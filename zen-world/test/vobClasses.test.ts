@@ -40,9 +40,9 @@ describe('the per-class field catalogue', () => {
       'zCZoneZFog',
     ]);
     expect(classPropKeys('oCItem')).toEqual(['instance']);
-    expect(classPropKeys('zCVobLight')).toEqual(['range', 'color']);
+    expect(classPropKeys('zCVobLight')).toEqual(['lightType', 'range', 'color', 'quality']);
     expect(classPropKeys('zCVobSound')).toEqual([
-      'soundName', 'volume', 'radius', 'coneAngle',
+      'soundName', 'volume', 'mode', 'radius', 'coneAngle', 'volumeType',
       'initiallyPlaying', 'ambient3d', 'obstruction',
     ]);
     expect(classPropKeys('zCZoneVobFarPlane'))
@@ -110,6 +110,12 @@ describe('the per-class field catalogue', () => {
     // (AddonWorld), with no negative anywhere.
     expect(fieldOf('oCZoneMusic', 'priority'))
       .toEqual({ key: 'priority', kind: 'int', min: 0 });
+    // An `enum` carries no bounds either, and for the opposite reason to a
+    // `bool`: there is plenty outside the set, and every bit of it is a value
+    // some world holds. The set is offered by the grid, not enforced here.
+    expect(fieldOf('zCVobLight', 'lightType')).toEqual({ key: 'lightType', kind: 'enum' });
+    expect(fieldOf('oCMobDoor', 'soundMaterial'))
+      .toEqual({ key: 'soundMaterial', kind: 'enum' });
     expect(classPropKeys('zCVobAnimate')).toEqual(['startOn']);
     expect(fieldOf('zCVobAnimate', 'startOn')).toEqual({ key: 'startOn', kind: 'bool' });
     expect(classPropKeys('zCPFXController'))
@@ -149,10 +155,11 @@ describe('the per-class field catalogue', () => {
       .toEqual({ key: 'levelName', kind: 'string' });
     expect(fieldOf('oCTriggerChangeLevel', 'startVob'))
       .toEqual({ key: 'startVob', kind: 'string' });
-    // `zCMover` inherits the base twelve and adds thirteen of its own
-    // fourteen, in the order `VMover` declares them.
+    // `zCMover` inherits the base twelve and adds fourteen of its own
+    // seventeen, in the order `VMover` declares them — `behavior` first.
     expect(classPropKeys('zCMover')).toEqual([
-      ...classPropKeys('zCTrigger'), 'touchBlockerDamage', 'stayOpenTimeSec', 'locked',
+      ...classPropKeys('zCTrigger'),
+      'behavior', 'touchBlockerDamage', 'stayOpenTimeSec', 'locked',
       'autoLink', 'autoRotate', 'sfxOpenStart', 'sfxOpenEnd', 'sfxTransitioning',
       'sfxCloseStart', 'sfxCloseEnd', 'sfxLock', 'sfxUnlock', 'sfxUseLocked',
     ]);
@@ -170,16 +177,17 @@ describe('the per-class field catalogue', () => {
     // many movers that animate from their visual instead.
     expect(fieldOf('zCMover', 'speed')).toBeNull();
     expect(fieldOf('zCMover', 'sfxLock')).toEqual({ key: 'sfxLock', kind: 'string' });
-    // `oCMOB` — the base every `oCMob*` class inherits, and its own nine
-    // plain scalars (`soundMaterial` is an enum and stays out).
+    // `oCMOB` — the base every `oCMob*` class inherits: all ten fields
+    // `VMovableObject` declares, `soundMaterial` in its own stored position.
     expect(classPropKeys('oCMOB')).toEqual([
       'focusName', 'hp', 'damage', 'movable', 'takable', 'focusOverride',
-      'visualDestroyed', 'owner', 'ownerGuild', 'destroyed',
+      'soundMaterial', 'visualDestroyed', 'owner', 'ownerGuild', 'destroyed',
     ]);
     expect(fieldOf('oCMOB', 'hp')).toEqual({ key: 'hp', kind: 'int' });
     expect(fieldOf('oCMOB', 'movable')).toEqual({ key: 'movable', kind: 'bool' });
     expect(fieldOf('oCMOB', 'owner')).toEqual({ key: 'owner', kind: 'string' });
-    expect(fieldOf('oCMOB', 'soundMaterial')).toBeNull();
+    expect(fieldOf('oCMOB', 'soundMaterial'))
+      .toEqual({ key: 'soundMaterial', kind: 'enum' });
     // `oCMobInter` — the base nine plus its own four; `target` (a cross-
     // reference, held out with the rest of the family's target strings) and
     // `item` (a script item-instance name, a decision point of its own) stay
@@ -187,7 +195,7 @@ describe('the per-class field catalogue', () => {
     // so they share the same key set.
     const OC_MOB_INTER_KEYS = [
       'focusName', 'hp', 'damage', 'movable', 'takable', 'focusOverride',
-      'visualDestroyed', 'owner', 'ownerGuild', 'destroyed',
+      'soundMaterial', 'visualDestroyed', 'owner', 'ownerGuild', 'destroyed',
       'stateCount', 'conditionFunction', 'onStateChangeFunction', 'rewind',
     ];
     for (const className of ['oCMobInter', 'oCMobBed', 'oCMobLadder', 'oCMobSwitch', 'oCMobWheel']) {
@@ -454,9 +462,8 @@ describe('the decal fields, which live on the visual and not on the vob', () => 
 describe('the enum sets (level-editor.md §16.21)', () => {
   it('names an enum on every class that has one, and no field twice', () => {
     // The set is per class and per key, so the two failures that reach a reader
-    // are a key catalogued twice — once as a scalar and once as an enum, which
-    // would give the grid two widgets for one archive member — and a class the
-    // grid never draws, whose set nothing can read.
+    // are a class the grid never draws, whose set nothing can read, and a key
+    // whose set and whose descriptor disagree about which of the two it is.
     expect(Object.keys(CLASS_ENUM_FIELDS).sort()).toEqual([
       'oCMOB', 'oCMobBed', 'oCMobContainer', 'oCMobDoor', 'oCMobFire', 'oCMobInter',
       'oCMobLadder', 'oCMobSwitch', 'oCMobWheel', 'zCMover', 'zCVobLight',
@@ -465,7 +472,35 @@ describe('the enum sets (level-editor.md §16.21)', () => {
     for (const [className, fields] of Object.entries(CLASS_ENUM_FIELDS)) {
       expect(Object.keys(CLASS_FIELDS)).toContain(className);
       for (const key of Object.keys(fields)) {
-        expect(classPropKeys(className)).not.toContain(key);
+        expect(classPropKeys(className)).toContain(key);
+        expect(fieldOf(className, key)?.kind).toBe('enum');
+      }
+    }
+  });
+
+  it('gives every `enum` field a set, and every set a field', () => {
+    // The two tables are read by different layers — the grid asks the fourth
+    // for its options and the IPC validator asks the third for the kind — so a
+    // key in one and not the other is a dropdown with nothing to offer, or a
+    // number field on an archive member that is an enumeration.
+    for (const className of Object.keys(CLASS_FIELDS)) {
+      for (const key of classPropKeys(className)) {
+        const isEnum = fieldOf(className, key)?.kind === 'enum';
+        expect([key, isEnum]).toEqual([key, enumValuesOf(className, key) !== null]);
+      }
+    }
+  });
+
+  it('bounds no enum field, because a value outside the set is kept', () => {
+    // The whole of §16.21: offering is not coercing. A value retail holds and
+    // the set does not is shown as itself and written back unchanged on an
+    // undo, so a `min`/`max` here would be the coercion the card refuses —
+    // reached by the validator instead of by the dropdown.
+    for (const className of Object.keys(CLASS_FIELDS)) {
+      for (const key of classPropKeys(className)) {
+        const field = fieldOf(className, key)!;
+        if (field.kind !== 'enum') continue;
+        expect([key, field.min, field.max]).toEqual([key, undefined, undefined]);
       }
     }
   });

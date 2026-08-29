@@ -2159,9 +2159,12 @@ Deliberately out, and each for a reason rather than for time. **`isStatic`**
 changes *which fields the archive contains* — ZenKit writes the animation block
 only when it is false — so its inverse does not restore the world; it needs an op
 carrying the animation vectors in `from`. **Enums** (`lightType`, sound `mode`,
-`lerpMode`), because retail data contains out-of-range values — `zCMover.lerpMode`
-is 120 on three VOBs — and a dropdown that cannot represent junk destroys it on
-write; that decision belongs with the first class that needs one. **List fields**
+`lerpMode`) were out for the same shape of reason — retail data contains
+out-of-range values, `zCMover.lerpMode` is 120 on three VOBs, and a dropdown that
+cannot represent junk destroys it on write — and **came in on 2026-08-29**, eight
+of them, once the decision above separated offering from coercing (§16.21). Only
+`lerpMode` and `speedMode` are still out, and by `zCMover.speed`'s rule rather
+than this one. **List fields**
 (`colorAnimationList`, trigger targets, mover keyframes), the first unbounded
 payloads in the op set, needing a length cap and a nested-record assertion
 `ipcValidation.ts` has no idiom for. **The rest of `zCVob`** (§14.1 item 1.8),
@@ -2263,11 +2266,12 @@ Not a class at all. Two kinds, and the nine fields the five classes of increment
   `overrideColor` just fixed for fog, and closing them means a `mode` control,
   which means enums.
 - **Two enums stayed out for the reason the catalogue already gives** (sound
-  `mode`, `volumeType`), and `randomDelay`/`randomDelayVar` stayed out for a
-  third reason that is neither: the engine reads them only when `mode` is
-  RANDOM, and `mode` is exactly what cannot be set. They are plain floats and
-  are the cheapest thing here to add if a random ambient sound ever needs
-  tuning.
+  `mode`, `volumeType`) — until §16.21 took both on 2026-08-29.
+  `randomDelay`/`randomDelayVar` stayed out for a third reason that is neither:
+  the engine reads them only when `mode` is RANDOM, and the grid commits one
+  field at a time, so a delay set beside a mode change is a write with no
+  effect. They are plain floats and are the cheapest thing here to add if a
+  random ambient sound ever needs tuning.
 - **A bound is only written down where something measured it — and the
   2026-08-27 `normalizeWorld` sweep over the three retail worlds settled the two
   that shipped unmeasured, plus one that was wrong.** `innerRangePercentage` is
@@ -2595,7 +2599,7 @@ feedback, the Daedalus overlay, the multi-part workspace); that is §11's job.
 | 1.1 | **Delete an arbitrary retail VOB** | **landed** (§7) | `DeleteVob`, the history barrier and the confirm. The one op with no inverse. |
 | 1.2 | **Copy / paste / duplicate**, incl. subtree | **done, less `physicsEnabled`** (§16.14) | The most-used Spacer verb after move. D1 (duplicate one VOB in place), D4 (a selection as one batch, one undo) and D3 (copy and paste as verbs) all landed 2026-08-28, as ordinary `AddVob`s with no new op. D2's class half landed 2026-08-28 on top of I1/I2 — a copy carries its **class** for the classes `insertVob` can construct, and drops it for the rest (and for `oCItem`, whose instance is not in the index) rather than have the op refused. What a copy still drops is the class *properties* and `physicsEnabled`. D5 (the subtree) landed 2026-08-28 as N appends in one batch. What is left is `physicsEnabled`; a cross-world clipboard only if part-to-part copying is wanted. |
 | 1.3 | **Class-specific insertion** | unscheduled → 1b-2 | `insertVob` authors `zCVob` and nothing else. Needs at least: `oCItem`, `zCVobLight`, `zCVobSound`/`Daytime`, the trigger family (`zCTrigger`, `zCTriggerList`, `zCTriggerScript`, `zCMover`, `zCCodeMaster`, `zCMessageFilter`, `zCTriggerChangeLevel`), `oCMobInter`/`Container`/`Door`/`Bed`/`Ladder`/`Switch`/`Wheel`, `oCTouchDamage`, `zCPFXController`, the zones (`oCZoneMusic`, `zCZoneZFog`, `zCZoneVobFarPlane`), `zCVobStartpoint`/`zCVobSpot`, `zCVobAnimate`. |
-| 1.4 | **Class-specific property editing** | **partial** (§7) | Seven classes so far. Increment 2 (2026-08-28) added the sound family and the zones — `zCVobSound`, `zCVobSoundDaytime` (which inherits the base four), `zCZoneVobFarPlane`, `zCZoneZFog`, `oCZoneMusic` — with no change to the validator, the op builder or the grid, which is increment 1's catalogue claim holding. What it exposed is that the value kinds, not the classes, were the limit — and increment 3 (2026-08-28) answered it with a `bool` kind and an `int` kind, which took the nine fields those five classes were holding back: the three sound booleans, the two fog booleans, and `oCZoneMusic`'s `enabled`/`ellipsoid`/`loop` plus its `int32` `priority`. `oCZoneMusic` and `zCZoneZFog` are now complete but for enums. **One question increment 3 left open**: `zCZoneZFog.color` is legible now only because `overrideColor` is drawn immediately above it — the grid still has no cross-field logic, so a colour on a zone that does not override is not disabled, greyed or annotated, and whether it should be is a UI decision nobody has taken. **`oCItem.instance` is no longer free text** (2026-08-28): the grid refuses a name the loaded project's item index does not declare and the IPC validator refuses a `to.instance` that is not a Daedalus symbol — see "The item instance stops being free text" in §7 for why the enforcement is split and why the main process cannot hold the index. Increment 1 (2026-08-28) landed `oCItem.instance` and `zCVobLight`'s `range` and `color` — 23.4 % of the 41,393 retail VOBs, and the three value kinds (cp1252 string, bounded float, fixed-arity integer array) the machinery needed. The whole path exists now — `getVobProps` exporting the reader `normalizeWorld` already had, the `SetVobClassProp` op, the `CLASS_FIELDS` catalogue every layer reads, the validator branch, the grid section — so each further class is one C++ case plus one catalogue entry plus its tests. Out by decision, not by time: `isStatic` (changes which fields the archive contains, so its inverse does not restore the world), enums (retail carries out-of-range values a dropdown would destroy), list fields (first unbounded payloads in the op set), base-`zCVob` widening (item 1.8, and the `farClipScale` junk it would write back), and class-specific insertion (item 1.3, which is `AddVob`). Still the largest volume of work in this section. |
+| 1.4 | **Class-specific property editing** | **partial** (§7) | Seven classes so far. Increment 2 (2026-08-28) added the sound family and the zones — `zCVobSound`, `zCVobSoundDaytime` (which inherits the base four), `zCZoneVobFarPlane`, `zCZoneZFog`, `oCZoneMusic` — with no change to the validator, the op builder or the grid, which is increment 1's catalogue claim holding. What it exposed is that the value kinds, not the classes, were the limit — and increment 3 (2026-08-28) answered it with a `bool` kind and an `int` kind, which took the nine fields those five classes were holding back: the three sound booleans, the two fog booleans, and `oCZoneMusic`'s `enabled`/`ellipsoid`/`loop` plus its `int32` `priority`. `oCZoneMusic` and `zCZoneZFog` are now complete but for enums. **One question increment 3 left open**: `zCZoneZFog.color` is legible now only because `overrideColor` is drawn immediately above it — the grid still has no cross-field logic, so a colour on a zone that does not override is not disabled, greyed or annotated, and whether it should be is a UI decision nobody has taken. **`oCItem.instance` is no longer free text** (2026-08-28): the grid refuses a name the loaded project's item index does not declare and the IPC validator refuses a `to.instance` that is not a Daedalus symbol — see "The item instance stops being free text" in §7 for why the enforcement is split and why the main process cannot hold the index. Increment 1 (2026-08-28) landed `oCItem.instance` and `zCVobLight`'s `range` and `color` — 23.4 % of the 41,393 retail VOBs, and the three value kinds (cp1252 string, bounded float, fixed-arity integer array) the machinery needed. The whole path exists now — `getVobProps` exporting the reader `normalizeWorld` already had, the `SetVobClassProp` op, the `CLASS_FIELDS` catalogue every layer reads, the validator branch, the grid section — so each further class is one C++ case plus one catalogue entry plus its tests. Out by decision, not by time: `isStatic` (changes which fields the archive contains, so its inverse does not restore the world), list fields (first unbounded payloads in the op set), base-`zCVob` widening (item 1.8, and the `farClipScale` junk it would write back), and class-specific insertion (item 1.3, which is `AddVob`). Still the largest volume of work in this section. |
 | 1.5 | **Numeric transform entry** | **landed** | **Position landed 2026-08-28**: the three coordinates are typed entry in `WorldPropertyGrid`, and a committed one leaves as a *delta* through the gizmo's own `onTranslateSelection` → `translateVobs` → `commitOps`, so there is one op-building path and not two — a multi-selection therefore moves by that delta and keeps its spacing, exactly as a drag does. Commit is blur or Enter, Escape reverts, and a value that is not a finite float32 (or is the number already there) is refused *before* an op exists and the field is remounted showing the world's own value — the refusal-counter idiom the class fields already had. **The rotation half landed too (2026-08-28).** `coords` gained `zenRotationToEuler` / `eulerToZenRotation` with the round-trip tolerance test the old wording asked for, and `WorldPropertyGrid` now has three angle fields on top of it. Unlike position, a committed angle leaves as an **absolute** pose (`rotateVob(..., eulerToZenRotation(typed), bounds)`), because an absolute angle is the thing the grid can now read off a VOB; the equality refusal below is therefore applied **per angle**, and it compares the typed number against the *displayed* rounded value as well as the exact decomposed one — `coordinate()` rounds to 2 dp, so a field reading "30" can be 30.000000000000004 underneath and retyping what is on screen would otherwise re-orthonormalize the matrix. `zenRotationToEuler`'s throw is caught and the row renders as unavailable rather than blanking the grid. **A multi-selection landed 2026-08-28** and is the one asymmetry: the fields describe the anchor VOB as always, but with N selected a committed angle leaves as a **delta** through the gizmo's own `onRotateSelection` → `rotateVobs`, so the selection turns together and keeps the relative orientation it had — the rule the position fields already have, and the one that keeps typing and dragging on one op-building path. The delta is `eulerDeltaRotation(displayed, typed)` (`zen-world/coords`), built from the two angle triples rather than from the anchor's stored matrix: a `R(to) * M^-1` would carry the anchor's own non-orthonormality into every other VOB of the selection. See §16.4. Four decisions came with it, all measured over the 41,393 VOBs of retail NewWorld/OldWorld/AddonWorld. **The convention is intrinsic Y-X-Z in degrees** (`R = Ry * Rx * Rz`, ZenGin axes) — chosen because nothing in ZenGin, ZenKit or this repo commits to an order, so the tie-break is the singularity: YXZ's is a VOB stood on its nose, XYZ's is on the vertical, and **464 retail VOBs sit within 1e-6 of the XYZ singularity against 53 of YXZ's**. **Spacer parity is therefore unverified and not claimed** — there is no artefact in the format or in ZenKit to check an order against, and settling it needs Spacer itself (type an angle, save, read the matrix back). **Gimbal lock** folds the roll into the yaw and returns roll 0; the matrix still round-trips, and there is deliberately no near-pole epsilon, because one of 1e-7 in sine space discards a recoverable roll and moves the VOB by 8.5e-4 of matrix entry. **Non-orthonormal input is normalized, not refused**: 12,514 VOBs (30.2 %) deviate by more than 1e-6, worst 2.1e-2, so refusing would take typed angles away from a third of the world — which means **reading and writing back an unchanged angle rewrites that VOB's matrix**, and the grid must only write an angle the user changed. A reflection or a rank-deficient matrix is refused; retail has 0 of each. **Tolerance is 1e-6 on a matrix entry**, a few float32 ulps (ulp near 1 is 5.96e-8); measured worst is 2.98e-8 across the retail corpus and 5.96e-8 over 200k random poses. |
 | 1.6 | **Snapping** | **partial** | **Grid step and angle step landed 2026-08-28.** One "Snap" step on the World bar, following the gizmo mode — centimetres for a move, degrees for a turn, both remembered, both free-form by default so an unsnapped drag and `verify-world-edit.js` are unchanged. **Snapping is relative: the drag's *delta* is quantised, never the position or orientation it lands on** (`renderer/world/snapping.ts`), for the reason typed coordinates chose a delta — one gizmo drives a whole selection and an absolute snap would put the anchor on the grid and shift the rest by whatever that took. For the angle there was no choice at all: an absolute angle needs the matrix↔Euler conversion `zen-world` does not have (row 1.5), while the turn since the press is exactly what the op carries. Quantised **on the proxy** in `objectChange`, so the live preview, both commits, a waypoint's destination and the drag harness read one snapped number rather than each applying the step themselves. A drag the step quantises to nothing commits no op at all. **Drop-to-ground and align-to-normal are still out**, and not for want of a raycast — the world mesh has a BVH and the terrain pick already uses it. They are out because both are *per-VOB* answers (each VOB finds its own ground, its own normal) and the commit path takes one delta for the whole selection: `translateVobs`/`rotateVobs` would need a per-VOB variant, which is a second op-building path and the thing the gizmo work has avoided since Phase 1b began. Align-to-normal additionally has to decide which axis of a visual is up — the same question that keeps a placed VOB unrotated (`IDENTITY` in `WorldSurface`). |
 | 1.7 | **Visual assignment**, as opposed to rename | unscheduled → 1b-2 | `setVobProp.visual` renames in place and refuses any VOB whose visual type is `UNKNOWN` — 15,749 of the 41,393 retail VOBs (§7). Assigning a visual has to decide the object's class; decals (`.TGA`) are refused outright. |
@@ -2892,8 +2896,10 @@ path `1/13`. `oCMob*` is the remaining work.
 `zCMover`'s own fields landed 2026-08-28: the inherited `VTrigger` twelve plus
 thirteen of its own fourteen — two delay/damage floats (`touchBlockerDamage`,
 `stayOpenTimeSec`), three bools (`locked`, `autoLink`, `autoRotate`) and eight
-sound names. `behavior`, `lerpMode` and `speedMode` are enums and stay out with
-the rest of the catalogue's enums; `keyframes` is an unbounded list. `speed` is
+sound names. `behavior`, `lerpMode` and `speedMode` were enums and stayed out
+with the rest of the catalogue's enums; `behavior` joined in §16.21 and the
+other two did not, held out by `speed`'s rule below instead. `keyframes` is an
+unbounded list. `speed` is
 held out for a reason none of the family's other held-out fields share:
 ZenKit's `VMover::save` writes `moveSpeed` (with the two lerp/speed enums)
 only when `keyframes` is non-empty, and this catalogue cannot author
@@ -2905,8 +2911,9 @@ keyframes (most of them), a `speed` write is silently dropped on save, the same
 `oCMOB` landed 2026-08-28: `VMovableObject`'s own nine plain scalars — the base
 every `oCMob*` class inherits, and a class in its own right for a plain,
 non-interactive movable object. `soundMaterial` is the one enum on the class and
-stays out with the rest of the catalogue's enums; nothing else on it is a list
-or save-game-only, so nothing else was held out. Appended to
+stayed out with the rest of the catalogue's enums until §16.21 took it, which
+makes this class's ten fields complete; nothing else on it is a list or
+save-game-only. Appended to
 `BuildVisualVobTree` at path `1/15`.
 
 `oCMobInter` landed 2026-08-28, and with it the three subclasses that add
@@ -2935,13 +2942,17 @@ reason `keyframes` is held out by. `VDoor` adds the same `locked` and
 `pickString`, `key` held out the same way. One fixture VOB per class, appended
 to `BuildVisualVobTree` at paths `1/17`-`1/19`.
 
-Held out by decision rather than by time, and **enums are now the whole of it**:
-`mode`, `volumeType`, `zCMover.lerpMode`/`speedMode` and their kin, where
-retail carries out-of-range values a dropdown destroys. Enums are also most of
-the "legal writes the engine ignores" question — `randomDelay` /
-`randomDelayVar` are read only when `mode` is RANDOM, and `mode` is precisely
-what cannot be set; `zCMover.speed` is the one instance of the same shape that
-is not an enum, held out for the `keyframes`-emptiness reason above instead.
+Held out by decision rather than by time, and **enums were the whole of it until
+§16.21 closed them on 2026-08-29**: eight of them — `zCVobLight.lightType` and
+`.quality`, the sound family's `mode` and `volumeType`, `zCMover.behavior` and
+`soundMaterial` on all nine `oCMob*` — are catalogued, writable and drawn as a
+dropdown that offers without coercing. `zCMover.lerpMode`/`speedMode` are the
+two that stayed out, and **not for the reason this paragraph gave**: they are
+held out by `zCMover.speed`'s rule, the `keyframes`-emptiness silent drop. What
+survives of the "legal writes the engine ignores" question is `randomDelay` /
+`randomDelayVar`: the engine reads them only when `mode` is RANDOM, and the grid
+commits one field at a time, so a delay written beside a mode change is still a
+write with no effect.
 
 Also out: `isStatic` and anything else changing *which* fields the archive
 contains, list fields, and base-`zCVob` widening (§14.1 item 1.8). Alongside and
@@ -5409,7 +5420,41 @@ NewWorld/OldWorld/AddonWorld, every stored value of every field:
   and `speedType` only `if (!keyframes.empty())`, and the catalogue cannot
   author keyframes — the same silent-drop that keeps `speed` out.
 
-What the field component still owes: nothing here decides how an out-of-set
-value is *shown*, only that it is kept. `SetVobClassProp` refuses these keys
-today — they are in no `CLASS_FIELDS` entry — so the component's card carries
-the binding case and the IPC branch with it.
+**The field component landed 2026-08-29, and with it the whole path.** FIXED
+across three workspaces in one change, because the key had to become legal at
+every layer at once:
+
+- `zen-world` — the eight keys are now `CLASS_FIELDS` entries of a seventh kind,
+  `enum`, carrying **no `min` and no `max`**. That absence is the mechanism, not
+  an omission: it is what lets a value outside the set cross the validator, the
+  binding and an undo unchanged. The fourth table is unchanged and is now read by
+  exactly one layer.
+- `ipcValidation` — an `enum` branch that checks whole and non-negative and
+  nothing else. Whole because the archive member is a `uint32_t` and 2.5
+  truncates on the cast reporting success; nothing else because a validator that
+  knew the set would refuse the undo restoring a value the world already held.
+- `zenkit-node` — `OptionalEnum<E>`, and the key in the `RequireClassKeys` list
+  and the assign of all five affected cases (light, the sound pair, mover, and
+  the five `oCMob*` blocks). `static_cast` onto the member is well defined for
+  any value: every one of these enums is `: uint32_t`.
+- The grid — a native `<select>`. A value the set does not name is an option of
+  its own, selected, labelled `<value> — unknown`, and written by nothing.
+
+Two things the change found rather than planned:
+
+- **A class field the read does not answer used to blank the whole panel.** The
+  base fields had guarded against it since §16.17 ("a build running against an
+  older native addon"); the class fields had not, because until now every
+  catalogued key was one `getVobProps` answered. Eight new keys made the
+  divergence reachable, and the same filter now covers both.
+- **`randomDelay`/`randomDelayVar` do not follow `mode` in.** The argument for
+  holding them out was "`mode` is an enum this catalogue cannot set", and that
+  clause is now false — but the conclusion survives on the other one: the grid
+  commits one field at a time, so a delay written on a sound that is not yet
+  RANDOM is still a write the engine ignores.
+
+What is *not* witnessed: no engine has seen any of these eight written. Gate 2b
+proved `SetVobClassProp` reaches the file and the engine plays it, but for scalar
+fields; an enum write is the same code path with a different member, and
+`zCVobLight.lightType` in particular is a value retail places nowhere (0 on all
+4,649 lights), so nothing in the corpus says what SPOT looks like.

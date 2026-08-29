@@ -623,6 +623,53 @@ describe('assertApplyOpsRequest', () => {
       }
     });
 
+    it('accepts an enum, in the set and out of it, and refuses a fraction', () => {
+      // §16.21: the validator holds no set, deliberately. `soundMaterial` 97 is
+      // a value no `SoundMaterialType` names, and a world that holds one must
+      // survive being edited beside it — an undo writes the `from` side back, so
+      // a validator that refused out-of-set values would refuse the restore. A
+      // fraction is still refused: the archive member is a `uint32_t`, so 2.5
+      // truncates on the cast in C++ and reports success.
+      const material = (from: unknown, to: unknown) => ({
+        op: 'SetVobClassProp',
+        vob: 15,
+        path: '0/16',
+        className: 'oCMobDoor',
+        from: { soundMaterial: from },
+        to: { soundMaterial: to },
+      });
+      expect(() => assertApplyOpsRequest({ ops: [material(0, 2)] })).not.toThrow();
+      expect(() => assertApplyOpsRequest({ ops: [material(97, 2)] })).not.toThrow();
+      expect(() => assertApplyOpsRequest({ ops: [material(0, 2.5)] }))
+        .toThrow(/to\.soundMaterial must be a whole number/);
+      expect(() => assertApplyOpsRequest({ ops: [material(0, -1)] }))
+        .toThrow(/to\.soundMaterial must be 0 or greater/);
+      expect(() => assertApplyOpsRequest({ ops: [material(0, 'WOOD')] }))
+        .toThrow(/to\.soundMaterial must be a whole number/);
+    });
+
+    it('accepts the light, sound and mover enums the catalogue now carries', () => {
+      // The half of the change `ReparentVob` shipped without: a key with no
+      // branch here is refused at the one layer every other test mocks past.
+      const enums: Array<[string, string, number]> = [
+        ['zCVobLight', 'lightType', 1],
+        ['zCVobLight', 'quality', 2],
+        ['zCVobSound', 'mode', 2],
+        ['zCVobSound', 'volumeType', 1],
+        ['zCVobSoundDaytime', 'mode', 1],
+        ['zCMover', 'behavior', 3],
+        ['oCMobContainer', 'soundMaterial', 4],
+      ];
+      for (const [className, key, value] of enums) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{
+            op: 'SetVobClassProp', vob: 3, path: '0/4', className,
+            from: { [key]: 0 }, to: { [key]: value },
+          }],
+        })).not.toThrow();
+      }
+    });
+
     it('refuses an item instance that is not the shape of a Daedalus symbol', () => {
       // `oCItem.instance` is the one class field whose value is a *name in
       // another file*, and ZenGin crashes on one no script declares

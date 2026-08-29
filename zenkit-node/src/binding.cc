@@ -1432,6 +1432,33 @@ std::optional<std::int32_t> OptionalInt32(Napi::Env env,
   return result;
 }
 
+// OptionalInt32's sibling for an archive member that is a C++ enumeration.
+//
+// It is separate rather than an `OptionalInt32` plus a cast because the *bounds*
+// differ, and deliberately: an enum member is a `uint32_t`, so 2.5 truncates and
+// -1 wraps to 4,294,967,295, and both would report success — but nothing here
+// checks the value against the enumerators (level-editor.md §16.21). Retail
+// carries values no enumerator names, the editor's dropdown offers the set
+// without coercing to it, and an undo writes back exactly what was read; a set
+// enforced here would refuse that restore.
+template <typename Enum>
+std::optional<Enum> OptionalEnum(Napi::Env env, Napi::Object props, char const* key) {
+  Napi::Value const value = props.Get(key);
+  if (value.IsUndefined()) return std::nullopt;
+  if (!value.IsNumber()) {
+    throw Napi::TypeError::New(env, std::string {"props."} + key + " must be a number");
+  }
+  double const number = value.As<Napi::Number>().DoubleValue();
+  if (!std::isfinite(number) || number != std::floor(number)) {
+    throw Napi::Error::New(env, std::string {"props."} + key + " must be a whole number");
+  }
+  if (number < 0 || number > 4294967295.0) {
+    throw Napi::Error::New(env,
+                           std::string {"props."} + key + " is outside the 32-bit unsigned range");
+  }
+  return static_cast<Enum>(static_cast<std::uint32_t>(number));
+}
+
 // RequiredCp1252String for a key that may simply be absent. Every string field
 // past `oCItem.instance` is one of several on its class, so "set the sound name
 // and leave the radius alone" has to be expressible.
@@ -1483,7 +1510,9 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       break;
     }
     case zenkit::VirtualObjectType::zCVobLight: {
-      RequireClassKeys(env, props, {"range", "color"}, class_name);
+      RequireClassKeys(env, props, {"lightType", "range", "color", "quality"}, class_name);
+      auto const light_type = OptionalEnum<zenkit::LightType>(env, props, "lightType");
+      auto const quality = OptionalEnum<zenkit::LightQuality>(env, props, "quality");
       auto const range = OptionalFloat(env, props, "range");
       // A negative range is not a light that reaches nothing; it is a light the
       // engine derives an attenuation from and draws as garbage.
@@ -1497,6 +1526,8 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       // vectors that only exist on a dynamic light, and none of them is this
       // op's to reset.
       auto& light = static_cast<zenkit::VLight&>(*vob);
+      if (light_type) light.light_type = *light_type;
+      if (quality) light.quality = *quality;
       if (range) light.range = *range;
       if (color) light.color = *color;
       break;
@@ -1508,22 +1539,24 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
     // offered a radius on one and not the other would be describing the class
     // hierarchy wrongly.
     //
-    // What is deliberately not here, by the catalogue's own rules: `mode` and
-    // `volumeType` are enums; and `randomDelay` / `randomDelayVar` are read by
-    // the engine only when `mode` is RANDOM, which is a mode this op cannot set,
-    // so both would be legal writes with no effect.
+    // `mode` and `volumeType` are here since §16.21. What is deliberately not:
+    // `randomDelay` / `randomDelayVar`, which the engine reads only when `mode`
+    // is RANDOM. The op can set that mode now, but not on the same call the grid
+    // makes — it commits one field at a time — so a delay written on a sound
+    // that is not yet random is still a legal write with no effect.
     case zenkit::VirtualObjectType::zCVobSound:
     case zenkit::VirtualObjectType::zCVobSoundDaytime: {
       bool const daytime = vob->type == zenkit::VirtualObjectType::zCVobSoundDaytime;
       if (daytime) {
         RequireClassKeys(env, props,
-                         {"soundName", "volume", "radius", "coneAngle", "initiallyPlaying",
-                          "ambient3d", "obstruction", "startTime", "endTime", "soundName2"},
+                         {"soundName", "volume", "mode", "radius", "coneAngle", "volumeType",
+                          "initiallyPlaying", "ambient3d", "obstruction", "startTime", "endTime",
+                          "soundName2"},
                          class_name);
       } else {
         RequireClassKeys(env, props,
-                         {"soundName", "volume", "radius", "coneAngle", "initiallyPlaying",
-                          "ambient3d", "obstruction"},
+                         {"soundName", "volume", "mode", "radius", "coneAngle", "volumeType",
+                          "initiallyPlaying", "ambient3d", "obstruction"},
                          class_name);
       }
       // Everything read and bounded before anything is assigned, so a refused
@@ -1533,8 +1566,11 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       // NewWorld holds 130 on two sounds and 150 on four (measured 2026-08-27),
       // so a max of 100 refuses values the game itself ships.
       auto const volume = OptionalFloatIn(env, props, "volume", 0, std::nullopt);
+      auto const mode = OptionalEnum<zenkit::SoundMode>(env, props, "mode");
       auto const radius = OptionalFloatIn(env, props, "radius", 0, std::nullopt);
       auto const cone_angle = OptionalFloatIn(env, props, "coneAngle", 0, 360);
+      auto const volume_type =
+          OptionalEnum<zenkit::SoundTriggerVolumeType>(env, props, "volumeType");
       auto const initially_playing = OptionalBool(env, props, "initiallyPlaying");
       auto const ambient3d = OptionalBool(env, props, "ambient3d");
       auto const obstruction = OptionalBool(env, props, "obstruction");
@@ -1552,6 +1588,8 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       auto& sound = static_cast<zenkit::VSound&>(*vob);
       if (sound_name) sound.sound_name = std::move(*sound_name);
       if (volume) sound.volume = *volume;
+      if (mode) sound.mode = *mode;
+      if (volume_type) sound.volume_type = *volume_type;
       if (radius) sound.radius = *radius;
       if (cone_angle) sound.cone_angle = *cone_angle;
       // `.has_value()` and not `if (initially_playing)`: on a
@@ -1778,10 +1816,10 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
     }
     // The base `VTrigger` twelve, plus thirteen of the fourteen fields
     // `VMover` declares beyond them: two delay/damage floats, three bools,
-    // and eight sound names. `behavior`, `lerp_mode` and `speed_mode` are
-    // enums and stay out with the rest of the catalogue's enums; `keyframes`
-    // is an unbounded list and stays out with the rest of those; the `s_*`
-    // fields are save-game only. `speed` is held out for a reason none of the
+    // and eight sound names, `behavior` among them since §16.21. `lerp_mode`
+    // and `speed_mode` stay out, but by `speed`'s rule below rather than by
+    // any rule about enums; `keyframes` is an unbounded list and stays out
+    // with the rest of those; the `s_*` fields are save-game only. `speed` is held out for a reason none of the
     // rest of the family has: `VMover::save` writes `moveSpeed` only when
     // `keyframes` is non-empty, which this op cannot author — see
     // zen-world's `vobClasses.ts` for the full "legal write the engine
@@ -1791,7 +1829,8 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
                        {"startEnabled", "sendUntrigger", "reactToOnTrigger", "reactToOnTouch",
                         "reactToOnDamage", "respondToObject", "respondToPc", "respondToNpc",
                         "maxActivationCount", "retriggerDelaySec", "damageThreshold",
-                        "fireDelaySec", "touchBlockerDamage", "stayOpenTimeSec", "locked",
+                        "fireDelaySec", "behavior", "touchBlockerDamage", "stayOpenTimeSec",
+                        "locked",
                         "autoLink", "autoRotate", "sfxOpenStart", "sfxOpenEnd",
                         "sfxTransitioning", "sfxCloseStart", "sfxCloseEnd", "sfxLock",
                         "sfxUnlock", "sfxUseLocked"},
@@ -1810,6 +1849,7 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
           OptionalFloatIn(env, props, "retriggerDelaySec", 0, std::nullopt);
       auto const damage_threshold = OptionalFloatIn(env, props, "damageThreshold", 0, std::nullopt);
       auto const fire_delay_sec = OptionalFloatIn(env, props, "fireDelaySec", 0, std::nullopt);
+      auto const behavior = OptionalEnum<zenkit::MoverBehavior>(env, props, "behavior");
       auto const touch_blocker_damage =
           OptionalFloatIn(env, props, "touchBlockerDamage", 0, std::nullopt);
       auto const stay_open_time_sec =
@@ -1838,6 +1878,7 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (retrigger_delay_sec.has_value()) mover.retrigger_delay_sec = *retrigger_delay_sec;
       if (damage_threshold.has_value()) mover.damage_threshold = *damage_threshold;
       if (fire_delay_sec.has_value()) mover.fire_delay_sec = *fire_delay_sec;
+      if (behavior) mover.behavior = *behavior;
       if (touch_blocker_damage.has_value()) mover.touch_blocker_damage = *touch_blocker_damage;
       if (stay_open_time_sec.has_value()) mover.stay_open_time_sec = *stay_open_time_sec;
       if (locked.has_value()) mover.locked = *locked;
@@ -1856,7 +1897,7 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
     case zenkit::VirtualObjectType::oCMOB: {
       RequireClassKeys(env, props,
                        {"focusName", "hp", "damage", "movable", "takable", "focusOverride",
-                        "visualDestroyed", "owner", "ownerGuild", "destroyed"},
+                        "soundMaterial", "visualDestroyed", "owner", "ownerGuild", "destroyed"},
                        class_name);
       auto focus_name = OptionalCp1252String(env, props, "focusName");
       auto const hp = OptionalInt32(env, props, "hp", std::nullopt, std::nullopt);
@@ -1864,6 +1905,8 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       auto const movable = OptionalBool(env, props, "movable");
       auto const takable = OptionalBool(env, props, "takable");
       auto const focus_override = OptionalBool(env, props, "focusOverride");
+      auto const sound_material =
+          OptionalEnum<zenkit::SoundMaterialType>(env, props, "soundMaterial");
       auto visual_destroyed = OptionalCp1252String(env, props, "visualDestroyed");
       auto owner = OptionalCp1252String(env, props, "owner");
       auto owner_guild = OptionalCp1252String(env, props, "ownerGuild");
@@ -1875,6 +1918,7 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (movable.has_value()) mob.movable = *movable;
       if (takable.has_value()) mob.takable = *takable;
       if (focus_override.has_value()) mob.focus_override = *focus_override;
+      if (sound_material) mob.material = *sound_material;
       if (visual_destroyed) mob.visual_destroyed = std::move(*visual_destroyed);
       if (owner) mob.owner = std::move(*owner);
       if (owner_guild) mob.owner_guild = std::move(*owner_guild);
@@ -1888,7 +1932,7 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
     case zenkit::VirtualObjectType::oCMobWheel: {
       RequireClassKeys(env, props,
                        {"focusName", "hp", "damage", "movable", "takable", "focusOverride",
-                        "visualDestroyed", "owner", "ownerGuild", "destroyed", "stateCount",
+                        "soundMaterial", "visualDestroyed", "owner", "ownerGuild", "destroyed", "stateCount",
                         "conditionFunction", "onStateChangeFunction", "rewind"},
                        class_name);
       auto focus_name = OptionalCp1252String(env, props, "focusName");
@@ -1897,6 +1941,8 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       auto const movable = OptionalBool(env, props, "movable");
       auto const takable = OptionalBool(env, props, "takable");
       auto const focus_override = OptionalBool(env, props, "focusOverride");
+      auto const sound_material =
+          OptionalEnum<zenkit::SoundMaterialType>(env, props, "soundMaterial");
       auto visual_destroyed = OptionalCp1252String(env, props, "visualDestroyed");
       auto owner = OptionalCp1252String(env, props, "owner");
       auto owner_guild = OptionalCp1252String(env, props, "ownerGuild");
@@ -1912,6 +1958,7 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (movable.has_value()) mob.movable = *movable;
       if (takable.has_value()) mob.takable = *takable;
       if (focus_override.has_value()) mob.focus_override = *focus_override;
+      if (sound_material) mob.material = *sound_material;
       if (visual_destroyed) mob.visual_destroyed = std::move(*visual_destroyed);
       if (owner) mob.owner = std::move(*owner);
       if (owner_guild) mob.owner_guild = std::move(*owner_guild);
@@ -1925,7 +1972,7 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
     case zenkit::VirtualObjectType::oCMobFire: {
       RequireClassKeys(env, props,
                        {"focusName", "hp", "damage", "movable", "takable", "focusOverride",
-                        "visualDestroyed", "owner", "ownerGuild", "destroyed", "stateCount",
+                        "soundMaterial", "visualDestroyed", "owner", "ownerGuild", "destroyed", "stateCount",
                         "conditionFunction", "onStateChangeFunction", "rewind", "slot", "vobTree"},
                        class_name);
       auto focus_name = OptionalCp1252String(env, props, "focusName");
@@ -1934,6 +1981,8 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       auto const movable = OptionalBool(env, props, "movable");
       auto const takable = OptionalBool(env, props, "takable");
       auto const focus_override = OptionalBool(env, props, "focusOverride");
+      auto const sound_material =
+          OptionalEnum<zenkit::SoundMaterialType>(env, props, "soundMaterial");
       auto visual_destroyed = OptionalCp1252String(env, props, "visualDestroyed");
       auto owner = OptionalCp1252String(env, props, "owner");
       auto owner_guild = OptionalCp1252String(env, props, "ownerGuild");
@@ -1951,6 +2000,7 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (movable.has_value()) mob.movable = *movable;
       if (takable.has_value()) mob.takable = *takable;
       if (focus_override.has_value()) mob.focus_override = *focus_override;
+      if (sound_material) mob.material = *sound_material;
       if (visual_destroyed) mob.visual_destroyed = std::move(*visual_destroyed);
       if (owner) mob.owner = std::move(*owner);
       if (owner_guild) mob.owner_guild = std::move(*owner_guild);
@@ -1966,7 +2016,7 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
     case zenkit::VirtualObjectType::oCMobContainer: {
       RequireClassKeys(env, props,
                        {"focusName", "hp", "damage", "movable", "takable", "focusOverride",
-                        "visualDestroyed", "owner", "ownerGuild", "destroyed", "stateCount",
+                        "soundMaterial", "visualDestroyed", "owner", "ownerGuild", "destroyed", "stateCount",
                         "conditionFunction", "onStateChangeFunction", "rewind", "locked",
                         "pickString"},
                        class_name);
@@ -1976,6 +2026,8 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       auto const movable = OptionalBool(env, props, "movable");
       auto const takable = OptionalBool(env, props, "takable");
       auto const focus_override = OptionalBool(env, props, "focusOverride");
+      auto const sound_material =
+          OptionalEnum<zenkit::SoundMaterialType>(env, props, "soundMaterial");
       auto visual_destroyed = OptionalCp1252String(env, props, "visualDestroyed");
       auto owner = OptionalCp1252String(env, props, "owner");
       auto owner_guild = OptionalCp1252String(env, props, "ownerGuild");
@@ -1993,6 +2045,7 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (movable.has_value()) mob.movable = *movable;
       if (takable.has_value()) mob.takable = *takable;
       if (focus_override.has_value()) mob.focus_override = *focus_override;
+      if (sound_material) mob.material = *sound_material;
       if (visual_destroyed) mob.visual_destroyed = std::move(*visual_destroyed);
       if (owner) mob.owner = std::move(*owner);
       if (owner_guild) mob.owner_guild = std::move(*owner_guild);
@@ -2008,7 +2061,7 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
     case zenkit::VirtualObjectType::oCMobDoor: {
       RequireClassKeys(env, props,
                        {"focusName", "hp", "damage", "movable", "takable", "focusOverride",
-                        "visualDestroyed", "owner", "ownerGuild", "destroyed", "stateCount",
+                        "soundMaterial", "visualDestroyed", "owner", "ownerGuild", "destroyed", "stateCount",
                         "conditionFunction", "onStateChangeFunction", "rewind", "locked",
                         "pickString"},
                        class_name);
@@ -2018,6 +2071,8 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       auto const movable = OptionalBool(env, props, "movable");
       auto const takable = OptionalBool(env, props, "takable");
       auto const focus_override = OptionalBool(env, props, "focusOverride");
+      auto const sound_material =
+          OptionalEnum<zenkit::SoundMaterialType>(env, props, "soundMaterial");
       auto visual_destroyed = OptionalCp1252String(env, props, "visualDestroyed");
       auto owner = OptionalCp1252String(env, props, "owner");
       auto owner_guild = OptionalCp1252String(env, props, "ownerGuild");
@@ -2035,6 +2090,7 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (movable.has_value()) mob.movable = *movable;
       if (takable.has_value()) mob.takable = *takable;
       if (focus_override.has_value()) mob.focus_override = *focus_override;
+      if (sound_material) mob.material = *sound_material;
       if (visual_destroyed) mob.visual_destroyed = std::move(*visual_destroyed);
       if (owner) mob.owner = std::move(*owner);
       if (owner_guild) mob.owner_guild = std::move(*owner_guild);

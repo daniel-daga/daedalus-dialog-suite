@@ -127,7 +127,8 @@ const WORLD = summaryOf(vobIndex([
  *  and the props object is the whole of what the VOB holds. */
 const BASE_READ = { presetName: '', visualCamAlign: 0, bias: 0 };
 const LIGHT: ClassProps = {
-  class: 'zCVobLight', range: 2000, color: [255, 220, 180, 255], lightType: 0, ...BASE_READ,
+  class: 'zCVobLight', range: 2000, color: [255, 220, 180, 255],
+  lightType: 0, quality: 2, isStatic: true, ...BASE_READ,
 };
 const ITEM: ClassProps = { class: 'oCItem', instance: 'ITMW_1H_SWORD_01', ...BASE_READ };
 const MUSIC: ClassProps = {
@@ -140,7 +141,7 @@ const MUSIC: ClassProps = {
 const CHEST: ClassProps = {
   class: 'oCMobContainer',
   focusName: '', hp: 20, damage: 0, movable: false, takable: false,
-  focusOverride: false, visualDestroyed: '', owner: '', ownerGuild: '',
+  focusOverride: false, soundMaterial: 0, visualDestroyed: '', owner: '', ownerGuild: '',
   destroyed: false, stateCount: 1, conditionFunction: '',
   onStateChangeFunction: '', rewind: false, locked: false, pickString: '',
   ...BASE_READ,
@@ -148,7 +149,7 @@ const CHEST: ClassProps = {
 const BED: ClassProps = {
   class: 'oCMobBed',
   focusName: '', hp: 20, damage: 0, movable: false, takable: false,
-  focusOverride: false, visualDestroyed: '', owner: '', ownerGuild: '',
+  focusOverride: false, soundMaterial: 0, visualDestroyed: '', owner: '', ownerGuild: '',
   destroyed: false, stateCount: 1, conditionFunction: '',
   onStateChangeFunction: '', rewind: false, ...BASE_READ,
 };
@@ -434,7 +435,12 @@ describe('WorldPropertyGrid, class fields', () => {
     // object rather than the catalogue would draw whatever the read answered.
     expect(screen.queryByTestId('world-prop-class-instance')).not.toBeInTheDocument();
     // And nothing the catalogue does not have, however much of it the read sent.
-    expect(screen.queryByTestId('world-prop-class-lightType')).not.toBeInTheDocument();
+    // `isStatic` is the pointed one: it is a real `zCVobLight` field the read
+    // answers, and it is held out because flipping it changes *which* members
+    // the archive contains, so its inverse would not restore the world.
+    expect(screen.queryByTestId('world-prop-class-isStatic')).not.toBeInTheDocument();
+    // The two enums *are* catalogued now (§16.21), and they are dropdowns.
+    expect(input('class-lightType').tagName).toBe('SELECT');
   });
 
   it('draws an item\'s instance', () => {
@@ -657,6 +663,80 @@ describe('WorldPropertyGrid, class fields', () => {
     expect(classEdits).toEqual([{ priority: 7 }]);
     // And the refused field is showing the world's own value again.
     expect(input('class-priority').value).toBe('2');
+  });
+
+  it('offers an enum as a set to pick from, and commits the number picked', () => {
+    // §16.21: the field offers the values the header names, labelled with the
+    // enumerator's own name — a prose label would be a second claim the header
+    // cannot check. What leaves is the number, because that is what the archive
+    // member holds.
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} classProps={LIGHT} />);
+
+    const select = input('class-lightType');
+    expect(select.value).toBe('0');
+    expect(Array.from(select.querySelectorAll('option')).map((o) => o.textContent))
+      .toEqual(['POINT (0)', 'SPOT (1)', 'RESERVED0 (2)', 'RESERVED1 (3)']);
+
+    fireEvent.change(select, { target: { value: '1' } });
+
+    expect(classEdits).toEqual([{ lightType: 1 }]);
+  });
+
+  it('keeps a value the set does not name, shows it as itself, and writes nothing', () => {
+    // The objection the whole card was built around: retail carries enum values
+    // outside the documented sets, and a dropdown that snapped one to the
+    // nearest legal value would corrupt a world by the act of being looked at.
+    // So an unknown value is an option of its own, selected, and drawing it
+    // commits nothing.
+    render(<WorldPropertyGrid
+      summary={WORLD}
+      selection={[1]}
+      {...wiring}
+      classProps={{ ...LIGHT, quality: 120 }}
+    />);
+
+    const select = input('class-quality');
+    expect(select.value).toBe('120');
+    expect(Array.from(select.querySelectorAll('option')).map((o) => o.textContent))
+      .toEqual(['120 — unknown', 'HIGH (0)', 'MEDIUM (1)', 'LOW (2)']);
+    expect(classEdits).toEqual([]);
+
+    // And it is still a field: picking a real value off it works.
+    fireEvent.change(select, { target: { value: '1' } });
+    expect(classEdits).toEqual([{ quality: 1 }]);
+  });
+
+  it('draws every enum the catalogue names on a class, in catalogue order', () => {
+    // `soundMaterial` is `VMovableObject`'s, so it is drawn between
+    // `focusOverride` and `visualDestroyed` — the position the archive stores it
+    // in, which is what makes the grid read like the file.
+    render(<WorldPropertyGrid summary={WORLD} selection={[7]} {...wiring} classProps={CHEST} />);
+
+    const section = screen.getByTestId('world-prop-class-section');
+    const drawn = Array.from(section.querySelectorAll('[data-testid^="world-prop-class-"]'))
+      .map((node) => node.getAttribute('data-testid'))
+      .filter((id) => id !== null && !id.endsWith('-input'));
+    expect(drawn.indexOf('world-prop-class-soundMaterial'))
+      .toBe(drawn.indexOf('world-prop-class-focusOverride') + 1);
+    expect(input('class-soundMaterial').value).toBe('0');
+  });
+
+  it('draws no field the read did not answer, rather than a blank panel', () => {
+    // The stale-addon case the base fields already guard against, and §16.21
+    // made it reachable for class fields too: the catalogue names eight keys it
+    // did not name before, so a renderer running against an older native addon
+    // is handed a descriptor with no value. Everything else still draws.
+    const { quality: _quality, ...withoutQuality } = LIGHT;
+    render(<WorldPropertyGrid
+      summary={WORLD}
+      selection={[1]}
+      {...wiring}
+      classProps={withoutQuality}
+    />);
+
+    expect(screen.queryByTestId('world-prop-class-quality')).not.toBeInTheDocument();
+    expect(input('class-lightType').value).toBe('0');
+    expect(input('class-range').value).toBe('2000');
   });
 
   it('draws a fog zone\'s overrideColor immediately above the colour it governs', () => {

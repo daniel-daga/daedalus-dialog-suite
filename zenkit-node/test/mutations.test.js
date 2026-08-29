@@ -1759,6 +1759,53 @@ test('setVobClassProp writes the light range and colour, and nothing beside them
   }
 });
 
+// The eight enum fields (level-editor.md §16.21). They were held out of the
+// catalogue while the resolution was still open, and what settled it is that
+// offering a set and coercing to it are different things: the editor's dropdown
+// offers, and this layer writes any whole number, because retail worlds hold
+// values no `SoundMaterialType` names and an undo has to be able to put one
+// back.
+test('setVobClassProp writes each class`s enums, and only the keys it was given', () => {
+  const handle = load();
+  const before = vobAt(dumpOf(load()), '0/0/0').props;
+
+  zenkit.setVobClassProp(handle, '0/0/0', { lightType: 1, quality: 2 });
+
+  const after = vobAt(dumpOf(handle), '0/0/0').props;
+  assert.strictEqual(after.lightType, 1);
+  assert.strictEqual(after.quality, 2);
+  for (const key of Object.keys(before)) {
+    if (key === 'lightType' || key === 'quality') continue;
+    assert.deepStrictEqual(after[key], before[key], key);
+  }
+});
+
+test('setVobClassProp writes an enum value no enumerator names', () => {
+  // The whole reason this layer holds no set. Retail `zCMover.lerpMode` is 120
+  // on three VOBs and 132198264 on a fourth; a validator that knew the set here
+  // would refuse the undo that restores such a value, so an out-of-set write is
+  // legal and round-trips.
+  const handle = zenkit.loadWorld(authored(), 'g2');
+
+  zenkit.setVobClassProp(handle, '1/19', { soundMaterial: 97 });
+
+  assert.strictEqual(zenkit.getVobProps(handle, '1/19').soundMaterial, 97);
+});
+
+test('setVobClassProp refuses an enum that is not a whole, non-negative number', () => {
+  // The archive member is a `uint32_t`, so 2.5 truncates on the cast and -1
+  // wraps to 4,294,967,295 — both would report success and write a value the
+  // caller never chose.
+  const handle = zenkit.loadWorld(authored(), 'g2');
+  const was = zenkit.getVobProps(handle, '1/19').soundMaterial;
+
+  for (const bad of [2.5, -1, NaN, Infinity, 4294967296, 'WOOD', true, null]) {
+    assert.throws(() => zenkit.setVobClassProp(handle, '1/19', { soundMaterial: bad }),
+      Error, String(bad));
+  }
+  assert.strictEqual(zenkit.getVobProps(handle, '1/19').soundMaterial, was);
+});
+
 test('setVobClassProp refuses a key that belongs to another class, naming the class', () => {
   // The failure this op is shaped around: `range` is a real key, spelled
   // correctly, on a VOB that has no such field. Nothing above C++ knows the
@@ -1871,16 +1918,16 @@ test('setVobClassProp survives a save and reload', () => {
 // assigning the wrong member would be caught only by the sibling test.
 const CLASS_PROP_ROUND_TRIP = [
   ['1/3', 'zCVobSound', {
-    soundName: 'OW_WOLF_ÄÖÜ', volume: 77.5, radius: 3125.25, coneAngle: 135.5,
-    initiallyPlaying: false, ambient3d: true, obstruction: false,
+    soundName: 'OW_WOLF_ÄÖÜ', volume: 77.5, mode: 2, radius: 3125.25, coneAngle: 135.5,
+    volumeType: 1, initiallyPlaying: false, ambient3d: true, obstruction: false,
   }],
   ['1/4', 'zCVobSoundDaytime', {
     // The base sound fields *and* the derived three: the case is one
     // fallthrough onto the same VSound members, and a derived class writing
     // only its own three would pass every test that did not name a base field.
     // The booleans are base members too, so they carry the same proof.
-    soundName: 'OW_DAY', volume: 12.5, radius: 4096, coneAngle: 45,
-    initiallyPlaying: true, ambient3d: false, obstruction: true,
+    soundName: 'OW_DAY', volume: 12.5, mode: 0, radius: 4096, coneAngle: 45,
+    volumeType: 1, initiallyPlaying: true, ambient3d: false, obstruction: true,
     startTime: 5.25, endTime: 21.75, soundName2: 'OW_NIGHT_ÄÖÜ',
   }],
   ['1/5', 'zCZoneVobFarPlane', { vobFarPlaneZ: 14000.5, innerRangePercentage: 0.125 }],
@@ -1912,7 +1959,7 @@ const CLASS_PROP_ROUND_TRIP = [
     startEnabled: false, sendUntrigger: true, reactToOnTrigger: false, reactToOnTouch: true,
     reactToOnDamage: false, respondToObject: true, respondToPc: false, respondToNpc: true,
     maxActivationCount: -1, retriggerDelaySec: 0, damageThreshold: 99.5, fireDelaySec: 0.25,
-    touchBlockerDamage: 12.5, stayOpenTimeSec: 6, locked: false, autoLink: true,
+    behavior: 4, touchBlockerDamage: 12.5, stayOpenTimeSec: 6, locked: false, autoLink: true,
     autoRotate: false, sfxOpenStart: 'SFX_OTHER_OPEN_START_ÄÖÜ',
     sfxOpenEnd: 'SFX_OTHER_OPEN_END', sfxTransitioning: 'SFX_OTHER_TRANSITIONING',
     sfxCloseStart: 'SFX_OTHER_CLOSE_START', sfxCloseEnd: 'SFX_OTHER_CLOSE_END',
@@ -1921,32 +1968,37 @@ const CLASS_PROP_ROUND_TRIP = [
   }],
   ['1/15', 'oCMOB', {
     focusName: 'FOCUS_OTHER_ÄÖÜ', hp: 99, damage: 12, movable: false, takable: true,
-    focusOverride: true, visualDestroyed: 'OTHER_DESTROYED.MMS', owner: 'PC_OTHER',
+    focusOverride: true, soundMaterial: 1, visualDestroyed: 'OTHER_DESTROYED.MMS',
+    owner: 'PC_OTHER',
     ownerGuild: 'GIL_NOV', destroyed: true,
   }],
   ['1/16', 'oCMobInter', {
     focusName: 'FOCUS_OTHER_LEVER_ÄÖÜ', hp: 50, damage: 1, movable: true, takable: false,
-    focusOverride: true, visualDestroyed: 'LEVER_OTHER_DESTROYED.MMS', owner: 'PC_OTHER',
+    focusOverride: true, soundMaterial: 2, visualDestroyed: 'LEVER_OTHER_DESTROYED.MMS',
+    owner: 'PC_OTHER',
     ownerGuild: 'GIL_NOV', destroyed: true, stateCount: 4, conditionFunction: 'OTHER_CONDITION',
     onStateChangeFunction: 'OTHER_ON_STATE_CHANGE', rewind: false,
   }],
   ['1/17', 'oCMobFire', {
     focusName: 'FOCUS_OTHER_CAMPFIRE_ÄÖÜ', hp: 1, damage: 0, movable: false, takable: false,
-    focusOverride: true, visualDestroyed: 'CAMPFIRE_OTHER_DESTROYED.MMS', owner: 'PC_OTHER',
+    focusOverride: true, soundMaterial: 3, visualDestroyed: 'CAMPFIRE_OTHER_DESTROYED.MMS',
+    owner: 'PC_OTHER',
     ownerGuild: 'GIL_NOV', destroyed: true, stateCount: 2, conditionFunction: 'OTHER_CONDITION',
     onStateChangeFunction: 'OTHER_ON_STATE_CHANGE', rewind: true,
     slot: 'BIP01 OTHER FIRE ÄÖÜ', vobTree: 'FIRETREE_OTHER.ZEN',
   }],
   ['1/18', 'oCMobContainer', {
     focusName: 'FOCUS_OTHER_CHEST_ÄÖÜ', hp: 40, damage: 0, movable: false, takable: false,
-    focusOverride: true, visualDestroyed: 'CHEST_OTHER_DESTROYED.MMS', owner: 'PC_OTHER',
+    focusOverride: true, soundMaterial: 4, visualDestroyed: 'CHEST_OTHER_DESTROYED.MMS',
+    owner: 'PC_OTHER',
     ownerGuild: 'GIL_NOV', destroyed: true, stateCount: 2, conditionFunction: 'OTHER_CONDITION',
     onStateChangeFunction: 'OTHER_ON_STATE_CHANGE', rewind: true,
     locked: false, pickString: 'RLLR ÄÖÜ',
   }],
   ['1/19', 'oCMobDoor', {
     focusName: 'FOCUS_OTHER_DOOR_ÄÖÜ', hp: 60, damage: 0, movable: false, takable: false,
-    focusOverride: true, visualDestroyed: 'DOOR_OTHER_DESTROYED.MMS', owner: 'PC_OTHER',
+    focusOverride: true, soundMaterial: 5, visualDestroyed: 'DOOR_OTHER_DESTROYED.MMS',
+    owner: 'PC_OTHER',
     ownerGuild: 'GIL_NOV', destroyed: true, stateCount: 2, conditionFunction: 'OTHER_CONDITION',
     onStateChangeFunction: 'OTHER_ON_STATE_CHANGE', rewind: true,
     locked: false, pickString: 'LLRR ÄÖÜ',
@@ -2097,10 +2149,11 @@ test('setVobClassProp refuses a zone field on the wrong zone, naming the class',
     /oCZoneMusic/,
   );
   // And the fields these classes have that the catalogue still deliberately
-  // excludes: the enums, and the two random delays the engine reads only under
-  // a `mode` this op cannot set.
-  for (const [at, bad] of [['1/3', { mode: 1 }], ['1/3', { volumeType: 1 }],
-    ['1/3', { randomDelay: 5 }], ['1/3', { randomDelayVar: 1 }]]) {
+  // excludes. The two enums left this list in §16.21; the two random delays did
+  // not — the engine reads them only when `mode` is RANDOM, and the grid commits
+  // one field at a time, so a delay set beside a mode change is still a write
+  // with no effect.
+  for (const [at, bad] of [['1/3', { randomDelay: 5 }], ['1/3', { randomDelayVar: 1 }]]) {
     assert.throws(() => zenkit.setVobClassProp(handle, at, bad), Error, at);
   }
 });

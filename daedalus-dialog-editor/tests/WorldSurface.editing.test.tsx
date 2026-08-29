@@ -266,7 +266,8 @@ const SUMMARY: WorldSummary = {
 const BASE_PROPS = { presetName: 'FIRE_STAT', visualCamAlign: 1, bias: 2 };
 let mockVobProps: Record<string, unknown> = { class: 'zCVob', ...BASE_PROPS };
 const LIGHT_PROPS = {
-  class: 'zCVobLight', range: 2000, color: [255, 220, 180, 255], ...BASE_PROPS,
+  class: 'zCVobLight', range: 2000, color: [255, 220, 180, 255],
+  lightType: 0, quality: 2, ...BASE_PROPS,
 };
 const ITEM_PROPS = { class: 'oCItem', instance: 'ITMW_1H_SWORD_01', ...BASE_PROPS };
 

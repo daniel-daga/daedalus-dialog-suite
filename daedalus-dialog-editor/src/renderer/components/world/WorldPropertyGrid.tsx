@@ -3,10 +3,10 @@ import {
   Box, Checkbox, Chip, FormControlLabel, Stack, TextField, Typography,
 } from '@mui/material';
 import {
-  BASE_FIELDS, DECAL_FIELDS, classPropKeys, decalSubKey, eulerDeltaRotation,
+  BASE_FIELDS, DECAL_FIELDS, classPropKeys, decalSubKey, enumValuesOf, eulerDeltaRotation,
   eulerToZenRotation, fieldOf, focusNameExpectation,
   zenRotationToEuler,
-  type ClassPropValue, type ClassProps, type FieldDescriptor,
+  type ClassPropValue, type ClassProps, type EnumValueDescriptor, type FieldDescriptor,
   type VobProps, type ZenEulerDegrees, type ZenPosition, type ZenRotation,
 } from 'zen-world';
 import type { WorldSummary } from '../../../shared/worldTypes';
@@ -210,10 +210,16 @@ const ClassField: React.FC<{
    * case-folded; the value committed is the one the user typed.
    */
   knownValues?: ReadonlySet<string>;
+  /** The values an `enum` field's class names for it, out of the catalogue's
+   *  fourth table — undefined for every other kind. It is passed in rather than
+   *  looked up here so this component goes on knowing nothing about which class
+   *  it is drawing: `base` and `decal` fields reach it by the same route and
+   *  belong to no class at all. */
+  values?: readonly EnumValueDescriptor[];
   helper?: string;
   onCommit: (value: ClassPropValue) => void;
 }> = ({
-  vob, group = 'class', field, value, knownValues, helper, onCommit,
+  vob, group = 'class', field, value, knownValues, values, helper, onCommit,
 }) => {
   const [refusals, setRefusals] = useState(0);
 
@@ -230,6 +236,38 @@ const ClassField: React.FC<{
         inputProps={{ 'data-testid': `world-prop-${group}-${field.key}-input` } as React.InputHTMLAttributes<HTMLInputElement>}
         onChange={(event) => onCommit(event.target.checked)}
       />
+    );
+  }
+
+  // An enumerator is a set to pick from, so it is the one kind that is neither
+  // text nor a checkbox (level-editor.md §16.21). It **offers** without
+  // coercing: a value the set does not name is an option of its own, selected,
+  // labelled unknown and written by nothing — retail carries such values, and a
+  // control that snapped one to the nearest legal value would corrupt a world by
+  // the act of being looked at. Controlled rather than remounted on a refusal,
+  // because there is nothing here to refuse: every option is a value the field
+  // can hold.
+  if (field.kind === 'enum' && values !== undefined) {
+    const known = values.some((option) => option.value === value);
+    return (
+      <TextField
+        select
+        size="small"
+        variant="standard"
+        SelectProps={{ native: true }}
+        value={String(value)}
+        helperText={helper}
+        inputProps={{ 'data-testid': `world-prop-${group}-${field.key}-input` } as React.InputHTMLAttributes<HTMLInputElement>}
+        onChange={(event) => onCommit(Number(event.target.value))}
+        sx={{ minWidth: 160 }}
+      >
+        {!known && <option value={String(value)}>{`${formatted(value)} — unknown`}</option>}
+        {values.map((option) => (
+          <option key={option.value} value={String(option.value)}>
+            {`${option.label} (${option.value})`}
+          </option>
+        ))}
+      </TextField>
     );
   }
 
@@ -882,7 +920,15 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
                 {`Reading this ${className}'s fields…`}
               </Typography>
             )
-            : classFields.map((classField) => (
+            : classFields
+              // A field the read did not answer is not drawn, exactly as a base
+              // field is not — and for the same reason, which §16.21 made
+              // reachable: the catalogue names eight keys it did not name
+              // before, so a build running against an older native addon gets a
+              // descriptor with no value. Drawn, that is a colour field with
+              // nothing to format and a blank panel for the whole VOB.
+              .filter((classField) => classProps[classField.key] !== undefined)
+              .map((classField) => (
               <Field
                 // The class section is also unmounted whole by `classProps`
                 // going null in `commitOps`' catch; the generation is folded in
@@ -896,6 +942,7 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
                   vob={selectedVob}
                   field={classField}
                   value={classProps[classField.key]}
+                  values={enumValuesOf(className, classField.key) ?? undefined}
                   knownValues={knownValuesFor(classField.key)}
                   // Stated up front rather than only on a refusal: a field that
                   // silently declines what was typed is the complaint the

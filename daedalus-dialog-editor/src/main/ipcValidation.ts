@@ -255,6 +255,20 @@ function assertClassPropValue(field: FieldDescriptor, side: string, value: unkno
     }
     return;
   }
+  // An enumerator is a whole number and nothing else is checked about it: the
+  // set lives in the catalogue's fourth table and is offered by the grid, not
+  // enforced here (level-editor.md §16.21). Retail holds values outside every
+  // documented set, and an undo writes the `from` side back — so a validator
+  // that knew the set would refuse the restore of a value the world already had.
+  // Whole, though, and non-negative: the archive member is a `uint32_t`, so 2.5
+  // truncates on the cast in C++ and -1 wraps, both reporting success.
+  if (field.kind === 'enum') {
+    if (typeof value !== 'number' || !Number.isInteger(value)) {
+      throw new Error(`Invalid op: ${where} must be a whole number`);
+    }
+    if (value < 0) throw new Error(`Invalid op: ${where} must be 0 or greater`);
+    return;
+  }
   // The integer check stands in for the finite one rather than following it:
   // `Number.isInteger` already refuses NaN and Infinity, and the two remaining
   // refusals are different facts a caller needs told apart — -1 is a whole

@@ -17,18 +17,28 @@
 // unavoidable — what ties it to this one is a per-key round-trip test in
 // `zenkit-node`, not a shared constant.
 //
-// It is deliberately narrow. Enums are out because retail data contains
-// out-of-range enum values (`zCMover.lerpMode` is 120 on three VOBs) and a
-// dropdown that cannot represent one destroys it on write; unbounded lists are
-// out because they are the first payloads with no length to cap; and
-// `zCVobLight.isStatic` is out because flipping it changes *which fields the
-// archive contains*, so its inverse does not restore the world. Each of those is
-// a decision, and each belongs with the first class that forces it.
+// It is deliberately narrow. Unbounded lists are out because they are the first
+// payloads with no length to cap; and `zCVobLight.isStatic` is out because
+// flipping it changes *which fields the archive contains*, so its inverse does
+// not restore the world. Each of those is a decision, and each belongs with the
+// first class that forces it.
+//
+// **Enums were out and are now in** (level-editor.md §16.21). They were held out
+// because retail carries values outside the documented sets — `zCMover.lerpMode`
+// is 120 on three VOBs and 132198264 on a fourth — and a dropdown that snapped
+// one to the nearest legal value would corrupt a world by the act of opening it.
+// The resolution was to stop conflating offering with coercing: an `enum` field
+// carries no `min` and no `max`, so a value outside its set crosses every layer
+// unchanged and is written back by an undo, and `CLASS_ENUM_FIELDS` below offers
+// the known values to the one layer that can ask a user to pick. The two mover
+// enums stay out, but for the reason `speed` does — `VMover::save` drops them
+// unless the mover has keyframes, which this catalogue cannot author.
 
 /**
  * What a class field's value can be.
  *
- * Six kinds: a plain string, a finite scalar, a whole number, a flag, a small
+ * Seven kinds: a plain string, a finite scalar, a whole number, an enumerator, a
+ * flag, a small
  * fixed-arity array of integers (`color`, four channels) and one of floats
  * (`vec2`, the two components of a decal's size or offset). Nothing here is a
  * nested record, which is what keeps the op's IPC assertion a flat walk over
@@ -39,6 +49,13 @@
  * member is an `int32_t` truncates on write and reports success, so the two are
  * separated at the *type* rather than at the one validator that happens to
  * remember — the grid, the IPC check and the binding each read `kind`.
+ *
+ * `enum` is not an `int` with a rule attached either, and the rule runs the
+ * other way: it is a whole number the validator bounds by *nothing*, because the
+ * values a world holds are not confined to the set (§16.21). What `enum` buys is
+ * the one reader that can do better than a text box — the grid draws the set
+ * from `CLASS_ENUM_FIELDS` and offers it, and shows an out-of-set value as
+ * itself.
  */
 export type ClassPropValue = string | number | boolean | readonly number[];
 
@@ -71,7 +88,7 @@ export interface ReadProps {
  */
 export interface FieldDescriptor {
   key: string;
-  kind: 'string' | 'float' | 'int' | 'bool' | 'color' | 'vec2';
+  kind: 'string' | 'float' | 'int' | 'enum' | 'bool' | 'color' | 'vec2';
   min?: number;
   max?: number;
 }
@@ -92,20 +109,29 @@ const OC_ITEM_FIELDS = [
   { key: 'instance', kind: 'string' },
 ] as const satisfies readonly FieldDescriptor[];
 
+/** In the order `LightPreset` stores them, the two enums included: a light is
+ *  its type, then its reach, then its colour, then the quality it is drawn at.
+ *  `isStatic` still stands between the colour and the quality in the archive and
+ *  is still held out — flipping it changes which members the archive contains,
+ *  so its inverse does not restore the world. */
 const ZC_VOB_LIGHT_FIELDS = [
+  { key: 'lightType', kind: 'enum' },
   { key: 'range', kind: 'float', min: 0 },
   { key: 'color', kind: 'color', min: 0, max: 255 },
+  { key: 'quality', kind: 'enum' },
 ] as const satisfies readonly FieldDescriptor[];
 
 /**
  * What a sound is: which script instance it plays, how loud, how far, and the
  * cone it is audible in.
  *
- * `mode` and `volumeType` are enums and stay out by the rules at the top of this
- * file. `randomDelay` and `randomDelayVar` are left out for a different reason:
- * the engine reads them only when `mode` is RANDOM, and `mode` is precisely what
- * this catalogue cannot set — so both would be legal writes the engine ignores,
- * which reads to a user as the editor having done nothing.
+ * `mode` and `volumeType` are the two enums, in since §16.21. `randomDelay` and
+ * `randomDelayVar` are still out, and their reason survived the enums arriving
+ * only in part: the engine reads them only when `mode` is RANDOM, and a mode
+ * *this* op can now set — but not on the same edit, since the grid commits one
+ * field at a time, so a delay written on a non-random sound is still a legal
+ * write the engine ignores, which reads to a user as the editor having done
+ * nothing.
  *
  * `volume` has no maximum, against ZenKit's own "percent (0-100)" doc comment:
  * measured 2026-08-27 over the three retail worlds, NewWorld holds 130 on two
@@ -119,8 +145,10 @@ const ZC_VOB_LIGHT_FIELDS = [
 const ZC_VOB_SOUND_FIELDS = [
   { key: 'soundName', kind: 'string' },
   { key: 'volume', kind: 'float', min: 0 },
+  { key: 'mode', kind: 'enum' },
   { key: 'radius', kind: 'float', min: 0 },
   { key: 'coneAngle', kind: 'float', min: 0, max: 360 },
+  { key: 'volumeType', kind: 'enum' },
   { key: 'initiallyPlaying', kind: 'bool' },
   { key: 'ambient3d', kind: 'bool' },
   { key: 'obstruction', kind: 'bool' },
@@ -273,10 +301,11 @@ const OC_TRIGGER_CHANGE_LEVEL_FIELDS = [
 ] as const satisfies readonly FieldDescriptor[];
 
 /** The base `VTrigger` twelve, plus thirteen of the fourteen fields `zCMover`
- *  declares beyond them, in the order `VMover` declares them. `behavior`,
- *  `lerpMode` and `speedMode` are enums and stay out with the rest of the
- *  catalogue's enums; `keyframes` is an unbounded list and stays out with the
- *  rest of those; the `s_*` save-game fields need nothing held out either.
+ *  declares beyond them, in the order `VMover` declares them — `behavior`, the
+ *  first of them, included since §16.21. `lerpMode` and `speedMode` are enums
+ *  too and stay out, but by `speed`'s rule below rather than by any rule about
+ *  enums; `keyframes` is an unbounded list and stays out with the rest of those;
+ *  the `s_*` save-game fields need nothing held out either.
  *  The two delay/damage-shaped floats are bounded at 0 for the same reason
  *  the base twelve's are — neither "damage to deal" nor "seconds to stay
  *  open" has a meaning below zero.
@@ -290,6 +319,7 @@ const OC_TRIGGER_CHANGE_LEVEL_FIELDS = [
  *  `zCVobSound`'s `randomDelay`. */
 const ZC_MOVER_FIELDS = [
   ...ZC_TRIGGER_FIELDS,
+  { key: 'behavior', kind: 'enum' },
   { key: 'touchBlockerDamage', kind: 'float', min: 0 },
   { key: 'stayOpenTimeSec', kind: 'float', min: 0 },
   { key: 'locked', kind: 'bool' },
@@ -307,9 +337,9 @@ const ZC_MOVER_FIELDS = [
 
 /** The nine plain scalars `VMovableObject` declares — the base every
  *  `oCMob*` class inherits, `oCMOB` itself included (a plain, non-interactive
- *  movable object has no subclass of its own). `soundMaterial` is an enum and
- *  stays out with the rest of the catalogue's enums; nothing here is a list or
- *  save-game-only, so that is the whole of what is held out. */
+ *  movable object has no subclass of its own) — ten of them since §16.21 added
+ *  `soundMaterial`, in the position `VMovableObject` declares it. Nothing here
+ *  is a list or save-game-only, so nothing on this class is held out at all. */
 const OC_MOB_FIELDS = [
   { key: 'focusName', kind: 'string' },
   { key: 'hp', kind: 'int' },
@@ -317,6 +347,7 @@ const OC_MOB_FIELDS = [
   { key: 'movable', kind: 'bool' },
   { key: 'takable', kind: 'bool' },
   { key: 'focusOverride', kind: 'bool' },
+  { key: 'soundMaterial', kind: 'enum' },
   { key: 'visualDestroyed', kind: 'string' },
   { key: 'owner', kind: 'string' },
   { key: 'ownerGuild', kind: 'string' },
@@ -679,16 +710,14 @@ const MOVABLE_OBJECT_ENUMS = {
  * The enum fields, per class, and the values each one has
  * (level-editor.md §16.21).
  *
- * **A fourth table, and deliberately not a `kind` on the third.** The rule at
- * the top of this file kept enums out of `CLASS_FIELDS` for a real reason —
- * retail carries values outside the documented sets, and a dropdown that snapped
- * one to the nearest legal value would corrupt a world by the act of opening it.
- * §16.21 resolves that by separating *offering* from *coercing*: a field offers
- * the set and writes a value when one is picked, and a value not in the set is
- * kept exactly as read and marked unknown. That is why the set lives beside the
- * field catalogue rather than in it — a reader that only knows how to write a
- * bounded scalar goes on seeing no enum at all, and the one that can offer looks
- * here.
+ * **A fourth table beside the third, not a replacement for it.** `CLASS_FIELDS`
+ * carries the enum keys with `kind: 'enum'` and no bounds; the values live here.
+ * The split is the whole of §16.21's separation of *offering* from *coercing*:
+ * the layers that only have to let a value through — the IPC validator, the
+ * binding — read the kind and pass any whole number, so a value retail holds and
+ * this table does not survives being read, edited around and restored by an
+ * undo. The one layer that can ask a user to pick reads this table, offers the
+ * set, and shows an out-of-set value as itself.
  *
  * The sets are the enumerators of `zenkit::LightType`, `LightQuality`,
  * `SoundMode`, `SoundTriggerVolumeType`, `MoverBehavior` and

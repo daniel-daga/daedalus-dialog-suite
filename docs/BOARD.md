@@ -104,7 +104,8 @@ was true for so long nobody re-reads it.
   I5's seven constructions, the bed's `setVobClassProp` case and `getPortals`, and
   again on 2026-08-29 for the waypoint names' windows-1252 arguments and for the
   binding-hardening refusals (`ParseIndexPath`, `decodeTexture`,
-  `extractWorldMesh`) plus the `corrupt-mesh` fixture variant their tests author. The recipe
+  `extractWorldMesh`) plus the `corrupt-mesh` fixture variant their tests author,
+  and once more for §16.21's eight enum writes. The recipe
   and every trap in it — `build-zenkit.js` before `node-gyp rebuild`, never
   `build`, `zen-world` before the editor typechecks, the full `build` for
   `verify-world-edit.js` — are in `environment-hazards.md`, *"Building the native
@@ -114,7 +115,9 @@ was true for so long nobody re-reads it.
   `getVobProps` nor `setVobClassProp` while the running app has no class
   properties at all — and, since §16.17 V1 and V2, against one whose `setVobProp`
   refuses `presetName`, `visualCamAlign`, `bias`, `dynamicShadows` and the seven
-  decal keys, and whose `getVobProps` answers no `dynamicShadows` at all.
+  decal keys, and whose `getVobProps` answers no `dynamicShadows` at all, and
+  since §16.21 against one that refuses all eight enum keys the grid now draws
+  as dropdowns.
 - `daedalus-dialog-editor/dist/` holds a packaged app (`win-unpacked`, the
   installer) that is **no longer fresh** — it predates the waypoint delete, and
   every session that only compiles leaves it further behind. `.gitignore`d, and
@@ -154,12 +157,6 @@ pointer is a finding id in the file the routing table names.
 
 - **`checkPortalMaterials` still has no consumer** — built and retail-tested
   2026-08-28, called by nothing. Any run. §16.20 slice 3
-
-**Phase 1b-2 — enum properties** (§7 decision, §16.21)
-
-- **An enum field is free text** — the combobox that offers without coercing,
-  now that the sets exist. Carries the binding case and the IPC branch with it,
-  since `SetVobClassProp` refuses these keys today. Any run. §16.21
 
 **Phase 1b-2 — VOB editing**
 
@@ -212,6 +209,10 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **An enum field is a dropdown** — the eight keys are `CLASS_FIELDS` entries of
+  a new `enum` kind with no bounds, so an out-of-set value crosses every layer
+  and an undo restores it; binding case, IPC branch and grid `<select>` in one
+  change. No engine has seen one written. §16.21
 - **The enum sets are written down** — `CLASS_ENUM_FIELDS`/`enumValuesOf`, eight
   fields over thirteen classes; a retail sweep found every value inside its set,
   and the two mover enums a save drops are held out. §16.21

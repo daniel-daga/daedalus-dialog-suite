@@ -914,6 +914,22 @@ describe('a class-property op', () => {
     expect(Object.keys(op.from)).toEqual(['range', 'color']);
   });
 
+  it('carries an enum both ways, out-of-set value and all', () => {
+    // §16.21's whole point at this layer: nothing here knows the set. A retail
+    // `soundMaterial` this catalogue does not offer is still a legal `from`, so
+    // the undo of an edit made beside it restores the value the world had rather
+    // than the nearest one a dropdown could show.
+    const live = createVobReader(vobIndex([
+      { childIndex: 0, cls: 'oCMobDoor', name: 'DOOR_01' },
+    ]));
+
+    const op = setVobClassProp(live, 0, { soundMaterial: 97 }, { soundMaterial: 2 });
+
+    expect(op.from).toEqual({ soundMaterial: 97 });
+    expect(op.to).toEqual({ soundMaterial: 2 });
+    expect(invertOp(op)).toEqual({ ...op, from: op.to, to: op.from });
+  });
+
   it('refuses a key the VOB\'s class does not have', () => {
     // Refused *here*, in the builder, rather than by the binding halfway down a
     // batch: nothing between `setVobProp`'s first line and its last checks a

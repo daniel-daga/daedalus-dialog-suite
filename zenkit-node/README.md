@@ -469,8 +469,10 @@ contains. A sound is authored `LOOP` (1,077 of retail's 1,237; ZenKit says
 `ONCE`) with `obstruction = false` (the retail majority, against ZenKit's
 `true`), volume 100, radius 1500 and no sound name — the caller sets that through
 `setVobClassProp`, and a `zCVobSoundDaytime` additionally wakes at 6 and sleeps
-at 20, retail's medians. The enums matter most because the class catalogue holds
-no field for one, so what is chosen here is what the placed VOB keeps.
+at 20, retail's medians. The enums used to matter most because the class
+catalogue held no field for one; since 2026-08-29 it holds eight of them, so a
+sound's `mode` and a light's `lightType` are editable after placement and what
+is chosen here is only the default.
 
 The trigger family is measured the same way, over its own 294 retail VOBs, and
 **the four flags the family disagrees about are per class rather than shared**:
@@ -480,8 +482,8 @@ also authored `locked = false` — every one of retail's 150 is, against ZenKit'
 `true` — and stays open 2 s. Two caveats travel with the family. Its `target` is
 not in the class catalogue, so **a placed trigger fires at nothing** until it
 is; and `zCTriggerList`, `zCCodeMaster` and `zCMessageFilter` are configured
-only by lists and enums, which the catalogue holds none of, so a placed one has
-no editable field of its own at all. A mover is the member that does something
+only by lists and enums, and the catalogue's eight enums are on none of those
+three classes, so a placed one has no editable field of its own at all. A mover is the member that does something
 unaided: it runs its visual's animation, needing neither a target nor keyframes.
 
 The movable-object family is measured over its own 1,424 retail VOBs, and
