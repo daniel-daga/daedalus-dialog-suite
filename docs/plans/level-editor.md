@@ -5280,10 +5280,10 @@ difference between no project open and no spawn here.
   §16.20 slice 1 landed `Problem.locus` — but the panel still only navigates a
   script locus (slice 2), so these stay uncarded and want a rule nobody has
   specified either way.
-- **W4, script→world go-to-definition, is called large at §16.8** and stays
-  that way: nothing in the editor currently displays a script-side waypoint name
-  to click, so the card would be a UI affordance plus a lookup plus a camera
-  call, and it decomposes.
+- **W4, script→world go-to-definition, was called large at §16.8** on the
+  premise that nothing displayed a script-side waypoint name to click. That
+  expired — `InsertNpcActionRenderer` displays one and §16.20 slice 2 built the
+  navigation — and W4 landed 2026-08-29. See §16.23.
 
 **Phase ordering note.** §11 schedules 1b-2 before 1c, and 1b-2 is not finished
 — but what remains of it on the board (Euler order against Spacer) needs Spacer
