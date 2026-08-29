@@ -167,6 +167,24 @@ anything does.
 
 - Installed at `C:\Program Files (x86)\Steam\steamapps\common\Gothic II`,
   extracted MDK-style into `_work\Data\{Meshes,Textures,Scripts,Worlds}`.
+- **The MDK extraction is gone as of 2026-08-29 and has to be redone before any
+  world work.** `_work\Data\{Worlds,Meshes,Textures,Scripts,Anims,Sound}` are
+  all empty — zero files, not thinned — and all six VDFs below are back in
+  `Data\` under their real names with no `.disabled` beside them. That is
+  exactly the reinstall / "verify integrity" state the next bullet describes,
+  in its complete form. What it costs, beyond the engine:
+  - **Every measurement and check script has lost its corpus.** They take
+    `--world <a .zen on disk>` (`check-portal-pairing.js`,
+    `check-portal-planarity.js`, `check-visual-winding.js`, `check-vob-bbox.js`)
+    and there is no world file left in the install — only the archives, and the
+    binding cannot read a world out of a VFS: `loadWorld` takes a path, and
+    nothing exports an entry's bytes. So a retail measurement is blocked on
+    re-extracting, not on code.
+  - **The pristine backup named at the bottom of this section is gone with it**,
+    so `engine-batch.ps1` fails its hash check before it starts anything.
+  - Nothing in the repo did this and nothing in the repo can undo it: restoring
+    the layout is a manual re-extract plus renaming the six VDFs `.disabled`
+    again, and it is a person's job on a person's install.
 - **The MDK layout depends on six VDFs staying renamed `.disabled`** — `Worlds`,
   `Worlds_Addon`, `Meshes`, `Meshes_Addon`, `Textures`, `Textures_Addon`. A
   Steam reinstall or "verify integrity" restores all six and silently breaks it
@@ -206,7 +224,8 @@ anything does.
 - Pristine backup: `_work\Data\Worlds\NewWorld\NewWorld.zen.original-backup`,
   75,387,729 B, sha256 `b4dac867…`. Never write into the Gothic directory
   without one; `engine-batch.ps1` verifies the hash before it starts and restores
-  in a `finally`.
+  in a `finally`. **Gone with the extraction on 2026-08-29** — the size and hash
+  are kept here so the re-extracted copy can be checked against them.
 
 ## ZenKit and the world format
 

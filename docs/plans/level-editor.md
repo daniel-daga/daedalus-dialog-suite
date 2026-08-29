@@ -5526,6 +5526,41 @@ apart rather than reported unpaired (they have no mirror to look for). It rides
 the same undecided consumer question as slice 1 — the check is writable, its
 locus is not, and it is a card for a person to file, not for a run to invent.
 
+**q2 is written and unrun, 2026-08-29: the instrument landed, the corpus did
+not.** `check-portal-planarity.js` in `zenkit-node/scripts/` is complete and
+tested (`test/portalPlanarity.test.js`, 8 cases), and it reports nothing,
+because the retail worlds are no longer on this machine — the whole MDK
+extraction under `_work\Data` is empty and the six VDFs are back under their
+real names (`environment-hazards.md`, *"the MDK extraction is gone"*). So q2's
+number is blocked on a re-extract, and so is any rerun of q1, the winding
+measurement or the bbox check: all four take a `.zen` path, and the binding
+cannot read a world out of an archive.
+
+What the script does, so the next run does not re-derive it. Two numbers per
+portal polygon: **spread**, `max(n·p) - min(n·p)` over the corners with the
+stored plane normal — how far from flat the polygon is, independent of how
+`plane_distance` is signed, and therefore the number a coplanarity tolerance
+comes from; and **`|n·p - d|`**, whether the *stored* plane is the polygon's
+own, reported beside its mirror `|n·p + d|` so the sign convention is read off
+the corpus rather than assumed.
+
+**The join was the work, and it is verified rather than trusted.** No binding
+call carries both a portal polygon's identity and its vertex positions:
+`getPortals` names the polygon by mesh index, `_drillMesh` adds its plane,
+material and corner count, and the only positions the binding exposes are
+`extractWorldMesh`'s — per material, fan-triangulated, in mesh order, with
+vertices keyed on the (vertex, feature) pair. So the walk counts triangles per
+material to find where a polygon's fan starts, reads its corners back off that
+fan (corner 0 and 1 from the first triangle, every later corner as the third
+vertex of its own triangle), and reproduces ExtractMesh's own two skips exactly
+— a polygon under three corners, and one naming a material the mesh does not
+declare — because a skip that advances the cursor desynchronises everything
+after it. Every triangle it lands on must carry the polygon's own packed flag
+word; a mismatch is counted and the run says the numbers are not evidence. The
+mesh-extraction fixture pins the arithmetic end to end (polygon 1 is the portal
+triangle over vertices 1, 2 and 4). **This needed no C++**, as §16.20 slice 2
+predicted.
+
 **A number in §16.18 was wrong and is corrected here and there:** AddonWorld has
 **74** sectors, not 154. 154 is its `P:` material count, copied one column
 across on 2026-08-28. Nothing was built on it — `checkPortalMaterials` reads the

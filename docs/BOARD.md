@@ -141,7 +141,8 @@ card waits on live at its pointer — put new prose there, not here.
 - **`07` is built and has not been played** — `07a`/`07b` (the torch subtree,
   its own A/B in a cleared frame) and `07c` (the renumber with nothing else in
   the file) are the last of Gate 2b's unwitnessed rows. Needs the engine, so it
-  needs a person. **Daniel.** §16.2, run sheet §07
+  needs a person. **Daniel.** §16.2, run sheet §07 — and the install has to be
+  restored first, see the planarity card
 
 **Review findings, 2026-08-29.** Each pointer is a section and number in
 `world-editor-review-2026-08-29.md`; each card starts with its failing test.
@@ -155,8 +156,10 @@ pointer is a finding id in the file the routing table names.
 
 **Phase 1c / Phase 2 — world findings get a locus** (§7 decision, §16.20)
 
-- **The planarity tolerance is unmeasured** — the worst retail coplanarity
-  deviation is the tolerance. Any run. §16.22 q2
+- **The planarity tolerance is unmeasured** — blocked: the script and its tests
+  landed, but **the MDK extraction is gone from this machine** and every
+  `--world` script has lost its corpus. Needs a re-extract, so it needs a
+  person. §16.22 q2, `environment-hazards.md`
 - **Portal orientation is unmeasured** — do normals point consistently with
   respect to their two sectors? Any run. §16.22 q3
 - **Waypoint occupancy is unmeasured** — how many NPCs retail spawns on one
