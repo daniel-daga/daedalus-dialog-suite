@@ -82,6 +82,10 @@ if (-not (Test-Path $Compiled)) {
 }
 if (EngineRunning) { throw "an engine process ($($Watch -join '/')) is already running; close it first" }
 
+# `powershell -File x.ps1 -Only 00,07` delivers ONE string "00,07", not an
+# array - and a PowerShell caller parses 00,07 as the integers 0 and 7. Split
+# and pad here so both spellings select the same candidates.
+$Only = @($Only | ForEach-Object { "$_" -split ',' } | ForEach-Object { $_.Trim().PadLeft(2, '0') } | Where-Object { $_ -ne '00' -or $_ })
 $cands = Get-ChildItem $CandDir -Filter '*.zen' | Sort-Object Name
 if ($Only.Count -gt 0) { $cands = $cands | Where-Object { $n = $_.Name.Substring(0,2); $Only -contains $n } }
 if ($Latest) {
