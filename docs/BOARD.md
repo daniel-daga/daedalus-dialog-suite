@@ -16,6 +16,7 @@ handovers cost an hour a session:
 | machine and toolchain hazards | `docs/reference/environment-hazards.md` |
 | a known wart nobody is fixing yet | `docs/refactoring-targets.md` |
 | the Gate 2 checklist | `zenkit-node/docs/engine-acceptance-2026-08-25.md` §8 |
+| a 2026-08-29 review finding | `docs/plans/world-editor-review-2026-08-29.md` |
 
 **Rules.** A card is one line, an owner, and a pointer to where its long form
 lives — §16 for a level-editor card, otherwise the file the routing table names.
@@ -134,6 +135,48 @@ card waits on live at its pointer — put new prose there, not here.
   the file) are the last of Gate 2b's unwitnessed rows. Needs the engine, so it
   needs a person. **Daniel.** §16.2, run sheet §07
 
+**Review findings, 2026-08-29.** Each pointer is a section and number in
+`world-editor-review-2026-08-29.md`; each card starts with its failing test.
+
+- **A failure after the commit is reported as a refusal** — two places, one
+  shape: `commitOps`' `try` spans `applied()`, the open path's spans the waynet
+  fetch. The world keeps the edit. Any run. *renderer* 1, *first pass* 1
+- **A dead world worker cannot be revived** — `handleWorkerDeath` never nulls
+  `this.worker`, so the banner tells the user to do what the code prevents.
+  Any run. *ops/main* 1
+- **An undo during a world open lands in the new world** — `openWorld` is
+  outside the `serialized` queue, so A's inverse paths are written into B.
+  Any run. *ops/main* 2
+- **`AddVob` with `to: null` is a delete nobody guards** — bypasses every
+  `DeleteVob` guard and rides the undo stack as if invertible. Any run.
+  *ops/main* 4
+- **`applyOps` trusts `op.vob`** — no bounds check, and it runs after the
+  commit; both of its waynet siblings do check. Any run. *ops/main* 3
+- **The waynet mutators never mark the handle mutated** — so `container`
+  reports the pre-edit file's digests as this handle's facts. Any run.
+  *binding* 1
+- **Waypoint names cross the binding as UTF-8** — everything else there is
+  cp1252: refused ops, mojibake, and a duplicate check that misses collisions.
+  Any run. *binding* 2
+- **The waynet store's three defects** — an empty waynet reads as full
+  knowledge, the payload survives into the next world, and the identity guard
+  is blind to the flags column. Any run. *first pass* 2-4
+- **The waypoint rule's problem ids collide** — one function naming the same
+  missing waypoint twice yields two identical ids. Any run. *first pass* 5
+- **The scene tree does not follow the world** — a rename re-renders neither
+  the row nor the filter, and `expanded` holds indices a renumber invalidates.
+  Any run. *renderer* 2-3
+- **Binding hardening, four of them** — `stoull` can `std::terminate`, mesh
+  indices are unbounded in-process, `decodeTexture` narrows before it
+  range-checks, `compareContainer` throws on `null`. Any run. *binding* 3-6
+- **Five cleanups, doc first** — `problems-panel.md` still claims five rules
+  and one scan input; a Problems click on an unopened file is a no-op; the
+  free-point flag bit has three private copies; `problemsStore` rebuilds a
+  ~3,000-entry Set per scan; `bvhReady` never settles. *first pass* 7-10,
+  *renderer* 4
+- **The free-point guard may be too narrow** — `startsWith` where ZenGin looks
+  to match by substring. Needs the engine. **Daniel.** *first pass* 6
+
 **Phase 1b-2 — VOB editing**
 
 - **Euler order is not measured against Spacer** — Y-X-Z was picked on retail
@@ -180,47 +223,5 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **The editor says when a mob nobody can use has been placed** — a warning
-  under `focusName` in the world property grid, per class and measured over two
-  retail worlds, naming a value to type. Fires and beds are out of the table on
-  purpose. board-loop-4. §16.15
-- **The instrument for `05`'s two rows exists** — `07a`/`07b`/`07c` in
-  `tools/mutate.js`, plus run sheet §07. Its own read-back assertions caught
-  three things that could have faked a result: a torch's flame is a plain
-  `zCVob`, a second wall torch stands 884 units below the one under test, and a
-  cleared VOB can bring a child with it. board-loop-4. §16.2
-- **The dangling-waypoint rule landed, and W1's lookup with it** —
-  `waypoint-not-in-world` joins the Problems rules, over the project index's
-  waypoint sites and the open world's waynet names. The names reach
-  `worldStore` and are read at world *open* now, not when the overlay is first
-  shown; the re-scan is a `storeSync` subscription that fires only when the name
-  set actually changed. It says "not in the open world", never "missing" — the
-  third answer stays unanswerable from one world. board-loop-4. §16.8
-- **Gate 2b ran, both passes** — 2026-08-28/29. Every op loads and plays, and
-  `06-minimal-frame` then witnessed the class-property writes the first pass
-  could not see: red fog, a carried sound radius, an authored chest the player
-  opens. `SetVobClassProp` has its engine witness. Daniel + one real
-  `insertVob` defect fixed on the way (§16.15). §16.2 and
-  `engine-acceptance-2026-08-25.md`
-- **The viewport's frame is a handle command** — `WorldViewportHandle.frameVob`
-  replaces the `frameRequest` prop; the trigger was `raycastDown`, not W4, and
-  the last of the three viewport warts is closed. board-loop.
-  `docs/refactoring-targets.md` §9
-- **The portal polygon payload is data** — `getPortals` reads out `is_portal`,
-  `is_sector`, `sector_index` and the BSP portal list; columnar, one row per
-  portal/sector polygon, and unplumbed like slice 1. board-loop. §16.18
-- **Portal material checks** — `checkPortalMaterials` in `zen-world/src/validate/`;
-  clean on all three retail worlds, and it has no consumer yet. board-loop. §16.18
-- **I5 — the zones, the markers and the two effect classes are authorable** —
-  all seven landed; §14.1 1.3 is closed. board-loop. §16.15
-- **`oCMobBed` is editable** — both halves; `oCTouchDamage` is now the family's
-  only authorable-with-nothing-catalogued class. board-loop. §16.15
-
-**Everything landed on 2026-08-28 was flushed that day**, and each card's
-substance is at its pointer rather than restated here: class insertion I1–I4 and
-the caveats they left at §16.15, the waypoint index W1/W2/W5 at §16.8, `zCVob`
-V1/V2 at §16.17 (which closes §14.1 1.8), copy/paste at §16.14, waynet at §16.7,
-`resavedSize` at §16.10, the scene tree at §16.16, and the three viewport warts
-in `refactoring-targets.md` §8–10. `git log` is the record of what landed and
-why; this section only exists so the next session sees the last one's work, and
-on 2026-08-28 that was two full runs.
+*(flushed 2026-08-29 — board-loop-4's cards had all reached their pointers, and
+the review above is what the last session produced. `git log` is the record.)*
