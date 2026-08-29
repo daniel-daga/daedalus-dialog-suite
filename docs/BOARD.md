@@ -149,9 +149,12 @@ card waits on live at its pointer — put new prose there, not here.
 - **The free-point guard may be too narrow** — `startsWith` where ZenGin looks
   to match by substring. Needs the engine. **Daniel.** *first pass* 6
 
-**Editor-side backlogs.** Never carded until 2026-08-29 — the board carried
-only the level editor, so "no actionable cards" never meant "no work". Each
-pointer is a finding id in the file the routing table names.
+**Editor-side backlogs — nothing carded, which is not the same as nothing
+open.** Still unfixed and unowned: the simulator's M2 (a background reparse
+wipes a running session), §3 P3's incomplete bundle-size guard, the
+error-boundary gaps and the update link with no `shell.openExternal` channel.
+None need the engine or the corpus; carding them is a person's call. See the
+routing table's review files.
 
 **Phase 1c / Phase 2 — world findings get a locus** (§7 decision, §16.20)
 
@@ -217,27 +220,9 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **The spawn index no longer stops at a body's top level** — a skipped `if`
-  or `return` subtree is swept for calls before it is skipped, so a chapter
-  block's `Wld_InsertNpc` reaches `callSites`. Actions and fidelity untouched;
-  the 71% is not re-measured. §16.19. board-loop
-- **The six waynet mutators card was already fixed** — `markMutated` wraps all
-  six in `lib/index.js` and `waynetMutation.test.js` asserts the null
-  `container`; landed in `9bb7258`, the card just outlived it. board-loop
-- **A script's spawn point goes to the world** — W4 is a button in
-  `InsertNpcActionRenderer` leaving the panel's own `focusRequest`; it reads
-  `waynetNames`, so W1's lookup is not going to be written. §16.23. board-loop
-- **Waypoint occupancy is measured, and it kills its own check** — 1,357 of
-  retail's 1,375 NPC spawn points hold 4 NPCs or fewer and the other 18 are
-  design (`NW_CITY_ENTRANCE_01` holds 173), so no count is a threshold and
-  nothing is carded. It also found the index misses every spawn inside an `if`
-  body — 1,178 of 4,087 calls, recorded at §16.19. §16.22 q4. board-loop
-- **Portal pairing is measured** — retail is 100% paired: 572 `P:` names, 286
-  pairs, zero unpaired, zero malformed, zero repeats. So the check is a warning
-  and it is writable; filing that card is a person's call. §16.22 q1 has the
-  table, and corrects §16.18's AddonWorld sector count (74, not 154).
-  board-loop
+*(empty)*
 
-*(flushed 2026-08-29. Twenty-six cards across six rounds. The four enum/locus
-cards' forward facts are at §16.21 — the two held-out mover enums, and that no
-engine has witnessed any of the eight written.)*
+*(flushed 2026-08-29, twice. Six rounds' twenty-six cards went first; then the
+five of round 7-9 — portal pairing, waypoint occupancy, W4, the spawn-index
+fix, and the waynet card that outlived its own fix. Every forward fact they
+carried is at §16.19, §16.22 and §16.23; the rest is in `git log`.)*

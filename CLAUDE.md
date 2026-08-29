@@ -88,7 +88,7 @@ High-performance Tree-sitter parser for the Gothic 2 Daedalus scripting language
 | `src/semantic/parsers/` | AST extraction helpers |
 | `src/semantic/visitors/` | `declaration-visitor.ts`, `linking-visitor.ts`, `error-visitor.ts` |
 | `src/codegen/generator.ts` | `SemanticCodeGenerator` class |
-| `test/` | 21 test files covering all subsystems |
+| `test/` | 26 test files covering all subsystems |
 
 ### Exported Subpaths
 
@@ -182,6 +182,8 @@ Visual desktop editor (Electron + React) for editing, validating, and generating
 | `src/renderer/components/actionRenderers/` | Per-action-type render components |
 | `src/renderer/components/common/` | Shared UI primitives (`VariableAutocomplete`, `autocompletePolicies.ts`, etc.) |
 | `src/renderer/quest/domain/` | Pure quest logic (analysis, graph inference, condition codec) |
+| `src/renderer/problems/domain/` | Pure Problems rules (seven of them) — no React/MUI/Electron imports |
+| `src/renderer/simulator/` | Dialog simulator domain and session state |
 | `src/renderer/types/questGraph.ts` | Quest graph type definitions |
 | `src/main/services/` | Main-process services (File, Parser, Project, Updater, etc.) |
 | `src/main/workers/` | Worker threads (`metadata.worker.ts`, `parser.worker.ts`, `zenkit.worker.ts`) |
@@ -200,6 +202,7 @@ Visual desktop editor (Electron + React) for editing, validating, and generating
 | `projectStore.ts` | Project-level index and metadata |
 | `searchStore.ts` | Search state |
 | `uiSelectionStore.ts` | UI selection state |
+| `problemsStore.ts` | Problems panel: rule inputs and the scan they feed |
 | `worldStore.ts` | World summary + selection. No `immer`: the summary carries `ArrayBuffer` columns |
 | `storeSync.ts` | Cross-store synchronization |
 
@@ -216,6 +219,9 @@ Visual desktop editor (Electron + React) for editing, validating, and generating
 | `WorldService.ts` | Owns the one stateful `zenkit.worker` holding a ZenGin world |
 | `ValidationService.ts` | Dialog/script validation |
 | `PathValidationService.ts` | File path validation |
+| `serviceRegistry.ts` | Constructs the main-process services (MCP plan's Phase 0) |
+| `SaveFileFlow.ts` | The `generator:saveFile` body, lifted out of the IPC handler |
+| `LogService.ts` | Main-process logging |
 | `SettingsService.ts` | App settings persistence |
 | `UpdaterService.ts` | In-app update checking and download |
 
