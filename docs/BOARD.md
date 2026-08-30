@@ -231,14 +231,8 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **Five of the six world-surface findings (§16.24)** — selection emphasis, the
-  mode-dependent gizmo anchor, the pick occluder, the paste offset and
-  selection, the grid locator. Durable record:
-  `docs/architecture/level-editor.md` §7. **Forward fact: none of it is
-  witnessed on a real screen** — the browser harness has no world to open and
-  `verify-world-edit.js` needs a Gothic install, the native addon and a GPU, so
-  the Jest component tests are the whole verification. **The rotate gizmo
-  deliberately still anchors on the last VOB picked**, and whoever lands
-  rotate-about-a-pivot moves it to the centroid in the same change.
-  **`duplicateVobs` was left alone** — Ctrl+D still lands the copy inside the
-  original; the card named paste.
+- **The markers say who (§16.19 slice 14)** — with *Spawns* on, a labelled point
+  names the NPCs standing on it. **Forward fact: the world→script direction was
+  asked for and is not carded** — an *Insert NPC* button writing
+  `Wld_InsertNpc` into `STARTUP_<worldfile>`, plus a world-directory setting;
+  long form is slice 14's last paragraph.

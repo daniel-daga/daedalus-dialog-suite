@@ -14,7 +14,7 @@
  */
 
 import * as THREE from 'three';
-import { chooseWaypointLabels, LABEL_CAP } from '../src/renderer/world/waypointLabels';
+import { chooseWaypointLabels, labelTextFor, LABEL_CAP } from '../src/renderer/world/waypointLabels';
 
 const WIDTH = 800;
 const HEIGHT = 600;
@@ -119,5 +119,31 @@ describe('chooseWaypointLabels', () => {
 
     expect(chooseWaypointLabels(buffer(...points), null, clipMatrix(), WIDTH, HEIGHT))
       .toHaveLength(LABEL_CAP);
+  });
+});
+
+describe('labelTextFor', () => {
+  // What a label says, once a marked point knows who is standing on it
+  // (§16.19 slice 14). Slice 9 left this as the waypoint's own name because
+  // `placementWaypointsAt` threw the instances away; the name of the waypoint
+  // is still the answer where nobody is standing.
+
+  it('names the waypoint when nobody is standing on it', () => {
+    expect(labelTextFor('WP_MARKET', [])).toBe('WP_MARKET');
+  });
+
+  it('names the NPC instead, where one is', () => {
+    // The marker is already the point; a second name for the point is not what
+    // the label is scarce screen space for.
+    expect(labelTextFor('WP_MARKET', ['BAU_900_FARIM'])).toBe('BAU_900_FARIM');
+  });
+
+  it('counts the rest where several share a point', () => {
+    expect(labelTextFor('WP_MARKET', ['BAU_900_FARIM', 'VLK_901_HAKON'])).toBe('BAU_900_FARIM +1');
+  });
+
+  it('stays one line for the 175 NPCs of a city entrance (§16.22 q4)', () => {
+    const crowd = Array.from({ length: 175 }, (_, i) => `VLK_${i}`);
+    expect(labelTextFor('NW_CITY_ENTRANCE_01', crowd)).toBe('VLK_0 +174');
   });
 });

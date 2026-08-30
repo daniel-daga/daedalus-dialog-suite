@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { WaynetPayload } from '../../shared/worldTypes';
 import type { SpawnSite } from '../../shared/types';
-import { placementWaypointsAt, type RoutineIndex } from '../routines/routineSchedule';
+import { placementWaypointsAt, spawnOccupants, type RoutineIndex } from '../routines/routineSchedule';
 
 // The project's static spawns, drawn over the world (level-editor.md §16.19
 // slice 4) — and, once a time is set, where the daily routines put the NPCs
@@ -42,6 +42,10 @@ const UNPLACED = 0x78909c;
 
 // Above the waynet's 10, for the same reason.
 const RENDER_ORDER = 11;
+
+// The answer for a point nobody stands on. One frozen array rather than a fresh
+// one per miss: this is asked once per label per frame.
+const NOBODY: readonly string[] = Object.freeze([]);
 
 // The dummy — a body standing where the dot already is (slice 9). Roughly a
 // person's height in ZenGin centimetres: a 25 cm radius and a 130 cm cylinder
@@ -88,6 +92,10 @@ export class SpawnOverlay {
   private byName = new Map<string, number>();
   /** The static spawn points, deduplicated — what a null minute draws. */
   private staticPoints: number[] = [];
+  /** Who is standing on each drawn point, by payload index (§16.19 slice 14). */
+  private occupants = new Map<number, string[]>();
+  /** The same, for the static layer — resolved once, like `staticPoints`. */
+  private staticOccupants = new Map<number, string[]>();
   /** The waypoints each layer stands on, in the order they are drawn. */
   private points: number[] = [];
   private unknownPoints: number[] = [];
@@ -113,6 +121,8 @@ export class SpawnOverlay {
     // `waypointNotInWorld` rule is where that finding belongs.
     this.staticPoints = this.resolve(sites.map((site) => site.spawnPoint));
     this.points = this.staticPoints;
+    this.staticOccupants = this.byPoint(spawnOccupants(sites));
+    this.occupants = this.staticOccupants;
 
     // Allocated once at the world's waypoint count — an upper bound on either
     // layer, since every drawn marker stands on a waypoint — and drawn as a
@@ -236,10 +246,12 @@ export class SpawnOverlay {
     if (minute === null) {
       this.points = this.staticPoints;
       this.unknownPoints = [];
+      this.occupants = this.staticOccupants;
     } else {
       const placements = placementWaypointsAt(this.routines, this.sites, minute, state);
       this.points = this.resolve(placements.known);
       this.unknownPoints = this.resolve(placements.unknown);
+      this.occupants = this.byPoint(placements.occupants);
     }
     this.writePositions();
   }
@@ -255,6 +267,31 @@ export class SpawnOverlay {
    */
   refresh(): void {
     this.writePositions();
+  }
+
+  /**
+   * Who the scripts put on this point, at whatever time the layer is drawing —
+   * UPPERCASED instance names, sorted, empty for a point nothing marks.
+   *
+   * The name layer draws by payload index, and this class is the only place a
+   * waypoint *name* became one. Empty rather than undefined for the unmarked:
+   * the caller is a draw loop deciding what a label says, and a point nobody
+   * stands on is the ordinary case, not a missing answer.
+   */
+  occupantsAt(point: number): readonly string[] {
+    return this.occupants.get(point) ?? NOBODY;
+  }
+
+  /** A name-keyed occupancy re-keyed by payload index; unknown names dropped,
+   *  exactly as `resolve` drops the points they would have been. */
+  private byPoint(occupants: Record<string, string[]>): Map<number, string[]> {
+    const byPoint = new Map<number, string[]>();
+    for (const [name, standing] of Object.entries(occupants)) {
+      const point = this.byName.get(name);
+      if (point === undefined) continue;
+      byPoint.set(point, standing);
+    }
+    return byPoint;
   }
 
   /** Waypoint names to payload indices, dropping the unknown and the repeated. */

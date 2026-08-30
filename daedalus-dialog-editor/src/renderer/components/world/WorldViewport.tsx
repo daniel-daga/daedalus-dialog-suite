@@ -1322,7 +1322,17 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     const host = hostRef.current;
     if (host === null || waynet === null) return;
 
-    const layer = new WaypointLabelLayer(waynet.names);
+    // Who is standing there, read through the refs rather than closed over:
+    // this layer outlives the spawn overlay — a structural op rebuilds that one
+    // and leaves this alone — and the occupancy changes under both on every
+    // tick of the time slider. Nobody, with the spawn layer off: occupancy is
+    // that layer's fact, and a name over a point it is not marking would be a
+    // claim nothing on screen supports (§16.19 slice 14).
+    const layer = new WaypointLabelLayer(waynet.names, (waypoint) => (
+      showSpawnsRef.current && spawnOverlayRef.current !== null
+        ? spawnOverlayRef.current.occupantsAt(waypoint)
+        : []
+    ));
     layer.setVisible(false);
     labelLayerRef.current = layer;
     host.appendChild(layer.root);

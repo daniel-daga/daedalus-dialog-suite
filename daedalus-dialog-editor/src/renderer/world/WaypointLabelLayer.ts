@@ -1,6 +1,9 @@
-import type { WaypointLabel } from './waypointLabels';
+import { labelTextFor, type WaypointLabel } from './waypointLabels';
 
-// Waypoint names drawn over the viewport (level-editor.md §16.19 slice 8).
+// Waypoint names drawn over the viewport (level-editor.md §16.19 slice 8) —
+// and, on a point the spawn layer marks, the NPCs standing on it instead
+// (slice 14). Which of the two a label says is `labelTextFor`'s; this class
+// only asks and draws.
 //
 // **DOM, not Three.js, and deliberately.** There is no text in this scene at
 // all — no sprite, no canvas texture, no SDF font — and adding one would be a
@@ -25,7 +28,17 @@ export class WaypointLabelLayer {
   readonly root: HTMLDivElement;
   private pool: HTMLDivElement[] = [];
 
-  constructor(private names: readonly string[]) {
+  /**
+   * `occupantsAt` is who is standing on a waypoint, asked for rather than
+   * handed over (§16.19 slice 14): the layer is built once per world and the
+   * occupancy changes under it on every tick of the time slider, every state
+   * pick and every toggle of the spawn layer. Omitted, this is the layer slice
+   * 8 shipped — waypoint names and nothing else.
+   */
+  constructor(
+    private names: readonly string[],
+    private occupantsAt: (waypoint: number) => readonly string[] = () => [],
+  ) {
     this.root = document.createElement('div');
     const style = this.root.style;
     style.position = 'absolute';
@@ -38,11 +51,12 @@ export class WaypointLabelLayer {
   update(labels: readonly WaypointLabel[]): void {
     let drawn = 0;
     for (const label of labels) {
-      const name = this.names[label.waypoint];
+      const waypointName = this.names[label.waypoint];
       // The names come from the waynet payload and the positions from the
       // overlay. They are the same world today, but a stale candidate list
       // would otherwise put the string "undefined" on screen.
-      if (name === undefined) continue;
+      if (waypointName === undefined) continue;
+      const name = labelTextFor(waypointName, this.occupantsAt(label.waypoint));
 
       const element = this.elementAt(drawn);
       // Read before write: assigning identical text still invalidates layout.

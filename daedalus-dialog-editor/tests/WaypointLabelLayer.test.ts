@@ -108,4 +108,42 @@ describe('WaypointLabelLayer', () => {
 
     expect(host.children).toHaveLength(0);
   });
+
+  describe('who is standing there (§16.19 slice 14)', () => {
+    // The layer is built once per world and the occupancy changes underneath it
+    // — the time slider, the state lens, the spawn toggle — so it asks rather
+    // than being handed a table it would have to be rebuilt to replace.
+
+    it('names the NPC on a marked point instead of the waypoint', () => {
+      const layer = new WaypointLabelLayer(NAMES, (waypoint) =>
+        waypoint === 1 ? ['BAU_900_FARIM'] : []);
+
+      layer.update([{ waypoint: 1, x: 10, y: 10 }, { waypoint: 0, x: 20, y: 20 }]);
+
+      expect(textOf(layer)).toEqual(['BAU_900_FARIM', 'WP_START']);
+    });
+
+    it('re-asks on every frame, so the slider moves the names with the markers', () => {
+      let minute = 0;
+      const layer = new WaypointLabelLayer(NAMES, () =>
+        minute === 0 ? ['BAU_900_FARIM'] : ['GRD_200_XARDAS']);
+
+      layer.update([{ waypoint: 0, x: 10, y: 10 }]);
+      expect(textOf(layer)).toEqual(['BAU_900_FARIM']);
+
+      minute = 720;
+      layer.update([{ waypoint: 0, x: 10, y: 10 }]);
+      expect(textOf(layer)).toEqual(['GRD_200_XARDAS']);
+    });
+
+    it('draws waypoint names when it is given no occupancy at all', () => {
+      // The waynet on its own, with the spawn layer off: there is no occupancy
+      // to draw and the layer is the one slice 8 shipped.
+      const layer = new WaypointLabelLayer(NAMES);
+
+      layer.update([{ waypoint: 2, x: 10, y: 10 }]);
+
+      expect(textOf(layer)).toEqual(['FP_CAMP']);
+    });
+  });
 });

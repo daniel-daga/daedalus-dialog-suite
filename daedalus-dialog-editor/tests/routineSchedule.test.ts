@@ -3,6 +3,7 @@ import {
   coverageOf,
   placementsAt,
   placementWaypointsAt,
+  spawnOccupants,
   stateReach,
   MINUTES_PER_DAY
 } from '../src/renderer/routines/routineSchedule';
@@ -224,7 +225,8 @@ describe('routine schedule', () => {
 
       expect(placementWaypointsAt(index, [spawn('GRD_200_XARDAS', 'WP_TOWER')], at(12))).toEqual({
         known: [],
-        unknown: ['WP_TOWER']
+        unknown: ['WP_TOWER'],
+        occupants: { WP_TOWER: ['GRD_200_XARDAS'] }
       });
     });
 
@@ -289,7 +291,8 @@ describe('routine schedule', () => {
 
       expect(placementWaypointsAt({ sites: [], routinesByNpc: {} }, spawns, at(12))).toEqual({
         known: [],
-        unknown: ['WP_ONE', 'WP_TWO']
+        unknown: ['WP_ONE', 'WP_TWO'],
+        occupants: { WP_ONE: ['A'], WP_TWO: ['B'] }
       });
     });
   });
@@ -368,6 +371,92 @@ describe('routine schedule', () => {
 
     it('reports no reach with no state chosen, so the readout can stay hidden', () => {
       expect(stateReach(index, null)).toEqual({ resolved: 0, total: 2 });
+    });
+  });
+
+  describe('occupancy (§16.19 slice 14)', () => {
+    // Who is standing on a point, which `placementWaypointsAt` used to throw
+    // away: it answered in waypoint names because a marker needed nothing else,
+    // and slice 9 left the label it draws as the waypoint's own name. The
+    // instance is the only thing that makes a marker say *who*, and
+    // `placementsAt` has had it all along.
+
+    const spawn = (instance: string, spawnPoint: string): SpawnSite => ({
+      instance,
+      spawnPoint,
+      filePath: `/test/Startup.d`,
+      functionName: 'STARTUP_NEWWORLD',
+      line: 1
+    });
+
+    it('names the NPCs a routine puts on a point', () => {
+      const index = {
+        sites: [entry('RTN_DAY', at(8), at(22), 'WP_MARKET')],
+        routinesByNpc: { BAU_900_FARIM: 'RTN_DAY' }
+      };
+
+      expect(placementWaypointsAt(index, [], at(12)).occupants).toEqual({
+        WP_MARKET: ['BAU_900_FARIM']
+      });
+    });
+
+    it('lists everyone on a shared point, in a stable order', () => {
+      // 175 distinct NPCs stand on NW_CITY_ENTRANCE_01 (§16.22 q4), and the
+      // label draws one name and a count — so which name is first must not
+      // depend on the order the index happened to enumerate its NPCs in.
+      const index = {
+        sites: [entry('RTN_DAY', 0, 0, 'WP_MARKET')],
+        routinesByNpc: { VLK_901_HAKON: 'RTN_DAY', BAU_900_FARIM: 'RTN_DAY' }
+      };
+
+      expect(placementWaypointsAt(index, [], at(9)).occupants.WP_MARKET)
+        .toEqual(['BAU_900_FARIM', 'VLK_901_HAKON']);
+    });
+
+    it('attributes an unknown point to the NPCs inserted there', () => {
+      const index = { sites: [], routinesByNpc: {} };
+
+      expect(placementWaypointsAt(index, [spawn('GRD_200_XARDAS', 'WP_TOWER')], at(12)).occupants)
+        .toEqual({ WP_TOWER: ['GRD_200_XARDAS'] });
+    });
+
+    it('leaves a swallowed spawn out of the known point it stands on', () => {
+      // The point is drawn known because a routine places somebody there now,
+      // and that is the fact the marker carries — so the label carries it too.
+      // The NPC merely *inserted* there is the weaker fact the layer already
+      // refuses to draw, and naming him on the stronger marker would put the
+      // two back together after `placementWaypointsAt` separated them.
+      const index = {
+        sites: [entry('RTN_DAY', at(8), at(22), 'WP_MARKET')],
+        routinesByNpc: { BAU_900_FARIM: 'RTN_DAY' }
+      };
+      const spawns = [spawn('GRD_200_XARDAS', 'WP_MARKET')];
+
+      expect(placementWaypointsAt(index, spawns, at(12)).occupants).toEqual({
+        WP_MARKET: ['BAU_900_FARIM']
+      });
+    });
+
+    it('names an NPC on both waypoints of an overlap, as the marker draws him', () => {
+      const index = {
+        sites: [
+          entry('RTN_DAY', at(8), at(14), 'WP_MARKET'),
+          entry('RTN_DAY', at(12), at(18), 'WP_FIELD')
+        ],
+        routinesByNpc: { BAU_900_FARIM: 'RTN_DAY' }
+      };
+
+      expect(placementWaypointsAt(index, [], at(13)).occupants).toEqual({
+        WP_MARKET: ['BAU_900_FARIM'],
+        WP_FIELD: ['BAU_900_FARIM']
+      });
+    });
+
+    it('groups the static spawns the same way, for the layer with no time set', () => {
+      // The overlay draws `Wld_InsertNpc` alone until the slider is touched,
+      // and that layer wants the same answer without a minute to ask about.
+      expect(spawnOccupants([spawn('B', 'WP_ONE'), spawn('A', 'WP_ONE'), spawn('C', 'WP_TWO')]))
+        .toEqual({ WP_ONE: ['A', 'B'], WP_TWO: ['C'] });
     });
   });
 });

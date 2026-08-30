@@ -25,6 +25,24 @@ export interface WaypointLabel {
 const point = new THREE.Vector4();
 
 /**
+ * What one label says (§16.19 slice 14).
+ *
+ * The waypoint's own name where nobody stands on it, and the NPC's where
+ * somebody does — *instead of*, not beside it. The marker is already the point;
+ * a second name for the point is not what a line of scarce screen space is for,
+ * and the waypoint name stays the panel's answer either way.
+ *
+ * A crowd is one name and a count: 175 distinct NPCs stand on
+ * `NW_CITY_ENTRANCE_01` (§16.22 q4), and the point of the count is that a label
+ * saying one of them would otherwise read as the only one.
+ */
+export function labelTextFor(name: string, occupants: readonly string[]): string {
+  if (occupants.length === 0) return name;
+  if (occupants.length === 1) return occupants[0];
+  return `${occupants[0]} +${occupants.length - 1}`;
+}
+
+/**
  * The nearest `cap` candidates that are actually on screen, nearest first.
  *
  * `candidates` is which waypoints are eligible — the drawn subset when only the

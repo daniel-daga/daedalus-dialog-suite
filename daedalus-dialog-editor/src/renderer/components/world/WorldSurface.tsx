@@ -154,10 +154,11 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    * no variant for it keeps his declared day rather than dropping out.
    */
   const [spawnState, setSpawnState] = useState<string | null>(null);
-  /** Waypoint names drawn over the viewport (§16.19 slice 8). Its own toggle
-   *  rather than a property of the waynet's, because the dots and the names
-   *  answer different questions — where the net runs, and which waypoint this
-   *  one is — and one of them is wanted far more often than the other. */
+  /** Waypoint names drawn over the viewport (§16.19 slice 8), and on a marked
+   *  point the NPCs standing on it instead (slice 14). Its own toggle rather
+   *  than a property of the waynet's, because the dots and the names answer
+   *  different questions — where the net runs, and who is at this one — and one
+   *  of them is wanted far more often than the other. */
   const [showWaypointNames, setShowWaypointNames] = useState(false);
   /** The name being typed into the add-waypoint dialog, or null when it is
    *  closed. A name is the whole of what a placed waypoint has to be told —
@@ -1661,7 +1662,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               only the spawns on, a name over an unmarked waypoint would point
               at nothing. Only the nearest few are drawn whatever is on; a
               retail world has ~3,000 waypoints and a name on each is neither
-              legible nor affordable. */}
+              legible nor affordable. With the spawn layer on, a marked point
+              says who is standing on it rather than what it is called — the
+              marker is already the point (slice 14). */}
           {summary && (showWaynet || showSpawns) && (
             <Button
               size="small"

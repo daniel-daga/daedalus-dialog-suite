@@ -153,6 +153,47 @@ export interface TimedPlacements {
   known: string[];
   /** Static spawns of the NPCs whose position at this minute is not stated. */
   unknown: string[];
+  /**
+   * Who is standing on each of those waypoints — UPPERCASED instance names,
+   * sorted, keyed by the waypoint name in either list above (§16.19 slice 14).
+   *
+   * The lists are what to *draw*; this is what to *call it*. Each point is
+   * described by the same layer's fact and no other: a known point names the
+   * NPCs a routine puts there, and an NPC merely inserted at that point stays
+   * out of it, because separating those two facts is the entire reason there
+   * are two lists. `placementsAt` has carried the instance all along; slice 9
+   * left the label as the waypoint's own name only because nothing here
+   * passed it on.
+   */
+  occupants: Record<string, string[]>;
+}
+
+/**
+ * The static spawns grouped by the point they insert at — what the layer draws
+ * before the slider is touched, where there is no minute to ask a routine
+ * about.
+ */
+export function spawnOccupants(spawns: readonly SpawnSite[]): Record<string, string[]> {
+  const occupants: Record<string, string[]> = {};
+  for (const site of spawns) add(occupants, site.spawnPoint, site.instance);
+  return sorted(occupants);
+}
+
+/** One name onto one point, without repeating it. */
+function add(occupants: Record<string, string[]>, point: string, instance: string): void {
+  const standing = occupants[point];
+  if (standing === undefined) occupants[point] = [instance];
+  else if (!standing.includes(instance)) standing.push(instance);
+}
+
+/**
+ * Alphabetical, because a label draws the first name and counts the rest: 175
+ * NPCs stand on `NW_CITY_ENTRANCE_01` (§16.22 q4) and which of them is named
+ * must not depend on the order an index happened to enumerate its NPCs in.
+ */
+function sorted(occupants: Record<string, string[]>): Record<string, string[]> {
+  for (const point of Object.keys(occupants)) occupants[point].sort();
+  return occupants;
 }
 
 export function placementWaypointsAt(
@@ -164,6 +205,7 @@ export function placementWaypointsAt(
   const known = new Set<string>();
   /** The NPCs a routine entry positions — the rest fall back to their spawn. */
   const positioned = new Set<string>();
+  const occupants: Record<string, string[]> = {};
 
   for (const placement of placementsAt(index, minute, state)) {
     // Empty entries is "the script does not say", which is the unknown case and
@@ -172,7 +214,10 @@ export function placementWaypointsAt(
     // in two places.
     if (placement.entries.length === 0) continue;
     positioned.add(placement.instance);
-    for (const entry of placement.entries) known.add(entry.waypoint);
+    for (const entry of placement.entries) {
+      known.add(entry.waypoint);
+      add(occupants, entry.waypoint, placement.instance);
+    }
   }
 
   const unknown = new Set<string>();
@@ -184,9 +229,10 @@ export function placementWaypointsAt(
     // is standing there is the waypoint panel's answer rather than a marker's.
     if (known.has(site.spawnPoint)) continue;
     unknown.add(site.spawnPoint);
+    add(occupants, site.spawnPoint, site.instance);
   }
 
-  return { known: [...known], unknown: [...unknown] };
+  return { known: [...known], unknown: [...unknown], occupants: sorted(occupants) };
 }
 
 /**

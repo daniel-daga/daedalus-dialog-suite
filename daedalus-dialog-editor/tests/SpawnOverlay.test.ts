@@ -469,4 +469,55 @@ describe('SpawnOverlay', () => {
       expect(overlay.root.children).toHaveLength(0);
     });
   });
+
+  describe('who is standing on a point (§16.19 slice 14)', () => {
+    // The overlay is where a waypoint name becomes a payload index, so it is
+    // also where "who is on WP_MIDDLE" becomes "who is on point 1" — the only
+    // question the label layer can ask, since it draws by index.
+    const ROUTINES = {
+      sites: [entry('RTN_START_FARIM', at(8), at(22), 'WP_MIDDLE')],
+      routinesByNpc: { BAU_900_FARIM: 'RTN_START_FARIM' },
+    };
+
+    it('names the NPCs inserted at a point while no time is set', () => {
+      const overlay = new SpawnOverlay(
+        waynet(),
+        [site('GRD_200_XARDAS', 'WP_START'), site('BAU_900_FARIM', 'WP_START')],
+        NO_ROUTINES,
+      );
+
+      expect(overlay.occupantsAt(0)).toEqual(['BAU_900_FARIM', 'GRD_200_XARDAS']);
+    });
+
+    it('matches the uppercase index against the world own casing here too', () => {
+      // The payload spells it `WP_Middle`; every by-name lookup on this surface
+      // is uppercase, and one that forgets it answers for no point at all.
+      const overlay = new SpawnOverlay(waynet(), [], ROUTINES);
+
+      overlay.setTime(at(12));
+
+      expect(overlay.occupantsAt(1)).toEqual(['BAU_900_FARIM']);
+    });
+
+    it('follows the slider off the point it just left', () => {
+      const overlay = new SpawnOverlay(waynet(), [site('BAU_900_FARIM', 'WP_START')], ROUTINES);
+
+      overlay.setTime(at(12));
+      expect(overlay.occupantsAt(1)).toEqual(['BAU_900_FARIM']);
+      expect(overlay.occupantsAt(0)).toEqual([]);
+
+      overlay.setTime(at(3));
+      // The routine is silent at 03:00, so the only stated position is the
+      // spawn — the unknown layer, which is labelled too.
+      expect(overlay.occupantsAt(0)).toEqual(['BAU_900_FARIM']);
+      expect(overlay.occupantsAt(1)).toEqual([]);
+    });
+
+    it('answers for a point nobody stands on, rather than for undefined', () => {
+      const overlay = new SpawnOverlay(waynet(), [], NO_ROUTINES);
+
+      expect(overlay.occupantsAt(2)).toEqual([]);
+      expect(overlay.occupantsAt(99)).toEqual([]);
+    });
+  });
 });

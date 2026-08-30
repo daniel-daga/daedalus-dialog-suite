@@ -2282,13 +2282,13 @@ four hundred entries; it is a per-NPC affordance or a filter field, and the
 picker as drawn here would be unusable in a way no amount of wiring fixes.
 **Do not build the select before the number exists.**
 
-**Where "who" belongs, when somebody asks for it.** The markers stay anonymous
-— slice 9 decision 4's reasoning is unchanged, and a state does not alter it.
-The surface that should answer *"who is standing here at this minute in this
-state"* is the waypoint panel, which already answers the static form of the
-question (slice 3), and that is the call site slice 9 decision 4 said did not
-exist yet. It still doesn't; noted so the next person reaches for the panel
-rather than for a label over a capsule.
+**Where "who" belongs, when somebody asks for it.** Somebody did, on
+2026-08-30, and slice 14 below is the answer — so the paragraph this replaces
+(the markers stay anonymous, the waypoint panel is the surface for *who*) is
+superseded rather than merely amended. The panel is still where the *list*
+lives; what changed is that a marker with one name on it turned out to be the
+question people ask of a picture, and slice 9 decision 4's "left for whoever
+gives a dummy its own label" is now spent.
 
 **The obvious follow-on, deliberately not in this slice: highlighting what the
 state *changed*.** "Which NPCs does chapter 3 move, and where from" is probably
@@ -2312,6 +2312,64 @@ same lens — state + chapter, one control stack, not two; a tail means the
 honest UI is a "conditional" marker *style*, never an evaluated one. Exchange
 calls are guarded by the same kinds of state, and the lens sidesteps that by
 construction — noted so nobody re-derives it.
+
+**Slice 14 — the markers say who. Landed 2026-08-30 (Claude).** With *Spawns*
+on, a labelled point draws the NPCs standing on it instead of the waypoint's own
+name.
+
+**Nothing new was connected — a discard was undone.** The question that
+prompted this ("the NPC name next to the waypoint does not work") assumed a
+missing link between script and world, and there is none missing: `spawnSites`
+carries `instance` + `spawnPoint`, `routineSites` carries the waypoint per
+window, and `placementsAt` has returned `{ instance, routine, entries }` since
+slice 2. `placementWaypointsAt` collapsed all of it to waypoint *names* because
+a marker needed nothing else (slice 9 decision 4), and the label layer was
+handed `waynet.names`. So the whole slice is: stop throwing the instance away,
+and let the label ask for it.
+
+**Each point is named by its own layer's fact.** A known point names the NPCs a
+routine puts there; an NPC merely *inserted* at that point stays out of it and
+keeps his own marker in the unknown layer. Putting him on the known point's
+label would rejoin exactly the two facts `placementWaypointsAt` exists to keep
+apart — the weaker reading as the stronger, slice 7's rule again.
+
+**One name and a count, not a list.** 175 distinct NPCs stand on
+`NW_CITY_ENTRANCE_01` (§16.22 q4), so `labelTextFor` draws `<first> +174`,
+alphabetically — the sort is not cosmetic, or which name is drawn would depend
+on the order the index enumerated its NPCs in. And the occupant name *replaces*
+the waypoint name rather than joining it: the marker is already the point, and
+the waypoint's own name stays the panel's answer.
+
+**The layer asks; it is not told.** `WaypointLabelLayer` takes an
+`occupantsAt(waypoint)` callback, because it is built once per world while the
+occupancy under it changes on every tick of the slider, every state pick and
+every rebuild of the spawn overlay (a structural op rebuilds that one and leaves
+this one alone). With *Spawns* off it answers nobody: occupancy is that layer's
+fact, and a name over a point nothing is marking is a claim the picture does not
+support. `SpawnOverlay` is where a waypoint name became a payload index, so it
+is where it also becomes "who is on point 1".
+
+**No Playwright, for slices 7–9's reason exactly** — the browser harness has no
+world. Jest covers the schedule (`routineSchedule.test.ts`), the text
+(`waypointLabels.test.ts`), the DOM layer (`WaypointLabelLayer.test.ts`) and the
+index mapping (`SpawnOverlay.test.ts`); **that a name lands on its dot on screen
+is still unwitnessed**, the same wall, not a new one.
+
+**What this does not do, and what was asked for beside it.** Daniel's larger
+proposal (2026-08-30) is the other direction: an *Insert NPC* button on the
+World surface that places a waypoint, writes the `Wld_InsertNpc` line into the
+world's `STARTUP_<worldfile>` and links the two — with a world directory set
+once, so a spawn point in a world that is not open can be resolved. That is a
+separate slice and a bigger one: it is the first time the editor would author
+into a file it is not editing (parse the file, append the action, regenerate,
+save — and refuse visibly when the file has parse errors, since the generator
+throws on an errored model), and the `STARTUP_`/`INIT_` split matters — the
+former runs once, the latter on every load, and `Wld_InsertNpc` belongs in the
+former. The world-directory setting also buys the answer the
+spawn-point jump keeps reserved — "no such waypoint anywhere", which
+`InsertNpcActionRenderer` refuses to give today because the editor holds one
+world and has no index of the others. **Not carded here** — recorded so the next person does not
+re-derive it.
 
 **Phase ordering note.** §11 schedules 1b-2 before 1c, and 1b-2 is not finished
 — but what remains of it on the board (Euler order against Spacer) needs Spacer
@@ -2605,6 +2663,16 @@ occluder, the paste offset and selection, and the property grid's locator. Their
 record is `git log` and `docs/architecture/level-editor.md` §7, *"What a
 selection is on screen, and what a click can reach"*. This one is still open,
 and now has more ruled out than in.
+
+**Two things those five left behind, carried off the board.** The rotate gizmo
+still anchors on the **last VOB picked**, not the centroid — deliberate, since
+`rotateVobs` turns each VOB about its own origin, so whoever lands
+rotate-about-a-pivot moves the anchor in the same change. And `duplicateVobs`
+was **left alone**: Ctrl+D still drops the copy inside the original, because the
+card named paste and only paste. None of the five is witnessed on a real screen
+either — the browser harness has no world and `verify-world-edit.js` needs a
+Gothic install, the addon and a GPU, so the Jest component tests are the whole
+verification.
 
 **The report.** After a paste, the scene tree's locator stops working on every
 VOB — not only on the copies.
