@@ -137,11 +137,21 @@ export class SpawnOverlay {
     // has no extent to offset.
     this.dummyGeometry = new THREE.CapsuleGeometry(DUMMY_RADIUS, DUMMY_CYLINDER_HEIGHT, 4, 8);
     this.dummyGeometry.translate(0, DUMMY_HEIGHT / 2, 0);
-    // White so the instance colour set below is the colour drawn, unmixed —
-    // `vertexColors` on an `InstancedMesh` multiplies the material's own
-    // colour by each instance's, and `HIDDEN_ATTRIBUTE`'s per-instance flag is
-    // the same idea: one mesh, split by an attribute rather than a second one.
-    this.dummyMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true });
+    // White, because the material colour and the instance colour are
+    // multiplied and the instance's is the one carrying the split.
+    //
+    // **`vertexColors` stays off, and that is load-bearing.** `instanceColor`
+    // on its own is the whole mechanism: three defines `USE_INSTANCING_COLOR`
+    // in the vertex shader from the attribute merely being present, and
+    // `USE_COLOR` in the *fragment* shader from `vertexColors ||
+    // instancingColor`, so the multiply into `diffuseColor` already happens.
+    // Setting it as well would additionally declare `attribute vec3 color` in
+    // the *vertex* shader and multiply by that — an attribute a capsule has
+    // not got, and one `MeshBasicMaterial` cannot supply a default for, since
+    // `defaultAttributeValues` is `ShaderMaterial`'s alone. The generic value
+    // stays at WebGL's (0, 0, 0, 1) and every dummy draws **black**, which no
+    // test here can see: `getColorAt` reads the buffer back, not the shader.
+    this.dummyMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
     this.dummies = new THREE.InstancedMesh(this.dummyGeometry, this.dummyMaterial, waynet.count);
     this.dummies.matrixAutoUpdate = false;
     // Nothing raycasts an overlay decoration: the World surface picks a

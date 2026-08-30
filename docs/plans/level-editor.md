@@ -2070,6 +2070,23 @@ unread by anything and the mirror problem stays exactly where §16.4 left it.
 Held by `SpawnOverlay.test.ts`'s new cases — one dummy per point, the feet
 position, the identity rotation, the depth-test split against the dot, the
 colour split, and that it moves and disposes with the rest of the overlay.
+
+**The one thing in the slice that failed silently, caught in review rather than
+by a test, and now pinned by one.** The material was first written
+`vertexColors: true`, which draws **every dummy black**. `instanceColor` alone
+is already the whole mechanism: three defines `USE_INSTANCING_COLOR` in the
+vertex shader from the attribute merely being present, and `USE_COLOR` in the
+*fragment* shader from `vertexColors || instancingColor`, so the multiply into
+`diffuseColor` happens without it (`WebGLProgram.js`, the two prefix blocks).
+Adding `vertexColors` additionally declares `attribute vec3 color` in the
+*vertex* shader and multiplies by it — an attribute a capsule has not got, and
+one `MeshBasicMaterial` cannot default, because `defaultAttributeValues` is
+`ShaderMaterial`'s alone (`WebGLBindingStates.js` skips the fallback branch
+entirely). The generic value stays at WebGL's (0, 0, 0, 1) and the colour split
+this slice turns on is invisible. **No colour assertion can see it** —
+`getColorAt` reads the buffer back, never the shader — so the regression test
+asserts the material contract instead: `instanceColor` set, `vertexColors`
+off, and no `color` attribute on the geometry.
 Cost is one draw call for the drawn points, against the 724 the VOBs already
 spend; ~1,816 is the corpus figure this was sized against, not a cap enforced
 anywhere.

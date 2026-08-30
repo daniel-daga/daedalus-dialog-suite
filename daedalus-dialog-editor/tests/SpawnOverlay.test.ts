@@ -369,6 +369,29 @@ describe('SpawnOverlay', () => {
       expect(color.getHex()).toBe(known.getHex());
     });
 
+    it('carries the split on `instanceColor` alone, with `vertexColors` off', () => {
+      // The one thing in this layer that fails silently and totally, and no
+      // colour assertion above can see it: `getColorAt` reads the buffer back,
+      // never the shader.
+      //
+      // three defines `USE_COLOR` in the *vertex* shader from
+      // `material.vertexColors` alone, and in the *fragment* shader from
+      // `vertexColors || instancingColor`. So `instanceColor` on its own
+      // already reaches `diffuseColor` — while switching `vertexColors` on as
+      // well would declare `attribute vec3 color` in the vertex shader and
+      // multiply by it. A capsule has no such attribute, and
+      // `MeshBasicMaterial` has no `defaultAttributeValues` to stand in for one
+      // (that is `ShaderMaterial`'s), so the generic value stays at WebGL's
+      // (0, 0, 0, 1) and every dummy draws black.
+      const overlay = new SpawnOverlay(waynet(), [site('GRD_200_XARDAS', 'WP_MIDDLE')], NO_ROUTINES);
+
+      expect(overlay.dummies.instanceColor).not.toBeNull();
+      expect((overlay.dummies.material as THREE.MeshBasicMaterial).vertexColors).toBe(false);
+      // The other half of the same fact: nothing supplies the attribute that
+      // `vertexColors` would have gone looking for.
+      expect(overlay.dummies.geometry.getAttribute('color')).toBeUndefined();
+    });
+
     it('moves with the time slider exactly as the dots do', () => {
       const ROUTINES = {
         sites: [
