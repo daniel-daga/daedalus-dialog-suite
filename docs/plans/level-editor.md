@@ -2377,6 +2377,29 @@ spawn-point jump keeps reserved — "no such waypoint anywhere", which
 world and has no index of the others. **Not carded here** — recorded so the next person does not
 re-derive it.
 
+**Slice 15 — the other direction, NPC/Dialog → World. Landed 2026-08-30
+(Claude).** `DialogDetailsEditor` gets the jump `InsertNpcActionRenderer`
+already had: a *Show in World* button that resolves the dialog's NPC to its
+project-index spawn point and leaves the same `requestFocus({ kind:
+'waypoint', name })` the action-level jump does.
+
+**The only new step is the resolve.** The action-level button already had a
+spawn-point string sitting in the action; a dialog never shows one, so
+`resolveNpcSpawnPoint` (`npcWorldJump.ts`) finds it — the first
+`spawnSiteIndex` entry whose `instance` matches the dialog's NPC,
+case-insensitively, both UPPERCASED at extraction and by the resolver alike.
+First match only, deliberately: an NPC spawned twice needs no invented
+winner here, because which of a script's spawns is "the" one is the waypoint
+panel's question (slice 9 decision 4's reasoning, again), not a jump button's.
+
+**Same three-answer shape as the action-level jump, one rung taller.**
+`npcJumpReason` adds "this dialog names no NPC" above the disabled reasons
+`worldHasPoint` already gives — no spawn point known for the NPC, no world
+open, not in *this* world — so the two buttons cannot answer differently for
+the same fact. This is read-only: nothing here writes a script, which is the
+whole reason it shipped a session ahead of slice 14's closing paragraph
+rather than behind it.
+
 **Phase ordering note.** §11 schedules 1b-2 before 1c, and 1b-2 is not finished
 — but what remains of it on the board (Euler order against Spacer) needs Spacer
 itself and a person, as do the Gate 2b `07` rows. These slices were carded by

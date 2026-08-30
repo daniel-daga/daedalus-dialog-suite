@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Box,
   Typography,
@@ -16,11 +16,16 @@ import {
   Redo as RedoIcon,
   Delete as DeleteIcon,
   DriveFileRenameOutline as RenameIcon,
+  Place as PlaceIcon,
 } from '@mui/icons-material';
 import { useEditorStore } from '../store/editorStore';
 import { useHistoryStore } from '../store/historyStore';
+import { useProjectStore } from '../store/projectStore';
+import { useWorldStore } from '../store/worldStore';
+import { useUISelectionStore } from '../store/uiSelectionStore';
 import * as historyActions from '../store/historyActions';
 import { DialogDetailsEditorProps } from './dialogTypes';
+import { resolveNpcSpawnPoint, npcJumpReason } from './npcWorldJump';
 import ValidationErrorDialog from './ValidationErrorDialog';
 import ReviewChangesDialog from './ReviewChangesDialog';
 import { flushAllPendingEdits } from '../utils/pendingEditFlushRegistry';
@@ -59,6 +64,24 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   const currentFunction = currentFunctionName
     ? semanticModel?.functions?.[currentFunctionName] || null
     : null;
+
+  // NPC/Dialog → World (§16.23 W4's other half). `InsertNpcActionRenderer`
+  // already jumps from a script's own spawn-point literal; this resolves the
+  // dialog's NPC to the same point through the project index, so the jump
+  // works from a dialog that names no spawn point of its own.
+  const npcName = (typeof dialog?.properties?.npc === 'string' ? dialog.properties.npc : null) || null;
+  const spawnSiteIndex = useProjectStore((s) => s.spawnSiteIndex);
+  const npcSpawnPoint = useMemo(
+    () => (npcName ? resolveNpcSpawnPoint(spawnSiteIndex, npcName) : null),
+    [spawnSiteIndex, npcName]
+  );
+  const world = useWorldStore((s) => (s.status === 'ready' ? (s.waynetNames ?? null) : null));
+  const worldJumpDisabledReason = npcJumpReason(npcName, npcSpawnPoint, world);
+  const handleWorldJump = useCallback(() => {
+    if (!npcSpawnPoint) return;
+    useWorldStore.getState().requestFocus({ kind: 'waypoint', name: npcSpawnPoint });
+    useUISelectionStore.getState().setActiveView('world');
+  }, [npcSpawnPoint]);
 
   const canUndo = useHistoryStore((state) => filePath ? state.canUndo(filePath) : false);
   const canRedo = useHistoryStore((state) => filePath ? state.canRedo(filePath) : false);
@@ -217,6 +240,19 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
           >
             View Source
           </Button>
+          <Tooltip title={worldJumpDisabledReason ?? `Show ${npcName} in the world`}>
+            <span>
+              <Button
+                variant="outlined"
+                disabled={worldJumpDisabledReason !== null}
+                onClick={handleWorldJump}
+                startIcon={<PlaceIcon />}
+                data-testid="npc-world-jump"
+              >
+                Show in World
+              </Button>
+            </span>
+          </Tooltip>
         </Stack>
       </Box>
 
