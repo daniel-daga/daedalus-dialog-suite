@@ -163,6 +163,11 @@ landed; one is left and it is the one that was never root-caused.
 
 **Phase 1c — the overlay, at §16.19.** Not blocked.
 
+- **Insert NPC, from the World surface** — a button that places a waypoint,
+  writes `Wld_InsertNpc` into the resolved `STARTUP_<worldfile>` and links the
+  two; needs a world-directory setting for the cross-world case and the
+  editor's first write into a file it isn't editing. Daniel asked for it
+  2026-08-30. §16.19 s14's closing paragraph
 - **The routine index's coverage has never been measured** — one command
   against `mdk/Content`; it qualifies everything built on the index. Now also
   qualifies the slider: an hour it reads badly draws grey. §16.19 s6
