@@ -2342,6 +2342,24 @@ describe('a waypoint dragged in the viewport', () => {
       ]));
     });
 
+    it('closes on confirm and on cancel, and does not reopen itself', async () => {
+      // The Name field is a controlled-`inputValue` Autocomplete and the
+      // dialog is open on `addingWaypoint !== null`, so a reset event firing
+      // `onInputChange('')` as it unmounts would put an empty string back
+      // where the null was — and the dialog would stand straight back up.
+      await openWithWaynet();
+
+      await addWaypoint('FP_ADDED');
+      await waitFor(() =>
+        expect(screen.queryByTestId('world-waypoint-add-confirm')).not.toBeInTheDocument());
+
+      fireEvent.click(await screen.findByTestId('world-add-waypoint'));
+      fireEvent.click(screen.getByText('Cancel'));
+
+      await waitFor(() =>
+        expect(screen.queryByTestId('world-waypoint-add-confirm')).not.toBeInTheDocument());
+    });
+
     it('refuses a name the payload already carries before the round trip', async () => {
       await openWithWaynet();
       fireEvent.click(screen.getByTestId('stub-pick-terrain'));
@@ -2353,6 +2371,38 @@ describe('a waypoint dragged in the viewport', () => {
       });
 
       expect(screen.getByTestId('world-waypoint-add-confirm')).toBeDisabled();
+    });
+
+    it('says why Add is dead for a name the world already has', async () => {
+      // The autocomplete offers every waypoint a script names, and most of
+      // those are in the world already — so the disabled button is now
+      // reachable by *picking from the list*, not only by typing a duplicate.
+      // Disabled with no reason given is the wart that makes it look broken.
+      await openWithWaynet();
+      fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+      act(() => useWorldStore.getState().selectVob(null));
+      fireEvent.click(await screen.findByTestId('world-add-waypoint'));
+
+      fireEvent.change(screen.getByTestId('world-waypoint-add-name'), {
+        target: { value: 'WP_MIDDLE' },
+      });
+
+      expect(screen.getByTestId('world-waypoint-add-dialog'))
+        .toHaveTextContent(/already in this world/i);
+    });
+
+    it('says nothing of the sort for a name the world has not got', async () => {
+      await openWithWaynet();
+      fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+      act(() => useWorldStore.getState().selectVob(null));
+      fireEvent.click(await screen.findByTestId('world-add-waypoint'));
+
+      fireEvent.change(screen.getByTestId('world-waypoint-add-name'), {
+        target: { value: 'FP_ADDED' },
+      });
+
+      expect(screen.getByTestId('world-waypoint-add-dialog'))
+        .not.toHaveTextContent(/already in this world/i);
     });
 
     it('re-reads the overlay payload, which is the only thing that can grow it', async () => {

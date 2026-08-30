@@ -1311,6 +1311,15 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   );
 
   /**
+   * Whether the name in the add-waypoint dialog is one the open world already
+   * carries — the refusal the binding makes, made on this side too. Derived
+   * once so the disabled Add button and the field's own explanation read the
+   * same boolean and cannot drift apart.
+   */
+  const duplicateWaypointName = addingWaypoint !== null
+    && (waynet?.names.includes(addingWaypoint.trim()) ?? false);
+
+  /**
    * Remove a VOB and its whole subtree — **the one edit here that cannot be
    * undone** (level-editor.md §15).
    *
@@ -1994,6 +2003,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         onClose={() => setAddingWaypoint(null)}
         maxWidth="xs"
         fullWidth
+        data-testid="world-waypoint-add-dialog"
       >
         <DialogTitle>Add a waypoint</DialogTitle>
         <DialogContent>
@@ -2018,6 +2028,14 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                 {...params}
                 autoFocus
                 label="Name"
+                /* The list offers every waypoint a *script* names, and most of
+                   those the world already has — so this is the ordinary way to
+                   reach the disabled Add, not a corner. It reads the same
+                   boolean the button does, so the two cannot disagree. */
+                error={duplicateWaypointName}
+                helperText={duplicateWaypointName
+                  ? 'Already in this world — pick a name it has not got.'
+                  : ' '}
                 inputProps={{ ...params.inputProps, 'data-testid': 'world-waypoint-add-name' }}
               />
             )}
@@ -2032,7 +2050,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                so a name they can see is taken is worth refusing before a round
                trip rather than after one. */
             disabled={addingWaypoint === null || addingWaypoint.trim() === ''
-              || (waynet?.names.includes(addingWaypoint.trim()) ?? false)}
+              || duplicateWaypointName}
             onClick={() => {
               const name = addingWaypoint;
               setAddingWaypoint(null);
