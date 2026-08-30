@@ -155,6 +155,9 @@ landed; one is left and it is the one that was never root-caused.
   stood is unreachable there. It is loud now, so a repeat leaves a console
   warning naming the link. Wants a real world. §16.24
 
+- **`extractRoutineStatesByNpc` answers `{}`** — two `ProjectService` tests red
+  on master since bb78edc; the State lens reads it. Repro: those two test names.
+
 **Phase 1c — the overlay, at §16.19.** Not blocked.
 
 - **The routine index's coverage has never been measured** — one command

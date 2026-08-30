@@ -113,6 +113,19 @@ function props(onPick: (...args: Pick) => void) {
   };
 }
 
+/** An emulated middle-button drag: Alt held, left button down, then the click
+ *  the browser delivers when it ends. */
+async function altDragCanvas(container: HTMLElement): Promise<void> {
+  const canvas = container.querySelector('canvas')!;
+  await act(async () => {
+    // jsdom has no PointerEvent constructor; the shim reads only these fields.
+    canvas.dispatchEvent(new MouseEvent('pointerdown', { button: 0, altKey: true, bubbles: true }));
+    canvas.dispatchEvent(new MouseEvent('pointerup', { button: 0, altKey: true, bubbles: true }));
+    canvas.dispatchEvent(new MouseEvent('click', { altKey: true, bubbles: true }));
+    await Promise.resolve();
+  });
+}
+
 /** The pick is awaited inside the handler, so the assertion has to be too. */
 async function clickCanvas(
   container: HTMLElement, modifiers: MouseEventInit,
@@ -145,6 +158,27 @@ describe('WorldViewport — building a selection with the mouse', () => {
     await clickCanvas(container, modifiers);
 
     expect(picks).toEqual([[7, null, true]]);
+    unmount();
+  });
+
+  it('an Alt+drag navigates and selects nothing', async () => {
+    // Alt+left is the trackpad's middle button (`cameraNav.navFor`), and it is
+    // the one navigation gesture that ends in a `click` on the canvas — the
+    // real middle button fires `auxclick` instead. Left unhandled, every orbit
+    // on a trackpad would also throw away the selection it was orbiting.
+    const picks: Pick[] = [];
+    const { container, unmount } = render(
+      <WorldViewport {...props((...pick: Pick) => picks.push(pick))} />,
+    );
+
+    await altDragCanvas(container);
+
+    expect(picks).toEqual([]);
+
+    // And only that click: the drag consumes its own, so the next plain click
+    // selects as it always did.
+    await clickCanvas(container, {});
+    expect(picks).toEqual([[7, null, false]]);
     unmount();
   });
 

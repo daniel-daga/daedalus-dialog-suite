@@ -25,7 +25,7 @@ import { NO_PICK } from '../../world/pickIds';
 import { pickWaypoint, NO_WAYPOINT } from '../../world/pickWaypoint';
 import { chooseWaypointLabels } from '../../world/waypointLabels';
 import { WaypointLabelLayer } from '../../world/WaypointLabelLayer';
-import { attachBlenderNav, frameOn, frameVobs, pivotAt } from '../../world/cameraNav';
+import { attachBlenderNav, frameOn, frameVobs, navFor, pivotAt } from '../../world/cameraNav';
 import { snapDelta, snapTurn } from '../../world/snapping';
 import {
   runViewportBenchmark,
@@ -519,7 +519,8 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       if (at !== null) pivotAt(camera, controls.target, at);
     };
 
-    // Blender's mapping: the middle button navigates, the left one selects —
+    // Blender's mapping: the middle button navigates (Alt+left stands in for it
+    // on a trackpad, see below), the left one selects —
     // and a navigation press first moves the pivot onto what is under the
     // cursor, so the dolly step, the pan speed and the orbit radius are all
     // scaled by the distance to *that* rather than to the middle of the island.
@@ -610,6 +611,47 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     // a flag that is true only during the drag would already be false by then.
     // This one is consumed by the click it belongs to.
     let endedDrag = false;
+
+    // ── the emulated middle button ──────────────────────────────────────────
+    //
+    // Alt+left navigates, because a trackpad has no middle button
+    // (`cameraNav`). It is the one navigation gesture that shares the left
+    // button, so it is the only one that collides with what the left button
+    // otherwise does, and both collisions are settled here:
+    //
+    //   - the browser ends it with a `click` on the canvas — a real middle
+    //     button fires `auxclick`, which nothing here listens for — and that
+    //     click would pick, so every orbit on a trackpad would throw away the
+    //     selection it was orbiting. `navigated` is what the click reads.
+    //     Unlike `endedDrag` it is *cleared by the next left press* rather than
+    //     only by the click it belongs to: the nav press is `preventDefault`ed
+    //     (Chromium's autoscroll), and a prevented pointerdown is allowed to
+    //     suppress the compatibility events that follow it — so a flag that
+    //     only a click could clear could be left standing and would then eat a
+    //     real selection.
+    //   - a press that lands on a gizmo axis would drag the VOB *and* the
+    //     camera. The gizmo is switched off for the length of the drag, and
+    //     given back the state it had rather than a guessed one, since what
+    //     `enabled` means here is "something is selected" (`attach`/`detach`).
+    let navigated = false;
+    let gizmoBeforeNav: boolean | null = null;
+    const onNavPointerDown = (event: PointerEvent) => {
+      if (event.button !== 0) return;
+      navigated = navFor(event) !== 'none';
+      if (!navigated) return;
+      gizmoBeforeNav = transform.enabled;
+      transform.enabled = false;
+    };
+    const onNavPointerUp = () => {
+      if (gizmoBeforeNav === null) return;
+      transform.enabled = gizmoBeforeNav;
+      gizmoBeforeNav = null;
+    };
+    // Capture on `host`, ahead of both OrbitControls and the gizmo, for the
+    // same ordering reason `attachBlenderNav` gives.
+    host.addEventListener('pointerdown', onNavPointerDown, { capture: true });
+    host.addEventListener('pointerup', onNavPointerUp, { capture: true });
+    host.addEventListener('pointercancel', onNavPointerUp, { capture: true });
 
     const detach = () => {
       transform.detach();
@@ -858,6 +900,8 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       // Picking here would select whatever is behind the gizmo — usually
       // nothing, so a finished drag would deselect the VOB it just moved.
       if (endedDrag) { endedDrag = false; return; }
+      // The same, for a drag of the camera on the emulated middle button.
+      if (navigated) { navigated = false; return; }
       const rect = renderer.domElement.getBoundingClientRect();
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
@@ -1214,6 +1258,9 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       renderer.domElement.removeEventListener('click', handleClick);
       window.removeEventListener('keydown', onKeyDown);
       detachNav();
+      host.removeEventListener('pointerdown', onNavPointerDown, { capture: true });
+      host.removeEventListener('pointerup', onNavPointerUp, { capture: true });
+      host.removeEventListener('pointercancel', onNavPointerUp, { capture: true });
       controls.dispose();
       transform.detach();
       scene.remove(transform.getHelper());

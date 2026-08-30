@@ -1143,6 +1143,22 @@ than fixtures:
   a convenience either: the orbit pivot starts at the centre of a 600 m island,
   so without a way to move it every orbit up close swings the camera through
   half the world.
+- **Alt+left is the middle button, for a trackpad** (2026-08-30). A trackpad
+  has no middle button, so the whole of the bullet above was out of reach of
+  one — two-finger scroll reached the wheel zoom and nothing else reached
+  anything. Alt+drag orbits, Shift+Alt+drag pans, Ctrl/Cmd+Alt+drag zooms:
+  Blender's own *Emulate 3 Button Mouse*, and Alt is what is free, since Shift,
+  Ctrl and Cmd on the left button already mean "add to the selection". The
+  mouse mapping is untouched. Two things follow from the button being shared
+  and both live in `WorldViewport`: the left button is *lent* to OrbitControls
+  for the length of the drag and taken back on pointerup, or every later click
+  would tumble the world; and the drag ends in a `click` on the canvas where a
+  real middle button ends in `auxclick`, so that click is swallowed rather than
+  read as a pick — cleared by the next left press rather than only by the click
+  it belongs to, because the nav press is `preventDefault`ed and a prevented
+  pointerdown may suppress the click that would have cleared it. The gizmo is
+  switched off for the drag too, or an Alt+drag begun on an axis would move the
+  VOB as well as the camera.
 - **Adding to a selection is Shift, Ctrl or Cmd, in both panels**
   (2026-08-28). Ctrl/Cmd was there from the start and Shift is the gesture a
   level editor is actually reached for with; it is free precisely because

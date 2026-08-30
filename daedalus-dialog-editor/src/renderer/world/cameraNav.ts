@@ -12,6 +12,12 @@ import { zenToThree, ZEN_TO_THREE_SCALE } from 'zen-world';
 // when a modifier is held, so Shift+middle needs no code here; what it does not
 // have is Blender's Ctrl+middle zoom, which it reads as a pan too. So the shim
 // below sets the button mapping once and swaps in DOLLY for that one case.
+//
+// A trackpad has no middle button, which left the whole of the above out of
+// reach of one — only the wheel zoom worked. So Alt+left stands in for it, the
+// same way Blender's own "Emulate 3 Button Mouse" does, and for the same
+// reason. Alt is what is free: Shift, Ctrl and Cmd on the left button all mean
+// "add to the selection" already (level-editor.md §7).
 
 export type Nav = 'orbit' | 'pan' | 'dolly' | 'none';
 
@@ -33,12 +39,19 @@ const MIN_PIVOT_DISTANCE = 1;
 
 /** Which navigation a press asks for, or `none` if the camera must not move. */
 export function navFor(event: {
-  button: number; shiftKey: boolean; ctrlKey: boolean; metaKey: boolean;
+  button: number; shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; altKey: boolean;
 }): Nav {
-  if (event.button !== 1) return 'none';
+  if (event.button !== 1 && !emulatesMiddle(event)) return 'none';
   if (event.ctrlKey || event.metaKey) return 'dolly';
   if (event.shiftKey) return 'pan';
   return 'orbit';
+}
+
+/** The left button standing in for the middle one: Alt held, and nothing else
+ *  about the press changed — the modifiers on top of it mean what they mean on
+ *  a real middle button. */
+function emulatesMiddle(event: { button: number; altKey: boolean }): boolean {
+  return event.button === 0 && event.altKey;
 }
 
 /**
@@ -75,11 +88,30 @@ export function attachBlenderNav(
     // 'pan' is deliberately absent: it is the modifier case OrbitControls
     // already handles under ROTATE, and naming PAN here would break it, since
     // the PAN branch reads a held modifier as a request to rotate.
-    controls.mouseButtons.MIDDLE = nav === 'dolly' ? THREE.MOUSE.DOLLY : THREE.MOUSE.ROTATE;
+    const mode = nav === 'dolly' ? THREE.MOUSE.DOLLY : THREE.MOUSE.ROTATE;
+
+    // The left button is `null` above so that a click can mean "select this
+    // VOB". An emulated middle drag borrows it for the length of the drag and
+    // `releaseLeft` gives it back — a borrow left standing would leave every
+    // later click tumbling the world, which is the failure the whole mapping
+    // exists to prevent. OrbitControls reads `mouseButtons` in its own
+    // pointerdown and never again, so the drag already under way keeps going.
+    if (emulatesMiddle(event)) controls.mouseButtons.LEFT = mode;
+    else controls.mouseButtons.MIDDLE = mode;
   };
 
+  const releaseLeft = () => { controls.mouseButtons.LEFT = null; };
+
   host.addEventListener('pointerdown', onPointerDown, { capture: true });
-  return () => host.removeEventListener('pointerdown', onPointerDown, { capture: true });
+  // Capture, and on `host`, for the ordering reason above — and unconditional
+  // because `null` is what the left button is when no drag is borrowing it.
+  host.addEventListener('pointerup', releaseLeft, { capture: true });
+  host.addEventListener('pointercancel', releaseLeft, { capture: true });
+  return () => {
+    host.removeEventListener('pointerdown', onPointerDown, { capture: true });
+    host.removeEventListener('pointerup', releaseLeft, { capture: true });
+    host.removeEventListener('pointercancel', releaseLeft, { capture: true });
+  };
 }
 
 // Scratch, so starting a drag allocates nothing.

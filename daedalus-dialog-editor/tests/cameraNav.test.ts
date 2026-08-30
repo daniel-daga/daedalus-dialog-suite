@@ -19,7 +19,7 @@ import {
 } from '../src/renderer/world/cameraNav';
 
 const press = (button: number, modifiers: Partial<MouseEvent> = {}) => ({
-  button, shiftKey: false, ctrlKey: false, metaKey: false, ...modifiers,
+  button, shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, ...modifiers,
 });
 
 /** Enough of an `OrbitControls` for the shim, which only writes two fields. */
@@ -27,6 +27,16 @@ const fakeControls = () => ({
   mouseButtons: { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN },
   rotateSpeed: 1.0,
 }) as unknown as OrbitControls;
+
+const leftDown = (host: HTMLElement, modifiers: Partial<PointerEventInit> = {}) => {
+  const event = new MouseEvent('pointerdown', { button: 0, bubbles: true, ...modifiers });
+  host.dispatchEvent(event);
+  return event;
+};
+
+const up = (host: HTMLElement) => host.dispatchEvent(
+  new MouseEvent('pointerup', { button: 0, bubbles: true }),
+);
 
 const middleDown = (host: HTMLElement, modifiers: Partial<PointerEventInit> = {}) => {
   // jsdom has no PointerEvent constructor; the shim reads only these fields.
@@ -114,6 +124,51 @@ describe('cameraNav', () => {
     expect(ORBIT_ROTATE_SPEED).toBeGreaterThan(0);
   });
 
+  test('Alt+left stands in for the middle button, which a trackpad does not have', () => {
+    // Blender's own "Emulate 3 Button Mouse", and the reason it is Alt: every
+    // other modifier on the left button is already spoken for by selection
+    // (Shift, Ctrl and Cmd all add to it — level-editor.md §7).
+    expect(navFor(press(0, { altKey: true }))).toBe('orbit');
+    expect(navFor(press(0, { altKey: true, shiftKey: true }))).toBe('pan');
+    expect(navFor(press(0, { altKey: true, ctrlKey: true }))).toBe('dolly');
+    expect(navFor(press(0, { altKey: true, metaKey: true }))).toBe('dolly');
+    // The emulation is the left button's alone: Alt on any other one changes
+    // nothing, so a real three-button mouse behaves exactly as it did.
+    expect(navFor(press(2, { altKey: true }))).toBe('none');
+    expect(navFor(press(1, { altKey: true }))).toBe('orbit');
+  });
+
+  test('the left button is lent to the drag and taken back when it ends', () => {
+    // The left button is `null` in the mapping precisely so that a click can
+    // mean "select this VOB". An emulated middle drag has to borrow it, and a
+    // borrow that is not given back would leave every later click tumbling the
+    // world — the exact failure the Blender mapping exists to prevent.
+    const controls = fakeControls();
+    const host = document.createElement('div');
+    attachBlenderNav(controls, host);
+
+    leftDown(host, { altKey: true });
+    expect(controls.mouseButtons.LEFT).toBe(THREE.MOUSE.ROTATE);
+    up(host);
+    expect(controls.mouseButtons.LEFT).toBeNull();
+
+    leftDown(host, { altKey: true, ctrlKey: true });
+    expect(controls.mouseButtons.LEFT).toBe(THREE.MOUSE.DOLLY);
+    up(host);
+    expect(controls.mouseButtons.LEFT).toBeNull();
+
+    // Shift is deliberately not DOLLY or PAN: OrbitControls' ROTATE branch
+    // already reads a held modifier as a request to pan, exactly as it does
+    // for the real middle button.
+    leftDown(host, { altKey: true, shiftKey: true });
+    expect(controls.mouseButtons.LEFT).toBe(THREE.MOUSE.ROTATE);
+    up(host);
+
+    // And a plain left press never borrows it at all.
+    leftDown(host);
+    expect(controls.mouseButtons.LEFT).toBeNull();
+  });
+
   test('a press that navigates asks for a pivot; one that selects does not', () => {
     // The pivot has to be set *before* OrbitControls sees the press, which is
     // why it hangs off this shim's capture listener rather than off a second
@@ -125,11 +180,14 @@ describe('cameraNav', () => {
     middleDown(host);
     middleDown(host, { shiftKey: true });
     middleDown(host, { ctrlKey: true });
+    leftDown(host, { altKey: true });
     host.dispatchEvent(new MouseEvent('pointerdown', { button: 0, bubbles: true }));
 
     // Orbit, pan and dolly all scale by the camera-to-target distance, so all
     // three want the pivot moved; the left button never moves the camera.
-    expect(asked).toEqual(['1', '1', '1']);
+    // The emulated middle button wants the pivot for the same reason the real
+    // one does — it is the same three navigations.
+    expect(asked).toEqual(['1', '1', '1', '0']);
   });
 });
 
