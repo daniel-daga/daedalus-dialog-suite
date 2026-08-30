@@ -105,6 +105,26 @@ the test that holds it; everything unmarked is still open.
    **Forward:** whether `Wld_IsFPAvailable`/`AI_GotoFP` (33 and 35 retail sites)
    should reach the index at all is a widening of `extractWaypointSites`, not of
    this rule, and nobody owns it.
+   **Sized 2026-08-30** (unattended-queue row 44), by
+   `daedalus-dialog-editor/scripts/check-free-point-sites.js` over `mdk/Content`
+   and the four extracted worlds. The 33 and 35 above are grep lines; **61 are
+   call sites**, and the difference is what a grep cannot tell apart — two
+   `Externals.d` prototype declarations (the same residual row 40 found for the
+   spawn index, and the only two sites whose argument is not a literal), three
+   comment mentions and two calls inside a block comment in `ZS_Concert.d`.
+   Every one of the 61 passes a string literal, so the widening would resolve
+   all of them. Against NewWorld (2,254 named `zCVobSpot`) **59 of 61 resolve**
+   — and only **2 exactly**: 12 are prefixes and **45 need the infix rule**, so
+   the substring form `worldHasPoint` took, which changes no site the index
+   collects today, is what carries nearly three quarters of these. AddonWorld
+   (958 spots) is 59 too, OldWorld (1,149) 44, DragonIsland (171) 47 — a world
+   that has no spot of a given kind is the normal case, and a widening would
+   have to say so rather than call the script wrong.
+   **The 2 that resolve in no world are both `WASH`**, from `ZS_Wash`: no spot
+   in any of the four worlds contains it. So the widening's floor is a 2-site
+   false positive on retail scripts in every world, before a project's own
+   content is counted. Held by `freePointSites.test.ts`; the script needs the
+   corpus and runs in no CI.
    Held by six tests: *"accepts a free point by its own full name"*, *"accepts a
    free-point prefix"*, *"accepts a free-point fragment from the middle"* and
    *"still flags a free-point name no free point contains"*
