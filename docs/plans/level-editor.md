@@ -2396,8 +2396,28 @@ panel's question (slice 9 decision 4's reasoning, again), not a jump button's.
 `npcJumpReason` adds "this dialog names no NPC" above the disabled reasons
 `worldHasPoint` already gives — no spawn point known for the NPC, no world
 open, not in *this* world — so the two buttons cannot answer differently for
-the same fact. This is read-only: nothing here writes a script, which is the
-whole reason it shipped a session ahead of slice 14's closing paragraph
+the same fact.
+
+**Naming the world to open, once Daniel asked why "no world is open" didn't
+already say which one.** The engine's own rule answers it: it spawns every
+NPC from a function named after the world *file* — `STARTUP_NEWWORLD`,
+`STARTUP_DRAGONISLAND`, `INIT_…` likewise (`environment-hazards.md`, *"A
+candidate is only a game under the name NEWWORLD.ZEN"*) — and `spawnSiteIndex`
+already carries that function's name on every site. `expectedWorldNameFor`
+reads it off the `STARTUP_`/`INIT_` prefix; when the site's own function does
+not follow the convention (a script's own wrapper around `Wld_InsertNpc`, say)
+it answers `null` rather than guess, and the message falls back to the plain
+"No world is open" — a guess dressed as a fact would be worse than the
+generic reason it would replace. Both disabled reasons that turn on `world`
+now name it: *"Open NEWWORLD.ZEN to jump here"*, and *"WP_MARKET is not in the
+open world — open NEWWORLD.ZEN"*.
+
+**Still read-only, and still short of the world-directory slice.** This names
+a `.ZEN`; it does not resolve that name to a path or open it — that needs the
+world-directory setting slice 14's closing paragraph asks for, which is what
+turns "open NEWWORLD.ZEN" from a message into a click. Nothing here writes a
+script either, which is the whole reason this shipped a session ahead of slice
+14's closing paragraph
 rather than behind it.
 
 **Phase ordering note.** §11 schedules 1b-2 before 1c, and 1b-2 is not finished

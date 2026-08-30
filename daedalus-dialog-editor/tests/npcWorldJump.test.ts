@@ -6,7 +6,12 @@
  * point of its own.
  */
 
-import { resolveNpcSpawnPoint, npcJumpReason } from '../src/renderer/components/npcWorldJump';
+import {
+  resolveNpcSpawnPoint,
+  resolveNpcSpawnSite,
+  expectedWorldNameFor,
+  npcJumpReason,
+} from '../src/renderer/components/npcWorldJump';
 import type { SpawnSite } from '../src/shared/types';
 import type { WorldWaynetView } from '../src/renderer/problems/domain/types';
 
@@ -70,5 +75,63 @@ describe('npcJumpReason', () => {
   it('is enabled for a free point too, same as the action-level jump', () => {
     expect(npcJumpReason('BAU_900_FARIM', 'FP_ROAM_CITY_01', world([], ['FP_ROAM_CITY_01'])))
       .toBeNull();
+  });
+
+  describe('naming the expected world', () => {
+    // The engine spawns every NPC from a function named after the world file
+    // (environment-hazards.md, "A candidate is only a game under the name
+    // NEWWORLD.ZEN"), so a spawn site's own function already says which .ZEN
+    // to open — a fact this button can hand the person, even though it cannot
+    // act on it without a world-directory setting (§16.19 s14's closing note).
+
+    it('names the world to open when none is', () => {
+      expect(npcJumpReason('BAU_900_FARIM', 'WP_MARKET', null, 'NEWWORLD'))
+        .toBe('Open NEWWORLD.ZEN to jump here');
+    });
+
+    it('names the world to open when the point is in the wrong one', () => {
+      expect(npcJumpReason('BAU_900_FARIM', 'WP_MARKET', world(['WP_OTHER']), 'NEWWORLD'))
+        .toBe('WP_MARKET is not in the open world — open NEWWORLD.ZEN');
+    });
+
+    it('falls back to the plain reason when no world name is known', () => {
+      expect(npcJumpReason('BAU_900_FARIM', 'WP_MARKET', null, null)).toBe('No world is open');
+    });
+
+    it('never fires when the jump is already enabled', () => {
+      expect(npcJumpReason('BAU_900_FARIM', 'WP_MARKET', world(['WP_MARKET']), 'NEWWORLD'))
+        .toBeNull();
+    });
+  });
+});
+
+describe('resolveNpcSpawnSite', () => {
+  it('carries the site a spawn point alone drops, for naming the world it is in', () => {
+    const sites = [site('BAU_900_FARIM', 'WP_MARKET')];
+    expect(resolveNpcSpawnSite(sites, 'BAU_900_FARIM')).toEqual(sites[0]);
+  });
+
+  it('returns null for an NPC the index has never seen spawned', () => {
+    expect(resolveNpcSpawnSite([], 'BAU_900_FARIM')).toBeNull();
+  });
+});
+
+describe('expectedWorldNameFor', () => {
+  it('reads the world file name off a STARTUP_ function', () => {
+    expect(expectedWorldNameFor('STARTUP_NEWWORLD')).toBe('NEWWORLD');
+  });
+
+  it('reads it off an INIT_ function too — the engine convention names both', () => {
+    expect(expectedWorldNameFor('INIT_DRAGONISLAND')).toBe('DRAGONISLAND');
+  });
+
+  it('matches case-insensitively, and answers uppercased', () => {
+    expect(expectedWorldNameFor('startup_newworld')).toBe('NEWWORLD');
+  });
+
+  it('answers null for a function that is not named by the convention', () => {
+    // A script may wrap Wld_InsertNpc in a helper of its own; guessing a world
+    // name from an arbitrary function would be a claim this index cannot back.
+    expect(expectedWorldNameFor('B_InsertFarmerNPCs')).toBeNull();
   });
 });

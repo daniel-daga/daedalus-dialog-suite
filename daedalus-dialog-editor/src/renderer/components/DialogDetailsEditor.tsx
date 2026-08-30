@@ -25,7 +25,7 @@ import { useWorldStore } from '../store/worldStore';
 import { useUISelectionStore } from '../store/uiSelectionStore';
 import * as historyActions from '../store/historyActions';
 import { DialogDetailsEditorProps } from './dialogTypes';
-import { resolveNpcSpawnPoint, npcJumpReason } from './npcWorldJump';
+import { resolveNpcSpawnSite, expectedWorldNameFor, npcJumpReason } from './npcWorldJump';
 import ValidationErrorDialog from './ValidationErrorDialog';
 import ReviewChangesDialog from './ReviewChangesDialog';
 import { flushAllPendingEdits } from '../utils/pendingEditFlushRegistry';
@@ -71,12 +71,18 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   // works from a dialog that names no spawn point of its own.
   const npcName = (typeof dialog?.properties?.npc === 'string' ? dialog.properties.npc : null) || null;
   const spawnSiteIndex = useProjectStore((s) => s.spawnSiteIndex);
-  const npcSpawnPoint = useMemo(
-    () => (npcName ? resolveNpcSpawnPoint(spawnSiteIndex, npcName) : null),
+  const npcSpawnSite = useMemo(
+    () => (npcName ? resolveNpcSpawnSite(spawnSiteIndex, npcName) : null),
     [spawnSiteIndex, npcName]
   );
+  const npcSpawnPoint = npcSpawnSite?.spawnPoint ?? null;
+  // The engine spawns every NPC from a function named after the world file
+  // (environment-hazards.md), so the site's own function can name the .ZEN to
+  // open even though this button cannot open it — no world-directory setting
+  // exists yet to resolve that name to a path (§16.19 s14's closing note).
+  const expectedWorldName = npcSpawnSite ? expectedWorldNameFor(npcSpawnSite.functionName) : null;
   const world = useWorldStore((s) => (s.status === 'ready' ? (s.waynetNames ?? null) : null));
-  const worldJumpDisabledReason = npcJumpReason(npcName, npcSpawnPoint, world);
+  const worldJumpDisabledReason = npcJumpReason(npcName, npcSpawnPoint, world, expectedWorldName);
   const handleWorldJump = useCallback(() => {
     if (!npcSpawnPoint) return;
     useWorldStore.getState().requestFocus({ kind: 'waypoint', name: npcSpawnPoint });

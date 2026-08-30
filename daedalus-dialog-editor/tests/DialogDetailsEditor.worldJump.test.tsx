@@ -32,14 +32,16 @@ const semanticModel = (npc: string | undefined) => ({
   errors: [],
 });
 
-const setSpawnSites = (sites: Array<{ instance: string; spawnPoint: string }>) => {
+const setSpawnSites = (
+  sites: Array<{ instance: string; spawnPoint: string; functionName?: string }>
+) => {
   act(() => {
     useProjectStore.setState({
       spawnSiteIndex: sites.map((s) => ({
-        ...s,
         filePath: '/test/Startup.d',
         functionName: 'STARTUP_NEWWORLD',
         line: 1,
+        ...s,
       })),
     } as any);
   });
@@ -98,21 +100,31 @@ describe('the NPC/Dialog view jumps to the world', () => {
     expect(await hoverReason()).toBe('No spawn point is known for BAU_900_FARIM');
   });
 
-  it('is disabled with its reason when no world is open', async () => {
+  it('names the world to open, read off the spawn site\'s own STARTUP_ function', async () => {
     setSpawnSites([{ instance: 'BAU_900_FARIM', spawnPoint: 'WP_MARKET' }]);
+    render(<DialogDetailsEditor dialogName={DIALOG_NAME} filePath={null} semanticModel={semanticModel('BAU_900_FARIM') as any} />);
+
+    expect(jumpButton()).toBeDisabled();
+    expect(await hoverReason()).toBe('Open NEWWORLD.ZEN to jump here');
+  });
+
+  it('falls back to the plain "no world" reason when the function does not follow the convention', async () => {
+    // A script may wrap Wld_InsertNpc in a helper of its own; guessing a world
+    // name from an arbitrary function would be a claim the index cannot back.
+    setSpawnSites([{ instance: 'BAU_900_FARIM', spawnPoint: 'WP_MARKET', functionName: 'B_InsertFarmerNPCs' }]);
     render(<DialogDetailsEditor dialogName={DIALOG_NAME} filePath={null} semanticModel={semanticModel('BAU_900_FARIM') as any} />);
 
     expect(jumpButton()).toBeDisabled();
     expect(await hoverReason()).toBe('No world is open');
   });
 
-  it('distinguishes "not in this world" from "no world"', async () => {
+  it('distinguishes "not in this world" from "no world", and still names the world to open', async () => {
     setSpawnSites([{ instance: 'BAU_900_FARIM', spawnPoint: 'WP_MARKET' }]);
     openWorldWith(['WP_OTHER']);
     render(<DialogDetailsEditor dialogName={DIALOG_NAME} filePath={null} semanticModel={semanticModel('BAU_900_FARIM') as any} />);
 
     expect(jumpButton()).toBeDisabled();
-    expect(await hoverReason()).toBe('WP_MARKET is not in the open world');
+    expect(await hoverReason()).toBe('WP_MARKET is not in the open world — open NEWWORLD.ZEN');
   });
 
   it('does not request a focus when it is disabled', () => {
