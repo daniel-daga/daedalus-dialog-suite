@@ -139,9 +139,12 @@ Main process:
       raw `filePath`, and `main.ts:120-123` passes the watcher's path straight into the cache
       clears. `FileWatcherService.ts:24-27` already has the canonicalizer (normalize, then `/`,
       then lowercase on win32) but applies it only to self-write suppression. Apply it to the keys.
-- [ ] 4.12 `closeApproved` (`main.ts:33`) is module-global, set at `:138` and `:473`, and the
-      `mainWindow.on('closed')` handler (`:143-146`) never resets it — so after a macOS
-      re-activation the guard at `:132` short-circuits permanently. Make it per-window.
+- [x] 4.12 **Landed 2026-08-30.** `closeApproved` was module-global and nothing reset it, so
+      after a macOS re-activation the guard short-circuited permanently. Approval is now a
+      `WeakSet<BrowserWindow>`, and the `close` handler closes over the window it was
+      registered for rather than reading `mainWindow` — which also means the force-destroy
+      timer can no longer destroy a *later* window. `createWindow` is exported for the test,
+      as `setupIpcHandlers` already was.
 - [x] 4.13 **Landed 2026-08-30.** The rate-limit timestamp is stamped only once the check
       reaches a conclusion: after `update-meta.json` parses, or on the missing-assets return
       (the release itself was fetched, so that is an answer and not a blip). A failed fetch of

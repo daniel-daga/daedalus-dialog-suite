@@ -142,8 +142,8 @@ with nobody watching, ordered: the 2026-07 defects, the production-readiness
 and simulator backlogs, and the level editor's measurements. Triaged against
 the tree 2026-08-30, each verified still open. **Take the top unclaimed row and
 cross it off in the same commit; a run may not add rows.**
-`unattended-queue.md` — rows 1-7 landed 2026-08-30; row 8 is `closeApproved`
-being a module global.
+`unattended-queue.md` — rows 1-8 landed 2026-08-30; row 9 is `FileService`
+keying its caches on the raw path.
 
 **World surface, from Daniel's own sessions 2026-08-30 — all at §16.24.** None
 needs the engine; the order is a guess at his, so move it.
@@ -232,6 +232,6 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 - **Unattended queue row 6** (board-loop) — the updater stamps its rate-limit
   timestamp only once a check reaches a conclusion, so a network blip no longer
   costs the hour. 2026-07 **4.13**
-- **Unattended queue row 5** (board-loop) — the three call-argument extractors share
-  `isArgumentNode`, so a comment inside an argument list no longer displaces the
-  arguments after it. Corpus numbers unchanged. 2026-07 **4.16**
+- **Unattended queue row 8** (board-loop) — close approval is a `WeakSet` of windows,
+  so a window created after an approved close asks the renderer about unsaved work
+  again instead of closing unguarded. 2026-07 **4.12**

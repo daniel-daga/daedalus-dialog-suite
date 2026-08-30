@@ -30,7 +30,9 @@ if (process.env.DDE_E2E_USER_DATA) {
 let mainWindow: BrowserWindow | null = null;
 // E1 window-close guard: main intercepts `close`, defers to the renderer, and
 // only lets the window go once the renderer approves (or fails to ACK in time).
-let closeApproved = false;
+// Approval is per window — a window created after an approved close (macOS
+// `activate`) has to ask the renderer again.
+const closeApprovedWindows = new WeakSet<BrowserWindow>();
 let closeGuardAckTimer: ReturnType<typeof setTimeout> | null = null;
 // Every service is constructed by the composition root, which must be taken
 // *after* the userData redirect above: SettingsService and LogService resolve
@@ -88,7 +90,9 @@ app.on('child-process-gone', (_event, details) => {
   );
 });
 
-function createWindow() {
+// Exported for the main-process tests, which drive the window lifecycle
+// against a stubbed `electron` rather than a running app.
+export function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -128,15 +132,16 @@ function createWindow() {
   // window if the renderer never acknowledges — this covers a hung/crashed
   // renderer (fix-03 R1 world), never a user still deciding (the ACK, sent
   // immediately on receipt, clears it).
-  mainWindow.on('close', (e) => {
-    if (closeApproved) {
+  const win = mainWindow;
+  win.on('close', (e) => {
+    if (closeApprovedWindows.has(win)) {
       return;
     }
     e.preventDefault();
-    mainWindow?.webContents.send('app:closeRequested');
+    win.webContents.send('app:closeRequested');
     closeGuardAckTimer = setTimeout(() => {
-      closeApproved = true;
-      mainWindow?.destroy();
+      closeApprovedWindows.add(win);
+      win.destroy();
     }, 3000);
   });
 
@@ -470,8 +475,10 @@ export function setupIpcHandlers() {
       clearTimeout(closeGuardAckTimer);
       closeGuardAckTimer = null;
     }
-    closeApproved = true;
-    mainWindow?.close();
+    if (mainWindow) {
+      closeApprovedWindows.add(mainWindow);
+      mainWindow.close();
+    }
   });
 
   ipcMain.on('app:cancelClose', () => {
