@@ -151,8 +151,9 @@ export class UpdaterService {
       return { updateAvailable: false, currentVersion };
     }
 
-    await this.settingsService.setUpdaterLastCheckTimestamp(now);
-
+    // The timestamp is stamped only once the check has actually reached a
+    // conclusion (4.13): stamping it here would let one network blip burn the
+    // whole hour, so every failed fetch leaves the next startup free to retry.
     let releaseJson: any;
     try {
       const body = await httpsGet(GITHUB_API_URL);
@@ -169,6 +170,8 @@ export class UpdaterService {
 
     if (!metaAsset || !installerAsset) {
       console.warn('[UpdaterService] update-meta.json or installer not found in release assets');
+      // The release itself was fetched, so this is an answer, not a blip.
+      await this.settingsService.setUpdaterLastCheckTimestamp(now);
       return { updateAvailable: false, currentVersion };
     }
 
@@ -180,6 +183,8 @@ export class UpdaterService {
       console.error('[UpdaterService] Failed to fetch update-meta.json:', error);
       return { updateAvailable: false, currentVersion };
     }
+
+    await this.settingsService.setUpdaterLastCheckTimestamp(now);
 
     // A version the user dismissed is not offered again; a version newer than
     // the dismissed one is, because the exact-match comparison stops applying.

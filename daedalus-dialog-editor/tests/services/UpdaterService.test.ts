@@ -242,6 +242,45 @@ describe('UpdaterService.checkForUpdate', () => {
     expect(result.latestVersion).toBe('0.1.0-build.21');
   });
 
+  it('does not consume the rate limit when the release fetch fails', async () => {
+    (app.getVersion as jest.Mock).mockReturnValue('0.1.0-build.10');
+    mockGetUpdaterSettings.mockResolvedValue(makeDefaultUpdaterSettings());
+
+    (https.get as jest.Mock).mockImplementation((_url: string, _opts: any, _callback: any) => ({
+      on: jest.fn((event: string, handler: any) => { if (event === 'error') handler(new Error('Network failure')); }),
+    }));
+
+    const result = await service.checkForUpdate();
+
+    expect(result.updateAvailable).toBe(false);
+    expect(mockSetUpdaterLastCheckTimestamp).not.toHaveBeenCalled();
+  });
+
+  it('does not consume the rate limit when the update-meta fetch fails', async () => {
+    (app.getVersion as jest.Mock).mockReturnValue('0.1.0-build.10');
+    mockGetUpdaterSettings.mockResolvedValue(makeDefaultUpdaterSettings());
+
+    const { release } = buildMockRelease('0.1.0-build.20', 20);
+    setupHttpsMock([{ body: release }, { body: '', status: 500 }]);
+
+    const result = await service.checkForUpdate();
+
+    expect(result.updateAvailable).toBe(false);
+    expect(mockSetUpdaterLastCheckTimestamp).not.toHaveBeenCalled();
+  });
+
+  it('consumes the rate limit when the check completes', async () => {
+    (app.getVersion as jest.Mock).mockReturnValue('0.1.0-build.10');
+    mockGetUpdaterSettings.mockResolvedValue(makeDefaultUpdaterSettings());
+
+    const { meta, release } = buildMockRelease('0.1.0-build.20', 20);
+    setupHttpsMock([{ body: release }, { body: meta }]);
+
+    await service.checkForUpdate();
+
+    expect(mockSetUpdaterLastCheckTimestamp).toHaveBeenCalledTimes(1);
+  });
+
   it('handles missing assets in release gracefully', async () => {
     (app.getVersion as jest.Mock).mockReturnValue('0.1.0-build.10');
     mockGetUpdaterSettings.mockResolvedValue(makeDefaultUpdaterSettings());

@@ -142,9 +142,12 @@ Main process:
 - [ ] 4.12 `closeApproved` (`main.ts:33`) is module-global, set at `:138` and `:473`, and the
       `mainWindow.on('closed')` handler (`:143-146`) never resets it — so after a macOS
       re-activation the guard at `:132` short-circuits permanently. Make it per-window.
-- [ ] 4.13 `UpdaterService.ts:154` writes the rate-limit timestamp *before* the `httpsGet` at
-      `:158`, so a network failure still burns the hour. `checkForUpdate()` (`:129`) takes no
-      arguments, so a manual check cannot be exempted either (`main.ts:483-485`, `preload.ts:87`).
+- [x] 4.13 **Landed 2026-08-30.** The rate-limit timestamp is stamped only once the check
+      reaches a conclusion: after `update-meta.json` parses, or on the missing-assets return
+      (the release itself was fetched, so that is an answer and not a blip). A failed fetch of
+      either body leaves the next startup free to retry. `checkForUpdate()` still takes no
+      arguments, so a manual check is still not exempted from the hour — unchanged, and now
+      only matters when the last check succeeded.
 - [ ] 4.14 The worker-count formula contradicts its own architecture doc:
       `docs/architecture/worker-reliability.md:36` states both pools cap at
       `Math.max(1, Math.min(os.cpus().length - 1, 8))`; `MetadataWorkerPool.ts:101` matches but
