@@ -179,6 +179,22 @@ faces. `sectorIndices` stays signed because -1 means "no sector" and an
 unsigned column would report a valid-looking 65535. No vertices and no plane:
 `polygonIndices` is the join key into `_drillMesh`, which already emits both.
 
+### `worldProperties(handle)`
+
+The world-level readout: the `oCWorld:zCWorld` archive wrapper the handle
+re-saves through (`rootObjectName`, `rootClassName`, `rootVersion`, `format`,
+`gameVersion`), plus every member `zenkit::World` models beyond vobs, mesh, BSP
+and waynet — `skyController`, `player` and the four NPC-spawn fields.
+
+**Those are all save-game members, and a world `.zen` carries none of them.**
+Measured over the four retail worlds (`node scripts/check-world-properties.js`,
+2026-08-30): `skyController` and `player` are `null` and the spawn state is
+zero in every one, so "expose sky and time of day" is not a matter of plumbing
+a field that is already parsed (`../docs/plans/level-editor.md` §14.3 3.5).
+The one world-level thing a `.zen` *does* carry is the start position, and it
+is not an `oCWorld` field either — it is a `zCVobStartpoint` in the vob tree
+and/or a waypoint named `START`. The same script reports both.
+
 ### The asset layer — `openVfs`, `vfsResolve`, `extractVisual`, `decodeTexture`
 
 ```js

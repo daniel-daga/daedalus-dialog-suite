@@ -112,9 +112,44 @@ export interface TexturePayload {
   rgba: ArrayBuffer;
 }
 
+/** Time of day and weather. Written by a save-game only; a world `.zen`
+ *  carries no sky controller at all (level-editor.md §14.3 3.5). */
+export interface SkyController {
+  masterTime: number;
+  rainWeight: number;
+  rainStart: number;
+  rainStop: number;
+  rainSctTimer: number;
+  rainSndVol: number;
+  dayCtr: number;
+  /** G1 only. */
+  fadeScale: number;
+  renderLightning: boolean;
+  isRaining: boolean;
+  rainCtr: number;
+}
+
+export interface WorldProperties {
+  gameVersion: 'g1' | 'g2';
+  format: 'binary' | 'binsafe' | 'ascii';
+  /** The archive wrapper `saveWorld` re-emits: usually `%` / `oCWorld:zCWorld`. */
+  rootObjectName: string;
+  rootClassName: string;
+  rootVersion: number;
+  /** Save-game only, all of them. Empty in a world file. */
+  npcSpawnEnabled: boolean;
+  npcSpawnFlags: number;
+  npcCount: number;
+  npcSpawnCount: number;
+  player: { lastProcessDay: number; lastProcessHour: number; playlistCount: number } | null;
+  skyController: SkyController | null;
+}
+
 export function loadWorld(file: string, gameVersion: 'g1' | 'g2'): WorldHandle;
 export function extractWorldMesh(handle: WorldHandle): WorldMesh;
 export function vobIndex(handle: WorldHandle): VobIndex;
+/** The world-level readout: the archive wrapper plus the save-game-only members. */
+export function worldProperties(handle: WorldHandle): WorldProperties;
 /** The waynet as a drawable graph: stored order, edges as index pairs. */
 export function getWaynet(handle: WorldHandle): WaynetGraph;
 export function getPortals(handle: WorldHandle): PortalPolygons;

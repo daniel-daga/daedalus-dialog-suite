@@ -363,6 +363,70 @@ char const* ArchiveFormatName(zenkit::ArchiveFormat format) {
   return "unknown";
 }
 
+// What the `oCWorld:zCWorld` wrapper carries beyond vobs, mesh, BSP and waynet
+// (docs/plans/level-editor.md §14.3 3.5). Two groups: the archive wrapper the
+// handle re-saves through, and the members `zenkit::World` models which are
+// written only by a save-game -- the sky controller (time of day, rain), the
+// cutscene player and the NPC spawn state. A world `.zen` leaves all of the
+// second group empty, and reporting it is how that claim stops being folklore;
+// `scripts/check-world-properties.js` is the corpus readout.
+//
+// Read-only, so it does not invalidate the handle's recorded source path.
+Napi::Value WorldProperties(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapHandle(env, info[0]);
+  auto const& world = *handle->world;
+
+  auto out = Napi::Object::New(env);
+  out.Set("gameVersion", Napi::String::New(env, GameVersionName(handle->version)));
+  out.Set("format", Napi::String::New(env, ArchiveFormatName(handle->format)));
+  out.Set("rootObjectName",
+          Napi::String::New(env, zenkit_node::Windows1252ToUtf16(handle->root_object_name)));
+  out.Set("rootClassName",
+          Napi::String::New(env, zenkit_node::Windows1252ToUtf16(handle->root_class_name)));
+  out.Set("rootVersion", Napi::Number::New(env, static_cast<double>(handle->root_version)));
+
+  out.Set("npcSpawnEnabled", Napi::Boolean::New(env, world.npc_spawn_enabled));
+  out.Set("npcSpawnFlags", Napi::Number::New(env, static_cast<double>(world.npc_spawn_flags)));
+  out.Set("npcCount", Napi::Number::New(env, static_cast<double>(world.npcs.size())));
+  out.Set("npcSpawnCount", Napi::Number::New(env, static_cast<double>(world.npc_spawns.size())));
+
+  if (world.player == nullptr) {
+    out.Set("player", env.Null());
+  } else {
+    auto player = Napi::Object::New(env);
+    player.Set("lastProcessDay",
+               Napi::Number::New(env, static_cast<double>(world.player->last_process_day)));
+    player.Set("lastProcessHour",
+               Napi::Number::New(env, static_cast<double>(world.player->last_process_hour)));
+    player.Set("playlistCount",
+               Napi::Number::New(env, static_cast<double>(world.player->playlists.size())));
+    out.Set("player", player);
+  }
+
+  if (world.sky_controller == nullptr) {
+    out.Set("skyController", env.Null());
+  } else {
+    auto const& sky = *world.sky_controller;
+    auto controller = Napi::Object::New(env);
+    controller.Set("masterTime", Napi::Number::New(env, sky.master_time));
+    controller.Set("rainWeight", Napi::Number::New(env, sky.rain_weight));
+    controller.Set("rainStart", Napi::Number::New(env, sky.rain_start));
+    controller.Set("rainStop", Napi::Number::New(env, sky.rain_stop));
+    controller.Set("rainSctTimer", Napi::Number::New(env, sky.rain_sct_timer));
+    controller.Set("rainSndVol", Napi::Number::New(env, sky.rain_snd_vol));
+    controller.Set("dayCtr", Napi::Number::New(env, sky.day_ctr));
+    // G1 only; ZenKit leaves these at their defaults for a G2 archive.
+    controller.Set("fadeScale", Napi::Number::New(env, sky.fade_scale));
+    controller.Set("renderLightning", Napi::Boolean::New(env, sky.render_lightning));
+    controller.Set("isRaining", Napi::Boolean::New(env, sky.is_raining));
+    controller.Set("rainCtr", Napi::Number::New(env, static_cast<double>(sky.rain_ctr)));
+    out.Set("skyController", controller);
+  }
+
+  return out;
+}
+
 // Only the BinSafe writer path is verified — byte-for-byte against the retail
 // corpus and in the original engine (docs/engine-acceptance-2026-08-25.md §3,
 // §10.1). The ASCII writer corrupts every raw entry it emits and ZenKit cannot
@@ -3160,6 +3224,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("zenkitAbi", ZenkitAbi(env));
   exports.Set("loadWorld", Napi::Function::New(env, LoadWorld));
   exports.Set("worldStats", Napi::Function::New(env, WorldStats));
+  exports.Set("worldProperties", Napi::Function::New(env, WorldProperties));
   exports.Set("vobNames", Napi::Function::New(env, VobNames));
   exports.Set("normalizeWorld", Napi::Function::New(env, NormalizeWorld));
   exports.Set("vobIndex", Napi::Function::New(env, VobIndex));

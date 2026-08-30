@@ -141,8 +141,8 @@ writes, the classes beyond five), none of it carded.
 with nobody watching. Triaged against the tree 2026-08-30, each verified still
 open. **Take the top unclaimed row and cross it off in the same commit; a run
 may not add rows.** `unattended-queue.md` — **section 5, the level editor, is
-now first (Daniel, 2026-08-30)**; row 42 went to Triage on 2026-08-30, so the
-next unclaimed row is 43. The corpus those rows want is in `zenkit-node/worlds/`. Rows
+now first (Daniel, 2026-08-30)**; row 42 went to Triage on 2026-08-30 and 43
+landed, so the next unclaimed row is 44. The corpus those rows want is in `zenkit-node/worlds/`. Rows
 1-12 of section 1 landed 2026-08-30 and the rest of it waits below section 5.
 
 **World surface, from Daniel's own sessions 2026-08-30 — all at §16.24.** None
@@ -228,7 +228,7 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **Unattended queue row 41** (board-loop) — `check-visual-types.js` re-measures
-  extension × visual class over the corpus and reproduces every figure §7 quotes:
-  `.3DS` is the only ambiguous extension, and 15,749 of 41,393 VOBs (38.0 %) carry
-  no visual object to rename
+- **Unattended queue row 43** (board-loop) — `worldProperties` + `check-world-properties.js`
+  measure the `oCWorld` level: sky, time and the cutscene player are save-game
+  members, absent from all four retail worlds; the start position is a
+  `zCVobStartpoint`, a `START` waypoint, both or neither. §14.3 3.5
