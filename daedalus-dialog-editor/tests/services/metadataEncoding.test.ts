@@ -42,4 +42,25 @@ describe('encodingUtils', () => {
     // No windows-1250-specific bytes present, so the heuristic must not fire.
     expect(detectEncoding(buffer)).not.toBe('windows-1250');
   });
+
+  it('does not flip a whole windows-1252 file on a lone accented byte', () => {
+    // 'è' is 0xE8 — 'č' in windows-1250, so it is on the heuristic's list, but a
+    // single ambiguous byte is French, not Czech. Flipping the file here decodes
+    // every other high byte through the wrong table.
+    const original = '// Après la mort de Noël\ninstance DIA_Test (C_INFO) { npc = Npc_1; };';
+    const buffer = iconv.encode(original, 'windows-1252');
+
+    expect(detectEncoding(buffer)).not.toBe('windows-1250');
+    expect(decodeBuffer(buffer).content).toBe(original);
+  });
+
+  it('still flips on a byte windows-1252 does not assign at all', () => {
+    // 0x8D is 'Ť' in windows-1250 and unassigned in windows-1252, so one
+    // occurrence is decisive on its own.
+    const original = '// Ťava\nvar int test = 1;';
+    const buffer = iconv.encode(original, 'windows-1250');
+
+    expect(buffer.includes(0x8d)).toBe(true);
+    expect(detectEncoding(buffer)).toBe('windows-1250');
+  });
 });

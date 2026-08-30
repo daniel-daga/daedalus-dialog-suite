@@ -30,6 +30,29 @@ or cross-workspace change.
 
 ---
 
+**Section 5 is picked first — Daniel, 2026-08-30.** The level editor is where
+the attention is, so its rows come before the editor-defect backlog below; the
+rest of the order is untouched, and a run resumes at section 1 when section 5
+is empty. The section keeps its original number so the cross-references hold.
+
+## 5. Level editor — measurements and domain work
+
+Sources are `level-editor.md` §16 and §14. **Nothing here needs the engine or
+Spacer**; the measurements are the archetype of unattended work, because they
+run headless and produce a number.
+
+| # | Item | Where the diagnosis is | Accept | Size |
+|---|---|---|---|---|
+| 40 | **(corpus)** Re-measure spawn-index coverage — the 71 % (2,909/4,087) predates the nested-call-sites fix and §16.19 says so outright | §16.19 | `check-spawn-occupancy.js` reports the new coverage; §16.19's paragraph and the occupancy table are updated with it | S |
+| 41 | **(corpus)** Which visual extension retail attaches to which VOB class, and the 15,749-of-41,393 `UNKNOWN` figure reproduced — the number the visual-assignment row has never had | §14.1 1.7 (the measurement only; the feature stays a decision) | a script tabulating extension × class, with a fixture test of the tabulation | M |
+| 42 | **(corpus)** The BINARY fidelity baseline: `extract-worlds.js` already takes directories, so point it at the install's loose `_work/Data/Worlds` and classify — BINARY has had no fidelity work at all | §14.3 3.1 | a per-world classification table; each defect it names then lands fixture-backed, as `0045`–`0048` did | M |
+| 43 | **(corpus)** What `oCWorld`/`zCWorld` actually carries — start position, sky, time — across the corpus. Which become *editable* is a scoping call; measuring them is not | §14.3 3.5 | `test/worldProperties.test.js` against the golden fixture, plus the readout | M |
+| 44 | Size the free-point widening: how many of the 33 `Wld_IsFPAvailable` + 35 `AI_GotoFP` retail sites resolve against a world's `zCVobSpot` set. The widening itself stays a decision | world-editor review, finding 6 *Forward* | a count, recorded beside that finding | S |
+| 45 | Catalogue the four classes whose only fields are enums, now that enums have landed — `oCTouchDamage.collision`, `zCTriggerList.mode`, `zCCodeMaster`/`zCMessageFilter`'s `onTrigger`/`onUntrigger`. `vobClasses.ts`'s comment still says the catalogue holds no enum, which is stale | §16.3 / §14.1 1.4 | `vobClasses.test.ts` › `oCTouchDamage` is no longer authorable with nothing catalogued, plus a per-key round-trip on a placed VOB and a retail value sweep (the I3/I4 rule) | M |
+| 46 | A copy carries its class **properties**, not just its class — `AddVob` then one `SetVobClassProp` per catalogued field, one batch, one undo entry, no new op. `physicsEnabled` stays out (A6 is deferred) | §14.1 1.2 | `ops.test.ts` › a duplicate of a `zCVobLight` carries its range and colour | M |
+| 47 | `verify-world-pipeline.js` writes no enum, so the eight enum keys have no file-level end-to-end coverage either — independent of the engine, which stays open | §16.2 | the script writes and reads back `zCVobLight.lightType` and `oCMOB.soundMaterial` | S |
+| 48 | The `--counts` fuzz sweep only ever runs against `minimal.g2.zen`; the `npc`, `camera` and `corrupt-mesh` variants exist and §16.11 says a field the sweep cannot reach has no coverage | §16.11 | `fuzz-world.js --counts --fixture npc\|camera\|corrupt-mesh` reports per entry, and every hit lands bounded and covered | M |
+
 ## 1. Correctness — a defect a user can hit
 
 | # | Item | Where the diagnosis is | Accept | Size |
@@ -45,7 +68,7 @@ or cross-workspace change.
 | ~~9~~ | ~~`FileService`'s caches and locks key on the raw path~~ — **landed 2026-08-30**, all three maps key on `canonicalPathKey` (`src/main/utils/pathKey.ts`), which is now the watcher's self-write key too rather than a second copy of the same four lines | 2026-07 **4.11** | `FileService.pathCanonicalization` › `C:\A\b.d` and `c:/a/b.d` are one key | M |
 | ~~10~~ | ~~A project-open failure is swallowed~~ — **landed 2026-08-30**, `openProject` rethrows after recording `loadError`, so `App`'s `openProjectWithReset` catch fires and the user sees the message; `loadError` stays write-only and is still the second half of 2026-07 **2.1** | 2026-07 **2.1** | `projectStore.openProjectError` › openProject rethrows | S |
 | ~~11~~ | ~~`updateModel` and `_applyHistoryModelUpdate` are byte-identical and neither clears `saveError`~~ — **landed 2026-08-30**, `updateModel` clears it and `_applyHistoryModelUpdate` delegates, so there is one body | 2026-07 **4.5** | `fileStore.updateModelSaveError` green | S |
-| 12 | Encoding detection flips a whole cp1252 file to cp1250 on one accented byte; untested in the false-positive direction | production-readiness §2, `encodingUtils.ts:18` | `encodingUtils` › a lone cp1252 accent does not flip the file | S |
+| ~~12~~ | ~~Encoding detection flips a whole cp1252 file to cp1250 on one accented byte~~ — **landed 2026-08-30**, three bytes cp1252 leaves unassigned decide alone, the ambiguous rest needs two distinct hits | production-readiness §2 | `metadataEncoding` › a lone cp1252 accent does not flip the file | S |
 | 13 | Two app instances share one settings temp path | production-readiness §2, `SettingsService.ts:77` | `SettingsService` › concurrent saves do not share a temp path | S |
 | 14 | The project scan recurses only on `isDirectory()`, so a junctioned script tree is invisible — and a `readdir` failure is swallowed | production-readiness §2, `ProjectService.ts:73` | `ProjectService.scanDirectory` › follows a junctioned tree | M |
 | 15 | `parser:parseSource` is the one IPC handler that takes an unvalidated payload | production-readiness §2, `main.ts:195` | `ipcValidation` › parseSource rejects a non-string payload | S |
@@ -90,24 +113,6 @@ Nothing here needs a design call: each has a template already in the tree.
 |---|---|---|---|---|
 | 38 | No simulator test is fed real parser output; two landed fixes (H1, H2) have no regression lock. Fixture: `daedalus-parser/test/fixtures/corpus/condition-idioms.d` | simulator, test-coverage observations | `simulatorParserIntegration` green under `--runInBand` **and** default workers | M |
 | 39 | The packaged-app asar check asserts the ZenKit addon but **not** the tree-sitter binding, and no packaged smoke parses a `.d` | production-readiness §2 blocker 3, `build-windows.yml:153` | the smoke entry's Jest test and the asar assertion; the workflow step itself needs a dispatch | L |
-
-## 5. Level editor — measurements and domain work
-
-Sources are `level-editor.md` §16 and §14. **Nothing here needs the engine or
-Spacer**; the measurements are the archetype of unattended work, because they
-run headless and produce a number.
-
-| # | Item | Where the diagnosis is | Accept | Size |
-|---|---|---|---|---|
-| 40 | **(corpus)** Re-measure spawn-index coverage — the 71 % (2,909/4,087) predates the nested-call-sites fix and §16.19 says so outright | §16.19 | `check-spawn-occupancy.js` reports the new coverage; §16.19's paragraph and the occupancy table are updated with it | S |
-| 41 | **(corpus)** Which visual extension retail attaches to which VOB class, and the 15,749-of-41,393 `UNKNOWN` figure reproduced — the number the visual-assignment row has never had | §14.1 1.7 (the measurement only; the feature stays a decision) | a script tabulating extension × class, with a fixture test of the tabulation | M |
-| 42 | **(corpus)** The BINARY fidelity baseline: `extract-worlds.js` already takes directories, so point it at the install's loose `_work/Data/Worlds` and classify — BINARY has had no fidelity work at all | §14.3 3.1 | a per-world classification table; each defect it names then lands fixture-backed, as `0045`–`0048` did | M |
-| 43 | **(corpus)** What `oCWorld`/`zCWorld` actually carries — start position, sky, time — across the corpus. Which become *editable* is a scoping call; measuring them is not | §14.3 3.5 | `test/worldProperties.test.js` against the golden fixture, plus the readout | M |
-| 44 | Size the free-point widening: how many of the 33 `Wld_IsFPAvailable` + 35 `AI_GotoFP` retail sites resolve against a world's `zCVobSpot` set. The widening itself stays a decision | world-editor review, finding 6 *Forward* | a count, recorded beside that finding | S |
-| 45 | Catalogue the four classes whose only fields are enums, now that enums have landed — `oCTouchDamage.collision`, `zCTriggerList.mode`, `zCCodeMaster`/`zCMessageFilter`'s `onTrigger`/`onUntrigger`. `vobClasses.ts`'s comment still says the catalogue holds no enum, which is stale | §16.3 / §14.1 1.4 | `vobClasses.test.ts` › `oCTouchDamage` is no longer authorable with nothing catalogued, plus a per-key round-trip on a placed VOB and a retail value sweep (the I3/I4 rule) | M |
-| 46 | A copy carries its class **properties**, not just its class — `AddVob` then one `SetVobClassProp` per catalogued field, one batch, one undo entry, no new op. `physicsEnabled` stays out (A6 is deferred) | §14.1 1.2 | `ops.test.ts` › a duplicate of a `zCVobLight` carries its range and colour | M |
-| 47 | `verify-world-pipeline.js` writes no enum, so the eight enum keys have no file-level end-to-end coverage either — independent of the engine, which stays open | §16.2 | the script writes and reads back `zCVobLight.lightType` and `oCMOB.soundMaterial` | S |
-| 48 | The `--counts` fuzz sweep only ever runs against `minimal.g2.zen`; the `npc`, `camera` and `corrupt-mesh` variants exist and §16.11 says a field the sweep cannot reach has no coverage | §16.11 | `fuzz-world.js --counts --fixture npc\|camera\|corrupt-mesh` reports per entry, and every hit lands bounded and covered | M |
 
 ## 6. Larger, and worth knowing before you start
 

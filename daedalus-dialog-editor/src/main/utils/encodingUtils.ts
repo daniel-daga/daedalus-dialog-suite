@@ -16,16 +16,22 @@ import * as iconv from 'iconv-lite';
  * windows-1252 / ISO-8859-1).
  */
 function detectCentralEuropeanPattern(buffer: Buffer): boolean {
-  // Byte values that are distinct to windows-1250 and commonly used in Central European languages:
-  // 0x8A (Š), 0x8C (Ś), 0x8D (Ť), 0x8E (Ž), 0x8F (Ź)
-  // 0x9A (š), 0x9C (ś), 0x9D (ť), 0x9E (ž), 0x9F (ź)
-  // 0xA5 (Ą), 0xAA (Ş), 0xAF (Ż)
-  // 0xB9 (ą), 0xBA (ş), 0xBC (ľ), 0xBE (ľ), 0xBF (ż)
-  // 0xC8 (Č), 0xD2 (Ň), 0xD5 (Ő), 0xD8 (Ř), 0xDD (Ý)
-  // 0xE8 (č), 0xF2 (ň), 0xF5 (ő), 0xF8 (ř)
-  const centralEuropeanBytes = [
-    0x8A, 0x8C, 0x8D, 0x8E, 0x8F,
-    0x9A, 0x9C, 0x9D, 0x9E, 0x9F,
+  // Bytes windows-1252 leaves unassigned, so seeing one at all says the file is
+  // not windows-1252: 0x8D (Ť), 0x8F (Ź), 0x9D (ť).
+  const decisiveBytes = [0x8D, 0x8F, 0x9D];
+
+  // Bytes that mean a Central European letter in windows-1250 but an ordinary
+  // Western one in windows-1252, so each is on its own as likely French, Nordic
+  // or Italian as it is Czech or Polish:
+  // 0x8A (Š/Š), 0x8C (Ś/Œ), 0x8E (Ž/Ž)
+  // 0x9A (š/š), 0x9C (ś/œ), 0x9E (ž/ž), 0x9F (ź/Ÿ)
+  // 0xA5 (Ą/¥), 0xAA (Ş/ª), 0xAF (Ż/¯)
+  // 0xB9 (ą/¹), 0xBA (ş/º), 0xBC (ľ/¼), 0xBE (ż/¾), 0xBF (ż/¿)
+  // 0xC8 (Č/È), 0xD2 (Ň/Ò), 0xD5 (Ő/Õ), 0xD8 (Ř/Ø), 0xDD (Ý/Ý)
+  // 0xE8 (č/è), 0xF2 (ň/ò), 0xF5 (ő/õ), 0xF8 (ř/ø)
+  const ambiguousBytes = [
+    0x8A, 0x8C, 0x8E,
+    0x9A, 0x9C, 0x9E, 0x9F,
     0xA5, 0xAA, 0xAF,
     0xB9, 0xBA, 0xBC, 0xBE, 0xBF,
     0xC8, 0xD2, 0xD5, 0xD8, 0xDD,
@@ -38,8 +44,18 @@ function detectCentralEuropeanPattern(buffer: Buffer): boolean {
   const limit = Math.min(buffer.length, MAX_SCAN_SIZE);
   const sample = buffer.subarray(0, limit);
 
-  for (const byte of centralEuropeanBytes) {
+  for (const byte of decisiveBytes) {
     if (sample.includes(byte)) {
+      return true;
+    }
+  }
+
+  // Corroboration for the ambiguous half: one accented byte is a loanword in an
+  // otherwise Western file, and flipping the whole file on it mis-decodes every
+  // other high byte in it. Two distinct ones is the Central European reading.
+  let distinct = 0;
+  for (const byte of ambiguousBytes) {
+    if (sample.includes(byte) && ++distinct === 2) {
       return true;
     }
   }
