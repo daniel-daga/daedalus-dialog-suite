@@ -170,6 +170,9 @@ needs the engine; the order is a guess at his, so move it.
 - **The routine index's coverage has never been measured** — one command
   against `mdk/Content`; it qualifies everything built on the index. Now also
   qualifies the slider: an hour it reads badly draws grey. §16.19 s6
+- **The slider answers only the declared routine** — a *State* lens over the
+  `RTN_*` variants quest state swaps in; planned as four slices, parser `id`
+  extraction first, chapter-gated spawns stay behind a measurement. §16.19 s10
 
 **Phase 1c / Phase 2 — world findings get a locus** (§7 decision, §16.20)
 
@@ -232,10 +235,5 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **The time slider, and waypoint names** (Claude) — the spawn markers draw the
-  routines' answer for a chosen minute with unplaced NPCs dimmed, and a *Names*
-  toggle labels the nearest 24 drawn waypoints. Neither has a Playwright
-  spec. §16.19 s7, s8
-- **NPC dummies** (Claude) — a capsule body per occupied point, depth-tested,
-  beside the untouched dot; symmetric, no facing written. Unwitnessed in a
-  real world, like s7/s8. §16.19 s9
+*(flushed 2026-08-30 — s7/s8/s9 are in `git log`, and their forward facts —
+no Playwright spec, unwitnessed on a real screen — are in §16.19's own prose)*

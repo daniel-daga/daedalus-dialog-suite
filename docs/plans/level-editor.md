@@ -2098,6 +2098,130 @@ bug. And like slice 7 and slice 8, **nothing here is witnessed on screen** — t
 browser harness has no world, so Jest is what checks the scene graph and
 nobody has watched a dummy stand in a real one yet.
 
+**The slider's answer is the start of the game — the state slices. Planned
+2026-08-30, nothing landed.** Slices 5–7 resolve an NPC through
+`routinesByNpc`, the one routine his instance *declares* — and the declared
+routine is only the day the game opens with. Quest state swaps it:
+`Npc_ExchangeRoutine(npc, "X")` (retail nearly always through the
+`B_StartOtherRoutine` wrapper) makes the engine run `RTN_X_<npc.id>` from then
+on, and the chapter-entry files insert whole casts conditionally. So the
+waypoint the slider draws for an NPC is conditional on quest state twice over —
+*which routine* is in force, and *whether he is in the world at all* — and
+today it silently answers "chapter 1, nothing progressed" for both. The four
+slices below make the first conditionality choosable; the second stays behind a
+measurement, deliberately — see the closing paragraph.
+
+**What this is not, and the framing every slice depends on: a quest-state
+evaluator.** The editor cannot know what state a playthrough is in, and the
+main process holds no semantic model to evaluate a guard against (the
+`assertApplyOpsRequest` note in `CLAUDE.md` is the same fact from the other
+side). A *State* control is a **lens** — "draw the day as if this state were
+active" — never a claim that the game reaches that state, or reaches it for
+everyone at once. That is what keeps the slices cheap: a lens needs an index
+and a resolution rule, not an interpreter.
+
+**What already exists is more than it looks — the §16.19 pattern a third
+time.** Read out of the code 2026-08-30:
+
+- `routineSites` already index **every** `TA_*` entry of **every** function,
+  not only the declared routines — the alternate `RTN_*` variants are in the
+  index today, and nothing reaches them only because `routinesByNpc` knows
+  nothing but the declared one. The expensive half of a state's schedule is
+  already paid for.
+- Exchange calls are already in `callSites` with parsed args: `recordCallSite`
+  runs before the action is built (`processFunctionCall`) and sweeps skipped
+  `if` subtrees since the 2026-08-29 nested-call fix, so a chapter-guarded
+  `B_StartOtherRoutine` is visible. No parser change for the exchange index.
+- The resolution rule is the **engine's**, not an observed naming style:
+  `Npc_ExchangeRoutine(npc, "X")` runs `RTN_X_<id>` where `id` is the C_NPC
+  instance's `id` field. Grouping variants by id suffix is grounded the way
+  `ENGINE_EXTERNAL_WAYPOINT_ARG_INDEX` is — engine behavior — *provided the id
+  is known*, and it is not: the semantic model does not carry the field. That
+  is the one parser change, and it is slice 10.
+
+**Slice 10 — `npcId` on the parser's instances.** `GlobalInstance.npcId`, read
+exactly as `dailyRoutine` is (`declaration-visitor.ts`, the
+`extractDailyRoutine` scan of the body's top-level assignments): `id =
+<integer literal>`, and anything else — a constant reference, an expression —
+leaves it `undefined`, excluded never guessed. A constant id is as
+unresolvable downstream as a constant hour was in slice 5, and for the same
+reason: the consumer has no symbol table. Parser workspace, TDD in
+`daedalus-parser/test`.
+
+**Slice 11 — the state index.** Two `ProjectIndex` fields, both riding
+`fileModelsForSiteIndexes` like slices 1 and 5, both reaching the renderer
+through `projectStore`:
+
+- `routineStatesByNpc`: UPPERCASED instance → `{ id, states:
+  Record<stateName, routineFunction> }`, built by matching the routine
+  functions already present in `routineSites` against `RTN_<state>_<id>` for
+  each NPC with a literal id. Prefix `RTN_`, suffix `_<id>` — the split is on
+  the *known* id, not a guess at where the state name ends, so a state name
+  containing underscores or digits parses correctly. The declared
+  `daily_routine` stays `routinesByNpc`'s answer and is not re-derived from
+  the name.
+- `exchangeSites`: every `Npc_ExchangeRoutine` / `B_StartOtherRoutine` call
+  whose state name is a string literal — target as written, state name,
+  file/function/line. **Not consumed by the picker.** It is the measurement's
+  ground truth for which states are *reachable*, and later the
+  go-to-definition for "what triggers this state". A `self` target inside a
+  dialog body is recorded unresolved rather than resolved through
+  `dialogsByNpc` — a real derivation, but one with no consumer yet, the
+  slice 9 decision 4 rule.
+
+The decision this slice turns on: variants enumerate **by the engine's name
+rule, not by exchange sites**. The name rule sees a variant an exchange
+reaches through a variable or a concatenation; an exchange-site enumeration
+would not. The cost is listing variants nothing in the scripts triggers — for
+a lens that is the point, not a defect.
+
+**The measurement, before the UI ships an option list** — a sibling of
+`scripts/check-routine-coverage.js`, run against `mdk/Content`: distinct state
+names and NPCs per state (does "TOT" / "PRISON" / "KAPITEL3" really recur
+across NPCs — the premise of a *global* picker), exchange sites resolvable
+against a variant vs not, and the drift both ways (variants no exchange names,
+exchanges naming no indexed variant). Slice 6's caveat applies verbatim: the
+corpus has to be on the machine, and until the number exists the honest
+statement is that it is missing.
+
+**Slice 12 — the schedule takes a state.** `routineSchedule.ts` stays pure:
+`RoutineIndex` gains optional `statesByNpc`, and `placementsAt` /
+`placementWaypointsAt` gain an optional state — with one chosen, an NPC that
+*has* that variant resolves through it and every other NPC keeps his declared
+routine. The fallback is the lens's honest semantics, not a convenience: a
+state names the NPCs it exists for, and for everyone else the chosen state
+says nothing — so they keep the strongest fact available, the declared day.
+Overlap, hole and empty-index semantics unchanged. Jest,
+`routineSchedule.test.ts`.
+
+**Slice 13 — the State picker.** A select on the World bar, offered while
+*Time* is on — a state without a minute answers nothing the static layer does
+not — options the distinct state names of the index, sorted, default
+**Declared**, which is today's behavior exactly. Wiring is `spawnTime`'s,
+verbatim: a `spawnState` prop through `WorldViewport` into the overlay's
+recompute, re-applied on the same rebuild dependencies (slice 7's note about a
+structural op silently resetting an open slider applies to the state too).
+Jest as slices 7–9 pin theirs (`WorldSurface.editing.test.tsx`,
+`SpawnOverlay.test.ts`); the Playwright wall is slice 7's, so that the markers
+*move* when the state changes stays unwitnessed on screen, said rather than
+hidden.
+
+**Chapter-conditional spawns — the other half, deliberately not carded.** An
+NPC's *presence* is quest-gated too: `B_Enter_OldWorld.d`'s 302 spawns are one
+`if (Kapitel ...)` after another, indexed since the nested-call fix but drawn
+unconditionally at every minute and every state. Making presence conditional
+needs the guard, and `recordCallSite` keeps no condition context — so it is a
+parser widening (the enclosing guard chain on a call site) plus a static
+evaluation of `KAPITEL` comparisons in main, which crosses the
+no-semantic-model line unless it stays literal-only. **Measure first, §16.22's
+manner:** of the 3,976 indexed spawn sites, how many sit under any guard; of
+those, how many guards are pure `KAPITEL <op> <literal>` chains. A cliff means
+a *Chapter* filter is a cheap follow-on and becomes a second dimension of the
+same lens — state + chapter, one control stack, not two; a tail means the
+honest UI is a "conditional" marker *style*, never an evaluated one. Exchange
+calls are guarded by the same kinds of state, and the lens sidesteps that by
+construction — noted so nobody re-derives it.
+
 **Phase ordering note.** §11 schedules 1b-2 before 1c, and 1b-2 is not finished
 — but what remains of it on the board (Euler order against Spacer) needs Spacer
 itself and a person, as do the Gate 2b `07` rows. These slices were carded by
