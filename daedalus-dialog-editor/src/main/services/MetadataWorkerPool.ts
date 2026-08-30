@@ -157,10 +157,11 @@ export class MetadataWorkerPool {
 
     worker.on('error', () => this.handleWorkerDeath(worker));
 
-    worker.on('exit', (code) => {
-      if (code !== 0) {
-        this.handleWorkerDeath(worker);
-      }
+    // Any exit is a death, code 0 included — see ParserService.spawnWorker.
+    // `handleWorkerDeath` ignores a worker already out of `this.workers`, so a
+    // deliberate `terminate()` does not look like one.
+    worker.on('exit', () => {
+      this.handleWorkerDeath(worker);
     });
 
     worker.on('messageerror', (err) => {

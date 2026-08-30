@@ -73,6 +73,17 @@ describe('MetadataWorkerPool worker lifecycle', () => {
     expect(result.filePath).toBe('__CRASH__');
   });
 
+  it('settles a file as failure when its worker exits cleanly (code 0)', async () => {
+    // The production task timeout is 30 s; an unreaped clean exit leaves this
+    // task waiting it out, so the test times out instead of passing slowly.
+    const pool = makePool('exit.worker.js', { taskTimeoutMs: 30000 });
+
+    const result: any = await pool.processFile('__EXIT0__');
+
+    expect(result.ok).toBe(false);
+    expect(result.filePath).toBe('__EXIT0__');
+  });
+
   it('recovers when a worker dies while idle and still processes the next task', async () => {
     const pool = makePool('echo.worker.js');
 

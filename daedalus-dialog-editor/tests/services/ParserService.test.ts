@@ -92,6 +92,25 @@ describe('ParserService worker lifecycle', () => {
     await expect(svc.parseSource('normal')).resolves.toBeDefined();
   });
 
+  it('settles the pending request when the worker exits cleanly (code 0)', async () => {
+    // A 30 s timeout is the production value: if a clean exit is not reaped,
+    // this request only settles when that backstop fires, so the test times
+    // out rather than passing slowly.
+    const svc = makeService('exit.worker.js', { timeoutMs: 30000 });
+
+    const err = await svc.parseSource('__EXIT0__').then(
+      () => {
+        throw new Error('expected the request on the exited worker to reject');
+      },
+      (e) => e,
+    );
+    expect(err).toBeInstanceOf(WorkerRequestError);
+    expect(err.kind).toBe('worker-crashed');
+
+    // The lane is restored: a subsequent request still resolves.
+    await expect(svc.parseSource('normal')).resolves.toBeDefined();
+  });
+
   it('rejects the in-flight request with worker-crashed (throw / error event)', async () => {
     const svc = makeService('throw.worker.js');
 

@@ -153,9 +153,15 @@ Main process:
       `Math.max(1, Math.min(os.cpus().length - 1, 8))`; `MetadataWorkerPool.ts:101` matches but
       `ParserService.ts:61` is `Math.max(2, Math.min(numCPUs, 8))` — different floor, no `-1`.
       Fix one to match the other, and say in the doc which is right.
-- [ ] 4.15 Both pools still treat a clean exit as normal — `ParserService.ts:96-100` and
-      `MetadataWorkerPool.ts:160-164` both guard on `code !== 0`, so a worker exiting 0 is never
-      reaped and callers stall for 30 s.
+- [x] 4.15 Both pools treated a clean exit as normal — `ParserService.ts:96-100` and
+      `MetadataWorkerPool.ts:160-164` both guarded on `code !== 0`, so a worker exiting 0 was never
+      reaped and callers stalled for 30 s. **Fixed 2026-08-30**: both `exit` handlers now reap
+      unconditionally. Nothing had to be added to keep a deliberate `terminate()` quiet — both
+      death paths already ignore a worker no longer in `this.workers`, and retirement and teardown
+      both remove it before terminating. Noted while there and **not** carded: `WorldService.ts:314`
+      has the same `code !== 0` guard, but it is a single stateful worker, not a pool, and its
+      `close()` drops the reference without membership bookkeeping — the same edit there is a
+      different change.
 
 Parser:
 - [x] 4.16 Comments become arguments: all three extractors filter punctuation only —

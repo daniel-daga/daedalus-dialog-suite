@@ -93,10 +93,13 @@ export class ParserService {
       this.handleWorkerDeath(worker, `error: ${err.message}`);
     });
 
+    // Any exit is a death, code 0 included: a worker that walks off the end of
+    // its own event loop can no longer answer the request in flight on it, and
+    // treating a clean exit as normal left that request waiting out the 30 s
+    // timeout. `retireWorker` is a no-op for a worker already out of the array,
+    // so a deliberate `terminate()` — retire, or `dispose()` — stays quiet.
     worker.on('exit', (code) => {
-      if (code !== 0) {
-        this.handleWorkerDeath(worker, `exit code ${code}`);
-      }
+      this.handleWorkerDeath(worker, `exit code ${code}`);
     });
 
     worker.on('messageerror', (err) => {
