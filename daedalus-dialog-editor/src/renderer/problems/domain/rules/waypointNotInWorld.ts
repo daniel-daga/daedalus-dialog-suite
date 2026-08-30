@@ -47,7 +47,12 @@ export const waypointNotInWorldRule: LintRule = (view): Problem[] => {
         rule: 'waypoint-not-in-world',
         severity: 'warning',
         message: `Waypoint "${name}" is not in the open world. It may belong to another world.`,
-        locus: { kind: 'script', filePath: site.filePath, functionName: site.functionName }
+        // `name`, not `upper`: the locus is what an "add to world" action
+        // would send to `AddWaypoint`, and the world it would join is
+        // case-sensitive even though the lookup above is not.
+        locus: {
+          kind: 'script', filePath: site.filePath, functionName: site.functionName, waypoint: name,
+        }
       });
     }
   }

@@ -236,5 +236,6 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **Daedalus overlay slices 5 and 6** (Claude) — the routine index and the pure
-  schedule over it, plus the coverage instrument nobody has run yet. §16.19
+- **Waypoint adding gets script integration** (Claude) — a `waypoint-not-in-world`
+  row now offers "Add to world", arming the add-waypoint dialog with the
+  script's own name; the dialog also autocompletes over every script waypoint. §14.2

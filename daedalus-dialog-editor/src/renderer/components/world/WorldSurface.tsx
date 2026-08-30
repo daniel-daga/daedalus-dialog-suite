@@ -2,7 +2,7 @@ import React, {
   useCallback, useEffect, useMemo, useRef, useState,
 } from 'react';
 import {
-  Alert, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
+  Alert, Autocomplete, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
   DialogContentText, DialogTitle, FormControlLabel, MenuItem, Paper, Slider, Stack, Tab, Tabs,
   TextField, ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
@@ -128,6 +128,16 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    *  the position is the terrain point and everything else the binding fixes —
    *  so the dialog's state is that one string. */
   const [addingWaypoint, setAddingWaypoint] = useState<string | null>(null);
+  /**
+   * A name the Problems panel's "Add to world" action armed, or null. Not the
+   * dialog's own draft — `addingWaypoint` — but what the *next* terrain click
+   * should offer instead of `suggestedWaypointName()`: the request carries no
+   * position, only a name, so there is nothing to place until the user picks
+   * one. Consumed the moment `world-add-waypoint` is clicked, whether or not
+   * the dialog it opens is then confirmed — the same way a fresh suggested
+   * name is spent by that click today.
+   */
+  const [pendingWaypointName, setPendingWaypointName] = useState<string | null>(null);
   /** The waypoint the delete warning is about, as an index+name pair, or null
    *  when it is closed. The name is kept beside the index for the dialog to
    *  show and for the op to be guarded by: it is read when the dialog opens,
@@ -202,6 +212,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     setMesh(null);
     setVisuals(null);
     setTerrainPoint(null);
+    // An armed name is a request about *this* open, and a new one answers no
+    // question the previous open's Problems scan asked.
+    setPendingWaypointName(null);
     // The waynet goes too, and it is the one reset that is not obvious: the
     // viewport mounts on `mesh && visuals && summary`, so a payload left
     // standing here draws the *previous* world's waypoints over the new one
@@ -343,6 +356,16 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     useWorldStore.getState().focusHandled();
 
     if (focusRequest.kind === 'vob') { focusVob(focusRequest.vob); return; }
+
+    if (focusRequest.kind === 'add-waypoint') {
+      // Not a jump: a script naming a place is not a position, so there is
+      // nothing to frame. The overlay goes on for the same reason the
+      // waypoint jump above needs it — it is the only thing that will draw
+      // the result — and the name is kept for the terrain click to pick up.
+      setShowWaynet(true);
+      setPendingWaypointName(focusRequest.name);
+      return;
+    }
 
     // The name comes out of a script, where Daedalus is case-insensitive, and
     // the waynet is the world's own spelling.
@@ -1276,6 +1299,18 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   }, [waynet]);
 
   /**
+   * Every waypoint name a script in the project actually calls for, sorted —
+   * the add-waypoint dialog's autocomplete list. `waypointSiteIndex`'s keys
+   * are the project index's own uppercased names (Daedalus is
+   * case-insensitive), which is the casing every retail name already has, so
+   * nothing here re-derives a display casing of its own.
+   */
+  const knownWaypointNames = useMemo(
+    () => Object.keys(waypointSiteIndex).sort(),
+    [waypointSiteIndex],
+  );
+
+  /**
    * Remove a VOB and its whole subtree — **the one edit here that cannot be
    * undone** (level-editor.md §15).
    *
@@ -1881,7 +1916,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
             {terrainPoint === null ? (
               <>
                 <Typography variant="caption" color="text.secondary" data-testid="world-terrain-hint">
-                  Click the ground to choose where a VOB goes.
+                  {pendingWaypointName !== null
+                    ? `Click the ground to place waypoint "${pendingWaypointName}".`
+                    : 'Click the ground to choose where a VOB goes.'}
                 </Typography>
                 {/* The reservation itself, and it is a button rather than a
                     number: a hard-coded height read off MUI's small-button
@@ -1934,7 +1971,13 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                 {showWaynet && waynet !== null && (
                   <Button
                     size="small"
-                    onClick={() => setAddingWaypoint(suggestedWaypointName())}
+                    onClick={() => {
+                      // An armed name wins over a fresh suggestion, and is
+                      // spent the moment it does — the same way a suggested
+                      // one is spent by this click today.
+                      setAddingWaypoint(pendingWaypointName ?? suggestedWaypointName());
+                      setPendingWaypointName(null);
+                    }}
                     data-testid="world-add-waypoint"
                   >
                     Add waypoint here…
@@ -1963,14 +2006,21 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
             {` ${terrainPoint?.map((v) => Math.round(v)).join(', ')}`}, in no edge and
             renumbering nothing.
           </DialogContentText>
-          <TextField
-            autoFocus
+          <Autocomplete
+            freeSolo
             fullWidth
             size="small"
-            label="Name"
-            value={addingWaypoint ?? ''}
-            onChange={(event) => setAddingWaypoint(event.target.value)}
-            inputProps={{ 'data-testid': 'world-waypoint-add-name' }}
+            options={knownWaypointNames}
+            inputValue={addingWaypoint ?? ''}
+            onInputChange={(_event, value) => setAddingWaypoint(value)}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                autoFocus
+                label="Name"
+                inputProps={{ ...params.inputProps, 'data-testid': 'world-waypoint-add-name' }}
+              />
+            )}
           />
         </DialogContent>
         <DialogActions>

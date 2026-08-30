@@ -26,10 +26,17 @@ export type WorldStatus = 'idle' | 'opening' | 'ready' | 'error';
  * Only what the surface can actually address: a VOB has a row in the columnar
  * index, a waypoint has a name in the waynet. A polygon has neither and is
  * deliberately absent — framing one is slice 3's, with the mesh it needs.
+ *
+ * `add-waypoint` is not a jump at all — it is the Problems panel's "Add to
+ * world" action on a `waypoint-not-in-world` finding, which names a place the
+ * open world does not have and so has no position to frame. What it asks for
+ * is the overlay on and the name armed for the next terrain click, which is
+ * the same placement `world-add-waypoint` already offers.
  */
 export type WorldFocus =
   | { kind: 'vob'; vob: number }
-  | { kind: 'waypoint'; name: string };
+  | { kind: 'waypoint'; name: string }
+  | { kind: 'add-waypoint'; name: string };
 
 /**
  * The focus a world locus asks for, or null when the locus names nothing the

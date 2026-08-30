@@ -45,13 +45,26 @@ describe('waypointNotInWorldRule', () => {
     expect(problems[0]).toMatchObject({
       rule: 'waypoint-not-in-world',
       severity: 'warning',
-      locus: { kind: 'script', filePath: 'Rtn.d', functionName: 'Rtn_Start_Diego' }
+      locus: { kind: 'script', filePath: 'Rtn.d', functionName: 'Rtn_Start_Diego', waypoint: 'OW_PATH_42' }
     });
     // The third answer is not knowable from one world: the message may never
     // claim the waypoint is missing, only that it is not in *this* world.
     expect(problems[0].message).toContain('OW_PATH_42');
     expect(problems[0].message).toMatch(/not in .*world/i);
     expect(problems[0].message).not.toMatch(/missing|does not exist|no such/i);
+  });
+
+  it('carries the name in the script\'s own casing, not the site key\'s upper case', () => {
+    // `waypointSites` is keyed uppercase (Daedalus is case-insensitive), but the
+    // locus is what an "add to world" action would send to `AddWaypoint` — and
+    // the world it is about to join is case-sensitive.
+    const view = viewOf(
+      { ow_path_42: [site('Rtn.d', 'Rtn_Start_Diego')] },
+      world(['NW_CITY_01'])
+    );
+
+    const problems = waypointNotInWorldRule(view);
+    expect(problems[0].locus).toMatchObject({ waypoint: 'ow_path_42' });
   });
 
   it('emits one problem per site of the same dangling name', () => {

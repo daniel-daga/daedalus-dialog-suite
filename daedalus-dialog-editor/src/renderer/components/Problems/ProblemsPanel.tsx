@@ -87,6 +87,18 @@ const ProblemsPanel: React.FC = () => {
     setActiveView('dialog');
   };
 
+  /**
+   * The "Add to world" action on a `waypoint-not-in-world` row. Not a
+   * navigation at all — it arms the World surface with the name and switches
+   * to it, the same way a world locus's own jump does, but there is no
+   * position to jump to yet: the surface waits for the terrain click that
+   * `world-add-waypoint` already takes (§16.8's W2).
+   */
+  const handleAddToWorld = (name: string): void => {
+    useWorldStore.getState().requestFocus({ kind: 'add-waypoint', name });
+    useUISelectionStore.getState().setActiveView('world');
+  };
+
   const ingestionIncomplete = totalFileCount > scannedFileCount;
 
   return (
@@ -115,7 +127,12 @@ const ProblemsPanel: React.FC = () => {
         </Typography>
       </Box>
       <Box sx={searchablePaneContentSx}>
-        <ProblemsList problems={problems} onSelect={handleSelect} worldOpen={worldOpen} />
+        <ProblemsList
+          problems={problems}
+          onSelect={handleSelect}
+          worldOpen={worldOpen}
+          onAddToWorld={handleAddToWorld}
+        />
       </Box>
     </Box>
   );

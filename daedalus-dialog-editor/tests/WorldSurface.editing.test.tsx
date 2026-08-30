@@ -2378,6 +2378,29 @@ describe('a waypoint dragged in the viewport', () => {
       expect(screen.queryByTestId('world-add-waypoint')).not.toBeInTheDocument();
     });
 
+    it('offers every waypoint name the project index knows as an autocomplete option', async () => {
+      // The names a script already uses — `AddWaypoint`'s name field is the
+      // one place a typo costs the most, since nothing else in the project
+      // catches a name that does not match what a routine calls for.
+      useProjectStore.setState({
+        waypointSiteIndex: {
+          OW_PATH_42: [{ filePath: 'Rtn.d', functionName: 'Rtn_Start_Diego' }],
+          NW_CROSSROAD: [{ filePath: 'Rtn.d', functionName: 'Rtn_Start_Bosper' }],
+        },
+      } as never);
+      await openWithWaynet();
+      fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+      act(() => useWorldStore.getState().selectVob(null));
+      fireEvent.click(await screen.findByTestId('world-add-waypoint'));
+
+      fireEvent.change(screen.getByTestId('world-waypoint-add-name'), {
+        target: { value: 'OW_' },
+      });
+
+      expect(await screen.findByText('OW_PATH_42')).toBeInTheDocument();
+      expect(screen.queryByText('NW_CROSSROAD')).not.toBeInTheDocument();
+    });
+
     it('re-reads the payload on undo too, and lets go of the waypoint', async () => {
       // Undo removes the tail. A gizmo left standing on it would be sitting on
       // an index the waynet no longer has.
@@ -3154,5 +3177,66 @@ describe('a focus request from outside the surface', () => {
 
     expect(mockFrameVob).not.toHaveBeenCalled();
     expect(useWorldStore.getState().focusRequest).toBeNull();
+  });
+
+  /**
+   * `{ kind: 'add-waypoint' }` — the Problems panel's "Add to world" action on
+   * a `waypoint-not-in-world` finding. Unlike the other two kinds it is not a
+   * jump: a script naming a place is not a position, so there is nothing to
+   * frame yet. What it arms is the same terrain click `world-add-waypoint`
+   * already takes — this only supplies the overlay and the name.
+   */
+  describe('the "add-waypoint" kind', () => {
+    it('shows the overlay and takes the request without framing anything', async () => {
+      await openWorld();
+
+      await act(async () => {
+        useWorldStore.getState().requestFocus({ kind: 'add-waypoint', name: 'OW_PATH_42' });
+      });
+
+      expect(mockShowWaynet).toBe(true);
+      expect(mockFramePoint).not.toHaveBeenCalled();
+      expect(mockFrameVob).not.toHaveBeenCalled();
+      expect(useWorldStore.getState().focusRequest).toBeNull();
+    });
+
+    it('pre-fills the next "Add waypoint here" dialog with the armed name', async () => {
+      await openWorld();
+      await act(async () => {
+        useWorldStore.getState().requestFocus({ kind: 'add-waypoint', name: 'OW_PATH_42' });
+      });
+
+      fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+      act(() => useWorldStore.getState().selectVob(null));
+      fireEvent.click(await screen.findByTestId('world-add-waypoint'));
+
+      expect(screen.getByTestId('world-waypoint-add-name')).toHaveValue('OW_PATH_42');
+    });
+
+    it('commits the armed name as the AddWaypoint op, not a suggested one', async () => {
+      await openWorld();
+      await act(async () => {
+        useWorldStore.getState().requestFocus({ kind: 'add-waypoint', name: 'OW_PATH_42' });
+      });
+
+      fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+      act(() => useWorldStore.getState().selectVob(null));
+      fireEvent.click(await screen.findByTestId('world-add-waypoint'));
+      fireEvent.click(screen.getByTestId('world-waypoint-add-confirm'));
+
+      await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledWith([
+        expect.objectContaining({ op: 'AddWaypoint', name: 'OW_PATH_42' }),
+      ]));
+    });
+
+    it('shows a hint naming the armed waypoint before the ground is clicked', async () => {
+      await openWorld();
+
+      await act(async () => {
+        useWorldStore.getState().requestFocus({ kind: 'add-waypoint', name: 'OW_PATH_42' });
+      });
+
+      expect(screen.getByTestId('world-terrain-hint')).toHaveTextContent('OW_PATH_42');
+    });
   });
 });

@@ -180,6 +180,40 @@ describe('a Problems click on a world finding', () => {
     expect(useUISelectionStore.getState().activeView).toBe('problems');
   });
 
+  /**
+   * `waypoint-not-in-world` keeps its ordinary script locus — the row's own
+   * click still goes to the routine, since the name may belong to another
+   * world (§16.8) — but it also carries the name the script used, and the
+   * panel wires that to a second action that does not navigate at all.
+   */
+  it('arms the World surface with the name instead of navigating', async () => {
+    // Cleared here rather than trusted to a fresh mock: this describe block's
+    // own `beforeEach` does not reset the navigation mocks, and an earlier
+    // test elsewhere in this file leaves them with calls recorded.
+    navigateToSymbol.mockClear();
+    act(() => {
+      useWorldStore.setState({ status: 'ready' });
+      useProblemsStore.setState({
+        problems: [problem({
+          locus: {
+            kind: 'script', filePath: 'Story/Routines/Rtn.d', functionName: 'Rtn_Start_Diego', waypoint: 'OW_PATH_42',
+          },
+        })],
+        hasScanned: true,
+        requestScan: jest.fn(),
+      });
+    });
+    render(<ProblemsPanel />);
+
+    await userEvent.click(screen.getByTestId('problem-row-0-add-to-world'));
+
+    expect(useWorldStore.getState().focusRequest)
+      .toEqual({ kind: 'add-waypoint', name: 'OW_PATH_42' });
+    expect(useUISelectionStore.getState().activeView).toBe('world');
+    expect(navigateToSymbol).not.toHaveBeenCalled();
+    expect(openFile).not.toHaveBeenCalled();
+  });
+
   it('leaves a locus it cannot address alone', async () => {
     // A polygon locus is slice 3's, and framing one needs the mesh: until then
     // it is listed and not clickable rather than silently doing nothing.

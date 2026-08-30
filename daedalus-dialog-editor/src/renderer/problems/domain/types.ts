@@ -34,6 +34,12 @@ export interface ScriptLocus {
   dialogName?: string;
   /** Function the problem points at, used for navigation. */
   functionName?: string;
+  /**
+   * The waypoint name a `waypoint-not-in-world` finding names, in the script's
+   * own casing. Carried so the Problems panel's "Add to world" action has a
+   * name to hand `AddWaypoint` without parsing one back out of `message`.
+   */
+  waypoint?: string;
 }
 
 /**

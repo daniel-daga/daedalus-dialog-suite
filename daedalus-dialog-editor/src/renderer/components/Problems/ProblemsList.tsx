@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Chip, List, ListItem, ListItemButton, ListItemText, Typography } from '@mui/material';
+import { Box, Button, Chip, List, ListItem, ListItemButton, ListItemText, Typography } from '@mui/material';
 import { searchablePaneRowButtonSx } from '../common/searchablePaneStyles';
 import type { Problem, ProblemRuleId } from '../../problems/domain/types';
 import { worldFocusOf } from '../../store/worldStore';
@@ -43,48 +43,86 @@ const isNavigable = (problem: Problem, worldOpen: boolean): boolean => (
     : worldOpen && worldFocusOf(problem.locus) !== null
 );
 
+/**
+ * The name an "Add to world" action would send to `AddWaypoint`, or null when
+ * this row offers no such action: only `waypoint-not-in-world` names a place
+ * the open world could gain, and only while there is one open to gain it in.
+ */
+const addableWaypoint = (problem: Problem, worldOpen: boolean): string | null => {
+  if (problem.rule !== 'waypoint-not-in-world' || !worldOpen) return null;
+  return problem.locus.kind === 'script' ? (problem.locus.waypoint ?? null) : null;
+};
+
 interface ProblemsListProps {
   problems: Problem[];
   onSelect: (problem: Problem) => void;
   /** Whether a world is open, which is half of what makes a world row clickable. */
   worldOpen?: boolean;
+  /**
+   * Adds the named waypoint to the open world — the `waypoint-not-in-world`
+   * row's own second action (`addableWaypoint`). Separate from `onSelect`,
+   * which still goes to the script: the name may belong to another world
+   * (level-editor.md §16.8), so navigating there stays the row's primary
+   * click and this is an explicit opt-in beside it.
+   */
+  onAddToWorld?: (name: string) => void;
 }
 
 /**
  * Presentational list of project-wide lint problems. Each row is navigable via
  * `onSelect`; severity is shown as a color-coded chip.
  */
-const ProblemsList: React.FC<ProblemsListProps> = ({ problems, onSelect, worldOpen = false }) => (
+const ProblemsList: React.FC<ProblemsListProps> = ({
+  problems, onSelect, worldOpen = false, onAddToWorld,
+}) => (
   <List dense disablePadding data-testid="problems-list" sx={{ height: '100%', overflowY: 'auto' }}>
-    {problems.map((problem, index) => (
-      <ListItem key={problem.id} disablePadding>
-        <ListItemButton
-          sx={searchablePaneRowButtonSx}
-          onClick={() => onSelect(problem)}
-          disabled={!isNavigable(problem, worldOpen)}
-          data-testid={`problem-row-${index}`}
-        >
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, width: '100%', minWidth: 0 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Chip
-                size="small"
-                label={problem.severity === 'error' ? 'Error' : 'Warning'}
-                color={problem.severity === 'error' ? 'error' : 'warning'}
-                variant="outlined"
+    {problems.map((problem, index) => {
+      const waypoint = onAddToWorld ? addableWaypoint(problem, worldOpen) : null;
+      return (
+        <ListItem key={problem.id} disablePadding>
+          <ListItemButton
+            sx={searchablePaneRowButtonSx}
+            onClick={() => onSelect(problem)}
+            disabled={!isNavigable(problem, worldOpen)}
+            data-testid={`problem-row-${index}`}
+          >
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, width: '100%', minWidth: 0 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Chip
+                  size="small"
+                  label={problem.severity === 'error' ? 'Error' : 'Warning'}
+                  color={problem.severity === 'error' ? 'error' : 'warning'}
+                  variant="outlined"
+                />
+                <Chip size="small" label={RULE_LABEL[problem.rule]} variant="outlined" />
+                {waypoint !== null && (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    sx={{ ml: 'auto' }}
+                    onClick={(event) => {
+                      // The row underneath navigates to the script; this must not.
+                      event.stopPropagation();
+                      onAddToWorld?.(waypoint);
+                    }}
+                    data-testid={`problem-row-${index}-add-to-world`}
+                  >
+                    Add to world
+                  </Button>
+                )}
+              </Box>
+              <ListItemText
+                primary={problem.message}
+                secondary={secondaryText(problem)}
+                primaryTypographyProps={{ variant: 'body2' }}
+                secondaryTypographyProps={{ variant: 'caption', color: 'text.secondary' }}
+                sx={{ m: 0 }}
               />
-              <Chip size="small" label={RULE_LABEL[problem.rule]} variant="outlined" />
             </Box>
-            <ListItemText
-              primary={problem.message}
-              secondary={secondaryText(problem)}
-              primaryTypographyProps={{ variant: 'body2' }}
-              secondaryTypographyProps={{ variant: 'caption', color: 'text.secondary' }}
-              sx={{ m: 0 }}
-            />
-          </Box>
-        </ListItemButton>
-      </ListItem>
-    ))}
+          </ListItemButton>
+        </ListItem>
+      );
+    })}
     {problems.length === 0 && (
       <Box sx={{ px: 2, py: 3 }}>
         <Typography variant="body2" color="text.secondary" data-testid="problems-empty">
