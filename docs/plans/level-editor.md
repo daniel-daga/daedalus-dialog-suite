@@ -2000,6 +2000,68 @@ in the Claude Code cloud container"*). Jest covers the choice
 toggle (`WorldSurface.editing.test.tsx`); **that the names land on their dots on
 screen is still unwitnessed**, and it is the same wall, not a new one.
 
+**Slice 9 — NPC dummies. Proposed, not built (Daniel, 2026-08-30).** Draw a
+body at each occupied point instead of a dot: the spawn layer's markers become
+stand-in figures, moved through the day by slice 7's slider and named by slice
+8's labels.
+
+**This is not the NPC-rendering that is out of scope, and the difference is the
+whole reason it is cheap.** The bullet above records that real NPC *visuals* are
+unreachable — `ProjectIndex` carries instance names and no bodies, so the
+`B_SetNpcVisual` chain has nothing to walk, and closing that needs a fifth
+extraction pass or a semantic model in main. A dummy needs none of it. It needs
+a position, which slice 1 already yields, and it is the answer to that gap
+rather than a placeholder waiting on it.
+
+**One dummy per point, as the markers already are.** The scripts give no
+per-NPC offset, so the 175 distinct NPCs on `NW_CITY_ENTRANCE_01` (§16.22 q4)
+would need 175 invented positions — the same reason slice 4 draws one marker per
+point. Who is standing there stays the waypoint panel's answer, and slice 8's
+label is where a count belongs.
+
+**Four things it has to decide, and the first is the one that can go silently
+wrong.**
+
+1. **The facing is unverified twice over.** `WaynetPayload.directions` has
+   crossed the binding since Phase 1a and **is read by nothing** — no consumer
+   has ever confirmed what the vector means, so a dummy would be its first. On
+   top of that the layer hangs under the mirrored root: `ROOT_MATRIX` negates X,
+   and `coords/index.ts` documents that a quaternion cannot carry a mirror and
+   drops it silently. A per-instance matrix composed under that root does come
+   out facing correctly — the root transforms the direction exactly as it
+   transforms the position — but it is a rotation *and* a reflection, so any
+   asymmetric dummy is mirrored with it, and a facing that looks plausible on
+   screen can still be wrong. **This is §16.4's problem again and wants the same
+   answer: Spacer.** Until then a symmetric dummy claims nothing it cannot back.
+2. **A solid body cannot keep the marker's `depthTest: false`.** The dots draw
+   through walls on purpose — "a spawn inside a building is exactly the one
+   worth looking at" — and a flat dot in front of a wall reads as a dot in
+   front of a wall. A *body* that ignores depth reads as standing in front of
+   the building rather than inside it. **Keep both layers**: the dummy
+   depth-tested, the dot as it is. That also answers (3).
+3. **A dummy is world-space and the marker is not.** The points draw with
+   `sizeAttenuation: false` — a constant 9 px, deliberately, so a spawn is
+   findable with the whole world in frame. A body shrinks with distance and is
+   nothing at map zoom. Keeping the dot is what preserves the find-it-anywhere
+   property; the dot sits at the dummy's feet, which is where the waypoint is.
+4. **`placementWaypointsAt` throws away who.** It returns waypoint names,
+   because that is all a marker needed. A labelled dummy wants point → the
+   instances standing on it, which `placementsAt` has and this discards. That is
+   the one API change in the slice.
+
+**Shape of the work.** One `InstancedMesh` of a capsule authored in ZenGin
+centimetres (~180 units, the root scales it), sized at the waynet's point count
+and drawn with `count` — the same fixed-capacity trick slice 7 put on the
+markers' `drawRange`, and for the same reason. The known/unknown split carries
+over as a per-instance attribute rather than a second mesh, which is the pattern
+`HIDDEN_ATTRIBUTE` already establishes (§16.24 1 reaches for it too). Cost is
+one draw call for ~1,816 bodies, against the 724 the VOBs already spend.
+
+**A loose end it does not close:** `pickWaypoint` projects waypoint *origins*
+with an 8 px radius, so up close the clickable spot is at the dummy's feet and
+clicking its chest selects nothing. Worth knowing before it is reported as a
+bug.
+
 **Phase ordering note.** §11 schedules 1b-2 before 1c, and 1b-2 is not finished
 — but what remains of it on the board (Euler order against Spacer) needs Spacer
 itself and a person, as do the Gate 2b `07` rows. These slices were carded by

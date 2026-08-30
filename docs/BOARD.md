@@ -152,24 +152,24 @@ needs the engine; the order is a guess at his, so move it.
 - **A VOB can be picked through the world mesh** — the pick pass draws only the
   VOB proxies, so nothing writes depth and a VOB behind a wall wins the pixel.
   Diagnosed, and the fix is a depth-only occluder in that scene. §16.24 3
-- **A selection is invisible unless its gizmo is** — wants an outline on the
-  selected VOBs. Overturns the silhouette shader's *"never a selection state"*;
-  the cheap form is a per-instance attribute, as hiding already is. §16.24 1
+- **A selection is invisible unless its gizmo is** — wants an outline; the cheap
+  form is a per-instance attribute. §16.24 1
 - **Paste lands the copy inside the original and leaves it unselected** — wants
-  an offset and the copy selected. The "jerk" is the structural re-read, which
-  is a bigger and separate question. §16.24 4
+  an offset and the copy selected. §16.24 4
 - **After a paste the locator works on no VOB at all** — every link in
   `onFocus → focusVob → frameVob → frameVobRef` is optional-chained, so a null
   is a silent no-op. Not root-caused; the probe is written. §16.24 5
 - **The right sidebar has no locator for the selection** — picking in the
   viewport leaves no way back to it. `.` already does it. §16.24 6
 - **The multi-select gizmo sits on the last VOB picked, not the centre** —
-  wants the centre. **Decide rotation first**: `rotateVobs` turns each VOB about
-  its own origin, so a centroid gizmo would show a pivot the op does not use.
+  **decide rotation first**, or the gizmo shows a pivot the op does not use.
   §16.24 2
 
-**Phase 1c — the overlay's last one, at §16.19.**
+**Phase 1c — the overlay, at §16.19.** Neither is blocked.
 
+- **NPC dummies** — draw a body at each occupied point instead of a dot, moved
+  by the slider and named by the labels. Designed, not built; the facing is
+  unverified and wants Spacer, as §16.4 does. §16.19 s9
 - **The routine index's coverage has never been measured** — one command
   against `mdk/Content`; it qualifies everything built on the index. Now also
   qualifies the slider: an hour it reads badly draws grey. §16.19 s6
