@@ -27,6 +27,54 @@ export interface RoutineIndex {
   sites: readonly RoutineSite[];
   /** UPPERCASED NPC instance to UPPERCASED routine function. */
   routinesByNpc: Readonly<Record<string, string>>;
+  /**
+   * The routine variants quest state swaps in, keyed by UPPERCASED NPC
+   * (§16.19 slice 11). Optional: an index without it behaves exactly as it did
+   * before the lens existed, which is also what an empty one does.
+   */
+  statesByNpc?: Readonly<Record<string, { id: number; states: Readonly<Record<string, string>> }>>;
+}
+
+/**
+ * Which routine an NPC runs under the chosen state.
+ *
+ * **The fallback is the lens's semantics, not a convenience.** A state names
+ * the NPCs it exists for; for everyone else the chosen state says nothing, so
+ * they keep the strongest fact available — the day their instance declares.
+ * Reading it as "this NPC is not in that state" would be inventing a claim the
+ * scripts do not make.
+ */
+function routineFor(
+  index: RoutineIndex,
+  instance: string,
+  declared: string,
+  state: string | null
+): string {
+  if (!state) return declared;
+  return index.statesByNpc?.[instance]?.states?.[state] || declared;
+}
+
+/**
+ * How many NPCs a chosen state actually moves, against how many it could.
+ *
+ * This is what stops *State: TOT* over a world where one NPC moved from
+ * reading as "the world is in TOT" — the same job slice 7's grey markers do for
+ * the unmeasured coverage, and the reason the picker is not allowed to ship
+ * without it. The denominator is the NPCs whose day is known at all, because
+ * those are the only ones a state could move.
+ */
+export function stateReach(
+  index: RoutineIndex,
+  state: string | null
+): { resolved: number; total: number } {
+  const total = Object.keys(index.routinesByNpc).length;
+  if (!state) return { resolved: 0, total };
+
+  let resolved = 0;
+  for (const instance of Object.keys(index.routinesByNpc)) {
+    if (index.statesByNpc?.[instance]?.states?.[state]) resolved += 1;
+  }
+  return { resolved, total };
 }
 
 export interface RoutinePlacement {
@@ -55,8 +103,16 @@ export function windowCovers(window: RoutineWindow, minute: number): boolean {
   return minute >= startMinute || minute < endMinute;
 }
 
-/** Where every NPC with a declared routine stands at `minute`. */
-export function placementsAt(index: RoutineIndex, minute: number): RoutinePlacement[] {
+/**
+ * Where every NPC with a declared routine stands at `minute`, optionally seen
+ * through a quest state — see `routineFor` for what a state does and does not
+ * claim.
+ */
+export function placementsAt(
+  index: RoutineIndex,
+  minute: number,
+  state: string | null = null
+): RoutinePlacement[] {
   const byRoutine = new Map<string, RoutineSite[]>();
   for (const site of index.sites) {
     const entries = byRoutine.get(site.routine);
@@ -64,11 +120,14 @@ export function placementsAt(index: RoutineIndex, minute: number): RoutinePlacem
     else byRoutine.set(site.routine, [site]);
   }
 
-  return Object.entries(index.routinesByNpc).map(([instance, routine]) => ({
-    instance,
-    routine,
-    entries: (byRoutine.get(routine) || []).filter((site) => windowCovers(site, minute))
-  }));
+  return Object.entries(index.routinesByNpc).map(([instance, declared]) => {
+    const routine = routineFor(index, instance, declared, state);
+    return {
+      instance,
+      routine,
+      entries: (byRoutine.get(routine) || []).filter((site) => windowCovers(site, minute))
+    };
+  });
 }
 
 /**
@@ -99,13 +158,14 @@ export interface TimedPlacements {
 export function placementWaypointsAt(
   index: RoutineIndex,
   spawns: readonly SpawnSite[],
-  minute: number
+  minute: number,
+  state: string | null = null
 ): TimedPlacements {
   const known = new Set<string>();
   /** The NPCs a routine entry positions — the rest fall back to their spawn. */
   const positioned = new Set<string>();
 
-  for (const placement of placementsAt(index, minute)) {
+  for (const placement of placementsAt(index, minute, state)) {
     // Empty entries is "the script does not say", which is the unknown case and
     // not a position. Every entry of an overlap is taken: `placementsAt` picks
     // no winner on purpose, so an NPC the routine puts in two places is drawn

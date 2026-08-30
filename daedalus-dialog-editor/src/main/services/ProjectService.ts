@@ -16,7 +16,9 @@ export type { DialogMetadata, ProjectIndex } from '../../shared/types';
 
 import {
   extractFileMetadataFromSource,
+  extractExchangeSites,
   extractRoutineSites,
+  extractRoutineStatesByNpc,
   extractRoutinesByNpc,
   extractSpawnSites,
   extractWaypointSites
@@ -241,6 +243,7 @@ class ProjectService {
 
     // Extract and sort NPC list
     const npcs = Array.from(allNpcs).sort();
+    const routineSites = extractRoutineSites(fileModelsForSiteIndexes);
 
     return {
       npcs,
@@ -252,8 +255,13 @@ class ProjectService {
       voiceIds,
       waypointSites: extractWaypointSites(fileModelsForSiteIndexes),
       spawnSites: extractSpawnSites(fileModelsForSiteIndexes),
-      routineSites: extractRoutineSites(fileModelsForSiteIndexes),
+      routineSites,
       routinesByNpc: extractRoutinesByNpc(fileModelsForSiteIndexes),
+      // The state index reuses the sites above rather than recomputing them:
+      // extractRoutineSites runs the wrapper fixed-point sweep over every
+      // function of every file, and once a load is enough.
+      routineStatesByNpc: extractRoutineStatesByNpc(fileModelsForSiteIndexes, routineSites),
+      exchangeSites: extractExchangeSites(fileModelsForSiteIndexes),
       metadataFailures
     };
   }

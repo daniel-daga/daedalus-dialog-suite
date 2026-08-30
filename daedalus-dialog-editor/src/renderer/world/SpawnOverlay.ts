@@ -226,13 +226,18 @@ export class SpawnOverlay {
    *
    * Null is the slider switched off, not midnight — an NPC's position at 00:00
    * is a thing the routines answer, and "no time chosen" is not.
+   *
+   * `state` is the quest-state lens (§16.19 slice 13): an NPC with a variant for
+   * it is drawn through that variant, everyone else through his declared day.
+   * It rides this call rather than one of its own because a state without a
+   * minute answers nothing the static layer does not.
    */
-  setTime(minute: number | null): void {
+  setTime(minute: number | null, state: string | null = null): void {
     if (minute === null) {
       this.points = this.staticPoints;
       this.unknownPoints = [];
     } else {
-      const placements = placementWaypointsAt(this.routines, this.sites, minute);
+      const placements = placementWaypointsAt(this.routines, this.sites, minute, state);
       this.points = this.resolve(placements.known);
       this.unknownPoints = this.resolve(placements.unknown);
     }

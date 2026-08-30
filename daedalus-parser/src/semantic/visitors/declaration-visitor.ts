@@ -139,6 +139,11 @@ export class DeclarationVisitor {
             instance.dailyRoutine = dailyRoutine;
           }
 
+          const npcId = this.extractNpcId(node);
+          if (npcId !== undefined) {
+            instance.npcId = npcId;
+          }
+
           if (upperParent === 'C_ITEM') {
             if (!this.semanticModel.items) {
               this.semanticModel.items = {};
@@ -262,6 +267,30 @@ export class DeclarationVisitor {
       return typeof value === 'string' && value.trim() !== '' ? value : undefined;
     }
 
+    return undefined;
+  }
+
+  /**
+   * The `id` field of an instance body, when it is an integer literal.
+   *
+   * Read exactly as `extractDailyRoutine` reads its field, and it stops at the
+   * same place: a constant or an expression is left undefined rather than
+   * guessed, because the consumers of this hold no symbol table to resolve one
+   * against. A leading `-` is part of the literal — retail writes `id = -1`.
+   */
+  private extractNpcId(instanceNode: TreeSitterNode): number | undefined {
+    const bodyNode = instanceNode.childForFieldName('body');
+    if (!bodyNode) return undefined;
+
+    for (const child of bodyNode.namedChildren) {
+      if (child.type !== 'assignment_statement') continue;
+      const leftNode = child.childForFieldName('left');
+      const rightNode = child.childForFieldName('right');
+      if (!leftNode || !rightNode) continue;
+      if (leftNode.text.toLowerCase() !== 'id') continue;
+      const raw = rightNode.text.trim();
+      return /^-?\d+$/.test(raw) ? Number.parseInt(raw, 10) : undefined;
+    }
     return undefined;
   }
 

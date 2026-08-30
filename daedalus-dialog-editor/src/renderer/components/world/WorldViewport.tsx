@@ -131,6 +131,12 @@ export interface WorldViewportProps {
    */
   spawnTime: number | null;
   /**
+   * The quest state the day is drawn through, or null for each NPC's declared
+   * routine (§16.19 slice 13). A lens, not a claim the game reaches the state:
+   * an NPC with no variant for it keeps his declared day.
+   */
+  spawnState: string | null;
+  /**
    * Draw the name of each nearby waypoint over it (§16.19 slice 8).
    *
    * What gets a name is what is *drawn*: every waypoint while the waynet is on,
@@ -310,7 +316,7 @@ function rowMajor(matrix: THREE.Matrix4): ZenRotation {
 }
 
 const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(({
-  mesh, visuals, bbox, waynet, showWaynet, spawns, showSpawns, routines, spawnTime,
+  mesh, visuals, bbox, waynet, showWaynet, spawns, showSpawns, routines, spawnTime, spawnState,
   showWaypointNames, loadTexture, onPick,
   selection, onTranslateSelection, gizmoMode, onRotateSelection, appliedOps,
   selectedWaypoint, terrainPoint, exposure, hiddenVobs, snapGrid, snapAngle,
@@ -1256,8 +1262,8 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   // same reason: a fresh overlay draws the static spawns, so without them a
   // structural op silently resets an open slider to no time at all.
   useEffect(() => {
-    spawnOverlayRef.current?.setTime(spawnTime);
-  }, [spawnTime, waynet, spawns, routines, mesh, visuals]);
+    spawnOverlayRef.current?.setTime(spawnTime, spawnState);
+  }, [spawnTime, spawnState, waynet, spawns, routines, mesh, visuals]);
 
   // The marker for the picked point, built and torn down exactly like the
   // overlay above — under the scene's converted root, so it needs no conversion

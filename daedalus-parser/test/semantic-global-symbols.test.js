@@ -160,3 +160,64 @@ instance ItFo_TestApple(C_Item)
     'Instance source text should include its body'
   );
 });
+
+// The `id` field is what resolves `Npc_ExchangeRoutine(npc, "X")` to the
+// function the engine actually runs, `RTN_X_<id>` (level-editor.md §16.19
+// slice 10). Read exactly as `daily_routine` is, and a non-literal id is left
+// undefined rather than guessed: a consumer of this has no symbol table to
+// resolve a constant against.
+test('should parse the C_NPC id field, and only when it is an integer literal', () => {
+  const source = `
+    const int SOME_ID = 42;
+
+    INSTANCE SLD_200_DIEGO(C_NPC)
+    {
+      name = "Diego";
+      id = 200;
+      daily_routine = Rtn_Start_200;
+    };
+
+    INSTANCE VLK_500_TEST(C_NPC)
+    {
+      name = "Test";
+      id = SOME_ID;
+    };
+
+    INSTANCE BAU_900_NOID(C_NPC)
+    {
+      name = "No Id";
+    };
+  `;
+
+  const model = parseSemanticModel(source);
+
+  assert.equal(model.hasErrors, false, 'Should parse without errors');
+
+  assert.equal(model.instances['SLD_200_DIEGO'].npcId, 200, 'Literal id is read');
+  assert.equal(
+    model.instances['SLD_200_DIEGO'].dailyRoutine,
+    'Rtn_Start_200',
+    'daily_routine still reads beside it'
+  );
+  assert.equal(
+    model.instances['VLK_500_TEST'].npcId,
+    undefined,
+    'A constant id is unresolvable here and is left undefined, never guessed'
+  );
+  assert.equal(
+    model.instances['BAU_900_NOID'].npcId,
+    undefined,
+    'An instance with no id field has none'
+  );
+});
+
+test('should parse a negative id literal', () => {
+  const model = parseSemanticModel(`
+    INSTANCE MONSTER_TEMPLATE(C_NPC)
+    {
+      id = -1;
+    };
+  `);
+
+  assert.equal(model.instances['MONSTER_TEMPLATE'].npcId, -1);
+});

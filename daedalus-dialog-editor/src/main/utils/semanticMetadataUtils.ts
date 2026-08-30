@@ -440,6 +440,112 @@ export function extractRoutinesByNpc(
   return byNpc;
 }
 
+/**
+ * The routine variants quest state swaps in, keyed by NPC (level-editor.md
+ * §16.19 slice 11).
+ *
+ * **The grouping rule is the engine's, not an observed naming style.**
+ * `Npc_ExchangeRoutine(npc, "X")` makes the engine run `RTN_X_<id>`, where
+ * `id` is the C_NPC instance's own `id` field — so a variant is found by
+ * stripping `RTN_` from the front of an indexed routine function and the NPC's
+ * id from the back, and what is left is the state name. Splitting on the
+ * *known* id rather than guessing where the state name ends is what keeps
+ * `Rtn_Addon_Tot_4300` intact as `ADDON_TOT`.
+ *
+ * Variants are enumerated from the routine functions the index already read,
+ * never from the exchange call sites: an exchange reaching a state through a
+ * variable would be missed, and a variant nothing triggers is still a day the
+ * scripts describe — which is what a lens is for. Two exclusions, both the
+ * "excluded, never guessed" rule of slice 5: an NPC whose `id` is not a
+ * literal has nothing to split on and gets no states, and a routine with no
+ * entries the index could read is not offered, because choosing it would empty
+ * the world with no explanation.
+ *
+ * The declared `daily_routine` is excluded — it is `routinesByNpc`'s answer,
+ * and the picker's *Declared* default must not also appear as a state.
+ */
+export function extractRoutineStatesByNpc(
+  fileModels: Array<{ semanticModel: SemanticModel }>,
+  routineSites: readonly RoutineSite[]
+): Record<string, { id: number; states: Record<string, string> }> {
+  // Only routines with entries the index could actually read qualify. Taken
+  // from the caller rather than recomputed: `extractRoutineSites` runs the
+  // wrapper fixed-point sweep over every function of every file, and the one
+  // caller in the project has already paid for it.
+  const indexedRoutines = new Set(routineSites.map((site) => site.routine));
+
+  const byNpc: Record<string, { id: number; states: Record<string, string> }> = {};
+
+  for (const { semanticModel } of fileModels) {
+    for (const instance of Object.values(semanticModel.instances || {})) {
+      if (!instance.name || instance.npcId === undefined) continue;
+
+      const suffix = `_${instance.npcId}`;
+      const declared = instance.dailyRoutine?.toUpperCase();
+      const states: Record<string, string> = {};
+
+      for (const routine of indexedRoutines) {
+        if (routine === declared) continue;
+        if (!routine.startsWith('RTN_') || !routine.endsWith(suffix)) continue;
+        const state = routine.slice('RTN_'.length, routine.length - suffix.length);
+        if (state) states[state] = routine;
+      }
+
+      if (Object.keys(states).length > 0) {
+        byNpc[instance.name.toUpperCase()] = { id: instance.npcId, states };
+      }
+    }
+  }
+
+  return byNpc;
+}
+
+const EXCHANGE_EXTERNAL_NAMES = new Set(['npc_exchangeroutine', 'b_startotherroutine']);
+
+/**
+ * Every `Npc_ExchangeRoutine` / `B_StartOtherRoutine` call whose state name is
+ * a string literal — which states the scripts actually *trigger*, as against
+ * the states `extractRoutineStatesByNpc` finds written.
+ *
+ * **Deliberately not consumed by the picker.** It is the ground truth the
+ * slice 11 measurement compares variants against, and later the "what triggers
+ * this state" navigation. A `self` target is recorded as written rather than
+ * resolved through the enclosing dialog: that derivation is real but has no
+ * reader yet, and an API grown for a call site that does not exist is the
+ * thing §16.19 slice 9 decision 4 declined to build.
+ */
+export function extractExchangeSites(
+  fileModels: Array<{ filePath: string; semanticModel: SemanticModel }>
+): Array<{ target: string; state: string; filePath: string; functionName: string; line: number }> {
+  const sites: Array<{
+    target: string; state: string; filePath: string; functionName: string; line: number;
+  }> = [];
+
+  for (const { filePath, semanticModel } of fileModels) {
+    for (const [functionName, func] of Object.entries(semanticModel.functions || {})) {
+      for (const call of func.callSites || []) {
+        if (!EXCHANGE_EXTERNAL_NAMES.has(call.functionName.toLowerCase())) continue;
+
+        const targetArg = call.args?.[0];
+        if (!targetArg || targetArg.isString || !BARE_IDENTIFIER.test(targetArg.raw)) continue;
+
+        const stateArg = call.args?.[1];
+        if (!stateArg || !stateArg.isString || !stateArg.value) continue;
+
+        sites.push({
+          target: targetArg.raw.toUpperCase(),
+          state: stateArg.value.toUpperCase(),
+          filePath,
+          functionName: functionName.toUpperCase(),
+          line: call.position.startLine
+        });
+      }
+    }
+  }
+
+  return sites;
+}
+
 export function extractFileMetadataFromSource(sourceCode: string, filePath: string): ParsedFileMetadata {
   const parseResult = daedalusWrapper.parse(sourceCode);
   const tree = parseResult.tree;

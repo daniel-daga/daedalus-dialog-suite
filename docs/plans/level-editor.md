@@ -2098,8 +2098,9 @@ bug. And like slice 7 and slice 8, **nothing here is witnessed on screen** — t
 browser harness has no world, so Jest is what checks the scene graph and
 nobody has watched a dummy stand in a real one yet.
 
-**The slider's answer is the start of the game — the state slices. Planned
-2026-08-30, nothing landed.** Slices 5–7 resolve an NPC through
+**The slider's answer is the start of the game — the state slices. Planned and
+landed 2026-08-30 (Claude), except the measurement, which has no corpus on this
+machine.** Slices 5–7 resolve an NPC through
 `routinesByNpc`, the one routine his instance *declares* — and the declared
 routine is only the day the game opens with. Quest state swaps it:
 `Npc_ExchangeRoutine(npc, "X")` (retail nearly always through the
@@ -2145,8 +2146,16 @@ exactly as `dailyRoutine` is (`declaration-visitor.ts`, the
 <integer literal>`, and anything else — a constant reference, an expression —
 leaves it `undefined`, excluded never guessed. A constant id is as
 unresolvable downstream as a constant hour was in slice 5, and for the same
-reason: the consumer has no symbol table. Parser workspace, TDD in
-`daedalus-parser/test`.
+reason: the consumer has no symbol table.
+
+**Landed.** `GlobalInstance.npcId` and `extractNpcId` in
+`declaration-visitor.ts`, beside `extractDailyRoutine` and reading the same
+top-level body assignments. A leading `-` is part of the literal — retail writes
+`id = -1` on templates. Held by two cases in
+`semantic-global-symbols.test.js`. **The editor keeps its own structural copy of
+`GlobalInstance` in `src/shared/types.ts`**, so the field had to be added in
+both places or the extractor does not compile — worth knowing before the next
+instance field.
 
 **Slice 11 — the state index.** Two `ProjectIndex` fields, both riding
 `fileModelsForSiteIndexes` like slices 1 and 5, both reaching the renderer
@@ -2169,13 +2178,35 @@ through `projectStore`:
   `dialogsByNpc` — a real derivation, but one with no consumer yet, the
   slice 9 decision 4 rule.
 
+**Landed** as `extractRoutineStatesByNpc` and `extractExchangeSites`, reaching
+the renderer as `projectStore.routineStateIndex`. **`extractRoutineStatesByNpc`
+takes the routine sites rather than recomputing them**: `extractRoutineSites`
+runs `buildRoutineParamIndex`'s fixed-point sweep over every function of every
+file, and `ProjectService` has already paid for it once. A variant whose routine
+has no entries the index could read is dropped — choosing it would empty the
+world with no explanation — which also means this index inherits slice 6's
+unmeasured coverage exactly.
+
 The decision this slice turns on: variants enumerate **by the engine's name
 rule, not by exchange sites**. The name rule sees a variant an exchange
 reaches through a variable or a concatenation; an exchange-site enumeration
 would not. The cost is listing variants nothing in the scripts triggers — for
 a lens that is the point, not a defect.
 
-**The measurement, before the UI ships an option list** — a sibling of
+**The measurement — written and NOT run, and the honest statement is that the
+number is missing.** `scripts/check-routine-states.js` exists in
+`check-routine-coverage.js`'s shape and was exercised against a synthetic corpus
+only (three NPCs, a state shared by two, drift planted in both directions — it
+reports all of it correctly), because **no retail corpus is on the machine that
+wrote it**, exactly as with slice 6's script. So the paragraph below still
+describes work to do, and *"do not build the select before the number exists"*
+was overridden by an explicit instruction to implement, not by the number
+arriving. **The select shipped; whether a dropdown is the right control is still
+unmeasured, and that is a live risk, not a closed question.** The run is
+`npm run build:main` then
+`node scripts/check-routine-states.js --project "<...>\mdk\Content"`.
+
+**What the measurement asks, and it is what the UI ships on** — a sibling of
 `scripts/check-routine-coverage.js`, run against `mdk/Content`: distinct state
 names and NPCs per state (does "TOT" / "PRISON" / "KAPITEL3" really recur
 across NPCs — the premise of a *global* picker), exchange sites resolvable
@@ -2194,6 +2225,9 @@ says nothing — so they keep the strongest fact available, the declared day.
 Overlap, hole and empty-index semantics unchanged. Jest,
 `routineSchedule.test.ts`.
 
+**Landed**, plus one function the plan did not foresee needing: `stateReach`,
+which the UX pass below turned into a requirement rather than a nicety.
+
 **Slice 13 — the State picker.** A select on the World bar, offered while
 *Time* is on — a state without a minute answers nothing the static layer does
 not — options the distinct state names of the index, sorted, default
@@ -2205,6 +2239,13 @@ Jest as slices 7–9 pin theirs (`WorldSurface.editing.test.tsx`,
 `SpawnOverlay.test.ts`); the Playwright wall is slice 7's, so that the markers
 *move* when the state changes stays unwitnessed on screen, said rather than
 hidden.
+
+**Landed**, with the reach readout below as `world-state-reach` and the picker
+as `world-state`. The state rides `setTime(minute, state)` rather than a call of
+its own, for the same reason the control hangs off *Time*. Switching *Time* off
+clears the state, and so does switching *Spawns* off — a state surviving behind
+a hidden control is a filter nobody can see, which is the rule the time slider
+already followed for the layer.
 
 **The story it serves, and the one thing that story needs which the wiring
 above does not give it.** The question is *"where is this NPC once the plot has

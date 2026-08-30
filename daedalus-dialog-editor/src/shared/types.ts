@@ -45,6 +45,17 @@ export interface RoutineSite {
   line: number;
 }
 
+/** One `Npc_ExchangeRoutine`/`B_StartOtherRoutine` call with a literal state. */
+export interface ExchangeSite {
+  /** The call's first argument as written, UPPERCASED — `SELF` is left as-is. */
+  target: string;
+  /** The state name, UPPERCASED: `"Tot"` reaches `RTN_TOT_<id>`. */
+  state: string;
+  filePath: string;
+  functionName: string;
+  line: number;
+}
+
 export interface ProjectIndex {
   npcs: string[];
   dialogsByNpc: Map<string, DialogMetadata[]>;
@@ -90,6 +101,24 @@ export interface ProjectIndex {
    * schedule cannot use.
    */
   routinesByNpc: Record<string, string>;
+  /**
+   * The routine variants quest state swaps in, keyed by UPPERCASED NPC
+   * instance: the NPC's `id` and its state name → routine function map, both
+   * UPPERCASED. Enumerated by the engine's own `RTN_<state>_<id>` rule over the
+   * routines already in `routineSites`, so a variant no script triggers is
+   * still listed — the World surface reads this as a *lens* ("draw the day as
+   * if this state were active"), never as a claim the game reaches it.
+   *
+   * An NPC appears only when he has at least one variant beside his declared
+   * `daily_routine`, which stays `routinesByNpc`'s answer.
+   */
+  routineStatesByNpc: Record<string, { id: number; states: Record<string, string> }>;
+  /**
+   * Every `Npc_ExchangeRoutine`/`B_StartOtherRoutine` call with a literal state
+   * name — which states are actually *triggered*, as against those written.
+   * Nothing in the UI consumes it yet; it is the state index's ground truth.
+   */
+  exchangeSites: ExchangeSite[];
   /** Files whose metadata extraction failed (read/parse error, timeout, crash). */
   metadataFailures: Array<{ filePath: string; error: string }>;
 }
@@ -529,6 +558,12 @@ export interface GlobalInstance {
   parent: string;
   displayName?: string;
   dailyRoutine?: string;
+  /**
+   * The C_NPC `id` field when it is an integer literal — what resolves an
+   * `Npc_ExchangeRoutine(npc, "X")` to the `RTN_X_<id>` the engine runs.
+   * Undefined when absent or not a literal (a constant is not resolved here).
+   */
+  npcId?: number;
   sourceText?: string;
   leadingComments?: string[];
   filePath?: string;

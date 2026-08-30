@@ -188,6 +188,13 @@ export class GlobalInstance {
   public parent: string;
   public displayName?: string;
   public dailyRoutine?: string;
+  /**
+   * The C_NPC `id` field, when it is an integer literal. It is what resolves an
+   * `Npc_ExchangeRoutine(npc, "X")` to the function the engine runs, `RTN_X_<id>`
+   * — so a consumer grouping a routine's variants needs it and nothing else
+   * identifies them. Undefined when the field is absent or not a literal.
+   */
+  public npcId?: number;
   /** Verbatim declaration text (including body), used for faithful re-emission. */
   public sourceText?: string;
   public leadingComments?: string[];

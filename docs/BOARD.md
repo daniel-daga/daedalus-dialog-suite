@@ -170,9 +170,9 @@ needs the engine; the order is a guess at his, so move it.
 - **The routine index's coverage has never been measured** — one command
   against `mdk/Content`; it qualifies everything built on the index. Now also
   qualifies the slider: an hour it reads badly draws grey. §16.19 s6
-- **The slider answers only the declared routine** — a *State* lens over the
-  `RTN_*` variants quest state swaps in; planned as four slices, parser `id`
-  extraction first, chapter-gated spawns stay behind a measurement. §16.19 s10
+- **The State lens shipped on an unmeasured premise** — `check-routine-states.js`
+  has never run against a corpus, so whether a *global dropdown* is the right
+  control is unknown; one command answers it. §16.19 s11
 
 **Phase 1c / Phase 2 — world findings get a locus** (§7 decision, §16.20)
 

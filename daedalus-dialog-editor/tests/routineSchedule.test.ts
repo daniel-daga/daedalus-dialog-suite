@@ -3,6 +3,7 @@ import {
   coverageOf,
   placementsAt,
   placementWaypointsAt,
+  stateReach,
   MINUTES_PER_DAY
 } from '../src/renderer/routines/routineSchedule';
 
@@ -295,5 +296,78 @@ describe('routine schedule', () => {
 
   it('exports the day length the callers slice on', () => {
     expect(MINUTES_PER_DAY).toBe(24 * 60);
+  });
+
+  // §16.19 slice 12 — the State lens. A chosen state is "draw the day as if
+  // this state were active", never a claim the game reaches it: an NPC who has
+  // a variant for that state resolves through it, and everyone else keeps the
+  // strongest fact available, his declared day.
+  describe('a chosen state', () => {
+    const index = {
+      sites: [
+        entry('RTN_START_200', at(8), at(22), 'WP_OC_MAIN'),
+        entry('RTN_TOT_200', 0, 0, 'WP_GRAVE'),
+        entry('RTN_START_900', at(8), at(22), 'WP_FARM')
+      ],
+      routinesByNpc: { SLD_200_DIEGO: 'RTN_START_200', BAU_900_FARIM: 'RTN_START_900' },
+      statesByNpc: {
+        SLD_200_DIEGO: { id: 200, states: { TOT: 'RTN_TOT_200' } }
+      }
+    };
+
+    it('resolves an NPC through his variant for that state', () => {
+      expect(
+        placementsAt(index, at(12), 'TOT')
+          .filter((p) => p.instance === 'SLD_200_DIEGO')
+          .map((p) => p.entries.map((e) => e.waypoint))
+      ).toEqual([['WP_GRAVE']]);
+    });
+
+    it('leaves an NPC with no variant for that state on his declared routine', () => {
+      // The lens's honest semantics: the state says nothing about Farim, so the
+      // strongest available fact is still the day his instance declares.
+      expect(
+        placementsAt(index, at(12), 'TOT')
+          .filter((p) => p.instance === 'BAU_900_FARIM')
+          .map((p) => p.entries.map((e) => e.waypoint))
+      ).toEqual([['WP_FARM']]);
+    });
+
+    it('is the declared routine for everyone when no state is chosen', () => {
+      expect(placementsAt(index, at(12)).map((p) => p.entries.map((e) => e.waypoint))).toEqual([
+        ['WP_OC_MAIN'],
+        ['WP_FARM']
+      ]);
+    });
+
+    it('carries the state through to the drawn waypoints', () => {
+      const spawns = [
+        {
+          instance: 'SLD_200_DIEGO',
+          spawnPoint: 'WP_SPAWN',
+          filePath: '/test/Startup.d',
+          functionName: 'STARTUP',
+          line: 1
+        }
+      ];
+
+      expect(placementWaypointsAt(index, spawns, at(12), 'TOT').known).toContain('WP_GRAVE');
+      expect(placementWaypointsAt(index, spawns, at(12)).known).toContain('WP_OC_MAIN');
+    });
+
+    // The readout that keeps the lens honest: "State: TOT" over a world where
+    // one NPC moved must not read as "the world is in TOT". The denominator is
+    // the NPCs whose day is known at all, which is what the lens could move.
+    it('reports how many NPCs the state actually reaches, against how many it could', () => {
+      expect(stateReach(index, 'TOT')).toEqual({ resolved: 1, total: 2 });
+    });
+
+    it('reports no reach for a state nobody has a variant for', () => {
+      expect(stateReach(index, 'KAPITEL3')).toEqual({ resolved: 0, total: 2 });
+    });
+
+    it('reports no reach with no state chosen, so the readout can stay hidden', () => {
+      expect(stateReach(index, null)).toEqual({ resolved: 0, total: 2 });
+    });
   });
 });

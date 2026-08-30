@@ -1105,6 +1105,183 @@ INSTANCE ItMi_Gold (C_Item)
     });
   });
 
+  // §16.19 slice 11. The declared routine is only the day the game opens with;
+  // quest state swaps it, and the engine's own rule is that
+  // `Npc_ExchangeRoutine(npc, "X")` runs `RTN_X_<id>`. So variants are
+  // enumerated by that name rule over the routine functions already indexed —
+  // not by the exchange sites, which would miss a variant reached through a
+  // variable.
+  describe('routine state extraction (semanticMetadataUtils)', () => {
+    const load = () => import('../src/main/utils/semanticMetadataUtils');
+
+    /** The two-argument call, with the sites the caller in ProjectService has. */
+    const statesOf = (
+      extractStates: any,
+      extractSites: any,
+      fileModels: Array<{ filePath: string; semanticModel: any }>
+    ) => extractStates(fileModels, extractSites(fileModels));
+
+    const models = async (files: Array<[string, string]>) => {
+      const { extractFileMetadataFromSource } = await load();
+      return files.map(([filePath, source]) => ({
+        filePath,
+        semanticModel: extractFileMetadataFromSource(source, filePath).semanticModel!
+      }));
+    };
+
+    it('groups RTN_<state>_<id> variants under the NPC whose id they carry', async () => {
+      const { extractRoutineStatesByNpc, extractRoutineSites } = await load();
+
+      const fileModels = await models([
+        ['/test/Diego.d', `INSTANCE SLD_200_Diego (Npc_Default)
+{
+	id = 200;
+	daily_routine = Rtn_Start_200;
+};
+
+FUNC VOID Rtn_Start_200()
+{
+	TA_MIN (self, 8, 0, 22, 0, ZS_Stand_WP, "WP_OC_MAIN");
+};
+
+FUNC VOID Rtn_Tot_200()
+{
+	TA_MIN (self, 0, 0, 0, 0, ZS_Stand_WP, "WP_DEAD");
+};
+
+FUNC VOID Rtn_Kapitel3_200()
+{
+	TA_MIN (self, 8, 0, 22, 0, ZS_Stand_WP, "WP_NC_TEMPLE");
+};`]
+      ]);
+
+      expect(
+        extractRoutineStatesByNpc(fileModels, extractRoutineSites(fileModels))
+      ).toEqual({
+        SLD_200_DIEGO: {
+          id: 200,
+          states: { TOT: 'RTN_TOT_200', KAPITEL3: 'RTN_KAPITEL3_200' }
+        }
+      });
+    });
+
+    // The split is on the *known* id, so a state name carrying an underscore or
+    // a digit survives. Guessing where the state name ended would cut
+    // `ADDON_TOT` at the underscore.
+    it('splits on the id, so an underscored state name survives whole', async () => {
+      const { extractRoutineStatesByNpc, extractRoutineSites } = await load();
+
+      const states = statesOf(extractRoutineStatesByNpc, extractRoutineSites, await models([
+        ['/test/Addon.d', `INSTANCE BAU_4300_Cavalorn (Npc_Default)
+{
+	id = 4300;
+	daily_routine = Rtn_Start_4300;
+};
+
+FUNC VOID Rtn_Addon_Tot_4300()
+{
+	TA_MIN (self, 0, 0, 0, 0, ZS_Stand_WP, "WP_X");
+};`]
+      ]));
+
+      expect(states.BAU_4300_CAVALORN.states).toEqual({ ADDON_TOT: 'RTN_ADDON_TOT_4300' });
+    });
+
+    // The declared routine is `routinesByNpc`'s answer and is not re-derived
+    // from the name — it is excluded here so the picker's "Declared" default
+    // and its state options never name the same thing twice.
+    it('excludes the declared routine from the variants', async () => {
+      const { extractRoutineStatesByNpc, extractRoutineSites } = await load();
+
+      const states = statesOf(extractRoutineStatesByNpc, extractRoutineSites, await models([
+        ['/test/D.d', `INSTANCE VLK_500_Test (Npc_Default)
+{
+	id = 500;
+	daily_routine = Rtn_Start_500;
+};
+
+FUNC VOID Rtn_Start_500()
+{
+	TA_MIN (self, 8, 0, 22, 0, ZS_Stand_WP, "WP_A");
+};`]
+      ]));
+
+      expect(states.VLK_500_TEST).toBeUndefined();
+    });
+
+    // An id is what makes the grouping the engine's rule rather than a guess;
+    // without one there is nothing to split a name on, so the NPC simply has no
+    // states. Excluded, never guessed — slice 5's rule.
+    it('yields no states for an NPC whose id is not a literal', async () => {
+      const { extractRoutineStatesByNpc, extractRoutineSites } = await load();
+
+      const states = statesOf(extractRoutineStatesByNpc, extractRoutineSites, await models([
+        ['/test/NoId.d', `INSTANCE MOB_1_Nameless (Npc_Default)
+{
+	id = SOME_CONST;
+	daily_routine = Rtn_Start_1;
+};
+
+FUNC VOID Rtn_Tot_1()
+{
+	TA_MIN (self, 0, 0, 0, 0, ZS_Stand_WP, "WP_X");
+};`]
+      ]));
+
+      expect(states.MOB_1_NAMELESS).toBeUndefined();
+    });
+
+    // A routine function with no TA entries the index could read is not a
+    // state worth offering: choosing it would empty the world with no
+    // explanation. Only functions present in routineSites qualify.
+    it('ignores a variant whose routine has no indexed entries', async () => {
+      const { extractRoutineStatesByNpc, extractRoutineSites } = await load();
+
+      const states = statesOf(extractRoutineStatesByNpc, extractRoutineSites, await models([
+        ['/test/Empty.d', `INSTANCE VLK_600_Test (Npc_Default)
+{
+	id = 600;
+	daily_routine = Rtn_Start_600;
+};
+
+FUNC VOID Rtn_Tot_600()
+{
+	AI_Wait (self, 1);
+};`]
+      ]));
+
+      expect(states.VLK_600_TEST).toBeUndefined();
+    });
+
+    it('records exchange sites, resolving the target and skipping a computed state', async () => {
+      const { extractExchangeSites } = await load();
+
+      expect(extractExchangeSites(await models([
+        ['/test/Ex.d', `FUNC VOID B_GiveDeathRoutine()
+{
+	Npc_ExchangeRoutine (self, "Tot");
+	B_StartOtherRoutine (SLD_200_Diego, "Kapitel3");
+	Npc_ExchangeRoutine (self, someVar);
+};`]
+      ]))).toEqual([
+        {
+          target: 'SELF',
+          state: 'TOT',
+          filePath: '/test/Ex.d',
+          functionName: 'B_GIVEDEATHROUTINE',
+          line: 3
+        },
+        {
+          target: 'SLD_200_DIEGO',
+          state: 'KAPITEL3',
+          filePath: '/test/Ex.d',
+          functionName: 'B_GIVEDEATHROUTINE',
+          line: 4
+        }
+      ]);
+    });
+  });
+
   describe('voice id extraction (semanticMetadataUtils)', () => {
     it('collects literal DialogLine ids across functions, including nested ones, and skips expression ids', async () => {
       const { extractFileMetadataFromSource } = await import('../src/main/utils/semanticMetadataUtils');

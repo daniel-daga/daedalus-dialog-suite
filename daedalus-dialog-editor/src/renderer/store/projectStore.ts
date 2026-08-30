@@ -74,6 +74,9 @@ interface ProjectState {
   // Same lifecycle as spawnSiteIndex.
   routineSiteIndex: RoutineSite[];
   routineNpcIndex: Record<string, string>;
+  // The routine variants quest state swaps in, keyed by UPPERCASED NPC. Read by
+  // the World surface's State lens; same lifecycle as routineSiteIndex.
+  routineStateIndex: Record<string, { id: number; states: Record<string, string> }>;
   // Files whose metadata extraction failed during the index build (degraded but openable)
   metadataFailures: Array<{ filePath: string; error: string }>;
 
@@ -391,6 +394,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   spawnSiteIndex: [],
   routineSiteIndex: [],
   routineNpcIndex: {},
+  routineStateIndex: {},
   metadataFailures: [],
   parsedFiles: new Map(),
   parseGeneration: 0,
@@ -438,6 +442,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         spawnSiteIndex: rawIndex.spawnSites || [],
         routineSiteIndex: rawIndex.routineSites || [],
         routineNpcIndex: rawIndex.routinesByNpc || {},
+        routineStateIndex: rawIndex.routineStatesByNpc || {},
         metadataFailures: rawIndex.metadataFailures || [],
         isLoading: false,
         parsedFiles: new Map(), // Clear any previous cache
@@ -609,6 +614,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       spawnSiteIndex: [],
       routineSiteIndex: [],
       routineNpcIndex: {},
+      routineStateIndex: {},
       metadataFailures: [],
       parsedFiles: new Map(),
       parseGeneration: get().parseGeneration + 1,

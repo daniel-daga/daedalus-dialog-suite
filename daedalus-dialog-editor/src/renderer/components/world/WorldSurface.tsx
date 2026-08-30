@@ -24,7 +24,7 @@ import {
 } from 'zen-world';
 import type { InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp } from '../../../shared/worldTypes';
 import { findFreePointVob, primaryVob, useWorldStore } from '../../store/worldStore';
-import { MINUTES_PER_DAY } from '../../routines/routineSchedule';
+import { MINUTES_PER_DAY, stateReach } from '../../routines/routineSchedule';
 import { useProjectStore } from '../../store/projectStore';
 import { vobModelOf } from '../../world/vobModel';
 import { DEFAULT_EXPOSURE, MAX_EXPOSURE, MIN_EXPOSURE } from '../../world/WorldScene';
@@ -100,6 +100,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const spawnSiteIndex = useProjectStore((s) => s.spawnSiteIndex);
   const routineSiteIndex = useProjectStore((s) => s.routineSiteIndex);
   const routineNpcIndex = useProjectStore((s) => s.routineNpcIndex);
+  const routineStateIndex = useProjectStore((s) => s.routineStateIndex);
   const {
     beginOpen, openSucceeded, openFailed, selectVob, toggleVob, selectWaypoint,
   } = useWorldStore.getState();
@@ -145,6 +146,13 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    *  an NPC stands at 00:00 is a thing the routines answer, and "no time chosen"
    *  is not, so the two cannot share a value. */
   const [spawnTime, setSpawnTime] = useState<number | null>(null);
+  /**
+   * The quest state the day is drawn through, or null for each NPC's declared
+   * routine (§16.19 slice 13). It is a *lens* — "draw the day as if this state
+   * were active" — never a claim the game reaches it, which is why an NPC with
+   * no variant for it keeps his declared day rather than dropping out.
+   */
+  const [spawnState, setSpawnState] = useState<string | null>(null);
   /** Waypoint names drawn over the viewport (§16.19 slice 8). Its own toggle
    *  rather than a property of the waynet's, because the dots and the names
    *  answer different questions — where the net runs, and which waypoint this
@@ -326,8 +334,32 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   // together. Memoized because it is a viewport prop, and a fresh object every
   // render would rebuild the overlay on every render.
   const routines = useMemo(
-    () => ({ sites: routineSiteIndex, routinesByNpc: routineNpcIndex }),
-    [routineSiteIndex, routineNpcIndex],
+    () => ({
+      sites: routineSiteIndex,
+      routinesByNpc: routineNpcIndex,
+      statesByNpc: routineStateIndex,
+    }),
+    [routineSiteIndex, routineNpcIndex, routineStateIndex],
+  );
+
+  // Every state name any NPC has a variant for. Sorted, because the index's own
+  // order is whichever file the worker pool finished first.
+  const stateNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const npc of Object.values(routineStateIndex)) {
+      for (const state of Object.keys(npc.states)) names.add(state);
+    }
+    return [...names].sort();
+  }, [routineStateIndex]);
+
+  // How far the chosen state actually reaches. Without this the label is a lie
+  // by omission: a state moves the NPCs that have a variant for it and leaves
+  // every other one on his declared day, so "State: TOT" over a world where one
+  // NPC moved would read as "the world is in TOT". Same job as the grey
+  // unplaced markers — the weaker fact must not read as the stronger.
+  const spawnStateReach = useMemo(
+    () => stateReach(routines, spawnState),
+    [routines, spawnState],
   );
 
   const toggleSpawns = useCallback(async () => {
@@ -336,7 +368,10 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     // The time control belongs to this layer and is only shown with it, so a
     // time left set behind a hidden layer would come back on with the layer and
     // surprise whoever turned it on expecting the spawns.
-    if (!next) setSpawnTime(null);
+    if (!next) {
+      setSpawnTime(null);
+      setSpawnState(null);
+    }
     if (next && waynet === null) setWaynet(await window.editorAPI.getWorldWaynet());
   }, [showSpawns, waynet]);
 
@@ -1509,7 +1544,14 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               <Button
                 size="small"
                 variant={spawnTime === null ? 'outlined' : 'contained'}
-                onClick={() => setSpawnTime(spawnTime === null ? DEFAULT_SPAWN_TIME : null)}
+                onClick={() => {
+                  const next = spawnTime === null ? DEFAULT_SPAWN_TIME : null;
+                  setSpawnTime(next);
+                  // The state is a lens on the day; with no day there is
+                  // nothing to look through, and a state surviving behind a
+                  // hidden control is a filter nobody can see.
+                  if (next === null) setSpawnState(null);
+                }}
                 data-testid="world-time-toggle"
               >
                 Time
@@ -1536,6 +1578,41 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                     data-testid="world-time"
                     sx={{ width: 120 }}
                   />
+                  {/* The quest state the day is drawn through. Offered with the
+                      slider rather than beside it because a state without a
+                      minute answers nothing the static layer does not, and
+                      offered even with nothing in it for the Spawns button's
+                      reason: a missing control cannot tell anybody the
+                      difference between no project open and no states in this
+                      one. */}
+                  <TextField
+                    select
+                    size="small"
+                    value={spawnState ?? ''}
+                    onChange={(event) => setSpawnState(event.target.value || null)}
+                    aria-label="Quest state"
+                    data-testid="world-state"
+                    sx={{ width: 130 }}
+                  >
+                    {/* Not "Chapter 1": a `daily_routine` is whatever the
+                        instance declares, which for some NPCs is already a
+                        late-game routine, so a chapter number would be a claim
+                        the index cannot back. */}
+                    <MenuItem value="">Declared</MenuItem>
+                    {stateNames.map((name) => (
+                      <MenuItem key={name} value={name}>{name}</MenuItem>
+                    ))}
+                  </TextField>
+                  {spawnState !== null && (
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      noWrap
+                      data-testid="world-state-reach"
+                    >
+                      {spawnStateReach.resolved} of {spawnStateReach.total} NPCs
+                    </Typography>
+                  )}
                 </>
               )}
             </Stack>
@@ -1942,6 +2019,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               showSpawns={showSpawns}
               routines={routines}
               spawnTime={spawnTime}
+              spawnState={spawnState}
               showWaypointNames={showWaypointNames}
               loadTexture={loadTexture}
               onPick={handlePick}

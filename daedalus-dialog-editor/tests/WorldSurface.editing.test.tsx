@@ -49,6 +49,7 @@ let mockShowSpawns: boolean | undefined;
  *  the time slider switched off, which is the static spawns. */
 let mockRoutines: { sites: readonly unknown[]; routinesByNpc: Record<string, string> } | undefined;
 let mockSpawnTime: number | null | undefined;
+let mockSpawnState: string | null | undefined;
 /** Whether the viewport is told to draw waypoint names over the world. */
 let mockShowWaypointNames: boolean | undefined;
 /** The steps the viewport is told to quantise a drag to. */
@@ -131,6 +132,7 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
     mockShowSpawns = props.showSpawns;
     mockRoutines = props.routines;
     mockSpawnTime = props.spawnTime;
+    mockSpawnState = props.spawnState;
     mockShowWaypointNames = props.showWaypointNames;
     // The imperative surface drop-to-ground, align-to-normal and the scene
     // tree's camera jump call directly — see `WorldViewportHandle`'s doc —
@@ -2317,6 +2319,9 @@ describe('a waypoint dragged in the viewport', () => {
       expect(mockRoutines).toEqual({
         sites: ROUTINES,
         routinesByNpc: { BAU_900_FARIM: 'RTN_START_FARIM' },
+        // Empty rather than absent: this project has no routine variants, and
+        // the State lens reads the same index whether or not it does.
+        statesByNpc: {},
       });
     });
 
@@ -2366,6 +2371,120 @@ describe('a waypoint dragged in the viewport', () => {
       fireEvent.click(screen.getByTestId('world-time-toggle'));
 
       await waitFor(() => expect(mockSpawnTime).toBeNull());
+    });
+
+    // §16.19 slice 13 — the State lens. The picker is a lens over the routine
+    // variants quest state swaps in, never a claim the game reaches that state,
+    // and the reach readout beside it is what keeps that distinction visible.
+    describe('and seen through a quest state (slice 13)', () => {
+      const STATES = {
+        BAU_900_FARIM: { id: 900, states: { TOT: 'RTN_TOT_900' } },
+      };
+
+      async function openWithStates() {
+        useProjectStore.setState({
+          spawnSiteIndex: [{
+            instance: 'BAU_900_FARIM', spawnPoint: 'WP_MIDDLE',
+            filePath: 'C:/Story/Startup.d', functionName: 'STARTUP_NEWWORLD', line: 12,
+          }],
+          routineSiteIndex: [
+            ...ROUTINES,
+            {
+              routine: 'RTN_TOT_900', startMinute: 0, endMinute: 0,
+              waypoint: 'FP_CAMP', filePath: 'C:/Story/Rtn.d', line: 9,
+            },
+          ],
+          routineNpcIndex: { BAU_900_FARIM: 'RTN_START_FARIM', GRD_200_X: 'RTN_START_X' },
+          routineStateIndex: STATES,
+        } as never);
+        await openWorld();
+        fireEvent.click(screen.getByTestId('world-spawns-toggle'));
+        await waitFor(() => expect(mockShowSpawns).toBe(true));
+      }
+
+      it('offers no state picker until a time is chosen', async () => {
+        // A state without a minute answers nothing the static layer does not.
+        await openWithStates();
+
+        expect(screen.queryByTestId('world-state')).toBeNull();
+      });
+
+      it('defaults to the declared routine, which is what it drew before', async () => {
+        await openWithStates();
+
+        fireEvent.click(screen.getByTestId('world-time-toggle'));
+
+        await waitFor(() => expect(mockSpawnTime).toBe(8 * 60));
+        expect(mockSpawnState).toBeNull();
+      });
+
+      it('sends the chosen state down to the viewport', async () => {
+        await openWithStates();
+        fireEvent.click(screen.getByTestId('world-time-toggle'));
+        await waitFor(() => expect(mockSpawnTime).toBe(8 * 60));
+
+        fireEvent.change(screen.getByTestId('world-state').querySelector('input')!, {
+          target: { value: 'TOT' },
+        });
+
+        await waitFor(() => expect(mockSpawnState).toBe('TOT'));
+      });
+
+      it('hands down the state index so the schedule can resolve a variant', async () => {
+        await openWithStates();
+
+        expect(mockRoutines.statesByNpc).toEqual(STATES);
+      });
+
+      // The readout that stops "State: TOT" reading as "the world is in TOT".
+      // One of the two NPCs with a known day has a TOT variant; the other keeps
+      // his declared routine, and the count is what says so.
+      it('reports how far the chosen state actually reaches', async () => {
+        await openWithStates();
+        fireEvent.click(screen.getByTestId('world-time-toggle'));
+        await waitFor(() => expect(mockSpawnTime).toBe(8 * 60));
+
+        expect(screen.queryByTestId('world-state-reach')).toBeNull();
+
+        fireEvent.change(screen.getByTestId('world-state').querySelector('input')!, {
+          target: { value: 'TOT' },
+        });
+
+        await waitFor(() =>
+          expect(screen.getByTestId('world-state-reach')).toHaveTextContent('1 of 2 NPCs')
+        );
+      });
+
+      it('clears the state when the time is switched off', async () => {
+        // The state is a lens on the day; with no day there is nothing to look
+        // through, and a state surviving a hidden control is a filter nobody
+        // can see.
+        await openWithStates();
+        fireEvent.click(screen.getByTestId('world-time-toggle'));
+        await waitFor(() => expect(mockSpawnTime).toBe(8 * 60));
+        fireEvent.change(screen.getByTestId('world-state').querySelector('input')!, {
+          target: { value: 'TOT' },
+        });
+        await waitFor(() => expect(mockSpawnState).toBe('TOT'));
+
+        fireEvent.click(screen.getByTestId('world-time-toggle'));
+
+        await waitFor(() => expect(mockSpawnTime).toBeNull());
+        expect(mockSpawnState).toBeNull();
+      });
+
+      it('offers the picker with no options rather than hiding it', async () => {
+        // The empty-index rule the Spawns button follows: a missing control
+        // cannot tell anybody the difference between "no project open" and "no
+        // states in this one".
+        useProjectStore.setState({ routineStateIndex: {} } as never);
+        await openWorld();
+        fireEvent.click(screen.getByTestId('world-spawns-toggle'));
+        await waitFor(() => expect(mockShowSpawns).toBe(true));
+        fireEvent.click(screen.getByTestId('world-time-toggle'));
+
+        await waitFor(() => expect(screen.getByTestId('world-state')).toBeTruthy());
+      });
     });
 
     it('clears the time when the spawn layer itself is switched off', async () => {

@@ -212,6 +212,29 @@ describe('SpawnOverlay', () => {
       expect(drawn(overlay.unknownMarkers)).toBe(0);
     });
 
+    // §16.19 slice 13 — the State lens reaches the layer through the same call
+    // the slider uses, because a state without a minute answers nothing the
+    // static layer does not.
+    it('draws the state variant when one is chosen, and the declared day otherwise', () => {
+      const routines = {
+        sites: [
+          ...ROUTINES.sites,
+          entry('RTN_TOT_900', 0, 0, 'FP_CAMP'),
+        ],
+        routinesByNpc: ROUTINES.routinesByNpc,
+        statesByNpc: { BAU_900_FARIM: { id: 900, states: { TOT: 'RTN_TOT_900' } } },
+      };
+      const overlay = new SpawnOverlay(waynet(), SPAWNS, routines);
+
+      overlay.setTime(at(12), 'TOT');
+      expect(drawn(overlay.markers)).toBe(1);
+      // FP_CAMP, the variant's waypoint — not WP_MIDDLE, the declared one.
+      expect(overlay.markers.geometry.getAttribute('position').getX(0)).toBe(9000);
+
+      overlay.setTime(at(12), null);
+      expect(overlay.markers.geometry.getAttribute('position').getX(0)).toBe(1000);
+    });
+
     it('falls back to the static spawn, in the other layer, where the routine is silent', () => {
       // 02:00 is the hole between the two entries. Drawing him at WP_START in
       // the same colour would assert the script says he is there, which it does
