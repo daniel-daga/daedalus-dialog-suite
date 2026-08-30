@@ -444,6 +444,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         isLoading: false,
         loadError: error instanceof Error ? error.message : 'Unknown error'
       });
+      // Nothing renders `loadError`; the caller's catch is what shows the user
+      // a message, so the failure has to leave this function (2026-07 2.1).
+      throw error;
     }
   },
 
