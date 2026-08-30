@@ -19,6 +19,11 @@
  *   node scripts/verify-world-pipeline.js
  *   node scripts/verify-world-pipeline.js --world "<...>\OldWorld.zen"
  *
+ * The default `--world` is the loose `_work\Data\Worlds` tree, which a stock
+ * install does not have — retail ships the worlds inside `Worlds*.vdf`. Point
+ * it at the extracted corpus instead (`zenkit-node/worlds/NEWWORLD.ZEN`, from
+ * `node scripts/extract-worlds.js`); the assets still come from the install.
+ *
  * Prints the §3 table. Exits non-zero if the pipeline breaks or if a payload
  * comes back detached.
  */
@@ -29,7 +34,8 @@ const path = require('path');
 const DIST = path.join(__dirname, '..', 'dist', 'main');
 const { WorldService } = require(path.join(DIST, 'services', 'WorldService.js'));
 const {
-  createVobReader, deleteVob, gothicAssetSources, moveVob, moveWaypoint,
+  createVobReader, deleteVob, enumValuesOf, gothicAssetSources, moveVob, moveWaypoint,
+  setVobClassProp, vobIndexPath,
 } = require(path.join(__dirname, '..', '..', 'zen-world', 'dist', 'cjs', 'index.js'));
 
 function arg(name, fallback) {
@@ -116,6 +122,7 @@ async function main() {
 
   await verifyOneEdit(service, index, visuals);
   await verifyWaypointEdit(service, index);
+  await verifyEnumWrite(service, index);
   // Last, because it is the one edit that cannot be taken back: everything
   // above restores the world it ran against, and this leaves it one VOB short.
   await verifyDelete(service, index);
@@ -271,6 +278,82 @@ async function verifyWaypointEdit(service, index) {
   console.log('\none waypoint edit, batched with a VOB move\n');
   row('Waypoint', `${waypoint} of ${names.length} — ${op.name}`);
   row('Moved / undone / redone', `${op.from.map(Math.round).join(', ')} -> ${op.to.map(Math.round).join(', ')} -> back`);
+}
+
+/**
+ * An enum class property, written and read back (level-editor.md §16.2).
+ *
+ * The eight enum keys are the one part of `SetVobClassProp` that nothing outside
+ * the fixtures had written: Gate 2b proved the op reaches the file and the
+ * engine plays it, but for *scalar* fields, and everything else here writes a
+ * float or a position. An enum is a different write on both sides — the binding
+ * coerces a whole number into a C++ enumerator and the archive stores it as a
+ * named member, so a value that never left the catalogue proves nothing about
+ * either.
+ *
+ * Two rows, `zCVobLight.lightType` and the `oCMob*` family's `soundMaterial`,
+ * because they are the two ends of how the binding gets at the field: the light
+ * writes through `zCVobLight`'s own case, and `soundMaterial` is declared by
+ * `VMovableObject` and reached through whichever `oCMob*` subclass the world
+ * happens to hold. Retail stores POINT on all 4,649 lights and STONE on almost
+ * every mob, so the value written is picked as *the first catalogue value the
+ * VOB does not already hold* — a read-back that agreed by accident with what was
+ * there is exactly the pass this row must not be able to produce.
+ *
+ * The read-back is `getVobProps` on the same path, which goes to the world the
+ * worker holds rather than to the op — and it is the read the property grid
+ * makes, so a write the grid could not see would fail here. It does **not**
+ * prove the enum survives a save: this driver never saves, and the file-level
+ * half of §16.2 stays with Gate 2b.
+ */
+async function verifyEnumWrite(service, index) {
+  const reader = createVobReader(index);
+  const rows = [
+    { key: 'lightType', matches: (className) => className === 'zCVobLight' },
+    { key: 'soundMaterial', matches: (className) => className.startsWith('oCMob') },
+  ];
+
+  const printed = [];
+  for (const { key, matches } of rows) {
+    let vob = -1;
+    for (let candidate = 0; candidate < reader.count; candidate++) {
+      const className = reader.className(candidate);
+      if (className && matches(className) && enumValuesOf(className, key) !== null) {
+        vob = candidate;
+        break;
+      }
+    }
+    if (vob < 0) { check(false, `the world holds no VOB with a ${key} to write`); continue; }
+
+    const className = reader.className(vob);
+    const current = await service.getVobProps(vobIndexPath(reader, vob));
+    if (typeof current[key] !== 'number') {
+      check(false, `${className}.${key} came back as ${current[key]}, not a number`);
+      continue;
+    }
+
+    const values = enumValuesOf(className, key);
+    const target = values.find((value) => value.value !== current[key]);
+    const op = setVobClassProp(reader, vob, current, { [key]: target.value });
+
+    await service.applyOps([op]);
+    const written = await service.getVobProps(op.path);
+    check(written[key] === target.value,
+      `${className}.${key} did not take the write: ${written[key]} vs ${target.value}`);
+
+    check(await service.undo(), `undo found nothing after writing ${key}`);
+    const restored = await service.getVobProps(op.path);
+    check(restored[key] === current[key],
+      `undo did not restore ${className}.${key}: ${restored[key]} vs ${current[key]}`);
+
+    const was = values.find((value) => value.value === current[key]);
+    printed.push([`${className}.${key}`,
+      `${vob} at ${op.path} — ${was ? was.label : current[key]} -> ${target.label} -> back`]);
+  }
+
+  const row = (label, value) => console.log(`  ${String(label).padEnd(34)}${value}`);
+  console.log('\ntwo enum class properties, written and read back\n');
+  for (const [label, value] of printed) row(label, value);
 }
 
 /**

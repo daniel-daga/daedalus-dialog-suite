@@ -323,9 +323,20 @@ work in the engine.
 seven decal fields are in no
 candidate. **Nor is any of the eight enum writes** - Gate 2b proved
 `SetVobClassProp` reaches the file and the engine plays it, but for *scalar*
-fields, and `verify-world-pipeline.js` writes no enum either.
+fields, and no candidate writes an enum.
 `zCVobLight.lightType` is the sharpest case: retail places SPOT nowhere (0 on
 all 4,649 lights), so nothing in the corpus says what it looks like.
+
+**The half of that gap a run could close did close, 2026-08-30.**
+`verify-world-pipeline.js` now writes two of the eight — `zCVobLight.lightType`
+POINT → SPOT and `oCMobInter.soundMaterial` STONE → WOOD, on retail NewWorld,
+each read back through `getVobProps` and undone. The value written is the first
+catalogue value the VOB does not already hold, so a read-back cannot pass by
+agreeing with what was there; suppressing the `applyOps` was run as a negative
+control and fails all four checks. That closes the *pipeline* half — binding
+coercion, archive member, the read the property grid makes. It closes nothing
+of the engine half: the driver never saves, so what an authored SPOT looks like
+is still a question only a candidate answers.
 `oCZoneMusic.volume` is dropped by decision, below. And five of the
 27 authorable classes have been seen in an engine.
 
