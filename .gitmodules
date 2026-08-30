@@ -1,3 +1,4 @@
 [submodule "zenkit-node/vendor/ZenKit"]
 	path = zenkit-node/vendor/ZenKit
 	url = https://github.com/GothicKit/ZenKit.git
+	ignore = dirty

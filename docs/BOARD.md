@@ -89,7 +89,10 @@ was true for so long nobody re-reads it.
   No HEAD hash and no count here — a file committed at HEAD cannot name either,
   and a number goes stale the moment anything lands. `git status -sb` answers it.
 - **`zenkit-node/vendor/ZenKit` is permanently dirty** and is **never**
-  committed: it is the applied patch series. Stage with
+  committed: it is the applied patch series, and `patches/` is what that series
+  actually is. Since 2026-08-30 the entry carries `ignore = dirty`, so the dirt
+  no longer shows in `git status` — a moved submodule *commit* still does,
+  which is the change worth seeing. Stage with
   `git add -A -- . ':!zenkit-node/vendor/ZenKit'`, or name paths explicitly.
   Anything else showing is unfinished work — `reports/` used to be the one
   exception and the root `.gitignore` now catches it.

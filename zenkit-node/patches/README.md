@@ -3,7 +3,9 @@
 `scripts/build-zenkit.js` resets `vendor/ZenKit` and applies every `.patch` here in
 order before the CMake pre-step. The submodule is therefore **permanently dirty and
 never committed** — this directory *is* the change, and the applied tree is a build
-artifact.
+artifact. `.gitmodules` carries `ignore = dirty` for exactly that reason, so the
+applied tree does not show up as a change to the superproject; a moved submodule
+commit still does.
 
 Upstream is pinned at `1ff081c`, which is still `origin/main`. **None of these have
 been fixed upstream.** Side branches (`dev/v2-next`,
