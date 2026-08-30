@@ -53,6 +53,49 @@ const OUTLINE_DARKEN = 0.7;
 const OUTLINE_POWER = 4.0;
 
 /**
+ * The selection emphasis (level-editor.md §16.24 1).
+ *
+ * The darkening above is deliberately never a selection state, and that left
+ * selection as the gizmo alone — so a VOB whose gizmo was off screen, or one of
+ * several selected, read as unselected. This is the missing half, and it is the
+ * *same* mechanism the hiding uses rather than an outline pass: a second
+ * `InstancedMesh` per visual would be 724 more draw calls every frame
+ * (render-performance.md), where a per-instance attribute costs one float per
+ * instance and a few ALU per fragment of the VOBs that are actually selected.
+ *
+ * Orange, because the gizmo's own axes are pure red, green and blue and the
+ * selection must not read as one of them. The rim is what carries it — a
+ * selected VOB is outlined against whatever it stands in front of — and the
+ * body tint is what keeps it legible head-on, where a rim is barely visible.
+ *
+ * The silhouette darkening is switched *off* on a selected VOB rather than
+ * layered under this, or the emphasis would be drawn over the one term whose
+ * job is to make that edge darker.
+ */
+const SELECT_COLOR = 'vec3( 1.0, 0.55, 0.12 )';
+
+/** How far the body of a selected VOB is pulled towards the colour. Enough to
+ *  read at a glance, low enough to leave the texture recognisable. */
+const SELECT_TINT = 0.28;
+
+/** And at the silhouette, where the emphasis does its work. */
+const SELECT_RIM = 0.9;
+
+/** The rim's falloff — wider than `OUTLINE_POWER`, so the outline is a band
+ *  that survives at a distance rather than a hairline that aliases away. */
+const SELECT_POWER = 2.0;
+
+/**
+ * The name of the per-instance "this one is selected" attribute.
+ *
+ * A sibling of {@link HIDDEN_ATTRIBUTE}, for the reason given there: a VOB is
+ * one instance inside an `InstancedMesh` shared with every other VOB of the
+ * same visual, so neither `mesh.visible` nor anything on the material can say
+ * something about *one* of them.
+ */
+export const SELECTED_ATTRIBUTE = 'instanceSelected';
+
+/**
  * The silhouette half of the `onBeforeCompile` every VOB material shares.
  *
  * It is not installed directly: `vobShading` wraps it together with the
@@ -60,7 +103,8 @@ const OUTLINE_POWER = 4.0;
  * the VOB program and the world-mesh program apart.
  */
 function outlineVobs(shader: THREE.WebGLProgramParametersWithUniforms): void {
-  shader.vertexShader = `varying vec3 vVobNormal;\nvarying vec3 vVobView;\n${
+  shader.vertexShader = `attribute float ${SELECTED_ATTRIBUTE};
+varying vec3 vVobNormal;\nvarying vec3 vVobView;\nvarying float vVobSelected;\n${
     shader.vertexShader.replace(
       '#include <project_vertex>',
       `#include <project_vertex>
@@ -70,17 +114,31 @@ function outlineVobs(shader: THREE.WebGLProgramParametersWithUniforms): void {
     vobNormal = mat3( instanceMatrix ) * vobNormal;
   #endif
   vVobNormal = normalMatrix * vobNormal;
-  vVobView = -mvPosition.xyz;`,
+  vVobView = -mvPosition.xyz;
+  // Carried to the fragment stage rather than acted on here: the emphasis is a
+  // colour, and a selected VOB has to stay exactly where every op reads it.
+  vVobSelected = ${SELECTED_ATTRIBUTE};`,
     )
   }`;
 
-  shader.fragmentShader = `varying vec3 vVobNormal;\nvarying vec3 vVobView;\n${
+  shader.fragmentShader = `varying vec3 vVobNormal;\nvarying vec3 vVobView;\nvarying float vVobSelected;\n${
     shader.fragmentShader.replace(
       '#include <opaque_fragment>',
       // abs(), because the mirrored root flips the sign of the normal and a
       // signed facing term would outline the front faces instead of the edges.
       `float vobFacing = abs( dot( normalize( vVobNormal ), normalize( vVobView ) ) );
-  outgoingLight *= mix( 1.0, ${OUTLINE_DARKEN.toFixed(2)}, pow( 1.0 - vobFacing, ${OUTLINE_POWER.toFixed(1)} ) );
+  float vobRim = pow( 1.0 - vobFacing, ${OUTLINE_POWER.toFixed(1)} );
+  // The darkening is the legibility aid, and it is switched off where the
+  // selection emphasis takes over the same edge — see SELECT_COLOR.
+  outgoingLight *= mix( mix( 1.0, ${OUTLINE_DARKEN.toFixed(2)}, vobRim ), 1.0, vVobSelected );
+  outgoingLight = mix(
+    outgoingLight,
+    ${SELECT_COLOR},
+    vVobSelected * mix(
+      ${SELECT_TINT.toFixed(2)}, ${SELECT_RIM.toFixed(2)},
+      pow( 1.0 - vobFacing, ${SELECT_POWER.toFixed(1)} )
+    )
+  );
   #include <opaque_fragment>`,
     )
   }`;
@@ -261,6 +319,10 @@ export class WorldScene {
    *  instance already exists and a second per-VOB structure would be a second
    *  thing to keep correct across every op that adds or removes one. */
   private meshBounds = new WeakMap<THREE.InstancedMesh, readonly number[]>();
+  /** The instances `setSelectedVobs` last switched on, so the next call clears
+   *  exactly those. Rewriting every instance in the scene would be ~20k writes
+   *  and 724 attribute uploads per click, for a selection that is usually one. */
+  private selectedInstances: Array<{ mesh: THREE.InstancedMesh; instance: number }> = [];
   private geometries: THREE.BufferGeometry[] = [];
   private materials: THREE.Material[] = [];
 
@@ -328,6 +390,14 @@ export class WorldScene {
         // clones this geometry once, when the scene is built — can share it.
         mesh.geometry.setAttribute(
           HIDDEN_ATTRIBUTE,
+          new THREE.InstancedBufferAttribute(new Float32Array(visual.count), 1),
+        );
+        // Nothing selected until something is. Allocated here for the same
+        // reason as the flag above — the shader declares the attribute, and a
+        // program compiled against one the geometry does not carry reads
+        // garbage rather than zero.
+        mesh.geometry.setAttribute(
+          SELECTED_ATTRIBUTE,
           new THREE.InstancedBufferAttribute(new Float32Array(visual.count), 1),
         );
 
@@ -473,6 +543,56 @@ export class WorldScene {
     }
   }
 
+  /**
+   * Which VOBs are drawn as selected (level-editor.md §16.24 1).
+   *
+   * A list rather than the byte-per-VOB mask `setHiddenVobs` takes, because
+   * that is the shape a selection has: hiding is a predicate over the whole
+   * world, a selection is a handful of indices.
+   *
+   * Only the meshes that changed are re-uploaded. The scan for the new
+   * selection is one pass over the scene's instance ids — the same pass
+   * `positionOf` already makes — but the *clear* is not: it walks only what was
+   * switched on last time, so a click that selects one VOB uploads one mesh's
+   * attribute rather than all 724 of them.
+   *
+   * Nothing about a pose is touched, exactly as with the hidden flag: the gizmo
+   * and every op read the instance matrix, and this is a float beside it.
+   */
+  setSelectedVobs(vobs: readonly number[]): void {
+    const touched = new Set<THREE.InstancedMesh>();
+
+    for (const { mesh, instance } of this.selectedInstances) {
+      const attribute = mesh.geometry.getAttribute(SELECTED_ATTRIBUTE);
+      if (!attribute) continue;
+      (attribute.array as Float32Array)[instance] = 0;
+      touched.add(mesh);
+    }
+    this.selectedInstances = [];
+
+    const wanted = new Set(vobs);
+    if (wanted.size > 0) {
+      for (const mesh of this.instancedMeshes) {
+        const vobIds = this.instanceVobIds.get(mesh);
+        const attribute = mesh.geometry.getAttribute(SELECTED_ATTRIBUTE);
+        if (!vobIds || !attribute) continue;
+
+        const flags = attribute.array as Float32Array;
+        for (let i = 0; i < vobIds.length; i++) {
+          if (!wanted.has(vobIds[i])) continue;
+          flags[i] = 1;
+          this.selectedInstances.push({ mesh, instance: i });
+          touched.add(mesh);
+        }
+      }
+    }
+
+    for (const mesh of touched) {
+      const attribute = mesh.geometry.getAttribute(SELECTED_ATTRIBUTE);
+      if (attribute) attribute.needsUpdate = true;
+    }
+  }
+
   /** A VOB's 3x3 as drawn, row-major — what a turn composes onto. */
   rotationOf(vob: number): number[] | null {
     const matrix = new THREE.Matrix4();
@@ -529,6 +649,35 @@ export class WorldScene {
       if (position !== null) return position;
     }
     return null;
+  }
+
+  /**
+   * The middle of a selection: the mean of the positions of the VOBs in it that
+   * are actually drawn, or null if none of them is (level-editor.md §16.24 2).
+   *
+   * Where a *translate* gizmo stands. `anchorOf` stays what a rotate gizmo
+   * stands on, and the two are different on purpose: `rotateVobs` turns each
+   * VOB about its own origin, so handles at the centroid would show a pivot the
+   * op does not use and the first multi-VOB rotate would look broken.
+   *
+   * A VOB with no instance is stepped over rather than counted, for the reason
+   * `anchorOf` steps over it — it has no position at all, and taking one as the
+   * origin would drag the centre of the selection towards [0, 0, 0].
+   */
+  centroidOf(vobs: readonly number[]): [number, number, number] | null {
+    const sum: [number, number, number] = [0, 0, 0];
+    let drawn = 0;
+
+    for (const vob of vobs) {
+      const position = this.positionOf(vob);
+      if (position === null) continue;
+      sum[0] += position[0];
+      sum[1] += position[1];
+      sum[2] += position[2];
+      drawn += 1;
+    }
+
+    return drawn === 0 ? null : [sum[0] / drawn, sum[1] / drawn, sum[2] / drawn];
   }
 
   resolveInstance(mesh: THREE.InstancedMesh, instanceId: number): number | null {
@@ -610,6 +759,7 @@ export class WorldScene {
 
     this.geometries = [];
     this.materials = [];
+    this.selectedInstances = [];
     this.textures.clear();
     this.worldMeshes.length = 0;
     this.instancedMeshes.length = 0;

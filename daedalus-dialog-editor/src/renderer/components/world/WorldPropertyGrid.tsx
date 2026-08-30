@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import {
-  Box, Checkbox, Chip, FormControlLabel, Stack, TextField, Typography,
+  Box, Checkbox, Chip, FormControlLabel, IconButton, Stack, TextField, Tooltip, Typography,
 } from '@mui/material';
+import MyLocationIcon from '@mui/icons-material/MyLocation';
 import {
   BASE_FIELDS, DECAL_FIELDS, classPropKeys, decalSubKey, enumValuesOf, eulerDeltaRotation,
   eulerToZenRotation, fieldOf, focusNameExpectation,
@@ -463,6 +464,16 @@ export interface WorldPropertyGridProps {
    */
   onEditProps: (props: VobProps) => void;
   /**
+   * Jump the camera to the VOB this grid describes (level-editor.md §16.24 6).
+   *
+   * Picking in the viewport left no way back to the selection: the scene tree's
+   * locator is per row, and a VOB selected by clicking the world may not even
+   * be scrolled into view there. It is the same command the `.` key already
+   * sends, given a button in the one panel that is always looking at the
+   * selected VOB.
+   */
+  onFocus: (vob: number) => void;
+  /**
    * The described VOB's per-class fields, as `getVobProps` answered them — the
    * whole props object, base fields and all — or null while that read is in
    * flight.
@@ -564,7 +575,7 @@ export interface WorldPropertyGridProps {
 const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
   {
     summary, selection, refusalGeneration,
-    onEditProps, classProps, onEditClassProps, onEditBaseProps, itemInstances,
+    onEditProps, onFocus, classProps, onEditClassProps, onEditBaseProps, itemInstances,
     onTranslate, onRotate, onRotateSelection,
   },
 ) => {
@@ -658,7 +669,20 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
         />
       )}
       <Field label="Index" name="index">
-        <Typography variant="caption">{selectedVob}</Typography>
+        <Stack direction="row" spacing={0.5} alignItems="center">
+          <Typography variant="caption">{selectedVob}</Typography>
+          <Tooltip title="Jump the camera to this VOB (.)">
+            <IconButton
+              size="small"
+              data-testid="world-prop-locate"
+              aria-label="Jump the camera to this VOB"
+              onClick={() => onFocus(selectedVob)}
+              sx={{ p: 0.25 }}
+            >
+              <MyLocationIcon sx={{ fontSize: 14 }} />
+            </IconButton>
+          </Tooltip>
+        </Stack>
       </Field>
       <Field label="Class" name="class">
         <Typography variant="caption">{className}</Typography>

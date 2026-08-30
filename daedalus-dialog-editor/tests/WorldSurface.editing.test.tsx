@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from '@jest/globals';
 import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import {
-  createVobReader, eulerDeltaRotation, eulerToZenRotation, placeBounds,
+  createVobReader, eulerDeltaRotation, eulerToZenRotation, placeBounds, PASTE_MIN_OFFSET,
   type VobIndex, type WorldOp, type ZenRotation,
 } from 'zen-world';
 import WorldSurface from '../src/renderer/components/world/WorldSurface';
@@ -1294,6 +1294,53 @@ describe('duplicating a VOB', () => {
   });
 });
 
+describe('the property grid locator (level-editor.md §16.24 6)', () => {
+  // Picking in the viewport left no way back to the selection: the tree's
+  // locator is per row, and a VOB selected by clicking the world may not even
+  // be scrolled into view there. The keyboard already does it — `.` frames the
+  // selection — so this is the same command with a button on it.
+  it('frames the described VOB', async () => {
+    await openWorld();
+
+    fireEvent.click(screen.getByTestId('world-prop-locate'));
+
+    expect(mockFrameVob).toHaveBeenCalledWith(1);
+  });
+
+  it('frames the VOB the grid describes, not the first of a multi-selection', async () => {
+    // The grid describes the last VOB in the selection — the one the rotate
+    // gizmo anchors on — and the locator has to agree with what is on screen
+    // beside it.
+    await openWorld();
+    await act(async () => { useWorldStore.getState().toggleVob(0); });
+
+    fireEvent.click(screen.getByTestId('world-prop-locate'));
+
+    expect(mockFrameVob).toHaveBeenCalledWith(0);
+  });
+
+  it('is not offered with nothing selected', async () => {
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(null); });
+
+    expect(screen.queryByTestId('world-prop-locate')).not.toBeInTheDocument();
+  });
+
+  it('says so when the jump does nothing, rather than failing silently', async () => {
+    // §16.24 5. The locator's whole path was optional-chained, so a jump that
+    // could not be made was indistinguishable from one that was — which is why
+    // a locator that had stopped working went unreported for a session.
+    const warned = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockFrameVob.mockReturnValueOnce('no-scene' as never);
+    await openWorld();
+
+    fireEvent.click(screen.getByTestId('world-prop-locate'));
+
+    expect(warned).toHaveBeenCalledWith(expect.stringContaining('no-scene'));
+    warned.mockRestore();
+  });
+});
+
 describe('copying and pasting a VOB', () => {
   // D3 (level-editor.md §16.14): duplicate taken apart into two verbs. The
   // clipboard is in-process and holds *subtrees* — what the rows said when Ctrl+C
@@ -1336,9 +1383,14 @@ describe('copying and pasting a VOB', () => {
       to: {
         name: 'BARREL',
         visual: 'BARREL.3DS',
-        position: [10, 20, 30],
+        // Offset from the original (§16.24 4): a copy landing on top of its
+        // source is invisible, and only findable in the scene tree. The barrel's
+        // own box is 2 cm across, so the offset is `PASTE_MIN_OFFSET`.
+        position: [10 + PASTE_MIN_OFFSET, 20, 30],
         rotation: IDENTITY,
-        bbox: placeBounds([-1, 0, -10, 1, 2, 10], IDENTITY, [10, 20, 30]),
+        bbox: placeBounds(
+          [-1, 0, -10, 1, 2, 10], IDENTITY, [10 + PASTE_MIN_OFFSET, 20, 30],
+        ),
         showVisual: false,
         vobStatic: false,
         ambient: false,
@@ -1402,6 +1454,44 @@ describe('copying and pasting a VOB', () => {
     expect(ops.map((op) => [op.op, (op as { path: string }).path])).toEqual([
       ['AddVob', '2'], ['AddVob', '3'],
     ]);
+  });
+
+  it('selects the copies it pasted, so they can be dragged straight away', async () => {
+    // §16.24 4: the paste committed its ops and the selection still held the
+    // *source*, so a copy that had just landed could only be reached by hunting
+    // for it in the scene tree.
+    //
+    // The flat index of an appended VOB is not knowable until the world has
+    // been re-enumerated — the `vob` an `AddVob` carries is the enumeration as
+    // it was — so the selection is resolved from the op's *path* against the
+    // refreshed index.
+    await openWorld();
+    // Three VOBs after the paste: the two the world had, and the copy appended
+    // to the roots as slot 2.
+    const pasted = {
+      ...SUMMARY, vobIndex: vobIndex([[0, 0, 0], [10, 20, 30], [110, 20, 30]]),
+    };
+    expectRefresh(pasted);
+
+    await copy();
+    await act(async () => { paste(); });
+
+    await waitFor(() => expect(api.refreshWorldIndex).toHaveBeenCalled());
+    await waitFor(() => expect(useWorldStore.getState().selection).toEqual([2]));
+  });
+
+  it('leaves the selection alone when the paste is refused', async () => {
+    // Nothing landed, so there is nothing to select — and selecting a path that
+    // happens to resolve in the unchanged index would put the gizmo on a VOB
+    // nobody pasted.
+    await openWorld();
+    api.applyWorldOps.mockRejectedValueOnce(new Error('nope') as never);
+
+    await copy();
+    await act(async () => { paste(); });
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    expect(useWorldStore.getState().selection).toEqual([1]);
   });
 
   it('carries the class properties across the clipboard', async () => {

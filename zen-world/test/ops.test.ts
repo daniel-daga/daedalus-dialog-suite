@@ -32,6 +32,7 @@ import {
   duplicateVobSubtree,
   duplicateVobs,
   pasteVobs,
+  PASTE_MIN_OFFSET,
   invertOp,
   isBarrierOp,
   isStructuralOp,
@@ -52,6 +53,7 @@ import {
   setVobProps,
   translateVobs,
   vobIndexPath,
+  vobAtIndexPath,
   type ClassProps,
   type AddVob,
   type ReadProps,
@@ -1586,11 +1588,82 @@ describe('a clipboard pasted into a list', () => {
 
   it('pastes what was copied, not what the world holds now', () => {
     // The clipboard is a value. The VOB it was read from may be gone by the
-    // time it is pasted, and the paste is still exact.
+    // time it is pasted, and the paste is still exact — bar the offset below,
+    // which is the only thing a paste changes about what it was handed.
     const copied = specs();
     const ops = pasteVobs(reader(), [copied[0]], null);
 
-    expect(ops[0].to).toBe(copied[0].spec);
+    expect(ops[0].to).toEqual({
+      ...copied[0].spec,
+      position: [
+        copied[0].spec.position[0] + PASTE_MIN_OFFSET,
+        copied[0].spec.position[1],
+        copied[0].spec.position[2],
+      ],
+    });
+  });
+
+  it('lands the copy beside the original rather than inside it', () => {
+    // §16.24 4: `duplicateVobSpec` copies the position verbatim, so a pasted
+    // VOB was exactly where its source was — invisible, and findable only in
+    // the scene tree.
+    const live = reader();
+    const copied = duplicateVobSubtree(live, 1);
+    const [op] = pasteVobs(live, [copied], null) as AddVob[];
+
+    expect(op.to!.position).toEqual([
+      copied.spec.position[0] + PASTE_MIN_OFFSET,
+      copied.spec.position[1],
+      copied.spec.position[2],
+    ]);
+    // Horizontal, and only horizontal: an offset with height in it would drop
+    // a copy through the floor or hang it in the air, and there is no ground
+    // query on this side of the boundary to put it back.
+    expect(op.to!.position[1]).toBe(copied.spec.position[1]);
+  });
+
+  it('clears the original by its own size, so a copied house is not inside itself', () => {
+    // A fixed nudge is "beside it" for a barrel and still "inside it" for a
+    // building. The offset is the copied group's own extent along X, which is
+    // the smallest one that clears whatever was copied.
+    const live = reader();
+    const wide = duplicateVobSubtree(live, 1, () => [-500, 0, -20, 500, 300, 20]);
+    const [op] = pasteVobs(live, [wide], null) as AddVob[];
+
+    expect(op.to!.position[0] - wide.spec.position[0]).toBe(1000);
+    // The box moves with the VOB it describes, or the copy is drawn in one
+    // place and culled and picked in another.
+    expect(op.to!.bbox![0] - wide.spec.bbox![0]).toBe(1000);
+    expect(op.to!.bbox![3] - wide.spec.bbox![3]).toBe(1000);
+    expect(op.to!.bbox![1]).toBe(wide.spec.bbox![1]);
+  });
+
+  it('moves a whole paste rigidly, so the copies keep the spacing they had', () => {
+    // One delta for the batch, not one per copy: a paste that offset each root
+    // by its own size would scatter a group that was copied as a group.
+    const live = reader();
+    const trees = specs(live);
+    const ops = addsOf(pasteVobs(live, trees, null));
+
+    const deltas = ops.slice(0, 2).map(
+      (op, at) => op.to!.position[0] - trees[at].spec.position[0],
+    );
+    expect(deltas[0]).toBe(deltas[1]);
+  });
+
+  it('carries the offset down the subtree, so a copy is not torn apart', () => {
+    // ZenGin VOB positions are world-space — the tree is organisational, not a
+    // transform hierarchy — so a root moved without its descendants leaves them
+    // standing on top of the original.
+    const live = reader();
+    const tree = duplicateVobSubtree(live, 0);
+    const ops = addsOf(pasteVobs(live, [tree], null));
+
+    expect(ops).toHaveLength(3);
+    for (const [at, op] of ops.entries()) {
+      const source = at === 0 ? tree.spec : tree.children[at - 1].spec;
+      expect(op.to!.position[0] - source.position[0]).toBe(PASTE_MIN_OFFSET);
+    }
   });
 
   it('is nothing at all for an empty clipboard', () => {
@@ -2974,5 +3047,47 @@ describe('deleting a waypoint', () => {
 
     expect(() => applyOps(live, [deleteWaypoint(NAMES, 1)])).toThrow(/waynet op/);
     expect(live.position(0)).toEqual([1, 2, 3]);
+  });
+});
+
+describe('the VOB at an index path', () => {
+  // The inverse of `vobIndexPath`, and the only way back from an op to the VOB
+  // it made: an `AddVob` carries a path, and its flat index is not knowable
+  // until the world has been re-enumerated (§16.24 4 — the paste selects what
+  // it pasted).
+  //
+  //  vob 0 (root 0) -- vob 1 -- vob 2
+  //  vob 3 (root 1)
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0 },
+    { parent: 0, childIndex: 0 },
+    { parent: 0, childIndex: 1 },
+    { childIndex: 1 },
+  ]));
+
+  it('walks the slot chain back to the VOB', () => {
+    const live = reader();
+    expect(vobAtIndexPath(live, '0')).toBe(0);
+    expect(vobAtIndexPath(live, '0/0')).toBe(1);
+    expect(vobAtIndexPath(live, '0/1')).toBe(2);
+    expect(vobAtIndexPath(live, '1')).toBe(3);
+  });
+
+  it('round-trips every VOB through its own path', () => {
+    const live = reader();
+    for (let vob = 0; vob < live.count; vob++) {
+      expect(vobAtIndexPath(live, vobIndexPath(live, vob)!)).toBe(vob);
+    }
+  });
+
+  it('answers null for a path this world does not have', () => {
+    const live = reader();
+    // A slot nobody filled, a descent through a VOB with no children, and the
+    // empty string — which is not the root, it is an absent path.
+    expect(vobAtIndexPath(live, '2')).toBeNull();
+    expect(vobAtIndexPath(live, '0/9')).toBeNull();
+    expect(vobAtIndexPath(live, '1/0')).toBeNull();
+    expect(vobAtIndexPath(live, '')).toBeNull();
+    expect(vobAtIndexPath(live, 'x')).toBeNull();
   });
 });

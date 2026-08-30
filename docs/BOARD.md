@@ -147,24 +147,13 @@ Triage, so a run resumes at section 1: rows 1-12 landed 2026-08-30 and the next
 unclaimed row is 13. The corpus section 5's rows wanted is in
 `zenkit-node/worlds/`.
 
-**World surface, from Daniel's own sessions 2026-08-30 — all at §16.24.** None
-needs the engine; the order is a guess at his, so move it.
+**World surface, from Daniel's own sessions 2026-08-30.** Five of the six
+landed; one is left and it is the one that was never root-caused.
 
-- **A VOB can be picked through the world mesh** — the pick pass draws only the
-  VOB proxies, so nothing writes depth and a VOB behind a wall wins the pixel.
-  Diagnosed, and the fix is a depth-only occluder in that scene. §16.24 3
-- **A selection is invisible unless its gizmo is** — wants an outline; the cheap
-  form is a per-instance attribute. §16.24 1
-- **Paste lands the copy inside the original and leaves it unselected** — wants
-  an offset and the copy selected. §16.24 4
-- **After a paste the locator works on no VOB at all** — every link in
-  `onFocus → focusVob → frameVob → frameVobRef` is optional-chained, so a null
-  is a silent no-op. Not root-caused; the probe is written. §16.24 5
-- **The right sidebar has no locator for the selection** — picking in the
-  viewport leaves no way back to it. `.` already does it. §16.24 6
-- **The multi-select gizmo sits on the last VOB picked, not the centre** —
-  **decide rotation first**, or the gizmo shows a pivot the op does not use.
-  §16.24 2
+- **After a paste the locator works on no VOB at all** — two probes green and
+  kept, so the wiring survives a paste in both harnesses; the hypothesis that
+  stood is unreachable there. It is loud now, so a repeat leaves a console
+  warning naming the link. Wants a real world. §16.24
 
 **Phase 1c — the overlay, at §16.19.** Not blocked.
 
@@ -236,5 +225,14 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-*(flushed 2026-08-30 — s7/s8/s9 are in `git log`, and their forward facts —
-no Playwright spec, unwitnessed on a real screen — are in §16.19's own prose)*
+- **Five of the six world-surface findings (§16.24)** — selection emphasis, the
+  mode-dependent gizmo anchor, the pick occluder, the paste offset and
+  selection, the grid locator. Durable record:
+  `docs/architecture/level-editor.md` §7. **Forward fact: none of it is
+  witnessed on a real screen** — the browser harness has no world to open and
+  `verify-world-edit.js` needs a Gothic install, the native addon and a GPU, so
+  the Jest component tests are the whole verification. **The rotate gizmo
+  deliberately still anchors on the last VOB picked**, and whoever lands
+  rotate-about-a-pivot moves it to the centroid in the same change.
+  **`duplicateVobs` was left alone** — Ctrl+D still lands the copy inside the
+  original; the card named paste.

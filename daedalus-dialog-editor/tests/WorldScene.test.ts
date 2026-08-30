@@ -617,6 +617,105 @@ describe('WorldScene', () => {
     expect(scene.anchorOf([])).toBeNull();
   });
 
+  test('a selection also reports its centre, which is what a translate gizmo stands on', () => {
+    // §16.24 2: the gizmo sat on the last VOB picked, so a multi-selection put
+    // the handles on its edge. The centre is the translate answer; `anchorOf`
+    // stays the rotate one, because `rotateVobs` turns each VOB about its own
+    // origin and a gizmo at the centroid would show a pivot the op does not use.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+
+    expect(scene.centroidOf([7, 9])).toEqual([25, 35, 45]);
+    // Order cannot matter, which is the whole difference from `anchorOf`.
+    expect(scene.centroidOf([9, 7])).toEqual([25, 35, 45]);
+    // A VOB with no instance has no position to average in — counting it as an
+    // origin would drag the centre towards [0, 0, 0].
+    expect(scene.centroidOf([9, 4242])).toEqual([40, 50, 60]);
+    expect(scene.centroidOf([4242])).toBeNull();
+    expect(scene.centroidOf([])).toBeNull();
+  });
+
+  test('the selected VOBs carry a per-instance flag, and only they do', () => {
+    // §16.24 1: the silhouette darkening is deliberately never a selection
+    // state, so a VOB whose gizmo is off screen read as unselected. The cheap
+    // emphasis is the one hiding already uses — a per-instance attribute the
+    // VOB shader carries — not a second InstancedMesh per visual, which is 724
+    // more draw calls (render-performance.md).
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    const mesh = scene.instancedMeshes[0];
+
+    scene.setSelectedVobs([9]);
+
+    const selected = mesh.geometry.getAttribute('instanceSelected');
+    // vobIds are [7, 9]: the second instance, and only it.
+    expect([...(selected.array as Float32Array)]).toEqual([0, 1]);
+    expect(selected.version).toBe(1);
+    // Nothing about the pose moves — the flag is beside the matrix, exactly as
+    // `instanceHidden` is, so the gizmo and every op still read the same place.
+    expect(scene.positionOf(9)).toEqual([40, 50, 60]);
+  });
+
+  test('deselecting clears the flag it set, and touches no other mesh', () => {
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({
+      visuals: [visual(), visual({
+        name: 'CRATE.3DS',
+        count: 1,
+        matrices: new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]).buffer,
+        vobIds: new Uint32Array([11]).buffer,
+      })],
+      stats: {} as never,
+    });
+    const [barrels, crate] = scene.instancedMeshes;
+
+    scene.setSelectedVobs([9]);
+    scene.setSelectedVobs([]);
+
+    expect([...(barrels.geometry.getAttribute('instanceSelected').array as Float32Array)])
+      .toEqual([0, 0]);
+    expect(barrels.geometry.getAttribute('instanceSelected').version).toBe(2);
+    // The crate never held a selected instance, so nothing about it was
+    // re-uploaded — a whole-scene rewrite per click is 724 attribute uploads.
+    expect(crate.geometry.getAttribute('instanceSelected').version).toBe(0);
+  });
+
+  test('every mesh a visual was split into takes the same selected flag', () => {
+    // The hazard `moveVob` and `setHiddenVobs` already carry: one VOB is an
+    // instance in every mesh its visual was split into, and marking it in one
+    // of them outlines half a prop.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({
+      visuals: [visual({ groups: [group({ lights: null }), group({ texture: 'NW_STONE.TGA', lights: null })] })],
+      stats: {} as never,
+    });
+
+    scene.setSelectedVobs([7]);
+
+    expect(scene.instancedMeshes).toHaveLength(2);
+    for (const mesh of scene.instancedMeshes) {
+      expect([...(mesh.geometry.getAttribute('instanceSelected').array as Float32Array)])
+        .toEqual([1, 0]);
+    }
+  });
+
+  test('the VOB shader reads the selected flag, and the world mesh never declares one', () => {
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    scene.setWorldMesh({ groups: [group()], bbox: [] });
+
+    const vob = compile(scene.instancedMeshes[0].material as THREE.MeshBasicMaterial);
+    expect(vob.vertexShader).toContain('attribute float instanceSelected;');
+    // Carried to the fragment stage: the emphasis is a colour, not a vertex
+    // move — a selected VOB must stay exactly where the op would put it.
+    expect(vob.vertexShader).toContain('vVobSelected = instanceSelected;');
+    expect(vob.fragmentShader).toContain('vVobSelected');
+
+    const world = compile(scene.worldMeshes[0].material as THREE.MeshBasicMaterial);
+    expect(world.vertexShader).not.toContain('instanceSelected');
+    expect(world.fragmentShader).not.toContain('vVobSelected');
+  });
+
   test('VOB materials darken towards the silhouette and the world mesh does not', () => {
     // "A VOB is hard to tell from the world mesh" (2026-08-27): the legibility
     // aid is a faint outline, and it hangs on the one thing that separates a

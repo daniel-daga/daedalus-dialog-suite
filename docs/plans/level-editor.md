@@ -2060,8 +2060,8 @@ it — sized at the waynet's point count and drawn with `.count`, the same
 fixed-capacity trick slice 7 put on the markers' `drawRange` and for the same
 reason: the slider rewrites the set on every tick of a drag. The known/unknown
 split is a per-instance colour (`setColorAt`, white material so it is drawn
-unmixed) rather than a second mesh — the `HIDDEN_ATTRIBUTE` pattern (§16.24 1
-reaches for it too), one draw call carrying both. The feet-at-the-waypoint
+unmixed) rather than a second mesh — the `HIDDEN_ATTRIBUTE` pattern (the
+selection emphasis reaches for it too, §7), one draw call carrying both. The feet-at-the-waypoint
 offset (decision 3) is baked into the geometry once, by `translate`, rather than
 composed into every instance's matrix, since `setMatrixAt` writes a pure
 translation to the waypoint and nothing here ever rotates. Symmetric per
@@ -2597,79 +2597,43 @@ extra `BAU_902_Gunnar_2.d` and is missing at least one dialog
 number §7 and §16.19 measured, so it is the same corpus those used; it is
 not the shipped `.DAT`.
 
-### 16.24 World-surface feedback from the first real sessions (2026-08-30)
+### 16.24 The locator that stops working after a paste (2026-08-30)
 
-Daniel's, from using the surface rather than from a review. Three, and the
-third is a defect with a diagnosis; the first two are decisions being revisited
-and each contradicts something the tree deliberately does.
+Five of the six findings from Daniel's first real editing sessions landed
+2026-08-30 — the selection emphasis, the mode-dependent gizmo anchor, the pick
+occluder, the paste offset and selection, and the property grid's locator. Their
+record is `git log` and `docs/architecture/level-editor.md` §7, *"What a
+selection is on screen, and what a click can reach"*. This one is still open,
+and now has more ruled out than in.
 
-**1. A selection is invisible unless the gizmo is.** The only VOB emphasis
-that exists is `WorldScene`'s silhouette darkening, and its own doc says it is
-*"deliberately faint and never a selection state — selection is the gizmo"*.
-That was the right call for legibility and is the wrong one for selection: a
-VOB whose gizmo is off-screen, or one of several selected, reads as unselected.
-Wanted: an outline or another visible effect on the selected VOBs themselves.
-The constraint that shaped the darkening still holds — an outline *pass* is a
-second `InstancedMesh` per visual, 724 more draw calls (§3, render-performance)
-— so the cheap form is the same one: a per-instance attribute the VOB shader
-already carries, switched on for the selection, exactly as `HIDDEN_ATTRIBUTE`
-is written today.
+**The report.** After a paste, the scene tree's locator stops working on every
+VOB — not only on the copies.
 
-**2. The multi-selection gizmo sits on the last VOB picked, not in the middle.**
-`WorldScene.anchorOf` walks the selection backwards and takes the first VOB
-that is drawn; `worldStore.toggleVob` appends for that reason. Wanted: the
-centre of the selected items. **The trap is rotation.** `rotateVobs` turns each
-VOB about *its own* origin, deliberately (§16.4 and its own doc: turning about
-a pivot moves the VOBs as well, which is a different feature) — so a gizmo
-standing at the centroid would show a pivot the op does not use, and the first
-multi-VOB rotate would look broken. Either the anchor moves for translate only,
-or rotate-about-pivot lands with it. Decide that before writing the anchor.
+**What is established.** The path is `onFocus(vob)` → `WorldSurface.focusVob` →
+`viewportRef.current.frameVob(vob)` → `frameVobRef.current(vob)`. It used to be
+optional-chained end to end, which is why the failure was invisible rather than
+why it happened; that half is fixed — `frameVob` answers `no-scene` or
+`not-drawn`, and `focusVob` warns. **A repeat now leaves a console warning
+naming which link gave way, and that is the next thing to collect.**
 
-**3. A VOB can be picked through the world mesh.** Reported on a Khorinis
-tower: click the wall and a VOB behind it is selected. **The pick pass draws
-only the VOB proxies** — `VobPicker`'s scene holds the instanced proxies and
-nothing else, so no world geometry ever writes depth into the 1×1 pick target
-and occlusion cannot happen. The fix is to draw the world mesh into that scene
-as a depth-only occluder (`colorWrite: false`, or black, which the pass already
-reads as "nothing was hit"); it costs one more draw into a one-pixel view
-offset. Watch the two knowns while there: the pass ignores alpha-tested
-cut-outs (documented in `VobPicker`), and `HIDDEN_ATTRIBUTE` must keep meaning
-"not clickable" — a hidden VOB behind a wall must not become pickable, and a
-*hidden* world mesh must not occlude.
+**What has been ruled out, and how.** Two probes, both green, both kept:
 
-**4. Paste lands the copy inside the original, and leaves it unselected.**
-`duplicateVobSpec` copies the position verbatim, so a pasted VOB is exactly
-where its source is — invisible, and only findable in the scene tree. Nothing
-selects the new VOBs either: `pasteClipboard` commits the ops and the selection
-still holds the *source*. Wanted: the copy offset a little from the original
-and selected, so it can be dragged straight away. The "jerking" reported with
-it is the structural-op re-read — a paste is `isStructuralOp`, so the whole
-projection is rebuilt — which is a separate and larger question from where the
-copy lands.
+- `WorldViewport.frameHandle.test.tsx` — the handle survives `visuals` being
+  replaced, which is what a structural op does to it. So the scene effect's
+  teardown-then-rebuild does not strand `frameVobRef` on its own.
+- `WorldSurface.editing.test.tsx` — the locator still fires after a real
+  Ctrl+C/Ctrl+V through the surface, index re-read and all. So the wiring from
+  the tree's button to the viewport survives a paste in the harness.
 
-**5. After a paste, the locator stops working on every VOB.** Reported
-2026-08-30. Not diagnosed to a root cause — what is established is the path and
-why it fails *silently*: the scene tree's locator is
-`onFocus(vob)` → `WorldSurface.focusVob` → `viewportRef.current?.frameVob(vob)`
-→ `frameVobRef.current?.(vob)`, and **every link is optional-chained**, so a
-null anywhere is a no-op with no error, which is exactly the reported symptom.
-`frameVobRef.current` is installed by the scene effect
-(`WorldViewport.tsx:854`) and set to null by its teardown (`:1076`); the effect
-is keyed on `[mesh, visuals, bbox]` — the three payloads a **structural op
-re-reads**, and a paste is `isStructuralOp`. Its first statement is
-`if (!host) return;` with **no cleanup returned**, so a re-run that finds no
-host leaves the ref null for the rest of the world's life. First probe:
-assert `frameVobRef.current` is non-null after a structural re-read; the
-double-click on a row and the `.` key go through `frameThese` too, so check
-whether they also died — that separates "the ref is null" from "the handle is
-stale".
-Whatever the cause, the optional chaining is the reason nobody saw it: a
-locator that cannot locate should say so, not do nothing.
+So the standing hypothesis — `if (!host) return;` at the top of the scene
+effect, which returns no cleanup and would leave the ref null for the world's
+life — is **not reachable in either harness**: `hostRef` is on the always-
+rendered `Box`, and nothing unmounts it. It is still the only known way the ref
+can be stranded, so it stays the first thing to check against a real world.
 
-**6. The right sidebar needs a locator for the current selection.** Picking in
-the viewport leaves no way back to it — the tree's locator is per row, and a
-VOB selected by clicking the world may not even be scrolled into view there.
-The keyboard already does it (`.` or Numpad-`.` → `frameSelection`, and `Home`
-frames the world), so this is the same command with a button on it, in the
-property grid's header, calling `focusVob(primaryVob(selection))`. It also
-gives item 5 a second surface to fail on, which is worth having.
+**What neither probe covers**, and where to look next: a real GPU, a real world,
+and the async work a structural re-read starts — `loadPendingTextures`, the BVH
+build, the two separate awaits in `applied` that produce *two* rebuilds per
+paste rather than one. A paste that rebuilds the scene twice in quick succession
+is the one shape the harness does not reproduce, because both its payload reads
+resolve in the same tick.

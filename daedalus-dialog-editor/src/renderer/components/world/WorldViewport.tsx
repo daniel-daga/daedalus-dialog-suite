@@ -16,7 +16,9 @@ import { WaynetOverlay } from '../../world/WaynetOverlay';
 import { SpawnOverlay } from '../../world/SpawnOverlay';
 import type { RoutineIndex } from '../../routines/routineSchedule';
 import { TerrainMarker } from '../../world/TerrainMarker';
-import { WorldScene, textureCacheFor, type TextureCache } from '../../world/WorldScene';
+import {
+  SELECTED_ATTRIBUTE, WorldScene, textureCacheFor, type TextureCache,
+} from '../../world/WorldScene';
 import { BvhBuilder } from '../../world/BvhBuilder';
 import { VobPicker } from '../../world/VobPicker';
 import { NO_PICK } from '../../world/pickIds';
@@ -70,6 +72,10 @@ declare global {
       turnGizmo: (axis: [number, number, number], radians: number) => void;
       /** Where the gizmo currently sits, in ZenGin space, or null if detached. */
       gizmoPosition: () => [number, number, number] | null;
+      /** The per-instance selection flags the scene is drawing, mesh by mesh and
+       *  flattened (§16.24 1). There is no picture to look at without a GPU, and
+       *  this is the buffer the shader reads. */
+      selectedInstances: () => number[];
       /** Report a click that hit a waypoint in the waynet overlay. It stands in
        *  for `pickWaypoint`'s projection and nothing else. */
       pickWaypoint: (waypoint: number) => void;
@@ -286,15 +292,28 @@ export interface WorldViewportHandle {
    * VOB) has no position to frame, and neither has any VOB while the scene
    * effect is between a teardown and its rebuild: both are no-ops.
    */
-  frameVob: (vob: number) => void;
+  frameVob: (vob: number) => FrameFailure | null;
   /**
    * The same jump onto a bare position in ZenGin space — a waypoint, which has
    * no row in the VOB index and no bounds (§16.20 slice 2). A no-op while the
    * scene effect is between a teardown and its rebuild, exactly as
    * {@link frameVob} is.
    */
-  framePoint: (at: ZenPosition) => void;
+  framePoint: (at: ZenPosition) => FrameFailure | null;
 }
+
+/**
+ * Why a jump did nothing — null when it was made (level-editor.md §16.24 5).
+ *
+ * The command used to answer nothing at all, and every link on the way to it
+ * was optional-chained, so a locator that had stopped working was a no-op with
+ * no error anywhere: exactly the symptom reported, and the reason nobody could
+ * see which link had gone. The two ways it can legitimately do nothing are told
+ * apart because only one of them is a defect — `not-drawn` is the honest answer
+ * for a decal or a sound VOB, and `no-scene` means the viewport was asked while
+ * the scene effect was between a teardown and its rebuild.
+ */
+export type FrameFailure = 'no-scene' | 'not-drawn';
 
 /** What the selection and edit effects need of the imperative viewport, so
  *  neither of them can tear the scene down and rebuild 31 MB of buffers. */
@@ -353,8 +372,10 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
         normal: threeToZen(worldNormal.toArray() as [number, number, number]),
       };
     },
-    frameVob: (vob) => { frameVobRef.current?.(vob); },
-    framePoint: (at) => { framePointRef.current?.(at); },
+    // Written out rather than `?.() ?? 'no-scene'`: null is what *success*
+    // answers, and `??` would turn every landed jump into a reported failure.
+    frameVob: (vob) => (frameVobRef.current === null ? 'no-scene' : frameVobRef.current(vob)),
+    framePoint: (at) => (framePointRef.current === null ? 'no-scene' : framePointRef.current(at)),
   }), []);
 
   const overlayRef = useRef<WaynetOverlay | null>(null);
@@ -372,6 +393,11 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   // step must not rebuild the scene, and must apply to the drag already in hand.
   const snapGridRef = useRef(snapGrid);
   snapGridRef.current = snapGrid;
+  // The gizmo's anchor depends on the mode (§16.24 2), and the scene effect is
+  // built once per world — so the mode it starts from is read through a ref,
+  // and every later change reaches it through `setMode`.
+  const gizmoModeRef = useRef(gizmoMode);
+  gizmoModeRef.current = gizmoMode;
   const snapAngleRef = useRef(snapAngle);
   snapAngleRef.current = snapAngle;
   // The overlay is only pickable while it is on screen, and the scene effect
@@ -396,8 +422,8 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   // Set by the scene effect, because the camera and the controls live inside
   // it, and cleared by its teardown — which is why the handle's `frameVob`
   // calls it through the ref rather than closing over it.
-  const frameVobRef = useRef<((vob: number) => void) | null>(null);
-  const framePointRef = useRef<((at: ZenPosition) => void) | null>(null);
+  const frameVobRef = useRef<((vob: number) => FrameFailure | null) | null>(null);
+  const framePointRef = useRef<((at: ZenPosition) => FrameFailure | null) | null>(null);
   // Read by the draw loop, which lives outside React's render path: going off
   // screen must not tear the scene down and rebuild 31 MB of buffers — that
   // would be the geometry loss the mount exists to prevent, once per tab
@@ -525,6 +551,10 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     // Measured: the first GPU pick of a session costs 53 ms — once, 276 ms —
     // compiling the pick shader. Paying it here makes the first click cost what
     // every later one does.
+    // The world mesh, depth only: without it the pick scene held the props and
+    // nothing else, so no geometry wrote depth into the 1x1 target and a VOB
+    // behind a wall won the pixel (§16.24 3).
+    picker.setWorldMeshes(world.worldMeshes, world.root.matrix);
     picker.warm(renderer, camera);
 
     // Textures on demand, and only the ones the cache above does not already
@@ -587,9 +617,27 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       transform.getHelper().visible = false;
     };
 
+    // Which anchor `attach` uses, and therefore a value the mode switch has to
+    // re-attach on — see `anchorFor`.
+    let gizmoModeNow: GizmoMode = gizmoModeRef.current;
+
+    /**
+     * Where the gizmo stands for a selection (§16.24 2).
+     *
+     * The middle of it while translating, and the last VOB picked while
+     * rotating. Not one answer for both, because `rotateVobs` turns each VOB
+     * about *its own* origin: a rotate gizmo at the centroid would show a pivot
+     * the op does not use, and the first multi-VOB rotate would look broken.
+     * Translating has no such pivot — the drag reports a delta from wherever
+     * the proxy was picked up — so the centre is free there and is what the
+     * handles should sit in.
+     */
+    const anchorFor = (vobs: readonly number[]) => (
+      gizmoModeNow === 'rotate' ? world.anchorOf(vobs) : world.centroidOf(vobs)
+    );
+
     const attach = (vobs: readonly number[]) => {
-      // The gizmo sits on the last selected VOB that is actually drawn.
-      const position = world.anchorOf(vobs);
+      const position = anchorFor(vobs);
       gizmoVobs = position === null ? [] : vobs;
       gizmoWaypoint = null;
 
@@ -635,7 +683,14 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       // selected; they just have nothing to switch to. Ignored rather than
       // disabled, so the mode the VOBs were in survives a detour through the
       // waynet.
-      setMode: (mode) => transform.setMode(gizmoWaypoint === null ? mode : 'translate'),
+      setMode: (mode) => {
+        gizmoModeNow = mode;
+        transform.setMode(gizmoWaypoint === null ? mode : 'translate');
+        // The anchor is the mode's, so W and E move the gizmo as well as
+        // changing its handles — a rotate gizmo left standing at the centroid
+        // would turn about a pivot no op uses.
+        if (gizmoWaypoint === null && gizmoVobs.length > 0) attach(gizmoVobs);
+      },
     };
 
     // A drag must not also orbit the camera.
@@ -867,23 +922,26 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     // through half the world.
     const frameFramables = (
       framable: Array<{ at: [number, number, number]; bounds: readonly number[] | null }>,
-    ) => {
+    ): FrameFailure | null => {
       const center = frameVobs(camera, controls.target, framable);
       // The pivot `frameVobs` left on them is `controls.target`; this is the
       // other one — the fallback a drag begun over the sky uses. Without it the
       // first orbit after a jump swings back to wherever the last click landed,
       // which is the whole complaint the pivot work exists to answer.
       if (center !== null) rememberPick(center);
+      // Reported rather than swallowed, so a locator that cannot locate says so
+      // — see `FrameFailure`.
+      return center === null ? 'not-drawn' : null;
     };
 
-    const frameThese = (vobs: readonly number[]) => {
+    const frameThese = (vobs: readonly number[]): FrameFailure | null => {
       // A VOB that is not drawn has no position to frame — a decal, a sound
       // VOB — and a selection can be nothing but those.
       const framable = vobs
         .map((vob) => ({ at: world.positionOf(vob), bounds: world.boundsOf(vob) }))
         .filter((vob): vob is { at: [number, number, number]; bounds: readonly number[] | null } => vob.at !== null);
 
-      frameFramables(framable);
+      return frameFramables(framable);
     };
 
     const frameSelection = () => frameThese(selectionRef.current);
@@ -1133,6 +1191,9 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       gizmoPosition: () => (gizmoVobs.length === 0 && gizmoWaypoint === null
         ? null
         : [proxy.position.x, proxy.position.y, proxy.position.z]),
+      selectedInstances: () => world.instancedMeshes.flatMap((instanced) => [
+        ...(instanced.geometry.getAttribute(SELECTED_ATTRIBUTE).array as Float32Array),
+      ]),
     };
 
     return () => {
@@ -1323,6 +1384,15 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   useEffect(() => {
     sceneRef.current?.setHiddenVobs(hiddenVobs);
   }, [hiddenVobs, mesh, visuals]);
+
+  // The selection, drawn on the VOBs themselves (§16.24 1) — the gizmo is one
+  // set of handles and says nothing about the other members of a multi-select,
+  // or about a selected VOB whose gizmo is off screen. `mesh`/`visuals` for the
+  // reason every effect above them takes them: a rebuilt scene starts with
+  // nothing marked.
+  useEffect(() => {
+    sceneRef.current?.setSelectedVobs(selection);
+  }, [selection, mesh, visuals]);
 
   // An edit the main process has taken — a commit, an undo, a redo, or the
   // reversal of a refused one. The scene is a projection and has to follow it;

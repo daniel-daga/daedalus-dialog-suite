@@ -116,6 +116,15 @@ interface WorldStore {
   openFailed: (error: string) => void;
   /** Replace the selection — a plain click. `null` clears it. */
   selectVob: (vob: number | null) => void;
+  /**
+   * Replace the selection with a whole list of VOBs at once.
+   *
+   * For a batch that produced its own selection rather than one a user built
+   * click by click: a paste selects the copies it just landed (§16.24 4), and
+   * doing that through `selectVob` plus N `toggleVob`s would be N renders and
+   * would leave the primary at the wrong end of the list.
+   */
+  selectVobs: (vobs: readonly number[]) => void;
   /** Add or remove one VOB — a Ctrl/Cmd click, which is how a batch is built. */
   toggleVob: (vob: number) => void;
   /**
@@ -229,6 +238,10 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
   // Both VOB picks drop the waypoint, and the waypoint pick drops them, for the
   // reason `selectedWaypoint` documents: one gizmo.
   selectVob: (vob) => set({ selection: vob === null ? [] : [vob], selectedWaypoint: null }),
+
+  // The order is the caller's, and it matters: the last VOB in a selection is
+  // the primary — what the grid describes and what the rotate gizmo anchors on.
+  selectVobs: (vobs) => set({ selection: [...vobs], selectedWaypoint: null }),
 
   toggleVob: (vob) => set(({ selection }) => ({
     selection: selection.includes(vob)

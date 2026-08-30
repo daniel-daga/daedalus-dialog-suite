@@ -184,3 +184,88 @@ describe('the prop pick', () => {
     expect(material.vertexShader).toMatch(/instanceHidden > 0\.5/);
   });
 });
+
+describe('the world mesh as a pick occluder (level-editor.md §16.24 3)', () => {
+  // The pick scene held the VOB proxies and *nothing else*, so no world
+  // geometry ever wrote depth into the 1x1 target and a VOB behind a wall won
+  // the pixel — reported on a Khorinis tower. The fix is one more draw into a
+  // one-pixel view offset: the world mesh, depth only.
+  const worldMesh = (material: THREE.Material) =>
+    new THREE.Mesh(new THREE.BufferGeometry(), material);
+
+  it('draws the world mesh into the pick scene, depth only and at the root', () => {
+    const picker = new VobPicker();
+    const root = new THREE.Matrix4().makeScale(0.01, 0.01, 0.01);
+    const mesh = worldMesh(new THREE.MeshBasicMaterial());
+
+    picker.setWorldMeshes([mesh], root);
+
+    expect(picker.pickOccluders).toHaveLength(1);
+    const occluder = picker.pickOccluders[0];
+    // The geometry is *shared*, not cloned: the occluder needs no attribute of
+    // its own, and a clone would be a second copy of the 476k-triangle world.
+    expect(occluder.geometry).toBe(mesh.geometry);
+    // Nothing is written to colour, so the cleared black — which the readback
+    // already reads as "nothing was hit" — survives wherever the world wins the
+    // depth test, and the click falls through to the BVH raycast as before.
+    expect((occluder.material as THREE.Material).colorWrite).toBe(false);
+    expect((occluder.material as THREE.Material).depthWrite).toBe(true);
+    // The proxies carry the mirrored root themselves rather than hanging under
+    // the viewport's node, and an occluder that did not would be somewhere else
+    // entirely — which is worse than not occluding at all.
+    expect(occluder.matrix.equals(root)).toBe(true);
+    expect(occluder.matrixAutoUpdate).toBe(false);
+  });
+
+  it('leaves a cut-out or blended world surface out, so a hole stays clickable', () => {
+    // The pass ignores alpha-tested cut-outs — the known limit documented in
+    // `VobPicker` — so a fence or a foliage quad drawn as an occluder would
+    // block a click through its own transparent half.
+    const picker = new VobPicker();
+    const cutout = new THREE.MeshBasicMaterial();
+    cutout.alphaTest = 0.5;
+    const blended = new THREE.MeshBasicMaterial();
+    blended.transparent = true;
+
+    picker.setWorldMeshes(
+      [worldMesh(new THREE.MeshBasicMaterial()), worldMesh(cutout), worldMesh(blended)],
+      new THREE.Matrix4(),
+    );
+
+    expect(picker.pickOccluders).toHaveLength(1);
+  });
+
+  it('replaces the occluders on a rebuild without disposing the world geometry', () => {
+    // A structural op rebuilds the scene, and the geometry here belongs to the
+    // `WorldScene` that made it — disposing it would release buffers the very
+    // next frame draws with.
+    const picker = new VobPicker();
+    const mesh = worldMesh(new THREE.MeshBasicMaterial());
+    const disposed = jest.fn();
+    mesh.geometry.addEventListener('dispose', disposed);
+
+    picker.setWorldMeshes([mesh], new THREE.Matrix4());
+    picker.setWorldMeshes([mesh], new THREE.Matrix4());
+
+    expect(picker.pickOccluders).toHaveLength(1);
+    expect(disposed).not.toHaveBeenCalled();
+
+    picker.dispose();
+    expect(picker.pickOccluders).toHaveLength(0);
+    expect(disposed).not.toHaveBeenCalled();
+  });
+
+  it('keeps the occluders when the VOB proxies are rebuilt', () => {
+    // The two are set from the same effect but are not the same call, and
+    // `setInstancedMeshes` clears what it owns. Clearing the occluders there
+    // would silently take the fix back out.
+    const picker = new VobPicker();
+    picker.setWorldMeshes([worldMesh(new THREE.MeshBasicMaterial())], new THREE.Matrix4());
+
+    const vobs = new THREE.InstancedMesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial(), 1);
+    picker.setInstancedMeshes([vobs], () => 3, new THREE.Matrix4());
+
+    expect(picker.pickOccluders).toHaveLength(1);
+    expect(picker.pickProxies).toHaveLength(1);
+  });
+});

@@ -2529,6 +2529,67 @@ it would flag most of a retail waynet), `AI_GotoFP` / `Wld_IsFPAvailable` /
 `AI_UseMob` / `Wld_AssignRoomTo*` (different namespaces), and
 `Npc_GetNearestWP` / `Npc_GetNextWP` (they return a name rather than take one).
 
+#### What a selection is on screen, and what a click can reach (2026-08-30)
+
+Five of the six findings from the first real editing sessions, and they share a
+seam: the viewport had exactly one way to say "this VOB", the gizmo, and exactly
+one thing in its pick scene, the props.
+
+**A selection is a per-instance attribute, never a second pass.**
+`SELECTED_ATTRIBUTE` sits beside `HIDDEN_ATTRIBUTE` and for the same reason: a
+VOB is one instance inside an `InstancedMesh` shared with every other VOB of its
+visual, so neither `mesh.visible` nor anything on the material can speak about
+one of them. The emphasis is a rim and a body tint mixed into `outgoingLight` in
+the VOB shader — no draw call, no geometry, no uniform. An outline *pass* would
+be a second `InstancedMesh` per visual, 724 more draw calls in the viewport that
+exists to keep per-frame work off the CPU (`render-performance.md`). The
+silhouette darkening is switched *off* on a selected VOB rather than layered
+under the emphasis, or the one term whose job is to darken that edge would fight
+the one whose job is to light it. `setSelectedVobs` clears by walking only what
+it last switched on, so a click uploads the attribute of the meshes that
+changed rather than all 724.
+
+**The gizmo's anchor is the mode's, not the selection's.** Translate stands at
+the centroid; rotate stays on the last VOB picked. That asymmetry is not a wart
+and must not be tidied away: `rotateVobs` turns each VOB about *its own* origin,
+so a rotate gizmo at the centroid would draw a pivot the op does not use and the
+first multi-VOB rotate would look broken. Whoever lands rotate-about-a-pivot
+lands the centroid anchor for rotate with it, in the same change. `setMode`
+re-attaches for this reason — W and E move the handles, not only their shape.
+
+**The pick pass needs something to hide behind.** It drew the VOB proxies and
+nothing else, so no world geometry ever wrote depth into the 1x1 target and a
+VOB behind a wall won the pixel — reported on a Khorinis tower. `setWorldMeshes`
+draws the world mesh into the same one-pixel view offset, `colorWrite: false`,
+sharing the `WorldScene`'s geometry (and therefore never disposing it). Black is
+already what the readback reads as "nothing was hit", so a click on a wall falls
+through to the BVH raycast exactly as a click on empty sky does. A cut-out or
+blended world surface is **left out**: the pass cannot see where its holes are —
+the same known limit that makes the transparent corner of a foliage quad select
+the plant — so drawn as a solid occluder it would block a click through its own
+transparent half.
+
+**A paste lands beside what it copied, and selects it.** The offset is the
+copied group's own extent along X, floored at `PASTE_MIN_OFFSET`: a fixed nudge
+is beside it for a barrel and still inside it for a building. Horizontal only,
+because nothing on the renderer's side of the boundary can put a copy back on
+the ground; one delta for the whole batch, so a group copied as a group keeps
+its spacing; and applied to every node of every subtree, because ZenGin VOB
+positions are world-space — the tree is organisational, not a transform
+hierarchy. The copies are then selected **by path**, not by the `vob` the
+`AddVob` carries: that index is the enumeration as it was, and appending moves
+every index after the insertion point. `vobAtIndexPath` is the inverse of
+`vobIndexPath` this needed and the first caller of it.
+
+**A locator that cannot locate says so.** `frameVob` and `framePoint` answer
+`FrameFailure | null` instead of nothing. Every link of
+`onFocus -> focusVob -> frameVob -> frameVobRef` was optional-chained, so a null
+anywhere was a no-op with no error — which is how a locator that had stopped
+working went a whole session unreported. `no-scene` and `not-drawn` are told
+apart because only one of them is a defect. Note the trap the first attempt fell
+into: `frameVobRef.current?.(vob) ?? 'no-scene'` is wrong, because `null` is what
+*success* answers and `??` would turn every landed jump into a reported failure.
+
 **A bound taken from ZenKit's documentation rather than from a `normalizeWorld`
 sweep is a live refusal risk, not a cautious default.** `zCVobSound.volume`
 shipped `max: 100` on ZenKit's "percent (0-100)" wording while retail NewWorld

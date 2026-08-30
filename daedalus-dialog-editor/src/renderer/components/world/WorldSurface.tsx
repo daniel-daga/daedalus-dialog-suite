@@ -16,7 +16,8 @@ import {
   matchVobs,
   moveWaypoint, pasteVobs, placeBounds, renameWaypoint, renumbersPaths,
   reparentVob, rotateVob, rotateVobs, setVobClassProp, setVobProp, setVobProps, topLevelVobs,
-  translateVobs, vobIndexPath,
+  translateVobs, vobAtIndexPath, vobIndexPath,
+  type AddVob,
   type AuthorableVobClass, type ClassProps, type NewVob, type ReadProps,
   type VobProps, type VobReader, type VobSubtree,
   type ZenBounds,
@@ -413,7 +414,15 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    */
   const focusVob = useCallback((vob: number) => {
     handleSelect(vob, false);
-    viewportRef.current?.frameVob(vob);
+    const viewport = viewportRef.current;
+    // Reported rather than optional-chained away (§16.24 5). Every link of this
+    // path used to swallow a null, so a locator that had stopped working was
+    // indistinguishable from one that had jumped to a VOB already on screen —
+    // which is exactly how it went unnoticed for a session. A VOB with no
+    // instance is a legitimate `not-drawn`, and it is still worth saying: the
+    // button was pressed and nothing moved.
+    const failure = viewport === null ? 'no-scene' : viewport.frameVob(vob);
+    if (failure !== null) console.warn(`Could not jump to VOB ${vob}: ${failure}`);
   }, [handleSelect]);
 
   /**
@@ -704,7 +713,11 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     setVisuals(await window.editorAPI.getWorldVisuals());
   }, [waynet, selectWaypoint]);
 
-  const commitOps = useCallback(async (ops: WorldOp[]) => {
+  /** @returns whether the world took the edit — false is a refusal, and the
+   *   banner has already been set. A caller that has something to do *after* a
+   *   commit needs it: the paste selects what it pasted, and there is nothing
+   *   to select when nothing landed. */
+  const commitOps = useCallback(async (ops: WorldOp[]): Promise<boolean> => {
     const { editFailed } = useWorldStore.getState();
     try {
       await window.editorAPI.applyWorldOps(ops);
@@ -738,7 +751,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       // what this puts back is the viewport's *optimistic* draw of a gizmo drag,
       // and a delete is never drawn before the main process has taken it.
       setAppliedOps(ops.filter((op) => !isBarrierOp(op)).map(invertOp));
-      return;
+      return false;
     }
 
     // **Past the commit point, and in its own try for that reason.** Everything
@@ -761,6 +774,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       const reason = failure instanceof Error ? failure.message : String(failure);
       editFailed(`The edit was applied, but the view could not be brought up to date: ${reason}. Re-open the world to resync.`);
     }
+    // The world holds the edit either way — a stale view is not a refusal, and
+    // the message above says so.
+    return true;
   }, [applied]);
 
   // One gizmo drives the whole selection, so a drag arrives as a delta rather
@@ -1217,7 +1233,29 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     const { reader } = vobModelOf(current);
     const into = primaryVob(selected);
     const parent = into === null ? -1 : reader.columns.parent[into];
-    await commitOps(pasteVobs(reader, clipboard.current, parent < 0 ? null : parent));
+    const parentPath = parent < 0 ? null : vobIndexPath(reader, parent);
+    const ops = pasteVobs(reader, clipboard.current, parent < 0 ? null : parent);
+
+    if (!await commitOps(ops)) return;
+
+    // The copies, selected (§16.24 4) — a paste used to leave the *source*
+    // selected, so the thing that had just landed could only be reached by
+    // hunting for it in the scene tree.
+    //
+    // By path, and only after the re-read: the flat index an `AddVob` carries
+    // is the enumeration as it was, and appending changes every index after the
+    // insertion point. The roots of the paste are the ops whose parent is the
+    // list the paste chose; a descendant's parent is its own root's new path.
+    const { summary: after } = useWorldStore.getState();
+    if (after === null) return;
+
+    const refreshed = vobModelOf(after).reader;
+    const pasted = ops
+      .filter((op): op is AddVob => op.op === 'AddVob' && op.parentPath === parentPath)
+      .map((op) => vobAtIndexPath(refreshed, op.path))
+      .filter((vob): vob is number => vob !== null);
+
+    if (pasted.length > 0) useWorldStore.getState().selectVobs(pasted);
   }, [commitOps]);
 
   /**
@@ -2067,6 +2105,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                     selection={selection}
                     refusalGeneration={editRefusals}
                     onEditProps={handleEditProps}
+                    onFocus={focusVob}
                     onTranslate={handleTranslateSelection}
                     onRotate={handleRotateVob}
                     onRotateSelection={handleRotateSelection}

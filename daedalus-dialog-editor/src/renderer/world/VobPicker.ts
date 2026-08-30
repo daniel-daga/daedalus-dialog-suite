@@ -28,6 +28,13 @@ import { HIDDEN_ATTRIBUTE } from './WorldScene';
 // clicking the transparent corner of a foliage quad selects the plant. Fixing
 // it means sampling the texture in the pick shader, which needs the texture
 // decoded — and textures are decoded on demand.
+//
+// The world mesh is drawn too, depth only (`setWorldMeshes`, §16.24 3). Without
+// it nothing in this scene ever wrote depth but the props themselves, so a VOB
+// behind a wall won the pixel and clicking a Khorinis tower selected whatever
+// stood inside it. It is one more draw into the same one-pixel view offset —
+// the cut-out limit above is why a cut-out or blended world surface is left
+// out of it rather than drawn as a solid occluder.
 
 const PICK_VERTEX = /* glsl */`
   attribute vec3 pickColor;
@@ -51,6 +58,21 @@ const PICK_FRAGMENT = /* glsl */`
   }
 `;
 
+// The occluder's own pair. It cannot share the material above: that one reads
+// `instanceMatrix` and two instanced attributes, and the world mesh carries
+// none of the three.
+const OCCLUDER_VERTEX = /* glsl */`
+  void main() {
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const OCCLUDER_FRAGMENT = /* glsl */`
+  void main() {
+    gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+  }
+`;
+
 export class VobPicker {
   private target = new THREE.WebGLRenderTarget(1, 1, {
     format: THREE.RGBAFormat,
@@ -69,13 +91,65 @@ export class VobPicker {
     side: THREE.FrontSide,
   });
 
+  // Depth only. `colorWrite: false` leaves the cleared black standing wherever
+  // the world wins the depth test, and black is already what the readback reads
+  // as "nothing was hit" — so a click on a wall falls through to the BVH
+  // raycast exactly as a click on empty sky does.
+  private occluderMaterial = new THREE.ShaderMaterial({
+    vertexShader: OCCLUDER_VERTEX,
+    fragmentShader: OCCLUDER_FRAGMENT,
+    side: THREE.FrontSide,
+    colorWrite: false,
+  });
+
   private proxies: THREE.InstancedMesh[] = [];
+  private occluders: THREE.Mesh[] = [];
 
   /** The proxies the pick pass draws, in the order their meshes were given.
    *  The pick scene is otherwise unreachable, and what they were built out of
    *  is the only thing about a pick that is checkable without a GPU. */
   get pickProxies(): readonly THREE.InstancedMesh[] {
     return this.proxies;
+  }
+
+  /** The world meshes drawn as depth-only occluders, for the same reason. */
+  get pickOccluders(): readonly THREE.Mesh[] {
+    return this.occluders;
+  }
+
+  /**
+   * Draw the world mesh into the pick scene as a depth-only occluder
+   * (level-editor.md §16.24 3).
+   *
+   * Separate from `setInstancedMeshes` because neither owns the other: the
+   * proxies are rebuilt from cloned geometry with an id attribute, and these
+   * are the caller's own meshes drawn through a different material.
+   *
+   * The geometry is **shared, not cloned** — it needs no attribute of its own,
+   * and the `WorldScene` that built it is the one that disposes it. A
+   * `mesh.visible` of false is honoured on the way in, because a world mesh
+   * nobody can see must not take a click either; nothing switches one off
+   * today, so this is the rule written down rather than a feature.
+   */
+  setWorldMeshes(meshes: readonly THREE.Mesh[], rootMatrix: THREE.Matrix4): void {
+    this.clearOccluders();
+
+    for (const mesh of meshes) {
+      // A cut-out or a blended surface is not solid, and the pass cannot tell
+      // where its holes are — see the note at the top. Drawn as an occluder it
+      // would block a click through its own transparent half.
+      const material = mesh.material as THREE.MeshBasicMaterial;
+      if (!mesh.visible || material.transparent || material.alphaTest > 0) continue;
+
+      const occluder = new THREE.Mesh(mesh.geometry, this.occluderMaterial);
+      occluder.matrixAutoUpdate = false;
+      occluder.matrix.copy(rootMatrix);
+      occluder.matrixWorldNeedsUpdate = true;
+      occluder.frustumCulled = mesh.frustumCulled;
+
+      this.scene.add(occluder);
+      this.occluders.push(occluder);
+    }
   }
 
   /** Build the pick scene: the same instanced geometry, with an id per instance. */
@@ -200,9 +274,19 @@ export class VobPicker {
     this.proxies = [];
   }
 
+  /** No `dispose` on the geometry, unlike `clear`: an occluder draws the
+   *  `WorldScene`'s own buffers, and releasing them here would take the world
+   *  out from under the very next frame. */
+  private clearOccluders(): void {
+    for (const occluder of this.occluders) this.scene.remove(occluder);
+    this.occluders = [];
+  }
+
   dispose(): void {
     this.clear();
+    this.clearOccluders();
     this.material.dispose();
+    this.occluderMaterial.dispose();
     this.target.dispose();
   }
 }

@@ -86,6 +86,9 @@ export function mockVobPicker(hitVobId = -1) {
   return {
     VobPicker: class {
       setInstancedMeshes() {}
+      // The world mesh as a depth-only occluder (§16.24 3). Present so that a
+      // viewport built against a stand-in still runs the call.
+      setWorldMeshes() {}
       warm() {}
       pickAsync() { return Promise.resolve(hitVobId); }
       dispose() {}

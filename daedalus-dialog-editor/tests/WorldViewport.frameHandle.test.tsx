@@ -162,7 +162,7 @@ describe('WorldViewport — framing a VOB through the handle', () => {
     unmount();
   });
 
-  it('is a no-op for a VOB that is not drawn', () => {
+  it('is a no-op for a VOB that is not drawn, and says which kind of no-op', () => {
     const ref = React.createRef<WorldViewportHandle>();
     const { unmount } = render(<WorldViewport ref={ref} {...props()} />);
 
@@ -171,6 +171,21 @@ describe('WorldViewport — framing a VOB through the handle', () => {
     // Nothing framable reaches `frameVobs`, which moves no camera for an
     // empty list — the filter is in the closure, not in the command.
     expect(mockFramed.mock.calls[0][2]).toEqual([]);
+    unmount();
+  });
+
+  it('reports what it did, so a locator that cannot locate is not silent', () => {
+    // §16.24 5: every link of `onFocus -> focusVob -> frameVob -> frameVobRef`
+    // was optional-chained, so a null anywhere was a no-op with no error — the
+    // reason a locator that had stopped working went unnoticed. The command
+    // answers now, and the two ways it can do nothing are told apart: a VOB
+    // with no instance is a legitimate answer, a scene that is not there is not.
+    const ref = React.createRef<WorldViewportHandle>();
+    const { unmount } = render(<WorldViewport ref={ref} {...props()} />);
+
+    expect(ref.current!.frameVob(7)).toBeNull();
+    expect(ref.current!.frameVob(9)).toBe('not-drawn');
+    expect(ref.current!.framePoint([1, 2, 3])).toBeNull();
     unmount();
   });
 
@@ -196,6 +211,23 @@ describe('WorldViewport — framing a VOB through the handle', () => {
 
     expect(seen.threw).toBeNull();
     expect(mockFramed).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('says the scene is missing rather than doing nothing quietly', () => {
+    // The same window as the test above, and the half §16.24 5 says was
+    // invisible: the caller has to be able to tell "this VOB has no instance"
+    // from "the viewport has no scene to frame in".
+    const seen: { answer: unknown } = { answer: 'unset' };
+    function Parent() {
+      const ref = React.useRef<WorldViewportHandle>(null);
+      React.useLayoutEffect(() => { seen.answer = ref.current!.frameVob(7); }, []);
+      return <WorldViewport ref={ref} {...props()} />;
+    }
+
+    const { unmount } = render(<Parent />);
+
+    expect(seen.answer).toBe('no-scene');
     unmount();
   });
 });

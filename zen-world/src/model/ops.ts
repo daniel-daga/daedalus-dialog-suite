@@ -610,6 +610,43 @@ function barrierError(op: WorldOp): RangeError {
  * that makes a scene tree sorting by the wrong key look correct — and the
  * disagreement moves the wrong VOB rather than failing.
  */
+/**
+ * The flat index of the VOB at `path`, or null when this world has no such
+ * address — the inverse of {@link vobIndexPath}.
+ *
+ * It exists because an `AddVob` knows *where* it put a VOB and not *which* VOB
+ * that is: the flat index a batch of appends carries is the enumeration as it
+ * was, and the real one is only knowable once the world has been re-enumerated.
+ * A paste selecting what it pasted (level-editor.md §16.24 4) is the first
+ * caller, and it asks after the re-read.
+ *
+ * A scan per path segment rather than an index, for `moveVob`'s reason: the
+ * callers are a handful of paths at a time, and a permanent path -> VOB map is
+ * a second structure to keep correct across every op that adds or removes one.
+ */
+export function vobAtIndexPath(reader: VobReader, path: string): number | null {
+  if (path === '') return null;
+
+  const { parent, childIndex } = reader.columns;
+  // The list being searched, as `vobIndexPath` writes it: -1 is the roots.
+  let at = -1;
+
+  for (const part of path.split('/')) {
+    const slot = Number(part);
+    if (!Number.isInteger(slot) || slot < 0) return null;
+
+    let found = -1;
+    for (let vob = 0; vob < reader.count; vob++) {
+      const inList = at < 0 ? parent[vob] < 0 : parent[vob] === at;
+      if (inList && childIndex[vob] === slot) { found = vob; break; }
+    }
+    if (found === -1) return null;
+    at = found;
+  }
+
+  return at;
+}
+
 export function vobIndexPath(reader: VobReader, vob: number): string | null {
   if (vob < 0 || vob >= reader.count) return null;
 
@@ -1592,9 +1629,77 @@ function appendedAfter(op: AddVob, ahead: number): AddVob {
 export function pasteVobs(
   reader: VobReader, trees: readonly VobSubtree[], parent: number | null = null,
 ): Array<AddVob | SetVobClassProp> {
-  return trees.flatMap((tree, ahead) => subtreeOps(
-    appendedAfter(addVob(reader, tree.spec, parent), ahead), tree,
-  ));
+  const offset = pasteOffset(trees);
+  return trees.flatMap((tree, ahead) => {
+    const moved = offsetSubtree(tree, offset);
+    return subtreeOps(appendedAfter(addVob(reader, moved.spec, parent), ahead), moved);
+  });
+}
+
+/**
+ * The smallest offset a paste can use and still land the copies *beside* what
+ * was copied (level-editor.md §16.24 4).
+ *
+ * A fixed nudge is beside it for a barrel and still inside it for a building,
+ * so the distance is the copied group's own extent along X — every box in every
+ * subtree, not just the roots, since a descendant can reach past its parent.
+ * `PASTE_MIN_OFFSET` covers what has no box at all: a VOB with no visual, or a
+ * copy taken with no bounds to fit.
+ *
+ * Horizontal, and one delta for the whole batch. Height is left alone because
+ * nothing on this side of the boundary can put a copy back on the ground, and
+ * the batch shares a delta so that a group copied as a group keeps its spacing.
+ */
+function pasteOffset(trees: readonly VobSubtree[]): ZenPosition {
+  let min = Infinity;
+  let max = -Infinity;
+
+  const span = (node: VobSubtree): void => {
+    const { bbox } = node.spec;
+    if (bbox !== undefined) {
+      min = Math.min(min, bbox[0]);
+      max = Math.max(max, bbox[3]);
+    }
+    node.children.forEach(span);
+  };
+  trees.forEach(span);
+
+  return [Math.max(max - min, PASTE_MIN_OFFSET), 0, 0];
+}
+
+/** How far a paste moves a copy that has no box to measure — 1 m, which is
+ *  clear of anything small enough to have been given no bounds. */
+export const PASTE_MIN_OFFSET = 100;
+
+/**
+ * The same subtree moved by `by`, root and descendants alike.
+ *
+ * Every node, because ZenGin VOB positions are **world-space** — the tree is
+ * organisational, not a transform hierarchy — so a root moved on its own would
+ * leave its children standing on top of the original. The bbox moves with the
+ * position it belongs to, or the copy is drawn in one place and culled and
+ * picked in another.
+ */
+function offsetSubtree(tree: VobSubtree, by: ZenPosition): VobSubtree {
+  const { spec } = tree;
+  const { bbox } = spec;
+
+  return {
+    ...tree,
+    spec: {
+      ...spec,
+      position: [
+        spec.position[0] + by[0], spec.position[1] + by[1], spec.position[2] + by[2],
+      ],
+      ...(bbox === undefined ? {} : {
+        bbox: [
+          bbox[0] + by[0], bbox[1] + by[1], bbox[2] + by[2],
+          bbox[3] + by[0], bbox[4] + by[1], bbox[5] + by[2],
+        ] as ZenBounds,
+      }),
+    },
+    children: tree.children.map((child) => offsetSubtree(child, by)),
+  };
 }
 
 /**
