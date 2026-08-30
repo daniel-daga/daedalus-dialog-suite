@@ -251,6 +251,17 @@ export class WorldService {
   }
 
   /**
+   * How many batches each stack holds — not exposed elsewhere, because the
+   * stacks themselves are private to this service (§7). It is how the World
+   * bar's undo/redo buttons know whether there is anything to do, over the
+   * IPC round trip `world:historyDepth` sends it through
+   * (level-editor-ui-improvements.md slice 4).
+   */
+  historyDepth(): { undo: number; redo: number } {
+    return { undo: this.undoStack.length, redo: this.redoStack.length };
+  }
+
+  /**
    * Undo and redo are the same move in opposite directions: take the top batch
    * off one stack, send it through the ordinary `applyOps` path, and put it on
    * the other. Undo sends the inverses **back to front** — two ops on the same

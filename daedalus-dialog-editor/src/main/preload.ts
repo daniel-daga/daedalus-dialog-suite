@@ -81,6 +81,7 @@ contextBridge.exposeInMainWorld('editorAPI', {
   saveWorld: (targetPath: string) => ipcRenderer.invoke('world:save', { targetPath }),
   undoWorldEdit: () => ipcRenderer.invoke('world:undo'),
   redoWorldEdit: () => ipcRenderer.invoke('world:redo'),
+  getWorldHistoryDepth: () => ipcRenderer.invoke('world:historyDepth'),
   closeWorld: () => ipcRenderer.invoke('world:close'),
 
   // Updater API

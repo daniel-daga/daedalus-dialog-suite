@@ -735,6 +735,9 @@ export function setupIpcHandlers() {
 
   ipcMain.handle('world:undo', async () => worldService.undo());
   ipcMain.handle('world:redo', async () => worldService.redo());
+  // The stacks are private to the service (§7); this is the World bar's
+  // undo/redo buttons' only way to know whether either has anything in it.
+  ipcMain.handle('world:historyDepth', () => worldService.historyDepth());
 
   ipcMain.handle('world:close', () => {
     worldService.close();

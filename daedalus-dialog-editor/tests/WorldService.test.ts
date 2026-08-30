@@ -401,6 +401,34 @@ describe('the op log', () => {
     service.close();
   });
 
+  test("historyDepth reports each stack's length, and 0/0 once a barrier clears them", async () => {
+    // The World bar's undo/redo buttons have no other way to know whether
+    // there is anything to do — the stacks themselves stay private to this
+    // service (§7).
+    const { worker, service } = await openedService();
+    expect(service.historyDepth()).toEqual({ undo: 0, redo: 0 });
+
+    await applied(service, worker, [A]);
+    expect(service.historyDepth()).toEqual({ undo: 1, redo: 0 });
+
+    await applied(service, worker, [B]);
+    expect(service.historyDepth()).toEqual({ undo: 2, redo: 0 });
+
+    const undone = service.undo();
+    await tick();
+    worker.replyLast('applyOps', null);
+    await undone;
+    expect(service.historyDepth()).toEqual({ undo: 1, redo: 1 });
+
+    const removing = service.applyOps([DELETE]);
+    await tick();
+    worker.replyLast('applyOps', null);
+    await removing;
+    expect(service.historyDepth()).toEqual({ undo: 0, redo: 0 });
+
+    service.close();
+  });
+
   test('a waypoint delete is a barrier too, and clears the same way', async () => {
     // §16.7's W4. The predicate is what the service reads, not a name, so this
     // op joined the rule without the service learning a second one — but the

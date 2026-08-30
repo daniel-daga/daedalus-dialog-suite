@@ -23,6 +23,7 @@ import {
 import { useEditorStore } from './store/editorStore';
 import { useHistoryStore } from './store/historyStore';
 import { useProjectStore } from './store/projectStore';
+import { useUISelectionStore } from './store/uiSelectionStore';
 import { useAutoSave } from './hooks/useAutoSave';
 import { useManualSave } from './hooks/useManualSave';
 import { useFileWatcher } from './hooks/useFileWatcher';
@@ -74,6 +75,13 @@ const AppContent: React.FC = () => {
   const { undo, redo } = useHistoryStore.getState();
   const canUndo = useHistoryStore((state) => (activeFile ? (state.editHistory.get(activeFile)?.past.length ?? 0) > 0 : false));
   const canRedo = useHistoryStore((state) => (activeFile ? (state.editHistory.get(activeFile)?.future.length ?? 0) > 0 : false));
+  // These buttons drive the *dialog* history unconditionally (they call
+  // `undo(activeFile)`/`redo(activeFile)` directly, not through the
+  // view-guarded keyboard handler in MainLayout). The World surface has its
+  // own history in the main process, so while it is on screen these would
+  // silently undo a dialog edit in a file the user cannot see — the
+  // button-shaped hole beside the already-guarded Ctrl+Z.
+  const worldViewActive = useUISelectionStore((state) => state.activeView === 'world');
   const { isAutoSaving, lastAutoSaveTime } = useAutoSave();
   useFileWatcher();
   const closeGuardDialog = useWindowCloseGuard();
@@ -242,8 +250,9 @@ const AppContent: React.FC = () => {
                   <IconButton
                     color="inherit"
                     aria-label="Undo"
-                    disabled={!canUndo}
+                    disabled={!canUndo || worldViewActive}
                     onClick={() => undo(activeFile)}
+                    data-testid="appbar-undo-button"
                   >
                     <UndoIcon />
                   </IconButton>
@@ -254,9 +263,10 @@ const AppContent: React.FC = () => {
                   <IconButton
                     color="inherit"
                     aria-label="Redo"
-                    disabled={!canRedo}
+                    disabled={!canRedo || worldViewActive}
                     onClick={() => redo(activeFile)}
                     sx={{ mr: 1 }}
+                    data-testid="appbar-redo-button"
                   >
                     <RedoIcon />
                   </IconButton>

@@ -188,6 +188,10 @@ export interface EditorAPI {
    *  null when there was nothing left to undo/redo. */
   undoWorldEdit: () => Promise<WorldOp[] | null>;
   redoWorldEdit: () => Promise<WorldOp[] | null>;
+  /** How many batches each stack holds — the World bar's undo/redo buttons'
+   *  only way to know whether either has anything in it; the stacks
+   *  themselves are private to the main-process service (§7). */
+  getWorldHistoryDepth: () => Promise<{ undo: number; redo: number }>;
   /** Ask for a save target. Null when the dialog was cancelled. The renderer
    *  never names its own: the target is chosen in a main-process dialog, which
    *  is also what puts it on the path whitelist. */

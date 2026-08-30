@@ -3,9 +3,11 @@ import React, {
 } from 'react';
 import {
   Alert, Autocomplete, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
-  DialogContentText, DialogTitle, FormControlLabel, MenuItem, Paper, Slider, Stack, Tab, Tabs,
-  TextField, ToggleButton, ToggleButtonGroup, Typography,
+  DialogContentText, DialogTitle, FormControlLabel, IconButton, MenuItem, Paper, Slider, Stack, Tab, Tabs,
+  TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material';
+import RedoIcon from '@mui/icons-material/Redo';
+import UndoIcon from '@mui/icons-material/Undo';
 import {
   AUTHORABLE_VOB_CLASSES,
   addVob, classPropKeys, addWaypoint, alignVobsToNormal, applyWaypointNames, applyWaypointPositions,
@@ -147,6 +149,15 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   // the cold open.
   const [waynet, setWaynet] = useState<WaynetPayload | null>(null);
   const [showWaynet, setShowWaynet] = useState(false);
+  /** How many batches the main process can undo/redo — the World bar's
+   *  buttons' only way to know, since the stacks are private to
+   *  `WorldService` (§7). Refreshed after every applied batch and after a
+   *  fresh open, never bumped locally: what this side thinks it sent is not
+   *  what decides, same as everywhere else an edit's outcome is read back. */
+  const [historyDepth, setHistoryDepth] = useState({ undo: 0, redo: 0 });
+  const refreshHistoryDepth = useCallback(async () => {
+    setHistoryDepth(await window.editorAPI.getWorldHistoryDepth());
+  }, []);
   /** The spawn markers (§16.19 slice 4), beside `showWaynet` because they are
    *  the same kind of thing: a layer over the world, off until asked for. Two
    *  toggles rather than one — the waynet is the world's graph and the markers
@@ -284,6 +295,10 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         assetSources: [],
       });
       openSucceeded(opened);
+      // A fresh open starts an empty history in the main process — this is
+      // the World bar's undo/redo buttons picking that up rather than
+      // showing whatever the previous world left them at.
+      void refreshHistoryDepth();
 
       // Requested after the summary, so the scene tree and the load timings are
       // on screen while 31 MB of geometry crosses.
@@ -318,7 +333,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         failure instanceof Error ? failure.message : String(failure),
       );
     }
-  }, [beginOpen, openSucceeded, openFailed]);
+  }, [beginOpen, openSucceeded, openFailed, refreshHistoryDepth]);
 
   // The payload is the overlay's, and its *names* are also the Problems
   // scan's world input. Published from one effect rather than beside each of
@@ -710,6 +725,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     }
 
     setAppliedOps([...ops]);
+    void refreshHistoryDepth();
     if (!ops.some(isStructuralOp)) return;
 
     // A selection is a list of flat indices, and an op that renumbers leaves
@@ -723,7 +739,17 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
 
     useWorldStore.getState().indexRefreshed(await window.editorAPI.refreshWorldIndex());
     setVisuals(await window.editorAPI.getWorldVisuals());
-  }, [waynet, selectWaypoint]);
+  }, [waynet, selectWaypoint, refreshHistoryDepth]);
+
+  /** Shared by Ctrl+Z/Y and the World bar's undo/redo buttons: ask the main
+   *  process what it did, and — through the same path a commit takes —
+   *  apply exactly that, never what this side thinks it sent. */
+  const runHistory = useCallback(async (direction: 'undo' | 'redo') => {
+    const ops = await (direction === 'undo'
+      ? window.editorAPI.undoWorldEdit() : window.editorAPI.redoWorldEdit());
+    if (ops === null || ops.length === 0) return;
+    await applied(ops);
+  }, [applied]);
 
   /** @returns whether the world took the edit — false is a refusal, and the
    *   banner has already been set. A caller that has something to do *after* a
@@ -1576,22 +1602,13 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       if (!undo && !redo) return;
 
       event.preventDefault();
-      // What the main process says it applied, not what this side thinks it
-      // sent: the op log is over there and it is the one that decides.
-      void (undo ? window.editorAPI.undoWorldEdit() : window.editorAPI.redoWorldEdit())
-        .then((ops) => {
-          if (ops === null || ops.length === 0) return;
-          // Through the same path a commit takes, because an undone placement
-          // is as structural as the placement was: the VOB is gone from the
-          // world and the renderer's index still has it.
-          return applied(ops);
-        });
+      void runHistory(undo ? 'undo' : 'redo');
     };
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [
-    summary, hidden, applied, copySelection, pasteClipboard, waynet, selectVob,
+    summary, hidden, runHistory, copySelection, pasteClipboard, waynet, selectVob,
     deleting, deletingWaypoint, placing, confirmingSave, addingWaypoint,
     snapGrid, handleTranslateSelection,
   ]);
@@ -1919,6 +1936,39 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
             >
               Delete VOB
             </Button>
+          )}
+          {/* The main process is the authority on whether there is anything
+              to do (§7) — these read `historyDepth`, never a local guess, and
+              a click drives the very path Ctrl+Z does (`runHistory`). */}
+          {summary && (
+            <Stack direction="row" spacing={0.5}>
+              <Tooltip title="Undo (Ctrl+Z)">
+                <span>
+                  <IconButton
+                    size="small"
+                    disabled={historyDepth.undo === 0}
+                    onClick={() => void runHistory('undo')}
+                    data-testid="world-undo"
+                    aria-label="Undo"
+                  >
+                    <UndoIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+              <Tooltip title="Redo (Ctrl+Y)">
+                <span>
+                  <IconButton
+                    size="small"
+                    disabled={historyDepth.redo === 0}
+                    onClick={() => void runHistory('redo')}
+                    data-testid="world-redo"
+                    aria-label="Redo"
+                  >
+                    <RedoIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+            </Stack>
           )}
           {summary && (
             <Stack direction="row" spacing={1}>

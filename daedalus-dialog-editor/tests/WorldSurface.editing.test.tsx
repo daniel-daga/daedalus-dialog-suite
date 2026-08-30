@@ -1583,6 +1583,10 @@ describe('placing a VOB', () => {
   });
 
   it('places every class but the item with no instance and no visual', async () => {
+    // 18 iterations, each a structural op — since slice 4 that is also an
+    // awaited `getWorldHistoryDepth` round trip and a re-render of the World
+    // bar, which pushes this loop past Jest's default 5s budget on a loaded
+    // machine.
     // I2's classes, I3's trigger family and I4's movable objects
     // (level-editor.md §16.15). None
     // carries a visual — a light *is* its own light, a sound its own sound and
@@ -1617,7 +1621,7 @@ describe('placing a VOB', () => {
       expect(to).not.toHaveProperty('instance');
       expect(to).not.toHaveProperty('visual');
     }
-  });
+  }, 15000);
 
   it('will not place an item whose instance the project does not declare', async () => {
     // The same refusal the property grid makes, in the one other place an
