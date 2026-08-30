@@ -66,6 +66,17 @@ const ANGLE_STEPS = [0, 5, 15, 45, 90].map((degrees) => ({
   value: degrees, label: degrees === 0 ? 'Free' : `${degrees}°`,
 }));
 
+/** Arrow-key nudge, in the world's own axes (ZenGin is Y-up): one unit of
+ *  step per key, `[x, y, z]`. Keyed by the lower-cased `KeyboardEvent.key`. */
+const NUDGE_DELTAS: Record<string, [number, number, number]> = {
+  arrowleft: [-1, 0, 0],
+  arrowright: [1, 0, 0],
+  arrowup: [0, 0, -1],
+  arrowdown: [0, 0, 1],
+  pageup: [0, 1, 0],
+  pagedown: [0, -1, 0],
+};
+
 interface WorldSurfaceProps {
   /**
    * Another view is on screen and this one is only kept mounted so its geometry
@@ -1500,6 +1511,65 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         return;
       }
 
+      // Delete — opens the confirm dialog that already gates a destructive
+      // edit (§15) rather than committing anything itself; the two dialogs
+      // stay the only place either delete is actually sent. Waypoint checked
+      // first: VOB and waypoint selection are mutually exclusive in the
+      // store, so only one of the two branches below can ever apply.
+      if (key === 'delete') {
+        const target = event.target as HTMLElement | null;
+        if (target?.isContentEditable
+          || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName ?? '')) return;
+        const { selection: currentSelection, selectedWaypoint: currentWaypoint } = useWorldStore.getState();
+        if (currentWaypoint !== null && waynet !== null) {
+          event.preventDefault();
+          setDeletingWaypoint({ waypoint: currentWaypoint, name: waynet.names[currentWaypoint] });
+        } else if (currentSelection.length === 1) {
+          event.preventDefault();
+          setDeleting(currentSelection[0]);
+        }
+        return;
+      }
+
+      // Escape — clears the selection, but not while a surface dialog is
+      // showing: every one of them already closes on Escape (MUI's own
+      // Modal), and this is a second, independent listener on the same
+      // keydown — without the guard it would also discard the selection the
+      // open dialog is about, out from under the dialog that is closing.
+      if (key === 'escape') {
+        const target = event.target as HTMLElement | null;
+        if (target?.isContentEditable
+          || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName ?? '')) return;
+        if (deleting !== null || deletingWaypoint !== null || placing !== null
+          || confirmingSave || addingWaypoint !== null) return;
+        const { selection: currentSelection, selectedWaypoint: currentWaypoint } = useWorldStore.getState();
+        if (currentSelection.length === 0 && currentWaypoint === null) return;
+        event.preventDefault();
+        selectVob(null);
+        return;
+      }
+
+      // World-axis nudge — ZenGin is Y-up, so ArrowLeft/Right move X,
+      // ArrowUp/Down move Z and PageUp/Down move Y; the step is the chosen
+      // snap grid, or 10 cm free-form (§: nudge step *is* the snap step),
+      // ×10 while Shift is held. One keypress is one undo entry — no
+      // coalescing, same as a single gizmo drag.
+      if (NUDGE_DELTAS[key]) {
+        const target = event.target as HTMLElement | null;
+        if (target?.isContentEditable
+          || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName ?? '')) return;
+        // Reserves the arrow keys for the scene tree's own navigation
+        // (level-editor-ui-improvements.md slice 7). `event.target` is the
+        // bare `Window` for a shortcut fired with nothing focused, which has
+        // no `closest` — only an in-page element can be inside the tree.
+        if (target instanceof Element && target.closest('[role="tree"]')) return;
+        event.preventDefault();
+        const step = (snapGrid > 0 ? snapGrid : 10) * (event.shiftKey ? 10 : 1);
+        const [dx, dy, dz] = NUDGE_DELTAS[key];
+        handleTranslateSelection([dx * step, dy * step, dz * step]);
+        return;
+      }
+
       const undo = (event.ctrlKey || event.metaKey) && key === 'z' && !event.shiftKey;
       const redo = (event.ctrlKey || event.metaKey)
         && (key === 'y' || (key === 'z' && event.shiftKey));
@@ -1520,7 +1590,11 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [summary, hidden, applied, copySelection, pasteClipboard]);
+  }, [
+    summary, hidden, applied, copySelection, pasteClipboard, waynet, selectVob,
+    deleting, deletingWaypoint, placing, confirmingSave, addingWaypoint,
+    snapGrid, handleTranslateSelection,
+  ]);
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
