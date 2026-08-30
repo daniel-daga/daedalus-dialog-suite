@@ -1635,7 +1635,17 @@ other entry there acts on `self` and would index a mover as a spawn. What it
 still cannot tell apart is an instance name from a `var` holding one — that is a
 symbol question, and the main process holds no semantic model of the project.
 
-**The index sees 71% of the spawn calls retail writes, measured 2026-08-29 by
+**Re-measured 2026-08-30, after the fix below: the index now sees 3,976 of the
+3,978 spawn calls retail writes**, and the two it misses are `Externals.d`'s
+`Wld_InsertNpc`/`Wld_InsertItem` prototype declarations, which the counting
+script's regex cannot tell from a call. Nothing real is lost any more. The
+denominator moved too — `countSpawnCalls` now strips comments before counting,
+because retail comments out spawns in bulk (`Startup.d` alone carries 61 in line
+comments) and a commented-out call was never one the index lost; the old 4,087
+counted those. **The paragraph that follows is the pre-fix state, kept because
+it is what the fix was measured against.**
+
+**The index saw 71% of the spawn calls retail writes, measured 2026-08-29 by
 q4's script and not known when slices 1–4 landed.** `DialogFunction.callSites`
 carries only a function body's **top-level** calls, so a `Wld_InsertNpc` inside
 an `if` body is not a call site at all and never reaches `extractSpawnSites`:
@@ -1664,9 +1674,8 @@ and a second nesting level) and, at the consumer, *"records a spawn written
 inside a chapter block, not only a top-level one"* (`ProjectService.test.ts`).
 The default-root corpus scan is unchanged against the same run before the fix —
 143 drift files, 314 Tier-1, both pre-existing — and `--root
-test/fixtures/corpus --strict` is clean. **The 71% was never re-measured after
-the fix**: the count above is what the corpus scan said on the old parser, and
-nothing has re-run q4's script against the new one.
+test/fixtures/corpus --strict` is clean. The re-measurement is the paragraph above: **3,976 of
+3,978**, on the same `mdk/Content` corpus.
 
 **Slice 2 — the duplicate-spawn rule.** §8 names "duplicate NPC IDs" as
 cross-validation and nothing implements it. Over slice 1's index this is a
@@ -1683,7 +1692,9 @@ capped). One warning per site, keyed on file + function + instance + point.
 
 **The one design decision it needed was measured, not assumed, and it is the
 whole rule.** Unconditioned, "same NPC at two distinct points" fires 103 times
-on retail Gothic II's 3,722 literal `Wld_InsertNpc` sites, and nearly every one
+on retail Gothic II's 3,722 literal `Wld_InsertNpc` sites — counted on the
+pre-fix index, like the 71% above, so the rule sees more sites today than the
+run that shaped it did — and nearly every one
 is a monster template — `Draconian` at 186 points, `ORCWARRIOR_ROAM` at 167,
 `Wolf` at 49 — which is how the game is built, not a defect. Nothing in
 `ProjectIndex` separates a character from a template by instance alone: monsters
@@ -2017,36 +2028,39 @@ editor's own index pass over a script tree (`extractFileMetadataFromSource` per
 file, then `extractSpawnSites`) and counts two numbers per spawn point: how many
 sites name it, and how many *distinct* instances those sites carry. NPCs are
 told from items by `ProjectService`'s own test — a prototype chain reaching
-`C_NPC` — because `SpawnSite` keeps no class and both externals feed it. Run
-over `mdk/Content`, 1,725 `.d` files: 2,909 spawn sites on 1,618 points, of
-which **2,653 NPC sites on 1,375 points**.
+`C_NPC` — because `SpawnSite` keeps no class and both externals feed it. **Re-run
+2026-08-30 on the fixed parser (row 40), which is the table below**; the shape
+did not change, only the counts. Over `mdk/Content`, 1,725 `.d` files: 3,976
+spawn sites on 2,098 points, of which **3,629 NPC sites on 1,816 points**.
 
-| distinct NPCs on one point | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 9 | 12 | 21 | 22 | 25 | 49 | 67 | 79 | 173 |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| points | 1174 | 157 | 20 | 6 | 4 | 3 | 1 | 2 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 |
+| distinct NPCs on one point | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 9 | 12 | 17 | 21 | 22 | 26 | 49 | 70 | 100 | 175 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| points | 1475 | 263 | 38 | 18 | 6 | 3 | 1 | 2 | 1 | 1 | 2 | 1 | 1 | 1 | 1 | 1 | 1 |
 
-**1,357 of 1,375 points hold four NPCs or fewer, and the other 18 are the
+**1,794 of 1,816 points hold four NPCs or fewer, and the other 22 are the
 game's own design.** Everything from 5 up is a named group: `ADW_ENTRANCE` and
-`FARM2` at 9, `NW_FARM1_OUT_01` at 7, `MAYA` and `REICH` at 6, mine and bandit
-camps at 5 — and above them the mass-relocation points, `NW_TROLLAREA_RITUALPATH_01`
-at 12, `STRAND` at 21, `ADDON_GOLDMINE` at 22, `NW_MONASTERY_ENTRY_01` at 25,
-`BANDIT` at 49, `BIGFARM` at 67, `OC1` at 79 and **`NW_CITY_ENTRANCE_01` at
-173**. So a threshold anywhere between 5 and 173 flags only points retail put
+`FARM2` at 9, `NW_FARM1_OUT_01` at 7, `DI_UNDEADDRAGONTEMPEL_01`, `MAYA` and
+`REICH` at 6, mine and bandit camps at 5 — and above them the mass-relocation
+points, `NW_TROLLAREA_RITUALPATH_01` at 12, `SHIP_DECK_01` at 17, `CITY1` and
+`STRAND` at 21, `ADDON_GOLDMINE` at 22, `NW_MONASTERY_ENTRY_01` at 26,
+`BANDIT` at 49, `BIGFARM` at 70, `OC1` at 100 and **`NW_CITY_ENTRANCE_01` at
+175**. So a threshold anywhere between 5 and 175 flags only points retail put
 there on purpose, and there is no gap in between to put it in. That is the
 outcome §16.22 allows: **the occupancy check is not writable from a count**, and
 this run cards nothing.
 
 **A second number that would have been the wrong one.** Sites per point is not
-occupancy: 840 points carry one site but 1,174 carry one distinct instance, so
-**334 points get the same NPC written more than once** — the chapter-re-entry
+occupancy: 1,124 points carry one site but 1,475 carry one distinct instance, so
+**351 points get the same NPC written more than once** — the chapter-re-entry
 pattern §16.19 slice 2 met as 598 site pairs. Only the distinct-instance column
 could ever have been a crowd, and it is the one tabled above.
 
-**Both numbers are floors, not counts, and that is the more useful finding.**
-The index misses every spawn nested in an `if` body — 1,178 of the corpus's
-4,087 spawn calls, whole chapter-entry files at a time. The script reports its
-own coverage for exactly that reason. The measurement is recorded at §16.19,
-where the index it qualifies is described.
+**They were floors on the first run and they are counts now.** The 2026-08-29
+numbers missed every spawn nested in an `if` body — 1,178 of the corpus's 4,087
+spawn calls, whole chapter-entry files at a time; the nested-call-sites fix
+closed that, and the re-run above sees 3,976 of 3,978. The script still reports
+its own coverage, which is how the difference was read off. The measurement is
+recorded at §16.19, where the index it qualifies is described.
 
 **The corpus is `mdk/Content`, which is not retail-equivalent** — it carries an
 extra `BAU_902_Gunnar_2.d` and is missing at least one dialog

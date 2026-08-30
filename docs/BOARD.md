@@ -123,8 +123,7 @@ was true for so long nobody re-reads it.
 
 ## Now
 
-- **Unattended queue row 40** (board-loop) — re-measure spawn-index coverage
-  after the nested-call-sites fix; `unattended-queue.md` 40, §16.19
+*(empty)*
 
 ## Next
 
@@ -230,6 +229,10 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 - **Unattended queue row 11** (board-loop) — `updateModel` clears `saveError` and
   `_applyHistoryModelUpdate` delegates to it, so a stale save failure no longer survives
   an edit and there is one body instead of two identical ones
+- **Unattended queue row 40** (board-loop) — spawn-index coverage re-measured on the
+  fixed parser: **3,976 of 3,978**, the two missed being `Externals.d`'s prototype
+  declarations. `countSpawnCalls` strips comments now, so the old 4,087 denominator
+  was counting 111 commented-out calls as lost ones; §16.19 and §16.22's table redone
 - **Unattended queue row 12** (board-loop) — the cp1250 heuristic needs two distinct
   ambiguous bytes, or one windows-1252 leaves unassigned, so a lone `è` or `Ø` no longer
   flips a Western file; landed in `7591836`, salvaged from a killed iteration

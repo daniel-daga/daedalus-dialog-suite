@@ -74,3 +74,12 @@ test('a call inside an if body is counted here and not by the index', () => {
   // The count is what lets the report say how much of the corpus it saw.
   expect(countSpawnCalls('func void T() { if (X) { Wld_InsertNpc(B,"W"); }; };')).toBe(1);
 });
+
+test('a commented-out call is not a spawn call', () => {
+  // The denominator is the whole point of the coverage line, so a call the
+  // parser never sees because it is commented out must not count as one the
+  // index lost. Retail comments out spawns in bulk — `Startup.d` alone carries
+  // 61 line-commented ones (§16.19).
+  expect(countSpawnCalls('// Wld_InsertNpc(A,"W");\nWld_InsertNpc(B,"W");')).toBe(1);
+  expect(countSpawnCalls('/* Wld_InsertNpc(A,"W");\n Wld_InsertItem(I,"W"); */\nWld_InsertNpc(B,"W");')).toBe(1);
+});

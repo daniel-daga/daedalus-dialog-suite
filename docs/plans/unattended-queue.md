@@ -43,7 +43,7 @@ run headless and produce a number.
 
 | # | Item | Where the diagnosis is | Accept | Size |
 |---|---|---|---|---|
-| 40 | **(corpus)** Re-measure spawn-index coverage — the 71 % (2,909/4,087) predates the nested-call-sites fix and §16.19 says so outright | §16.19 | `check-spawn-occupancy.js` reports the new coverage; §16.19's paragraph and the occupancy table are updated with it | S |
+| ~~40~~ | ~~**(corpus)** Re-measure spawn-index coverage~~ — **landed 2026-08-30**: 3,976 of 3,978, and the two missed are `Externals.d`'s prototype declarations. `countSpawnCalls` now strips comments, so the old 4,087 denominator counted 111 commented-out calls as lost ones | §16.19 | `check-spawn-occupancy.js` reports the new coverage; §16.19's paragraph and the occupancy table are updated with it | S |
 | 41 | **(corpus)** Which visual extension retail attaches to which VOB class, and the 15,749-of-41,393 `UNKNOWN` figure reproduced — the number the visual-assignment row has never had | §14.1 1.7 (the measurement only; the feature stays a decision) | a script tabulating extension × class, with a fixture test of the tabulation | M |
 | 42 | **(corpus)** The BINARY fidelity baseline: `extract-worlds.js` already takes directories, so point it at the install's loose `_work/Data/Worlds` and classify — BINARY has had no fidelity work at all | §14.3 3.1 | a per-world classification table; each defect it names then lands fixture-backed, as `0045`–`0048` did | M |
 | 43 | **(corpus)** What `oCWorld`/`zCWorld` actually carries — start position, sky, time — across the corpus. Which become *editable* is a scoping call; measuring them is not | §14.3 3.5 | `test/worldProperties.test.js` against the golden fixture, plus the readout | M |

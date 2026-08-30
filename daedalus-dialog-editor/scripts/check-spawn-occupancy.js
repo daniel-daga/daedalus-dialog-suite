@@ -70,14 +70,31 @@ function occupancyOf(spawnSites) {
 }
 
 /**
- * Spawn calls written in a source, counted from the text. The index sees fewer:
- * `DialogFunction.callSites` carries only a function body's top-level calls, so
- * a `Wld_InsertNpc` inside an `if` body is invisible to `extractSpawnSites`
- * (measured 2026-08-29 — 1,178 of retail's 4,084). Reporting both is what keeps
- * the occupancy numbers from reading as the whole corpus.
+ * Spawn calls written in a source, counted from the text — comments stripped
+ * first, because retail comments out spawns in bulk and a commented-out call is
+ * not one the index lost. Reporting this beside the index's own count is what
+ * keeps the occupancy numbers from reading as the whole corpus. Re-measured
+ * 2026-08-30 after the nested-call-sites fix (§16.19): 3,976 of 3,978 reach the
+ * index, where on the old parser it was 2,909 of 4,087 — and the two missing
+ * are `Externals.d`'s prototype declarations, which this regex cannot tell from
+ * a call.
  */
 function countSpawnCalls(source) {
-  return (source.match(/Wld_Insert(Npc|Item)\s*\(/gi) || []).length;
+  let code = '';
+  let state = 'code'; // code | line | block | string
+  for (let i = 0; i < source.length; i += 1) {
+    const two = source.substr(i, 2);
+    if (state === 'code') {
+      if (two === '//') { state = 'line'; i += 1; }
+      else if (two === '/*') { state = 'block'; i += 1; }
+      else { if (source[i] === '"') state = 'string'; code += source[i]; }
+    } else if (state === 'string') {
+      if (source[i] === '"') state = 'code';
+    } else if (state === 'line') {
+      if (source[i] === '\n') { state = 'code'; code += '\n'; }
+    } else if (two === '*/') { state = 'code'; i += 1; }
+  }
+  return (code.match(/Wld_Insert(Npc|Item)\s*\(/gi) || []).length;
 }
 
 function parseArgs(argv) {
@@ -181,7 +198,7 @@ function main() {
 
   console.log(`\n${path.basename(args.project)} — spawn occupancy per waypoint\n`);
   console.log(`  ${files.length} .d files, ${fileModels.length} with a complete model, ${failed} failed to parse`);
-  console.log(`  ${sites.length} of ${written} spawn calls reached the index (the rest are nested in if bodies)`);
+  console.log(`  ${sites.length} of ${written} spawn calls reached the index (comments excluded from both)`);
   report('every static spawn (Wld_InsertNpc and Wld_InsertItem)', occupancyOf(sites), args.top);
   report('NPC spawns only', occupancyOf(npcSites), args.top);
 }
