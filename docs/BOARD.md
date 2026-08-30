@@ -138,12 +138,12 @@ would ship unproven is the acceptance record's short list (decal fields, enum
 writes, the classes beyond five), none of it carded.
 
 **The unattended queue — one card for 49 items.** Everything a run can take
-with nobody watching, ordered: the 2026-07 defects, the production-readiness
-and simulator backlogs, and the level editor's measurements. Triaged against
-the tree 2026-08-30, each verified still open. **Take the top unclaimed row and
-cross it off in the same commit; a run may not add rows.**
-`unattended-queue.md` — rows 1-11 landed 2026-08-30; row 12 is encoding
-detection flipping a whole cp1252 file to cp1250 on one accented byte.
+with nobody watching. Triaged against the tree 2026-08-30, each verified still
+open. **Take the top unclaimed row and cross it off in the same commit; a run
+may not add rows.** `unattended-queue.md` — **section 5, the level editor, is
+now first (Daniel, 2026-08-30)**, so the next row is 40, re-measuring spawn-index
+coverage; the corpus those rows want is present in `zenkit-node/worlds/`. Rows
+1-12 of section 1 landed 2026-08-30 and the rest of it waits below section 5.
 
 **World surface, from Daniel's own sessions 2026-08-30 — all at §16.24.** None
 needs the engine; the order is a guess at his, so move it.
