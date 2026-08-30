@@ -894,6 +894,46 @@ ${result.stderr}`);
   assert.match(result.stdout, /trajectory frame count/i);
 });
 
+// Every guard above the deep-tree section was found by pointing
+// `tools/fuzz-world.js --counts` at a world the checked-in fixture is not —
+// which used to mean authoring one by hand, because the sweep only reaches the
+// INTEGER entries its `--file` happens to carry. `--fixture <variant>` authors
+// the variant itself, and this is what keeps that honest: the sweep has to
+// reach the `oCNpc` and `zCCSCamera` counts `minimal.g2.zen` does not have, and
+// every entry it does reach has to be bounded already. A sweep that reports
+// nothing is the failure mode this test exists for — an empty run and a run
+// that never touched the class look identical from the summary line.
+const SWEEP_CASES = [
+  { variant: 'npc', reaches: ['numTalents', 'itemCount', 'numInvSlots'] },
+  { variant: 'camera', reaches: ['numPos', 'numTargets'] },
+  // The mesh corruption is raw chunk bytes rather than an archive entry, so this
+  // variant's entry set is the minimal fixture's. It is swept for the summary,
+  // not for a count of its own.
+  { variant: 'corrupt-mesh', reaches: [] },
+];
+
+for (const sweep of SWEEP_CASES) {
+  test(`the --counts sweep reaches the ${sweep.variant} fixture's own counts and every one of them is bounded`, () => {
+    const proc = spawnSync(process.execPath,
+      [path.join(__dirname, '..', 'tools', 'fuzz-world.js'), '--counts', '--fixture', sweep.variant],
+      { encoding: 'utf8', timeout: 300_000, env: { ...process.env, FUZZ_VERBOSE: '1' } });
+
+    assert.strictEqual(proc.status, 0, `the sweep failed: ${proc.stdout}\n${proc.stderr}`);
+    assert.match(proc.stdout, /^baseline: LOADED in \d+ ms, \d+ INTEGER entries to sweep/,
+      'the authored fixture must load cleanly before anything is rewritten');
+
+    for (const entryName of sweep.reaches) {
+      const line = proc.stdout.split('\n').find((l) => l.startsWith(`${entryName} @`));
+      assert.ok(line, `the sweep never reached ${entryName}: ${proc.stdout}`);
+      assert.match(line, /THREW "failed to load world: .*count exceeds the bytes left in the archive/,
+        `${entryName} is reachable but not bounded`);
+    }
+
+    assert.match(proc.stdout, /\n0 of \d+ INTEGER entries crashed, hung or loaded slowly\n?$/,
+      'a flagged entry is an unbounded count and has to land bounded and covered');
+  });
+}
+
 // A VOb tree that nests one child per level, located by structure: the
 // `VobTree` object opens with the root count (`childs0`), then each root VOb
 // followed by its own child count. The first root VOb and its count are found

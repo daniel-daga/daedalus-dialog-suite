@@ -960,6 +960,20 @@ set: a count that no VOB in `minimal.g2.zen` carries — `oCNpc`'s `numTalents`,
 for one — is not swept by it, and running the sweep against a retail world is not
 practical at one process spawn per entry.
 
+**That limit is now a flag, and the sweep of the three variants is clean
+(2026-08-30).** `--fixture <variant>` authors one of the binding's own fixture
+variants and sweeps it, so reaching a class the checked-in fixture does not carry
+no longer means writing a world by hand. Run against all three: `npc` sweeps 76
+INTEGER entries in 5.4 s, `camera` 29, `corrupt-mesh` 21 — the last is the
+minimal fixture's own entry set, since its corruption is raw chunk bytes rather
+than an archive entry — and **nothing crashed, hung or loaded slowly in any of
+them**, so there was no hit to bound. Not a null result: the sweep does reach
+`oCNpc`'s `numTalents`, `itemCount` and `numInvSlots` and `zCCSCamera`'s `numPos`
+and `numTargets`, and each of the five throws its own guard, which is `0040` and
+the camera patch answering. `test/loadWorld.test.js` runs all three sweeps and
+asserts *that* — the entry is reached and it is bounded — because an empty run
+and a run that never touched the class are the same summary line.
+
 **Two things the sweep cleared, and they are worth not re-deriving.**
 `parse_vob_tree`'s `childs<N>` count is equally unbounded and `reserve`s just as
 much, but the first missing child makes `read_object_begin` fail and the load

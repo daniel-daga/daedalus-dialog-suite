@@ -29,14 +29,20 @@
 // **Its limit is the fixture's field set, and that is not a small limit.** A
 // sweep only reaches the INTEGER entries the file it is given happens to carry,
 // so `minimal.g2.zen` -- which has no `oCNpc` -- hides all five of the NPC
-// reader's element counts, three of which were unbounded (patch `0040`). Point
-// `--file` at a world that carries the class, or author one: the `npc` fixture
-// variant exists for exactly that.
+// reader's element counts, three of which were unbounded (patch `0040`).
+//
+// **`--fixture <variant>` is how the sweep reaches those fields**, rather than
+// hand-writing a world or pointing `--file` at a retail one: it authors one of
+// the binding's fixture variants -- `minimal`, `mesh-extraction`, `npc`,
+// `camera`, `corrupt-mesh` -- into a temp file and runs against that. All three
+// of the last are swept by `test/loadWorld.test.js`, which asserts the sweep
+// reaches the class's own counts rather than only that it reported nothing.
 //
 // Usage:
 //   node tools/fuzz-world.js [--seeds 40] [--bytes 20] [--whole] [--file <zen>]
 //   node tools/fuzz-world.js --seed 2 [--bytes 20] [--file <zen>]
 //   node tools/fuzz-world.js --counts [--value 268435455] [--file <zen>]
+//   node tools/fuzz-world.js --counts --fixture npc|camera|corrupt-mesh
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -52,7 +58,21 @@ const flag = (name, fallback) => {
   return i < 0 ? fallback : args[i + 1];
 };
 
-const file = flag('file', path.join(ROOT, 'test', 'fixtures', 'minimal.g2.zen'));
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zenkit-fuzz-'));
+process.on('exit', () => fs.rmSync(dir, { recursive: true, force: true }));
+
+// `--fixture` wins over `--file`: naming both is a mistake, and authoring a
+// named variant is the more specific request.
+const variant = flag('fixture', null);
+const file = variant
+  ? authorFixture(variant)
+  : flag('file', path.join(ROOT, 'test', 'fixtures', 'minimal.g2.zen'));
+
+function authorFixture(name) {
+  const authored = path.join(dir, `${name}.g2.zen`);
+  require(ROOT)._authorFixtureWorld(authored, 'binsafe', 'g2', name);
+  return authored;
+}
 const nBytes = Number(flag('bytes', 20));
 const nSeeds = Number(flag('seeds', 40));
 const only = args.includes('--seed') ? Number(flag('seed')) : null;
@@ -63,7 +83,6 @@ const header = readHeader(base);
 const lo = whole ? 0 : header.entryStart;
 const hi = whole ? base.length : header.hashTableOffset;
 
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zenkit-fuzz-'));
 const child = path.join(dir, 'load.js');
 fs.writeFileSync(child, `
   const zenkit = require(${JSON.stringify(ROOT)});

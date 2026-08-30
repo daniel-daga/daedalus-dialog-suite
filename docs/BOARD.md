@@ -140,10 +140,11 @@ writes, the classes beyond five), none of it carded.
 **The unattended queue — one card for 49 items.** Everything a run can take
 with nobody watching. Triaged against the tree 2026-08-30, each verified still
 open. **Take the top unclaimed row and cross it off in the same commit; a run
-may not add rows.** `unattended-queue.md` — **section 5, the level editor, is
-now first (Daniel, 2026-08-30)**; row 42 went to Triage on 2026-08-30 and 43,
-44, 45, 46 and 47 landed, so the next unclaimed row is 48. The corpus those rows want is in `zenkit-node/worlds/`. Rows
-1-12 of section 1 landed 2026-08-30 and the rest of it waits below section 5.
+may not add rows.** `unattended-queue.md` — **section 5, the level editor, was
+first (Daniel, 2026-08-30)** and is now empty but for row 42, which went to
+Triage, so a run resumes at section 1: rows 1-12 landed 2026-08-30 and the next
+unclaimed row is 13. The corpus section 5's rows wanted is in
+`zenkit-node/worlds/`.
 
 **World surface, from Daniel's own sessions 2026-08-30 — all at §16.24.** None
 needs the engine; the order is a guess at his, so move it.
@@ -228,10 +229,10 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **Unattended queue row 48** (board-loop) — `fuzz-world.js --fixture` authors a
+  binding fixture variant and sweeps it; `npc`, `camera` and `corrupt-mesh` all
+  come back clean, and the test asserts the five counts are *reached*, not that
+  the run was quiet. §16.11
 - **Unattended queue row 47** (board-loop) — `verify-world-pipeline.js` writes
   two enums now, read back and undone; the negative control fails all four
   checks. The engine half of §16.2 is untouched — the driver never saves. §16.2
-- **Unattended queue row 46** (board-loop) — a copy carries its class properties:
-  one `SetVobClassProp` per copy beside the adds, one batch, one undo. Ctrl+C is
-  asynchronous now, so a paste inside the fetch pastes the clipboard as it was.
-  §14.1 1.2

@@ -76,6 +76,11 @@ over it. See `../docs/engine-acceptance-2026-08-25.md`.
   `--seed <n>` replays one seed and then delta-debugs it down to the smallest
   set of mutations that still fails, which is what turns a crash into a named
   field — patch `0030` was found this way, minimized to a single byte.
+  `--counts` sweeps every INTEGER entry instead of writing random bytes, and
+  `--fixture <minimal|mesh-extraction|npc|camera|corrupt-mesh>` authors that
+  variant to a temp file first, which is how the sweep reaches a count no VOB in
+  `minimal.g2.zen` carries. All three of `npc`, `camera` and `corrupt-mesh` are
+  swept clean and covered by `test/loadWorld.test.js`.
 - `engine-batch.ps1 [-Dir tools/cand] [-Only 00,07] [-Reinstall] [-Latest] [-Windowed] [-NoAudio]`
   — the manual engine pass, automated as far as it can be, **through GMBT**
   (below). Takes the selected candidates one at a time: stages each into
