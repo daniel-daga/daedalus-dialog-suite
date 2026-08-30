@@ -168,6 +168,13 @@ needs the engine; the order is a guess at his, so move it.
   its own origin, so a centroid gizmo would show a pivot the op does not use.
   §16.24 2
 
+**Phase 1c — the overlay's last two, both at §16.19.** Data landed 2026-08-30;
+neither is blocked and the order between them is a guess.
+
+- **The routine index's coverage has never been measured** — one command
+  against `mdk/Content`; it qualifies everything built on the index. §16.19 s6
+- **The time slider has no UI** — a UI workflow, so Playwright first. §16.19 s5
+
 **Phase 1c / Phase 2 — world findings get a locus** (§7 decision, §16.20)
 
 - **Portal orientation is unmeasured** — unblocked: the corpus is
@@ -229,10 +236,5 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **Unattended queue row 48** (board-loop) — `fuzz-world.js --fixture` authors a
-  binding fixture variant and sweeps it; `npc`, `camera` and `corrupt-mesh` all
-  come back clean, and the test asserts the five counts are *reached*, not that
-  the run was quiet. §16.11
-- **Unattended queue row 47** (board-loop) — `verify-world-pipeline.js` writes
-  two enums now, read back and undone; the negative control fails all four
-  checks. The engine half of §16.2 is untouched — the driver never saves. §16.2
+- **Daedalus overlay slices 5 and 6** (Claude) — the routine index and the pure
+  schedule over it, plus the coverage instrument nobody has run yet. §16.19

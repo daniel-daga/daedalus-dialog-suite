@@ -909,6 +909,202 @@ FUNC VOID Rtn_Mixed()
     });
   });
 
+  describe('routine extraction (semanticMetadataUtils)', () => {
+    // The time slider is the one Phase 1c deliverable left with no data behind
+    // it (level-editor.md §16.19): `ProjectIndex.routines` is the set of
+    // `daily_routine` *names*, and a schedule needs the windows.
+    const load = () => import('../src/main/utils/semanticMetadataUtils');
+
+    it('records a TA_MIN window and its waypoint off the engine external', async () => {
+      const { extractFileMetadataFromSource, extractRoutineSites } = await load();
+
+      const file = extractFileMetadataFromSource(
+        `FUNC VOID Rtn_Start_99003()
+{
+	TA_MIN (self, 8, 0, 22, 30, ZS_Stand_WP, "WP_FARIM_01");
+};`,
+        '/test/Rtn.d'
+      );
+
+      expect(
+        extractRoutineSites([{ filePath: '/test/Rtn.d', semanticModel: file.semanticModel! }])
+      ).toEqual([
+        {
+          routine: 'RTN_START_99003',
+          startMinute: 8 * 60,
+          endMinute: 22 * 60 + 30,
+          waypoint: 'WP_FARIM_01',
+          filePath: '/test/Rtn.d',
+          line: 3
+        }
+      ]);
+    });
+
+    // `TA` is the hour-only external: its waypoint sits at argument 4, not 6,
+    // and it has no minute arguments at all.
+    it('records a TA window, which carries hours and no minutes', async () => {
+      const { extractFileMetadataFromSource, extractRoutineSites } = await load();
+
+      const file = extractFileMetadataFromSource(
+        `FUNC VOID Rtn_Start_100()
+{
+	TA (self, 8, 22, ZS_Stand_WP, "WP_HOURS_ONLY");
+};`,
+        '/test/Ta.d'
+      );
+
+      const sites = extractRoutineSites([
+        { filePath: '/test/Ta.d', semanticModel: file.semanticModel! }
+      ]);
+      expect(sites).toHaveLength(1);
+      expect(sites[0].startMinute).toBe(8 * 60);
+      expect(sites[0].endMinute).toBe(22 * 60);
+      expect(sites[0].waypoint).toBe('WP_HOURS_ONLY');
+    });
+
+    // Retail never calls TA_MIN from a routine — it calls a `TA_*` wrapper, and
+    // every one of them has its own argument order. The index reads that order
+    // off the wrapper's own body (which of its parameters reach TA_MIN's time
+    // slots), so nothing here depends on a parameter being *named* `start_h`:
+    // this wrapper's are deliberately misnamed and reordered.
+    it('resolves a project TA_ wrapper by following its parameters into TA_MIN', async () => {
+      const { extractFileMetadataFromSource, extractRoutineSites } = await load();
+
+      const file = extractFileMetadataFromSource(
+        `FUNC VOID TA_Sit_Chair(var int a, var int b, var int c, var int d, var string place)
+{
+	TA_MIN (self, a, b, c, d, ZS_Sit_Chair, place);
+};
+
+FUNC VOID Rtn_Start_99003()
+{
+	TA_Sit_Chair (6, 15, 22, 45, "WP_FARIM_01_SIT");
+};`,
+        '/test/Wrapper.d'
+      );
+
+      const sites = extractRoutineSites([
+        { filePath: '/test/Wrapper.d', semanticModel: file.semanticModel! }
+      ]);
+
+      expect(sites).toEqual([
+        {
+          routine: 'RTN_START_99003',
+          startMinute: 6 * 60 + 15,
+          endMinute: 22 * 60 + 45,
+          waypoint: 'WP_FARIM_01_SIT',
+          filePath: '/test/Wrapper.d',
+          line: 8
+        }
+      ]);
+    });
+
+    // Retail writes both ends of a day as `(06,00,24,00)` + `(24,00,06,00)`
+    // (SLD_99003_Farim is the reference file in daedalus-parser). Hour 24 is
+    // midnight, so it normalizes to 0 and the first of the pair becomes a
+    // window that wraps — which is what makes the two cover the day exactly
+    // once between them.
+    it('normalizes hour 24 to midnight, leaving the wrapping window to the consumer', async () => {
+      const { extractFileMetadataFromSource, extractRoutineSites } = await load();
+
+      const file = extractFileMetadataFromSource(
+        `FUNC VOID Rtn_Start_99003()
+{
+	TA_MIN (self, 6, 0, 24, 0, ZS_Sit_Chair, "WP_DAY");
+	TA_MIN (self, 24, 0, 6, 0, ZS_Sit_Chair, "WP_NIGHT");
+};`,
+        '/test/Wrap.d'
+      );
+
+      const sites = extractRoutineSites([
+        { filePath: '/test/Wrap.d', semanticModel: file.semanticModel! }
+      ]);
+
+      expect(sites.map((site) => [site.startMinute, site.endMinute])).toEqual([
+        [6 * 60, 0],
+        [0, 6 * 60]
+      ]);
+    });
+
+    // The same nested-call-sites fact §16.19 met on the spawn index: a routine
+    // written per guild is one `if` after another, so a body's top-level calls
+    // are not the routine.
+    it('records a routine entry written inside a guild block', async () => {
+      const { extractFileMetadataFromSource, extractRoutineSites } = await load();
+
+      const file = extractFileMetadataFromSource(
+        `FUNC VOID Rtn_Start_500()
+{
+	if (Kapitel == 1)
+	{
+		TA_MIN (self, 8, 0, 22, 0, ZS_Stand_WP, "WP_CHAPTER_ONE");
+	}
+	else
+	{
+		TA_MIN (self, 8, 0, 22, 0, ZS_Stand_WP, "WP_OTHERWISE");
+	};
+};`,
+        '/test/Guild.d'
+      );
+
+      expect(
+        extractRoutineSites([
+          { filePath: '/test/Guild.d', semanticModel: file.semanticModel! }
+        ]).map((site) => [site.waypoint, site.line])
+      ).toEqual([
+        ['WP_CHAPTER_ONE', 5],
+        ['WP_OTHERWISE', 9]
+      ]);
+    });
+
+    // Same hard rule the spawn index follows (§8, design brief §5.1): a window
+    // that is not statically resolvable is excluded, never guessed. A constant
+    // hour is exactly as unresolvable here as a computed waypoint.
+    it('excludes an entry whose time or waypoint is not a literal', async () => {
+      const { extractFileMetadataFromSource, extractRoutineSites } = await load();
+
+      const file = extractFileMetadataFromSource(
+        `FUNC VOID Rtn_Start_Dynamic()
+{
+	TA_MIN (self, RTN_MORNING_H, 0, 22, 0, ZS_Stand_WP, "WP_CONST_HOUR");
+	TA_MIN (self, 8, 0, 22, 0, ZS_Stand_WP, waypoint);
+	TA_MIN (self, 8, 0, 22, 0, ZS_Stand_WP, "WP_KEPT");
+};`,
+        '/test/Dynamic.d'
+      );
+
+      expect(
+        extractRoutineSites([
+          { filePath: '/test/Dynamic.d', semanticModel: file.semanticModel! }
+        ]).map((site) => site.waypoint)
+      ).toEqual(['WP_KEPT']);
+    });
+
+    // The other half of the schedule: `routines` is a sorted name set (what
+    // autocomplete wants), and nothing carries which NPC runs which.
+    it('maps an NPC instance to the routine it declares', async () => {
+      const { extractFileMetadataFromSource, extractRoutinesByNpc } = await load();
+
+      const file = extractFileMetadataFromSource(
+        `INSTANCE SLD_99003_Farim (Npc_Default)
+{
+	name = "Farim";
+	daily_routine = Rtn_Start_99003;
+};
+
+INSTANCE ItMi_Gold (C_Item)
+{
+	name = "Gold";
+};`,
+        '/test/Farim.d'
+      );
+
+      expect(
+        extractRoutinesByNpc([{ filePath: '/test/Farim.d', semanticModel: file.semanticModel! }])
+      ).toEqual({ SLD_99003_FARIM: 'RTN_START_99003' });
+    });
+  });
+
   describe('voice id extraction (semanticMetadataUtils)', () => {
     it('collects literal DialogLine ids across functions, including nested ones, and skips expression ids', async () => {
       const { extractFileMetadataFromSource } = await import('../src/main/utils/semanticMetadataUtils');

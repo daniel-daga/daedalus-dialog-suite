@@ -22,6 +22,29 @@ export interface SpawnSite {
   line: number;
 }
 
+/**
+ * One entry of a daily routine: a `TA`-family call's time window and the
+ * waypoint it puts the NPC at. `routine` is the function the call sits in —
+ * an NPC reaches it through `daily_routine`, which is `routinesByNpc`.
+ *
+ * Times are **minutes since midnight, 0..1439**, normalized at extraction:
+ * retail spells midnight both `00` and `24` and writes both ends of a day as
+ * `(06,00,24,00)` + `(24,00,06,00)`, so `24:00` is 0 here. A window whose end
+ * is at or before its start **wraps** past midnight, which is what makes both
+ * of those spellings come out right; `(00,00,00,00)` is therefore the whole
+ * day, which is the idiom retail uses for a routine with one entry.
+ *
+ * Names are UPPERCASED (Daedalus is case-insensitive), line is 1-based.
+ */
+export interface RoutineSite {
+  routine: string;
+  startMinute: number;
+  endMinute: number;
+  waypoint: string;
+  filePath: string;
+  line: number;
+}
+
 export interface ProjectIndex {
   npcs: string[];
   dialogsByNpc: Map<string, DialogMetadata[]>;
@@ -52,6 +75,21 @@ export interface ProjectIndex {
    * rather than guessed. Built at project load/reindex time, same as voiceIds.
    */
   spawnSites: SpawnSite[];
+  /**
+   * Every `TA`-family entry of every routine function, with its time window and
+   * waypoint. Deliberately keyed by the *routine function*, not by the NPC: a
+   * routine is shared (retail's generic guards all run one), and which NPC runs
+   * which is `routinesByNpc`. Built at project load/reindex time, same as
+   * voiceIds.
+   */
+  routineSites: RoutineSite[];
+  /**
+   * UPPERCASED NPC instance name to the UPPERCASED `daily_routine` function it
+   * declares. The other half of `routineSites` — `routines` is the same
+   * function names as a sorted set, which is what autocomplete wants and what a
+   * schedule cannot use.
+   */
+  routinesByNpc: Record<string, string>;
   /** Files whose metadata extraction failed (read/parse error, timeout, crash). */
   metadataFailures: Array<{ filePath: string; error: string }>;
 }

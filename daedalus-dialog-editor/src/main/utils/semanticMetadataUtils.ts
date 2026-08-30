@@ -1,4 +1,4 @@
-import type { DialogMetadata, SemanticModel, SpawnSite } from '../../shared/types';
+import type { DialogMetadata, RoutineSite, SemanticModel, SpawnSite } from '../../shared/types';
 import { SemanticModelBuilderVisitor } from 'daedalus-parser/semantic-visitor';
 
 import DaedalusParser from 'daedalus-parser';
@@ -239,6 +239,205 @@ export function extractSpawnSites(
   }
 
   return sites;
+}
+
+/**
+ * Where a routine-carrying call keeps its time window and its waypoint.
+ * `startM`/`stopM` are absent for `TA`, which is hour-only.
+ */
+interface RoutineArgIndex {
+  startH: number;
+  startM?: number;
+  stopH: number;
+  stopM?: number;
+  waypoint: number;
+}
+
+/**
+ * The two engine externals that actually install a routine entry, from their
+ * own `Externals.d` signatures:
+ *
+ *   TA     (var C_Npc self, var int start_h,                var int stop_h,                var int state, var string waypoint)
+ *   TA_MIN (var C_Npc self, var int start_h, var int start_m, var int stop_h, var int stop_m, var int state, var string waypoint)
+ *
+ * The waypoint indices agree with `ENGINE_EXTERNAL_WAYPOINT_ARG_INDEX` above,
+ * which is the measured table — these are the same two rows with their time
+ * slots added.
+ */
+const ROUTINE_EXTERNAL_ARG_INDEX: Record<string, RoutineArgIndex> = {
+  ta: { startH: 1, stopH: 2, waypoint: 4 },
+  ta_min: { startH: 1, startM: 2, stopH: 3, stopM: 4, waypoint: 6 }
+};
+
+const INTEGER_LITERAL = /^\d+$/;
+
+const MINUTES_PER_DAY = 1440;
+
+/**
+ * Which argument of every routine-carrying function holds which part of a
+ * window, seeded with the two externals and grown by **following the call**:
+ * a `TA_*` wrapper passes its own parameters straight into `TA_MIN`, so the
+ * wrapper's layout is read off which of its parameters land in slots already
+ * known.
+ *
+ * This is `buildWaypointParamIndex`'s derivation rule — don't hardcode the
+ * project's helper functions, read their own declaration — taken one step
+ * further than
+ * `buildWaypointParamIndex` needs to. That one can key on a parameter *named*
+ * `waypoint`; a window has four parts and no such convention is measured, so
+ * matching on names like `start_h` would be an assumption that fails silently
+ * and totally on a mod that spells them differently. Following the call
+ * assumes nothing but that the wrapper passes its parameters through, which is
+ * the only thing a wrapper can do with them.
+ *
+ * The sweep repeats while it is still learning, so a wrapper around a wrapper
+ * resolves too; retail has one level.
+ */
+export function buildRoutineParamIndex(
+  fileModels: Array<{ semanticModel: SemanticModel }>
+): Record<string, RoutineArgIndex> {
+  const index: Record<string, RoutineArgIndex> = { ...ROUTINE_EXTERNAL_ARG_INDEX };
+
+  let learned = true;
+  while (learned) {
+    learned = false;
+
+    for (const { semanticModel } of fileModels) {
+      for (const func of Object.values(semanticModel.functions || {})) {
+        const key = func.name.toLowerCase();
+        if (index[key]) continue;
+
+        const parameterAt = new Map<string, number>();
+        (func.parameters || []).forEach((param, position) => {
+          if (param.name) parameterAt.set(param.name.toLowerCase(), position);
+        });
+        if (parameterAt.size === 0) continue;
+
+        for (const call of func.callSites || []) {
+          const carrier = index[call.functionName.toLowerCase()];
+          if (!carrier) continue;
+
+          // Which of this function's own parameters the carrier's slot is
+          // handed. A literal or an expression there is not a pass-through:
+          // the wrapper fixes that part of the window rather than taking it.
+          const passedThrough = (slot: number | undefined): number | undefined => {
+            if (slot === undefined) return undefined;
+            const arg = call.args?.[slot];
+            if (!arg || arg.isString || !BARE_IDENTIFIER.test(arg.raw)) return undefined;
+            return parameterAt.get(arg.raw.toLowerCase());
+          };
+
+          const startH = passedThrough(carrier.startH);
+          const stopH = passedThrough(carrier.stopH);
+          const waypoint = passedThrough(carrier.waypoint);
+          if (startH === undefined || stopH === undefined || waypoint === undefined) continue;
+
+          index[key] = {
+            startH,
+            startM: passedThrough(carrier.startM),
+            stopH,
+            stopM: passedThrough(carrier.stopM),
+            waypoint
+          };
+          learned = true;
+          break;
+        }
+      }
+    }
+  }
+
+  return index;
+}
+
+/**
+ * Every routine entry in the project: the time window, the waypoint it puts the
+ * NPC at, and the routine function it sits in (level-editor.md §16.19, the
+ * slice the time slider waits on).
+ *
+ * Times come back as minutes since midnight — see `RoutineSite` for why hour 24
+ * is 0 and what a window whose end is at or before its start means. An entry
+ * whose hour, minute or waypoint is not a literal is **excluded, never
+ * guessed**, the same hard rule the spawn index follows (§8, design brief
+ * §5.1); a constant hour is as unresolvable here as a computed waypoint,
+ * because the main process holds no semantic model of the project to resolve
+ * one against.
+ */
+export function extractRoutineSites(
+  fileModels: Array<{ filePath: string; semanticModel: SemanticModel }>
+): RoutineSite[] {
+  const argIndex = buildRoutineParamIndex(fileModels);
+  const sites: RoutineSite[] = [];
+
+  const literalInt = (raw: string | undefined, isString: boolean | undefined): number | undefined => {
+    if (raw === undefined || isString || !INTEGER_LITERAL.test(raw)) return undefined;
+    return Number.parseInt(raw, 10);
+  };
+
+  for (const { filePath, semanticModel } of fileModels) {
+    for (const [functionName, func] of Object.entries(semanticModel.functions || {})) {
+      for (const call of func.callSites || []) {
+        const slots = argIndex[call.functionName.toLowerCase()];
+        if (!slots) continue;
+
+        const minuteOfDay = (hourSlot: number, minuteSlot: number | undefined) => {
+          const hourArg = call.args?.[hourSlot];
+          const hour = literalInt(hourArg?.raw, hourArg?.isString);
+          if (hour === undefined) return undefined;
+          if (minuteSlot === undefined) return (hour * 60) % MINUTES_PER_DAY;
+          const minuteArg = call.args?.[minuteSlot];
+          const minute = literalInt(minuteArg?.raw, minuteArg?.isString);
+          if (minute === undefined) return undefined;
+          return (hour * 60 + minute) % MINUTES_PER_DAY;
+        };
+
+        const startMinute = minuteOfDay(slots.startH, slots.startM);
+        const endMinute = minuteOfDay(slots.stopH, slots.stopM);
+        if (startMinute === undefined || endMinute === undefined) continue;
+
+        const waypointArg = call.args?.[slots.waypoint];
+        if (!waypointArg || !waypointArg.isString || !waypointArg.value) continue;
+
+        sites.push({
+          routine: functionName.toUpperCase(),
+          startMinute,
+          endMinute,
+          waypoint: waypointArg.value.toUpperCase(),
+          filePath,
+          line: call.position.startLine
+        });
+      }
+    }
+  }
+
+  return sites;
+}
+
+/**
+ * UPPERCASED NPC instance to the UPPERCASED `daily_routine` it declares — the
+ * half of a schedule `extractRoutineSites` cannot carry, because a routine
+ * function is shared and knows nothing about who runs it.
+ *
+ * Declaring the field is the filter: an item instance has no `daily_routine`,
+ * so no prototype-chain walk is needed to keep items out.
+ *
+ * It reads the same whole-project model list `extractRoutineSites` does rather
+ * than riding the per-file worker pass `routines` uses, deliberately: both
+ * halves of a schedule then come from one set of files, so an NPC never
+ * resolves to a routine whose entries the index could not read.
+ */
+export function extractRoutinesByNpc(
+  fileModels: Array<{ semanticModel: SemanticModel }>
+): Record<string, string> {
+  const byNpc: Record<string, string> = {};
+
+  for (const { semanticModel } of fileModels) {
+    for (const instance of Object.values(semanticModel.instances || {})) {
+      if (!instance.name || !instance.dailyRoutine) continue;
+      byNpc[instance.name.toUpperCase()] = instance.dailyRoutine.toUpperCase();
+    }
+  }
+
+  return byNpc;
 }
 
 export function extractFileMetadataFromSource(sourceCode: string, filePath: string): ParsedFileMetadata {

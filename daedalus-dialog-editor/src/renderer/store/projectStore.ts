@@ -11,7 +11,7 @@
 import { create } from 'zustand';
 import { enableMapSet } from 'immer';
 import type { DialogMetadata, SemanticModel } from '../types/global';
-import type { SpawnSite } from '../../shared/types';
+import type { RoutineSite, SpawnSite } from '../../shared/types';
 import { getQuestUsage } from '../utils/questAnalyzer';
 import { deserialiseIpcMap } from '../utils/ipcSerialisation';
 import { escapeRegExp } from '../utils/pathAndIdentifierUtils';
@@ -69,6 +69,11 @@ interface ProjectState {
   // Static NPC/item spawn sites across the project, same lifecycle as
   // waypointSiteIndex; dynamic sites are excluded rather than guessed
   spawnSiteIndex: SpawnSite[];
+  // Every TA-family routine entry across the project, keyed by routine function
+  // rather than by NPC, with routineNpcIndex carrying which NPC runs which.
+  // Same lifecycle as spawnSiteIndex.
+  routineSiteIndex: RoutineSite[];
+  routineNpcIndex: Record<string, string>;
   // Files whose metadata extraction failed during the index build (degraded but openable)
   metadataFailures: Array<{ filePath: string; error: string }>;
 
@@ -384,6 +389,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   voiceIdIndex: {},
   waypointSiteIndex: {},
   spawnSiteIndex: [],
+  routineSiteIndex: [],
+  routineNpcIndex: {},
   metadataFailures: [],
   parsedFiles: new Map(),
   parseGeneration: 0,
@@ -429,6 +436,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         voiceIdIndex: rawIndex.voiceIds || {},
         waypointSiteIndex: rawIndex.waypointSites || {},
         spawnSiteIndex: rawIndex.spawnSites || [],
+        routineSiteIndex: rawIndex.routineSites || [],
+        routineNpcIndex: rawIndex.routinesByNpc || {},
         metadataFailures: rawIndex.metadataFailures || [],
         isLoading: false,
         parsedFiles: new Map(), // Clear any previous cache
@@ -598,6 +607,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       voiceIdIndex: {},
       waypointSiteIndex: {},
       spawnSiteIndex: [],
+      routineSiteIndex: [],
+      routineNpcIndex: {},
       metadataFailures: [],
       parsedFiles: new Map(),
       parseGeneration: get().parseGeneration + 1,

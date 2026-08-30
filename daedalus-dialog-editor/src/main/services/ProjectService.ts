@@ -14,7 +14,13 @@ import type { DialogMetadata, ProjectIndex, SemanticModel } from '../../shared/t
 // Re-export types for consumers of this service
 export type { DialogMetadata, ProjectIndex } from '../../shared/types';
 
-import { extractFileMetadataFromSource, extractSpawnSites, extractWaypointSites } from '../utils/semanticMetadataUtils';
+import {
+  extractFileMetadataFromSource,
+  extractRoutineSites,
+  extractRoutinesByNpc,
+  extractSpawnSites,
+  extractWaypointSites
+} from '../utils/semanticMetadataUtils';
 import { MetadataWorkerPool } from './MetadataWorkerPool';
 import type { MetadataResult } from './MetadataWorkerPool';
 
@@ -246,6 +252,8 @@ class ProjectService {
       voiceIds,
       waypointSites: extractWaypointSites(fileModelsForSiteIndexes),
       spawnSites: extractSpawnSites(fileModelsForSiteIndexes),
+      routineSites: extractRoutineSites(fileModelsForSiteIndexes),
+      routinesByNpc: extractRoutinesByNpc(fileModelsForSiteIndexes),
       metadataFailures
     };
   }

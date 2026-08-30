@@ -1813,6 +1813,88 @@ stayed open. The spawn index reaching it empty stays "nothing is known": the
 button is offered anyway, because a missing button cannot tell anybody the
 difference between no project open and no spawn here.
 
+**Slice 5 — the routine index.** The time slider's missing half. `ProjectIndex`
+gains `routineSites` — every `TA`-family entry with its window, its waypoint and
+its call location — and `routinesByNpc`, the UPPERCASED instance to the
+UPPERCASED `daily_routine` it declares. `routines` stays what it was, a sorted
+name set for autocomplete, which is why neither of these is a widening of it.
+
+**Landed 2026-08-30.** `extractRoutineSites` and `extractRoutinesByNpc` in
+`semanticMetadataUtils.ts` ride the same whole-project model list
+`extractSpawnSites` does, and reach the renderer as
+`projectStore.routineSiteIndex` / `routineNpcIndex`. Both halves read that one
+list deliberately — an NPC then never resolves to a routine whose entries the
+index could not read, which a per-file pass for the instances (the route
+`routines` takes) would not guarantee.
+
+**The one thing it had to decide is how a wrapper's arguments are found, and it
+is not by their names.** Retail never calls `TA_MIN` from a routine; it calls a
+`TA_*` wrapper, and only the two engine externals have a signature anything here
+can know — `TA(self, start_h, stop_h, state, waypoint)` and `TA_MIN(self,
+start_h, start_m, stop_h, stop_m, state, waypoint)`, whose waypoint indices are
+already the measured `ENGINE_EXTERNAL_WAYPOINT_ARG_INDEX` rows 4 and 6. The
+obvious extension of `buildWaypointParamIndex`'s derivation rule — read the
+project's own helper declarations rather than listing them — would be to key on
+parameters *named* `start_h`; that is a convention nothing in this repo has measured, and
+it fails **silently and totally** — a mod spelling them differently yields zero
+routine entries and no error. So `buildRoutineParamIndex` follows the call
+instead: a wrapper passes its own parameters into a carrier it already knows, so
+which of its parameters land in that carrier's time slots *is* its layout. It
+assumes only that a wrapper passes its parameters through, which is the one
+thing a wrapper can do with them, and it sweeps to a fixed point so a wrapper
+around a wrapper resolves too. A wrapper that hardcodes its window rather than
+taking it does not resolve, and is reported rather than dropped — see slice 6's
+instrument.
+
+Times are normalized to minutes since midnight at extraction, hour 24 to 0.
+That is what makes retail's `(06,00,24,00)` + `(24,00,06,00)` pair — the
+reference is `daedalus-parser`'s own `SLD_99003_Farim.d` — come out as a window
+that wraps plus one that does not, partitioning the day exactly once. An entry
+whose hour, minute or waypoint is not a literal is excluded, never guessed (§8,
+brief §5.1); a *constant* hour is as unresolvable as a computed waypoint,
+because the main process holds no semantic model to resolve one against.
+
+**Slice 6 — the schedule, and the gap/overlap instrument.**
+`src/renderer/routines/routineSchedule.ts`, pure, no React or Three.js — the
+same split `quest/domain` and `problems/domain` keep. **Landed 2026-08-30.**
+
+`placementsAt(index, minute)` is what a time slider reads: one placement per NPC
+with a declared routine, carrying **every** entry in force at that minute rather
+than one. Nothing in the format, in ZenKit or in this repo says which entry the
+engine picks when two windows overlap, and no measurement available here could
+settle it, so a precedence would be a rule the game does not have. Windows are
+half-open, which is what lets the retail pair partition the day instead of
+colliding on minute 0, and a zero-length window is the whole day — that is
+`TA_Stand_WP(00,00,00,00,…)`, the idiom for a routine with one entry. An empty
+`entries` is deliberately ambiguous between a hole in the day and a routine the
+index never read: an empty index means nothing is known, never that nothing is
+legal.
+
+`coverageOf(sites, routine)` is the other half and is **a measurement, not a
+rule**: which minutes of a day a routine leaves uncovered and which it covers
+twice. It counts a minute at a time rather than merging intervals, because the
+day is a circle and every wrap-around case an interval merge has to get right is
+one this cannot get wrong; 1,440 counters per routine. **No Problems rule was
+written on it, on purpose** — §16.22's precedent is that the number comes first
+and the check second, and that the number is allowed to kill the check, as the
+occupancy measurement's did.
+
+**What is unmeasured, and it is the coverage ratio.**
+`scripts/check-routine-coverage.js` is the instrument, in
+`check-spawn-occupancy.js`'s shape: it reports the `TA`-family calls written in
+a corpus beside the entries that reached the index, **names every `TA_*` callee
+it could not resolve**, and then gives the gap and overlap distributions. It was
+run only against a synthetic corpus (two files, a resolvable wrapper pair and a
+deliberately unresolvable third), where it reports 4 of 7 calls indexed and
+names the third — the arithmetic is right and the pass-through derivation
+works. It has **not been run against `mdk/Content`**, because the session that
+wrote it had no retail corpus on the machine. Until it has been, this index's
+coverage is unknown in exactly the way the spawn index's was for a year, and the
+honest statement is that number is missing — not that the index is complete.
+That run is the first thing to do with this, and it is a board card:
+`npm run build:main` then
+`node scripts/check-routine-coverage.js --project "<...>\mdk\Content"`.
+
 **What is deliberately not carded, and why:**
 
 - **NPC and item *visuals* are not reachable.** §11's "NPC/item rendering"
@@ -1823,15 +1905,19 @@ difference between no project open and no spawn here.
   a fifth extraction pass over instance bodies or a semantic model in main,
   which `CLAUDE.md` records the main process deliberately not having. Slice 4
   draws markers because a marker needs only the position slice 1 already yields.
-- **The time slider needs the routine *windows*, not the routine names.**
-  `ProjectIndex.routines` is the set of `dailyRoutine` name strings off NPC
-  instances and feeds autocomplete; the `TA_*` windows §8 asks for are a
-  different extraction that nothing does.
-- **Occupancy, gap and overlap checks are world-locus findings** and used to hit
-  the wall §7 and §16.18 stood behind. The wall is down on the type side —
-  §16.20 slices 1 and 2 both landed, so the panel navigates a world locus too.
-  What is left is not a wall but a specification: these stay uncarded because
-  nobody has said what the rule should be, either way.
+- **The time slider's *data* is no longer the gap — its UI is.** This bullet
+  used to read that the `TA_*` windows were an extraction nothing does; slices 5
+  and 6 are that extraction and the schedule over it. What is left is a viewport
+  surface: a time control on the World bar, and `SpawnOverlay`'s markers moved
+  to `placementsAt`'s answer rather than to the static spawn point. That is a UI
+  workflow, so it wants a Playwright spec first, and it is a board card.
+- **Occupancy is dead and gap/overlap are now a number away.** All three used to
+  sit behind the world-locus wall §7 and §16.18 stood behind; that wall is down
+  (§16.20 slices 1 and 2). Occupancy was then measured and killed its own check
+  — §16.22 q4, a cliff and no tail. Gap and overlap are the two that survive,
+  and they stay uncarded for the same reason as before, that nobody has said
+  what the finding should be — but `coverageOf` and its script now compute the
+  distribution the saying would rest on.
 - **W4, script→world go-to-definition, was called large when it was sized** on the
   premise that nothing displayed a script-side waypoint name to click. That
   expired — `InsertNpcActionRenderer` displays one and §16.20 slice 2 built the
