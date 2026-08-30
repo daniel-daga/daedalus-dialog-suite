@@ -1,13 +1,24 @@
 import { TreeSitterNode } from '../semantic-model';
 
 /**
+ * Is this child of an argument_list an actual argument? Punctuation is not, and
+ * neither is a comment: comments are grammar extras and can appear anywhere
+ * inside a call, so counting one as an argument shifts every real argument.
+ */
+export function isArgumentNode(node: TreeSitterNode): boolean {
+  return (
+    node.type !== ',' && node.type !== '(' && node.type !== ')' && node.type !== 'comment'
+  );
+}
+
+/**
  * Parse a tree-sitter argument_list node into normalized argument text values.
  */
 export function parseArguments(argsNode: TreeSitterNode): string[] {
   const args: string[] = [];
   for (let i = 0; i < argsNode.childCount; i++) {
     const child = argsNode.child(i);
-    if (child.type !== ',' && child.type !== '(' && child.type !== ')') {
+    if (isArgumentNode(child)) {
       args.push(normalizeArgumentText(child));
     }
   }
@@ -35,7 +46,7 @@ export function parseArgumentsDetailed(argsNode: TreeSitterNode): ParsedArg[] {
   const args: ParsedArg[] = [];
   for (let i = 0; i < argsNode.childCount; i++) {
     const child = argsNode.child(i);
-    if (child.type !== ',' && child.type !== '(' && child.type !== ')') {
+    if (isArgumentNode(child)) {
       args.push({
         raw: child.text.trim(),
         value: normalizeArgumentText(child),

@@ -4,7 +4,9 @@ const {
   parseSemanticModel,
   SemanticCodeGenerator,
   CommentAction,
-  DialogLine
+  DialogLine,
+  NpcKnowsInfoCondition,
+  NpcHasItemsCondition
 } = require('../dist/semantic/semantic-visitor-index');
 
 function generate(model) {
@@ -146,4 +148,62 @@ test('empty void function does not gain an invented TODO placeholder', () => {
 
   const reparsed = parseSemanticModel(generated);
   assert.equal(reparsed.hasErrors, false, 'empty function still reparses cleanly');
+});
+
+// A comment inside an argument list is an extra, not an argument: the three
+// call-argument extractors filtered punctuation only, so `/* n */` was collected
+// as an argument and shifted every real one out of place (2026-07 4.16).
+test('a comment inside an argument list is not collected as an argument', () => {
+  const source = `func void B_Foo()
+{
+\tAI_Output (self, other, /* voice note */ "DIA_Foo_15_00");
+};
+`;
+  const model = parseSemanticModel(source);
+  const line = model.functions.B_Foo.actions[0];
+
+  assert.ok(line instanceof DialogLine, 'first action is a DialogLine');
+  assert.equal(line.id, 'DIA_Foo_15_00', 'the third argument is still the subtitle id');
+  assert.equal(line.idIsExpression, false, 'the id is a string literal, not an expression');
+});
+
+test('a comment inside a condition call is not collected as an argument', () => {
+  const source = `instance DIA_Foo_Hello(C_INFO)
+{
+	npc			= SLD_99003_Farim;
+	nr			= 1;
+	condition	= DIA_Foo_Hello_Condition;
+	information	= DIA_Foo_Hello_Info;
+	permanent	= FALSE;
+	description	= "Hello";
+};
+
+func int DIA_Foo_Hello_Condition()
+{
+	if (Npc_KnowsInfo (other, /* the info */ DIA_Foo_Intro)
+		&& Npc_HasItems (other, /* the item */ ItMi_Gold) >= 1)
+	{
+		return TRUE;
+	};
+};
+
+func void DIA_Foo_Hello_Info()
+{
+	AI_StopProcessInfos (self);
+};
+`;
+  const model = parseSemanticModel(source);
+  const { conditions } = model.dialogs.DIA_Foo_Hello.properties.condition;
+
+  // parseArguments (Npc_KnowsInfo) and parseRawCallArguments (Npc_HasItems)
+  // are separate extractors; both used to shift on an interleaved comment.
+  const knowsInfo = conditions.find((c) => c instanceof NpcKnowsInfoCondition);
+  assert.ok(knowsInfo, 'the Npc_KnowsInfo condition is recognized');
+  assert.equal(knowsInfo.npc, 'other');
+  assert.equal(knowsInfo.dialogRef, 'DIA_Foo_Intro');
+
+  const hasItems = conditions.find((c) => c instanceof NpcHasItemsCondition);
+  assert.ok(hasItems, 'the Npc_HasItems condition is recognized');
+  assert.equal(hasItems.npc, 'other');
+  assert.equal(hasItems.item, 'ItMi_Gold');
 });

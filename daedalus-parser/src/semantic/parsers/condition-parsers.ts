@@ -12,7 +12,7 @@ import {
   Condition,
   VariableCondition
 } from '../semantic-model';
-import { parseArguments } from './argument-parsing';
+import { isArgumentNode, parseArguments } from './argument-parsing';
 import { parseLiteralOrIdentifier } from './literal-parsing';
 import { getBinaryOperator, isComparisonOperator } from './ast-constants';
 
@@ -295,7 +295,7 @@ export class ConditionParsers {
     const args: string[] = [];
     for (let i = 0; i < argsNode.childCount; i++) {
       const child = argsNode.child(i);
-      if (child.type !== ',' && child.type !== '(' && child.type !== ')') {
+      if (isArgumentNode(child)) {
         args.push(child.text.trim());
       }
     }

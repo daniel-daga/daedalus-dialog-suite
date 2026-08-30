@@ -155,11 +155,13 @@ Main process:
       reaped and callers stall for 30 s.
 
 Parser:
-- [ ] 4.16 Comments become arguments: all three extractors filter punctuation only —
+- [x] 4.16 Comments become arguments: all three extractors filter punctuation only —
       `argument-parsing.ts:10` and `:38`, and `condition-parsers.ts:297` (`parseRawCallArguments`)
       — so a `comment` node inside an argument list is collected as an argument. Other visitors do
       skip comments (`linking-visitor.ts:182, 282, 705, 904`), so the pattern exists and simply was
-      not applied here. No test covers it.
+      not applied here. **Fixed 2026-08-30**: the three sites share `isArgumentNode`, which excludes
+      `comment` along with the punctuation. A comment inside an argument list is now lost on
+      regeneration instead of displacing the arguments after it — the corpus numbers are unchanged.
 - [ ] 4.17 `allowPartialModel` generates from an EMPTY model whenever parsing errored:
       `parser-utils.ts:45-47` returns as soon as `hasErrors`, skipping `pass1_createObjects` and
       `pass2_analyzeAndLink`, and the editor worker duplicates it verbatim
