@@ -141,8 +141,8 @@ writes, the classes beyond five), none of it carded.
 with nobody watching. Triaged against the tree 2026-08-30, each verified still
 open. **Take the top unclaimed row and cross it off in the same commit; a run
 may not add rows.** `unattended-queue.md` — **section 5, the level editor, is
-now first (Daniel, 2026-08-30)**; row 42 went to Triage on 2026-08-30 and 43
-and 44 landed, so the next unclaimed row is 45. The corpus those rows want is in `zenkit-node/worlds/`. Rows
+now first (Daniel, 2026-08-30)**; row 42 went to Triage on 2026-08-30 and 43,
+44 and 45 landed, so the next unclaimed row is 46. The corpus those rows want is in `zenkit-node/worlds/`. Rows
 1-12 of section 1 landed 2026-08-30 and the rest of it waits below section 5.
 
 **World surface, from Daniel's own sessions 2026-08-30 — all at §16.24.** None
@@ -228,6 +228,9 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **Unattended queue row 45** (board-loop) — the last four uncatalogued placeable
+  classes are catalogued; `oCTouchDamage` is complete at twelve fields, and
+  `zCCodeMaster` turned out to have no enum at all. §16.3
 - **Unattended queue row 44** (board-loop) — the free-point widening is 61 call
   sites, not the 33+35 grep lines; 59 resolve against NewWorld, only 2 exactly,
   45 need the infix rule, and the 2 `WASH` sites resolve in no world.

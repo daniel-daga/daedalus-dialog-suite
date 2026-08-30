@@ -289,6 +289,81 @@ const OC_TRIGGER_SCRIPT_FIELDS = [
   { key: 'function', kind: 'string' },
 ] as const satisfies readonly FieldDescriptor[];
 
+/** The base `VTrigger` twelve, plus the one field of `zCTriggerList`'s own that
+ *  is neither the `targets` list nor a target string: `mode`, which decides
+ *  whether firing the list fires all of its targets, the next one, or a random
+ *  one. It was the last thing holding the class out of the catalogue entirely —
+ *  it was authorable-with-nothing-catalogued from I3 until the enums landed.
+ *
+ *  Retail's 44 trigger lists all hold `ALL` (0), so nothing in the corpus is
+ *  outside `TriggerBatchMode`'s three values. */
+const ZC_TRIGGER_LIST_FIELDS = [
+  ...ZC_TRIGGER_FIELDS,
+  { key: 'mode', kind: 'enum' },
+] as const satisfies readonly FieldDescriptor[];
+
+/** The three booleans that steer a code master's slave sequence. It derives
+ *  straight from `zCVob`, so there is no base set to spread.
+ *
+ *  The one of the four late classes with **no enum at all**: what held it out
+ *  was `slaves`, an unbounded list, and the two cross-reference strings
+ *  (`target`, `failureTarget`) that go with the rest of the family's. The three
+ *  booleans were held out with them and are all that is eligible.
+ *  `s_num_triggered_slaves` is save-game only.
+ *
+ *  Retail places 7, and one of them is the odd one out on two fields at once:
+ *  `ordered` and `firstFalseIsFailure` are true on the same single master and
+ *  false on the other six, and no retail master lets an untrigger cancel. */
+const ZC_CODE_MASTER_FIELDS = [
+  { key: 'ordered', kind: 'bool' },
+  { key: 'firstFalseIsFailure', kind: 'bool' },
+  { key: 'untriggeredCancels', kind: 'bool' },
+] as const satisfies readonly FieldDescriptor[];
+
+/** What a message filter turns an incoming `OnTrigger` and `OnUntrigger` into
+ *  before passing it on. Both are `MessageFilterAction`s, and they were the
+ *  whole of the class: `target` is the third field and stays out with the rest
+ *  of the family's cross-reference strings, which is why this class carried
+ *  nothing catalogued until the enums landed.
+ *
+ *  Retail's 26 filters use five of the six values on each field — every one but
+ *  `NONE` — so this is the class with the widest spread of stored enum values in
+ *  the corpus, and none of it is outside the set. */
+const ZC_MESSAGE_FILTER_FIELDS = [
+  { key: 'onTrigger', kind: 'enum' },
+  { key: 'onUntrigger', kind: 'enum' },
+] as const satisfies readonly FieldDescriptor[];
+
+/** A damage volume, whole: what it deals, the eight damage types it deals it
+ *  as, how often, and how the collision is tested.
+ *
+ *  It derives straight from `zCVob` and shares nothing with the movable-object
+ *  family it is placed beside. Nothing on it is a list, a cross-reference string
+ *  or save-game-only, so **the class is complete** — the last of I4's
+ *  authorable-with-nothing-catalogued classes, and it was that only because
+ *  `collision` is an enum.
+ *
+ *  Measured over retail's 51 volumes (NewWorld/OldWorld/AddonWorld, 2026-08-30):
+ *  1000 damage on 49 and 50 on 2, point damage alone on 48, a two-second tick on
+ *  42, `volumeScale` 1 on every one and `BOX` collision on every one. The three
+ *  floats are floored at zero and given no maximum — a mod may deal more damage
+ *  than retail does, and none of "damage", "seconds between ticks" or "scale the
+ *  box by" means anything below zero. */
+const OC_TOUCH_DAMAGE_FIELDS = [
+  { key: 'damage', kind: 'float', min: 0 },
+  { key: 'barrier', kind: 'bool' },
+  { key: 'blunt', kind: 'bool' },
+  { key: 'edge', kind: 'bool' },
+  { key: 'fire', kind: 'bool' },
+  { key: 'fly', kind: 'bool' },
+  { key: 'magic', kind: 'bool' },
+  { key: 'point', kind: 'bool' },
+  { key: 'fall', kind: 'bool' },
+  { key: 'repeatDelaySec', kind: 'float', min: 0 },
+  { key: 'volumeScale', kind: 'float', min: 0 },
+  { key: 'collision', kind: 'enum' },
+] as const satisfies readonly FieldDescriptor[];
+
 /** The base `VTrigger` twelve, plus `oCTriggerChangeLevel`'s own two: the
  *  level to load and the VObject to place the player at in it. Both are
  *  plain config, not cross-references the way `target`/`vobTarget` are —
@@ -417,6 +492,7 @@ export const CLASS_FIELDS = {
   zCVobAnimate: ZC_VOB_ANIMATE_FIELDS,
   zCPFXController: ZC_PFX_CONTROLLER_FIELDS,
   zCTrigger: ZC_TRIGGER_FIELDS,
+  zCTriggerList: ZC_TRIGGER_LIST_FIELDS,
   zCTriggerWorldStart: ZC_TRIGGER_WORLD_START_FIELDS,
   oCTriggerScript: OC_TRIGGER_SCRIPT_FIELDS,
   oCTriggerChangeLevel: OC_TRIGGER_CHANGE_LEVEL_FIELDS,
@@ -430,6 +506,9 @@ export const CLASS_FIELDS = {
   oCMobFire: OC_MOB_FIRE_FIELDS,
   oCMobContainer: OC_MOB_CONTAINER_FIELDS,
   oCMobDoor: OC_MOB_DOOR_FIELDS,
+  oCTouchDamage: OC_TOUCH_DAMAGE_FIELDS,
+  zCCodeMaster: ZC_CODE_MASTER_FIELDS,
+  zCMessageFilter: ZC_MESSAGE_FILTER_FIELDS,
 } as const satisfies Record<string, readonly FieldDescriptor[]>;
 
 /**
@@ -458,12 +537,16 @@ export const CLASS_FIELDS = {
  * already *edit*. A `zCMover` is the one member that does something on its own,
  * since it moves along its visual's animation.
  *
- * Three of the seven go further and carry no catalogued field at all —
+ * Three of the seven used to go further and carry no catalogued field at all —
  * `zCTriggerList`, `zCCodeMaster` and `zCMessageFilter` — because what
  * configures each is a list (`targets`, `slaves`) or an enum (`mode`,
- * `onTrigger`/`onUntrigger`), and the catalogue holds neither by the rules at
- * the top of this file. **Authorable with no editable field is a real state
- * since I3**, and the dialog offers those three knowing it.
+ * `onTrigger`/`onUntrigger`), and the catalogue held neither. **The enum half
+ * of that is over** (2026-08-30): all three are catalogued above, the filter by
+ * its two actions, the list by its `mode` plus the twelve it inherits, and the
+ * master by the three booleans that were held out with its slaves. The lists
+ * and the target strings are still out. Authorable with no editable field is
+ * still a real state, but only for the classes that declare no field at all —
+ * `zCVob` and the two markers.
  */
 export const AUTHORABLE_VOB_CLASSES = [
   'zCVob',
@@ -512,10 +595,11 @@ export const AUTHORABLE_VOB_CLASSES = [
   // world's fallback fog, far plane and music are one object each rather than
   // something a designer places.
   //
-  // `zCVobSpot` and `zCVobStartpoint` are the third and fourth
-  // authorable-with-nothing-catalogued classes, and for the opposite reason to
-  // `zCTriggerList`'s: not fields this table refuses, but no fields at all --
-  // `VSpot` and `VStartPoint` declare nothing beyond `zCVob`.
+  // `zCVobSpot` and `zCVobStartpoint` are, with `zCVob` itself, the only
+  // authorable-with-nothing-catalogued classes left -- and for the opposite
+  // reason to the one `zCTriggerList` used to have: not fields this table
+  // refuses, but no fields at all. `VSpot` and `VStartPoint` declare nothing
+  // beyond `zCVob`, so there is nothing an enum could bring in later.
   'oCZoneMusic',
   'zCZoneZFog',
   'zCZoneVobFarPlane',
@@ -639,7 +723,9 @@ export function baseFieldOf(key: string): FieldDescriptor | null {
  * and every offset is [0,0]. A size cannot be negative and an offset can, so
  * only `decalDimension` is floored. `decalAlphaFunc` is an `AlphaFunction` and
  * retail stays inside its seven values (1, 2, 3, and 6 once) — unlike
- * `zCMover.lerpMode`, which is why enums are otherwise out of the catalogue.
+ * `zCMover.lerpMode`, which is why it is an `int` here rather than the `enum`
+ * kind the catalogue has held since §16.21: the seven are `AlphaFunction`'s,
+ * but nothing offers them, and the bound is the archive's.
  * `decalAlphaWeight` is the byte `write_byte` puts in the archive.
  */
 export const DECAL_FIELDS = [
@@ -706,6 +792,17 @@ const MOVABLE_OBJECT_ENUMS = {
   ],
 } as const satisfies Readonly<Record<string, readonly EnumValueDescriptor[]>>;
 
+/** `zenkit::MessageFilterAction`, shared by a message filter's two fields —
+ *  what an incoming event is turned into on its way to the target. */
+const MESSAGE_FILTER_ACTIONS = [
+  { value: 0, label: 'NONE' },
+  { value: 1, label: 'TRIGGER' },
+  { value: 2, label: 'UNTRIGGER' },
+  { value: 3, label: 'ENABLE' },
+  { value: 4, label: 'DISABLE' },
+  { value: 5, label: 'TOGGLE' },
+] as const satisfies readonly EnumValueDescriptor[];
+
 /**
  * The enum fields, per class, and the values each one has
  * (level-editor.md §16.21).
@@ -741,6 +838,20 @@ const MOVABLE_OBJECT_ENUMS = {
  * Every one is inside its set, so nothing here marks a retail value unknown —
  * which was the whole risk the card named. The one field that *is* outside its
  * set is held out below.
+ *
+ * **Swept again 2026-08-30** for the four fields of the three classes the enums
+ * brought in, over the same three worlds:
+ *
+ * | field | values held |
+ * |---|---|
+ * | `zCTriggerList.mode` | 0 (44) — every retail list fires ALL of its targets |
+ * | `zCMessageFilter.onTrigger` | 1 (8), 3 (7), 4 (6), 2 (3), 5 (2) |
+ * | `zCMessageFilter.onUntrigger` | 1 (8), 4 (7), 3 (6), 2 (3), 5 (2) |
+ * | `oCTouchDamage.collision` | 1 (51) — every retail volume is a BOX |
+ *
+ * Inside their sets too. The filter is the widest spread in the corpus — five
+ * of six values on each of its two fields, everything but `NONE` — and the
+ * other two are the narrowest: one value each, on 95 VOBs.
  */
 export const CLASS_ENUM_FIELDS = {
   zCVobLight: {
@@ -795,6 +906,35 @@ export const CLASS_ENUM_FIELDS = {
   oCMobFire: MOVABLE_OBJECT_ENUMS,
   oCMobContainer: MOVABLE_OBJECT_ENUMS,
   oCMobDoor: MOVABLE_OBJECT_ENUMS,
+  // The three classes the enums brought into the catalogue at all rather than
+  // completing (2026-08-30). Each was authorable-with-nothing-catalogued from
+  // I3/I4, because the field that configures it *is* an enum.
+  zCTriggerList: {
+    // `zenkit::TriggerBatchMode` — which of the list's targets a firing fires.
+    mode: [
+      { value: 0, label: 'ALL' },
+      { value: 1, label: 'NEXT' },
+      { value: 2, label: 'RANDOM' },
+    ],
+  },
+  zCMessageFilter: {
+    // `zenkit::MessageFilterAction`, twice: what an incoming `OnTrigger` and an
+    // incoming `OnUntrigger` are turned into before being passed on. The two
+    // fields share the set the way the sound family's do, but not the table —
+    // they are one class, so a shared constant would buy a name and nothing
+    // else.
+    onTrigger: MESSAGE_FILTER_ACTIONS,
+    onUntrigger: MESSAGE_FILTER_ACTIONS,
+  },
+  oCTouchDamage: {
+    // `zenkit::TouchCollisionType` — how the volume tests whether something is
+    // inside it. `NONE` disables the volume altogether.
+    collision: [
+      { value: 0, label: 'NONE' },
+      { value: 1, label: 'BOX' },
+      { value: 2, label: 'POINT' },
+    ],
+  },
 } as const satisfies Record<string, Readonly<Record<string, readonly EnumValueDescriptor[]>>>;
 
 /**

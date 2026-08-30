@@ -449,9 +449,36 @@ stays out with the rest of the trigger family's target strings, and
 already read on the get side (`normalize.cc`'s `PutTriggerProps`/case). The
 base `VTrigger` fields it inherits (`target` among them) stay out with the
 rest of the family's target strings and base fields. `zCTriggerUntouch` and
-`zCTriggerList` turn out to have **no** eligible field at all once enums,
-lists and `target` are excluded — `zCTriggerUntouch` is `target` alone, and
-`zCTriggerList` is `mode` (enum) and `targets` (list).
+`zCTriggerList` turned out to have **no** eligible field at all once enums,
+lists and `target` were excluded — `zCTriggerUntouch` is `target` alone, and
+`zCTriggerList` is `mode` (enum) and `targets` (list). **The enum half of that
+is over** — see the four classes below.
+
+**The four classes the enums brought in landed 2026-08-30** (queue row 45),
+which closes the state I3 and I4 both left behind: authorable with nothing
+editable, because the field that configures the class *is* an enum.
+
+- `zCTriggerList` — `mode` (`TriggerBatchMode`), plus the twelve it inherits
+  from `VTrigger`, on the rule `zCMover` and `oCTriggerChangeLevel` already
+  follow. `targets` and the target strings stay out.
+- `zCMessageFilter` — `onTrigger` and `onUntrigger`, both
+  `MessageFilterAction`, which is the whole class bar `target`.
+- `zCCodeMaster` — the **one with no enum at all**: `ordered`,
+  `firstFalseIsFailure` and `untriggeredCancels` were held out with the
+  `slaves` list they steer and with `target`/`failureTarget`. Naming it beside
+  the enums (as the card did) is the card's one inaccuracy.
+- `oCTouchDamage` — all twelve fields, so **the class is complete**: nothing on
+  `VTouchDamage` is a list, a cross-reference string or save-game-only. The
+  three floats are floored at zero and given no maximum.
+
+Swept over retail NewWorld/OldWorld/AddonWorld the same day, and every stored
+value is inside its set: `zCTriggerList.mode` is ALL on all 44,
+`oCTouchDamage.collision` is BOX on all 51, and the 26 message filters between
+them use five of `MessageFilterAction`'s six values on each of their two fields
+— everything but `NONE`, which is the widest spread of any enum in the corpus.
+None of the four has a fixture VOB, so each test *places* one, the way the bed's
+did. What is left authorable-with-nothing-catalogued is only what declares no
+field at all: `zCVob`, `zCVobSpot`, `zCVobStartpoint`.
 
 `zCTrigger`'s own base fields landed 2026-08-28: the eight bools and four
 numerics `VTrigger` declares (`startEnabled`, `sendUntrigger`,
@@ -1401,11 +1428,12 @@ offered a grid the binding refuses, which is why the card insisted on both.
 The bed had no fixture VOB to write to — the authored world's class-property
 round-trip table runs `1/3`…`1/19` and holds no bed — so its three tests
 *place* one with `insertVob` and write to that, which is also the only way a
-user reaches a bed the editor made. **`oCTouchDamage` is now the only
-authorable-with-nothing-catalogued class in this family**, and unlike the bed's
-that is not a plain omission to reverse: what configures a damage volume past
-its eleven catalogued-shaped scalars is `collision`, an enum, and the catalogue
-holds no enum by design.
+user reaches a bed the editor made. **`oCTouchDamage` was the last
+authorable-with-nothing-catalogued class in this family and is not one since
+2026-08-30**: what configured a damage volume past its eleven catalogued-shaped
+scalars was `collision`, an enum, and the catalogue held no enum until the enums landed (§7) —
+so it was the enums, not an omission, and all twelve fields landed together
+(§16.3). No class of this family is editable-only-in-name any more.
 
 **A duplicate of a door is now a door**, which is the increment's one change to
 behaviour nobody asked for: `duplicateVobSpec` carries the class of any class

@@ -34,8 +34,9 @@ describe('the per-class field catalogue', () => {
     // a `zCZoneZFogDefault` is a world's fallback fog, not a placed zone.
     expect(Object.keys(CLASS_FIELDS).sort()).toEqual([
       'oCItem', 'oCMOB', 'oCMobBed', 'oCMobContainer', 'oCMobDoor', 'oCMobFire', 'oCMobInter',
-      'oCMobLadder', 'oCMobSwitch', 'oCMobWheel', 'oCTriggerChangeLevel', 'oCTriggerScript',
-      'oCZoneMusic', 'zCMover', 'zCPFXController', 'zCTrigger', 'zCTriggerWorldStart',
+      'oCMobLadder', 'oCMobSwitch', 'oCMobWheel', 'oCTouchDamage', 'oCTriggerChangeLevel',
+      'oCTriggerScript', 'oCZoneMusic', 'zCCodeMaster', 'zCMessageFilter', 'zCMover',
+      'zCPFXController', 'zCTrigger', 'zCTriggerList', 'zCTriggerWorldStart',
       'zCVobAnimate', 'zCVobLight', 'zCVobSound', 'zCVobSoundDaytime', 'zCZoneVobFarPlane',
       'zCZoneZFog',
     ]);
@@ -261,14 +262,69 @@ describe('the per-class field catalogue', () => {
     expect(classPropKeys('zCVob')).toEqual([]);
     expect(isAuthorableVobClass('zCTriggerWorldStart')).toBe(false);
     expect(classPropKeys('zCTriggerWorldStart').length).toBeGreaterThan(0);
-    // And since I3 the other direction has three examples too: a class can be
-    // authorable and carry no catalogued field at all. It is not an oversight —
-    // everything that configures one of these three is an enum or a list, and
-    // the catalogue holds neither.
+    // And the other direction still has examples, but only the ones with no
+    // fields at all: `zCVob` above and the two markers. The three I3 left
+    // authorable-with-nothing-catalogued — a trigger list, a code master and a
+    // message filter — are catalogued since the enums landed, so what used to
+    // be "the catalogue holds neither an enum nor a list" is now only the list.
     for (const className of ['zCTriggerList', 'zCCodeMaster', 'zCMessageFilter']) {
+      expect(isAuthorableVobClass(className)).toBe(true);
+      expect(classPropKeys(className).length).toBeGreaterThan(0);
+    }
+    for (const className of ['zCVobSpot', 'zCVobStartpoint']) {
       expect(isAuthorableVobClass(className)).toBe(true);
       expect(classPropKeys(className)).toEqual([]);
     }
+  });
+
+  it('gives the trigger list the twelve it inherits and the one enum it adds', () => {
+    // `VTriggerList` derives from `VTrigger`, so its case inherits the twelve
+    // exactly as `zCMover`'s and `oCTriggerChangeLevel`'s do — and `mode` is
+    // the one field of its own that is not the `targets` list.
+    expect(classPropKeys('zCTriggerList')).toEqual([...classPropKeys('zCTrigger'), 'mode']);
+    for (const key of classPropKeys('zCTrigger')) {
+      expect(fieldOf('zCTriggerList', key)).toEqual(fieldOf('zCTrigger', key));
+    }
+    // The list itself and the target strings stay out, by the rules at the top
+    // of the catalogue.
+    expect(fieldOf('zCTriggerList', 'targets')).toBeNull();
+    expect(fieldOf('zCTriggerList', 'target')).toBeNull();
+  });
+
+  it('catalogues the code master`s three booleans and neither its slaves nor its targets', () => {
+    // The one of the four with no enum at all: what held it out was the
+    // `slaves` list and the two cross-reference strings, and the three
+    // booleans that steer the sequence were held out with them.
+    expect(classPropKeys('zCCodeMaster'))
+      .toEqual(['ordered', 'firstFalseIsFailure', 'untriggeredCancels']);
+    for (const key of ['slaves', 'target', 'failureTarget']) {
+      expect(fieldOf('zCCodeMaster', key)).toBeNull();
+    }
+  });
+
+  it('catalogues the message filter`s two enums and not the target they relay to', () => {
+    expect(classPropKeys('zCMessageFilter')).toEqual(['onTrigger', 'onUntrigger']);
+    expect(fieldOf('zCMessageFilter', 'target')).toBeNull();
+  });
+
+  it('catalogues a damage volume whole — eleven scalars and the collision enum', () => {
+    // `oCTouchDamage` derives straight from `zCVob` and shares nothing with the
+    // movable-object family it is placed beside. Nothing on it is a list, a
+    // cross-reference string or save-game-only, so the class is complete.
+    expect(classPropKeys('oCTouchDamage')).toEqual([
+      'damage', 'barrier', 'blunt', 'edge', 'fire', 'fly', 'magic', 'point', 'fall',
+      'repeatDelaySec', 'volumeScale', 'collision',
+    ]);
+    // The three floors, measured over retail's 51 volumes: damage is 1000 on 49
+    // and 50 on 2, the tick is 2s/0.5s/0 and the scale is 1 on every one. None
+    // has a maximum — a modded volume may deal more than retail does — and none
+    // may be negative: a negative scale is not a smaller box.
+    expect(fieldOf('oCTouchDamage', 'damage')).toEqual({ key: 'damage', kind: 'float', min: 0 });
+    expect(fieldOf('oCTouchDamage', 'repeatDelaySec'))
+      .toEqual({ key: 'repeatDelaySec', kind: 'float', min: 0 });
+    expect(fieldOf('oCTouchDamage', 'volumeScale'))
+      .toEqual({ key: 'volumeScale', kind: 'float', min: 0 });
+    expect(fieldOf('oCTouchDamage', 'blunt')).toEqual({ key: 'blunt', kind: 'bool' });
   });
 
   it('places the whole trigger family, under the names the archive uses', () => {
@@ -312,9 +368,9 @@ describe('the per-class field catalogue', () => {
     // The bed was the third authorable-with-nothing-catalogued class and is not
     // one any more: its fields are exactly `oCMobInter`'s, and it now carries
     // them here and a `case oCMobBed:` in the binding's `setVobClassProp`
-    // switch. `oCTouchDamage` is still that state — it has never been
-    // catalogued — and it works unaided, dealing retail's own 1000 point damage.
-    expect(classPropKeys('oCTouchDamage')).toEqual([]);
+    // switch. `oCTouchDamage` was the last of that state in this family and is
+    // catalogued too — twelve fields, the collision enum among them.
+    expect(classPropKeys('oCTouchDamage')).toHaveLength(12);
   });
 
   it('places the zones, the markers and the two effect classes (I5)', () => {
@@ -466,8 +522,8 @@ describe('the enum sets (level-editor.md §16.21)', () => {
     // whose set and whose descriptor disagree about which of the two it is.
     expect(Object.keys(CLASS_ENUM_FIELDS).sort()).toEqual([
       'oCMOB', 'oCMobBed', 'oCMobContainer', 'oCMobDoor', 'oCMobFire', 'oCMobInter',
-      'oCMobLadder', 'oCMobSwitch', 'oCMobWheel', 'zCMover', 'zCVobLight',
-      'zCVobSound', 'zCVobSoundDaytime',
+      'oCMobLadder', 'oCMobSwitch', 'oCMobWheel', 'oCTouchDamage', 'zCMessageFilter',
+      'zCMover', 'zCTriggerList', 'zCVobLight', 'zCVobSound', 'zCVobSoundDaytime',
     ]);
     for (const [className, fields] of Object.entries(CLASS_ENUM_FIELDS)) {
       expect(Object.keys(CLASS_FIELDS)).toContain(className);
@@ -527,6 +583,19 @@ describe('the enum sets (level-editor.md §16.21)', () => {
       { value: 2, label: 'OPEN_TIME' }, { value: 3, label: 'LOOP' },
       { value: 4, label: 'SINGLE_KEYS' },
     ]);
+    expect(enumValuesOf('zCTriggerList', 'mode')).toEqual([
+      { value: 0, label: 'ALL' }, { value: 1, label: 'NEXT' }, { value: 2, label: 'RANDOM' },
+    ]);
+    expect(enumValuesOf('oCTouchDamage', 'collision')).toEqual([
+      { value: 0, label: 'NONE' }, { value: 1, label: 'BOX' }, { value: 2, label: 'POINT' },
+    ]);
+    for (const key of ['onTrigger', 'onUntrigger']) {
+      expect(enumValuesOf('zCMessageFilter', key)).toEqual([
+        { value: 0, label: 'NONE' }, { value: 1, label: 'TRIGGER' },
+        { value: 2, label: 'UNTRIGGER' }, { value: 3, label: 'ENABLE' },
+        { value: 4, label: 'DISABLE' }, { value: 5, label: 'TOGGLE' },
+      ]);
+    }
     expect(enumValuesOf('oCMobDoor', 'soundMaterial')).toEqual([
       { value: 0, label: 'WOOD' }, { value: 1, label: 'STONE' }, { value: 2, label: 'METAL' },
       { value: 3, label: 'LEATHER' }, { value: 4, label: 'CLAY' }, { value: 5, label: 'GLASS' },

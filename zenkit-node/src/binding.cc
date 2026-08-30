@@ -2167,6 +2167,125 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (pick_string) mob.pick_string = std::move(*pick_string);
       break;
     }
+    // The base `VTrigger` twelve, plus the one field of this class's own that
+    // is neither the `targets` list nor a target string: `mode`, which decides
+    // whether a firing fires all of the list's targets, the next one or a
+    // random one. It was the whole of what held the class out of the catalogue,
+    // so a trigger list was authorable with nothing editable from I3 until the
+    // enums landed.
+    case zenkit::VirtualObjectType::zCTriggerList: {
+      RequireClassKeys(env, props,
+                       {"startEnabled", "sendUntrigger", "reactToOnTrigger", "reactToOnTouch",
+                        "reactToOnDamage", "respondToObject", "respondToPc", "respondToNpc",
+                        "maxActivationCount", "retriggerDelaySec", "damageThreshold",
+                        "fireDelaySec", "mode"},
+                       class_name);
+      auto const start_enabled = OptionalBool(env, props, "startEnabled");
+      auto const send_untrigger = OptionalBool(env, props, "sendUntrigger");
+      auto const react_to_on_trigger = OptionalBool(env, props, "reactToOnTrigger");
+      auto const react_to_on_touch = OptionalBool(env, props, "reactToOnTouch");
+      auto const react_to_on_damage = OptionalBool(env, props, "reactToOnDamage");
+      auto const respond_to_object = OptionalBool(env, props, "respondToObject");
+      auto const respond_to_pc = OptionalBool(env, props, "respondToPc");
+      auto const respond_to_npc = OptionalBool(env, props, "respondToNpc");
+      auto const max_activation_count =
+          OptionalInt32(env, props, "maxActivationCount", std::nullopt, std::nullopt);
+      auto const retrigger_delay_sec =
+          OptionalFloatIn(env, props, "retriggerDelaySec", 0, std::nullopt);
+      auto const damage_threshold = OptionalFloatIn(env, props, "damageThreshold", 0, std::nullopt);
+      auto const fire_delay_sec = OptionalFloatIn(env, props, "fireDelaySec", 0, std::nullopt);
+      auto const mode = OptionalEnum<zenkit::TriggerBatchMode>(env, props, "mode");
+      auto& list = static_cast<zenkit::VTriggerList&>(*vob);
+      if (start_enabled.has_value()) list.start_enabled = *start_enabled;
+      if (send_untrigger.has_value()) list.send_untrigger = *send_untrigger;
+      if (react_to_on_trigger.has_value()) list.react_to_on_trigger = *react_to_on_trigger;
+      if (react_to_on_touch.has_value()) list.react_to_on_touch = *react_to_on_touch;
+      if (react_to_on_damage.has_value()) list.react_to_on_damage = *react_to_on_damage;
+      if (respond_to_object.has_value()) list.respond_to_object = *respond_to_object;
+      if (respond_to_pc.has_value()) list.respond_to_pc = *respond_to_pc;
+      if (respond_to_npc.has_value()) list.respond_to_npc = *respond_to_npc;
+      if (max_activation_count.has_value()) list.max_activation_count = *max_activation_count;
+      if (retrigger_delay_sec.has_value()) list.retrigger_delay_sec = *retrigger_delay_sec;
+      if (damage_threshold.has_value()) list.damage_threshold = *damage_threshold;
+      if (fire_delay_sec.has_value()) list.fire_delay_sec = *fire_delay_sec;
+      if (mode) list.mode = *mode;
+      break;
+    }
+    // The three booleans that steer the slave sequence -- the one class of this
+    // group with no enum at all. What held it out is `slaves`, an unbounded
+    // list, and the two target strings that go with the rest of the family's;
+    // these three were held out with them.
+    case zenkit::VirtualObjectType::zCCodeMaster: {
+      RequireClassKeys(env, props, {"ordered", "firstFalseIsFailure", "untriggeredCancels"},
+                       class_name);
+      auto const ordered = OptionalBool(env, props, "ordered");
+      auto const first_false_is_failure = OptionalBool(env, props, "firstFalseIsFailure");
+      auto const untriggered_cancels = OptionalBool(env, props, "untriggeredCancels");
+      auto& master = static_cast<zenkit::VCodeMaster&>(*vob);
+      if (ordered.has_value()) master.ordered = *ordered;
+      if (first_false_is_failure.has_value()) {
+        master.first_false_is_failure = *first_false_is_failure;
+      }
+      if (untriggered_cancels.has_value()) master.untriggered_cancels = *untriggered_cancels;
+      break;
+    }
+    // Both of this class's fields, and both are enums: what an incoming
+    // `OnTrigger` and an incoming `OnUntrigger` are turned into before being
+    // passed on. `target` is the third field and is held out with the rest of
+    // the family's cross-reference strings, which is why the class carried
+    // nothing editable at all until the enums landed.
+    case zenkit::VirtualObjectType::zCMessageFilter: {
+      RequireClassKeys(env, props, {"onTrigger", "onUntrigger"}, class_name);
+      auto const on_trigger = OptionalEnum<zenkit::MessageFilterAction>(env, props, "onTrigger");
+      auto const on_untrigger =
+          OptionalEnum<zenkit::MessageFilterAction>(env, props, "onUntrigger");
+      auto& filter = static_cast<zenkit::VMessageFilter&>(*vob);
+      if (on_trigger) filter.on_trigger = *on_trigger;
+      if (on_untrigger) filter.on_untrigger = *on_untrigger;
+      break;
+    }
+    // A damage volume, whole: what it deals, the eight damage types it deals it
+    // as, how often, and how the collision is tested. It derives straight from
+    // `zCVob` and shares nothing with the movable-object family it is placed
+    // beside, and nothing on it is a list, a cross-reference string or
+    // save-game-only -- so this case is the class, complete. `collision` is the
+    // one enum, and it is what kept the class authorable-with-nothing-editable
+    // after I4.
+    case zenkit::VirtualObjectType::oCTouchDamage: {
+      RequireClassKeys(env, props,
+                       {"damage", "barrier", "blunt", "edge", "fire", "fly", "magic", "point",
+                        "fall", "repeatDelaySec", "volumeScale", "collision"},
+                       class_name);
+      // The three floors are the catalogue's, and none has a maximum: a mod may
+      // deal more damage than retail's 1000, but none of "damage", "seconds
+      // between ticks" or "scale the box by" means anything below zero.
+      auto const damage = OptionalFloatIn(env, props, "damage", 0, std::nullopt);
+      auto const barrier = OptionalBool(env, props, "barrier");
+      auto const blunt = OptionalBool(env, props, "blunt");
+      auto const edge = OptionalBool(env, props, "edge");
+      auto const fire = OptionalBool(env, props, "fire");
+      auto const fly = OptionalBool(env, props, "fly");
+      auto const magic = OptionalBool(env, props, "magic");
+      auto const point = OptionalBool(env, props, "point");
+      auto const fall = OptionalBool(env, props, "fall");
+      auto const repeat_delay_sec = OptionalFloatIn(env, props, "repeatDelaySec", 0, std::nullopt);
+      auto const volume_scale = OptionalFloatIn(env, props, "volumeScale", 0, std::nullopt);
+      auto const collision = OptionalEnum<zenkit::TouchCollisionType>(env, props, "collision");
+      auto& touch = static_cast<zenkit::VTouchDamage&>(*vob);
+      if (damage) touch.damage = *damage;
+      if (barrier.has_value()) touch.barrier = *barrier;
+      if (blunt.has_value()) touch.blunt = *blunt;
+      if (edge.has_value()) touch.edge = *edge;
+      if (fire.has_value()) touch.fire = *fire;
+      if (fly.has_value()) touch.fly = *fly;
+      if (magic.has_value()) touch.magic = *magic;
+      if (point.has_value()) touch.point = *point;
+      if (fall.has_value()) touch.fall = *fall;
+      if (repeat_delay_sec) touch.repeat_delay_sec = *repeat_delay_sec;
+      if (volume_scale) touch.volume_scale = *volume_scale;
+      if (collision) touch.collision = *collision;
+      break;
+    }
     default:
       throw Napi::Error::New(env,
                              "no class properties are known for a " + std::string {class_name});

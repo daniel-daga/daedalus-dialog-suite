@@ -1110,7 +1110,8 @@ const I3_EXPECTED = {
     sendUntrigger: false, reactToOnTouch: true, respondToObject: true, respondToNpc: true,
   },
   // 44 retail lists: reached by an event and not by a touch (39). `mode` is ALL
-  // on every one of them, and it is an enum, so a placed list keeps it.
+  // on every one of them, and it is catalogued since 2026-08-30 — so a placed
+  // list starts on retail's own value and the grid can change it.
   zCTriggerList: {
     ...TRIGGER_BASE,
     sendUntrigger: false, reactToOnTouch: false, respondToObject: true, respondToNpc: true,
@@ -1149,8 +1150,8 @@ const I3_EXPECTED = {
     untriggeredCancels: false, slaves: [],
   },
   // 26 retail filters. Both actions are TRIGGER on the plurality (8 of 26
-  // each), and both are enums the catalogue holds no field for - so, like a
-  // sound's `mode`, what is chosen here is what a placed filter keeps.
+  // each). Both are catalogued since 2026-08-30, so this is where a placed
+  // filter starts rather than where it is stuck.
   zCMessageFilter: { target: '', onTrigger: 1, onUntrigger: 1 },
 };
 
@@ -2108,6 +2109,123 @@ test('class props written on an oCMobBed survive a save and reload', () => {
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// The four classes the enums brought in (level-editor.md §16.3, queue row 45).
+// Three of them -- the trigger list, the code master and the message filter --
+// were authorable with nothing editable from I3, and `oCTouchDamage` was the
+// same state from I4; what held each out was an enum, a list or a target
+// string, and only the enum half has changed. None of the four has a fixture
+// VOB (`BuildVisualVobTree` runs `1/3`...`1/19` and holds none of them), so each
+// test places one, which is also the only way a user reaches one the editor
+// made. Every value below differs from the construction's own default, so a
+// case that wrote nothing at all would read back the default and pass.
+const LATE_CLASS_WRITES = {
+  // The twelve it inherits from `VTrigger` plus the one field of its own that
+  // is neither the `targets` list nor a target string. `mode` 2 is RANDOM,
+  // against retail's uniform ALL and the construction's.
+  zCTriggerList: {
+    props: {
+      startEnabled: false, sendUntrigger: true, reactToOnTrigger: false, reactToOnTouch: true,
+      reactToOnDamage: true, respondToObject: false, respondToPc: false, respondToNpc: false,
+      maxActivationCount: 3, retriggerDelaySec: 1.5, damageThreshold: 42.5, fireDelaySec: 0.25,
+      mode: 2,
+    },
+    // The list and the two target strings the catalogue still holds out. A case
+    // that assigned a whole struct rather than member by member would clear
+    // them, and nothing above C++ would notice.
+    untouched: { target: '', vobTarget: '', targets: [] },
+  },
+  // The one of the four with no enum at all: three booleans that were held out
+  // with the slaves they steer. All three false on the construction.
+  zCCodeMaster: {
+    props: { ordered: true, firstFalseIsFailure: true, untriggeredCancels: true },
+    untouched: { target: '', failureTarget: '', slaves: [] },
+  },
+  // Both actions, and `onUntrigger` to NONE (0) -- the one value of the six no
+  // retail filter holds, which is exactly why it may be written: the catalogue
+  // offers the set without confining a world to it.
+  zCMessageFilter: {
+    props: { onTrigger: 5, onUntrigger: 0 },
+    untouched: { target: '' },
+  },
+  // Twelve fields and the class is complete: nothing on `VTouchDamage` is a
+  // list, a cross-reference string or save-game-only. Every boolean is the
+  // opposite of the construction's (which deals point damage alone), the
+  // collision is POINT against retail's uniform BOX, and there is nothing left
+  // to leave untouched.
+  oCTouchDamage: {
+    props: {
+      damage: 25.5, barrier: true, blunt: true, edge: true, fire: true,
+      fly: true, magic: true, point: false, fall: true,
+      repeatDelaySec: 0.25, volumeScale: 2.5, collision: 2,
+    },
+    untouched: {},
+  },
+};
+
+for (const [className, { props, untouched }] of Object.entries(LATE_CLASS_WRITES)) {
+  test(`setVobClassProp writes every catalogued key of a placed ${className}`, () => {
+    const handle = load();
+    const at = zenkit.insertVob(handle, null, { class: className, position: [1, 2, 3] });
+
+    zenkit.setVobClassProp(handle, at, props);
+
+    const read = zenkit.getVobProps(handle, at);
+    assert.strictEqual(read.class, className);
+    for (const [key, value] of Object.entries(props)) {
+      assert.deepStrictEqual(read[key], value, `${className}.${key}`);
+    }
+    for (const [key, value] of Object.entries(untouched)) {
+      assert.deepStrictEqual(read[key], value, `${className}.${key} (held out)`);
+    }
+  });
+
+  test(`class props written on a placed ${className} survive a save and reload`, () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zk-late-'));
+    try {
+      const handle = load();
+      const at = zenkit.insertVob(handle, null, { class: className, position: [1, 2, 3] });
+      zenkit.setVobClassProp(handle, at, props);
+      const before = zenkit.getVobProps(handle, at);
+
+      const out = path.join(dir, 'late.zen');
+      zenkit.saveWorld(handle, out);
+      const read = zenkit.getVobProps(zenkit.loadWorld(out, 'g2'), at);
+
+      assert.strictEqual(read.class, className);
+      assert.deepStrictEqual(read, before);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test(`setVobClassProp refuses a foreign key on a ${className}, naming the class`, () => {
+    const handle = load();
+    const at = zenkit.insertVob(handle, null, { class: className, position: [0, 0, 0] });
+
+    // A light's, and the two the catalogue holds out on these very classes: a
+    // target string and a list. "Real on some other class" is the mistake this
+    // op carries a class name to catch.
+    for (const bad of [{ range: 500 }, { target: 'X' }, { targets: [] }, { slaves: [] }]) {
+      if (className === 'zCTriggerList' && 'targets' in bad) continue;
+      assert.throws(() => zenkit.setVobClassProp(handle, at, bad),
+        new RegExp(className), `${className} ${Object.keys(bad)[0]}`);
+    }
+  });
+}
+
+test('setVobClassProp keeps an out-of-set action on a message filter', () => {
+  // The whole of §16.21 from the writing end, on the class with the widest
+  // spread of stored enum values in retail: a value no `MessageFilterAction`
+  // names crosses the binding unchanged, so an undo can write back what a world
+  // held before the editor ever saw it.
+  const handle = load();
+  const at = zenkit.insertVob(handle, null, { class: 'zCMessageFilter', position: [0, 0, 0] });
+
+  zenkit.setVobClassProp(handle, at, { onTrigger: 4294967295 });
+
+  assert.strictEqual(zenkit.getVobProps(handle, at).onTrigger, 4294967295);
 });
 
 test('setVobClassProp writes one key of these classes without touching its siblings', () => {
