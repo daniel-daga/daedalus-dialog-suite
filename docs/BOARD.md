@@ -142,9 +142,8 @@ with nobody watching, ordered: the 2026-07 defects, the production-readiness
 and simulator backlogs, and the level editor's measurements. Triaged against
 the tree 2026-08-30, each verified still open. **Take the top unclaimed row and
 cross it off in the same commit; a run may not add rows.**
-`unattended-queue.md` — rows 1-10 landed 2026-08-30; row 11 is `updateModel`
-and `_applyHistoryModelUpdate` being byte-identical and neither clearing
-`saveError`.
+`unattended-queue.md` — rows 1-11 landed 2026-08-30; row 12 is encoding
+detection flipping a whole cp1252 file to cp1250 on one accented byte.
 
 **World surface, from Daniel's own sessions 2026-08-30 — all at §16.24.** None
 needs the engine; the order is a guess at his, so move it.
@@ -227,6 +226,6 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **Unattended queue row 10** (board-loop) — `openProject` rethrows after recording
-  `loadError`, so `App`'s catch shows the failure instead of leaving the user on the
-  welcome screen. `loadError` is still write-only: the other half of 2026-07 **2.1**
+- **Unattended queue row 11** (board-loop) — `updateModel` clears `saveError` and
+  `_applyHistoryModelUpdate` delegates to it, so a stale save failure no longer survives
+  an edit and there is one body instead of two identical ones

@@ -378,6 +378,7 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       fileState.semanticModel = model;
       fileState.isDirty = true;
       fileState.autoSaveError = undefined;
+      fileState.saveError = undefined;
     });
   },
 
@@ -930,15 +931,7 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
   },
 
   _applyHistoryModelUpdate: (filePath: string, model: SemanticModel) => {
-    set((state) => {
-      const fileState = state.openFiles.get(filePath);
-      if (!fileState) {
-        return;
-      }
-      fileState.semanticModel = model;
-      fileState.isDirty = true;
-      fileState.autoSaveError = undefined;
-    });
+    get().updateModel(filePath, model);
   },
 
   _markFileDirty: (filePath: string) => {

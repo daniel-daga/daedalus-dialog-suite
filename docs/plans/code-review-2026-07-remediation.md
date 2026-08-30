@@ -123,9 +123,10 @@ Renderer stores:
 - [x] **4.3 `clearSearch` cancels the in-flight search** — **landed 2026-08-30.** It bumps
       `currentSearchId` and sets `isSearching: false`, so a chunked search that was mid-yield
       fails both cancellation guards and returns without writing its results.
-- [ ] 4.5 `updateModel` (`fileStore.ts:372-382`) and `_applyHistoryModelUpdate` (`:932-942`) have
-      byte-identical bodies, and neither clears `saveError` though every sibling mutator does
-      (`:393, 417, 452, 476, 499, 539, 648, 681`). Dedupe and clear.
+- [x] **4.5 `updateModel` clears `saveError`, and is the only copy** — **landed 2026-08-30.**
+      `_applyHistoryModelUpdate` now delegates to it, so an undo/redo and a direct model
+      write clear the same two fields; both cleared only `autoSaveError` before, leaving a
+      stale save failure on screen after the user had edited the file.
 - [ ] 4.7 Case-sensitivity divergence: `quest/domain/graph.ts:36` does an exact-case
       `TOPIC_` to `MIS_` replace and `questNodeIdentification.ts:106, 147, 160, 271` compare with
       `===`, while `utils/questIdentity.ts:15-17` is case-insensitive.
