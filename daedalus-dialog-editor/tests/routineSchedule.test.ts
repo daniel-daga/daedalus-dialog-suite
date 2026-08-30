@@ -1,7 +1,8 @@
-import type { RoutineSite } from '../src/shared/types';
+import type { RoutineSite, SpawnSite } from '../src/shared/types';
 import {
   coverageOf,
   placementsAt,
+  placementWaypointsAt,
   MINUTES_PER_DAY
 } from '../src/renderer/routines/routineSchedule';
 
@@ -171,6 +172,124 @@ describe('routine schedule', () => {
       expect(coverageOf(sites, 'RTN_B').gaps).toEqual([
         { startMinute: at(9), endMinute: at(8) }
       ]);
+    });
+  });
+
+  describe('placementWaypointsAt', () => {
+    // What the overlay draws once a time is set (§16.19 slice 5's UI half). It
+    // is two lists, not one, because the day splits NPCs three ways and only
+    // one of the three is a position the script actually states: an NPC whose
+    // routine covers the minute is *known*, and an NPC whose routine has a hole
+    // there — or who declares no routine at all — is *unknown* and can only be
+    // drawn at the static spawn `Wld_InsertNpc` gave him. Merging the two would
+    // assert a position the script does not.
+
+    const spawn = (instance: string, spawnPoint: string): SpawnSite => ({
+      instance,
+      spawnPoint,
+      filePath: `/test/Startup.d`,
+      functionName: 'STARTUP_NEWWORLD',
+      line: 1
+    });
+
+    it('puts an NPC whose routine covers the minute on the routine waypoint', () => {
+      const index = {
+        sites: [entry('RTN_DAY', at(8), at(22), 'WP_MARKET')],
+        routinesByNpc: { BAU_900_FARIM: 'RTN_DAY' }
+      };
+
+      const at12 = placementWaypointsAt(index, [spawn('BAU_900_FARIM', 'WP_HOME')], at(12));
+      expect(at12.known).toEqual(['WP_MARKET']);
+      expect(at12.unknown).toEqual([]);
+    });
+
+    it('falls back to the static spawn where the routine has a hole', () => {
+      // The routine says nothing about 03:00, so the only position anything
+      // states for him is where he was inserted — and that is a different fact
+      // from "the script puts him here now", which is why it comes back in the
+      // other list.
+      const index = {
+        sites: [entry('RTN_DAY', at(8), at(22), 'WP_MARKET')],
+        routinesByNpc: { BAU_900_FARIM: 'RTN_DAY' }
+      };
+
+      const at3 = placementWaypointsAt(index, [spawn('BAU_900_FARIM', 'WP_HOME')], at(3));
+      expect(at3.known).toEqual([]);
+      expect(at3.unknown).toEqual(['WP_HOME']);
+    });
+
+    it('treats an NPC with no declared routine as unknown at every minute', () => {
+      const index = { sites: [], routinesByNpc: {} };
+
+      expect(placementWaypointsAt(index, [spawn('GRD_200_XARDAS', 'WP_TOWER')], at(12))).toEqual({
+        known: [],
+        unknown: ['WP_TOWER']
+      });
+    });
+
+    it('draws both waypoints of an overlap, because the module picks no winner', () => {
+      // `placementsAt` refuses a precedence on purpose — nothing in the format
+      // or in ZenKit says which entry the engine takes. An NPC in two places is
+      // the honest picture of a routine that says so.
+      const index = {
+        sites: [
+          entry('RTN_DAY', at(8), at(14), 'WP_MARKET'),
+          entry('RTN_DAY', at(12), at(18), 'WP_FIELD')
+        ],
+        routinesByNpc: { BAU_900_FARIM: 'RTN_DAY' }
+      };
+
+      expect(placementWaypointsAt(index, [], at(13)).known.sort()).toEqual(['WP_FIELD', 'WP_MARKET']);
+    });
+
+    it('names a waypoint once however many NPCs stand on it', () => {
+      // One marker per point is the overlay's rule (§16.19 slice 4); who they
+      // are is the waypoint panel's answer.
+      const index = {
+        sites: [entry('RTN_DAY', 0, 0, 'WP_MARKET')],
+        routinesByNpc: { BAU_900_FARIM: 'RTN_DAY', BAU_901_HAKON: 'RTN_DAY' }
+      };
+
+      expect(placementWaypointsAt(index, [], at(9)).known).toEqual(['WP_MARKET']);
+    });
+
+    it('keeps a point out of the unknown list when it is already a known one', () => {
+      // Both lists are drawn, so a point in both would get two markers in two
+      // colours on one spot and the dimmer one would be pure noise. Known wins:
+      // the marker says the script places somebody here at this minute, which
+      // is the stronger of the two facts.
+      const index = {
+        sites: [entry('RTN_DAY', at(8), at(22), 'WP_MARKET')],
+        routinesByNpc: { BAU_900_FARIM: 'RTN_DAY' }
+      };
+      const spawns = [spawn('BAU_900_FARIM', 'WP_HOME'), spawn('GRD_200_XARDAS', 'WP_MARKET')];
+
+      const noon = placementWaypointsAt(index, spawns, at(12));
+      expect(noon.known).toEqual(['WP_MARKET']);
+      expect(noon.unknown).toEqual([]);
+    });
+
+    it('draws a routine placement for an NPC no spawn site names', () => {
+      // World scoping is the waynet's job, not this one's: the overlay drops a
+      // waypoint the world has not got. An NPC inserted by something the index
+      // cannot read still has a routine, and dropping him here would hide it.
+      const index = {
+        sites: [entry('RTN_DAY', 0, 0, 'WP_MARKET')],
+        routinesByNpc: { BAU_900_FARIM: 'RTN_DAY' }
+      };
+
+      expect(placementWaypointsAt(index, [], at(12)).known).toEqual(['WP_MARKET']);
+    });
+
+    it('reports every spawn as unknown when the index is empty', () => {
+      // An empty index means nothing is known, never that nothing is legal —
+      // so with no project open every marker is drawn, and drawn as unknown.
+      const spawns = [spawn('A', 'WP_ONE'), spawn('B', 'WP_TWO')];
+
+      expect(placementWaypointsAt({ sites: [], routinesByNpc: {} }, spawns, at(12))).toEqual({
+        known: [],
+        unknown: ['WP_ONE', 'WP_TWO']
+      });
     });
   });
 

@@ -14,6 +14,7 @@ import type { SpawnSite } from '../../../shared/types';
 import { DampedTransformControls } from '../../world/DampedTransformControls';
 import { WaynetOverlay } from '../../world/WaynetOverlay';
 import { SpawnOverlay } from '../../world/SpawnOverlay';
+import type { RoutineIndex } from '../../routines/routineSchedule';
 import { TerrainMarker } from '../../world/TerrainMarker';
 import { WorldScene, textureCacheFor, type TextureCache } from '../../world/WorldScene';
 import { BvhBuilder } from '../../world/BvhBuilder';
@@ -116,6 +117,17 @@ export interface WorldViewportProps {
    */
   spawns: readonly SpawnSite[];
   showSpawns: boolean;
+  /**
+   * The project's daily routines, for the time slider (§16.19 slice 5). Empty
+   * on the same terms as `spawns`: nothing is known, not nobody has a routine.
+   */
+  routines: RoutineIndex;
+  /**
+   * The minute of the day the spawn layer is showing, or null for the static
+   * spawns. Null is the slider switched off rather than midnight — where an
+   * NPC stands at 00:00 is a question the routines answer and this is not.
+   */
+  spawnTime: number | null;
   loadTexture: (name: string, maxSize: number) => Promise<DecodedTexture | null>;
   /**
    * A click's result: the VOB that was hit, or the point on the world mesh in
@@ -288,7 +300,8 @@ function rowMajor(matrix: THREE.Matrix4): ZenRotation {
 }
 
 const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(({
-  mesh, visuals, bbox, waynet, showWaynet, spawns, showSpawns, loadTexture, onPick,
+  mesh, visuals, bbox, waynet, showWaynet, spawns, showSpawns, routines, spawnTime,
+  loadTexture, onPick,
   selection, onTranslateSelection, gizmoMode, onRotateSelection, appliedOps,
   selectedWaypoint, terrainPoint, exposure, hiddenVobs, snapGrid, snapAngle,
   onSelectWaypoint, onMoveWaypoint, paused = false,
@@ -1145,7 +1158,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     const world = sceneRef.current;
     if (world === null || waynet === null) return;
 
-    const overlay = new SpawnOverlay(waynet, spawns);
+    const overlay = new SpawnOverlay(waynet, spawns, routines);
     spawnOverlayRef.current = overlay;
     world.root.add(overlay.root);
 
@@ -1154,11 +1167,18 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       overlay.dispose();
       spawnOverlayRef.current = null;
     };
-  }, [waynet, spawns, mesh, visuals]);
+  }, [waynet, spawns, routines, mesh, visuals]);
 
   useEffect(() => {
     spawnOverlayRef.current?.setVisible(showSpawns);
-  }, [showSpawns, waynet, spawns, mesh, visuals]);
+  }, [showSpawns, waynet, spawns, routines, mesh, visuals]);
+
+  // The same rebuild dependencies as the two above, and for the third time the
+  // same reason: a fresh overlay draws the static spawns, so without them a
+  // structural op silently resets an open slider to no time at all.
+  useEffect(() => {
+    spawnOverlayRef.current?.setTime(spawnTime);
+  }, [spawnTime, waynet, spawns, routines, mesh, visuals]);
 
   // The marker for the picked point, built and torn down exactly like the
   // overlay above — under the scene's converted root, so it needs no conversion

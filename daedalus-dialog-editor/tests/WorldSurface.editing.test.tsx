@@ -45,6 +45,10 @@ let mockShowWaynet: boolean | undefined;
 /** The spawn markers the viewport is told to draw, and whether to show them. */
 let mockSpawns: readonly unknown[] | undefined;
 let mockShowSpawns: boolean | undefined;
+/** The routine index the viewport is handed, and the minute it draws — null is
+ *  the time slider switched off, which is the static spawns. */
+let mockRoutines: { sites: readonly unknown[]; routinesByNpc: Record<string, string> } | undefined;
+let mockSpawnTime: number | null | undefined;
 /** The steps the viewport is told to quantise a drag to. */
 let mockSnapGrid: number | undefined;
 let mockSnapAngle: number | undefined;
@@ -97,6 +101,8 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
     showWaynet: boolean;
     spawns: readonly unknown[];
     showSpawns: boolean;
+    routines: { sites: readonly unknown[]; routinesByNpc: Record<string, string> };
+    spawnTime: number | null;
     onSelectWaypoint: (waypoint: number | null) => void;
     onMoveWaypoint: (
       waypoint: number,
@@ -120,6 +126,8 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
     mockShowWaynet = props.showWaynet;
     mockSpawns = props.spawns;
     mockShowSpawns = props.showSpawns;
+    mockRoutines = props.routines;
+    mockSpawnTime = props.spawnTime;
     // The imperative surface drop-to-ground, align-to-normal and the scene
     // tree's camera jump call directly — see `WorldViewportHandle`'s doc —
     // stood in by jest.fns so the shell side can be tested without a WebGL
@@ -2224,6 +2232,104 @@ describe('a waypoint dragged in the viewport', () => {
 
       await waitFor(() => expect(mockShowSpawns).toBe(false));
       expect(mockWaynet).not.toBeNull();
+    });
+  });
+
+  describe('and moved through the day by the time slider (§16.19 slice 5)', () => {
+    // The shell's half: the control exists, it reaches the viewport as a
+    // minute, and it hands down the routine index the schedule reads. Where the
+    // markers actually land is `SpawnOverlay.test.ts` and `routineSchedule`'s.
+    const ROUTINES = [{
+      routine: 'RTN_START_FARIM', startMinute: 8 * 60, endMinute: 22 * 60,
+      waypoint: 'WP_MIDDLE', filePath: 'C:/Story/Rtn.d', line: 3,
+    }];
+
+    async function openWithSpawns() {
+      useProjectStore.setState({
+        spawnSiteIndex: [{
+          instance: 'BAU_900_FARIM', spawnPoint: 'WP_MIDDLE',
+          filePath: 'C:/Story/Startup.d', functionName: 'STARTUP_NEWWORLD', line: 12,
+        }],
+        routineSiteIndex: ROUTINES,
+        routineNpcIndex: { BAU_900_FARIM: 'RTN_START_FARIM' },
+      } as never);
+      await openWorld();
+      fireEvent.click(screen.getByTestId('world-spawns-toggle'));
+      await waitFor(() => expect(mockShowSpawns).toBe(true));
+    }
+
+    it('hands the routine index down beside the spawns', async () => {
+      await openWithSpawns();
+
+      expect(mockRoutines).toEqual({
+        sites: ROUTINES,
+        routinesByNpc: { BAU_900_FARIM: 'RTN_START_FARIM' },
+      });
+    });
+
+    it('offers no time control until the spawn layer is on', async () => {
+      // It has nothing else to change, so a control for a layer nobody is
+      // looking at is a control that does nothing visible.
+      await openWorld();
+
+      expect(screen.queryByTestId('world-time-toggle')).toBeNull();
+    });
+
+    it('draws the static spawns until a time is asked for', async () => {
+      // Null is the slider off, not midnight. The static spawns are a fact on
+      // their own and stay the default.
+      await openWithSpawns();
+
+      expect(mockSpawnTime).toBeNull();
+      expect(screen.queryByTestId('world-time')).toBeNull();
+    });
+
+    it('opens on a populated hour rather than on midnight', async () => {
+      await openWithSpawns();
+
+      fireEvent.click(screen.getByTestId('world-time-toggle'));
+
+      await waitFor(() => expect(mockSpawnTime).toBe(8 * 60));
+      expect(screen.getByTestId('world-time-readout')).toHaveTextContent('08:00');
+    });
+
+    it('sends the minute the slider is moved to', async () => {
+      await openWithSpawns();
+      fireEvent.click(screen.getByTestId('world-time-toggle'));
+      await waitFor(() => expect(mockSpawnTime).toBe(8 * 60));
+
+      const slider = screen.getByTestId('world-time').querySelector('input')!;
+      fireEvent.change(slider, { target: { value: String(13 * 60 + 30) } });
+
+      await waitFor(() => expect(mockSpawnTime).toBe(13 * 60 + 30));
+      expect(screen.getByTestId('world-time-readout')).toHaveTextContent('13:30');
+    });
+
+    it('goes back to the static spawns when the time is switched off', async () => {
+      await openWithSpawns();
+      fireEvent.click(screen.getByTestId('world-time-toggle'));
+      await waitFor(() => expect(mockSpawnTime).toBe(8 * 60));
+
+      fireEvent.click(screen.getByTestId('world-time-toggle'));
+
+      await waitFor(() => expect(mockSpawnTime).toBeNull());
+    });
+
+    it('clears the time when the spawn layer itself is switched off', async () => {
+      // Otherwise a time set behind a hidden layer comes back with the layer,
+      // and whoever turns the spawns on gets a day-filtered set they did not
+      // ask for and no visible control saying so.
+      await openWithSpawns();
+      fireEvent.click(screen.getByTestId('world-time-toggle'));
+      await waitFor(() => expect(mockSpawnTime).toBe(8 * 60));
+
+      fireEvent.click(screen.getByTestId('world-spawns-toggle'));
+      await waitFor(() => expect(mockShowSpawns).toBe(false));
+
+      expect(mockSpawnTime).toBeNull();
+      fireEvent.click(screen.getByTestId('world-spawns-toggle'));
+      await waitFor(() => expect(mockShowSpawns).toBe(true));
+      expect(mockSpawnTime).toBeNull();
     });
   });
 

@@ -24,6 +24,7 @@ import {
 } from 'zen-world';
 import type { InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp } from '../../../shared/worldTypes';
 import { findFreePointVob, primaryVob, useWorldStore } from '../../store/worldStore';
+import { MINUTES_PER_DAY } from '../../routines/routineSchedule';
 import { useProjectStore } from '../../store/projectStore';
 import { vobModelOf } from '../../world/vobModel';
 import { DEFAULT_EXPOSURE, MAX_EXPOSURE, MIN_EXPOSURE } from '../../world/WorldScene';
@@ -74,6 +75,20 @@ interface WorldSurfaceProps {
   hidden?: boolean;
 }
 
+/**
+ * Where the slider starts when it is switched on. Mid-morning rather than
+ * midnight: the routines put most NPCs somewhere in the working day, so 08:00
+ * shows a populated world, and a slider opening on an empty one would read as a
+ * broken layer rather than as the hour it is.
+ */
+const DEFAULT_SPAWN_TIME = 8 * 60;
+
+/** Minutes since midnight as `HH:MM` — the routine index's own unit (§16.19). */
+function formatDayMinute(minute: number): string {
+  const hours = Math.floor(minute / 60);
+  return `${String(hours).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
+}
+
 const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const status = useWorldStore((s) => s.status);
   const summary = useWorldStore((s) => s.summary);
@@ -83,6 +98,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const selectedWaypoint = useWorldStore((s) => s.selectedWaypoint);
   const waypointSiteIndex = useProjectStore((s) => s.waypointSiteIndex);
   const spawnSiteIndex = useProjectStore((s) => s.spawnSiteIndex);
+  const routineSiteIndex = useProjectStore((s) => s.routineSiteIndex);
+  const routineNpcIndex = useProjectStore((s) => s.routineNpcIndex);
   const {
     beginOpen, openSucceeded, openFailed, selectVob, toggleVob, selectWaypoint,
   } = useWorldStore.getState();
@@ -123,6 +140,11 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    *  are the script's opinion of it, and reading one against the other is
    *  exactly the comparison a story author is making. */
   const [showSpawns, setShowSpawns] = useState(false);
+  /** The minute of the day the spawn layer is showing, or null for the static
+   *  spawns (§16.19 slice 5). Null is the slider off rather than midnight: where
+   *  an NPC stands at 00:00 is a thing the routines answer, and "no time chosen"
+   *  is not, so the two cannot share a value. */
+  const [spawnTime, setSpawnTime] = useState<number | null>(null);
   /** The name being typed into the add-waypoint dialog, or null when it is
    *  closed. A name is the whole of what a placed waypoint has to be told —
    *  the position is the terrain point and everything else the binding fixes —
@@ -294,9 +316,22 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   // The markers stand on waypoints, so the layer needs the payload the waynet
   // overlay needs. The open reads it already; this covers the case where that
   // read failed over a world that stayed open, which leaves it null.
+  // The two halves of the routine index arrive as separate store fields — one
+  // is keyed by routine and the other by NPC — and `routineSchedule` wants them
+  // together. Memoized because it is a viewport prop, and a fresh object every
+  // render would rebuild the overlay on every render.
+  const routines = useMemo(
+    () => ({ sites: routineSiteIndex, routinesByNpc: routineNpcIndex }),
+    [routineSiteIndex, routineNpcIndex],
+  );
+
   const toggleSpawns = useCallback(async () => {
     const next = !showSpawns;
     setShowSpawns(next);
+    // The time control belongs to this layer and is only shown with it, so a
+    // time left set behind a hidden layer would come back on with the layer and
+    // surprise whoever turned it on expecting the spawns.
+    if (!next) setSpawnTime(null);
     if (next && waynet === null) setWaynet(await window.editorAPI.getWorldWaynet());
   }, [showSpawns, waynet]);
 
@@ -1456,6 +1491,50 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               Spawns
             </Button>
           )}
+          {/* The time of day the spawn layer answers for (§16.19 slice 5), and
+              it hangs off that layer rather than standing beside it because it
+              has nothing else to change. Off by default: the static spawns are
+              where `Wld_InsertNpc` puts an NPC and they are a fact on their own,
+              so the slider is an extra question and not a better default. What
+              it draws is two-coloured on purpose — the routines do not cover
+              every NPC at every minute, and the dim markers are the ones the
+              scripts leave unplaced rather than NPCs who are not there. */}
+          {summary && showSpawns && (
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Button
+                size="small"
+                variant={spawnTime === null ? 'outlined' : 'contained'}
+                onClick={() => setSpawnTime(spawnTime === null ? DEFAULT_SPAWN_TIME : null)}
+                data-testid="world-time-toggle"
+              >
+                Time
+              </Button>
+              {spawnTime !== null && (
+                <>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    noWrap
+                    sx={{ fontVariantNumeric: 'tabular-nums' }}
+                    data-testid="world-time-readout"
+                  >
+                    {formatDayMinute(spawnTime)}
+                  </Typography>
+                  <Slider
+                    size="small"
+                    min={0}
+                    max={MINUTES_PER_DAY - 1}
+                    step={5}
+                    value={spawnTime}
+                    onChange={(_event, next) => setSpawnTime(next as number)}
+                    aria-label="Time of day"
+                    data-testid="world-time"
+                    sx={{ width: 120 }}
+                  />
+                </>
+              )}
+            </Stack>
+          )}
           {/* Brightness, beside the other view toggles and deliberately not
               near anything that edits: ZenGin's lighting is baked into the
               vertex colours, so an interior is dark in the file and there is no
@@ -1839,6 +1918,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               showWaynet={showWaynet}
               spawns={spawnSiteIndex}
               showSpawns={showSpawns}
+              routines={routines}
+              spawnTime={spawnTime}
               loadTexture={loadTexture}
               onPick={handlePick}
               selection={selection}

@@ -1,4 +1,4 @@
-import type { RoutineSite } from '../../shared/types';
+import type { RoutineSite, SpawnSite } from '../../shared/types';
 
 /**
  * The daily schedule a project's routines describe — slice 2 of the Daedalus
@@ -69,6 +69,64 @@ export function placementsAt(index: RoutineIndex, minute: number): RoutinePlacem
     routine,
     entries: (byRoutine.get(routine) || []).filter((site) => windowCovers(site, minute))
   }));
+}
+
+/**
+ * The waypoints the spawn overlay draws at one minute, in two lists.
+ *
+ * Two rather than one because the day splits NPCs three ways and only one of
+ * the three is a position the script actually states. An NPC whose routine
+ * covers the minute is **known** — the script puts him there. An NPC whose
+ * routine has a hole there, and an NPC who declares no routine at all, are both
+ * **unknown**: the only position anything states for them is the static spawn
+ * `Wld_InsertNpc` gave them, which is where they were *inserted* and not where
+ * the script says they are now. Drawn in one list those two facts would be
+ * indistinguishable, and the weaker one would be read as the stronger.
+ *
+ * Waypoint names, not positions: resolving a name to a point needs the waynet,
+ * and the overlay is what holds it. That is also what scopes this to the world
+ * on screen — a waypoint the world has not got is dropped there, so an NPC
+ * whose routine names a waypoint in another world simply does not draw, and no
+ * filtering is needed here.
+ */
+export interface TimedPlacements {
+  /** Waypoints the script positively puts an NPC on at this minute. */
+  known: string[];
+  /** Static spawns of the NPCs whose position at this minute is not stated. */
+  unknown: string[];
+}
+
+export function placementWaypointsAt(
+  index: RoutineIndex,
+  spawns: readonly SpawnSite[],
+  minute: number
+): TimedPlacements {
+  const known = new Set<string>();
+  /** The NPCs a routine entry positions — the rest fall back to their spawn. */
+  const positioned = new Set<string>();
+
+  for (const placement of placementsAt(index, minute)) {
+    // Empty entries is "the script does not say", which is the unknown case and
+    // not a position. Every entry of an overlap is taken: `placementsAt` picks
+    // no winner on purpose, so an NPC the routine puts in two places is drawn
+    // in two places.
+    if (placement.entries.length === 0) continue;
+    positioned.add(placement.instance);
+    for (const entry of placement.entries) known.add(entry.waypoint);
+  }
+
+  const unknown = new Set<string>();
+  for (const site of spawns) {
+    if (positioned.has(site.instance)) continue;
+    // One marker per point (§16.19 slice 4), so a point in both lists would be
+    // two markers in two colours on one spot. Known wins: that the script
+    // places somebody here now is the stronger of the two facts, and who else
+    // is standing there is the waypoint panel's answer rather than a marker's.
+    if (known.has(site.spawnPoint)) continue;
+    unknown.add(site.spawnPoint);
+  }
+
+  return { known: [...known], unknown: [...unknown] };
 }
 
 /**

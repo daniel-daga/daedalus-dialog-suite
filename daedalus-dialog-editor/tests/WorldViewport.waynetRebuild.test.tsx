@@ -135,6 +135,8 @@ function props(visuals: InstancedPayload, payload: WaynetPayload, showWaynet: bo
     showWaynet,
     spawns: SPAWNS,
     showSpawns: true,
+    routines: { sites: [], routinesByNpc: {} },
+    spawnTime: null,
     loadTexture: async () => null,
     onPick: () => {},
     selection: [] as readonly number[],

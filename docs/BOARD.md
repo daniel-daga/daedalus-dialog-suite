@@ -168,12 +168,11 @@ needs the engine; the order is a guess at his, so move it.
   its own origin, so a centroid gizmo would show a pivot the op does not use.
   §16.24 2
 
-**Phase 1c — the overlay's last two, both at §16.19.** Data landed 2026-08-30;
-neither is blocked and the order between them is a guess.
+**Phase 1c — the overlay's last one, at §16.19.**
 
 - **The routine index's coverage has never been measured** — one command
-  against `mdk/Content`; it qualifies everything built on the index. §16.19 s6
-- **The time slider has no UI** — a UI workflow, so Playwright first. §16.19 s5
+  against `mdk/Content`; it qualifies everything built on the index. Now also
+  qualifies the slider: an hour it reads badly draws grey. §16.19 s6
 
 **Phase 1c / Phase 2 — world findings get a locus** (§7 decision, §16.20)
 
@@ -236,6 +235,6 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **Waypoint adding gets script integration** (Claude) — a `waypoint-not-in-world`
-  row now offers "Add to world", arming the add-waypoint dialog with the
-  script's own name; the dialog also autocompletes over every script waypoint. §14.2
+- **The time slider** (Claude) — the spawn markers draw the routines' answer for
+  a chosen minute, unplaced NPCs dimmed. No Playwright; the harness has no
+  world. §16.19 s7

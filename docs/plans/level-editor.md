@@ -1905,12 +1905,9 @@ That run is the first thing to do with this, and it is a board card:
   a fifth extraction pass over instance bodies or a semantic model in main,
   which `CLAUDE.md` records the main process deliberately not having. Slice 4
   draws markers because a marker needs only the position slice 1 already yields.
-- **The time slider's *data* is no longer the gap — its UI is.** This bullet
-  used to read that the `TA_*` windows were an extraction nothing does; slices 5
-  and 6 are that extraction and the schedule over it. What is left is a viewport
-  surface: a time control on the World bar, and `SpawnOverlay`'s markers moved
-  to `placementsAt`'s answer rather than to the static spawn point. That is a UI
-  workflow, so it wants a Playwright spec first, and it is a board card.
+- **The time slider is built — slice 7, below.** This bullet has now read three
+  ways: first that the `TA_*` windows were an extraction nothing does, then that
+  the extraction had landed and only the UI was missing. Both are answered.
 - **Occupancy is dead and gap/overlap are now a number away.** All three used to
   sit behind the world-locus wall §7 and §16.18 stood behind; that wall is down
   (§16.20 slices 1 and 2). Occupancy was then measured and killed its own check
@@ -1922,6 +1919,49 @@ That run is the first thing to do with this, and it is a board card:
   premise that nothing displayed a script-side waypoint name to click. That
   expired — `InsertNpcActionRenderer` displays one and §16.20 slice 2 built the
   navigation — and W4 landed 2026-08-29. See §7.
+
+**Slice 7 — the time slider itself.** Landed 2026-08-30. A *Time* button and a
+0–1439 slider on the World bar, hung off the *Spawns* toggle rather than beside
+it because it has nothing else to change, and `SpawnOverlay` drawing the minute
+instead of the static spawns.
+
+**It draws two layers, and that is the decision the slice turned on.** A minute
+splits the NPCs three ways and only one of the three is a position the scripts
+state: a routine covering the minute is a *placement*, while a routine with a
+hole there and an NPC declaring no `daily_routine` at all are both only their
+static spawn — the point they were *inserted* at, which is not a claim about
+this minute. Drawn in one colour those two are indistinguishable and the weaker
+fact reads as the stronger, so `placementWaypointsAt` returns them as two lists
+and the overlay draws the fallback smaller, dimmer and in `UNPLACED` grey.
+**This is also what keeps the unmeasured coverage visible:** slice 6's ratio is
+still unrun, so an hour the index reads badly shows as grey markers rather than
+as an empty world nothing explains. Known wins a point both lists reach — one
+marker per point is still the rule, and who is standing there is the waypoint
+panel's answer.
+
+Null is the slider **off**, not midnight: where an NPC stands at 00:00 is a
+thing the routines answer and "no time chosen" is not, so the two cannot share a
+value. It opens at 08:00 for the same reason — a slider opening on a sparse hour
+would read as a broken layer.
+
+Two mechanical notes worth not rediscovering. The marker buffers are allocated
+once at the waynet's size and drawn as a `drawRange`, because the slider
+rewrites both sets on every tick of a drag and replacing the attribute instead
+orphans its GPU buffer each time — `WebGLAttributes` frees one on the
+attribute's own dispose event, which a replaced attribute never fires. And
+`setTime` is re-applied on the overlay's rebuild dependencies, or a structural
+op silently resets an open slider to no time at all.
+
+**It has no Playwright spec, and the reason is §16.20 slice 2's exactly.** The
+browser harness has no world — `openWorld` is refused there by design — so
+`summary` is never set and the World bar never renders, which puts the *Waynet*
+and *Spawns* toggles equally out of reach. Daniel took the Jest route knowingly
+(2026-08-30): the toolbar wiring is pinned in `WorldSurface.editing.test.tsx`
+beside the spawn toggle's, the marker sets in `SpawnOverlay.test.ts`, and the
+day's arithmetic in `routineSchedule.test.ts`. **What none of them covers is
+that the markers move on screen**, and nothing here can until the harness gets a
+world; that is the same wall, not a new one, and it is why `world-render.spec.ts`
+exists on the real-Electron side.
 
 **Phase ordering note.** §11 schedules 1b-2 before 1c, and 1b-2 is not finished
 — but what remains of it on the board (Euler order against Spacer) needs Spacer
