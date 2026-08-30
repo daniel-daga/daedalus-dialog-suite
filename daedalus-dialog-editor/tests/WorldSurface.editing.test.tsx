@@ -49,6 +49,8 @@ let mockShowSpawns: boolean | undefined;
  *  the time slider switched off, which is the static spawns. */
 let mockRoutines: { sites: readonly unknown[]; routinesByNpc: Record<string, string> } | undefined;
 let mockSpawnTime: number | null | undefined;
+/** Whether the viewport is told to draw waypoint names over the world. */
+let mockShowWaypointNames: boolean | undefined;
 /** The steps the viewport is told to quantise a drag to. */
 let mockSnapGrid: number | undefined;
 let mockSnapAngle: number | undefined;
@@ -103,6 +105,7 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
     showSpawns: boolean;
     routines: { sites: readonly unknown[]; routinesByNpc: Record<string, string> };
     spawnTime: number | null;
+    showWaypointNames: boolean;
     onSelectWaypoint: (waypoint: number | null) => void;
     onMoveWaypoint: (
       waypoint: number,
@@ -128,6 +131,7 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
     mockShowSpawns = props.showSpawns;
     mockRoutines = props.routines;
     mockSpawnTime = props.spawnTime;
+    mockShowWaypointNames = props.showWaypointNames;
     // The imperative surface drop-to-ground, align-to-normal and the scene
     // tree's camera jump call directly — see `WorldViewportHandle`'s doc —
     // stood in by jest.fns so the shell side can be tested without a WebGL
@@ -2232,6 +2236,55 @@ describe('a waypoint dragged in the viewport', () => {
 
       await waitFor(() => expect(mockShowSpawns).toBe(false));
       expect(mockWaynet).not.toBeNull();
+    });
+  });
+
+  describe('named over the world (§16.19 slice 8)', () => {
+    // The shell's half again: the toggle appears when something is drawing
+    // waypoints, and reaches the viewport. Which names get drawn, and where, is
+    // `waypointLabels`' and `WaypointLabelLayer`'s.
+
+    it('offers no names toggle while nothing is drawing waypoints', async () => {
+      // Both layers off, so there is nothing on screen a name could sit on.
+      await openWorld();
+
+      expect(screen.queryByTestId('world-names-toggle')).toBeNull();
+    });
+
+    it('offers it with the waynet on, and hands the choice down', async () => {
+      await openWorld();
+      fireEvent.click(screen.getByTestId('world-waynet-toggle'));
+      await waitFor(() => expect(mockShowWaynet).toBe(true));
+      expect(mockShowWaypointNames).toBe(false);
+
+      fireEvent.click(screen.getByTestId('world-names-toggle'));
+
+      await waitFor(() => expect(mockShowWaypointNames).toBe(true));
+    });
+
+    it('offers it with only the spawn markers on', async () => {
+      // The markers stand on waypoints, so their names are exactly as askable
+      // there — and this is the case where the label layer draws the marked
+      // subset rather than the whole net.
+      useProjectStore.setState({ spawnSiteIndex: [] } as never);
+      await openWorld();
+      fireEvent.click(screen.getByTestId('world-spawns-toggle'));
+      await waitFor(() => expect(mockShowSpawns).toBe(true));
+
+      expect(screen.getByTestId('world-names-toggle')).toBeInTheDocument();
+    });
+
+    it('switches back off without touching either layer', async () => {
+      await openWorld();
+      fireEvent.click(screen.getByTestId('world-waynet-toggle'));
+      await waitFor(() => expect(mockShowWaynet).toBe(true));
+      fireEvent.click(screen.getByTestId('world-names-toggle'));
+      await waitFor(() => expect(mockShowWaypointNames).toBe(true));
+
+      fireEvent.click(screen.getByTestId('world-names-toggle'));
+
+      await waitFor(() => expect(mockShowWaypointNames).toBe(false));
+      expect(mockShowWaynet).toBe(true);
     });
   });
 

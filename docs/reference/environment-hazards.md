@@ -92,6 +92,23 @@ doc, not here. This file is only for the ground the code stands on.
   React 18 batches state updates, and a real driver dispatching a whole gesture
   in one `page.evaluate` reads state the handler has not flushed yet.
 
+## Playwright in the Claude Code cloud container
+
+- **The browser-harness suite cannot run there at all, and the failure does not
+  say so.** The image ships Playwright's browser build **1194** under
+  `/opt/pw-browsers`; the pinned `playwright` (1.58.1) wants **1208**, so every
+  spec fails at launch with `Executable doesn't exist at
+  …/chromium_headless_shell-1208/…`. Every spec failing at once, including ones
+  the change never touched, is the tell — check that before reading it as a
+  regression. Confirmed 2026-08-30 by re-running the same specs with the work
+  stashed: identical failure on a clean tree.
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` at the image's own
+  `chromium-1194/chrome-linux/chrome` **does not fix it** — the headless-shell
+  channel is resolved separately and is what the run asks for.
+- The container's own instructions say not to run `playwright install`, so the
+  suite is simply unavailable in that environment. Verify a UI change with Jest
+  and leave the E2E to CI and to Windows.
+
 ## The intermittent `3221226505`, and what it is not
 
 `npm run test:matrix:windows` exists to reproduce an intermittent

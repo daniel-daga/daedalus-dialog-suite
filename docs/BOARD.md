@@ -235,6 +235,7 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **The time slider** (Claude) — the spawn markers draw the routines' answer for
-  a chosen minute, unplaced NPCs dimmed. No Playwright; the harness has no
-  world. §16.19 s7
+- **The time slider, and waypoint names** (Claude) — the spawn markers draw the
+  routines' answer for a chosen minute with unplaced NPCs dimmed, and a *Names*
+  toggle labels the nearest 24 drawn waypoints. Neither has a Playwright
+  spec. §16.19 s7, s8

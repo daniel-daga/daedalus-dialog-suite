@@ -150,6 +150,18 @@ export class SpawnOverlay {
   }
 
   /**
+   * Every waypoint this layer currently draws a marker on, both colours.
+   *
+   * The name layer labels what is drawn and not the whole waynet: with only
+   * this layer on, a name over a waypoint carrying no marker is a name over
+   * nothing. Both lists, because an NPC the scripts leave unplaced is still an
+   * NPC somebody wants to find.
+   */
+  get labelledPoints(): number[] {
+    return [...this.points, ...this.unknownPoints];
+  }
+
+  /**
    * Draw the world as the scripts describe it at `minute`, or `null` for the
    * static spawns the layer has always drawn.
    *

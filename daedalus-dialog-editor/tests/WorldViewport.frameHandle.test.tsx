@@ -107,6 +107,7 @@ function props() {
     showSpawns: false,
     routines: { sites: [], routinesByNpc: {} },
     spawnTime: null,
+    showWaypointNames: false,
     loadTexture: async () => null,
     onPick: () => {},
     selection: [] as readonly number[],

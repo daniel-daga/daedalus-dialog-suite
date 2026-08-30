@@ -145,6 +145,11 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    *  an NPC stands at 00:00 is a thing the routines answer, and "no time chosen"
    *  is not, so the two cannot share a value. */
   const [spawnTime, setSpawnTime] = useState<number | null>(null);
+  /** Waypoint names drawn over the viewport (§16.19 slice 8). Its own toggle
+   *  rather than a property of the waynet's, because the dots and the names
+   *  answer different questions — where the net runs, and which waypoint this
+   *  one is — and one of them is wanted far more often than the other. */
+  const [showWaypointNames, setShowWaypointNames] = useState(false);
   /** The name being typed into the add-waypoint dialog, or null when it is
    *  closed. A name is the whole of what a placed waypoint has to be told —
    *  the position is the terrain point and everything else the binding fixes —
@@ -1535,6 +1540,23 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               )}
             </Stack>
           )}
+          {/* Waypoint names. Offered whenever something is drawing waypoints —
+              the waynet itself, or the spawn markers, which stand on them —
+              because it labels what is drawn rather than the whole net: with
+              only the spawns on, a name over an unmarked waypoint would point
+              at nothing. Only the nearest few are drawn whatever is on; a
+              retail world has ~3,000 waypoints and a name on each is neither
+              legible nor affordable. */}
+          {summary && (showWaynet || showSpawns) && (
+            <Button
+              size="small"
+              variant={showWaypointNames ? 'contained' : 'outlined'}
+              onClick={() => setShowWaypointNames(!showWaypointNames)}
+              data-testid="world-names-toggle"
+            >
+              Names
+            </Button>
+          )}
           {/* Brightness, beside the other view toggles and deliberately not
               near anything that edits: ZenGin's lighting is baked into the
               vertex colours, so an interior is dark in the file and there is no
@@ -1920,6 +1942,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               showSpawns={showSpawns}
               routines={routines}
               spawnTime={spawnTime}
+              showWaypointNames={showWaypointNames}
               loadTexture={loadTexture}
               onPick={handlePick}
               selection={selection}

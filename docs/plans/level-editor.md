@@ -1963,6 +1963,43 @@ that the markers move on screen**, and nothing here can until the harness gets a
 world; that is the same wall, not a new one, and it is why `world-render.spec.ts`
 exists on the real-Electron side.
 
+**Slice 8 — waypoint names over the world.** Landed 2026-08-30. A *Names*
+toggle, offered whenever something is drawing waypoints — the waynet, or the
+spawn markers, which stand on them.
+
+**It labels what is drawn, not what exists.** With the waynet on the candidates
+are every waypoint; with only the spawn layer on they are that layer's
+`labelledPoints`, both colours, because a name over an unmarked waypoint points
+at nothing. Only the nearest `LABEL_CAP` (24) survive: a retail world has ~3,000
+waypoints and a name on each is neither legible nor affordable, and nearest-first
+is what keeps the survivors around the camera instead of an arbitrary slice.
+
+**The layer is DOM, not Three.js, and that is the decision worth recording.**
+There is no text anywhere in this scene — no sprite, no canvas texture, no SDF
+font — so every option was new infrastructure, and the cheapest that is also the
+most legible is HTML over the canvas. The renderer's CSP allows
+`style-src 'unsafe-inline'` (`security-model.md`), which is what lets a
+transform go straight onto the element. Two consequences: the viewport host is
+now `position: relative`, or the labels resolve against the page; and nothing in
+the layer takes pointer events, because the viewport is entirely click-driven
+and a label over a dot that swallowed the click would make the waypoint you are
+looking at the one you cannot select, with nothing about the picture looking
+wrong.
+
+`chooseWaypointLabels` is `pickWaypoint`'s projection, guard for guard — a
+non-positive `w` is dropped rather than divided, or a waypoint behind the camera
+is labelled on the opposite side of the screen. Unlike the pick it runs in the
+draw loop: ~3,000 `Vector4` transforms, tens of microseconds against 16 ms, and
+only while the layer is on. The cap is on the DOM writes, so the write side does
+not grow with the world.
+
+**No Playwright here either, for slice 7's reason** — and in the cloud container
+the suite could not have been run anyway (`environment-hazards.md`, *"Playwright
+in the Claude Code cloud container"*). Jest covers the choice
+(`waypointLabels.test.ts`), the DOM layer (`WaypointLabelLayer.test.ts`) and the
+toggle (`WorldSurface.editing.test.tsx`); **that the names land on their dots on
+screen is still unwitnessed**, and it is the same wall, not a new one.
+
 **Phase ordering note.** §11 schedules 1b-2 before 1c, and 1b-2 is not finished
 — but what remains of it on the board (Euler order against Spacer) needs Spacer
 itself and a person, as do the Gate 2b `07` rows. These slices were carded by

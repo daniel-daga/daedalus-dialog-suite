@@ -21,6 +21,8 @@ import { BvhBuilder } from '../../world/BvhBuilder';
 import { VobPicker } from '../../world/VobPicker';
 import { NO_PICK } from '../../world/pickIds';
 import { pickWaypoint, NO_WAYPOINT } from '../../world/pickWaypoint';
+import { chooseWaypointLabels } from '../../world/waypointLabels';
+import { WaypointLabelLayer } from '../../world/WaypointLabelLayer';
 import { attachBlenderNav, frameOn, frameVobs, pivotAt } from '../../world/cameraNav';
 import { snapDelta, snapTurn } from '../../world/snapping';
 import {
@@ -128,6 +130,14 @@ export interface WorldViewportProps {
    * NPC stands at 00:00 is a question the routines answer and this is not.
    */
   spawnTime: number | null;
+  /**
+   * Draw the name of each nearby waypoint over it (§16.19 slice 8).
+   *
+   * What gets a name is what is *drawn*: every waypoint while the waynet is on,
+   * and otherwise the points the spawn layer is marking. A name over a dot that
+   * is not there labels nothing.
+   */
+  showWaypointNames: boolean;
   loadTexture: (name: string, maxSize: number) => Promise<DecodedTexture | null>;
   /**
    * A click's result: the VOB that was hit, or the point on the world mesh in
@@ -301,7 +311,7 @@ function rowMajor(matrix: THREE.Matrix4): ZenRotation {
 
 const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(({
   mesh, visuals, bbox, waynet, showWaynet, spawns, showSpawns, routines, spawnTime,
-  loadTexture, onPick,
+  showWaypointNames, loadTexture, onPick,
   selection, onTranslateSelection, gizmoMode, onRotateSelection, appliedOps,
   selectedWaypoint, terrainPoint, exposure, hiddenVobs, snapGrid, snapAngle,
   onSelectWaypoint, onMoveWaypoint, paused = false,
@@ -362,6 +372,13 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   // does not re-run when it is toggled.
   const showWaynetRef = useRef(showWaynet);
   showWaynetRef.current = showWaynet;
+  // Read from the draw loop, so they are refs rather than dependencies: the
+  // loop is built once per world and must not be torn down to change a label.
+  const showNamesRef = useRef(showWaypointNames);
+  showNamesRef.current = showWaypointNames;
+  const showSpawnsRef = useRef(showSpawns);
+  showSpawnsRef.current = showSpawns;
+  const labelLayerRef = useRef<WaypointLabelLayer | null>(null);
   // Read through refs so a parent re-render cannot tear the scene down and
   // rebuild 31 MB of buffers just because a callback identity changed.
   const onPickRef = useRef(onPick);
@@ -910,9 +927,44 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     // that no `cancelAnimationFrame` can reach.
     let frame = 0;
     let running = false;
+    // Scratch for the label pass, separate from the pick's: this runs in the
+    // draw loop and the pick runs from an event, and sharing one matrix would
+    // couple them for no gain.
+    const labelClip = new THREE.Matrix4();
     const draw = () => {
       frame = requestAnimationFrame(draw);
       controls.update();
+
+      // Names, after `controls.update()` so they follow the camera in the same
+      // frame it moved rather than trailing it by one.
+      //
+      // It projects every waypoint — the same loop `pickWaypoint` runs, which
+      // its comment calls out as a per-click cost. Per frame it is ~3,000
+      // Vector4 transforms, tens of microseconds against a 16 ms budget, and it
+      // only runs while the layer is on. `chooseWaypointLabels` caps what
+      // reaches the DOM, so the write side does not grow with the world.
+      const labels = labelLayerRef.current;
+      const netOverlay = overlayRef.current;
+      if (labels !== null && netOverlay !== null && showNamesRef.current) {
+        // What is drawn, not what exists: the whole waynet when it is on, and
+        // otherwise only the points the spawn layer is marking.
+        const candidates = showWaynetRef.current
+          ? null
+          : (showSpawnsRef.current && spawnOverlayRef.current !== null)
+            ? spawnOverlayRef.current.labelledPoints
+            : [];
+        camera.updateMatrixWorld();
+        world.root.updateMatrixWorld();
+        labels.update(chooseWaypointLabels(
+          netOverlay.positions,
+          candidates,
+          labelClip.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+            .multiply(world.root.matrixWorld),
+          host.clientWidth || 1,
+          host.clientHeight || 1,
+        ));
+      }
+
       renderer.render(scene, camera);
     };
     const startDraw = () => {
@@ -1148,6 +1200,33 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     overlayRef.current?.setVisible(showWaynet);
   }, [showWaynet, waynet, mesh, visuals]);
 
+  // The name layer. DOM over the canvas rather than anything in the scene, so
+  // it is not tied to `mesh`/`visuals` the way the overlays are — a structural
+  // op rebuilds the scene and leaves this alone. It follows `waynet` because
+  // the names are the payload's.
+  useEffect(() => {
+    const host = hostRef.current;
+    if (host === null || waynet === null) return;
+
+    const layer = new WaypointLabelLayer(waynet.names);
+    layer.setVisible(false);
+    labelLayerRef.current = layer;
+    host.appendChild(layer.root);
+
+    return () => {
+      layer.dispose();
+      labelLayerRef.current = null;
+    };
+  }, [waynet]);
+
+  useEffect(() => {
+    labelLayerRef.current?.setVisible(showWaypointNames);
+    // A layer switched off keeps whatever the last frame left in it, and the
+    // draw loop stops updating it — so it is cleared here rather than left to
+    // reappear stale when it comes back on.
+    if (!showWaypointNames) labelLayerRef.current?.update([]);
+  }, [showWaypointNames, waynet]);
+
   // The spawn markers, built and torn down exactly like the waynet above and
   // for the same reasons — including `visuals`, or a structural op leaves them
   // on a root that has been disposed. `spawns` is a dependency because the
@@ -1284,7 +1363,15 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appliedOps]);
 
-  return <Box ref={hostRef} data-testid="world-viewport" sx={{ width: '100%', height: '100%', minHeight: 0 }} />;
+  // `position: relative` is what the name layer's absolute positioning resolves
+  // against — without it the labels are placed against the page.
+  return (
+    <Box
+      ref={hostRef}
+      data-testid="world-viewport"
+      sx={{ position: 'relative', width: '100%', height: '100%', minHeight: 0 }}
+    />
+  );
 });
 
 WorldViewport.displayName = 'WorldViewport';
