@@ -188,6 +188,11 @@ feedback, the Daedalus overlay, the multi-part workspace); that is §11's job.
 | 1.7 | **Visual assignment**, as opposed to rename | unscheduled → 1b-2 | `setVobProp.visual` renames in place and refuses any VOB whose visual type is `UNKNOWN` — 15,749 of the 41,393 retail VOBs, 38.0 % (§7). Assigning a visual has to decide the object's class; decals (`.TGA`) are refused outright. **The extension × class table is reproducible as of 2026-08-30** — `zenkit-node/scripts/check-visual-types.js` re-measures it over the corpus and reproduces every figure §7 quotes, `.3DS` being the one ambiguous extension (`MULTI_RESOLUTION_MESH` ×20,716 against `MESH` ×31). That settles the measurement the row was missing; the feature stays a decision. |
 | 1.8 | **The rest of `zCVob`** | **landed** (§7) | V1 landed 2026-08-28 — `SetVobProp` takes `presetName`, `visualCamAlign` and `bias`, bounded by the packed layout's bit fields rather than by their archive types. V2 landed the same day: `dynamicShadows` on the same two bits, and all seven fields of a decal visual, flat and prefixed. Two fields stay out and both by a fact rather than by time — `farClipScale`, because retail ships uninitialised junk in it (§7), and **`sleepMode`, because `VirtualObject` reads and writes it only under `is_save_game()`**, so a value set on a world archive never reaches the file. |
 
+**Not a gap either: a foliage/scatter brush.** Spacer has no paint tool — its
+whole placement verb is one right-click insert plus a physics drop. Carded
+anyway, as a past-Spacer feature, at §16.25; that section also holds the one
+Spacer *window* nothing here covers, the image-backed model browser.
+
 **Not a gap: scale.** `zCVob` has no scale field, so the two-mode gizmo is
 correct and a third mode would author a representation ZenGin does not have.
 
@@ -2705,3 +2710,66 @@ build, the two separate awaits in `applied` that produce *two* rebuilds per
 paste rather than one. A paste that rebuilds the scene twice in quick succession
 is the one shape the harness does not reproduce, because both its payload reads
 resolve in the same tick.
+
+### 16.25 Scatter placement — a tool Spacer does not have (2026-08-30)
+
+**Asked for by Daniel 2026-08-30 as "the foliage painting tool in Spacer".
+Checked: Spacer has no such tool.** The
+[GMC's Spacer reference](https://gothic-modding-community.github.io/gmc/zengin/worlds/spacer/)
+lists the whole of its VOB placement as *insert one VOB from the Create tab's
+right-click menu*, plus a physics button that drops the inserted object onto
+the terrain and a grid snap. There is no brush, no scatter, no multi-placement.
+What the search turns up under that name is **Spacer.NET**, the Union-based
+modernisation, whose own pitch is "maximum automation of the vobbing process" —
+a different tool, not the MDK Spacer §14 measures parity against.
+
+So this is not a §14 row and must not be filed as one: it is a **past-Spacer**
+feature, and its home is §11's question of where the editor goes beyond parity.
+It is carded because the request stands on its own merits — placing a forest one
+`AddVob` at a time is the single most tedious thing the World surface asks of a
+modder, and every piece it needs already exists.
+
+**What it would be built from, all of it already landed.** A scatter is N
+`AddVob`s in one batch with one undo entry, which is exactly what `duplicateVob-
+Subtree` + `commitOps` already do for a subtree paste (§14.1 1.2, D5); the
+per-VOB ground placement is `dropVobsToGround`/`alignVobsToNormal`, which
+already take per-VOB raycast hits and batch to one op per VOB (§14.1 1.6); the
+raycast is `WorldViewportHandle.raycastDown` against the existing BVH. Nothing
+in the op set, the validator or the binding has to change. That is the reason to
+believe the estimate: the work is a brush *interaction* over machinery that
+exists, not a new op.
+
+**What is undecided, and none of it is small.**
+
+- **What the brush paints.** A class plus a visual is not enough — retail
+  foliage is a set of visuals with a distribution (five bush meshes, not one),
+  so the tool needs a *palette* the user assembles, and nothing in the editor
+  stores one. Whether a palette is a project artefact, a settings blob or
+  transient per-session is the first decision.
+- **Where the models come from.** Spacer has *VOB Bilder*, an image-backed
+  browser of model names; we have a text field. See the separate gap below —
+  a scatter tool without a model browser is a tool you cannot pick a tree in.
+- **Randomisation, and its reproducibility.** Rotation about the up axis,
+  uniform scale — except `zCVob` **has no scale field** (§14.1's "Not a gap"),
+  so size variation is unavailable and a forest will read as clones. That is a
+  fact about the format the tool cannot design around, and it should be settled
+  before the interaction is built, not after.
+- **Density and the undo entry.** One stroke over a hillside is plausibly
+  hundreds of VOBs in one batch; §15's undo bar has never been shown a batch
+  that size, and neither has the structural re-read path (§16.24's two rebuilds
+  per paste is the same machinery).
+- **Erase.** The natural inverse of a paint stroke is a delete stroke, and
+  `DeleteVob` is the one op with no inverse and a history barrier (§14.1 1.1).
+  A scatter tool whose erase clears the undo history is worse than no erase.
+
+**A second gap the same check surfaced, unscheduled and not carded:** Spacer's
+**VOB Bilder** browses available model names *with images*; `insertVob` and
+`setVobProp.visual` both take a typed string, and there is no library view at
+all. It is a prerequisite for a usable scatter tool and it is independently
+useful for §14.1 1.3 and 1.7. Also absent, and deliberately noted here so the
+next parity question does not re-derive it: Spacer's first-person navigation
+modes (F3/M/T/C) and its two camera slots, against our orbit plus focus/frame.
+Everything else the GMC page lists is already in §14 — mesh-editor mode's
+triangle material assignment, portal setup, leak detection and polygon check
+under 3.4/3.6, the multi-ZEN macro system under 3.3, the physics drop under
+1.6, `cdDyn` under 1.8.

@@ -183,6 +183,9 @@ landed; one is left and it is the one that was never root-caused.
 
 **Phase 1b-2 — VOB editing**
 
+- **Scatter placement, past Spacer rather than parity** — Spacer has no paint
+  tool; the ops, the batch and the ground-drop all exist, so the work is the
+  brush and five decisions, one of which (no scale field) may sink it. §16.25
 - **Euler order is not measured against Spacer** — Y-X-Z was picked on retail
   singularity counts, not a Spacer match. Needs Spacer itself, and only two
   functions change if it differs. **Daniel.** §16.4
@@ -236,8 +239,4 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **The markers say who (§16.19 slice 14)** — with *Spawns* on, a labelled point
-  names the NPCs standing on it. **Forward fact: the world→script direction was
-  asked for and is not carded** — an *Insert NPC* button writing
-  `Wld_InsertNpc` into `STARTUP_<worldfile>`, plus a world-directory setting;
-  long form is slice 14's last paragraph.
+*(empty — flushed 2026-08-30; the Insert NPC forward fact is carded in Next)*
