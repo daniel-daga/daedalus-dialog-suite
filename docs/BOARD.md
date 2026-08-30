@@ -183,6 +183,9 @@ landed; one is left and it is the one that was never root-caused.
 
 **Phase 1b-2 — VOB editing**
 
+- **Three gaps §14 never inventoried** — a model browser (both Spacers ship
+  one; it gates 1.3, 1.7 and the scatter tool), chest contents (the first list
+  field), first-person navigation. §16.26
 - **Scatter placement, past Spacer rather than parity** — Spacer has no paint
   tool; the ops, the batch and the ground-drop all exist, so the work is the
   brush and five decisions, one of which (no scale field) may sink it. §16.25
@@ -239,4 +242,4 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-*(empty — flushed 2026-08-30; the Insert NPC forward fact is carded in Next)*
+*(empty)*

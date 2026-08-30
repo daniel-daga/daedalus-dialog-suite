@@ -190,8 +190,9 @@ feedback, the Daedalus overlay, the multi-part workspace); that is §11's job.
 
 **Not a gap either: a foliage/scatter brush.** Spacer has no paint tool — its
 whole placement verb is one right-click insert plus a physics drop. Carded
-anyway, as a past-Spacer feature, at §16.25; that section also holds the one
-Spacer *window* nothing here covers, the image-backed model browser.
+anyway, as a past-Spacer feature, at §16.25 — and neither does Spacer.NET, so
+it is invention rather than catch-up. The *windows and modes* this inventory
+never covered are §16.26.
 
 **Not a gap: scale.** `zCVob` has no scale field, so the two-mode gizmo is
 correct and a third mode would author a representation ZenGin does not have.
@@ -2773,3 +2774,61 @@ Everything else the GMC page lists is already in §14 — mesh-editor mode's
 triangle material assignment, portal setup, leak detection and polygon check
 under 3.4/3.6, the multi-ZEN macro system under 3.3, the physics drop under
 1.6, `cdDyn` under 1.8.
+
+### 16.26 Three gaps §14 never inventoried, and Spacer.NET's own list (2026-08-30)
+
+**Spacer.NET has no foliage brush either.** Its published feature list — the
+same twelve items on the
+[GitHub repo](https://github.com/postm1/SpacerNET_Interface) and the
+[Steam Workshop page](https://steamcommunity.com/sharedfiles/filedetails/?id=3261221886)
+— is entirely VOB-editing quality of life: hierarchical copy, reparenting,
+collision-free manipulation, preview models, PFX and item support, VobTree
+support, chest-contents editing, Union extended classes, FPS/VOB counters. No
+brush, no scatter, no randomised or mass placement anywhere in it. So the
+scatter tool of §16.25 is not a thing we lack — **it does not exist anywhere in
+the ZenGin tooling lineage**, and building it is invention, not catch-up. That
+is worth knowing before it is estimated: there is no reference implementation
+to copy and no modder muscle memory to match.
+
+Reading that list against ours also settles two things that look like gaps and
+are not. **Reparenting is landed** — `ReparentVob` is validated in
+`ipcValidation.ts` and driven by drag-and-drop in `WorldSceneTree` — CLAUDE.md
+tells its "shipped refused" story in the past tense, as the cautionary tale it
+is, and that reads as a live gap on a fast skim. **Hierarchical
+copy is landed** (§14.1 1.2 D5). What is genuinely missing is below.
+
+**1. A model browser.** Spacer's *VOB Bilder* and Spacer.NET's *preview models*
+are the same thing from both editors: browse the available visuals by name,
+with an image. We have a text field in `insertVob` and in `setVobProp.visual`,
+so choosing a mesh means already knowing its name. Two independent editors
+shipping it is the strongest parity signal in this section, and it gates three
+other rows — §14.1 1.3 (class-specific insertion picks a visual), 1.7 (visual
+assignment *is* picking a visual) and §16.25 (a scatter palette is a multi-
+selection of them). **What it costs is not UI work but asset work**: the visuals
+live in `.VDF`/`.MOD` volumes as `.MRM`/`.MDL`/`.MDM`, ZenKit reads them, and a
+thumbnail means rendering each one offline and caching it. Whether the browser
+is name-only first (cheap, a searchable list off the volume index) or
+image-backed (the actual parity) is the decision to take before any of it.
+
+**2. Container contents.** Spacer.NET calls it "convenient editing of chests
+contents". `oCMobContainer`'s catalogue is the thirteen `oCMobInter` fields plus
+`locked` and `pickString` — the item list itself is not there, because it is a
+**list field, and list fields are out of `SetVobClassProp` by decision** (§14.1
+1.4): they would be the first unbounded payload in the op set. So this is not an
+oversight to correct but the first concrete demand for the thing that decision
+deferred, and it should be the case that reopens it. Note the cross-reference
+problem it inherits from `oCItem.instance`: contents are Daedalus item symbols,
+so validation splits across the IPC boundary exactly as that field's did, and
+"nothing is known" must not mean "nothing is legal".
+
+**3. First-person navigation.** Spacer has four movement modes (F3, M, T, C)
+and two camera slots; we have orbit, focus-on-selection and frame-world. A
+modder placing objects along a path walks it in Spacer. This is the cheapest of
+the three — it is `renderer/world/cameraNav` and no op, no binding, no
+validator — and it is the one with a real design question hiding in it: a
+walk mode wants collision against the world mesh to be useful, and the BVH that
+would answer that is already built for picking.
+
+None of the three is scheduled. They are carded as one line because they share
+a cause — §14 was assembled against Spacer's *verbs*, and these are its
+*windows and modes*, which nobody enumerated until 2026-08-30.
