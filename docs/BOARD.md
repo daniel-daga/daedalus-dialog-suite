@@ -181,9 +181,9 @@ landed; one is left and it is the one that was never root-caused.
 
 **Phase 1b-2 — VOB editing**
 
-- **Three gaps §14 never inventoried** — a model browser (both Spacers ship
-  one; it gates 1.3, 1.7 and the scatter tool), chest contents (the first list
-  field), first-person navigation. §16.26
+- **Three gaps §14 never inventoried** — a mesh preview + picker for the VFS
+  browser that already exists (gates 1.3, 1.7 and the scatter tool), chest
+  contents (the first list field), first-person navigation. §16.26
 - **Scatter placement, past Spacer rather than parity** — Spacer has no paint
   tool; the ops, the batch and the ground-drop all exist, so the work is the
   brush and five decisions, one of which (no scale field) may sink it. §16.25

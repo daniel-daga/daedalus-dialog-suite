@@ -2790,9 +2790,10 @@ exists, not a new op.
   so the tool needs a *palette* the user assembles, and nothing in the editor
   stores one. Whether a palette is a project artefact, a settings blob or
   transient per-session is the first decision.
-- **Where the models come from.** Spacer has *VOB Bilder*, an image-backed
-  browser of model names; we have a text field. See the separate gap below —
-  a scatter tool without a model browser is a tool you cannot pick a tree in.
+- **Where the models come from.** The VFS browser exists (`WorldAssetBrowser`,
+  §16.26 row 1) but previews textures, not meshes, and feeds no field — a
+  scatter tool needs the mesh preview and the picker wiring that row still
+  wants, before a palette can be assembled from anything.
 - **Randomisation, and its reproducibility.** Rotation about the up axis,
   uniform scale — except `zCVob` **has no scale field** (§14.1's "Not a gap"),
   so size variation is unavailable and a forest will read as clones. That is a
@@ -2806,10 +2807,10 @@ exists, not a new op.
   `DeleteVob` is the one op with no inverse and a history barrier (§14.1 1.1).
   A scatter tool whose erase clears the undo history is worse than no erase.
 
-**A second gap the same check surfaced, unscheduled and not carded:** Spacer's
-**VOB Bilder** browses available model names *with images*; `insertVob` and
-`setVobProp.visual` both take a typed string, and there is no library view at
-all. It is a prerequisite for a usable scatter tool and it is independently
+**A second gap the same check surfaced, unscheduled and not carded:** a
+mesh-capable model browser wired as a picker into `insertVob` and
+`setVobProp.visual` — the VFS-browsing half exists, corrected in §16.26 row 1.
+It is a prerequisite for a usable scatter tool and it is independently
 useful for §14.1 1.3 and 1.7. Also absent, and deliberately noted here so the
 next parity question does not re-derive it: Spacer's first-person navigation
 modes (F3/M/T/C) and its two camera slots, against our orbit plus focus/frame.
@@ -2840,18 +2841,33 @@ tells its "shipped refused" story in the past tense, as the cautionary tale it
 is, and that reads as a live gap on a fast skim. **Hierarchical
 copy is landed** (§14.1 1.2 D5). What is genuinely missing is below.
 
-**1. A model browser.** Spacer's *VOB Bilder* and Spacer.NET's *preview models*
-are the same thing from both editors: browse the available visuals by name,
-with an image. We have a text field in `insertVob` and in `setVobProp.visual`,
-so choosing a mesh means already knowing its name. Two independent editors
-shipping it is the strongest parity signal in this section, and it gates three
-other rows — §14.1 1.3 (class-specific insertion picks a visual), 1.7 (visual
-assignment *is* picking a visual) and §16.25 (a scatter palette is a multi-
-selection of them). **What it costs is not UI work but asset work**: the visuals
-live in `.VDF`/`.MOD` volumes as `.MRM`/`.MDL`/`.MDM`, ZenKit reads them, and a
-thumbnail means rendering each one offline and caching it. Whether the browser
-is name-only first (cheap, a searchable list off the volume index) or
-image-backed (the actual parity) is the decision to take before any of it.
+**1. A model browser — corrected 2026-08-30, this row overstated the gap.**
+Spacer's *VOB Bilder* and Spacer.NET's *preview models* browse the available
+visuals by name, with an image. **That half already exists**: `WorldAssetBrowser`
+walks the mounted VFS namespace one directory at a time over `vfsList`
+(`world:assets`), and `WorldAssetPreview` renders a selected file's texture to
+a 2D canvas via `decodeTexture` — both live in `WorldSurface`'s Assets panel
+today, not a text field. Three things are still missing, and none of them is
+the VFS plumbing:
+
+- **It previews textures, not meshes.** `extractVisual` — the same render-ready
+  buffers `buildScene` already turns into the world's own geometry — is wired
+  into the worker but never called from the preview; picking a `.MRM`/`.MDL`
+  shows nothing. The gap is a `<canvas>` with a small Three.js scene, not a new
+  binding call.
+- **It is a namespace explorer, not a picker.** `onPreview` sets a viewed path;
+  nothing feeds a chosen name back into `insertVob`'s class field or
+  `setVobProp.visual`. Wiring that is the difference between "a browser exists"
+  and "a model browser answers 1.3/1.7/§16.25".
+- **No thumbnail grid.** The list is names in a directory, sorted
+  directories-first; Spacer's *Bilder* and Spacer.NET's *preview models* are an
+  image grid. Getting there is offline rendering and caching a thumbnail per
+  visual — real work, but it sits on top of the mesh preview above, not
+  instead of it.
+
+So the honest framing: the *asset access* layer §14 assumed was missing is
+landed; what §16.25/1.3/1.7 still want is a mesh-capable preview and a picker
+wired to the two write paths, then optionally a thumbnail grid on top.
 
 **2. Container contents.** Spacer.NET calls it "convenient editing of chests
 contents". `oCMobContainer`'s catalogue is the thirteen `oCMobInter` fields plus
