@@ -123,7 +123,8 @@ was true for so long nobody re-reads it.
 
 ## Now
 
-*(empty)*
+- **Unattended queue row 40** (board-loop) — re-measure spawn-index coverage
+  after the nested-call-sites fix; `unattended-queue.md` 40, §16.19
 
 ## Next
 
@@ -229,3 +230,6 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 - **Unattended queue row 11** (board-loop) — `updateModel` clears `saveError` and
   `_applyHistoryModelUpdate` delegates to it, so a stale save failure no longer survives
   an edit and there is one body instead of two identical ones
+- **Unattended queue row 12** (board-loop) — the cp1250 heuristic needs two distinct
+  ambiguous bytes, or one windows-1252 leaves unassigned, so a lone `è` or `Ø` no longer
+  flips a Western file; landed in `7591836`, salvaged from a killed iteration
