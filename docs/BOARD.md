@@ -141,8 +141,8 @@ writes, the classes beyond five), none of it carded.
 with nobody watching. Triaged against the tree 2026-08-30, each verified still
 open. **Take the top unclaimed row and cross it off in the same commit; a run
 may not add rows.** `unattended-queue.md` — **section 5, the level editor, is
-now first (Daniel, 2026-08-30)**, so the next row is 42, the BINARY fidelity
-baseline; the corpus those rows want is present in `zenkit-node/worlds/`. Rows
+now first (Daniel, 2026-08-30)**; row 42 went to Triage on 2026-08-30, so the
+next unclaimed row is 43. The corpus those rows want is in `zenkit-node/worlds/`. Rows
 1-12 of section 1 landed 2026-08-30 and the rest of it waits below section 5.
 
 **World surface, from Daniel's own sessions 2026-08-30 — all at §16.24.** None
@@ -222,7 +222,9 @@ the series absorbed most of a night's run by the time `0048` landed.
 itself — no new cards, no filing its own splits. Too big means: one line here,
 the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
-*(empty)*
+- **Unattended-queue row 42, the BINARY fidelity baseline** — no BINARY `.zen`
+  exists on this machine to classify and the instrument has no BINARY walker, so
+  it decomposes into three runs plus a scope call. §14.3 3.1
 
 ## Done
 
