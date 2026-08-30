@@ -53,6 +53,9 @@ import {
   translateVobs,
   vobIndexPath,
   type ClassProps,
+  type AddVob,
+  type ReadProps,
+  type SetVobClassProp,
   type MoveWaypoint,
   type RenameWaypoint,
   type AddWaypoint,
@@ -138,6 +141,12 @@ function vobIndex(vobs: Spec[]): VobIndex {
     visuals: visuals.dictionary, visualIndex: visuals.index,
     visualTypes: ['MULTI_RESOLUTION_MESH'], visualTypeIndex: new Uint32Array(vobs.length).buffer,
   };
+}
+
+/** The adds of a batch. A duplicate's batch is not adds alone since a copy
+ *  carries its class fields (§14.1 1.2), and only an add has a `parentPath`. */
+function addsOf(ops: ReadonlyArray<AddVob | SetVobClassProp>): AddVob[] {
+  return ops.filter((op): op is AddVob => op.op === 'AddVob');
 }
 
 describe('the native address of a VOB', () => {
@@ -1444,7 +1453,7 @@ describe('a selection duplicated as one batch', () => {
   it('is one AddVob per VOB, each beside the VOB it was copied from', () => {
     const ops = duplicateVobs(reader(), [1, 3]);
 
-    expect(ops.map((op) => [op.op, op.path, op.parentPath])).toEqual([
+    expect(addsOf(ops).map((op) => [op.op, op.path, op.parentPath])).toEqual([
       ['AddVob', '0/2', '0'],
       ['AddVob', '2', null],
     ]);
@@ -1560,7 +1569,7 @@ describe('a clipboard pasted into a list', () => {
     // original.
     const ops = pasteVobs(reader(), specs(), 0);
 
-    expect(ops.map((op) => [op.op, op.path, op.parentPath])).toEqual([
+    expect(addsOf(ops).map((op) => [op.op, op.path, op.parentPath])).toEqual([
       ['AddVob', '0/2', '0'],
       ['AddVob', '0/3', '0'],
     ]);
@@ -1633,7 +1642,7 @@ describe('a duplicate that carries the subtree', () => {
     // card was sized (§16.14, D5), and this is the prediction it measured.
     const ops = duplicateVobs(reader(), [0]);
 
-    expect(ops.map((op) => [op.op, op.path, op.parentPath, op.vob])).toEqual([
+    expect(addsOf(ops).map((op) => [op.op, op.path, op.parentPath, op.vob])).toEqual([
       ['AddVob', '2', null, 5],
       ['AddVob', '2/0', '2', 6],
       ['AddVob', '2/1', '2', 7],
@@ -1671,7 +1680,7 @@ describe('a duplicate that carries the subtree', () => {
     // descendants under the root's copy.
     const ops = pasteVobs(reader(), [duplicateVobSubtree(reader(), 0)], 4);
 
-    expect(ops.map((op) => [op.path, op.parentPath])).toEqual([
+    expect(addsOf(ops).map((op) => [op.path, op.parentPath])).toEqual([
       ['1/0', '1'],
       ['1/0/0', '1/0'],
       ['1/0/1', '1/0'],
@@ -1713,6 +1722,198 @@ describe('a duplicate that carries the subtree', () => {
     // still to be unwound standing.
     commitOps(binding, [...duplicateVobs(reader(), [0])].reverse().map(invertOp));
     expect([...world]).toEqual(WORLD);
+  });
+});
+
+describe('a duplicate that carries the class properties', () => {
+  // D2's other half (level-editor.md §14.1 1.2). The *class* came across on
+  // 2026-08-28 and the fields that class names did not, so a duplicated
+  // `zCVobLight` was a light with the binding's range and the binding's colour —
+  // a copy that looks right in the scene tree and wrong in the world.
+  //
+  // They cannot be read out of the index: it interns the class *name* and
+  // carries no field of the class, which is the fact `SetVobClassProp` exists
+  // for. So they are handed in, exactly as that op's `from` is, and each copy
+  // takes one follow-up `SetVobClassProp` in the same batch — no new op, no
+  // validator branch, and one undo entry, because a batch of appends plus the
+  // props of what it appended moves no index path.
+  //
+  //  vob 0 (root 0) ── vob 1
+  //  vob 2 (root 1)
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0, cls: 'zCVobLight', name: 'TORCH' },
+    { parent: 0, childIndex: 0, cls: 'zCVobSound', name: 'CRACKLE' },
+    { childIndex: 1, name: 'BARREL' },
+  ]));
+  /** What `getVobProps` answers per VOB — the whole record, base fields and
+   *  all, which is the shape the reader sends and not a pre-filtered one. */
+  const READ: Record<number, ReadProps> = {
+    0: {
+      class: 'zCVobLight', presetName: 'FIRE', bias: 2,
+      range: 2000, color: [255, 220, 180, 255], lightType: 0, quality: 2,
+    },
+    1: {
+      class: 'zCVobSound', presetName: 'FIRE',
+      soundName: 'FIRE_M', volume: 80, radius: 1500,
+      mode: 1, coneAngle: 0, volumeType: 0,
+      initiallyPlaying: true, ambient3d: false, obstruction: true,
+    },
+  };
+  const props = (vob: number): ReadProps | null => READ[vob] ?? null;
+
+  /** Everything but the two calls a copy makes, so a test that provokes one of
+   *  the others is told which. */
+  const refusing = {
+    addWaypoint: () => { throw new Error('not a waypoint add'); },
+    removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+    addWaypointEdge: () => { throw new Error('not an edge add'); },
+    removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+    setVobPosition: () => { throw new Error('not a move'); },
+    setVobRotation: () => { throw new Error('not a rotation'); },
+    setVobProp: () => { throw new Error('not a property change'); },
+    reparentVob: () => { throw new Error('not a reparent'); },
+    setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+    setWaypointName: () => { throw new Error('not a waypoint rename'); },
+  };
+
+  it('follows the copy of a `zCVobLight` with its range and its colour', () => {
+    const ops = duplicateVobs(reader(), [0], () => null, props);
+
+    // The add first and the fields after it: the op has to address a VOB that is
+    // in the world, and `commitOps` applies a batch in order.
+    expect(ops.map((op) => op.op))
+      .toEqual(['AddVob', 'SetVobClassProp', 'AddVob', 'SetVobClassProp']);
+    expect(ops[1]).toEqual({
+      op: 'SetVobClassProp',
+      // The copy's two addresses, taken from the add that makes it rather than
+      // resolved against the reader: the VOB this names is not in the index at
+      // all, it is the one the op before it appends.
+      vob: 3,
+      path: '2',
+      className: 'zCVobLight',
+      // Catalogue order, as `setVobClassProp` orders them, and every catalogued
+      // field the read answered. `from` is the same side, because the value the
+      // copy had before is the binding's default and nothing here knows it —
+      // and both replays that read `from` remove the copy immediately after.
+      from: {
+        lightType: 0, range: 2000, color: [255, 220, 180, 255], quality: 2,
+      },
+      to: {
+        lightType: 0, range: 2000, color: [255, 220, 180, 255], quality: 2,
+      },
+    });
+    expect(Object.keys((ops[1] as SetVobClassProp).to))
+      .toEqual(['lightType', 'range', 'color', 'quality']);
+  });
+
+  it('carries the fields of each VOB in the subtree, under the copy of each', () => {
+    // The callback is asked per VOB, exactly as the bounds one is: a copied
+    // child keeps its own sound rather than its parent's light.
+    const ops = duplicateVobs(reader(), [0], () => null, props);
+
+    expect(ops[2]).toMatchObject({ op: 'AddVob', path: '2/0', to: { name: 'CRACKLE' } });
+    expect(ops[3]).toMatchObject({
+      op: 'SetVobClassProp', vob: 4, path: '2/0', className: 'zCVobSound',
+    });
+    expect((ops[3] as SetVobClassProp).to).toEqual({
+      soundName: 'FIRE_M', volume: 80, mode: 1, radius: 1500, coneAngle: 0,
+      volumeType: 0, initiallyPlaying: true, ambient3d: false, obstruction: true,
+    });
+  });
+
+  it('numbers the adds by the adds alone', () => {
+    // The flat index a subtree's ops run on counts *VOBs appended*, and a
+    // class-property op appends none. Counting ops instead would number the
+    // second copy one too high.
+    const ops = duplicateVobs(reader(), [0], () => null, props);
+
+    expect(ops.filter((op) => op.op === 'AddVob').map((op) => op.vob)).toEqual([3, 4]);
+  });
+
+  it('adds nothing for a VOB whose class it dropped, or whose props it was not given', () => {
+    // A copy that names no class is a `zCVob`, and every catalogued key would be
+    // refused on one — here by the class it is read from, and by the binding if
+    // it got that far. The plain barrel is that case from the other side: it has
+    // a class and the class has no fields.
+    expect(duplicateVobs(reader(), [2], () => null, props).map((op) => op.op))
+      .toEqual(['AddVob']);
+    // And with no callback at all nothing changes for anybody: this is what a
+    // caller that has not been taught to fetch props still gets.
+    expect(duplicateVobs(reader(), [0]).map((op) => op.op)).toEqual(['AddVob', 'AddVob']);
+  });
+
+  it('drops a field the read did not answer and a value the op could not carry', () => {
+    // Lossy beats refused, which is the rule the dropped *class* already
+    // follows: a value outside its catalogue bounds is refused at the IPC
+    // boundary, and one refusal would cost the whole copy rather than the one
+    // field. A nested record is the decal read, which no class field is.
+    const ops = duplicateVobs(reader(), [0], () => null, () => ({
+      range: -1, // below the descriptor's minimum
+      color: [255, 220, 180, 255],
+      quality: 1.5, // an enumerator is a whole number
+      lightType: { nested: 1 },
+    }));
+
+    expect((ops[1] as SetVobClassProp).to).toEqual({ color: [255, 220, 180, 255] });
+  });
+
+  it('drops the whole op rather than carrying one that sets nothing', () => {
+    // `SetVobClassProp` refuses to set nothing, and a read answering none of the
+    // catalogued keys is exactly that.
+    expect(duplicateVobs(reader(), [0], () => null, () => ({ presetName: 'FIRE' }))
+      .map((op) => op.op)).toEqual(['AddVob', 'AddVob']);
+  });
+
+  it('holds them on the clipboard and pastes them with the copy', () => {
+    // The clipboard is values read at the copy, so the props are read there too:
+    // a paste of a VOB deleted since still carries the fields it had.
+    const tree = duplicateVobSubtree(reader(), 0, () => null, props);
+    expect(tree.classProps).toEqual({
+      lightType: 0, range: 2000, color: [255, 220, 180, 255], quality: 2,
+    });
+
+    expect(pasteVobs(reader(), [tree], null).map((op) => [op.op, op.path])).toEqual([
+      ['AddVob', '2'], ['SetVobClassProp', '2'],
+      ['AddVob', '2/0'], ['SetVobClassProp', '2/0'],
+    ]);
+  });
+
+  it('commits as one batch and unwinds it back to front', () => {
+    // The whole point of the follow-up being *in* the batch. `commitOps` takes
+    // the adds and the props of what they added together — an append moves no
+    // index path and a class-property op is addressed by one — and the inverse
+    // batch is the same shape, so undo goes through the same relaxation.
+    const world = new Set(['0', '0/0', '1']);
+    const written: string[] = [];
+    const binding: OpBinding = {
+      ...refusing,
+      insertVob: (_spec, parentPath) => {
+        const slots = [...world].filter((path) => (
+          (path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : null) === parentPath
+        )).length;
+        const path = parentPath === null ? String(slots) : `${parentPath}/${slots}`;
+        world.add(path);
+        return path;
+      },
+      deleteVob: (path) => { world.delete(path); },
+      setVobClassProp: (path, values) => { written.push(`${path} ${JSON.stringify(values)}`); },
+    };
+
+    const ops = duplicateVobs(reader(), [0], () => null, props);
+    commitOps(binding, ops);
+
+    expect([...world]).toEqual(['0', '0/0', '1', '2', '2/0']);
+    expect(written).toEqual([
+      '2 {"lightType":0,"range":2000,"color":[255,220,180,255],"quality":2}',
+      '2/0 {"soundName":"FIRE_M","volume":80,"mode":1,"radius":1500,"coneAngle":0,'
+      + '"volumeType":0,"initiallyPlaying":true,"ambient3d":false,"obstruction":true}',
+    ]);
+
+    // Back to front, which is the one order that leaves the paths of the ops
+    // still to be unwound standing — and the props op is unwound onto a VOB the
+    // add's inverse then deletes.
+    commitOps(binding, [...ops].reverse().map(invertOp));
+    expect([...world]).toEqual(['0', '0/0', '1']);
   });
 });
 

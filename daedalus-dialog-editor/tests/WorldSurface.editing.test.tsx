@@ -1099,6 +1099,63 @@ describe('duplicating a VOB', () => {
     expect(ops[0]).toMatchObject({ op: 'AddVob', to: { class: 'zCVobLight' } });
   });
 
+  it('carries the class properties, so a duplicated light keeps its range and colour', async () => {
+    // D2's other half (§14.1 1.2). The class came across and the fields it names
+    // did not, so a copy of a light was a light with the binding's range and the
+    // binding's colour. They are in no column, so the surface fetches them —
+    // the same `getVobProps` the property grid reads one VOB with — and hands
+    // them to `duplicateVobs`, which follows each add with one
+    // `SetVobClassProp` in the same batch. One batch, therefore one undo.
+    mockVobProps = LIGHT_PROPS;
+    const summary = await openWorld(['zCVob', 'zCVobLight']);
+    api.refreshWorldIndex.mockResolvedValueOnce(summary as never);
+    api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+
+    fireEvent.click(await screen.findByTestId('world-duplicate-vob'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    expect(ops).toHaveLength(2);
+    expect(ops[1]).toEqual({
+      op: 'SetVobClassProp',
+      // The copy's own addresses — the VOB the add before it appends, which is
+      // in no index this side could resolve a path against.
+      vob: 2,
+      path: '2',
+      className: 'zCVobLight',
+      // The catalogued fields of the read and nothing else: `presetName` and
+      // `bias` are base fields, and a copy does not carry them.
+      from: {
+        lightType: 0, range: 2000, color: [255, 220, 180, 255], quality: 2,
+      },
+      to: {
+        lightType: 0, range: 2000, color: [255, 220, 180, 255], quality: 2,
+      },
+    });
+  });
+
+  it('asks for no props at all when nothing in the copy has catalogued fields', async () => {
+    // A read per VOB is a round trip per VOB, and most of a retail selection is
+    // classes the catalogue is silent about. The plain `zCVob` fixture asks for
+    // nothing beyond the selection read the grid already makes.
+    await openWorld();
+    api.getVobProps.mockClear();
+    // Counted *at the commit*, because the grid re-reads the selection's own
+    // props once the batch has applied — the read this is about is the one
+    // issued before it, to build the ops.
+    let readsBeforeCommit = -1;
+    api.applyWorldOps.mockImplementationOnce(async () => {
+      readsBeforeCommit = api.getVobProps.mock.calls.length;
+    });
+
+    fireEvent.click(await screen.findByTestId('world-duplicate-vob'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    expect(ops.map((op) => op.op)).toEqual(['AddVob']);
+    expect(readsBeforeCommit).toBe(0);
+  });
+
   it('drops a class the binding cannot construct, rather than refusing the copy', async () => {
     // A `zCVobLensFlare` duplicates as it always did — name, visual, pose, no
     // class — because naming a class `insertVob` has no construction for is
@@ -1228,7 +1285,12 @@ describe('copying and pasting a VOB', () => {
   // clipboard is in-process and holds *subtrees* — what the rows said when Ctrl+C
   // was pressed — so where a copy lands is chosen at the paste, and the paste
   // is still a batch of pure adds and still one undo entry.
-  const copy = () => fireEvent.keyDown(window, { key: 'c', ctrlKey: true });
+  // Awaited, because a copy reads the class properties of what it copies before
+  // it fills the clipboard (§14.1 1.2) — one round trip, and the clipboard is
+  // what it was until it answers.
+  const copy = async () => {
+    await act(async () => { fireEvent.keyDown(window, { key: 'c', ctrlKey: true }); });
+  };
   const paste = () => fireEvent.keyDown(window, { key: 'v', ctrlKey: true });
 
   /** A paste re-reads the index, exactly as a duplicate does. */
@@ -1244,7 +1306,7 @@ describe('copying and pasting a VOB', () => {
     const summary = await openWorld(undefined, [-1, 0]);
     expectRefresh(summary);
 
-    copy();
+    await copy();
     paste();
 
     await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
@@ -1280,7 +1342,7 @@ describe('copying and pasting a VOB', () => {
     expectRefresh(summary);
 
     act(() => useWorldStore.getState().selectVob(0));
-    copy();
+    await copy();
     paste();
 
     await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
@@ -1297,7 +1359,7 @@ describe('copying and pasting a VOB', () => {
     const summary = await openWorld();
     expectRefresh(summary);
 
-    copy();
+    await copy();
     act(() => useWorldStore.getState().selectVob(0));
     paste();
 
@@ -1315,7 +1377,7 @@ describe('copying and pasting a VOB', () => {
 
     act(() => useWorldStore.getState().selectVob(0));
     act(() => useWorldStore.getState().toggleVob(1));
-    copy();
+    await copy();
     // Nothing selected at the paste: the roots are where a copy goes when there
     // is no selection to take a parent from.
     act(() => useWorldStore.getState().selectVob(null));
@@ -1328,12 +1390,37 @@ describe('copying and pasting a VOB', () => {
     ]);
   });
 
+  it('carries the class properties across the clipboard', async () => {
+    // Read at the copy, like everything else on the clipboard (§14.1 1.2): the
+    // paste sends the fields the light had when Ctrl+C was pressed, not the ones
+    // it has now — which is what lets a paste outlive the VOB it came from.
+    mockVobProps = LIGHT_PROPS;
+    const summary = await openWorld(['zCVob', 'zCVobLight']);
+    expectRefresh(summary);
+
+    await copy();
+    // The world's own answer changes under the clipboard, and the paste is
+    // unmoved by it.
+    mockVobProps = { ...LIGHT_PROPS, range: 50 };
+    paste();
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    expect(ops.map((op) => op.op)).toEqual(['AddVob', 'SetVobClassProp']);
+    expect(ops[1]).toMatchObject({
+      op: 'SetVobClassProp',
+      path: '2',
+      className: 'zCVobLight',
+      to: { lightType: 0, range: 2000, color: [255, 220, 180, 255], quality: 2 },
+    });
+  });
+
   it('pastes the same clipboard again, so a copy is not consumed', async () => {
     const summary = await openWorld();
     expectRefresh(summary);
     expectRefresh(summary);
 
-    copy();
+    await copy();
     paste();
     await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
     paste();
@@ -1347,9 +1434,9 @@ describe('copying and pasting a VOB', () => {
     const summary = await openWorld();
     expectRefresh(summary);
 
-    copy();
+    await copy();
     act(() => useWorldStore.getState().selectVob(null));
-    copy();
+    await copy();
     act(() => useWorldStore.getState().selectVob(0));
     paste();
 

@@ -8,7 +8,7 @@ import {
 } from '@mui/material';
 import {
   AUTHORABLE_VOB_CLASSES,
-  addVob, addWaypoint, alignVobsToNormal, applyWaypointNames, applyWaypointPositions,
+  addVob, classPropKeys, addWaypoint, alignVobsToNormal, applyWaypointNames, applyWaypointPositions,
   connectWaypoints, disconnectWaypoints,
   deleteVob, deleteWaypoint, dropVobsToGround,
   duplicateVobSubtree, duplicateVobs,
@@ -17,7 +17,8 @@ import {
   moveWaypoint, pasteVobs, placeBounds, renameWaypoint, renumbersPaths,
   reparentVob, rotateVob, rotateVobs, setVobClassProp, setVobProp, setVobProps, topLevelVobs,
   translateVobs, vobIndexPath,
-  type AuthorableVobClass, type ClassProps, type NewVob, type VobProps, type VobSubtree,
+  type AuthorableVobClass, type ClassProps, type NewVob, type ReadProps,
+  type VobProps, type VobReader, type VobSubtree,
   type ZenBounds,
   type ZenPosition, type ZenRotation,
 } from 'zen-world';
@@ -971,6 +972,52 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   }, [commitOps, terrainPoint]);
 
   /**
+   * The class fields of every VOB a copy of `vobs` would bring, keyed by flat
+   * index — what a duplicate and a copy hand to `zen-world` (§14.1 1.2).
+   *
+   * **The one thing about a copy that cannot be read synchronously.** Every
+   * other field of a `NewVob` is a column of the index the renderer already
+   * holds; a `zCVobLight`'s range and colour are in no column at all, so they
+   * come back over the same `getVobProps` the property grid reads one VOB with
+   * — one round trip per VOB, issued together.
+   *
+   * Asked only for the VOBs whose class has catalogued fields, which is the
+   * difference between two reads and forty: most of a retail selection is
+   * `zCVob`s and `oCMobInter`-shaped classes the catalogue is silent about, and
+   * a read for one of those would answer base fields a copy does not carry.
+   *
+   * A read that fails is left out rather than failing the copy — the world was
+   * closed under it, or the path no longer resolves — for the reason a
+   * non-authorable class is dropped rather than named: a copy missing one field
+   * beats no copy.
+   */
+  const readClassProps = useCallback(async (
+    reader: VobReader, vobs: readonly number[],
+  ): Promise<(vob: number) => ReadProps | null> => {
+    const wanted: number[] = [];
+    const walk = (vob: number): void => {
+      // The whole subtree, because a duplicate copies one (D5) and each
+      // descendant keeps its own fields.
+      const className = reader.className(vob);
+      if (className !== null && classPropKeys(className).length > 0) wanted.push(vob);
+      for (let child = 0; child < reader.count; child++) {
+        if (reader.columns.parent[child] === vob) walk(child);
+      }
+    };
+    topLevelVobs(reader, vobs).forEach(walk);
+
+    const read = new Map<number, ReadProps>();
+    await Promise.all(wanted.map(async (vob) => {
+      const path = vobIndexPath(reader, vob);
+      if (path === null) return;
+      const props = await window.editorAPI.getVobProps(path).catch(() => null);
+      if (props !== null) read.set(vob, props as ReadProps);
+    }));
+
+    return (vob: number) => read.get(vob) ?? null;
+  }, []);
+
+  /**
    * Duplicate the selection in place — **one batch, therefore one undo**
    * (level-editor.md §16.14, D1 and D4).
    *
@@ -1006,8 +1053,10 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     const { summary: current, selection: selected } = useWorldStore.getState();
     if (current === null || selected.length === 0) return;
 
-    await commitOps(duplicateVobs(vobModelOf(current).reader, selected, boundsOf));
-  }, [commitOps, boundsOf]);
+    const { reader } = vobModelOf(current);
+    const classProps = await readClassProps(reader, selected);
+    await commitOps(duplicateVobs(reader, selected, boundsOf, classProps));
+  }, [commitOps, boundsOf, readClassProps]);
 
   /**
    * The clipboard copy and paste share (level-editor.md §16.14, D3).
@@ -1031,16 +1080,20 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    * `physicsEnabled`, the class properties, and the class of an `oCItem` or of
    * anything `insertVob` cannot construct.
    */
-  const copySelection = useCallback(() => {
+  const copySelection = useCallback(async () => {
     const { summary: current, selection: selected } = useWorldStore.getState();
     if (current === null || selected.length === 0) return;
 
     const { reader } = vobModelOf(current);
+    // Awaited before the clipboard is filled, so a copy is the fields the VOBs
+    // had when Ctrl+C was pressed — the same instant the rest of the subtree is
+    // read at, and the whole point of the clipboard being values.
+    const classProps = await readClassProps(reader, selected);
     // Pruned as a duplicate's selection is, and for the same reason: a child
     // whose parent is also copied is already inside its parent's subtree.
     clipboard.current = topLevelVobs(reader, selected)
-      .map((vob) => duplicateVobSubtree(reader, vob, boundsOf));
-  }, [boundsOf]);
+      .map((vob) => duplicateVobSubtree(reader, vob, boundsOf, classProps));
+  }, [boundsOf, readClassProps]);
 
   /**
    * Paste the clipboard into the selection's own list — beside it, not inside
@@ -1285,7 +1338,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         // already on the clipboard standing.
         if (key === 'c' && useWorldStore.getState().selection.length === 0) return;
         event.preventDefault();
-        if (key === 'c') copySelection(); else void pasteClipboard();
+        if (key === 'c') void copySelection(); else void pasteClipboard();
         return;
       }
 

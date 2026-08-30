@@ -142,7 +142,7 @@ with nobody watching. Triaged against the tree 2026-08-30, each verified still
 open. **Take the top unclaimed row and cross it off in the same commit; a run
 may not add rows.** `unattended-queue.md` — **section 5, the level editor, is
 now first (Daniel, 2026-08-30)**; row 42 went to Triage on 2026-08-30 and 43,
-44 and 45 landed, so the next unclaimed row is 46. The corpus those rows want is in `zenkit-node/worlds/`. Rows
+44, 45 and 46 landed, so the next unclaimed row is 47. The corpus those rows want is in `zenkit-node/worlds/`. Rows
 1-12 of section 1 landed 2026-08-30 and the rest of it waits below section 5.
 
 **World surface, from Daniel's own sessions 2026-08-30 — all at §16.24.** None
@@ -228,13 +228,7 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **Unattended queue row 45** (board-loop) — the last four uncatalogued placeable
-  classes are catalogued; `oCTouchDamage` is complete at twelve fields, and
-  `zCCodeMaster` turned out to have no enum at all. §16.3
-- **Unattended queue row 44** (board-loop) — the free-point widening is 61 call
-  sites, not the 33+35 grep lines; 59 resolve against NewWorld, only 2 exactly,
-  45 need the infix rule, and the 2 `WASH` sites resolve in no world.
-- **Unattended queue row 43** (board-loop) — `worldProperties` + `check-world-properties.js`
-  measure the `oCWorld` level: sky, time and the cutscene player are save-game
-  members, absent from all four retail worlds; the start position is a
-  `zCVobStartpoint`, a `START` waypoint, both or neither. §14.3 3.5
+- **Unattended queue row 46** (board-loop) — a copy carries its class properties:
+  one `SetVobClassProp` per copy beside the adds, one batch, one undo. Ctrl+C is
+  asynchronous now, so a paste inside the fetch pastes the clipboard as it was.
+  §14.1 1.2

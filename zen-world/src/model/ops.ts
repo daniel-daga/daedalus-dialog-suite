@@ -34,7 +34,8 @@
 import type { VobReader } from './vobTree';
 import {
   baseFieldOf, classPropKeys, decalFieldOf, decalSubKey, fieldOf, isAuthorableVobClass,
-  type AuthorableVobClass, type ClassPropValue, type ClassProps, type ReadProps,
+  type AuthorableVobClass, type ClassPropValue, type ClassProps, type FieldDescriptor,
+  type ReadProps,
 } from './vobClasses';
 
 /** ZenGin space, centimetres — unconverted, exactly as the binding takes it. */
@@ -1259,9 +1260,11 @@ export function addVob(reader: VobReader, spec: NewVob, parent: number | null = 
  * the binding's default differs from the row's value, and here it *is* the row's
  * value, so omission is exact.
  *
- * The **class properties** are not here at all — a duplicated light has the
- * binding's range and colour. They are follow-up `SetVobClassProp`s in the same
- * batch, and that is the rest of D2 (§16.14).
+ * The **class properties** are not here either, and cannot be: they are not in
+ * the index, so a synchronous read of it cannot answer them. They come in
+ * beside this spec, as `copiedClassProps` below reads them out of a fetched
+ * props record, and reach the world as one follow-up `SetVobClassProp` per copy
+ * in the same batch — the rest of D2 (§16.14).
  */
 export function duplicateVobSpec(
   reader: VobReader, vob: number, bounds: ZenBounds | null = null,
@@ -1293,6 +1296,75 @@ export function duplicateVobSpec(
     cdStatic: flags.cdStatic,
     cdDynamic: flags.cdDynamic,
   };
+}
+
+/**
+ * The catalogued fields of a copy, read out of the props its original answered
+ * (level-editor.md §14.1 1.2).
+ *
+ * The other half of D2. The class came across as a column; the fields that
+ * class *names* are in no column at all, so they arrive here as the whole
+ * `getVobProps` record — base fields, nested decal record and all — and this
+ * picks the catalogued keys out of it, exactly as the property grid does.
+ *
+ * **Only for a spec that carries a class.** A copy that dropped its class is a
+ * `zCVob`, and every catalogued key belongs to some other class: writing one
+ * would be refused by the binding, on the VOB the op before it had just made.
+ *
+ * **A value it cannot carry is dropped, not refused** — the rule the dropped
+ * class already follows, and the reason is sharper here. A retail world is not
+ * confined to the catalogue's bounds, so a field somewhere holds a value the
+ * IPC assertion would reject; refusing at that boundary costs the *whole* copy,
+ * one field at a time. So the checks below are the assertion's own, run early
+ * and answering "carry it or leave it" instead of throwing: the two are meant
+ * to agree, and where they disagree this one is only ever the stricter, which
+ * costs a field rather than the copy.
+ */
+function copiedClassProps(spec: NewVob, current: ReadProps | null): ClassProps | undefined {
+  if (spec.class === undefined || current === null) return undefined;
+
+  const copied: ClassProps = {};
+  // Catalogue order, for `setVobClassProp`'s reason: two ops built from the same
+  // VOB have to be the same object, and the read is a record whose key order is
+  // the binding's.
+  for (const key of classPropKeys(spec.class)) {
+    const field = fieldOf(spec.class, key);
+    const value = current[key];
+    if (field !== null && isCarriableValue(field, value)) copied[key] = value;
+  }
+  return Object.keys(copied).length === 0 ? undefined : copied;
+}
+
+/**
+ * Can this read value cross as this field's, unchanged?
+ *
+ * `undefined` (the read did not answer the key), a nested record (the decal
+ * read, which no class field is) and anything outside the descriptor's bounds
+ * all answer no — see `copiedClassProps` for why that is a drop rather than a
+ * throw.
+ */
+function isCarriableValue(field: FieldDescriptor, value: ReadProps[string]): value is ClassPropValue {
+  if (field.kind === 'string') return typeof value === 'string';
+  if (field.kind === 'bool') return typeof value === 'boolean';
+  if (field.kind === 'color' || field.kind === 'vec2') {
+    // Fixed arity, because the binding reads the channels positionally — a
+    // three-element colour would leave one to whatever the struct held.
+    const arity = field.kind === 'color' ? 4 : 2;
+    const whole = field.kind === 'color';
+    return Array.isArray(value) && value.length === arity
+      && value.every((part) => typeof part === 'number'
+        && (whole ? Number.isInteger(part) : Number.isFinite(part))
+        && (field.min === undefined || part >= field.min)
+        && (field.max === undefined || part <= field.max));
+  }
+  if (typeof value !== 'number') return false;
+  // An enumerator is bounded by nothing but its archive member (§16.21): retail
+  // holds values outside every documented set, and a copy that dropped one would
+  // make the copy quietly unlike its original.
+  if (field.kind === 'enum') return Number.isInteger(value) && value >= 0;
+  if (field.kind === 'int' ? !Number.isInteger(value) : !Number.isFinite(value)) return false;
+  return (field.min === undefined || value >= field.min)
+    && (field.max === undefined || value <= field.max);
 }
 
 /**
@@ -1329,7 +1401,8 @@ export function duplicateVobs(
   reader: VobReader,
   vobs: readonly number[],
   bounds: (vob: number) => ZenBounds | null = () => null,
-): AddVob[] {
+  classProps: (vob: number) => ReadProps | null = () => null,
+): Array<AddVob | SetVobClassProp> {
   // How many copies this batch has already appended to each list — keyed by the
   // parent's path, with the roots keyed by an empty string no path can be. It
   // counts *copies*, not ops: a subtree appends one VOB to that list however
@@ -1338,13 +1411,13 @@ export function duplicateVobs(
 
   return topLevelVobs(reader, vobs).flatMap((vob) => {
     const parent = reader.columns.parent[vob];
-    const tree = duplicateVobSubtree(reader, vob, bounds);
+    const tree = duplicateVobSubtree(reader, vob, bounds, classProps);
     const op = addVob(reader, tree.spec, parent < 0 ? null : parent);
 
     const list = op.parentPath ?? '';
     const ahead = appended.get(list) ?? 0;
     appended.set(list, ahead + 1);
-    return subtreeOps(appendedAfter(op, ahead), tree.children);
+    return subtreeOps(appendedAfter(op, ahead), tree);
   });
 }
 
@@ -1378,6 +1451,16 @@ export function topLevelVobs(reader: VobReader, vobs: readonly number[]): number
  */
 export interface VobSubtree {
   readonly spec: NewVob;
+  /**
+   * The catalogued class fields the copy is to be given, absent when there are
+   * none to give — the spec dropped the class, the class has none catalogued,
+   * or the caller fetched no props.
+   *
+   * Beside the spec rather than in it because `NewVob` is what `insertVob`
+   * constructs from, and the binding constructs a VOB before it has fields to
+   * set: these reach the world as the `SetVobClassProp` that follows the add.
+   */
+  readonly classProps?: ClassProps;
   /** In slot order, which is the order the copies are appended in. */
   readonly children: readonly VobSubtree[];
 }
@@ -1394,20 +1477,25 @@ export function duplicateVobSubtree(
   reader: VobReader,
   vob: number,
   bounds: (vob: number) => ZenBounds | null = () => null,
+  classProps: (vob: number) => ReadProps | null = () => null,
 ): VobSubtree {
   const spec = duplicateVobSpec(reader, vob, bounds(vob));
+  const copied = copiedClassProps(spec, classProps(vob));
   const children: VobSubtree[] = [];
   // Enumeration order is depth-first, so a parent's children come out in slot
   // order without sorting.
   for (let child = 0; child < reader.count; child++) {
-    if (reader.columns.parent[child] === vob) children.push(duplicateVobSubtree(reader, child, bounds));
+    if (reader.columns.parent[child] === vob) {
+      children.push(duplicateVobSubtree(reader, child, bounds, classProps));
+    }
   }
-  return { spec, children };
+  return { spec, ...(copied === undefined ? {} : { classProps: copied }), children };
 }
 
 /**
  * A subtree's ops: the root's own `AddVob`, already placed, followed by one per
- * descendant with the path it will take.
+ * descendant with the path it will take — and after each add, the one
+ * `SetVobClassProp` its copy's class fields need.
  *
  * **Forward-computed, and that is the whole of D5's implementation note.**
  * `addVob` resolves a parent against the world as it was, and a copied child's
@@ -1415,25 +1503,53 @@ export function duplicateVobSubtree(
  * appended to an empty list of children, so its slots are 0, 1, 2 … under the
  * path its own parent's op names, and nothing has to be resolved at all.
  *
- * The flat `vob` runs on from the root's, which is exact for one appended
- * subtree because a depth-first traversal reaches it in this order. Where the
- * batch holds several it carries the same approximation a single `addVob`
- * already does, and nothing reads it: a structural op is never applied to the
+ * The class-property op is addressed the same way and for the same reason: the
+ * VOB it names is not in the index, so its path and its flat index are the ones
+ * its own add just computed rather than anything `vobIndexPath` could answer.
+ * Its `from` is its `to` — a freshly constructed VOB holds the binding's
+ * defaults, which nothing on this side knows, and both replays that read `from`
+ * (an unwind, an undo) remove the copy immediately afterwards, so the values
+ * written back are never the ones anybody sees.
+ *
+ * The flat `vob` counts the *adds*, which is exact for one appended subtree
+ * because a depth-first traversal reaches it in this order. Where the batch
+ * holds several it carries the same approximation a single `addVob` already
+ * does, and nothing reads it: a structural op is never applied to the
  * projection.
  */
-function subtreeOps(root: AddVob, children: readonly VobSubtree[]): AddVob[] {
-  const ops: AddVob[] = [root];
+function subtreeOps(root: AddVob, tree: VobSubtree): Array<AddVob | SetVobClassProp> {
+  const ops: Array<AddVob | SetVobClassProp> = [];
+  // VOBs appended so far, not ops emitted: a class-property op appends none.
+  let added = 0;
 
-  const append = (parentPath: string, trees: readonly VobSubtree[]): void => {
-    trees.forEach((tree, slot) => {
-      const path = `${parentPath}/${slot}`;
+  const place = (op: AddVob, node: VobSubtree): void => {
+    ops.push(op);
+    added += 1;
+
+    const className = node.spec.class;
+    if (node.classProps !== undefined && className !== undefined) {
       ops.push({
-        op: 'AddVob', vob: root.vob + ops.length, path, parentPath, from: null, to: tree.spec,
+        op: 'SetVobClassProp',
+        vob: op.vob,
+        path: op.path,
+        className,
+        from: node.classProps,
+        to: node.classProps,
       });
-      append(path, tree.children);
+    }
+
+    node.children.forEach((child, slot) => {
+      place({
+        op: 'AddVob',
+        vob: root.vob + added,
+        path: `${op.path}/${slot}`,
+        parentPath: op.path,
+        from: null,
+        to: child.spec,
+      }, child);
     });
   };
-  append(root.path, children);
+  place(root, tree);
 
   return ops;
 }
@@ -1475,9 +1591,9 @@ function appendedAfter(op: AddVob, ahead: number): AddVob {
  */
 export function pasteVobs(
   reader: VobReader, trees: readonly VobSubtree[], parent: number | null = null,
-): AddVob[] {
+): Array<AddVob | SetVobClassProp> {
   return trees.flatMap((tree, ahead) => subtreeOps(
-    appendedAfter(addVob(reader, tree.spec, parent), ahead), tree.children,
+    appendedAfter(addVob(reader, tree.spec, parent), ahead), tree,
   ));
 }
 
@@ -1824,15 +1940,22 @@ export function commitOps(binding: OpBinding, ops: readonly WorldOp[]): void {
   // left to callers: the batch is where the addresses were resolved, and this is
   // the only place that can see the whole of one.
   //
-  // **A batch of adds is the exception, and it is the only one** (§16.14, D4).
-  // A path is a chain of sibling slots and every add here is an *append*, so it
-  // takes a new last slot and moves none of the paths the ops after it carry —
-  // it renumbers flat indices, which no op is addressed by. The exception is
-  // written as "all adds" rather than "no delete and no reparent" so that the
-  // inverse batch is covered by the same sentence: undo replays these back to
-  // front as removals of exactly the slots they appended, which is the one order
-  // that leaves the remaining paths standing. Any other op in the batch and the
-  // refusal is back, `physicsEnabled`'s follow-up (D2) included.
+  // **A batch of appends is the exception, and it is the only one** (§16.14,
+  // D4). A path is a chain of sibling slots and every add here is an *append*,
+  // so it takes a new last slot and moves none of the paths the ops after it
+  // carry — it renumbers flat indices, which no op is addressed by. The
+  // exception is written as a shape rather than as "no delete and no reparent"
+  // so that the inverse batch is covered by the same sentence: undo replays
+  // these back to front as removals of exactly the slots they appended, which is
+  // the one order that leaves the remaining paths standing.
+  //
+  // **`SetVobClassProp` joins the adds** (§14.1 1.2): a copy carries its class
+  // fields as one of those per copy, and holding them out of the batch would
+  // make a duplicate two undo entries — one of which restores a light to the
+  // binding's defaults rather than removing it. It is safe in this company for
+  // the reason the adds are safe in each other's: it is addressed by an index
+  // path, and an append moves none. Any other op in the batch and the refusal is
+  // back, `physicsEnabled`'s follow-up included.
   // A barrier is alone for a reason of its own, beyond the paths: it cannot be
   // unwound, so a later op failing in the same batch would leave the world with
   // an edit applied and no history entry describing it. `DeleteVob` was already
@@ -1845,8 +1968,8 @@ export function commitOps(binding: OpBinding, ops: readonly WorldOp[]): void {
     );
   }
 
-  const adds = ops.every((op) => op.op === 'AddVob');
-  const renumbering = ops.length > 1 && !adds ? ops.find(renumbersPaths) : undefined;
+  const appends = ops.every((op) => op.op === 'AddVob' || op.op === 'SetVobClassProp');
+  const renumbering = ops.length > 1 && !appends ? ops.find(renumbersPaths) : undefined;
   if (renumbering !== undefined) {
     throw new RangeError(
       `a ${renumbering.op} that renumbers invalidates every path after it: `
