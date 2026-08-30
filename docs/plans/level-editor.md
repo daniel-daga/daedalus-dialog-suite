@@ -2206,6 +2206,56 @@ Jest as slices 7–9 pin theirs (`WorldSurface.editing.test.tsx`,
 *move* when the state changes stays unwitnessed on screen, said rather than
 hidden.
 
+**The story it serves, and the one thing that story needs which the wiring
+above does not give it.** The question is *"where is this NPC once the plot has
+moved on"* — today a person turns on *Spawns*, turns on *Time*, drags to 10:00
+and gets an answer that is silently chapter-one-only, with nothing on screen
+saying so. The lens makes that answer choosable: pick a state, the dummies jump
+to the waypoints the variant routines name. The control chain is
+*Spawns → Time → State*, each one meaningful only given the one before, which
+is why the picker hangs off *Time* exactly as *Time* hangs off *Spawns*.
+
+**But a chosen state moves a handful of NPCs and leaves the rest on their
+declared day, and the control as specified cannot say which it did.** The
+fallback is honest (slice 12) and the label is a lie by omission: *State:
+KAPITEL3* reads as "the world is in chapter 3" when it means "chapter 3 for the
+NPCs who have a chapter-3 routine, opening day for everyone else". **So the
+picker ships with a reach readout beside it — the NPC count the chosen state
+actually resolved, against the count it could have** — and that is not a nicety.
+It is slice 7's grey-marker decision again, in the same spirit and for the same
+reason: the weaker fact must not be able to read as the stronger one, and a
+number is the cheapest thing that stops it.
+
+**Two naming decisions that look cosmetic and are not.** The default option is
+**Declared**, never "Chapter 1": a `daily_routine` is whatever the instance
+says, which for some NPCs is already a late-game routine, so "Chapter 1" would
+be a claim the index cannot back. And the readout counts *NPCs*, not markers —
+one point carries many NPCs (§16.22 q4's 175 on one waypoint), so a marker count
+would answer a question nobody asked.
+
+**The control's shape is gated on slice 11's measurement, and this is where the
+measurement earns its place.** A dropdown is right only if state names recur
+across NPCs — a dozen shared names like `TOT` or `KAPITEL3`. If the corpus
+instead shows mostly bespoke suffixes, the honest control is not a select with
+four hundred entries; it is a per-NPC affordance or a filter field, and the
+picker as drawn here would be unusable in a way no amount of wiring fixes.
+**Do not build the select before the number exists.**
+
+**Where "who" belongs, when somebody asks for it.** The markers stay anonymous
+— slice 9 decision 4's reasoning is unchanged, and a state does not alter it.
+The surface that should answer *"who is standing here at this minute in this
+state"* is the waypoint panel, which already answers the static form of the
+question (slice 3), and that is the call site slice 9 decision 4 said did not
+exist yet. It still doesn't; noted so the next person reaches for the panel
+rather than for a label over a capsule.
+
+**The obvious follow-on, deliberately not in this slice: highlighting what the
+state *changed*.** "Which NPCs does chapter 3 move, and where from" is probably
+the most useful question in the whole feature, and it wants a third marker
+colour — which the layer has not got, because the colour channel already
+carries the known/unknown split that keeps the unmeasured coverage visible. It
+is a real slice, not a tweak, and it should not be smuggled into the picker's.
+
 **Chapter-conditional spawns — the other half, deliberately not carded.** An
 NPC's *presence* is quest-gated too: `B_Enter_OldWorld.d`'s 302 spawns are one
 `if (Kapitel ...)` after another, indexed since the nested-call fix but drawn
