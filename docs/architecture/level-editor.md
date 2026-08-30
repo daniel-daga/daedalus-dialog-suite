@@ -1496,7 +1496,9 @@ that restores the wrong set of fields — until somebody presses Ctrl+Z.
   entry and fifty.
 - **A visual is renamed, never re-typed.** A visual is its own object frame in
   the archive with its own class, and the class is **not** implied by the file
-  name. Measured across the three retail worlds:
+  name. Measured across the three retail worlds, and re-measurable —
+  `zenkit-node/scripts/check-visual-types.js` is the script, its tabulation is
+  pinned by `test/visualTypes.test.js`, and it reproduces every number below:
 
   | extension | type | | |
   |---|---|---|---|
@@ -1513,8 +1515,9 @@ that restores the wrong set of fields — until somebody presses Ctrl+Z.
   only its name changes. A VOB whose visual is `UNKNOWN` has none to rename —
   and that is not an edge case, it is **15,749 of the 41,393**, which is what
   "this VOB has no visual" actually looks like on disk (no retail VOB has a null
-  visual pointer at all). The binding refuses it and the grid disables the field
-  rather than offering an edit that would be refused at the bottom of the stack.
+  visual pointer at all) — **38.0 %** of the corpus. The binding refuses it and
+  the grid disables the field rather than offering an edit that would be
+  refused at the bottom of the stack.
 - **Only a visual swap can move the box, and its two sides are different
   visuals** — not one visual under two transforms, which is what a rotation has.
   So the op carries a box for each and `invertOp` swaps both, and the *new*

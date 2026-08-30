@@ -141,8 +141,8 @@ writes, the classes beyond five), none of it carded.
 with nobody watching. Triaged against the tree 2026-08-30, each verified still
 open. **Take the top unclaimed row and cross it off in the same commit; a run
 may not add rows.** `unattended-queue.md` — **section 5, the level editor, is
-now first (Daniel, 2026-08-30)**, so the next row is 40, re-measuring spawn-index
-coverage; the corpus those rows want is present in `zenkit-node/worlds/`. Rows
+now first (Daniel, 2026-08-30)**, so the next row is 42, the BINARY fidelity
+baseline; the corpus those rows want is present in `zenkit-node/worlds/`. Rows
 1-12 of section 1 landed 2026-08-30 and the rest of it waits below section 5.
 
 **World surface, from Daniel's own sessions 2026-08-30 — all at §16.24.** None
@@ -226,13 +226,7 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **Unattended queue row 11** (board-loop) — `updateModel` clears `saveError` and
-  `_applyHistoryModelUpdate` delegates to it, so a stale save failure no longer survives
-  an edit and there is one body instead of two identical ones
-- **Unattended queue row 40** (board-loop) — spawn-index coverage re-measured on the
-  fixed parser: **3,976 of 3,978**, the two missed being `Externals.d`'s prototype
-  declarations. `countSpawnCalls` strips comments now, so the old 4,087 denominator
-  was counting 111 commented-out calls as lost ones; §16.19 and §16.22's table redone
-- **Unattended queue row 12** (board-loop) — the cp1250 heuristic needs two distinct
-  ambiguous bytes, or one windows-1252 leaves unassigned, so a lone `è` or `Ø` no longer
-  flips a Western file; landed in `7591836`, salvaged from a killed iteration
+- **Unattended queue row 41** (board-loop) — `check-visual-types.js` re-measures
+  extension × visual class over the corpus and reproduces every figure §7 quotes:
+  `.3DS` is the only ambiguous extension, and 15,749 of 41,393 VOBs (38.0 %) carry
+  no visual object to rename
