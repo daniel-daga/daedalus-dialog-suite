@@ -83,8 +83,9 @@ was true for so long nobody re-reads it.
 - `master` is where work lands and is **pushed to `origin/master`**;
   `feature/level-editor` was merged and is no longer where work happens.
   Every `board-loop*` branch is now **spent** — `master` contains all five, and
-  work lands on `master` directly. It is ahead of `origin/master` and pushing is
-  a person's call. A push is not a release — see the merge note below.
+  work lands on `master` directly, and is pushed as it lands — it was level with
+  `origin/master` on 2026-08-30. A push is not a release — see the merge note
+  below.
   No HEAD hash and no count here — a file committed at HEAD cannot name either,
   and a number goes stale the moment anything lands. `git status -sb` answers it.
 - **`zenkit-node/vendor/ZenKit` is permanently dirty** and is **never**
