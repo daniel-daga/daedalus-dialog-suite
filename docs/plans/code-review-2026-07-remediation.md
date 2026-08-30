@@ -135,10 +135,11 @@ Renderer stores:
       and record the decision in `docs/architecture/quest-editor.md`.
 
 Main process:
-- [ ] 4.11 `FileService.ts:26, 33, 39` keys `fileEncodingCache`/`fileStatCache`/`fileLocks` on the
-      raw `filePath`, and `main.ts:120-123` passes the watcher's path straight into the cache
-      clears. `FileWatcherService.ts:24-27` already has the canonicalizer (normalize, then `/`,
-      then lowercase on win32) but applies it only to self-write suppression. Apply it to the keys.
+- [x] 4.11 **Landed 2026-08-30.** `fileEncodingCache`, `fileStatCache` and `fileLocks` all key on
+      `canonicalPathKey` (`src/main/utils/pathKey.ts`) — normalize, unify on `/`, lowercase on
+      win32 only — so the watcher's spelling reaching `main.ts`'s cache clears hits the entries
+      the read path created, and two spellings of one file share a lock instead of racing.
+      `FileWatcherService`'s `selfWriteKey` was that same function copied; it now imports it.
 - [x] 4.12 **Landed 2026-08-30.** `closeApproved` was module-global and nothing reset it, so
       after a macOS re-activation the guard short-circuited permanently. Approval is now a
       `WeakSet<BrowserWindow>`, and the `close` handler closes over the window it was

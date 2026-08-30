@@ -3,6 +3,7 @@ import type { FileHandle } from 'fs/promises';
 import * as path from 'path';
 import { dialog } from 'electron';
 import { decodeBuffer, encodeWithRoundtripCheck } from '../utils/encodingUtils';
+import { canonicalPathKey } from '../utils/pathKey';
 
 /**
  * Error types for FileService operations
@@ -20,13 +21,14 @@ export class FileServiceError extends Error {
 }
 
 /**
- * Mapping of file paths to their detected encodings
- * This allows us to preserve the original encoding when saving files
+ * Mapping of canonical path keys (see `canonicalPathKey`) to detected
+ * encodings. This allows us to preserve the original encoding when saving
+ * files, whichever spelling of the path the caller holds.
  */
 const fileEncodingCache = new Map<string, string>();
 
 /**
- * Mapping of file paths to the `mtimeMs` observed at the last successful read
+ * Mapping of canonical path keys to the `mtimeMs` observed at the last successful read
  * or write. Used by the `expectUnchanged` write precondition (E4 phase 2) to
  * detect an external modification landing before the file watcher fires.
  */
@@ -34,7 +36,7 @@ const fileStatCache = new Map<string, number>();
 
 /**
  * Simple lock mechanism to prevent race conditions during file operations
- * Maps file paths to pending operation promises
+ * Maps canonical path keys to pending operation promises
  */
 const fileLocks = new Map<string, Promise<any>>();
 
@@ -110,21 +112,23 @@ async function writeFileAtomic(filePath: string, buffer: Buffer): Promise<void> 
  * three or more concurrent callers could overlap once the first settled.)
  */
 export async function acquireLock<T>(filePath: string, operation: () => Promise<T>): Promise<T> {
+  const key = canonicalPathKey(filePath);
+
   // Chain this operation after whatever is currently queued for the path.
-  const previous = fileLocks.get(filePath) ?? Promise.resolve();
+  const previous = fileLocks.get(key) ?? Promise.resolve();
   const run = previous.then(() => operation(), () => operation());
 
   // Store a never-rejecting tail so the next caller chains after this one
   // without inheriting its rejection.
   const tail = run.then(() => undefined, () => undefined);
-  fileLocks.set(filePath, tail);
+  fileLocks.set(key, tail);
 
   try {
     return await run;
   } finally {
     // Only delete if no newer operation has queued behind us.
-    if (fileLocks.get(filePath) === tail) {
-      fileLocks.delete(filePath);
+    if (fileLocks.get(key) === tail) {
+      fileLocks.delete(key);
     }
   }
 }
@@ -151,12 +155,12 @@ export class FileService {
         const { content, encoding } = decodeBuffer(buffer);
 
         // Store the detected encoding for later use when writing
-        fileEncodingCache.set(filePath, encoding);
+        fileEncodingCache.set(canonicalPathKey(filePath), encoding);
 
         // Remember the on-disk mtime so a later `expectUnchanged` write can
         // detect an external modification (E4 phase 2).
         try {
-          fileStatCache.set(filePath, (await fs.stat(filePath)).mtimeMs);
+          fileStatCache.set(canonicalPathKey(filePath), (await fs.stat(filePath)).mtimeMs);
         } catch {
           // Non-fatal: without a cached mtime the write guard simply no-ops.
         }
@@ -209,7 +213,7 @@ export class FileService {
       // the file to be unchanged but its on-disk mtime no longer matches the
       // mtime we cached at read time (an edit landed before the watcher fired).
       if (opts?.expectUnchanged) {
-        const cachedMtime = fileStatCache.get(filePath);
+        const cachedMtime = fileStatCache.get(canonicalPathKey(filePath));
         if (cachedMtime !== undefined) {
           let diskMtime: number | undefined;
           try {
@@ -232,8 +236,9 @@ export class FileService {
       // Use the cached encoding if available. For files the editor never read
       // (e.g. freshly created scripts) default to windows-1252, the encoding
       // Gothic 2 tooling expects — not utf8.
-      const hadCache = fileEncodingCache.has(filePath);
-      let encoding = fileEncodingCache.get(filePath) || 'windows-1252';
+      const cacheKey = canonicalPathKey(filePath);
+      const hadCache = fileEncodingCache.has(cacheKey);
+      let encoding = fileEncodingCache.get(cacheKey) || 'windows-1252';
       let { buffer, lossyChars } = encodeWithRoundtripCheck(content, encoding);
 
       if (lossyChars.length > 0) {
@@ -246,7 +251,7 @@ export class FileService {
           encoding = 'windows-1252';
           ({ buffer, lossyChars } = encodeWithRoundtripCheck(content, encoding));
           if (lossyChars.length === 0) {
-            fileEncodingCache.set(filePath, encoding);
+            fileEncodingCache.set(cacheKey, encoding);
           }
         }
 
@@ -294,7 +299,7 @@ export class FileService {
         // Refresh the cached mtime so a subsequent expectUnchanged write does
         // not misfire on our own write.
         try {
-          fileStatCache.set(filePath, (await fs.stat(filePath)).mtimeMs);
+          fileStatCache.set(canonicalPathKey(filePath), (await fs.stat(filePath)).mtimeMs);
         } catch {
           // Non-fatal: the next read repopulates the cache.
         }
@@ -335,7 +340,7 @@ export class FileService {
    * @returns The detected encoding or undefined if not cached
    */
   getFileEncoding(filePath: string): string | undefined {
-    return fileEncodingCache.get(filePath);
+    return fileEncodingCache.get(canonicalPathKey(filePath));
   }
 
   /**
@@ -344,7 +349,7 @@ export class FileService {
    */
   clearEncodingCache(filePath?: string): void {
     if (filePath) {
-      fileEncodingCache.delete(filePath);
+      fileEncodingCache.delete(canonicalPathKey(filePath));
     } else {
       fileEncodingCache.clear();
     }
@@ -358,7 +363,7 @@ export class FileService {
    */
   clearStatCache(filePath?: string): void {
     if (filePath) {
-      fileStatCache.delete(filePath);
+      fileStatCache.delete(canonicalPathKey(filePath));
     } else {
       fileStatCache.clear();
     }

@@ -10,22 +10,12 @@
  */
 
 import { watch, type FSWatcher } from 'chokidar';
-import * as path from 'path';
 import type { BrowserWindow } from 'electron';
+import { canonicalPathKey } from '../utils/pathKey';
 
 interface PathStats {
   isFile(): boolean;
   isDirectory(): boolean;
-}
-
-/**
- * Normalize a path for self-write suppression matching. The notifier and the
- * watcher may disagree on separators (and casing on Windows), so we compare on
- * a canonical key: forward slashes everywhere, lowercased on win32.
- */
-function selfWriteKey(filePath: string): string {
-  const unified = path.normalize(filePath).replace(/\\/g, '/');
-  return process.platform === 'win32' ? unified.toLowerCase() : unified;
 }
 
 export type FileChangeType = 'change' | 'add' | 'unlink';
@@ -74,7 +64,7 @@ export class FileWatcherService {
    * event for it is suppressed. The mark expires after 2 seconds.
    */
   notifySelfWrite(filePath: string): void {
-    const key = selfWriteKey(filePath);
+    const key = canonicalPathKey(filePath);
     this.selfWrittenPaths.add(key);
     // Unref'd: expiring a suppression mark is never a reason to hold the
     // process open. Referenced, each call pins its process for two seconds —
@@ -145,7 +135,7 @@ export class FileWatcherService {
 
   private handleEvent(type: FileChangeType, filePath: string): void {
     // Skip events triggered by the editor's own writes
-    const key = selfWriteKey(filePath);
+    const key = canonicalPathKey(filePath);
     if (this.selfWrittenPaths.has(key)) {
       this.selfWrittenPaths.delete(key);
       return;

@@ -142,8 +142,8 @@ with nobody watching, ordered: the 2026-07 defects, the production-readiness
 and simulator backlogs, and the level editor's measurements. Triaged against
 the tree 2026-08-30, each verified still open. **Take the top unclaimed row and
 cross it off in the same commit; a run may not add rows.**
-`unattended-queue.md` — rows 1-8 landed 2026-08-30; row 9 is `FileService`
-keying its caches on the raw path.
+`unattended-queue.md` — rows 1-9 landed 2026-08-30; row 10 is a project-open
+failure swallowed into a `loadError` nothing reads.
 
 **World surface, from Daniel's own sessions 2026-08-30 — all at §16.24.** None
 needs the engine; the order is a guess at his, so move it.
@@ -226,12 +226,6 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **Unattended queue row 7** (board-loop) — both worker pools reap on any `exit`,
-  code 0 included, so a worker that walks off its own event loop settles its
-  pending request instead of stalling 30 s. 2026-07 **4.15**
-- **Unattended queue row 6** (board-loop) — the updater stamps its rate-limit
-  timestamp only once a check reaches a conclusion, so a network blip no longer
-  costs the hour. 2026-07 **4.13**
-- **Unattended queue row 8** (board-loop) — close approval is a `WeakSet` of windows,
-  so a window created after an approved close asks the renderer about unsaved work
-  again instead of closing unguarded. 2026-07 **4.12**
+- **Unattended queue row 9** (board-loop) — `FileService`'s encoding cache, stat cache
+  and locks key on `canonicalPathKey`, which the watcher now shares instead of
+  copying. 2026-07 **4.11**
