@@ -43,6 +43,16 @@ const UNPLACED = 0x78909c;
 // Above the waynet's 10, for the same reason.
 const RENDER_ORDER = 11;
 
+// The dummy — a body standing where the dot already is (slice 9). Roughly a
+// person's height in ZenGin centimetres: a 25 cm radius and a 130 cm cylinder
+// between the two hemispherical caps add up to 180.
+const DUMMY_RADIUS = 25;
+const DUMMY_CYLINDER_HEIGHT = 130;
+const DUMMY_HEIGHT = DUMMY_CYLINDER_HEIGHT + 2 * DUMMY_RADIUS;
+
+const DUMMY_KNOWN_COLOR = new THREE.Color(SPAWN);
+const DUMMY_UNKNOWN_COLOR = new THREE.Color(UNPLACED);
+
 export class SpawnOverlay {
   /** Add this under the scene's converted root, not under the scene. */
   readonly root = new THREE.Group();
@@ -50,11 +60,28 @@ export class SpawnOverlay {
   readonly markers: THREE.Points;
   /** Static spawns of the NPCs this minute has no stated position for. */
   readonly unknownMarkers: THREE.Points;
+  /**
+   * A body at each occupied point (§16.19 slice 9) — one `InstancedMesh`, known
+   * and unknown together, told apart by instance colour rather than a second
+   * mesh, the way `HIDDEN_ATTRIBUTE` already carries a per-instance flag beside
+   * a VOB's matrix. It stands beside the dot, not instead of it: the dot keeps
+   * `depthTest: false` and a fixed pixel size on purpose, and a solid body can
+   * hold neither property without hiding a spawn behind a wall or vanishing at
+   * map zoom.
+   *
+   * Symmetric on purpose — no rotation is ever written. `WaynetPayload.directions`
+   * has no confirmed consumer and the mirrored root turns a wrong facing into a
+   * mirrored one, so until that is checked against Spacer (as §16.4's Euler
+   * order is) a facing this draws would claim more than it can back.
+   */
+  readonly dummies: THREE.InstancedMesh;
 
   private geometry = new THREE.BufferGeometry();
   private unknownGeometry = new THREE.BufferGeometry();
   private material: THREE.PointsMaterial;
   private unknownMaterial: THREE.PointsMaterial;
+  private dummyGeometry: THREE.CapsuleGeometry;
+  private dummyMaterial: THREE.MeshBasicMaterial;
   /** The payload's positions, read again on every `refresh`. */
   private source: Float32Array;
   /** UPPERCASED waypoint name to its index in the payload. */
@@ -101,6 +128,27 @@ export class SpawnOverlay {
       'position',
       new THREE.BufferAttribute(new Float32Array(waynet.count * 3), 3),
     );
+
+    // Capped at the person's own height, feet at the origin: `setMatrixAt`
+    // below writes a pure translation to the waypoint, so the offset that puts
+    // the feet there rather than the capsule's centre has to live in the
+    // geometry itself. Baked once here rather than composed into every
+    // instance matrix, the way slice 4's markers bake nothing because a point
+    // has no extent to offset.
+    this.dummyGeometry = new THREE.CapsuleGeometry(DUMMY_RADIUS, DUMMY_CYLINDER_HEIGHT, 4, 8);
+    this.dummyGeometry.translate(0, DUMMY_HEIGHT / 2, 0);
+    // White so the instance colour set below is the colour drawn, unmixed —
+    // `vertexColors` on an `InstancedMesh` multiplies the material's own
+    // colour by each instance's, and `HIDDEN_ATTRIBUTE`'s per-instance flag is
+    // the same idea: one mesh, split by an attribute rather than a second one.
+    this.dummyMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true });
+    this.dummies = new THREE.InstancedMesh(this.dummyGeometry, this.dummyMaterial, waynet.count);
+    this.dummies.matrixAutoUpdate = false;
+    // Nothing raycasts an overlay decoration: the World surface picks a
+    // waypoint by projecting its origin (`pickWaypoint`), never by a mesh hit,
+    // and a stray hit here would only ever be a bug in something else's cast.
+    this.dummies.raycast = () => undefined;
+
     this.writePositions();
 
     this.material = new THREE.PointsMaterial({
@@ -132,6 +180,7 @@ export class SpawnOverlay {
 
     this.root.add(this.markers);
     this.root.add(this.unknownMarkers);
+    this.root.add(this.dummies);
     this.root.matrixAutoUpdate = false;
     // Hidden until asked for, like the waynet: it costs a buffer and a draw call.
     this.root.visible = false;
@@ -209,6 +258,38 @@ export class SpawnOverlay {
   private writePositions(): void {
     this.writeLayer(this.geometry, this.points);
     this.writeLayer(this.unknownGeometry, this.unknownPoints);
+    this.writeDummies();
+  }
+
+  /**
+   * One instance per point in either list, known first — the same set the two
+   * dot layers draw, told apart by colour rather than by which of two meshes
+   * they are in (the `HIDDEN_ATTRIBUTE` pattern, not the markers' two-`Points`
+   * one, because a body is one draw call either way and a second `InstancedMesh`
+   * would only double the buffers).
+   */
+  private writeDummies(): void {
+    const matrix = new THREE.Matrix4();
+    let instance = 0;
+
+    const write = (points: readonly number[], color: THREE.Color) => {
+      for (const point of points) {
+        matrix.setPosition(this.source[point * 3], this.source[point * 3 + 1], this.source[point * 3 + 2]);
+        this.dummies.setMatrixAt(instance, matrix);
+        this.dummies.setColorAt(instance, color);
+        instance += 1;
+      }
+    };
+    write(this.points, DUMMY_KNOWN_COLOR);
+    write(this.unknownPoints, DUMMY_UNKNOWN_COLOR);
+
+    this.dummies.count = instance;
+    this.dummies.instanceMatrix.needsUpdate = true;
+    // `setColorAt` allocates `instanceColor` on its first call, so a world with
+    // nobody drawn here yet — nothing spawned, or the layer just built — never
+    // has one to flag stale.
+    if (this.dummies.instanceColor) this.dummies.instanceColor.needsUpdate = true;
+    this.dummies.computeBoundingSphere();
   }
 
   private writeLayer(geometry: THREE.BufferGeometry, points: readonly number[]): void {
@@ -233,6 +314,8 @@ export class SpawnOverlay {
     this.unknownGeometry.dispose();
     this.material.dispose();
     this.unknownMaterial.dispose();
+    this.dummyGeometry.dispose();
+    this.dummyMaterial.dispose();
     this.root.clear();
   }
 }

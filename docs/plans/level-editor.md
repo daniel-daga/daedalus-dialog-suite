@@ -2000,10 +2000,10 @@ in the Claude Code cloud container"*). Jest covers the choice
 toggle (`WorldSurface.editing.test.tsx`); **that the names land on their dots on
 screen is still unwitnessed**, and it is the same wall, not a new one.
 
-**Slice 9 — NPC dummies. Proposed, not built (Daniel, 2026-08-30).** Draw a
-body at each occupied point instead of a dot: the spawn layer's markers become
-stand-in figures, moved through the day by slice 7's slider and named by slice
-8's labels.
+**Slice 9 — NPC dummies. Landed 2026-08-30 (Claude).** Draw a body at each
+occupied point instead of a dot: the spawn layer's markers become stand-in
+figures, moved through the day by slice 7's slider and named by slice 8's
+labels.
 
 **This is not the NPC-rendering that is out of scope, and the difference is the
 whole reason it is cheap.** The bullet above records that real NPC *visuals* are
@@ -2044,23 +2044,42 @@ wrong.**
    findable with the whole world in frame. A body shrinks with distance and is
    nothing at map zoom. Keeping the dot is what preserves the find-it-anywhere
    property; the dot sits at the dummy's feet, which is where the waypoint is.
-4. **`placementWaypointsAt` throws away who.** It returns waypoint names,
-   because that is all a marker needed. A labelled dummy wants point → the
-   instances standing on it, which `placementsAt` has and this discards. That is
-   the one API change in the slice.
+4. **`placementWaypointsAt` throws away who — not closed here.** It returns
+   waypoint names, because that is all a marker needed, and a labelled dummy
+   would want point → the instances standing on it, which `placementsAt` has
+   and this discards. **Not taken**: the label a dummy draws is still slice 8's
+   waypoint name, over the same point a dot already stood on, so nothing built
+   in this slice consumes occupant identity — the count is still the waypoint
+   panel's answer. Threading it through `SpawnOverlay` with no reader would be
+   an API grown for a call site that does not exist; left for whoever gives a
+   dummy its own label.
 
-**Shape of the work.** One `InstancedMesh` of a capsule authored in ZenGin
-centimetres (~180 units, the root scales it), sized at the waynet's point count
-and drawn with `count` — the same fixed-capacity trick slice 7 put on the
-markers' `drawRange`, and for the same reason. The known/unknown split carries
-over as a per-instance attribute rather than a second mesh, which is the pattern
-`HIDDEN_ATTRIBUTE` already establishes (§16.24 1 reaches for it too). Cost is
-one draw call for ~1,816 bodies, against the 724 the VOBs already spend.
+**Shape of the work, as built.** One `InstancedMesh` of a capsule authored in
+ZenGin centimetres — 25 cm radius, 130 cm cylinder, 180 total, the root scales
+it — sized at the waynet's point count and drawn with `.count`, the same
+fixed-capacity trick slice 7 put on the markers' `drawRange` and for the same
+reason: the slider rewrites the set on every tick of a drag. The known/unknown
+split is a per-instance colour (`setColorAt`, white material so it is drawn
+unmixed) rather than a second mesh — the `HIDDEN_ATTRIBUTE` pattern (§16.24 1
+reaches for it too), one draw call carrying both. The feet-at-the-waypoint
+offset (decision 3) is baked into the geometry once, by `translate`, rather than
+composed into every instance's matrix, since `setMatrixAt` writes a pure
+translation to the waypoint and nothing here ever rotates. Symmetric per
+decision 1: no rotation is written, so `WaynetPayload.directions` stays
+unread by anything and the mirror problem stays exactly where §16.4 left it.
+Held by `SpawnOverlay.test.ts`'s new cases — one dummy per point, the feet
+position, the identity rotation, the depth-test split against the dot, the
+colour split, and that it moves and disposes with the rest of the overlay.
+Cost is one draw call for the drawn points, against the 724 the VOBs already
+spend; ~1,816 is the corpus figure this was sized against, not a cap enforced
+anywhere.
 
 **A loose end it does not close:** `pickWaypoint` projects waypoint *origins*
 with an 8 px radius, so up close the clickable spot is at the dummy's feet and
 clicking its chest selects nothing. Worth knowing before it is reported as a
-bug.
+bug. And like slice 7 and slice 8, **nothing here is witnessed on screen** — the
+browser harness has no world, so Jest is what checks the scene graph and
+nobody has watched a dummy stand in a real one yet.
 
 **Phase ordering note.** §11 schedules 1b-2 before 1c, and 1b-2 is not finished
 — but what remains of it on the board (Euler order against Spacer) needs Spacer

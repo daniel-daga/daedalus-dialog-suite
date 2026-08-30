@@ -286,4 +286,141 @@ describe('SpawnOverlay', () => {
       expect(disposed).toBe(true);
     });
   });
+
+  describe('NPC dummies (§16.19 slice 9)', () => {
+    // A body at each occupied point, standing beside the dot that has always
+    // been there — not instead of it (§16.19 slice 9, decision 2): the dot is
+    // what makes a spawn findable with the whole map in frame, and a solid body
+    // cannot keep that property.
+
+    it('draws one dummy at each occupied point, feet on the waypoint', () => {
+      const overlay = new SpawnOverlay(waynet(), [site('GRD_200_XARDAS', 'WP_MIDDLE')], NO_ROUTINES);
+
+      expect(overlay.dummies.count).toBe(1);
+      const matrix = new THREE.Matrix4();
+      overlay.dummies.getMatrixAt(0, matrix);
+      const position = new THREE.Vector3();
+      const quaternion = new THREE.Quaternion();
+      const scale = new THREE.Vector3();
+      matrix.decompose(position, quaternion, scale);
+      // The waypoint's own position, unshifted — the visual offset that puts
+      // the capsule's feet there rather than its centre is baked into the
+      // geometry, not the instance matrix.
+      expect([position.x, position.y, position.z]).toEqual([1000, 200, 1000]);
+    });
+
+    it('is symmetric — no rotation is written, because the facing is unverified', () => {
+      // level-editor.md §16.19 slice 9, decision 1: `WaynetPayload.directions`
+      // is read by nothing and the mirrored root turns a wrong facing into a
+      // reflection too. A symmetric dummy claims nothing it cannot back.
+      const overlay = new SpawnOverlay(waynet(), [site('GRD_200_XARDAS', 'WP_MIDDLE')], NO_ROUTINES);
+
+      const matrix = new THREE.Matrix4();
+      overlay.dummies.getMatrixAt(0, matrix);
+      const position = new THREE.Vector3();
+      const quaternion = new THREE.Quaternion();
+      const scale = new THREE.Vector3();
+      matrix.decompose(position, quaternion, scale);
+
+      expect(quaternion.equals(new THREE.Quaternion())).toBe(true);
+    });
+
+    it('draws one dummy per point, not per site', () => {
+      const overlay = new SpawnOverlay(waynet(), [
+        site('GRD_200_XARDAS', 'WP_MIDDLE'),
+        site('BAU_961_GAAN', 'WP_MIDDLE'),
+        site('MIL_350_MARTIN', 'FP_CAMP'),
+      ], NO_ROUTINES);
+
+      expect(overlay.dummies.count).toBe(2);
+    });
+
+    it('drops a spawn point the world has not got', () => {
+      const overlay = new SpawnOverlay(waynet(), [site('GRD_200_XARDAS', 'WP_NOWHERE')], NO_ROUTINES);
+
+      expect(overlay.dummies.count).toBe(0);
+    });
+
+    it('draws through walls like the dot, but the dummy does not', () => {
+      // Decision 2: the dot keeps `depthTest: false` on purpose — a spawn
+      // inside a building is exactly the one worth looking at — and a solid
+      // body that ignored depth would read as standing in front of the
+      // building instead. The dummy is depth-tested; the dot is untouched.
+      const overlay = new SpawnOverlay(waynet(), [site('GRD_200_XARDAS', 'WP_MIDDLE')], NO_ROUTINES);
+
+      expect((overlay.dummies.material as THREE.Material).depthTest).toBe(true);
+      expect((overlay.markers.material as THREE.Material).depthTest).toBe(false);
+    });
+
+    it('colours a dummy by the same known/unknown split as the dots', () => {
+      const ROUTINES = {
+        sites: [entry('RTN_START_FARIM', at(8), at(22), 'WP_MIDDLE')],
+        routinesByNpc: { BAU_900_FARIM: 'RTN_START_FARIM' },
+      };
+      const overlay = new SpawnOverlay(waynet(), [site('BAU_900_FARIM', 'WP_START')], ROUTINES);
+      overlay.setTime(at(12));
+
+      // BAU_900_FARIM is placed at WP_MIDDLE by the routine (known) — the
+      // single dummy drawn must carry the known colour, not the unknown one.
+      expect(overlay.dummies.count).toBe(1);
+      const color = new THREE.Color();
+      overlay.dummies.getColorAt(0, color);
+      const known = (overlay.markers.material as THREE.PointsMaterial).color;
+      expect(color.getHex()).toBe(known.getHex());
+    });
+
+    it('moves with the time slider exactly as the dots do', () => {
+      const ROUTINES = {
+        sites: [
+          entry('RTN_START_FARIM', at(8), at(22), 'WP_MIDDLE'),
+          entry('RTN_START_FARIM', at(22), at(23), 'FP_CAMP'),
+        ],
+        routinesByNpc: { BAU_900_FARIM: 'RTN_START_FARIM' },
+      };
+      const SPAWNS = [site('BAU_900_FARIM', 'WP_START')];
+      const overlay = new SpawnOverlay(waynet(), SPAWNS, ROUTINES);
+
+      overlay.setTime(at(12));
+
+      expect(overlay.dummies.count).toBe(1);
+      const matrix = new THREE.Matrix4();
+      overlay.dummies.getMatrixAt(0, matrix);
+      const position = new THREE.Vector3();
+      matrix.decompose(position, new THREE.Quaternion(), new THREE.Vector3());
+      expect(position.x).toBe(1000); // WP_MIDDLE, not WP_START
+    });
+
+    it('follows a waypoint the payload has moved under it', () => {
+      const payload = waynet();
+      const overlay = new SpawnOverlay(payload, [site('GRD_200_XARDAS', 'WP_MIDDLE')], NO_ROUTINES);
+
+      new Float32Array(payload.positions).set([1400, 50, 900], 1 * 3);
+      overlay.refresh();
+
+      const matrix = new THREE.Matrix4();
+      overlay.dummies.getMatrixAt(0, matrix);
+      const position = new THREE.Vector3();
+      matrix.decompose(position, new THREE.Quaternion(), new THREE.Vector3());
+      expect([position.x, position.y, position.z]).toEqual([1400, 50, 900]);
+    });
+
+    it('survives a project that spawns nobody in this world', () => {
+      const overlay = new SpawnOverlay(waynet(), [], NO_ROUTINES);
+
+      expect(overlay.dummies.count).toBe(0);
+      expect(() => overlay.refresh()).not.toThrow();
+    });
+
+    it('is added and released with the rest of the overlay', () => {
+      const overlay = new SpawnOverlay(waynet(), [site('GRD_200_XARDAS', 'WP_MIDDLE')], NO_ROUTINES);
+      expect(overlay.root.children).toContain(overlay.dummies);
+
+      let disposed = false;
+      overlay.dummies.geometry.addEventListener('dispose', () => { disposed = true; });
+      overlay.dispose();
+
+      expect(disposed).toBe(true);
+      expect(overlay.root.children).toHaveLength(0);
+    });
+  });
 });

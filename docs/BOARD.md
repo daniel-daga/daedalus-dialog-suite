@@ -165,11 +165,8 @@ needs the engine; the order is a guess at his, so move it.
   **decide rotation first**, or the gizmo shows a pivot the op does not use.
   §16.24 2
 
-**Phase 1c — the overlay, at §16.19.** Neither is blocked.
+**Phase 1c — the overlay, at §16.19.** Not blocked.
 
-- **NPC dummies** — draw a body at each occupied point instead of a dot, moved
-  by the slider and named by the labels. Designed, not built; the facing is
-  unverified and wants Spacer, as §16.4 does. §16.19 s9
 - **The routine index's coverage has never been measured** — one command
   against `mdk/Content`; it qualifies everything built on the index. Now also
   qualifies the slider: an hour it reads badly draws grey. §16.19 s6
@@ -239,3 +236,6 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
   routines' answer for a chosen minute with unplaced NPCs dimmed, and a *Names*
   toggle labels the nearest 24 drawn waypoints. Neither has a Playwright
   spec. §16.19 s7, s8
+- **NPC dummies** (Claude) — a capsule body per occupied point, depth-tested,
+  beside the untouched dot; symmetric, no facing written. Unwitnessed in a
+  real world, like s7/s8. §16.19 s9
