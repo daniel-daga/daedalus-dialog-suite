@@ -69,6 +69,34 @@ describe('searchStore', () => {
       expect(state.dialogFilter).toBe('');
       expect(state.searchResults).toHaveLength(0);
     });
+
+    it('should cancel an in-flight search so it cannot repopulate results', async () => {
+      // Enough functions to force performSearch past its 500-entry chunk boundary,
+      // where it yields to the main thread and clearSearch can land mid-flight.
+      const functions: SemanticModel['functions'] = {};
+      for (let i = 0; i < 1200; i++) {
+        functions[`DIA_Bulk_${i}_Info`] = {
+          name: `DIA_Bulk_${i}_Info`,
+          returnType: 'VOID',
+          actions: [{ speaker: 'self', text: 'Old Camp gossip', id: `${i}` }],
+          conditions: [],
+          calls: []
+        };
+      }
+      const bulkModel: SemanticModel = { dialogs: {}, functions, hasErrors: false, errors: [] };
+
+      useSearchStore.getState().setSearchQuery('Old Camp');
+      const pending = useSearchStore.getState().performSearch(bulkModel, new Map());
+
+      useSearchStore.getState().clearSearch();
+      expect(useSearchStore.getState().isSearching).toBe(false);
+
+      await pending;
+
+      const state = useSearchStore.getState();
+      expect(state.searchResults).toHaveLength(0);
+      expect(state.isSearching).toBe(false);
+    });
   });
 
   describe('filterNpcs', () => {

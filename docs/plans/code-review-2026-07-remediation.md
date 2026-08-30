@@ -120,9 +120,9 @@ Renderer stores:
       open file's entry is evicted on a project past the 512-file cap, the next
       `getSemanticModel` re-parses from disk and caches a model without its unsaved edits.
       Pinning needs the open-file set, which is the import projectStore cannot have.
-- [ ] 4.3 `clearSearch` (`searchStore.ts:95-102`) still does not bump `currentSearchId` (`:65`) or
-      reset `isSearching` (`:73`), so an in-flight chunked search passes the guards at `:221/:258`
-      and repopulates cleared results at `:262`.
+- [x] **4.3 `clearSearch` cancels the in-flight search** — **landed 2026-08-30.** It bumps
+      `currentSearchId` and sets `isSearching: false`, so a chunked search that was mid-yield
+      fails both cancellation guards and returns without writing its results.
 - [ ] 4.5 `updateModel` (`fileStore.ts:372-382`) and `_applyHistoryModelUpdate` (`:932-942`) have
       byte-identical bodies, and neither clears `saveError` though every sibling mutator does
       (`:393, 417, 452, 476, 499, 539, 648, 681`). Dedupe and clear.

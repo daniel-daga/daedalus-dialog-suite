@@ -93,11 +93,15 @@ export const useSearchStore = create<SearchStore>((set, get) => ({
   },
 
   clearSearch: () => {
+    // Bump the search id so an in-flight chunked search fails its cancellation
+    // guards instead of repopulating the results we are clearing.
+    currentSearchId++;
     set({
       searchQuery: '',
       npcFilter: '',
       dialogFilter: '',
-      searchResults: []
+      searchResults: [],
+      isSearching: false
     });
   },
 
