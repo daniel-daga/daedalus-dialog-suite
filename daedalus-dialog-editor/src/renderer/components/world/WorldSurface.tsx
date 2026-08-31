@@ -54,6 +54,28 @@ import WorldToolbar from './toolbar/WorldToolbar';
  *  its own decisions (which axis is up for this visual?) rather than a default. */
 const IDENTITY: ZenRotation = [1, 0, 0, 0, 1, 0, 0, 0, 1];
 
+/**
+ * Whether a keystroke belongs to something *over* the surface rather than to
+ * the surface itself — the guard every shortcut below shares.
+ *
+ * Two cases, and the second is the one a tagName check alone misses: MUI
+ * renders a `Select`'s options as `li[role="option"]` inside a popover and a
+ * `Dialog`'s buttons as plain `button`s, so arrowing through the Snap step
+ * dropdown or pressing Delete inside the save confirm would otherwise reach
+ * the surface's own handler — nudging a VOB (and recording an undo entry)
+ * while the user believes they are only picking a menu item.
+ */
+function isTypingOrInPopover(target: EventTarget | null): boolean {
+  const element = target as HTMLElement | null;
+  if (element?.isContentEditable) return true;
+  if (['INPUT', 'TEXTAREA', 'SELECT'].includes(element?.tagName ?? '')) return true;
+  // `event.target` is the bare `Window` for a shortcut fired with nothing
+  // focused, which has no `closest` — only an in-page element can be inside
+  // a popover.
+  return element instanceof Element
+    && element.closest('[role="listbox"], [role="menu"], [role="dialog"]') !== null;
+}
+
 /** Arrow-key nudge, in the world's own axes (ZenGin is Y-up): one unit of
  *  step per key, `[x, y, z]`. Keyed by the lower-cased `KeyboardEvent.key`. */
 const NUDGE_DELTAS: Record<string, [number, number, number]> = {
@@ -65,7 +87,7 @@ const NUDGE_DELTAS: Record<string, [number, number, number]> = {
   pagedown: [0, -1, 0],
 };
 
-/** The side panels' widths (level-editor-ui-improvements.md slice 8) —
+/** The side panels' widths (level-editor.md §17) —
  *  view state like the theme, so it persists the same way (`main.tsx`'s
  *  `THEME_STORAGE_KEY` pattern), not through `SettingsService`, which is
  *  for main-process/security-adjacent config. */
@@ -465,7 +487,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   }, [selectVob, toggleVob]);
 
   /**
-   * The right-click menu (level-editor-ui-improvements.md slice 6, the
+   * The right-click menu (level-editor.md §17, the
    * app's first context menu) — the vob it is about, and its anchor
    * position in viewport coordinates. Null while closed.
    */
@@ -1562,6 +1584,14 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     await commitOps([deleteVob(vobModelOf(current).reader, vob)]);
   }, [commitOps]);
 
+  /** Any of the surface's own modal surfaces is up, so the window-level
+   *  shortcuts below are not the keystroke's owner — the dialog or menu is.
+   *  Checked in addition to `isTypingOrInPopover`, which only sees where
+   *  focus *is*: a shortcut fired with focus still on `window` (nothing in
+   *  the dialog focused yet) would pass that test and fail this one. */
+  const surfaceDialogOpen = deleting !== null || deletingWaypoint !== null
+    || placing !== null || confirmingSave || addingWaypoint !== null || contextMenu !== null;
+
   useEffect(() => {
     if (summary === null) return undefined;
     // Every shortcut below is a *window* listener, and the surface stays
@@ -1581,9 +1611,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       // typing — the World surface has no text field of its own, but this is a
       // window listener and the app is full of them.
       if (!event.ctrlKey && !event.metaKey && !event.altKey && (key === 'w' || key === 'e')) {
-        const target = event.target as HTMLElement | null;
-        if (target?.isContentEditable
-          || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName ?? '')) return;
+        if (isTypingOrInPopover(event.target) || surfaceDialogOpen) return;
         event.preventDefault();
         setGizmoMode(key === 'w' ? 'translate' : 'rotate');
         return;
@@ -1594,9 +1622,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       // browser.
       if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey
         && (key === 'c' || key === 'v')) {
-        const target = event.target as HTMLElement | null;
-        if (target?.isContentEditable
-          || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName ?? '')) return;
+        if (isTypingOrInPopover(event.target) || surfaceDialogOpen) return;
         // And with nothing selected a copy is the browser's too, rather than a
         // swallowed keystroke: the surface shows text — the install path, a VOB
         // name — that a user may well be trying to copy. It leaves whatever is
@@ -1613,9 +1639,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       // first: VOB and waypoint selection are mutually exclusive in the
       // store, so only one of the two branches below can ever apply.
       if (key === 'delete') {
-        const target = event.target as HTMLElement | null;
-        if (target?.isContentEditable
-          || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName ?? '')) return;
+        if (isTypingOrInPopover(event.target) || surfaceDialogOpen) return;
         const { selection: currentSelection, selectedWaypoint: currentWaypoint } = useWorldStore.getState();
         if (currentWaypoint !== null && waynet !== null) {
           event.preventDefault();
@@ -1633,11 +1657,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       // keydown — without the guard it would also discard the selection the
       // open dialog is about, out from under the dialog that is closing.
       if (key === 'escape') {
-        const target = event.target as HTMLElement | null;
-        if (target?.isContentEditable
-          || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName ?? '')) return;
-        if (deleting !== null || deletingWaypoint !== null || placing !== null
-          || confirmingSave || addingWaypoint !== null || contextMenu !== null) return;
+        if (isTypingOrInPopover(event.target) || surfaceDialogOpen) return;
         const { selection: currentSelection, selectedWaypoint: currentWaypoint } = useWorldStore.getState();
         if (currentSelection.length === 0 && currentWaypoint === null) return;
         event.preventDefault();
@@ -1646,21 +1666,26 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       }
 
       // World-axis nudge — ZenGin is Y-up, so ArrowLeft/Right move X,
-      // ArrowUp/Down move Z and PageUp/Down move Y; the step is the chosen
-      // snap grid, or 10 cm free-form (§: nudge step *is* the snap step),
-      // ×10 while Shift is held. One keypress is one undo entry — no
-      // coalescing, same as a single gizmo drag.
+      // ArrowUp/Down move Z and PageUp/Down move Y, ×10 while Shift is held.
+      // One keypress is one undo entry — no coalescing, same as a single
+      // gizmo drag.
       if (NUDGE_DELTAS[key]) {
+        if (isTypingOrInPopover(event.target) || surfaceDialogOpen) return;
+        // Reserves the arrow keys for the scene tree's own navigation.
         const target = event.target as HTMLElement | null;
-        if (target?.isContentEditable
-          || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName ?? '')) return;
-        // Reserves the arrow keys for the scene tree's own navigation
-        // (level-editor-ui-improvements.md slice 7). `event.target` is the
-        // bare `Window` for a shortcut fired with nothing focused, which has
-        // no `closest` — only an in-page element can be inside the tree.
         if (target instanceof Element && target.closest('[role="tree"]')) return;
+        // Read *before* `preventDefault`, as the Escape branch does: with
+        // nothing selected this key is nobody's, and swallowing it would
+        // stop the asset list scrolling for a nudge that never happens.
+        if (useWorldStore.getState().selection.length === 0) return;
         event.preventDefault();
-        const step = (snapGrid > 0 ? snapGrid : 10) * (event.shiftKey ? 10 : 1);
+        // A nudge translates, so it takes the *translate* step — and only
+        // while that is the step the Snap control is actually showing. In
+        // rotate mode that control edits the angle instead, so a `snapGrid`
+        // left over from translate mode would be an invisible value driving
+        // a visible key: 45° on screen, 5 m under the arrow.
+        const grid = gizmoMode === 'translate' ? snapGrid : 0;
+        const step = (grid > 0 ? grid : 10) * (event.shiftKey ? 10 : 1);
         const [dx, dy, dz] = NUDGE_DELTAS[key];
         handleTranslateSelection([dx * step, dy * step, dz * step]);
         return;
@@ -1679,8 +1704,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     return () => window.removeEventListener('keydown', handler);
   }, [
     summary, hidden, runHistory, copySelection, pasteClipboard, waynet, selectVob,
-    deleting, deletingWaypoint, placing, confirmingSave, addingWaypoint, contextMenu,
-    snapGrid, handleTranslateSelection,
+    surfaceDialogOpen, snapGrid, gizmoMode, handleTranslateSelection,
   ]);
 
   // The World bar's own combined-state rules (WorldToolbar §5): each collapses
@@ -1943,11 +1967,16 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
             </Tooltip>
           </Box>
         )}
-        {summary && !leftPanelCollapsed && (
+        {/* Hidden, never unmounted — the same rule the Scene/Assets tab
+            switch below already follows, and for the same reason: the tree
+            owns its expansion set, its filter text and its scroll offset,
+            and a collapse that threw all three away would make the button
+            cost far more than the space it buys. */}
+        {summary && (
           <>
             <Box data-testid="world-panel-left" sx={{
-              width: panelWidths.left, flexShrink: 0,
-              minHeight: 0, display: 'flex', flexDirection: 'column',
+              width: panelWidths.left, flexShrink: 0, minHeight: 0,
+              display: leftPanelCollapsed ? 'none' : 'flex', flexDirection: 'column',
             }}>
               <Stack direction="row" alignItems="center">
                 <Tabs
@@ -1989,13 +2018,15 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                 </Box>
               )}
             </Box>
-            <PanelSplitter
-              data-testid="world-splitter-left"
-              width={panelWidths.left}
-              grow="right"
-              onResize={setLeftPanelWidth}
-              onResizeEnd={persistPanelWidths}
-            />
+            {!leftPanelCollapsed && (
+              <PanelSplitter
+                data-testid="world-splitter-left"
+                width={panelWidths.left}
+                grow="right"
+                onResize={setLeftPanelWidth}
+                onResizeEnd={persistPanelWidths}
+              />
+            )}
           </>
         )}
 
@@ -2061,8 +2092,15 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
             onResizeEnd={persistPanelWidths}
           />
         )}
-        {summary && !rightPanelCollapsed && (
-          <Box data-testid="world-panel-right" sx={{ width: panelWidths.right, flexShrink: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        {/* Hidden rather than unmounted, as the left panel is — the
+            property grid's fields are uncontrolled and corrected by
+            remount-by-key (`refactoring-targets.md` §7), so an unmount
+            here would discard a half-typed coordinate on a collapse. */}
+        {summary && (
+          <Box data-testid="world-panel-right" sx={{
+            width: panelWidths.right, flexShrink: 0, minHeight: 0,
+            display: rightPanelCollapsed ? 'none' : 'flex', flexDirection: 'column',
+          }}>
             <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
               <Tooltip title="Hide properties panel">
                 <IconButton

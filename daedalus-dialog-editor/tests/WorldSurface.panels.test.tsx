@@ -8,8 +8,7 @@ import { useProjectStore } from '../src/renderer/store/projectStore';
 import { SUMMARY, makeWorldEditorApi, vobIndex, waynetPayload } from './worldFixtures';
 
 /**
- * The World surface's resizable side panels (level-editor-ui-improvements.md
- * slice 8) — a `PanelSplitter` drag changes the panel's width, clamped, and
+ * The World surface's resizable side panels (level-editor.md §17) — a `PanelSplitter` drag changes the panel's width, clamped, and
  * persists it to localStorage on pointerup; collapse/expand hide and restore
  * a panel at the width it already had. jsdom has no layout, so these assert
  * the `width` style and the stored preference, not pixels on screen.
@@ -158,15 +157,33 @@ describe('the World surface panels', () => {
 
     fireEvent.click(screen.getByTestId('world-panel-collapse-left'));
 
-    expect(screen.queryByTestId('world-panel-left')).not.toBeInTheDocument();
+    // Hidden, not unmounted — the panel keeps its subtree's state (the
+    // tree's expansion, filter and scroll) across a collapse.
+    expect(screen.getByTestId('world-panel-left')).not.toBeVisible();
     expect(screen.queryByTestId('world-splitter-left')).not.toBeInTheDocument();
     expect(screen.getByTestId('world-panel-expand-left')).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('world-panel-expand-left'));
 
     // Restored at the width it was resized to, not the default.
+    expect(screen.getByTestId('world-panel-left')).toBeVisible();
     expect(screen.getByTestId('world-panel-left')).toHaveStyle({ width: '340px' });
     expect(screen.queryByTestId('world-panel-expand-left')).not.toBeInTheDocument();
+  });
+
+  it('keeps the scene tree mounted across a collapse, so its state survives', async () => {
+    // The defect this pins: collapsing used to unmount the panel, throwing
+    // away the tree's expansion set, filter text and scroll offset — while
+    // the Scene/Assets tab switch beside it deliberately uses display:none
+    // to avoid exactly that.
+    await openWorld();
+    const treeBefore = screen.getByRole('tree');
+
+    fireEvent.click(screen.getByTestId('world-panel-collapse-left'));
+    fireEvent.click(screen.getByTestId('world-panel-expand-left'));
+
+    // The very same DOM node, not a remounted replacement.
+    expect(screen.getByRole('tree')).toBe(treeBefore);
   });
 
   it('collapses the right panel to a slim strip, and back to its own width', async () => {
@@ -174,11 +191,12 @@ describe('the World surface panels', () => {
 
     fireEvent.click(screen.getByTestId('world-panel-collapse-right'));
 
-    expect(screen.queryByTestId('world-panel-right')).not.toBeInTheDocument();
+    expect(screen.getByTestId('world-panel-right')).not.toBeVisible();
     expect(screen.getByTestId('world-panel-expand-right')).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('world-panel-expand-right'));
 
+    expect(screen.getByTestId('world-panel-right')).toBeVisible();
     expect(screen.getByTestId('world-panel-right')).toHaveStyle({ width: '300px' });
   });
 });

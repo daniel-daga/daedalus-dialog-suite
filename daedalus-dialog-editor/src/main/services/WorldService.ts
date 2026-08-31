@@ -255,7 +255,7 @@ export class WorldService {
    * stacks themselves are private to this service (§7). It is how the World
    * bar's undo/redo buttons know whether there is anything to do, over the
    * IPC round trip `world:historyDepth` sends it through
-   * (level-editor-ui-improvements.md slice 4).
+   * (level-editor.md §17).
    */
   historyDepth(): { undo: number; redo: number } {
     return { undo: this.undoStack.length, redo: this.redoStack.length };
@@ -313,6 +313,13 @@ export class WorldService {
     this.failure ??= new WorkerRequestError('The world was closed', 'world-closed');
     this.rejectAll(this.failure);
     this.worldPath = null;
+    // The stacks belong to the world that was open — `openWorld` says why —
+    // and closing ends that world as surely as opening the next one does.
+    // Left standing they are not just stale but *readable*: `historyDepth`
+    // is a plain getter with no `requestOnOpenWorld` guard, so it would go
+    // on reporting a closed world's depths where every other read refuses.
+    this.undoStack = [];
+    this.redoStack = [];
     void this.worker?.terminate();
     this.worker = null;
   }

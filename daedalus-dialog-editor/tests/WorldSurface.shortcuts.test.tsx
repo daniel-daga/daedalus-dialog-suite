@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
-import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within, createEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import WorldSurface from '../src/renderer/components/world/WorldSurface';
 import { useWorldStore } from '../src/renderer/store/worldStore';
@@ -9,7 +9,7 @@ import { SUMMARY, makeWorldEditorApi, vobIndex, waynetPayload } from './worldFix
 
 /**
  * The window keydown handler's shortcuts that open an existing confirm rather
- * than commit directly (level-editor-ui-improvements.md slices 1-3): Delete,
+ * than commit directly (level-editor.md §17): Delete,
  * Escape, and arrow-key nudge. The delete and Escape paths are gated by the
  * same confirm dialogs `WorldSurface.editing.test.tsx` already exercises —
  * these tests check only that the shortcut *reaches* them.
@@ -262,6 +262,62 @@ describe('arrow-key nudge', () => {
 
     expect(api.applyWorldOps).not.toHaveBeenCalled();
     tree.remove();
+  });
+
+  it('does nothing while a MUI Select popover has focus', async () => {
+    // The bug this pins: a Select's options are `li[role="option"]` inside
+    // a `[role="listbox"]` — not INPUT/TEXTAREA/SELECT, not inside the
+    // tree — so arrowing through the Snap step dropdown used to nudge the
+    // VOB and record an undo entry while the user was only picking a step.
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    fireEvent.mouseDown(within(screen.getByTestId('world-snap')).getByRole('combobox'));
+    const option = await screen.findByRole('option', { name: '1 m' });
+
+    fireEvent.keyDown(option, { key: 'ArrowDown' });
+
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+  });
+
+  it('does nothing while one of the surface\'s own dialogs is open', async () => {
+    // Focus can still be on `window` the instant a dialog opens, so the
+    // popover check alone would let this through — the open-dialog state
+    // guard is the other half.
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    fireEvent.keyDown(window, { key: 'Delete' });
+    expect(screen.getByTestId('world-delete-warning')).toBeVisible();
+
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+  });
+
+  it('leaves the key alone when nothing is selected, rather than swallowing it', async () => {
+    // `preventDefault` used to run before the empty-selection check, so an
+    // arrow key was consumed in the whole World view even where it would
+    // have scrolled a list.
+    await openWorld();
+
+    const event = createEvent.keyDown(window, { key: 'ArrowDown' });
+    fireEvent(window, event);
+
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('uses the free-form step in rotate mode, not the invisible translate grid', async () => {
+    // In rotate mode the Snap control edits the *angle*, so a `snapGrid`
+    // left over from translate mode is a value the user cannot see driving
+    // a key they can: 45° on screen, 5 m under the arrow.
+    await openWorld();
+    await chooseStep('5 m');
+    fireEvent.click(screen.getByTestId('world-gizmo-rotate'));
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp([20, 20, 30])]);
   });
 
   it('does nothing on the real scene tree either, once slice 7 gives it its own arrow keys', async () => {

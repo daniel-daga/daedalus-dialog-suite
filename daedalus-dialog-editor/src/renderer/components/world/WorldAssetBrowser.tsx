@@ -101,7 +101,7 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({ listAssets, onPre
     });
   }, [state]);
 
-  // The filter (level-editor-ui-improvements.md slice 9) — the current
+  // The filter (level-editor.md §17) — the current
   // directory only, never a walk of the whole namespace: the same "one
   // level at a time" rule the browser already holds for the listing
   // itself. Reset on navigation, so a filter typed two directories ago
@@ -213,16 +213,23 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({ listAssets, onPre
             inputProps={{ 'data-testid': 'world-asset-filter', 'aria-label': 'Filter this directory' }}
             sx={{ flex: 1, minWidth: 0, '& .MuiInputBase-input': { fontSize: 12, py: 0.5 } }}
           />
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            noWrap
-            data-testid="world-asset-count"
-          >
-            {filter.trim() === ''
-              ? `${sorted.length.toLocaleString()} entries`
-              : `${filtered.length.toLocaleString()} of ${sorted.length.toLocaleString()}`}
-          </Typography>
+          {/* Only once the listing has actually arrived. `sorted` is `[]`
+              while loading and on a refusal alike, so an unconditional
+              count would assert "0 entries" for a directory nobody has
+              heard back about yet — the very flash the three-state
+              `state` above exists to prevent. */}
+          {state.status === 'ready' && (
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              noWrap
+              data-testid="world-asset-count"
+            >
+              {filter.trim() === ''
+                ? `${sorted.length.toLocaleString()} entries`
+                : `${filtered.length.toLocaleString()} of ${sorted.length.toLocaleString()}`}
+            </Typography>
+          )}
         </Box>
       </Box>
 

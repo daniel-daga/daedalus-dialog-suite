@@ -8,7 +8,7 @@ import { useProjectStore } from '../src/renderer/store/projectStore';
 import { SUMMARY, makeWorldEditorApi, vobIndex, waynetPayload } from './worldFixtures';
 
 /**
- * The right-click menu over a VOB (level-editor-ui-improvements.md slice 6)
+ * The right-click menu over a VOB (level-editor.md §17)
  * — the app's first context menu. Reached from the scene tree row, which is
  * real here (only the viewport is stubbed, as in every other World surface
  * suite): the menu itself, and the surface's wiring around it (select-first,
@@ -109,6 +109,24 @@ describe('the VOB context menu', () => {
 
     expect(screen.getByTestId('world-delete-warning')).toBeVisible();
     expect(api.applyWorldOps).not.toHaveBeenCalled();
+  });
+
+  it('actually hides the right-clicked VOB\'s class, not just offering to', async () => {
+    // The menu closes *before* its action runs (`run()` is onClose() then
+    // action()), and `hideVobClass` reads `contextMenu.vob` — so this pins
+    // that the handler still sees the VOB it was opened for rather than the
+    // null the close just set. Observable through the toolbar's own Hide
+    // control, which is the list this writes into.
+    await openWorld();
+    expect(screen.getByTestId('world-hidden-classes')).toHaveTextContent('Nothing');
+
+    await act(async () => {
+      fireEvent.contextMenu(screen.getByTestId('world-vob-row-1'), { clientX: 50, clientY: 60 });
+    });
+    fireEvent.click(await screen.findByTestId('world-context-hide-class'));
+
+    // The fixture's VOBs are all zCVob, so hiding VOB 1's class is one entry.
+    await waitFor(() => expect(screen.getByTestId('world-hidden-classes')).toHaveTextContent('1 classes'));
   });
 
   it('disables Paste with an empty clipboard, and enables it once something is copied', async () => {
