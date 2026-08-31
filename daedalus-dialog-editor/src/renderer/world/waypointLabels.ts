@@ -53,11 +53,20 @@ export function labelTextFor(name: string, occupants: readonly string[]): string
  * takes it: the positions are ZenGin centimetres and the mirrored root is what
  * puts them in the world, so leaving the root out labels every waypoint at a
  * position it is not drawn at.
+ *
+ * "Nearest" is true distance from `cameraPosition` — a sphere around the
+ * camera — not the view-space depth `toClip` produces. Depth alone is
+ * distance to the *plane* through the camera perpendicular to where it's
+ * looking, so two waypoints at the same depth but different lateral offset
+ * would rank as equally near even though one is further from the camera
+ * than the other. `cameraPosition` is in the same (pre-root, raw ZenGin)
+ * space as `positions`, matching what `toClip`'s own root multiply maps from.
  */
 export function chooseWaypointLabels(
   positions: Float32Array,
   candidates: readonly number[] | null,
   toClip: THREE.Matrix4,
+  cameraPosition: THREE.Vector3,
   width: number,
   height: number,
   cap: number = LABEL_CAP,
@@ -65,14 +74,18 @@ export function chooseWaypointLabels(
   const count = Math.floor(positions.length / 3);
   const eligible = candidates ?? null;
   const total = eligible ? eligible.length : count;
-  const found: (WaypointLabel & { depth: number })[] = [];
+  const found: (WaypointLabel & { distanceSq: number })[] = [];
 
   for (let i = 0; i < total; i++) {
     const waypoint = eligible ? eligible[i] : i;
     const at = waypoint * 3;
     if (at + 2 >= positions.length) continue;
 
-    point.set(positions[at], positions[at + 1], positions[at + 2], 1).applyMatrix4(toClip);
+    const px = positions[at];
+    const py = positions[at + 1];
+    const pz = positions[at + 2];
+
+    point.set(px, py, pz, 1).applyMatrix4(toClip);
     // Behind the eye. Dividing by a negative w mirrors the point back into
     // view, so without this a waypoint behind the camera is labelled on the
     // opposite side of the screen — `pickWaypoint` guards the same way.
@@ -82,11 +95,14 @@ export function chooseWaypointLabels(
     const y = (1 - (point.y / point.w * 0.5 + 0.5)) * height;
     if (x < 0 || x > width || y < 0 || y > height) continue;
 
-    found.push({ waypoint, x, y, depth: point.w });
+    const dx = px - cameraPosition.x;
+    const dy = py - cameraPosition.y;
+    const dz = pz - cameraPosition.z;
+    found.push({ waypoint, x, y, distanceSq: dx * dx + dy * dy + dz * dz });
   }
 
-  // Nearest first: `w` is the view-space depth, so the cap keeps the labels
-  // around the camera rather than an arbitrary slice of the world.
-  found.sort((a, b) => a.depth - b.depth);
+  // Nearest first, by true distance from the camera — squared, since only
+  // the ordering matters and a sqrt per waypoint would buy nothing.
+  found.sort((a, b) => a.distanceSq - b.distanceSq);
   return found.slice(0, cap).map(({ waypoint, x, y }) => ({ waypoint, x, y }));
 }

@@ -1115,6 +1115,14 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     // draw loop and the pick runs from an event, and sharing one matrix would
     // couple them for no gain.
     const labelClip = new THREE.Matrix4();
+    // The camera's own position, one root-inverse away from `positions`'
+    // raw ZenGin space — `chooseWaypointLabels` ranks by true distance from
+    // the camera, and `camera.position` lives in Three's mirrored, scaled
+    // world space instead. `world.root`'s matrix (zen-world's `ROOT_MATRIX`)
+    // is a mirror plus a uniform scale, so distance ordering computed here
+    // matches ordering by true distance in Three space.
+    const labelRootInverse = new THREE.Matrix4();
+    const labelCameraPosition = new THREE.Vector3();
     const draw = () => {
       frame = requestAnimationFrame(draw);
       controls.update();
@@ -1139,11 +1147,14 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
             : [];
         camera.updateMatrixWorld();
         world.root.updateMatrixWorld();
+        labelCameraPosition.copy(camera.position)
+          .applyMatrix4(labelRootInverse.copy(world.root.matrixWorld).invert());
         labels.update(chooseWaypointLabels(
           netOverlay.positions,
           candidates,
           labelClip.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
             .multiply(world.root.matrixWorld),
+          labelCameraPosition,
           host.clientWidth || 1,
           host.clientHeight || 1,
         ));

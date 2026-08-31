@@ -36,9 +36,12 @@ function clipMatrix(): THREE.Matrix4 {
 /** Points down the view axis: `[x, y, z]` triples straight into a buffer. */
 const buffer = (...points: number[][]) => new Float32Array(points.flat());
 
+/** The camera position `clipMatrix()` builds its view from — the origin. */
+const AT_ORIGIN = new THREE.Vector3(0, 0, 0);
+
 describe('chooseWaypointLabels', () => {
   it('places a waypoint in front of the camera at the centre of the screen', () => {
-    const labels = chooseWaypointLabels(buffer([0, 0, -1000]), null, clipMatrix(), WIDTH, HEIGHT);
+    const labels = chooseWaypointLabels(buffer([0, 0, -1000]), null, clipMatrix(), AT_ORIGIN, WIDTH, HEIGHT);
 
     expect(labels).toHaveLength(1);
     expect(labels[0].waypoint).toBe(0);
@@ -50,7 +53,7 @@ describe('chooseWaypointLabels', () => {
     // The bug this exists to prevent: a negative `w` divides the point back
     // onto the screen, so a waypoint behind you gets a name in front of you.
     const labels = chooseWaypointLabels(
-      buffer([0, 0, 1000], [0, 0, -1000]), null, clipMatrix(), WIDTH, HEIGHT,
+      buffer([0, 0, 1000], [0, 0, -1000]), null, clipMatrix(), AT_ORIGIN, WIDTH, HEIGHT,
     );
 
     expect(labels.map((label) => label.waypoint)).toEqual([1]);
@@ -60,7 +63,7 @@ describe('chooseWaypointLabels', () => {
     // Far off to the side but still in front — on screen it is nowhere, and a
     // label clamped to the edge would point at nothing.
     const labels = chooseWaypointLabels(
-      buffer([100000, 0, -1000], [0, 0, -1000]), null, clipMatrix(), WIDTH, HEIGHT,
+      buffer([100000, 0, -1000], [0, 0, -1000]), null, clipMatrix(), AT_ORIGIN, WIDTH, HEIGHT,
     );
 
     expect(labels.map((label) => label.waypoint)).toEqual([1]);
@@ -72,11 +75,26 @@ describe('chooseWaypointLabels', () => {
     const points = [];
     for (let i = 10; i >= 1; i--) points.push([0, 0, -1000 * i]);
 
-    const labels = chooseWaypointLabels(buffer(...points), null, clipMatrix(), WIDTH, HEIGHT, 3);
+    const labels = chooseWaypointLabels(buffer(...points), null, clipMatrix(), AT_ORIGIN, WIDTH, HEIGHT, 3);
 
     expect(labels).toHaveLength(3);
     // Index 9 is the -1000 one, 8 is -2000, 7 is -3000.
     expect(labels.map((label) => label.waypoint)).toEqual([9, 8, 7]);
+  });
+
+  it('ranks by true distance from the camera, not by depth into the screen', () => {
+    // Waypoint 0 sits dead ahead at depth 1000 — true distance 1000.
+    // Waypoint 1 sits off to the side at depth 900 — nearer to the view
+    // plane, but sqrt(900² + 800²) ≈ 1204 away from the camera itself. A
+    // depth-only sort (the view-space `w`, i.e. distance to the plane
+    // through the camera perpendicular to where it's looking) would rank 1
+    // ahead of 0; true distance — a sphere around the camera — ranks 0
+    // ahead of 1.
+    const labels = chooseWaypointLabels(
+      buffer([0, 0, -1000], [800, 0, -900]), null, clipMatrix(), AT_ORIGIN, WIDTH, HEIGHT, 1,
+    );
+
+    expect(labels.map((label) => label.waypoint)).toEqual([0]);
   });
 
   it('labels only the candidates it is given', () => {
@@ -84,7 +102,7 @@ describe('chooseWaypointLabels', () => {
     // drawing is a name floating over nothing.
     const points = buffer([0, 0, -1000], [100, 0, -1000], [-100, 0, -1000]);
 
-    const labels = chooseWaypointLabels(points, [2], clipMatrix(), WIDTH, HEIGHT);
+    const labels = chooseWaypointLabels(points, [2], clipMatrix(), AT_ORIGIN, WIDTH, HEIGHT);
 
     expect(labels.map((label) => label.waypoint)).toEqual([2]);
   });
@@ -92,7 +110,7 @@ describe('chooseWaypointLabels', () => {
   it('labels every waypoint when the candidates are null', () => {
     const points = buffer([0, 0, -1000], [100, 0, -1000], [-100, 0, -1000]);
 
-    expect(chooseWaypointLabels(points, null, clipMatrix(), WIDTH, HEIGHT)).toHaveLength(3);
+    expect(chooseWaypointLabels(points, null, clipMatrix(), AT_ORIGIN, WIDTH, HEIGHT)).toHaveLength(3);
   });
 
   it('ignores a candidate past the end of the buffer', () => {
@@ -100,14 +118,14 @@ describe('chooseWaypointLabels', () => {
     // overlay's drawn set and the waynet — and a world reopened under a stale
     // set would otherwise read off the end of the positions.
     const labels = chooseWaypointLabels(
-      buffer([0, 0, -1000]), [0, 7], clipMatrix(), WIDTH, HEIGHT,
+      buffer([0, 0, -1000]), [0, 7], clipMatrix(), AT_ORIGIN, WIDTH, HEIGHT,
     );
 
     expect(labels.map((label) => label.waypoint)).toEqual([0]);
   });
 
   it('survives a world with no waypoints at all', () => {
-    expect(chooseWaypointLabels(new Float32Array(0), null, clipMatrix(), WIDTH, HEIGHT)).toEqual([]);
+    expect(chooseWaypointLabels(new Float32Array(0), null, clipMatrix(), AT_ORIGIN, WIDTH, HEIGHT)).toEqual([]);
   });
 
   it('caps at a legible number by default', () => {
@@ -117,7 +135,7 @@ describe('chooseWaypointLabels', () => {
     const points = [];
     for (let i = 1; i <= LABEL_CAP + 10; i++) points.push([i, 0, -1000 * i]);
 
-    expect(chooseWaypointLabels(buffer(...points), null, clipMatrix(), WIDTH, HEIGHT))
+    expect(chooseWaypointLabels(buffer(...points), null, clipMatrix(), AT_ORIGIN, WIDTH, HEIGHT))
       .toHaveLength(LABEL_CAP);
   });
 });
