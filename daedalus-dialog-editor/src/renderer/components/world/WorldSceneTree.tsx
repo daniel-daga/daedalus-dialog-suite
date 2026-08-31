@@ -52,6 +52,11 @@ interface RowData {
   /** Absent on a tree with no viewport beside it, and then no row carries a
    *  locator and a double-click does nothing. */
   onFocus?: (vob: number) => void;
+  /** Right-click on this row — the position is the context menu's anchor,
+   *  in viewport coordinates (`Menu`'s `anchorReference="anchorPosition"`
+   *  reads them directly). Absent when the surface offers no menu, and then
+   *  a right-click here is the browser's own. */
+  onContextMenu?: (vob: number, position: { left: number; top: number }) => void;
   /** Absent on a read-only tree, and then no row is draggable at all — a row
    *  that looks draggable and drops nowhere is worse than one that does not. */
   onDragVob?: (vob: number) => void;
@@ -127,7 +132,7 @@ const DropStrip: React.FC<{
 };
 
 const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
-  const { rows, reader, expanded, selected, onSelect, onToggle, onFocus } = data;
+  const { rows, reader, expanded, selected, onSelect, onToggle, onFocus, onContextMenu } = data;
   const { onDragVob, onDropOn, canDropOn } = data;
   const { vob, depth, hasChildren } = rows[index];
   // Every gap is "before the row under the line", which is what makes a gap mean
@@ -152,6 +157,10 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
       data-testid={`world-vob-row-${vob}`}
       onClick={(event) => onSelect(vob, event.shiftKey || event.ctrlKey || event.metaKey)}
       onDoubleClick={onFocus === undefined ? undefined : () => onFocus(vob)}
+      onContextMenu={onContextMenu === undefined ? undefined : (event) => {
+        event.preventDefault();
+        onContextMenu(vob, { left: event.clientX, top: event.clientY });
+      }}
       draggable={onDragVob !== undefined}
       onDragStart={onDragVob === undefined ? undefined : () => onDragVob(vob)}
       onDragEnd={onDragVob === undefined ? undefined : data.onDragEnd}
@@ -247,6 +256,9 @@ export interface WorldSceneTreeProps {
    * list".
    */
   onReparent?: (vob: number, toParent: number | null, slot: number) => void;
+  /** Right-click on a row — threaded to `RowData.onContextMenu`. Absent
+   *  when the surface offers no menu. */
+  onContextMenu?: (vob: number, position: { left: number; top: number }) => void;
   /**
    * The ops last applied to the world — the tree's only news that anything
    * changed.
@@ -268,7 +280,7 @@ export interface WorldSceneTreeProps {
 }
 
 const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
-  summary, selection, onSelect, onFocus, onReparent, appliedOps = null,
+  summary, selection, onSelect, onFocus, onReparent, onContextMenu, appliedOps = null,
 }) => {
   const { tree, reader } = useMemo(() => vobModelOf(summary), [summary]);
   const selected = useMemo(() => new Set(selection), [selection]);
@@ -467,6 +479,7 @@ const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
       onSelect,
       onToggle,
       onFocus,
+      onContextMenu,
       canDropOn,
       canDropBetween,
       hovering,
@@ -479,8 +492,8 @@ const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
     // `appliedOps` again, and here for the label: `Row` is memoised and reads
     // the name through `reader`, so without it a renamed VOB keeps its old
     // label until an unrelated change breaks this object's identity.
-    [rows, reader, rowExpanded, selected, onSelect, onToggle, onFocus, canDropOn, onReparent,
-      onDropOn, canDropBetween, onDropBetween, hovering, onDragEnd, appliedOps],
+    [rows, reader, rowExpanded, selected, onSelect, onToggle, onFocus, onContextMenu, canDropOn,
+      onReparent, onDropOn, canDropBetween, onDropBetween, hovering, onDragEnd, appliedOps],
   );
 
   return (

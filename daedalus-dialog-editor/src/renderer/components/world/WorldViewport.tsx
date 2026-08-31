@@ -163,6 +163,14 @@ export interface WorldViewportProps {
      *  replacing it. */
     additive: boolean,
   ) => void;
+  /**
+   * A right-click that hit a VOB — the same async GPU pick `onPick` uses,
+   * reused rather than a second raycast path. Terrain right-click is
+   * reserved (level-editor-ui-improvements.md slice 6) and a miss reports
+   * nothing. Absent when the surface offers no menu, and then a right-click
+   * on the canvas is the browser's own.
+   */
+  onVobContextMenu?: (vob: number, position: { left: number; top: number }) => void;
   /** What the gizmo drives. Empty hides it; the gizmo sits on the last entry. */
   selection: readonly number[];
   /**
@@ -336,7 +344,7 @@ function rowMajor(matrix: THREE.Matrix4): ZenRotation {
 
 const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(({
   mesh, visuals, bbox, waynet, showWaynet, spawns, showSpawns, routines, spawnTime, spawnState,
-  showWaypointNames, loadTexture, onPick,
+  showWaypointNames, loadTexture, onPick, onVobContextMenu,
   selection, onTranslateSelection, gizmoMode, onRotateSelection, appliedOps,
   selectedWaypoint, terrainPoint, exposure, hiddenVobs, snapGrid, snapAngle,
   onSelectWaypoint, onMoveWaypoint, paused = false,
@@ -415,6 +423,8 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   // rebuild 31 MB of buffers just because a callback identity changed.
   const onPickRef = useRef(onPick);
   onPickRef.current = onPick;
+  const onVobContextMenuRef = useRef(onVobContextMenu);
+  onVobContextMenuRef.current = onVobContextMenu;
   const loadTextureRef = useRef(loadTexture);
   loadTextureRef.current = loadTexture;
   const selectionRef = useRef(selection);
@@ -960,6 +970,26 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     };
     renderer.domElement.addEventListener('click', handleClick);
 
+    /**
+     * The context menu's own pick (level-editor-ui-improvements.md slice
+     * 6) — the same async GPU pick `handleClick` uses, VOB hits only. A
+     * miss reports nothing, so a right-click over terrain or empty sky
+     * opens no menu; that pick is reserved. `preventDefault` runs first,
+     * unconditionally: swallowing the browser's own menu is not something
+     * the (awaited) pick's outcome should decide.
+     */
+    const handleContextMenu = async (event: MouseEvent) => {
+      if (onVobContextMenuRef.current === undefined) return;
+      event.preventDefault();
+      const rect = renderer.domElement.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      const vob = await picker.pickAsync(renderer, camera, x, y, rect.width, rect.height);
+      if (disposed || vob === NO_PICK) return;
+      onVobContextMenuRef.current(vob, { left: event.clientX, top: event.clientY });
+    };
+    renderer.domElement.addEventListener('contextmenu', handleContextMenu);
+
     // Blender's framing keys, and the reason orbiting is usable at all: the
     // pivot starts at the centre of a 600 m island, so without a way to move it
     // onto what you are looking at, every orbit up close swings the camera
@@ -1256,6 +1286,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       stopDraw();
       resize.disconnect();
       renderer.domElement.removeEventListener('click', handleClick);
+      renderer.domElement.removeEventListener('contextmenu', handleContextMenu);
       window.removeEventListener('keydown', onKeyDown);
       detachNav();
       host.removeEventListener('pointerdown', onNavPointerDown, { capture: true });

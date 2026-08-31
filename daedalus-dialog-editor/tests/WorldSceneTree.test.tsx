@@ -204,6 +204,33 @@ describe('WorldSceneTree', () => {
     expect(onFocus).toHaveBeenCalledWith(4);
   });
 
+  it('reports a right-click on a row with the pointer position, and takes the click', async () => {
+    // The context menu's own anchor (level-editor-ui-improvements.md slice
+    // 6): `Menu`'s `anchorReference="anchorPosition"` reads `{left, top}`
+    // directly, so this is the shape the surface's handler is handed.
+    const onContextMenu = jest.fn();
+    render(<WorldSceneTree
+      summary={NESTED}
+      selection={[]}
+      onSelect={jest.fn()}
+      onContextMenu={onContextMenu}
+    />);
+
+    fireEvent.contextMenu(row(4)!, { clientX: 120, clientY: 340 });
+
+    expect(onContextMenu).toHaveBeenCalledWith(4, { left: 120, top: 340 });
+  });
+
+  it('leaves a right-click to the browser when the surface offers no menu', () => {
+    render(<WorldSceneTree summary={NESTED} selection={[]} onSelect={jest.fn()} />);
+
+    const event = fireEvent.contextMenu(row(4)!, { clientX: 120, clientY: 340 });
+
+    // No handler bound means the browser's own context menu — jsdom reports
+    // that as the event completing un-prevented.
+    expect(event).toBe(true);
+  });
+
   it('carries a locator on every row, which jumps without also being a click', async () => {
     // Double-click is not discoverable, and a row is where someone looks for
     // the affordance. Its click must not fall through to the row underneath:

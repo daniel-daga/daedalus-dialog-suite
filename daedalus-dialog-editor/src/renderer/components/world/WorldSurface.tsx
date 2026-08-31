@@ -35,6 +35,7 @@ import WorldPropertyGrid from './WorldPropertyGrid';
 import WorldAssetBrowser from './WorldAssetBrowser';
 import WorldAssetPreview from './WorldAssetPreview';
 import WaypointPanel from './WaypointPanel';
+import WorldVobContextMenu from './WorldVobContextMenu';
 import WorldToolbar from './toolbar/WorldToolbar';
 
 // The World surface (level-editor.md §6): a new top-level view of the existing
@@ -397,6 +398,34 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const handleSelect = useCallback((vob: number, additive: boolean) => {
     if (additive) toggleVob(vob); else selectVob(vob);
   }, [selectVob, toggleVob]);
+
+  /**
+   * The right-click menu (level-editor-ui-improvements.md slice 6, the
+   * app's first context menu) — the vob it is about, and its anchor
+   * position in viewport coordinates. Null while closed.
+   */
+  const [contextMenu, setContextMenu] = useState<{
+    vob: number; position: { left: number; top: number };
+  } | null>(null);
+
+  /** Opens the menu for `vob` — replacing the selection with it first when
+   *  it was outside the selection, the way every right-click does: the menu
+   *  always acts on the row it was opened from. A right-click on a VOB
+   *  already inside a multi-selection leaves it standing, so the menu's
+   *  Duplicate/Copy/Drop/Align act on the whole selection. */
+  const openVobContextMenu = useCallback((vob: number, position: { left: number; top: number }) => {
+    if (!selection.includes(vob)) handleSelect(vob, false);
+    setContextMenu({ vob, position });
+  }, [selection, handleSelect]);
+
+  /** The menu's "Hide this class" — the right-clicked VOB's own class,
+   *  added to the same list the toolbar's Hide control drives. */
+  const hideVobClass = useCallback(() => {
+    if (contextMenu === null || summary === null) return;
+    const cls = vobModelOf(summary).reader.className(contextMenu.vob);
+    if (cls === null) return;
+    setHiddenClasses((current) => (current.includes(cls) ? current : [...current, cls]));
+  }, [contextMenu, summary]);
 
   /**
    * The imperative handle onto the viewport (level-editor.md §16.5,
@@ -1543,7 +1572,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         if (target?.isContentEditable
           || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName ?? '')) return;
         if (deleting !== null || deletingWaypoint !== null || placing !== null
-          || confirmingSave || addingWaypoint !== null) return;
+          || confirmingSave || addingWaypoint !== null || contextMenu !== null) return;
         const { selection: currentSelection, selectedWaypoint: currentWaypoint } = useWorldStore.getState();
         if (currentSelection.length === 0 && currentWaypoint === null) return;
         event.preventDefault();
@@ -1585,7 +1614,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     return () => window.removeEventListener('keydown', handler);
   }, [
     summary, hidden, runHistory, copySelection, pasteClipboard, waynet, selectVob,
-    deleting, deletingWaypoint, placing, confirmingSave, addingWaypoint,
+    deleting, deletingWaypoint, placing, confirmingSave, addingWaypoint, contextMenu,
     snapGrid, handleTranslateSelection,
   ]);
 
@@ -1711,6 +1740,22 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <WorldVobContextMenu
+        open={contextMenu !== null}
+        position={contextMenu?.position ?? null}
+        onClose={() => setContextMenu(null)}
+        selectionCount={selection.length}
+        canPaste={clipboard.current.length > 0}
+        onFrame={() => { if (contextMenu !== null) focusVob(contextMenu.vob); }}
+        onDuplicate={() => void duplicateSelection()}
+        onCopy={() => void copySelection()}
+        onPaste={() => void pasteClipboard()}
+        onDeleteRequest={requestDeleteSelection}
+        onDropToGround={handleDropToGround}
+        onAlignToNormal={handleAlignToNormal}
+        onHideClass={hideVobClass}
+      />
 
       {/* The requirement §15 put in place of an inverse. Every other edit in
           this surface undoes, so the thing the user has to be told is not that
@@ -1838,6 +1883,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                 onSelect={handleSelect}
                 onFocus={focusVob}
                 onReparent={reparent}
+                onContextMenu={openVobContextMenu}
               />
             </Box>
             {/* Mounted only once the user asks for it: the first listing is an
@@ -1867,6 +1913,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               showWaypointNames={showWaypointNames}
               loadTexture={loadTexture}
               onPick={handlePick}
+              onVobContextMenu={openVobContextMenu}
               selection={selection}
               onTranslateSelection={handleTranslateSelection}
               gizmoMode={gizmoMode}
