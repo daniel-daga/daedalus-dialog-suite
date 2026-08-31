@@ -27,7 +27,12 @@ jobs:
   # `tests` gate); publishing stays guarded on the `build` job below.
   e2e-electron-windows:
     name: E2E Tests (real Electron, Windows)
-    runs-on: windows-latest
+    # windows-2022, not windows-latest — same reason `all-tests.yml`'s
+    # zenkit-node-tests job is pinned: the latest image ships Visual Studio 18,
+    # which node-gyp 11.5.0 cannot identify, so daedalus-parser's install dies
+    # before any of our code runs. This job builds the same native code and
+    # was just never given the same pin.
+    runs-on: windows-2022
     steps:
       # submodules: the zenkit-node addon is built from vendor/ZenKit sources
       # (same as the `build` job below) — without this, `vendor/ZenKit` checks
@@ -88,7 +93,10 @@ jobs:
     # Only the default branch (master) may publish a release. Non-master
     # dispatches produce a skipped build, not a published release.
     if: github.ref == 'refs/heads/master'
-    runs-on: windows-latest
+    # windows-2022, not windows-latest — same reason as e2e-electron-windows
+    # above: this job also force-builds the native addon from source, and
+    # would hit the identical node-gyp/VS18 failure once that job passes.
+    runs-on: windows-2022
 
     steps:
     # submodules: the zenkit-node addon is built from vendor/ZenKit sources.
