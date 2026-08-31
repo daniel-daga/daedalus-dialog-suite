@@ -97,6 +97,13 @@ declare global {
       renderFrom: (
         from: [number, number, number], at: [number, number, number],
       ) => Promise<{ width: number; height: number; rgba: string }>;
+      /** The orbit pivot — `OrbitControls.target` — in **ZenGin space**.
+       *  What a double-click on the mesh moves, and what a navigation press
+       *  moves ambiently onto whatever is under the cursor. */
+      cameraTarget: () => [number, number, number];
+      /** The camera itself, in **ZenGin space** — what a double-click pivot
+       *  deliberately leaves alone, unlike the framing keys. */
+      cameraPosition: () => [number, number, number];
     };
   }
 }
@@ -166,7 +173,7 @@ export interface WorldViewportProps {
   /**
    * A right-click that hit a VOB — the same async GPU pick `onPick` uses,
    * reused rather than a second raycast path. Terrain right-click is
-   * reserved (level-editor-ui-improvements.md slice 6) and a miss reports
+   * reserved (level-editor.md §17) and a miss reports
    * nothing. Absent when the surface offers no menu, and then a right-click
    * on the canvas is the browser's own.
    */
@@ -971,8 +978,47 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     renderer.domElement.addEventListener('click', handleClick);
 
     /**
-     * The context menu's own pick (level-editor-ui-improvements.md slice
-     * 6) — the same async GPU pick `handleClick` uses, VOB hits only. A
+     * Double-click a point on the world mesh to pivot there — a deliberate,
+     * sticky version of `pivotUnderCursor`'s ambient one. That fires on
+     * every navigation *press* and only lasts the drag it started, so
+     * re-centring on somewhere specific means starting the very next drag
+     * exactly over it; this sets the pivot outright, independent of where
+     * the next drag begins. The camera itself does not move — `pivotAt`
+     * only ever changes what future orbits turn around, never zooms to it
+     * the way the framing keys do.
+     *
+     * World mesh only, not VOBs: a CPU raycast is what `pivotUnderCursor`
+     * exists to avoid paying for the 724 InstancedMeshes, and "a point in
+     * the mesh" is terrain, a building or a cave wall either way.
+     */
+    const handleDoubleClick = (event: MouseEvent) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      pointer.set(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      // The mesh's own vertices stay in raw ZenGin centimetres — only
+      // `world.root`'s matrix carries the unit scale and the handedness
+      // mirror (`zen-world`'s `ROOT_MATRIX`) — so a stale `matrixWorld`
+      // raycasts against geometry sitting at identity, two orders of
+      // magnitude out of scale with the camera. The draw loop's own
+      // `renderer.render()` keeps this fresh as a side effect every frame
+      // in practice, but a pick must not depend on one having already run;
+      // `handleClick`'s waynet branch makes the same call for the same
+      // reason.
+      camera.updateMatrixWorld();
+      world.root.updateMatrixWorld();
+      raycaster.setFromCamera(pointer, camera);
+      const hit = raycaster.intersectObjects(world.worldMeshes, false)[0];
+      if (!hit) return;
+      pivotAt(camera, controls.target, hit.point);
+      rememberPick(hit.point);
+    };
+    renderer.domElement.addEventListener('dblclick', handleDoubleClick);
+
+    /**
+     * The context menu's own pick (level-editor.md §17) — the same
+     * async GPU pick `handleClick` uses, VOB hits only. A
      * miss reports nothing, so a right-click over terrain or empty sky
      * opens no menu; that pick is reserved. `preventDefault` runs first,
      * unconditionally: swallowing the browser's own menu is not something
@@ -1268,6 +1314,8 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       selectedInstances: () => world.instancedMeshes.flatMap((instanced) => [
         ...(instanced.geometry.getAttribute(SELECTED_ATTRIBUTE).array as Float32Array),
       ]),
+      cameraTarget: () => threeToZen(controls.target.toArray() as [number, number, number]),
+      cameraPosition: () => threeToZen(camera.position.toArray() as [number, number, number]),
     };
 
     return () => {
@@ -1286,6 +1334,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       stopDraw();
       resize.disconnect();
       renderer.domElement.removeEventListener('click', handleClick);
+      renderer.domElement.removeEventListener('dblclick', handleDoubleClick);
       renderer.domElement.removeEventListener('contextmenu', handleContextMenu);
       window.removeEventListener('keydown', onKeyDown);
       detachNav();
