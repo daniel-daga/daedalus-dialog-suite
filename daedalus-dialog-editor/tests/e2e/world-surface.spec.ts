@@ -50,6 +50,19 @@ test.describe('World surface', () => {
     await expect(page.getByText(/Select the Gothic installation|Gothic installation/i)).toBeVisible();
   });
 
+  test('the toolbar keeps its file controls in the file group', async ({ page }) => {
+    // A regression tripwire for the toolbar restructure
+    // (level-editor-ui-improvements.md slice 5): the split into
+    // WorldToolbar's four groups must not have left world-open or
+    // world-choose-install outside the group named for them, and this is
+    // the one thing the browser harness can check pre-open without a world.
+    await openWorldView(page);
+
+    const fileGroup = page.getByTestId('world-toolbar-file');
+    await expect(fileGroup.getByTestId('world-open')).toBeVisible();
+    await expect(fileGroup.getByTestId('world-choose-install')).toBeVisible();
+  });
+
   test('the viewport is not mounted until a world is actually open', async ({ page }) => {
     // The scene costs tens of megabytes of GPU buffers; mounting it eagerly
     // would pay that for a view the user only glanced at.
