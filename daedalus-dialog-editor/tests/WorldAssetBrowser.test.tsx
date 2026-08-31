@@ -170,7 +170,7 @@ describe('WorldAssetBrowser', () => {
     ]);
   });
 
-  // The filter (level-editor-ui-improvements.md slice 9) — the current
+  // The filter (level-editor.md §17) — the current
   // directory only, the same "one level at a time" rule the listing
   // itself already holds.
   describe('the filter', () => {
@@ -229,7 +229,7 @@ describe('WorldAssetBrowser', () => {
     });
   });
 
-  // The breadcrumbs (level-editor-ui-improvements.md slice 9) — one segment
+  // The breadcrumbs (level-editor.md §17) — one segment
   // per path component, replacing the static path caption.
   describe('the breadcrumbs', () => {
     it('shows just the root at the top level', async () => {

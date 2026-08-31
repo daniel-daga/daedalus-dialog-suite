@@ -9,8 +9,8 @@ import { useProjectStore } from '../src/renderer/store/projectStore';
 import { MOVE, SUMMARY, makeWorldEditorApi, vobIndex, waynetPayload } from './worldFixtures';
 
 /**
- * The World bar's undo/redo buttons (level-editor-ui-improvements.md slice
- * 4): disabled/enabled off `getWorldHistoryDepth`, and a click drives the
+ * The World bar's undo/redo buttons (level-editor.md §17):
+ * disabled/enabled off `getWorldHistoryDepth`, and a click drives the
  * same `undoWorldEdit`/`applied` path Ctrl+Z already does.
  */
 

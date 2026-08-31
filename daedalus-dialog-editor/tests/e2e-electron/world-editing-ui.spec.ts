@@ -5,8 +5,9 @@ import * as path from 'path';
 import { launchApp, seedProjectDir, type AppFixture } from './harness';
 
 /**
- * Real-Electron E2E for the World UI slices (level-editor-ui-improvements.md
- * slice 10) — the honest home for "a new UI workflow gets a Playwright spec"
+ * Real-Electron E2E for the World surface's interaction layer
+ * (level-editor.md §17) — the honest home for "a new UI workflow gets a
+ * Playwright spec"
  * (AGENTS.md), modeled on `world-render.spec.ts`: a real window, a real
  * fixture world, and a fake install (this spec never reads a texture).
  *

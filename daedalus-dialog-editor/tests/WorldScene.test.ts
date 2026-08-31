@@ -1,5 +1,5 @@
 /**
- * Scene-graph assertions for the Phase 1a viewport (level-editor.md §11 —
+ * Scene-graph assertions for the Phase 1a viewport (level-editor.md §17 —
  * "viewport correctness via scene-graph assertions where DOM assertions can't
  * reach"). `WorldScene` deliberately builds the Three.js graph without a
  * WebGLRenderer, so everything the spike had to verify by looking at a picture

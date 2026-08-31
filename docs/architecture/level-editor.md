@@ -2681,6 +2681,85 @@ Anything beyond this is out of scope.
 
 ---
 
+## 17. World surface interaction and layout
+
+Settled 2026-08-31, extracting the decisions from the (now deleted)
+`level-editor-ui-improvements.md` plan. The code cites this section; the
+commit messages carry the slice-by-slice reasoning.
+
+**Keyboard shortcuts are one window listener with one shared guard.** The
+surface stays mounted behind whichever view is on screen (§8 of
+`refactoring-targets.md`), so every shortcut is bound only while
+`summary && !hidden`. All of them share `isTypingOrInPopover` — a text-field
+check *plus* `closest('[role="listbox"], [role="menu"], [role="dialog"]')`,
+because MUI renders a `Select`'s options as `li` and a `Dialog`'s buttons as
+`button`, neither of which a tagName check catches — and a `surfaceDialogOpen`
+state check, which catches the case where focus is still on `window`. Both
+halves are needed: the first sees where focus *is*, the second what is *open*.
+
+- **Delete opens a confirm, never commits.** The two delete dialogs stay the
+  only place either delete is sent (§15's requirement in place of an inverse).
+- **Escape clears the selection**, but not while a surface dialog is open —
+  it is a second listener on the same keydown as MUI's own Escape-close, and
+  would otherwise discard the selection the closing dialog was about.
+- **Arrow keys nudge along the world's axes** (ZenGin Y-up: Left/Right ∓/±X,
+  Up/Down ∓/±Z, PageUp/Down ±Y), ×10 with Shift, one keypress one undo entry.
+  The step is the *translate* snap grid and only while the Snap control is
+  showing it — in rotate mode that control edits the angle, so a leftover
+  `snapGrid` would be an invisible value driving a visible key. The selection
+  is read *before* `preventDefault`, so an arrow with nothing selected is left
+  to whatever would otherwise scroll. `[role="tree"]` is reserved for the
+  scene tree's own navigation.
+
+**The toolbar wraps onto a new row on a narrow window, but only *between*
+groups** (file, overlays, edit, stats) — each group is `flexShrink: 0`, so it
+is one atomic flex item and never breaks mid-group the way the monolith this
+replaced did with a bare `flexWrap="wrap"` on every button. Each row's groups
+are spread with `justifyContent: 'space-between'` — flex's version of
+justified text — rather than left-packed and ragged. The vertical rule
+between groups is a border on each group's own container rather than a
+standalone `Divider` flex item, since a lone divider would be stranded by the
+same `space-between` gap the moment a row wraps. Horizontal scroll was tried
+first and **rejected** in turn — it hid controls off-screen with no visible
+cue there was more toolbar to see. A priority-"More" overflow menu was
+**rejected** too: it needs `ResizeObserver` measurement jsdom cannot
+exercise, and moving controls into a `Menu` breaks the synchronous
+`getByTestId` the large editing suite depends on. Groups are pure
+props-down/callbacks-up; all state stays in `WorldSurface`, and rules that
+touch two pieces of state at once are passed down as one named callback
+rather than reassembled in a child.
+
+**The scene tree is navigated by a container-level `onKeyDown`, never a roving
+`tabIndex`.** `react-window` unmounts offscreen rows, so a roving tabindex
+loses the node it was on the moment it scrolls out of view;
+`aria-activedescendant` on the `role="tree"` container names the active row by
+id instead. ArrowRight opens a closed row and *then* enters it on a second
+press — the two-step every ARIA treeview uses. Home/End stay unbound: the
+viewport owns Home.
+
+**The side panels are resizable and collapse by hiding, not unmounting.**
+Widths persist to `localStorage` (renderer view preference, the theme pattern
+— `SettingsService` is for main-process/security-adjacent config) and are
+clamped on the surface's side; the splitter reports a width, not a delta.
+Collapse uses `display: none` for the same reason the Scene/Assets tab switch
+does: the tree owns its expansion set, filter text and scroll offset, and the
+property grid's fields are uncontrolled and corrected by remount-by-key
+(`refactoring-targets.md` §7), so an unmount would discard a half-typed
+coordinate.
+
+**Undo/redo depth is read from the main process, never guessed.** The stacks
+are private to `WorldService` (§7); `historyDepth()` is what the World bar's
+buttons enable off, refreshed after every applied batch and after an open. The
+app-bar undo/redo buttons drive the *dialog* history unconditionally, so they
+are disabled while the World view is active — the button-shaped half of the
+already-settled keyboard rule.
+
+**The VOB context menu is the app's first, and becomes the pattern** for
+production-readiness F10. Its items only call handlers the surface already
+has; enablement mirrors the toolbar; right-clicking outside the selection
+replaces it with the clicked VOB, while right-clicking inside a multi-selection
+leaves it standing. Terrain right-click is reserved.
+
 ## 13. Brief §10 open questions — answer key
 
 | # | Question | Answer |

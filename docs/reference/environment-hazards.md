@@ -96,7 +96,7 @@ doc, not here. This file is only for the ground the code stands on.
   silently gets `NaN` — no throw, no warning, just a value that never renders
   as the number it should. `WorldViewport.multiSelect.test.tsx` found this
   first for pointerdown/pointerup; `WorldSurface.panels.test.tsx`
-  (level-editor-ui-improvements.md slice 8) hit it again for a drag. The fix
+  (level-editor.md §17) hit it again for a drag. The fix
   both use: dispatch a plain `new MouseEvent('pointerdown', {clientX, ...})`
   directly via `element.dispatchEvent(...)`, wrapped in `act()` — React routes
   on `event.type`, not the constructor, and `MouseEvent`'s `clientX` is a real

@@ -10,7 +10,7 @@ import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 
 /**
  * The right-click menu over a VOB — the app's **first** context menu
- * (level-editor-ui-improvements.md slice 6, production-readiness F10). It
+ * (level-editor.md §17, production-readiness F10). It
  * becomes the pattern the rest of the app follows; nothing here is
  * abstracted ahead of a second consumer.
  *

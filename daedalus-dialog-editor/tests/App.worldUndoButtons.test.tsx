@@ -5,7 +5,7 @@
  * alone they would still drive the *dialog* history while the World view is
  * on screen — silently undoing an edit in a file the user cannot see, in a
  * view whose own history lives in the main process
- * (level-editor-ui-improvements.md slice 4).
+ * (level-editor.md §17).
  */
 import React from 'react';
 import { render, screen } from '@testing-library/react';

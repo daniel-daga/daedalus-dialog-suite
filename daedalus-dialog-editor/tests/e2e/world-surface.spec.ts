@@ -52,7 +52,7 @@ test.describe('World surface', () => {
 
   test('the toolbar keeps its file controls in the file group', async ({ page }) => {
     // A regression tripwire for the toolbar restructure
-    // (level-editor-ui-improvements.md slice 5): the split into
+    // (level-editor.md §17): the split into
     // WorldToolbar's four groups must not have left world-open or
     // world-choose-install outside the group named for them, and this is
     // the one thing the browser harness can check pre-open without a world.

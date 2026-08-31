@@ -1,6 +1,5 @@
 /**
- * Right-click on a VOB opens the context menu (level-editor-ui-improvements.md
- * slice 6) — the viewport's own half: a `contextmenu` listener beside
+ * Right-click on a VOB opens the context menu (level-editor.md §17) — the viewport's own half: a `contextmenu` listener beside
  * `handleClick`, reusing the same async GPU pick. VOB hits only; a right-click
  * over terrain or empty sky is reserved and opens nothing.
  *

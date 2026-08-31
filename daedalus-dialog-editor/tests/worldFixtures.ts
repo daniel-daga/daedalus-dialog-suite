@@ -2,8 +2,8 @@ import type { VobIndex } from 'zen-world';
 import type { WaynetPayload, WorldOp, WorldSummary } from '../src/shared/worldTypes';
 
 /**
- * Shared pure-data builders for the World surface's test suites (level-editor
- * `docs/plans/level-editor-ui-improvements.md` slice 0). Moved out of
+ * Shared pure-data builders for the World surface's test suites
+ * (`docs/architecture/level-editor.md` §17). Moved out of
  * `WorldSurface.editing.test.tsx` so new test files (shortcuts, toolbar,
  * context menu, panels, ...) don't each reinvent a `VobIndex`.
  *

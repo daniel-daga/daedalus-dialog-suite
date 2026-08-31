@@ -498,7 +498,7 @@ const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
   );
 
   /**
-   * Keyboard navigation (level-editor-ui-improvements.md slice 7) — one
+   * Keyboard navigation (level-editor.md §17) — one
    * `onKeyDown` on the tree container, never on a row: `react-window`
    * unmounts offscreen rows, so a roving `tabIndex` would lose the DOM node
    * it was on the moment it scrolled out of view. `aria-activedescendant`

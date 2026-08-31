@@ -205,8 +205,8 @@ describe('WorldSceneTree', () => {
   });
 
   it('reports a right-click on a row with the pointer position, and takes the click', async () => {
-    // The context menu's own anchor (level-editor-ui-improvements.md slice
-    // 6): `Menu`'s `anchorReference="anchorPosition"` reads `{left, top}`
+    // The context menu's own anchor (level-editor.md §17):
+    // `Menu`'s `anchorReference="anchorPosition"` reads `{left, top}`
     // directly, so this is the shape the surface's handler is handed.
     const onContextMenu = jest.fn();
     render(<WorldSceneTree
@@ -561,7 +561,7 @@ describe('WorldSceneTree', () => {
     expect(screen.getByTestId('world-tree-count')).toHaveTextContent('5');
   });
 
-  // Keyboard navigation (level-editor-ui-improvements.md slice 7). One
+  // Keyboard navigation (level-editor.md §17). One
   // `onKeyDown` on the tree container, never on a row — `react-window`
   // unmounts offscreen rows, so a roving tabIndex would lose the node it
   // was on the moment it scrolled away.
