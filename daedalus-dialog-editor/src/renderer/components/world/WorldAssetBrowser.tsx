@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { Box, IconButton, Tooltip, Typography } from '@mui/material';
+import { Box, Breadcrumbs, IconButton, Link, TextField, Tooltip, Typography } from '@mui/material';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import FolderIcon from '@mui/icons-material/Folder';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
@@ -101,6 +101,18 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({ listAssets, onPre
     });
   }, [state]);
 
+  // The filter (level-editor-ui-improvements.md slice 9) — the current
+  // directory only, never a walk of the whole namespace: the same "one
+  // level at a time" rule the browser already holds for the listing
+  // itself. Reset on navigation, so a filter typed two directories ago
+  // does not silently hide everything in this one.
+  const [filter, setFilter] = useState('');
+  useEffect(() => { setFilter(''); }, [path]);
+  const filtered = useMemo(() => {
+    const needle = filter.trim().toLowerCase();
+    return needle === '' ? sorted : sorted.filter((entry) => entry.name.toLowerCase().includes(needle));
+  }, [sorted, filter]);
+
   const onOpen = useCallback((entry: VfsEntry) => {
     const child = path === '/' ? entry.name : `${path}/${entry.name}`;
     if (entry.type === 'directory') setPath(child);
@@ -114,32 +126,104 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({ listAssets, onPre
     });
   }, []);
 
-  const itemData = useMemo<RowData>(() => ({ entries: sorted, onOpen }), [sorted, onOpen]);
+  /** The path as breadcrumb segments — the root first, always, then one
+   *  per path component with the path it navigates to. Keyed and
+   *  identified by that cumulative path rather than the bare name: two
+   *  directories sharing a name at different depths are a real position
+   *  in the VFS namespace and must not collide. */
+  const crumbs = useMemo(() => {
+    const parts = path === '/' ? [] : path.split('/').filter((part) => part !== '');
+    const segments: Array<{ name: string; path: string }> = [{ name: '/', path: '/' }];
+    let at = '';
+    for (const part of parts) {
+      at = at === '' ? part : `${at}/${part}`;
+      segments.push({ name: part, path: at });
+    }
+    return segments;
+  }, [path]);
+
+  const itemData = useMemo<RowData>(() => ({ entries: filtered, onOpen }), [filtered, onOpen]);
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <Box sx={{
-        display: 'flex', alignItems: 'center', gap: 0.5, px: 0.5, py: 0.25,
+        display: 'flex', flexDirection: 'column', gap: 0.5, px: 0.5, py: 0.25,
         borderBottom: 1, borderColor: 'divider',
       }}>
-        <Tooltip title="Up one directory">
-          {/* A span, because a disabled button reports no pointer events and
-              MUI's tooltip needs one to attach to. */}
-          <span>
-            <IconButton
-              size="small"
-              onClick={goUp}
-              disabled={path === '/'}
-              data-testid="world-asset-up"
-              aria-label="Up one directory"
-            >
-              <ArrowUpwardIcon sx={{ fontSize: 16 }} />
-            </IconButton>
-          </span>
-        </Tooltip>
-        <Typography variant="caption" color="text.secondary" noWrap data-testid="world-asset-path">
-          {path}
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          <Tooltip title="Up one directory">
+            {/* A span, because a disabled button reports no pointer events and
+                MUI's tooltip needs one to attach to. */}
+            <span>
+              <IconButton
+                size="small"
+                onClick={goUp}
+                disabled={path === '/'}
+                data-testid="world-asset-up"
+                aria-label="Up one directory"
+              >
+                <ArrowUpwardIcon sx={{ fontSize: 16 }} />
+              </IconButton>
+            </span>
+          </Tooltip>
+          {/* One namespace, not a filesystem — but still a position in it,
+              and a breadcrumb per segment is what makes an arbitrary depth
+              jumpable in one click rather than one "Up" at a time. */}
+          <Breadcrumbs
+            aria-label="Position in the mounted namespace"
+            sx={{ '& .MuiBreadcrumbs-ol': { flexWrap: 'nowrap' }, minWidth: 0 }}
+          >
+            {crumbs.map((crumb, index) => {
+              const testId = `world-asset-crumb-${crumb.path === '/' ? 'root' : crumb.path.replace(/\//g, '-')}`;
+              return index === crumbs.length - 1
+                ? (
+                  <Typography
+                    key={crumb.path}
+                    variant="caption"
+                    color="text.primary"
+                    noWrap
+                    data-testid={testId}
+                  >
+                    {crumb.name}
+                  </Typography>
+                )
+                : (
+                  <Link
+                    key={crumb.path}
+                    component="button"
+                    variant="caption"
+                    underline="hover"
+                    color="text.secondary"
+                    onClick={() => setPath(crumb.path)}
+                    data-testid={testId}
+                  >
+                    {crumb.name}
+                  </Link>
+                );
+            })}
+          </Breadcrumbs>
+        </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          <TextField
+            size="small"
+            variant="outlined"
+            placeholder="Filter this directory"
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+            inputProps={{ 'data-testid': 'world-asset-filter', 'aria-label': 'Filter this directory' }}
+            sx={{ flex: 1, minWidth: 0, '& .MuiInputBase-input': { fontSize: 12, py: 0.5 } }}
+          />
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            noWrap
+            data-testid="world-asset-count"
+          >
+            {filter.trim() === ''
+              ? `${sorted.length.toLocaleString()} entries`
+              : `${filtered.length.toLocaleString()} of ${sorted.length.toLocaleString()}`}
+          </Typography>
+        </Box>
       </Box>
 
       {state.status === 'error' && (
@@ -164,14 +248,27 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({ listAssets, onPre
         </Typography>
       )}
 
-      {state.status === 'ready' && sorted.length > 0 && (
+      {/* Distinct from the directory being empty: the directory has
+          entries, the filter matched none of them. */}
+      {state.status === 'ready' && sorted.length > 0 && filtered.length === 0 && (
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          data-testid="world-asset-filter-empty"
+          sx={{ p: 1 }}
+        >
+          No matches for this filter.
+        </Typography>
+      )}
+
+      {state.status === 'ready' && filtered.length > 0 && (
         <Box sx={{ flex: 1, minHeight: 0 }} role="list" aria-label="Mounted assets">
           <AutoSizer>
             {({ height, width }) => (
               <List
                 height={height}
                 width={width}
-                itemCount={sorted.length}
+                itemCount={filtered.length}
                 itemSize={ROW_HEIGHT}
                 itemData={itemData}
                 overscanCount={8}

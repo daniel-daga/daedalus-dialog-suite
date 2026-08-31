@@ -19,7 +19,7 @@
  */
 
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { VfsEntry } from '../src/shared/worldTypes';
 import WorldAssetBrowser from '../src/renderer/components/world/WorldAssetBrowser';
@@ -91,11 +91,11 @@ describe('WorldAssetBrowser', () => {
 
     await user.click(await screen.findByTestId('world-asset-Meshes'));
     await user.click(await screen.findByTestId('world-asset-_compiled'));
-    expect(screen.getByTestId('world-asset-path')).toHaveTextContent('Meshes/_compiled');
+    expect(screen.getByTestId('world-asset-crumb-Meshes-_compiled')).toHaveTextContent('_compiled');
 
     await user.click(screen.getByTestId('world-asset-up'));
     await screen.findByTestId('world-asset-_compiled');
-    expect(screen.getByTestId('world-asset-path')).toHaveTextContent('Meshes');
+    expect(screen.getByTestId('world-asset-crumb-Meshes')).toHaveTextContent('Meshes');
   });
 
   it('cannot go up from the root', async () => {
@@ -161,9 +161,110 @@ describe('WorldAssetBrowser', () => {
     render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} />);
 
     await screen.findByTestId('world-asset-Meshes');
-    const names = screen.getAllByRole('listitem').map((row) => row.getAttribute('data-testid'));
+    // Scoped to the row list — the breadcrumb above it is its own `<ol>`
+    // and contributes `listitem`s of its own now.
+    const rowList = screen.getByRole('list', { name: 'Mounted assets' });
+    const names = within(rowList).getAllByRole('listitem').map((row) => row.getAttribute('data-testid'));
     expect(names).toEqual([
       'world-asset-Meshes', 'world-asset-Textures', 'world-asset-MOD_ONLY.MRM',
     ]);
+  });
+
+  // The filter (level-editor-ui-improvements.md slice 9) — the current
+  // directory only, the same "one level at a time" rule the listing
+  // itself already holds.
+  describe('the filter', () => {
+    it('narrows the current directory case-insensitively', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} />);
+      await screen.findByTestId('world-asset-Meshes');
+
+      await user.type(screen.getByTestId('world-asset-filter'), 'mesh');
+
+      expect(screen.getByTestId('world-asset-Meshes')).toBeInTheDocument();
+      expect(screen.queryByTestId('world-asset-Textures')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('world-asset-MOD_ONLY.MRM')).not.toBeInTheDocument();
+    });
+
+    it('reports how many entries match, out of how many are in this directory', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} />);
+      await screen.findByTestId('world-asset-Meshes');
+      expect(screen.getByTestId('world-asset-count')).toHaveTextContent('3 entries');
+
+      await user.type(screen.getByTestId('world-asset-filter'), 'mesh');
+
+      expect(screen.getByTestId('world-asset-count')).toHaveTextContent('1 of 3');
+    });
+
+    it('says so when nothing in this directory matches, rather than showing an empty list', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} />);
+      await screen.findByTestId('world-asset-Meshes');
+
+      await user.type(screen.getByTestId('world-asset-filter'), 'nothing matches this');
+
+      expect(await screen.findByTestId('world-asset-filter-empty')).toBeInTheDocument();
+      // Distinct from the directory actually being empty.
+      expect(screen.queryByTestId('world-asset-empty')).not.toBeInTheDocument();
+    });
+
+    it('resets on navigation, rather than hiding everything in the next directory', async () => {
+      // A filter that still matches "Meshes" itself, so the row survives to
+      // be clicked — "_compiled" would not match "mesh" and must not stay
+      // hidden by a filter typed one directory up.
+      const user = userEvent.setup();
+      const { list } = listing();
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} />);
+      await screen.findByTestId('world-asset-Meshes');
+
+      await user.type(screen.getByTestId('world-asset-filter'), 'mesh');
+      await user.click(screen.getByTestId('world-asset-Meshes'));
+
+      expect(await screen.findByTestId('world-asset-_compiled')).toBeInTheDocument();
+      expect(screen.getByTestId('world-asset-filter')).toHaveValue('');
+    });
+  });
+
+  // The breadcrumbs (level-editor-ui-improvements.md slice 9) — one segment
+  // per path component, replacing the static path caption.
+  describe('the breadcrumbs', () => {
+    it('shows just the root at the top level', async () => {
+      const { list } = listing();
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} />);
+
+      await screen.findByTestId('world-asset-Meshes');
+      expect(screen.getByTestId('world-asset-crumb-root')).toHaveTextContent('/');
+    });
+
+    it('adds one segment per directory descended into', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} />);
+
+      await user.click(await screen.findByTestId('world-asset-Meshes'));
+      await user.click(await screen.findByTestId('world-asset-_compiled'));
+
+      expect(screen.getByTestId('world-asset-crumb-root')).toBeInTheDocument();
+      expect(screen.getByTestId('world-asset-crumb-Meshes')).toHaveTextContent('Meshes');
+      expect(screen.getByTestId('world-asset-crumb-Meshes-_compiled')).toHaveTextContent('_compiled');
+    });
+
+    it('jumps back to a prefix in one click', async () => {
+      const user = userEvent.setup();
+      const { list, calls } = listing();
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} />);
+      await user.click(await screen.findByTestId('world-asset-Meshes'));
+      await user.click(await screen.findByTestId('world-asset-_compiled'));
+      await screen.findByTestId('world-asset-NW_CRATE.MRM');
+
+      await user.click(screen.getByTestId('world-asset-crumb-root'));
+
+      await screen.findByTestId('world-asset-Meshes');
+      expect(calls).toEqual(['/', 'Meshes', 'Meshes/_compiled', '/']);
+    });
   });
 });
