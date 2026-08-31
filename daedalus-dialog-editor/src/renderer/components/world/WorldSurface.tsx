@@ -3,9 +3,11 @@ import React, {
 } from 'react';
 import {
   Alert, Autocomplete, Box, Button, Checkbox, Dialog, DialogActions, DialogContent,
-  DialogContentText, DialogTitle, FormControlLabel, Paper, Stack, Tab, Tabs,
-  TextField, Typography,
+  DialogContentText, DialogTitle, FormControlLabel, IconButton, Paper, Stack, Tab, Tabs,
+  TextField, Tooltip, Typography,
 } from '@mui/material';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import {
   AUTHORABLE_VOB_CLASSES,
   addVob, classPropKeys, addWaypoint, alignVobsToNormal, applyWaypointNames, applyWaypointPositions,
@@ -36,6 +38,7 @@ import WorldAssetBrowser from './WorldAssetBrowser';
 import WorldAssetPreview from './WorldAssetPreview';
 import WaypointPanel from './WaypointPanel';
 import WorldVobContextMenu from './WorldVobContextMenu';
+import PanelSplitter from './PanelSplitter';
 import WorldToolbar from './toolbar/WorldToolbar';
 
 // The World surface (level-editor.md §6): a new top-level view of the existing
@@ -61,6 +64,41 @@ const NUDGE_DELTAS: Record<string, [number, number, number]> = {
   pageup: [0, 1, 0],
   pagedown: [0, -1, 0],
 };
+
+/** The side panels' widths (level-editor-ui-improvements.md slice 8) —
+ *  view state like the theme, so it persists the same way (`main.tsx`'s
+ *  `THEME_STORAGE_KEY` pattern), not through `SettingsService`, which is
+ *  for main-process/security-adjacent config. */
+const PANEL_WIDTH_STORAGE_KEY = 'dandelion-world-panel-widths';
+const LEFT_PANEL_MIN = 200;
+const LEFT_PANEL_MAX = 480;
+const LEFT_PANEL_DEFAULT = 280;
+const RIGHT_PANEL_MIN = 220;
+const RIGHT_PANEL_MAX = 520;
+const RIGHT_PANEL_DEFAULT = 300;
+/** Wide enough for the one button a collapsed panel still shows. */
+const COLLAPSED_PANEL_WIDTH = 28;
+
+const clampPanelWidth = (value: number, min: number, max: number): number => (
+  Math.min(max, Math.max(min, value))
+);
+
+/** Read once, at mount — a later change from another window does not need
+ *  to be watched, and reading through `useState`'s lazy initializer means
+ *  it runs exactly once regardless of how often the surface re-renders. */
+function loadPanelWidths(): { left: number; right: number } {
+  try {
+    const raw = localStorage.getItem(PANEL_WIDTH_STORAGE_KEY);
+    if (raw === null) return { left: LEFT_PANEL_DEFAULT, right: RIGHT_PANEL_DEFAULT };
+    const parsed = JSON.parse(raw) as { left?: unknown; right?: unknown };
+    return {
+      left: clampPanelWidth(Number(parsed.left) || LEFT_PANEL_DEFAULT, LEFT_PANEL_MIN, LEFT_PANEL_MAX),
+      right: clampPanelWidth(Number(parsed.right) || RIGHT_PANEL_DEFAULT, RIGHT_PANEL_MIN, RIGHT_PANEL_MAX),
+    };
+  } catch {
+    return { left: LEFT_PANEL_DEFAULT, right: RIGHT_PANEL_DEFAULT };
+  }
+}
 
 interface WorldSurfaceProps {
   /**
@@ -121,6 +159,33 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   // beside the browser.
   const [panel, setPanel] = useState<'scene' | 'assets'>('scene');
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
+  /** The two side panels' widths, restored from localStorage on mount.
+   *  Collapse is not part of it — session-only, so every launch opens with
+   *  both panels showing, and collapsing one never has to touch the width
+   *  it will be restored to. */
+  const [panelWidths, setPanelWidths] = useState(loadPanelWidths);
+  const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
+  const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
+  const setLeftPanelWidth = useCallback((width: number) => {
+    setPanelWidths((current) => (
+      { ...current, left: clampPanelWidth(width, LEFT_PANEL_MIN, LEFT_PANEL_MAX) }
+    ));
+  }, []);
+  const setRightPanelWidth = useCallback((width: number) => {
+    setPanelWidths((current) => (
+      { ...current, right: clampPanelWidth(width, RIGHT_PANEL_MIN, RIGHT_PANEL_MAX) }
+    ));
+  }, []);
+  /** Written once the drag ends, not on every move — a live drag is dozens
+   *  of resizes and localStorage is not where they belong. */
+  const persistPanelWidths = useCallback(() => {
+    try {
+      localStorage.setItem(PANEL_WIDTH_STORAGE_KEY, JSON.stringify(panelWidths));
+    } catch {
+      // A full or disabled localStorage loses the preference, not the
+      // resize that is already on screen.
+    }
+  }, [panelWidths]);
   // Fetched the first time it is switched on and kept afterwards. It is a
   // separate IPC call on purpose: an overlay nobody asked for should not be in
   // the cold open.
@@ -1861,39 +1926,77 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
           world is open: without a `VobIndex` there is no hierarchy to show, and
           an empty tree beside an empty viewport says nothing. */}
       <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
-        {summary && (
+        {summary && leftPanelCollapsed && (
           <Box sx={{
-            width: 280, flexShrink: 0, borderRight: 1, borderColor: 'divider',
-            minHeight: 0, display: 'flex', flexDirection: 'column',
+            width: COLLAPSED_PANEL_WIDTH, flexShrink: 0, borderRight: 1, borderColor: 'divider',
+            minHeight: 0, display: 'flex', justifyContent: 'center', pt: 0.5,
           }}>
-            <Tabs
-              value={panel}
-              onChange={(_event, next: 'scene' | 'assets') => setPanel(next)}
-              variant="fullWidth"
-              sx={{ minHeight: 32, '& .MuiTab-root': { minHeight: 32, fontSize: 12 } }}
-            >
-              <Tab value="scene" label="Scene" data-testid="world-panel-scene" />
-              <Tab value="assets" label="Assets" data-testid="world-panel-assets" />
-            </Tabs>
-            <Box sx={{ flex: 1, minHeight: 0, display: panel === 'scene' ? 'block' : 'none' }}>
-              <WorldSceneTree
-                summary={summary}
-                selection={selection}
-                appliedOps={appliedOps}
-                onSelect={handleSelect}
-                onFocus={focusVob}
-                onReparent={reparent}
-                onContextMenu={openVobContextMenu}
-              />
-            </Box>
-            {/* Mounted only once the user asks for it: the first listing is an
-                IPC round trip into the worker that holds the VFS. */}
-            {panel === 'assets' && (
-              <Box sx={{ flex: 1, minHeight: 0 }}>
-                <WorldAssetBrowser listAssets={listAssets} onPreview={setSelectedAsset} />
-              </Box>
-            )}
+            <Tooltip title="Show scene panel">
+              <IconButton
+                size="small"
+                onClick={() => setLeftPanelCollapsed(false)}
+                data-testid="world-panel-expand-left"
+                aria-label="Show scene panel"
+              >
+                <ChevronRightIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
           </Box>
+        )}
+        {summary && !leftPanelCollapsed && (
+          <>
+            <Box data-testid="world-panel-left" sx={{
+              width: panelWidths.left, flexShrink: 0,
+              minHeight: 0, display: 'flex', flexDirection: 'column',
+            }}>
+              <Stack direction="row" alignItems="center">
+                <Tabs
+                  value={panel}
+                  onChange={(_event, next: 'scene' | 'assets') => setPanel(next)}
+                  variant="fullWidth"
+                  sx={{ flex: 1, minHeight: 32, '& .MuiTab-root': { minHeight: 32, fontSize: 12 } }}
+                >
+                  <Tab value="scene" label="Scene" data-testid="world-panel-scene" />
+                  <Tab value="assets" label="Assets" data-testid="world-panel-assets" />
+                </Tabs>
+                <Tooltip title="Hide scene panel">
+                  <IconButton
+                    size="small"
+                    onClick={() => setLeftPanelCollapsed(true)}
+                    data-testid="world-panel-collapse-left"
+                    aria-label="Hide scene panel"
+                  >
+                    <ChevronLeftIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </Stack>
+              <Box sx={{ flex: 1, minHeight: 0, display: panel === 'scene' ? 'block' : 'none' }}>
+                <WorldSceneTree
+                  summary={summary}
+                  selection={selection}
+                  appliedOps={appliedOps}
+                  onSelect={handleSelect}
+                  onFocus={focusVob}
+                  onReparent={reparent}
+                  onContextMenu={openVobContextMenu}
+                />
+              </Box>
+              {/* Mounted only once the user asks for it: the first listing is an
+                  IPC round trip into the worker that holds the VFS. */}
+              {panel === 'assets' && (
+                <Box sx={{ flex: 1, minHeight: 0 }}>
+                  <WorldAssetBrowser listAssets={listAssets} onPreview={setSelectedAsset} />
+                </Box>
+              )}
+            </Box>
+            <PanelSplitter
+              data-testid="world-splitter-left"
+              width={panelWidths.left}
+              grow="right"
+              onResize={setLeftPanelWidth}
+              onResizeEnd={persistPanelWidths}
+            />
+          </>
         )}
 
         <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative' }}>
@@ -1932,42 +2035,82 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
           )}
         </Box>
 
-        {summary && (
-          <Box sx={{ width: 300, flexShrink: 0, borderLeft: 1, borderColor: 'divider', minHeight: 0 }}>
-            {panel === 'assets' && selectedAsset !== null
-              ? <WorldAssetPreview path={selectedAsset} loadTexture={loadTexture} />
-              : selectedWaypoint !== null && waynet
-                ? (
-                  <WaypointPanel
-                    name={waynet.names[selectedWaypoint]}
-                    routines={waypointSiteIndex[waynet.names[selectedWaypoint].toUpperCase()] || []}
-                    spawns={waypointSpawns}
-                    onRename={(to) => renameWaypointTo(selectedWaypoint, to)}
-                    neighbours={waypointEdges}
-                    resolveWaypoint={resolveWaypointToJoin}
-                    onConnect={joinWaypointTo}
-                    onDisconnect={unjoinWaypointFrom}
-                    onDelete={() => setDeletingWaypoint({
-                      waypoint: selectedWaypoint, name: waynet.names[selectedWaypoint],
-                    })}
-                  />
-                )
-                : (
-                  <WorldPropertyGrid
-                    summary={summary}
-                    selection={selection}
-                    refusalGeneration={editRefusals}
-                    onEditProps={handleEditProps}
-                    onFocus={focusVob}
-                    onTranslate={handleTranslateSelection}
-                    onRotate={handleRotateVob}
-                    onRotateSelection={handleRotateSelection}
-                    classProps={classProps?.vob === primary ? classProps.props : null}
-                    onEditClassProps={handleEditClassProps}
-                    onEditBaseProps={handleEditBaseProps}
-                    itemInstances={itemInstances}
-                  />
-                )}
+        {summary && rightPanelCollapsed && (
+          <Box sx={{
+            width: COLLAPSED_PANEL_WIDTH, flexShrink: 0, borderLeft: 1, borderColor: 'divider',
+            minHeight: 0, display: 'flex', justifyContent: 'center', pt: 0.5,
+          }}>
+            <Tooltip title="Show properties panel">
+              <IconButton
+                size="small"
+                onClick={() => setRightPanelCollapsed(false)}
+                data-testid="world-panel-expand-right"
+                aria-label="Show properties panel"
+              >
+                <ChevronLeftIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Box>
+        )}
+        {summary && !rightPanelCollapsed && (
+          <PanelSplitter
+            data-testid="world-splitter-right"
+            width={panelWidths.right}
+            grow="left"
+            onResize={setRightPanelWidth}
+            onResizeEnd={persistPanelWidths}
+          />
+        )}
+        {summary && !rightPanelCollapsed && (
+          <Box data-testid="world-panel-right" sx={{ width: panelWidths.right, flexShrink: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <Tooltip title="Hide properties panel">
+                <IconButton
+                  size="small"
+                  onClick={() => setRightPanelCollapsed(true)}
+                  data-testid="world-panel-collapse-right"
+                  aria-label="Hide properties panel"
+                >
+                  <ChevronRightIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </Box>
+            <Box sx={{ flex: 1, minHeight: 0 }}>
+              {panel === 'assets' && selectedAsset !== null
+                ? <WorldAssetPreview path={selectedAsset} loadTexture={loadTexture} />
+                : selectedWaypoint !== null && waynet
+                  ? (
+                    <WaypointPanel
+                      name={waynet.names[selectedWaypoint]}
+                      routines={waypointSiteIndex[waynet.names[selectedWaypoint].toUpperCase()] || []}
+                      spawns={waypointSpawns}
+                      onRename={(to) => renameWaypointTo(selectedWaypoint, to)}
+                      neighbours={waypointEdges}
+                      resolveWaypoint={resolveWaypointToJoin}
+                      onConnect={joinWaypointTo}
+                      onDisconnect={unjoinWaypointFrom}
+                      onDelete={() => setDeletingWaypoint({
+                        waypoint: selectedWaypoint, name: waynet.names[selectedWaypoint],
+                      })}
+                    />
+                  )
+                  : (
+                    <WorldPropertyGrid
+                      summary={summary}
+                      selection={selection}
+                      refusalGeneration={editRefusals}
+                      onEditProps={handleEditProps}
+                      onFocus={focusVob}
+                      onTranslate={handleTranslateSelection}
+                      onRotate={handleRotateVob}
+                      onRotateSelection={handleRotateSelection}
+                      classProps={classProps?.vob === primary ? classProps.props : null}
+                      onEditClassProps={handleEditClassProps}
+                      onEditBaseProps={handleEditBaseProps}
+                      itemInstances={itemInstances}
+                    />
+                  )}
+            </Box>
           </Box>
         )}
       </Box>
