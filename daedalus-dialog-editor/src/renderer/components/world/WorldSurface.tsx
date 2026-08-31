@@ -2,12 +2,10 @@ import React, {
   useCallback, useEffect, useMemo, useRef, useState,
 } from 'react';
 import {
-  Alert, Autocomplete, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
-  DialogContentText, DialogTitle, FormControlLabel, IconButton, MenuItem, Paper, Slider, Stack, Tab, Tabs,
-  TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
+  Alert, Autocomplete, Box, Button, Checkbox, Dialog, DialogActions, DialogContent,
+  DialogContentText, DialogTitle, FormControlLabel, Paper, Stack, Tab, Tabs,
+  TextField, Typography,
 } from '@mui/material';
-import RedoIcon from '@mui/icons-material/Redo';
-import UndoIcon from '@mui/icons-material/Undo';
 import {
   AUTHORABLE_VOB_CLASSES,
   addVob, classPropKeys, addWaypoint, alignVobsToNormal, applyWaypointNames, applyWaypointPositions,
@@ -27,16 +25,17 @@ import {
 } from 'zen-world';
 import type { InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp } from '../../../shared/worldTypes';
 import { findFreePointVob, primaryVob, useWorldStore } from '../../store/worldStore';
-import { MINUTES_PER_DAY, stateReach } from '../../routines/routineSchedule';
+import { stateReach } from '../../routines/routineSchedule';
 import { useProjectStore } from '../../store/projectStore';
 import { vobModelOf } from '../../world/vobModel';
-import { DEFAULT_EXPOSURE, MAX_EXPOSURE, MIN_EXPOSURE } from '../../world/WorldScene';
+import { DEFAULT_EXPOSURE } from '../../world/WorldScene';
 import WorldViewport, { type GizmoMode, type WorldViewportHandle } from './WorldViewport';
 import WorldSceneTree from './WorldSceneTree';
 import WorldPropertyGrid from './WorldPropertyGrid';
 import WorldAssetBrowser from './WorldAssetBrowser';
 import WorldAssetPreview from './WorldAssetPreview';
 import WaypointPanel from './WaypointPanel';
+import WorldToolbar from './toolbar/WorldToolbar';
 
 // The World surface (level-editor.md §6): a new top-level view of the existing
 // app, lazily loaded, so `zenkit-node` is pulled in only when a world is
@@ -50,23 +49,6 @@ import WaypointPanel from './WaypointPanel';
  *  else, and inventing an orientation from a surface normal is a feature with
  *  its own decisions (which axis is up for this visual?) rather than a default. */
 const IDENTITY: ZenRotation = [1, 0, 0, 0, 1, 0, 0, 0, 1];
-
-/** What a move drag can be quantised to. **ZenGin centimetres** — every position
- *  in this app is in them (`WorldPropertyGrid` says so too), so a metre is 100
- *  and the labels say which is which. */
-const GRID_STEPS = [
-  { value: 0, label: 'Free' },
-  { value: 10, label: '10 cm' },
-  { value: 50, label: '50 cm' },
-  { value: 100, label: '1 m' },
-  { value: 500, label: '5 m' },
-];
-
-/** And a turn drag, in degrees — converted to radians on the way to the gizmo,
- *  which is what it turns in. */
-const ANGLE_STEPS = [0, 5, 15, 45, 90].map((degrees) => ({
-  value: degrees, label: degrees === 0 ? 'Free' : `${degrees}°`,
-}));
 
 /** Arrow-key nudge, in the world's own axes (ZenGin is Y-up): one unit of
  *  step per key, `[x, y, z]`. Keyed by the lower-cased `KeyboardEvent.key`. */
@@ -96,12 +78,6 @@ interface WorldSurfaceProps {
  * broken layer rather than as the hour it is.
  */
 const DEFAULT_SPAWN_TIME = 8 * 60;
-
-/** Minutes since midnight as `HH:MM` — the routine index's own unit (§16.19). */
-function formatDayMinute(minute: number): string {
-  const hours = Math.floor(minute / 60);
-  return `${String(hours).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
-}
 
 const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const status = useWorldStore((s) => s.status);
@@ -1613,373 +1589,76 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     snapGrid, handleTranslateSelection,
   ]);
 
+  // The World bar's own combined-state rules (WorldToolbar §5): each collapses
+  // a pair of related setters, or an event's shape, into the one callback the
+  // bar is handed — the bar's children only ever call up, never read a second
+  // piece of state to decide what to write.
+  /** The Time toggle: switching the slider off clears the state lens with
+   *  it, since a state without a minute answers nothing the static layer
+   *  does not. */
+  const toggleSpawnTime = useCallback(() => {
+    const next = spawnTime === null ? DEFAULT_SPAWN_TIME : null;
+    setSpawnTime(next);
+    if (next === null) setSpawnState(null);
+  }, [spawnTime]);
+  /** The Names toggle. */
+  const toggleWaypointNames = useCallback(() => setShowWaypointNames((v) => !v), []);
+  /** The Snap step: which of the two step values it writes follows the
+   *  gizmo mode, the way reading it already does. */
+  const handleSnapStepChange = useCallback((step: number) => {
+    if (gizmoMode === 'rotate') setSnapAngleDegrees(step);
+    else setSnapGrid(step);
+  }, [gizmoMode]);
+  /** The Delete button — opens the same confirm the Delete key does, never
+   *  a direct removal. */
+  const requestDeleteSelection = useCallback(
+    () => setDeleting(selection[0]),
+    [selection],
+  );
+
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <Paper square elevation={1} sx={{ p: 1, borderBottom: 1, borderColor: 'divider' }}>
-        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-          <Button size="small" variant="outlined" onClick={chooseInstall} data-testid="world-choose-install">
-            {gothicInstall ? 'Change Gothic install' : 'Select Gothic install'}
-          </Button>
-          <Button
-            size="small"
-            variant="contained"
-            onClick={openWorld}
-            disabled={status === 'opening'}
-            data-testid="world-open"
-          >
-            Open world
-          </Button>
-          {gothicInstall && (
-            <Typography variant="caption" color="text.secondary" data-testid="world-install-path">
-              {gothicInstall}
-            </Typography>
-          )}
-          {status === 'opening' && <CircularProgress size={16} />}
-          {summary && (
-            <Button
-              size="small"
-              variant={showWaynet ? 'contained' : 'outlined'}
-              onClick={toggleWaynet}
-              data-testid="world-waynet-toggle"
-            >
-              Waynet
-            </Button>
-          )}
-          {/* The project's spawns, drawn where the script puts them. Offered
-              beside the waynet because it is the same kind of layer, and
-              deliberately not hidden when the index is empty: an empty index
-              means no script project is open, which is a different fact from
-              "nobody is spawned in this world" and is not one a missing button
-              could tell anybody. */}
-          {summary && (
-            <Button
-              size="small"
-              variant={showSpawns ? 'contained' : 'outlined'}
-              onClick={toggleSpawns}
-              data-testid="world-spawns-toggle"
-            >
-              Spawns
-            </Button>
-          )}
-          {/* The time of day the spawn layer answers for (§16.19 slice 5), and
-              it hangs off that layer rather than standing beside it because it
-              has nothing else to change. Off by default: the static spawns are
-              where `Wld_InsertNpc` puts an NPC and they are a fact on their own,
-              so the slider is an extra question and not a better default. What
-              it draws is two-coloured on purpose — the routines do not cover
-              every NPC at every minute, and the dim markers are the ones the
-              scripts leave unplaced rather than NPCs who are not there. */}
-          {summary && showSpawns && (
-            <Stack direction="row" spacing={1} alignItems="center">
-              <Button
-                size="small"
-                variant={spawnTime === null ? 'outlined' : 'contained'}
-                onClick={() => {
-                  const next = spawnTime === null ? DEFAULT_SPAWN_TIME : null;
-                  setSpawnTime(next);
-                  // The state is a lens on the day; with no day there is
-                  // nothing to look through, and a state surviving behind a
-                  // hidden control is a filter nobody can see.
-                  if (next === null) setSpawnState(null);
-                }}
-                data-testid="world-time-toggle"
-              >
-                Time
-              </Button>
-              {spawnTime !== null && (
-                <>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    noWrap
-                    sx={{ fontVariantNumeric: 'tabular-nums' }}
-                    data-testid="world-time-readout"
-                  >
-                    {formatDayMinute(spawnTime)}
-                  </Typography>
-                  <Slider
-                    size="small"
-                    min={0}
-                    max={MINUTES_PER_DAY - 1}
-                    step={5}
-                    value={spawnTime}
-                    onChange={(_event, next) => setSpawnTime(next as number)}
-                    aria-label="Time of day"
-                    data-testid="world-time"
-                    sx={{ width: 120 }}
-                  />
-                  {/* The quest state the day is drawn through. Offered with the
-                      slider rather than beside it because a state without a
-                      minute answers nothing the static layer does not, and
-                      offered even with nothing in it for the Spawns button's
-                      reason: a missing control cannot tell anybody the
-                      difference between no project open and no states in this
-                      one. */}
-                  <TextField
-                    select
-                    size="small"
-                    value={spawnState ?? ''}
-                    onChange={(event) => setSpawnState(event.target.value || null)}
-                    aria-label="Quest state"
-                    data-testid="world-state"
-                    sx={{ width: 130 }}
-                  >
-                    {/* Not "Chapter 1": a `daily_routine` is whatever the
-                        instance declares, which for some NPCs is already a
-                        late-game routine, so a chapter number would be a claim
-                        the index cannot back. */}
-                    <MenuItem value="">Declared</MenuItem>
-                    {stateNames.map((name) => (
-                      <MenuItem key={name} value={name}>{name}</MenuItem>
-                    ))}
-                  </TextField>
-                  {spawnState !== null && (
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      noWrap
-                      data-testid="world-state-reach"
-                    >
-                      {spawnStateReach.resolved} of {spawnStateReach.total} NPCs
-                    </Typography>
-                  )}
-                </>
-              )}
-            </Stack>
-          )}
-          {/* Waypoint names. Offered whenever something is drawing waypoints —
-              the waynet itself, or the spawn markers, which stand on them —
-              because it labels what is drawn rather than the whole net: with
-              only the spawns on, a name over an unmarked waypoint would point
-              at nothing. Only the nearest few are drawn whatever is on; a
-              retail world has ~3,000 waypoints and a name on each is neither
-              legible nor affordable. With the spawn layer on, a marked point
-              says who is standing on it rather than what it is called — the
-              marker is already the point (slice 14). */}
-          {summary && (showWaynet || showSpawns) && (
-            <Button
-              size="small"
-              variant={showWaypointNames ? 'contained' : 'outlined'}
-              onClick={() => setShowWaypointNames(!showWaypointNames)}
-              data-testid="world-names-toggle"
-            >
-              Names
-            </Button>
-          )}
-          {/* Brightness, beside the other view toggles and deliberately not
-              near anything that edits: ZenGin's lighting is baked into the
-              vertex colours, so an interior is dark in the file and there is no
-              light in this scene to turn up. This lifts the picture and nothing
-              else — no op, no dirty world, nothing saved. */}
-          {summary && (
-            <Stack direction="row" spacing={1} alignItems="center" sx={{ width: 170 }}>
-              <Typography variant="caption" color="text.secondary" noWrap>
-                Brightness
-              </Typography>
-              <Slider
-                size="small"
-                min={MIN_EXPOSURE}
-                max={MAX_EXPOSURE}
-                step={0.1}
-                value={exposure}
-                onChange={(_event, next) => setExposure(next as number)}
-                aria-label="Brightness"
-                data-testid="world-exposure"
-              />
-            </Stack>
-          )}
-          {/* Spacer's per-class show/hide, beside the other view controls
-              because that is what it is: the world still holds every VOB, the
-              scene tree still lists them, and one of them switched off here is
-              only not drawn — and, since the pick pass reads the same flag, not
-              clickable either. Named for what it does rather than for what is
-              on: the empty list is the ordinary state and "nothing hidden"
-              should read as the empty one. */}
-          {summary && (
-            <Stack direction="row" spacing={1} alignItems="center">
-              <Typography variant="caption" color="text.secondary" noWrap>
-                Hide
-              </Typography>
-              <TextField
-                select
-                size="small"
-                value={hiddenClasses as string[]}
-                onChange={(event) => setHiddenClasses(
-                  typeof event.target.value === 'string'
-                    ? [event.target.value]
-                    : (event.target.value as unknown as string[]),
-                )}
-                aria-label="Hidden VOB classes"
-                data-testid="world-hidden-classes"
-                SelectProps={{
-                  multiple: true,
-                  displayEmpty: true,
-                  renderValue: (picked) => ((picked as string[]).length === 0
-                    ? 'Nothing'
-                    : `${(picked as string[]).length} classes`),
-                }}
-                sx={{ width: 110, '& .MuiInputBase-input': { py: 0.5, fontSize: 12 } }}
-              >
-                {classOptions.map((cls) => (
-                  <MenuItem key={cls} value={cls} sx={{ fontSize: 12 }}>{cls}</MenuItem>
-                ))}
-              </TextField>
-            </Stack>
-          )}
-          {summary && (
-            <Button
-              size="small"
-              variant="outlined"
-              onClick={() => setConfirmingSave(true)}
-              data-testid="world-save"
-            >
-              Save world…
-            </Button>
-          )}
-          {/* Two modes, not three: a VOB has no scale to gizmo. */}
-          {summary && (
-            <ToggleButtonGroup
-              size="small"
-              exclusive
-              value={gizmoMode}
-              onChange={(_event, next: GizmoMode | null) => next !== null && setGizmoMode(next)}
-              sx={{ '& .MuiToggleButton-root': { py: 0.25, px: 1, fontSize: 12 } }}
-            >
-              <ToggleButton value="translate" data-testid="world-gizmo-translate">Move (W)</ToggleButton>
-              <ToggleButton value="rotate" data-testid="world-gizmo-rotate">Turn (E)</ToggleButton>
-            </ToggleButtonGroup>
-          )}
-          {/* The step the gizmo drags in, and it follows the mode rather than
-              being two controls: one of them is always meaningless, and the
-              steps for a distance and for an angle share nothing but the word.
-              Both values are kept, so a detour through the other mode does not
-              reset the one you set. */}
-          {summary && (
-            <Stack direction="row" spacing={1} alignItems="center">
-              <Typography variant="caption" color="text.secondary" noWrap>
-                Snap
-              </Typography>
-              <TextField
-                select
-                size="small"
-                value={gizmoMode === 'rotate' ? snapAngleDegrees : snapGrid}
-                onChange={(event) => {
-                  const step = Number(event.target.value);
-                  if (gizmoMode === 'rotate') setSnapAngleDegrees(step);
-                  else setSnapGrid(step);
-                }}
-                aria-label="Snap step"
-                sx={{ width: 88, '& .MuiInputBase-input': { py: 0.5, fontSize: 12 } }}
-                data-testid="world-snap"
-              >
-                {(gizmoMode === 'rotate' ? ANGLE_STEPS : GRID_STEPS).map((step) => (
-                  <MenuItem key={step.value} value={step.value} sx={{ fontSize: 12 }}>
-                    {step.label}
-                  </MenuItem>
-                ))}
-              </TextField>
-            </Stack>
-          )}
-          {/* Snapping's per-VOB half (level-editor.md §16.5) — unlike the
-              gizmo, which drives the whole selection from one shared delta,
-              each of these finds its own ground point or its own normal, so
-              they act on the selection whatever its size. */}
-          {summary && (
-            <Stack direction="row" spacing={1}>
-              <Button
-                size="small"
-                variant="outlined"
-                disabled={selection.length === 0}
-                onClick={handleDropToGround}
-                data-testid="world-drop-to-ground"
-              >
-                Drop to ground
-              </Button>
-              <Button
-                size="small"
-                variant="outlined"
-                disabled={selection.length === 0}
-                onClick={handleAlignToNormal}
-                data-testid="world-align-to-normal"
-              >
-                Align to normal
-              </Button>
-            </Stack>
-          )}
-          {/* The one destructive edit in the surface, and the only one behind a
-              confirm. Exactly one VOB, never a selection: it renumbers, so each
-              would need its own batch, and a button that removed only the
-              primary of five is the surprise the dialog exists to prevent. */}
-          {/* The whole selection, unlike the delete beside it: an append moves
-              no index path, so the copies share one batch and one undo (D4).
-              A delete cannot, because it renumbers the paths of everything
-              after it. */}
-          {summary && (
-            <Button
-              size="small"
-              variant="outlined"
-              disabled={selection.length === 0}
-              onClick={() => void duplicateSelection()}
-              data-testid="world-duplicate-vob"
-            >
-              {selection.length > 1 ? `Duplicate ${selection.length} VOBs` : 'Duplicate VOB'}
-            </Button>
-          )}
-          {summary && (
-            <Button
-              size="small"
-              color="error"
-              variant="outlined"
-              disabled={selection.length !== 1}
-              onClick={() => setDeleting(selection[0])}
-              data-testid="world-delete-vob"
-            >
-              Delete VOB
-            </Button>
-          )}
-          {/* The main process is the authority on whether there is anything
-              to do (§7) — these read `historyDepth`, never a local guess, and
-              a click drives the very path Ctrl+Z does (`runHistory`). */}
-          {summary && (
-            <Stack direction="row" spacing={0.5}>
-              <Tooltip title="Undo (Ctrl+Z)">
-                <span>
-                  <IconButton
-                    size="small"
-                    disabled={historyDepth.undo === 0}
-                    onClick={() => void runHistory('undo')}
-                    data-testid="world-undo"
-                    aria-label="Undo"
-                  >
-                    <UndoIcon fontSize="small" />
-                  </IconButton>
-                </span>
-              </Tooltip>
-              <Tooltip title="Redo (Ctrl+Y)">
-                <span>
-                  <IconButton
-                    size="small"
-                    disabled={historyDepth.redo === 0}
-                    onClick={() => void runHistory('redo')}
-                    data-testid="world-redo"
-                    aria-label="Redo"
-                  >
-                    <RedoIcon fontSize="small" />
-                  </IconButton>
-                </span>
-              </Tooltip>
-            </Stack>
-          )}
-          {summary && (
-            <Stack direction="row" spacing={1}>
-              <Chip size="small" label={`${summary.stats.vobCount.toLocaleString()} VOBs`} />
-              <Chip size="small" label={`${summary.stats.worldTriangles.toLocaleString()} triangles`} />
-              <Chip size="small" label={`${summary.stats.worldDrawGroups} world draw calls`} />
-              {visuals && <Chip size="small" label={`${visuals.stats.vobsPlaced.toLocaleString()} placed`} />}
-            </Stack>
-          )}
-        </Stack>
-      </Paper>
+      <WorldToolbar
+        gothicInstall={gothicInstall}
+        onChooseInstall={() => void chooseInstall()}
+        onOpenWorld={() => void openWorld()}
+        status={status}
+        hasWorld={summary !== null}
+        onSave={() => setConfirmingSave(true)}
+        showWaynet={showWaynet}
+        onToggleWaynet={() => void toggleWaynet()}
+        showSpawns={showSpawns}
+        onToggleSpawns={() => void toggleSpawns()}
+        spawnTime={spawnTime}
+        onToggleTime={toggleSpawnTime}
+        onSpawnTimeChange={setSpawnTime}
+        spawnState={spawnState}
+        onSpawnStateChange={setSpawnState}
+        stateNames={stateNames}
+        spawnStateReach={spawnStateReach}
+        showWaypointNames={showWaypointNames}
+        onToggleWaypointNames={toggleWaypointNames}
+        exposure={exposure}
+        onExposureChange={setExposure}
+        hiddenClasses={hiddenClasses}
+        onHiddenClassesChange={setHiddenClasses}
+        classOptions={classOptions}
+        gizmoMode={gizmoMode}
+        onGizmoModeChange={setGizmoMode}
+        snapGrid={snapGrid}
+        snapAngleDegrees={snapAngleDegrees}
+        onSnapStepChange={handleSnapStepChange}
+        selectionCount={selection.length}
+        onDropToGround={handleDropToGround}
+        onAlignToNormal={handleAlignToNormal}
+        onDuplicate={() => void duplicateSelection()}
+        onDeleteRequest={requestDeleteSelection}
+        historyDepth={historyDepth}
+        onUndo={() => void runHistory('undo')}
+        onRedo={() => void runHistory('redo')}
+        summary={summary}
+        visuals={visuals}
+      />
 
       {status === 'error' && (
         <Alert severity="error" square data-testid="world-error">{error}</Alert>
