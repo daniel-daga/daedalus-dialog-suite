@@ -296,6 +296,39 @@ describe('matchVobs', () => {
     expect(Array.from(matchVobs(index, { text: '  ', classes: [] }))).toEqual([1, 1, 1, 1]);
   });
 
+  it('keeps only VOBs within reach of a centre, in ZenGin units', () => {
+    // The scene tree's "within reach of the camera" filter — a sphere, not
+    // a plane, so the radius is checked against true 3D distance.
+    const positioned = vobIndex([
+      { name: 'at the centre', pos: [0, 0, 0] },
+      { name: 'on the edge', pos: [100, 0, 0] },
+      { name: 'just past it', pos: [0, 0, 101] },
+      { name: 'well outside', pos: [1000, 0, 0] },
+    ]);
+
+    expect(Array.from(matchVobs(positioned, { near: { center: [0, 0, 0], radiusCm: 100 } })))
+      .toEqual([1, 1, 0, 0]);
+  });
+
+  it('requires the distance filter alongside text and class, same as the others', () => {
+    const positioned = vobIndex([
+      { name: 'FIRE_01', cls: 'zCVobLight', pos: [0, 0, 0] },
+      { name: 'FIRE_02', cls: 'zCVobLight', pos: [1000, 0, 0] },
+      { name: 'crate', cls: 'zCVob', pos: [0, 0, 0] },
+    ]);
+
+    expect(Array.from(matchVobs(positioned, {
+      text: 'fire', near: { center: [0, 0, 0], radiusCm: 100 },
+    }))).toEqual([1, 0, 0]);
+  });
+
+  it('treats an absent distance filter as "any distance", not zero', () => {
+    // `near` undefined must not be confused with a zero-radius filter — the
+    // same "absent half means any" rule `text`/`classes` already follow.
+    expect(Array.from(matchVobs(index, { text: 'fire' })))
+      .toEqual(Array.from(matchVobs(index, { text: 'fire', near: undefined })));
+  });
+
   it('reads each dictionary entry once, not each VOB', () => {
     // 20,000 VOBs sharing two names: a scan that lowercased per row would do
     // 20,000 string operations for the two the dictionary actually holds.

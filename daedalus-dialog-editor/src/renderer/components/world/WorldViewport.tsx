@@ -315,6 +315,15 @@ export interface WorldViewportHandle {
    * {@link frameVob} is.
    */
   framePoint: (at: ZenPosition) => FrameFailure | null;
+  /**
+   * The camera's own position, in ZenGin space — what the scene tree's
+   * "within reach of the camera" filter measures VOBs against.
+   *
+   * A query, not a subscription: read once, on demand, the same as
+   * {@link raycastDown}. Null while the scene effect is between a teardown
+   * and its rebuild, exactly as {@link frameVob} is.
+   */
+  cameraPosition: () => ZenPosition | null;
 }
 
 /**
@@ -391,6 +400,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     // answers, and `??` would turn every landed jump into a reported failure.
     frameVob: (vob) => (frameVobRef.current === null ? 'no-scene' : frameVobRef.current(vob)),
     framePoint: (at) => (framePointRef.current === null ? 'no-scene' : framePointRef.current(at)),
+    cameraPosition: () => (cameraPositionRef.current === null ? null : cameraPositionRef.current()),
   }), []);
 
   const overlayRef = useRef<WaynetOverlay | null>(null);
@@ -441,6 +451,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   // calls it through the ref rather than closing over it.
   const frameVobRef = useRef<((vob: number) => FrameFailure | null) | null>(null);
   const framePointRef = useRef<((at: ZenPosition) => FrameFailure | null) | null>(null);
+  const cameraPositionRef = useRef<(() => ZenPosition) | null>(null);
   // Read by the draw loop, which lives outside React's render path: going off
   // screen must not tear the scene down and rebuild 31 MB of buffers — that
   // would be the geometry loss the mount exists to prevent, once per tab
@@ -1069,6 +1080,10 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     // A waypoint carries its own position and has no size: `bounds: null` is
     // what `frameVobs` already reads as "a point".
     framePointRef.current = (at: ZenPosition) => frameFramables([{ at, bounds: null }]);
+    // Same math as `window.__worldViewport.cameraPosition()` below — this is
+    // the production path, that one is the debug/test double for scripting
+    // the viewport without a ref.
+    cameraPositionRef.current = () => threeToZen(camera.position.toArray() as [number, number, number]);
 
     const frameAll = () => {
       frameOn(
@@ -1340,6 +1355,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       gizmoRef.current = null;
       frameVobRef.current = null;
       framePointRef.current = null;
+      cameraPositionRef.current = null;
       delete window.__worldViewport;
       drawLoopRef.current = null;
       stopDraw();

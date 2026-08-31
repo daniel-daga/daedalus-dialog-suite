@@ -1,5 +1,6 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Box, MenuItem, Select, TextField, Typography } from '@mui/material';
+import { Box, IconButton, MenuItem, Select, TextField, Tooltip, Typography } from '@mui/material';
+import AdjustIcon from '@mui/icons-material/Adjust';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import MyLocationIcon from '@mui/icons-material/MyLocation';
@@ -7,7 +8,7 @@ import { FixedSizeList as List, type ListChildComponentProps, areEqual } from 'r
 import AutoSizer from 'react-virtualized-auto-sizer';
 import {
   flattenMatching, flattenVisible, isEmptyQuery, matchVobs, renumbersPaths,
-  type VobQuery, type VobReader, type VobRow, type WorldOp,
+  type VobQuery, type VobReader, type VobRow, type WorldOp, type ZenPosition,
 } from 'zen-world';
 import type { WorldSummary } from '../../../shared/worldTypes';
 import { vobModelOf } from '../../world/vobModel';
@@ -33,6 +34,14 @@ const ROW_HEIGHT = 28;
  *  costs a sweep over 41,393 VOBs and a re-flatten of what survived, and doing
  *  that per character is slower than having no filter at all. */
 const FILTER_DEBOUNCE_MS = 200;
+/** How often the "within reach of the camera" filter re-reads the camera's
+ *  position while it is on. A poll, not a subscription — the viewport has no
+ *  push channel for this, and the filter only has to feel live, not track
+ *  every frame the way the viewport's own waypoint labels do. */
+const NEAR_CAMERA_POLL_MS = 300;
+/** The reach the filter starts at, in metres — generous enough to be useful
+ *  the moment it is switched on, without starting equal to "everything". */
+const DEFAULT_NEAR_CAMERA_RADIUS_M = 50;
 const INDENT = 14;
 /** How much of a row belongs to the gap above or below it. A quarter: enough to
  *  hit deliberately, small enough that the row itself is still the easy target,
@@ -278,10 +287,19 @@ export interface WorldSceneTreeProps {
    * same lie in the other direction.
    */
   appliedOps?: readonly WorldOp[] | null;
+  /**
+   * The camera's own position, on demand — what the "within reach of the
+   * camera" filter measures VOBs against. A query, not a subscription: this
+   * tree polls it itself while that filter is on, the same shape `onFocus`
+   * reaches the viewport with. Absent when there is no viewport beside the
+   * tree, and then the filter offers no control it could not serve.
+   */
+  getCameraPosition?: () => ZenPosition | null;
 }
 
 const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
   summary, selection, onSelect, onFocus, onReparent, onContextMenu, appliedOps = null,
+  getCameraPosition,
 }) => {
   const { tree, reader } = useMemo(() => vobModelOf(summary), [summary]);
   const selected = useMemo(() => new Set(selection), [selection]);
@@ -303,7 +321,31 @@ const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
     return () => clearTimeout(timer);
   }, [text]);
 
-  const query = useMemo<VobQuery>(() => ({ text: debouncedText, classes }), [debouncedText, classes]);
+  // "Within reach of the camera" (level-editor.md §17) — a sphere, not the
+  // text/class filter's dictionaries. The centre is the viewport's own
+  // camera, which this tree has no way to derive on its own, so it is read
+  // from `getCameraPosition` on a poll rather than computed. An absent
+  // centre (no viewport, or a scene mid-rebuild) leaves `near` off rather
+  // than filtering on a stale or a zero position — the same "nothing known,
+  // not nothing legal" rule the hidden-classes filter already follows.
+  const [nearCameraEnabled, setNearCameraEnabled] = useState(false);
+  const [nearCameraRadiusM, setNearCameraRadiusM] = useState(DEFAULT_NEAR_CAMERA_RADIUS_M);
+  const [nearCameraCenter, setNearCameraCenter] = useState<ZenPosition | null>(null);
+  useEffect(() => {
+    if (!nearCameraEnabled || getCameraPosition === undefined) return undefined;
+    const poll = () => setNearCameraCenter(getCameraPosition());
+    poll();
+    const timer = setInterval(poll, NEAR_CAMERA_POLL_MS);
+    return () => clearInterval(timer);
+  }, [nearCameraEnabled, getCameraPosition]);
+
+  const query = useMemo<VobQuery>(() => ({
+    text: debouncedText,
+    classes,
+    near: nearCameraEnabled && nearCameraCenter !== null
+      ? { center: nearCameraCenter, radiusCm: Math.max(1, nearCameraRadiusM || 1) * 100 }
+      : undefined,
+  }), [debouncedText, classes, nearCameraEnabled, nearCameraCenter, nearCameraRadiusM]);
   /** Null when nothing is being asked for — the unfiltered tree is not a filter
    *  that happens to keep everything, and must not pay for one. */
   const matches = useMemo(
@@ -593,6 +635,36 @@ const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
             ))}
           </Select>
         </Box>
+        {getCameraPosition !== undefined && (
+          <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+            <Tooltip title="Show only VOBs within reach of the camera">
+              <span>
+                <IconButton
+                  size="small"
+                  color={nearCameraEnabled ? 'primary' : 'default'}
+                  onClick={() => setNearCameraEnabled((enabled) => !enabled)}
+                  data-testid="world-tree-near-toggle"
+                  aria-label="Filter to VOBs near the camera"
+                  aria-pressed={nearCameraEnabled}
+                >
+                  <AdjustIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+            <TextField
+              size="small"
+              type="number"
+              disabled={!nearCameraEnabled}
+              value={nearCameraRadiusM}
+              onChange={(event) => setNearCameraRadiusM(Number(event.target.value))}
+              inputProps={{
+                'data-testid': 'world-tree-near-radius', 'aria-label': 'Reach, in metres', min: 1,
+              }}
+              sx={{ width: 76, '& .MuiInputBase-input': { fontSize: 12, py: 0.5 } }}
+            />
+            <Typography variant="caption" color="text.secondary" noWrap>m reach</Typography>
+          </Box>
+        )}
         <Typography variant="caption" color="text.secondary" data-testid="world-tree-count">
           {matchCount === null
             ? `${summary.stats.vobCount.toLocaleString()} VOBs`

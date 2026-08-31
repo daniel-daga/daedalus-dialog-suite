@@ -14,7 +14,7 @@
  */
 
 import React from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { applyOps, createVobReader, setVobProp, type WorldOp } from 'zen-world';
 import type { VobIndex, WorldSummary } from '../src/shared/worldTypes';
@@ -31,6 +31,9 @@ interface Spec {
   cls?: string;
   name?: string;
   visual?: string;
+  /** ZenGin centimetres. Defaults to the origin — only the "within reach of
+   *  the camera" filter's own tests set this. */
+  pos?: [number, number, number];
 }
 
 function vobIndex(vobs: Spec[]): VobIndex {
@@ -44,6 +47,7 @@ function vobIndex(vobs: Spec[]): VobIndex {
 
   const parent = new Int32Array(vobs.length);
   const childIndex = new Uint32Array(vobs.length);
+  const positions = new Float32Array(vobs.length * 3);
   const classIndex = new Uint32Array(vobs.length);
   const nameIndex = new Uint32Array(vobs.length);
   const visualIndex = new Uint32Array(vobs.length);
@@ -51,6 +55,7 @@ function vobIndex(vobs: Spec[]): VobIndex {
   vobs.forEach((vob, i) => {
     parent[i] = vob.parent ?? -1;
     childIndex[i] = vob.childIndex ?? 0;
+    positions.set(vob.pos ?? [0, 0, 0], i * 3);
     classIndex[i] = intern(classes, vob.cls ?? 'zCVob');
     nameIndex[i] = intern(names, vob.name ?? '');
     visualIndex[i] = intern(visuals, vob.visual ?? '');
@@ -60,7 +65,7 @@ function vobIndex(vobs: Spec[]): VobIndex {
     count: vobs.length,
     parent: parent.buffer,
     childIndex: childIndex.buffer,
-    positions: new Float32Array(vobs.length * 3).buffer,
+    positions: positions.buffer,
     rotations: new Float32Array(vobs.length * 9).buffer,
     flags: new Uint32Array(vobs.length).fill(1).buffer,
     classes, classIndex: classIndex.buffer,
@@ -803,6 +808,124 @@ describe('WorldSceneTree', () => {
       expect(row(2)).not.toBeInTheDocument();
     });
   });
+
+  // "Within reach of the camera" (level-editor.md §17) — a sphere, not the
+  // text/class filter's dictionaries: the centre is wherever the viewport's
+  // camera is, which the tree has no way to know on its own, so it is read
+  // from `getCameraPosition` on a poll rather than derived here.
+  describe('the "within reach of the camera" filter', () => {
+    const NEAR = summaryOf(vobIndex([
+      { name: 'at the centre', pos: [0, 0, 0] },
+      { name: 'on the edge', pos: [4900, 0, 0] },
+      { name: 'well outside', pos: [50_000, 0, 0] },
+    ]));
+
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('offers no reach control when there is no viewport beside the tree', () => {
+      render(<WorldSceneTree summary={NEAR} selection={[]} onSelect={jest.fn()} />);
+
+      expect(screen.queryByTestId('world-tree-near-toggle')).not.toBeInTheDocument();
+    });
+
+    it('keeps only VOBs within the default reach, once switched on', () => {
+      render(<WorldSceneTree
+        summary={NEAR}
+        selection={[]}
+        onSelect={jest.fn()}
+        getCameraPosition={() => [0, 0, 0]}
+      />);
+      expect(row(2)).toBeInTheDocument();
+
+      fireEvent.click(screen.getByTestId('world-tree-near-toggle'));
+      act(() => { jest.advanceTimersByTime(1); });
+
+      expect(row(0)).toBeInTheDocument();
+      expect(row(1)).toBeInTheDocument();
+      expect(row(2)).not.toBeInTheDocument();
+    });
+
+    it('widens what it keeps when the reach is made larger', () => {
+      render(<WorldSceneTree
+        summary={NEAR}
+        selection={[]}
+        onSelect={jest.fn()}
+        getCameraPosition={() => [0, 0, 0]}
+      />);
+      fireEvent.click(screen.getByTestId('world-tree-near-toggle'));
+      act(() => { jest.advanceTimersByTime(1); });
+      expect(row(2)).not.toBeInTheDocument();
+
+      fireEvent.change(screen.getByTestId('world-tree-near-radius'), { target: { value: '600' } });
+
+      expect(row(2)).toBeInTheDocument();
+    });
+
+    it('gives every VOB back once switched off', () => {
+      render(<WorldSceneTree
+        summary={NEAR}
+        selection={[]}
+        onSelect={jest.fn()}
+        getCameraPosition={() => [0, 0, 0]}
+      />);
+      const toggle = screen.getByTestId('world-tree-near-toggle');
+      fireEvent.click(toggle);
+      act(() => { jest.advanceTimersByTime(1); });
+      expect(row(2)).not.toBeInTheDocument();
+
+      fireEvent.click(toggle);
+
+      expect(row(2)).toBeInTheDocument();
+    });
+
+    it('re-reads the camera position on a poll, so a moved camera updates the list', () => {
+      let at: [number, number, number] = [50_000, 0, 0];
+      render(<WorldSceneTree
+        summary={NEAR}
+        selection={[]}
+        onSelect={jest.fn()}
+        getCameraPosition={() => at}
+      />);
+      fireEvent.click(screen.getByTestId('world-tree-near-toggle'));
+      act(() => { jest.advanceTimersByTime(1); });
+      // The camera started 50,000 cm out — nothing at the origin is in reach.
+      expect(row(0)).not.toBeInTheDocument();
+
+      // It orbits back to the origin; nobody told the tree directly.
+      at = [0, 0, 0];
+      act(() => { jest.advanceTimersByTime(300); });
+
+      expect(row(0)).toBeInTheDocument();
+    });
+
+    it('stops polling once switched off', () => {
+      const getCameraPosition = jest.fn(() => [0, 0, 0] as [number, number, number]);
+      render(<WorldSceneTree
+        summary={NEAR}
+        selection={[]}
+        onSelect={jest.fn()}
+        getCameraPosition={getCameraPosition}
+      />);
+      const toggle = screen.getByTestId('world-tree-near-toggle');
+      fireEvent.click(toggle);
+      act(() => { jest.advanceTimersByTime(1); });
+      const callsWhileOn = getCameraPosition.mock.calls.length;
+      expect(callsWhileOn).toBeGreaterThan(0);
+
+      fireEvent.click(toggle);
+      getCameraPosition.mockClear();
+      act(() => { jest.advanceTimersByTime(3000); });
+
+      expect(getCameraPosition).not.toHaveBeenCalled();
+    });
+  });
+
   // `applyOps` writes a name or a visual straight into the summary's columns
   // and deliberately leaves `summary`'s identity alone (worldStore's
   // `applyEdit`), so nothing React compares changes on a property edit. The

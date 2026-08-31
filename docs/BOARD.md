@@ -240,6 +240,5 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **World surface UI improvements, all 10 slices** — shortcuts, undo/redo,
-  the toolbar split, the app's first context menu, tree keyboard nav,
-  resizable panels, asset browser filter+breadcrumbs, E2E. Plan deleted.
+- **VOB list: filter to within reach of the camera** — a sphere, not a
+  plane; `zen-world`'s `matchVobs` grew `near`, polled off the viewport. §17

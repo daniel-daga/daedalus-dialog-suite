@@ -2760,6 +2760,21 @@ has; enablement mirrors the toolbar; right-clicking outside the selection
 replaces it with the clicked VOB, while right-clicking inside a multi-selection
 leaves it standing. Terrain right-click is reserved.
 
+**The scene tree's "within reach of the camera" filter is a sphere, not the
+toolbar's plane.** `matchVobs`' `VobQuery` grew a `near: { center, radiusCm }`
+clause in `zen-world` — true squared Euclidean distance, alongside the
+existing text/class predicates, so it composes with them for free through the
+one mask `flattenMatching` already reads. The centre the tree filters against
+is not derivable locally the way text/class are: `WorldViewportHandle` grew a
+`cameraPosition()` query (same shape as `raycastDown`/`frameVob`, null during
+the teardown-to-rebuild window) that `WorldSurface` forwards down as
+`getCameraPosition`, and the tree **polls** it — every 300 ms while the filter
+is on, not a push subscription the viewport has no channel for. Absent
+`getCameraPosition` (no viewport beside the tree) hides the control entirely,
+the same as `onFocus`; an unresolved centre leaves `near` off rather than
+filtering on a stale or zero position, the hidden-classes filter's "nothing
+known, not nothing legal" rule again.
+
 ## 13. Brief §10 open questions — answer key
 
 | # | Question | Answer |

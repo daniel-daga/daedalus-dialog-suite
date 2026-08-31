@@ -545,6 +545,17 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   }, [handleSelect]);
 
   /**
+   * The camera's own position, on demand — what the scene tree's "within
+   * reach of the camera" filter measures VOBs against. Unlike `focusVob`, a
+   * pure read: the tree polls this itself while that filter is on, and a
+   * scene mid-rebuild answers null the same way `frameVob` reports no scene.
+   */
+  const getCameraPosition = useCallback(
+    () => viewportRef.current?.cameraPosition() ?? null,
+    [],
+  );
+
+  /**
    * A jump asked for from outside the surface — the Problems panel's click on a
    * world finding (§16.20 slice 2). The panel cannot call the viewport: it is
    * another view, and while it is on screen this one may not even be mounted.
@@ -2008,6 +2019,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                   onFocus={focusVob}
                   onReparent={reparent}
                   onContextMenu={openVobContextMenu}
+                  getCameraPosition={getCameraPosition}
                 />
               </Box>
               {/* Mounted only once the user asks for it: the first listing is an

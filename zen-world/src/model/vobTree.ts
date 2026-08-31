@@ -19,6 +19,7 @@
 /** The `vobIndex` payload, columnar with the repeated strings interned. */
 export type { VobIndex } from '../scene';
 import type { VobIndex } from '../scene';
+import type { ZenPosition } from './ops';
 
 export interface VobTree {
   count: number;
@@ -142,11 +143,17 @@ export interface VobQuery {
   /** Kept classes, matched exactly against the class dictionary. Empty is
    *  "any class", not "no class". */
   classes?: readonly string[];
+  /** Kept only within `radiusCm` ZenGin centimetres of `center` — true 3D
+   *  distance, a sphere rather than a plane. The scene tree's "within reach
+   *  of the camera" filter; `center` is wherever the caller says, usually
+   *  the camera's own position. Absent is "any distance". */
+  near?: { center: ZenPosition; radiusCm: number };
 }
 
 /** Whether a query would keep every VOB, and so is not worth running. */
 export function isEmptyQuery(query: VobQuery): boolean {
-  return (query.text ?? '').trim() === '' && (query.classes ?? []).length === 0;
+  return (query.text ?? '').trim() === '' && (query.classes ?? []).length === 0
+    && query.near === undefined;
 }
 
 /**
@@ -155,7 +162,11 @@ export function isEmptyQuery(query: VobQuery): boolean {
  * The query is answered against the **dictionaries** first — retail worlds name
  * 2,654 names and 37 classes for 41,393 VOBs — and the sweep over the VOBs is
  * then an integer lookup per row. Lowercasing per row instead would do fifteen
- * times the string work for the same answer, on every keystroke.
+ * times the string work for the same answer, on every keystroke. The distance
+ * half has no dictionary to precompute against — every VOB's own position is
+ * already the answer — so it stays a per-row subtraction, squared to skip a
+ * sqrt nobody needs: only whether it is inside the radius matters, not by how
+ * much.
  */
 export function matchVobs(index: VobIndex, query: VobQuery): Uint8Array {
   const matches = new Uint8Array(index.count);
@@ -172,12 +183,21 @@ export function matchVobs(index: VobIndex, query: VobQuery): Uint8Array {
   const classHits = classes.length === 0
     ? null
     : index.classes.map((cls) => (classes.includes(cls) ? 1 : 0));
+  const near = query.near;
+  const radiusSq = near === undefined ? 0 : near.radiusCm * near.radiusCm;
+  const positions = near === undefined ? null : new Float32Array(index.positions);
 
   const nameIndex = new Uint32Array(index.nameIndex);
   const classIndex = new Uint32Array(index.classIndex);
   for (let vob = 0; vob < index.count; vob++) {
     if (nameHits !== null && nameHits[nameIndex[vob]] === 0) continue;
     if (classHits !== null && classHits[classIndex[vob]] === 0) continue;
+    if (positions !== null && near !== undefined) {
+      const dx = positions[vob * 3] - near.center[0];
+      const dy = positions[vob * 3 + 1] - near.center[1];
+      const dz = positions[vob * 3 + 2] - near.center[2];
+      if (dx * dx + dy * dy + dz * dz > radiusSq) continue;
+    }
     matches[vob] = 1;
   }
   return matches;
