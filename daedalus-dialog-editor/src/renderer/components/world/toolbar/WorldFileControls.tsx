@@ -3,7 +3,7 @@ import { Button, CircularProgress, Typography } from '@mui/material';
 import type { WorldStatus } from '../../../store/worldStore';
 
 /**
- * The World bar's "file" group (level-editor-ui-improvements.md slice 5):
+ * The World bar's "file" group (level-editor.md §17):
  * choose/open the Gothic install, the path readout, the open spinner, and
  * save. Moved verbatim out of `WorldSurface.tsx` — every testid and
  * enablement rule is unchanged, only the state and handlers now arrive as
@@ -40,11 +40,11 @@ const WorldFileControls: React.FC<WorldFileControlsProps> = ({
       </Typography>
     )}
     {status === 'opening' && <CircularProgress size={16} />}
-    {hasWorld && (
-      <Button size="small" variant="outlined" onClick={onSave} data-testid="world-save">
-        Save world…
-      </Button>
-    )}
+    {/* Always rendered — disabled rather than unmounted, so the file group
+        does not resize when a world opens or closes. */}
+    <Button size="small" variant="outlined" disabled={!hasWorld} onClick={onSave} data-testid="world-save">
+      Save world…
+    </Button>
   </>
 );
 

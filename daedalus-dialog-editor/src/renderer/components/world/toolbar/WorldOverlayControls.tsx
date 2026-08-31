@@ -11,8 +11,8 @@ function formatDayMinute(minute: number): string {
 }
 
 /**
- * The World bar's "overlays" group (level-editor-ui-improvements.md slice
- * 5): Waynet, Spawns, the time-of-day slider and its quest-state lens,
+ * The World bar's "overlays" group (level-editor.md §17):
+ * Waynet, Spawns, the time-of-day slider and its quest-state lens,
  * waypoint names, brightness, and per-class hide. Moved verbatim out of
  * `WorldSurface.tsx` — every testid and enablement rule is unchanged, only
  * the state and handlers now arrive as props. Combined-state rules (the
@@ -49,32 +49,33 @@ const WorldOverlayControls: React.FC<WorldOverlayControlsProps> = ({
   exposure, onExposureChange, hiddenClasses, onHiddenClassesChange, classOptions,
 }) => (
   <>
-    {hasWorld && (
-      <Button
-        size="small"
-        variant={showWaynet ? 'contained' : 'outlined'}
-        onClick={onToggleWaynet}
-        data-testid="world-waynet-toggle"
-      >
-        Waynet
-      </Button>
-    )}
+    {/* Always rendered, never conditionally mounted on `hasWorld` — a
+        control that pops in and out at open/close shifts every group after
+        it in the row. Disabled instead. */}
+    <Button
+      size="small"
+      variant={showWaynet ? 'contained' : 'outlined'}
+      disabled={!hasWorld}
+      onClick={onToggleWaynet}
+      data-testid="world-waynet-toggle"
+    >
+      Waynet
+    </Button>
     {/* The project's spawns, drawn where the script puts them. Offered
         beside the waynet because it is the same kind of layer, and
         deliberately not hidden when the index is empty: an empty index
         means no script project is open, which is a different fact from
         "nobody is spawned in this world" and is not one a missing button
         could tell anybody. */}
-    {hasWorld && (
-      <Button
-        size="small"
-        variant={showSpawns ? 'contained' : 'outlined'}
-        onClick={onToggleSpawns}
-        data-testid="world-spawns-toggle"
-      >
-        Spawns
-      </Button>
-    )}
+    <Button
+      size="small"
+      variant={showSpawns ? 'contained' : 'outlined'}
+      disabled={!hasWorld}
+      onClick={onToggleSpawns}
+      data-testid="world-spawns-toggle"
+    >
+      Spawns
+    </Button>
     {/* The time of day the spawn layer answers for (§16.19 slice 5), and it
         hangs off that layer rather than standing beside it because it has
         nothing else to change. Off by default: the static spawns are where
@@ -178,23 +179,22 @@ const WorldOverlayControls: React.FC<WorldOverlayControlsProps> = ({
         colours, so an interior is dark in the file and there is no light
         in this scene to turn up. This lifts the picture and nothing else —
         no op, no dirty world, nothing saved. */}
-    {hasWorld && (
-      <Stack direction="row" spacing={1} alignItems="center" sx={{ width: 170 }}>
-        <Typography variant="caption" color="text.secondary" noWrap>
-          Brightness
-        </Typography>
-        <Slider
-          size="small"
-          min={MIN_EXPOSURE}
-          max={MAX_EXPOSURE}
-          step={0.1}
-          value={exposure}
-          onChange={(_event, next) => onExposureChange(next as number)}
-          aria-label="Brightness"
-          data-testid="world-exposure"
-        />
-      </Stack>
-    )}
+    <Stack direction="row" spacing={1} alignItems="center" sx={{ width: 170 }}>
+      <Typography variant="caption" color="text.secondary" noWrap>
+        Brightness
+      </Typography>
+      <Slider
+        size="small"
+        disabled={!hasWorld}
+        min={MIN_EXPOSURE}
+        max={MAX_EXPOSURE}
+        step={0.1}
+        value={exposure}
+        onChange={(_event, next) => onExposureChange(next as number)}
+        aria-label="Brightness"
+        data-testid="world-exposure"
+      />
+    </Stack>
     {/* Spacer's per-class show/hide, beside the other view controls because
         that is what it is: the world still holds every VOB, the scene tree
         still lists them, and one of them switched off here is only not
@@ -202,37 +202,36 @@ const WorldOverlayControls: React.FC<WorldOverlayControlsProps> = ({
         either. Named for what it does rather than for what is on: the
         empty list is the ordinary state and "nothing hidden" should read
         as the empty one. */}
-    {hasWorld && (
-      <Stack direction="row" spacing={1} alignItems="center">
-        <Typography variant="caption" color="text.secondary" noWrap>
-          Hide
-        </Typography>
-        <TextField
-          select
-          size="small"
-          value={hiddenClasses as string[]}
-          onChange={(event) => onHiddenClassesChange(
-            typeof event.target.value === 'string'
-              ? [event.target.value]
-              : (event.target.value as unknown as string[]),
-          )}
-          aria-label="Hidden VOB classes"
-          data-testid="world-hidden-classes"
-          SelectProps={{
-            multiple: true,
-            displayEmpty: true,
-            renderValue: (picked) => ((picked as string[]).length === 0
-              ? 'Nothing'
-              : `${(picked as string[]).length} classes`),
-          }}
-          sx={{ width: 110, '& .MuiInputBase-input': { py: 0.5, fontSize: 12 } }}
-        >
-          {classOptions.map((cls) => (
-            <MenuItem key={cls} value={cls} sx={{ fontSize: 12 }}>{cls}</MenuItem>
-          ))}
-        </TextField>
-      </Stack>
-    )}
+    <Stack direction="row" spacing={1} alignItems="center">
+      <Typography variant="caption" color="text.secondary" noWrap>
+        Hide
+      </Typography>
+      <TextField
+        select
+        size="small"
+        disabled={!hasWorld}
+        value={hiddenClasses as string[]}
+        onChange={(event) => onHiddenClassesChange(
+          typeof event.target.value === 'string'
+            ? [event.target.value]
+            : (event.target.value as unknown as string[]),
+        )}
+        aria-label="Hidden VOB classes"
+        data-testid="world-hidden-classes"
+        SelectProps={{
+          multiple: true,
+          displayEmpty: true,
+          renderValue: (picked) => ((picked as string[]).length === 0
+            ? 'Nothing'
+            : `${(picked as string[]).length} classes`),
+        }}
+        sx={{ width: 110, '& .MuiInputBase-input': { py: 0.5, fontSize: 12 } }}
+      >
+        {classOptions.map((cls) => (
+          <MenuItem key={cls} value={cls} sx={{ fontSize: 12 }}>{cls}</MenuItem>
+        ))}
+      </TextField>
+    </Stack>
   </>
 );
 

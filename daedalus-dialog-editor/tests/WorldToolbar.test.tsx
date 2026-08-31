@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import WorldSurface from '../src/renderer/components/world/WorldSurface';
 import { useWorldStore } from '../src/renderer/store/worldStore';
@@ -8,8 +8,7 @@ import { useProjectStore } from '../src/renderer/store/projectStore';
 import { SUMMARY, makeWorldEditorApi, vobIndex, waynetPayload } from './worldFixtures';
 
 /**
- * The World bar's four-group structure (level-editor-ui-improvements.md
- * slice 5) — the toolbar restructure's own safety net beyond the 178-case
+ * The World bar's four-group structure (level-editor.md §17) — the toolbar restructure's own safety net beyond the 178-case
  * editing suite, which pins every testid and enablement rule surviving the
  * move to `toolbar/*.tsx` unchanged.
  */
@@ -101,11 +100,71 @@ describe('the World bar', () => {
     expect(statsGroup).toHaveTextContent('VOBs');
   });
 
-  it('does not wrap, and scrolls horizontally instead', () => {
+  it('wraps between groups on a narrow window, and justifies each row', () => {
     render(<WorldSurface />);
 
     const bar = screen.getByTestId('world-toolbar-file').parentElement;
-    expect(bar).toHaveStyle({ flexWrap: 'nowrap', overflowX: 'auto' });
+    expect(bar).toHaveStyle({ flexWrap: 'wrap', justifyContent: 'space-between' });
+  });
+
+  it('shows every control before a world is open, disabled rather than absent', () => {
+    // A control that pops in and out at open/close shifts every group after
+    // it in the row — disabled, always mounted, is what keeps the layout
+    // stable across the transition.
+    render(<WorldSurface />);
+
+    for (const testId of [
+      'world-save', 'world-waynet-toggle', 'world-spawns-toggle',
+      'world-gizmo-translate', 'world-gizmo-rotate',
+      'world-drop-to-ground', 'world-align-to-normal', 'world-duplicate-vob',
+      'world-delete-vob', 'world-undo', 'world-redo',
+    ]) {
+      expect(screen.getByTestId(testId)).toBeInTheDocument();
+      expect(screen.getByTestId(testId)).toBeDisabled();
+    }
+    // The Slider's root is a `<span>`, not a native form element —
+    // `toBeDisabled` finds nothing there. MUI does apply `Mui-disabled` to
+    // it, so check that instead.
+    expect(screen.getByTestId('world-exposure')).toHaveClass('Mui-disabled');
+    // Each select `TextField`'s `data-testid` lands on the outer
+    // `MuiFormControl-root` div, not on the interactive `role="combobox"`
+    // MUI actually marks `aria-disabled` on — reach that instead.
+    for (const testId of ['world-hidden-classes', 'world-snap']) {
+      expect(within(screen.getByTestId(testId)).getByRole('combobox'))
+        .toHaveAttribute('aria-disabled', 'true');
+    }
+  });
+
+  it('enables the always-visible controls once a world is open', async () => {
+    await openWorld();
+
+    expect(screen.getByTestId('world-save')).toBeEnabled();
+    expect(screen.getByTestId('world-waynet-toggle')).toBeEnabled();
+    expect(screen.getByTestId('world-spawns-toggle')).toBeEnabled();
+    expect(screen.getByTestId('world-exposure')).not.toHaveClass('Mui-disabled');
+    expect(screen.getByTestId('world-gizmo-translate')).toBeEnabled();
+    for (const testId of ['world-hidden-classes', 'world-snap']) {
+      expect(within(screen.getByTestId(testId)).getByRole('combobox'))
+        .not.toHaveAttribute('aria-disabled', 'true');
+    }
+  });
+
+  it('shows placeholder stat chips before a world is open, never a bare zero', () => {
+    render(<WorldSurface />);
+
+    const statsGroup = screen.getByTestId('world-toolbar-stats');
+    expect(statsGroup).toHaveTextContent('—');
+    expect(statsGroup).not.toHaveTextContent('0 VOBs');
+  });
+
+  it('never breaks a group across two rows', () => {
+    // Each group is one atomic flex item — flexShrink: 0 is what keeps the
+    // wrap point between groups rather than inside one.
+    render(<WorldSurface />);
+
+    for (const testId of ['world-toolbar-file', 'world-toolbar-overlays', 'world-toolbar-edit', 'world-toolbar-stats']) {
+      expect(screen.getByTestId(testId)).toHaveStyle({ flexShrink: '0', flexWrap: 'nowrap' });
+    }
   });
 
   it('gives every icon-only action an accessible name, reachable by a tooltip', async () => {
