@@ -3,9 +3,9 @@
 // which is where they are tested; this file adds only what crossing a process
 // boundary needs — the request/response envelope and the summary.
 
-import type { DrawGroup, InstancedVisual, VobIndex, WorldOp } from 'zen-world';
+import type { DrawGroup, InstancedVisual, VobFolders, VobIndex, WorldOp } from 'zen-world';
 
-export type { DrawGroup, InstancedVisual, VobIndex, WorldOp };
+export type { DrawGroup, InstancedVisual, VobFolders, VobIndex, WorldOp };
 
 export type GameVersion = 'g1' | 'g2';
 

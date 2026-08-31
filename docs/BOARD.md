@@ -22,6 +22,7 @@ handovers cost an hour a session:
 | a dialog-simulator finding | `docs/plans/dialog-simulator-review-findings.md` |
 | a production-readiness finding | `docs/plans/production-readiness-review-findings.md` |
 | a 2026-07 code-review item | `docs/plans/code-review-2026-07-remediation.md` |
+| the VOB folders design | `docs/plans/vob-folders.md` |
 
 **Rules.** A card is one line, an owner, and a pointer to where its long form
 lives — §16 for a level-editor card, otherwise the file the routing table names.
@@ -240,5 +241,6 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **VOB list: filter to within reach of the camera** — a sphere, not a
-  plane; `zen-world`'s `matchVobs` grew `near`, polled off the viewport. §17
+- **VOB folders** — user-created, editor-only groupings additional to the
+  scene tree; a `<worldname>.folders.json` sidecar, never a VOB. New Folders
+  tab plus "Add to Folder" on the VOB context menu. `docs/plans/vob-folders.md`

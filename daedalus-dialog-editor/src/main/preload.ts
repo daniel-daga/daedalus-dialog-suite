@@ -79,6 +79,11 @@ contextBridge.exposeInMainWorld('editorAPI', {
   applyWorldOps: (ops: unknown[]) => ipcRenderer.invoke('world:applyOps', { ops }),
   saveWorldDialog: (suggested: string) => ipcRenderer.invoke('world:saveDialog', { suggested }),
   saveWorld: (targetPath: string) => ipcRenderer.invoke('world:save', { targetPath }),
+  // VOB folders (VOB folders slice) — a virtual grouping kept beside the
+  // world file, never in it; see zen-world's vobFolders.ts.
+  getVobFolders: (worldPath: string) => ipcRenderer.invoke('world:getVobFolders', { worldPath }),
+  saveVobFolders: (worldPath: string, folders: unknown) =>
+    ipcRenderer.invoke('world:saveVobFolders', { worldPath, folders }),
   undoWorldEdit: () => ipcRenderer.invoke('world:undo'),
   redoWorldEdit: () => ipcRenderer.invoke('world:redo'),
   getWorldHistoryDepth: () => ipcRenderer.invoke('world:historyDepth'),

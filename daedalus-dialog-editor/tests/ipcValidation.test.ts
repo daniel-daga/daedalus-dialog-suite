@@ -15,6 +15,8 @@ import {
   assertVobPropsRequest,
   assertApplyOpsRequest,
   assertSaveWorldRequest,
+  assertVobFoldersGetRequest,
+  assertVobFoldersSaveRequest,
   sanitizeRendererErrorPayload,
   RENDERER_ERROR_MESSAGE_MAX,
   RENDERER_ERROR_STACK_MAX,
@@ -266,6 +268,45 @@ describe('assertSaveWorldRequest', () => {
     }
     expect(() => assertSaveWorldRequest(null)).toThrow();
     expect(() => assertSaveWorldRequest('C:/a.zen')).toThrow();
+  });
+});
+
+describe('assertVobFoldersGetRequest', () => {
+  it('accepts a world path', () => {
+    expect(() => assertVobFoldersGetRequest({ worldPath: 'C:/Gothic/NewWorld.zen' })).not.toThrow();
+  });
+
+  it('rejects anything that is not a non-empty string', () => {
+    for (const bad of ['', '   ', null, 42, ['a'], undefined]) {
+      expect(() => assertVobFoldersGetRequest({ worldPath: bad })).toThrow(/worldPath/);
+    }
+    expect(() => assertVobFoldersGetRequest(null)).toThrow();
+    expect(() => assertVobFoldersGetRequest('C:/a.zen')).toThrow();
+  });
+});
+
+describe('assertVobFoldersSaveRequest', () => {
+  it('accepts a world path with a folders payload', () => {
+    expect(() => assertVobFoldersSaveRequest({
+      worldPath: 'C:/Gothic/NewWorld.zen',
+      folders: { folders: [] },
+    })).not.toThrow();
+  });
+
+  it('rejects the same worldPath shapes assertVobFoldersGetRequest does', () => {
+    expect(() => assertVobFoldersSaveRequest({ folders: {} })).toThrow(/worldPath/);
+    expect(() => assertVobFoldersSaveRequest(null)).toThrow();
+  });
+
+  it('rejects a request missing folders entirely', () => {
+    expect(() => assertVobFoldersSaveRequest({ worldPath: 'C:/Gothic/NewWorld.zen' })).toThrow(/folders/);
+  });
+
+  it('does not itself validate the shape of folders — that is parseVobFolders\' job', () => {
+    expect(() => assertVobFoldersSaveRequest({
+      worldPath: 'C:/Gothic/NewWorld.zen',
+      folders: 'not even an object',
+    })).not.toThrow();
   });
 });
 

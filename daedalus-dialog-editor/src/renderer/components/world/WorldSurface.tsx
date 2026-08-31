@@ -10,13 +10,15 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import {
   AUTHORABLE_VOB_CLASSES,
-  addVob, classPropKeys, addWaypoint, alignVobsToNormal, applyWaypointNames, applyWaypointPositions,
-  connectWaypoints, disconnectWaypoints,
+  addVob, addVobsToFolder, classPropKeys, addWaypoint, alignVobsToNormal, applyWaypointNames,
+  applyWaypointPositions,
+  connectWaypoints, createFolder, deleteFolder, disconnectWaypoints,
   deleteVob, deleteWaypoint, dropVobsToGround,
-  duplicateVobSubtree, duplicateVobs,
+  duplicateVobSubtree, duplicateVobs, emptyVobFolders,
   invertOp, isBarrierOp, isStructuralOp,
   matchVobs,
-  moveWaypoint, pasteVobs, placeBounds, renameWaypoint, renumbersPaths,
+  moveWaypoint, pasteVobs, placeBounds, removeVobFromFolder, renameFolder, renameWaypoint,
+  renumbersPaths,
   reparentVob, rotateVob, rotateVobs, setVobClassProp, setVobProp, setVobProps, topLevelVobs,
   translateVobs, vobAtIndexPath, vobIndexPath,
   type AddVob,
@@ -25,7 +27,9 @@ import {
   type ZenBounds,
   type ZenPosition, type ZenRotation,
 } from 'zen-world';
-import type { InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp } from '../../../shared/worldTypes';
+import type {
+  InstancedPayload, VobFolders, WaynetPayload, WorldMeshPayload, WorldOp,
+} from '../../../shared/worldTypes';
 import { findFreePointVob, primaryVob, useWorldStore } from '../../store/worldStore';
 import { stateReach } from '../../routines/routineSchedule';
 import { useProjectStore } from '../../store/projectStore';
@@ -33,6 +37,7 @@ import { vobModelOf } from '../../world/vobModel';
 import { DEFAULT_EXPOSURE } from '../../world/WorldScene';
 import WorldViewport, { type GizmoMode, type WorldViewportHandle } from './WorldViewport';
 import WorldSceneTree from './WorldSceneTree';
+import WorldFolderTree from './WorldFolderTree';
 import WorldPropertyGrid from './WorldPropertyGrid';
 import WorldAssetBrowser from './WorldAssetBrowser';
 import WorldAssetPreview from './WorldAssetPreview';
@@ -179,7 +184,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   // The left panel is the scene *or* the mounted assets, and the right panel
   // follows it: a VOB's properties belong beside the tree, an asset's preview
   // beside the browser.
-  const [panel, setPanel] = useState<'scene' | 'assets'>('scene');
+  const [panel, setPanel] = useState<'scene' | 'assets' | 'folders'>('scene');
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
   /** The two side panels' widths, restored from localStorage on mount.
    *  Collapse is not part of it — session-only, so every launch opens with
@@ -213,6 +218,11 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   // the cold open.
   const [waynet, setWaynet] = useState<WaynetPayload | null>(null);
   const [showWaynet, setShowWaynet] = useState(false);
+  /** User-created VOB folders (VOB folders slice) — never a `WorldOp`, so it
+   *  is loaded/persisted beside `waynet` rather than through `commitOps`'s
+   *  history. Read fresh on every open; a fresh open's default is no folders,
+   *  same as `waynet`'s null. */
+  const [vobFolders, setVobFolders] = useState<VobFolders>(emptyVobFolders());
   /** How many batches the main process can undo/redo — the World bar's
    *  buttons' only way to know, since the stacks are private to
    *  `WorldService` (§7). Refreshed after every applied batch and after a
@@ -346,6 +356,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     // guard refuses with a message about a waynet that changed. A failed open
     // would leave it standing for good.
     setWaynet(null);
+    setVobFolders(emptyVobFolders());
 
     try {
       // An empty asset list asks main to derive the sources from the
@@ -392,6 +403,18 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     // "nothing is known".
     try {
       setWaynet(await window.editorAPI.getWorldWaynet());
+    } catch (failure) {
+      useWorldStore.getState().editFailed(
+        failure instanceof Error ? failure.message : String(failure),
+      );
+    }
+
+    // The `<worldname>.folders.json` sidecar (VOB folders slice) — outside
+    // the try above for the same reason the waynet is: a failure here is a
+    // world that opened correctly and has an editor-only extra nobody could
+    // read, not a reason to throw away 31 MB of geometry and re-pay the open.
+    try {
+      setVobFolders(await window.editorAPI.getVobFolders(worldPath));
     } catch (failure) {
       useWorldStore.getState().editFailed(
         failure instanceof Error ? failure.message : String(failure),
@@ -1314,6 +1337,62 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   }, [commitOps, boundsOf, readClassProps]);
 
   /**
+   * User-created VOB folders (VOB folders slice) — a virtual grouping kept
+   * beside the world file, never a `WorldOp`. `persistFolders` is the one
+   * place state is set and the sidecar written; every mutation below goes
+   * through it rather than calling `setVobFolders`/`saveVobFolders` itself.
+   *
+   * The save is fire-and-forget: folders are low-stakes editor metadata, not
+   * the world itself, so a failed write is logged rather than surfaced the
+   * way a refused world edit is.
+   */
+  const persistFolders = useCallback((next: VobFolders) => {
+    setVobFolders(next);
+    const worldPath = useWorldStore.getState().summary?.worldPath;
+    if (worldPath === undefined) return;
+    window.editorAPI.saveVobFolders(worldPath, next).catch((failure) => {
+      console.error('[World] Failed to save VOB folders:', failure);
+    });
+  }, []);
+
+  /** The selection's `vobIndexPath` addresses — what a folder actually
+   *  stores. A VOB with no summary to resolve it against contributes nothing,
+   *  the same "drop rather than guess" rule `vobIndexPath` itself follows. */
+  const selectionPaths = useCallback((): string[] => {
+    const { summary: current, selection: selected } = useWorldStore.getState();
+    if (current === null) return [];
+    const { reader } = vobModelOf(current);
+    return selected
+      .map((vob) => vobIndexPath(reader, vob))
+      .filter((path): path is string => path !== null);
+  }, []);
+
+  const addSelectionToFolder = useCallback((id: string) => {
+    const paths = selectionPaths();
+    if (paths.length === 0) return;
+    persistFolders(addVobsToFolder(vobFolders, id, paths));
+  }, [selectionPaths, persistFolders, vobFolders]);
+
+  const createFolderWithSelection = useCallback((name: string) => {
+    const id = crypto.randomUUID();
+    const paths = selectionPaths();
+    const withFolder = createFolder(vobFolders, id, name);
+    persistFolders(paths.length === 0 ? withFolder : addVobsToFolder(withFolder, id, paths));
+  }, [selectionPaths, persistFolders, vobFolders]);
+
+  const renameFolderHandler = useCallback((id: string, name: string) => {
+    persistFolders(renameFolder(vobFolders, id, name));
+  }, [persistFolders, vobFolders]);
+
+  const deleteFolderHandler = useCallback((id: string) => {
+    persistFolders(deleteFolder(vobFolders, id));
+  }, [persistFolders, vobFolders]);
+
+  const removeVobFromFolderHandler = useCallback((id: string, vobPath: string) => {
+    persistFolders(removeVobFromFolder(vobFolders, id, vobPath));
+  }, [persistFolders, vobFolders]);
+
+  /**
    * The clipboard copy and paste share (level-editor.md §16.14, D3).
    *
    * **In-process, and a `ref` rather than state**: nothing on screen changes
@@ -1855,6 +1934,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         onDropToGround={handleDropToGround}
         onAlignToNormal={handleAlignToNormal}
         onHideClass={hideVobClass}
+        folders={vobFolders.folders}
+        onAddSelectionToFolder={addSelectionToFolder}
+        onCreateFolderWithSelection={createFolderWithSelection}
       />
 
       {/* The requirement §15 put in place of an inverse. Every other edit in
@@ -1992,12 +2074,13 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               <Stack direction="row" alignItems="center">
                 <Tabs
                   value={panel}
-                  onChange={(_event, next: 'scene' | 'assets') => setPanel(next)}
+                  onChange={(_event, next: 'scene' | 'assets' | 'folders') => setPanel(next)}
                   variant="fullWidth"
                   sx={{ flex: 1, minHeight: 32, '& .MuiTab-root': { minHeight: 32, fontSize: 12 } }}
                 >
                   <Tab value="scene" label="Scene" data-testid="world-panel-scene" />
                   <Tab value="assets" label="Assets" data-testid="world-panel-assets" />
+                  <Tab value="folders" label="Folders" data-testid="world-panel-folders" />
                 </Tabs>
                 <Tooltip title="Hide scene panel">
                   <IconButton
@@ -2027,6 +2110,24 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               {panel === 'assets' && (
                 <Box sx={{ flex: 1, minHeight: 0 }}>
                   <WorldAssetBrowser listAssets={listAssets} onPreview={setSelectedAsset} />
+                </Box>
+              )}
+              {/* Lazily mounted, like Assets above — the folder list is small
+                  and rebuilding it on a tab switch is cheap, so nothing here
+                  is kept alive the way the scene tree's expansion set is. */}
+              {panel === 'folders' && (
+                <Box sx={{ flex: 1, minHeight: 0 }}>
+                  <WorldFolderTree
+                    folders={vobFolders}
+                    summary={summary}
+                    selection={selection}
+                    onSelect={handleSelect}
+                    onFocus={focusVob}
+                    onCreateFolder={(name) => persistFolders(createFolder(vobFolders, crypto.randomUUID(), name))}
+                    onRenameFolder={renameFolderHandler}
+                    onDeleteFolder={deleteFolderHandler}
+                    onRemoveFromFolder={removeVobFromFolderHandler}
+                  />
                 </Box>
               )}
             </Box>

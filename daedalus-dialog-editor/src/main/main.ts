@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { gothicAssetSources } from 'zen-world';
+import { gothicAssetSources, parseVobFolders } from 'zen-world';
 import { PathValidationError } from './services/PathValidationService';
 import { getServiceRegistry } from './services/serviceRegistry';
 import { saveFileFlow, type SaveFileFlowOptions } from './services/SaveFileFlow';
@@ -15,6 +15,8 @@ import {
   assertVobPropsRequest,
   assertApplyOpsRequest,
   assertSaveWorldRequest,
+  assertVobFoldersGetRequest,
+  assertVobFoldersSaveRequest,
   sanitizeRendererErrorPayload,
 } from './ipcValidation';
 
@@ -47,6 +49,7 @@ const {
   fileWatcherService,
   updaterService,
   worldService,
+  worldFoldersService,
   logService,
   pathValidator,
 } = getServiceRegistry();
@@ -730,6 +733,45 @@ export function setupIpcHandlers() {
       // The binding's own refusal — a non-BinSafe world — is the message worth
       // showing, so it is passed through rather than replaced.
       throw new Error(error instanceof Error ? error.message : 'Failed to save the world');
+    }
+  });
+
+  // The `<worldname>.folders.json` sidecar (VOB folders slice) — user-created,
+  // editor-only VOB groupings, kept beside the world file rather than in it.
+  // Stateless like `world:save`: the renderer already holds the open world's
+  // path (`WorldSummary.worldPath`) and carries it on every call rather than
+  // this process tracking a second one.
+  ipcMain.handle('world:getVobFolders', async (_event, request: unknown) => {
+    try {
+      assertVobFoldersGetRequest(request);
+      await pathValidator.validatePathResolved(worldFoldersService.sidecarPath(request.worldPath));
+      return await worldFoldersService.load(request.worldPath);
+    } catch (error) {
+      if (error instanceof PathValidationError) {
+        console.error('[IPC] world:getVobFolders - Path validation failed:', error.message);
+        throw new Error(error.message);
+      }
+      console.error('[IPC] world:getVobFolders error:', error);
+      throw new Error(`Failed to read VOB folders: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  });
+
+  ipcMain.handle('world:saveVobFolders', async (_event, request: unknown) => {
+    try {
+      assertVobFoldersSaveRequest(request);
+      await pathValidator.validatePathResolved(
+        worldFoldersService.sidecarPath(request.worldPath), { write: true },
+      );
+      // `folders` is untrusted regardless of the shape assertion above — it is
+      // re-derived through `parseVobFolders` rather than written as given.
+      await worldFoldersService.save(request.worldPath, parseVobFolders(request.folders));
+    } catch (error) {
+      if (error instanceof PathValidationError) {
+        console.error('[IPC] world:saveVobFolders - Path validation failed:', error.message);
+        throw new Error(error.message);
+      }
+      console.error('[IPC] world:saveVobFolders error:', error);
+      throw new Error(`Failed to save VOB folders: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   });
 

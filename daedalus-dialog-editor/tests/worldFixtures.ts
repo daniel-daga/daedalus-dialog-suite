@@ -1,5 +1,5 @@
 import type { VobIndex } from 'zen-world';
-import type { WaynetPayload, WorldOp, WorldSummary } from '../src/shared/worldTypes';
+import type { VobFolders, WaynetPayload, WorldOp, WorldSummary } from '../src/shared/worldTypes';
 
 /**
  * Shared pure-data builders for the World surface's test suites
@@ -139,6 +139,8 @@ export function makeWorldEditorApi() {
     getWorldHistoryDepth: jest.fn(async (): Promise<{ undo: number; redo: number }> => ({ undo: 0, redo: 0 })),
     saveWorldDialog: jest.fn(async (): Promise<string | null> => null),
     saveWorld: jest.fn(async () => undefined),
+    getVobFolders: jest.fn(async (): Promise<VobFolders> => ({ folders: [] })),
+    saveVobFolders: jest.fn(async () => undefined),
     closeWorld: jest.fn(),
   };
 }

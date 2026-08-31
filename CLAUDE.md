@@ -307,6 +307,8 @@ But know what that layer **cannot** check: the main process holds no semantic mo
 
 **Active plan:** [`docs/plans/production-readiness-review-findings.md`](docs/plans/production-readiness-review-findings.md) — production-readiness / performance / UI-UX review, including the decision to deprecate the quest Flow view (Option A and Option B both landed: the litegraph Flow view has been removed; the quest surface is the read-only list/details/create panel). §3 Performance is closed down to P3 (the P0, P1, and P2 items all landed; durable outcomes in `docs/architecture/render-performance.md`), and the §5 post-release fast-follows are all landed too (F2 dead source-view cleanup, F6 Ctrl+F scoping, and a strict `default-src 'self'` CSP — which moved Monaco off the jsdelivr CDN to the app's own origin; see `docs/architecture/security-model.md`). Its §5 tracks what has landed and what remains.
 
+**Active plan:** [`docs/plans/vob-folders.md`](docs/plans/vob-folders.md) — user-created VOB folders in the World scene tree: a virtual, editor-only grouping (never a VOB, never touching the `.zen` file) persisted as a `<worldname>.folders.json` sidecar beside the world file. Landed 2026-08-31 — create/rename/delete a folder, add/remove VOBs via the context menu, a new Folders tab; no nesting, no undo/redo, no drag-and-drop-in by design. Awaiting real-world use before extraction into `docs/architecture/level-editor.md`.
+
 When a plan is complete, extract durable decisions into canonical docs and delete the plan file.
 
 ---

@@ -665,6 +665,12 @@ export const mockEditorAPI: EditorAPI = {
   async saveWorld(): Promise<never> {
     throw new Error('No world is open');
   },
+  async getVobFolders(): Promise<never> {
+    throw new Error('No world is open');
+  },
+  async saveVobFolders(): Promise<never> {
+    throw new Error('No world is open');
+  },
   async closeWorld(): Promise<void> {},
 };
 

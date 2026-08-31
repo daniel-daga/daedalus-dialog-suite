@@ -13,6 +13,7 @@ export type {
   VfsEntry,
   WaynetPayload,
   WorldOp,
+  VobFolders,
 } from '../../shared/worldTypes';
 
 // Re-export all shared types
@@ -199,6 +200,10 @@ export interface EditorAPI {
   /** Write the world. Rejects with the binding's own message for a world that
    *  was not loaded from a `zCArchiverBinSafe` archive. */
   saveWorld: (targetPath: string) => Promise<void>;
+  /** The `<worldname>.folders.json` sidecar — user-created, editor-only VOB
+   *  groupings kept beside the world file, never in it. */
+  getVobFolders: (worldPath: string) => Promise<VobFolders>;
+  saveVobFolders: (worldPath: string, folders: VobFolders) => Promise<void>;
   closeWorld: () => Promise<void>;
 
   // Updater API

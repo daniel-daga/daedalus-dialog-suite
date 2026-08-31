@@ -324,6 +324,33 @@ export function assertSaveWorldRequest(
   }
 }
 
+/** Assert a request to read the `<worldname>.folders.json` sidecar (VOB folders slice). */
+export function assertVobFoldersGetRequest(
+  request: unknown,
+): asserts request is { worldPath: string } {
+  if (!isPlainObject(request)) {
+    throw new Error('Invalid vob folders request: expected a plain object');
+  }
+  if (typeof request.worldPath !== 'string' || request.worldPath.trim() === '') {
+    throw new Error('Invalid vob folders request: worldPath must be a non-empty string');
+  }
+}
+
+/**
+ * Assert a request to write the sidecar. `folders` is only checked for
+ * presence here — its content is untrusted regardless of this shape check, so
+ * `WorldFoldersService.save`'s caller re-derives it through `parseVobFolders`
+ * rather than writing whatever a compromised renderer sent.
+ */
+export function assertVobFoldersSaveRequest(
+  request: unknown,
+): asserts request is { worldPath: string; folders: unknown } {
+  assertVobFoldersGetRequest(request);
+  if (!('folders' in request)) {
+    throw new Error('Invalid vob folders save request: folders is required');
+  }
+}
+
 /**
  * Assert an edit batch (level-editor.md §7).
  *

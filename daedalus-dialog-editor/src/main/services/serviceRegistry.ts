@@ -10,6 +10,7 @@ import { SettingsService } from './SettingsService';
 import { FileWatcherService } from './FileWatcherService';
 import { UpdaterService } from './UpdaterService';
 import { WorldService } from './WorldService';
+import { WorldFoldersService } from './WorldFoldersService';
 
 /**
  * The main process's composition root.
@@ -34,6 +35,7 @@ export interface ServiceRegistry {
   fileWatcherService: FileWatcherService;
   updaterService: UpdaterService;
   worldService: WorldService;
+  worldFoldersService: WorldFoldersService;
   logService: LogService;
   pathValidator: PathValidationService;
 }
@@ -57,6 +59,7 @@ function createServiceRegistry(): ServiceRegistry {
     // Constructed eagerly, but it does not spawn its worker — and therefore
     // does not load the native addon — until a world is actually opened (§6).
     worldService: new WorldService(),
+    worldFoldersService: new WorldFoldersService(),
     logService: new LogService(app.getPath('userData'), app.getVersion()),
     // The path validator starts empty — paths are added when the user opens
     // files/projects via the main-process dialogs.
