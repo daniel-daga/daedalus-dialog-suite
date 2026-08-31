@@ -1109,8 +1109,9 @@ describe('duplicating a VOB', () => {
     await act(async () => { useWorldStore.getState().toggleVob(0); });
     expect(screen.getByTestId('world-duplicate-vob')).toBeEnabled();
     // And it says how many, because the singular label on a five-VOB selection
-    // would be describing an edit the button no longer makes.
-    expect(screen.getByTestId('world-duplicate-vob')).toHaveTextContent('Duplicate 2 VOBs');
+    // would be describing an edit the button no longer makes — in the
+    // accessible name now, an icon button having no visible text of its own.
+    expect(screen.getByTestId('world-duplicate-vob')).toHaveAccessibleName('Duplicate 2 VOBs');
     expect(screen.getByTestId('world-delete-vob')).toBeDisabled();
   });
 

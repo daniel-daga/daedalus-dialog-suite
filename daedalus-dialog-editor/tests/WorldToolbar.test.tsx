@@ -111,12 +111,37 @@ describe('the World bar', () => {
   it('gives every icon-only action an accessible name, reachable by a tooltip', async () => {
     await openWorld();
 
-    const undo = screen.getByTestId('world-undo');
-    expect(undo).toHaveAccessibleName('Undo');
-    fireEvent.mouseOver(undo);
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('Undo (Ctrl+Z)');
+    for (const [testId, name] of [
+      ['world-undo', 'Undo'], ['world-redo', 'Redo'],
+      ['world-drop-to-ground', 'Drop to ground'], ['world-align-to-normal', 'Align to normal'],
+      ['world-duplicate-vob', 'Duplicate VOB'], ['world-delete-vob', 'Delete VOB'],
+    ] as const) {
+      expect(screen.getByTestId(testId)).toHaveAccessibleName(name);
+    }
 
-    const redo = screen.getByTestId('world-redo');
-    expect(redo).toHaveAccessibleName('Redo');
+    fireEvent.mouseOver(screen.getByTestId('world-undo'));
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Undo (Ctrl+Z)');
+  });
+
+  it('keeps the gizmo ToggleButtonGroup working with each button wrapped in its own Tooltip', async () => {
+    // The MUI gotcha this pins: ToggleButtonGroup clones its *direct*
+    // children to inject value/selected/onChange, and a Tooltip wrapping a
+    // ToggleButton (rather than the reverse) is what keeps that plumbing
+    // intact — get the nesting backwards and the group stops driving the
+    // buttons' selected state.
+    await openWorld();
+
+    const translate = screen.getByTestId('world-gizmo-translate');
+    const rotate = screen.getByTestId('world-gizmo-rotate');
+    expect(translate).toHaveAttribute('aria-pressed', 'true');
+    expect(rotate).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(rotate);
+
+    expect(translate).toHaveAttribute('aria-pressed', 'false');
+    expect(rotate).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.mouseOver(rotate);
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Turn (E)');
   });
 });
