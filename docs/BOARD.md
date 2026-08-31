@@ -240,6 +240,6 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **NPC/Dialog → World jump** — the dialog view resolves its NPC to a spawn
-  point and jumps to it, `InsertNpcActionRenderer`'s disabled-reason shape.
-  Read-only; the write direction stays the Next card above. §16.19 s15
+- **World surface UI improvements, all 10 slices** — shortcuts, undo/redo,
+  the toolbar split, the app's first context menu, tree keyboard nav,
+  resizable panels, asset browser filter+breadcrumbs, E2E. Plan deleted.
