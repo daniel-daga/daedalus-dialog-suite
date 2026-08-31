@@ -263,4 +263,16 @@ describe('arrow-key nudge', () => {
     expect(api.applyWorldOps).not.toHaveBeenCalled();
     tree.remove();
   });
+
+  it('does nothing on the real scene tree either, once slice 7 gives it its own arrow keys', async () => {
+    // The synthetic tree above pins the generic guard; this is the same
+    // guard against the actual `role="tree"` WorldSceneTree renders once a
+    // world is open, which is not mocked in this suite.
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+
+    fireEvent.keyDown(screen.getByRole('tree'), { key: 'ArrowRight' });
+
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+  });
 });

@@ -154,6 +154,7 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
       role="treeitem"
       aria-selected={isSelected}
       aria-expanded={hasChildren ? expanded.has(vob) : undefined}
+      id={`world-vob-row-${vob}`}
       data-testid={`world-vob-row-${vob}`}
       onClick={(event) => onSelect(vob, event.shiftKey || event.ctrlKey || event.metaKey)}
       onDoubleClick={onFocus === undefined ? undefined : () => onFocus(vob)}
@@ -496,6 +497,69 @@ const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
       onReparent, onDropOn, canDropBetween, onDropBetween, hovering, onDragEnd, appliedOps],
   );
 
+  /**
+   * Keyboard navigation (level-editor-ui-improvements.md slice 7) — one
+   * `onKeyDown` on the tree container, never on a row: `react-window`
+   * unmounts offscreen rows, so a roving `tabIndex` would lose the DOM node
+   * it was on the moment it scrolled out of view. `aria-activedescendant`
+   * on the container is the pattern built for exactly that — the active
+   * row is tracked by id, not by focus.
+   *
+   * Home/End are deliberately unbound: the viewport already owns Home
+   * (camera framing), and a second meaning on the tree would be a
+   * conflict, not a convenience.
+   */
+  const onTreeKeyDown = useCallback((event: React.KeyboardEvent) => {
+    if (rows.length === 0) return;
+    const at = selectedVob === null ? -1 : rows.findIndex((row) => row.vob === selectedVob);
+
+    switch (event.key) {
+      case 'ArrowDown': {
+        event.preventDefault();
+        if (at >= rows.length - 1) return; // already on the last row
+        onSelect(rows[at === -1 ? 0 : at + 1].vob, false);
+        return;
+      }
+      case 'ArrowUp': {
+        event.preventDefault();
+        if (at === 0) return; // already on the first row
+        onSelect(rows[at === -1 ? 0 : at - 1].vob, false);
+        return;
+      }
+      case 'ArrowRight': {
+        if (at === -1) return;
+        const row = rows[at];
+        if (!row.hasChildren) return;
+        event.preventDefault();
+        // Closed: opens it, and the selection stays where it is — the same
+        // two-step every ARIA treeview uses, so opening and entering are
+        // never the same keypress.
+        if (!rowExpanded.has(row.vob)) { onToggle(row.vob); return; }
+        // Open already: moves onto the first child, immediately the next
+        // row once expansion has put it there.
+        const child = rows[at + 1];
+        if (child !== undefined && tree.parent(child.vob) === row.vob) onSelect(child.vob, false);
+        return;
+      }
+      case 'ArrowLeft': {
+        if (at === -1) return;
+        const row = rows[at];
+        event.preventDefault();
+        if (row.hasChildren && rowExpanded.has(row.vob)) { onToggle(row.vob); return; }
+        const parent = tree.parent(row.vob);
+        if (parent >= 0) onSelect(parent, false);
+        return;
+      }
+      case 'Enter': {
+        if (at === -1 || onFocus === undefined) return;
+        event.preventDefault();
+        onFocus(rows[at].vob);
+        return;
+      }
+      default:
+    }
+  }, [rows, selectedVob, onSelect, rowExpanded, onToggle, tree, onFocus]);
+
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <Box sx={{
@@ -535,7 +599,14 @@ const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
             : `${matchCount.toLocaleString()} of ${summary.stats.vobCount.toLocaleString()} VOBs`}
         </Typography>
       </Box>
-      <Box sx={{ flex: 1, minHeight: 0 }} role="tree" aria-label="World scene tree">
+      <Box
+        sx={{ flex: 1, minHeight: 0 }}
+        role="tree"
+        aria-label="World scene tree"
+        tabIndex={0}
+        aria-activedescendant={selectedVob === null ? undefined : `world-vob-row-${selectedVob}`}
+        onKeyDown={onTreeKeyDown}
+      >
         {rows.length === 0 ? (
           <Typography
             variant="caption"

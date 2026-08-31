@@ -561,6 +561,156 @@ describe('WorldSceneTree', () => {
     expect(screen.getByTestId('world-tree-count')).toHaveTextContent('5');
   });
 
+  // Keyboard navigation (level-editor-ui-improvements.md slice 7). One
+  // `onKeyDown` on the tree container, never on a row — `react-window`
+  // unmounts offscreen rows, so a roving tabIndex would lose the node it
+  // was on the moment it scrolled away.
+  describe('keyboard navigation', () => {
+    const treeContainer = () => screen.getByRole('tree');
+
+    it('is a single tab stop', () => {
+      render(<WorldSceneTree summary={NESTED} selection={[]} onSelect={jest.fn()} />);
+      expect(treeContainer()).toHaveAttribute('tabIndex', '0');
+    });
+
+    it('names the selected row as the active descendant', () => {
+      render(<WorldSceneTree summary={NESTED} selection={[4]} onSelect={jest.fn()} />);
+      expect(treeContainer()).toHaveAttribute('aria-activedescendant', 'world-vob-row-4');
+    });
+
+    it('has no active descendant with nothing selected', () => {
+      render(<WorldSceneTree summary={NESTED} selection={[]} onSelect={jest.fn()} />);
+      expect(treeContainer()).not.toHaveAttribute('aria-activedescendant');
+    });
+
+    it('moves to the next visible row on ArrowDown', () => {
+      // Collapsed, the visible rows are 0, 4 — CASTLE's children are folded.
+      const onSelect = jest.fn();
+      render(<WorldSceneTree summary={NESTED} selection={[0]} onSelect={onSelect} />);
+
+      fireEvent.keyDown(treeContainer(), { key: 'ArrowDown' });
+
+      expect(onSelect).toHaveBeenCalledWith(4, false);
+    });
+
+    it('moves to the previous visible row on ArrowUp', () => {
+      const onSelect = jest.fn();
+      render(<WorldSceneTree summary={NESTED} selection={[4]} onSelect={onSelect} />);
+
+      fireEvent.keyDown(treeContainer(), { key: 'ArrowUp' });
+
+      expect(onSelect).toHaveBeenCalledWith(0, false);
+    });
+
+    it('goes no further than the last row on ArrowDown', () => {
+      const onSelect = jest.fn();
+      render(<WorldSceneTree summary={NESTED} selection={[4]} onSelect={onSelect} />);
+
+      fireEvent.keyDown(treeContainer(), { key: 'ArrowDown' });
+
+      expect(onSelect).not.toHaveBeenCalled();
+    });
+
+    it('goes no further than the first row on ArrowUp', () => {
+      const onSelect = jest.fn();
+      render(<WorldSceneTree summary={NESTED} selection={[0]} onSelect={onSelect} />);
+
+      fireEvent.keyDown(treeContainer(), { key: 'ArrowUp' });
+
+      expect(onSelect).not.toHaveBeenCalled();
+    });
+
+    it('selects the first row on ArrowDown or ArrowUp with nothing selected', () => {
+      const onSelect = jest.fn();
+      render(<WorldSceneTree summary={NESTED} selection={[]} onSelect={onSelect} />);
+
+      fireEvent.keyDown(treeContainer(), { key: 'ArrowDown' });
+
+      expect(onSelect).toHaveBeenCalledWith(0, false);
+    });
+
+    it('opens a collapsed row on ArrowRight, without moving the selection', async () => {
+      const onSelect = jest.fn();
+      render(<WorldSceneTree summary={NESTED} selection={[0]} onSelect={onSelect} />);
+      expect(row(1)).not.toBeInTheDocument();
+
+      fireEvent.keyDown(treeContainer(), { key: 'ArrowRight' });
+
+      expect(await screen.findByTestId('world-vob-row-1')).toBeInTheDocument();
+      expect(onSelect).not.toHaveBeenCalled();
+    });
+
+    it('enters the first child on ArrowRight when already open', async () => {
+      const onSelect = jest.fn();
+      render(<WorldSceneTree summary={NESTED} selection={[0]} onSelect={onSelect} />);
+
+      fireEvent.keyDown(treeContainer(), { key: 'ArrowRight' });
+      await screen.findByTestId('world-vob-row-1');
+      fireEvent.keyDown(treeContainer(), { key: 'ArrowRight' });
+
+      expect(onSelect).toHaveBeenCalledWith(1, false);
+    });
+
+    it('does nothing on ArrowRight for a row with no children', () => {
+      const onSelect = jest.fn();
+      render(<WorldSceneTree summary={NESTED} selection={[4]} onSelect={onSelect} />);
+
+      fireEvent.keyDown(treeContainer(), { key: 'ArrowRight' });
+
+      expect(onSelect).not.toHaveBeenCalled();
+    });
+
+    it('collapses an open row on ArrowLeft, without moving the selection', async () => {
+      const onSelect = jest.fn();
+      render(<WorldSceneTree summary={NESTED} selection={[0]} onSelect={onSelect} />);
+      fireEvent.keyDown(treeContainer(), { key: 'ArrowRight' });
+      await screen.findByTestId('world-vob-row-1');
+
+      fireEvent.keyDown(treeContainer(), { key: 'ArrowLeft' });
+
+      await waitFor(() => expect(row(1)).not.toBeInTheDocument());
+      expect(onSelect).not.toHaveBeenCalled();
+    });
+
+    it('moves to the parent on ArrowLeft when already collapsed', () => {
+      // Selecting 1 (GATE) auto-expands its ancestor (0), the same effect a
+      // viewport pick relies on — so the row is on screen to navigate from.
+      const onSelect = jest.fn();
+      render(<WorldSceneTree summary={NESTED} selection={[1]} onSelect={onSelect} />);
+
+      fireEvent.keyDown(treeContainer(), { key: 'ArrowLeft' });
+
+      expect(onSelect).toHaveBeenCalledWith(0, false);
+    });
+
+    it('does nothing on ArrowLeft for a selected root', () => {
+      const onSelect = jest.fn();
+      render(<WorldSceneTree summary={NESTED} selection={[0]} onSelect={onSelect} />);
+
+      fireEvent.keyDown(treeContainer(), { key: 'ArrowLeft' });
+
+      expect(onSelect).not.toHaveBeenCalled();
+    });
+
+    it('frames the selected VOB on Enter', () => {
+      const onFocus = jest.fn();
+      render(<WorldSceneTree summary={NESTED} selection={[0]} onSelect={jest.fn()} onFocus={onFocus} />);
+
+      fireEvent.keyDown(treeContainer(), { key: 'Enter' });
+
+      expect(onFocus).toHaveBeenCalledWith(0);
+    });
+
+    it('leaves arrows in the filter field alone — they never reach the tree', () => {
+      const onSelect = jest.fn();
+      render(<WorldSceneTree summary={NESTED} selection={[0]} onSelect={onSelect} />);
+
+      fireEvent.keyDown(screen.getByTestId('world-tree-filter'), { key: 'ArrowDown' });
+
+      expect(onSelect).not.toHaveBeenCalled();
+    });
+  });
+
   // The filter (level-editor.md §16.16). Spacer narrows by name and by VOB
   // type; a retail world is 41,393 VOBs, so a tree with no way to narrow it is
   // a list nobody can find anything in.
