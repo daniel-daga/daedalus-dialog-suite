@@ -29,7 +29,14 @@ jobs:
     name: E2E Tests (real Electron, Windows)
     runs-on: windows-latest
     steps:
+      # submodules: the zenkit-node addon is built from vendor/ZenKit sources
+      # (same as the `build` job below) — without this, `vendor/ZenKit` checks
+      # out as an uninitialized gitlink, and applyPatches' `git apply`,
+      # invoked with cwd inside it, resolves against the outer repo instead
+      # and reports a source file missing partway through the patch series.
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
