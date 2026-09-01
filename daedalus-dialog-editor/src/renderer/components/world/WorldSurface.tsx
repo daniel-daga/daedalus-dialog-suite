@@ -563,9 +563,22 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     // which is exactly how it went unnoticed for a session. A VOB with no
     // instance is a legitimate `not-drawn`, and it is still worth saying: the
     // button was pressed and nothing moved.
-    const failure = viewport === null ? 'no-scene' : viewport.frameVob(vob);
-    if (failure !== null) console.warn(`Could not jump to VOB ${vob}: ${failure}`);
-  }, [handleSelect]);
+    if (viewport === null) { console.warn(`Could not jump to VOB ${vob}: no-scene`); return; }
+
+    const failure = viewport.frameVob(vob);
+    if (failure === null) return;
+
+    // `not-drawn` is most of the VOB index, not an edge case (§16.24): a VOB
+    // gets an instance only if its visual resolves, so zCVobSpot, oCItem, the
+    // triggers, the zones and the sound VOBs have none and were permanently
+    // unlocatable. The index carries a position for every one of them, so the
+    // camera jumps to the point instead — the same jump a waypoint gets.
+    const at = failure === 'not-drawn' && summary !== null
+      ? vobModelOf(summary).reader.position(vob)
+      : null;
+    const outcome = at === null ? failure : viewport.framePoint(at);
+    if (outcome !== null) console.warn(`Could not jump to VOB ${vob}: ${outcome}`);
+  }, [handleSelect, summary]);
 
   /**
    * The camera's own position, on demand — what the scene tree's "within

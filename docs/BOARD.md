@@ -154,10 +154,10 @@ unclaimed row is 13. The corpus section 5's rows wanted is in
 **World surface, from Daniel's own sessions 2026-08-30.** Five of the six
 landed; one is left and it is the one that was never root-caused.
 
-- **After a paste the locator works on no VOB at all** — two probes green and
-  kept, so the wiring survives a paste in both harnesses; the hypothesis that
-  stood is unreachable there. It is loud now, so a repeat leaves a console
-  warning naming the link. Wants a real world. §16.24
+- **The locator never worked on an undrawn VOB** — Daniel's 2026-09-01 read
+  (zCVobSpot, oCItem never locate) root-caused it: it framed from the scene,
+  which holds only VOBs whose visual resolved. Falls back to the index's own
+  position now. Whether a paste breaks it *besides* this is unwitnessed. §16.24
 
 - **`extractRoutineStatesByNpc` answers `{}`** — two `ProjectService` tests red
   on master since bb78edc; the State lens reads it. Repro: those two test names.

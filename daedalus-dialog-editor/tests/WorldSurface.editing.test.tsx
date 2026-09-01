@@ -1218,6 +1218,26 @@ describe('the property grid locator (level-editor.md §16.24 6)', () => {
     expect(screen.queryByTestId('world-prop-locate')).not.toBeInTheDocument();
   });
 
+  it('frames a VOB with no drawn instance at its stored position', async () => {
+    // §16.24: the locator read the *scene* for a position, so every class the
+    // viewport draws nothing for — zCVobSpot, oCItem, the trigger and zone
+    // VOBs — was permanently unlocatable, not only after a paste. The index
+    // carries a position for all of them, and that is what the camera jumps to.
+    // VOB 0 is the fixture's undrawn one; VOB 1 carries the only instance.
+    const warned = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockFrameVob.mockReturnValue('not-drawn' as never);
+    // The real handle answers null for a jump that landed.
+    mockFramePoint.mockReturnValue(null as never);
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(0); });
+
+    fireEvent.click(screen.getByTestId('world-prop-locate'));
+
+    expect(mockFramePoint).toHaveBeenCalledWith([0, 0, 0]);
+    expect(warned).not.toHaveBeenCalled();
+    warned.mockRestore();
+  });
+
   it('says so when the jump does nothing, rather than failing silently', async () => {
     // §16.24 5. The locator's whole path was optional-chained, so a jump that
     // could not be made was indistinguishable from one that was — which is why

@@ -2767,6 +2767,25 @@ paste rather than one. A paste that rebuilds the scene twice in quick succession
 is the one shape the harness does not reproduce, because both its payload reads
 resolve in the same tick.
 
+**Root cause, from Daniel 2026-09-01: most VOBs were never locatable at all.**
+He noticed the locator does nothing on a `zCVobSpot` or an `oCItem` *ever*,
+paste or no paste. It is `WorldScene.positionOf`: it reads the instance matrices,
+and `buildInstancedScene` gives a VOB an instance only when its visual name is
+non-empty and `extractVisual` resolves it. So every class the viewport draws
+nothing for — spots, start points, items (whose visual the engine sets from the
+script instance, not the `.zen`), sounds, triggers, zones, `zCVobLevelCompo` —
+answered `not-drawn`, and the honest report §16.24 5 added was reporting a
+defect, not a legitimate miss. `focusVob` now falls back to
+`reader.position(vob)` — the index carries a position for every VOB — through
+the existing `framePoint`, the same jump a waypoint gets. Covered by *"frames a
+VOB with no drawn instance at its stored position"* in
+`WorldSurface.editing.test.tsx`.
+
+**What that leaves open.** Whether a paste *also* breaks the locator for drawn
+VOBs is now unwitnessed either way: the original report is fully explained by
+this if the VOBs Daniel tried it on were undrawn, and the two probes above stay
+green regardless. Re-open only on a repeat that names a drawn VOB.
+
 ### 16.25 Scatter placement — a tool Spacer does not have (2026-08-30)
 
 **Asked for by Daniel 2026-08-30 as "the foliage painting tool in Spacer".
