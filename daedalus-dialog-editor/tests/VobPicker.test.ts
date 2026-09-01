@@ -163,6 +163,50 @@ describe('the prop pick', () => {
     expect(camera.view?.enabled).toBe(false);
   });
 
+  it('discards a cut-out prop where its texture is see-through, so the click carries on', () => {
+    // The Phase 1a limit: the pick pass drew a foliage quad whole, so clicking
+    // the empty corner of a bush selected the bush — and clicking *through* the
+    // gap between two branches selected them rather than the wall behind. Same
+    // fix as the world occluder: sample the drawn texture at the drawn
+    // threshold. A discarded fragment writes no depth either, so whatever is
+    // behind the hole wins the pixel as it does on screen.
+    const picker = new VobPicker();
+    const foliage = new THREE.MeshBasicMaterial();
+    foliage.alphaTest = 0.5;
+    foliage.map = new THREE.Texture();
+    const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(), foliage, 1);
+
+    picker.setInstancedMeshes([mesh], () => 4, new THREE.Matrix4());
+
+    const material = picker.pickProxies[0].material as THREE.ShaderMaterial;
+    expect(material.fragmentShader).toContain('discard');
+    // Still the id pass: what survives the discard is the VOB's colour.
+    expect(material.fragmentShader).toContain('vPickColor');
+    expect(material.vertexShader).toMatch(/instanceHidden > 0\.5/);
+    expect(material.uniforms.map.value).toBe(foliage.map);
+    expect(material.uniforms.alphaThreshold.value).toBe(0.5);
+  });
+
+  it('picks up a prop texture decoded after the pick scene was built', async () => {
+    const { renderer, pending } = fakeRenderer();
+    const picker = new VobPicker();
+    const foliage = new THREE.MeshBasicMaterial();
+    foliage.alphaTest = 0.5;
+    const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(), foliage, 1);
+
+    picker.setInstancedMeshes([mesh], () => 4, new THREE.Matrix4());
+    const material = picker.pickProxies[0].material as THREE.ShaderMaterial;
+    expect(material.uniforms.map.value).not.toBeNull();
+
+    const decoded = new THREE.Texture();
+    foliage.map = decoded;
+    const answer = picker.pickAsync(renderer, new THREE.PerspectiveCamera(), 1, 1, 8, 6);
+    pending[0].resolve([0, 0, 0, 255]);
+    await answer;
+
+    expect(material.uniforms.map.value).toBe(decoded);
+  });
+
   it('shares the hidden flag with the drawn mesh, so a hidden VOB is not pickable', () => {
     // Per-class visibility (§16.16) hides an instance by dropping it in the
     // vertex shader. The pick pass is a *second* draw of the same instances
@@ -217,22 +261,66 @@ describe('the world mesh as a pick occluder (level-editor.md §16.24 3)', () => 
     expect(occluder.matrixAutoUpdate).toBe(false);
   });
 
-  it('leaves a cut-out or blended world surface out, so a hole stays clickable', () => {
-    // The pass ignores alpha-tested cut-outs — the known limit documented in
-    // `VobPicker` — so a fence or a foliage quad drawn as an occluder would
-    // block a click through its own transparent half.
+  it('leaves a blended world surface out, so you can click through glass and water', () => {
+    // An alpha-blended surface does not write depth in the visible pass either:
+    // what is behind it is on screen, so a click must reach it.
     const picker = new VobPicker();
-    const cutout = new THREE.MeshBasicMaterial();
-    cutout.alphaTest = 0.5;
     const blended = new THREE.MeshBasicMaterial();
     blended.transparent = true;
 
-    picker.setWorldMeshes(
-      [worldMesh(new THREE.MeshBasicMaterial()), worldMesh(cutout), worldMesh(blended)],
-      new THREE.Matrix4(),
-    );
+    picker.setWorldMeshes([worldMesh(blended)], new THREE.Matrix4());
+
+    expect(picker.pickOccluders).toHaveLength(0);
+  });
+
+  it('draws an alpha-tested world surface, discarding where its texture is see-through', () => {
+    // Skipping these was the whole of the leak: ZenGin's *default* alpha
+    // function is NONE — "alpha on or off" — which `WorldScene` turns into an
+    // `alphaTest`, and in retail NewWorld it is what **every** opaque surface
+    // carries: 463,530 of the world mesh's 476,445 triangles, walls and floors
+    // included, against 12,915 blended ones and not a single alphaFunc 0. So an
+    // occluder pass that skipped alpha-tested meshes occluded nothing at all,
+    // and every VOB stayed clickable through the floor it sits under.
+    //
+    // The hole in a fence still has to stay clickable, so the occluder samples
+    // the same texture at the same alpha threshold as the drawn mesh does.
+    const picker = new VobPicker();
+    const cutout = new THREE.MeshBasicMaterial();
+    cutout.alphaTest = 0.5;
+    cutout.map = new THREE.Texture();
+
+    picker.setWorldMeshes([worldMesh(cutout)], new THREE.Matrix4());
 
     expect(picker.pickOccluders).toHaveLength(1);
+    const material = picker.pickOccluders[0].material as THREE.ShaderMaterial;
+    expect(material.colorWrite).toBe(false);
+    expect(material.depthWrite).toBe(true);
+    expect(material.fragmentShader).toContain('discard');
+    expect(material.uniforms.map.value).toBe(cutout.map);
+    expect(material.uniforms.alphaThreshold.value).toBe(0.5);
+  });
+
+  it('picks up a texture decoded after the pick scene was built', async () => {
+    // Textures are decoded on demand, so an occluder built before its pixels
+    // arrived holds none — and one that never looked again would keep sampling
+    // the stand-in for the world's life. The stand-in is opaque, which is what
+    // the drawn mesh looks like until its texture lands.
+    const { renderer, pending } = fakeRenderer();
+    const picker = new VobPicker();
+    const cutout = new THREE.MeshBasicMaterial();
+    cutout.alphaTest = 0.5;
+
+    picker.setWorldMeshes([worldMesh(cutout)], new THREE.Matrix4());
+    const material = picker.pickOccluders[0].material as THREE.ShaderMaterial;
+    expect(material.uniforms.map.value).not.toBeNull();
+
+    const decoded = new THREE.Texture();
+    cutout.map = decoded;
+    const answer = picker.pickAsync(renderer, new THREE.PerspectiveCamera(), 1, 1, 8, 6);
+    pending[0].resolve([0, 0, 0, 255]);
+    await answer;
+
+    expect(material.uniforms.map.value).toBe(decoded);
   });
 
   it('replaces the occluders on a rebuild without disposing the world geometry', () => {

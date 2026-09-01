@@ -24,24 +24,36 @@ import { HIDDEN_ATTRIBUTE } from './WorldScene';
 // the decision standing on what it was actually chosen for: O(1) in prop count,
 // against a raycast that is linear in `InstancedMesh`es (§3 decision 1).
 //
-// Known limit for Phase 1a: the pick pass ignores alpha-tested cut-outs, so
-// clicking the transparent corner of a foliage quad selects the plant. Fixing
-// it means sampling the texture in the pick shader, which needs the texture
-// decoded — and textures are decoded on demand.
+// Both passes honour the drawn alpha test: a cut-out is sampled at the same
+// threshold the visible mesh uses, so the empty corner of a foliage quad is not
+// the plant, and the gap between two branches is whatever stands behind it. A
+// discarded fragment writes no depth either, so the pixel falls through exactly
+// as it does on screen.
 //
 // The world mesh is drawn too, depth only (`setWorldMeshes`, §16.24 3). Without
 // it nothing in this scene ever wrote depth but the props themselves, so a VOB
 // behind a wall won the pixel and clicking a Khorinis tower selected whatever
-// stood inside it. It is one more draw into the same one-pixel view offset —
-// the cut-out limit above is why a cut-out or blended world surface is left
-// out of it rather than drawn as a solid occluder.
+// stood inside it. It is one more draw into the same one-pixel view offset.
+//
+// That draw has to include the alpha-tested surfaces, which is what the first
+// version of it left out: ZenGin's *default* alpha function is NONE — "alpha on
+// or off" — so `WorldScene` gives nearly the whole world an `alphaTest`, and in
+// retail NewWorld that is **every** opaque surface, 463,530 of the world mesh's
+// 476,445 triangles. Skipping them meant the occluder pass occluded nothing at
+// all and every VOB stayed clickable through the floor above it. So they are
+// drawn through a second occluder material that samples the same texture at the
+// same threshold as the visible mesh — a wall occludes, the hole in a fence
+// does not. Only blended surfaces stay out: they write no depth when drawn
+// either, and what is behind glass or water is on screen and must be clickable.
 
 const PICK_VERTEX = /* glsl */`
   attribute vec3 pickColor;
   attribute float ${HIDDEN_ATTRIBUTE};
   varying vec3 vPickColor;
+  varying vec2 vUv;
   void main() {
     vPickColor = pickColor;
+    vUv = uv;
     gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
     // The pick pass is a second draw of the same instances, so it has to honour
     // the same hiding: a VOB switched off by class that stayed clickable would
@@ -53,7 +65,21 @@ const PICK_VERTEX = /* glsl */`
 
 const PICK_FRAGMENT = /* glsl */`
   varying vec3 vPickColor;
+  varying vec2 vUv;
   void main() {
+    gl_FragColor = vec4(vPickColor, 1.0);
+  }
+`;
+
+// The cut-out prop's fragment pair — the same id, written only where the drawn
+// material would have kept the pixel.
+const PICK_CUTOUT_FRAGMENT = /* glsl */`
+  uniform sampler2D map;
+  uniform float alphaThreshold;
+  varying vec3 vPickColor;
+  varying vec2 vUv;
+  void main() {
+    if (texture2D(map, vUv).a < alphaThreshold) discard;
     gl_FragColor = vec4(vPickColor, 1.0);
   }
 `;
@@ -69,6 +95,28 @@ const OCCLUDER_VERTEX = /* glsl */`
 
 const OCCLUDER_FRAGMENT = /* glsl */`
   void main() {
+    gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+  }
+`;
+
+// And the cut-out pair, for the alpha-tested surfaces — which is most of the
+// world. One material per drawn material, because the sampler and the threshold
+// are per material; the shader source is the same for all of them, so the GPU
+// compiles one program however many there are.
+const CUTOUT_VERTEX = /* glsl */`
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const CUTOUT_FRAGMENT = /* glsl */`
+  uniform sampler2D map;
+  uniform float alphaThreshold;
+  varying vec2 vUv;
+  void main() {
+    if (texture2D(map, vUv).a < alphaThreshold) discard;
     gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
   }
 `;
@@ -102,8 +150,23 @@ export class VobPicker {
     colorWrite: false,
   });
 
+  // What a cut-out occluder samples until its own texture is decoded: opaque,
+  // which is how the drawn mesh looks in the same moment — untextured and
+  // white. Sampling a null map is not an option; the uniform must be a texture.
+  private readonly opaquePixel = ((): THREE.DataTexture => {
+    const texture = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+    texture.needsUpdate = true;   // a DataTexture is not uploaded without it
+    return texture;
+  })();
+
   private proxies: THREE.InstancedMesh[] = [];
   private occluders: THREE.Mesh[] = [];
+  /** The cut-out materials and the drawn materials they follow — the world's
+   *  occluders and the props' proxies kept apart because each is cleared with
+   *  what it belongs to. Textures are decoded on demand, so the sampler is
+   *  re-read at every pick rather than bound once when the scene was built. */
+  private cutouts: Array<{ material: THREE.ShaderMaterial; drawn: THREE.MeshBasicMaterial }> = [];
+  private propCutouts: Array<{ material: THREE.ShaderMaterial; drawn: THREE.MeshBasicMaterial }> = [];
 
   /** The proxies the pick pass draws, in the order their meshes were given.
    *  The pick scene is otherwise unreachable, and what they were built out of
@@ -139,9 +202,12 @@ export class VobPicker {
       // where its holes are — see the note at the top. Drawn as an occluder it
       // would block a click through its own transparent half.
       const material = mesh.material as THREE.MeshBasicMaterial;
-      if (!mesh.visible || material.transparent || material.alphaTest > 0) continue;
+      if (!mesh.visible || material.transparent) continue;
 
-      const occluder = new THREE.Mesh(mesh.geometry, this.occluderMaterial);
+      const occluder = new THREE.Mesh(
+        mesh.geometry,
+        material.alphaTest > 0 ? this.cutoutMaterial(material) : this.occluderMaterial,
+      );
       occluder.matrixAutoUpdate = false;
       occluder.matrix.copy(rootMatrix);
       occluder.matrixWorldNeedsUpdate = true;
@@ -150,6 +216,37 @@ export class VobPicker {
       this.scene.add(occluder);
       this.occluders.push(occluder);
     }
+  }
+
+  /** The occluder material for one alpha-tested drawn material. */
+  private cutoutMaterial(drawn: THREE.MeshBasicMaterial): THREE.ShaderMaterial {
+    const material = new THREE.ShaderMaterial({
+      vertexShader: CUTOUT_VERTEX,
+      fragmentShader: CUTOUT_FRAGMENT,
+      side: THREE.FrontSide,
+      colorWrite: false,
+      uniforms: {
+        map: { value: drawn.map ?? this.opaquePixel },
+        alphaThreshold: { value: drawn.alphaTest },
+      },
+    });
+    this.cutouts.push({ material, drawn });
+    return material;
+  }
+
+  /** The pick material for one alpha-tested prop material. */
+  private propCutoutMaterial(drawn: THREE.MeshBasicMaterial): THREE.ShaderMaterial {
+    const material = new THREE.ShaderMaterial({
+      vertexShader: PICK_VERTEX,
+      fragmentShader: PICK_CUTOUT_FRAGMENT,
+      side: THREE.FrontSide,
+      uniforms: {
+        map: { value: drawn.map ?? this.opaquePixel },
+        alphaThreshold: { value: drawn.alphaTest },
+      },
+    });
+    this.propCutouts.push({ material, drawn });
+    return material;
   }
 
   /** Build the pick scene: the same instanced geometry, with an id per instance. */
@@ -180,7 +277,12 @@ export class VobPicker {
       const hidden = mesh.geometry.getAttribute(HIDDEN_ATTRIBUTE);
       if (hidden) geometry.setAttribute(HIDDEN_ATTRIBUTE, hidden);
 
-      const proxy = new THREE.InstancedMesh(geometry, this.material, mesh.count);
+      const drawn = mesh.material as THREE.MeshBasicMaterial;
+      const proxy = new THREE.InstancedMesh(
+        geometry,
+        drawn.alphaTest > 0 ? this.propCutoutMaterial(drawn) : this.material,
+        mesh.count,
+      );
       proxy.instanceMatrix = mesh.instanceMatrix;
       proxy.matrixAutoUpdate = false;
       // The proxies live in their own scene, so they carry the root conversion
@@ -254,6 +356,11 @@ export class VobPicker {
   ): void {
     const previousTarget = renderer.getRenderTarget();
 
+    // The texture a cut-out samples may have been decoded since the last pick.
+    for (const { material, drawn } of [...this.cutouts, ...this.propCutouts]) {
+      material.uniforms.map.value = drawn.map ?? this.opaquePixel;
+    }
+
     // Reframe the projection onto the one pixel under the cursor.
     camera.setViewOffset(width, height, x, y, 1, 1);
     renderer.setRenderTarget(this.target);
@@ -271,7 +378,10 @@ export class VobPicker {
       this.scene.remove(proxy);
       proxy.geometry.dispose();
     }
+    // The cut-out materials are the picker's own, unlike the shared geometry.
+    for (const { material } of this.propCutouts) material.dispose();
     this.proxies = [];
+    this.propCutouts = [];
   }
 
   /** No `dispose` on the geometry, unlike `clear`: an occluder draws the
@@ -279,7 +389,10 @@ export class VobPicker {
    *  out from under the very next frame. */
   private clearOccluders(): void {
     for (const occluder of this.occluders) this.scene.remove(occluder);
+    // The cut-out materials are the picker's own, unlike the geometry.
+    for (const { material } of this.cutouts) material.dispose();
     this.occluders = [];
+    this.cutouts = [];
   }
 
   dispose(): void {
@@ -287,6 +400,7 @@ export class VobPicker {
     this.clearOccluders();
     this.material.dispose();
     this.occluderMaterial.dispose();
+    this.opaquePixel.dispose();
     this.target.dispose();
   }
 }
