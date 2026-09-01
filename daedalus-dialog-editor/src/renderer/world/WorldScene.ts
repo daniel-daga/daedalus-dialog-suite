@@ -46,11 +46,20 @@ const ALPHA_TEST = 0.5;
  * a legibility aid that competed with it would make the selected VOB harder to
  * find, not easier.
  */
-const OUTLINE_DARKEN = 0.7;
+const OUTLINE_DARKEN = 0.5;
 
-/** Keeps the darkening near the silhouette: at 4, a surface has to be within
- *  ~25° of edge-on before it loses a quarter of the effect's strength. */
-const OUTLINE_POWER = 4.0;
+/**
+ * Keeps the darkening near the silhouette without shrinking it to a hairline.
+ *
+ * The first pair was 0.7 and 4, on a comment claiming a surface had to be
+ * within ~25° of edge-on to lose a quarter of the effect. That reading was
+ * backwards — at 25° off edge-on a fourth power leaves 11 % of the effect, so
+ * the whole visible band sat outside `d/R = 0.971` on a sphere: under a pixel
+ * on any VOB smaller than the screen, and **nothing a human could see**
+ * (level-editor.md §16.12). At 2 the band is the outer tenth of the radius,
+ * which is what `WorldScene.test.ts` now holds the pair to.
+ */
+const OUTLINE_POWER = 2.0;
 
 /**
  * The selection emphasis (level-editor.md §16.24 1).
@@ -81,8 +90,10 @@ const SELECT_TINT = 0.28;
 /** And at the silhouette, where the emphasis does its work. */
 const SELECT_RIM = 0.9;
 
-/** The rim's falloff — wider than `OUTLINE_POWER`, so the outline is a band
- *  that survives at a distance rather than a hairline that aliases away. */
+/** The rim's falloff — a band that survives at a distance rather than a
+ *  hairline that aliases away. It used to be the wider of the two; the
+ *  silhouette darkening has since been widened to match it, for the reason at
+ *  `OUTLINE_POWER`. What still separates them is strength, not width. */
 const SELECT_POWER = 2.0;
 
 /**

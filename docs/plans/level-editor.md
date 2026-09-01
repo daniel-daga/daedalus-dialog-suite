@@ -1159,12 +1159,14 @@ evidence.
 
 ### 16.12 Two viewport constants only Daniel's hands can settle
 
-Both landed with numbers chosen by reasoning, and neither has a test that could
-ever judge them.
+Both landed with numbers chosen by reasoning, and neither had a test that could
+ever judge them. **The pivot is settled; the outline is diagnosed, retuned and
+awaiting one look.**
 
 **The pivot — settled by use, 2026-09-01**, and both halves reversed.
-`ORBIT_ROTATE_SPEED` is `1` (since 2026-08-27), not the `0.4` named here;
-`MIN_PIVOT_DISTANCE = 1` m is still unjudged.
+`ORBIT_ROTATE_SPEED` is `1` (since 2026-08-27), not the `0.4` named here.
+`MIN_PIVOT_DISTANCE = 1` m was judged good at the near range it exists for
+(Daniel, 2026-09-01) and is no longer an open number.
 
 - The view-axis projection is for a drag, not a double-click: it put the pivot
   11.6 m from the cursor, so the orbit swung around the screen middle.
@@ -1183,14 +1185,47 @@ ever judge them.
 - The dot is `TerrainMarker` in `PIVOT_COLOR`, not the placement pink: in one
   colour they were indistinguishable where they landed together.
 
-**The VOB outline.** Two things in it are unverifiable without a GPU: that the
-injected GLSL compiles at all — jsdom has no WebGL, so a shader-link error would
-surface as black or missing props at runtime, not as a red test — and whether
-`OUTLINE_DARKEN = 0.7` / `OUTLINE_POWER = 4` is the right faintness on retail
-NewWorld. Both constants are named in `WorldScene.ts`. Also unjudged: how it
-reads on alpha-tested foliage and on blended VOB materials, which get the term
-uniformly by design (a face-on billboard is untouched; an edge-on one dims
-slightly).
+**The VOB outline drew nothing at all, 2026-09-01**, and the first pair of
+numbers is why. On retail NewWorld Daniel could see no outline on any VOB, and
+no rim on a selected one either — a selected VOB read as a flat orange tint.
+
+*The GLSL compiles*, and that half is settled permanently without a GPU: the
+selection tint is emitted by the same injected block as the darkening
+(`outlineVobs`), from the same `vobFacing`, so a visible tint proves the vertex
+replacement ran, the varyings are written and the program links. A shader-link
+error would have shown as black or missing props, and did not.
+
+*What was wrong is the falloff, and the comment that justified it.* It claimed
+that at a fourth power a surface had to be within ~25° of edge-on to lose a
+quarter of the effect. Backwards: at 25° off edge-on a fourth power leaves
+**11 %** of it, so `0.7`/`4` darkened by 3 % there. Read on a sphere — the one
+VOB whose facing term has a closed form — a 10 %-or-more dip lived entirely
+outside `d/R = 0.971`, the outer 3 % of the radius: under one pixel on any VOB
+that is not filling the screen. Now `OUTLINE_DARKEN = 0.5` / `OUTLINE_POWER =
+2`, which puts the band in the outer tenth of the radius, and
+`WorldScene.test.ts` holds the pair to a **width** rather than to bounds — the
+old assertions (`darken > 0.6`, `power >= 2`) were both satisfied by the
+invisible pair. **Not yet judged by eye**: whether the new pair is right is one
+look at NewWorld.
+
+*Two things were ruled out by measurement rather than by argument.* The stored
+normals are real and varied — `check-visual-winding.js` decides 230,395 of
+230,395 proto-mesh triangles with them — and they are not flat: over the 355
+visuals NewWorld actually places (84,829 triangles), the largest angle between
+a triangle's three wedge normals is <1° on 24.9 %, 1-15° on 18.3 % and >15° on
+56.9 %. So a per-fragment rim term has a gradient to work with on most VOB
+geometry, and the failure was never the data.
+
+*The exception is structural and no constant fixes it.* The most-placed visuals
+in NewWorld are alpha-tested billboards — `NW_NATURE_BUSH_120P` ×690,
+`NW_NATURE_GRASSGROUP_01` ×688 (100 % flat), `NW_NATURE_FARNTEPPICH_306P` ×565,
+`NW_CAVEWEBS_V201` ×455 (100 % flat). Their visible silhouette is the texture's
+alpha cutout, not the polygon edge, and a camera-facing quad has
+`vobFacing ≈ 1` across its whole surface. A geometric rim term cannot outline
+them, at any darkening or power. If foliage has to read as VOB, the mechanism
+has to change — a depth/normal edge pass over the picked-VOB buffer is the
+obvious candidate, and it is a draw call the viewport currently refuses (§3).
+**Uncarded**, and it is the open question this subsection now holds.
 
 ### 16.15 Class-specific insertion (§14.1 1.3)
 

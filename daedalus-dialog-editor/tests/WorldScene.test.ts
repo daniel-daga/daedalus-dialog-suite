@@ -748,13 +748,26 @@ describe('WorldScene', () => {
     expect(vobShader.fragmentShader).toMatch(/outgoingLight \*= mix\(/);
     expect(vobShader.fragmentShader).toContain('#include <opaque_fragment>');
 
-    // Faint, and unmistakably weaker than a selection state: at most a third of
-    // the light taken away, and only where the surface turns away from the eye.
+    // Faint, and unmistakably weaker than a selection state, but the bounds
+    // alone are what let the first pair of numbers ship as an invisible
+    // hairline (level-editor.md §16.12): 0.7 and 4 satisfy both of these and
+    // draw nothing a human can see.
     const darken = Number(/mix\(\s*1\.0,\s*([0-9.]+),/.exec(vobShader.fragmentShader)?.[1]);
-    expect(darken).toBeGreaterThan(0.6);
+    expect(darken).toBeGreaterThan(0.4);
     expect(darken).toBeLessThan(1);
     const power = Number(/pow\(\s*1\.0 - vobFacing,\s*([0-9.]+)\s*\)/.exec(vobShader.fragmentShader)?.[1]);
-    expect(power).toBeGreaterThanOrEqual(2);
+    expect(power).toBeGreaterThanOrEqual(1.5);
+
+    // So the constants are held to a *width*, which is the thing a bound
+    // cannot express and the thing that was actually wrong. Read on a sphere,
+    // the only VOB whose facing term has a closed form: at a tenth of the
+    // radius in from the silhouette the surface faces the eye at
+    // sqrt(1 - 0.9^2), so the darkening there is the effect's strength over a
+    // band a human can point at rather than over the last sub-pixel. Below 5 %
+    // it is not an outline, whatever the constants say.
+    const facingAtBand = Math.sqrt(1 - 0.9 ** 2);
+    const strengthAtBand = (1 - darken) * (1 - facingAtBand) ** power;
+    expect(strengthAtBand).toBeGreaterThan(0.05);
 
     // And the world mesh gets none of it: its vertex shader is the stock one,
     // and the only thing its fragment shader gained is the exposure term below.
