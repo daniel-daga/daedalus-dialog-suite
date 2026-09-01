@@ -153,11 +153,13 @@ Main process:
       either body leaves the next startup free to retry. `checkForUpdate()` still takes no
       arguments, so a manual check is still not exempted from the hour — unchanged, and now
       only matters when the last check succeeded.
-- [ ] 4.14 The worker-count formula contradicts its own architecture doc:
+- [x] 4.14 The worker-count formula contradicts its own architecture doc:
       `docs/architecture/worker-reliability.md:36` states both pools cap at
       `Math.max(1, Math.min(os.cpus().length - 1, 8))`; `MetadataWorkerPool.ts:101` matches but
       `ParserService.ts:61` is `Math.max(2, Math.min(numCPUs, 8))` — different floor, no `-1`.
-      Fix one to match the other, and say in the doc which is right.
+      **Fixed 2026-09-01**: the doc's rule is canon and is now one function,
+      `workerPoolSize` (`src/main/services/workerPoolSize.ts`), which both pools call;
+      `ParserService` on a 1- or 2-core machine therefore runs one worker, not two.
 - [x] 4.15 Both pools treated a clean exit as normal — `ParserService.ts:96-100` and
       `MetadataWorkerPool.ts:160-164` both guarded on `code !== 0`, so a worker exiting 0 was never
       reaped and callers stalled for 30 s. **Fixed 2026-08-30**: both `exit` handlers now reap

@@ -77,7 +77,7 @@ run headless and produce a number.
 
 | # | Item | Where the diagnosis is | Accept | Size |
 |---|---|---|---|---|
-| 16 | The two worker pools compute their size differently; `worker-reliability.md` already names which is canon | 2026-07 **4.14**, `ParserService.ts:61` vs `MetadataWorkerPool.ts:101` | `workerPool.count` › both pools agree for 1/2/4/32 cores | S |
+| ~~16~~ | ~~The two worker pools compute their size differently; `worker-reliability.md` already names which is canon~~ — **landed 2026-09-01**: the doc's rule is `workerPoolSize()` in one module and both pools call it, so `ParserService` on a 1- or 2-core machine now runs one worker where it ran two | 2026-07 **4.14**, `ParserService.ts:61` vs `MetadataWorkerPool.ts:101` | `workerPool.count` › both pools agree for 1/2/4/32 cores | S |
 | 17 | Validation types are declared three times and have already drifted (`invalid_string_content` is emitted but not in the shared type) | 2026-07 **3.4**, `ValidationService.ts:8`, `shared/types.ts:583` | `typecheck:renderer` + `build:main` green with one shared type | S |
 | 18 | Action types are listed in three places — labels, menu items and an icon switch — and disagree | 2026-07 **3.2**, `actionRenderers/index.tsx`, `ActionTypeMenu.tsx:30`, `ActionCard.tsx:244` | `actionTypeRegistry` › no two sites disagree on a label | M |
 | 19 | Two add-action flows seed companions differently | 2026-07 **3.3**, `useDialogEditorCommands.ts:79` vs `useActionManagement.ts:285` | › addActionToEnd matches addActionAfter | M |
