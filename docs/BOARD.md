@@ -241,6 +241,6 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **VOB folders** — user-created, editor-only groupings additional to the
-  scene tree; a `<worldname>.folders.json` sidecar, never a VOB. New Folders
-  tab plus "Add to Folder" on the VOB context menu. `docs/plans/vob-folders.md`
+- **Double-click never pivoted where you clicked** (Daniel, 2026-09-01) — the
+  view-axis projection, and an orbit press that re-centred over the top of it.
+  Plus a VOB fallback and a marker of its own. Two caveats left open. §16.12

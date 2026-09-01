@@ -21,6 +21,11 @@ import * as THREE from 'three';
 const SIZE = 11;
 const COLOR = 0xff4081;
 
+/** The orbit pivot's own dot. Both markers are on screen at once and routinely
+ *  on the same spot, where in one colour they were indistinguishable. */
+export const PIVOT_COLOR = 0x40e0ff;
+export const PIVOT_SIZE = 8;
+
 /** Over the waynet's 10, so a point picked on top of the net is still visible. */
 const RENDER_ORDER = 11;
 
@@ -32,19 +37,24 @@ export class TerrainMarker {
   private geometry = new THREE.BufferGeometry();
   private material: THREE.PointsMaterial;
 
-  constructor(at: readonly [number, number, number]) {
+  /** @param style the pivot's cyan dot rather than the placement pink one —
+   *   see `PIVOT_COLOR`. */
+  constructor(
+    at: readonly [number, number, number],
+    style: { color?: number; size?: number } = {},
+  ) {
     this.geometry.setAttribute(
       'position',
       new THREE.BufferAttribute(new Float32Array([at[0], at[1], at[2]]), 3),
     );
 
     this.material = new THREE.PointsMaterial({
-      size: SIZE,
+      size: style.size ?? SIZE,
       // Pixels, not world units — a picked point has no size, and one that
       // shrank with distance would be invisible from the viewpoint a placement
       // is usually aimed from.
       sizeAttenuation: false,
-      color: COLOR,
+      color: style.color ?? COLOR,
       depthTest: false,
       transparent: true,
     });

@@ -1162,14 +1162,26 @@ evidence.
 Both landed with numbers chosen by reasoning, and neither has a test that could
 ever judge them.
 
-**The pivot.** `ORBIT_ROTATE_SPEED = 0.4` against OrbitControls' 1.0, and
-`MIN_PIVOT_DISTANCE = 1` m. Two shapes to judge at the same time — whether the
-projection-onto-the-view-axis pivot reads right near a screen edge (the
-alternative is the literal picked point, which costs a view snap on every
-middle-press), and whether a VOB under the cursor ought to be a pivot target
-(it is not: ID-picking answers an id, not a point, and a CPU raycast over 724
-`InstancedMesh`es is the 14.2 ms the viewport exists to avoid — a *clicked* VOB
-is the fallback pivot, and interiors pivot on walls, which are world mesh).
+**The pivot — settled by use, 2026-09-01**, and both halves reversed.
+`ORBIT_ROTATE_SPEED` is `1` (since 2026-08-27), not the `0.4` named here;
+`MIN_PIVOT_DISTANCE = 1` m is still unjudged.
+
+- The view-axis projection is for a drag, not a double-click: it put the pivot
+  11.6 m from the cursor, so the orbit swung around the screen middle.
+  `pivotUnderCursor` keeps it (a drag must not snap the view);
+  `handleDoubleClick` writes the picked point to `controls.target` outright.
+- An orbit press no longer re-pivots at all — the ambient re-centre, not the
+  projection, is what made the gesture useless, since the press after a
+  double-click is always the orbit it was aiming. `attachBlenderNav` passes the
+  `Nav` to `onNavStart`; only dolly and pan still re-centre, which is all they
+  use the pivot for.
+- A VOB is a pivot target after all, via the GPU pick, so the 14.2 ms CPU
+  raycast is still refused. Two open caveats, uncarded: it answers the VOB's
+  *origin*, not the surface (raycasting the one picked mesh would fix it), and
+  a prop standing on ground never reaches the fallback — the ray passes through
+  it and the terrain behind wins.
+- The dot is `TerrainMarker` in `PIVOT_COLOR`, not the placement pink: in one
+  colour they were indistinguishable where they landed together.
 
 **The VOB outline.** Two things in it are unverifiable without a GPU: that the
 injected GLSL compiles at all — jsdom has no WebGL, so a shader-link error would

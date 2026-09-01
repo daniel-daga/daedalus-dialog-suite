@@ -15,7 +15,7 @@ import { DampedTransformControls } from '../../world/DampedTransformControls';
 import { WaynetOverlay } from '../../world/WaynetOverlay';
 import { SpawnOverlay } from '../../world/SpawnOverlay';
 import type { RoutineIndex } from '../../routines/routineSchedule';
-import { TerrainMarker } from '../../world/TerrainMarker';
+import { TerrainMarker, PIVOT_COLOR, PIVOT_SIZE } from '../../world/TerrainMarker';
 import {
   SELECTED_ATTRIBUTE, WorldScene, textureCacheFor, type TextureCache,
 } from '../../world/WorldScene';
@@ -25,7 +25,9 @@ import { NO_PICK } from '../../world/pickIds';
 import { pickWaypoint, NO_WAYPOINT } from '../../world/pickWaypoint';
 import { chooseWaypointLabels } from '../../world/waypointLabels';
 import { WaypointLabelLayer } from '../../world/WaypointLabelLayer';
-import { attachBlenderNav, frameOn, frameVobs, navFor, pivotAt } from '../../world/cameraNav';
+import {
+  attachBlenderNav, frameOn, frameVobs, navFor, pivotAt, type Nav,
+} from '../../world/cameraNav';
 import { snapDelta, snapTurn } from '../../world/snapping';
 import {
   runViewportBenchmark,
@@ -104,6 +106,9 @@ declare global {
       /** The camera itself, in **ZenGin space** — what a double-click pivot
        *  deliberately leaves alone, unlike the framing keys. */
       cameraPosition: () => [number, number, number];
+      /** Where the double-click marker sits, in **ZenGin space**, or null if
+       *  a double-click has never hit anything yet. */
+      pivotMarkerPoint: () => [number, number, number] | null;
     };
   }
 }
@@ -466,6 +471,11 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   const poseRef = useRef<{
     key: string; position: number[]; target: number[];
   } | null>(null);
+  // Where a double-click last set the pivot, in ZenGin space — the dot that
+  // confirms it landed somewhere, since `pivotAt` itself is otherwise
+  // invisible until the next drag. Survives a same-world rebuild the same
+  // way `poseRef` does, and for the same reason: the pivot itself does.
+  const pivotMarkerRef = useRef<{ key: string; point: [number, number, number] } | null>(null);
   // Survives it for the same reason and keyed the same way: the pixels did not
   // change when a VOB was placed, and re-decoding all 490 of them is the 549 ms
   // the cold open pays. Owned here rather than by the scene, which is torn down
@@ -529,7 +539,12 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     // Where the last click landed, in three space, or null before the first
     // one. The fallback pivot for a drag that begins over the sky.
     let lastPick: THREE.Vector3 | null = null;
-    const pivotUnderCursor = (event: PointerEvent) => {
+    const pivotUnderCursor = (event: PointerEvent, nav: Exclude<Nav, 'none'>) => {
+      // An orbit turns *about* the pivot, so it must not move it — re-centring
+      // here is what threw away every pivot a double-click set, the orbit
+      // being the very press it was aiming (§16.12). Dolly and pan only read
+      // the distance to it, so they keep the ambient behaviour.
+      if (nav === 'orbit') return;
       const rect = renderer.domElement.getBoundingClientRect();
       pointer.set(
         ((event.clientX - rect.left) / rect.width) * 2 - 1,
@@ -545,6 +560,19 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       const hit = raycaster.intersectObjects(world.worldMeshes, false)[0];
       const at = hit ? hit.point : lastPick;
       if (at !== null) pivotAt(camera, controls.target, at);
+    };
+
+    // Where a double-click last set the pivot — the dot that confirms it
+    // landed somewhere, since `pivotAt` itself moves nothing a screenshot
+    // could tell apart from before. Set only by `handleDoubleClick`, replaced
+    // rather than moved for the same reason `TerrainMarker`'s own comment
+    // gives: a click is not a frame.
+    let pivotMarker: TerrainMarker | null = null;
+    const setPivotMarker = (point: [number, number, number]) => {
+      if (pivotMarker) { world.root.remove(pivotMarker.root); pivotMarker.dispose(); }
+      pivotMarker = new TerrainMarker(point, { color: PIVOT_COLOR, size: PIVOT_SIZE });
+      world.root.add(pivotMarker.root);
+      pivotMarkerRef.current = { key: worldKey, point };
     };
 
     // Blender's mapping: the middle button navigates (Alt+left stands in for it
@@ -565,6 +593,8 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       camera.position.fromArray(poseRef.current.position);
       controls.target.fromArray(poseRef.current.target);
     }
+    // The marker survives the same rebuild, and for the same reason.
+    if (pivotMarkerRef.current?.key === worldKey) setPivotMarker(pivotMarkerRef.current.point);
     controls.update();
 
     // Only what is pickable gets a tree, and off the main thread.
@@ -989,25 +1019,24 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     renderer.domElement.addEventListener('click', handleClick);
 
     /**
-     * Double-click a point on the world mesh to pivot there — a deliberate,
-     * sticky version of `pivotUnderCursor`'s ambient one. That fires on
-     * every navigation *press* and only lasts the drag it started, so
-     * re-centring on somewhere specific means starting the very next drag
-     * exactly over it; this sets the pivot outright, independent of where
-     * the next drag begins. The camera itself does not move — `pivotAt`
-     * only ever changes what future orbits turn around, never zooms to it
-     * the way the framing keys do.
+     * Double-click to pivot **on the point clicked** (§16.12).
      *
-     * World mesh only, not VOBs: a CPU raycast is what `pivotUnderCursor`
-     * exists to avoid paying for the 724 InstancedMeshes, and "a point in
-     * the mesh" is terrain, a building or a cave wall either way.
+     * Deliberately not `pivotAt`: its view-axis projection put the pivot
+     * metres from the cursor, so the orbit swung around the screen middle.
+     * That projection is right for `pivotUnderCursor`, which must not snap
+     * the view mid-drag, and wrong for the one gesture that means "make this
+     * the centre" — OrbitControls re-aims at `target`, so writing the point
+     * is the whole of it: the camera holds its position and only turns.
+     *
+     * World mesh first; a VOB is the fallback, through the GPU pick
+     * `handleClick` already pays for, so no CPU raycast over the 724
+     * InstancedMeshes. Without it a double-click over sky did nothing.
      */
-    const handleDoubleClick = (event: MouseEvent) => {
+    const handleDoubleClick = async (event: MouseEvent) => {
       const rect = renderer.domElement.getBoundingClientRect();
-      pointer.set(
-        ((event.clientX - rect.left) / rect.width) * 2 - 1,
-        -((event.clientY - rect.top) / rect.height) * 2 + 1,
-      );
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      pointer.set((x / rect.width) * 2 - 1, -(y / rect.height) * 2 + 1);
       // The mesh's own vertices stay in raw ZenGin centimetres — only
       // `world.root`'s matrix carries the unit scale and the handedness
       // mirror (`zen-world`'s `ROOT_MATRIX`) — so a stale `matrixWorld`
@@ -1021,9 +1050,21 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       world.root.updateMatrixWorld();
       raycaster.setFromCamera(pointer, camera);
       const hit = raycaster.intersectObjects(world.worldMeshes, false)[0];
-      if (!hit) return;
-      pivotAt(camera, controls.target, hit.point);
-      rememberPick(hit.point);
+      if (hit) {
+        controls.target.copy(hit.point);
+        rememberPick(hit.point);
+        setPivotMarker(threeToZen(hit.point.toArray()));
+        return;
+      }
+
+      const vob = await picker.pickAsync(renderer, camera, x, y, rect.width, rect.height);
+      if (disposed || vob === NO_PICK) return;
+      const at = world.positionOf(vob);
+      if (at === null) return;
+      pivotPoint.set(...zenToThree(at));
+      controls.target.copy(pivotPoint);
+      rememberPick(pivotPoint);
+      setPivotMarker(at);
     };
     renderer.domElement.addEventListener('dblclick', handleDoubleClick);
 
@@ -1342,6 +1383,17 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       ]),
       cameraTarget: () => threeToZen(controls.target.toArray() as [number, number, number]),
       cameraPosition: () => threeToZen(camera.position.toArray() as [number, number, number]),
+      // Reports the marker that is actually *in the scene*, not merely the
+      // point remembered for the next rebuild: reading the ref alone would
+      // stay green with the `world.root.add` deleted, and drawing the dot is
+      // the whole of what this feature is for.
+      pivotMarkerPoint: () => (
+        pivotMarker !== null
+        && pivotMarker.root.parent === world.root
+        && pivotMarkerRef.current?.key === worldKey
+          ? pivotMarkerRef.current.point
+          : null
+      ),
     };
 
     return () => {
@@ -1374,6 +1426,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       transform.dispose();
       picker.dispose();
       bvh.dispose();
+      pivotMarker?.dispose();
       world.dispose();
       renderer.dispose();
       host.removeChild(renderer.domElement);

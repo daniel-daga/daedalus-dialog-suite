@@ -150,18 +150,23 @@ function stubCanvasRect(canvas: HTMLCanvasElement): DOMRect {
   return rect as DOMRect;
 }
 
-async function doubleClickCentre(container: HTMLElement): Promise<void> {
+/** Double-click at a fraction of the canvas — (0.5, 0.5) is the centre. */
+async function doubleClickAt(
+  container: HTMLElement, fx: number, fy: number,
+): Promise<void> {
   const canvas = container.querySelector('canvas')!;
   const rect = stubCanvasRect(canvas);
   await act(async () => {
     canvas.dispatchEvent(new MouseEvent('dblclick', {
       bubbles: true,
-      clientX: rect.left + rect.width / 2,
-      clientY: rect.top + rect.height / 2,
+      clientX: rect.left + rect.width * fx,
+      clientY: rect.top + rect.height * fy,
     }));
     await Promise.resolve();
   });
 }
+
+const doubleClickCentre = (container: HTMLElement) => doubleClickAt(container, 0.5, 0.5);
 
 describe('WorldViewport — double-click pivots the orbit onto the mesh', () => {
   beforeEach(() => {
@@ -200,6 +205,94 @@ describe('WorldViewport — double-click pivots the orbit onto the mesh', () => 
     await doubleClickCentre(container);
 
     expect(window.__worldViewport!.cameraPosition()).toEqual(before);
+    unmount();
+  });
+
+  it('pivots on the clicked point itself, not on its view-axis projection', async () => {
+    // The complaint this answers (Daniel, 2026-09-01): "it also does not
+    // pivot around that point". `pivotAt` puts the pivot at
+    // `camera.position + forward * depth` — dead centre on screen at the
+    // clicked depth — so a click anywhere but the centre pivots somewhere
+    // the user did not click. That projection is right for
+    // `pivotUnderCursor`, which must not snap the view mid-drag (§16.12);
+    // a deliberate double-click is the case where the snap is the point.
+    //
+    // Clicked well off centre, so the projection and the hit are far apart:
+    // at the centre the two coincide and this could not tell them apart.
+    const { container, unmount } = render(<WorldViewport {...props()} />);
+    await act(async () => { await nextFrame(); });
+
+    await doubleClickAt(container, 0.3, 0.68);
+
+    const target = window.__worldViewport!.cameraTarget();
+    const hit = window.__worldViewport!.pivotMarkerPoint();
+    expect(hit).not.toBeNull();
+    // The pivot *is* the hit, to the last centimetre — not a point some
+    // distance along the view axis from it.
+    for (let i = 0; i < 3; i++) expect(target[i]).toBeCloseTo(hit![i], 2);
+    unmount();
+  });
+
+  it('keeps that pivot through an orbit press, but a dolly press re-centres it', async () => {
+    // The second half of the same complaint: setting the pivot is useless if
+    // the very next middle-press throws it away, and that press is always
+    // the next thing to happen — a double-click is *how you aim* an orbit.
+    // `pivotUnderCursor` used to fire for all three navigations, so the
+    // pivot never survived the drag it was set for. Dolly and pan keep it,
+    // since scaling their step by the distance to what is under the cursor
+    // is the only thing they use the pivot for.
+    const { container, unmount } = render(<WorldViewport {...props()} />);
+    await act(async () => { await nextFrame(); });
+
+    await doubleClickAt(container, 0.3, 0.68);
+    const set = window.__worldViewport!.cameraTarget();
+
+    const canvas = container.querySelector('canvas')!;
+    const rect = stubCanvasRect(canvas);
+    const host = canvas.parentElement!;
+    // Low on screen, so the ray meets the ground well short of the pivot the
+    // double-click set — a press whose *depth* differs is the only kind a
+    // dolly's re-centring can be seen in, since `pivotAt` only ever moves the
+    // pivot along the view axis.
+    const press = async (init: MouseEventInit) => {
+      await act(async () => {
+        host.dispatchEvent(new MouseEvent('pointerdown', {
+          bubbles: true,
+          button: 1,
+          clientX: rect.left + rect.width * 0.5,
+          clientY: rect.top + rect.height * 0.88,
+          ...init,
+        }));
+        host.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, button: 1 }));
+      });
+    };
+
+    await press({});
+    const afterOrbit = window.__worldViewport!.cameraTarget();
+    for (let i = 0; i < 3; i++) expect(afterOrbit[i]).toBeCloseTo(set[i], 2);
+
+    await press({ ctrlKey: true });
+    const afterDolly = window.__worldViewport!.cameraTarget();
+    expect(set.some((value, i) => Math.abs(afterDolly[i] - value) > 1)).toBe(true);
+    unmount();
+  });
+
+  it('drops a marker on the hit point, so the click is not invisible', async () => {
+    const { container, unmount } = render(<WorldViewport {...props()} />);
+    await act(async () => { await nextFrame(); });
+    // No marker before the first click.
+    expect(window.__worldViewport!.pivotMarkerPoint()).toBeNull();
+
+    await doubleClickCentre(container);
+
+    const point = window.__worldViewport!.pivotMarkerPoint();
+    expect(point).not.toBeNull();
+    // The literal hit, on the mesh — not the pivot's own view-axis
+    // projection (`cameraTarget`, asserted above), so this is a second,
+    // independent check that the same click was read.
+    expect(point![1]).toBeCloseTo(0, 0);
+    expect(Math.abs(point![0])).toBeLessThan(5000);
+    expect(Math.abs(point![2])).toBeLessThan(5000);
     unmount();
   });
 });

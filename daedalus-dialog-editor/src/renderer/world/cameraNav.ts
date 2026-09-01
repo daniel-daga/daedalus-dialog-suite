@@ -67,11 +67,16 @@ function emulatesMiddle(event: { button: number; altKey: boolean }): boolean {
  * seeing it — the hook the caller moves the pivot from. It hangs off this
  * listener rather than one of its own for exactly the ordering reason above:
  * the pivot has to be in place before OrbitControls records where a drag began.
+ *
+ * It is told *which* navigation the press is, because the three do not want
+ * the same thing from the pivot: a dolly and a pan only read the distance to
+ * it, so they want it under the cursor, while an orbit turns about it and so
+ * must keep the one a double-click deliberately set.
  */
 export function attachBlenderNav(
   controls: OrbitControls,
   host: HTMLElement,
-  onNavStart?: (event: PointerEvent) => void,
+  onNavStart?: (event: PointerEvent, nav: Exclude<Nav, 'none'>) => void,
 ): () => void {
   controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.ROTATE, RIGHT: null };
   controls.rotateSpeed = ORBIT_ROTATE_SPEED;
@@ -79,9 +84,7 @@ export function attachBlenderNav(
   const onPointerDown = (event: PointerEvent) => {
     const nav = navFor(event);
     if (nav === 'none') return;
-    // Every one of the three is scaled by the camera-to-target distance, so
-    // every one of them wants the pivot on what is being looked at.
-    onNavStart?.(event);
+    onNavStart?.(event, nav);
     // Chromium answers a middle press with autoscroll, which captures the
     // pointer and leaves the drag half-delivered.
     event.preventDefault();

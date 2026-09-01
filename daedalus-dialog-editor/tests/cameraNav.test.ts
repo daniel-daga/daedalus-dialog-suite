@@ -189,6 +189,23 @@ describe('cameraNav', () => {
     // one does — it is the same three navigations.
     expect(asked).toEqual(['1', '1', '1', '0']);
   });
+
+  test('the pivot hook is told which navigation the press is', () => {
+    // The caller has to tell them apart: an orbit must keep the pivot a
+    // double-click deliberately set, while a dolly or a pan still wants it
+    // under the cursor, because scaling the step by the distance to *that*
+    // is the whole of what they use it for.
+    const host = document.createElement('div');
+    const asked: string[] = [];
+    attachBlenderNav(fakeControls(), host, (_event, nav) => asked.push(nav));
+
+    middleDown(host);
+    middleDown(host, { shiftKey: true });
+    middleDown(host, { ctrlKey: true });
+    leftDown(host, { altKey: true });
+
+    expect(asked).toEqual(['orbit', 'pan', 'dolly', 'orbit']);
+  });
 });
 
 describe('frameVobs', () => {
