@@ -132,6 +132,71 @@ describe('SettingsService', () => {
       renameSpy.mockRestore();
     });
 
+    it('does not share a temp path between two app instances', async () => {
+      // Two instances of the app share one userData directory, and the write
+      // queue only serializes within an instance. A fixed `.tmp` name means the
+      // second `open(..., 'w')` truncates the first writer's file mid-write and
+      // one of the two renames then moves a file the other is still filling.
+      const openSpy = jest.spyOn(fsPromises, 'open');
+      const otherInstance = new SettingsService();
+
+      await Promise.all([
+        settingsService.setGothicInstallPath('C:/Gothic II'),
+        otherInstance.addRecentProject('/path/other', 'Other'),
+      ]);
+
+      const tmpPaths = openSpy.mock.calls.map((call) => String(call[0]));
+      expect(tmpPaths).toHaveLength(2);
+      expect(new Set(tmpPaths).size).toBe(2);
+      // Still siblings of the real file, so the rename stays on one volume.
+      for (const tmpPath of tmpPaths) {
+        expect(tmpPath.startsWith(settingsPath)).toBe(true);
+        expect(tmpPath).not.toBe(settingsPath);
+      }
+
+      openSpy.mockRestore();
+    });
+
+    it('retries a rename the other instance is contending for', async () => {
+      // Unique temp names are only half of it: Windows fails the rename with
+      // EPERM while another writer is renaming onto the same destination (an
+      // AV scanner or the indexer holding it does the same). Observed ~1 run in
+      // 3 with two instances saving at once, so a save must survive it.
+      const contended: NodeJS.ErrnoException = new Error(
+        'EPERM: operation not permitted, rename'
+      );
+      contended.code = 'EPERM';
+      const realRename = fsPromises.rename;
+      const renameSpy = jest
+        .spyOn(fsPromises, 'rename')
+        .mockRejectedValueOnce(contended)
+        .mockImplementation((...args: unknown[]) => realRename(...args));
+
+      await settingsService.addRecentProject('/path/contended', 'Contended');
+
+      expect(renameSpy).toHaveBeenCalledTimes(2);
+      expect(await settingsService.getRecentProjects()).toHaveLength(1);
+
+      renameSpy.mockRestore();
+    });
+
+    it('removes its temp file when the rename fails', async () => {
+      // Unique names only stay affordable if a failed write cleans up after
+      // itself; otherwise every ENOSPC leaves another orphan in userData.
+      const renameSpy = jest
+        .spyOn(fsPromises, 'rename')
+        .mockRejectedValueOnce(new Error('ENOSPC: simulated disk full'));
+
+      await expect(
+        settingsService.addRecentProject('/path/new', 'New')
+      ).rejects.toThrow();
+
+      const entries = await fs.readdir(testUserDataPath);
+      expect(entries.filter((name) => name.endsWith('.tmp'))).toEqual([]);
+
+      renameSpy.mockRestore();
+    });
+
     it('preserves a corrupt settings file and falls back to defaults on read', async () => {
       await fs.writeFile(settingsPath, '{ this is not valid json', 'utf8');
 

@@ -6,6 +6,16 @@ import { UpdaterSettings } from '../../shared/updater-types';
 
 const MAX_RECENT_PROJECTS = 10;
 
+// Distinguishes concurrent writers that share a process — two `SettingsService`
+// instances — where the pid alone cannot. Two *processes* are separated by the
+// pid, which is what the second app instance actually is.
+let tmpWriteCounter = 0;
+
+// Four retries at 10/20/30/40 ms — 100 ms in all, well past the window in which
+// two renames onto one destination can collide.
+const RENAME_RETRIES = 4;
+const RENAME_RETRY_DELAY_MS = 10;
+
 const DEFAULT_UPDATER_SETTINGS: UpdaterSettings = {
   autoCheckOnStartup: true,
   lastCheckTimestamp: null,
@@ -72,9 +82,16 @@ export class SettingsService {
    * Atomic write: serialize to a sibling temp file, best-effort fsync, then
    * rename over the real file. A crash/ENOSPC mid-write leaves the previous
    * settings.json intact rather than a torn file. Errors are not swallowed.
+   *
+   * The temp name is unique per writer. The queue only serializes within one
+   * instance, and two app instances share the userData directory: on a fixed
+   * name the second `open(..., 'w')` truncates the first writer's file
+   * mid-write, and the first rename moves it out from under the second, which
+   * then fails ENOENT. Unique names cost an orphan on a failed write, so the
+   * failure path unlinks.
    */
   private async writeSettings(settings: any): Promise<void> {
-    const tmpPath = `${this.settingsPath}.tmp`;
+    const tmpPath = `${this.settingsPath}.${process.pid}-${tmpWriteCounter++}.tmp`;
     const data = JSON.stringify(settings, null, 2);
     const handle = await fs.open(tmpPath, 'w');
     try {
@@ -88,7 +105,34 @@ export class SettingsService {
     } finally {
       await handle.close();
     }
-    await fs.rename(tmpPath, this.settingsPath);
+    try {
+      await this.renameOverSettings(tmpPath);
+    } catch (error) {
+      await fs.unlink(tmpPath).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  /**
+   * Windows fails a rename with EPERM/EACCES while another writer is renaming
+   * onto the same destination — the other app instance, or an AV scanner or the
+   * indexer holding the file for a moment. Observed on roughly one run in three
+   * with two instances saving at once, so the contention is retried rather than
+   * surfaced as a lost save. Any other error is the caller's immediately.
+   */
+  private async renameOverSettings(tmpPath: string): Promise<void> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await fs.rename(tmpPath, this.settingsPath);
+        return;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (attempt >= RENAME_RETRIES || (code !== 'EPERM' && code !== 'EACCES')) {
+          throw error;
+        }
+        await new Promise((resolve) => setTimeout(resolve, RENAME_RETRY_DELAY_MS * (attempt + 1)));
+      }
+    }
   }
 
   async getRecentProjects(): Promise<RecentProject[]> {

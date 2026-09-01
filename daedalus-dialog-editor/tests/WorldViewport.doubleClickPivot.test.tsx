@@ -246,21 +246,33 @@ describe('WorldViewport — double-click pivots the orbit onto the mesh', () => 
 
     await doubleClickAt(container, 0.3, 0.68);
     const set = window.__worldViewport!.cameraTarget();
+    // Settle the pose before pressing. `update()` re-aims the camera at
+    // `target`, so a press lands in one of two different geometries depending
+    // on whether a frame got in first — which under a loaded full-suite run is
+    // a coin toss, and was a real intermittent failure here. After this frame
+    // the camera looks at `set`, and every later frame is an idempotent
+    // `lookAt` of a target that only ever moves *along* the view axis.
+    await act(async () => { await nextFrame(); });
 
     const canvas = container.querySelector('canvas')!;
     const rect = stubCanvasRect(canvas);
     const host = canvas.parentElement!;
-    // Low on screen, so the ray meets the ground well short of the pivot the
+    // Below centre, so the ray meets the ground short of the pivot the
     // double-click set — a press whose *depth* differs is the only kind a
     // dolly's re-centring can be seen in, since `pivotAt` only ever moves the
-    // pivot along the view axis.
+    // pivot along the view axis. Not *far* below: from the settled pose the
+    // lower fifth of the screen looks past the fixture's single triangle
+    // (measured: nothing is hit at 0.7 or beyond), and a press that hits
+    // nothing falls back to the last pick, which is this very pivot — so the
+    // re-centring would be a no-op and the test would fail for the geometry
+    // rather than for the behaviour.
     const press = async (init: MouseEventInit) => {
       await act(async () => {
         host.dispatchEvent(new MouseEvent('pointerdown', {
           bubbles: true,
           button: 1,
           clientX: rect.left + rect.width * 0.5,
-          clientY: rect.top + rect.height * 0.88,
+          clientY: rect.top + rect.height * 0.6,
           ...init,
         }));
         host.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, button: 1 }));

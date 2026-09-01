@@ -147,8 +147,8 @@ with nobody watching. Triaged against the tree 2026-08-30, each verified still
 open. **Take the top unclaimed row and cross it off in the same commit; a run
 may not add rows.** `unattended-queue.md` — **section 5, the level editor, was
 first (Daniel, 2026-08-30)** and is now empty but for row 42, which went to
-Triage, so a run resumes at section 1: rows 1-12 landed 2026-08-30 and the next
-unclaimed row is 13. The corpus section 5's rows wanted is in
+Triage, so a run resumes at section 1: rows 1-12 landed 2026-08-30, row 13 on
+2026-09-01, and the next unclaimed row is 14. The corpus section 5's rows wanted is in
 `zenkit-node/worlds/`.
 
 **World surface, from Daniel's own sessions 2026-08-30.** Five of the six
@@ -159,8 +159,8 @@ landed; one is left and it is the one that was never root-caused.
   which holds only VOBs whose visual resolved. Falls back to the index's own
   position now. Whether a paste breaks it *besides* this is unwitnessed. §16.24
 
-- **`extractRoutineStatesByNpc` answers `{}`** — two `ProjectService` tests red
-  on master since bb78edc; the State lens reads it. Repro: those two test names.
+- **`extractRoutineStatesByNpc` answers `{}` — not reproducible at c514e8a**:
+  `ProjectService` is 55/55 in both jest configs. Daniel's to drop or re-witness.
 
 **Phase 1c — the overlay, at §16.19.** Not blocked.
 
@@ -241,6 +241,6 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **Double-click never pivoted where you clicked** (Daniel, 2026-09-01) — the
-  view-axis projection, and an orbit press that re-centred over the top of it.
-  Plus a VOB fallback and a marker of its own. Two caveats left open. §16.12
+- **Queue row 13, the settings temp path** (2026-09-01) — and the shared name
+  was the smaller half: two renames onto one destination fail EPERM on Windows
+  about one run in three, so a contended rename retries. `unattended-queue.md`
