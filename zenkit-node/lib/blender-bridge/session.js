@@ -39,6 +39,23 @@ function createSession(zenkit) {
       const session = requireSession(params.sessionId);
       if (method === 'getVisual') return serialize(zenkit.extractVisual(session.vfs, params.name));
       if (method === 'getTexture') return serialize(zenkit.decodeTexture(session.vfs, params.name, params.level ?? 0));
+      if (method === 'setVobTransform') {
+        zenkit.setVobPosition(session.world, params.path, params.position);
+        zenkit.setVobRotation(session.world, params.path, params.rotation, params.bbox);
+        return serialize(zenkit.getVobProps(session.world, params.path));
+      }
+      if (method === 'setVobProperties') {
+        if (params.props) zenkit.setVobProp(session.world, params.path, params.props);
+        if (params.classProps) zenkit.setVobClassProp(session.world, params.path, params.classProps);
+        return serialize(zenkit.getVobProps(session.world, params.path));
+      }
+      if (method === 'addVob') return { path: zenkit.insertVob(session.world, params.parentPath, params.options), vobIndex: serialize(zenkit.vobIndex(session.world)) };
+      if (method === 'reparentVob') return { path: zenkit.reparentVob(session.world, params.fromPath, params.parentPath, params.slot), vobIndex: serialize(zenkit.vobIndex(session.world)) };
+      if (method === 'saveWorld') {
+        zenkit.saveWorld(session.world, params.path);
+        session.path = params.path;
+        return { path: session.path };
+      }
       throw new Error(`unknown Blender bridge method ${method}`);
     },
   };
