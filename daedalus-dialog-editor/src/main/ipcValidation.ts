@@ -39,6 +39,13 @@ export function assertDialogName(name: unknown): asserts name is string {
   }
 }
 
+/** Assert a parseSource payload is a string. */
+export function assertParseSourcePayload(source: unknown): asserts source is string {
+  if (typeof source !== 'string') {
+    throw new Error('Invalid source payload: expected a string');
+  }
+}
+
 /** Assert a settings payload is a plain object or undefined. */
 export function assertSaveFileSettings(settings: unknown): void {
   if (settings !== undefined && !isPlainObject(settings)) {
