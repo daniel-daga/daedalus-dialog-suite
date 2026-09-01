@@ -17,6 +17,7 @@ mdk/
 
 # Generated corpus/roundtrip output
 /reports/
+/.worktrees/
 
 .claude/*
 !.claude/skills/
