@@ -5,6 +5,9 @@
   "description": "N-API binding around ZenKit for loading and saving ZenGin worlds, plus the zen-roundtrip fidelity harness",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
+  "bin": {
+    "daedalus-blender-bridge": "bin/blender-bridge.js"
+  },
   "scripts": {
     "install": "node scripts/install.js",
     "build:zenkit": "node scripts/build-zenkit.js",
