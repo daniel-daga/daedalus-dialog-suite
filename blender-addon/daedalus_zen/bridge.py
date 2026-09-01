@@ -32,3 +32,29 @@ class FrameReader:
             offset += 4 + length
         self._pending = data[offset:]
         return values
+
+
+class BridgeClient:
+    """Request correlation; process I/O is supplied by the Blender adapter."""
+    def __init__(self):
+        self._next_id = 1
+        self._pending = {}
+        self._reader = FrameReader()
+
+    def request_frame(self, method, params=None):
+        request_id = self._next_id
+        self._next_id += 1
+        self._pending[request_id] = None
+        return encode_frame({'id': request_id, 'version': 1, 'method': method, 'params': params or {}})
+
+    def receive(self, data):
+        frames = self._reader.push(data)
+        if not frames:
+            return None
+        frame = frames[0]
+        if frame['id'] not in self._pending:
+            raise ValueError('unknown bridge response')
+        del self._pending[frame['id']]
+        if 'error' in frame:
+            raise RuntimeError(frame['error']['message'])
+        return frame['result']
