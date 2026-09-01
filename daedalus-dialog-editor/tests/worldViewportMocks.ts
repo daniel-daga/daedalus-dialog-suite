@@ -25,11 +25,16 @@ export function mockThree() {
     WebGLRenderer: class {
       domElement = document.createElement('canvas');
       info = { render: { calls: 0, triangles: 0 } };
+      autoClear = true;
       setPixelRatio() {}
       setSize() {}
       render() {}
+      setRenderTarget() {}
+      getRenderTarget() { return null; }
+      setClearColor() {}
+      clear() {}
       dispose() {}
-      getContext() { return { finish: () => {}, readPixels: () => {} }; }
+      getContext() { return { COLOR: 0x1800, clearBufferfv: () => {}, finish: () => {}, readPixels: () => {} }; }
     },
   };
 }

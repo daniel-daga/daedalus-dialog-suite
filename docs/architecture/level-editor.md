@@ -2555,15 +2555,16 @@ one thing in its pick scene, the props.
 `SELECTED_ATTRIBUTE` sits beside `HIDDEN_ATTRIBUTE` and for the same reason: a
 VOB is one instance inside an `InstancedMesh` shared with every other VOB of its
 visual, so neither `mesh.visible` nor anything on the material can speak about
-one of them. The emphasis is a rim and a body tint mixed into `outgoingLight` in
-the VOB shader — no draw call, no geometry, no uniform. An outline *pass* would
-be a second `InstancedMesh` per visual, 724 more draw calls in the viewport that
-exists to keep per-frame work off the CPU (`render-performance.md`). The
-silhouette darkening is switched *off* on a selected VOB rather than layered
-under the emphasis, or the one term whose job is to darken that edge would fight
-the one whose job is to light it. `setSelectedVobs` clears by walking only what
-it last switched on, so a click uploads the attribute of the meshes that
-changed rather than all 724.
+one of them. The emphasis is a body tint mixed into `outgoingLight` in the VOB
+shader plus the attribute written into the outline *mask* — no draw call, no
+geometry, no uniform. The line itself is `VobOutline`'s: since 2026-09-01 the
+VOB outline is a screen-space pass, one full-screen quad over a two-attachment
+target, and the selection colour is one of the things the mask carries (plan
+§16.12). What §3 refused was an outline pass as a second `InstancedMesh` per
+visual — 724 more draw calls — and that is still refused; the mask rides the
+draws that exist. `setSelectedVobs` clears by walking only what it last
+switched on, so a click uploads the attribute of the meshes that changed
+rather than all 724.
 
 **The gizmo's anchor is the mode's, not the selection's.** Translate stands at
 the centroid; rotate stays on the last VOB picked. That asymmetry is not a wart

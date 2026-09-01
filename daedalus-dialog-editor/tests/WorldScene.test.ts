@@ -17,7 +17,7 @@
 import * as THREE from 'three';
 import { ROOT_MATRIX } from 'zen-world';
 import type { DecodedTexture, DrawGroup, InstancedVisual } from '../src/shared/worldTypes';
-import { DEFAULT_EXPOSURE, WorldScene, textureCacheFor } from '../src/renderer/world/WorldScene';
+import { DEFAULT_EXPOSURE, WORLD_LAYER, WorldScene, textureCacheFor } from '../src/renderer/world/WorldScene';
 
 function group(overrides: Partial<DrawGroup> = {}): DrawGroup {
   return {
@@ -716,11 +716,14 @@ describe('WorldScene', () => {
     expect(world.fragmentShader).not.toContain('vVobSelected');
   });
 
-  test('VOB materials darken towards the silhouette and the world mesh does not', () => {
-    // "A VOB is hard to tell from the world mesh" (2026-08-27): the legibility
-    // aid is a faint outline, and it hangs on the one thing that separates a
-    // VOB from the ground it stands on — its material. The world mesh must not
-    // get it, or the outline marks nothing.
+  test('VOB materials write the outline mask and the world mesh writes an empty one', () => {
+    // "A VOB is hard to tell from the world mesh" (2026-08-27), and the rim
+    // term that answered it drew nothing a human could see (§16.12): a flat
+    // face has no facing gradient and a billboard's silhouette is its texture's
+    // cutout. So the outline is no longer shaded — it is a screen-space line
+    // drawn by `VobOutline` wherever a *mask* changes, and this is the mask's
+    // producer: a second colour attachment every VOB fragment writes and every
+    // world-mesh fragment clears.
     const scene = new WorldScene();
     scene.setWorldMesh({ groups: [group()], bbox: [] });
     scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
@@ -732,49 +735,71 @@ describe('WorldScene', () => {
     // handed to both and whichever material compiled first decides.
     expect(vob.customProgramCacheKey()).not.toBe(world.customProgramCacheKey());
 
-    // Nothing extra is drawn: one world mesh, one InstancedMesh, no outline
-    // pass. A second draw per VOB visual is 724 extra draw calls a frame.
+    // Nothing extra is drawn: one world mesh, one InstancedMesh, no second
+    // mesh per visual. The mask rides the draw that exists.
     expect(scene.root.children).toHaveLength(2);
 
     const vobShader = compile(vob);
-    // The silhouette term itself: a view-space normal carried across, the
-    // instance's own rotation folded into it (every VOB is an instance, so a
-    // normal left in visual space would light the outline from the wrong side),
-    // and an exponent that keeps the darkening off the faces pointing at the
-    // camera.
-    expect(vobShader.vertexShader).toContain('mat3( instanceMatrix )');
-    expect(vobShader.vertexShader).toContain('vVobNormal = normalMatrix *');
-    expect(vobShader.fragmentShader).toContain('vVobNormal');
-    expect(vobShader.fragmentShader).toMatch(/outgoingLight \*= mix\(/);
+    // The mask has three channels: "a VOB is here", a key that tells two
+    // touching VOBs apart (hashed from the instance's own origin, so it costs
+    // no attribute), and the selection flag — so the line between a selected
+    // VOB and its neighbour is drawn in the selection colour.
+    expect(vobShader.fragmentShader).toContain('layout(location = 1) out highp vec4 vobMask;');
+    expect(vobShader.vertexShader).toContain('instanceMatrix[ 3 ].xyz');
+    expect(vobShader.vertexShader).toMatch(/vVobKey = /);
+    expect(vobShader.fragmentShader).toMatch(/vobMask = vec4\( 1\.0, vVobKey, vVobSelected, 1\.0 \);/);
     expect(vobShader.fragmentShader).toContain('#include <opaque_fragment>');
+    // And no rim: the facing term is gone with the mechanism it belonged to.
+    expect(vobShader.fragmentShader).not.toContain('vobFacing');
+    expect(vobShader.vertexShader).not.toContain('vVobNormal');
 
-    // Faint, and unmistakably weaker than a selection state, but the bounds
-    // alone are what let the first pair of numbers ship as an invisible
-    // hairline (level-editor.md §16.12): 0.7 and 4 satisfy both of these and
-    // draw nothing a human can see.
-    const darken = Number(/mix\(\s*1\.0,\s*([0-9.]+),/.exec(vobShader.fragmentShader)?.[1]);
-    expect(darken).toBeGreaterThan(0.4);
-    expect(darken).toBeLessThan(1);
-    const power = Number(/pow\(\s*1\.0 - vobFacing,\s*([0-9.]+)\s*\)/.exec(vobShader.fragmentShader)?.[1]);
-    expect(power).toBeGreaterThanOrEqual(1.5);
-
-    // So the constants are held to a *width*, which is the thing a bound
-    // cannot express and the thing that was actually wrong. Read on a sphere,
-    // the only VOB whose facing term has a closed form: at a tenth of the
-    // radius in from the silhouette the surface faces the eye at
-    // sqrt(1 - 0.9^2), so the darkening there is the effect's strength over a
-    // band a human can point at rather than over the last sub-pixel. Below 5 %
-    // it is not an outline, whatever the constants say.
-    const facingAtBand = Math.sqrt(1 - 0.9 ** 2);
-    const strengthAtBand = (1 - darken) * (1 - facingAtBand) ** power;
-    expect(strengthAtBand).toBeGreaterThan(0.05);
-
-    // And the world mesh gets none of it: its vertex shader is the stock one,
-    // and the only thing its fragment shader gained is the exposure term below.
+    // The world mesh declares the same output and writes nothing into it — an
+    // attachment a program never writes is undefined, not zero, and a wall
+    // that left garbage in the mask would grow an outline.
     const worldShader = compile(world);
     expect(worldShader.vertexShader).toBe(THREE.ShaderLib.basic.vertexShader);
-    expect(worldShader.fragmentShader).not.toContain('vVobNormal');
-    expect(worldShader.fragmentShader).not.toMatch(/outgoingLight \*= mix\(/);
+    expect(worldShader.fragmentShader).toContain('layout(location = 1) out highp vec4 vobMask;');
+    expect(worldShader.fragmentShader).toMatch(/vobMask = vec4\( 0\.0 \);/);
+    expect(worldShader.fragmentShader).not.toContain('vVobKey');
+  });
+
+  test('a blended VOB leaves the mask alone, so a flame quad gets no rectangle', () => {
+    // A blended surface blends *every* attachment with its own alpha, so the
+    // mask it writes has to be all zero — then the blend leaves what was there.
+    // The choice is a define, not a second hook: defines are part of the
+    // program cache key, so the two variants stay two programs.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({
+      visuals: [visual({ groups: [group({ alphaFunc: 2, lights: null })] })],
+      stats: {} as never,
+    });
+    const blended = scene.instancedMeshes[0].material as THREE.MeshBasicMaterial;
+    expect(blended.transparent).toBe(true);
+    expect(blended.defines).toEqual({ VOB_MASK_BLENDED: '' });
+    const shader = compile(blended);
+    expect(shader.fragmentShader).toMatch(/#ifdef VOB_MASK_BLENDED\s+vobMask = vec4\( 0\.0 \);\s+#else/);
+
+    const opaque = new WorldScene();
+    opaque.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    expect((opaque.instancedMeshes[0].material as THREE.MeshBasicMaterial).defines).toBeUndefined();
+  });
+
+  test('the world and its VOBs draw on their own layer, so the outline pass can draw them alone', () => {
+    // `VobOutline` renders the world into the masked target with the camera on
+    // this layer, composites, and only then draws everything else — gizmo,
+    // waynet, markers — on top with the world's depth restored. An object left
+    // on layer 0 in this scene would be drawn twice; one on this layer that is
+    // not world geometry would be drawn under the line.
+    const scene = new WorldScene();
+    scene.setWorldMesh({ groups: [group()], bbox: [] });
+    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+
+    const worldLayer = new THREE.Layers();
+    worldLayer.set(WORLD_LAYER);
+    expect(WORLD_LAYER).not.toBe(0);
+    for (const mesh of [...scene.worldMeshes, ...scene.instancedMeshes]) {
+      expect(mesh.layers.mask).toBe(worldLayer.mask);
+    }
   });
 
   test('brightness is one shared uniform that lifts the picture and nothing else', () => {
@@ -797,8 +822,8 @@ describe('WorldScene', () => {
     expect(worldShader.fragmentShader).toContain('outgoingLight *= uExposure;');
     expect(vobShader.fragmentShader).toContain('outgoingLight *= uExposure;');
     expect(worldShader.fragmentShader).toContain('uniform float uExposure;');
-    // After the silhouette outline, not instead of it: the two multiply.
-    expect(vobShader.fragmentShader.indexOf('outgoingLight *= mix('))
+    // After the selection tint, not instead of it: the two multiply.
+    expect(vobShader.fragmentShader.indexOf('outgoingLight = mix('))
       .toBeLessThan(vobShader.fragmentShader.indexOf('outgoingLight *= uExposure;'));
 
     // ONE uniform object for the whole scene, so a slider drag is one

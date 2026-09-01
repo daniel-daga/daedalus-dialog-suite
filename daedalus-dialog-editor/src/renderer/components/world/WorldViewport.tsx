@@ -19,6 +19,7 @@ import { TerrainMarker, PIVOT_COLOR, PIVOT_SIZE } from '../../world/TerrainMarke
 import {
   SELECTED_ATTRIBUTE, WorldScene, textureCacheFor, type TextureCache,
 } from '../../world/WorldScene';
+import { VobOutline } from '../../world/VobOutline';
 import { BvhBuilder } from '../../world/BvhBuilder';
 import { VobPicker } from '../../world/VobPicker';
 import { NO_PICK } from '../../world/pickIds';
@@ -382,6 +383,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
 
       const raycaster = new THREE.Raycaster();
       raycaster.firstHitOnly = true;
+      raycaster.layers.enableAll();
       raycaster.set(
         new THREE.Vector3(...zenToThree(origin)),
         new THREE.Vector3(...zenToThree([0, -1, 0])).normalize(),
@@ -496,7 +498,9 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
 
     let disposed = false;
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x10141c);
+    // No `scene.background`: the outline pass owns every clear of the frame,
+    // and a Scene with a background forces one of its own. The sky is its.
+    const outline = new VobOutline(0x10141c);
 
     // The same key the camera pose is restored on, below.
     const worldKey = bbox.join(',');
@@ -511,6 +515,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
     renderer.setPixelRatio(1);
     renderer.setSize(host.clientWidth || 1, host.clientHeight || 1);
+    outline.setSize(host.clientWidth || 1, host.clientHeight || 1);
     host.appendChild(renderer.domElement);
 
     const camera = new THREE.PerspectiveCamera(
@@ -530,6 +535,9 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     // rather than beside the click handler because the pivot needs it first.
     const raycaster = new THREE.Raycaster();
     raycaster.firstHitOnly = true;
+    // The world mesh draws on `WORLD_LAYER` (the outline pass draws the frame
+    // in two halves), and a raycaster only meets what it shares a layer with.
+    raycaster.layers.enableAll();
     const pointer = new THREE.Vector2();
 
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -1154,6 +1162,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       const width = host.clientWidth || 1;
       const height = host.clientHeight || 1;
       renderer.setSize(width, height);
+      outline.setSize(width, height);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
     });
@@ -1216,7 +1225,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
         ));
       }
 
-      renderer.render(scene, camera);
+      outline.render(renderer, scene, camera);
     };
     const startDraw = () => {
       if (running || pausedRef.current) return;
@@ -1247,7 +1256,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
         camera.position.set(pose.position[0], pose.position[1], pose.position[2]);
         camera.lookAt(target.set(pose.lookAt[0], pose.lookAt[1], pose.lookAt[2]));
       },
-      render: () => renderer.render(scene, camera),
+      render: () => outline.render(renderer, scene, camera),
       finishGpu: () => gl.finish(),
       drawCalls: () => renderer.info.render.calls,
       triangles: () => renderer.info.render.triangles,
@@ -1356,7 +1365,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
           camera.position.set(...zenToThree(from));
           camera.lookAt(target.set(...zenToThree(at)));
           camera.updateMatrixWorld();
-          renderer.render(scene, camera);
+          outline.render(renderer, scene, camera);
 
           // The default framebuffer, read in the same task as the render that
           // filled it — the pixels a human would have screenshotted.
@@ -1425,6 +1434,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       scene.remove(transform.getHelper());
       transform.dispose();
       picker.dispose();
+      outline.dispose();
       bvh.dispose();
       pivotMarker?.dispose();
       world.dispose();

@@ -27,74 +27,51 @@ const ALPHA_TEST = 0.5;
 
 /**
  * A VOB is hard to tell from the world mesh (2026-08-27), and the answer asked
- * for is a faint outline on VOB visuals.
+ * for is an outline on VOB visuals: a thin bright line along the edge.
  *
- * It is drawn *inside* the VOB's own shader rather than as an outline pass,
- * because the alternative is a second `InstancedMesh` per visual — 724 more
- * draw calls every frame, in the viewport that exists to keep per-frame work
- * off the CPU (render-performance.md). This costs no draw call, no geometry, no
- * uniform to update and no CPU work at all: it is a handful of ALU per VOB
- * fragment, and only VOB materials compile it.
+ * The line itself is not drawn here. It is drawn by `VobOutline`, one
+ * full-screen draw over the finished world, wherever a *mask* changes between
+ * a pixel and its neighbour. What this shader does is write that mask — a
+ * second colour attachment beside the picture, filled by the same draw calls
+ * that paint the VOB, so it costs no draw call, no geometry and no CPU work.
  *
- * What it does is darken the surface as it turns away from the eye, so the
- * silhouette of every VOB reads as a soft dark contour against whatever it
- * stands in front of. `MeshBasicMaterial` and baked vertex colours are no
- * obstacle: this multiplies the outgoing light after the texture and the baked
- * colour, and adds no light source.
+ * It replaced a per-fragment rim term, which darkened a surface as it turned
+ * away from the eye. That never became a line a human could see
+ * (level-editor.md §16.12): a flat face has no facing gradient at all, so a
+ * box's edge is a step the term cannot find, and the most-placed visuals in
+ * NewWorld are camera-facing billboards whose silhouette is the texture's
+ * cutout, not the polygon. A screen-space line has neither problem — it reads
+ * the picture, and a discarded cut-out fragment writes no mask.
  *
- * Deliberately faint and never a selection state — selection is the gizmo, and
- * a legibility aid that competed with it would make the selected VOB harder to
- * find, not easier.
+ * The three channels of the mask, and why each exists:
+ *   r  "a VOB is here", against the world mesh and the sky, which write zero
+ *   g  a key that tells two *touching* VOBs apart, so a bush in front of a
+ *      tree still has its own line. Hashed from the instance's origin in the
+ *      vertex shader: it costs no attribute, and two neighbours collide once
+ *      in 256
+ *   b  the selection flag, so the line around a selected VOB — and the line
+ *      between it and whatever it touches — is drawn in the selection colour
  */
-const OUTLINE_DARKEN = 0.5;
-
-/**
- * Keeps the darkening near the silhouette without shrinking it to a hairline.
- *
- * The first pair was 0.7 and 4, on a comment claiming a surface had to be
- * within ~25° of edge-on to lose a quarter of the effect. That reading was
- * backwards — at 25° off edge-on a fourth power leaves 11 % of the effect, so
- * the whole visible band sat outside `d/R = 0.971` on a sphere: under a pixel
- * on any VOB smaller than the screen, and **nothing a human could see**
- * (level-editor.md §16.12). At 2 the band is the outer tenth of the radius,
- * which is what `WorldScene.test.ts` now holds the pair to.
- */
-const OUTLINE_POWER = 2.0;
+export const MASK_OUTPUT = 'vobMask';
 
 /**
  * The selection emphasis (level-editor.md §16.24 1).
  *
- * The darkening above is deliberately never a selection state, and that left
- * selection as the gizmo alone — so a VOB whose gizmo was off screen, or one of
- * several selected, read as unselected. This is the missing half, and it is the
- * *same* mechanism the hiding uses rather than an outline pass: a second
- * `InstancedMesh` per visual would be 724 more draw calls every frame
- * (render-performance.md), where a per-instance attribute costs one float per
- * instance and a few ALU per fragment of the VOBs that are actually selected.
+ * The line is the outline pass's, in `VobOutline`'s `SELECT_COLOR`, and it is
+ * what carries the selection: a selected VOB is outlined in orange against
+ * whatever it stands in front of. This is the other half, a body tint, for the
+ * case a line cannot cover — a VOB filling the screen, whose outline is off it
+ * — and it rides the *same* per-instance attribute rather than a second pass,
+ * for the reason at {@link HIDDEN_ATTRIBUTE}.
  *
  * Orange, because the gizmo's own axes are pure red, green and blue and the
- * selection must not read as one of them. The rim is what carries it — a
- * selected VOB is outlined against whatever it stands in front of — and the
- * body tint is what keeps it legible head-on, where a rim is barely visible.
- *
- * The silhouette darkening is switched *off* on a selected VOB rather than
- * layered under this, or the emphasis would be drawn over the one term whose
- * job is to make that edge darker.
+ * selection must not read as one of them.
  */
 const SELECT_COLOR = 'vec3( 1.0, 0.55, 0.12 )';
 
 /** How far the body of a selected VOB is pulled towards the colour. Enough to
  *  read at a glance, low enough to leave the texture recognisable. */
 const SELECT_TINT = 0.28;
-
-/** And at the silhouette, where the emphasis does its work. */
-const SELECT_RIM = 0.9;
-
-/** The rim's falloff — a band that survives at a distance rather than a
- *  hairline that aliases away. It used to be the wider of the two; the
- *  silhouette darkening has since been widened to match it, for the reason at
- *  `OUTLINE_POWER`. What still separates them is strength, not width. */
-const SELECT_POWER = 2.0;
 
 /**
  * The name of the per-instance "this one is selected" attribute.
@@ -107,49 +84,80 @@ const SELECT_POWER = 2.0;
 export const SELECTED_ATTRIBUTE = 'instanceSelected';
 
 /**
- * The silhouette half of the `onBeforeCompile` every VOB material shares.
+ * The define a blended VOB material carries.
  *
- * It is not installed directly: `vobShading` wraps it together with the
- * exposure term, and the note there about `customProgramCacheKey` is what keeps
- * the VOB program and the world-mesh program apart.
+ * A blended surface blends *every* attachment with its own alpha, so a flame
+ * quad that wrote the mask would blend a rectangle into it and be outlined as
+ * one. It writes all zeros instead, and the blend leaves what was there. A
+ * define rather than a second hook, because a define is part of the program
+ * cache key and the two variants stay two programs.
  */
-function outlineVobs(shader: THREE.WebGLProgramParametersWithUniforms): void {
+export const MASK_BLENDED_DEFINE = 'VOB_MASK_BLENDED';
+
+/**
+ * The layer the world's own geometry draws on — the world mesh and every VOB.
+ *
+ * `VobOutline` draws a frame in two halves: the world alone into the masked
+ * target, then everything else — gizmo, waynet, markers, all of it on layer
+ * 0 — on top of the composite, with the world's depth restored. The camera
+ * picks the half; this is how the geometry says which one it belongs to. A
+ * raycaster that wants the world has to enable it too.
+ */
+export const WORLD_LAYER = 1;
+
+/**
+ * The mask half of the `onBeforeCompile` every VOB material shares.
+ *
+ * It is not installed directly: `vobShading` wraps it together with the hide
+ * and the exposure term, and the note there about `customProgramCacheKey` is
+ * what keeps the VOB program and the world-mesh program apart.
+ */
+function maskVobs(shader: THREE.WebGLProgramParametersWithUniforms): void {
   shader.vertexShader = `attribute float ${SELECTED_ATTRIBUTE};
-varying vec3 vVobNormal;\nvarying vec3 vVobView;\nvarying float vVobSelected;\n${
+varying float vVobKey;\nvarying float vVobSelected;\n${
     shader.vertexShader.replace(
       '#include <project_vertex>',
       `#include <project_vertex>
-  // After project_vertex, so mvPosition already carries the instance.
-  vec3 vobNormal = normal;
+  // The instance's origin, which no two VOBs share, folded to one byte.
+  vec3 vobOrigin = vec3( 0.0 );
   #ifdef USE_INSTANCING
-    vobNormal = mat3( instanceMatrix ) * vobNormal;
+    vobOrigin = instanceMatrix[ 3 ].xyz;
   #endif
-  vVobNormal = normalMatrix * vobNormal;
-  vVobView = -mvPosition.xyz;
+  vVobKey = fract( sin( dot( vobOrigin, vec3( 12.9898, 78.233, 37.719 ) ) ) * 43758.5453 );
   // Carried to the fragment stage rather than acted on here: the emphasis is a
   // colour, and a selected VOB has to stay exactly where every op reads it.
   vVobSelected = ${SELECTED_ATTRIBUTE};`,
     )
   }`;
 
-  shader.fragmentShader = `varying vec3 vVobNormal;\nvarying vec3 vVobView;\nvarying float vVobSelected;\n${
+  shader.fragmentShader = `layout(location = 1) out highp vec4 ${MASK_OUTPUT};
+varying float vVobKey;\nvarying float vVobSelected;\n${
     shader.fragmentShader.replace(
       '#include <opaque_fragment>',
-      // abs(), because the mirrored root flips the sign of the normal and a
-      // signed facing term would outline the front faces instead of the edges.
-      `float vobFacing = abs( dot( normalize( vVobNormal ), normalize( vVobView ) ) );
-  float vobRim = pow( 1.0 - vobFacing, ${OUTLINE_POWER.toFixed(1)} );
-  // The darkening is the legibility aid, and it is switched off where the
-  // selection emphasis takes over the same edge — see SELECT_COLOR.
-  outgoingLight *= mix( mix( 1.0, ${OUTLINE_DARKEN.toFixed(2)}, vobRim ), 1.0, vVobSelected );
-  outgoingLight = mix(
-    outgoingLight,
-    ${SELECT_COLOR},
-    vVobSelected * mix(
-      ${SELECT_TINT.toFixed(2)}, ${SELECT_RIM.toFixed(2)},
-      pow( 1.0 - vobFacing, ${SELECT_POWER.toFixed(1)} )
+      `outgoingLight = mix( outgoingLight, ${SELECT_COLOR}, vVobSelected * ${SELECT_TINT.toFixed(2)} );
+  #ifdef ${MASK_BLENDED_DEFINE}
+    ${MASK_OUTPUT} = vec4( 0.0 );
+  #else
+    ${MASK_OUTPUT} = vec4( 1.0, vVobKey, vVobSelected, 1.0 );
+  #endif
+  #include <opaque_fragment>`,
     )
-  );
+  }`;
+}
+
+/**
+ * The world mesh's side of the mask: declared, and written empty.
+ *
+ * An attachment a program never writes is *undefined*, not zero — a wall that
+ * left whatever was in the register would grow an outline. Blended world
+ * surfaces (water) blend a zero in, which leaves the VOB behind them outlined:
+ * what is behind water is on screen, and reads as what it is.
+ */
+function maskWorld(shader: THREE.WebGLProgramParametersWithUniforms): void {
+  shader.fragmentShader = `layout(location = 1) out highp vec4 ${MASK_OUTPUT};\n${
+    shader.fragmentShader.replace(
+      '#include <opaque_fragment>',
+      `${MASK_OUTPUT} = vec4( 0.0 );
   #include <opaque_fragment>`,
     )
   }`;
@@ -190,7 +198,7 @@ function exposeBakedLight(
   shader.fragmentShader = `uniform float uExposure;\n${
     shader.fragmentShader.replace(
       '#include <opaque_fragment>',
-      // After the texture, the baked colour and the outline, and before the
+      // After the texture, the baked colour and the selection tint, and before the
       // fragment is written: the term is on the finished picture, which is what
       // makes it a viewport setting rather than a change to the world.
       `outgoingLight *= uExposure;
@@ -247,13 +255,14 @@ ${
  */
 function worldShading(exposure: Exposure) {
   return (shader: THREE.WebGLProgramParametersWithUniforms): void => {
+    maskWorld(shader);
     exposeBakedLight(shader, exposure);
   };
 }
 
 function vobShading(exposure: Exposure) {
   return (shader: THREE.WebGLProgramParametersWithUniforms): void => {
-    outlineVobs(shader);
+    maskVobs(shader);
     hideInstances(shader);
     exposeBakedLight(shader, exposure);
   };
@@ -365,6 +374,7 @@ export class WorldScene {
     for (const group of payload.groups) {
       const mesh = new THREE.Mesh(this.geometry(group), this.material(group));
       mesh.matrixAutoUpdate = false;
+      mesh.layers.set(WORLD_LAYER);
       this.root.add(mesh);
       this.worldMeshes.push(mesh);
     }
@@ -395,6 +405,7 @@ export class WorldScene {
         }
         mesh.instanceMatrix.needsUpdate = true;
         mesh.matrixAutoUpdate = false;
+        mesh.layers.set(WORLD_LAYER);
         mesh.computeBoundingSphere();
         // Every VOB shown, until a class is switched off. The attribute is made
         // here rather than on the first hide so that the pick pass — which
@@ -799,7 +810,7 @@ export class WorldScene {
   }
 
   /** @param vob whether this draws a VOB rather than the world mesh — the one
-   *   difference is the silhouette outline, see `outlineVobs`. Both kinds carry
+   *   difference is the outline mask, see `maskVobs`. Both kinds carry
    *   the exposure term: an interior's walls are world mesh, so a brightness
    *   control the world mesh did not take would light nothing that is dark. */
   private material(group: DrawGroup, vob = false): THREE.MeshBasicMaterial {
@@ -836,6 +847,9 @@ export class WorldScene {
       material.transparent = true;
       material.depthWrite = false;
       if (group.alphaFunc === 3) material.blending = THREE.AdditiveBlending;
+      // A blended VOB must not blend a rectangle into the outline mask.
+      // Every material takes defines at runtime; only the typings stop short.
+      if (vob) (material as THREE.Material & { defines?: Record<string, string> }).defines = { [MASK_BLENDED_DEFINE]: '' };
     }
 
     this.materials.push(material);

@@ -1160,8 +1160,8 @@ evidence.
 ### 16.12 Two viewport constants only Daniel's hands can settle
 
 Both landed with numbers chosen by reasoning, and neither had a test that could
-ever judge them. **The pivot is settled; the outline is diagnosed, retuned and
-awaiting one look.**
+ever judge them. **The pivot is settled; the outline is a screen-space line now, and
+Daniel is tuning it by eye.**
 
 **The pivot — settled by use, 2026-09-01**, and both halves reversed.
 `ORBIT_ROTATE_SPEED` is `1` (since 2026-08-27), not the `0.4` named here.
@@ -1185,47 +1185,45 @@ awaiting one look.**
 - The dot is `TerrainMarker` in `PIVOT_COLOR`, not the placement pink: in one
   colour they were indistinguishable where they landed together.
 
-**The VOB outline drew nothing at all, 2026-09-01**, and the first pair of
-numbers is why. On retail NewWorld Daniel could see no outline on any VOB, and
-no rim on a selected one either — a selected VOB read as a flat orange tint.
+**The VOB outline drew nothing at all, 2026-09-01**, and the mechanism is
+why — not the numbers. The first pair (`0.7`/`4`) put the whole band under a
+pixel, and a retuned pair (`0.5`/`2`) drew "at most a bit brighter" on retail
+NewWorld (Daniel, 2026-09-01). Both were a per-fragment rim term, darkening a
+surface as it turns from the eye, and that term has no edge to find on the
+geometry VOBs actually are: a flat face has no facing gradient at all, so a
+box's edge is a step, and the most-placed visuals — `NW_NATURE_BUSH_120P`
+×690, `NW_NATURE_GRASSGROUP_01` ×688 (100 % flat), `NW_NATURE_FARNTEPPICH_306P`
+×565, `NW_CAVEWEBS_V201` ×455 (100 % flat) — are camera-facing billboards
+whose silhouette is the texture's cutout, with `vobFacing ≈ 1` across the
+whole quad. The stored normals were ruled out by measurement (230,395 of
+230,395 proto-mesh triangles decided; wedge-normal spread >15° on 56.9 % of
+placed visuals), so the failure was never the data.
 
-*The GLSL compiles*, and that half is settled permanently without a GPU: the
-selection tint is emitted by the same injected block as the darkening
-(`outlineVobs`), from the same `vobFacing`, so a visible tint proves the vertex
-replacement ran, the varyings are written and the program links. A shader-link
-error would have shown as black or missing props, and did not.
+*What replaced it is a screen-space line, `VobOutline`.* The world pass
+renders into a two-attachment target: the picture on 0 and a **mask** on 1,
+written by the VOB shader — `r` "a VOB is here", `g` a per-instance key hashed
+from the instance origin so two touching VOBs stay distinct, `b` the selection
+flag; the world mesh writes zero, a blended VOB writes zero under a define so a
+flame quad does not blend a rectangle in. One full-screen quad then paints a
+pixel wherever a neighbour's mask *outranks* it — one pixel wide, on the
+outside of every edge — and writes the target's depth back so the overlays
+drawn after it are occluded as before. The frame is two halves through the
+camera's layers: the world's geometry on `WORLD_LAYER`, everything else on 0,
+which is the one obligation on the rest of the viewport (both raycasters
+`enableAll`). Cost: one draw call and a full-screen copy per frame, against
+the 724-draw-call outline pass §3 refused. The colour attachment is sRGB8 so
+eight bits do not band the darks. `VobOutline.test.ts` holds the frame's call
+order and the composite's source; `WorldScene.test.ts` holds the mask.
 
-*What was wrong is the falloff, and the comment that justified it.* It claimed
-that at a fourth power a surface had to be within ~25° of edge-on to lose a
-quarter of the effect. Backwards: at 25° off edge-on a fourth power leaves
-**11 %** of it, so `0.7`/`4` darkened by 3 % there. Read on a sphere — the one
-VOB whose facing term has a closed form — a 10 %-or-more dip lived entirely
-outside `d/R = 0.971`, the outer 3 % of the radius: under one pixel on any VOB
-that is not filling the screen. Now `OUTLINE_DARKEN = 0.5` / `OUTLINE_POWER =
-2`, which puts the band in the outer tenth of the radius, and
-`WorldScene.test.ts` holds the pair to a **width** rather than to bounds — the
-old assertions (`darken > 0.6`, `power >= 2`) were both satisfied by the
-invisible pair. **Not yet judged by eye**: whether the new pair is right is one
-look at NewWorld.
-
-*Two things were ruled out by measurement rather than by argument.* The stored
-normals are real and varied — `check-visual-winding.js` decides 230,395 of
-230,395 proto-mesh triangles with them — and they are not flat: over the 355
-visuals NewWorld actually places (84,829 triangles), the largest angle between
-a triangle's three wedge normals is <1° on 24.9 %, 1-15° on 18.3 % and >15° on
-56.9 %. So a per-fragment rim term has a gradient to work with on most VOB
-geometry, and the failure was never the data.
-
-*The exception is structural and no constant fixes it.* The most-placed visuals
-in NewWorld are alpha-tested billboards — `NW_NATURE_BUSH_120P` ×690,
-`NW_NATURE_GRASSGROUP_01` ×688 (100 % flat), `NW_NATURE_FARNTEPPICH_306P` ×565,
-`NW_CAVEWEBS_V201` ×455 (100 % flat). Their visible silhouette is the texture's
-alpha cutout, not the polygon edge, and a camera-facing quad has
-`vobFacing ≈ 1` across its whole surface. A geometric rim term cannot outline
-them, at any darkening or power. If foliage has to read as VOB, the mechanism
-has to change — a depth/normal edge pass over the picked-VOB buffer is the
-obvious candidate, and it is a draw call the viewport currently refuses (§3).
-**Uncarded**, and it is the open question this subsection now holds.
+*Seen on hardware, 2026-09-01*: every VOB in a retail NewWorld frame carried
+the line, cut-out trees included — the cutout silhouette, which the rim never
+could. Daniel's first look: present, "very bright". It went to one pixel on
+the outside (two — one each side — doubled the fringe on foliage, where every
+gap between branches is an edge) and to `OUTLINE_OPACITY = 0.55` over the
+picture; the selection line stays opaque. **Still Daniel's to judge**:
+opacity, colour, and whether the foliage fringe wants more — that fringe is
+the cutout being outlined faithfully, and the only lever left is to not
+outline gaps below some size, which is a different pass.
 
 ### 16.15 Class-specific insertion (§14.1 1.3)
 
