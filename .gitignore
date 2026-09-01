@@ -18,6 +18,8 @@ mdk/
 # Generated corpus/roundtrip output
 /reports/
 /.worktrees/
+/__pycache__/
+*.pyc
 
 .claude/*
 !.claude/skills/
