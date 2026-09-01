@@ -27,11 +27,41 @@ Use package-local instructions when working inside a workspace:
 3. Keep changes focused and minimal; do not add unnecessary docs or scaffolding.
 4. Verify with workspace-level commands before claiming completion.
 
+## Worktrees for Parallel Agents
+
+**One agent, one worktree.** Two agents in the same checkout collide — on the
+working tree, on `git stash`, on a full-suite run that reads a neighbour's
+half-written file. Unless a human tells you otherwise, do not work in the main
+checkout while another agent is active; take a worktree of your own.
+
+```
+npm run wt:new  -- <name>     # .worktrees/<name> on branch agent/<name>, installed
+npm run wt:list               # every worktree, its branch, whether it is dirty
+npm run wt:rm   -- <name>     # refuses while dirty or ahead of master
+```
+
+- `wt:new` branches from `master` (`--from <ref>` to change it), copies the
+  prebuilt native addons out of the main checkout, and runs `pnpm install` —
+  about a minute, and **no ZenKit or tree-sitter compile**, because the seeded
+  `.node` files satisfy `node-gyp-build` before either install hook builds.
+  `--no-install` skips the install; `--branch <b>` overrides `agent/<name>`.
+- The seeded addons are a *copy of whatever the main checkout last built*. They
+  go stale exactly as described in `docs/reference/environment-hazards.md`,
+  "Building the native addon" — rebuild inside your worktree if you touch the
+  binding or the grammar.
+- Land your work by merging `agent/<name>` into `master` from the main checkout,
+  then `npm run wt:rm -- <name>`. The branch survives the removal.
+- Never edit files in another agent's worktree, and never `git stash` — it takes
+  the whole tree, which in a shared checkout is somebody else's work.
+- Working directories are per-agent but the git *repository* is shared: a branch
+  name, a `git gc`, and a rebase of `master` are still visible to everyone.
+
 ## Useful Root Commands
 
 - `npm run build` - build all workspaces
 - `npm run test` - run tests across workspaces
 - `npm run test:roundtrip-corpus` - parser corpus roundtrip check
+- `npm run wt:new -- <name>` - a worktree of your own (see above)
 
 ## Sandbox Notes (Codex)
 

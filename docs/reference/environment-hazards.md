@@ -336,9 +336,17 @@ them.
 
 ## Parallel agents in one working tree
 
-Cards split by *file domain* run concurrently in the same checkout — no worktree,
-so nobody pays for a ZenKit rebuild or a fresh pnpm install. Two things follow,
-both met on 2026-08-28 with three agents in flight.
+**Superseded as the default on 2026-09-01: take a worktree instead**
+(`npm run wt:new -- <name>`, AGENTS.md "Worktrees for Parallel Agents"). The
+reason this section existed — a worktree costs a ZenKit rebuild and a fresh
+pnpm install — is gone: `tools/worktree.js` copies the built addons across, so
+the install is ~45 s and compiles nothing.
+
+What follows is what it cost to share one checkout, kept because a shared tree
+still happens (a human working alongside an agent, a quick fix in main) and
+because the last three bullets apply to worktrees too. Cards were split by
+*file domain* and run concurrently; the lessons below were met on 2026-08-28
+with three agents in flight.
 
 - **Never `git stash` to prove a test red.** `git stash push` takes the whole
   working tree, not your files: proving one suite red stashed and restored

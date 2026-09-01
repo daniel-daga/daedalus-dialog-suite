@@ -241,6 +241,6 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **Queue row 13, the settings temp path** (2026-09-01) — and the shared name
-  was the smaller half: two renames onto one destination fail EPERM on Windows
-  about one run in three, so a contended rename retries. `unattended-queue.md`
+- **Agent worktrees** (Daniel, 2026-09-01) — `npm run wt:new/list/rm` and
+  `tools/worktree.js`. One agent, one checkout; the seeded `.node` files keep a
+  fresh worktree free of a ZenKit or tree-sitter compile. AGENTS.md.

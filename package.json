@@ -12,6 +12,9 @@
   },
   "scripts": {
     "board:check": "node tools/check-board.js",
+    "wt:new": "node tools/worktree.js new",
+    "wt:list": "node tools/worktree.js list",
+    "wt:rm": "node tools/worktree.js remove",
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces",
     "test:roundtrip-corpus": "npm run test:roundtrip-corpus --workspace daedalus-parser --"
