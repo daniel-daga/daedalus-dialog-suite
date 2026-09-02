@@ -659,6 +659,9 @@ export function setupIpcHandlers() {
   });
 
   ipcMain.handle('world:waynet', async () => worldService.getWaynet());
+  // No payload, like `world:waynet`, so there is nothing to validate: the
+  // findings are computed over the world the worker already holds.
+  ipcMain.handle('world:portalFindings', async () => worldService.getPortalFindings());
 
   // One visual for the Assets panel's mesh preview — a name inside the mounted
   // VFS namespace like `world:texture`, never a filesystem path.

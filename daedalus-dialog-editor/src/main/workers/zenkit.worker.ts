@@ -5,6 +5,7 @@ import {
   buildInstancedVisuals,
   buildVisual,
   buildWorldMesh,
+  checkPortals,
   commitOps,
   createVobReader,
   groupTransferables,
@@ -29,6 +30,7 @@ import type {
   WorldSummary,
   VfsEntry,
   WaynetPayload,
+  PortalFindingsPayload,
   WorldWorkerRequest,
 } from '../../shared/worldTypes';
 
@@ -201,6 +203,17 @@ function waynet(): { result: WaynetPayload; transfer: ArrayBuffer[] } {
 }
 
 /**
+ * The portal checks, run here rather than in the renderer (level-editor.md
+ * §16.20 slice 3). `getPortals` carries every portal *and sector* face with
+ * its plane and corners — NewWorld's is 85,749 rows and 4.9 MB, measured — and
+ * nothing in the renderer wants the geometry: framing a polygon is not built,
+ * so only the findings cross. 11 ms to read and 151 ms to check on NewWorld.
+ */
+function portalFindings(): { result: PortalFindingsPayload; transfer: ArrayBuffer[] } {
+  return { result: phase('portalFindings', () => checkPortals(zenkit.getPortals(handle!))), transfer: [] };
+}
+
+/**
  * The bounds of a visual a VOB is being *given* — the one thing a property edit
  * needs that is not already in the renderer.
  *
@@ -351,6 +364,7 @@ function run(message: WorldWorkerRequest): { result: unknown; transfer: ArrayBuf
     case 'texture': return texture(message.payload as { name: string; maxSize: number });
     case 'assets': return assets(message.payload as { path: string });
     case 'waynet': return waynet();
+    case 'portalFindings': return portalFindings();
     case 'visualBounds': return boundsOfVisual(message.payload as VisualBoundsRequest);
     case 'visual': return visualOf(message.payload as VisualRequest);
     case 'vobProps': return propsOfVob(message.payload as VobPropsRequest);

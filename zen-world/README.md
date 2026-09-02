@@ -15,7 +15,7 @@ every binding call is injected.
 | `render/` | `mergeChunks` — one chunk per material becomes one draw call per *render state*. |
 | `scene/` | `buildWorldMesh` / `buildInstancedVisuals` — a loaded world becomes a renderable scene description. |
 | `assets/` | `gothicAssetSources` — which VDFs or directories to mount for an install. |
-| `validate/` | `checkPortalMaterials` — the `P:<sector>_<sector>` portal convention, checked against the world's own sector names. |
+| `validate/` | The portal checks over `getPortals`: `checkPortalMaterials` (the `P:<sector>_<sector>` convention against the world's own sector names), `checkPortalPairing` (every `P:A_B` has its `P:B_A`), `checkPortalPlanarity` (a portal face within 12.1 units of its own plane) and `checkPortalOrientation` (the stored normal points into the first-named sector), and `checkPortals`, which runs all four and pins each finding to a polygon. Every threshold is retail's own worst, measured (`level-editor.md` §16.22). |
 
 ## The rules it encodes, and why each is a rule
 
@@ -182,6 +182,18 @@ viewport.
   structural op by name rather than skipping it, and the caller re-reads the
   index. Deleting an *arbitrary* VOB is the one op still missing, and it waits on
   invertibility rather than on renumbering.
+- **A portal check's threshold is retail's own worst, or there is no check.**
+  Measured over the four retail G2 worlds (`level-editor.md` §16.22): every
+  `P:A_B` has its `P:B_A` (572 names, 286 pairs), so a missing mirror is a
+  warning; the worst shipped portal face is 12.1 units off its own plane, so
+  that is the planarity tolerance; and the stored normal points into the
+  first-named sector, judged by **corner share** rather than centroid, because
+  nested sectors put both centroids on one side and a centroid test flags
+  retail. A one-sided portal has no second sector to compare against, and
+  retail runs continuously down to 28.4 % of the sector on the convention's
+  side before a gap to the one genuinely reversed portal at 0.8 %
+  (`P:CAPTAIN_`), so its cut is a quarter — between them, and measured. Run
+  over all four worlds, the whole set fires exactly once: that portal.
 - **Mount archives, not loose trees.** `Vfs::mount_host` memory-maps every file
   under a directory eagerly: 2,170 ms for an extracted install's 4,153 compiled
   asset files against **15 ms** for the equivalent VDFs, which resolve every name

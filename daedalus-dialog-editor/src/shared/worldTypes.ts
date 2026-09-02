@@ -3,9 +3,11 @@
 // which is where they are tested; this file adds only what crossing a process
 // boundary needs — the request/response envelope and the summary.
 
-import type { DrawGroup, InstancedVisual, VisualScene, VobFolders, VobIndex, WorldOp } from 'zen-world';
+import type {
+  DrawGroup, InstancedVisual, PortalFinding, VisualScene, VobFolders, VobIndex, WorldOp,
+} from 'zen-world';
 
-export type { DrawGroup, InstancedVisual, VisualScene, VobFolders, VobIndex, WorldOp };
+export type { DrawGroup, InstancedVisual, PortalFinding, VisualScene, VobFolders, VobIndex, WorldOp };
 
 export type GameVersion = 'g1' | 'g2';
 
@@ -95,8 +97,16 @@ export interface DecodedTexture {
 }
 
 export type WorldWorkerOp =
-  | 'open' | 'worldMesh' | 'visuals' | 'texture' | 'assets' | 'waynet' | 'visualBounds' | 'visual'
-  | 'vobProps' | 'refreshIndex' | 'applyOps' | 'save' | 'close';
+  | 'open' | 'worldMesh' | 'visuals' | 'texture' | 'assets' | 'waynet' | 'portalFindings'
+  | 'visualBounds' | 'visual' | 'vobProps' | 'refreshIndex' | 'applyOps' | 'save' | 'close';
+
+/**
+ * The portal checks' findings (level-editor.md §16.20 slice 3, §16.22 q1–q3),
+ * computed in the worker over `getPortals` and crossing as data. The renderer
+ * gets findings and not geometry: nothing frames a polygon (decided
+ * 2026-09-02), so nothing on this side has a use for 5 MB of corners.
+ */
+export type PortalFindingsPayload = readonly PortalFinding[];
 
 /**
  * The bounds of a visual that is **not** in the scene — what a visual swap needs

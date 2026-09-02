@@ -42,7 +42,10 @@ export function initStoreSync(): () => void {
    * the payload and neither reaches here.
    */
   const unsubscribeWorld = useWorldStore.subscribe((state, prevState) => {
-    if (state.waynetNames === prevState.waynetNames) return;
+    // The portal findings arrive once per open and are cleared with the world
+    // (level-editor.md §16.20 slice 3); either edge is a re-scan.
+    if (state.waynetNames === prevState.waynetNames
+      && state.portalFindings === prevState.portalFindings) return;
     useProblemsStore.getState().requestScan();
   });
 

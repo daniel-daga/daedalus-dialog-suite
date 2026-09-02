@@ -92,6 +92,17 @@ export interface PortalPolygons {
   sectorFlags: ArrayBuffer;
   /** Uint32 x1 — the BSP's `portal_polygon_indices`, stored order. */
   bspPortalPolygons: ArrayBuffer;
+  /** Float32 x4 per row — the stored plane, on-disk order [distance, nx, ny, nz]. */
+  planes: ArrayBuffer;
+  /** Uint32 x(count + 1) — row `i`'s corners are `corners[offsets[i] .. offsets[i + 1])`. */
+  cornerOffsets: ArrayBuffer;
+  /** Float32 x3 per corner — ZenGin space, unconverted. */
+  corners: ArrayBuffer;
+  /** `mesh.materials`' names, in the order polygons index them. */
+  materials: string[];
+  /** `bsp.sectors`' names in **stored** order — `sectorIndices` indexes it — not
+   *  the sorted order `normalizeWorld` dumps. */
+  sectorNames: string[];
 }
 
 export interface VfsEntry {

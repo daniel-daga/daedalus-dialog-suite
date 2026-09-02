@@ -1,4 +1,5 @@
 import type { SemanticModel, SpawnSite } from '../../../shared/types';
+import type { PortalFinding } from '../../../shared/worldTypes';
 import type {
   FileFacts,
   FileFactsEntry,
@@ -34,9 +35,11 @@ export function buildProjectView(input: {
   spawnSites?: readonly SpawnSite[];
   npcsWithDialogs?: readonly string[];
   world?: WorldWaynetView;
+  portalFindings?: readonly PortalFinding[];
 }): ProjectView {
-  const { files, knownNpcNames, factsCache, waypointSites, spawnSites, npcsWithDialogs, world } =
-    input;
+  const {
+    files, knownNpcNames, factsCache, waypointSites, spawnSites, npcsWithDialogs, world, portalFindings,
+  } = input;
 
   const fileFacts: FileFactsEntry[] = files.map(({ filePath, model }) => {
     let facts = factsCache?.get(model);
@@ -71,6 +74,7 @@ export function buildProjectView(input: {
     waypointSites: waypointSites ?? {},
     spawnSites: spawnSites ?? [],
     dialogNpcKeys: new Set((npcsWithDialogs ?? []).map((name) => name.trim().toUpperCase())),
-    world
+    world,
+    portalFindings
   };
 }

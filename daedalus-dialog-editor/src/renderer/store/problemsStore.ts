@@ -108,6 +108,7 @@ export const useProblemsStore = create<ProblemsStore>((set, get) => {
       // read from its own store for the same reason. No world open means the
       // rule that needs it returns nothing (level-editor.md §16.8).
       const world = useWorldStore.getState().waynetNames ?? undefined;
+      const portalFindings = useWorldStore.getState().portalFindings ?? undefined;
 
       const { problems, scannedFileCount } = scanProject({
         files,
@@ -116,7 +117,8 @@ export const useProblemsStore = create<ProblemsStore>((set, get) => {
         waypointSites: project.waypointSiteIndex,
         spawnSites: project.spawnSiteIndex,
         npcsWithDialogs: npcsWithDialogs(project.dialogIndex),
-        world
+        world,
+        portalFindings
       });
 
       set({

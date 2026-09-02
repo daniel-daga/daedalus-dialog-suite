@@ -68,6 +68,43 @@ test('getPortals reads out the BSP portal polygon list', () => {
   assert.deepStrictEqual(u32(portals(MINIMAL).bspPortalPolygons), []);
 });
 
+test('getPortals emits the two name lists its indices point into', () => {
+  // §16.20 slice 3: `materialIndices` and `sectorIndices` index lists that
+  // used to exist only in `normalizeWorld`'s dump, which the editor never
+  // reads. Without them no name check can be fed from this readout.
+  const p = portals();
+  assert.deepStrictEqual(p.materials, ['EX_STONE', 'EX_GRASS', 'EX_UNUSED']);
+  // Stored order, not sorted as the dump sorts: `sectorIndices` is an index
+  // into this list, and a sorted list would break that join.
+  assert.deepStrictEqual(p.sectorNames, ['EX_OUTSIDE', 'EX_CAVE']);
+
+  const plain = portals(MINIMAL);
+  assert.deepStrictEqual(plain.sectorNames, []);
+  assert.ok(plain.materials.length > 0);
+});
+
+test('getPortals emits each row\'s stored plane and corner positions', () => {
+  // The geometric checks (§16.22 q2, q3) need every row's plane and corners.
+  // The scripts reconstructed them from `extractWorldMesh` by walking all
+  // ~200k polygons through `_drillMesh`; the readout carries them directly
+  // for its few thousand rows instead. Plane is on-disk order
+  // [distance, nx, ny, nz]; corners are ZenGin space, unconverted.
+  const p = portals();
+  const f32 = (buf) => Array.from(new Float32Array(buf));
+  assert.deepStrictEqual(f32(p.planes), [0, 0, 1, 0, 0, 0, 1, 0]);
+  assert.deepStrictEqual(u32(p.cornerOffsets), [0, 3, 6]);
+  // Polygon 1 is the portal triangle over vertices 1, 2, 4; polygon 2 the
+  // sector triangle over 4, 5, 2 (src/fixture.cc).
+  assert.deepStrictEqual(f32(p.corners), [
+    10, 0, 0, 10, 0, 10, 20, 0, 0,
+    20, 0, 0, 20, 0, 10, 10, 0, 10,
+  ]);
+
+  const plain = portals(MINIMAL);
+  assert.deepStrictEqual(u32(plain.cornerOffsets), [0]);
+  assert.deepStrictEqual(f32(plain.corners), []);
+});
+
 test('getPortals rejects a non-handle argument', () => {
   assert.throws(() => zenkit.getPortals('not a handle'), /world handle/);
 });

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { applyOps, createVobReader, isStructuralOp, isWaynetOp } from 'zen-world';
-import type { WaynetPayload, WorldOp, WorldSummary } from '../../shared/worldTypes';
+import type { PortalFindingsPayload, WaynetPayload, WorldOp, WorldSummary } from '../../shared/worldTypes';
 import type { WorldLocus, WorldWaynetView } from '../problems/domain/types';
 
 /**
@@ -97,6 +97,14 @@ interface WorldStore {
    * dangling.
    */
   waynetNames: WorldWaynetView | null;
+  /**
+   * The portal checks' findings over the open world's mesh, or null while
+   * none has been read (level-editor.md §16.20 slice 3). Computed in the
+   * worker and stored as the rule's own input, like `waynetNames`: an empty
+   * list is a clean world, null is nothing known. Read once per open — no op
+   * touches the mesh.
+   */
+  portalFindings: PortalFindingsPayload | null;
   /** A refused edit, or one the *view* could not follow — a failure past the
    *  commit point, which says so rather than claiming a refusal. Deliberately
    *  not `error`/`status: 'error'`, which replaces the whole surface: the world
@@ -134,6 +142,8 @@ interface WorldStore {
    * `AddWaypoint`, `DeleteWaypoint` and `RenameWaypoint` can change the set.
    */
   waynetLoaded: (payload: WaynetPayload | null) => void;
+  /** Publish the portal findings the World surface just read. */
+  portalsLoaded: (findings: PortalFindingsPayload | null) => void;
   /** Put the gizmo on a waypoint instead — the waynet overlay's own pick.
    *  `null` clears it. */
   selectWaypoint: (waypoint: number | null) => void;
@@ -158,6 +168,7 @@ const EMPTY = {
   selection: [] as readonly number[],
   selectedWaypoint: null as number | null,
   waynetNames: null as WorldWaynetView | null,
+  portalFindings: null as PortalFindingsPayload | null,
   editError: null,
   focusRequest: null as WorldFocus | null,
 };
@@ -284,6 +295,11 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
 
     set({ waynetNames: { pointNameKeys, freePointNames } });
   },
+
+  // A new object on every read, and that is fine where `waynetLoaded` had to
+  // guard identity: the mesh never changes under an op, so this is read once
+  // per open and a re-read is a re-scan on purpose.
+  portalsLoaded: (portalFindings) => set({ portalFindings }),
 
   applyEdit: (ops) => {
     const summary = get().summary;

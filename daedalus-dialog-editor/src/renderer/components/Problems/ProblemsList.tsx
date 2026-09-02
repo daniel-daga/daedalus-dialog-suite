@@ -12,7 +12,12 @@ const RULE_LABEL: Record<ProblemRuleId, string> = {
   'voice-id-duplicate': 'Duplicate voice ID',
   'voice-id-malformed': 'Malformed voice ID',
   'waypoint-not-in-world': 'Waypoint not in world',
-  'duplicate-spawn': 'NPC spawned twice'
+  'duplicate-spawn': 'NPC spawned twice',
+  'portal-material-malformed': 'Malformed portal name',
+  'portal-material-unknown-sector': 'Portal names unknown sector',
+  'portal-unpaired': 'Portal unpaired',
+  'portal-non-planar': 'Portal not flat',
+  'portal-reversed': 'Portal reversed'
 };
 
 const baseName = (filePath: string): string => filePath.split(/[\\/]/).pop() || filePath;
@@ -34,8 +39,9 @@ const secondaryText = ({ locus }: Problem): string => {
  * Whether clicking the row leads anywhere. A script problem always does. A
  * world problem needs the world open — the editor holds one at a time — and an
  * address the World surface can jump to; a polygon locus has neither a row in
- * the VOB index nor a name in the waynet, and is listed without a jump until
- * §16.20 slice 3 gives it one.
+ * the VOB index nor a name in the waynet, and is listed without a jump —
+ * §16.20 slice 3 landed the portal findings that way on purpose (Daniel,
+ * 2026-09-02): framing a polygon is not designed, and not built.
  */
 const isNavigable = (problem: Problem, worldOpen: boolean): boolean => (
   problem.locus.kind !== 'world'

@@ -426,6 +426,19 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       );
     }
 
+    // The portal findings, for the same Problems scan and outside the try for
+    // the same reason (level-editor.md §16.20 slice 3). Once per open: no op
+    // touches the world mesh they are computed over. Published straight to
+    // the store — nothing on this surface draws them, since framing a polygon
+    // is deliberately not built.
+    try {
+      useWorldStore.getState().portalsLoaded(await window.editorAPI.getWorldPortalFindings());
+    } catch (failure) {
+      useWorldStore.getState().editFailed(
+        failure instanceof Error ? failure.message : String(failure),
+      );
+    }
+
     // The `<worldname>.folders.json` sidecar (VOB folders slice) — outside
     // the try above for the same reason the waynet is: a failure here is a
     // world that opened correctly and has an editor-only extra nobody could
