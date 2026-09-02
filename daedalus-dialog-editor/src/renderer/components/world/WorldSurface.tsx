@@ -2160,8 +2160,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         <Box sx={{ p: 3 }}>
           <Typography variant="body2" color="text.secondary">
             Open a ZenGin <code>.zen</code> world to view it. Phase 1a is read-only:
-            the world mesh, VOB visuals and picking. Select the Gothic installation
-            first — its archives supply the meshes and textures.
+            the world mesh, VOB visuals and picking. Configure at least one
+            available asset source in the active project first.
           </Typography>
         </Box>
       )}

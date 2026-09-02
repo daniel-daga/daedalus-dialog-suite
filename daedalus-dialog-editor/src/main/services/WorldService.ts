@@ -8,7 +8,7 @@ import type {
   DecodedTexture,
   VisualScene,
   InstancedPayload,
-  OpenWorldRequest,
+  ResolvedOpenWorldRequest,
   VfsEntry,
   WaynetPayload,
   WorldMeshPayload,
@@ -99,7 +99,7 @@ export class WorldService {
    * failure can be anywhere in the worker's load, so the world it holds is not
    * knowably the old one, and the renderer's `openFailed` resets the surface.
    */
-  async openWorld(request: OpenWorldRequest): Promise<WorldSummary> {
+  async openWorld(request: ResolvedOpenWorldRequest): Promise<WorldSummary> {
     if (this.worker === null) this.startWorker();
     this.worldPath = null;
     this.undoStack = [];

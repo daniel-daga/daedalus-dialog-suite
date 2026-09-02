@@ -94,6 +94,11 @@ describe('world:openDialog defaultPath', () => {
     return electron.__showOpenDialog.mock.calls[0][0] as unknown as OpenDialogOptions;
   }
 
+  it('does not register the obsolete global Gothic install handlers', () => {
+    expect(electron.__handlers.has('world:selectGothicInstall')).toBe(false);
+    expect(electron.__handlers.has('world:getGothicInstall')).toBe(false);
+  });
+
   it('passes no defaultPath when no configured loose world entry exists', async () => {
     const options = await invokeAndGetOptions();
 

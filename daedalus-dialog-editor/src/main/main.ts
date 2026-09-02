@@ -693,37 +693,6 @@ export function setupIpcHandlers() {
     }
   });
 
-  if (false) ipcMain.handle('world:selectGothicInstall', async () => {
-    try {
-      // Re-selecting an install starts at the one it replaces, the mirror of
-      // world:openDialog above.
-      const storedPath = await settingsService.getGothicInstallPath();
-
-      const result = await dialog.showOpenDialog({
-        properties: ['openDirectory'],
-        title: 'Select the Gothic installation directory',
-        ...(storedPath ? { defaultPath: storedPath } : {}),
-      });
-      if (result.canceled || result.filePaths.length === 0) return null;
-
-      const installPath = result.filePaths[0];
-      pathValidator.addAllowedPath(installPath);
-      await settingsService.setGothicInstallPath(installPath);
-      return installPath;
-    } catch (error) {
-      console.error('[IPC] world:selectGothicInstall error:', error);
-      throw new Error(`Failed to select Gothic install: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  });
-
-  if (false) ipcMain.handle('world:getGothicInstall', async () => {
-    const installPath = await settingsService.getGothicInstallPath();
-    // A persisted install re-seeds the whitelist on launch, exactly as recent
-    // projects do — the user already chose it through a main-process dialog.
-    if (installPath) pathValidator.addAllowedPath(installPath);
-    return installPath;
-  });
-
   ipcMain.handle('world:open', async (_event, request: unknown) => {
     try {
       assertOpenWorldRequest(request);
@@ -747,7 +716,11 @@ export function setupIpcHandlers() {
       for (const source of assetSources) {
         await pathValidator.validatePathResolved(source);
       }
-      return await worldService.openWorld({ ...request, assetSources });
+      return await worldService.openWorld({
+        worldPath: request.worldPath,
+        gameVersion: request.gameVersion,
+        assetSources,
+      });
     } catch (error) {
       if (error instanceof PathValidationError) {
         console.error('[IPC] world:open - Path validation failed:', error.message);

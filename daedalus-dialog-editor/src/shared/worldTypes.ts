@@ -21,6 +21,13 @@ export interface OpenWorldRequest {
   projectFilePath: string;
 }
 
+/** Main-process/worker contract after project mounts have been resolved. */
+export interface ResolvedOpenWorldRequest {
+  worldPath: string;
+  gameVersion: GameVersion;
+  assetSources: string[];
+}
+
 export interface WorldSummary {
   worldPath: string;
   /** ZenGin space, computed from the vertices the binding emitted — a retail
