@@ -75,7 +75,13 @@ export const AssetSourcesDialog: React.FC<AssetSourcesDialogProps> = ({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm" aria-labelledby="asset-sources-title">
+    <Dialog
+      open={open}
+      onClose={() => { if (!saving) onClose(); }}
+      fullWidth
+      maxWidth="sm"
+      aria-labelledby="asset-sources-title"
+    >
       <DialogTitle id="asset-sources-title">Asset sources</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>

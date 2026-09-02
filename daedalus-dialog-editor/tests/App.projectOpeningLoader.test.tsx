@@ -34,7 +34,12 @@ const mockProjectState = {
   parsedFiles: new Map<string, unknown>(),
   metadataFailures: [] as Array<{ filePath: string; error: string }>,
   isIngestedFilesOpen: false,
-  setIngestedFilesOpen: jest.fn()
+  setIngestedFilesOpen: jest.fn(),
+  projectFilePath: null as string | null,
+  projectConfig: null as any,
+  projectWarnings: [] as any[],
+  saveAssetSources: jest.fn().mockResolvedValue(undefined),
+  dismissProjectWarning: jest.fn(),
 };
 
 const mockWorldState = { summary: null as unknown };
@@ -92,6 +97,10 @@ describe('App project opening loader', () => {
     mockProjectState.isIngesting = false;
     mockProjectState.allDialogFiles = [];
     mockProjectState.parsedFiles = new Map();
+    mockProjectState.projectFilePath = null;
+    mockProjectState.projectConfig = null;
+    mockProjectState.projectWarnings = [];
+    mockProjectState.dismissProjectWarning = jest.fn();
     mockWorldState.summary = null;
 
     (window as any).editorAPI = {
@@ -189,6 +198,44 @@ describe('App project opening loader', () => {
     mockWorldState.summary = { worldPath: 'C:/project/world.zen' };
     rerender(<App />);
     expect(screen.getByText(/reopen the world to apply changes/i)).toBeInTheDocument();
+  });
+
+  test('keeps inline source warnings after dismissing the app-level warning', () => {
+    const warning = {
+      code: 'asset-source-unavailable',
+      source: 'missing-assets',
+      resolvedPath: 'C:/project/missing-assets',
+      message: 'Asset source is unavailable: missing-assets',
+    };
+    mockProjectState.projectPath = 'C:/project';
+    mockProjectState.projectFilePath = 'C:/project/project.gothicproject.json';
+    mockProjectState.projectConfig = { version: 1, target: 'g2-notr', scriptsRoot: '.', worlds: [], assetSources: ['.', 'missing-assets'] };
+    mockProjectState.projectWarnings = [warning];
+    const { rerender } = render(<App />);
+    expect(screen.getByText(warning.message)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('alert').querySelector('button')!);
+    expect(screen.queryByText(warning.message)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Asset sources...' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent(warning.message);
+    expect(mockProjectState.dismissProjectWarning).not.toHaveBeenCalled();
+    rerender(<App />);
+  });
+
+  test('closes the asset sources dialog when the project changes', async () => {
+    mockProjectState.projectPath = 'C:/project';
+    mockProjectState.projectFilePath = 'C:/project/project.gothicproject.json';
+    mockProjectState.projectConfig = { version: 1, target: 'g2-notr', scriptsRoot: '.', worlds: [], assetSources: ['.'] };
+    mockProjectState.projectWarnings = [];
+    const { rerender } = render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Asset sources...' }));
+    expect(screen.getByRole('dialog', { name: /asset sources/i })).toBeInTheDocument();
+
+    mockProjectState.projectPath = 'C:/successor';
+    mockProjectState.projectFilePath = 'C:/successor/project.gothicproject.json';
+    mockProjectState.projectConfig = { version: 1, target: 'g2-notr', scriptsRoot: '.', worlds: [], assetSources: ['.'] };
+    rerender(<App />);
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /asset sources/i })).not.toBeInTheDocument());
   });
 });
 

@@ -65,4 +65,19 @@ describe('AssetSourcesDialog', () => {
     expect(screen.getByText('4. draft-assets')).toBeInTheDocument();
     expect(screen.queryByText('3. refreshed')).not.toBeInTheDocument();
   });
+
+  it('blocks Escape dismissal while an async save is in flight', async () => {
+    let resolveSave!: () => void;
+    const onSave = jest.fn(() => new Promise<void>((resolve) => { resolveSave = resolve; }));
+    render(<AssetSourcesDialog {...baseProps} onSave={onSave} />);
+    (window as any).editorAPI = { selectAssetSourceFolder: jest.fn().mockResolvedValue('new-assets') };
+    fireEvent.click(screen.getByRole('button', { name: /add asset source/i }));
+    await waitFor(() => expect(screen.getByText('4. new-assets')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /save asset sources/i }));
+    fireEvent.keyDown(document, { key: 'Escape', code: 'Escape' });
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(baseProps.onClose).not.toHaveBeenCalled();
+    resolveSave();
+    await waitFor(() => expect(baseProps.onClose).toHaveBeenCalled());
+  });
 });

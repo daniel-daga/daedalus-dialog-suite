@@ -62,7 +62,7 @@ const AppContent: React.FC = () => {
     activeFile: state.activeFile,
     resetEditorSession: state.resetEditorSession,
   }), shallow);
-  const { openProject, closeProject, projectPath, projectName, projectFilePath, projectConfig, projectWarnings, isIngesting, allDialogFiles, parsedFilesCount, metadataFailures, isIngestedFilesOpen, setIngestedFilesOpen, saveAssetSources, dismissProjectWarning } = useProjectStore((state) => ({
+  const { openProject, closeProject, projectPath, projectName, projectFilePath, projectConfig, projectWarnings, isIngesting, allDialogFiles, parsedFilesCount, metadataFailures, isIngestedFilesOpen, setIngestedFilesOpen, saveAssetSources } = useProjectStore((state) => ({
     openProject: state.openProject,
     closeProject: state.closeProject,
     projectPath: state.projectPath,
@@ -77,7 +77,6 @@ const AppContent: React.FC = () => {
     isIngestedFilesOpen: state.isIngestedFilesOpen,
     setIngestedFilesOpen: state.setIngestedFilesOpen,
     saveAssetSources: state.saveAssetSources,
-    dismissProjectWarning: state.dismissProjectWarning,
   }), shallow);
   const worldLoaded = useWorldStore((state) => state.summary !== null);
   const visibleProjectWarnings = projectWarnings ?? [];
@@ -128,7 +127,9 @@ const AppContent: React.FC = () => {
   const [isProjectOpening, setIsProjectOpening] = useState(false);
   const [triggerUpdateCheck, setTriggerUpdateCheck] = useState(false);
   const [assetSourcesOpen, setAssetSourcesOpen] = useState(false);
+  const [dismissedProjectWarnings, setDismissedProjectWarnings] = useState<Set<string>>(() => new Set());
   const { mode, setMode } = useThemeMode();
+  const appWarnings = visibleProjectWarnings.filter((warning) => !dismissedProjectWarnings.has(warning.resolvedPath));
 
   const ingestionProgress = useMemo(() => {
     const total = allDialogFiles.length;
@@ -139,6 +140,11 @@ const AppContent: React.FC = () => {
   const overlayTotalFiles = isIngesting ? allDialogFiles.length : 0;
   const overlayParsedFiles = isIngesting ? parsedFilesCount : 0;
   const showProjectOpeningOverlay = isProjectOpening || (!!projectPath && isIngesting);
+
+  useEffect(() => {
+    setDismissedProjectWarnings(new Set());
+    setAssetSourcesOpen(false);
+  }, [projectPath]);
 
 
   useEffect(() => {
@@ -477,9 +483,9 @@ const AppContent: React.FC = () => {
         />
       )}
 
-      {visibleProjectWarnings.map((warning) => (
+      {appWarnings.map((warning) => (
         <Snackbar key={warning.resolvedPath} open anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}>
-          <Alert severity="warning" onClose={() => dismissProjectWarning(warning.resolvedPath)}>
+          <Alert severity="warning" onClose={() => setDismissedProjectWarnings((current) => new Set(current).add(warning.resolvedPath))}>
             {warning.message}
           </Alert>
         </Snackbar>
