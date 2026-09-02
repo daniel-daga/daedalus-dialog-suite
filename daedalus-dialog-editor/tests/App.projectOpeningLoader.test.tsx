@@ -37,6 +37,8 @@ const mockProjectState = {
   setIngestedFilesOpen: jest.fn()
 };
 
+const mockWorldState = { summary: null as unknown };
+
 jest.mock('../src/renderer/store/storeSync', () => ({
   initStoreSync: jest.fn(() => jest.fn())
 }));
@@ -50,6 +52,12 @@ jest.mock('../src/renderer/store/editorStore', () => {
 jest.mock('../src/renderer/store/projectStore', () => ({
   useProjectStore: (selector?: (state: any) => any) => selector ? selector(mockProjectState) : mockProjectState
 }));
+
+jest.mock('../src/renderer/store/worldStore', () => {
+  const useWorldStore = (selector?: (state: any) => any) => selector ? selector(mockWorldState) : mockWorldState;
+  useWorldStore.getState = () => mockWorldState;
+  return { useWorldStore };
+});
 
 jest.mock('../src/renderer/hooks/useAutoSave', () => ({
   useAutoSave: () => ({
@@ -84,6 +92,7 @@ describe('App project opening loader', () => {
     mockProjectState.isIngesting = false;
     mockProjectState.allDialogFiles = [];
     mockProjectState.parsedFiles = new Map();
+    mockWorldState.summary = null;
 
     (window as any).editorAPI = {
       ...((window as any).editorAPI || {}),
@@ -166,6 +175,20 @@ describe('App project opening loader', () => {
       deferred.resolve(undefined);
       await deferred.promise;
     });
+  });
+
+  test('updates the asset-source world notice when the world summary appears', () => {
+    mockProjectState.projectPath = 'C:/project';
+    mockProjectState.projectFilePath = 'C:/project/project.gothicproject.json';
+    mockProjectState.projectConfig = { version: 1, target: 'g2-notr', scriptsRoot: '.', worlds: [], assetSources: ['.'] };
+    mockProjectState.projectWarnings = [];
+    const { rerender } = render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Asset sources...' }));
+    expect(screen.queryByText(/reopen the world to apply changes/i)).not.toBeInTheDocument();
+
+    mockWorldState.summary = { worldPath: 'C:/project/world.zen' };
+    rerender(<App />);
+    expect(screen.getByText(/reopen the world to apply changes/i)).toBeInTheDocument();
   });
 });
 

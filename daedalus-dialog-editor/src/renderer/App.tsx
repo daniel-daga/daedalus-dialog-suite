@@ -42,6 +42,8 @@ import { describeSaveError } from './utils/saveError';
 import { hasUnsavedChanges as fileHasUnsavedChanges } from './store/fileStore';
 import { flushAllPendingEdits } from './utils/pendingEditFlushRegistry';
 import { useWindowCloseGuard } from './hooks/useWindowCloseGuard';
+import AssetSourcesDialog from './components/AssetSourcesDialog';
+import { useWorldStore } from './store/worldStore';
 
 // Wire up the cross-store model sync once at module load.
 // editorStore pushes semantic model changes to projectStore's parsed-files
@@ -60,18 +62,25 @@ const AppContent: React.FC = () => {
     activeFile: state.activeFile,
     resetEditorSession: state.resetEditorSession,
   }), shallow);
-  const { openProject, closeProject, projectPath, projectName, isIngesting, allDialogFiles, parsedFilesCount, metadataFailures, isIngestedFilesOpen, setIngestedFilesOpen } = useProjectStore((state) => ({
+  const { openProject, closeProject, projectPath, projectName, projectFilePath, projectConfig, projectWarnings, isIngesting, allDialogFiles, parsedFilesCount, metadataFailures, isIngestedFilesOpen, setIngestedFilesOpen, saveAssetSources, dismissProjectWarning } = useProjectStore((state) => ({
     openProject: state.openProject,
     closeProject: state.closeProject,
     projectPath: state.projectPath,
     projectName: state.projectName,
+    projectFilePath: state.projectFilePath,
+    projectConfig: state.projectConfig,
+    projectWarnings: state.projectWarnings,
     isIngesting: state.isIngesting,
     allDialogFiles: state.allDialogFiles,
     parsedFilesCount: state.parsedFiles.size,
     metadataFailures: state.metadataFailures,
     isIngestedFilesOpen: state.isIngestedFilesOpen,
     setIngestedFilesOpen: state.setIngestedFilesOpen,
+    saveAssetSources: state.saveAssetSources,
+    dismissProjectWarning: state.dismissProjectWarning,
   }), shallow);
+  const worldLoaded = useWorldStore((state) => state.summary !== null);
+  const visibleProjectWarnings = projectWarnings ?? [];
   const { undo, redo } = useHistoryStore.getState();
   const canUndo = useHistoryStore((state) => (activeFile ? (state.editHistory.get(activeFile)?.past.length ?? 0) > 0 : false));
   const canRedo = useHistoryStore((state) => (activeFile ? (state.editHistory.get(activeFile)?.future.length ?? 0) > 0 : false));
@@ -118,6 +127,7 @@ const AppContent: React.FC = () => {
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [isProjectOpening, setIsProjectOpening] = useState(false);
   const [triggerUpdateCheck, setTriggerUpdateCheck] = useState(false);
+  const [assetSourcesOpen, setAssetSourcesOpen] = useState(false);
   const { mode, setMode } = useThemeMode();
 
   const ingestionProgress = useMemo(() => {
@@ -355,6 +365,11 @@ const AppContent: React.FC = () => {
               sx={{ mr: 2, bgcolor: 'rgba(255,255,255,0.1)', color: 'white' }}
             />
           )}
+          {projectPath && projectConfig && (
+            <Button color="inherit" onClick={() => setAssetSourcesOpen(true)} sx={{ mr: 1 }}>
+              Asset sources...
+            </Button>
+          )}
            <Tooltip title={isIngesting ? `Ingesting files: ${Math.round(ingestionProgress)}%` : 'Ingested Files'}>
             <Box sx={{ position: 'relative', display: 'inline-flex', mr: 1, alignItems: 'center', justifyContent: 'center' }}>
               {isIngesting && (
@@ -449,6 +464,26 @@ const AppContent: React.FC = () => {
         open={isIngestedFilesOpen}
         onClose={() => setIngestedFilesOpen(false)}
       />
+
+      {projectConfig && projectFilePath && (
+        <AssetSourcesDialog
+          open={assetSourcesOpen}
+          assetSources={projectConfig.assetSources}
+          projectRoot={projectPath}
+          warnings={visibleProjectWarnings}
+          worldLoaded={worldLoaded}
+          onClose={() => setAssetSourcesOpen(false)}
+          onSave={saveAssetSources}
+        />
+      )}
+
+      {visibleProjectWarnings.map((warning) => (
+        <Snackbar key={warning.resolvedPath} open anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}>
+          <Alert severity="warning" onClose={() => dismissProjectWarning(warning.resolvedPath)}>
+            {warning.message}
+          </Alert>
+        </Snackbar>
+      ))}
 
       <ExternalChangeConflictDialog />
       {closeGuardDialog}
