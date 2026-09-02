@@ -2465,6 +2465,115 @@ script either, which is the whole reason this shipped a session ahead of slice
 14's closing paragraph
 rather than behind it.
 
+**Slice 16 — Insert NPC from the World surface. Sized 2026-09-01; A and B
+landed 2026-09-02 (Claude), C–E open.** The card slice 14's closing paragraph
+declined to card. Sized into six pieces, because it is the first time the
+editor authors into a file it is not editing, and the sizing changed what the
+write can be.
+
+**Ground truth, before the design.** Retail has *one* file,
+`Content\Story\Startup.d` (4,801 lines, 2,356 `Wld_InsertNpc`), and
+`STARTUP_<worldfile>` is a *function* in it, not a file of its own.
+`STARTUP_NewWorld()` holds no spawn itself — it only calls
+`STARTUP_NewWorld_Part_City_01()` and seven siblings, then `Kapitel = 1;` and
+two `PlayVideo`s; `STARTUP_OLDWORLD` and the `STARTUP_ADDON_PART_*` family
+follow the same pattern. So "find `STARTUP_<worldfile>`" is: find the function
+`STARTUP_` + basename of `worldStore.summary.worldPath` (`.zen` stripped,
+case-insensitive) in `projectStore.parsedFiles`, and append to *that*
+function. **Decision: append to `STARTUP_<world>` itself**, accepting that
+retail's own function delegates to parts and holds no spawns — picking a part
+would be a guess, and a spawn appended after the parts still runs. No
+world-directory setting is needed for this: the open world's path is already
+in the store. The setting only buys the *other* card (opening a `.ZEN` from a
+dialog — `expectedWorldNameFor`'s answer becoming a click), so it is slice F,
+deferred.
+
+**What the save pipeline is, and what it is not.** `SaveFileFlow` takes a
+model, generates it through `CodeGeneratorService` (`allowPartialModel:
+false`, so the generator throws on `hasErrors`), parse-gates, writes with
+`expectUnchanged` and then `notifySelfWrite`. Unknown statements survive as
+generic `Action(text)`, so a non-dialog function survives regeneration *in
+principle* — but the roundtrip corpus defaults to `Story\Dialoge`, and
+`Startup.d`'s fidelity had never been measured. That measurement is slice B,
+and it decides slice C's shape, which is why B lands before C.
+
+**Two facts that shape D and E.** The waypoint half exists: `addWaypointAt`
+and the `AddWaypoint` op, with the add-waypoint focus request and the
+`pendingWaypointName` arming flow; and `projectStore.npcList` +
+`AUTOCOMPLETE_POLICIES.actions.npc` already drive the NPC autocomplete in
+`InsertNpcActionRenderer`. The conflict: `notifySelfWrite` suppresses the
+watcher for that path, so if `Startup.d` is also open in the dialog editor the
+renderer keeps a stale model and its next save hits the mtime guard →
+`markExternalConflict`; nothing today handles a self-write to an open file
+from another surface. And with no project open `projectPath` is `null`,
+`parsedFiles` is empty and so is `spawnSiteIndex` — which is only set at
+`buildProjectIndex` and never refreshed by `updateFileModels`.
+
+**The slices, in landing order.** Jest throughout; Playwright cannot reach any
+of this, the browser harness has no world.
+
+*A — pure resolver + model edit. Landed.* `components/world/insertNpcScript.ts`:
+`startupFunctionFor(worldPath)` → `STARTUP_<BASENAME>`;
+`findFunctionFile(parsedFiles, name)` → `{ filePath, functionName, model }`
+or a typed refusal — `no-project`, `no-startup-function`, `parse-errors`
+when the holding model has `hasErrors`; `appendInsertNpc(model, fn, instance,
+wp)` returns a new model with a plain-object `InsertNpcAction` pushed onto
+`functions[fn].actions` (plain because the `saveFile` IPC deserialises).
+Tests cover the retail shape (`STARTUP_NewWorld` found in a file that also
+holds `INIT_NewWorld`), case-insensitivity, each refusal, and that `INIT_` is
+never chosen.
+
+*B — fidelity gate. Landed, and the verdict is: not clean.*
+`daedalus-parser/test/startup-fidelity.test.js` holds a Startup-shaped fixture
+(mixed-case `FUNC VOID`, `Kapitel = 1;`, `PlayVideo`, a commented-out
+`//Wld_InsertNpc`, tab indent, trailing comments) and asserts what *is* true:
+it parses clean with no `hasErrors`, the commented-out spawn is not an action,
+and an appended `InsertNpcAction` regenerates as the last statement of
+`STARTUP_<world>` with every original statement intact and `INIT_` untouched.
+It does **not** assert byte identity, because regeneration of retail's
+`Startup.d` is not byte-identical — measured 2026-09-02 against the real
+file: 4,801 lines in, 3,944 out. Three things differ, all cosmetic, all
+everywhere: blank lines inside and between functions are dropped; a trailing
+`// comment` after a statement is moved onto its own line (`Wld_InsertNpc
+(X,"WP"); //Held` becomes two lines); and every `Wld_InsertNpc (X,"WP")` is
+re-emitted as `Wld_InsertNpc (X, "WP")`. A block comment inside a function
+also gains a tab per line. `npm run test:roundtrip-corpus -- --root
+mdk\Content\Story` over 1,383 files: 4 source syntax errors (none of them
+`Startup.d`), 0 generated syntax errors, 253 drift files — and `Startup.d` is
+one of them: token-fidelity drift at the re-indented block comment, action
+multiset drift that is trailing whitespace on comment text and CRLF inside
+`ConditionalAction` condition text, and byte-idempotence drift. So a
+regenerate-and-save of `Startup.d` would rewrite 4,788 of its 4,802 lines to
+add one. **Decision, as sized: slice C's write is a text-level insert** —
+find the function's closing `};`, splice `\tWld_InsertNpc (X, "WP");` before
+it — not a regenerate. The model edit from A stays the renderer's picture of
+the result; it is not what reaches the disk.
+
+*C — main-side write (~150 lines).* New IPC `script:appendInsertNpc(filePath,
+fnName, instance, wp)` in `main.ts` + `preload.ts` + `ipcValidation.ts` +
+`mockAPI.ts`. Body: read → `parseSource` → refuse on `hasErrors` (visible,
+never `forceOnErrors`) → locate the function's closing `};` by the parsed
+node's range → splice the line → write with the `expectUnchanged` mtime guard
+and `notifySelfWrite`, as `SaveFileFlow` does, but without its generate step.
+Decision: parse on disk in main rather than trust the renderer's cached model.
+
+*D — the button (~180 lines).* Terrain bar beside "Add waypoint here…" → a
+dialog with the NPC autocomplete and a waypoint name; `commitOps([addWaypoint])`
+awaited, then the IPC; refusals through the `editFailed`-style banner; an
+existing-waypoint variant in the waypoint panel. Decision: waypoint op first,
+script second — a spawn onto a point that does not exist is the worse
+half-state.
+
+*E — open-file and index coherence (~100 lines).* Refuse before writing if
+the file is open and dirty; reload it if open and clean; push the new site
+into `spawnSiteIndex`. Decision: refuse-on-dirty rather than merge.
+
+*F — deferred, its own card.* World-directory setting on `SettingsService`
+(the `gothicInstallPath` pattern), only for `expectedWorldNameFor`'s `.ZEN`
+opening.
+
+Three runs minimum: {A, B}, {C}, {D, E}. C is next.
+
 **Phase ordering note.** §11 schedules 1b-2 before 1c, and 1b-2 is not finished
 — but what remains of it on the board (Euler order against Spacer) needs Spacer
 itself and a person, as do the Gate 2b `07` rows. These slices were carded by
