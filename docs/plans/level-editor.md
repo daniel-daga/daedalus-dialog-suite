@@ -3159,10 +3159,24 @@ the VFS plumbing:
   built payload per click with no cache, so a large `.MDL` re-extracts on every
   re-selection — fine for a panel, and the thumbnail grid will want the worker
   to cache or the renderer to memoise per name.
-- **It is a namespace explorer, not a picker.** `onPreview` sets a viewed path;
-  nothing feeds a chosen name back into `insertVob`'s class field or
-  `setVobProp.visual`. Wiring that is the difference between "a browser exists"
-  and "a model browser answers 1.3/1.7/§16.25".
+- **It is a namespace explorer, not a picker — landed 2026-09-02.** The
+  preview of any mesh the binding can place (the same extension list the mesh
+  preview keys on, now `isPlaceableVisual`) carries a **"Use as visual"**
+  button that writes the file's bare name — what retail stores, `NW_CRATE.3DS`
+  and never a directory — to the whole selection through `handleEditProps`,
+  the grid's own path: one `SetVobProp` per VOB, one batch, one undo entry,
+  the box refitted only when the name resolves. Disabled, with the reason,
+  when nothing is selected. The place-a-VOB dialog's visual field has a
+  **"Use previewed"** button beside it that fills in the same name; the
+  previewed path already lived in `WorldSurface`, so it outlives the tab and
+  the gesture is preview, switch to the scene, click the ground, place. No new
+  op, no new IPC. Two things it does not do: it writes the compiled name the
+  browser lists (`.MRM`) rather than deriving the source name retail would
+  carry (`.3DS`) — the engine and `extractVisual` resolve either, and the
+  mapping is not one-to-one for `.MDL`/`.MMB`; and it does not pre-check the
+  selection for a VOB with no visual object, which the binding refuses the
+  same way the grid's field does for a multi-selection. What is left is the
+  thumbnail grid below.
 - **No thumbnail grid.** The list is names in a directory, sorted
   directories-first; Spacer's *Bilder* and Spacer.NET's *preview models* are an
   image grid. Getting there is offline rendering and caching a thumbnail per

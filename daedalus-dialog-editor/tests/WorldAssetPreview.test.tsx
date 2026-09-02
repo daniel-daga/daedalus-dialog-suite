@@ -12,7 +12,7 @@
  */
 
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { DecodedTexture, VisualScene } from '../src/shared/worldTypes';
 import * as mockWorldViewport from './worldViewportMocks';
 import WorldAssetPreview from '../src/renderer/components/world/WorldAssetPreview';
@@ -172,5 +172,70 @@ describe('WorldAssetPreview', () => {
 
     await screen.findByTestId('world-asset-preview-failed');
     expect(screen.queryByTestId('world-asset-preview-image')).not.toBeInTheDocument();
+  });
+
+  describe('as a picker (§16.26 row 1)', () => {
+    it("offers a previewed mesh as the selection's visual, by its bare file name", async () => {
+      // The name the world stores is the file name alone — retail says
+      // `NW_CRATE.3DS`, never a directory — so the button hands back the last
+      // path segment and nothing of where the browser found it.
+      const onUseAsVisual = jest.fn();
+      render(
+        <WorldAssetPreview
+          path="Meshes/_compiled/NW_CRATE.MRM"
+          loadTexture={noVisual}
+          loadVisual={async () => crate()}
+          selectionCount={2}
+          onUseAsVisual={onUseAsVisual}
+        />,
+      );
+
+      const button = await screen.findByTestId('world-asset-use-visual');
+      expect(button).toBeEnabled();
+      fireEvent.click(button);
+      expect(onUseAsVisual).toHaveBeenCalledWith('NW_CRATE.MRM');
+    });
+
+    it('is disabled, and says why, when no VOB is selected', async () => {
+      render(
+        <WorldAssetPreview
+          path="Meshes/_compiled/NW_CRATE.MRM"
+          loadTexture={noVisual}
+          loadVisual={async () => crate()}
+          selectionCount={0}
+          onUseAsVisual={jest.fn()}
+        />,
+      );
+
+      const button = await screen.findByTestId('world-asset-use-visual');
+      expect(button).toBeDisabled();
+      expect(screen.getByTestId('world-asset-use-visual-reason')).toHaveAttribute('aria-label', expect.stringMatching(/select/i));
+    });
+
+    it('offers nothing for a texture or an unsupported file — neither is a visual a VOB can carry', async () => {
+      const { rerender } = render(
+        <WorldAssetPreview
+          path="Textures/_compiled/NW_WOOD-C.TEX"
+          loadTexture={async () => texture('NW_WOOD-C.TEX')}
+          loadVisual={noVisual}
+          selectionCount={1}
+          onUseAsVisual={jest.fn()}
+        />,
+      );
+      await screen.findByTestId('world-asset-preview-image');
+      expect(screen.queryByTestId('world-asset-use-visual')).not.toBeInTheDocument();
+
+      rerender(
+        <WorldAssetPreview
+          path="Anims/_compiled/HUMANS.MDH"
+          loadTexture={noVisual}
+          loadVisual={noVisual}
+          selectionCount={1}
+          onUseAsVisual={jest.fn()}
+        />,
+      );
+      await screen.findByTestId('world-asset-preview-unsupported');
+      expect(screen.queryByTestId('world-asset-use-visual')).not.toBeInTheDocument();
+    });
   });
 });

@@ -129,6 +129,7 @@ export function makeWorldEditorApi() {
     getWorldVisuals: jest.fn(),
     getWorldTexture: jest.fn(async () => null),
     listWorldAssets: jest.fn(async () => null),
+    getWorldVisual: jest.fn(async () => null),
     getWorldWaynet: jest.fn(),
     getVisualBounds: jest.fn(async (): Promise<number[] | null> => null),
     getVobProps: jest.fn(async (): Promise<Record<string, unknown>> => ({ class: 'zCVob', ...BASE_PROPS })),
