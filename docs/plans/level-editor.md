@@ -1269,10 +1269,9 @@ the line, cut-out trees included — the cutout silhouette, which the rim never
 could. Daniel's first look: present, "very bright". It went to one pixel on
 the outside (two — one each side — doubled the fringe on foliage, where every
 gap between branches is an edge) and to `OUTLINE_OPACITY = 0.55` over the
-picture; the selection line stays opaque. **Still Daniel's to judge**:
-opacity, colour, and whether the foliage fringe wants more — that fringe is
-the cutout being outlined faithfully, and the only lever left is to not
-outline gaps below some size, which is a different pass.
+picture; the selection line stays opaque. **Judged good, 2026-09-02
+(Daniel).** Opacity, colour and the foliage fringe all stand as shipped — no
+further tuning wanted.
 
 ### 16.15 Class-specific insertion (§14.1 1.3)
 
@@ -3162,10 +3161,12 @@ exists, not a new op.
   its distribution off a selection rather than off a separate palette editor.
   Whether that selection is remembered across strokes/sessions or rebuilt every
   time is still open.
-- **Where the models come from.** The VFS browser exists (`WorldAssetBrowser`,
-  §16.26 row 1) but previews textures, not meshes, and feeds no field — a
-  scatter tool needs the mesh preview and the picker wiring that row still
-  wants, before a palette can be assembled from anything.
+- **Where the models come from — confirmed 2026-09-02 (Daniel): the assets.**
+  Same source as everywhere else, no separate model list — the palette is
+  drawn from the VFS asset namespace `WorldAssetBrowser` already walks. That
+  still leaves the prerequisite unchanged: the browser previews textures, not
+  meshes, and feeds no field, so the mesh preview and the picker wiring
+  §16.26 row 1 still wants come first.
 - **Randomisation, and its reproducibility — the scale half dropped 2026-09-02
   (Daniel): not needed.** `zCVob` **has no scale field** (§14.1's "Not a gap"),
   so size variation was never available; Daniel does not consider that a
@@ -3276,9 +3277,20 @@ wired to the two write paths, then optionally a thumbnail grid on top.
 
 **Wanted on top, 2026-09-02 (Daniel): favorites and categories on the asset
 browser.** Neither exists — the browser is a plain VFS directory walk with no
-way to mark or group visuals. Undecided: whether either persists as a project
-sidecar or an app-level setting, and what a "category" is keyed on (the VFS
-directory it already has, a user tag, something else). Scoped in, not designed.
+way to mark or group visuals. **Persistence decided: a project sidecar, so
+it's committable** — not an app-level setting, the same shape as the VOB
+folders sidecar (`docs/plans/vob-folders.md`), though that one is scoped to a
+world and this is asset-browser-wide, so it wants its own file, not a section
+of `<worldname>.folders.json`. **Categorization reference named: `vobbilder`
+(the "VOB-Katalog" tool, Felix Horn / HornOx, a static HTML+JS Spacer-era
+catalog)**, which Daniel already has installed and calls sensibly
+categorized — its scheme is a **hand-authored, hierarchical category tree**
+keyed by category path (e.g. `Items/Bögen und Armbrüste`, `Items/Sonstiges`),
+each category listing `(source directory, base name)` pairs across G1 and G2
+assets, not derived from the VFS directory layout at all. That's the bar for
+"sensible": a curated taxonomy, not an auto-grouping by folder. Whether the
+tree itself gets adapted as a starting seed or the feature just needs to
+support authoring one like it is still open.
 
 **2. Container contents.** Spacer.NET calls it "convenient editing of chests
 contents". `oCMobContainer`'s catalogue is the thirteen `oCMobInter` fields plus
@@ -3338,8 +3350,18 @@ reopened. It is a **toggle key**, not a modifier on the right-hold fly (Spacer's
 F3/M/T/C are all free here; use one of them rather than the no-mode idiom).
 Starting inside geometry does not hard-refuse: search upward for the next free
 point above the start and enter there, and refuse only if the search finds
-none. Still open: which key, and how far up the search looks before giving up.
-Also unbound and cheap once a walk exists: Spacer's two camera slots.
+none. **Key, proposed 2026-09-02 (Daniel): Ctrl+W** — tentative ("maybe
+something like"), and worth checking before it's bound: Electron's default
+application menu (`main.ts` sets none of its own, per §16.27 item 3's
+finding, so the built-in template applies) binds Ctrl+W to Window > Close on
+Windows/Linux by default, which would close the app instead of toggling
+walk. **Search bound: use the world's known height, not a guessed
+constant** (Daniel) — the world's vertical extent is already in the loaded
+data (the same bounds the BVH and the frame-world camera already read), so
+the upward search should be capped by that rather than an arbitrary number;
+exactly which field and how it composes with eye height is still to
+determine. Also unbound and cheap once a walk exists: Spacer's two camera
+slots.
 
 None of the three is scheduled. They are carded as one line because they share
 a cause — §14 was assembled against Spacer's *verbs*, and these are its
@@ -3439,10 +3461,9 @@ says "VDF search paths" (plural), "keyed by project" — but
 global string, not project-keyed and not a list. So this request is mostly
 making §9's language real, not inventing new architecture:
 
-1. **A project-keyed list of asset sources**, not one global path and not
-   capped at two — settings need an addable, orderable, per-project source
-   list defaulting to the project root, with further folders (MDK included)
-   added by hand, any number of them.
+1. **A flat, ordered list of asset sources**, not one global path and not
+   capped at two — an addable, orderable list defaulting to the project
+   root, with further folders (MDK included) added by hand, any number.
 2. **`modSources` gets a UI and a settings-backed value**, plural. The
    "project overrides the rest" default falls straight out of this, since
    later sources already win — no new mount logic needed, just wiring.
@@ -3453,7 +3474,20 @@ making §9's language real, not inventing new architecture:
    in an extracted MDK-style install. Pulling worlds from the same
    asset-source list fixes that limitation too, as a side effect.
 
-Not designed, not carded — the settings-schema shape (ordered list? how does
-it interact with the existing single global path?) needs a decision first.
-`docs/architecture/level-editor.md` §9 should be corrected once this lands,
-or corrected now to stop overclaiming what is actually built.
+**Storage settled 2026-09-02 (Daniel): the project file, not `SettingsService`
+— and it *replaces* `gothicInstallPath` rather than sitting beside it.** The
+list is per-project "since the mod root" is itself a project concept, and it
+should be committable like `worlds`/`parts`/`target` already are, not
+machine-local. This is a real change to §9, not just filling in its
+aspirational "VDF search paths" plural: §9 currently puts the install path in
+`SettingsService`, machine-local, precisely so it doesn't need to be the same
+on every collaborator's machine — the project file's `worlds` array already
+records paths *relative to the project root* for that reason. A flat ordered
+list of absolute folders committed into the project file reopens that
+question for every entry after the first (the project root itself is free —
+it's wherever the project file already is): if a collaborator's MDK folder
+sits somewhere else, a committed absolute path won't resolve for them. Worth
+a decision on how a missing/wrong entry behaves (skip with a warning, most
+likely, given a `modSources` config is already optional) before this is
+carded. `docs/architecture/level-editor.md` §9 should be updated once this
+lands.

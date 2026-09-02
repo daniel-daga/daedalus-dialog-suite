@@ -167,24 +167,25 @@ the next unclaimed row is **28** (section 3, UI with a template in the tree).
   structural op, and `SetVobProp` never is. Needs a `visual`-aware trigger
   and a test; neither exists. §16.27 item 1
 - **§14's uninventoried gaps** — mesh preview, fly navigation, the picker,
-  the four camera slots and the walk mode's design (toggle key; search up for
-  free space or refuse, on starting inside geometry) are settled; left are the
-  thumbnail grid and chest contents — **reopened 2026-09-02 (Daniel)**: wanted
-  as a visual grid, plus favorites and categories on the asset browser
-  generally. §16.26
-- **Scatter placement, past Spacer rather than parity** — **2026-09-02
-  (Daniel): the missing scale field doesn't block it**, and the palette is a
-  multi-VOB selection, not a stored blob. Still undecided: model source,
-  density/undo-bar size, erase. Benched until decided. §16.25
+  the four camera slots and §16.12's outline tuning are settled; the walk
+  mode's design is settled bar its key (Ctrl+W proposed, but likely a
+  default Electron accelerator for Close) and its search-up bound (the
+  world's known height, not a guess — exact field TBD). Left otherwise: the
+  thumbnail grid and chest contents — reopened as a visual grid, plus
+  favorites/categories, persisted to a project sidecar, taxonomy referencing
+  `vobbilder`'s hand-curated tree. §16.26
+- **Scatter placement, past Spacer rather than parity** — the missing scale
+  field doesn't block it, the palette is a multi-VOB selection, and models
+  come from the assets (same picker-wiring prerequisite as the row above).
+  Still undecided: density/undo-bar size, erase. Benched until decided. §16.25
 
 **Asset sources**
 
-- **Arbitrary-length asset folder list — requested 2026-09-02 (Daniel)**:
-  not just mod + MDK — an orderable list of any size, project root the
-  default first entry, others (MDK included) added by hand. Worlds resolve
-  off the same list. The native VFS layer already supports the overlay; the
-  gap is settings (one global path today, not project-keyed, not a list).
-  Not designed yet. §16.28
+- **Arbitrary-length asset folder list** — an orderable list of any size,
+  project root the default first entry, others (MDK included) added by
+  hand, worlds resolved off the same list. Storage decided: the project
+  file, replacing `gothicInstallPath`, not `SettingsService` — open: how a
+  collaborator's missing/wrong absolute entry behaves. §16.28
 
 **zenkit-node / fidelity**
 
