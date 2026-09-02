@@ -1,8 +1,9 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Box, Paper, Typography, Stack, IconButton, Tooltip, Button, Menu, MenuItem, Chip } from '@mui/material';
-import { Add as AddIcon, ExpandMore as ExpandMoreIcon, ChevronRight as ChevronRightIcon, Code as CodeIcon, Check as CheckIcon, Info as InfoIcon, Assignment as AssignmentIcon } from '@mui/icons-material';
+import { Add as AddIcon, ExpandMore as ExpandMoreIcon, ChevronRight as ChevronRightIcon } from '@mui/icons-material';
 import { ToggleButton, ToggleButtonGroup } from '@mui/material';
 import ConditionCard from './ConditionCard';
+import { CONDITION_REGISTRY } from './conditions/conditionRegistry';
 import type { DialogCondition, DialogFunction } from '../types/global';
 import type { ConditionEditorCondition, FunctionUpdater } from './dialogTypes';
 
@@ -159,88 +160,8 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
     }, 10);
   }, []);
 
-  const addCondition = useCallback((conditionType: 'npcKnowsInfo' | 'variable' | 'npcHasItems' | 'npcIsInState' | 'npcIsDead' | 'npcGetDistToWp' | 'npcGetTalentSkill' | 'questState' | 'generic') => {
-    let newCondition: ConditionEditorCondition;
-    switch (conditionType) {
-      case 'npcKnowsInfo':
-        newCondition = {
-          type: 'NpcKnowsInfoCondition',
-          npc: 'self',
-          dialogRef: '',
-          getTypeName: () => 'NpcKnowsInfoCondition'
-        };
-        break;
-      case 'variable':
-        newCondition = {
-          type: 'VariableCondition',
-          variableName: '',
-          negated: false,
-          getTypeName: () => 'VariableCondition'
-        };
-        break;
-      case 'npcHasItems':
-        newCondition = {
-          type: 'NpcHasItemsCondition',
-          npc: 'other',
-          item: '',
-          operator: '>=',
-          value: 1,
-          getTypeName: () => 'NpcHasItemsCondition'
-        };
-        break;
-      case 'npcIsInState':
-        newCondition = {
-          type: 'NpcIsInStateCondition',
-          npc: 'self',
-          state: 'ZS_Talk',
-          negated: false,
-          getTypeName: () => 'NpcIsInStateCondition'
-        };
-        break;
-      case 'npcIsDead':
-        newCondition = {
-          type: 'NpcIsDeadCondition',
-          npc: '',
-          negated: false,
-          getTypeName: () => 'NpcIsDeadCondition'
-        };
-        break;
-      case 'npcGetDistToWp':
-        newCondition = {
-          type: 'NpcGetDistToWpCondition',
-          npc: 'self',
-          waypoint: '',
-          operator: '<=',
-          value: 500,
-          getTypeName: () => 'NpcGetDistToWpCondition'
-        };
-        break;
-      case 'npcGetTalentSkill':
-        newCondition = {
-          type: 'NpcGetTalentSkillCondition',
-          npc: 'other',
-          talent: 'NPC_TALENT_PICKPOCKET',
-          operator: '>=',
-          value: 1,
-          getTypeName: () => 'NpcGetTalentSkillCondition'
-        };
-        break;
-      case 'questState':
-        newCondition = {
-          type: 'QuestStateCondition',
-          questVariable: '',
-          state: 'LOG_SUCCESS',
-          getTypeName: () => 'QuestStateCondition'
-        };
-        break;
-      case 'generic':
-        newCondition = {
-          type: 'Condition',
-          condition: '',
-          getTypeName: () => 'Condition'
-        };
-        break;
-    }
+  const addCondition = useCallback((conditionType: string) => {
+    const newCondition = CONDITION_REGISTRY[conditionType].createDefault();
 
     // Append a matching uiId so the reconcile above does not regenerate keys.
     uiIdsRef.current = [...uiIdsRef.current, `cond-${uiIdCounterRef.current++}`];
@@ -439,42 +360,12 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
             open={Boolean(addMenuAnchor)}
             onClose={() => setAddMenuAnchor(null)}
           >
-            <MenuItem onClick={() => { addCondition('npcKnowsInfo'); setAddMenuAnchor(null); }}>
-              <InfoIcon fontSize="small" sx={{ mr: 1 }} />
-              NPC Knows Dialog
-            </MenuItem>
-            <MenuItem onClick={() => { addCondition('variable'); setAddMenuAnchor(null); }}>
-              <CheckIcon fontSize="small" sx={{ mr: 1 }} />
-              Variable Check
-            </MenuItem>
-            <MenuItem onClick={() => { addCondition('npcHasItems'); setAddMenuAnchor(null); }}>
-              <InfoIcon fontSize="small" sx={{ mr: 1 }} />
-              NPC Has Items
-            </MenuItem>
-            <MenuItem onClick={() => { addCondition('npcIsInState'); setAddMenuAnchor(null); }}>
-              <InfoIcon fontSize="small" sx={{ mr: 1 }} />
-              NPC Is In State
-            </MenuItem>
-            <MenuItem onClick={() => { addCondition('npcIsDead'); setAddMenuAnchor(null); }}>
-              <InfoIcon fontSize="small" sx={{ mr: 1 }} />
-              NPC Is Dead
-            </MenuItem>
-            <MenuItem onClick={() => { addCondition('npcGetDistToWp'); setAddMenuAnchor(null); }}>
-              <InfoIcon fontSize="small" sx={{ mr: 1 }} />
-              Distance To WP
-            </MenuItem>
-            <MenuItem onClick={() => { addCondition('npcGetTalentSkill'); setAddMenuAnchor(null); }}>
-              <InfoIcon fontSize="small" sx={{ mr: 1 }} />
-              Talent Skill
-            </MenuItem>
-            <MenuItem onClick={() => { addCondition('questState'); setAddMenuAnchor(null); }}>
-              <AssignmentIcon fontSize="small" sx={{ mr: 1 }} />
-              Quest-Zustand
-            </MenuItem>
-            <MenuItem onClick={() => { addCondition('generic'); setAddMenuAnchor(null); }}>
-              <CodeIcon fontSize="small" sx={{ mr: 1 }} />
-              Custom Condition
-            </MenuItem>
+            {Object.entries(CONDITION_REGISTRY).map(([conditionType, entry]) => (
+              <MenuItem key={conditionType} onClick={() => { addCondition(conditionType); setAddMenuAnchor(null); }}>
+                {React.cloneElement(entry.icon, { sx: { mr: 1 } })}
+                {entry.menuLabel}
+              </MenuItem>
+            ))}
           </Menu>
         </>
       )}
