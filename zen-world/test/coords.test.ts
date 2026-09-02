@@ -346,50 +346,108 @@ describe('zen-world/coords — typed angles', () => {
     return worst;
   };
 
-  // The three quarter turns the existing mirror tests above already use, so the
-  // convention is pinned against a fixture the file already trusts.
+  // The three quarter turns the existing mirror tests above already use — the
+  // right-handed rotation matrices about each ZenGin axis, so the convention is
+  // pinned against a fixture the file already trusts. Note that the *engine's*
+  // angles turn the other way (below), so a +90 typed here is the transpose.
   const quarterX: Mat3 = [1, 0, 0, 0, 0, -1, 0, 1, 0];
   const quarterY: Mat3 = [0, 0, 1, 0, 1, 0, -1, 0, 0];
   const quarterZ: Mat3 = [0, -1, 0, 1, 0, 0, 0, 0, 1];
+  const transpose = (m: readonly number[]): number[] => [
+    m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]];
 
-  test('each angle is a quarter turn about its own ZenGin axis, in the sense the matrix names', () => {
+  // The right-handed rotation matrices about each axis, written out rather than
+  // taken from the implementation, so the composition tests below check a
+  // formula against something that is not itself.
+  const axis = (angle: number, about: 'x' | 'y' | 'z'): number[] => {
+    const c = Math.cos((angle * Math.PI) / 180);
+    const s = Math.sin((angle * Math.PI) / 180);
+    return {
+      x: [1, 0, 0, 0, c, -s, 0, s, c],
+      y: [c, 0, s, 0, 1, 0, -s, 0, c],
+      z: [c, -s, 0, s, c, 0, 0, 0, 1],
+    }[about];
+  };
+  /** `Rx(-pitch) * Ry(-yaw) * Rz(-roll)` — the engine's `SetByEulerAngles`
+   *  in this repo's column-vector terms, built by hand from the axis matrices. */
+  const engineMatrix = ([yaw, pitch, roll]: readonly number[]): number[] =>
+    mul(axis(-pitch, 'x'), mul(axis(-yaw, 'y'), axis(-roll, 'z')));
+
+  test('each angle is a quarter turn about its own ZenGin axis, in the sense the engine gives it', () => {
     // What "yaw", "pitch" and "roll" *mean* here, stated as the axis each one
     // turns and the direction it turns it. Anything vaguer leaves the sign of a
     // typed angle undefined, and a sign error is exactly the defect the mirror
     // shipped once already.
-    expect(eulerToZenRotation([90, 0, 0]).map(Math.round)).toEqual(quarterY);
-    expect(eulerToZenRotation([0, 90, 0]).map(Math.round)).toEqual(quarterX);
-    expect(eulerToZenRotation([0, 0, 90]).map(Math.round)).toEqual(quarterZ);
+    //
+    // **The sense is the engine's, and it is the opposite of the right-handed
+    // matrix about each axis** (level-editor.md §16.4, 2026-09-02): ZenGin's
+    // `zMAT4::SetByEulerAngles` builds `Rx(-x) * Ry(-y) * Rz(-z)`, so a +90 yaw
+    // is `Ry(-90)` — the transpose of `quarterY`. The convention that shipped
+    // first had these three the other way round, which is the sign flip this
+    // test exists to make explicit.
+    expect(eulerToZenRotation([90, 0, 0]).map(Math.round)).toEqual(transpose(quarterY));
+    expect(eulerToZenRotation([0, 90, 0]).map(Math.round)).toEqual(transpose(quarterX));
+    expect(eulerToZenRotation([0, 0, 90]).map(Math.round)).toEqual(transpose(quarterZ));
 
-    // And the sense, in ZenGin's own stored coordinates: +yaw takes +Z to +X,
-    // +pitch takes +Y to +Z, +roll takes +X to +Y.
-    expect(applyTo(eulerToZenRotation([90, 0, 0]), [0, 0, 1]).map(Math.round)).toEqual([1, 0, 0]);
-    expect(applyTo(eulerToZenRotation([0, 90, 0]), [0, 1, 0]).map(Math.round)).toEqual([0, 0, 1]);
-    expect(applyTo(eulerToZenRotation([0, 0, 90]), [1, 0, 0]).map(Math.round)).toEqual([0, 1, 0]);
+    // And the sense, in ZenGin's own stored coordinates: +yaw takes +Z to -X,
+    // +pitch takes +Y to -Z, +roll takes +X to -Y. (The old convention took
+    // each of them to the positive axis instead.)
+    expect(applyTo(eulerToZenRotation([90, 0, 0]), [0, 0, 1]).map(Math.round)).toEqual([-1, 0, 0]);
+    expect(applyTo(eulerToZenRotation([0, 90, 0]), [0, 1, 0]).map(Math.round)).toEqual([0, 0, -1]);
+    expect(applyTo(eulerToZenRotation([0, 0, 90]), [1, 0, 0]).map(Math.round)).toEqual([0, -1, 0]);
+
+    // A quarter turn about world Y, stored as the right-handed matrix, reads as
+    // yaw -90 — not +90 — because that matrix is `Ry(+90) = Ry(-(-90))`.
+    expect(zenRotationToEuler(quarterY)).toEqual([-90, 0, 0]);
   });
 
-  test('the order is Y then X then Z, which is what a wrong order silently changes', () => {
+  test('the order is X then Y then Z with the vertical in the middle, which is what a wrong order silently changes', () => {
     // The whole content of "which convention": the composition order. Every
-    // order agrees on a single-axis turn, so the tests above cannot tell them
-    // apart and this one has to. Built from the three axis matrices rather than
-    // from the implementation's own formula.
-    const axis = (angle: number, about: 'x' | 'y' | 'z'): number[] => {
-      const c = Math.cos((angle * Math.PI) / 180);
-      const s = Math.sin((angle * Math.PI) / 180);
-      return {
-        x: [1, 0, 0, 0, c, -s, 0, s, c],
-        y: [c, 0, s, 0, 1, 0, -s, 0, c],
-        z: [c, -s, 0, s, c, 0, 0, 0, 1],
-      }[about];
-    };
+    // order agrees on a single-axis turn, so the test above cannot tell them
+    // apart and this one has to. The engine's is `Rx(-x) * Ry(-y) * Rz(-z)`,
+    // built here from the three axis matrices rather than from the
+    // implementation's own formula.
+    const xyz = engineMatrix([30, 40, 50]);
+    expect(maxEntryError(eulerToZenRotation([30, 40, 50]), xyz)).toBeLessThan(1e-12);
 
-    const yxz = mul(axis(30, 'y'), mul(axis(40, 'x'), axis(50, 'z')));
-    expect(maxEntryError(eulerToZenRotation([30, 40, 50]), yxz)).toBeLessThan(1e-12);
+    // The order actually matters on this input — a test that passed for the
+    // old `Ry * Rx * Rz` too, with either sign, would be pinning nothing.
+    const oldYxz = mul(axis(30, 'y'), mul(axis(40, 'x'), axis(50, 'z')));
+    const oldYxzNegated = mul(axis(-30, 'y'), mul(axis(-40, 'x'), axis(-50, 'z')));
+    expect(maxEntryError(xyz, oldYxz)).toBeGreaterThan(0.1);
+    expect(maxEntryError(xyz, oldYxzNegated)).toBeGreaterThan(0.1);
+  });
 
-    // The order actually matters on this input — a test that passed for XYZ too
-    // would be pinning nothing.
-    const xyz = mul(axis(40, 'x'), mul(axis(30, 'y'), axis(50, 'z')));
-    expect(maxEntryError(yxz, xyz)).toBeGreaterThan(0.1);
+  test('a matrix built from known engine angles decomposes to those angles', () => {
+    // The other direction of the same contract, on matrices the implementation
+    // did not build: a `trafoOSToWSRot` the engine wrote from (x, y, z) has to
+    // read back as (x, y, z) — that is what "the fields are the engine's
+    // angles" means. Yaw stays inside its canonical [-90, 90]: outside it the
+    // same matrix has a second, equivalent triple, and that one is the answer.
+    for (const pose of [[30, 40, 50], [-60, -125, 170], [80, -45, -10], [0, 0, 180]] as const) {
+      const back = zenRotationToEuler(engineMatrix(pose));
+      for (let angle = 0; angle < 3; angle++) {
+        expect(back[angle]).toBeCloseTo(pose[angle], 9);
+      }
+    }
+  });
+
+  test('reads exactly the entries zMAT4::GetEulerAngles reads, radians made degrees', () => {
+    // The engine's formula, with its own `m[r][c]` indices into the row-major
+    // 3x3 exactly as `trafoOSToWSRot` is written (Gothic2.exe `0x00516390`):
+    // `x = atan2(m[1][2], m[2][2])`, `y = asin(-m[0][2])`,
+    // `z = atan2(m[0][1], m[0][0])`. Restating the formula is the point here —
+    // it is the engine's, not ours, so a witness plugin calling
+    // `GetEulerAngles()` on a VOB can be compared against these three lines.
+    const random = lcg(7);
+    const toDegrees = 180 / Math.PI;
+    for (let i = 0; i < 200; i++) {
+      const m = engineMatrix([random() * 176 - 88, random() * 358 - 179, random() * 358 - 179]);
+      const [yaw, pitch, roll] = zenRotationToEuler(m);
+      expect(pitch).toBeCloseTo(Math.atan2(m[1 * 3 + 2], m[2 * 3 + 2]) * toDegrees, 9);
+      expect(yaw).toBeCloseTo(Math.asin(-m[0 * 3 + 2]) * toDegrees, 9);
+      expect(roll).toBeCloseTo(Math.atan2(m[0 * 3 + 1], m[0 * 3 + 0]) * toDegrees, 9);
+    }
   });
 
   test('a float32 matrix survives matrix -> angles -> matrix within a few ulps', () => {
@@ -412,60 +470,69 @@ describe('zen-world/coords — typed angles', () => {
   test('angles survive angles -> matrix -> angles, inside the canonical range', () => {
     // The other direction, and the range that makes it well-posed at all: the
     // decomposition can only answer in one canonical band, so the property is
-    // stated over that band. `pitch` is kept off the pole here on purpose —
-    // there the *angles* are genuinely not recoverable, which is the next test.
+    // stated over that band. `yaw` — the middle, singular angle of the engine's
+    // X-Y-Z — is kept off the pole here on purpose: there the *angles* are
+    // genuinely not recoverable, which is the next test.
     const random = lcg(99);
     for (let i = 0; i < 2000; i++) {
       const pose: ZenEulerDegrees = [
-        random() * 358 - 179, random() * 176 - 88, random() * 358 - 179,
+        random() * 176 - 88, random() * 358 - 179, random() * 358 - 179,
       ];
       const back = zenRotationToEuler(eulerToZenRotation(pose));
       for (let angle = 0; angle < 3; angle++) {
         expect(back[angle]).toBeCloseTo(pose[angle], 5);
       }
-      expect(back[0]).toBeGreaterThan(-180);
-      expect(back[0]).toBeLessThanOrEqual(180);
-      expect(back[1]).toBeGreaterThanOrEqual(-90);
-      expect(back[1]).toBeLessThanOrEqual(90);
+      expect(back[0]).toBeGreaterThanOrEqual(-90);
+      expect(back[0]).toBeLessThanOrEqual(90);
+      expect(back[1]).toBeGreaterThan(-180);
+      expect(back[1]).toBeLessThanOrEqual(180);
       expect(back[2]).toBeGreaterThan(-180);
       expect(back[2]).toBeLessThanOrEqual(180);
     }
   });
 
-  test('at the pole the roll is folded into the yaw, and the matrix still round-trips', () => {
-    // Gimbal lock: at pitch = +-90 the yaw and roll axes coincide, so only their
-    // sum (or difference) is observable and no decomposition can return the pair
-    // that was typed. The rule is stated rather than left to the arithmetic:
-    // **roll comes back 0 and the yaw carries the whole turn**. What survives is
-    // the thing the world stores — the matrix — so a designer who types a pole
-    // pose gets the orientation asked for, with the angles rewritten.
-    // Built exactly rather than by asking for pitch 90: `cos(90 degrees)` is
+  test('at the pole the roll is folded into the pitch, and the matrix still round-trips', () => {
+    // Gimbal lock: at yaw = +-90 — `m[0][2] = -+1`, the engine's lock branch —
+    // the pitch and roll axes coincide, so only their sum (or difference) is
+    // observable and no decomposition can return the pair that was typed. The
+    // rule is the engine's rather than left to the arithmetic: **roll comes
+    // back 0 and the pitch carries the whole turn**, `x = atan2(-m[2][1],
+    // m[1][1])`. What survives is the thing the world stores — the matrix — so
+    // a designer who types a pole pose gets the orientation asked for, with the
+    // angles rewritten.
+    // Built exactly rather than by asking for yaw 90: `cos(90 degrees)` is
     // 6.1e-17 and not 0, so a matrix *computed* from a pole pose is near the
     // pole and decomposes normally — which is the right answer and is why the
-    // next test exists. Measured, **no retail VOB is stored exactly on the pole**
-    // (0 of 41,393 take this branch; 53 are within 1e-6 of it and decompose the
-    // ordinary way), so this is the authored and the corrupted case rather than
-    // one a designer reaches by typing 90.
+    // next test exists. Measured, **464 retail VOBs sit within 1e-6 of this
+    // pole** — a quarter turn about the vertical is the commonest deliberate
+    // pose in the game — and the ones stored exactly on it read as yaw +-90,
+    // roll 0, with whatever was authored as roll shown as pitch.
     //
-    // At pitch = +90 the observable is yaw - roll, at -90 it is yaw + roll:
-    // with cos(pitch) = 0 every entry collapses to one angle-sum identity, which
-    // is gimbal lock written out.
-    const poled = (pitch: 90 | -90, combined: number): Mat3 => {
+    // At yaw = +90 the observable is pitch - roll, at -90 it is pitch + roll:
+    // with cos(yaw) = 0 every entry collapses to one angle-sum identity, which
+    // is gimbal lock written out. The matrices below are `Rx(-p) * Ry(-+90) *
+    // Rz(-r)` with the sum identities applied, so `m[0][2]` is exactly -+1.
+    const poled = (yaw: 90 | -90, combined: number): Mat3 => {
       const c = Math.cos((combined * Math.PI) / 180);
       const s = Math.sin((combined * Math.PI) / 180);
-      return pitch === 90
-        ? [c, s, 0, 0, 0, -1, -s, c, 0]
-        : [c, -s, 0, 0, 0, 1, -s, -c, 0];
+      return yaw === 90
+        ? [0, 0, -1, s, c, 0, c, -s, 0]
+        : [0, 0, 1, -s, c, 0, -c, -s, 0];
     };
 
-    for (const [pitch, yaw, roll] of [[90, 37, 13], [-90, 37, 13]] as const) {
-      const combined = pitch === 90 ? yaw - roll : yaw + roll;
-      const stored = poled(pitch, combined);
+    for (const [yaw, pitch, roll] of [[90, 37, 13], [-90, 37, 13]] as const) {
+      const combined = yaw === 90 ? pitch - roll : pitch + roll;
+      const stored = poled(yaw, combined);
+      // The fixture really is the pose it claims to be, checked against the
+      // hand-built engine matrix rather than trusted.
+      expect(maxEntryError(stored, engineMatrix([yaw, pitch, roll]))).toBeLessThan(1e-12);
       const back = zenRotationToEuler(stored);
 
       expect(back[2]).toBe(0);
-      expect(back[1]).toBeCloseTo(pitch, 6);
-      expect(back[0]).toBeCloseTo(combined, 6);
+      expect(back[0]).toBeCloseTo(yaw, 6);
+      expect(back[1]).toBeCloseTo(combined, 6);
+      // And the pitch is exactly the engine's lock-branch formula.
+      expect(back[1]).toBeCloseTo(Math.atan2(-stored[2 * 3 + 1], stored[1 * 3 + 1]) * (180 / Math.PI), 9);
       expect(back).not.toEqual([yaw, pitch, roll]);
 
       // Stable: the rewritten angles describe the same orientation, and
@@ -492,7 +559,7 @@ describe('zen-world/coords — typed angles', () => {
     // eps of 1e-7 in sine space costs 8.5e-4 of matrix entry, four orders above
     // the tolerance below.
     for (const eps of [1e-2, 1e-3, 1e-4, 1e-5, 1e-6]) {
-      const stored = f32(eulerToZenRotation([37, 90 - eps, 13]));
+      const stored = f32(eulerToZenRotation([90 - eps, 37, 13]));
       const back = zenRotationToEuler(stored);
       expect(maxEntryError(f32(eulerToZenRotation(back)), stored)).toBeLessThan(1e-6);
     }
@@ -578,12 +645,23 @@ describe('zen-world/coords — typed angles', () => {
         .toBeGreaterThan(0.1);
     });
 
-    test('a change on one axis alone is the quarter turn about that axis', () => {
+    test('a change on one axis alone is the quarter turn about that axis, in the engine\'s sense', () => {
       // Written out rather than derived, so an implementation that composed the
-      // wrong way round could not agree with the expectation.
-      expect(maxEntryError(eulerDeltaRotation([0, 0, 0], [90, 0, 0]), quarterY)).toBeLessThan(1e-12);
-      expect(maxEntryError(eulerDeltaRotation([0, 0, 0], [0, 90, 0]), quarterX)).toBeLessThan(1e-12);
-      expect(maxEntryError(eulerDeltaRotation([0, 0, 0], [0, 0, 90]), quarterZ)).toBeLessThan(1e-12);
+      // wrong way round could not agree with the expectation. The engine's +90
+      // is the right-handed quarter turn's transpose (see the convention test).
+      expect(maxEntryError(eulerDeltaRotation([0, 0, 0], [90, 0, 0]), transpose(quarterY))).toBeLessThan(1e-12);
+      expect(maxEntryError(eulerDeltaRotation([0, 0, 0], [0, 90, 0]), transpose(quarterX))).toBeLessThan(1e-12);
+      expect(maxEntryError(eulerDeltaRotation([0, 0, 0], [0, 0, 90]), transpose(quarterZ))).toBeLessThan(1e-12);
+    });
+
+    test('is R(to) * R(from)^T under the engine convention, on a pose where every angle is live', () => {
+      // The delta is defined against the matrices the convention builds, so a
+      // change of convention must not change this identity — checked against
+      // the hand-built engine matrices rather than the implementation's own.
+      const from: ZenEulerDegrees = [20, -50, 110];
+      const to: ZenEulerDegrees = [-35, 80, -140];
+      const expected = mul(engineMatrix(to), transpose(engineMatrix(from)));
+      expect(maxEntryError(eulerDeltaRotation(from, to), expected)).toBeLessThan(1e-12);
     });
 
     test('is the identity when nothing changed', () => {

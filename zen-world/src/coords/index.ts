@@ -49,7 +49,8 @@ export type Mat3 = [
 
 /**
  * `[yaw, pitch, roll]` in **degrees**, ZenGin axes — the three numbers a level
- * designer types, and the form Spacer's own object properties take.
+ * designer types, holding the engine's own `GetEulerAngles` (x, y, z) as
+ * (pitch, yaw, roll); see "Angles" below.
  *
  * Degrees rather than radians on purpose: the only consumer is a property grid,
  * and a second unit conversion in the renderer is exactly the kind of duplicated
@@ -159,39 +160,56 @@ export function threeToZen(p: Vec3): [number, number, number] {
 // because three angles do not determine a matrix until the order they compose
 // in is fixed. The choice made here, and why:
 //
-// **The convention is intrinsic Y-X-Z: `R = Ry(yaw) * Rx(pitch) * Rz(roll)`,
-// in degrees, about ZenGin's own axes.**
+// **The convention is the engine's own — `zMAT4::GetEulerAngles` /
+// `SetByEulerAngles` (Gothic2.exe `0x00516390` / `0x005163D0`, via
+// `zCQuat::EulerToQuat` / `QuatToEuler`), in degrees, about ZenGin's axes.**
+// With `m[r][c]` the stored row-major 3x3 exactly as `trafoOSToWSRot` is
+// written, the engine reads
 //
-// - **Nothing in ZenGin, ZenKit or this repo commits to an order.** The world
-//   format stores the matrix and nothing else; ZenKit's `Mat3` has no Euler
-//   conversion at all; grep finds no `euler`/`atan2`/`asin` in either. So
-//   **whether this matches what Spacer's own angle fields would have shown is
-//   unverified** — there is no artefact here to check it against, and the claim
-//   is deliberately not made. What *is* verified is that it round-trips retail
-//   data (see the tolerances below), which is the property the editor needs.
-// - **The order is chosen by where it breaks.** Every order has one degenerate
-//   pose — the middle axis at +-90 degrees, where the outer two coincide — and
-//   the middle axis of YXZ is X, so the singularity is a VOB tipped onto its
-//   nose. An XYZ order would put it on the *vertical* axis instead: measured
-//   across the 41,393 VOBs of retail NewWorld, OldWorld and AddonWorld, **464
-//   sit within 1e-6 of the XYZ singularity and 53 within 1e-6 of this one**
-//   (1,064 against 174 within 1e-3) — because a prop turned a quarter turn about
-//   the vertical is the commonest deliberate pose in the game and a prop stood
-//   on its nose is not.
-// - Y-up yaw/pitch/roll is also what every Y-up engine calls heading, pitch and
-//   bank, so the three fields read the way a modder expects without a legend.
+//     x = atan2(m[1][2], m[2][2])     (pitch, about X)
+//     y = asin(-m[0][2])              (yaw,   about Y — the middle, singular axis)
+//     z = atan2(m[0][1], m[0][0])     (roll,  about Z)
 //
-// **Gimbal lock is answered, not avoided.** At pitch = +-90 the yaw and roll
-// axes are the same axis and only their sum is observable, so no decomposition
-// can return the pair that was typed. `zenRotationToEuler` puts the whole turn
-// in **yaw and returns roll 0**; the matrix still round-trips inside tolerance,
-// and re-decomposing the rewritten angles is a fixed point. The dangerous part
-// is the *neighbourhood*, not the pole: a "close enough to the pole" epsilon in
-// sine space discards a roll that is still perfectly recoverable and moves the
-// VOB (measured: an epsilon of 1e-7 costs 8.5e-4 of matrix entry, four orders
-// above the tolerance the tests hold). So there is no epsilon — the pole branch
-// is taken only when the ordinary `atan2` has no direction left at all, which is
-// exactly the case it exists for.
+// and at `|m[0][2]| >= 1` its lock branch sets `y = +-pi/2`, `z = 0`,
+// `x = atan2(-m[2][1], m[1][1])`. In this module's column-vector terms that is
+// **`R = Rx(-x) * Ry(-y) * Rz(-z)` — intrinsic X-Y-Z, every angle turning the
+// opposite way from the right-handed matrix about its axis.** `ZenEulerDegrees`
+// keeps its `[yaw, pitch, roll]` order; the *values* are the engine's (x, y, z)
+// reordered, nothing more.
+//
+// - **This is the one Euler triple ZenGin has, and the only one a witness can
+//   check.** The world format stores the matrix and nothing else, ZenKit has no
+//   Euler conversion, and no Spacer shows an angle triple (level-editor.md
+//   §16.4, 2026-09-02): Spacer.NET edits `trafoOSToWSRot` raw and uses
+//   `GetEulerAngles()[1]` only as "around vertical axis" for its HUD. So "the
+//   angles Spacer would show" was never a thing to match, and the engine's
+//   formula is — a ten-line Union plugin calling `GetEulerAngles()` on a known
+//   VOB compares directly against the three lines above.
+// - **The order is where it breaks, and the engine chose the vertical.** Every
+//   order has one degenerate pose — the middle axis at +-90 degrees, where the
+//   outer two coincide — and the middle axis of X-Y-Z is Y, so the singularity
+//   is a VOB turned a quarter turn about the vertical. Measured across the
+//   41,393 VOBs of retail NewWorld, OldWorld and AddonWorld, **464 sit within
+//   1e-6 of it** (1,064 within 1e-3), because that is the commonest deliberate
+//   pose in the game. The convention that shipped first (2026-08-28) was
+//   `Ry * Rx * Rz` for exactly that reason — its pole is a VOB stood on its
+//   nose, 53 VOBs — and was replaced 2026-09-02 because those 464 are also the
+//   ones the engine itself shows on the pole, and matching the engine is worth
+//   more than dodging its lock.
+//
+// **Gimbal lock is answered the engine's way, not avoided.** At yaw = +-90 the
+// pitch and roll axes are the same axis and only their sum is observable, so
+// no decomposition can return the pair that was typed. `zenRotationToEuler`
+// puts the whole turn in **pitch and returns roll 0**, as `GetEulerAngles`
+// does; the matrix still round-trips inside tolerance, and re-decomposing the
+// rewritten angles is a fixed point. The dangerous part is the *neighbourhood*,
+// not the pole: a "close enough to the pole" epsilon in sine space discards a
+// roll that is still perfectly recoverable and moves the VOB (measured: an
+// epsilon of 1e-7 costs 8.5e-4 of matrix entry, four orders above the tolerance
+// the tests hold). So there is no epsilon — the lock branch is the engine's
+// own `|m[0][2]| >= 1`, taken only when `asin` is at its end and the ordinary
+// `atan2` pairs have no direction left at all, which is exactly the case it
+// exists for.
 //
 // **A non-orthonormal matrix is normalized, and its scale and shear are
 // dropped.** Retail data is not orthonormal: 12,514 of those 41,393 VOBs
@@ -220,9 +238,10 @@ const RADIANS_PER_DEGREE = Math.PI / 180;
 const noNegativeZero = (v: number): number => (v === 0 ? 0 : v);
 
 /**
- * The angles of a stored rotation, `[yaw, pitch, roll]` in degrees.
+ * The angles of a stored rotation, `[yaw, pitch, roll]` in degrees — the
+ * engine's `zMAT4::GetEulerAngles` (x, y, z) as (pitch, yaw, roll).
  *
- * Canonical range: yaw and roll in (-180, 180], pitch in [-90, 90] — the band
+ * Canonical range: pitch and roll in (-180, 180], yaw in [-90, 90] — the band
  * `atan2` and `asin` answer in, and the only one in which the decomposition is
  * a function at all.
  *
@@ -232,32 +251,33 @@ const noNegativeZero = (v: number): number => (v === 0 ? 0 : v);
 export function zenRotationToEuler(rotation: readonly number[]): ZenEulerDegrees {
   const m = orthonormalizeColumns(rotation);
 
-  // m[5] is row 1, column 2 = -sin(pitch): the one entry YXZ leaves a single
-  // angle in, which is why the pitch is the angle read first and directly.
-  const pitch = Math.asin(Math.min(1, Math.max(-1, -m[5])));
+  // m[2] is m[0][2] = -sin(yaw): the one entry X-Y-Z leaves a single angle in,
+  // which is why the yaw is the angle read first and directly.
+  const yaw = Math.asin(Math.min(1, Math.max(-1, -m[2])));
 
-  // Away from the pole, yaw and roll each read off a pair of entries that share
-  // a factor of cos(pitch) — `atan2` divides it out, however small it is.
-  if ((m[2] !== 0 || m[8] !== 0) && (m[3] !== 0 || m[4] !== 0)) {
+  // Away from the pole, pitch and roll each read off a pair of entries that
+  // share a factor of cos(yaw) — `atan2` divides it out, however small it is.
+  if (Math.abs(m[2]) < 1) {
     return [
-      noNegativeZero(Math.atan2(m[2], m[8]) * DEGREES_PER_RADIAN),
-      noNegativeZero(pitch * DEGREES_PER_RADIAN),
-      noNegativeZero(Math.atan2(m[3], m[4]) * DEGREES_PER_RADIAN),
+      noNegativeZero(yaw * DEGREES_PER_RADIAN),
+      noNegativeZero(Math.atan2(m[5], m[8]) * DEGREES_PER_RADIAN),
+      noNegativeZero(Math.atan2(m[1], m[0]) * DEGREES_PER_RADIAN),
     ];
   }
 
-  // cos(pitch) is 0: the yaw and roll axes coincide and only the combined turn
-  // survives. It goes in the yaw.
+  // cos(yaw) is 0: the pitch and roll axes coincide and only the combined turn
+  // survives. The engine puts it in the pitch: `x = atan2(-m[2][1], m[1][1])`.
   return [
-    noNegativeZero(Math.atan2(-m[6], m[0]) * DEGREES_PER_RADIAN),
-    noNegativeZero(pitch * DEGREES_PER_RADIAN),
+    noNegativeZero(yaw * DEGREES_PER_RADIAN),
+    noNegativeZero(Math.atan2(-m[7], m[4]) * DEGREES_PER_RADIAN),
     0,
   ];
 }
 
-/** The stored rotation for `[yaw, pitch, roll]` degrees — `Ry * Rx * Rz`,
- *  row-major, in ZenGin space. The exact inverse of `zenRotationToEuler` for
- *  any pose it can answer. */
+/** The stored rotation for `[yaw, pitch, roll]` degrees — the engine's
+ *  `SetByEulerAngles`, `Rx(-pitch) * Ry(-yaw) * Rz(-roll)`, row-major, in
+ *  ZenGin space. The exact inverse of `zenRotationToEuler` for any pose it can
+ *  answer. */
 export function eulerToZenRotation(euler: readonly number[]): Mat3 {
   const yaw = euler[0] * RADIANS_PER_DEGREE;
   const pitch = euler[1] * RADIANS_PER_DEGREE;
@@ -268,9 +288,9 @@ export function eulerToZenRotation(euler: readonly number[]): Mat3 {
   const cr = Math.cos(roll), sr = Math.sin(roll);
 
   return [
-    cy * cr + sy * sp * sr, -cy * sr + sy * sp * cr, sy * cp,
-    cp * sr, cp * cr, -sp,
-    -sy * cr + cy * sp * sr, sy * sr + cy * sp * cr, cy * cp,
+    cy * cr, cy * sr, -sy,
+    -cp * sr + sp * sy * cr, cp * cr + sp * sy * sr, sp * cy,
+    sp * sr + cp * sy * cr, -sp * cr + cp * sy * sr, cp * cy,
   ].map(noNegativeZero) as Mat3;
 }
 
