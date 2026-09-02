@@ -31,7 +31,7 @@ import type {
   InstancedPayload, VobFolders, WaynetPayload, WorldMeshPayload, WorldOp,
 } from '../../../shared/worldTypes';
 import { findFreePointVob, primaryVob, useWorldStore } from '../../store/worldStore';
-import { stateReach } from '../../routines/routineSchedule';
+import { stateOptions, stateReach } from '../../routines/routineSchedule';
 import { useProjectStore } from '../../store/projectStore';
 import { vobModelOf } from '../../world/vobModel';
 import { DEFAULT_EXPOSURE } from '../../world/WorldScene';
@@ -457,15 +457,10 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     [routineSiteIndex, routineNpcIndex, routineStateIndex],
   );
 
-  // Every state name any NPC has a variant for. Sorted, because the index's own
-  // order is whichever file the worker pool finished first.
-  const stateNames = useMemo(() => {
-    const names = new Set<string>();
-    for (const npc of Object.values(routineStateIndex)) {
-      for (const state of Object.keys(npc.states)) names.add(state);
-    }
-    return [...names].sort();
-  }, [routineStateIndex]);
+  // Every state name any NPC has a variant for, shared names first. Ordered
+  // by the module, because the index's own order is whichever file the worker
+  // pool finished first.
+  const stateOptionList = useMemo(() => stateOptions(routines), [routines]);
 
   // How far the chosen state actually reaches. Without this the label is a lie
   // by omission: a state moves the NPCs that have a variant for it and leaves
@@ -1860,7 +1855,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         onSpawnTimeChange={setSpawnTime}
         spawnState={spawnState}
         onSpawnStateChange={setSpawnState}
-        stateNames={stateNames}
+        stateOptions={stateOptionList}
         spawnStateReach={spawnStateReach}
         showWaypointNames={showWaypointNames}
         onToggleWaypointNames={toggleWaypointNames}
