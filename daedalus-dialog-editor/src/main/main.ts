@@ -698,11 +698,10 @@ export function setupIpcHandlers() {
       assertOpenWorldRequest(request);
       await pathValidator.validatePathResolved(request.worldPath);
 
-      // An empty list means "derive them from the configured install". The
-      // rule is `zen-world`'s and it is measured, not stylistic: archives beat
-      // the equivalent loose trees 15 ms to 2,170 ms. It runs here because it
-      // needs the filesystem and the persisted install path.
       const key = projectFileKey(request.projectFilePath);
+      if (activeProjectFileKey !== key) {
+        throw new Error('The requested project is not the active project');
+      }
       const registered = registeredProjectConfigs.get(key);
       if (!registered) throw new Error('Load a project before opening a world');
       const refreshed = await projectConfigService.openOrMigrate(registered.descriptor.projectRoot, null);
@@ -710,7 +709,6 @@ export function setupIpcHandlers() {
       const assetSources = refreshed.project.resolvedAssetSources;
       if (assetSources.length === 0) {
         throw new Error('Configure at least one available asset source before opening a world.');
-        return Promise.reject(new Error('Configure at least one available asset source before opening a world.'));
       }
 
       for (const source of assetSources) {

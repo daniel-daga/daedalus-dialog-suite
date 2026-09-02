@@ -366,11 +366,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     setVobFolders(emptyVobFolders());
 
     try {
-      // An empty asset list asks main to derive the sources from the
-      // configured Gothic install, by `zen-world`'s measured rule — archives
-      // when they exist, loose trees only as a fallback. It runs there because
-      // it needs the filesystem, and because those paths are then the ones the
-      // path validator sees.
+      // Main resolves the active project's ordered sources and owns the VFS
+      // mount list; the renderer sends only the project configuration identity.
       const opened = await window.editorAPI.openWorld({
         worldPath,
         gameVersion: 'g2',

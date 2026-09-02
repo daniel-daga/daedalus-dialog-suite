@@ -159,6 +159,22 @@ describe('project config IPC', () => {
       .rejects.toThrow(/native folder picker/i);
   });
 
+  it('rejects opening a stale project after another project becomes active', async () => {
+    const first = await makeProject();
+    const second = await makeProject();
+    await invoke('project:loadConfig', first.root);
+    await invoke('project:loadConfig', second.root);
+
+    await expect(invoke('world:open', {
+      worldPath: path.join(second.root, 'World.zen'),
+      gameVersion: 'g2',
+      projectFilePath: first.projectFilePath,
+    })).rejects.toThrow(/active project/i);
+
+    await expect(invoke('project:saveAssetSources', second.projectFilePath, ['.']))
+      .resolves.toMatchObject({ projectFilePath: second.projectFilePath });
+  });
+
   it('rejects malformed arrays, missing root, unknown files, and ungranted absolute paths', async () => {
     const project = await makeProject();
     await invoke('project:loadConfig', project.root);
