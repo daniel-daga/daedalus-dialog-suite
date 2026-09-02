@@ -30,7 +30,8 @@ export function assertAssetSourcesPayload(value: unknown): asserts value is stri
 }
 
 export function assertOptionalFolderPath(value: unknown): asserts value is string | undefined {
-  if (value !== undefined && (typeof value !== 'string' || value.trim() === '')) {
+  if (value !== undefined && (typeof value !== 'string' || value.trim() === ''
+    || /[\x00-\x1f\x7f]/.test(value))) {
     throw new Error('Invalid folder path: expected a non-empty string or undefined');
   }
 }

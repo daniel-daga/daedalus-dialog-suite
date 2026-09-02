@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -226,6 +226,39 @@ describe('ProjectConfigService', () => {
       expect(String(tempPath)).toMatch(new RegExp(`^${escapeRegExp(projectFilePath)}\\.`));
       expect(tempPath).not.toBe(projectFilePath);
       renameSpy.mockRestore();
+    });
+
+    test('does not clobber a pre-planted predictable temp file or symlink', async () => {
+      const service = new ProjectConfigService();
+      const projectFilePath = join(root, 'demo.gothicproject.json');
+      const sentinelPath = join(root, 'sentinel.txt');
+      const predictableTempPath = `${projectFilePath}.${process.pid}-0.tmp`;
+      await writeFile(sentinelPath, 'sentinel');
+      await symlink(sentinelPath, predictableTempPath);
+
+      await service.save(projectFilePath, parseProjectFile(validConfig()));
+
+      expect(await readFile(sentinelPath, 'utf8')).toBe('sentinel');
+      expect(await readFile(predictableTempPath, 'utf8')).toBe('sentinel');
+    });
+
+    test('retries with another exclusive temp name after an EEXIST collision', async () => {
+      const fsPromises = require('node:fs').promises;
+      const projectFilePath = join(root, 'demo.gothicproject.json');
+      const realOpen = fsPromises.open;
+      const collision: NodeJS.ErrnoException = new Error('EEXIST');
+      collision.code = 'EEXIST';
+      const openSpy = jest.spyOn(fsPromises, 'open')
+        .mockRejectedValueOnce(collision)
+        .mockImplementation((...args: unknown[]) => realOpen(...args));
+
+      await new ProjectConfigService().save(projectFilePath, parseProjectFile(validConfig()));
+
+      expect(openSpy).toHaveBeenCalledTimes(2);
+      expect(openSpy.mock.calls[0][1]).toBe('wx');
+      expect(openSpy.mock.calls[1][1]).toBe('wx');
+      expect(openSpy.mock.calls[0][0]).not.toBe(openSpy.mock.calls[1][0]);
+      openSpy.mockRestore();
     });
 
     test('preserves the old complete file and cleans up the temp file when rename fails', async () => {

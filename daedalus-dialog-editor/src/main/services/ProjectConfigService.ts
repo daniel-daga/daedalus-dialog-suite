@@ -1,4 +1,5 @@
 import { constants, promises as fs, statSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { gothicAssetSources } from 'zen-world';
 
@@ -16,7 +17,7 @@ const ARCHIVES = ['Textures.vdf', 'Textures_Addon.vdf', 'Meshes.vdf', 'Meshes_Ad
 const COMPILED_FOLDERS = ['Meshes', 'Textures', 'Anims'];
 const RENAME_RETRIES = 4;
 const RENAME_RETRY_DELAY_MS = 10;
-let tmpWriteCounter = 0;
+const TEMP_CREATE_RETRIES = 8;
 const projectFileQueues = new Map<string, Promise<unknown>>();
 
 function isPortableAbsolute(candidate: string): boolean {
@@ -188,14 +189,33 @@ async function renameOver(tempPath: string, destination: string): Promise<void> 
   }
 }
 
+async function openExclusiveTemp(projectFilePath: string): Promise<{
+  tempPath: string;
+  handle: Awaited<ReturnType<typeof fs.open>>;
+}> {
+  for (let attempt = 0; attempt < TEMP_CREATE_RETRIES; attempt++) {
+    const token = randomBytes(16).toString('hex');
+    const tempPath = `${projectFilePath}.${process.pid}-${token}.tmp`;
+    try {
+      return { tempPath, handle: await fs.open(tempPath, 'wx') };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST'
+        || attempt === TEMP_CREATE_RETRIES - 1) throw error;
+    }
+  }
+  throw new Error('Unable to create a temporary project file');
+}
+
 async function writeProjectFile(
   projectFilePath: string,
   config: GothicProjectFileV1,
   expectedContents?: string,
 ): Promise<void> {
-  const tempPath = `${projectFilePath}.${process.pid}-${tmpWriteCounter++}.tmp`;
+  let tempPath: string | undefined;
   try {
-    const handle = await fs.open(tempPath, 'w');
+    const opened = await openExclusiveTemp(projectFilePath);
+    tempPath = opened.tempPath;
+    const handle = opened.handle;
     try {
       await handle.writeFile(JSON.stringify(config, null, 2));
       try {
@@ -212,15 +232,14 @@ async function writeProjectFile(
     }
     await renameOver(tempPath, projectFilePath);
   } catch (error) {
-    await fs.unlink(tempPath).catch(() => undefined);
+    if (tempPath) await fs.unlink(tempPath).catch(() => undefined);
     throw error;
   }
 }
 
 async function createProjectFile(projectFilePath: string, config: GothicProjectFileV1): Promise<boolean> {
-  const tempPath = `${projectFilePath}.${process.pid}-${tmpWriteCounter++}.tmp`;
+  const { tempPath, handle } = await openExclusiveTemp(projectFilePath);
   try {
-    const handle = await fs.open(tempPath, 'wx');
     try {
       await handle.writeFile(JSON.stringify(config, null, 2));
       try {

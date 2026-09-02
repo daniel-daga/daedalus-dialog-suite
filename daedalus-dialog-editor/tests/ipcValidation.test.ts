@@ -48,7 +48,7 @@ describe('project config IPC payloads', () => {
   });
 
   it('rejects a malformed optional folder path', () => {
-    for (const bad of [null, 7, {}, '']) {
+    for (const bad of [null, 7, {}, '', 'C:/Gothic\n']) {
       expect(() => assertOptionalFolderPath(bad)).toThrow(/folder path/);
     }
   });
