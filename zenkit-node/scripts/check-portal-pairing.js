@@ -116,6 +116,6 @@ function main() {
   }
 }
 
-module.exports = { pairPortalMaterials };
+module.exports = { sidesOf, pairPortalMaterials };
 
 if (require.main === module) main();
