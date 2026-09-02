@@ -1142,7 +1142,10 @@ than fixtures:
   viewport unusable for the thing it exists to do. Framing the selection is not
   a convenience either: the orbit pivot starts at the centre of a 600 m island,
   so without a way to move it every orbit up close swings the camera through
-  half the world.
+  half the world. Spacer's camera slots are `Ctrl+Shift+1..4` to store the
+  pose — camera and pivot together, so a recalled view orbits about what it
+  did — and `Ctrl+1..4` to recall; four per open world, not persisted
+  (2026-09-02).
 - **Alt+left is the middle button, for a trackpad** (2026-08-30). A trackpad
   has no middle button, so the whole of the bullet above was out of reach of
   one — two-finger scroll reached the wheel zoom and nothing else reached

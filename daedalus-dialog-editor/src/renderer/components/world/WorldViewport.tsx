@@ -30,6 +30,7 @@ import {
   attachBlenderNav, frameOn, frameVobs, navFor, pivotAt, type Nav,
 } from '../../world/cameraNav';
 import { Fly, flyMoveFor, flySpeedFor, pivotAhead } from '../../world/flyNav';
+import { CameraSlots, cameraSlotFor } from '../../world/cameraSlots';
 import { snapDelta, snapTurn } from '../../world/snapping';
 import {
   runViewportBenchmark,
@@ -474,6 +475,9 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   const poseRef = useRef<{
     key: string; position: number[]; target: number[];
   } | null>(null);
+  // Spacer's camera slots (`cameraSlots.ts`): per world, so keyed the same way
+  // as the pose and replaced when a different world arrives.
+  const slotsRef = useRef<{ key: string; slots: CameraSlots } | null>(null);
   // Where a double-click last set the pivot, in ZenGin space — the dot that
   // confirms it landed somewhere, since `pivotAt` itself is otherwise
   // invisible until the next drag. Survives a same-world rebuild the same
@@ -506,6 +510,8 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     // The same key the camera pose is restored on, below.
     const worldKey = bbox.join(',');
     texturesRef.current = textureCacheFor(texturesRef.current, worldKey);
+    if (slotsRef.current?.key !== worldKey) slotsRef.current = { key: worldKey, slots: new CameraSlots() };
+    const cameraSlots = slotsRef.current.slots;
 
     const world = new WorldScene(texturesRef.current);
     sceneRef.current = world;
@@ -1224,6 +1230,22 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       // them is a decimal point, not a camera move.
       const target = event.target as HTMLElement | null;
       if (target?.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target?.tagName ?? '')) return;
+
+      // Spacer's camera slots: Ctrl+Shift+N stores the pose, Ctrl+N brings it
+      // back — camera and pivot both, so the next orbit turns about the same
+      // point. `Ctrl+digit` is bound nowhere else in the app.
+      const slot = cameraSlotFor(event);
+      if (slot !== null) {
+        event.preventDefault();
+        if (slot.action === 'store') {
+          cameraSlots.store(slot.slot, camera.position, controls.target);
+        } else if (cameraSlots.recall(slot.slot, camera.position, controls.target)) {
+          controls.update();
+          // The sky-fallback pivot too, as `frameFramables` does.
+          rememberPick(controls.target);
+        }
+        return;
+      }
       if (event.ctrlKey || event.metaKey || event.altKey) return;
 
       // Blender's key is numpad-period; laptops without a numpad send the
