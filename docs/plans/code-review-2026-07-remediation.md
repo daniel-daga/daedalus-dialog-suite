@@ -90,13 +90,18 @@ undo prompt and nothing to reveal that deletion was armed.
   through `insertActionAfterPath`.
   Fix: express append as insert-after-last, or extract one shared helper.
 
-- [ ] **3.4 Single source of truth for validation types**
+- [x] **3.4 Single source of truth for validation types**
   `main/services/ValidationService.ts:8-16, 21-36, 481`, `shared/types.ts:583-591`,
   `main/services/CodeGeneratorService.ts:4-9`
   Still triplicated and still drifted in the direction that crosses IPC: `ValidationService` emits
   `invalid_string_content` and the renderer handles it (`ValidationErrorDialog.tsx:44, 58`), but
   the shared union omits it. `CodeGeneratorSettings` keeps a private copy too.
   Fix: move to `shared/types.ts`; main and renderer both import from there.
+  **Fixed 2026-09-01**: `shared/types.ts` holds the one `ValidationErrorType` (with
+  `invalid_string_content`), `ValidationError`, `ValidationWarning`, `ValidationOptions` and
+  `ValidationResult`; both services import them, and the private `CodeGeneratorSettings` copies are
+  the shared `CodeGenerationSettings`. With the copies gone, `build:main` is what catches the next
+  drift — it failed on the emit at `ValidationService.ts:419` until the union gained the member.
 
 - [ ] **3.5 Render condition menu/templates from `conditionRegistry`**
   `components/ConditionEditor.tsx:164-236, 442-477`,

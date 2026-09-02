@@ -1,12 +1,6 @@
 import { SemanticCodeGenerator } from 'daedalus-parser/semantic-code-generator';
 import { deserializeSemanticModel } from 'daedalus-parser/semantic-model';
-
-interface CodeGeneratorSettings {
-  indentChar: '\t' | ' ';
-  includeComments: boolean;
-  sectionHeaders: boolean;
-  uppercaseKeywords: boolean;
-}
+import type { CodeGenerationSettings } from '../../shared/types';
 
 export class CodeGeneratorService {
   /**
@@ -18,7 +12,7 @@ export class CodeGeneratorService {
    */
   generateCode(
     plainModel: any,
-    settings: CodeGeneratorSettings,
+    settings: CodeGenerationSettings,
     options?: { allowPartialModel?: boolean }
   ): string {
     // Reconstruct the model with proper class instances using the parser's deserializer
@@ -39,7 +33,7 @@ export class CodeGeneratorService {
   /**
    * Generate Daedalus code for a specific dialog
    */
-  generateDialogCode(plainModel: any, dialogName: string, settings: CodeGeneratorSettings): string {
+  generateDialogCode(plainModel: any, dialogName: string, settings: CodeGenerationSettings): string {
     // Reconstruct the model with proper class instances
     const model = deserializeSemanticModel(plainModel);
 
