@@ -29,6 +29,7 @@ import { WaypointLabelLayer } from '../../world/WaypointLabelLayer';
 import {
   attachBlenderNav, frameOn, frameVobs, navFor, pivotAt, type Nav,
 } from '../../world/cameraNav';
+import { Fly, flyMoveFor, flySpeedFor, pivotAhead } from '../../world/flyNav';
 import { snapDelta, snapTurn } from '../../world/snapping';
 import {
   runViewportBenchmark,
@@ -699,12 +700,16 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     //     camera. The gizmo is switched off for the length of the drag, and
     //     given back the state it had rather than a guessed one, since what
     //     `enabled` means here is "something is selected" (`attach`/`detach`).
+    //
+    // A right press is a fly (`flyNav`, below), and it lands on the gizmo the
+    // same way, so it switches it off the same way.
     let navigated = false;
     let gizmoBeforeNav: boolean | null = null;
     const onNavPointerDown = (event: PointerEvent) => {
-      if (event.button !== 0) return;
-      navigated = navFor(event) !== 'none';
-      if (!navigated) return;
+      if (event.button === 0) {
+        navigated = navFor(event) !== 'none';
+        if (!navigated) return;
+      } else if (event.button !== 2) return;
       gizmoBeforeNav = transform.enabled;
       transform.enabled = false;
     };
@@ -1085,6 +1090,9 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
      * the (awaited) pick's outcome should decide.
      */
     const handleContextMenu = async (event: MouseEvent) => {
+      // The right button was a fly, not a click: the menu it would open at
+      // the release stays shut, and so does the browser's.
+      if (flew) { flew = false; event.preventDefault(); return; }
       if (onVobContextMenuRef.current === undefined) return;
       event.preventDefault();
       const rect = renderer.domElement.getBoundingClientRect();
@@ -1095,6 +1103,73 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       onVobContextMenuRef.current(vob, { left: event.clientX, top: event.clientY });
     };
     renderer.domElement.addEventListener('contextmenu', handleContextMenu);
+
+    // ── fly navigation (plan §16.26 row 3) ─────────────────────────────────
+    //
+    // Hold the right button: the drag looks, WASD/QE moves, Shift hurries
+    // (`flyNav`). The right button is free — OrbitControls' RIGHT is `null` —
+    // except for the click that opens the context menu, and a hold is told
+    // from a click by whether it moved anything (`flew`, read by the
+    // `contextmenu` handler above, which on Windows fires after the release).
+    //
+    // OrbitControls re-aims the camera at its target on every `update()`, so
+    // for the length of the hold the draw loop steps the fly instead, and the
+    // release re-seats the target ahead of the camera — on the world mesh
+    // under the centre of the view if there is one, else at the distance the
+    // hold began with — so the next orbit turns about what is being looked
+    // at and the next dolly and pan keep their scale.
+    let fly: Fly | null = null;
+    let flew = false;
+    let flyReach = 0;
+    let flyLastX = 0;
+    let flyLastY = 0;
+    const onFlyPointerDown = (event: PointerEvent) => {
+      if (event.button !== 2 || fly !== null) return;
+      flew = false;
+      flyReach = camera.position.distanceTo(controls.target);
+      fly = new Fly(camera, flySpeedFor(flyReach));
+      flyLastX = event.clientX;
+      flyLastY = event.clientY;
+      controls.enabled = false;
+    };
+    // Window listeners, so a drag that leaves the canvas keeps looking and a
+    // release over another panel still ends the hold.
+    const onFlyPointerMove = (event: PointerEvent) => {
+      if (fly === null) return;
+      fly.look(event.clientX - flyLastX, event.clientY - flyLastY);
+      flyLastX = event.clientX;
+      flyLastY = event.clientY;
+    };
+    const onFlyPointerUp = (event: PointerEvent) => {
+      if (fly === null || event.button !== 2) return;
+      flew = fly.moved;
+      fly = null;
+      controls.enabled = true;
+      if (!flew) return;
+      raycaster.setFromCamera(pointer.set(0, 0), camera);
+      const hit = raycaster.intersectObjects(world.worldMeshes, false)[0];
+      if (hit) pivotAt(camera, controls.target, hit.point);
+      else pivotAhead(camera, controls.target, flyReach);
+      // The sky-fallback pivot too, for the same reason `frameFramables` does.
+      rememberPick(controls.target);
+    };
+    // Capture on the window, ahead of the surface's own W/E gizmo-mode keys:
+    // while the right button is down, W is "forward".
+    const onFlyKey = (event: KeyboardEvent) => {
+      if (fly === null) return;
+      const taken = event.type === 'keydown'
+        ? fly.press(event.code, event.shiftKey)
+        : (fly.release(event.code, event.shiftKey), flyMoveFor(event.code) !== null);
+      if (!taken) return;
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    host.addEventListener('pointerdown', onFlyPointerDown, { capture: true });
+    window.addEventListener('pointermove', onFlyPointerMove);
+    window.addEventListener('pointerup', onFlyPointerUp);
+    window.addEventListener('pointercancel', onFlyPointerUp);
+    window.addEventListener('keydown', onFlyKey, { capture: true });
+    window.addEventListener('keyup', onFlyKey, { capture: true });
 
     // Blender's framing keys, and the reason orbiting is usable at all: the
     // pivot starts at the centre of a 600 m island, so without a way to move it
@@ -1190,7 +1265,8 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     const labelCameraPosition = new THREE.Vector3();
     const draw = () => {
       frame = requestAnimationFrame(draw);
-      controls.update();
+      if (fly !== null) fly.step(performance.now());
+      else controls.update();
 
       // Names, after `controls.update()` so they follow the camera in the same
       // frame it moved rather than trailing it by one.
@@ -1425,6 +1501,12 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       renderer.domElement.removeEventListener('dblclick', handleDoubleClick);
       renderer.domElement.removeEventListener('contextmenu', handleContextMenu);
       window.removeEventListener('keydown', onKeyDown);
+      host.removeEventListener('pointerdown', onFlyPointerDown, { capture: true });
+      window.removeEventListener('pointermove', onFlyPointerMove);
+      window.removeEventListener('pointerup', onFlyPointerUp);
+      window.removeEventListener('pointercancel', onFlyPointerUp);
+      window.removeEventListener('keydown', onFlyKey, { capture: true });
+      window.removeEventListener('keyup', onFlyKey, { capture: true });
       detachNav();
       host.removeEventListener('pointerdown', onNavPointerDown, { capture: true });
       host.removeEventListener('pointerup', onNavPointerUp, { capture: true });

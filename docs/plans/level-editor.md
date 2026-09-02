@@ -3009,6 +3009,33 @@ validator — and it is the one with a real design question hiding in it: a
 walk mode wants collision against the world mesh to be useful, and the BVH that
 would answer that is already built for picking.
 
+*Landed 2026-09-01, the fly half:* hold the **right mouse button** in the
+viewport — the drag looks (yaw about world up, pitch clamped short of the
+poles, no roll), **W/A/S/D** move along the view, **Q/E** descend and climb
+along the world's up, **Shift** is four times faster. No mode key: the right
+button was free (OrbitControls' RIGHT is `null`) except for the click that
+opens the context menu, and a hold is told from a click by whether it moved
+anything — a hold that did opens no menu on release. Speed is the distance
+from camera to orbit pivot at the moment the hold began, clamped to 2–2000
+m/s, so a camera framed on a barrel walks and one framed on the island crosses
+it in about a second. On release the orbit pivot is re-seated on the world
+mesh under the centre of the view, or failing that at the starting distance
+along the view axis, so the next orbit turns about what is being looked at and
+the next dolly and pan keep their scale; W/E are the fly's while held and the
+surface's gizmo-mode keys again after; the gizmo is switched off for the
+hold exactly as it is for an Alt+left orbit. Pure logic is
+`renderer/world/flyNav.ts` (`Fly`, `flySpeedFor`, `pivotAhead`), wiring in
+`WorldViewport` beside the context-menu handler. **Open:** the walk. A walk
+mode is a fly with gravity and a capsule against the world mesh, and the
+picking BVH (`BvhBuilder`, three-mesh-bvh on `world.worldMeshes`) can answer
+both queries — a downward ray for the floor, a `shapecast` for the walls —
+without a physics engine. The design questions it carries are the eye height
+(Gothic's hero is ~180 cm; the camera should stand where a player's would),
+what happens when the walk begins inside geometry (fall through, or refuse to
+enter), and whether it is a toggle key (Spacer's are F3/M/T/C, all free here)
+or a modifier on the same right-hold, which would keep the no-mode idiom.
+Also unbound and cheap once a walk exists: Spacer's two camera slots.
+
 None of the three is scheduled. They are carded as one line because they share
 a cause — §14 was assembled against Spacer's *verbs*, and these are its
 *windows and modes*, which nobody enumerated until 2026-08-30.
