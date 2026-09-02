@@ -6,6 +6,7 @@
 import React from 'react';
 import { getActionType } from '../actionTypes';
 import type { ActionTypeId, DetectableAction } from '../actionTypes';
+import { ACTION_TYPE_REGISTRY } from '../actionTypeRegistry';
 import type { BaseActionRendererProps } from './types';
 
 import DialogLineRenderer from './DialogLineRenderer';
@@ -79,42 +80,9 @@ export function getRendererForAction(action: DetectableAction): React.FC<BaseAct
 }
 
 /**
- * Action type labels for UI display
- */
-export const ACTION_TYPE_LABELS: Record<ActionTypeId, string> = {
-  dialogLine: 'Dialog Line',
-  choice: 'Choice',
-  logEntry: 'Log Entry',
-  createTopic: 'Create Topic',
-  logSetTopicStatus: 'Log Set Status',
-  createInventoryItems: 'Create Inventory Items',
-  giveInventoryItems: 'Give Inventory Items',
-  attackAction: 'Attack Action',
-  setAttitudeAction: 'Set Attitude',
-  chapterTransition: 'Chapter Transition',
-  exchangeRoutine: 'Exchange Routine',
-  setVariableAction: 'Set Variable',
-  stopProcessInfosAction: 'End Dialog',
-  setRefuseTalkAction: 'Refuse Talk',
-  clearChoicesAction: 'Clear Choices',
-  playAniAction: 'Play Animation',
-  givePlayerXPAction: 'Give XP',
-  pickpocketAction: 'Pickpocket',
-  startOtherRoutineAction: 'Start Other Routine',
-  teachAction: 'Teach',
-  giveTradeInventoryAction: 'Give Trade Inventory',
-  removeInventoryItemsAction: 'Remove Inventory Items',
-  insertNpcAction: 'Insert NPC',
-  heroFollowsAction: 'Hero Follows NPC',
-  conditionalAction: 'If / Else Block',
-  commentAction: 'Comment',
-  customAction: 'Action'
-};
-
-/**
- * Get the display label for an action
+ * Get the display label for an action (from the action type registry)
  */
 export function getActionTypeLabel(action: DetectableAction): string {
   const actionType = getActionType(action);
-  return ACTION_TYPE_LABELS[actionType] || 'Unknown';
+  return ACTION_TYPE_REGISTRY[actionType]?.label || 'Unknown';
 }

@@ -118,7 +118,6 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   const {
     setFunction,
     handleRenameFunction,
-    addActionToEnd,
     handleDialogPropertyChange,
     handleConditionFunctionUpdate,
     handleSave,
@@ -128,10 +127,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     dialogName,
     filePath,
     currentFunctionName,
-    currentFunction,
-    semanticModel,
     saveFile,
-    focusAction,
     setIsSaving: uiState.setIsSaving,
     setIsResetting: uiState.setIsResetting,
     setSnackbar: uiState.setSnackbar,
@@ -144,6 +140,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     deleteActionAndFocusPrev,
     addDialogLineAfter,
     addActionAfter,
+    addActionToEnd,
     addActionToBranchEnd,
     moveAction
   } = useActionManagement({
