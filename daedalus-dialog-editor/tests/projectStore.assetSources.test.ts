@@ -47,6 +47,7 @@ describe('ProjectStore - project asset sources', () => {
     expect(loadConfig.mock.invocationCallOrder[0]).toBeLessThan(buildIndex.mock.invocationCallOrder[0]);
     expect(useProjectStore.getState()).toMatchObject({
       projectPath: '/proj',
+      scriptsRoot: descriptor.scriptsRoot,
       projectFilePath: descriptor.projectFilePath,
       projectConfig: descriptor.config,
       resolvedAssetSources: descriptor.resolvedAssetSources,
@@ -73,6 +74,28 @@ describe('ProjectStore - project asset sources', () => {
 
     useProjectStore.getState().dismissProjectWarning('C:/Missing');
 
+    expect(useProjectStore.getState().projectWarnings).toEqual([]);
+  });
+
+  test('does not apply an in-flight save after the project is closed', async () => {
+    useProjectStore.setState({
+      projectPath: descriptor.projectRoot,
+      projectFilePath: descriptor.projectFilePath,
+      projectConfig: descriptor.config,
+      projectWarnings: descriptor.warnings
+    });
+    let resolveSave: (value: typeof descriptor) => void = () => {};
+    window.editorAPI.saveProjectAssetSources = jest.fn(() => new Promise((resolve) => {
+      resolveSave = resolve;
+    }));
+
+    const savePromise = useProjectStore.getState().saveAssetSources(['.', 'assets']);
+    useProjectStore.getState().closeProject();
+    resolveSave(descriptor);
+    await savePromise;
+
+    expect(useProjectStore.getState().projectFilePath).toBeNull();
+    expect(useProjectStore.getState().projectConfig).toBeNull();
     expect(useProjectStore.getState().projectWarnings).toEqual([]);
   });
 });

@@ -51,6 +51,7 @@ function createEmptySemanticModel(): SemanticModel {
 interface ProjectState {
   // Project metadata
   projectPath: string | null;
+  scriptsRoot: string | null;
   projectName: string | null;
   projectFilePath: string | null;
   projectConfig: GothicProjectFileV1 | null;
@@ -225,6 +226,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   // invalidateCacheForFile/clearCache/closeProject so a stale parse is never
   // handed to a post-mutation caller.
   const inFlight = new Map<string, Promise<SemanticModel>>();
+  // Changes whenever the active project session is replaced. Async descriptor
+  // writes use this token so a late response cannot resurrect a closed or
+  // superseded project.
+  let projectSession = 0;
 
   // Staleness stamps for the cache write at the end of getSemanticModel (2026-07
   // finding 4.1). The write happens after an await, so between the parse
@@ -392,6 +397,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   return {
   // Initial state
   projectPath: null,
+  scriptsRoot: null,
   projectName: null,
   projectFilePath: null,
   projectConfig: null,
@@ -422,6 +428,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
   // Actions
   openProject: async (folderPath: string) => {
+    projectSession += 1;
     set({ isLoading: true, loadError: null });
 
     try {
@@ -448,6 +455,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       resetParsedFileRecency();
       set({
         projectPath: descriptor.projectRoot,
+        scriptsRoot: descriptor.scriptsRoot,
         projectName,
         projectFilePath: descriptor.projectFilePath,
         projectConfig: descriptor.config,
@@ -488,14 +496,26 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
   saveAssetSources: async (assetSources: string[]) => {
     const projectFilePath = get().projectFilePath;
+    const projectRoot = get().projectPath;
+    const projectConfig = get().projectConfig;
+    const sessionAtStart = projectSession;
     if (!projectFilePath) {
       throw new Error('No project is open');
     }
 
     try {
       const descriptor = await window.editorAPI.saveProjectAssetSources(projectFilePath, assetSources);
+      if (
+        projectSession !== sessionAtStart ||
+        get().projectFilePath !== projectFilePath ||
+        get().projectPath !== projectRoot ||
+        get().projectConfig !== projectConfig
+      ) {
+        return;
+      }
       set({
         projectPath: descriptor.projectRoot,
+        scriptsRoot: descriptor.scriptsRoot,
         projectFilePath: descriptor.projectFilePath,
         projectConfig: descriptor.config,
         resolvedAssetSources: descriptor.resolvedAssetSources,
@@ -639,6 +659,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   },
 
   closeProject: () => {
+    projectSession += 1;
     // Abort any running ingestion
     const { abortIngestion } = get();
     if (abortIngestion) {
@@ -652,6 +673,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
     set({
       projectPath: null,
+      scriptsRoot: null,
       projectName: null,
       projectFilePath: null,
       projectConfig: null,
