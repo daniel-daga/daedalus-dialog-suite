@@ -106,3 +106,46 @@ prototype Mst_Rec (C_Rec)
   assert.ok(generated.includes('// record definition'), 'class leading comment emitted');
   assert.ok(generated.includes('// default prototype'), 'prototype leading comment emitted');
 });
+
+test('prototype body mixing assignments and a call statement parses, models and round-trips', () => {
+  // Retail: Story/NPC/DMT_DementorAmbient.d — PROTOTYPE Default_AmbientDementor
+  // calls B_SetAttributesToChapter (self, 3) between plain assignments.
+  const source = `PROTOTYPE Default_AmbientDementor (C_NPC)
+{
+\tname = "Dementor";
+\tguild = GIL_DMT;
+\tB_SetAttributesToChapter (self, 3);
+\tfight_tactic = FAI_HUMAN_STRONG;
+};
+`;
+  const DaedalusParser = require('../src/core/parser');
+  const parsed = new DaedalusParser().parse(source);
+  assert.equal(parsed.hasErrors, false, 'a call statement in a prototype body is legal Daedalus');
+
+  const proto = parsed.rootNode.namedChildren.find((n) => n.type === 'prototype_declaration');
+  assert.ok(proto, 'prototype_declaration node present');
+  const body = proto.childForFieldName('body');
+  assert.equal(body.type, 'block', 'prototype body is a block, like an instance body');
+  const statementTypes = body.namedChildren.map((n) => n.type);
+  assert.deepEqual(
+    statementTypes,
+    ['assignment_statement', 'assignment_statement', 'expression_statement', 'assignment_statement'],
+    'all three assignments and the call are in the tree, in order'
+  );
+  assert.ok(
+    body.namedChildren[2].namedChildren.some((n) => n.type === 'call_expression'),
+    'the expression statement is the call'
+  );
+
+  const model = parseSemanticModel(source);
+  assert.equal(model.hasErrors, false);
+  const modeled = model.prototypes.Default_AmbientDementor;
+  assert.ok(modeled instanceof GlobalPrototype);
+  assert.equal(modeled.parent, 'C_NPC');
+  assert.ok(modeled.sourceText.includes('B_SetAttributesToChapter (self, 3);'), 'call captured verbatim');
+  assert.ok(modeled.sourceText.includes('fight_tactic = FAI_HUMAN_STRONG;'), 'assignment after the call captured');
+
+  const generator = new SemanticCodeGenerator({ includeComments: true, sectionHeaders: false, preserveSourceStyle: true });
+  const generated = generator.generateSemanticModel(model);
+  assert.equal(generated.trim(), source.trim(), 'prototype body round-trips byte-for-byte');
+});

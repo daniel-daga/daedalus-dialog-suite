@@ -1979,7 +1979,9 @@ only), so a call statement there is a syntax error and
 `extractFileMetadataFromSource` drops the whole file. That is a `grammar.js`
 fix (`prototype_declaration` → `$.block`, as `instance_declaration` already
 has), a parser-workspace change with a native regenerate behind it, not an
-`extractRoutineSites` one — recorded here, not fixed. The other 60: 58 are
+`extractRoutineSites` one. **Landed 2026-09-02**: `prototype_declaration` takes
+`$.block`; re-measured, the index sees 6,215 of 6,275 (99%), 0 of 1,725 files
+fail to parse, and the 60 left are the ones named next. The other 60: 58 are
 `AI/Human/TA.d`'s own wrapper bodies passing parameters into `TA_Min`, which
 is what a wrapper is and never an entry; 2 are `BDT_1020_Wegelagerer.d` writing
 its `TA_Guard_Passage` pair in the *instance* body instead of a routine
