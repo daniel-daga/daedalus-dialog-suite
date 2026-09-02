@@ -40,7 +40,7 @@ import WorldSceneTree from './WorldSceneTree';
 import WorldFolderTree from './WorldFolderTree';
 import WorldPropertyGrid from './WorldPropertyGrid';
 import WorldAssetBrowser from './WorldAssetBrowser';
-import WorldAssetPreview from './WorldAssetPreview';
+import WorldAssetPreview, { NAME_OF, isPlaceableVisual } from './WorldAssetPreview';
 import WaypointPanel from './WaypointPanel';
 import WorldVobContextMenu from './WorldVobContextMenu';
 import PanelSplitter from './PanelSplitter';
@@ -1155,6 +1155,13 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     }
   }, [commitOps, boundsOf]);
 
+  /** The Assets panel's "Use as visual" (§16.26 row 1): the previewed mesh's
+   *  bare name, written to the whole selection through the same path as the
+   *  grid's visual field — one batch, one undo entry, the box refitted. */
+  const useAssetAsVisual = useCallback((name: string) => {
+    void handleEditProps({ visual: name });
+  }, [handleEditProps]);
+
   /**
    * A class field change from the grid — the primary VOB alone.
    *
@@ -2246,7 +2253,15 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
             </Box>
             <Box sx={{ flex: 1, minHeight: 0 }}>
               {panel === 'assets' && selectedAsset !== null
-                ? <WorldAssetPreview path={selectedAsset} loadTexture={loadTexture} loadVisual={loadVisual} />
+                ? (
+                  <WorldAssetPreview
+                    path={selectedAsset}
+                    loadTexture={loadTexture}
+                    loadVisual={loadVisual}
+                    selectionCount={selection.length}
+                    onUseAsVisual={useAssetAsVisual}
+                  />
+                )
                 : selectedWaypoint !== null && waynet
                   ? (
                     <WaypointPanel
@@ -2537,18 +2552,42 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
             />
           )}
           {placing?.vobClass === 'zCVob' && (
-            <TextField
-              fullWidth
-              size="small"
-              variant="standard"
-              label="Visual"
-              placeholder="NW_CRATE.3DS"
-              helperText="Its class comes from the extension. A .TGA decal is refused — it carries settings this does not take."
-              value={placing?.visual ?? ''}
-              onChange={(event) => setPlacing((was) => (was === null ? was : { ...was, visual: event.target.value }))}
-              inputProps={{ 'data-testid': 'world-place-visual' }}
-              sx={{ mt: 2 }}
-            />
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mt: 2 }}>
+              <TextField
+                fullWidth
+                size="small"
+                variant="standard"
+                label="Visual"
+                placeholder="NW_CRATE.3DS"
+                helperText="Its class comes from the extension. A .TGA decal is refused — it carries settings this does not take."
+                value={placing?.visual ?? ''}
+                onChange={(event) => setPlacing((was) => (was === null ? was : { ...was, visual: event.target.value }))}
+                inputProps={{ 'data-testid': 'world-place-visual' }}
+              />
+              {/* The Assets panel as a picker (§16.26 row 1): the mesh it last
+                  previewed, by its bare name. The previewed path outlives the
+                  tab, so the gesture is preview, switch to the scene, click
+                  the ground, place. */}
+              <Tooltip
+                title={selectedAsset === null || !isPlaceableVisual(selectedAsset)
+                  ? 'Preview a mesh in the Assets panel first'
+                  : `Use ${NAME_OF(selectedAsset)}`}
+              >
+                <span>
+                  <Button
+                    size="small"
+                    disabled={selectedAsset === null || !isPlaceableVisual(selectedAsset)}
+                    onClick={() => setPlacing((was) => (was === null || selectedAsset === null
+                      ? was
+                      : { ...was, visual: NAME_OF(selectedAsset) }))}
+                    data-testid="world-place-use-previewed"
+                    sx={{ mt: 1.5, whiteSpace: 'nowrap' }}
+                  >
+                    Use previewed
+                  </Button>
+                </span>
+              </Tooltip>
+            </Box>
           )}
         </DialogContent>
         <DialogActions>

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Box, Typography } from '@mui/material';
+import { Box, Button, Tooltip, Typography } from '@mui/material';
 import * as THREE from 'three';
 import type { DecodedTexture, VisualScene } from '../../../shared/worldTypes';
 import { buildVisualPreview, frameVisual } from '../../world/VisualPreviewScene';
@@ -17,7 +17,10 @@ import { buildVisualPreview, frameVisual } from '../../world/VisualPreviewScene'
 // resolves a name across the whole mounted namespace, and handing it a path
 // resolves nothing.
 
-const NAME_OF = (path: string) => path.slice(path.lastIndexOf('/') + 1);
+/** The bare file name — what a VOB's `visual` stores. Retail says
+ *  `NW_CRATE.3DS`, never a directory: the engine resolves the name across the
+ *  whole mounted namespace, exactly as the lookup below does. */
+export const NAME_OF = (path: string) => path.slice(path.lastIndexOf('/') + 1);
 const DIRECTORY_OF = (path: string) => {
   const at = path.lastIndexOf('/');
   return at <= 0 ? '/' : path.slice(0, at);
@@ -30,10 +33,15 @@ const MESH_EXTENSIONS = ['.MRM', '.MSH', '.MMB', '.MDM', '.MDL', '.3DS', '.ASC',
 
 type AssetKind = 'texture' | 'mesh' | 'other';
 
-function kindOf(name: string): AssetKind {
+/** Whether `name` is a visual the binding can place on a VOB. */
+export function isPlaceableVisual(name: string): boolean {
   const upper = name.toUpperCase();
-  if (upper.endsWith('.TEX')) return 'texture';
-  if (MESH_EXTENSIONS.some((extension) => upper.endsWith(extension))) return 'mesh';
+  return MESH_EXTENSIONS.some((extension) => upper.endsWith(extension));
+}
+
+function kindOf(name: string): AssetKind {
+  if (name.toUpperCase().endsWith('.TEX')) return 'texture';
+  if (isPlaceableVisual(name)) return 'mesh';
   return 'other';
 }
 
@@ -43,6 +51,11 @@ export interface WorldAssetPreviewProps {
   loadTexture: (name: string, maxSize: number) => Promise<DecodedTexture | null>;
   /** The visual's merged draw groups, or null for a name the binding cannot extract. */
   loadVisual: (name: string) => Promise<VisualScene | null>;
+  /** How many VOBs are selected — what "Use as visual" would write to. */
+  selectionCount?: number;
+  /** Hand the previewed mesh's bare name back as the selection's visual
+   *  (§16.26 row 1). Absent, the panel is a viewer and offers no button. */
+  onUseAsVisual?: (name: string) => void;
 }
 
 const PREVIEW_MAX_SIZE = 256;
@@ -51,7 +64,9 @@ const MESH_CANVAS_FALLBACK = 256;
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
 
-const WorldAssetPreview: React.FC<WorldAssetPreviewProps> = ({ path, loadTexture, loadVisual }) => {
+const WorldAssetPreview: React.FC<WorldAssetPreviewProps> = ({
+  path, loadTexture, loadVisual, selectionCount = 0, onUseAsVisual,
+}) => {
   const name = NAME_OF(path);
   const kind = kindOf(name);
 
@@ -208,6 +223,31 @@ const WorldAssetPreview: React.FC<WorldAssetPreviewProps> = ({ path, loadTexture
             {decoded.width} × {decoded.height} — decoded at most {PREVIEW_MAX_SIZE}px
           </Typography>
         </>
+      )}
+
+      {/* Offered for any mesh name, resolved or not: the write goes through the
+          same `SetVobProp` the property grid's visual field uses, which refits
+          the box only when the name resolves and otherwise leaves it alone. */}
+      {kind === 'mesh' && onUseAsVisual !== undefined && (
+        <Tooltip
+          title={selectionCount === 0 ? 'Select a VOB first' : ''}
+          data-testid="world-asset-use-visual-reason"
+        >
+          {/* A span, because a disabled button reports no pointer events and
+              MUI's tooltip needs one to attach to. */}
+          <span>
+            <Button
+              size="small"
+              variant="outlined"
+              disabled={selectionCount === 0}
+              onClick={() => onUseAsVisual(name)}
+              data-testid="world-asset-use-visual"
+              sx={{ mb: 1.5 }}
+            >
+              Use as visual{selectionCount > 1 ? ` (${selectionCount} VOBs)` : ''}
+            </Button>
+          </span>
+        </Tooltip>
       )}
 
       {visual !== null && (
