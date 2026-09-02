@@ -81,13 +81,15 @@ module.exports = grammar({
     ),
 
     // Prototype declaration: prototype PrototypeName(ParentClass) { ... }
+    // Body is a block, as for instances: retail prototypes carry call
+    // statements (B_SetAttributesToChapter) between their assignments.
     prototype_declaration: $ => seq(
       field('keyword', alias(/[pP][rR][oO][tT][oO][tT][yY][pP][eE]/, 'prototype')),
       field('name', $.identifier),
       '(',
       field('parent', $.identifier),
       ')',
-      field('body', $.class_body),
+      field('body', $.block),
       optional(';'),
     ),
 

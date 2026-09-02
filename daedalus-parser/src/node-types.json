@@ -902,7 +902,7 @@
         "required": true,
         "types": [
           {
-            "type": "class_body",
+            "type": "block",
             "named": true
           }
         ]
