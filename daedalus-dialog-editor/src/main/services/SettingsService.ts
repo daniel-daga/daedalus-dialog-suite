@@ -228,4 +228,12 @@ export class SettingsService {
       await this.writeSettings(settings);
     });
   }
+
+  async clearGothicInstallPath(): Promise<void> {
+    return this.enqueue(async () => {
+      const settings = await this.readSettings();
+      delete settings.gothicInstallPath;
+      await this.writeSettings(settings);
+    });
+  }
 }

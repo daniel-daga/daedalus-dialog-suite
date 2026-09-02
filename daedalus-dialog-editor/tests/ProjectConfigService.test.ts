@@ -1,10 +1,11 @@
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import {
   discoverProjectFile,
   parseProjectFile,
+  ProjectConfigService,
   resolveProjectConfig,
 } from '../src/main/services/ProjectConfigService';
 import type { GothicProjectFileV1 } from '../src/shared/projectConfigTypes';
@@ -155,7 +156,104 @@ describe('ProjectConfigService', () => {
     expect((await resolveProjectConfig(join(root, 'p.gothicproject.json'), config)).resolvedAssetSources)
       .toEqual([root, assets]);
   });
+
+  describe('migration and atomic saves', () => {
+    test('creates a default project file named after a legacy folder', async () => {
+      const service = new ProjectConfigService();
+
+      const result = await service.openOrMigrate(root, null);
+
+      const projectFilePath = join(root, `${pathBasename(root)}.gothicproject.json`);
+      expect(result.migrationCommitted).toBe(true);
+      expect(result.project.projectFilePath).toBe(projectFilePath);
+      expect(JSON.parse(await readFile(projectFilePath, 'utf8'))).toEqual(validConfig());
+    });
+
+    test('appends a legacy install once after the project root', async () => {
+      const install = join(root, 'Gothic II');
+      await mkdir(install);
+      const service = new ProjectConfigService();
+
+      const result = await service.openOrMigrate(root, install);
+
+      expect(result.project.config.assetSources).toEqual(['.', install]);
+    });
+
+    test.each([
+      ['project root', (projectRoot: string) => projectRoot],
+      ['equivalent normalized project root', (projectRoot: string) => join(projectRoot, 'sub', '..')],
+    ])('de-duplicates a legacy install equivalent to the %s', async (_name, legacyPath) => {
+      const service = new ProjectConfigService();
+
+      const result = await service.openOrMigrate(root, legacyPath(root));
+
+      expect(result.project.config.assetSources).toEqual(['.']);
+    });
+
+    test('uses a unique sibling temp file and atomic rename', async () => {
+      const fsPromises = require('node:fs').promises;
+      const renameSpy = jest.spyOn(fsPromises, 'rename');
+      const service = new ProjectConfigService();
+      const projectFilePath = join(root, 'demo.gothicproject.json');
+
+      await service.save(projectFilePath, parseProjectFile(validConfig()));
+
+      const [tempPath, destination] = renameSpy.mock.calls.at(-1)!;
+      expect(destination).toBe(projectFilePath);
+      expect(String(tempPath)).toMatch(new RegExp(`^${escapeRegExp(projectFilePath)}\\.`));
+      expect(tempPath).not.toBe(projectFilePath);
+      renameSpy.mockRestore();
+    });
+
+    test('preserves the old complete file and cleans up the temp file when rename fails', async () => {
+      const fsPromises = require('node:fs').promises;
+      const service = new ProjectConfigService();
+      const projectFilePath = join(root, 'demo.gothicproject.json');
+      await writeFile(projectFilePath, JSON.stringify(validConfig(['.'])));
+      const before = await readFile(projectFilePath, 'utf8');
+      const renameSpy = jest.spyOn(fsPromises, 'rename').mockRejectedValueOnce(new Error('ENOSPC'));
+
+      await expect(service.save(projectFilePath, parseProjectFile(validConfig(['.', 'assets'])))).rejects.toThrow('ENOSPC');
+
+      expect(await readFile(projectFilePath, 'utf8')).toBe(before);
+      expect((await readdir(root)).filter((name) => name.endsWith('.tmp'))).toEqual([]);
+      renameSpy.mockRestore();
+    });
+
+    test('reports no migration and never enriches an existing project from legacy settings', async () => {
+      const projectFilePath = join(root, 'existing.gothicproject.json');
+      const original = JSON.stringify(validConfig(['.']), null, 2);
+      await writeFile(projectFilePath, original);
+      const service = new ProjectConfigService();
+
+      const result = await service.openOrMigrate(root, join(root, 'Gothic II'));
+
+      expect(result.migrationCommitted).toBe(false);
+      expect(result.project.config.assetSources).toEqual(['.']);
+      expect(await readFile(projectFilePath, 'utf8')).toBe(original);
+    });
+
+    test('serializes simultaneous migrations so the committed file is reused', async () => {
+      const service = new ProjectConfigService();
+
+      const [first, second] = await Promise.all([
+        service.openOrMigrate(root, join(root, 'first-install')),
+        service.openOrMigrate(root, join(root, 'second-install')),
+      ]);
+
+      expect([first.migrationCommitted, second.migrationCommitted].filter(Boolean)).toHaveLength(1);
+      expect(second.project.config).toEqual(first.project.config);
+    });
+  });
 });
+
+function pathBasename(value: string): string {
+  return value.replace(/[\\/]$/, '').split(/[\\/]/).at(-1)!;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 // Compile-time assertion that parsing exposes the shared contract.
 const _config: GothicProjectFileV1 = parseProjectFile(validConfig());

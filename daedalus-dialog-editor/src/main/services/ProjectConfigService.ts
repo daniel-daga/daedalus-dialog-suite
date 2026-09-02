@@ -1,5 +1,4 @@
-import { constants, statSync } from 'node:fs';
-import { access, readdir, stat } from 'node:fs/promises';
+import { constants, promises as fs, statSync } from 'node:fs';
 import path from 'node:path';
 import { gothicAssetSources } from 'zen-world';
 
@@ -14,6 +13,10 @@ const PROJECT_FILE_SUFFIX = '.gothicproject.json';
 const TARGETS = new Set<GothicTarget>(['g1', 'g2', 'g2-notr']);
 const ARCHIVES = ['Textures.vdf', 'Textures_Addon.vdf', 'Meshes.vdf', 'Meshes_Addon.vdf', 'Anims.vdf', 'Anims_Addon.vdf'];
 const COMPILED_FOLDERS = ['Meshes', 'Textures', 'Anims'];
+const RENAME_RETRIES = 4;
+const RENAME_RETRY_DELAY_MS = 10;
+let tmpWriteCounter = 0;
+const projectFileQueues = new Map<string, Promise<unknown>>();
 
 function isPortableAbsolute(candidate: string): boolean {
   return path.win32.isAbsolute(candidate) || path.posix.isAbsolute(candidate);
@@ -32,7 +35,7 @@ function stringAt(value: unknown, field: string): string {
 }
 
 export async function discoverProjectFile(projectRoot: string): Promise<string | null> {
-  const entries = await readdir(projectRoot, { withFileTypes: true });
+  const entries = await fs.readdir(projectRoot, { withFileTypes: true });
   const projectFiles = entries
     .filter((entry) => entry.isFile() && entry.name.endsWith(PROJECT_FILE_SUFFIX))
     .map((entry) => path.join(projectRoot, entry.name));
@@ -95,9 +98,9 @@ export function parseProjectFile(value: unknown): GothicProjectFileV1 {
 
 async function isAvailableDirectory(candidate: string): Promise<boolean> {
   try {
-    const details = await stat(candidate);
+    const details = await fs.stat(candidate);
     if (!details.isDirectory()) return false;
-    await access(candidate, constants.R_OK);
+    await fs.access(candidate, constants.R_OK);
     return true;
   } catch {
     return false;
@@ -117,13 +120,106 @@ async function isInstallShaped(candidate: string): Promise<boolean> {
   ];
   for (const probe of probes) {
     try {
-      const details = await stat(probe.filePath);
+      const details = await fs.stat(probe.filePath);
       if (probe.kind === 'file' ? details.isFile() : details.isDirectory()) return true;
     } catch {
       // Continue probing known install markers.
     }
   }
   return false;
+}
+
+export interface OpenOrMigrateResult {
+  project: OpenedProjectConfig;
+  migrationCommitted: boolean;
+}
+
+function enqueueProjectFile<T>(projectFilePath: string, operation: () => Promise<T>): Promise<T> {
+  const key = path.resolve(projectFilePath);
+  const previous = projectFileQueues.get(key) ?? Promise.resolve();
+  const run = previous.then(operation, operation);
+  const settled = run.then(() => undefined, () => undefined);
+  projectFileQueues.set(key, settled);
+  void settled.finally(() => {
+    if (projectFileQueues.get(key) === settled) projectFileQueues.delete(key);
+  });
+  return run;
+}
+
+function comparablePath(candidate: string): string {
+  const normalized = path.normalize(path.resolve(candidate));
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
+
+async function renameOver(tempPath: string, destination: string): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await fs.rename(tempPath, destination);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (attempt >= RENAME_RETRIES || (code !== 'EPERM' && code !== 'EACCES')) throw error;
+      await new Promise((resolve) => setTimeout(resolve, RENAME_RETRY_DELAY_MS * (attempt + 1)));
+    }
+  }
+}
+
+async function writeProjectFile(projectFilePath: string, config: GothicProjectFileV1): Promise<void> {
+  const tempPath = `${projectFilePath}.${process.pid}-${tmpWriteCounter++}.tmp`;
+  try {
+    const handle = await fs.open(tempPath, 'w');
+    try {
+      await handle.writeFile(JSON.stringify(config, null, 2));
+      try {
+        await handle.sync();
+      } catch {
+        // Some filesystems do not support fsync; rename still prevents torn JSON.
+      }
+    } finally {
+      await handle.close();
+    }
+    await renameOver(tempPath, projectFilePath);
+  } catch (error) {
+    await fs.unlink(tempPath).catch(() => undefined);
+    throw error;
+  }
+}
+
+export class ProjectConfigService {
+  async openOrMigrate(projectRoot: string, legacyInstallPath: string | null): Promise<OpenOrMigrateResult> {
+    const absoluteRoot = path.resolve(projectRoot);
+    const defaultProjectFilePath = path.join(absoluteRoot, `${path.basename(absoluteRoot)}${PROJECT_FILE_SUFFIX}`);
+    const initiallyDiscovered = await discoverProjectFile(absoluteRoot);
+
+    return enqueueProjectFile(initiallyDiscovered ?? defaultProjectFilePath, async () => {
+      const discovered = await discoverProjectFile(absoluteRoot);
+      const projectFilePath = discovered ?? defaultProjectFilePath;
+      if (discovered) {
+        const config = parseProjectFile(await fs.readFile(projectFilePath, 'utf8'));
+        return { project: await resolveProjectConfig(projectFilePath, config), migrationCommitted: false };
+      }
+
+      const assetSources = ['.'];
+      if (legacyInstallPath && comparablePath(legacyInstallPath) !== comparablePath(absoluteRoot)) {
+        assetSources.push(legacyInstallPath);
+      }
+      const config = parseProjectFile({
+        version: 1,
+        target: 'g2-notr',
+        scriptsRoot: '.',
+        worlds: [],
+        assetSources,
+      });
+      await writeProjectFile(projectFilePath, config);
+      return { project: await resolveProjectConfig(projectFilePath, config), migrationCommitted: true };
+    });
+  }
+
+  async save(projectFilePath: string, config: GothicProjectFileV1): Promise<void> {
+    const absolutePath = path.resolve(projectFilePath);
+    const validated = parseProjectFile(config);
+    return enqueueProjectFile(absolutePath, () => writeProjectFile(absolutePath, validated));
+  }
 }
 
 export async function resolveProjectConfig(
