@@ -80,6 +80,25 @@ function absoluteSourceKey(source: string): string {
   return projectFileKey(source);
 }
 
+function isConfiguredWorldMount(registered: RegisteredProjectConfig, mount: string): boolean {
+  const mountKeys = new Set([absoluteSourceKey(mount)]);
+  try { mountKeys.add(absoluteSourceKey(fs.realpathSync(mount))); } catch { /* source may be an archive path */ }
+  const projectRoot = registered.descriptor.projectRoot;
+  for (const configured of registered.descriptor.config.assetSources) {
+    const base = path.isAbsolute(configured) ? configured : path.resolve(projectRoot, configured);
+    const bases = [base];
+    try { bases.push(fs.realpathSync(base)); } catch { /* unavailable source is already omitted */ }
+    for (const candidate of bases) {
+      if (mountKeys.has(absoluteSourceKey(candidate))) return true;
+      for (const mountKey of mountKeys) {
+        const relative = path.relative(candidate, mountKey);
+        if (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)) return true;
+      }
+    }
+  }
+  return false;
+}
+
 function registerProjectConfig(descriptor: OpenedProjectConfig): RegisteredProjectConfig {
   const key = projectFileKey(descriptor.projectFilePath);
   const existing = registeredProjectConfigs.get(key);
@@ -715,7 +734,9 @@ export function setupIpcHandlers() {
       }
 
       for (const source of assetSources) {
-        await pathValidator.validatePathResolved(source);
+        if (!isConfiguredWorldMount(refreshedRegistration, source)) {
+          throw new Error(`World asset mount is not configured for the active project: ${source}`);
+        }
       }
       if (activeProjectFileKey !== key || registeredProjectConfigs.get(key) !== refreshedRegistration) {
         throw new Error('The active project changed while validating asset sources');

@@ -211,7 +211,7 @@ describe('project config IPC', () => {
     let release!: () => void;
     const blocked = new Promise<void>((resolve) => { release = resolve; });
     registry.__pathValidator.validatePathResolved.mockImplementation(async (candidate: string) => {
-      if (candidate === first.root) await blocked;
+      if (candidate.endsWith('World.zen')) await blocked;
     });
 
     const opening = invoke('world:open', {
@@ -238,6 +238,26 @@ describe('project config IPC', () => {
     expect(registry.__worldService.openWorld).toHaveBeenCalledWith(expect.objectContaining({
       worldPath: path.join(project.root, 'World.zen'), gameVersion: 'g2', assetSources: [project.root],
     }));
+  });
+
+  it('opens with a configured external source without generic whitelisting', async () => {
+    const external = await fs.mkdtemp(path.join(os.tmpdir(), 'dde-world-external-'));
+    const project = await makeProject(['.', external]);
+    await invoke('project:loadConfig', project.root);
+    const worldPath = path.join(project.root, 'World.zen');
+    registry.__pathValidator.validatePathResolved.mockImplementation(async (candidate: string) => {
+      if (candidate === external) throw new Error('external source is not generic renderer-approved');
+      if (candidate.endsWith('unrelated.zen')) throw new Error('outside project');
+    });
+    const summary = { worldPath, stats: {} };
+    registry.__worldService.openWorld.mockResolvedValueOnce(summary);
+
+    await expect(invoke('world:open', { worldPath, gameVersion: 'g2', projectFilePath: project.projectFilePath }))
+      .resolves.toEqual(summary);
+    expect(registry.__worldService.openWorld).toHaveBeenCalledWith(expect.objectContaining({ assetSources: [project.root, external] }));
+    await expect(invoke('world:open', {
+      worldPath: path.join(os.tmpdir(), 'unrelated.zen'), gameVersion: 'g2', projectFilePath: project.projectFilePath,
+    })).rejects.toThrow(/generic renderer-approved|outside/i);
   });
 
   it('rejects malformed arrays, missing root, unknown files, and ungranted absolute paths', async () => {
