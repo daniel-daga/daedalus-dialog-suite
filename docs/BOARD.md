@@ -145,45 +145,41 @@ writes, the classes beyond five), none of it carded.
 **The unattended queue — one card for 49 items.** Everything a run can take
 with nobody watching. **Take the top unclaimed row and cross it off in the
 same commit; a run may not add rows.** `unattended-queue.md` — section 5 is
-empty but for row 42 (Triage); rows 1-20 landed 2026-08-30 to 2026-09-02, and
-the next unclaimed row is **21**.
+empty but for row 42 (Triage); rows 1-27 landed 2026-08-30 to 2026-09-02, and
+the next unclaimed row is **28** (section 3, UI with a template in the tree).
 
 **Daniel's decisions — each one line, none blocking a run.**
 
-- **`extractRoutineStatesByNpc` answers `{}` — not reproducible, twice**
-  (55/55 at c514e8a, 271 NPCs over retail 2026-09-02). Recommend dropping it
-  unless the project it happened on can be named. §16.19 s11
-- **Portal orientation** — convention settled 2026-09-02 (front-named, `n`
-  into the first sector); the open question is whether to write a warning
-  that fires once on retail (`P:CAPTAIN_`). Recommend yes, judged by corners
-  not centroid, filed like q1/q2's. §16.22 q3
-- **Euler order** — no Spacer shows an angle triple, so the choice is the
-  engine's X-Y-Z (sign-flipped, 464 retail VOBs on its pole) or our Y-X-Z
-  (53). Recommend the engine's: it is the one triple a witness can check.
-  Only `zenRotationToEuler` / `eulerToZenRotation` change. §16.4
-- **Three looks in the running app** (2026-09-02): Assets → preview a
-  `.MRM`, select a VOB, "Use as visual", undo; overlay on → ground click →
-  "Insert NPC here…" with `Startup.d` in the project, then the same with the
-  file open-and-dirty; the State select's new order. Plus the two from the
-  last session: right-hold + WASD, and `NW_CRATE.MRM` drag-to-orbit.
+- **The three portal checks (q1 pairing, q2 planarity, q3 orientation)** —
+  all measured, all writable, none with a consumer: their input is not on the
+  editor's side of the binding (§16.20 slice 3, deferred). Recommend filing
+  them as *one* card with that consumer rather than three unplumbed
+  functions now; nothing is lost by waiting. §16.22
+- **Euler order — taken 2026-09-02 on the standing recommendation**, the
+  engine's X-Y-Z; a veto is a revert of two functions and their tests. §16.4
+- **Five looks in the running app** (2026-09-02): Assets → preview a `.MRM`,
+  select a VOB, "Use as visual", undo; overlay on → ground click → "Insert
+  NPC here…" with `Startup.d` in the project (the instance and duplicate
+  warnings, then the same with the file open-and-dirty); the State select's
+  order; a VOB's angle fields — a retail VOB stood at yaw ±90 now shows
+  roll 0 (§16.4); `Ctrl+Shift+1` then orbit away then `Ctrl+1`. Plus
+  right-hold + WASD and `NW_CRATE.MRM` drag-to-orbit from the last session.
 
 **Phase 1c — the overlay, at §16.19.** Not blocked.
 
-- **Insert NPC, from the World surface — A–E landed 2026-09-02.** What is
-  left is slice F (a world-directory setting, only for opening a `.ZEN` from a
-  dialog) and E's forward facts: instance existence is unchecked, the same
-  spawn can be appended twice, `parsedFiles` is one spawn behind after a
-  write. §16.19 s16
+- **Insert NPC, from the World surface — A–E landed 2026-09-02**, and E's
+  three forward facts closed the same day (instance and duplicate warnings,
+  `parsedFiles` refreshed). Only slice F is left, and it is Deferred. §16.19 s16
 
 **Phase 1c / Phase 2 — world findings get a locus** (§7 decision, §16.20) —
 nothing carded beyond q3 above.
 
 **Phase 1b-2 — VOB editing**
 
-- **§14's uninventoried gaps** — mesh preview, fly navigation and the picker
-  (`Use as visual`, `Use previewed`) landed; left are the thumbnail grid,
-  chest contents (the first list field — reopens a §14.1 1.4 decision, so
-  Daniel's), and the walk with collision (three design questions). §16.26
+- **§14's uninventoried gaps** — mesh preview, fly navigation, the picker
+  and the four camera slots landed; left are the thumbnail grid, chest
+  contents (the first list field — reopens a §14.1 1.4 decision, so Daniel's),
+  and the walk with collision (three design questions, all Daniel's). §16.26
 - **Scatter placement, past Spacer rather than parity** — the ops, the batch
   and the ground-drop exist; the work is the brush and five decisions, one of
   which (no scale field) may sink it. Benched until decided. §16.25
@@ -241,9 +237,9 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **2026-09-02, second session — six agent branches merged**, `git log` has
-  them: Insert NPC C/D/E, the prototype-body grammar gap (routine coverage
-  81 % → 99 %), the State select order, the asset picker, queue rows 18-20,
-  and `wt:new`'s install step (Node 24 `EINVAL`, never flaky). The locator
-  card (§16.24) left the board on its own rule: re-open only on a repeat
-  naming a drawn VOB.
+- **2026-09-02, third session — five agent branches merged**, `git log` has
+  them: Insert NPC's three forward facts, the engine's Euler order, camera
+  slots, queue rows 21-27. Also: the `three` chunk had crossed CI's 550 kB
+  guard (addons now their own chunk), the parser CLI test failed under
+  `pnpm --filter` only, and §14.1 1.3 was a week stale. The
+  `extractRoutineStatesByNpc` `{}` card left on the locator card's rule.
