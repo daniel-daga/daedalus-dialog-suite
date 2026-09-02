@@ -1086,9 +1086,10 @@ describe('WorldPropertyGrid, typed position', () => {
 // Typed rotation entry (level-editor.md §14.1 item 1.5, the rotation half).
 //
 // A `zCVob` stores a row-major 3x3; a level designer types three angles. The
-// conversion is `zen-world/coords`' — intrinsic Y-X-Z, degrees, canonical
-// ranges yaw/roll (-180, 180], pitch [-90, 90] — and the grid's whole job is
-// to use it without inventing a second convention beside it.
+// conversion is `zen-world/coords`' — the engine's own `zMAT4::GetEulerAngles`,
+// intrinsic X-Y-Z with the vertical in the middle, degrees, canonical ranges
+// pitch/roll (-180, 180], yaw [-90, 90] — and the grid's whole job is to use
+// it without inventing a second convention beside it.
 //
 // The trap this suite pins hardest: **the read normalizes.** 30.2 % of retail
 // VOBs are non-orthonormal, so `eulerToZenRotation(zenRotationToEuler(M))`
@@ -1098,16 +1099,24 @@ describe('WorldPropertyGrid, typed position', () => {
 // applied per angle, exactly as the position fields refuse an unchanged
 // coordinate.
 describe('WorldPropertyGrid, typed rotation', () => {
-  // A quarter turn about the vertical, stored exactly: Ry(90) in row-major is
-  // [0,0,1, 0,1,0, -1,0,0], every entry exact in float32, so the decomposition
-  // answers 90/0/0 without float noise.
-  const YAW_90 = [0, 0, 1, 0, 1, 0, -1, 0, 0];
+  // A quarter turn about the vertical, stored exactly: the engine's yaw 90 is
+  // `Ry(-90)`, [0,0,-1, 0,1,0, 1,0,0] in row-major, every entry exact in
+  // float32, so the decomposition answers 90/0/0 without float noise. It is
+  // also exactly on the engine's pole (`m[0][2] = -1`), which is where 464
+  // retail VOBs sit.
+  const YAW_90 = [0, 0, -1, 0, 1, 0, 1, 0, 0];
   // The retail case: a matrix that is a rotation times a small uniform drift —
   // non-orthonormal, as 12,514 of 41,393 retail VOBs are. Reading it shows the
   // nearest rotation's angles; committing one of them unchanged would silently
-  // replace the matrix with the orthonormalized one.
+  // replace the matrix with the orthonormalized one. `Ry(-30)` times 1.02.
   const cy = Math.cos(Math.PI / 6);
-  const SKEWED = [cy * 1.02, 0, 0.5 * 1.02, 0, 1.02, 0, -0.5 * 1.02, 0, cy * 1.02];
+  const SKEWED = [cy * 1.02, 0, -0.5 * 1.02, 0, 1.02, 0, 0.5 * 1.02, 0, cy * 1.02];
+  // On the pole with a roll authored: yaw 90, pitch 0, roll 20 through the
+  // engine's `SetByEulerAngles`. At the pole only pitch - roll is observable,
+  // so this reads back as yaw 90, pitch -20, roll 0.
+  const c20 = Math.cos(Math.PI / 9);
+  const s20 = Math.sin(Math.PI / 9);
+  const POLED = [0, 0, -1, -s20, c20, 0, c20, s20, 0];
   const ROTATIONS = summaryOf(vobIndex([
     { name: 'PLAIN' }, // identity
     { name: 'TURNED', rot: YAW_90 },
@@ -1117,6 +1126,7 @@ describe('WorldPropertyGrid, typed rotation', () => {
     { name: 'MIRRORED', rot: [-1, 0, 0, 0, 1, 0, 0, 0, 1] },
     // A collapsed matrix: no three independent axes.
     { name: 'FLAT', rot: [0, 0, 0, 0, 0, 0, 0, 0, 0] },
+    { name: 'POLED', rot: POLED },
   ]));
 
   const commitAngle = (axis: string, value: string) => {
@@ -1130,6 +1140,19 @@ describe('WorldPropertyGrid, typed rotation', () => {
     expect(input('rotation-yaw').value).toBe('90');
     expect(input('rotation-pitch').value).toBe('0');
     expect(input('rotation-roll').value).toBe('0');
+  });
+
+  it('shows a pole pose the way the engine does: yaw +-90, roll folded into pitch, roll 0', () => {
+    // The gimbal-lock row is the vertical now (level-editor.md §16.4,
+    // 2026-09-02): at yaw +-90 `GetEulerAngles` puts the whole remaining turn in
+    // x and returns z = 0, and the fields show exactly that rather than the
+    // roll that was authored. The matrix is unchanged; only the triple is.
+    render(<WorldPropertyGrid summary={ROTATIONS} selection={[5]} {...wiring} />);
+
+    expect(input('rotation-yaw').value).toBe('90');
+    expect(input('rotation-pitch').value).toBe('-20');
+    expect(input('rotation-roll').value).toBe('0');
+    expect(screen.queryByTestId('world-prop-rotation-unavailable')).not.toBeInTheDocument();
   });
 
   it('commits an absolute rotation with the one angle that changed', () => {
@@ -1227,8 +1250,9 @@ describe('WorldPropertyGrid, typed rotation', () => {
     expect(rotates).toEqual([]);
     expect(turns).toHaveLength(1);
     // The anchor is at yaw 90; typing 180 is a further quarter turn about the
-    // vertical, which is Ry(90) = [0,0,1, 0,1,0, -1,0,0] in ZenGin row-major.
-    [0, 0, 1, 0, 1, 0, -1, 0, 0].forEach((entry, at) => {
+    // vertical in the engine's sense, which is Ry(-90) = [0,0,-1, 0,1,0, 1,0,0]
+    // in ZenGin row-major.
+    [0, 0, -1, 0, 1, 0, 1, 0, 0].forEach((entry, at) => {
       expect(turns[0][at]).toBeCloseTo(entry, 10);
     });
   });

@@ -50,19 +50,23 @@ viewport.
   The general rule both cases teach: **a conversion whose two halves can cancel
   needs a test that models both of them.** Asserting the determinant is negative
   is true and says nothing.
-- **Angles are `Ry * Rx * Rz` in degrees, and the order was chosen by where it
-  breaks.** A `zCVob` stores a 3x3 and a designer types three numbers, so a
-  decomposition is a *choice*: nothing in ZenGin, in ZenKit or in this repo
-  commits to an order, so **whether these are the numbers Spacer would have shown
-  is unverified and is not claimed.** What decides it is the singularity every
-  order has at its middle axis: YXZ puts it on *pitch*, a VOB stood on its nose,
-  where XYZ would put it on the vertical — and measured over the 41,393 retail
-  VOBs, **464 sit within 1e-6 of the XYZ singularity against 53 of this one**,
-  because a quarter turn about the vertical is the commonest deliberate pose in
-  the game. At the pole the roll is folded into the yaw and the *matrix* still
-  round-trips, which is the half the world stores. There is deliberately **no
-  near-pole epsilon**: one of 1e-7 in sine space discards a still-recoverable
-  roll and moves the VOB by 8.5e-4 of matrix entry.
+- **Angles are the engine's own — `zMAT4::GetEulerAngles` / `SetByEulerAngles`,
+  in degrees — and nothing else was ever there to match.** A `zCVob` stores a
+  3x3 and a designer types three numbers, so a decomposition is a *choice*, and
+  no Spacer shows an angle triple to copy. What ZenGin itself has is one
+  formula: `x = atan2(m[1][2], m[2][2])`, `y = asin(-m[0][2])`,
+  `z = atan2(m[0][1], m[0][0])` over the stored row-major 3x3, which in
+  column-vector terms is `Rx(-x) * Ry(-y) * Rz(-z)` — intrinsic X-Y-Z with the
+  vertical as the middle, singular axis. Its pole is a quarter turn about the
+  vertical, the commonest deliberate pose in the game: measured over the 41,393
+  retail VOBs, **464 sit within 1e-6 of it**. The convention that shipped first
+  was `Ry * Rx * Rz` precisely to dodge those 464 (its own pole had 53); it was
+  replaced 2026-09-02 because matching the engine's numbers is worth more than
+  dodging its lock. At the pole the roll is folded into the *pitch* (the
+  engine's lock branch, `x = atan2(-m[2][1], m[1][1])`, `z = 0`) and the
+  *matrix* still round-trips, which is the half the world stores. There is
+  deliberately **no near-pole epsilon**: one of 1e-7 in sine space discards a
+  still-recoverable roll and moves the VOB by 8.5e-4 of matrix entry.
 - **A stored rotation is not orthonormal, and reading its angles drops the
   difference.** 12,514 of those 41,393 VOBs (30.2 %) deviate from orthonormal by
   more than 1e-6 (worst 2.1e-2) — drift, not deliberate scale, and no VOB is

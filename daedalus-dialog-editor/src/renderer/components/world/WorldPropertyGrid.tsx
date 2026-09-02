@@ -408,8 +408,10 @@ const ANGLE_AXES = ['yaw', 'pitch', 'roll'] as const;
  * edit).
  *
  * A committed angle can legitimately come back different: the decomposition is
- * canonical — yaw/roll in (-180, 180], pitch in [-90, 90] — so a committed 190
- * remounts as -170. That is the same angle, not a defect to fight here.
+ * canonical — pitch/roll in (-180, 180], yaw in [-90, 90] — so a committed 190
+ * remounts as -170. That is the same angle, not a defect to fight here. Nor is
+ * the pole: at yaw +-90 the engine's own `GetEulerAngles` folds the roll into
+ * the pitch and shows roll 0, and so does this grid.
  */
 const AngleField: React.FC<{
   vob: number;
@@ -752,7 +754,8 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
       </Field>
       <Field label="Rotation" name="rotation">
         {/* Typed angles through `zen-world/coords`' one matrix↔Euler conversion
-            (intrinsic Y-X-Z, degrees), for a selection of any size: the fields
+            (the engine's `zMAT4::GetEulerAngles` — intrinsic X-Y-Z with the
+            vertical in the middle, degrees), for a selection of any size: the fields
             describe the anchor VOB, and what a commit *means* is what changes
             with the count — absolute for one VOB, a delta every selected VOB
             turns by for N (§16.4). The read-only matrix is what is left when no
