@@ -174,6 +174,9 @@ interface ProjectActions {
 
   // Register a newly created dialog in the project index
   addDialogToIndex: (metadata: DialogMetadata) => void;
+  // A spawn the World surface just wrote (level-editor.md §16.19, slice 16 E):
+  // the index is built at project load and never refreshed by a file update.
+  addSpawnSite: (site: SpawnSite) => void;
 
   // Register a newly created project file path
   addProjectFile: (filePath: string) => void;
@@ -1115,6 +1118,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         allDialogFiles: nextAllDialogFiles
       };
     });
+  },
+
+  addSpawnSite: (site: SpawnSite) => {
+    set((state) => ({ spawnSiteIndex: [...state.spawnSiteIndex, site] }));
   },
 
   addProjectFile: (filePath: string) => {

@@ -2553,8 +2553,8 @@ script either, which is the whole reason this shipped a session ahead of slice
 14's closing paragraph
 rather than behind it.
 
-**Slice 16 — Insert NPC from the World surface. Sized 2026-09-01; A, B and
-C landed 2026-09-02 (Claude), D and E open.** The card slice 14's closing paragraph
+**Slice 16 — Insert NPC from the World surface. Sized 2026-09-01; A–E landed
+2026-09-02 (Claude), F open.** The card slice 14's closing paragraph
 declined to card. Sized into six pieces, because it is the first time the
 editor authors into a file it is not editing, and the sizing changed what the
 write can be.
@@ -2671,22 +2671,51 @@ spawn landed sails through the guard and drops the spawn — which corrects the
 reload-if-clean are therefore load-bearing, and they have to live in the
 renderer: main has no notion of which files the editor holds open.
 
-*D — the button (~180 lines).* Terrain bar beside "Add waypoint here…" → a
-dialog with the NPC autocomplete and a waypoint name; `commitOps([addWaypoint])`
-awaited, then the IPC; refusals through the `editFailed`-style banner; an
-existing-waypoint variant in the waypoint panel. Decision: waypoint op first,
-script second — a spawn onto a point that does not exist is the worse
-half-state.
+*D — the button. Landed.* "Insert NPC here…" sits beside "Add waypoint
+here…" on the terrain bar, under the same condition (overlay on: the point
+it authors would otherwise be invisible), and opens a dialog with
+`VariableAutocomplete` under `AUTOCOMPLETE_POLICIES.actions.npc`
+(`allowCreation` off — this dialog creates no symbol) and a waypoint name
+prefilled from `suggestedWaypointName()`, with the same duplicate refusal the
+add-waypoint dialog makes before the round trip. Confirm runs `insertNpcAt`
+in `WorldSurface`: `startupFunctionFor(summary.worldPath)` →
+`findFunctionFile(parsedFiles, …)`, each typed refusal to the edit banner as
+a sentence; then `await commitOps([addWaypoint])` — a refusal there is
+already on the banner and the script is left alone — then the IPC. **A
+refusal after the op says the waypoint stands** ("Waypoint X was added, but
+…"): the half-state the decision accepted is named, not hidden. The
+waypoint panel's "Insert NPC at this waypoint…" is the same dialog with the
+name fixed and `existing: true`, which skips the op. Two things it does not
+check: the instance's existence — the autocomplete lists the project's NPCs
+but free input is allowed, since an instance declared in a file the index
+has not parsed is legal, and C's validator only guards the identifier shape
+— and what `STARTUP_<world>` already holds, so the same spawn can be
+appended twice. Slice A's `appendInsertNpc` model edit ended up with no
+caller: D writes through C and never regenerates, and nothing needs the
+renderer's picture of the function to carry the action.
 
-*E — open-file and index coherence (~100 lines).* Refuse before writing if
-the file is open and dirty; reload it if open and clean; push the new site
-into `spawnSiteIndex`. Decision: refuse-on-dirty rather than merge.
+*E — open-file and index coherence. Landed, renderer-side.* Before anything
+is written, `fileStore.openFiles.get(filePath)` under `hasUnsavedChanges`
+refuses with the file named; after a successful write the same slot, if
+present, goes through `fileStore.reloadFile` — the watcher's own
+external-change path, and the only reload there is, since `notifySelfWrite`
+has silenced the watcher for that write. `projectStore.addSpawnSite` pushes
+the site (instance and waypoint uppercased, the index's own casing, and C's
+1-based `line`) onto `spawnSiteIndex`, so the waypoint panel and the spawn
+markers show it without a reindex. What E does *not* refresh:
+`projectStore.parsedFiles`. The cached model of `Startup.d` still lacks the
+action until the next `updateFileModels`; a second insert in the same session
+still resolves — `findFunctionFile` matches on the name alone — but anything
+reading that function's `actions` out of `parsedFiles` is one spawn behind.
+Jest covers the order (op before IPC), every refusal, the dirty refusal, the
+clean reload and the index gain; Playwright cannot, the browser harness has no
+world.
 
 *F — deferred, its own card.* World-directory setting on `SettingsService`
 (the `gothicInstallPath` pattern), only for `expectedWorldNameFor`'s `.ZEN`
 opening.
 
-Three runs minimum: {A, B}, {C}, {D, E}. D and E are next.
+Three runs: {A, B}, {C}, {D, E} — all run. F is the only open piece.
 
 **Phase ordering note.** §11 schedules 1b-2 before 1c, and 1b-2 is not finished
 — but what remains of it on the board (Euler order against Spacer) needs Spacer

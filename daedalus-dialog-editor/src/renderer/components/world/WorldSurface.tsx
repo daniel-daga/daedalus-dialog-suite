@@ -33,6 +33,10 @@ import type {
 import { findFreePointVob, primaryVob, useWorldStore } from '../../store/worldStore';
 import { stateReach } from '../../routines/routineSchedule';
 import { useProjectStore } from '../../store/projectStore';
+import { hasUnsavedChanges, useFileStore } from '../../store/fileStore';
+import VariableAutocomplete from '../common/VariableAutocomplete';
+import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
+import { findFunctionFile, startupFunctionFor } from './insertNpcScript';
 import { vobModelOf } from '../../world/vobModel';
 import { DEFAULT_EXPOSURE } from '../../world/WorldScene';
 import WorldViewport, { type GizmoMode, type WorldViewportHandle } from './WorldViewport';
@@ -53,6 +57,10 @@ import WorldToolbar from './toolbar/WorldToolbar';
 // Phase 1a is read-only. This shell owns the IPC calls and hands the viewport
 // finished payloads; the viewport owns the Three.js lifetime. Nothing here
 // keeps a geometry buffer in React state.
+
+/** The file name a banner shows for a script path — the whole path is noise
+ *  next to a reason. */
+const baseName = (filePath: string): string => filePath.split(/[\\/]/).pop() || filePath;
 
 /** A new VOB is placed unrotated: the terrain click gives a point and nothing
  *  else, and inventing an orientation from a surface normal is a feature with
@@ -271,6 +279,14 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    * name is spent by that click today.
    */
   const [pendingWaypointName, setPendingWaypointName] = useState<string | null>(null);
+  /**
+   * The Insert-NPC dialog's draft, or null when it is closed (§16.19, slice 16
+   * D): the instance being typed and the waypoint the spawn names. `existing`
+   * is the waypoint panel's variant — the point is already in the world, so
+   * the name is fixed and no `AddWaypoint` precedes the script write.
+   */
+  const [insertingNpc, setInsertingNpc] =
+    useState<{ instance: string; waypoint: string; existing: boolean } | null>(null);
   /** The waypoint the delete warning is about, as an index+name pair, or null
    *  when it is closed. The name is kept beside the index for the dialog to
    *  show and for the op to be guarded by: it is read when the dialog opens,
@@ -1560,6 +1576,76 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   }, [commitOps, terrainPoint, waynet]);
 
   /**
+   * Spawn an NPC at a waypoint by writing `Wld_InsertNpc` into the open
+   * project's `STARTUP_<world>` (level-editor.md §16.19, slice 16 D and E) —
+   * the first edit here that reaches a file this surface is not editing.
+   *
+   * Waypoint op first, script second: a spawn naming a point the world has
+   * not got is the worse half-state. The op goes through `commitOps`, so a
+   * refusal there is already on the banner and the script is left alone; a
+   * refusal *after* it says the waypoint stands.
+   *
+   * The refusals before anything is written are the renderer's, because main
+   * holds no picture of the project (slice A's resolver) and none of which
+   * files the dialog editor has open (E). A `Startup.d` open and dirty is
+   * refused rather than merged: the flow's mtime guard compares against its
+   * own read, so the editor's stale model would save straight over the spawn.
+   * Open and clean, it is reloaded the way an external change is.
+   */
+  const insertNpcAt = useCallback(async (
+    instance: string, spawnPoint: string, existing: boolean,
+  ) => {
+    const { editFailed, summary: current } = useWorldStore.getState();
+    if (current === null) return;
+    const functionName = startupFunctionFor(current.worldPath);
+    const found = findFunctionFile(useProjectStore.getState().parsedFiles, functionName);
+    if (!found.ok) {
+      const { refusal } = found;
+      editFailed(refusal.kind === 'no-project'
+        ? 'No script project is open — Wld_InsertNpc needs a STARTUP_<world> function to go in.'
+        : refusal.kind === 'no-startup-function'
+          ? `No file in the project declares ${refusal.functionName}.`
+          : `${baseName(refusal.filePath)} has syntax errors; fix them before a spawn is appended.`);
+      return;
+    }
+    const { filePath } = found;
+    const open = useFileStore.getState().openFiles.get(filePath);
+    if (open !== undefined && hasUnsavedChanges(open)) {
+      editFailed(`${baseName(filePath)} is open in the dialog editor with unsaved changes — save or discard them first.`);
+      return;
+    }
+
+    if (!existing) {
+      if (waynet === null || terrainPoint === null) return;
+      if (!await commitOps([addWaypoint(waynet.names, spawnPoint, terrainPoint)])) return;
+    }
+
+    const half = existing ? '' : `Waypoint ${spawnPoint} was added, but `;
+    let result;
+    try {
+      result = await window.editorAPI.appendInsertNpc(filePath, found.functionName, instance, spawnPoint);
+    } catch (failure) {
+      editFailed(half + (failure instanceof Error ? failure.message : String(failure)));
+      return;
+    }
+    if (!result.ok) {
+      const { reason } = result;
+      editFailed(half + (reason.kind === 'parse-errors'
+        ? `${baseName(filePath)} has syntax errors on disk: ${reason.errors.join('; ')}`
+        : reason.kind === 'function-not-found'
+          ? `${reason.functionName} is not in ${baseName(filePath)} on disk.`
+          : `${baseName(filePath)} changed on disk while the spawn was being appended — nothing was written.`));
+      return;
+    }
+
+    useProjectStore.getState().addSpawnSite({
+      instance: instance.toUpperCase(), spawnPoint: spawnPoint.toUpperCase(),
+      filePath, functionName: found.functionName, line: result.line,
+    });
+    if (open !== undefined) await useFileStore.getState().reloadFile(filePath);
+  }, [commitOps, terrainPoint, waynet]);
+
+  /**
    * The selected waypoint's edges, as the other end of each (§16.7, W3).
    *
    * Derived from the payload the overlay is already drawing rather than asked
@@ -1676,6 +1762,11 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    */
   const duplicateWaypointName = addingWaypoint !== null
     && (waynet?.names.includes(addingWaypoint.trim()) ?? false);
+  /** The same refusal for the Insert-NPC dialog's waypoint — only when it is
+   *  authoring one; the panel's variant names a point the world already has. */
+  const duplicateInsertWaypoint = insertingNpc !== null && !insertingNpc.existing
+    && (waynet?.names.includes(insertingNpc.waypoint.trim()) ?? false);
+  const startupFunctionName = summary === null ? '' : startupFunctionFor(summary.worldPath);
 
   /**
    * Remove a VOB and its whole subtree — **the one edit here that cannot be
@@ -2276,6 +2367,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                       onDelete={() => setDeletingWaypoint({
                         waypoint: selectedWaypoint, name: waynet.names[selectedWaypoint],
                       })}
+                      onInsertNpc={() => setInsertingNpc({
+                        instance: '', waypoint: waynet.names[selectedWaypoint], existing: true,
+                      })}
                     />
                   )
                   : (
@@ -2393,6 +2487,19 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                     Add waypoint here…
                   </Button>
                 )}
+                {/* Same condition as the waypoint it authors: the spawn's
+                    point would be invisible with the overlay off. */}
+                {showWaynet && waynet !== null && (
+                  <Button
+                    size="small"
+                    onClick={() => setInsertingNpc({
+                      instance: '', waypoint: suggestedWaypointName(), existing: false,
+                    })}
+                    data-testid="world-insert-npc"
+                  >
+                    Insert NPC here…
+                  </Button>
+                )}
               </>
             )}
           </Stack>
@@ -2460,6 +2567,68 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
             data-testid="world-waypoint-add-confirm"
           >
             Add
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={insertingNpc !== null}
+        onClose={() => setInsertingNpc(null)}
+        maxWidth="xs"
+        fullWidth
+        data-testid="world-insert-npc-dialog"
+      >
+        <DialogTitle>Insert NPC</DialogTitle>
+        <DialogContent>
+          <DialogContentText variant="caption" sx={{ display: 'block', mb: 1.5 }}>
+            {/* The one thing this dialog does that no other here does: it
+                writes a script. Said up front, with where. */}
+            {insertingNpc?.existing
+              ? `A Wld_InsertNpc line is appended to ${startupFunctionName} in the open project.`
+              : `The waypoint is appended as a free point at ${terrainPoint?.map((v) => Math.round(v)).join(', ')}, `
+                + `then a Wld_InsertNpc line is appended to ${startupFunctionName} in the open project.`}
+          </DialogContentText>
+          <Box data-testid="world-insert-npc-instance" sx={{ mb: 1.5 }}>
+            <VariableAutocomplete
+              label="NPC instance"
+              value={insertingNpc?.instance ?? ''}
+              onChange={(instance) => setInsertingNpc((draft) => draft && { ...draft, instance })}
+              fullWidth
+              allowCreation={false}
+              showNavigation={false}
+              {...AUTOCOMPLETE_POLICIES.actions.npc}
+            />
+          </Box>
+          <TextField
+            label="Waypoint"
+            value={insertingNpc?.waypoint ?? ''}
+            onChange={(event) => setInsertingNpc((draft) => draft && { ...draft, waypoint: event.target.value })}
+            disabled={insertingNpc?.existing ?? false}
+            size="small"
+            fullWidth
+            error={duplicateInsertWaypoint}
+            helperText={duplicateInsertWaypoint
+              ? 'Already in this world — pick a name it has not got.'
+              : ' '}
+            inputProps={{ 'data-testid': 'world-insert-npc-waypoint', spellCheck: false }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setInsertingNpc(null)}>Cancel</Button>
+          <Button
+            variant="contained"
+            disabled={insertingNpc === null || insertingNpc.instance.trim() === ''
+              || insertingNpc.waypoint.trim() === '' || duplicateInsertWaypoint}
+            onClick={() => {
+              const draft = insertingNpc;
+              setInsertingNpc(null);
+              if (draft !== null) {
+                void insertNpcAt(draft.instance.trim(), draft.waypoint.trim(), draft.existing);
+              }
+            }}
+            data-testid="world-insert-npc-confirm"
+          >
+            Insert
           </Button>
         </DialogActions>
       </Dialog>

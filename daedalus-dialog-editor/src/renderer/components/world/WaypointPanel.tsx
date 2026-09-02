@@ -47,9 +47,12 @@ const WaypointPanel: React.FC<{
   /** Asks to delete this waypoint. Not a commit: the op is a barrier, and the
    *  warning that has to precede it is the surface's. */
   onDelete: () => void;
+  /** Asks to spawn an NPC here (§16.19 slice 16 D) — the existing-waypoint
+   *  variant of the terrain bar's "Insert NPC here…", so no waypoint op. */
+  onInsertNpc: () => void;
 }> = ({
   name, routines, spawns, onRename, neighbours, resolveWaypoint, onConnect, onDisconnect,
-  onDelete,
+  onDelete, onInsertNpc,
 }) => {
   const baseName = (filePath: string): string => filePath.split(/[\\/]/).pop() || filePath;
 
@@ -206,10 +209,20 @@ const WaypointPanel: React.FC<{
       </Stack>
       <Button
         size="small"
-        color="error"
         variant="outlined"
         fullWidth
         sx={{ mt: 2 }}
+        onClick={onInsertNpc}
+        data-testid="world-waypoint-insert-npc"
+      >
+        Insert NPC at this waypoint…
+      </Button>
+      <Button
+        size="small"
+        color="error"
+        variant="outlined"
+        fullWidth
+        sx={{ mt: 1 }}
         onClick={onDelete}
         data-testid="world-waypoint-delete"
       >

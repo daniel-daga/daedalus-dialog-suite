@@ -1,5 +1,6 @@
 import type { VobIndex } from 'zen-world';
 import type { VobFolders, WaynetPayload, WorldOp, WorldSummary } from '../src/shared/worldTypes';
+import type { AppendInsertNpcResult } from '../src/shared/types';
 
 /**
  * Shared pure-data builders for the World surface's test suites
@@ -143,5 +144,6 @@ export function makeWorldEditorApi() {
     getVobFolders: jest.fn(async (): Promise<VobFolders> => ({ folders: [] })),
     saveVobFolders: jest.fn(async () => undefined),
     closeWorld: jest.fn(),
+    appendInsertNpc: jest.fn(async (): Promise<AppendInsertNpcResult> => ({ ok: true, line: 1 })),
   };
 }
