@@ -95,6 +95,69 @@ describe('ProjectService', () => {
       expect(files).toContain(path.join(dialogDir, 'DIA_Lower.d'));
       expect(files).toContain(path.join(dialogDir, 'DIA_Upper.D'));
     });
+
+    it('follows a junctioned tree', async () => {
+      // A mod's script tree is often a junction into the game install; a
+      // junction reports isSymbolicLink(), not isDirectory().
+      const target = fs.mkdtempSync(path.join(os.tmpdir(), 'gothic-junction-target-'));
+      try {
+        fs.mkdirSync(path.join(target, 'Dialoge'));
+        fs.writeFileSync(path.join(target, 'Dialoge', 'DIA_Linked.d'), '// linked');
+        fs.writeFileSync(path.join(target, 'top.d'), '// linked top');
+        fs.symlinkSync(target, path.join(tempDir, 'Scripts'), 'junction');
+
+        const service = new ProjectService();
+        const files = await service.scanDirectory(tempDir);
+
+        expect(files).toHaveLength(2);
+        expect(files).toContain(path.join(tempDir, 'Scripts', 'top.d'));
+        expect(files).toContain(path.join(tempDir, 'Scripts', 'Dialoge', 'DIA_Linked.d'));
+      } finally {
+        fs.rmSync(target, { recursive: true, force: true });
+      }
+    });
+
+    it('does not loop on a junction back into an ancestor', async () => {
+      fs.mkdirSync(path.join(tempDir, 'Story'));
+      fs.writeFileSync(path.join(tempDir, 'Story', 'story.d'), '// story');
+      fs.symlinkSync(tempDir, path.join(tempDir, 'Story', 'Loop'), 'junction');
+
+      const service = new ProjectService();
+      const files = await service.scanDirectory(tempDir);
+
+      expect(files).toEqual([path.join(tempDir, 'Story', 'story.d')]);
+    });
+
+    it('logs and skips a subdirectory that cannot be read', async () => {
+      const fine = path.join(tempDir, 'Fine');
+      const broken = path.join(tempDir, 'Broken');
+      fs.mkdirSync(fine);
+      fs.mkdirSync(broken);
+      fs.writeFileSync(path.join(fine, 'ok.d'), '// ok');
+      const realReaddir = fs.promises.readdir;
+      const readdirSpy = jest.spyOn(fs.promises, 'readdir').mockImplementation(((dir: string, opts: any) => {
+        if (dir === broken) return Promise.reject(new Error('EACCES: permission denied'));
+        return realReaddir.call(fs.promises, dir, opts);
+      }) as any);
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const service = new ProjectService();
+        const files = await service.scanDirectory(tempDir);
+
+        expect(files).toEqual([path.join(fine, 'ok.d')]);
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(warn.mock.calls[0].join(' ')).toContain(broken);
+        expect(warn.mock.calls[0].join(' ')).toContain('EACCES');
+      } finally {
+        readdirSpy.mockRestore();
+        warn.mockRestore();
+      }
+    });
+
+    it('rejects when the root itself cannot be read', async () => {
+      const service = new ProjectService();
+      await expect(service.scanDirectory(path.join(tempDir, 'missing'))).rejects.toThrow(/ENOENT/);
+    });
   });
 
   describe('extractDialogMetadata', () => {

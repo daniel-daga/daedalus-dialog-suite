@@ -8,6 +8,7 @@ import { describe, it, expect } from '@jest/globals';
 import {
   assertModelShape,
   assertDialogName,
+  assertParseSourcePayload,
   assertSaveFileSettings,
   assertSaveFileOptions,
   assertOpenWorldRequest,
@@ -57,6 +58,20 @@ describe('assertDialogName', () => {
 
   it('accepts a string name', () => {
     expect(() => assertDialogName('DIA_Test')).not.toThrow();
+  });
+});
+
+describe('assertParseSourcePayload', () => {
+  it('parseSource rejects a non-string payload', () => {
+    expect(() => assertParseSourcePayload(42)).toThrow(/source/i);
+    expect(() => assertParseSourcePayload(undefined)).toThrow(/source/i);
+    expect(() => assertParseSourcePayload({ sourceCode: 'func void x() {};' })).toThrow(/source/i);
+    expect(() => assertParseSourcePayload(['func void x() {};'])).toThrow(/source/i);
+  });
+
+  it('accepts a string, including the empty one', () => {
+    expect(() => assertParseSourcePayload('func void x() {};')).not.toThrow();
+    expect(() => assertParseSourcePayload('')).not.toThrow();
   });
 });
 

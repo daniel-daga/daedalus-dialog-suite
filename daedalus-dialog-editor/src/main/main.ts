@@ -10,6 +10,7 @@ import { applyWindowSecurity } from './windowSecurity';
 import {
   assertModelShape,
   assertDialogName,
+  assertParseSourcePayload,
   assertOpenWorldRequest,
   assertTextureRequest,
   assertVobPropsRequest,
@@ -200,8 +201,9 @@ app.on('window-all-closed', () => {
 // a stubbed `electron` rather than a running app.
 export function setupIpcHandlers() {
   // Parser handler (main process has access to native modules)
-  ipcMain.handle('parser:parseSource', async (_event, sourceCode: string) => {
+  ipcMain.handle('parser:parseSource', async (_event, sourceCode: unknown) => {
     try {
+      assertParseSourcePayload(sourceCode);
       return await parserService.parseSource(sourceCode);
     } catch (error) {
       console.error('[IPC] parser:parseSource error:', error);

@@ -76,30 +76,62 @@ class ProjectService {
     return entry.model;
   }
   /**
-   * Recursively scan directory for .d files (async)
+   * Recursively scan directory for .d files (async).
+   *
+   * Junctions and symlinks are followed (a mod's script tree is often a
+   * junction into the game install); a link back into an ancestor is cut by
+   * the visited set. A subdirectory that cannot be read is logged and skipped
+   * so one bad folder does not hide the rest of the project; the root itself
+   * failing is the caller's error.
    */
   async scanDirectory(rootPath: string): Promise<string[]> {
     const files: string[] = [];
+    const visited = new Set<string>();
+
+    const isDotD = (name: string) => path.extname(name).toLowerCase() === '.d';
 
     const scanRecursive = async (dir: string): Promise<void> => {
-      try {
-        const entries = await fs.readdir(dir, { withFileTypes: true });
+      const realDir = await fs.realpath(dir);
+      if (visited.has(realDir)) return;
+      visited.add(realDir);
 
-        const promises: Promise<void>[] = [];
+      const entries = await fs.readdir(dir, { withFileTypes: true });
+      const promises: Promise<void>[] = [];
 
-        for (const entry of entries) {
-          const fullPath = path.join(dir, entry.name);
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
 
-          if (entry.isDirectory()) {
-            promises.push(scanRecursive(fullPath));
-          } else if (entry.isFile() && path.extname(entry.name).toLowerCase() === '.d') {
-            files.push(fullPath);
-          }
+        if (entry.isSymbolicLink()) {
+          promises.push(scanLink(fullPath));
+        } else if (entry.isDirectory()) {
+          promises.push(scanSubdirectory(fullPath));
+        } else if (entry.isFile() && isDotD(entry.name)) {
+          files.push(fullPath);
         }
+      }
 
-        await Promise.all(promises);
+      await Promise.all(promises);
+    };
+
+    const scanSubdirectory = async (dir: string): Promise<void> => {
+      try {
+        await scanRecursive(dir);
+      } catch (error) {
+        console.warn(`[ProjectService] skipping unreadable directory ${dir}:`, error);
+      }
+    };
+
+    const scanLink = async (linkPath: string): Promise<void> => {
+      let stat;
+      try {
+        stat = await fs.stat(linkPath);
       } catch {
-        // Silently skip directories that can't be read (permissions, etc.)
+        return; // dangling link
+      }
+      if (stat.isDirectory()) {
+        await scanSubdirectory(linkPath);
+      } else if (stat.isFile() && isDotD(linkPath)) {
+        files.push(linkPath);
       }
     };
 
