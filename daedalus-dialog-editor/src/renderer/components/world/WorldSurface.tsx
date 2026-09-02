@@ -882,7 +882,23 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
 
     setAppliedOps([...ops]);
     void refreshHistoryDepth();
-    if (!ops.some(isStructuralOp)) return;
+    if (!ops.some(isStructuralOp)) {
+      // The one property change the viewport cannot follow by rewriting an
+      // instance matrix: a swapped visual is a different mesh, in a different
+      // `InstancedMesh` which may not exist yet, so the payload is re-read
+      // whole — the same thing a structural op does below, for a reason of its
+      // own. Not structural itself: no VOB came or went, nothing renumbered,
+      // and the index is left alone.
+      //
+      // Here rather than beside the commit because undo and redo do not go
+      // through the commit: they apply what the main process says it did, and
+      // an inverted `SetVobProp` carries `visual` on both sides just as the
+      // forward one does — so testing either side answers.
+      if (ops.some((op) => op.op === 'SetVobProp' && op.to.visual !== undefined)) {
+        setVisuals(await window.editorAPI.getWorldVisuals());
+      }
+      return;
+    }
 
     // A selection is a list of flat indices, and an op that renumbers leaves
     // every one of them naming a VOB nobody picked — the property grid would
@@ -1154,17 +1170,11 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       bounds = { from: boundsOf, to: next === null ? null : next as ZenBounds };
     }
 
+    // The scene is rebuilt for a changed visual by `applied`, which this commit
+    // goes through and undo and redo reach on their own — so there is nothing
+    // to do here afterwards. It used to be a hand-written fetch on this line,
+    // and that is exactly why undo left the old mesh on screen.
     await commitOps(setVobProps(vobModelOf(current).reader, selected, props, bounds));
-
-    // The viewport can follow a move or a turn by rewriting an instance matrix.
-    // It cannot follow a swapped visual: that is a different mesh, in a
-    // different `InstancedMesh` which may not exist yet. Re-requesting the
-    // instanced visuals rebuilds the scene from the world as it now is, which is
-    // the same path the cold open takes and the only one that is correct. It
-    // costs what an open costs, and only a change of visual pays it.
-    if (props.visual !== undefined) {
-      setVisuals(await window.editorAPI.getWorldVisuals());
-    }
   }, [commitOps, boundsOf]);
 
   /** The Assets panel's "Use as visual" (§16.26 row 1): the previewed mesh's

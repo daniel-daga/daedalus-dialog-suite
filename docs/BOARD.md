@@ -162,10 +162,6 @@ the next unclaimed row is **28** (section 3, UI with a template in the tree).
 
 **Phase 1b-2 — VOB editing**
 
-- **Undo doesn't revert the 3D mesh after "Use as visual"** — confirmed real,
-  root cause and fix shape known: `applied()` re-reads visuals only for a
-  structural op, and `SetVobProp` never is. Needs a `visual`-aware trigger
-  and a test; neither exists. §16.27 item 1
 - **§14's uninventoried gaps** — mesh preview, fly navigation, the picker,
   the four camera slots and §16.12's outline tuning are settled; the walk
   mode's design is settled bar its key (Ctrl+W proposed, but likely a
@@ -233,5 +229,6 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-*(empty — flushed 2026-09-02; substance is in `git log`, forward fact already
-routed to the locator card's rule)*
+- **Undo now reverts the 3D mesh after "Use as visual"** — `applied` re-reads
+  the visuals for a `visual`-carrying `SetVobProp`, and the forward path's
+  duplicate fetch is gone. §16.27 item 1

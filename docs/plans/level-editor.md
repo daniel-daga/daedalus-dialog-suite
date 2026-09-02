@@ -3374,8 +3374,16 @@ back with findings. Each was diagnosed by a separate read-only pass before any
 fix; only item 1 is a real bug — items 2-4 were retested and confirmed working
 as built, so nothing there needs a code change.
 
-**1. Undo doesn't revert the 3D mesh after "Use as visual" — confirmed real
-bug.** `applied()` in `WorldSurface.tsx` (~825-908) only re-fetches
+**1. Undo doesn't revert the 3D mesh after "Use as visual" — fixed
+2026-09-02.** `applied` gained a `visual`-aware trigger beside `isStructuralOp`
+— a batch holding a `SetVobProp` whose `to` carries `visual` re-reads
+`getWorldVisuals()` and nothing else, leaving the index alone because nothing
+renumbered. The forward path's hand-written fetch in `handleEditProps` is gone
+with it: the commit goes through `applied` too, so keeping both would have paid
+an open's worth of work twice per visual change, and the duplication is what let
+the two paths disagree in the first place. Three tests: the undo re-reads, the
+`MoveVob` undo still re-reads nothing, and a forward edit fetches exactly once.
+The diagnosis it replaces: `applied()` only re-fetched
 `getWorldVisuals()` — the call that rebuilds the `InstancedPayload` the
 viewport renders from — when an op is `isStructuralOp` (`AddVob`,
 `ReparentVob`, `DeleteVob`; `zen-world/src/model/ops.ts:539`). `SetVobProp` is

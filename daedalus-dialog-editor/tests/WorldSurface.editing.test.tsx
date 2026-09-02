@@ -202,6 +202,19 @@ const LIGHT_PROPS = {
 };
 const ITEM_PROPS = { class: 'oCItem', instance: 'ITMW_1H_SWORD_01', ...BASE_PROPS };
 
+/** What the main process hands back for an undo of a visual swap: the op the
+ *  edit was, with its sides already exchanged. Not structural — no VOB came or
+ *  went — and yet the scene has to be rebuilt from it. */
+const VISUAL_SWAP_UNDONE: WorldOp = {
+  op: 'SetVobProp',
+  vob: 1,
+  path: '1',
+  from: { visual: 'CRATE.3DS' },
+  to: { visual: 'BARREL.3DS' },
+  fromBbox: null,
+  toBbox: null,
+};
+
 /** One axis of the property grid's typed position — an input, so its value is
  *  not its text content. */
 const coordinate = (axis: string) => screen.getByTestId(
@@ -1840,6 +1853,41 @@ describe('placing a VOB', () => {
 
     await waitFor(() => expect(api.undoWorldEdit).toHaveBeenCalled());
     expect(api.refreshWorldIndex).not.toHaveBeenCalled();
+    expect(api.getWorldVisuals).toHaveBeenCalledTimes(1);   // the open, and no more
+  });
+
+  it('re-reads the visuals on an undo that swapped a visual, though it is not structural', async () => {
+    // The one property change the viewport cannot follow by patching a column:
+    // a different visual is a different mesh, in an `InstancedMesh` that may
+    // not exist yet, so the payload has to be rebuilt. The forward edit pays
+    // for it at its own call site; undo and redo never go through that site —
+    // they apply what the main process says it did — so the trigger has to sit
+    // where they land. The index is *not* re-read: nothing renumbered.
+    await openWorld();
+    api.undoWorldEdit.mockResolvedValueOnce([VISUAL_SWAP_UNDONE] as never);
+    api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+
+    await waitFor(() => expect(api.getWorldVisuals).toHaveBeenCalledTimes(2));
+    expect(api.refreshWorldIndex).not.toHaveBeenCalled();
+  });
+
+  it('re-reads the visuals once for a forward visual edit, not twice', async () => {
+    // The trigger above is the only one: the grid's commit goes through the
+    // same `applied`, so a second hand-written fetch beside it would pay an
+    // open's worth of work twice for every visual change.
+    await openWorld();
+    api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+
+    const visualInput = screen.getByTestId('world-prop-visual-input') as HTMLInputElement;
+    fireEvent.change(visualInput, { target: { value: 'CRATE.3DS' } });
+    fireEvent.blur(visualInput);
+
+    await waitFor(() => expect(api.getWorldVisuals).toHaveBeenCalledTimes(2));
+    // Settled: any second fetch would have been issued by now.
+    await act(async () => {});
+    expect(api.getWorldVisuals).toHaveBeenCalledTimes(2);
   });
 
   it('reserves the placement button’s own height, not a pixel count of its own', async () => {

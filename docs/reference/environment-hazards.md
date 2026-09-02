@@ -87,6 +87,11 @@ doc, not here. This file is only for the ground the code stands on.
   next test.** The symptom is the *following* test failing.
 - **react-window renders no rows under jsdom without the AutoSizer mock.** Any
   suite that renders the scene tree needs it.
+- **`FileService.lruCaches.test.ts` times out under a full parallel run, and
+  passes alone.** Both its cases read `FILE_CACHE_CAP` (1024) real files in a
+  loop against Jest's 5 s default, which is comfortable on an idle machine and
+  not comfortable beside 249 other suites. Seen 2026-09-02; nothing about the
+  cache is wrong, and re-running the file on its own is the check.
 - **`fireEvent` wraps every call in `act()`.** That is why a component test can
   never find a bug that only appears when two events land in one JS task —
   React 18 batches state updates, and a real driver dispatching a whole gesture
