@@ -1772,6 +1772,19 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const unknownInsertInstance = insertingNpc !== null && npcList.length > 0
     && insertingNpc.instance.trim() !== ''
     && !npcList.some((npc) => npc.toUpperCase() === insertingNpc.instance.trim().toUpperCase());
+  /**
+   * The site the index already holds for this instance on this point, if any —
+   * keyed uppercase, the index's own casing. A warning that wants an explicit
+   * confirm, not a refusal: retail spawns the same NPC on a point more than
+   * once (chapter re-entry).
+   */
+  const duplicateInsertSpawn = useMemo(() => {
+    if (insertingNpc === null) return null;
+    const instance = insertingNpc.instance.trim().toUpperCase();
+    const spawnPoint = insertingNpc.waypoint.trim().toUpperCase();
+    if (instance === '' || spawnPoint === '') return null;
+    return spawnSiteIndex.find((site) => site.instance === instance && site.spawnPoint === spawnPoint) ?? null;
+  }, [insertingNpc, spawnSiteIndex]);
 
   /**
    * Remove a VOB and its whole subtree — **the one edit here that cannot be
@@ -2627,6 +2640,17 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               : ' '}
             inputProps={{ 'data-testid': 'world-insert-npc-waypoint', spellCheck: false }}
           />
+          {duplicateInsertSpawn !== null && (
+            <Typography
+              variant="caption"
+              color="warning.main"
+              data-testid="world-insert-npc-duplicate-warning"
+              sx={{ display: 'block' }}
+            >
+              {`${duplicateInsertSpawn.instance} already spawns at ${duplicateInsertSpawn.spawnPoint} `
+                + `(${baseName(duplicateInsertSpawn.filePath)}:${duplicateInsertSpawn.line}).`}
+            </Typography>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setInsertingNpc(null)}>Cancel</Button>
@@ -2643,7 +2667,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
             }}
             data-testid="world-insert-npc-confirm"
           >
-            Insert
+            {duplicateInsertSpawn === null ? 'Insert' : 'Insert anyway'}
           </Button>
         </DialogActions>
       </Dialog>

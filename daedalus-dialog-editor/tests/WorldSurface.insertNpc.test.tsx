@@ -326,6 +326,51 @@ describe('Insert NPC here…', () => {
     });
   });
 
+  describe('a spawn the index already holds is a warning that wants an explicit confirm', () => {
+    // Retail spawns the same NPC on a point more than once (chapter re-entry),
+    // so this is not a refusal — the button just stops reading "Insert".
+    const warning = () => screen.queryByTestId('world-insert-npc-duplicate-warning');
+    const existingSite = {
+      instance: 'PC_THIEF', spawnPoint: 'WP_MIDDLE',
+      filePath: STARTUP_PATH, functionName: 'STARTUP_NewWorld', line: 12,
+    };
+
+    it('names the site, matches the index case-insensitively, and inserts anyway on confirm', async () => {
+      seedProject();
+      useProjectStore.setState({ spawnSiteIndex: [existingSite] } as never);
+      await openWorld();
+      fireEvent.click(screen.getByTestId('stub-pick-waypoint'));
+      await screen.findByTestId('world-waypoint-panel');
+      fireEvent.click(screen.getByTestId('world-waypoint-insert-npc'));
+      await screen.findByTestId('world-insert-npc-dialog');
+
+      fireEvent.change(instanceField(), { target: { value: 'pc_thief' } });
+      expect(warning()).toHaveTextContent('PC_THIEF already spawns at WP_MIDDLE (Startup.d:12)');
+      const confirm = screen.getByTestId('world-insert-npc-confirm');
+      expect(confirm).toHaveTextContent('Insert anyway');
+      expect(confirm).toBeEnabled();
+
+      fireEvent.click(confirm);
+      await waitFor(() => expect(api.appendInsertNpc).toHaveBeenCalledWith(
+        STARTUP_PATH, 'STARTUP_NewWorld', 'pc_thief', 'WP_MIDDLE',
+      ));
+    });
+
+    it('says nothing for a different instance on the same point', async () => {
+      seedProject();
+      useProjectStore.setState({ spawnSiteIndex: [existingSite] } as never);
+      await openWorld();
+      fireEvent.click(screen.getByTestId('stub-pick-waypoint'));
+      await screen.findByTestId('world-waypoint-panel');
+      fireEvent.click(screen.getByTestId('world-waypoint-insert-npc'));
+      await screen.findByTestId('world-insert-npc-dialog');
+
+      fireEvent.change(instanceField(), { target: { value: 'PC_Hero' } });
+      expect(warning()).toBeNull();
+      expect(screen.getByTestId('world-insert-npc-confirm')).toHaveTextContent(/^Insert$/);
+    });
+  });
+
   it('spawns at the selected waypoint from its panel, with no waypoint op', async () => {
     seedProject();
     await openWorld();
