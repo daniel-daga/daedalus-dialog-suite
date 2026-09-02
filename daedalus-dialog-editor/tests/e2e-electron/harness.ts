@@ -32,6 +32,11 @@ export interface AppFixture {
   cleanup: () => Promise<void>;
 }
 
+export interface LaunchAppOptions {
+  /** Initial settings persisted before Electron starts and constructs SettingsService. */
+  settings?: Record<string, unknown>;
+}
+
 const tempDirs: string[] = [];
 
 function mkTemp(prefix: string): string {
@@ -41,8 +46,16 @@ function mkTemp(prefix: string): string {
 }
 
 /** Launch the built Electron app against a fresh, isolated userData dir. */
-export async function launchApp(): Promise<AppFixture> {
+export async function launchApp(options: LaunchAppOptions = {}): Promise<AppFixture> {
   const userDataDir = mkTemp('dde-e2e-userdata-');
+
+  if (options.settings) {
+    fs.writeFileSync(
+      path.join(userDataDir, 'settings.json'),
+      JSON.stringify(options.settings, null, 2),
+      'utf8',
+    );
+  }
 
   const app = await electron.launch({
     // `.` loads the app at cwd (reads `main` from package.json -> dist/main/main.js).
@@ -109,6 +122,22 @@ export async function stubOpenDialog(app: ElectronApplication, filePaths: string
       filePaths: paths,
     });
   }, filePaths);
+}
+
+/** Route native open-directory/file dialogs by their user-visible title. */
+export async function stubOpenDialogsByTitle(
+  app: ElectronApplication,
+  routes: Record<string, string[]>,
+): Promise<void> {
+  await app.evaluate(({ dialog }, dialogRoutes) => {
+    (dialog as { showOpenDialog: (options: { title?: string }) => unknown }).showOpenDialog = async (
+      options: { title?: string },
+    ) => {
+      const filePaths = options.title ? dialogRoutes[options.title] : undefined;
+      if (!filePaths) throw new Error(`unexpected dialog: ${options.title ?? '<untitled>'}`);
+      return { canceled: false, filePaths };
+    };
+  }, routes);
 }
 
 /** Stub `dialog.showSaveDialog` to return the given target path. Same call-time invariant as above. */
