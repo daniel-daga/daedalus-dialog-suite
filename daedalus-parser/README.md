@@ -265,7 +265,7 @@ See [API.md](API.md) for complete parser and semantic API documentation.
 
 ### Literals
 - ✅ Numbers: `42`, `3.14`
-- ✅ Strings: `"text"`, with escape sequences
+- ✅ Strings: `"text"` — no escape sequences; a backslash is a literal character and the next `"` ends the string
 - ✅ Booleans: `true`, `false` (case-insensitive)
 
 ### Comments

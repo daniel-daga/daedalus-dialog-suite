@@ -232,22 +232,12 @@ module.exports = grammar({
 
     number: $ => /\d+(\.\d+)?/,
 
+    // Daedalus has no string escape sequences (docs/reference/parser-roundtrip-scope.md):
+    // a backslash is an ordinary character and the string ends at the next `"`.
+    // Newlines are allowed (multi-line strings).
     string: $ => token(seq(
       '"',
-      repeat(choice(
-        // Regular characters including newlines (for multi-line strings)
-        /[^"\\]/,
-        // Newline characters (allows multi-line strings)
-        /\r?\n/,
-        // Escape sequences
-        seq('\\', choice(
-          /[\\"/ntr]/,  // Common escapes
-          /[0-7]{1,3}/, // Octal
-          /x[0-9a-fA-F]{2}/, // Hex
-          /u[0-9a-fA-F]{4}/, // Unicode
-          /./ // Any other escaped character
-        ))
-      )),
+      /[^"]*/,
       '"'
     )),
 

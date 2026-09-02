@@ -188,12 +188,12 @@ Parser:
       `pass2_analyzeAndLink`, and the editor worker duplicates it verbatim
       (`main/workers/parser.worker.ts:30-33`). The force-save path can therefore emit a near-empty
       file. Run the passes on errored trees, or rename and document the option.
-- [ ] 4.18 The grammar contradicts both the doc and codegen on string escapes.
-      `docs/reference/parser-roundtrip-scope.md:19-27` declares Daedalus has **no** string escape
-      sequences and codegen agrees (`generator.ts:483-492` just wraps in quotes), but
-      `grammar.js:233-249` still implements C-style escapes — so a string ending in a backslash
-      consumes its own closing quote. No trailing-backslash test exists. Settle the real Daedalus
-      semantics first, then make all three agree.
+- [x] 4.18 **Landed 2026-09-02.** The grammar's `string` is now `"` + `[^"]*` + `"` — no
+      escapes, a backslash is literal, the next `"` ends the string — matching
+      `parser-roundtrip-scope.md` and codegen; parser regenerated and binding rebuilt in the
+      same change. Tests: `parser.test.js` tokenizes `"C:\"`, `"Ja\"`, `"b"` as separate
+      strings; a trailing-backslash choice/log entry round-trips; a trailing backslash in a
+      binary string condition. The fixture corpus holds no backslash, so no corpus parse moved.
 
 ## P5 — UX polish backlog
 
