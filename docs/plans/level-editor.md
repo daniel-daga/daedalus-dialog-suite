@@ -1930,21 +1930,44 @@ written on it, on purpose** — §16.22's precedent is that the number comes fir
 and the check second, and that the number is allowed to kill the check, as the
 occupancy measurement's did.
 
-**What is unmeasured, and it is the coverage ratio.**
-`scripts/check-routine-coverage.js` is the instrument, in
-`check-spawn-occupancy.js`'s shape: it reports the `TA`-family calls written in
-a corpus beside the entries that reached the index, **names every `TA_*` callee
-it could not resolve**, and then gives the gap and overlap distributions. It was
-run only against a synthetic corpus (two files, a resolvable wrapper pair and a
-deliberately unresolvable third), where it reports 4 of 7 calls indexed and
-names the third — the arithmetic is right and the pass-through derivation
-works. It has **not been run against `mdk/Content`**, because the session that
-wrote it had no retail corpus on the machine. Until it has been, this index's
-coverage is unknown in exactly the way the spawn index's was for a year, and the
-honest statement is that number is missing — not that the index is complete.
-That run is the first thing to do with this, and it is a board card:
-`npm run build:main` then
-`node scripts/check-routine-coverage.js --project "<...>\mdk\Content"`.
+**The coverage ratio, measured 2026-09-01 against `mdk/Content`** (the
+gitignored copy `environment-hazards.md` says is not retail-equivalent for
+*compiling*; for an index count that does not matter — every file parses, and
+the two retail defects it names touch no routine). `scripts/check-routine-coverage.js`
+is the instrument, in `check-spawn-occupancy.js`'s shape: it reports the
+`TA`-family calls written in a corpus beside the entries that reached the index,
+**names every `TA_*` callee it could not resolve**, and then gives the gap and
+overlap distributions. **The index sees 5,087 of the 6,275 `TA`-family calls
+retail writes (81%), all 60 wrapper callees resolve, and the 1,188 it misses
+are one file, not a scatter**: `Story/NPC/DMT_DementorAmbient.d` carries
+1,128 of them — 17 dementor-walker `Rtn_Start_12xx` functions averaging 66
+entries — and yields no model at all, because its `PROTOTYPE Default_AmbientDementor`
+body calls `B_SetAttributesToChapter (self, 3)` and the grammar's
+`prototype_declaration` takes a `class_body` (declarations and assignments
+only), so a call statement there is a syntax error and
+`extractFileMetadataFromSource` drops the whole file. That is a `grammar.js`
+fix (`prototype_declaration` → `$.block`, as `instance_declaration` already
+has), a parser-workspace change with a native regenerate behind it, not an
+`extractRoutineSites` one — recorded here, not fixed. The other 60: 58 are
+`AI/Human/TA.d`'s own wrapper bodies passing parameters into `TA_Min`, which
+is what a wrapper is and never an entry; 2 are `BDT_1020_Wegelagerer.d` writing
+its `TA_Guard_Passage` pair in the *instance* body instead of a routine
+function — the extractor walks `functions` only, and two calls in one file do
+not earn an instance-body walk. So the true loss is one syntax gap worth 18%
+of the corpus, and the number to quote is 81% until that lands. (The run also
+found and fixed a denominator bug of the counting script's own: `instance
+TA_Testmodell (Npc_Default)` matched the call regex; `tests/routineCoverage.test.ts`
+now holds it.)
+
+**Gap and overlap are how the game is built, at the margin only**: of 1,137
+routines with at least one indexed entry, 1,126 cover the day exactly once;
+11 leave a hole (each one hole; 720 minutes for `RTN_START_10013`, 600 for
+`RTN_START_1086`, 540 for `RTN_START_503`, then 420, 240, 60, 50, 30, 30, 30,
+7) and 8 cover a window twice (one each). No tail — a rule written on either
+would fire 19 times on retail and every one is plausibly deliberate (a
+half-day routine is an NPC who is elsewhere the other half), so the §16.22
+precedent holds: the number does not justify a Problems rule, and none is
+carded.
 
 **What is deliberately not carded, and why:**
 
@@ -1984,9 +2007,10 @@ static spawn — the point they were *inserted* at, which is not a claim about
 this minute. Drawn in one colour those two are indistinguishable and the weaker
 fact reads as the stronger, so `placementWaypointsAt` returns them as two lists
 and the overlay draws the fallback smaller, dimmer and in `UNPLACED` grey.
-**This is also what keeps the unmeasured coverage visible:** slice 6's ratio is
-still unrun, so an hour the index reads badly shows as grey markers rather than
-as an empty world nothing explains. Known wins a point both lists reach — one
+**This is also what keeps the coverage gap visible:** slice 6's ratio is 81%
+and the missing fifth is one file (measured 2026-09-01, above), so an hour the
+index reads badly shows as grey markers rather than as an empty world nothing
+explains. Known wins a point both lists reach — one
 marker per point is still the rule, and who is standing there is the waypoint
 panel's answer.
 
@@ -2236,7 +2260,8 @@ runs `buildRoutineParamIndex`'s fixed-point sweep over every function of every
 file, and `ProjectService` has already paid for it once. A variant whose routine
 has no entries the index could read is dropped — choosing it would empty the
 world with no explanation — which also means this index inherits slice 6's
-unmeasured coverage exactly.
+coverage exactly: 81%, and the dementor walkers' `Rtn_Start_12xx` are the
+routines it cannot offer.
 
 The decision this slice turns on: variants enumerate **by the engine's name
 rule, not by exchange sites**. The name rule sees a variant an exchange
@@ -2244,27 +2269,44 @@ reaches through a variable or a concatenation; an exchange-site enumeration
 would not. The cost is listing variants nothing in the scripts triggers — for
 a lens that is the point, not a defect.
 
-**The measurement — written and NOT run, and the honest statement is that the
-number is missing.** `scripts/check-routine-states.js` exists in
-`check-routine-coverage.js`'s shape and was exercised against a synthetic corpus
-only (three NPCs, a state shared by two, drift planted in both directions — it
-reports all of it correctly), because **no retail corpus is on the machine that
-wrote it**, exactly as with slice 6's script. So the paragraph below still
-describes work to do, and *"do not build the select before the number exists"*
-was overridden by an explicit instruction to implement, not by the number
-arriving. **The select shipped; whether a dropdown is the right control is still
-unmeasured, and that is a live risk, not a closed question.** The run is
-`npm run build:main` then
-`node scripts/check-routine-states.js --project "<...>\mdk\Content"`.
+**The measurement — run 2026-09-01 against `mdk/Content`** (slice 6's caveat
+about that copy applies: not retail-equivalent for compiling, immaterial for
+an index count). `scripts/check-routine-states.js` is a sibling of
+`check-routine-coverage.js`; it had been exercised against a synthetic corpus
+only, and the select shipped ahead of the number on an explicit instruction to
+implement. The number now exists, and it is what the paragraph *"the control's
+shape is gated on slice 11's measurement"* below reads against:
 
-**What the measurement asks, and it is what the UI ships on** — a sibling of
-`scripts/check-routine-coverage.js`, run against `mdk/Content`: distinct state
-names and NPCs per state (does "TOT" / "PRISON" / "KAPITEL3" really recur
-across NPCs — the premise of a *global* picker), exchange sites resolvable
-against a variant vs not, and the drift both ways (variants no exchange names,
-exchanges naming no indexed variant). Slice 6's caveat applies verbatim: the
-corpus has to be on the machine, and until the number exists the honest
-statement is that it is missing.
+- **271 of the 663 NPCs with a declared routine have at least one variant**
+  (every one of the 663 has a literal id — the name rule never fails on that).
+  **182 distinct state names, 501 NPC×state pairs.** 112 names reach one NPC
+  only; 70 reach two or more and those 70 carry 389 of the 501 pairs (78%).
+  The head is real and it is *event*-shaped, not chapter-shaped: `START` 69
+  (NPCs whose declared routine is *not* their `Rtn_Start`), `TOT` 34,
+  `SHIPFREE` 16, `FOLLOW` 15, `SHIP` 14, `WAITFORSHIP` 13, then 8, 8, 8, 7,
+  7, 7 (`FLEEDMT`, `FLEEFROMPASS`, `FLUCHT`, `AFTERRITUAL`, `CONCERT`,
+  `PRISON`) and a run of 6s and 5s — twenty-four names reach 5 or more. **No
+  `KAPITEL*` state exists in retail** — the chapter is a spawn guard, never a
+  routine name.
+- **Exchange sites: 672 `Npc_ExchangeRoutine`/`B_StartOtherRoutine` calls,
+  670 with a literal state** (the 2 are `B_StartOtherRoutine`'s own body
+  passing its parameter through). By *target*: 94 name an instance and **all
+  94 resolve** to an indexed variant of that instance; 324 target `self`
+  (resolvable through the enclosing dialog's `npc`, the derivation slice 9
+  decision 4 declined to build — this is its first number, 48% of the sites);
+  252 target a local `var C_NPC` alias (`Biff`, `Lee`, `Bloodwyn` — 139
+  distinct names, none an instance), a symbol question the main process
+  cannot answer. So 14% resolve today, 62% would with the `self` derivation,
+  and the remaining 38% need a symbol table.
+- **Drift, by name**: 173 distinct states triggered. **3 triggered that no
+  variant is written for** — `FLED`, `POSTSTART`, and `RTN_POSTSTART_1367`,
+  a retail call passing a whole function name where a state goes. **12
+  written that nothing triggers by literal** — `ATTACK`, `CONCERT`,
+  `FLUCHT2`, `FLUCHT3`, `ICEDRAGON`, `ICEWAIT2`, `PIRATECAMP`,
+  `POSTENVERLASSEN`, `REST`, `RUHE`, `RUNAFTERVIRTUALREFUGEE`, `TEST` —
+  dead, or reached through a variable, which is the case the name rule was
+  chosen for. Both lists are short enough to be a Problems rule's output and
+  neither is carded, for §16.22's reason: nobody has said the finding.
 
 **Slice 12 — the schedule takes a state.** `routineSchedule.ts` stays pure:
 `RoutineIndex` gains optional `statesByNpc`, and `placementsAt` /
@@ -2331,7 +2373,22 @@ across NPCs — a dozen shared names like `TOT` or `KAPITEL3`. If the corpus
 instead shows mostly bespoke suffixes, the honest control is not a select with
 four hundred entries; it is a per-NPC affordance or a filter field, and the
 picker as drawn here would be unusable in a way no amount of wiring fixes.
-**Do not build the select before the number exists.**
+*Do not build the select before the number exists* — it was built before, on
+instruction, and the number arrived 2026-09-01 (slice 11 above).
+
+**Verdict: the global select is the right control, and its list is the wrong
+length.** The premise holds — names do recur across NPCs, 70 of 182 do and
+they carry 78% of the NPC×state pairs, with a head (`TOT`, `SHIP*`, `FOLLOW`,
+`PRISON`) that is exactly the "where is everyone once the plot has moved on"
+question the lens exists for. It is not the four-hundred-bespoke-suffixes case
+that would have killed a dropdown. But 112 of the 182 entries reach one NPC,
+and a flat alphabetical select puts `ABMARSCH`-style singletons between the
+names anyone would pick; the reach readout says *1 of 271* after the fact,
+which is late. The fix is a sort or a split, not a rebuild: shared names
+first, ordered by reach, singletons after a divider (or behind a filter) — a
+tweak to `world-state`'s option list, and not in this slice. Also of note: the
+names are events, not chapters, so the *Declared* default's honesty argument
+stands twice over — there is no `KAPITEL3` for it to be confused with.
 
 **Where "who" belongs, when somebody asks for it.** Somebody did, on
 2026-08-30, and slice 14 below is the answer — so the paragraph this replaces

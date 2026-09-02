@@ -51,7 +51,8 @@ function loadSchedule() {
  * `TA`-family calls written in a source, counted from the text with comments
  * stripped — retail comments routines out in bulk, and a commented-out entry is
  * not one the index lost. Declarations are subtracted: `func void
- * TA_Stand_WP(...)` matches the same shape as a call to it.
+ * TA_Stand_WP(...)` matches the same shape as a call to it, and so does
+ * `instance TA_Testmodell (Npc_Default)` — retail has two of those.
  */
 function countRoutineCalls(source) {
   let code = '';
@@ -69,7 +70,7 @@ function countRoutineCalls(source) {
     } else if (two === '*/') { state = 'code'; i += 1; }
   }
   const calls = (code.match(/\bTA(_\w+)?\s*\(/gi) || []).length;
-  const declarations = (code.match(/\bfunc\s+\w+\s+TA(_\w+)?\s*\(/gi) || []).length;
+  const declarations = (code.match(/\b(func\s+\w+|instance|prototype)\s+TA(_\w+)?\s*\(/gi) || []).length;
   return calls - declarations;
 }
 
