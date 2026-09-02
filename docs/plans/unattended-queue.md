@@ -111,7 +111,7 @@ Nothing here needs a design call: each has a template already in the tree.
 
 | # | Item | Where the diagnosis is | Accept | Size |
 |---|---|---|---|---|
-| 38 | No simulator test is fed real parser output; two landed fixes (H1, H2) have no regression lock. Fixture: `daedalus-parser/test/fixtures/corpus/condition-idioms.d` | simulator, test-coverage observations | `simulatorParserIntegration` green under `--runInBand` **and** default workers | M |
+| ~~38~~ | ~~No simulator test is fed real parser output; two landed fixes (H1, H2) have no regression lock. Fixture: `daedalus-parser/test/fixtures/corpus/condition-idioms.d`~~ — **landed 2026-09-02**: `tests/simulatorParserIntegration.test.ts` parses the fixture with the real parser in a child process (the binding-per-registry idiom `teacherDialogTemplate` uses), appends the three C_INFO instances the corpus file deliberately lacks, and runs `createSimulatorModel` → `getDialogAvailability`: both raw-mode shapes come out unknown with the "not structurally analyzable" reason, and the `!Npc_KnowsInfo` gate is true on a fresh session and false once `DIA_Foo` is known. Reverting either fix by hand turns three of the four cases red; green in band and under the default workers | simulator, test-coverage observations | `simulatorParserIntegration` green under `--runInBand` **and** default workers | M |
 | 39 | The packaged-app asar check asserts the ZenKit addon but **not** the tree-sitter binding, and no packaged smoke parses a `.d` | production-readiness §2 blocker 3, `build-windows.yml:153` | the smoke entry's Jest test and the asar assertion; the workflow step itself needs a dispatch | L |
 
 ## 6. Larger, and worth knowing before you start
