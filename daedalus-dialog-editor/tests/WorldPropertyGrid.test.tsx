@@ -758,6 +758,27 @@ describe('WorldPropertyGrid, class fields', () => {
     ]);
     expect(input('class-overrideColor').checked).toBe(false);
   });
+
+  it('disables the fog colour while overrideColor is off, and frees it when on', () => {
+    // The adjacency above makes the pair legible; this makes the rule
+    // enforceable. A colour committed on a zone that does not override is a
+    // legal write the engine never reads — the same shape as `randomDelay`
+    // beside a non-RANDOM `mode` (§16.3) — so the field says so instead of
+    // taking a value that changes nothing. Decided 2026-09-02 (§14.1 1.4).
+    const { rerender } = render(
+      <WorldPropertyGrid summary={WORLD} selection={[6]} {...wiring} classProps={FOG} />,
+    );
+    expect(input('class-color').disabled).toBe(true);
+    expect(field('class-color')).toHaveTextContent(/overrideColor/);
+
+    rerender(
+      <WorldPropertyGrid
+        summary={WORLD} selection={[6]} {...wiring}
+        classProps={{ ...FOG, overrideColor: true }}
+      />,
+    );
+    expect(input('class-color').disabled).toBe(false);
+  });
 });
 
 // Typed transform entry (level-editor.md §14.1 item 1.5).

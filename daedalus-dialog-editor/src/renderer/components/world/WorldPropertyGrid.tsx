@@ -218,9 +218,12 @@ const ClassField: React.FC<{
    *  belong to no class at all. */
   values?: readonly EnumValueDescriptor[];
   helper?: string;
+  /** A field the engine would not read as the VOB stands — see `disabledFor`
+   *  below. Text kinds only: no catalogued bool or enum is governed by another. */
+  disabled?: boolean;
   onCommit: (value: ClassPropValue) => void;
 }> = ({
-  vob, group = 'class', field, value, knownValues, values, helper, onCommit,
+  vob, group = 'class', field, value, knownValues, values, helper, disabled, onCommit,
 }) => {
   const [refusals, setRefusals] = useState(0);
 
@@ -279,6 +282,7 @@ const ClassField: React.FC<{
       key={`${group}-${vob}-${field.key}-${text}-${refusals}`}
       name={`${group}-${field.key}`}
       value={text}
+      disabled={disabled}
       helper={helper}
       onCommit={(typed) => {
         const parsed = parse(field, typed);
@@ -625,6 +629,20 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
   const knownValuesFor = (key: string): ReadonlySet<string> | undefined => (
     className === 'oCItem' && key === 'instance' && itemInstances.size > 0
       ? itemInstances
+      : undefined
+  );
+
+  // The one cross-field rule the grid has (decided 2026-09-02, level-editor.md
+  // §14.1 1.4). ZenGin reads `zCZoneZFog.color` only while `overrideColor` is
+  // true, so a colour committed on a zone that does not override is a legal
+  // write the engine never reads — `randomDelay` beside a non-RANDOM `mode` has
+  // the same shape (§16.3), and stays enabled only because a mode change and a
+  // delay are two commits on the same VOB. Here the switch is drawn one row up,
+  // so the field can say why it is off rather than take a number that changes
+  // nothing. Not generalised into the catalogue: this is one field.
+  const disabledFor = (key: string): string | undefined => (
+    className === 'zCZoneZFog' && key === 'color' && classProps?.overrideColor !== true
+      ? 'Read by the engine only while overrideColor is on.'
       : undefined
   );
 
@@ -975,9 +993,11 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
                   // silently declines what was typed is the complaint the
                   // refusal idiom's remount already comes close to, and the rule
                   // is worth knowing before it bites.
-                  helper={knownValuesFor(classField.key) === undefined
-                    ? undefined
-                    : 'Must be an item instance declared by the loaded scripts.'}
+                  helper={disabledFor(classField.key)
+                    ?? (knownValuesFor(classField.key) === undefined
+                      ? undefined
+                      : 'Must be an item instance declared by the loaded scripts.')}
+                  disabled={disabledFor(classField.key) !== undefined}
                   onCommit={(value) => onEditClassProps({ [classField.key]: value })}
                 />
                 {classField.key === 'focusName' && (
