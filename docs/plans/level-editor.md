@@ -3308,7 +3308,12 @@ the next dolly and pan keep their scale; W/E are the fly's while held and the
 surface's gizmo-mode keys again after; the gizmo is switched off for the
 hold exactly as it is for an Alt+left orbit. Pure logic is
 `renderer/world/flyNav.ts` (`Fly`, `flySpeedFor`, `pivotAhead`), wiring in
-`WorldViewport` beside the context-menu handler. **Open:** the walk. A walk
+`WorldViewport` beside the context-menu handler. *Landed 2026-09-02, Spacer's
+camera slots:* four per open world, **Ctrl+Shift+1..4** stores the pose
+(camera and orbit pivot), **Ctrl+1..4** recalls it — by key code, since Shift
+turns the digit into `!`; `Ctrl+digit` was bound nowhere in the app. Per
+session, reset when a different world opens, no persistence
+(`renderer/world/cameraSlots.ts`, wired beside `.`/`Home`). **Open:** the walk. A walk
 mode is a fly with gravity and a capsule against the world mesh, and the
 picking BVH (`BvhBuilder`, three-mesh-bvh on `world.worldMeshes`) can answer
 both queries — a downward ray for the floor, a `shapecast` for the walls —
