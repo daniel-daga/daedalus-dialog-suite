@@ -1,4 +1,5 @@
 import type { SemanticModel, SpawnSite } from '../../../shared/types';
+import type { PortalFinding } from '../../../shared/worldTypes';
 
 /**
  * Domain types for the project-wide Problems panel.
@@ -18,7 +19,14 @@ export type ProblemRuleId =
   | 'voice-id-duplicate'
   | 'voice-id-malformed'
   | 'waypoint-not-in-world'
-  | 'duplicate-spawn';
+  | 'duplicate-spawn'
+  // The portal checks (level-editor.md §16.18 slice 1, §16.22 q1–q3), one id
+  // per `zen-world` finding kind. All world-locus, by polygon.
+  | 'portal-material-malformed'
+  | 'portal-material-unknown-sector'
+  | 'portal-unpaired'
+  | 'portal-non-planar'
+  | 'portal-reversed';
 
 /**
  * A problem in the scripts: a declaration in a file, which is what the panel
@@ -162,6 +170,14 @@ export interface ProjectView {
   dialogNpcKeys: ReadonlySet<string>;
   /** The open world's waynet names, or undefined when no world is open. */
   world?: WorldWaynetView;
+  /**
+   * The open world's portal findings, or undefined when no world is open.
+   * Computed once per open in the zenkit worker, where the mesh is, and
+   * carried in whole rather than recomputed per scan — the orientation check
+   * is a dot product per sector corner per portal, 150 ms on NewWorld, and a
+   * scan runs on every debounced keystroke.
+   */
+  portalFindings?: readonly PortalFinding[];
 }
 
 /**

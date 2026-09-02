@@ -6,6 +6,7 @@ import { orphanedFunctionRule } from './rules/orphanedFunction';
 import { voiceIdRule } from './rules/voiceId';
 import { waypointNotInWorldRule } from './rules/waypointNotInWorld';
 import { duplicateSpawnRule } from './rules/duplicateSpawn';
+import { portalsRule } from './rules/portals';
 
 /** Every lint rule the Problems panel runs, in declaration order. */
 export const ALL_RULES: readonly LintRule[] = [
@@ -15,7 +16,8 @@ export const ALL_RULES: readonly LintRule[] = [
   orphanedFunctionRule,
   voiceIdRule,
   waypointNotInWorldRule,
-  duplicateSpawnRule
+  duplicateSpawnRule,
+  portalsRule
 ];
 
 const SEVERITY_ORDER: Record<Problem['severity'], number> = { error: 0, warning: 1 };

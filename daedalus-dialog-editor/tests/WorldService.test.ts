@@ -348,6 +348,26 @@ describe('WorldService', () => {
     service.close();
   });
 
+  test('getPortalFindings asks the worker for the checked portal findings', async () => {
+    // §16.20 slice 3: the checks run in the worker, where the mesh is, and
+    // only the findings cross — the renderer never frames a polygon.
+    const { worker, service } = await openedService();
+    const findings = [{ kind: 'portal-reversed', material: 'P:CAPTAIN_', polygon: 456754, sector: 'CAPTAIN' }];
+
+    const pending = service.getPortalFindings();
+    expect(worker.sent.at(-1)).toMatchObject({ op: 'portalFindings' });
+    worker.reply('portalFindings', findings);
+
+    await expect(pending).resolves.toEqual(findings);
+    service.close();
+  });
+
+  test('asking for portal findings before a world is open is refused, not queued', async () => {
+    const { service } = makeService();
+    await expect(service.getPortalFindings()).rejects.toThrow(/no world is open/i);
+    service.close();
+  });
+
   test('asking for class props before a world is open is refused, not queued', async () => {
     const { service } = makeService();
     await expect(service.getVobProps('0/4')).rejects.toThrow(/no world is open/i);

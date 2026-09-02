@@ -14,6 +14,7 @@ export type {
   DecodedTexture,
   VfsEntry,
   WaynetPayload,
+  PortalFindingsPayload,
   WorldOp,
   VobFolders,
 } from '../../shared/worldTypes';
@@ -174,6 +175,9 @@ export interface EditorAPI {
   /** One level of the mounted VFS; null for a missing path and for a file. */
   listWorldAssets: (path: string) => Promise<VfsEntry[] | null>;
   getWorldWaynet: () => Promise<WaynetPayload>;
+  /** The portal checks' findings over the open world's mesh, computed in the
+   *  worker (level-editor.md §16.20 slice 3). Findings only, never geometry. */
+  getWorldPortalFindings: () => Promise<PortalFindingsPayload>;
   /** The bounds of a visual a VOB is being *given*, for the box a swap refits —
    *  the one bounds not already in the renderer, because a visual the world does
    *  not use has no instance. Null for a name that does not resolve. */

@@ -1,4 +1,5 @@
 import type { SemanticModel, SpawnSite } from '../../../shared/types';
+import type { PortalFinding } from '../../../shared/worldTypes';
 import type {
   FileFacts,
   FileModel,
@@ -36,6 +37,9 @@ export interface ProjectScanInput {
    * dangling.
    */
   world?: WorldWaynetView;
+  /** The open world's portal findings, computed in the zenkit worker. Absent
+   *  when no world is open, and the portal rule then returns nothing. */
+  portalFindings?: readonly PortalFinding[];
 }
 
 export interface ProjectScanResult {
@@ -52,7 +56,8 @@ export function scanProject(input: ProjectScanInput): ProjectScanResult {
     waypointSites: input.waypointSites,
     spawnSites: input.spawnSites,
     npcsWithDialogs: input.npcsWithDialogs,
-    world: input.world
+    world: input.world,
+    portalFindings: input.portalFindings
   });
   return { problems: runRules(view), scannedFileCount: input.files.length };
 }

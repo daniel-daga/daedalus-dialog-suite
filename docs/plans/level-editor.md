@@ -1708,13 +1708,19 @@ i32 and kept **signed** — -1 is "no sector" and unsigned would report a
 valid-looking 65535), `portalKinds` (`is_portal` is a two-bit ZenGin value, not
 a boolean), `sectorFlags`, and `bspPortalPolygons`.
 
-Two things it deliberately does not do. **It is not plumbed** — no worker
-message, no `zen-world` consumer — for the same reason slice 1 was not: how
-world data reaches the Problems pipeline is still the undecided question at
-§7. And **it carries no vertices and no plane**: a row's `polygonIndices`
-entry is the join key into `_drillMesh`, which already emits the plane and the
-corner indices per polygon, so planarity and orientation can be written without
-touching C++ again.
+Two things it deliberately did not do, and both were undone by slice 3 of
+§16.20 on 2026-09-02. **It was not plumbed** — no worker message, no
+`zen-world` consumer — for the same reason slice 1 was not: how world data
+reaches the Problems pipeline was the undecided question at §7. And **it
+carried no vertices and no plane**: a row's `polygonIndices` entry was the join
+key into `_drillMesh`, which emits the plane and the corner indices per polygon,
+so the measurement scripts wrote planarity and orientation without touching
+C++. The *consumer* could not ride that join — it walks every polygon of the
+mesh through `_drillMesh` windows, on every open — so the readout now carries
+`planes`, `cornerOffsets` and `corners` per row, plus the `materials` and
+`sectorNames` lists its index columns point into (`sectorNames` in stored
+order, since `sectorIndices` indexes it). NewWorld's is 85,749 rows and 4.9 MB
+— 83,816 of them sector faces — read in 11 ms.
 
 The mesh-extraction fixture grew the portal metadata this is tested against —
 two BSP sectors, a BSP portal list, and distinct `sector_index` values on the
@@ -1725,15 +1731,11 @@ untouched, so no fidelity claim moved.
 validation proving out (§11), and the BSP compiler is out of scope for good —
 the editor validates portal metadata and never recompiles a world.
 
-**Where world findings surface is the open question these two slices leave.**
-Both functions are correct, tested and have no consumer, and that is a real cost
-rather than a tidy pause — `checkPortalMaterials` and `getPortals` are the second
-and third things now waiting on a decision about world-shaped findings. The
-Problems panel is **not** the answer (§7 says why: a portal finding has no
-file, dialog or function, which is the panel's entire navigation model), so the
-answer is a surface on the World side, and nobody has designed one. Until then
-neither slice is plumbed, and a third portal check would only deepen the debt --
-prefer designing the surface over adding checks.
+**Where world findings surface was the open question these two slices left,
+and §16.20 answered it**: the Problems panel, with a locus union — the earlier
+reading that a portal finding could not live there is superseded there and in
+`docs/architecture/level-editor.md` §7. Both functions have their consumer
+since 2026-09-02 (§16.20 slice 3).
 
 ---
 
@@ -2809,9 +2811,39 @@ and argued that a fifth checker would only deepen the debt.
      world locus, so the flow has no reachable end to end. The seams are pinned
      in Jest instead (`ProblemsPanel.navigation`, `WorldSurface.editing`,
      `WorldViewport.frameHandle`). Slice 3 is what makes an E2E possible.
-3. **`checkPortalMaterials` gets its consumer.** It has been built and tested
-   against all three retail worlds since 2026-08-28 with nothing calling it
-   (§16.18 slice 1). Its two findings are world-locus by polygon.
+3. **`checkPortalMaterials` gets its consumer — LANDED 2026-09-02, with q1,
+   q2 and q3 of §16.22 in the same card** (Daniel: one card, not three; and
+   *listed, not clickable* is an acceptable slice 3 — no polygon framing was
+   designed or built). What landed, by workspace:
+   - **`zenkit-node`** — `getPortals` gained `materials`, `sectorNames` (stored
+     order: `sectorIndices` indexes it), `planes`, `cornerOffsets` and
+     `corners` (`normalize.cc`, `test/getPortals.test.js`). Geometry rather
+     than the scripts' `_drillMesh` fan join, because the join walks every
+     polygon of the mesh and this runs on every open; §16.18 says the sizes.
+   - **`zen-world`** — `validate/portals.ts`: `checkPortalPairing` (q1),
+     `PORTAL_PLANARITY_TOLERANCE = 12.1` and `checkPortalPlanarity` (q2),
+     `PORTAL_ONE_SIDED_MIN_SHARE = 0.25` and `checkPortalOrientation` (q3),
+     and `checkPortals`, which runs all four over the readout and pins each
+     finding to the first portal face carrying its material — `null` for a
+     name no face carries, since the mesh keeps unused materials.
+   - **the editor** — a thirteenth worker op, `portalFindings`, which runs
+     `checkPortals` **in the worker** and sends findings only: nothing on the
+     renderer side frames a polygon, so 4.9 MB of corners had no reader there.
+     `WorldService.getPortalFindings`, `world:portalFindings` (no payload, so
+     no validator — like `world:waynet`), `worldStore.portalFindings` +
+     `portalsLoaded`, the `storeSync` re-scan on its identity, and
+     `problems/domain/rules/portals.ts` — five `ProblemRuleId`s, one per
+     finding kind: `portal-material-malformed` and
+     `portal-material-unknown-sector` as errors (no retail world has either),
+     `portal-unpaired`, `portal-non-planar` and `portal-reversed` as warnings.
+     `WorldSurface` reads it once per open after the waynet; no op touches the
+     mesh. The row lists as `World · polygon N` and is disabled — `worldFocusOf`
+     answers null, pinned in `problemsPortalFindings.test.tsx`.
+   - **Witnessed on all four retail worlds** with the built addon
+     (2026-09-02): pairing, planarity and the material checks fire nowhere;
+     orientation fires on `P:CAPTAIN_` and nothing else. No real world has
+     been opened in the app with it — the Jest suites fake the worker — and
+     no seeded defect has been through it; Gate 3 (§11) is still Gate 3.
 
    **Triaged 2026-08-29: this is not one card, and the reason is that its input
    does not exist on the editor's side of the binding.** §16.18 recorded that
@@ -2849,15 +2881,14 @@ and argued that a fifth checker would only deepen the debt.
    readout — a design decision, not an implementation of one. Without it the
    findings are listed and not clickable, which `worldFocusOf` already does
    correctly for a polygon locus; whether that is an acceptable slice 3 is a
-   human's call, not a run's.
+   human's call, not a run's. (It was: Daniel, 2026-09-02, above.)
 
-**What this does *not* unblock, and must not be smuggled in.** The portal
-*pairing* check is still blocked on its own measurement — whether a missing
-reverse `P:B_A` is an error or a convention was never measured (§16.18) — and
-`getPortals`' geometric checks (orientation, planarity, leaks) are Phase 2 with
-their own Gate 3. Occupancy and overlap checks become *possible* here and stay
-uncarded: §16.19 lists them under Phase 1c and they want the spawn index they
-now have plus a rule nobody has specified.
+**What this does *not* unblock, and must not be smuggled in.** Leak
+flood-fill, intersections and triangle limits are still Phase 2 with their own
+Gate 3 (§11); pairing, planarity and orientation joined the card only because
+§16.22 had measured them. Occupancy and overlap checks become *possible* here
+and stay uncarded: §16.19 lists them under Phase 1c and they want the spawn
+index they now have plus a rule nobody has specified.
 
 ### 16.22 The measurement tranche (§11 Phase 2, decided 2026-08-29)
 
@@ -2919,9 +2950,10 @@ mirror of `P:OWCAVE01_` is `P:_OWCAVE01`, and both are always there.
 So the rule q1 asked for exists and the check is a **warning**, in
 §16.18 slice 1's shape: a pure function over `mesh.materials`, mirror lookup
 case-insensitive as `checkPortalMaterials` already is, malformed names counted
-apart rather than reported unpaired (they have no mirror to look for). It rides
-the same undecided consumer question as slice 1 — the check is writable, its
-locus is not, and it is a card for a person to file, not for a run to invent.
+apart rather than reported unpaired (they have no mirror to look for).
+**Written and consumed 2026-09-02** — `zen-world`'s `checkPortalPairing`,
+reaching the Problems panel as `portal-unpaired` through §16.20 slice 3; zero
+findings over the four retail worlds.
 
 **q2 answered, 2026-08-29: retail portal polygons sit up to 12.1 units off
 their own plane, and the stored plane is `n·p = d`.** `check-portal-planarity.js`
@@ -2948,6 +2980,11 @@ AddonWorld 12-gons), where 1% of retail is more than ~1.2–1.4 units off flat
 and the worst shipped polygon is 12.1. **So the tolerance is ≥ 12.1 units** —
 anything tighter flags OldWorld as shipped — and a check at that width catches
 only a polygon folded outright, which is the honest thing it can do.
+**Written and consumed 2026-09-02** as `PORTAL_PLANARITY_TOLERANCE = 12.1` and
+`checkPortalPlanarity`, reaching the panel as `portal-non-planar`. Re-measured
+off `getPortals`' own Float32 corners rather than the fan join: OldWorld's
+worst is 12.0968, NewWorld 6.92, AddonWorld 5.03, DragonIsland 0.45 — all
+inside, zero findings.
 
 **q3 ran 2026-09-02: the normal points into the first-named sector.**
 `scripts/check-portal-orientation.js` rides the same `getPortals` walk and the
@@ -2977,6 +3014,25 @@ warning that fires once on shipped content; whether to write it is a person's
 card, as q1 and q2's are. `test/portalOrientation.test.js` pins the sector
 parse, the centroid arithmetic and the verdict on a fixture; the corpus half
 needs `worlds/`.
+
+**Written and consumed 2026-09-02** as `checkPortalOrientation`, reaching the
+panel as `portal-reversed`, judging by corner share as the paragraph above
+demands. The re-run by corners, over the four worlds through `getPortals`'
+own geometry, is what fixed the two rules. **Two-sided:** reversed when a
+larger share of B's corners than of A's is in front; no threshold, and the
+closest retail portal is 0.14 apart (`P:EG1_EG3`, OldWorld) — zero findings.
+**One-sided:** there is no second sector, so the judge is the share of the one
+sector on the convention's side, and retail is a continuum there, not a
+cliff: `P:GRPTURM01_` 28.4 %, `P:DT1_` 30.9 %, `P:WAFFENKAMMER_` 47.8 %
+(this one the centroid run had not listed), `P:OCAR02_` and two `P:BAMBUS01_`
+faces at exactly 50 %, then everything else above. Below 28.4 % there is
+nothing until `P:CAPTAIN_` at **0.8 %**. A majority rule flags four shipped
+portals; the cut is therefore `PORTAL_ONE_SIDED_MIN_SHARE = 0.25` — in the
+gap, the way q2's tolerance is the worst shipped value — and the whole check
+fires exactly once over the corpus: `P:CAPTAIN_`, on NewWorld (polygon
+456754) and its DragonIsland copy (71186). Its `P:_CAPTAIN` mirrors are
+85–88 % and pass, which is what a genuinely reversed one-sided portal looks
+like from the other side.
 
 What the script does, so the next run does not re-derive it. Two numbers per
 portal polygon: **spread**, `max(n·p) - min(n·p)` over the corners with the

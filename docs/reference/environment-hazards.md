@@ -68,6 +68,16 @@ doc, not here. This file is only for the ground the code stands on.
   whatever the ops have gained since it was built; the only place a stale
   addon shows is the running app — a property absent from the grid, an edit
   refused. Rebuild before trusting anything observed in the app.
+- **A worktree has an empty `vendor/ZenKit`, so a C++ change there needs the
+  submodule first.** `wt:new` copies the built `.node` files and nothing else:
+  `git submodule update --init --recursive` in the worktree is what
+  `build-zenkit.js` needs before it can reset and patch anything (it clones
+  from GitHub — `--reference <main>\.git\modules\zenkit-node\vendor\ZenKit`
+  makes that local), and `vendor-build/` is then a full ZenKit CMake build,
+  several minutes. Never copy the main checkout's `vendor/ZenKit` across
+  instead: its `.git` file points at a gitdir whose `core.worktree` is the
+  main checkout, so the `git checkout -- .` at the top of the build would
+  reset the *main* tree's submodule from inside the worktree. Seen 2026-09-02.
 - **`daedalus-parser`'s own native binding goes stale the same way, silently.**
   `npm test`'s `npm run build` step is `tree-sitter generate` — it regenerates
   `src/parser.c` but never recompiles `bindings/node`'s `.node` file, so a

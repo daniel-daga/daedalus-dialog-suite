@@ -11,6 +11,7 @@ import type {
   OpenWorldRequest,
   VfsEntry,
   WaynetPayload,
+  PortalFindingsPayload,
   WorldMeshPayload,
   WorldOp,
   WorldSummary,
@@ -144,6 +145,13 @@ export class WorldService {
    *  turned on should not be in the cold open. */
   getWaynet(): Promise<WaynetPayload> {
     return this.requestOnOpenWorld<WaynetPayload>('waynet');
+  }
+
+  /** The portal checks' findings, computed in the worker over the world mesh
+   *  (level-editor.md §16.20 slice 3). Requested once per open by the World
+   *  surface, since no op touches the mesh. */
+  getPortalFindings(): Promise<PortalFindingsPayload> {
+    return this.requestOnOpenWorld<PortalFindingsPayload>('portalFindings');
   }
 
   /**

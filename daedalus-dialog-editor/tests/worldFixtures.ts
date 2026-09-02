@@ -1,5 +1,5 @@
 import type { VobIndex } from 'zen-world';
-import type { VobFolders, WaynetPayload, WorldOp, WorldSummary } from '../src/shared/worldTypes';
+import type { PortalFinding, VobFolders, WaynetPayload, WorldOp, WorldSummary } from '../src/shared/worldTypes';
 import type { AppendInsertNpcResult } from '../src/shared/types';
 
 /**
@@ -132,6 +132,7 @@ export function makeWorldEditorApi() {
     listWorldAssets: jest.fn(async () => null),
     getWorldVisual: jest.fn(async () => null),
     getWorldWaynet: jest.fn(),
+    getWorldPortalFindings: jest.fn(async (): Promise<PortalFinding[]> => []),
     getVisualBounds: jest.fn(async (): Promise<number[] | null> => null),
     getVobProps: jest.fn(async (): Promise<Record<string, unknown>> => ({ class: 'zCVob', ...BASE_PROPS })),
     refreshWorldIndex: jest.fn(),

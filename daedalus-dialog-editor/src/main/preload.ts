@@ -71,6 +71,7 @@ contextBridge.exposeInMainWorld('editorAPI', {
   getWorldVisuals: () => ipcRenderer.invoke('world:visuals'),
   listWorldAssets: (path: string) => ipcRenderer.invoke('world:assets', { path }),
   getWorldWaynet: () => ipcRenderer.invoke('world:waynet'),
+  getWorldPortalFindings: () => ipcRenderer.invoke('world:portalFindings'),
   getVisualBounds: (name: string) => ipcRenderer.invoke('world:visualBounds', { name }),
   getWorldVisual: (name: string) => ipcRenderer.invoke('world:visual', { name }),
   getVobProps: (path: string) => ipcRenderer.invoke('world:vobProps', { path }),

@@ -187,7 +187,7 @@ Visual desktop editor (Electron + React) for editing, validating, and generating
 | `src/renderer/components/actionRenderers/` | Per-action-type render components |
 | `src/renderer/components/common/` | Shared UI primitives (`VariableAutocomplete`, `autocompletePolicies.ts`, etc.) |
 | `src/renderer/quest/domain/` | Pure quest logic (analysis, graph inference, condition codec) |
-| `src/renderer/problems/domain/` | Pure Problems rules (seven of them) — no React/MUI/Electron imports |
+| `src/renderer/problems/domain/` | Pure Problems rules (eight of them) — no React/MUI/Electron imports |
 | `src/renderer/simulator/` | Dialog simulator domain and session state |
 | `src/renderer/types/questGraph.ts` | Quest graph type definitions |
 | `src/main/services/` | Main-process services (File, Parser, Project, Updater, etc.) |

@@ -145,18 +145,13 @@ why, and the short version is that a person has to decide something first:
   and a real GPU; jsdom has no WebGL) and §16.4's Euler order, which needs
   Spacer and nothing in the format can settle.
 
-**And four that a survey found automatable but a person has already ruled on.**
-They are omitted deliberately, and each needs one word from Daniel to join:
+**And one that a survey found automatable but a person has already ruled on.**
+It is omitted deliberately, and needs one word from Daniel to join:
 
-- **Portal orientation (§16.22 q3)** is not missing — it is a **board card
-  already**, and duplicating it here would let a run take it twice.
-- **`checkPortalPairing` and `checkPortalPlanarity`** (§16.22 q1, q2): the
-  measurements are done and the thresholds settled — 100 % paired, tolerance
-  ≥ 12.1 units — and the code needs no decision, but §16.22 reserves *filing
-  the card* to Daniel. It also lands unplumbed, as slice 1 did.
-- **`checkPortalMaterials`' consumer** (§16.20 slice 3): **deferred 2026-08-29**
-  by Daniel, and the reason still holds — a binding readout, a thirteenth
-  worker op with its IPC chain, and an undefined part (what framing a polygon
-  means). Three workspaces.
 - **The ASCII writer's signed `bool:`** (§16.9): **deferred 2026-08-28**, with
   the other two ASCII items. The editor does not save through that path.
+
+Three more used to sit here — portal orientation (§16.22 q3), the pairing and
+planarity checks (q1, q2) and `checkPortalMaterials`' consumer (§16.20 slice
+3). Daniel filed them as one card on 2026-09-02 and it landed the same day:
+`git log` and §16.20 slice 3.
