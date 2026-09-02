@@ -46,12 +46,12 @@ async function openProject(fixture: AppFixture, projectDir: string, assetSource?
 }
 
 function sourceRow(dialog: Locator, source: string): Locator {
-  const escaped = source.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
+  const escaped = source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const numberedLabel = dialog.getByText(new RegExp(`^\\d+\\.\\s+${escaped}$`));
   return dialog.getByRole('listitem').filter({
-    // The primary label is numbered (for example, `1. .`), so exact text
-    // matching the configured source is intentionally too strict. Restrict
-    // the suffix match to the label span so `.` cannot match every row.
-    has: dialog.locator('span').filter({ hasText: new RegExp(`${escaped}$`) }),
+    // The primary label is numbered (for example, `1. .`). Match the whole
+    // label so a source of `.` cannot match every row's punctuation.
+    has: numberedLabel,
   });
 }
 
