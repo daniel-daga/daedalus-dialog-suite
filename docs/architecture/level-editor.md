@@ -1,5 +1,10 @@
 # Architecture: the ZenGin level editor
 
+Project asset sources are defined by the v1 `*.gothicproject.json` file in
+section 9 below. The ordered `assetSources` list is shared by world loading
+and the asset browser; relative paths are project-file-relative, absolute paths
+are preserved, and later sources override earlier ones.
+
 The settled design of the level editor — the decisions that answer the design
 brief, and the process and data-flow architecture the ops are built on. Extracted
 from `docs/plans/level-editor.md` when they stopped being proposals; the plan
@@ -2657,14 +2662,30 @@ mod's content:
 {
   "version": 1,
   "target": "g2-notr",              // g1 | g2 | g2-notr — explicit, never guessed
-  "scriptsRoot": "./Scripts",
+  "scriptsRoot": ".",
   "worlds": [{
     "name": "NewWorld",
     "parts": [{ "path": "./Worlds/NEWWORLD.ZEN", "role": "main" },
               { "path": "./Worlds/NEWWORLD_PART_*.ZEN", "role": "part" }]
-  }]
+  }],
+  "assetSources": [".", "C:/Games/Gothic II"]
 }
 ```
+
+The ordered `assetSources` list is unlimited. Relative paths resolve against
+the project-file directory; absolute paths are preserved. The project root is
+required but may be reordered, and later entries override earlier entries.
+Recognized Gothic installations expand through the archive/compiled-data
+rules, while ordinary directories mount directly. The resolved mounts are
+shared by world loading and the asset browser.
+
+Opening a legacy folder atomically creates its v1 project file, seeds the list
+with `.` and the old machine-local `gothicInstallPath` when available, then
+removes that setting only after the rename succeeds. Existing project files are
+never enriched from machine-local settings. Malformed or ambiguous files block
+opening; missing or unreadable sources are skipped and shown as persistent
+warnings naming the configured path. Dialog editing remains available with no
+usable sources, while world opening asks the user to configure one.
 
 Machine-local, non-committed state (Gothic installation path, VDF search
 paths, window layout) lives in the existing `SettingsService` store keyed by

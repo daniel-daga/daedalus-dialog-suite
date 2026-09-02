@@ -33,6 +33,20 @@ function makeFakeInstall(): string {
   return dir;
 }
 
+function writeProjectFile(projectDir: string, installDir: string): void {
+  fs.writeFileSync(
+    path.join(projectDir, `${path.basename(projectDir)}.gothicproject.json`),
+    JSON.stringify({
+      version: 1,
+      target: 'g2-notr',
+      scriptsRoot: '.',
+      worlds: [],
+      assetSources: ['.', installDir],
+    }, null, 2),
+    'utf8',
+  );
+}
+
 let addonAvailable = true;
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -51,6 +65,7 @@ test.describe('World surface UI workflows in a real window', () => {
   test.beforeEach(async () => {
     projectDir = seedProjectDir([]);
     installDir = makeFakeInstall();
+    writeProjectFile(projectDir, installDir);
     fixture = await launchApp();
 
     await fixture.app.evaluate(({ dialog }, paths) => {
@@ -59,7 +74,6 @@ test.describe('World surface UI workflows in a real window', () => {
       ) => {
         switch (options.title) {
           case 'Select Gothic Mod Project Folder': return { canceled: false, filePaths: [paths.project] };
-          case 'Select the Gothic installation directory': return { canceled: false, filePaths: [paths.install] };
           case 'Open a ZenGin world': return { canceled: false, filePaths: [paths.world] };
           default: throw new Error(`unexpected dialog: ${options.title}`);
         }
@@ -79,9 +93,6 @@ test.describe('World surface UI workflows in a real window', () => {
     const { page } = fixture;
     await page.getByRole('button', { name: /Open Project/i }).first().click();
     await page.getByTestId('world-toggle').click();
-    await page.getByTestId('world-choose-install').click();
-    await page.getByTestId('world-install-path').waitFor();
-
     await page.getByTestId('world-open').click();
     await page.getByTestId('world-viewport').waitFor();
     await page.waitForFunction(() => window.__worldViewport !== undefined);

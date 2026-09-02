@@ -29,6 +29,20 @@ function makeFakeInstall(): string {
   return dir;
 }
 
+function writeProjectFile(projectDir: string, installDir: string): void {
+  fs.writeFileSync(
+    path.join(projectDir, `${path.basename(projectDir)}.gothicproject.json`),
+    JSON.stringify({
+      version: 1,
+      target: 'g2-notr',
+      scriptsRoot: '.',
+      worlds: [],
+      assetSources: ['.', installDir],
+    }, null, 2),
+    'utf8',
+  );
+}
+
 /** A private copy of the fixture world, so a sidecar write lands beside the
  *  copy rather than the committed fixture. */
 function copyFixtureWorld(): { dir: string; worldPath: string; sidecarPath: string } {
@@ -57,6 +71,7 @@ test.describe('VOB folders in a real window', () => {
   test.beforeEach(async () => {
     projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dde-e2e-project-'));
     installDir = makeFakeInstall();
+    writeProjectFile(projectDir, installDir);
     world = copyFixtureWorld();
     fixture = await launchApp();
 
@@ -66,7 +81,6 @@ test.describe('VOB folders in a real window', () => {
       ) => {
         switch (options.title) {
           case 'Select Gothic Mod Project Folder': return { canceled: false, filePaths: [paths.project] };
-          case 'Select the Gothic installation directory': return { canceled: false, filePaths: [paths.install] };
           case 'Open a ZenGin world': return { canceled: false, filePaths: [paths.world] };
           default: throw new Error(`unexpected dialog: ${options.title}`);
         }
@@ -85,9 +99,6 @@ test.describe('VOB folders in a real window', () => {
     const { page } = fixture;
     await page.getByRole('button', { name: /Open Project/i }).first().click();
     await page.getByTestId('world-toggle').click();
-    await page.getByTestId('world-choose-install').click();
-    await page.getByTestId('world-install-path').waitFor();
-
     await page.getByTestId('world-open').click();
     await page.getByTestId('world-viewport').waitFor();
     await page.waitForFunction(() => window.__worldViewport !== undefined);

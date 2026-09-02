@@ -49,6 +49,17 @@ folder. A manual Windows pass on this UX is in the
 
 ## IPC boundary hardening
 
+Project configuration is a main-process capability. The renderer can load the
+descriptor for the already-authorized project root and save only the
+`assetSources` list for the project file that was loaded. The main process
+re-reads and validates the file, resolves mounts, and persists changes
+atomically; resolved VFS mounts are never accepted from renderer input. A new
+external source can enter the current session only through the native
+directory picker. Picker results are validated and registered main-side before
+they can be saved. This keeps project-file edits narrow and prevents a
+compromised renderer from turning a generic path string into a filesystem
+capability.
+
 - **Structural payload checks** on `generator:generateCode`,
   `generator:generateDialogCode`, `validation:validate`, and `generator:saveFile`
   reject malformed `model`/`settings`/`options` shapes early (cheap local asserts,
