@@ -5,18 +5,21 @@ const path = require('node:path');
 
 const workspaceDir = path.resolve(__dirname, '..');
 
-// npm sets `npm_execpath`; pnpm (`pnpm --filter daedalus-parser test`) does
-// not, so fall back to `npm` on PATH rather than spawning `.../undefined`.
+// npm sets `npm_execpath` to its JS entry; pnpm may set it to a native
+// `pnpm.exe` (not runnable through node) or leave it unset. Run a JS entry
+// through node, an executable directly, and fall back to `npm` on PATH.
 function runNpmScript(scriptName) {
   const execpath = process.env.npm_execpath;
-  const [command, args] = execpath
-    ? [process.execPath, [execpath, 'run', scriptName, '--', '--help']]
-    : ['npm', ['run', scriptName, '--', '--help']];
+  const scriptArgs = ['run', scriptName, '--', '--help'];
+  const isJs = Boolean(execpath) && /\.[cm]?js$/i.test(execpath);
+  const [command, args] = isJs
+    ? [process.execPath, [execpath, ...scriptArgs]]
+    : [execpath || 'npm', scriptArgs];
   return spawnSync(command, args, {
     cwd: workspaceDir,
     encoding: 'utf8',
     timeout: 120000,
-    shell: !execpath
+    shell: !isJs
   });
 }
 
