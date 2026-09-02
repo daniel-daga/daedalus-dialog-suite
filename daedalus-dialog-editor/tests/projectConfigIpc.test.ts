@@ -78,6 +78,38 @@ describe('project config IPC', () => {
     expect(registry.__settings.clearGothicInstallPath).not.toHaveBeenCalled();
   });
 
+  it('returns the opened project and retries legacy cleanup after a cleanup failure', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dde-ipc-cleanup-'));
+    const legacy = path.join(root, 'legacy-assets');
+    registry.__settings.getGothicInstallPath.mockResolvedValue(legacy);
+    registry.__settings.clearGothicInstallPath.mockRejectedValueOnce(new Error('settings locked'));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(invoke('project:loadConfig', root)).resolves.toMatchObject({ config: { assetSources: ['.', legacy] } });
+    await expect(invoke('project:loadConfig', root)).resolves.toMatchObject({ config: { assetSources: ['.', legacy] } });
+    expect(registry.__settings.clearGothicInstallPath).toHaveBeenCalledTimes(2);
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/cleanup.*retried/i), expect.any(Error));
+  });
+
+  it('does not promote configured absolute or symlink-resolved sources into the generic whitelist', async () => {
+    const external = await fs.mkdtemp(path.join(os.tmpdir(), 'dde-declared-external-'));
+    const project = await makeProject(['.', external]);
+    const escaped = await fs.mkdtemp(path.join(os.tmpdir(), 'dde-symlink-external-'));
+    const link = path.join(project.root, 'linked-assets');
+    try {
+      await fs.symlink(escaped, link, process.platform === 'win32' ? 'junction' : 'dir');
+    } catch {
+      return;
+    }
+    await fs.writeFile(project.projectFilePath, JSON.stringify({ version: 1, target: 'g2-notr', scriptsRoot: '.', worlds: [], assetSources: ['.', external, 'linked-assets'] }));
+
+    await invoke('project:loadConfig', project.root);
+
+    expect(registry.__pathValidator.addAllowedPath).not.toHaveBeenCalledWith(external);
+    expect(registry.__pathValidator.addAllowedPath).not.toHaveBeenCalledWith(escaped);
+    expect(registry.__pathValidator.addAllowedPath).not.toHaveBeenCalledWith(link);
+  });
+
   it('allows a native-picked external folder for the current project only', async () => {
     const first = await makeProject();
     const second = await makeProject();
@@ -109,6 +141,22 @@ describe('project config IPC', () => {
     await expect(invoke('project:saveAssetSources', first.projectFilePath, ['.', picked])).resolves.toMatchObject({
       config: { assetSources: ['.', picked] },
     });
+  });
+
+  it('returns null and grants nothing when the launching project registration was replaced', async () => {
+    const project = await makeProject();
+    const picked = await fs.mkdtemp(path.join(os.tmpdir(), 'dde-stale-picker-assets-'));
+    let resolvePicker!: (result: { canceled: boolean; filePaths: string[] }) => void;
+    electron.__showOpenDialog.mockImplementationOnce(() => new Promise((resolve) => { resolvePicker = resolve; }));
+    await invoke('project:loadConfig', project.root);
+    const pendingSelection = invoke('project:selectAssetSourceFolder');
+    await invoke('project:loadConfig', project.root);
+    resolvePicker({ canceled: false, filePaths: [picked] });
+
+    await expect(pendingSelection).resolves.toBeNull();
+    expect(registry.__pathValidator.addAllowedPath).not.toHaveBeenCalledWith(picked);
+    await expect(invoke('project:saveAssetSources', project.projectFilePath, ['.', picked]))
+      .rejects.toThrow(/native folder picker/i);
   });
 
   it('rejects malformed arrays, missing root, unknown files, and ungranted absolute paths', async () => {

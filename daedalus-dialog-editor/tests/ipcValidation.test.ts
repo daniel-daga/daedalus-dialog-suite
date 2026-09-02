@@ -35,9 +35,16 @@ describe('project config IPC payloads', () => {
   });
 
   it('rejects malformed asset source arrays', () => {
-    for (const bad of [undefined, null, {}, '.', ['.', 7]]) {
+    const sparse = new Array(2);
+    sparse[0] = '.';
+    for (const bad of [undefined, null, {}, '.', ['.', 7], sparse, ['.', ''], ['.', 'bad\0path'], ['.', 'bad\npath']]) {
       expect(() => assertAssetSourcesPayload(bad)).toThrow(/assetSources/);
     }
+  });
+
+  it('bounds asset source count and configured string length', () => {
+    expect(() => assertAssetSourcesPayload(['.', ...Array(128).fill('assets')])).toThrow(/assetSources/);
+    expect(() => assertAssetSourcesPayload(['.', 'x'.repeat(4097)])).toThrow(/assetSources/);
   });
 
   it('rejects a malformed optional folder path', () => {

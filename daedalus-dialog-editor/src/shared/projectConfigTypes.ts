@@ -1,5 +1,11 @@
 export type GothicTarget = 'g1' | 'g2' | 'g2-notr';
 
+/** IPC/disk bounds keep project files cheap to validate and path strings OS-realistic. */
+export const PROJECT_ASSET_SOURCE_LIMITS = {
+  maxCount: 128,
+  maxLength: 4096,
+} as const;
+
 export interface GothicProjectFileV1 {
   version: 1;
   target: GothicTarget;

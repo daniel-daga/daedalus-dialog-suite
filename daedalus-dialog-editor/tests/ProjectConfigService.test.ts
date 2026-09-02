@@ -57,6 +57,10 @@ describe('ProjectConfigService', () => {
     ['empty assetSources', validConfig([]), /assetSources/i],
     ['non-string asset source', validConfig(['.', 42]), /assetSources\[1\]/i],
     ['asset sources without project root', validConfig(['assets']), /assetSources.*\./i],
+    ['empty asset source', validConfig(['.', '']), /assetSources\[1\]/i],
+    ['control character in asset source', validConfig(['.', 'bad\0path']), /assetSources\[1\]/i],
+    ['too many asset sources', validConfig(['.', ...Array(128).fill('assets')]), /assetSources/i],
+    ['oversized asset source', validConfig(['.', 'x'.repeat(4097)]), /assetSources\[1\]/i],
   ])('rejects %s with a field-specific error', (_name, value, error) => {
     expect(() => parseProjectFile(value)).toThrow(error as RegExp);
   });
@@ -64,6 +68,12 @@ describe('ProjectConfigService', () => {
   test('rejects invalid world fields precisely', () => {
     expect(() => parseProjectFile({ ...validConfig(), worlds: [{ name: 'x', parts: [{ path: 1, role: 'main' }] }] }))
       .toThrow(/worlds\[0\]\.parts\[0\]\.path/i);
+  });
+
+  test('rejects a sparse asset source array', () => {
+    const sparse = new Array(2);
+    sparse[0] = '.';
+    expect(() => parseProjectFile(validConfig(sparse))).toThrow(/assetSources\[1\]/i);
   });
 
   test('parses JSON text without normalizing configured strings', () => {
@@ -244,6 +254,47 @@ describe('ProjectConfigService', () => {
       expect(result.migrationCommitted).toBe(false);
       expect(result.project.config.assetSources).toEqual(['.']);
       expect(await readFile(projectFilePath, 'utf8')).toBe(original);
+    });
+
+    test('marks an existing project safe for legacy cleanup only when it durably contains that source', async () => {
+      const legacy = join(root, 'Gothic II');
+      await writeFile(join(root, 'existing.gothicproject.json'), JSON.stringify(validConfig(['.', legacy])));
+
+      expect((await new ProjectConfigService().openOrMigrate(root, legacy)).legacyCleanupSafe).toBe(true);
+      expect((await new ProjectConfigService().openOrMigrate(root, join(root, 'other'))).legacyCleanupSafe).toBe(false);
+    });
+
+    test('serializes asset updates with other project writes and preserves their non-asset fields', async () => {
+      const projectFilePath = join(root, 'demo.gothicproject.json');
+      await writeFile(projectFilePath, JSON.stringify(validConfig()));
+      const service = new ProjectConfigService();
+      const changed = parseProjectFile({ ...validConfig(), target: 'g1' });
+
+      const [, opened] = await Promise.all([
+        service.save(projectFilePath, changed),
+        service.updateAssetSources(projectFilePath, ['.', 'assets']),
+      ]);
+
+      expect(opened.config.target).toBe('g1');
+      expect(opened.config.assetSources).toEqual(['.', 'assets']);
+    });
+
+    test('refuses an asset update when the project changes externally before publication', async () => {
+      const fsPromises = require('node:fs').promises;
+      const projectFilePath = join(root, 'demo.gothicproject.json');
+      await writeFile(projectFilePath, JSON.stringify(validConfig()));
+      const realReadFile = fsPromises.readFile;
+      let projectReads = 0;
+      jest.spyOn(fsPromises, 'readFile').mockImplementation(async (...args: unknown[]) => {
+        if (String(args[0]) === projectFilePath && ++projectReads === 2) {
+          await writeFile(projectFilePath, JSON.stringify({ ...validConfig(), target: 'g1' }));
+        }
+        return realReadFile(...args);
+      });
+
+      await expect(new ProjectConfigService().updateAssetSources(projectFilePath, ['.', 'assets']))
+        .rejects.toThrow(/changed externally/i);
+      expect(JSON.parse(await readFile(projectFilePath, 'utf8')).target).toBe('g1');
     });
 
     test('serializes simultaneous migrations so the committed file is reused', async () => {

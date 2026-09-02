@@ -25,7 +25,7 @@ import {
   assertOptionalFolderPath,
 } from './ipcValidation';
 import { appendInsertNpcFlow } from './services/AppendInsertNpcFlow';
-import { ProjectConfigService, parseProjectFile, resolveProjectConfig } from './services/ProjectConfigService';
+import { ProjectConfigService } from './services/ProjectConfigService';
 import type { OpenedProjectConfig } from '../shared/projectConfigTypes';
 
 // E2E userData isolation seam (fix-08 §2 / T9a). When the real-Electron E2E
@@ -92,8 +92,6 @@ function registerProjectConfig(descriptor: OpenedProjectConfig): RegisteredProje
   const registered = { descriptor, allowedAbsoluteSources };
   registeredProjectConfigs.set(key, registered);
   activeProjectFileKey = key;
-  pathValidator.addAllowedPath(descriptor.projectRoot);
-  for (const source of descriptor.resolvedAssetSources) pathValidator.addAllowedPath(source);
   return registered;
 }
 
@@ -242,6 +240,8 @@ app.on('window-all-closed', () => {
 // Exported for the main-process IPC tests, which register the handlers against
 // a stubbed `electron` rather than a running app.
 export function setupIpcHandlers() {
+  registeredProjectConfigs.clear();
+  activeProjectFileKey = null;
   // Parser handler (main process has access to native modules)
   ipcMain.handle('parser:parseSource', async (_event, sourceCode: unknown) => {
     try {
@@ -399,8 +399,14 @@ export function setupIpcHandlers() {
     await pathValidator.validatePathResolved(projectRoot);
     const legacyInstallPath = await settingsService.getGothicInstallPath();
     const opened = await projectConfigService.openOrMigrate(projectRoot, legacyInstallPath);
-    if (opened.migrationCommitted) await settingsService.clearGothicInstallPath();
     registerProjectConfig(opened.project);
+    if (opened.legacyCleanupSafe) {
+      try {
+        await settingsService.clearGothicInstallPath();
+      } catch (error) {
+        console.warn('[IPC] project:loadConfig - legacy setting cleanup will be retried:', error);
+      }
+    }
     return opened.project;
   });
 
@@ -420,7 +426,7 @@ export function setupIpcHandlers() {
     // selection to the project that launched it, never whichever project is
     // active when the promise settles. If that registration was replaced in
     // the meantime, it is stale and must not be revived by this late result.
-    if (registeredProjectConfigs.get(projectKey) !== registered) return selected;
+    if (registeredProjectConfigs.get(projectKey) !== registered) return null;
     pathValidator.addAllowedPath(selected);
     registered.allowedAbsoluteSources.add(absoluteSourceKey(selected));
     return selected;
@@ -450,10 +456,7 @@ export function setupIpcHandlers() {
       }
     }
     await pathValidator.validatePathResolved(projectFilePath, { write: true });
-    const diskConfig = parseProjectFile(await fs.promises.readFile(projectFilePath, 'utf8'));
-    const updated = parseProjectFile({ ...diskConfig, assetSources });
-    await projectConfigService.save(projectFilePath, updated);
-    const descriptor = await resolveProjectConfig(projectFilePath, updated);
+    const descriptor = await projectConfigService.updateAssetSources(projectFilePath, assetSources);
     registerProjectConfig(descriptor);
     return descriptor;
   });

@@ -11,13 +11,20 @@ import {
   type FieldDescriptor,
 } from 'zen-world';
 import type { WorldOp } from '../shared/worldTypes';
+import { PROJECT_ASSET_SOURCE_LIMITS } from '../shared/projectConfigTypes';
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 export function assertAssetSourcesPayload(value: unknown): asserts value is string[] {
-  if (!Array.isArray(value) || !value.every((source) => typeof source === 'string')) {
+  if (!Array.isArray(value) || value.length > PROJECT_ASSET_SOURCE_LIMITS.maxCount
+    || !Array.from({ length: value.length }, (_, index) => index)
+      .every((index) => Object.prototype.hasOwnProperty.call(value, index)
+        && typeof value[index] === 'string'
+        && value[index].length > 0
+        && value[index].length <= PROJECT_ASSET_SOURCE_LIMITS.maxLength
+        && !/[\x00-\x1f\x7f]/.test(value[index]))) {
     throw new Error('Invalid assetSources payload: expected an array of strings');
   }
 }

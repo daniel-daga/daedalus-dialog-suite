@@ -8,6 +8,7 @@ import type {
   OpenedProjectConfig,
   ProjectConfigWarning,
 } from '../../shared/projectConfigTypes';
+import { PROJECT_ASSET_SOURCE_LIMITS } from '../../shared/projectConfigTypes';
 
 const PROJECT_FILE_SUFFIX = '.gothicproject.json';
 const TARGETS = new Set<GothicTarget>(['g1', 'g2', 'g2-notr']);
@@ -84,7 +85,21 @@ export function parseProjectFile(value: unknown): GothicProjectFileV1 {
   if (!Array.isArray(root.assetSources) || root.assetSources.length === 0) {
     throw new Error('assetSources must be a non-empty array');
   }
-  const assetSources = root.assetSources.map((source, index) => stringAt(source, `assetSources[${index}]`));
+  const rawAssetSources = root.assetSources;
+  if (rawAssetSources.length > PROJECT_ASSET_SOURCE_LIMITS.maxCount) {
+    throw new Error(`assetSources must contain at most ${PROJECT_ASSET_SOURCE_LIMITS.maxCount} entries`);
+  }
+  const assetSources = Array.from({ length: rawAssetSources.length }, (_, index) => {
+    if (!Object.prototype.hasOwnProperty.call(rawAssetSources, index)) {
+      throw new Error(`assetSources[${index}] must be present`);
+    }
+    const source = stringAt(rawAssetSources[index], `assetSources[${index}]`);
+    if (source.length === 0 || source.length > PROJECT_ASSET_SOURCE_LIMITS.maxLength
+      || /[\x00-\x1f\x7f]/.test(source)) {
+      throw new Error(`assetSources[${index}] must be 1-${PROJECT_ASSET_SOURCE_LIMITS.maxLength} characters without control characters`);
+    }
+    return source;
+  });
   if (!assetSources.includes('.')) throw new Error('assetSources must include "."');
 
   return {
@@ -132,6 +147,7 @@ async function isInstallShaped(candidate: string): Promise<boolean> {
 export interface OpenOrMigrateResult {
   project: OpenedProjectConfig;
   migrationCommitted: boolean;
+  legacyCleanupSafe: boolean;
 }
 
 function enqueueProjectFile<T>(projectFilePath: string, operation: () => Promise<T>): Promise<T> {
@@ -172,7 +188,11 @@ async function renameOver(tempPath: string, destination: string): Promise<void> 
   }
 }
 
-async function writeProjectFile(projectFilePath: string, config: GothicProjectFileV1): Promise<void> {
+async function writeProjectFile(
+  projectFilePath: string,
+  config: GothicProjectFileV1,
+  expectedContents?: string,
+): Promise<void> {
   const tempPath = `${projectFilePath}.${process.pid}-${tmpWriteCounter++}.tmp`;
   try {
     const handle = await fs.open(tempPath, 'w');
@@ -185,6 +205,10 @@ async function writeProjectFile(projectFilePath: string, config: GothicProjectFi
       }
     } finally {
       await handle.close();
+    }
+    if (expectedContents !== undefined
+      && await fs.readFile(projectFilePath, 'utf8') !== expectedContents) {
+      throw new Error('Project file changed externally before the asset sources could be saved');
     }
     await renameOver(tempPath, projectFilePath);
   } catch (error) {
@@ -222,9 +246,18 @@ async function createProjectFile(projectFilePath: string, config: GothicProjectF
   }
 }
 
-async function openExistingProject(projectFilePath: string): Promise<OpenOrMigrateResult> {
+async function openExistingProject(
+  projectFilePath: string,
+  legacyInstallPath: string | null,
+): Promise<OpenOrMigrateResult> {
   const config = parseProjectFile(await fs.readFile(projectFilePath, 'utf8'));
-  return { project: await resolveProjectConfig(projectFilePath, config), migrationCommitted: false };
+  const project = await resolveProjectConfig(projectFilePath, config);
+  const legacyCleanupSafe = legacyInstallPath !== null && (
+    comparablePath(legacyInstallPath) === comparablePath(project.projectRoot)
+    || config.assetSources.some((source) => isPortableAbsolute(source)
+      && comparablePath(source) === comparablePath(legacyInstallPath))
+  );
+  return { project, migrationCommitted: false, legacyCleanupSafe };
 }
 
 export class ProjectConfigService {
@@ -235,7 +268,7 @@ export class ProjectConfigService {
 
     return enqueueProjectFile(initiallyDiscovered ?? defaultProjectFilePath, async () => {
       const discovered = await discoverProjectFile(absoluteRoot);
-      if (discovered) return openExistingProject(discovered);
+      if (discovered) return openExistingProject(discovered, legacyInstallPath);
 
       const assetSources = ['.'];
       if (legacyInstallPath && comparablePath(legacyInstallPath) !== comparablePath(absoluteRoot)) {
@@ -249,8 +282,12 @@ export class ProjectConfigService {
         assetSources,
       });
       const committed = await createProjectFile(defaultProjectFilePath, config);
-      if (!committed) return openExistingProject(defaultProjectFilePath);
-      return { project: await resolveProjectConfig(defaultProjectFilePath, config), migrationCommitted: true };
+      if (!committed) return openExistingProject(defaultProjectFilePath, legacyInstallPath);
+      return {
+        project: await resolveProjectConfig(defaultProjectFilePath, config),
+        migrationCommitted: true,
+        legacyCleanupSafe: legacyInstallPath !== null,
+      };
     });
   }
 
@@ -258,6 +295,17 @@ export class ProjectConfigService {
     const absolutePath = path.resolve(projectFilePath);
     const validated = parseProjectFile(config);
     return enqueueProjectFile(absolutePath, () => writeProjectFile(absolutePath, validated));
+  }
+
+  async updateAssetSources(projectFilePath: string, assetSources: string[]): Promise<OpenedProjectConfig> {
+    const absolutePath = path.resolve(projectFilePath);
+    return enqueueProjectFile(absolutePath, async () => {
+      const originalContents = await fs.readFile(absolutePath, 'utf8');
+      const current = parseProjectFile(originalContents);
+      const updated = parseProjectFile({ ...current, assetSources });
+      await writeProjectFile(absolutePath, updated, originalContents);
+      return resolveProjectConfig(absolutePath, updated);
+    });
   }
 }
 
