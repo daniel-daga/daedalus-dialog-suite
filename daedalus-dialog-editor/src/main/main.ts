@@ -19,8 +19,10 @@ import {
   assertSaveWorldRequest,
   assertVobFoldersGetRequest,
   assertVobFoldersSaveRequest,
+  assertAppendInsertNpcRequest,
   sanitizeRendererErrorPayload,
 } from './ipcValidation';
+import { appendInsertNpcFlow } from './services/AppendInsertNpcFlow';
 
 // E2E userData isolation seam (fix-08 §2 / T9a). When the real-Electron E2E
 // harness sets DDE_E2E_USER_DATA, redirect Electron's userData to a per-test
@@ -783,6 +785,17 @@ export function setupIpcHandlers() {
       console.error('[IPC] world:saveVobFolders error:', error);
       throw new Error(`Failed to save VOB folders: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  });
+
+  // Append a `Wld_InsertNpc` to a `STARTUP_<world>` function on disk by text
+  // splice (level-editor.md §16.19, slice 16 C). The shape check is here;
+  // the flow parses the file itself and answers with a typed result.
+  ipcMain.handle('script:appendInsertNpc', async (_event, request: unknown) => {
+    assertAppendInsertNpcRequest(request);
+    return appendInsertNpcFlow(
+      { pathValidator, fileService, parserService, fileWatcherService },
+      request.filePath, request.functionName, request.npcInstance, request.spawnPoint,
+    );
   });
 
   ipcMain.handle('world:undo', async () => worldService.undo());

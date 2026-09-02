@@ -2553,8 +2553,8 @@ script either, which is the whole reason this shipped a session ahead of slice
 14's closing paragraph
 rather than behind it.
 
-**Slice 16 — Insert NPC from the World surface. Sized 2026-09-01; A and B
-landed 2026-09-02 (Claude), C–E open.** The card slice 14's closing paragraph
+**Slice 16 — Insert NPC from the World surface. Sized 2026-09-01; A, B and
+C landed 2026-09-02 (Claude), D and E open.** The card slice 14's closing paragraph
 declined to card. Sized into six pieces, because it is the first time the
 editor authors into a file it is not editing, and the sizing changed what the
 write can be.
@@ -2637,13 +2637,39 @@ find the function's closing `};`, splice `\tWld_InsertNpc (X, "WP");` before
 it — not a regenerate. The model edit from A stays the renderer's picture of
 the result; it is not what reaches the disk.
 
-*C — main-side write (~150 lines).* New IPC `script:appendInsertNpc(filePath,
-fnName, instance, wp)` in `main.ts` + `preload.ts` + `ipcValidation.ts` +
-`mockAPI.ts`. Body: read → `parseSource` → refuse on `hasErrors` (visible,
-never `forceOnErrors`) → locate the function's closing `};` by the parsed
-node's range → splice the line → write with the `expectUnchanged` mtime guard
-and `notifySelfWrite`, as `SaveFileFlow` does, but without its generate step.
-Decision: parse on disk in main rather than trust the renderer's cached model.
+*C — main-side write. Landed.* `script:appendInsertNpc` — `main.ts` +
+`preload.ts` + `assertAppendInsertNpcRequest` in `ipcValidation.ts` +
+`mockAPI.ts` (a typed `function-not-found`: the harness has no `Startup.d`) +
+`EditorAPI.appendInsertNpc(filePath, functionName, npcInstance, spawnPoint)`,
+returning `AppendInsertNpcResult` from `shared/types.ts`: `{ ok: true, line }`
+(1-based) or `{ ok: false, reason }` with `parse-errors`, `function-not-found`
+or `external-modification`. The body is `services/AppendInsertNpcFlow.ts`,
+`SaveFileFlow`'s shape with no generate step: path-validate for write → read
+through `FileService` (its encoding detection is what makes the write-back
+byte-faithful) → `parseSource` on the bytes just read → refuse on `hasErrors`
+→ find the function case-insensitively → splice `Wld_InsertNpc (X, "WP");`
+on its own line before the closing `};`, in the file's own line ending and the
+indent of the body's first indented line → `writeFile` with `expectUnchanged`
+→ `notifySelfWrite`. The validator refuses `INIT_` outright and requires an
+identifier instance and a waypoint without `"` or a line break, because both
+are spliced into source verbatim. The Jest suite runs the real parser in a
+child process over a CRLF, tab-indented, mixed-case fixture with a trailing
+comment and `INIT_NewWorld` beside, and asserts the output is the input plus
+exactly one line. The parser now records a `range` on `DialogFunction` — the
+closing brace is `lastIndexOf('}', range.endIndex)` — the way it already did
+for constants, variables and instances.
+
+**What the mtime guard does and does not buy here, for E.** `FileService`
+keeps one cached mtime per path, refreshed by every read and every write. The
+flow reads the file itself immediately before writing, so `expectUnchanged`
+compares against *that* read: the `external-modification` refusal covers only
+the race between the flow's read and its write, never the dialog editor's
+stale picture. And after the write the cache holds the flow's own mtime, so a
+dialog-editor `saveFile` of the same file from a model parsed *before* the
+spawn landed sails through the guard and drops the spawn — which corrects the
+"next save hits the mtime guard" sentence above. E's refuse-on-dirty and
+reload-if-clean are therefore load-bearing, and they have to live in the
+renderer: main has no notion of which files the editor holds open.
 
 *D — the button (~180 lines).* Terrain bar beside "Add waypoint here…" → a
 dialog with the NPC autocomplete and a waypoint name; `commitOps([addWaypoint])`
@@ -2660,7 +2686,7 @@ into `spawnSiteIndex`. Decision: refuse-on-dirty rather than merge.
 (the `gothicInstallPath` pattern), only for `expectedWorldNameFor`'s `.ZEN`
 opening.
 
-Three runs minimum: {A, B}, {C}, {D, E}. C is next.
+Three runs minimum: {A, B}, {C}, {D, E}. D and E are next.
 
 **Phase ordering note.** §11 schedules 1b-2 before 1c, and 1b-2 is not finished
 — but what remains of it on the board (Euler order against Spacer) needs Spacer

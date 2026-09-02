@@ -825,6 +825,11 @@ export class DialogFunction {
   public leadingComments?: string[];
   public hasExplicitBodyContent?: boolean;
   public parameters?: FunctionParameter[];
+  /** Source range of the whole declaration node, `FUNC` through `};`. */
+  public range?: {
+    startIndex: number;
+    endIndex: number;
+  };
   public calls: string[];
   public callSites: FunctionCallSite[];
 

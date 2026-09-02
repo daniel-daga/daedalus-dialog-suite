@@ -6,7 +6,7 @@
  * file persistence and includes sample dialog data for testing.
  */
 
-import type { EditorAPI, ValidationResult, SaveResult, FileChangeEvent } from '../types/global';
+import type { EditorAPI, ValidationResult, SaveResult, FileChangeEvent, AppendInsertNpcResult } from '../types/global';
 
 // Captured file-change callback (see onFileChanged). Lets E2E tests inject
 // external change/unlink events through the `__mockEmitFileChange` window hook.
@@ -674,6 +674,11 @@ export const mockEditorAPI: EditorAPI = {
     throw new Error('No world is open');
   },
   async closeWorld(): Promise<void> {},
+  // The browser harness has no world and no Startup.d on disk; a typed
+  // refusal keeps the surface's error path reachable without a file.
+  async appendInsertNpc(_filePath: string, functionName: string): Promise<AppendInsertNpcResult> {
+    return { ok: false, reason: { kind: 'function-not-found', functionName } };
+  },
 };
 
 // Helper for tests to reset mock file system

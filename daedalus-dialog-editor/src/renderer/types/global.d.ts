@@ -78,7 +78,8 @@ export type {
   ValidationOptions,
   ValidationResult,
   SaveResult,
-  RecentProject
+  RecentProject,
+  AppendInsertNpcResult
 } from '../../shared/types';
 
 // Import types needed for EditorAPI definition
@@ -89,7 +90,8 @@ import type {
   ValidationResult,
   ValidationOptions,
   SaveResult,
-  RecentProject
+  RecentProject,
+  AppendInsertNpcResult
 } from '../../shared/types';
 
 import type { UpdateCheckResult } from '../../shared/updater-types';
@@ -208,6 +210,12 @@ export interface EditorAPI {
   getVobFolders: (worldPath: string) => Promise<VobFolders>;
   saveVobFolders: (worldPath: string, folders: VobFolders) => Promise<void>;
   closeWorld: () => Promise<void>;
+
+  /** Append `Wld_InsertNpc (npcInstance, "spawnPoint");` as the last statement
+   *  of `functionName` in the script at `filePath`, by text splice on disk
+   *  (level-editor.md §16.19, slice 16 C). Refuses, typed, on parse errors,
+   *  a missing function, or a file changed since it was last read. */
+  appendInsertNpc: (filePath: string, functionName: string, npcInstance: string, spawnPoint: string) => Promise<AppendInsertNpcResult>;
 
   // Updater API
   checkForUpdate: () => Promise<UpdateCheckResult>;

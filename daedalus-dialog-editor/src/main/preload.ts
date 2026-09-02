@@ -85,6 +85,8 @@ contextBridge.exposeInMainWorld('editorAPI', {
   getVobFolders: (worldPath: string) => ipcRenderer.invoke('world:getVobFolders', { worldPath }),
   saveVobFolders: (worldPath: string, folders: unknown) =>
     ipcRenderer.invoke('world:saveVobFolders', { worldPath, folders }),
+  appendInsertNpc: (filePath: string, functionName: string, npcInstance: string, spawnPoint: string) =>
+    ipcRenderer.invoke('script:appendInsertNpc', { filePath, functionName, npcInstance, spawnPoint }),
   undoWorldEdit: () => ipcRenderer.invoke('world:undo'),
   redoWorldEdit: () => ipcRenderer.invoke('world:redo'),
   getWorldHistoryDepth: () => ipcRenderer.invoke('world:historyDepth'),
