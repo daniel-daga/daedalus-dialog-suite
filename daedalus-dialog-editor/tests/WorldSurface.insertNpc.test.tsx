@@ -172,6 +172,25 @@ describe('Insert NPC here…', () => {
     }]));
   });
 
+  it('refreshes the cached model so STARTUP_<world> carries the new action without a reparse', async () => {
+    // Slice A's model edit is the renderer's picture of what C wrote: after
+    // the IPC, anything reading the function's actions out of parsedFiles
+    // sees the spawn, and no read or parse round trip is spent on it.
+    seedProject();
+    await openWorld();
+    await openInsertDialog();
+
+    await confirmInsert('PC_Thief');
+
+    await waitFor(() => expect(
+      useProjectStore.getState().parsedFiles.get(STARTUP_PATH)?.semanticModel.functions.STARTUP_NewWorld.actions,
+    ).toEqual([{ type: 'InsertNpcAction', npcInstance: 'PC_Thief', spawnPoint: 'FP_NEW_3' }]));
+    expect(api.readFile).not.toHaveBeenCalled();
+    expect(api.parseSource).not.toHaveBeenCalled();
+    // The seed model itself is left alone.
+    expect(STARTUP_MODEL.functions.STARTUP_NewWorld.actions).toEqual([]);
+  });
+
   it('is dead without an instance, and for a waypoint name the world already has', async () => {
     seedProject();
     await openWorld();

@@ -36,7 +36,7 @@ import { useProjectStore } from '../../store/projectStore';
 import { hasUnsavedChanges, useFileStore } from '../../store/fileStore';
 import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
-import { findFunctionFile, startupFunctionFor } from './insertNpcScript';
+import { appendInsertNpc, findFunctionFile, startupFunctionFor } from './insertNpcScript';
 import { vobModelOf } from '../../world/vobModel';
 import { DEFAULT_EXPOSURE } from '../../world/WorldScene';
 import WorldViewport, { type GizmoMode, type WorldViewportHandle } from './WorldViewport';
@@ -1586,7 +1586,10 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    * files the dialog editor has open (E). A `Startup.d` open and dirty is
    * refused rather than merged: the flow's mtime guard compares against its
    * own read, so the editor's stale model would save straight over the spawn.
-   * Open and clean, it is reloaded the way an external change is.
+   * Open and clean, it is reloaded the way an external change is. The cached
+   * model in `parsedFiles` gets slice A's edit — the renderer's picture of the
+   * one line C spliced — so a reader of the function's actions is not one
+   * spawn behind and no parse round trip is spent on it.
    */
   const insertNpcAt = useCallback(async (
     instance: string, spawnPoint: string, existing: boolean,
@@ -1634,10 +1637,12 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       return;
     }
 
-    useProjectStore.getState().addSpawnSite({
+    const project = useProjectStore.getState();
+    project.addSpawnSite({
       instance: instance.toUpperCase(), spawnPoint: spawnPoint.toUpperCase(),
       filePath, functionName: found.functionName, line: result.line,
     });
+    project.updateFileModel(filePath, appendInsertNpc(found.model, found.functionName, instance, spawnPoint));
     if (open !== undefined) await useFileStore.getState().reloadFile(filePath);
   }, [commitOps, terrainPoint, waynet]);
 
