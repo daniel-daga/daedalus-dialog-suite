@@ -170,14 +170,30 @@ change", and no portal check past the material names can be written on that.
   portalKinds,        // ArrayBuffer, Uint8 x1 — is_portal, a two-bit value
   sectorFlags,        // ArrayBuffer, Uint8 x1 — is_sector
   bspPortalPolygons,  // ArrayBuffer, Uint32 x1 — BSP portal list, stored order
+  planes,             // ArrayBuffer, Float32 x4 per row — [distance, nx, ny, nz], on-disk order
+  cornerOffsets,      // ArrayBuffer, Uint32 x(count+1) — row i's corners are [offsets[i], offsets[i+1])
+  corners,            // ArrayBuffer, Float32 x3 per corner — ZenGin space, unconverted
+  materials,          // string[] — mesh.materials' names, the order polygons index them
+  sectorNames,        // string[] — bsp.sectors' names, STORED order (sectorIndices indexes it)
 }
 ```
 
-One row per polygon **carrying portal metadata**, not per polygon: a retail
-world mesh is ~200k polygons and a few hundred of them are portal or sector
-faces. `sectorIndices` stays signed because -1 means "no sector" and an
-unsigned column would report a valid-looking 65535. No vertices and no plane:
-`polygonIndices` is the join key into `_drillMesh`, which already emits both.
+One row per polygon **carrying portal metadata**, not per polygon — and that
+is mostly sector faces: NewWorld's 232k-polygon mesh has 1,933 portal faces
+and 83,816 `is_sector` faces, 85,749 rows and 4.9 MB of planes and corners,
+read in 11 ms. `sectorIndices` stays signed because -1 means "no sector" and
+an unsigned column would report a valid-looking 65535.
+
+The geometry and the two name lists were added for §16.20 slice 3, when the
+checks got a consumer. Until then the readout carried indices into lists it
+did not emit — `materials` and `sectorNames` existed only in `normalizeWorld`'s
+dump, which the editor never reads — and no plane and no corners, because the
+measurement scripts rebuilt those from `extractWorldMesh`'s fans by walking
+every polygon of the mesh through `_drillMesh`. A check that runs on every
+world open cannot afford that walk, and a few thousand rows are cheap to emit.
+`sectorNames` is deliberately the BSP's stored order and **not** the sorted
+order the dump uses: `sectorIndices` is an index into it. The checks
+themselves are `zen-world`'s `checkPortals`.
 
 ### `worldProperties(handle)`
 

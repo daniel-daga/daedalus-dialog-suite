@@ -1472,17 +1472,55 @@ Napi::Object GetPortals(Napi::Env env, WorldHandle const& handle) {
   std::vector<std::int32_t> sector_indices;
   std::vector<std::uint8_t> portal_kinds;
   std::vector<std::uint8_t> sector_flags;
+  // The geometry the checks past the names need (level-editor.md §16.22 q2,
+  // q3): each row's stored plane in on-disk order [distance, nx, ny, nz], and
+  // its corner positions, ZenGin space, unconverted. The measurement scripts
+  // rebuilt these from `extractWorldMesh`'s fans by walking every polygon of
+  // the mesh through `_drillMesh`; a few thousand rows are cheaper to emit.
+  std::vector<float> planes;
+  std::vector<std::uint32_t> corner_offsets {0};
+  std::vector<float> corners;
 
   for (std::size_t i = 0; i < mesh.geometry.size(); ++i) {
-    auto const& flags = mesh.geometry[i].flags;
+    auto const& poly = mesh.geometry[i];
+    auto const& flags = poly.flags;
     if (flags.is_portal == 0 && flags.is_sector == 0) continue;
     polygon_indices.push_back(static_cast<std::uint32_t>(i));
-    material_indices.push_back(static_cast<std::uint32_t>(mesh.geometry[i].material));
+    material_indices.push_back(static_cast<std::uint32_t>(poly.material));
     // Widened from the on-disk i16 and kept signed: -1 is "no sector", and an
     // unsigned column would report it as a valid-looking index.
     sector_indices.push_back(static_cast<std::int32_t>(flags.sector_index));
     portal_kinds.push_back(static_cast<std::uint8_t>(flags.is_portal));
     sector_flags.push_back(static_cast<std::uint8_t>(flags.is_sector));
+
+    planes.push_back(poly.plane_distance);
+    planes.push_back(poly.plane_normal.x);
+    planes.push_back(poly.plane_normal.y);
+    planes.push_back(poly.plane_normal.z);
+    for (std::uint32_t c = 0; c < poly.index_count; ++c) {
+      auto const vertex = mesh.polygon_vertex_indices[poly.index_offset + c];
+      // A corner naming a vertex the mesh does not have is dropped rather than
+      // read past the end; the offsets still describe what was emitted.
+      if (vertex >= mesh.vertices.size()) continue;
+      auto const& position = mesh.vertices[vertex];
+      corners.push_back(position.x);
+      corners.push_back(position.y);
+      corners.push_back(position.z);
+    }
+    corner_offsets.push_back(static_cast<std::uint32_t>(corners.size() / 3));
+  }
+
+  // The two name lists the index columns point into. `materials` is in the
+  // order polygons index them; `sectorNames` is the BSP's **stored** order,
+  // not the sorted order `normalizeWorld` dumps, because `sectorIndices` is an
+  // index into it.
+  auto materials = Napi::Array::New(env, mesh.materials.size());
+  for (std::uint32_t i = 0; i < mesh.materials.size(); ++i) {
+    materials.Set(i, Str(env, mesh.materials[i].name));
+  }
+  auto sector_names = Napi::Array::New(env, bsp.sectors.size());
+  for (std::uint32_t i = 0; i < bsp.sectors.size(); ++i) {
+    sector_names.Set(i, Str(env, bsp.sectors[i].name));
   }
 
   auto out = Napi::Object::New(env);
@@ -1493,6 +1531,11 @@ Napi::Object GetPortals(Napi::Env env, WorldHandle const& handle) {
   out.Set("sectorIndices", Buffer(env, sector_indices));
   out.Set("portalKinds", Buffer(env, portal_kinds));
   out.Set("sectorFlags", Buffer(env, sector_flags));
+  out.Set("planes", Buffer(env, planes));
+  out.Set("cornerOffsets", Buffer(env, corner_offsets));
+  out.Set("corners", Buffer(env, corners));
+  out.Set("materials", materials);
+  out.Set("sectorNames", sector_names);
   // The BSP's own portal list, in stored order. It indexes mesh geometry, so
   // it joins to `polygonIndices` above.
   out.Set("bspPortalPolygons", Buffer(env, bsp.portal_polygon_indices));
