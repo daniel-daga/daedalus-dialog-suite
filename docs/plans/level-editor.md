@@ -2341,6 +2341,12 @@ shape is gated on slice 11's measurement"* below reads against:
   chosen for. Both lists are short enough to be a Problems rule's output and
   neither is carded, for §16.22's reason: nobody has said the finding.
 
+**The "`extractRoutineStatesByNpc` answers `{}`" report is closed
+2026-09-02 on the locator card's rule (§16.24): not reproducible, twice** —
+55/55 tests at c514e8a and 271 NPCs indexed over retail the same day, so the
+one project it was seen on is what would re-open it. Re-open only on a repeat
+that names the project and the file the index missed.
+
 **Slice 12 — the schedule takes a state.** `routineSchedule.ts` stays pure:
 `RoutineIndex` gains optional `statesByNpc`, and `placementsAt` /
 `placementWaypointsAt` gain an optional state — with one chosen, an NPC that
