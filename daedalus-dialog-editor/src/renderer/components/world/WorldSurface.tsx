@@ -162,6 +162,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const selectedWaypoint = useWorldStore((s) => s.selectedWaypoint);
   const waypointSiteIndex = useProjectStore((s) => s.waypointSiteIndex);
   const spawnSiteIndex = useProjectStore((s) => s.spawnSiteIndex);
+  const npcList = useProjectStore((s) => s.npcList);
   const routineSiteIndex = useProjectStore((s) => s.routineSiteIndex);
   const routineNpcIndex = useProjectStore((s) => s.routineNpcIndex);
   const routineStateIndex = useProjectStore((s) => s.routineStateIndex);
@@ -1762,6 +1763,15 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const duplicateInsertWaypoint = insertingNpc !== null && !insertingNpc.existing
     && (waynet?.names.includes(insertingNpc.waypoint.trim()) ?? false);
   const startupFunctionName = summary === null ? '' : startupFunctionFor(summary.worldPath);
+  /**
+   * The typed instance is not one the project index declares — a warning, not
+   * a refusal: an empty index means "nothing is known", never "nothing is
+   * legal", and an instance declared in a file the index has not parsed is
+   * legal too. Case-insensitive, since Daedalus is.
+   */
+  const unknownInsertInstance = insertingNpc !== null && npcList.length > 0
+    && insertingNpc.instance.trim() !== ''
+    && !npcList.some((npc) => npc.toUpperCase() === insertingNpc.instance.trim().toUpperCase());
 
   /**
    * Remove a VOB and its whole subtree — **the one edit here that cannot be
@@ -2593,6 +2603,16 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               showNavigation={false}
               {...AUTOCOMPLETE_POLICIES.actions.npc}
             />
+            {unknownInsertInstance && (
+              <Typography
+                variant="caption"
+                color="warning.main"
+                data-testid="world-insert-npc-instance-warning"
+                sx={{ display: 'block', mt: 0.25 }}
+              >
+                {`${insertingNpc.instance.trim()} is not an NPC instance this project declares.`}
+              </Typography>
+            )}
           </Box>
           <TextField
             label="Waypoint"

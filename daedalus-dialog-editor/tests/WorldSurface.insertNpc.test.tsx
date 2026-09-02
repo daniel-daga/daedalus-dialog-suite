@@ -285,6 +285,47 @@ describe('Insert NPC here…', () => {
     expect(api.readFile.mock.invocationCallOrder[0]).toBeGreaterThan(api.appendInsertNpc.mock.invocationCallOrder[0]);
   });
 
+  describe('instance existence is a warning, never a refusal', () => {
+    // An empty index means "nothing is known", not "nothing is legal"; and an
+    // instance declared in a file the index has not parsed is legal too.
+    const warning = () => screen.queryByTestId('world-insert-npc-instance-warning');
+
+    it('warns when the project index knows NPCs and the typed one is not among them, and still inserts', async () => {
+      seedProject();
+      useProjectStore.setState({ npcList: ['Diego', 'PC_Hero'] } as never);
+      await openWorld();
+      await openInsertDialog();
+
+      fireEvent.change(instanceField(), { target: { value: 'PC_Thief' } });
+      expect(warning()).toHaveTextContent('PC_Thief is not an NPC instance this project declares');
+      expect(screen.getByTestId('world-insert-npc-confirm')).toBeEnabled();
+
+      fireEvent.click(screen.getByTestId('world-insert-npc-confirm'));
+      await waitFor(() => expect(api.appendInsertNpc).toHaveBeenCalledWith(
+        STARTUP_PATH, 'STARTUP_NewWorld', 'PC_Thief', 'FP_NEW_3',
+      ));
+    });
+
+    it('matches the index case-insensitively, the way Daedalus does', async () => {
+      seedProject();
+      useProjectStore.setState({ npcList: ['Diego', 'PC_Hero'] } as never);
+      await openWorld();
+      await openInsertDialog();
+
+      fireEvent.change(instanceField(), { target: { value: 'pc_hero' } });
+      expect(warning()).toBeNull();
+    });
+
+    it('says nothing when the index knows no NPCs', async () => {
+      seedProject();
+      await openWorld();
+      await openInsertDialog();
+
+      fireEvent.change(instanceField(), { target: { value: 'PC_Thief' } });
+      expect(warning()).toBeNull();
+    });
+  });
+
   it('spawns at the selected waypoint from its panel, with no waypoint op', async () => {
     seedProject();
     await openWorld();
