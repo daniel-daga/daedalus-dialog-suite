@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 
 import {
   discoverProjectFile,
+  projectOperationKey,
   parseProjectFile,
   ProjectConfigService,
   resolveProjectConfig,
@@ -158,6 +159,14 @@ describe('ProjectConfigService', () => {
   });
 
   describe('migration and atomic saves', () => {
+    test('canonicalizes equivalent Windows spellings to the same operation queue key', () => {
+      const projectFilePath = join(root, 'Demo.gothicproject.json');
+
+      expect(projectOperationKey(projectFilePath, 'win32')).toBe(
+        projectOperationKey(join(root, 'sub', '..', 'demo.gothicproject.json'), 'win32'),
+      );
+    });
+
     test('creates a default project file named after a legacy folder', async () => {
       const service = new ProjectConfigService();
 
@@ -243,6 +252,39 @@ describe('ProjectConfigService', () => {
 
       expect([first.migrationCommitted, second.migrationCommitted].filter(Boolean)).toHaveLength(1);
       expect(second.project.config).toEqual(first.project.config);
+    });
+
+    test('loses an external migration claim without overwriting the winner', async () => {
+      const projectFilePath = join(root, `${pathBasename(root)}.gothicproject.json`);
+      const claimPath = `${projectFilePath}.migration.lock`;
+      const winner = validConfig(['.', 'winner-assets']);
+      await writeFile(claimPath, 'external writer');
+      const service = new ProjectConfigService();
+
+      const opening = service.openOrMigrate(root, join(root, 'loser-install'));
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      await writeFile(projectFilePath, JSON.stringify(winner));
+      await require('node:fs').promises.unlink(claimPath);
+      const result = await opening;
+
+      expect(result.migrationCommitted).toBe(false);
+      expect(result.project.config).toEqual(winner);
+      expect(JSON.parse(await readFile(projectFilePath, 'utf8'))).toEqual(winner);
+    });
+
+    test('retries a contended rename and cleans up after retry exhaustion', async () => {
+      const fsPromises = require('node:fs').promises;
+      const service = new ProjectConfigService();
+      const projectFilePath = join(root, 'demo.gothicproject.json');
+      const contended: NodeJS.ErrnoException = new Error('EACCES');
+      contended.code = 'EACCES';
+      const renameSpy = jest.spyOn(fsPromises, 'rename').mockRejectedValue(contended);
+
+      await expect(service.save(projectFilePath, parseProjectFile(validConfig()))).rejects.toThrow('EACCES');
+
+      expect(renameSpy).toHaveBeenCalledTimes(5);
+      expect((await readdir(root)).filter((name) => name.endsWith('.tmp'))).toEqual([]);
+      renameSpy.mockRestore();
     });
   });
 });

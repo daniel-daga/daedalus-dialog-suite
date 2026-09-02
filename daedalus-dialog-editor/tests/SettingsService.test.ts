@@ -268,6 +268,7 @@ describe('SettingsService', () => {
       await expect(new ProjectConfigService().openOrMigrate(projectRoot, 'C:/Gothic II')).rejects.toThrow('ENOSPC');
 
       expect(await settingsService.getGothicInstallPath()).toBe('C:/Gothic II');
+      expect((await fs.readdir(projectRoot)).filter((name) => name.endsWith('.migration.lock'))).toEqual([]);
       renameSpy.mockRestore();
     });
 

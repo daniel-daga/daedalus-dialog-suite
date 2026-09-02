@@ -15,6 +15,8 @@ const ARCHIVES = ['Textures.vdf', 'Textures_Addon.vdf', 'Meshes.vdf', 'Meshes_Ad
 const COMPILED_FOLDERS = ['Meshes', 'Textures', 'Anims'];
 const RENAME_RETRIES = 4;
 const RENAME_RETRY_DELAY_MS = 10;
+const MIGRATION_CLAIM_WAIT_MS = 10;
+const MIGRATION_CLAIM_TIMEOUT_MS = 5_000;
 let tmpWriteCounter = 0;
 const projectFileQueues = new Map<string, Promise<unknown>>();
 
@@ -135,7 +137,7 @@ export interface OpenOrMigrateResult {
 }
 
 function enqueueProjectFile<T>(projectFilePath: string, operation: () => Promise<T>): Promise<T> {
-  const key = path.resolve(projectFilePath);
+  const key = projectOperationKey(projectFilePath);
   const previous = projectFileQueues.get(key) ?? Promise.resolve();
   const run = previous.then(operation, operation);
   const settled = run.then(() => undefined, () => undefined);
@@ -146,9 +148,17 @@ function enqueueProjectFile<T>(projectFilePath: string, operation: () => Promise
   return run;
 }
 
+export function projectOperationKey(
+  candidate: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  const platformPath = platform === 'win32' ? path.win32 : path.posix;
+  const normalized = platformPath.normalize(platformPath.resolve(candidate));
+  return platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
+
 function comparablePath(candidate: string): string {
-  const normalized = path.normalize(path.resolve(candidate));
-  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+  return projectOperationKey(candidate);
 }
 
 async function renameOver(tempPath: string, destination: string): Promise<void> {
@@ -185,33 +195,74 @@ async function writeProjectFile(projectFilePath: string, config: GothicProjectFi
   }
 }
 
+async function waitForMigrationClaim(claimPath: string): Promise<void> {
+  const deadline = Date.now() + MIGRATION_CLAIM_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    try {
+      await fs.access(claimPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, MIGRATION_CLAIM_WAIT_MS));
+  }
+  throw new Error(`Timed out waiting for project migration claim: ${claimPath}`);
+}
+
+async function openExistingProject(projectFilePath: string): Promise<OpenOrMigrateResult> {
+  const config = parseProjectFile(await fs.readFile(projectFilePath, 'utf8'));
+  return { project: await resolveProjectConfig(projectFilePath, config), migrationCommitted: false };
+}
+
 export class ProjectConfigService {
   async openOrMigrate(projectRoot: string, legacyInstallPath: string | null): Promise<OpenOrMigrateResult> {
-    const absoluteRoot = path.resolve(projectRoot);
+    const absoluteRoot = await fs.realpath(path.resolve(projectRoot));
     const defaultProjectFilePath = path.join(absoluteRoot, `${path.basename(absoluteRoot)}${PROJECT_FILE_SUFFIX}`);
     const initiallyDiscovered = await discoverProjectFile(absoluteRoot);
 
     return enqueueProjectFile(initiallyDiscovered ?? defaultProjectFilePath, async () => {
-      const discovered = await discoverProjectFile(absoluteRoot);
-      const projectFilePath = discovered ?? defaultProjectFilePath;
-      if (discovered) {
-        const config = parseProjectFile(await fs.readFile(projectFilePath, 'utf8'));
-        return { project: await resolveProjectConfig(projectFilePath, config), migrationCommitted: false };
-      }
+      const claimPath = `${defaultProjectFilePath}.migration.lock`;
+      for (;;) {
+        const discovered = await discoverProjectFile(absoluteRoot);
+        if (discovered) return openExistingProject(discovered);
 
-      const assetSources = ['.'];
-      if (legacyInstallPath && comparablePath(legacyInstallPath) !== comparablePath(absoluteRoot)) {
-        assetSources.push(legacyInstallPath);
+        let claimHandle;
+        try {
+          claimHandle = await fs.open(claimPath, 'wx');
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+          await waitForMigrationClaim(claimPath);
+          continue;
+        }
+
+        try {
+          await claimHandle.writeFile(`${process.pid}\n`);
+          try {
+            await claimHandle.sync();
+          } catch {
+            // The claim remains exclusive even where syncing it is unsupported.
+          }
+          const winner = await discoverProjectFile(absoluteRoot);
+          if (winner) return openExistingProject(winner);
+
+          const assetSources = ['.'];
+          if (legacyInstallPath && comparablePath(legacyInstallPath) !== comparablePath(absoluteRoot)) {
+            assetSources.push(legacyInstallPath);
+          }
+          const config = parseProjectFile({
+            version: 1,
+            target: 'g2-notr',
+            scriptsRoot: '.',
+            worlds: [],
+            assetSources,
+          });
+          await writeProjectFile(defaultProjectFilePath, config);
+          return { project: await resolveProjectConfig(defaultProjectFilePath, config), migrationCommitted: true };
+        } finally {
+          await claimHandle.close().catch(() => undefined);
+          await fs.unlink(claimPath).catch(() => undefined);
+        }
       }
-      const config = parseProjectFile({
-        version: 1,
-        target: 'g2-notr',
-        scriptsRoot: '.',
-        worlds: [],
-        assetSources,
-      });
-      await writeProjectFile(projectFilePath, config);
-      return { project: await resolveProjectConfig(projectFilePath, config), migrationCommitted: true };
     });
   }
 
