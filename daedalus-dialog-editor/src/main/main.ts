@@ -717,6 +717,9 @@ export function setupIpcHandlers() {
       for (const source of assetSources) {
         await pathValidator.validatePathResolved(source);
       }
+      if (activeProjectFileKey !== key || registeredProjectConfigs.get(key) !== registered) {
+        throw new Error('The active project changed while validating asset sources');
+      }
       return await worldService.openWorld({
         worldPath: request.worldPath,
         gameVersion: request.gameVersion,

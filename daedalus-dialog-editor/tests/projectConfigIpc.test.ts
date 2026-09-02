@@ -202,6 +202,28 @@ describe('project config IPC', () => {
     reload.mockRestore();
   });
 
+  it('rejects when another project becomes active during source validation', async () => {
+    const first = await makeProject();
+    const second = await makeProject();
+    await invoke('project:loadConfig', first.root);
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => { release = resolve; });
+    registry.__pathValidator.validatePathResolved.mockImplementation(async (candidate: string) => {
+      if (candidate === first.root) await blocked;
+    });
+
+    const opening = invoke('world:open', {
+      worldPath: path.join(first.root, 'World.zen'), gameVersion: 'g2', projectFilePath: first.projectFilePath,
+    });
+    await Promise.resolve();
+    await invoke('project:loadConfig', second.root);
+    release();
+
+    await expect(opening).rejects.toThrow(/project changed|active project/i);
+    await expect(invoke('project:saveAssetSources', second.projectFilePath, ['.']))
+      .resolves.toMatchObject({ projectFilePath: second.projectFilePath });
+  });
+
   it('rejects malformed arrays, missing root, unknown files, and ungranted absolute paths', async () => {
     const project = await makeProject();
     await invoke('project:loadConfig', project.root);
