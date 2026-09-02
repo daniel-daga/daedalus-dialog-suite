@@ -1,9 +1,10 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { Box, Tooltip, Typography } from '@mui/material';
-import { Add as AddIcon, Chat as ChatIcon, CallSplit as CallSplitIcon, Description as DescriptionIcon, LibraryBooks as LibraryBooksIcon, SwapHoriz as SwapHorizIcon, Navigation as NavigationIcon, Code as CodeIcon, Inventory as InventoryIcon, CardGiftcard as CardGiftcardIcon, Gavel as GavelIcon, EmojiPeople as EmojiPeopleIcon, Edit as EditIcon, Stop as StopIcon, PlayArrow as PlayArrowIcon, Star as StarIcon, School as SchoolIcon, PersonAdd as PersonAddIcon, RemoveShoppingCart as RemoveShoppingCartIcon, Inventory2 as Inventory2Icon, DragIndicator as DragIndicatorIcon, Comment as CommentIcon } from '@mui/icons-material';
+import { Add as AddIcon, DragIndicator as DragIndicatorIcon } from '@mui/icons-material';
 import { ActionCardProps } from './dialogTypes';
 import { getRendererForAction, getActionTypeLabel } from './actionRenderers';
 import { getActionType } from './actionTypes';
+import { ACTION_TYPE_REGISTRY } from './actionTypeRegistry';
 import type { ActionTypeId } from './actionTypes';
 import type { BaseActionRendererProps } from './actionRenderers/types';
 import { shallowEqual } from '../utils/shallowEqual';
@@ -242,33 +243,8 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
   }, [menuAnchor, isDialogLine, localAction, flushUpdate, handleTabToNext, handleTabToPrev, handleAddNewAfter, handleDeleteAndFocusPrev, hasNonEmptyText]);
 
   const getActionIcon = () => {
-    switch (actionType) {
-      case 'dialogLine': return <ChatIcon fontSize="small" />;
-      case 'choice': return <CallSplitIcon fontSize="small" />;
-      case 'createTopic': return <LibraryBooksIcon fontSize="small" />;
-      case 'logEntry': return <DescriptionIcon fontSize="small" />;
-      case 'logSetTopicStatus': return <DescriptionIcon fontSize="small" />;
-      case 'createInventoryItems': return <InventoryIcon fontSize="small" />;
-      case 'giveInventoryItems': return <CardGiftcardIcon fontSize="small" />;
-      case 'attackAction': return <GavelIcon fontSize="small" />;
-      case 'setAttitudeAction': return <EmojiPeopleIcon fontSize="small" />;
-      case 'chapterTransition': return <NavigationIcon fontSize="small" />;
-      case 'exchangeRoutine': return <SwapHorizIcon fontSize="small" />;
-      case 'setVariableAction': return <EditIcon fontSize="small" />;
-      case 'stopProcessInfosAction': return <StopIcon fontSize="small" />;
-      case 'playAniAction': return <PlayArrowIcon fontSize="small" />;
-      case 'givePlayerXPAction': return <StarIcon fontSize="small" />;
-      case 'pickpocketAction': return <GavelIcon fontSize="small" />;
-      case 'startOtherRoutineAction': return <SwapHorizIcon fontSize="small" />;
-      case 'teachAction': return <SchoolIcon fontSize="small" />;
-      case 'giveTradeInventoryAction': return <Inventory2Icon fontSize="small" />;
-      case 'removeInventoryItemsAction': return <RemoveShoppingCartIcon fontSize="small" />;
-      case 'insertNpcAction': return <PersonAddIcon fontSize="small" />;
-      case 'conditionalAction': return <CallSplitIcon fontSize="small" />;
-      case 'commentAction': return <CommentIcon fontSize="small" />;
-      case 'customAction': return <CodeIcon fontSize="small" />;
-      default: return <CodeIcon fontSize="small" />;
-    }
+    const Icon = (ACTION_TYPE_REGISTRY[actionType] ?? ACTION_TYPE_REGISTRY.customAction).icon;
+    return <Icon fontSize="small" />;
   };
 
   // Get the appropriate renderer for this action type

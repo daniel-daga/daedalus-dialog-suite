@@ -1,60 +1,14 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Box, Popover, TextField, MenuItem, InputAdornment } from '@mui/material';
-import {
-  Search as SearchIcon,
-  Chat as ChatIcon,
-  CallSplit as CallSplitIcon,
-  Description as DescriptionIcon,
-  LibraryBooks as LibraryBooksIcon,
-  Inventory as InventoryIcon,
-  CardGiftcard as CardGiftcardIcon,
-  Gavel as GavelIcon,
-  EmojiPeople as EmojiPeopleIcon,
-  Navigation as NavigationIcon,
-  SwapHoriz as SwapHorizIcon,
-  Code as CodeIcon,
-  Edit as EditIcon,
-  Stop as StopIcon,
-  Block as BlockIcon,
-  PlaylistRemove as PlaylistRemoveIcon,
-  PlayArrow as PlayArrowIcon,
-  Star as StarIcon,
-  School as SchoolIcon,
-  PersonAdd as PersonAddIcon,
-  RemoveShoppingCart as RemoveShoppingCartIcon,
-  Inventory2 as Inventory2Icon,
-  DirectionsWalk as DirectionsWalkIcon
-} from '@mui/icons-material';
+import { Search as SearchIcon } from '@mui/icons-material';
 import type { ActionTypeId } from '../actionTypes';
+import { ACTION_TYPE_REGISTRY, ADDABLE_ACTION_TYPES } from '../actionTypeRegistry';
 
-const ACTION_TYPE_ITEMS: { type: ActionTypeId; label: string; icon: React.ReactNode }[] = [
-  { type: 'dialogLine', label: 'Dialog Line', icon: <ChatIcon fontSize="small" /> },
-  { type: 'choice', label: 'Choice', icon: <CallSplitIcon fontSize="small" /> },
-  { type: 'logEntry', label: 'Log Entry', icon: <DescriptionIcon fontSize="small" /> },
-  { type: 'createTopic', label: 'Create Topic', icon: <LibraryBooksIcon fontSize="small" /> },
-  { type: 'logSetTopicStatus', label: 'Log Set Status', icon: <DescriptionIcon fontSize="small" /> },
-  { type: 'createInventoryItems', label: 'Create Inventory Items', icon: <InventoryIcon fontSize="small" /> },
-  { type: 'giveInventoryItems', label: 'Give Inventory Items', icon: <CardGiftcardIcon fontSize="small" /> },
-  { type: 'attackAction', label: 'Attack Action', icon: <GavelIcon fontSize="small" /> },
-  { type: 'setAttitudeAction', label: 'Set Attitude', icon: <EmojiPeopleIcon fontSize="small" /> },
-  { type: 'chapterTransition', label: 'Chapter Transition', icon: <NavigationIcon fontSize="small" /> },
-  { type: 'exchangeRoutine', label: 'Exchange Routine', icon: <SwapHorizIcon fontSize="small" /> },
-  { type: 'setVariableAction', label: 'Set Variable', icon: <EditIcon fontSize="small" /> },
-  { type: 'stopProcessInfosAction', label: 'End Dialog', icon: <StopIcon fontSize="small" /> },
-  { type: 'setRefuseTalkAction', label: 'Refuse Talk', icon: <BlockIcon fontSize="small" /> },
-  { type: 'clearChoicesAction', label: 'Clear Choices', icon: <PlaylistRemoveIcon fontSize="small" /> },
-  { type: 'playAniAction', label: 'Play Animation', icon: <PlayArrowIcon fontSize="small" /> },
-  { type: 'givePlayerXPAction', label: 'Give XP', icon: <StarIcon fontSize="small" /> },
-  { type: 'pickpocketAction', label: 'Pickpocket', icon: <GavelIcon fontSize="small" /> },
-  { type: 'startOtherRoutineAction', label: 'Start Other Routine', icon: <SwapHorizIcon fontSize="small" /> },
-  { type: 'teachAction', label: 'Teach', icon: <SchoolIcon fontSize="small" /> },
-  { type: 'giveTradeInventoryAction', label: 'Give Trade Inventory', icon: <Inventory2Icon fontSize="small" /> },
-  { type: 'removeInventoryItemsAction', label: 'Remove Inventory Items', icon: <RemoveShoppingCartIcon fontSize="small" /> },
-  { type: 'insertNpcAction', label: 'Insert NPC', icon: <PersonAddIcon fontSize="small" /> },
-  { type: 'heroFollowsAction', label: 'Hero Follows NPC', icon: <DirectionsWalkIcon fontSize="small" /> },
-  { type: 'conditionalAction', label: 'If / Else Block', icon: <CallSplitIcon fontSize="small" /> },
-  { type: 'customAction', label: 'Custom Action', icon: <CodeIcon fontSize="small" /> },
-];
+const ACTION_TYPE_ITEMS: { type: ActionTypeId; label: string; icon: React.ReactNode }[] =
+  ADDABLE_ACTION_TYPES.map((type) => {
+    const { label, icon: Icon } = ACTION_TYPE_REGISTRY[type];
+    return { type, label, icon: <Icon fontSize="small" /> };
+  });
 
 interface ActionTypeMenuProps {
   anchorEl: HTMLElement | null;

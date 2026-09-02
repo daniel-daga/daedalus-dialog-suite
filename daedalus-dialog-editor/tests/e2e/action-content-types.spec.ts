@@ -49,7 +49,7 @@ test.describe('Action type content insertion', () => {
     await openSampleDialog(page);
   });
 
-  // menuLabel = the label shown in the Add-action menu (ACTION_TYPE_LABELS),
+  // menuLabel = the label shown in the Add-action menu (actionTypeRegistry),
   // signatureLabel = a field label unique to that action's renderer.
   const ACTION_MATRIX: Array<{ menuLabel: string; signatureLabel: string }> = [
     { menuLabel: 'Create Topic', signatureLabel: 'Topic Type' },

@@ -221,7 +221,7 @@ export function createAction(
   } else {
     // All other action types use default arguments.
     // CommentAction is parser-preserved-only (not offered in the "add action"
-    // menu, see ActionTypeMenu's fixed item list) and has no template here.
+    // menu: `addable: false` in actionTypeRegistry) and has no template here.
     const templateFn = (ACTION_TEMPLATES as Partial<Record<ActionTypeId, () => DialogAction>>)[actionType];
     if (!templateFn) {
       throw new Error(`Unknown action type: ${actionType}`);
