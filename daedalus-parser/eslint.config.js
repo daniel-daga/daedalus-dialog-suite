@@ -7,8 +7,6 @@ module.exports = [
       'node_modules/**',
       'prebuilds/**',
       'bindings/**',
-      'bin/bin/**',
-      'bin/src/**',
       'dist/**',
       'src/parser.c',
       'src/grammar.json',

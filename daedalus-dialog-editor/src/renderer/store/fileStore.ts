@@ -218,12 +218,6 @@ export interface FileStore {
   // Current active file
   activeFile: string | null;
 
-  // Validation dialog state
-  pendingValidation: {
-    filePath: string;
-    validationResult: ValidationResult;
-  } | null;
-
   // Code generation settings
   codeSettings: CodeGenerationSettings;
 
@@ -268,7 +262,6 @@ export interface FileStore {
   ) => void;
   validateFile: (filePath: string) => Promise<ValidationResult>;
   saveFile: (filePath: string, options?: { forceOnErrors?: boolean; overwriteExternal?: boolean }) => Promise<SaveFileResult>;
-  clearPendingValidation: () => void;
   generateCode: (filePath: string) => Promise<string>;
   reloadFile: (filePath: string) => Promise<void>;
   markExternalConflict: (filePath: string, opts?: { fileMissing?: boolean }) => void;
@@ -320,7 +313,6 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
   project: null,
   openFiles: new Map(),
   activeFile: null,
-  pendingValidation: null,
   codeSettings: {
     indentChar: '\t',
     includeComments: true,
@@ -754,11 +746,6 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
           if (currentFileState) {
             currentFileState.lastValidationResult = result.validationResult;
           }
-          // A superseded model must not raise a stale validation dialog: the
-          // edit that landed mid-save has not been validated.
-          if (stillCurrent) {
-            state.pendingValidation = { filePath, validationResult: result.validationResult! };
-          }
         });
 
         return { success: false, validationResult: result.validationResult };
@@ -779,7 +766,6 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
             currentFileState.lastSaved = new Date();
           }
         }
-        state.pendingValidation = null;
       });
 
       return { success: true, validationResult: result.validationResult };
@@ -803,12 +789,6 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       console.error('Failed to save file:', error);
       throw error;
     }
-  },
-
-  clearPendingValidation: () => {
-    set((state) => {
-      state.pendingValidation = null;
-    });
   },
 
   generateCode: async (filePath: string) => {
@@ -924,7 +904,6 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
     set((state) => {
       state.openFiles.clear();
       state.activeFile = null;
-      state.pendingValidation = null;
     });
     // historyStore subscribes to openFiles changes and clears history automatically
     useUISelectionStore.getState().resetUISelection();

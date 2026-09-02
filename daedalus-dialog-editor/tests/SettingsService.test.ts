@@ -84,7 +84,7 @@ describe('SettingsService', () => {
       await Promise.all([
         settingsService.addRecentProject('/path/concurrent', 'Concurrent'),
         settingsService.setUpdaterLastCheckTimestamp(123456),
-        settingsService.setUpdaterAutoCheck(false),
+        settingsService.setUpdaterDismissedVersion('1.2.3'),
       ]);
 
       const raw = await fs.readFile(settingsPath, 'utf8');
@@ -94,7 +94,7 @@ describe('SettingsService', () => {
       expect(settings.recentProjects).toHaveLength(1);
       expect(settings.recentProjects[0].path).toBe('/path/concurrent');
       expect(settings.updater.lastCheckTimestamp).toBe(123456);
-      expect(settings.updater.autoCheckOnStartup).toBe(false);
+      expect(settings.updater.dismissedVersion).toBe('1.2.3');
     });
 
     it('writes atomically via a temp file + rename', async () => {

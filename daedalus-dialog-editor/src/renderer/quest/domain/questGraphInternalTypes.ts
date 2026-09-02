@@ -59,7 +59,6 @@ export interface IdentifyResult {
 
 export interface EdgeBuildResult {
   edges: QuestGraphEdge[];
-  adjacency: Map<string, string[]>;
 }
 
 export interface EffectiveConditionEntry {

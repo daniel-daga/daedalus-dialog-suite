@@ -100,7 +100,6 @@ beforeEach(() => {
     openFiles: new Map(),
     activeFile: null,
     project: null,
-    pendingValidation: null,
     codeSettings: {
       indentChar: '\t',
       includeComments: true,

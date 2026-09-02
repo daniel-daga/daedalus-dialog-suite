@@ -26,7 +26,6 @@ const openSelf = () => {
       lastSaved: new Date(),
     }]]),
     activeFile: SELF,
-    pendingValidation: null,
   } as any);
 };
 

@@ -28,7 +28,6 @@ const makeFileState = (over: Partial<FileState>): FileState => ({
 
 const baseFileStoreState = {
   activeFile: null as string | null,
-  pendingValidation: null,
   project: null,
   codeSettings: {
     indentChar: '\t' as const,
