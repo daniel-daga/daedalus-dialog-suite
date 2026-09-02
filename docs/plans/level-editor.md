@@ -2419,7 +2419,9 @@ and a flat alphabetical select puts `ABMARSCH`-style singletons between the
 names anyone would pick; the reach readout says *1 of 271* after the fact,
 which is late. The fix is a sort or a split, not a rebuild: shared names
 first, ordered by reach, singletons after a divider (or behind a filter) — a
-tweak to `world-state`'s option list, and not in this slice. Also of note: the
+tweak to `world-state`'s option list, and not in this slice. Landed 2026-09-02:
+`stateOptions` in `routineSchedule.ts` splits the list, shared names by reach
+above an *Only one NPC* subheader, each option labelled `TOT (41)`. Also of note: the
 names are events, not chapters, so the *Declared* default's honesty argument
 stands twice over — there is no `KAPITEL3` for it to be confused with.
 

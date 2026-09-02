@@ -77,6 +77,36 @@ export function stateReach(
   return { resolved, total };
 }
 
+/** One entry of the State select: a state name and how many NPCs have a variant for it. */
+export interface StateOption {
+  name: string;
+  reach: number;
+}
+
+/**
+ * The State select's option list, split the way slice 11's measurement said
+ * to (§16.19): 112 of retail's 182 names reach one NPC, and flat alphabetical
+ * puts those between the names anyone would pick. So names more than one NPC
+ * shares come first, by reach (ties alphabetical), and the singletons after,
+ * alphabetical — the caller draws the divider. Reach here is counted over the
+ * state index alone, which is what the list is built from; `stateReach` is
+ * the readout against the NPCs whose day is known, a different denominator.
+ */
+export function stateOptions(index: RoutineIndex): { shared: StateOption[]; singletons: StateOption[] } {
+  const reachByName = new Map<string, number>();
+  for (const npc of Object.values(index.statesByNpc ?? {})) {
+    for (const name of Object.keys(npc.states)) {
+      reachByName.set(name, (reachByName.get(name) ?? 0) + 1);
+    }
+  }
+  const options = [...reachByName].map(([name, reach]) => ({ name, reach }));
+  options.sort((a, b) => b.reach - a.reach || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  return {
+    shared: options.filter((option) => option.reach > 1),
+    singletons: options.filter((option) => option.reach === 1)
+  };
+}
+
 export interface RoutinePlacement {
   instance: string;
   routine: string;

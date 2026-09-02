@@ -1,6 +1,6 @@
 import React from 'react';
-import { Button, MenuItem, Slider, Stack, TextField, Typography } from '@mui/material';
-import { MINUTES_PER_DAY } from '../../../routines/routineSchedule';
+import { Button, ListSubheader, MenuItem, Slider, Stack, TextField, Typography } from '@mui/material';
+import { MINUTES_PER_DAY, type StateOption } from '../../../routines/routineSchedule';
 import { MAX_EXPOSURE, MIN_EXPOSURE } from '../../../world/WorldScene';
 
 /** Minutes since midnight as `HH:MM` — the routine index's own unit
@@ -31,7 +31,7 @@ export interface WorldOverlayControlsProps {
   onSpawnTimeChange: (minute: number) => void;
   spawnState: string | null;
   onSpawnStateChange: (state: string | null) => void;
-  stateNames: readonly string[];
+  stateOptions: { shared: readonly StateOption[]; singletons: readonly StateOption[] };
   spawnStateReach: { resolved: number; total: number };
   showWaypointNames: boolean;
   onToggleWaypointNames: () => void;
@@ -45,7 +45,7 @@ export interface WorldOverlayControlsProps {
 const WorldOverlayControls: React.FC<WorldOverlayControlsProps> = ({
   hasWorld, showWaynet, onToggleWaynet, showSpawns, onToggleSpawns,
   spawnTime, onToggleTime, onSpawnTimeChange, spawnState, onSpawnStateChange,
-  stateNames, spawnStateReach, showWaypointNames, onToggleWaypointNames,
+  stateOptions, spawnStateReach, showWaypointNames, onToggleWaypointNames,
   exposure, onExposureChange, hiddenClasses, onHiddenClassesChange, classOptions,
 }) => (
   <>
@@ -137,8 +137,17 @@ const WorldOverlayControls: React.FC<WorldOverlayControlsProps> = ({
                   routine, so a chapter number would be a claim the index
                   cannot back. */}
               <MenuItem value="">Declared</MenuItem>
-              {stateNames.map((name) => (
-                <MenuItem key={name} value={name}>{name}</MenuItem>
+              {/* Shared names first by reach, singletons behind a divider
+                  (§16.19 slice 11's verdict), each with its reach: the
+                  readout beside the select only speaks after a choice. */}
+              {stateOptions.shared.map(({ name, reach }) => (
+                <MenuItem key={name} value={name}>{name} ({reach})</MenuItem>
+              ))}
+              {stateOptions.shared.length > 0 && stateOptions.singletons.length > 0 && (
+                <ListSubheader>Only one NPC</ListSubheader>
+              )}
+              {stateOptions.singletons.map(({ name, reach }) => (
+                <MenuItem key={name} value={name}>{name} ({reach})</MenuItem>
               ))}
             </TextField>
             {spawnState !== null && (

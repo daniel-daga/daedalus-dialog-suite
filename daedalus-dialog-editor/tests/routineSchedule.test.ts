@@ -4,6 +4,7 @@ import {
   placementsAt,
   placementWaypointsAt,
   spawnOccupants,
+  stateOptions,
   stateReach,
   MINUTES_PER_DAY
 } from '../src/renderer/routines/routineSchedule';
@@ -371,6 +372,40 @@ describe('routine schedule', () => {
 
     it('reports no reach with no state chosen, so the readout can stay hidden', () => {
       expect(stateReach(index, null)).toEqual({ resolved: 0, total: 2 });
+    });
+  });
+
+  // The select's list, split the way the measurement said to (§16.19, slice
+  // 11's verdict): names more than one NPC shares first, by how many, then
+  // the singletons alphabetically — so `ABMARSCH` never sits between `TOT`
+  // and `SHIP`.
+  describe('the state option list', () => {
+    const index = {
+      sites: [],
+      routinesByNpc: {},
+      statesByNpc: {
+        A: { id: 1, states: { TOT: 'R', SHIP: 'R', ABMARSCH: 'R' } },
+        B: { id: 2, states: { TOT: 'R', SHIP: 'R', FOLLOW: 'R' } },
+        C: { id: 3, states: { TOT: 'R', FOLLOW: 'R', ZZZ: 'R' } }
+      }
+    };
+
+    it('puts shared names first by reach, ties alphabetical, singletons after', () => {
+      expect(stateOptions(index)).toEqual({
+        shared: [
+          { name: 'TOT', reach: 3 },
+          { name: 'FOLLOW', reach: 2 },
+          { name: 'SHIP', reach: 2 }
+        ],
+        singletons: [
+          { name: 'ABMARSCH', reach: 1 },
+          { name: 'ZZZ', reach: 1 }
+        ]
+      });
+    });
+
+    it('is empty without a state index', () => {
+      expect(stateOptions({ sites: [], routinesByNpc: {} })).toEqual({ shared: [], singletons: [] });
     });
   });
 

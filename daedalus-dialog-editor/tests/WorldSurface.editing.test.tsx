@@ -2479,6 +2479,34 @@ describe('a waypoint dragged in the viewport', () => {
         expect(mockSpawnState).toBeNull();
       });
 
+      // Slice 11's verdict on the list: shared names first by reach, then a
+      // divider, then the singletons — each with its reach, because the
+      // readout beside the select only speaks after a choice.
+      it('lists shared states first by reach, singletons after a divider, each with its reach', async () => {
+        useProjectStore.setState({
+          spawnSiteIndex: [],
+          routineSiteIndex: ROUTINES,
+          routineNpcIndex: { BAU_900_FARIM: 'RTN_START_FARIM', GRD_200_X: 'RTN_START_X' },
+          routineStateIndex: {
+            BAU_900_FARIM: { id: 900, states: { TOT: 'R', ABMARSCH: 'R', SHIP: 'R' } },
+            GRD_200_X: { id: 200, states: { TOT: 'R', SHIP: 'R' } },
+            OTHER: { id: 1, states: { TOT: 'R' } },
+          },
+        } as never);
+        await openWorld();
+        fireEvent.click(screen.getByTestId('world-spawns-toggle'));
+        await waitFor(() => expect(mockShowSpawns).toBe(true));
+        fireEvent.click(screen.getByTestId('world-time-toggle'));
+        await waitFor(() => expect(mockSpawnTime).toBe(8 * 60));
+
+        fireEvent.mouseDown(screen.getByTestId('world-state').querySelector('[role="combobox"]')!);
+
+        const listbox = await screen.findByRole('listbox');
+        expect(
+          Array.from(listbox.children).map((child) => child.textContent)
+        ).toEqual(['Declared', 'TOT (3)', 'SHIP (2)', 'Only one NPC', 'ABMARSCH (1)']);
+      });
+
       it('offers the picker with no options rather than hiding it', async () => {
         // The empty-index rule the Spawns button follows: a missing control
         // cannot tell anybody the difference between "no project open" and "no
