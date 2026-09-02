@@ -3,12 +3,20 @@ import ReactDOM from 'react-dom/client';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import App from './App';
-import { mockEditorAPI } from './utils/mockAPI';
 import { themes, THEME_STORAGE_KEY, ThemeMode } from './theme';
 import { ThemeModeContext } from './themeContext';
 
-// Browser mode detection: inject mock API if running outside Electron
-if (!window.editorAPI) {
+// Browser mode: outside Electron there is no preload, so the dev shim stands in
+// for the main process (the Playwright harness runs against the Vite dev
+// server). Gated on DEV so the production build drops the shim — Vite replaces
+// `import.meta.env.DEV` with a constant and Rollup removes the dead branch,
+// dynamic import and all (§3 P3; pinned by tests/bundleContents.test.ts).
+async function installBrowserMockApi(): Promise<void> {
+  // Two plain guards, not one `||`: Rollup only proves the tail unreachable
+  // when the constant stands alone in its own `if`.
+  if (!import.meta.env.DEV) return;
+  if (window.editorAPI) return;
+  const { mockEditorAPI } = await import('./utils/mockAPI');
   window.editorAPI = mockEditorAPI;
 }
 
@@ -64,8 +72,10 @@ const Root: React.FC = () => {
   );
 };
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <Root />
-  </React.StrictMode>,
-);
+void installBrowserMockApi().then(() => {
+  ReactDOM.createRoot(document.getElementById('root')!).render(
+    <React.StrictMode>
+      <Root />
+    </React.StrictMode>,
+  );
+});
