@@ -279,11 +279,20 @@ export function useActionManagement(config: ActionManagementConfig) {
   }, [setFunction, focusAction, buildDialogLineAction]);
 
   /**
-   * Add an action after a specific index
-   * Handles choice creation with automatic target function generation
+   * Insert an action after `path`, or append it to the root list when `path`
+   * is null. The one seeding path for both flows: choice target-function
+   * creation and createTopic's log pair happen here and nowhere else.
    */
-  const addActionAfter = useCallback((path: ActionPath, actionType: ActionTypeId) => {
+  const insertAction = useCallback((path: ActionPath | null, actionType: ActionTypeId) => {
     let nextPath: ActionPath | null = null;
+
+    const insertAt = (actions: DialogAction[], action: DialogAction): { actions: DialogAction[]; insertedPath: ActionPath | null } => {
+      if (path === null) {
+        return { actions: [...actions, action], insertedPath: [actions.length] };
+      }
+      const newActions = insertActionAfterPath(actions, path, action);
+      return { actions: newActions, insertedPath: findInsertedPath(newActions, path) };
+    };
 
     if (actionType === 'choice' && semanticModel) {
       // Choice creation: generate a fresh target function before inserting the action
@@ -305,9 +314,9 @@ export function useActionManagement(config: ActionManagementConfig) {
           ...createAction('choice', { dialogName: contextName }),
           targetFunction: newFunctionName
         };
-        const newActions = insertActionAfterPath(actions, path, newAction);
-        nextPath = findInsertedPath(newActions, path);
-        return { ...prev, actions: newActions };
+        const inserted = insertAt(actions, newAction);
+        nextPath = inserted.insertedPath;
+        return { ...prev, actions: inserted.actions };
       });
       onUpdateSemanticModel?.(newFunctionName, newFunction);
     } else {
@@ -315,12 +324,13 @@ export function useActionManagement(config: ActionManagementConfig) {
       setFunction((prev) => {
         if (!prev) return prev;
         const actions = prev.actions || [];
-        const parentIndex = path[path.length - 1] as number;
-        const siblingActions = path.length === 1
+        const anchor = path ?? [actions.length - 1];
+        const parentIndex = anchor[anchor.length - 1] as number;
+        const siblingActions = anchor.length === 1
           ? actions
           : (() => {
-              const branch = path[path.length - 2];
-              const parentPath = path.slice(0, -2);
+              const branch = anchor[anchor.length - 2];
+              const parentPath = anchor.slice(0, -2);
               const parent = getActionAtPath(actions, parentPath);
               if (branch !== 'then' && branch !== 'else') {
                 return actions;
@@ -348,8 +358,9 @@ export function useActionManagement(config: ActionManagementConfig) {
           };
         }
 
-        let newActions = insertActionAfterPath(actions, path, newAction);
-        const createTopicPath = findInsertedPath(newActions, path);
+        const inserted = insertAt(actions, newAction);
+        let newActions = inserted.actions;
+        const createTopicPath = inserted.insertedPath;
 
         if (actionType === 'createTopic' && createTopicPath) {
           const createTopicTopic = newAction.type === 'CreateTopic' ? newAction.topic : 'TOPIC_';
@@ -383,6 +394,19 @@ export function useActionManagement(config: ActionManagementConfig) {
       setTimeout(() => focusAction(pathToFocus, true), 0);
     }
   }, [setFunction, focusAction, semanticModel, onUpdateSemanticModel, contextName, getAllDialogLineActions]);
+
+  /**
+   * Add an action after a specific index
+   * Handles choice creation with automatic target function generation
+   */
+  const addActionAfter = useCallback((path: ActionPath, actionType: ActionTypeId) => {
+    insertAction(path, actionType);
+  }, [insertAction]);
+
+  /** Append an action to the end of the function: insert-after-last. */
+  const addActionToEnd = useCallback((actionType: ActionTypeId) => {
+    insertAction(null, actionType);
+  }, [insertAction]);
 
   const addActionToBranchEnd = useCallback((path: ActionPath, branch: ActionBranchKey, actionType: ActionTypeId) => {
     let nextPath: ActionPath | null = null;
@@ -432,6 +456,7 @@ export function useActionManagement(config: ActionManagementConfig) {
     deleteActionAndFocusPrev,
     addDialogLineAfter,
     addActionAfter,
+    addActionToEnd,
     addActionToBranchEnd,
     moveAction
   };
