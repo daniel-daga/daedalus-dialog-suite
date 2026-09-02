@@ -97,6 +97,8 @@ import type {
 } from '../../shared/types';
 
 import type { UpdateCheckResult } from '../../shared/updater-types';
+import type { OpenedProjectConfig } from '../../shared/projectConfigTypes';
+export type { GothicProjectFileV1, GothicTarget, OpenedProjectConfig, ProjectConfigWarning } from '../../shared/projectConfigTypes';
 
 // ============================================================================
 // Editor API (renderer-specific)
@@ -137,6 +139,9 @@ export interface EditorAPI {
   buildProjectIndex: (folderPath: string) => Promise<ProjectIndex>;
   parseDialogFile: (filePath: string) => Promise<SemanticModel>;
   addAllowedPath: (folderPath: string) => Promise<void>;
+  loadProjectConfig: (projectRoot: string) => Promise<OpenedProjectConfig>;
+  selectAssetSourceFolder: (defaultPath?: string) => Promise<string | null>;
+  saveProjectAssetSources: (projectFilePath: string, assetSources: string[]) => Promise<OpenedProjectConfig>;
 
   // Settings API
   getRecentProjects: () => Promise<RecentProject[]>;

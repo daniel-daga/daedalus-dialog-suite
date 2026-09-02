@@ -6,7 +6,7 @@
  * file persistence and includes sample dialog data for testing.
  */
 
-import type { EditorAPI, ValidationResult, SaveResult, FileChangeEvent, AppendInsertNpcResult } from '../types/global';
+import type { EditorAPI, ValidationResult, SaveResult, FileChangeEvent, AppendInsertNpcResult, OpenedProjectConfig } from '../types/global';
 
 // Captured file-change callback (see onFileChanged). Lets E2E tests inject
 // external change/unlink events through the `__mockEmitFileChange` window hook.
@@ -469,6 +469,25 @@ export const mockEditorAPI: EditorAPI = {
   async openProjectFolderDialog(): Promise<string | null> {
     const path = prompt('Enter project folder path:', '/project');
     return path || null;
+  },
+
+  async loadProjectConfig(projectRoot: string): Promise<OpenedProjectConfig> {
+    return {
+      projectFilePath: `${projectRoot}/mock.gothicproject.json`, projectRoot, scriptsRoot: projectRoot,
+      config: { version: 1, target: 'g2-notr', scriptsRoot: '.', worlds: [], assetSources: ['.'] },
+      resolvedAssetSources: [projectRoot], warnings: [],
+    };
+  },
+
+  async selectAssetSourceFolder(): Promise<string | null> {
+    return prompt('Enter asset source folder path:') || null;
+  },
+
+  async saveProjectAssetSources(projectFilePath: string, assetSources: string[]): Promise<OpenedProjectConfig> {
+    const projectRoot = projectFilePath.replace(/[\\/][^\\/]+$/, '');
+    return { projectFilePath, projectRoot, scriptsRoot: projectRoot,
+      config: { version: 1, target: 'g2-notr', scriptsRoot: '.', worlds: [], assetSources },
+      resolvedAssetSources: assetSources.map((source) => source === '.' ? projectRoot : source), warnings: [] };
   },
 
   async buildProjectIndex(_folderPath: string): Promise<any> {

@@ -20,10 +20,32 @@ import {
   assertVobFoldersGetRequest,
   assertVobFoldersSaveRequest,
   assertAppendInsertNpcRequest,
+  assertAssetSourcesPayload,
+  assertOptionalFolderPath,
   sanitizeRendererErrorPayload,
   RENDERER_ERROR_MESSAGE_MAX,
   RENDERER_ERROR_STACK_MAX,
 } from '../src/main/ipcValidation';
+
+describe('project config IPC payloads', () => {
+  it('accepts asset source string arrays and an optional folder path', () => {
+    expect(() => assertAssetSourcesPayload(['.', 'C:/Gothic'])).not.toThrow();
+    expect(() => assertOptionalFolderPath(undefined)).not.toThrow();
+    expect(() => assertOptionalFolderPath('C:/Gothic')).not.toThrow();
+  });
+
+  it('rejects malformed asset source arrays', () => {
+    for (const bad of [undefined, null, {}, '.', ['.', 7]]) {
+      expect(() => assertAssetSourcesPayload(bad)).toThrow(/assetSources/);
+    }
+  });
+
+  it('rejects a malformed optional folder path', () => {
+    for (const bad of [null, 7, {}, '']) {
+      expect(() => assertOptionalFolderPath(bad)).toThrow(/folder path/);
+    }
+  });
+});
 
 describe('assertModelShape', () => {
   it('rejects null', () => {

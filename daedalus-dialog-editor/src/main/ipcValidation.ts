@@ -16,6 +16,18 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+export function assertAssetSourcesPayload(value: unknown): asserts value is string[] {
+  if (!Array.isArray(value) || !value.every((source) => typeof source === 'string')) {
+    throw new Error('Invalid assetSources payload: expected an array of strings');
+  }
+}
+
+export function assertOptionalFolderPath(value: unknown): asserts value is string | undefined {
+  if (value !== undefined && (typeof value !== 'string' || value.trim() === '')) {
+    throw new Error('Invalid folder path: expected a non-empty string or undefined');
+  }
+}
+
 /**
  * Assert a semantic-model payload is a plain (non-array) object, and that its
  * `dialogs`/`functions` fields, when present, are plain objects too.

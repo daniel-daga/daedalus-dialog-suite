@@ -21,8 +21,12 @@ import {
   assertVobFoldersSaveRequest,
   assertAppendInsertNpcRequest,
   sanitizeRendererErrorPayload,
+  assertAssetSourcesPayload,
+  assertOptionalFolderPath,
 } from './ipcValidation';
 import { appendInsertNpcFlow } from './services/AppendInsertNpcFlow';
+import { ProjectConfigService, parseProjectFile, resolveProjectConfig } from './services/ProjectConfigService';
+import type { OpenedProjectConfig } from '../shared/projectConfigTypes';
 
 // E2E userData isolation seam (fix-08 §2 / T9a). When the real-Electron E2E
 // harness sets DDE_E2E_USER_DATA, redirect Electron's userData to a per-test
@@ -57,6 +61,41 @@ const {
   logService,
   pathValidator,
 } = getServiceRegistry();
+const projectConfigService = new ProjectConfigService();
+
+interface RegisteredProjectConfig {
+  descriptor: OpenedProjectConfig;
+  allowedAbsoluteSources: Set<string>;
+}
+
+const registeredProjectConfigs = new Map<string, RegisteredProjectConfig>();
+let activeProjectFileKey: string | null = null;
+
+function projectFileKey(filePath: string): string {
+  const normalized = path.normalize(path.resolve(filePath));
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
+
+function absoluteSourceKey(source: string): string {
+  return projectFileKey(source);
+}
+
+function registerProjectConfig(descriptor: OpenedProjectConfig): RegisteredProjectConfig {
+  const key = projectFileKey(descriptor.projectFilePath);
+  const existing = registeredProjectConfigs.get(key);
+  const allowedAbsoluteSources = existing?.allowedAbsoluteSources ?? new Set<string>();
+  for (const source of descriptor.config.assetSources) {
+    if (path.win32.isAbsolute(source) || path.posix.isAbsolute(source)) {
+      allowedAbsoluteSources.add(absoluteSourceKey(source));
+    }
+  }
+  const registered = { descriptor, allowedAbsoluteSources };
+  registeredProjectConfigs.set(key, registered);
+  activeProjectFileKey = key;
+  pathValidator.addAllowedPath(descriptor.projectRoot);
+  for (const source of descriptor.resolvedAssetSources) pathValidator.addAllowedPath(source);
+  return registered;
+}
 
 // Crash visibility (fix-08 §5). Wire the process/app crash handlers before
 // `app.whenReady()` so failures during startup are still captured. Deliberately
@@ -351,6 +390,64 @@ export function setupIpcHandlers() {
       console.error('[IPC] project:openFolderDialog error:', error);
       throw new Error(`Failed to open folder dialog: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  });
+
+  ipcMain.handle('project:loadConfig', async (_event, projectRoot: unknown) => {
+    if (typeof projectRoot !== 'string' || projectRoot.trim() === '') {
+      throw new Error('Invalid project root: expected a non-empty string');
+    }
+    await pathValidator.validatePathResolved(projectRoot);
+    const legacyInstallPath = await settingsService.getGothicInstallPath();
+    const opened = await projectConfigService.openOrMigrate(projectRoot, legacyInstallPath);
+    if (opened.migrationCommitted) await settingsService.clearGothicInstallPath();
+    registerProjectConfig(opened.project);
+    return opened.project;
+  });
+
+  ipcMain.handle('project:selectAssetSourceFolder', async (_event, defaultPath: unknown) => {
+    assertOptionalFolderPath(defaultPath);
+    if (!activeProjectFileKey) throw new Error('Load a project before selecting an asset source folder');
+    const result = await dialog.showOpenDialog({
+      ...(defaultPath === undefined ? {} : { defaultPath }),
+      properties: ['openDirectory'],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    const selected = result.filePaths[0];
+    pathValidator.addAllowedPath(selected);
+    registeredProjectConfigs.get(activeProjectFileKey)!.allowedAbsoluteSources.add(absoluteSourceKey(selected));
+    return selected;
+  });
+
+  ipcMain.handle('project:saveAssetSources', async (_event, projectFilePath: unknown, assetSources: unknown) => {
+    if (typeof projectFilePath !== 'string' || projectFilePath.trim() === '') {
+      throw new Error('Invalid project file path: expected a non-empty string');
+    }
+    assertAssetSourcesPayload(assetSources);
+    if (!assetSources.includes('.')) throw new Error('assetSources must include "."');
+    const key = projectFileKey(projectFilePath);
+    const registered = registeredProjectConfigs.get(key);
+    if (!registered) throw new Error('Project file is not a loaded project');
+    const root = path.dirname(path.resolve(projectFilePath));
+    for (const source of assetSources) {
+      if (path.win32.isAbsolute(source) || path.posix.isAbsolute(source)) {
+        if (!registered.allowedAbsoluteSources.has(absoluteSourceKey(source))) {
+          throw new Error('External asset sources must be loaded from this project or chosen through the native folder picker');
+        }
+      } else {
+        const resolved = path.resolve(root, source);
+        const relative = path.relative(root, resolved);
+        if (relative.startsWith('..') || path.isAbsolute(relative)) {
+          throw new Error('Relative asset sources must stay within the project folder');
+        }
+      }
+    }
+    await pathValidator.validatePathResolved(projectFilePath, { write: true });
+    const diskConfig = parseProjectFile(await fs.promises.readFile(projectFilePath, 'utf8'));
+    const updated = parseProjectFile({ ...diskConfig, assetSources });
+    await projectConfigService.save(projectFilePath, updated);
+    const descriptor = await resolveProjectConfig(projectFilePath, updated);
+    registerProjectConfig(descriptor);
+    return descriptor;
   });
 
   ipcMain.handle('project:buildIndex', async (_event, folderPath: string) => {
