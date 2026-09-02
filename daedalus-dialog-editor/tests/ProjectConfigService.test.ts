@@ -26,6 +26,10 @@ describe('ProjectConfigService', () => {
     root = await mkdtemp(join(tmpdir(), 'gothic-project-'));
   });
 
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   test('discovers the sole Gothic project file', async () => {
     const file = join(root, 'demo.gothicproject.json');
     await writeFile(file, '{}');
@@ -254,22 +258,39 @@ describe('ProjectConfigService', () => {
       expect(second.project.config).toEqual(first.project.config);
     });
 
-    test('loses an external migration claim without overwriting the winner', async () => {
+    test('loses an external atomic publication without overwriting the winner', async () => {
+      const fsPromises = require('node:fs').promises;
       const projectFilePath = join(root, `${pathBasename(root)}.gothicproject.json`);
-      const claimPath = `${projectFilePath}.migration.lock`;
       const winner = validConfig(['.', 'winner-assets']);
-      await writeFile(claimPath, 'external writer');
       const service = new ProjectConfigService();
+      const realLink = fsPromises.link;
+      const linkSpy = jest.spyOn(fsPromises, 'link').mockImplementationOnce(async (...args: unknown[]) => {
+        await writeFile(projectFilePath, JSON.stringify(winner));
+        const exists: NodeJS.ErrnoException = new Error('EEXIST');
+        exists.code = 'EEXIST';
+        throw exists;
+      }).mockImplementation((...args: unknown[]) => realLink(...args));
 
-      const opening = service.openOrMigrate(root, join(root, 'loser-install'));
-      await new Promise((resolve) => setTimeout(resolve, 25));
-      await writeFile(projectFilePath, JSON.stringify(winner));
-      await require('node:fs').promises.unlink(claimPath);
-      const result = await opening;
+      const result = await service.openOrMigrate(root, join(root, 'loser-install'));
 
       expect(result.migrationCommitted).toBe(false);
       expect(result.project.config).toEqual(winner);
       expect(JSON.parse(await readFile(projectFilePath, 'utf8'))).toEqual(winner);
+      linkSpy.mockRestore();
+    });
+
+    test.each([
+      ['stale/dead', JSON.stringify({ pid: 2147483647, token: 'dead-owner' })],
+      ['live', JSON.stringify({ pid: process.pid, token: 'live-owner' })],
+    ])('does not block on or delete an obsolete %s migration claim', async (_name, owner) => {
+      const projectFilePath = join(root, `${pathBasename(root)}.gothicproject.json`);
+      const claimPath = `${projectFilePath}.migration.lock`;
+      await writeFile(claimPath, owner);
+
+      const result = await new ProjectConfigService().openOrMigrate(root, null);
+
+      expect(result.migrationCommitted).toBe(true);
+      expect(await readFile(claimPath, 'utf8')).toBe(owner);
     });
 
     test('retries a contended rename and cleans up after retry exhaustion', async () => {

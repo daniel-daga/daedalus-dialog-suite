@@ -34,6 +34,7 @@ describe('SettingsService', () => {
   });
 
   afterEach(async () => {
+    jest.restoreAllMocks();
     try {
       await fs.rm(testUserDataPath, { recursive: true, force: true });
     } catch {
@@ -263,13 +264,12 @@ describe('SettingsService', () => {
     it('keeps the legacy setting when project-file persistence fails', async () => {
       const projectRoot = await fs.mkdtemp(path.join(testUserDataPath, 'project-'));
       await settingsService.setGothicInstallPath('C:/Gothic II');
-      const renameSpy = jest.spyOn(fsPromises, 'rename').mockRejectedValueOnce(new Error('ENOSPC'));
+      const linkSpy = jest.spyOn(fsPromises, 'link').mockRejectedValueOnce(new Error('ENOSPC'));
 
       await expect(new ProjectConfigService().openOrMigrate(projectRoot, 'C:/Gothic II')).rejects.toThrow('ENOSPC');
 
       expect(await settingsService.getGothicInstallPath()).toBe('C:/Gothic II');
-      expect((await fs.readdir(projectRoot)).filter((name) => name.endsWith('.migration.lock'))).toEqual([]);
-      renameSpy.mockRestore();
+      linkSpy.mockRestore();
     });
 
     it('allows the caller to clear the legacy setting only after migration commits', async () => {
