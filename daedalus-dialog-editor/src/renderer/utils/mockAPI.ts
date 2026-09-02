@@ -644,6 +644,8 @@ export const mockEditorAPI: EditorAPI = {
   // Null is what the real call returns for a visual that does not resolve, and
   // the op treats that as "leave the stale box alone" rather than as an error.
   async getVisualBounds(): Promise<null> { return null; },
+  // Null is what the real call returns for a visual the binding cannot extract.
+  async getWorldVisual(): Promise<null> { return null; },
   // No world means no VOB to have class properties, so this refuses like its
   // siblings rather than answering with an empty object a grid would render as
   // a VOB whose every field is blank.

@@ -12,6 +12,7 @@ import {
   assertSaveFileOptions,
   assertOpenWorldRequest,
   assertTextureRequest,
+  assertVisualRequest,
   assertVobPropsRequest,
   assertApplyOpsRequest,
   assertSaveWorldRequest,
@@ -236,6 +237,21 @@ describe('assertTextureRequest', () => {
     for (const bad of [0, -1, 1.5, NaN, Infinity, '256']) {
       expect(() => assertTextureRequest({ name: 'NW_WOOD.TGA', maxSize: bad })).toThrow(/maxSize/);
     }
+  });
+});
+
+describe('assertVisualRequest', () => {
+  it('accepts a name inside the mounted namespace', () => {
+    expect(() => assertVisualRequest({ name: 'NW_CRATE.MRM' })).not.toThrow();
+  });
+
+  it('rejects anything that is not a non-empty string name', () => {
+    // The name is resolved by the VFS and never reaches the disk, so the shape
+    // assertion is the whole boundary — which is exactly why it has to exist.
+    for (const bad of ['', 42, null, undefined, ['NW_CRATE.MRM']]) {
+      expect(() => assertVisualRequest({ name: bad })).toThrow(/visual name/i);
+    }
+    expect(() => assertVisualRequest('NW_CRATE.MRM')).toThrow(/plain object/i);
   });
 });
 

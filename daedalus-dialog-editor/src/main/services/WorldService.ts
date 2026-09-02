@@ -6,6 +6,7 @@ import { invertOp, isBarrierOp } from 'zen-world';
 import { WorkerRequestError } from './WorkerRequestError';
 import type {
   DecodedTexture,
+  VisualScene,
   InstancedPayload,
   OpenWorldRequest,
   VfsEntry,
@@ -155,6 +156,12 @@ export class WorldService {
    */
   getVisualBounds(name: string): Promise<number[] | null> {
     return this.requestOnOpenWorld<number[] | null>('visualBounds', { name });
+  }
+
+  /** One visual by name, merged as the scene would place it, for the Assets
+   *  panel's mesh preview. Null for a name the binding cannot extract. */
+  getVisual(name: string): Promise<VisualScene | null> {
+    return this.requestOnOpenWorld<VisualScene | null>('visual', { name });
   }
 
   /**

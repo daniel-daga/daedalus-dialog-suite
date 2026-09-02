@@ -174,6 +174,20 @@ export function assertTextureRequest(
   }
 }
 
+/**
+ * A visual by name for the Assets panel's mesh preview. The name is resolved
+ * inside the mounted VFS namespace and never reaches the disk, so this shape
+ * check is the whole boundary.
+ */
+export function assertVisualRequest(request: unknown): asserts request is { name: string } {
+  if (!isPlainObject(request)) {
+    throw new Error('Invalid visual request: expected a plain object');
+  }
+  if (typeof request.name !== 'string' || request.name.trim() === '') {
+    throw new Error('Invalid visual name: expected a non-empty string');
+  }
+}
+
 /** Slots down the children lists, as `setVobPosition` parses it: "0", "0/4". */
 const INDEX_PATH = /^\d+(\/\d+)*$/;
 

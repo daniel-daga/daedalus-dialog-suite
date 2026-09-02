@@ -173,10 +173,41 @@ function groupBounds(groups: readonly DrawGroup[]): ZenBounds {
 export function visualBounds(
   binding: SceneBinding, vfs: VfsHandle, name: string,
 ): ZenBounds | null {
+  return buildVisual(binding, vfs, name)?.bounds ?? null;
+}
+
+/**
+ * One visual on its own, unplaced — what the asset preview draws
+ * (level-editor.md §16.26 row 1).
+ */
+export interface VisualScene {
+  /** The name asked for, as the caller spelled it. */
+  name: string;
+  /** The VFS entry the name resolved to — `NW_CRATE.3DS` → `NW_CRATE.MRM`. */
+  source: string;
+  groups: DrawGroup[];
+  /** The visual's own space, `[minX, minY, minZ, maxX, maxY, maxZ]`. */
+  bounds: ZenBounds;
+  triangleCount: number;
+}
+
+/**
+ * The draw groups of one visual by name, merged exactly as `buildInstancedVisuals`
+ * merges them — so a preview shows the geometry the world would place, with an
+ * attachment's node transform applied, by construction rather than by two
+ * implementations agreeing. Null for a name that does not resolve and for one
+ * that resolves to no geometry, which are both normal facts about a VFS.
+ */
+export function buildVisual(
+  binding: SceneBinding, vfs: VfsHandle, name: string,
+): VisualScene | null {
   const visual = binding.extractVisual(vfs, name);
   if (visual === null) return null;
   const groups = mergeChunks(visual.chunks);
-  return groups.length === 0 ? null : groupBounds(groups);
+  if (groups.length === 0) return null;
+  let triangleCount = 0;
+  for (const group of groups) triangleCount += group.triangleCount;
+  return { name, source: visual.source, groups, bounds: groupBounds(groups), triangleCount };
 }
 
 export function buildInstancedVisuals(

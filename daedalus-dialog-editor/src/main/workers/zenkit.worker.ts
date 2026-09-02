@@ -3,6 +3,7 @@ import * as zenkit from 'zenkit-node';
 import {
   applyOps,
   buildInstancedVisuals,
+  buildVisual,
   buildWorldMesh,
   commitOps,
   createVobReader,
@@ -12,11 +13,13 @@ import {
   visualBounds,
   type MeshChunk,
   type SceneBinding,
+  type VisualScene,
   type ZenBounds,
 } from 'zen-world';
 import type {
   ApplyOpsRequest,
   VisualBoundsRequest,
+  VisualRequest,
   VobPropsRequest,
   SaveWorldRequest,
   DecodedTexture,
@@ -213,6 +216,16 @@ function boundsOfVisual(
 }
 
 /**
+ * One visual on its own, for the Assets panel (level-editor.md §16.26 row 1).
+ * The same merge `visuals` runs, on one name; the buffers are built here and
+ * for nobody else, so they are transferred rather than copied.
+ */
+function visualOf(payload: VisualRequest): { result: VisualScene | null; transfer: ArrayBuffer[] } {
+  const built = buildVisual(binding, vfs!, payload.name);
+  return { result: built, transfer: built === null ? [] : groupTransferables(built.groups) };
+}
+
+/**
  * The per-class fields of one VOB — what a `SetVobClassProp` needs for its
  * `from` and what the grid shows.
  *
@@ -339,6 +352,7 @@ function run(message: WorldWorkerRequest): { result: unknown; transfer: ArrayBuf
     case 'assets': return assets(message.payload as { path: string });
     case 'waynet': return waynet();
     case 'visualBounds': return boundsOfVisual(message.payload as VisualBoundsRequest);
+    case 'visual': return visualOf(message.payload as VisualRequest);
     case 'vobProps': return propsOfVob(message.payload as VobPropsRequest);
     case 'refreshIndex': return refreshIndex();
     case 'applyOps': return applyOpsRequest(message.payload as ApplyOpsRequest);

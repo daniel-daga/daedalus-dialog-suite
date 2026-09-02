@@ -500,6 +500,11 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     [],
   );
 
+  const loadVisual = useCallback(
+    (name: string) => window.editorAPI.getWorldVisual(name),
+    [],
+  );
+
   // A plain click replaces the selection; Shift, Ctrl or Cmd adds to it. One
   // rule for
   // both panels — the tree is the only way to reach a VOB the viewport cannot
@@ -2241,7 +2246,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
             </Box>
             <Box sx={{ flex: 1, minHeight: 0 }}>
               {panel === 'assets' && selectedAsset !== null
-                ? <WorldAssetPreview path={selectedAsset} loadTexture={loadTexture} />
+                ? <WorldAssetPreview path={selectedAsset} loadTexture={loadTexture} loadVisual={loadVisual} />
                 : selectedWaypoint !== null && waynet
                   ? (
                     <WaypointPanel

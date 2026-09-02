@@ -2914,11 +2914,27 @@ a 2D canvas via `decodeTexture` — both live in `WorldSurface`'s Assets panel
 today, not a text field. Three things are still missing, and none of them is
 the VFS plumbing:
 
-- **It previews textures, not meshes.** `extractVisual` — the same render-ready
-  buffers `buildScene` already turns into the world's own geometry — is wired
-  into the worker but never called from the preview; picking a `.MRM`/`.MDL`
-  shows nothing. The gap is a `<canvas>` with a small Three.js scene, not a new
-  binding call.
+- **Mesh preview — landed 2026-09-01.** It previewed textures only;
+  `extractVisual` was wired into the worker but never called from the panel.
+  Now a file with any extension the binding resolves (`.MRM`/`.MSH`/`.MMB`/
+  `.MDM`/`.MDL`, and the source names `.3DS`/`.ASC`/`.MDS`/`.MMS`) goes over a
+  new `world:visual` channel (validator `assertVisualRequest`, service
+  `getVisual`, worker op `visual`) to `zen-world`'s new `buildVisual` — the
+  same `mergeChunks` path `buildInstancedVisuals` takes, so the preview shows
+  the geometry the world would place, attachments transformed; `visualBounds`
+  now delegates to it. The renderer side is `VisualPreviewScene`
+  (`buildVisualPreview` + `frameVisual`, no React, no WebGLRenderer, tested by
+  scene-graph assertions) under `WorldScene`'s own `drawGroupGeometry` and
+  `dataTexture`, factored out as exports rather than copied, so scale, mirror
+  and winding are the viewport's. Materials are Lambert under a hemisphere and
+  a key light — a proto mesh has no baked light word, and alone on a canvas a
+  `MeshBasicMaterial` is a silhouette — textured with the world's maps at 256
+  px, fetched after the first frame; `.TEX` still draws to the 2D canvas. The
+  panel frames the bounds and orbits with `OrbitControls`, drawing only while
+  the orbit moves or a texture arrives. An unextractable name says so. **Not
+  done**: no picker wiring and no thumbnail grid — the two bullets below — and
+  `.MDH` alone is refused as "neither", which is right (a hierarchy has no
+  geometry).
 - **It is a namespace explorer, not a picker.** `onPreview` sets a viewed path;
   nothing feeds a chosen name back into `insertVob`'s class field or
   `setVobProp.visual`. Wiring that is the difference between "a browser exists"

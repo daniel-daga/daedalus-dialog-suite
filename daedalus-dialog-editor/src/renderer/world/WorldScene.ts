@@ -23,7 +23,7 @@ for (let i = 0; i < 256; i++) {
 }
 
 /** AlphaFunction: 1 NONE (cut-out), 2 BLEND, 3 ADD; anything else is opaque. */
-const ALPHA_TEST = 0.5;
+export const ALPHA_TEST = 0.5;
 
 /**
  * A VOB is hard to tell from the world mesh (2026-08-27), and the answer asked
@@ -743,20 +743,7 @@ export class WorldScene {
     const slot = this.textures.get(name);
     if (!slot || slot.texture !== null) return;
 
-    const texture = new THREE.DataTexture(
-      new Uint8Array(decoded.rgba), decoded.width, decoded.height,
-    );
-    texture.format = THREE.RGBAFormat;
-    texture.type = THREE.UnsignedByteType;
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.RepeatWrapping;
-    texture.magFilter = THREE.LinearFilter;
-    texture.minFilter = THREE.LinearMipmapLinearFilter;
-    texture.generateMipmaps = true;
-    texture.anisotropy = 4;
-    texture.flipY = true;
-    texture.needsUpdate = true;
+    const texture = dataTexture(decoded);
 
     slot.texture = texture;
     this.textureCache?.set(name, texture);
@@ -792,19 +779,7 @@ export class WorldScene {
   // `lights: null` exactly for the proto-mesh chunks that have no baked ZenGin
   // light word, so the buffer's presence already says it.
   private geometry(group: DrawGroup): THREE.BufferGeometry {
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(group.positions), 3));
-    geometry.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(group.normals), 3));
-    geometry.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(group.uvs), 2));
-    if (group.lights !== null) {
-      geometry.setAttribute('color', new THREE.BufferAttribute(vertexColors(new Uint32Array(group.lights)), 3));
-    }
-    // The one conversion the root node cannot carry: Three.js cancels the
-    // mirror's effect on the front/back test, so the winding is reversed here
-    // instead — in `coords`, with the rest of the ZenGin -> Three.js boundary.
-    geometry.setIndex(new THREE.BufferAttribute(threeIndexOrder(new Uint32Array(group.indices)), 1));
-    geometry.computeBoundingSphere();
-
+    const geometry = drawGroupGeometry(group);
     this.geometries.push(geometry);
     return geometry;
   }
@@ -855,6 +830,49 @@ export class WorldScene {
     this.materials.push(material);
     return material;
   }
+}
+
+/**
+ * A draw group's buffers as Three.js geometry — shared with the asset preview
+ * (`VisualPreviewScene`), so a visual is built the same way wherever it is
+ * drawn. Whether a group is lit is not a caller's choice: `mergeChunks` emits
+ * `lights: null` exactly for the proto-mesh chunks that have no baked ZenGin
+ * light word, so the buffer's presence already says it.
+ */
+export function drawGroupGeometry(group: DrawGroup): THREE.BufferGeometry {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(group.positions), 3));
+  geometry.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(group.normals), 3));
+  geometry.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(group.uvs), 2));
+  if (group.lights !== null) {
+    geometry.setAttribute('color', new THREE.BufferAttribute(vertexColors(new Uint32Array(group.lights)), 3));
+  }
+  // The one conversion the root node cannot carry: Three.js cancels the
+  // mirror's effect on the front/back test, so the winding is reversed here
+  // instead — in `coords`, with the rest of the ZenGin -> Three.js boundary.
+  geometry.setIndex(new THREE.BufferAttribute(threeIndexOrder(new Uint32Array(group.indices)), 1));
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+/** Decoded RGBA8 as a GPU texture, set up the way every ZenGin texture is drawn:
+ *  sRGB, repeating, mipmapped, flipped to the engine's UV origin. */
+export function dataTexture(decoded: DecodedTexture): THREE.DataTexture {
+  const texture = new THREE.DataTexture(
+    new Uint8Array(decoded.rgba), decoded.width, decoded.height,
+  );
+  texture.format = THREE.RGBAFormat;
+  texture.type = THREE.UnsignedByteType;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.generateMipmaps = true;
+  texture.anisotropy = 4;
+  texture.flipY = true;
+  texture.needsUpdate = true;
+  return texture;
 }
 
 /** The baked ZenGin light word, decoded here rather than in the binding: the

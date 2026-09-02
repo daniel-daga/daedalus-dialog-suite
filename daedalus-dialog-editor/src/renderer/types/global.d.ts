@@ -174,6 +174,9 @@ export interface EditorAPI {
    *  the one bounds not already in the renderer, because a visual the world does
    *  not use has no instance. Null for a name that does not resolve. */
   getVisualBounds: (name: string) => Promise<number[] | null>;
+  /** One visual by name for the Assets panel's mesh preview — its merged draw
+   *  groups and bounds. Null for a name the binding cannot extract. */
+  getWorldVisual: (name: string) => Promise<VisualScene | null>;
   /** The per-class fields of one VOB, by its native index path — the `from` side
    *  of a class-property edit and what the grid shows. Asked for every time: the
    *  columnar index interns a class name and carries no per-class data. */

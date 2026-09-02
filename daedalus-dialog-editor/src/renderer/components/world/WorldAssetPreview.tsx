@@ -1,14 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Box, Typography } from '@mui/material';
-import type { DecodedTexture } from '../../../shared/worldTypes';
+import * as THREE from 'three';
+import type { DecodedTexture, VisualScene } from '../../../shared/worldTypes';
+import { buildVisualPreview, frameVisual } from '../../world/VisualPreviewScene';
 
-// What a mounted asset looks like (level-editor.md §6).
+// What a mounted asset looks like (level-editor.md §6, §16.26 row 1).
 //
-// Phase 1a can honestly show one kind: a texture. `decodeTexture` already
-// returns RGBA8 through ZenKit's own ZTEX decoder, so the renderer never sees
-// DXT and a canvas is the whole of the work. A mesh would need a second
-// three.js context beside the world viewport, which is Phase 2's problem —
-// until then it is named and typed rather than faked.
+// A texture: `decodeTexture` already returns RGBA8 through ZenKit's own ZTEX
+// decoder, so the renderer never sees DXT and a 2D canvas is the whole of the
+// work. A mesh: `extractVisual`'s draw groups — the same buffers `buildScene`
+// turns into the world's own geometry — in a small Three.js scene of its own,
+// framed to the visual's bounds and orbitable. Anything else is named rather
+// than faked.
 //
 // The lookup is by **name**, not by the path the browser walked: the VFS
 // resolves a name across the whole mounted namespace, and handing it a path
@@ -20,37 +23,64 @@ const DIRECTORY_OF = (path: string) => {
   return at <= 0 ? '/' : path.slice(0, at);
 };
 
+/** Every extension `extractVisual` resolves (zenkit-node README, "The asset
+ *  layer"): the compiled files the browser lists, and the source names a VOB
+ *  carries. A `.MDH` alone is a hierarchy with no geometry and is not one. */
+const MESH_EXTENSIONS = ['.MRM', '.MSH', '.MMB', '.MDM', '.MDL', '.3DS', '.ASC', '.MDS', '.MMS'];
+
+type AssetKind = 'texture' | 'mesh' | 'other';
+
+function kindOf(name: string): AssetKind {
+  const upper = name.toUpperCase();
+  if (upper.endsWith('.TEX')) return 'texture';
+  if (MESH_EXTENSIONS.some((extension) => upper.endsWith(extension))) return 'mesh';
+  return 'other';
+}
+
 export interface WorldAssetPreviewProps {
   /** Full path inside the mounted namespace. */
   path: string;
   loadTexture: (name: string, maxSize: number) => Promise<DecodedTexture | null>;
+  /** The visual's merged draw groups, or null for a name the binding cannot extract. */
+  loadVisual: (name: string) => Promise<VisualScene | null>;
 }
 
 const PREVIEW_MAX_SIZE = 256;
+/** The mesh canvas's fallback edge, for a host that has no layout yet. */
+const MESH_CANVAS_FALLBACK = 256;
 
-const WorldAssetPreview: React.FC<WorldAssetPreviewProps> = ({ path, loadTexture }) => {
+const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
+
+const WorldAssetPreview: React.FC<WorldAssetPreviewProps> = ({ path, loadTexture, loadVisual }) => {
   const name = NAME_OF(path);
-  const isTexture = name.toUpperCase().endsWith('.TEX');
+  const kind = kindOf(name);
 
   const [decoded, setDecoded] = useState<DecodedTexture | null>(null);
+  const [visual, setVisual] = useState<VisualScene | null>(null);
   const [failed, setFailed] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const meshCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
     setDecoded(null);
+    setVisual(null);
     setFailed(false);
-    if (!isTexture) return;
+    if (kind === 'other') return;
 
     let current = true;
-    void loadTexture(name, PREVIEW_MAX_SIZE)
-      .then((texture) => {
+    const request: Promise<DecodedTexture | VisualScene | null> = kind === 'texture'
+      ? loadTexture(name, PREVIEW_MAX_SIZE)
+      : loadVisual(name);
+    void request
+      .then((result) => {
         if (!current) return;
-        if (texture === null) setFailed(true);
-        else setDecoded(texture);
+        if (result === null) setFailed(true);
+        else if (kind === 'texture') setDecoded(result as DecodedTexture);
+        else setVisual(result as VisualScene);
       })
       .catch(() => { if (current) setFailed(true); });
     return () => { current = false; };
-  }, [name, isTexture, loadTexture]);
+  }, [name, kind, loadTexture, loadVisual]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -61,6 +91,80 @@ const WorldAssetPreview: React.FC<WorldAssetPreviewProps> = ({ path, loadTexture
       new ImageData(new Uint8ClampedArray(decoded.rgba), decoded.width, decoded.height), 0, 0,
     );
   }, [decoded]);
+
+  // The mesh scene lives exactly as long as the visual it shows. Textures are
+  // fetched after the first frame — an untextured crate at once beats a blank
+  // panel until every map has decoded — and each arrival marks a frame dirty.
+  useEffect(() => {
+    const canvas = meshCanvasRef.current;
+    if (canvas === null || visual === null) return;
+
+    let current = true;
+    let teardown: (() => void) | null = null;
+    // Loaded on demand: `WorldSurface` imports this component statically, and
+    // a static `three/examples/jsm` import would drag the ESM controls into
+    // every suite that renders the surface — the viewport keeps them out the
+    // same way, by never being loaded until a world is.
+    void import('three/examples/jsm/controls/OrbitControls.js').then(({ OrbitControls }) => {
+    if (!current) return;
+    const preview = buildVisualPreview(visual);
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio || 1);
+    renderer.setClearColor(0x2b2b2b, 1);
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+    const controls = new OrbitControls(camera, canvas);
+    controls.enableDamping = true;
+    controls.target.copy(frameVisual(camera, visual.bounds));
+    controls.update();
+
+    let dirty = true;
+    let frame = 0;
+
+    const size = () => {
+      const edge = canvas.clientWidth || MESH_CANVAS_FALLBACK;
+      renderer.setSize(edge, edge, false);
+      dirty = true;
+    };
+    size();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(size);
+    observer?.observe(canvas);
+
+    const draw = () => {
+      if (!current) return;
+      // `update` is true only while the orbit is moving or damping out, so an
+      // idle preview costs no draw.
+      if (controls.update() || dirty) {
+        dirty = false;
+        renderer.render(preview.scene, camera);
+      }
+      frame = requestAnimationFrame(draw);
+    };
+    frame = requestAnimationFrame(draw);
+
+    for (const textureName of preview.pendingTextureNames()) {
+      void loadTexture(textureName, PREVIEW_MAX_SIZE)
+        .then((texture) => {
+          if (!current || texture === null) return;
+          preview.applyTexture(texture);
+          dirty = true;
+        })
+        .catch(() => { /* an undecodable map leaves that material white */ });
+    }
+
+    teardown = () => {
+      cancelAnimationFrame(frame);
+      observer?.disconnect();
+      controls.dispose();
+      preview.dispose();
+      renderer.dispose();
+    };
+    });
+
+    return () => {
+      current = false;
+      teardown?.();
+    };
+  }, [visual, loadTexture]);
 
   return (
     <Box sx={{ p: 1.5, overflowY: 'auto', height: '100%' }}>
@@ -106,20 +210,47 @@ const WorldAssetPreview: React.FC<WorldAssetPreviewProps> = ({ path, loadTexture
         </>
       )}
 
+      {visual !== null && (
+        <>
+          <canvas
+            ref={meshCanvasRef}
+            data-testid="world-asset-preview-mesh"
+            style={{
+              width: '100%', maxWidth: 320, aspectRatio: '1 / 1', display: 'block',
+              border: '1px solid rgba(128,128,128,0.4)',
+              touchAction: 'none',
+            }}
+          />
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: 'block', mt: 0.5 }}
+            data-testid="world-asset-preview-mesh-stats"
+          >
+            {plural(visual.triangleCount, 'triangle')} · {plural(visual.groups.length, 'draw group')}
+            {visual.source.toUpperCase() !== name.toUpperCase() && ` · resolved to ${visual.source}`}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            Drag to orbit, wheel to zoom, right-drag to pan.
+          </Typography>
+        </>
+      )}
+
       {failed && (
         <Typography variant="caption" color="error" data-testid="world-asset-preview-failed">
-          This texture did not decode.
+          {kind === 'texture'
+            ? 'This texture did not decode.'
+            : 'This visual could not be extracted — the binding resolves no geometry for it.'}
         </Typography>
       )}
 
-      {!isTexture && (
+      {kind === 'other' && (
         <Typography
           variant="caption"
           color="text.secondary"
           data-testid="world-asset-preview-unsupported"
         >
-          Phase 1a previews textures only. Meshes are drawn where they are placed,
-          in the viewport.
+          Textures and meshes are previewed; this file is neither.
         </Typography>
       )}
     </Box>

@@ -3,9 +3,9 @@
 // which is where they are tested; this file adds only what crossing a process
 // boundary needs — the request/response envelope and the summary.
 
-import type { DrawGroup, InstancedVisual, VobFolders, VobIndex, WorldOp } from 'zen-world';
+import type { DrawGroup, InstancedVisual, VisualScene, VobFolders, VobIndex, WorldOp } from 'zen-world';
 
-export type { DrawGroup, InstancedVisual, VobFolders, VobIndex, WorldOp };
+export type { DrawGroup, InstancedVisual, VisualScene, VobFolders, VobIndex, WorldOp };
 
 export type GameVersion = 'g1' | 'g2';
 
@@ -95,7 +95,7 @@ export interface DecodedTexture {
 }
 
 export type WorldWorkerOp =
-  | 'open' | 'worldMesh' | 'visuals' | 'texture' | 'assets' | 'waynet' | 'visualBounds'
+  | 'open' | 'worldMesh' | 'visuals' | 'texture' | 'assets' | 'waynet' | 'visualBounds' | 'visual'
   | 'vobProps' | 'refreshIndex' | 'applyOps' | 'save' | 'close';
 
 /**
@@ -108,6 +108,16 @@ export type WorldWorkerOp =
  * payload, so its bounds are the one thing here that has to be asked for.
  */
 export interface VisualBoundsRequest {
+  name: string;
+}
+
+/**
+ * One visual by name, unplaced, for the Assets panel's mesh preview
+ * (level-editor.md §16.26 row 1). The answer is a `VisualScene`: the draw
+ * groups `buildScene` would place for it, merged the same way, and null for a
+ * name the binding cannot extract.
+ */
+export interface VisualRequest {
   name: string;
 }
 

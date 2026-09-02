@@ -12,6 +12,7 @@ import {
   assertDialogName,
   assertOpenWorldRequest,
   assertTextureRequest,
+  assertVisualRequest,
   assertVobPropsRequest,
   assertApplyOpsRequest,
   assertSaveWorldRequest,
@@ -654,6 +655,13 @@ export function setupIpcHandlers() {
   });
 
   ipcMain.handle('world:waynet', async () => worldService.getWaynet());
+
+  // One visual for the Assets panel's mesh preview — a name inside the mounted
+  // VFS namespace like `world:texture`, never a filesystem path.
+  ipcMain.handle('world:visual', async (_event, request: unknown) => {
+    assertVisualRequest(request);
+    return worldService.getVisual(request.name);
+  });
 
   // A name inside the mounted VFS namespace, exactly like `world:assets` — it
   // never reaches the disk, so the path validator has nothing to validate.
