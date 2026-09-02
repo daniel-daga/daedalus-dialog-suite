@@ -46,7 +46,9 @@ async function openProject(fixture: AppFixture, projectDir: string, assetSource?
 }
 
 function sourceRow(dialog: Locator, source: string): Locator {
-  return dialog.getByRole('listitem').filter({ hasText: source });
+  return dialog.getByRole('listitem').filter({
+    has: dialog.getByText(source, { exact: true }),
+  });
 }
 
 test.describe('project asset sources', () => {
@@ -80,10 +82,11 @@ test.describe('project asset sources', () => {
         worlds: [],
         assetSources: ['.', gothicInstall],
       });
+      const settings = JSON.parse(
+        fs.readFileSync(path.join(fixture!.userDataDir, 'settings.json'), 'utf8'),
+      );
+      expect(settings).not.toHaveProperty('gothicInstallPath');
     }).toPass({ timeout: 20_000 });
-
-    const settings = JSON.parse(fs.readFileSync(path.join(fixture.userDataDir, 'settings.json'), 'utf8'));
-    expect(settings).not.toHaveProperty('gothicInstallPath');
   });
 
   test('adds, reorders, saves, and restores ordered asset sources', async () => {
