@@ -13,9 +13,9 @@ import {
   DialogFunction,
   DialogLine,
   CreateTopic,
-  LogEntry,
-  SemanticCodeGenerator
-} from '../src/semantic-visitor-index';
+  LogEntry
+} from 'daedalus-parser/semantic-model';
+import { SemanticCodeGenerator } from 'daedalus-parser/semantic-code-generator';
 
 // ============================================================================
 // Create a semantic model from scratch

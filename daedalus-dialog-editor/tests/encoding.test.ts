@@ -57,7 +57,7 @@ async function runTests() {
 
     // Test 1b: Read original win1250.d if it exists
     console.log('\nTest 1b: Reading original win1250.d file...');
-    const win1250File = path.join(__dirname, '..', 'win1250.d');
+    const win1250File = path.join(__dirname, 'fixtures', 'win1250.d');
     try {
       const content = await fileService.readFile(win1250File);
       const encoding = fileService.getFileEncoding(win1250File);

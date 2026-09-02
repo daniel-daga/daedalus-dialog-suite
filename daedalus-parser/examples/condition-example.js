@@ -1,12 +1,9 @@
 // Example demonstrating condition parsing in Daedalus dialogs
 
-const Parser = require('tree-sitter');
-const Daedalus = require('../bindings/node');
-const {
-  SemanticModelBuilderVisitor,
-  SemanticCodeGenerator,
-  NpcKnowsInfoCondition
-} = require('../dist/semantic-visitor-index');
+const DaedalusParser = require('daedalus-parser');
+const { SemanticModelBuilderVisitor } = require('daedalus-parser/semantic-visitor');
+const { SemanticCodeGenerator } = require('daedalus-parser/semantic-code-generator');
+const { NpcKnowsInfoCondition } = require('daedalus-parser/semantic-model');
 
 // Example dialog with Npc_KnowsInfo condition
 const exampleDialog = `
@@ -38,8 +35,7 @@ func void DIA_Merchant_SpecialOffer_Info()
 console.log('=== Daedalus Dialog Condition Parsing Example ===\n');
 
 // Parse the dialog
-const parser = new Parser();
-parser.setLanguage(Daedalus);
+const parser = DaedalusParser.create();
 const tree = parser.parse(exampleDialog);
 
 // Build semantic model
@@ -53,11 +49,11 @@ const dialog = visitor.semanticModel.dialogs['DIA_Merchant_SpecialOffer'];
 console.log('Dialog:', dialog.name);
 console.log('Description:', dialog.properties.description);
 console.log('Permanent:', dialog.properties.permanent);
-console.log('\nConditions found:', dialog.conditions.length);
+console.log('\nConditions found:', dialog.properties.condition.conditions.length);
 
-if (dialog.conditions.length > 0) {
+if (dialog.properties.condition.conditions.length > 0) {
   console.log('\nCondition details:');
-  dialog.conditions.forEach((condition, index) => {
+  dialog.properties.condition.conditions.forEach((condition, index) => {
     console.log(`  ${index + 1}. Type: ${condition.getTypeName()}`);
     console.log(`     Display: ${condition.toDisplayString()}`);
 
@@ -74,10 +70,10 @@ console.log('\n=== Adding a new condition programmatically ===\n');
 
 // Create a new condition: player must also know another dialog
 const newCondition = new NpcKnowsInfoCondition('other', 'DIA_Merchant_FirstVisit');
-dialog.conditions.push(newCondition);
+dialog.properties.condition.conditions.push(newCondition);
 
 console.log('Added condition:', newCondition.toDisplayString());
-console.log('Total conditions now:', dialog.conditions.length);
+console.log('Total conditions now:', dialog.properties.condition.conditions.length);
 
 // Generate code with the new condition
 console.log('\n=== Generated Code ===\n');
@@ -101,6 +97,6 @@ visitor2.pass2_analyzeAndLink(tree2.rootNode);
 
 const dialog2 = visitor2.semanticModel.dialogs['DIA_Merchant_SpecialOffer'];
 console.log('Round-trip successful!');
-console.log('Conditions preserved:', dialog2.conditions.length);
-console.log('First condition:', dialog2.conditions[0].toDisplayString());
-console.log('Second condition:', dialog2.conditions[1].toDisplayString());
+console.log('Conditions preserved:', dialog2.properties.condition.conditions.length);
+console.log('First condition:', dialog2.properties.condition.conditions[0].toDisplayString());
+console.log('Second condition:', dialog2.properties.condition.conditions[1].toDisplayString());

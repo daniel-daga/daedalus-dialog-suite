@@ -15,7 +15,6 @@ const mockReadFile = jest.spyOn(window.editorAPI, 'readFile');
 
 const baseState = {
   activeFile: null as string | null,
-  pendingValidation: null,
   project: null,
   codeSettings: {
     indentChar: '\t' as const,

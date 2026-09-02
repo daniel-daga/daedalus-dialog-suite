@@ -205,14 +205,6 @@ export class SettingsService {
     });
   }
 
-  async setUpdaterAutoCheck(enabled: boolean): Promise<void> {
-    return this.enqueue(async () => {
-      const settings = await this.readSettings();
-      settings.updater = { ...DEFAULT_UPDATER_SETTINGS, ...(settings.updater || {}), autoCheckOnStartup: enabled };
-      await this.writeSettings(settings);
-    });
-  }
-
   /**
    * The Gothic installation the World surface mounts assets from. Machine-local
    * and non-committed by design (level-editor.md §9): the project file records

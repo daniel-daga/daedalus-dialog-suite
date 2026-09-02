@@ -21,6 +21,9 @@
     "baseUrl": "./",
     "paths": {
       "daedalus-parser": ["./index.d.ts"],
+      "daedalus-parser/semantic-model": ["./src/semantic/semantic-model.ts"],
+      "daedalus-parser/semantic-visitor": ["./src/semantic/semantic-visitor.ts"],
+      "daedalus-parser/semantic-code-generator": ["./src/codegen/generator.ts"],
       "daedalus-parser/*": ["./src/*"]
     },
     "allowSyntheticDefaultImports": true,
@@ -35,6 +38,7 @@
     "src/**/*",
     "test/**/*",
     "bin/**/*",
+    "examples/**/*",
     "index.d.ts"
   ],
   "exclude": [

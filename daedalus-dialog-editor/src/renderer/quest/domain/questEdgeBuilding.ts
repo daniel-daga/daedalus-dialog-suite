@@ -175,17 +175,6 @@ export const buildQuestEdges = (
 ): EdgeBuildResult => {
   const edges: QuestGraphEdge[] = [];
   const unresolvedConditionNodes = new Map<string, InternalNodeData>();
-  const adjacency = new Map<string, string[]>();
-
-  const addAdjacency = (sourceId: string, targetId: string) => {
-    if (!adjacency.has(sourceId)) adjacency.set(sourceId, []);
-    adjacency.get(sourceId)!.push(targetId);
-  };
-
-  nodeDataMap.forEach((_, funcName) => {
-    if (!adjacency.has(funcName)) adjacency.set(funcName, []);
-  });
-
   nodeDataMap.forEach((consumerData, consumerId) => {
     const func = semanticModel.functions[consumerId];
     if (!func) return;
@@ -214,7 +203,6 @@ export const buildQuestEdges = (
         targetHandle,
         { functionName: consumerId, dialogName: consumerData.provenance?.dialogName }
       ));
-      addAdjacency(consumerId, targetFunc);
     });
 
     effectiveConditionEntries.forEach(({ condition: cond, ownerFunctionName, ownerConditionIndex }, conditionPosition) => {
@@ -270,7 +258,6 @@ export const buildQuestEdges = (
         { functionName: ownerFunctionName, dialogName: consumerData.provenance?.dialogName }
       ));
       addedConditionEdge = true;
-      addAdjacency(conditionNodeId, consumerId);
 
       if (conditionType === 'NpcKnowsInfoCondition' && 'dialogRef' in cond) {
         const producerDialogName = cond.dialogRef;
@@ -292,7 +279,6 @@ export const buildQuestEdges = (
             ownerFunctionName,
             { functionName: ownerFunctionName, dialogName: consumerData.provenance?.dialogName }
           ));
-          addAdjacency(producerFunc, consumerId);
         }
         return;
       }
@@ -323,7 +309,6 @@ export const buildQuestEdges = (
             ownerFunctionName,
             { functionName: ownerFunctionName, dialogName: consumerData.provenance?.dialogName }
           ));
-          addAdjacency(producerId, consumerId);
         });
       }
     });
@@ -367,7 +352,6 @@ export const buildQuestEdges = (
         consumerData.entryReason || 'entry trigger',
         { functionName: consumerId, dialogName: consumerData.provenance?.dialogName }
       ));
-      addAdjacency(externalId, consumerId);
     }
   });
 
@@ -375,8 +359,7 @@ export const buildQuestEdges = (
     if (!nodeDataMap.has(nodeId)) {
       nodeDataMap.set(nodeId, nodeData);
     }
-    if (!adjacency.has(nodeId)) adjacency.set(nodeId, []);
   });
 
-  return { edges, adjacency };
+  return { edges };
 };
