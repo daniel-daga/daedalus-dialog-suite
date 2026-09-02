@@ -352,40 +352,61 @@ func void DIA_Test_PropertyExpr_Info()
   assert.ok(!reparsed.rootNode.hasError, 'Generated code should parse without syntax errors');
 });
 
-test('SemanticCodeGenerator should preserve escaped internal quotes in string arguments', () => {
+test('A trailing-backslash string round-trips — the quote after the backslash ends the string', () => {
+  // Under C-style escapes `"Ja\"` would swallow its own closing quote and run
+  // on into the next argument; Daedalus has no escapes, so it is the string `Ja\`.
   const sourceCode = `
-instance DIA_Test_EscapedQuotes(C_INFO)
+instance DIA_Test_Trailing(C_INFO)
 {
 \tnpc\t\t\t= TEST_NPC;
 \tnr\t\t\t= 1;
-\tcondition\t= DIA_Test_EscapedQuotes_Condition;
-\tinformation\t= DIA_Test_EscapedQuotes_Info;
-\tdescription\t= "Escaped";
+\tcondition\t= DIA_Test_Trailing_Condition;
+\tinformation\t= DIA_Test_Trailing_Info;
+\tdescription\t= "Trailing";
 };
 
-func int DIA_Test_EscapedQuotes_Condition()
+func int DIA_Test_Trailing_Condition()
 {
 \treturn TRUE;
 };
 
-func void DIA_Test_EscapedQuotes_Info()
+func void DIA_Test_Trailing_Info()
 {
-\tB_LogEntry(TOPIC_Test, "He said \\"hello\\"");
+\tB_LogEntry(TOPIC_Test, "Pfad C:\\");
+\tInfo_AddChoice(DIA_Test_Trailing, "Ja\\", DIA_Test_Trailing_Next);
 };
 `;
 
   const tree = parser.parse(sourceCode);
+  assert.ok(!tree.rootNode.hasError, 'A backslash before the closing quote is not a syntax error');
   const visitor = new SemanticModelBuilderVisitor();
   visitor.pass1_createObjects(tree.rootNode);
   visitor.pass2_analyzeAndLink(tree.rootNode);
+
+  const dialog = visitor.semanticModel.dialogs.DIA_Test_Trailing;
+  const choice = dialog.actions.find((a) => a.constructor.name === 'Choice');
+  assert.ok(choice, 'Choice should be in the model');
+  assert.equal(choice.text, 'Ja\\', 'The string ends at the quote after the backslash');
 
   const generator = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false });
   const generatedCode = generator.generateSemanticModel(visitor.semanticModel);
 
   assert.ok(
-    generatedCode.includes('B_LogEntry (TOPIC_Test, "He said \\"hello\\"");'),
-    'Generated code should preserve escaped internal quotes'
+    generatedCode.includes('B_LogEntry (TOPIC_Test, "Pfad C:\\");'),
+    `Trailing backslash must be emitted verbatim. Got:\n${generatedCode}`
   );
+  assert.ok(
+    generatedCode.includes('Info_AddChoice (DIA_Test_Trailing, "Ja\\", DIA_Test_Trailing_Next);'),
+    `Choice text must be emitted verbatim. Got:\n${generatedCode}`
+  );
+
+  const reparsed = parser.parse(generatedCode);
+  assert.ok(!reparsed.rootNode.hasError, 'Generated code should parse without syntax errors');
+  const revisitor = new SemanticModelBuilderVisitor();
+  revisitor.pass1_createObjects(reparsed.rootNode);
+  revisitor.pass2_analyzeAndLink(reparsed.rootNode);
+  const rechoice = revisitor.semanticModel.dialogs.DIA_Test_Trailing.actions.find((a) => a.constructor.name === 'Choice');
+  assert.equal(rechoice.text, 'Ja\\', 'The choice text survives a second parse unchanged');
 });
 
 test('SemanticCodeGenerator round-trip: DIA_Arog_SLD_99005.d from examples', () => {

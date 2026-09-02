@@ -472,6 +472,23 @@ Prototype SpecialWeapon(BasicItem)
     assert.equal(result.hasErrors, false, 'Should parse comparison binary expressions without errors');
   });
 
+  test('strings have no escape sequences: a backslash is literal and the next quote ends the string', () => {
+    // Retail scripts carry backslashes literally (paths, "\n"-looking text). The
+    // settled semantics (docs/reference/parser-roundtrip-scope.md) are that a
+    // backslash never escapes anything, so `"Ja\"` is a complete string and the
+    // `"b"` after it is the next one — not the tail of one long string.
+    const source = `func void TestStrings()
+{
+    B_Log("C:\\", "mid\\dle", "Ja\\", "b");
+};`;
+
+    const result = parser.parse(source);
+    assert.equal(result.hasErrors, false, 'Backslashes inside strings must not produce syntax errors');
+
+    const strings = result.rootNode.descendantsOfType('string').map((node) => node.text);
+    assert.deepEqual(strings, ['"C:\\"', '"mid\\dle"', '"Ja\\"', '"b"']);
+  });
+
   test('should parse local variable declarations as variable_declaration nodes', () => {
     const source = `func void TestLocals()
 {

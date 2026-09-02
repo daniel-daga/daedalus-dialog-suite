@@ -118,7 +118,7 @@ Nothing here needs a design call: each has a template already in the tree.
 
 | # | Item | Where the diagnosis is | Accept | Size |
 |---|---|---|---|---|
-| 49 | The grammar takes C-style string escapes, `parser-roundtrip-scope.md` says Daedalus has none, and the generator agrees with the doc. The reference doc is the settled semantics, so this is making the grammar agree — but it needs `tree-sitter generate` and a native rebuild in the same change | 2026-07 **4.18**, `grammar.js:233` | parser › a trailing-backslash string round-trips, then `npm run test:roundtrip-corpus` | L |
+| ~~49~~ | ~~The grammar takes C-style string escapes, `parser-roundtrip-scope.md` says Daedalus has none, and the generator agrees with the doc~~ — **landed 2026-09-02**: `string` is now `"` + `[^"]*` + `"`, so a backslash is literal and `"Ja\"` ends at its quote; `src/parser.c` regenerated and the binding rebuilt in the same change. The two tests that asserted `\"` as an escape were rewritten to the settled semantics. The fixture corpus carries no backslash at all, so no corpus parse changed (11 files, 0 drift under `--strict`). Forward: the editor mirrors nothing — it has no Monaco tokenizer for Daedalus, and `ValidationService` already states the no-escapes rule | 2026-07 **4.18**, `grammar.js:233` | parser › a trailing-backslash string round-trips, then `npm run test:roundtrip-corpus` | L |
 
 ---
 
