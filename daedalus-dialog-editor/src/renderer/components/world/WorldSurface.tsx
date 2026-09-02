@@ -36,7 +36,7 @@ import { useProjectStore } from '../../store/projectStore';
 import { hasUnsavedChanges, useFileStore } from '../../store/fileStore';
 import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
-import { findFunctionFile, startupFunctionFor } from './insertNpcScript';
+import { appendInsertNpc, findFunctionFile, startupFunctionFor } from './insertNpcScript';
 import { vobModelOf } from '../../world/vobModel';
 import { DEFAULT_EXPOSURE } from '../../world/WorldScene';
 import WorldViewport, { type GizmoMode, type WorldViewportHandle } from './WorldViewport';
@@ -162,6 +162,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const selectedWaypoint = useWorldStore((s) => s.selectedWaypoint);
   const waypointSiteIndex = useProjectStore((s) => s.waypointSiteIndex);
   const spawnSiteIndex = useProjectStore((s) => s.spawnSiteIndex);
+  const npcList = useProjectStore((s) => s.npcList);
   const routineSiteIndex = useProjectStore((s) => s.routineSiteIndex);
   const routineNpcIndex = useProjectStore((s) => s.routineNpcIndex);
   const routineStateIndex = useProjectStore((s) => s.routineStateIndex);
@@ -1585,7 +1586,10 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    * files the dialog editor has open (E). A `Startup.d` open and dirty is
    * refused rather than merged: the flow's mtime guard compares against its
    * own read, so the editor's stale model would save straight over the spawn.
-   * Open and clean, it is reloaded the way an external change is.
+   * Open and clean, it is reloaded the way an external change is. The cached
+   * model in `parsedFiles` gets slice A's edit — the renderer's picture of the
+   * one line C spliced — so a reader of the function's actions is not one
+   * spawn behind and no parse round trip is spent on it.
    */
   const insertNpcAt = useCallback(async (
     instance: string, spawnPoint: string, existing: boolean,
@@ -1633,10 +1637,12 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       return;
     }
 
-    useProjectStore.getState().addSpawnSite({
+    const project = useProjectStore.getState();
+    project.addSpawnSite({
       instance: instance.toUpperCase(), spawnPoint: spawnPoint.toUpperCase(),
       filePath, functionName: found.functionName, line: result.line,
     });
+    project.updateFileModel(filePath, appendInsertNpc(found.model, found.functionName, instance, spawnPoint));
     if (open !== undefined) await useFileStore.getState().reloadFile(filePath);
   }, [commitOps, terrainPoint, waynet]);
 
@@ -1762,6 +1768,28 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const duplicateInsertWaypoint = insertingNpc !== null && !insertingNpc.existing
     && (waynet?.names.includes(insertingNpc.waypoint.trim()) ?? false);
   const startupFunctionName = summary === null ? '' : startupFunctionFor(summary.worldPath);
+  /**
+   * The typed instance is not one the project index declares — a warning, not
+   * a refusal: an empty index means "nothing is known", never "nothing is
+   * legal", and an instance declared in a file the index has not parsed is
+   * legal too. Case-insensitive, since Daedalus is.
+   */
+  const unknownInsertInstance = insertingNpc !== null && npcList.length > 0
+    && insertingNpc.instance.trim() !== ''
+    && !npcList.some((npc) => npc.toUpperCase() === insertingNpc.instance.trim().toUpperCase());
+  /**
+   * The site the index already holds for this instance on this point, if any —
+   * keyed uppercase, the index's own casing. A warning that wants an explicit
+   * confirm, not a refusal: retail spawns the same NPC on a point more than
+   * once (chapter re-entry).
+   */
+  const duplicateInsertSpawn = useMemo(() => {
+    if (insertingNpc === null) return null;
+    const instance = insertingNpc.instance.trim().toUpperCase();
+    const spawnPoint = insertingNpc.waypoint.trim().toUpperCase();
+    if (instance === '' || spawnPoint === '') return null;
+    return spawnSiteIndex.find((site) => site.instance === instance && site.spawnPoint === spawnPoint) ?? null;
+  }, [insertingNpc, spawnSiteIndex]);
 
   /**
    * Remove a VOB and its whole subtree — **the one edit here that cannot be
@@ -2593,6 +2621,16 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               showNavigation={false}
               {...AUTOCOMPLETE_POLICIES.actions.npc}
             />
+            {unknownInsertInstance && (
+              <Typography
+                variant="caption"
+                color="warning.main"
+                data-testid="world-insert-npc-instance-warning"
+                sx={{ display: 'block', mt: 0.25 }}
+              >
+                {`${insertingNpc.instance.trim()} is not an NPC instance this project declares.`}
+              </Typography>
+            )}
           </Box>
           <TextField
             label="Waypoint"
@@ -2607,6 +2645,17 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               : ' '}
             inputProps={{ 'data-testid': 'world-insert-npc-waypoint', spellCheck: false }}
           />
+          {duplicateInsertSpawn !== null && (
+            <Typography
+              variant="caption"
+              color="warning.main"
+              data-testid="world-insert-npc-duplicate-warning"
+              sx={{ display: 'block' }}
+            >
+              {`${duplicateInsertSpawn.instance} already spawns at ${duplicateInsertSpawn.spawnPoint} `
+                + `(${baseName(duplicateInsertSpawn.filePath)}:${duplicateInsertSpawn.line}).`}
+            </Typography>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setInsertingNpc(null)}>Cancel</Button>
@@ -2623,7 +2672,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
             }}
             data-testid="world-insert-npc-confirm"
           >
-            Insert
+            {duplicateInsertSpawn === null ? 'Insert' : 'Insert anyway'}
           </Button>
         </DialogActions>
       </Dialog>

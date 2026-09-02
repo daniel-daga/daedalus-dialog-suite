@@ -2695,14 +2695,18 @@ already on the banner and the script is left alone — then the IPC. **A
 refusal after the op says the waypoint stands** ("Waypoint X was added, but
 …"): the half-state the decision accepted is named, not hidden. The
 waypoint panel's "Insert NPC at this waypoint…" is the same dialog with the
-name fixed and `existing: true`, which skips the op. Two things it does not
-check: the instance's existence — the autocomplete lists the project's NPCs
-but free input is allowed, since an instance declared in a file the index
-has not parsed is legal, and C's validator only guards the identifier shape
-— and what `STARTUP_<world>` already holds, so the same spawn can be
-appended twice. Slice A's `appendInsertNpc` model edit ended up with no
-caller: D writes through C and never regenerates, and nothing needs the
-renderer's picture of the function to carry the action.
+name fixed and `existing: true`, which skips the op. Two things it warns
+about and never refuses (2026-09-02): an instance the index does not know —
+only when `projectStore.npcList` is non-empty, case-insensitively, as a
+caption under the field ("X is not an NPC instance this project declares"),
+because an empty index means "nothing is known" and an instance declared in
+a file the index has not parsed is legal, so C's identifier-shape check stays
+the only hard one; and a site `spawnSiteIndex` already holds for the same
+instance on the same point ("X already spawns at WP (file:line)"), where the
+confirm button turns into "Insert anyway" — retail spawns the same NPC on a
+point more than once across chapters. Slice A's `appendInsertNpc` model edit
+found its caller in E: D writes through C and never regenerates, and the
+edit is the renderer's picture of the one line C spliced.
 
 *E — open-file and index coherence. Landed, renderer-side.* Before anything
 is written, `fileStore.openFiles.get(filePath)` under `hasUnsavedChanges`
@@ -2712,14 +2716,13 @@ external-change path, and the only reload there is, since `notifySelfWrite`
 has silenced the watcher for that write. `projectStore.addSpawnSite` pushes
 the site (instance and waypoint uppercased, the index's own casing, and C's
 1-based `line`) onto `spawnSiteIndex`, so the waypoint panel and the spawn
-markers show it without a reindex. What E does *not* refresh:
-`projectStore.parsedFiles`. The cached model of `Startup.d` still lacks the
-action until the next `updateFileModels`; a second insert in the same session
-still resolves — `findFunctionFile` matches on the name alone — but anything
-reading that function's `actions` out of `parsedFiles` is one spawn behind.
-Jest covers the order (op before IPC), every refusal, the dirty refusal, the
-clean reload and the index gain; Playwright cannot, the browser harness has no
-world.
+markers show it without a reindex; and `projectStore.updateFileModel` puts
+`appendInsertNpc(model, fn, instance, wp)` on the cached model of the holding
+file, so a reader of that function's `actions` out of `parsedFiles` is not one
+spawn behind and no parse round trip is spent — the IPC's success is the fact
+(2026-09-02). Jest covers the order (op before IPC), every refusal, the dirty
+refusal, the clean reload, the index gain, the model refresh and both
+warnings; Playwright cannot, the browser harness has no world.
 
 *F — deferred, its own card.* World-directory setting on `SettingsService`
 (the `gothicInstallPath` pattern), only for `expectedWorldNameFor`'s `.ZEN`

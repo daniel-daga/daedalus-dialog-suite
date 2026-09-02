@@ -172,6 +172,25 @@ describe('Insert NPC here…', () => {
     }]));
   });
 
+  it('refreshes the cached model so STARTUP_<world> carries the new action without a reparse', async () => {
+    // Slice A's model edit is the renderer's picture of what C wrote: after
+    // the IPC, anything reading the function's actions out of parsedFiles
+    // sees the spawn, and no read or parse round trip is spent on it.
+    seedProject();
+    await openWorld();
+    await openInsertDialog();
+
+    await confirmInsert('PC_Thief');
+
+    await waitFor(() => expect(
+      useProjectStore.getState().parsedFiles.get(STARTUP_PATH)?.semanticModel.functions.STARTUP_NewWorld.actions,
+    ).toEqual([{ type: 'InsertNpcAction', npcInstance: 'PC_Thief', spawnPoint: 'FP_NEW_3' }]));
+    expect(api.readFile).not.toHaveBeenCalled();
+    expect(api.parseSource).not.toHaveBeenCalled();
+    // The seed model itself is left alone.
+    expect(STARTUP_MODEL.functions.STARTUP_NewWorld.actions).toEqual([]);
+  });
+
   it('is dead without an instance, and for a waypoint name the world already has', async () => {
     seedProject();
     await openWorld();
@@ -283,6 +302,92 @@ describe('Insert NPC here…', () => {
       originalCode: source, isDirty: false, semanticModel: { constants: {} },
     }));
     expect(api.readFile.mock.invocationCallOrder[0]).toBeGreaterThan(api.appendInsertNpc.mock.invocationCallOrder[0]);
+  });
+
+  describe('instance existence is a warning, never a refusal', () => {
+    // An empty index means "nothing is known", not "nothing is legal"; and an
+    // instance declared in a file the index has not parsed is legal too.
+    const warning = () => screen.queryByTestId('world-insert-npc-instance-warning');
+
+    it('warns when the project index knows NPCs and the typed one is not among them, and still inserts', async () => {
+      seedProject();
+      useProjectStore.setState({ npcList: ['Diego', 'PC_Hero'] } as never);
+      await openWorld();
+      await openInsertDialog();
+
+      fireEvent.change(instanceField(), { target: { value: 'PC_Thief' } });
+      expect(warning()).toHaveTextContent('PC_Thief is not an NPC instance this project declares');
+      expect(screen.getByTestId('world-insert-npc-confirm')).toBeEnabled();
+
+      fireEvent.click(screen.getByTestId('world-insert-npc-confirm'));
+      await waitFor(() => expect(api.appendInsertNpc).toHaveBeenCalledWith(
+        STARTUP_PATH, 'STARTUP_NewWorld', 'PC_Thief', 'FP_NEW_3',
+      ));
+    });
+
+    it('matches the index case-insensitively, the way Daedalus does', async () => {
+      seedProject();
+      useProjectStore.setState({ npcList: ['Diego', 'PC_Hero'] } as never);
+      await openWorld();
+      await openInsertDialog();
+
+      fireEvent.change(instanceField(), { target: { value: 'pc_hero' } });
+      expect(warning()).toBeNull();
+    });
+
+    it('says nothing when the index knows no NPCs', async () => {
+      seedProject();
+      await openWorld();
+      await openInsertDialog();
+
+      fireEvent.change(instanceField(), { target: { value: 'PC_Thief' } });
+      expect(warning()).toBeNull();
+    });
+  });
+
+  describe('a spawn the index already holds is a warning that wants an explicit confirm', () => {
+    // Retail spawns the same NPC on a point more than once (chapter re-entry),
+    // so this is not a refusal — the button just stops reading "Insert".
+    const warning = () => screen.queryByTestId('world-insert-npc-duplicate-warning');
+    const existingSite = {
+      instance: 'PC_THIEF', spawnPoint: 'WP_MIDDLE',
+      filePath: STARTUP_PATH, functionName: 'STARTUP_NewWorld', line: 12,
+    };
+
+    it('names the site, matches the index case-insensitively, and inserts anyway on confirm', async () => {
+      seedProject();
+      useProjectStore.setState({ spawnSiteIndex: [existingSite] } as never);
+      await openWorld();
+      fireEvent.click(screen.getByTestId('stub-pick-waypoint'));
+      await screen.findByTestId('world-waypoint-panel');
+      fireEvent.click(screen.getByTestId('world-waypoint-insert-npc'));
+      await screen.findByTestId('world-insert-npc-dialog');
+
+      fireEvent.change(instanceField(), { target: { value: 'pc_thief' } });
+      expect(warning()).toHaveTextContent('PC_THIEF already spawns at WP_MIDDLE (Startup.d:12)');
+      const confirm = screen.getByTestId('world-insert-npc-confirm');
+      expect(confirm).toHaveTextContent('Insert anyway');
+      expect(confirm).toBeEnabled();
+
+      fireEvent.click(confirm);
+      await waitFor(() => expect(api.appendInsertNpc).toHaveBeenCalledWith(
+        STARTUP_PATH, 'STARTUP_NewWorld', 'pc_thief', 'WP_MIDDLE',
+      ));
+    });
+
+    it('says nothing for a different instance on the same point', async () => {
+      seedProject();
+      useProjectStore.setState({ spawnSiteIndex: [existingSite] } as never);
+      await openWorld();
+      fireEvent.click(screen.getByTestId('stub-pick-waypoint'));
+      await screen.findByTestId('world-waypoint-panel');
+      fireEvent.click(screen.getByTestId('world-waypoint-insert-npc'));
+      await screen.findByTestId('world-insert-npc-dialog');
+
+      fireEvent.change(instanceField(), { target: { value: 'PC_Hero' } });
+      expect(warning()).toBeNull();
+      expect(screen.getByTestId('world-insert-npc-confirm')).toHaveTextContent(/^Insert$/);
+    });
   });
 
   it('spawns at the selected waypoint from its panel, with no waypoint op', async () => {
