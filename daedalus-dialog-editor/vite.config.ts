@@ -94,6 +94,12 @@ export default defineConfig({
           // over the CI chunk-size guard. It is still only fetched when the
           // World view is opened — the chunk hangs off that lazy import.
           if (id.includes('node_modules/three-mesh-bvh/')) return 'three-bvh';
+          // The addons (OrbitControls, TransformControls) live under
+          // `three/examples/` and are their own chunk: with them inside `three`
+          // the core library sat at 553.78 kB against the 550 kB guard, and the
+          // addons are the separable part — the core is not (see the note on
+          // the limit above).
+          if (id.includes('node_modules/three/examples/')) return 'three-addons';
           if (id.includes('node_modules/three/')) return 'three';
           return undefined;
         },
