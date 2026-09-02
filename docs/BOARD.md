@@ -186,10 +186,10 @@ Status: delivered 2026-09-03 (§16.28).
 - **Arbitrary-length asset folder list** — an orderable list of any size,
   project root the default first entry, others (MDK included) added by
   hand, worlds resolved off the same list. Storage decided: the project
-  file, replacing `gothicInstallPath`, not `SettingsService` — open: how a
-  collaborator's missing/wrong absolute entry behaves. §16.28
+  file, replacing `gothicInstallPath`, not `SettingsService`; missing or
+  unreadable collaborator paths are skipped with visible warnings. §16.28
 
-The arbitrary-length project asset-source list is delivered (Â§16.28,
+The arbitrary-length project asset-source list is delivered (§16.28,
 2026-09-03): v1 project files replace `gothicInstallPath`, preserve ordered
 later-wins overlays, and surface missing collaborator paths as warnings.
 

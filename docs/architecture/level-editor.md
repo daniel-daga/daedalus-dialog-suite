@@ -2687,11 +2687,10 @@ opening; missing or unreadable sources are skipped and shown as persistent
 warnings naming the configured path. Dialog editing remains available with no
 usable sources, while world opening asks the user to configure one.
 
-Machine-local, non-committed state (Gothic installation path, VDF search
-paths, window layout) lives in the existing `SettingsService` store keyed by
-project — same split the app already uses for app settings. Target version is
-per-project and explicit (brief §7); the binding refuses to load with a
-mismatched archive version rather than guessing.
+The project file is committed project state. Other machine-local state (window
+layout and recent-project metadata) remains in `SettingsService`. Target
+version is per-project and explicit (brief §7); the binding refuses to load
+with a mismatched archive version rather than guessing.
 
 ---
 

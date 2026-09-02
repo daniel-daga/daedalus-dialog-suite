@@ -77,8 +77,8 @@ test.describe('World surface renders a real window', () => {
     writeProjectFile(projectDir, installDir);
     fixture = await launchApp();
 
-    // Three different `showOpenDialog` calls in one flow (project folder,
-    // Gothic install, world file) — matched on title, the same way
+    // Two different `showOpenDialog` calls in one flow (project folder,
+    // world file) — matched on title, the same way
     // `scripts/verify-world-render.js` drives the real app.
     await fixture.app.evaluate(({ dialog }, paths) => {
       (dialog as { showOpenDialog: (options: { title: string }) => unknown }).showOpenDialog = async (
