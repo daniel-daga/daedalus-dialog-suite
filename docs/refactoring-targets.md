@@ -6,11 +6,13 @@ Audit of god components, muddled concerns, and maintainability red flags.
 
 ## Deferred Architectural Splits
 
-### 1. `editorStore.ts` — split into focused stores
+### 1. `editorStore.ts` — split into focused stores — done
 **File:** `daedalus-dialog-editor/src/renderer/store/editorStore.ts`
 
-- `fileStore` — open/close/save, dirty tracking
-- `historyStore` — undo/redo state + snapshot helpers (move `applyUndoForFile`/`applyRedoForFile` + store state)
+Landed: `fileStore` (open/close/save, dirty tracking) and `historyStore`
+(undo/redo state + snapshot helpers) are the stores; `editorStore.ts` is a
+16-line barrel that keeps `useEditorStore` as an alias of `useFileStore` for
+the consumers that only manage files.
 
 ---
 
@@ -74,7 +76,7 @@ loads the addon.
 
 `VobIndex` is defined in `zen-world` and re-exported by the editor
 (`worldTypes.ts:6-8`); `WaynetPayload` is defined in the editor instead
-(`worldTypes.ts:62-73`), even though both are shapes the binding emits and the
+(`worldTypes.ts:71-82`), even though both are shapes the binding emits and the
 domain reasons about. The split is historical, not designed.
 
 Noticed while adding `MoveWaypoint` (2026-08-27) and deliberately not fixed
@@ -243,3 +245,76 @@ untestable claim into a structural one a jsdom test *can* make: the spacer is a
 
 The one wart the fix carries: MUI's `Stack` spacing selector outranks a child's
 `sx`, so the spacer overrides its own margin with `!important`.
+
+---
+
+### 11. `linking-visitor.ts` is a god class
+**File:** `daedalus-parser/src/semantic/visitors/linking-visitor.ts`
+
+1,016 lines and 48 methods carrying five concerns — reference resolution,
+action extraction, condition extraction, call-site bookkeeping and comment
+attachment — with a literal duplicate (`isCallInsideComparisonBinary` and
+`hasComparisonBinaryAncestor` have byte-identical bodies) and a denormalized
+mirror: every action is pushed to `currentFunction.actions` *and* to
+`dialog.actions` (`:624-628`), which then has to be kept in step on removal
+(`:733`). Fix direction: one visitor per concern behind the two-pass
+orchestrator, and `Dialog.actions` derived from the information function rather
+than stored twice. Surfaced by the 2026-07 review (item 6.2).
+
+---
+
+### 12. `setupIpcHandlers` is 600 lines of inline handler bodies
+**File:** `daedalus-dialog-editor/src/main/main.ts` (`setupIpcHandlers`, `:205-809`)
+
+`generator:saveFile` was lifted into `SaveFileFlow.ts` (the MCP plan's Phase 0)
+and `script:appendInsertNpc` into `AppendInsertNpcFlow.ts`; the other 45
+handlers still carry their orchestration inline — request shape checks, dialog
+prompting, allow-listing the chosen directory, error wrapping — so the one
+function that registers the IPC surface is also where most main-process flows
+live. Fix direction: the two extracted flows are the template; a handler whose
+body is more than a delegation moves out beside them, and `setupIpcHandlers`
+becomes a registration table.
+
+---
+
+### 13. `deserializeSemanticModel` normalizes every action twice
+**File:** `daedalus-parser/src/semantic/semantic-model.ts` (`:1017-1026`)
+
+The function loop runs `ensureActionType` over `funcJson.actions`, then maps
+the same array through `deserializeAction`, whose first line is
+`ensureActionType(json)` again (`:716`). Harmless — the second pass finds the
+discriminator already set — but the loop-level call is dead work on every model
+crossing the IPC boundary, and a reader has to prove to themselves that the two
+calls agree. Fix direction: drop the loop-level `ensureActionType`; the
+per-action one inside `deserializeAction` is the one recursion into
+`thenActions`/`elseActions` already depends on.
+
+---
+
+### 14. The quest UI sits flat at `components/` root
+**Files:** `daedalus-dialog-editor/src/renderer/components/QuestEditor.tsx`,
+`QuestList.tsx`, `QuestDetails.tsx`, `CreateQuestDialog.tsx`
+
+The other surfaces with several files own a folder — `Problems/`,
+`Simulator/`, `world/` — while the four quest files sit among some fifty
+siblings at the root. `docs/architecture/quest-editor.md` (§Scope, §Internal
+Boundaries) was aligned to the flat layout rather than the layout to a folder,
+and `tests/questDomainBoundary.test.ts` guards only the domain side (domain
+must not import UI); nothing names the UI files as one unit. Fix direction:
+`components/QuestEditor/` holding the four, the doc's two file lists and the
+boundary test's UI-tree path updated in the same change.
+
+---
+
+### 15. Cross-store wiring is split between `initStoreSync` and a module-level subscribe
+**Files:** `daedalus-dialog-editor/src/renderer/store/storeSync.ts` (`initStoreSync`, `:36`),
+`store/historyStore.ts` (`:263`)
+
+`initStoreSync` is the documented home for store-to-store subscriptions —
+editor → project model push, world → problems rescan — and returns the
+unsubscribe that tests rely on. `historyStore.ts` wires itself to `fileStore`
+by a `useFileStore.subscribe` at module scope instead, so it runs on import,
+cannot be torn down, and is not visible from the one place that claims to hold
+the wiring. Fix direction: move the history cleanup subscription into
+`initStoreSync` beside the other two; `useAutoSave.ts:167` is a hook-scoped
+subscription with its own lifecycle and stays where it is.

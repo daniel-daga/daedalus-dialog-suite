@@ -88,7 +88,7 @@ run headless and produce a number.
 | 24 | `ReviewChangesDialog` and `SimulatorDialog` are still statically imported; the lazy idiom is already used by `DialogSourceViewDialog` | production-readiness §3 P3, `DialogDetailsEditor.tsx:25`, `:35` | the entry chunk shrinks and the lazy-boundary test passes | M |
 | 25 | `ensureActionIds` re-walks every function on every `openFile`, cache hit included | production-readiness §3 P3, `fileStore.ts:69` | `fileStore` › re-opening a normalized file does not re-walk | M |
 | 26 | `fileEncodingCache` / `fileStatCache` are uncapped; the LRU idiom exists in `ProjectService` | production-readiness §3 P3, `FileService.ts:26`, `:33` | `FileService` › the encoding cache is LRU-capped | S |
-| 27 | Five known refactoring targets are not in `docs/refactoring-targets.md` (and one of its paths is stale) | 2026-07 **6.2** | the five headings exist; `lint` green | S |
+| ~~27~~ | ~~Five known refactoring targets are not in `docs/refactoring-targets.md` (and one of its paths is stale)~~ — **landed 2026-09-02**: entries 11–15 (linking-visitor god class, `setupIpcHandlers` inline bodies, the double `ensureActionType` in `deserializeSemanticModel`, the flat quest UI, the module-level `historyStore` subscribe), each re-checked against the tree rather than copied from 6.2 — the quest entry in particular, since `quest-editor.md` now documents the flat layout the review measured it against. The stale item was #1: the `editorStore` split it asks for landed long ago (the file is a 16-line barrel), so it is marked done; `worldTypes.ts` line refs in #5 refreshed | 2026-07 **6.2** | the five headings exist; `lint` green | S |
 
 ## 3. UI, where the shape is already decided
 
