@@ -17,7 +17,8 @@ export interface OpenWorldRequest {
    * Prefer archives: mounting an extracted install's loose `_compiled` trees
    * costs 2,170 ms against 15 ms for the equivalent VDFs (zenkit-node README).
    */
-  assetSources: string[];
+  /** Identity of the main-process-owned project configuration supplying mounts. */
+  projectFilePath: string;
 }
 
 export interface WorldSummary {

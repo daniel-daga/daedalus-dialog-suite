@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { gothicAssetSources, parseVobFolders } from 'zen-world';
+import { parseVobFolders } from 'zen-world';
 import { PathValidationError } from './services/PathValidationService';
 import { getServiceRegistry } from './services/serviceRegistry';
 import { saveFileFlow, type SaveFileFlowOptions } from './services/SaveFileFlow';
@@ -654,14 +654,26 @@ export function setupIpcHandlers() {
     try {
       // Start where the worlds are. `.zen` files only exist loose in an
       // extracted install's `_work/Data/Worlds` (the same `_work/Data` tree
-      // gothicAssetSources falls back to); a retail install keeps them inside
-      // Worlds.vdf, so the install root is the best a picker can offer there.
-      // With no install configured we pass nothing and Electron decides.
-      const installPath = await settingsService.getGothicInstallPath();
+      // Archives have no filesystem path to offer, so omit defaultPath when
+      // the project has no configured loose world entry.
       let defaultPath: string | undefined;
-      if (installPath) {
-        const worldsDir = path.join(installPath, '_work', 'Data', 'Worlds');
-        defaultPath = fs.existsSync(worldsDir) ? worldsDir : installPath;
+      const registered = activeProjectFileKey
+        ? registeredProjectConfigs.get(activeProjectFileKey)
+        : undefined;
+      const project = registered?.descriptor;
+      const worldPart = project?.config.worlds
+        .flatMap((world) => world.parts)
+        .find((part) => {
+          const candidate = path.isAbsolute(part.path)
+            ? part.path
+            : path.resolve(project!.projectRoot, part.path);
+          return part.role === 'main' && fs.existsSync(candidate);
+        });
+      if (worldPart && project) {
+        const candidate = path.isAbsolute(worldPart.path)
+          ? worldPart.path
+          : path.resolve(project.projectRoot, worldPart.path);
+        defaultPath = fs.statSync(candidate).isDirectory() ? candidate : path.dirname(candidate);
       }
 
       const result = await dialog.showOpenDialog({
@@ -681,7 +693,7 @@ export function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('world:selectGothicInstall', async () => {
+  if (false) ipcMain.handle('world:selectGothicInstall', async () => {
     try {
       // Re-selecting an install starts at the one it replaces, the mirror of
       // world:openDialog above.
@@ -704,7 +716,7 @@ export function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('world:getGothicInstall', async () => {
+  if (false) ipcMain.handle('world:getGothicInstall', async () => {
     const installPath = await settingsService.getGothicInstallPath();
     // A persisted install re-seeds the whitelist on launch, exactly as recent
     // projects do — the user already chose it through a main-process dialog.
@@ -721,16 +733,15 @@ export function setupIpcHandlers() {
       // rule is `zen-world`'s and it is measured, not stylistic: archives beat
       // the equivalent loose trees 15 ms to 2,170 ms. It runs here because it
       // needs the filesystem and the persisted install path.
-      let { assetSources } = request;
+      const key = projectFileKey(request.projectFilePath);
+      const registered = registeredProjectConfigs.get(key);
+      if (!registered) throw new Error('Load a project before opening a world');
+      const refreshed = await projectConfigService.openOrMigrate(registered.descriptor.projectRoot, null);
+      registerProjectConfig(refreshed.project);
+      const assetSources = refreshed.project.resolvedAssetSources;
       if (assetSources.length === 0) {
-        const installPath = await settingsService.getGothicInstallPath();
-        if (!installPath) {
-          throw new Error('No Gothic installation is configured — select one before opening a world.');
-        }
-        assetSources = gothicAssetSources(installPath, fs.existsSync);
-        if (assetSources.length === 0) {
-          throw new Error(`No Gothic assets found under ${installPath} — neither archives nor compiled asset directories.`);
-        }
+        throw new Error('Configure at least one available asset source before opening a world.');
+        return Promise.reject(new Error('Configure at least one available asset source before opening a world.'));
       }
 
       for (const source of assetSources) {

@@ -170,7 +170,6 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     beginOpen, openSucceeded, openFailed, selectVob, toggleVob, selectWaypoint,
   } = useWorldStore.getState();
 
-  const [gothicInstall, setGothicInstall] = useState<string | null>(null);
   const [mesh, setMesh] = useState<WorldMeshPayload | null>(null);
   const [visuals, setVisuals] = useState<InstancedPayload | null>(null);
   const [terrainPoint, setTerrainPoint] = useState<[number, number, number] | null>(null);
@@ -345,15 +344,6 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     [items],
   );
 
-  useEffect(() => {
-    void window.editorAPI.getGothicInstall().then(setGothicInstall);
-  }, []);
-
-  const chooseInstall = useCallback(async () => {
-    const chosen = await window.editorAPI.selectGothicInstall();
-    if (chosen) setGothicInstall(chosen);
-  }, []);
-
   const openWorld = useCallback(async () => {
     const worldPath = await window.editorAPI.openWorldDialog();
     if (!worldPath) return;
@@ -384,7 +374,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       const opened = await window.editorAPI.openWorld({
         worldPath,
         gameVersion: 'g2',
-        assetSources: [],
+        projectFilePath: useProjectStore.getState().projectFilePath ?? '',
       });
       openSucceeded(opened);
       // A fresh open starts an empty history in the main process — this is
@@ -1966,8 +1956,6 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <WorldToolbar
-        gothicInstall={gothicInstall}
-        onChooseInstall={() => void chooseInstall()}
         onOpenWorld={() => void openWorld()}
         status={status}
         hasWorld={summary !== null}

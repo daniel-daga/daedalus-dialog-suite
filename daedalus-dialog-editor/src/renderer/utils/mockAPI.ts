@@ -642,8 +642,6 @@ export const mockEditorAPI: EditorAPI = {
   // These report "no world" rather than fabricating one — a mock world would
   // be a scene nobody could tell apart from a broken real one.
   async openWorldDialog(): Promise<string | null> { return null; },
-  async selectGothicInstall(): Promise<string | null> { return null; },
-  async getGothicInstall(): Promise<string | null> { return null; },
   async openWorld(): Promise<never> {
     throw new Error('The world editor needs the desktop app — it is not available in browser mode.');
   },

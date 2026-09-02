@@ -157,7 +157,7 @@ const GAME_VERSIONS = ['g1', 'g2'] as const;
 export interface OpenWorldRequestShape {
   worldPath: string;
   gameVersion: 'g1' | 'g2';
-  assetSources: string[];
+  projectFilePath: string;
 }
 
 /**
@@ -176,9 +176,8 @@ export function assertOpenWorldRequest(request: unknown): asserts request is Ope
   if (!(GAME_VERSIONS as readonly unknown[]).includes(request.gameVersion)) {
     throw new Error(`Invalid world request: gameVersion must be one of ${GAME_VERSIONS.join(', ')}`);
   }
-  if (!Array.isArray(request.assetSources)
-    || !request.assetSources.every((source) => typeof source === 'string')) {
-    throw new Error('Invalid world request: assetSources must be an array of strings');
+  if (typeof request.projectFilePath !== 'string' || request.projectFilePath === '') {
+    throw new Error('Invalid world request: projectFilePath must be a non-empty string');
   }
 }
 

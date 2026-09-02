@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button, CircularProgress, Typography } from '@mui/material';
+import { Button, CircularProgress } from '@mui/material';
 import type { WorldStatus } from '../../../store/worldStore';
 
 /**
@@ -10,8 +10,6 @@ import type { WorldStatus } from '../../../store/worldStore';
  * props.
  */
 export interface WorldFileControlsProps {
-  gothicInstall: string | null;
-  onChooseInstall: () => void;
   onOpenWorld: () => void;
   status: WorldStatus;
   hasWorld: boolean;
@@ -19,12 +17,9 @@ export interface WorldFileControlsProps {
 }
 
 const WorldFileControls: React.FC<WorldFileControlsProps> = ({
-  gothicInstall, onChooseInstall, onOpenWorld, status, hasWorld, onSave,
+  onOpenWorld, status, hasWorld, onSave,
 }) => (
   <>
-    <Button size="small" variant="outlined" onClick={onChooseInstall} data-testid="world-choose-install">
-      {gothicInstall ? 'Change Gothic install' : 'Select Gothic install'}
-    </Button>
     <Button
       size="small"
       variant="contained"
@@ -34,11 +29,6 @@ const WorldFileControls: React.FC<WorldFileControlsProps> = ({
     >
       Open world
     </Button>
-    {gothicInstall && (
-      <Typography variant="caption" color="text.secondary" data-testid="world-install-path">
-        {gothicInstall}
-      </Typography>
-    )}
     {status === 'opening' && <CircularProgress size={16} />}
     {/* Always rendered — disabled rather than unmounted, so the file group
         does not resize when a world opens or closes. */}
