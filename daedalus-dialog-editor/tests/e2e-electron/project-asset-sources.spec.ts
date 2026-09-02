@@ -46,8 +46,12 @@ async function openProject(fixture: AppFixture, projectDir: string, assetSource?
 }
 
 function sourceRow(dialog: Locator, source: string): Locator {
+  const escaped = source.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
   return dialog.getByRole('listitem').filter({
-    has: dialog.getByText(source, { exact: true }),
+    // The primary label is numbered (for example, `1. .`), so exact text
+    // matching the configured source is intentionally too strict. Restrict
+    // the suffix match to the label span so `.` cannot match every row.
+    has: dialog.locator('span').filter({ hasText: new RegExp(`${escaped}$`) }),
   });
 }
 
