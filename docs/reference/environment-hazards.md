@@ -336,6 +336,18 @@ them.
 
 ## Parallel agents in one working tree
 
+- **`npm run wt:new` and `wt:rm` are flaky on this machine, not the tree.**
+  Seen 2026-09-02 with seven worktrees created at once: `wt:new` reported
+  "pnpm install failed" and a plain `pnpm install` inside the worktree then
+  succeeded (the pnpm store lock, most likely); `wt:rm` after a merge failed
+  `EPERM` on `zenkit-node/` while a `node --test` or Jest process still held
+  the addon, and left a half-removed directory that `git worktree prune`
+  forgets and a later `rm -rf` finishes. Neither leaves anything wrong in git.
+- **Seven full editor baselines in parallel take an hour each.**
+  `test:stable:windows` runs 230 suites in isolated processes; one at a time
+  it is ~40 minutes, and agents that each start their own contend for the
+  same cores. Run focused suites per branch and one baseline on the merge.
+
 **Superseded as the default on 2026-09-01: take a worktree instead**
 (`npm run wt:new -- <name>`, AGENTS.md "Worktrees for Parallel Agents"). The
 reason this section existed — a worktree costs a ZenKit rebuild and a fresh

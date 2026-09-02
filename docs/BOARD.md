@@ -147,9 +147,9 @@ with nobody watching. Triaged against the tree 2026-08-30, each verified still
 open. **Take the top unclaimed row and cross it off in the same commit; a run
 may not add rows.** `unattended-queue.md` — **section 5, the level editor, was
 first (Daniel, 2026-08-30)** and is now empty but for row 42, which went to
-Triage, so a run resumes at section 1: rows 1-12 landed 2026-08-30, row 13 on
-2026-09-01, and the next unclaimed row is 14. The corpus section 5's rows wanted is in
-`zenkit-node/worlds/`.
+Triage, so a run resumes at section 1: rows 1-12 landed 2026-08-30, 13-17 on
+2026-09-01/02, and the next unclaimed row is 18. The corpus section 5's rows
+wanted is in `zenkit-node/worlds/`.
 
 **World surface, from Daniel's own sessions 2026-08-30.** Five of the six
 landed; one is left and it is the one that was never root-caused.
@@ -159,38 +159,35 @@ landed; one is left and it is the one that was never root-caused.
   which holds only VOBs whose visual resolved. Falls back to the index's own
   position now. Whether a paste breaks it *besides* this is unwitnessed. §16.24
 
-- **`extractRoutineStatesByNpc` answers `{}` — not reproducible at c514e8a**:
-  `ProjectService` is 55/55 in both jest configs. Daniel's to drop or re-witness.
+- **`extractRoutineStatesByNpc` answers `{}` — not reproducible, twice**: 55/55
+  at c514e8a, and over retail on 2026-09-02 it answered 271 NPCs (§16.19 s11).
+  **Daniel** drops it, or names the project it happened on.
 
 **Phase 1c — the overlay, at §16.19.** Not blocked.
 
-- **Insert NPC, from the World surface** — a button that writes `Wld_InsertNpc`
-  into `STARTUP_<worldfile>` and links the placed waypoint; the editor's first
-  write into a file it isn't editing. §16.19 s14's closing paragraph
-- **The routine index's coverage has never been measured** — one command
-  against `mdk/Content`; it qualifies everything built on the index. Now also
-  qualifies the slider: an hour it reads badly draws grey. §16.19 s6
-- **The State lens shipped on an unmeasured premise** — `check-routine-states.js`
-  has never run against a corpus, so whether a *global dropdown* is the right
-  control is unknown; one command answers it. §16.19 s11
+- **Insert NPC, from the World surface** — six slices at §16.19 s16; A and B
+  landed 2026-09-02 (regeneration is not byte-identical, so C writes by text
+  splice). **Next is C**, the main-side write, its own run. §16.19 s16
 
 **Phase 1c / Phase 2 — world findings get a locus** (§7 decision, §16.20)
 
-- **Portal orientation is unmeasured** — unblocked: the corpus is
-  `node scripts/extract-worlds.js` away and `getPortals` is the walk; the
-  sector-facing half is what the planarity script does not measure. §16.22 q3
+- **Portal orientation measured 2026-09-02** — front-named, `n` into the
+  first sector, on every decidable retail portal; whether to write the
+  warning (one shipped portal, `P:CAPTAIN_`, would fire it) is **Daniel's**
+  card to file, as q1/q2's were. §16.22 q3
 
 **Phase 1b-2 — VOB editing**
 
-- **Three gaps §14 never inventoried** — a mesh preview + picker for the VFS
-  browser that already exists (gates 1.3, 1.7 and the scatter tool), chest
-  contents (the first list field), first-person navigation. §16.26
+- **Three gaps §14 never inventoried** — the mesh preview and the fly
+  navigation landed 2026-09-02; left are the picker wiring into `insertVob` /
+  `setVobProp.visual` (gates 1.3, 1.7, scatter), the thumbnail grid, chest
+  contents (the first list field), and the walk with collision. §16.26
 - **Scatter placement, past Spacer rather than parity** — Spacer has no paint
   tool; the ops, the batch and the ground-drop all exist, so the work is the
   brush and five decisions, one of which (no scale field) may sink it. §16.25
-- **Euler order is not measured against Spacer** — Y-X-Z was picked on retail
-  singularity counts, not a Spacer match. Needs Spacer itself, and only two
-  functions change if it differs. **Daniel.** §16.4
+- **Euler order — Spacer cannot settle it** (2026-09-02): no Spacer shows an
+  angle triple, and the engine's `zMAT4` Euler is X-Y-Z, signs flipped against
+  ours. **Daniel** picks: match the engine, or keep Y-X-Z. §16.4
 
 **zenkit-node / fidelity**
 
@@ -238,9 +235,19 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 - **Unattended-queue row 42, the BINARY fidelity baseline** — no BINARY `.zen`
   exists on this machine to classify and the instrument has no BINARY walker, so
   it decomposes into three runs plus a scope call. §14.3 3.1
+- **The routine index loses 18 % of retail to one grammar gap** (2026-09-02):
+  `prototype_declaration` takes a `class_body`, so a call statement in a
+  prototype body voids the whole file (`DMT_DementorAmbient.d`, 1,128 entries).
+  The fix is `grammar.js` + a native regenerate — a parser card. §16.19 s6
+- **The State select's option order** (2026-09-02): the measurement says the
+  dropdown is right and its flat list is wrong — 112 of 182 names reach one
+  NPC. Shared names first, singletons after; a small UI card. §16.19 s11
 
 ## Done
 
 - **Agent worktrees** (Daniel, 2026-09-01) — `npm run wt:new/list/rm` and
   `tools/worktree.js`. One agent, one checkout; the seeded `.node` files keep a
   fresh worktree free of a ZenKit or tree-sitter compile. AGENTS.md.
+- **2026-09-02, eight agent branches merged** — `git log` has them. **Daniel,
+  two looks:** right-hold + WASD in the viewport; Assets → `NW_CRATE.MRM`,
+  drag to orbit.

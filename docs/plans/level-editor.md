@@ -3155,7 +3155,10 @@ the VFS plumbing:
   the orbit moves or a texture arrives. An unextractable name says so. **Not
   done**: no picker wiring and no thumbnail grid — the two bullets below — and
   `.MDH` alone is refused as "neither", which is right (a hierarchy has no
-  geometry).
+  geometry). One fact for the grid: `world:visual` transfers a freshly
+  built payload per click with no cache, so a large `.MDL` re-extracts on every
+  re-selection — fine for a panel, and the thumbnail grid will want the worker
+  to cache or the renderer to memoise per name.
 - **It is a namespace explorer, not a picker.** `onPreview` sets a viewed path;
   nothing feeds a chosen name back into `insertVob`'s class field or
   `setVobProp.visual`. Wiring that is the difference between "a browser exists"
