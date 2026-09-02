@@ -92,6 +92,25 @@ describe('project config IPC', () => {
     await expect(invoke('project:saveAssetSources', second.projectFilePath, ['.', picked])).rejects.toThrow(/native folder picker/i);
   });
 
+  it('grants a folder to the project that opened the picker when another project loads meanwhile', async () => {
+    const first = await makeProject();
+    const second = await makeProject();
+    const picked = await fs.mkdtemp(path.join(os.tmpdir(), 'dde-interleaved-assets-'));
+    let resolvePicker!: (result: { canceled: boolean; filePaths: string[] }) => void;
+    electron.__showOpenDialog.mockImplementationOnce(() => new Promise((resolve) => { resolvePicker = resolve; }));
+
+    await invoke('project:loadConfig', first.root);
+    const pendingSelection = invoke('project:selectAssetSourceFolder');
+    await invoke('project:loadConfig', second.root);
+    resolvePicker({ canceled: false, filePaths: [picked] });
+    await expect(pendingSelection).resolves.toBe(picked);
+
+    await expect(invoke('project:saveAssetSources', second.projectFilePath, ['.', picked])).rejects.toThrow(/native folder picker/i);
+    await expect(invoke('project:saveAssetSources', first.projectFilePath, ['.', picked])).resolves.toMatchObject({
+      config: { assetSources: ['.', picked] },
+    });
+  });
+
   it('rejects malformed arrays, missing root, unknown files, and ungranted absolute paths', async () => {
     const project = await makeProject();
     await invoke('project:loadConfig', project.root);

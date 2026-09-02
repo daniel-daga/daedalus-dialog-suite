@@ -407,14 +407,22 @@ export function setupIpcHandlers() {
   ipcMain.handle('project:selectAssetSourceFolder', async (_event, defaultPath: unknown) => {
     assertOptionalFolderPath(defaultPath);
     if (!activeProjectFileKey) throw new Error('Load a project before selecting an asset source folder');
+    const projectKey = activeProjectFileKey;
+    const registered = registeredProjectConfigs.get(projectKey);
+    if (!registered) throw new Error('The active project is no longer loaded');
     const result = await dialog.showOpenDialog({
       ...(defaultPath === undefined ? {} : { defaultPath }),
       properties: ['openDirectory'],
     });
     if (result.canceled || result.filePaths.length === 0) return null;
     const selected = result.filePaths[0];
+    // The dialog may stay open while another project becomes active. Grant the
+    // selection to the project that launched it, never whichever project is
+    // active when the promise settles. If that registration was replaced in
+    // the meantime, it is stale and must not be revived by this late result.
+    if (registeredProjectConfigs.get(projectKey) !== registered) return selected;
     pathValidator.addAllowedPath(selected);
-    registeredProjectConfigs.get(activeProjectFileKey)!.allowedAbsoluteSources.add(absoluteSourceKey(selected));
+    registered.allowedAbsoluteSources.add(absoluteSourceKey(selected));
     return selected;
   });
 
