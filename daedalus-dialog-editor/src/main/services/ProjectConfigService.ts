@@ -1,4 +1,4 @@
-import { constants, existsSync } from 'node:fs';
+import { constants, statSync } from 'node:fs';
 import { access, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { gothicAssetSources } from 'zen-world';
@@ -14,6 +14,10 @@ const PROJECT_FILE_SUFFIX = '.gothicproject.json';
 const TARGETS = new Set<GothicTarget>(['g1', 'g2', 'g2-notr']);
 const ARCHIVES = ['Textures.vdf', 'Textures_Addon.vdf', 'Meshes.vdf', 'Meshes_Addon.vdf', 'Anims.vdf', 'Anims_Addon.vdf'];
 const COMPILED_FOLDERS = ['Meshes', 'Textures', 'Anims'];
+
+function isPortableAbsolute(candidate: string): boolean {
+  return path.win32.isAbsolute(candidate) || path.posix.isAbsolute(candidate);
+}
 
 function recordAt(value: unknown, field: string): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -54,7 +58,7 @@ export function parseProjectFile(value: unknown): GothicProjectFileV1 {
     throw new Error('target must be one of g1, g2, or g2-notr');
   }
   const scriptsRoot = stringAt(root.scriptsRoot, 'scriptsRoot');
-  if (scriptsRoot.length === 0 || path.isAbsolute(scriptsRoot)) {
+  if (scriptsRoot.length === 0 || isPortableAbsolute(scriptsRoot)) {
     throw new Error('scriptsRoot must be a non-empty relative path');
   }
   if (!Array.isArray(root.worlds)) throw new Error('worlds must be an array');
@@ -101,14 +105,20 @@ async function isAvailableDirectory(candidate: string): Promise<boolean> {
 }
 
 async function isInstallShaped(candidate: string): Promise<boolean> {
-  const probes = [
-    ...ARCHIVES.flatMap((archive) => [path.join(candidate, 'Data', archive), path.join(candidate, 'Data', `${archive}.disabled`)]),
-    ...COMPILED_FOLDERS.map((folder) => path.join(candidate, '_work', 'Data', folder, '_compiled')),
+  const probes: Array<{ filePath: string; kind: 'file' | 'directory' }> = [
+    ...ARCHIVES.flatMap((archive) => [
+      { filePath: path.join(candidate, 'Data', archive), kind: 'file' as const },
+      { filePath: path.join(candidate, 'Data', `${archive}.disabled`), kind: 'file' as const },
+    ]),
+    ...COMPILED_FOLDERS.map((folder) => ({
+      filePath: path.join(candidate, '_work', 'Data', folder, '_compiled'),
+      kind: 'directory' as const,
+    })),
   ];
   for (const probe of probes) {
     try {
-      await access(probe, constants.R_OK);
-      return true;
+      const details = await stat(probe.filePath);
+      if (probe.kind === 'file' ? details.isFile() : details.isDirectory()) return true;
     } catch {
       // Continue probing known install markers.
     }
@@ -126,7 +136,7 @@ export async function resolveProjectConfig(
   const warnings: ProjectConfigWarning[] = [];
 
   for (const source of config.assetSources) {
-    const resolvedPath = path.resolve(projectRoot, source);
+    const resolvedPath = isPortableAbsolute(source) ? source : path.resolve(projectRoot, source);
     if (!await isAvailableDirectory(resolvedPath)) {
       warnings.push({
         code: 'asset-source-unavailable',
@@ -138,7 +148,14 @@ export async function resolveProjectConfig(
     }
     if (await isInstallShaped(resolvedPath)) {
       const portableRoot = resolvedPath.replace(/\\/g, '/');
-      const expanded = gothicAssetSources(portableRoot, existsSync);
+      const expanded = gothicAssetSources(portableRoot, (candidate) => {
+        try {
+          const details = statSync(candidate);
+          return candidate.endsWith('/_compiled') ? details.isDirectory() : details.isFile();
+        } catch {
+          return false;
+        }
+      });
       resolvedAssetSources.push(...expanded.map((candidate) => path.normalize(candidate)));
     } else {
       resolvedAssetSources.push(resolvedPath);

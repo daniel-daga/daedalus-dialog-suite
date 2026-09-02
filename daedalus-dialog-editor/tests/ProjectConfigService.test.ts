@@ -46,6 +46,7 @@ describe('ProjectConfigService', () => {
     ['unsupported version', { ...validConfig(), version: 2 }, /version/i],
     ['invalid target', { ...validConfig(), target: 'g3' }, /target/i],
     ['absolute scriptsRoot', { ...validConfig(), scriptsRoot: 'C:\\scripts' }, /scriptsRoot/i],
+    ['POSIX absolute scriptsRoot', { ...validConfig(), scriptsRoot: '/opt/gothic/scripts' }, /scriptsRoot/i],
     ['missing assetSources', { ...validConfig(), assetSources: undefined }, /assetSources/i],
     ['empty assetSources', validConfig([]), /assetSources/i],
     ['non-string asset source', validConfig(['.', 42]), /assetSources\[1\]/i],
@@ -77,6 +78,19 @@ describe('ProjectConfigService', () => {
     expect(opened.scriptsRoot).toBe(root);
     expect(opened.resolvedAssetSources).toEqual([root, relative, absolute]);
     expect(opened.config.assetSources).toEqual(['.', 'assets', absolute]);
+  });
+
+  test('classifies foreign-platform absolute sources as absolute without rewriting their spelling', async () => {
+    const foreignAbsolute = process.platform === 'win32' ? '/opt/gothic/assets' : 'C:\\Gothic\\Data';
+    const config = parseProjectFile(validConfig(['.', foreignAbsolute]));
+
+    const opened = await resolveProjectConfig(join(root, 'demo.gothicproject.json'), config);
+
+    expect(opened.config.assetSources[1]).toBe(foreignAbsolute);
+    expect(opened.warnings[0]).toEqual(expect.objectContaining({
+      source: foreignAbsolute,
+      resolvedPath: foreignAbsolute,
+    }));
   });
 
   test('warns and omits missing or unreadable sources', async () => {
@@ -120,6 +134,26 @@ describe('ProjectConfigService', () => {
     const config = parseProjectFile(validConfig(['.', 'Gothic']));
     expect((await resolveProjectConfig(join(root, 'p.gothicproject.json'), config)).resolvedAssetSources)
       .toEqual([root, compiled]);
+  });
+
+  test('does not treat a directory named like a VDF as an install marker', async () => {
+    const assets = join(root, 'assets');
+    await mkdir(join(assets, 'Data', 'Textures.vdf'), { recursive: true });
+    const config = parseProjectFile(validConfig(['.', 'assets']));
+
+    expect((await resolveProjectConfig(join(root, 'p.gothicproject.json'), config)).resolvedAssetSources)
+      .toEqual([root, assets]);
+  });
+
+  test('does not treat a file at a compiled-folder path as an install marker', async () => {
+    const assets = join(root, 'assets');
+    const compiled = join(assets, '_work', 'Data', 'Textures', '_compiled');
+    await mkdir(join(assets, '_work', 'Data', 'Textures'), { recursive: true });
+    await writeFile(compiled, 'not a directory');
+    const config = parseProjectFile(validConfig(['.', 'assets']));
+
+    expect((await resolveProjectConfig(join(root, 'p.gothicproject.json'), config)).resolvedAssetSources)
+      .toEqual([root, assets]);
   });
 });
 
