@@ -89,22 +89,15 @@ function planeDeviation(corners, plane) {
 }
 
 /**
- * Every portal polygon of a world with its corner positions and stored plane.
+ * The corner positions and stored plane of every polygon in `wanted` — a Map
+ * from mesh polygon index to whatever tag the caller wants back on the row.
+ * This is the fan join described above; `check-portal-orientation.js` rides
+ * the same walk for its sector polygons.
  *
  * `zenkit` is passed in rather than required here so the join can be exercised
  * against a fixture world from the test suite.
  */
-function portalPolygonCorners(zenkit, handle) {
-  const portals = zenkit.getPortals(handle);
-  const polygonIndices = new Uint32Array(portals.polygonIndices);
-  const portalKinds = new Uint8Array(portals.portalKinds);
-  const wanted = new Map(); // mesh polygon index -> portal kind
-  let sectorPolygons = 0;
-  for (let i = 0; i < polygonIndices.length; i += 1) {
-    if (portalKinds[i] === 0) sectorPolygons += 1;
-    else wanted.set(polygonIndices[i], portalKinds[i]);
-  }
-
+function polygonCorners(zenkit, handle, wanted) {
   const chunks = new Map(); // material index -> { positions, indices, flags }
   for (const chunk of zenkit.extractWorldMesh(handle).chunks) {
     chunks.set(chunk.materialIndex, {
@@ -154,7 +147,7 @@ function portalPolygonCorners(zenkit, handle) {
         material: polygon.material,
         cornerCount,
         sectorIndex: polygon.sectorIndex,
-        portalKind: wanted.get(polygonIndex),
+        tag: wanted.get(polygonIndex),
         plane: polygon.plane,
         corners: cornerIndices.map((v) => [
           chunk.positions[v * 3], chunk.positions[v * 3 + 1], chunk.positions[v * 3 + 2],
@@ -165,7 +158,24 @@ function portalPolygonCorners(zenkit, handle) {
     if (offset + drill.geometry.length >= drill.polyCount) break;
   }
 
-  return { polygons, flagMismatches, unjoined, sectorPolygons, polyCount: portals.polyCount };
+  return { polygons, flagMismatches, unjoined };
+}
+
+/** Every portal polygon of a world with its corner positions and stored plane. */
+function portalPolygonCorners(zenkit, handle) {
+  const portals = zenkit.getPortals(handle);
+  const polygonIndices = new Uint32Array(portals.polygonIndices);
+  const portalKinds = new Uint8Array(portals.portalKinds);
+  const wanted = new Map(); // mesh polygon index -> portal kind
+  let sectorPolygons = 0;
+  for (let i = 0; i < polygonIndices.length; i += 1) {
+    if (portalKinds[i] === 0) sectorPolygons += 1;
+    else wanted.set(polygonIndices[i], portalKinds[i]);
+  }
+
+  const found = polygonCorners(zenkit, handle, wanted);
+  for (const polygon of found.polygons) polygon.portalKind = polygon.tag;
+  return { ...found, sectorPolygons, polyCount: portals.polyCount };
 }
 
 /** Deviations bucketed by decade, so the tail is visible and not just the max. */
@@ -244,6 +254,6 @@ function main() {
   }
 }
 
-module.exports = { fanCornerIndices, planeDeviation, portalPolygonCorners };
+module.exports = { fanCornerIndices, planeDeviation, polygonCorners, portalPolygonCorners };
 
 if (require.main === module) main();

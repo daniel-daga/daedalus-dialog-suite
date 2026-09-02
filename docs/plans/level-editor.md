@@ -2724,10 +2724,34 @@ and the worst shipped polygon is 12.1. **So the tolerance is ≥ 12.1 units** �
 anything tighter flags OldWorld as shipped — and a check at that width catches
 only a polygon folded outright, which is the honest thing it can do.
 
-**q3 is unblocked and unrun.** It rides the same `getPortals` walk over the
-same corpus; the sector-facing half — which of a portal's two sectors its
-normal points into — is not what the planarity script measures, and it is a
-card for a person to file.
+**q3 ran 2026-09-02: the normal points into the first-named sector.**
+`scripts/check-portal-orientation.js` rides the same `getPortals` walk and the
+planarity script's verified fan join (`polygonCorners` is now exported from it,
+and `sidesOf` from the pairing script), and needed no C++: a sector's polygons
+carry the material `S:<sector>_<material>` and no sector name holds an
+underscore (§16.18), so membership is read off the material name —
+`sector_index` is -1 on every retail polygon and `bsp.portal_polygon_indices`
+is empty in every retail world, so neither is one. The number per portal is
+the signed distance of each named sector's centroid from the stored plane.
+Over the four worlds, **every two-sided `P:A_B` the centroid test can decide
+is front-named** — 355 of 443 in NewWorld, 46 of 52 in OldWorld, 140 of 140 in
+AddonWorld, 226 of 226 in DragonIsland — and the 94 it cannot decide (both
+centroids on one side: 44 + 44 in NewWorld, 3 + 3 in OldWorld, always as a
+pair, since `P:A_B` and `P:B_A` share the plane) all lean the same way,
+*more of A than of B in front*. Those are nested sectors (`P:HH1_HH7`, the
+thief-guild rooms), where a centroid is the wrong instrument and a
+corner-fraction is the right one — so a check must judge by corners, not by
+centroid, or it flags retail. One-sided portals (`P:A_`, `P:_B`, the empty
+side outdoors) agree at 97.7–100 %, with six exceptions in three portals:
+`P:GRPTURM01_`/`P:_GRPTURM01` and `P:DT1_`/`P:_DT1` (the named sector 28–31 %
+in front — a doorway on the edge of a large sector, so a centroid artefact
+again) and `P:CAPTAIN_` (1 % in front, on NewWorld and DragonIsland alike),
+which is the one row that reads as a genuinely reversed retail portal. So the
+convention is settled — front-named, `n` into A — and a check on it would be a
+warning that fires once on shipped content; whether to write it is a person's
+card, as q1 and q2's are. `test/portalOrientation.test.js` pins the sector
+parse, the centroid arithmetic and the verdict on a fixture; the corpus half
+needs `worlds/`.
 
 What the script does, so the next run does not re-derive it. Two numbers per
 portal polygon: **spread**, `max(n·p) - min(n·p)` over the corners with the
