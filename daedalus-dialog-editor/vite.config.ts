@@ -22,9 +22,13 @@ function monacoLocalAssets(): Plugin {
   const require = createRequire(import.meta.url);
   const vsDir = path.join(path.dirname(require.resolve('monaco-editor/package.json')), 'min/vs');
   const PREFIX = '/monaco/vs/';
+  let outDir = '';
 
   return {
     name: 'monaco-local-assets',
+    configResolved(config) {
+      outDir = path.resolve(config.root, config.build.outDir);
+    },
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         const url = req.url?.split('?')[0];
@@ -43,9 +47,9 @@ function monacoLocalAssets(): Plugin {
       });
     },
     closeBundle() {
-      const outDir = path.join(__dirname, 'dist/renderer/monaco/vs');
-      fs.rmSync(outDir, { recursive: true, force: true });
-      fs.cpSync(vsDir, outDir, { recursive: true });
+      const target = path.join(outDir, 'monaco/vs');
+      fs.rmSync(target, { recursive: true, force: true });
+      fs.cpSync(vsDir, target, { recursive: true });
     },
   };
 }

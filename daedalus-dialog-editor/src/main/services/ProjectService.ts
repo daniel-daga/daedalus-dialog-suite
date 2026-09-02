@@ -25,6 +25,7 @@ import {
 } from '../utils/semanticMetadataUtils';
 import { MetadataWorkerPool } from './MetadataWorkerPool';
 import type { MetadataResult } from './MetadataWorkerPool';
+import { LruMap } from '../utils/lruMap';
 
 function normalizeIdentifier(value: string): string {
   return value.trim().toUpperCase();
@@ -45,17 +46,11 @@ class ProjectService {
    * Entries are served at most once (take semantics) so the main process does
    * not duplicate the renderer's model cache at steady state.
    */
-  private primedModels = new Map<string, { mtimeMs: number; model: SemanticModel }>();
+  private primedModels = new LruMap<string, { mtimeMs: number; model: SemanticModel }>(MAX_PRIMED_MODELS);
 
   primeParsedModel(filePath: string, mtimeMs: number, model: SemanticModel): void {
     if (!model || model.hasErrors) return;
-    this.primedModels.delete(filePath);
     this.primedModels.set(filePath, { mtimeMs, model });
-    while (this.primedModels.size > MAX_PRIMED_MODELS) {
-      const oldest = this.primedModels.keys().next().value;
-      if (oldest === undefined) break;
-      this.primedModels.delete(oldest);
-    }
   }
 
   /**

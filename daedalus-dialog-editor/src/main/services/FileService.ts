@@ -4,6 +4,7 @@ import * as path from 'path';
 import { dialog } from 'electron';
 import { decodeBuffer, encodeWithRoundtripCheck } from '../utils/encodingUtils';
 import { canonicalPathKey } from '../utils/pathKey';
+import { LruMap } from '../utils/lruMap';
 
 /**
  * Error types for FileService operations
@@ -21,18 +22,27 @@ export class FileServiceError extends Error {
 }
 
 /**
+ * Upper bound on the per-path caches below. Far above the number of files a
+ * session reads through this service (opened files, not the index pass), so
+ * eviction is a memory bound, not a working-set event; an evicted encoding
+ * falls back to the windows-1252 default on write, and an evicted mtime makes
+ * the `expectUnchanged` guard a no-op for that one write (§3 P3).
+ */
+export const FILE_CACHE_CAP = 1024;
+
+/**
  * Mapping of canonical path keys (see `canonicalPathKey`) to detected
  * encodings. This allows us to preserve the original encoding when saving
  * files, whichever spelling of the path the caller holds.
  */
-const fileEncodingCache = new Map<string, string>();
+const fileEncodingCache = new LruMap<string, string>(FILE_CACHE_CAP);
 
 /**
  * Mapping of canonical path keys to the `mtimeMs` observed at the last successful read
  * or write. Used by the `expectUnchanged` write precondition (E4 phase 2) to
  * detect an external modification landing before the file watcher fires.
  */
-const fileStatCache = new Map<string, number>();
+const fileStatCache = new LruMap<string, number>(FILE_CACHE_CAP);
 
 /**
  * Simple lock mechanism to prevent race conditions during file operations

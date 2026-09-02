@@ -64,10 +64,28 @@ function stampNonDialogLineActionIds(
 }
 
 /**
+ * Models already put through `ensureActionIds`, keyed on the object that went
+ * in and on the one that came out. `openFile` is handed the projectStore's
+ * cached model object on a cross-file dialog click, and the same object again
+ * on the next click — the walk is O(functions × dialogs) and has nothing left
+ * to stamp the second time (§3 P3). A fresh parse is a fresh object and misses.
+ */
+const normalizedModels = new WeakMap<SemanticModel, SemanticModel>();
+
+/**
  * Ensure all actions in the model have unique IDs
  */
 function ensureActionIds(model: SemanticModel): SemanticModel {
   if (!model || !model.functions) return model;
+  const normalized = normalizedModels.get(model);
+  if (normalized) return normalized;
+  const result = walkActionIds(model);
+  normalizedModels.set(model, result);
+  normalizedModels.set(result, result);
+  return result;
+}
+
+function walkActionIds(model: SemanticModel): SemanticModel {
 
   // Build a map from function name to dialog base name.
   // First, map info functions directly via dialog properties.
