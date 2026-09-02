@@ -25,10 +25,11 @@ jest.mock('electron', () => ({
 jest.mock('../src/main/services/serviceRegistry', () => ({
   __pathValidator: { validatePathResolved: jest.fn(async () => undefined), addAllowedPath: jest.fn(), addAllowedFile: jest.fn() },
   __settings: { getGothicInstallPath: jest.fn(async () => null), clearGothicInstallPath: jest.fn(async () => undefined), getRecentProjects: jest.fn(async () => []) },
+  __worldService: { openWorld: jest.fn(async () => ({ worldPath: 'test', stats: {} })) },
   getServiceRegistry: () => ({
     fileService: {}, parserService: {}, codeGeneratorService: {}, validationService: {}, projectService: {},
     settingsService: (jest.requireMock('../src/main/services/serviceRegistry') as any).__settings,
-    fileWatcherService: {}, updaterService: {}, worldService: {}, worldFoldersService: {},
+    fileWatcherService: {}, updaterService: {}, worldService: (jest.requireMock('../src/main/services/serviceRegistry') as any).__worldService, worldFoldersService: {},
     logService: { log: jest.fn(), getLogFilePath: jest.fn() },
     pathValidator: (jest.requireMock('../src/main/services/serviceRegistry') as any).__pathValidator,
   }),
@@ -58,6 +59,7 @@ describe('project config IPC', () => {
     registry.__pathValidator.addAllowedPath.mockClear();
     registry.__settings.getGothicInstallPath.mockReset().mockResolvedValue(null);
     registry.__settings.clearGothicInstallPath.mockClear();
+    registry.__worldService.openWorld.mockClear();
     setupIpcHandlers();
   });
 
@@ -222,6 +224,20 @@ describe('project config IPC', () => {
     await expect(opening).rejects.toThrow(/project changed|active project/i);
     await expect(invoke('project:saveAssetSources', second.projectFilePath, ['.']))
       .resolves.toMatchObject({ projectFilePath: second.projectFilePath });
+  });
+
+  it('dispatches a world open when the active project remains unchanged', async () => {
+    const project = await makeProject();
+    await invoke('project:loadConfig', project.root);
+    const summary = { worldPath: 'test', stats: {} };
+    registry.__worldService.openWorld.mockResolvedValueOnce(summary);
+
+    await expect(invoke('world:open', {
+      worldPath: path.join(project.root, 'World.zen'), gameVersion: 'g2', projectFilePath: project.projectFilePath,
+    })).resolves.toEqual(summary);
+    expect(registry.__worldService.openWorld).toHaveBeenCalledWith(expect.objectContaining({
+      worldPath: path.join(project.root, 'World.zen'), gameVersion: 'g2', assetSources: [project.root],
+    }));
   });
 
   it('rejects malformed arrays, missing root, unknown files, and ungranted absolute paths', async () => {

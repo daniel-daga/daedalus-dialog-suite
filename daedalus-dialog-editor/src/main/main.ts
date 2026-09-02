@@ -708,7 +708,7 @@ export function setupIpcHandlers() {
       if (activeProjectFileKey !== key || registeredProjectConfigs.get(key) !== registered) {
         throw new Error('The active project changed while loading the project configuration');
       }
-      registerProjectConfig(refreshed.project);
+      const refreshedRegistration = registerProjectConfig(refreshed.project);
       const assetSources = refreshed.project.resolvedAssetSources;
       if (assetSources.length === 0) {
         throw new Error('Configure at least one available asset source before opening a world.');
@@ -717,7 +717,7 @@ export function setupIpcHandlers() {
       for (const source of assetSources) {
         await pathValidator.validatePathResolved(source);
       }
-      if (activeProjectFileKey !== key || registeredProjectConfigs.get(key) !== registered) {
+      if (activeProjectFileKey !== key || registeredProjectConfigs.get(key) !== refreshedRegistration) {
         throw new Error('The active project changed while validating asset sources');
       }
       return await worldService.openWorld({
