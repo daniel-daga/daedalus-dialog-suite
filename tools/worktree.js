@@ -95,8 +95,10 @@ function cmdNew(argv) {
     console.log('\nSkipped install. Run `pnpm install` in the worktree before testing.');
   } else {
     console.log('\npnpm install ...');
-    const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
-    const r = spawnSync(pnpm, ['install'], { cwd: dir, stdio: 'inherit' });
+    // One command string under a shell: Node >= 20.12 / 24 refuses to spawn a
+    // `.cmd` shim directly on Windows (EINVAL), and passing args alongside
+    // `shell: true` is deprecated (DEP0190), so the whole line is the command.
+    const r = spawnSync('pnpm install', { cwd: dir, stdio: 'inherit', shell: true });
     if (r.status !== 0) fail('pnpm install failed — fix it in the worktree, the tree itself is fine');
   }
 
