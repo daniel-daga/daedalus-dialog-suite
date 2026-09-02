@@ -12,6 +12,7 @@ import { create } from 'zustand';
 import { enableMapSet } from 'immer';
 import type { DialogMetadata, SemanticModel } from '../types/global';
 import type { RoutineSite, SpawnSite } from '../../shared/types';
+import type { GothicProjectFileV1, ProjectConfigWarning } from '../../shared/projectConfigTypes';
 import { getQuestUsage } from '../utils/questAnalyzer';
 import { deserialiseIpcMap } from '../utils/ipcSerialisation';
 import { escapeRegExp } from '../utils/pathAndIdentifierUtils';
@@ -51,6 +52,10 @@ interface ProjectState {
   // Project metadata
   projectPath: string | null;
   projectName: string | null;
+  projectFilePath: string | null;
+  projectConfig: GothicProjectFileV1 | null;
+  resolvedAssetSources: string[];
+  projectWarnings: ProjectConfigWarning[];
 
   // Project index (lightweight)
   npcList: string[];
@@ -109,6 +114,8 @@ interface ProjectState {
 interface ProjectActions {
   // Open and index a project
   openProject: (folderPath: string) => Promise<void>;
+  saveAssetSources: (assetSources: string[]) => Promise<void>;
+  dismissProjectWarning: (resolvedPath: string) => void;
 
   // Start background ingestion of all files
   startBackgroundIngestion: () => void;
@@ -386,6 +393,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   // Initial state
   projectPath: null,
   projectName: null,
+  projectFilePath: null,
+  projectConfig: null,
+  resolvedAssetSources: [],
+  projectWarnings: [],
   npcList: [],
   routineList: [],
   dialogIndex: new Map(),
@@ -417,14 +428,18 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       // Ensure the path is allowed in the backend (especially for recent projects)
       await window.editorAPI.addAllowedPath(folderPath);
 
+      // Load (or migrate) the project descriptor before indexing. The
+      // descriptor owns the normalized scripts root used by the indexer.
+      const descriptor = await window.editorAPI.loadProjectConfig(folderPath);
+
       // Build project index via IPC
-      const rawIndex = await window.editorAPI.buildProjectIndex(folderPath);
+      const rawIndex = await window.editorAPI.buildProjectIndex(descriptor.scriptsRoot);
 
       // Convert the plain object back to Map (IPC serialization loses Map type)
       const dialogsByNpc = deserialiseIpcMap<string, DialogMetadata[]>(rawIndex.dialogsByNpc);
 
       // Extract project name from path
-      const pathParts = folderPath.split(/[\\/]/);
+      const pathParts = descriptor.projectRoot.split(/[\\/]/);
       const projectName = pathParts[pathParts.length - 1];
 
       // Recent projects are persisted main-side inside project:openFolderDialog;
@@ -432,8 +447,12 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
       resetParsedFileRecency();
       set({
-        projectPath: folderPath,
+        projectPath: descriptor.projectRoot,
         projectName,
+        projectFilePath: descriptor.projectFilePath,
+        projectConfig: descriptor.config,
+        resolvedAssetSources: descriptor.resolvedAssetSources,
+        projectWarnings: descriptor.warnings,
         npcList: rawIndex.npcs || [],
         routineList: rawIndex.routines || [],
         dialogIndex: dialogsByNpc,
@@ -465,6 +484,34 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       // a message, so the failure has to leave this function (2026-07 2.1).
       throw error;
     }
+  },
+
+  saveAssetSources: async (assetSources: string[]) => {
+    const projectFilePath = get().projectFilePath;
+    if (!projectFilePath) {
+      throw new Error('No project is open');
+    }
+
+    try {
+      const descriptor = await window.editorAPI.saveProjectAssetSources(projectFilePath, assetSources);
+      set({
+        projectPath: descriptor.projectRoot,
+        projectFilePath: descriptor.projectFilePath,
+        projectConfig: descriptor.config,
+        resolvedAssetSources: descriptor.resolvedAssetSources,
+        projectWarnings: descriptor.warnings,
+        loadError: null
+      });
+    } catch (error) {
+      set({ loadError: error instanceof Error ? error.message : 'Failed to save asset sources' });
+      throw error;
+    }
+  },
+
+  dismissProjectWarning: (resolvedPath: string) => {
+    set((state) => ({
+      projectWarnings: state.projectWarnings.filter((warning) => warning.resolvedPath !== resolvedPath)
+    }));
   },
 
   startBackgroundIngestion: async () => {
@@ -606,6 +653,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     set({
       projectPath: null,
       projectName: null,
+      projectFilePath: null,
+      projectConfig: null,
+      resolvedAssetSources: [],
+      projectWarnings: [],
       npcList: [],
       routineList: [],
       dialogIndex: new Map(),

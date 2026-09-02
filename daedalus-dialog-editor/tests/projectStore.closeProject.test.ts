@@ -10,6 +10,10 @@ describe('ProjectStore - closeProject', () => {
   test('clears project state including questFiles', () => {
     useProjectStore.setState({
       projectPath: '/some/project',
+      projectFilePath: '/some/project/project.gothicproject.json',
+      projectConfig: { version: 1, target: 'g2-notr', scriptsRoot: '.', worlds: [], assetSources: ['.'] },
+      resolvedAssetSources: ['/some/project'],
+      projectWarnings: [{ code: 'asset-source-unavailable', source: '/missing', resolvedPath: '/missing', message: 'missing' }],
       projectName: 'project',
       npcList: ['NPC_1'],
       routineList: ['Routine_1'],
@@ -28,6 +32,10 @@ describe('ProjectStore - closeProject', () => {
 
     const state = useProjectStore.getState();
     expect(state.projectPath).toBeNull();
+    expect(state.projectFilePath).toBeNull();
+    expect(state.projectConfig).toBeNull();
+    expect(state.resolvedAssetSources).toEqual([]);
+    expect(state.projectWarnings).toEqual([]);
     expect(state.projectName).toBeNull();
     expect(state.npcList).toEqual([]);
     expect(state.routineList).toEqual([]);
