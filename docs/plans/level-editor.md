@@ -3156,20 +3156,21 @@ exists, not a new op.
 
 **What is undecided, and none of it is small.**
 
-- **What the brush paints.** A class plus a visual is not enough — retail
-  foliage is a set of visuals with a distribution (five bush meshes, not one),
-  so the tool needs a *palette* the user assembles, and nothing in the editor
-  stores one. Whether a palette is a project artefact, a settings blob or
-  transient per-session is the first decision.
+- **What the brush paints — partly settled 2026-09-02 (Daniel).** The palette
+  is assembled by selecting a handful of already-placed VOBs in the scene as
+  the scatter set, not a typed name or a stored settings blob — the tool reads
+  its distribution off a selection rather than off a separate palette editor.
+  Whether that selection is remembered across strokes/sessions or rebuilt every
+  time is still open.
 - **Where the models come from.** The VFS browser exists (`WorldAssetBrowser`,
   §16.26 row 1) but previews textures, not meshes, and feeds no field — a
   scatter tool needs the mesh preview and the picker wiring that row still
   wants, before a palette can be assembled from anything.
-- **Randomisation, and its reproducibility.** Rotation about the up axis,
-  uniform scale — except `zCVob` **has no scale field** (§14.1's "Not a gap"),
-  so size variation is unavailable and a forest will read as clones. That is a
-  fact about the format the tool cannot design around, and it should be settled
-  before the interaction is built, not after.
+- **Randomisation, and its reproducibility — the scale half dropped 2026-09-02
+  (Daniel): not needed.** `zCVob` **has no scale field** (§14.1's "Not a gap"),
+  so size variation was never available; Daniel does not consider that a
+  blocker. Rotation about the up axis is still open, and no longer coupled to
+  a scale decision that isn't coming.
 - **Density and the undo entry.** One stroke over a hillside is plausibly
   hundreds of VOBs in one batch; §15's undo bar has never been shown a batch
   that size, and neither has the structural re-read path (§16.24's two rebuilds
@@ -3273,6 +3274,12 @@ So the honest framing: the *asset access* layer §14 assumed was missing is
 landed; what §16.25/1.3/1.7 still want is a mesh-capable preview and a picker
 wired to the two write paths, then optionally a thumbnail grid on top.
 
+**Wanted on top, 2026-09-02 (Daniel): favorites and categories on the asset
+browser.** Neither exists — the browser is a plain VFS directory walk with no
+way to mark or group visuals. Undecided: whether either persists as a project
+sidecar or an app-level setting, and what a "category" is keyed on (the VFS
+directory it already has, a user tag, something else). Scoped in, not designed.
+
 **2. Container contents.** Spacer.NET calls it "convenient editing of chests
 contents". `oCMobContainer`'s catalogue is the thirteen `oCMobInter` fields plus
 `locked` and `pickString` — the item list itself is not there, because it is a
@@ -3283,6 +3290,14 @@ deferred, and it should be the case that reopens it. Note the cross-reference
 problem it inherits from `oCItem.instance`: contents are Daedalus item symbols,
 so validation splits across the IPC boundary exactly as that field's did, and
 "nothing is known" must not mean "nothing is legal".
+
+**Reopened 2026-09-02 (Daniel): wanted, and not as a bare list.** The contents
+editor should be the same visual grid the thumbnail-grid gap above still wants
+— pick items by picture, not by typing or choosing an instance symbol from a
+list — so this converges with row 1's thumbnail grid into one component rather
+than two. The two things that decision left unaddressed are unchanged by the UI
+choice: the list-field plumbing itself (§14.1 1.4's unbounded-payload concern),
+and the cross-reference validation split inherited from `oCItem.instance`.
 
 **3. First-person navigation.** Spacer has four movement modes (F3, M, T, C)
 and two camera slots; we have orbit, focus-on-selection and frame-world. A
@@ -3317,13 +3332,128 @@ session, reset when a different world opens, no persistence
 mode is a fly with gravity and a capsule against the world mesh, and the
 picking BVH (`BvhBuilder`, three-mesh-bvh on `world.worldMeshes`) can answer
 both queries — a downward ray for the floor, a `shapecast` for the walls —
-without a physics engine. The design questions it carries are the eye height
-(Gothic's hero is ~180 cm; the camera should stand where a player's would),
-what happens when the walk begins inside geometry (fall through, or refuse to
-enter), and whether it is a toggle key (Spacer's are F3/M/T/C, all free here)
-or a modifier on the same right-hold, which would keep the no-mode idiom.
+without a physics engine. **The three design questions, decided 2026-09-02
+(Daniel):** eye height is the ~180 cm hero-eye figure above — confirmed, not
+reopened. It is a **toggle key**, not a modifier on the right-hold fly (Spacer's
+F3/M/T/C are all free here; use one of them rather than the no-mode idiom).
+Starting inside geometry does not hard-refuse: search upward for the next free
+point above the start and enter there, and refuse only if the search finds
+none. Still open: which key, and how far up the search looks before giving up.
 Also unbound and cheap once a walk exists: Spacer's two camera slots.
 
 None of the three is scheduled. They are carded as one line because they share
 a cause — §14 was assembled against Spacer's *verbs*, and these are its
 *windows and modes*, which nobody enumerated until 2026-08-30.
+
+### 16.27 Four findings from Daniel's 2026-09-02 in-app pass — one carded, three confirmed fine
+
+Four of the "five looks" (board, §16.19/§16.26/§16.12's landed features) came
+back with findings. Each was diagnosed by a separate read-only pass before any
+fix; only item 1 is a real bug — items 2-4 were retested and confirmed working
+as built, so nothing there needs a code change.
+
+**1. Undo doesn't revert the 3D mesh after "Use as visual" — confirmed real
+bug.** `applied()` in `WorldSurface.tsx` (~825-908) only re-fetches
+`getWorldVisuals()` — the call that rebuilds the `InstancedPayload` the
+viewport renders from — when an op is `isStructuralOp` (`AddVob`,
+`ReparentVob`, `DeleteVob`; `zen-world/src/model/ops.ts:539`). `SetVobProp` is
+never structural, regardless of which field it touches, so the inverse
+`SetVobProp` that undo replays patches `worldStore` (`applyEdit`, correct —
+the property grid reads from there and shows the old name) but never
+triggers a re-read of the mesh payload. The forward edit only works because
+`handleEditProps`'s "Use as visual" call site has its own hand-written fast
+path (`if (props.visual !== undefined) setVisuals(await
+window.editorAPI.getWorldVisuals())`) — a path `runHistory`/`applied` never
+goes through, since undo and redo bypass `handleEditProps` entirely and call
+`applied(ops)` directly. Redo goes through the same gate and should show the
+identical bug, just harder to notice since redo's target already matches
+what's on screen. **Fix shape**: `applied` needs a `visual`-aware trigger
+(any op — forward or inverted — whose `to`/`from` touches `visual`) beside
+`isStructuralOp`, not instead of it. **Test gap**: no test asserts
+`getWorldVisuals` is called for an undo of a visual-carrying `SetVobProp`;
+`WorldSurface.editing.test.tsx`'s "does not re-read on an undo that was not
+structural" uses a plain `MoveVob`, which doesn't exercise this case at all.
+
+**2. "Can't find Insert NPC" — a real precondition, and a possible stale
+build, not mutually exclusive.** The gesture that works: open a world →
+explicitly turn the **"Waynet"** overlay toggle ON (`WorldOverlayControls.tsx`,
+off by default) → left-click terrain → a bottom bar appears
+(`world-terrain-bar`) → **only then**, gated on `showWaynet && waynet !==
+null`, does "Insert NPC here…" appear beside "Place VOB here…"
+(`WorldSurface.tsx:2515`). With Waynet off, ground-click shows only "Place
+VOB here…", with no hint a third option exists once Waynet is on — the
+board's own phrasing ("overlay on → ground click") states the precondition
+but nothing in the running UI does. A second entry point exists too: select
+an existing waypoint → `WaypointPanel`'s "Insert NPC at this waypoint…".
+Visibility needs no project or `Startup.d` open — those are checked only
+after the dialog is confirmed, surfacing as an edit-banner error. Separately:
+`daedalus-dialog-editor/dist/win-unpacked` (built 2026-08-27) predates this
+feature (landed 2026-09-02) entirely — if that packaged build is what ran
+instead of `npm run dev`/`npm start`, the feature genuinely isn't there.
+**Confirmed working, 2026-09-02 (Daniel).** No code change.
+
+**3. Camera slots "do nothing" — no wiring bug found.** `cameraSlotFor`
+(`cameraSlots.ts:29-38`) reads `event.code` (not `event.key`, so layout- and
+Shift-independent), and the `keydown` listener in `WorldViewport.tsx`
+(~1225-1256) is on `window`, not the canvas, so DOM focus isn't the issue; it
+skips typing targets first, then calls `preventDefault()`. No other
+`Ctrl+Digit` binding exists in the renderer, no Electron `Menu`/
+`globalShortcut` claims the combo, and both test files
+(`WorldViewport.cameraSlots.test.tsx`, dispatching real `KeyboardEvent`s;
+`cameraSlots.test.ts`) pass on `HEAD`. **Leading theory**: neither `store` nor
+`recall` gives any on-screen feedback — grepped for toast/status/announce,
+none exists — so storing a pose is silently a no-op to look at, and recalling
+it without having moved the camera first looks like a no-op too. A stale dev
+window that didn't pick up today's merge (Vite HMR miss) is the other live
+candidate. **Confirmed working, 2026-09-02 (Daniel), after retest.** No code
+change — the silent-feedback theory stands as the likely reason it first
+looked broken.
+
+**4. Fly speed** — "a bit fast by default" on first look (Daniel), then
+**confirmed fine, 2026-09-02** on further use. `flySpeedFor`
+(`renderer/world/flyNav.ts`) derives speed from the distance to the orbit
+pivot at hold-start, clamped 2–2000 m/s. No number changed.
+
+### 16.28 An arbitrary-length asset folder list, project root default (2026-09-02, Daniel)
+
+**Requested:** the asset browser, and world resolution, should pull from more
+than the single Gothic install path configured today — an **orderable list of
+any length**, not a fixed pair. The project root is the default first entry;
+further folders (the shared MDK folder is the common one, but the list is not
+limited to it) are added by hand. Worlds should resolve off the same source
+list, not a separate mechanism.
+
+**The native layer already does this — it is not the gap.** `openVfs`
+(zenkit-node) mounts an ordered list of directories/archives with later-wins
+overlay priority, a straight port of ZenGin's own VDFS load order, tested in
+`zenkit-node/test/assets.test.js`. `OpenWorldRequest.assetSources` is
+`string[]` end-to-end, IPC validation included, and `world:open`'s handler
+(`main.ts`) already accepts a `modSources` parameter appended after the
+install-derived list — "so a mod overrides the retail assets" — it is simply
+never populated from the app today.
+
+**What's missing is the settings layer, and it's a gap against what
+`docs/architecture/level-editor.md` §9 already committed to.** §9 already
+says "VDF search paths" (plural), "keyed by project" — but
+`SettingsService.getGothicInstallPath`/`setGothicInstallPath` is one flat
+global string, not project-keyed and not a list. So this request is mostly
+making §9's language real, not inventing new architecture:
+
+1. **A project-keyed list of asset sources**, not one global path and not
+   capped at two — settings need an addable, orderable, per-project source
+   list defaulting to the project root, with further folders (MDK included)
+   added by hand, any number of them.
+2. **`modSources` gets a UI and a settings-backed value**, plural. The
+   "project overrides the rest" default falls straight out of this, since
+   later sources already win — no new mount logic needed, just wiring.
+3. **World resolution moves off the dedicated file-picker dialog and onto
+   the same source list.** Today `.ZEN` opening is a native Open File dialog
+   seeded from the install path, not the merged VFS namespace — it cannot
+   reach a retail `.zen` still packed inside `Worlds.vdf`, only a loose file
+   in an extracted MDK-style install. Pulling worlds from the same
+   asset-source list fixes that limitation too, as a side effect.
+
+Not designed, not carded — the settings-schema shape (ordered list? how does
+it interact with the existing single global path?) needs a decision first.
+`docs/architecture/level-editor.md` §9 should be corrected once this lands,
+or corrected now to stop overclaiming what is actually built.

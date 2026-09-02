@@ -148,41 +148,43 @@ same commit; a run may not add rows.** `unattended-queue.md` — section 5 is
 empty but for row 42 (Triage); rows 1-27 landed 2026-08-30 to 2026-09-02, and
 the next unclaimed row is **28** (section 3, UI with a template in the tree).
 
-**Daniel's decisions — each one line, none blocking a run.**
-
-- **The three portal checks (q1 pairing, q2 planarity, q3 orientation)** —
-  all measured, all writable, none with a consumer: their input is not on the
-  editor's side of the binding (§16.20 slice 3, deferred). Recommend filing
-  them as *one* card with that consumer rather than three unplumbed
-  functions now; nothing is lost by waiting. §16.22
-- **Euler order — taken 2026-09-02 on the standing recommendation**, the
-  engine's X-Y-Z; a veto is a revert of two functions and their tests. §16.4
-- **Five looks in the running app** (2026-09-02): Assets → preview a `.MRM`,
-  select a VOB, "Use as visual", undo; overlay on → ground click → "Insert
-  NPC here…" with `Startup.d` in the project (the instance and duplicate
-  warnings, then the same with the file open-and-dirty); the State select's
-  order; a VOB's angle fields — a retail VOB stood at yaw ±90 now shows
-  roll 0 (§16.4); `Ctrl+Shift+1` then orbit away then `Ctrl+1`. Plus
-  right-hold + WASD and `NW_CRATE.MRM` drag-to-orbit from the last session.
-
 **Phase 1c — the overlay, at §16.19.** Not blocked.
 
 - **Insert NPC, from the World surface — A–E landed 2026-09-02**, and E's
   three forward facts closed the same day (instance and duplicate warnings,
   `parsedFiles` refreshed). Only slice F is left, and it is Deferred. §16.19 s16
 
-**Phase 1c / Phase 2 — world findings get a locus** (§7 decision, §16.20) —
-nothing carded beyond q3 above.
+**Phase 1c / Phase 2 — world findings get a locus** (§7 decision, §16.20)
+
+- **Portal checks' consumer — agreed 2026-09-02 (Daniel): one card, not
+  three.** q1 pairing, q2 planarity, q3 orientation are all measured and
+  writable; wire them through slice 3's locus once it exists. §16.22
 
 **Phase 1b-2 — VOB editing**
 
-- **§14's uninventoried gaps** — mesh preview, fly navigation, the picker
-  and the four camera slots landed; left are the thumbnail grid, chest
-  contents (the first list field — reopens a §14.1 1.4 decision, so Daniel's),
-  and the walk with collision (three design questions, all Daniel's). §16.26
-- **Scatter placement, past Spacer rather than parity** — the ops, the batch
-  and the ground-drop exist; the work is the brush and five decisions, one of
-  which (no scale field) may sink it. Benched until decided. §16.25
+- **Undo doesn't revert the 3D mesh after "Use as visual"** — confirmed real,
+  root cause and fix shape known: `applied()` re-reads visuals only for a
+  structural op, and `SetVobProp` never is. Needs a `visual`-aware trigger
+  and a test; neither exists. §16.27 item 1
+- **§14's uninventoried gaps** — mesh preview, fly navigation, the picker,
+  the four camera slots and the walk mode's design (toggle key; search up for
+  free space or refuse, on starting inside geometry) are settled; left are the
+  thumbnail grid and chest contents — **reopened 2026-09-02 (Daniel)**: wanted
+  as a visual grid, plus favorites and categories on the asset browser
+  generally. §16.26
+- **Scatter placement, past Spacer rather than parity** — **2026-09-02
+  (Daniel): the missing scale field doesn't block it**, and the palette is a
+  multi-VOB selection, not a stored blob. Still undecided: model source,
+  density/undo-bar size, erase. Benched until decided. §16.25
+
+**Asset sources**
+
+- **Arbitrary-length asset folder list — requested 2026-09-02 (Daniel)**:
+  not just mod + MDK — an orderable list of any size, project root the
+  default first entry, others (MDK included) added by hand. Worlds resolve
+  off the same list. The native VFS layer already supports the overlay; the
+  gap is settings (one global path today, not project-keyed, not a list).
+  Not designed yet. §16.28
 
 **zenkit-node / fidelity**
 
@@ -211,13 +213,6 @@ the series absorbed most of a night's run by the time `0048` landed.
 - **Half-way float rounding** — UCRT ties-to-even against MSVC 6's away-from-
   zero. The other 5 findings.
 
-- **`checkPortalMaterials`' consumer — deferred 2026-08-29** (Daniel). Not a
-  card: its input is not on the editor's side of the binding, so the slice is a
-  `zenkit-node` readout, a thirteenth worker op with its IPC chain and the rule
-  — three workspaces — plus an undefined part, what framing a polygon means.
-  Belongs with the Phase 2 geometric checks the measurement tranche leads into,
-  not ahead of them. §16.20 slice 3
-
 - **`.MMB` authoring has no ZenKit writer at all** — `MorphMesh` has `load` and
   no `save`: new upstream code, not a patch. Deferred 2026-08-28.
 
@@ -237,9 +232,5 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **2026-09-02, third session — five agent branches merged**, `git log` has
-  them: Insert NPC's three forward facts, the engine's Euler order, camera
-  slots, queue rows 21-27. Also: the `three` chunk had crossed CI's 550 kB
-  guard (addons now their own chunk), the parser CLI test failed under
-  `pnpm --filter` only, and §14.1 1.3 was a week stale. The
-  `extractRoutineStatesByNpc` `{}` card left on the locator card's rule.
+*(empty — flushed 2026-09-02; substance is in `git log`, forward fact already
+routed to the locator card's rule)*
