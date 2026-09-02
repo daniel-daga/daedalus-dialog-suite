@@ -145,8 +145,9 @@ writes, the classes beyond five), none of it carded.
 **The unattended queue — one card for 49 items.** Everything a run can take
 with nobody watching. **Take the top unclaimed row and cross it off in the
 same commit; a run may not add rows.** `unattended-queue.md` — section 5 is
-empty but for row 42 (Triage); rows 1-27 landed 2026-08-30 to 2026-09-02, and
-the next unclaimed row is **28** (section 3, UI with a template in the tree).
+empty but for row 42 (Triage); rows 1-27, 38 and 49 landed 2026-08-30 to
+2026-09-02, and the next unclaimed row is **28** (section 3, UI with a template
+in the tree).
 
 **Phase 1c — the overlay, at §16.19.** Not blocked.
 
@@ -156,20 +157,19 @@ the next unclaimed row is **28** (section 3, UI with a template in the tree).
 
 **Phase 1c / Phase 2 — world findings get a locus** (§7 decision, §16.20)
 
-- **Portal checks' consumer — agreed 2026-09-02 (Daniel): one card, not
-  three.** q1 pairing, q2 planarity, q3 orientation are all measured and
-  writable; wire them through slice 3's locus once it exists. §16.22
+- **Portal findings in the Problems panel — landed 2026-09-02, listed and not
+  clickable by decision.** Five rule ids over `checkPortals` in the worker;
+  the one-sided orientation cut (0.25 corner share) is the one number Daniel
+  may move; framing a polygon is still nobody's card. §16.20 slice 3, §16.22
 
 **Phase 1b-2 — VOB editing**
 
 - **§14's uninventoried gaps** — mesh preview, fly navigation, the picker,
-  the four camera slots and §16.12's outline tuning are settled; the walk
-  mode's design is settled bar its key (Ctrl+W proposed, but likely a
-  default Electron accelerator for Close) and its search-up bound (the
-  world's known height, not a guess — exact field TBD). Left otherwise: the
-  thumbnail grid and chest contents — reopened as a visual grid, plus
-  favorites/categories, persisted to a project sidecar, taxonomy referencing
-  `vobbilder`'s hand-curated tree. §16.26
+  the four camera slots, §16.12's outline tuning and now the walk (F3,
+  pointer lock, capsule against the BVH — landed 2026-09-02, feel unwitnessed
+  on a real GPU) are settled. Left: the thumbnail grid and chest contents —
+  reopened as a visual grid, plus favorites/categories, persisted to a project
+  sidecar, taxonomy referencing `vobbilder`'s hand-curated tree. §16.26
 - **Scatter placement, past Spacer rather than parity** — the missing scale
   field doesn't block it, the palette is a multi-VOB selection, and models
   come from the assets (same picker-wiring prerequisite as the row above).
@@ -232,3 +232,11 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 - **Undo now reverts the 3D mesh after "Use as visual"** — `applied` re-reads
   the visuals for a `visual`-carrying `SetVobProp`, and the forward path's
   duplicate fetch is gone. §16.27 item 1
+- **Walk mode** — F3 toggles, pointer-lock look, gravity and a capsule against
+  the picking BVH, silent refusal when no clear entry exists below the world's
+  top. Needs Daniel's eye for feel and real pointer lock. §16.26 item 3
+- **`zCZoneZFog.color` disabled while `overrideColor` is off** — the grid's one
+  cross-field rule, decided 2026-09-02. §14.1 1.4
+- **Queue rows 38 and 49** — simulator locked against real parser output; the
+  grammar takes no string escapes, matching `parser-roundtrip-scope.md`.
+  `unattended-queue.md`
