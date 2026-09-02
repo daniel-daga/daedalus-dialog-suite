@@ -1,75 +1,13 @@
 import type { ParserService } from './ParserService';
 import type { CodeGeneratorService } from './CodeGeneratorService';
 import { deserializeSemanticModel } from 'daedalus-parser/semantic-model';
-
-/**
- * Validation error types
- */
-export type ValidationErrorType =
-  | 'syntax_error'
-  | 'duplicate_dialog'
-  | 'missing_function'
-  | 'missing_required_property'
-  | 'circular_dependency'
-  | 'invalid_string_content'
-  | 'duplicate_voice_id'
-  | 'malformed_voice_id';
-
-/**
- * A single validation error
- */
-export interface ValidationError {
-  type: ValidationErrorType;
-  message: string;
-  dialogName?: string;
-  functionName?: string;
-  position?: { row: number; column: number };
-}
-
-/**
- * A validation warning (non-blocking)
- */
-export interface ValidationWarning {
-  type: string;
-  message: string;
-  dialogName?: string;
-  functionName?: string;
-}
-
-/**
- * Options for validation context
- */
-export interface ValidationOptions {
-  /** Existing dialog names in the project (for duplicate detection) */
-  existingDialogs?: string[];
-  /** Skip syntax validation (round-trip parsing) */
-  skipSyntaxValidation?: boolean;
-  /**
-   * Project-wide AI_Output voice ids (excluding the file being validated),
-   * keyed by UPPERCASED id — same shape as ProjectIndex.voiceIds.
-   */
-  existingVoiceIds?: Record<string, Array<{ filePath: string; functionName: string }>>;
-}
-
-/**
- * Result of validation
- */
-export interface ValidationResult {
-  isValid: boolean;
-  errors: ValidationError[];
-  warnings: ValidationWarning[];
-  generatedCode?: string;
-}
-
-/**
- * Code generation settings
- */
-interface CodeGeneratorSettings {
-  indentChar: '\t' | ' ';
-  includeComments: boolean;
-  sectionHeaders: boolean;
-  uppercaseKeywords: boolean;
-}
+import type {
+  CodeGenerationSettings,
+  ValidationError,
+  ValidationOptions,
+  ValidationResult,
+  ValidationWarning
+} from '../../shared/types';
 
 /**
  * Maps action type names to human-readable display labels used in error messages.
@@ -162,7 +100,7 @@ export class ValidationService {
    */
   async validate(
     model: any,
-    settings: CodeGeneratorSettings,
+    settings: CodeGenerationSettings,
     options: ValidationOptions = {}
   ): Promise<ValidationResult> {
     const errors: ValidationError[] = [];

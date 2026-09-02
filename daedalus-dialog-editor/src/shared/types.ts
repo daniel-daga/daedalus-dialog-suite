@@ -659,6 +659,7 @@ export type ValidationErrorType =
   | 'missing_function'
   | 'missing_required_property'
   | 'circular_dependency'
+  | 'invalid_string_content'
   | 'duplicate_voice_id'
   | 'malformed_voice_id';
 

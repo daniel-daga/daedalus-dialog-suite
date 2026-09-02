@@ -35,7 +35,9 @@ alive for the session:
 
 Both pools cap at `Math.max(1, Math.min(os.cpus().length - 1, 8))` — one core is
 left for the main thread/event loop, and the cap bounds native parser instances
-(each loads the parser and uses tens of MB) on high-core machines.
+(each loads the parser and uses tens of MB) on high-core machines. The rule is
+one function, `workerPoolSize` in `src/main/services/workerPoolSize.ts`, and
+both pools call it (`ParserService` only when no `workerCount` is passed).
 
 ## Timeout
 

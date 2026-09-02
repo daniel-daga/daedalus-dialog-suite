@@ -3,6 +3,7 @@ import * as path from 'path';
 import { randomUUID } from 'crypto';
 import * as os from 'os';
 import { WorkerRequestError } from './WorkerRequestError';
+import { workerPoolSize } from './workerPoolSize';
 
 const DEFAULT_PARSE_TIMEOUT_MS = 30000;
 const RESTART_WINDOW_MS = 60000;
@@ -56,9 +57,12 @@ export class ParserService {
     this.workerPath = options.workerPath ?? path.join(__dirname, '../workers/parser.worker.js');
     this.timeoutMs = options.timeoutMs ?? DEFAULT_PARSE_TIMEOUT_MS;
 
-    // Limit to 8 to avoid excessive memory usage, but at least 2 for parallelism.
-    const numCPUs = os.cpus().length;
-    this.workerCount = options.workerCount ?? Math.max(2, Math.min(numCPUs, 8));
+    this.workerCount = options.workerCount ?? workerPoolSize(os.cpus().length);
+  }
+
+  /** Threads this pool runs once started. */
+  get poolSize(): number {
+    return this.workerCount;
   }
 
   /**

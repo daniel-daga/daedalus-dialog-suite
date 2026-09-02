@@ -7,6 +7,7 @@ import type { DialogMetadata, SemanticModel } from '../../shared/types';
 import { promises as fsPromises } from 'fs';
 import { decodeBuffer } from '../utils/encodingUtils';
 import { WorkerRequestError } from './WorkerRequestError';
+import { workerPoolSize } from './workerPoolSize';
 
 const DEFAULT_TASK_TIMEOUT_MS = 30000;
 
@@ -84,6 +85,7 @@ export class MetadataWorkerPool {
   private workerPath = '';
   private readonly taskTimeoutMs: number;
   private readonly maxRestarts: number;
+  private readonly workerCount: number;
   private restartCount = 0;
 
   constructor(options: MetadataWorkerPoolOptions = {}) {
@@ -93,12 +95,12 @@ export class MetadataWorkerPool {
       // Jest should execute the current TS sources, not a potentially stale dist worker build.
       this.useInlineProcessing = true;
       this.maxRestarts = 0;
+      this.workerCount = 0;
       return;
     }
 
-    // Leave one core for the main thread/event loop; cap to bound native
-    // parser instances (each loads the parser and uses tens of MB).
-    const numWorkers = Math.max(1, Math.min(os.cpus().length - 1, 8));
+    const numWorkers = workerPoolSize(os.cpus().length);
+    this.workerCount = numWorkers;
     this.maxRestarts = options.maxRestarts ?? numWorkers * 3;
     this.workerPath = this.resolveWorkerPath(options.workerPath);
 
@@ -106,6 +108,11 @@ export class MetadataWorkerPool {
       const worker = this.spawnWorker();
       this.idleWorkers.push(worker);
     }
+  }
+
+  /** Threads this pool runs; 0 when it processes inline. */
+  get poolSize(): number {
+    return this.workerCount;
   }
 
   private resolveWorkerPath(override?: string): string {
