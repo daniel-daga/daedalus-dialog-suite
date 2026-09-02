@@ -5,6 +5,7 @@ import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import { setupIpcHandlers } from '../src/main/main';
+import { ProjectConfigService } from '../src/main/services/ProjectConfigService';
 
 type Handler = (event: unknown, ...args: unknown[]) => unknown;
 
@@ -173,6 +174,32 @@ describe('project config IPC', () => {
 
     await expect(invoke('project:saveAssetSources', second.projectFilePath, ['.']))
       .resolves.toMatchObject({ projectFilePath: second.projectFilePath });
+  });
+
+  it('rejects when another project becomes active during descriptor reload', async () => {
+    const first = await makeProject();
+    const second = await makeProject();
+    await invoke('project:loadConfig', first.root);
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => { release = resolve; });
+    const original = ProjectConfigService.prototype.openOrMigrate;
+    const reload = jest.spyOn(ProjectConfigService.prototype, 'openOrMigrate')
+      .mockImplementationOnce(async (...args) => {
+        await blocked;
+        return original.apply(ProjectConfigService.prototype, args);
+      });
+
+    const opening = invoke('world:open', {
+      worldPath: path.join(first.root, 'World.zen'), gameVersion: 'g2', projectFilePath: first.projectFilePath,
+    });
+    await Promise.resolve();
+    await invoke('project:loadConfig', second.root);
+    release();
+
+    await expect(opening).rejects.toThrow(/project changed|active project/i);
+    await expect(invoke('project:saveAssetSources', second.projectFilePath, ['.']))
+      .resolves.toMatchObject({ projectFilePath: second.projectFilePath });
+    reload.mockRestore();
   });
 
   it('rejects malformed arrays, missing root, unknown files, and ungranted absolute paths', async () => {

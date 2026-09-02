@@ -705,6 +705,9 @@ export function setupIpcHandlers() {
       const registered = registeredProjectConfigs.get(key);
       if (!registered) throw new Error('Load a project before opening a world');
       const refreshed = await projectConfigService.openOrMigrate(registered.descriptor.projectRoot, null);
+      if (activeProjectFileKey !== key || registeredProjectConfigs.get(key) !== registered) {
+        throw new Error('The active project changed while loading the project configuration');
+      }
       registerProjectConfig(refreshed.project);
       const assetSources = refreshed.project.resolvedAssetSources;
       if (assetSources.length === 0) {
