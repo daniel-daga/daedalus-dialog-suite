@@ -8,7 +8,7 @@ import * as THREE from 'three';
 // are told apart by whether anything moved (`moved`).
 //
 // No gravity and no collision: this is a fly, not a walk. The walk that
-// collides against the picking BVH is the open half of §16.26 row 3.
+// collides against the picking BVH is `walkNav`, the other half of the row.
 
 export type FlyMove = 'forward' | 'back' | 'left' | 'right' | 'up' | 'down';
 
@@ -37,8 +37,9 @@ export const MAX_FLY_SPEED = 2000;
  *  `lookAt` that OrbitControls does on the way back has an up to use. */
 const PITCH_LIMIT = Math.PI / 2 - 0.01;
 /** A frame after a stall — a hidden tab, a debugger — moves this much at most,
- *  rather than the whole stall's worth in one jump. */
-const MAX_STEP_SECONDS = 0.1;
+ *  rather than the whole stall's worth in one jump. The walk shares it: a
+ *  stalled tab that integrated a whole second of gravity would tunnel a floor. */
+export const MAX_STEP_SECONDS = 0.1;
 
 /**
  * Metres per second for a fly begun with the orbit pivot this far away: the
@@ -53,6 +54,17 @@ export function flySpeedFor(pivotDistance: number): number {
 // Scratch, so a frame allocates nothing.
 const euler = new THREE.Euler(0, 0, 0, 'YXZ');
 const stride = new THREE.Vector3();
+
+/** Turn a camera by a mouse delta in pixels. Yaw about the world's up, pitch
+ *  about the camera's right, never any roll: YXZ Euler is exactly that. The
+ *  walk looks the same way, which is why this is not a method of `Fly`. */
+export function turnCamera(camera: THREE.Camera, dx: number, dy: number): void {
+  if (dx === 0 && dy === 0) return;
+  euler.setFromQuaternion(camera.quaternion);
+  euler.y -= dx * LOOK_RADIANS_PER_PIXEL;
+  euler.x = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, euler.x - dy * LOOK_RADIANS_PER_PIXEL));
+  camera.quaternion.setFromEuler(euler);
+}
 
 /** One right-mouse hold: lives from the press to the release. */
 export class Fly {
@@ -69,14 +81,9 @@ export class Fly {
     readonly speed: number,
   ) {}
 
-  /** Turn by a mouse delta in pixels. Yaw about the world's up, pitch about
-   *  the camera's right, never any roll: YXZ Euler is exactly that. */
+  /** Turn by a mouse delta in pixels (`turnCamera`). */
   look(dx: number, dy: number): void {
-    if (dx === 0 && dy === 0) return;
-    euler.setFromQuaternion(this.camera.quaternion);
-    euler.y -= dx * LOOK_RADIANS_PER_PIXEL;
-    euler.x = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, euler.x - dy * LOOK_RADIANS_PER_PIXEL));
-    this.camera.quaternion.setFromEuler(euler);
+    turnCamera(this.camera, dx, dy);
     this.moved = true;
   }
 

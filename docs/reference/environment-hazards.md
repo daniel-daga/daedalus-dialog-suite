@@ -106,6 +106,15 @@ doc, not here. This file is only for the ground the code stands on.
   directly via `element.dispatchEvent(...)`, wrapped in `act()` — React routes
   on `event.type`, not the constructor, and `MouseEvent`'s `clientX` is a real
   field where `PointerEvent`'s init-dict fallback here is not.
+- **jsdom has no Pointer Lock API, and its `MouseEvent` has no `movementX`/
+  `movementY` at all** — not on the prototype, and the init dict's are
+  dropped, so a handler reads `undefined`. `WorldViewport.walkNav.test.tsx`
+  stubs the lot: `requestPointerLock` is a `jest.fn` on the mock renderer's
+  canvas (`worldViewportMocks.ts`), `document.pointerLockElement` and
+  `exitPointerLock` are `defineProperty`'d, and the deltas are put on a
+  hand-built `mousemove` with `Object.defineProperties`. A pointer-lock
+  regression the stubs cannot express — the lock refused, the deltas'
+  sign, Escape — needs a pass in the real app.
 
 ## Playwright in the Claude Code cloud container
 

@@ -3340,28 +3340,43 @@ camera slots:* four per open world, **Ctrl+Shift+1..4** stores the pose
 (camera and orbit pivot), **Ctrl+1..4** recalls it — by key code, since Shift
 turns the digit into `!`; `Ctrl+digit` was bound nowhere in the app. Per
 session, reset when a different world opens, no persistence
-(`renderer/world/cameraSlots.ts`, wired beside `.`/`Home`). **Open:** the walk. A walk
-mode is a fly with gravity and a capsule against the world mesh, and the
-picking BVH (`BvhBuilder`, three-mesh-bvh on `world.worldMeshes`) can answer
-both queries — a downward ray for the floor, a `shapecast` for the walls —
-without a physics engine. **The three design questions, decided 2026-09-02
-(Daniel):** eye height is the ~180 cm hero-eye figure above — confirmed, not
-reopened. It is a **toggle key**, not a modifier on the right-hold fly (Spacer's
-F3/M/T/C are all free here; use one of them rather than the no-mode idiom).
-Starting inside geometry does not hard-refuse: search upward for the next free
-point above the start and enter there, and refuse only if the search finds
-none. **Key, proposed 2026-09-02 (Daniel): Ctrl+W** — tentative ("maybe
-something like"), and worth checking before it's bound: Electron's default
-application menu (`main.ts` sets none of its own, per §16.27 item 3's
-finding, so the built-in template applies) binds Ctrl+W to Window > Close on
-Windows/Linux by default, which would close the app instead of toggling
-walk. **Search bound: use the world's known height, not a guessed
-constant** (Daniel) — the world's vertical extent is already in the loaded
-data (the same bounds the BVH and the frame-world camera already read), so
-the upward search should be capped by that rather than an arbitrary number;
-exactly which field and how it composes with eye height is still to
-determine. Also unbound and cheap once a walk exists: Spacer's two camera
-slots.
+(`renderer/world/cameraSlots.ts`, wired beside `.`/`Home`). *Landed
+2026-09-02, the walk half:* **F3** toggles it — Spacer's own key, free here
+(Ctrl+W was proposed and dropped: Electron's default menu binds it to Close).
+The mouse looks under **pointer lock**, the app's first use of it: a look
+with no edge to run into, requested on the F3 keydown because the lock needs
+the user's activation, entry optimistic and `pointerlockerror` the rollback.
+A walker is the spawn overlay's dummy — 25 cm radius, 130 cm cylinder, eye at
+180 (`SpawnOverlay`'s `DUMMY_*`, now exported, so the figure lives once) —
+at 4 m/s, Shift ×4, gravity 9.8, fall capped at 20 m/s so a stalled 0.1 s
+frame moves under a storey. Pure logic is `renderer/world/walkNav.ts`
+(`Walk`, `resolveWalkCapsule`, `snapWalkToFloor`, `findWalkEntry`); it
+integrates in Three metres and crosses into ZenGin centimetres only for the
+BVH, which is built on the mesh's raw buffers. Walls: the capsule's axis as a
+`Line3`, `shapecast` over the picking BVH, each overlapping triangle pushing
+the segment out along its closest-point direction, three rounds — no
+`Raycaster`, a capsule is not a ray; a mesh whose tree has not landed yet is
+walked through and caught next frame. The push is by nearest point, so the
+frame's move is cut into pieces of half a radius — a sprint at 60 fps moves
+more than a radius a frame and would be pushed on through a wall. Floor: a
+ray down from 10 cm above the feet, `raycastFirst` both sides, snapped within
+15 cm; no step or slope logic beyond that, no jump. Entry: the current spot
+first (open air resolves in one test), then upward in 0.5 m steps to the
+world's top — `zenBoxToThree(bbox).max[1]`, the bound the frame-world
+camera already reads — and a search that finds nothing enters nothing and
+says nothing. Mutually exclusive with the fly (F3 bails during a hold, the
+right button starts nothing during a walk); under lock the click, double-click,
+context menu and nav press all fire at frozen coordinates and are declined;
+`controls.enabled`, the gizmo and its helper are snapshotted at F3 and
+restored exactly at exit, the `gizmoBeforeNav` precedent, since a walk is a
+mode and not a hold; `Home` and the slots keep working because `Walk.step`
+reads the camera fresh each frame; the exit re-seats the pivot on the mesh
+under the crosshair, else 5 m ahead — the fly's reach does not transfer, a
+walk can cross the level. WASD keys are taken on capture (`onWalkKey`) so
+they never reach the surface's W/E mode switch. **Unwitnessed:** the feel of
+speed, gravity and snap on a real ramp, the lock itself in Electron, and the
+entry search's cost on a retail world — all three want a human at a GPU.
+Also unbound and cheap once a walk exists: Spacer's two camera slots.
 
 None of the three is scheduled. They are carded as one line because they share
 a cause — §14 was assembled against Spacer's *verbs*, and these are its

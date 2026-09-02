@@ -49,10 +49,11 @@ const NOBODY: readonly string[] = Object.freeze([]);
 
 // The dummy — a body standing where the dot already is (slice 9). Roughly a
 // person's height in ZenGin centimetres: a 25 cm radius and a 130 cm cylinder
-// between the two hemispherical caps add up to 180.
-const DUMMY_RADIUS = 25;
-const DUMMY_CYLINDER_HEIGHT = 130;
-const DUMMY_HEIGHT = DUMMY_CYLINDER_HEIGHT + 2 * DUMMY_RADIUS;
+// between the two hemispherical caps add up to 180. Exported because the walk
+// (`walkNav`) is the same body moving: one figure, not two that can drift.
+export const DUMMY_RADIUS = 25;
+export const DUMMY_CYLINDER_HEIGHT = 130;
+export const DUMMY_HEIGHT = DUMMY_CYLINDER_HEIGHT + 2 * DUMMY_RADIUS;
 
 const DUMMY_KNOWN_COLOR = new THREE.Color(SPAWN);
 const DUMMY_UNKNOWN_COLOR = new THREE.Color(UNPLACED);

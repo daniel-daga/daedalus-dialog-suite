@@ -23,7 +23,9 @@ export function mockThree() {
   return {
     ...actual,
     WebGLRenderer: class {
-      domElement = document.createElement('canvas');
+      // jsdom has no Pointer Lock API; the walk (`walkNav`) asks the canvas
+      // for it, and the spec that drives a walk reads this back.
+      domElement = Object.assign(document.createElement('canvas'), { requestPointerLock: jest.fn() });
       info = { render: { calls: 0, triangles: 0 } };
       autoClear = true;
       setPixelRatio() {}
