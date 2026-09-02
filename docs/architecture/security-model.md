@@ -51,7 +51,8 @@ folder. A manual Windows pass on this UX is in the
 
 Project configuration is a main-process capability. The renderer can load the
 descriptor for the already-authorized project root and save only the
-`assetSources` list for the project file that was loaded. The main process
+`assetSources` list for the project file that was loaded. The list is bounded
+to 128 entries and 4096 characters per configured path. The main process
 re-reads and validates the file, resolves mounts, and persists changes
 atomically; resolved VFS mounts are never accepted from renderer input. A new
 external source can enter the current session only through the native

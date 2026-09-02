@@ -2653,7 +2653,7 @@ same analysis layer later.)
 
 ---
 
-## 9. Project file — open question 5
+## 9. Project file and asset sources — settled 2026-09-03
 
 A JSON project file, e.g. `myworld.gothicproject.json`, committed with the
 mod's content:
@@ -2672,7 +2672,8 @@ mod's content:
 }
 ```
 
-The ordered `assetSources` list is unlimited. Relative paths resolve against
+The ordered `assetSources` list supports up to 128 entries, with each configured
+path limited to 4096 characters. Relative paths resolve against
 the project-file directory; absolute paths are preserved. The project root is
 required but may be reordered, and later entries override earlier entries.
 Recognized Gothic installations expand through the archive/compiled-data
