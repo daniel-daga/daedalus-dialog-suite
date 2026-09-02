@@ -589,7 +589,7 @@ independent: class-specific *insertion* (item 1.3 — I1 landed 2026-08-28,
 (1.5) is landed, multi-selection rotation included (§16.4); snapping (1.6) is
 fully landed (§14.1 1.6). All still before Phase 1c in §11.
 
-### 16.4 Typed rotation — the multi-selection landed; what is left needs Spacer
+### 16.4 Typed rotation — the multi-selection landed; what is left is a decision, not Spacer
 
 The three fields are in and the quiet-corruption trap is handled per angle, so
 the 30.2 % of retail VOBs that are non-orthonormal are not re-orthonormalized by
@@ -658,6 +658,37 @@ One thing users will see and may report as a bug: displayed angles are canonical
 — yaw/roll in (−180, 180], pitch in [−90, 90] — so a field committed at 190°
 remounts as −170°, and a pole pose remounts with roll 0. Both correct, both look
 like the editor changing their number.
+
+**Read 2026-09-02, and the Spacer dependency is gone: no Spacer shows an
+angle triple, so "type an angle, save, read back" is not an experiment that
+exists.** The GMC's Spacer page says of the rotation property that it "uses an
+odd format and can't be set manually"; Spacer.NET edits `trafoOSToWSRot` as
+the raw archive property (`Windows/PropertiesWin.cs`, the `trafoOSToWSRot`
+branch) and its rotate tool is single-axis `RotateWorld(axis, angle)` /
+`RotateWorldY` (`SpacerNET_Union/VobManipulator.cpp`), using
+`GetEulerAngles()[1]` only as "around vertical axis" for its HUD. So Spacer
+parity on an *order* is not a thing a modder could notice, and what is left is
+whether the fields should match the one Euler triple ZenGin itself has:
+`zMAT4::GetEulerAngles` / `SetByEulerAngles` (Gothic2.exe `0x00516390` /
+`0x005163D0`, through `zCQuat::EulerToQuat` at `0x00518BE0` and `QuatToEuler`
+at `0x00518AC0`), disassembled from the shipped binary and cross-checked
+against Siemekk's AST-World-Editor reconstruction (`G2API/zmath.inl`). With
+`m[r][c]` the stored row-major 3×3 exactly as `trafoOSToWSRot` is written:
+`x = atan2(m[1][2], m[2][2])`, `y = asin(-m[0][2])`, `z = atan2(m[0][1],
+m[0][0])`, radians, and at `|m[0][2]| ≥ 1` the lock branch sets `y = ±π/2`,
+`z = 0`, `x = atan2(-m[2][1], m[1][1])`. In this repo's column-vector terms
+that is `R = Rx(−x) · Ry(−y) · Rz(−z)` — **intrinsic X-Y-Z with the vertical
+as the middle, singular axis, every angle sign-flipped against ours**. Ours is
+`Ry · Rx · Rz` with X in the middle, so the two disagree on order and, for
+even a single-axis turn, on sign. The measurement above already described the
+engine's convention without knowing it was the engine's: "XYZ's singularity is
+on the vertical, 464 retail VOBs sit on it". **The decision, Daniel's:** match
+the engine (X-Y-Z negated, lock at yaw ±90° folding roll to 0, which puts those
+464 on the pole) and call the fields "the engine's angles", or keep Y-X-Z for
+its 53 and stop calling it Spacer parity — nothing Spacer could settle remains.
+Either way only `zenRotationToEuler` / `eulerToZenRotation` change. An
+independent witness, if wanted, is a ten-line Union plugin calling
+`trafoObjToWorld.GetEulerAngles()` on a known VOB against the formulas above.
 
 ### 16.9 What is left of the ASCII writer — A6, and what `0048` left behind
 
