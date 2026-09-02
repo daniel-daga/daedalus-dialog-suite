@@ -336,13 +336,23 @@ them.
 
 ## Parallel agents in one working tree
 
-- **`npm run wt:new` and `wt:rm` are flaky on this machine, not the tree.**
-  Seen 2026-09-02 with seven worktrees created at once: `wt:new` reported
-  "pnpm install failed" and a plain `pnpm install` inside the worktree then
-  succeeded (the pnpm store lock, most likely); `wt:rm` after a merge failed
-  `EPERM` on `zenkit-node/` while a `node --test` or Jest process still held
-  the addon, and left a half-removed directory that `git worktree prune`
-  forgets and a later `rm -rf` finishes. Neither leaves anything wrong in git.
+- **`wt:new`'s "pnpm install failed" was not flaky — root-caused and fixed
+  2026-09-02.** Node 24 refuses to spawn a `.cmd` shim without a shell
+  (`EINVAL`), so the helper's install step failed on every Windows run while
+  a manual `pnpm install` in the tree succeeded; it now spawns under a shell.
+  `wt:rm` after a merge can still fail `EPERM` on `zenkit-node/` while a
+  `node --test` or Jest process holds the addon, leaving a half-removed
+  directory that `git worktree prune` forgets and a later `rm -rf` finishes.
+  Neither leaves anything wrong in git.
+- **A full editor Jest run at the default worker count hangs when other
+  worktrees are also running Jest.** Seen twice 2026-09-02: 26 idle node
+  workers and no output for 50 minutes; a 25-minute run that a
+  `--maxWorkers=4` rerun finished in 9. Cap the workers in a worktree
+  (`pnpm --filter daedalus-dialog-editor exec jest --maxWorkers=4` — note
+  `pnpm … test -- --maxWorkers=4` hands the flag to Jest as a test-name
+  pattern and runs nothing) or use `test:stable:windows`. Under that
+  starvation `Cannot find module './Score' from @mui/icons-material` is a
+  pnpm-store stat failure, not a code defect: rerun the suite alone.
 - **Seven full editor baselines in parallel take an hour each.**
   `test:stable:windows` runs 230 suites in isolated processes; one at a time
   it is ~40 minutes, and agents that each start their own contend for the

@@ -143,51 +143,50 @@ would ship unproven is the acceptance record's short list (decal fields, enum
 writes, the classes beyond five), none of it carded.
 
 **The unattended queue — one card for 49 items.** Everything a run can take
-with nobody watching. Triaged against the tree 2026-08-30, each verified still
-open. **Take the top unclaimed row and cross it off in the same commit; a run
-may not add rows.** `unattended-queue.md` — **section 5, the level editor, was
-first (Daniel, 2026-08-30)** and is now empty but for row 42, which went to
-Triage, so a run resumes at section 1: rows 1-12 landed 2026-08-30, 13-17 on
-2026-09-01/02, and the next unclaimed row is 18. The corpus section 5's rows
-wanted is in `zenkit-node/worlds/`.
+with nobody watching. **Take the top unclaimed row and cross it off in the
+same commit; a run may not add rows.** `unattended-queue.md` — section 5 is
+empty but for row 42 (Triage); rows 1-20 landed 2026-08-30 to 2026-09-02, and
+the next unclaimed row is **21**.
 
-**World surface, from Daniel's own sessions 2026-08-30.** Five of the six
-landed; one is left and it is the one that was never root-caused.
+**Daniel's decisions — each one line, none blocking a run.**
 
-- **The locator never worked on an undrawn VOB** — Daniel's 2026-09-01 read
-  (zCVobSpot, oCItem never locate) root-caused it: it framed from the scene,
-  which holds only VOBs whose visual resolved. Falls back to the index's own
-  position now. Whether a paste breaks it *besides* this is unwitnessed. §16.24
-
-- **`extractRoutineStatesByNpc` answers `{}` — not reproducible, twice**: 55/55
-  at c514e8a, and over retail on 2026-09-02 it answered 271 NPCs (§16.19 s11).
-  **Daniel** drops it, or names the project it happened on.
+- **`extractRoutineStatesByNpc` answers `{}` — not reproducible, twice**
+  (55/55 at c514e8a, 271 NPCs over retail 2026-09-02). Recommend dropping it
+  unless the project it happened on can be named. §16.19 s11
+- **Portal orientation** — convention settled 2026-09-02 (front-named, `n`
+  into the first sector); the open question is whether to write a warning
+  that fires once on retail (`P:CAPTAIN_`). Recommend yes, judged by corners
+  not centroid, filed like q1/q2's. §16.22 q3
+- **Euler order** — no Spacer shows an angle triple, so the choice is the
+  engine's X-Y-Z (sign-flipped, 464 retail VOBs on its pole) or our Y-X-Z
+  (53). Recommend the engine's: it is the one triple a witness can check.
+  Only `zenRotationToEuler` / `eulerToZenRotation` change. §16.4
+- **Three looks in the running app** (2026-09-02): Assets → preview a
+  `.MRM`, select a VOB, "Use as visual", undo; overlay on → ground click →
+  "Insert NPC here…" with `Startup.d` in the project, then the same with the
+  file open-and-dirty; the State select's new order. Plus the two from the
+  last session: right-hold + WASD, and `NW_CRATE.MRM` drag-to-orbit.
 
 **Phase 1c — the overlay, at §16.19.** Not blocked.
 
-- **Insert NPC, from the World surface** — six slices at §16.19 s16; A and B
-  landed 2026-09-02 (regeneration is not byte-identical, so C writes by text
-  splice). **Next is C**, the main-side write, its own run. §16.19 s16
+- **Insert NPC, from the World surface — A–E landed 2026-09-02.** What is
+  left is slice F (a world-directory setting, only for opening a `.ZEN` from a
+  dialog) and E's forward facts: instance existence is unchecked, the same
+  spawn can be appended twice, `parsedFiles` is one spawn behind after a
+  write. §16.19 s16
 
-**Phase 1c / Phase 2 — world findings get a locus** (§7 decision, §16.20)
-
-- **Portal orientation measured 2026-09-02** — front-named, `n` into the
-  first sector, on every decidable retail portal; whether to write the
-  warning (one shipped portal, `P:CAPTAIN_`, would fire it) is **Daniel's**
-  card to file, as q1/q2's were. §16.22 q3
+**Phase 1c / Phase 2 — world findings get a locus** (§7 decision, §16.20) —
+nothing carded beyond q3 above.
 
 **Phase 1b-2 — VOB editing**
 
-- **Three gaps §14 never inventoried** — the mesh preview and the fly
-  navigation landed 2026-09-02; left are the picker wiring into `insertVob` /
-  `setVobProp.visual` (gates 1.3, 1.7, scatter), the thumbnail grid, chest
-  contents (the first list field), and the walk with collision. §16.26
-- **Scatter placement, past Spacer rather than parity** — Spacer has no paint
-  tool; the ops, the batch and the ground-drop all exist, so the work is the
-  brush and five decisions, one of which (no scale field) may sink it. §16.25
-- **Euler order — Spacer cannot settle it** (2026-09-02): no Spacer shows an
-  angle triple, and the engine's `zMAT4` Euler is X-Y-Z, signs flipped against
-  ours. **Daniel** picks: match the engine, or keep Y-X-Z. §16.4
+- **§14's uninventoried gaps** — mesh preview, fly navigation and the picker
+  (`Use as visual`, `Use previewed`) landed; left are the thumbnail grid,
+  chest contents (the first list field — reopens a §14.1 1.4 decision, so
+  Daniel's), and the walk with collision (three design questions). §16.26
+- **Scatter placement, past Spacer rather than parity** — the ops, the batch
+  and the ground-drop exist; the work is the brush and five decisions, one of
+  which (no scale field) may sink it. Benched until decided. §16.25
 
 **zenkit-node / fidelity**
 
@@ -226,6 +225,10 @@ the series absorbed most of a night's run by the time `0048` landed.
 - **`.MMB` authoring has no ZenKit writer at all** — `MorphMesh` has `load` and
   no `save`: new upstream code, not a patch. Deferred 2026-08-28.
 
+- **Insert NPC slice F** — the world-directory setting, deferred with the
+  slicing 2026-09-01; only `expectedWorldNameFor`'s `.ZEN` opening wants it.
+  §16.19 s16
+
 ## Triage
 
 **Too big for one board entry.** An unattended run may not create work for
@@ -235,19 +238,12 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 - **Unattended-queue row 42, the BINARY fidelity baseline** — no BINARY `.zen`
   exists on this machine to classify and the instrument has no BINARY walker, so
   it decomposes into three runs plus a scope call. §14.3 3.1
-- **The routine index loses 18 % of retail to one grammar gap** (2026-09-02):
-  `prototype_declaration` takes a `class_body`, so a call statement in a
-  prototype body voids the whole file (`DMT_DementorAmbient.d`, 1,128 entries).
-  The fix is `grammar.js` + a native regenerate — a parser card. §16.19 s6
-- **The State select's option order** (2026-09-02): the measurement says the
-  dropdown is right and its flat list is wrong — 112 of 182 names reach one
-  NPC. Shared names first, singletons after; a small UI card. §16.19 s11
 
 ## Done
 
-- **Agent worktrees** (Daniel, 2026-09-01) — `npm run wt:new/list/rm` and
-  `tools/worktree.js`. One agent, one checkout; the seeded `.node` files keep a
-  fresh worktree free of a ZenKit or tree-sitter compile. AGENTS.md.
-- **2026-09-02, eight agent branches merged** — `git log` has them. **Daniel,
-  two looks:** right-hold + WASD in the viewport; Assets → `NW_CRATE.MRM`,
-  drag to orbit.
+- **2026-09-02, second session — six agent branches merged**, `git log` has
+  them: Insert NPC C/D/E, the prototype-body grammar gap (routine coverage
+  81 % → 99 %), the State select order, the asset picker, queue rows 18-20,
+  and `wt:new`'s install step (Node 24 `EINVAL`, never flaky). The locator
+  card (§16.24) left the board on its own rule: re-open only on a repeat
+  naming a drawn VOB.
