@@ -82,6 +82,7 @@ export class DeclarationVisitor {
           func.parameters = parameters;
         }
         func.leadingComments = [...this.pendingLeadingComments];
+        func.range = { startIndex: node.startIndex, endIndex: node.endIndex };
         this.semanticModel.functions[func.name] = func;
         this.semanticModel.declarationOrder?.push({ type: 'function', name: func.name });
         this.functionNameMap.set(func.name.toLowerCase(), func.name);

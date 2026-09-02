@@ -345,6 +345,35 @@ export function assertSaveWorldRequest(
   }
 }
 
+/**
+ * Assert a `script:appendInsertNpc` request (level-editor.md §16.19, slice 16
+ * C). The instance and waypoint are spliced verbatim into a script line, so
+ * the instance must be an identifier and the waypoint must not be able to
+ * close the string literal or the line. `INIT_` is refused outright: spawns
+ * belong in `STARTUP_`, and the renderer's resolver never picks it.
+ */
+export function assertAppendInsertNpcRequest(
+  request: unknown,
+): asserts request is { filePath: string; functionName: string; npcInstance: string; spawnPoint: string } {
+  if (!isPlainObject(request)) {
+    throw new Error('Invalid appendInsertNpc request: expected a plain object');
+  }
+  for (const key of ['filePath', 'functionName', 'npcInstance', 'spawnPoint'] as const) {
+    if (typeof request[key] !== 'string' || (request[key] as string).trim() === '') {
+      throw new Error(`Invalid appendInsertNpc request: ${key} must be a non-empty string`);
+    }
+  }
+  if (/^INIT_/i.test(request.functionName as string)) {
+    throw new Error('Invalid appendInsertNpc request: functionName must not be an INIT_ function');
+  }
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(request.npcInstance as string)) {
+    throw new Error('Invalid appendInsertNpc request: npcInstance must be an identifier');
+  }
+  if (/["\r\n]/.test(request.spawnPoint as string)) {
+    throw new Error('Invalid appendInsertNpc request: spawnPoint must not contain quotes or line breaks');
+  }
+}
+
 /** Assert a request to read the `<worldname>.folders.json` sidecar (VOB folders slice). */
 export function assertVobFoldersGetRequest(
   request: unknown,

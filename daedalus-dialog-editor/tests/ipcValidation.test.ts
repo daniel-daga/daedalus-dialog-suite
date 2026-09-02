@@ -19,6 +19,7 @@ import {
   assertSaveWorldRequest,
   assertVobFoldersGetRequest,
   assertVobFoldersSaveRequest,
+  assertAppendInsertNpcRequest,
   sanitizeRendererErrorPayload,
   RENDERER_ERROR_MESSAGE_MAX,
   RENDERER_ERROR_STACK_MAX,
@@ -1489,5 +1490,41 @@ describe('assertApplyOpsRequest', () => {
           .toThrow(new RegExp(extra));
       }
     });
+  });
+});
+
+describe('assertAppendInsertNpcRequest', () => {
+  const good = {
+    filePath: 'C:/proj/Startup.d',
+    functionName: 'STARTUP_NewWorld',
+    npcInstance: 'BAU_900_Lobart',
+    spawnPoint: 'NW_FARM1_LOBART',
+  };
+
+  it('accepts a well-formed request', () => {
+    expect(() => assertAppendInsertNpcRequest(good)).not.toThrow();
+  });
+
+  it('rejects a non-object', () => {
+    expect(() => assertAppendInsertNpcRequest('Startup.d')).toThrow(/appendInsertNpc/i);
+    expect(() => assertAppendInsertNpcRequest(null)).toThrow(/appendInsertNpc/i);
+  });
+
+  it('rejects a missing or empty field', () => {
+    for (const key of Object.keys(good)) {
+      expect(() => assertAppendInsertNpcRequest({ ...good, [key]: '' })).toThrow(new RegExp(key));
+      expect(() => assertAppendInsertNpcRequest({ ...good, [key]: 7 })).toThrow(new RegExp(key));
+    }
+  });
+
+  it('rejects an INIT_ function: spawns belong in STARTUP_', () => {
+    expect(() => assertAppendInsertNpcRequest({ ...good, functionName: 'init_NewWorld' })).toThrow(/INIT_/);
+  });
+
+  it('rejects an instance that is not an identifier and a waypoint that would break the string literal', () => {
+    expect(() => assertAppendInsertNpcRequest({ ...good, npcInstance: 'BAU 900' })).toThrow(/npcInstance/);
+    expect(() => assertAppendInsertNpcRequest({ ...good, npcInstance: 'X);Wld_InsertNpc(Y' })).toThrow(/npcInstance/);
+    expect(() => assertAppendInsertNpcRequest({ ...good, spawnPoint: 'WP"' })).toThrow(/spawnPoint/);
+    expect(() => assertAppendInsertNpcRequest({ ...good, spawnPoint: 'WP\nX' })).toThrow(/spawnPoint/);
   });
 });

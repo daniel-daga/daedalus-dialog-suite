@@ -98,3 +98,20 @@ test('an appended Wld_InsertNpc regenerates as the last statement of STARTUP_<wo
     0
   );
 });
+
+// Slice C splices a line before a function's closing `};` on disk, and finds
+// that `};` through the function's source range — which the visitor records
+// here, as it already does for constants, variables and instances.
+test('a function carries the source range of its declaration node, ending at its closing `};`', () => {
+  const model = parseSemanticModel(startupSource);
+
+  const startup = model.functions.STARTUP_NewWorld.range;
+  assert.ok(startup, 'STARTUP_NewWorld has a range');
+  assert.equal(startup.startIndex, startupSource.indexOf('FUNC VOID STARTUP_NewWorld'));
+  assert.equal(startupSource.slice(startup.startIndex, startup.endIndex).trimEnd().endsWith('};'), true);
+  assert.equal(startupSource.slice(startup.endIndex).trimStart().startsWith('FUNC VOID INIT_NewWorld'), true);
+
+  const init = model.functions.INIT_NewWorld.range;
+  assert.equal(init.startIndex, startupSource.indexOf('FUNC VOID INIT_NewWorld'));
+  assert.ok(init.endIndex > init.startIndex);
+});

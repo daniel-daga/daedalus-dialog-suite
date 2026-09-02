@@ -477,7 +477,26 @@ export interface DialogFunction {
   calls: string[];
   /** Every call_expression in this function's body, args and 1-based position. */
   callSites?: FunctionCallSite[];
+  /** Source range of the whole declaration node, `FUNC` through `};`. */
+  range?: {
+    startIndex: number;
+    endIndex: number;
+  };
 }
+
+/**
+ * Result of `script:appendInsertNpc` (level-editor.md §16.19, slice 16 C):
+ * the 1-based line the `Wld_InsertNpc` landed on, or a typed refusal.
+ */
+export type AppendInsertNpcResult =
+  | { ok: true; line: number }
+  | {
+      ok: false;
+      reason:
+        | { kind: 'parse-errors'; errors: string[] }
+        | { kind: 'function-not-found'; functionName: string }
+        | { kind: 'external-modification' };
+    };
 
 /**
  * A dialog property value referencing a C_INFO function: either the bare
