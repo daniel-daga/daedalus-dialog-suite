@@ -129,6 +129,23 @@ describe('WorldService', () => {
     service.close();
   });
 
+  test('a visual is asked for by name and comes back as the worker built it', async () => {
+    // The asset preview's mesh (level-editor.md §16.26 row 1): one `visual`
+    // request per name, and null passes through — an unresolvable name is a
+    // normal fact about a VFS, not a failure.
+    const { worker, service } = await openedService();
+
+    const visual = service.getVisual('NW_CRATE.MRM');
+    expect(worker.sent.find((m) => m.op === 'visual')?.payload).toEqual({ name: 'NW_CRATE.MRM' });
+    worker.reply('visual', { name: 'NW_CRATE.MRM', source: 'NW_CRATE.MRM', groups: [], bounds: [0, 0, 0, 1, 1, 1], triangleCount: 0 });
+    await expect(visual).resolves.toMatchObject({ source: 'NW_CRATE.MRM' });
+
+    const missing = service.getVisual('PFX_SMOKE');
+    worker.replyLast('visual', null);
+    await expect(missing).resolves.toBeNull();
+    service.close();
+  });
+
   test('a per-request failure rejects only that request', async () => {
     const { worker, service } = await openedService();
 

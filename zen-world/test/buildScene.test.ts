@@ -10,7 +10,7 @@
 // addon and without a Gothic install.
 
 import {
-  buildInstancedVisuals, buildWorldMesh, visualBounds,
+  buildInstancedVisuals, buildVisual, buildWorldMesh, visualBounds,
   type SceneBinding, type VobIndex,
 } from '../src/scene';
 import type { MeshChunk } from '../src/render';
@@ -139,6 +139,44 @@ describe('zen-world/scene — visualBounds', () => {
 
   test('is null for a visual that resolves to no geometry', () => {
     expect(visualBounds(binding(() => []), VFS, 'EMPTY.3DS')).toBeNull();
+  });
+});
+
+describe('zen-world/scene — buildVisual', () => {
+  // One visual on its own, for the asset preview (level-editor.md §16.26 row
+  // 1): the same merged draw groups the instanced scene would place, with the
+  // same bounds, and no VOB placing it.
+
+  test('is the draw groups and bounds the scene would have given that visual', () => {
+    const b = binding(() => [chunk('A.TGA'), chunk('A.TGA'), chunk('B.TGA')]);
+    const scene = buildInstancedVisuals(b, VFS, vobIndex([{ visual: 'BARREL.3DS' }]));
+
+    const visual = buildVisual(b, VFS, 'BARREL.3DS')!;
+
+    expect(visual.name).toBe('BARREL.3DS');
+    expect(visual.source).toBe('BARREL.3DS');
+    expect(visual.groups).toHaveLength(2);
+    expect(visual.groups.map((g) => g.materials)).toEqual([2, 1]);
+    expect(visual.bounds).toEqual(scene.visuals[0].bounds);
+    expect(visual.triangleCount).toBe(3);
+  });
+
+  test("applies an attachment's node transform, because it goes through the merge", () => {
+    const attached = { ...chunk('A.TGA'), node: 'LID', transform: [1, 0, 0, 100, 0, 1, 0, 0, 0, 0, 1, 0] };
+    const visual = buildVisual(binding(() => [attached]), VFS, 'CHEST.3DS')!;
+
+    expect(new Float32Array(visual.groups[0].positions)[0]).toBeCloseTo(100);
+    expect(visual.bounds[0]).toBeCloseTo(100);
+  });
+
+  test('is null for a name that does not resolve, and for one with no geometry', () => {
+    expect(buildVisual(binding(() => null), VFS, 'PFX_SMOKE')).toBeNull();
+    expect(buildVisual(binding(() => []), VFS, 'EMPTY.3DS')).toBeNull();
+  });
+
+  test("visualBounds is buildVisual's bounds — one path, not two that agree", () => {
+    const b = binding(() => [chunk('A.TGA')]);
+    expect(visualBounds(b, VFS, 'BARREL.3DS')).toEqual(buildVisual(b, VFS, 'BARREL.3DS')!.bounds);
   });
 });
 
