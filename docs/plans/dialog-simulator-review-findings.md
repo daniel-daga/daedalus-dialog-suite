@@ -7,9 +7,8 @@ application), `src/renderer/components/Simulator/SimulatorDialog.tsx`, the
 `DialogDetailsEditor` integration, the Jest/Playwright suites, and
 `docs/architecture/dialog-simulator.md`.
 
-Status legend: **Open** — no fix landed yet. Every finding is fixed; what is
-left of this file is the test-coverage observations, carried as row 38 of
-`unattended-queue.md`.
+Status legend: **Open** — no fix landed yet. Every finding is fixed, and the
+test-coverage gap (row 38 of `unattended-queue.md`) closed 2026-09-02.
 
 ---
 
@@ -233,11 +232,10 @@ clause) so bare `MIS_*`/`!MIS_*` identifiers evaluate.
 - Domain and session Jest suites are thorough for hand-built inputs; the
   Playwright spec genuinely drives launch → choice → back → alternate branch →
   restart through the real UI.
-- No test feeds the simulator a semantic model produced by the actual parser,
-  which is where H1/H2 live. Add integration fixtures that run real Daedalus
-  source through `daedalus-parser` and assert availability (a raw-mode
-  condition function must not evaluate crisply true; a negated knows-info gate
-  must not invert).
+- Covered as of 2026-09-02 (`tests/simulatorParserIntegration.test.ts`,
+  unattended-queue row 38): `condition-idioms.d` goes through the real parser
+  and availability is asserted — a raw-mode condition function lands unknown,
+  not crisply true, and the negated knows-info gate does not invert.
 - The failed-launch UI path is covered as of 2026-08-29
   (`tests/simulatorDialog.test.tsx`).
 
