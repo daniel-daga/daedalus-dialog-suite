@@ -83,7 +83,8 @@ const DialogSourceViewDialog: React.FC<DialogSourceViewDialogProps> = ({
       }}
     >
       <DialogTitle sx={{ m: 0, p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Typography variant="h6">Source Code: {dialogName}</Typography>
+        {/* DialogTitle is already an h2; this is its text, not a second heading. */}
+        <Typography variant="h6" component="span">Source Code: {dialogName}</Typography>
         <Box>
           <Tooltip title="Copy to clipboard">
             <IconButton onClick={handleCopy}>
