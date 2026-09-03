@@ -2324,6 +2324,21 @@ world, which is the cross-reference job in §14.4, not this one. And **partial
 ingestion can refuse a real name**: the index converges, the refusal writes
 nothing, and the alternative is not enforcing at all.
 
+#### The chest's contents follow the item instance (2026-09-03)
+
+`oCMobContainer.contents` is the second class field whose value names symbols
+in another file — a list of item instances with counts, held by the archive as
+one `contains` string (`ItMw_1H_VLK_Dagger,ItMi_Gold:26`). It takes the split
+above unchanged: **the main process holds the grammar, the renderer holds the
+index.** `assertApplyOpsRequest` refuses a `to.contents` that is not
+`INSTANCE[:COUNT]` entries separated by `,` or `;` (the two spellings retail's
+294 chests actually use), or longer than 4 KB — `to` only, for the reason
+`instance` is. The renderer's editor offers the loaded scripts' item index and
+nothing else while there is one, and a shape-checked typed name while there is
+none. What is written back is canonical (no spaces, a count only above one);
+what is read is whatever the archive holds, and a string the grammar cannot
+read is shown as it is and can be cleared, never rewritten by being looked at.
+
 #### What a VOB's bbox is, and why there is no scale gizmo (measured 2026-08-26)
 
 Rotation is the next op, and it cannot be built the way `MoveVob` was.
@@ -2692,6 +2707,24 @@ The project file is committed project state. Other machine-local state (window
 layout and recent-project metadata) remains in `SettingsService`. Target
 version is per-project and explicit (brief §7); the binding refuses to load
 with a mismatched archive version rather than guessing.
+
+**Sidecars beside it (2026-09-03).** Editor-only state that belongs to the
+project and should travel with it lives in its own JSON file next to the
+project file, never as a section of the project file (whose schema every
+reader validates strictly) and never in `userData`: `<project>.assets.json`
+holds the asset browser's favorites and user categories — what the project
+added on top of the shipped vobbilder seed, which is merged in at read time
+and never written back. A world-scoped sidecar keeps the world's name instead
+(`<worldname>.folders.json`, `docs/plans/vob-folders.md`). Both are read
+through a stateless service that takes the owning file's path per call,
+validated against the exact sidecar path, written temp-file-and-rename, and a
+corrupt one is preserved aside and read as empty.
+
+**What is machine-local and stays out of the project:** thumbnails.
+`userData/asset-thumbnails/` holds PNGs the renderer drew of mounted visuals,
+keyed by name and the mount list's paths and mtimes, regenerated on demand —
+derived images of files the VFS holds, nothing a collaborator needs to
+receive.
 
 ---
 

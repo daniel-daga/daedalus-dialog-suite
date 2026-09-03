@@ -182,7 +182,7 @@ feedback, the Daedalus overlay, the multi-part workspace); that is §11's job.
 | 1.1 | **Delete an arbitrary retail VOB** | **landed** (§7) | `DeleteVob`, the history barrier and the confirm. The one op with no inverse. |
 | 1.2 | **Copy / paste / duplicate**, incl. subtree | **done, less `physicsEnabled`** (§7) | The most-used Spacer verb after move. D1 (duplicate one VOB in place), D4 (a selection as one batch, one undo) and D3 (copy and paste as verbs) all landed 2026-08-28, as ordinary `AddVob`s with no new op. D2's class half landed 2026-08-28 on top of I1/I2 — a copy carries its **class** for the classes `insertVob` can construct, and drops it for the rest (and for `oCItem`, whose instance is not in the index) rather than have the op refused. D5 (the subtree) landed 2026-08-28 as N appends in one batch. **D2's other half landed 2026-08-30** (unattended queue row 46): a copy carries the class *properties* too, as one `SetVobClassProp` per copy in the same batch — the surface fetches them with `getVobProps` (only for VOBs whose class has catalogued fields), `duplicateVobSubtree` puts them on the clipboard, and `commitOps` takes them beside the adds because an append moves no index path. Two rules the copy inherits from the dropped class: a copy that has no class carries no class fields, and a value outside its catalogue bounds is dropped rather than refused, because the IPC assertion would cost the whole copy for one field. What is left is `physicsEnabled`; a cross-world clipboard only if part-to-part copying is wanted. One consequence to know: **Ctrl+C is now asynchronous**, so a paste issued inside the fetch pastes the clipboard as it was. |
 | 1.3 | **Class-specific insertion** | **landed** (§16.15) | I1–I5 landed 2026-08-28 and Gate 2b saw `AddVob` author 27 classes; `focusName`'s measured warning followed 2026-08-29. This row used to read "`insertVob` authors `zCVob` and nothing else" and named the list that §16.15 then worked through: `oCItem`, `zCVobLight`, `zCVobSound`/`Daytime`, the trigger family (`zCTrigger`, `zCTriggerList`, `zCTriggerScript`, `zCMover`, `zCCodeMaster`, `zCMessageFilter`, `zCTriggerChangeLevel`), `oCMobInter`/`Container`/`Door`/`Bed`/`Ladder`/`Switch`/`Wheel`, `oCTouchDamage`, `zCPFXController`, the zones (`oCZoneMusic`, `zCZoneZFog`, `zCZoneVobFarPlane`), `zCVobStartpoint`/`zCVobSpot`, `zCVobAnimate`. |
-| 1.4 | **Class-specific property editing** | **partial** (§7) | Seven classes so far. Increment 2 (2026-08-28) added the sound family and the zones — `zCVobSound`, `zCVobSoundDaytime` (which inherits the base four), `zCZoneVobFarPlane`, `zCZoneZFog`, `oCZoneMusic` — with no change to the validator, the op builder or the grid, which is increment 1's catalogue claim holding. What it exposed is that the value kinds, not the classes, were the limit — and increment 3 (2026-08-28) answered it with a `bool` kind and an `int` kind, which took the nine fields those five classes were holding back: the three sound booleans, the two fog booleans, and `oCZoneMusic`'s `enabled`/`ellipsoid`/`loop` plus its `int32` `priority`. `oCZoneMusic` and `zCZoneZFog` are complete — the enums that were the last of it landed 2026-08-29 as eight keys over thirteen classes, a fourth table (`CLASS_ENUM_FIELDS`) the validator reads generically so no per-key list can drift, and a field that offers the known values without coercing to them: an unrecognised value is kept, shown as such, and committed by nothing. No engine has seen any of the eight written (§16.2). **Increment 3's one open question closed 2026-09-02 (Daniel)**: `zCZoneZFog.color` is now disabled, with the reason as its helper, while `overrideColor` is false — the grid's first and only cross-field rule (`disabledFor` in `WorldPropertyGrid.tsx`, deliberately not generalised into the catalogue for one field). `randomDelay` beside a non-RANDOM `mode` keeps the same shape and stays enabled, because there the two are separate commits on one VOB rather than a switch drawn one row up. **`oCItem.instance` is no longer free text** (2026-08-28): the grid refuses a name the loaded project's item index does not declare and the IPC validator refuses a `to.instance` that is not a Daedalus symbol — see "The item instance stops being free text" in §7 for why the enforcement is split and why the main process cannot hold the index. Increment 1 (2026-08-28) landed `oCItem.instance` and `zCVobLight`'s `range` and `color` — 23.4 % of the 41,393 retail VOBs, and the three value kinds (cp1252 string, bounded float, fixed-arity integer array) the machinery needed. The whole path exists now — `getVobProps` exporting the reader `normalizeWorld` already had, the `SetVobClassProp` op, the `CLASS_FIELDS` catalogue every layer reads, the validator branch, the grid section — so each further class is one C++ case plus one catalogue entry plus its tests. Out by decision, not by time: `isStatic` (changes which fields the archive contains, so its inverse does not restore the world), list fields (first unbounded payloads in the op set), base-`zCVob` widening (item 1.8, and the `farClipScale` junk it would write back), and class-specific insertion (item 1.3, which is `AddVob`). Still the largest volume of work in this section. |
+| 1.4 | **Class-specific property editing** | **partial** (§7) | Seven classes so far. Increment 2 (2026-08-28) added the sound family and the zones — `zCVobSound`, `zCVobSoundDaytime` (which inherits the base four), `zCZoneVobFarPlane`, `zCZoneZFog`, `oCZoneMusic` — with no change to the validator, the op builder or the grid, which is increment 1's catalogue claim holding. What it exposed is that the value kinds, not the classes, were the limit — and increment 3 (2026-08-28) answered it with a `bool` kind and an `int` kind, which took the nine fields those five classes were holding back: the three sound booleans, the two fog booleans, and `oCZoneMusic`'s `enabled`/`ellipsoid`/`loop` plus its `int32` `priority`. `oCZoneMusic` and `zCZoneZFog` are complete — the enums that were the last of it landed 2026-08-29 as eight keys over thirteen classes, a fourth table (`CLASS_ENUM_FIELDS`) the validator reads generically so no per-key list can drift, and a field that offers the known values without coercing to them: an unrecognised value is kept, shown as such, and committed by nothing. No engine has seen any of the eight written (§16.2). **Increment 3's one open question closed 2026-09-02 (Daniel)**: `zCZoneZFog.color` is now disabled, with the reason as its helper, while `overrideColor` is false — the grid's first and only cross-field rule (`disabledFor` in `WorldPropertyGrid.tsx`, deliberately not generalised into the catalogue for one field). `randomDelay` beside a non-RANDOM `mode` keeps the same shape and stays enabled, because there the two are separate commits on one VOB rather than a switch drawn one row up. **`oCItem.instance` is no longer free text** (2026-08-28): the grid refuses a name the loaded project's item index does not declare and the IPC validator refuses a `to.instance` that is not a Daedalus symbol — see "The item instance stops being free text" in §7 for why the enforcement is split and why the main process cannot hold the index. Increment 1 (2026-08-28) landed `oCItem.instance` and `zCVobLight`'s `range` and `color` — 23.4 % of the 41,393 retail VOBs, and the three value kinds (cp1252 string, bounded float, fixed-arity integer array) the machinery needed. The whole path exists now — `getVobProps` exporting the reader `normalizeWorld` already had, the `SetVobClassProp` op, the `CLASS_FIELDS` catalogue every layer reads, the validator branch, the grid section — so each further class is one C++ case plus one catalogue entry plus its tests. Out by decision, not by time: `isStatic` (changes which fields the archive contains, so its inverse does not restore the world), list fields (first unbounded payloads in the op set — **narrowed 2026-09-03**: `oCMobContainer.contents` is in, because the archive holds it as one string and the validator bounds that string at 4 KB, so it is a `string` field with a grammar rather than a list payload; `keyframes` and any field the archive stores as a counted list stay out), base-`zCVob` widening (item 1.8, and the `farClipScale` junk it would write back), and class-specific insertion (item 1.3, which is `AddVob`). Still the largest volume of work in this section. |
 | 1.5 | **Numeric transform entry** | **landed** | **Position landed 2026-08-28**: the three coordinates are typed entry in `WorldPropertyGrid`, and a committed one leaves as a *delta* through the gizmo's own `onTranslateSelection` → `translateVobs` → `commitOps`, so there is one op-building path and not two — a multi-selection therefore moves by that delta and keeps its spacing, exactly as a drag does. Commit is blur or Enter, Escape reverts, and a value that is not a finite float32 (or is the number already there) is refused *before* an op exists and the field is remounted showing the world's own value — the refusal-counter idiom the class fields already had. **The rotation half landed too (2026-08-28).** `coords` gained `zenRotationToEuler` / `eulerToZenRotation` with the round-trip tolerance test the old wording asked for, and `WorldPropertyGrid` now has three angle fields on top of it. Unlike position, a committed angle leaves as an **absolute** pose (`rotateVob(..., eulerToZenRotation(typed), bounds)`), because an absolute angle is the thing the grid can now read off a VOB; the equality refusal below is therefore applied **per angle**, and it compares the typed number against the *displayed* rounded value as well as the exact decomposed one — `coordinate()` rounds to 2 dp, so a field reading "30" can be 30.000000000000004 underneath and retyping what is on screen would otherwise re-orthonormalize the matrix. `zenRotationToEuler`'s throw is caught and the row renders as unavailable rather than blanking the grid. **A multi-selection landed 2026-08-28** and is the one asymmetry: the fields describe the anchor VOB as always, but with N selected a committed angle leaves as a **delta** through the gizmo's own `onRotateSelection` → `rotateVobs`, so the selection turns together and keeps the relative orientation it had — the rule the position fields already have, and the one that keeps typing and dragging on one op-building path. The delta is `eulerDeltaRotation(displayed, typed)` (`zen-world/coords`), built from the two angle triples rather than from the anchor's stored matrix: a `R(to) * M^-1` would carry the anchor's own non-orthonormality into every other VOB of the selection. See §16.4. Four decisions came with it, all measured over the 41,393 VOBs of retail NewWorld/OldWorld/AddonWorld. **The convention is the engine's own since 2026-09-02** — `zMAT4::GetEulerAngles` / `SetByEulerAngles`, `R = Rx(−x) · Ry(−y) · Rz(−z)`, intrinsic X-Y-Z with the vertical as the middle axis, in degrees (§16.4). It shipped first as Y-X-Z, chosen because nothing in the format or ZenKit commits to an order and YXZ's singularity (a VOB on its nose, 53 retail VOBs) was rarer than XYZ's (a quarter turn about the vertical, 464); it was switched once it was clear no Spacer shows an angle triple and the engine's formula is the one thing a witness can check. **Gimbal lock** is the engine's: at yaw ±90 the roll is folded into the pitch and roll reads 0; the matrix still round-trips, and there is deliberately no near-pole epsilon, because one of 1e-7 in sine space discards a recoverable roll and moves the VOB by 8.5e-4 of matrix entry. **Non-orthonormal input is normalized, not refused**: 12,514 VOBs (30.2 %) deviate by more than 1e-6, worst 2.1e-2, so refusing would take typed angles away from a third of the world — which means **reading and writing back an unchanged angle rewrites that VOB's matrix**, and the grid must only write an angle the user changed. A reflection or a rank-deficient matrix is refused; retail has 0 of each. **Tolerance is 1e-6 on a matrix entry**, a few float32 ulps (ulp near 1 is 5.96e-8); measured worst is 2.98e-8 across the retail corpus and 5.96e-8 over 200k random poses. |
 | 1.6 | **Snapping** | **landed** | **Grid step and angle step landed 2026-08-28.** One "Snap" step on the World bar, following the gizmo mode — centimetres for a move, degrees for a turn, both remembered, both free-form by default so an unsnapped drag and `verify-world-edit.js` are unchanged. **Snapping is relative: the drag's *delta* is quantised, never the position or orientation it lands on** (`renderer/world/snapping.ts`), for the reason typed coordinates chose a delta — one gizmo drives a whole selection and an absolute snap would put the anchor on the grid and shift the rest by whatever that took. For the angle there was no choice at all: an absolute angle needs the matrix↔Euler conversion `zen-world` does not have (row 1.5), while the turn since the press is exactly what the op carries. Quantised **on the proxy** in `objectChange`, so the live preview, both commits, a waypoint's destination and the drag harness read one snapped number rather than each applying the step themselves. A drag the step quantises to nothing commits no op at all. **Drop-to-ground and align-to-normal landed 2026-08-28**, as the per-VOB answer the shared-delta commit path could not give: `zen-world`'s `dropVobsToGround`/`alignVobsToNormal` take per-VOB hits and batch to one `MoveVob`/`RotateVob` per VOB, one undo entry, exactly as `translateVobs`/`rotateVobs` do for a shared delta. Align turns local **+Y** onto the hit normal — the engine is Y-up, with no per-visual-class exception (the "which axis is up for this visual" question that keeps a placed VOB at `IDENTITY` is not reopened) — and composes on the left, so whatever rotation the VOB had about that axis survives. The raycast is `WorldViewportHandle.raycastDown`, synchronous against the existing BVH; a VOB whose ray misses (over the sky, off the mesh) is left where it was rather than refusing the batch. A *typed* coordinate still does not snap — a typed number is an explicit destination. |
 | 1.7 | **Visual assignment**, as opposed to rename | unscheduled → 1b-2 | `setVobProp.visual` renames in place and refuses any VOB whose visual type is `UNKNOWN` — 15,749 of the 41,393 retail VOBs, 38.0 % (§7). Assigning a visual has to decide the object's class; decals (`.TGA`) are refused outright. **The extension × class table is reproducible as of 2026-08-30** — `zenkit-node/scripts/check-visual-types.js` re-measures it over the corpus and reproduces every figure §7 quotes, `.3DS` being the one ambiguous extension (`MULTI_RESOLUTION_MESH` ×20,716 against `MESH` ×31). That settles the measurement the row was missing; the feature stays a decision. |
@@ -562,11 +562,11 @@ other three, so a second fixture would round-trip the same code path).
 its own fields. `VFire` adds `slot` and `vobTree`, both plain config that
 names no script symbol, so nothing on the class is held out. `VContainer`
 adds `locked` and `pickString`; `key` (the item instance that unlocks it)
-stays out with `item`, the same cross-reference decision, and so does
-`contents` — a single archive string, but one that encodes a comma-separated
-list of item instances and counts, the same "names script symbols this
-catalogue cannot validate" shape as `key` rather than the unbounded-list
-reason `keyframes` is held out by. `VDoor` adds the same `locked` and
+stays out with `item`, the same cross-reference decision. `contents` was held
+out the same way — a single archive string encoding a comma-separated list of
+item instances and counts — **and is in since 2026-09-03 (§16.26 row 2)**: it
+travels as that string through `SetVobClassProp`, the IPC validator holds its
+grammar and the renderer its item index, `oCItem.instance`'s split. `VDoor` adds the same `locked` and
 `pickString`, `key` held out the same way. One fixture VOB per class, appended
 to `BuildVisualVobTree` at paths `1/17`-`1/19`.
 
@@ -3321,15 +3321,33 @@ the VFS plumbing:
   selection for a VOB with no visual object, which the binding refuses the
   same way the grid's field does for a multi-selection. What is left is the
   thumbnail grid below.
-- **No thumbnail grid.** The list is names in a directory, sorted
-  directories-first; Spacer's *Bilder* and Spacer.NET's *preview models* are an
-  image grid. Getting there is offline rendering and caching a thumbnail per
-  visual — real work, but it sits on top of the mesh preview above, not
-  instead of it.
+- **Thumbnail grid — landed 2026-09-03.** A list/grid toggle in the Assets
+  panel (`WorldAssetGrid.tsx`, react-window `FixedSizeGrid`, 96 px tiles).
+  The picture is the editor's own: `ThumbnailRenderer.ts` draws
+  `VisualPreviewScene`'s scene — same geometry, lights, `frameVisual` — once
+  into one reused offscreen `WebGLRenderer` (a context per tile would exhaust
+  the browser's budget inside one directory), textures fetched at 64 px
+  before the draw; a `.TEX` is a 2D scale. Cached **machine-locally** in
+  `userData/asset-thumbnails/<sha256>.png` (`ThumbnailCacheService.ts`),
+  never beside the project: the key is the name plus each mount's path and
+  mtime in mount order, since the VFS answers "which file" and nothing else,
+  so a rebuilt VDF or a reordered source list changes the key. A loose
+  directory's mtime does not follow its files, which is why the grid has a
+  redraw button. `world:getThumbnail` answers the key and the PNG or null;
+  the renderer — the only process with a GPU — draws and `world:putThumbnail`
+  stores under that key, the bytes checked as PNG and capped at 512 KB. The
+  worker caches nothing and the renderer memoises nothing
+  (`assetThumbnails.ts`): the PNG cache *is* the memo, at the layer where it
+  survives a restart, and a name is extracted once and never while its PNG
+  exists — the one access pattern the grid has. Tiles ask as they mount, one
+  draw at a time in request order, the queue dropped when the listing moves
+  on; a name the binding cannot extract is a marked tile, not a pending one.
+  **Wants a human eye:** the pictures themselves — framing, lighting and the
+  texture fetch are scene-graph-tested under a mocked renderer, and nothing
+  in jsdom draws a pixel.
 
 So the honest framing: the *asset access* layer §14 assumed was missing is
-landed; what §16.25/1.3/1.7 still want is a mesh-capable preview and a picker
-wired to the two write paths, then optionally a thumbnail grid on top.
+landed, and so are the preview, the picker and the grid on top of it.
 
 **Wanted on top, 2026-09-02 (Daniel): favorites and categories on the asset
 browser.** Neither exists — the browser is a plain VFS directory walk with no
@@ -3344,9 +3362,30 @@ categorized — its scheme is a **hand-authored, hierarchical category tree**
 keyed by category path (e.g. `Items/Bögen und Armbrüste`, `Items/Sonstiges`),
 each category listing `(source directory, base name)` pairs across G1 and G2
 assets, not derived from the VFS directory layout at all. That's the bar for
-"sensible": a curated taxonomy, not an auto-grouping by folder. Whether the
-tree itself gets adapted as a starting seed or the feature just needs to
-support authoring one like it is still open.
+"sensible": a curated taxonomy, not an auto-grouping by folder.
+
+*Landed 2026-09-03, seeded from the tree (decided by Daniel 2026-09-02).*
+`scripts/convert-vobbilder.js` reads the tool's `neue_daten.js` (cp1252;
+per category path an array of `(dir, baseName, view, games)` tuples, `games`
+a bit set — 1 G1, 2 G2, 4 the author's own) and writes
+`src/shared/assetCategorySeed.json`: **32 categories, 1,396 G2 entries** as
+`<BASE>.3DS` source names, author and URL in its `$source`; the tool's own
+thumbnails are not shipped. The sidecar is **`<project>.assets.json` beside
+the project file** (`AssetCatalogService.ts`, `project:getAssetCatalog` /
+`saveAssetCatalog`), holding only what the project added — favorites and
+categories — and merged with the seed at read time (`mergeCatalogs`,
+`zen-world/src/model/assetCatalog.ts`), so the sidecar stays a diff and a
+seed update reaches every project. A visual is identified by `assetKey` —
+bare name, no extension, case-folded — because the VFS lists `NW_CRATE.MRM`,
+a VOB carries `NW_CRATE.3DS` and vobbilder stores neither. The UI is a
+Browse / Favorites / Categories switch on the Assets panel once a project is
+loaded; every tile carries a star and a file-into menu (any known category,
+or a new one typed in place); a category view can unfile the project's own
+entries and not the seed's. **Not done, by choice:** no removal or renaming
+of seed categories, no nesting beyond the path string, no export of the
+merged tree — a category's tiles ask the binding for the seed's `.3DS`
+names, so a seed entry the mounted sources lack is a marked tile, which is
+also the only way to learn the seed names an install does not have.
 
 **2. Container contents.** Spacer.NET calls it "convenient editing of chests
 contents". `oCMobContainer`'s catalogue is the thirteen `oCMobInter` fields plus
@@ -3366,6 +3405,29 @@ list — so this converges with row 1's thumbnail grid into one component rather
 than two. The two things that decision left unaddressed are unchanged by the UI
 choice: the list-field plumbing itself (§14.1 1.4's unbounded-payload concern),
 and the cross-reference validation split inherited from `oCItem.instance`.
+
+**Landed 2026-09-03.** `contents` travels as the archive's own `contains`
+string through the existing `SetVobClassProp` — `{ key: 'contents', kind:
+'string' }` on `OC_MOB_CONTAINER_FIELDS`, and the C++ case writes it
+(`binding.cc`, `1/18` in `mutations.test.js` round-trips it). The grammar is
+retail's, surveyed over the 294 chests of NewWorld/OldWorld/AddonWorld:
+`INSTANCE[:COUNT]`, comma-separated, no count meaning one; two chests carry a
+space after the comma and one a `;`, so the reader takes both and the writer
+emits the majority form (`zen-world/src/model/containerContents.ts`). The
+validator refuses a `to.contents` that is not that grammar or is over 4 KB,
+`to` only, the `instance` rule (`ipcValidation.ts`); the renderer holds the
+index: `ContainerContentsField.tsx` draws a row per entry with a count and a
+remove, and "Add item…" opens a picker over the loaded scripts' item
+instances, each drawn with the visual its `C_ITEM` declares — read off the
+instance's `sourceText` by a regex in `WorldSurface`, since the semantic model
+keeps no per-field record of an item — through the Assets panel's own
+thumbnail queue. With an index, the picker is the only way in; with none, a
+name is typed and shape-checked, "nothing is known" never being "nothing is
+legal". A string the grammar cannot read is shown as it is with a Clear, never
+rewritten. §14.1 1.4's list-field sentence is narrowed accordingly. **No
+engine has played a written `contents`** — the binding round-trip is the
+witness so far; an item whose visual is assigned through a constant has no
+picture and is offered by name.
 
 **3. First-person navigation.** Spacer has four movement modes (F3, M, T, C)
 and two camera slots; we have orbit, focus-on-selection and frame-world. A
