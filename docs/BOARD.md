@@ -165,11 +165,12 @@ in the tree).
 **Phase 1b-2 — VOB editing**
 
 - **§14's uninventoried gaps** — mesh preview, fly navigation, the picker,
-  the four camera slots, §16.12's outline tuning and now the walk (F3,
-  pointer lock, capsule against the BVH — landed 2026-09-02, feel unwitnessed
-  on a real GPU) are settled. Left: the thumbnail grid and chest contents —
-  reopened as a visual grid, plus favorites/categories, persisted to a project
-  sidecar, taxonomy referencing `vobbilder`'s hand-curated tree. §16.26
+  the four camera slots, §16.12's outline tuning, the walk (F3, pointer lock,
+  capsule against the BVH — feel unwitnessed on a real GPU) and, 2026-09-03,
+  the thumbnail grid, vobbilder-seeded favorites/categories in a
+  `<project>.assets.json` sidecar and the chest-contents editor are all
+  landed. Unwitnessed: the thumbnails' look, and a written `contents` in the
+  engine. §16.26
 - **Scatter placement, past Spacer rather than parity** — the missing scale
   field doesn't block it, the palette is a multi-VOB selection, and models
   come from the assets (same picker-wiring prerequisite as the row above).
