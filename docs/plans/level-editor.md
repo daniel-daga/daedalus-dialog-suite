@@ -3632,3 +3632,19 @@ a decision on how a missing/wrong entry behaves (skip with a warning, most
 likely, given a `modSources` config is already optional) before this is
 carded. `docs/architecture/level-editor.md` §9 should be updated once this
 lands.
+
+### 16.29 A GMBT quick-test button for the selected world (2026-09-03, Daniel)
+
+**The ask.** A button in the level editor that starts a Gothic Mod Builder
+Toolkit quick test run with the selected `.zen`, so an edit can be seen in the
+engine without leaving the app and without the by-hand copy/launch dance every
+Gate pass has done so far.
+
+**Undecided, and all of it is decided before this is carded.** How GMBT is
+invoked (CLI entry point and its arguments, versus driving its GUI); where its
+install lives and whether that is another entry in §16.28's asset-source list
+or its own setting; whether the button saves the world first or refuses on a
+dirty world; whether the run is fire-and-forget or the editor watches the
+process and surfaces its output; and what happens when GMBT is not installed.
+Daniel has the GMBT side of this — the answers are not derivable from this
+repo.

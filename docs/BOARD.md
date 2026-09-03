@@ -177,17 +177,12 @@ below it.
   come from the assets (same picker-wiring prerequisite as the row above).
   Still undecided: density/undo-bar size, erase. Benched until decided. §16.25
 
-**Asset sources**
+**Engine round-trip**
 
-Status: delivered 2026-09-03 (section 16.28); bounds are 128 entries and
-4096 characters per configured path.
-
-- **Arbitrary-length asset folder list** — an orderable list within the
-  security bounds,
-  project root the default first entry, others (MDK included) added by
-  hand, worlds resolved off the same list. Storage decided: the project
-  file, replacing `gothicInstallPath`, not `SettingsService`; missing or
-  unreadable collaborator paths are skipped with visible warnings. §16.28
+- **A GMBT quick-test button for the selected world** — start a Gothic Mod
+  Builder Toolkit quick test run from the editor. Invocation, install
+  location, save-first and not-installed behaviour are all undecided;
+  Daniel holds the GMBT side. §16.29
 
 **zenkit-node / fidelity**
 
@@ -240,3 +235,7 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
   `measure-viewport.js` against retail NEWWORLD (opened in 1.8 s, 197 fps,
   `valid: true`). Their default `--world` is stale on this machine and now
   says so in `environment-hazards.md`. §16.28
+- **The asset-source list, all three parts** — ordered list in the project
+  file (replacing `gothicInstallPath`, bounds 128 entries / 4096 chars),
+  `modSources` wired, and world opening moved onto the same list
+  (`ef4d5b2`). §16.28
