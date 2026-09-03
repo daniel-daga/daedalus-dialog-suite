@@ -235,12 +235,23 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
     } else if (e.key === 'Backspace' && isDialogLine && !hasNonEmptyText(localAction)) {
       e.preventDefault();
       handleDeleteAndFocusPrev();
+    } else if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && moveAction) {
+      // Alt+Up/Down moves the action one slot within its list — the keyboard
+      // counterpart of the drag handle (2026-07 review 5.4).
+      e.preventDefault();
+      const destination = e.key === 'ArrowUp' ? index - 1 : index + 1;
+      if (destination < 0 || destination >= totalActions) return;
+      flushUpdate();
+      const pathPrefix = path.slice(0, -1);
+      moveAction(pathPrefix, index, destination);
+      // The card remounts at its new index; focus follows once its ref is re-registered.
+      setTimeout(() => focusActionAtPath([...pathPrefix, destination]), 0);
     } else if (e.key === 'Escape') {
       e.preventDefault();
       flushUpdate();
       setDeleteConfirmOpen(true);
     }
-  }, [menuAnchor, isDialogLine, localAction, flushUpdate, handleTabToNext, handleTabToPrev, handleAddNewAfter, handleDeleteAndFocusPrev, hasNonEmptyText]);
+  }, [menuAnchor, isDialogLine, localAction, flushUpdate, handleTabToNext, handleTabToPrev, handleAddNewAfter, handleDeleteAndFocusPrev, hasNonEmptyText, moveAction, index, totalActions, path, focusActionAtPath]);
 
   const getActionIcon = () => {
     const Icon = (ACTION_TYPE_REGISTRY[actionType] ?? ACTION_TYPE_REGISTRY.customAction).icon;

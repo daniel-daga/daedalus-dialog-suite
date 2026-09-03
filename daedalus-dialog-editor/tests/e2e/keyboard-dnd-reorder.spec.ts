@@ -128,6 +128,45 @@ test.describe('Keyboard drag-and-drop reorder under one hoisted context (U5)', (
     }).toPass({ timeout: 5000 });
   });
 
+  test('Alt+Arrow moves the focused action and keeps focus on it', async ({ page }) => {
+    const before = await textOrder(page);
+    expect(before.indexOf('TOP_A')).toBeLessThan(before.indexOf('TOP_B'));
+
+    const topA = page.getByLabel('Text', { exact: true }).filter({ hasText: '' }).nth(before.indexOf('TOP_A'));
+    await topA.click();
+    await page.keyboard.press('Alt+ArrowDown');
+
+    await expect(async () => {
+      const after = await textOrder(page);
+      expect(after.indexOf('TOP_B')).toBeLessThan(after.indexOf('TOP_A'));
+    }).toPass({ timeout: 5000 });
+    // Focus followed the moved line, so a second press keeps moving it.
+    await expect(page.locator(':focus')).toHaveValue('TOP_A');
+
+    await page.keyboard.press('Alt+ArrowUp');
+    await expect(async () => {
+      const back = await textOrder(page);
+      expect(back.indexOf('TOP_A')).toBeLessThan(back.indexOf('TOP_B'));
+    }).toPass({ timeout: 5000 });
+  });
+
+  test('Alt+Arrow inside a ConditionalAction branch stays within the branch', async ({ page }) => {
+    const before = await textOrder(page);
+    await page.getByLabel('Text', { exact: true }).nth(before.indexOf('THEN_B')).click();
+
+    // THEN_B is the branch's last line: Alt+Down is a no-op, not an escape into the parent list.
+    await page.keyboard.press('Alt+ArrowDown');
+    await page.waitForTimeout(300);
+    expect(await textOrder(page)).toEqual(before);
+
+    await page.keyboard.press('Alt+ArrowUp');
+    await expect(async () => {
+      const after = await textOrder(page);
+      expect(after.indexOf('THEN_B')).toBeLessThan(after.indexOf('THEN_A'));
+      expect(after.indexOf('TOP_B')).toBeLessThan(after.indexOf('THEN_B'));
+    }).toPass({ timeout: 5000 });
+  });
+
   test('the InlineChoiceEditor sub-list joins the one hoisted context and lifts a drag', async ({ page }) => {
     // Expand the choice to mount its inline sub-list (a different target function).
     await page.getByRole('button', { name: 'Expand choice actions' }).click();
