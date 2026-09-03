@@ -127,6 +127,28 @@ describe('project config IPC', () => {
     await expect(invoke('project:saveAssetSources', second.projectFilePath, ['.', picked])).rejects.toThrow(/native folder picker/i);
   });
 
+  it('holds the GMBT project folder to the same picker rule as an asset source (§16.29)', async () => {
+    const project = await makeProject();
+    await invoke('project:loadConfig', project.root);
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'dde-gmbt-'));
+
+    await expect(invoke('project:saveAssetSources', project.projectFilePath, ['.'], outside))
+      .rejects.toThrow(/native folder picker/i);
+    await expect(invoke('project:saveAssetSources', project.projectFilePath, ['.'], '../escape'))
+      .rejects.toThrow(/within the project folder/i);
+    await expect(invoke('project:saveAssetSources', project.projectFilePath, ['.'], 42))
+      .rejects.toThrow(/GMBT project folder/i);
+
+    electron.__showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [outside] });
+    expect(await invoke('project:selectAssetSourceFolder')).toBe(outside);
+    await expect(invoke('project:saveAssetSources', project.projectFilePath, ['.'], outside))
+      .resolves.toMatchObject({ config: { gmbtProjectDir: outside } });
+
+    // Cleared to null, and a re-save with it omitted leaves what is there.
+    await expect(invoke('project:saveAssetSources', project.projectFilePath, ['.'], null))
+      .resolves.toMatchObject({ gmbtProjectDir: null });
+  });
+
   it('grants a folder to the project that opened the picker when another project loads meanwhile', async () => {
     const first = await makeProject();
     const second = await makeProject();

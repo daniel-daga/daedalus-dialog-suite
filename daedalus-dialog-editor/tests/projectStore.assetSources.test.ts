@@ -63,10 +63,22 @@ describe('ProjectStore - project asset sources', () => {
 
     await useProjectStore.getState().saveAssetSources(['.', 'assets']);
 
-    expect(save).toHaveBeenCalledWith(descriptor.projectFilePath, ['.', 'assets']);
+    expect(save).toHaveBeenCalledWith(descriptor.projectFilePath, ['.', 'assets'], undefined);
     expect(useProjectStore.getState().projectConfig).toEqual(saved.config);
     expect(useProjectStore.getState().resolvedAssetSources).toEqual(saved.resolvedAssetSources);
     expect(useProjectStore.getState().projectWarnings).toEqual([]);
+  });
+
+  test('saveAssetSources passes the GMBT project folder straight through', async () => {
+    useProjectStore.setState({ projectFilePath: descriptor.projectFilePath });
+    const saved = { ...descriptor, gmbtProjectDir: '/proj/gmbt', warnings: [] };
+    const save = jest.fn(async () => saved);
+    window.editorAPI.saveProjectAssetSources = save;
+
+    await useProjectStore.getState().saveAssetSources(['.'], 'gmbt');
+
+    expect(save).toHaveBeenCalledWith(descriptor.projectFilePath, ['.'], 'gmbt');
+    expect(useProjectStore.getState().gmbtProjectDir).toBe('/proj/gmbt');
   });
 
   test('dismissProjectWarning removes only matching resolved path', () => {

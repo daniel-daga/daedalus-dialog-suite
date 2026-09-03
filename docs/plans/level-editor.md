@@ -3728,14 +3728,83 @@ Toolkit quick test run with the selected `.zen`, so an edit can be seen in the
 engine without leaving the app and without the by-hand copy/launch dance every
 Gate pass has done so far.
 
-**Undecided, and all of it is decided before this is carded.** How GMBT is
-invoked (CLI entry point and its arguments, versus driving its GUI); where its
-install lives and whether that is another entry in §16.28's asset-source list
-or its own setting; whether the button saves the world first or refuses on a
-dirty world; whether the run is fire-and-forget or the editor watches the
-process and surfaces its output; and what happens when GMBT is not installed.
-Daniel has the GMBT side of this — the answers are not derivable from this
-repo.
+**Settled 2026-09-03 (Daniel), all six questions:**
+
+- **Invocation is the CLI**, the same entry point `zenkit-node/tools/engine-batch.ps1`
+  already drives: `gmbt` resolved off PATH, falling back to
+  `%APPDATA%\GMBT\bin\gmbt.exe` exactly as that script does. The command is
+  `gmbt test --world=<NAME> --nomenu -D --noupdatesubtitles`, run with the
+  GMBT project directory (below) as the working directory — `gmbt` reads its
+  `.gmbt.yml` from cwd, same as the harness's `-WorkingDirectory $GmbtDir`.
+  **No `--noreparse`**: the harness passes it because its `mdk/` never
+  compiles and it wants world-only iteration; Daniel's own scripts change too
+  (dialogs edited in this suite), so a quick test recompiles them every run.
+  **Never `--full`** either — GMBT refuses it without a prior script reparse,
+  and dropping `--noreparse` already gets one. `<NAME>` is the open world's
+  own on-disk filename, not a rename — see below.
+- **Config is Daniel's own pre-existing GMBT project, not generated.** He
+  already maintains a `.gmbt.yml` (its own `gothicRoot`, asset dirs) for his
+  mod, the way `zenkit-node/tools/gmbt/.gmbt.yml` does for the round-trip
+  harness. The editor does not synthesize one from the project's §16.28
+  asset-source list — that list is VFS mount sources, and a GMBT project is a
+  different kind of thing.
+- **Stored as a dedicated project-file field** — a GMBT project directory
+  path, not another entry in the §16.28 asset-source list (it is not content
+  to mount). Same storage pattern as §16.28 otherwise: committed to the
+  project file, skip-with-a-warning if the path is missing or wrong.
+- **No staging or copying.** Daniel edits the world file in place inside the
+  mod repo already, at the path GMBT's `mod\Worlds` points to — the button
+  does not copy or rename anything, unlike `engine-batch.ps1`'s forced
+  `NEWWORLD.ZEN` staging (which exists only because that harness needs one
+  fixed identity across many candidates). One caveat inherited from GMBT
+  itself and not solved here: `--world` is compared case-sensitively against
+  the on-disk filename after GMBT upper-cases the argument, so the file has
+  to already be cased the way its `STARTUP_<name>` script expects — Daniel's
+  setup already satisfies this, the button just passes the filename through.
+- **Save behaviour: refuse and prompt.** A dirty world blocks the button with
+  a prompt to save first, rather than auto-saving or launching stale bytes.
+- **Run mode: fire-and-forget.** The editor launches the process and does not
+  track it, show a running indicator, or capture its output — no watcher, no
+  exit-code handling.
+- **Not configured: disabled with a tooltip.** No GMBT project directory set,
+  or the path doesn't resolve, and the button is greyed out with a tooltip
+  naming the setting — never an error toast on click.
+
+**Built 2026-09-03, all six as settled.** `gmbtProjectDir` is an optional field
+of the project file (`docs/architecture/level-editor.md` §9), resolved by
+`ProjectConfigService` into `OpenedProjectConfig.gmbtProjectDir` — non-null only
+when the folder exists *and* holds a `.gmbt.yml`, otherwise a
+`gmbt-project-dir-unavailable` warning through the same snackbar an unavailable
+asset source uses. `GmbtService` finds `gmbt` on PATH (PATHEXT by PATHEXT) then
+at `%APPDATA%\GMBT\bin\gmbt.exe`, and spawns
+`test --world=<file> --nomenu -D --noupdatesubtitles` detached, `stdio: 'ignore'`,
+unref'd, with an `error` listener so a failed spawn cannot take main down.
+
+Three things in it are load-bearing:
+
+- **The IPC takes no payload.** `world:gmbtQuickTest` reads both halves of the
+  launch from main's own state — the registered project's resolved
+  `gmbtProjectDir`, and `WorldService.openWorldPath()`'s basename. A renderer
+  that could name either would be naming a folder to run a program in and a
+  file to hand it.
+- **Dirty means "not written back over the file the world was opened from"**,
+  not "edits exist". The save dialog suggests `.edited.zen` *beside* the
+  original, and a quick test plays the original — so the block clears only on a
+  save whose target matches `summary.worldPath`. Undo counts as an edit for the
+  same reason: the history's depth cannot say what is on disk.
+- **The Asset sources dialog sets it** (asked for 2026-09-03, after the six
+  decisions): a Choose…/Clear pair below the list and outside it, never a
+  fourteenth entry in the list — it is still not a mount. `project:saveAssetSources`
+  gained a third argument and `updateAssetSources` became `updateProjectPaths`,
+  with `null` for "clear" and omitted for "leave alone"; the folder answers to
+  the sources' own save-time rule (absolute only if the native picker granted
+  it, relative only inside the project), and one already in the project file is
+  granted at load like an asset source there.
+
+Unwitnessed: no quick test has been launched from the button on this machine —
+the launcher's argv and its two lookup paths are covered by
+`tests/GmbtService.test.ts` against an injected `spawn`, which is not the same
+as GMBT having started a game.
 
 ### 16.30 The point markers get a sprite (2026-09-03)
 

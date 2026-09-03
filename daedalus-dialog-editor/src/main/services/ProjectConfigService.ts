@@ -103,12 +103,22 @@ export function parseProjectFile(value: unknown): GothicProjectFileV1 {
   });
   if (!assetSources.includes('.')) throw new Error('assetSources must include "."');
 
+  let gmbtProjectDir: string | undefined;
+  if (root.gmbtProjectDir !== undefined) {
+    gmbtProjectDir = stringAt(root.gmbtProjectDir, 'gmbtProjectDir');
+    if (gmbtProjectDir.length === 0 || gmbtProjectDir.length > PROJECT_ASSET_SOURCE_LIMITS.maxLength
+      || /\p{Cc}/u.test(gmbtProjectDir)) {
+      throw new Error(`gmbtProjectDir must be 1-${PROJECT_ASSET_SOURCE_LIMITS.maxLength} characters without control characters`);
+    }
+  }
+
   return {
     version: 1,
     target: root.target as GothicTarget,
     scriptsRoot,
     worlds,
     assetSources,
+    ...(gmbtProjectDir === undefined ? {} : { gmbtProjectDir }),
   };
 }
 
@@ -143,6 +153,18 @@ async function isInstallShaped(candidate: string): Promise<boolean> {
     }
   }
   return false;
+}
+
+/** A GMBT project folder is the directory `gmbt` reads its `.gmbt.yml` from —
+ *  a folder without one is a wrong path, not a usable project (§16.29). */
+async function gmbtProjectProblem(candidate: string): Promise<string | null> {
+  if (!await isAvailableDirectory(candidate)) return 'GMBT project folder is unavailable';
+  try {
+    if ((await fs.stat(path.join(candidate, '.gmbt.yml'))).isFile()) return null;
+  } catch {
+    // Reported as the missing config below, like any other wrong path.
+  }
+  return 'GMBT project folder has no .gmbt.yml';
 }
 
 export interface OpenOrMigrateResult {
@@ -316,12 +338,28 @@ export class ProjectConfigService {
     return enqueueProjectFile(absolutePath, () => writeProjectFile(absolutePath, validated));
   }
 
-  async updateAssetSources(projectFilePath: string, assetSources: string[]): Promise<OpenedProjectConfig> {
+  /**
+   * The paths the Asset sources dialog owns: the ordered list, and the GMBT
+   * project folder beside it (§16.29). `gmbtProjectDir` is `null` for "clear
+   * it" and omitted for "leave it alone" — the two are different answers, and
+   * a save that always wrote what it was handed could not express the second.
+   */
+  async updateProjectPaths(
+    projectFilePath: string,
+    assetSources: string[],
+    gmbtProjectDir?: string | null,
+  ): Promise<OpenedProjectConfig> {
     const absolutePath = path.resolve(projectFilePath);
     return enqueueProjectFile(absolutePath, async () => {
       const originalContents = await fs.readFile(absolutePath, 'utf8');
       const current = parseProjectFile(originalContents);
-      const updated = parseProjectFile({ ...current, assetSources });
+      const { gmbtProjectDir: currentGmbt, ...rest } = current;
+      const next = gmbtProjectDir === undefined ? currentGmbt : (gmbtProjectDir ?? undefined);
+      const updated = parseProjectFile({
+        ...rest,
+        assetSources,
+        ...(next === undefined ? {} : { gmbtProjectDir: next }),
+      });
       await writeProjectFile(absolutePath, updated, originalContents);
       return resolveProjectConfig(absolutePath, updated);
     });
@@ -364,12 +402,30 @@ export async function resolveProjectConfig(
     }
   }
 
+  let gmbtProjectDir: string | null = null;
+  if (config.gmbtProjectDir !== undefined) {
+    const resolvedPath = isPortableAbsolute(config.gmbtProjectDir)
+      ? config.gmbtProjectDir
+      : path.resolve(projectRoot, config.gmbtProjectDir);
+    const problem = await gmbtProjectProblem(resolvedPath);
+    if (problem === null) gmbtProjectDir = resolvedPath;
+    else {
+      warnings.push({
+        code: 'gmbt-project-dir-unavailable',
+        source: config.gmbtProjectDir,
+        resolvedPath,
+        message: `${problem}: ${config.gmbtProjectDir}`,
+      });
+    }
+  }
+
   return {
     projectFilePath: absoluteProjectFilePath,
     projectRoot,
     scriptsRoot: path.resolve(projectRoot, config.scriptsRoot),
     config,
     resolvedAssetSources,
+    gmbtProjectDir,
     warnings,
   };
 }

@@ -475,7 +475,7 @@ export const mockEditorAPI: EditorAPI = {
     return {
       projectFilePath: `${projectRoot}/mock.gothicproject.json`, projectRoot, scriptsRoot: projectRoot,
       config: { version: 1, target: 'g2-notr', scriptsRoot: '.', worlds: [], assetSources: ['.'] },
-      resolvedAssetSources: [projectRoot], warnings: [],
+      resolvedAssetSources: [projectRoot], gmbtProjectDir: null, warnings: [],
     };
   },
 
@@ -483,11 +483,15 @@ export const mockEditorAPI: EditorAPI = {
     return prompt('Enter asset source folder path:') || null;
   },
 
-  async saveProjectAssetSources(projectFilePath: string, assetSources: string[]): Promise<OpenedProjectConfig> {
+  async saveProjectAssetSources(
+    projectFilePath: string, assetSources: string[], gmbtProjectDir?: string | null,
+  ): Promise<OpenedProjectConfig> {
     const projectRoot = projectFilePath.replace(/[\\/][^\\/]+$/, '');
     return { projectFilePath, projectRoot, scriptsRoot: projectRoot,
-      config: { version: 1, target: 'g2-notr', scriptsRoot: '.', worlds: [], assetSources },
-      resolvedAssetSources: assetSources.map((source) => source === '.' ? projectRoot : source), warnings: [] };
+      config: { version: 1, target: 'g2-notr', scriptsRoot: '.', worlds: [], assetSources,
+        ...(gmbtProjectDir ? { gmbtProjectDir } : {}) },
+      resolvedAssetSources: assetSources.map((source) => source === '.' ? projectRoot : source),
+      gmbtProjectDir: gmbtProjectDir ?? null, warnings: [] };
   },
 
   async buildProjectIndex(_folderPath: string): Promise<any> {
@@ -694,6 +698,9 @@ export const mockEditorAPI: EditorAPI = {
   // dialog to open, and a cancelled save is a state the surface already handles.
   async saveWorldDialog(): Promise<null> { return null; },
   async saveWorld(): Promise<never> {
+    throw new Error('No world is open');
+  },
+  async startGmbtQuickTest(): Promise<never> {
     throw new Error('No world is open');
   },
   async getVobFolders(): Promise<never> {

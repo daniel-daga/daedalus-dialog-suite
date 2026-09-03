@@ -474,6 +474,7 @@ const AppContent: React.FC = () => {
         <AssetSourcesDialog
           open={assetSourcesOpen}
           assetSources={projectConfig.assetSources}
+          gmbtProjectDir={projectConfig.gmbtProjectDir ?? null}
           projectRoot={projectPath}
           warnings={visibleProjectWarnings}
           worldLoaded={worldLoaded}

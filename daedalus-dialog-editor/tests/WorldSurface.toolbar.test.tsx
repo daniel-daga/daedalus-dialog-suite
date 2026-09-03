@@ -59,6 +59,84 @@ afterEach(() => {
   useProjectStore.getState().closeProject();
 });
 
+describe('the World bar GMBT quick test (§16.29)', () => {
+  it('is disabled with a tooltip naming the setting when no GMBT folder resolves', async () => {
+    await openWorld();
+
+    const button = screen.getByTestId('world-gmbt-test');
+    expect(button).toBeDisabled();
+    // The tooltip has to name what to set — a disabled button with no reason
+    // is the failure mode this replaces.
+    fireEvent.mouseOver(button.parentElement as HTMLElement);
+    expect(await screen.findByText(/GMBT project folder in Asset sources/)).toBeInTheDocument();
+    expect(api.startGmbtQuickTest).not.toHaveBeenCalled();
+  });
+
+  it('launches over a clean world once the project names a GMBT folder', async () => {
+    await openWorld();
+    await act(async () => { useProjectStore.setState({ gmbtProjectDir: 'C:/mod/gmbt' }); });
+
+    const button = screen.getByTestId('world-gmbt-test');
+    expect(button).toBeEnabled();
+    fireEvent.click(button);
+
+    await waitFor(() => expect(api.startGmbtQuickTest).toHaveBeenCalledTimes(1));
+  });
+
+  it('blocks on unsaved edits and offers the save flow instead', async () => {
+    await openWorld();
+    await act(async () => { useProjectStore.setState({ gmbtProjectDir: 'C:/mod/gmbt' }); });
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByTestId('world-gmbt-test'));
+
+    await screen.findByTestId('world-gmbt-blocked-save');
+    expect(api.startGmbtQuickTest).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('world-gmbt-blocked-save'));
+    await screen.findByTestId('world-save-confirm');
+  });
+
+  it('launches again once the edits are saved over the opened world', async () => {
+    const summary = await openWorld();
+    await act(async () => { useProjectStore.setState({ gmbtProjectDir: 'C:/mod/gmbt' }); });
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+
+    // The save dialog answers the file the world was opened from — the only
+    // target that leaves a quick test playing what is on screen.
+    api.saveWorldDialog.mockResolvedValueOnce(summary.worldPath.replace(/\//g, '\\') as never);
+    fireEvent.click(screen.getByTestId('world-save'));
+    fireEvent.click(await screen.findByTestId('world-save-confirm'));
+    await waitFor(() => expect(api.saveWorld).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByTestId('world-gmbt-test'));
+
+    await waitFor(() => expect(api.startGmbtQuickTest).toHaveBeenCalledTimes(1));
+  });
+
+  it('keeps blocking after a save beside the opened world', async () => {
+    await openWorld();
+    await act(async () => { useProjectStore.setState({ gmbtProjectDir: 'C:/mod/gmbt' }); });
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+
+    api.saveWorldDialog.mockResolvedValueOnce('C:/Gothic/NewWorld.edited.zen' as never);
+    fireEvent.click(screen.getByTestId('world-save'));
+    fireEvent.click(await screen.findByTestId('world-save-confirm'));
+    await waitFor(() => expect(api.saveWorld).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByTestId('world-gmbt-test'));
+
+    await screen.findByTestId('world-gmbt-blocked-save');
+    expect(api.startGmbtQuickTest).not.toHaveBeenCalled();
+  });
+});
+
 describe('the World bar undo/redo buttons', () => {
   it('are disabled once the world opens with an empty history', async () => {
     await openWorld();

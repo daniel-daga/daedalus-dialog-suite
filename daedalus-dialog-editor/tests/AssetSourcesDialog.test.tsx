@@ -38,7 +38,7 @@ describe('AssetSourcesDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: /remove source assets/i }));
     expect(baseProps.onSave).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: /save asset sources/i }));
-    await waitFor(() => expect(baseProps.onSave).toHaveBeenCalledWith(['.', 'new-assets', 'missing']));
+    await waitFor(() => expect(baseProps.onSave).toHaveBeenCalledWith(['.', 'new-assets', 'missing'], null));
     fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
     expect(baseProps.onClose).toHaveBeenCalled();
   });
@@ -64,6 +64,45 @@ describe('AssetSourcesDialog', () => {
     rerender(<AssetSourcesDialog {...baseProps} assetSources={['.', 'assets', 'refreshed']} />);
     expect(screen.getByText('4. draft-assets')).toBeInTheDocument();
     expect(screen.queryByText('3. refreshed')).not.toBeInTheDocument();
+  });
+
+  it('chooses, shows, clears and saves the GMBT project folder (§16.29)', async () => {
+    const select = jest.fn().mockResolvedValue('C:/mod/gmbt');
+    (window as any).editorAPI = { selectAssetSourceFolder: select };
+    render(<AssetSourcesDialog {...baseProps} />);
+
+    expect(screen.getByTestId('gmbt-project-dir')).toHaveTextContent('Not set');
+    expect(screen.getByRole('button', { name: /clear gmbt project folder/i })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: /choose gmbt project folder/i }));
+    await waitFor(() => expect(screen.getByTestId('gmbt-project-dir')).toHaveTextContent('C:/mod/gmbt'));
+    // The picker is what whitelists an absolute path main-side, so it is also
+    // what seeds this field — never a typed string.
+    expect(select).toHaveBeenCalledWith('C:/project');
+
+    fireEvent.click(screen.getByRole('button', { name: /save asset sources/i }));
+    await waitFor(() => expect(baseProps.onSave).toHaveBeenCalledWith(baseProps.assetSources, 'C:/mod/gmbt'));
+  });
+
+  it('clears a configured GMBT folder to null, and warns about one that does not resolve', async () => {
+    (window as any).editorAPI = { selectAssetSourceFolder: jest.fn() };
+    render(
+      <AssetSourcesDialog
+        {...baseProps}
+        gmbtProjectDir="gmbt"
+        warnings={[{ code: 'gmbt-project-dir-unavailable' as const, source: 'gmbt',
+          resolvedPath: 'C:/project/gmbt', message: 'GMBT project folder has no .gmbt.yml: gmbt' }]}
+      />,
+    );
+
+    expect(screen.getByTestId('gmbt-project-dir')).toHaveTextContent('gmbt');
+    expect(screen.getByText(/has no \.gmbt\.yml/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /clear gmbt project folder/i }));
+    expect(screen.getByTestId('gmbt-project-dir')).toHaveTextContent('Not set');
+
+    fireEvent.click(screen.getByRole('button', { name: /save asset sources/i }));
+    await waitFor(() => expect(baseProps.onSave).toHaveBeenCalledWith(baseProps.assetSources, null));
   });
 
   it('blocks Escape dismissal while an async save is in flight', async () => {

@@ -69,6 +69,13 @@ import WorldToolbar from './toolbar/WorldToolbar';
  *  next to a reason. */
 const baseName = (filePath: string): string => filePath.split(/[\\/]/).pop() || filePath;
 
+/** Two paths naming the same file on Windows, which is where this app runs and
+ *  where a save dialog answers `C:\Gothic\...` for a world opened as
+ *  `C:/Gothic/...`. Not a general path comparison: neither side is relative —
+ *  both come from a main-process dialog. */
+const samePath = (a: string, b: string): boolean =>
+  a.replace(/\\/g, '/').toLowerCase() === b.replace(/\\/g, '/').toLowerCase();
+
 /** A new VOB is placed unrotated: the terrain click gives a point and nothing
  *  else, and inventing an orientation from a surface normal is a feature with
  *  its own decisions (which axis is up for this visual?) rather than a default. */
@@ -403,6 +410,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     // would leave it standing for good.
     setWaynet(null);
     setVobFolders(emptyVobFolders());
+    // The previous world's edits are not this one's, and a quick test over the
+    // new world has nothing to be stale about yet.
+    setUnsavedEdits(false);
 
     try {
       // Main resolves the active project's ordered sources and owns the VFS
@@ -837,6 +847,12 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const [confirmingSave, setConfirmingSave] = useState(false);
   const [savedTo, setSavedTo] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  /** Whether an edit has landed that the world file on disk does not have.
+   *  Only a save back over the *opened* file clears it: the save dialog's own
+   *  suggestion is `.edited.zen` beside it, and a quick test plays the file
+   *  the world was opened from — so saving next to it leaves the engine on
+   *  stale bytes, which is exactly what the block is for (§16.29). */
+  const [unsavedEdits, setUnsavedEdits] = useState(false);
 
   const saveWorld = useCallback(async () => {
     setConfirmingSave(false);
@@ -854,12 +870,38 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       if (target === null) return;
       await window.editorAPI.saveWorld(target);
       setSavedTo(target);
+      if (samePath(target, summary.worldPath)) setUnsavedEdits(false);
     } catch (failure) {
       // The binding's own refusal — "only the binsafe writer path is verified" —
       // is the message worth showing, so it is not replaced with a generic one.
       setSaveError(failure instanceof Error ? failure.message : String(failure));
     }
   }, [summary]);
+
+  // ── the GMBT quick test (level-editor.md §16.29) ──────────────────────────
+  //
+  // Fire-and-forget: main launches `gmbt test` over the open world and nothing
+  // here tracks the process, its output or its exit code. A dirty world is
+  // refused rather than auto-saved — launching the engine at bytes the screen
+  // does not show is the one outcome worth a click to avoid.
+  const gmbtConfigured = useProjectStore((s) => s.gmbtProjectDir !== null);
+  const [quickTestBlocked, setQuickTestBlocked] = useState(false);
+
+  const startQuickTest = useCallback(async () => {
+    if (unsavedEdits) {
+      setQuickTestBlocked(true);
+      return;
+    }
+    try {
+      await window.editorAPI.startGmbtQuickTest();
+    } catch (failure) {
+      // The banner over the surface, not a `status: 'error'`: the world is
+      // still open, and a launch that did not happen changed nothing.
+      useWorldStore.getState().editFailed(
+        failure instanceof Error ? failure.message : String(failure),
+      );
+    }
+  }, [unsavedEdits]);
 
   /**
    * What every applied batch does, whichever way it arrived.
@@ -883,6 +925,12 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    */
   const applied = useCallback(async (ops: readonly WorldOp[]) => {
     useWorldStore.getState().applyEdit(ops);
+    // What the quick test refuses to launch over (§16.29). Undo comes through
+    // here too and marks the world edited rather than clean — an undone edit
+    // is still a world whose bytes on disk are not what is on screen, and the
+    // history's own depth cannot say otherwise: the stack is emptied by a save
+    // no more than it is filled by one.
+    setUnsavedEdits(true);
 
     // The waynet's half of the projection. The store's `applyEdit` writes the
     // VOB columns and filters these out — a waypoint has no row in them — so
@@ -2171,6 +2219,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         status={status}
         hasWorld={summary !== null}
         onSave={() => setConfirmingSave(true)}
+        gmbtConfigured={gmbtConfigured}
+        onQuickTest={() => void startQuickTest()}
         showWaynet={showWaynet}
         onToggleWaynet={() => void toggleWaynet()}
         showSpawns={showSpawns}
@@ -2260,6 +2310,32 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
           <Button onClick={() => setConfirmingSave(false)} data-testid="world-save-cancel">Cancel</Button>
           <Button onClick={saveWorld} variant="contained" data-testid="world-save-confirm">
             Choose a file…
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* A dirty world blocks the quick test rather than saving itself: which
+          file to write is a question the save dialog asks, and answering it
+          from here would either overwrite a retail world or leave the engine
+          playing the unedited one. */}
+      <Dialog open={quickTestBlocked} onClose={() => setQuickTestBlocked(false)}>
+        <DialogTitle>Save this world first</DialogTitle>
+        <DialogContent>
+          <DialogContentText variant="body2">
+            A quick test plays the world file on disk, and this world has edits that are not in
+            it yet. Save over the file it was opened from, then start the test again.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setQuickTestBlocked(false)} data-testid="world-gmbt-blocked-cancel">
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            data-testid="world-gmbt-blocked-save"
+            onClick={() => { setQuickTestBlocked(false); setConfirmingSave(true); }}
+          >
+            Save world…
           </Button>
         </DialogActions>
       </Dialog>

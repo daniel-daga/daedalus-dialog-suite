@@ -12,17 +12,24 @@ import type { ProjectConfigWarning } from '../../shared/projectConfigTypes';
 export interface AssetSourcesDialogProps {
   open: boolean;
   assetSources: string[];
+  /** The project file's configured `gmbtProjectDir` — the GMBT project folder
+   *  a quick test runs from (level-editor.md §16.29). Not an asset source: it
+   *  is one path, edited here because this is where the project's paths are
+   *  edited, and it never joins the mount list. */
+  gmbtProjectDir?: string | null;
   projectRoot?: string | null;
   warnings?: ProjectConfigWarning[];
   worldLoaded?: boolean;
   onClose: () => void;
-  onSave: (assetSources: string[]) => Promise<void>;
+  onSave: (assetSources: string[], gmbtProjectDir: string | null) => Promise<void>;
 }
 
 export const AssetSourcesDialog: React.FC<AssetSourcesDialogProps> = ({
-  open, assetSources, projectRoot, warnings = [], worldLoaded = false, onClose, onSave,
+  open, assetSources, gmbtProjectDir = null, projectRoot, warnings = [], worldLoaded = false,
+  onClose, onSave,
 }) => {
   const [draft, setDraft] = useState<string[]>(assetSources);
+  const [gmbtDraft, setGmbtDraft] = useState<string | null>(gmbtProjectDir);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const wasOpen = useRef(false);
@@ -30,15 +37,18 @@ export const AssetSourcesDialog: React.FC<AssetSourcesDialogProps> = ({
   useEffect(() => {
     if (open && !wasOpen.current) {
       setDraft(assetSources);
+      setGmbtDraft(gmbtProjectDir);
       setError(null);
       setSaving(false);
     }
     wasOpen.current = open;
-  }, [open, assetSources]);
+  }, [open, assetSources, gmbtProjectDir]);
 
   const changed = useMemo(
-    () => draft.length !== assetSources.length || draft.some((source, index) => source !== assetSources[index]),
-    [draft, assetSources],
+    () => draft.length !== assetSources.length
+      || draft.some((source, index) => source !== assetSources[index])
+      || gmbtDraft !== gmbtProjectDir,
+    [draft, assetSources, gmbtDraft, gmbtProjectDir],
   );
 
   const warningFor = (source: string) => warnings.find((warning) => warning.source === source);
@@ -61,11 +71,20 @@ export const AssetSourcesDialog: React.FC<AssetSourcesDialogProps> = ({
     return next;
   });
 
+  const chooseGmbt = async () => {
+    try {
+      const selected = await window.editorAPI.selectAssetSourceFolder(gmbtDraft ?? projectRoot ?? undefined);
+      if (selected) setGmbtDraft(selected);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not choose a GMBT project folder');
+    }
+  };
+
   const save = async () => {
     setSaving(true);
     setError(null);
     try {
-      await onSave(draft);
+      await onSave(draft, gmbtDraft);
       onClose();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not save asset sources');
@@ -127,6 +146,34 @@ export const AssetSourcesDialog: React.FC<AssetSourcesDialogProps> = ({
           <Button startIcon={<AddIcon />} onClick={() => void addSource()} disabled={saving} aria-label="Add asset source">
             Add source
           </Button>
+        </Box>
+
+        {/* The GMBT project folder is not a mount and is deliberately below the
+            list, outside it: one path, chosen or cleared, that only the
+            quick-test button reads. */}
+        <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
+          <Typography variant="subtitle2">GMBT project folder</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            The folder holding the <code>.gmbt.yml</code> a quick test runs from. Not an asset
+            source — it is never mounted.
+          </Typography>
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+            <Typography variant="body2" data-testid="gmbt-project-dir" sx={{ wordBreak: 'break-all', flexGrow: 1 }}>
+              {gmbtDraft ?? 'Not set'}
+            </Typography>
+            <Button size="small" onClick={() => void chooseGmbt()} disabled={saving} aria-label="Choose GMBT project folder">
+              Choose…
+            </Button>
+            <Button size="small" onClick={() => setGmbtDraft(null)} disabled={saving || gmbtDraft === null} aria-label="Clear GMBT project folder">
+              Clear
+            </Button>
+          </Stack>
+          {gmbtDraft !== null && warningFor(gmbtDraft) && (
+            <Typography variant="body2" color="warning.main" sx={{ mt: 0.5 }}>
+              <WarningAmberIcon fontSize="inherit" sx={{ verticalAlign: 'middle', mr: 0.5 }} />
+              {warningFor(gmbtDraft)?.message}
+            </Typography>
+          )}
         </Box>
       </DialogContent>
       <DialogActions>

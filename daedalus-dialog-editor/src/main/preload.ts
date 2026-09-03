@@ -30,8 +30,8 @@ contextBridge.exposeInMainWorld('editorAPI', {
   addAllowedPath: (folderPath: string) => ipcRenderer.invoke('project:addAllowedPath', folderPath),
   loadProjectConfig: (projectRoot: string) => ipcRenderer.invoke('project:loadConfig', projectRoot),
   selectAssetSourceFolder: (defaultPath?: string) => ipcRenderer.invoke('project:selectAssetSourceFolder', defaultPath),
-  saveProjectAssetSources: (projectFilePath: string, assetSources: string[]) =>
-    ipcRenderer.invoke('project:saveAssetSources', projectFilePath, assetSources),
+  saveProjectAssetSources: (projectFilePath: string, assetSources: string[], gmbtProjectDir?: string | null) =>
+    ipcRenderer.invoke('project:saveAssetSources', projectFilePath, assetSources, gmbtProjectDir),
 
   // Settings API
   getRecentProjects: () => ipcRenderer.invoke('settings:getRecentProjects'),
@@ -90,6 +90,9 @@ contextBridge.exposeInMainWorld('editorAPI', {
   applyWorldOps: (ops: unknown[]) => ipcRenderer.invoke('world:applyOps', { ops }),
   saveWorldDialog: (suggested: string) => ipcRenderer.invoke('world:saveDialog', { suggested }),
   saveWorld: (targetPath: string) => ipcRenderer.invoke('world:save', { targetPath }),
+  // The GMBT quick test (§16.29). No arguments: main names the world and the
+  // GMBT project folder itself.
+  startGmbtQuickTest: () => ipcRenderer.invoke('world:gmbtQuickTest'),
   // VOB folders (VOB folders slice) — a virtual grouping kept beside the
   // world file, never in it; see zen-world's vobFolders.ts.
   getVobFolders: (worldPath: string) => ipcRenderer.invoke('world:getVobFolders', { worldPath }),

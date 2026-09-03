@@ -173,13 +173,6 @@ below it.
   landed. Unwitnessed: the thumbnails' look, and a written `contents` in the
   engine. §16.26
 
-**Engine round-trip**
-
-- **A GMBT quick-test button for the selected world** — start a Gothic Mod
-  Builder Toolkit quick test run from the editor. Invocation, install
-  location, save-first and not-installed behaviour are all undecided;
-  Daniel holds the GMBT side. §16.29
-
 **zenkit-node / fidelity**
 
 - macOS CI — **dropped from scope, 2026-08-27** (Daniel). Not a gap to close.
@@ -226,6 +219,10 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **The GMBT quick-test button — landed 2026-09-03**, all six decisions as
+  settled, plus a Choose…/Clear for the folder in the Asset sources dialog. A
+  dirty world blocks unless the save went back over the opened file.
+  Unwitnessed: no run has been launched from the button. §16.29
 - **The point markers get a sprite — landed 2026-09-03.** A rimmed pip for the
   spawn layers, a reticle for the placement and pivot markers; colours
   unchanged, sizes up to keep the core. Unwitnessed: how it looks. §16.30

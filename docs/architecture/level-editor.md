@@ -2683,7 +2683,8 @@ mod's content:
     "parts": [{ "path": "./Worlds/NEWWORLD.ZEN", "role": "main" },
               { "path": "./Worlds/NEWWORLD_PART_*.ZEN", "role": "part" }]
   }],
-  "assetSources": [".", "C:/Games/Gothic II"]
+  "assetSources": [".", "C:/Games/Gothic II"],
+  "gmbtProjectDir": "./gmbt"        // optional — the folder holding a .gmbt.yml
 }
 ```
 
@@ -2702,6 +2703,19 @@ never enriched from machine-local settings. Malformed or ambiguous files block
 opening; missing or unreadable sources are skipped and shown as persistent
 warnings naming the configured path. Dialog editing remains available with no
 usable sources, while world opening asks the user to configure one.
+
+**`gmbtProjectDir` (2026-09-03)** is the one other path the file carries, and
+it is not an asset source: it is the working directory a `gmbt test` run reads
+its `.gmbt.yml` from, so it is a field of its own rather than an entry in the
+list. Optional, resolved the same way (relative against the project-file
+directory, absolute preserved) and warned about the same way, with one extra
+condition — a folder without a `.gmbt.yml` in it is a wrong path, not a GMBT
+project. It is edited in the Asset sources dialog, below the list and outside
+it, through the same native picker (which is what whitelists an absolute path
+main-side) and under the same save-time rule: an absolute path must have been
+picked, a relative one must stay inside the project. Until it resolves, the
+World bar's quick-test button is disabled with a tooltip pointing at that
+dialog. What the button then does is §16.29 of the plan.
 
 The project file is committed project state. Other machine-local state (window
 layout and recent-project metadata) remains in `SettingsService`. Target

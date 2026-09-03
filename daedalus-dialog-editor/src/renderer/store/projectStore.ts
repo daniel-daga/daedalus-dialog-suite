@@ -56,6 +56,10 @@ interface ProjectState {
   projectFilePath: string | null;
   projectConfig: GothicProjectFileV1 | null;
   resolvedAssetSources: string[];
+  /** The project's resolved GMBT project folder, or null when none is
+   *  configured or it does not resolve — what enables the World bar's quick
+   *  test (level-editor.md §16.29). */
+  gmbtProjectDir: string | null;
   projectWarnings: ProjectConfigWarning[];
 
   // Project index (lightweight)
@@ -115,7 +119,9 @@ interface ProjectState {
 interface ProjectActions {
   // Open and index a project
   openProject: (folderPath: string) => Promise<void>;
-  saveAssetSources: (assetSources: string[]) => Promise<void>;
+  /** Writes the Asset sources dialog: the ordered list, and the GMBT project
+   *  folder beside it (null clears it, omitted leaves it). */
+  saveAssetSources: (assetSources: string[], gmbtProjectDir?: string | null) => Promise<void>;
   dismissProjectWarning: (resolvedPath: string) => void;
 
   // Start background ingestion of all files
@@ -402,6 +408,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   projectFilePath: null,
   projectConfig: null,
   resolvedAssetSources: [],
+  gmbtProjectDir: null,
   projectWarnings: [],
   npcList: [],
   routineList: [],
@@ -460,6 +467,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         projectFilePath: descriptor.projectFilePath,
         projectConfig: descriptor.config,
         resolvedAssetSources: descriptor.resolvedAssetSources,
+        gmbtProjectDir: descriptor.gmbtProjectDir,
         projectWarnings: descriptor.warnings,
         npcList: rawIndex.npcs || [],
         routineList: rawIndex.routines || [],
@@ -494,7 +502,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     }
   },
 
-  saveAssetSources: async (assetSources: string[]) => {
+  saveAssetSources: async (assetSources: string[], gmbtProjectDir?: string | null) => {
     const projectFilePath = get().projectFilePath;
     const projectRoot = get().projectPath;
     const projectConfig = get().projectConfig;
@@ -504,7 +512,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     }
 
     try {
-      const descriptor = await window.editorAPI.saveProjectAssetSources(projectFilePath, assetSources);
+      const descriptor = await window.editorAPI.saveProjectAssetSources(
+        projectFilePath, assetSources, gmbtProjectDir,
+      );
       if (
         projectSession !== sessionAtStart ||
         get().projectFilePath !== projectFilePath ||
@@ -519,6 +529,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         projectFilePath: descriptor.projectFilePath,
         projectConfig: descriptor.config,
         resolvedAssetSources: descriptor.resolvedAssetSources,
+        gmbtProjectDir: descriptor.gmbtProjectDir,
         projectWarnings: descriptor.warnings,
         loadError: null
       });
@@ -678,6 +689,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       projectFilePath: null,
       projectConfig: null,
       resolvedAssetSources: [],
+  gmbtProjectDir: null,
       projectWarnings: [],
       npcList: [],
       routineList: [],

@@ -118,6 +118,16 @@ export class WorldService {
    * open, like every other read of it: the list belongs to the open, and a
    * previous world's mounts would key a thumbnail to the wrong files.
    */
+  /**
+   * The path the open world was loaded from — what a GMBT quick test names in
+   * `--world` (§16.29). Refused with no world open, like the mounts below: the
+   * renderer never gets to name the file a launch is built from.
+   */
+  openWorldPath(): string {
+    if (this.worldPath === null) throw new Error('No world is open');
+    return this.worldPath;
+  }
+
   openAssetSources(): readonly string[] {
     if (this.worldPath === null || this.assetSources === null) throw new Error('No world is open');
     return this.assetSources;

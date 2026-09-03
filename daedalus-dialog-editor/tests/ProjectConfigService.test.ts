@@ -122,6 +122,61 @@ describe('ProjectConfigService', () => {
     })]);
   });
 
+  test.each([
+    ['non-string gmbtProjectDir', { ...(validConfig() as object), gmbtProjectDir: 7 }],
+    ['empty gmbtProjectDir', { ...(validConfig() as object), gmbtProjectDir: '' }],
+    ['control character in gmbtProjectDir', { ...(validConfig() as object), gmbtProjectDir: 'mod\0dir' }],
+    ['oversized gmbtProjectDir', { ...(validConfig() as object), gmbtProjectDir: 'x'.repeat(4097) }],
+  ])('rejects %s', (_name, value) => {
+    expect(() => parseProjectFile(value)).toThrow(/gmbtProjectDir/i);
+  });
+
+  test('resolves a GMBT project folder that carries a .gmbt.yml', async () => {
+    const gmbt = join(root, 'gmbt');
+    await mkdir(gmbt);
+    await writeFile(join(gmbt, '.gmbt.yml'), 'gothicRoot: C:\\Gothic\n');
+    const config = parseProjectFile({ ...(validConfig() as object), gmbtProjectDir: 'gmbt' });
+
+    const opened = await resolveProjectConfig(join(root, 'demo.gothicproject.json'), config);
+
+    expect(opened.gmbtProjectDir).toBe(gmbt);
+    expect(opened.warnings).toEqual([]);
+  });
+
+  test('warns instead of resolving a folder without a .gmbt.yml, and one that is missing', async () => {
+    await mkdir(join(root, 'gmbt'));
+    const withoutConfig = await resolveProjectConfig(
+      join(root, 'demo.gothicproject.json'),
+      parseProjectFile({ ...(validConfig() as object), gmbtProjectDir: 'gmbt' }),
+    );
+    expect(withoutConfig.gmbtProjectDir).toBeNull();
+    expect(withoutConfig.warnings).toEqual([expect.objectContaining({
+      code: 'gmbt-project-dir-unavailable',
+      source: 'gmbt',
+      resolvedPath: join(root, 'gmbt'),
+      message: expect.stringContaining('.gmbt.yml'),
+    })]);
+
+    const missing = await resolveProjectConfig(
+      join(root, 'demo.gothicproject.json'),
+      parseProjectFile({ ...(validConfig() as object), gmbtProjectDir: 'nowhere' }),
+    );
+    expect(missing.gmbtProjectDir).toBeNull();
+    expect(missing.warnings).toEqual([expect.objectContaining({
+      code: 'gmbt-project-dir-unavailable',
+      resolvedPath: join(root, 'nowhere'),
+    })]);
+  });
+
+  test('leaves gmbtProjectDir null when the project file does not name one', async () => {
+    const opened = await resolveProjectConfig(
+      join(root, 'demo.gothicproject.json'),
+      parseProjectFile(validConfig()),
+    );
+    expect(opened.gmbtProjectDir).toBeNull();
+    expect('gmbtProjectDir' in opened.config).toBe(false);
+  });
+
   test('expands install-shaped folders but mounts ordinary folders directly in configured order', async () => {
     const ordinary = join(root, 'ordinary');
     const install = join(root, 'Gothic');
@@ -214,6 +269,17 @@ describe('ProjectConfigService', () => {
       expect(result.project.config.assetSources).toEqual(['.']);
     });
 
+    test('keeps gmbtProjectDir across an asset-source save', async () => {
+      const service = new ProjectConfigService();
+      const projectFilePath = join(root, 'demo.gothicproject.json');
+      await writeFile(projectFilePath, JSON.stringify({ ...(validConfig() as object), gmbtProjectDir: 'gmbt' }));
+
+      const descriptor = await service.updateProjectPaths(projectFilePath, ['.', root]);
+
+      expect(descriptor.config.gmbtProjectDir).toBe('gmbt');
+      expect(JSON.parse(await readFile(projectFilePath, 'utf8')).gmbtProjectDir).toBe('gmbt');
+    });
+
     test('uses a unique sibling temp file and atomic rename', async () => {
       const renameSpy = jest.spyOn(fsPromises, 'rename');
       const service = new ProjectConfigService();
@@ -303,7 +369,7 @@ describe('ProjectConfigService', () => {
 
       const [, opened] = await Promise.all([
         service.save(projectFilePath, changed),
-        service.updateAssetSources(projectFilePath, ['.', 'assets']),
+        service.updateProjectPaths(projectFilePath, ['.', 'assets']),
       ]);
 
       expect(opened.config.target).toBe('g1');
@@ -322,7 +388,7 @@ describe('ProjectConfigService', () => {
         return realReadFile(...args);
       });
 
-      await expect(new ProjectConfigService().updateAssetSources(projectFilePath, ['.', 'assets']))
+      await expect(new ProjectConfigService().updateProjectPaths(projectFilePath, ['.', 'assets']))
         .rejects.toThrow(/changed externally/i);
       expect(JSON.parse(await readFile(projectFilePath, 'utf8')).target).toBe('g1');
     });

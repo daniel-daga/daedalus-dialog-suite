@@ -1,22 +1,27 @@
 import React from 'react';
-import { Button, CircularProgress } from '@mui/material';
+import { Button, CircularProgress, Tooltip } from '@mui/material';
 import type { WorldStatus } from '../../../store/worldStore';
 
 /**
  * The World bar's "file" group (level-editor.md §17): open a world, the open
- * spinner, and save. The install picker and its path readout were removed by
- * §16.28 — asset sources are a list in the project file now, not a button
- * here.
+ * spinner, save, and the GMBT quick test. The install picker and its path
+ * readout were removed by §16.28 — asset sources are a list in the project
+ * file now, not a button here.
  */
 export interface WorldFileControlsProps {
   onOpenWorld: () => void;
   status: WorldStatus;
   hasWorld: boolean;
   onSave: () => void;
+  /** Whether the project names a GMBT project folder that resolves (§16.29).
+   *  Unset is the ordinary case, not an error: the quick test is disabled with
+   *  a tooltip naming the field, never an error on click. */
+  gmbtConfigured: boolean;
+  onQuickTest: () => void;
 }
 
 const WorldFileControls: React.FC<WorldFileControlsProps> = ({
-  onOpenWorld, status, hasWorld, onSave,
+  onOpenWorld, status, hasWorld, onSave, gmbtConfigured, onQuickTest,
 }) => (
   <>
     <Button
@@ -34,6 +39,26 @@ const WorldFileControls: React.FC<WorldFileControlsProps> = ({
     <Button size="small" variant="outlined" disabled={!hasWorld} onClick={onSave} data-testid="world-save">
       Save world…
     </Button>
+    <Tooltip
+      title={gmbtConfigured
+        ? 'Start a GMBT test run with this world'
+        : 'Set a GMBT project folder in Asset sources to run a quick test'}
+    >
+      {/* A disabled button fires no events, so the tooltip needs a wrapper to
+          hang on — which is the whole point here: the unconfigured case has to
+          say what to set. */}
+      <span>
+        <Button
+          size="small"
+          variant="outlined"
+          disabled={!hasWorld || !gmbtConfigured}
+          onClick={onQuickTest}
+          data-testid="world-gmbt-test"
+        >
+          Quick test
+        </Button>
+      </span>
+    </Tooltip>
   </>
 );
 

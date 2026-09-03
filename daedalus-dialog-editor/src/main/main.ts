@@ -32,6 +32,7 @@ import {
 } from './ipcValidation';
 import { appendInsertNpcFlow } from './services/AppendInsertNpcFlow';
 import { ProjectConfigService } from './services/ProjectConfigService';
+import { startGmbtQuickTest } from './services/GmbtService';
 import type { OpenedProjectConfig } from '../shared/projectConfigTypes';
 
 // E2E userData isolation seam (fix-08 §2 / T9a). When the real-Electron E2E
@@ -111,7 +112,15 @@ function registerProjectConfig(descriptor: OpenedProjectConfig): RegisteredProje
   const key = projectFileKey(descriptor.projectFilePath);
   const existing = registeredProjectConfigs.get(key);
   const allowedAbsoluteSources = existing?.allowedAbsoluteSources ?? new Set<string>();
-  for (const source of descriptor.config.assetSources) {
+  // The GMBT folder rides along: it is written by the same dialog under the
+  // same rule, and one already standing in the project file is as trusted as
+  // an asset source standing there — otherwise re-saving the list would refuse
+  // a path the file itself supplied.
+  const configured = [
+    ...descriptor.config.assetSources,
+    ...(descriptor.config.gmbtProjectDir === undefined ? [] : [descriptor.config.gmbtProjectDir]),
+  ];
+  for (const source of configured) {
     if (path.win32.isAbsolute(source) || path.posix.isAbsolute(source)) {
       allowedAbsoluteSources.add(absoluteSourceKey(source));
     }
@@ -474,17 +483,29 @@ export function setupIpcHandlers() {
     return selected;
   });
 
-  ipcMain.handle('project:saveAssetSources', async (_event, projectFilePath: unknown, assetSources: unknown) => {
+  ipcMain.handle('project:saveAssetSources', async (
+    _event, projectFilePath: unknown, assetSources: unknown, gmbtProjectDir: unknown,
+  ) => {
     if (typeof projectFilePath !== 'string' || projectFilePath.trim() === '') {
       throw new Error('Invalid project file path: expected a non-empty string');
     }
     assertAssetSourcesPayload(assetSources);
     if (!assetSources.includes('.')) throw new Error('assetSources must include "."');
+    if (gmbtProjectDir !== undefined && gmbtProjectDir !== null
+      && (typeof gmbtProjectDir !== 'string' || gmbtProjectDir.trim() === '')) {
+      throw new Error('Invalid GMBT project folder: expected a non-empty string or null');
+    }
     const key = projectFileKey(projectFilePath);
     const registered = registeredProjectConfigs.get(key);
     if (!registered) throw new Error('Project file is not a loaded project');
     const root = path.dirname(path.resolve(projectFilePath));
-    for (const source of assetSources) {
+    // The GMBT folder is written by the same dialog and reaches the disk the
+    // same way, so it answers to the same rule the sources do: an absolute path
+    // has to have come from the native picker (which is what whitelists it),
+    // and a relative one has to stay inside the project.
+    const configuredPaths = gmbtProjectDir === undefined || gmbtProjectDir === null
+      ? assetSources : [...assetSources, gmbtProjectDir];
+    for (const source of configuredPaths) {
       if (path.win32.isAbsolute(source) || path.posix.isAbsolute(source)) {
         if (!registered.allowedAbsoluteSources.has(absoluteSourceKey(source))) {
           throw new Error('External asset sources must be loaded from this project or chosen through the native folder picker');
@@ -498,7 +519,9 @@ export function setupIpcHandlers() {
       }
     }
     await pathValidator.validatePathResolved(projectFilePath, { write: true });
-    const descriptor = await projectConfigService.updateAssetSources(projectFilePath, assetSources);
+    const descriptor = await projectConfigService.updateProjectPaths(
+      projectFilePath, assetSources, gmbtProjectDir as string | null | undefined,
+    );
     registerProjectConfig(descriptor);
     return descriptor;
   });
@@ -784,6 +807,21 @@ export function setupIpcHandlers() {
       console.error('[IPC] world:open error:', error);
       throw new Error(`Failed to open world: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  });
+
+  // The GMBT quick test (§16.29). No payload, and deliberately so: both halves
+  // of the launch — the working directory and the `--world` filename — are read
+  // from state this process already owns, so the renderer cannot name a folder
+  // to run a program in or a file to hand it.
+  ipcMain.handle('world:gmbtQuickTest', async () => {
+    const registered = activeProjectFileKey === null
+      ? undefined
+      : registeredProjectConfigs.get(activeProjectFileKey);
+    const gmbtProjectDir = registered?.descriptor.gmbtProjectDir ?? null;
+    if (gmbtProjectDir === null) {
+      throw new Error('Set "gmbtProjectDir" in the project file to a GMBT project folder to run a quick test');
+    }
+    startGmbtQuickTest(gmbtProjectDir, path.basename(worldService.openWorldPath()));
   });
 
   ipcMain.handle('world:mesh', async () => worldService.getWorldMesh());

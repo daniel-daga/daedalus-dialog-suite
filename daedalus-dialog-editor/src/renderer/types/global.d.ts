@@ -143,7 +143,11 @@ export interface EditorAPI {
   addAllowedPath: (folderPath: string) => Promise<void>;
   loadProjectConfig: (projectRoot: string) => Promise<OpenedProjectConfig>;
   selectAssetSourceFolder: (defaultPath?: string) => Promise<string | null>;
-  saveProjectAssetSources: (projectFilePath: string, assetSources: string[]) => Promise<OpenedProjectConfig>;
+  /** Writes the Asset sources dialog's two paths. `gmbtProjectDir` is null to
+   *  clear it and omitted to leave it as it is. */
+  saveProjectAssetSources: (
+    projectFilePath: string, assetSources: string[], gmbtProjectDir?: string | null,
+  ) => Promise<OpenedProjectConfig>;
 
   // Settings API
   getRecentProjects: () => Promise<RecentProject[]>;
@@ -226,6 +230,11 @@ export interface EditorAPI {
   /** Write the world. Rejects with the binding's own message for a world that
    *  was not loaded from a `zCArchiverBinSafe` archive. */
   saveWorld: (targetPath: string) => Promise<void>;
+  /** Start a GMBT quick test over the open world (§16.29). Fire-and-forget:
+   *  it resolves once the process has been launched, and nothing tracks it.
+   *  Rejects when no GMBT project folder is configured, when no world is open,
+   *  or when `gmbt` is not installed. */
+  startGmbtQuickTest: () => Promise<void>;
   /** The `<worldname>.folders.json` sidecar — user-created, editor-only VOB
    *  groupings kept beside the world file, never in it. */
   getVobFolders: (worldPath: string) => Promise<VobFolders>;
