@@ -1,5 +1,10 @@
 # Architecture: the ZenGin level editor
 
+Project asset sources are defined by the v1 `*.gothicproject.json` file in
+section 9 below. The ordered `assetSources` list is shared by world loading
+and the asset browser; relative paths are project-file-relative, absolute paths
+are preserved, and later sources override earlier ones.
+
 The settled design of the level editor — the decisions that answer the design
 brief, and the process and data-flow architecture the ops are built on. Extracted
 from `docs/plans/level-editor.md` when they stopped being proposals; the plan
@@ -2648,7 +2653,7 @@ same analysis layer later.)
 
 ---
 
-## 9. Project file — open question 5
+## 9. Project file and asset sources — settled 2026-09-03
 
 A JSON project file, e.g. `myworld.gothicproject.json`, committed with the
 mod's content:
@@ -2657,20 +2662,36 @@ mod's content:
 {
   "version": 1,
   "target": "g2-notr",              // g1 | g2 | g2-notr — explicit, never guessed
-  "scriptsRoot": "./Scripts",
+  "scriptsRoot": ".",
   "worlds": [{
     "name": "NewWorld",
     "parts": [{ "path": "./Worlds/NEWWORLD.ZEN", "role": "main" },
               { "path": "./Worlds/NEWWORLD_PART_*.ZEN", "role": "part" }]
-  }]
+  }],
+  "assetSources": [".", "C:/Games/Gothic II"]
 }
 ```
 
-Machine-local, non-committed state (Gothic installation path, VDF search
-paths, window layout) lives in the existing `SettingsService` store keyed by
-project — same split the app already uses for app settings. Target version is
-per-project and explicit (brief §7); the binding refuses to load with a
-mismatched archive version rather than guessing.
+The ordered `assetSources` list supports up to 128 entries, with each configured
+path limited to 4096 characters. Relative paths resolve against
+the project-file directory; absolute paths are preserved. The project root is
+required but may be reordered, and later entries override earlier entries.
+Recognized Gothic installations expand through the archive/compiled-data
+rules, while ordinary directories mount directly. The resolved mounts are
+shared by world loading and the asset browser.
+
+Opening a legacy folder atomically creates its v1 project file, seeds the list
+with `.` and the old machine-local `gothicInstallPath` when available, then
+removes that setting only after the rename succeeds. Existing project files are
+never enriched from machine-local settings. Malformed or ambiguous files block
+opening; missing or unreadable sources are skipped and shown as persistent
+warnings naming the configured path. Dialog editing remains available with no
+usable sources, while world opening asks the user to configure one.
+
+The project file is committed project state. Other machine-local state (window
+layout and recent-project metadata) remains in `SettingsService`. Target
+version is per-project and explicit (brief §7); the binding refuses to load
+with a mismatched archive version rather than guessing.
 
 ---
 

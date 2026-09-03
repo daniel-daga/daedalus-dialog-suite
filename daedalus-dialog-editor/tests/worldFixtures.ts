@@ -122,8 +122,6 @@ export const WAYPOINT_MOVE: WorldOp = {
  */
 export function makeWorldEditorApi() {
   return {
-    getGothicInstall: jest.fn(async () => 'C:/Gothic II'),
-    selectGothicInstall: jest.fn(),
     openWorldDialog: jest.fn(),
     openWorld: jest.fn(),
     getWorldMesh: jest.fn(),

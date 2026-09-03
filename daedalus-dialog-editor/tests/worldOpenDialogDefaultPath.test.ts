@@ -94,55 +94,16 @@ describe('world:openDialog defaultPath', () => {
     return electron.__showOpenDialog.mock.calls[0][0] as unknown as OpenDialogOptions;
   }
 
-  it("opens in the install's extracted worlds directory when it exists", async () => {
-    SettingsServiceMock.getGothicInstallPath.mockResolvedValue(INSTALL);
-    existsSync.mockImplementation((p) => p === WORLDS);
-
-    expect(await invokeAndGetOptions()).toMatchObject({ defaultPath: WORLDS });
+  it('does not register the obsolete global Gothic install handlers', () => {
+    expect(electron.__handlers.has('world:selectGothicInstall')).toBe(false);
+    expect(electron.__handlers.has('world:getGothicInstall')).toBe(false);
   });
 
-  it('falls back to the install root when no worlds directory is extracted', async () => {
-    SettingsServiceMock.getGothicInstallPath.mockResolvedValue(INSTALL);
-
-    expect(await invokeAndGetOptions()).toMatchObject({ defaultPath: INSTALL });
-  });
-
-  it('passes no defaultPath when no Gothic install is stored', async () => {
+  it('passes no defaultPath when no configured loose world entry exists', async () => {
     const options = await invokeAndGetOptions();
 
     expect(options.defaultPath).toBeUndefined();
     // The rest of the picker is unchanged.
     expect(options).toMatchObject({ properties: ['openFile'] });
-  });
-});
-
-describe('world:selectGothicInstall defaultPath', () => {
-  beforeEach(() => {
-    electron.__handlers.clear();
-    electron.__showOpenDialog.mockClear();
-    SettingsServiceMock.getGothicInstallPath.mockReset();
-    SettingsServiceMock.getGothicInstallPath.mockResolvedValue(null);
-    setupIpcHandlers();
-  });
-
-  async function invokeAndGetOptions(): Promise<OpenDialogOptions> {
-    const handler = electron.__handlers.get('world:selectGothicInstall');
-    expect(handler).toBeDefined();
-    await handler!({});
-    expect(electron.__showOpenDialog).toHaveBeenCalledTimes(1);
-    return electron.__showOpenDialog.mock.calls[0][0] as unknown as OpenDialogOptions;
-  }
-
-  it('re-opens on the stored install', async () => {
-    SettingsServiceMock.getGothicInstallPath.mockResolvedValue(INSTALL);
-
-    expect(await invokeAndGetOptions()).toMatchObject({ defaultPath: INSTALL });
-  });
-
-  it('passes no defaultPath when no install is stored yet', async () => {
-    const options = await invokeAndGetOptions();
-
-    expect(options.defaultPath).toBeUndefined();
-    expect(options).toMatchObject({ properties: ['openDirectory'] });
   });
 });

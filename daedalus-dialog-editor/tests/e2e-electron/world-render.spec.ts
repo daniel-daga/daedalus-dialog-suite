@@ -36,6 +36,20 @@ function makeFakeInstall(): string {
   return dir;
 }
 
+function writeProjectFile(projectDir: string, installDir: string): void {
+  fs.writeFileSync(
+    path.join(projectDir, `${path.basename(projectDir)}.gothicproject.json`),
+    JSON.stringify({
+      version: 1,
+      target: 'g2-notr',
+      scriptsRoot: '.',
+      worlds: [],
+      assetSources: ['.', installDir],
+    }, null, 2),
+    'utf8',
+  );
+}
+
 // The ubuntu `editor-e2e-electron` job runs this same testDir but never
 // force-builds the native addon (`zenkit-node/scripts/install.js` skips the
 // source build in CI unless `ZENKIT_NODE_FORCE_BUILD=1`, which only
@@ -60,10 +74,11 @@ test.describe('World surface renders a real window', () => {
   test.beforeEach(async () => {
     projectDir = seedProjectDir([]);
     installDir = makeFakeInstall();
+    writeProjectFile(projectDir, installDir);
     fixture = await launchApp();
 
-    // Three different `showOpenDialog` calls in one flow (project folder,
-    // Gothic install, world file) — matched on title, the same way
+    // Two different `showOpenDialog` calls in one flow (project folder,
+    // world file) — matched on title, the same way
     // `scripts/verify-world-render.js` drives the real app.
     await fixture.app.evaluate(({ dialog }, paths) => {
       (dialog as { showOpenDialog: (options: { title: string }) => unknown }).showOpenDialog = async (
@@ -71,7 +86,6 @@ test.describe('World surface renders a real window', () => {
       ) => {
         switch (options.title) {
           case 'Select Gothic Mod Project Folder': return { canceled: false, filePaths: [paths.project] };
-          case 'Select the Gothic installation directory': return { canceled: false, filePaths: [paths.install] };
           case 'Open a ZenGin world': return { canceled: false, filePaths: [paths.world] };
           default: throw new Error(`unexpected dialog: ${options.title}`);
         }
@@ -89,9 +103,6 @@ test.describe('World surface renders a real window', () => {
 
     await page.getByRole('button', { name: /Open Project/i }).first().click();
     await page.getByTestId('world-toggle').click();
-    await page.getByTestId('world-choose-install').click();
-    await page.getByTestId('world-install-path').waitFor();
-
     await page.getByTestId('world-open').click();
     await page.getByTestId('world-viewport').waitFor();
     await page.waitForFunction(() => window.__worldViewport !== undefined);

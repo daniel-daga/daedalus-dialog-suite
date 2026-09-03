@@ -79,6 +79,7 @@ beforeEach(() => {
   // Reset stores to a clean state
   useProjectStore.setState({
     projectPath: PROJ_PATH,
+    scriptsRoot: null,
     projectName: 'TestProject',
     parsedFiles: new Map(),
     allDialogFiles: [],
@@ -144,6 +145,14 @@ describe('useFileWatcher hook lifecycle', () => {
   test('starts the file watcher when a project is open', async () => {
     const { unmount } = await setupHook();
     expect(mockStartFileWatcher).toHaveBeenCalledWith(PROJ_PATH);
+    unmount();
+  });
+
+  test('watches the configured scripts root instead of the project root', async () => {
+    const scriptsRoot = 'C:/project/Scripts';
+    useProjectStore.setState({ scriptsRoot });
+    const { unmount } = await setupHook();
+    expect(mockStartFileWatcher).toHaveBeenCalledWith(scriptsRoot);
     unmount();
   });
 

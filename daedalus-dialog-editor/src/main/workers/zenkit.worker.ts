@@ -25,7 +25,7 @@ import type {
   SaveWorldRequest,
   DecodedTexture,
   InstancedPayload,
-  OpenWorldRequest,
+  ResolvedOpenWorldRequest,
   WorldMeshPayload,
   WorldSummary,
   VfsEntry,
@@ -81,7 +81,7 @@ function phase<T>(name: string, run: () => T): T {
   return value;
 }
 
-function open(request: OpenWorldRequest): { result: WorldSummary; transfer: ArrayBuffer[] } {
+function open(request: ResolvedOpenWorldRequest): { result: WorldSummary; transfer: ArrayBuffer[] } {
   for (const key of Object.keys(timings)) delete timings[key];
 
   handle = phase('loadWorld', () => zenkit.loadWorld(request.worldPath, request.gameVersion));
@@ -358,7 +358,7 @@ if (parentPort) {
 
 function run(message: WorldWorkerRequest): { result: unknown; transfer: ArrayBuffer[] } {
   switch (message.op) {
-    case 'open': return open(message.payload as OpenWorldRequest);
+    case 'open': return open(message.payload as ResolvedOpenWorldRequest);
     case 'worldMesh': return takeWorldMesh();
     case 'visuals': return visuals();
     case 'texture': return texture(message.payload as { name: string; maxSize: number });

@@ -42,25 +42,24 @@ test.describe('World surface', () => {
   test('the World view is reachable and says what it needs before it can show anything', async ({ page }) => {
     await openWorldView(page);
 
+    // World mounts are owned by the active project configuration. The toolbar
+    // exposes only the world-file action; asset sources are edited at project
+    // level.
     await expect(page.getByTestId('world-open')).toBeVisible();
-    await expect(page.getByTestId('world-choose-install')).toBeVisible();
-    // The install is what supplies meshes and textures; a world opened without
-    // one resolves no visual at all, so the surface says so up front rather
-    // than rendering an empty world and letting it look like a data problem.
-    await expect(page.getByText(/Select the Gothic installation|Gothic installation/i)).toBeVisible();
+    await expect(page.getByTestId('world-toolbar-file').getByRole('button')).toHaveCount(2);
   });
 
   test('the toolbar keeps its file controls in the file group', async ({ page }) => {
     // A regression tripwire for the toolbar restructure
     // (level-editor.md §17): the split into
     // WorldToolbar's four groups must not have left world-open or
-    // world-choose-install outside the group named for them, and this is
-    // the one thing the browser harness can check pre-open without a world.
+    // asset-source controls outside the project-level action, and this is the
+    // one thing the browser harness can check pre-open without a world.
     await openWorldView(page);
 
     const fileGroup = page.getByTestId('world-toolbar-file');
     await expect(fileGroup.getByTestId('world-open')).toBeVisible();
-    await expect(fileGroup.getByTestId('world-choose-install')).toBeVisible();
+    await expect(fileGroup.getByRole('button')).toHaveCount(2);
   });
 
   test('the viewport is not mounted until a world is actually open', async ({ page }) => {

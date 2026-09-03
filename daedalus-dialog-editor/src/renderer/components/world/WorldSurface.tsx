@@ -170,7 +170,6 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     beginOpen, openSucceeded, openFailed, selectVob, toggleVob, selectWaypoint,
   } = useWorldStore.getState();
 
-  const [gothicInstall, setGothicInstall] = useState<string | null>(null);
   const [mesh, setMesh] = useState<WorldMeshPayload | null>(null);
   const [visuals, setVisuals] = useState<InstancedPayload | null>(null);
   const [terrainPoint, setTerrainPoint] = useState<[number, number, number] | null>(null);
@@ -345,15 +344,6 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     [items],
   );
 
-  useEffect(() => {
-    void window.editorAPI.getGothicInstall().then(setGothicInstall);
-  }, []);
-
-  const chooseInstall = useCallback(async () => {
-    const chosen = await window.editorAPI.selectGothicInstall();
-    if (chosen) setGothicInstall(chosen);
-  }, []);
-
   const openWorld = useCallback(async () => {
     const worldPath = await window.editorAPI.openWorldDialog();
     if (!worldPath) return;
@@ -376,15 +366,12 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     setVobFolders(emptyVobFolders());
 
     try {
-      // An empty asset list asks main to derive the sources from the
-      // configured Gothic install, by `zen-world`'s measured rule — archives
-      // when they exist, loose trees only as a fallback. It runs there because
-      // it needs the filesystem, and because those paths are then the ones the
-      // path validator sees.
+      // Main resolves the active project's ordered sources and owns the VFS
+      // mount list; the renderer sends only the project configuration identity.
       const opened = await window.editorAPI.openWorld({
         worldPath,
         gameVersion: 'g2',
-        assetSources: [],
+        projectFilePath: useProjectStore.getState().projectFilePath ?? '',
       });
       openSucceeded(opened);
       // A fresh open starts an empty history in the main process — this is
@@ -1989,8 +1976,6 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <WorldToolbar
-        gothicInstall={gothicInstall}
-        onChooseInstall={() => void chooseInstall()}
         onOpenWorld={() => void openWorld()}
         status={status}
         hasWorld={summary !== null}
@@ -2195,8 +2180,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         <Box sx={{ p: 3 }}>
           <Typography variant="body2" color="text.secondary">
             Open a ZenGin <code>.zen</code> world to view it. Phase 1a is read-only:
-            the world mesh, VOB visuals and picking. Select the Gothic installation
-            first — its archives supply the meshes and textures.
+            the world mesh, VOB visuals and picking. Configure at least one
+            available asset source in the active project first.
           </Typography>
         </Box>
       )}

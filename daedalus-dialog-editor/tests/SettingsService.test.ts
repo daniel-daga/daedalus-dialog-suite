@@ -1,24 +1,30 @@
 import { SettingsService } from '../src/main/services/SettingsService';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { ProjectConfigService } from '../src/main/services/ProjectConfigService';
 
 // SettingsService references `require('fs').promises`; spy on that same object
 // (the ESM namespace import above is non-configurable and cannot be spied).
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- must spy on the exact object SettingsService uses
 const fsPromises = require('fs').promises;
+let mockTestUserDataPath = '';
+let testDirectoryCounter = 0;
 
 jest.mock('electron', () => ({
   app: {
-    getPath: jest.fn().mockReturnValue('./test-userData')
+    getPath: jest.fn(() => mockTestUserDataPath)
   }
 }));
 
 describe('SettingsService', () => {
   let settingsService: SettingsService;
-  const testUserDataPath = './test-userData';
-  const settingsPath = path.join(testUserDataPath, 'settings.json');
+  let testUserDataPath: string;
+  let settingsPath: string;
 
   beforeEach(async () => {
+    testUserDataPath = `./test-userData-${process.pid}-${testDirectoryCounter++}`;
+    settingsPath = path.join(testUserDataPath, 'settings.json');
+    mockTestUserDataPath = testUserDataPath;
     settingsService = new SettingsService();
     try {
       await fs.mkdir(testUserDataPath, { recursive: true });
@@ -28,6 +34,7 @@ describe('SettingsService', () => {
   });
 
   afterEach(async () => {
+    jest.restoreAllMocks();
     try {
       await fs.rm(testUserDataPath, { recursive: true, force: true });
     } catch {
@@ -244,6 +251,37 @@ describe('SettingsService', () => {
     it('round-trips through the settings file', async () => {
       await settingsService.setGothicInstallPath('C:/Gothic II');
       expect(await settingsService.getGothicInstallPath()).toBe('C:/Gothic II');
+    });
+
+    it('clears the legacy Gothic install path', async () => {
+      await settingsService.setGothicInstallPath('C:/Gothic II');
+
+      await settingsService.clearGothicInstallPath();
+
+      expect(await settingsService.getGothicInstallPath()).toBeNull();
+    });
+
+    it('keeps the legacy setting when project-file persistence fails', async () => {
+      const projectRoot = await fs.mkdtemp(path.join(testUserDataPath, 'project-'));
+      await settingsService.setGothicInstallPath('C:/Gothic II');
+      const linkSpy = jest.spyOn(fsPromises, 'link').mockRejectedValueOnce(new Error('ENOSPC'));
+
+      await expect(new ProjectConfigService().openOrMigrate(projectRoot, 'C:/Gothic II')).rejects.toThrow('ENOSPC');
+
+      expect(await settingsService.getGothicInstallPath()).toBe('C:/Gothic II');
+      linkSpy.mockRestore();
+    });
+
+    it('allows the caller to clear the legacy setting only after migration commits', async () => {
+      const projectRoot = await fs.mkdtemp(path.join(testUserDataPath, 'project-'));
+      await settingsService.setGothicInstallPath('C:/Gothic II');
+
+      const result = await new ProjectConfigService().openOrMigrate(projectRoot, 'C:/Gothic II');
+      expect(result.migrationCommitted).toBe(true);
+      expect(await settingsService.getGothicInstallPath()).toBe('C:/Gothic II');
+
+      await settingsService.clearGothicInstallPath();
+      expect(await settingsService.getGothicInstallPath()).toBeNull();
     });
 
     it('does not disturb the recent projects it shares a file with', async () => {

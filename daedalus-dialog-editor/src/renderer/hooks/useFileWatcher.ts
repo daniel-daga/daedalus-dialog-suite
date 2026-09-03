@@ -43,17 +43,19 @@ function queueChangedFile(filePath: string): void {
  */
 export function useFileWatcher(): void {
   const projectPath = useProjectStore((s) => s.projectPath);
+  const scriptsRoot = useProjectStore((s) => s.scriptsRoot);
+  const watchRoot = scriptsRoot ?? projectPath;
   const unsubscribeRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
-    if (!projectPath) {
+    if (!watchRoot) {
       // No project open — make sure watcher is stopped
       window.editorAPI.stopFileWatcher().catch(() => {});
       return;
     }
 
     // Start the file watcher for this project
-    window.editorAPI.startFileWatcher(projectPath).catch((err) => {
+    window.editorAPI.startFileWatcher(watchRoot).catch((err) => {
       console.error('[useFileWatcher] Failed to start watcher:', err);
     });
 
@@ -71,7 +73,7 @@ export function useFileWatcher(): void {
       clearPendingChanges();
       window.editorAPI.stopFileWatcher().catch(() => {});
     };
-  }, [projectPath]);
+  }, [watchRoot]);
 }
 
 async function handleFileChange(event: FileChangeEvent): Promise<void> {

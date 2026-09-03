@@ -20,10 +20,39 @@ import {
   assertVobFoldersGetRequest,
   assertVobFoldersSaveRequest,
   assertAppendInsertNpcRequest,
+  assertAssetSourcesPayload,
+  assertOptionalFolderPath,
   sanitizeRendererErrorPayload,
   RENDERER_ERROR_MESSAGE_MAX,
   RENDERER_ERROR_STACK_MAX,
 } from '../src/main/ipcValidation';
+
+describe('project config IPC payloads', () => {
+  it('accepts asset source string arrays and an optional folder path', () => {
+    expect(() => assertAssetSourcesPayload(['.', 'C:/Gothic'])).not.toThrow();
+    expect(() => assertOptionalFolderPath(undefined)).not.toThrow();
+    expect(() => assertOptionalFolderPath('C:/Gothic')).not.toThrow();
+  });
+
+  it('rejects malformed asset source arrays', () => {
+    const sparse = new Array(2);
+    sparse[0] = '.';
+    for (const bad of [undefined, null, {}, '.', ['.', 7], sparse, ['.', ''], ['.', 'bad\0path'], ['.', 'bad\npath']]) {
+      expect(() => assertAssetSourcesPayload(bad)).toThrow(/assetSources/);
+    }
+  });
+
+  it('bounds asset source count and configured string length', () => {
+    expect(() => assertAssetSourcesPayload(['.', ...Array(128).fill('assets')])).toThrow(/assetSources/);
+    expect(() => assertAssetSourcesPayload(['.', 'x'.repeat(4097)])).toThrow(/assetSources/);
+  });
+
+  it('rejects a malformed optional folder path', () => {
+    for (const bad of [null, 7, {}, '', 'C:/Gothic\n']) {
+      expect(() => assertOptionalFolderPath(bad)).toThrow(/folder path/);
+    }
+  });
+});
 
 describe('assertModelShape', () => {
   it('rejects null', () => {
@@ -200,7 +229,7 @@ describe('assertOpenWorldRequest', () => {
   const valid = {
     worldPath: 'C:/Gothic II/_work/Data/Worlds/NewWorld/NewWorld.zen',
     gameVersion: 'g2',
-    assetSources: ['C:/Gothic II/Data/Meshes.vdf'],
+    projectFilePath: 'C:/Projects/demo/demo.gothicproject.json',
   };
 
   it('accepts a well-formed request', () => {
@@ -219,17 +248,13 @@ describe('assertOpenWorldRequest', () => {
     expect(() => assertOpenWorldRequest({ ...valid, worldPath: 42 })).toThrow(/worldPath/);
   });
 
-  it('rejects asset sources that are not a string array', () => {
-    // Every entry is path-validated by the caller; one non-string would slip
-    // through the loop untouched and be handed to the VFS.
-    expect(() => assertOpenWorldRequest({ ...valid, assetSources: 'Meshes.vdf' })).toThrow(/assetSources/);
-    expect(() => assertOpenWorldRequest({ ...valid, assetSources: ['ok', 7] })).toThrow(/assetSources/);
+  it('rejects a missing project configuration identity', () => {
+    expect(() => assertOpenWorldRequest({ ...valid, projectFilePath: '' })).toThrow(/projectFilePath/);
+    expect(() => assertOpenWorldRequest({ ...valid, projectFilePath: 7 })).toThrow(/projectFilePath/);
   });
 
-  it('accepts an empty asset source list', () => {
-    // An install with neither archives nor loose trees is a real state, and
-    // it is the renderer's job to report it, not this validator's.
-    expect(() => assertOpenWorldRequest({ ...valid, assetSources: [] })).not.toThrow();
+  it('accepts a project identity without renderer-supplied mounts', () => {
+    expect(() => assertOpenWorldRequest(valid)).not.toThrow();
   });
 
   it('rejects a non-object payload', () => {

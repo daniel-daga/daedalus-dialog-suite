@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { gothicAssetSources, parseVobFolders } from 'zen-world';
+import { parseVobFolders } from 'zen-world';
 import { PathValidationError } from './services/PathValidationService';
 import { getServiceRegistry } from './services/serviceRegistry';
 import { saveFileFlow, type SaveFileFlowOptions } from './services/SaveFileFlow';
@@ -21,8 +21,12 @@ import {
   assertVobFoldersSaveRequest,
   assertAppendInsertNpcRequest,
   sanitizeRendererErrorPayload,
+  assertAssetSourcesPayload,
+  assertOptionalFolderPath,
 } from './ipcValidation';
 import { appendInsertNpcFlow } from './services/AppendInsertNpcFlow';
+import { ProjectConfigService } from './services/ProjectConfigService';
+import type { OpenedProjectConfig } from '../shared/projectConfigTypes';
 
 // E2E userData isolation seam (fix-08 §2 / T9a). When the real-Electron E2E
 // harness sets DDE_E2E_USER_DATA, redirect Electron's userData to a per-test
@@ -57,6 +61,58 @@ const {
   logService,
   pathValidator,
 } = getServiceRegistry();
+const projectConfigService = new ProjectConfigService();
+
+interface RegisteredProjectConfig {
+  descriptor: OpenedProjectConfig;
+  allowedAbsoluteSources: Set<string>;
+}
+
+const registeredProjectConfigs = new Map<string, RegisteredProjectConfig>();
+let activeProjectFileKey: string | null = null;
+
+function projectFileKey(filePath: string): string {
+  const normalized = path.normalize(path.resolve(filePath));
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
+
+function absoluteSourceKey(source: string): string {
+  return projectFileKey(source);
+}
+
+function isConfiguredWorldMount(registered: RegisteredProjectConfig, mount: string): boolean {
+  const mountKeys = new Set([absoluteSourceKey(mount)]);
+  try { mountKeys.add(absoluteSourceKey(fs.realpathSync(mount))); } catch { /* source may be an archive path */ }
+  const projectRoot = registered.descriptor.projectRoot;
+  for (const configured of registered.descriptor.config.assetSources) {
+    const base = path.isAbsolute(configured) ? configured : path.resolve(projectRoot, configured);
+    const bases = [base];
+    try { bases.push(fs.realpathSync(base)); } catch { /* unavailable source is already omitted */ }
+    for (const candidate of bases) {
+      if (mountKeys.has(absoluteSourceKey(candidate))) return true;
+      for (const mountKey of mountKeys) {
+        const relative = path.relative(candidate, mountKey);
+        if (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+function registerProjectConfig(descriptor: OpenedProjectConfig): RegisteredProjectConfig {
+  const key = projectFileKey(descriptor.projectFilePath);
+  const existing = registeredProjectConfigs.get(key);
+  const allowedAbsoluteSources = existing?.allowedAbsoluteSources ?? new Set<string>();
+  for (const source of descriptor.config.assetSources) {
+    if (path.win32.isAbsolute(source) || path.posix.isAbsolute(source)) {
+      allowedAbsoluteSources.add(absoluteSourceKey(source));
+    }
+  }
+  const registered = { descriptor, allowedAbsoluteSources };
+  registeredProjectConfigs.set(key, registered);
+  activeProjectFileKey = key;
+  return registered;
+}
 
 // Crash visibility (fix-08 §5). Wire the process/app crash handlers before
 // `app.whenReady()` so failures during startup are still captured. Deliberately
@@ -203,6 +259,8 @@ app.on('window-all-closed', () => {
 // Exported for the main-process IPC tests, which register the handlers against
 // a stubbed `electron` rather than a running app.
 export function setupIpcHandlers() {
+  registeredProjectConfigs.clear();
+  activeProjectFileKey = null;
   // Parser handler (main process has access to native modules)
   ipcMain.handle('parser:parseSource', async (_event, sourceCode: unknown) => {
     try {
@@ -351,6 +409,75 @@ export function setupIpcHandlers() {
       console.error('[IPC] project:openFolderDialog error:', error);
       throw new Error(`Failed to open folder dialog: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  });
+
+  ipcMain.handle('project:loadConfig', async (_event, projectRoot: unknown) => {
+    if (typeof projectRoot !== 'string' || projectRoot.trim() === '') {
+      throw new Error('Invalid project root: expected a non-empty string');
+    }
+    await pathValidator.validatePathResolved(projectRoot);
+    const legacyInstallPath = await settingsService.getGothicInstallPath();
+    const opened = await projectConfigService.openOrMigrate(projectRoot, legacyInstallPath);
+    registerProjectConfig(opened.project);
+    if (opened.legacyCleanupSafe) {
+      try {
+        await settingsService.clearGothicInstallPath();
+      } catch (error) {
+        console.warn('[IPC] project:loadConfig - legacy setting cleanup will be retried:', error);
+      }
+    }
+    return opened.project;
+  });
+
+  ipcMain.handle('project:selectAssetSourceFolder', async (_event, defaultPath: unknown) => {
+    assertOptionalFolderPath(defaultPath);
+    if (!activeProjectFileKey) throw new Error('Load a project before selecting an asset source folder');
+    const projectKey = activeProjectFileKey;
+    const registered = registeredProjectConfigs.get(projectKey);
+    if (!registered) throw new Error('The active project is no longer loaded');
+    const result = await dialog.showOpenDialog({
+      ...(defaultPath === undefined ? {} : { defaultPath }),
+      properties: ['openDirectory'],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    const selected = result.filePaths[0];
+    // The dialog may stay open while another project becomes active. Grant the
+    // selection to the project that launched it, never whichever project is
+    // active when the promise settles. If that registration was replaced in
+    // the meantime, it is stale and must not be revived by this late result.
+    if (registeredProjectConfigs.get(projectKey) !== registered) return null;
+    pathValidator.addAllowedPath(selected);
+    registered.allowedAbsoluteSources.add(absoluteSourceKey(selected));
+    return selected;
+  });
+
+  ipcMain.handle('project:saveAssetSources', async (_event, projectFilePath: unknown, assetSources: unknown) => {
+    if (typeof projectFilePath !== 'string' || projectFilePath.trim() === '') {
+      throw new Error('Invalid project file path: expected a non-empty string');
+    }
+    assertAssetSourcesPayload(assetSources);
+    if (!assetSources.includes('.')) throw new Error('assetSources must include "."');
+    const key = projectFileKey(projectFilePath);
+    const registered = registeredProjectConfigs.get(key);
+    if (!registered) throw new Error('Project file is not a loaded project');
+    const root = path.dirname(path.resolve(projectFilePath));
+    for (const source of assetSources) {
+      if (path.win32.isAbsolute(source) || path.posix.isAbsolute(source)) {
+        if (!registered.allowedAbsoluteSources.has(absoluteSourceKey(source))) {
+          throw new Error('External asset sources must be loaded from this project or chosen through the native folder picker');
+        }
+      } else {
+        const resolved = path.resolve(root, source);
+        const relative = path.relative(root, resolved);
+        if (relative.startsWith('..') || path.isAbsolute(relative)) {
+          throw new Error('Relative asset sources must stay within the project folder');
+        }
+      }
+    }
+    await pathValidator.validatePathResolved(projectFilePath, { write: true });
+    const descriptor = await projectConfigService.updateAssetSources(projectFilePath, assetSources);
+    registerProjectConfig(descriptor);
+    return descriptor;
   });
 
   ipcMain.handle('project:buildIndex', async (_event, folderPath: string) => {
@@ -546,14 +673,26 @@ export function setupIpcHandlers() {
     try {
       // Start where the worlds are. `.zen` files only exist loose in an
       // extracted install's `_work/Data/Worlds` (the same `_work/Data` tree
-      // gothicAssetSources falls back to); a retail install keeps them inside
-      // Worlds.vdf, so the install root is the best a picker can offer there.
-      // With no install configured we pass nothing and Electron decides.
-      const installPath = await settingsService.getGothicInstallPath();
+      // Archives have no filesystem path to offer, so omit defaultPath when
+      // the project has no configured loose world entry.
       let defaultPath: string | undefined;
-      if (installPath) {
-        const worldsDir = path.join(installPath, '_work', 'Data', 'Worlds');
-        defaultPath = fs.existsSync(worldsDir) ? worldsDir : installPath;
+      const registered = activeProjectFileKey
+        ? registeredProjectConfigs.get(activeProjectFileKey)
+        : undefined;
+      const project = registered?.descriptor;
+      const worldPart = project?.config.worlds
+        .flatMap((world) => world.parts)
+        .find((part) => {
+          const candidate = path.isAbsolute(part.path)
+            ? part.path
+            : path.resolve(project!.projectRoot, part.path);
+          return part.role === 'main' && fs.existsSync(candidate);
+        });
+      if (worldPart && project) {
+        const candidate = path.isAbsolute(worldPart.path)
+          ? worldPart.path
+          : path.resolve(project.projectRoot, worldPart.path);
+        defaultPath = fs.statSync(candidate).isDirectory() ? candidate : path.dirname(candidate);
       }
 
       const result = await dialog.showOpenDialog({
@@ -573,62 +712,40 @@ export function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('world:selectGothicInstall', async () => {
-    try {
-      // Re-selecting an install starts at the one it replaces, the mirror of
-      // world:openDialog above.
-      const storedPath = await settingsService.getGothicInstallPath();
-
-      const result = await dialog.showOpenDialog({
-        properties: ['openDirectory'],
-        title: 'Select the Gothic installation directory',
-        ...(storedPath ? { defaultPath: storedPath } : {}),
-      });
-      if (result.canceled || result.filePaths.length === 0) return null;
-
-      const installPath = result.filePaths[0];
-      pathValidator.addAllowedPath(installPath);
-      await settingsService.setGothicInstallPath(installPath);
-      return installPath;
-    } catch (error) {
-      console.error('[IPC] world:selectGothicInstall error:', error);
-      throw new Error(`Failed to select Gothic install: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  });
-
-  ipcMain.handle('world:getGothicInstall', async () => {
-    const installPath = await settingsService.getGothicInstallPath();
-    // A persisted install re-seeds the whitelist on launch, exactly as recent
-    // projects do — the user already chose it through a main-process dialog.
-    if (installPath) pathValidator.addAllowedPath(installPath);
-    return installPath;
-  });
-
   ipcMain.handle('world:open', async (_event, request: unknown) => {
     try {
       assertOpenWorldRequest(request);
       await pathValidator.validatePathResolved(request.worldPath);
 
-      // An empty list means "derive them from the configured install". The
-      // rule is `zen-world`'s and it is measured, not stylistic: archives beat
-      // the equivalent loose trees 15 ms to 2,170 ms. It runs here because it
-      // needs the filesystem and the persisted install path.
-      let { assetSources } = request;
+      const key = projectFileKey(request.projectFilePath);
+      if (activeProjectFileKey !== key) {
+        throw new Error('The requested project is not the active project');
+      }
+      const registered = registeredProjectConfigs.get(key);
+      if (!registered) throw new Error('Load a project before opening a world');
+      const refreshed = await projectConfigService.openOrMigrate(registered.descriptor.projectRoot, null);
+      if (activeProjectFileKey !== key || registeredProjectConfigs.get(key) !== registered) {
+        throw new Error('The active project changed while loading the project configuration');
+      }
+      const refreshedRegistration = registerProjectConfig(refreshed.project);
+      const assetSources = refreshed.project.resolvedAssetSources;
       if (assetSources.length === 0) {
-        const installPath = await settingsService.getGothicInstallPath();
-        if (!installPath) {
-          throw new Error('No Gothic installation is configured — select one before opening a world.');
-        }
-        assetSources = gothicAssetSources(installPath, fs.existsSync);
-        if (assetSources.length === 0) {
-          throw new Error(`No Gothic assets found under ${installPath} — neither archives nor compiled asset directories.`);
-        }
+        throw new Error('Configure at least one available asset source before opening a world.');
       }
 
       for (const source of assetSources) {
-        await pathValidator.validatePathResolved(source);
+        if (!isConfiguredWorldMount(refreshedRegistration, source)) {
+          throw new Error(`World asset mount is not configured for the active project: ${source}`);
+        }
       }
-      return await worldService.openWorld({ ...request, assetSources });
+      if (activeProjectFileKey !== key || registeredProjectConfigs.get(key) !== refreshedRegistration) {
+        throw new Error('The active project changed while validating asset sources');
+      }
+      return await worldService.openWorld({
+        worldPath: request.worldPath,
+        gameVersion: request.gameVersion,
+        assetSources,
+      });
     } catch (error) {
       if (error instanceof PathValidationError) {
         console.error('[IPC] world:open - Path validation failed:', error.message);

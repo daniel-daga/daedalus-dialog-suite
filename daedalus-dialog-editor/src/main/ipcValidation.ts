@@ -11,9 +11,29 @@ import {
   type FieldDescriptor,
 } from 'zen-world';
 import type { WorldOp } from '../shared/worldTypes';
+import { PROJECT_ASSET_SOURCE_LIMITS } from '../shared/projectConfigTypes';
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export function assertAssetSourcesPayload(value: unknown): asserts value is string[] {
+  if (!Array.isArray(value) || value.length > PROJECT_ASSET_SOURCE_LIMITS.maxCount
+    || !Array.from({ length: value.length }, (_, index) => index)
+      .every((index) => Object.prototype.hasOwnProperty.call(value, index)
+        && typeof value[index] === 'string'
+        && value[index].length > 0
+        && value[index].length <= PROJECT_ASSET_SOURCE_LIMITS.maxLength
+        && !/[\x00-\x1f\x7f]/.test(value[index]))) {
+    throw new Error('Invalid assetSources payload: expected an array of strings');
+  }
+}
+
+export function assertOptionalFolderPath(value: unknown): asserts value is string | undefined {
+  if (value !== undefined && (typeof value !== 'string' || value.trim() === ''
+    || /[\x00-\x1f\x7f]/.test(value))) {
+    throw new Error('Invalid folder path: expected a non-empty string or undefined');
+  }
 }
 
 /**
@@ -137,7 +157,7 @@ const GAME_VERSIONS = ['g1', 'g2'] as const;
 export interface OpenWorldRequestShape {
   worldPath: string;
   gameVersion: 'g1' | 'g2';
-  assetSources: string[];
+  projectFilePath: string;
 }
 
 /**
@@ -156,9 +176,8 @@ export function assertOpenWorldRequest(request: unknown): asserts request is Ope
   if (!(GAME_VERSIONS as readonly unknown[]).includes(request.gameVersion)) {
     throw new Error(`Invalid world request: gameVersion must be one of ${GAME_VERSIONS.join(', ')}`);
   }
-  if (!Array.isArray(request.assetSources)
-    || !request.assetSources.every((source) => typeof source === 'string')) {
-    throw new Error('Invalid world request: assetSources must be an array of strings');
+  if (typeof request.projectFilePath !== 'string' || request.projectFilePath === '') {
+    throw new Error('Invalid world request: projectFilePath must be a non-empty string');
   }
 }
 

@@ -12,6 +12,7 @@ import { create } from 'zustand';
 import { enableMapSet } from 'immer';
 import type { DialogMetadata, SemanticModel } from '../types/global';
 import type { RoutineSite, SpawnSite } from '../../shared/types';
+import type { GothicProjectFileV1, ProjectConfigWarning } from '../../shared/projectConfigTypes';
 import { getQuestUsage } from '../utils/questAnalyzer';
 import { deserialiseIpcMap } from '../utils/ipcSerialisation';
 import { escapeRegExp } from '../utils/pathAndIdentifierUtils';
@@ -50,7 +51,12 @@ function createEmptySemanticModel(): SemanticModel {
 interface ProjectState {
   // Project metadata
   projectPath: string | null;
+  scriptsRoot: string | null;
   projectName: string | null;
+  projectFilePath: string | null;
+  projectConfig: GothicProjectFileV1 | null;
+  resolvedAssetSources: string[];
+  projectWarnings: ProjectConfigWarning[];
 
   // Project index (lightweight)
   npcList: string[];
@@ -109,6 +115,8 @@ interface ProjectState {
 interface ProjectActions {
   // Open and index a project
   openProject: (folderPath: string) => Promise<void>;
+  saveAssetSources: (assetSources: string[]) => Promise<void>;
+  dismissProjectWarning: (resolvedPath: string) => void;
 
   // Start background ingestion of all files
   startBackgroundIngestion: () => void;
@@ -218,6 +226,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   // invalidateCacheForFile/clearCache/closeProject so a stale parse is never
   // handed to a post-mutation caller.
   const inFlight = new Map<string, Promise<SemanticModel>>();
+  // Changes whenever the active project session is replaced. Async descriptor
+  // writes use this token so a late response cannot resurrect a closed or
+  // superseded project.
+  let projectSession = 0;
 
   // Staleness stamps for the cache write at the end of getSemanticModel (2026-07
   // finding 4.1). The write happens after an await, so between the parse
@@ -385,7 +397,12 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   return {
   // Initial state
   projectPath: null,
+  scriptsRoot: null,
   projectName: null,
+  projectFilePath: null,
+  projectConfig: null,
+  resolvedAssetSources: [],
+  projectWarnings: [],
   npcList: [],
   routineList: [],
   dialogIndex: new Map(),
@@ -411,20 +428,25 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
   // Actions
   openProject: async (folderPath: string) => {
+    projectSession += 1;
     set({ isLoading: true, loadError: null });
 
     try {
       // Ensure the path is allowed in the backend (especially for recent projects)
       await window.editorAPI.addAllowedPath(folderPath);
 
+      // Load (or migrate) the project descriptor before indexing. The
+      // descriptor owns the normalized scripts root used by the indexer.
+      const descriptor = await window.editorAPI.loadProjectConfig(folderPath);
+
       // Build project index via IPC
-      const rawIndex = await window.editorAPI.buildProjectIndex(folderPath);
+      const rawIndex = await window.editorAPI.buildProjectIndex(descriptor.scriptsRoot);
 
       // Convert the plain object back to Map (IPC serialization loses Map type)
       const dialogsByNpc = deserialiseIpcMap<string, DialogMetadata[]>(rawIndex.dialogsByNpc);
 
       // Extract project name from path
-      const pathParts = folderPath.split(/[\\/]/);
+      const pathParts = descriptor.projectRoot.split(/[\\/]/);
       const projectName = pathParts[pathParts.length - 1];
 
       // Recent projects are persisted main-side inside project:openFolderDialog;
@@ -432,8 +454,13 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
       resetParsedFileRecency();
       set({
-        projectPath: folderPath,
+        projectPath: descriptor.projectRoot,
+        scriptsRoot: descriptor.scriptsRoot,
         projectName,
+        projectFilePath: descriptor.projectFilePath,
+        projectConfig: descriptor.config,
+        resolvedAssetSources: descriptor.resolvedAssetSources,
+        projectWarnings: descriptor.warnings,
         npcList: rawIndex.npcs || [],
         routineList: rawIndex.routines || [],
         dialogIndex: dialogsByNpc,
@@ -465,6 +492,46 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       // a message, so the failure has to leave this function (2026-07 2.1).
       throw error;
     }
+  },
+
+  saveAssetSources: async (assetSources: string[]) => {
+    const projectFilePath = get().projectFilePath;
+    const projectRoot = get().projectPath;
+    const projectConfig = get().projectConfig;
+    const sessionAtStart = projectSession;
+    if (!projectFilePath) {
+      throw new Error('No project is open');
+    }
+
+    try {
+      const descriptor = await window.editorAPI.saveProjectAssetSources(projectFilePath, assetSources);
+      if (
+        projectSession !== sessionAtStart ||
+        get().projectFilePath !== projectFilePath ||
+        get().projectPath !== projectRoot ||
+        get().projectConfig !== projectConfig
+      ) {
+        return;
+      }
+      set({
+        projectPath: descriptor.projectRoot,
+        scriptsRoot: descriptor.scriptsRoot,
+        projectFilePath: descriptor.projectFilePath,
+        projectConfig: descriptor.config,
+        resolvedAssetSources: descriptor.resolvedAssetSources,
+        projectWarnings: descriptor.warnings,
+        loadError: null
+      });
+    } catch (error) {
+      set({ loadError: error instanceof Error ? error.message : 'Failed to save asset sources' });
+      throw error;
+    }
+  },
+
+  dismissProjectWarning: (resolvedPath: string) => {
+    set((state) => ({
+      projectWarnings: state.projectWarnings.filter((warning) => warning.resolvedPath !== resolvedPath)
+    }));
   },
 
   startBackgroundIngestion: async () => {
@@ -592,6 +659,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   },
 
   closeProject: () => {
+    projectSession += 1;
     // Abort any running ingestion
     const { abortIngestion } = get();
     if (abortIngestion) {
@@ -605,7 +673,12 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
     set({
       projectPath: null,
+      scriptsRoot: null,
       projectName: null,
+      projectFilePath: null,
+      projectConfig: null,
+      resolvedAssetSources: [],
+      projectWarnings: [],
       npcList: [],
       routineList: [],
       dialogIndex: new Map(),

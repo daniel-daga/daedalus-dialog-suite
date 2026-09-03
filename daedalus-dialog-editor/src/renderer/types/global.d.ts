@@ -98,6 +98,8 @@ import type {
 } from '../../shared/types';
 
 import type { UpdateCheckResult } from '../../shared/updater-types';
+import type { OpenedProjectConfig } from '../../shared/projectConfigTypes';
+export type { GothicProjectFileV1, GothicTarget, OpenedProjectConfig, ProjectConfigWarning } from '../../shared/projectConfigTypes';
 
 // ============================================================================
 // Editor API (renderer-specific)
@@ -138,6 +140,9 @@ export interface EditorAPI {
   buildProjectIndex: (folderPath: string) => Promise<ProjectIndex>;
   parseDialogFile: (filePath: string) => Promise<SemanticModel>;
   addAllowedPath: (folderPath: string) => Promise<void>;
+  loadProjectConfig: (projectRoot: string) => Promise<OpenedProjectConfig>;
+  selectAssetSourceFolder: (defaultPath?: string) => Promise<string | null>;
+  saveProjectAssetSources: (projectFilePath: string, assetSources: string[]) => Promise<OpenedProjectConfig>;
 
   // Settings API
   getRecentProjects: () => Promise<RecentProject[]>;
@@ -166,8 +171,6 @@ export interface EditorAPI {
   // World API (level-editor.md §7). The world stays in the main process; what
   // crosses is the lightweight VOB index plus geometry and texture buffers.
   openWorldDialog: () => Promise<string | null>;
-  selectGothicInstall: () => Promise<string | null>;
-  getGothicInstall: () => Promise<string | null>;
   openWorld: (request: OpenWorldRequest) => Promise<WorldSummary>;
   getWorldMesh: () => Promise<WorldMeshPayload>;
   getWorldVisuals: () => Promise<InstancedPayload>;
