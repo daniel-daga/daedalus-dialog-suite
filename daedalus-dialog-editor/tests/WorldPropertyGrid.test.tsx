@@ -22,6 +22,7 @@ import {
   type ClassProps, type VobProps, type ZenRotation,
 } from 'zen-world';
 import type { VobIndex, WorldSummary } from '../src/shared/worldTypes';
+import type { AssetThumbnails } from '../src/renderer/world/assetThumbnails';
 import WorldPropertyGrid from '../src/renderer/components/world/WorldPropertyGrid';
 
 interface Spec {
@@ -1405,6 +1406,86 @@ describe('WorldPropertyGrid, typed rotation', () => {
       render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} classProps={LIGHT} />);
 
       expect(screen.queryByTestId('world-prop-class-focusName-warning')).not.toBeInTheDocument();
+    });
+  });
+
+  // Chest contents (level-editor.md §16.26 row 2): the archive's `contains`
+  // string edited as a list, items picked by picture, and the item index
+  // enforced the way `oCItem.instance`'s is — an empty index refuses nothing.
+  describe('a chest’s contents', () => {
+    const FULL: ClassProps = { ...CHEST, contents: 'ItMi_Gold:25,ItFo_Fish' };
+    const ITEM_INDEX = new Set(['ITMI_GOLD', 'ITFO_FISH', 'ITFO_APPLE']);
+    const VISUALS = new Map([['ITFO_APPLE', 'ItFo_Apple.3DS']]);
+    const queue = () => ({
+      get: () => undefined, request: jest.fn(), redraw: jest.fn(), cancelPending: jest.fn(),
+      subscribe: () => () => {},
+    }) as unknown as AssetThumbnails;
+
+    it('draws one row per entry with its count, and removes one as a whole new string', () => {
+      render(<WorldPropertyGrid summary={WORLD} selection={[7]} {...wiring} classProps={FULL} />);
+
+      expect(screen.getByTestId('world-prop-contents-row-ItMi_Gold')).toBeInTheDocument();
+      expect((screen.getByTestId('world-prop-contents-count-ItMi_Gold') as HTMLInputElement).value).toBe('25');
+      expect((screen.getByTestId('world-prop-contents-count-ItFo_Fish') as HTMLInputElement).value).toBe('1');
+
+      fireEvent.click(screen.getByTestId('world-prop-contents-remove-ItMi_Gold'));
+      expect(classEdits).toEqual([{ contents: 'ItFo_Fish' }]);
+    });
+
+    it('commits a changed count in the canonical spelling, and refuses a count under one', () => {
+      render(<WorldPropertyGrid summary={WORLD} selection={[7]} {...wiring} classProps={FULL} />);
+      const count = screen.getByTestId('world-prop-contents-count-ItFo_Fish') as HTMLInputElement;
+
+      fireEvent.change(count, { target: { value: '0' } });
+      fireEvent.blur(count);
+      expect(classEdits).toEqual([]);
+
+      fireEvent.change(count, { target: { value: '3' } });
+      fireEvent.blur(count);
+      expect(classEdits).toEqual([{ contents: 'ItMi_Gold:25,ItFo_Fish:3' }]);
+    });
+
+    it('adds an item from the index by picture, and a repeat pick counts it up', () => {
+      const thumbnails = queue();
+      render(
+        <WorldPropertyGrid
+          summary={WORLD} selection={[7]} {...wiring} classProps={FULL}
+          itemInstances={ITEM_INDEX} itemVisuals={VISUALS} thumbnails={thumbnails}
+        />,
+      );
+
+      fireEvent.click(screen.getByTestId('world-prop-contents-add'));
+      fireEvent.change(screen.getByTestId('world-prop-contents-filter'), { target: { value: 'apple' } });
+      expect(screen.queryByTestId('world-prop-contents-item-ITMI_GOLD')).not.toBeInTheDocument();
+      // The picture is the item's declared visual, through the Assets panel's queue.
+      expect(thumbnails.request).toHaveBeenCalledWith('ItFo_Apple.3DS');
+      fireEvent.click(screen.getByTestId('world-prop-contents-item-ITFO_APPLE'));
+      expect(classEdits).toEqual([{ contents: 'ItMi_Gold:25,ItFo_Fish,ITFO_APPLE' }]);
+
+      fireEvent.click(screen.getByTestId('world-prop-contents-add'));
+      fireEvent.click(screen.getByTestId('world-prop-contents-item-ITFO_FISH'));
+      expect(classEdits[1]).toEqual({ contents: 'ItMi_Gold:25,ItFo_Fish:2' });
+    });
+
+    it('takes a typed name when no index is loaded — shape-checked, never refused for being unknown', () => {
+      render(<WorldPropertyGrid summary={WORLD} selection={[7]} {...wiring} classProps={FULL} />);
+
+      fireEvent.click(screen.getByTestId('world-prop-contents-add'));
+      const typed = screen.getByTestId('world-prop-contents-typed');
+      fireEvent.change(typed, { target: { value: 'not a symbol' } });
+      fireEvent.keyDown(typed, { key: 'Enter' });
+      expect(classEdits).toEqual([]);
+
+      fireEvent.change(typed, { target: { value: 'ItMi_Nugget' } });
+      fireEvent.keyDown(typed, { key: 'Enter' });
+      expect(classEdits).toEqual([{ contents: 'ItMi_Gold:25,ItFo_Fish,ItMi_Nugget' }]);
+    });
+
+    it('shows a string the grammar cannot read as it is, and can clear it, never rewrite it', () => {
+      render(<WorldPropertyGrid summary={WORLD} selection={[7]} {...wiring} classProps={{ ...CHEST, contents: 'ItMi_Gold:x' }} />);
+      expect(screen.getByTestId('world-prop-contents-unreadable')).toHaveTextContent('ItMi_Gold:x');
+      fireEvent.click(screen.getByTestId('world-prop-contents-clear'));
+      expect(classEdits).toEqual([{ contents: '' }]);
     });
   });
 

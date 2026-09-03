@@ -454,16 +454,23 @@ const OC_MOB_FIRE_FIELDS = [
   { key: 'vobTree', kind: 'string' },
 ] as const satisfies readonly FieldDescriptor[];
 
-/** The base thirteen plus `VContainer`'s `locked` and `pickString`. `key` (the
- *  item instance that unlocks it) stays out with `item`, the same cross-
- *  reference decision. `contents` stays out too: it is a single string in the
- *  archive, but it encodes a comma-separated list of item instances and
- *  counts, the same "names script symbols this catalogue cannot validate"
- *  shape as `key` — not the unbounded-list reason `keyframes` is held out by. */
+/** The base thirteen plus `VContainer`'s `locked`, `pickString` and
+ *  `contents`. `key` (the item instance that unlocks it) stays out with
+ *  `item`, the same cross-reference decision.
+ *
+ *  `contents` was held out by that decision too and is in since §16.26 row 2
+ *  reopened it (2026-09-03): it travels as the archive's own `contains`
+ *  string — `INSTANCE[:COUNT]`, comma-separated, as retail writes it
+ *  (`containerContents.ts`) — so at this layer it is a `string` like
+ *  `oCItem.instance`, and it is checked the way that one is: the IPC
+ *  validator holds the grammar, the renderer holds the item index. It is not
+ *  the unbounded list §14.1 1.4 held out; the archive bounds it as one
+ *  string, and the validator bounds the string. */
 const OC_MOB_CONTAINER_FIELDS = [
   ...OC_MOB_INTER_FIELDS,
   { key: 'locked', kind: 'bool' },
   { key: 'pickString', kind: 'string' },
+  { key: 'contents', kind: 'string' },
 ] as const satisfies readonly FieldDescriptor[];
 
 /** The base thirteen plus `VDoor`'s `locked` and `pickString`; `key` stays out

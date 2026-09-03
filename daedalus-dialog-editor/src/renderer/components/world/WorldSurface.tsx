@@ -21,6 +21,8 @@ import {
   renumbersPaths,
   reparentVob, rotateVob, rotateVobs, setVobClassProp, setVobProp, setVobProps, topLevelVobs,
   translateVobs, vobAtIndexPath, vobIndexPath,
+  addToCategory, assetKey, emptyAssetCatalog, mergeCatalogs, parseAssetCatalog, removeFromCategory,
+  toggleFavorite, visualsOf,
   type AddVob,
   type AuthorableVobClass, type ClassProps, type NewVob, type ReadProps,
   type VobProps, type VobReader, type VobSubtree,
@@ -28,7 +30,7 @@ import {
   type ZenPosition, type ZenRotation,
 } from 'zen-world';
 import type {
-  InstancedPayload, VobFolders, WaynetPayload, WorldMeshPayload, WorldOp,
+  AssetCatalog, InstancedPayload, VobFolders, WaynetPayload, WorldMeshPayload, WorldOp,
 } from '../../../shared/worldTypes';
 import { findFreePointVob, primaryVob, useWorldStore } from '../../store/worldStore';
 import { stateOptions, stateReach } from '../../routines/routineSchedule';
@@ -38,12 +40,15 @@ import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
 import { appendInsertNpc, findFunctionFile, startupFunctionFor } from './insertNpcScript';
 import { vobModelOf } from '../../world/vobModel';
+import { AssetThumbnails } from '../../world/assetThumbnails';
+import { ThumbnailRenderer } from '../../world/ThumbnailRenderer';
 import { DEFAULT_EXPOSURE } from '../../world/WorldScene';
 import WorldViewport, { type GizmoMode, type WorldViewportHandle } from './WorldViewport';
 import WorldSceneTree from './WorldSceneTree';
 import WorldFolderTree from './WorldFolderTree';
 import WorldPropertyGrid from './WorldPropertyGrid';
-import WorldAssetBrowser from './WorldAssetBrowser';
+import WorldAssetBrowser, { type AssetCatalogProps } from './WorldAssetBrowser';
+import assetCategorySeed from '../../../shared/assetCategorySeed.json';
 import WorldAssetPreview, { NAME_OF, isPlaceableVisual } from './WorldAssetPreview';
 import WaypointPanel from './WaypointPanel';
 import WorldVobContextMenu from './WorldVobContextMenu';
@@ -343,6 +348,19 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     () => new Set(Object.keys(items ?? {}).map((name) => name.toUpperCase())),
     [items],
   );
+  /** Uppercased instance → the `visual` its declaration assigns, read off
+   *  the instance's verbatim source (§16.26 row 2): the semantic model keeps
+   *  no per-field record of a `C_ITEM`, and the one line the picker needs is
+   *  a regex away. An item that assigns none, or through a constant, has no
+   *  picture and is offered by name. */
+  const itemVisuals = useMemo(() => {
+    const visuals = new Map<string, string>();
+    for (const [name, item] of Object.entries(items ?? {})) {
+      const match = /\bvisual\s*=\s*"([^"]+)"/i.exec(item.sourceText ?? '');
+      if (match !== null) visuals.set(name.toUpperCase(), match[1]);
+    }
+    return visuals;
+  }, [items]);
 
   const openWorld = useCallback(async () => {
     const worldPath = await window.editorAPI.openWorldDialog();
@@ -516,6 +534,26 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     (name: string) => window.editorAPI.getWorldVisual(name),
     [],
   );
+
+  // The thumbnail queue (§16.26 row 1) — one per open world, since its cache
+  // keys are the open world's mounts. Built lazily: the offscreen renderer
+  // holds a GL context, and a surface with no Assets tab open owes none.
+  const thumbnailsRef = useRef<AssetThumbnails | null>(null);
+  const thumbnails = useMemo(() => {
+    thumbnailsRef.current?.dispose();
+    thumbnailsRef.current = summary === null ? null : new AssetThumbnails({
+      getThumbnail: (name) => window.editorAPI.getAssetThumbnail(name),
+      putThumbnail: (key, dataUrl) => window.editorAPI.putAssetThumbnail(key, dataUrl),
+      loadVisual,
+      loadTexture,
+      renderer: new ThumbnailRenderer(),
+    });
+    return thumbnailsRef.current;
+    // Keyed on the world, not the summary object: a refreshed index after a
+    // structural op is the same world over the same mounts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [summary?.worldPath, loadVisual, loadTexture]);
+  useEffect(() => () => { thumbnailsRef.current?.dispose(); }, []);
 
   // A plain click replaces the selection; Shift, Ctrl or Cmd adds to it. One
   // rule for
@@ -1393,6 +1431,45 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    * the world itself, so a failed write is logged rather than surfaced the
    * way a refused world edit is.
    */
+  /**
+   * The asset browser's favorites and categories (§16.26, "Wanted on top"),
+   * the project's own half: the `<project>.assets.json` sidecar, loaded when
+   * a project is, persisted on every change the way folders are. The shipped
+   * seed is merged in for display and never written back, so the sidecar
+   * stays the project's diff against it.
+   */
+  const projectFilePath = useProjectStore((s) => s.projectFilePath);
+  const [assetCatalog, setAssetCatalog] = useState<AssetCatalog>(emptyAssetCatalog());
+  useEffect(() => {
+    let current = true;
+    setAssetCatalog(emptyAssetCatalog());
+    if (projectFilePath === null) return undefined;
+    window.editorAPI.getAssetCatalog(projectFilePath)
+      .then((loaded) => { if (current) setAssetCatalog(loaded); })
+      .catch((failure) => { console.error('[World] Failed to read the asset catalog:', failure); });
+    return () => { current = false; };
+  }, [projectFilePath]);
+  const persistAssetCatalog = useCallback((next: AssetCatalog) => {
+    setAssetCatalog(next);
+    if (projectFilePath === null) return;
+    window.editorAPI.saveAssetCatalog(projectFilePath, next).catch((failure) => {
+      console.error('[World] Failed to save the asset catalog:', failure);
+    });
+  }, [projectFilePath]);
+  const mergedAssetCatalog = useMemo(
+    () => mergeCatalogs(parseAssetCatalog(assetCategorySeed), assetCatalog),
+    [assetCatalog],
+  );
+  const assetCatalogProps = useMemo<AssetCatalogProps | undefined>(() => (
+    projectFilePath === null ? undefined : {
+      catalog: mergedAssetCatalog,
+      removable: (path, name) => visualsOf(assetCatalog, path).some((visual) => assetKey(visual) === assetKey(name)),
+      onToggleFavorite: (name) => persistAssetCatalog(toggleFavorite(assetCatalog, name)),
+      onAddToCategory: (path, name) => persistAssetCatalog(addToCategory(assetCatalog, path, name)),
+      onRemoveFromCategory: (path, name) => persistAssetCatalog(removeFromCategory(assetCatalog, path, name)),
+    }
+  ), [projectFilePath, mergedAssetCatalog, assetCatalog, persistAssetCatalog]);
+
   const persistFolders = useCallback((next: VobFolders) => {
     setVobFolders(next);
     const worldPath = useWorldStore.getState().summary?.worldPath;
@@ -2256,7 +2333,12 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                   IPC round trip into the worker that holds the VFS. */}
               {panel === 'assets' && (
                 <Box sx={{ flex: 1, minHeight: 0 }}>
-                  <WorldAssetBrowser listAssets={listAssets} onPreview={setSelectedAsset} />
+                  <WorldAssetBrowser
+                    listAssets={listAssets}
+                    onPreview={setSelectedAsset}
+                    thumbnails={thumbnails ?? undefined}
+                    catalog={assetCatalogProps}
+                  />
                 </Box>
               )}
               {/* Lazily mounted, like Assets above — the folder list is small
@@ -2417,6 +2499,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                       onEditClassProps={handleEditClassProps}
                       onEditBaseProps={handleEditBaseProps}
                       itemInstances={itemInstances}
+                      itemVisuals={itemVisuals}
+                      thumbnails={thumbnails}
                     />
                   )}
             </Box>

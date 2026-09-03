@@ -4,10 +4,10 @@
 // boundary needs — the request/response envelope and the summary.
 
 import type {
-  DrawGroup, InstancedVisual, PortalFinding, VisualScene, VobFolders, VobIndex, WorldOp,
+  AssetCatalog, DrawGroup, InstancedVisual, PortalFinding, VisualScene, VobFolders, VobIndex, WorldOp,
 } from 'zen-world';
 
-export type { DrawGroup, InstancedVisual, PortalFinding, VisualScene, VobFolders, VobIndex, WorldOp };
+export type { AssetCatalog, DrawGroup, InstancedVisual, PortalFinding, VisualScene, VobFolders, VobIndex, WorldOp };
 
 export type GameVersion = 'g1' | 'g2';
 

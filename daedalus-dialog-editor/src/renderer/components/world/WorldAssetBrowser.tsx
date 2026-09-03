@@ -1,11 +1,20 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { Box, Breadcrumbs, IconButton, Link, TextField, Tooltip, Typography } from '@mui/material';
+import {
+  Box, Breadcrumbs, IconButton, Link, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
+} from '@mui/material';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import FolderIcon from '@mui/icons-material/Folder';
+import GridViewIcon from '@mui/icons-material/GridView';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import ViewListIcon from '@mui/icons-material/ViewList';
 import { FixedSizeList as List, type ListChildComponentProps, areEqual } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
-import type { VfsEntry } from '../../../shared/worldTypes';
+import { isFavorite } from 'zen-world';
+import type { AssetCatalog, VfsEntry } from '../../../shared/worldTypes';
+import type { AssetThumbnails } from '../../world/assetThumbnails';
+import WorldAssetGrid, { type TileCatalogActions } from './WorldAssetGrid';
+import WorldAssetCatalogView from './WorldAssetCatalogView';
 
 // The asset browser over the mounted VFS (level-editor.md §6).
 //
@@ -61,10 +70,36 @@ export interface WorldAssetBrowserProps {
   listAssets: (path: string) => Promise<VfsEntry[] | null>;
   /** A file was chosen — the full path inside the mounted namespace. */
   onPreview: (path: string) => void;
+  /** The thumbnail queue (level-editor.md §16.26 row 1). Absent, there is no
+   *  grid view to offer — the browser harness has no world to draw from. */
+  thumbnails?: AssetThumbnails;
+  /** Favorites and categories (§16.26, "Wanted on top"). Absent — no project
+   *  sidecar loaded — the browser is the directory walk alone. */
+  catalog?: AssetCatalogProps;
 }
 
-const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({ listAssets, onPreview }) => {
+export interface AssetCatalogProps {
+  /** The merged view: the shipped seed plus the project's own sidecar. */
+  catalog: AssetCatalog;
+  /** Whether `name` under `path` is the project's own entry, and so removable. */
+  removable: (path: string, name: string) => boolean;
+  onToggleFavorite: (name: string) => void;
+  onAddToCategory: (path: string, name: string) => void;
+  onRemoveFromCategory: (path: string, name: string) => void;
+}
+
+const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({ listAssets, onPreview, thumbnails, catalog }) => {
   const [path, setPath] = useState('/');
+  const [view, setView] = useState<'list' | 'grid'>('list');
+  const [mode, setMode] = useState<'browse' | 'favorites' | 'categories'>('browse');
+  const tileActions = useMemo<TileCatalogActions | undefined>(() => (
+    catalog === undefined ? undefined : {
+      isFavorite: (name) => isFavorite(catalog.catalog, name),
+      onToggleFavorite: catalog.onToggleFavorite,
+      categoryPaths: catalog.catalog.categories.map((category) => category.path),
+      onAddToCategory: catalog.onAddToCategory,
+    }
+  ), [catalog]);
   // Three states, not two. "Nothing here" and "not listed yet" look identical
   // and are not the same thing: collapsing them makes every directory flash as
   // empty on the way in, and makes an empty state that can never be trusted.
@@ -108,6 +143,10 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({ listAssets, onPre
   // does not silently hide everything in this one.
   const [filter, setFilter] = useState('');
   useEffect(() => { setFilter(''); }, [path]);
+  // A directory left behind takes its queued draws with it: the tiles that
+  // asked are gone, and the next directory's tiles should not wait behind
+  // them.
+  useEffect(() => { thumbnails?.cancelPending(); }, [thumbnails, path]);
   const filtered = useMemo(() => {
     const needle = filter.trim().toLowerCase();
     return needle === '' ? sorted : sorted.filter((entry) => entry.name.toLowerCase().includes(needle));
@@ -146,6 +185,32 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({ listAssets, onPre
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      {catalog !== undefined && thumbnails !== undefined && (
+        <ToggleButtonGroup
+          size="small"
+          exclusive
+          fullWidth
+          value={mode}
+          onChange={(_event, next: 'browse' | 'favorites' | 'categories' | null) => { if (next !== null) setMode(next); }}
+          sx={{ '& .MuiToggleButton-root': { py: 0.25, fontSize: 11, textTransform: 'none' } }}
+        >
+          <ToggleButton value="browse" data-testid="world-asset-mode-browse">Browse</ToggleButton>
+          <ToggleButton value="favorites" data-testid="world-asset-mode-favorites">Favorites</ToggleButton>
+          <ToggleButton value="categories" data-testid="world-asset-mode-categories">Categories</ToggleButton>
+        </ToggleButtonGroup>
+      )}
+      {catalog !== undefined && thumbnails !== undefined && tileActions !== undefined && mode !== 'browse' && (
+        <WorldAssetCatalogView
+          mode={mode}
+          catalog={catalog.catalog}
+          thumbnails={thumbnails}
+          actions={tileActions}
+          removable={catalog.removable}
+          onRemoveFromCategory={catalog.onRemoveFromCategory}
+          onPreview={onPreview}
+        />
+      )}
+      {mode === 'browse' && (<>
       <Box sx={{
         display: 'flex', flexDirection: 'column', gap: 0.5, px: 0.5, py: 0.25,
         borderBottom: 1, borderColor: 'divider',
@@ -230,6 +295,36 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({ listAssets, onPre
                 : `${filtered.length.toLocaleString()} of ${sorted.length.toLocaleString()}`}
             </Typography>
           )}
+          {thumbnails !== undefined && (
+            <>
+              <ToggleButtonGroup
+                size="small"
+                exclusive
+                value={view}
+                onChange={(_event, next: 'list' | 'grid' | null) => { if (next !== null) setView(next); }}
+                sx={{ '& .MuiToggleButton-root': { p: 0.25 } }}
+              >
+                <ToggleButton value="list" data-testid="world-asset-view-list" aria-label="List view">
+                  <ViewListIcon sx={{ fontSize: 16 }} />
+                </ToggleButton>
+                <ToggleButton value="grid" data-testid="world-asset-view-grid" aria-label="Thumbnail grid">
+                  <GridViewIcon sx={{ fontSize: 16 }} />
+                </ToggleButton>
+              </ToggleButtonGroup>
+              {view === 'grid' && (
+                <Tooltip title="Redraw the thumbnails in this directory">
+                  <IconButton
+                    size="small"
+                    data-testid="world-asset-redraw"
+                    aria-label="Redraw thumbnails"
+                    onClick={() => { for (const entry of filtered) if (entry.type === 'file') thumbnails.redraw(entry.name); }}
+                  >
+                    <RefreshIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </Tooltip>
+              )}
+            </>
+          )}
         </Box>
       </Box>
 
@@ -268,7 +363,13 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({ listAssets, onPre
         </Typography>
       )}
 
-      {state.status === 'ready' && filtered.length > 0 && (
+      {state.status === 'ready' && filtered.length > 0 && view === 'grid' && thumbnails !== undefined && (
+        <Box sx={{ flex: 1, minHeight: 0 }} role="list" aria-label="Mounted assets">
+          <WorldAssetGrid entries={filtered} thumbnails={thumbnails} onOpen={onOpen} actions={tileActions} />
+        </Box>
+      )}
+
+      {state.status === 'ready' && filtered.length > 0 && (view === 'list' || thumbnails === undefined) && (
         <Box sx={{ flex: 1, minHeight: 0 }} role="list" aria-label="Mounted assets">
           <AutoSizer>
             {({ height, width }) => (
@@ -286,6 +387,7 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({ listAssets, onPre
           </AutoSizer>
         </Box>
       )}
+      </>)}
     </Box>
   );
 };

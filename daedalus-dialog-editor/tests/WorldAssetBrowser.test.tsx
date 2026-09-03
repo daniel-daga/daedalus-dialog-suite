@@ -19,10 +19,11 @@
  */
 
 import React from 'react';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { VfsEntry } from '../src/shared/worldTypes';
-import WorldAssetBrowser from '../src/renderer/components/world/WorldAssetBrowser';
+import type { AssetThumbnails, ThumbnailState } from '../src/renderer/world/assetThumbnails';
+import WorldAssetBrowser, { type AssetCatalogProps } from '../src/renderer/components/world/WorldAssetBrowser';
 
 jest.mock('react-virtualized-auto-sizer', () => (props: {
   children: (size: { height: number; width: number }) => React.ReactNode;
@@ -226,6 +227,218 @@ describe('WorldAssetBrowser', () => {
 
       expect(await screen.findByTestId('world-asset-_compiled')).toBeInTheDocument();
       expect(screen.getByTestId('world-asset-filter')).toHaveValue('');
+    });
+  });
+
+  // The thumbnail grid (level-editor.md §16.26 row 1) — the same listing as
+  // tiles, each asking the queue for its picture as it comes on screen.
+  describe('the grid', () => {
+    function thumbnails(states: Record<string, ThumbnailState> = {}) {
+      const listeners = new Set<() => void>();
+      const store = new Map(Object.entries(states));
+      return {
+        queue: {
+          get: (name: string) => store.get(name),
+          request: jest.fn(),
+          redraw: jest.fn(),
+          cancelPending: jest.fn(),
+          subscribe: (listener: () => void) => { listeners.add(listener); return () => listeners.delete(listener); },
+        } as unknown as AssetThumbnails,
+        deliver(name: string, state: ThumbnailState) {
+          store.set(name, state);
+          for (const listener of listeners) listener();
+        },
+      };
+    }
+
+    it('is not offered without a queue to draw from', async () => {
+      const { list } = listing();
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} />);
+      await screen.findByTestId('world-asset-Meshes');
+      expect(screen.queryByTestId('world-asset-view-grid')).not.toBeInTheDocument();
+    });
+
+    it('shows the listing as tiles, directories first, and previews a file on click', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const onPreview = jest.fn();
+      const { queue } = thumbnails();
+      render(<WorldAssetBrowser listAssets={list} onPreview={onPreview} thumbnails={queue} />);
+      await screen.findByTestId('world-asset-Meshes');
+
+      await user.click(screen.getByTestId('world-asset-view-grid'));
+
+      const tiles = screen.getAllByTestId(/^world-asset-tile-/).map((tile) => tile.getAttribute('data-testid'));
+      expect(tiles).toEqual(['world-asset-tile-Meshes', 'world-asset-tile-Textures', 'world-asset-tile-MOD_ONLY.MRM']);
+      expect(screen.queryByTestId('world-asset-Meshes')).not.toBeInTheDocument();
+
+      await user.click(screen.getByTestId('world-asset-tile-MOD_ONLY.MRM'));
+      expect(onPreview).toHaveBeenCalledWith('MOD_ONLY.MRM');
+
+      await user.click(screen.getByTestId('world-asset-tile-Meshes'));
+      await screen.findByTestId('world-asset-tile-_compiled');
+    });
+
+    it('asks the queue for each file tile, shows a placeholder until it answers, then the picture', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const { queue, deliver } = thumbnails();
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} thumbnails={queue} />);
+      await screen.findByTestId('world-asset-Meshes');
+      await user.click(screen.getByTestId('world-asset-view-grid'));
+
+      expect(queue.request).toHaveBeenCalledWith('MOD_ONLY.MRM');
+      // A directory has no thumbnail and must not be asked for one.
+      expect(queue.request).not.toHaveBeenCalledWith('Meshes');
+      expect(within(screen.getByTestId('world-asset-tile-MOD_ONLY.MRM')).getByTestId('world-asset-thumb-pending')).toBeInTheDocument();
+
+      act(() => deliver('MOD_ONLY.MRM', { status: 'ready', dataUrl: 'data:image/png;base64,AAAA' }));
+
+      const image = within(screen.getByTestId('world-asset-tile-MOD_ONLY.MRM')).getByRole('img');
+      expect(image).toHaveAttribute('src', 'data:image/png;base64,AAAA');
+    });
+
+    it('marks a tile the binding could not draw, rather than leaving it pending forever', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const { queue } = thumbnails({ 'MOD_ONLY.MRM': { status: 'failed' } });
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} thumbnails={queue} />);
+      await screen.findByTestId('world-asset-Meshes');
+      await user.click(screen.getByTestId('world-asset-view-grid'));
+
+      expect(within(screen.getByTestId('world-asset-tile-MOD_ONLY.MRM')).getByTestId('world-asset-thumb-failed')).toBeInTheDocument();
+    });
+
+    it('drops the queued draws when the listing moves on, and can redraw the ones on screen', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const { queue } = thumbnails();
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} thumbnails={queue} />);
+      await screen.findByTestId('world-asset-Meshes');
+      await user.click(screen.getByTestId('world-asset-view-grid'));
+
+      await user.click(screen.getByTestId('world-asset-tile-Meshes'));
+      await screen.findByTestId('world-asset-tile-_compiled');
+      expect(queue.cancelPending).toHaveBeenCalled();
+
+      await user.click(screen.getByTestId('world-asset-tile-_compiled'));
+      await screen.findByTestId('world-asset-tile-NW_CRATE.MRM');
+      await user.click(screen.getByTestId('world-asset-redraw'));
+      expect(queue.redraw).toHaveBeenCalledWith('NW_CRATE.MRM');
+      expect(queue.redraw).toHaveBeenCalledWith('CHESTBIG.MDL');
+    });
+
+    it('goes back to the list', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const { queue } = thumbnails();
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} thumbnails={queue} />);
+      await screen.findByTestId('world-asset-Meshes');
+      await user.click(screen.getByTestId('world-asset-view-grid'));
+      await user.click(screen.getByTestId('world-asset-view-list'));
+      expect(screen.getByTestId('world-asset-Meshes')).toBeInTheDocument();
+    });
+  });
+
+  // Favorites and categories (level-editor.md §16.26, "Wanted on top") — a
+  // second and third way into the same tiles, over the project sidecar
+  // merged with the vobbilder seed.
+  describe('favorites and categories', () => {
+    function catalogProps(overrides: Partial<AssetCatalogProps> = {}): AssetCatalogProps {
+      return {
+        catalog: {
+          favorites: ['NW_BARREL.3DS'],
+          categories: [
+            { path: 'Items/Schwerter', visuals: ['ITMW_SWORD.3DS'] },
+            { path: 'Mine/Crates', visuals: ['NW_CRATE.MRM'] },
+          ],
+        },
+        removable: (path, name) => path === 'Mine/Crates' && name === 'NW_CRATE.MRM',
+        onToggleFavorite: jest.fn(),
+        onAddToCategory: jest.fn(),
+        onRemoveFromCategory: jest.fn(),
+        ...overrides,
+      };
+    }
+    const queue = () => ({
+      get: () => undefined, request: jest.fn(), redraw: jest.fn(), cancelPending: jest.fn(),
+      subscribe: () => () => {},
+    }) as unknown as AssetThumbnails;
+
+    it('offers the two views only with a catalogue', async () => {
+      const { list } = listing();
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} thumbnails={queue()} />);
+      await screen.findByTestId('world-asset-Meshes');
+      expect(screen.queryByTestId('world-asset-mode-favorites')).not.toBeInTheDocument();
+    });
+
+    it('lists the favorites as tiles and previews one on click', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const onPreview = jest.fn();
+      render(<WorldAssetBrowser listAssets={list} onPreview={onPreview} thumbnails={queue()} catalog={catalogProps()} />);
+      await screen.findByTestId('world-asset-Meshes');
+
+      await user.click(screen.getByTestId('world-asset-mode-favorites'));
+
+      expect(screen.getByTestId('world-asset-tile-NW_BARREL.3DS')).toBeInTheDocument();
+      expect(screen.queryByTestId('world-asset-Meshes')).not.toBeInTheDocument();
+      await user.click(screen.getByTestId('world-asset-tile-NW_BARREL.3DS'));
+      expect(onPreview).toHaveBeenCalledWith('NW_BARREL.3DS');
+    });
+
+    it('stars a tile from the directory grid, and reads the star off the catalogue by key', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const props = catalogProps({ catalog: { favorites: ['MOD_ONLY.3DS'], categories: [] } });
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} thumbnails={queue()} catalog={props} />);
+      await screen.findByTestId('world-asset-Meshes');
+      await user.click(screen.getByTestId('world-asset-view-grid'));
+
+      // `MOD_ONLY.MRM` is the compiled name of the favourite `MOD_ONLY.3DS`.
+      const star = within(screen.getByTestId('world-asset-tile-MOD_ONLY.MRM')).getByTestId('world-asset-star');
+      expect(star).toHaveAttribute('aria-pressed', 'true');
+      await user.click(star);
+      expect(props.onToggleFavorite).toHaveBeenCalledWith('MOD_ONLY.MRM');
+    });
+
+    it('lists the categories, shows the chosen one as tiles, and can drop a visual the project filed', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const props = catalogProps();
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} thumbnails={queue()} catalog={props} />);
+      await screen.findByTestId('world-asset-Meshes');
+
+      await user.click(screen.getByTestId('world-asset-mode-categories'));
+      expect(screen.getByTestId('world-asset-category-Items/Schwerter')).toBeInTheDocument();
+      await user.click(screen.getByTestId('world-asset-category-Mine/Crates'));
+
+      const tile = screen.getByTestId('world-asset-tile-NW_CRATE.MRM');
+      expect(screen.queryByTestId('world-asset-tile-ITMW_SWORD.3DS')).not.toBeInTheDocument();
+      await user.click(within(tile).getByTestId('world-asset-unfile'));
+      expect(props.onRemoveFromCategory).toHaveBeenCalledWith('Mine/Crates', 'NW_CRATE.MRM');
+
+      // A seed entry is not the project's to drop.
+      await user.click(screen.getByTestId('world-asset-category-back'));
+      await user.click(screen.getByTestId('world-asset-category-Items/Schwerter'));
+      expect(within(screen.getByTestId('world-asset-tile-ITMW_SWORD.3DS')).queryByTestId('world-asset-unfile')).not.toBeInTheDocument();
+    });
+
+    it('files a tile into an existing category, or a new one, from its menu', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const props = catalogProps();
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} thumbnails={queue()} catalog={props} />);
+      await screen.findByTestId('world-asset-Meshes');
+      await user.click(screen.getByTestId('world-asset-view-grid'));
+
+      await user.click(within(screen.getByTestId('world-asset-tile-MOD_ONLY.MRM')).getByTestId('world-asset-file'));
+      await user.click(await screen.findByTestId('world-asset-file-into-Items/Schwerter'));
+      expect(props.onAddToCategory).toHaveBeenCalledWith('Items/Schwerter', 'MOD_ONLY.MRM');
+
+      await user.click(within(screen.getByTestId('world-asset-tile-MOD_ONLY.MRM')).getByTestId('world-asset-file'));
+      await user.type(await screen.findByTestId('world-asset-file-new'), 'Mine/Barrels{Enter}');
+      expect(props.onAddToCategory).toHaveBeenCalledWith('Mine/Barrels', 'MOD_ONLY.MRM');
     });
   });
 

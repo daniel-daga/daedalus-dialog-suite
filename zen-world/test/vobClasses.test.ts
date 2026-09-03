@@ -212,17 +212,17 @@ describe('the per-class field catalogue', () => {
     expect(classPropKeys('oCMobFire')).toEqual([...OC_MOB_INTER_KEYS, 'slot', 'vobTree']);
     expect(fieldOf('oCMobFire', 'slot')).toEqual({ key: 'slot', kind: 'string' });
     expect(fieldOf('oCMobFire', 'vobTree')).toEqual({ key: 'vobTree', kind: 'string' });
-    // `oCMobContainer` — the base nine plus `locked` and `pickString`. `key`
-    // (the item instance that unlocks it) stays out with `item`, the same
-    // cross-reference decision; `contents` stays out too — it is a single
-    // string in the archive but encodes a list of item instances and counts,
-    // the same "names script symbols this catalogue cannot validate" shape.
+    // `oCMobContainer` — the base nine plus `locked`, `pickString` and, since
+    // §16.26 row 2, `contents`: the archive's own `contains` string, a string
+    // at this layer exactly as `oCItem.instance` is, with its grammar checked
+    // by the IPC validator and its instances by the renderer. `key` (the item
+    // instance that unlocks it) stays out with `item`.
     expect(classPropKeys('oCMobContainer'))
-      .toEqual([...OC_MOB_INTER_KEYS, 'locked', 'pickString']);
+      .toEqual([...OC_MOB_INTER_KEYS, 'locked', 'pickString', 'contents']);
     expect(fieldOf('oCMobContainer', 'locked')).toEqual({ key: 'locked', kind: 'bool' });
     expect(fieldOf('oCMobContainer', 'pickString')).toEqual({ key: 'pickString', kind: 'string' });
+    expect(fieldOf('oCMobContainer', 'contents')).toEqual({ key: 'contents', kind: 'string' });
     expect(fieldOf('oCMobContainer', 'key')).toBeNull();
-    expect(fieldOf('oCMobContainer', 'contents')).toBeNull();
     // `oCMobDoor` — the base nine plus `locked` and `pickString`; `key` stays
     // out for the same cross-reference reason as the container's.
     expect(classPropKeys('oCMobDoor')).toEqual([...OC_MOB_INTER_KEYS, 'locked', 'pickString']);

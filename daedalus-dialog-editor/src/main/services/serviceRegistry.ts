@@ -1,4 +1,5 @@
 import { app } from 'electron';
+import * as path from 'path';
 import { FileService } from './FileService';
 import { LogService } from './LogService';
 import { ParserService } from './ParserService';
@@ -11,6 +12,8 @@ import { FileWatcherService } from './FileWatcherService';
 import { UpdaterService } from './UpdaterService';
 import { WorldService } from './WorldService';
 import { WorldFoldersService } from './WorldFoldersService';
+import { ThumbnailCacheService } from './ThumbnailCacheService';
+import { AssetCatalogService } from './AssetCatalogService';
 
 /**
  * The main process's composition root.
@@ -36,6 +39,8 @@ export interface ServiceRegistry {
   updaterService: UpdaterService;
   worldService: WorldService;
   worldFoldersService: WorldFoldersService;
+  thumbnailCacheService: ThumbnailCacheService;
+  assetCatalogService: AssetCatalogService;
   logService: LogService;
   pathValidator: PathValidationService;
 }
@@ -60,6 +65,10 @@ function createServiceRegistry(): ServiceRegistry {
     // does not load the native addon — until a world is actually opened (§6).
     worldService: new WorldService(),
     worldFoldersService: new WorldFoldersService(),
+    // Machine-local, never beside the project: a thumbnail is derived from
+    // files the VFS holds and is redrawn on demand (level-editor.md §16.26).
+    thumbnailCacheService: new ThumbnailCacheService(path.join(app.getPath('userData'), 'asset-thumbnails')),
+    assetCatalogService: new AssetCatalogService(),
     logService: new LogService(app.getPath('userData'), app.getVersion()),
     // The path validator starts empty — paths are added when the user opens
     // files/projects via the main-process dialogs.

@@ -15,6 +15,11 @@ import {
   assertOpenWorldRequest,
   assertTextureRequest,
   assertVisualRequest,
+  assertThumbnailGetRequest,
+  assertThumbnailPutRequest,
+  THUMBNAIL_DATA_URL_MAX,
+  assertAssetCatalogGetRequest,
+  assertAssetCatalogSaveRequest,
   assertVobPropsRequest,
   assertApplyOpsRequest,
   assertSaveWorldRequest,
@@ -310,6 +315,46 @@ describe('assertVisualRequest', () => {
       expect(() => assertVisualRequest({ name: bad })).toThrow(/visual name/i);
     }
     expect(() => assertVisualRequest('NW_CRATE.MRM')).toThrow(/plain object/i);
+  });
+});
+
+describe('the asset catalog sidecar requests', () => {
+  it('accepts a project file path, and a catalog for a write', () => {
+    expect(() => assertAssetCatalogGetRequest({ projectFilePath: 'C:/mod/mymod.gothicproject.json' })).not.toThrow();
+    expect(() => assertAssetCatalogSaveRequest({ projectFilePath: 'C:/mod/mymod.gothicproject.json', catalog: {} })).not.toThrow();
+  });
+
+  it('rejects a missing or empty project file path, and a write with no catalog', () => {
+    expect(() => assertAssetCatalogGetRequest({ projectFilePath: '' })).toThrow(/projectFilePath/);
+    expect(() => assertAssetCatalogGetRequest(null)).toThrow(/plain object/);
+    expect(() => assertAssetCatalogSaveRequest({ projectFilePath: 'C:/mod/mymod.gothicproject.json' })).toThrow(/catalog/);
+  });
+});
+
+describe('the thumbnail cache requests', () => {
+  // A read is a name; a write is a key the main process minted and the PNG the
+  // renderer drew. The bytes are checked again by the service (they go to
+  // disk under a `.png` name); here the shape and a size ceiling are the
+  // whole boundary, so a renderer cannot fill `userData` one call at a time.
+  it('accepts a name for a read and a key with a PNG data URL for a write', () => {
+    expect(() => assertThumbnailGetRequest({ name: 'NW_CRATE.MRM' })).not.toThrow();
+    expect(() => assertThumbnailPutRequest({ key: 'a'.repeat(64), dataUrl: 'data:image/png;base64,iVBORw0KGgo=' }))
+      .not.toThrow();
+  });
+
+  it('rejects a read that is not a non-empty name', () => {
+    for (const bad of ['', 42, null]) {
+      expect(() => assertThumbnailGetRequest({ name: bad })).toThrow(/thumbnail name/i);
+    }
+  });
+
+  it('rejects a write whose key is not one the service mints, or whose image is not a PNG data URL, or too big', () => {
+    const dataUrl = 'data:image/png;base64,iVBORw0KGgo=';
+    expect(() => assertThumbnailPutRequest({ key: '../settings', dataUrl })).toThrow(/key/);
+    expect(() => assertThumbnailPutRequest({ key: 'A'.repeat(64), dataUrl })).toThrow(/key/);
+    expect(() => assertThumbnailPutRequest({ key: 'a'.repeat(64), dataUrl: 'data:image/jpeg;base64,AAAA' })).toThrow(/PNG/);
+    expect(() => assertThumbnailPutRequest({ key: 'a'.repeat(64), dataUrl: `data:image/png;base64,${'A'.repeat(THUMBNAIL_DATA_URL_MAX)}` }))
+      .toThrow(/too large/);
   });
 });
 
@@ -730,6 +775,23 @@ describe('assertApplyOpsRequest', () => {
     it('accepts an item instance and a light', () => {
       expect(() => assertApplyOpsRequest({ ops: [instance] })).not.toThrow();
       expect(() => assertApplyOpsRequest({ ops: [light] })).not.toThrow();
+    });
+
+    it('holds a chest’s contents to the archive grammar, on `to` only (§16.26 row 2)', () => {
+      // The second field whose value names script symbols: the grammar here,
+      // the item index in the renderer, and `from` left alone so a chest a
+      // hand-edited world holds oddly can still be repaired and undone.
+      const chest = (from: unknown, to: unknown) => ({
+        op: 'SetVobClassProp', vob: 16, path: '0/17', className: 'oCMobContainer',
+        from: { contents: from }, to: { contents: to },
+      });
+      expect(() => assertApplyOpsRequest({ ops: [chest('', 'ItMi_Gold:26,ItFo_Fish')] })).not.toThrow();
+      expect(() => assertApplyOpsRequest({ ops: [chest('ItMi_Gold:26', '')] })).not.toThrow();
+      expect(() => assertApplyOpsRequest({ ops: [chest('ItMi_Gold:32;ItPo_Health_02:3', 'ItMi_Gold:32')] })).not.toThrow();
+      for (const bad of ['ItMi_Gold:0', 'ItMi Gold', '1Gold:2', 'ItMi_Gold:2.5', 'ItMi_Gold,,ItFo_Fish', `ItMi_Gold:${'9'.repeat(5000)}`]) {
+        expect(() => assertApplyOpsRequest({ ops: [chest('', bad)] })).toThrow(/to\.contents must be a list of item instances/);
+      }
+      expect(() => assertApplyOpsRequest({ ops: [chest(42, '')] })).toThrow(/from\.contents/);
     });
 
     it('accepts the sound family and the three zones', () => {
