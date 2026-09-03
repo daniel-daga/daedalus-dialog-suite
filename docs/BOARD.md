@@ -237,14 +237,6 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-- **Undo now reverts the 3D mesh after "Use as visual"** — `applied` re-reads
-  the visuals for a `visual`-carrying `SetVobProp`, and the forward path's
-  duplicate fetch is gone. §16.27 item 1
-- **Walk mode** — F3 toggles, pointer-lock look, gravity and a capsule against
-  the picking BVH, silent refusal when no clear entry exists below the world's
-  top. Needs Daniel's eye for feel and real pointer lock. §16.26 item 3
-- **`zCZoneZFog.color` disabled while `overrideColor` is off** — the grid's one
-  cross-field rule, decided 2026-09-02. §14.1 1.4
-- **Queue rows 38 and 49** — simulator locked against real parser output; the
-  grammar takes no string escapes, matching `parser-roundtrip-scope.md`.
-  `unattended-queue.md`
+*(empty — flushed 2026-09-03; the 2026-09-02/03 run's substance is in
+`git log`, and its one forward fact — the walk's feel is unwitnessed on a
+real GPU — sits on the §14 gaps card)*
