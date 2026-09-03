@@ -230,7 +230,11 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
           )}
         </Box>
         <Tooltip title={conditionsExpanded ? 'Collapse conditions' : 'Expand conditions'}>
-          <IconButton size="small" aria-label={conditionsExpanded ? 'Collapse conditions' : 'Expand conditions'}>
+          <IconButton
+            size="small"
+            aria-label={conditionsExpanded ? 'Collapse conditions' : 'Expand conditions'}
+            aria-expanded={conditionsExpanded}
+          >
             {conditionsExpanded ? <ExpandMoreIcon /> : <ChevronRightIcon />}
           </IconButton>
         </Tooltip>

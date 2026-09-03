@@ -46,10 +46,11 @@ const DeleteConfirmDialog: React.FC<DeleteConfirmDialogProps> = ({
       onClose={onCancel}
       maxWidth="xs"
       aria-labelledby="delete-confirm-title"
+      aria-describedby="delete-confirm-description"
     >
       <DialogTitle id="delete-confirm-title">{title}</DialogTitle>
       <DialogContent>
-        <DialogContentText>{message}</DialogContentText>
+        <DialogContentText id="delete-confirm-description">{message}</DialogContentText>
       </DialogContent>
       <DialogActions>
         <Button ref={cancelRef} onClick={onCancel} size="small">

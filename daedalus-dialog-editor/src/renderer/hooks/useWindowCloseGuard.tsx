@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Button,
@@ -54,6 +54,20 @@ export function useWindowCloseGuard(): React.ReactElement | null {
   const openFiles = useFileStore((s) => (pendingPaths ? s.openFiles : null));
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<CloseFailure | null>(null);
+  const saveRef = useRef<HTMLButtonElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+
+  // Focus the default action once the dialog is up (the DeleteConfirmDialog
+  // idiom). Save-and-close loses nothing, so Enter lands there; while a
+  // conflict disables it, Cancel takes the focus.
+  useEffect(() => {
+    if (pendingPaths === null) return;
+    const timer = setTimeout(() => {
+      const target = saveRef.current?.disabled ? cancelRef.current : saveRef.current;
+      target?.focus();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [pendingPaths]);
 
   useEffect(() => {
     const unsubscribe = window.editorAPI.onCloseRequested(() => {
@@ -185,10 +199,11 @@ export function useWindowCloseGuard(): React.ReactElement | null {
       fullWidth
       data-testid="close-guard-dialog"
       aria-labelledby="close-guard-title"
+      aria-describedby="close-guard-description"
     >
       <DialogTitle id="close-guard-title">Unsaved changes</DialogTitle>
       <DialogContent>
-        <DialogContentText>
+        <DialogContentText id="close-guard-description">
           You have unsaved changes in the following file{liveStates.length === 1 ? '' : 's'}:
         </DialogContentText>
         <List dense>
@@ -249,6 +264,7 @@ export function useWindowCloseGuard(): React.ReactElement | null {
           disabled={busy}
           color="inherit"
           data-testid="close-guard-cancel"
+          ref={cancelRef}
         >
           Cancel
         </Button>
@@ -265,6 +281,7 @@ export function useWindowCloseGuard(): React.ReactElement | null {
           disabled={busy || hasConflicts}
           variant="contained"
           data-testid="close-guard-save"
+          ref={saveRef}
           startIcon={busy ? <CircularProgress size={16} color="inherit" /> : undefined}
         >
           Save and close

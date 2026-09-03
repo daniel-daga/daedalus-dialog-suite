@@ -82,7 +82,11 @@ const DialogPropertiesSection: React.FC<DialogPropertiesSectionProps> = ({
           )}
         </Box>
         <Tooltip title={propertiesExpanded ? 'Collapse properties' : 'Expand properties'}>
-          <IconButton size="small" aria-label={propertiesExpanded ? 'Collapse properties' : 'Expand properties'}>
+          <IconButton
+            size="small"
+            aria-label={propertiesExpanded ? 'Collapse properties' : 'Expand properties'}
+            aria-expanded={propertiesExpanded}
+          >
             {propertiesExpanded ? <ExpandMoreIcon /> : <ChevronRightIcon />}
           </IconButton>
         </Tooltip>

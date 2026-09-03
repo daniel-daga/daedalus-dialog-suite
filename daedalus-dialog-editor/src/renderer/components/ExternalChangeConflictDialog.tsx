@@ -102,6 +102,7 @@ const ExternalChangeConflictDialog: React.FC = () => {
       fullWidth
       data-testid="external-conflict-dialog"
       aria-labelledby="external-conflict-title"
+      aria-describedby="external-conflict-description"
     >
       <DialogTitle id="external-conflict-title">
         {fileMissing ? 'File deleted on disk' : 'File changed on disk'}
@@ -128,7 +129,9 @@ const ExternalChangeConflictDialog: React.FC = () => {
             />
           </Box>
         )}
-        <Typography variant="body2">
+        {/* No autoFocus here on purpose: both resolutions lose something, so
+            Enter must not pick one — the user reads the diff and chooses. */}
+        <Typography variant="body2" id="external-conflict-description">
           {fileMissing
             ? `${fileName} was deleted or moved on disk while you have unsaved changes.`
             : `${fileName} changed on disk while you have unsaved changes.`}

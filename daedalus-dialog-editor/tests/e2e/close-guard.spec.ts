@@ -100,6 +100,23 @@ test.describe('Window close guard', () => {
     expect(calls.approveClose).toBe(0);
   });
 
+  test('the close guard focuses its default action', async ({ page }) => {
+    await openDialogAndMakeDirty(page);
+    await requestClose(page);
+
+    const dialog = page.getByTestId('close-guard-dialog');
+    await expect(dialog).toBeVisible();
+    // Save-and-close loses nothing, so it is where Enter lands; the dialog
+    // is described by its body text for assistive tech.
+    await expect(page.getByTestId('close-guard-save')).toBeFocused();
+    await expect(page.getByRole('dialog', { name: 'Unsaved changes' })).toHaveAttribute(
+      'aria-describedby', 'close-guard-description'
+    );
+    await page.keyboard.press('Enter');
+    await expect(dialog).toBeHidden();
+    await expect.poll(async () => (await readCalls(page)).approveClose).toBeGreaterThan(0);
+  });
+
   test('"Cancel" cancels the close and dismisses the dialog', async ({ page }) => {
     await openDialogAndMakeDirty(page);
     await requestClose(page);
