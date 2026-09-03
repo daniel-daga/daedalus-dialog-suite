@@ -149,6 +149,37 @@ describe('project config IPC', () => {
       .resolves.toMatchObject({ gmbtProjectDir: null });
   });
 
+  // level-editor.md §16.31: the GMBT folders sit *beside* the project folder,
+  // so "Add from GMBT" saves `../thirdparty` — main derived those paths itself,
+  // which is what makes them savable without a trip through the picker.
+  it('saves a relative source that leaves the project folder when the GMBT project declares it', async () => {
+    const gmbtRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'dde-gmbt-'));
+    await fs.mkdir(path.join(gmbtRoot, 'mod'));
+    await fs.mkdir(path.join(gmbtRoot, 'thirdparty'));
+    await fs.writeFile(path.join(gmbtRoot, '.gmbt.yml'), `modFiles:
+  assets:
+    - mod
+    - thirdparty
+`);
+    const projectFilePath = path.join(gmbtRoot, 'mod', 'mod.gothicproject.json');
+    await fs.writeFile(projectFilePath, JSON.stringify({
+      version: 1, target: 'g2-notr', scriptsRoot: '.', worlds: [], assetSources: ['.'],
+    }));
+
+    const opened = await invoke('project:loadConfig', path.join(gmbtRoot, 'mod')) as any;
+    expect(opened.gmbtAssetSources).toEqual(['../thirdparty']);
+    // Adopted on open, and it escapes the project folder too.
+    expect(opened.config.gmbtProjectDir).toBe('..');
+
+    await expect(invoke(
+      'project:saveAssetSources', opened.projectFilePath, ['.', '../thirdparty'], '..',
+    )).resolves.toMatchObject({ config: { assetSources: ['.', '../thirdparty'] } });
+
+    // Everything else outside the project folder is still refused.
+    await expect(invoke('project:saveAssetSources', opened.projectFilePath, ['.', '../mdk']))
+      .rejects.toThrow(/stay within the project folder/i);
+  });
+
   it('grants a folder to the project that opened the picker when another project loads meanwhile', async () => {
     const first = await makeProject();
     const second = await makeProject();

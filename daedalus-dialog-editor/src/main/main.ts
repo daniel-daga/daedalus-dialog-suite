@@ -121,10 +121,20 @@ function registerProjectConfig(descriptor: OpenedProjectConfig): RegisteredProje
   const configured = [
     ...descriptor.config.assetSources,
     ...(descriptor.config.gmbtProjectDir === undefined ? [] : [descriptor.config.gmbtProjectDir]),
+    // What the detected GMBT project declares (§16.31). Main derived these
+    // paths from the project file's own `.gmbt.yml`, so the dialog may save
+    // them — they sit beside the project folder rather than inside it, and
+    // without this a save of "Add from GMBT" would be refused as an escape.
+    ...descriptor.gmbtAssetSources,
   ];
   for (const source of configured) {
+    // Both spellings are granted: the absolute one because that is the key an
+    // absolute save is checked against, and the resolved one because a
+    // relative entry leaving the project folder is checked by where it lands.
     if (path.win32.isAbsolute(source) || path.posix.isAbsolute(source)) {
       allowedAbsoluteSources.add(absoluteSourceKey(source));
+    } else {
+      allowedAbsoluteSources.add(absoluteSourceKey(path.resolve(descriptor.projectRoot, source)));
     }
   }
   const registered = { descriptor, allowedAbsoluteSources };
@@ -516,7 +526,8 @@ export function setupIpcHandlers() {
       } else {
         const resolved = path.resolve(root, source);
         const relative = path.relative(root, resolved);
-        if (relative.startsWith('..') || path.isAbsolute(relative)) {
+        if ((relative.startsWith('..') || path.isAbsolute(relative))
+          && !registered.allowedAbsoluteSources.has(absoluteSourceKey(resolved))) {
           throw new Error('Relative asset sources must stay within the project folder');
         }
       }

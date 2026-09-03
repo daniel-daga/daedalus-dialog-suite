@@ -3891,6 +3891,16 @@ waypoint to the world that holds it, open that world and fly to them".
   files are found: the VFS could *name* a world inside `Worlds.vdf`, but
   nothing downstream can open a world with no filesystem path, so listing one
   would be an entry that fails on click.
+- **The save-time rule had to learn about them** (2026-09-03, after Daniel hit
+  it): `project:saveAssetSources` refused a relative source leaving the project
+  folder, and every GMBT folder does — `../thirdparty`, and the adopted
+  `gmbtProjectDir: ".."` itself. `registerProjectConfig` now grants the
+  *resolved* path of every configured source and of `gmbtAssetSources`, and the
+  escape check passes only for a path in that set. The trust level is
+  unchanged: main derived those paths from the project file and its `.gmbt.yml`,
+  which is the same standing an absolute configured source already had. It also
+  fixes the older case of a hand-written `../shared` that could be loaded but
+  not re-saved.
 - **`world:listWorlds` takes no payload** and whitelists the folders it
   returns, for the reason `registerProjectConfig` whitelists an absolute asset
   source: the paths come from the project file the user has already opened, not
