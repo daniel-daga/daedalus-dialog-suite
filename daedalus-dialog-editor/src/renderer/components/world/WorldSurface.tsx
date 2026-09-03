@@ -21,6 +21,8 @@ import {
   renumbersPaths,
   reparentVob, rotateVob, rotateVobs, setVobClassProp, setVobProp, setVobProps, topLevelVobs,
   translateVobs, vobAtIndexPath, vobIndexPath,
+  addToCategory, assetKey, emptyAssetCatalog, mergeCatalogs, parseAssetCatalog, removeFromCategory,
+  toggleFavorite, visualsOf,
   type AddVob,
   type AuthorableVobClass, type ClassProps, type NewVob, type ReadProps,
   type VobProps, type VobReader, type VobSubtree,
@@ -28,7 +30,7 @@ import {
   type ZenPosition, type ZenRotation,
 } from 'zen-world';
 import type {
-  InstancedPayload, VobFolders, WaynetPayload, WorldMeshPayload, WorldOp,
+  AssetCatalog, InstancedPayload, VobFolders, WaynetPayload, WorldMeshPayload, WorldOp,
 } from '../../../shared/worldTypes';
 import { findFreePointVob, primaryVob, useWorldStore } from '../../store/worldStore';
 import { stateOptions, stateReach } from '../../routines/routineSchedule';
@@ -45,7 +47,8 @@ import WorldViewport, { type GizmoMode, type WorldViewportHandle } from './World
 import WorldSceneTree from './WorldSceneTree';
 import WorldFolderTree from './WorldFolderTree';
 import WorldPropertyGrid from './WorldPropertyGrid';
-import WorldAssetBrowser from './WorldAssetBrowser';
+import WorldAssetBrowser, { type AssetCatalogProps } from './WorldAssetBrowser';
+import assetCategorySeed from '../../../shared/assetCategorySeed.json';
 import WorldAssetPreview, { NAME_OF, isPlaceableVisual } from './WorldAssetPreview';
 import WaypointPanel from './WaypointPanel';
 import WorldVobContextMenu from './WorldVobContextMenu';
@@ -1415,6 +1418,45 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    * the world itself, so a failed write is logged rather than surfaced the
    * way a refused world edit is.
    */
+  /**
+   * The asset browser's favorites and categories (§16.26, "Wanted on top"),
+   * the project's own half: the `<project>.assets.json` sidecar, loaded when
+   * a project is, persisted on every change the way folders are. The shipped
+   * seed is merged in for display and never written back, so the sidecar
+   * stays the project's diff against it.
+   */
+  const projectFilePath = useProjectStore((s) => s.projectFilePath);
+  const [assetCatalog, setAssetCatalog] = useState<AssetCatalog>(emptyAssetCatalog());
+  useEffect(() => {
+    let current = true;
+    setAssetCatalog(emptyAssetCatalog());
+    if (projectFilePath === null) return undefined;
+    window.editorAPI.getAssetCatalog(projectFilePath)
+      .then((loaded) => { if (current) setAssetCatalog(loaded); })
+      .catch((failure) => { console.error('[World] Failed to read the asset catalog:', failure); });
+    return () => { current = false; };
+  }, [projectFilePath]);
+  const persistAssetCatalog = useCallback((next: AssetCatalog) => {
+    setAssetCatalog(next);
+    if (projectFilePath === null) return;
+    window.editorAPI.saveAssetCatalog(projectFilePath, next).catch((failure) => {
+      console.error('[World] Failed to save the asset catalog:', failure);
+    });
+  }, [projectFilePath]);
+  const mergedAssetCatalog = useMemo(
+    () => mergeCatalogs(parseAssetCatalog(assetCategorySeed), assetCatalog),
+    [assetCatalog],
+  );
+  const assetCatalogProps = useMemo<AssetCatalogProps | undefined>(() => (
+    projectFilePath === null ? undefined : {
+      catalog: mergedAssetCatalog,
+      removable: (path, name) => visualsOf(assetCatalog, path).some((visual) => assetKey(visual) === assetKey(name)),
+      onToggleFavorite: (name) => persistAssetCatalog(toggleFavorite(assetCatalog, name)),
+      onAddToCategory: (path, name) => persistAssetCatalog(addToCategory(assetCatalog, path, name)),
+      onRemoveFromCategory: (path, name) => persistAssetCatalog(removeFromCategory(assetCatalog, path, name)),
+    }
+  ), [projectFilePath, mergedAssetCatalog, assetCatalog, persistAssetCatalog]);
+
   const persistFolders = useCallback((next: VobFolders) => {
     setVobFolders(next);
     const worldPath = useWorldStore.getState().summary?.worldPath;
@@ -2282,6 +2324,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                     listAssets={listAssets}
                     onPreview={setSelectedAsset}
                     thumbnails={thumbnails ?? undefined}
+                    catalog={assetCatalogProps}
                   />
                 </Box>
               )}

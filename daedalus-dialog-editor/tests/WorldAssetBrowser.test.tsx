@@ -23,7 +23,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { VfsEntry } from '../src/shared/worldTypes';
 import type { AssetThumbnails, ThumbnailState } from '../src/renderer/world/assetThumbnails';
-import WorldAssetBrowser from '../src/renderer/components/world/WorldAssetBrowser';
+import WorldAssetBrowser, { type AssetCatalogProps } from '../src/renderer/components/world/WorldAssetBrowser';
 
 jest.mock('react-virtualized-auto-sizer', () => (props: {
   children: (size: { height: number; width: number }) => React.ReactNode;
@@ -337,6 +337,108 @@ describe('WorldAssetBrowser', () => {
       await user.click(screen.getByTestId('world-asset-view-grid'));
       await user.click(screen.getByTestId('world-asset-view-list'));
       expect(screen.getByTestId('world-asset-Meshes')).toBeInTheDocument();
+    });
+  });
+
+  // Favorites and categories (level-editor.md §16.26, "Wanted on top") — a
+  // second and third way into the same tiles, over the project sidecar
+  // merged with the vobbilder seed.
+  describe('favorites and categories', () => {
+    function catalogProps(overrides: Partial<AssetCatalogProps> = {}): AssetCatalogProps {
+      return {
+        catalog: {
+          favorites: ['NW_BARREL.3DS'],
+          categories: [
+            { path: 'Items/Schwerter', visuals: ['ITMW_SWORD.3DS'] },
+            { path: 'Mine/Crates', visuals: ['NW_CRATE.MRM'] },
+          ],
+        },
+        removable: (path, name) => path === 'Mine/Crates' && name === 'NW_CRATE.MRM',
+        onToggleFavorite: jest.fn(),
+        onAddToCategory: jest.fn(),
+        onRemoveFromCategory: jest.fn(),
+        ...overrides,
+      };
+    }
+    const queue = () => ({
+      get: () => undefined, request: jest.fn(), redraw: jest.fn(), cancelPending: jest.fn(),
+      subscribe: () => () => {},
+    }) as unknown as AssetThumbnails;
+
+    it('offers the two views only with a catalogue', async () => {
+      const { list } = listing();
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} thumbnails={queue()} />);
+      await screen.findByTestId('world-asset-Meshes');
+      expect(screen.queryByTestId('world-asset-mode-favorites')).not.toBeInTheDocument();
+    });
+
+    it('lists the favorites as tiles and previews one on click', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const onPreview = jest.fn();
+      render(<WorldAssetBrowser listAssets={list} onPreview={onPreview} thumbnails={queue()} catalog={catalogProps()} />);
+      await screen.findByTestId('world-asset-Meshes');
+
+      await user.click(screen.getByTestId('world-asset-mode-favorites'));
+
+      expect(screen.getByTestId('world-asset-tile-NW_BARREL.3DS')).toBeInTheDocument();
+      expect(screen.queryByTestId('world-asset-Meshes')).not.toBeInTheDocument();
+      await user.click(screen.getByTestId('world-asset-tile-NW_BARREL.3DS'));
+      expect(onPreview).toHaveBeenCalledWith('NW_BARREL.3DS');
+    });
+
+    it('stars a tile from the directory grid, and reads the star off the catalogue by key', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const props = catalogProps({ catalog: { favorites: ['MOD_ONLY.3DS'], categories: [] } });
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} thumbnails={queue()} catalog={props} />);
+      await screen.findByTestId('world-asset-Meshes');
+      await user.click(screen.getByTestId('world-asset-view-grid'));
+
+      // `MOD_ONLY.MRM` is the compiled name of the favourite `MOD_ONLY.3DS`.
+      const star = within(screen.getByTestId('world-asset-tile-MOD_ONLY.MRM')).getByTestId('world-asset-star');
+      expect(star).toHaveAttribute('aria-pressed', 'true');
+      await user.click(star);
+      expect(props.onToggleFavorite).toHaveBeenCalledWith('MOD_ONLY.MRM');
+    });
+
+    it('lists the categories, shows the chosen one as tiles, and can drop a visual the project filed', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const props = catalogProps();
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} thumbnails={queue()} catalog={props} />);
+      await screen.findByTestId('world-asset-Meshes');
+
+      await user.click(screen.getByTestId('world-asset-mode-categories'));
+      expect(screen.getByTestId('world-asset-category-Items/Schwerter')).toBeInTheDocument();
+      await user.click(screen.getByTestId('world-asset-category-Mine/Crates'));
+
+      const tile = screen.getByTestId('world-asset-tile-NW_CRATE.MRM');
+      expect(screen.queryByTestId('world-asset-tile-ITMW_SWORD.3DS')).not.toBeInTheDocument();
+      await user.click(within(tile).getByTestId('world-asset-unfile'));
+      expect(props.onRemoveFromCategory).toHaveBeenCalledWith('Mine/Crates', 'NW_CRATE.MRM');
+
+      // A seed entry is not the project's to drop.
+      await user.click(screen.getByTestId('world-asset-category-back'));
+      await user.click(screen.getByTestId('world-asset-category-Items/Schwerter'));
+      expect(within(screen.getByTestId('world-asset-tile-ITMW_SWORD.3DS')).queryByTestId('world-asset-unfile')).not.toBeInTheDocument();
+    });
+
+    it('files a tile into an existing category, or a new one, from its menu', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const props = catalogProps();
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} thumbnails={queue()} catalog={props} />);
+      await screen.findByTestId('world-asset-Meshes');
+      await user.click(screen.getByTestId('world-asset-view-grid'));
+
+      await user.click(within(screen.getByTestId('world-asset-tile-MOD_ONLY.MRM')).getByTestId('world-asset-file'));
+      await user.click(await screen.findByTestId('world-asset-file-into-Items/Schwerter'));
+      expect(props.onAddToCategory).toHaveBeenCalledWith('Items/Schwerter', 'MOD_ONLY.MRM');
+
+      await user.click(within(screen.getByTestId('world-asset-tile-MOD_ONLY.MRM')).getByTestId('world-asset-file'));
+      await user.type(await screen.findByTestId('world-asset-file-new'), 'Mine/Barrels{Enter}');
+      expect(props.onAddToCategory).toHaveBeenCalledWith('Mine/Barrels', 'MOD_ONLY.MRM');
     });
   });
 

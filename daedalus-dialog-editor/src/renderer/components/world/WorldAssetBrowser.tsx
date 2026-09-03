@@ -10,9 +10,11 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import ViewListIcon from '@mui/icons-material/ViewList';
 import { FixedSizeList as List, type ListChildComponentProps, areEqual } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
-import type { VfsEntry } from '../../../shared/worldTypes';
+import { isFavorite } from 'zen-world';
+import type { AssetCatalog, VfsEntry } from '../../../shared/worldTypes';
 import type { AssetThumbnails } from '../../world/assetThumbnails';
-import WorldAssetGrid from './WorldAssetGrid';
+import WorldAssetGrid, { type TileCatalogActions } from './WorldAssetGrid';
+import WorldAssetCatalogView from './WorldAssetCatalogView';
 
 // The asset browser over the mounted VFS (level-editor.md §6).
 //
@@ -71,11 +73,33 @@ export interface WorldAssetBrowserProps {
   /** The thumbnail queue (level-editor.md §16.26 row 1). Absent, there is no
    *  grid view to offer — the browser harness has no world to draw from. */
   thumbnails?: AssetThumbnails;
+  /** Favorites and categories (§16.26, "Wanted on top"). Absent — no project
+   *  sidecar loaded — the browser is the directory walk alone. */
+  catalog?: AssetCatalogProps;
 }
 
-const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({ listAssets, onPreview, thumbnails }) => {
+export interface AssetCatalogProps {
+  /** The merged view: the shipped seed plus the project's own sidecar. */
+  catalog: AssetCatalog;
+  /** Whether `name` under `path` is the project's own entry, and so removable. */
+  removable: (path: string, name: string) => boolean;
+  onToggleFavorite: (name: string) => void;
+  onAddToCategory: (path: string, name: string) => void;
+  onRemoveFromCategory: (path: string, name: string) => void;
+}
+
+const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({ listAssets, onPreview, thumbnails, catalog }) => {
   const [path, setPath] = useState('/');
   const [view, setView] = useState<'list' | 'grid'>('list');
+  const [mode, setMode] = useState<'browse' | 'favorites' | 'categories'>('browse');
+  const tileActions = useMemo<TileCatalogActions | undefined>(() => (
+    catalog === undefined ? undefined : {
+      isFavorite: (name) => isFavorite(catalog.catalog, name),
+      onToggleFavorite: catalog.onToggleFavorite,
+      categoryPaths: catalog.catalog.categories.map((category) => category.path),
+      onAddToCategory: catalog.onAddToCategory,
+    }
+  ), [catalog]);
   // Three states, not two. "Nothing here" and "not listed yet" look identical
   // and are not the same thing: collapsing them makes every directory flash as
   // empty on the way in, and makes an empty state that can never be trusted.
@@ -161,6 +185,32 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({ listAssets, onPre
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      {catalog !== undefined && thumbnails !== undefined && (
+        <ToggleButtonGroup
+          size="small"
+          exclusive
+          fullWidth
+          value={mode}
+          onChange={(_event, next: 'browse' | 'favorites' | 'categories' | null) => { if (next !== null) setMode(next); }}
+          sx={{ '& .MuiToggleButton-root': { py: 0.25, fontSize: 11, textTransform: 'none' } }}
+        >
+          <ToggleButton value="browse" data-testid="world-asset-mode-browse">Browse</ToggleButton>
+          <ToggleButton value="favorites" data-testid="world-asset-mode-favorites">Favorites</ToggleButton>
+          <ToggleButton value="categories" data-testid="world-asset-mode-categories">Categories</ToggleButton>
+        </ToggleButtonGroup>
+      )}
+      {catalog !== undefined && thumbnails !== undefined && tileActions !== undefined && mode !== 'browse' && (
+        <WorldAssetCatalogView
+          mode={mode}
+          catalog={catalog.catalog}
+          thumbnails={thumbnails}
+          actions={tileActions}
+          removable={catalog.removable}
+          onRemoveFromCategory={catalog.onRemoveFromCategory}
+          onPreview={onPreview}
+        />
+      )}
+      {mode === 'browse' && (<>
       <Box sx={{
         display: 'flex', flexDirection: 'column', gap: 0.5, px: 0.5, py: 0.25,
         borderBottom: 1, borderColor: 'divider',
@@ -315,7 +365,7 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({ listAssets, onPre
 
       {state.status === 'ready' && filtered.length > 0 && view === 'grid' && thumbnails !== undefined && (
         <Box sx={{ flex: 1, minHeight: 0 }} role="list" aria-label="Mounted assets">
-          <WorldAssetGrid entries={filtered} thumbnails={thumbnails} onOpen={onOpen} />
+          <WorldAssetGrid entries={filtered} thumbnails={thumbnails} onOpen={onOpen} actions={tileActions} />
         </Box>
       )}
 
@@ -337,6 +387,7 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({ listAssets, onPre
           </AutoSizer>
         </Box>
       )}
+      </>)}
     </Box>
   );
 };
