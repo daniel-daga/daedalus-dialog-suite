@@ -64,9 +64,10 @@ describe('serviceRegistry', () => {
     expect(second).toBe(first);
     expect(second.settingsService).toBe(first.settingsService);
     expect(second.worldService).toBe(first.worldService);
-    // userData is read by the one construction only — SettingsService and
-    // LogService each resolve it, and nothing resolves it a second time.
-    expect(getPathCalls).toEqual(['userData', 'userData']);
+    // userData is read by the one construction only — SettingsService,
+    // ThumbnailCacheService and LogService each resolve it, and nothing
+    // resolves it a second time.
+    expect(getPathCalls).toEqual(['userData', 'userData', 'userData']);
   });
 
   it('wires the services that depend on each other', async () => {
