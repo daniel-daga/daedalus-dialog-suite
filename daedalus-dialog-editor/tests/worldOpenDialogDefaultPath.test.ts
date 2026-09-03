@@ -7,7 +7,6 @@
  */
 
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
-import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { setupIpcHandlers } from '../src/main/main';
@@ -72,8 +71,6 @@ const { SettingsService: SettingsServiceMock } = jest.requireMock('../src/main/s
 };
 const existsSync = fs.existsSync as unknown as jest.Mock<(p: fs.PathLike) => boolean>;
 
-const INSTALL = path.join('C:', 'Games', 'Gothic II');
-const WORLDS = path.join(INSTALL, '_work', 'Data', 'Worlds');
 
 describe('world:openDialog defaultPath', () => {
   beforeEach(() => {

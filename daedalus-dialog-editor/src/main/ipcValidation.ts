@@ -24,14 +24,14 @@ export function assertAssetSourcesPayload(value: unknown): asserts value is stri
         && typeof value[index] === 'string'
         && value[index].length > 0
         && value[index].length <= PROJECT_ASSET_SOURCE_LIMITS.maxLength
-        && !/[\x00-\x1f\x7f]/.test(value[index]))) {
+        && !/\p{Cc}/u.test(value[index]))) {
     throw new Error('Invalid assetSources payload: expected an array of strings');
   }
 }
 
 export function assertOptionalFolderPath(value: unknown): asserts value is string | undefined {
   if (value !== undefined && (typeof value !== 'string' || value.trim() === ''
-    || /[\x00-\x1f\x7f]/.test(value))) {
+    || /\p{Cc}/u.test(value))) {
     throw new Error('Invalid folder path: expected a non-empty string or undefined');
   }
 }

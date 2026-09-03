@@ -1,3 +1,4 @@
+import { promises as fsPromises } from 'node:fs';
 import { mkdtemp, mkdir, readFile, readdir, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -214,7 +215,6 @@ describe('ProjectConfigService', () => {
     });
 
     test('uses a unique sibling temp file and atomic rename', async () => {
-      const fsPromises = require('node:fs').promises;
       const renameSpy = jest.spyOn(fsPromises, 'rename');
       const service = new ProjectConfigService();
       const projectFilePath = join(root, 'demo.gothicproject.json');
@@ -243,7 +243,6 @@ describe('ProjectConfigService', () => {
     });
 
     test('retries with another exclusive temp name after an EEXIST collision', async () => {
-      const fsPromises = require('node:fs').promises;
       const projectFilePath = join(root, 'demo.gothicproject.json');
       const realOpen = fsPromises.open;
       const collision: NodeJS.ErrnoException = new Error('EEXIST');
@@ -262,7 +261,6 @@ describe('ProjectConfigService', () => {
     });
 
     test('preserves the old complete file and cleans up the temp file when rename fails', async () => {
-      const fsPromises = require('node:fs').promises;
       const service = new ProjectConfigService();
       const projectFilePath = join(root, 'demo.gothicproject.json');
       await writeFile(projectFilePath, JSON.stringify(validConfig(['.'])));
@@ -313,7 +311,6 @@ describe('ProjectConfigService', () => {
     });
 
     test('refuses an asset update when the project changes externally before publication', async () => {
-      const fsPromises = require('node:fs').promises;
       const projectFilePath = join(root, 'demo.gothicproject.json');
       await writeFile(projectFilePath, JSON.stringify(validConfig()));
       const realReadFile = fsPromises.readFile;
@@ -343,12 +340,11 @@ describe('ProjectConfigService', () => {
     });
 
     test('loses an external atomic publication without overwriting the winner', async () => {
-      const fsPromises = require('node:fs').promises;
       const projectFilePath = join(root, `${pathBasename(root)}.gothicproject.json`);
       const winner = validConfig(['.', 'winner-assets']);
       const service = new ProjectConfigService();
       const realLink = fsPromises.link;
-      const linkSpy = jest.spyOn(fsPromises, 'link').mockImplementationOnce(async (...args: unknown[]) => {
+      const linkSpy = jest.spyOn(fsPromises, 'link').mockImplementationOnce(async () => {
         await writeFile(projectFilePath, JSON.stringify(winner));
         const exists: NodeJS.ErrnoException = new Error('EEXIST');
         exists.code = 'EEXIST';
@@ -378,7 +374,6 @@ describe('ProjectConfigService', () => {
     });
 
     test('retries a contended rename and cleans up after retry exhaustion', async () => {
-      const fsPromises = require('node:fs').promises;
       const service = new ProjectConfigService();
       const projectFilePath = join(root, 'demo.gothicproject.json');
       const contended: NodeJS.ErrnoException = new Error('EACCES');

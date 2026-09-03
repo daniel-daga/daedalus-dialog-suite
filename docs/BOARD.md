@@ -186,6 +186,10 @@ Status: delivered 2026-09-03 (section 16.28); bounds are 128 entries and
   hand, worlds resolved off the same list. Storage decided: the project
   file, replacing `gothicInstallPath`, not `SettingsService`; missing or
   unreadable collaborator paths are skipped with visible warnings. §16.28
+- **Four driver scripts still click `world-choose-install`, which §16.28
+  removed** — `verify-world-edit.js`, `verify-world-render.js`,
+  `measure-viewport.js`, `build-gate2-candidate.js` cannot open a world until
+  they seed a project file's `assetSources` instead. Unowned. §16.28
 
 **zenkit-node / fidelity**
 

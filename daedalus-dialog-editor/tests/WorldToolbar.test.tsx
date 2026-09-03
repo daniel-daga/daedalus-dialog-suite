@@ -72,8 +72,9 @@ describe('the World bar', () => {
     render(<WorldSurface />);
 
     const fileGroup = screen.getByTestId('world-toolbar-file');
-    expect(fileGroup).toContainElement(screen.getByTestId('world-choose-install'));
+    // The install chooser left with §16.28 — sources are the project file's.
     expect(fileGroup).toContainElement(screen.getByTestId('world-open'));
+    expect(fileGroup).toContainElement(screen.getByTestId('world-save'));
   });
 
   it('puts the edit controls in the edit group once a world is open', async () => {

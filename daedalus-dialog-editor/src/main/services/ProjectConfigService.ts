@@ -96,7 +96,7 @@ export function parseProjectFile(value: unknown): GothicProjectFileV1 {
     }
     const source = stringAt(rawAssetSources[index], `assetSources[${index}]`);
     if (source.length === 0 || source.length > PROJECT_ASSET_SOURCE_LIMITS.maxLength
-      || /[\x00-\x1f\x7f]/.test(source)) {
+      || /\p{Cc}/u.test(source)) {
       throw new Error(`assetSources[${index}] must be 1-${PROJECT_ASSET_SOURCE_LIMITS.maxLength} characters without control characters`);
     }
     return source;
