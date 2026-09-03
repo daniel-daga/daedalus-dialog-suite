@@ -70,6 +70,30 @@ const CENTRE = 0.5;
 /** Never inside the Gothic install. */
 const SHOTS = os.tmpdir();
 
+/**
+ * A throwaway project the World surface can open a world from.
+ *
+ * §16.28 removed the World bar's install picker: asset sources are now a list
+ * in the project file, and `world:open` refuses a project whose sources do not
+ * mount the world's assets. So the Gothic install has to be seeded here, as
+ * the second source after the project root, rather than clicked in afterwards.
+ */
+function seedProject(prefix, fixture) {
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  fs.writeFileSync(path.join(project, 'world.d'), fixture);
+  fs.writeFileSync(
+    path.join(project, `${path.basename(project)}.gothicproject.json`),
+    JSON.stringify({
+      version: 1,
+      target: 'g2-notr',
+      scriptsRoot: '.',
+      worlds: [],
+      assetSources: ['.', INSTALL],
+    }, null, 2),
+  );
+  return project;
+}
+
 const problems = [];
 const check = (condition, message) => { if (!condition) problems.push(message); };
 
@@ -179,8 +203,7 @@ async function main() {
     ? openGround(zenkit.extractWorldMesh(zenkit.loadWorld(WORLD, 'g2')))
     : POINT.split(',').map(Number);
 
-  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'world-render-'));
-  fs.writeFileSync(path.join(project, 'world.d'), '// render fixture\n');
+  const project = seedProject('world-render-', '// render fixture\n');
 
   const app = await electron.launch({ args: ['.'], cwd: path.join(__dirname, '..') });
 
@@ -191,13 +214,11 @@ async function main() {
     dialog.showOpenDialog = async (options) => {
       switch (options.title) {
         case 'Open a ZenGin world': return { canceled: false, filePaths: [paths.world] };
-        case 'Select the Gothic installation directory':
-          return { canceled: false, filePaths: [paths.install] };
         case 'Select Gothic Mod Project Folder': return { canceled: false, filePaths: [paths.project] };
         default: throw new Error(`unexpected dialog: ${options.title}`);
       }
     };
-  }, { world: WORLD, install: INSTALL, project });
+  }, { world: WORLD, project });
 
   const page = await app.firstWindow();
   page.setDefaultTimeout(180_000);
@@ -207,8 +228,6 @@ async function main() {
 
   await page.getByRole('button', { name: /Open Project/i }).first().click();
   await page.getByTestId('world-toggle').click();
-  await page.getByTestId('world-choose-install').click();
-  await page.getByTestId('world-install-path').waitFor();
 
   console.log(`opening ${path.basename(WORLD)} …`);
   await page.getByTestId('world-open').click();

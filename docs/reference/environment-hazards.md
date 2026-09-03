@@ -280,6 +280,15 @@ anything does.
     check* line in `results.log`.
   `zenkit-node/tools/startup-probe.ps1` is still the unattended "does the
   engine itself start" check, before blaming a candidate.
+- **The four driver scripts' default `--world` does not exist here.**
+  `verify-world-edit.js`, `verify-world-render.js`, `measure-viewport.js` and
+  `build-gate2-candidate.js` all default to
+  `_work\Data\Worlds\NewWorld\NewWorld.zen` — a stock extracted install's
+  layout. GMBT stages worlds *flat* into `_work\Data\Worlds`, so on this
+  machine the file is `_work\Data\Worlds\NEWWORLD.ZEN` and every one of them
+  exits with `No world at …` unless `--world` names it. The default is left
+  alone deliberately: it is right for the layout it describes, and the flat
+  one here is GMBT's doing, not the install's.
 - **The oracle is not stock**, and every verdict has to say so: Gothic II 2.6
   (fix) + SystemPack + GD3D11 (kirides fork, `51efd73`, as `System\ddraw.dll`).
   Stock never rendered on this machine — black screen with working audio in

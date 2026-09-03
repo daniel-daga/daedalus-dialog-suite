@@ -3,11 +3,10 @@ import { Button, CircularProgress } from '@mui/material';
 import type { WorldStatus } from '../../../store/worldStore';
 
 /**
- * The World bar's "file" group (level-editor.md §17):
- * choose/open the Gothic install, the path readout, the open spinner, and
- * save. Moved verbatim out of `WorldSurface.tsx` — every testid and
- * enablement rule is unchanged, only the state and handlers now arrive as
- * props.
+ * The World bar's "file" group (level-editor.md §17): open a world, the open
+ * spinner, and save. The install picker and its path readout were removed by
+ * §16.28 — asset sources are a list in the project file now, not a button
+ * here.
  */
 export interface WorldFileControlsProps {
   onOpenWorld: () => void;

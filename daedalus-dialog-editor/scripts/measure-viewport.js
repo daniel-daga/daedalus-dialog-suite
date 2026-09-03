@@ -43,6 +43,30 @@ const WORLD = arg('world', path.join(INSTALL, '_work', 'Data', 'Worlds', 'NewWor
 const BACKGROUND = wants('background');
 const OUT = arg('out', null);
 
+/**
+ * A throwaway project the World surface can open a world from.
+ *
+ * §16.28 removed the World bar's install picker: asset sources are now a list
+ * in the project file, and `world:open` refuses a project whose sources do not
+ * mount the world's assets. So the Gothic install has to be seeded here, as
+ * the second source after the project root, rather than clicked in afterwards.
+ */
+function seedProject(prefix, fixture) {
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  fs.writeFileSync(path.join(project, 'world.d'), fixture);
+  fs.writeFileSync(
+    path.join(project, `${path.basename(project)}.gothicproject.json`),
+    JSON.stringify({
+      version: 1,
+      target: 'g2-notr',
+      scriptsRoot: '.',
+      worlds: [],
+      assetSources: ['.', INSTALL],
+    }, null, 2),
+  );
+  return project;
+}
+
 async function main() {
   for (const [what, where] of [['install', INSTALL], ['world', WORLD]]) {
     if (!fs.existsSync(where)) throw new Error(`No ${what} at ${where}`);
@@ -51,12 +75,11 @@ async function main() {
   // A throwaway project, only because the World view lives inside the main
   // layout and the main layout needs something open. Deliberately not a real
   // Gothic script project: indexing one would cost more than the measurement.
-  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'world-measure-'));
-  fs.writeFileSync(path.join(project, 'world.d'), '// measurement fixture\n');
+  const project = seedProject('world-measure-', '// measurement fixture\n');
 
   const app = await electron.launch({ args: ['.'], cwd: path.join(__dirname, '..') });
 
-  // The three dialogs this drive opens, answered without a human, matched on
+  // The two dialogs this drive opens, answered without a human, matched on
   // their *exact* titles. A substring match is what the first version used and
   // it was wrong: the project picker is titled "Select Gothic Mod Project
   // Folder", so a test for "Gothic" answered it with the installation
@@ -66,13 +89,11 @@ async function main() {
     dialog.showOpenDialog = async (options) => {
       switch (options.title) {
         case 'Open a ZenGin world': return { canceled: false, filePaths: [paths.world] };
-        case 'Select the Gothic installation directory':
-          return { canceled: false, filePaths: [paths.install] };
         case 'Select Gothic Mod Project Folder': return { canceled: false, filePaths: [paths.project] };
         default: throw new Error(`unexpected dialog: ${options.title}`);
       }
     };
-  }, { world: WORLD, install: INSTALL, project });
+  }, { world: WORLD, project });
 
   const page = await app.firstWindow();
   page.setDefaultTimeout(180_000);
@@ -82,9 +103,6 @@ async function main() {
 
   await page.getByRole('button', { name: /Open Project/i }).first().click();
   await page.getByTestId('world-toggle').click();
-
-  await page.getByTestId('world-choose-install').click();
-  await page.getByTestId('world-install-path').waitFor();
 
   console.log(`opening ${WORLD} …`);
   const openedAt = Date.now();

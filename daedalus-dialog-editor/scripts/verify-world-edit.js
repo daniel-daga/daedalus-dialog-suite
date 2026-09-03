@@ -47,6 +47,30 @@ const NUDGE = 500;   // ZenGin centimetres — far past any float noise
 /** Never inside the Gothic install: this writes a world. */
 const SAVE_TO = path.join(os.tmpdir(), `verify-world-edit-${process.pid}.zen`);
 
+/**
+ * A throwaway project the World surface can open a world from.
+ *
+ * §16.28 removed the World bar's install picker: asset sources are now a list
+ * in the project file, and `world:open` refuses a project whose sources do not
+ * mount the world's assets. So the Gothic install has to be seeded here, as
+ * the second source after the project root, rather than clicked in afterwards.
+ */
+function seedProject(prefix, fixture) {
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  fs.writeFileSync(path.join(project, 'world.d'), fixture);
+  fs.writeFileSync(
+    path.join(project, `${path.basename(project)}.gothicproject.json`),
+    JSON.stringify({
+      version: 1,
+      target: 'g2-notr',
+      scriptsRoot: '.',
+      worlds: [],
+      assetSources: ['.', INSTALL],
+    }, null, 2),
+  );
+  return project;
+}
+
 const problems = [];
 const check = (condition, message) => { if (!condition) problems.push(message); };
 
@@ -74,8 +98,7 @@ async function main() {
     if (!fs.existsSync(where)) throw new Error(`No ${what} at ${where}`);
   }
 
-  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'world-edit-'));
-  fs.writeFileSync(path.join(project, 'world.d'), '// edit fixture\n');
+  const project = seedProject('world-edit-', '// edit fixture\n');
 
   const app = await electron.launch({ args: ['.'], cwd: path.join(__dirname, '..') });
 
@@ -86,8 +109,6 @@ async function main() {
     dialog.showOpenDialog = async (options) => {
       switch (options.title) {
         case 'Open a ZenGin world': return { canceled: false, filePaths: [paths.world] };
-        case 'Select the Gothic installation directory':
-          return { canceled: false, filePaths: [paths.install] };
         case 'Select Gothic Mod Project Folder': return { canceled: false, filePaths: [paths.project] };
         default: throw new Error(`unexpected dialog: ${options.title}`);
       }
@@ -95,7 +116,7 @@ async function main() {
     // Never the Gothic directory: this script writes a world, and the one it
     // opened is a retail game file.
     dialog.showSaveDialog = async () => ({ canceled: false, filePath: paths.save });
-  }, { world: WORLD, install: INSTALL, project, save: SAVE_TO });
+  }, { world: WORLD, project, save: SAVE_TO });
 
   const page = await app.firstWindow();
   page.setDefaultTimeout(180_000);
@@ -105,8 +126,6 @@ async function main() {
 
   await page.getByRole('button', { name: /Open Project/i }).first().click();
   await page.getByTestId('world-toggle').click();
-  await page.getByTestId('world-choose-install').click();
-  await page.getByTestId('world-install-path').waitFor();
 
   console.log(`opening ${path.basename(WORLD)} …`);
   await page.getByTestId('world-open').click();

@@ -188,10 +188,6 @@ Status: delivered 2026-09-03 (section 16.28); bounds are 128 entries and
   hand, worlds resolved off the same list. Storage decided: the project
   file, replacing `gothicInstallPath`, not `SettingsService`; missing or
   unreadable collaborator paths are skipped with visible warnings. §16.28
-- **Four driver scripts still click `world-choose-install`, which §16.28
-  removed** — `verify-world-edit.js`, `verify-world-render.js`,
-  `measure-viewport.js`, `build-gate2-candidate.js` cannot open a world until
-  they seed a project file's `assetSources` instead. Unowned. §16.28
 
 **zenkit-node / fidelity**
 
@@ -239,6 +235,8 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
-*(empty — flushed 2026-09-03; the 2026-09-02/03 run's substance is in
-`git log`, and its one forward fact — the walk's feel is unwitnessed on a
-real GPU — sits on the §14 gaps card)*
+- **The four driver scripts seed a project file instead of clicking the
+  install picker** — landed 2026-09-03, verified by running
+  `measure-viewport.js` against retail NEWWORLD (opened in 1.8 s, 197 fps,
+  `valid: true`). Their default `--world` is stale on this machine and now
+  says so in `environment-hazards.md`. §16.28
