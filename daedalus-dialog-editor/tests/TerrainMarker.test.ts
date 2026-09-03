@@ -23,6 +23,7 @@
 import * as THREE from 'three';
 import { ROOT_MATRIX, zenToThree } from 'zen-world';
 import { TerrainMarker } from '../src/renderer/world/TerrainMarker';
+import { markerReticleTexture } from '../src/renderer/world/markerSprite';
 
 /** A click on the ground, ZenGin centimetres, deliberately not round. */
 const POINT: [number, number, number] = [1500.5, -220, 3300.25];
@@ -67,6 +68,25 @@ describe('TerrainMarker', () => {
     const material = marker.point.material as THREE.PointsMaterial;
     expect(material.depthTest).toBe(false);
     expect(material.sizeAttenuation).toBe(false);
+  });
+
+  it('draws the shared reticle sprite rather than a bare square', () => {
+    const marker = new TerrainMarker(POINT);
+    const material = marker.point.material as THREE.PointsMaterial;
+    expect(material.map).toBe(markerReticleTexture());
+  });
+
+  it('leaves the shared sprite alone when it is disposed', () => {
+    // Built per placement click and thrown away with the next one. The texture
+    // is not: disposing it here would blank the pivot marker, which is drawing
+    // the same one, and the next placement would upload it again.
+    const marker = new TerrainMarker(POINT);
+    const sprite = jest.spyOn(markerReticleTexture(), 'dispose');
+
+    marker.dispose();
+
+    expect(sprite).not.toHaveBeenCalled();
+    sprite.mockRestore();
   });
 
   it('answers no raycast, so it cannot steal the click that placed it', () => {

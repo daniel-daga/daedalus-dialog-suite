@@ -24,6 +24,7 @@ import * as THREE from 'three';
 import type { WaynetPayload } from '../src/shared/worldTypes';
 import type { RoutineSite, SpawnSite } from '../src/shared/types';
 import { SpawnOverlay } from '../src/renderer/world/SpawnOverlay';
+import { markerDotTexture } from '../src/renderer/world/markerSprite';
 
 /**
  * How many markers a layer actually draws.
@@ -258,6 +259,23 @@ describe('SpawnOverlay', () => {
       expect(unsure.color.getHex()).not.toBe(known.color.getHex());
       // And it still draws through walls, like everything else on this layer.
       expect(unsure.depthTest).toBe(false);
+    });
+
+    it('draws both layers as the shared rimmed pip, not as bare squares', () => {
+      // A marker sits over terrain of any brightness, and an unrimmed square in
+      // the layer's own colour is lost against half of it. The texture is the
+      // app's one copy: disposing the overlay must not take it with it, or the
+      // next world's markers upload it again.
+      const overlay = new SpawnOverlay(waynet(), SPAWNS, ROUTINES);
+      const sprite = markerDotTexture();
+
+      expect((overlay.markers.material as THREE.PointsMaterial).map).toBe(sprite);
+      expect((overlay.unknownMarkers.material as THREE.PointsMaterial).map).toBe(sprite);
+
+      const disposed = jest.spyOn(sprite, 'dispose');
+      overlay.dispose();
+      expect(disposed).not.toHaveBeenCalled();
+      disposed.mockRestore();
     });
 
     it('goes back to the static spawns when the time is cleared', () => {

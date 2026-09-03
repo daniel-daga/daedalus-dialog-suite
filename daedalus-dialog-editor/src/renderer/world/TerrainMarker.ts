@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { markerReticleTexture } from './markerSprite';
 
 // Where the last terrain click landed, drawn (level-editor.md §6).
 //
@@ -17,14 +18,16 @@ import * as THREE from 'three';
 // the click after a placement click would select nothing at all.
 
 /** Bigger than a waypoint's 3.5 px, and a colour the waynet does not use: it is
- *  one dot among thousands whenever the overlay is on. */
-const SIZE = 11;
+ *  one dot among thousands whenever the overlay is on. Bigger again since the
+ *  reticle arrived — most of the sprite is its gap, so the ink is roughly the
+ *  square's old width. */
+const SIZE = 16;
 const COLOR = 0xff4081;
 
 /** The orbit pivot's own dot. Both markers are on screen at once and routinely
  *  on the same spot, where in one colour they were indistinguishable. */
 export const PIVOT_COLOR = 0x40e0ff;
-export const PIVOT_SIZE = 8;
+export const PIVOT_SIZE = 12;
 
 /** Over the waynet's 10, so a point picked on top of the net is still visible. */
 const RENDER_ORDER = 11;
@@ -55,6 +58,15 @@ export class TerrainMarker {
       // is usually aimed from.
       sizeAttenuation: false,
       color: style.color ?? COLOR,
+      // A ring around a gap around a dot, rather than a filled square: the
+      // point being named stays visible through the thing naming it, and the
+      // sprite's black rim keeps it readable over bright rock. Shared and
+      // never disposed here — see `markerSprite`.
+      map: markerReticleTexture(),
+      // The sprite is transparent over most of its area, and two markers on
+      // the same spot are the ordinary case: without this the nearer one's
+      // empty corners blend the far one away.
+      alphaTest: 0.1,
       depthTest: false,
       transparent: true,
     });
@@ -73,6 +85,8 @@ export class TerrainMarker {
 
   dispose(): void {
     this.geometry.dispose();
+    // Not the material's `map`: it is the app's one reticle, drawn by the
+    // pivot marker as well as this one. `Material.dispose` leaves it alone.
     this.material.dispose();
     this.root.clear();
   }

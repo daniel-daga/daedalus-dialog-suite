@@ -3321,6 +3321,9 @@ an engine: a scattered subtree, though it reaches the world down the same
   blocked on giving `DeleteVob` an inverse rather than on anything about the
   brush.
 
+**Landed 2026-09-03, and unwitnessed in two ways:** how a stroke actually looks
+on a real GPU, and what draping the brush ring over the mesh costs there.
+
 **A second gap the same check surfaced, unscheduled and not carded:** a
 mesh-capable model browser wired as a picker into `insertVob` and
 `setVobProp.visual` — the VFS-browsing half exists, corrected in §16.26 row 1.
@@ -3733,3 +3736,40 @@ dirty world; whether the run is fire-and-forget or the editor watches the
 process and surfaces its output; and what happens when GMBT is not installed.
 Daniel has the GMBT side of this — the answers are not derivable from this
 repo.
+
+### 16.30 The point markers get a sprite (2026-09-03)
+
+Every marker on the World surface was a bare `PointsMaterial` square in a flat
+colour: the placement point, the orbit pivot, and both spawn layers. At 6-16
+pixels over terrain that is sunlit rock as often as it is cave floor, an
+unrimmed square is lost against one of the two, and two of them on the same
+waypoint read as one smudge.
+
+`markerSprite.ts` now builds two shared masks and the four materials take one
+as `map`. A **pip** — colour to 0.58 of the sprite, black rim to 0.86 — for the
+spawn layers; a **reticle** — a centre dot inside a gap inside a ring, all
+rimmed — for the placement and pivot markers, so the point being named stays
+visible through the thing naming it. Sizes went up to keep the coloured core at
+its old width, the rim being new area: placement 11→16, pivot 8→12, spawn 9→11,
+unplaced 6→8. Every colour is unchanged.
+
+Three things in it are load-bearing:
+
+- **The mask is white-on-black.** `map` multiplies into `material.color`, so a
+  white texel takes the layer's colour and a black one stays black whatever the
+  layer picked. A grey rim would take the marker's colour too, which is the
+  contrast gone.
+- **`DataTexture`, not a canvas.** The renderer suites run in jsdom, which has
+  no 2D context — a canvas sprite would be silently blank in exactly the
+  environment that tests it. Written texel by texel, it is also readable back,
+  which is how `markerSprite.test.ts` checks a picture.
+- **One texture per shape for the whole app, and nobody disposes it.**
+  `TerrainMarker` is built per placement click; a texture built with it would be
+  a GPU upload per click, and one disposed with it would blank the pivot marker
+  drawing the same sprite. `Material.dispose` leaves a `map` alone, so both
+  layers' `dispose` are already correct — the tests assert it rather than trust
+  it.
+
+Unwitnessed: how any of it looks on a real GPU. The waynet's own 3.5 px points
+were deliberately left as squares — that size is tuned against NewWorld's 2,959
+of them reading as a mass, and it is a waypoint rather than a marker.

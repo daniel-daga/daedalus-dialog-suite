@@ -226,17 +226,14 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **The point markers get a sprite — landed 2026-09-03.** A rimmed pip for the
+  spawn layers, a reticle for the placement and pivot markers; colours
+  unchanged, sizes up to keep the core. Unwitnessed: how it looks. §16.30
 - **The four driver scripts seed a project file instead of clicking the
   install picker** — landed 2026-09-03, verified by running
   `measure-viewport.js` against retail NEWWORLD (opened in 1.8 s, 197 fps,
   `valid: true`). Their default `--world` is stale on this machine and now
   says so in `environment-hazards.md`. §16.28
-- **Scatter placement, past Spacer rather than parity — landed 2026-09-03.**
-  All four decisions settled (spacing + a 200 cap, no erase, random yaw +
-  ground align, palette rebuilt per stroke); the ring is draped on the mesh
-  per Daniel's ask. Unwitnessed: how a stroke looks, and the drape's cost on
-  a real GPU. Erase is the one piece still wanted — blocked on giving
-  `DeleteVob` an inverse. §16.25
 - **The asset-source list, all three parts** — ordered list in the project
   file (replacing `gothicInstallPath`, bounds 128 entries / 4096 chars),
   `modSources` wired, and world opening moved onto the same list

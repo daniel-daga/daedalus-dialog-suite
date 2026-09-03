@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { WaynetPayload } from '../../shared/worldTypes';
 import type { SpawnSite } from '../../shared/types';
 import { placementWaypointsAt, spawnOccupants, type RoutineIndex } from '../routines/routineSchedule';
+import { markerDotTexture } from './markerSprite';
 
 // The project's static spawns, drawn over the world (level-editor.md §16.19
 // slice 4) — and, once a time is set, where the daily routines put the NPCs
@@ -175,11 +176,22 @@ export class SpawnOverlay {
     this.material = new THREE.PointsMaterial({
       // Larger than the waynet's 3.5: a spawn is rare where a waypoint is
       // everywhere, and it has to be findable with the whole world in frame.
-      size: 9,
+      // Larger again than the square it replaces, because the sprite spends
+      // its outer third on the rim: the coloured core is the old 9 px.
+      size: 11,
       // Pixels, not world units — a marker has no size, and one that shrinks
       // with distance is invisible from the viewpoint that shows the map.
       sizeAttenuation: false,
       color: SPAWN,
+      // A rimmed round pip rather than a flat square: a spawn is drawn over
+      // terrain of any brightness, and the black rim is what keeps it readable
+      // over the bright half. Shared and never disposed here — see
+      // `markerSprite`.
+      map: markerDotTexture(),
+      // The pip is transparent to its corners, and two markers a few pixels
+      // apart are the ordinary case: without this the nearer one's empty
+      // corners blend the far one away.
+      alphaTest: 0.1,
       // A spawn inside a building is exactly the one worth looking at.
       depthTest: false,
       transparent: true,
@@ -188,9 +200,11 @@ export class SpawnOverlay {
     // be separable at a glance, and size is the difference that survives being
     // colour-blind.
     this.unknownMaterial = new THREE.PointsMaterial({
-      size: 6,
+      size: 8,
       sizeAttenuation: false,
       color: UNPLACED,
+      map: markerDotTexture(),
+      alphaTest: 0.1,
       depthTest: false,
       transparent: true,
       opacity: 0.75,
@@ -365,6 +379,8 @@ export class SpawnOverlay {
   dispose(): void {
     this.geometry.dispose();
     this.unknownGeometry.dispose();
+    // Not their `map`: it is the app's one pip, shared with whatever else
+    // draws one. `Material.dispose` leaves a texture alone.
     this.material.dispose();
     this.unknownMaterial.dispose();
     this.dummyGeometry.dispose();
