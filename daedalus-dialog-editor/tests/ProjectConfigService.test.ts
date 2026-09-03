@@ -474,7 +474,8 @@ describe('ProjectConfigService', () => {
     test('seeds a new project file with the GMBT folders and the GMBT project itself', async () => {
       const result = await new ProjectConfigService().openOrMigrate(modRoot, null);
 
-      expect(result.project.config.assetSources).toEqual(['.', '../mdk', '../thirdparty', '../gothic']);
+      // GMBT's own order: the install is the base, the mod folder wins.
+      expect(result.project.config.assetSources).toEqual(['../gothic', '../mdk', '../thirdparty', '.']);
       expect(result.project.config.gmbtProjectDir).toBe('..');
       expect(result.project.gmbtProjectDir).toBe(await fsPromises.realpath(root));
       expect(JSON.parse(await readFile(
@@ -493,7 +494,7 @@ describe('ProjectConfigService', () => {
 
       const result = await new ProjectConfigService().openOrMigrate(modRoot, null);
 
-      expect(result.project.config.assetSources).toEqual(['.', '../mdk']);
+      expect(result.project.config.assetSources).toEqual(['../mdk', '.']);
     });
 
     test('adopts the GMBT project for an existing file that names none, and persists it', async () => {

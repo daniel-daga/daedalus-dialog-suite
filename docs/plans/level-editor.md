@@ -3891,6 +3891,12 @@ waypoint to the world that holds it, open that world and fly to them".
   files are found: the VFS could *name* a world inside `Worlds.vdf`, but
   nothing downstream can open a world with no filesystem path, so listing one
   would be an entry that fails on click.
+- **Seeding follows GMBT's mount order, corrected 2026-09-03**: `gothicRoot`
+  first when it is an install, then `modFiles.assets` as the file lists them,
+  with the project root written as `.` wherever it falls among them (last if
+  the list does not contain it). The first cut put `.` first, which is
+  backwards — later wins here as it does in GMBT, so retail has to be the base
+  and the mod folder has to win.
 - **The save-time rule had to learn about them** (2026-09-03, after Daniel hit
   it): `project:saveAssetSources` refused a relative source leaving the project
   folder, and every GMBT folder does — `../thirdparty`, and the adopted
@@ -3905,6 +3911,39 @@ waypoint to the world that holds it, open that world and fly to them".
   returns, for the reason `registerProjectConfig` whitelists an absolute asset
   source: the paths come from the project file the user has already opened, not
   from the renderer.
+
+**What beppo then showed (2026-09-03, Daniel: white world, no VOBs).** Not a
+bug in any of the above: the project's sources were `.`, `../mdk`,
+`../thirdparty` and **no Gothic install**, because beppo's `.gmbt.yml` says
+`gothicRoot: ..\..`, which on this machine resolves to `C:/Users/Daniel/Projects`
+— stale, and correctly rejected as not install-shaped. Probed with the binding
+over `SURFACE_BEPPO.ZEN` (4,539 VOBs, 414 distinct visuals, 329 world
+textures):
+
+| mounts | world textures | VOB visuals |
+|---|---|---|
+| `mdk` + `thirdparty` + `mod` | 8 / 329 | 0 / 414 |
+| the same plus the Steam install's six VDFs | 317 / 329 | 319 / 414 |
+
+So the fix for the project is to add the install by hand and move it to the
+top of the list. Two facts came out of the probe and are worth keeping:
+
+- **What is still missing with the install mounted is beppo's own content, and
+  it is missing because it is not compiled.** `KM_VOB_BIG_BUSH_01.3DS` is a
+  source `.3DS` in `mod/Meshes/Archolos_stuff/`, and `thirdparty/Meshes/_compiled`
+  holds exactly one `.MRM`. ZenKit reads compiled formats; GMBT compiles into
+  `<gothicRoot>/_work/Data/*/_compiled` on a build. So a mod's own new assets
+  appear in the editor only after a GMBT build, and only if the install that
+  build wrote into is an asset source. The 12 remaining world textures are
+  mostly `NAME.TGA.TGA` double extensions in the world's own material names.
+- **`gothicAssetSources` returns archives *or* loose `_compiled`, never both**
+  (`zen-world/src/assets/gothicArchives.ts`), and on a GMBT-built install both
+  exist: the retail VDFs, plus the mod's compiled output in `_work/Data`. ZenGin
+  itself reads the loose files with priority. So on an install GMBT builds into,
+  the editor mounts the archives and **ignores every asset the mod just
+  compiled**. Not carded — it wants Daniel's call, and it is measured against
+  the 2,170 ms figure that rule was written for (a fully extracted install; a
+  GMBT-built one holds only the mod's own files there).
 
 Unwitnessed: nothing here has been run against the beppo project in the app —
 the detection, the seeding and the scan are covered by `gmbtProject.test.ts`,

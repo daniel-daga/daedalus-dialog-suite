@@ -182,26 +182,35 @@ function projectRelative(projectRoot: string, target: string): string {
 
 /**
  * Asset sources for a project folder that sits inside a GMBT tree
- * (level-editor.md §16.31): the project root, the folders the `.gmbt.yml`
- * mounts, in its own order, and its `gothicRoot` when that is an install.
+ * (level-editor.md §16.31), **in GMBT's own mount order**: `gothicRoot` first
+ * when it is an install, then `modFiles.assets` as the file lists them, with
+ * the project root written as `.` wherever it appears among them.
+ *
+ * The order is the point. Later wins here as it does in GMBT, so the retail
+ * install has to be the base and the mod folder has to be last — a list that
+ * put `.` first would let retail content override the mod's own.
  */
 async function gmbtSeededAssetSources(
   projectRoot: string,
   gmbt: Awaited<ReturnType<typeof findGmbtProject>>,
 ): Promise<string[]> {
-  if (gmbt === null) return [];
   const seeded: string[] = [];
-  const seen = new Set([comparablePath(projectRoot)]);
-  for (const assetDir of gmbt.assetDirs) {
-    const key = comparablePath(assetDir);
-    if (seen.has(key)) continue;
+  const seen = new Set<string>();
+  const add = (candidate: string) => {
+    const key = comparablePath(candidate);
+    if (seen.has(key)) return;
     seen.add(key);
-    seeded.push(projectRelative(projectRoot, assetDir));
+    seeded.push(projectRelative(projectRoot, candidate));
+  };
+  if (gmbt !== null) {
+    if (gmbt.gothicRoot !== null && await isAvailableDirectory(gmbt.gothicRoot)
+      && await isInstallShaped(gmbt.gothicRoot)) {
+      add(gmbt.gothicRoot);
+    }
+    for (const assetDir of gmbt.assetDirs) add(assetDir);
   }
-  if (gmbt.gothicRoot !== null && !seen.has(comparablePath(gmbt.gothicRoot))
-    && await isAvailableDirectory(gmbt.gothicRoot) && await isInstallShaped(gmbt.gothicRoot)) {
-    seeded.push(projectRelative(projectRoot, gmbt.gothicRoot));
-  }
+  // Required, and last when the GMBT list did not already place it.
+  add(projectRoot);
   return seeded;
 }
 
@@ -377,7 +386,7 @@ export class ProjectConfigService {
       if (discovered) return openExistingProject(discovered, legacyInstallPath);
 
       const gmbt = await findGmbtProject(absoluteRoot);
-      const assetSources = ['.', ...await gmbtSeededAssetSources(absoluteRoot, gmbt)];
+      const assetSources = await gmbtSeededAssetSources(absoluteRoot, gmbt);
       if (legacyInstallPath && comparablePath(legacyInstallPath) !== comparablePath(absoluteRoot)) {
         assetSources.push(legacyInstallPath);
       }
