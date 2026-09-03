@@ -10,7 +10,9 @@ import {
   IconButton,
   Tooltip,
   Typography,
-  useTheme
+  useTheme,
+  Snackbar,
+  Alert
 } from '@mui/material';
 import { Close as CloseIcon, ContentCopy as CopyIcon } from '@mui/icons-material';
 import Editor, { loader } from '@monaco-editor/react';
@@ -68,8 +70,11 @@ const DialogSourceViewDialog: React.FC<DialogSourceViewDialogProps> = ({
     }
   }, [open, dialogName, semanticModel, codeSettings]);
 
+  const [copied, setCopied] = useState(false);
+
   const handleCopy = () => {
     navigator.clipboard.writeText(code);
+    setCopied(true);
   };
 
   return (
@@ -120,6 +125,9 @@ const DialogSourceViewDialog: React.FC<DialogSourceViewDialogProps> = ({
       <DialogActions>
         <Button onClick={onClose}>Close</Button>
       </DialogActions>
+      <Snackbar open={copied} autoHideDuration={2000} onClose={() => setCopied(false)}>
+        <Alert severity="success" onClose={() => setCopied(false)}>Copied to clipboard</Alert>
+      </Snackbar>
     </Dialog>
   );
 };

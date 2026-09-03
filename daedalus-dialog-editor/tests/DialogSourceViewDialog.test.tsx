@@ -1,11 +1,12 @@
 /**
  * The source view dialog's title: `DialogTitle` is already an `h2`, and an
  * `h6` Typography inside it was a heading inside a heading — a live
- * `validateDOMNesting` warning (2026-07 review 5.7a).
+ * `validateDOMNesting` warning (2026-07 review 5.7a). And its copy button gave
+ * no feedback at all (5.7b).
  */
 
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import DialogSourceViewDialog from '../src/renderer/components/DialogSourceViewDialog';
 
@@ -34,5 +35,17 @@ describe('DialogSourceViewDialog', () => {
     const nesting = consoleError.mock.calls.filter((args) => String(args[0]).includes('validateDOMNesting'));
     expect(nesting).toEqual([]);
     consoleError.mockRestore();
+  });
+
+  it('copy shows a confirmation', async () => {
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    render(<DialogSourceViewDialog open onClose={jest.fn()} dialogName="DIA_X" semanticModel={MODEL} />);
+    await waitFor(() => expect(screen.getByTestId('monaco-stub')).toHaveTextContent('generated DIA_X'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy to clipboard' }));
+
+    expect(writeText).toHaveBeenCalledWith('// generated DIA_X');
+    expect(await screen.findByRole('alert')).toHaveTextContent(/copied/i);
   });
 });
