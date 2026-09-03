@@ -19,12 +19,14 @@ import {
   matchVobs,
   moveWaypoint, pasteVobs, placeBounds, removeVobFromFolder, renameFolder, renameWaypoint,
   renumbersPaths,
-  reparentVob, rotateVob, rotateVobs, setVobClassProp, setVobProp, setVobProps, topLevelVobs,
+  reparentVob, rotateVob, rotateVobs, scatterVobs, setVobClassProp, setVobProp, setVobProps,
+  strokeCandidates, topLevelVobs,
   translateVobs, vobAtIndexPath, vobIndexPath,
   addToCategory, assetKey, emptyAssetCatalog, mergeCatalogs, parseAssetCatalog, removeFromCategory,
   toggleFavorite, visualsOf,
   type AddVob,
   type AuthorableVobClass, type ClassProps, type NewVob, type ReadProps,
+  type ScatterPlacement,
   type VobProps, type VobReader, type VobSubtree,
   type ZenBounds,
   type ZenPosition, type ZenRotation,
@@ -157,6 +159,25 @@ interface WorldSurfaceProps {
  * broken layer rather than as the hour it is.
  */
 const DEFAULT_SPAWN_TIME = 8 * 60;
+
+/**
+ * The scatter brush's defaults and its cap, all in ZenGin centimetres
+ * (level-editor.md §16.25).
+ *
+ * 8 m across with 2.5 m between trunks is a copse rather than a hedge, which is
+ * the shape the tool was asked for — and both are fields, so the numbers only
+ * have to be a sane place to start rather than right.
+ *
+ * **The cap is not a preference and is deliberately not a field.** A stroke is
+ * one batch and therefore one undo entry, and neither §15's undo bar nor the
+ * structural re-read (§16.24's two rebuilds per paste is the same machinery)
+ * has ever been shown a batch this size, let alone the thousands one drag over
+ * a hillside would otherwise produce. Raising it is a measurement somebody has
+ * to make, not a number a user should be able to type.
+ */
+const SCATTER_DEFAULT_RADIUS = 800;
+const SCATTER_DEFAULT_SPACING = 250;
+const SCATTER_LIMIT = 200;
 
 const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const status = useWorldStore((s) => s.status);
@@ -1422,6 +1443,99 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   }, [commitOps, boundsOf, readClassProps]);
 
   /**
+   * The scatter brush (level-editor.md §16.25) — off until the toolbar toggle
+   * is pressed, and **paints with the selection**: the palette is assembled by
+   * selecting a handful of already-placed VOBs rather than from a typed name or
+   * a stored blob, so there is nothing to persist and nothing to keep in sync
+   * with a world that can be closed under it.
+   */
+  const [scatterOn, setScatterOn] = useState(false);
+  const [scatterRadius, setScatterRadius] = useState(SCATTER_DEFAULT_RADIUS);
+  const [scatterSpacing, setScatterSpacing] = useState(SCATTER_DEFAULT_SPACING);
+
+  /**
+   * A finished brush stroke, committed as **one batch and therefore one undo
+   * entry** — which is the whole reason the stroke is capped (§16.25, the
+   * density decision): §15's undo bar and the structural re-read have never
+   * been shown a batch of thousands, and a stroke over a hillside is one
+   * gesture away from that.
+   *
+   * The three layers meet here. `strokeCandidates` says where to try, knowing
+   * nothing of the world; each try is raycast **down from a candidate lifted by
+   * the brush radius**, so a candidate that fell uphill of the cursor still
+   * finds the ground above it rather than the inside of the slope; and
+   * `scatterVobs` turns the survivors into ordinary `AddVob`s.
+   *
+   * A candidate that hits nothing is dropped, not refused — the brush is a
+   * disc and the ground under it is not, so a stroke along a ridge legitimately
+   * throws half its tries away. That is the same rule a drop-to-ground follows
+   * for a VOB over the sky.
+   */
+  const handleScatterStroke = useCallback(async (
+    samples: Array<[number, number, number]>,
+  ) => {
+    const { summary: current, selection, editFailed } = useWorldStore.getState();
+    const viewport = viewportRef.current;
+    if (current === null || viewport === null || selection.length === 0) return;
+    // The viewport fires no stroke with a null radius, so this is belt and
+    // braces — but a stroke is delivered from outside React's render path and
+    // can outlive the toggle that allowed it, and what it would commit is 200
+    // VOBs the user did not ask for.
+    if (!scatterOn) return;
+
+    const { reader } = vobModelOf(current);
+    // Pruned as a duplicate prunes it: a member carries its own subtree, so a
+    // parent and its child both selected would paint that child twice.
+    const palette = topLevelVobs(reader, selection);
+    if (palette.length === 0) return;
+
+    const { candidates, capped } = strokeCandidates(
+      samples,
+      { radius: scatterRadius, spacing: scatterSpacing, limit: SCATTER_LIMIT },
+      palette.length,
+      // The seed is the stroke's own: two strokes of the same shape should not
+      // produce the same forest, and `strokeCandidates` is deterministic in it
+      // so a stroke stays reproducible from the one number.
+      Date.now() >>> 0,
+    );
+
+    const placements: ScatterPlacement[] = [];
+    for (const candidate of candidates) {
+      const hit = viewport.raycastDown([
+        candidate.at[0], candidate.at[1] + scatterRadius, candidate.at[2],
+      ]);
+      if (hit === null) continue;
+      placements.push({
+        source: palette[candidate.member],
+        position: hit.point,
+        normal: hit.normal,
+        yaw: candidate.yaw,
+      });
+    }
+    if (placements.length === 0) return;
+
+    const classProps = await readClassProps(reader, palette);
+    const committed = await commitOps(scatterVobs(reader, placements, boundsOf, classProps));
+    // Said only for a stroke that landed: a refusal already has the banner, and
+    // overwriting it with the cap would replace the reason with a footnote.
+    if (committed && capped) {
+      editFailed(`The stroke was capped at ${SCATTER_LIMIT} VOBs — one stroke is one undo entry. Paint it in several passes for more.`);
+    }
+  }, [commitOps, boundsOf, readClassProps, scatterOn, scatterRadius, scatterSpacing]);
+
+  /**
+   * The radius the viewport draws its ring at, and null for a brush that is not
+   * live.
+   *
+   * The brush paints with the selection, so a pressed toggle over an empty
+   * selection is a brush with nothing to place: it stays pressed — clearing a
+   * selection mid-session should not silently turn the tool off — and goes
+   * inert until something is selected again, which is the state the toolbar's
+   * own hint names.
+   */
+  const scatterBrushRadius = scatterOn && selection.length > 0 ? scatterRadius : null;
+
+  /**
    * User-created VOB folders (VOB folders slice) — a virtual grouping kept
    * beside the world file, never a `WorldOp`. `persistFolders` is the one
    * place state is set and the sidecar written; every mutation below goes
@@ -2088,6 +2202,12 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         historyDepth={historyDepth}
         onUndo={() => void runHistory('undo')}
         onRedo={() => void runHistory('redo')}
+        scatterOn={scatterOn}
+        onScatterToggle={() => setScatterOn((on) => !on)}
+        scatterRadius={scatterRadius}
+        scatterSpacing={scatterSpacing}
+        onScatterRadiusChange={setScatterRadius}
+        onScatterSpacingChange={setScatterSpacing}
         summary={summary}
         visuals={visuals}
       />
@@ -2401,6 +2521,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               hiddenVobs={hiddenVobs}
               snapGrid={snapGrid}
               snapAngle={(snapAngleDegrees * Math.PI) / 180}
+              scatterRadius={scatterBrushRadius}
+              onScatterStroke={handleScatterStroke}
               onSelectWaypoint={selectWaypoint}
               onMoveWaypoint={moveWaypointTo}
               paused={hidden}

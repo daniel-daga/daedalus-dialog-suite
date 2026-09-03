@@ -1611,6 +1611,159 @@ function appendedAfter(op: AddVob, ahead: number): AddVob {
 }
 
 /**
+ * One thing a scatter stroke landed — a palette member, and the pose the brush
+ * found for it (level-editor.md §16.25).
+ *
+ * `position` and `normal` are what the viewport's downward raycast answered, so
+ * a placement only exists for a candidate that actually hit something: the
+ * stroke's misses are dropped before this shape is built.
+ */
+export interface ScatterPlacement {
+  /** The palette member being copied, as a flat index into the world. */
+  readonly source: number;
+  /** The ground point the ray hit, in ZenGin space. */
+  readonly position: ZenPosition;
+  /** The surface normal there. Normalised here rather than trusted. */
+  readonly normal: ZenPosition;
+  /** Radians about the world up axis, applied before the normal tilts it. */
+  readonly yaw: number;
+}
+
+/**
+ * A whole scatter stroke as **one batch**, therefore one undo entry
+ * (level-editor.md §16.25).
+ *
+ * It is `duplicateVobs` with a pose, and deliberately nothing more: a scattered
+ * copy is an ordinary `AddVob` carrying a whole description of a VOB, so the op
+ * set, the IPC validator and the binding are all untouched — the same reason
+ * D5's subtree and D3's paste needed none of them either. What it adds over a
+ * duplicate is that each copy lands where the brush hit rather than on top of
+ * its original, turned by the stroke's yaw and stood up on the surface normal.
+ *
+ * **The turn is rigid about the copy's own root.** A palette member may be a
+ * subtree — a torch is a `zCVob` with a fire underneath it — and ZenGin VOB
+ * positions are world-space (`offsetSubtree`), so a root that turned alone
+ * would leave its children behind and a root that moved alone would leave them
+ * standing over the original. Each descendant therefore takes the same rotation
+ * on the left and has its *position* carried through the same transform.
+ *
+ * Each copy goes into its own source's parent, as a duplicate does: a palette
+ * member picked out of a VOB tree group scatters inside that group.
+ *
+ * A source that is not in the index refuses the whole stroke rather than being
+ * skipped, for the reason every other batch here does — a batch is atomic and
+ * is one undo entry.
+ */
+export function scatterVobs(
+  reader: VobReader,
+  placements: readonly ScatterPlacement[],
+  bounds: (vob: number) => ZenBounds | null = () => null,
+  classProps: (vob: number) => ReadProps | null = () => null,
+): Array<AddVob | SetVobClassProp> {
+  // Copies already appended to each list, keyed as `duplicateVobs` keys them —
+  // a stroke is many copies of few sources, so this is the correction that
+  // matters most here.
+  const appended = new Map<string, number>();
+
+  return placements.flatMap(({ source, position, normal, yaw }) => {
+    const from = reader.rotation(source);
+    const origin = reader.position(source);
+    if (from === null || origin === null) throw new RangeError(`no vob ${source} in the index`);
+
+    // Yaw in world space (on the left, `rotateVobs`' convention), then the same
+    // stand-up `alignVobsToNormal` computes — of the *yawed* pose, so the two
+    // compose rather than the tilt undoing the spin.
+    const spin = rotationAboutUp(yaw);
+    const spun = multiplyRotation(spin, from as ZenRotation);
+    const length = Math.hypot(normal[0], normal[1], normal[2]);
+    const unit: ZenPosition = [normal[0] / length, normal[1] / length, normal[2] / length];
+    const stand = rotationBetween([spun[1], spun[4], spun[7]], unit);
+    // The delta the whole subtree moves by — both turns, so a descendant gets
+    // the same one the root does — about the source's origin, landing the root
+    // on the hit point.
+    const pose = { turn: multiplyRotation(stand, spin), origin, at: position };
+
+    const tree = posedSubtree(reader, source, pose, bounds, classProps);
+    const parent = reader.columns.parent[source];
+    const op = addVob(reader, tree.spec, parent < 0 ? null : parent);
+
+    const list = op.parentPath ?? '';
+    const ahead = appended.get(list) ?? 0;
+    appended.set(list, ahead + 1);
+    return subtreeOps(appendedAfter(op, ahead), tree);
+  });
+}
+
+/** A rotation about the world up axis (+Y — the engine is Y-up), row-major. */
+function rotationAboutUp(radians: number): ZenRotation {
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  return [cos, 0, sin, 0, 1, 0, -sin, 0, cos];
+}
+
+/** Where a scatter puts a subtree: turned by `turn` about `origin`, with the
+ *  root landing on `at`. */
+interface ScatterPose {
+  readonly turn: ZenRotation;
+  readonly origin: ZenPosition;
+  readonly at: ZenPosition;
+}
+
+/**
+ * `duplicateVobSubtree`, with every node put through the stroke's pose.
+ *
+ * A separate walk rather than a transform over the tree that function returns,
+ * because the **bbox has to be fitted in the pose the copy lands in** and the
+ * only honest input for that is the node's own visual bounds — which is a
+ * callback keyed by the source VOB, and a `VobSubtree` no longer remembers
+ * which VOB each node came from. Fitting from an already-placed box instead
+ * would grow it on every turn: an axis-aligned box rotated and re-bounded is
+ * strictly larger, and a forest painted a few times over would end up culled by
+ * boxes the size of houses.
+ */
+function posedSubtree(
+  reader: VobReader,
+  vob: number,
+  pose: ScatterPose,
+  bounds: (vob: number) => ZenBounds | null,
+  classProps: (vob: number) => ReadProps | null,
+): VobSubtree {
+  // Read with no bounds: the box this VOB gets is fitted below, in the pose the
+  // scatter puts it in rather than the one it was read from.
+  const read = duplicateVobSpec(reader, vob, null);
+  const rotation = multiplyRotation(pose.turn, read.rotation as ZenRotation);
+  const position = posedPoint(read.position, pose);
+  const box = bounds(vob);
+
+  const spec: NewVob = {
+    ...read,
+    position,
+    rotation,
+    ...(box === null ? {} : { bbox: placeBounds(box, rotation, position) }),
+  };
+  const copied = copiedClassProps(spec, classProps(vob));
+
+  const children: VobSubtree[] = [];
+  for (let child = 0; child < reader.count; child++) {
+    if (reader.columns.parent[child] === vob) {
+      children.push(posedSubtree(reader, child, pose, bounds, classProps));
+    }
+  }
+
+  return { spec, ...(copied === undefined ? {} : { classProps: copied }), children };
+}
+
+/** A world-space point carried through a pose: turned about the stroke's origin
+ *  and landed on its hit point. The root itself comes out exactly on `at`. */
+function posedPoint(point: ZenPosition, { turn, origin, at }: ScatterPose): ZenPosition {
+  const local = [point[0] - origin[0], point[1] - origin[1], point[2] - origin[2]];
+  return [0, 1, 2].map((row) => (
+    turn[row * 3] * local[0] + turn[row * 3 + 1] * local[1] + turn[row * 3 + 2] * local[2]
+      + at[row]
+  )) as unknown as ZenPosition;
+}
+
+/**
  * Paste a clipboard of specs into one list — `parent`'s children, or the roots
  * (level-editor.md §16.14, D3).
  *

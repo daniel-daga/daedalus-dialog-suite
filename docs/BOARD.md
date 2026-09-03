@@ -172,10 +172,6 @@ below it.
   `<project>.assets.json` sidecar and the chest-contents editor are all
   landed. Unwitnessed: the thumbnails' look, and a written `contents` in the
   engine. §16.26
-- **Scatter placement, past Spacer rather than parity** — the missing scale
-  field doesn't block it, the palette is a multi-VOB selection, and models
-  come from the assets (same picker-wiring prerequisite as the row above).
-  Still undecided: density/undo-bar size, erase. Benched until decided. §16.25
 
 **Engine round-trip**
 
@@ -235,6 +231,12 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
   `measure-viewport.js` against retail NEWWORLD (opened in 1.8 s, 197 fps,
   `valid: true`). Their default `--world` is stale on this machine and now
   says so in `environment-hazards.md`. §16.28
+- **Scatter placement, past Spacer rather than parity — landed 2026-09-03.**
+  All four decisions settled (spacing + a 200 cap, no erase, random yaw +
+  ground align, palette rebuilt per stroke); the ring is draped on the mesh
+  per Daniel's ask. Unwitnessed: how a stroke looks, and the drape's cost on
+  a real GPU. Erase is the one piece still wanted — blocked on giving
+  `DeleteVob` an inverse. §16.25
 - **The asset-source list, all three parts** — ordered list in the project
   file (replacing `gothicInstallPath`, bounds 128 entries / 4096 chars),
   `modSources` wired, and world opening moved onto the same list

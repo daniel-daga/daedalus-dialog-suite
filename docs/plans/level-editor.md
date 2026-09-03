@@ -3209,32 +3209,117 @@ in the op set, the validator or the binding has to change. That is the reason to
 believe the estimate: the work is a brush *interaction* over machinery that
 exists, not a new op.
 
-**What is undecided, and none of it is small.**
+**Landed 2026-09-03.** The four open decisions were settled by Daniel that day
+and the tool was built the same session; what follows the decision list is the
+record of what it became. The three that shaped it: **spacing plus a capped
+batch** (a stroke is one batch, so the cap bounds what §15's undo bar is
+handed), **no erase** (`DeleteVob` is the one op with no inverse and a history
+barrier — an erase that cleared the undo history was judged worse than none),
+and **random yaw plus ground align** (no scale: `zCVob` has no scale field).
+The fourth, whether the palette persists across strokes, was decided in the
+build: **it does not**. The palette is read off the live selection every
+stroke, so there is nothing to store, nothing to migrate, and nothing that can
+name a VOB the world no longer holds.
+
+**Three layers, split by what each one is able to answer.**
+
+1. `zen-world/src/model/scatter.ts` — `strokeCandidates` turns the raw pointer
+   stream into candidate positions, each with a yaw and a palette member. It
+   cannot see the world, so every candidate is a *guess*. It decimates the
+   samples itself, at a quarter of the radius, because the decimation distance
+   is a function of a setting rather than of anything a pointer handler holds;
+   it draws from a seeded `mulberry32`, so a stroke is reproducible from one
+   number; and **it applies the cap**, before a single ray is cast, because the
+   cap exists to bound the batch rather than the work.
+2. `WorldViewport` — one downward raycast per candidate, it being the only
+   layer holding a BVH. **Lifted by the brush radius before the ray is cast**:
+   a candidate that fell uphill of the cursor has its ground *above* the
+   cursor, and a ray from the sample height would pass through the slope and
+   report the far side of the hill.
+3. `scatterVobs` in `ops.ts` — the survivors become one batch of ordinary
+   `AddVob`s. **No op, no validator branch, no binding change**, which is the
+   same reason D5's subtree and D3's paste needed none: `AddVob` already
+   carries a whole description of a VOB and already inverts to a delete.
+
+**What `scatterVobs` adds over `duplicateVobs` is the pose, and it is rigid
+about each copy's own root.** A palette member may be a subtree — a torch is a
+`zCVob` with a fire under it — and ZenGin VOB positions are world-space, so a
+root turned alone leaves its children behind and a root moved alone leaves them
+standing over the original. Every descendant therefore takes the same rotation
+on the left and has its position carried through the same transform.
+`posedSubtree` is a separate walk rather than a transform over what
+`duplicateVobSubtree` returns, because **the bbox has to be fitted in the pose
+the copy lands in**: refitting from an already-placed box would grow it every
+time — an axis-aligned box rotated and re-bounded is strictly larger — and a
+forest painted over a few times would end up culled by boxes the size of
+houses.
+
+**The cursor is draped over the mesh, not flat, and that is the second thing a
+person asked for** (Daniel, 2026-09-03: "project the circle of influence on the
+world mesh as a thin line akin to the outline shader"). `ScatterRing` finds
+each of its 48 vertices by its own downward ray — the *same* ray a placement
+makes — so the ring is a prediction rather than a decoration. A flat disc in
+the tangent plane is what it was built as first, and it is wrong in exactly the
+terrain the brush is for: on a hillside it cuts through the hill on one side
+and floats over the valley on the other. A vertex with no ground under it falls
+back to the cursor's own plane rather than breaking the loop, because a broken
+ring reads as a rendering fault where a closed one reads as "the brush reaches
+here and there is nothing under it". The vertices are written in world space
+with the object's own transform left at identity: a draped ring is no longer a
+rigid circle, and no single position and rotation describes it.
+
+**What is not there, and none of it is an oversight.** No preview during the
+stroke — the placements appear on mouse-up, in one batch, and the ring is the
+only feedback before then. No erase, by the decision above. No scale variation,
+there being no field to vary. The cap is 200 and is deliberately **not** a
+toolbar field: raising it is a measurement somebody has to make against the
+undo bar and the structural re-read, not a number a user should be able to
+type.
+
+**Unwitnessed:** how a painted stroke actually looks, and whether 48 segments
+of ring re-draped on every pointermove stay smooth on a real GPU over retail
+terrain — the ring's geometry is asserted against a fake ground in
+`ScatterRing.test.ts`, and nothing in jsdom draws a pixel. Also unwitnessed in
+an engine: a scattered subtree, though it reaches the world down the same
+`AddVob` path Gate 2b witnessed for the 27 authorable classes.
+
+**What was undecided when this was carded, and how each was settled.**
 
 - **What the brush paints — partly settled 2026-09-02 (Daniel).** The palette
   is assembled by selecting a handful of already-placed VOBs in the scene as
   the scatter set, not a typed name or a stored settings blob — the tool reads
   its distribution off a selection rather than off a separate palette editor.
-  Whether that selection is remembered across strokes/sessions or rebuilt every
-  time is still open.
+  **Settled in the build 2026-09-03: rebuilt every stroke**, off the live
+  selection, so nothing is remembered and nothing can name a VOB the world no
+  longer holds.
 - **Where the models come from — confirmed 2026-09-02 (Daniel): the assets.**
   Same source as everywhere else, no separate model list — the palette is
   drawn from the VFS asset namespace `WorldAssetBrowser` already walks. That
-  still leaves the prerequisite unchanged: the browser previews textures, not
-  meshes, and feeds no field, so the mesh preview and the picker wiring
-  §16.26 row 1 still wants come first.
+  **That prerequisite closed 2026-09-01/02/03** — mesh preview, the "Use as
+  visual" picker and the thumbnail grid all landed (§16.26 row 1), which is
+  what unblocked this card. Note what the brush actually does with it: the
+  palette is *placed VOBs*, so a model reaches a stroke by being placed once
+  and selected, and the asset browser is how it got placed.
 - **Randomisation, and its reproducibility — the scale half dropped 2026-09-02
   (Daniel): not needed.** `zCVob` **has no scale field** (§14.1's "Not a gap"),
   so size variation was never available; Daniel does not consider that a
-  blocker. Rotation about the up axis is still open, and no longer coupled to
-  a scale decision that isn't coming.
-- **Density and the undo entry.** One stroke over a hillside is plausibly
-  hundreds of VOBs in one batch; §15's undo bar has never been shown a batch
-  that size, and neither has the structural re-read path (§16.24's two rebuilds
-  per paste is the same machinery).
-- **Erase.** The natural inverse of a paint stroke is a delete stroke, and
-  `DeleteVob` is the one op with no inverse and a history barrier (§14.1 1.1).
-  A scatter tool whose erase clears the undo history is worse than no erase.
+  blocker. **Rotation about the up axis settled 2026-09-03 (Daniel): random
+  yaw, then align to the surface normal** — the yaw and the stand-up compose
+  in that order, and a seeded RNG makes the whole stroke reproducible.
+- **Density and the undo entry — settled 2026-09-03 (Daniel): a spacing
+  slider and a hard cap of 200 per stroke.** The concern stands exactly as
+  written — §15's undo bar has never been shown a batch that size, and neither
+  has the structural re-read path (§16.24's two rebuilds per paste is the same
+  machinery) — so the cap is what keeps a stroke inside sizes that *have* been
+  shown. Raising it is a measurement, not a preference, which is why it is a
+  constant and not a field.
+- **Erase — settled 2026-09-03 (Daniel): not in this version.** The reasoning
+  is unchanged and is why: the natural inverse of a paint stroke is a delete
+  stroke, `DeleteVob` is the one op with no inverse and a history barrier
+  (§14.1 1.1), and a scatter tool whose erase clears the undo history is worse
+  than no erase. **This is the one piece of the tool still wanted**, and it is
+  blocked on giving `DeleteVob` an inverse rather than on anything about the
+  brush.
 
 **A second gap the same check surfaced, unscheduled and not carded:** a
 mesh-capable model browser wired as a picker into `insertVob` and

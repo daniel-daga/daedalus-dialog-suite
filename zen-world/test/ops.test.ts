@@ -48,6 +48,7 @@ import {
   renumbersPaths,
   rotateVob,
   rotateVobs,
+  scatterVobs,
   setVobClassProp,
   setVobProp,
   setVobProps,
@@ -3089,5 +3090,193 @@ describe('the VOB at an index path', () => {
     expect(vobAtIndexPath(live, '1/0')).toBeNull();
     expect(vobAtIndexPath(live, '')).toBeNull();
     expect(vobAtIndexPath(live, 'x')).toBeNull();
+  });
+});
+
+describe('a scatter stroke', () => {
+  // The scatter brush's op half (level-editor.md §16.25). A stroke is N copies
+  // of palette VOBs at ground points the viewport raycast, in **one batch** and
+  // therefore one undo entry — which is the same shape a duplicate already has,
+  // and the reason no op, no validator branch and no binding change is needed.
+  //
+  // What a scatter does that a duplicate does not is *pose* each copy: a
+  // duplicate lands exactly where its original stands, and a scattered copy
+  // lands where the brush hit, turned by a random yaw and tilted onto the
+  // surface normal. That posing is the whole of what these assert.
+  //
+  //  vob 0 (root 0) ── vob 1        a two-VOB palette member, e.g. a torch
+  //  vob 2 (root 1)                 a one-VOB member
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0, name: 'TREE', visual: 'TREE.3DS', pos: [0, 0, 0] },
+    { parent: 0, childIndex: 0, name: 'LEAVES', visual: 'LEAF.3DS', pos: [0, 100, 0] },
+    { childIndex: 1, name: 'ROCK', visual: 'ROCK.3DS', pos: [500, 0, 0] },
+  ]));
+
+  const UP: [number, number, number] = [0, 1, 0];
+
+  it('places one copy of the named source at the ground point', () => {
+    const ops = scatterVobs(reader(), [
+      { source: 2, position: [1000, 50, 2000], normal: UP, yaw: 0 },
+    ]);
+
+    expect(ops).toHaveLength(1);
+    expect(ops[0]).toMatchObject({
+      op: 'AddVob', path: '2', parentPath: null, from: null,
+    });
+    expect(addsOf(ops)[0].to).toMatchObject({
+      name: 'ROCK', visual: 'ROCK.3DS', position: [1000, 50, 2000],
+    });
+  });
+
+  it('turns the copy by its yaw about the world up axis', () => {
+    const ops = scatterVobs(reader(), [
+      { source: 2, position: [0, 0, 0], normal: UP, yaw: Math.PI / 2 },
+    ]);
+
+    // Row-major Ry(90°): +X goes to -Z, which is a quarter turn and not a
+    // mirror — the sign is the half of this worth asserting.
+    const turned = addsOf(ops)[0].to!.rotation!;
+    expect(turned[0]).toBeCloseTo(0);
+    expect(turned[2]).toBeCloseTo(1);
+    expect(turned[6]).toBeCloseTo(-1);
+    expect(turned[8]).toBeCloseTo(0);
+    expect(turned[4]).toBeCloseTo(1);
+  });
+
+  it('stands the copy up on the surface normal', () => {
+    // A 45° slope. The copy's local +Y — the rotation's middle column — has to
+    // come out along it, which is what `alignVobsToNormal` does for a selection
+    // and what makes scattered foliage follow a hillside.
+    const slope: [number, number, number] = [Math.SQRT1_2, Math.SQRT1_2, 0];
+    const ops = scatterVobs(reader(), [
+      { source: 2, position: [0, 0, 0], normal: slope, yaw: 0 },
+    ]);
+
+    const rotation = addsOf(ops)[0].to!.rotation!;
+    const localUp = [rotation[1], rotation[4], rotation[7]];
+    expect(localUp[0]).toBeCloseTo(slope[0]);
+    expect(localUp[1]).toBeCloseTo(slope[1]);
+    expect(localUp[2]).toBeCloseTo(slope[2]);
+  });
+
+  it('normalises a normal that is not unit length', () => {
+    // The viewport hands over `face.normal` through a matrix, so it is unit
+    // length in practice — but a scatter that silently skewed every copy on a
+    // mirrored mesh is the kind of thing nobody sees until a whole forest is
+    // wrong.
+    const ops = scatterVobs(reader(), [
+      { source: 2, position: [0, 0, 0], normal: [0, 17, 0], yaw: 0 },
+    ]);
+
+    expect(addsOf(ops)[0].to!.rotation).toEqual([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+  });
+
+  it('carries a palette member whole subtree, moved rigidly with it', () => {
+    // ZenGin VOB positions are world-space, so a root moved on its own leaves
+    // its children standing over the original — the trap `offsetSubtree`
+    // already names for a paste.
+    const ops = scatterVobs(reader(), [
+      { source: 0, position: [1000, 0, 0], normal: UP, yaw: 0 },
+    ]);
+
+    expect(addsOf(ops).map((op) => [op.path, op.parentPath, op.to!.name])).toEqual([
+      ['2', null, 'TREE'],
+      ['2/0', '2', 'LEAVES'],
+    ]);
+    // The leaves were 100 above the trunk and still are.
+    expect(addsOf(ops)[1].to!.position).toEqual([1000, 100, 0]);
+  });
+
+  it('turns a subtree about its own root, not about the world origin', () => {
+    // The fixture child is offset along +Y, so a yaw leaves it where it is; the
+    // one that would catch a rotation applied about the origin is a child
+    // offset horizontally.
+    const offset = createVobReader(vobIndex([
+      { childIndex: 0, name: 'POST', pos: [0, 0, 0] },
+      { parent: 0, childIndex: 0, name: 'SIGN', pos: [100, 0, 0] },
+    ]));
+    const ops = scatterVobs(offset, [
+      { source: 0, position: [7000, 0, 7000], normal: UP, yaw: Math.PI / 2 },
+    ]);
+
+    // +X about world up by 90° is -Z, measured from the root's new position.
+    const sign = addsOf(ops)[1].to!.position;
+    expect(sign[0]).toBeCloseTo(7000);
+    expect(sign[1]).toBeCloseTo(0);
+    expect(sign[2]).toBeCloseTo(6900);
+  });
+
+  it('appends several copies of one source without colliding on a slot', () => {
+    // The correction `duplicateVobs` needs, for the same reason: `addVob`
+    // resolves the slot against the world as it was, so a batch of copies into
+    // one list would all claim it and `writeOp` would refuse every one but the
+    // first.
+    const ops = scatterVobs(reader(), [
+      { source: 2, position: [0, 0, 0], normal: UP, yaw: 0 },
+      { source: 2, position: [100, 0, 0], normal: UP, yaw: 0 },
+      { source: 2, position: [200, 0, 0], normal: UP, yaw: 0 },
+    ]);
+
+    expect(addsOf(ops).map((op) => op.path)).toEqual(['2', '3', '4']);
+  });
+
+  it('appends a copy beside its own source, under that source parent', () => {
+    // A palette member picked out of a VOB tree group keeps the grouping, which
+    // is the behaviour a duplicate already has.
+    const ops = scatterVobs(reader(), [
+      { source: 1, position: [0, 0, 0], normal: UP, yaw: 0 },
+    ]);
+
+    expect(ops[0]).toMatchObject({ path: '0/1', parentPath: '0' });
+  });
+
+  it('fits each copy a box in the pose it landed in', () => {
+    const bounds = (vob: number): ZenBounds | null => (
+      vob === 2 ? [-10, 0, -10, 10, 200, 10] : null
+    );
+    const ops = scatterVobs(reader(), [
+      { source: 2, position: [1000, 50, 2000], normal: UP, yaw: 0 },
+    ], bounds);
+
+    expect(addsOf(ops)[0].to!.bbox).toEqual(placeBounds(
+      [-10, 0, -10, 10, 200, 10], [1, 0, 0, 0, 1, 0, 0, 0, 1], [1000, 50, 2000],
+    ));
+  });
+
+  it('carries the class properties, as a duplicate does', () => {
+    const lights = createVobReader(vobIndex([
+      { name: 'TORCH', cls: 'zCVobLight', pos: [0, 0, 0] },
+    ]));
+    const props = (): ReadProps => ({ range: 900, color: [255, 200, 100, 255] });
+    const ops = scatterVobs(lights, [
+      { source: 0, position: [10, 20, 30], normal: UP, yaw: 0 },
+    ], () => null, props);
+
+    expect(ops.map((op) => op.op)).toEqual(['AddVob', 'SetVobClassProp']);
+    expect(ops[1]).toMatchObject({
+      op: 'SetVobClassProp', path: '1', className: 'zCVobLight',
+      to: { range: 900, color: [255, 200, 100, 255] },
+    });
+  });
+
+  it('is a batch of pure appends, so it commits as one undo entry', () => {
+    const ops = scatterVobs(reader(), [
+      { source: 2, position: [0, 0, 0], normal: UP, yaw: 0 },
+      { source: 0, position: [100, 0, 0], normal: UP, yaw: 1 },
+    ]);
+
+    expect(ops.every((op) => op.op === 'AddVob' || op.op === 'SetVobClassProp')).toBe(true);
+    expect(ops.some((op) => isBarrierOp(op as WorldOp))).toBe(false);
+  });
+
+  it('refuses the whole stroke when a source is not in the index', () => {
+    expect(() => scatterVobs(reader(), [
+      { source: 0, position: [0, 0, 0], normal: UP, yaw: 0 },
+      { source: 99, position: [0, 0, 0], normal: UP, yaw: 0 },
+    ])).toThrow(/99/);
+  });
+
+  it('emits nothing for a stroke that placed nothing', () => {
+    expect(scatterVobs(reader(), [])).toEqual([]);
   });
 });

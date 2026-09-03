@@ -5,6 +5,7 @@ import {
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ExploreIcon from '@mui/icons-material/Explore';
+import GrassIcon from '@mui/icons-material/Grass';
 import RedoIcon from '@mui/icons-material/Redo';
 import UndoIcon from '@mui/icons-material/Undo';
 import VerticalAlignBottomIcon from '@mui/icons-material/VerticalAlignBottom';
@@ -50,12 +51,22 @@ export interface WorldEditControlsProps {
   historyDepth: { undo: number; redo: number };
   onUndo: () => void;
   onRedo: () => void;
+  /** The scatter brush (level-editor.md §16.25) — pressed or not, and the two
+   *  numbers that shape a stroke, both in ZenGin centimetres. */
+  scatterOn: boolean;
+  onScatterToggle: () => void;
+  scatterRadius: number;
+  scatterSpacing: number;
+  onScatterRadiusChange: (radius: number) => void;
+  onScatterSpacingChange: (spacing: number) => void;
 }
 
 const WorldEditControls: React.FC<WorldEditControlsProps> = ({
   hasWorld, gizmoMode, onGizmoModeChange, snapGrid, snapAngleDegrees, onSnapStepChange,
   selectionCount, onDropToGround, onAlignToNormal, onDuplicate, onDeleteRequest,
   historyDepth, onUndo, onRedo,
+  scatterOn, onScatterToggle, scatterRadius, scatterSpacing,
+  onScatterRadiusChange, onScatterSpacingChange,
 }) => (
   <>
     {/* Always rendered, never conditionally mounted on `hasWorld` — a
@@ -163,6 +174,61 @@ const WorldEditControls: React.FC<WorldEditControlsProps> = ({
         </IconButton>
       </span>
     </Tooltip>
+    {/* The scatter brush (§16.25) — a tool no ZenGin editor has, so there is
+        no muscle memory to match and the affordances have to say what it is.
+        It paints with the *selection*, which is why it is disabled without
+        one and why the tooltip names the palette rather than the tool: the
+        thing a first-time user has to be told is that selecting the trees
+        comes first. The two fields appear only while it is on — they are
+        meaningless otherwise, and the bar is crowded. */}
+    <Stack direction="row" spacing={0.5} alignItems="center">
+      <Tooltip
+        title={selectionCount === 0
+          ? 'Scatter brush — select the VOBs to paint with first'
+          : `Scatter brush: paint with ${selectionCount === 1 ? 'the selected VOB' : `${selectionCount} selected VOBs`}`}
+      >
+        <span>
+          <ToggleButton
+            size="small"
+            value="scatter"
+            selected={scatterOn}
+            disabled={!hasWorld || selectionCount === 0}
+            onChange={onScatterToggle}
+            data-testid="world-scatter-toggle"
+            aria-label="Scatter brush"
+            sx={{ py: 0.25, px: 1 }}
+          >
+            <GrassIcon fontSize="small" />
+          </ToggleButton>
+        </span>
+      </Tooltip>
+      {scatterOn && (
+        <>
+          <Tooltip title="Brush radius (cm)">
+            <TextField
+              size="small"
+              type="number"
+              value={scatterRadius}
+              onChange={(event) => onScatterRadiusChange(Number(event.target.value))}
+              aria-label="Brush radius"
+              sx={{ width: 80, '& .MuiInputBase-input': { py: 0.5, fontSize: 12 } }}
+              data-testid="world-scatter-radius"
+            />
+          </Tooltip>
+          <Tooltip title="Closest two placements may stand (cm)">
+            <TextField
+              size="small"
+              type="number"
+              value={scatterSpacing}
+              onChange={(event) => onScatterSpacingChange(Number(event.target.value))}
+              aria-label="Brush spacing"
+              sx={{ width: 80, '& .MuiInputBase-input': { py: 0.5, fontSize: 12 } }}
+              data-testid="world-scatter-spacing"
+            />
+          </Tooltip>
+        </>
+      )}
+    </Stack>
     {/* The one destructive edit in the surface, and the only one behind a
         confirm. Exactly one VOB, never a selection: it renumbers, so each
         would need its own batch, and a button that removed only the

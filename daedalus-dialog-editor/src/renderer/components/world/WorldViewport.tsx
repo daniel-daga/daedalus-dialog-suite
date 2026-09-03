@@ -16,6 +16,7 @@ import { WaynetOverlay } from '../../world/WaynetOverlay';
 import { SpawnOverlay } from '../../world/SpawnOverlay';
 import type { RoutineIndex } from '../../routines/routineSchedule';
 import { TerrainMarker, PIVOT_COLOR, PIVOT_SIZE } from '../../world/TerrainMarker';
+import { ScatterRing } from '../../world/ScatterRing';
 import {
   SELECTED_ATTRIBUTE, WorldScene, textureCacheFor, type TextureCache,
 } from '../../world/WorldScene';
@@ -256,6 +257,26 @@ export interface WorldViewportProps {
    *  free-form turn. Also applied to the delta, and for a stronger reason: an
    *  absolute angle is not something this app can read off a VOB. */
   snapAngle: number;
+  /**
+   * The scatter brush's radius in **ZenGin centimetres**, or null while the
+   * brush is off (level-editor.md §16.25).
+   *
+   * The radius rather than a boolean because the viewport needs it for the ring
+   * cursor and for nothing else: *what* a stroke places is the surface's
+   * business, and the whole of what this side does is draw the footprint and
+   * report where the cursor went.
+   */
+  scatterRadius: number | null;
+  /**
+   * A finished brush stroke — every surface point the cursor passed over while
+   * the left button was down, in **ZenGin space**, in the order they were
+   * sampled.
+   *
+   * Raw and undecimated: `strokeCandidates` decimates by a distance derived
+   * from the radius, which is a setting rather than something a pointer handler
+   * holds. A stroke that never left the sky reports nothing at all.
+   */
+  onScatterStroke: (samples: Array<[number, number, number]>) => void;
   /** A click that hit a waypoint in the overlay. */
   onSelectWaypoint: (waypoint: number | null) => void;
   /**
@@ -372,6 +393,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   showWaypointNames, loadTexture, onPick, onVobContextMenu,
   selection, onTranslateSelection, gizmoMode, onRotateSelection, appliedOps,
   selectedWaypoint, terrainPoint, exposure, hiddenVobs, snapGrid, snapAngle,
+  scatterRadius, onScatterStroke,
   onSelectWaypoint, onMoveWaypoint, paused = false,
 }, ref) => {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -435,6 +457,13 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   gizmoModeRef.current = gizmoMode;
   const snapAngleRef = useRef(snapAngle);
   snapAngleRef.current = snapAngle;
+  // The brush is read from pointer handlers built once per world, so switching
+  // it on must not rebuild the scene — the same reason the snap steps are refs.
+  const scatterRadiusRef = useRef(scatterRadius);
+  scatterRadiusRef.current = scatterRadius;
+  const onScatterStrokeRef = useRef(onScatterStroke);
+  onScatterStrokeRef.current = onScatterStroke;
+  const scatterRingRef = useRef<ScatterRing | null>(null);
   // The overlay is only pickable while it is on screen, and the scene effect
   // does not re-run when it is toggled.
   const showWaynetRef = useRef(showWaynet);
@@ -976,6 +1005,142 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       lastPick = (lastPick ?? new THREE.Vector3()).copy(at);
     };
 
+    // ── the scatter brush (level-editor.md §16.25) ──────────────────────────
+    //
+    // The left button is free for this: `attachBlenderNav` maps LEFT to null, so
+    // nothing here has to fight OrbitControls for it, and the only other thing a
+    // left press can land on is a gizmo axis. That one is real — the palette
+    // *is* the selection, so the gizmo is standing exactly where the user is
+    // about to paint — and it is settled the way a nav press settles it, by
+    // switching the gizmo off for the length of the stroke.
+    //
+    // What the brush emits is where the cursor went and nothing else. It does
+    // not know the palette, the spacing or the seed; `WorldSurface` turns a
+    // stroke into candidates, raycasts them and commits the batch.
+    const scatterRing = new ScatterRing();
+    scatterRingRef.current = scatterRing;
+    world.root.add(scatterRing.root);
+
+    const brushPointer = new THREE.Vector2();
+    const brushRaycaster = new THREE.Raycaster();
+    brushRaycaster.firstHitOnly = true;
+    /** The stroke in hand, or null when the button is up. */
+    let stroke: Array<[number, number, number]> | null = null;
+    /** Consumed by the click that ends a stroke, exactly as `endedDrag` is. */
+    let painted = false;
+    let gizmoBeforeStroke: boolean | null = null;
+
+    /** What is under the cursor, in ZenGin space — the same conversion
+     *  `raycastDown` makes, against the same meshes. */
+    const brushHit = (event: PointerEvent): {
+      point: [number, number, number]; normal: [number, number, number];
+    } | null => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      brushPointer.set(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      brushRaycaster.setFromCamera(brushPointer, camera);
+      const hit = brushRaycaster.intersectObjects(world.worldMeshes, false)[0];
+      if (!hit || !hit.face) return null;
+
+      const normal = hit.face.normal.clone()
+        .transformDirection(hit.object.matrixWorld).normalize();
+      return {
+        point: threeToZen(hit.point.toArray() as [number, number, number]),
+        normal: threeToZen(normal.toArray() as [number, number, number]),
+      };
+    };
+
+    const onBrushDown = (event: PointerEvent) => {
+      if (scatterRadiusRef.current === null || walk !== null) return;
+      // Alt+left is the emulated middle button, so a modified press is a
+      // navigation and never a stroke — the brush must not take the one gesture
+      // a trackpad orbits with.
+      if (event.button !== 0 || navFor(event) !== 'none') return;
+
+      const hit = brushHit(event);
+      if (hit === null) return;
+
+      stroke = [hit.point];
+      painted = true;
+      gizmoBeforeStroke = transform.enabled;
+      transform.enabled = false;
+      // Ahead of the gizmo and the picker, both of which listen on the canvas.
+      event.stopPropagation();
+      renderer.domElement.setPointerCapture(event.pointerId);
+    };
+
+    /**
+     * The ground at a horizontal position, for the ring's drape — the same
+     * downward ray a placement makes, so the ring predicts rather than
+     * decorates.
+     *
+     * It starts a radius above the cursor's own height for the reason the
+     * placements do: a vertex uphill of the cursor has its ground *above* the
+     * cursor, and a ray from the cursor's height would pass through the inside
+     * of the slope and report the far side of the hill.
+     */
+    const brushGround = (from: number, lift: number) => (x: number, z: number) => {
+      const origin = zenToThree([x, from + lift, z]);
+      brushRaycaster.set(
+        new THREE.Vector3(...origin),
+        new THREE.Vector3(...zenToThree([0, -1, 0])).normalize(),
+      );
+      const hit = brushRaycaster.intersectObjects(world.worldMeshes, false)[0];
+      if (!hit || !hit.face) return null;
+
+      const normal = hit.face.normal.clone()
+        .transformDirection(hit.object.matrixWorld).normalize();
+      return {
+        y: threeToZen(hit.point.toArray() as [number, number, number])[1],
+        normal: threeToZen(normal.toArray() as [number, number, number]),
+      };
+    };
+
+    const onBrushMove = (event: PointerEvent) => {
+      const radius = scatterRadiusRef.current;
+      if (radius === null) return;
+
+      const hit = brushHit(event);
+      if (hit === null) {
+        // Off the mesh: no footprint to show, and a stale ring would be a lie
+        // about where a press would land. The stroke itself is not ended — a
+        // cursor crossing the sky between two hillsides is one stroke.
+        scatterRing.hide();
+        return;
+      }
+
+      scatterRing.moveTo(hit.point, hit.normal, radius, brushGround(hit.point[1], radius));
+      if (stroke !== null) {
+        stroke.push(hit.point);
+        event.stopPropagation();
+      }
+    };
+
+    const onBrushUp = (event: PointerEvent) => {
+      if (stroke === null) return;
+      const samples = stroke;
+      stroke = null;
+      if (gizmoBeforeStroke !== null) {
+        transform.enabled = gizmoBeforeStroke;
+        gizmoBeforeStroke = null;
+      }
+      event.stopPropagation();
+      if (renderer.domElement.hasPointerCapture(event.pointerId)) {
+        renderer.domElement.releasePointerCapture(event.pointerId);
+      }
+      onScatterStrokeRef.current(samples);
+    };
+
+    host.addEventListener('pointerdown', onBrushDown, { capture: true });
+    // On the window rather than the host: a stroke that runs off the edge of
+    // the canvas and comes back is one stroke, and a button released outside it
+    // still has to commit what was painted.
+    window.addEventListener('pointermove', onBrushMove);
+    window.addEventListener('pointerup', onBrushUp, { capture: true });
+    window.addEventListener('pointercancel', onBrushUp, { capture: true });
+
     const handleClick = async (event: MouseEvent) => {
       // A walk's click lands at the frozen pointer-lock coordinates: it would
       // pick whatever sits under wherever the cursor was when F3 was pressed.
@@ -985,6 +1150,10 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       if (endedDrag) { endedDrag = false; return; }
       // The same, for a drag of the camera on the emulated middle button.
       if (navigated) { navigated = false; return; }
+      // And the same for a brush stroke, which ends on the canvas exactly as a
+      // gizmo drag does — a stroke that deselected the palette it had just
+      // painted with would make a second stroke impossible.
+      if (painted) { painted = false; return; }
       const rect = renderer.domElement.getBoundingClientRect();
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
@@ -1641,6 +1810,13 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       host.removeEventListener('pointerdown', onNavPointerDown, { capture: true });
       host.removeEventListener('pointerup', onNavPointerUp, { capture: true });
       host.removeEventListener('pointercancel', onNavPointerUp, { capture: true });
+      host.removeEventListener('pointerdown', onBrushDown, { capture: true });
+      window.removeEventListener('pointermove', onBrushMove);
+      window.removeEventListener('pointerup', onBrushUp, { capture: true });
+      window.removeEventListener('pointercancel', onBrushUp, { capture: true });
+      scatterRingRef.current = null;
+      world.root.remove(scatterRing.root);
+      scatterRing.dispose();
       controls.dispose();
       transform.detach();
       scene.remove(transform.getHelper());
@@ -1804,6 +1980,14 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   useEffect(() => {
     gizmoRef.current?.setMode(gizmoMode);
   }, [gizmoMode, mesh, visuals]);
+
+  // The ring is drawn by the pointer handler and can only be *un*drawn from
+  // here: switching the brush off is a prop change, and the cursor may never
+  // move again afterwards. Without this the footprint of a brush that is no
+  // longer active stays on the ground.
+  useEffect(() => {
+    if (scatterRadius === null) scatterRingRef.current?.hide();
+  }, [scatterRadius, mesh, visuals]);
 
   // Brightness. One uniform write for the whole scene, picked up by the next
   // frame the render loop draws — no recompile, and nothing to invalidate, so a
