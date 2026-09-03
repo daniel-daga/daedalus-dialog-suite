@@ -172,7 +172,17 @@ function texture(payload: { name: string; maxSize: number }): {
   result: DecodedTexture | null;
   transfer: ArrayBuffer[];
 } {
-  let decoded = zenkit.decodeTexture(vfs!, payload.name, 0);
+  // A name can resolve to something that is not a ZenGin texture at all — a
+  // mod folder's *source* `.TGA` is the case that happens (level-editor.md
+  // §16.31) — and the binding refuses it by throwing. That is one white
+  // material, not a failed world: it answers null, exactly like a name the VFS
+  // does not hold.
+  let decoded: ReturnType<typeof zenkit.decodeTexture>;
+  try {
+    decoded = zenkit.decodeTexture(vfs!, payload.name, 0);
+  } catch {
+    return { result: null, transfer: [] };
+  }
   if (decoded === null) return { result: null, transfer: [] };
 
   // Pick a mipmap rather than resampling. Decoding every texture at full size
@@ -180,7 +190,9 @@ function texture(payload: { name: string; maxSize: number }): {
   // projection-layer choice, so it comes in with the request.
   let level = 0;
   while (Math.max(decoded.width, decoded.height) > payload.maxSize && level + 1 < decoded.mipmaps) {
-    decoded = zenkit.decodeTexture(vfs!, payload.name, ++level)!;
+    const smaller = zenkit.decodeTexture(vfs!, payload.name, ++level);
+    if (smaller === null) break;
+    decoded = smaller;
   }
 
   return {

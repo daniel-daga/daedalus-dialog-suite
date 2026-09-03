@@ -168,6 +168,9 @@ export interface WorldViewportProps {
    */
   showWaypointNames: boolean;
   loadTexture: (name: string, maxSize: number) => Promise<DecodedTexture | null>;
+  /** The texture names that could not be decoded, once per scene build. White
+   *  geometry is otherwise a fact the user has to reverse-engineer. */
+  onTextureFailures?: (names: string[]) => void;
   /**
    * A click's result: the VOB that was hit, or the point on the world mesh in
    * **ZenGin space** when the click landed on terrain instead. Both null means
@@ -390,7 +393,7 @@ function rowMajor(matrix: THREE.Matrix4): ZenRotation {
 
 const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(({
   mesh, visuals, bbox, waynet, showWaynet, spawns, showSpawns, routines, spawnTime, spawnState,
-  showWaypointNames, loadTexture, onPick, onVobContextMenu,
+  showWaypointNames, loadTexture, onTextureFailures, onPick, onVobContextMenu,
   selection, onTranslateSelection, gizmoMode, onRotateSelection, appliedOps,
   selectedWaypoint, terrainPoint, exposure, hiddenVobs, snapGrid, snapAngle,
   scatterRadius, onScatterStroke,
@@ -483,6 +486,8 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   onVobContextMenuRef.current = onVobContextMenu;
   const loadTextureRef = useRef(loadTexture);
   loadTextureRef.current = loadTexture;
+  const textureFailuresRef = useRef(onTextureFailures);
+  textureFailuresRef.current = onTextureFailures;
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
   // Set by the scene effect, because the camera and the controls live inside
@@ -667,7 +672,14 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     const texturesReady = world.loadPendingTextures(
       (name) => loadTextureRef.current(name, TEXTURE_MAX_SIZE),
       () => disposed,
-    );
+    ).then((failed) => {
+      // Said out loud, because the alternative is white geometry the user has
+      // to reverse-engineer (level-editor.md §16.31): a mod folder holds
+      // *source* `.TGA` files, which resolve by name and then fail to parse —
+      // they are textures the mod has not compiled yet.
+      if (failed.length > 0 && !disposed) textureFailuresRef.current?.(failed);
+      return failed;
+    });
 
     // ── the gizmo (level-editor.md §7, Phase 1b) ────────────────────────────
     //

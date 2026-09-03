@@ -3964,6 +3964,36 @@ top of the list. Two facts came out of the probe and are worth keeping:
   archives first, so a GMBT build's output wins the way ZenGin resolves it. A
   stock install has no `_work` and pays nothing for the change.
 
+**One texture killed the rest (2026-09-03, Daniel: a tree still white with the
+install mounted).** Not the tree's fault — `NW_NATURE_SMALLTREE_79P.3DS`
+resolves to its `.MRM`, its three materials name `NW_NATURE_BARK_01.TGA` and
+two branch textures, and all three decode at 256/512. Probed name by name over
+`SURFACE_BEPPO`'s 494 distinct texture names: **476 decode, 12 return null, and
+6 throw**. The six throw `invalid signature` — they are beppo's own *source*
+`.TGA` files in `mod/Textures`, which resolve by name because the mod folder is
+mounted and are then handed to a ZTEX parser. `WorldScene.loadPendingTextures`
+awaited each decode in one sequential loop with no `try`, so the first rejection
+came out of the loop and **every name after it stayed white**, which is why the
+white set looked arbitrary.
+
+Three changes, each independently right:
+
+- The loop catches per name and keeps going, returning the names it could not
+  decode. A name the VFS simply does not hold is returned too — white is white,
+  whatever the reason.
+- `zenkit.worker`'s `texture` op answers `null` instead of throwing when the
+  binding refuses a file, and its mipmap walk stops instead of asserting a
+  level is non-null.
+- The failures are **said**: `WorldViewport` hands them up (`onTextureFailures`)
+  and `WorldSurface` puts them in the world banner, naming the first three and
+  the reason. White geometry the user has to reverse-engineer is what cost the
+  last two sessions.
+
+Not fixed, because it is not the editor's to fix: those six textures have no
+compiled form anywhere in the project, so they stay white until a GMBT build
+compiles them. The 12 nulls are `NAME.TGA.TGA` double extensions in the world's
+own material names.
+
 Unwitnessed: nothing here has been run against the beppo project in the app —
 the detection, the seeding and the scan are covered by `gmbtProject.test.ts`,
 `worldDiscovery.test.ts` and `ProjectConfigService.test.ts` over temp trees,

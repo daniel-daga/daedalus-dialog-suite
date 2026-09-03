@@ -508,6 +508,20 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     }
   }, []);
 
+  /**
+   * Textures the VFS could not decode (level-editor.md §16.31). Said out loud,
+   * because the alternative is white geometry the user has to reverse-engineer:
+   * a mod folder holds *source* `.TGA` files, which resolve by name and then
+   * fail to parse — they are textures the mod has not compiled yet.
+   */
+  const reportTextureFailures = useCallback((names: string[]) => {
+    useWorldStore.getState().editFailed(
+      `${names.length} texture${names.length === 1 ? '' : 's'} could not be decoded and draw white — `
+      + `${names.slice(0, 3).join(', ')}${names.length > 3 ? '…' : ''}. `
+      + 'A source .TGA in a mod folder resolves by name but is not a compiled ZenGin texture.',
+    );
+  }, []);
+
   const pickWorld = useCallback((worldPath: string) => {
     setPickerOpen(false);
     void openWorldAt(worldPath);
@@ -2643,6 +2657,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               spawnState={spawnState}
               showWaypointNames={showWaypointNames}
               loadTexture={loadTexture}
+              onTextureFailures={reportTextureFailures}
               onPick={handlePick}
               onVobContextMenu={openVobContextMenu}
               selection={selection}

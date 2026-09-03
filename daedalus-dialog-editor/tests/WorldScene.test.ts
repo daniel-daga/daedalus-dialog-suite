@@ -380,6 +380,44 @@ describe('WorldScene', () => {
     expect(dispose).toHaveBeenCalled();
   });
 
+  test('one texture that cannot be decoded does not cost the rest their pixels', async () => {
+    // beppo, 2026-09-03: six of `SURFACE_BEPPO`'s texture names resolve to a
+    // *source* .TGA sitting loose in the mod folder, which ZenKit refuses with
+    // "invalid signature". The rejection came out of this loop and every name
+    // after it in the list stayed white — including a tree whose own textures
+    // decode perfectly.
+    const scene = new WorldScene(null);
+    scene.setWorldMesh({
+      groups: [
+        group({ texture: 'NW_STONE.TGA' }),
+        group({ texture: 'KM_SOURCE_TGA.TGA' }),
+        group({ texture: 'NW_GRASS.TGA' }),
+      ],
+      bbox: [],
+    });
+
+    const load = jest.fn(async (name: string) => {
+      if (name === 'KM_SOURCE_TGA.TGA') throw new Error('invalid signature');
+      return decoded(name);
+    });
+
+    await expect(scene.loadPendingTextures(load, () => false)).resolves.toEqual(['KM_SOURCE_TGA.TGA']);
+    expect(load).toHaveBeenCalledTimes(3);
+    expect(scene.pendingTextureNames()).toEqual(['KM_SOURCE_TGA.TGA']);
+  });
+
+  test('a name the VFS does not hold is reported too — it is white either way', async () => {
+    const scene = new WorldScene(null);
+    scene.setWorldMesh({
+      groups: [group({ texture: 'NW_STONE.TGA' }), group({ texture: 'GONE.TGA.TGA' })],
+      bbox: [],
+    });
+
+    const load = jest.fn(async (name: string) => (name === 'GONE.TGA.TGA' ? null : decoded(name)));
+
+    await expect(scene.loadPendingTextures(load, () => false)).resolves.toEqual(['GONE.TGA.TGA']);
+  });
+
   test('a cancelled load stops asking', async () => {
     // The world can be closed while the pump is between awaits, and a decode
     // applied to a torn-down scene is a texture nothing will ever dispose.

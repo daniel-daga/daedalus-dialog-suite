@@ -219,6 +219,11 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **One undecodable texture no longer costs every later one its pixels —
+  landed 2026-09-03.** `loadPendingTextures` caught nothing, so beppo's six
+  source `.TGA` files (which resolve by name, then fail to parse) left every
+  name after them white. Now caught per name, answered `null` by the worker,
+  and reported in the world banner. §16.31
 - **The Gothic install is machine-local again — landed 2026-09-03**, reversing
   §16.28 for that one path: a setting, mounted first under every project, a
   section in the Asset sources dialog, adopted out of a project file that still

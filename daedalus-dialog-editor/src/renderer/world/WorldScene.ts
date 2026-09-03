@@ -716,17 +716,34 @@ export class WorldScene {
    * `cancelled` is checked on both sides of the await: the world can be closed
    * while this is in flight, and pixels applied to a torn-down scene are a
    * texture nothing will ever dispose.
+   *
+   * Returns the names that could not be decoded, so the caller can say how
+   * many rather than leaving white geometry to be discovered on screen.
    */
   async loadPendingTextures(
     load: (name: string) => Promise<DecodedTexture | null>,
     cancelled: () => boolean,
-  ): Promise<void> {
+  ): Promise<string[]> {
+    const failed: string[] = [];
     for (const name of this.pendingTextureNames()) {
-      if (cancelled()) return;
-      const decoded = await load(name);
-      if (cancelled()) return;
+      if (cancelled()) return failed;
+      let decoded: DecodedTexture | null = null;
+      try {
+        decoded = await load(name);
+      } catch {
+        // One name the VFS cannot decode is one white material, not a white
+        // world: a mod folder holds *source* `.TGA` files, which resolve by
+        // name and then fail to parse as ZenGin textures. Letting that
+        // rejection out of the loop left every later name unloaded.
+        failed.push(name);
+      }
+      if (cancelled()) return failed;
+      // A name with no pixels draws white whether the VFS refused it or simply
+      // does not hold it, so both are reported the same way.
       if (decoded) this.applyTexture(decoded);
+      else if (!failed.includes(name)) failed.push(name);
     }
+    return failed;
   }
 
   /** Texture names the scene has materials for but no pixels yet. */
