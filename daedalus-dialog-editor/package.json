@@ -57,7 +57,9 @@
       "!node_modules/zenkit-node/build/Release/*.{iobj,ipdb,exp,lib}"
     ],
     "asarUnpack": [
-      "**/node_modules/zenkit-node/**/*.node"
+      "**/node_modules/zenkit-node/**/*.node",
+      "**/node_modules/daedalus-parser/**/*.node",
+      "**/node_modules/tree-sitter/**/*.node"
     ],
     "directories": {
       "buildResources": "assets"

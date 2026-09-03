@@ -6,6 +6,7 @@ import { PathValidationError } from './services/PathValidationService';
 import { getServiceRegistry } from './services/serviceRegistry';
 import { saveFileFlow, type SaveFileFlowOptions } from './services/SaveFileFlow';
 import { runOpenWorldSmoke } from './openWorldSmoke';
+import { runParseSmoke } from './parseSmoke';
 import { applyWindowSecurity } from './windowSecurity';
 import {
   assertModelShape,
@@ -231,6 +232,21 @@ app.whenReady().then(async () => {
     const result = await runOpenWorldSmoke(
       worldService,
       process.env.DDE_SMOKE_OPEN_WORLD,
+      process.env.DDE_SMOKE_RESULT,
+    );
+    app.exit(result.ok ? 0 : 1);
+    return;
+  }
+
+  // Packaged-app parse smoke (build-windows.yml), the same shape for the
+  // tree-sitter bindings: no window, the fixture is parsed through the same
+  // ParserService call the parser:parseSource handler makes — which is what
+  // loads the bindings in the packaged Electron — and the exit code is the
+  // verdict. Inert in production.
+  if (process.env.DDE_SMOKE_PARSE) {
+    const result = await runParseSmoke(
+      parserService,
+      process.env.DDE_SMOKE_PARSE,
       process.env.DDE_SMOKE_RESULT,
     );
     app.exit(result.ok ? 0 : 1);

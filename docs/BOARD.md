@@ -119,9 +119,10 @@ was true for so long nobody re-reads it.
   every suite stays green against a binary missing whatever the ops have
   gained since it was built. Do not repeat any of it here.
 - `daedalus-dialog-editor/dist/` holds a packaged app (`win-unpacked`, the
-  installer) that is **no longer fresh** — it predates the waypoint delete, and
-  every session that only compiles leaves it further behind. `.gitignore`d, and
-  it only matters if you are about to trust a package already sitting there:
+  installer) **re-packaged 2026-09-03** for the parse smoke, so it is fresh as
+  of that commit — and goes stale again with the next one, because every
+  session that only compiles leaves it behind. `.gitignore`d, and it only
+  matters if you are about to trust a package already sitting there:
   re-package before you do.
 
 ---
@@ -144,10 +145,10 @@ writes, the classes beyond five), none of it carded.
 
 **The unattended queue — one card for 49 items.** Everything a run can take
 with nobody watching. **Take the top unclaimed row and cross it off in the
-same commit; a run may not add rows.** `unattended-queue.md` — section 5 is
-empty but for row 42 (Triage); rows 1-27, 38 and 49 landed 2026-08-30 to
-2026-09-02, and the next unclaimed row is **28** (section 3, UI with a template
-in the tree).
+same commit; a run may not add rows.** `unattended-queue.md` — **only row 42
+(Triage) is left**: rows 1-41 and 43-49 landed 2026-08-30 to 2026-09-03, so
+the queue is empty of pickable work and the next run resumes at the card
+below it.
 
 **Phase 1c — the overlay, at §16.19.** Not blocked.
 

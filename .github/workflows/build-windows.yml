@@ -202,6 +202,31 @@ jobs:
           process.exit(1);
         }
         console.log('Packaged native addon verified (unpacked):', unpacked);
+
+        // The other native pair, behind every parse: the daedalus grammar
+        // binding and the tree-sitter runtime, both loaded by parser.worker.ts.
+        // Same two silent failures as the addon above — never built, or built
+        // and left inside the asar — and the same assertion. The runtime ships
+        // as prebuilds, so the win32-x64 one is what this build needs.
+        const parserBinding = files.filter((f) => f.endsWith('tree_sitter_daedalus_binding.node'));
+        const runtimeBinding = files.filter(
+          (f) => f.includes('\\tree-sitter\\') && f.endsWith('win32-x64\\tree-sitter.node'),
+        );
+        for (const [label, entries] of [['grammar', parserBinding], ['runtime', runtimeBinding]]) {
+          if (entries.length === 0) {
+            console.error(`tree-sitter ${label} binding is not packaged.`);
+            process.exit(1);
+          }
+          const outside = entries.filter((f) => fs.existsSync(path.join(unpackedRoot, f)));
+          if (outside.length === 0) {
+            console.error(
+              `tree-sitter ${label} binding is packed inside app.asar — asarUnpack did not match:`,
+              entries,
+            );
+            process.exit(1);
+          }
+          console.log(`Packaged tree-sitter ${label} binding verified (unpacked):`, outside);
+        }
         '@ | node -
 
     - name: Smoke-test packaged app startup
@@ -259,6 +284,45 @@ jobs:
           throw "Open-world smoke opened a world with no VOBs: $(Get-Content $resultPath -Raw)"
         }
         Write-Host "Open-world smoke passed: $(Get-Content $resultPath -Raw)"
+
+    # The world smoke above covers the ZenKit addon; this covers the tree-sitter
+    # pair, which is what every parse in the app rests on. DDE_SMOKE_PARSE routes
+    # main.ts into runParseSmoke (no window): ParserService spawns a parser
+    # worker, which loads both bindings out of app.asar.unpacked and runs the
+    # semantic passes over a committed corpus fixture. Exit code is the verdict;
+    # the result file carries the model counts so a red run says why.
+    - name: Smoke-test packaged app parses a script
+      shell: pwsh
+      run: |
+        $exe = "daedalus-dialog-editor/dist/win-unpacked/Daedalus Dialog Editor.exe"
+        $fixture = (Resolve-Path "daedalus-parser/test/fixtures/corpus/declaration-order.d").Path
+        $resultPath = Join-Path $env:RUNNER_TEMP "smoke-parse.json"
+        Remove-Item $resultPath -Force -ErrorAction SilentlyContinue
+
+        $env:DDE_SMOKE_PARSE = $fixture
+        $env:DDE_SMOKE_RESULT = $resultPath
+        $process = Start-Process -FilePath $exe -PassThru
+        $null = $process.Handle  # cache so ExitCode is readable after exit
+        if (-not $process.WaitForExit(120000)) {
+          Stop-Process -Id $process.Id -Force
+          throw "Parse smoke timed out after 120 s"
+        }
+        if ($process.ExitCode -ne 0) {
+          $detail = if (Test-Path $resultPath) { Get-Content $resultPath -Raw } else { "(no result file written)" }
+          throw "Parse smoke failed with exit code $($process.ExitCode): $detail"
+        }
+        if (-not (Test-Path $resultPath)) {
+          throw "Parse smoke exited 0 but wrote no result file - the smoke mode did not run"
+        }
+        $result = Get-Content $resultPath -Raw | ConvertFrom-Json
+        if (-not $result.ok) {
+          throw "Parse smoke result is not ok: $(Get-Content $resultPath -Raw)"
+        }
+        # The fixture is one C_INFO instance and its two functions.
+        if ([int]$result.dialogCount -ne 1 -or [int]$result.functionCount -ne 2) {
+          throw "Parse smoke returned the wrong model shape: $(Get-Content $resultPath -Raw)"
+        }
+        Write-Host "Parse smoke passed: $(Get-Content $resultPath -Raw)"
 
     - name: Normalize installer filename
       shell: pwsh
