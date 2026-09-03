@@ -63,6 +63,8 @@ interface ProjectState {
   /** Asset folders the detected GMBT project declares that the list does not
    *  have yet — the Asset sources dialog's one-click add (§16.31). */
   gmbtAssetSources: string[];
+  /** The machine's Gothic installation, mounted under every project (§9). */
+  gothicInstallPath: string | null;
   projectWarnings: ProjectConfigWarning[];
 
   // Project index (lightweight)
@@ -125,6 +127,9 @@ interface ProjectActions {
   /** Writes the Asset sources dialog: the ordered list, and the GMBT project
    *  folder beside it (null clears it, omitted leaves it). */
   saveAssetSources: (assetSources: string[], gmbtProjectDir?: string | null) => Promise<void>;
+  /** Choose or clear the machine's Gothic installation (§9). Main re-resolves
+   *  the active project against it and this adopts what comes back. */
+  changeGothicInstall: (choose: boolean) => Promise<void>;
   dismissProjectWarning: (resolvedPath: string) => void;
 
   // Start background ingestion of all files
@@ -413,6 +418,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   resolvedAssetSources: [],
   gmbtProjectDir: null,
   gmbtAssetSources: [],
+  gothicInstallPath: null,
   projectWarnings: [],
   npcList: [],
   routineList: [],
@@ -473,6 +479,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         resolvedAssetSources: descriptor.resolvedAssetSources,
         gmbtProjectDir: descriptor.gmbtProjectDir,
         gmbtAssetSources: descriptor.gmbtAssetSources,
+        gothicInstallPath: descriptor.gothicInstallPath,
         projectWarnings: descriptor.warnings,
         npcList: rawIndex.npcs || [],
         routineList: rawIndex.routines || [],
@@ -536,6 +543,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         resolvedAssetSources: descriptor.resolvedAssetSources,
         gmbtProjectDir: descriptor.gmbtProjectDir,
         gmbtAssetSources: descriptor.gmbtAssetSources,
+        gothicInstallPath: descriptor.gothicInstallPath,
         projectWarnings: descriptor.warnings,
         loadError: null
       });
@@ -543,6 +551,26 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       set({ loadError: error instanceof Error ? error.message : 'Failed to save asset sources' });
       throw error;
     }
+  },
+
+  changeGothicInstall: async (choose: boolean) => {
+    const projectFilePath = get().projectFilePath;
+    const sessionAtStart = projectSession;
+    const descriptor = choose
+      ? await window.editorAPI.selectGothicInstall()
+      : await window.editorAPI.clearGothicInstall();
+    // Null is a cancelled picker, or no project loaded — neither is a change.
+    if (descriptor === null) return;
+    if (projectSession !== sessionAtStart || get().projectFilePath !== projectFilePath) return;
+    set({
+      projectConfig: descriptor.config,
+      resolvedAssetSources: descriptor.resolvedAssetSources,
+      gmbtProjectDir: descriptor.gmbtProjectDir,
+      gmbtAssetSources: descriptor.gmbtAssetSources,
+      gothicInstallPath: descriptor.gothicInstallPath,
+      projectWarnings: descriptor.warnings,
+      loadError: null,
+    });
   },
 
   dismissProjectWarning: (resolvedPath: string) => {
@@ -697,6 +725,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       resolvedAssetSources: [],
   gmbtProjectDir: null,
   gmbtAssetSources: [],
+  gothicInstallPath: null,
       projectWarnings: [],
       npcList: [],
       routineList: [],

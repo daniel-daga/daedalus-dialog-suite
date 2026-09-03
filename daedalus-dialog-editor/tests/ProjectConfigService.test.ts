@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 
 import {
   discoverProjectFile,
+  findInstallShaped,
   projectOperationKey,
   parseProjectFile,
   ProjectConfigService,
@@ -248,25 +249,33 @@ describe('ProjectConfigService', () => {
       expect(JSON.parse(await readFile(projectFilePath, 'utf8'))).toEqual(validConfig());
     });
 
-    test('appends a legacy install once after the project root', async () => {
+    // The install is machine state and mounts under the project's own sources
+    // (level-editor.md §9); it is never written into the project file.
+    test('mounts the machine install as the base without touching the project file', async () => {
       const install = join(root, 'Gothic II');
-      await mkdir(install);
-      const service = new ProjectConfigService();
+      await mkdir(join(install, 'Data'), { recursive: true });
+      await writeFile(join(install, 'Data', 'Textures.vdf'), 'archive');
 
-      const result = await service.openOrMigrate(root, install);
-
-      expect(result.project.config.assetSources).toEqual(['.', install]);
-    });
-
-    test.each([
-      ['project root', (projectRoot: string) => projectRoot],
-      ['equivalent normalized project root', (projectRoot: string) => join(projectRoot, 'sub', '..')],
-    ])('de-duplicates a legacy install equivalent to the %s', async (_name, legacyPath) => {
-      const service = new ProjectConfigService();
-
-      const result = await service.openOrMigrate(root, legacyPath(root));
+      const result = await new ProjectConfigService().openOrMigrate(root, install);
 
       expect(result.project.config.assetSources).toEqual(['.']);
+      expect(result.project.gothicInstallPath).toBe(install);
+      expect(result.project.resolvedAssetSources)
+        .toEqual([join(install, 'Data', 'Textures.vdf'), await fsPromises.realpath(root)]);
+      expect(result.project.resolvedAssetRoots).toEqual([install, await fsPromises.realpath(root)]);
+    });
+
+    test('warns about a machine install that is missing or is not an install', async () => {
+      const notAnInstall = join(root, 'plain');
+      await mkdir(notAnInstall);
+
+      for (const candidate of [join(root, 'gone'), notAnInstall]) {
+        const result = await new ProjectConfigService().openOrMigrate(root, candidate);
+        expect(result.project.gothicInstallPath).toBeNull();
+        expect(result.project.warnings).toEqual([expect.objectContaining({
+          code: 'gothic-install-unavailable', source: candidate,
+        })]);
+      }
     });
 
     test('keeps gmbtProjectDir across an asset-source save', async () => {
@@ -353,12 +362,26 @@ describe('ProjectConfigService', () => {
       expect(await readFile(projectFilePath, 'utf8')).toBe(original);
     });
 
-    test('marks an existing project safe for legacy cleanup only when it durably contains that source', async () => {
-      const legacy = join(root, 'Gothic II');
-      await writeFile(join(root, 'existing.gothicproject.json'), JSON.stringify(validConfig(['.', legacy])));
+    test('finds the install-shaped folder a project file still carries, and only that', async () => {
+      const install = join(root, 'Gothic II');
+      await mkdir(join(install, '_work', 'Data', 'Textures', '_compiled'), { recursive: true });
+      const plain = join(root, 'plain');
+      await mkdir(plain);
 
-      expect((await new ProjectConfigService().openOrMigrate(root, legacy)).legacyCleanupSafe).toBe(true);
-      expect((await new ProjectConfigService().openOrMigrate(root, join(root, 'other'))).legacyCleanupSafe).toBe(false);
+      expect(await findInstallShaped([plain, install])).toBe(install);
+      expect(await findInstallShaped([plain, join(root, 'gone')])).toBeNull();
+    });
+
+    test('mounts a configured install once when it is also the machine install', async () => {
+      const install = join(root, 'Gothic II');
+      await mkdir(join(install, 'Data'), { recursive: true });
+      await writeFile(join(install, 'Data', 'Textures.vdf'), 'archive');
+      await writeFile(join(root, 'existing.gothicproject.json'), JSON.stringify(validConfig(['.', install])));
+
+      const result = await new ProjectConfigService().openOrMigrate(root, install);
+
+      expect(result.project.resolvedAssetSources)
+        .toEqual([join(install, 'Data', 'Textures.vdf'), await fsPromises.realpath(root)]);
     });
 
     test('serializes asset updates with other project writes and preserves their non-asset fields', async () => {

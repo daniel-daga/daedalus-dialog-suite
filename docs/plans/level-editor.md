@@ -3945,6 +3945,25 @@ top of the list. Two facts came out of the probe and are worth keeping:
   the 2,170 ms figure that rule was written for (a fully extracted install; a
   GMBT-built one holds only the mod's own files there).
 
+**Both of those were then decided and built the same day (Daniel).**
+
+- **The Gothic install goes back to being machine-local**, reversing §16.28 for
+  that one path: it is a fact about the machine, not about the mod. It is
+  `SettingsService.gothicInstallPath` again, mounted *first* under every
+  project's own sources, chosen through a main-process folder dialog from a
+  section of the Asset sources dialog, and never written into a project file. A
+  project file that still names an install-shaped source hands it to the
+  setting on the next open and is de-duplicated at mount time — nothing is
+  rewritten, nothing is mounted twice. The legacy migration that *consumed* the
+  setting into the list, and its `legacyCleanupSafe` machinery, are gone.
+- **The check Daniel asked for is a refusal, not a warning.** `world:open`
+  refuses when no installation resolves, naming the setting — the white world
+  was a silent failure, and a snackbar on project open would fire for every
+  dialog-only session too.
+- **`gothicAssetSources` mounts archives *and* loose `_compiled` trees**,
+  archives first, so a GMBT build's output wins the way ZenGin resolves it. A
+  stock install has no `_work` and pays nothing for the change.
+
 Unwitnessed: nothing here has been run against the beppo project in the app —
 the detection, the seeding and the scan are covered by `gmbtProject.test.ts`,
 `worldDiscovery.test.ts` and `ProjectConfigService.test.ts` over temp trees,

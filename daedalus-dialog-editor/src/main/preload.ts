@@ -68,6 +68,8 @@ contextBridge.exposeInMainWorld('editorAPI', {
   // crosses here is the lightweight VOB index and geometry/texture buffers.
   openWorldDialog: () => ipcRenderer.invoke('world:openDialog'),
   listWorlds: () => ipcRenderer.invoke('world:listWorlds'),
+  selectGothicInstall: () => ipcRenderer.invoke('settings:selectGothicInstall'),
+  clearGothicInstall: () => ipcRenderer.invoke('settings:clearGothicInstall'),
   openWorld: (request: { worldPath: string; gameVersion: string; projectFilePath: string }) =>
     ipcRenderer.invoke('world:open', request),
   getWorldMesh: () => ipcRenderer.invoke('world:mesh'),

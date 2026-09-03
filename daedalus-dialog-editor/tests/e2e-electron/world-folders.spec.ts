@@ -100,6 +100,9 @@ test.describe('VOB folders in a real window', () => {
     await page.getByRole('button', { name: /Open Project/i }).first().click();
     await page.getByTestId('world-toggle').click();
     await page.getByTestId('world-open').click();
+    // The picker lists worlds under the asset sources (level-editor.md
+    // §16.31); the fixture world is elsewhere, so this is Browse….
+    await page.getByTestId('world-picker-browse').click();
     await page.getByTestId('world-viewport').waitFor();
     await page.waitForFunction(() => window.__worldViewport !== undefined);
   }

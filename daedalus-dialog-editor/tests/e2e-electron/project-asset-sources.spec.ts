@@ -70,10 +70,14 @@ test.describe('project asset sources', () => {
     }
   });
 
-  test('migrates a legacy project and consumes the machine-local Gothic install setting', async () => {
+  // level-editor.md §9, reversed 2026-09-03: the install is machine-local
+  // again, mounted under every project and never written into a project file.
+  test('keeps the machine-local Gothic install out of the project file and shows it in the dialog', async () => {
     const projectDir = seedProjectDir(['sample-dialog.d']);
     const gothicInstall = fs.mkdtempSync(path.join(os.tmpdir(), 'dde-e2e-gothic-install-'));
     extraTempDirs.push(gothicInstall);
+    fs.mkdirSync(path.join(gothicInstall, 'Data'), { recursive: true });
+    fs.writeFileSync(path.join(gothicInstall, 'Data', 'Textures.vdf'), 'archive');
     fixture = await launchApp({
       settings: { recentProjects: [], gothicInstallPath: gothicInstall },
     });
@@ -87,13 +91,17 @@ test.describe('project asset sources', () => {
         target: 'g2-notr',
         scriptsRoot: '.',
         worlds: [],
-        assetSources: ['.', gothicInstall],
+        assetSources: ['.'],
       });
       const settings = JSON.parse(
         fs.readFileSync(path.join(fixture!.userDataDir, 'settings.json'), 'utf8'),
       );
-      expect(settings).not.toHaveProperty('gothicInstallPath');
+      expect(settings.gothicInstallPath).toBe(gothicInstall);
     }).toPass({ timeout: 20_000 });
+
+    await fixture.page.getByRole('button', { name: 'Asset sources...' }).click();
+    const dialog = fixture.page.getByRole('dialog', { name: /Asset sources/i });
+    await expect(dialog.getByTestId('gothic-install-path')).toHaveText(gothicInstall);
   });
 
   test('adds, reorders, saves, and restores ordered asset sources', async () => {

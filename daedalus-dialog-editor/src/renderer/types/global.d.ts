@@ -179,6 +179,10 @@ export interface EditorAPI {
   openWorldDialog: () => Promise<string | null>;
   /** The worlds under the project's asset sources (level-editor.md §16.31). */
   listWorlds: () => Promise<DiscoveredWorld[]>;
+  /** The machine's Gothic installation (level-editor.md §9). Both return the
+   *  re-resolved active project, or null when no project is open. */
+  selectGothicInstall: () => Promise<OpenedProjectConfig | null>;
+  clearGothicInstall: () => Promise<OpenedProjectConfig | null>;
   openWorld: (request: OpenWorldRequest) => Promise<WorldSummary>;
   getWorldMesh: () => Promise<WorldMeshPayload>;
   getWorldVisuals: () => Promise<InstancedPayload>;

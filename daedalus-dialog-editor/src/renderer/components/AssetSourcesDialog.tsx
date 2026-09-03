@@ -21,6 +21,12 @@ export interface AssetSourcesDialogProps {
    *  have yet (§16.31). Offered by a button, never applied on its own: the
    *  order of this list is the user's, and a mount order is a decision. */
   gmbtAssetSources?: string[];
+  /** The machine's Gothic installation (level-editor.md §9), mounted under
+   *  every project. Shown here because this is where a project's paths are
+   *  looked at, but it is a setting: it is not in the list, not in the draft,
+   *  and it saves the moment it is chosen. */
+  gothicInstallPath?: string | null;
+  onChangeGothicInstall?: (choose: boolean) => Promise<void>;
   projectRoot?: string | null;
   warnings?: ProjectConfigWarning[];
   worldLoaded?: boolean;
@@ -30,6 +36,7 @@ export interface AssetSourcesDialogProps {
 
 export const AssetSourcesDialog: React.FC<AssetSourcesDialogProps> = ({
   open, assetSources, gmbtProjectDir = null, gmbtAssetSources = [], projectRoot,
+  gothicInstallPath = null, onChangeGothicInstall,
   warnings = [], worldLoaded = false, onClose, onSave,
 }) => {
   const [draft, setDraft] = useState<string[]>(assetSources);
@@ -166,6 +173,43 @@ export const AssetSourcesDialog: React.FC<AssetSourcesDialogProps> = ({
             </Button>
           )}
         </Box>
+
+        {onChangeGothicInstall && (
+          <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
+            <Typography variant="subtitle2">Gothic installation (this machine)</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              Mounted under every project&apos;s own sources. Not part of the list above and not
+              written to the project file — an install path belongs to the machine.
+            </Typography>
+            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+              <Typography variant="body2" data-testid="gothic-install-path" sx={{ wordBreak: 'break-all', flexGrow: 1 }}>
+                {gothicInstallPath ?? 'Not set'}
+              </Typography>
+              <Button
+                size="small"
+                onClick={() => void onChangeGothicInstall(true)}
+                disabled={saving}
+                aria-label="Choose Gothic installation"
+              >
+                Choose…
+              </Button>
+              <Button
+                size="small"
+                onClick={() => void onChangeGothicInstall(false)}
+                disabled={saving || gothicInstallPath === null}
+                aria-label="Clear Gothic installation"
+              >
+                Clear
+              </Button>
+            </Stack>
+            {gothicInstallPath === null && (
+              <Alert severity="warning" sx={{ mt: 1 }}>
+                No world can be opened without it: the mod folders hold none of the retail meshes
+                and textures a Gothic world draws.
+              </Alert>
+            )}
+          </Box>
+        )}
 
         {/* The GMBT project folder is not a mount and is deliberately below the
             list, outside it: one path, chosen or cleared, that only the

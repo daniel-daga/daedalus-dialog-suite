@@ -27,6 +27,16 @@ describe('zen-world/assets — gothicAssetSources', () => {
     expect(gothicAssetSources(ROOT, installWith(ALL_ARCHIVES))).toEqual(ALL_ARCHIVES);
   });
 
+  test('mounts a GMBT build`s loose output on top of the archives', () => {
+    // An install a mod builder compiles into has both: the retail VDFs and
+    // whatever the build wrote to `_work/Data`. ZenGin reads the loose file
+    // first, so the mount order has to end with the loose trees — otherwise
+    // every asset the build just compiled is invisible.
+    const loose = [`${ROOT}/_work/Data/Meshes/_compiled`, `${ROOT}/_work/Data/Textures/_compiled`];
+    expect(gothicAssetSources(ROOT, installWith([...ALL_ARCHIVES, ...loose])))
+      .toEqual([...ALL_ARCHIVES, ...loose]);
+  });
+
   test('finds the archives parked as .disabled by an MDK-style install', () => {
     // The MDK layout renames the six VDFs so the engine reads loose files
     // instead. They are byte-identical and still perfectly mountable — and on
@@ -75,8 +85,9 @@ describe('zen-world/assets — gothicAssetSources', () => {
 
   test('mod sources are appended last, so a mod overrides the retail assets', () => {
     const mod = 'C:/MyMod/Data/mod.vdf';
-    const sources = gothicAssetSources(ROOT, installWith([...ALL_ARCHIVES, mod]), [mod]);
+    const loose = `${ROOT}/_work/Data/Meshes/_compiled`;
+    const sources = gothicAssetSources(ROOT, installWith([...ALL_ARCHIVES, loose, mod]), [mod]);
     expect(sources[sources.length - 1]).toBe(mod);
-    expect(sources.slice(0, -1)).toEqual(ALL_ARCHIVES);
+    expect(sources.slice(0, -1)).toEqual([...ALL_ARCHIVES, loose]);
   });
 });

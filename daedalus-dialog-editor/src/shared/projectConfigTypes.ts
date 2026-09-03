@@ -23,7 +23,7 @@ export interface GothicProjectFileV1 {
 }
 
 export interface ProjectConfigWarning {
-  code: 'asset-source-unavailable' | 'gmbt-project-dir-unavailable';
+  code: 'asset-source-unavailable' | 'gmbt-project-dir-unavailable' | 'gothic-install-unavailable';
   source: string;
   resolvedPath: string;
   message: string;
@@ -46,5 +46,10 @@ export interface OpenedProjectConfig {
   /** The resolved `gmbtProjectDir`, or null when it is unset, missing, or not
    *  a GMBT project — which is also what disables the quick-test button. */
   gmbtProjectDir: string | null;
+  /** The machine-local Gothic installation mounted under every project
+   *  (level-editor.md §9), or null when none is set or the one set is not an
+   *  install. It is not in the project file: an install path is a fact about
+   *  this machine, and a committed one would not resolve on anybody else's. */
+  gothicInstallPath: string | null;
   warnings: ProjectConfigWarning[];
 }

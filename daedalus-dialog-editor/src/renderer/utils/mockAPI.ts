@@ -476,7 +476,7 @@ export const mockEditorAPI: EditorAPI = {
       projectFilePath: `${projectRoot}/mock.gothicproject.json`, projectRoot, scriptsRoot: projectRoot,
       config: { version: 1, target: 'g2-notr', scriptsRoot: '.', worlds: [], assetSources: ['.'] },
       resolvedAssetSources: [projectRoot], resolvedAssetRoots: [projectRoot],
-      gmbtAssetSources: [], gmbtProjectDir: null, warnings: [],
+      gmbtAssetSources: [], gmbtProjectDir: null, gothicInstallPath: null, warnings: [],
     };
   },
 
@@ -493,7 +493,7 @@ export const mockEditorAPI: EditorAPI = {
         ...(gmbtProjectDir ? { gmbtProjectDir } : {}) },
       resolvedAssetSources: assetSources.map((source) => source === '.' ? projectRoot : source),
       resolvedAssetRoots: assetSources.map((source) => source === '.' ? projectRoot : source),
-      gmbtAssetSources: [], gmbtProjectDir: gmbtProjectDir ?? null, warnings: [] };
+      gmbtAssetSources: [], gmbtProjectDir: gmbtProjectDir ?? null, gothicInstallPath: null, warnings: [] };
   },
 
   async buildProjectIndex(_folderPath: string): Promise<any> {
@@ -650,6 +650,8 @@ export const mockEditorAPI: EditorAPI = {
   // be a scene nobody could tell apart from a broken real one.
   async openWorldDialog(): Promise<string | null> { return null; },
   async listWorlds(): Promise<[]> { return []; },
+  async selectGothicInstall(): Promise<null> { return null; },
+  async clearGothicInstall(): Promise<null> { return null; },
   async openWorld(): Promise<never> {
     throw new Error('The world editor needs the desktop app — it is not available in browser mode.');
   },

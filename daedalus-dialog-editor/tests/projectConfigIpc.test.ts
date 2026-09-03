@@ -24,7 +24,7 @@ jest.mock('electron', () => ({
 
 jest.mock('../src/main/services/serviceRegistry', () => ({
   __pathValidator: { validatePathResolved: jest.fn(async () => undefined), addAllowedPath: jest.fn(), addAllowedFile: jest.fn() },
-  __settings: { getGothicInstallPath: jest.fn(async () => null), clearGothicInstallPath: jest.fn(async () => undefined), getRecentProjects: jest.fn(async () => []) },
+  __settings: { getGothicInstallPath: jest.fn(async () => null), setGothicInstallPath: jest.fn(async () => undefined), clearGothicInstallPath: jest.fn(async () => undefined), getRecentProjects: jest.fn(async () => []) },
   __worldService: { openWorld: jest.fn(async () => ({ worldPath: 'test', stats: {} })) },
   getServiceRegistry: () => ({
     fileService: {}, parserService: {}, codeGeneratorService: {}, validationService: {}, projectService: {},
@@ -44,6 +44,15 @@ async function invoke(channel: string, ...args: unknown[]) {
   return handler!({}, ...args);
 }
 
+/** A folder shaped like a Gothic install, and the setting pointed at it (§9). */
+async function useInstall() {
+  const install = await fs.mkdtemp(path.join(os.tmpdir(), 'dde-install-'));
+  await fs.mkdir(path.join(install, 'Data'), { recursive: true });
+  await fs.writeFile(path.join(install, 'Data', 'Textures.vdf'), 'archive');
+  registry.__settings.getGothicInstallPath.mockResolvedValue(install);
+  return { install, archive: path.join(install, 'Data', 'Textures.vdf') };
+}
+
 async function makeProject(assetSources: string[] = ['.']) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dde-ipc-project-'));
   const projectFilePath = path.join(root, `${path.basename(root)}.gothicproject.json`);
@@ -58,21 +67,38 @@ describe('project config IPC', () => {
     registry.__pathValidator.validatePathResolved.mockClear();
     registry.__pathValidator.addAllowedPath.mockClear();
     registry.__settings.getGothicInstallPath.mockReset().mockResolvedValue(null);
+    registry.__settings.setGothicInstallPath.mockClear();
     registry.__settings.clearGothicInstallPath.mockClear();
     registry.__worldService.openWorld.mockClear();
     setupIpcHandlers();
   });
 
-  it('loads only an already-allowed root, migrates, returns warnings, and clears legacy state after commit', async () => {
+  it('loads only an already-allowed root and warns about a machine install that is gone', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dde-ipc-migrate-'));
-    const missing = path.join(root, 'missing-assets');
+    const missing = path.join(root, 'missing-install');
     registry.__settings.getGothicInstallPath.mockResolvedValue(missing);
 
     const opened = await invoke('project:loadConfig', root) as any;
 
     expect(registry.__pathValidator.validatePathResolved).toHaveBeenCalledWith(root);
-    expect(opened.warnings).toEqual([expect.objectContaining({ source: missing })]);
-    expect(registry.__settings.clearGothicInstallPath).toHaveBeenCalledTimes(1);
+    expect(opened.warnings).toEqual([expect.objectContaining({
+      code: 'gothic-install-unavailable', source: missing,
+    })]);
+    expect(opened.gothicInstallPath).toBeNull();
+    // The setting is machine state now (§9), never cleared behind the user.
+    expect(registry.__settings.clearGothicInstallPath).not.toHaveBeenCalled();
+  });
+
+  it('mounts the machine install under the project`s own sources', async () => {
+    const { install, archive } = await useInstall();
+    const project = await makeProject();
+
+    const opened = await invoke('project:loadConfig', project.root) as any;
+
+    expect(opened.gothicInstallPath).toBe(install);
+    expect(opened.resolvedAssetSources).toEqual([archive, project.root]);
+    // Not written into the project file: it is not the project's fact.
+    expect(opened.config.assetSources).toEqual(['.']);
   });
 
   it('does not clear legacy state when migration fails', async () => {
@@ -81,17 +107,20 @@ describe('project config IPC', () => {
     expect(registry.__settings.clearGothicInstallPath).not.toHaveBeenCalled();
   });
 
-  it('returns the opened project and retries legacy cleanup after a cleanup failure', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dde-ipc-cleanup-'));
-    const legacy = path.join(root, 'legacy-assets');
-    registry.__settings.getGothicInstallPath.mockResolvedValue(legacy);
-    registry.__settings.clearGothicInstallPath.mockRejectedValueOnce(new Error('settings locked'));
-    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+  it('adopts an install-shaped source from the project file into the setting', async () => {
+    // Project files written while the install lived in the list (§16.28) hand
+    // it over on the next open: the entry stays, but the machine now knows.
+    const install = await fs.mkdtemp(path.join(os.tmpdir(), 'dde-configured-install-'));
+    await fs.mkdir(path.join(install, 'Data'), { recursive: true });
+    await fs.writeFile(path.join(install, 'Data', 'Textures.vdf'), 'archive');
+    const project = await makeProject(['.', install]);
 
-    await expect(invoke('project:loadConfig', root)).resolves.toMatchObject({ config: { assetSources: ['.', legacy] } });
-    await expect(invoke('project:loadConfig', root)).resolves.toMatchObject({ config: { assetSources: ['.', legacy] } });
-    expect(registry.__settings.clearGothicInstallPath).toHaveBeenCalledTimes(2);
-    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/cleanup.*retried/i), expect.any(Error));
+    const opened = await invoke('project:loadConfig', project.root) as any;
+
+    expect(registry.__settings.setGothicInstallPath).toHaveBeenCalledWith(install);
+    expect(opened.gothicInstallPath).toBe(install);
+    // Mounted once, and as the base rather than over the project's own folders.
+    expect(opened.resolvedAssetSources).toEqual([path.join(install, 'Data', 'Textures.vdf'), project.root]);
   });
 
   it('does not promote configured absolute or symlink-resolved sources into the generic whitelist', async () => {
@@ -280,6 +309,7 @@ describe('project config IPC', () => {
   });
 
   it('dispatches a world open when the active project remains unchanged', async () => {
+    const { archive } = await useInstall();
     const project = await makeProject();
     await invoke('project:loadConfig', project.root);
     const summary = { worldPath: 'test', stats: {} };
@@ -289,11 +319,13 @@ describe('project config IPC', () => {
       worldPath: path.join(project.root, 'World.zen'), gameVersion: 'g2', projectFilePath: project.projectFilePath,
     })).resolves.toEqual(summary);
     expect(registry.__worldService.openWorld).toHaveBeenCalledWith(expect.objectContaining({
-      worldPath: path.join(project.root, 'World.zen'), gameVersion: 'g2', assetSources: [project.root],
+      worldPath: path.join(project.root, 'World.zen'), gameVersion: 'g2',
+      assetSources: [archive, project.root],
     }));
   });
 
   it('opens with a configured external source without generic whitelisting', async () => {
+    const { archive } = await useInstall();
     const external = await fs.mkdtemp(path.join(os.tmpdir(), 'dde-world-external-'));
     const project = await makeProject(['.', external]);
     await invoke('project:loadConfig', project.root);
@@ -307,7 +339,7 @@ describe('project config IPC', () => {
 
     await expect(invoke('world:open', { worldPath, gameVersion: 'g2', projectFilePath: project.projectFilePath }))
       .resolves.toEqual(summary);
-    expect(registry.__worldService.openWorld).toHaveBeenCalledWith(expect.objectContaining({ assetSources: [project.root, external] }));
+    expect(registry.__worldService.openWorld).toHaveBeenCalledWith(expect.objectContaining({ assetSources: [archive, project.root, external] }));
     await expect(invoke('world:open', {
       worldPath: path.join(os.tmpdir(), 'unrelated.zen'), gameVersion: 'g2', projectFilePath: project.projectFilePath,
     })).rejects.toThrow(/generic renderer-approved|outside/i);

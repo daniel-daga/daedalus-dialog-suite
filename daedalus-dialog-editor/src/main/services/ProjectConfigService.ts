@@ -134,6 +134,19 @@ async function isAvailableDirectory(candidate: string): Promise<boolean> {
   }
 }
 
+/** An install's own mounts, in ZenGin load order (`zen-world`'s measured rule). */
+function expandInstall(installRoot: string): string[] {
+  const portableRoot = installRoot.replace(/\\/g, '/');
+  return gothicAssetSources(portableRoot, (candidate) => {
+    try {
+      const details = statSync(candidate);
+      return candidate.endsWith('/_compiled') ? details.isDirectory() : details.isFile();
+    } catch {
+      return false;
+    }
+  }).map((candidate) => path.normalize(candidate));
+}
+
 async function isInstallShaped(candidate: string): Promise<boolean> {
   const probes: Array<{ filePath: string; kind: 'file' | 'directory' }> = [
     ...ARCHIVES.flatMap((archive) => [
@@ -217,7 +230,6 @@ async function gmbtSeededAssetSources(
 export interface OpenOrMigrateResult {
   project: OpenedProjectConfig;
   migrationCommitted: boolean;
-  legacyCleanupSafe: boolean;
 }
 
 function enqueueProjectFile<T>(projectFilePath: string, operation: () => Promise<T>): Promise<T> {
@@ -362,34 +374,42 @@ async function adoptGmbtProject(
 
 async function openExistingProject(
   projectFilePath: string,
-  legacyInstallPath: string | null,
+  installPath: string | null,
 ): Promise<OpenOrMigrateResult> {
   const contents = await fs.readFile(projectFilePath, 'utf8');
   const config = await adoptGmbtProject(projectFilePath, contents, parseProjectFile(contents));
-  const project = await resolveProjectConfig(projectFilePath, config);
-  const legacyCleanupSafe = legacyInstallPath !== null && (
-    comparablePath(legacyInstallPath) === comparablePath(project.projectRoot)
-    || config.assetSources.some((source) => isPortableAbsolute(source)
-      && comparablePath(source) === comparablePath(legacyInstallPath))
-  );
-  return { project, migrationCommitted: false, legacyCleanupSafe };
+  return { project: await resolveProjectConfig(projectFilePath, config, installPath), migrationCommitted: false };
+}
+
+/**
+ * The first of `candidates` shaped like a Gothic installation — how a project
+ * file written before the install became machine-local hands its install over
+ * to the setting (level-editor.md §9).
+ */
+export async function findInstallShaped(candidates: readonly string[]): Promise<string | null> {
+  for (const candidate of candidates) {
+    if (await isAvailableDirectory(candidate) && await isInstallShaped(candidate)) return candidate;
+  }
+  return null;
 }
 
 export class ProjectConfigService {
-  async openOrMigrate(projectRoot: string, legacyInstallPath: string | null): Promise<OpenOrMigrateResult> {
+  /**
+   * @param installPath the machine-local Gothic installation, mounted under
+   *   the project's own sources. It is never written into the project file:
+   *   §9's rule is that an install path is a fact about this machine.
+   */
+  async openOrMigrate(projectRoot: string, installPath: string | null): Promise<OpenOrMigrateResult> {
     const absoluteRoot = await fs.realpath(path.resolve(projectRoot));
     const defaultProjectFilePath = path.join(absoluteRoot, `${path.basename(absoluteRoot)}${PROJECT_FILE_SUFFIX}`);
     const initiallyDiscovered = await discoverProjectFile(absoluteRoot);
 
     return enqueueProjectFile(initiallyDiscovered ?? defaultProjectFilePath, async () => {
       const discovered = await discoverProjectFile(absoluteRoot);
-      if (discovered) return openExistingProject(discovered, legacyInstallPath);
+      if (discovered) return openExistingProject(discovered, installPath);
 
       const gmbt = await findGmbtProject(absoluteRoot);
       const assetSources = await gmbtSeededAssetSources(absoluteRoot, gmbt);
-      if (legacyInstallPath && comparablePath(legacyInstallPath) !== comparablePath(absoluteRoot)) {
-        assetSources.push(legacyInstallPath);
-      }
       const config = parseProjectFile({
         version: 1,
         target: 'g2-notr',
@@ -399,11 +419,10 @@ export class ProjectConfigService {
         ...(gmbt === null ? {} : { gmbtProjectDir: projectRelative(absoluteRoot, gmbt.dir) }),
       });
       const committed = await createProjectFile(defaultProjectFilePath, config);
-      if (!committed) return openExistingProject(defaultProjectFilePath, legacyInstallPath);
+      if (!committed) return openExistingProject(defaultProjectFilePath, installPath);
       return {
-        project: await resolveProjectConfig(defaultProjectFilePath, config),
+        project: await resolveProjectConfig(defaultProjectFilePath, config, installPath),
         migrationCommitted: true,
-        legacyCleanupSafe: legacyInstallPath !== null,
       };
     });
   }
@@ -424,6 +443,7 @@ export class ProjectConfigService {
     projectFilePath: string,
     assetSources: string[],
     gmbtProjectDir?: string | null,
+    installPath: string | null = null,
   ): Promise<OpenedProjectConfig> {
     const absolutePath = path.resolve(projectFilePath);
     return enqueueProjectFile(absolutePath, async () => {
@@ -437,7 +457,7 @@ export class ProjectConfigService {
         ...(next === undefined ? {} : { gmbtProjectDir: next }),
       });
       await writeProjectFile(absolutePath, updated, originalContents);
-      return resolveProjectConfig(absolutePath, updated);
+      return resolveProjectConfig(absolutePath, updated, installPath);
     });
   }
 }
@@ -445,12 +465,34 @@ export class ProjectConfigService {
 export async function resolveProjectConfig(
   projectFilePath: string,
   config: GothicProjectFileV1,
+  installPath: string | null = null,
 ): Promise<OpenedProjectConfig> {
   const absoluteProjectFilePath = path.resolve(projectFilePath);
   const projectRoot = path.dirname(absoluteProjectFilePath);
   const resolvedAssetSources: string[] = [];
   const resolvedAssetRoots: string[] = [];
   const warnings: ProjectConfigWarning[] = [];
+
+  // The machine's Gothic installation mounts first and the project's own
+  // sources mount over it (level-editor.md §9): it is the base every mod is an
+  // overlay on, and it is not in the project file because it is not the
+  // project's fact to record.
+  let gothicInstallPath: string | null = null;
+  if (installPath !== null) {
+    if (await isAvailableDirectory(installPath) && await isInstallShaped(installPath)) {
+      gothicInstallPath = path.normalize(installPath);
+      resolvedAssetRoots.push(gothicInstallPath);
+      resolvedAssetSources.push(...expandInstall(gothicInstallPath));
+    } else {
+      warnings.push({
+        code: 'gothic-install-unavailable',
+        source: installPath,
+        resolvedPath: installPath,
+        message: `Gothic installation is unavailable: ${installPath}`,
+      });
+    }
+  }
+  const mountedInstall = gothicInstallPath === null ? null : comparablePath(gothicInstallPath);
 
   for (const source of config.assetSources) {
     const resolvedPath = isPortableAbsolute(source) ? source : path.resolve(projectRoot, source);
@@ -463,18 +505,12 @@ export async function resolveProjectConfig(
       });
       continue;
     }
+    // A source naming the machine's install is already mounted, below
+    // everything: mounting it twice would also move it above the mod folders.
+    if (mountedInstall !== null && comparablePath(resolvedPath) === mountedInstall) continue;
     resolvedAssetRoots.push(resolvedPath);
     if (await isInstallShaped(resolvedPath)) {
-      const portableRoot = resolvedPath.replace(/\\/g, '/');
-      const expanded = gothicAssetSources(portableRoot, (candidate) => {
-        try {
-          const details = statSync(candidate);
-          return candidate.endsWith('/_compiled') ? details.isDirectory() : details.isFile();
-        } catch {
-          return false;
-        }
-      });
-      resolvedAssetSources.push(...expanded.map((candidate) => path.normalize(candidate)));
+      resolvedAssetSources.push(...expandInstall(resolvedPath));
     } else {
       resolvedAssetSources.push(resolvedPath);
     }
@@ -516,6 +552,7 @@ export async function resolveProjectConfig(
 
   return {
     projectFilePath: absoluteProjectFilePath,
+    gothicInstallPath,
     projectRoot,
     scriptsRoot: path.resolve(projectRoot, config.scriptsRoot),
     config,

@@ -63,7 +63,7 @@ const AppContent: React.FC = () => {
     activeFile: state.activeFile,
     resetEditorSession: state.resetEditorSession,
   }), shallow);
-  const { openProject, closeProject, projectPath, projectName, projectFilePath, projectConfig, gmbtAssetSources, projectWarnings, isIngesting, allDialogFiles, parsedFilesCount, metadataFailures, isIngestedFilesOpen, setIngestedFilesOpen, saveAssetSources } = useProjectStore((state) => ({
+  const { openProject, closeProject, projectPath, projectName, projectFilePath, projectConfig, gmbtAssetSources, gothicInstallPath, changeGothicInstall, projectWarnings, isIngesting, allDialogFiles, parsedFilesCount, metadataFailures, isIngestedFilesOpen, setIngestedFilesOpen, saveAssetSources } = useProjectStore((state) => ({
     openProject: state.openProject,
     closeProject: state.closeProject,
     projectPath: state.projectPath,
@@ -71,6 +71,8 @@ const AppContent: React.FC = () => {
     projectFilePath: state.projectFilePath,
     projectConfig: state.projectConfig,
     gmbtAssetSources: state.gmbtAssetSources,
+    gothicInstallPath: state.gothicInstallPath,
+    changeGothicInstall: state.changeGothicInstall,
     projectWarnings: state.projectWarnings,
     isIngesting: state.isIngesting,
     allDialogFiles: state.allDialogFiles,
@@ -477,6 +479,8 @@ const AppContent: React.FC = () => {
           assetSources={projectConfig.assetSources}
           gmbtProjectDir={projectConfig.gmbtProjectDir ?? null}
           gmbtAssetSources={gmbtAssetSources}
+          gothicInstallPath={gothicInstallPath}
+          onChangeGothicInstall={changeGothicInstall}
           projectRoot={projectPath}
           warnings={visibleProjectWarnings}
           worldLoaded={worldLoaded}

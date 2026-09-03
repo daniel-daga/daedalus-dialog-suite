@@ -109,6 +109,9 @@ async function main() {
 
   log(`opening ${path.basename(WORLD)} …`);
   await page.getByTestId('world-open').click();
+  // Open world is a picker over the project's asset sources now
+  // (level-editor.md §16.31); these drive a world by path, so Browse….
+  await page.getByTestId('world-picker-browse').click();
   await page.getByTestId('world-viewport').waitFor();
   await page.waitForFunction(() => globalThis.__worldViewport !== undefined);
 

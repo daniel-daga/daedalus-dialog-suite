@@ -2696,13 +2696,30 @@ Recognized Gothic installations expand through the archive/compiled-data
 rules, while ordinary directories mount directly. The resolved mounts are
 shared by world loading and the asset browser.
 
-Opening a legacy folder atomically creates its v1 project file, seeds the list
-with `.` and the old machine-local `gothicInstallPath` when available, then
-removes that setting only after the rename succeeds. Existing project files are
-never enriched from machine-local settings. Malformed or ambiguous files block
-opening; missing or unreadable sources are skipped and shown as persistent
-warnings naming the configured path. Dialog editing remains available with no
-usable sources, while world opening asks the user to configure one.
+Opening a legacy folder atomically creates its v1 project file. Malformed or
+ambiguous files block opening; missing or unreadable sources are skipped and
+shown as persistent warnings naming the configured path. Dialog editing remains
+available with no usable sources, while world opening asks the user to
+configure one.
+
+**The Gothic installation is machine-local again (2026-09-03, Daniel), and it
+is not in this file.** §16.28 moved it into `assetSources`; that was wrong for
+the one path that is a fact about the machine rather than about the mod — a
+committed install path does not resolve on a collaborator's disk. It lives in
+`SettingsService` as `gothicInstallPath`, is written only by a main-process
+folder dialog (which is what lets it seed the path whitelist), and is
+**mounted first, under every project's own sources**, so the mod overlays
+retail exactly as it does in the engine. A project file that still carries an
+install-shaped source hands it to the setting on the next open — the entry
+stays where it is and is de-duplicated at mount time, so nothing is rewritten
+and nothing is mounted twice. A set install that is missing or is not
+install-shaped is a `gothic-install-unavailable` warning, and **opening a world
+with none configured is refused with a message naming the setting**: every
+visual and texture a Gothic world draws lives in the installation, so without
+it a world opens white and empty, which is a silent failure worth turning into
+a loud one. `OpenedProjectConfig.gothicInstallPath` carries the resolved path;
+the Asset sources dialog shows it in its own section, saved through its own IPC
+the moment it is chosen rather than with the list's draft.
 
 **`gmbtProjectDir` (2026-09-03)** is the one other path the file carries, and
 it is not an asset source: it is the working directory a `gmbt test` run reads
@@ -2729,6 +2746,15 @@ as a hand-written one. An *existing* file is never rewritten except to adopt a
 user made, so what GMBT mounts and the list lacks is offered as a button in
 the Asset sources dialog instead. The reader is a three-key subset of YAML,
 not a dependency, and skips whatever it does not understand.
+
+**An install a mod is built into mounts both halves.** `gothicAssetSources`
+used to return the retail archives *or* the loose `_work/Data/*/_compiled`
+trees; a GMBT-built install has both, and ZenGin reads the loose file first.
+Since 2026-09-03 the mount order is archives, then whatever loose trees exist,
+then the caller's mod sources — otherwise every asset a GMBT build just
+compiled is invisible in the editor. A stock install has no `_work` and pays
+nothing; the 2,170 ms measurement that motivated preferring archives was an
+install with no archives at all, which still takes that path.
 
 **Worlds come off the same source list.** `world:listWorlds` scans each
 configured source *as a folder* — `resolvedAssetRoots`, the list before an

@@ -26,7 +26,9 @@ const ARCHIVES = [
 const LOOSE = ['Meshes', 'Textures', 'Anims'];
 
 /**
- * Asset sources for `openVfs`, in mount order — later wins.
+ * Asset sources for `openVfs`, in mount order — later wins: the archives, then
+ * any loose `_compiled` tree beside them (what a GMBT build writes), then the
+ * caller's mod sources.
  *
  * @param root       the Gothic installation directory
  * @param exists     `fs.existsSync`, injected
@@ -48,11 +50,14 @@ export function gothicAssetSources(
     else if (exists(`${file}.disabled`)) archives.push(`${file}.disabled`);
   }
 
-  if (archives.length > 0) return [...archives, ...modSources];
-
+  // Loose trees ride *on top of* the archives rather than replacing them: an
+  // install a mod is built into has both, and ZenGin reads the loose file
+  // first, so the assets a GMBT build just compiled have to win. A stock
+  // install has no `_work` and pays nothing for this; the 2,170 ms case is an
+  // install with no archives at all, which takes the same path it always did.
   const loose = LOOSE
     .map((name) => `${root}/_work/Data/${name}/_compiled`)
     .filter(exists);
 
-  return [...loose, ...modSources];
+  return [...archives, ...loose, ...modSources];
 }

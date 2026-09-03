@@ -219,6 +219,11 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **The Gothic install is machine-local again — landed 2026-09-03**, reversing
+  §16.28 for that one path: a setting, mounted first under every project, a
+  section in the Asset sources dialog, adopted out of a project file that still
+  carries one. World open now *refuses* without it. `gothicAssetSources` also
+  mounts loose `_compiled` over the archives, so a GMBT build is visible. §16.31
 - **The GMBT project configures the project, and worlds are a list — landed
   2026-09-03.** `.gmbt.yml` detected by walking up; a new project file seeds
   its asset sources from it, an existing one only adopts `gmbtProjectDir` and
@@ -232,12 +237,3 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 - **The point markers get a sprite — landed 2026-09-03.** A rimmed pip for the
   spawn layers, a reticle for the placement and pivot markers; colours
   unchanged, sizes up to keep the core. Unwitnessed: how it looks. §16.30
-- **The four driver scripts seed a project file instead of clicking the
-  install picker** — landed 2026-09-03, verified by running
-  `measure-viewport.js` against retail NEWWORLD (opened in 1.8 s, 197 fps,
-  `valid: true`). Their default `--world` is stale on this machine and now
-  says so in `environment-hazards.md`. §16.28
-- **The asset-source list, all three parts** — ordered list in the project
-  file (replacing `gothicInstallPath`, bounds 128 entries / 4096 chars),
-  `modSources` wired, and world opening moved onto the same list
-  (`ef4d5b2`). §16.28

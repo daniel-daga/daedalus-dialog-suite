@@ -105,6 +105,28 @@ describe('AssetSourcesDialog', () => {
     await waitFor(() => expect(baseProps.onSave).toHaveBeenCalledWith(baseProps.assetSources, null));
   });
 
+  // level-editor.md §9: the Gothic installation is machine state, so it is
+  // shown here but saved through its own IPC, not with the list.
+  it('shows the machine`s Gothic installation and changes it outside the draft', async () => {
+    const change = jest.fn().mockResolvedValue(undefined);
+    render(<AssetSourcesDialog {...baseProps} gothicInstallPath="C:/Gothic II" onChangeGothicInstall={change} />);
+
+    expect(screen.getByTestId('gothic-install-path')).toHaveTextContent('C:/Gothic II');
+
+    fireEvent.click(screen.getByRole('button', { name: /choose gothic installation/i }));
+    await waitFor(() => expect(change).toHaveBeenCalledWith(true));
+    fireEvent.click(screen.getByRole('button', { name: /clear gothic installation/i }));
+    await waitFor(() => expect(change).toHaveBeenCalledWith(false));
+    // It is not an asset source and never reaches the list's save.
+    expect(baseProps.onSave).not.toHaveBeenCalled();
+  });
+
+  it('says a world needs an installation when none is set', () => {
+    render(<AssetSourcesDialog {...baseProps} gothicInstallPath={null} onChangeGothicInstall={jest.fn()} />);
+    expect(screen.getByTestId('gothic-install-path')).toHaveTextContent(/not set/i);
+    expect(screen.getByText(/no world can be opened|retail meshes/i)).toBeInTheDocument();
+  });
+
   // level-editor.md §16.31: the detected GMBT project's own asset folders,
   // offered rather than applied — the list's order is the user's.
   it('adds the GMBT folders the list does not have yet, once', async () => {

@@ -31,7 +31,7 @@ import {
   assertExternalUrl,
 } from './ipcValidation';
 import { appendInsertNpcFlow } from './services/AppendInsertNpcFlow';
-import { ProjectConfigService } from './services/ProjectConfigService';
+import { findInstallShaped, ProjectConfigService } from './services/ProjectConfigService';
 import { startGmbtQuickTest } from './services/GmbtService';
 import { readGmbtDefaultWorld } from './services/gmbtProject';
 import { discoverWorlds } from './services/worldDiscovery';
@@ -95,7 +95,12 @@ function isConfiguredWorldMount(registered: RegisteredProjectConfig, mount: stri
   const mountKeys = new Set([absoluteSourceKey(mount)]);
   try { mountKeys.add(absoluteSourceKey(fs.realpathSync(mount))); } catch { /* source may be an archive path */ }
   const projectRoot = registered.descriptor.projectRoot;
-  for (const configured of registered.descriptor.config.assetSources) {
+  // The machine's installation is a configured mount too — it is configured in
+  // the settings rather than the project file, and only main can write it.
+  const configuredSources = registered.descriptor.gothicInstallPath === null
+    ? registered.descriptor.config.assetSources
+    : [...registered.descriptor.config.assetSources, registered.descriptor.gothicInstallPath];
+  for (const configured of configuredSources) {
     const base = path.isAbsolute(configured) ? configured : path.resolve(projectRoot, configured);
     const bases = [base];
     try { bases.push(fs.realpathSync(base)); } catch { /* unavailable source is already omitted */ }
@@ -108,6 +113,19 @@ function isConfiguredWorldMount(registered: RegisteredProjectConfig, mount: stri
     }
   }
   return false;
+}
+
+/**
+ * Re-resolve the active project against a changed machine install, so the
+ * renderer sees the new mounts without reopening the project. Null when no
+ * project is loaded — changing the setting is legal with none.
+ */
+async function reloadActiveProject(installPath: string | null): Promise<OpenedProjectConfig | null> {
+  const registered = activeProjectFileKey ? registeredProjectConfigs.get(activeProjectFileKey) : undefined;
+  if (!registered) return null;
+  const reopened = await projectConfigService.openOrMigrate(registered.descriptor.projectRoot, installPath);
+  registerProjectConfig(reopened.project);
+  return reopened.project;
 }
 
 function registerProjectConfig(descriptor: OpenedProjectConfig): RegisteredProjectConfig {
@@ -460,17 +478,48 @@ export function setupIpcHandlers() {
       throw new Error('Invalid project root: expected a non-empty string');
     }
     await pathValidator.validatePathResolved(projectRoot);
-    const legacyInstallPath = await settingsService.getGothicInstallPath();
-    const opened = await projectConfigService.openOrMigrate(projectRoot, legacyInstallPath);
-    registerProjectConfig(opened.project);
-    if (opened.legacyCleanupSafe) {
-      try {
-        await settingsService.clearGothicInstallPath();
-      } catch (error) {
-        console.warn('[IPC] project:loadConfig - legacy setting cleanup will be retried:', error);
+    const installPath = await settingsService.getGothicInstallPath();
+    let opened = await projectConfigService.openOrMigrate(projectRoot, installPath);
+    // A project file written while the install lived in the list hands it to
+    // the setting (§9): the entry stays where it is and mounts once, but from
+    // now on it is machine state, and the next project inherits it.
+    if (installPath === null) {
+      const adopted = await findInstallShaped(opened.project.resolvedAssetRoots);
+      if (adopted !== null) {
+        try {
+          await settingsService.setGothicInstallPath(adopted);
+          opened = await projectConfigService.openOrMigrate(projectRoot, adopted);
+        } catch (error) {
+          console.warn('[IPC] project:loadConfig - could not adopt the configured Gothic install:', error);
+        }
       }
     }
+    registerProjectConfig(opened.project);
     return opened.project;
+  });
+
+  /**
+   * The machine's Gothic installation (§9). Machine-local, so it is a setting
+   * and not a project field — and written only here, from a main-process
+   * folder dialog, which is what lets it seed the path whitelist.
+   */
+  ipcMain.handle('settings:selectGothicInstall', async () => {
+    const current = await settingsService.getGothicInstallPath();
+    const result = await dialog.showOpenDialog({
+      ...(current === null ? {} : { defaultPath: current }),
+      properties: ['openDirectory'],
+      title: 'Select the Gothic installation folder',
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    const selected = result.filePaths[0];
+    pathValidator.addAllowedPath(selected);
+    await settingsService.setGothicInstallPath(selected);
+    return reloadActiveProject(selected);
+  });
+
+  ipcMain.handle('settings:clearGothicInstall', async () => {
+    await settingsService.clearGothicInstallPath();
+    return reloadActiveProject(null);
   });
 
   ipcMain.handle('project:selectAssetSourceFolder', async (_event, defaultPath: unknown) => {
@@ -535,6 +584,7 @@ export function setupIpcHandlers() {
     await pathValidator.validatePathResolved(projectFilePath, { write: true });
     const descriptor = await projectConfigService.updateProjectPaths(
       projectFilePath, assetSources, gmbtProjectDir as string | null | undefined,
+      await settingsService.getGothicInstallPath(),
     );
     registerProjectConfig(descriptor);
     return descriptor;
@@ -814,7 +864,9 @@ export function setupIpcHandlers() {
       }
       const registered = registeredProjectConfigs.get(key);
       if (!registered) throw new Error('Load a project before opening a world');
-      const refreshed = await projectConfigService.openOrMigrate(registered.descriptor.projectRoot, null);
+      const refreshed = await projectConfigService.openOrMigrate(
+        registered.descriptor.projectRoot, await settingsService.getGothicInstallPath(),
+      );
       if (activeProjectFileKey !== key || registeredProjectConfigs.get(key) !== registered) {
         throw new Error('The active project changed while loading the project configuration');
       }
@@ -822,6 +874,12 @@ export function setupIpcHandlers() {
       const assetSources = refreshed.project.resolvedAssetSources;
       if (assetSources.length === 0) {
         throw new Error('Configure at least one available asset source before opening a world.');
+      }
+      // Without the retail assets a world opens white and empty — every visual
+      // and texture a Gothic world names lives in the installation, not in the
+      // mod (§16.31). Said here rather than left to be discovered on screen.
+      if (refreshed.project.gothicInstallPath === null) {
+        throw new Error('No Gothic installation is configured. Set it in Asset sources — the mod folders alone hold none of the retail meshes or textures a world draws.');
       }
 
       for (const source of assetSources) {
