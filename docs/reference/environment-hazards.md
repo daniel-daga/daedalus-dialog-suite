@@ -143,6 +143,23 @@ doc, not here. This file is only for the ground the code stands on.
   suite is simply unavailable in that environment. Verify a UI change with Jest
   and leave the E2E to CI and to Windows.
 
+## Playwright in a worktree
+
+- **The browser harness reuses whatever is already on port 5173 — including
+  another checkout's vite.** `playwright.config.ts` has
+  `reuseExistingServer: true` outside CI and a fixed `baseURL`, so when the
+  main checkout (or a neighbouring worktree) has `vite` running, a worktree's
+  `npx playwright test` silently drives *that* renderer: specs asserting
+  code that exists only in the worktree fail as "not implemented", specs
+  asserting code the other tree also has pass, and nothing says which tree
+  served the page. Seen 2026-09-03 — two new specs failed for an hour against
+  a main-checkout vite before `Get-NetTCPConnection -LocalPort 5173` named
+  it. Check the listener before reading a Playwright failure in a worktree,
+  and run on a port of your own: a config that spreads the base one with
+  `webServer.command: 'npx vite --port 5199 --strictPort'`,
+  `reuseExistingServer: false` and the matching `baseURL`, passed via
+  `--config`. Never kill the 5173 listener — it is somebody's.
+
 ## The intermittent `3221226505`, and what it is not
 
 `npm run test:matrix:windows` exists to reproduce an intermittent
