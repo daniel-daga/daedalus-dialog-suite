@@ -2717,6 +2717,29 @@ picked, a relative one must stay inside the project. Until it resolves, the
 World bar's quick-test button is disabled with a tooltip pointing at that
 dialog. What the button then does is §16.29 of the plan.
 
+**Detection from a GMBT project (2026-09-03).** A project folder that sits
+inside a GMBT tree configures itself from the `.gmbt.yml` above it, which
+already names the mod's asset folders, its Gothic root and its default world.
+Detection walks up four levels. A *new* project file is seeded from it: the
+project root, then `modFiles.assets` in the file's own mount order, then
+`gothicRoot` only when that folder is install-shaped — all written
+project-relative with forward slashes, so a detected folder is as committable
+as a hand-written one. An *existing* file is never rewritten except to adopt a
+`gmbtProjectDir` it does not name; its asset list's order is a decision the
+user made, so what GMBT mounts and the list lacks is offered as a button in
+the Asset sources dialog instead. The reader is a three-key subset of YAML,
+not a dependency, and skips whatever it does not understand.
+
+**Worlds come off the same source list.** `world:listWorlds` scans each
+configured source *as a folder* — `resolvedAssetRoots`, the list before an
+install-shaped source expands into its archives — for `Worlds/`,
+`_work/Data/Worlds/` and loose `.zen` files, and the World bar's "Open world"
+is that list, with the GMBT `defaultWorld` marked. A later source wins the
+same world name, which is the mount order the engine resolves through. Only
+loose files: nothing downstream can open a world that has no filesystem path,
+so one still inside `Worlds.vdf` would be an entry that fails on click, and
+"Browse…" stays in the dialog for everything the scan does not reach.
+
 The project file is committed project state. Other machine-local state (window
 layout and recent-project metadata) remains in `SettingsService`. Target
 version is per-project and explicit (brief §7); the binding refuses to load

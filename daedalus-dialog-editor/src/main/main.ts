@@ -33,6 +33,8 @@ import {
 import { appendInsertNpcFlow } from './services/AppendInsertNpcFlow';
 import { ProjectConfigService } from './services/ProjectConfigService';
 import { startGmbtQuickTest } from './services/GmbtService';
+import { readGmbtDefaultWorld } from './services/gmbtProject';
+import { discoverWorlds } from './services/worldDiscovery';
 import type { OpenedProjectConfig } from '../shared/projectConfigTypes';
 
 // E2E userData isolation seam (fix-08 §2 / T9a). When the real-Electron E2E
@@ -723,6 +725,30 @@ export function setupIpcHandlers() {
   // Both directory dialogs below are the only writers of a whitelisted path, in
   // the same pattern project:openFolderDialog uses — a compromised renderer
   // cannot reach outside what the user has actually opened.
+  // The worlds the project's own asset sources hold (level-editor.md §16.31),
+  // so opening one is a list rather than a native file dialog aimed at a single
+  // install. Whitelisting the folders they sit in is safe for the same reason
+  // registerProjectConfig whitelists an absolute asset source: the paths come
+  // from the project file the user has already opened, not from the renderer.
+  ipcMain.handle('world:listWorlds', async () => {
+    try {
+      const registered = activeProjectFileKey
+        ? registeredProjectConfigs.get(activeProjectFileKey)
+        : undefined;
+      if (!registered) return [];
+      const project = registered.descriptor;
+      const defaultWorld = project.gmbtProjectDir === null
+        ? null
+        : await readGmbtDefaultWorld(project.gmbtProjectDir);
+      const worlds = await discoverWorlds(project.resolvedAssetRoots, defaultWorld);
+      for (const world of worlds) pathValidator.addAllowedPath(path.dirname(world.path));
+      return worlds;
+    } catch (error) {
+      console.error('[IPC] world:listWorlds error:', error);
+      throw new Error(`Failed to list worlds: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  });
+
   ipcMain.handle('world:openDialog', async () => {
     try {
       // Start where the worlds are. `.zen` files only exist loose in an

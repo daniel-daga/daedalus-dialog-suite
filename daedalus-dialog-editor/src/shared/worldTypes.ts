@@ -30,6 +30,17 @@ export interface ResolvedOpenWorldRequest {
   assetSources: string[];
 }
 
+/** A `.zen` found under the project's asset sources (level-editor.md §16.31). */
+export interface DiscoveredWorld {
+  path: string;
+  /** The file name as it is cased on disk — what GMBT's `--world` compares. */
+  name: string;
+  /** The asset source it was found under. */
+  source: string;
+  /** The GMBT project's `defaultWorld`. */
+  isDefault: boolean;
+}
+
 export interface WorldSummary {
   worldPath: string;
   /** ZenGin space, computed from the vertices the binding emitted — a retail

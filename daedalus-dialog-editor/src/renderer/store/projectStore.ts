@@ -60,6 +60,9 @@ interface ProjectState {
    *  configured or it does not resolve — what enables the World bar's quick
    *  test (level-editor.md §16.29). */
   gmbtProjectDir: string | null;
+  /** Asset folders the detected GMBT project declares that the list does not
+   *  have yet — the Asset sources dialog's one-click add (§16.31). */
+  gmbtAssetSources: string[];
   projectWarnings: ProjectConfigWarning[];
 
   // Project index (lightweight)
@@ -409,6 +412,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   projectConfig: null,
   resolvedAssetSources: [],
   gmbtProjectDir: null,
+  gmbtAssetSources: [],
   projectWarnings: [],
   npcList: [],
   routineList: [],
@@ -468,6 +472,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         projectConfig: descriptor.config,
         resolvedAssetSources: descriptor.resolvedAssetSources,
         gmbtProjectDir: descriptor.gmbtProjectDir,
+        gmbtAssetSources: descriptor.gmbtAssetSources,
         projectWarnings: descriptor.warnings,
         npcList: rawIndex.npcs || [],
         routineList: rawIndex.routines || [],
@@ -530,6 +535,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         projectConfig: descriptor.config,
         resolvedAssetSources: descriptor.resolvedAssetSources,
         gmbtProjectDir: descriptor.gmbtProjectDir,
+        gmbtAssetSources: descriptor.gmbtAssetSources,
         projectWarnings: descriptor.warnings,
         loadError: null
       });
@@ -690,6 +696,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       projectConfig: null,
       resolvedAssetSources: [],
   gmbtProjectDir: null,
+  gmbtAssetSources: [],
       projectWarnings: [],
       npcList: [],
       routineList: [],

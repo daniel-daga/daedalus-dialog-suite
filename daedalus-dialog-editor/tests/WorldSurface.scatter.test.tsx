@@ -119,6 +119,9 @@ async function openWorld(parents?: readonly number[], names?: readonly string[])
 
   render(<WorldSurface />);
   fireEvent.click(screen.getByTestId('world-open'));
+  // Open world lists the project's worlds (level-editor.md §16.31); these
+  // suites want a named file, which is what Browse… still is.
+  fireEvent.click(await screen.findByTestId('world-picker-browse'));
   await screen.findByTestId('stub-stroke');
   return summary;
 }

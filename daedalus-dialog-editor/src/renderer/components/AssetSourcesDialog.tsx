@@ -17,6 +17,10 @@ export interface AssetSourcesDialogProps {
    *  is one path, edited here because this is where the project's paths are
    *  edited, and it never joins the mount list. */
   gmbtProjectDir?: string | null;
+  /** Asset folders the detected GMBT project declares that the list does not
+   *  have yet (§16.31). Offered by a button, never applied on its own: the
+   *  order of this list is the user's, and a mount order is a decision. */
+  gmbtAssetSources?: string[];
   projectRoot?: string | null;
   warnings?: ProjectConfigWarning[];
   worldLoaded?: boolean;
@@ -25,8 +29,8 @@ export interface AssetSourcesDialogProps {
 }
 
 export const AssetSourcesDialog: React.FC<AssetSourcesDialogProps> = ({
-  open, assetSources, gmbtProjectDir = null, projectRoot, warnings = [], worldLoaded = false,
-  onClose, onSave,
+  open, assetSources, gmbtProjectDir = null, gmbtAssetSources = [], projectRoot,
+  warnings = [], worldLoaded = false, onClose, onSave,
 }) => {
   const [draft, setDraft] = useState<string[]>(assetSources);
   const [gmbtDraft, setGmbtDraft] = useState<string | null>(gmbtProjectDir);
@@ -61,6 +65,11 @@ export const AssetSourcesDialog: React.FC<AssetSourcesDialogProps> = ({
       setError(reason instanceof Error ? reason.message : 'Could not choose an asset source');
     }
   };
+
+  const missingFromGmbt = gmbtAssetSources.filter((source) => !draft.includes(source));
+  const addFromGmbt = () => setDraft((current) => [
+    ...current, ...gmbtAssetSources.filter((source) => !current.includes(source)),
+  ]);
 
   const removeAt = (index: number) => setDraft((current) => current.filter((_, i) => i !== index));
   const move = (index: number, offset: -1 | 1) => setDraft((current) => {
@@ -146,6 +155,16 @@ export const AssetSourcesDialog: React.FC<AssetSourcesDialogProps> = ({
           <Button startIcon={<AddIcon />} onClick={() => void addSource()} disabled={saving} aria-label="Add asset source">
             Add source
           </Button>
+          {missingFromGmbt.length > 0 && (
+            <Button
+              startIcon={<AddIcon />}
+              onClick={addFromGmbt}
+              disabled={saving}
+              aria-label={`Add ${missingFromGmbt.length} folders from GMBT`}
+            >
+              Add {missingFromGmbt.length} from GMBT
+            </Button>
+          )}
         </Box>
 
         {/* The GMBT project folder is not a mount and is deliberately below the

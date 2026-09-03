@@ -3842,3 +3842,63 @@ Three things in it are load-bearing:
 Unwitnessed: how any of it looks on a real GPU. The waynet's own 3.5 px points
 were deliberately left as squares — that size is tuned against NewWorld's 2,959
 of them reading as a mass, and it is a waypoint rather than a marker.
+
+### 16.31 The GMBT project configures the project, and worlds are a list (2026-09-03, Daniel)
+
+**The ask.** A `.gmbt.yml` already names the mod's asset folders, its Gothic
+root and its default world — beppo's names `mdk`, `thirdparty`, `mod` and
+`SURFACE_BEPPO.ZEN`. Detect the GMBT project, seed the asset list from it, and
+then the worlds under `thirdparty/Worlds` can be *found* rather than browsed
+for. Scope settled the same day: this plus §16.28 item 3 (world detection);
+opening the world an NPC lives in is a separate card, and Daniel's own
+definition of it is "from an NPC in the dialog editor, resolve their start
+waypoint to the world that holds it, open that world and fly to them".
+
+**Built 2026-09-03.**
+
+- **`gmbtProject.ts` reads the file**, and it is a three-key subset rather than
+  a YAML dependency: `gothicRoot`, `modFiles.assets`, `modFiles.defaultWorld`.
+  Anything it does not understand is skipped — the file belongs to GMBT, and
+  this app does not get to call it invalid. `modVdf` repeating the same key
+  names below is why the reader tracks which top-level block it is in.
+  Backslashes are normalized to `/` before resolving, so the paths a
+  Windows-only tool writes resolve on the Linux CI that tests them.
+- **Detection walks up four levels** from the project folder. beppo's project
+  root is `beppo/mod` and its `.gmbt.yml` is one above.
+- **Seeding happens once, at project-file creation**: `assetSources` becomes
+  the project root plus the GMBT asset folders in the file's own mount order,
+  plus `gothicRoot` *only when that folder is install-shaped* — beppo's is
+  `..\..`, which resolves to a folder with no `Data/*.vdf` in it, and an entry
+  that resolves to nothing is a warning the user did not ask for. The paths are
+  written project-relative with forward slashes, so a detected folder is as
+  committable as a hand-written one.
+- **An existing project file is not rewritten**, with one exception: a file
+  that names no `gmbtProjectDir` adopts the detected one and persists just that
+  field, so the quick test configures itself. The asset list's *order* is a
+  decision, and a silent append would be this code making it. Instead
+  `OpenedProjectConfig.gmbtAssetSources` carries what the GMBT project mounts
+  and the list does not, and the Asset sources dialog offers it as one button
+  ("Add 2 from GMBT"). beppo, whose committed file predates all of this and is
+  missing `thirdparty`, is exactly that case.
+- **Worlds are discovered off the same source list** (§16.28 item 3):
+  `worldDiscovery.ts` scans each configured source *as a folder* — hence the
+  new `resolvedAssetRoots`, which is the list before an install-shaped source
+  is expanded into its six archives — for `Worlds/`, `_work/Data/Worlds/` and
+  loose `.zen` files in the folder itself. A later source wins the same world
+  name, which is the mount order the engine would resolve through. The GMBT
+  `defaultWorld` is re-read at list time and marked.
+- **"Open world" is a list, and "Browse…" is still in it.** Only loose `.zen`
+  files are found: the VFS could *name* a world inside `Worlds.vdf`, but
+  nothing downstream can open a world with no filesystem path, so listing one
+  would be an entry that fails on click.
+- **`world:listWorlds` takes no payload** and whitelists the folders it
+  returns, for the reason `registerProjectConfig` whitelists an absolute asset
+  source: the paths come from the project file the user has already opened, not
+  from the renderer.
+
+Unwitnessed: nothing here has been run against the beppo project in the app —
+the detection, the seeding and the scan are covered by `gmbtProject.test.ts`,
+`worldDiscovery.test.ts` and `ProjectConfigService.test.ts` over temp trees,
+and the picker by a browser-harness spec against the mock API. The first real
+open is also the first proof that `thirdparty/Worlds/SURFACE_BEPPO.ZEN` both
+lists and loads.

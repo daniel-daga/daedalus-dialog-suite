@@ -105,6 +105,29 @@ describe('AssetSourcesDialog', () => {
     await waitFor(() => expect(baseProps.onSave).toHaveBeenCalledWith(baseProps.assetSources, null));
   });
 
+  // level-editor.md §16.31: the detected GMBT project's own asset folders,
+  // offered rather than applied — the list's order is the user's.
+  it('adds the GMBT folders the list does not have yet, once', async () => {
+    render(<AssetSourcesDialog {...baseProps} gmbtAssetSources={['../thirdparty', '../mdk']} />);
+
+    const add = screen.getByRole('button', { name: /add 2 folders from gmbt/i });
+    fireEvent.click(add);
+
+    expect(screen.getByText('4. ../thirdparty')).toBeInTheDocument();
+    expect(screen.getByText('5. ../mdk')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /from gmbt/i })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /save asset sources/i }));
+    await waitFor(() => expect(baseProps.onSave).toHaveBeenCalledWith(
+      ['.', 'assets', 'missing', '../thirdparty', '../mdk'], null,
+    ));
+  });
+
+  it('offers nothing when the GMBT project adds nothing', () => {
+    render(<AssetSourcesDialog {...baseProps} gmbtAssetSources={[]} />);
+    expect(screen.queryByRole('button', { name: /from gmbt/i })).not.toBeInTheDocument();
+  });
+
   it('blocks Escape dismissal while an async save is in flight', async () => {
     let resolveSave!: () => void;
     const onSave = jest.fn(() => new Promise<void>((resolve) => { resolveSave = resolve; }));

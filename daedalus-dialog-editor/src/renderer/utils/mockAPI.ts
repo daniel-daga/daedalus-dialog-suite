@@ -475,7 +475,8 @@ export const mockEditorAPI: EditorAPI = {
     return {
       projectFilePath: `${projectRoot}/mock.gothicproject.json`, projectRoot, scriptsRoot: projectRoot,
       config: { version: 1, target: 'g2-notr', scriptsRoot: '.', worlds: [], assetSources: ['.'] },
-      resolvedAssetSources: [projectRoot], gmbtProjectDir: null, warnings: [],
+      resolvedAssetSources: [projectRoot], resolvedAssetRoots: [projectRoot],
+      gmbtAssetSources: [], gmbtProjectDir: null, warnings: [],
     };
   },
 
@@ -491,7 +492,8 @@ export const mockEditorAPI: EditorAPI = {
       config: { version: 1, target: 'g2-notr', scriptsRoot: '.', worlds: [], assetSources,
         ...(gmbtProjectDir ? { gmbtProjectDir } : {}) },
       resolvedAssetSources: assetSources.map((source) => source === '.' ? projectRoot : source),
-      gmbtProjectDir: gmbtProjectDir ?? null, warnings: [] };
+      resolvedAssetRoots: assetSources.map((source) => source === '.' ? projectRoot : source),
+      gmbtAssetSources: [], gmbtProjectDir: gmbtProjectDir ?? null, warnings: [] };
   },
 
   async buildProjectIndex(_folderPath: string): Promise<any> {
@@ -647,6 +649,7 @@ export const mockEditorAPI: EditorAPI = {
   // These report "no world" rather than fabricating one — a mock world would
   // be a scene nobody could tell apart from a broken real one.
   async openWorldDialog(): Promise<string | null> { return null; },
+  async listWorlds(): Promise<[]> { return []; },
   async openWorld(): Promise<never> {
     throw new Error('The world editor needs the desktop app — it is not available in browser mode.');
   },

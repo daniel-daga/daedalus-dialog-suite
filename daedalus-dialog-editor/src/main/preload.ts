@@ -67,6 +67,7 @@ contextBridge.exposeInMainWorld('editorAPI', {
   // World API (level-editor.md §7). The world stays in the main process; what
   // crosses here is the lightweight VOB index and geometry/texture buffers.
   openWorldDialog: () => ipcRenderer.invoke('world:openDialog'),
+  listWorlds: () => ipcRenderer.invoke('world:listWorlds'),
   openWorld: (request: { worldPath: string; gameVersion: string; projectFilePath: string }) =>
     ipcRenderer.invoke('world:open', request),
   getWorldMesh: () => ipcRenderer.invoke('world:mesh'),

@@ -32,7 +32,8 @@ import {
   type ZenPosition, type ZenRotation,
 } from 'zen-world';
 import type {
-  AssetCatalog, InstancedPayload, VobFolders, WaynetPayload, WorldMeshPayload, WorldOp,
+  AssetCatalog, DiscoveredWorld, InstancedPayload, VobFolders, WaynetPayload,
+  WorldMeshPayload, WorldOp,
 } from '../../../shared/worldTypes';
 import { findFreePointVob, primaryVob, useWorldStore } from '../../store/worldStore';
 import { stateOptions, stateReach } from '../../routines/routineSchedule';
@@ -56,6 +57,7 @@ import WaypointPanel from './WaypointPanel';
 import WorldVobContextMenu from './WorldVobContextMenu';
 import PanelSplitter from './PanelSplitter';
 import WorldToolbar from './toolbar/WorldToolbar';
+import WorldPickerDialog from './WorldPickerDialog';
 
 // The World surface (level-editor.md §6): a new top-level view of the existing
 // app, lazily loaded, so `zenkit-node` is pulled in only when a world is
@@ -390,10 +392,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     return visuals;
   }, [items]);
 
-  const openWorld = useCallback(async () => {
-    const worldPath = await window.editorAPI.openWorldDialog();
-    if (!worldPath) return;
-
+  const openWorldAt = useCallback(async (worldPath: string) => {
     beginOpen();
     setMesh(null);
     setVisuals(null);
@@ -487,6 +486,46 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       );
     }
   }, [beginOpen, openSucceeded, openFailed, refreshHistoryDepth]);
+
+  /**
+   * The world picker (level-editor.md §16.31): the worlds the project's own
+   * asset sources hold, listed instead of a native file dialog pointed at one
+   * install. The scan runs on open, not on mount — a project's sources change
+   * under the dialog, and a list nobody is looking at is a directory walk
+   * nobody asked for.
+   */
+  const openPicker = useCallback(async () => {
+    setPickerOpen(true);
+    setPickerError(null);
+    setPickerLoading(true);
+    try {
+      setDiscoveredWorlds(await window.editorAPI.listWorlds());
+    } catch (failure) {
+      setDiscoveredWorlds([]);
+      setPickerError(failure instanceof Error ? failure.message : String(failure));
+    } finally {
+      setPickerLoading(false);
+    }
+  }, []);
+
+  const pickWorld = useCallback((worldPath: string) => {
+    setPickerOpen(false);
+    void openWorldAt(worldPath);
+  }, [openWorldAt]);
+
+  /** Everything the list cannot reach — a world outside the sources. */
+  const browseForWorld = useCallback(async () => {
+    let worldPath: string | null = null;
+    try {
+      worldPath = await window.editorAPI.openWorldDialog();
+    } catch (failure) {
+      setPickerError(failure instanceof Error ? failure.message : String(failure));
+      return;
+    }
+    if (!worldPath) return;
+    setPickerOpen(false);
+    void openWorldAt(worldPath);
+  }, [openWorldAt]);
 
   // The payload is the overlay's, and its *names* are also the Problems
   // scan's world input. Published from one effect rather than beside each of
@@ -845,6 +884,12 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   // warnings below are shown *before* the dialog rather than after the write,
   // because they are about whether to save at all.
   const [confirmingSave, setConfirmingSave] = useState(false);
+  // The world picker's own state (§16.31) — the scan is per opening, so the
+  // list never outlives the asset sources it was read from.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerLoading, setPickerLoading] = useState(false);
+  const [pickerError, setPickerError] = useState<string | null>(null);
+  const [discoveredWorlds, setDiscoveredWorlds] = useState<DiscoveredWorld[]>([]);
   const [savedTo, setSavedTo] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   /** Whether an edit has landed that the world file on disk does not have.
@@ -2215,7 +2260,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <WorldToolbar
-        onOpenWorld={() => void openWorld()}
+        onOpenWorld={() => void openPicker()}
         status={status}
         hasWorld={summary !== null}
         onSave={() => setConfirmingSave(true)}
@@ -2283,6 +2328,20 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       {/* The warnings belong before the write, not after it: they are about
           whether to save at all. Both are the brief's (§7) and both are facts
           about ZenGin rather than about this editor. */}
+      {/* Unmounted rather than kept closed: MUI's Modal restores the rest of
+          the app from `aria-hidden` when it unmounts, and a picker fading out
+          over a world that has just opened leaves the toolbar unreachable. */}
+      {pickerOpen && (
+        <WorldPickerDialog
+          open
+          worlds={discoveredWorlds}
+          loading={pickerLoading}
+          error={pickerError}
+          onPick={pickWorld}
+          onBrowse={() => void browseForWorld()}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
       <Dialog open={confirmingSave} onClose={() => setConfirmingSave(false)}>
         <DialogTitle>Save this world?</DialogTitle>
         <DialogContent>

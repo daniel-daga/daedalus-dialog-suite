@@ -10,6 +10,7 @@ import type {
   ProjectConfigWarning,
 } from '../../shared/projectConfigTypes';
 import { PROJECT_ASSET_SOURCE_LIMITS } from '../../shared/projectConfigTypes';
+import { findGmbtProject } from './gmbtProject';
 
 const PROJECT_FILE_SUFFIX = '.gothicproject.json';
 const TARGETS = new Set<GothicTarget>(['g1', 'g2', 'g2-notr']);
@@ -167,6 +168,43 @@ async function gmbtProjectProblem(candidate: string): Promise<string | null> {
   return 'GMBT project folder has no .gmbt.yml';
 }
 
+/**
+ * A path as the project file should carry it: relative to the project root,
+ * forward slashes, so a detected folder is as committable as a hand-written
+ * one. A folder on another drive has no relative spelling and stays absolute.
+ */
+function projectRelative(projectRoot: string, target: string): string {
+  const relative = path.relative(projectRoot, target);
+  if (relative.length === 0) return '.';
+  if (isPortableAbsolute(relative)) return target;
+  return relative.split(path.sep).join('/');
+}
+
+/**
+ * Asset sources for a project folder that sits inside a GMBT tree
+ * (level-editor.md §16.31): the project root, the folders the `.gmbt.yml`
+ * mounts, in its own order, and its `gothicRoot` when that is an install.
+ */
+async function gmbtSeededAssetSources(
+  projectRoot: string,
+  gmbt: Awaited<ReturnType<typeof findGmbtProject>>,
+): Promise<string[]> {
+  if (gmbt === null) return [];
+  const seeded: string[] = [];
+  const seen = new Set([comparablePath(projectRoot)]);
+  for (const assetDir of gmbt.assetDirs) {
+    const key = comparablePath(assetDir);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    seeded.push(projectRelative(projectRoot, assetDir));
+  }
+  if (gmbt.gothicRoot !== null && !seen.has(comparablePath(gmbt.gothicRoot))
+    && await isAvailableDirectory(gmbt.gothicRoot) && await isInstallShaped(gmbt.gothicRoot)) {
+    seeded.push(projectRelative(projectRoot, gmbt.gothicRoot));
+  }
+  return seeded;
+}
+
 export interface OpenOrMigrateResult {
   project: OpenedProjectConfig;
   migrationCommitted: boolean;
@@ -287,11 +325,38 @@ async function createProjectFile(projectFilePath: string, config: GothicProjectF
   }
 }
 
+/**
+ * A project file that names no GMBT project adopts the one it sits inside
+ * (§16.31), and the adoption is written back so the quick test is configured
+ * from then on. Only that one field: the asset list is the user's ordering and
+ * is never rewritten — the Asset sources dialog offers the rest by hand.
+ */
+async function adoptGmbtProject(
+  projectFilePath: string,
+  contents: string,
+  config: GothicProjectFileV1,
+): Promise<GothicProjectFileV1> {
+  if (config.gmbtProjectDir !== undefined) return config;
+  const projectRoot = path.dirname(projectFilePath);
+  const gmbt = await findGmbtProject(projectRoot);
+  if (gmbt === null) return config;
+  const adopted = { ...config, gmbtProjectDir: projectRelative(projectRoot, gmbt.dir) };
+  try {
+    await writeProjectFile(projectFilePath, adopted, contents);
+  } catch (error) {
+    // A project file that cannot be written is still perfectly openable; the
+    // adoption simply happens again next time.
+    console.warn('[ProjectConfig] could not record the detected GMBT project:', error);
+  }
+  return adopted;
+}
+
 async function openExistingProject(
   projectFilePath: string,
   legacyInstallPath: string | null,
 ): Promise<OpenOrMigrateResult> {
-  const config = parseProjectFile(await fs.readFile(projectFilePath, 'utf8'));
+  const contents = await fs.readFile(projectFilePath, 'utf8');
+  const config = await adoptGmbtProject(projectFilePath, contents, parseProjectFile(contents));
   const project = await resolveProjectConfig(projectFilePath, config);
   const legacyCleanupSafe = legacyInstallPath !== null && (
     comparablePath(legacyInstallPath) === comparablePath(project.projectRoot)
@@ -311,7 +376,8 @@ export class ProjectConfigService {
       const discovered = await discoverProjectFile(absoluteRoot);
       if (discovered) return openExistingProject(discovered, legacyInstallPath);
 
-      const assetSources = ['.'];
+      const gmbt = await findGmbtProject(absoluteRoot);
+      const assetSources = ['.', ...await gmbtSeededAssetSources(absoluteRoot, gmbt)];
       if (legacyInstallPath && comparablePath(legacyInstallPath) !== comparablePath(absoluteRoot)) {
         assetSources.push(legacyInstallPath);
       }
@@ -321,6 +387,7 @@ export class ProjectConfigService {
         scriptsRoot: '.',
         worlds: [],
         assetSources,
+        ...(gmbt === null ? {} : { gmbtProjectDir: projectRelative(absoluteRoot, gmbt.dir) }),
       });
       const committed = await createProjectFile(defaultProjectFilePath, config);
       if (!committed) return openExistingProject(defaultProjectFilePath, legacyInstallPath);
@@ -373,6 +440,7 @@ export async function resolveProjectConfig(
   const absoluteProjectFilePath = path.resolve(projectFilePath);
   const projectRoot = path.dirname(absoluteProjectFilePath);
   const resolvedAssetSources: string[] = [];
+  const resolvedAssetRoots: string[] = [];
   const warnings: ProjectConfigWarning[] = [];
 
   for (const source of config.assetSources) {
@@ -386,6 +454,7 @@ export async function resolveProjectConfig(
       });
       continue;
     }
+    resolvedAssetRoots.push(resolvedPath);
     if (await isInstallShaped(resolvedPath)) {
       const portableRoot = resolvedPath.replace(/\\/g, '/');
       const expanded = gothicAssetSources(portableRoot, (candidate) => {
@@ -419,12 +488,31 @@ export async function resolveProjectConfig(
     }
   }
 
+  // What the GMBT project mounts that the list does not — an offer for the
+  // Asset sources dialog, never applied here (§16.31).
+  const gmbtAssetSources: string[] = [];
+  if (gmbtProjectDir !== null) {
+    const configured = new Set(resolvedAssetRoots.map(comparablePath));
+    const gmbt = await findGmbtProject(gmbtProjectDir, 0);
+    for (const assetDir of gmbt?.assetDirs ?? []) {
+      if (configured.has(comparablePath(assetDir))) continue;
+      configured.add(comparablePath(assetDir));
+      gmbtAssetSources.push(projectRelative(projectRoot, assetDir));
+    }
+    if (gmbt?.gothicRoot != null && !configured.has(comparablePath(gmbt.gothicRoot))
+      && await isAvailableDirectory(gmbt.gothicRoot) && await isInstallShaped(gmbt.gothicRoot)) {
+      gmbtAssetSources.push(projectRelative(projectRoot, gmbt.gothicRoot));
+    }
+  }
+
   return {
     projectFilePath: absoluteProjectFilePath,
     projectRoot,
     scriptsRoot: path.resolve(projectRoot, config.scriptsRoot),
     config,
     resolvedAssetSources,
+    resolvedAssetRoots,
+    gmbtAssetSources,
     gmbtProjectDir,
     warnings,
   };

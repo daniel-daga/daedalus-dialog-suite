@@ -7,6 +7,7 @@
  */
 
 export type {
+  DiscoveredWorld,
   OpenWorldRequest,
   WorldSummary,
   WorldMeshPayload,
@@ -176,6 +177,8 @@ export interface EditorAPI {
   // World API (level-editor.md §7). The world stays in the main process; what
   // crosses is the lightweight VOB index plus geometry and texture buffers.
   openWorldDialog: () => Promise<string | null>;
+  /** The worlds under the project's asset sources (level-editor.md §16.31). */
+  listWorlds: () => Promise<DiscoveredWorld[]>;
   openWorld: (request: OpenWorldRequest) => Promise<WorldSummary>;
   getWorldMesh: () => Promise<WorldMeshPayload>;
   getWorldVisuals: () => Promise<InstancedPayload>;

@@ -46,6 +46,9 @@ async function openWorld() {
   api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
   render(<WorldSurface />);
   fireEvent.click(screen.getByTestId('world-open'));
+  // Open world lists the project's worlds (level-editor.md §16.31); these
+  // suites want a named file, which is what Browse… still is.
+  fireEvent.click(await screen.findByTestId('world-picker-browse'));
   await screen.findByTestId('world-viewport-stub');
   return summary;
 }
@@ -113,6 +116,9 @@ describe('the Delete key', () => {
     api.getWorldMesh.mockResolvedValueOnce({ groups: [], bbox: SUMMARY.bbox } as never);
     api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
     fireEvent.click(screen.getByTestId('world-open'));
+    // Open world lists the project's worlds (level-editor.md §16.31); these
+    // suites want a named file, which is what Browse… still is.
+    fireEvent.click(await screen.findByTestId('world-picker-browse'));
     await screen.findByTestId('world-viewport-stub');
     await act(async () => { useWorldStore.getState().selectVob(1); });
 

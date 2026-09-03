@@ -125,6 +125,9 @@ export const WAYPOINT_MOVE: WorldOp = {
 export function makeWorldEditorApi() {
   return {
     openWorldDialog: jest.fn(),
+    // The picker's scan: empty by default, so a suite that only wants a named
+    // world goes through Browse… without stubbing a list (§16.31).
+    listWorlds: jest.fn(async () => []),
     openWorld: jest.fn(),
     getWorldMesh: jest.fn(),
     getWorldVisuals: jest.fn(),

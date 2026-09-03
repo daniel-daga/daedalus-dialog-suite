@@ -41,8 +41,14 @@ async function openWorld() {
   api.openWorld.mockResolvedValueOnce(summary as never);
   api.getWorldMesh.mockResolvedValueOnce({ groups: [], bbox: summary.bbox } as never);
   api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+  // Open world lists the project's worlds first (level-editor.md §16.31); the
+  // toolbar's own flow starts at picking one.
+  api.listWorlds.mockResolvedValueOnce([{
+    path: 'C:/Gothic/NewWorld.zen', name: 'NewWorld.zen', source: 'C:/Gothic', isDefault: false,
+  }] as never);
   render(<WorldSurface />);
   fireEvent.click(screen.getByTestId('world-open'));
+  fireEvent.click(await screen.findByTestId('world-picker-entry-NewWorld.zen'));
   await screen.findByTestId('world-viewport-stub');
   return summary;
 }

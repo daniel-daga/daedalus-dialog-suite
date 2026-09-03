@@ -63,13 +63,14 @@ const AppContent: React.FC = () => {
     activeFile: state.activeFile,
     resetEditorSession: state.resetEditorSession,
   }), shallow);
-  const { openProject, closeProject, projectPath, projectName, projectFilePath, projectConfig, projectWarnings, isIngesting, allDialogFiles, parsedFilesCount, metadataFailures, isIngestedFilesOpen, setIngestedFilesOpen, saveAssetSources } = useProjectStore((state) => ({
+  const { openProject, closeProject, projectPath, projectName, projectFilePath, projectConfig, gmbtAssetSources, projectWarnings, isIngesting, allDialogFiles, parsedFilesCount, metadataFailures, isIngestedFilesOpen, setIngestedFilesOpen, saveAssetSources } = useProjectStore((state) => ({
     openProject: state.openProject,
     closeProject: state.closeProject,
     projectPath: state.projectPath,
     projectName: state.projectName,
     projectFilePath: state.projectFilePath,
     projectConfig: state.projectConfig,
+    gmbtAssetSources: state.gmbtAssetSources,
     projectWarnings: state.projectWarnings,
     isIngesting: state.isIngesting,
     allDialogFiles: state.allDialogFiles,
@@ -475,6 +476,7 @@ const AppContent: React.FC = () => {
           open={assetSourcesOpen}
           assetSources={projectConfig.assetSources}
           gmbtProjectDir={projectConfig.gmbtProjectDir ?? null}
+          gmbtAssetSources={gmbtAssetSources}
           projectRoot={projectPath}
           warnings={visibleProjectWarnings}
           worldLoaded={worldLoaded}

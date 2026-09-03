@@ -35,6 +35,14 @@ export interface OpenedProjectConfig {
   scriptsRoot: string;
   config: GothicProjectFileV1;
   resolvedAssetSources: string[];
+  /** The configured sources as folders, before an install-shaped one is
+   *  expanded into its archives — which is what world discovery scans
+   *  (level-editor.md §16.31). */
+  resolvedAssetRoots: string[];
+  /** Asset folders the detected GMBT project declares that the list above does
+   *  not have yet, as project-file paths. The Asset sources dialog offers
+   *  these; nothing adds them behind the user's back (§16.31). */
+  gmbtAssetSources: string[];
   /** The resolved `gmbtProjectDir`, or null when it is unset, missing, or not
    *  a GMBT project — which is also what disables the quick-test button. */
   gmbtProjectDir: string | null;

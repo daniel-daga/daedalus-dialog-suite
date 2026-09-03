@@ -219,6 +219,12 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 
 ## Done
 
+- **The GMBT project configures the project, and worlds are a list — landed
+  2026-09-03.** `.gmbt.yml` detected by walking up; a new project file seeds
+  its asset sources from it, an existing one only adopts `gmbtProjectDir` and
+  is offered the rest by a button. "Open world" now lists the `.zen` files
+  under the sources (§16.28 item 3), Browse… kept for the rest. Unwitnessed:
+  never run against beppo in the app. §16.31
 - **The GMBT quick-test button — landed 2026-09-03**, all six decisions as
   settled, plus a Choose…/Clear for the folder in the Asset sources dialog. A
   dirty world blocks unless the save went back over the opened file.

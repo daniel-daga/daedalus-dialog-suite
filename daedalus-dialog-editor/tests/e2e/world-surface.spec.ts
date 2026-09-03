@@ -99,7 +99,51 @@ test.describe('World surface', () => {
     });
 
     await page.getByTestId('world-open').click();
+    await page.getByTestId('world-picker-browse').click();
     await expect(page.getByTestId('world-error')).toBeVisible();
     await expect(page.getByTestId('world-viewport')).toHaveCount(0);
+  });
+
+  // The worlds the project's asset sources hold, listed instead of a native
+  // file dialog aimed at one install (level-editor.md §16.31).
+  test('lists the project`s own worlds and opens the one picked', async ({ page }) => {
+    await openWorldView(page);
+
+    await page.evaluate(() => {
+      const api = (window as unknown as { editorAPI: Record<string, unknown> }).editorAPI;
+      api.listWorlds = async () => [
+        {
+          path: 'C:/beppo/thirdparty/Worlds/BURGDORF.ZEN',
+          name: 'BURGDORF.ZEN',
+          source: 'C:/beppo/thirdparty',
+          isDefault: false,
+        },
+        {
+          path: 'C:/beppo/thirdparty/Worlds/SURFACE_BEPPO.ZEN',
+          name: 'SURFACE_BEPPO.ZEN',
+          source: 'C:/beppo/thirdparty',
+          isDefault: true,
+        },
+      ];
+      api.openWorld = async (request: { worldPath: string }) => {
+        throw new Error(`refused: ${request.worldPath}`);
+      };
+    });
+
+    await page.getByTestId('world-open').click();
+
+    const picker = page.getByTestId('world-picker');
+    await expect(picker.getByText('BURGDORF.ZEN')).toBeVisible();
+    await expect(picker.getByText('SURFACE_BEPPO.ZEN')).toBeVisible();
+    // The GMBT project's own default world is called out.
+    await expect(picker.getByText('GMBT default')).toBeVisible();
+
+    await picker.getByText('SURFACE_BEPPO.ZEN').click();
+
+    // The refusal carries the picked path, which is what proves the list entry
+    // and not the file dialog drove the open.
+    await expect(page.getByTestId('world-error'))
+      .toContainText('C:/beppo/thirdparty/Worlds/SURFACE_BEPPO.ZEN');
+    await expect(picker).toHaveCount(0);
   });
 });

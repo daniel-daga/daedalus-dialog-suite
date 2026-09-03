@@ -264,6 +264,9 @@ async function openWorld(
 
   lastRender = render(<WorldSurface />);
   fireEvent.click(screen.getByTestId('world-open'));
+  // Open world lists the project's worlds (level-editor.md §16.31); these
+  // suites want a named file, which is what Browse… still is.
+  fireEvent.click(await screen.findByTestId('world-picker-browse'));
   await screen.findByTestId('stub-drag');
   // Awaited, not the bare synchronous `act`: selecting a VOB of a catalogued
   // class issues the per-class read, and its answer lands a microtask after the
@@ -3461,6 +3464,12 @@ describe('a failure after the world has already taken the edit', () => {
 
     fireEvent.click(screen.getByTestId('world-open'));
 
+    // Open world lists the project's worlds (level-editor.md §16.31); these
+
+    // suites want a named file, which is what Browse… still is.
+
+    fireEvent.click(await screen.findByTestId('world-picker-browse'));
+
     await waitFor(() => expect(screen.getByTestId('world-edit-error')).toHaveTextContent(
       /worker exited/,
     ));
@@ -3483,6 +3492,9 @@ describe('a failure after the world has already taken the edit', () => {
 
     render(<WorldSurface />);
     fireEvent.click(screen.getByTestId('world-open'));
+    // Open world lists the project's worlds (level-editor.md §16.31); these
+    // suites want a named file, which is what Browse… still is.
+    fireEvent.click(await screen.findByTestId('world-picker-browse'));
 
     await waitFor(() => expect(api.getWorldWaynet).toHaveBeenCalled());
     await waitFor(() => expect(screen.getByTestId('world-edit-error')).toHaveTextContent(

@@ -453,6 +453,96 @@ describe('ProjectConfigService', () => {
       renameSpy.mockRestore();
     });
   });
+
+  // level-editor.md §16.31: a project opened from inside a GMBT tree reads the
+  // `.gmbt.yml` that already names its asset folders.
+  describe('GMBT detection', () => {
+    const beppoYml = 'gothicRoot: gothic\n\nmodFiles:\n  assets:\n    - mdk\n    - thirdparty\n    - mod\n\n  defaultWorld: SURFACE_BEPPO.ZEN\n';
+
+    let modRoot: string;
+
+    beforeEach(async () => {
+      modRoot = join(root, 'mod');
+      await mkdir(modRoot);
+      await mkdir(join(root, 'mdk'));
+      await mkdir(join(root, 'thirdparty'));
+      await mkdir(join(root, 'gothic', 'Data'), { recursive: true });
+      await writeFile(join(root, 'gothic', 'Data', 'Textures.vdf'), 'archive');
+      await writeFile(join(root, '.gmbt.yml'), beppoYml);
+    });
+
+    test('seeds a new project file with the GMBT folders and the GMBT project itself', async () => {
+      const result = await new ProjectConfigService().openOrMigrate(modRoot, null);
+
+      expect(result.project.config.assetSources).toEqual(['.', '../mdk', '../thirdparty', '../gothic']);
+      expect(result.project.config.gmbtProjectDir).toBe('..');
+      expect(result.project.gmbtProjectDir).toBe(await fsPromises.realpath(root));
+      expect(JSON.parse(await readFile(
+        join(modRoot, 'mod.gothicproject.json'), 'utf8',
+      )).gmbtProjectDir).toBe('..');
+    });
+
+    test('skips a GMBT asset folder that is the project root itself', async () => {
+      const result = await new ProjectConfigService().openOrMigrate(modRoot, null);
+
+      expect(result.project.config.assetSources).not.toContain('../mod');
+    });
+
+    test('leaves the Gothic root out when it is not shaped like an install', async () => {
+      await writeFile(join(root, '.gmbt.yml'), 'gothicRoot: ..\nmodFiles:\n  assets:\n    - mdk\n');
+
+      const result = await new ProjectConfigService().openOrMigrate(modRoot, null);
+
+      expect(result.project.config.assetSources).toEqual(['.', '../mdk']);
+    });
+
+    test('adopts the GMBT project for an existing file that names none, and persists it', async () => {
+      const projectFilePath = join(modRoot, 'demo.gothicproject.json');
+      await writeFile(projectFilePath, JSON.stringify(validConfig()));
+
+      const result = await new ProjectConfigService().openOrMigrate(modRoot, null);
+
+      expect(result.project.gmbtProjectDir).toBe(await fsPromises.realpath(root));
+      expect(JSON.parse(await readFile(projectFilePath, 'utf8')).gmbtProjectDir).toBe('..');
+      // The asset list is the user's, so adoption never rewrites it.
+      expect(result.project.config.assetSources).toEqual(['.']);
+    });
+
+    test('leaves an existing gmbtProjectDir alone', async () => {
+      const projectFilePath = join(modRoot, 'demo.gothicproject.json');
+      await mkdir(join(modRoot, 'own'));
+      await writeFile(join(modRoot, 'own', '.gmbt.yml'), 'modFiles:\n  assets:\n    - .\n');
+      await writeFile(projectFilePath, JSON.stringify({ ...(validConfig() as object), gmbtProjectDir: 'own' }));
+
+      const result = await new ProjectConfigService().openOrMigrate(modRoot, null);
+
+      expect(result.project.config.gmbtProjectDir).toBe('own');
+    });
+
+    test('offers the GMBT folders the asset list does not have yet', async () => {
+      const projectFilePath = join(modRoot, 'demo.gothicproject.json');
+      await writeFile(projectFilePath, JSON.stringify({
+        ...(validConfig(['.', '../mdk']) as object), gmbtProjectDir: '..',
+      }));
+
+      const result = await new ProjectConfigService().openOrMigrate(modRoot, null);
+
+      expect(result.project.gmbtAssetSources).toEqual(['../thirdparty', '../gothic']);
+    });
+
+    test('reports the source folders themselves, not the archives they expand to', async () => {
+      const projectFilePath = join(modRoot, 'demo.gothicproject.json');
+      await writeFile(projectFilePath, JSON.stringify(validConfig(['.', '../gothic', '../thirdparty'])));
+
+      const { project } = await new ProjectConfigService().openOrMigrate(modRoot, null);
+
+      expect(project.resolvedAssetRoots).toEqual([
+        project.projectRoot,
+        join(await fsPromises.realpath(root), 'gothic'),
+        join(await fsPromises.realpath(root), 'thirdparty'),
+      ]);
+    });
+  });
 });
 
 function pathBasename(value: string): string {
