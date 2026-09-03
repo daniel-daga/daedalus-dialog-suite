@@ -134,13 +134,13 @@ const NPCList: React.FC<NPCListProps> = ({ npcs, npcMap, selectedNPC, onSelectNP
             )}
           </AutoSizer>
         ) : (
-          npcFilter && (
-            <Box sx={{ p: 2, textAlign: 'center' }}>
-              <Typography variant='body2' color='text.secondary'>
-                No NPCs match "{npcFilter}"
-              </Typography>
-            </Box>
-          )
+          <Box sx={{ p: 2, textAlign: 'center' }}>
+            <Typography variant='body2' color='text.secondary'>
+              {npcFilter
+                ? `No NPCs match "${npcFilter}"`
+                : 'No NPCs yet. Place an NPC .d file in the project folder — the editor picks it up and creates its EXIT dialog file.'}
+            </Typography>
+          </Box>
         )}
       </Box>
 
