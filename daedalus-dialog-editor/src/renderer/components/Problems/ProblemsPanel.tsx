@@ -24,6 +24,7 @@ import ProblemsList from './ProblemsList';
 const ProblemsPanel: React.FC = () => {
   const problems = useProblemsStore((s) => s.problems);
   const hasScanned = useProblemsStore((s) => s.hasScanned);
+  const isScanning = useProblemsStore((s) => s.isScanning);
   const scannedFileCount = useProblemsStore((s) => s.scannedFileCount);
   const totalFileCount = useProblemsStore((s) => s.totalFileCount);
   const runScan = useProblemsStore((s) => s.runScan);
@@ -34,6 +35,9 @@ const ProblemsPanel: React.FC = () => {
   // effect fire on the completion flip even without a parseGeneration bump.
   const parseGeneration = useProjectStore((s) => s.parseGeneration);
   const isIngesting = useProjectStore((s) => s.isIngesting);
+  // The scan reads the project's parsed files, so in single-file mode there is
+  // nothing to scan — say so rather than reporting a clean scan (F18).
+  const projectOpen = useProjectStore((s) => s.projectPath !== null);
   const { navigateToDialog, navigateToSymbol } = useNavigation();
   // A world finding is only navigable while the world it addresses is the one
   // that is open — the editor holds one at a time, and the finding may belong
@@ -120,9 +124,11 @@ const ProblemsPanel: React.FC = () => {
           </Button>
         </Box>
         <Typography variant="caption" color="text.secondary" data-testid="problems-summary">
-          {hasScanned
-            ? `${errorCount} error${errorCount === 1 ? '' : 's'}, ${warningCount} warning${warningCount === 1 ? '' : 's'}`
-            : 'Scanning…'}
+          {!projectOpen
+            ? 'Problems are found by scanning a project — open a project to see them here.'
+            : isScanning || !hasScanned
+              ? 'Scanning…'
+              : `${errorCount} error${errorCount === 1 ? '' : 's'}, ${warningCount} warning${warningCount === 1 ? '' : 's'}`}
           {ingestionIncomplete ? ` · ${scannedFileCount}/${totalFileCount} files scanned` : ''}
         </Typography>
       </Box>
