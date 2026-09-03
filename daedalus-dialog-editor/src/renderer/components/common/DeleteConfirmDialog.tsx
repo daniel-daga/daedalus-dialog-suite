@@ -14,6 +14,7 @@ export interface DeleteConfirmDialogProps {
   onCancel: () => void;
   title?: string;
   message?: string;
+  confirmLabel?: string;
 }
 
 /**
@@ -26,7 +27,8 @@ const DeleteConfirmDialog: React.FC<DeleteConfirmDialogProps> = ({
   onConfirm,
   onCancel,
   title = 'Delete action',
-  message = 'Are you sure you want to delete this action?'
+  message = 'Are you sure you want to delete this action?',
+  confirmLabel = 'Delete'
 }) => {
   const cancelRef = useRef<HTMLButtonElement>(null);
 
@@ -59,7 +61,7 @@ const DeleteConfirmDialog: React.FC<DeleteConfirmDialogProps> = ({
           variant="contained"
           size="small"
         >
-          Delete
+          {confirmLabel}
         </Button>
       </DialogActions>
     </Dialog>

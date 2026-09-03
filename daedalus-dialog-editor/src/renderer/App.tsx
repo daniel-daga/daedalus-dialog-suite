@@ -43,6 +43,7 @@ import { hasUnsavedChanges as fileHasUnsavedChanges } from './store/fileStore';
 import { flushAllPendingEdits } from './utils/pendingEditFlushRegistry';
 import { useWindowCloseGuard } from './hooks/useWindowCloseGuard';
 import AssetSourcesDialog from './components/AssetSourcesDialog';
+import DeleteConfirmDialog from './components/common/DeleteConfirmDialog';
 import { useWorldStore } from './store/worldStore';
 
 // Wire up the cross-store model sync once at module load.
@@ -127,6 +128,7 @@ const AppContent: React.FC = () => {
   const [isProjectOpening, setIsProjectOpening] = useState(false);
   const [triggerUpdateCheck, setTriggerUpdateCheck] = useState(false);
   const [assetSourcesOpen, setAssetSourcesOpen] = useState(false);
+  const [discardPrompt, setDiscardPrompt] = useState<{ context: string; proceed: () => void } | null>(null);
   const [dismissedProjectWarnings, setDismissedProjectWarnings] = useState<Set<string>>(() => new Set());
   const { mode, setMode } = useThemeMode();
   const appWarnings = visibleProjectWarnings.filter((warning) => !dismissedProjectWarnings.has(warning.resolvedPath));
@@ -165,7 +167,9 @@ const AppContent: React.FC = () => {
     return () => clearTimeout(timer);
   }, []);
 
-  const confirmDiscardChanges = (context: string): boolean => {
+  // Runs `proceed` at once when nothing is unsaved; otherwise parks it behind
+  // the in-app guard below, which runs it on "Discard and continue".
+  const withDiscardConfirmed = (context: string, proceed: () => void): void => {
     // Drain any debounced condition/action edit (N4) so a pending keystroke
     // counts toward dirtiness, then evaluate against the live store — the flush
     // mutates the store synchronously, after this render's memo was computed.
@@ -174,10 +178,11 @@ const AppContent: React.FC = () => {
     const hasUnsavedChanges = Array.from(useEditorStore.getState().openFiles.values())
       .some((fileState) => fileHasUnsavedChanges(fileState));
     if (!hasUnsavedChanges) {
-      return true;
+      proceed();
+      return;
     }
 
-    return window.confirm(`You have unsaved changes. Continue and ${context}?`);
+    setDiscardPrompt({ context, proceed });
   };
 
   const handleOpenFile = async () => {
@@ -191,31 +196,29 @@ const AppContent: React.FC = () => {
     }
   };
 
-  const openProjectWithReset = async (nextProjectPath: string) => {
+  const openProjectWithReset = (nextProjectPath: string) => {
     const isReloadingCurrentProject = !!projectPath && projectPath === nextProjectPath;
     const context = isReloadingCurrentProject ? 'reload the project' : 'switch projects';
 
-    if (!confirmDiscardChanges(context)) {
-      return;
-    }
+    withDiscardConfirmed(context, async () => {
+      setIsProjectOpening(true);
 
-    setIsProjectOpening(true);
-
-    try {
-      resetEditorSession();
-      await openProject(nextProjectPath);
-    } catch (error) {
-      setAppError(`Failed to open project: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      setIsProjectOpening(false);
-    }
+      try {
+        resetEditorSession();
+        await openProject(nextProjectPath);
+      } catch (error) {
+        setAppError(`Failed to open project: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      } finally {
+        setIsProjectOpening(false);
+      }
+    });
   };
 
   const handleOpenProject = async () => {
     try {
       const folderPath = await window.editorAPI.openProjectFolderDialog();
       if (folderPath) {
-        await openProjectWithReset(folderPath);
+        openProjectWithReset(folderPath);
       }
     } catch (error) {
       setAppError(`Failed to choose project folder: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -223,17 +226,15 @@ const AppContent: React.FC = () => {
   };
 
   const handleCloseProject = () => {
-    if (!confirmDiscardChanges('close the project')) {
-      return;
-    }
-
-    resetEditorSession();
-    closeProject();
+    withDiscardConfirmed('close the project', () => {
+      resetEditorSession();
+      closeProject();
+    });
   };
 
-  const handleReload = async () => {
+  const handleReload = () => {
     if (projectPath) {
-      await openProjectWithReset(projectPath);
+      openProjectWithReset(projectPath);
       return;
     }
 
@@ -241,15 +242,13 @@ const AppContent: React.FC = () => {
       return;
     }
 
-    if (!confirmDiscardChanges('reload the file')) {
-      return;
-    }
-
-    try {
-      await openFile(activeFile);
-    } catch (error) {
-      setAppError(`Failed to reload file: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
+    withDiscardConfirmed('reload the file', async () => {
+      try {
+        await openFile(activeFile);
+      } catch (error) {
+        setAppError(`Failed to reload file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    });
   };
 
   return (
@@ -444,7 +443,7 @@ const AppContent: React.FC = () => {
               <IconButton
                 color="inherit"
                 aria-label="Reload"
-                onClick={() => void handleReload()}
+                onClick={handleReload}
                 disabled={!projectPath && !activeFile}
               >
                 <RefreshIcon />
@@ -493,6 +492,18 @@ const AppContent: React.FC = () => {
 
       <ExternalChangeConflictDialog />
       {closeGuardDialog}
+      <DeleteConfirmDialog
+        open={discardPrompt !== null}
+        title="Unsaved changes"
+        message={`You have unsaved changes. Continue and ${discardPrompt?.context ?? ''}?`}
+        confirmLabel="Discard and continue"
+        onConfirm={() => {
+          const prompt = discardPrompt;
+          setDiscardPrompt(null);
+          prompt?.proceed();
+        }}
+        onCancel={() => setDiscardPrompt(null)}
+      />
 
       <Box sx={{ flexGrow: 1, display: 'flex', overflow: 'hidden' }}>
         <ErrorBoundary>
@@ -546,7 +557,7 @@ const AppContent: React.FC = () => {
                     <List sx={{ pt: 0, pb: 0 }}>
                       {recentProjects.map((project) => (
                         <ListItem key={project.path} disablePadding>
-                          <ListItemButton onClick={() => void openProjectWithReset(project.path)}>
+                          <ListItemButton onClick={() => openProjectWithReset(project.path)}>
                             <ListItemIcon>
                               <FolderIcon />
                             </ListItemIcon>

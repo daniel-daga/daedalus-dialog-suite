@@ -20,11 +20,14 @@ import {
   Select,
   MenuItem,
   TablePagination,
+  Snackbar,
+  Alert,
 } from '@mui/material';
 import { Search as SearchIcon, Add as AddIcon, Delete as DeleteIcon } from '@mui/icons-material';
 import { useProjectStore } from '../store/projectStore';
 import type { GlobalConstant, GlobalVariable } from '../types/global';
 import VariableCreationDialog from './common/VariableCreationDialog';
+import DeleteConfirmDialog from './common/DeleteConfirmDialog';
 import {
   SEARCHABLE_PANE_PATTERN,
   searchablePaneFilterStripSx,
@@ -52,6 +55,8 @@ const VariableManager: React.FC = () => {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(100);
   const [openAdd, setOpenAdd] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<GlobalConstant | GlobalVariable | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const variables = useMemo(() => {
     const vars: VariableEntry[] = [];
@@ -124,18 +129,18 @@ const VariableManager: React.FC = () => {
     return filteredVariables.slice(start, start + rowsPerPage);
   }, [filteredVariables, page, rowsPerPage]);
 
-  const handleDelete = async (v: GlobalConstant | GlobalVariable) => {
-    if (!v.filePath || !v.range) {
+  const handleDelete = async () => {
+    const v = pendingDelete;
+    setPendingDelete(null);
+    if (!v?.filePath || !v.range) {
       return;
     }
 
-    if (confirm(`Are you sure you want to delete ${v.name}?`)) {
-      try {
-        await deleteVariable(v.filePath, v.range);
-      } catch (e) {
-        console.error(e);
-        alert('Failed to delete variable: ' + (e instanceof Error ? e.message : String(e)));
-      }
+    try {
+      await deleteVariable(v.filePath, v.range);
+    } catch (e) {
+      console.error(e);
+      setDeleteError('Failed to delete variable: ' + (e instanceof Error ? e.message : String(e)));
     }
   };
 
@@ -249,7 +254,7 @@ const VariableManager: React.FC = () => {
                       <span>
                         <IconButton
                           size='small'
-                          onClick={() => handleDelete(v)}
+                          onClick={() => setPendingDelete(v)}
                           disabled={!v.filePath || !v.range}
                           color='error'
                           aria-label='Delete variable'
@@ -292,6 +297,18 @@ const VariableManager: React.FC = () => {
         open={openAdd}
         onClose={() => setOpenAdd(false)}
       />
+
+      <DeleteConfirmDialog
+        open={pendingDelete !== null}
+        title='Delete variable'
+        message={`Delete ${pendingDelete?.name ?? ''} from ${pendingDelete?.filePath ?? ''}? The file is written immediately and this cannot be undone.`}
+        onConfirm={() => void handleDelete()}
+        onCancel={() => setPendingDelete(null)}
+      />
+
+      <Snackbar open={deleteError !== null} autoHideDuration={6000} onClose={() => setDeleteError(null)}>
+        <Alert severity='error' onClose={() => setDeleteError(null)}>{deleteError}</Alert>
+      </Snackbar>
     </Box>
   );
 };

@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 /**
  * E2E tests for the "Reload" button with unsaved changes confirmation.
- * Covers the browser confirm dialog shown when reloading with unsaved changes.
+ * Covers the in-app confirm dialog shown when reloading with unsaved changes.
  */
 
 const DIALOG_FILE = `INSTANCE DIA_Reload_Test(C_INFO)
@@ -60,23 +60,20 @@ test.describe('Reload with Unsaved Changes', () => {
   });
 
   test('clicking "Reload" with no unsaved changes reloads without confirmation', async ({ page }) => {
-    let confirmDialogShown = false;
+    let nativeDialogShown = false;
     page.on('dialog', async (d) => {
-      if (d.type() === 'confirm') {
-        confirmDialogShown = true;
-        await d.dismiss();
-      } else {
-        await d.dismiss();
-      }
+      nativeDialogShown = true;
+      await d.dismiss();
     });
 
     await page.getByRole('button', { name: 'Reload', exact: true }).click();
     await page.waitForTimeout(1000);
-    // No unsaved changes → no confirmation prompt
-    expect(confirmDialogShown).toBe(false);
+    // No unsaved changes → no confirmation prompt, native or in-app
+    expect(nativeDialogShown).toBe(false);
+    await expect(page.getByRole('dialog', { name: 'Unsaved changes' })).toBeHidden();
   });
 
-  test('clicking "Reload" with unsaved changes shows a confirmation dialog', async ({ page }) => {
+  test('clicking "Reload" with unsaved changes shows the in-app confirmation dialog', async ({ page }) => {
     // Make an unsaved change
     const textField = page.getByLabel('Text').first();
     await textField.click();
@@ -85,40 +82,37 @@ test.describe('Reload with Unsaved Changes', () => {
     // Wait for state to reflect dirty status
     await page.waitForTimeout(500);
 
-    let confirmMessage = '';
+    let nativeDialogShown = false;
     page.on('dialog', async (d) => {
-      if (d.type() === 'confirm') {
-        confirmMessage = d.message();
-        await d.dismiss(); // Dismiss to preserve changes
-      }
+      nativeDialogShown = true;
+      await d.dismiss();
     });
 
     await page.getByRole('button', { name: 'Reload', exact: true }).click();
 
-    await expect(async () => {
-      expect(confirmMessage).toContain('unsaved changes');
-    }).toPass({ timeout: 5000 });
+    const guard = page.getByRole('dialog', { name: 'Unsaved changes' });
+    await expect(guard).toBeVisible();
+    await expect(guard).toContainText('reload the file');
+    expect(nativeDialogShown).toBe(false);
   });
 
-  test('dismissing the confirmation preserves unsaved changes', async ({ page }) => {
+  test('cancelling the confirmation preserves unsaved changes', async ({ page }) => {
     const textField = page.getByLabel('Text').first();
     await textField.click();
     await textField.fill('Changes to preserve');
     await page.keyboard.press('Tab');
     await page.waitForTimeout(500);
 
-    page.on('dialog', async (d) => {
-      if (d.type() === 'confirm') {
-        await d.dismiss(); // Cancel reload
-      }
-    });
-
     await page.getByRole('button', { name: 'Reload', exact: true }).click();
-    await page.waitForTimeout(500);
+    const guard = page.getByRole('dialog', { name: 'Unsaved changes' });
+    await expect(guard).toBeVisible();
+    await guard.getByRole('button', { name: 'Cancel' }).click();
+    await expect(guard).toBeHidden();
 
     // Dialog should still be visible (reload was cancelled)
     await expect(
       page.getByRole('heading', { name: 'DIA_Reload_Test', exact: true })
     ).toBeVisible();
+    await expect(page.getByLabel('Text').first()).toHaveValue('Changes to preserve');
   });
 });

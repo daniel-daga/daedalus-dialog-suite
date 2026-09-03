@@ -91,46 +91,87 @@ test.describe('Close Project', () => {
     await expect(page.getByText('Project: project')).toBeVisible();
   });
 
-  test('closing with unsaved changes asks for confirmation; cancel keeps the project open', async ({ page }) => {
-    await seedAndShowWelcome(page);
-
-    const confirmMessages: string[] = [];
-    let acceptConfirm = false;
-    page.on('dialog', async (dialog) => {
-      if (dialog.message().includes('project folder path')) {
-        await dialog.accept('project');
-      } else if (dialog.type() === 'confirm') {
-        confirmMessages.push(dialog.message());
-        if (acceptConfirm) {
-          await dialog.accept();
-        } else {
-          await dialog.dismiss();
-        }
-      } else {
-        await dialog.dismiss();
-      }
-    });
-    await openProject(page);
-
-    // Open a dialog and make an unsaved edit.
+  async function makeUnsavedEdit(page: Page) {
     await page.getByText('PC_CloseProject_NPC').click();
     await page.getByRole('button', { name: /DIA_CloseProject_Test/ }).click();
     await expect(page.getByRole('heading', { name: 'DIA_CloseProject_Test', exact: true })).toBeVisible();
     const textField = page.getByLabel('Text').first();
     await textField.click();
     await textField.fill('DIA_CloseProject_Test_EDITED');
+  }
 
-    // Cancel the confirm: the project stays open.
+  test('closing with unsaved changes asks for confirmation; cancel keeps the project open', async ({ page }) => {
+    await seedAndShowWelcome(page);
+
+    let nativeConfirms = 0;
+    page.on('dialog', async (dialog) => {
+      if (dialog.message().includes('project folder path')) {
+        await dialog.accept('project');
+      } else {
+        if (dialog.type() === 'confirm') nativeConfirms += 1;
+        await dialog.dismiss();
+      }
+    });
+    await openProject(page);
+    await makeUnsavedEdit(page);
+
+    // The guard is the in-app dialog, not a native confirm. Cancel keeps the
+    // project open.
     await page.getByTestId('close-project-button').click();
-    await expect.poll(() => confirmMessages.length).toBeGreaterThan(0);
-    expect(confirmMessages[0]).toContain('unsaved changes');
+    const guard = page.getByRole('dialog', { name: 'Unsaved changes' });
+    await expect(guard).toBeVisible();
+    await expect(guard).toContainText('close the project');
+    await guard.getByRole('button', { name: 'Cancel' }).click();
+    await expect(guard).toBeHidden();
     await expect(page.getByText('PC_CloseProject_NPC').first()).toBeVisible();
     await expect(page.getByText('Welcome to Dandelion')).toBeHidden();
+    expect(nativeConfirms).toBe(0);
 
-    // Accept the confirm (or none if auto-save has since cleaned the file):
-    // the project closes.
-    acceptConfirm = true;
+    // Discarding (or no guard at all if auto-save has since cleaned the file)
+    // closes the project.
     await page.getByTestId('close-project-button').click();
+    if (await guard.isVisible()) {
+      await guard.getByRole('button', { name: 'Discard and continue' }).click();
+    }
     await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
+  });
+
+  test('switching projects with unsaved changes shows the in-app guard', async ({ page }) => {
+    await seedAndShowWelcome(page);
+    // The second folder prompt names another project so the guard reads
+    // "switch", not "reload"; the mock index lists every seeded file
+    // regardless of folder, so the same dialog is there after the switch.
+    let folderPrompts = 0;
+    page.on('dialog', async (dialog) => {
+      if (dialog.message().includes('project folder path')) {
+        folderPrompts += 1;
+        await dialog.accept(folderPrompts === 1 ? 'project' : 'other');
+      } else {
+        await dialog.dismiss();
+      }
+    });
+    await openProject(page);
+    await makeUnsavedEdit(page);
+
+    await page.getByRole('button', { name: 'Open Project', exact: true }).click();
+    const guard = page.getByRole('dialog', { name: 'Unsaved changes' });
+    await expect(guard).toBeVisible();
+    await expect(guard).toContainText('switch projects');
+    // Cancel focused: Enter backs out, as in every other confirm.
+    await expect(guard.getByRole('button', { name: 'Cancel' })).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(guard).toBeHidden();
+    await expect(page.getByLabel('Text').first()).toHaveValue('DIA_CloseProject_Test_EDITED');
+
+    // Discarding reopens the project from disk: the edit is gone.
+    await page.getByRole('button', { name: 'Open Project', exact: true }).click();
+    await expect(guard).toBeVisible();
+    await guard.getByRole('button', { name: 'Discard and continue' }).click();
+    await expect(guard).toBeHidden();
+    await expect(page.getByText('Project: other')).toBeVisible({ timeout: 15000 });
+    await page.getByText('PC_CloseProject_NPC', { exact: true }).click();
+    await page.getByRole('button', { name: /^DIA_CloseProject_Test/ }).first().click();
+    await expect(page.getByRole('heading', { name: 'DIA_CloseProject_Test', exact: true })).toBeVisible();
+    await expect(page.getByLabel('Text').first()).toHaveValue(ORIGINAL_TEXT_ID);
   });
 });
