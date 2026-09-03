@@ -470,6 +470,7 @@ export function setupIpcHandlers() {
     const result = await dialog.showOpenDialog({
       ...(defaultPath === undefined ? {} : { defaultPath }),
       properties: ['openDirectory'],
+      title: 'Select asset source folder',
     });
     if (result.canceled || result.filePaths.length === 0) return null;
     const selected = result.filePaths[0];

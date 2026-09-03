@@ -12,7 +12,7 @@ import {
  * same command `zenkit-node/tools/engine-batch.ps1` uses, minus `--noreparse`.
  */
 const WINDOWS_ENV = {
-  PATH: ['C:\\tools', 'C:\\other'].join(path.delimiter),
+  PATH: ['C:\\tools', 'C:\\other'].join(path.win32.delimiter),
   PATHEXT: '.COM;.EXE;.BAT',
   APPDATA: 'C:\\Users\\d\\AppData\\Roaming',
 };
@@ -27,14 +27,14 @@ function fakeChild() {
 
 describe('resolveGmbtExecutable', () => {
   it('takes gmbt off PATH, extension by extension, before the APPDATA fallback', () => {
-    const found = path.join('C:\\other', 'gmbt.EXE');
+    const found = path.win32.join('C:\\other', 'gmbt.EXE');
     expect(resolveGmbtExecutable({
       env: WINDOWS_ENV, platform: 'win32', exists: (candidate) => candidate === found,
     })).toBe(found);
   });
 
   it('falls back to %APPDATA%\\GMBT\\bin\\gmbt.exe when PATH has none', () => {
-    const fallback = path.join(WINDOWS_ENV.APPDATA, 'GMBT', 'bin', 'gmbt.exe');
+    const fallback = path.win32.join(WINDOWS_ENV.APPDATA, 'GMBT', 'bin', 'gmbt.exe');
     expect(resolveGmbtExecutable({
       env: WINDOWS_ENV, platform: 'win32', exists: (candidate) => candidate === fallback,
     })).toBe(fallback);
@@ -57,7 +57,7 @@ describe('startGmbtQuickTest', () => {
     });
 
     const [executable, args, options] = spawn.mock.calls[0] as unknown as [string, string[], Record<string, unknown>];
-    expect(executable).toBe(path.join('C:\\tools', 'gmbt.COM'));
+    expect(executable).toBe(path.win32.join('C:\\tools', 'gmbt.COM'));
     expect(args).toEqual(['test', '--world=MYWORLD.ZEN', '--nomenu', '-D', '--noupdatesubtitles']);
     // `--noreparse` is the harness's, not this one's: scripts edited in this
     // app have to be recompiled by the run that tests them.

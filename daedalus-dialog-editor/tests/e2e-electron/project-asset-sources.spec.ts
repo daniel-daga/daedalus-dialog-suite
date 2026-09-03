@@ -47,7 +47,10 @@ async function openProject(fixture: AppFixture, projectDir: string, assetSource?
 
 function sourceRow(dialog: Locator, source: string): Locator {
   const escaped = source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const numberedLabel = dialog.getByText(new RegExp(`^\\d+\\.\\s+${escaped}$`));
+  // `has:` re-runs its locator anchored inside each candidate row, so an inner
+  // locator built from `dialog` would look for a dialog inside the row and
+  // match nothing. It has to start from the page.
+  const numberedLabel = dialog.page().getByText(new RegExp(`^\\d+\\.\\s+${escaped}$`));
   return dialog.getByRole('listitem').filter({
     // The primary label is numbered (for example, `1. .`). Match the whole
     // label so a source of `.` cannot match every row's punctuation.
@@ -109,13 +112,14 @@ test.describe('project asset sources', () => {
 
     await dialog.getByRole('button', { name: /Add/i }).click();
     await expect(sourceRow(dialog, addedSource)).toBeVisible();
-    await sourceRow(dialog, addedSource).getByRole('button', { name: /Move up/i }).click();
+    // The move controls name the source they move — `Move <source> up`.
+    await sourceRow(dialog, addedSource).getByRole('button', { name: /^Move .+ up$/i }).click();
 
     const orderedSources = dialog.getByRole('listitem');
     await expect(orderedSources.nth(0)).toContainText('.');
     await expect(orderedSources.nth(1)).toContainText(addedSource);
     await expect(orderedSources.nth(2)).toContainText(existingSource);
-    await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+    await dialog.getByRole('button', { name: /save asset sources/i }).click();
 
     await expect(async () => {
       expect(JSON.parse(fs.readFileSync(configPath, 'utf8')).assetSources).toEqual([

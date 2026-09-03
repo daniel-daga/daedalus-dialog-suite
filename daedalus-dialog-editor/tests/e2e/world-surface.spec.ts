@@ -46,7 +46,8 @@ test.describe('World surface', () => {
     // exposes only the world-file action; asset sources are edited at project
     // level.
     await expect(page.getByTestId('world-open')).toBeVisible();
-    await expect(page.getByTestId('world-toolbar-file').getByRole('button')).toHaveCount(2);
+    // Open world, Save world…, Quick test.
+    await expect(page.getByTestId('world-toolbar-file').getByRole('button')).toHaveCount(3);
   });
 
   test('the toolbar keeps its file controls in the file group', async ({ page }) => {
@@ -59,7 +60,8 @@ test.describe('World surface', () => {
 
     const fileGroup = page.getByTestId('world-toolbar-file');
     await expect(fileGroup.getByTestId('world-open')).toBeVisible();
-    await expect(fileGroup.getByRole('button')).toHaveCount(2);
+    await expect(fileGroup.getByTestId('world-gmbt-test')).toBeVisible();
+    await expect(fileGroup.getByRole('button')).toHaveCount(3);
   });
 
   test('the viewport is not mounted until a world is actually open', async ({ page }) => {

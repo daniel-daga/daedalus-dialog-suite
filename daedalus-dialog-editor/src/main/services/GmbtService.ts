@@ -32,18 +32,22 @@ export function resolveGmbtExecutable(deps: GmbtLaunchDeps = {}): string | null 
   const env = deps.env ?? process.env;
   const exists = deps.exists ?? existsSync;
   const platform = deps.platform ?? process.platform;
-  const extensions = platform === 'win32'
+  const isWindows = platform === 'win32';
+  // Windows paths are parsed as Windows paths whatever the host is: the tests
+  // run on Linux in CI, where `path.delimiter` would split `C:\tools` in two.
+  const paths = isWindows ? path.win32 : path.posix;
+  const extensions = isWindows
     ? (env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean)
     : [''];
-  for (const directory of (env.PATH ?? env.Path ?? '').split(path.delimiter).filter(Boolean)) {
+  for (const directory of (env.PATH ?? env.Path ?? '').split(paths.delimiter).filter(Boolean)) {
     for (const extension of extensions) {
-      const candidate = path.join(directory, `gmbt${extension}`);
+      const candidate = paths.join(directory, `gmbt${extension}`);
       if (exists(candidate)) return candidate;
     }
   }
   const appData = env.APPDATA;
   if (appData) {
-    const fallback = path.join(appData, 'GMBT', 'bin', 'gmbt.exe');
+    const fallback = paths.join(appData, 'GMBT', 'bin', 'gmbt.exe');
     if (exists(fallback)) return fallback;
   }
   return null;
