@@ -666,6 +666,14 @@ export const mockEditorAPI: EditorAPI = {
   async getVisualBounds(): Promise<null> { return null; },
   // Null is what the real call returns for a visual the binding cannot extract.
   async getWorldVisual(): Promise<null> { return null; },
+  async getAssetThumbnail(): Promise<never> {
+    throw new Error('No world is open');
+  },
+  async putAssetThumbnail(): Promise<void> {},
+  async getAssetCatalog(): Promise<{ favorites: string[]; categories: never[] }> {
+    return { favorites: [], categories: [] };
+  },
+  async saveAssetCatalog(): Promise<void> {},
   // No world means no VOB to have class properties, so this refuses like its
   // siblings rather than answering with an empty object a grid would render as
   // a VOB whose every field is blank.

@@ -66,6 +66,7 @@ export class WorldService {
   private readonly requestTimeoutMs: number;
   private readonly createWorker: () => WorldWorker;
   private worldPath: string | null = null;
+  private assetSources: readonly string[] | null = null;
   private failure: WorkerRequestError | null = null;
   // The authoritative history (§7). A batch is one entry. Both stacks belong to
   // the world that is open: an op addresses a VOB by its index path down *that*
@@ -107,7 +108,19 @@ export class WorldService {
     this.redoStack = [];
     const summary = await this.request<WorldSummary>('open', request);
     this.worldPath = request.worldPath;
+    this.assetSources = request.assetSources;
     return summary;
+  }
+
+  /**
+   * The mounts the open world's VFS was built from, in mount order — what a
+   * thumbnail is keyed by (`ThumbnailCacheService`). Refused with no world
+   * open, like every other read of it: the list belongs to the open, and a
+   * previous world's mounts would key a thumbnail to the wrong files.
+   */
+  openAssetSources(): readonly string[] {
+    if (this.worldPath === null || this.assetSources === null) throw new Error('No world is open');
+    return this.assetSources;
   }
 
   getWorldMesh(): Promise<WorldMeshPayload> {

@@ -38,6 +38,8 @@ import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
 import { appendInsertNpc, findFunctionFile, startupFunctionFor } from './insertNpcScript';
 import { vobModelOf } from '../../world/vobModel';
+import { AssetThumbnails } from '../../world/assetThumbnails';
+import { ThumbnailRenderer } from '../../world/ThumbnailRenderer';
 import { DEFAULT_EXPOSURE } from '../../world/WorldScene';
 import WorldViewport, { type GizmoMode, type WorldViewportHandle } from './WorldViewport';
 import WorldSceneTree from './WorldSceneTree';
@@ -516,6 +518,26 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     (name: string) => window.editorAPI.getWorldVisual(name),
     [],
   );
+
+  // The thumbnail queue (§16.26 row 1) — one per open world, since its cache
+  // keys are the open world's mounts. Built lazily: the offscreen renderer
+  // holds a GL context, and a surface with no Assets tab open owes none.
+  const thumbnailsRef = useRef<AssetThumbnails | null>(null);
+  const thumbnails = useMemo(() => {
+    thumbnailsRef.current?.dispose();
+    thumbnailsRef.current = summary === null ? null : new AssetThumbnails({
+      getThumbnail: (name) => window.editorAPI.getAssetThumbnail(name),
+      putThumbnail: (key, dataUrl) => window.editorAPI.putAssetThumbnail(key, dataUrl),
+      loadVisual,
+      loadTexture,
+      renderer: new ThumbnailRenderer(),
+    });
+    return thumbnailsRef.current;
+    // Keyed on the world, not the summary object: a refreshed index after a
+    // structural op is the same world over the same mounts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [summary?.worldPath, loadVisual, loadTexture]);
+  useEffect(() => () => { thumbnailsRef.current?.dispose(); }, []);
 
   // A plain click replaces the selection; Shift, Ctrl or Cmd adds to it. One
   // rule for
@@ -2256,7 +2278,11 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                   IPC round trip into the worker that holds the VFS. */}
               {panel === 'assets' && (
                 <Box sx={{ flex: 1, minHeight: 0 }}>
-                  <WorldAssetBrowser listAssets={listAssets} onPreview={setSelectedAsset} />
+                  <WorldAssetBrowser
+                    listAssets={listAssets}
+                    onPreview={setSelectedAsset}
+                    thumbnails={thumbnails ?? undefined}
+                  />
                 </Box>
               )}
               {/* Lazily mounted, like Assets above — the folder list is small

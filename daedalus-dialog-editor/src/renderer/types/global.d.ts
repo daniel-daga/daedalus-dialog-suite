@@ -17,6 +17,7 @@ export type {
   PortalFindingsPayload,
   WorldOp,
   VobFolders,
+  AssetCatalog,
 } from '../../shared/worldTypes';
 
 // Re-export all shared types
@@ -188,6 +189,17 @@ export interface EditorAPI {
   /** One visual by name for the Assets panel's mesh preview — its merged draw
    *  groups and bounds. Null for a name the binding cannot extract. */
   getWorldVisual: (name: string) => Promise<VisualScene | null>;
+  /** The machine-local thumbnail cache (level-editor.md §16.26 row 1): a read
+   *  answers the key the name was looked up under and the PNG data URL drawn
+   *  for it, or null when nothing has been — in which case the renderer draws
+   *  one and puts it back under that key. */
+  getAssetThumbnail: (name: string) => Promise<{ key: string; dataUrl: string | null }>;
+  putAssetThumbnail: (key: string, dataUrl: string) => Promise<void>;
+  /** The `<project>.assets.json` sidecar — favorites and user categories on
+   *  the asset browser, beside the project file (§16.26). The shipped seed is
+   *  not in it; the renderer merges the two. */
+  getAssetCatalog: (projectFilePath: string) => Promise<AssetCatalog>;
+  saveAssetCatalog: (projectFilePath: string, catalog: AssetCatalog) => Promise<void>;
   /** The per-class fields of one VOB, by its native index path — the `from` side
    *  of a class-property edit and what the grid shows. Asked for every time: the
    *  columnar index interns a class name and carries no per-class data. */

@@ -76,6 +76,13 @@ contextBridge.exposeInMainWorld('editorAPI', {
   getWorldPortalFindings: () => ipcRenderer.invoke('world:portalFindings'),
   getVisualBounds: (name: string) => ipcRenderer.invoke('world:visualBounds', { name }),
   getWorldVisual: (name: string) => ipcRenderer.invoke('world:visual', { name }),
+  getAssetThumbnail: (name: string) => ipcRenderer.invoke('world:getThumbnail', { name }),
+  getAssetCatalog: (projectFilePath: string) =>
+    ipcRenderer.invoke('project:getAssetCatalog', { projectFilePath }),
+  saveAssetCatalog: (projectFilePath: string, catalog: unknown) =>
+    ipcRenderer.invoke('project:saveAssetCatalog', { projectFilePath, catalog }),
+  putAssetThumbnail: (key: string, dataUrl: string) =>
+    ipcRenderer.invoke('world:putThumbnail', { key, dataUrl }),
   getVobProps: (path: string) => ipcRenderer.invoke('world:vobProps', { path }),
   refreshWorldIndex: () => ipcRenderer.invoke('world:refreshIndex'),
   getWorldTexture: (name: string, maxSize: number) =>

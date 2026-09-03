@@ -19,9 +19,10 @@
  */
 
 import React from 'react';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { VfsEntry } from '../src/shared/worldTypes';
+import type { AssetThumbnails, ThumbnailState } from '../src/renderer/world/assetThumbnails';
 import WorldAssetBrowser from '../src/renderer/components/world/WorldAssetBrowser';
 
 jest.mock('react-virtualized-auto-sizer', () => (props: {
@@ -226,6 +227,116 @@ describe('WorldAssetBrowser', () => {
 
       expect(await screen.findByTestId('world-asset-_compiled')).toBeInTheDocument();
       expect(screen.getByTestId('world-asset-filter')).toHaveValue('');
+    });
+  });
+
+  // The thumbnail grid (level-editor.md §16.26 row 1) — the same listing as
+  // tiles, each asking the queue for its picture as it comes on screen.
+  describe('the grid', () => {
+    function thumbnails(states: Record<string, ThumbnailState> = {}) {
+      const listeners = new Set<() => void>();
+      const store = new Map(Object.entries(states));
+      return {
+        queue: {
+          get: (name: string) => store.get(name),
+          request: jest.fn(),
+          redraw: jest.fn(),
+          cancelPending: jest.fn(),
+          subscribe: (listener: () => void) => { listeners.add(listener); return () => listeners.delete(listener); },
+        } as unknown as AssetThumbnails,
+        deliver(name: string, state: ThumbnailState) {
+          store.set(name, state);
+          for (const listener of listeners) listener();
+        },
+      };
+    }
+
+    it('is not offered without a queue to draw from', async () => {
+      const { list } = listing();
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} />);
+      await screen.findByTestId('world-asset-Meshes');
+      expect(screen.queryByTestId('world-asset-view-grid')).not.toBeInTheDocument();
+    });
+
+    it('shows the listing as tiles, directories first, and previews a file on click', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const onPreview = jest.fn();
+      const { queue } = thumbnails();
+      render(<WorldAssetBrowser listAssets={list} onPreview={onPreview} thumbnails={queue} />);
+      await screen.findByTestId('world-asset-Meshes');
+
+      await user.click(screen.getByTestId('world-asset-view-grid'));
+
+      const tiles = screen.getAllByTestId(/^world-asset-tile-/).map((tile) => tile.getAttribute('data-testid'));
+      expect(tiles).toEqual(['world-asset-tile-Meshes', 'world-asset-tile-Textures', 'world-asset-tile-MOD_ONLY.MRM']);
+      expect(screen.queryByTestId('world-asset-Meshes')).not.toBeInTheDocument();
+
+      await user.click(screen.getByTestId('world-asset-tile-MOD_ONLY.MRM'));
+      expect(onPreview).toHaveBeenCalledWith('MOD_ONLY.MRM');
+
+      await user.click(screen.getByTestId('world-asset-tile-Meshes'));
+      await screen.findByTestId('world-asset-tile-_compiled');
+    });
+
+    it('asks the queue for each file tile, shows a placeholder until it answers, then the picture', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const { queue, deliver } = thumbnails();
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} thumbnails={queue} />);
+      await screen.findByTestId('world-asset-Meshes');
+      await user.click(screen.getByTestId('world-asset-view-grid'));
+
+      expect(queue.request).toHaveBeenCalledWith('MOD_ONLY.MRM');
+      // A directory has no thumbnail and must not be asked for one.
+      expect(queue.request).not.toHaveBeenCalledWith('Meshes');
+      expect(within(screen.getByTestId('world-asset-tile-MOD_ONLY.MRM')).getByTestId('world-asset-thumb-pending')).toBeInTheDocument();
+
+      act(() => deliver('MOD_ONLY.MRM', { status: 'ready', dataUrl: 'data:image/png;base64,AAAA' }));
+
+      const image = within(screen.getByTestId('world-asset-tile-MOD_ONLY.MRM')).getByRole('img');
+      expect(image).toHaveAttribute('src', 'data:image/png;base64,AAAA');
+    });
+
+    it('marks a tile the binding could not draw, rather than leaving it pending forever', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const { queue } = thumbnails({ 'MOD_ONLY.MRM': { status: 'failed' } });
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} thumbnails={queue} />);
+      await screen.findByTestId('world-asset-Meshes');
+      await user.click(screen.getByTestId('world-asset-view-grid'));
+
+      expect(within(screen.getByTestId('world-asset-tile-MOD_ONLY.MRM')).getByTestId('world-asset-thumb-failed')).toBeInTheDocument();
+    });
+
+    it('drops the queued draws when the listing moves on, and can redraw the ones on screen', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const { queue } = thumbnails();
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} thumbnails={queue} />);
+      await screen.findByTestId('world-asset-Meshes');
+      await user.click(screen.getByTestId('world-asset-view-grid'));
+
+      await user.click(screen.getByTestId('world-asset-tile-Meshes'));
+      await screen.findByTestId('world-asset-tile-_compiled');
+      expect(queue.cancelPending).toHaveBeenCalled();
+
+      await user.click(screen.getByTestId('world-asset-tile-_compiled'));
+      await screen.findByTestId('world-asset-tile-NW_CRATE.MRM');
+      await user.click(screen.getByTestId('world-asset-redraw'));
+      expect(queue.redraw).toHaveBeenCalledWith('NW_CRATE.MRM');
+      expect(queue.redraw).toHaveBeenCalledWith('CHESTBIG.MDL');
+    });
+
+    it('goes back to the list', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const { queue } = thumbnails();
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} thumbnails={queue} />);
+      await screen.findByTestId('world-asset-Meshes');
+      await user.click(screen.getByTestId('world-asset-view-grid'));
+      await user.click(screen.getByTestId('world-asset-view-list'));
+      expect(screen.getByTestId('world-asset-Meshes')).toBeInTheDocument();
     });
   });
 

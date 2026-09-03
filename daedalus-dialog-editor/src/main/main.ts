@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { parseVobFolders } from 'zen-world';
+import { parseAssetCatalog, parseVobFolders } from 'zen-world';
 import { PathValidationError } from './services/PathValidationService';
 import { getServiceRegistry } from './services/serviceRegistry';
 import { saveFileFlow, type SaveFileFlowOptions } from './services/SaveFileFlow';
@@ -14,6 +14,10 @@ import {
   assertOpenWorldRequest,
   assertTextureRequest,
   assertVisualRequest,
+  assertThumbnailGetRequest,
+  assertThumbnailPutRequest,
+  assertAssetCatalogGetRequest,
+  assertAssetCatalogSaveRequest,
   assertVobPropsRequest,
   assertApplyOpsRequest,
   assertSaveWorldRequest,
@@ -58,6 +62,8 @@ const {
   updaterService,
   worldService,
   worldFoldersService,
+  thumbnailCacheService,
+  assetCatalogService,
   logService,
   pathValidator,
 } = getServiceRegistry();
@@ -787,6 +793,21 @@ export function setupIpcHandlers() {
     return worldService.getVisual(request.name);
   });
 
+  // The thumbnail cache (level-editor.md §16.26 row 1). A read answers the key
+  // it was looked up under, so the renderer — the only process with a GPU —
+  // can draw the missing image and hand it back under that same key. The key
+  // is a digest and never a path; the bytes are checked as PNG before they
+  // touch `userData`.
+  ipcMain.handle('world:getThumbnail', async (_event, request: unknown) => {
+    assertThumbnailGetRequest(request);
+    const key = await thumbnailCacheService.keyFor(request.name, worldService.openAssetSources());
+    return { key, dataUrl: await thumbnailCacheService.load(key) };
+  });
+  ipcMain.handle('world:putThumbnail', async (_event, request: unknown) => {
+    assertThumbnailPutRequest(request);
+    await thumbnailCacheService.store(request.key, request.dataUrl);
+  });
+
   // A name inside the mounted VFS namespace, exactly like `world:assets` — it
   // never reaches the disk, so the path validator has nothing to validate.
   ipcMain.handle('world:visualBounds', async (_event, request: unknown) => {
@@ -904,6 +925,42 @@ export function setupIpcHandlers() {
       }
       console.error('[IPC] world:saveVobFolders error:', error);
       throw new Error(`Failed to save VOB folders: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  });
+
+  // The `<project>.assets.json` sidecar (§16.26, "Wanted on top") — the asset
+  // browser's favorites and categories, beside the project file. The same
+  // shape as the folders sidecar above: stateless, path-validated against the
+  // exact file, the payload re-derived rather than written as given.
+  ipcMain.handle('project:getAssetCatalog', async (_event, request: unknown) => {
+    try {
+      assertAssetCatalogGetRequest(request);
+      await pathValidator.validatePathResolved(assetCatalogService.sidecarPath(request.projectFilePath));
+      return await assetCatalogService.load(request.projectFilePath);
+    } catch (error) {
+      if (error instanceof PathValidationError) {
+        console.error('[IPC] project:getAssetCatalog - Path validation failed:', error.message);
+        throw new Error(error.message);
+      }
+      console.error('[IPC] project:getAssetCatalog error:', error);
+      throw new Error(`Failed to read asset catalog: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  });
+
+  ipcMain.handle('project:saveAssetCatalog', async (_event, request: unknown) => {
+    try {
+      assertAssetCatalogSaveRequest(request);
+      await pathValidator.validatePathResolved(
+        assetCatalogService.sidecarPath(request.projectFilePath), { write: true },
+      );
+      await assetCatalogService.save(request.projectFilePath, parseAssetCatalog(request.catalog));
+    } catch (error) {
+      if (error instanceof PathValidationError) {
+        console.error('[IPC] project:saveAssetCatalog - Path validation failed:', error.message);
+        throw new Error(error.message);
+      }
+      console.error('[IPC] project:saveAssetCatalog error:', error);
+      throw new Error(`Failed to save asset catalog: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   });
 

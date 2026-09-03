@@ -1,11 +1,18 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { Box, Breadcrumbs, IconButton, Link, TextField, Tooltip, Typography } from '@mui/material';
+import {
+  Box, Breadcrumbs, IconButton, Link, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
+} from '@mui/material';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import FolderIcon from '@mui/icons-material/Folder';
+import GridViewIcon from '@mui/icons-material/GridView';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import ViewListIcon from '@mui/icons-material/ViewList';
 import { FixedSizeList as List, type ListChildComponentProps, areEqual } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
 import type { VfsEntry } from '../../../shared/worldTypes';
+import type { AssetThumbnails } from '../../world/assetThumbnails';
+import WorldAssetGrid from './WorldAssetGrid';
 
 // The asset browser over the mounted VFS (level-editor.md §6).
 //
@@ -61,10 +68,14 @@ export interface WorldAssetBrowserProps {
   listAssets: (path: string) => Promise<VfsEntry[] | null>;
   /** A file was chosen — the full path inside the mounted namespace. */
   onPreview: (path: string) => void;
+  /** The thumbnail queue (level-editor.md §16.26 row 1). Absent, there is no
+   *  grid view to offer — the browser harness has no world to draw from. */
+  thumbnails?: AssetThumbnails;
 }
 
-const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({ listAssets, onPreview }) => {
+const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({ listAssets, onPreview, thumbnails }) => {
   const [path, setPath] = useState('/');
+  const [view, setView] = useState<'list' | 'grid'>('list');
   // Three states, not two. "Nothing here" and "not listed yet" look identical
   // and are not the same thing: collapsing them makes every directory flash as
   // empty on the way in, and makes an empty state that can never be trusted.
@@ -108,6 +119,10 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({ listAssets, onPre
   // does not silently hide everything in this one.
   const [filter, setFilter] = useState('');
   useEffect(() => { setFilter(''); }, [path]);
+  // A directory left behind takes its queued draws with it: the tiles that
+  // asked are gone, and the next directory's tiles should not wait behind
+  // them.
+  useEffect(() => { thumbnails?.cancelPending(); }, [thumbnails, path]);
   const filtered = useMemo(() => {
     const needle = filter.trim().toLowerCase();
     return needle === '' ? sorted : sorted.filter((entry) => entry.name.toLowerCase().includes(needle));
@@ -230,6 +245,36 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({ listAssets, onPre
                 : `${filtered.length.toLocaleString()} of ${sorted.length.toLocaleString()}`}
             </Typography>
           )}
+          {thumbnails !== undefined && (
+            <>
+              <ToggleButtonGroup
+                size="small"
+                exclusive
+                value={view}
+                onChange={(_event, next: 'list' | 'grid' | null) => { if (next !== null) setView(next); }}
+                sx={{ '& .MuiToggleButton-root': { p: 0.25 } }}
+              >
+                <ToggleButton value="list" data-testid="world-asset-view-list" aria-label="List view">
+                  <ViewListIcon sx={{ fontSize: 16 }} />
+                </ToggleButton>
+                <ToggleButton value="grid" data-testid="world-asset-view-grid" aria-label="Thumbnail grid">
+                  <GridViewIcon sx={{ fontSize: 16 }} />
+                </ToggleButton>
+              </ToggleButtonGroup>
+              {view === 'grid' && (
+                <Tooltip title="Redraw the thumbnails in this directory">
+                  <IconButton
+                    size="small"
+                    data-testid="world-asset-redraw"
+                    aria-label="Redraw thumbnails"
+                    onClick={() => { for (const entry of filtered) if (entry.type === 'file') thumbnails.redraw(entry.name); }}
+                  >
+                    <RefreshIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </Tooltip>
+              )}
+            </>
+          )}
         </Box>
       </Box>
 
@@ -268,7 +313,13 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({ listAssets, onPre
         </Typography>
       )}
 
-      {state.status === 'ready' && filtered.length > 0 && (
+      {state.status === 'ready' && filtered.length > 0 && view === 'grid' && thumbnails !== undefined && (
+        <Box sx={{ flex: 1, minHeight: 0 }} role="list" aria-label="Mounted assets">
+          <WorldAssetGrid entries={filtered} thumbnails={thumbnails} onOpen={onOpen} />
+        </Box>
+      )}
+
+      {state.status === 'ready' && filtered.length > 0 && (view === 'list' || thumbnails === undefined) && (
         <Box sx={{ flex: 1, minHeight: 0 }} role="list" aria-label="Mounted assets">
           <AutoSizer>
             {({ height, width }) => (
