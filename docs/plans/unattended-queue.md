@@ -96,7 +96,7 @@ Nothing here needs a design call: each has a template already in the tree.
 
 | # | Item | Where the diagnosis is | Accept | Size |
 |---|---|---|---|---|
-| 28 | The delete-confirm dialog focuses **Confirm**, so Escape-then-Enter deletes an action | 2026-07 **2.5**, `ActionCard.tsx:237`, `DeleteConfirmDialog.tsx` | › DeleteConfirmDialog focuses Cancel | S |
+| ~~28~~ | ~~The delete-confirm dialog focuses **Confirm**, so Escape-then-Enter deletes an action~~ — **landed 2026-09-03**: the ref moved to Cancel, Delete stays one Tab away. Whether Escape should open a delete confirm at all (2.5's second half) is a keyboard-grammar call and stays open | 2026-07 **2.5**, `ActionCard.tsx:237`, `DeleteConfirmDialog.tsx` | `DeleteConfirmDialog` › focuses Cancel; e2e `action-deletion` › Escape then Enter backs out | S |
 | 29 | Native `confirm()`/`alert()` where `DeleteConfirmDialog` is the house idiom | 2026-07 **5.3**, `App.tsx:156`, `VariableManager.tsx:132`, `:137` | e2e › switching projects with unsaved changes shows the in-app guard | M |
 | 30 | The Problems panel is silently empty in single-file mode and never renders `isScanning`, which the store already publishes | production-readiness §4 **F18**, `ProblemsPanel.tsx` | `ProblemsPanel` › explains the single-file empty state | S |
 | 31 | A zero-NPC project renders an empty box: the guidance is behind `npcFilter &&` | 2026-07 **5.6**, `NPCList.tsx:136` | `NPCList` › empty project shows the drop guidance | S |

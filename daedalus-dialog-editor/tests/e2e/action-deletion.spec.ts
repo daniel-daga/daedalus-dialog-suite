@@ -87,4 +87,19 @@ test.describe('Action Deletion', () => {
     await expect(page.getByRole('dialog', { name: 'Delete action' })).not.toBeVisible();
     expect(await textFields.count()).toBe(initialCount);
   });
+
+  test('Escape then Enter backs out instead of deleting', async ({ page }) => {
+    const textFields = page.getByLabel('Text');
+    const initialCount = await textFields.count();
+
+    await textFields.first().click();
+    await page.keyboard.press('Escape');
+
+    await expect(page.getByRole('dialog', { name: 'Delete action' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Cancel' })).toBeFocused();
+    await page.keyboard.press('Enter');
+
+    await expect(page.getByRole('dialog', { name: 'Delete action' })).not.toBeVisible();
+    expect(await textFields.count()).toBe(initialCount);
+  });
 });
