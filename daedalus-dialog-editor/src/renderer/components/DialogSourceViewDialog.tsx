@@ -9,7 +9,8 @@ import {
   CircularProgress,
   IconButton,
   Tooltip,
-  Typography
+  Typography,
+  useTheme
 } from '@mui/material';
 import { Close as CloseIcon, ContentCopy as CopyIcon } from '@mui/icons-material';
 import Editor, { loader } from '@monaco-editor/react';
@@ -46,6 +47,8 @@ const DialogSourceViewDialog: React.FC<DialogSourceViewDialogProps> = ({
   const [code, setCode] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const codeSettings = useEditorStore((s) => s.codeSettings);
+  // Monaco ships two stock themes; follow the app palette's mode (F13).
+  const monacoTheme = useTheme().palette.mode === 'dark' ? 'vs-dark' : 'light';
 
   useEffect(() => {
     if (open && dialogName && semanticModel) {
@@ -102,7 +105,7 @@ const DialogSourceViewDialog: React.FC<DialogSourceViewDialogProps> = ({
             height="100%"
             defaultLanguage="cpp"
             value={code}
-            theme="vs-dark"
+            theme={monacoTheme}
             options={{
               readOnly: true,
               minimap: { enabled: true },
