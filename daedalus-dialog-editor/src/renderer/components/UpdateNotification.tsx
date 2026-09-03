@@ -169,7 +169,14 @@ const UpdateNotification: React.FC<UpdateNotificationProps> = ({ triggerCheck })
               </Box>
               {state.result.releaseUrl && (
                 <Box sx={{ mb: 2 }}>
-                  <Link href="#" onClick={(e) => { e.preventDefault(); /* open via shell */ }} underline="hover">
+                  <Link
+                    href={state.result.releaseUrl}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      void window.editorAPI.openExternal(e.currentTarget.href);
+                    }}
+                    underline="hover"
+                  >
                     View release notes
                   </Link>
                 </Box>

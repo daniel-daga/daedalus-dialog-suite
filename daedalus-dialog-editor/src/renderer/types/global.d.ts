@@ -231,6 +231,8 @@ export interface EditorAPI {
   downloadUpdate: (url: string) => Promise<string>;
   installUpdate: (installerPath: string) => Promise<void>;
   dismissUpdateVersion: (version: string) => Promise<void>;
+  /** Open an https URL in the system browser (release notes). Main refuses any other scheme. */
+  openExternal: (url: string) => Promise<void>;
   onDownloadProgress: (callback: (percent: number) => void) => () => void;
 }
 

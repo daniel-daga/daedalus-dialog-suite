@@ -9,6 +9,7 @@ import {
   assertModelShape,
   assertDialogName,
   assertParseSourcePayload,
+  assertExternalUrl,
   assertSaveFileSettings,
   assertSaveFileOptions,
   assertOpenWorldRequest,
@@ -103,6 +104,22 @@ describe('assertParseSourcePayload', () => {
   it('accepts a string, including the empty one', () => {
     expect(() => assertParseSourcePayload('func void x() {};')).not.toThrow();
     expect(() => assertParseSourcePayload('')).not.toThrow();
+  });
+});
+
+describe('assertExternalUrl', () => {
+  it('rejects a non-https URL', () => {
+    expect(() => assertExternalUrl('http://github.com/x/releases')).toThrow(/https/);
+    expect(() => assertExternalUrl('file:///C:/Windows/System32/calc.exe')).toThrow(/https/);
+    expect(() => assertExternalUrl('javascript:alert(1)')).toThrow(/https/);
+    expect(() => assertExternalUrl('github.com/x/releases')).toThrow(/https/);
+    expect(() => assertExternalUrl('')).toThrow(/https/);
+    expect(() => assertExternalUrl(42)).toThrow(/https/);
+    expect(() => assertExternalUrl({ href: 'https://github.com' })).toThrow(/https/);
+  });
+
+  it('accepts an https URL', () => {
+    expect(() => assertExternalUrl('https://github.com/x/releases/tag/v1')).not.toThrow();
   });
 });
 

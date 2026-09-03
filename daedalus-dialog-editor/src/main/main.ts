@@ -23,6 +23,7 @@ import {
   sanitizeRendererErrorPayload,
   assertAssetSourcesPayload,
   assertOptionalFolderPath,
+  assertExternalUrl,
 } from './ipcValidation';
 import { appendInsertNpcFlow } from './services/AppendInsertNpcFlow';
 import { ProjectConfigService } from './services/ProjectConfigService';
@@ -651,6 +652,13 @@ export function setupIpcHandlers() {
     } catch (error) {
       console.error('[IPC] updater:dismissVersion error:', error);
     }
+  });
+
+  // "View release notes" and nothing else: the one channel that leaves the app
+  // for the system browser, restricted to https at the boundary.
+  ipcMain.handle('shell:openExternal', async (_event, url: unknown) => {
+    assertExternalUrl(url);
+    await shell.openExternal(url);
   });
 
   ipcMain.handle('updater:installUpdate', (_event, installerPath: string) => {

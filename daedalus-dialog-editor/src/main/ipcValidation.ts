@@ -66,6 +66,21 @@ export function assertParseSourcePayload(source: unknown): asserts source is str
   }
 }
 
+/**
+ * Assert a URL bound for `shell.openExternal` is https. Anything else — a
+ * `file:` path, a `javascript:` scheme, a bare string — is refused: the
+ * renderer hands the main process a link, not a command.
+ */
+export function assertExternalUrl(url: unknown): asserts url is string {
+  let parsed: URL | null = null;
+  if (typeof url === 'string') {
+    try { parsed = new URL(url); } catch { parsed = null; }
+  }
+  if (!parsed || parsed.protocol !== 'https:') {
+    throw new Error('Invalid external URL: expected an https:// URL');
+  }
+}
+
 /** Assert a settings payload is a plain object or undefined. */
 export function assertSaveFileSettings(settings: unknown): void {
   if (settings !== undefined && !isPlainObject(settings)) {

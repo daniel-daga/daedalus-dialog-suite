@@ -327,9 +327,10 @@ any later date; nothing in B forecloses C.
   and read errors are swallowed (`:47-49`). The release checklist expects a
   readable error here; the index path fails silently before
   `PathValidationService` ever runs.
-- **Updater loose ends:** "View release notes" is a no-op
-  (`UpdateNotification.tsx:160`; no `shell.openExternal` channel) — **still
-  open**. ~~`autoCheckOnStartup`/`dismissedVersion` are persisted but never read
+- **Updater loose ends:** ~~"View release notes" is a no-op
+  (`UpdateNotification.tsx:160`; no `shell.openExternal` channel)~~ — **FIXED
+  2026-09-03** (unattended-queue row 37): `shell:openExternal`, https-only at
+  `assertExternalUrl`. ~~`autoCheckOnStartup`/`dismissedVersion` are persisted but never read
   — the startup check is an unconditional 5s timer (`App.tsx:127-130`) and
   "Remind Me Later" re-prompts every launch.~~ **FIXED 2026-08-29** — both are
   read in `UpdaterService.checkForUpdate` (the startup timer is its only

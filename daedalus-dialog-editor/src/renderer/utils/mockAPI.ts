@@ -633,6 +633,7 @@ export const mockEditorAPI: EditorAPI = {
   async installUpdate(_installerPath: string): Promise<void> {},
 
   async dismissUpdateVersion(_version: string): Promise<void> {},
+  async openExternal(_url: string): Promise<void> {},
   onDownloadProgress(_callback: (percent: number) => void): () => void {
     return () => {};
   },
