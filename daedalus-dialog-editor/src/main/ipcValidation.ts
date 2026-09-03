@@ -7,9 +7,13 @@
  */
 
 import {
-  baseFieldOf, classPropKeys, decalFieldOf, fieldOf, isAuthorableVobClass,
+  baseFieldOf, classPropKeys, decalFieldOf, fieldOf, isAuthorableVobClass, isContainerContents,
   type FieldDescriptor,
 } from 'zen-world';
+
+/** `oCMobContainer.contents` is one archive string; retail's longest chest is
+ *  under 200 characters. */
+const CONTAINER_CONTENTS_MAX = 4096;
 import type { WorldOp } from '../shared/worldTypes';
 import { PROJECT_ASSET_SOURCE_LIMITS } from '../shared/projectConfigTypes';
 
@@ -914,6 +918,17 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
         && !DAEDALUS_INSTANCE.test(to.instance)) {
         throw new Error(
           `Invalid op: to.instance must be a Daedalus instance name, not ${JSON.stringify(to.instance)}`,
+        );
+      }
+      // The second such field (§16.26 row 2): a chest's `contents` is a list
+      // of item instances with counts, in the archive's own string. The same
+      // split as `instance` — the grammar here, the index in the renderer —
+      // and the same `to` only. Bounded as well: the archive holds it as one
+      // string, and 4 KB is fifteen times the longest chest in retail.
+      if (className === 'oCMobContainer' && typeof to.contents === 'string'
+        && (to.contents.length > CONTAINER_CONTENTS_MAX || !isContainerContents(to.contents))) {
+        throw new Error(
+          `Invalid op: to.contents must be a list of item instances with counts, not ${JSON.stringify(to.contents)}`,
         );
       }
       const keys = sides.map((side) => Object.keys(op[side] as object).sort());

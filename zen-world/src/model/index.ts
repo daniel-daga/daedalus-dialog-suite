@@ -3,3 +3,4 @@ export * from './vobClasses';
 export * from './ops';
 export * from './vobFolders';
 export * from './assetCatalog';
+export * from './containerContents';

@@ -1995,6 +1995,9 @@ const CLASS_PROP_ROUND_TRIP = [
     ownerGuild: 'GIL_NOV', destroyed: true, stateCount: 2, conditionFunction: 'OTHER_CONDITION',
     onStateChangeFunction: 'OTHER_ON_STATE_CHANGE', rewind: true,
     locked: false, pickString: 'RLLR ÄÖÜ',
+    // The archive's own `contains` string, written as given (§16.26 row 2);
+    // the fixture chest holds 'ItMi_Gold:75, ItFo_Fish:2'.
+    contents: 'ItMi_Gold:100,ItPo_Health_01',
   }],
   ['1/19', 'oCMobDoor', {
     focusName: 'FOCUS_OTHER_DOOR_ÄÖÜ', hp: 60, damage: 0, movable: false, takable: false,

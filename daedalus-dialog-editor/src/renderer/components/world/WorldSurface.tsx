@@ -348,6 +348,19 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     () => new Set(Object.keys(items ?? {}).map((name) => name.toUpperCase())),
     [items],
   );
+  /** Uppercased instance → the `visual` its declaration assigns, read off
+   *  the instance's verbatim source (§16.26 row 2): the semantic model keeps
+   *  no per-field record of a `C_ITEM`, and the one line the picker needs is
+   *  a regex away. An item that assigns none, or through a constant, has no
+   *  picture and is offered by name. */
+  const itemVisuals = useMemo(() => {
+    const visuals = new Map<string, string>();
+    for (const [name, item] of Object.entries(items ?? {})) {
+      const match = /\bvisual\s*=\s*"([^"]+)"/i.exec(item.sourceText ?? '');
+      if (match !== null) visuals.set(name.toUpperCase(), match[1]);
+    }
+    return visuals;
+  }, [items]);
 
   const openWorld = useCallback(async () => {
     const worldPath = await window.editorAPI.openWorldDialog();
@@ -2486,6 +2499,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                       onEditClassProps={handleEditClassProps}
                       onEditBaseProps={handleEditBaseProps}
                       itemInstances={itemInstances}
+                      itemVisuals={itemVisuals}
+                      thumbnails={thumbnails}
                     />
                   )}
             </Box>

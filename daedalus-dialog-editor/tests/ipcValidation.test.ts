@@ -760,6 +760,23 @@ describe('assertApplyOpsRequest', () => {
       expect(() => assertApplyOpsRequest({ ops: [light] })).not.toThrow();
     });
 
+    it('holds a chest’s contents to the archive grammar, on `to` only (§16.26 row 2)', () => {
+      // The second field whose value names script symbols: the grammar here,
+      // the item index in the renderer, and `from` left alone so a chest a
+      // hand-edited world holds oddly can still be repaired and undone.
+      const chest = (from: unknown, to: unknown) => ({
+        op: 'SetVobClassProp', vob: 16, path: '0/17', className: 'oCMobContainer',
+        from: { contents: from }, to: { contents: to },
+      });
+      expect(() => assertApplyOpsRequest({ ops: [chest('', 'ItMi_Gold:26,ItFo_Fish')] })).not.toThrow();
+      expect(() => assertApplyOpsRequest({ ops: [chest('ItMi_Gold:26', '')] })).not.toThrow();
+      expect(() => assertApplyOpsRequest({ ops: [chest('ItMi_Gold:32;ItPo_Health_02:3', 'ItMi_Gold:32')] })).not.toThrow();
+      for (const bad of ['ItMi_Gold:0', 'ItMi Gold', '1Gold:2', 'ItMi_Gold:2.5', 'ItMi_Gold,,ItFo_Fish', `ItMi_Gold:${'9'.repeat(5000)}`]) {
+        expect(() => assertApplyOpsRequest({ ops: [chest('', bad)] })).toThrow(/to\.contents must be a list of item instances/);
+      }
+      expect(() => assertApplyOpsRequest({ ops: [chest(42, '')] })).toThrow(/from\.contents/);
+    });
+
     it('accepts the sound family and the three zones', () => {
       for (const op of [sound, daytime, fog, farPlane, music]) {
         expect(() => assertApplyOpsRequest({ ops: [op] })).not.toThrow();

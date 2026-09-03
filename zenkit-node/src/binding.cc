@@ -2082,7 +2082,7 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
                        {"focusName", "hp", "damage", "movable", "takable", "focusOverride",
                         "soundMaterial", "visualDestroyed", "owner", "ownerGuild", "destroyed", "stateCount",
                         "conditionFunction", "onStateChangeFunction", "rewind", "locked",
-                        "pickString"},
+                        "pickString", "contents"},
                        class_name);
       auto focus_name = OptionalCp1252String(env, props, "focusName");
       auto const hp = OptionalInt32(env, props, "hp", std::nullopt, std::nullopt);
@@ -2102,6 +2102,11 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       auto const rewind = OptionalBool(env, props, "rewind");
       auto const locked = OptionalBool(env, props, "locked");
       auto pick_string = OptionalCp1252String(env, props, "pickString");
+      // The archive's own `contains` string, `INSTANCE[:COUNT],…` — written
+      // as given. The grammar is the editor's to check (`ipcValidation`), the
+      // instances the renderer's (level-editor.md §16.26 row 2): this layer
+      // holds no script index and refuses nothing the archive can hold.
+      auto contents = OptionalCp1252String(env, props, "contents");
       auto& mob = static_cast<zenkit::VContainer&>(*vob);
       if (focus_name) mob.name = std::move(*focus_name);
       if (hp.has_value()) mob.hp = *hp;
@@ -2120,6 +2125,7 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (rewind.has_value()) mob.rewind = *rewind;
       if (locked.has_value()) mob.locked = *locked;
       if (pick_string) mob.pick_string = std::move(*pick_string);
+      if (contents) mob.contents = std::move(*contents);
       break;
     }
     case zenkit::VirtualObjectType::oCMobDoor: {

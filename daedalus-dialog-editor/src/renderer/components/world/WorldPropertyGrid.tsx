@@ -12,6 +12,8 @@ import {
 } from 'zen-world';
 import type { WorldSummary } from '../../../shared/worldTypes';
 import { vobModelOf } from '../../world/vobModel';
+import type { AssetThumbnails } from '../../world/assetThumbnails';
+import ContainerContentsField from './ContainerContentsField';
 
 // The property grid for the selected VOB (level-editor.md §6, §7). It reads the
 // `VobIndex` the worker sent, and — since `SetVobProp` — it also writes: the
@@ -538,6 +540,12 @@ export interface WorldPropertyGridProps {
    * whether an index it does not have would have allowed the name.
    */
   itemInstances: ReadonlySet<string>;
+  /** Uppercased item instance → the visual its script declares — what the
+   *  chest-contents picker draws (§16.26 row 2). Absent with no project. */
+  itemVisuals?: ReadonlyMap<string, string>;
+  /** The Assets panel's thumbnail queue, for the same picker; null before a
+   *  world is open. */
+  thumbnails?: AssetThumbnails | null;
   /**
    * A typed coordinate, as the **delta** it moves the described VOB by — the
    * gizmo's own shape, and the gizmo's own handler.
@@ -582,6 +590,7 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
   {
     summary, selection, refusalGeneration,
     onEditProps, onFocus, classProps, onEditClassProps, onEditBaseProps, itemInstances,
+    itemVisuals, thumbnails,
     onTranslate, onRotate, onRotateSelection,
   },
 ) => {
@@ -983,6 +992,17 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
                 label={classField.key}
                 name={`class-${classField.key}`}
               >
+                {className === 'oCMobContainer' && classField.key === 'contents'
+                  ? (
+                    <ContainerContentsField
+                      value={String(classProps[classField.key])}
+                      itemInstances={itemInstances}
+                      itemVisuals={itemVisuals}
+                      thumbnails={thumbnails}
+                      onCommit={(contents) => onEditClassProps({ contents })}
+                    />
+                  )
+                  : (
                 <ClassField
                   vob={selectedVob}
                   field={classField}
@@ -1000,6 +1020,7 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
                   disabled={disabledFor(classField.key) !== undefined}
                   onCommit={(value) => onEditClassProps({ [classField.key]: value })}
                 />
+                  )}
                 {classField.key === 'focusName' && (
                   <FocusNameWarning className={className} value={classProps[classField.key]} />
                 )}
