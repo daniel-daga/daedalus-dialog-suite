@@ -1,0 +1,28 @@
+VOB: keep packed physicsEnabled bit independent of rigid-body payload.
+
+The packed zCVob flag word stores `physicsEnabled` in bit 6 for both Gothic
+versions. Its following rigid-body payload is a save-game-only concern, but
+the G2 writer incorrectly made bit 6 conditional on a rigid body being
+present. Ordinary world VOBs have no such payload, so an enabled flag was
+silently cleared during save.
+
+Write the on-disk flag directly. The later `physics_enabled && rigid_body`
+payload guard remains unchanged.
+
+diff --git a/src/vobs/VirtualObject.cc b/src/vobs/VirtualObject.cc
+--- a/src/vobs/VirtualObject.cc
++++ b/src/vobs/VirtualObject.cc
+@@ -278,12 +278,7 @@ namespace zenkit {
+ 			bit1 |= (!!this->ai) << 4u;
+ 			bit1 |= (!!this->event_manager) << 5u;
+ 
+-			// Gothic 1 does not store rigid-body information.
+-			if (version == GameVersion::GOTHIC_1) {
+-				bit1 |= this->physics_enabled << 6u;
+-			} else {
+-				bit1 |= (this->physics_enabled && this->rigid_body) << 6u;
+-			}
++			bit1 |= this->physics_enabled << 6u;
+ 
+ 			if (version == GameVersion::GOTHIC_2) {
+ 				bit1 |= (static_cast<uint8_t>(this->anim_mode) & 3) << 7u;

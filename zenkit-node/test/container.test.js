@@ -369,8 +369,10 @@ test('the ASCII `objects` field is padded to the 9 characters ZenGin writes', ()
 // payload is exactly the byte string the ASCII hex must decode to: a
 // zero-tolerance assertion, and the one that catches the defect coming back.
 test('every ASCII raw entry decodes to the bytes the packer produced', () => {
-  withAsciiFixture((buf) => {
-    const binSafe = fs.readFileSync(FIXTURE);
+  withAsciiFixture((buf, at) => {
+    const binSafeAt = path.join(path.dirname(at), 'binsafe.zen');
+    zenkit._authorFixtureWorld(binSafeAt, 'binsafe', 'g2');
+    const binSafe = fs.readFileSync(binSafeAt);
     const expected = Buffer.from(rawText([...walk(binSafe)], binSafe, 'oCItem:zCVob', 'dataRaw'), 'latin1');
     const actual = Buffer.from(rawText(asciiEvents(buf), buf, 'oCItem:zCVob', 'dataRaw'), 'hex');
 

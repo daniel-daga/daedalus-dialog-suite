@@ -409,6 +409,22 @@ test('saveWorld round-trips bit 15 of the packed zCVob flag word', () => {
   });
 });
 
+test('saveWorld preserves packed physicsEnabled without a rigid body', () => {
+  withAuthoredFixture((authored, resaved) => {
+    const payloads = (buffer) => binSafeEntries(buffer, 'dataRaw', 0x09);
+    const enabled = (buffer) => payloads(buffer)
+      .filter((raw) => raw.length === 83 && (raw[73] & 0x40) !== 0);
+
+    // The authored G2 fixture's VOBs are enabled but have no save-game rigid
+    // body. Every packed VOB must retain its bit-6 flag.
+    const before = payloads(authored);
+    // Bit 6 belongs to the packed VOB flags and must appear before and after
+    // a normal world save.
+    assert.strictEqual(enabled(authored).length, before.length);
+    assert.deepStrictEqual(payloads(resaved), before);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // The non-BinSafe guard (docs/engine-acceptance-2026-08-25.md §10.2, §10.3).
 //
