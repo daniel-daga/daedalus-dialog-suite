@@ -2158,7 +2158,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    *  focus *is*: a shortcut fired with focus still on `window` (nothing in
    *  the dialog focused yet) would pass that test and fail this one. */
   const surfaceDialogOpen = deleting !== null || deletingWaypoint !== null
-    || placing !== null || confirmingSave || addingWaypoint !== null || contextMenu !== null;
+    || placing !== null || confirmingSave || addingWaypoint !== null || contextMenu !== null
+    || insertingNpc !== null || pickerOpen || quickTestBlocked;
 
   useEffect(() => {
     if (summary === null) return undefined;
@@ -2263,6 +2264,12 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       const redo = (event.ctrlKey || event.metaKey)
         && (key === 'y' || (key === 'z' && event.shiftKey));
       if (!undo && !redo) return;
+      // The same pair of guards every branch above takes, and this one wants
+      // them most: in a text field Ctrl+Z is the field's own undo, and with a
+      // confirm open the dialog owns the keystroke — the delete confirm names a
+      // VOB by flat index, and an undo that renumbers would leave it pointing at
+      // whatever moved into that index.
+      if (isTypingOrInPopover(event.target) || surfaceDialogOpen) return;
 
       event.preventDefault();
       void runHistory(undo ? 'undo' : 'redo');

@@ -2817,7 +2817,10 @@ Settled 2026-08-31, extracting the decisions from the (now deleted)
 `level-editor-ui-improvements.md` plan. The code cites this section; the
 commit messages carry the slice-by-slice reasoning.
 
-**Keyboard shortcuts are one window listener with one shared guard.** The
+**Keyboard shortcuts are one window listener with one shared guard**, undo and
+redo included — they were the exception until 2026-09-04 (review §2.5), which
+is how a Ctrl+Z typed into a property field undid a *world* edit and a Ctrl+Z
+with the delete confirm open could renumber the VOB that confirm was about. The
 surface stays mounted behind whichever view is on screen (§8 of
 `refactoring-targets.md`), so every shortcut is bound only while
 `summary && !hidden`. All of them share `isTypingOrInPopover` — a text-field

@@ -36,6 +36,9 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
 
 const api = makeWorldEditorApi();
 
+/** The last `render`, for the tests that re-render the surface hidden. */
+let lastRender: ReturnType<typeof render> | null = null;
+
 async function openWorld() {
   // A fresh vobIndex per call: a committed op mutates it in place, and a
   // shared object would carry one test's move into the next.
@@ -44,7 +47,7 @@ async function openWorld() {
   api.openWorld.mockResolvedValueOnce(summary as never);
   api.getWorldMesh.mockResolvedValueOnce({ groups: [], bbox: summary.bbox } as never);
   api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
-  render(<WorldSurface />);
+  lastRender = render(<WorldSurface />);
   fireEvent.click(screen.getByTestId('world-open'));
   // Open world lists the project's worlds (level-editor.md §16.31); these
   // suites want a named file, which is what Browse… still is.
@@ -126,6 +129,77 @@ describe('the Delete key', () => {
     fireEvent.keyDown(window, { key: 'Delete' });
 
     expect(screen.queryByTestId('world-delete-warning')).not.toBeInTheDocument();
+  });
+});
+
+describe('Ctrl+Z and Ctrl+Y', () => {
+  // The one pair that reached past both guards. §17 of the architecture doc
+  // says every shortcut here shares `isTypingOrInPopover` *and* the
+  // `surfaceDialogOpen` check; undo and redo shared neither, so a Ctrl+Z in a
+  // property field undid a world edit instead of the typing, and a Ctrl+Z with
+  // the delete confirm open could renumber the very VOB that confirm was about
+  // — `deleting` is a flat index, and `applied` clears the selection but not
+  // the dialog.
+
+  it('undoes a world edit when nothing else owns the keystroke', async () => {
+    await openWorld();
+
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+
+    await waitFor(() => expect(api.undoWorldEdit).toHaveBeenCalled());
+  });
+
+  it('leaves the keystroke to a focused text field', async () => {
+    await openWorld();
+    const field = document.createElement('input');
+    document.body.appendChild(field);
+    field.focus();
+
+    const event = createEvent.keyDown(field, { key: 'z', ctrlKey: true });
+    fireEvent(field, event);
+
+    expect(api.undoWorldEdit).not.toHaveBeenCalled();
+    // And the browser's own text undo is left to happen.
+    expect(event.defaultPrevented).toBe(false);
+    field.remove();
+  });
+
+  it('leaves redo to a focused text field too', async () => {
+    await openWorld();
+    const field = document.createElement('input');
+    document.body.appendChild(field);
+    field.focus();
+
+    fireEvent.keyDown(field, { key: 'y', ctrlKey: true });
+
+    expect(api.redoWorldEdit).not.toHaveBeenCalled();
+    field.remove();
+  });
+
+  it('does nothing while the delete confirm is open', async () => {
+    // The dialog names a VOB by flat index. An undo of a structural op
+    // renumbers, and the confirm would then remove whatever had moved into that
+    // index.
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    fireEvent.keyDown(window, { key: 'Delete' });
+    await screen.findByTestId('world-delete-warning');
+
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+
+    expect(api.undoWorldEdit).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when the surface is hidden', async () => {
+    await openWorld();
+    // The surface stays mounted behind the dialog view, so its window listeners
+    // are still bound — Ctrl+Z there belongs to the dialog editor's history.
+    const { rerender } = lastRender!;
+    rerender(<WorldSurface hidden />);
+
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+
+    expect(api.undoWorldEdit).not.toHaveBeenCalled();
   });
 });
 
