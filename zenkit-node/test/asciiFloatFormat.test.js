@@ -85,3 +85,41 @@ test('vec3 and rawFloat entries keep nine significant digits and ZenGin\'s expon
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('ASCII float writers round exact halfway values away from zero', () => {
+  const dir = tmpdir();
+  try {
+    const source = path.join(dir, 'source.zen');
+    const resaved = path.join(dir, 'resaved.zen');
+    zenkit._authorFixtureWorld(source, 'ascii', 'g2', 'minimal', false);
+
+    const original = fs.readFileSync(source, 'latin1');
+    fs.writeFileSync(
+      source,
+      original
+        .replace('range=float:500', 'range=float:-3055.890625')
+        .replace(
+          'bbox3DWS=rawFloat:-10 -10 -10 10 10 10 ',
+          'bbox3DWS=rawFloat:-4509.328125 3055.890625 4509.328125 10 10 10 '
+        ),
+      'latin1'
+    );
+
+    const handle = zenkit.loadWorld(source, 'g2');
+    zenkit.setVobPosition(handle, '0/1', [3055.890625, -4509.328125, 0]);
+    zenkit.saveWorld(handle, resaved, { allowNonBinSafe: true });
+
+    assert.deepStrictEqual(entries(resaved, 'range'), ['range=float:-3055.89063']);
+    assert.ok(entries(resaved, 'trafoOSToWSPos').includes(
+      'trafoOSToWSPos=vec3:3055.89063 -4509.32813 0'
+    ));
+    assert.ok(
+      entries(resaved, 'bbox3DWS').includes(
+        'bbox3DWS=rawFloat:-4509.32813 3055.89063 4509.32813 10 10 10'
+      ),
+      `boxes written: ${entries(resaved, 'bbox3DWS').join(' | ')}`
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

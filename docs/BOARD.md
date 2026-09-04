@@ -196,16 +196,12 @@ below it.
 **Outside the pick path — an unattended run skips this section.** Deprioritised,
 not blocked: moving a card back to Next is a human decision.
 
-**ASCII writer — deferred 2026-08-28**, all three at §16.9. Real defects, but
-the editor does not save through the ASCII path, BinSafe stays `identical`, and
-the series absorbed most of a night's run by the time `0048` landed.
-
-- **A6** — the packed `zCVob` writer drops `physicsEnabled`, so the editor's own
-  BinSafe path has it too. Wants a fixture VOB and an engine A/B, like §16.2.
-- **`bool:` writes `1` where ZenGin writes `-1`** (`locked`, `moveable`) —
-  `0017` is the BinSafe template. 3 of OldCamp's 8 findings.
-- **Half-way float rounding** — UCRT ties-to-even against MSVC 6's away-from-
-  zero. The other 5 findings.
+**ASCII writer — completed 2026-09-04.** The three deferred defects at §16.9
+were closed by patches `0050`–`0052`, and untouched, property-edited, and
+structurally edited copies of the real `SURFACE_BEPPO.ZEN` ASCII world all
+passed the Gothic II QuickTest gate. Normal save now accepts ASCII and BinSafe;
+BINARY remains diagnostic-only. See
+`docs/engine-acceptance-2026-09-04-ascii.md`.
 
 - **`.MMB` authoring has no ZenKit writer at all** — `MorphMesh` has `load` and
   no `save`: new upstream code, not a patch. Deferred 2026-08-28.

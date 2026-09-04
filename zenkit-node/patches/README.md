@@ -100,6 +100,9 @@ regardless of what upstream does with it.
 | `0045` | `WriteArchiveAscii::write_mat3x3` emitted a `rawFloat:` entry where `ReadArchiveAscii::read_mat3x3` reads `raw:` and ZenGin writes `raw:` (all 1277 `trafoOSToWSRot` entries in OldCamp). ZenKit could not read back its own unpacked `zCVob`s — the same class of writer/reader disagreement as `0024` and `0026`, on the library's only `write_mat3x3` caller |
 | `0046` | `VirtualObject::save`'s unpacked branch writes `presetName`/`vobName`/`visual` and the common tail wrote all three again; entries are read positionally, so the repeat is a stream desync. The mirror-image hole: `load` hardcodes `has_visual_object`/`has_ai_object` to true in the unpacked layout, so the reader takes two objects out of the stream that `save` never wrote. `visual` also came from `visual_name`, empty on any VOB that was built rather than loaded, where the packed tail writes `visual->name` |
 | `0048` | Every ASCII float written with `std::to_string` — `%f`, six decimals, always — where ZenGin wrote nine significant digits with its MSVC CRT's three-digit exponent. It both pads (`0` → `0.000000`) and *truncates* (`1511.77087` → `1511.770874`, and anything under 1e-6 → `0.000000`). `%.9g` is what the retail ASCII worlds hold and is also what round-trips a float exactly, so no parsed value changes. OldCamp: 440 struct findings → 8, re-save 4,012,132 B → 3,979,084 B against a 3,979,132 B original |
+| `0050` | G2's packed `zCVob` writer stored `physicsEnabled` in bit 6 only when a save-game rigid-body payload existed. The flag is independent of that payload, so an ordinary authored world VOB with `physicsEnabled=true` was saved as false. Write bit 6 directly while retaining the payload guard. |
+| `0051` | Unpacked ASCII `visualAniMode` is a 32-bit enum while ZenKit narrows it to an 8-bit `AnimationType`. A retail-shaped value `145297640` re-saved as `232`. Preserve the raw value only while its narrowed semantic value remains unchanged. |
+| `0052` | UCRT `%.9g` rounds exact halfway floats to even, while ZenGin's legacy formatter rounded away from zero: `-3055.890625` must write `-3055.89063`. One shared formatter preserves ordinary nine-digit output and fixes halfway scalar, vec3, and raw-float values. |
 
 `0020`, `0021` and `0022` are the strongest candidates: standalone, no API change,
 no fidelity argument needed. `0018` is a portability crash fix with identical output.
@@ -127,7 +130,7 @@ took a retail G2 install's ASCII worlds from 20 crashed to 20 measured
 | `0019` | The fidelity half of `0015`. Adds public `Mesh::shared_lightmap_textures`; not independently applicable |
 | `0047` | The fidelity half of `0045`/`0046`. `save` wrote every VObject packed whatever layout `load` read, and the packed layout has no room for most of the tail — all 1277 of OldCamp's `pack=int:0` VObjects come back `pack=int:1`. Adds public `VirtualObject::packed_layout` so the layout survives; same shape as `0016`, but it also changes what `save` writes for any consumer that loads an unpacked world |
 
-### Ours forever (1)
+### Ours forever (2)
 
 `0017` — `WriteArchiveBinsafe::write_bool` special-cases the entry names `locked`,
 `moveable` and `focusOverride` to write `0xFFFFFFFF` instead of `1`. The underlying
@@ -135,6 +138,12 @@ observation is real (ZenGin's signed 1-bit `oCMOB` bitfields), but keying
 archive-layer behaviour on string entry names is a layering violation upstream
 should reject. The right upstream shape is an explicit raw/tri-state write called
 from the `oCMOB` save sites; until someone writes that, this stays local.
+
+`0049` — the ASCII half of `0017`: the same three signed one-bit entry names
+write `-1` instead of `1`. A retail ASCII census finds 56 such values among
+45,068 boolean entries (51 `locked`, 5 `moveable`) and no other non-0/1 value.
+It has the same archive-layer string-keying compromise and the same desired
+upstream shape as `0017`.
 
 ## Suggested upstreaming order
 
@@ -153,7 +162,7 @@ Independent, highest-value and least arguable first:
    fixture: `0011`, `0019` (after `0015`), `0016` (after `0001`),
    `0044` (after `0028`), `0047` (after `0045` and `0046`), `0012`, then
    `0008` reshaped to keep the counter internal, then `0009`.
-7. `0017` — do not send as written.
+7. `0017` and `0049` — do not send as written.
 
 ## Open questions
 

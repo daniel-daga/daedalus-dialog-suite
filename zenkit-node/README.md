@@ -617,18 +617,12 @@ unreachable from the roots and would be neither enumerated, counted nor
 written — it would simply disappear at the next save rather than being
 misplaced.
 
-**Saving is BinSafe-only.** `saveWorld(handle, path)` throws unless the handle
-was loaded from a `zCArchiverBinSafe` archive: that is the only writer path
-verified byte-for-byte against the retail corpus and in the original engine.
-Patches 0024–0026 fixed defects A1, A4 and A5, so ZenKit's ASCII writer now
-re-loads its own output and all 20 of a retail install's ASCII worlds are
-measured rather than crashed — but they classify `semantic-drift`, not
-`identical`, and no ASCII world has been through the engine. A2, A3 and the
-newly found A6 are open (§10.4).
-The BINARY path has had no fidelity work at all
-(`docs/engine-acceptance-2026-08-25.md` §10.2, §10.3). Diagnostics that mean to
-measure those paths pass `saveWorld(handle, path, { allowNonBinSafe: true })`,
-as `scripts/zen-roundtrip.js` does.
+**Saving preserves BinSafe and ASCII archives.** Both writer paths have passed
+the round-trip and original-engine gates. BINARY has had no fidelity work and
+remains refused by default. Diagnostics that intentionally measure BINARY pass
+`saveWorld(handle, path, { allowNonBinSafe: true })`, as
+`scripts/zen-roundtrip.js` does. See
+`docs/engine-acceptance-2026-09-04-ascii.md` for the ASCII engine run.
 
 ### TypeScript consumers
 
@@ -785,27 +779,10 @@ hash of the decoded bytes could not have seen it. **BINARY has no walker**: for 
 `{ archiver, format, covered: false, header }` and nothing more, and
 `classifyDumps` returns `containerCoverage: false` for the pair.
 
-**The ASCII writer is usable but not yet trusted.** A1–A5 are fixed (patches
-0024–0026 and 0045–0047): ZenKit re-loads its own ASCII output, the authored
-fixture round-trips `identical` fully instrumented, a retail G2 install's 20
-ASCII worlds went from 20 crashed to 20 measured, and a re-save now keeps each
-VObject in the layout it was loaded in instead of packing it — which takes
-OldCamp's container diff from `whole-file` (unalignable) to `event-aligned`
-with gap 0. They still classify **`semantic-drift`**, which is the instrument
-working, not the writer passing, but for two reasons that are both smaller than
-they looked. The `physicsEnabled` findings that were 43,341 of 43,469 were an
-artifact of that packed conversion, not of A6: an unpacked VObject has no
-`physicsEnabled` entry, so it keeps ZenKit's `= true` default, and only the
-re-save's packed form wrote it false. What remains is **ASCII float text
-precision** — every float is written with six decimal places where ZenGin
-writes a shortest-round-trip form, so `1511.77087` returns as `1511.770874` —
-plus `animMode`, which is **diagnosed and unfixable in principle**: 130 retail
-`oCMobContainer` chests store a heap-pointer-shaped `visualAniMode` that ZenKit
-narrows twice — uint32 to the `uint8_t` `AnimationType` on load, then to two
-bits by the packed writer — so the format has nowhere to put the value. The
-editor's BinSafe path is unaffected by both, measured: retail BinSafe worlds
-are packed throughout and still re-save `identical`. A6 is still open, and it
-is the *packed* writer, so it is the editor's path. And **no ZenGin-written
-ASCII fixture exists**, so the checked-in corpus can only ever prove that ZenKit
-agrees with itself. `saveWorld` is still BinSafe-only for all of those reasons.
-The evidence is in the acceptance record §10.2 and §10.4.
+**The ASCII writer is certified for preservation saves.** Patches 0024–0026,
+0045–0052 cover raw hex entries, integer tokens, packed and unpacked VOBs,
+signed booleans, physics flags, wide animation modes, and legacy float
+formatting. The fixture and retail corpus are reloadable and deterministic;
+the original engine loaded untouched, property-edited, and structurally edited
+copies under the production world basename. The evidence is in
+`docs/engine-acceptance-2026-09-04-ascii.md`.

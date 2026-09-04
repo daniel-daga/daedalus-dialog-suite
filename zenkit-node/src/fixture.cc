@@ -453,9 +453,12 @@ std::shared_ptr<VirtualObject> BuildVobTree() {
   container->name = "CHEST";
   container->hp = 10;
   container->damage = 0;
-  container->movable = false;
+  // True witnesses for ZenGin's signed ASCII oCMOB booleans. The chest also
+  // supplies an ordinary true boolean through show_visual for comparison.
+  container->movable = true;
   container->takable = false;
-  container->focus_override = false;
+  container->focus_override = true;
+  container->show_visual = true;
   container->material = SoundMaterialType::WOOD;
   container->destroyed = false;
   container->state_count = 1;

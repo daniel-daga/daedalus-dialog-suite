@@ -62,19 +62,35 @@ test('an unpacked ASCII world loads back to the same world as the packed one', (
     const a = zenkit.normalizeWorld(zenkit.loadWorld(packed, 'g2'));
     const b = zenkit.normalizeWorld(zenkit.loadWorld(unpacked, 'g2'));
 
-    // The one field the two forms disagree on, and it is A6, not this patch:
-    // the fixture's VOBs carry ZenKit's `physics_enabled = true` default, the
-    // packed writer gates bit 6 on a `rigid_body` only save-games ever fill so
-    // it writes false, and the unpacked form has no entry for the field at all
-    // — ZenGin only stores it in the packed layout. Asserted rather than
-    // stripped so that landing A6 has to come back through this test.
-    assert.strictEqual(a.vobs[0].flags.physicsEnabled, false);
+    // `physicsEnabled` exists only in packed data, but it is still a VOB flag:
+    // it must not be cleared merely because no save-game rigid-body payload
+    // accompanies it.
+    assert.strictEqual(a.vobs[0].flags.physicsEnabled, true);
     assert.strictEqual(b.vobs[0].flags.physicsEnabled, true);
-    const withoutPhysics = (dump) =>
-      dump.vobs.map((v) => ({ ...v, flags: { ...v.flags, physicsEnabled: null } }));
-
-    assert.deepStrictEqual(withoutPhysics(b), withoutPhysics(a));
+    assert.deepStrictEqual(b.vobs, a.vobs);
     assert.deepStrictEqual(b.waynet, a.waynet);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('an unpacked visualAniMode preserves its original 32-bit value when unchanged', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zenkit-unpacked-'));
+  try {
+    const source = path.join(dir, 'source.zen');
+    const resaved = path.join(dir, 'resaved.zen');
+    zenkit._authorFixtureWorld(source, 'ascii', 'g2', 'minimal', false);
+
+    const raw = 145297640;
+    const original = fs.readFileSync(source, 'latin1');
+    assert.match(original, /visualAniMode=enum:0/);
+    fs.writeFileSync(source, original.replace('visualAniMode=enum:0', `visualAniMode=enum:${raw}`), 'latin1');
+
+    zenkit.saveWorld(zenkit.loadWorld(source, 'g2'), resaved, { allowNonBinSafe: true });
+    const text = fs.readFileSync(resaved, 'latin1');
+    assert.match(text, new RegExp(`visualAniMode=enum:${raw}`));
+    assert.doesNotMatch(text, /visualAniMode=enum:232/);
+    assert.ok(zenkit.loadWorld(resaved, 'g2'));
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

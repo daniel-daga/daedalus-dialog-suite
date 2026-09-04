@@ -1,0 +1,31 @@
+ASCII: store oCMOB's signed one-bit flags as -1 like ZenGin.
+
+WriteArchiveAscii::write_bool always wrote 1 for true. ZenGin declares some of
+oCMOB's flags as signed one-bit bit-fields, so reading a set flag yields -1 and
+the ASCII archiver stores that signed value. A retail ASCII census finds 56
+`bool:-1` values among 45,068 boolean entries: 51 `locked` and 5 `moveable`,
+with every other observed true boolean written as 1.
+
+The same signed-field rule is already measured more broadly by patch 0017's
+BinSafe census: `locked`, `moveable`, and `focusOverride` are the only boolean
+entry names that ever hold a non-0/1 value. Mirror that rule here while leaving
+ordinary true values and every false value unchanged.
+
+Like 0017, this is not upstreamable as written: selecting field semantics by
+archive entry name is a layering violation. The clean upstream form would be
+an explicit signed/raw boolean write at the oCMOB save sites.
+
+diff --git a/src/archive/ArchiveAscii.cc b/src/archive/ArchiveAscii.cc
+--- a/src/archive/ArchiveAscii.cc
++++ b/src/archive/ArchiveAscii.cc
+@@ -354,7 +354,9 @@ namespace zenkit {
+ 	}
+ 
+ 	void WriteArchiveAscii::write_bool(std::string_view name, bool v) {
+-		this->write_entry(name, "bool", v ? "1" : "0");
++		auto const signed_true =
++		    name == "locked" || name == "moveable" || name == "focusOverride";
++		this->write_entry(name, "bool", v ? (signed_true ? "-1" : "1") : "0");
+ 	}
+ 
+ 	void WriteArchiveAscii::write_color(std::string_view name, Color v) {
