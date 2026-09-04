@@ -1404,8 +1404,8 @@ Three decisions are worth keeping:
   never names its own target: **`world:save` writes only to a path
   `world:saveDialog` handed back**, and refuses anything else before it reaches
   the whitelist at all.
-  The whitelist cannot express that rule and was never enough for it (fixed
-  2026-09-04, review §2.1): the opened world is legitimately *readable*, so any
+  The whitelist cannot express that rule and was never enough for it (fixed 2026-09-04;
+  `docs/plans/level-editor-review-2026-09-04.md`, its section 2.1): the opened world is legitimately *readable*, so any
   grant that lets the worker load it also lets a `saveWorld` call name it — and
   until then those grants were `path.dirname(...)`, recursively, which for a
   world listed out of an install is the whole of `_work/Data/Worlds`. The world
@@ -2818,7 +2818,8 @@ Settled 2026-08-31, extracting the decisions from the (now deleted)
 commit messages carry the slice-by-slice reasoning.
 
 **Keyboard shortcuts are one window listener with one shared guard**, undo and
-redo included — they were the exception until 2026-09-04 (review §2.5), which
+redo included — they were the exception until 2026-09-04
+(`docs/plans/level-editor-review-2026-09-04.md`, its section 2.5), which
 is how a Ctrl+Z typed into a property field undid a *world* edit and a Ctrl+Z
 with the delete confirm open could renumber the VOB that confirm was about. The
 surface stays mounted behind whichever view is on screen (§8 of

@@ -22,11 +22,17 @@ screenshots informed the UX section. Suites run, all green on `HEAD`:
 pass, 1 skipped), the editor's world-related Jest suites (54 suites, 813
 tests) and the seven main-process suites the main-process pass named.
 
-Nothing here is fixed. Findings are ranked most severe first within each
-section, each with the file and line, the failure scenario and a confidence:
-**confirmed** means re-read or reproduced, **plausible** means the mechanism
-is confirmed and the trigger is narrow or timing-dependent. A finding the
-08-29 review or §16 already holds is not repeated.
+Findings are ranked most severe first within each section, each with the file
+and line, the failure scenario and a confidence: **confirmed** means re-read or
+reproduced, **plausible** means the mechanism is confirmed and the trigger is
+narrow or timing-dependent. A finding the 08-29 review or §16 already holds is
+not repeated.
+
+**Remediation, same day.** Every heading marked **FIXED 2026-09-04** landed
+that afternoon, each with a test written first and each verified to fail
+without its fix — the section body is left as it was written, describing the
+defect, so a heading is the only thing to read for state. What is *not* fixed
+is listed in §6, and it is where anybody picking this up should start.
 
 ## 1. Verdict
 
@@ -64,7 +70,7 @@ the fake binding's path arithmetic are two more.
 
 ## 2. Correctness and security
 
-### 2.1 `world:save` writes anywhere in a whitelisted directory — **confirmed**
+### 2.1 `world:save` writes anywhere in a whitelisted directory — **FIXED 2026-09-04**
 
 `daedalus-dialog-editor/src/main/main.ts:1033-1037` validates `targetPath`
 against `pathValidator` only. `world:openDialog` (`:848`), `world:saveDialog`
@@ -80,7 +86,7 @@ grant *that exact file only*, and `:421`/`:437` do (`addAllowedFile`). The
 world dialogs should do the same, and `world:save` should also pass
 `{ write: true }` as `world:saveVobFolders` (`:1054`) does.
 
-### 2.2 `rotationBetween` emits a non-rotation for an antiparallel pair — **confirmed**
+### 2.2 `rotationBetween` emits a non-rotation for an antiparallel pair — **FIXED 2026-09-04**
 
 `zen-world/src/model/ops.ts:715-757`. The antiparallel branch replaces `axis`
 with `from × reference` but keeps `sin = |axis|` (≈1) where θ = 180° needs
@@ -93,7 +99,7 @@ sheared matrix is written into the `.zen`, and `zenRotationToEuler` later
 "squares it up" silently. The tests pin a 90° and a 45° case only. Fix: `sin =
 0` in that branch after normalising the perpendicular axis.
 
-### 2.3 Undoing a `ReparentVob` that lands ahead of its old parent is refused, and wedges the stack — **confirmed** (simulated against the binding's arithmetic)
+### 2.3 Undoing a `ReparentVob` that lands ahead of its old parent is refused, and wedges the stack — **FIXED 2026-09-04**
 
 `ops.ts:1890-1950` (`reparentVob`/`landingPath`), `:1961-1990` (`invertOp`),
 `:2081-2095` (`writeOp`). `landingPath` predicts `to.path` accounting for the
@@ -109,7 +115,7 @@ hits the same refusal and everything beneath it is unreachable. The
 for, so it cannot see this. Fix: `invertOp` computes the old parent's path *as
 it stands after the move*.
 
-### 2.4 A commit in flight when a new world opens lands on the new world's undo stack — **confirmed**
+### 2.4 A commit in flight when a new world opens lands on the new world's undo stack — **FIXED 2026-09-04**
 
 `WorldService.ts:104-112` replaces `this.undoStack = []` *before* awaiting the
 open; `applyOps` (`:233-251`) pushes *after* the worker answers, and the worker
@@ -122,7 +128,7 @@ only. Also, `WorldSurface.tsx:414` clears `unsavedEdits` at the start of
 `openWorldAt`, so the same late commit reopens B dirty. A generation counter
 on the service, or refusing an open while a commit is in flight, closes both.
 
-### 2.5 Ctrl+Z/Y is the one shortcut that ignores both guards — **confirmed**
+### 2.5 Ctrl+Z/Y is the one shortcut that ignores both guards — **FIXED 2026-09-04**
 
 `WorldSurface.tsx:2231-2237`: the undo/redo branch has neither
 `isTypingOrInPopover` nor `surfaceDialogOpen`, unlike W/E, C/V, Delete,
@@ -136,7 +142,7 @@ not `deleting`, so Confirm removes whatever now sits at N — a barrier. No test
 in `WorldSurface.shortcuts.test.tsx` covers Ctrl+Z with a focused field or an
 open dialog.
 
-### 2.6 `removeWaypoint(barrier)` dereferences a null edge endpoint — **confirmed** mechanism, narrow trigger
+### 2.6 `removeWaypoint(barrier)` dereferences a null edge endpoint — **FIXED 2026-09-04, untested**
 
 `zenkit-node/src/binding.cc:873` collects each edge's other endpoint, `:890`
 does `endpoint->free_point`. `WayNet::load` (`vendor/ZenKit/src/world/
@@ -156,14 +162,14 @@ Double-click Duplicate or held Ctrl+V builds the second `AddVob` from the
 stale reader with the same `path`, which the `landed !== op.path` guard
 refuses with an internal message.
 
-### 2.8 `runHistory` catches nothing — **confirmed**
+### 2.8 `runHistory` catches nothing — **FIXED 2026-09-04**
 
 `WorldSurface.tsx:1085-1090`, called as `void runHistory(...)`. A rejected
 `undoWorldEdit` (worker died, world mid-open) or a throw in `applied` is an
 unhandled rejection: no banner, `historyDepth` stale, view silently behind the
 world. `commitOps` wraps `applied` for exactly this reason (`:1140-1150`).
 
-### 2.9 `alignVobsToNormal` and `scatterVobs` feed an un-normalised column into Rodrigues — **confirmed**
+### 2.9 `alignVobsToNormal` and `scatterVobs` feed an un-normalised column into Rodrigues — **FIXED 2026-09-04**
 
 `ops.ts:776` and `:1683` take `[m[1], m[4], m[7]]` as the current up;
 `rotationBetween` uses `dot` as cos θ, so it assumes unit inputs. The README
@@ -172,7 +178,7 @@ of length 1.02 gives a delta with max|RᵀR−I| = 0.04, then compounded onto th
 drifted matrix. One shared `standUp(rotation, normal)` helper is where §2.2
 and this get fixed together — the stand-up logic exists twice today.
 
-### 2.10 `WorldService.handleTimeout` cannot stop the thread it claims to — **confirmed**
+### 2.10 `WorldService.handleTimeout` cannot stop the thread it claims to — **DOC FIXED 2026-09-04**
 
 `WorldService.ts:420-432`: `worker.terminate()` interrupts JavaScript only; a
 worker inside a synchronous N-API call (`loadWorld`, `saveWorld`, `commitOps`)
@@ -182,7 +188,7 @@ down"; it orphans it — the world it holds stays resident and the next
 out mid-write leaves `<target>.tmp` behind (`binding.cc:476-497` rolls back on
 its own error paths only).
 
-### 2.11 Worker `error`/`exit` handlers are not scoped to the instance — **plausible**
+### 2.11 Worker `error`/`exit` handlers are not scoped to the instance — **FIXED 2026-09-04**
 
 `WorldService.ts:365-374`. `close()`/`handleTimeout` terminate and null
 `this.worker`; `exit` arrives asynchronously. If `openWorld` runs first,
@@ -202,7 +208,7 @@ a caller bug (the worker or the blender bridge swapping arguments), but it is
 the one argument hole that is memory-unsafe rather than a wrong answer.
 `napi_type_tag_object`/`CheckTypeTag` closes it.
 
-### 2.13 `zCVob` position/rotation/bbox accept NaN and ±Infinity in the binding — **confirmed**
+### 2.13 `zCVob` position/rotation/bbox accept NaN and ±Infinity in the binding — **PART FIXED 2026-09-04**
 
 `Vec3FromValue` (`binding.cc:595`) and `FloatsFromValue` (`:1055`) cast
 unchecked, unlike every class-prop float. `ipcValidation.ts:585` guards the
@@ -214,7 +220,7 @@ slot admits `1e300`/`Infinity`; `:339` `_drillMesh` offset admits NaN), and
 waypoint indices go through `Int64Value()` with no integrality check
 (`:663, :704, :832, :920`).
 
-### 2.14 `WorldFoldersService.save` is unserialized with a fixed temp name — **plausible**
+### 2.14 `WorldFoldersService.save` is unserialized with a fixed temp name — **FIXED 2026-09-04**
 
 `WorldFoldersService.ts:64-80` opens `<target>.tmp` with `'w'` and renames;
 the renderer fires one save per folder mutation without awaiting
@@ -280,7 +286,7 @@ aside as corrupt on next load and the folders come back empty.
 
 ## 3. Renderer scene layer
 
-### 3.1 The scatter brush cannot hit the world mesh — the feature is dead in the app — **confirmed**
+### 3.1 The scatter brush cannot hit the world mesh — **FIXED 2026-09-04**
 
 `WorldViewport.tsx:1037` creates `brushRaycaster` without `layers.enableAll()`;
 every world mesh is on `WORLD_LAYER` = 1 (`WorldScene.ts:106, 377, 408`). A
@@ -294,7 +300,7 @@ outline. Every scatter test mocks the viewport and calls `onScatterStroke`
 directly (`WorldSurface.scatter.test.tsx`), which is why it is green. The
 board's 09-03 card says the brush landed; nobody has painted with it.
 
-### 3.2 Every structural op tears down and recreates the `WebGLRenderer`, twice — **confirmed**
+### 3.2 Every structural op tears down and recreates the `WebGLRenderer`, twice — **FIXED 2026-09-04**
 
 The scene effect's deps are `[mesh, visuals, bbox]` (`WorldViewport.tsx:1846`)
 and `bbox` is `summary.bbox` (`WorldSurface.tsx:2650`) — a structured-cloned
@@ -573,7 +579,72 @@ the session, not the repo; what they showed is stated as such.
 - The tree's `aria-activedescendant` model is the right one for a virtualised
   list.
 
-## 6. What is not in this document
+## 6. What is still open
+
+Everything without a **FIXED** heading, of which these are the ones worth
+deciding about rather than merely doing:
+
+**Structural, and the largest thing here.** `WorldViewport.tsx` (§4) is a
+2,090-line component whose single 1,310-line effect owns the renderer, the
+gizmo, three pick handlers, the brush, fly, walk, slots, resize and the draw
+loop. §3.1 lived there for two days precisely because a closure inside that
+effect is reachable only through a mocked viewport, and §3.2's fix keys the
+effect differently rather than doing what the effect actually wants, which is
+to stop being one effect. The split — `ViewportRenderer`, `SceneHost`,
+`GizmoController`, `PickController`, `NavController`, `ScatterBrush` — is
+named in §4 and is not carded anywhere. `WorldSurface.tsx` (3,190 lines) and
+`binding.cc` (3,388, with ~250 duplicated lines in one switch) are the same
+shape of debt with lower risk.
+
+**§3.3, the BVH rebuilt per structural op.** §3.2 removed the *duplicate*
+rebuild; the remaining one still discards and rebuilds all 352 trees for a
+mesh that did not change. Caching them per `mesh` payload is the fix and it
+belongs with the viewport split above.
+
+**§3.4, `ThumbnailRenderer`'s shared canvas.** A 2D and a WebGL context on one
+canvas: whichever tile kind is drawn second fails for the rest of the session,
+silently, as a `{status:'failed'}` tile. Two lines to fix and no test can see
+it under jsdom, which has neither context — this is what "the thumbnails' look
+is unwitnessed" on the board actually means.
+
+**§2.6 has no test.** The null-endpoint guard landed, but a dangling edge
+reference cannot be produced through the API — it comes from a malformed file,
+and no fixture expresses one. Producing one means byte-surgery on a BinSafe
+archive's waynet chunk.
+
+**§2.7, no in-flight guard on `commitOps`.** Held key-repeat still builds N
+ops from one stale `from`. The open-generation counter (§2.4) does not cover
+it: this is two edits racing each other, not an edit racing an open.
+
+**§2.12, untagged `Napi::External` handles.** Memory-unsafe if a caller ever
+swaps a VFS handle for a world handle. `napi_type_tag_object` closes it; no
+current caller does it.
+
+**§2.15's remainder**, none of them urgent: the structural-refresh window
+between `indexRefreshed` and `setVisuals`, `surfaceDialogOpen`'s three missing
+modals (fixed), the `mergeChunks` `lights === null` mismatch (latent, masked
+by the worker), the GMBT dirty-check/launch-target disagreement,
+`world:getVobFolders` writing under a read validation, the cp1252 round-trip
+hole for five undefined bytes, `loadWorld` on a directory path,
+`decodeTexture`'s ignored non-number `level`, `vobAtIndexPath`'s lenient
+parsing, and the dead `close` op in `zenkit.worker.ts` — left alone
+deliberately: wiring it risks hanging `close()` on a stuck worker, and
+deleting it discards a documented Windows mapped-file concern. A person should
+pick.
+
+**§5's remainder** — the UI items §5.1's fixes did not cover: the multi-select
+flag checkbox with no indeterminate state (§5.2 item 9), the position field's
+wrong multi-selection note (item 8), the property grid losing to the asset
+preview (item 10), the asset browser's missing highlight, keyboard path and
+loading state (§5.4 item 17), the folder tree's hidden affordances (item 18),
+the frame-verb disagreement (item 19), Home/`.` firing inside popovers (item
+20), scene-tree truncation without a tooltip (item 21), scatter fields
+accepting NaN (item 22), and the waypoint panel and splitter accessibility
+gaps (item 23). Delete-with-N>1 (§5.1 item 5) is still one VOB at a time and
+still says nothing about why — the tooltip is trivial, but whether a batch
+delete should exist at all is §15's call, not a fix.
+
+## 7. What is not in this document
 
 Everything found clean is not listed — the
 passes checked, and confirmed, the 08-29 fixes for the waynet-fetch, stale

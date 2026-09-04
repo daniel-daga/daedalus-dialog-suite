@@ -217,12 +217,11 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 - **Unattended-queue row 42, the BINARY fidelity baseline** — no BINARY `.zen`
   exists on this machine to classify and the instrument has no BINARY walker, so
   it decomposes into three runs plus a scope call. §14.3 3.1
-- **The 2026-09-04 level-editor review — ~50 findings, nothing fixed.** Its
-  verdict ranks four: the scatter brush's raycaster has no layer mask, so the
-  brush never hits the world; `world:save` writes anywhere in a whitelisted
-  directory; three world-corrupting or undo-wedging defects plus a renderer
-  rebuilt twice per placement; and the UI's silent feedback. Daniel carves it
-  into cards. `docs/plans/level-editor-review-2026-09-04.md`, its section 1
+- **The 2026-09-04 level-editor review — the ranked four and 14 findings
+  landed the same day; the rest is its section 6.** Biggest thing left is
+  structural and uncarded: `WorldViewport.tsx` is 2,090 lines in one
+  1,310-line effect, which is *why* the dead scatter brush was invisible for
+  two days. `docs/plans/level-editor-review-2026-09-04.md`, its section 6
 
 ## Done
 
