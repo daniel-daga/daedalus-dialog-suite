@@ -334,6 +334,43 @@ describe('a VOB dragged in the viewport', () => {
     await waitFor(() => expect(createVobReader(summary.vobIndex).position(1)).toEqual([11, 22, 33]));
   });
 
+  it('does not apply an edit that was still in flight when the next world opened', async () => {
+    // The main process records the batch against the world it edited, and drops
+    // it when that world is no longer the one open (`WorldService.generation`).
+    // This side has the same window and the same duty: `applied` writes into the
+    // columns of whatever summary the store now holds, and would have written
+    // A's move into B's index, marked B edited — blocking its quick test — and
+    // handed the viewport A's ops to draw.
+    await openWorld();
+    let take = (): void => undefined;
+    api.applyWorldOps.mockImplementationOnce(() => new Promise<undefined>((resolve) => {
+      take = () => resolve(undefined);
+    }));
+
+    fireEvent.click(screen.getByTestId('stub-drag'));
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+
+    // The next world, opened while that commit is still out.
+    const next = {
+      ...SUMMARY,
+      worldPath: 'C:/Gothic/OldWorld.zen',
+      vobIndex: vobIndex([[0, 0, 0], [10, 20, 30]]),
+    };
+    api.openWorldDialog.mockResolvedValueOnce('C:/Gothic/OldWorld.zen' as never);
+    api.openWorld.mockResolvedValueOnce(next as never);
+    api.getWorldMesh.mockResolvedValueOnce({ groups: [], bbox: next.bbox } as never);
+    api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+    fireEvent.click(screen.getByTestId('world-open'));
+    fireEvent.click(await screen.findByTestId('world-picker-browse'));
+    await waitFor(() => expect(useWorldStore.getState().summary).toBe(next));
+
+    await act(async () => { take(); });
+
+    // B's VOB 1 is where B says it is, and nothing was drawn over it.
+    expect(createVobReader(next.vobIndex).position(1)).toEqual([10, 20, 30]);
+    expect(mockAppliedOps).toBeNull();
+  });
+
   it('sends the VOB back where it was when the op is refused, and says so', async () => {
     // The viewport has already drawn the drag. Left alone, the VOB sits at a
     // position nothing in the world agrees with — including the property grid

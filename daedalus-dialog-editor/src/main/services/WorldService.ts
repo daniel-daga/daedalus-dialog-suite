@@ -74,6 +74,18 @@ export class WorldService {
   // whatever happens to sit at that path.
   private undoStack: WorldOp[][] = [];
   private redoStack: WorldOp[][] = [];
+  /**
+   * Which world the stacks belong to, bumped by every `openWorld`.
+   *
+   * An edit is recorded *after* the worker confirms it, and an open is not
+   * serialized behind edits (see `openWorld`), so a batch sent before an open
+   * is answered after it: correctly, against the world it was built for, and
+   * then recorded onto the stacks the open had already replaced. Comparing the
+   * generation across the await is what tells the two apart — the alternative,
+   * comparing the stack *array* it started with, would silently record into an
+   * array nothing reads.
+   */
+  private generation = 0;
   /** Edits run one at a time — see `serialized`. */
   private queue: Promise<unknown> = Promise.resolve();
 
@@ -104,6 +116,7 @@ export class WorldService {
   async openWorld(request: ResolvedOpenWorldRequest): Promise<WorldSummary> {
     if (this.worker === null) this.startWorker();
     this.worldPath = null;
+    this.generation += 1;
     this.undoStack = [];
     this.redoStack = [];
     const summary = await this.request<WorldSummary>('open', request);
@@ -231,7 +244,14 @@ export class WorldService {
    */
   applyOps(ops: readonly WorldOp[]): Promise<void> {
     return this.serialized(async () => {
+      const generation = this.generation;
       await this.requestOnOpenWorld<null>('applyOps', { ops });
+
+      // The world this edited is no longer the one that is open, so there is
+      // nothing here to undo *into*: its index paths address the old tree.
+      // Recording it would light up the Undo button over a world the user just
+      // opened and replay the wrong edit backwards into it.
+      if (this.generation !== generation) return;
 
       // A barrier op has no inverse (§15), and recording it would leave `undo`
       // reaching for one. Both stacks go, not just the entry it would have

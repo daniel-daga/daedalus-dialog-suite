@@ -415,6 +415,31 @@ describe('the op log', () => {
     await pending;
   }
 
+  test('an edit still in flight when the next world opens is not recorded against it', async () => {
+    // The history is dropped *before* the open is awaited, so an undo pressed
+    // mid-open finds nothing (the test below this one). The other half of that
+    // window was never covered: a batch already sent is ahead of the open in
+    // the worker's FIFO, so it is answered — correctly, against the world it
+    // was built for — after `openWorld` has already put the next world's empty
+    // stacks in place, and `applyOps` recorded it there. The Undo button then
+    // enabled over a freshly opened world, and Ctrl+Z replayed A's inverse, at
+    // A's index paths, into B.
+    const { worker, service } = await openedService();
+
+    const editing = service.applyOps([A]);
+    await tick();
+
+    const opening = service.openWorld(OPEN);
+    // A is answered first, as the worker's queue would: it edited the world
+    // that was open when it was sent.
+    worker.replyLast('applyOps', null);
+    await editing;
+    worker.replyLast('open', SUMMARY);
+    await opening;
+
+    expect(service.historyDepth()).toEqual({ undo: 0, redo: 0 });
+  });
+
   test('a barrier op clears the history rather than being recorded in it', async () => {
     // §15: a delete has no inverse, so the history cannot replay it backwards.
     // What it must not do is leave the *earlier* batches undoable — they were

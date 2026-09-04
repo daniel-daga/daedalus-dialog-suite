@@ -378,6 +378,22 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     () => new Set(Object.keys(items ?? {}).map((name) => name.toUpperCase())),
     [items],
   );
+  /**
+   * Which world the surface is showing, bumped by every open.
+   *
+   * An edit is sent, awaited, and only then applied to the projection — so an
+   * open that starts while a commit is out lands its summary first, and the
+   * commit comes back to a store holding a different world. `applied` would
+   * write A's ops into B's columns, mark B edited (blocking its quick test over
+   * bytes that are in fact clean), and hand the viewport A's ops to draw.
+   * `WorldService.generation` is the same guard on the authoritative side; this
+   * is the projection's own, because the two states are separate.
+   *
+   * A ref rather than state: it is read across an await inside callbacks, never
+   * rendered, and a re-render on open would be one nobody asked for.
+   */
+  const openGeneration = useRef(0);
+
   /** Uppercased instance → the `visual` its declaration assigns, read off
    *  the instance's verbatim source (§16.26 row 2): the semantic model keeps
    *  no per-field record of a `C_ITEM`, and the one line the picker needs is
@@ -410,8 +426,10 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     setWaynet(null);
     setVobFolders(emptyVobFolders());
     // The previous world's edits are not this one's, and a quick test over the
-    // new world has nothing to be stale about yet.
+    // new world has nothing to be stale about yet. The generation goes with it:
+    // an edit still in flight belongs to the world being left behind.
     setUnsavedEdits(false);
+    openGeneration.current += 1;
 
     try {
       // Main resolves the active project's ordered sources and owns the VFS
@@ -1083,9 +1101,13 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    *  process what it did, and — through the same path a commit takes —
    *  apply exactly that, never what this side thinks it sent. */
   const runHistory = useCallback(async (direction: 'undo' | 'redo') => {
+    const generation = openGeneration.current;
     const ops = await (direction === 'undo'
       ? window.editorAPI.undoWorldEdit() : window.editorAPI.redoWorldEdit());
     if (ops === null || ops.length === 0) return;
+    // A world opened while this was out: the ops address the world it undid,
+    // and this side is showing a different one.
+    if (openGeneration.current !== generation) return;
     await applied(ops);
   }, [applied]);
 
@@ -1095,6 +1117,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    *   to select when nothing landed. */
   const commitOps = useCallback(async (ops: WorldOp[]): Promise<boolean> => {
     const { editFailed } = useWorldStore.getState();
+    const generation = openGeneration.current;
     try {
       await window.editorAPI.applyWorldOps(ops);
     } catch (failure) {
@@ -1144,6 +1167,14 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     // So a failure here says exactly that, and puts nothing back. What is stale
     // is the *view*, and the way out of a stale view is to re-open the world —
     // not to pretend the world does not hold the edit.
+    // Unless a world opened while the commit was out, in which case the edit
+    // landed in a world this side is no longer showing: `applied` would write
+    // its ops into the new world's columns and mark that world edited. The main
+    // process drops the batch from the history for the same reason
+    // (`WorldService.generation`), so the two stay in step by agreeing to
+    // forget it rather than by one of them catching up.
+    if (openGeneration.current !== generation) return true;
+
     try {
       await applied(ops);
     } catch (failure) {
