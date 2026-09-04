@@ -194,6 +194,39 @@ describe('WorldViewport — the waynet overlay across a structural rebuild', () 
     unmount();
   });
 
+  it('does not rebuild for a bbox array that is merely a new object', () => {
+    // Every structural op re-reads the index, and the summary comes back
+    // structured-cloned from the main process — so `summary.bbox`, which the
+    // surface passes straight down, is a new array holding the same six
+    // numbers. Keyed on the array's *identity* that was a whole extra rebuild:
+    // renderer, canvas, scene, picker and 352 BVH trees thrown away and made
+    // again, with the old GL context left holding its textures until the
+    // detached canvas is collected. It ran first, too, with the *stale* visuals
+    // — the real payload arrived one await later and rebuilt everything a
+    // second time.
+    const payload = waynet();
+    const visuals = instancedPayload();
+    const { rerender, unmount } = render(
+      <WorldViewport {...props(visuals, payload, true)} bbox={[...BBOX]} />,
+    );
+
+    expect(mockScenes).toHaveLength(1);
+
+    act(() => {
+      rerender(<WorldViewport {...props(visuals, payload, true)} bbox={[...BBOX]} />);
+    });
+
+    expect(mockScenes).toHaveLength(1);
+
+    // A different world still frames as a different world.
+    act(() => {
+      rerender(<WorldViewport {...props(visuals, payload, true)} bbox={[0, 0, 0, 900, 900, 900]} />);
+    });
+
+    expect(mockScenes).toHaveLength(2);
+    unmount();
+  });
+
   it('leaves a shown waynet on screen across that rebuild', () => {
     const payload = waynet();
     const { rerender, unmount } = render(

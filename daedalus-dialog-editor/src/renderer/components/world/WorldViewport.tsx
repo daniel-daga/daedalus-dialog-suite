@@ -402,6 +402,12 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   const hostRef = useRef<HTMLDivElement | null>(null);
   // The overlay is built and torn down independently of the scene, so asking
   // for the waynet does not rebuild 31 MB of geometry.
+  /**
+   * The world's own identity, as far as the scene is concerned: six numbers,
+   * not the array holding them. See the scene effect's dependency list.
+   */
+  const bboxKey = bbox.join(',');
+
   const sceneRef = useRef<WorldScene | null>(null);
 
   useImperativeHandle(ref, () => ({
@@ -542,8 +548,10 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     // and a Scene with a background forces one of its own. The sky is its.
     const outline = new VobOutline(0x10141c);
 
-    // The same key the camera pose is restored on, below.
-    const worldKey = bbox.join(',');
+    // The same key the camera pose is restored on, below — and the same one
+    // this effect is keyed on, so that it is computed once here rather than
+    // twice out of step.
+    const worldKey = bboxKey;
     texturesRef.current = textureCacheFor(texturesRef.current, worldKey);
     if (slotsRef.current?.key !== worldKey) slotsRef.current = { key: worldKey, slots: new CameraSlots() };
     const cameraSlots = slotsRef.current.slots;
@@ -1848,7 +1856,25 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     };
     // Rebuilt only when a different world's payloads arrive — the callbacks are
     // read through refs precisely so they are not dependencies.
-  }, [mesh, visuals, bbox]);
+    // Keyed on the bbox's *value*, never the array's identity. Every structural
+    // op re-reads the index and the summary comes back structured-cloned from
+    // the main process, so `summary.bbox` is a fresh array of the same six
+    // numbers each time — and this effect throws away the renderer, its canvas,
+    // the scene, the picker and every BVH tree. `WebGLRenderer.dispose()` does
+    // not release the GL context (only `forceContextLoss` does) and the texture
+    // cache is deliberately kept, so the old context sat on its uploads until
+    // the detached canvas was collected while the new one re-uploaded all of
+    // them and recompiled every program — the shader-compile cost §3 moved off
+    // the first click, paid again per placement, against a browser cap of about
+    // sixteen contexts. Worse, it ran *before* the new visuals arrived, so the
+    // whole thing happened twice per op: once with the stale payload, once for
+    // real.
+    //
+    // `bbox` itself is therefore deliberately not a dependency: `bboxKey` is
+    // the same information by value, and the array identity is the thing being
+    // kept out.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mesh, visuals, bboxKey]);
 
   // Going off screen stops the loop; coming back starts it again. Deliberately
   // not a dependency of the scene effect above: `paused` flips on every tab
@@ -1857,7 +1883,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     const loop = drawLoopRef.current;
     if (loop === null) return;
     if (paused) loop.stop(); else loop.start();
-  }, [paused, mesh, visuals, bbox]);
+  }, [paused, mesh, visuals, bboxKey]);
 
   // The overlay lives and dies on its own, under the scene's converted root so
   // it needs no conversion of its own. `mesh` and `visuals` are dependencies
