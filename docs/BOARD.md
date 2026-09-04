@@ -239,6 +239,6 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
   settled, plus a Choose…/Clear for the folder in the Asset sources dialog. A
   dirty world blocks unless the save went back over the opened file.
   Unwitnessed: no run has been launched from the button. §16.29
-- **The point markers get a sprite — landed 2026-09-03.** A rimmed pip for the
-  spawn layers, a reticle for the placement and pivot markers; colours
-  unchanged, sizes up to keep the core. Unwitnessed: how it looks. §16.30
+- **Plane gizmo handles follow the camera — landed 2026-09-04.** The XY/YZ/XZ
+  squares are mirrored into the camera's octant instead of the baked positive
+  one. Unwitnessed: the drag itself. `docs/architecture/level-editor.md` §7

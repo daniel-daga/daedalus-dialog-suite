@@ -27,6 +27,13 @@ jest.mock('three/examples/jsm/controls/TransformControls.js', () => ({
   TransformControls: class {
     private mode = 'translate';
 
+    /** Only what the subclass reaches for to chain its plane-handle mirroring
+     *  onto the gizmo's layout — that behaviour is covered, against handles
+     *  with real geometry, in `gizmoPlaneFacing.test.ts`. */
+    private root = { children: [{ isTransformControlsGizmo: true, updateMatrixWorld() {} }] };
+
+    getHelper() { return this.root; }
+
     getMode() { return this.mode; }
 
     setMode(mode: string) { this.mode = mode; }
