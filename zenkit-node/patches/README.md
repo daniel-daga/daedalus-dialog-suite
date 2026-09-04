@@ -127,7 +127,7 @@ took a retail G2 install's ASCII worlds from 20 crashed to 20 measured
 | `0019` | The fidelity half of `0015`. Adds public `Mesh::shared_lightmap_textures`; not independently applicable |
 | `0047` | The fidelity half of `0045`/`0046`. `save` wrote every VObject packed whatever layout `load` read, and the packed layout has no room for most of the tail — all 1277 of OldCamp's `pack=int:0` VObjects come back `pack=int:1`. Adds public `VirtualObject::packed_layout` so the layout survives; same shape as `0016`, but it also changes what `save` writes for any consumer that loads an unpacked world |
 
-### Ours forever (1)
+### Ours forever (2)
 
 `0017` — `WriteArchiveBinsafe::write_bool` special-cases the entry names `locked`,
 `moveable` and `focusOverride` to write `0xFFFFFFFF` instead of `1`. The underlying
@@ -135,6 +135,12 @@ observation is real (ZenGin's signed 1-bit `oCMOB` bitfields), but keying
 archive-layer behaviour on string entry names is a layering violation upstream
 should reject. The right upstream shape is an explicit raw/tri-state write called
 from the `oCMOB` save sites; until someone writes that, this stays local.
+
+`0049` — the ASCII half of `0017`: the same three signed one-bit entry names
+write `-1` instead of `1`. A retail ASCII census finds 56 such values among
+45,068 boolean entries (51 `locked`, 5 `moveable`) and no other non-0/1 value.
+It has the same archive-layer string-keying compromise and the same desired
+upstream shape as `0017`.
 
 ## Suggested upstreaming order
 
@@ -153,7 +159,7 @@ Independent, highest-value and least arguable first:
    fixture: `0011`, `0019` (after `0015`), `0016` (after `0001`),
    `0044` (after `0028`), `0047` (after `0045` and `0046`), `0012`, then
    `0008` reshaped to keep the counter internal, then `0009`.
-7. `0017` — do not send as written.
+7. `0017` and `0049` — do not send as written.
 
 ## Open questions
 
