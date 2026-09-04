@@ -22,6 +22,25 @@ doc, not here. This file is only for the ground the code stands on.
 - **Editor source files are CRLF.** Normalize before matching multi-line
   anchors.
 
+## `os.tmpdir()` on GitHub's Windows runner is an 8.3 short path
+
+`C:\Users\RUNNER~1\AppData\Local\Temp` — `RUNNER~1` is the 8.3 alias of
+`runneradmin`, and `fs.realpath` expands it. Neither this machine
+(`C:\Users\Daniel\…`, short enough to need no alias) nor a Linux runner shows it,
+so **anything that compares a `tmpdir()`-derived path against a resolved one
+passes everywhere except the one runner that ships the release**.
+
+That is not hypothetical: it silently refused every first
+`<world>.folders.json` write in `world-folders.spec.ts` for a day
+(`PathValidationService` canonicalized a whitelisted file with `realpath`, which
+fails for a file that does not exist yet, and fell back to the unexpanded
+spelling). Compare resolved-to-resolved, or lstat-free normalize both sides.
+
+The general shape — a short name, a junction, a symlinked temp dir — is what to
+test against, and a junction reproduces it on any platform. `--- Electron main
+process output ---` in a failing `e2e-electron` job's log is the main process's
+own `console.error`, which is where a refusal like this actually says so.
+
 ## Building the native addon
 
 - **Run `node scripts/build-zenkit.js` before `node-gyp`** — it resets the

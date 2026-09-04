@@ -511,6 +511,33 @@ describe('PathValidationService', () => {
       const p = path.join(root, '..', '..', 'etc', 'passwd');
       await expect(service.validatePathResolved(p)).rejects.toThrow();
     });
+
+    // An exact-file grant for a file that does not exist yet, named through a
+    // path whose existing prefix realpath rewrites. The candidate is resolved
+    // through its deepest existing ancestor, so the whitelist entry has to be
+    // resolved the same way or the two spellings never compare equal.
+    //
+    // This is not hypothetical: `os.tmpdir()` on GitHub's Windows runners is
+    // `C:\Users\RUNNER~1\...`, an 8.3 alias realpath expands to `runneradmin`,
+    // which silently refused every first `<world>.folders.json` write there
+    // while passing on any machine whose paths need no alias. A junction
+    // reproduces the same prefix rewrite on every platform.
+    maybe('allows a not-yet-created granted file whose prefix realpath rewrites', async () => {
+      const linked = path.join(outside, 'link');
+      await fsp.symlink(root, linked, 'junction');
+      const sidecar = path.join(linked, 'world.folders.json');
+
+      // No allowed roots: the exact-file grant is the only thing that can pass
+      // this, so the assertion cannot succeed by containment instead.
+      const filesOnly: any = new PathValidationService([]);
+      filesOnly.addAllowedFile(sidecar);
+
+      await expect(filesOnly.validatePathResolved(sidecar, { write: true })).resolves.toBeUndefined();
+      // Still exactly one file: an ungranted sibling through the same link stays refused.
+      await expect(
+        filesOnly.validatePathResolved(path.join(linked, 'other.folders.json'), { write: true })
+      ).rejects.toThrow();
+    });
   });
 
   // Whitelist granularity: openDialog/saveDialog whitelist the exact selected

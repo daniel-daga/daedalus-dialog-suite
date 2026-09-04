@@ -232,15 +232,25 @@ export class PathValidationService {
   }
 
   /**
-   * Canonicalize an allowed directory/file with realpath. Roots/files added
-   * from dialogs exist by construction, but tolerate non-existent entries
-   * (fall back to the normalized path) so validation degrades gracefully.
+   * Canonicalize an allowed directory/file with realpath.
+   *
+   * An entry need not exist: a world's `.folders.json` sidecar is granted when
+   * the world opens and written only once the user makes a folder. For those,
+   * resolve the deepest ancestor that does exist — the same resolution the
+   * candidate gets — because a bare normalized fallback compares unequal to a
+   * resolved candidate whenever realpath rewrites the shared prefix (an 8.3
+   * short name, a junction, a symlinked temp dir). Falls back to the given path
+   * when nothing resolves, so validation still degrades gracefully.
    */
   private async canonicalizeAllowed(p: string): Promise<string> {
     try {
       return await fs.realpath(p);
     } catch {
-      return p;
+      try {
+        return await this.resolveDeepestExisting(p, p);
+      } catch {
+        return p;
+      }
     }
   }
 
