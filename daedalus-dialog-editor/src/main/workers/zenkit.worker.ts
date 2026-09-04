@@ -324,14 +324,12 @@ function applyOpsRequest(payload: ApplyOpsRequest): { result: null; transfer: Ar
 /**
  * Write the world out (level-editor.md §5, §7).
  *
- * The binding refuses a world that was not loaded from a `zCArchiverBinSafe`
- * archive — the only writer path verified byte-for-byte against the retail
- * corpus and in the original engine — and that refusal is passed through rather
- * than worked around: ZenKit's ASCII writer corrupts every raw entry it emits
- * and cannot re-load its own output. It writes to a temp file and renames, so a
- * failed save leaves the target as it was.
+ * The binding accepts verified BinSafe and ASCII worlds and refuses unverified
+ * BINARY worlds. That refusal is passed through rather than worked around. It
+ * writes to a temp file and renames, so a failed save leaves the target as it
+ * was.
  *
- * `{ allowNonBinSafe: true }` exists for diagnostics and is deliberately not
+ * `{ allowNonBinSafe: true }` exists for BINARY diagnostics and is deliberately not
  * reachable from the app.
  */
 function save(payload: SaveWorldRequest): { result: null; transfer: ArrayBuffer[] } {

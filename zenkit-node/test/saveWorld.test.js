@@ -426,21 +426,11 @@ test('saveWorld preserves packed physicsEnabled without a rigid body', () => {
 });
 
 // ---------------------------------------------------------------------------
-// The non-BinSafe guard (docs/engine-acceptance-2026-08-25.md §10.2, §10.3).
+// The unverified BINARY guard (docs/engine-acceptance-2026-08-25.md §10.3).
 //
-// Only the BinSafe writer path is verified — against the retail corpus and
-// against the original engine. The ASCII writer corrupts every raw entry it
-// emits and ZenKit cannot re-load its own ASCII output at all, and the BINARY
-// path has had no fidelity work either. A save that silently produces a file
-// nothing can re-open is worse than no save, so saveWorld refuses.
-//
-// The guard is exercised on a BINARY world because an ASCII one still cannot
-// reach it: loading ZenKit's own ASCII output fails, so an ASCII handle cannot
-// be produced in-process. It now fails by *throwing* — it used to abort the
-// whole process, which is a defect in this addon's build rather than in the
-// ASCII writer (see the `_HAS_EXCEPTIONS` note in binding.gyp), and the abort
-// was load-bearing for this comment but never for the guard. Both formats go
-// through the same `format != BINSAFE` check.
+// ASCII and BinSafe are verified. BINARY has had no fidelity work; a save that
+// silently produces a file nothing can re-open is worse than no save, so
+// saveWorld refuses it unless a diagnostic caller opts out explicitly.
 function withBinaryWorld(fn) {
   withTmpDir((dir) => {
     const authored = path.join(dir, 'authored.zen');
@@ -449,17 +439,30 @@ function withBinaryWorld(fn) {
   });
 }
 
-test('saveWorld refuses a world that was not loaded from a BinSafe archive', () => {
+test('saveWorld accepts an ASCII world without a diagnostic override', () => {
+  withTmpDir((dir) => {
+    const authored = path.join(dir, 'authored.zen');
+    const out = path.join(dir, 'out.zen');
+    zenkit._authorFixtureWorld(authored, 'ascii', 'g2');
+
+    zenkit.saveWorld(zenkit.loadWorld(authored, 'g2'), out);
+
+    assert.ok(fs.statSync(out).size > 0);
+    assert.match(fs.readFileSync(out, 'latin1'), /\nASCII\n/);
+    assert.ok(zenkit.loadWorld(out, 'g2'));
+  });
+});
+
+test('saveWorld refuses a world loaded from a BINARY archive', () => {
   withBinaryWorld((handle, dir) => {
     const out = path.join(dir, 'out.zen');
-    assert.throws(() => zenkit.saveWorld(handle, out), /binsafe|BinSafe/);
+    assert.throws(() => zenkit.saveWorld(handle, out), /binary writer path is not verified/);
     assert.strictEqual(fs.existsSync(out), false);
   });
 });
 
-// The diagnostic harness (scripts/zen-roundtrip.js) measures the unverified
-// paths on purpose — that is how §10.2's four ASCII defects were found — so
-// the refusal is overridable, explicitly and per call.
+// The diagnostic harness may still measure the unverified BINARY path, so the
+// refusal remains overridable explicitly and per call.
 test('saveWorld saves a non-BinSafe world when explicitly allowed', () => {
   withBinaryWorld((handle, dir) => {
     const out = path.join(dir, 'out.zen');

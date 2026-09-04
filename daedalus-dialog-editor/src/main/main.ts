@@ -1084,7 +1084,7 @@ export function setupIpcHandlers() {
         throw new Error(error.message);
       }
       console.error('[IPC] world:save error:', error);
-      // The binding's own refusal — a non-BinSafe world — is the message worth
+      // The binding's own refusal — currently an unverified BINARY world — is the message worth
       // showing, so it is passed through rather than replaced.
       throw new Error(error instanceof Error ? error.message : 'Failed to save the world');
     }

@@ -865,7 +865,18 @@ built (it *was* the bisect) and is kept as diagnostic tooling — a working
 fallback that has now been demonstrated end to end, should a later format or a
 mod-specific world need it.
 
-### Scope of the verdict — BinSafe only (T8, 2026-08-25)
+### Current save verdict — ASCII and BinSafe (2026-09-04)
+
+The earlier T8 verdict below has been superseded for ASCII preservation saves.
+Patches `0050`–`0052` closed its remaining signed-boolean, packed-physics,
+wide-animation-mode, and legacy-rounding defects. Untouched, property-edited,
+and structurally edited copies of the real `SURFACE_BEPPO.ZEN` ASCII world all
+loaded through the Gothic II QuickTest gate under the production basename.
+`saveWorld` therefore accepts ASCII and BinSafe normally; BINARY remains
+refused unless a diagnostic caller opts out explicitly. The dated evidence and
+hashes are in `docs/engine-acceptance-2026-09-04-ascii.md`.
+
+### Historical verdict — BinSafe only (T8, 2026-08-25)
 
 **Plan A holds for `zCArchiverBinSafe` worlds. The ASCII path is out of Phase
 0's scope, and not because it was skipped — because it was measured and does
@@ -915,9 +926,9 @@ engine. What remains:
   byte-faithful fix would need `AnimationType` widened upstream *and* the
   unpacked writer, which `0045`–`0047` have now resurrected.
 
-**The Phase 1a consequence is unchanged and is not optional:** the binding
-still **refuses to save** a non-BinSafe world. "Loads back" is not "is
-faithful", and until an ASCII world has an engine verdict the refusal stands.
+**This Phase 1a consequence was superseded on 2026-09-04:** ASCII received the
+engine verdict required above and is accepted by normal save. The refusal now
+applies only to unverified BINARY worlds.
 
 Evidence, the named defects and the full corpus tables:
 `zenkit-node/docs/engine-acceptance-2026-08-25.md` §10.2 and §10.4.
