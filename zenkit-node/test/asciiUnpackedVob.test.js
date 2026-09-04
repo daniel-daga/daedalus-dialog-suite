@@ -74,6 +74,28 @@ test('an unpacked ASCII world loads back to the same world as the packed one', (
   }
 });
 
+test('an unpacked visualAniMode preserves its original 32-bit value when unchanged', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zenkit-unpacked-'));
+  try {
+    const source = path.join(dir, 'source.zen');
+    const resaved = path.join(dir, 'resaved.zen');
+    zenkit._authorFixtureWorld(source, 'ascii', 'g2', 'minimal', false);
+
+    const raw = 145297640;
+    const original = fs.readFileSync(source, 'latin1');
+    assert.match(original, /visualAniMode=enum:0/);
+    fs.writeFileSync(source, original.replace('visualAniMode=enum:0', `visualAniMode=enum:${raw}`), 'latin1');
+
+    zenkit.saveWorld(zenkit.loadWorld(source, 'g2'), resaved, { allowNonBinSafe: true });
+    const text = fs.readFileSync(resaved, 'latin1');
+    assert.match(text, new RegExp(`visualAniMode=enum:${raw}`));
+    assert.doesNotMatch(text, /visualAniMode=enum:232/);
+    assert.ok(zenkit.loadWorld(resaved, 'g2'));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // The half of A2 that was reachable all along and is what the 20 retail ASCII
 // worlds actually measure: `save` packed every VObject regardless of the form
 // it was loaded in, and the packed layout has no room for most of the tail, so
