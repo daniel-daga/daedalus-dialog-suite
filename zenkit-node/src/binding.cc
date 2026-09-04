@@ -870,7 +870,14 @@ Napi::Value RemoveWaypoint(Napi::CallbackInfo const& info) {
   std::vector<std::shared_ptr<zenkit::WayPoint>> neighbours;
   for (auto it = edges.begin(); it != edges.end();) {
     if (it->first.get() == target || it->second.get() == target) {
-      neighbours.push_back(it->first.get() == target ? it->second : it->first);
+      // `WayNet::load` keeps an edge whose endpoint failed to resolve, so the
+      // other end of one can be null — and the promotion loop below would
+      // dereference it. `CollectWaypoints` filters the same nulls out of the
+      // point list and `NormalizeWorld` skips the same edges; this loop was the
+      // one place that did neither. The edge still goes: it named the waypoint
+      // being removed, whatever its other end was.
+      auto const& other = it->first.get() == target ? it->second : it->first;
+      if (other != nullptr) neighbours.push_back(other);
       it = edges.erase(it);
     } else {
       ++it;
