@@ -19,6 +19,7 @@ handovers cost an hour a session:
 | the Gate 2 checklist | `zenkit-node/docs/engine-acceptance-2026-08-25.md` §8 |
 | **work a run can take unattended** | `docs/plans/unattended-queue.md` |
 | a 2026-08-29 review finding | `docs/plans/world-editor-review-2026-08-29.md` |
+| **a 2026-09-04 review finding** — the second pass the 08-29 review never got | `docs/plans/level-editor-review-2026-09-04.md` |
 | a dialog-simulator finding | `docs/plans/dialog-simulator-review-findings.md` |
 | a production-readiness finding | `docs/plans/production-readiness-review-findings.md` |
 | a 2026-07 code-review item | `docs/plans/code-review-2026-07-remediation.md` |
@@ -216,6 +217,12 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 - **Unattended-queue row 42, the BINARY fidelity baseline** — no BINARY `.zen`
   exists on this machine to classify and the instrument has no BINARY walker, so
   it decomposes into three runs plus a scope call. §14.3 3.1
+- **The 2026-09-04 level-editor review — ~50 findings, nothing fixed.** Its
+  verdict ranks four: the scatter brush's raycaster has no layer mask, so the
+  brush never hits the world; `world:save` writes anywhere in a whitelisted
+  directory; three world-corrupting or undo-wedging defects plus a renderer
+  rebuilt twice per placement; and the UI's silent feedback. Daniel carves it
+  into cards. `docs/plans/level-editor-review-2026-09-04.md`, its section 1
 
 ## Done
 
