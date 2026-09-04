@@ -12,8 +12,24 @@
  *   jest.mock('three', () => require('./worldViewportMocks').mockThree());
  */
 
+/**
+ * `WorldViewport` installs `acceleratedRaycast` as `THREE.Mesh.prototype.raycast`
+ * for the whole process, so a stand-in that does nothing silently turns *every*
+ * raycast in every spec into a miss — which is how the scatter brush shipped
+ * with a raycaster that could not meet the world mesh and no test to say so.
+ *
+ * The real `acceleratedRaycast` falls back to three's own `raycast` for a
+ * geometry with no `boundsTree`, and the mocked BVH builder never builds one,
+ * so delegating is what the real thing would do here anyway.
+ */
 export function mockThreeMeshBvh() {
-  return { acceleratedRaycast: () => {} };
+  const three = jest.requireActual('three');
+  const stock = three.Mesh.prototype.raycast;
+  return {
+    acceleratedRaycast: function raycast(this: unknown, ...args: unknown[]) {
+      return stock.apply(this, args);
+    },
+  };
 }
 
 /** A canvas-backed stand-in for the WebGL renderer: jsdom has no GL context.
@@ -41,15 +57,39 @@ export function mockThree() {
   };
 }
 
-export function mockOrbitControls() {
+/**
+ * `aims` points the camera at `target` whenever the target moves, which is the
+ * one thing the real controls do that a spec casting a ray through the middle
+ * of the canvas depends on: without it the camera keeps three's default
+ * orientation and looks at nothing in particular, however the framing code
+ * moves it. The real controls do it on their next `update()`; a spec that fires
+ * its events synchronously never reaches a frame, so this does it as the target
+ * is written — the same thing by the time anything observes it.
+ *
+ * Off by default: every spec that picks through the harness instead was written
+ * against a camera that never turns, and turning one is not free.
+ */
+export function mockOrbitControls({ aims = false }: { aims?: boolean } = {}) {
   const three = jest.requireActual('three');
   return {
     OrbitControls: class {
-      target = new three.Vector3();
+      target: InstanceType<typeof three.Vector3>;
       enabled = true;
       enableDamping = false;
       rotateSpeed = 1;
       mouseButtons: Record<string, unknown> = {};
+
+      constructor(camera: { lookAt: (target: unknown) => void }) {
+        const target = new three.Vector3();
+        if (aims) {
+          const aim = <T,>(write: T): T => { camera.lookAt(target); return write; };
+          const { copy, set } = target;
+          target.copy = (v: unknown) => aim(copy.call(target, v));
+          target.set = (x: number, y: number, z: number) => aim(set.call(target, x, y, z));
+        }
+        this.target = target;
+      }
+
       update() { return false; }
       dispose() {}
     },

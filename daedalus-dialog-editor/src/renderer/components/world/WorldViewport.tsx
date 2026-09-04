@@ -1036,6 +1036,11 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     const brushPointer = new THREE.Vector2();
     const brushRaycaster = new THREE.Raycaster();
     brushRaycaster.firstHitOnly = true;
+    // The third raycaster, and it needs what the other two need: the world mesh
+    // draws on `WORLD_LAYER`, and a raycaster only meets what it shares a layer
+    // with. Without this every `intersectObjects` below returns nothing, no
+    // press starts a stroke, and the brush is inert.
+    brushRaycaster.layers.enableAll();
     /** The stroke in hand, or null when the button is up. */
     let stroke: Array<[number, number, number]> | null = null;
     /** Consumed by the click that ends a stroke, exactly as `endedDrag` is. */
