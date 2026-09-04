@@ -166,6 +166,12 @@ below it.
 
 **Phase 1b-2 — VOB editing**
 
+- **`WorldViewport.tsx` is 2,090 lines in one 1,310-line effect** — the
+  largest thing the 2026-09-04 review left open, and *why* the dead scatter
+  brush hid there for two days: a closure inside it is reachable only through
+  a mocked viewport. The split — `ViewportRenderer`, `SceneHost`,
+  `GizmoController`, `PickController`, `NavController`, `ScatterBrush` — is
+  named but not started. `docs/plans/level-editor-review-2026-09-04.md` §4, §6
 - **§14's uninventoried gaps** — mesh preview, fly navigation, the picker,
   the four camera slots, §16.12's outline tuning, the walk (F3, pointer lock,
   capsule against the BVH — feel unwitnessed on a real GPU) and, 2026-09-03,
@@ -217,34 +223,23 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 - **Unattended-queue row 42, the BINARY fidelity baseline** — no BINARY `.zen`
   exists on this machine to classify and the instrument has no BINARY walker, so
   it decomposes into three runs plus a scope call. §14.3 3.1
-- **The 2026-09-04 level-editor review — the ranked four and 14 findings
-  landed the same day; the rest is its section 6.** Biggest thing left is
-  structural and uncarded: `WorldViewport.tsx` is 2,090 lines in one
-  1,310-line effect, which is *why* the dead scatter brush was invisible for
-  two days. `docs/plans/level-editor-review-2026-09-04.md`, its section 6
 
 ## Done
 
-- **One undecodable texture no longer costs every later one its pixels —
-  landed 2026-09-03.** `loadPendingTextures` caught nothing, so beppo's six
-  source `.TGA` files (which resolve by name, then fail to parse) left every
-  name after them white. Now caught per name, answered `null` by the worker,
-  and reported in the world banner. §16.31
-- **The Gothic install is machine-local again — landed 2026-09-03**, reversing
-  §16.28 for that one path: a setting, mounted first under every project, a
-  section in the Asset sources dialog, adopted out of a project file that still
-  carries one. World open now *refuses* without it. `gothicAssetSources` also
-  mounts loose `_compiled` over the archives, so a GMBT build is visible. §16.31
-- **The GMBT project configures the project, and worlds are a list — landed
-  2026-09-03.** `.gmbt.yml` detected by walking up; a new project file seeds
-  its asset sources from it, an existing one only adopts `gmbtProjectDir` and
-  is offered the rest by a button. "Open world" now lists the `.zen` files
-  under the sources (§16.28 item 3), Browse… kept for the rest. Unwitnessed:
-  never run against beppo in the app. §16.31
-- **The GMBT quick-test button — landed 2026-09-03**, all six decisions as
-  settled, plus a Choose…/Clear for the folder in the Asset sources dialog. A
-  dirty world blocks unless the save went back over the opened file.
-  Unwitnessed: no run has been launched from the button. §16.29
-- **Plane gizmo handles follow the camera — landed 2026-09-04.** The XY/YZ/XZ
-  squares are mirrored into the camera's octant instead of the baked positive
-  one. Unwitnessed: the drag itself. `docs/architecture/level-editor.md` §7
+*(flushed 2026-09-05 — texture decoding, the machine-local Gothic install, the
+GMBT project/world-list and quick-test button, and the plane-gizmo fix all
+landed 2026-08-27 to 2026-09-04; substance is in `git log` and each already
+has a forward pointer at §16.31, §16.29 and `level-editor.md` §7.)*
+
+- **The 2026-09-04 review's ranked four, plus ten more — landed 2026-09-05.**
+  The scatter brush's raycaster had no layer mask and never hit the world;
+  `world:save` wrote anywhere in a whitelisted directory; a half-turn onto a
+  normal sheared instead of rotating; a `ReparentVob` undo could wedge the
+  stack; an edit in flight during an open landed on the wrong world's stack,
+  and the renderer rebuilt twice per placement; Ctrl+Z reached past its own
+  guards. Plus a null-endpoint segfault in the binding, serialized sidecar
+  saves, scoped worker handlers, silent overlay/undo failures now reported,
+  a cross-world clipboard, a non-finite-float guard, and the UI's
+  silent-feedback cluster (refusal reasons, a dirty marker, Ctrl+S,
+  dismissible banners, axis labels, a shortcut legend). §6 is what is left.
+  `docs/plans/level-editor-review-2026-09-04.md`
