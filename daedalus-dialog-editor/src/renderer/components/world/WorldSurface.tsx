@@ -72,13 +72,6 @@ import ErrorBoundary from '../ErrorBoundary';
  *  next to a reason. */
 const baseName = (filePath: string): string => filePath.split(/[\\/]/).pop() || filePath;
 
-/** Two paths naming the same file on Windows, which is where this app runs and
- *  where a save dialog answers `C:\Gothic\...` for a world opened as
- *  `C:/Gothic/...`. Not a general path comparison: neither side is relative —
- *  both come from a main-process dialog. */
-const samePath = (a: string, b: string): boolean =>
-  a.replace(/\\/g, '/').toLowerCase() === b.replace(/\\/g, '/').toLowerCase();
-
 /** A new VOB is placed unrotated: the terrain click gives a point and nothing
  *  else, and inventing an orientation from a surface normal is a feature with
  *  its own decisions (which axis is up for this visual?) rather than a default. */
@@ -946,11 +939,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
 
   // ── saving (level-editor.md §5) ───────────────────────────────────────────
   //
-  // Two things are deliberately not automatic. The **target** is always chosen
-  // in the save dialog: the worlds this app opens are retail game files, and
-  // writing back over the one it opened is never the default. And the two
-  // warnings below are shown *before* the dialog rather than after the write,
-  // because they are about whether to save at all.
+  // Saving overwrites the open world. The two warnings below are shown before
+  // the write because they are about whether to save at all; the confirmation
+  // also names the exact file that will be replaced.
   const [confirmingSave, setConfirmingSave] = useState(false);
   // The world picker's own state (§16.31) — the scan is per opening, so the
   // list never outlives the asset sources it was read from.
@@ -960,11 +951,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const [discoveredWorlds, setDiscoveredWorlds] = useState<DiscoveredWorld[]>([]);
   const [savedTo, setSavedTo] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  /** Whether an edit has landed that the world file on disk does not have.
-   *  Only a save back over the *opened* file clears it: the save dialog's own
-   *  suggestion is `.edited.zen` beside it, and a quick test plays the file
-   *  the world was opened from — so saving next to it leaves the engine on
-   *  stale bytes, which is exactly what the block is for (§16.29). */
+  /** Whether an edit has landed that the world file on disk does not have. */
   const [unsavedEdits, setUnsavedEdits] = useState(false);
 
   const saveWorld = useCallback(async () => {
@@ -973,17 +960,10 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     setSaveError(null);
     if (summary === null) return;
 
-    // `.edited.zen` beside the original, so the pre-filled answer is never the
-    // file the world was opened from. Overwriting is still reachable — the OS
-    // dialog asks — but it has to be asked for.
-    const suggested = `${summary.worldPath.replace(/\.zen$/i, '')}.edited.zen`;
-
     try {
-      const target = await window.editorAPI.saveWorldDialog(suggested);
-      if (target === null) return;
-      await window.editorAPI.saveWorld(target);
-      setSavedTo(target);
-      if (samePath(target, summary.worldPath)) setUnsavedEdits(false);
+      await window.editorAPI.saveWorld();
+      setSavedTo(summary.worldPath);
+      setUnsavedEdits(false);
     } catch (failure) {
       // The binding's own refusal — "only the binsafe writer path is verified" —
       // is the message worth showing, so it is not replaced with a generic one.
@@ -2497,24 +2477,25 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               against an edited world is where ZenGin is least forgiving.
             </p>
             <p>
-              Only <code>zCArchiverBinSafe</code> worlds can be written: that is the one writer path
-              verified byte-for-byte against the retail corpus and in the original engine. The four
-              in a Gothic II install are NewWorld, OldWorld, AddonWorld and DragonIsland.
+              This will overwrite the currently opened file:
+              <br />
+              <code>{summary?.worldPath}</code>
+            </p>
+            <p>
+              BinSafe and ASCII worlds can be written. BINARY worlds remain unsupported.
             </p>
           </DialogContentText>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setConfirmingSave(false)} data-testid="world-save-cancel">Cancel</Button>
           <Button onClick={saveWorld} variant="contained" data-testid="world-save-confirm">
-            Choose a file…
+            Overwrite opened file
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* A dirty world blocks the quick test rather than saving itself: which
-          file to write is a question the save dialog asks, and answering it
-          from here would either overwrite a retail world or leave the engine
-          playing the unedited one. */}
+      {/* A dirty world blocks the quick test rather than silently overwriting
+          its file. The user can enter the same explicit save confirmation. */}
       <Dialog open={quickTestBlocked} onClose={() => setQuickTestBlocked(false)}>
         <DialogTitle>Save this world first</DialogTitle>
         <DialogContent>

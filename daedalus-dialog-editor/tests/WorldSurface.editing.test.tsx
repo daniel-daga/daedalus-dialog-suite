@@ -364,7 +364,6 @@ describe('a VOB dragged in the viewport', () => {
     fireEvent.keyDown(window, { key: 'c', ctrlKey: true });
     await waitFor(() => expect(api.getVobProps).toHaveBeenCalled());
 
-    api.saveWorldDialog.mockResolvedValueOnce('C:/Gothic/NewWorld.edited.zen' as never);
     fireEvent.click(screen.getByTestId('world-save'));
     fireEvent.click(await screen.findByTestId('world-save-confirm'));
     await screen.findByTestId('world-saved');
@@ -407,7 +406,7 @@ describe('a VOB dragged in the viewport', () => {
     // title change — so "have I saved this?" was a question the app would not
     // answer, over files that are somebody's retail install.
     await openWorld();
-    expect(screen.getByTestId('world-save')).toHaveTextContent(/^Save world…$/);
+    expect(screen.getByTestId('world-save')).toHaveTextContent(/^Save world$/);
 
     fireEvent.click(screen.getByTestId('stub-drag'));
     await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
@@ -427,8 +426,6 @@ describe('a VOB dragged in the viewport', () => {
     // It stood until the *next* save started — across every later edit, still
     // claiming a world was saved while the Save button said it was edited.
     await openWorld();
-    api.saveWorldDialog.mockResolvedValueOnce('C:/Gothic/NewWorld.edited.zen' as never);
-
     fireEvent.click(screen.getByTestId('world-save'));
     fireEvent.click(await screen.findByTestId('world-save-confirm'));
     const banner = await screen.findByTestId('world-saved');
@@ -937,7 +934,7 @@ describe('saving the world', () => {
     await screen.findByTestId('world-save-confirm');
   };
 
-  it('warns before it asks for a file, not after it has written one', async () => {
+  it('warns before it overwrites the opened file, not after it has written', async () => {
     // Both warnings are facts about ZenGin rather than about this editor, and
     // both are about whether to save at all: the lighting a world was compiled
     // with is not re-baked by an edit, and a savegame carries its own copy of
@@ -947,7 +944,7 @@ describe('saving the world', () => {
     const dialog = screen.getByRole('dialog');
     expect(dialog).toHaveTextContent(/lighting/i);
     expect(dialog).toHaveTextContent(/savegame/i);
-    expect(api.saveWorldDialog).not.toHaveBeenCalled();
+    expect(dialog).toHaveTextContent('C:/Gothic/NewWorld.zen');
   });
 
   it('writes nothing when the warning is dismissed', async () => {
@@ -956,45 +953,29 @@ describe('saving the world', () => {
     fireEvent.click(screen.getByTestId('world-save-cancel'));
 
     await waitFor(() => expect(screen.queryByTestId('world-save-confirm')).not.toBeInTheDocument());
-    expect(api.saveWorldDialog).not.toHaveBeenCalled();
     expect(api.saveWorld).not.toHaveBeenCalled();
   });
 
-  it('suggests a name beside the original rather than the original', async () => {
-    // The worlds this app opens are retail game files. Overwriting one is
-    // reachable — the OS dialog asks — but it is never the pre-filled answer.
+  it('overwrites the opened file without opening a Save As dialog', async () => {
     await openSaveDialog();
-    api.saveWorldDialog.mockResolvedValueOnce(null as never);
 
     fireEvent.click(screen.getByTestId('world-save-confirm'));
 
-    await waitFor(() => expect(api.saveWorldDialog)
-      .toHaveBeenCalledWith('C:/Gothic/NewWorld.edited.zen'));
-    expect(api.saveWorld).not.toHaveBeenCalled();
-  });
-
-  it('writes to the chosen file and says where it went', async () => {
-    await openSaveDialog();
-    api.saveWorldDialog.mockResolvedValueOnce('C:/out/NewWorld.zen' as never);
-
-    fireEvent.click(screen.getByTestId('world-save-confirm'));
-
-    await waitFor(() => expect(api.saveWorld).toHaveBeenCalledWith('C:/out/NewWorld.zen'));
-    expect(await screen.findByTestId('world-saved')).toHaveTextContent('C:/out/NewWorld.zen');
+    await waitFor(() => expect(api.saveWorld).toHaveBeenCalledWith());
+    expect(await screen.findByTestId('world-saved')).toHaveTextContent('C:/Gothic/NewWorld.zen');
   });
 
   it('shows the binding\'s refusal without tearing the world down', async () => {
     // A non-BinSafe world is the case this is for, and the sentence the binding
     // writes is the only one the user can act on.
     await openSaveDialog();
-    api.saveWorldDialog.mockResolvedValueOnce('C:/out/OldCamp.zen' as never);
     api.saveWorld.mockRejectedValueOnce(
-      new Error("refusing to save a world loaded from a 'ascii' archive"),
+      new Error("refusing to save a world loaded from a 'binary' archive"),
     );
 
     fireEvent.click(screen.getByTestId('world-save-confirm'));
 
-    expect(await screen.findByTestId('world-save-error')).toHaveTextContent(/binsafe|ascii/i);
+    expect(await screen.findByTestId('world-save-error')).toHaveTextContent(/binary/i);
     expect(screen.getByTestId('world-viewport-stub')).toBeInTheDocument();
   });
 });

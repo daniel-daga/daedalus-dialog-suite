@@ -61,10 +61,13 @@ test.describe('World surface UI workflows in a real window', () => {
   let fixture: AppFixture;
   let projectDir: string;
   let installDir: string;
+  let worldPath: string;
 
   test.beforeEach(async () => {
     projectDir = seedProjectDir([]);
     installDir = makeFakeInstall();
+    worldPath = path.join(projectDir, 'minimal.g2.zen');
+    fs.copyFileSync(FIXTURE_WORLD, worldPath);
     writeProjectFile(projectDir, installDir);
     fixture = await launchApp();
 
@@ -78,7 +81,7 @@ test.describe('World surface UI workflows in a real window', () => {
           default: throw new Error(`unexpected dialog: ${options.title}`);
         }
       };
-    }, { project: projectDir, install: installDir, world: FIXTURE_WORLD });
+    }, { project: projectDir, install: installDir, world: worldPath });
   });
 
   test.afterEach(async () => {
@@ -144,5 +147,29 @@ test.describe('World surface UI workflows in a real window', () => {
 
     const after = await panel.evaluate((el) => el.getBoundingClientRect().width);
     expect(after - before).toBeCloseTo(80, 0);
+  });
+
+  test('Save overwrites the opened world without opening a Save As dialog', async () => {
+    const { app, page } = fixture;
+    await openWorld();
+
+    await app.evaluate(({ dialog }) => {
+      (dialog as { showSaveDialog: unknown }).showSaveDialog = async () => {
+        throw new Error('Save must not open a Save As dialog');
+      };
+    });
+
+    await page.getByTestId('world-save').click();
+    const confirmation = page.getByRole('dialog', { name: 'Save this world?' });
+    await expect(confirmation).toContainText(worldPath);
+    await confirmation.getByRole('button', { name: 'Overwrite opened file' }).click();
+
+    const outcome = await Promise.race([
+      page.getByText(`Saved to ${worldPath}`).waitFor().then(() => ({ saved: true })),
+      page.getByTestId('world-save-error').waitFor().then(async () => ({
+        error: await page.getByTestId('world-save-error').textContent(),
+      })),
+    ]);
+    expect(outcome).toEqual({ saved: true });
   });
 });

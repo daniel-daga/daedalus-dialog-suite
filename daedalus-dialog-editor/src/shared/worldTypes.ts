@@ -169,8 +169,8 @@ export interface ApplyOpsRequest {
   ops: WorldOp[];
 }
 
-/** Where to write the world. Always an explicit target: the app never writes
- *  back over the file it opened unless the user names it in the save dialog. */
+/** Internal worker payload. Main derives this target from the open world; the
+ *  renderer never supplies it. */
 export interface SaveWorldRequest {
   targetPath: string;
 }

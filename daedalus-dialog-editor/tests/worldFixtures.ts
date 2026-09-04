@@ -147,7 +147,6 @@ export function makeWorldEditorApi() {
     undoWorldEdit: jest.fn(async (): Promise<WorldOp[] | null> => null),
     redoWorldEdit: jest.fn(async (): Promise<WorldOp[] | null> => null),
     getWorldHistoryDepth: jest.fn(async (): Promise<{ undo: number; redo: number }> => ({ undo: 0, redo: 0 })),
-    saveWorldDialog: jest.fn(async (): Promise<string | null> => null),
     saveWorld: jest.fn(async () => undefined),
     startGmbtQuickTest: jest.fn(async () => undefined),
     getVobFolders: jest.fn(async (): Promise<VobFolders> => ({ folders: [] })),

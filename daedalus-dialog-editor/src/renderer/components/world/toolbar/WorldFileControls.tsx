@@ -50,7 +50,7 @@ const WorldFileControls: React.FC<WorldFileControlsProps> = ({
           onClick={onSave}
           data-testid="world-save"
         >
-          {unsavedEdits ? 'Save world… • edited' : 'Save world…'}
+          {unsavedEdits ? 'Save world • edited' : 'Save world'}
         </Button>
       </span>
     </Tooltip>

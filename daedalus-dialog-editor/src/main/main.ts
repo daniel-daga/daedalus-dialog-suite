@@ -21,7 +21,6 @@ import {
   assertAssetCatalogSaveRequest,
   assertVobPropsRequest,
   assertApplyOpsRequest,
-  assertSaveWorldRequest,
   assertVobFoldersGetRequest,
   assertVobFoldersSaveRequest,
   assertAppendInsertNpcRequest,
@@ -81,20 +80,6 @@ interface RegisteredProjectConfig {
 
 const registeredProjectConfigs = new Map<string, RegisteredProjectConfig>();
 let activeProjectFileKey: string | null = null;
-
-/**
- * Every path `world:saveDialog` has handed back — the only targets `world:save`
- * will write to.
- *
- * The path whitelist cannot express this on its own, and that is the whole of
- * why this exists: the world the user opened is legitimately *readable*, so any
- * whitelist that lets the worker load it also lets a `saveWorld` call name it.
- * A write over a retail `.ZEN` has to be a thing the user chose in a save
- * dialog, not a thing the renderer decided — the overwrite prompt and the
- * `.edited.zen` suggestion are `WorldSurface`'s, which is the side the rule is
- * about. Reset with the handlers, like the registered configs above.
- */
-const dialogChosenSaveTargets = new Set<string>();
 
 /**
  * Make one world file reachable — the file itself and its `.folders.json`
@@ -353,7 +338,6 @@ app.on('window-all-closed', () => {
 export function setupIpcHandlers() {
   registeredProjectConfigs.clear();
   activeProjectFileKey = null;
-  dialogChosenSaveTargets.clear();
   // Parser handler (main process has access to native modules)
   ipcMain.handle('parser:parseSource', async (_event, sourceCode: unknown) => {
     try {
@@ -1037,47 +1021,14 @@ export function setupIpcHandlers() {
     await worldService.applyOps(request.ops);
   });
 
-  // Saving (level-editor.md §5). Two handlers, because the target is chosen in
-  // a main-process dialog and only then does the path exist: a renderer that
-  // could name its own target could write anywhere the whitelist allows, and
-  // the worlds this app opens are retail game files.
-  ipcMain.handle('world:saveDialog', async (_event, request: unknown) => {
+  // Save always overwrites the world currently held by WorldService. Main owns
+  // the target: the renderer sends no path and therefore cannot redirect the
+  // write to another file that happens to be readable.
+  ipcMain.handle('world:save', async () => {
     try {
-      const suggested = typeof request === 'object' && request !== null && 'suggested' in request
-        && typeof (request as { suggested: unknown }).suggested === 'string'
-        ? (request as { suggested: string }).suggested
-        : 'world.zen';
-
-      const result = await dialog.showSaveDialog({
-        title: 'Save the world',
-        defaultPath: suggested,
-        filters: [{ name: 'ZenGin world', extensions: ['zen'] }],
-        // Electron's own overwrite prompt is the confirmation for writing over
-        // an existing file, and the suggested name is deliberately not the one
-        // the world was opened under.
-        properties: ['showOverwriteConfirmation', 'createDirectory'],
-      });
-      if (result.canceled || !result.filePath) return null;
-
-      pathValidator.addAllowedFile(result.filePath);
-      dialogChosenSaveTargets.add(path.normalize(result.filePath));
-      return result.filePath;
-    } catch (error) {
-      console.error('[IPC] world:saveDialog error:', error);
-      throw new Error(`Failed to open save dialog: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  });
-
-  ipcMain.handle('world:save', async (_event, request: unknown) => {
-    try {
-      assertSaveWorldRequest(request);
-      // Ahead of the whitelist, because the whitelist cannot answer it: the
-      // opened world is readable and would therefore be writable.
-      if (!dialogChosenSaveTargets.has(path.normalize(request.targetPath))) {
-        throw new Error('Choose where to save through the save dialog.');
-      }
-      await pathValidator.validatePathResolved(request.targetPath, { write: true });
-      await worldService.saveWorld(request.targetPath);
+      const targetPath = worldService.openWorldPath();
+      await pathValidator.validatePathResolved(targetPath, { write: true });
+      await worldService.saveWorld(targetPath);
     } catch (error) {
       if (error instanceof PathValidationError) {
         console.error('[IPC] world:save - Path validation failed:', error.message);

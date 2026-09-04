@@ -1,0 +1,29 @@
+Mmap: allow the mapped file to be replaced on Windows.
+
+`Vfs::mount_host` memory-maps every file under a mounted directory, and the
+Win32 mapping opened the file with `FILE_SHARE_READ` only. That denies any
+later rename-into-place over the file: Windows refuses the replacement with
+ERROR_ACCESS_DENIED while the mapping lives.
+
+The editor mounts the asset sources for as long as a world is open, and the
+normal Gothic layout keeps worlds under one (`_work/Data/Worlds/`). Saving over
+the open world therefore failed for exactly the worlds a user edits, even
+though nothing ever reads a world through the VFS — it is mapped for sitting in
+a mounted directory.
+
+Add `FILE_SHARE_DELETE`. The rename is then permitted; the existing mapping
+keeps serving the bytes it already mapped, which is the same guarantee the
+POSIX implementation gives, where renaming over an mmap'd file has always been
+legal.
+
+--- a/src/MmapWin32.cc
++++ b/src/MmapWin32.cc
+@@ -15,7 +15,7 @@ namespace zenkit {
+ 
+ 		hFile = CreateFileW(path.c_str(),
+ 		                    GENERIC_READ,
+-		                    FILE_SHARE_READ,
++		                    FILE_SHARE_READ | FILE_SHARE_DELETE,
+ 		                    nullptr,
+ 		                    OPEN_EXISTING,
+ 		                    FILE_ATTRIBUTE_NORMAL,

@@ -170,6 +170,49 @@ test('saveWorld leaves no temp file behind on failure', () => {
   });
 });
 
+test('saveWorld atomically replaces an existing destination', () => {
+  withTmpDir((dir) => {
+    const target = path.join(dir, 'world.zen');
+    fs.copyFileSync(FIXTURE, target);
+    const handle = zenkit.loadWorld(target, 'g2');
+
+    zenkit.saveWorld(handle, target);
+
+    assert.ok(zenkit.loadWorld(target, 'g2'));
+    assert.strictEqual(fs.existsSync(`${target}.tmp`), false);
+  });
+});
+
+// The editor holds a VFS over the asset sources for as long as a world is open,
+// and `Vfs::mount_host` memory-maps every file in a mounted directory. A world
+// under an asset source — the normal Gothic layout, `_work/Data/Worlds/` — is
+// therefore mapped while it is open, and on Windows a mapping opened without
+// FILE_SHARE_DELETE blocks the writer's rename-into-place ("Zugriff
+// verweigert"). Saving over the open world is the whole point of the save
+// button, so the mount must not lock it (patches/0053).
+test('saveWorld replaces a destination that a mounted VFS has mapped', () => {
+  // Not `withTmpDir`: the VFS is released by a GC finalizer, so the mapping is
+  // still alive here and removing the directory is allowed to fail. The claim
+  // under test is the save, which is asserted before any cleanup runs.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zenkit-node-vfs-save-'));
+  try {
+    const target = path.join(dir, 'world.zen');
+    fs.copyFileSync(FIXTURE, target);
+    const handle = zenkit.loadWorld(target, 'g2');
+
+    // Mounting the directory maps `world.zen` even though nothing reads the
+    // world through the VFS — it is mapped for sitting there.
+    assert.ok(zenkit.openVfs([dir], { overwrite: 'all' }), 'the directory mounted');
+
+    zenkit.saveWorld(handle, target);
+
+    assert.ok(zenkit.loadWorld(target, 'g2'), 'the replaced world still loads');
+    assert.strictEqual(fs.existsSync(`${target}.tmp`), false);
+  } finally {
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* still mapped */ }
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Byte-fidelity tests for the ZenKit writer patches 0010-0018 (patches/). Each
 // one inspects the saved bytes directly, the way ZenGin's own reader would.

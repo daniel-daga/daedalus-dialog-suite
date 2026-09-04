@@ -22,7 +22,6 @@ import {
   assertAssetCatalogSaveRequest,
   assertVobPropsRequest,
   assertApplyOpsRequest,
-  assertSaveWorldRequest,
   assertVobFoldersGetRequest,
   assertVobFoldersSaveRequest,
   assertAppendInsertNpcRequest,
@@ -371,22 +370,6 @@ describe('assertVobPropsRequest', () => {
       expect(() => assertVobPropsRequest({ path: bad })).toThrow(/path/i);
     }
     expect(() => assertVobPropsRequest('0/4')).toThrow(/plain object/i);
-  });
-});
-
-describe('assertSaveWorldRequest', () => {
-  it('accepts a target path', () => {
-    expect(() => assertSaveWorldRequest({ targetPath: 'C:/Gothic/NewWorld.edited.zen' })).not.toThrow();
-  });
-
-  it('rejects anything that is not a non-empty string', () => {
-    // It reaches the native writer, which creates a temp file beside it and
-    // renames. The whitelist check in main is the other half; this is the shape.
-    for (const bad of ['', '   ', null, 42, ['a'], undefined]) {
-      expect(() => assertSaveWorldRequest({ targetPath: bad })).toThrow(/targetPath/);
-    }
-    expect(() => assertSaveWorldRequest(null)).toThrow();
-    expect(() => assertSaveWorldRequest('C:/a.zen')).toThrow();
   });
 });
 

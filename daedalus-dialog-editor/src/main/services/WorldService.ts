@@ -280,10 +280,8 @@ export class WorldService {
    * guarantees a batch is all-or-nothing only against callers that never read it
    * half-applied.
    *
-   * The target is always explicit. The app never writes back over the file it
-   * opened unless the user names it in the save dialog — the worlds it opens are
-   * retail game files, and the acceptance workflow keeps a hash-verified
-   * pristine backup for exactly that reason.
+   * Main passes the path returned by `openWorldPath`; renderer IPC never names
+   * a target. The native writer performs the replacement atomically.
    */
   saveWorld(targetPath: string): Promise<void> {
     return this.serialized(async () => {

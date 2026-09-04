@@ -485,8 +485,44 @@ Napi::Value SaveWorld(Napi::CallbackInfo const& info) {
       }
     }
 
+    // Replace the destination. The direct rename is the whole story on POSIX
+    // and on any Windows target nothing has mapped.
+    //
+    // A mapped target is the case that needs the second path. The editor holds
+    // a VFS over the asset sources while a world is open, and `Vfs::mount_host`
+    // memory-maps every file under a mounted directory -- so a world saved in
+    // place is normally mapped by its own editor. Windows refuses to *replace*
+    // a file that has an open section (patches/0053 buys the delete right, not
+    // this one), but it will rename that file away and let a new one take its
+    // name: the section keeps the bytes it already mapped.
+    //
+    // So: move the old file aside, put the new one in its place, then drop the
+    // old one. The path holds a complete world at every step except the gap
+    // between the two renames, and a crash in that gap leaves the original
+    // beside it as `.old` rather than losing it.
     std::error_code ec;
     std::filesystem::rename(tmp, path, ec);
+
+    if (ec && std::filesystem::exists(path)) {
+      auto aside = path;
+      aside += ".old";
+      std::error_code moved;
+      std::filesystem::remove(aside, moved);
+      std::filesystem::rename(path, aside, moved);
+
+      if (!moved) {
+        ec.clear();
+        std::filesystem::rename(tmp, path, ec);
+        std::error_code ignored;
+        if (ec) {
+          // Put the original back rather than leave the path empty.
+          std::filesystem::rename(aside, path, ignored);
+        } else {
+          std::filesystem::remove(aside, ignored);
+        }
+      }
+    }
+
     if (ec) {
       std::error_code ignored;
       std::filesystem::remove(tmp, ignored);

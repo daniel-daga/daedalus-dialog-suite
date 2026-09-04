@@ -103,6 +103,7 @@ regardless of what upstream does with it.
 | `0050` | G2's packed `zCVob` writer stored `physicsEnabled` in bit 6 only when a save-game rigid-body payload existed. The flag is independent of that payload, so an ordinary authored world VOB with `physicsEnabled=true` was saved as false. Write bit 6 directly while retaining the payload guard. |
 | `0051` | Unpacked ASCII `visualAniMode` is a 32-bit enum while ZenKit narrows it to an 8-bit `AnimationType`. A retail-shaped value `145297640` re-saved as `232`. Preserve the raw value only while its narrowed semantic value remains unchanged. |
 | `0052` | UCRT `%.9g` rounds exact halfway floats to even, while ZenGin's legacy formatter rounded away from zero: `-3055.890625` must write `-3055.89063`. One shared formatter preserves ordinary nine-digit output and fixes halfway scalar, vec3, and raw-float values. |
+| `0053` | The Win32 `Mmap` opened the mapped file with `FILE_SHARE_READ` alone, so Windows denied any rename-into-place over it while the mapping lived. `Vfs::mount_host` maps every file under a mounted directory, so an open world under an asset source could not be saved over. Adding `FILE_SHARE_DELETE` matches what POSIX has always permitted. |
 
 `0020`, `0021` and `0022` are the strongest candidates: standalone, no API change,
 no fidelity argument needed. `0018` is a portability crash fix with identical output.

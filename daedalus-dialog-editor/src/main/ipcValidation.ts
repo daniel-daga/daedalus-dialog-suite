@@ -430,25 +430,6 @@ export function assertVobPropsRequest(
 }
 
 /**
- * Assert a save request (level-editor.md §5).
- *
- * The path goes to the native writer, which creates a temp file beside it and
- * renames — so this is the last place a renderer-supplied string is a string
- * rather than a file on disk. The main process validates it against the
- * whitelist as well; this only settles its shape.
- */
-export function assertSaveWorldRequest(
-  request: unknown,
-): asserts request is { targetPath: string } {
-  if (!isPlainObject(request)) {
-    throw new Error('Invalid save request: expected a plain object');
-  }
-  if (typeof request.targetPath !== 'string' || request.targetPath.trim() === '') {
-    throw new Error('Invalid save request: targetPath must be a non-empty string');
-  }
-}
-
-/**
  * Assert a `script:appendInsertNpc` request (level-editor.md §16.19, slice 16
  * C). The instance and waypoint are spliced verbatim into a script line, so
  * the instance must be an identifier and the waypoint must not be able to

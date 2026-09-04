@@ -1,21 +1,7 @@
 /**
- * `world:save` writes only where a save dialog said it may.
- *
- * `docs/architecture/level-editor.md` §7: "the renderer never names its own
- * target: the dialog is what puts the directory on the path whitelist". The
- * whitelist was the whole of the enforcement, and it is a *directory* grant —
- * `world:openDialog`, `world:saveDialog` and `world:listWorlds` each added
- * `path.dirname(...)` recursively — so a renderer that had opened or merely
- * listed a world could `saveWorld(summary.worldPath)` straight over the retail
- * file, with no dialog and no overwrite prompt: those live in `WorldSurface`,
- * which is the side the promise is about.
- *
- * Two things changed, and this pins both. The world dialogs grant the exact
- * file (and its `.folders.json` sidecar) rather than its directory, the way the
- * script dialogs already did; and a save target has to have come out of
- * `world:saveDialog`, which is the "the dialog is what authorises the write"
- * half that no whitelist can express — the opened world's own path is legally
- * readable, and that is what made it writable.
+ * `world:save` overwrites exactly the world held by WorldService. The renderer
+ * supplies no path, so a compromised renderer cannot redirect a save to a
+ * sibling file that merely happens to be readable.
  *
  * @jest-environment node
  */
@@ -66,12 +52,19 @@ jest.mock('../src/main/services/SettingsService', () => ({
 jest.mock('../src/main/services/WorldService', () => ({
   WorldService: class {
     static saved: string[] = [];
+    static opened: string | null = null;
     saveWorld = async (target: string) => {
       (jest.requireMock('../src/main/services/WorldService') as {
         WorldService: { saved: string[] };
       }).WorldService.saved.push(target);
     };
-    openWorldPath = () => null;
+    openWorldPath = () => {
+      const opened = (jest.requireMock('../src/main/services/WorldService') as {
+        WorldService: { opened: string | null };
+      }).WorldService.opened;
+      if (opened === null) throw new Error('No world is open');
+      return opened;
+    };
     close = () => undefined;
   },
 }));
@@ -82,7 +75,7 @@ const electron = jest.requireMock('electron') as {
   __showSaveDialog: jest.Mock<() => Promise<{ canceled: boolean; filePath: string | undefined }>>;
 };
 const { WorldService } = jest.requireMock('../src/main/services/WorldService') as {
-  WorldService: { saved: string[] };
+  WorldService: { saved: string[]; opened: string | null };
 };
 
 /** A real directory with a real world file: the validator resolves symlinks
@@ -102,7 +95,7 @@ async function invoke(channel: string, request?: unknown): Promise<unknown> {
   return handler!({}, request);
 }
 
-describe('world:save — only a dialog names a write target', () => {
+describe('world:save — overwrite the open world only', () => {
   let worlds: ReturnType<typeof seedWorlds>;
 
   beforeEach(() => {
@@ -110,6 +103,7 @@ describe('world:save — only a dialog names a write target', () => {
     electron.__showOpenDialog.mockReset();
     electron.__showSaveDialog.mockReset();
     WorldService.saved.length = 0;
+    WorldService.opened = null;
     worlds = seedWorlds();
     setupIpcHandlers();
   });
@@ -118,41 +112,27 @@ describe('world:save — only a dialog names a write target', () => {
   async function openThroughDialog(): Promise<void> {
     electron.__showOpenDialog.mockResolvedValue({ canceled: false, filePaths: [worlds.opened] });
     await expect(invoke('world:openDialog')).resolves.toBe(worlds.opened);
+    WorldService.opened = worlds.opened;
   }
 
-  it('refuses to write over the opened world when no save dialog chose it', async () => {
+  it('writes over the opened world without a save dialog', async () => {
     await openThroughDialog();
 
-    await expect(invoke('world:save', { targetPath: worlds.opened })).rejects.toThrow();
-    expect(WorldService.saved).toEqual([]);
+    await expect(invoke('world:save')).resolves.toBeUndefined();
+    expect(WorldService.saved).toEqual([worlds.opened]);
+    expect(electron.__showSaveDialog).not.toHaveBeenCalled();
   });
 
-  it('refuses a neighbour of the opened world', async () => {
+  it('does not let a renderer payload redirect the save', async () => {
     await openThroughDialog();
 
-    await expect(invoke('world:save', { targetPath: worlds.sibling })).rejects.toThrow();
-    // And a path that does not exist yet, which is what a save-as would be.
-    await expect(invoke('world:save', { targetPath: path.join(worlds.dir, 'INVENTED.ZEN') }))
-      .rejects.toThrow();
-    expect(WorldService.saved).toEqual([]);
+    await expect(invoke('world:save', { targetPath: worlds.sibling })).resolves.toBeUndefined();
+    expect(WorldService.saved).toEqual([worlds.opened]);
   });
 
-  it('writes where the save dialog said, including over the opened file', async () => {
-    await openThroughDialog();
-
-    const target = path.join(worlds.dir, 'NEWWORLD.edited.zen');
-    electron.__showSaveDialog.mockResolvedValue({ canceled: false, filePath: target });
-    await expect(invoke('world:saveDialog', { suggested: target })).resolves.toBe(target);
-
-    await expect(invoke('world:save', { targetPath: target })).resolves.toBeUndefined();
-    expect(WorldService.saved).toEqual([target]);
-
-    // Overwriting the original stays reachable — the OS dialog asks, and the
-    // quick test needs it (§16.29) — but it has to be chosen there.
-    electron.__showSaveDialog.mockResolvedValue({ canceled: false, filePath: worlds.opened });
-    await expect(invoke('world:saveDialog', { suggested: worlds.opened })).resolves.toBe(worlds.opened);
-    await expect(invoke('world:save', { targetPath: worlds.opened })).resolves.toBeUndefined();
-    expect(WorldService.saved).toEqual([target, worlds.opened]);
+  it('refuses when no world is open', async () => {
+    await expect(invoke('world:save')).rejects.toThrow(/no world is open/i);
+    expect(WorldService.saved).toEqual([]);
   });
 
   it('grants the opened world and its sidecar, not the folder they sit in', async () => {
