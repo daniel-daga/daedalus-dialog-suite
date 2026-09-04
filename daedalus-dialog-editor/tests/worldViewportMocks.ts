@@ -60,12 +60,31 @@ export function mockOrbitControls() {
  *  in the tests that drive it — see `WorldViewport`'s `__worldViewport` doc —
  *  so the stand-in here is an event dispatcher and a mode, which is all the
  *  viewport asks of it. */
+/** A helper shaped like the library's: a root holding the gizmo, which is what
+ *  `DampedTransformControls` chains its plane-handle mirroring onto. The handle
+ *  groups are empty, so the mirroring is a no-op here — it is covered against
+ *  real handle geometry in `gizmoPlaneFacing.test.ts`. */
+function mockGizmoHelper(three: typeof import('three')) {
+  const helper = new three.Object3D();
+  const gizmo = Object.assign(new three.Object3D(), {
+    isTransformControlsGizmo: true,
+    mode: 'translate',
+    space: 'world',
+    eye: new three.Vector3(0, 0, 1),
+    worldQuaternion: new three.Quaternion(),
+    gizmo: { translate: new three.Object3D() },
+    picker: { translate: new three.Object3D() },
+  });
+  helper.add(gizmo);
+  return helper;
+}
+
 export function mockTransformControls() {
   const three = jest.requireActual('three');
   return {
     TransformControls: class extends three.EventDispatcher {
       enabled = false;
-      private helper = new three.Object3D();
+      private helper = mockGizmoHelper(three);
       private mode = 'translate';
       setSpace() {}
       getHelper() { return this.helper; }
