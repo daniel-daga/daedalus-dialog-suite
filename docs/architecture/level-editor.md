@@ -868,7 +868,7 @@ mod-specific world need it.
 ### Current save verdict — ASCII and BinSafe (2026-09-04)
 
 The earlier T8 verdict below has been superseded for ASCII preservation saves.
-Patches `0050`–`0052` closed its remaining signed-boolean, packed-physics,
+Patches `0049`–`0052` closed its remaining signed-boolean, packed-physics,
 wide-animation-mode, and legacy-rounding defects. Untouched, property-edited,
 and structurally edited copies of the real `SURFACE_BEPPO.ZEN` ASCII world all
 loaded through the Gothic II QuickTest gate under the production basename.

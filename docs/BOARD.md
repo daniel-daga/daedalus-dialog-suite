@@ -197,7 +197,7 @@ below it.
 not blocked: moving a card back to Next is a human decision.
 
 **ASCII writer — completed 2026-09-04.** The three deferred defects at §16.9
-were closed by patches `0050`–`0052`, and untouched, property-edited, and
+were closed by patches `0049`–`0052`, and untouched, property-edited, and
 structurally edited copies of the real `SURFACE_BEPPO.ZEN` ASCII world all
 passed the Gothic II QuickTest gate. Normal save now accepts ASCII and BinSafe;
 BINARY remains diagnostic-only. See
