@@ -393,6 +393,44 @@ describe('WorldService', () => {
 // history lives here rather than in the renderer for the same reason the world
 // does: the renderer holds a projection, and an undo stack over a projection
 // can outlive the thing it describes.
+describe('a worker that dies after it was replaced', () => {
+  test('a stale exit does not reach the worker that took its place', async () => {
+    // `close()` and the request timeout both terminate and null `this.worker`,
+    // and `exit` arrives asynchronously afterwards. The handlers were closures
+    // over no particular worker, so an exit belonging to the *previous* thread
+    // was taken as the death of the current one: it rejected the fresh open,
+    // nulled the new worker reference — leaving that thread running and
+    // unreferenced — and reported "the world worker died" for a worker that was
+    // perfectly alive. The fake's `terminate()` never emits `exit`, which is why
+    // no test saw this.
+    const workers: FakeWorker[] = [];
+    const service = new WorldService({
+      createWorker: () => {
+        const worker = new FakeWorker();
+        workers.push(worker);
+        return worker;
+      },
+    });
+
+    const first = service.openWorld(OPEN);
+    workers[0].reply('open', SUMMARY);
+    await first;
+
+    service.close();
+    const reopened = service.openWorld(OPEN);
+    // The first worker's exit lands after the second has been started.
+    workers[0].emit('exit', 1);
+    workers[1].replyLast('open', SUMMARY);
+
+    await expect(reopened).resolves.toBeDefined();
+    // And the new worker is still the one requests go to.
+    const meshed = service.getWorldMesh();
+    await tick();
+    workers[1].replyLast('worldMesh', { groups: [], bbox: [0, 0, 0, 1, 1, 1] });
+    await expect(meshed).resolves.toBeDefined();
+  });
+});
+
 describe('the op log', () => {
   const move = (vob: number, path: string, from: Move['from'], to: Move['to']): Move =>
     ({ op: 'MoveVob', vob, path, from, to });

@@ -70,6 +70,31 @@ test('setVobPosition throws on a bad index path', () => {
   }
 });
 
+test('setVobPosition refuses a coordinate that is not a finite number', () => {
+  // The bounds the editor's own ipcValidation applies are not the copy that is
+  // load-bearing: the blender bridge hands these straight through, and
+  // `JSON.parse('1e400')` is Infinity. An accepted NaN is worse than a rejected
+  // one — it is written to the .zen as a float the engine reads back and
+  // computes with, and it poisons the bbox by the same delta.
+  const handle = load();
+  const before = zenkit.vobIndex(handle);
+  for (const bad of [[NaN, 0, 0], [0, Infinity, 0], [0, 0, -Infinity]]) {
+    assert.throws(() => zenkit.setVobPosition(handle, '0/1', bad), Error);
+  }
+  assert.deepStrictEqual(zenkit.vobIndex(handle).positions, before.positions);
+});
+
+test('setVobRotation refuses a matrix or a box holding a non-finite number', () => {
+  const handle = load();
+  const nonFinite = [...ROTATION_90_Y];
+  nonFinite[4] = NaN;
+  assert.throws(() => zenkit.setVobRotation(handle, '0/1', nonFinite), Error);
+  assert.throws(
+    () => zenkit.setVobRotation(handle, '0/1', ROTATION_90_Y, [0, 0, 0, Infinity, 1, 1]),
+    Error,
+  );
+});
+
 // setVobRotation — the second mutation (level-editor.md §7). It takes the
 // bounding box rather than deriving one, and that is the whole design decision:
 // measured across the three retail worlds, a VOB's stored box is the tight

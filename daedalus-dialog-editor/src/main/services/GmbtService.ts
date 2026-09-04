@@ -22,6 +22,10 @@ export interface GmbtLaunchDeps {
   exists?: (candidate: string) => boolean;
   spawn?: typeof nodeSpawn;
   platform?: NodeJS.Platform;
+  /** A launch that failed after this call returned. The quick test is
+   *  fire-and-forget by design (§16.29), so there is no promise to reject —
+   *  and a packaged build shows nobody its stdout. */
+  onError?: (error: Error) => void;
 }
 
 /**
@@ -36,8 +40,15 @@ export function resolveGmbtExecutable(deps: GmbtLaunchDeps = {}): string | null 
   // Windows paths are parsed as Windows paths whatever the host is: the tests
   // run on Linux in CI, where `path.delimiter` would split `C:\tools` in two.
   const paths = isWindows ? path.win32 : path.posix;
+  // A batch file is not a candidate, whatever PATHEXT says: Node >= 20.12
+  // refuses to spawn one without `shell: true` (the CVE-2024-27980 fix), and
+  // `shell: true` is not the way out — the arguments would then go through
+  // cmd's own parsing, which is the thing an argv array exists to avoid.
+  // Resolving one would mean resolving something this service cannot launch.
+  const unspawnable = new Set(['.BAT', '.CMD']);
   const extensions = isWindows
     ? (env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean)
+      .filter((extension) => !unspawnable.has(extension.toUpperCase()))
     : [''];
   for (const directory of (env.PATH ?? env.Path ?? '').split(paths.delimiter).filter(Boolean)) {
     for (const extension of extensions) {
@@ -80,9 +91,12 @@ export function startGmbtQuickTest(
   });
   // Nothing awaits the child, so a spawn failure arrives as an unhandled
   // 'error' event — which would take the main process down rather than the
-  // quick test.
+  // quick test. It is reported through `onError` as well as the console: in a
+  // packaged build nobody sees stdout, so a launch that never happened was
+  // invisible on both sides of the IPC.
   child.on('error', (error) => {
     console.error('[GMBT] quick test failed to start:', error);
+    deps.onError?.(error instanceof Error ? error : new Error(String(error)));
   });
   child.unref();
 }

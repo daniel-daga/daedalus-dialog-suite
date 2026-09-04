@@ -16,6 +16,9 @@ import { emptyAssetCatalog, parseAssetCatalog, type AssetCatalog } from 'zen-wor
  * folders.
  */
 export class AssetCatalogService {
+  /** Saves run one at a time — see `save`. */
+  private queue: Promise<unknown> = Promise.resolve();
+
   sidecarPath(projectFilePath: string): string {
     const base = path.basename(projectFilePath).replace(/\.gothicproject\.json$/i, '');
     return path.join(path.dirname(projectFilePath), `${base}.assets.json`);
@@ -45,6 +48,17 @@ export class AssetCatalogService {
 
   /** `WorldFoldersService.save`'s temp-file-and-rename. */
   async save(projectFilePath: string, catalog: AssetCatalog): Promise<void> {
+    // Serialized, exactly as `WorldFoldersService.save` is and for the same
+    // reason: the renderer fires one save per change and awaits none of them
+    // (`WorldSurface`'s `persistCatalog`), and two in flight over one fixed
+    // `<target>.tmp` tear the sidecar between them.
+    const run = this.queue.then(() => this.write(projectFilePath, catalog),
+      () => this.write(projectFilePath, catalog));
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
+
+  private async write(projectFilePath: string, catalog: AssetCatalog): Promise<void> {
     const target = this.sidecarPath(projectFilePath);
     const tmpPath = `${target}.tmp`;
     const handle = await fs.open(tmpPath, 'w');

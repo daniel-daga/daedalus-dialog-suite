@@ -57,6 +57,31 @@ describe('WorldFoldersService', () => {
       renameSpy.mockRestore();
     });
 
+    it('serializes two saves fired without awaiting the first', async () => {
+      // The renderer fires one save per folder mutation and awaits none of
+      // them (`WorldSurface`'s persistFolders). Unserialized, and with a temp
+      // name fixed at `<target>.tmp`, the second `open` truncates the first's
+      // temp file, the first `rename` moves a possibly partial file into
+      // place, and the second `rename` fails ENOENT — which is only logged.
+      // The sidecar is then torn, and `load` renames a torn one aside as
+      // corrupt: the user's folders come back empty.
+      const first = { folders: [{ id: 'f1', name: 'First', vobPaths: ['0'] }] };
+      const second = {
+        folders: [
+          { id: 'f1', name: 'First', vobPaths: ['0'] },
+          { id: 'f2', name: 'Second', vobPaths: ['1', '2'] },
+        ],
+      };
+
+      await Promise.all([service.save(worldPath, first), service.save(worldPath, second)]);
+
+      // The last one issued is what is on disk, whole.
+      expect(await service.load(worldPath)).toEqual(second);
+      // And nothing is left behind for the next save to trip over.
+      const leftovers = (await fs.readdir(testDir)).filter((name) => name.endsWith('.tmp'));
+      expect(leftovers).toEqual([]);
+    });
+
     it('leaves the previous sidecar intact and rejects when the write fails', async () => {
       const original = { folders: [{ id: 'f1', name: 'Original', vobPaths: [] }] };
       await service.save(worldPath, original);

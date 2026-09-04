@@ -40,6 +40,28 @@ describe('resolveGmbtExecutable', () => {
     })).toBe(fallback);
   });
 
+  it('passes over a .BAT or .CMD, which Node will not spawn without a shell', () => {
+    // PATHEXT lists them and `where gmbt` would find one, but Node >= 20.12
+    // refuses to spawn a batch file without `shell: true` (the fix for
+    // CVE-2024-27980) — and `shell: true` is not the answer here, because the
+    // arguments would then go through cmd's own parsing. Resolving one is
+    // therefore resolving something this service cannot launch: the honest
+    // answer is to keep looking, and to say GMBT was not found if a real
+    // executable is not.
+    const batch = path.win32.join('C:\\tools', 'gmbt.BAT');
+    expect(resolveGmbtExecutable({
+      env: WINDOWS_ENV, platform: 'win32', exists: (candidate) => candidate === batch,
+    })).toBeNull();
+
+    // And an .EXE beside it in the same directory is still found.
+    const exe = path.win32.join('C:\\tools', 'gmbt.EXE');
+    expect(resolveGmbtExecutable({
+      env: WINDOWS_ENV,
+      platform: 'win32',
+      exists: (candidate) => candidate === batch || candidate === exe,
+    })).toBe(exe);
+  });
+
   it('is null when GMBT is installed nowhere it looks', () => {
     expect(resolveGmbtExecutable({ env: WINDOWS_ENV, platform: 'win32', exists: () => false }))
       .toBeNull();

@@ -16,6 +16,9 @@ import { emptyVobFolders, parseVobFolders, type VobFolders } from 'zen-world';
  * There is no cache here, so there is nothing to go stale.
  */
 export class WorldFoldersService {
+  /** Saves run one at a time — see `save`. */
+  private queue: Promise<unknown> = Promise.resolve();
+
   /** Exposed so callers (`main.ts`) can validate the exact path this service
    *  is about to touch, the same way `world:open`/`world:save` validate their
    *  own target rather than the directory it happens to live in. */
@@ -62,6 +65,20 @@ export class WorldFoldersService {
    * intact rather than a torn file.
    */
   async save(worldPath: string, folders: VobFolders): Promise<void> {
+    // Serialized, because the renderer fires one save per folder mutation and
+    // awaits none of them. Two in flight over one fixed `<target>.tmp` name and
+    // the second `open` truncates the first's temp file, the first `rename`
+    // moves a partial file into place, and the second fails ENOENT — leaving a
+    // torn sidecar that `load` renames aside as corrupt, so the user's folders
+    // come back empty. `SettingsService` has the same queue for the same
+    // reason. `then(run, run)`: a failed save is no reason to stop taking them.
+    const run = this.queue.then(() => this.write(worldPath, folders),
+      () => this.write(worldPath, folders));
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
+
+  private async write(worldPath: string, folders: VobFolders): Promise<void> {
     const target = this.sidecarPath(worldPath);
     const tmpPath = `${target}.tmp`;
     const data = JSON.stringify(folders, null, 2);

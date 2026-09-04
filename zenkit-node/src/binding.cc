@@ -593,6 +593,14 @@ zenkit::Vec3 Vec3FromValue(Napi::Env env, Napi::Value value, char const* label) 
       throw Napi::TypeError::New(env, std::string {label} + " elements must be numbers");
     }
     components[i] = static_cast<float>(element.As<Napi::Number>().DoubleValue());
+    // The same rule every class-prop float already keeps, and for the reason
+    // stated there: a NaN or an infinity is a number the engine reads back and
+    // computes with. The editor's ipcValidation checks this too, but that is
+    // not the copy that is load-bearing — the blender bridge hands values
+    // straight through, and `JSON.parse('1e400')` is Infinity.
+    if (!std::isfinite(components[i])) {
+      throw Napi::TypeError::New(env, std::string {label} + " components must be finite numbers");
+    }
   }
   return zenkit::Vec3 {components[0], components[1], components[2]};
 }
@@ -1059,7 +1067,13 @@ std::vector<float> FloatsFromValue(Napi::Env env,
     if (!element.IsNumber()) {
       throw Napi::TypeError::New(env, std::string {label} + " elements must be numbers");
     }
-    out.push_back(static_cast<float>(element.As<Napi::Number>().DoubleValue()));
+    auto const value = static_cast<float>(element.As<Napi::Number>().DoubleValue());
+    // As `Vec3FromValue` above: a rotation or a bbox is written to the archive
+    // as float32s the engine culls and transforms with.
+    if (!std::isfinite(value)) {
+      throw Napi::TypeError::New(env, std::string {label} + " elements must be finite numbers");
+    }
+    out.push_back(value);
   }
   return out;
 }

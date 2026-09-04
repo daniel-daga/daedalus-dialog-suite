@@ -334,6 +334,73 @@ describe('a VOB dragged in the viewport', () => {
     await waitFor(() => expect(createVobReader(summary.vobIndex).position(1)).toEqual([11, 22, 33]));
   });
 
+  it('says so when turning an overlay on cannot read the waynet', async () => {
+    // The open path was rewritten to report this rather than throw the world
+    // away (the 2026-08-29 review's first finding). These two toggles read the
+    // same payload for the same reason and reported nothing at all: the button
+    // stayed on, the overlay drew nothing, and no message said why.
+    // The open's read fails first, which leaves `waynet` null — that path
+    // already reports, and is not what this is about. Clearing the banner puts
+    // the surface in the state a user is actually in: a world open, no waynet
+    // read yet, and the toggle about to try again.
+    api.getWorldWaynet.mockRejectedValueOnce(new Error('open read failed') as never);
+    await openWorld();
+    await waitFor(() => expect(screen.getByTestId('world-edit-error')).toBeInTheDocument());
+    await act(async () => { useWorldStore.getState().editFailed(null); });
+
+    api.getWorldWaynet.mockRejectedValueOnce(new Error('worker exited') as never);
+    fireEvent.click(screen.getByTestId('world-waynet-toggle'));
+
+    await waitFor(() => expect(screen.getByTestId('world-edit-error')).toHaveTextContent(/worker exited/));
+  });
+
+  it('does not carry the clipboard, or the last world\'s banners, into the next world', async () => {
+    // The clipboard holds world-space positions from the world it was copied
+    // in, so a paste into another world puts VOBs at coordinates nobody chose.
+    // The banners are the same shape of leftover: "Saved to …" standing over a
+    // world that was never saved.
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    fireEvent.keyDown(window, { key: 'c', ctrlKey: true });
+    await waitFor(() => expect(api.getVobProps).toHaveBeenCalled());
+
+    api.saveWorldDialog.mockResolvedValueOnce('C:/Gothic/NewWorld.edited.zen' as never);
+    fireEvent.click(screen.getByTestId('world-save'));
+    fireEvent.click(await screen.findByTestId('world-save-confirm'));
+    await screen.findByTestId('world-saved');
+
+    const next = { ...SUMMARY, worldPath: 'C:/Gothic/OldWorld.zen', vobIndex: vobIndex([[0, 0, 0]]) };
+    api.openWorldDialog.mockResolvedValueOnce('C:/Gothic/OldWorld.zen' as never);
+    api.openWorld.mockResolvedValueOnce(next as never);
+    api.getWorldMesh.mockResolvedValueOnce({ groups: [], bbox: next.bbox } as never);
+    api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+    fireEvent.click(screen.getByTestId('world-open'));
+    fireEvent.click(await screen.findByTestId('world-picker-browse'));
+    await waitFor(() => expect(useWorldStore.getState().summary).toBe(next));
+
+    expect(screen.queryByTestId('world-saved')).not.toBeInTheDocument();
+
+    // And a paste in the new world adds nothing, because there is nothing held.
+    api.applyWorldOps.mockClear();
+    fireEvent.keyDown(window, { key: 'v', ctrlKey: true });
+    await act(async () => { await Promise.resolve(); });
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+  });
+
+  it('says so when an undo is refused, instead of failing silently', async () => {
+    // Both callers are `void runHistory(...)`, so a rejected undo — a dead
+    // worker, a refused replay — was an unhandled rejection: no banner, the
+    // buttons left at a depth the main process no longer agrees with, and a
+    // view quietly one edit behind the world.
+    await openWorld();
+    api.undoWorldEdit.mockRejectedValueOnce(new Error('the world worker died') as never);
+
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+
+    await waitFor(() => expect(screen.getByTestId('world-edit-error'))
+      .toHaveTextContent(/undo did not go through.*worker died/i));
+  });
+
   it('marks the world edited until it is saved, and says so on the Save button', async () => {
     // `unsavedEdits` existed only to block the quick test. Nothing on screen
     // said a world had been edited: no marker on Save, nothing in the stats, no

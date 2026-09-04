@@ -431,6 +431,18 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     // an edit still in flight belongs to the world being left behind.
     setUnsavedEdits(false);
     openGeneration.current += 1;
+    // And neither are the previous world's *reports*: "Saved to …" standing
+    // over a world that was never saved is a lie, and a save error about a file
+    // nobody is looking at any more is noise.
+    setSavedTo(null);
+    setSaveError(null);
+    // The clipboard holds positions in the world it was copied from — pasting
+    // them into another world puts VOBs at coordinates nobody chose. A
+    // cross-world clipboard is not a feature anybody asked for.
+    clipboard.current = [];
+    // An asset previewed out of the previous world's mounts, which the new
+    // world's may not even have.
+    setSelectedAsset(null);
 
     try {
       // Main resolves the active project's ordered sources and owns the VFS
@@ -569,6 +581,29 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     useWorldStore.getState().waynetLoaded(waynet);
   }, [waynet]);
 
+  /**
+   * The waynet read both overlay toggles make when the open's own read left
+   * nothing behind — reported rather than swallowed.
+   *
+   * The open path was rewritten to report this instead of throwing the world
+   * away (2026-08-29 review, finding 1); these two made the same read and said
+   * nothing at all, so a failure left the toggle on, the overlay empty and no
+   * word about why. The banner over an open world is the same one that path
+   * uses.
+   */
+  const readWaynetInto = useCallback(
+    async (into: (payload: WaynetPayload | null) => void): Promise<void> => {
+      try {
+        into(await window.editorAPI.getWorldWaynet());
+      } catch (failure) {
+        useWorldStore.getState().editFailed(
+          failure instanceof Error ? failure.message : String(failure),
+        );
+      }
+    },
+    [],
+  );
+
   const toggleWaynet = useCallback(async () => {
     const next = !showWaynet;
     setShowWaynet(next);
@@ -576,7 +611,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     // a waypoint still being selected — and the gizmo would go on standing, and
     // dragging, where there is no longer a dot to see.
     if (!next) selectWaypoint(null);
-    if (next && waynet === null) setWaynet(await window.editorAPI.getWorldWaynet());
+    if (next && waynet === null) await readWaynetInto(setWaynet);
   }, [showWaynet, waynet, selectWaypoint]);
 
   // The markers stand on waypoints, so the layer needs the payload the waynet
@@ -620,7 +655,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       setSpawnTime(null);
       setSpawnState(null);
     }
-    if (next && waynet === null) setWaynet(await window.editorAPI.getWorldWaynet());
+    if (next && waynet === null) await readWaynetInto(setWaynet);
   }, [showSpawns, waynet]);
 
   const listAssets = useCallback(
@@ -1103,14 +1138,26 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    *  apply exactly that, never what this side thinks it sent. */
   const runHistory = useCallback(async (direction: 'undo' | 'redo') => {
     const generation = openGeneration.current;
-    const ops = await (direction === 'undo'
-      ? window.editorAPI.undoWorldEdit() : window.editorAPI.redoWorldEdit());
-    if (ops === null || ops.length === 0) return;
-    // A world opened while this was out: the ops address the world it undid,
-    // and this side is showing a different one.
-    if (openGeneration.current !== generation) return;
-    await applied(ops);
-  }, [applied]);
+    // Every caller is `void runHistory(...)` — a keystroke and a toolbar button
+    // — so a rejection here had nowhere to go: no banner, a stale history depth
+    // on the buttons, and a view quietly behind the world. `commitOps` wraps
+    // its own `applied` for exactly this reason; this path did not.
+    try {
+      const ops = await (direction === 'undo'
+        ? window.editorAPI.undoWorldEdit() : window.editorAPI.redoWorldEdit());
+      if (ops === null || ops.length === 0) return;
+      // A world opened while this was out: the ops address the world it undid,
+      // and this side is showing a different one.
+      if (openGeneration.current !== generation) return;
+      await applied(ops);
+    } catch (failure) {
+      const reason = failure instanceof Error ? failure.message : String(failure);
+      useWorldStore.getState().editFailed(
+        `The ${direction} did not go through: ${reason}.`,
+      );
+      void refreshHistoryDepth();
+    }
+  }, [applied, refreshHistoryDepth]);
 
   /** @returns whether the world took the edit — false is a refusal, and the
    *   banner has already been set. A caller that has something to do *after* a

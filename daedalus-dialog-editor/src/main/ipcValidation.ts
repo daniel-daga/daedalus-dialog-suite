@@ -180,10 +180,15 @@ export interface OpenWorldRequestShape {
 }
 
 /**
- * Assert an open-world request. Beyond the usual boundary hygiene, the two
- * path-bearing fields matter for a specific reason: the caller path-validates
- * `worldPath` and every entry of `assetSources`, and a non-string in that array
- * would pass straight through the validation loop and reach the VFS.
+ * Assert an open-world request. Beyond the usual boundary hygiene, `worldPath`
+ * matters for a specific reason: the caller path-validates it, and a non-string
+ * would pass straight through that check.
+ *
+ * The request carries **no** asset sources. `world:open` resolves the active
+ * project's own mounts main-side and ignores anything the renderer might say
+ * about them — this comment used to claim the caller validated a request-borne
+ * `assetSources` array, which has not been the shape since the project file
+ * took ownership of the mounts (§9).
  */
 export function assertOpenWorldRequest(request: unknown): asserts request is OpenWorldRequestShape {
   if (!isPlainObject(request)) {

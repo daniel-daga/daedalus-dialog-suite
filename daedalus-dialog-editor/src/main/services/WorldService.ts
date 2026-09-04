@@ -385,11 +385,23 @@ export class WorldService {
   private startWorker(): void {
     this.failure = null;
     const worker = this.createWorker();
-    worker.on('error', (error) => this.handleWorkerDeath(error));
+    // Every handler is scoped to the worker it was registered for. `close()`
+    // and `handleTimeout` terminate and null `this.worker`, and `exit` arrives
+    // asynchronously after that — so an exit belonging to a thread that has
+    // already been replaced would otherwise be taken as the death of its
+    // successor: it rejects the fresh open, nulls the new reference (leaving
+    // that thread running and unreachable) and reports a dead worker that is
+    // perfectly alive.
+    const mine = (): boolean => this.worker === worker;
+    worker.on('error', (error) => { if (mine()) this.handleWorkerDeath(error); });
     worker.on('exit', (code) => {
-      if (code !== 0) this.handleWorkerDeath(new Error(`zenkit worker exited with code ${code}`));
+      // A clean exit is a dead worker too: nothing in the worker calls
+      // `process.exit`, but taking only non-zero codes as death would leave
+      // every pending request waiting out the full timeout if anything ever
+      // does.
+      if (mine()) this.handleWorkerDeath(new Error(`zenkit worker exited with code ${code}`));
     });
-    worker.on('message', (message) => this.handleMessage(message));
+    worker.on('message', (message) => { if (mine()) this.handleMessage(message); });
     this.worker = worker;
   }
 
@@ -427,7 +439,7 @@ export class WorldService {
   }
 
   /**
-   * A request that never answered takes the worker down with it.
+   * A request that never answered gives up on the worker.
    *
    * The thread is not idle — it is still inside the call that went quiet, and
    * the world it holds is in whatever state that call left it. Rejecting only
@@ -436,6 +448,16 @@ export class WorldService {
    * surface never recovers and every retry feeds the same stuck worker. Same
    * policy as a crash, for the same reason: the world is gone, and the user is
    * told to reopen it rather than being handed a silent reload.
+   *
+   * **`terminate()` does not stop it, and nothing can.** It interrupts
+   * JavaScript, and a worker inside a synchronous N-API call (`loadWorld`,
+   * `saveWorld`, `commitOps`) runs to the end of that call whatever happens
+   * here; `exit` arrives only then. So what this really does is *abandon* the
+   * worker: the world it holds stays resident until the call returns, and a
+   * save that timed out mid-write can leave a `<target>.tmp` behind. The next
+   * `openWorld` starts a second worker beside it. That is the accepted cost of
+   * not hanging the surface on a call that will not come back — and it is why
+   * the handlers registered in `startWorker` are scoped to their own worker.
    */
   private handleTimeout(op: WorldWorkerOp): void {
     if (this.failure !== null) return;
