@@ -334,6 +334,46 @@ describe('a VOB dragged in the viewport', () => {
     await waitFor(() => expect(createVobReader(summary.vobIndex).position(1)).toEqual([11, 22, 33]));
   });
 
+  it('marks the world edited until it is saved, and says so on the Save button', async () => {
+    // `unsavedEdits` existed only to block the quick test. Nothing on screen
+    // said a world had been edited: no marker on Save, nothing in the stats, no
+    // title change — so "have I saved this?" was a question the app would not
+    // answer, over files that are somebody's retail install.
+    await openWorld();
+    expect(screen.getByTestId('world-save')).toHaveTextContent(/^Save world…$/);
+
+    fireEvent.click(screen.getByTestId('stub-drag'));
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+
+    await waitFor(() => expect(screen.getByTestId('world-save')).toHaveTextContent(/edited/i));
+  });
+
+  it('saves on Ctrl+S, the same confirm the button opens', async () => {
+    await openWorld();
+
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+
+    expect(await screen.findByTestId('world-save-confirm')).toBeInTheDocument();
+  });
+
+  it('lets the saved banner be dismissed', async () => {
+    // It stood until the *next* save started — across every later edit, still
+    // claiming a world was saved while the Save button said it was edited.
+    await openWorld();
+    api.saveWorldDialog.mockResolvedValueOnce('C:/Gothic/NewWorld.edited.zen' as never);
+
+    fireEvent.click(screen.getByTestId('world-save'));
+    fireEvent.click(await screen.findByTestId('world-save-confirm'));
+    const banner = await screen.findByTestId('world-saved');
+    // The confirm's own Modal marks the rest of the app `aria-hidden` while it
+    // is up, so the banner behind it has no accessible role until it is gone.
+    await waitFor(() => expect(screen.queryByTestId('world-save-confirm')).not.toBeInTheDocument());
+
+    fireEvent.click(within(banner).getByRole('button', { name: /close/i }));
+
+    await waitFor(() => expect(screen.queryByTestId('world-saved')).not.toBeInTheDocument());
+  });
+
   it('does not apply an edit that was still in flight when the next world opened', async () => {
     // The main process records the batch against the world it edited, and drops
     // it when that world is no longer the one open (`WorldService.generation`).

@@ -508,6 +508,63 @@ describe('WorldPropertyGrid, class fields', () => {
     expect(input('class-color').value).toBe('255, 220, 180, 255');
   });
 
+  it('says why a refused value was refused, rather than only snapping back', () => {
+    // The snap-back is the whole of what a refusal used to be: the field
+    // remounts showing the world's value and nothing on screen says a thing.
+    // Typing 2.5 into an int field looks identical to typing it into a field
+    // that took it and rounded — and a user who cannot tell those apart has no
+    // reason to believe the panel at all.
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} classProps={LIGHT} />);
+
+    fireEvent.change(input('class-range'), { target: { value: 'bright' } });
+    fireEvent.blur(input('class-range'));
+
+    expect(classEdits).toEqual([]);
+    expect(screen.getByText(/must be a number/i)).toBeInTheDocument();
+
+    // And it goes when the user comes back to the field: the message is about
+    // the value they just typed, not a state the field is stuck in.
+    fireEvent.focus(input('class-range'));
+    expect(screen.queryByText(/must be a number/i)).not.toBeInTheDocument();
+  });
+
+  it('names the whole-number rule when a fraction is refused', () => {
+    // An `int` field is an int32_t in the archive: 2.5 truncates on the cast in
+    // C++ and reports success, so it is refused here — which is only useful if
+    // the panel says which rule it broke. A chest's `hp` is one; the light's
+    // `range` above is a float, and 2.5 is a perfectly good value for it.
+    render(<WorldPropertyGrid summary={WORLD} selection={[7]} {...wiring} classProps={CHEST} />);
+
+    fireEvent.change(input('class-hp'), { target: { value: '2.5' } });
+    fireEvent.blur(input('class-hp'));
+
+    expect(classEdits).toEqual([]);
+    expect(screen.getByText(/whole number/i)).toBeInTheDocument();
+  });
+
+  it('says a coordinate has to be a number', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
+
+    fireEvent.change(input('position-x'), { target: { value: 'over there' } });
+    fireEvent.blur(input('position-x'));
+
+    expect(edits).toEqual([]);
+    expect(screen.getByText(/must be a number/i)).toBeInTheDocument();
+  });
+
+  it('stays quiet when a retyped value is simply the one already there', () => {
+    // Not a refusal to explain: nothing was rejected, there is just nothing to
+    // do. Saying "refused" here would train the user to ignore the message.
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
+
+    const field = input('position-x');
+    fireEvent.change(field, { target: { value: field.value } });
+    fireEvent.blur(field);
+
+    expect(edits).toEqual([]);
+    expect(screen.queryByText(/must be a number/i)).not.toBeInTheDocument();
+  });
+
   it('refuses a colour with an emptied channel rather than reading it as zero', () => {
     // `Number('')` is 0, which the float branch already refuses for its own
     // field. A typo that dropped a channel would otherwise be an accepted edit

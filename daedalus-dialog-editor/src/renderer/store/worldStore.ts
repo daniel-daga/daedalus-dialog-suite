@@ -157,7 +157,9 @@ interface WorldStore {
    *  new buffers, so every cached reader over the old summary is stale — which
    *  is why this replaces the summary rather than writing into it. */
   indexRefreshed: (summary: WorldSummary) => void;
-  editFailed: (error: string) => void;
+  /** Report a refused edit, or clear the report with null — the banner it
+   *  drives can be dismissed, and dismissing it is not an edit succeeding. */
+  editFailed: (error: string | null) => void;
   reset: () => void;
 }
 

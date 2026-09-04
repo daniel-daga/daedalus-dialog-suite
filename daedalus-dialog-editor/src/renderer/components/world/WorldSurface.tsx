@@ -58,14 +58,15 @@ import WorldVobContextMenu from './WorldVobContextMenu';
 import PanelSplitter from './PanelSplitter';
 import WorldToolbar from './toolbar/WorldToolbar';
 import WorldPickerDialog from './WorldPickerDialog';
+import ErrorBoundary from '../ErrorBoundary';
 
 // The World surface (level-editor.md §6): a new top-level view of the existing
 // app, lazily loaded, so `zenkit-node` is pulled in only when a world is
 // actually opened and dialog-only sessions never touch the native addon.
 //
-// Phase 1a is read-only. This shell owns the IPC calls and hands the viewport
-// finished payloads; the viewport owns the Three.js lifetime. Nothing here
-// keeps a geometry buffer in React state.
+// This shell owns the IPC calls and hands the viewport finished payloads; the
+// viewport owns the Three.js lifetime. Nothing here keeps a geometry buffer in
+// React state.
 
 /** The file name a banner shows for a script path — the whole path is noise
  *  next to a reason. */
@@ -2260,6 +2261,16 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         return;
       }
 
+      // Ctrl+S, the shortcut every editor has and this one did not. It opens
+      // the confirm rather than saving: the warnings there are about whether to
+      // save at all, and a keystroke is not a reason to skip them.
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && key === 's') {
+        if (isTypingOrInPopover(event.target) || surfaceDialogOpen) return;
+        event.preventDefault();
+        setConfirmingSave(true);
+        return;
+      }
+
       const undo = (event.ctrlKey || event.metaKey) && key === 'z' && !event.shiftKey;
       const redo = (event.ctrlKey || event.metaKey)
         && (key === 'y' || (key === 'z' && event.shiftKey));
@@ -2316,6 +2327,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         status={status}
         hasWorld={summary !== null}
         onSave={() => setConfirmingSave(true)}
+        unsavedEdits={unsavedEdits}
         gmbtConfigured={gmbtConfigured}
         onQuickTest={() => void startQuickTest()}
         showWaynet={showWaynet}
@@ -2365,16 +2377,43 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
 
       {/* A refused edit — or one the view could not follow, or a waynet read
           that failed over an open world. Deliberately not `status: 'error'`:
-          that replaces the whole surface, and the world is still open. */}
+          that replaces the whole surface, and the world is still open.
+
+          All three close. Each used to stand until something else replaced it —
+          the saved banner until the *next* save began, so it went on claiming a
+          world was saved across every edit after it, beside a Save button that
+          by then said "edited". A banner the user cannot dismiss is one they
+          learn to read past. */}
       {editError !== null && (
-        <Alert severity="warning" square data-testid="world-edit-error">{editError}</Alert>
+        <Alert
+          severity="warning"
+          square
+          onClose={() => useWorldStore.getState().editFailed(null)}
+          data-testid="world-edit-error"
+        >
+          {editError}
+        </Alert>
       )}
 
       {saveError !== null && (
-        <Alert severity="warning" square data-testid="world-save-error">{saveError}</Alert>
+        <Alert
+          severity="warning"
+          square
+          onClose={() => setSaveError(null)}
+          data-testid="world-save-error"
+        >
+          {saveError}
+        </Alert>
       )}
       {savedTo !== null && (
-        <Alert severity="success" square data-testid="world-saved">Saved to {savedTo}</Alert>
+        <Alert
+          severity="success"
+          square
+          onClose={() => setSavedTo(null)}
+          data-testid="world-saved"
+        >
+          Saved to {savedTo}
+        </Alert>
       )}
 
       {/* The warnings belong before the write, not after it: they are about
@@ -2563,9 +2602,23 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       {status === 'idle' && (
         <Box sx={{ p: 3 }}>
           <Typography variant="body2" color="text.secondary">
-            Open a ZenGin <code>.zen</code> world to view it. Phase 1a is read-only:
-            the world mesh, VOB visuals and picking. Configure at least one
-            available asset source in the active project first.
+            Open a ZenGin <code>.zen</code> world to view and edit it: move,
+            turn, place, duplicate and delete VOBs, edit the waynet, and start a
+            GMBT test run over what you have. Configure at least one available
+            asset source in the active project first.
+          </Typography>
+          <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 1.5 }}>
+            {/* The shortcuts have never been on screen anywhere (review §5.1):
+                every one of them is a window listener with no menu item, no
+                tooltip and no legend, so the walk, the fly, the camera slots
+                and the nudge were discoverable only by reading the source. */}
+            Once a world is open: <b>W</b>/<b>E</b> move and turn ·{' '}
+            <b>.</b> frame the selection · <b>Home</b> frame the world ·{' '}
+            <b>F3</b> walk · right-drag to fly, <b>WASD</b>/<b>QE</b> while held ·{' '}
+            <b>Ctrl</b>+<b>1</b>…<b>4</b> recall a camera, <b>Ctrl</b>+<b>Shift</b> to store ·{' '}
+            arrows and <b>PageUp</b>/<b>PageDown</b> nudge · <b>Ctrl</b>+<b>C</b>/<b>V</b> copy
+            and paste · <b>Ctrl</b>+<b>Z</b>/<b>Y</b> undo · <b>Ctrl</b>+<b>S</b> save ·{' '}
+            <b>Del</b> delete · <b>Esc</b> clear the selection.
           </Typography>
         </Box>
       )}
@@ -2680,7 +2733,26 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         )}
 
         <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative' }}>
-          {mesh && visuals && summary && (
+          {/* The viewport's own boundary. `new THREE.WebGLRenderer(...)` throws
+              "Error creating WebGL context" on a machine with no usable GL —
+              a broken driver, a remote desktop, a VM — and the nearest boundary
+              was the app's root one, so opening a world replaced the *whole*
+              window, dialog editor and all, with a crash page. The scene tree,
+              the property grid and everything else here work without a picture,
+              so the failure belongs to this box. */}
+          <ErrorBoundary
+            fallback={(
+              <Box sx={{ p: 3 }} data-testid="world-viewport-failed">
+                <Alert severity="error" square>
+                  The 3D view could not start — this machine has no usable WebGL
+                  context. The scene tree and properties still work; a graphics
+                  driver update, or running without remote desktop, is what gets
+                  the picture back.
+                </Alert>
+              </Box>
+            )}
+          >
+            {mesh && visuals && summary && (
             <WorldViewport
               ref={viewportRef}
               mesh={mesh}
@@ -2715,7 +2787,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               onMoveWaypoint={moveWaypointTo}
               paused={hidden}
             />
-          )}
+            )}
+          </ErrorBoundary>
         </Box>
 
         {summary && rightPanelCollapsed && (

@@ -86,19 +86,32 @@ const Field: React.FC<{ label: string; name: string; children: React.ReactNode }
  */
 const EditableField: React.FC<{
   name: string;
+  /** What this box holds, when the row's own label does not say — the three
+   *  coordinates and the three angles were bare boxes in a row, and which one
+   *  was yaw was something the user had to already know. */
+  label?: string;
   value: string;
   disabled?: boolean;
   helper?: string;
+  /** Why the last value typed here was rejected, or null. Shown in place of the
+   *  helper, because the snap-back on its own is indistinguishable from a field
+   *  that took the value and reformatted it. Cleared by focusing the field: the
+   *  message is about the value that was typed, not a state to be stuck in. */
+  refusal?: string | null;
+  onRefusalSeen?: () => void;
   onCommit: (value: string) => void;
-}> = ({ name, value, disabled, helper, onCommit }) => (
+}> = ({ name, label, value, disabled, helper, refusal, onRefusalSeen, onCommit }) => (
   <TextField
     variant="standard"
     size="small"
     fullWidth
+    label={label}
     defaultValue={value}
     disabled={disabled}
-    helperText={helper}
+    error={refusal != null}
+    helperText={refusal ?? helper}
     inputProps={{ 'data-testid': `world-prop-${name}-input`, spellCheck: false }}
+    onFocus={() => { if (refusal != null) onRefusalSeen?.(); }}
     onBlur={(event) => { if (event.target.value !== value) onCommit(event.target.value); }}
     onKeyDown={(event) => {
       const target = event.target as HTMLInputElement;
@@ -112,6 +125,53 @@ const EditableField: React.FC<{
     }}
   />
 );
+
+/**
+ * The state a field keeps about its own refusals: a counter that remounts it
+ * (discarding the typed text) and the reason to show while it stands.
+ *
+ * One hook rather than three copies of `useState(0)`, because the counter alone
+ * was the bug: it put the world's value back on screen and said nothing, so a
+ * refused 2.5 looked exactly like a 2.5 that had been accepted and rounded.
+ * A refusal with no reason is left as a bare remount — an unchanged value is
+ * not an error, and calling it one teaches the user to ignore the message.
+ */
+function useRefusal(): {
+  generation: number; reason: string | null;
+  refuse: (reason?: string) => void; clear: () => void;
+} {
+  const [refused, setRefused] = useState<{ generation: number; reason: string | null }>(
+    { generation: 0, reason: null },
+  );
+  return {
+    generation: refused.generation,
+    reason: refused.reason,
+    refuse: (reason?: string) => setRefused((at) => ({
+      generation: at.generation + 1, reason: reason ?? null,
+    })),
+    clear: () => setRefused((at) => (at.reason === null ? at : { ...at, reason: null })),
+  };
+}
+
+/** Why `parse` would not take this text, in the words of the rule it broke. */
+function refusalFor(field: FieldDescriptor, text: string): string {
+  const bounds = [
+    field.min === undefined ? null : `at least ${field.min}`,
+    field.max === undefined ? null : `at most ${field.max}`,
+  ].filter((part) => part !== null).join(' and ');
+
+  if (field.kind === 'int' || field.kind === 'float') {
+    const value = text.trim() === '' ? NaN : Number(text);
+    if (!Number.isFinite(value)) return 'Must be a number.';
+    if (field.kind === 'int' && !Number.isInteger(value)) return 'Must be a whole number.';
+    return bounds === '' ? 'Not a value this field can hold.' : `Must be ${bounds}.`;
+  }
+  if (field.kind === 'color') {
+    return `Four whole channels, comma separated${bounds === '' ? '' : `, each ${bounds}`}.`;
+  }
+  if (field.kind === 'vec2') return 'Two numbers, comma separated.';
+  return 'Not a value this field can hold.';
+}
 
 /**
  * A class field's value as text, and text back to a value of its kind.
@@ -227,7 +287,7 @@ const ClassField: React.FC<{
 }> = ({
   vob, group = 'class', field, value, knownValues, values, helper, disabled, onCommit,
 }) => {
-  const [refusals, setRefusals] = useState(0);
+  const { generation: refusals, reason: refusal, refuse, clear } = useRefusal();
 
   // A boolean is a checkbox, controlled, exactly like the six base flags above:
   // there is no text to type, so there is nothing to refuse, nothing to remount
@@ -286,14 +346,16 @@ const ClassField: React.FC<{
       value={text}
       disabled={disabled}
       helper={helper}
+      refusal={refusal}
+      onRefusalSeen={clear}
       onCommit={(typed) => {
         const parsed = parse(field, typed);
         // A value outside the allowed set is refused by the same route a value
         // the field cannot hold is: nothing is sent, and the field remounts
-        // showing what the world has. The two are the same refusal to a user.
-        if (parsed === null
-          || (knownValues !== undefined && !knownValues.has(String(parsed).toUpperCase()))) {
-          setRefusals((at) => at + 1);
+        // showing what the world has. They differ only in what they say.
+        if (parsed === null) refuse(refusalFor(field, typed));
+        else if (knownValues !== undefined && !knownValues.has(String(parsed).toUpperCase())) {
+          refuse('No script in this project declares that instance.');
         } else onCommit(parsed);
       }}
     />
@@ -376,17 +438,24 @@ const CoordinateField: React.FC<{
   value: number;
   onCommit: (value: number) => void;
 }> = ({ vob, axis, value, onCommit }) => {
-  const [refusals, setRefusals] = useState(0);
+  const { generation: refusals, reason: refusal, refuse, clear } = useRefusal();
   const text = coordinate(value);
 
   return (
     <EditableField
       key={`position-${vob}-${axis}-${text}-${refusals}`}
       name={`position-${axis}`}
+      label={axis.toUpperCase()}
       value={text}
+      refusal={refusal}
+      onRefusalSeen={clear}
       onCommit={(typed) => {
         const parsed = parseCoordinate(typed);
-        if (parsed === null || parsed === value) setRefusals((at) => at + 1);
+        // A number this field cannot hold is a refusal with something to say;
+        // retyping the value already there is not a refusal at all, just
+        // nothing to do, and it remounts without a word.
+        if (parsed === null) refuse('Must be a number.');
+        else if (parsed === value) refuse();
         else onCommit(parsed);
       }}
     />
@@ -425,19 +494,22 @@ const AngleField: React.FC<{
   value: number;
   onCommit: (value: number) => void;
 }> = ({ vob, axis, value, onCommit }) => {
-  const [refusals, setRefusals] = useState(0);
+  const { generation: refusals, reason: refusal, refuse, clear } = useRefusal();
   const text = coordinate(value);
 
   return (
     <EditableField
       key={`rotation-${vob}-${axis}-${text}-${refusals}`}
       name={`rotation-${axis}`}
+      label={axis}
       value={text}
+      refusal={refusal}
+      onRefusalSeen={clear}
       onCommit={(typed) => {
         const parsed = parseCoordinate(typed);
-        if (parsed === null || parsed === value || parsed === Number(text)) {
-          setRefusals((at) => at + 1);
-        } else onCommit(parsed);
+        if (parsed === null) refuse('Must be a number.');
+        else if (parsed === value || parsed === Number(text)) refuse();
+        else onCommit(parsed);
       }}
     />
   );
@@ -755,7 +827,7 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
       <Field label="Type" name="visualType">
         <Typography variant="caption">{visualType}</Typography>
       </Field>
-      <Field label="Position" name="position">
+      <Field label="Position (cm)" name="position">
         {/* ZenGin space, centimetres — see the note at the top of this file.
             Typed, and it leaves as a delta: the destination is this axis
             changed and the other two left alone. */}
@@ -779,7 +851,7 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
           ))}
         </Stack>
       </Field>
-      <Field label="Rotation" name="rotation">
+      <Field label="Rotation (°)" name="rotation">
         {/* Typed angles through `zen-world/coords`' one matrix↔Euler conversion
             (the engine's `zMAT4::GetEulerAngles` — intrinsic X-Y-Z with the
             vertical in the middle, degrees), for a selection of any size: the fields

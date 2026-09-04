@@ -13,6 +13,10 @@ export interface WorldFileControlsProps {
   status: WorldStatus;
   hasWorld: boolean;
   onSave: () => void;
+  /** Whether the world holds an edit the file on disk does not. The Save button
+   *  says so: nothing else on screen did, and "have I saved this?" is not a
+   *  question to leave unanswered over somebody's retail install. */
+  unsavedEdits: boolean;
   /** Whether the project names a GMBT project folder that resolves (§16.29).
    *  Unset is the ordinary case, not an error: the quick test is disabled with
    *  a tooltip naming the field, never an error on click. */
@@ -21,7 +25,7 @@ export interface WorldFileControlsProps {
 }
 
 const WorldFileControls: React.FC<WorldFileControlsProps> = ({
-  onOpenWorld, status, hasWorld, onSave, gmbtConfigured, onQuickTest,
+  onOpenWorld, status, hasWorld, onSave, unsavedEdits, gmbtConfigured, onQuickTest,
 }) => (
   <>
     <Button
@@ -36,9 +40,20 @@ const WorldFileControls: React.FC<WorldFileControlsProps> = ({
     {status === 'opening' && <CircularProgress size={16} />}
     {/* Always rendered — disabled rather than unmounted, so the file group
         does not resize when a world opens or closes. */}
-    <Button size="small" variant="outlined" disabled={!hasWorld} onClick={onSave} data-testid="world-save">
-      Save world…
-    </Button>
+    <Tooltip title={unsavedEdits ? 'This world has unsaved edits (Ctrl+S)' : 'Save this world (Ctrl+S)'}>
+      <span>
+        <Button
+          size="small"
+          variant={unsavedEdits ? 'contained' : 'outlined'}
+          color={unsavedEdits ? 'warning' : 'primary'}
+          disabled={!hasWorld}
+          onClick={onSave}
+          data-testid="world-save"
+        >
+          {unsavedEdits ? 'Save world… • edited' : 'Save world…'}
+        </Button>
+      </span>
+    </Tooltip>
     <Tooltip
       title={gmbtConfigured
         ? 'Start a GMBT test run with this world'
