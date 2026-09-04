@@ -1,4 +1,4 @@
-import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
+import { _electron as electron, test, type ElectronApplication, type Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -69,10 +69,38 @@ export async function launchApp(options: LaunchAppOptions = {}): Promise<AppFixt
     },
   });
 
+  // Keep the main process's own output. Its IPC handlers report failures with
+  // `console.error` and the renderer awaits few of those calls, so a refused
+  // write is silent from the page's side — the test sees only the effect that
+  // never happened. Nothing else preserves this: CI keeps the Playwright report
+  // but not the Electron process output, which is how a path-validation refusal
+  // of every `<world>.folders.json` write read as an unexplained timeout.
+  const mainOutput: string[] = [];
+  app.process().stdout?.on('data', (chunk: Buffer) => mainOutput.push(chunk.toString()));
+  app.process().stderr?.on('data', (chunk: Buffer) => mainOutput.push(chunk.toString()));
+
   const page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
 
+  /** Print the main process output, but only for a test that did not pass. */
+  const reportMainOutput = () => {
+    if (mainOutput.length === 0) return;
+    let title: string;
+    try {
+      const info = test.info();
+      if (info.status === 'passed') return;
+      title = info.title;
+    } catch {
+      return; // Called outside a test; nothing to report against.
+    }
+    console.log(
+      `\n--- Electron main process output for "${title}" ---\n`
+      + `${mainOutput.join('')}\n--- end main process output ---\n`,
+    );
+  };
+
   const cleanup = async () => {
+    reportMainOutput();
     // Destroy windows directly before closing: `destroy()` skips the `close`
     // event, so the window-close guard (which shows a modal dialog and waits
     // for the user when a file is dirty) can never block teardown. Without
