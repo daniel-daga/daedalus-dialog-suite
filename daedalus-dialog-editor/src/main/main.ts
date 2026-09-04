@@ -82,6 +82,36 @@ interface RegisteredProjectConfig {
 const registeredProjectConfigs = new Map<string, RegisteredProjectConfig>();
 let activeProjectFileKey: string | null = null;
 
+/**
+ * Every path `world:saveDialog` has handed back — the only targets `world:save`
+ * will write to.
+ *
+ * The path whitelist cannot express this on its own, and that is the whole of
+ * why this exists: the world the user opened is legitimately *readable*, so any
+ * whitelist that lets the worker load it also lets a `saveWorld` call name it.
+ * A write over a retail `.ZEN` has to be a thing the user chose in a save
+ * dialog, not a thing the renderer decided — the overwrite prompt and the
+ * `.edited.zen` suggestion are `WorldSurface`'s, which is the side the rule is
+ * about. Reset with the handlers, like the registered configs above.
+ */
+const dialogChosenSaveTargets = new Set<string>();
+
+/**
+ * Make one world file reachable — the file itself and its `.folders.json`
+ * sidecar, and nothing else in the folder it sits in.
+ *
+ * The script dialogs have always granted the exact file they opened
+ * (`addAllowedFile`); the world ones granted `path.dirname(...)`, recursively,
+ * which for a world listed out of a Gothic install is the whole of
+ * `_work/Data/Worlds`. The sidecar is the one other path an open legitimately
+ * reads or writes, and it is derived here rather than trusted from the
+ * renderer, which is what keeps the pair exact.
+ */
+function allowWorldFile(worldPath: string): void {
+  pathValidator.addAllowedFile(worldPath);
+  pathValidator.addAllowedFile(worldFoldersService.sidecarPath(worldPath));
+}
+
 function projectFileKey(filePath: string): string {
   const normalized = path.normalize(path.resolve(filePath));
   return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
@@ -323,6 +353,7 @@ app.on('window-all-closed', () => {
 export function setupIpcHandlers() {
   registeredProjectConfigs.clear();
   activeProjectFileKey = null;
+  dialogChosenSaveTargets.clear();
   // Parser handler (main process has access to native modules)
   ipcMain.handle('parser:parseSource', async (_event, sourceCode: unknown) => {
     try {
@@ -802,7 +833,7 @@ export function setupIpcHandlers() {
         ? null
         : await readGmbtDefaultWorld(project.gmbtProjectDir);
       const worlds = await discoverWorlds(project.resolvedAssetRoots, defaultWorld);
-      for (const world of worlds) pathValidator.addAllowedPath(path.dirname(world.path));
+      for (const world of worlds) allowWorldFile(world.path);
       return worlds;
     } catch (error) {
       console.error('[IPC] world:listWorlds error:', error);
@@ -845,7 +876,7 @@ export function setupIpcHandlers() {
       if (result.canceled || result.filePaths.length === 0) return null;
 
       const worldPath = result.filePaths[0];
-      pathValidator.addAllowedPath(path.dirname(worldPath));
+      allowWorldFile(worldPath);
       return worldPath;
     } catch (error) {
       console.error('[IPC] world:openDialog error:', error);
@@ -1022,7 +1053,8 @@ export function setupIpcHandlers() {
       });
       if (result.canceled || !result.filePath) return null;
 
-      pathValidator.addAllowedPath(path.dirname(result.filePath));
+      pathValidator.addAllowedFile(result.filePath);
+      dialogChosenSaveTargets.add(path.normalize(result.filePath));
       return result.filePath;
     } catch (error) {
       console.error('[IPC] world:saveDialog error:', error);
@@ -1033,7 +1065,12 @@ export function setupIpcHandlers() {
   ipcMain.handle('world:save', async (_event, request: unknown) => {
     try {
       assertSaveWorldRequest(request);
-      await pathValidator.validatePathResolved(request.targetPath);
+      // Ahead of the whitelist, because the whitelist cannot answer it: the
+      // opened world is readable and would therefore be writable.
+      if (!dialogChosenSaveTargets.has(path.normalize(request.targetPath))) {
+        throw new Error('Choose where to save through the save dialog.');
+      }
+      await pathValidator.validatePathResolved(request.targetPath, { write: true });
       await worldService.saveWorld(request.targetPath);
     } catch (error) {
       if (error instanceof PathValidationError) {

@@ -1401,8 +1401,17 @@ Three decisions are worth keeping:
   file the world was opened from** (`NewWorld.zen` → `NewWorld.edited.zen`).
   The worlds this app opens are retail game files. Overwriting one stays
   reachable — the OS dialog asks — but it has to be asked for, and the renderer
-  never names its own target: the dialog is what puts the directory on the path
-  whitelist.
+  never names its own target: **`world:save` writes only to a path
+  `world:saveDialog` handed back**, and refuses anything else before it reaches
+  the whitelist at all.
+  The whitelist cannot express that rule and was never enough for it (fixed
+  2026-09-04, review §2.1): the opened world is legitimately *readable*, so any
+  grant that lets the worker load it also lets a `saveWorld` call name it — and
+  until then those grants were `path.dirname(...)`, recursively, which for a
+  world listed out of an install is the whole of `_work/Data/Worlds`. The world
+  dialogs and the world list now grant the **exact file plus its
+  `.folders.json` sidecar** (`allowWorldFile`), as the script dialogs always
+  did.
 - **The warnings are about whether to save at all**, so they come first: the
   lighting a world was compiled with is not re-baked by an edit (only Spacer's
   `compile light` does that, and re-running it rebuilds the world from its
