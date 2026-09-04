@@ -1188,6 +1188,24 @@ than fixtures:
   units, already one-to-one with the cursor) and deliberately not applied to
   `__worldViewport.turnGizmo`, which stands in for this pointer maths rather
   than running it — so `verify-world-edit.js` still means the radians it says.
+- **The translate gizmo's plane handles are mirrored into the camera's octant**
+  (2026-09-04). Each plane square — XY, YZ, XZ — is drawn once, in the positive
+  quadrant of the two axes it names, and `setupGizmo` bakes that offset into the
+  geometry, so `handle.position` is the gizmo's origin and the square never
+  moves. Orbit past it and the square is behind the VOB, on top of the axis
+  lines: dragging a VOB in a plane becomes a hunt for a few pixels. The arrows
+  have no such problem — each is drawn at both `+0.5` and `-0.5`.
+  `DampedTransformControls` chains onto the gizmo's own `updateMatrixWorld` —
+  there is no event for it, and anything earlier is undone by the layout it runs
+  every frame — and negates the handle's scale on each axis the eye is negative
+  along, mirroring rather than moving because the offset is in the geometry and
+  there is no constant of the library's to reuse. A mirrored handle is still
+  pickable: it is a closed box, so a flipped winding still gives a ray one front
+  face against its `FrontSide` material. `gizmoPlaneFacing.test.ts` pins that
+  and the octant, against a stand-in — `three/examples/jsm` is ESM and the Jest
+  suite is not, which is why every gizmo spec here mocks the library. What no
+  test here reaches is the drag itself: unwitnessed until somebody moves a VOB
+  in a plane from the far side.
 - **A structural edit must not move the camera.** The scene is rebuilt from the
   world after one, which is the same path an open takes and therefore re-framed
   the camera from the bbox — throwing away the view a placement was aimed from,
