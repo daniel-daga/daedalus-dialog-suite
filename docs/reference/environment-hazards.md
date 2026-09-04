@@ -41,6 +41,12 @@ test against, and a junction reproduces it on any platform. `--- Electron main
 process output ---` in a failing `e2e-electron` job's log is the main process's
 own `console.error`, which is where a refusal like this actually says so.
 
+**Nothing on a push runs that job.** The only real-Electron E2E on Windows is
+`build-windows.yml`'s `e2e-electron-windows`, and that workflow is
+`workflow_dispatch` only, so a Windows-only regression sits on a green `master`
+until somebody dispatches a build. This one did, for a day. Dispatch it before
+trusting master for a release, not after.
+
 ## Building the native addon
 
 - **Run `node scripts/build-zenkit.js` before `node-gyp`** — it resets the

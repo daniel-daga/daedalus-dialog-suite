@@ -225,17 +225,11 @@ the card stays in Next, report BLOCKED, a human decides. Empty is normal.
 *(flushed 2026-09-05 — texture decoding, the machine-local Gothic install, the
 GMBT project/world-list and quick-test button, and the plane-gizmo fix all
 landed 2026-08-27 to 2026-09-04; substance is in `git log` and each already
-has a forward pointer at §16.31, §16.29 and `level-editor.md` §7.)*
+has a forward pointer at §16.31, §16.29 and `level-editor.md` §7. Flushed
+again the same day: the 2026-09-04 review's ranked four and ten more, whose
+one forward fact — §6 is what is left — is the `WorldViewport.tsx` card in
+Next.)*
 
-- **The 2026-09-04 review's ranked four, plus ten more — landed 2026-09-05.**
-  The scatter brush's raycaster had no layer mask and never hit the world;
-  `world:save` wrote anywhere in a whitelisted directory; a half-turn onto a
-  normal sheared instead of rotating; a `ReparentVob` undo could wedge the
-  stack; an edit in flight during an open landed on the wrong world's stack,
-  and the renderer rebuilt twice per placement; Ctrl+Z reached past its own
-  guards. Plus a null-endpoint segfault in the binding, serialized sidecar
-  saves, scoped worker handlers, silent overlay/undo failures now reported,
-  a cross-world clipboard, a non-finite-float guard, and the UI's
-  silent-feedback cluster (refusal reasons, a dirty marker, Ctrl+S,
-  dismissible banners, axis labels, a shortcut legend). §6 is what is left.
-  `docs/plans/level-editor-review-2026-09-04.md`
+- **`world-folders.spec.ts` failed only on GitHub's Windows runner — fixed
+  2026-09-05**, with the reason a failing `e2e-electron` test now prints.
+  `environment-hazards.md`, *"`os.tmpdir()` on GitHub's Windows runner"*
