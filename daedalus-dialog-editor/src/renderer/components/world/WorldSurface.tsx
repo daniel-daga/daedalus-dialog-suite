@@ -612,7 +612,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     // dragging, where there is no longer a dot to see.
     if (!next) selectWaypoint(null);
     if (next && waynet === null) await readWaynetInto(setWaynet);
-  }, [showWaynet, waynet, selectWaypoint]);
+  }, [showWaynet, waynet, selectWaypoint, readWaynetInto]);
 
   // The markers stand on waypoints, so the layer needs the payload the waynet
   // overlay needs. The open reads it already; this covers the case where that
@@ -656,7 +656,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       setSpawnState(null);
     }
     if (next && waynet === null) await readWaynetInto(setWaynet);
-  }, [showSpawns, waynet]);
+  }, [showSpawns, waynet, readWaynetInto]);
 
   const listAssets = useCallback(
     (assetPath: string) => window.editorAPI.listWorldAssets(assetPath),
