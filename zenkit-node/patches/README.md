@@ -102,6 +102,7 @@ regardless of what upstream does with it.
 | `0048` | Every ASCII float written with `std::to_string` — `%f`, six decimals, always — where ZenGin wrote nine significant digits with its MSVC CRT's three-digit exponent. It both pads (`0` → `0.000000`) and *truncates* (`1511.77087` → `1511.770874`, and anything under 1e-6 → `0.000000`). `%.9g` is what the retail ASCII worlds hold and is also what round-trips a float exactly, so no parsed value changes. OldCamp: 440 struct findings → 8, re-save 4,012,132 B → 3,979,084 B against a 3,979,132 B original |
 | `0050` | G2's packed `zCVob` writer stored `physicsEnabled` in bit 6 only when a save-game rigid-body payload existed. The flag is independent of that payload, so an ordinary authored world VOB with `physicsEnabled=true` was saved as false. Write bit 6 directly while retaining the payload guard. |
 | `0051` | Unpacked ASCII `visualAniMode` is a 32-bit enum while ZenKit narrows it to an 8-bit `AnimationType`. A retail-shaped value `145297640` re-saved as `232`. Preserve the raw value only while its narrowed semantic value remains unchanged. |
+| `0052` | UCRT `%.9g` rounds exact halfway floats to even, while ZenGin's legacy formatter rounded away from zero: `-3055.890625` must write `-3055.89063`. One shared formatter preserves ordinary nine-digit output and fixes halfway scalar, vec3, and raw-float values. |
 
 `0020`, `0021` and `0022` are the strongest candidates: standalone, no API change,
 no fidelity argument needed. `0018` is a portability crash fix with identical output.

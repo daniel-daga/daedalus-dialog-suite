@@ -1,0 +1,112 @@
+ASCII: reproduce ZenGin's nine-digit halfway rounding.
+
+ZenGin's MSVC formatter rounded an exact nine-significant-digit halfway case
+away from zero. The current UCRT `%g` follows ties-to-even, turning
+`-3055.890625` into `-3055.89062` rather than ZenGin's `-3055.89063` (and
+likewise for positive values).
+
+Use one formatter for scalar, vec3 and raw-float writers. It keeps the normal
+nine-significant-digit `to_chars` form and three-digit exponent, while exact
+halfway values are rendered from their integer decimal significand with the
+legacy away-from-zero rule. Newly rendered values retain `%g`'s fixed/scientific
+thresholds and trimmed zeroes.
+
+diff --git a/src/archive/ArchiveAscii.cc b/src/archive/ArchiveAscii.cc
+--- a/src/archive/ArchiveAscii.cc
++++ b/src/archive/ArchiveAscii.cc
+@@ -7,6 +7,7 @@
+ 
+ #include <array>
+ #include <charconv>
++#include <cmath>
+ #include <cstdio>
+ #include <cstring>
+ #include <ctime>
+@@ -254,22 +255,73 @@ namespace zenkit {
+ 		return std::string_view {buf.data(), static_cast<size_t>(r.ptr - buf.data())};
+ 	}
+ 
++	static void pad_exponent(std::string& out) {
++		auto const e = out.find('e');
++		if (e != std::string::npos && out.size() - e == 4) {
++			out.insert(e + 2, 1, '0');
++		}
++	}
++
++	static std::string format_halfway(float v, std::uint64_t digits, int exponent) {
++		if (digits == 1'000'000'000) {
++			digits = 100'000'000;
++			++exponent;
++		}
++
++		std::array<char, 16> buf {};
++		auto const result = std::to_chars(buf.data(), buf.data() + buf.size(), digits);
++		std::string significand {buf.data(), static_cast<size_t>(result.ptr - buf.data())};
++		while (significand.size() > 1 && significand.back() == '0') significand.pop_back();
++
++		std::string out;
++		if (std::signbit(v)) out.push_back('-');
++		if (exponent < -4 || exponent >= 9) {
++			out.push_back(significand.front());
++			if (significand.size() > 1) {
++				out.push_back('.');
++				out.append(significand.substr(1));
++			}
++			out.push_back('e');
++			out.push_back(exponent < 0 ? '-' : '+');
++			std::array<char, 4> exponent_buf {};
++			auto const exp_result = std::to_chars(exponent_buf.data(), exponent_buf.data() + exponent_buf.size(), std::abs(exponent));
++			for (auto count = exp_result.ptr - exponent_buf.data(); count < 3; ++count) out.push_back('0');
++			out.append(exponent_buf.data(), static_cast<size_t>(exp_result.ptr - exponent_buf.data()));
++			return out;
++		}
++
++		auto const point = exponent + 1;
++		if (point <= 0) {
++			out.append("0.");
++			out.append(static_cast<size_t>(-point), '0');
++			out.append(significand);
++		} else if (static_cast<size_t>(point) >= significand.size()) {
++			out.append(significand);
++			out.append(static_cast<size_t>(point) - significand.size(), '0');
++		} else {
++			out.append(significand.substr(0, static_cast<size_t>(point)));
++			out.push_back('.');
++			out.append(significand.substr(static_cast<size_t>(point)));
++		}
++		return out;
++	}
++
+ 	/// \brief Formats a float the way ZenGin's ASCII archiver did.
+-	///
+-	/// Nine significant digits, trailing zeros stripped, and the three exponent
+-	/// digits ZenGin's MSVC CRT always printed (`2.98023224e-008`; modern CRTs
+-	/// print two). `std::to_string` is `%f` - six decimals, always - which both
+-	/// pads every round value (`0` became `0.000000`) and *loses* digits at
+-	/// world magnitudes (`1511.77087` became `1511.770874`) and below
+-	/// (`2.98023224e-008` became `0.000000`). Byte fidelity only: nine digits
+-	/// round-trips a float exactly, so no parsed value changes.
+ 	static std::string ftosv(float v) {
+ 		char buf[64];
+-		std::snprintf(buf, sizeof buf, "%.9g", static_cast<double>(v));
++		auto const result = std::to_chars(buf, buf + sizeof buf, static_cast<double>(v), std::chars_format::general, 9);
++		std::string out {buf, static_cast<size_t>(result.ptr - buf)};
++		if (!std::isfinite(v) || v == 0.0f) {
++			pad_exponent(out);
++			return out;
++		}
+ 
+-		std::string out {buf};
+-		auto e = out.find('e');
+-		if (e != std::string::npos && out.size() - e == 4) {
+-			out.insert(e + 2, 1, '0');
++		auto const exponent = static_cast<int>(std::floor(std::log10(std::fabs(static_cast<double>(v)))));
++		auto const scaled = std::fabs(static_cast<double>(v)) * std::pow(10.0, 8 - exponent);
++		auto const truncated = static_cast<std::uint64_t>(scaled);
++		if (scaled - static_cast<double>(truncated) == 0.5) {
++			return format_halfway(v, truncated + 1, exponent);
+ 		}
++
++		pad_exponent(out);
+ 		return out;
+ 	}
