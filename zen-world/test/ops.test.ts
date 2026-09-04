@@ -2183,12 +2183,27 @@ describe('a reparent op', () => {
     expect(op.to).toEqual({ path: '2', parentPath: null, slot: 2 });
   });
 
-  it('is its own inverse, with the two sides swapped', () => {
+  it('inverts by swapping the sides when the move renumbered neither of them', () => {
+    // The common case, and the one that made a plain swap look like the whole
+    // rule: the old parent is a root and the VOB went into a list two levels
+    // down, so the insertion moved nothing the inverse has to name. When it
+    // does, the swap is not enough — see `parentAfterInsert` and the round
+    // trips below.
     const op = reparentVob(reader(), 2, 1, 0);
     const back = invertOp(op);
 
     expect(back).toEqual({ op: 'ReparentVob', vob: 2, from: op.to, to: op.from });
     expect(invertOp(back)).toEqual(op);
+  });
+
+  it('names the old parent where the move left it, not where it was', () => {
+    // Pulling a child out to the front of the roots: its parent was root 0 and
+    // is root 1 the moment the child lands there. An inverse still saying `0`
+    // asks for the VOB to be reparented into itself.
+    const op = reparentVob(reader(), 2, null, 0);
+
+    expect(op.from.parentPath).toBe('0');
+    expect(invertOp(op).to).toEqual({ path: '0/1', parentPath: '1', slot: 1 });
   });
 
   it('reaches the binding from the path the VOB is at, each way round', () => {
@@ -2219,6 +2234,117 @@ describe('a reparent op', () => {
     commitOps(binding, [invertOp(op)]);
 
     expect(calls).toEqual(['0/1 -> 0/0[0]', '0/0/0 -> 0[1]']);
+  });
+
+  /**
+   * A binding that actually holds a tree, so a round trip is a round trip.
+   *
+   * The fake above answers whatever path it is asked for, which is what let an
+   * inverse addressing the wrong parent look correct: nothing in it can move,
+   * so nothing in it can move to the wrong place. This one models the binding's
+   * contract structurally rather than by index arithmetic — `parentPath` names
+   * a node in the tree **as it stands before the removal**, and the node is
+   * resolved to a reference *first*, so the removal shift falls out of the
+   * model instead of being a second copy of the formula under test.
+   */
+  interface Node { name: string; children: Node[] }
+
+  function makeTreeBinding(roots: Node[]) {
+    const listAt = (parentPath: string | null): Node[] => {
+      if (parentPath === null) return roots;
+      let node: Node | undefined;
+      let list = roots;
+      for (const segment of parentPath.split('/').map(Number)) {
+        node = list[segment];
+        if (node === undefined) throw new RangeError(`no vob at ${parentPath}`);
+        list = node.children;
+      }
+      return list;
+    };
+    const pathOf = (target: Node[], list = roots, prefix: string | null = null): string | null => {
+      if (list === target) return prefix;
+      for (let i = 0; i < list.length; i++) {
+        const under = prefix === null ? String(i) : `${prefix}/${i}`;
+        const found = pathOf(target, list[i].children, under);
+        if (found !== null || list[i].children === target) return list[i].children === target ? under : found;
+      }
+      return null;
+    };
+    const contains = (node: Node, maybe: Node[]): boolean =>
+      node.children === maybe || node.children.some((child) => contains(child, maybe));
+
+    const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+      setVobPosition: () => { throw new Error('not a move'); },
+      setVobRotation: () => { throw new Error('not a turn'); },
+      setVobProp: () => { throw new Error('not a property change'); },
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: () => { throw new Error('not an insert'); },
+      deleteVob: () => { throw new Error('not a delete'); },
+      reparentVob: (from, parentPath, slot) => {
+        const segments = from.split('/').map(Number);
+        const sourceList = listAt(segments.length === 1 ? null : segments.slice(0, -1).join('/'));
+        const source = sourceList[segments[segments.length - 1]];
+        if (source === undefined) throw new RangeError(`no vob at ${from}`);
+
+        // Resolved before the removal, which is the contract, and the reason
+        // this is a reference rather than a path.
+        const destination = listAt(parentPath);
+        if (destination === source.children || contains(source, destination)) {
+          throw new RangeError('cannot reparent a vob into itself');
+        }
+
+        sourceList.splice(sourceList.indexOf(source), 1);
+        destination.splice(slot, 0, source);
+        const landedIn = pathOf(destination);
+        return landedIn === null ? String(destination.indexOf(source))
+          : `${landedIn}/${destination.indexOf(source)}`;
+      },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+    };
+    return binding;
+  }
+
+  /** The tree the reader above describes, as the binding's model holds it. */
+  const tree = (): Node[] => ([
+    { name: 'v0', children: [{ name: 'v1', children: [] }, { name: 'v2', children: [] }] },
+    { name: 'v3', children: [] },
+  ]);
+
+  const shape = (roots: Node[]): string => roots
+    .map((node) => (node.children.length === 0 ? node.name : `${node.name}(${shape(node.children)})`))
+    .join(' ');
+
+  it.each([
+    ['a child out to the front of the roots', 2, null, 0],
+    ['the first child out to the front of the roots', 1, null, 0],
+    ['a child in under its own later sibling', 1, 2, 0],
+    ['a root in under another root', 3, 0, 0],
+    ['a child to the end of the roots', 1, null, 2],
+  ])('undoes %s and leaves the world exactly as it was', (_what, vob, toParent, slot) => {
+    // The forward op predicts where the VOB lands, accounting for its own
+    // removal (`landingPath`). Nothing made the same account for the *insertion*
+    // on the way back: `invertOp` handed the binding `from.parentPath` as it
+    // read before the move, so a move that landed the VOB ahead of its own old
+    // parent in a list they share addressed the wrong parent — reparenting the
+    // VOB into itself in the worst case, and landing somewhere else in the rest.
+    // Every one of those is refused by the landing check rather than applied,
+    // and `WorldService.replayOne` leaves a refused batch on the stack: the
+    // entry never comes off, and everything under it is unreachable for good.
+    const roots = tree();
+    const binding = makeTreeBinding(roots);
+    const before = shape(roots);
+
+    const op = reparentVob(reader(), vob, toParent, slot);
+    commitOps(binding, [op]);
+    expect(shape(roots)).not.toEqual(before);
+
+    commitOps(binding, [invertOp(op)]);
+    expect(shape(roots)).toEqual(before);
   });
 
   it('refuses a move that did not land where the op says it would', () => {

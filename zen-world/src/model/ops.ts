@@ -1993,6 +1993,39 @@ export function deleteVob(reader: VobReader, vob: number): DeleteVob {
   return { op: 'DeleteVob', vob, path };
 }
 
+/**
+ * Where a reparented VOB's **old parent** sits once the move has happened —
+ * the address its own undo has to name.
+ *
+ * The forward move does two things to the tree, and only one of them can touch
+ * this path. The removal renumbers the list the VOB came out of, and the old
+ * parent owns that list rather than sitting in it, so it is untouched. The
+ * insertion renumbers the destination list — and the old parent may well be a
+ * member of *that* one, at or after the slot the VOB was put in, in which case
+ * it has shifted down one.
+ *
+ * Pulling a child out to the front of the roots is the whole of it: the parent
+ * was root 0, the child lands at root 0, and the parent is root 1 now. Undoing
+ * with the recorded `0` reparents the VOB into itself — refused by the binding,
+ * refused again by the landing check, and left on the undo stack by
+ * `WorldService.replayOne`, where it blocks every entry beneath it for good.
+ */
+function parentAfterInsert(op: ReparentVob): string | null {
+  const parentPath = op.from.parentPath;
+  if (parentPath === null) return null;
+
+  const segments = parentPath.split('/');
+  const list = segments.length === 1 ? null : segments.slice(0, -1).join('/');
+  // A different list is renumbered by nothing this op did.
+  if (list !== op.to.parentPath) return parentPath;
+
+  const slot = Number(segments[segments.length - 1]);
+  if (slot < op.to.slot) return parentPath;
+
+  segments[segments.length - 1] = String(slot + 1);
+  return segments.join('/');
+}
+
 /** The op that undoes `op` — pure, and an ordinary op in its own right, for
  *  every op that has one. A barrier does not, and is refused rather than given
  *  an inverse that would restore something else. */
@@ -2020,7 +2053,11 @@ export function invertOp(op: WorldOp): Exclude<WorldOp, DeleteVob | DeleteWaypoi
     return { ...op, from: op.to, to: op.from };
   }
   if (op.op === 'ReparentVob') {
-    return { ...op, from: op.to, to: op.from };
+    // The one op whose inverse is not a swap. `to.path` already accounts for the
+    // forward *removal* (`landingPath`); `from.parentPath` accounts for nothing,
+    // because when the op was built there was nothing yet to account for — and
+    // by the time the inverse runs, the forward *insertion* has happened.
+    return { ...op, from: op.to, to: { ...op.from, parentPath: parentAfterInsert(op) } };
   }
   if (op.op === 'MoveWaypoint') {
     return { ...op, from: op.to, to: op.from };
