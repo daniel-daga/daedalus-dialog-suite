@@ -613,6 +613,59 @@ describe('an align to normal', () => {
     expect(ops[1].toBbox).toBeNull();
   });
 
+  /** How far a matrix is from being a rotation: max |RᵀR − I| over the nine
+   *  entries. A shear or a scale shows up here and nowhere else — the engine
+   *  will happily store one and draw the VOB skewed. */
+  function orthonormalityError(r: readonly number[]): number {
+    let worst = 0;
+    for (let i = 0; i < 3; i++) {
+      for (let j = 0; j < 3; j++) {
+        const dot = r[i] * r[j] + r[3 + i] * r[3 + j] + r[6 + i] * r[6 + j];
+        worst = Math.max(worst, Math.abs(dot - (i === j ? 1 : 0)));
+      }
+    }
+    return worst;
+  }
+
+  it('turns an upright VOB right over for a normal pointing straight down', () => {
+    // A ceiling, an overhang, the underside of a bridge. The half turn is the
+    // one case Rodrigues' formula cannot take the axis from the cross product,
+    // because the cross product of a vector and its opposite is zero — and the
+    // branch that picks a perpendicular axis instead used its *length* as
+    // sin θ, which for a half turn is 0. The result was a shear that the
+    // request validator (finite entries only) would have written to the world.
+    const ops = alignVobsToNormal(reader(), [{ vob: 0, normal: [0, -1, 0] }], () => BOUNDS);
+
+    expect(orthonormalityError(ops[0].to)).toBeLessThan(1e-9);
+    const [, y1, , , y4, , , y7] = ops[0].to;
+    expect([y1, y4, y7].map((v) => Math.round(v))).toEqual([0, -1, 0]);
+  });
+
+  it('stays a rotation when the VOB\'s own matrix has drifted off unit length', () => {
+    // 30.2% of retail VOBs are not orthonormal (zenkit-node README), so the
+    // middle column this reads as "up" is routinely a little longer or shorter
+    // than 1. Taken as a cosine, that alone skews the turn.
+    const drifted: ZenRotation = [1.02, 0, 0, 0, 1.02, 0, 0, 0, 1.02];
+    const withDrift = () => createVobReader(vobIndex([
+      { childIndex: 0, pos: [100, 200, 300], rot: drifted },
+    ]));
+
+    const ops = alignVobsToNormal(withDrift(), [{ vob: 0, normal: [1, 0, 0] }], () => BOUNDS);
+
+    // The delta itself is a rotation, so the drift is carried, never amplified:
+    // the result is exactly the drifted matrix turned, and no more skewed. The
+    // tolerance is float32's, not the arithmetic's — the index stores rotations
+    // as float32, so 1.02 comes back as 1.0199999809 and dividing it out leaves
+    // a few times 1e-8 behind.
+    const delta = ops[0].to.map((v) => v / 1.02);
+    expect(orthonormalityError(delta)).toBeLessThan(1e-6);
+    const [, y1, , , y4, , , y7] = ops[0].to;
+    const up = [y1, y4, y7];
+    const length = Math.hypot(up[0], up[1], up[2]);
+    expect([up[0] / length, up[1] / length, up[2] / length].map((v) => Math.round(v)))
+      .toEqual([1, 0, 0]);
+  });
+
   it('is nothing at all when nothing is selected', () => {
     expect(alignVobsToNormal(reader(), [], () => null)).toEqual([]);
   });
@@ -3157,6 +3210,25 @@ describe('a scatter stroke', () => {
     expect(localUp[0]).toBeCloseTo(slope[0]);
     expect(localUp[1]).toBeCloseTo(slope[1]);
     expect(localUp[2]).toBeCloseTo(slope[2]);
+  });
+
+  it('stands a copy up under a ceiling', () => {
+    // The scatter brush's own half-turn case, and the second of the two places
+    // the stand-up is computed — a fix in one that missed the other would put
+    // sheared foliage on every overhang.
+    const ops = scatterVobs(reader(), [
+      { source: 2, position: [0, 0, 0], normal: [0, -1, 0], yaw: 0 },
+    ]);
+
+    const rotation = addsOf(ops)[0].to!.rotation!;
+    for (let i = 0; i < 3; i++) {
+      for (let j = 0; j < 3; j++) {
+        const dot = rotation[i] * rotation[j] + rotation[3 + i] * rotation[3 + j]
+          + rotation[6 + i] * rotation[6 + j];
+        expect(dot).toBeCloseTo(i === j ? 1 : 0, 9);
+      }
+    }
+    expect([rotation[1], rotation[4], rotation[7]].map((v) => Math.round(v))).toEqual([0, -1, 0]);
   });
 
   it('normalises a normal that is not unit length', () => {

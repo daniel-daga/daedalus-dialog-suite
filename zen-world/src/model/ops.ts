@@ -712,31 +712,61 @@ export function dropVobsToGround(
  * back to an arbitrary perpendicular axis for the antiparallel case, where the
  * cross product is zero and any axis through that pair is a valid 180° turn.
  */
+/** A direction of unit length, or null for a vector that names no direction. */
+function unitVector(v: ZenPosition): ZenPosition | null {
+  const length = Math.hypot(v[0], v[1], v[2]);
+  if (!(length > 0)) return null;
+  return [v[0] / length, v[1] / length, v[2] / length];
+}
+
 function rotationBetween(from: ZenPosition, to: ZenPosition): ZenRotation {
-  const dot = from[0] * to[0] + from[1] * to[1] + from[2] * to[2];
   const IDENTITY: ZenRotation = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+
+  // Both sides are normalised here rather than by the callers, because `dot`
+  // below is used as cos θ and a vector of length 1.02 is not a cosine of
+  // anything. One caller passes a hit normal (unit in practice) and both pass a
+  // *column of a VOB's own matrix*, and 30.2% of retail VOBs are not
+  // orthonormal — so the drifted case is the common one, not the exotic one.
+  // A zero-length side names no direction, and the turn onto it is no turn.
+  const a = unitVector(from);
+  const b = unitVector(to);
+  if (a === null || b === null) return IDENTITY;
+
+  // Clamped: two unit vectors can still dot to 1 + 1e-16, and `oneMinusCos`
+  // going negative would put a mirror in the matrix.
+  const dot = Math.min(1, Math.max(-1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2]));
   if (dot > 1 - 1e-9) return IDENTITY;
 
   let axis: ZenPosition = [
-    from[1] * to[2] - from[2] * to[1],
-    from[2] * to[0] - from[0] * to[2],
-    from[0] * to[1] - from[1] * to[0],
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
   ];
+  // |a x b| is sin θ for unit a and b — the one case below where that is not
+  // also the length used to normalise the axis is exactly why the two are
+  // separate names.
   let sin = Math.hypot(axis[0], axis[1], axis[2]);
+  let length = sin;
 
   if (dot < -1 + 1e-9) {
     // Antiparallel: the cross product is ~zero, so pick any axis perpendicular
     // to `from` instead of the one between the (undefined) pair.
-    const reference: ZenPosition = Math.abs(from[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+    const reference: ZenPosition = Math.abs(a[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
     axis = [
-      from[1] * reference[2] - from[2] * reference[1],
-      from[2] * reference[0] - from[0] * reference[2],
-      from[0] * reference[1] - from[1] * reference[0],
+      a[1] * reference[2] - a[2] * reference[1],
+      a[2] * reference[0] - a[0] * reference[2],
+      a[0] * reference[1] - a[1] * reference[0],
     ];
-    sin = Math.hypot(axis[0], axis[1], axis[2]);
+    length = Math.hypot(axis[0], axis[1], axis[2]);
+    // θ is π, so sin θ is 0 — *not* the length of the axis just picked, which
+    // is ~1 and has nothing to do with the angle. Taking one for the other left
+    // a matrix with max |RᵀR − I| = 1: not a rotation at all, but nine finite
+    // numbers, which is all `assertApplyOpsRequest` can check. What is left is
+    // I + 2K², the half turn about that axis.
+    sin = 0;
   }
 
-  const [x, y, z] = [axis[0] / sin, axis[1] / sin, axis[2] / sin];
+  const [x, y, z] = [axis[0] / length, axis[1] / length, axis[2] / length];
   const oneMinusCos = 1 - dot;
 
   // I + sin(θ)·K + (1 - cos θ)·K², K the cross-product matrix of the axis.
@@ -745,6 +775,19 @@ function rotationBetween(from: ZenPosition, to: ZenPosition): ZenRotation {
     y * x * oneMinusCos + z * sin, dot + y * y * oneMinusCos, y * z * oneMinusCos - x * sin,
     z * x * oneMinusCos - y * sin, z * y * oneMinusCos + x * sin, dot + z * z * oneMinusCos,
   ];
+}
+
+/**
+ * The turn that stands a VOB's own **+Y axis** — the middle column of its
+ * rotation — up onto `normal`, composed on the left of whatever it already is.
+ *
+ * The two callers below differ only in what they do with it: an align applies it
+ * to the VOB's current pose, a scatter composes it with the yaw it is also
+ * applying. Neither normalises the column it reads, and neither has to: that is
+ * `rotationBetween`'s job now, which is the one place it can be got right.
+ */
+function standUpDelta(rotation: ZenRotation, normal: ZenPosition): ZenRotation {
+  return rotationBetween([rotation[1], rotation[4], rotation[7]], normal);
 }
 
 /**
@@ -768,10 +811,7 @@ export function alignVobsToNormal(
     const from = reader.rotation(vob);
     if (from === null) throw new RangeError(`no vob ${vob} in the index`);
 
-    const currentUp: ZenPosition = [from[1], from[4], from[7]];
-    const length = Math.hypot(normal[0], normal[1], normal[2]);
-    const unitNormal: ZenPosition = [normal[0] / length, normal[1] / length, normal[2] / length];
-    const delta = rotationBetween(currentUp, unitNormal);
+    const delta = standUpDelta(from as ZenRotation, normal);
 
     return rotateVob(reader, vob, multiplyRotation(delta, from as ZenRotation), boundsOf(vob));
   });
@@ -1675,9 +1715,7 @@ export function scatterVobs(
     // compose rather than the tilt undoing the spin.
     const spin = rotationAboutUp(yaw);
     const spun = multiplyRotation(spin, from as ZenRotation);
-    const length = Math.hypot(normal[0], normal[1], normal[2]);
-    const unit: ZenPosition = [normal[0] / length, normal[1] / length, normal[2] / length];
-    const stand = rotationBetween([spun[1], spun[4], spun[7]], unit);
+    const stand = standUpDelta(spun, normal);
     // The delta the whole subtree moves by — both turns, so a descendant gets
     // the same one the root does — about the source's origin, landing the root
     // on the hit point.
