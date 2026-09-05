@@ -16,7 +16,7 @@ rationale (§1, §2), the phasing and gates (§11), the risks (§12), the Spacer
 parity backlog (§14), the undo bar (§15) and the open findings (§16).
 
 Section numbers are continuous across the two files and never reused, so a bare
-`§7` resolves whichever file you are in; `npm run board:check` fails if that
+`§7` resolves whichever file you are in; `npm run docs:check` fails if that
 stops being true.
 
 ---
@@ -280,12 +280,12 @@ open as later improvements. Neither is a prerequisite.
 
 ## 16. Open findings (2026-08-28)
 
-The long form of every open card on [`docs/BOARD.md`](../BOARD.md). The board
-carries one line and an owner per card and points here; this section carries the
-diagnosis, the measurement and the decision each one is waiting on. A card that
-closes takes its subsection with it — the commit is then the record. Numbers
-are never reused, so a flushed subsection leaves its gap and old pointers stay
-unambiguous. This is checked: `npm run board:check` (root, and CI) fails while
+The long form of every open [GitHub issue](https://github.com/daniel-daga/daedalus-dialog-suite/issues)
+that points here. The issue carries a few lines and a pointer; this section
+carries the diagnosis, the measurement and the decision it is waiting on. An
+issue that closes takes its subsection with it — the commit is then the record.
+Numbers are never reused, so a flushed subsection leaves its gap and old
+pointers stay unambiguous. This is checked: `npm run docs:check` (root, and CI) fails while
 a subsection declares itself *closed* or *landed*, either on its heading or
 opening its first paragraph. It cannot judge a subsection whose halves landed
 separately — mark the heading when the last half lands.
@@ -779,7 +779,7 @@ drowning them.** OldCamp's remaining 8 findings are exactly these:
    `WriteArchiveAscii::write_bool` was never given the same treatment. The
    retail ASCII worlds agree with the rule and nothing else does: 56 `=bool:-1`
    in 45,068 bool entries, and all 56 are `locked` (51) or `moveable` (5).
-   Carded in the board; it is a three-line patch with `0017` as its template,
+   Carded as an issue; it is a three-line patch with `0017` as its template,
    and it inherits `0017`'s "ours forever" triage — keying the archive layer on
    entry names is the layering violation upstream should reject.
 
@@ -1469,7 +1469,7 @@ four of the five.
 
 **Two of the seven names are not the names anyone says.** The archive — and so
 `CLASS_FIELDS`, the dump and the binding — spells them `oCTriggerScript` and
-`oCTriggerChangeLevel`, while the board card, this section and everyday speech
+`oCTriggerChangeLevel`, while the issue, this section and everyday speech
 say `zCTrigger…`. The spoken forms stay refused, and both test suites keep
 `zCTriggerScript` in their bad-class list for exactly that reason.
 
@@ -1651,7 +1651,7 @@ own Gate 3 (each seeded error class detected pre-compile), and it decomposes
 into static checks (pairing, orientation, accidental `P:` materials), then
 geometric ones (planarity, intersections, leak flood-fill, triangle limits),
 then spatial display, and only then face-material authoring. Two slices are
-carded here; the rest stays a phase and is deliberately not on the board.
+carded here; the rest stays a phase and is deliberately not in the tracker.
 
 **What the payload already holds, checked 2026-08-28 rather than assumed.**
 `normalizeWorld` sets `materials` (the mesh's material names, in the order
@@ -1746,8 +1746,8 @@ Phase 1c is a **phase**, not a card. §11 gives it five deliverables — NPC/ite
 rendering from static spawns, a time slider, occupancy/gap/overlap checks,
 cross-validation in the problems panel, and go-to-definition both directions —
 and only some of that is reachable with the data the project actually has.
-Four slices are carded here; the rest stays a phase and is deliberately not on
-the board, for reasons named at the bottom.
+Four slices are carded here; the rest stays a phase and is deliberately not in
+the tracker, for reasons named at the bottom.
 
 **What already exists, read out of the code 2026-08-29 rather than assumed.**
 §7's waypoint work landed more of 1c than its own section claims:
@@ -2751,7 +2751,7 @@ opening.
 Three runs: {A, B}, {C}, {D, E} — all run. F is the only open piece.
 
 **Phase ordering note.** §11 schedules 1b-2 before 1c, and 1b-2 is not finished
-— but what remains of it on the board (Euler order against Spacer) needs Spacer
+— but what remains of it open (Euler order against Spacer) needs Spacer
 itself and a person, as do the Gate 2b `07` rows. These slices were carded by
 Daniel on 2026-08-29 with that ordering understood: they are the work an
 unattended run *can* take while the 1b-2 remainder waits on hardware.

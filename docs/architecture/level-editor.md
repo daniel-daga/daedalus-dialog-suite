@@ -14,7 +14,7 @@ findings) and points here for the rest.
 **The section numbers are the plan's own, kept deliberately.** A pointer written
 `§7` predates the split and still resolves, because the two files hold disjoint
 numbers: §3–§10 and §13 are here, §1, §2, §11, §12 and §14–§16 are in the plan.
-`npm run board:check` fails if that ever stops being true. Do not renumber.
+`npm run docs:check` fails if that ever stops being true. Do not renumber.
 
 ---
 

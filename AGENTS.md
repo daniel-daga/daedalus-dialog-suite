@@ -17,6 +17,13 @@ Use package-local instructions when working inside a workspace:
 - `daedalus-parser/AGENTS.md`
 - `zenkit-node/README.md`, `zen-world/README.md`
 
+## Tracking Work
+
+Work is tracked in GitHub issues, not in a file. Read the open ones at the start
+of a session and file what you learned before it ends;
+[`docs/WORKFLOW.md`](docs/WORKFLOW.md) says how an issue is written, which
+labels mean what, and which of them an unattended run may take.
+
 ## Core Working Rules
 
 1. Use TDD for feature work and bug fixes:

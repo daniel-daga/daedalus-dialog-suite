@@ -15,7 +15,7 @@ item below that is gated on "a release having shipped" is simply not yet due.
 dialog/quest app, and the **level editor did not exist yet** — it is a whole
 subsystem that can write a world file, and §4 gained one item for it. Treat the
 rest of this checklist as covering the app this file knew about; anything about
-worlds is on `BOARD.md` and `docs/plans/level-editor.md`.
+worlds is in the GitHub issues and `docs/plans/level-editor.md`.
 
 ---
 
@@ -120,7 +120,7 @@ the substance of each item below; these are the human passes CI can't do.
   checklist was written and has no other item here. CI now proves the packaged
   app *opens* a world (`DDE_SMOKE_OPEN_WORLD` in `build-windows.yml`), but
   **nothing automated has watched the packaged renderer draw one** — that gap is
-  a Next card on the board. So: open a retail world in the packaged build,
+  an open issue. So: open a retail world in the packaged build,
   confirm the viewport renders, pick and edit a VOB, save, and re-open. Note
   that a world edited through the UI has an engine verdict only for the five ops
   Gate 2 tested — `DeleteVob`, `MoveWaypoint` and `SetVobClassProp` have none

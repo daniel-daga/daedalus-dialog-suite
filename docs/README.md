@@ -4,8 +4,9 @@ This directory is the canonical home for repository-level documentation.
 
 ## Structure
 
-- `BOARD.md` - what is in flight, who owns it, and the state of the tree. Read it
-  first; update it last. It holds only what nothing else holds.
+- `WORKFLOW.md` - how an issue is written, and the state of the tree. Read it
+  first, with the open [GitHub issues](https://github.com/daniel-daga/daedalus-dialog-suite/issues),
+  which are where work is tracked. It holds only what nothing else holds.
 - `architecture/` - durable architecture and boundary decisions.
 - `reference/` - durable implementation references and behavior mappings.
 - `plans/` - active implementation plans that are still in progress.
