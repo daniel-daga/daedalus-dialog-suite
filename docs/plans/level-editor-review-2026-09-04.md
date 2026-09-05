@@ -298,7 +298,7 @@ two raycasters (`:414`, `:582`) do enable all layers, and `VobOutline.ts:24`
 says "both raycasters" — the brush is the third, landed two days after the
 outline. Every scatter test mocks the viewport and calls `onScatterStroke`
 directly (`WorldSurface.scatter.test.tsx`), which is why it is green. The
-board's 09-03 card says the brush landed; nobody has painted with it.
+the 09-03 card said the brush landed; nobody has painted with it.
 
 ### 3.2 Every structural op tears down and recreates the `WebGLRenderer`, twice — **FIXED 2026-09-04**
 
@@ -337,7 +337,7 @@ context mode is fixed by its first `getContext`, so whichever tile kind is
 drawn second fails for the rest of the world session; `AssetThumbnails.produce`
 catches it as `{status:'failed'}` — a silently marked tile. Reachable in
 Favorites or any mixed listing. This is "the thumbnails' look", which the
-board lists as unwitnessed. Fix: a second canvas for the 2D path.
+the tracker lists as unwitnessed. Fix: a second canvas for the 2D path.
 
 ### 3.5 GPU buffers never released — **confirmed**
 
@@ -605,7 +605,7 @@ belongs with the viewport split above.
 canvas: whichever tile kind is drawn second fails for the rest of the session,
 silently, as a `{status:'failed'}` tile. Two lines to fix and no test can see
 it under jsdom, which has neither context — this is what "the thumbnails' look
-is unwitnessed" on the board actually means.
+is unwitnessed" in the tracker actually means.
 
 **§2.6 has no test.** The null-endpoint guard landed, but a dangling edge
 reference cannot be produced through the API — it comes from a malformed file,

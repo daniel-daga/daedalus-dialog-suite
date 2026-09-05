@@ -1,35 +1,19 @@
 #!/usr/bin/env node
-// Mechanical enforcement of two flush rules the docs state but nothing checked:
-// - docs/BOARD.md: Now + Next + Done together stay under the line budget
-//   (Deferred and Triage are budgeted separately, by the board's own rule).
-// - docs/plans/level-editor.md §16: a card that closes takes its subsection
+// Mechanical enforcement of the doc rules docs/WORKFLOW.md states but nothing
+// else checked:
+// - docs/plans/level-editor.md §16: an issue that closes takes its subsection
 //   with it, so no `### 16.x` heading may still say closed/landed.
-// Usage: node tools/check-board.js [boardPath] [planPath]  (paths for tests only)
+// - every bare `§N` resolves, and no number is a heading in two members of the
+//   level-editor doc set.
+// Usage: node tools/check-docs.js [workflowPath] [planPath]  (paths for tests only)
 'use strict';
 const fs = require('fs');
 const path = require('path');
 
 const root = path.join(__dirname, '..');
-const boardPath = process.argv[2] || path.join(root, 'docs', 'BOARD.md');
+const workflowPath = process.argv[2] || path.join(root, 'docs', 'WORKFLOW.md');
 const planPath = process.argv[3] || path.join(root, 'docs', 'plans', 'level-editor.md');
 const failures = [];
-
-const BUDGET = 80;
-const counted = new Set(['## Now', '## Next', '## Done']);
-let inCounted = false;
-let cardLines = 0;
-for (const line of fs.readFileSync(boardPath, 'utf8').split(/\r?\n/)) {
-  if (/^## /.test(line)) inCounted = counted.has(line.trim());
-  else if (inCounted) cardLines += 1;
-}
-if (cardLines > BUDGET) {
-  failures.push(
-    `${boardPath}: Now+Next+Done hold ${cardLines} lines (budget ${BUDGET}). ` +
-    'The fix is never to compress a card - move its prose to its home and leave the pointer.'
-  );
-} else {
-  console.log(`board: Now+Next+Done ${cardLines}/${BUDGET} lines`);
-}
 
 if (fs.existsSync(planPath)) {
   // A closure is declared one of two ways, and both are checked: a status
@@ -51,7 +35,7 @@ if (fs.existsSync(planPath)) {
     }
     if (declared) {
       failures.push(
-        `${planPath}:${i + 1}: §16.${m[1].split('.')[1]} is marked closed/landed - a closed card takes ` +
+        `${planPath}:${i + 1}: §16.${m[1].split('.')[1]} is marked closed/landed - a closed issue takes ` +
         'its subsection with it: route the forward facts, delete the rest; the commit is the record.'
       );
     }
@@ -68,7 +52,7 @@ if (fs.existsSync(planPath)) {
 // the filename beside it - and those are left alone.
 const DOC_SET = [planPath, path.join(root, 'docs', 'architecture', 'level-editor.md')]
   .filter((f) => fs.existsSync(f));
-const CITING = [boardPath, ...DOC_SET];
+const CITING = [workflowPath, ...DOC_SET];
 // "brief §5.1", "acceptance record §10.4", "<file>.md §10.2 and §10.4" - the
 // qualifier carries across a conjunction so one filename can name two sections,
 // but not across arbitrary text, which would exempt a whole line.
@@ -111,4 +95,4 @@ if (failures.length) {
   for (const f of failures) console.error(`FAIL ${f}`);
   process.exit(1);
 }
-console.log('board: clean');
+console.log('docs: clean');
