@@ -2642,7 +2642,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                 and the nudge were discoverable only by reading the source. */}
             Once a world is open: <b>W</b>/<b>E</b> move and turn ·{' '}
             <b>.</b> frame the selection · <b>Home</b> frame the world ·{' '}
-            <b>F3</b> walk · right-drag to fly, <b>WASD</b>/<b>QE</b> while held ·{' '}
+            <b>F3</b> walk · right-drag to fly, <b>WASD</b>/<b>Space</b>/<b>X</b> while held ·{' '}
             <b>Ctrl</b>+<b>1</b>…<b>4</b> recall a camera, <b>Ctrl</b>+<b>Shift</b> to store ·{' '}
             arrows and <b>PageUp</b>/<b>PageDown</b> nudge · <b>Ctrl</b>+<b>C</b>/<b>V</b> copy
             and paste · <b>Ctrl</b>+<b>Z</b>/<b>Y</b> undo · <b>Ctrl</b>+<b>S</b> save ·{' '}

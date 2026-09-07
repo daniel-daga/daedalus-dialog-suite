@@ -1,6 +1,7 @@
 /**
  * Fly navigation — the first-person half of the viewport's camera (plan
- * §16.26 row 3). Right-mouse-hold looks, WASD/QE moves, Shift is faster, and
+ * §16.26 row 3). Right-mouse-hold looks, WASD moves, Space/X climbs and
+ * descends, Shift is faster, and
  * the speed comes from how far the orbit pivot was when the hold began, so a
  * 1 km island and a barrel are both crossable at a sensible pace.
  *
@@ -26,15 +27,15 @@ const lookingDownMinusZ = () => {
 const direction = (camera: THREE.Camera) => camera.getWorldDirection(new THREE.Vector3());
 
 describe('flyNav', () => {
-  test('WASD moves, Q/E climb and descend, by key *code* so a layout cannot rename them', () => {
+  test('WASD moves, Space/X climb and descend, by key *code* so a layout cannot rename them', () => {
     expect(flyMoveFor('KeyW')).toBe('forward');
     expect(flyMoveFor('KeyS')).toBe('back');
     expect(flyMoveFor('KeyA')).toBe('left');
     expect(flyMoveFor('KeyD')).toBe('right');
-    expect(flyMoveFor('KeyE')).toBe('up');
-    expect(flyMoveFor('KeyQ')).toBe('down');
+    expect(flyMoveFor('Space')).toBe('up');
+    expect(flyMoveFor('KeyX')).toBe('down');
     expect(flyMoveFor('KeyF')).toBeNull();
-    expect(flyMoveFor('Space')).toBeNull();
+    expect(flyMoveFor('KeyQ')).toBeNull();
   });
 
   test('speed is the pivot distance per second, clamped so a wall and a whole island both work', () => {
@@ -109,7 +110,7 @@ describe('flyNav', () => {
     expect(camera.position.y).toBeLessThan(-0.99);
     fly.release('KeyW', false);
 
-    fly.press('KeyE', false);
+    fly.press('Space', false);
     fly.step(200);
     expect(camera.position.y).toBeGreaterThan(-0.02);
     expect(camera.position.x).toBeCloseTo(0, 9);

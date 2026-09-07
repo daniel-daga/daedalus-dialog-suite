@@ -3528,8 +3528,9 @@ would answer that is already built for picking.
 
 *Landed 2026-09-01, the fly half:* hold the **right mouse button** in the
 viewport — the drag looks (yaw about world up, pitch clamped short of the
-poles, no roll), **W/A/S/D** move along the view, **Q/E** descend and climb
-along the world's up, **Shift** is four times faster. No mode key: the right
+poles, no roll), **W/A/S/D** move along the view, **Space/X** climb and
+descend along the world's up (rebound from Q/E on 2026-09-07), **Shift** is
+four times faster. No mode key: the right
 button was free (OrbitControls' RIGHT is `null`) except for the click that
 opens the context menu, and a hold is told from a click by whether it moved
 anything — a hold that did opens no menu on release. Speed is the distance

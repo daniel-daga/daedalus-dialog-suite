@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 // Fly navigation — the first-person half of the camera, beside the orbit in
 // `cameraNav` (plan §16.26 row 3). The idiom every 3D editor shares: hold the
-// right button to look, WASD to move, Q/E for down/up, Shift to hurry. No
+// right button to look, WASD to move, Space/X for up/down, Shift to hurry. No
 // mode to enter and none to leave, which is what lets it share the viewport
 // with a right *click* that opens the context menu — the hold and the click
 // are told apart by whether anything moved (`moved`).
@@ -15,7 +15,7 @@ export type FlyMove = 'forward' | 'back' | 'left' | 'right' | 'up' | 'down';
 // Keyed by `KeyboardEvent.code`, the physical key: on an AZERTY or a German
 // layout W/A/S/D are still the cluster under the left hand.
 const MOVE_FOR_CODE: Record<string, FlyMove> = {
-  KeyW: 'forward', KeyS: 'back', KeyA: 'left', KeyD: 'right', KeyE: 'up', KeyQ: 'down',
+  KeyW: 'forward', KeyS: 'back', KeyA: 'left', KeyD: 'right', Space: 'up', KeyX: 'down',
 };
 
 /** The movement a key code asks for, or null for a key the fly does not own. */
