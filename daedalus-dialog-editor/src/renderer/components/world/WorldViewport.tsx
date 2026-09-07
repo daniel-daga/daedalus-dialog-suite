@@ -1316,7 +1316,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
 
     // ── fly navigation (plan §16.26 row 3) ─────────────────────────────────
     //
-    // Hold the right button: the drag looks, WASD/QE moves, Shift hurries
+    // Hold the right button: the drag looks, WASD/Space/X moves, Shift hurries
     // (`flyNav`). The right button is free — OrbitControls' RIGHT is `null` —
     // except for the click that opens the context menu, and a hold is told
     // from a click by whether it moved anything (`flew`, read by the
