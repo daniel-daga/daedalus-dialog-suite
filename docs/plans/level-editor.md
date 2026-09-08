@@ -3007,3 +3007,82 @@ the others.
 
 The landed append needs none of it — the open world's path is already in
 `worldStore.summary`.
+
+---
+
+### 16.33 Routine overlap — the finding the measurement supports (#235)
+
+`coverageOf` (`src/renderer/routines/routineSchedule.ts`) reports, per routine,
+which minutes of a day it leaves uncovered and which it covers twice. The
+overlap half has a principled finding and the gap half (#236) does not, which is
+why they are two cards and not one.
+
+**Why an overlap is reportable.** `placementsAt` returns *every* entry in force
+at a minute rather than one, deliberately: nothing in the format, in ZenKit or
+in this repo says which the engine picks, so a precedence would be a rule the
+game does not have (`docs/architecture/level-editor.md` §8). That is exactly
+what makes the overlap a finding — the NPC's position at that minute is
+undefined by anything the editor can read, and an author almost certainly did
+not mean it to be. No threshold and no discriminator: any minute covered twice
+is one.
+
+**What retail does.** 8 of the 1,137 routines with an indexed entry cover a
+window twice, one window each. No tail — which is why §16.22's precedent left
+this uncarded rather than killing it, as it killed occupancy. A rule would fire
+8 times on the whole of Gothic II.
+
+**What is missing is the saying, not the number.** Its wording, its severity,
+and whether 8 findings on retail is a rule worth having or noise a modder learns
+to scroll past. A person's call, which is the `needs-decision` label.
+
+**What it costs once said.** The eighth Problems rule, beside
+`duplicateSpawnRule` in `src/renderer/problems/domain/rules/`, over
+`routineSiteIndex`. The locus is a script one — file, function, line — so it
+fits the panel's navigation model as it stands, the same property that made the
+duplicate-spawn rule the cross-validation slice worth taking first.
+
+**One caveat on the 8.** The distribution was measured 2026-09-01, before
+`prototype_declaration` took `$.block` and lifted the routine index from 81% to
+99% of the corpus's `TA` calls. The 1,128 entries that fix recovered are
+`DMT_DementorAmbient.d`'s 17 walker routines, and whether any of them overlaps is
+unknown. Re-run `daedalus-dialog-editor/scripts/check-routine-coverage.js` before
+writing the rule; the corpus is `mdk/Content`, which is Daniel's machine and not
+CI, so this is not work an unattended run can take.
+
+---
+
+### 16.34 Routine gap — a hole in the day, and the threshold nobody has set (#236)
+
+The other half of `coverageOf`, and it is not the overlap's twin (#235).
+
+**A hole is not undefined behaviour.** It is legal and common at half-day
+scale: an NPC with a twelve-hour routine is elsewhere the other twelve, and the
+schedule's own fallback draws him at his static spawn in the unknown layer
+rather than nowhere (`docs/architecture/level-editor.md` §8). So a gap is a
+fact about the day that may or may not be a defect, where an overlap is a day
+the scripts do not determine.
+
+**What retail does, and why it is not a cliff.** 11 of the 1,137 routines leave
+exactly one hole each: 720, 600, 540, 420, 240, 60, 50, 30, 30, 30 and 7
+minutes. That is a spread, not two populations. The top five are plainly
+deliberate half- and quarter-day routines, the 7-minute one is plainly not, and
+nothing in between announces where the line falls. A threshold at 60 minutes
+fires four times on the whole of Gothic II; a threshold anywhere else is equally
+defensible, which is the problem.
+
+**So this is a measurement card before it is a rule card**, in §16.22's manner:
+the question is not "is a gap bad" but "is there a hole size retail does not
+write". The instrument exists —
+`daedalus-dialog-editor/scripts/check-routine-coverage.js` already reports the
+distribution — so the work is a re-run and a reading, not a script.
+
+**And the re-run is owed anyway.** The 11 were counted 2026-09-01, before
+`prototype_declaration` took `$.block` lifted the index from 81% to 99%, and the
+1,128 entries that recovered are `DMT_DementorAmbient.d`'s 17 walker routines —
+66 entries apiece, the densest in the corpus and the likeliest to change the
+shape of this tail.
+
+**A measurement is allowed to kill its own check**, as occupancy's did (§16.22).
+If the re-run shows the same spread with no cliff, the honest outcome is no gap
+rule at all and this closes as answered rather than as built. Corpus is
+`mdk/Content` — Daniel's machine, not CI, so this is not agent-ready either.

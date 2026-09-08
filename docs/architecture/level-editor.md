@@ -3016,9 +3016,10 @@ added, but …" — rather than hiding the half-state.
   main that `CLAUDE.md` records the main process deliberately not having. The
   dummy is the answer to that gap, not a placeholder waiting on it.
 - **Occupancy is dead** — measured, a cliff and no tail (§16.22 q4). **Gap and
-  overlap survive the measurement and stay uncarded** because nobody has said
-  what the finding should be; `coverageOf` and its script compute the
-  distribution the saying would rest on.
+  overlap survive the measurement**, each as its own card: the overlap is a
+  minute the scripts do not determine and needs only the saying (§16.33), the
+  gap is a threshold nobody has set and is a measurement before it is a rule
+  (§16.34). `coverageOf` and its script compute what both rest on.
 - **Chapter-conditional presence.** `B_Enter_OldWorld.d`'s 302 spawns are one
   `if (Kapitel …)` after another, indexed since the nested-call fix but drawn
   unconditionally at every minute and every state. It needs the guard, and
