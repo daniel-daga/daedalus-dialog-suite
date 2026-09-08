@@ -162,6 +162,52 @@ describe('VobOutline', () => {
     expect(material.glslVersion).toBe(THREE.GLSL3);
   });
 
+  test('the mode decides which lines the composite is allowed to paint', () => {
+    const outline = new VobOutline(0x000000);
+    const material = (outline.quad.children[0] as THREE.Mesh).material as THREE.ShaderMaterial;
+
+    // Unchanged until told: a viewport that never sets a mode draws what it
+    // always drew, a line around every VOB.
+    expect(material.uniforms.uOutlineMode.value).toBe(2);
+
+    // The edge test itself is untouched in every mode — the rank, the
+    // neighbours and the one-pixel-outside rule are what the line *is*. What
+    // the mode gates is only whether the found edge is painted, so an edge a
+    // mode rejects costs the same and reads the same.
+    expect(material.fragmentShader).toContain('uniform float uOutlineMode;');
+    expect(material.fragmentShader).toMatch(
+      /if \( uOutlineMode > 1\.5 \|\| \( uOutlineMode > 0\.5 && selected > 0\.5 \) \)/,
+    );
+
+    // 'selected' is the middle state: only a selected VOB's line survives,
+    // which is the reading Florian asked for (#229) without taking the body
+    // tint away from everyone.
+    outline.setMode('selected');
+    expect(material.uniforms.uOutlineMode.value).toBe(1);
+
+    // 'off' paints no line at all. The composite still runs — it is what
+    // copies the picture and writes the world's depth back — so the frame
+    // keeps its shape and only the line is gone.
+    outline.setMode('off');
+    expect(material.uniforms.uOutlineMode.value).toBe(0);
+
+    outline.setMode('all');
+    expect(material.uniforms.uOutlineMode.value).toBe(2);
+  });
+
+  test('an off mode still composites, so the depth write-back survives it', () => {
+    const { renderer, calls } = fakeRenderer();
+    const outline = new VobOutline(0x10141c);
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera();
+
+    outline.setMode('off');
+    outline.render(renderer, scene, camera);
+
+    expect(calls.map((c) => c.op))
+      .toEqual(['target', 'clearColor', 'clear', 'clearMask', 'render', 'target', 'render', 'render']);
+  });
+
   test('resizing follows the canvas, texel and target both', () => {
     const outline = new VobOutline(0x000000);
     const material = (outline.quad.children[0] as THREE.Mesh).material as THREE.ShaderMaterial;

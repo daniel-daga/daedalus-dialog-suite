@@ -41,6 +41,23 @@ export const OUTLINE_OPACITY = 0.55;
 /** The selection line is the selection, and does not let anything through. */
 export const SELECT_OPACITY = 1.0;
 
+/**
+ * Which VOBs get a line (#229). `all` is what the pass has always drawn;
+ * `selected` leaves the line as a selection mark only, which is how the scene
+ * reads closest to the engine while an edit is still visible; `off` is the
+ * clean picture, where the body tint (`WorldScene`'s `SELECT_COLOR`) is the
+ * whole of the selection.
+ *
+ * A uniform, not a define: the mode changes from a toolbar click and a
+ * recompile per click is a stall the pass does not need. The edge test runs in
+ * every mode — the rank, the four neighbours and the one-pixel-outside rule
+ * are what the line *is* — and the mode only decides whether the edge it found
+ * is painted.
+ */
+export type OutlineMode = 'all' | 'selected' | 'off';
+
+const MODE_RANK: Record<OutlineMode, number> = { off: 0, selected: 1, all: 2 };
+
 /** What separates two ranks: the key is one byte, so anything under a
  *  half-step is the same VOB. */
 const RANK_STEP = 0.001;
@@ -62,6 +79,7 @@ uniform sampler2D tDepth;
 uniform vec2 uTexel;
 uniform vec3 uOutlineColor;
 uniform vec3 uSelectColor;
+uniform float uOutlineMode;
 varying vec2 vUv;
 layout(location = 0) out highp vec4 fragColor;
 
@@ -86,11 +104,14 @@ void main() {
   vec3 colour = texture( tColor, vUv ).rgb;
   if ( top > mine + ${RANK_STEP} ) {
     float selected = step( 2.5, top );
-    colour = mix(
-      colour,
-      mix( uOutlineColor, uSelectColor, selected ),
-      mix( ${OUTLINE_OPACITY.toFixed(2)}, ${SELECT_OPACITY.toFixed(2)}, selected )
-    );
+    // 2 paints every VOB's line, 1 only a selected VOB's, 0 none.
+    if ( uOutlineMode > 1.5 || ( uOutlineMode > 0.5 && selected > 0.5 ) ) {
+      colour = mix(
+        colour,
+        mix( uOutlineColor, uSelectColor, selected ),
+        mix( ${OUTLINE_OPACITY.toFixed(2)}, ${SELECT_OPACITY.toFixed(2)}, selected )
+      );
+    }
   }
 
   // Drawn linear into the target; the canvas wants the renderer's output
@@ -141,6 +162,7 @@ export class VobOutline {
         uTexel: { value: new THREE.Vector2(1, 1) },
         uOutlineColor: { value: new THREE.Color(...OUTLINE_COLOR) },
         uSelectColor: { value: new THREE.Color(...SELECT_COLOR) },
+        uOutlineMode: { value: MODE_RANK.all },
       },
       // A depth write only happens with the test enabled, so the test is on
       // and always passes: the quad is the whole canvas and writes every pixel.
@@ -151,6 +173,12 @@ export class VobOutline {
     const mesh = new THREE.Mesh(this.geometry, this.material);
     mesh.frustumCulled = false;
     this.quad.add(mesh);
+  }
+
+  /** Which VOBs are outlined from the next frame on. One uniform write, no
+   *  recompile and nothing to invalidate. */
+  setMode(mode: OutlineMode): void {
+    this.material.uniforms.uOutlineMode.value = MODE_RANK[mode];
   }
 
   setSize(width: number, height: number): void {

@@ -97,6 +97,33 @@ describe('the World bar', () => {
     expect(overlayGroup).toContainElement(screen.getByTestId('world-exposure'));
   });
 
+  it('cycles the VOB outlines through all, selected and off', async () => {
+    // #229: Florian asked to see a scene without the white frames, and
+    // separately proposed the line as a selection mark only. Both are modes
+    // rather than a swap, so the default reading is unchanged and the orange
+    // body tint still marks the selection in every one of them.
+    await openWorld();
+
+    const button = screen.getByTestId('world-outlines-toggle');
+    expect(button).toHaveTextContent('Outlines: All');
+
+    fireEvent.click(button);
+    expect(button).toHaveTextContent('Outlines: Selected');
+
+    fireEvent.click(button);
+    expect(button).toHaveTextContent('Outlines: Off');
+
+    fireEvent.click(button);
+    expect(button).toHaveTextContent('Outlines: All');
+  });
+
+  it('keeps the outline control in the overlays group, beside the other view toggles', async () => {
+    await openWorld();
+
+    expect(screen.getByTestId('world-toolbar-overlays'))
+      .toContainElement(screen.getByTestId('world-outlines-toggle'));
+  });
+
   it('puts the stat chips in the stats group once a world is open', async () => {
     await openWorld();
 
@@ -118,7 +145,7 @@ describe('the World bar', () => {
     render(<WorldSurface />);
 
     for (const testId of [
-      'world-save', 'world-waynet-toggle', 'world-spawns-toggle',
+      'world-save', 'world-waynet-toggle', 'world-spawns-toggle', 'world-outlines-toggle',
       'world-gizmo-translate', 'world-gizmo-rotate',
       'world-drop-to-ground', 'world-align-to-normal', 'world-duplicate-vob',
       'world-delete-vob', 'world-undo', 'world-redo',
@@ -145,6 +172,7 @@ describe('the World bar', () => {
     expect(screen.getByTestId('world-save')).toBeEnabled();
     expect(screen.getByTestId('world-waynet-toggle')).toBeEnabled();
     expect(screen.getByTestId('world-spawns-toggle')).toBeEnabled();
+    expect(screen.getByTestId('world-outlines-toggle')).toBeEnabled();
     expect(screen.getByTestId('world-exposure')).not.toHaveClass('Mui-disabled');
     expect(screen.getByTestId('world-gizmo-translate')).toBeEnabled();
     for (const testId of ['world-hidden-classes', 'world-snap']) {

@@ -57,6 +57,8 @@ import WaypointPanel from './WaypointPanel';
 import WorldVobContextMenu from './WorldVobContextMenu';
 import PanelSplitter from './PanelSplitter';
 import WorldToolbar from './toolbar/WorldToolbar';
+import { OUTLINE_MODE_ORDER } from './toolbar/WorldOverlayControls';
+import type { OutlineMode } from '../../world/VobOutline';
 import WorldPickerDialog from './WorldPickerDialog';
 import ErrorBoundary from '../ErrorBoundary';
 
@@ -293,6 +295,10 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    *  different questions — where the net runs, and who is at this one — and one
    *  of them is wanted far more often than the other. */
   const [showWaypointNames, setShowWaypointNames] = useState(false);
+  /** Which VOBs carry the outline (#229). A view setting, not an edit: no op,
+   *  nothing saved, and not persisted across a session either — the other view
+   *  toggles on this bar are not. */
+  const [outlineMode, setOutlineMode] = useState<OutlineMode>('all');
   /** The name being typed into the add-waypoint dialog, or null when it is
    *  closed. A name is the whole of what a placed waypoint has to be told —
    *  the position is the terrain point and everything else the binding fixes —
@@ -2334,6 +2340,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   }, [spawnTime]);
   /** The Names toggle. */
   const toggleWaypointNames = useCallback(() => setShowWaypointNames((v) => !v), []);
+  const cycleOutlineMode = useCallback(() => setOutlineMode((mode) => (
+    OUTLINE_MODE_ORDER[(OUTLINE_MODE_ORDER.indexOf(mode) + 1) % OUTLINE_MODE_ORDER.length]
+  )), []);
   /** The Snap step: which of the two step values it writes follows the
    *  gizmo mode, the way reading it already does. */
   const handleSnapStepChange = useCallback((step: number) => {
@@ -2370,6 +2379,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         spawnStateReach={spawnStateReach}
         showWaypointNames={showWaypointNames}
         onToggleWaypointNames={toggleWaypointNames}
+        outlineMode={outlineMode}
+        onCycleOutlineMode={cycleOutlineMode}
         exposure={exposure}
         onExposureChange={setExposure}
         hiddenClasses={hiddenClasses}
@@ -2807,6 +2818,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               terrainPoint={terrainPoint}
               exposure={exposure}
               hiddenVobs={hiddenVobs}
+              outlineMode={outlineMode}
               snapGrid={snapGrid}
               snapAngle={(snapAngleDegrees * Math.PI) / 180}
               scatterRadius={scatterBrushRadius}

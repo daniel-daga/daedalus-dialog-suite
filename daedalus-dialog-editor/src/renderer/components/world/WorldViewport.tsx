@@ -20,7 +20,7 @@ import { ScatterRing } from '../../world/ScatterRing';
 import {
   SELECTED_ATTRIBUTE, WorldScene, textureCacheFor, type TextureCache,
 } from '../../world/WorldScene';
-import { VobOutline } from '../../world/VobOutline';
+import { VobOutline, type OutlineMode } from '../../world/VobOutline';
 import { BvhBuilder } from '../../world/BvhBuilder';
 import { VobPicker } from '../../world/VobPicker';
 import { NO_PICK } from '../../world/pickIds';
@@ -247,6 +247,11 @@ export interface WorldViewportProps {
    */
   hiddenVobs: Uint8Array | null;
   /**
+   * Which VOBs carry the outline (#229). A view setting like `exposure`: one
+   * uniform on the pass, no op, nothing saved with the world.
+   */
+  outlineMode: OutlineMode;
+  /**
    * The grid step a drag is quantised to, in **ZenGin centimetres**, or 0 for a
    * free-form drag.
    *
@@ -395,7 +400,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   mesh, visuals, bbox, waynet, showWaynet, spawns, showSpawns, routines, spawnTime, spawnState,
   showWaypointNames, loadTexture, onTextureFailures, onPick, onVobContextMenu,
   selection, onTranslateSelection, gizmoMode, onRotateSelection, appliedOps,
-  selectedWaypoint, terrainPoint, exposure, hiddenVobs, snapGrid, snapAngle,
+  selectedWaypoint, terrainPoint, exposure, hiddenVobs, outlineMode, snapGrid, snapAngle,
   scatterRadius, onScatterStroke,
   onSelectWaypoint, onMoveWaypoint, paused = false,
 }, ref) => {
@@ -409,6 +414,9 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   const bboxKey = bbox.join(',');
 
   const sceneRef = useRef<WorldScene | null>(null);
+  // The outline pass, for the mode effect below — it is built inside the scene
+  // effect, so a prop cannot reach it any other way.
+  const outlineRef = useRef<VobOutline | null>(null);
 
   useImperativeHandle(ref, () => ({
     raycastDown: (origin) => {
@@ -547,6 +555,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     // No `scene.background`: the outline pass owns every clear of the frame,
     // and a Scene with a background forces one of its own. The sky is its.
     const outline = new VobOutline(0x10141c);
+    outlineRef.current = outline;
 
     // The same key the camera pose is restored on, below — and the same one
     // this effect is keyed on, so that it is computed once here rather than
@@ -1812,6 +1821,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
         target: controls.target.toArray(),
       };
       sceneRef.current = null;
+      outlineRef.current = null;
       gizmoRef.current = null;
       frameVobRef.current = null;
       framePointRef.current = null;
@@ -2047,6 +2057,13 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   useEffect(() => {
     sceneRef.current?.setExposure(exposure);
   }, [exposure, mesh, visuals]);
+
+  // Which VOBs are outlined. One uniform write, on `mesh`/`visuals` for the
+  // reason the brightness effect gives: a rebuilt scene brings a fresh
+  // `VobOutline`, whose uniform starts at `all`.
+  useEffect(() => {
+    outlineRef.current?.setMode(outlineMode);
+  }, [outlineMode, mesh, visuals]);
 
   // Per-class visibility, on `mesh`/`visuals` for the same reason: a rebuilt
   // scene draws every instance until it is told again which ones are switched

@@ -2,6 +2,7 @@ import React from 'react';
 import { Button, ListSubheader, MenuItem, Slider, Stack, TextField, Typography } from '@mui/material';
 import { MINUTES_PER_DAY, type StateOption } from '../../../routines/routineSchedule';
 import { MAX_EXPOSURE, MIN_EXPOSURE } from '../../../world/WorldScene';
+import type { OutlineMode } from '../../../world/VobOutline';
 
 /** Minutes since midnight as `HH:MM` — the routine index's own unit
  *  (level-editor.md §16.19). Moved with the one readout that uses it. */
@@ -35,6 +36,8 @@ export interface WorldOverlayControlsProps {
   spawnStateReach: { resolved: number; total: number };
   showWaypointNames: boolean;
   onToggleWaypointNames: () => void;
+  outlineMode: OutlineMode;
+  onCycleOutlineMode: () => void;
   exposure: number;
   onExposureChange: (value: number) => void;
   hiddenClasses: readonly string[];
@@ -42,10 +45,17 @@ export interface WorldOverlayControlsProps {
   classOptions: readonly string[];
 }
 
+/** The cycle, and the word each state puts on the button. */
+export const OUTLINE_MODE_ORDER: readonly OutlineMode[] = ['all', 'selected', 'off'];
+const OUTLINE_MODE_LABEL: Record<OutlineMode, string> = {
+  all: 'All', selected: 'Selected', off: 'Off',
+};
+
 const WorldOverlayControls: React.FC<WorldOverlayControlsProps> = ({
   hasWorld, showWaynet, onToggleWaynet, showSpawns, onToggleSpawns,
   spawnTime, onToggleTime, onSpawnTimeChange, spawnState, onSpawnStateChange,
   stateOptions, spawnStateReach, showWaypointNames, onToggleWaypointNames,
+  outlineMode, onCycleOutlineMode,
   exposure, onExposureChange, hiddenClasses, onHiddenClassesChange, classOptions,
 }) => (
   <>
@@ -183,6 +193,26 @@ const WorldOverlayControls: React.FC<WorldOverlayControlsProps> = ({
         Names
       </Button>
     )}
+    {/* The VOB outlines (#229). Three states rather than a toggle, because
+        the ask had two halves: a scene without the white frames at all, and
+        the line as a selection mark only. `All` is what the pass has always
+        drawn and stays the default, so nobody's picture changes until they
+        ask. One button cycling them, not three, because they are one
+        setting — and the label carries the state, since a two-variant
+        button cannot say which of three it is in.
+
+        `WorldScene`'s orange body tint marks the selection in every mode,
+        which is what makes `Off` safe: the selection is still visible with
+        no line on screen. */}
+    <Button
+      size="small"
+      variant={outlineMode === 'off' ? 'outlined' : 'contained'}
+      disabled={!hasWorld}
+      onClick={onCycleOutlineMode}
+      data-testid="world-outlines-toggle"
+    >
+      Outlines: {OUTLINE_MODE_LABEL[outlineMode]}
+    </Button>
     {/* Brightness, beside the other view toggles and deliberately not near
         anything that edits: ZenGin's lighting is baked into the vertex
         colours, so an interior is dark in the file and there is no light
