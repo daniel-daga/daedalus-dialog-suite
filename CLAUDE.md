@@ -326,6 +326,9 @@ paragraph where a sentence does. Prose, not nested bullet trees. Long form goes
 in the plan or the issue, which is what they are for — a reply that has to be
 skimmed is too long.
 
+**Restated by Daniel 2026-09-08, so treat it as standing rather than advisory:**
+plain and concise, every reply, including the one that reports finished work.
+
 ## General Conventions
 
 - **TDD everywhere**: failing test → minimal implementation → green. Tests must genuinely exercise the feature — a test that passes without the feature being correctly implemented is not acceptable. For Playwright E2E tests, manually verify the test interacts with the real UI behavior, not just that it passes.
