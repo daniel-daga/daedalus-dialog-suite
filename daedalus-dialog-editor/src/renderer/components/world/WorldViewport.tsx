@@ -30,9 +30,8 @@ import { WaypointLabelLayer } from '../../world/WaypointLabelLayer';
 import {
   attachBlenderNav, frameOn, frameVobs, navFor, pivotAt, type Nav,
 } from '../../world/cameraNav';
-import { Fly, flyMoveFor, flySpeedFor, pivotAhead } from '../../world/flyNav';
-import { Walk, walkMoveFor, findWalkEntry, WALK_EXIT_PIVOT_DISTANCE } from '../../world/walkNav';
-import { CameraSlots, cameraSlotFor } from '../../world/cameraSlots';
+import { NavController } from '../../world/NavController';
+import { CameraSlots } from '../../world/cameraSlots';
 import {
   runViewportBenchmark,
   type BenchmarkOptions,
@@ -754,13 +753,13 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     //     given back the state it had rather than a guessed one, since what
     //     `enabled` means here is "something is selected" (`attach`/`detach`).
     //
-    // A right press is a fly (`flyNav`, below), and it lands on the gizmo the
-    // same way, so it switches it off the same way.
+    // A right press is a fly (`NavController`, below), and it lands on the
+    // gizmo the same way, so it switches it off the same way.
     let navigated = false;
     let gizmoBeforeNav: boolean | null = null;
     const onNavPointerDown = (event: PointerEvent) => {
       // Under pointer lock the buttons still fire, at frozen coordinates.
-      if (walk !== null) return;
+      if (nav.walking()) return;
       if (event.button === 0) {
         navigated = navFor(event) !== 'none';
         if (!navigated) return;
@@ -799,7 +798,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       worldMeshes: () => world.worldMeshes,
       radius: () => scatterRadiusRef.current,
       // A walk's press is not a stroke.
-      walking: () => walk !== null,
+      walking: () => nav.walking(),
       gizmo,
       onStroke: (samples) => onScatterStrokeRef.current(samples as [number, number, number][]),
     });
@@ -826,7 +825,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       waynet: () => overlayRef.current,
       showWaynet: () => showWaynetRef.current,
       disposed: () => disposed,
-      walking: () => walk !== null,
+      walking: () => nav.walking(),
       consumeGesture: () => {
         // A finished gizmo drag: picking here would select whatever is behind
         // the gizmo — usually nothing — and deselect the VOB it just moved.
@@ -838,11 +837,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
         // painted with would make a second stroke impossible.
         return scatterBrush.consumePainted();
       },
-      consumeFly: () => {
-        if (!flew) return false;
-        flew = false;
-        return true;
-      },
+      consumeFly: () => nav.consumeFly(),
       contextMenu: () => onVobContextMenuRef.current,
       onPick: (vob, terrain, additive) => onPickRef.current(vob, terrain, additive),
       onSelectWaypoint: (waypoint) => onSelectWaypointRef.current(waypoint),
@@ -854,156 +849,45 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     });
     picks.attach();
 
-    // ── fly navigation (plan §16.26 row 3) ─────────────────────────────────
+    // ── moving the camera (level-editor.md §16.26 row 3) ───────────────────
     //
-    // Hold the right button: the drag looks, WASD/Space/X moves, Shift hurries
-    // (`flyNav`). The right button is free — OrbitControls' RIGHT is `null` —
-    // except for the click that opens the context menu, and a hold is told
-    // from a click by whether it moved anything (`flew`, read by the
-    // `contextmenu` handler above, which on Windows fires after the release).
+    // `world/NavController` owns both navigations (#220): the right-button fly,
+    // the F3 walk under pointer lock, the camera slots and the framing keys.
+    // What is interesting about them is the wiring — which of the two owns the
+    // camera on a frame, what a mode switch stands down and gives back, and
+    // where each leaves the pivot — and none of it was reachable without a
+    // whole mocked viewport.
     //
-    // OrbitControls re-aims the camera at its target on every `update()`, so
-    // for the length of the hold the draw loop steps the fly instead, and the
-    // release re-seats the target ahead of the camera — on the world mesh
-    // under the centre of the view if there is one, else at the distance the
-    // hold began with — so the next orbit turns about what is being looked
-    // at and the next dolly and pan keep their scale.
-    let fly: Fly | null = null;
-    let flew = false;
-    let flyReach = 0;
-    let flyLastX = 0;
-    let flyLastY = 0;
-    const onFlyPointerDown = (event: PointerEvent) => {
-      // A walk and a fly would both write the camera every frame.
-      if (event.button !== 2 || fly !== null || walk !== null) return;
-      flew = false;
-      flyReach = camera.position.distanceTo(controls.target);
-      fly = new Fly(camera, flySpeedFor(flyReach));
-      flyLastX = event.clientX;
-      flyLastY = event.clientY;
-      controls.enabled = false;
-    };
-    // Window listeners, so a drag that leaves the canvas keeps looking and a
-    // release over another panel still ends the hold.
-    const onFlyPointerMove = (event: PointerEvent) => {
-      if (fly === null) return;
-      fly.look(event.clientX - flyLastX, event.clientY - flyLastY);
-      flyLastX = event.clientX;
-      flyLastY = event.clientY;
-    };
-    const onFlyPointerUp = (event: PointerEvent) => {
-      if (fly === null || event.button !== 2) return;
-      flew = fly.moved;
-      fly = null;
-      controls.enabled = true;
-      if (!flew) return;
-      raycaster.setFromCamera(pointer.set(0, 0), camera);
-      const hit = raycaster.intersectObjects(world.worldMeshes, false)[0];
-      if (hit) pivotAt(camera, controls.target, hit.point);
-      else pivotAhead(camera, controls.target, flyReach);
-      // The sky-fallback pivot too, for the same reason `frameFramables` does.
-      rememberPick(controls.target);
-    };
-    // Capture on the window, ahead of the surface's own W/E gizmo-mode keys:
-    // while the right button is down, W is "forward".
-    const onFlyKey = (event: KeyboardEvent) => {
-      if (fly === null) return;
-      const taken = event.type === 'keydown'
-        ? fly.press(event.code, event.shiftKey)
-        : (fly.release(event.code, event.shiftKey), flyMoveFor(event.code) !== null);
-      if (!taken) return;
-      event.preventDefault();
-      event.stopPropagation();
-    };
-    host.addEventListener('pointerdown', onFlyPointerDown, { capture: true });
-    window.addEventListener('pointermove', onFlyPointerMove);
-    window.addEventListener('pointerup', onFlyPointerUp);
-    window.addEventListener('pointercancel', onFlyPointerUp);
-    window.addEventListener('keydown', onFlyKey, { capture: true });
-    window.addEventListener('keyup', onFlyKey, { capture: true });
-
-    // ── walk navigation (plan §16.26 row 3, the grounded half) ─────────────
-    //
-    // F3 toggles a walk (`walkNav`): the mouse looks under pointer lock — the
-    // app's first use of it, and the only way a look has no edge to run
-    // into — WASD walks, gravity and the world mesh do the rest. Unlike the
-    // fly it is a long-lived mode, not a press-scoped hold, so what it
-    // switches off is snapshotted and given back exactly (the `gizmoBeforeNav`
-    // precedent); the selection is never touched.
-    //
-    // Entry is optimistic: the walk begins on the keydown, where the lock
-    // request needs the user's activation, and a refused lock rolls it back
-    // through `pointerlockerror`. A camera with nowhere to stand — the search
-    // above it finds nothing before the world's top — enters nothing and says
-    // nothing.
-    let walk: Walk | null = null;
-    let walkBeforeControlsEnabled: boolean | null = null;
-    let walkBeforeGizmo: { enabled: boolean; helperVisible: boolean } | null = null;
-    const enterWalk = () => {
-      const entry = findWalkEntry(camera.position, world.worldMeshes, box.max[1]);
-      if (entry === null) return;
-      walkBeforeControlsEnabled = controls.enabled;
-      walkBeforeGizmo = { enabled: gizmo.enabled, helperVisible: gizmo.helperVisible };
-      controls.enabled = false;
-      gizmo.enabled = false;
-      gizmo.helperVisible = false;
-      camera.position.copy(entry);
-      // A promise in Chromium, nothing in older engines; a refusal arrives as
-      // `pointerlockerror` either way, so the rejection carries nothing new.
-      Promise.resolve(renderer.domElement.requestPointerLock()).catch(() => {});
-      walk = new Walk(camera, world.worldMeshes);
-    };
-    // The one teardown, for every way a walk ends: F3 again, the lock lost
-    // to Escape or a window switch, a refused lock, the scene going away.
-    const exitWalk = () => {
-      if (walk === null) return;
-      walk = null;
-      if (walkBeforeControlsEnabled !== null) controls.enabled = walkBeforeControlsEnabled;
-      if (walkBeforeGizmo !== null) {
-        gizmo.enabled = walkBeforeGizmo.enabled;
-        gizmo.helperVisible = walkBeforeGizmo.helperVisible;
-      }
-      walkBeforeControlsEnabled = null;
-      walkBeforeGizmo = null;
-      if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
-      // The pivot as the fly's release leaves it, but at a fixed reach: the
-      // fly's own is the distance it began with, and a walk can have crossed
-      // the level since F3.
-      raycaster.setFromCamera(pointer.set(0, 0), camera);
-      const hit = raycaster.intersectObjects(world.worldMeshes, false)[0];
-      if (hit) pivotAt(camera, controls.target, hit.point);
-      else pivotAhead(camera, controls.target, WALK_EXIT_PIVOT_DISTANCE);
-      rememberPick(controls.target);
-    };
-    // `mousemove`, not the `pointermove` the fly reads: under pointer lock
-    // the deltas are `movementX/Y`, which is a mouse event's field.
-    const onWalkMouseMove = (event: MouseEvent) => {
-      if (walk === null) return;
-      walk.look(event.movementX, event.movementY);
-    };
-    const onWalkKey = (event: KeyboardEvent) => {
-      if (walk === null) return;
-      const taken = event.type === 'keydown'
-        ? walk.press(event.code, event.shiftKey)
-        : (walk.release(event.code, event.shiftKey), walkMoveFor(event.code) !== null);
-      if (!taken) return;
-      event.preventDefault();
-      event.stopPropagation();
-    };
-    const onPointerLockChange = () => {
-      if (walk !== null && document.pointerLockElement !== renderer.domElement) exitWalk();
-    };
-    const onPointerLockError = () => { exitWalk(); };
-    window.addEventListener('mousemove', onWalkMouseMove);
-    window.addEventListener('keydown', onWalkKey, { capture: true });
-    window.addEventListener('keyup', onWalkKey, { capture: true });
-    document.addEventListener('pointerlockchange', onPointerLockChange);
-    document.addEventListener('pointerlockerror', onPointerLockError);
+    // It takes what it cannot own: the world meshes it probes, the gizmo it
+    // stands down for a walk, this world's slots, and the framing the surface
+    // defines below.
+    const nav = new NavController({
+      host,
+      canvas: renderer.domElement,
+      camera,
+      controls,
+      gizmo,
+      // Shared rather than duplicated, as `PickController` shares them.
+      raycaster,
+      pointer,
+      // Read per probe rather than captured: a structural op replaces them.
+      worldMeshes: () => world.worldMeshes,
+      slots: cameraSlots,
+      // Where a walk's entry search gives up: the world's own top.
+      ceiling: box.max[1],
+      paused: () => pausedRef.current,
+      rememberPick,
+      // Defined below, and called through the closure for that reason.
+      frameSelection: () => { frameSelection(); },
+      frameAll: () => { frameAll(); },
+    });
+    nav.attach();
 
     // Blender's framing keys, and the reason orbiting is usable at all: the
     // pivot starts at the centre of a 600 m island, so without a way to move it
     // onto what you are looking at, every orbit up close swings the camera
-    // through half the world.
+    // through half the world. `NavController` binds them; what they *do* is
+    // here, where the selection and the world's own box are.
     const frameFramables = (
       framable: Array<{ at: [number, number, number]; bounds: readonly number[] | null }>,
     ): FrameFailure | null => {
@@ -1045,49 +929,6 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       );
     };
 
-    const onKeyDown = (event: KeyboardEvent) => {
-      // Another view is on screen: this is a window listener, and framing a
-      // camera nobody can see is at best a swallowed keystroke.
-      if (pausedRef.current) return;
-      // The property grid is a pile of text fields, and a '.' typed into one of
-      // them is a decimal point, not a camera move.
-      const target = event.target as HTMLElement | null;
-      if (target?.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target?.tagName ?? '')) return;
-
-      // Spacer's camera slots: Ctrl+Shift+N stores the pose, Ctrl+N brings it
-      // back — camera and pivot both, so the next orbit turns about the same
-      // point. `Ctrl+digit` is bound nowhere else in the app.
-      const slot = cameraSlotFor(event);
-      if (slot !== null) {
-        event.preventDefault();
-        if (slot.action === 'store') {
-          cameraSlots.store(slot.slot, camera.position, controls.target);
-        } else if (cameraSlots.recall(slot.slot, camera.position, controls.target)) {
-          controls.update();
-          // The sky-fallback pivot too, as `frameFramables` does.
-          rememberPick(controls.target);
-        }
-        return;
-      }
-      if (event.ctrlKey || event.metaKey || event.altKey) return;
-
-      // Spacer's walk key. Not during a fly — both would write the camera —
-      // and not while something else owns the controls (a gizmo drag, a
-      // benchmark), for the same reason.
-      if (event.code === 'F3') {
-        event.preventDefault();
-        if (walk !== null) exitWalk();
-        else if (fly === null && controls.enabled) enterWalk();
-        return;
-      }
-
-      // Blender's key is numpad-period; laptops without a numpad send the
-      // ordinary one, and both mean the same thing here.
-      if (event.code === 'NumpadDecimal' || event.key === '.') { frameSelection(); return; }
-      if (event.key === 'Home') frameAll();
-    };
-    window.addEventListener('keydown', onKeyDown);
-
     const resize = new ResizeObserver(() => {
       const width = host.clientWidth || 1;
       const height = host.clientHeight || 1;
@@ -1120,9 +961,9 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     const labelCameraPosition = new THREE.Vector3();
     const draw = () => {
       frame = requestAnimationFrame(draw);
-      if (fly !== null) fly.step(performance.now());
-      else if (walk !== null) walk.step(performance.now());
-      else controls.update();
+      // A fly or a walk writes the camera itself, and OrbitControls would
+      // re-aim at a target neither of them is moving.
+      if (!nav.step(performance.now())) controls.update();
 
       // Names, after `controls.update()` so they follow the camera in the same
       // frame it moved rather than trailing it by one.
@@ -1307,8 +1148,9 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     return () => {
       disposed = true;
       // Before the pose is read: a walk left standing would keep the lock and
-      // hand the rebuilt scene a pivot it never re-seated.
-      if (walk !== null) exitWalk();
+      // hand the rebuilt scene a pivot it never re-seated, which `dispose`
+      // does first for that reason.
+      nav.dispose();
       poseRef.current = {
         key: worldKey,
         position: camera.position.toArray(),
@@ -1325,18 +1167,6 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       stopDraw();
       resize.disconnect();
       picks.dispose();
-      window.removeEventListener('keydown', onKeyDown);
-      host.removeEventListener('pointerdown', onFlyPointerDown, { capture: true });
-      window.removeEventListener('pointermove', onFlyPointerMove);
-      window.removeEventListener('pointerup', onFlyPointerUp);
-      window.removeEventListener('pointercancel', onFlyPointerUp);
-      window.removeEventListener('keydown', onFlyKey, { capture: true });
-      window.removeEventListener('keyup', onFlyKey, { capture: true });
-      window.removeEventListener('mousemove', onWalkMouseMove);
-      window.removeEventListener('keydown', onWalkKey, { capture: true });
-      window.removeEventListener('keyup', onWalkKey, { capture: true });
-      document.removeEventListener('pointerlockchange', onPointerLockChange);
-      document.removeEventListener('pointerlockerror', onPointerLockError);
       detachNav();
       host.removeEventListener('pointerdown', onNavPointerDown, { capture: true });
       host.removeEventListener('pointerup', onNavPointerUp, { capture: true });

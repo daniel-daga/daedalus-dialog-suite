@@ -592,14 +592,16 @@ effect is reachable only through a mocked viewport, and §3.2's fix keys the
 effect differently rather than doing what the effect actually wants, which is
 to stop being one effect. The split — `ViewportRenderer`, `SceneHost`,
 `GizmoController`, `PickController`, `NavController`, `ScatterBrush` — is
-named in §4 and is **#220**. Three of the six landed 2026-09-08:
+named in §4 and is **#220**. Four of the six landed 2026-09-08:
 `world/ScatterBrush` (the brush, and §3.1's own hiding place),
 `world/GizmoController` (the proxy, the snap, the preview and both commits,
-plus the harness's `dragGizmo`/`turnGizmo`) and `world/PickController` (the
+plus the harness's `dragGizmo`/`turnGizmo`), `world/PickController` (the
 three handlers, whose whole content is the order they try the waynet, the
-props and the world mesh in), each with the unit spec the extraction was for
-and none changing behaviour. The component is 1,629 lines; `SceneHost`,
-`NavController` and `ViewportRenderer` are untouched.
+props and the world mesh in) and `world/NavController` (the fly, the walk, the
+camera slots and the framing keys — the wiring around `flyNav`/`walkNav`, not
+the navigations themselves), each with the unit spec the extraction was for
+and none changing behaviour. The component is 1,459 lines; `SceneHost` and
+`ViewportRenderer` are untouched.
 `WorldSurface.tsx` (3,190 lines) and `binding.cc` (3,388, with ~250 duplicated
 lines in one switch) are the same shape of debt with lower risk.
 

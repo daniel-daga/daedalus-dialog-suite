@@ -3647,9 +3647,10 @@ instead of `npm run dev`/`npm start`, the feature genuinely isn't there.
 
 **3. Camera slots "do nothing" — no wiring bug found.** `cameraSlotFor`
 (`cameraSlots.ts:29-38`) reads `event.code` (not `event.key`, so layout- and
-Shift-independent), and the `keydown` listener in `WorldViewport.tsx`
-(~1225-1256) is on `window`, not the canvas, so DOM focus isn't the issue; it
-skips typing targets first, then calls `preventDefault()`. No other
+Shift-independent), and the `keydown` listener — `NavController.onKeyDown`
+since the #220 split, `WorldViewport.tsx` before it — is on `window`, not the
+canvas, so DOM focus isn't the issue; it skips typing targets first, then calls
+`preventDefault()`. No other
 `Ctrl+Digit` binding exists in the renderer, no Electron `Menu`/
 `globalShortcut` claims the combo, and both test files
 (`WorldViewport.cameraSlots.test.tsx`, dispatching real `KeyboardEvent`s;
