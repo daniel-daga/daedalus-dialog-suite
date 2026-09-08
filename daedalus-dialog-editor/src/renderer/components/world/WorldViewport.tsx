@@ -4,14 +4,13 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { acceleratedRaycast } from 'three-mesh-bvh';
 import {
-  multiplyRotation, mirrorRotation, threeToZen, zenToThree, zenBoxToThree,
+  threeToZen, zenToThree, zenBoxToThree,
   isWaynetOp, type ZenPosition, type ZenRotation,
 } from 'zen-world';
 import type {
   DecodedTexture, InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp,
 } from '../../../shared/worldTypes';
 import type { SpawnSite } from '../../../shared/types';
-import { DampedTransformControls } from '../../world/DampedTransformControls';
 import { WaynetOverlay } from '../../world/WaynetOverlay';
 import { SpawnOverlay } from '../../world/SpawnOverlay';
 import type { RoutineIndex } from '../../routines/routineSchedule';
@@ -23,6 +22,7 @@ import {
 import { VobOutline, type OutlineMode } from '../../world/VobOutline';
 import { BvhBuilder } from '../../world/BvhBuilder';
 import { VobPicker } from '../../world/VobPicker';
+import { GizmoController, type GizmoMode } from '../../world/GizmoController';
 import { NO_PICK } from '../../world/pickIds';
 import { pickWaypoint, NO_WAYPOINT } from '../../world/pickWaypoint';
 import { chooseWaypointLabels } from '../../world/waypointLabels';
@@ -33,7 +33,6 @@ import {
 import { Fly, flyMoveFor, flySpeedFor, pivotAhead } from '../../world/flyNav';
 import { Walk, walkMoveFor, findWalkEntry, WALK_EXIT_PIVOT_DISTANCE } from '../../world/walkNav';
 import { CameraSlots, cameraSlotFor } from '../../world/cameraSlots';
-import { snapDelta, snapTurn } from '../../world/snapping';
 import {
   runViewportBenchmark,
   type BenchmarkOptions,
@@ -312,7 +311,9 @@ export interface WorldViewportProps {
   paused?: boolean;
 }
 
-export type GizmoMode = 'translate' | 'rotate';
+// Defined with the controller that owns the gizmo, re-exported here because
+// the toolbar and `WorldSurface` have always taken it from the viewport.
+export type { GizmoMode };
 
 /**
  * The imperative surface `WorldSurface` calls directly, for the one thing that
@@ -384,16 +385,6 @@ interface Gizmo {
   /** The other thing the gizmo can be on. Null detaches it. */
   attachWaypoint: (waypoint: number | null) => void;
   setMode: (mode: GizmoMode) => void;
-}
-
-/** A rotation as ZenGin reads it — row-major — out of three's column-major
- *  `Matrix4`. `elements[col * 4 + row]` is element [row][col]. */
-function rowMajor(matrix: THREE.Matrix4): ZenRotation {
-  const out: number[] = [];
-  for (let row = 0; row < 3; row++) {
-    for (let col = 0; col < 3; col++) out.push(matrix.elements[col * 4 + row]);
-  }
-  return out as ZenRotation;
 }
 
 const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(({
@@ -716,49 +707,29 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
 
     // ── the gizmo (level-editor.md §7, Phase 1b) ────────────────────────────
     //
-    // A VOB is an *instance*, not an Object3D, so there is nothing for
-    // TransformControls to attach to. The proxy is that something: it hangs
-    // under the same mirrored root as everything else, which means its local
-    // position is ZenGin centimetres and reading it back needs no conversion —
-    // the root stays the only one in the app.
-    //
-    // The gizmo's own helper goes in the top-level scene instead, or it would
-    // be drawn through that same 0.01 scale and mirror.
-    const proxy = new THREE.Object3D();
-    world.root.add(proxy);
-
-    // Damped rather than the library's own, because its rotate rate is a
-    // turntable's — see `DampedTransformControls`.
-    const transform = new DampedTransformControls(camera, renderer.domElement);
-    transform.setSpace('world');
-    scene.add(transform.getHelper());
-    transform.enabled = false;
-    transform.getHelper().visible = false;
-
-    // What the gizmo drives, and where each of them started the drag. A
-    // selection can hold VOBs that are not drawn at all — a decal, a sound VOB,
-    // anything unresolved — and those have no instance to preview. They are
-    // still in the batch: the op is built from the index, which knows where
-    // they are, and only the preview needs an instance.
-    let gizmoVobs: readonly number[] = [];
-    // The other thing the gizmo can be on, and never at the same time as the
-    // VOBs above. A waypoint's position is in the *same* space as the proxy's
-    // local one — the overlay hangs under the same mirrored root — so unlike a
-    // VOB there is nothing to convert on the way in or out.
-    let gizmoWaypoint: number | null = null;
-    let waypointFrom: [number, number, number] | null = null;
-    const dragFrom = new Map<number, [number, number, number]>();
-    const turnFrom = new Map<number, ZenRotation>();
-    const proxyFrom = new THREE.Vector3();
-    const proxyTurnFrom = new THREE.Quaternion();
-    // Scratch, so a drag frame allocates nothing.
-    const turn = new THREE.Quaternion();
-    const turnMatrix = new THREE.Matrix4();
-    // A drag ends with a pointerup that the browser also delivers as a click on
-    // the canvas, *after* the gizmo has already reported the drag finished — so
-    // a flag that is true only during the drag would already be false by then.
-    // This one is consumed by the click it belongs to.
-    let endedDrag = false;
+    // `world/GizmoController` owns it (#220): the proxy under the mirrored
+    // root, the `TransformControls`, the snap, the live preview and both
+    // commits. It takes the scene and the overlay it drives and hands back a
+    // delta.
+    const gizmo = new GizmoController({
+      camera,
+      canvas: renderer.domElement,
+      // The **top-level** scene for the helper, never `world.root` — through
+      // that 0.01 scale and mirror the handles would be unusable.
+      scene,
+      world,
+      controls,
+      // Read per call: a rebuild replaces the overlay, and it is null whenever
+      // the waynet is not drawn.
+      overlay: () => overlayRef.current,
+      mode: gizmoModeRef.current,
+      snapGrid: () => snapGridRef.current,
+      snapAngle: () => snapAngleRef.current,
+      onTranslate: (delta) => onTranslateRef.current(delta),
+      onRotate: (delta) => onRotateRef.current(delta),
+      onMoveWaypoint: (waypoint, from, to) => onMoveWaypointRef.current(waypoint, from, to),
+    });
+    gizmoRef.current = gizmo;
 
     // ── the emulated middle button ──────────────────────────────────────────
     //
@@ -793,12 +764,12 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
         navigated = navFor(event) !== 'none';
         if (!navigated) return;
       } else if (event.button !== 2) return;
-      gizmoBeforeNav = transform.enabled;
-      transform.enabled = false;
+      gizmoBeforeNav = gizmo.enabled;
+      gizmo.enabled = false;
     };
     const onNavPointerUp = () => {
       if (gizmoBeforeNav === null) return;
-      transform.enabled = gizmoBeforeNav;
+      gizmo.enabled = gizmoBeforeNav;
       gizmoBeforeNav = null;
     };
     // Capture on `host`, ahead of both OrbitControls and the gizmo, for the
@@ -806,238 +777,6 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     host.addEventListener('pointerdown', onNavPointerDown, { capture: true });
     host.addEventListener('pointerup', onNavPointerUp, { capture: true });
     host.addEventListener('pointercancel', onNavPointerUp, { capture: true });
-
-    const detach = () => {
-      transform.detach();
-      transform.enabled = false;
-      transform.getHelper().visible = false;
-    };
-
-    // Which anchor `attach` uses, and therefore a value the mode switch has to
-    // re-attach on — see `anchorFor`.
-    let gizmoModeNow: GizmoMode = gizmoModeRef.current;
-
-    /**
-     * Where the gizmo stands for a selection (§16.24 2).
-     *
-     * The middle of it while translating, and the last VOB picked while
-     * rotating. Not one answer for both, because `rotateVobs` turns each VOB
-     * about *its own* origin: a rotate gizmo at the centroid would show a pivot
-     * the op does not use, and the first multi-VOB rotate would look broken.
-     * Translating has no such pivot — the drag reports a delta from wherever
-     * the proxy was picked up — so the centre is free there and is what the
-     * handles should sit in.
-     */
-    const anchorFor = (vobs: readonly number[]) => (
-      gizmoModeNow === 'rotate' ? world.anchorOf(vobs) : world.centroidOf(vobs)
-    );
-
-    const attach = (vobs: readonly number[]) => {
-      const position = anchorFor(vobs);
-      gizmoVobs = position === null ? [] : vobs;
-      gizmoWaypoint = null;
-
-      if (position === null) { detach(); return; }
-      proxy.position.set(position[0], position[1], position[2]);
-      // The proxy's own orientation is reset on every attach: the gizmo reports
-      // a *delta* from where it was picked up, so what it starts from only has
-      // to be the same at the press and at the release.
-      proxy.quaternion.identity();
-      transform.attach(proxy);
-      transform.enabled = true;
-      transform.getHelper().visible = true;
-    };
-    /**
-     * Put the gizmo on a waypoint instead.
-     *
-     * Translate only, and that is a fact about the op set rather than about the
-     * gizmo: `MoveWaypoint` is the only waynet op there is. A waypoint does
-     * carry a direction, but nothing writes one yet, so a rotate ring here
-     * would turn something the world would never be told about.
-     */
-    const attachWaypoint = (waypoint: number | null) => {
-      gizmoVobs = [];
-      gizmoWaypoint = null;
-
-      const overlay = overlayRef.current;
-      if (waypoint === null || overlay === null) { detach(); return; }
-
-      gizmoWaypoint = waypoint;
-      const position = overlay.positionOf(waypoint);
-      proxy.position.set(position[0], position[1], position[2]);
-      proxy.quaternion.identity();
-      transform.setMode('translate');
-      transform.attach(proxy);
-      transform.enabled = true;
-      transform.getHelper().visible = true;
-    };
-
-    gizmoRef.current = {
-      attach,
-      attachWaypoint,
-      // The mode buttons and the W/E keys keep working while a waypoint is
-      // selected; they just have nothing to switch to. Ignored rather than
-      // disabled, so the mode the VOBs were in survives a detour through the
-      // waynet.
-      setMode: (mode) => {
-        gizmoModeNow = mode;
-        transform.setMode(gizmoWaypoint === null ? mode : 'translate');
-        // The anchor is the mode's, so W and E move the gizmo as well as
-        // changing its handles — a rotate gizmo left standing at the centroid
-        // would turn about a pivot no op uses.
-        if (gizmoWaypoint === null && gizmoVobs.length > 0) attach(gizmoVobs);
-      },
-    };
-
-    // A drag must not also orbit the camera.
-    transform.addEventListener('dragging-changed', (event) => {
-      const dragging = event.value as boolean;
-      controls.enabled = !dragging;
-
-      if (dragging) {
-        // Where everything was when the drag began. Read once: the preview
-        // writes the instance matrices this would otherwise be read back out
-        // of, so a per-frame read would compound the delta. For a waypoint,
-        // reading once is not an optimisation but the only way to still know
-        // where it started — the preview writes the overlay's own positions,
-        // which is the array this would be read out of.
-        waypointFrom = gizmoWaypoint === null
-          ? null
-          : overlayRef.current?.positionOf(gizmoWaypoint) ?? null;
-        proxyFrom.copy(proxy.position);
-        proxyTurnFrom.copy(proxy.quaternion);
-        dragFrom.clear();
-        turnFrom.clear();
-        for (const vob of gizmoVobs) {
-          const position = world.positionOf(vob);
-          if (position !== null) dragFrom.set(vob, position);
-          const rotation = world.rotationOf(vob);
-          if (rotation !== null) turnFrom.set(vob, rotation as ZenRotation);
-        }
-        return;
-      }
-
-      endedDrag = true;
-
-      if (gizmoWaypoint !== null) {
-        const from = waypointFrom;
-        if (from === null) return;
-        const to: [number, number, number] = [
-          proxy.position.x, proxy.position.y, proxy.position.z,
-        ];
-        // A click that dragged nothing. Committing it would put an op on the
-        // undo stack that undoes nothing.
-        if (to.every((component, axis) => component === from[axis])) return;
-        onMoveWaypointRef.current(gizmoWaypoint, from, to);
-        return;
-      }
-
-      if (gizmoVobs.length === 0) return;
-
-      if (transform.getMode() === 'rotate') {
-        const delta = turnDelta();
-        // Identity is a click that turned nothing, and committing it would put
-        // one op per selected VOB on the undo stack for a batch that undoes
-        // nothing.
-        if (delta === null) return;
-        onRotateRef.current(delta);
-        return;
-      }
-
-      const delta: [number, number, number] = [
-        proxy.position.x - proxyFrom.x, proxy.position.y - proxyFrom.y, proxy.position.z - proxyFrom.z,
-      ];
-      if (delta.every((component) => component === 0)) return;
-      onTranslateRef.current(delta);
-    });
-
-    /**
-     * The turn since the drag began, row-major in ZenGin space — or null if the
-     * gizmo has not actually turned.
-     *
-     * **The proxy's local orientation is not in ZenGin's basis, though its local
-     * position is.** `TransformControls` builds its parent-inverse by
-     * decomposing the parent's `matrixWorld`, and `Matrix4.decompose` answers a
-     * negative determinant by negating `scale.x` — so the mirrored root
-     * decomposes to a scale of (-0.01, 0.01, 0.01) and a rotation of *identity*,
-     * and the flip never reaches the quaternion. Translation survives that (the
-     * offset is divided by the same negative scale); a rotation does not, and
-     * the VOB turned the opposite way to the ring about Y and about Z, X being
-     * the mirrored axis and therefore the one that looked correct.
-     *
-     * So the delta is conjugated by the mirror on the way out, in `coords`, with
-     * the rest of the conversion. `tests/gizmoRotation.test.ts` pins both
-     * library behaviours this depends on.
-     */
-    const turnDelta = (): ZenRotation | null => {
-      // q_now = delta * q_start, so delta = q_now * q_start⁻¹.
-      turn.copy(proxyTurnFrom).invert().premultiply(proxy.quaternion);
-      if (Math.abs(turn.w) >= 1) return null;
-      return mirrorRotation(rowMajor(turnMatrix.makeRotationFromQuaternion(turn)));
-    };
-
-    /**
-     * Quantise the drag, by writing the snapped pose back onto the proxy.
-     *
-     * On the proxy rather than on the delta the commit reports, because the
-     * proxy is what everything downstream reads: the live preview, the two
-     * commits, a waypoint's destination and `verify-world-edit.js`'s harness all
-     * take their number from it, and snapping any one of them separately would
-     * be a second place the step has to be applied. `TransformControls`
-     * recomputes the pose from where the press left it on every pointer move, so
-     * writing back cannot accumulate — this is what its own snapping does.
-     */
-    const snapProxy = () => {
-      if (transform.getMode() === 'rotate') {
-        // The turn since the press, snapped and put back — the proxy's start
-        // orientation is arbitrary (`attach` resets it), so only the delta is a
-        // quantity a step means anything against.
-        turn.copy(proxyTurnFrom).invert().premultiply(proxy.quaternion);
-        snapTurn(turn, snapAngleRef.current);
-        proxy.quaternion.copy(proxyTurnFrom).premultiply(turn);
-        return;
-      }
-
-      const snapped = snapDelta([
-        proxy.position.x - proxyFrom.x,
-        proxy.position.y - proxyFrom.y,
-        proxy.position.z - proxyFrom.z,
-      ], snapGridRef.current);
-      proxy.position.set(
-        proxyFrom.x + snapped[0], proxyFrom.y + snapped[1], proxyFrom.z + snapped[2],
-      );
-    };
-
-    // The live preview. The world in the main process still has the VOBs where
-    // they were; this is the drag being drawn, and it is made real on release.
-    transform.addEventListener('objectChange', () => {
-      snapProxy();
-
-      if (gizmoWaypoint !== null) {
-        // Straight into the array the point cloud and the edge lines share, so
-        // the edges into this waypoint follow the drag instead of pointing at
-        // where it used to be for as long as the drag lasts.
-        overlayRef.current?.setPosition(gizmoWaypoint, [
-          proxy.position.x, proxy.position.y, proxy.position.z,
-        ]);
-        return;
-      }
-
-      if (transform.getMode() === 'rotate') {
-        const delta = turnDelta();
-        if (delta === null) return;
-        for (const [vob, from] of turnFrom) world.rotateVob(vob, multiplyRotation(delta, from));
-        return;
-      }
-
-      for (const [vob, from] of dragFrom) {
-        world.moveVob(vob, [
-          from[0] + proxy.position.x - proxyFrom.x,
-          from[1] + proxy.position.y - proxyFrom.y,
-          from[2] + proxy.position.z - proxyFrom.z,
-        ]);
-      }
-    });
 
     // Scratch for the waypoint pick, so a click allocates no matrix.
     const toClip = new THREE.Matrix4();
@@ -1065,7 +804,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       radius: () => scatterRadiusRef.current,
       // A walk's press is not a stroke.
       walking: () => walk !== null,
-      gizmo: transform,
+      gizmo,
       onStroke: (samples) => onScatterStrokeRef.current(samples as [number, number, number][]),
     });
     scatterBrushRef.current = scatterBrush;
@@ -1077,7 +816,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       if (walk !== null) return;
       // Picking here would select whatever is behind the gizmo — usually
       // nothing, so a finished drag would deselect the VOB it just moved.
-      if (endedDrag) { endedDrag = false; return; }
+      if (gizmo.consumeEndedDrag()) return;
       // The same, for a drag of the camera on the emulated middle button.
       if (navigated) { navigated = false; return; }
       // And the same for a brush stroke, which ends on the canvas exactly as a
@@ -1308,10 +1047,10 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       const entry = findWalkEntry(camera.position, world.worldMeshes, box.max[1]);
       if (entry === null) return;
       walkBeforeControlsEnabled = controls.enabled;
-      walkBeforeGizmo = { enabled: transform.enabled, helperVisible: transform.getHelper().visible };
+      walkBeforeGizmo = { enabled: gizmo.enabled, helperVisible: gizmo.helperVisible };
       controls.enabled = false;
-      transform.enabled = false;
-      transform.getHelper().visible = false;
+      gizmo.enabled = false;
+      gizmo.helperVisible = false;
       camera.position.copy(entry);
       // A promise in Chromium, nothing in older engines; a refusal arrives as
       // `pointerlockerror` either way, so the rejection carries nothing new.
@@ -1325,8 +1064,8 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       walk = null;
       if (walkBeforeControlsEnabled !== null) controls.enabled = walkBeforeControlsEnabled;
       if (walkBeforeGizmo !== null) {
-        transform.enabled = walkBeforeGizmo.enabled;
-        transform.getHelper().visible = walkBeforeGizmo.helperVisible;
+        gizmo.enabled = walkBeforeGizmo.enabled;
+        gizmo.helperVisible = walkBeforeGizmo.helperVisible;
       }
       walkBeforeControlsEnabled = null;
       walkBeforeGizmo = null;
@@ -1607,39 +1346,8 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
 
     window.__worldViewport = {
       benchmark,
-      dragGizmo: (to) => {
-        if (gizmoVobs.length === 0 && gizmoWaypoint === null) {
-          throw new Error('nothing is selected');
-        }
-        // The whole sequence a real drag fires, in order: the press is what
-        // records where everything started, and a delta measured from a stale
-        // origin is the defect this stands to catch.
-        transform.dispatchEvent({ type: 'dragging-changed', value: true });
-        proxy.position.set(to[0], to[1], to[2]);
-        transform.dispatchEvent({ type: 'objectChange' });
-        transform.dispatchEvent({ type: 'dragging-changed', value: false });
-      },
-      turnGizmo: (axis, radians) => {
-        if (gizmoVobs.length === 0) throw new Error('no VOB is selected');
-        transform.dispatchEvent({ type: 'dragging-changed', value: true });
-        // The axis is in ZenGin space, like everything an op carries, so the
-        // driver can predict the answer. The proxy's quaternion is *not* in that
-        // basis (see `turnDelta`), so the turn is built in ZenGin and conjugated
-        // into the proxy's frame by the same function that converts it back —
-        // which is its own inverse, so this cannot be applied the wrong way.
-        const inZen = rowMajor(turnMatrix.makeRotationFromQuaternion(
-          turn.setFromAxisAngle(new THREE.Vector3(axis[0], axis[1], axis[2]).normalize(), radians),
-        ));
-        const asProxy = mirrorRotation(inZen);
-        proxy.quaternion.setFromRotationMatrix(turnMatrix.set(
-          asProxy[0], asProxy[1], asProxy[2], 0,
-          asProxy[3], asProxy[4], asProxy[5], 0,
-          asProxy[6], asProxy[7], asProxy[8], 0,
-          0, 0, 0, 1,
-        ));
-        transform.dispatchEvent({ type: 'objectChange' });
-        transform.dispatchEvent({ type: 'dragging-changed', value: false });
-      },
+      dragGizmo: (to) => gizmo.dragTo(to),
+      turnGizmo: (axis, radians) => gizmo.turnBy(axis, radians),
       // A click that hit the world mesh rather than a VOB, in ZenGin space.
       // What it stands in for is precisely the BVH raycast that turns a pixel
       // into a point — everything above it, including the surface's placement
@@ -1680,10 +1388,8 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
           startDraw();
         }
       },
-      gizmoRotation: () => (gizmoVobs.length === 0 ? null : world.rotationOf(gizmoVobs[gizmoVobs.length - 1])),
-      gizmoPosition: () => (gizmoVobs.length === 0 && gizmoWaypoint === null
-        ? null
-        : [proxy.position.x, proxy.position.y, proxy.position.z]),
+      gizmoRotation: () => gizmo.rotation(),
+      gizmoPosition: () => gizmo.position(),
       selectedInstances: () => world.instancedMeshes.flatMap((instanced) => [
         ...(instanced.geometry.getAttribute(SELECTED_ATTRIBUTE).array as Float32Array),
       ]),
@@ -1744,9 +1450,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       scatterBrushRef.current = null;
       scatterBrush.dispose();
       controls.dispose();
-      transform.detach();
-      scene.remove(transform.getHelper());
-      transform.dispose();
+      gizmo.dispose();
       picker.dispose();
       outline.dispose();
       // Settled, not disposed: this scene's builds are abandoned, but the

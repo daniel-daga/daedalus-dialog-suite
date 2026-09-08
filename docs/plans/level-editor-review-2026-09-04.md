@@ -592,9 +592,15 @@ effect is reachable only through a mocked viewport, and §3.2's fix keys the
 effect differently rather than doing what the effect actually wants, which is
 to stop being one effect. The split — `ViewportRenderer`, `SceneHost`,
 `GizmoController`, `PickController`, `NavController`, `ScatterBrush` — is
-named in §4 and is not carded anywhere. `WorldSurface.tsx` (3,190 lines) and
-`binding.cc` (3,388, with ~250 duplicated lines in one switch) are the same
-shape of debt with lower risk.
+named in §4 and is **#220**. Two of the six landed 2026-09-08:
+`world/ScatterBrush` (the brush, and §3.1's own hiding place) and
+`world/GizmoController` (the proxy, the snap, the preview and both commits,
+plus the harness's `dragGizmo`/`turnGizmo`), each with the unit spec the
+extraction was for and neither changing behaviour. The component is 1,735
+lines; `SceneHost`, `PickController`, `NavController` and `ViewportRenderer`
+are untouched, and the pick handlers are the largest of them.
+`WorldSurface.tsx` (3,190 lines) and `binding.cc` (3,388, with ~250 duplicated
+lines in one switch) are the same shape of debt with lower risk.
 
 **§3.3, the BVH rebuilt per structural op. Landed 2026-09-08.** §3.2 removed
 the *duplicate* rebuild; the remaining one discarded and rebuilt all 352 trees
