@@ -22,9 +22,9 @@ import {
 import { VobOutline, type OutlineMode } from '../../world/VobOutline';
 import { BvhBuilder } from '../../world/BvhBuilder';
 import { VobPicker } from '../../world/VobPicker';
+import { PickController } from '../../world/PickController';
 import { GizmoController, type GizmoMode } from '../../world/GizmoController';
 import { NO_PICK } from '../../world/pickIds';
-import { pickWaypoint, NO_WAYPOINT } from '../../world/pickWaypoint';
 import { chooseWaypointLabels } from '../../world/waypointLabels';
 import { WaypointLabelLayer } from '../../world/WaypointLabelLayer';
 import {
@@ -590,9 +590,10 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       box.center[0] + span * 0.6, box.center[1] + span * 0.35, box.center[2] + span * 0.6,
     );
 
-    // Picking the world mesh: the pivot below reads it on every navigation
-    // press, and a click reads it when nothing else was hit. Declared here
-    // rather than beside the click handler because the pivot needs it first.
+    // Picking the world mesh, shared by everything that casts one: the pivot
+    // below on every navigation press, `PickController` when a click hit no
+    // waypoint and no prop, the fly and walk probes, and the measurement
+    // handle. Declared here because the pivot needs it first.
     const raycaster = new THREE.Raycaster();
     raycaster.firstHitOnly = true;
     // The world mesh draws on `WORLD_LAYER` (the outline pass draws the frame
@@ -636,7 +637,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
 
     // Where a double-click last set the pivot — the dot that confirms it
     // landed somewhere, since `pivotAt` itself moves nothing a screenshot
-    // could tell apart from before. Set only by `handleDoubleClick`, replaced
+    // could tell apart from before. Set only by a double-click, replaced
     // rather than moved for the same reason `TerrainMarker`'s own comment
     // gives: a click is not a frame.
     let pivotMarker: TerrainMarker | null = null;
@@ -778,11 +779,6 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     host.addEventListener('pointerup', onNavPointerUp, { capture: true });
     host.addEventListener('pointercancel', onNavPointerUp, { capture: true });
 
-    // Scratch for the waypoint pick, so a click allocates no matrix.
-    const toClip = new THREE.Matrix4();
-    // Scratch for a picked VOB's position on its way into `rememberPick`.
-    const pivotPoint = new THREE.Vector3();
-
     /** Remember where a click landed, so a later drag over the sky still has a
      *  pivot to fall back on. */
     const rememberPick = (at: THREE.Vector3) => {
@@ -810,153 +806,53 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     scatterBrushRef.current = scatterBrush;
     scatterBrush.attach();
 
-    const handleClick = async (event: MouseEvent) => {
-      // A walk's click lands at the frozen pointer-lock coordinates: it would
-      // pick whatever sits under wherever the cursor was when F3 was pressed.
-      if (walk !== null) return;
-      // Picking here would select whatever is behind the gizmo — usually
-      // nothing, so a finished drag would deselect the VOB it just moved.
-      if (gizmo.consumeEndedDrag()) return;
-      // The same, for a drag of the camera on the emulated middle button.
-      if (navigated) { navigated = false; return; }
-      // And the same for a brush stroke, which ends on the canvas exactly as a
-      // gizmo drag does — a stroke that deselected the palette it had just
-      // painted with would make a second stroke impossible.
-      if (scatterBrush.consumePainted()) return;
-      const rect = renderer.domElement.getBoundingClientRect();
-      const x = event.clientX - rect.left;
-      const y = event.clientY - rect.top;
-
-      // The props first: GPU ID-picking is one draw pass into a 1x1 buffer,
-      // where the equivalent CPU raycast is 14.2 ms. The readback is awaited
-      // rather than stalled on, so the draw loop keeps running underneath it —
-      // and the world can be closed while a pick is still in flight.
-      // Read before the await: a modifier released while the readback is in
-      // flight would otherwise turn a Shift+click into a plain one.
-      //
-      // Shift is free for this because panning is on Shift+*middle*
-      // (`cameraNav.navFor`), so no left-button gesture is spoken for — and it
-      // is the modifier a level editor is reached for with.
-      const additive = event.shiftKey || event.ctrlKey || event.metaKey;
-
-      // The waynet first, and only while it is on screen. It draws with
-      // `depthTest: false` — over everything, including whatever VOB is behind
-      // it — so picking it second would mean clicking a dot that is plainly on
-      // top and selecting the wall behind it. The modifiers do not apply: one
-      // waypoint is the whole selection, so there is no batch to add to.
-      const overlay = overlayRef.current;
-      if (showWaynetRef.current && overlay !== null) {
-        // Projection x view x the mirrored root, because the overlay's
-        // positions are ZenGin centimetres and the root is what puts them in
-        // the world.
-        camera.updateMatrixWorld();
-        world.root.updateMatrixWorld();
-        const waypoint = pickWaypoint(
-          overlay.positions,
-          toClip.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
-            .multiply(world.root.matrixWorld),
-          x, y, rect.width, rect.height,
-        );
-        if (waypoint !== NO_WAYPOINT) { onSelectWaypointRef.current(waypoint); return; }
-      }
-
-      const vob = await picker.pickAsync(renderer, camera, x, y, rect.width, rect.height);
-      if (disposed) return;
-      if (vob !== NO_PICK) {
-        const at = world.positionOf(vob);
-        if (at !== null) rememberPick(pivotPoint.set(...zenToThree(at)));
-        onPickRef.current(vob, null, additive);
-        return;
-      }
-
-      // Then the world mesh, through its BVH — 0.2 ms p50 against 476k
-      // triangles. Terrain is not a VOB, so a hit reports the point rather
-      // than inventing a selection, and it comes back in ZenGin space: the
-      // conversion is one-way at the root and `threeToZen` is the way back.
-      pointer.set((x / rect.width) * 2 - 1, -(y / rect.height) * 2 + 1);
-      raycaster.setFromCamera(pointer, camera);
-      const hit = raycaster.intersectObjects(world.worldMeshes, false)[0];
-      if (hit) rememberPick(hit.point);
-      onPickRef.current(null, hit ? threeToZen(hit.point.toArray()) : null, additive);
-    };
-    renderer.domElement.addEventListener('click', handleClick);
-
-    /**
-     * Double-click to pivot **on the point clicked** (§16.12).
-     *
-     * Deliberately not `pivotAt`: its view-axis projection put the pivot
-     * metres from the cursor, so the orbit swung around the screen middle.
-     * That projection is right for `pivotUnderCursor`, which must not snap
-     * the view mid-drag, and wrong for the one gesture that means "make this
-     * the centre" — OrbitControls re-aims at `target`, so writing the point
-     * is the whole of it: the camera holds its position and only turns.
-     *
-     * World mesh first; a VOB is the fallback, through the GPU pick
-     * `handleClick` already pays for, so no CPU raycast over the 724
-     * InstancedMeshes. Without it a double-click over sky did nothing.
-     */
-    const handleDoubleClick = async (event: MouseEvent) => {
-      if (walk !== null) return;
-      const rect = renderer.domElement.getBoundingClientRect();
-      const x = event.clientX - rect.left;
-      const y = event.clientY - rect.top;
-      pointer.set((x / rect.width) * 2 - 1, -(y / rect.height) * 2 + 1);
-      // The mesh's own vertices stay in raw ZenGin centimetres — only
-      // `world.root`'s matrix carries the unit scale and the handedness
-      // mirror (`zen-world`'s `ROOT_MATRIX`) — so a stale `matrixWorld`
-      // raycasts against geometry sitting at identity, two orders of
-      // magnitude out of scale with the camera. The draw loop's own
-      // `renderer.render()` keeps this fresh as a side effect every frame
-      // in practice, but a pick must not depend on one having already run;
-      // `handleClick`'s waynet branch makes the same call for the same
-      // reason.
-      camera.updateMatrixWorld();
-      world.root.updateMatrixWorld();
-      raycaster.setFromCamera(pointer, camera);
-      const hit = raycaster.intersectObjects(world.worldMeshes, false)[0];
-      if (hit) {
-        controls.target.copy(hit.point);
-        rememberPick(hit.point);
-        setPivotMarker(threeToZen(hit.point.toArray()));
-        return;
-      }
-
-      const vob = await picker.pickAsync(renderer, camera, x, y, rect.width, rect.height);
-      if (disposed || vob === NO_PICK) return;
-      const at = world.positionOf(vob);
-      if (at === null) return;
-      pivotPoint.set(...zenToThree(at));
-      controls.target.copy(pivotPoint);
-      rememberPick(pivotPoint);
-      setPivotMarker(at);
-    };
-    renderer.domElement.addEventListener('dblclick', handleDoubleClick);
-
-    /**
-     * The context menu's own pick (level-editor.md §17) — the same
-     * async GPU pick `handleClick` uses, VOB hits only. A
-     * miss reports nothing, so a right-click over terrain or empty sky
-     * opens no menu; that pick is reserved. `preventDefault` runs first,
-     * unconditionally: swallowing the browser's own menu is not something
-     * the (awaited) pick's outcome should decide.
-     */
-    const handleContextMenu = async (event: MouseEvent) => {
-      // A walk's right click opens nothing — neither menu — for the reason
-      // `handleClick` gives.
-      if (walk !== null) { event.preventDefault(); return; }
-      // The right button was a fly, not a click: the menu it would open at
-      // the release stays shut, and so does the browser's.
-      if (flew) { flew = false; event.preventDefault(); return; }
-      if (onVobContextMenuRef.current === undefined) return;
-      event.preventDefault();
-      const rect = renderer.domElement.getBoundingClientRect();
-      const x = event.clientX - rect.left;
-      const y = event.clientY - rect.top;
-      const vob = await picker.pickAsync(renderer, camera, x, y, rect.width, rect.height);
-      if (disposed || vob === NO_PICK) return;
-      onVobContextMenuRef.current(vob, { left: event.clientX, top: event.clientY });
-    };
-    renderer.domElement.addEventListener('contextmenu', handleContextMenu);
+    // ── what a click means (level-editor.md §3, §16.12, §17) ────────────────
+    //
+    // `world/PickController` owns the three handlers (#220). The order they
+    // try things in is the whole of what is interesting about them — waynet,
+    // then props, then world mesh for a click; mesh then props for a
+    // double-click; props only for a right-click — and each also has to know
+    // when the click it is looking at is the tail of some other gesture.
+    const picks = new PickController({
+      renderer,
+      camera,
+      world,
+      picker,
+      controls,
+      // Shared rather than duplicated: the navigation pivot, the fly, the walk
+      // and the measurement probe all read this pair.
+      raycaster,
+      pointer,
+      waynet: () => overlayRef.current,
+      showWaynet: () => showWaynetRef.current,
+      disposed: () => disposed,
+      walking: () => walk !== null,
+      consumeGesture: () => {
+        // A finished gizmo drag: picking here would select whatever is behind
+        // the gizmo — usually nothing — and deselect the VOB it just moved.
+        if (gizmo.consumeEndedDrag()) return true;
+        // The same, for a drag of the camera on the emulated middle button.
+        if (navigated) { navigated = false; return true; }
+        // And the same for a brush stroke, which ends on the canvas exactly as
+        // a gizmo drag does — a stroke that deselected the palette it had just
+        // painted with would make a second stroke impossible.
+        return scatterBrush.consumePainted();
+      },
+      consumeFly: () => {
+        if (!flew) return false;
+        flew = false;
+        return true;
+      },
+      contextMenu: () => onVobContextMenuRef.current,
+      onPick: (vob, terrain, additive) => onPickRef.current(vob, terrain, additive),
+      onSelectWaypoint: (waypoint) => onSelectWaypointRef.current(waypoint),
+      rememberPick,
+      onPivot: (at, zen) => {
+        rememberPick(at);
+        setPivotMarker(zen);
+      },
+    });
+    picks.attach();
 
     // ── fly navigation (plan §16.26 row 3) ─────────────────────────────────
     //
@@ -1428,9 +1324,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       drawLoopRef.current = null;
       stopDraw();
       resize.disconnect();
-      renderer.domElement.removeEventListener('click', handleClick);
-      renderer.domElement.removeEventListener('dblclick', handleDoubleClick);
-      renderer.domElement.removeEventListener('contextmenu', handleContextMenu);
+      picks.dispose();
       window.removeEventListener('keydown', onKeyDown);
       host.removeEventListener('pointerdown', onFlyPointerDown, { capture: true });
       window.removeEventListener('pointermove', onFlyPointerMove);
