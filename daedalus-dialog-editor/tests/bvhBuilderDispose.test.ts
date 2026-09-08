@@ -29,7 +29,7 @@ const geometry = (): THREE.BufferGeometry => {
 describe('BvhBuilder.dispose', () => {
   it('settles the builds it will never finish, so an awaiting caller does not hang', async () => {
     const builder = new BvhBuilder();
-    const pending = builder.build(geometry());
+    const pending = builder.buildAll([geometry()], { theMesh: true });
 
     builder.dispose();
 

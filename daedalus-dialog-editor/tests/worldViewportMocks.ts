@@ -140,7 +140,8 @@ export function mockTransformControls() {
 export function mockBvhBuilder() {
   return {
     BvhBuilder: class {
-      build() { return Promise.resolve(); }
+      buildAll() { return Promise.resolve(); }
+      settle() {}
       dispose() {}
     },
   };

@@ -538,12 +538,22 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   // and rebuilt underneath it — see `TextureCache`.
   const texturesRef = useRef<TextureCache | null>(null);
 
-  // The cache outlives every run of the scene effect, so it is released when
-  // the viewport itself goes — the world being closed — and when a different
-  // world arrives, which `textureCacheFor` handles below.
+  // The world mesh's BVH, and the builder's own memory of it (review §3.3).
+  // Every structural op rebuilds the scene, so the geometry is new — but the
+  // world mesh is not, and a rebuilt tree is the cold open's 145-590 ms spent
+  // again. The builder is keyed on the `mesh` payload and outlives the effect
+  // for the same reason the texture cache does.
+  const bvhRef = useRef<BvhBuilder | null>(null);
+
+  // Both caches outlive every run of the scene effect, so they are released
+  // when the viewport itself goes — the world being closed — and when a
+  // different world arrives, which `textureCacheFor` handles below for the
+  // textures and the payload key handles for the trees.
   useEffect(() => () => {
     texturesRef.current?.dispose();
     texturesRef.current = null;
+    bvhRef.current?.dispose();
+    bvhRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -668,9 +678,11 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     if (pivotMarkerRef.current?.key === worldKey) setPivotMarker(pivotMarkerRef.current.point);
     controls.update();
 
-    // Only what is pickable gets a tree, and off the main thread.
-    const bvh = new BvhBuilder();
-    const bvhReady = Promise.all(world.worldMeshes.map((worldMesh) => bvh.build(worldMesh.geometry)));
+    // Only what is pickable gets a tree, and off the main thread — or, when
+    // this is a rebuild of the same world mesh, out of the builder's memory of
+    // the last one rather than off the thread at all.
+    const bvh = bvhRef.current ?? (bvhRef.current = new BvhBuilder());
+    const bvhReady = bvh.buildAll(world.worldMeshes.map((worldMesh) => worldMesh.geometry), mesh);
 
     const picker = new VobPicker();
     picker.setInstancedMeshes(
@@ -1737,7 +1749,9 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       transform.dispose();
       picker.dispose();
       outline.dispose();
-      bvh.dispose();
+      // Settled, not disposed: this scene's builds are abandoned, but the
+      // builder and its trees belong to the viewport now.
+      bvh.settle();
       pivotMarker?.dispose();
       world.dispose();
       renderer.dispose();

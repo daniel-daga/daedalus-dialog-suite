@@ -596,10 +596,14 @@ named in §4 and is not carded anywhere. `WorldSurface.tsx` (3,190 lines) and
 `binding.cc` (3,388, with ~250 duplicated lines in one switch) are the same
 shape of debt with lower risk.
 
-**§3.3, the BVH rebuilt per structural op.** §3.2 removed the *duplicate*
-rebuild; the remaining one still discards and rebuilds all 352 trees for a
-mesh that did not change. Caching them per `mesh` payload is the fix and it
-belongs with the viewport split above.
+**§3.3, the BVH rebuilt per structural op. Landed 2026-09-08.** §3.2 removed
+the *duplicate* rebuild; the remaining one discarded and rebuilt all 352 trees
+for a mesh that did not change. `BvhBuilder` now keeps the serialized trees
+against the `mesh` payload they came from and deserializes them into the fresh
+geometry, so an edit asks the worker nothing; the builder outlives the scene
+effect, which `settle()`s the builds it abandoned rather than disposing it.
+Held by `bvhCache.test.ts`. Not measured in the app — no GPU here — so the
+saving is the review's own 145-590 ms figure, not a fresh one.
 
 **§3.4, `ThumbnailRenderer`'s shared canvas.** A 2D and a WebGL context on one
 canvas: whichever tile kind is drawn second fails for the rest of the session,

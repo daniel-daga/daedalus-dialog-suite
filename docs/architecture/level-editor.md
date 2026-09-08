@@ -582,7 +582,15 @@ GPU ID-picking for instanced VOBs (`VobPicker`, ids shifted by one so a cleared
 black buffer is "nothing" rather than VOB 0), a BVH for the world mesh only and
 built off the main thread (`BvhBuilder` — deliberately *not*
 `GenerateMeshBVHWorker`, which transfers the live geometry's buffers away and
-would leave the viewport drawing a detached mesh), textures decoded on demand,
+would leave the viewport drawing a detached mesh), **built once per `mesh`
+payload** rather than once per edit — every structural op rebuilds the scene,
+so the geometry is new, but the world mesh is untouched by moving, adding or
+deleting a VOB, and rebuilding its trees costs the cold open's 145-590 ms
+again, during which every pivot press and terrain click falls back to a linear
+sweep of 476k triangles; the builder therefore outlives the scene effect,
+keeps the serialized trees against the payload they came from, and a rebuild
+`settle()`s the builds it abandoned instead of disposing the worker — textures
+decoded on demand,
 level compos skipped, and one mirrored root node as the entire coordinate and
 winding decision.
 
