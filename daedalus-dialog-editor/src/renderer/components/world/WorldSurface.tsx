@@ -256,6 +256,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   // separate IPC call on purpose: an overlay nobody asked for should not be in
   // the cold open.
   const [waynet, setWaynet] = useState<WaynetPayload | null>(null);
+  /** A waypoint to fly to as soon as the world opened for it is on screen
+   *  (#226) — see `openWorldNamed`. */
+  const [pendingJump, setPendingJump] = useState<string | null>(null);
   const [showWaynet, setShowWaynet] = useState(false);
   /** User-created VOB folders (VOB folders slice) — never a `WorldOp`, so it
    *  is loaded/persisted beside `waynet` rather than through `commitOps`'s
@@ -784,37 +787,17 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   );
 
   /**
-   * A jump asked for from outside the surface — the Problems panel's click on a
-   * world finding (§16.20 slice 2). The panel cannot call the viewport: it is
-   * another view, and while it is on screen this one may not even be mounted.
-   * So it leaves a request in the store and this consumes it.
-   *
-   * Taken exactly once, whether or not it lands: a request left standing would
-   * fire again on the next waynet re-read, long after the click that made it.
+   * The jump itself — the camera onto the point a name reaches. Lifted out of
+   * the focus effect below because it has a second caller now: a jump into a
+   * world that had to be opened for it first (#226).
    */
-  const focusRequest = useWorldStore((s) => s.focusRequest);
-  useEffect(() => {
-    if (focusRequest === null) return;
-    useWorldStore.getState().focusHandled();
-
-    if (focusRequest.kind === 'vob') { focusVob(focusRequest.vob); return; }
-
-    if (focusRequest.kind === 'add-waypoint') {
-      // Not a jump: a script naming a place is not a position, so there is
-      // nothing to frame. The overlay goes on for the same reason the
-      // waypoint jump above needs it — it is the only thing that will draw
-      // the result — and the name is kept for the terrain click to pick up.
-      setShowWaynet(true);
-      setPendingWaypointName(focusRequest.name);
-      return;
-    }
-
+  const jumpToPoint = useCallback((name: string) => {
     // The name comes out of a script, where Daedalus is case-insensitive, and
     // the waynet is the world's own spelling.
-    const wanted = focusRequest.name.toUpperCase();
+    const wanted = name.toUpperCase();
     const waypoint = waynet === null
       ? -1
-      : waynet.names.findIndex((name) => name.toUpperCase() === wanted);
+      : waynet.names.findIndex((each) => each.toUpperCase() === wanted);
 
     if (waynet !== null && waypoint >= 0) {
       // The overlay is switched on rather than assumed: with it off the gizmo
@@ -835,7 +818,93 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     // is a worse answer than the disabled one that button used to give.
     const spot = findFreePointVob(summary, wanted);
     if (spot !== null) focusVob(spot);
-  }, [focusRequest, waynet, summary, focusVob, selectWaypoint]);
+  }, [waynet, summary, focusVob, selectWaypoint]);
+
+  /**
+   * The world an NPC lives in, opened from outside the surface (#226). The
+   * dialog editor's jump names the `.ZEN` the spawn site's own `STARTUP_`
+   * function points to; the path comes from the same scan the picker lists
+   * (§16.31), which is why naming a world resolves to a file with no
+   * world-directory setting of its own — the project's asset sources already
+   * say where worlds are.
+   */
+  const openWorldNamed = useCallback(async (worldName: string, thenFocus: string) => {
+    let worlds: DiscoveredWorld[];
+    try {
+      worlds = await window.editorAPI.listWorlds();
+    } catch (failure) {
+      useWorldStore.getState().editFailed(
+        failure instanceof Error ? failure.message : String(failure),
+      );
+      return;
+    }
+    const wanted = `${worldName.toUpperCase()}.ZEN`;
+    const found = worlds.find((world) => world.name.toUpperCase() === wanted) ?? null;
+    if (found === null) {
+      useWorldStore.getState().editFailed(
+        `${wanted} is not among the project's asset sources — open it with Browse…, `
+        + 'or add the folder that holds it to the project.',
+      );
+      return;
+    }
+    await openWorldAt(found.path);
+    // A refused open has replaced the surface with its own error; a jump into
+    // it would be one nothing will ever take.
+    if (useWorldStore.getState().status !== 'ready') return;
+    // Left to the effect below rather than jumped here, and both halves of
+    // that are the point. Not here: React commits this open's mesh and visuals
+    // on a task of its own, so at this line the viewport that owns the camera
+    // is not mounted and there is nothing to fly. And not back through
+    // `requestFocus` either: a store update renders at sync priority and may
+    // skip the `setWaynet` this very open just made, which is how the first
+    // cut jumped into a world whose waynet it could not yet see. A `useState`
+    // lands in the same batch as the open's own — one render, one commit, and
+    // the effect runs with the world on screen and its waynet in hand.
+    setPendingJump(thenFocus);
+  }, [openWorldAt]);
+
+  useEffect(() => {
+    if (pendingJump === null) return;
+    setPendingJump(null);
+    jumpToPoint(pendingJump);
+  }, [pendingJump, jumpToPoint]);
+
+  /**
+   * A jump asked for from outside the surface — the Problems panel's click on a
+   * world finding (§16.20 slice 2). The panel cannot call the viewport: it is
+   * another view, and while it is on screen this one may not even be mounted.
+   * So it leaves a request in the store and this consumes it.
+   *
+   * Taken exactly once, whether or not it lands: a request left standing would
+   * fire again on the next waynet re-read, long after the click that made it.
+   */
+  const focusRequest = useWorldStore((s) => s.focusRequest);
+  useEffect(() => {
+    if (focusRequest === null) return;
+    useWorldStore.getState().focusHandled();
+
+    if (focusRequest.kind === 'vob') { focusVob(focusRequest.vob); return; }
+
+    // A world the request names and this surface is not showing (#226): the
+    // dialog editor knows which `.ZEN` an NPC lives in but cannot open one, so
+    // the open happens here and the jump is re-issued on the other side of it.
+    if (focusRequest.kind === 'waypoint' && focusRequest.inWorld !== undefined) {
+      void openWorldNamed(focusRequest.inWorld, focusRequest.name);
+      return;
+    }
+
+    if (focusRequest.kind === 'add-waypoint') {
+      // Not a jump: a script naming a place is not a position, so there is
+      // nothing to frame. The overlay goes on for the same reason the
+      // waypoint jump above needs it — it is the only thing that will draw
+      // the result — and the name is kept for the terrain click to pick up.
+      setShowWaynet(true);
+      setPendingWaypointName(focusRequest.name);
+      return;
+    }
+
+    jumpToPoint(focusRequest.name);
+  }, [focusRequest, focusVob, jumpToPoint, openWorldNamed]);
 
   const handlePick = useCallback((
     vob: number | null, point: [number, number, number] | null, additive: boolean,

@@ -10,7 +10,8 @@ import {
   resolveNpcSpawnPoint,
   resolveNpcSpawnSite,
   expectedWorldNameFor,
-  npcJumpReason,
+  worldToOpenFor,
+  npcJumpPlan,
 } from '../src/renderer/components/npcWorldJump';
 import type { SpawnSite } from '../src/shared/types';
 import type { WorldWaynetView } from '../src/renderer/problems/domain/types';
@@ -49,59 +50,89 @@ describe('resolveNpcSpawnPoint', () => {
   });
 });
 
-describe('npcJumpReason', () => {
+describe('npcJumpPlan', () => {
   it('is disabled with its reason when the dialog names no NPC', () => {
-    expect(npcJumpReason(null, null, world([]))).toBe('This dialog names no NPC');
+    expect(npcJumpPlan(null, null, world([])))
+      .toEqual({ kind: 'disabled', reason: 'This dialog names no NPC' });
   });
 
   it('is disabled with its reason when the index has no spawn point for the NPC', () => {
-    expect(npcJumpReason('BAU_900_FARIM', null, world(['WP_MARKET'])))
-      .toBe('No spawn point is known for BAU_900_FARIM');
+    expect(npcJumpPlan('BAU_900_FARIM', null, world(['WP_MARKET'])))
+      .toEqual({ kind: 'disabled', reason: 'No spawn point is known for BAU_900_FARIM' });
   });
 
-  it('is disabled with its reason when no world is open', () => {
-    expect(npcJumpReason('BAU_900_FARIM', 'WP_MARKET', null)).toBe('No world is open');
+  it('is disabled with its reason when no world is open and none can be named', () => {
+    expect(npcJumpPlan('BAU_900_FARIM', 'WP_MARKET', null))
+      .toEqual({ kind: 'disabled', reason: 'No world is open' });
   });
 
   it('distinguishes "not in this world" from "no world"', () => {
-    expect(npcJumpReason('BAU_900_FARIM', 'WP_MARKET', world(['WP_OTHER'])))
-      .toBe('WP_MARKET is not in the open world');
+    expect(npcJumpPlan('BAU_900_FARIM', 'WP_MARKET', world(['WP_OTHER'])))
+      .toEqual({ kind: 'disabled', reason: 'WP_MARKET is not in the open world' });
   });
 
-  it('is enabled when the point is in the open world', () => {
-    expect(npcJumpReason('BAU_900_FARIM', 'WP_MARKET', world(['WP_MARKET']))).toBeNull();
+  it('jumps when the point is in the open world', () => {
+    expect(npcJumpPlan('BAU_900_FARIM', 'WP_MARKET', world(['WP_MARKET'])))
+      .toEqual({ kind: 'jump' });
   });
 
-  it('is enabled for a free point too, same as the action-level jump', () => {
-    expect(npcJumpReason('BAU_900_FARIM', 'FP_ROAM_CITY_01', world([], ['FP_ROAM_CITY_01'])))
-      .toBeNull();
+  it('jumps for a free point too, same as the action-level jump', () => {
+    expect(npcJumpPlan('BAU_900_FARIM', 'FP_ROAM_CITY_01', world([], ['FP_ROAM_CITY_01'])))
+      .toEqual({ kind: 'jump' });
   });
 
-  describe('naming the expected world', () => {
+  describe('opening the world the NPC lives in (#226)', () => {
     // The engine spawns every NPC from a function named after the world file
     // (environment-hazards.md, "A candidate is only a game under the name
-    // NEWWORLD.ZEN"), so a spawn site's own function already says which .ZEN
-    // to open — a fact this button can hand the person, even though it cannot
-    // act on it without a world-directory setting (§16.19 s14's closing note).
+    // NEWWORLD.ZEN"), so a spawn site's own function says which .ZEN to open —
+    // and the project's asset sources say where that file is (§16.31). Between
+    // them the jump opens the world rather than naming it in a tooltip.
 
-    it('names the world to open when none is', () => {
-      expect(npcJumpReason('BAU_900_FARIM', 'WP_MARKET', null, 'NEWWORLD'))
-        .toBe('Open NEWWORLD.ZEN to jump here');
+    it('offers the open when no world is open', () => {
+      expect(npcJumpPlan('BAU_900_FARIM', 'WP_MARKET', null, 'NEWWORLD'))
+        .toEqual({ kind: 'open', world: 'NEWWORLD' });
     });
 
-    it('names the world to open when the point is in the wrong one', () => {
-      expect(npcJumpReason('BAU_900_FARIM', 'WP_MARKET', world(['WP_OTHER']), 'NEWWORLD'))
-        .toBe('WP_MARKET is not in the open world — open NEWWORLD.ZEN');
+    it('offers the open when the point is in another world', () => {
+      expect(npcJumpPlan('BAU_900_FARIM', 'WP_MARKET', world(['WP_OTHER']), 'NEWWORLD'))
+        .toEqual({ kind: 'open', world: 'NEWWORLD' });
     });
 
-    it('falls back to the plain reason when no world name is known', () => {
-      expect(npcJumpReason('BAU_900_FARIM', 'WP_MARKET', null, null)).toBe('No world is open');
+    it('stays disabled when no world name could be read off the spawn site', () => {
+      expect(npcJumpPlan('BAU_900_FARIM', 'WP_MARKET', null, null))
+        .toEqual({ kind: 'disabled', reason: 'No world is open' });
     });
 
-    it('never fires when the jump is already enabled', () => {
-      expect(npcJumpReason('BAU_900_FARIM', 'WP_MARKET', world(['WP_MARKET']), 'NEWWORLD'))
-        .toBeNull();
+    it('never opens a world when the point is already in the open one', () => {
+      // Re-opening the world under the camera would throw away 31 MB of
+      // geometry to land where the plain jump lands.
+      expect(npcJumpPlan('BAU_900_FARIM', 'WP_MARKET', world(['WP_MARKET']), 'NEWWORLD'))
+        .toEqual({ kind: 'jump' });
     });
+  });
+});
+
+describe('worldToOpenFor', () => {
+  it('names the world when none is open', () => {
+    expect(worldToOpenFor('NEWWORLD', null)).toBe('NEWWORLD');
+  });
+
+  it('names nothing when the world holding the NPC is the open one', () => {
+    // The point is missing from a world that *is* NEWWORLD.ZEN — re-opening it
+    // would find it missing again, so the reason stands rather than a button.
+    expect(worldToOpenFor('NEWWORLD', 'C:/Gothic/_work/Data/Worlds/NewWorld.zen')).toBeNull();
+  });
+
+  it('names the world when another one is open', () => {
+    expect(worldToOpenFor('NEWWORLD', 'C:/Gothic/_work/Data/Worlds/OldWorld.zen')).toBe('NEWWORLD');
+  });
+
+  it('compares the file name on either path separator', () => {
+    expect(worldToOpenFor('NEWWORLD', 'C:\\Gothic\\Worlds\\NEWWORLD.ZEN')).toBeNull();
+  });
+
+  it('names nothing when the spawn site named no world', () => {
+    expect(worldToOpenFor(null, null)).toBeNull();
   });
 });
 

@@ -3727,6 +3727,104 @@ describe('a focus request from outside the surface', () => {
   });
 
   /**
+   * `inWorld` — the world the NPC actually lives in (#226). The dialog editor
+   * reads the `.ZEN` off the spawn site's own `STARTUP_` function and can name
+   * it but not open it; opening a world is this surface's, so the name rides
+   * the request and this is where it is resolved — through the same
+   * project-source scan the world picker lists (§16.31), which is why no
+   * world-directory setting was needed to get here.
+   */
+  describe('a request naming a world that is not open', () => {
+    const WORLDS = [
+      { path: 'C:/Gothic/_work/Data/Worlds/OldWorld.zen', name: 'OldWorld.ZEN', source: 'C:/Gothic', isDefault: false },
+      { path: 'C:/Gothic/_work/Data/Worlds/NewWorld.zen', name: 'NewWorld.ZEN', source: 'C:/Gothic', isDefault: true },
+    ];
+
+    /** The open the resolved path is expected to make, stubbed through. */
+    const stubOpen = () => {
+      const summary = { ...SUMMARY, vobIndex: vobIndex([[0, 0, 0], [10, 20, 30]]) };
+      api.openWorld.mockResolvedValueOnce(summary as never);
+      api.getWorldMesh.mockResolvedValueOnce({ groups: [], bbox: summary.bbox } as never);
+      api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+      return summary;
+    };
+
+    it('opens that world, then makes the jump in it', async () => {
+      api.listWorlds.mockResolvedValueOnce(WORLDS as never);
+      stubOpen();
+      render(<WorldSurface />);
+
+      await act(async () => {
+        useWorldStore.getState().requestFocus(
+          { kind: 'waypoint', name: 'wp_middle', inWorld: 'NEWWORLD' },
+        );
+      });
+
+      await waitFor(() => expect(api.openWorld).toHaveBeenCalledWith(
+        expect.objectContaining({ worldPath: 'C:/Gothic/_work/Data/Worlds/NewWorld.zen' }),
+      ));
+      // The jump itself is re-issued after the open, because the waynet it
+      // needs is the one *this* open has just read.
+      await waitFor(() => expect(mockFramePoint).toHaveBeenCalledWith(WAYPOINT_WAS));
+      expect(useWorldStore.getState().selectedWaypoint).toBe(1);
+      expect(mockShowWaynet).toBe(true);
+      expect(useWorldStore.getState().focusRequest).toBeNull();
+    });
+
+    it('says so and opens nothing when the project has no such world', async () => {
+      api.listWorlds.mockResolvedValueOnce([WORLDS[0]] as never);
+      render(<WorldSurface />);
+
+      await act(async () => {
+        useWorldStore.getState().requestFocus(
+          { kind: 'waypoint', name: 'WP_MIDDLE', inWorld: 'NEWWORLD' },
+        );
+      });
+
+      await waitFor(() => expect(screen.getByTestId('world-edit-error')).toHaveTextContent(
+        /NEWWORLD\.ZEN/,
+      ));
+      expect(api.openWorld).not.toHaveBeenCalled();
+      expect(useWorldStore.getState().focusRequest).toBeNull();
+    });
+
+    it('reports a scan that failed rather than leaving the click unanswered', async () => {
+      api.listWorlds.mockRejectedValueOnce(new Error('sources unreadable') as never);
+      render(<WorldSurface />);
+
+      await act(async () => {
+        useWorldStore.getState().requestFocus(
+          { kind: 'waypoint', name: 'WP_MIDDLE', inWorld: 'NEWWORLD' },
+        );
+      });
+
+      await waitFor(() => expect(screen.getByTestId('world-edit-error')).toHaveTextContent(
+        /sources unreadable/,
+      ));
+      expect(api.openWorld).not.toHaveBeenCalled();
+    });
+
+    it('makes no jump when the open itself failed', async () => {
+      // A refused open replaces the whole surface with its own error, and
+      // there is no world left to fly through.
+      api.listWorlds.mockResolvedValueOnce(WORLDS as never);
+      api.openWorld.mockRejectedValueOnce(new Error('no asset source') as never);
+      render(<WorldSurface />);
+
+      await act(async () => {
+        useWorldStore.getState().requestFocus(
+          { kind: 'waypoint', name: 'WP_MIDDLE', inWorld: 'NEWWORLD' },
+        );
+      });
+
+      await waitFor(() => expect(useWorldStore.getState().status).toBe('error'));
+      expect(mockFramePoint).not.toHaveBeenCalled();
+      expect(useWorldStore.getState().selectedWaypoint).toBeNull();
+      expect(useWorldStore.getState().focusRequest).toBeNull();
+    });
+  });
+
+  /**
    * `{ kind: 'add-waypoint' }` — the Problems panel's "Add to world" action on
    * a `waypoint-not-in-world` finding. Unlike the other two kinds it is not a
    * jump: a script naming a place is not a position, so there is nothing to

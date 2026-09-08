@@ -35,7 +35,15 @@ export type WorldStatus = 'idle' | 'opening' | 'ready' | 'error';
  */
 export type WorldFocus =
   | { kind: 'vob'; vob: number }
-  | { kind: 'waypoint'; name: string }
+  /**
+   * `inWorld` is the `.ZEN` file name (without its extension) the surface has
+   * to open before the jump can land — the world an NPC actually lives in
+   * (#226), which the dialog editor names but cannot open: opening a world is
+   * the World surface's, and the request is how the two sides meet, exactly
+   * as the jump itself already is. Absent when the point is in the world
+   * already open, which is every request the Problems panel makes.
+   */
+  | { kind: 'waypoint'; name: string; inWorld?: string }
   | { kind: 'add-waypoint'; name: string };
 
 /**

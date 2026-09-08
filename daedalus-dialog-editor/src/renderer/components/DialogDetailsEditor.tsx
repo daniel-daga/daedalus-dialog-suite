@@ -25,7 +25,7 @@ import { useWorldStore } from '../store/worldStore';
 import { useUISelectionStore } from '../store/uiSelectionStore';
 import * as historyActions from '../store/historyActions';
 import { DialogDetailsEditorProps } from './dialogTypes';
-import { resolveNpcSpawnSite, expectedWorldNameFor, npcJumpReason } from './npcWorldJump';
+import { resolveNpcSpawnSite, expectedWorldNameFor, worldToOpenFor, npcJumpPlan } from './npcWorldJump';
 import ValidationErrorDialog from './ValidationErrorDialog';
 import { flushAllPendingEdits } from '../utils/pendingEditFlushRegistry';
 import DialogPropertiesSection from './DialogPropertiesSection';
@@ -80,17 +80,27 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   );
   const npcSpawnPoint = npcSpawnSite?.spawnPoint ?? null;
   // The engine spawns every NPC from a function named after the world file
-  // (environment-hazards.md), so the site's own function can name the .ZEN to
-  // open even though this button cannot open it — no world-directory setting
-  // exists yet to resolve that name to a path (§16.19 s14's closing note).
+  // (environment-hazards.md), so the site's own function names the .ZEN the
+  // NPC lives in — and the project's own asset sources say where that file is
+  // (§16.31), which is what turns the name into an open (#226).
   const expectedWorldName = npcSpawnSite ? expectedWorldNameFor(npcSpawnSite.functionName) : null;
   const world = useWorldStore((s) => (s.status === 'ready' ? (s.waynetNames ?? null) : null));
-  const worldJumpDisabledReason = npcJumpReason(npcName, npcSpawnPoint, world, expectedWorldName);
+  const openWorldPath = useWorldStore((s) => s.summary?.worldPath ?? null);
+  const jumpPlan = useMemo(
+    () => npcJumpPlan(
+      npcName, npcSpawnPoint, world, worldToOpenFor(expectedWorldName, openWorldPath),
+    ),
+    [npcName, npcSpawnPoint, world, expectedWorldName, openWorldPath]
+  );
   const handleWorldJump = useCallback(() => {
-    if (!npcSpawnPoint) return;
-    useWorldStore.getState().requestFocus({ kind: 'waypoint', name: npcSpawnPoint });
+    if (!npcSpawnPoint || jumpPlan.kind === 'disabled') return;
+    // The world to open rides the focus request rather than being opened here:
+    // opening one is the World surface's, which is also where the jump lands.
+    useWorldStore.getState().requestFocus(jumpPlan.kind === 'open'
+      ? { kind: 'waypoint', name: npcSpawnPoint, inWorld: jumpPlan.world }
+      : { kind: 'waypoint', name: npcSpawnPoint });
     useUISelectionStore.getState().setActiveView('world');
-  }, [npcSpawnPoint]);
+  }, [npcSpawnPoint, jumpPlan]);
 
   const canUndo = useHistoryStore((state) => filePath ? state.canUndo(filePath) : false);
   const canRedo = useHistoryStore((state) => filePath ? state.canRedo(filePath) : false);
@@ -246,11 +256,15 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
           >
             View Source
           </Button>
-          <Tooltip title={worldJumpDisabledReason ?? `Show ${npcName} in the world`}>
+          <Tooltip title={
+            jumpPlan.kind === 'disabled' ? jumpPlan.reason
+              : jumpPlan.kind === 'open' ? `Open ${jumpPlan.world}.ZEN and show ${npcName} in it`
+                : `Show ${npcName} in the world`
+          }>
             <span>
               <Button
                 variant="outlined"
-                disabled={worldJumpDisabledReason !== null}
+                disabled={jumpPlan.kind === 'disabled'}
                 onClick={handleWorldJump}
                 startIcon={<PlaceIcon />}
                 data-testid="npc-world-jump"

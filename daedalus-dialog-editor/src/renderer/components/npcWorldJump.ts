@@ -49,33 +49,52 @@ export function expectedWorldNameFor(functionName: string): string | null {
 }
 
 /**
- * Why the jump is disabled, or `null` when it isn't — the same three-answer
- * shape §16.8 named for the action-level button, with one more rung above it:
- * a dialog can also name no NPC, and an NPC the index has never seen spawned
- * is a different fact from a spawn point missing from *this* world.
- *
- * `expectedWorldName` only sharpens the wording of the "no world" and "wrong
- * world" reasons — it names the `.ZEN` the spawn site's own function points
- * to, when `expectedWorldNameFor` could read one off it. It answers no new
- * question and opens nothing itself: resolving that name to a path, and
- * actually opening it, needs a world-directory setting this button does not
- * have (level-editor.md §16.19 slice 14's closing paragraph).
+ * The `.ZEN` a jump would have to open before it can land, or `null` when
+ * there is nothing to open — the spawn site named no world, or the world it
+ * named is the one already open. That last case is the point of the function:
+ * a point missing from a world that *is* `NEWWORLD.ZEN` would still be missing
+ * after re-opening it, so it stays a reason rather than becoming a button
+ * that throws 31 MB of geometry away to land nowhere.
  */
-export function npcJumpReason(
+export function worldToOpenFor(
+  expectedWorldName: string | null,
+  openWorldPath: string | null,
+): string | null {
+  if (expectedWorldName === null) return null;
+  if (openWorldPath === null) return expectedWorldName;
+  const fileName = openWorldPath.split(/[\\/]/).pop() ?? '';
+  const openName = fileName.replace(/\.zen$/i, '').toUpperCase();
+  return openName === expectedWorldName.toUpperCase() ? null : expectedWorldName;
+}
+
+/** What the jump button does, or why it cannot. */
+export type NpcJumpPlan =
+  | { kind: 'jump' }
+  | { kind: 'open'; world: string }
+  | { kind: 'disabled'; reason: string };
+
+/**
+ * The jump, the open, or the reason for neither — the same three-answer shape
+ * §16.8 named for the action-level button, with one more rung above it: a
+ * dialog can also name no NPC, and an NPC the index has never seen spawned is
+ * a different fact from a spawn point missing from *this* world.
+ *
+ * `worldToOpen` is what makes the middle answer possible (#226): the spawn
+ * site's own function names the world file the engine spawns from, and the
+ * project's asset sources say where that file is — so a point in another world
+ * is a world to open, not a tooltip to read. It buys nothing when the open
+ * world already holds the point, which is why that case is tested first.
+ */
+export function npcJumpPlan(
   npc: string | null,
   spawnPoint: string | null,
   world: WorldWaynetView | null,
-  expectedWorldName: string | null = null,
-): string | null {
-  if (!npc) return 'This dialog names no NPC';
-  if (!spawnPoint) return `No spawn point is known for ${npc}`;
-  if (world === null) {
-    return expectedWorldName ? `Open ${expectedWorldName}.ZEN to jump here` : 'No world is open';
-  }
-  if (!worldHasPoint(world, spawnPoint)) {
-    return expectedWorldName
-      ? `${spawnPoint} is not in the open world — open ${expectedWorldName}.ZEN`
-      : `${spawnPoint} is not in the open world`;
-  }
-  return null;
+  worldToOpen: string | null = null,
+): NpcJumpPlan {
+  if (!npc) return { kind: 'disabled', reason: 'This dialog names no NPC' };
+  if (!spawnPoint) return { kind: 'disabled', reason: `No spawn point is known for ${npc}` };
+  if (world !== null && worldHasPoint(world, spawnPoint)) return { kind: 'jump' };
+  if (worldToOpen !== null) return { kind: 'open', world: worldToOpen };
+  if (world === null) return { kind: 'disabled', reason: 'No world is open' };
+  return { kind: 'disabled', reason: `${spawnPoint} is not in the open world` };
 }

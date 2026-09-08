@@ -47,10 +47,11 @@ const setSpawnSites = (
   });
 };
 
-const openWorldWith = (names: string[]): void => {
+const openWorldWith = (names: string[], worldPath = 'C:/Gothic/_work/Data/Worlds/OldWorld.zen'): void => {
   act(() => {
     useWorldStore.setState({
       status: 'ready',
+      summary: { worldPath },
       waynetNames: { pointNameKeys: new Set(names), freePointNames: [] },
     } as any);
   });
@@ -100,12 +101,46 @@ describe('the NPC/Dialog view jumps to the world', () => {
     expect(await hoverReason()).toBe('No spawn point is known for BAU_900_FARIM');
   });
 
-  it('names the world to open, read off the spawn site\'s own STARTUP_ function', async () => {
+  it('offers to open the world, read off the spawn site\'s own STARTUP_ function', async () => {
     setSpawnSites([{ instance: 'BAU_900_FARIM', spawnPoint: 'WP_MARKET' }]);
     render(<DialogDetailsEditor dialogName={DIALOG_NAME} filePath={null} semanticModel={semanticModel('BAU_900_FARIM') as any} />);
 
+    expect(jumpButton()).toBeEnabled();
+    expect(await hoverReason()).toBe('Open NEWWORLD.ZEN and show BAU_900_FARIM in it');
+  });
+
+  it('asks the World surface to open that world and jump there', async () => {
+    // The dialog editor names the world; only the World surface can open one
+    // (#226), so the name rides the same focus request the jump already sends.
+    setSpawnSites([{ instance: 'BAU_900_FARIM', spawnPoint: 'WP_MARKET' }]);
+    render(<DialogDetailsEditor dialogName={DIALOG_NAME} filePath={null} semanticModel={semanticModel('BAU_900_FARIM') as any} />);
+
+    fireEvent.click(jumpButton());
+
+    expect(useWorldStore.getState().focusRequest)
+      .toEqual({ kind: 'waypoint', name: 'WP_MARKET', inWorld: 'NEWWORLD' });
+    expect(useUISelectionStore.getState().activeView).toBe('world');
+  });
+
+  it('carries no world to open when the point is in the world already open', async () => {
+    setSpawnSites([{ instance: 'BAU_900_FARIM', spawnPoint: 'WP_MARKET' }]);
+    openWorldWith(['WP_MARKET'], 'C:/Gothic/_work/Data/Worlds/NewWorld.zen');
+    render(<DialogDetailsEditor dialogName={DIALOG_NAME} filePath={null} semanticModel={semanticModel('BAU_900_FARIM') as any} />);
+
+    fireEvent.click(jumpButton());
+
+    expect(useWorldStore.getState().focusRequest).toEqual({ kind: 'waypoint', name: 'WP_MARKET' });
+  });
+
+  it('stays disabled when the point is missing from the very world it names', async () => {
+    // Re-opening NEWWORLD.ZEN would find WP_MARKET missing all over again, so
+    // the reason stands rather than becoming a button that costs an open.
+    setSpawnSites([{ instance: 'BAU_900_FARIM', spawnPoint: 'WP_MARKET' }]);
+    openWorldWith(['WP_OTHER'], 'C:/Gothic/_work/Data/Worlds/NewWorld.zen');
+    render(<DialogDetailsEditor dialogName={DIALOG_NAME} filePath={null} semanticModel={semanticModel('BAU_900_FARIM') as any} />);
+
     expect(jumpButton()).toBeDisabled();
-    expect(await hoverReason()).toBe('Open NEWWORLD.ZEN to jump here');
+    expect(await hoverReason()).toBe('WP_MARKET is not in the open world');
   });
 
   it('falls back to the plain "no world" reason when the function does not follow the convention', async () => {
@@ -118,13 +153,13 @@ describe('the NPC/Dialog view jumps to the world', () => {
     expect(await hoverReason()).toBe('No world is open');
   });
 
-  it('distinguishes "not in this world" from "no world", and still names the world to open', async () => {
+  it('offers the open when the point is in another world than the one on screen', async () => {
     setSpawnSites([{ instance: 'BAU_900_FARIM', spawnPoint: 'WP_MARKET' }]);
-    openWorldWith(['WP_OTHER']);
+    openWorldWith(['WP_OTHER'], 'C:/Gothic/_work/Data/Worlds/OldWorld.zen');
     render(<DialogDetailsEditor dialogName={DIALOG_NAME} filePath={null} semanticModel={semanticModel('BAU_900_FARIM') as any} />);
 
-    expect(jumpButton()).toBeDisabled();
-    expect(await hoverReason()).toBe('WP_MARKET is not in the open world — open NEWWORLD.ZEN');
+    expect(jumpButton()).toBeEnabled();
+    expect(await hoverReason()).toBe('Open NEWWORLD.ZEN and show BAU_900_FARIM in it');
   });
 
   it('does not request a focus when it is disabled', () => {

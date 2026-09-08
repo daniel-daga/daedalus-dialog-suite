@@ -2988,28 +2988,6 @@ lists and loads.
 
 ---
 
-### 16.32 Insert NPC slice F — the world-directory setting (#226, deferred)
-
-The one open piece of the Phase 1c Insert-NPC work; A–E landed 2026-09-02 and
-their durable outcome is in `docs/architecture/level-editor.md` §8, *"Authoring
-into a file the editor is not editing"*.
-
-A world-directory setting on `SettingsService`, following the
-`gothicInstallPath` pattern. It buys exactly one thing: `expectedWorldNameFor`
-already names the `.ZEN` a jump would need — *"Open NEWWORLD.ZEN to jump
-here"*, read off the site's `STARTUP_`/`INIT_` prefix, `null` rather than a
-guess when the holding function does not follow the convention — and the
-setting is what turns that message into a click, by resolving the name to a
-path. The second thing it would buy is the answer the spawn-point jump keeps
-reserved: *"no such waypoint anywhere"*, which `InsertNpcActionRenderer`
-refuses to give today because the editor holds one world and has no index of
-the others.
-
-The landed append needs none of it — the open world's path is already in
-`worldStore.summary`.
-
----
-
 ### 16.33 Routine overlap — the finding the measurement supports (#235)
 
 `coverageOf` (`src/renderer/routines/routineSchedule.ts`) reports, per routine,

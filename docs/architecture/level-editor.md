@@ -3007,6 +3007,35 @@ NPC on a point more than once across chapters), where the confirm turns into
 *Insert anyway*. A refusal *after* the waypoint op says so — "Waypoint X was
 added, but …" — rather than hiding the half-state.
 
+#### Opening the world an NPC lives in (2026-09-08)
+
+The last piece of the Insert-NPC slicing, and it needed no setting of its own.
+The dialog editor's *Show in World* already read the `.ZEN` an NPC lives in off
+the spawn site's own function name — `STARTUP_NEWWORLD` names `NEWWORLD.ZEN`,
+`null` for a helper that does not follow the convention — and said it in a
+tooltip it could not act on. What turned that into a click is world discovery
+(§16.31): the project's asset sources already say where worlds are, so a name
+resolves to a path through the same `listWorlds` scan the world picker lists.
+The `SettingsService` world-directory entry the card was written around would
+have been a second answer to a question the project file had since answered.
+
+Three sides, each doing only what it can: `npcJumpPlan` answers *jump*, *open*
+or *why not* (`npcWorldJump.ts`, pure); the dialog editor puts the world's name
+on the focus request it already sends (`WorldFocus.inWorld`); the World surface
+resolves it, opens it, and jumps. The jump after such an open cannot be made
+inline and cannot go back through `requestFocus` — React commits the open's
+mesh and visuals on a task of its own, so the viewport that owns the camera is
+not mounted yet, and a store update renders at sync priority and can skip the
+`setWaynet` the same open just made. It is a `useState`, which lands in the
+same batch as the open's own: one render, one commit, and the effect runs with
+the world on screen and its waynet in hand.
+
+Two answers stay out of reach for the same reason as before, and neither is
+this card's: a point missing from the very world its site names stays a
+disabled reason rather than an open that would find it missing again, and *"no
+such waypoint anywhere"* still needs an index of worlds the editor does not
+hold — it holds one world at a time.
+
 #### What Phase 1c does not reach, and what each would need
 
 - **NPC and item *visuals*.** §11's "NPC/item rendering" reads as the actual
