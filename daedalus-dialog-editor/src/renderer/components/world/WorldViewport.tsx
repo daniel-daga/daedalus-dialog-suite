@@ -592,7 +592,11 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.target.set(box.center[0], box.center[1], box.center[2]);
-    controls.enableDamping = true;
+    // No damping: the camera stops when the drag stops. Three's default coast
+    // reads as the viewport lagging the hand, and neither Spacer nor Blender
+    // — the two sets of hands this is aimed at — coasts. The gizmo's own
+    // damping (`DampedTransformControls`) is a separate rate and is not this.
+    controls.enableDamping = false;
 
     // Where the last click landed, in three space, or null before the first
     // one. The fallback pivot for a drag that begins over the sky.
