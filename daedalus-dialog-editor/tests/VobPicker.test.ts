@@ -31,6 +31,7 @@ interface Deferred {
  *  `WebGLRenderer` needs a GL context; the picker needs none of it. */
 function fakeRenderer() {
   const pending: Deferred[] = [];
+  const passes: unknown[][] = [];
   const calls = { renders: 0, clears: 0, synchronousReads: 0 };
   let target: THREE.WebGLRenderTarget | null = null;
 
@@ -39,7 +40,13 @@ function fakeRenderer() {
     setRenderTarget: (next: THREE.WebGLRenderTarget | null) => { target = next; },
     setClearColor: () => {},
     clear: () => { calls.clears += 1; },
-    render: () => { calls.renders += 1; },
+    render: (scene: THREE.Scene) => {
+      calls.renders += 1;
+      // Which material each proxy was drawn *with*, per pass: the near-miss
+      // pass swaps them for the draw and puts them back, so reading them
+      // afterwards says nothing about what was drawn (#230).
+      passes.push(scene.children.map((child) => (child as THREE.Mesh).material));
+    },
     // The one this change exists to remove. Present so that using it is a
     // failure rather than a TypeError somewhere less obvious.
     readRenderTargetPixels: () => { calls.synchronousReads += 1; },
@@ -60,6 +67,7 @@ function fakeRenderer() {
   return {
     renderer: renderer as unknown as THREE.WebGLRenderer,
     calls,
+    passes,
     pending,
     currentTarget: () => target,
   };
@@ -74,6 +82,15 @@ function pickerWithOneVob(vobId: number) {
 
 const idPixel = (id: number): number[] =>
   [...encodePickId(id).map((channel) => Math.round(channel * 255)), 255];
+
+/** Wait until `count` passes have been submitted. A pick that misses submits
+ *  its near-miss pass from the continuation after the first readback settles,
+ *  which is several microtask hops away — this drains them rather than
+ *  guessing at how many. */
+async function untilPasses(pending: Deferred[], count: number): Promise<void> {
+  for (let tick = 0; tick < 100 && pending.length < count; tick += 1) await Promise.resolve();
+  expect(pending).toHaveLength(count);
+}
 
 describe('the prop pick', () => {
   it('reads the pixel back asynchronously — never through the stalling call', async () => {
@@ -141,7 +158,11 @@ describe('the prop pick', () => {
     const camera = new THREE.PerspectiveCamera();
 
     const answer = picker.pickAsync(renderer, camera, 10, 10, 800, 600);
+    // Both passes empty: the exact one, then the near-miss one it falls
+    // through to.
     pending[0].resolve([0, 0, 0, 255]);
+    await untilPasses(pending, 2);
+    pending[1].resolve([0, 0, 0, 255]);
 
     expect(await answer).toBe(NO_PICK);
   });
@@ -156,7 +177,8 @@ describe('the prop pick', () => {
 
     picker.warm(renderer, camera);
 
-    expect(calls.renders).toBe(1);
+    // Two: the exact pass and the near-miss pass are different programs.
+    expect(calls.renders).toBe(2);
     expect(pending).toHaveLength(0);
     expect(calls.synchronousReads).toBe(0);
     expect(currentTarget()).toBeNull();
@@ -202,6 +224,8 @@ describe('the prop pick', () => {
     foliage.map = decoded;
     const answer = picker.pickAsync(renderer, new THREE.PerspectiveCamera(), 1, 1, 8, 6);
     pending[0].resolve([0, 0, 0, 255]);
+    await untilPasses(pending, 2);
+    pending[1].resolve([0, 0, 0, 255]);
     await answer;
 
     expect(material.uniforms.map.value).toBe(decoded);
@@ -226,6 +250,104 @@ describe('the prop pick', () => {
     const material = proxy.material as THREE.ShaderMaterial;
     expect(material.vertexShader).toContain('attribute float instanceHidden;');
     expect(material.vertexShader).toMatch(/instanceHidden > 0\.5/);
+  });
+});
+
+describe('the near-miss pass (#230)', () => {
+  /** One cut-out prop — a foliage quad, the case the report is about. */
+  function foliagePicker(vobId: number) {
+    const picker = new VobPicker();
+    const foliage = new THREE.MeshBasicMaterial();
+    foliage.alphaTest = 0.5;
+    foliage.map = new THREE.Texture();
+    const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(), foliage, 1);
+    picker.setInstancedMeshes([mesh], () => vobId, new THREE.Matrix4());
+    return picker;
+  }
+
+  it('answers the cut-out quad whole when the exact pass found nothing', async () => {
+    // Clicking between two grass blades hit no drawn fragment, so nothing was
+    // selected. A second 1x1 pass, drawn without the alpha test, answers the
+    // quad's full rectangle — so the gaps inside a VOB's outer surface select
+    // it, and the plant does not have to be hit on a blade.
+    const { renderer, calls, passes, pending } = fakeRenderer();
+    const picker = foliagePicker(7);
+    const camera = new THREE.PerspectiveCamera();
+
+    const answer = picker.pickAsync(renderer, camera, 10, 10, 800, 600);
+    pending[0].resolve([0, 0, 0, 255]);
+    await untilPasses(pending, 2);
+    pending[1].resolve(idPixel(7));
+
+    expect(await answer).toBe(7);
+    expect(calls.renders).toBe(2);
+    // The first pass drew the cut-out material — the one that discards — and
+    // the second drew the plain id material, which keeps every fragment.
+    const [exact, loose] = passes;
+    expect((exact[0] as THREE.ShaderMaterial).fragmentShader).toContain('discard');
+    expect((loose[0] as THREE.ShaderMaterial).fragmentShader).not.toContain('discard');
+    expect((loose[0] as THREE.ShaderMaterial).fragmentShader).toContain('vPickColor');
+    // ...and the proxy is handed its own material back, so the *next* click
+    // starts from an exact pass again.
+    expect(picker.pickProxies[0].material).toBe(exact[0]);
+  });
+
+  it('never runs when the exact pass hit something', async () => {
+    // The rule the two readings disagree on (#230): an exact hit always wins,
+    // so a bush's empty corner can never take a click away from the wall
+    // behind it. That holds because the loose pass only runs on a miss.
+    const { renderer, calls, pending } = fakeRenderer();
+    const picker = foliagePicker(7);
+
+    const answer = picker.pickAsync(renderer, new THREE.PerspectiveCamera(), 1, 1, 8, 6);
+    pending[0].resolve(idPixel(7));
+
+    expect(await answer).toBe(7);
+    expect(calls.renders).toBe(1);
+    expect(pending).toHaveLength(1);
+  });
+
+  it('leaves the world occluders alpha-tested in both passes', async () => {
+    // Only the *props* lose their alpha test. An occluder that lost its own
+    // would make a fence solid, and a bush behind a fence would stop being
+    // clickable through the gaps — the opposite of the report.
+    const { renderer, passes, pending } = fakeRenderer();
+    const picker = foliagePicker(7);
+    const fence = new THREE.MeshBasicMaterial();
+    fence.alphaTest = 0.5;
+    fence.map = new THREE.Texture();
+    picker.setWorldMeshes([new THREE.Mesh(new THREE.PlaneGeometry(), fence)], new THREE.Matrix4());
+    const occluder = picker.pickOccluders[0];
+
+    const cutout = occluder.material as THREE.ShaderMaterial;
+    expect(cutout.fragmentShader).toContain('discard');
+
+    const answer = picker.pickAsync(renderer, new THREE.PerspectiveCamera(), 1, 1, 8, 6);
+    pending[0].resolve([0, 0, 0, 255]);
+    await untilPasses(pending, 2);
+    pending[1].resolve([0, 0, 0, 255]);
+    await answer;
+
+    // The very same material in both passes — the swap reaches the proxies
+    // and nothing else.
+    expect(passes).toHaveLength(2);
+    for (const pass of passes) expect(pass).toContain(cutout);
+  });
+
+  it('warms both passes, so neither compiles inside a click', async () => {
+    // The first pick of a session costs 53 ms compiling the pick shader. The
+    // near-miss pass draws the *same* proxies through the plain id material,
+    // which a scene of nothing but cut-out props would otherwise never have
+    // compiled — and that cost would land on the first click that missed.
+    const { renderer, calls, passes, pending } = fakeRenderer();
+    const picker = foliagePicker(3);
+
+    picker.warm(renderer, new THREE.PerspectiveCamera());
+
+    expect(calls.renders).toBe(2);
+    expect(pending).toHaveLength(0);
+    expect((passes[0][0] as THREE.ShaderMaterial).fragmentShader).toContain('discard');
+    expect((passes[1][0] as THREE.ShaderMaterial).fragmentShader).not.toContain('discard');
   });
 });
 
@@ -317,7 +439,11 @@ describe('the world mesh as a pick occluder (level-editor.md §16.24 3)', () => 
     const decoded = new THREE.Texture();
     cutout.map = decoded;
     const answer = picker.pickAsync(renderer, new THREE.PerspectiveCamera(), 1, 1, 8, 6);
+    // Nothing in this scene but the occluder, so the pick misses and falls
+    // through to the near-miss pass.
     pending[0].resolve([0, 0, 0, 255]);
+    await untilPasses(pending, 2);
+    pending[1].resolve([0, 0, 0, 255]);
     await answer;
 
     expect(material.uniforms.map.value).toBe(decoded);

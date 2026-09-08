@@ -2641,11 +2641,28 @@ VOB behind a wall won the pixel — reported on a Khorinis tower. `setWorldMeshe
 draws the world mesh into the same one-pixel view offset, `colorWrite: false`,
 sharing the `WorldScene`'s geometry (and therefore never disposing it). Black is
 already what the readback reads as "nothing was hit", so a click on a wall falls
-through to the BVH raycast exactly as a click on empty sky does. A cut-out or
-blended world surface is **left out**: the pass cannot see where its holes are —
-the same known limit that makes the transparent corner of a foliage quad select
-the plant — so drawn as a solid occluder it would block a click through its own
-transparent half.
+through to the BVH raycast exactly as a click on empty sky does. A **blended**
+world surface is **left out**: it writes no depth when drawn either, and what is
+behind glass or water is on screen and must be clickable. An alpha-tested one is
+drawn through an occluder material that samples the same texture at the same
+threshold as the visible mesh, so a wall occludes and the hole in a fence does
+not — leaving those out was the leak that let every VOB stay clickable through
+the floor above it, ZenGin's default alpha function being NONE and `WorldScene`
+therefore giving nearly the whole world an `alphaTest`.
+
+**An exact pick, then a near-miss one (#230).** Sampling the drawn alpha is
+right about what stands in front of what and wrong about what a click means:
+picking a grass VOB meant hitting a blade, and the gaps between them fell
+through. So a pick that finds nothing draws a second 1x1 pass with the *props'*
+alpha test off — the cut-out quad's full rectangle — and answers with that. The
+order is the whole rule, and it is what settles the two readings the ask can
+have: "click what you see" and "click anywhere in the outer surface" disagree
+wherever two VOBs overlap, and running the loose pass **only on a miss** means
+an exact hit always wins, so no near miss can take a click away from the wall
+behind a bush. The occluders keep their own alpha test in both passes — a fence
+that went solid would stop the bush behind it being clickable through the gaps,
+which is the complaint inverted. It costs one more draw and one more readback,
+on misses only, and `warm` compiles both programs so neither lands in a click.
 
 **A paste lands beside what it copied, and selects it.** The offset is the
 copied group's own extent along X, floored at `PASTE_MIN_OFFSET`: a fixed nudge

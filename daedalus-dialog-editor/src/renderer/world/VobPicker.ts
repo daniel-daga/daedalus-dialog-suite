@@ -30,6 +30,20 @@ import { HIDDEN_ATTRIBUTE } from './WorldScene';
 // discarded fragment writes no depth either, so the pixel falls through exactly
 // as it does on screen.
 //
+// **The near-miss pass (#230).** Exactness is right about what is in front of
+// what and wrong about what a click means: picking a grass VOB meant hitting a
+// blade, and the gaps between them fell through. So a pick that finds nothing
+// draws a *second* 1x1 pass with the props' alpha test off — the cut-out quad's
+// full rectangle — and answers with that. The order is the whole rule: an exact
+// hit always wins, so no near miss can take a click away from the wall behind a
+// bush. Only the props lose the test; the world occluders keep theirs, or a
+// fence would go solid and the bush behind it would stop being clickable
+// through the gaps, which is the reported complaint inverted.
+//
+// It costs one more draw and one more readback, and only on a miss — which
+// includes every click on terrain or sky, where the caller was going to fall
+// through to the BVH raycast anyway. Both are off the main thread.
+//
 // The world mesh is drawn too, depth only (`setWorldMeshes`, §16.24 3). Without
 // it nothing in this scene ever wrote depth but the props themselves, so a VOB
 // behind a wall won the pixel and clicking a Khorinis tower selected whatever
@@ -160,6 +174,9 @@ export class VobPicker {
   })();
 
   private proxies: THREE.InstancedMesh[] = [];
+  /** The material each proxy is drawn with in the exact pass — the near-miss
+   *  pass borrows the proxy and has to give it back. */
+  private exactMaterials = new WeakMap<THREE.InstancedMesh, THREE.ShaderMaterial>();
   private occluders: THREE.Mesh[] = [];
   /** The cut-out materials and the drawn materials they follow — the world's
    *  occluders and the props' proxies kept apart because each is cleared with
@@ -278,11 +295,9 @@ export class VobPicker {
       if (hidden) geometry.setAttribute(HIDDEN_ATTRIBUTE, hidden);
 
       const drawn = mesh.material as THREE.MeshBasicMaterial;
-      const proxy = new THREE.InstancedMesh(
-        geometry,
-        drawn.alphaTest > 0 ? this.propCutoutMaterial(drawn) : this.material,
-        mesh.count,
-      );
+      const exact = drawn.alphaTest > 0 ? this.propCutoutMaterial(drawn) : this.material;
+      const proxy = new THREE.InstancedMesh(geometry, exact, mesh.count);
+      this.exactMaterials.set(proxy, exact);
       proxy.instanceMatrix = mesh.instanceMatrix;
       proxy.matrixAutoUpdate = false;
       // The proxies live in their own scene, so they carry the root conversion
@@ -314,6 +329,24 @@ export class VobPicker {
     width: number,
     height: number,
   ): Promise<number> {
+    const exact = await this.readPick(renderer, camera, x, y, width, height, false);
+    if (exact !== NO_PICK) return exact;
+    // Nothing was drawn under the pixel. Ask again for the quad, not the
+    // texture — see "the near-miss pass" at the top.
+    return this.readPick(renderer, camera, x, y, width, height, true);
+  }
+
+  /** One pass, drawn and read back. `whole` draws the props without their
+   *  alpha test. */
+  private async readPick(
+    renderer: THREE.WebGLRenderer,
+    camera: THREE.PerspectiveCamera,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    whole: boolean,
+  ): Promise<number> {
     // Its own buffer per call: the draw loop keeps running during the readback,
     // so a second click can be in flight before the first has settled, and a
     // shared buffer would make each answer depend on the order the two fences
@@ -323,7 +356,7 @@ export class VobPicker {
     let readback: Promise<unknown> | undefined;
     this.draw(renderer, camera, x, y, width, height, () => {
       readback = renderer.readRenderTargetPixelsAsync(this.target, 0, 0, 1, 1, pixel);
-    });
+    }, whole);
 
     // Everything above — including the readback's own `readPixels` into a pixel
     // pack buffer — is submitted before the first await, so the render target
@@ -341,7 +374,11 @@ export class VobPicker {
    * upload (§3). Doing it when the world opens keeps it out of the first click.
    */
   warm(renderer: THREE.WebGLRenderer, camera: THREE.PerspectiveCamera): void {
-    this.draw(renderer, camera, 0, 0, 1, 1, () => {});
+    this.draw(renderer, camera, 0, 0, 1, 1, () => {}, false);
+    // The near-miss pass draws the same proxies through a different program. A
+    // world of nothing but cut-out props would never have compiled it here, and
+    // the cost would land on the first click that missed.
+    this.draw(renderer, camera, 0, 0, 1, 1, () => {}, true);
   }
 
   /** The pick pass, framed onto one pixel, with the renderer left as it was. */
@@ -353,6 +390,7 @@ export class VobPicker {
     width: number,
     height: number,
     read: () => void,
+    whole: boolean,
   ): void {
     const previousTarget = renderer.getRenderTarget();
 
@@ -366,11 +404,24 @@ export class VobPicker {
     renderer.setRenderTarget(this.target);
     renderer.setClearColor(0x000000, 1);   // black is "nothing was hit"
     renderer.clear();
+    // Swapped for the draw and put straight back, rather than a second set of
+    // proxies: the near-miss pass wants the same instances, the same ids and
+    // the same hiding, and only the fragment that decides whether to keep the
+    // pixel differs. The occluders are untouched.
+    if (whole) for (const proxy of this.proxies) proxy.material = this.material;
     renderer.render(this.scene, camera);
+    if (whole) this.restoreProxyMaterials();
     read();
 
     renderer.setRenderTarget(previousTarget);
     camera.clearViewOffset();
+  }
+
+  /** Each proxy back to the material `setInstancedMeshes` gave it. */
+  private restoreProxyMaterials(): void {
+    for (const proxy of this.proxies) {
+      proxy.material = this.exactMaterials.get(proxy) ?? this.material;
+    }
   }
 
   private clear(): void {
