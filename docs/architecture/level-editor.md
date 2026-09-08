@@ -2729,6 +2729,339 @@ same analysis layer later.)
   VOB/waypoint, mirroring the brief's "spatial, pre-compile" validation
   decision for portals.
 
+#### Where it actually landed, and why not `zen-world/analysis/` (Phase 1c, 2026-08-29 to 09-02)
+
+The bullets above are the Phase 1a design. The extraction did not go into
+`zen-world/analysis/`: it is in the main process, in
+`src/main/utils/semanticMetadataUtils.ts`, riding the `MetadataWorkerPool` pass
+inside `buildProjectIndex` over the one whole-project model list
+`fileModelsForSiteIndexes`. That pass is the only one that sees **every** file —
+the renderer's `parsedFiles` is capped at `PARSED_FILES_CAP = 512` — and an
+index that silently misses files under-reports every question asked of it.
+Everything else in the bullets holds: `daedalus-parser` stays game-agnostic, the
+excluded-never-guessed rule is enforced at each extractor, and `WorldState`'s
+role is played by the time/state lens below.
+
+Six `ProjectIndex` fields carry the overlay, all built in that pass, all
+reaching the renderer through `projectStore`:
+
+| Field | Carries | Renderer |
+|---|---|---|
+| `waypointSites` | every waypoint-taking external's call site (pre-1c, §7) | `waypointSiteIndex` |
+| `spawnSites` | flat `SpawnSite[]` — instance, spawn point, file, function, 1-based line | `spawnSiteIndex` |
+| `routineSites` | every `TA`-family entry — window, waypoint, call location | `routineSiteIndex` |
+| `routinesByNpc` | instance → the `daily_routine` it declares | `routineNpcIndex` |
+| `routineStatesByNpc` | instance → `{ id, states: state → routine function }` | `routineStateIndex` |
+| `exchangeSites` | literal-state `Npc_ExchangeRoutine` / `B_StartOtherRoutine` calls | no consumer yet |
+
+Every name in every one of them is UPPERCASED at extraction, and every lookup
+uppercases to match. `spawnSites` is deliberately flat and deliberately not a
+widening of `waypointSites`: a spawn is not a routine, they answer different
+questions about the same waypoint, and the two consumers key it differently
+(by instance, and by point). A site is kept only when argument 0 is a bare
+identifier *and* argument 1 is a string literal, and the two spawn externals are
+read from their own set rather than from `ENGINE_EXTERNAL_WAYPOINT_ARG_INDEX` —
+every other entry there acts on `self` and would index a mover as a spawn.
+
+Consumers, all one-way from the index: `SpawnOverlay` and `WaypointLabelLayer`
+(`src/renderer/world/`), `routineSchedule.ts` (`src/renderer/routines/`, pure —
+the split `quest/domain` and `problems/domain` keep), `duplicateSpawnRule`
+(`problems/domain/rules/`), `WaypointPanel`, `npcWorldJump.ts`, and
+`components/world/insertNpcScript.ts`.
+
+#### The four derivation rules, and why each is what it is
+
+**A wrapper's argument layout is found by following the call, not by parameter
+names.** Retail never calls `TA_MIN` from a routine; it calls a `TA_*` wrapper,
+and only the two engine externals have a signature anything can know —
+`TA(self, start_h, stop_h, state, waypoint)` and `TA_MIN(self, start_h, start_m,
+stop_h, stop_m, state, waypoint)`, already rows 4 and 6 of the measured
+`ENGINE_EXTERNAL_WAYPOINT_ARG_INDEX`. Keying on parameters *named* `start_h`
+would be a convention nothing here has measured and it fails **silently and
+totally**: a mod spelling them differently yields zero entries and no error. So
+`buildRoutineParamIndex` reads which of a wrapper's parameters land in the time
+slots of a carrier it already knows — that *is* the layout — and sweeps to a
+fixed point, so a wrapper around a wrapper resolves. It assumes only that a
+wrapper passes its parameters through, which is the one thing a wrapper can do
+with them. A wrapper that hardcodes its window does not resolve, and is
+reported rather than dropped.
+
+**A routine variant is enumerated by the engine's name rule, not by exchange
+sites.** `Npc_ExchangeRoutine(npc, "X")` runs `RTN_X_<id>`, where `id` is the
+C_NPC instance's `id` field — engine behavior, grounded the way the waypoint-
+externals table is. `routineStatesByNpc` matches the routine functions already
+in `routineSites` against `RTN_<state>_<id>`, splitting on the *known* id rather
+than guessing where the state name ends, so a state name with underscores or
+digits parses. The cost is listing variants nothing in the scripts triggers; for
+a lens that is the point, not a defect — an exchange-site enumeration would miss
+every variant reached through a variable or a concatenation. `GlobalInstance.npcId`
+is what makes it possible (`declaration-visitor.ts`, `extractNpcId`, read exactly
+as `dailyRoutine` is: `id = <integer literal>`, a leading `-` included, anything
+else `undefined`).
+
+**A day is minutes since midnight, and a window is half-open.** Times normalize
+at extraction, hour 24 to 0, which is what makes retail's `(06,00,24,00)` +
+`(24,00,06,00)` pair partition the day exactly once instead of colliding on
+minute 0. A zero-length window is the whole day — `TA_Stand_WP(00,00,00,00,…)`,
+the idiom for a one-entry routine. `placementsAt` returns **every** entry in
+force at a minute, never one: nothing in the format, in ZenKit or in this repo
+says which the engine picks when two windows overlap, so a precedence would be a
+rule the game does not have.
+
+**An empty index means nothing is known, never that nothing is legal.** It is
+the same rule `assertApplyOpsRequest` follows from the other side (`CLAUDE.md`),
+and it decides the UI: an empty `entries` is ambiguous between a hole in the day
+and a routine that was never read; the *Spawns* toggle is offered with an empty
+index, because a missing button cannot tell anybody the difference between no
+project open and no spawn here; an instance the index does not know is a
+**warning**, never a refusal. What no extractor can do is tell an instance name
+from a `var` holding one, or resolve a constant hour or a constant id — those
+are symbol questions and the main process holds no semantic model.
+
+#### What the indexes see — measured against `mdk/Content` (2026-08-30, 2026-09-02)
+
+Two parser defects were found by measuring rather than by reading, and both are
+fixed; the numbers are what the fixes are worth.
+
+- **Spawns: 3,976 of the 3,978 calls retail writes.** The two missed are
+  `Externals.d`'s prototype declarations, which the counting script's regex
+  cannot tell from a call. Before the fix it was 71%, and the loss was whole
+  files rather than a scatter — `B_Enter_NewWorld.d` (400 calls),
+  `B_Enter_OldWorld.d` (302), every `EVT_*.d`: **`DialogFunction.callSites`
+  carried only a body's top-level calls**, so a spawn inside an `if` was not a
+  call site at all. `shouldSkipChildren` now sweeps a skipped subtree for
+  `call_expression` nodes and records each through `recordCallSite`; only the
+  call record is taken, so `ConditionalAction` is still the one thing built from
+  an `if` and round-trip fidelity is untouched.
+- **Routines: 6,215 of the 6,275 `TA`-family calls (99%), all 60 wrapper callees
+  resolved.** Before the fix it was 81%, and the missing fifth was **one file** —
+  `Story/NPC/DMT_DementorAmbient.d`, 1,128 entries — which yielded no model at
+  all because its `PROTOTYPE` body calls a function and the grammar's
+  `prototype_declaration` took a `class_body`. It now takes `$.block`, as
+  `instance_declaration` already did. The 60 left are `AI/Human/TA.d`'s own
+  wrapper bodies (58, which is what a wrapper is and never an entry) and
+  `BDT_1020_Wegelagerer.d` writing a `TA_Guard_Passage` pair in an *instance*
+  body (2 — the extractor walks `functions` only).
+- **Duplicate spawns: dialog is the discriminator, and it is the whole rule.**
+  Unconditioned, "same NPC at two distinct points" fires 103 times, and nearly
+  every one is a monster template — `Draconian` at 186 points, `Wolf` at 49 —
+  which is how the game is built. Nothing in `ProjectIndex` separates a
+  character from a template by instance alone (monsters are `C_NPC` instances
+  too; all 961 spawned instances are in `npcs`). Requiring dialog takes the same
+  corpus to **4**, all four story relocations. `dialogsByNpc` keys every C_NPC
+  with an empty array, so the array's *length* is the test, never the key's
+  presence.
+- **Gap and overlap are how the game is built, at the margin only.** Of 1,137
+  routines with an indexed entry, 1,126 cover the day exactly once; 11 leave one
+  hole and 8 cover a window twice. No tail. `coverageOf` computes the
+  distribution — a minute at a time, 1,440 counters, because the day is a circle
+  and every wrap-around case an interval merge must get right is one this cannot
+  get wrong — and **no Problems rule was written on it**, on the §16.22
+  precedent: the number comes first, and the number is allowed to kill the
+  check, as the occupancy measurement's did.
+- **States are events, not chapters.** 271 of the 663 NPCs with a declared
+  routine have at least one variant (every one of the 663 has a literal id);
+  **182 distinct state names, 501 NPC×state pairs**, of which 70 shared names
+  carry 389 (78%) and 112 names reach one NPC only. The head is `START` (69),
+  `TOT` (34), `SHIPFREE`, `FOLLOW`, `SHIP`, `WAITFORSHIP`. **No `KAPITEL*` state
+  exists in retail** — the chapter is a spawn guard, never a routine name, which
+  is why the picker's default is *Declared* and not "Chapter 1".
+- **Exchange sites resolve 14% today.** 672 calls, 670 with a literal state. By
+  target: 94 name an instance and all 94 resolve; 324 target `self` (48%,
+  resolvable through the enclosing dialog's `npc` — a derivation nothing has
+  needed yet); 252 target a local `var C_NPC` alias, 139 distinct names, a
+  symbol question. Drift by name: 3 states triggered that no variant is written
+  for, 12 written that nothing triggers by literal.
+
+The instruments are `daedalus-dialog-editor/scripts/check-spawn-occupancy.js`,
+`check-routine-coverage.js` and `check-routine-states.js`. `mdk/Content` is the
+gitignored copy `environment-hazards.md` says is not retail-equivalent for
+*compiling*; for an index count that does not matter.
+
+#### The time and state controls are a lens, never an evaluator
+
+The editor cannot know what state a playthrough is in, and the main process
+holds no semantic model to evaluate a guard against. A *State* pick means "draw
+the day as if this state were active", never "the game reaches this state" — and
+that is what keeps it cheap: a lens needs an index and a resolution rule, not an
+interpreter. The control chain is *Spawns → Time → State*, each meaningful only
+given the one before, and switching an outer one off clears the inner: a filter
+that survives behind a hidden control is one nobody can see.
+
+**The weaker fact must never be able to read as the stronger one.** It is the
+single decision the surface repeats, in four places:
+
+- A minute splits the NPCs three ways, and only one is a position the scripts
+  state. A routine covering the minute is a *placement*; a routine with a hole
+  there, and an NPC declaring no `daily_routine` at all, are only their static
+  spawn — the point they were *inserted* at, which is not a claim about this
+  minute. `placementWaypointsAt` returns two lists and the overlay draws the
+  fallback smaller, dimmer, in `UNPLACED` grey. This is also what keeps a
+  coverage gap visible as grey markers rather than as an empty world nothing
+  explains.
+- A chosen state resolves the NPCs that *have* that variant and leaves everyone
+  else on their declared day, so the picker ships a **reach readout** beside it —
+  the NPC count the state resolved against the count it could have. *State: TOT*
+  alone reads as "the world is in TOT". The readout counts NPCs, not markers:
+  one point carries many.
+- Null is the slider **off**, not midnight — where an NPC stands at 00:00 is
+  something the routines answer and "no time chosen" is not, so the two cannot
+  share a value. It opens at 08:00, because a slider opening on a sparse hour
+  reads as a broken layer.
+- A labelled point names the NPCs a *routine* puts there; an NPC merely inserted
+  at that point keeps his own marker in the unknown layer rather than joining the
+  label.
+
+One marker per point throughout — nine NPCs on a waypoint are nine vertices in
+the same place, and the scripts give no per-NPC offset, so the 175 distinct NPCs
+on `NW_CITY_ENTRANCE_01` would need 175 invented positions. Who is standing
+there is the waypoint panel's answer, and the label draws `<first> +174`
+alphabetically (the sort is not cosmetic, or which name is drawn would depend on
+enumeration order).
+
+**Three drawing decisions worth not rediscovering.** The dummy is an
+`InstancedMesh` capsule authored in ZenGin centimetres, depth-**tested**, with
+the flat 9 px `sizeAttenuation: false` dot kept underneath it: the dot draws
+through walls on purpose (a spawn inside a building is the one worth looking at)
+and stays findable with the whole world in frame, which a body that shrinks with
+distance is not. Its buffers are allocated once at the waynet's size and drawn
+with `drawRange` / `.count`, because the slider rewrites both sets on every tick
+of a drag and replacing an attribute orphans its GPU buffer each time —
+`WebGLAttributes` frees one on the attribute's own dispose event, which a
+replaced attribute never fires. And the known/unknown split is a per-instance
+colour, **`instanceColor` alone**: adding `vertexColors: true` declares
+`attribute vec3 color` in the vertex shader, an attribute a capsule has not got
+and `MeshBasicMaterial` cannot default (`defaultAttributeValues` is
+`ShaderMaterial`'s alone), so every dummy draws black. No colour assertion can
+catch it — `getColorAt` reads the buffer, never the shader — so the regression
+test asserts the material contract instead.
+
+**The waypoint label layer is DOM, not Three.js.** There is no text anywhere in
+this scene — no sprite, no canvas texture, no SDF font — so every option was new
+infrastructure and the cheapest that is also the most legible is HTML over the
+canvas; the renderer's CSP allows `style-src 'unsafe-inline'`
+(`security-model.md`), which puts the transform straight on the element. Two
+consequences: the viewport host is `position: relative`, or labels resolve
+against the page; and nothing in the layer takes pointer events, or a label over
+a dot would make the waypoint you are looking at the one you cannot select.
+`chooseWaypointLabels` is `pickWaypoint`'s projection guard for guard (a
+non-positive `w` is dropped, never divided) and caps at the nearest 24, so the
+DOM write side does not grow with the world. The layer takes an
+`occupantsAt(waypoint)` **callback** rather than a list: it is built once per
+world while the occupancy under it changes on every tick, every state pick and
+every rebuild of the spawn overlay.
+
+`SpawnOverlay` cannot draw the waynet payload buffer the way `WaynetOverlay`
+does — its markers are a subset — so it copies positions and keeps the waypoint
+each stands on, which is why it has a `refresh()` the viewport calls beside the
+waynet's on every applied waynet op. A spawn point the world has not got is
+**dropped**, not drawn at the origin; the honest report for it is
+`waypointNotInWorld`'s. And `setTime(minute, state)` is re-applied on the
+overlay's rebuild dependencies, or a structural op silently resets an open
+slider to no time at all.
+
+#### Authoring into a file the editor is not editing — Insert NPC (2026-09-02)
+
+The first write the editor makes outside the file it has open. `STARTUP_<world>`
+is a *function*, not a file: retail has one `Content\Story\Startup.d` (4,801
+lines, 2,356 `Wld_InsertNpc`) and `STARTUP_NewWorld()` holds no spawn itself, it
+calls eight `_Part_` siblings. **The append goes to `STARTUP_<world>` anyway** —
+picking a part would be a guess, and a spawn appended after the parts still
+runs. `INIT_` is refused outright: it runs on every load, `STARTUP_` once, and
+`Wld_InsertNpc` belongs in the former.
+
+**The write is a text-level splice, not a regenerate, and that is a measured
+decision.** Regenerating retail's `Startup.d` is not byte-identical: 4,801 lines
+in, 3,944 out. Three differences, all cosmetic and all everywhere — blank lines
+inside and between functions are dropped, a trailing `// comment` after a
+statement moves onto its own line, and every `Wld_InsertNpc (X,"WP")` is
+re-emitted as `Wld_InsertNpc (X, "WP")`; a block comment inside a function also
+gains a tab per line. So a regenerate-and-save to add one spawn would rewrite
+4,788 of 4,802 lines. `AppendInsertNpcFlow` is therefore `SaveFileFlow`'s shape
+with no generate step: path-validate → read through `FileService` (its encoding
+detection is what makes the write-back byte-faithful) → parse the bytes just
+read → refuse on `hasErrors` → find the function case-insensitively → splice one
+line before its closing `};`, in the file's own line ending and the indent of
+the body's first indented line → write with `expectUnchanged` → `notifySelfWrite`.
+`DialogFunction` gained a `range` for it, as constants, variables and instances
+already had.
+
+**The mtime guard does not cover what it looks like it covers.** The flow reads
+immediately before writing, so `expectUnchanged` only closes the race between
+*that* read and the write — never the dialog editor's stale picture. After the
+write the cache holds the flow's own mtime, so a `saveFile` from a model parsed
+before the spawn landed sails through the guard and drops the spawn. The
+protection has to be renderer-side, because main has no notion of which files the
+editor holds open: refuse when the file is open and dirty (naming it), and on
+success run the open slot through `fileStore.reloadFile` — the watcher's own
+external-change path, and the only reload there is, since `notifySelfWrite` has
+silenced the watcher for that write. `projectStore.addSpawnSite` and
+`updateFileModel` then keep the index and the cached model current without a
+reparse; the IPC's success is the fact.
+
+The validator refuses a non-identifier instance and a waypoint containing `"` or
+a line break, because both are spliced into source verbatim. Everything else is
+a warning: an instance `npcList` does not know, and a site `spawnSiteIndex`
+already holds for the same instance on the same point (retail spawns the same
+NPC on a point more than once across chapters), where the confirm turns into
+*Insert anyway*. A refusal *after* the waypoint op says so — "Waypoint X was
+added, but …" — rather than hiding the half-state.
+
+#### What Phase 1c does not reach, and what each would need
+
+- **NPC and item *visuals*.** §11's "NPC/item rendering" reads as the actual
+  mesh, and the data does not exist: `ProjectIndex` carries `npcs` and
+  `npcPrototypes` as name strings only, so the `B_SetNpcVisual` chain has nothing
+  to walk. Closing it needs a pass over instance bodies, or a semantic model in
+  main that `CLAUDE.md` records the main process deliberately not having. The
+  dummy is the answer to that gap, not a placeholder waiting on it.
+- **Occupancy is dead** — measured, a cliff and no tail (§16.22 q4). **Gap and
+  overlap survive the measurement and stay uncarded** because nobody has said
+  what the finding should be; `coverageOf` and its script compute the
+  distribution the saying would rest on.
+- **Chapter-conditional presence.** `B_Enter_OldWorld.d`'s 302 spawns are one
+  `if (Kapitel …)` after another, indexed since the nested-call fix but drawn
+  unconditionally at every minute and every state. It needs the guard, and
+  `recordCallSite` keeps no condition context — a parser widening (the enclosing
+  guard chain on a call site) plus a literal-only evaluation in main. **Measure
+  first, §16.22's manner:** of the 3,976 indexed sites, how many sit under any
+  guard, and how many of those guards are pure `KAPITEL <op> <literal>` chains. A
+  cliff makes a *Chapter* filter a second dimension of the same lens — one
+  control stack, not two; a tail makes the honest UI a "conditional" marker
+  *style*, never an evaluated one.
+- **Highlighting what a state *changed*** — "which NPCs does this state move, and
+  from where" is probably the most useful question in the feature, and it wants a
+  third marker colour the layer has not got: the colour channel already carries
+  the known/unknown split. A real slice, not a tweak.
+- **The `self` exchange-target derivation** (324 sites, 48%) through the
+  enclosing dialog's `npc`, and the "what triggers this state" jump that
+  `exchangeSites` is the ground truth for. Both are real; neither has a consumer,
+  and an API grown for a call site that does not exist is the thing this section
+  has declined four times.
+- **The facing of a dummy is unverified twice over, and nothing reads it.**
+  `WaynetPayload.directions` has crossed the binding since Phase 1a and no
+  consumer has ever confirmed what the vector means. On top of that the layer
+  hangs under the mirrored root: `ROOT_MATRIX` negates X and a quaternion cannot
+  carry a mirror (`coords/index.ts` drops it silently), so a per-instance matrix
+  comes out rotated *and* reflected and a facing that looks plausible can still
+  be wrong. The dummy is symmetric and writes no rotation, so it claims nothing
+  it cannot back. Same answer as §16.4's: Spacer.
+- **`pickWaypoint` projects waypoint origins with an 8 px radius**, so up close
+  the clickable spot is at a dummy's feet and clicking its chest selects nothing.
+  Worth knowing before it is filed as a bug.
+
+**None of the overlay is witnessed on screen.** The browser harness has no world
+— `openWorld` is refused there by design, so `summary` is never set and the World
+bar never renders — which puts every toggle out of Playwright's reach. Jest pins
+the scene graph, the schedule arithmetic, the label text and the toolbar wiring;
+that the markers *move* when the slider or the state changes is unwitnessed, and
+it is the same wall `world-render.spec.ts` exists on the other side of, not a new
+one.
+
+**The editor keeps its own structural copy of `GlobalInstance`** in
+`src/shared/types.ts`, so a new instance field has to be added in both places or
+the extractor does not compile. Worth knowing before the next one.
+
 ---
 
 ## 9. Project file and asset sources — settled 2026-09-03
