@@ -17,11 +17,11 @@ import type { RoutineIndex } from '../../routines/routineSchedule';
 import { TerrainMarker, PIVOT_COLOR, PIVOT_SIZE } from '../../world/TerrainMarker';
 import { ScatterBrush } from '../../world/ScatterBrush';
 import {
-  SELECTED_ATTRIBUTE, WorldScene, textureCacheFor, type TextureCache,
+  SELECTED_ATTRIBUTE, textureCacheFor, type TextureCache, type WorldScene,
 } from '../../world/WorldScene';
 import { VobOutline, type OutlineMode } from '../../world/VobOutline';
 import { BvhBuilder } from '../../world/BvhBuilder';
-import { VobPicker } from '../../world/VobPicker';
+import { SceneHost } from '../../world/SceneHost';
 import { PickController } from '../../world/PickController';
 import { GizmoController, type GizmoMode } from '../../world/GizmoController';
 import { NO_PICK } from '../../world/pickIds';
@@ -115,11 +115,6 @@ declare global {
     };
   }
 }
-
-/** Textures are decoded at this cap by picking a mipmap rather than resampling.
- *  Every NewWorld texture at full size is ~490 MB of RGBA; the spike's measured
- *  scene used 256 and 96 MB. */
-const TEXTURE_MAX_SIZE = 256;
 
 export interface WorldViewportProps {
   mesh: WorldMeshPayload;
@@ -550,7 +545,6 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     const host = hostRef.current;
     if (!host) return;
 
-    let disposed = false;
     const scene = new THREE.Scene();
     // No `scene.background`: the outline pass owns every clear of the frame,
     // and a Scene with a background forces one of its own. The sky is its.
@@ -564,12 +558,6 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     texturesRef.current = textureCacheFor(texturesRef.current, worldKey);
     if (slotsRef.current?.key !== worldKey) slotsRef.current = { key: worldKey, slots: new CameraSlots() };
     const cameraSlots = slotsRef.current.slots;
-
-    const world = new WorldScene(texturesRef.current);
-    sceneRef.current = world;
-    world.setWorldMesh(mesh);
-    world.setInstancedVisuals(visuals);
-    scene.add(world.root);
 
     const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
     renderer.setPixelRatio(1);
@@ -588,6 +576,28 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     camera.position.set(
       box.center[0] + span * 0.6, box.center[1] + span * 0.35, box.center[2] + span * 0.6,
     );
+
+    // ── the scene this payload gets (level-editor.md §7) ───────────────────
+    //
+    // `world/SceneHost` owns it (#220): the `WorldScene`, the world mesh's BVH
+    // trees and the GPU picker — which is exactly the set of things a
+    // structural op rebuilds. The decoded pixels and the builder's memory of
+    // the trees are handed in rather than made here, because they are what has
+    // to survive that rebuild.
+    const sceneHost = new SceneHost({
+      scene,
+      renderer,
+      camera,
+      mesh,
+      visuals,
+      textures: texturesRef.current,
+      bvh: bvhRef.current ?? (bvhRef.current = new BvhBuilder()),
+      // Through the refs, so a parent re-render cannot rebuild the scene.
+      loadTexture: (name, maxSize) => loadTextureRef.current(name, maxSize),
+      onTextureFailures: (names) => textureFailuresRef.current?.(names),
+    });
+    const { world, picker } = sceneHost;
+    sceneRef.current = world;
 
     // Picking the world mesh, shared by everything that casts one: the pivot
     // below on every navigation press, `PickController` when a click hit no
@@ -669,41 +679,6 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     if (pivotMarkerRef.current?.key === worldKey) setPivotMarker(pivotMarkerRef.current.point);
     controls.update();
 
-    // Only what is pickable gets a tree, and off the main thread — or, when
-    // this is a rebuild of the same world mesh, out of the builder's memory of
-    // the last one rather than off the thread at all.
-    const bvh = bvhRef.current ?? (bvhRef.current = new BvhBuilder());
-    const bvhReady = bvh.buildAll(world.worldMeshes.map((worldMesh) => worldMesh.geometry), mesh);
-
-    const picker = new VobPicker();
-    picker.setInstancedMeshes(
-      world.instancedMeshes,
-      (instanced, instance) => world.resolveInstance(instanced, instance),
-      world.root.matrix,
-    );
-    // Measured: the first GPU pick of a session costs 53 ms — once, 276 ms —
-    // compiling the pick shader. Paying it here makes the first click cost what
-    // every later one does.
-    // The world mesh, depth only: without it the pick scene held the props and
-    // nothing else, so no geometry wrote depth into the 1x1 target and a VOB
-    // behind a wall won the pixel (§16.24 3).
-    picker.setWorldMeshes(world.worldMeshes, world.root.matrix);
-    picker.warm(renderer, camera);
-
-    // Textures on demand, and only the ones the cache above does not already
-    // hold — a rebuilt scene asks for nothing at all unless the edit brought a
-    // visual whose texture is new.
-    const texturesReady = world.loadPendingTextures(
-      (name) => loadTextureRef.current(name, TEXTURE_MAX_SIZE),
-      () => disposed,
-    ).then((failed) => {
-      // Said out loud, because the alternative is white geometry the user has
-      // to reverse-engineer (level-editor.md §16.31): a mod folder holds
-      // *source* `.TGA` files, which resolve by name and then fail to parse —
-      // they are textures the mod has not compiled yet.
-      if (failed.length > 0 && !disposed) textureFailuresRef.current?.(failed);
-      return failed;
-    });
 
     // ── the gizmo (level-editor.md §7, Phase 1b) ────────────────────────────
     //
@@ -824,7 +799,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       pointer,
       waynet: () => overlayRef.current,
       showWaynet: () => showWaynetRef.current,
-      disposed: () => disposed,
+      disposed: () => sceneHost.isDisposed(),
       walking: () => nav.walking(),
       consumeGesture: () => {
         // A finished gizmo drag: picking here would select whatever is behind
@@ -1055,7 +1030,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     const benchmark = async (options?: Partial<BenchmarkOptions>): Promise<BenchmarkResult> => {
       // A half-loaded scene is a different scene: the BVH decides the terrain
       // pick and the textures decide what the GPU actually samples.
-      await Promise.all([bvhReady, texturesReady]);
+      await sceneHost.ready;
 
       // The draw loop and OrbitControls both write the camera every frame, and
       // the sweep's whole point is that the camera follows a fixed path.
@@ -1098,7 +1073,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
         // A half-loaded scene is a different scene, and an untextured material
         // draws its flat colour — which a pixel check would read as ground that
         // is not there. Awaited rather than slept on, like `benchmark`.
-        await Promise.all([bvhReady, texturesReady]);
+        await sceneHost.ready;
 
         // The draw loop and OrbitControls both write the camera every frame.
         stopDraw();
@@ -1146,7 +1121,6 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     };
 
     return () => {
-      disposed = true;
       // Before the pose is read: a walk left standing would keep the lock and
       // hand the rebuilt scene a pivot it never re-seated, which `dispose`
       // does first for that reason.
@@ -1175,13 +1149,9 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       scatterBrush.dispose();
       controls.dispose();
       gizmo.dispose();
-      picker.dispose();
       outline.dispose();
-      // Settled, not disposed: this scene's builds are abandoned, but the
-      // builder and its trees belong to the viewport now.
-      bvh.settle();
       pivotMarker?.dispose();
-      world.dispose();
+      sceneHost.dispose();
       renderer.dispose();
       host.removeChild(renderer.domElement);
     };
