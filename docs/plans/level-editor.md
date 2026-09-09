@@ -2416,6 +2416,30 @@ the VFS plumbing:
   **Wants a human eye:** the pictures themselves — framing, lighting and the
   texture fetch are scene-graph-tested under a mocked renderer, and nothing
   in jsdom draws a pixel.
+- **The hovered tile turns — landed 2026-09-09 (#231).** The still was read
+  as "not a 3D preview" from outside the repo, and the reading was fair: a
+  grid of frozen frames is a grid of pictures whatever drew them. So the tile
+  under the pointer *is* the scene — `LiveTilePreview.ts`, one
+  `WebGLRenderer` whose canvas is moved into the hovered tile and taken back
+  on the way out, running `VisualPreviewScene`'s graph under `frameVisual`,
+  the same geometry and lights the still was drawn from. It starts turning
+  where the still stood, so the tile does not jump as it comes alive. Drag
+  turns it by hand (`beginDrag`/`drag`/`endDrag`, pointer capture as
+  `PanelSplitter` takes it) and a drag past 4 px eats its own click so a turn
+  never opens the file; `title="Drag to turn"` says so before the pointer
+  arrives. **Only the hovered tile**, by decision: every visible tile live
+  would re-extract its geometry over `world:visual` on every scroll — the
+  worker caches nothing — and hold forty meshes on the GPU for a grid nobody
+  is looking at, where a hover costs one extraction and one context. The one
+  visual is memoised for a re-hover, and the maps are the still's own 64 px
+  fetch. Reached by a React context (`LiveTileContext`, provided by
+  `WorldSurface`), so the property grid's visual thumbnail and the container
+  rows turn too; a suite with no provider gets stills, which is what every
+  existing one asserts. Texture tiles do not turn: a `.TEX` has no geometry,
+  and that stays the honest answer rather than a faked one. **Wants a human
+  eye** with the row above: the turn's pace and the drag's feel are numbers
+  (`SPIN_RADIANS_PER_SECOND`, `DRAG_RADIANS_PER_PIXEL`) nothing in jsdom can
+  judge.
 
 So the honest framing: the *asset access* layer §14 assumed was missing is
 landed, and so are the preview, the picker and the grid on top of it.

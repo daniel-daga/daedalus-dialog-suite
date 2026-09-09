@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import React, { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Box, IconButton, Menu, MenuItem, TextField, Typography } from '@mui/material';
 import FolderIcon from '@mui/icons-material/Folder';
 import BrokenImageOutlinedIcon from '@mui/icons-material/BrokenImageOutlined';
@@ -10,7 +10,8 @@ import { FixedSizeGrid as Grid, type GridChildComponentProps, areEqual } from 'r
 import AutoSizer from 'react-virtualized-auto-sizer';
 import type { VfsEntry } from '../../../shared/worldTypes';
 import { THUMBNAIL_SIZE } from '../../world/ThumbnailRenderer';
-import type { AssetThumbnails, ThumbnailState } from '../../world/assetThumbnails';
+import type { LiveTilePreview } from '../../world/LiveTilePreview';
+import { thumbnailKindOf, type AssetThumbnails, type ThumbnailState } from '../../world/assetThumbnails';
 
 // The Assets panel's tile view (level-editor.md §16.26 row 1) — Spacer's
 // *VOB Bilder* and Spacer.NET's *preview models* as a grid over the same
@@ -32,32 +33,105 @@ export function useThumbnail(thumbnails: AssetThumbnails, name: string): Thumbna
   );
 }
 
+/** The one live render the tiles share, or null where there is none — a
+ *  surface with no world open, and every suite that does not stub it. A
+ *  context rather than a prop because the tile is four components down and
+ *  three of them have no other reason to know about it. */
+export const LiveTileContext = React.createContext<LiveTilePreview | null>(null);
+
+/** How far the pointer travels before a press counts as a turn and not as a
+ *  click — the tile is 96 px, so this is small. */
+const DRAG_SLOP = 4;
+
 export const Thumbnail: React.FC<{ thumbnails: AssetThumbnails; name: string; size?: number }> = ({
   thumbnails, name, size = THUMBNAIL_SIZE,
 }) => {
   const state = useThumbnail(thumbnails, name);
   useEffect(() => { thumbnails.request(name); }, [thumbnails, name]);
 
+  // The still is a frame of a scene, so the tile under the pointer runs the
+  // scene instead (level-editor.md §16.26 row 1). A texture has no geometry
+  // to turn and stays the flat image it correctly is.
+  const live = React.useContext(LiveTileContext);
+  const turnable = live !== null && thumbnailKindOf(name) === 'mesh';
+  const frameRef = useRef<HTMLDivElement | null>(null);
+  const drag = useRef<{ x: number; y: number; turned: boolean } | null>(null);
+  useEffect(() => {
+    const host = frameRef.current;
+    // Unmounting under the pointer — a scroll in a virtualised grid does it
+    // every row — leaves no pointerleave behind it.
+    return () => { if (host !== null) live?.hide(host); };
+  }, [live, name]);
+
+  const turn = !turnable ? {} : {
+    onPointerEnter: () => { void live.show(name, frameRef.current!, size); },
+    onPointerLeave: () => { live.hide(frameRef.current!); },
+    onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return;
+      // Optional, as in `PanelSplitter`: the capture keeps the turn going
+      // when the pointer leaves the 96 px tile, and jsdom implements
+      // neither call.
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      drag.current = { x: event.clientX, y: event.clientY, turned: false };
+      live.beginDrag();
+    },
+    onPointerMove: (event: React.PointerEvent<HTMLDivElement>) => {
+      const from = drag.current;
+      if (from === null) return;
+      const dx = event.clientX - from.x;
+      const dy = event.clientY - from.y;
+      if (Math.abs(dx) > DRAG_SLOP || Math.abs(dy) > DRAG_SLOP) from.turned = true;
+      drag.current = { x: event.clientX, y: event.clientY, turned: from.turned };
+      live.drag(dx, dy);
+    },
+    onPointerUp: (event: React.PointerEvent<HTMLDivElement>) => {
+      if (drag.current === null) return;
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+      live.endDrag();
+      // The capture kept every move on this tile, so a release outside it is
+      // a pointer that has already left.
+      const box = event.currentTarget.getBoundingClientRect();
+      const inside = event.clientX >= box.left && event.clientX <= box.right
+        && event.clientY >= box.top && event.clientY <= box.bottom;
+      if (!inside) live.hide(event.currentTarget);
+    },
+    onClickCapture: (event: React.MouseEvent<HTMLDivElement>) => {
+      const turned = drag.current?.turned ?? false;
+      drag.current = null;
+      // A turn ends in a click the tile must not read as "open me".
+      if (turned) event.stopPropagation();
+    },
+  };
+
   const frame = {
     width: size, height: size, display: 'flex', alignItems: 'center', justifyContent: 'center',
     bgcolor: 'action.hover', borderRadius: 0.5, overflow: 'hidden',
+    position: 'relative', ...(turnable ? { cursor: 'grab' } : {}),
+  };
+  const shared = {
+    ref: frameRef, sx: frame, ...turn,
+    ...(turnable ? { title: 'Drag to turn' } : {}),
   };
   if (state?.status === 'ready') {
     return (
-      <Box sx={frame}>
+      <Box {...shared}>
         <img src={state.dataUrl} alt={name} width={size} height={size} style={{ display: 'block', imageRendering: 'auto' }} />
       </Box>
     );
   }
   if (state?.status === 'failed') {
     return (
-      <Box sx={frame} data-testid="world-asset-thumb-failed" title="No thumbnail — the binding extracts nothing for this file">
+      <Box
+        {...shared}
+        data-testid="world-asset-thumb-failed"
+        title="No thumbnail — the binding extracts nothing for this file"
+      >
         <BrokenImageOutlinedIcon sx={{ color: 'text.disabled' }} />
       </Box>
     );
   }
   return (
-    <Box sx={frame} data-testid="world-asset-thumb-pending">
+    <Box {...shared} data-testid="world-asset-thumb-pending">
       <Typography variant="caption" color="text.disabled">{name.slice(name.lastIndexOf('.') + 1).toUpperCase()}</Typography>
     </Box>
   );

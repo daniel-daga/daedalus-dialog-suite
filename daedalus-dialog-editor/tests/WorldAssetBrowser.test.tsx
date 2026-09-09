@@ -19,11 +19,26 @@
  */
 
 import React from 'react';
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { VfsEntry } from '../src/shared/worldTypes';
 import type { AssetThumbnails, ThumbnailState } from '../src/renderer/world/assetThumbnails';
 import WorldAssetBrowser, { type AssetCatalogProps } from '../src/renderer/components/world/WorldAssetBrowser';
+import { LiveTileContext } from '../src/renderer/components/world/WorldAssetGrid';
+import type { LiveTilePreview } from '../src/renderer/world/LiveTilePreview';
+import { THUMBNAIL_SIZE } from '../src/renderer/world/ThumbnailRenderer';
+
+/** The live render, stubbed: what it draws is `LiveTilePreview.test.ts`'s
+ *  business, and what the tile owes it is which name, which host and when. */
+function livePreview() {
+  return {
+    show: jest.fn(async () => {}),
+    hide: jest.fn(),
+    beginDrag: jest.fn(),
+    drag: jest.fn(),
+    endDrag: jest.fn(),
+  } as unknown as jest.Mocked<LiveTilePreview>;
+}
 
 jest.mock('react-virtualized-auto-sizer', () => (props: {
   children: (size: { height: number; width: number }) => React.ReactNode;
@@ -326,6 +341,88 @@ describe('WorldAssetBrowser', () => {
       await user.click(screen.getByTestId('world-asset-redraw'));
       expect(queue.redraw).toHaveBeenCalledWith('NW_CRATE.MRM');
       expect(queue.redraw).toHaveBeenCalledWith('CHESTBIG.MDL');
+    });
+
+    // The hovered tile comes alive (level-editor.md §16.26 row 1): the still
+    // is a frame of a scene, and the pointer is what makes it turn.
+    it('turns the mesh tile under the pointer, and takes the render back on the way out', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const { queue } = thumbnails();
+      const live = livePreview();
+      render(
+        <LiveTileContext.Provider value={live}>
+          <WorldAssetBrowser listAssets={list} onPreview={jest.fn()} thumbnails={queue} />
+        </LiveTileContext.Provider>,
+      );
+      await screen.findByTestId('world-asset-Meshes');
+      await user.click(screen.getByTestId('world-asset-view-grid'));
+
+      const tile = screen.getByTestId('world-asset-tile-MOD_ONLY.MRM');
+      const thumb = within(tile).getByTestId('world-asset-thumb-pending');
+      await user.hover(thumb);
+      expect(live.show).toHaveBeenCalledWith('MOD_ONLY.MRM', thumb, THUMBNAIL_SIZE);
+
+      await user.unhover(thumb);
+      expect(live.hide).toHaveBeenCalledWith(thumb);
+    });
+
+    it('leaves a directory and a texture alone — neither has geometry to turn', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const { queue } = thumbnails();
+      const live = livePreview();
+      render(
+        <LiveTileContext.Provider value={live}>
+          <WorldAssetBrowser listAssets={list} onPreview={jest.fn()} thumbnails={queue} />
+        </LiveTileContext.Provider>,
+      );
+      await screen.findByTestId('world-asset-Meshes');
+      await user.click(screen.getByTestId('world-asset-view-grid'));
+
+      await user.hover(screen.getByTestId('world-asset-tile-Textures'));
+      await user.click(screen.getByTestId('world-asset-tile-Textures'));
+      const texture = await screen.findByTestId('world-asset-tile-NW_WOOD-C.TEX');
+      await user.hover(within(texture).getByTestId('world-asset-thumb-pending'));
+
+      expect(live.show).not.toHaveBeenCalled();
+    });
+
+    it('a drag turns the tile instead of opening it', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const { queue } = thumbnails();
+      const live = livePreview();
+      const onPreview = jest.fn();
+      render(
+        <LiveTileContext.Provider value={live}>
+          <WorldAssetBrowser listAssets={list} onPreview={onPreview} thumbnails={queue} />
+        </LiveTileContext.Provider>,
+      );
+      await screen.findByTestId('world-asset-Meshes');
+      await user.click(screen.getByTestId('world-asset-view-grid'));
+
+      const tile = screen.getByTestId('world-asset-tile-MOD_ONLY.MRM');
+      const thumb = within(tile).getByTestId('world-asset-thumb-pending');
+      await user.hover(thumb);
+      // A `MouseEvent` under the pointer type, as the viewport suites do it:
+      // jsdom implements no `PointerEvent`, and `fireEvent.pointerDown`
+      // silently drops the button and the coordinates it is given.
+      const press = { bubbles: true, button: 0, clientX: 10, clientY: 10 };
+      fireEvent(thumb, new MouseEvent('pointerdown', press));
+      fireEvent(thumb, new MouseEvent('pointermove', { ...press, clientX: 40, clientY: 14 }));
+      fireEvent(thumb, new MouseEvent('pointerup', { ...press, clientX: 40, clientY: 14 }));
+
+      expect(live.beginDrag).toHaveBeenCalled();
+      expect(live.drag).toHaveBeenCalledWith(30, 4);
+      expect(live.endDrag).toHaveBeenCalled();
+      // The click the drag ends with is the drag's, not the tile's.
+      fireEvent.click(thumb);
+      expect(onPreview).not.toHaveBeenCalled();
+
+      // A plain click still opens the file.
+      await user.click(tile);
+      expect(onPreview).toHaveBeenCalledWith('MOD_ONLY.MRM');
     });
 
     it('goes back to the list', async () => {

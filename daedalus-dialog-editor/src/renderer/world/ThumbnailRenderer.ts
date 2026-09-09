@@ -18,8 +18,10 @@ import { buildVisualPreview, frameVisual } from './VisualPreviewScene';
 // cache.
 
 export const THUMBNAIL_SIZE = 96;
-/** The texture edge fetched for a thumbnail — the tile is 96 px. */
-const THUMBNAIL_TEXTURE_SIZE = 64;
+/** The texture edge fetched for a thumbnail — the tile is 96 px. The live
+ *  hover render (`LiveTilePreview`) fetches at the same edge, so coming alive
+ *  costs no map the still had not already asked for. */
+export const THUMBNAIL_TEXTURE_SIZE = 64;
 
 export type TextureLoader = (name: string, maxSize: number) => Promise<DecodedTexture | null>;
 

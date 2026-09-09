@@ -45,6 +45,8 @@ import { appendInsertNpc, findFunctionFile, startupFunctionFor } from './insertN
 import { vobModelOf } from '../../world/vobModel';
 import { AssetThumbnails } from '../../world/assetThumbnails';
 import { ThumbnailRenderer } from '../../world/ThumbnailRenderer';
+import { LiveTilePreview } from '../../world/LiveTilePreview';
+import { LiveTileContext } from './WorldAssetGrid';
 import { DEFAULT_EXPOSURE } from '../../world/WorldScene';
 import WorldViewport, { type GizmoMode, type WorldViewportHandle } from './WorldViewport';
 import WorldSceneTree from './WorldSceneTree';
@@ -694,6 +696,19 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [summary?.worldPath, loadVisual, loadTexture]);
   useEffect(() => () => { thumbnailsRef.current?.dispose(); }, []);
+
+  // The tile under the pointer turns (§16.26 row 1) — one live scene for the
+  // whole grid, the still PNG everywhere else. Same lifetime as the queue and
+  // for the same reason: its GL context and the one visual it keeps between
+  // hovers belong to the open world's mounts.
+  const liveTileRef = useRef<LiveTilePreview | null>(null);
+  const liveTile = useMemo(() => {
+    liveTileRef.current?.dispose();
+    liveTileRef.current = summary === null ? null : new LiveTilePreview({ loadVisual, loadTexture });
+    return liveTileRef.current;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [summary?.worldPath, loadVisual, loadTexture]);
+  useEffect(() => () => { liveTileRef.current?.dispose(); }, []);
 
   // A plain click replaces the selection; Shift, Ctrl or Cmd adds to it. One
   // rule for
@@ -2426,6 +2441,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   );
 
   return (
+    <LiveTileContext.Provider value={liveTile}>
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <WorldToolbar
         onOpenWorld={() => void openPicker()}
@@ -3404,6 +3420,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         </DialogActions>
       </Dialog>
     </Box>
+    </LiveTileContext.Provider>
   );
 };
 
