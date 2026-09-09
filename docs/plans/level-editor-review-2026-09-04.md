@@ -300,7 +300,7 @@ outline. Every scatter test mocks the viewport and calls `onScatterStroke`
 directly (`WorldSurface.scatter.test.tsx`), which is why it is green. The
 the 09-03 card said the brush landed; nobody has painted with it.
 
-### 3.2 Every structural op tears down and recreates the `WebGLRenderer`, twice — **FIXED 2026-09-04**
+### 3.2 Every structural op tears down and recreates the `WebGLRenderer`, twice — **FIXED 2026-09-04, and wholly 2026-09-09**
 
 The scene effect's deps are `[mesh, visuals, bbox]` (`WorldViewport.tsx:1846`)
 and `bbox` is `summary.bbox` (`WorldSurface.tsx:2650`) — a structured-cloned
@@ -316,7 +316,14 @@ the first click is now paid per placement. Chrome's ~16-context cap evicts the
 index before `:1079` commits the visuals. §16.24 notes "two rebuilds per
 paste" as a harness gap; this is the cause. Fix: key on the bbox *value*, and
 keep renderer, canvas, outline and controls for the component's life,
-rebuilding only `WorldScene`, picker and BVH.
+rebuilding only `WorldScene`, picker and BVH. The first half landed on the day
+of the review, which halved it; the second half is `world/ViewportRenderer`
+(#220, 2026-09-09) — the renderer, its context, the canvas, the outline pass,
+the camera and the controls now belong to the mount, and a structural op
+rebuilds `SceneHost` and nothing above it. Held by
+`WorldViewport.rendererLifetime.test.tsx`: one renderer and one canvas across
+an op, the camera still where the placement was aimed from, and a different
+world still framed afresh.
 
 ### 3.3 The world-mesh BVH is rebuilt on every structural op though the mesh never changed — **confirmed**
 
@@ -592,21 +599,26 @@ effect is reachable only through a mocked viewport, and §3.2's fix keys the
 effect differently rather than doing what the effect actually wants, which is
 to stop being one effect. The split — `ViewportRenderer`, `SceneHost`,
 `GizmoController`, `PickController`, `NavController`, `ScatterBrush` — is
-named in §4 and is **#220**. Five of the six have landed:
+named in §4 and is **#220**, and all six have landed:
 `world/ScatterBrush` (the brush, and §3.1's own hiding place),
 `world/GizmoController` (the proxy, the snap, the preview and both commits,
 plus the harness's `dragGizmo`/`turnGizmo`), `world/PickController` (the
 three handlers, whose whole content is the order they try the waynet, the
 props and the world mesh in), `world/NavController` (the fly, the walk, the
 camera slots and the framing keys — the wiring around `flyNav`/`walkNav`, not
-the navigations themselves) and `world/SceneHost` (the `WorldScene`, its BVH
+the navigations themselves), `world/SceneHost` (the `WorldScene`, its BVH
 trees and its picker — exactly what a structural op rebuilds, against the
-texture cache and the tree cache that must survive it), each with the unit
-spec the extraction was for and none changing behaviour. The component is
-1,429 lines; `ViewportRenderer` is untouched, and it is the one that matters
-most — the renderer, its GL context, the canvas, the outline pass and the
-controls are still rebuilt per structural op, which is the shader-compile cost
-§3.2 only halved.
+texture cache and the tree cache that must survive it) and
+`world/ViewportRenderer` (the renderer, its GL context, the canvas, the
+outline pass, the camera and the controls — the mount's, not the payload's,
+which is the rest of §3.2's fix). Each came with the unit spec the extraction
+was for, and none changed behaviour except where §3.2 required it.
+
+The component is **1,389 lines from 2,090, and its effect 581 from 1,310**.
+What is left in that effect is wiring rather than mechanism: the six units
+being handed each other, the framing callbacks, the draw loop, the benchmark
+probe and the `window.__worldViewport` harness. Splitting *that* further is a
+different judgement from the one this finding made and is not carried here.
 `WorldSurface.tsx` (3,190 lines) and `binding.cc` (3,388, with ~250 duplicated
 lines in one switch) are the same shape of debt with lower risk.
 

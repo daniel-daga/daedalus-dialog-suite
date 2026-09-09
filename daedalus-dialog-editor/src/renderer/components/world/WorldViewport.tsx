@@ -1,7 +1,6 @@
 import React, { useEffect, useImperativeHandle, useRef } from 'react';
 import { Box } from '@mui/material';
 import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { acceleratedRaycast } from 'three-mesh-bvh';
 import {
   threeToZen, zenToThree, zenBoxToThree,
@@ -19,9 +18,10 @@ import { ScatterBrush } from '../../world/ScatterBrush';
 import {
   SELECTED_ATTRIBUTE, textureCacheFor, type TextureCache, type WorldScene,
 } from '../../world/WorldScene';
-import { VobOutline, type OutlineMode } from '../../world/VobOutline';
+import { type OutlineMode } from '../../world/VobOutline';
 import { BvhBuilder } from '../../world/BvhBuilder';
 import { SceneHost } from '../../world/SceneHost';
+import { ViewportRenderer } from '../../world/ViewportRenderer';
 import { PickController } from '../../world/PickController';
 import { GizmoController, type GizmoMode } from '../../world/GizmoController';
 import { NO_PICK } from '../../world/pickIds';
@@ -399,9 +399,11 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   const bboxKey = bbox.join(',');
 
   const sceneRef = useRef<WorldScene | null>(null);
-  // The outline pass, for the mode effect below — it is built inside the scene
-  // effect, so a prop cannot reach it any other way.
-  const outlineRef = useRef<VobOutline | null>(null);
+  // The renderer, its canvas, the outline pass, the camera and the controls —
+  // everything a structural op must not throw away (`ViewportRenderer`). Built
+  // on the scene effect's first run and disposed only when the viewport goes,
+  // which is what the effect below it does.
+  const viewportRef = useRef<ViewportRenderer | null>(null);
 
   useImperativeHandle(ref, () => ({
     raycastDown: (origin) => {
@@ -505,17 +507,19 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   // The other half: the scene effect owns the loop, so pausing has to reach it
   // through a handle it publishes. Null while no scene is built.
   const drawLoopRef = useRef<{ start: () => void; stop: () => void } | null>(null);
-  // Survives the scene rebuild a structural op forces — see the restore below.
-  const poseRef = useRef<{
-    key: string; position: number[]; target: number[];
-  } | null>(null);
+  // The world the camera has already been pointed at. A rebuild of the same
+  // world leaves the view alone — the camera is the viewport's now, not the
+  // scene's, so there is nothing to save and restore — and a different world is
+  // framed from its own bounds.
+  const framedRef = useRef<string | null>(null);
   // Spacer's camera slots (`cameraSlots.ts`): per world, so keyed the same way
-  // as the pose and replaced when a different world arrives.
+  // as the framing and replaced when a different world arrives.
   const slotsRef = useRef<{ key: string; slots: CameraSlots } | null>(null);
   // Where a double-click last set the pivot, in ZenGin space — the dot that
   // confirms it landed somewhere, since `pivotAt` itself is otherwise
-  // invisible until the next drag. Survives a same-world rebuild the same
-  // way `poseRef` does, and for the same reason: the pivot itself does.
+  // invisible until the next drag. The dot hangs on the scene's root, so a
+  // same-world rebuild has to put it back; the pivot it marks is the camera's
+  // and never went anywhere.
   const pivotMarkerRef = useRef<{ key: string; point: [number, number, number] } | null>(null);
   // Survives it for the same reason and keyed the same way: the pixels did not
   // change when a VOB was placed, and re-decoding all 490 of them is the 549 ms
@@ -545,37 +549,26 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     const host = hostRef.current;
     if (!host) return;
 
-    const scene = new THREE.Scene();
-    // No `scene.background`: the outline pass owns every clear of the frame,
-    // and a Scene with a background forces one of its own. The sky is its.
-    const outline = new VobOutline(0x10141c);
-    outlineRef.current = outline;
+    // Built on the first run and kept: the renderer, its GL context, the canvas,
+    // the outline pass, the camera and the controls are precisely what a
+    // structural op must not throw away (`ViewportRenderer`, review §3.2). What
+    // this effect rebuilds is the scene under them.
+    const viewport = viewportRef.current ?? (viewportRef.current = new ViewportRenderer(host));
+    const { scene, renderer, camera, controls, raycaster, pointer } = viewport;
 
-    // The same key the camera pose is restored on, below — and the same one
-    // this effect is keyed on, so that it is computed once here rather than
-    // twice out of step.
+    // The same key the framing and the caches are held against, and the same
+    // one this effect is keyed on, so that it is computed once here rather than
+    // several times out of step.
     const worldKey = bboxKey;
     texturesRef.current = textureCacheFor(texturesRef.current, worldKey);
     if (slotsRef.current?.key !== worldKey) slotsRef.current = { key: worldKey, slots: new CameraSlots() };
     const cameraSlots = slotsRef.current.slots;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
-    renderer.setPixelRatio(1);
-    renderer.setSize(host.clientWidth || 1, host.clientHeight || 1);
-    outline.setSize(host.clientWidth || 1, host.clientHeight || 1);
-    host.appendChild(renderer.domElement);
-
-    const camera = new THREE.PerspectiveCamera(
-      70, (host.clientWidth || 1) / (host.clientHeight || 1), 0.5, 4000,
-    );
-    // Framed from the payload's own bbox — which `extractWorldMesh` computes
-    // from the vertices it emitted, because every retail zCMesh stores that box
-    // as all zeros and a copied one hands the viewport a world with no size.
+    // The payload's own bbox — which `extractWorldMesh` computes from the
+    // vertices it emitted, because every retail zCMesh stores that box as all
+    // zeros and a copied one hands the viewport a world with no size.
     const box = zenBoxToThree(bbox);
     const span = Math.max(box.size[0], box.size[2]) || 10;
-    camera.position.set(
-      box.center[0] + span * 0.6, box.center[1] + span * 0.35, box.center[2] + span * 0.6,
-    );
 
     // ── the scene this payload gets (level-editor.md §7) ───────────────────
     //
@@ -598,25 +591,6 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     });
     const { world, picker } = sceneHost;
     sceneRef.current = world;
-
-    // Picking the world mesh, shared by everything that casts one: the pivot
-    // below on every navigation press, `PickController` when a click hit no
-    // waypoint and no prop, the fly and walk probes, and the measurement
-    // handle. Declared here because the pivot needs it first.
-    const raycaster = new THREE.Raycaster();
-    raycaster.firstHitOnly = true;
-    // The world mesh draws on `WORLD_LAYER` (the outline pass draws the frame
-    // in two halves), and a raycaster only meets what it shares a layer with.
-    raycaster.layers.enableAll();
-    const pointer = new THREE.Vector2();
-
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.target.set(box.center[0], box.center[1], box.center[2]);
-    // No damping: the camera stops when the drag stops. Three's default coast
-    // reads as the viewport lagging the hand, and neither Spacer nor Blender
-    // — the two sets of hands this is aimed at — coasts. The gizmo's own
-    // damping (`DampedTransformControls`) is a separate rate and is not this.
-    controls.enableDamping = false;
 
     // Where the last click landed, in three space, or null before the first
     // one. The fallback pivot for a drag that begins over the sky.
@@ -665,17 +639,17 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     const detachNav = attachBlenderNav(controls, host, pivotUnderCursor);
 
     // A structural op — placing a VOB — cannot be applied to the columnar
-    // projection, so the scene is rebuilt from the world (level-editor.md §7),
-    // which runs this effect again and re-frames the camera from the bbox. That
-    // throws away the view the placement was aimed from, which is the one view
-    // the user needs to see whether it landed. So the pose survives a rebuild
-    // of the *same* world, keyed on the bbox so that opening a different one
-    // still frames it.
-    if (poseRef.current?.key === worldKey) {
-      camera.position.fromArray(poseRef.current.position);
-      controls.target.fromArray(poseRef.current.target);
+    // projection, so the scene is rebuilt from the world (level-editor.md §7)
+    // and this effect runs again. Re-framing here would throw away the view the
+    // placement was aimed from, which is the one view the user needs in order
+    // to see whether it landed — so only a world the camera has not been in is
+    // framed, and the rest of the time the camera is simply left where it is.
+    if (framedRef.current !== worldKey) {
+      framedRef.current = worldKey;
+      viewport.frameWorld(box.center, span);
     }
-    // The marker survives the same rebuild, and for the same reason.
+    // The marker hangs on the scene's root, so it does not survive the rebuild
+    // by itself — it is put back, keyed on the world the same way.
     if (pivotMarkerRef.current?.key === worldKey) setPivotMarker(pivotMarkerRef.current.point);
     controls.update();
 
@@ -904,16 +878,6 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       );
     };
 
-    const resize = new ResizeObserver(() => {
-      const width = host.clientWidth || 1;
-      const height = host.clientHeight || 1;
-      renderer.setSize(width, height);
-      outline.setSize(width, height);
-      camera.aspect = width / height;
-      camera.updateProjectionMatrix();
-    });
-    resize.observe(host);
-
     // The loop is started and stopped through this pair rather than by calling
     // `draw` directly: `paused` stops it while the surface is off screen, and
     // the benchmark and the screenshot both stop it for the length of a fixed
@@ -973,7 +937,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
         ));
       }
 
-      outline.render(renderer, scene, camera);
+      viewport.render();
     };
     const startDraw = () => {
       if (running || pausedRef.current) return;
@@ -1004,7 +968,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
         camera.position.set(pose.position[0], pose.position[1], pose.position[2]);
         camera.lookAt(target.set(pose.lookAt[0], pose.lookAt[1], pose.lookAt[2]));
       },
-      render: () => outline.render(renderer, scene, camera),
+      render: () => { viewport.render(); },
       finishGpu: () => gl.finish(),
       drawCalls: () => renderer.info.render.calls,
       triangles: () => renderer.info.render.triangles,
@@ -1082,7 +1046,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
           camera.position.set(...zenToThree(from));
           camera.lookAt(target.set(...zenToThree(at)));
           camera.updateMatrixWorld();
-          outline.render(renderer, scene, camera);
+          viewport.render();
 
           // The default framebuffer, read in the same task as the render that
           // filled it — the pixels a human would have screenshotted.
@@ -1121,17 +1085,11 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     };
 
     return () => {
-      // Before the pose is read: a walk left standing would keep the lock and
-      // hand the rebuilt scene a pivot it never re-seated, which `dispose`
-      // does first for that reason.
+      // First: a walk left standing would keep the pointer lock and hand the
+      // rebuilt scene a camera it never re-seated, which `dispose` does before
+      // anything else for that reason.
       nav.dispose();
-      poseRef.current = {
-        key: worldKey,
-        position: camera.position.toArray(),
-        target: controls.target.toArray(),
-      };
       sceneRef.current = null;
-      outlineRef.current = null;
       gizmoRef.current = null;
       frameVobRef.current = null;
       framePointRef.current = null;
@@ -1139,7 +1097,6 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       delete window.__worldViewport;
       drawLoopRef.current = null;
       stopDraw();
-      resize.disconnect();
       picks.dispose();
       detachNav();
       host.removeEventListener('pointerdown', onNavPointerDown, { capture: true });
@@ -1147,35 +1104,37 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       host.removeEventListener('pointercancel', onNavPointerUp, { capture: true });
       scatterBrushRef.current = null;
       scatterBrush.dispose();
-      controls.dispose();
       gizmo.dispose();
-      outline.dispose();
       pivotMarker?.dispose();
       sceneHost.dispose();
-      renderer.dispose();
-      host.removeChild(renderer.domElement);
+      // The renderer, the canvas, the outline pass, the camera and the controls
+      // are deliberately not touched here — see `ViewportRenderer`, and the
+      // effect below, which is where they go.
     };
-    // Rebuilt only when a different world's payloads arrive — the callbacks are
-    // read through refs precisely so they are not dependencies.
-    // Keyed on the bbox's *value*, never the array's identity. Every structural
+    // Re-run whenever a payload arrives — the callbacks are read through refs
+    // precisely so they are not dependencies. A structural op brings new
+    // `visuals`, which is a rebuild of the scene and of nothing above it: the
+    // renderer, its GL context, the canvas, the outline pass and the camera all
+    // belong to `ViewportRenderer` now (review §3.2).
+    //
+    // Keyed on the bbox's *value*, never the array's identity: every structural
     // op re-reads the index and the summary comes back structured-cloned from
     // the main process, so `summary.bbox` is a fresh array of the same six
-    // numbers each time — and this effect throws away the renderer, its canvas,
-    // the scene, the picker and every BVH tree. `WebGLRenderer.dispose()` does
-    // not release the GL context (only `forceContextLoss` does) and the texture
-    // cache is deliberately kept, so the old context sat on its uploads until
-    // the detached canvas was collected while the new one re-uploaded all of
-    // them and recompiled every program — the shader-compile cost §3 moved off
-    // the first click, paid again per placement, against a browser cap of about
-    // sixteen contexts. Worse, it ran *before* the new visuals arrived, so the
-    // whole thing happened twice per op: once with the stale payload, once for
-    // real.
-    //
-    // `bbox` itself is therefore deliberately not a dependency: `bboxKey` is
-    // the same information by value, and the array identity is the thing being
-    // kept out.
+    // numbers each time — and it arrives one commit before the new visuals do,
+    // which is what used to make the rebuild happen twice per op. `bbox` itself
+    // is therefore deliberately not a dependency: `bboxKey` is the same
+    // information by value, and the array identity is the thing being kept out.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mesh, visuals, bboxKey]);
+
+  // The other half of the scene effect's lifetime. Declared after it so that
+  // its cleanup runs after the scene's — React unmounts effects in the order
+  // they were declared, and the scene has to be disposed while the context that
+  // uploaded it is still there.
+  useEffect(() => () => {
+    viewportRef.current?.dispose();
+    viewportRef.current = null;
+  }, []);
 
   // Going off screen stops the loop; coming back starts it again. Deliberately
   // not a dependency of the scene effect above: `paused` flips on every tab
@@ -1345,12 +1304,12 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     sceneRef.current?.setExposure(exposure);
   }, [exposure, mesh, visuals]);
 
-  // Which VOBs are outlined. One uniform write, on `mesh`/`visuals` for the
-  // reason the brightness effect gives: a rebuilt scene brings a fresh
-  // `VobOutline`, whose uniform starts at `all`.
+  // Which VOBs are outlined. One uniform write — and unlike the brightness
+  // above it, not on `mesh`/`visuals`: the outline pass belongs to the viewport
+  // rather than to the scene, so a structural op leaves its uniform standing.
   useEffect(() => {
-    outlineRef.current?.setMode(outlineMode);
-  }, [outlineMode, mesh, visuals]);
+    viewportRef.current?.outline.setMode(outlineMode);
+  }, [outlineMode]);
 
   // Per-class visibility, on `mesh`/`visuals` for the same reason: a rebuilt
   // scene draws every instance until it is told again which ones are switched
