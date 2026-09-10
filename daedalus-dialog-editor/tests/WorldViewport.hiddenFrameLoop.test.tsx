@@ -65,6 +65,7 @@ function props(paused: boolean) {
   return {
     mesh: MESH,
     visuals: PAYLOAD,
+    vobIndex: mockWorldViewport.noVobMarkers(),
     bbox: BBOX,
     waynet: null,
     showWaynet: false,

@@ -2710,6 +2710,78 @@ added owes the same sweep. `coneAngle`'s 0-360 is the exception that proves it:
 retail holds 0 on all 1,237 sound VOBs, so nothing tests the ceiling and nothing
 refutes it either.
 
+#### The VOBs with no visual, drawn (2026-09-10)
+
+`buildInstancedVisuals` opens its loop with `if (name === '') continue`, and
+that one line was **15,749 of the 41,393 retail VOBs, 38.0 %** — every sound,
+light, zone, trigger, mover, code master, message filter, touch-damage volume,
+startpoint and spot. Nothing was drawn where they stand, so `VobPicker` had no
+pixel to write for them, `positionOf` answered null and the gizmo detached even
+for one selected in the scene tree: placing a sound was typing three
+coordinates, and the per-class hide switched off something that was never drawn.
+
+**The criterion is the empty visual name, not "has no instance".** A VOB whose
+visual is a *name* that resolves to no geometry — a decal's `.TGA`, a `.PFX` —
+is a different cause with a different answer (plan §16.40, #249) and gets no
+marker: a decal should be drawn as itself, and a marker keyed on "not drawn"
+would have pre-empted that. So `VobMarkerLayer` reads the same condition
+`buildInstancedVisuals` skips on, and the two partition the index between them.
+
+**A marker needed no new data.** `VobIndex` already carries a position and a
+class for every VOB, `markerSprite` already builds the rimmed pip and
+`SpawnOverlay` already draws a `THREE.Points` layer of them — so this is one
+buffer and one draw call under the same mirrored root, with no binding change,
+no IPC, no worker op and nothing that touches the `.zen` file. One shape at one
+pixel size for all of them, and the colour is what tells a sound from a trigger:
+a class table keyed by what the class *is* — sound, light, zone, trigger family,
+named point, everything else — written into a `color` attribute so the whole
+layer stays one draw. A class the table has never heard of still gets a marker,
+because the table is a way of reading a world rather than a list of what a world
+may contain.
+
+**The pick is the waynet's pick.** The GPU id-pass draws instances and has
+nothing to draw a marker into, and `THREE.Points.raycast`'s threshold is in
+world units while the layer draws `sizeAttenuation: false` — the two reasons
+`pickWaypoint` already exists. Its loop is now exported as `pickPoint` and both
+layers project through it; 15,749 is five times the waynet's 2,959 and still one
+loop, once per click. A click therefore asks the waynet, then the markers, then
+the props, then the world mesh: the first two draw with `depthTest: false` and
+are plainly on top, so picking them later would mean clicking a dot you can see
+and selecting the wall behind it.
+
+**The layer draws only what the class filter left on, and hands the pick exactly
+that.** A `Points` layer has no per-vertex "skip" — the instanced meshes push a
+hidden instance out of the clip volume in their own vertex shader, and there is
+no shader of ours here — so `setHidden` *compacts* the drawn markers to the
+front of the buffer. That is what makes the pick agree with the picture by
+construction rather than by two code paths agreeing, and it is what finally
+gives the hide something to hide for these classes.
+
+**`positionOf` falls back to the marker, which inverts the rule `anchorOf` and
+`centroidOf` used to document.** Their comments said a VOB with no instance has
+no position at all and named a sound VOB as the case; what they were protecting
+is that a gizmo must not be dragged away from a selection full of VOBs it could
+have stood on, and that survives — the set they step over is down to the decal
+and the particle effect. `moveVob` writes the marker as well, so the gizmo's
+live preview, a committed move, an undo and a redo all reach it through the one
+call they already made. A **rotation** has no marker half on purpose: a dot has
+no orientation to draw, so there is nothing a turn would change on screen, and
+the op is still built from the index where the rotation lives.
+
+**The index reaches the viewport through a ref, not a dependency.** A structural
+op refreshes the summary one commit *before* the new `visuals` arrive, so taking
+both as dependencies of the scene effect would rebuild 31 MB of buffers twice
+per placement. `SceneHost` builds the layer beside the instances and the effect
+re-runs on `visuals`, which is when the fresh index is read — the same window in
+which the instance ids are momentarily the old ones.
+
+**What is still not settled is what it should look like.** One shape for every
+class is a decision by omission, and nothing has answered whether 15,749 dots
+at once is the right default in a world that size — the per-class hide is the
+only control over it, which is at least a control the old behaviour did not
+have. The extent of a sound, a light or a zone (plan §16.39, #248) is separate
+work and is what a modder tuning one of them actually wants.
+
 ---
 
 ## 8. Daedalus integration — open question 4

@@ -12,12 +12,22 @@
 // projection. That is a loop over every waypoint, which sounds worse than it is
 // — NewWorld has 2,959 of them and this runs once per click, not once per
 // frame.
+//
+// **Two layers pick this way now**, which is why the loop is exported on its own
+// as `pickPoint`: the markers for the VOBs with no visual (§16.38,
+// `VobMarkerLayer`) are a `THREE.Points` layer with the same two properties, so
+// they have the same two problems and take the same answer. The retail marker
+// count is 15,749, five times the waynet's — still one loop, still once per
+// click.
 
 import * as THREE from 'three';
 
-/** Nothing was near enough. Distinguishable from waypoint 0, which is an
- *  ordinary waypoint like any other — the same reason `NO_PICK` is not zero. */
-export const NO_WAYPOINT = -1;
+/** Nothing was near enough. Distinguishable from point 0, which is an ordinary
+ *  point like any other — the same reason `NO_PICK` is not zero. */
+export const NO_POINT = -1;
+
+/** {@link NO_POINT}, for the waynet's own caller. */
+export const NO_WAYPOINT = NO_POINT;
 
 /** How near the pointer has to be, in pixels. Wider than the 3.5 px the overlay
  *  draws, because a waypoint is a dot and a dot is hard to hit exactly. */
@@ -45,11 +55,31 @@ export function pickWaypoint(
   height: number,
   radius: number = WAYPOINT_PICK_RADIUS,
 ): number {
-  let best = NO_WAYPOINT;
+  return pickPoint(positions, toClip, x, y, width, height, radius);
+}
+
+/**
+ * The point of a pixel-sized `THREE.Points` layer under the pointer, or
+ * `NO_POINT` — an index into `positions`, three floats per point.
+ *
+ * The waynet's caller is {@link pickWaypoint}; the other is `VobMarkerLayer`,
+ * which hands over only the points it is currently *drawing*, so a class the
+ * view controls have switched off is not clickable either.
+ */
+export function pickPoint(
+  positions: Float32Array,
+  toClip: THREE.Matrix4,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+): number {
+  let best = NO_POINT;
   let bestDistance = radius * radius;
 
-  for (let waypoint = 0; waypoint * 3 + 2 < positions.length; waypoint++) {
-    const at = waypoint * 3;
+  for (let candidate = 0; candidate * 3 + 2 < positions.length; candidate++) {
+    const at = candidate * 3;
     point.set(positions[at], positions[at + 1], positions[at + 2], 1).applyMatrix4(toClip);
     // Behind the eye. Dividing by a negative w mirrors the point back into
     // view, so without this it is pickable on the opposite side of the screen
@@ -67,7 +97,7 @@ export function pickWaypoint(
     // depending on iteration order to decide something arbitrary.
     if (distance >= bestDistance) continue;
     bestDistance = distance;
-    best = waypoint;
+    best = candidate;
   }
 
   return best;

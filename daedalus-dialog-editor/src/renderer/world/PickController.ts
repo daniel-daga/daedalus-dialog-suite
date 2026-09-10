@@ -14,8 +14,10 @@ import type { WorldScene } from './WorldScene';
 // and was previously reachable only by rendering the entire viewport:
 //
 //   - a click asks the waynet first, because the overlay draws with
-//     `depthTest: false` and is plainly on top; then the props, by GPU
-//     ID-pick; then the world mesh, through its BVH.
+//     `depthTest: false` and is plainly on top; then the markers for the VOBs
+//     with no visual, which draw on the same terms (§16.38) and which the GPU
+//     id-pass has nothing to draw into; then the props, by GPU ID-pick; then
+//     the world mesh, through its BVH.
 //   - a double-click asks the world mesh first and falls back to the props,
 //     because "make this the centre" wants the surface, not an origin.
 //   - a right-click asks the props and nothing else: a miss opens no menu.
@@ -66,7 +68,7 @@ export interface PickControllerOptions {
 }
 
 export class PickController {
-  /** Scratch for the waynet pick, so a click allocates no matrix. */
+  /** Scratch for the two pixel picks, so a click allocates no matrix. */
   private readonly toClip = new THREE.Matrix4();
   /** Scratch for a picked VOB's position on its way back out. */
   private readonly pivotPoint = new THREE.Vector3();
@@ -96,6 +98,24 @@ export class PickController {
       width: rect.width,
       height: rect.height,
     };
+  }
+
+  /**
+   * Projection × view × the mirrored root — what a pixel pick projects through.
+   *
+   * The root has to be in it: both point layers hold ZenGin centimetres and the
+   * root is what puts them in the world, so without it every point is picked at
+   * a position it is not drawn at. `updateMatrixWorld` for the reason `meshHit`
+   * gives — the draw loop keeps these fresh in practice, and a pick must not
+   * depend on one having already run.
+   */
+  private clip(): THREE.Matrix4 {
+    const { camera, world } = this.options;
+    camera.updateMatrixWorld();
+    world.root.updateMatrixWorld();
+    return this.toClip
+      .multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+      .multiply(world.root.matrixWorld);
   }
 
   /**
@@ -148,17 +168,29 @@ export class PickController {
     // waypoint is the whole selection, so there is no batch to add to.
     const overlay = o.waynet();
     if (o.showWaynet() && overlay !== null) {
-      // Projection x view x the mirrored root, because the overlay's positions
-      // are ZenGin centimetres and the root is what puts them in the world.
-      o.camera.updateMatrixWorld();
-      o.world.root.updateMatrixWorld();
       const waypoint = pickWaypoint(
-        overlay.positions,
-        this.toClip.multiplyMatrices(o.camera.projectionMatrix, o.camera.matrixWorldInverse)
-          .multiply(o.world.root.matrixWorld),
-        x, y, width, height,
+        overlay.positions, this.clip(), x, y, width, height,
       );
       if (waypoint !== NO_WAYPOINT) { o.onSelectWaypoint(waypoint); return; }
+    }
+
+    // Then the markers for the VOBs that have no visual at all (§16.38): a
+    // sound, a light, a zone, a trigger — 38 % of a retail world. Before the
+    // props for two reasons, and the first is the waynet's: the layer draws
+    // with `depthTest: false` at a fixed pixel size, so a marker the user can
+    // see is a marker the user expects to hit. The second is that the GPU
+    // id-pass has nothing to answer with here — it draws instances, and a
+    // marker is a vertex in a `THREE.Points` — so asking it first would return
+    // whatever wall is behind the marker.
+    const markers = o.world.markers;
+    if (markers !== null) {
+      const marker = markers.pick(this.clip(), x, y, width, height);
+      if (marker !== NO_PICK) {
+        const at = o.world.positionOf(marker);
+        if (at !== null) o.rememberPick(this.pivotPoint.set(...zenToThree(at)));
+        o.onPick(marker, null, additive);
+        return;
+      }
     }
 
     // The props next: GPU ID-picking is one draw pass into a 1x1 buffer, where

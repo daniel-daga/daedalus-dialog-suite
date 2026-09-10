@@ -1,3 +1,6 @@
+import type { VobIndex } from '../src/shared/worldTypes';
+import { vobIndex } from './worldFixtures';
+
 /**
  * Shared jsdom stand-ins for what a real `WorldViewport` render needs and
  * jsdom cannot provide: the WebGL renderer, the two example controls, the BVH
@@ -161,4 +164,18 @@ export function mockVobPicker(hitVobId = -1) {
       dispose() {}
     },
   };
+}
+
+/**
+ * A VOB index the marker layer finds nothing in (level-editor.md §16.38): its
+ * one VOB has a visual, so no marker is built.
+ *
+ * Every spec here is about something else — the gizmo, the navigation, the
+ * picks, the frame loop — and a marker layer in the middle of them would be one
+ * more `THREE.Points` in the scene graph those assertions walk. The markers have
+ * their own spec (`VobMarkerLayer.test.ts`), and `WorldScene.test.ts` holds what
+ * the scene does with them.
+ */
+export function noVobMarkers(): VobIndex {
+  return vobIndex([[0, 0, 0]]);
 }

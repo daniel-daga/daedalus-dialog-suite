@@ -39,6 +39,7 @@ function props() {
   return {
     mesh: MESH,
     visuals: emptyVisuals(),
+    vobIndex: mockWorldViewport.noVobMarkers(),
     bbox: MESH.bbox,
     waynet: null,
     showWaynet: false,

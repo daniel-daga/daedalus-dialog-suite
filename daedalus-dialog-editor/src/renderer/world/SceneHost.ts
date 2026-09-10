@@ -1,5 +1,7 @@
 import * as THREE from 'three';
-import type { DecodedTexture, InstancedPayload, WorldMeshPayload } from '../../shared/worldTypes';
+import type {
+  DecodedTexture, InstancedPayload, VobIndex, WorldMeshPayload,
+} from '../../shared/worldTypes';
 import type { BvhBuilder } from './BvhBuilder';
 import { VobPicker } from './VobPicker';
 import { WorldScene, type TextureCache } from './WorldScene';
@@ -29,6 +31,9 @@ import { WorldScene, type TextureCache } from './WorldScene';
 //   - only the textures the cache does not already hold are asked for: a
 //     rebuilt scene asks for nothing at all unless the edit brought a visual
 //     whose texture is new.
+//   - the marker layer for the VOBs with no visual is built here too (§16.38),
+//     because it is exactly as rebuildable as the instances are: a placed sound
+//     gets its marker from the rebuild the placement already forces.
 //   - and the mirrored root comes back off the scene it was added to, because
 //     that scene is not this class's to throw away.
 
@@ -47,6 +52,14 @@ export interface SceneHostOptions {
 
   mesh: WorldMeshPayload;
   visuals: InstancedPayload;
+  /**
+   * The VOB index, for the markers the worker places nothing for (§16.38) —
+   * 38 % of a retail world, every sound, light, zone and trigger. It is the
+   * renderer's own copy of the summary's columns rather than a payload of its
+   * own: a position exists there for every VOB, which is exactly what a VOB
+   * with no visual has and no payload carries.
+   */
+  vobIndex: VobIndex;
 
   /** Decoded pixels, kept across the rebuild a structural op forces. Owned by
    *  the viewport, which is also what disposes it. */
@@ -83,6 +96,10 @@ export class SceneHost {
     this.world = new WorldScene(textures);
     this.world.setWorldMesh(mesh);
     this.world.setInstancedVisuals(visuals);
+    // After the visuals, because that is the order the two describe the same
+    // world in: the instances are what is drawn, and the markers are what is
+    // left over.
+    this.world.setVobMarkers(options.vobIndex);
     scene.add(this.world.root);
 
     // Only what is pickable gets a tree, and off the main thread — or, when

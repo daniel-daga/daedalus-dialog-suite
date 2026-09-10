@@ -90,6 +90,7 @@ function props() {
   return {
     mesh: EMPTY_MESH,
     visuals: instancedPayload(),
+    vobIndex: mockWorldViewport.noVobMarkers(),
     bbox: EMPTY_MESH.bbox,
     waynet: null,
     showWaynet: false,
