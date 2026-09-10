@@ -240,6 +240,12 @@ would survive it (§7).
 - Batch operations. Spacer has zSlang; our answer is
   [`mcp-server.md`](mcp-server.md) plus scripted ops. *Planned elsewhere.*
 - Engine preview ("play from here") — parked as later/kept-open (§11).
+- **A visual for a VOB that has no mesh** — Spacer draws a marker for a sound,
+  a light, a zone or a trigger, and we draw nothing at all: 38.0 % of retail
+  VOBs are not in the viewport, cannot be clicked and get no gizmo. Carded
+  2026-09-10 as §16.38 (the marker), §16.39 (the radius and the box) and
+  §16.40 (decals and particle effects, which have a visual name that resolves
+  to no geometry). This inventory never had a row for it.
 
 Already landed and therefore absent above: focus-on-selection and frame-world
 (`.` and `Home`, the 2026-08-27 navigation entry), and batch property edit
@@ -3161,3 +3167,132 @@ places a mesh lives in the far right panel rather than on the tile.
    repo has looked at, and it decides whether row 1's search is a filter over a
    listing or an index over the whole namespace. Needs a Gothic install —
    Daniel's machine, not CI.
+
+### 16.38 A VOB with no visual is not in the viewport at all (2026-09-10; #247)
+
+`buildInstancedVisuals` opens its loop with `if (name === '') continue;`
+(`zen-world/src/scene/buildScene.ts`). That one line is **15,749 of the 41,393
+retail VOBs, 38.0 %** — the `UNKNOWN` row of the visual-type table in
+`docs/architecture/level-editor.md` §7, and what "this VOB has no visual"
+actually looks like on disk. Every sound, light, zone, trigger, mover, code
+master, message filter, touch-damage volume, startpoint and spot is in it.
+
+Four consequences, one cause:
+
+1. **Nothing is drawn** where the VOB stands. A placed `zCVobSound` is a row in
+   the scene tree and no pixels anywhere.
+2. **Nothing can be clicked.** `VobPicker` draws the instanced meshes into its
+   1×1 buffer; a VOB with no instance writes no pixel, in the exact pass and in
+   the near-miss pass alike. The scene tree is the only door in, which means
+   finding a sound means already knowing its name.
+3. **There is no gizmo even once it is selected.** `WorldScene.positionOf`
+   answers by searching the instanced meshes for the VOB id and returns null
+   when none holds it; `anchorOf` and `centroidOf` step over such a VOB on
+   purpose, and their comments name a sound VOB as the case; `GizmoController.
+   attach` detaches on a null anchor. So the whole of "put it where I want it"
+   is typing three coordinates into `WorldPropertyGrid` — no drag, no snap, no
+   drop-to-ground, no align-to-normal, none of §14.1 1.6.
+4. **The class-visibility filter is inert for these classes.** Hiding
+   `zCVobSound` from the view controls hides nothing, because nothing was drawn;
+   the class is offered in the list all the same.
+
+**A marker layer needs no new data.** `VobIndex` carries `positions`,
+`rotations` and `classIndex` for every VOB in the world, the renderer already
+holds it (`worldStore`'s summary, read through `vobModel`), and the sprite
+machinery exists: `markerSprite.ts` builds white-on-black `DataTexture` masks
+that take the drawing layer's colour, and `SpawnOverlay` already draws a
+`THREE.Points` layer of them at a fixed pixel size. A per-class marker is a
+colour table plus one or two more masks. No binding change, no IPC, no worker
+op, and nothing that touches the `.zen` file.
+
+Two pieces are not free:
+
+- **Picking.** The GPU id-pass draws instances and has nothing to draw a marker
+  into. The precedent for a `Points` layer is `pickWaypoint.ts`, which picks in
+  pixels after the projection — a loop over every candidate, once per click and
+  never per frame, chosen because the overlay draws with `sizeAttenuation:
+  false` and a world-unit threshold is wrong at every distance. A marker layer
+  drawn the same way picks the same way, and 15,749 is five times the waynet's
+  2,959 on one loop.
+- **The gizmo.** `positionOf` wants a fallback to the index position, and then
+  `anchorOf` and `centroidOf` work unchanged. That **inverts a documented
+  rule** — both comments say a VOB with no instance has no position at all and
+  is therefore stepped over — so the comments go with the change, and the
+  "anchor on the last *drawn* VOB" tiebreak for a mixed selection has to be
+  restated in terms of what it was protecting rather than deleted.
+
+Deliberately not in this: the extent of a sound or a light (§16.39), and the
+VOBs whose visual is a name that resolves to no geometry (§16.40) — a decal or
+a `.PFX` is a different cause with a different answer.
+
+**Wants a human eye:** which shape reads as "sound" against "trigger" at 16
+pixels, whether the marker scales with distance or stays pixel-sized like the
+waynet's 3.5 px points, and whether an unselected marker is drawn at all in a
+world with thousands of them or only under a class filter.
+
+### 16.39 The extent of a sound, a light or a zone is invisible too (2026-09-10; #248)
+
+A marker says where the origin is and nothing about how far the thing reaches,
+and for this family the reach *is* the object: a `zCVobSound` is its `radius`, a
+`zCVobLight` its `range` and `color`, a `zCZoneZFog` its `rangeCenter` and
+`innerRangePercentage`, an `oCZoneMusic` its volume, a `zCTrigger` its box. With
+§16.38 landed, tuning any of them is still a save-and-play loop.
+
+**The sphere half is drawable from data already in hand.** `radius` and `range`
+are catalogued class fields (`CLASS_FIELDS`, `zen-world/src/model/vobClasses.ts`)
+and reach the renderer through `getVobProps` — the round trip
+`WorldPropertyGrid` already makes when a selection changes. A wireframe sphere
+at the marker, radius from the field, needs nothing new.
+
+**The box half has no source.** `ops.ts` states it: *"The bbox is not in the
+index at all — there is no column for it."* A zone's or a trigger's volume is
+that bbox, so drawing one means either a new index column — paid for by every
+world load, 41,393 × 6 floats — or a per-selection fetch that does not exist.
+That is the decision this section is really holding, and it is why the two
+halves should not land together.
+
+Three things to settle with it:
+
+- **`oCZoneMusic.ellipsoid` makes one box mean two shapes**, and it is a
+  catalogued bool, so the shape follows a field the user can flip.
+- **`zCZoneZFog` has no radius field at all** — `rangeCenter` is a distance
+  along the view, not an extent — so a fog zone's shape is its bbox like the
+  others, and `rangeCenter` is something the grid says and the viewport cannot.
+- **Selection only, first.** The corpus holds 1,237 sound VOBs across the three
+  retail worlds; every radius drawn at once is a screen of overlapping spheres,
+  and drawing the selection is what a modder tuning one sound actually wants.
+
+### 16.40 A decal and a particle effect draw nothing either (2026-09-10; #249)
+
+Same hole, different cause, and it is worth keeping apart from §16.38: these
+VOBs **have** a visual name. `extractVisual` cannot turn a `.TGA` or a `.PFX`
+into geometry, so `buildInstancedVisuals` counts them into `unresolvedByType`
+and places nothing — **1,932 decals and 1,391 particle effects** across the
+three retail worlds, 49 unique names of the two on NewWorld (23 DECAL, 26
+PARTICLE_EFFECT), which is the unresolved-visual table in
+`docs/architecture/level-editor.md` §3.
+
+**A decal is not a mystery and should be drawn as itself, not as an icon.** All
+seven of its fields have been readable and writable since V2 (§14.1 1.8):
+`decalDimension` gives its size (measured 10–550 across the corpus),
+`decalOffset` its shift (every retail one is [0,0]), and `decalTwoSided`,
+`decalAlphaFunc` and `decalAlphaWeight` say how it blends. The texture is a
+`.TGA` the VFS already decodes for the world mesh, through the same
+`decodeTexture` path. So the work is a quad per decal VOB in
+`buildInstancedVisuals`/`WorldScene`, and it hands those seven fields their
+first visual feedback — none of them is in any engine witness either, per the
+acceptance record's *"What is still not witnessed"*.
+
+Two facts to check before writing that quad, neither of which this repo has
+established: **whether `decalDimension` is a half-extent or a full one**, and
+**how a decal is oriented** — the VOB's own rotation, or camera-aligned by
+`visualCamAlign`. Both are one ZenKit read and one look at a retail wall.
+
+The decal is also the case that breaks a class-keyed marker table: every one of
+the 1,932 sits on a plain `zCVob`, so the key here is the **visual type**, not
+the class.
+
+**A `.PFX` is not drawable.** It is a particle script, not geometry, and
+nothing in the binding turns one into vertices. So a `zCPFXController` is one
+more row in §16.38's marker table and nothing more — which is the honest answer
+rather than a faked puff of smoke.
