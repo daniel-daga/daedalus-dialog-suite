@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Box, Button, Tooltip, Typography } from '@mui/material';
+import { Box, Button, Stack, Tooltip, Typography } from '@mui/material';
 import * as THREE from 'three';
 import type { DecodedTexture, VisualScene } from '../../../shared/worldTypes';
 import { buildVisualPreview, frameVisual } from '../../world/VisualPreviewScene';
@@ -56,6 +56,10 @@ export interface WorldAssetPreviewProps {
   /** Hand the previewed mesh's bare name back as the selection's visual
    *  (§16.26 row 1). Absent, the panel is a viewer and offers no button. */
   onUseAsVisual?: (name: string) => void;
+  /** Arm a placement of the previewed mesh (level-editor.md §17, "Adding
+   *  things"): the next ground click places a `zCVob` carrying it, with no
+   *  dialog in between. */
+  onPlace?: (name: string) => void;
 }
 
 const PREVIEW_MAX_SIZE = 256;
@@ -65,7 +69,7 @@ const MESH_CANVAS_FALLBACK = 256;
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
 
 const WorldAssetPreview: React.FC<WorldAssetPreviewProps> = ({
-  path, loadTexture, loadVisual, selectionCount = 0, onUseAsVisual,
+  path, loadTexture, loadVisual, selectionCount = 0, onUseAsVisual, onPlace,
 }) => {
   const name = NAME_OF(path);
   const kind = kindOf(name);
@@ -225,29 +229,45 @@ const WorldAssetPreview: React.FC<WorldAssetPreviewProps> = ({
         </>
       )}
 
-      {/* Offered for any mesh name, resolved or not: the write goes through the
-          same `SetVobProp` the property grid's visual field uses, which refits
-          the box only when the name resolves and otherwise leaves it alone. */}
-      {kind === 'mesh' && onUseAsVisual !== undefined && (
-        <Tooltip
-          title={selectionCount === 0 ? 'Select a VOB first' : ''}
-          data-testid="world-asset-use-visual-reason"
-        >
-          {/* A span, because a disabled button reports no pointer events and
-              MUI's tooltip needs one to attach to. */}
-          <span>
-            <Button
-              size="small"
-              variant="outlined"
-              disabled={selectionCount === 0}
-              onClick={() => onUseAsVisual(name)}
-              data-testid="world-asset-use-visual"
-              sx={{ mb: 1.5 }}
+      {/* The two things a previewed mesh can become. Both offered for any
+          mesh name, resolved or not: the writes go through the same paths the
+          property grid's visual field and the place dialog use, which refit
+          the box only when the name resolves and otherwise leave it alone. */}
+      {kind === 'mesh' && (
+        <Stack direction="row" spacing={1} sx={{ mb: 1.5 }}>
+          {onPlace !== undefined && (
+            <Tooltip title="Then click the ground where it goes">
+              <Button
+                size="small"
+                variant="contained"
+                onClick={() => onPlace(name)}
+                data-testid="world-asset-place"
+              >
+                Place in world
+              </Button>
+            </Tooltip>
+          )}
+          {onUseAsVisual !== undefined && (
+            <Tooltip
+              title={selectionCount === 0 ? 'Select a VOB first' : ''}
+              data-testid="world-asset-use-visual-reason"
             >
-              Use as visual{selectionCount > 1 ? ` (${selectionCount} VOBs)` : ''}
-            </Button>
-          </span>
-        </Tooltip>
+              {/* A span, because a disabled button reports no pointer events and
+                  MUI's tooltip needs one to attach to. */}
+              <span>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  disabled={selectionCount === 0}
+                  onClick={() => onUseAsVisual(name)}
+                  data-testid="world-asset-use-visual"
+                >
+                  Use as visual{selectionCount > 1 ? ` (${selectionCount} VOBs)` : ''}
+                </Button>
+              </span>
+            </Tooltip>
+          )}
+        </Stack>
       )}
 
       {visual !== null && (

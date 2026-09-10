@@ -3262,23 +3262,61 @@ halves are needed: the first sees where focus *is*, the second what is *open*.
   to whatever would otherwise scroll. `[role="tree"]` is reserved for the
   scene tree's own navigation.
 
-**The toolbar wraps onto a new row on a narrow window, but only *between*
-groups** (file, overlays, edit, stats) — each group is `flexShrink: 0`, so it
-is one atomic flex item and never breaks mid-group the way the monolith this
-replaced did with a bare `flexWrap="wrap"` on every button. Each row's groups
-are spread with `justifyContent: 'space-between'` — flex's version of
-justified text — rather than left-packed and ragged. The vertical rule
-between groups is a border on each group's own container rather than a
-standalone `Divider` flex item, since a lone divider would be stranded by the
-same `space-between` gap the moment a row wraps. Horizontal scroll was tried
-first and **rejected** in turn — it hid controls off-screen with no visible
-cue there was more toolbar to see. A priority-"More" overflow menu was
-**rejected** too: it needs `ResizeObserver` measurement jsdom cannot
-exercise, and moving controls into a `Menu` breaks the synchronous
-`getByTestId` the large editing suite depends on. Groups are pure
-props-down/callbacks-up; all state stays in `WorldSurface`, and rules that
-touch two pieces of state at once are passed down as one named callback
-rather than reassembled in a child.
+**The toolbar is four groups — file, add, edit, view — packed from the
+left, with the view group pinned to the right edge** (`marginLeft: auto`).
+Reworked 2026-09-10 after Daniel's in-app pass found it "a mess of hidden
+features, controls jumping around when others become visible and wasted
+space": the counts had the widest group and wrapped first; `space-between`
+spread the groups across the full width, so every one of them shifted
+whenever any changed width; and Names and Time mounted only once their layer
+was on. Now: the counts live in the status bar (below); every toggle is
+mounted whatever its layer's state and *disabled* with a tooltip naming the
+layer to turn on; the Open button carries its own spinner in place of its
+icon; and the one thing that still appears — the time slider and its
+quest-state lens, inside the view group — grows into that group's own slack
+at the right edge and moves nothing else. Secondary actions are icon buttons
+with the label in the tooltip and the accessible name; the add group keeps
+text labels because it exists to be found. Each group is `flexShrink: 0`, so
+the row wraps only *between* groups, never inside one; the rule between
+groups is a border on the group's own container rather than a standalone
+`Divider`, which wrapping would strand. Horizontal scroll was tried first and
+**rejected** — it hid controls off-screen with no cue there was more toolbar
+to see. A priority-"More" overflow menu was **rejected** too: it needs
+`ResizeObserver` measurement jsdom cannot exercise, and moving controls into
+a `Menu` breaks the synchronous `getByTestId` the large editing suite depends
+on. Groups are pure props-down/callbacks-up; all state stays in
+`WorldSurface`, and rules that touch two pieces of state at once are passed
+down as one named callback rather than reassembled in a child.
+
+**The status bar under the viewport is the ground on the left and the counts
+on the right.** It is the old terrain bar with the toolbar's chips moved
+in: the hint or the picked point, the actions that take that point, and —
+right-aligned, tabular figures — VOBs, triangles, draw calls and placed. It
+is mounted whether or not there is a point, and reserves the height of the
+buttons it only sometimes carries, because a bar that changes height shoves
+the picture out from under the cursor that just picked it.
+
+**Adding things: the dialog first, the ground click second.** The add group
+offers Place VOB…, Insert NPC… and Add waypoint… the moment a world is
+open. Each opens its dialog straight away; where the result goes is the
+ground point already chosen, or — with none chosen — the *next* ground
+click: the confirm reads "Place on next click", the surface holds an
+`armed` add, the status bar says what it is waiting for beside a Cancel, and
+Escape drops it. The next terrain pick spends it, one click one add; a VOB
+hit is a selection, not a place. The Assets panel's **Place in world** arms
+the previewed mesh directly, with no dialog — the gesture the picker used to
+need was preview, switch tabs, click the ground, open the dialog, "Use
+previewed", Place. Insert NPC's waypoint field offers the world's own names:
+an existing name means "spawn there" with no waypoint op, a new one is
+authored first. Before this every one of the three was reachable only from
+the bar that appears *after* a ground click — and two of them only with the
+Waynet overlay switched on by hand, a precondition nothing on screen stated
+(§16.27 item 2 was that exact support question). Now any action whose result
+is a waypoint switches the overlay on itself, since only the overlay draws
+one. The Problems panel's "Add to world" keeps its own arming
+(`pendingWaypointName`): it pre-fills the *dialog* the bar opens after the
+click rather than committing on the click, because that flow's name comes
+from a script and wants a look before it lands.
 
 **The scene tree is navigated by a container-level `onKeyDown`, never a roving
 `tabIndex`.** `react-window` unmounts offscreen rows, so a roving tabindex

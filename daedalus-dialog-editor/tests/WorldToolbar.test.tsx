@@ -8,9 +8,9 @@ import { useProjectStore } from '../src/renderer/store/projectStore';
 import { SUMMARY, makeWorldEditorApi, vobIndex, waynetPayload } from './worldFixtures';
 
 /**
- * The World bar's four-group structure (level-editor.md §17) — the toolbar restructure's own safety net beyond the 178-case
- * editing suite, which pins every testid and enablement rule surviving the
- * move to `toolbar/*.tsx` unchanged.
+ * The World bar's four-group structure (level-editor.md §17) — file, add,
+ * edit, view — and the status bar the counts moved to. The safety net beyond
+ * the 178-case editing suite, which pins every testid and enablement rule.
  */
 
 jest.mock('react-virtualized-auto-sizer', () => (props: {
@@ -66,9 +66,20 @@ describe('the World bar', () => {
     render(<WorldSurface />);
 
     expect(screen.getByTestId('world-toolbar-file')).toBeInTheDocument();
-    expect(screen.getByTestId('world-toolbar-overlays')).toBeInTheDocument();
+    expect(screen.getByTestId('world-toolbar-add')).toBeInTheDocument();
     expect(screen.getByTestId('world-toolbar-edit')).toBeInTheDocument();
-    expect(screen.getByTestId('world-toolbar-stats')).toBeInTheDocument();
+    expect(screen.getByTestId('world-toolbar-view')).toBeInTheDocument();
+    expect(screen.queryByTestId('world-toolbar-stats')).toBeNull();
+  });
+
+  it('puts the three add actions in the add group, disabled until a world is open', async () => {
+    render(<WorldSurface />);
+
+    const addGroup = screen.getByTestId('world-toolbar-add');
+    for (const testId of ['world-add-vob', 'world-add-npc', 'world-add-waypoint-toolbar']) {
+      expect(addGroup).toContainElement(screen.getByTestId(testId));
+      expect(screen.getByTestId(testId)).toBeDisabled();
+    }
   });
 
   it('puts the file controls in the file group', () => {
@@ -89,12 +100,27 @@ describe('the World bar', () => {
     expect(editGroup).toContainElement(screen.getByTestId('world-delete-vob'));
   });
 
-  it('puts the overlay controls in the overlays group once a world is open', async () => {
+  it('puts the view controls in the view group once a world is open', async () => {
     await openWorld();
 
-    const overlayGroup = screen.getByTestId('world-toolbar-overlays');
-    expect(overlayGroup).toContainElement(screen.getByTestId('world-waynet-toggle'));
-    expect(overlayGroup).toContainElement(screen.getByTestId('world-exposure'));
+    const viewGroup = screen.getByTestId('world-toolbar-view');
+    expect(viewGroup).toContainElement(screen.getByTestId('world-waynet-toggle'));
+    expect(viewGroup).toContainElement(screen.getByTestId('world-exposure'));
+  });
+
+  it('keeps Time and Names in the bar with their layer off — disabled, and saying why', async () => {
+    // Both used to mount only once their layer was on, so the row grew and
+    // shifted when a layer was toggled, and nothing said the control existed.
+    await openWorld();
+
+    expect(screen.getByTestId('world-time-toggle')).toBeDisabled();
+    expect(screen.getByTestId('world-names-toggle')).toBeDisabled();
+    fireEvent.mouseOver(screen.getByTestId('world-time-toggle'));
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(/Spawns/);
+
+    fireEvent.click(screen.getByTestId('world-spawns-toggle'));
+    expect(screen.getByTestId('world-time-toggle')).toBeEnabled();
+    expect(screen.getByTestId('world-names-toggle')).toBeEnabled();
   });
 
   it('cycles the VOB outlines through all, selected and off', async () => {
@@ -105,37 +131,45 @@ describe('the World bar', () => {
     await openWorld();
 
     const button = screen.getByTestId('world-outlines-toggle');
-    expect(button).toHaveTextContent('Outlines: All');
+    expect(button).toHaveAccessibleName('Outlines: All');
 
     fireEvent.click(button);
-    expect(button).toHaveTextContent('Outlines: Selected');
+    expect(button).toHaveAccessibleName('Outlines: Selected');
 
     fireEvent.click(button);
-    expect(button).toHaveTextContent('Outlines: Off');
+    expect(button).toHaveAccessibleName('Outlines: Off');
 
     fireEvent.click(button);
-    expect(button).toHaveTextContent('Outlines: All');
+    expect(button).toHaveAccessibleName('Outlines: All');
   });
 
-  it('keeps the outline control in the overlays group, beside the other view toggles', async () => {
+  it('keeps the outline control in the view group, beside the other view toggles', async () => {
     await openWorld();
 
-    expect(screen.getByTestId('world-toolbar-overlays'))
+    expect(screen.getByTestId('world-toolbar-view'))
       .toContainElement(screen.getByTestId('world-outlines-toggle'));
   });
 
-  it('puts the stat chips in the stats group once a world is open', async () => {
+  it('puts the counts in the status bar once a world is open, not in the toolbar', async () => {
     await openWorld();
 
-    const statsGroup = screen.getByTestId('world-toolbar-stats');
-    expect(statsGroup).toHaveTextContent('VOBs');
+    const stats = screen.getByTestId('world-status-stats');
+    expect(screen.getByTestId('world-status-bar')).toContainElement(stats);
+    expect(stats).toHaveTextContent('2 VOBs');
+    expect(stats).toHaveTextContent('1 triangles');
+    expect(screen.getByTestId('world-toolbar-file').parentElement).not.toContainElement(stats);
   });
 
-  it('wraps between groups on a narrow window, and justifies each row', () => {
+  it('packs the groups from the left and pins the view group to the right', () => {
+    // `space-between` was what made controls jump: every group moved whenever
+    // one of them changed width. Left-packed, only the view group's own
+    // slack moves when a slider appears inside it.
     render(<WorldSurface />);
 
     const bar = screen.getByTestId('world-toolbar-file').parentElement;
-    expect(bar).toHaveStyle({ flexWrap: 'wrap', justifyContent: 'space-between' });
+    expect(bar).toHaveStyle({ flexWrap: 'wrap' });
+    expect(bar).not.toHaveStyle({ justifyContent: 'space-between' });
+    expect(screen.getByTestId('world-toolbar-view')).toHaveStyle({ marginLeft: 'auto' });
   });
 
   it('shows every control before a world is open, disabled rather than absent', () => {
@@ -181,20 +215,12 @@ describe('the World bar', () => {
     }
   });
 
-  it('shows placeholder stat chips before a world is open, never a bare zero', () => {
-    render(<WorldSurface />);
-
-    const statsGroup = screen.getByTestId('world-toolbar-stats');
-    expect(statsGroup).toHaveTextContent('—');
-    expect(statsGroup).not.toHaveTextContent('0 VOBs');
-  });
-
   it('never breaks a group across two rows', () => {
     // Each group is one atomic flex item — flexShrink: 0 is what keeps the
     // wrap point between groups rather than inside one.
     render(<WorldSurface />);
 
-    for (const testId of ['world-toolbar-file', 'world-toolbar-overlays', 'world-toolbar-edit', 'world-toolbar-stats']) {
+    for (const testId of ['world-toolbar-file', 'world-toolbar-add', 'world-toolbar-edit', 'world-toolbar-view']) {
       expect(screen.getByTestId(testId)).toHaveStyle({ flexShrink: '0', flexWrap: 'nowrap' });
     }
   });
@@ -206,6 +232,9 @@ describe('the World bar', () => {
       ['world-undo', 'Undo'], ['world-redo', 'Redo'],
       ['world-drop-to-ground', 'Drop to ground'], ['world-align-to-normal', 'Align to normal'],
       ['world-duplicate-vob', 'Duplicate VOB'], ['world-delete-vob', 'Delete VOB'],
+      ['world-save', 'Save world'], ['world-gmbt-test', 'Quick test'],
+      ['world-waynet-toggle', 'Waynet'], ['world-spawns-toggle', 'Spawns'],
+      ['world-gizmo-translate', 'Move'], ['world-gizmo-rotate', 'Turn'],
     ] as const) {
       expect(screen.getByTestId(testId)).toHaveAccessibleName(name);
     }

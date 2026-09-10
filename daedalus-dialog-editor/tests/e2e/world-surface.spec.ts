@@ -64,6 +64,25 @@ test.describe('World surface', () => {
     await expect(fileGroup.getByRole('button')).toHaveCount(3);
   });
 
+  test('the add actions are in the bar before a world is open, disabled and named', async ({ page }) => {
+    // The three used to be reachable only by clicking the ground first — and
+    // two of them only with the Waynet overlay on. In the bar they are found
+    // before they are needed; the tooltip says what each does.
+    await openWorldView(page);
+
+    const addGroup = page.getByTestId('world-toolbar-add');
+    for (const testId of ['world-add-vob', 'world-add-npc', 'world-add-waypoint-toolbar']) {
+      await expect(addGroup.getByTestId(testId)).toBeVisible();
+      await expect(addGroup.getByTestId(testId)).toBeDisabled();
+    }
+    // A disabled button takes no pointer events; the tooltip hangs on the
+    // span around it, which is what a real hover lands on.
+    await addGroup.getByTestId('world-add-npc').locator('..').hover();
+    await expect(page.getByRole('tooltip').filter({ hasText: /NPC/ })).toBeVisible();
+    // And the counts are no longer in the bar at all.
+    await expect(page.getByTestId('world-toolbar-stats')).toHaveCount(0);
+  });
+
   test('the viewport is not mounted until a world is actually open', async ({ page }) => {
     // The scene costs tens of megabytes of GPU buffers; mounting it eagerly
     // would pay that for a view the user only glanced at.

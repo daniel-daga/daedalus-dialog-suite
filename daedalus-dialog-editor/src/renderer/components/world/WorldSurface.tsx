@@ -59,7 +59,8 @@ import WaypointPanel from './WaypointPanel';
 import WorldVobContextMenu from './WorldVobContextMenu';
 import PanelSplitter from './PanelSplitter';
 import WorldToolbar from './toolbar/WorldToolbar';
-import { OUTLINE_MODE_ORDER } from './toolbar/WorldOverlayControls';
+import { OUTLINE_MODE_ORDER } from './toolbar/WorldViewControls';
+import WorldStatusStats from './toolbar/WorldStatusStats';
 import type { OutlineMode } from '../../world/VobOutline';
 import WorldPickerDialog from './WorldPickerDialog';
 import ErrorBoundary from '../ErrorBoundary';
@@ -186,6 +187,21 @@ const SCATTER_DEFAULT_RADIUS = 800;
 const SCATTER_DEFAULT_SPACING = 250;
 const SCATTER_LIMIT = 200;
 
+/** What the place dialog collects. `parent` is a flat index or null for a
+ *  root; where the VOB goes is the ground point, chosen before or after. */
+interface PlaceSpec {
+  vobClass: AuthorableVobClass; name: string; visual: string; instance: string;
+  parent: number | null;
+}
+const FRESH_PLACE: PlaceSpec = { vobClass: 'zCVob', name: '', visual: '', instance: '', parent: null };
+/** How the status bar names an armed placement: the visual or the instance
+ *  when there is one, the class otherwise. */
+function placeLabel(spec: PlaceSpec): string {
+  if (spec.vobClass === 'zCVob' && spec.visual.trim() !== '') return spec.visual.trim();
+  if (spec.vobClass === 'oCItem' && spec.instance.trim() !== '') return spec.instance.trim();
+  return spec.vobClass;
+}
+
 const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const status = useWorldStore((s) => s.status);
   const summary = useWorldStore((s) => s.summary);
@@ -214,9 +230,19 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    * set up a parented placement — the ground, then the row — do not say which
    * the user meant, and appending a root is the case that renumbers nothing.
    */
-  const [placing, setPlacing] = useState<
-    { vobClass: AuthorableVobClass; name: string; visual: string; instance: string;
-      parent: number | null } | null
+  const [placing, setPlacing] = useState<PlaceSpec | null>(null);
+  /**
+   * An add action waiting for its ground click (level-editor.md §17, "Adding
+   * things"): the toolbar's three dialogs confirm into this when no ground
+   * point has been chosen yet, and the Assets panel's "Place in world" arms
+   * it directly. The next terrain pick spends it — one click, one add — and
+   * Escape or the status bar's Cancel drops it. Null is the ordinary state.
+   */
+  const [armed, setArmed] = useState<
+    | { kind: 'place'; spec: PlaceSpec }
+    | { kind: 'insert-npc'; instance: string; waypoint: string }
+    | { kind: 'add-waypoint'; name: string }
+    | null
   >(null);
   /** The VOB the delete warning is about, or null when it is closed. A flat
    *  index rather than a boolean: the dialog names what it is about to remove,
@@ -419,8 +445,10 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     setVisuals(null);
     setTerrainPoint(null);
     // An armed name is a request about *this* open, and a new one answers no
-    // question the previous open's Problems scan asked.
+    // question the previous open's Problems scan asked. The same for an
+    // armed add: it was about a world that is being replaced.
     setPendingWaypointName(null);
+    setArmed(null);
     // The waynet goes too, and it is the one reset that is not obvious: the
     // viewport mounts on `mesh && visuals && summary`, so a payload left
     // standing here draws the *previous* world's waypoints over the new one
@@ -920,16 +948,6 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
 
     jumpToPoint(focusRequest.name);
   }, [focusRequest, focusVob, jumpToPoint, openWorldNamed]);
-
-  const handlePick = useCallback((
-    vob: number | null, point: [number, number, number] | null, additive: boolean,
-  ) => {
-    // An additive click that misses must not empty a selection someone is
-    // building.
-    if (vob !== null) handleSelect(vob, additive);
-    else if (!additive) selectVob(null);
-    setTerrainPoint(point);
-  }, [handleSelect, selectVob]);
 
   // ── editing (level-editor.md §7, Phase 1b) ────────────────────────────────
   //
@@ -1431,6 +1449,11 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    * no project open places items exactly as it did before; an empty name is
    * refused whatever the index says, because an item without one spawns nothing.
    */
+  /** Where the place dialog says the VOB goes: the chosen point, or the
+   *  click the confirm will wait for. */
+  const placeWhere = terrainPoint === null
+    ? 'where you next click the ground'
+    : `at ${terrainPoint.map((v) => Math.round(v)).join(', ')}`;
   const placeRefused = placing !== null && placing.vobClass === 'oCItem'
     && (placing.instance.trim() === ''
       || (itemInstances.size > 0 && !itemInstances.has(placing.instance.trim().toUpperCase())));
@@ -1578,14 +1601,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    * enforces that rather than this side promising it — and `applied` clears the
    * selection afterwards.
    */
-  const placeVob = useCallback(async (
-    spec: {
-      vobClass: AuthorableVobClass; name: string; visual: string; instance: string;
-      parent: number | null;
-    },
-  ) => {
+  const placeVobAt = useCallback(async (spec: PlaceSpec, point: [number, number, number]) => {
     const { summary: current } = useWorldStore.getState();
-    if (current === null || terrainPoint === null) return;
+    if (current === null) return;
 
     // Only a `zCVob` carries a visual from this dialog. An item has none in the
     // file — the engine derives one from its script instance — and a light or a
@@ -1598,18 +1616,18 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       .catch(() => null);
 
     const placed: NewVob = {
-      position: terrainPoint,
+      position: point,
       ...(spec.vobClass === 'zCVob' ? {} : { class: spec.vobClass }),
       ...(item ? { instance: spec.instance.trim() } : {}),
       ...(spec.name.trim() === '' ? {} : { name: spec.name.trim() }),
       ...(visual === '' ? {} : { visual }),
       ...(bounds === null ? {} : {
-        bbox: placeBounds(bounds as ZenBounds, IDENTITY, terrainPoint),
+        bbox: placeBounds(bounds as ZenBounds, IDENTITY, point),
       }),
     };
 
     await commitOps([addVob(vobModelOf(current).reader, placed, spec.parent)]);
-  }, [commitOps, terrainPoint]);
+  }, [commitOps]);
 
   /**
    * The class fields of every VOB a copy of `vobs` would bring, keyed by flat
@@ -2023,10 +2041,10 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    * before. The waypoint is free and in no edge, which is what makes
    * `WayNet::save` write it at all; joining it to the net is W3.
    */
-  const addWaypointAt = useCallback((name: string) => {
-    if (waynet === null || terrainPoint === null) return;
-    void commitOps([addWaypoint(waynet.names, name, terrainPoint)]);
-  }, [commitOps, terrainPoint, waynet]);
+  const addWaypointAt = useCallback((name: string, point: [number, number, number]) => {
+    if (waynet === null) return;
+    void commitOps([addWaypoint(waynet.names, name, point)]);
+  }, [commitOps, waynet]);
 
   /**
    * Spawn an NPC at a waypoint by writing `Wld_InsertNpc` into the open
@@ -2049,7 +2067,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    * spawn behind and no parse round trip is spent on it.
    */
   const insertNpcAt = useCallback(async (
-    instance: string, spawnPoint: string, existing: boolean,
+    instance: string, spawnPoint: string, existing: boolean, point: [number, number, number] | null,
   ) => {
     const { editFailed, summary: current } = useWorldStore.getState();
     if (current === null) return;
@@ -2072,8 +2090,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     }
 
     if (!existing) {
-      if (waynet === null || terrainPoint === null) return;
-      if (!await commitOps([addWaypoint(waynet.names, spawnPoint, terrainPoint)])) return;
+      if (waynet === null || point === null) return;
+      if (!await commitOps([addWaypoint(waynet.names, spawnPoint, point)])) return;
     }
 
     const half = existing ? '' : `Waypoint ${spawnPoint} was added, but `;
@@ -2101,7 +2119,36 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     });
     project.updateFileModel(filePath, appendInsertNpc(found.model, found.functionName, instance, spawnPoint));
     if (open !== undefined) await useFileStore.getState().reloadFile(filePath);
-  }, [commitOps, terrainPoint, waynet]);
+  }, [commitOps, waynet]);
+
+  /**
+   * The overlay, switched on for an action whose result is a waypoint: only
+   * the overlay draws one, so a waypoint authored with it off would land
+   * invisible and unpickable. Add waypoint and Insert NPC used to hide until
+   * somebody turned it on by hand — a precondition nothing on screen stated.
+   */
+  const ensureWaynetShown = useCallback(() => {
+    if (!showWaynet) setShowWaynet(true);
+    if (waynet === null) void readWaynetInto(setWaynet);
+  }, [showWaynet, waynet, readWaynetInto]);
+
+  const handlePick = useCallback((
+    vob: number | null, point: [number, number, number] | null, additive: boolean,
+  ) => {
+    // An additive click that misses must not empty a selection someone is
+    // building.
+    if (vob !== null) handleSelect(vob, additive);
+    else if (!additive) selectVob(null);
+    setTerrainPoint(point);
+    // An armed add is spent by the ground click it was waiting for — and only
+    // a ground click: a VOB hit is a selection, not a place.
+    if (point !== null && armed !== null) {
+      setArmed(null);
+      if (armed.kind === 'place') void placeVobAt(armed.spec, point);
+      else if (armed.kind === 'insert-npc') void insertNpcAt(armed.instance, armed.waypoint, false, point);
+      else addWaypointAt(armed.name, point);
+    }
+  }, [handleSelect, selectVob, armed, placeVobAt, insertNpcAt, addWaypointAt]);
 
   /**
    * The selected waypoint's edges, as the other end of each (§16.7, W3).
@@ -2222,7 +2269,10 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     && (waynet?.names.includes(addingWaypoint.trim()) ?? false);
   /** The same refusal for the Insert-NPC dialog's waypoint — only when it is
    *  authoring one; the panel's variant names a point the world already has. */
-  const duplicateInsertWaypoint = insertingNpc !== null && !insertingNpc.existing
+  /** Whether the typed waypoint is one the world already has — then the NPC
+   *  spawns there and no waypoint is authored. Not a clash: the name field
+   *  offers the world's own names for exactly this. */
+  const insertTargetExists = insertingNpc !== null && !insertingNpc.existing
     && (waynet?.names.includes(insertingNpc.waypoint.trim()) ?? false);
   const startupFunctionName = summary === null ? '' : startupFunctionFor(summary.worldPath);
   /**
@@ -2345,6 +2395,13 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       // open dialog is about, out from under the dialog that is closing.
       if (key === 'escape') {
         if (isTypingOrInPopover(event.target) || surfaceDialogOpen) return;
+        // An armed add is the more recent intent, and the one Escape is
+        // most likely aimed at; the selection survives it.
+        if (armed !== null) {
+          event.preventDefault();
+          setArmed(null);
+          return;
+        }
         const { selection: currentSelection, selectedWaypoint: currentWaypoint } = useWorldStore.getState();
         if (currentSelection.length === 0 && currentWaypoint === null) return;
         event.preventDefault();
@@ -2407,7 +2464,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     return () => window.removeEventListener('keydown', handler);
   }, [
     summary, hidden, runHistory, copySelection, pasteClipboard, waynet, selectVob,
-    surfaceDialogOpen, snapGrid, gizmoMode, handleTranslateSelection,
+    surfaceDialogOpen, snapGrid, gizmoMode, handleTranslateSelection, armed,
   ]);
 
   // The World bar's own combined-state rules (WorldToolbar §5): each collapses
@@ -2451,6 +2508,18 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         unsavedEdits={unsavedEdits}
         gmbtConfigured={gmbtConfigured}
         onQuickTest={() => void startQuickTest()}
+        onPlaceVob={() => setPlacing(FRESH_PLACE)}
+        onInsertNpc={() => {
+          ensureWaynetShown();
+          setInsertingNpc(selectedWaypoint !== null && waynet !== null
+            ? { instance: '', waypoint: waynet.names[selectedWaypoint], existing: true }
+            : { instance: '', waypoint: suggestedWaypointName(), existing: false });
+        }}
+        onAddWaypoint={() => {
+          ensureWaynetShown();
+          setAddingWaypoint(pendingWaypointName ?? suggestedWaypointName());
+          setPendingWaypointName(null);
+        }}
         showWaynet={showWaynet}
         onToggleWaynet={() => void toggleWaynet()}
         showSpawns={showSpawns}
@@ -2490,8 +2559,6 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         scatterSpacing={scatterSpacing}
         onScatterRadiusChange={setScatterRadius}
         onScatterSpacingChange={setScatterSpacing}
-        summary={summary}
-        visuals={visuals}
       />
 
       {status === 'error' && (
@@ -2972,6 +3039,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                     loadVisual={loadVisual}
                     selectionCount={selection.length}
                     onUseAsVisual={useAssetAsVisual}
+                    onPlace={(name) => setArmed({ kind: 'place', spec: { ...FRESH_PLACE, visual: name } })}
                   />
                 )
                 : selectedWaypoint !== null && waynet
@@ -3020,10 +3088,12 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         <Paper
           square
           elevation={1}
-          sx={{ p: 1, borderTop: 1, borderColor: 'divider' }}
-          data-testid="world-terrain-bar"
+          sx={{ p: 1, borderTop: 1, borderColor: 'divider', display: 'flex', alignItems: 'center' }}
+          data-testid="world-status-bar"
         >
-          {/* Terrain is not a VOB, so it has no row and no properties — a hit
+          {/* The status bar: the ground on the left, the counts on the right.
+
+              Terrain is not a VOB, so it has no row and no properties — a hit
               reports the point rather than inventing a selection. ZenGin space,
               centimetres: the coordinates an op would carry, and the position a
               placed VOB gets.
@@ -3039,8 +3109,24 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               it. That is also why the row reserves the height of the button it
               only sometimes carries: a bar that changes height is the same
               shove. */}
-          <Stack direction="row" spacing={1} alignItems="center">
-            {terrainPoint === null ? (
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+            {armed !== null ? (
+              <>
+                {/* An armed add speaks over the point: it is the more recent
+                    intent, and the click it asks for is the same click that
+                    would replace the point anyway. */}
+                <Typography variant="caption" color="text.secondary" data-testid="world-terrain-hint">
+                  {armed.kind === 'place'
+                    ? `Click the ground to place ${placeLabel(armed.spec)}.`
+                    : armed.kind === 'insert-npc'
+                      ? `Click the ground to add waypoint ${armed.waypoint} and insert ${armed.instance} there.`
+                      : `Click the ground to place waypoint ${armed.name}.`}
+                </Typography>
+                <Button size="small" onClick={() => setArmed(null)} data-testid="world-armed-cancel">
+                  Cancel (Esc)
+                </Button>
+              </>
+            ) : terrainPoint === null ? (
               <>
                 <Typography variant="caption" color="text.secondary" data-testid="world-terrain-hint">
                   {pendingWaypointName !== null
@@ -3084,21 +3170,21 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                 </Typography>
                 <Button
                   size="small"
-                  onClick={() => setPlacing({
-                    vobClass: 'zCVob', name: '', visual: '', instance: '', parent: null,
-                  })}
+                  onClick={() => setPlacing(FRESH_PLACE)}
                   data-testid="world-place-vob"
                 >
                   Place VOB here…
                 </Button>
-                {/* Offered only while the overlay is on, and not as a
-                    preference: the overlay is the only thing that draws a
-                    waypoint, so a waypoint added without it would be invisible
-                    and unpickable the moment it landed. */}
-                {showWaynet && waynet !== null && (
+                {/* Both switch the overlay on rather than waiting for it: the
+                    overlay is the only thing that draws a waypoint, so a
+                    waypoint added without it would be invisible and unpickable
+                    the moment it landed. Gated on the payload alone — with no
+                    names to append to there is nothing to author. */}
+                {waynet !== null && (
                   <Button
                     size="small"
                     onClick={() => {
+                      ensureWaynetShown();
                       // An armed name wins over a fresh suggestion, and is
                       // spent the moment it does — the same way a suggested
                       // one is spent by this click today.
@@ -3110,14 +3196,13 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                     Add waypoint here…
                   </Button>
                 )}
-                {/* Same condition as the waypoint it authors: the spawn's
-                    point would be invisible with the overlay off. */}
-                {showWaynet && waynet !== null && (
+                {waynet !== null && (
                   <Button
                     size="small"
-                    onClick={() => setInsertingNpc({
-                      instance: '', waypoint: suggestedWaypointName(), existing: false,
-                    })}
+                    onClick={() => {
+                      ensureWaynetShown();
+                      setInsertingNpc({ instance: '', waypoint: suggestedWaypointName(), existing: false });
+                    }}
                     data-testid="world-insert-npc"
                   >
                     Insert NPC here…
@@ -3126,6 +3211,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               </>
             )}
           </Stack>
+          <WorldStatusStats summary={summary} visuals={visuals} />
         </Paper>
       )}
 
@@ -3143,8 +3229,10 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                 appended, so nothing else moves, and it is a free point in no
                 edge — which is what makes the engine keep it, and what makes it
                 not part of the walkable net yet. */}
-            It is appended as a free point at
-            {` ${terrainPoint?.map((v) => Math.round(v)).join(', ')}`}, in no edge and
+            It is appended as a free point
+            {terrainPoint === null
+              ? ' where you next click the ground'
+              : ` at ${terrainPoint.map((v) => Math.round(v)).join(', ')}`}, in no edge and
             renumbering nothing.
           </DialogContentText>
           <Autocomplete
@@ -3185,11 +3273,13 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
             onClick={() => {
               const name = addingWaypoint;
               setAddingWaypoint(null);
-              if (name !== null) void addWaypointAt(name.trim());
+              if (name === null) return;
+              if (terrainPoint !== null) addWaypointAt(name.trim(), terrainPoint);
+              else setArmed({ kind: 'add-waypoint', name: name.trim() });
             }}
             data-testid="world-waypoint-add-confirm"
           >
-            Add
+            {terrainPoint === null ? 'Add on next click' : 'Add'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -3206,9 +3296,11 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
           <DialogContentText variant="caption" sx={{ display: 'block', mb: 1.5 }}>
             {/* The one thing this dialog does that no other here does: it
                 writes a script. Said up front, with where. */}
-            {insertingNpc?.existing
+            {insertingNpc?.existing || insertTargetExists
               ? `A Wld_InsertNpc line is appended to ${startupFunctionName} in the open project.`
-              : `The waypoint is appended as a free point at ${terrainPoint?.map((v) => Math.round(v)).join(', ')}, `
+              : `The waypoint is appended as a free point ${terrainPoint === null
+                ? 'where you next click the ground'
+                : `at ${terrainPoint.map((v) => Math.round(v)).join(', ')}`}, `
                 + `then a Wld_InsertNpc line is appended to ${startupFunctionName} in the open project.`}
           </DialogContentText>
           <Box data-testid="world-insert-npc-instance" sx={{ mb: 1.5 }}>
@@ -3232,18 +3324,29 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               </Typography>
             )}
           </Box>
-          <TextField
-            label="Waypoint"
-            value={insertingNpc?.waypoint ?? ''}
-            onChange={(event) => setInsertingNpc((draft) => draft && { ...draft, waypoint: event.target.value })}
-            disabled={insertingNpc?.existing ?? false}
-            size="small"
+          {/* The world's own names are the options: an existing one means
+              "spawn there", a new one means "author it". Opened from a
+              waypoint's panel the field is that waypoint and locked. */}
+          <Autocomplete
+            freeSolo
             fullWidth
-            error={duplicateInsertWaypoint}
-            helperText={duplicateInsertWaypoint
-              ? 'Already in this world — pick a name it has not got.'
-              : ' '}
-            inputProps={{ 'data-testid': 'world-insert-npc-waypoint', spellCheck: false }}
+            size="small"
+            disabled={insertingNpc?.existing ?? false}
+            options={waynet?.names ?? []}
+            inputValue={insertingNpc?.waypoint ?? ''}
+            onInputChange={(_event, value) => setInsertingNpc((draft) => draft && { ...draft, waypoint: value })}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="Waypoint"
+                helperText={insertingNpc?.existing
+                  ? ' '
+                  : insertTargetExists
+                    ? 'Already in this world — the NPC spawns there.'
+                    : 'Not in this world yet — a free point is added for it.'}
+                inputProps={{ ...params.inputProps, 'data-testid': 'world-insert-npc-waypoint', spellCheck: false }}
+              />
+            )}
           />
           {duplicateInsertSpawn !== null && (
             <Typography
@@ -3262,17 +3365,22 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
           <Button
             variant="contained"
             disabled={insertingNpc === null || insertingNpc.instance.trim() === ''
-              || insertingNpc.waypoint.trim() === '' || duplicateInsertWaypoint}
+              || insertingNpc.waypoint.trim() === ''}
             onClick={() => {
               const draft = insertingNpc;
               setInsertingNpc(null);
-              if (draft !== null) {
-                void insertNpcAt(draft.instance.trim(), draft.waypoint.trim(), draft.existing);
-              }
+              if (draft === null) return;
+              const instance = draft.instance.trim();
+              const waypoint = draft.waypoint.trim();
+              if (draft.existing || insertTargetExists) void insertNpcAt(instance, waypoint, true, null);
+              else if (terrainPoint !== null) void insertNpcAt(instance, waypoint, false, terrainPoint);
+              else setArmed({ kind: 'insert-npc', instance, waypoint });
             }}
             data-testid="world-insert-npc-confirm"
           >
-            {duplicateInsertSpawn === null ? 'Insert' : 'Insert anyway'}
+            {duplicateInsertSpawn === null
+              ? (insertingNpc?.existing || insertTargetExists || terrainPoint !== null ? 'Insert' : 'Insert on next click')
+              : 'Insert anyway'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -3285,9 +3393,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                 that changes the world's shape, so it is said before the fields
                 rather than left to be discovered from the scene tree. */}
             {placing?.parent === null
-              ? `It is appended as a root VOB at ${terrainPoint?.map((v) => Math.round(v)).join(', ')}.`
-              : `It becomes the last child of ${parentLabel}, at `
-                + `${terrainPoint?.map((v) => Math.round(v)).join(', ')} — which renumbers `
+              ? `It is appended as a root VOB ${placeWhere}.`
+              : `It becomes the last child of ${parentLabel}, ${placeWhere} — which renumbers `
                 + 'every VOB after that subtree.'}
           </DialogContentText>
           {/* Offered only when there is a VOB to be a parent. A checkbox rather
@@ -3412,10 +3519,12 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
             onClick={() => {
               const spec = placing;
               setPlacing(null);
-              if (spec !== null) void placeVob(spec);
+              if (spec === null) return;
+              if (terrainPoint !== null) void placeVobAt(spec, terrainPoint);
+              else setArmed({ kind: 'place', spec });
             }}
           >
-            Place
+            {terrainPoint === null ? 'Place on next click' : 'Place'}
           </Button>
         </DialogActions>
       </Dialog>
