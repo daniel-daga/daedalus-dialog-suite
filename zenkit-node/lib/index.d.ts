@@ -108,6 +108,11 @@ export interface PortalPolygons {
 export interface VfsEntry {
   name: string;
   type: 'file' | 'directory';
+  /** Every mounted source holding this entry, as indices into the `openVfs`
+   *  path list, ascending. Under the default `overwrite: 'all'` the last is the
+   *  source the merged namespace serves and the earlier ones are what it
+   *  shadows; a mode that keeps the existing file instead reverses that. */
+  sources: number[];
 }
 
 export interface VisualPayload {

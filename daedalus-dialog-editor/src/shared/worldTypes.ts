@@ -56,6 +56,10 @@ export interface WorldSummary {
   /** Per phase, not per block: one stopwatch around the load is how the spike
    *  blamed the BVH for a cost that was `openVfs`. */
   timings: Record<string, number>;
+  /** What the VFS was mounted from, in mount order — later wins. Main resolves
+   *  the list and the renderer never builds it, so this is how the asset
+   *  browser learns the names behind {@link VfsEntry.sources}. */
+  assetSources: string[];
 }
 
 export interface WorldMeshPayload {
@@ -106,6 +110,14 @@ export interface WaynetPayload {
 export interface VfsEntry {
   name: string;
   type: 'file' | 'directory';
+  /**
+   * The mounts holding this entry, as indices into {@link WorldSummary.assetSources},
+   * ascending: the last is the one the merged namespace serves and the earlier
+   * ones are what it shadows. Optional because the catalogue views (favorites,
+   * categories) name assets that were never listed out of a directory, and an
+   * invented provenance there would be a lie.
+   */
+  sources?: number[];
 }
 
 export interface DecodedTexture {

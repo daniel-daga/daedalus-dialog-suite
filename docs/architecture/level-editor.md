@@ -1103,6 +1103,14 @@ browser.
   list". A texture previews as an image, because `decodeTexture` already returns
   RGBA8 and a canvas is the whole of the work; a mesh does not, and says so
   rather than showing an empty frame.
+  Each entry also carries the **mounts that hold it**, as indices into the mount
+  list the summary now returns, and the panel turns that into a source facet:
+  narrow the listing to one mount, and see an entry a later mount overrides
+  shaded rather than hidden. ZenKit records no provenance on a merged node — the
+  loser of an override is simply gone from the tree — so the only way to answer
+  it at all is to mount each source a second time into a `Vfs` of its own and
+  keep it beside the merged one, which is what `openVfs` does. What it costs is
+  in §9.
 
 - **Waynet overlay.** `getWaynet` is to `normalizeWorld`'s waynet section what
   `vobIndex` is to the VOB dump: the dump sorts waypoints by name and sorts each
@@ -3121,6 +3129,30 @@ required but may be reordered, and later entries override earlier entries.
 Recognized Gothic installations expand through the archive/compiled-data
 rules, while ordinary directories mount directly. The resolved mounts are
 shared by world loading and the asset browser.
+
+Every source is mounted **twice** — once into the merged namespace every read
+goes through, once into a `Vfs` of its own so a listing can say where an entry
+came from (§6, and `vfsList`'s `sources`). Measured on this repo's synthetic
+worst case, two loose `_compiled` trees of 4,000 files sharing half their names
+(2026-09-10, linux, warm cache):
+
+| | one mount each | mounted twice |
+|---|---|---|
+| `openVfs` | 139–170 ms | 274–392 ms |
+| resident after it | +2.2 MB | +3.4 MB |
+| `vfsList /`, 6,000 entries | 11.8 ms | ~32 ms |
+
+So roughly **2× the time, 1.55× the memory** on the mount that was already the
+expensive one: `mount_host` walks a directory eagerly, while `mount_disk` on a
+VDF is index-only, which is why archives beat loose trees by two orders of
+magnitude in the first place (§3). Most of the listing's own share is the JS
+array per entry rather than the lookup — pre-sizing that array took 45 ms back
+to 32 — because the directory is resolved once per source and each child then
+asked for by name, never a path walk per entry.
+
+**The retail numbers are not these.** No CI machine and no fixture has a Gothic
+install; `zenkit-node/scripts/bench-vfs-sources.js` is what produces them, run
+against an install on this commit and on the one before it.
 
 Opening a legacy folder atomically creates its v1 project file. Malformed or
 ambiguous files block opening; missing or unreadable sources are skipped and

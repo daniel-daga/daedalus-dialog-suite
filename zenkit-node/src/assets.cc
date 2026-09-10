@@ -129,13 +129,21 @@ Napi::Value OpenVfs(Napi::CallbackInfo const& info) {
     bool const is_directory = std::filesystem::is_directory(path, ec);
     if (ec) throw Napi::Error::New(env, "cannot stat VFS path: " + path.string());
 
+    // The same mount twice: once into the merged namespace every read goes
+    // through, once into a namespace of its own so a listing can say where an
+    // entry came from. A VDF mount is index-only and a host mount's second
+    // pass re-walks a directory the OS has just cached, so this is the cost
+    // the source facet is worth paying.
+    auto& own = handle->sources.emplace_back(std::make_unique<Vfs>());
     try {
       // Later paths win, so a mod directory listed after the retail VDFs
       // overrides them — the load order ZenGin itself uses.
       if (is_directory) {
         handle->vfs.mount_host(path, "/", overwrite);
+        own->mount_host(path, "/", overwrite);
       } else {
         handle->vfs.mount_disk(path, overwrite);
+        own->mount_disk(path, overwrite);
       }
     } catch (std::exception const& e) {
       throw Napi::Error::New(env, "failed to mount '" + path.string() + "': " + e.what());
@@ -177,14 +185,46 @@ Napi::Value VfsList(Napi::CallbackInfo const& info) {
   auto const& children = node->children();
   auto entries = Napi::Array::New(env, children.size());
 
+  // The same directory in each source, resolved once for the whole listing
+  // rather than once per entry: a directory of a few hundred files against
+  // seven mounts is otherwise a few thousand path walks to answer one
+  // listing. Null where a source has no such directory at all.
+  std::vector<VfsNode const*> per_source;
+  per_source.reserve(handle->sources.size());
+  for (auto const& source : handle->sources) {
+    auto const* at_source = source->resolve(path);
+    per_source.push_back(at_source != nullptr && at_source->type() == VfsNodeType::DIRECTORY
+                             ? at_source
+                             : nullptr);
+  }
+
   // The container is a std::set ordered by the node comparator, so the order
   // here is stable across runs without sorting anything.
+  std::vector<std::uint32_t> holders;
+  holders.reserve(per_source.size());
   std::uint32_t at = 0;
   for (auto const& child : children) {
     auto entry = Napi::Object::New(env);
     entry.Set("name", Napi::String::New(env, child.name()));
     entry.Set("type", Napi::String::New(
                           env, child.type() == VfsNodeType::DIRECTORY ? "directory" : "file"));
+
+    // Ascending, so the last index is the source the merged tree serves and
+    // the earlier ones are what it shadows. Collected first and handed to an
+    // array of exactly that length: almost every entry is held by one source,
+    // and growing a JS array one `Set` at a time is the expensive way to say
+    // so over a directory of several thousand.
+    holders.clear();
+    for (std::uint32_t i = 0; i < per_source.size(); ++i) {
+      if (per_source[i] == nullptr || per_source[i]->child(child.name()) == nullptr) continue;
+      holders.push_back(i);
+    }
+    auto sources = Napi::Array::New(env, holders.size());
+    for (std::uint32_t at_holder = 0; at_holder < holders.size(); ++at_holder) {
+      sources.Set(at_holder, Napi::Number::New(env, holders[at_holder]));
+    }
+    entry.Set("sources", sources);
+
     entries.Set(at++, entry);
   }
   return entries;

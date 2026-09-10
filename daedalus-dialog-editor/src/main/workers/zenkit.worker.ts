@@ -55,6 +55,10 @@ let worldMesh: ReturnType<typeof buildWorldMesh> | null = null;
 let openedPath: string | null = null;
 let worldBbox: number[] | null = null;
 let openedStats: WorldSummary['stats'] | null = null;
+/** The mount list the VFS above was built from — what a listing's per-entry
+ *  `sources` index into, and the only place the renderer can learn the names
+ *  behind those indices (architecture level-editor.md §6). */
+let openedSources: string[] = [];
 
 // `zenkit-node` omits `lights` on a proto-mesh chunk; `zen-world` wants the
 // absence stated. This is the whole of the impedance mismatch between them.
@@ -93,6 +97,7 @@ function open(request: ResolvedOpenWorldRequest): { result: WorldSummary; transf
 
   worldMesh = mesh;
   openedPath = request.worldPath;
+  openedSources = [...request.assetSources];
   worldBbox = mesh.bbox;
   openedStats = {
     vobCount: index.count,
@@ -108,6 +113,7 @@ function open(request: ResolvedOpenWorldRequest): { result: WorldSummary; transf
       vobIndex: index,
       stats: { ...openedStats },
       timings: { ...timings },
+      assetSources: [...openedSources],
     },
     // Nothing is transferred here, and that is deliberate. Transferring the
     // index's columns detaches them on this side, and `visuals` reads exactly
@@ -141,6 +147,7 @@ function refreshIndex(): { result: WorldSummary; transfer: ArrayBuffer[] } {
       vobIndex: index,
       stats: { ...openedStats!, vobCount: index.count },
       timings: { ...timings },
+      assetSources: [...openedSources],
     },
     transfer: [],
   };
@@ -346,6 +353,7 @@ function close(): { result: null; transfer: ArrayBuffer[] } {
   index = null;
   worldMesh = null;
   openedPath = null;
+  openedSources = [];
   worldBbox = null;
   openedStats = null;
   return { result: null, transfer: [] };

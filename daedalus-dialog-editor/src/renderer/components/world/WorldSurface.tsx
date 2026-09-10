@@ -2889,6 +2889,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                     onPreview={setSelectedAsset}
                     thumbnails={thumbnails ?? undefined}
                     catalog={assetCatalogProps}
+                    sources={summary?.assetSources}
                   />
                 </Box>
               )}
