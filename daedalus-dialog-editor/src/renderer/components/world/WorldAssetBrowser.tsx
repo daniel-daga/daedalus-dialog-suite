@@ -13,7 +13,7 @@ import AutoSizer from 'react-virtualized-auto-sizer';
 import { isFavorite } from 'zen-world';
 import type { AssetCatalog, VfsEntry } from '../../../shared/worldTypes';
 import type { AssetThumbnails } from '../../world/assetThumbnails';
-import WorldAssetGrid, { type TileCatalogActions } from './WorldAssetGrid';
+import WorldAssetGrid, { type TileCatalogActions, type TileOrigin } from './WorldAssetGrid';
 import WorldAssetCatalogView from './WorldAssetCatalogView';
 
 // The asset browser over the mounted VFS (level-editor.md §6).
@@ -37,30 +37,85 @@ import WorldAssetCatalogView from './WorldAssetCatalogView';
 
 const ROW_HEIGHT = 26;
 
+/** One array, so a browser with no mount list does not re-derive its labels on
+ *  every render against a fresh `[]`. */
+const NO_SOURCES: readonly string[] = [];
+
+/**
+ * How a mount is named in the facet and on a row. The tail of the path, except
+ * for a loose tree, whose own name is `_compiled` under Meshes, Textures and
+ * Anims alike — there the directory above it is what tells the three apart.
+ */
+function assetSourceLabel(source: string): string {
+  const parts = source.replace(/\\/g, '/').split('/').filter((part) => part !== '');
+  const name = parts[parts.length - 1] ?? source;
+  if (name !== '_compiled' || parts.length < 2) return name;
+  return `${parts[parts.length - 2]}/${name}`;
+}
+
+/**
+ * What a row says about where its entry came from: the mount serving it, and —
+ * once the listing is narrowed to one mount — whether a later one overrides it.
+ * Null when nothing is known, which is a listing from before the facet existed
+ * and every surface with no mount list.
+ */
+function origin(entry: VfsEntry, labels: readonly string[], only: number | null): TileOrigin | undefined {
+  const held = entry.sources;
+  if (held === undefined || held.length === 0 || labels.length === 0) return undefined;
+  const winner = held[held.length - 1];
+  const label = labels[winner] ?? String(winner);
+  const title = held.length === 1
+    ? label
+    : `${held.map((at) => labels[at] ?? String(at)).join(' → ')} (the last wins)`;
+  // Only a listing narrowed to one mount can show an overridden entry at all:
+  // merged, the copy on screen *is* the winner.
+  return { label, overridden: only !== null && only !== winner, title };
+}
+
 interface RowData {
   entries: VfsEntry[];
   onOpen: (entry: VfsEntry) => void;
+  sourceLabels: readonly string[];
+  only: number | null;
 }
 
 const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
   const entry = data.entries[index];
   const isDirectory = entry.type === 'directory';
+  const from = origin(entry, data.sourceLabels, data.only);
+  const overridden = from?.overridden === true;
 
   return (
     <Box
       role="listitem"
       data-testid={`world-asset-${entry.name}`}
+      {...(overridden ? { 'data-overridden': 'true' } : {})}
       onClick={() => data.onOpen(entry)}
       style={style}
       sx={{
         display: 'flex', alignItems: 'center', gap: 0.75, px: 1, cursor: 'pointer',
         whiteSpace: 'nowrap', '&:hover': { bgcolor: 'action.hover' },
+        // Shaded, not hidden: the copy in this mount is real, it is just not
+        // the one the engine reads.
+        ...(overridden ? { opacity: 0.45 } : {}),
       }}
     >
       {isDirectory
         ? <FolderIcon fontSize="small" sx={{ color: 'text.secondary', fontSize: 16 }} />
         : <InsertDriveFileOutlinedIcon sx={{ color: 'text.disabled', fontSize: 16 }} />}
-      <Typography variant="caption" noWrap>{entry.name}</Typography>
+      <Typography variant="caption" noWrap sx={{ flex: 1, minWidth: 0 }}>{entry.name}</Typography>
+      {from !== undefined && (
+        <Typography
+          variant="caption"
+          color="text.disabled"
+          noWrap
+          data-testid={`world-asset-origin-${entry.name}`}
+          title={overridden ? `${from.title} — overridden here` : from.title}
+          sx={{ fontSize: 10, maxWidth: '45%' }}
+        >
+          {from.label}
+        </Typography>
+      )}
     </Box>
   );
 }, areEqual);
@@ -76,6 +131,10 @@ export interface WorldAssetBrowserProps {
   /** Favorites and categories (§16.26, "Wanted on top"). Absent — no project
    *  sidecar loaded — the browser is the directory walk alone. */
   catalog?: AssetCatalogProps;
+  /** The mounts the open world's VFS was built from, in mount order — what an
+   *  entry's `sources` index into (architecture §6). Absent, the browser is the merged
+   *  listing it has always been, with nothing to name a row with. */
+  sources?: readonly string[];
 }
 
 export interface AssetCatalogProps {
@@ -88,7 +147,9 @@ export interface AssetCatalogProps {
   onRemoveFromCategory: (path: string, name: string) => void;
 }
 
-const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({ listAssets, onPreview, thumbnails, catalog }) => {
+const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
+  listAssets, onPreview, thumbnails, catalog, sources = NO_SOURCES,
+}) => {
   const [path, setPath] = useState('/');
   const [view, setView] = useState<'list' | 'grid'>('list');
   const [mode, setMode] = useState<'browse' | 'favorites' | 'categories'>('browse');
@@ -143,14 +204,26 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({ listAssets, onPre
   // does not silently hide everything in this one.
   const [filter, setFilter] = useState('');
   useEffect(() => { setFilter(''); }, [path]);
+  // The source facet (architecture §6). Unlike the text filter it survives a
+  // navigation: it is a lens on the whole install, not a question about the
+  // directory in front of you.
+  const [only, setOnly] = useState<number | null>(null);
+  const sourceLabels = useMemo(() => sources.map(assetSourceLabel), [sources]);
+  // A mount list that shrank under a chosen index — a new world with fewer
+  // sources — would otherwise filter against a mount that is no longer there.
+  useEffect(() => { setOnly((at) => (at !== null && at >= sources.length ? null : at)); }, [sources.length]);
   // A directory left behind takes its queued draws with it: the tiles that
   // asked are gone, and the next directory's tiles should not wait behind
   // them.
   useEffect(() => { thumbnails?.cancelPending(); }, [thumbnails, path]);
   const filtered = useMemo(() => {
     const needle = filter.trim().toLowerCase();
-    return needle === '' ? sorted : sorted.filter((entry) => entry.name.toLowerCase().includes(needle));
-  }, [sorted, filter]);
+    const byName = needle === '' ? sorted : sorted.filter((entry) => entry.name.toLowerCase().includes(needle));
+    if (only === null) return byName;
+    // Everything the mount holds, including what a later one shadows — the
+    // shadowed copy is the whole point of asking about one mount.
+    return byName.filter((entry) => entry.sources?.includes(only) ?? false);
+  }, [sorted, filter, only]);
 
   const onOpen = useCallback((entry: VfsEntry) => {
     const child = path === '/' ? entry.name : `${path}/${entry.name}`;
@@ -181,7 +254,14 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({ listAssets, onPre
     return segments;
   }, [path]);
 
-  const itemData = useMemo<RowData>(() => ({ entries: filtered, onOpen }), [filtered, onOpen]);
+  const itemData = useMemo<RowData>(
+    () => ({ entries: filtered, onOpen, sourceLabels, only }),
+    [filtered, onOpen, sourceLabels, only],
+  );
+  const originOf = useCallback(
+    (entry: VfsEntry) => origin(entry, sourceLabels, only),
+    [sourceLabels, only],
+  );
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
@@ -278,6 +358,27 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({ listAssets, onPre
             inputProps={{ 'data-testid': 'world-asset-filter', 'aria-label': 'Filter this directory' }}
             sx={{ flex: 1, minWidth: 0, '& .MuiInputBase-input': { fontSize: 12, py: 0.5 } }}
           />
+          {/* One mount is no facet: there is nothing to narrow to and nothing
+              can be overridden. */}
+          {sources.length > 1 && (
+            <TextField
+              select
+              size="small"
+              value={only === null ? 'all' : String(only)}
+              onChange={(event) => {
+                const next = event.target.value;
+                setOnly(next === 'all' ? null : Number(next));
+              }}
+              SelectProps={{ native: true }}
+              inputProps={{ 'data-testid': 'world-asset-source', 'aria-label': 'Asset source' }}
+              sx={{ minWidth: 96, '& .MuiInputBase-input': { fontSize: 12, py: 0.5 } }}
+            >
+              <option value="all">All sources</option>
+              {sourceLabels.map((label, at) => (
+                <option key={sources[at]} value={String(at)} title={sources[at]}>{label}</option>
+              ))}
+            </TextField>
+          )}
           {/* Only once the listing has actually arrived. `sorted` is `[]`
               while loading and on a refusal alike, so an unconditional
               count would assert "0 entries" for a directory nobody has
@@ -290,7 +391,10 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({ listAssets, onPre
               noWrap
               data-testid="world-asset-count"
             >
-              {filter.trim() === ''
+              {/* Either filter narrows it, and the count has to say so: a
+                  source facet that silently kept reporting the whole
+                  directory would be the one number nobody could trust. */}
+              {filtered.length === sorted.length
                 ? `${sorted.length.toLocaleString()} entries`
                 : `${filtered.length.toLocaleString()} of ${sorted.length.toLocaleString()}`}
             </Typography>
@@ -365,7 +469,13 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({ listAssets, onPre
 
       {state.status === 'ready' && filtered.length > 0 && view === 'grid' && thumbnails !== undefined && (
         <Box sx={{ flex: 1, minHeight: 0 }} role="list" aria-label="Mounted assets">
-          <WorldAssetGrid entries={filtered} thumbnails={thumbnails} onOpen={onOpen} actions={tileActions} />
+          <WorldAssetGrid
+            entries={filtered}
+            thumbnails={thumbnails}
+            onOpen={onOpen}
+            actions={tileActions}
+            originOf={originOf}
+          />
         </Box>
       )}
 

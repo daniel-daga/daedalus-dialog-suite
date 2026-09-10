@@ -3088,42 +3088,26 @@ shape of this tail.
 If the re-run shows the same spread with no cliff, the honest outcome is no gap
 rule at all and this closes as answered rather than as built. Corpus is
 `mdk/Content` — Daniel's machine, not CI, so this is not agent-ready either.
-### 16.35 The asset browser grouped by source — a spike (2026-09-10, Daniel; #237)
 
-**Asked:** the Assets panel should group what it lists by the asset source
-it came from — the retail VDFs, a mod's VDF, a loose `_compiled` folder —
-rather than one flat merged directory. Carded as a spike rather than built
-in the toolbar pass, because the listing cannot say it today.
+### 16.36 The per-source mount cost on a retail install is unmeasured (2026-09-10; #239)
 
-**Why it cannot:** `openVfs(paths)` mounts every source into **one**
-`zenkit::Vfs`, later sources winning — the load order ZenGin uses — and
-`vfsList` (`zenkit-node/src/assets.cc`) walks that merged tree's
-`VfsNode::children()`, which carry a name and a type and nothing about which
-mount put them there. ZenKit records no provenance on a node: an overridden
-retail file is simply gone from the tree. So the renderer's `VfsEntry`
-(`name`, `type`) has no source to group by, and no renderer-side change can
-invent one.
+The source facet landed (architecture §6, §9): `openVfs` mounts every source
+twice, and `vfsList` says which mounts hold each entry. Its cost is measured
+only on a synthetic pair of loose `_compiled` trees on linux — roughly 2× the
+mount time and 1.55× the memory, written up in architecture §9. That is the
+`mount_host` case, and it is the one that was already expensive.
 
-**The shape of the answer, to be measured before it is built:** the binding
-keeps one `Vfs` *per source* beside the merged one, and `vfsList` annotates
-each entry with the sources that hold it — resolve the same path in each and
-collect the hits, in load order, so the last one is the one the merged tree
-serves and the earlier ones are what it shadows. The browser then gets a
-source facet: group the listing by source, or filter to one, and shade an
-entry that a later source overrides. What has to be measured first is the
-cost of N mounts of a retail install: `mount_disk` on a VDF is index-only
-(the file is mapped, not read), so the directory trees are the price, and
-`Vfs` for the six retail VDFs plus a mod is probably tens of megabytes of
-nodes — probably fine, not known. `mount_host` on a loose folder walks it
-eagerly, so a large extracted install mounted twice is the case to time.
+**What is not known is the retail one.** Six VDFs plus a mod, on Windows, where
+`mount_disk` is index-only and the price is the directory trees rather than a
+directory walk. The acceptance the spike set — "no more than twice the time and
+memory it takes today" — is answered for the synthetic case and open for the
+real one.
 
-**Not this:** grouping by *extension* or by the catalogue's categories
-(§16.26 already does the second). And not a per-file `stat` of which archive
-holds it at listing time — that is the walk the one-level-at-a-time rule
-exists to avoid.
+`zenkit-node/scripts/bench-vfs-sources.js --install <dir>` produces it. There is
+deliberately no switch to turn provenance off, so the baseline is the commit
+before it landed: run the bench there, run it again on master, keep both. If the
+retail cost turns out to be worse than 2×, the fix already has a shape — build
+the per-source mounts lazily, on the browser's first provenance request, so the
+world open pays nothing for a panel nobody opened.
 
-**Acceptance:** the listing says which source each entry comes from and can
-be filtered to one; an overridden entry is visible as overridden; a retail
-install with one mod mounts in no more than twice the time and memory it
-takes today, measured and written here.
-
+Daniel's machine, not CI: no runner has a Gothic install.

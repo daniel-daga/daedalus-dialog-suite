@@ -188,13 +188,24 @@ const FileIntoMenu: React.FC<{
   );
 };
 
+/** Where a tile's asset is served from, and whether this listing is showing a
+ *  copy a later mount overrides (architecture level-editor.md §6). A badge
+ *  over the thumbnail rather than a caption under it: the grid's row height is
+ *  fixed, and a tile is 96 px wide. */
+export interface TileOrigin {
+  label: string;
+  overridden: boolean;
+  title: string;
+}
+
 export const AssetTile: React.FC<{
   entry: VfsEntry;
   thumbnails: AssetThumbnails;
   onOpen: (entry: VfsEntry) => void;
   actions?: TileCatalogActions;
+  origin?: TileOrigin;
   style?: React.CSSProperties;
-}> = ({ entry, thumbnails, onOpen, actions, style }) => {
+}> = ({ entry, thumbnails, onOpen, actions, origin, style }) => {
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const isFile = entry.type === 'file';
   const favorite = isFile && actions !== undefined && actions.isFavorite(entry.name);
@@ -203,12 +214,16 @@ export const AssetTile: React.FC<{
     <Box
       role="listitem"
       data-testid={`world-asset-tile-${entry.name}`}
+      {...(origin?.overridden === true ? { 'data-overridden': 'true' } : {})}
       onClick={() => onOpen(entry)}
       style={style}
       sx={{
         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5, p: 1, cursor: 'pointer',
         position: 'relative', '&:hover': { bgcolor: 'action.hover' },
         '&:hover .tile-actions, & .tile-actions.on': { opacity: 1 },
+        // Shaded, not hidden: the copy in this mount is real, it is just not
+        // the one the engine reads.
+        ...(origin?.overridden === true ? { opacity: 0.45 } : {}),
       }}
     >
       {isFile
@@ -219,6 +234,21 @@ export const AssetTile: React.FC<{
           </Box>
         )}
       <Typography variant="caption" noWrap sx={{ maxWidth: '100%' }} title={entry.name}>{entry.name}</Typography>
+      {origin !== undefined && (
+        <Typography
+          variant="caption"
+          noWrap
+          data-testid="world-asset-tile-origin"
+          title={origin.overridden ? `${origin.title} — overridden here` : origin.title}
+          sx={{
+            position: 'absolute', bottom: THUMBNAIL_SIZE / 3, left: 8, right: 8,
+            fontSize: 9, lineHeight: 1.4, textAlign: 'center', color: 'common.white',
+            bgcolor: 'rgba(0,0,0,0.55)', borderRadius: 0.5, px: 0.25, pointerEvents: 'none',
+          }}
+        >
+          {origin.label}
+        </Typography>
+      )}
       {isFile && actions !== undefined && (
         <Box
           className={`tile-actions${favorite ? ' on' : ''}`}
@@ -274,12 +304,22 @@ interface CellData {
   thumbnails: AssetThumbnails;
   onOpen: (entry: VfsEntry) => void;
   actions?: TileCatalogActions;
+  originOf?: (entry: VfsEntry) => TileOrigin | undefined;
 }
 
 const Cell = memo(({ columnIndex, rowIndex, style, data }: GridChildComponentProps<CellData>) => {
   const entry = data.entries[rowIndex * data.columns + columnIndex];
   if (entry === undefined) return null;
-  return <AssetTile entry={entry} thumbnails={data.thumbnails} onOpen={data.onOpen} actions={data.actions} style={style} />;
+  return (
+    <AssetTile
+      entry={entry}
+      thumbnails={data.thumbnails}
+      onOpen={data.onOpen}
+      actions={data.actions}
+      origin={data.originOf?.(entry)}
+      style={style}
+    />
+  );
 }, areEqual);
 Cell.displayName = 'WorldAssetTile';
 
@@ -288,16 +328,19 @@ export interface WorldAssetGridProps {
   thumbnails: AssetThumbnails;
   onOpen: (entry: VfsEntry) => void;
   actions?: TileCatalogActions;
+  /** Absent where provenance is unknown — the favorites and category views name
+   *  assets that were never listed out of a directory. */
+  originOf?: (entry: VfsEntry) => TileOrigin | undefined;
 }
 
-const WorldAssetGrid: React.FC<WorldAssetGridProps> = ({ entries, thumbnails, onOpen, actions }) => (
+const WorldAssetGrid: React.FC<WorldAssetGridProps> = ({ entries, thumbnails, onOpen, actions, originOf }) => (
   <AutoSizer>
     {({ height, width }) => {
       const columns = Math.max(1, Math.floor(width / TILE_WIDTH));
       return (
         <SizedGrid
           height={height} width={width} columns={columns}
-          entries={entries} thumbnails={thumbnails} onOpen={onOpen} actions={actions}
+          entries={entries} thumbnails={thumbnails} onOpen={onOpen} actions={actions} originOf={originOf}
         />
       );
     }}
@@ -305,11 +348,11 @@ const WorldAssetGrid: React.FC<WorldAssetGridProps> = ({ entries, thumbnails, on
 );
 
 const SizedGrid: React.FC<WorldAssetGridProps & { height: number; width: number; columns: number }> = ({
-  height, width, columns, entries, thumbnails, onOpen, actions,
+  height, width, columns, entries, thumbnails, onOpen, actions, originOf,
 }) => {
   const itemData = useMemo<CellData>(
-    () => ({ entries, columns, thumbnails, onOpen, actions }),
-    [entries, columns, thumbnails, onOpen, actions],
+    () => ({ entries, columns, thumbnails, onOpen, actions, originOf }),
+    [entries, columns, thumbnails, onOpen, actions, originOf],
   );
   return (
     <Grid

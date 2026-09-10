@@ -9,12 +9,19 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace zenkit_node {
 
 // Owns a mounted VFS for the lifetime of the JS handle.
 struct VfsHandle {
   zenkit::Vfs vfs;
+  // The same sources again, one `Vfs` each, in mount order. ZenKit records no
+  // provenance on a merged node — an overridden file is simply gone from the
+  // tree — so the only way to say which source holds a name is to resolve it
+  // in each. The price is a second set of directory trees; the file bytes are
+  // memory-mapped either way and are not duplicated.
+  std::vector<std::unique_ptr<zenkit::Vfs>> sources;
 };
 
 // openVfs(paths) — mounts VDF/MOD archives and loose directories into one
@@ -27,7 +34,11 @@ Napi::Value OpenVfs(Napi::CallbackInfo const& info);
 Napi::Value VfsResolve(Napi::CallbackInfo const& info);
 
 // vfsList(handle, path) — the children of one directory in the mounted
-// namespace, as { name, type }, or null when the path is absent or is a file.
+// namespace, as { name, type, sources }, or null when the path is absent or is
+// a file. `sources` are indices into the `openVfs` path list, ascending: every
+// mount that holds the entry. Under the default `overwrite: 'all'` the last of
+// them is the one the merged tree serves and the earlier ones are what it
+// shadows; a mode that keeps the existing file reverses that.
 // One level, never a recursive walk: a Gothic install is tens of thousands of
 // entries and an asset browser shows one directory at a time.
 Napi::Value VfsList(Napi::CallbackInfo const& info);

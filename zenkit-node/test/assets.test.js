@@ -23,6 +23,15 @@ const OVERLAY = path.join(root, 'overlay');
 fs.mkdirSync(OVERLAY);
 fs.writeFileSync(path.join(OVERLAY, 'EX_LIT.TEX'), 'overlay');
 fs.writeFileSync(path.join(OVERLAY, 'EX_MOD_ONLY.MRM'), 'overlay');
+// A name the tree below also has, at the same path, and a directory the two
+// share: an overridden entry is invisible in the merged tree, so provenance
+// has nothing to report unless the sources overlap. Cased differently on
+// purpose — a VDF spells every name upper case and a loose folder spells it
+// however it sits on disk, so a per-source lookup that compared names
+// literally would report an override as two unrelated files.
+fs.writeFileSync(path.join(OVERLAY, 'readme.txt'), 'overlay');
+fs.mkdirSync(path.join(OVERLAY, 'Meshes', '_compiled'), { recursive: true });
+fs.writeFileSync(path.join(OVERLAY, 'Meshes', '_compiled', 'EX_MOD.MRM'), 'overlay');
 
 test.after(() => {
   try {
@@ -138,7 +147,10 @@ test('vfsList lists the root of the mounted namespace', () => {
 
   assert.deepStrictEqual(
     entries.slice().sort((a, b) => a.name.localeCompare(b.name)),
-    [{ name: 'Meshes', type: 'directory' }, { name: 'README.TXT', type: 'file' }],
+    [
+      { name: 'Meshes', type: 'directory', sources: [0] },
+      { name: 'README.TXT', type: 'file', sources: [0] },
+    ],
   );
 });
 
@@ -159,7 +171,7 @@ test('vfsList descends one level at a time, never recursively', () => {
   assert.ok(!names.includes('EX_TREE.MRM'));
 
   const compiled = zenkit.vfsList(handle, 'Meshes/_compiled');
-  assert.deepStrictEqual(compiled, [{ name: 'EX_TREE.MRM', type: 'file' }]);
+  assert.deepStrictEqual(compiled, [{ name: 'EX_TREE.MRM', type: 'file', sources: [0] }]);
 });
 
 test('vfsList returns null for a file and for a path that is not there', () => {
@@ -178,6 +190,37 @@ test('vfsList shows a later mount source alongside the earlier ones', () => {
 
   assert.ok(names.includes('Meshes'));
   assert.ok(names.includes('EX_MOD_ONLY.MRM'));
+});
+
+test('vfsList says which mounted sources hold each entry', () => {
+  // ZenKit records no provenance on a merged node — an overridden retail file
+  // is simply gone from the tree — so the sources are indices into the
+  // `openVfs` path list, ascending, and the last one is the one the merged
+  // tree actually serves.
+  const handle = zenkit.openVfs([TREE, OVERLAY]);
+  // Keyed upper case: with `overwrite: 'all'` the merged node carries the
+  // *winner's* spelling, so the entry below is listed as the overlay spells it.
+  const at = (where) => new Map(
+    zenkit.vfsList(handle, where).map((entry) => [entry.name.toUpperCase(), entry.sources]),
+  );
+
+  const listed = at('/');
+  assert.deepStrictEqual(listed.get('README.TXT'), [0, 1], 'in both, cased differently, the overlay winning');
+  assert.deepStrictEqual(listed.get('EX_MOD_ONLY.MRM'), [1], 'the overlay alone');
+  assert.deepStrictEqual(listed.get('MESHES'), [0, 1], 'a directory both sources contribute to');
+
+  // Below the root, because a per-source lookup that only ever resolved "/"
+  // would agree with the root listing and prove nothing.
+  const compiled = at('Meshes/_compiled');
+  assert.deepStrictEqual(compiled.get('EX_TREE.MRM'), [0]);
+  assert.deepStrictEqual(compiled.get('EX_MOD.MRM'), [1]);
+});
+
+test('vfsList over a single source says every entry came from it', () => {
+  const handle = zenkit.openVfs([TREE]);
+  for (const entry of zenkit.vfsList(handle, '/')) {
+    assert.deepStrictEqual(entry.sources, [0], entry.name);
+  }
 });
 
 test('vfsList rejects a handle that is not a VFS', () => {

@@ -216,7 +216,7 @@ and/or a waypoint named `START`. The same script reports both.
 ```js
 const vfs = openVfs([vdfOrDirectory, ...], { overwrite: 'all' });
 vfsResolve(vfs, 'NW_CRATE.3DS');        // -> 'NW_CRATE.MRM' | null
-vfsList(vfs, '/');                      // -> [{ name, type: 'file'|'directory' }] | null
+vfsList(vfs, '/');                      // -> [{ name, type, sources: number[] }] | null
 extractVisual(vfs, 'NW_CRATE.3DS');     // -> the chunk payload above | null
 decodeTexture(vfs, 'NW_WOOD.TGA', 0);   // -> { source, width, height, mipmaps, rgba } | null
 ```
@@ -241,6 +241,18 @@ thousands of entries and an asset browser shows one directory at a time. It
 returns null both for a path that is not there and for a file, because both mean
 "nothing here to list" and no browser offers to descend into a file. Entries come
 out in the VFS's own set order, which is stable across runs without sorting.
+
+Each entry carries `sources`: the mounts that hold it, as indices into the
+`openVfs` path list, ascending. Under the default `overwrite: 'all'` the last is
+the one the merged namespace actually serves and the earlier ones are what it
+shadows (a mode that keeps the existing file reverses that) — which is the only
+way to see an overridden file at all, since ZenKit records no provenance on a
+merged node and the loser is simply gone from the tree. To answer it, `openVfs`
+mounts each source a second time into a `Vfs` of its own and keeps it beside the
+merged one; a listing then resolves its directory once per source and asks each
+for the child. The bytes are memory-mapped either way, so what the second mount
+costs is the directory trees — `scripts/bench-vfs-sources.js` measures it
+against a real install.
 
 A VOB names its **source** asset (`.3DS`, `.ASC`, `.MDS`, `.MMS`, `.TGA`) while
 the VFS holds what the asset compiler produced. The mapping is spelled out

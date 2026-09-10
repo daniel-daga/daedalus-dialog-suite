@@ -75,6 +75,26 @@ function listing() {
   return { list, calls };
 }
 
+/** The thumbnail queue, stubbed: what it draws is the renderer's business,
+ *  and what a tile owes it is which name and when. */
+function thumbnails(states: Record<string, ThumbnailState> = {}) {
+  const listeners = new Set<() => void>();
+  const store = new Map(Object.entries(states));
+  return {
+    queue: {
+      get: (name: string) => store.get(name),
+      request: jest.fn(),
+      redraw: jest.fn(),
+      cancelPending: jest.fn(),
+      subscribe: (listener: () => void) => { listeners.add(listener); return () => listeners.delete(listener); },
+    } as unknown as AssetThumbnails,
+    deliver(name: string, state: ThumbnailState) {
+      store.set(name, state);
+      for (const listener of listeners) listener();
+    },
+  };
+}
+
 describe('WorldAssetBrowser', () => {
   it('lists the root of the mounted namespace on open', async () => {
     const { list, calls } = listing();
@@ -186,6 +206,139 @@ describe('WorldAssetBrowser', () => {
     ]);
   });
 
+  // The source facet (architecture level-editor.md §6, #237). `openVfs` mounts the
+  // retail VDFs, a mod's archives and any loose `_compiled` tree into one
+  // namespace, later sources winning, and until now the browser could not say
+  // which of them a name came from — an overridden retail file is simply gone
+  // from the merged tree. `vfsList` now annotates each entry with the mounts
+  // that hold it, as indices into the mount list.
+  describe('the source facet', () => {
+    const MOUNTS = [
+      'C:/Gothic II/Data/Textures.vdf',
+      'C:/Gothic II/_work/Data/Meshes/_compiled',
+      'D:/mods/Chronicles/Chronicles.vdf',
+    ];
+
+    const MIXED: Record<string, VfsEntry[] | null> = {
+      '/': [
+        { name: 'RETAIL.TEX', type: 'file', sources: [0] },
+        { name: 'SHARED.TEX', type: 'file', sources: [0, 2] },
+        { name: 'MOD.MRM', type: 'file', sources: [2] },
+        { name: 'LOOSE.MRM', type: 'file', sources: [1] },
+        { name: 'Meshes', type: 'directory', sources: [1, 2] },
+      ],
+    };
+
+    function mixed() {
+      return jest.fn(async (path: string) => MIXED[path] ?? null);
+    }
+
+    const rowNames = () => within(screen.getByRole('list', { name: 'Mounted assets' }))
+      .getAllByRole('listitem')
+      .map((row) => row.getAttribute('data-testid'));
+
+    it('names the mount each entry is served from', async () => {
+      render(<WorldAssetBrowser listAssets={mixed()} onPreview={jest.fn()} sources={MOUNTS} />);
+      await screen.findByTestId('world-asset-RETAIL.TEX');
+
+      expect(screen.getByTestId('world-asset-origin-RETAIL.TEX')).toHaveTextContent('Textures.vdf');
+      // A loose tree's own name is `_compiled` in three different places, so
+      // the directory above it is part of the name or the label says nothing.
+      expect(screen.getByTestId('world-asset-origin-LOOSE.MRM')).toHaveTextContent('Meshes/_compiled');
+      // Held by two, and the one shown is the one the merged namespace serves:
+      // the last, not the first.
+      expect(screen.getByTestId('world-asset-origin-SHARED.TEX')).toHaveTextContent('Chronicles.vdf');
+    });
+
+    it('narrows the listing to one mount', async () => {
+      const user = userEvent.setup();
+      render(<WorldAssetBrowser listAssets={mixed()} onPreview={jest.fn()} sources={MOUNTS} />);
+      await screen.findByTestId('world-asset-RETAIL.TEX');
+
+      await user.selectOptions(screen.getByTestId('world-asset-source'), '2');
+
+      // Everything the mod holds, including what it only shadows, and nothing
+      // it does not.
+      expect(rowNames()).toEqual([
+        'world-asset-Meshes', 'world-asset-SHARED.TEX', 'world-asset-MOD.MRM',
+      ]);
+    });
+
+    it('shades an entry a later mount overrides, and only there', async () => {
+      const user = userEvent.setup();
+      render(<WorldAssetBrowser listAssets={mixed()} onPreview={jest.fn()} sources={MOUNTS} />);
+      await screen.findByTestId('world-asset-RETAIL.TEX');
+
+      // Merged, `SHARED.TEX` is not overridden — it *is* the mod's copy.
+      expect(screen.getByTestId('world-asset-SHARED.TEX')).not.toHaveAttribute('data-overridden');
+
+      await user.selectOptions(screen.getByTestId('world-asset-source'), '0');
+      expect(screen.getByTestId('world-asset-SHARED.TEX')).toHaveAttribute('data-overridden', 'true');
+      expect(screen.getByTestId('world-asset-RETAIL.TEX')).not.toHaveAttribute('data-overridden');
+    });
+
+    it('counts what the source filter left, like the text filter does', async () => {
+      const user = userEvent.setup();
+      render(<WorldAssetBrowser listAssets={mixed()} onPreview={jest.fn()} sources={MOUNTS} />);
+      await screen.findByTestId('world-asset-RETAIL.TEX');
+
+      await user.selectOptions(screen.getByTestId('world-asset-source'), '2');
+      expect(screen.getByTestId('world-asset-count')).toHaveTextContent('3 of 5');
+    });
+
+    it('offers no facet when there is only one mount, or none', async () => {
+      const { rerender } = render(
+        <WorldAssetBrowser listAssets={mixed()} onPreview={jest.fn()} sources={['C:/Gothic II/Data/Textures.vdf']} />,
+      );
+      await screen.findByTestId('world-asset-RETAIL.TEX');
+      expect(screen.queryByTestId('world-asset-source')).not.toBeInTheDocument();
+
+      rerender(<WorldAssetBrowser listAssets={mixed()} onPreview={jest.fn()} />);
+      await screen.findByTestId('world-asset-RETAIL.TEX');
+      expect(screen.queryByTestId('world-asset-source')).not.toBeInTheDocument();
+      // And without a mount list there is nothing to name a row with either.
+      expect(screen.queryByTestId('world-asset-origin-RETAIL.TEX')).not.toBeInTheDocument();
+    });
+
+    it('names the mount on a tile too, and shades an overridden one', async () => {
+      // The grid is the same listing, so the same question is answerable in
+      // it — a badge over the thumbnail rather than a column, because a tile
+      // is 96 px and its height is fixed by the virtualised grid.
+      const user = userEvent.setup();
+      const { queue } = thumbnails();
+      render(
+        <WorldAssetBrowser listAssets={mixed()} onPreview={jest.fn()} thumbnails={queue} sources={MOUNTS} />,
+      );
+      await screen.findByTestId('world-asset-RETAIL.TEX');
+      await user.click(screen.getByTestId('world-asset-view-grid'));
+
+      const tile = screen.getByTestId('world-asset-tile-RETAIL.TEX');
+      expect(within(tile).getByTestId('world-asset-tile-origin')).toHaveTextContent('Textures.vdf');
+      expect(tile).not.toHaveAttribute('data-overridden');
+
+      await user.selectOptions(screen.getByTestId('world-asset-source'), '0');
+      expect(screen.getByTestId('world-asset-tile-SHARED.TEX')).toHaveAttribute('data-overridden', 'true');
+    });
+
+    it('keeps the chosen mount across a navigation, unlike the text filter', async () => {
+      // The facet is a lens on the whole install; the text filter is about the
+      // directory in front of you, which is why that one resets.
+      const user = userEvent.setup();
+      const list = jest.fn(async (path: string) => (path === '/' ? MIXED['/'] : [
+        { name: 'DEEP.MRM', type: 'file' as const, sources: [1] },
+        { name: 'DEEP_MOD.MRM', type: 'file' as const, sources: [2] },
+      ]));
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} sources={MOUNTS} />);
+      await screen.findByTestId('world-asset-RETAIL.TEX');
+
+      await user.selectOptions(screen.getByTestId('world-asset-source'), '2');
+      await user.click(screen.getByTestId('world-asset-Meshes'));
+
+      await screen.findByTestId('world-asset-DEEP_MOD.MRM');
+      expect(screen.queryByTestId('world-asset-DEEP.MRM')).not.toBeInTheDocument();
+    });
+  });
+
   // The filter (level-editor.md §17) — the current
   // directory only, the same "one level at a time" rule the listing
   // itself already holds.
@@ -248,24 +401,6 @@ describe('WorldAssetBrowser', () => {
   // The thumbnail grid (level-editor.md §16.26 row 1) — the same listing as
   // tiles, each asking the queue for its picture as it comes on screen.
   describe('the grid', () => {
-    function thumbnails(states: Record<string, ThumbnailState> = {}) {
-      const listeners = new Set<() => void>();
-      const store = new Map(Object.entries(states));
-      return {
-        queue: {
-          get: (name: string) => store.get(name),
-          request: jest.fn(),
-          redraw: jest.fn(),
-          cancelPending: jest.fn(),
-          subscribe: (listener: () => void) => { listeners.add(listener); return () => listeners.delete(listener); },
-        } as unknown as AssetThumbnails,
-        deliver(name: string, state: ThumbnailState) {
-          store.set(name, state);
-          for (const listener of listeners) listener();
-        },
-      };
-    }
-
     it('is not offered without a queue to draw from', async () => {
       const { list } = listing();
       render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} />);

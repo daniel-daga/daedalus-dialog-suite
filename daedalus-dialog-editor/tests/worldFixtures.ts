@@ -98,6 +98,7 @@ export const SUMMARY: WorldSummary = {
   vobIndex: vobIndex([[0, 0, 0], [10, 20, 30]]),
   stats: { vobCount: 2, materials: 1, worldDrawGroups: 1, worldTriangles: 1 },
   timings: {},
+  assetSources: ['C:/Gothic/Data/Textures.vdf', 'C:/Gothic/_work/Data/Meshes/_compiled'],
 };
 
 /** The three `zCVob` fields every read carries, whatever the class — they are
