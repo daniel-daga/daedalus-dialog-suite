@@ -194,7 +194,7 @@ describe('Insert NPC here…', () => {
     expect(STARTUP_MODEL.functions.STARTUP_NewWorld.actions).toEqual([]);
   });
 
-  it('is dead without an instance, and for a waypoint name the world already has', async () => {
+  it('is dead without an instance', async () => {
     seedProject();
     await openWorld();
     await openInsertDialog();
@@ -202,9 +202,23 @@ describe('Insert NPC here…', () => {
     expect(screen.getByTestId('world-insert-npc-confirm')).toBeDisabled();
     fireEvent.change(instanceField(), { target: { value: 'PC_Thief' } });
     expect(screen.getByTestId('world-insert-npc-confirm')).toBeEnabled();
+  });
+
+  it('spawns at an existing waypoint when its name is typed over the suggestion, with no op', async () => {
+    // A name the world already has is a place to spawn, not a clash: the
+    // dialog says so and the ground point goes unused.
+    seedProject();
+    await openWorld();
+    await openInsertDialog();
 
     fireEvent.change(waypointField(), { target: { value: 'WP_MIDDLE' } });
-    expect(screen.getByTestId('world-insert-npc-confirm')).toBeDisabled();
+    expect(screen.getByTestId('world-insert-npc-dialog')).toHaveTextContent(/already in this world/i);
+    await confirmInsert('PC_Thief');
+
+    await waitFor(() => expect(api.appendInsertNpc).toHaveBeenCalledWith(
+      STARTUP_PATH, 'STARTUP_NewWorld', 'PC_Thief', 'WP_MIDDLE',
+    ));
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
   });
 
   describe('refuses before anything is written', () => {

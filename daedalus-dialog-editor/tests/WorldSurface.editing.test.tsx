@@ -406,12 +406,13 @@ describe('a VOB dragged in the viewport', () => {
     // title change — so "have I saved this?" was a question the app would not
     // answer, over files that are somebody's retail install.
     await openWorld();
-    expect(screen.getByTestId('world-save')).toHaveTextContent(/^Save world$/);
+    expect(screen.getByTestId('world-save')).toHaveAccessibleName('Save world');
 
     fireEvent.click(screen.getByTestId('stub-drag'));
     await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
 
-    await waitFor(() => expect(screen.getByTestId('world-save')).toHaveTextContent(/edited/i));
+    // An icon button now: the state is its accessible name and its dot.
+    await waitFor(() => expect(screen.getByTestId('world-save')).toHaveAccessibleName(/edited/i));
   });
 
   it('saves on Ctrl+S, the same confirm the button opens', async () => {
@@ -2044,12 +2045,12 @@ describe('placing a VOB', () => {
     // the cursor that picked it. So it is there before the first pick, and it
     // is the *same* element after — a remount is the same shove.
     await openWorld();
-    const before = screen.getByTestId('world-terrain-bar');
+    const before = screen.getByTestId('world-status-bar');
 
     fireEvent.click(screen.getByTestId('stub-pick-terrain'));
 
     expect(await screen.findByTestId('world-place-vob')).toBeInTheDocument();
-    expect(screen.getByTestId('world-terrain-bar')).toBe(before);
+    expect(screen.getByTestId('world-status-bar')).toBe(before);
   });
 
   it('tells the viewport where to draw the point the bar names', async () => {
@@ -2428,11 +2429,13 @@ describe('a waypoint dragged in the viewport', () => {
     // waypoints, and reaches the viewport. Which names get drawn, and where, is
     // `waypointLabels`' and `WaypointLabelLayer`'s.
 
-    it('offers no names toggle while nothing is drawing waypoints', async () => {
+    it('disables the names toggle while nothing is drawing waypoints', async () => {
       // Both layers off, so there is nothing on screen a name could sit on.
+      // Disabled rather than absent, so the bar does not grow when a layer
+      // comes on (§17).
       await openWorld();
 
-      expect(screen.queryByTestId('world-names-toggle')).toBeNull();
+      expect(screen.getByTestId('world-names-toggle')).toBeDisabled();
     });
 
     it('offers it with the waynet on, and hands the choice down', async () => {
@@ -2507,12 +2510,13 @@ describe('a waypoint dragged in the viewport', () => {
       });
     });
 
-    it('offers no time control until the spawn layer is on', async () => {
+    it('disables the time control until the spawn layer is on', async () => {
       // It has nothing else to change, so a control for a layer nobody is
-      // looking at is a control that does nothing visible.
+      // looking at is a control that does nothing visible — disabled rather
+      // than absent, so the bar does not grow when the layer comes on (§17).
       await openWorld();
 
-      expect(screen.queryByTestId('world-time-toggle')).toBeNull();
+      expect(screen.getByTestId('world-time-toggle')).toBeDisabled();
     });
 
     it('draws the static spawns until a time is asked for', async () => {
@@ -2906,14 +2910,19 @@ describe('a waypoint dragged in the viewport', () => {
       await waitFor(() => expect(api.getWorldWaynet).toHaveBeenCalledTimes(2));
     });
 
-    it('is not offered while the waynet overlay is off', async () => {
-      // Nothing would draw the waypoint, and the gizmo could not reach it.
+    it('turns the waynet overlay on when used with it off', async () => {
+      // Nothing else would draw the waypoint, and the gizmo could not reach
+      // it — so the action switches the overlay on rather than hiding until
+      // somebody does.
       await openWorld();
       fireEvent.click(screen.getByTestId('stub-pick-terrain'));
       act(() => useWorldStore.getState().selectVob(null));
+      expect(mockShowWaynet).toBe(false);
 
-      expect(await screen.findByTestId('world-place-vob')).toBeInTheDocument();
-      expect(screen.queryByTestId('world-add-waypoint')).not.toBeInTheDocument();
+      fireEvent.click(await screen.findByTestId('world-add-waypoint'));
+      await screen.findByTestId('world-waypoint-add-dialog');
+
+      expect(mockShowWaynet).toBe(true);
     });
 
     it('offers every waypoint name the project index knows as an autocomplete option', async () => {

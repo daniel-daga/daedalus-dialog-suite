@@ -1,12 +1,15 @@
 import React from 'react';
 import {
-  IconButton, MenuItem, Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip,
+  IconButton, InputAdornment, MenuItem, Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip,
 } from '@mui/material';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ExploreIcon from '@mui/icons-material/Explore';
 import GrassIcon from '@mui/icons-material/Grass';
+import GridOnIcon from '@mui/icons-material/GridOn';
+import OpenWithIcon from '@mui/icons-material/OpenWith';
 import RedoIcon from '@mui/icons-material/Redo';
+import ThreeSixtyIcon from '@mui/icons-material/ThreeSixty';
 import UndoIcon from '@mui/icons-material/Undo';
 import VerticalAlignBottomIcon from '@mui/icons-material/VerticalAlignBottom';
 import type { GizmoMode } from '../WorldViewport';
@@ -30,11 +33,11 @@ const ANGLE_STEPS = [0, 5, 15, 45, 90].map((degrees) => ({
 
 /**
  * The World bar's "edit" group (level-editor.md §17):
- * the gizmo mode toggle, its snap step, drop/align, duplicate, delete, and
- * undo/redo. Moved verbatim out of `WorldSurface.tsx` — every testid and
- * enablement rule is unchanged, only the state and handlers now arrive as
- * props. The snap step's gizmo-mode branch stays in `WorldSurface`,
- * collapsed into one `onSnapStepChange` callback.
+ * the gizmo mode toggle, its snap step, drop/align, duplicate, the scatter
+ * brush, delete, and undo/redo. Every testid and enablement rule dates from
+ * when this was inline in `WorldSurface.tsx`; only the state and handlers
+ * arrive as props. The snap step's gizmo-mode branch stays in
+ * `WorldSurface`, collapsed into one `onSnapStepChange` callback.
  */
 export interface WorldEditControlsProps {
   hasWorld: boolean;
@@ -72,31 +75,30 @@ const WorldEditControls: React.FC<WorldEditControlsProps> = ({
     {/* Always rendered, never conditionally mounted on `hasWorld` — a
         control that pops in and out at open/close shifts every group after
         it in the row. Disabled instead, same as every other guard here. */}
-    {/* Two modes, not three: a VOB has no scale to gizmo. Text labels stay —
-        these are the two most-used controls in the bar — and each is also
-        wrapped in its own Tooltip rather than sharing one on the group, so
-        hovering either button names only the shortcut it stands for. A
-        Tooltip directly wrapping a ToggleButton (rather than the whole
-        group) is what keeps the group's own value/onChange plumbing
-        intact. */}
+    {/* Two modes, not three: a VOB has no scale to gizmo. Icons, with the
+        shortcut in the tooltip; each button is wrapped in its own Tooltip
+        rather than sharing one on the group, so hovering either names only
+        the shortcut it stands for. A Tooltip directly wrapping a
+        ToggleButton (rather than the whole group) is what keeps the group's
+        own value/onChange plumbing intact. */}
     <ToggleButtonGroup
       size="small"
       exclusive
       value={gizmoMode}
       onChange={(_event, next: GizmoMode | null) => next !== null && onGizmoModeChange(next)}
-      sx={{ '& .MuiToggleButton-root': { py: 0.25, px: 1, fontSize: 12 } }}
+      sx={{ '& .MuiToggleButton-root': { py: 0.25, px: 1 } }}
     >
       <Tooltip title="Move (W)">
         <span>
-          <ToggleButton value="translate" disabled={!hasWorld} data-testid="world-gizmo-translate">
-            Move (W)
+          <ToggleButton value="translate" disabled={!hasWorld} data-testid="world-gizmo-translate" aria-label="Move">
+            <OpenWithIcon fontSize="small" />
           </ToggleButton>
         </span>
       </Tooltip>
       <Tooltip title="Turn (E)">
         <span>
-          <ToggleButton value="rotate" disabled={!hasWorld} data-testid="world-gizmo-rotate">
-            Turn (E)
+          <ToggleButton value="rotate" disabled={!hasWorld} data-testid="world-gizmo-rotate" aria-label="Turn">
+            <ThreeSixtyIcon fontSize="small" />
           </ToggleButton>
         </span>
       </Tooltip>
@@ -105,8 +107,9 @@ const WorldEditControls: React.FC<WorldEditControlsProps> = ({
         being two controls: one of them is always meaningless, and the
         steps for a distance and for an angle share nothing but the word.
         Both values are kept, so a detour through the other mode does not
-        reset the one you set. */}
-    <Stack direction="row" spacing={1} alignItems="center">
+        reset the one you set. The grid icon is its label — "Free" alone
+        did not say it was a snap step. */}
+    <Tooltip title={gizmoMode === 'rotate' ? 'Snap step for a turn' : 'Snap step for a move'}>
       <TextField
         select
         size="small"
@@ -114,7 +117,14 @@ const WorldEditControls: React.FC<WorldEditControlsProps> = ({
         value={gizmoMode === 'rotate' ? snapAngleDegrees : snapGrid}
         onChange={(event) => onSnapStepChange(Number(event.target.value))}
         aria-label="Snap step"
-        sx={{ width: 88, '& .MuiInputBase-input': { py: 0.5, fontSize: 12 } }}
+        InputProps={{
+          startAdornment: (
+            <InputAdornment position="start" sx={{ mr: 0.5 }}>
+              <GridOnIcon sx={{ fontSize: 16 }} />
+            </InputAdornment>
+          ),
+        }}
+        sx={{ width: 104, '& .MuiInputBase-input': { py: 0.5, fontSize: 12 } }}
         data-testid="world-snap"
       >
         {(gizmoMode === 'rotate' ? ANGLE_STEPS : GRID_STEPS).map((step) => (
@@ -123,7 +133,7 @@ const WorldEditControls: React.FC<WorldEditControlsProps> = ({
           </MenuItem>
         ))}
       </TextField>
-    </Stack>
+    </Tooltip>
     {/* Snapping's per-VOB half (level-editor.md §16.5) — unlike the gizmo,
         which drives the whole selection from one shared delta, each of
         these finds its own ground point or its own normal, so they act on
