@@ -109,6 +109,7 @@ function props(overrides: Record<string, unknown> = {}) {
   return {
     mesh: MESH,
     visuals: instancedPayload(),
+    vobIndex: mockWorldViewport.noVobMarkers(),
     bbox: BBOX,
     waynet: null,
     showWaynet: false,

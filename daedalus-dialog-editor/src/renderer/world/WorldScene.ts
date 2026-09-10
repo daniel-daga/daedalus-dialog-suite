@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { ROOT_MATRIX, threeIndexOrder } from 'zen-world';
-import type { DrawGroup, InstancedPayload, WorldMeshPayload, DecodedTexture } from '../../shared/worldTypes';
+import type {
+  DrawGroup, InstancedPayload, VobIndex, WorldMeshPayload, DecodedTexture,
+} from '../../shared/worldTypes';
+import { VobMarkerLayer } from './VobMarkerLayer';
 
 // The Three.js projection of a world (level-editor.md §7: "the renderer is a
 // projection, never the model"). Deliberately free of React and of
@@ -332,6 +335,23 @@ export class WorldScene {
   readonly worldMeshes: THREE.Mesh[] = [];
   readonly instancedMeshes: THREE.InstancedMesh[] = [];
 
+  /**
+   * The VOBs with no visual at all, drawn as markers (§16.38) — null until
+   * `setVobMarkers` is called, which is a world without an index rather than a
+   * world without markers.
+   *
+   * Readable because the click path picks it: the GPU id-pass draws instances
+   * and has nothing to draw a marker into, so a marker is picked in pixels like
+   * a waypoint (`PickController`). Read-only, because everything the scene does
+   * with it — the position fallback, the drag, the per-class hide — is a method
+   * on the scene rather than a caller reaching in.
+   */
+  get markers(): VobMarkerLayer | null {
+    return this.markerLayer;
+  }
+
+  private markerLayer: VobMarkerLayer | null = null;
+
   private textures = new Map<string, TextureSlot>();
   private instanceVobIds = new WeakMap<THREE.InstancedMesh, Uint32Array>();
   /** The visual's own bounds, per mesh — what a rotation refits a bbox from.
@@ -431,6 +451,25 @@ export class WorldScene {
     }
   }
 
+  /**
+   * Draw the VOBs that have no visual (level-editor.md §7, #247).
+   *
+   * `VobMarkerLayer` decides which those are and what colour each is; what the
+   * scene adds is that everything asking it about a VOB — the gizmo through
+   * `positionOf`, a drag through `moveVob`, the view controls through
+   * `setHiddenVobs` — answers for a marker as readily as for an instance, and
+   * none of those callers learns the difference.
+   *
+   * Taken from the index rather than from a payload, because the index is where
+   * a position exists for a VOB the worker placed nothing for. Called once per
+   * scene build, beside `setInstancedVisuals`: a structural op rebuilds the
+   * scene, which is what gives a placed sound its marker.
+   */
+  setVobMarkers(index: VobIndex): void {
+    this.markerLayer = new VobMarkerLayer(index);
+    this.root.add(this.markerLayer.markers);
+  }
+
   /** The VOB an instance came from — a pick returns nothing else that identifies it. */
   /**
    * Move a VOB in the scene, in **ZenGin space** — an edit arriving from the op
@@ -450,9 +489,11 @@ export class WorldScene {
    * render frame, and a permanent VOB -> instance map is a second structure to
    * keep correct across every future op that adds or removes one.
    *
-   * @returns whether the VOB is drawn at all — 23,288 VOBs are enumerated on
-   *   NewWorld and 12,463 placed, so a decal or a particle effect is selectable
-   *   and has no instance to move.
+   * @returns whether the VOB is drawn at all — as an instance, or as a marker
+   *   (§16.38). 23,288 VOBs are enumerated on NewWorld and 12,463 placed, and
+   *   what is left over after the markers is the VOB whose visual is a name
+   *   that resolves to no geometry: a decal or a particle effect is selectable
+   *   and has nothing in the scene to move.
    */
   moveVob(vob: number, position: readonly [number, number, number]): boolean {
     const matrix = new THREE.Matrix4();
@@ -476,6 +517,11 @@ export class WorldScene {
       moved = true;
     }
 
+    // And the marker, for a VOB that has one instead. Not `else`: a VOB is
+    // either instanced or markered and never both, and writing whichever exists
+    // is one statement rather than a branch that has to stay true.
+    if (this.markerLayer?.setPosition(vob, position) === true) moved = true;
+
     return moved;
   }
 
@@ -489,7 +535,12 @@ export class WorldScene {
    * rotation is not a move, and a VOB that quietly jumped to the origin when it
    * was turned would look like a gizmo bug.
    *
-   * @returns whether the VOB is drawn at all.
+   * Unlike `moveVob` this has no marker half, and deliberately: a marker is a
+   * dot with no orientation to draw, so there is nothing a turn would change
+   * about the picture. The op is still built from the index, which is where a
+   * markerless VOB's rotation actually lives.
+   *
+   * @returns whether the VOB has an instance to turn.
    */
   rotateVob(vob: number, rotation: readonly number[]): boolean {
     const matrix = new THREE.Matrix4();
@@ -547,8 +598,13 @@ export class WorldScene {
    *
    * Writes a float per instance and nothing else: no geometry is rebuilt, no
    * material recompiled, and the instance matrices — where the poses live — are
-   * not touched. A VOB with no instance is simply not found here, exactly as it
-   * is not drawn.
+   * not touched.
+   *
+   * The marker layer takes the same mask, which is what makes the filter mean
+   * anything for a sound or a trigger (§16.38 consequence 4): hiding
+   * `zCVobSound` used to hide nothing, because nothing was drawn, and the class
+   * was offered in the list all the same. A VOB with neither an instance nor a
+   * marker is still simply not found, exactly as it is still not drawn.
    */
   setHiddenVobs(hidden: Uint8Array | null): void {
     for (const mesh of this.instancedMeshes) {
@@ -563,6 +619,8 @@ export class WorldScene {
       }
       attribute.needsUpdate = true;
     }
+
+    this.markerLayer?.setHidden(hidden);
   }
 
   /**
@@ -615,7 +673,9 @@ export class WorldScene {
     }
   }
 
-  /** A VOB's 3x3 as drawn, row-major — what a turn composes onto. */
+  /** A VOB's 3x3 as drawn, row-major — what a turn composes onto. Null for a
+   *  VOB drawn as a marker, which has no orientation on screen; `rotateVob`
+   *  says why that is not a gap. */
   rotationOf(vob: number): number[] | null {
     const matrix = new THREE.Matrix4();
 
@@ -640,6 +700,13 @@ export class WorldScene {
    *
    * The viewport is handed payloads, never the world, so the scene is what it
    * asks where the selected VOB is when it puts a gizmo on it.
+   *
+   * The instances first and the markers second, because a VOB is in exactly one
+   * of the two and the instance scan is the hot one — a drag frame reads this
+   * per selected VOB. What is left answering null is the VOB whose visual is a
+   * *name* that resolves to no geometry: a decal, a `.PFX`. That used to be
+   * every markerless VOB as well, and the gizmo detached for all of them
+   * (§16.38 consequence 3).
    */
   positionOf(vob: number): [number, number, number] | null {
     const matrix = new THREE.Matrix4();
@@ -653,7 +720,7 @@ export class WorldScene {
       return [matrix.elements[12], matrix.elements[13], matrix.elements[14]];
     }
 
-    return null;
+    return this.markerLayer?.positionOf(vob) ?? null;
   }
 
   /**
@@ -661,9 +728,14 @@ export class WorldScene {
    * VOB in it that is actually drawn, or null if none of them is.
    *
    * The last is the one just clicked, which is the one the user expects the
-   * handles to appear on. It is the last *drawn* one because a selection may
-   * hold VOBs with no instance — a decal, a sound VOB — and anchoring on one of
-   * those would take the gizmo away from a selection full of drawable VOBs.
+   * handles to appear on. It is the last one with a *position* because a
+   * selection may hold VOBs the scene draws nothing for at all, and anchoring
+   * on one of those would take the gizmo away from a selection full of VOBs it
+   * could have stood on.
+   *
+   * That used to mean "the last one with an instance", and a sound VOB was the
+   * example: it has a marker now, and a marker has a position, so the set this
+   * steps over is down to the decal and the particle effect (§16.38, §16.40).
    */
   anchorOf(vobs: readonly number[]): [number, number, number] | null {
     for (let at = vobs.length - 1; at >= 0; at--) {
@@ -682,9 +754,10 @@ export class WorldScene {
    * VOB about its own origin, so handles at the centroid would show a pivot the
    * op does not use and the first multi-VOB rotate would look broken.
    *
-   * A VOB with no instance is stepped over rather than counted, for the reason
-   * `anchorOf` steps over it — it has no position at all, and taking one as the
-   * origin would drag the centre of the selection towards [0, 0, 0].
+   * A VOB the scene draws nothing for is stepped over rather than counted, for
+   * the reason `anchorOf` steps over it — it has no position at all, and taking
+   * one as the origin would drag the centre of the selection towards
+   * [0, 0, 0]. A marker counts: it is a position, and it is drawn.
    */
   centroidOf(vobs: readonly number[]): [number, number, number] | null {
     const sum: [number, number, number] = [0, 0, 0];
@@ -782,6 +855,11 @@ export class WorldScene {
     if (this.textureCache === null) {
       for (const slot of this.textures.values()) slot.texture?.dispose();
     }
+
+    // Its own buffers, and not the pip it draws them with: that is the app's
+    // one sprite, shared with the spawn markers.
+    this.markerLayer?.dispose();
+    this.markerLayer = null;
 
     this.geometries = [];
     this.materials = [];

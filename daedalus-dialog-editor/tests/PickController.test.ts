@@ -34,6 +34,7 @@ import { NO_PICK } from '../src/renderer/world/pickIds';
 import type { VobPicker } from '../src/renderer/world/VobPicker';
 import type { WaynetOverlay } from '../src/renderer/world/WaynetOverlay';
 import type { WorldScene } from '../src/renderer/world/WorldScene';
+import type { VobMarkerLayer } from '../src/renderer/world/VobMarkerLayer';
 
 const WIDTH = 800;
 const HEIGHT = 600;
@@ -60,7 +61,8 @@ function harness({
   fly = false,
   menu = true,
   hasMesh = true,
-  vobPositions = { 5: [500, 60, 700] as ZenPosition },
+  markerUnderCursor = NO_PICK,
+  vobPositions = { 5: [500, 60, 700] as ZenPosition, 8: [800, 10, 900] as ZenPosition },
 } = {}) {
   waypointPick.answer = waypointUnderCursor;
 
@@ -77,9 +79,18 @@ function harness({
   camera.updateMatrixWorld(true);
 
   const mesh = ground();
+  // The markers for the VOBs with no visual (§16.38): a `THREE.Points` layer
+  // picked in pixels, like the waynet and for the same reason, so its own pick
+  // is stood in for here — what this spec is about is where in the order it is
+  // asked.
+  let markerPicks = 0;
+  const markers = {
+    pick: () => { markerPicks += 1; return markerUnderCursor; },
+  } as unknown as VobMarkerLayer;
   const world = {
     root: new THREE.Group(),
     worldMeshes: hasMesh ? [mesh] : [],
+    markers,
     positionOf: (vob: number) => vobPositions[vob as keyof typeof vobPositions] ?? null,
   } as unknown as WorldScene;
 
@@ -121,6 +132,7 @@ function harness({
   return {
     controller, canvas, controls, picked, waypoints, menus, remembered, pivots,
     picks: () => picks,
+    markerPicks: () => markerPicks,
     dispose: () => { disposed = true; },
   };
 }
@@ -163,6 +175,56 @@ describe('PickController — a click', () => {
 
     expect(h.waypoints).toEqual([]);
     expect(h.picked).toEqual([[5, null, false]]);
+  });
+
+  it('takes a VOB marker next, ahead of the props and without a GPU pick', async () => {
+    // The markers for the VOBs with no visual (§16.38, #247) draw with
+    // `depthTest: false` and a fixed pixel size, exactly as the waynet does, so
+    // one that is plainly on top has to be what a click on it selects. And the
+    // GPU id-pass has nothing to draw a marker into — it draws instances — so
+    // asking it here would answer the wall behind the marker.
+    const h = harness({ markerUnderCursor: 8, vobUnderCursor: 5 });
+
+    click(h.canvas);
+    await settle();
+
+    expect(h.picked).toEqual([[8, null, false]]);
+    expect(h.picks()).toBe(0);
+    // Where it stands, remembered as the fallback pivot — the same thing an
+    // instanced VOB's pick does with it.
+    expect(h.remembered).toHaveLength(1);
+  });
+
+  it('still lets the waynet win over a marker', async () => {
+    // A startpoint or a spot stands on a waypoint, so the two layers are drawn
+    // in the same place more often than not, and the waynet's own click is the
+    // older rule.
+    const h = harness({ waypointUnderCursor: 3, markerUnderCursor: 8 });
+
+    click(h.canvas);
+    await settle();
+
+    expect(h.waypoints).toEqual([3]);
+    expect(h.picked).toEqual([]);
+  });
+
+  it('asks the markers before the props, and only when nothing else won', async () => {
+    // The order, from the other side: a click that hits no marker falls through
+    // to the props, and a click that is not a pick at all asks neither.
+    const h = harness({ vobUnderCursor: 5 });
+
+    click(h.canvas);
+    await settle();
+
+    expect(h.markerPicks()).toBe(1);
+    expect(h.picked).toEqual([[5, null, false]]);
+
+    const walk = harness({ markerUnderCursor: 8, walking: true });
+    click(walk.canvas);
+    await settle();
+
+    expect(walk.markerPicks()).toBe(0);
+    expect(walk.picked).toEqual([]);
   });
 
   it('takes the prop next, and never raycasts the mesh for it', async () => {

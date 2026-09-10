@@ -25,6 +25,7 @@ import { describe, it, expect, beforeEach } from '@jest/globals';
 import type {
   DecodedTexture, DrawGroup, InstancedPayload, InstancedVisual, WorldMeshPayload,
 } from '../src/shared/worldTypes';
+import { vobIndex } from './worldFixtures';
 
 const worker = {
   onmessage: null as ((event: MessageEvent) => void) | null,
@@ -139,6 +140,10 @@ function answerBuilds(): void {
 function harness({
   mesh = meshPayload(),
   visuals = visualsPayload(),
+  // One VOB with a visual, so the marker layer (§16.38) is empty: what this
+  // spec is about is the rebuild boundary, and `WorldScene.test.ts` holds what
+  // the scene does with a markerless VOB.
+  index = vobIndex([[0, 0, 0]]),
   builder = new BvhBuilder(),
   textures = textureCacheFor(null, 'the-world'),
   load = async (name: string) => decoded(name),
@@ -153,6 +158,7 @@ function harness({
     camera: new THREE.PerspectiveCamera(),
     mesh,
     visuals,
+    vobIndex: index,
     textures,
     bvh: builder,
     loadTexture: (name, maxSize) => { asked.push({ name, maxSize }); return load(name); },

@@ -241,11 +241,14 @@ would survive it (§7).
   [`mcp-server.md`](mcp-server.md) plus scripted ops. *Planned elsewhere.*
 - Engine preview ("play from here") — parked as later/kept-open (§11).
 - **A visual for a VOB that has no mesh** — Spacer draws a marker for a sound,
-  a light, a zone or a trigger, and we draw nothing at all: 38.0 % of retail
-  VOBs are not in the viewport, cannot be clicked and get no gizmo. Carded
-  2026-09-10 as §16.38 (the marker), §16.39 (the radius and the box) and
-  §16.40 (decals and particle effects, which have a visual name that resolves
-  to no geometry). This inventory never had a row for it.
+  a light, a zone or a trigger, and we drew nothing at all: 38.0 % of retail
+  VOBs were not in the viewport, could not be clicked and got no gizmo. This
+  inventory never had a row for it; carded 2026-09-10 in three parts. The
+  marker itself *landed 2026-09-10 (§7)* — every VOB with no visual name is
+  drawn, pickable, hideable by class and gizmo-attachable. What is left is the
+  **extent** of a sound, a light or a zone (§16.39) and the VOBs whose visual
+  is a name that resolves to no geometry (§16.40, decals and particle
+  effects).
 
 Already landed and therefore absent above: focus-on-selection and frame-world
 (`.` and `Home`, the 2026-08-27 navigation entry), and batch property edit
@@ -3168,75 +3171,13 @@ places a mesh lives in the far right panel rather than on the tile.
    listing or an index over the whole namespace. Needs a Gothic install —
    Daniel's machine, not CI.
 
-### 16.38 A VOB with no visual is not in the viewport at all (2026-09-10; #247)
-
-`buildInstancedVisuals` opens its loop with `if (name === '') continue;`
-(`zen-world/src/scene/buildScene.ts`). That one line is **15,749 of the 41,393
-retail VOBs, 38.0 %** — the `UNKNOWN` row of the visual-type table in
-`docs/architecture/level-editor.md` §7, and what "this VOB has no visual"
-actually looks like on disk. Every sound, light, zone, trigger, mover, code
-master, message filter, touch-damage volume, startpoint and spot is in it.
-
-Four consequences, one cause:
-
-1. **Nothing is drawn** where the VOB stands. A placed `zCVobSound` is a row in
-   the scene tree and no pixels anywhere.
-2. **Nothing can be clicked.** `VobPicker` draws the instanced meshes into its
-   1×1 buffer; a VOB with no instance writes no pixel, in the exact pass and in
-   the near-miss pass alike. The scene tree is the only door in, which means
-   finding a sound means already knowing its name.
-3. **There is no gizmo even once it is selected.** `WorldScene.positionOf`
-   answers by searching the instanced meshes for the VOB id and returns null
-   when none holds it; `anchorOf` and `centroidOf` step over such a VOB on
-   purpose, and their comments name a sound VOB as the case; `GizmoController.
-   attach` detaches on a null anchor. So the whole of "put it where I want it"
-   is typing three coordinates into `WorldPropertyGrid` — no drag, no snap, no
-   drop-to-ground, no align-to-normal, none of §14.1 1.6.
-4. **The class-visibility filter is inert for these classes.** Hiding
-   `zCVobSound` from the view controls hides nothing, because nothing was drawn;
-   the class is offered in the list all the same.
-
-**A marker layer needs no new data.** `VobIndex` carries `positions`,
-`rotations` and `classIndex` for every VOB in the world, the renderer already
-holds it (`worldStore`'s summary, read through `vobModel`), and the sprite
-machinery exists: `markerSprite.ts` builds white-on-black `DataTexture` masks
-that take the drawing layer's colour, and `SpawnOverlay` already draws a
-`THREE.Points` layer of them at a fixed pixel size. A per-class marker is a
-colour table plus one or two more masks. No binding change, no IPC, no worker
-op, and nothing that touches the `.zen` file.
-
-Two pieces are not free:
-
-- **Picking.** The GPU id-pass draws instances and has nothing to draw a marker
-  into. The precedent for a `Points` layer is `pickWaypoint.ts`, which picks in
-  pixels after the projection — a loop over every candidate, once per click and
-  never per frame, chosen because the overlay draws with `sizeAttenuation:
-  false` and a world-unit threshold is wrong at every distance. A marker layer
-  drawn the same way picks the same way, and 15,749 is five times the waynet's
-  2,959 on one loop.
-- **The gizmo.** `positionOf` wants a fallback to the index position, and then
-  `anchorOf` and `centroidOf` work unchanged. That **inverts a documented
-  rule** — both comments say a VOB with no instance has no position at all and
-  is therefore stepped over — so the comments go with the change, and the
-  "anchor on the last *drawn* VOB" tiebreak for a mixed selection has to be
-  restated in terms of what it was protecting rather than deleted.
-
-Deliberately not in this: the extent of a sound or a light (§16.39), and the
-VOBs whose visual is a name that resolves to no geometry (§16.40) — a decal or
-a `.PFX` is a different cause with a different answer.
-
-**Wants a human eye:** which shape reads as "sound" against "trigger" at 16
-pixels, whether the marker scales with distance or stays pixel-sized like the
-waynet's 3.5 px points, and whether an unselected marker is drawn at all in a
-world with thousands of them or only under a class filter.
-
 ### 16.39 The extent of a sound, a light or a zone is invisible too (2026-09-10; #248)
 
 A marker says where the origin is and nothing about how far the thing reaches,
 and for this family the reach *is* the object: a `zCVobSound` is its `radius`, a
 `zCVobLight` its `range` and `color`, a `zCZoneZFog` its `rangeCenter` and
 `innerRangePercentage`, an `oCZoneMusic` its volume, a `zCTrigger` its box. With
-§16.38 landed, tuning any of them is still a save-and-play loop.
+the marker layer landed (§7), tuning any of them is still a save-and-play loop.
 
 **The sphere half is drawable from data already in hand.** `radius` and `range`
 are catalogued class fields (`CLASS_FIELDS`, `zen-world/src/model/vobClasses.ts`)
@@ -3264,12 +3205,14 @@ Three things to settle with it:
 
 ### 16.40 A decal and a particle effect draw nothing either (2026-09-10; #249)
 
-Same hole, different cause, and it is worth keeping apart from §16.38: these
-VOBs **have** a visual name. `extractVisual` cannot turn a `.TGA` or a `.PFX`
-into geometry, so `buildInstancedVisuals` counts them into `unresolvedByType`
-and places nothing — **1,932 decals and 1,391 particle effects** across the
-three retail worlds, 49 unique names of the two on NewWorld (23 DECAL, 26
-PARTICLE_EFFECT), which is the unresolved-visual table in
+Same hole, different cause, and it is worth keeping apart from the marker layer
+that closed the other half (§7): these VOBs **have** a visual name, and the
+layer keys on the name being *empty*, so not one of them gets a marker either.
+`extractVisual` cannot turn a `.TGA` or a `.PFX` into geometry, so
+`buildInstancedVisuals` counts them into `unresolvedByType` and places nothing
+— **1,932 decals and 1,391 particle effects** across the three retail worlds,
+49 unique names of the two on NewWorld (23 DECAL, 26 PARTICLE_EFFECT), which is
+the unresolved-visual table in
 `docs/architecture/level-editor.md` §3.
 
 **A decal is not a mystery and should be drawn as itself, not as an icon.** All
@@ -3293,6 +3236,10 @@ the 1,932 sits on a plain `zCVob`, so the key here is the **visual type**, not
 the class.
 
 **A `.PFX` is not drawable.** It is a particle script, not geometry, and
-nothing in the binding turns one into vertices. So a `zCPFXController` is one
-more row in §16.38's marker table and nothing more — which is the honest answer
-rather than a faked puff of smoke.
+nothing in the binding turns one into vertices. So a `zCPFXController` deserves
+a marker and nothing more — which is the honest answer rather than a faked puff
+of smoke, and it is *this* section's work: `VobMarkerLayer` draws a VOB with no
+visual name, and a `zCPFXController` has one. Giving the layer a second
+criterion — a visual that resolved to nothing — is the whole of that half, and
+its colour keys on the **visual type** rather than the class, for the reason the
+decal above gives.

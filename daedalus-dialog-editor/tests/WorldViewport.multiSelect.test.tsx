@@ -90,6 +90,7 @@ function props(onPick: (...args: Pick) => void) {
   return {
     mesh: MESH,
     visuals: instancedPayload(),
+    vobIndex: mockWorldViewport.noVobMarkers(),
     bbox: [0, 0, 0, 100, 100, 100],
     waynet: null,
     showWaynet: false,

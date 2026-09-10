@@ -52,6 +52,10 @@ export function vobIndex(
   // One name per VOB. Every VOB is `BARREL` unless a test names them, which
   // the free-point jump does: a free point is found by *its own name*.
   vobNames: readonly string[] = positions.map(() => 'BARREL'),
+  // One visual per VOB. Every VOB is drawn as a barrel unless a test says
+  // otherwise, which the markers do (§16.38): the empty string is what "this
+  // VOB has no visual" looks like on disk, and it is 38 % of the retail corpus.
+  vobVisuals: readonly string[] = positions.map(() => 'BARREL.3DS'),
 ): VobIndex {
   const count = positions.length;
   const columns = new Float32Array(count * 3);
@@ -87,7 +91,10 @@ export function vobIndex(
     classes, classIndex: classIndex.buffer,
     names: [...new Set(vobNames)],
     nameIndex: Uint32Array.from(vobNames.map((n) => [...new Set(vobNames)].indexOf(n))).buffer,
-    visuals: ['BARREL.3DS'], visualIndex: new Uint32Array(count).buffer,
+    visuals: [...new Set(vobVisuals)],
+    visualIndex: Uint32Array.from(
+      vobVisuals.map((v) => [...new Set(vobVisuals)].indexOf(v)),
+    ).buffer,
     visualTypes: ['MULTI_RESOLUTION_MESH'], visualTypeIndex: new Uint32Array(count).buffer,
   };
 }

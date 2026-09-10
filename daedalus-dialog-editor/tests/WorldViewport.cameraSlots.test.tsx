@@ -47,6 +47,7 @@ function props(bbox: number[]) {
   return {
     mesh,
     visuals: VISUALS,
+    vobIndex: mockWorldViewport.noVobMarkers(),
     bbox,
     waynet: null,
     showWaynet: false,

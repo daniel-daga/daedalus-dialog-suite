@@ -84,6 +84,7 @@ function props(onScatterStroke: (samples: Array<[number, number, number]>) => vo
   return {
     mesh: MESH,
     visuals: NO_VISUALS,
+    vobIndex: mockWorldViewport.noVobMarkers(),
     bbox: MESH.bbox,
     waynet: null,
     showWaynet: false,

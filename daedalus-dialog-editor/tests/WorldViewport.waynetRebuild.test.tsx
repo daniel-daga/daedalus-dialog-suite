@@ -130,6 +130,7 @@ function props(visuals: InstancedPayload, payload: WaynetPayload, showWaynet: bo
   return {
     mesh: MESH,
     visuals,
+    vobIndex: mockWorldViewport.noVobMarkers(),
     bbox: BBOX,
     waynet: payload,
     showWaynet,

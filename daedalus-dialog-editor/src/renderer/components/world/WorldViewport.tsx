@@ -7,7 +7,7 @@ import {
   isWaynetOp, type ZenPosition, type ZenRotation,
 } from 'zen-world';
 import type {
-  DecodedTexture, InstancedPayload, WaynetPayload, WorldMeshPayload, WorldOp,
+  DecodedTexture, InstancedPayload, VobIndex, WaynetPayload, WorldMeshPayload, WorldOp,
 } from '../../../shared/worldTypes';
 import type { SpawnSite } from '../../../shared/types';
 import { WaynetOverlay } from '../../world/WaynetOverlay';
@@ -119,6 +119,18 @@ declare global {
 export interface WorldViewportProps {
   mesh: WorldMeshPayload;
   visuals: InstancedPayload;
+  /**
+   * The summary's own VOB columns, for the 38 % of a retail world the worker
+   * places nothing for — every sound, light, zone, trigger, mover, startpoint
+   * and spot (level-editor.md §16.38). They are drawn as markers, and the index
+   * is where a position for them exists.
+   *
+   * Read through a ref rather than made a dependency of the scene effect: a
+   * structural op refreshes the index one commit *before* the new `visuals`
+   * arrive, and taking both would rebuild the scene twice per placement. The
+   * effect re-runs on `visuals`, which is when the fresh index is read.
+   */
+  vobIndex: VobIndex;
   /** ZenGin-space world bounds, for framing the camera. */
   bbox: number[];
   /** The waynet, once someone has asked to see it. Null until then: it is a
@@ -336,9 +348,10 @@ export interface WorldViewportHandle {
    *
    * A command and not a state: jumping to the same VOB twice is two of them,
    * and that is precisely when the second one is asked for — after the camera
-   * has been flown somewhere else. A VOB that is not drawn (a decal, a sound
-   * VOB) has no position to frame, and neither has any VOB while the scene
-   * effect is between a teardown and its rebuild: both are no-ops.
+   * has been flown somewhere else. A VOB that is not drawn at all — a decal, a
+   * particle effect; not a sound VOB, which has a marker now (§16.38) — has no
+   * position to frame, and neither has any VOB while the scene effect is
+   * between a teardown and its rebuild: both are no-ops.
    */
   frameVob: (vob: number) => FrameFailure | null;
   /**
@@ -367,8 +380,11 @@ export interface WorldViewportHandle {
  * no error anywhere: exactly the symptom reported, and the reason nobody could
  * see which link had gone. The two ways it can legitimately do nothing are told
  * apart because only one of them is a defect — `not-drawn` is the honest answer
- * for a decal or a sound VOB, and `no-scene` means the viewport was asked while
- * the scene effect was between a teardown and its rebuild.
+ * for a VOB the scene draws nothing for, and `no-scene` means the viewport was
+ * asked while the scene effect was between a teardown and its rebuild.
+ *
+ * That set has shrunk to the decal and the particle effect: a VOB with no
+ * visual at all is drawn as a marker now (§16.38), and a marker has a position.
  */
 export type FrameFailure = 'no-scene' | 'not-drawn';
 
@@ -382,7 +398,7 @@ interface Gizmo {
 }
 
 const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(({
-  mesh, visuals, bbox, waynet, showWaynet, spawns, showSpawns, routines, spawnTime, spawnState,
+  mesh, visuals, vobIndex, bbox, waynet, showWaynet, spawns, showSpawns, routines, spawnTime, spawnState,
   showWaypointNames, loadTexture, onTextureFailures, onPick, onVobContextMenu,
   selection, onTranslateSelection, gizmoMode, onRotateSelection, appliedOps,
   selectedWaypoint, terrainPoint, exposure, hiddenVobs, outlineMode, snapGrid, snapAngle,
@@ -448,6 +464,8 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   onRotateRef.current = onRotateSelection;
   const onSelectWaypointRef = useRef(onSelectWaypoint);
   onSelectWaypointRef.current = onSelectWaypoint;
+  const vobIndexRef = useRef(vobIndex);
+  vobIndexRef.current = vobIndex;
   const onMoveWaypointRef = useRef(onMoveWaypoint);
   onMoveWaypointRef.current = onMoveWaypoint;
   // Read by the drag, which happens outside React's render path — changing the
@@ -583,6 +601,9 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       camera,
       mesh,
       visuals,
+      // Through the ref, for the reason the prop's own comment gives: the index
+      // arrives one commit ahead of the visuals a rebuild is keyed on.
+      vobIndex: vobIndexRef.current,
       textures: texturesRef.current,
       bvh: bvhRef.current ?? (bvhRef.current = new BvhBuilder()),
       // Through the refs, so a parent re-render cannot rebuild the scene.
@@ -852,8 +873,10 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     };
 
     const frameThese = (vobs: readonly number[]): FrameFailure | null => {
-      // A VOB that is not drawn has no position to frame — a decal, a sound
-      // VOB — and a selection can be nothing but those.
+      // A VOB the scene draws nothing for has no position to frame — a decal, a
+      // particle effect — and a selection can be nothing but those. A sound VOB
+      // is no longer one of them: it has a marker, and `positionOf` answers for
+      // it (§16.38).
       const framable = vobs
         .map((vob) => ({ at: world.positionOf(vob), bounds: world.boundsOf(vob) }))
         .filter((vob): vob is { at: [number, number, number]; bounds: readonly number[] | null } => vob.at !== null);

@@ -50,6 +50,7 @@ function props(onVobContextMenu: (...args: ContextMenuHit) => void) {
   return {
     mesh: MESH,
     visuals: VISUALS,
+    vobIndex: mockWorldViewport.noVobMarkers(),
     bbox: [0, 0, 0, 10000, 10000, 10000],
     waynet: null,
     showWaynet: false,

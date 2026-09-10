@@ -806,11 +806,14 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     const failure = viewport.frameVob(vob);
     if (failure === null) return;
 
-    // `not-drawn` is most of the VOB index, not an edge case (§16.24): a VOB
-    // gets an instance only if its visual resolves, so zCVobSpot, oCItem, the
-    // triggers, the zones and the sound VOBs have none and were permanently
-    // unlocatable. The index carries a position for every one of them, so the
-    // camera jumps to the point instead — the same jump a waypoint gets.
+    // `not-drawn` used to be most of the VOB index (§16.24): a VOB gets an
+    // instance only if its visual resolves, so zCVobSpot, oCItem, the triggers,
+    // the zones and the sound VOBs had none and were permanently unlocatable.
+    // The markers closed most of that (§16.38) — a VOB with no visual at all is
+    // drawn now, and the viewport frames it like any other. What is left is the
+    // VOB whose visual is a *name* resolving to no geometry, a decal or a
+    // `.PFX`, and the index carries a position for those too: the camera jumps
+    // to the point instead, the same jump a waypoint gets.
     const at = failure === 'not-drawn' && summary !== null
       ? vobModelOf(summary).reader.position(vob)
       : null;
@@ -2949,6 +2952,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               ref={viewportRef}
               mesh={mesh}
               visuals={visuals}
+              vobIndex={summary.vobIndex}
               bbox={summary.bbox}
               waynet={waynet}
               showWaynet={showWaynet}

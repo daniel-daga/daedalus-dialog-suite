@@ -18,6 +18,7 @@ import * as THREE from 'three';
 import { ROOT_MATRIX } from 'zen-world';
 import type { DecodedTexture, DrawGroup, InstancedVisual } from '../src/shared/worldTypes';
 import { DEFAULT_EXPOSURE, WORLD_LAYER, WorldScene, textureCacheFor } from '../src/renderer/world/WorldScene';
+import { vobIndex } from './worldFixtures';
 
 function group(overrides: Partial<DrawGroup> = {}): DrawGroup {
   return {
@@ -63,6 +64,24 @@ function visual(overrides: Partial<InstancedVisual> = {}): InstancedVisual {
     bounds: [0, 0, 0, 100, 100, 0],
     ...overrides,
   };
+}
+
+/**
+ * Ten VOBs, of which VOB 4 is a sound with **no visual name at all** and VOB 5
+ * a decal — a name that resolves to no geometry. `visual()` above places VOBs 7
+ * and 9, so the three cases the scene has to tell apart are all here: instanced,
+ * markered, and neither.
+ */
+function markerIndex() {
+  const positions = Array.from(
+    { length: 10 }, (_, vob) => [vob * 100, 0, 0] as [number, number, number],
+  );
+  const classes = positions.map(() => 'zCVob');
+  classes[4] = 'zCVobSound';
+  const visuals = positions.map(() => 'BARREL.3DS');
+  visuals[4] = '';
+  visuals[5] = 'BLOOD.TGA';
+  return vobIndex(positions, classes, undefined, undefined, visuals);
 }
 
 /** Run a material's `onBeforeCompile` over the stock basic shader and hand back
@@ -943,5 +962,105 @@ describe('WorldScene', () => {
     const hidden = scene.instancedMeshes[0].geometry.getAttribute('instanceHidden');
     expect([...(hidden.array as Float32Array)]).toEqual([0, 0]);
     expect(hidden.version).toBe(2);
+  });
+
+  // ── the VOBs with no visual at all (level-editor.md §16.38, #247) ────────
+  //
+  // `buildInstancedVisuals` skips a VOB whose visual name is empty — 38 % of
+  // the retail corpus, every sound, light, zone, trigger, mover, startpoint and
+  // spot — so none of them had an instance, and everything the scene answers
+  // about a VOB it answers by scanning the instances. A marker layer draws
+  // them, and the scene is what the gizmo, the class filter and the drag all
+  // reach that layer through: those three read `positionOf`, `setHiddenVobs`
+  // and `moveVob` and must not learn what a marker is.
+  //
+  // What stays null is the VOB whose visual is a *name* that resolves to no
+  // geometry — a decal, a `.PFX` — because that is a different cause with a
+  // different answer (§16.40).
+
+  test('a VOB with no visual reports where its marker is drawn', () => {
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    scene.setVobMarkers(markerIndex());
+
+    // The sound VOB: no instance anywhere, and a position all the same.
+    expect(scene.positionOf(4)).toEqual([400, 0, 0]);
+    // An instanced VOB still answers from its instance — the marker layer has
+    // no entry for it, and a second answer in the same place would be a bug.
+    expect(scene.positionOf(7)).toEqual([10, 20, 30]);
+    // The decal: it has a visual name, so no marker, and it resolved to no
+    // geometry, so no instance either. Null is still the honest answer.
+    expect(scene.positionOf(5)).toBeNull();
+  });
+
+  test('moving a VOB with no visual moves its marker, and says it is drawn', () => {
+    // The whole of the live drag preview for these VOBs: `GizmoController`
+    // reads `positionOf` on the press and writes `moveVob` on every frame, and
+    // neither of them knows a marker from an instance.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    scene.setVobMarkers(markerIndex());
+
+    expect(scene.moveVob(4, [1, 2, 3])).toBe(true);
+    expect(scene.positionOf(4)).toEqual([1, 2, 3]);
+    // Still nothing to move for a decal, and still said out loud.
+    expect(scene.moveVob(5, [1, 2, 3])).toBe(false);
+  });
+
+  test('a marker anchors the gizmo and counts towards the selection centre', () => {
+    // The rule `anchorOf` and `centroidOf` document is "the ones that are
+    // actually drawn", and a marker is drawn: the VOBs they step over are the
+    // ones with no position at all, which is now the decal and the `.PFX` alone.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    scene.setVobMarkers(markerIndex());
+
+    expect(scene.anchorOf([7, 4])).toEqual([400, 0, 0]);
+    expect(scene.anchorOf([4, 5])).toEqual([400, 0, 0]);
+    expect(scene.centroidOf([7, 4])).toEqual([205, 10, 15]);
+    // And the VOB with neither instance nor marker still detaches it.
+    expect(scene.anchorOf([5])).toBeNull();
+    expect(scene.centroidOf([5])).toBeNull();
+    // A rotation is a different matter: nothing draws a sound's orientation, so
+    // there is no basis to read back and no preview to draw. The op is still
+    // built from the index, which is where the rotation actually lives.
+    expect(scene.rotationOf(4)).toBeNull();
+    expect(scene.rotateVob(4, [1, 0, 0, 0, 1, 0, 0, 0, 1])).toBe(false);
+  });
+
+  test('the per-class filter reaches the markers, so hiding a sound hides it', () => {
+    // §16.38 consequence 4: hiding `zCVobSound` from the view controls hid
+    // nothing, because nothing was drawn — and the class was offered in the
+    // list all the same.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    scene.setVobMarkers(markerIndex());
+    const hidden = new Uint8Array(10);
+    hidden[4] = 1;
+
+    scene.setHiddenVobs(hidden);
+
+    expect(scene.markers!.drawn).toBe(0);
+    // Hidden is not gone: the scene tree still lists it and the gizmo still
+    // goes on it, exactly as for a hidden instance.
+    expect(scene.positionOf(4)).toEqual([400, 0, 0]);
+
+    scene.setHiddenVobs(null);
+    expect(scene.markers!.drawn).toBe(1);
+  });
+
+  test('the marker layer hangs under the mirrored root, and goes with the scene', () => {
+    // Under the root because its positions are ZenGin centimetres, unconverted
+    // — the same reason the waynet and the spawn markers hang there.
+    const scene = new WorldScene();
+    scene.setVobMarkers(markerIndex());
+    const layer = scene.markers!;
+    const disposed = jest.spyOn(layer.markers.geometry, 'dispose');
+
+    expect(scene.root.children).toContain(layer.markers);
+
+    scene.dispose();
+
+    expect(disposed).toHaveBeenCalled();
   });
 });

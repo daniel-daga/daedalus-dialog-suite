@@ -59,6 +59,7 @@ function props(outlineMode: OutlineMode) {
   return {
     mesh: MESH,
     visuals: PAYLOAD,
+    vobIndex: mockWorldViewport.noVobMarkers(),
     bbox: [0, 0, 0, 100, 100, 100],
     waynet: null,
     showWaynet: false,
