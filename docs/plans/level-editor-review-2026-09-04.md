@@ -211,7 +211,7 @@ new thread running unreferenced. The test double's `terminate()` never emits
 closes it. A code-0 exit is also ignored entirely (`:369-371`): every pending
 request then waits the full 120 s.
 
-### 2.12 `Napi::External` handles are not type-tagged — **confirmed** hazard
+### 2.12 `Napi::External` handles are not type-tagged — **FIXED 2026-09-11**
 
 `binding.cc:114` (`UnwrapHandle`) and `assets.cc:81` (`UnwrapVfs`) check
 `IsExternal()` only. `zenkit.vobIndex(vfs)` reinterprets a `zenkit::Vfs` as a
@@ -284,11 +284,16 @@ aside as corrupt on next load and the folders come back empty.
   after "U+". `vfsList` (`assets.cc:185`) emits entry names as UTF-8 via
   `Napi::String::New(std::string)`, not `Str()`, so a non-ASCII VDF name is
   U+FFFD. Edge messages at `binding.cc:976, 1014` quote raw cp1252.
-- **`loadWorld` on a directory path** (`binding.cc:73-78`): `ifstream` opens a
-  directory on Linux, `tellg()` is huge or −1, the `vector` constructor throws
-  outside any `try` — `std::terminate`. Windows refuses directories.
-- **`decodeTexture` ignores a non-number `level`** (`assets.cc:299`) and
-  returns mipmap 0 as success; `openVfs`'s `overwrite` likewise.
+- **`loadWorld` on a directory path — FIXED 2026-09-11.** `ifstream` opened a
+  directory on Linux, `tellg()` answered −1 or something enormous, and the
+  `vector` constructor threw outside any `try`: SIGABRT from a `bad_alloc`, no
+  JS error, process gone. Windows refuses directories, which is why the
+  platform that ships never saw it. `is_regular_file` before the stream, and a
+  negative `tellg()` refused as well.
+- **`decodeTexture` ignored a non-number `level` and `openVfs` a non-string
+  `overwrite` — FIXED 2026-09-11.** Both returned the default reporting
+  success. Absent, `undefined` and `null` still mean "not given" — the idiom
+  the optional bbox in `setVobRotation` uses — and anything else is refused.
 - **`vobAtIndexPath` parses leniently** (`ops.ts:627-648`): `'0//1'` and
   `'1e0'` resolve; folder sidecars are the only external source of paths and
   `parseVobFolders` does not validate shape.
@@ -702,9 +707,10 @@ reference cannot be produced through the API — it comes from a malformed file,
 and no fixture expresses one. Producing one means byte-surgery on a BinSafe
 archive's waynet chunk.
 
-**§2.12, untagged `Napi::External` handles.** Memory-unsafe if a caller ever
-swaps a VFS handle for a world handle. `napi_type_tag_object` closes it; no
-current caller does it.
+**§2.12, untagged `Napi::External` handles — fixed 2026-09-11.** It was not
+hypothetical: a test that passes a world handle to `vfsList` segfaults the
+process before the fix, and `napi_type_tag_object` (through node-addon-api's
+`TypeTag`/`CheckTypeTag`) closes it with a UUID per handle kind.
 
 **§2.15's remainder**, none of them urgent: the structural-refresh window
 between `indexRefreshed` and `setVisuals`, `surfaceDialogOpen`'s three missing

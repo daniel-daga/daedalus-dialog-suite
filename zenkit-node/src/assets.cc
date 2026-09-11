@@ -83,8 +83,15 @@ VfsNode const* FindFirst(Vfs const& vfs,
 // them; a search box that answers all of them has answered nothing.
 constexpr std::size_t DEFAULT_FIND_LIMIT = 500;
 
+// The VFS half of `binding.cc`'s `kWorldHandleTag`, and a different UUID for
+// the same reason: `IsExternal()` is true of every handle this addon hands out,
+// so without a tag a world handle passed here has its pointer cast to
+// `VfsHandle*` and dereferenced (review 2026-09-04 §2.12).
+constexpr napi_type_tag kVfsHandleTag = {0x4c81f2a760d34b19ULL, 0x8e27b5306ca9df41ULL};
+
 VfsHandle* UnwrapVfs(Napi::Env env, Napi::Value value) {
-  if (!value.IsExternal()) {
+  if (!value.IsExternal() || !value.As<Napi::External<VfsHandle>>().CheckTypeTag(
+          &kVfsHandleTag)) {
     throw Napi::TypeError::New(env, "expected a VFS handle returned by openVfs()");
   }
   auto* handle = value.As<Napi::External<VfsHandle>>().Data();
@@ -117,7 +124,14 @@ Napi::Value OpenVfs(Napi::CallbackInfo const& info) {
   auto overwrite = VfsOverwriteBehavior::ALL;
   if (info[1].IsObject()) {
     auto value = info[1].As<Napi::Object>().Get("overwrite");
-    if (value.IsString()) {
+    // `decodeTexture`'s rule, for its reason: this decides which mounted source
+    // wins a name collision, so a value silently ignored is a namespace the
+    // caller did not ask for — and an unknown *string* was already refused,
+    // which is the same mistake spelled differently.
+    if (!value.IsUndefined() && !value.IsNull()) {
+      if (!value.IsString()) {
+        throw Napi::TypeError::New(env, "overwrite must be 'all', 'none', 'newer' or 'older'");
+      }
       auto const mode = value.As<Napi::String>().Utf8Value();
       if (mode == "all") overwrite = VfsOverwriteBehavior::ALL;
       else if (mode == "none") overwrite = VfsOverwriteBehavior::NONE;
@@ -155,8 +169,10 @@ Napi::Value OpenVfs(Napi::CallbackInfo const& info) {
     }
   }
 
-  return Napi::External<VfsHandle>::New(env, handle.release(),
-                                        [](Napi::Env, VfsHandle* data) { delete data; });
+  auto external = Napi::External<VfsHandle>::New(
+      env, handle.release(), [](Napi::Env, VfsHandle* data) { delete data; });
+  external.TypeTag(&kVfsHandleTag);
+  return external;
 }
 
 Napi::Value VfsResolve(Napi::CallbackInfo const& info) {
@@ -464,7 +480,14 @@ Napi::Value DecodeTexture(Napi::CallbackInfo const& info) {
   auto name = StringArg(env, info[1], "name");
 
   std::uint32_t level = 0;
-  if (info[2].IsNumber()) {
+  // Absent, `undefined` and `null` all mean "no level" — the idiom the optional
+  // bbox in `setVobRotation` already uses. Anything else is a caller who meant
+  // something: a `'1'` used to be *ignored* and mipmap 0 came back reporting
+  // success for a level nobody asked for (review 2026-09-04 §2.15).
+  if (!info[2].IsUndefined() && !info[2].IsNull()) {
+    if (!info[2].IsNumber()) {
+      throw Napi::TypeError::New(env, "mipmap level must be a number");
+    }
     // Range-check before the cast, not after: NaN and 1e20 both narrow to 0,
     // so the check below would pass and mipmap 0 come back reporting success
     // for a level the caller never asked for. Same reason OptionalInt32 and
