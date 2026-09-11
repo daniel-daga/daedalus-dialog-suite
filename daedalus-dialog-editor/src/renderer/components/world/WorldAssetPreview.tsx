@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Box, Button, Stack, Tooltip, Typography } from '@mui/material';
+import { Box, Button, CircularProgress, Stack, Tooltip, Typography } from '@mui/material';
 import * as THREE from 'three';
 import type { DecodedTexture, VisualScene } from '../../../shared/worldTypes';
 import { buildVisualPreview, frameVisual } from '../../world/VisualPreviewScene';
@@ -132,6 +132,13 @@ const WorldAssetPreview: React.FC<WorldAssetPreviewProps> = ({
     renderer.setClearColor(0x2b2b2b, 1);
     const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
     const controls = new OrbitControls(camera, canvas);
+    // Kept on, decided 2026-09-11 (#234) — the viewport turned its own damping
+    // off (#228) and this did not follow. That one is a level, where a coasting
+    // camera reads as lag and neither Spacer nor Blender coasts; this is one
+    // small object in a thumbnail, where the coast is the feel of spinning it.
+    // The draw loop below is gated on `controls.update()` having work to do,
+    // and its comment names the damping as half of what that work is — so the
+    // flag is not the only line an answer the other way would touch.
     controls.enableDamping = true;
     controls.target.copy(frameVisual(camera, visual.bounds));
     controls.update();
@@ -294,6 +301,19 @@ const WorldAssetPreview: React.FC<WorldAssetPreviewProps> = ({
             Drag to orbit, wheel to zoom, right-drag to pan.
           </Typography>
         </>
+      )}
+
+      {/* A large `.MDL` is re-extracted on every click (§16.26), so this wait is
+          seconds rather than a flicker — and the panel used to show a name, a
+          path and nothing else for all of it, which reads exactly like a mesh
+          that resolved to nothing (§5.4 item 17 of the 2026-09-04 review). */}
+      {kind !== 'other' && !failed && decoded === null && visual === null && (
+        <Stack direction="row" spacing={1} alignItems="center" data-testid="world-asset-preview-loading">
+          <CircularProgress size={14} />
+          <Typography variant="caption" color="text.secondary">
+            {kind === 'texture' ? 'Decoding…' : 'Extracting…'}
+          </Typography>
+        </Stack>
       )}
 
       {failed && (

@@ -289,7 +289,10 @@ export const AssetTile: React.FC<{
       sx={{
         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5, p: 1, cursor: 'pointer',
         position: 'relative', '&:hover': { bgcolor: 'action.hover' },
-        '&:hover .tile-actions, & .tile-actions.on': { opacity: 1 },
+        // `:focus-within` as well as `:hover`: the star and the place verb are
+        // buttons, and a tile reached by keyboard used to hide the very controls
+        // the focus had just landed on (§5.4 item 17 of the 2026-09-04 review).
+        '&:hover .tile-actions, &:focus-within .tile-actions, & .tile-actions.on': { opacity: 1 },
         // Shaded, not hidden: the copy in this mount is real, it is just not
         // the one the engine reads.
         ...(origin?.overridden === true ? { opacity: 0.45 } : {}),

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Divider, ListItemIcon, ListItemText, Menu, MenuItem, TextField,
+  Divider, ListItemIcon, ListItemText, Menu, MenuItem, TextField, Typography,
 } from '@mui/material';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
@@ -50,6 +50,13 @@ export interface WorldVobContextMenuProps {
   onCreateFolderWithSelection: (name: string) => void;
 }
 
+/** The key a menu item names, set to the right of its label. Only where one
+ *  exists: Duplicate is bound to nothing, and a hint invented for it would be
+ *  a shortcut that does not work. */
+const Shortcut: React.FC<{ keys: string }> = ({ keys }) => (
+  <Typography variant="caption" color="text.secondary" sx={{ ml: 3 }}>{keys}</Typography>
+);
+
 const WorldVobContextMenu: React.FC<WorldVobContextMenuProps> = ({
   open, position, onClose, selectionCount, canPaste,
   onFrame, onDuplicate, onCopy, onPaste, onDeleteRequest, onDropToGround, onAlignToNormal, onHideClass,
@@ -93,9 +100,14 @@ const WorldVobContextMenu: React.FC<WorldVobContextMenuProps> = ({
       data-testid="world-context-menu"
       MenuListProps={{ dense: true }}
     >
+      {/* One verb for one command, and the key that does it. The tree's
+          locator used to say "Jump the camera to this VOB" and only the
+          property grid's copy named the key (§5.4 item 19 of the 2026-09-04
+          review); all three now say Frame, and say ".". */}
       <MenuItem onClick={run(onFrame)} data-testid="world-context-frame">
         <ListItemIcon><MyLocationIcon fontSize="small" /></ListItemIcon>
         <ListItemText>Frame</ListItemText>
+        <Shortcut keys="." />
       </MenuItem>
       <Divider />
       <MenuItem onClick={run(onDuplicate)} disabled={selectionCount === 0} data-testid="world-context-duplicate">
@@ -105,10 +117,12 @@ const WorldVobContextMenu: React.FC<WorldVobContextMenuProps> = ({
       <MenuItem onClick={run(onCopy)} disabled={selectionCount === 0} data-testid="world-context-copy">
         <ListItemIcon><ContentCopyIcon fontSize="small" /></ListItemIcon>
         <ListItemText>Copy</ListItemText>
+        <Shortcut keys="Ctrl+C" />
       </MenuItem>
       <MenuItem onClick={run(onPaste)} disabled={!canPaste} data-testid="world-context-paste">
         <ListItemIcon><ContentPasteIcon fontSize="small" /></ListItemIcon>
         <ListItemText>Paste</ListItemText>
+        <Shortcut keys="Ctrl+V" />
       </MenuItem>
       <Divider />
       <MenuItem
@@ -191,6 +205,7 @@ const WorldVobContextMenu: React.FC<WorldVobContextMenuProps> = ({
       >
         <ListItemIcon sx={{ color: 'error.main' }}><DeleteIcon fontSize="small" /></ListItemIcon>
         <ListItemText>Delete VOB…</ListItemText>
+        <Shortcut keys="Del" />
       </MenuItem>
     </Menu>
   );

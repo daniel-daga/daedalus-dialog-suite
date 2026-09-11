@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { pivotAt } from './cameraNav';
+import { isTypingOrInPopover } from './keyboardTarget';
 import { cameraSlotFor, type CameraSlots } from './cameraSlots';
 import { Fly, flyMoveFor, flySpeedFor, pivotAhead } from './flyNav';
 import { Walk, walkMoveFor, findWalkEntry, WALK_EXIT_PIVOT_DISTANCE } from './walkNav';
@@ -310,9 +311,9 @@ export class NavController {
     // camera nobody can see is at best a swallowed keystroke.
     if (this.options.paused()) return;
     // The property grid is a pile of text fields, and a '.' typed into one of
-    // them is a decimal point, not a camera move.
-    const target = event.target as HTMLElement | null;
-    if (target?.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target?.tagName ?? '')) return;
+    // them is a decimal point, not a camera move — and a Home pressed inside an
+    // open Select belongs to the Select, which is the half this used to miss.
+    if (isTypingOrInPopover(event.target)) return;
 
     // Spacer's camera slots: Ctrl+Shift+N stores the pose, Ctrl+N brings it
     // back — camera and pivot both, so the next orbit turns about the same

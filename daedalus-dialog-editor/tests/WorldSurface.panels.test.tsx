@@ -131,6 +131,44 @@ describe('the World surface panels', () => {
     expect(screen.getByTestId('world-panel-right')).toHaveStyle({ width: '220px' });
   });
 
+  it('is a separator a keyboard can move', async () => {
+    // §5.4 item 23 of `docs/plans/level-editor-review-2026-09-04.md`. A 6 px
+    // strip driven by pointer events only: no role saying what it is, no way to
+    // reach it at all without a mouse.
+    await openWorld();
+    const splitter = screen.getByTestId('world-splitter-left');
+
+    expect(splitter).toHaveAttribute('role', 'separator');
+    expect(splitter).toHaveAttribute('aria-orientation', 'vertical');
+    expect(splitter).toHaveAttribute('tabindex', '0');
+
+    act(() => { fireEvent.keyDown(splitter, { key: 'ArrowRight' }); });
+    expect(screen.getByTestId('world-panel-left')).toHaveStyle({ width: '290px' });
+    act(() => { fireEvent.keyDown(splitter, { key: 'ArrowLeft' }); });
+    expect(screen.getByTestId('world-panel-left')).toHaveStyle({ width: '280px' });
+  });
+
+  it('stores a width the keyboard set, the way a finished drag does', async () => {
+    await openWorld();
+    const splitter = screen.getByTestId('world-splitter-left');
+
+    act(() => { fireEvent.keyDown(splitter, { key: 'ArrowRight' }); });
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    act(() => { fireEvent.keyUp(splitter, { key: 'ArrowRight' }); });
+
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!).left).toBe(290);
+  });
+
+  it('grows the right panel with the key that points at it', async () => {
+    // `grow="left"`, so the arrows mean the opposite of the left splitter's —
+    // the key that widens a panel is the one pointing away from the viewport.
+    await openWorld();
+
+    act(() => { fireEvent.keyDown(screen.getByTestId('world-splitter-right'), { key: 'ArrowLeft' }); });
+
+    expect(screen.getByTestId('world-panel-right')).toHaveStyle({ width: '310px' });
+  });
+
   it('persists to localStorage on pointerup, not on every move', async () => {
     await openWorld();
     const splitter = screen.getByTestId('world-splitter-left');

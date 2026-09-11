@@ -116,7 +116,15 @@ const WaypointPanel: React.FC<{
         size="small"
         fullWidth
         variant="standard"
-        inputProps={{ 'data-testid': 'world-waypoint-name-input', spellCheck: false }}
+        // The caption below says "Waypoint" and nothing associates it with this
+        // box, so the field itself carries the name (§5.4 item 23 of the
+        // 2026-09-04 review). `aria-label` rather than a floating MUI label:
+        // the caption is already doing the visible half.
+        inputProps={{
+          'data-testid': 'world-waypoint-name-input',
+          'aria-label': 'Waypoint name',
+          spellCheck: false,
+        }}
       />
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, mb: 1 }}>
         Waypoint
@@ -192,7 +200,10 @@ const WaypointPanel: React.FC<{
           onKeyDown={(event) => {
             if (event.key === 'Enter' && joinTarget !== null) join(joinTarget);
           }}
-          placeholder="Connect to…"
+          // A label rather than the placeholder it replaces: a placeholder is
+          // gone the moment anything is typed, which is exactly when the user
+          // is most likely to want to know what the box is.
+          label="Connect to"
           size="small"
           fullWidth
           variant="standard"

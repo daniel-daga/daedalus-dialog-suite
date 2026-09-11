@@ -43,6 +43,7 @@ import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
 import { appendInsertNpc, findFunctionFile, startupFunctionFor } from './insertNpcScript';
 import { vobModelOf } from '../../world/vobModel';
+import { isTypingOrInPopover } from '../../world/keyboardTarget';
 import { AssetThumbnails } from '../../world/assetThumbnails';
 import { ThumbnailRenderer } from '../../world/ThumbnailRenderer';
 import { LiveTilePreview } from '../../world/LiveTilePreview';
@@ -81,28 +82,6 @@ const baseName = (filePath: string): string => filePath.split(/[\\/]/).pop() || 
  *  else, and inventing an orientation from a surface normal is a feature with
  *  its own decisions (which axis is up for this visual?) rather than a default. */
 const IDENTITY: ZenRotation = [1, 0, 0, 0, 1, 0, 0, 0, 1];
-
-/**
- * Whether a keystroke belongs to something *over* the surface rather than to
- * the surface itself — the guard every shortcut below shares.
- *
- * Two cases, and the second is the one a tagName check alone misses: MUI
- * renders a `Select`'s options as `li[role="option"]` inside a popover and a
- * `Dialog`'s buttons as plain `button`s, so arrowing through the Snap step
- * dropdown or pressing Delete inside the save confirm would otherwise reach
- * the surface's own handler — nudging a VOB (and recording an undo entry)
- * while the user believes they are only picking a menu item.
- */
-function isTypingOrInPopover(target: EventTarget | null): boolean {
-  const element = target as HTMLElement | null;
-  if (element?.isContentEditable) return true;
-  if (['INPUT', 'TEXTAREA', 'SELECT'].includes(element?.tagName ?? '')) return true;
-  // `event.target` is the bare `Window` for a shortcut fired with nothing
-  // focused, which has no `closest` — only an in-page element can be inside
-  // a popover.
-  return element instanceof Element
-    && element.closest('[role="listbox"], [role="menu"], [role="dialog"]') !== null;
-}
 
 /** Arrow-key nudge, in the world's own axes (ZenGin is Y-up): one unit of
  *  step per key, `[x, y, z]`. Keyed by the lower-cased `KeyboardEvent.key`. */
@@ -186,6 +165,18 @@ const DEFAULT_SPAWN_TIME = 8 * 60;
 const SCATTER_DEFAULT_RADIUS = 800;
 const SCATTER_DEFAULT_SPACING = 250;
 const SCATTER_LIMIT = 200;
+
+/**
+ * The smallest brush the tool will actually paint with, in cm.
+ *
+ * An emptied number field reads as `''`, and `Number('')` is 0 — so clearing
+ * the box to type a new radius handed the viewport a ring of nothing and the
+ * stroke a disc of nothing, which drops every candidate onto one point. Floored
+ * here rather than in the field, so a half-typed number is still a number the
+ * user can finish typing (§5.4 item 22 of the 2026-09-04 review). Spacing needs
+ * no floor: zero spacing means "no minimum distance", which is a real answer.
+ */
+const SCATTER_MIN_RADIUS = 1;
 
 /** What the place dialog collects. `parent` is a flat index or null for a
  *  root; where the VOB goes is the ground point, chosen before or after. */
@@ -750,6 +741,14 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   // tree has not been scrolled to.
   const handleSelect = useCallback((vob: number, additive: boolean) => {
     if (additive) toggleVob(vob); else selectVob(vob);
+    // The preview and the property grid share the right-hand panel, and the
+    // preview used to win it outright — so picking a VOB while the Assets tab
+    // was open went on showing the mesh being browsed, with nothing on screen
+    // saying the pick had landed (§5.2 item 10 of the 2026-09-04 review).
+    // Cleared on the pick rather than made to lose the panel: a pick is the
+    // user turning away from the asset, and the browser still has its own
+    // highlight to bring it back.
+    setSelectedAsset(null);
   }, [selectVob, toggleVob]);
 
   /**
@@ -1274,45 +1273,71 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     }
   }, [applied, refreshHistoryDepth]);
 
-  /** @returns whether the world took the edit — false is a refusal, and the
-   *   banner has already been set. A caller that has something to do *after* a
-   *   commit needs it: the paste selects what it pasted, and there is nothing
-   *   to select when nothing landed. */
-  const commitOps = useCallback(async (ops: WorldOp[]): Promise<boolean> => {
+  /**
+   * Put the screen back where an edit did not happen — shared by the refusal
+   * and by the in-flight drop below, which differ only in whether there is a
+   * banner to show.
+   *
+   * **Let go of the class fields here, and not only in the re-read effect.**
+   * The grid's inputs are uncontrolled and are put right by *remounting*
+   * through a key that carries the value — so an edit that did not land is only
+   * undone on screen if the fields unmount, and the value the re-read answers is
+   * by definition the value they already had: the key does not change, and
+   * nothing but a `null` in between takes the typed number off the screen.
+   *
+   * The effect below sets that `null` too, but a render later and in the same
+   * tick as the read that fills it back in — so whether it is ever *committed*
+   * depends on whether React happens to flush between the two, which any
+   * unrelated pending update in this component can change (adding a MUI
+   * `Select` to the bar above did exactly that). Set here it is committed before
+   * the read is even issued, which is what makes the revert a rule rather than a
+   * coincidence.
+   */
+  const putTheViewBack = useCallback((ops: readonly WorldOp[]) => {
+    setClassProps(null);
+    // And re-key the base fields for the same reason: they read from the
+    // columnar index, which an edit that did not land leaves exactly as it was,
+    // so no value change remounts them and a typed number would stay on screen.
+    setEditRefusals((at) => at + 1);
+    // The viewport has already drawn the drag; left alone, the VOB would sit
+    // where nothing else in the app agrees it is. Through `invertOp` rather
+    // than by swapping `from` and `to` here: a rotation carries a box for each
+    // pose, and swapping only the matrix is half an inverse.
+    //
+    // A barrier op is dropped rather than inverted, and needs no inverse here:
+    // what this puts back is the viewport's *optimistic* draw of a gizmo drag,
+    // and a delete is never drawn before the main process has taken it.
+    setAppliedOps(ops.filter((op) => !isBarrierOp(op)).map(invertOp));
+  }, []);
+
+  /**
+   * Whether a batch is out at the main process — the guard that makes a commit
+   * one-at-a-time (`docs/plans/level-editor-review-2026-09-04.md` §2.7).
+   *
+   * Every builder reads `from` out of the columnar projection, and that
+   * projection is only written once the round trip is back (`applied`). So two
+   * commits overlapping is two ops built from the *same* `from`: a held arrow
+   * key moved the VOB one step and recorded N identical undo entries, and the
+   * second click of a double-click Duplicate built its `AddVob` against a path
+   * the first had already taken, which the main process refused with an
+   * internal message.
+   *
+   * A `ref` rather than state because it is read and written inside one
+   * synchronous run of the handler, before React could re-render.
+   */
+  const commitInFlight = useRef(false);
+
+  /** The commit itself, guarded by `commitOps` below — never called directly.
+   *  @returns whether the world took the edit; false is a refusal, and the
+   *   banner has already been set. */
+  const sendOps = useCallback(async (ops: WorldOp[]): Promise<boolean> => {
     const { editFailed } = useWorldStore.getState();
     const generation = openGeneration.current;
     try {
       await window.editorAPI.applyWorldOps(ops);
     } catch (failure) {
       editFailed(failure instanceof Error ? failure.message : String(failure));
-      // **Let go of the class fields here, and not only in the re-read effect.**
-      // The grid's inputs are uncontrolled and are put right by *remounting*
-      // through a key that carries the value — so a refused edit is only undone
-      // on screen if the fields unmount, and the value the re-read answers is by
-      // definition the value they already had: the key does not change, and
-      // nothing but a `null` in between takes the typed number off the screen.
-      //
-      // The effect below sets that `null` too, but a render later and in the
-      // same tick as the read that fills it back in — so whether it is ever
-      // *committed* depends on whether React happens to flush between the two,
-      // which any unrelated pending update in this component can change (adding
-      // a MUI `Select` to the bar above did exactly that). Set here it is
-      // committed before the read is even issued, which is what makes the revert
-      // a rule rather than a coincidence.
-      setClassProps(null);
-      // And re-key the base fields for the same reason: they read from the
-      // columnar index, which a refusal leaves exactly as it was, so no value
-      // change remounts them and a typed number would stay on screen.
-      setEditRefusals((at) => at + 1);
-      // The viewport has already drawn the drag; left alone, the VOB would sit
-      // where nothing else in the app agrees it is. Through `invertOp` rather
-      // than by swapping `from` and `to` here: a rotation carries a box for each
-      // pose, and swapping only the matrix is half an inverse.
-      //
-      // A barrier op is dropped rather than inverted, and needs no inverse here:
-      // what this puts back is the viewport's *optimistic* draw of a gizmo drag,
-      // and a delete is never drawn before the main process has taken it.
-      setAppliedOps(ops.filter((op) => !isBarrierOp(op)).map(invertOp));
+      putTheViewBack(ops);
       return false;
     }
 
@@ -1347,7 +1372,32 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     // The world holds the edit either way — a stale view is not a refusal, and
     // the message above says so.
     return true;
-  }, [applied]);
+  }, [applied, putTheViewBack]);
+
+  /** @returns whether the world took the edit — false is a refusal, and the
+   *   banner has already been set, or the drop of a commit that arrived while
+   *   another was still out, which says nothing at all. A caller that has
+   *   something to do *after* a commit needs it: the paste selects what it
+   *   pasted, and there is nothing to select when nothing landed. */
+  const commitOps = useCallback(async (ops: WorldOp[]): Promise<boolean> => {
+    // Dropped, and silently: this is auto-repeat and double-clicks, so a banner
+    // per dropped press would be noise about nothing the user did wrong. The
+    // screen is put back for the same reason a refusal puts it back — the
+    // viewport may already have drawn the gizmo drag that got here.
+    if (commitInFlight.current) {
+      putTheViewBack(ops);
+      return false;
+    }
+    commitInFlight.current = true;
+    // In a `finally`, and that is the point of the split: `sendOps` has three
+    // exits, and one of them forgetting to clear the flag would wedge every
+    // edit in the app for the rest of the session.
+    try {
+      return await sendOps(ops);
+    } finally {
+      commitInFlight.current = false;
+    }
+  }, [sendOps, putTheViewBack]);
 
   // One gizmo drives the whole selection, so a drag arrives as a delta rather
   // than a destination and becomes one op per VOB in one batch — which is one
@@ -1753,6 +1803,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const [scatterOn, setScatterOn] = useState(false);
   const [scatterRadius, setScatterRadius] = useState(SCATTER_DEFAULT_RADIUS);
   const [scatterSpacing, setScatterSpacing] = useState(SCATTER_DEFAULT_SPACING);
+  /** What the ring and the stroke actually use — see `SCATTER_MIN_RADIUS`. The
+   *  field keeps whatever was typed; only the tool is floored. */
+  const brushRadius = Math.max(SCATTER_MIN_RADIUS, scatterRadius || SCATTER_MIN_RADIUS);
 
   /**
    * A finished brush stroke, committed as **one batch and therefore one undo
@@ -1792,7 +1845,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
 
     const { candidates, capped } = strokeCandidates(
       samples,
-      { radius: scatterRadius, spacing: scatterSpacing, limit: SCATTER_LIMIT },
+      { radius: brushRadius, spacing: scatterSpacing, limit: SCATTER_LIMIT },
       palette.length,
       // The seed is the stroke's own: two strokes of the same shape should not
       // produce the same forest, and `strokeCandidates` is deterministic in it
@@ -1803,7 +1856,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     const placements: ScatterPlacement[] = [];
     for (const candidate of candidates) {
       const hit = viewport.raycastDown([
-        candidate.at[0], candidate.at[1] + scatterRadius, candidate.at[2],
+        candidate.at[0], candidate.at[1] + brushRadius, candidate.at[2],
       ]);
       if (hit === null) continue;
       placements.push({
@@ -1822,7 +1875,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     if (committed && capped) {
       editFailed(`The stroke was capped at ${SCATTER_LIMIT} VOBs — one stroke is one undo entry. Paint it in several passes for more.`);
     }
-  }, [commitOps, boundsOf, readClassProps, scatterOn, scatterRadius, scatterSpacing]);
+  }, [commitOps, boundsOf, readClassProps, scatterOn, brushRadius, scatterSpacing]);
 
   /**
    * The radius the viewport draws its ring at, and null for a brush that is not
@@ -1834,7 +1887,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    * inert until something is selected again, which is the state the toolbar's
    * own hint names.
    */
-  const scatterBrushRadius = scatterOn && selection.length > 0 ? scatterRadius : null;
+  const scatterBrushRadius = scatterOn && selection.length > 0 ? brushRadius : null;
 
   /**
    * User-created VOB folders (VOB folders slice) — a virtual grouping kept
@@ -2444,8 +2497,10 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
 
       // World-axis nudge — ZenGin is Y-up, so ArrowLeft/Right move X,
       // ArrowUp/Down move Z and PageUp/Down move Y, ×10 while Shift is held.
-      // One keypress is one undo entry — no coalescing, same as a single
-      // gizmo drag.
+      // One keypress is one undo entry, same as a single gizmo drag — but only
+      // the presses that reach the world: auto-repeat while a commit is out is
+      // dropped by `commitOps`' in-flight guard, because the op it would build
+      // reads a `from` the round trip has not written yet.
       if (NUDGE_DELTAS[key]) {
         if (isTypingOrInPopover(event.target) || surfaceDialogOpen) return;
         // Reserves the arrow keys for the scene tree's own navigation.
@@ -2925,6 +2980,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                     catalog={assetCatalogProps}
                     sources={summary?.assetSources}
                     placement={assetPlacement}
+                    previewing={selectedAsset}
                   />
                 </Box>
               )}

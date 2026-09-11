@@ -49,6 +49,18 @@ trusting master for a release, not after.
 
 ## Building the native addon
 
+- **A plain `pnpm install` fails on a checkout with no built addon and no
+  submodule**, which is every fresh clone and every Claude Code cloud container.
+  `zenkit-node`'s install hook finds no prebuild and falls through to the source
+  build, which dies in `build-zenkit.js` with nothing in `vendor/ZenKit` — and
+  it takes the *whole* install down, so no workspace gets its `node_modules`.
+  `CI=1 pnpm install` is the way past it: `install.js` skips the source build
+  unless `ZENKIT_NODE_FORCE_BUILD=1`, which is exactly the arrangement the CI
+  jobs use. Everything but the addon then works, the editor's Jest suite
+  included — it fakes the zenkit worker, as the entry below says. Seen
+  2026-09-11 in a cloud container. `zen-world` still has to be built by hand
+  afterwards (`pnpm --filter zen-world build`); `daedalus-parser` builds itself
+  in its own postinstall.
 - **Run `node scripts/build-zenkit.js` before `node-gyp`** — it resets the
   submodule, applies `patches/*.patch` and writes `zenkit-abi.json`.
 - **That reset destroys any edit in `vendor/ZenKit` that is not a patch file.**

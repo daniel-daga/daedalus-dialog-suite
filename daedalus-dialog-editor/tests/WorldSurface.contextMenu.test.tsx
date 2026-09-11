@@ -80,6 +80,25 @@ describe('the VOB context menu', () => {
     }
   });
 
+  it('shows the shortcut a menu item has, and agrees with the tree on the verb', async () => {
+    // §5.4 item 19 of `docs/plans/level-editor-review-2026-09-04.md`. Three
+    // surfaces called the same command three things — "Frame" in the menu,
+    // "Jump the camera to this VOB" on the tree's locator, and only the grid's
+    // said which key does it — and the menu named no shortcut at all.
+    await openWorld();
+
+    await act(async () => {
+      fireEvent.contextMenu(screen.getByTestId('world-vob-row-1'), { clientX: 50, clientY: 60 });
+    });
+
+    await screen.findByTestId('world-context-menu');
+    expect(screen.getByTestId('world-context-frame')).toHaveTextContent('Frame');
+    expect(screen.getByTestId('world-context-frame')).toHaveTextContent('.');
+    expect(screen.getByTestId('world-context-copy')).toHaveTextContent('Ctrl+C');
+    expect(screen.getByTestId('world-context-paste')).toHaveTextContent('Ctrl+V');
+    expect(screen.getByTestId('world-context-delete')).toHaveTextContent('Del');
+  });
+
   it('selects the row first when it was outside the selection', async () => {
     await openWorld();
     await act(async () => { useWorldStore.getState().selectVob(0); });

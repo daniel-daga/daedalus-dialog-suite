@@ -12,7 +12,7 @@
  */
 
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { DecodedTexture, VisualScene } from '../src/shared/worldTypes';
 import * as mockWorldViewport from './worldViewportMocks';
 import WorldAssetPreview from '../src/renderer/components/world/WorldAssetPreview';
@@ -90,6 +90,41 @@ describe('WorldAssetPreview', () => {
     render(<WorldAssetPreview path="Textures/_compiled/NW_WOOD-C.TEX" loadTexture={load} loadVisual={loadVisual} />);
     await waitFor(() => expect(load).toHaveBeenCalled());
     expect(loadVisual).toHaveBeenCalledTimes(1);
+  });
+
+  it('says it is working while the extraction is out', async () => {
+    // §5.4 item 17 of `docs/plans/level-editor-review-2026-09-04.md`. A large
+    // `.MDL` is re-extracted on every click (§16.26), so the wait is real — and
+    // the panel showed a name, a path and nothing else for the whole of it,
+    // which is indistinguishable from a mesh that resolved to nothing.
+    let resolve: (scene: VisualScene) => void = () => undefined;
+    const loadVisual = jest.fn(() => new Promise<VisualScene>((keep) => { resolve = keep; }));
+    render(
+      <WorldAssetPreview
+        path="Meshes/_compiled/NW_CRATE.MRM"
+        loadTexture={async () => null}
+        loadVisual={loadVisual}
+      />,
+    );
+
+    expect(await screen.findByTestId('world-asset-preview-loading')).toBeInTheDocument();
+
+    await act(async () => { resolve(crate()); });
+    expect(screen.queryByTestId('world-asset-preview-loading')).not.toBeInTheDocument();
+  });
+
+  it('stops saying it once the extraction comes back with nothing', async () => {
+    const loadVisual = jest.fn(async () => null);
+    render(
+      <WorldAssetPreview
+        path="Meshes/_compiled/NW_CRATE.MRM"
+        loadTexture={async () => null}
+        loadVisual={loadVisual}
+      />,
+    );
+
+    await screen.findByTestId('world-asset-preview-failed');
+    expect(screen.queryByTestId('world-asset-preview-loading')).not.toBeInTheDocument();
   });
 
   it('says so for a file that is neither', async () => {

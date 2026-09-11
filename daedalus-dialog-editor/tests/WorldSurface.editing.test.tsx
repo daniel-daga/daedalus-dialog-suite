@@ -1134,6 +1134,31 @@ describe('duplicating a VOB', () => {
     }]);
   });
 
+  it('ignores the second click of a double-click while the first is in flight', async () => {
+    // §2.7 of `docs/plans/level-editor-review-2026-09-04.md`. Both clicks read
+    // the same index, so the second built its `AddVob` against a world that
+    // already had the first copy in it — same `path`, which the main process
+    // then refused with an internal message. The guard drops it instead.
+    const summary = await openWorld();
+    api.refreshWorldIndex.mockResolvedValue(summary as never);
+    api.getWorldVisuals.mockResolvedValue(
+      { visuals: [], stats: { vobsPlaced: 0 } } as never,
+    );
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    let release: () => void = () => undefined;
+    api.applyWorldOps.mockImplementationOnce(
+      () => new Promise<void>((resolve) => { release = () => resolve(); }) as never,
+    );
+    const duplicate = await screen.findByTestId('world-duplicate-vob');
+
+    fireEvent.click(duplicate);
+    fireEvent.click(duplicate);
+    await act(async () => undefined);
+
+    expect(api.applyWorldOps).toHaveBeenCalledTimes(1);
+    await act(async () => { release(); });
+  });
+
   it('carries the class, so a duplicated light is a light', async () => {
     // D2's class half (level-editor.md §16.14). The class reaches the op
     // through the same spec every other field does — nothing new is fetched —
@@ -2740,6 +2765,17 @@ describe('a waypoint dragged in the viewport', () => {
       fireEvent.change(nameField(), { target: { value } });
       fireEvent.blur(nameField());
     };
+
+    it('names both of its fields, rather than leaving it to a placeholder', async () => {
+      // §5.4 item 23 of `docs/plans/level-editor-review-2026-09-04.md`. The
+      // rename box had no label at all — the word "Waypoint" sits under it as
+      // free text, which nothing associates with the field — and the connect
+      // box had a placeholder, which is gone the moment anything is typed.
+      await pickWaypoint();
+
+      expect(nameField()).toHaveAccessibleName('Waypoint name');
+      expect(screen.getByTestId('world-waypoint-join-name')).toHaveAccessibleName(/connect/i);
+    });
 
     it('becomes a RenameWaypoint carrying the name it replaces', async () => {
       // `from` is the guard as well as the origin: a bare index always resolves

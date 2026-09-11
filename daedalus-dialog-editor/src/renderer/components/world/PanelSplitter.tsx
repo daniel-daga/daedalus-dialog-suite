@@ -13,7 +13,19 @@ import { Box } from '@mui/material';
  * those calls are still made, for the real browser's sake (they keep the
  * drag tracking once the pointer leaves the 6 px strip), but jsdom does not
  * implement them and this must not depend on it doing so.
+ *
+ * The keyboard drives the same two callbacks (§5.4 item 23 of the 2026-09-04
+ * review): an arrow key is a move, and the key coming back up is the end of the
+ * gesture. Committing on keyup rather than on the keydown that moved it is not
+ * only symmetry with the drag — `onResizeEnd` reads the width out of the
+ * caller's state, and that state is a render behind until the browser delivers
+ * the next event.
  */
+
+/** How far one arrow key moves the boundary, in px. Ten: fine enough to land on
+ *  a width, coarse enough that a panel crosses its clamp in a few presses
+ *  rather than thirty. */
+const KEY_STEP = 10;
 export interface PanelSplitterProps {
   /** The panel's width when the drag begins. */
   width: number;
@@ -63,9 +75,35 @@ const PanelSplitter: React.FC<PanelSplitterProps> = ({
     onResizeEnd();
   };
 
+  /** Which way this key moves the boundary, and 0 for a key that is not one of
+   *  the two. The arrow that *widens* is the one `grow` names, so on the
+   *  right-hand panel the keys mean the opposite of the left-hand one's — which
+   *  is "the key pointing away from the viewport widens the panel". */
+  const stepFor = (key: string): number => {
+    const towards = key === 'ArrowRight' ? 1 : key === 'ArrowLeft' ? -1 : 0;
+    return towards * (grow === 'right' ? 1 : -1) * KEY_STEP;
+  };
+
+  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const step = stepFor(event.key);
+    if (step === 0) return;
+    event.preventDefault();
+    onResize(width + step);
+  };
+
+  const onKeyUp = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (stepFor(event.key) !== 0) onResizeEnd();
+  };
+
   return (
     <Box
       data-testid={testId}
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize panel"
+      tabIndex={0}
+      onKeyDown={onKeyDown}
+      onKeyUp={onKeyUp}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}

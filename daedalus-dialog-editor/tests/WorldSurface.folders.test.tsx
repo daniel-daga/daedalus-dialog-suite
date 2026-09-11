@@ -153,8 +153,11 @@ describe('VOB folders', () => {
     await waitFor(() => expect(api.saveVobFolders).toHaveBeenCalledTimes(2));
 
     fireEvent.click(screen.getByTestId('world-panel-folders'));
-    const folderId = screen.getByText('A').closest('[data-testid^="world-folder-"]')
-      ?.getAttribute('data-testid')?.replace('world-folder-', '');
+    // The row, not the nearest `world-folder-` ancestor: the folder row is now
+    // a `treeitem` of its own inside the container (§5.4 item 18), so "nearest"
+    // stopped meaning the container the moment it gained a test id.
+    const folderId = screen.getByText('A').closest('[data-testid^="world-folder-row-"]')
+      ?.getAttribute('data-testid')?.replace('world-folder-row-', '');
     fireEvent.click(screen.getByTestId(`world-folder-toggle-${folderId}`));
     fireEvent.click(screen.getByTestId(`world-folder-member-remove-${folderId}-1`));
 

@@ -163,6 +163,10 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
       role="treeitem"
       aria-selected={isSelected}
       aria-expanded={hasChildren ? expanded.has(vob) : undefined}
+      // The list is virtualized, so no row is a DOM descendant of its parent
+      // and the depth is a left padding — which is nothing an assistive
+      // technology can read (§5.4 item 21 of the 2026-09-04 review).
+      aria-level={depth + 1}
       id={`world-vob-row-${vob}`}
       data-testid={`world-vob-row-${vob}`}
       onClick={(event) => onSelect(vob, event.shiftKey || event.ctrlKey || event.metaKey)}
@@ -199,10 +203,19 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
           ? <ExpandMoreIcon fontSize="small" />
           : <ChevronRightIcon fontSize="small" />)}
       </Box>
+      {/* `title` on both, because both truncate in a 300 px panel and the row
+          is otherwise the only place either is written — the asset tiles beside
+          this have said their full name on hover all along. */}
       {label
-        ? <Typography variant="caption" noWrap>{label}</Typography>
+        ? <Typography variant="caption" noWrap title={label}>{label}</Typography>
         : null}
-      <Typography variant="caption" color="text.secondary" noWrap sx={{ opacity: 0.75 }}>
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        noWrap
+        title={className ?? undefined}
+        sx={{ opacity: 0.75 }}
+      >
         {className}
       </Typography>
       {/* The discoverable half of the jump — a double-click is not something
@@ -214,7 +227,7 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
         <Box
           component="span"
           className="world-vob-locate"
-          title="Jump the camera to this VOB"
+          title="Frame this VOB (.)"
           data-testid={`world-vob-locate-${vob}`}
           onClick={(event) => { event.stopPropagation(); onFocus(vob); }}
           sx={{
@@ -686,7 +699,9 @@ const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
             data-testid="world-tree-empty"
             sx={{ display: 'block', p: 1 }}
           >
-            No VOB matches this filter.
+            {matches === null
+              ? 'This world holds no VOBs.'
+              : 'No VOB matches this filter.'}
           </Typography>
         ) : (
         <AutoSizer>

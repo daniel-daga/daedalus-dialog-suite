@@ -80,6 +80,19 @@ function origin(entry: VfsEntry, labels: readonly string[], only: number | null)
   return { label, overridden: only !== null && only !== winner, title };
 }
 
+/**
+ * Where an entry lives in the mounted namespace — what a click on it opens, and
+ * what a preview of it is keyed by.
+ *
+ * A search hit carries its own directory, and that is the whole reason it was
+ * worth finding; a listing's entry carries none and is in the directory being
+ * shown.
+ */
+function pathOf(entry: VfsEntry, showing: string): string {
+  const where = entry.directory ?? showing;
+  return where === '/' ? entry.name : `${where}/${entry.name}`;
+}
+
 interface RowData {
   entries: VfsEntry[];
   onOpen: (entry: VfsEntry) => void;
@@ -92,6 +105,10 @@ interface RowData {
    *  loaded — then a row carries no star, as a tile carries none. */
   actions?: TileCatalogActions;
   placement?: AssetPlacement;
+  /** The full path the panel beside this is showing, or null. Nothing on a row
+   *  used to say which of them that was (§5.4 item 17 of the 2026-09-04
+   *  review), so a preview and the list could disagree with no sign of it. */
+  previewing?: string | null;
 }
 
 const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
@@ -106,18 +123,33 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
   // A row places what a tile places (§16.37 row 4): list is the view the panel
   // opens in, so leaving it out would put the verb behind a view switch.
   const place = usePlaceMenu(isDirectory ? '' : entry.name, data.placement);
+  // The same path `onOpen` would hand up, so the two cannot drift apart.
+  const showing = data.previewing !== null && data.previewing !== undefined
+    && data.previewing === pathOf(entry, data.path);
 
   return (
     <Box
       role="listitem"
       data-testid={`world-asset-${entry.name}`}
       {...(overridden ? { 'data-overridden': 'true' } : {})}
+      {...(showing ? { 'aria-current': 'true' } : {})}
+      // A row was a `div` with an `onClick` and nothing else: not reachable by
+      // keyboard, let alone activatable. Space as well as Enter, and with
+      // `preventDefault` — Space scrolls a list otherwise, which here is the
+      // virtualized list the row is in (§5.4 item 17).
+      tabIndex={0}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        data.onOpen(entry);
+      }}
       onClick={() => data.onOpen(entry)}
       onContextMenu={place.onContextMenu}
       style={style}
       sx={{
         display: 'flex', alignItems: 'center', gap: 0.75, px: 1, cursor: 'pointer',
         whiteSpace: 'nowrap', '&:hover': { bgcolor: 'action.hover' },
+        ...(showing ? { bgcolor: 'action.selected' } : {}),
         // Dim rather than hidden: a control nobody can see is the bug this
         // row is fixing. A starred row keeps its star at full strength.
         '& .row-star': { opacity: 0.25 },
@@ -194,6 +226,10 @@ export interface WorldAssetBrowserProps {
   /** Placing a mesh straight off its row or tile (§16.37 row 4). Absent — no
    *  world open — nothing here offers the verb. */
   placement?: AssetPlacement;
+  /** The full path the preview panel is showing, so the row for it can say so.
+   *  Owned by the surface rather than tracked here: the surface clears it on a
+   *  viewport pick, and a copy kept in the browser would go stale. */
+  previewing?: string | null;
 }
 
 export interface AssetCatalogProps {
@@ -208,6 +244,7 @@ export interface AssetCatalogProps {
 
 const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
   listAssets, searchAssets, onPreview, thumbnails, catalog, sources = NO_SOURCES, placement,
+  previewing = null,
 }) => {
   const [path, setPath] = useState('/');
   const [view, setView] = useState<'list' | 'grid'>('list');
@@ -330,11 +367,7 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
     : (state.status === 'error' ? state.message : null);
 
   const onOpen = useCallback((entry: VfsEntry) => {
-    // The entry's own directory when it has one: a search hit lives somewhere
-    // else, and that is the whole reason it was worth finding. A listing's
-    // entry carries none and is in the directory being shown.
-    const where = entry.directory ?? path;
-    const child = where === '/' ? entry.name : `${where}/${entry.name}`;
+    const child = pathOf(entry, path);
     if (entry.type === 'directory') setPath(child);
     else onPreview(child);
   }, [path, onPreview]);
@@ -363,8 +396,11 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
   }, [path]);
 
   const itemData = useMemo<RowData>(
-    () => ({ entries: filtered, onOpen, path, sourceLabels, only, actions: tileActions, placement }),
-    [filtered, onOpen, path, sourceLabels, only, tileActions, placement],
+    () => ({
+      entries: filtered, onOpen, path, sourceLabels, only,
+      actions: tileActions, placement, previewing,
+    }),
+    [filtered, onOpen, path, sourceLabels, only, tileActions, placement, previewing],
   );
   const originOf = useCallback(
     (entry: VfsEntry) => origin(entry, sourceLabels, only),

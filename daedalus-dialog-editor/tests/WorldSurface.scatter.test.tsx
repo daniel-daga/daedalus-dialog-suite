@@ -208,6 +208,25 @@ describe('arming the brush', () => {
 
     expect(mockScatterRadius).toBe(1500);
   });
+
+  it('keeps a usable brush when the radius field is emptied', async () => {
+    // §5.4 item 22 of `docs/plans/level-editor-review-2026-09-04.md`. An empty
+    // number field reads as `''`, and `Number('')` is 0 — so clearing the box
+    // to type a new radius gave the viewport a ring of nothing and the stroke a
+    // disc of nothing, which places every copy on one point.
+    await openWorld();
+    await armBrush();
+
+    fireEvent.change(screen.getByTestId('world-scatter-radius').querySelector('input')!, {
+      target: { value: '' },
+    });
+
+    expect(mockScatterRadius).toBeGreaterThan(0);
+    await paint();
+    for (const [origin] of mockRaycastDown.mock.calls) {
+      expect(origin[1]).toBeGreaterThan(100);
+    }
+  });
 });
 
 describe('a stroke', () => {
