@@ -81,6 +81,26 @@ trusting master for a release, not after.
   and `build-zenkit.js`'s reset (`git checkout -- .`) leaves untracked
   directories alone, so it survives a rebuild. About four minutes. Verified
   2026-09-11: 438 of `zenkit-node`'s 439 tests pass, one skipped.
+- **The real-Electron World specs need software GL in a container.** With no
+  GPU, Chromium blocklists WebGL2 outright (`ContextResult::kFatalFailure:
+  WebGL2 blocklisted`) and every spec that opens a world times out waiting for
+  a viewport that never mounts — seven of them, and the failure names none of
+  this. `DDE_E2E_SOFTWARE_GL=1` adds `--use-gl=angle --use-angle=swiftshader`
+  in `tests/e2e-electron/harness.ts`. Opt-in rather than always on, because
+  forcing swiftshader on a machine that *has* a GPU would hide the very thing
+  `world-render.spec.ts` exists to watch. The whole run, with the addon built
+  as above:
+
+  ```
+  cd daedalus-dialog-editor && npm run build
+  DDE_E2E_SOFTWARE_GL=1 xvfb-run --auto-servernum \
+      pnpm exec playwright test -c playwright.electron.config.ts
+  ```
+
+  `pnpm exec`, not `npx`: `npx` picks the root Playwright and the specs resolve
+  another copy, which fails as *"Playwright Test did not expect test.describe()
+  to be called here"* and finds no tests at all. Verified 2026-09-11: 32 passed,
+  1 skipped.
 - **Run `node scripts/build-zenkit.js` before `node-gyp`** — it resets the
   submodule, applies `patches/*.patch` and writes `zenkit-abi.json`.
 - **That reset destroys any edit in `vendor/ZenKit` that is not a patch file.**
