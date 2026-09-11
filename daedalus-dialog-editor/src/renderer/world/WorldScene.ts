@@ -904,6 +904,12 @@ export class WorldScene {
   dispose(): void {
     for (const geometry of this.geometries) geometry.dispose();
     for (const material of this.materials) material.dispose();
+    // `instanceMatrix` and `instanceColor` are the mesh's, not the geometry's,
+    // so the two lines above free neither: a retail world's ~724 instanced
+    // meshes left them to the garbage collector, which frees the JS object and
+    // never the GPU buffer. A structural edit rebuilds this scene, so it was a
+    // megabyte per edit rather than per world open.
+    for (const mesh of this.instancedMeshes) mesh.dispose();
     // Only what this scene owns. With a cache the textures outlive it by
     // design, and disposing them here would release GPU memory the very next
     // scene is about to draw with — see `TextureCache`.

@@ -297,6 +297,45 @@ describe('WorldScene', () => {
     expect(scene.root.children).toHaveLength(0);
   });
 
+  test('dispose releases the instance buffers too, not only the geometries', () => {
+    // `InstancedMesh.instanceMatrix` and `instanceColor` are GPU buffers the
+    // geometry does not hold, so disposing the geometry frees neither: a
+    // retail world's ~724 instanced meshes left about a megabyte per rebuild
+    // to the garbage collector, which frees the JS object and never the
+    // buffer (§3.5). A structural edit rebuilds the scene, so this is per
+    // edit, not per world open.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    const mesh = scene.instancedMeshes[0];
+    const disposed = jest.spyOn(mesh, 'dispose');
+
+    scene.dispose();
+
+    expect(disposed).toHaveBeenCalled();
+  });
+
+  test('a decal quad is an instanced mesh, and its buffers go the same way', () => {
+    const scene = new WorldScene();
+    scene.setDecals({
+      groups: [{
+        texture: 'BLOOD.TGA',
+        count: 1,
+        positions: new Float32Array([600, 0, 0]).buffer,
+        sizes: new Float32Array([50, 50]).buffer,
+        vobIds: new Uint32Array([6]).buffer,
+      }],
+      stats: { decals: 1, textures: 1 },
+    });
+    const quad = scene.root.children.find(
+      (child) => (child as THREE.InstancedMesh).isInstancedMesh,
+    ) as THREE.InstancedMesh;
+    const disposed = jest.spyOn(quad, 'dispose');
+
+    scene.dispose();
+
+    expect(disposed).toHaveBeenCalled();
+  });
+
   // ── decoded textures across a rebuild (level-editor.md §7) ────────────────
   //
   // A structural op rebuilds the scene, because an instance cannot be appended

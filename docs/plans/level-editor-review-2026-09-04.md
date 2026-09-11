@@ -362,16 +362,23 @@ that sees it is the shape worth reusing: jsdom has neither context, but it does
 have `getContext`, so a spy that records **which canvas** each `'2d'` request
 was made of catches the collision without either context existing.
 
-### 3.5 GPU buffers never released — **confirmed**
+### 3.5 GPU buffers never released — **FIXED 2026-09-11**
 
-`WorldScene.dispose()` (`WorldScene.ts:776-793`) never calls `dispose()` on
-its ~724 `InstancedMesh`es, so their `instanceMatrix`/`instanceColor` buffers
-are freed only by GC; `SpawnOverlay.dispose()` (`:379-390`) the same for
-`dummies`. ~1 MB per rebuild — small, but the 08-29 "resource lifecycle found
-clean" is wrong on this point. And `VobPicker.setInstancedMeshes` deep-clones
-every geometry (`VobPicker.ts:272`) — the comment at `:270-271` claiming "no
-extra vertex memory" is wrong; a `BufferGeometry` sharing the attribute
-objects and adding only `pickColor` is the fix.
+`WorldScene.dispose()` never called `dispose()` on its ~724 `InstancedMesh`es,
+so their `instanceMatrix`/`instanceColor` buffers were freed only by GC;
+`SpawnOverlay.dispose()` the same for `dummies`, and `DecalLayer.dispose()`
+for its quads, which the finding missed. ~1 MB per rebuild — small, but the
+08-29 "resource lifecycle found clean" was wrong on this point. All three now
+dispose the mesh as well as its geometry.
+
+`VobPicker.setInstancedMeshes` deep-cloned every geometry while its comment
+claimed "no extra vertex memory". It now builds a `BufferGeometry` that shares
+`position`, `uv` and the index with the drawn mesh and adds only `pickColor`.
+**That put a rule on the teardown**, which is the part worth knowing before
+touching either: three frees the GPU buffer of every attribute a disposed
+geometry still holds, so `clear()` gives the shared ones back before disposing,
+and the proxy itself is never disposed at all — its `instanceMatrix` is the
+drawn mesh's.
 
 ### 3.6 Smaller items
 
@@ -682,6 +689,10 @@ geometry, so an edit asks the worker nothing; the builder outlives the scene
 effect, which `settle()`s the builds it abandoned rather than disposing it.
 Held by `bvhCache.test.ts`. Not measured in the app — no GPU here — so the
 saving is the review's own 145-590 ms figure, not a fresh one.
+
+**§3.5, the unreleased GPU buffers — fixed 2026-09-11.** The instance buffers
+and the picker's cloned geometry, in §3.5; the pick proxies now share the drawn
+vertices, which is a rule about the teardown as much as a saving.
 
 **§3.4, `ThumbnailRenderer`'s shared canvas — fixed 2026-09-11.** See §3.4: a
 texture tile draws into its own canvas, and the "no test can see it under

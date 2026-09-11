@@ -385,6 +385,9 @@ export class SpawnOverlay {
     this.unknownMaterial.dispose();
     this.dummyGeometry.dispose();
     this.dummyMaterial.dispose();
+    // And the instance buffers, which neither of those two holds
+    // (`WorldScene.dispose` says why).
+    this.dummies.dispose();
     this.root.clear();
   }
 }

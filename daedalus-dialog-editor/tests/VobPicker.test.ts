@@ -482,4 +482,36 @@ describe('the world mesh as a pick occluder (level-editor.md §16.24 3)', () => 
     expect(picker.pickOccluders).toHaveLength(1);
     expect(picker.pickProxies).toHaveLength(1);
   });
+
+  it('shares the drawn vertices rather than copying them, and frees only its own attribute', () => {
+    // The comment this replaces claimed "the pick pass costs no extra vertex
+    // memory" while cloning the geometry, which copies every position and uv of
+    // every prop in the world into a second set of GPU buffers (§3.5).
+    //
+    // Sharing them puts a rule on the teardown: three frees the buffer of every
+    // attribute a disposed geometry still holds, and those buffers are now the
+    // visible scene's. So the proxy must give the shared ones back before it is
+    // disposed, and `pickColor` — the only attribute the picker made — is all
+    // that may be left on it.
+    const picker = new VobPicker();
+    const geometry = new THREE.BoxGeometry();
+    const mesh = new THREE.InstancedMesh(geometry, new THREE.MeshBasicMaterial(), 1);
+    picker.setInstancedMeshes([mesh], () => 3, new THREE.Matrix4());
+
+    const proxy = picker.pickProxies[0];
+    expect(proxy.geometry.getAttribute('position')).toBe(geometry.getAttribute('position'));
+    expect(proxy.geometry.getAttribute('uv')).toBe(geometry.getAttribute('uv'));
+    expect(proxy.geometry.getIndex()).toBe(geometry.getIndex());
+    expect(proxy.geometry.getAttribute('pickColor')).toBeDefined();
+
+    const held: string[][] = [];
+    proxy.geometry.addEventListener('dispose', () => {
+      const names = Object.keys(proxy.geometry.attributes);
+      held.push(proxy.geometry.index === null ? names : [...names, 'index']);
+    });
+
+    picker.setInstancedMeshes([], () => null, new THREE.Matrix4());
+
+    expect(held).toEqual([['pickColor']]);
+  });
 });
