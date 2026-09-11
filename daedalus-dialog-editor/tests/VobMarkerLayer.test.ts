@@ -71,10 +71,12 @@ function channels(hex: number): number[] {
 }
 
 describe('VobMarkerLayer', () => {
-  it('draws one marker per VOB with no visual, and none for a VOB that has one', () => {
+  it('draws one marker per VOB nothing else draws, and none for one that is drawn', () => {
     // VOB 1 is a sound and VOB 3 a trigger — no visual name at all. VOB 0 is
-    // drawn as an instance, and VOB 2 is a decal: it *has* a name, which
-    // resolves to no geometry, and that is §16.40's case rather than this one.
+    // drawn as an instance and gets none. VOB 2 is a decal: it *has* a name,
+    // which resolves to no geometry, so its quad is the picture (§16.40, #249)
+    // and this is still the only handle it has — a pick, a gizmo and a position
+    // all come through here.
     const layer = new VobMarkerLayer(vobIndex(
       [[0, 0, 0], [-3, 0, 0], [10, 20, 30], [3, 0, 0]],
       ['zCVob', 'zCVobSound', 'zCVob', 'zCTrigger'],
@@ -83,13 +85,41 @@ describe('VobMarkerLayer', () => {
       ['BARREL.3DS', '', 'BLOOD.TGA', ''],
     ));
 
-    expect(layer.drawn).toBe(2);
-    expect(layer.markers.geometry.drawRange.count).toBe(2);
-    expect(drawnPositions(layer)).toEqual([-3, 0, 0, 3, 0, 0]);
+    expect(layer.drawn).toBe(3);
+    expect(layer.markers.geometry.drawRange.count).toBe(3);
+    expect(drawnPositions(layer)).toEqual([-3, 0, 0, 10, 20, 30, 3, 0, 0]);
     // And the index positions are what it drew them at, not an origin.
     expect(layer.positionOf(1)).toEqual([-3, 0, 0]);
+    expect(layer.positionOf(2)).toEqual([10, 20, 30]);
     expect(layer.positionOf(0)).toBeNull();
-    expect(layer.positionOf(2)).toBeNull();
+  });
+
+  it('marks a particle effect too, which is all a `.PFX` can ever get', () => {
+    // A `.PFX` is a Daedalus particle script, not geometry, so there is nothing
+    // to draw it as — 1,391 of them across the three retail worlds, none of
+    // which could be clicked or moved before this.
+    const layer = new VobMarkerLayer(vobIndex(
+      [[0, 0, 0], [1, 1, 1]],
+      ['zCPFXController', 'zCVob'],
+      undefined,
+      undefined,
+      ['FIRE.PFX', 'BARREL.3DS'],
+    ));
+
+    expect(layer.drawn).toBe(1);
+    expect(layer.positionOf(0)).toEqual([0, 0, 0]);
+    expect(layer.positionOf(1)).toBeNull();
+  });
+
+  it('colours a decal and a particle effect by their visual, not by their class', () => {
+    // Every retail decal sits on a plain `zCVob`, so by class all 1,932 would
+    // be the same grey as everything uncatalogued — and a dot's colour is the
+    // whole of what tells two markers apart.
+    expect(markerColorOf('zCVob', 'DECAL')).not.toBe(markerColorOf('zCVob'));
+    expect(markerColorOf('zCVob', 'PARTICLE_EFFECT')).not.toBe(markerColorOf('zCVob'));
+    expect(markerColorOf('zCVob', 'DECAL')).not.toBe(markerColorOf('zCVob', 'PARTICLE_EFFECT'));
+    // A drawable visual says nothing; the class still does.
+    expect(markerColorOf('zCVobSound', 'MULTI_RESOLUTION_MESH')).toBe(markerColorOf('zCVobSound'));
   });
 
   it('colours a marker by what its class is', () => {

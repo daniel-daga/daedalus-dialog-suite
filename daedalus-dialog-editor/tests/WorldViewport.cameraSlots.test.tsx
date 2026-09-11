@@ -36,6 +36,8 @@ import WorldViewport from '../src/renderer/components/world/WorldViewport';
 
 const VISUALS: InstancedPayload = {
   visuals: [],
+  // Nothing about a decal here; `DecalLayer.test.ts` is where one is drawn.
+  decals: mockWorldViewport.noDecals(),
   stats: {
     visualsSeen: 0, visualsResolved: 0, vobsPlaced: 0,
     instancedDrawGroups: 0, levelCompos: 0, unresolvedByType: {},

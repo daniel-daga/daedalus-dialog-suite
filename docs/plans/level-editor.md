@@ -2407,7 +2407,10 @@ the VFS plumbing:
   `VisualPreviewScene`'s scene — same geometry, lights, `frameVisual` — once
   into one reused offscreen `WebGLRenderer` (a context per tile would exhaust
   the browser's budget inside one directory), textures fetched at 64 px
-  before the draw; a `.TEX` is a 2D scale. Cached **machine-locally** in
+  before the draw; a `.TEX` is a 2D scale **into a second canvas of its own** —
+  a canvas keeps the first context kind it is handed and one canvas for both
+  drew whichever tile kind came second as a silently failed tile
+  (`level-editor-review-2026-09-04.md` §3.4, fixed 2026-09-11). Cached **machine-locally** in
   `userData/asset-thumbnails/<sha256>.png` (`ThumbnailCacheService.ts`),
   never beside the project: the key is the name plus each mount's path and
   mtime in mount order, since the VFS answers "which file" and nothing else,
@@ -3135,115 +3138,75 @@ verbatim; what they share is the cause, and the cause is worth stating once.
 where things are.** Every piece worked as designed and the designs did not add
 up to "put a fence in my world".
 
-Three of the five are done and `git log` carries them (#242, #243, #244). What
-they settled, because row 1 has to be designed next to it:
+Four of the five are done and `git log` carries them (#241, #242, #243, #244);
+the settled outcomes are architecture §6 and §7. Row numbers are the ones the
+issues cite and do not move.
 
-- **The catalogue filter matches a visual, not only a category path.** The whole
-  catalogue is in memory, so the field above the Categories list keeps a
-  category whose path matches *or* which holds a matching visual, and says how
-  many of its visuals did — which is how `NW_NATURE_GRASSGROUP_01.3DS` is found
-  under *Pflanzen* by typing "grassgroup". The filter survives the step into a
-  category and resets between Favorites and Categories, which are different
-  corpora. This is the catalogue only; it never reads the VFS, so it is not
-  row 1.
-- **The star is one control** (`FavoriteStar`, `WorldAssetGrid.tsx`), on the
-  grid tile and on the browser's list row alike, dimmed rather than hidden.
-- **Placing is a right-click** (`usePlaceMenu`), on a row and a tile in all
-  three views, arming the same placement the preview panel's button arms. Drag
-  into the viewport was the other candidate and was not taken.
+**One row is left.**
 
-The two that remain:
-
-1. **Nothing finds an asset by name (#241).** `WorldAssetBrowser`'s filter is
-   the current directory only — deliberately, by the same "one level at a time"
-   rule the listing itself has. The catalogue half of this is closed (above);
-   what is still missing is finding a *mounted* file whose directory you are not
-   standing in. **Triage step before any design**: open Categories, type
-   "grassgroup", and look at the `NW_NATURE_GRASSGROUP_01.3DS` tile. A drawn
-   thumbnail means the file is mounted and this is purely a search gap; a marked
-   tile means the mount list is short and the search would have found nothing
-   anyway. The catalogue seed proves nothing about an install — it ships 1,396
-   names regardless of what is mounted.
 5. **What the browse root actually looks like on a retail install is unknown
    (#245).** Florian could not steer into folders. `gothicAssetSources` mounts
    each loose `_compiled` tree at the namespace root, so those files are flat by
    construction; what the six VDFs contribute is an open question nobody in this
-   repo has looked at, and it decides whether row 1's search is a filter over a
-   listing or an index over the whole namespace. Needs a Gothic install —
-   Daniel's machine, not CI.
+   repo has looked at. Row 1's search no longer waits on the answer — `vfsFind`
+   walks the whole namespace either way — but whether the *navigation* complaint
+   is a UI problem or simply an accurate description of a flat namespace still
+   does.
 
-Row numbers are the ones the issues cite and do not move; 2, 3 and 4 are the
-three above.
+   `zenkit-node/scripts/describe-vfs-root.js --install <dir>` is the
+   measurement: it prints the top level counted folders-against-files, the shape
+   below it, and whether the names from the report are mounted at all. Needs a
+   Gothic install — Daniel's machine, not CI.
 
-### 16.39 The extent of a sound, a light or a zone is invisible too (2026-09-10; #248)
+### 16.39 A zone's or a trigger's extent is a box nothing holds (2026-09-10; #248)
 
-A marker says where the origin is and nothing about how far the thing reaches,
-and for this family the reach *is* the object: a `zCVobSound` is its `radius`, a
-`zCVobLight` its `range` and `color`, a `zCZoneZFog` its `rangeCenter` and
-`innerRangePercentage`, an `oCZoneMusic` its volume, a `zCTrigger` its box. With
-the marker layer landed (§7), tuning any of them is still a save-and-play loop.
+The sphere half is done and `git log` carries it — a `zCVobSound`'s `radius` and
+a `zCVobLight`'s `range` are drawn round the selection as a wireframe sphere,
+off the `getVobProps` read the property grid already makes. The durable outcome
+is architecture §7.
 
-**The sphere half is drawable from data already in hand.** `radius` and `range`
-are catalogued class fields (`CLASS_FIELDS`, `zen-world/src/model/vobClasses.ts`)
-and reach the renderer through `getVobProps` — the round trip
-`WorldPropertyGrid` already makes when a selection changes. A wireframe sphere
-at the marker, radius from the field, needs nothing new.
+**What is left has no data source.** `ops.ts` states it: *"The bbox is not in
+the index at all — there is no column for it."* A zone's or a trigger's volume
+*is* that bbox, so drawing one means either a new index column — paid for by
+every world load, 41,393 × 6 floats — or a per-selection fetch that does not
+exist. That is the decision this section is really holding, and it is why the
+two halves were not landed together.
 
-**The box half has no source.** `ops.ts` states it: *"The bbox is not in the
-index at all — there is no column for it."* A zone's or a trigger's volume is
-that bbox, so drawing one means either a new index column — paid for by every
-world load, 41,393 × 6 floats — or a per-selection fetch that does not exist.
-That is the decision this section is really holding, and it is why the two
-halves should not land together.
-
-Three things to settle with it:
+Two things to settle with it:
 
 - **`oCZoneMusic.ellipsoid` makes one box mean two shapes**, and it is a
   catalogued bool, so the shape follows a field the user can flip.
 - **`zCZoneZFog` has no radius field at all** — `rangeCenter` is a distance
   along the view, not an extent — so a fog zone's shape is its bbox like the
   others, and `rangeCenter` is something the grid says and the viewport cannot.
-- **Selection only, first.** The corpus holds 1,237 sound VOBs across the three
-  retail worlds; every radius drawn at once is a screen of overlapping spheres,
-  and drawing the selection is what a modder tuning one sound actually wants.
 
-### 16.40 A decal and a particle effect draw nothing either (2026-09-10; #249)
+A light's `color` is the other half of what a light *is* and is equally
+invisible; it is a tint on the sphere rather than a shape, and nothing has been
+decided about it.
 
-Same hole, different cause, and it is worth keeping apart from the marker layer
-that closed the other half (§7): these VOBs **have** a visual name, and the
-layer keys on the name being *empty*, so not one of them gets a marker either.
-`extractVisual` cannot turn a `.TGA` or a `.PFX` into geometry, so
-`buildInstancedVisuals` counts them into `unresolvedByType` and places nothing
-— **1,932 decals and 1,391 particle effects** across the three retail worlds,
-49 unique names of the two on NewWorld (23 DECAL, 26 PARTICLE_EFFECT), which is
-the unresolved-visual table in
-`docs/architecture/level-editor.md` §3.
+### 16.40 Six of a decal's seven fields are still invisible (2026-09-10; #249)
 
-**A decal is not a mystery and should be drawn as itself, not as an icon.** All
-seven of its fields have been readable and writable since V2 (§14.1 1.8):
-`decalDimension` gives its size (measured 10–550 across the corpus),
-`decalOffset` its shift (every retail one is [0,0]), and `decalTwoSided`,
-`decalAlphaFunc` and `decalAlphaWeight` say how it blends. The texture is a
-`.TGA` the VFS already decodes for the world mesh, through the same
-`decodeTexture` path. So the work is a quad per decal VOB in
-`buildInstancedVisuals`/`WorldScene`, and it hands those seven fields their
-first visual feedback — none of them is in any engine witness either, per the
-acceptance record's *"What is still not witnessed"*.
+The decals are drawn and `git log` carries it — a camera-facing quad of the
+size the decal states, one instanced mesh per texture, and a marker at each
+centre for the pick and the gizmo. A particle effect gets the marker and nothing
+more, which is all a Daedalus script can be given. The durable outcome is
+architecture §7, including the two facts it rests on: `decalDimension` is a half
+extent, and a decal is oriented by the camera rather than by its VOB.
 
-Two facts to check before writing that quad, neither of which this repo has
-established: **whether `decalDimension` is a half-extent or a full one**, and
-**how a decal is oriented** — the VOB's own rotation, or camera-aligned by
-`visualCamAlign`. Both are one ZenKit read and one look at a retail wall.
+**What is left is the other six fields.** `decalDimension` has visual feedback;
+`decalOffset`, `decalTwoSided`, `decalAlphaFunc`, `decalTextureAnimFps`,
+`decalAlphaWeight` and `decalIgnoreDaylight` change nothing on screen, and none
+of the seven has an engine witness (§16.2).
 
-The decal is also the case that breaks a class-keyed marker table: every one of
-the 1,932 sits on a plain `zCVob`, so the key here is the **visual type**, not
-the class.
+Two of the six are settled by the shape rather than open: a billboard is never
+seen from behind, so `decalTwoSided` has no side to hide, and
+`decalIgnoreDaylight` is about a lighting model the viewport does not have. The
+other four are per-VOB where the material is per texture, so drawing them means
+either a per-instance attribute for alpha and offset, or a material per
+*decal*, which is the 1,405 draw calls the grouping exists to avoid. That is the
+decision this section is holding.
 
-**A `.PFX` is not drawable.** It is a particle script, not geometry, and
-nothing in the binding turns one into vertices. So a `zCPFXController` deserves
-a marker and nothing more — which is the honest answer rather than a faked puff
-of smoke, and it is *this* section's work: `VobMarkerLayer` draws a VOB with no
-visual name, and a `zCPFXController` has one. Giving the layer a second
-criterion — a visual that resolved to nothing — is the whole of that half, and
-its colour keys on the **visual type** rather than the class, for the reason the
-decal above gives.
+`visualCamAlign` is the other loose end. The engine picks between a full
+billboard and a yaw-locked one from that base field; the viewport draws every
+decal as a full billboard, which is right for the common case and wrong for a
+decal authored yaw-locked. Nobody has counted how many of the 1,932 are.

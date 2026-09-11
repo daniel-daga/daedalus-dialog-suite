@@ -1,6 +1,6 @@
 import type { VobIndex } from 'zen-world';
 import type {
-  AssetCatalog, PortalFinding, VobFolders, WaynetPayload, WorldOp, WorldSummary,
+  AssetCatalog, PortalFinding, VfsSearch, VobFolders, WaynetPayload, WorldOp, WorldSummary,
 } from '../src/shared/worldTypes';
 import type { AppendInsertNpcResult } from '../src/shared/types';
 
@@ -95,7 +95,35 @@ export function vobIndex(
     visualIndex: Uint32Array.from(
       vobVisuals.map((v) => [...new Set(vobVisuals)].indexOf(v)),
     ).buffer,
-    visualTypes: ['MULTI_RESOLUTION_MESH'], visualTypeIndex: new Uint32Array(count).buffer,
+    ...visualTypeColumns(vobVisuals),
+  };
+}
+
+/**
+ * The visual-type column and the decal side table, derived from the visual
+ * names rather than passed in — the binding derives them from the same place,
+ * and a fixture that let the two disagree would let a test assert a decal whose
+ * name is a `.3DS`.
+ *
+ * Every decal gets the same 25x25 half extent ZenGin defaults to; a test that
+ * cares about the size builds its own payload (`DecalLayer.test.ts`).
+ */
+function visualTypeColumns(vobVisuals: readonly string[]) {
+  const typeOf = (visual: string) => {
+    if (visual === '') return 'UNKNOWN';
+    if (visual.toUpperCase().endsWith('.TGA')) return 'DECAL';
+    if (visual.toUpperCase().endsWith('.PFX')) return 'PARTICLE_EFFECT';
+    return 'MULTI_RESOLUTION_MESH';
+  };
+  const perVob = vobVisuals.map(typeOf);
+  const visualTypes = [...new Set(perVob)];
+  const decals = perVob.flatMap((type, vob) => (type === 'DECAL' ? [vob] : []));
+
+  return {
+    visualTypes,
+    visualTypeIndex: Uint32Array.from(perVob.map((type) => visualTypes.indexOf(type))).buffer,
+    decalVobs: Uint32Array.from(decals).buffer,
+    decalDimensions: Float32Array.from(decals.flatMap(() => [25, 25])).buffer,
   };
 }
 
@@ -141,6 +169,9 @@ export function makeWorldEditorApi() {
     getWorldVisuals: jest.fn(),
     getWorldTexture: jest.fn(async () => null),
     listWorldAssets: jest.fn(async () => null),
+    // The whole-namespace search behind the browser's filter box (#241).
+    // Nothing by default: a suite that wants hits stubs them.
+    searchWorldAssets: jest.fn(async (): Promise<VfsSearch> => ({ matches: [], truncated: false })),
     getWorldVisual: jest.fn(async () => null),
     getAssetThumbnail: jest.fn(async (): Promise<{ key: string; dataUrl: string | null }> => ({ key: 'k', dataUrl: null })),
     putAssetThumbnail: jest.fn(async () => undefined),

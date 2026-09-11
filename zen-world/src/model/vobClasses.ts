@@ -482,6 +482,48 @@ const OC_MOB_DOOR_FIELDS = [
 ] as const satisfies readonly FieldDescriptor[];
 
 /**
+ * The reach a VOB *is*, for the classes where the reach is the object (#248).
+ *
+ * A marker says where a sound's origin is and nothing about how far it carries,
+ * and the radius is the whole of what a modder is tuning — so tuning one was a
+ * save-and-play loop even after the markers landed (level-editor.md §16.39).
+ *
+ * Only the classes whose extent is a **radius**, which is to say a sphere:
+ * `zCVobSound.radius` and `zCVobLight.range`, both of them catalogued fields
+ * that already reach the renderer through `getVobProps`. A zone's or a
+ * trigger's extent is its bounding box, and the index carries no column for
+ * one — a different problem, deliberately not answered here.
+ */
+export interface VobExtent {
+  /** ZenGin centimetres, like every other length in a world. */
+  radius: number;
+  /** What is reaching that far, which is what tells two spheres apart. */
+  kind: 'sound' | 'light';
+}
+
+const EXTENT_FIELDS: Record<string, { key: string; kind: VobExtent['kind'] }> = {
+  zCVobSound: { key: 'radius', kind: 'sound' },
+  // Derives from `zCVobSound` and inherits the radius, as CLASS_FIELDS does.
+  zCVobSoundDaytime: { key: 'radius', kind: 'sound' },
+  zCVobLight: { key: 'range', kind: 'light' },
+};
+
+/**
+ * The sphere to draw around one VOB, or null when there is none to draw.
+ *
+ * Null for every class without a radius field, and also for a radius of zero
+ * or less: a sound that carries nowhere has no extent to show, and a sphere of
+ * radius zero is a point the marker is already drawing.
+ */
+export function vobExtentOf(className: string, props: ClassProps): VobExtent | null {
+  const field = EXTENT_FIELDS[className];
+  if (field === undefined) return null;
+  const value = props[field.key];
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return null;
+  return { radius: value, kind: field.kind };
+}
+
+/**
  * Class name → the fields the editor writes on it, in the order it draws them.
  *
  * `as const satisfies` for the same reason `PROP_KEYS` has it: the literal types

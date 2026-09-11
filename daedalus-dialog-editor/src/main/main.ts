@@ -960,6 +960,21 @@ export function setupIpcHandlers() {
     return worldService.listAssets(path);
   });
 
+  // A needle over the same namespace `world:assets` lists, so it never reaches
+  // the disk either and there is nothing for the path validator to validate.
+  // The query is bounded here rather than in the worker: an empty one means
+  // "walk the whole install", which is the one thing this call must not do.
+  ipcMain.handle('world:assetSearch', async (_event, request: unknown) => {
+    const query = typeof request === 'object' && request !== null && 'query' in request
+      && typeof (request as { query: unknown }).query === 'string'
+      ? (request as { query: string }).query
+      : '';
+    if (query.trim() === '') {
+      throw new Error('Invalid asset search request: query must be a non-empty string');
+    }
+    return worldService.searchAssets(query);
+  });
+
   ipcMain.handle('world:waynet', async () => worldService.getWaynet());
   // No payload, like `world:waynet`, so there is nothing to validate: the
   // findings are computed over the world the worker already holds.

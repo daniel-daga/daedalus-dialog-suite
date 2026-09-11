@@ -1110,6 +1110,14 @@ struct VobColumns {
   std::vector<std::uint32_t> visual_index;
   std::vector<std::uint32_t> visual_type_index;
 
+  // The decals, sparsely (#249). A decal's size is on its *visual* — one
+  // `zCDecal` per VOB, not per name — so it is in no column and in no
+  // dictionary, and it is the one thing a renderer needs to draw the 1,932
+  // retail decals at the size they actually are. Two rows rather than a dense
+  // column because 95 % of a world is not a decal.
+  std::vector<std::uint32_t> decal_vobs;
+  std::vector<float> decal_dimensions;
+
   std::vector<std::string> classes;
   std::vector<std::string> names;
   std::vector<std::string> visuals;
@@ -1189,6 +1197,13 @@ void CollectVobColumns(std::vector<std::shared_ptr<VirtualObject>> const& vobs,
         out.visual_types, out.visual_type_lookup,
         vob->visual != nullptr ? std::string {VisualTypeName(vob->visual->type)}
                                : std::string {"UNKNOWN"}));
+
+    if (vob->visual != nullptr && vob->visual->type == VisualType::DECAL) {
+      auto const* decal = static_cast<VisualDecal const*>(vob->visual.get());
+      out.decal_vobs.push_back(static_cast<std::uint32_t>(self));
+      out.decal_dimensions.insert(out.decal_dimensions.end(),
+                                  {decal->dimension.x, decal->dimension.y});
+    }
 
     stack.push_back({&vob->children, 0, self});  // invalidates `top`
   }
@@ -1362,6 +1377,11 @@ Napi::Object VobIndex(Napi::Env env, WorldHandle const& handle) {
   out.Set("visualIndex", Buffer(env, columns.visual_index));
   out.Set("visualTypes", dictionary(columns.visual_types));
   out.Set("visualTypeIndex", Buffer(env, columns.visual_type_index));
+  // Always present, empty for a world with no decal in it: a consumer reads it
+  // unconditionally, and an absent buffer would be a branch in every one of
+  // them for a case that is only "no decals here".
+  out.Set("decalVobs", Buffer(env, columns.decal_vobs));
+  out.Set("decalDimensions", Buffer(env, columns.decal_dimensions));
   return out;
 }
 

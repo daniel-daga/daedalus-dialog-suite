@@ -1112,6 +1112,20 @@ browser.
   keep it beside the merged one, which is what `openVfs` does. What it costs is
   in §9.
 
+  **`vfsFind` is the one recursive walk there is, and it exists because the
+  listing refuses to be one.** One level at a time is right for browsing and
+  wrong for finding: the thing a modder knows about an asset is its name, and
+  the thing they do not know is which of thousands of directories holds it — so
+  a filter over the current directory made an asset that *is* mounted read as
+  missing, which is exactly how the first outside user reported it (#241). The
+  call takes a needle and a cap, walks the merged tree breadth-first and answers
+  at most 500 hits, each carrying the directory it was found in and the same
+  per-mount provenance a listing carries. Directories come first, as in a
+  listing, and a truncated answer says so rather than pretending it saw
+  everything. The browser's filter box *is* this call: hits from elsewhere name
+  their directory on the row, and opening one goes to its own path rather than
+  to the path being browsed.
+
 - **Waynet overlay.** `getWaynet` is to `normalizeWorld`'s waynet section what
   `vobIndex` is to the VOB dump: the dump sorts waypoints by name and sorts each
   edge pair because order is noise to a diff, while an overlay needs stored
@@ -2720,12 +2734,20 @@ pixel to write for them, `positionOf` answered null and the gizmo detached even
 for one selected in the scene tree: placing a sound was typing three
 coordinates, and the per-class hide switched off something that was never drawn.
 
-**The criterion is the empty visual name, not "has no instance".** A VOB whose
-visual is a *name* that resolves to no geometry — a decal's `.TGA`, a `.PFX` —
-is a different cause with a different answer (plan §16.40, #249) and gets no
-marker: a decal should be drawn as itself, and a marker keyed on "not drawn"
-would have pre-empted that. So `VobMarkerLayer` reads the same condition
-`buildInstancedVisuals` skips on, and the two partition the index between them.
+**The criterion was the empty visual name, and since #249 it is "nothing else
+draws this VOB".** Those are two causes rather than one. An empty name is what
+"this VOB has no visual" is on disk and is the line `buildInstancedVisuals`
+skips on. A `.TGA` or a `.PFX` is a *name* that resolves to no geometry, which
+was deliberately excluded while a decal had no other picture; now it has one,
+and both are marked — a decal's quad is the picture and the pip at its centre is
+the handle, and a particle effect has only the pip. The one VOB left with
+neither is a drawable *kind* of visual the VFS did not hold, which is a missing
+asset rather than a class of object.
+
+The colour then comes from the **visual** where there is one to read, because
+the class does not say: every retail decal sits on a plain `zCVob`, so colouring
+those by class would make 1,932 of them the same grey as everything
+uncatalogued.
 
 **A marker needed no new data.** `VobIndex` already carries a position and a
 class for every VOB, `markerSprite` already builds the rimmed pip and
@@ -2779,8 +2801,93 @@ which the instance ids are momentarily the old ones.
 class is a decision by omission, and nothing has answered whether 15,749 dots
 at once is the right default in a world that size — the per-class hide is the
 only control over it, which is at least a control the old behaviour did not
-have. The extent of a sound, a light or a zone (plan §16.39, #248) is separate
-work and is what a modder tuning one of them actually wants.
+have.
+
+#### How far the selection reaches (2026-09-11)
+
+A marker says where a VOB is, and for one family that is the smaller half of
+the fact: a `zCVobSound` **is** its `radius` and a `zCVobLight` **is** its
+`range`, so tuning either was still a save-and-play loop with the marker on
+screen. `VobExtentOverlay` draws that reach as a wireframe sphere at the
+selected VOB.
+
+**It costs no new data and no new call.** `radius` and `range` are catalogued
+class fields and already cross on the `getVobProps` read the property grid
+makes whenever the selection changes; `vobExtentOf` (zen-world) is the lookup
+that turns a class name and those props into a radius, and the renderer only
+draws. A unit sphere is built once and scaled per selection rather than rebuilt
+per radius.
+
+**Only where the extent IS a radius.** A zone's or a trigger's extent is its
+bounding box, and the index carries no column for one — `ops.ts` says so
+outright. Drawing a sphere there would be a confident wrong answer rather than
+a missing one, so `vobExtentOf` answers null for every such class and the box
+half stays open (plan §16.39): it needs either a new index column, paid for by
+every world load at 41,393 × 6 floats, or a per-selection fetch that does not
+exist yet. `oCZoneMusic.ellipsoid` making one box mean two shapes, and
+`zCZoneZFog` having no extent field at all, are part of that same open
+decision.
+
+**The selection only, and attached only while it draws.** The three retail
+worlds hold 1,237 sound VOBs between them, so every radius at once is a screen
+of overlapping spheres; the modder tuning one sound wants that one. The
+wireframe joins the scene root when it has something to show and leaves when it
+does not — the root's children are what the world is made of, and a permanent
+invisible node in it is one more thing every reader of the graph has to know to
+skip. It never answers a raycast, so a click still reaches the VOB inside it.
+
+#### The decals, drawn as themselves (2026-09-11)
+
+`extractVisual` cannot turn a `.TGA` into geometry, so **1,932 decals and 1,391
+particle effects** across the three retail worlds landed in `unresolvedByType`
+and nothing was drawn where they stand. They are not missing assets: a `zCDecal`
+**is** a flat texture of a stated size, and drawing it as one is the answer.
+
+Two facts decide the shape, and both were read out of OpenGothic, which
+reimplements the ZenGin renderer rather than guessing at it:
+
+- **`decalDimension` is a half extent.** OpenGothic builds the sprite at
+  `2 * decal->dimension` and spans that -0.5..0.5, so the drawn quad is twice
+  the stored value across. The doubling happens once, in
+  `buildDecalBillboards`, so nothing downstream has to remember it.
+- **A decal is not oriented by its VOB at all — it faces the camera.** The
+  quad's axes come from the camera basis and the VOB's rotation is unused;
+  `visualCamAlign` picks between a full billboard and a yaw-locked one. That is
+  why this is a billboard in the vertex shader rather than a plane placed by an
+  instance matrix: a fixed quad would be edge-on and invisible from half the
+  angles a modder looks from.
+
+**The size is per-VOB, so the index grew a side table for it.** A `zCDecal` is
+one object per VOB rather than per name, so `decalDimension` is in no column and
+no dictionary, and drawing 1,932 decals at their real size through `getVobProps`
+would have been 1,932 round trips. `vobIndex` answers `decalVobs` and
+`decalDimensions` — sparse, since 95 % of a world is not a decal, which is 23 KB
+on a retail world against the 331 KB a dense column would cost.
+
+The quads are grouped by texture, one `InstancedMesh` each, for the reason VOBs
+sharing a visual are instanced at all: 23 textures carry 1,405 decal VOBs on
+NewWorld, and a quad each would be 1,405 draw calls against a budget under
+1,500. The material is made by `WorldScene` and goes through the same texture
+slot every other one does, so a decal's `.TGA` loads by the path that was
+already loading the world's. Cut-out and depth-write-off, because a decal is
+mostly transparent and sits on the surface it decorates.
+
+**The quad is the picture and never the handle.** It does not enter the GPU id
+pass: that pass draws instances through its own material, and a billboard there
+would be a third shader variant of it whose only job is to agree with this one.
+The pick, the gizmo and `positionOf` come from the marker at the decal's centre
+instead — which is why a decal is now marked, and why `moveVob` writes the quad
+and the marker together rather than one or the other.
+
+A particle effect gets the marker and nothing more: a `.PFX` is a Daedalus
+script, not geometry, so there is nothing to draw it as.
+
+**What is still invisible is six of a decal's seven fields.** `decalDimension`
+is drawn; `decalOffset`, `decalTwoSided`, `decalAlphaFunc`, `decalTextureAnimFps`,
+`decalAlphaWeight` and `decalIgnoreDaylight` change nothing on screen. Two of
+them cannot come up — a billboard is never seen from behind, so `decalTwoSided`
+has no side to hide — and the rest are per-VOB where the material is per
+texture, which is the next decision rather than an omission.
 
 ---
 

@@ -182,6 +182,72 @@ test('vfsList returns null for a file and for a path that is not there', () => {
   assert.strictEqual(zenkit.vfsList(handle, 'NoSuchDirectory'), null);
 });
 
+// --- vfsFind -------------------------------------------------------------
+
+test('vfsFind finds a file in a directory the caller is not standing in', () => {
+  // The whole point: `vfsList` answers one level, so a name you know but whose
+  // directory you do not is unreachable without a walk of the namespace.
+  const handle = zenkit.openVfs([TREE]);
+
+  const found = zenkit.vfsFind(handle, 'EX_TREE');
+
+  assert.strictEqual(found.truncated, false);
+  assert.deepStrictEqual(found.matches, [
+    { name: 'EX_TREE.MRM', directory: 'Meshes/_compiled', type: 'file', sources: [0] },
+  ]);
+});
+
+test('vfsFind matches case-insensitively, as every other name lookup does', () => {
+  // A VDF spells every name upper case and a loose folder spells it however it
+  // sits on disk, so a literal comparison would answer differently per mount.
+  const handle = zenkit.openVfs([TREE]);
+
+  assert.deepStrictEqual(
+    zenkit.vfsFind(handle, 'ex_tree').matches,
+    zenkit.vfsFind(handle, 'EX_TREE').matches,
+  );
+});
+
+test('vfsFind matches a directory too, and puts directories first', () => {
+  // Descending is the useful action on a directory hit, and one buried among
+  // the files is a hunt — the same order `vfsList`'s caller sorts into.
+  const handle = zenkit.openVfs([TREE]);
+
+  const names = zenkit.vfsFind(handle, 'e').matches.map((match) => `${match.type}:${match.name}`);
+
+  assert.ok(names.includes('directory:Meshes'));
+  assert.ok(names.includes('file:NOTES.TXT'));
+  assert.ok(names.indexOf('directory:Meshes') < names.indexOf('file:NOTES.TXT'));
+});
+
+test('vfsFind reports every mount holding a match, as a listing does', () => {
+  // Same provenance as `vfsList`: ascending, the last one winning. README.TXT
+  // is in both sources, cased differently, and is one entry in the merged tree.
+  const handle = zenkit.openVfs([TREE, OVERLAY]);
+
+  const readme = zenkit.vfsFind(handle, 'readme').matches;
+
+  assert.strictEqual(readme.length, 1);
+  assert.deepStrictEqual(readme[0].sources, [0, 1]);
+  assert.strictEqual(readme[0].directory, '/');
+});
+
+test('vfsFind stops at the limit and says the walk was cut short', () => {
+  // Tens of thousands of entries match a short needle on a retail install; the
+  // caller asked for a search box, not the whole namespace.
+  const handle = zenkit.openVfs([TREE]);
+
+  const capped = zenkit.vfsFind(handle, 'e', { limit: 1 });
+
+  assert.strictEqual(capped.matches.length, 1);
+  assert.strictEqual(capped.truncated, true);
+});
+
+test('vfsFind refuses an empty query rather than walking everything', () => {
+  const handle = zenkit.openVfs([TREE]);
+  assert.throws(() => zenkit.vfsFind(handle, '   '), /query/);
+});
+
 test('vfsList shows a later mount source alongside the earlier ones', () => {
   // Mount order is ZenGin's load order, and the browser has to show the union
   // rather than only the last source mounted.

@@ -111,6 +111,8 @@ a VOB is drawn: **9.2 ms and 1.69 MB** of transferables.
   names, nameIndex,
   visuals, visualIndex,
   visualTypes, visualTypeIndex,
+  decalVobs,       // ArrayBuffer, Uint32 ×1 — the VOBs whose visual is a zCDecal
+  decalDimensions, // ArrayBuffer, Float32 ×2 per row — decalDimension, a HALF extent
 }
 ```
 
@@ -122,6 +124,19 @@ single VOB being edited, rather than building 23,288 path strings on load.
 A VOB with no visual object interns as the empty string; `normalizeWorld`
 reports `null` there. `''` and "a visual named `''`" are the same thing to a
 renderer, and a dictionary column has no null.
+
+**The decal table is the one sparse pair here, and it is sparse on purpose.** A
+`zCDecal` is one object *per VOB* rather than per name, so its size is in no
+column and no dictionary — and it is the one thing a renderer needs to draw a
+decal, because a decal is a flat texture of a stated size and nothing else.
+Dense it would be 331 KB on a retail world for the 4.7 % of VOBs that are
+decals; as two rows it is 23 KB. Always present, empty where a world has no
+decal: a consumer reads it unconditionally.
+
+`decalDimension` is a **half** extent — the drawn quad is twice it across.
+OpenGothic, which reimplements the ZenGin renderer, builds the sprite at
+`2 * decal->dimension` and spans it -0.5..0.5 of that. The doubling is the
+consumer's; this reports what the archive holds.
 
 ### `getWaynet(handle)`
 
@@ -211,12 +226,13 @@ The one world-level thing a `.zen` *does* carry is the start position, and it
 is not an `oCWorld` field either — it is a `zCVobStartpoint` in the vob tree
 and/or a waypoint named `START`. The same script reports both.
 
-### The asset layer — `openVfs`, `vfsResolve`, `extractVisual`, `decodeTexture`
+### The asset layer — `openVfs`, `vfsResolve`, `vfsFind`, `extractVisual`, `decodeTexture`
 
 ```js
 const vfs = openVfs([vdfOrDirectory, ...], { overwrite: 'all' });
 vfsResolve(vfs, 'NW_CRATE.3DS');        // -> 'NW_CRATE.MRM' | null
 vfsList(vfs, '/');                      // -> [{ name, type, sources: number[] }] | null
+vfsFind(vfs, 'grassgroup', { limit: 20 }); // -> { matches: [{ name, directory, type, sources }], truncated }
 extractVisual(vfs, 'NW_CRATE.3DS');     // -> the chunk payload above | null
 decodeTexture(vfs, 'NW_WOOD.TGA', 0);   // -> { source, width, height, mipmaps, rgba } | null
 ```
@@ -253,6 +269,26 @@ merged one; a listing then resolves its directory once per source and asks each
 for the child. The bytes are memory-mapped either way, so what the second mount
 costs is the directory trees — `scripts/bench-vfs-sources.js` measures it
 against a real install.
+
+`vfsFind` is the recursive walk `vfsList` refuses to be, and it exists because
+one level at a time is right for browsing and wrong for *finding*: what a user
+knows about an asset is its name, and what they do not know is which of
+thousands of directories holds it. It takes a needle — matched
+case-insensitively against the entry name, as every other name lookup here is —
+and walks the merged tree breadth-first, so a hit near the root is answered
+before one buried deep. Directories come first, as in a listing. Each match
+carries the `directory` it was found in (`'/'` at the root) and the same
+`sources` provenance a listing carries, resolved once per directory rather than
+once per match.
+
+It is **capped** at `limit`, default 500: a three-letter needle matches
+thousands of entries on a retail install, and `truncated` says the walk stopped
+rather than pretending it saw everything. An empty query throws rather than
+walking the whole namespace — a caller who wants everything wants `vfsList`.
+
+`scripts/describe-vfs-root.js --install <dir>` uses both calls to report what a
+real install's namespace looks like: the top level counted folders-against-files,
+the shape below it, and whether a given name is mounted at all.
 
 A VOB names its **source** asset (`.3DS`, `.ASC`, `.MDS`, `.MMS`, `.TGA`) while
 the VFS holds what the asset compiler produced. The mapping is spelled out

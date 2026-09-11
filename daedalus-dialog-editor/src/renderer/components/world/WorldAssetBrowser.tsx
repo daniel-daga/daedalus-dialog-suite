@@ -11,7 +11,7 @@ import ViewListIcon from '@mui/icons-material/ViewList';
 import { FixedSizeList as List, type ListChildComponentProps, areEqual } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
 import { isFavorite } from 'zen-world';
-import type { AssetCatalog, VfsEntry } from '../../../shared/worldTypes';
+import type { AssetCatalog, VfsEntry, VfsSearch } from '../../../shared/worldTypes';
 import type { AssetThumbnails } from '../../world/assetThumbnails';
 import WorldAssetGrid, {
   FavoriteStar, usePlaceMenu, type AssetPlacement, type TileCatalogActions, type TileOrigin,
@@ -29,7 +29,9 @@ import WorldAssetCatalogView from './WorldAssetCatalogView';
 //
 //   - **one level at a time.** A Gothic install is tens of thousands of
 //     entries; a recursive walk would hand this component the whole tree to
-//     show one directory.
+//     show one directory. The search box is the deliberate exception and is
+//     not a listing: `vfsFind` walks the namespace for a needle and answers a
+//     capped set of hits, each carrying the directory it was found in (#241).
 //   - **null means "nothing here to list".** `vfsList` answers null for a path
 //     that is not there and for a file alike, and neither is an error.
 //   - **the names are the compiled ones.** A VOB names its source asset
@@ -38,6 +40,10 @@ import WorldAssetCatalogView from './WorldAssetCatalogView';
 //     is actually there.
 
 const ROW_HEIGHT = 26;
+
+/** How long the search box waits before walking the namespace. Every keystroke
+ *  would otherwise start a walk, and only the last one was ever wanted. */
+const SEARCH_DEBOUNCE_MS = 150;
 
 /** One array, so a browser with no mount list does not re-derive its labels on
  *  every render against a fresh `[]`. */
@@ -77,6 +83,9 @@ function origin(entry: VfsEntry, labels: readonly string[], only: number | null)
 interface RowData {
   entries: VfsEntry[];
   onOpen: (entry: VfsEntry) => void;
+  /** Where the browser is standing. A row whose own directory differs is a
+   *  search hit from elsewhere and says where it lives. */
+  path: string;
   sourceLabels: readonly string[];
   only: number | null;
   /** The same actions the tiles get, or undefined with no project sidecar
@@ -122,6 +131,21 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
         ? <FolderIcon fontSize="small" sx={{ color: 'text.secondary', fontSize: 16 }} />
         : <InsertDriveFileOutlinedIcon sx={{ color: 'text.disabled', fontSize: 16 }} />}
       <Typography variant="caption" noWrap sx={{ flex: 1, minWidth: 0 }}>{entry.name}</Typography>
+      {/* A hit from somewhere else: without this the search answers a bare
+          name and the one thing the user was missing — where it is — is still
+          missing. */}
+      {entry.directory !== undefined && entry.directory !== data.path && (
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          noWrap
+          data-testid={`world-asset-where-${entry.name}`}
+          title={entry.directory}
+          sx={{ fontSize: 10, maxWidth: '45%' }}
+        >
+          {entry.directory}
+        </Typography>
+      )}
       {from !== undefined && (
         <Typography
           variant="caption"
@@ -151,6 +175,10 @@ Row.displayName = 'WorldAssetRow';
 
 export interface WorldAssetBrowserProps {
   listAssets: (path: string) => Promise<VfsEntry[] | null>;
+  /** The whole-namespace search behind the filter box (#241). Absent — the
+   *  browser harness, which has no mounted VFS — the box narrows the current
+   *  directory, which is all it ever did. */
+  searchAssets?: (query: string) => Promise<VfsSearch>;
   /** A file was chosen — the full path inside the mounted namespace. */
   onPreview: (path: string) => void;
   /** The thumbnail queue (level-editor.md §16.26 row 1). Absent, there is no
@@ -179,7 +207,7 @@ export interface AssetCatalogProps {
 }
 
 const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
-  listAssets, onPreview, thumbnails, catalog, sources = NO_SOURCES, placement,
+  listAssets, searchAssets, onPreview, thumbnails, catalog, sources = NO_SOURCES, placement,
 }) => {
   const [path, setPath] = useState('/');
   const [view, setView] = useState<'list' | 'grid'>('list');
@@ -228,13 +256,46 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
     });
   }, [state]);
 
-  // The filter (level-editor.md §17) — the current
-  // directory only, never a walk of the whole namespace: the same "one
-  // level at a time" rule the browser already holds for the listing
-  // itself. Reset on navigation, so a filter typed two directories ago
+  // The filter. With `searchAssets` it is a search of the whole mounted
+  // namespace (#241) — the directory-only filter is what made an asset that
+  // is mounted read as missing, because the one thing you know about it is
+  // its name and the one thing you do not is where it lives. Without
+  // `searchAssets` it stays the narrowing of the current directory it was.
+  // Reset on navigation either way, so a needle typed two directories ago
   // does not silently hide everything in this one.
   const [filter, setFilter] = useState('');
   useEffect(() => { setFilter(''); }, [path]);
+  const [search, setSearch] = useState<
+    | { status: 'idle' }
+    | { status: 'searching' }
+    | { status: 'ready'; matches: VfsEntry[]; truncated: boolean }
+    | { status: 'error'; message: string }
+  >({ status: 'idle' });
+  const needle = filter.trim();
+  const searching = searchAssets !== undefined && needle !== '';
+  useEffect(() => {
+    if (searchAssets === undefined || needle === '') { setSearch({ status: 'idle' }); return undefined; }
+    let current = true;
+    setSearch({ status: 'searching' });
+    // Debounced: every keystroke would otherwise walk the whole namespace,
+    // and the walk the user meant is the one after the last letter.
+    const timer = setTimeout(() => {
+      searchAssets(needle)
+        .then((found) => {
+          if (current) setSearch({ status: 'ready', matches: found.matches, truncated: found.truncated });
+        })
+        // A refused search ("No world is open") is a failure and must not read
+        // as "nothing anywhere matches" — the same distinction the listing makes.
+        .catch((failure: unknown) => {
+          if (!current) return;
+          setSearch({
+            status: 'error',
+            message: failure instanceof Error ? failure.message : String(failure),
+          });
+        });
+    }, SEARCH_DEBOUNCE_MS);
+    return () => { current = false; clearTimeout(timer); };
+  }, [searchAssets, needle]);
   // The source facet (architecture §6). Unlike the text filter it survives a
   // navigation: it is a lens on the whole install, not a question about the
   // directory in front of you.
@@ -247,17 +308,33 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
   // asked are gone, and the next directory's tiles should not wait behind
   // them.
   useEffect(() => { thumbnails?.cancelPending(); }, [thumbnails, path]);
+  // What the listing, the count and the empty states are about: the search's
+  // hits while one is running, this directory's entries otherwise.
+  const base = useMemo<VfsEntry[]>(() => {
+    if (searching) return search.status === 'ready' ? search.matches : [];
+    const lower = needle.toLowerCase();
+    return lower === '' ? sorted : sorted.filter((entry) => entry.name.toLowerCase().includes(lower));
+  }, [searching, search, sorted, needle]);
   const filtered = useMemo(() => {
-    const needle = filter.trim().toLowerCase();
-    const byName = needle === '' ? sorted : sorted.filter((entry) => entry.name.toLowerCase().includes(needle));
-    if (only === null) return byName;
+    if (only === null) return base;
     // Everything the mount holds, including what a later one shadows — the
     // shadowed copy is the whole point of asking about one mount.
-    return byName.filter((entry) => entry.sources?.includes(only) ?? false);
-  }, [sorted, filter, only]);
+    return base.filter((entry) => entry.sources?.includes(only) ?? false);
+  }, [base, only]);
+  // One status for the surface below, because a search and a listing are the
+  // two things it can be showing and each has its own loading and its own
+  // refusal.
+  const ready = searching ? search.status === 'ready' : state.status === 'ready';
+  const failure = searching
+    ? (search.status === 'error' ? search.message : null)
+    : (state.status === 'error' ? state.message : null);
 
   const onOpen = useCallback((entry: VfsEntry) => {
-    const child = path === '/' ? entry.name : `${path}/${entry.name}`;
+    // The entry's own directory when it has one: a search hit lives somewhere
+    // else, and that is the whole reason it was worth finding. A listing's
+    // entry carries none and is in the directory being shown.
+    const where = entry.directory ?? path;
+    const child = where === '/' ? entry.name : `${where}/${entry.name}`;
     if (entry.type === 'directory') setPath(child);
     else onPreview(child);
   }, [path, onPreview]);
@@ -286,8 +363,8 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
   }, [path]);
 
   const itemData = useMemo<RowData>(
-    () => ({ entries: filtered, onOpen, sourceLabels, only, actions: tileActions, placement }),
-    [filtered, onOpen, sourceLabels, only, tileActions, placement],
+    () => ({ entries: filtered, onOpen, path, sourceLabels, only, actions: tileActions, placement }),
+    [filtered, onOpen, path, sourceLabels, only, tileActions, placement],
   );
   const originOf = useCallback(
     (entry: VfsEntry) => origin(entry, sourceLabels, only),
@@ -384,10 +461,13 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
           <TextField
             size="small"
             variant="outlined"
-            placeholder="Filter this directory"
+            placeholder={searchAssets === undefined ? 'Filter this directory' : 'Search all assets'}
             value={filter}
             onChange={(event) => setFilter(event.target.value)}
-            inputProps={{ 'data-testid': 'world-asset-filter', 'aria-label': 'Filter this directory' }}
+            inputProps={{
+              'data-testid': 'world-asset-filter',
+              'aria-label': searchAssets === undefined ? 'Filter this directory' : 'Search all assets',
+            }}
             sx={{ flex: 1, minWidth: 0, '& .MuiInputBase-input': { fontSize: 12, py: 0.5 } }}
           />
           {/* One mount is no facet: there is nothing to narrow to and nothing
@@ -416,7 +496,7 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
               count would assert "0 entries" for a directory nobody has
               heard back about yet — the very flash the three-state
               `state` above exists to prevent. */}
-          {state.status === 'ready' && (
+          {ready && (
             <Typography
               variant="caption"
               color="text.secondary"
@@ -425,10 +505,14 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
             >
               {/* Either filter narrows it, and the count has to say so: a
                   source facet that silently kept reporting the whole
-                  directory would be the one number nobody could trust. */}
-              {filtered.length === sorted.length
-                ? `${sorted.length.toLocaleString()} entries`
-                : `${filtered.length.toLocaleString()} of ${sorted.length.toLocaleString()}`}
+                  directory would be the one number nobody could trust.
+                  A capped search says "first N" for the same reason — the
+                  number is not how many there are. */}
+              {searching
+                ? `${search.status === 'ready' && search.truncated ? 'first ' : ''}${filtered.length.toLocaleString()} matches`
+                : (filtered.length === sorted.length
+                  ? `${sorted.length.toLocaleString()} entries`
+                  : `${filtered.length.toLocaleString()} of ${sorted.length.toLocaleString()}`)}
             </Typography>
           )}
           {thumbnails !== undefined && (
@@ -464,18 +548,18 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
         </Box>
       </Box>
 
-      {state.status === 'error' && (
+      {failure !== null && (
         <Typography
           variant="caption"
           color="error"
           data-testid="world-asset-error"
           sx={{ p: 1 }}
         >
-          {state.message}
+          {failure}
         </Typography>
       )}
 
-      {state.status === 'ready' && sorted.length === 0 && (
+      {ready && !searching && sorted.length === 0 && (
         <Typography
           variant="caption"
           color="text.secondary"
@@ -486,20 +570,22 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
         </Typography>
       )}
 
-      {/* Distinct from the directory being empty: the directory has
-          entries, the filter matched none of them. */}
-      {state.status === 'ready' && sorted.length > 0 && filtered.length === 0 && (
+      {/* Distinct from the directory being empty: there was something to
+          narrow and the needle matched none of it. Under a search the corpus
+          is the whole install, so the sentence has to say which one it is —
+          "nothing in this directory" would be the wrong answer twice. */}
+      {ready && filtered.length === 0 && (searching || sorted.length > 0) && (
         <Typography
           variant="caption"
           color="text.secondary"
           data-testid="world-asset-filter-empty"
           sx={{ p: 1 }}
         >
-          No matches for this filter.
+          {searching ? 'Nothing in the mounted assets matches.' : 'No matches for this filter.'}
         </Typography>
       )}
 
-      {state.status === 'ready' && filtered.length > 0 && view === 'grid' && thumbnails !== undefined && (
+      {ready && filtered.length > 0 && view === 'grid' && thumbnails !== undefined && (
         <Box sx={{ flex: 1, minHeight: 0 }} role="list" aria-label="Mounted assets">
           <WorldAssetGrid
             entries={filtered}
@@ -512,7 +598,7 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
         </Box>
       )}
 
-      {state.status === 'ready' && filtered.length > 0 && (view === 'list' || thumbnails === undefined) && (
+      {ready && filtered.length > 0 && (view === 'list' || thumbnails === undefined) && (
         <Box sx={{ flex: 1, minHeight: 0 }} role="list" aria-label="Mounted assets">
           <AutoSizer>
             {({ height, width }) => (

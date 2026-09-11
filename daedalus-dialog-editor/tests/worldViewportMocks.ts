@@ -176,6 +176,12 @@ export function mockVobPicker(hitVobId = -1) {
  * their own spec (`VobMarkerLayer.test.ts`), and `WorldScene.test.ts` holds what
  * the scene does with them.
  */
+/** The decal half of an instanced payload, empty — for a spec that is about
+ *  something else. `DecalLayer.test.ts` is where a decal payload is exercised. */
+export function noDecals(): DecalScene {
+  return { groups: [], stats: { decals: 0, textures: 0 } };
+}
+
 export function noVobMarkers(): VobIndex {
   return vobIndex([[0, 0, 0]]);
 }

@@ -2,6 +2,7 @@ import { parentPort } from 'worker_threads';
 import * as zenkit from 'zenkit-node';
 import {
   applyOps,
+  buildDecalBillboards,
   buildInstancedVisuals,
   buildVisual,
   buildWorldMesh,
@@ -29,6 +30,7 @@ import type {
   WorldMeshPayload,
   WorldSummary,
   VfsEntry,
+  VfsSearch,
   WaynetPayload,
   PortalFindingsPayload,
   WorldWorkerRequest,
@@ -168,11 +170,18 @@ function takeWorldMesh(): { result: WorldMeshPayload; transfer: ArrayBuffer[] } 
 
 function visuals(): { result: InstancedPayload; transfer: ArrayBuffer[] } {
   const built = phase('visuals', () => buildInstancedVisuals(binding, vfs!, index!));
+  // Beside the meshes, not behind an op of its own: both are built from the one
+  // index, and a placed or deleted decal has to arrive with the scene the
+  // placement rebuilt rather than a round trip later (#249).
+  const decals = phase('decals', () => buildDecalBillboards(index!));
   const transfer: ArrayBuffer[] = [];
   for (const visual of built.visuals) {
     transfer.push(visual.matrices, visual.vobIds, ...groupTransferables(visual.groups));
   }
-  return { result: built, transfer };
+  for (const group of decals.groups) {
+    transfer.push(group.positions, group.sizes, group.vobIds);
+  }
+  return { result: { ...built, decals }, transfer };
 }
 
 function texture(payload: { name: string; maxSize: number }): {
@@ -212,6 +221,16 @@ function texture(payload: { name: string; maxSize: number }): {
  *  Gothic install is tens of thousands of entries. */
 function assets(payload: { path: string }): { result: VfsEntry[] | null; transfer: ArrayBuffer[] } {
   return { result: zenkit.vfsList(vfs!, payload.path), transfer: [] };
+}
+
+/** The one recursive walk of the namespace there is (#241). `vfsList` answers
+ *  a directory, so a name whose directory the user does not know is
+ *  unreachable — which is how an asset that is mounted reads as missing. The
+ *  needle and the cap are what keep the walk from being the whole install. */
+function assetSearch(payload: { query: string }): { result: VfsSearch; transfer: ArrayBuffer[] } {
+  // The cap is the binding's own default: nothing here has a reason to want a
+  // different one, and an option that exists only to be passed is scaffolding.
+  return { result: zenkit.vfsFind(vfs!, payload.query), transfer: [] };
 }
 
 /** The waynet as a drawable graph. Small next to the geometry — NewWorld's is
@@ -381,6 +400,7 @@ function run(message: WorldWorkerRequest): { result: unknown; transfer: ArrayBuf
     case 'visuals': return visuals();
     case 'texture': return texture(message.payload as { name: string; maxSize: number });
     case 'assets': return assets(message.payload as { path: string });
+    case 'assetSearch': return assetSearch(message.payload as { query: string });
     case 'waynet': return waynet();
     case 'portalFindings': return portalFindings();
     case 'visualBounds': return boundsOfVisual(message.payload as VisualBoundsRequest);

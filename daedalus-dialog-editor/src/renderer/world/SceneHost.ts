@@ -96,6 +96,10 @@ export class SceneHost {
     this.world = new WorldScene(textures);
     this.world.setWorldMesh(mesh);
     this.world.setInstancedVisuals(visuals);
+    // The decals the same payload carries, as the quads they are (#249). Before
+    // the markers for the reason below: what is drawn first, what is left over
+    // last.
+    this.world.setDecals(visuals.decals);
     // After the visuals, because that is the order the two describe the same
     // world in: the instances are what is drawn, and the markers are what is
     // left over.

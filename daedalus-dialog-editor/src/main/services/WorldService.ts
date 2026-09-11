@@ -10,6 +10,7 @@ import type {
   InstancedPayload,
   ResolvedOpenWorldRequest,
   VfsEntry,
+  VfsSearch,
   WaynetPayload,
   PortalFindingsPayload,
   WorldMeshPayload,
@@ -175,6 +176,16 @@ export class WorldService {
    */
   listAssets(path = '/'): Promise<VfsEntry[] | null> {
     return this.requestOnOpenWorld<VfsEntry[] | null>('assets', { path });
+  }
+
+  /**
+   * Every entry anywhere in the mounted namespace whose name contains `query`.
+   * The recursive walk `listAssets` refuses to do, bounded by a needle and a
+   * cap — the browser's search box, which is the only way to reach an asset
+   * whose directory the user does not already know (#241).
+   */
+  searchAssets(query: string): Promise<VfsSearch> {
+    return this.requestOnOpenWorld<VfsSearch>('assetSearch', { query });
   }
 
   /** The waynet as a drawable graph. Requested on demand: an overlay nobody

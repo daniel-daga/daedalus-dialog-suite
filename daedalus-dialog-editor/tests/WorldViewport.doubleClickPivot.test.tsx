@@ -101,7 +101,8 @@ const MESH: WorldMeshPayload = {
 };
 
 function emptyVisuals(): InstancedPayload {
-  return { visuals: [], stats: { visualsSeen: 0, visualsResolved: 0, vobsPlaced: 0, instancedDrawGroups: 0, levelCompos: 0, unresolvedByType: {} } };
+  // Nothing about a decal here; `DecalLayer.test.ts` is where one is drawn.
+  return { visuals: [], decals: mockWorldViewport.noDecals(), stats: { visualsSeen: 0, visualsResolved: 0, vobsPlaced: 0, instancedDrawGroups: 0, levelCompos: 0, unresolvedByType: {} } };
 }
 
 function props() {

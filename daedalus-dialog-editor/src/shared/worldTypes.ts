@@ -4,10 +4,14 @@
 // boundary needs — the request/response envelope and the summary.
 
 import type {
-  AssetCatalog, DrawGroup, InstancedVisual, PortalFinding, VisualScene, VobFolders, VobIndex, WorldOp,
+  AssetCatalog, DecalGroup, DecalScene, DrawGroup, InstancedVisual, PortalFinding, VisualScene,
+  VobFolders, VobIndex, WorldOp,
 } from 'zen-world';
 
-export type { AssetCatalog, DrawGroup, InstancedVisual, PortalFinding, VisualScene, VobFolders, VobIndex, WorldOp };
+export type {
+  AssetCatalog, DecalGroup, DecalScene, DrawGroup, InstancedVisual, PortalFinding, VisualScene,
+  VobFolders, VobIndex, WorldOp,
+};
 
 export type GameVersion = 'g1' | 'g2';
 
@@ -69,6 +73,13 @@ export interface WorldMeshPayload {
 
 export interface InstancedPayload {
   visuals: InstancedVisual[];
+  /**
+   * The decals, as quads (#249). Beside the instanced visuals rather than behind
+   * an op of their own, because they are built from the same index and rebuilt
+   * by the same structural op: a decal placed or deleted has to arrive with the
+   * scene the placement rebuilt, not one round trip later.
+   */
+  decals: DecalScene;
   stats: {
     visualsSeen: number;
     visualsResolved: number;
@@ -118,6 +129,13 @@ export interface VfsEntry {
    * invented provenance there would be a lie.
    */
   sources?: number[];
+  /**
+   * The directory holding it, `'/'` at the root. Set on a search hit
+   * (zenkit-node's `vfsFind`), which is the whole point of one: it was found
+   * somewhere the browser is not standing. Absent on a listing's entry, which
+   * is by construction in the directory that was listed.
+   */
+  directory?: string;
 }
 
 export interface DecodedTexture {
@@ -127,8 +145,16 @@ export interface DecodedTexture {
   rgba: ArrayBuffer;
 }
 
+/** What a whole-namespace search answers. `truncated` is the cap being hit,
+ *  not a failure — a short needle matches thousands of entries on a retail
+ *  install and the browser says so rather than pretending it saw them all. */
+export interface VfsSearch {
+  matches: VfsEntry[];
+  truncated: boolean;
+}
+
 export type WorldWorkerOp =
-  | 'open' | 'worldMesh' | 'visuals' | 'texture' | 'assets' | 'waynet' | 'portalFindings'
+  | 'open' | 'worldMesh' | 'visuals' | 'texture' | 'assets' | 'assetSearch' | 'waynet' | 'portalFindings'
   | 'visualBounds' | 'visual' | 'vobProps' | 'refreshIndex' | 'applyOps' | 'save' | 'close';
 
 /**

@@ -165,4 +165,42 @@ test('vobIndex buffer lengths agree with the declared count', () => {
     // Transferable to the renderer as-is (level-editor.md §7).
     assert.ok(ix[key] instanceof ArrayBuffer, key);
   }
+  // The decal table is sparse rather than dense, so its length is its own — but
+  // it is always present, because a consumer reads it unconditionally and an
+  // absent buffer would be a branch in every one of them.
+  assert.ok(ix.decalVobs instanceof ArrayBuffer);
+  assert.ok(ix.decalDimensions instanceof ArrayBuffer);
+  assert.strictEqual(ix.decalDimensions.byteLength, ix.decalVobs.byteLength * 2);
+});
+
+// The decal side table (#249). A decal's size lives on its *visual* — one
+// `zCDecal` object per VOB, not per name — so it is in no column and no
+// dictionary, and a renderer that wanted to draw 1,932 retail decals at their
+// real size had to ask for each one over IPC. Sparse, because 95 % of a world
+// is not a decal.
+test('vobIndex carries each decal VOB and the size of its visual', () => {
+  const world = handle();
+  const ix = zenkit.vobIndex(world);
+  const at = paths(ix);
+
+  const decalVobs = u32(ix.decalVobs);
+  const dims = f32(ix.decalDimensions);
+
+  // Exactly the VOBs the type column calls DECAL, in index order.
+  const expected = [];
+  const typeOf = (i) => ix.visualTypes[u32(ix.visualTypeIndex)[i]];
+  for (let i = 0; i < ix.count; i++) if (typeOf(i) === 'DECAL') expected.push(i);
+  assert.deepStrictEqual(decalVobs, expected);
+  assert.ok(expected.length > 0, 'the fixture authors a decal');
+
+  // Two floats per row, and the second reader — the per-VOB props the property
+  // grid reads — agrees with them.
+  assert.strictEqual(dims.length, decalVobs.length * 2);
+  for (const [row, vob] of decalVobs.entries()) {
+    const props = zenkit.getVobProps(world, at[vob]);
+    assert.deepStrictEqual(
+      [dims[row * 2], dims[row * 2 + 1]], props.decal.dimension,
+      `dimension of vob ${vob}`,
+    );
+  }
 });

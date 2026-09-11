@@ -96,6 +96,32 @@ describe('ThumbnailRenderer', () => {
     await expect(renderer.renderVisual(VISUAL, async () => { throw new Error('undecodable'); })).resolves.toBe(PNG);
   });
 
+  // A canvas keeps the first context kind it is handed out and answers null
+  // for every other kind from then on. One canvas for both draws therefore
+  // breaks whichever tile kind the session happens to ask for second, and
+  // does it silently (#223).
+  it('never takes a 2D context on the canvas the WebGL renderer draws into', async () => {
+    (globalThis as { ImageData?: unknown }).ImageData = class { constructor(public data: Uint8ClampedArray, public width: number, public height: number) {} };
+    const twoD: HTMLCanvasElement[] = [];
+    const getContext = jest.spyOn(HTMLCanvasElement.prototype, 'getContext')
+      .mockImplementation(function (this: HTMLCanvasElement, kind: string) {
+        if (kind !== '2d') return null;
+        twoD.push(this);
+        return { putImageData: jest.fn(), drawImage: jest.fn(), imageSmoothingEnabled: true } as unknown as CanvasRenderingContext2D;
+      } as typeof HTMLCanvasElement.prototype.getContext);
+    const render = jest.spyOn(THREE.WebGLRenderer.prototype, 'render').mockImplementation(() => {});
+    const renderer = new ThumbnailRenderer();
+
+    // Both kinds, in the order the grid mixes them.
+    await renderer.renderVisual(VISUAL, async () => null);
+    renderer.renderTexture({ ...WOOD, width: 2, height: 2, rgba: new Uint8Array(16).buffer });
+
+    expect(twoD.length).toBeGreaterThan(0);
+    expect(twoD).not.toContain(renderer.canvas);
+    render.mockRestore();
+    getContext.mockRestore();
+  });
+
   it('draws a decoded texture to a 2D canvas, scaled into the tile', () => {
     // jsdom has no ImageData; the preview component draws through the same
     // constructor and its spec never reaches the draw.

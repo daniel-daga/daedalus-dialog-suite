@@ -35,6 +35,7 @@ function vobIndex(vobs: Spec[]): VobIndex {
     names: [''], nameIndex: new Uint32Array(vobs.length).buffer,
     visuals: [''], visualIndex: new Uint32Array(vobs.length).buffer,
     visualTypes: ['MULTI_RESOLUTION_MESH'], visualTypeIndex: new Uint32Array(vobs.length).buffer,
+    decalVobs: new Uint32Array(0).buffer, decalDimensions: new Float32Array(0).buffer,
   };
 }
 

@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { acceleratedRaycast } from 'three-mesh-bvh';
 import {
   threeToZen, zenToThree, zenBoxToThree,
-  isWaynetOp, type ZenPosition, type ZenRotation,
+  isWaynetOp, type VobExtent, type ZenPosition, type ZenRotation,
 } from 'zen-world';
 import type {
   DecodedTexture, InstancedPayload, VobIndex, WaynetPayload, WorldMeshPayload, WorldOp,
@@ -252,6 +252,18 @@ export interface WorldViewportProps {
    */
   hiddenVobs: Uint8Array | null;
   /**
+   * How far the selected VOB reaches, when its reach is a radius (§16.39,
+   * #248): a `zCVobSound`'s `radius`, a `zCVobLight`'s `range`, read off the
+   * `getVobProps` the property grid already makes. Null for every other class,
+   * for a multi-select, and while the read is in flight — a sphere is drawn
+   * around exactly the one VOB whose number is known.
+   *
+   * Optional, and absent means the same as null: nothing to draw. Every
+   * viewport spec that predates the sphere leaves it out, and a viewport with
+   * no radius to show is the ordinary case rather than a missing argument.
+   */
+  selectedExtent?: { vob: number; extent: VobExtent } | null;
+  /**
    * Which VOBs carry the outline (#229). A view setting like `exposure`: one
    * uniform on the pass, no op, nothing saved with the world.
    */
@@ -402,6 +414,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   showWaypointNames, loadTexture, onTextureFailures, onPick, onVobContextMenu,
   selection, onTranslateSelection, gizmoMode, onRotateSelection, appliedOps,
   selectedWaypoint, terrainPoint, exposure, hiddenVobs, outlineMode, snapGrid, snapAngle,
+  selectedExtent = null,
   scatterRadius, onScatterStroke,
   onSelectWaypoint, onMoveWaypoint, paused = false,
 }, ref) => {
@@ -1349,6 +1362,18 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   useEffect(() => {
     sceneRef.current?.setSelectedVobs(selection);
   }, [selection, mesh, visuals]);
+
+  // The selected VOB's reach (§16.39). On `mesh`/`visuals` for the reason the
+  // effects above take them, and on `appliedOps` as well: the radius is a field
+  // an op writes and the VOB is something a move takes elsewhere, so the sphere
+  // has to be redrawn from the committed position rather than the one it was
+  // first drawn at.
+  useEffect(() => {
+    const world = sceneRef.current;
+    if (world === null) return;
+    if (selectedExtent === null) world.hideExtent();
+    else world.showExtent(selectedExtent.vob, selectedExtent.extent);
+  }, [selectedExtent, mesh, visuals, appliedOps]);
 
   // An edit the main process has taken — a commit, an undo, a redo, or the
   // reversal of a refused one. The scene is a projection and has to follow it;

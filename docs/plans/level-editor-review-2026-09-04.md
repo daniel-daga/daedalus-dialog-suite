@@ -336,15 +336,19 @@ every pivot press, terrain click and `raycastDown`, and the walk passes
 through untreed meshes. With §3.2, ×2 per op. Cache the serialized trees per
 `mesh` payload the way textures are cached.
 
-### 3.4 `ThumbnailRenderer` uses one canvas for both a 2D and a WebGL context — **confirmed** (spec behaviour)
+### 3.4 `ThumbnailRenderer` uses one canvas for both a 2D and a WebGL context — **fixed 2026-09-11**
 
-`renderTexture` calls `getContext('2d')` (`ThumbnailRenderer.ts:67`) and
-`webgl()` hands the *same* canvas to `WebGLRenderer` (`:86`). A canvas's
-context mode is fixed by its first `getContext`, so whichever tile kind is
-drawn second fails for the rest of the world session; `AssetThumbnails.produce`
-catches it as `{status:'failed'}` — a silently marked tile. Reachable in
-Favorites or any mixed listing. This is "the thumbnails' look", which the
-the tracker lists as unwitnessed. Fix: a second canvas for the 2D path.
+`renderTexture` called `getContext('2d')` and `webgl()` handed the *same* canvas
+to `WebGLRenderer`. A canvas's context mode is fixed by its first `getContext`,
+so whichever tile kind was drawn second failed for the rest of the world
+session; `AssetThumbnails.produce` caught it as `{status:'failed'}` — a silently
+marked tile, reachable in Favorites or any mixed listing. A texture tile now
+draws into a second canvas of the renderer's own.
+
+The prediction that no test could see it under jsdom was wrong, and the test
+that sees it is the shape worth reusing: jsdom has neither context, but it does
+have `getContext`, so a spy that records **which canvas** each `'2d'` request
+was made of catches the collision without either context existing.
 
 ### 3.5 GPU buffers never released — **confirmed**
 
@@ -631,11 +635,9 @@ effect, which `settle()`s the builds it abandoned rather than disposing it.
 Held by `bvhCache.test.ts`. Not measured in the app — no GPU here — so the
 saving is the review's own 145-590 ms figure, not a fresh one.
 
-**§3.4, `ThumbnailRenderer`'s shared canvas.** A 2D and a WebGL context on one
-canvas: whichever tile kind is drawn second fails for the rest of the session,
-silently, as a `{status:'failed'}` tile. Two lines to fix and no test can see
-it under jsdom, which has neither context — this is what "the thumbnails' look
-is unwitnessed" in the tracker actually means.
+**§3.4, `ThumbnailRenderer`'s shared canvas — fixed 2026-09-11.** See §3.4: a
+texture tile draws into its own canvas, and the "no test can see it under
+jsdom" claim did not survive contact with one.
 
 **§2.6 has no test.** The null-endpoint guard landed, but a dangling edge
 reference cannot be produced through the API — it comes from a malformed file,

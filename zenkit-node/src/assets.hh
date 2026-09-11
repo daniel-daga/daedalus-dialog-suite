@@ -43,6 +43,15 @@ Napi::Value VfsResolve(Napi::CallbackInfo const& info);
 // entries and an asset browser shows one directory at a time.
 Napi::Value VfsList(Napi::CallbackInfo const& info);
 
+// vfsFind(handle, query, options) — every entry anywhere in the mounted
+// namespace whose name contains `query`, case-insensitively, as
+// { name, directory, type, sources } with the same provenance a listing
+// carries. Directories first, breadth-first within each half, and capped:
+// `{ matches, truncated }` says whether the walk stopped early. This IS the
+// recursive walk vfsList refuses to do, which is why it is a separate call
+// with a needle and a cap rather than a mode of the listing.
+Napi::Value VfsFind(Napi::CallbackInfo const& info);
+
 // vfsRead(handle, name) — the bytes of the first file of that name anywhere in
 // the mounted namespace, as a Buffer, or null when absent. Name lookup is
 // case-insensitive, as the engine's own is. This is how a world leaves a

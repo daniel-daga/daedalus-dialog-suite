@@ -28,6 +28,8 @@ const MESH: WorldMeshPayload = { groups: [], bbox: [0, 0, 0, 2000, 500, 4000] };
 function emptyVisuals(): InstancedPayload {
   return {
     visuals: [],
+    // Nothing about a decal here; `DecalLayer.test.ts` is where one is drawn.
+    decals: mockWorldViewport.noDecals(),
     stats: {
       visualsSeen: 0, visualsResolved: 0, vobsPlaced: 0, instancedDrawGroups: 0,
       levelCompos: 0, unresolvedByType: {},
