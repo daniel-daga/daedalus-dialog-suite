@@ -123,6 +123,39 @@ describe('WorldAssetBrowser', () => {
     expect(calls).toEqual(['/']);
   });
 
+  it('opens a row from the keyboard, so the list can be walked without a mouse', async () => {
+    // §5.4 item 17 of `docs/plans/level-editor-review-2026-09-04.md`. A row was
+    // a `div` with an `onClick` and no `tabIndex`: nothing in the browser could
+    // be reached, let alone activated, without a pointer.
+    const { list } = listing();
+    const onPreview = jest.fn();
+    render(<WorldAssetBrowser listAssets={list} onPreview={onPreview} />);
+
+    const row = await screen.findByTestId('world-asset-MOD_ONLY.MRM');
+    expect(row).toHaveAttribute('tabindex', '0');
+
+    row.focus();
+    fireEvent.keyDown(row, { key: 'Enter' });
+    expect(onPreview).toHaveBeenCalledWith('MOD_ONLY.MRM');
+  });
+
+  it('marks the row whose asset is being previewed', async () => {
+    // §5.4 item 17's other half. Nothing on a row said which of them the panel
+    // beside it was showing, so a preview and the list disagreed silently.
+    const { list } = listing();
+    render(
+      <WorldAssetBrowser
+        listAssets={list}
+        onPreview={jest.fn()}
+        previewing="MOD_ONLY.MRM"
+      />,
+    );
+
+    const row = await screen.findByTestId('world-asset-MOD_ONLY.MRM');
+    expect(row).toHaveAttribute('aria-current', 'true');
+    expect(screen.getByTestId('world-asset-Meshes')).not.toHaveAttribute('aria-current');
+  });
+
   it('descends one directory at a time, asking only for the one opened', async () => {
     // Never a recursive walk: the install is tens of thousands of entries.
     const user = userEvent.setup();

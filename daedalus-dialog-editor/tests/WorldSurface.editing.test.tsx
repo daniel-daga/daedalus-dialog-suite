@@ -2766,6 +2766,17 @@ describe('a waypoint dragged in the viewport', () => {
       fireEvent.blur(nameField());
     };
 
+    it('names both of its fields, rather than leaving it to a placeholder', async () => {
+      // §5.4 item 23 of `docs/plans/level-editor-review-2026-09-04.md`. The
+      // rename box had no label at all — the word "Waypoint" sits under it as
+      // free text, which nothing associates with the field — and the connect
+      // box had a placeholder, which is gone the moment anything is typed.
+      await pickWaypoint();
+
+      expect(nameField()).toHaveAccessibleName('Waypoint name');
+      expect(screen.getByTestId('world-waypoint-join-name')).toHaveAccessibleName(/connect/i);
+    });
+
     it('becomes a RenameWaypoint carrying the name it replaces', async () => {
       // `from` is the guard as well as the origin: a bare index always resolves
       // to *some* waypoint, so the name it had is the only check the address

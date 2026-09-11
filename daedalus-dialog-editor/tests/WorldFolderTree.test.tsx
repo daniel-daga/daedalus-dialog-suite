@@ -207,7 +207,10 @@ describe('WorldFolderTree', () => {
     expect(onRenameFolder).toHaveBeenCalledWith('f1', 'Renamed');
   });
 
-  it('deletes a folder', () => {
+  it('deletes a folder, once the confirm is answered', () => {
+    // §5.4 item 18 of `docs/plans/level-editor-review-2026-09-04.md`. A folder
+    // is hand-built grouping with no undo by design (`docs/plans/vob-folders.md`),
+    // and the delete was a hover-only icon that took it away on one click.
     const onDeleteFolder = jest.fn();
     render(
       <WorldFolderTree
@@ -222,7 +225,83 @@ describe('WorldFolderTree', () => {
       />,
     );
     fireEvent.click(screen.getByTestId('world-folder-delete-f1'));
+    expect(onDeleteFolder).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('world-folder-delete-confirm'));
     expect(onDeleteFolder).toHaveBeenCalledWith('f1');
+  });
+
+  it('lets the confirm be declined, keeping the folder', () => {
+    const onDeleteFolder = jest.fn();
+    render(
+      <WorldFolderTree
+        folders={foldersOf([{ id: 'f1', name: 'A', vobPaths: [] }])}
+        summary={SUMMARY}
+        selection={[]}
+        onSelect={jest.fn()}
+        onCreateFolder={jest.fn()}
+        onRenameFolder={jest.fn()}
+        onDeleteFolder={onDeleteFolder}
+        onRemoveFromFolder={jest.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('world-folder-delete-f1'));
+    fireEvent.click(screen.getByTestId('world-folder-delete-cancel'));
+
+    expect(onDeleteFolder).not.toHaveBeenCalled();
+    expect(screen.getByTestId('world-folder-f1')).toBeInTheDocument();
+  });
+
+  it('offers rename as a button, not only as a double-click nobody finds', () => {
+    // §5.4 item 18 again: the rename was a `onDoubleClick` on the label and
+    // nothing said so — there was no way to discover it and no way to reach it
+    // without a pointer.
+    const onRenameFolder = jest.fn();
+    render(
+      <WorldFolderTree
+        folders={foldersOf([{ id: 'f1', name: 'Quest NPCs', vobPaths: [] }])}
+        summary={SUMMARY}
+        selection={[]}
+        onSelect={jest.fn()}
+        onCreateFolder={jest.fn()}
+        onRenameFolder={onRenameFolder}
+        onDeleteFolder={jest.fn()}
+        onRemoveFromFolder={jest.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('world-folder-rename-open-f1'));
+    const input = screen.getByTestId('world-folder-rename-f1');
+    fireEvent.change(input, { target: { value: 'Renamed' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(onRenameFolder).toHaveBeenCalledWith('f1', 'Renamed');
+  });
+
+  it('is a tree whose folder rows are tree items', () => {
+    // §5.4 item 18's third half: the members carried `role="treeitem"` and the
+    // folders they sit under carried nothing, so the one thing the tree is a
+    // tree *of* was invisible to an assistive technology.
+    render(
+      <WorldFolderTree
+        folders={foldersOf([{ id: 'f1', name: 'A', vobPaths: ['0'] }])}
+        summary={SUMMARY}
+        selection={[]}
+        onSelect={jest.fn()}
+        onCreateFolder={jest.fn()}
+        onRenameFolder={jest.fn()}
+        onDeleteFolder={jest.fn()}
+        onRemoveFromFolder={jest.fn()}
+      />,
+    );
+
+    const folder = screen.getByTestId('world-folder-row-f1');
+    expect(folder).toHaveAttribute('role', 'treeitem');
+    expect(folder).toHaveAttribute('aria-level', '1');
+    expect(folder).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(screen.getByTestId('world-folder-toggle-f1'));
+    expect(screen.getByTestId('world-folder-member-f1-0')).toHaveAttribute('aria-level', '2');
   });
 
   it('removes a member from its folder', () => {

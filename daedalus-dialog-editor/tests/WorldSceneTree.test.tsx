@@ -109,6 +109,50 @@ describe('WorldSceneTree', () => {
     expect(row(3)).not.toBeInTheDocument();
   });
 
+  it('says how deep a row is, so the indent is not the only evidence of it', async () => {
+    // §5.4 item 21 of `docs/plans/level-editor-review-2026-09-04.md`. The rows
+    // are `treeitem`s in a virtualized list, so nothing nests them in the DOM —
+    // depth is a left padding and an assistive technology cannot see it.
+    const user = userEvent.setup();
+    render(<WorldSceneTree summary={NESTED} selection={[]} onSelect={jest.fn()} />);
+
+    expect(row(0)).toHaveAttribute('aria-level', '1');
+    await user.click(screen.getByTestId('world-vob-toggle-0'));
+    expect(row(1)).toHaveAttribute('aria-level', '2');
+  });
+
+  it('carries the full label as a tooltip, since the row truncates it', async () => {
+    // §5.4 item 21 again. A 300 px panel truncates most names, and the asset
+    // tiles beside it have said their full name on hover all along.
+    const user = userEvent.setup();
+    render(<WorldSceneTree summary={NESTED} selection={[]} onSelect={jest.fn()} />);
+
+    await user.click(screen.getByTestId('world-vob-toggle-0'));
+    expect(within(row(1)!).getByText('GATE')).toHaveAttribute('title', 'GATE');
+    expect(within(row(1)!).getByText('oCMobDoor')).toHaveAttribute('title', 'oCMobDoor');
+  });
+
+  it('calls the camera jump what the menu and the grid call it', async () => {
+    // §5.4 item 19: one verb for one command. The locator said "Jump the camera
+    // to this VOB", the context menu said "Frame", and only the property grid's
+    // copy said which key did it.
+    const user = userEvent.setup();
+    render(
+      <WorldSceneTree summary={NESTED} selection={[]} onSelect={jest.fn()} onFocus={jest.fn()} />,
+    );
+
+    await user.click(screen.getByTestId('world-vob-toggle-0'));
+    expect(screen.getByTestId('world-vob-locate-1')).toHaveAttribute('title', 'Frame this VOB (.)');
+  });
+
+  it('does not blame a filter for a world that has no VOBs', () => {
+    // §5.4 item 21's third half. The message is the only thing on screen, and
+    // it told the user to clear a filter they had never set.
+    render(<WorldSceneTree summary={summaryOf(vobIndex([]))} selection={[]} onSelect={jest.fn()} />);
+
+    expect(screen.getByTestId('world-tree-empty')).not.toHaveTextContent(/filter/i);
+  });
+
   it('reveals children when a row is expanded, and hides them again', async () => {
     const user = userEvent.setup();
     render(<WorldSceneTree summary={NESTED} selection={[]} onSelect={jest.fn()} />);

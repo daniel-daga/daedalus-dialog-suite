@@ -1,11 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import {
-  Box, IconButton, TextField, Tooltip, Typography,
+  Box, Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle,
+  IconButton, TextField, Tooltip, Typography,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import CloseIcon from '@mui/icons-material/Close';
 import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/Edit';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import MyLocationIcon from '@mui/icons-material/MyLocation';
 import { vobAtIndexPath, type VobFolder, type VobFolders, type VobReader } from 'zen-world';
@@ -59,6 +61,11 @@ const WorldFolderTree: React.FC<WorldFolderTreeProps> = ({
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   const [newFolderName, setNewFolderName] = useState('');
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
+  /** The folder a delete is being confirmed for, or null. A folder is grouping
+   *  somebody filed by hand and there is no undo for it by design
+   *  (`docs/plans/vob-folders.md`), so the one click it used to take was the
+   *  whole of what stood between that work and nothing (§5.4 item 18). */
+  const [deleting, setDeleting] = useState<VobFolder | null>(null);
 
   const toggle = (id: string) => setExpanded((current) => {
     const next = new Set(current);
@@ -125,10 +132,16 @@ const WorldFolderTree: React.FC<WorldFolderTreeProps> = ({
           return (
             <Box key={folder.id} data-testid={`world-folder-${folder.id}`}>
               <Box
+                role="treeitem"
+                aria-level={1}
+                aria-expanded={isOpen}
+                data-testid={`world-folder-row-${folder.id}`}
                 sx={{
                   display: 'flex', alignItems: 'center', gap: 0.5, pl: 0.5, pr: 1, minHeight: 28,
                   cursor: 'pointer',
-                  '&:hover .world-folder-delete': { visibility: 'visible' },
+                  // `:focus-within` as well, or a row's own verbs vanish the
+                  // moment a keyboard reaches them (§5.4 item 18).
+                  '&:hover .world-folder-verb, &:focus-within .world-folder-verb': { visibility: 'visible' },
                 }}
               >
                 <Box
@@ -167,16 +180,35 @@ const WorldFolderTree: React.FC<WorldFolderTreeProps> = ({
                 <Typography variant="caption" color="text.secondary" noWrap sx={{ opacity: 0.75 }}>
                   {members.length}
                 </Typography>
-                <Box
-                  component="span"
-                  className="world-folder-delete"
-                  data-testid={`world-folder-delete-${folder.id}`}
-                  title="Delete folder"
-                  onClick={() => onDeleteFolder(folder.id)}
-                  sx={{ display: 'flex', flexShrink: 0, visibility: 'hidden', color: 'text.secondary' }}
-                >
-                  <DeleteIcon sx={{ fontSize: 14 }} />
-                </Box>
+                {/* Buttons, not spans: the rename was a double-click on the
+                    label and nothing on screen said so, and neither verb could
+                    be reached without a pointer (§5.4 item 18 of the
+                    2026-09-04 review). The double-click stays — it is what a
+                    file manager does — but it is no longer the only way in. */}
+                <Tooltip title="Rename folder">
+                  <IconButton
+                    size="small"
+                    className="world-folder-verb"
+                    data-testid={`world-folder-rename-open-${folder.id}`}
+                    aria-label={`Rename ${folder.name}`}
+                    onClick={() => setRenaming({ id: folder.id, name: folder.name })}
+                    sx={{ p: 0.25, flexShrink: 0, visibility: 'hidden', color: 'text.secondary' }}
+                  >
+                    <EditIcon sx={{ fontSize: 14 }} />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Delete folder">
+                  <IconButton
+                    size="small"
+                    className="world-folder-verb"
+                    data-testid={`world-folder-delete-${folder.id}`}
+                    aria-label={`Delete ${folder.name}`}
+                    onClick={() => setDeleting(folder)}
+                    sx={{ p: 0.25, flexShrink: 0, visibility: 'hidden', color: 'text.secondary' }}
+                  >
+                    <DeleteIcon sx={{ fontSize: 14 }} />
+                  </IconButton>
+                </Tooltip>
               </Box>
               {isOpen && members.map(({ path, vob }) => {
                 const label = reader.name(vob) || reader.visual(vob);
@@ -185,6 +217,7 @@ const WorldFolderTree: React.FC<WorldFolderTreeProps> = ({
                   <Box
                     key={path}
                     role="treeitem"
+                    aria-level={2}
                     aria-selected={isSelected}
                     data-testid={`world-folder-member-${folder.id}-${vob}`}
                     onClick={(event) => onSelect(vob, event.shiftKey || event.ctrlKey || event.metaKey)}
@@ -207,7 +240,7 @@ const WorldFolderTree: React.FC<WorldFolderTreeProps> = ({
                       <Box
                         component="span"
                         className="world-folder-member-locate"
-                        title="Jump the camera to this VOB"
+                        title="Frame this VOB (.)"
                         data-testid={`world-folder-member-locate-${folder.id}-${vob}`}
                         onClick={(event) => { event.stopPropagation(); onFocus(vob); }}
                         sx={{ display: 'flex', ml: 'auto', flexShrink: 0, pl: 0.5, visibility: 'hidden', color: 'text.secondary' }}
@@ -232,6 +265,29 @@ const WorldFolderTree: React.FC<WorldFolderTreeProps> = ({
           );
         })}
       </Box>
+      <Dialog open={deleting !== null} onClose={() => setDeleting(null)}>
+        <DialogTitle>Delete this folder?</DialogTitle>
+        <DialogContent>
+          <DialogContentText data-testid="world-folder-delete-warning">
+            {deleting === null ? '' : `"${deleting.name}" and its grouping go, and there is no undo for it. The ${resolveMembers(reader, deleting).length} VOBs in it stay in the world.`}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleting(null)} data-testid="world-folder-delete-cancel">
+            Keep it
+          </Button>
+          <Button
+            color="error"
+            data-testid="world-folder-delete-confirm"
+            onClick={() => {
+              if (deleting !== null) onDeleteFolder(deleting.id);
+              setDeleting(null);
+            }}
+          >
+            Delete folder
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

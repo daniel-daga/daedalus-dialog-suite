@@ -525,14 +525,18 @@ the session, not the repo; what they showed is stated as such.
 8. **The multi-selection scope note is wrong for position.** `:726` says an
    edit applies to all N VOBs; a typed coordinate becomes a delta
    (`:773-776`) that moves the selection together — only the anchor lands on
-   the typed value.
+   the typed value. **FIXED 2026-09-11**: the note now says both halves.
 9. **Flag checkboxes on a multi-selection show only the anchor** (`:853`): no
    indeterminate state; a click writes the anchor's inverse to every VOB.
+   **FIXED 2026-09-11**: a flag the selection disagrees on is indeterminate
+   and a click resolves it upwards. The DOM `indeterminate` property is set
+   through a ref — MUI's own prop draws the dash and sets a data attribute,
+   and the property is what an assistive technology reads.
 10. **The grid disappears while the Assets tab has a preview**
     (`WorldSurface.tsx:2740-2748`): `panel === 'assets' && selectedAsset`
     wins over the selected VOB, so a viewport pick while browsing keeps
     showing the mesh preview. Smallest fix: clear `selectedAsset` on a
-    viewport pick.
+    viewport pick. **FIXED 2026-09-11**, that way.
 
 ### 5.3 Toolbar and layout (seen in the app)
 
@@ -567,26 +571,58 @@ the session, not the repo; what they showed is stated as such.
     `tabIndex`); tile actions reveal on `:hover` only (`WorldAssetGrid.tsx:
     532, 546`), no `:focus-within`. **Mesh preview has no loading state**
     (`WorldAssetPreview.tsx:730-749`) — and §16.26 notes a large `.MDL`
-    re-extracts on every click, so the wait is real.
+    re-extracts on every click, so the wait is real. **FIXED 2026-09-11**: a
+    row is focusable and opens on Enter or Space, carries `aria-current` and a
+    highlight when the panel beside it is showing it (`previewing` comes down
+    from the surface, which owns the path and clears it on a viewport pick —
+    a copy kept in the browser would go stale), tiles reveal their actions on
+    `:focus-within` too, and the preview says "Decoding…"/"Extracting…" while
+    the request is out.
 18. **Folder tree**: rename is double-click on the label only
     (`WorldFolderTree.tsx:161`); delete is a hover-only span with no confirm
     and, by design, no undo (`:170-179`); `role="tree"` with no
-    `role="treeitem"` rows (`:110`).
+    `role="treeitem"` rows (`:110`). **FIXED 2026-09-11**: rename and delete
+    are `IconButton`s revealed by `:focus-within` as well as `:hover` (the
+    double-click stays — it is what a file manager does — but it is no longer
+    the only way in), the delete is behind a confirm naming what goes and what
+    stays, and a folder row is a `treeitem` with `aria-level` and
+    `aria-expanded`.
 19. **Context menu, tree and grid disagree on the frame verb** — "Frame" vs
     "Jump the camera to this VOB", with "(.)" only in the grid — and the menu
-    shows no shortcut hints; Duplicate has no shortcut anywhere.
+    shows no shortcut hints; Duplicate has no shortcut anywhere. **FIXED
+    2026-09-11**: all three say Frame and all three say ".", and the menu
+    shows the key for Frame, Copy, Paste and Delete. Duplicate still shows
+    none, because it still *is* none — inventing a hint for an unbound verb
+    would be a shortcut that does not work. Binding one is a decision nobody
+    has made.
 20. **Viewport Home/`.` fire inside popovers** (`WorldViewport.tsx:1502` skips
     inputs only; the surface's guard also skips listbox/menu/dialog) — Home in
-    an open MUI Select frames the world.
+    an open MUI Select frames the world. **FIXED 2026-09-11**: the surface's
+    guard moved to `renderer/world/keyboardTarget.ts`, which `NavController`
+    can import (`renderer/world/` has no React in it) and both window
+    listeners now share.
 21. **Scene-tree labels truncate with no tooltip** (`WorldSceneTree.tsx:
     203-207`, unlike `AssetTile`); rows lack `aria-level`; the empty message
     "No VOB matches this filter." also shows for an empty world (`:682-690`).
+    **FIXED 2026-09-11**, all three.
 22. **Scatter radius/spacing accept NaN** (`WorldEditControls.tsx:718, 731`
     `Number('')`), passed through as the brush radius (`WorldSurface.tsx:
-    1643`); the tree's reach field guards the same case.
+    1643`); the tree's reach field guards the same case. **FIXED 2026-09-11,
+    and the finding was half wrong**: a number input reports `''` for anything
+    it cannot parse and `Number('')` is 0, so the value is never NaN. The
+    defect is a *zero* radius — a ring of nothing and every candidate on one
+    point — and it is floored at the tool rather than in the field, so a
+    half-typed number stays typeable. The spacing has no defect at all: zero
+    spacing means "no minimum distance", which is a real answer.
 23. **Waypoint panel fields have placeholder-only labels** (`WaypointPanel.tsx:
     307-319, 388-399`); **`PanelSplitter` is mouse-only** with no
-    `role="separator"` (`PanelSplitter.tsx:592-607`).
+    `role="separator"` (`PanelSplitter.tsx:592-607`). **FIXED 2026-09-11**: the
+    rename box carries an `aria-label` (the visible "Waypoint" caption stays,
+    since nothing associated it with the field), the connect box takes a label
+    in place of its placeholder, and the splitter is a focusable
+    `role="separator"` the arrow keys move — committing on keyup, which is both
+    the symmetry with a drag and the only point at which `onResizeEnd` can read
+    a width the caller's state has caught up with.
 
 ### 5.5 Component quality
 
@@ -672,17 +708,12 @@ deliberately: wiring it risks hanging `close()` on a stuck worker, and
 deleting it discards a documented Windows mapped-file concern. A person should
 pick.
 
-**§5's remainder** — the UI items §5.1's fixes did not cover: the multi-select
-flag checkbox with no indeterminate state (§5.2 item 9), the position field's
-wrong multi-selection note (item 8), the property grid losing to the asset
-preview (item 10), the asset browser's missing highlight, keyboard path and
-loading state (§5.4 item 17), the folder tree's hidden affordances (item 18),
-the frame-verb disagreement (item 19), Home/`.` firing inside popovers (item
-20), scene-tree truncation without a tooltip (item 21), scatter fields
-accepting NaN (item 22), and the waypoint panel and splitter accessibility
-gaps (item 23). Delete-with-N>1 (§5.1 item 5) is still one VOB at a time and
-still says nothing about why — the tooltip is trivial, but whether a batch
-delete should exist at all is §15's call, not a fix.
+**§5's remainder is closed.** Items 8, 9, 10, 17, 18, 19, 20, 21, 22 and 23
+all landed 2026-09-11 — see each item for what was done and, for 19 and 22,
+for what the finding got wrong. What is left of §5 is one thing, and it is a
+decision rather than a fix: **Delete-with-N>1** (§5.1 item 5) is still one VOB
+at a time and still says nothing about why. The tooltip is trivial; whether a
+batch delete should exist at all is §15's call.
 
 ## 7. What is not in this document
 

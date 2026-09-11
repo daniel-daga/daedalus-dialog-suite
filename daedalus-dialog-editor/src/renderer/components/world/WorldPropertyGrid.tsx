@@ -780,11 +780,11 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
       <Field label="Index" name="index">
         <Stack direction="row" spacing={0.5} alignItems="center">
           <Typography variant="caption">{selectedVob}</Typography>
-          <Tooltip title="Jump the camera to this VOB (.)">
+          <Tooltip title="Frame this VOB (.)">
             <IconButton
               size="small"
               data-testid="world-prop-locate"
-              aria-label="Jump the camera to this VOB"
+              aria-label="Frame this VOB"
               onClick={() => onFocus(selectedVob)}
               sx={{ p: 0.25 }}
             >

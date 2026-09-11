@@ -2980,6 +2980,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                     catalog={assetCatalogProps}
                     sources={summary?.assetSources}
                     placement={assetPlacement}
+                    previewing={selectedAsset}
                   />
                 </Box>
               )}

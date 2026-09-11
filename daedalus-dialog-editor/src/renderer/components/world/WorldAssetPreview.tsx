@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Box, Button, Stack, Tooltip, Typography } from '@mui/material';
+import { Box, Button, CircularProgress, Stack, Tooltip, Typography } from '@mui/material';
 import * as THREE from 'three';
 import type { DecodedTexture, VisualScene } from '../../../shared/worldTypes';
 import { buildVisualPreview, frameVisual } from '../../world/VisualPreviewScene';
@@ -301,6 +301,19 @@ const WorldAssetPreview: React.FC<WorldAssetPreviewProps> = ({
             Drag to orbit, wheel to zoom, right-drag to pan.
           </Typography>
         </>
+      )}
+
+      {/* A large `.MDL` is re-extracted on every click (§16.26), so this wait is
+          seconds rather than a flicker — and the panel used to show a name, a
+          path and nothing else for all of it, which reads exactly like a mesh
+          that resolved to nothing (§5.4 item 17 of the 2026-09-04 review). */}
+      {kind !== 'other' && !failed && decoded === null && visual === null && (
+        <Stack direction="row" spacing={1} alignItems="center" data-testid="world-asset-preview-loading">
+          <CircularProgress size={14} />
+          <Typography variant="caption" color="text.secondary">
+            {kind === 'texture' ? 'Decoding…' : 'Extracting…'}
+          </Typography>
+        </Stack>
       )}
 
       {failed && (
