@@ -81,6 +81,24 @@ trusting master for a release, not after.
   and `build-zenkit.js`'s reset (`git checkout -- .`) leaves untracked
   directories alone, so it survives a rebuild. About four minutes. Verified
   2026-09-11: 438 of `zenkit-node`'s 439 tests pass, one skipped.
+- **The browser-harness Playwright suite finds no browser in a cloud
+  container.** The pre-installed Chromium under `/opt/pw-browsers` is a
+  different build than this repo's Playwright pins, so every spec fails with
+  *"Executable doesn't exist at /opt/pw-browsers/chromium-1208/…"* — 178 of
+  them, and the message never says the two are simply different builds. Do
+  **not** run `playwright install`; point the existing one at it instead, with
+  a config that is never committed:
+
+  ```ts
+  // playwright.local.config.ts — delete it when you are done
+  import base from './playwright.config';
+  export default { ...base, projects: (base.projects ?? []).map((p) => ({
+    ...p, use: { ...p.use, launchOptions: { executablePath: '/opt/pw-browsers/chromium' } },
+  })) };
+  ```
+
+  `pnpm exec playwright test -c playwright.local.config.ts`. Verified
+  2026-09-11: 177 passed.
 - **The real-Electron World specs need software GL in a container.** With no
   GPU, Chromium blocklists WebGL2 outright (`ContextResult::kFatalFailure:
   WebGL2 blocklisted`) and every spec that opens a world times out waiting for
