@@ -275,8 +275,12 @@ aside as corrupt on next load and the folders come back empty.
   about which file the engine plays: a world opened from the install's list
   and saved back clears `unsavedEdits`, yet GMBT runs the mod's copy; nothing
   checks the opened path is under `gmbtProjectDir`.
-- **`world:getVobFolders` writes under a read validation** (`main.ts:1043`,
-  `WorldFoldersService.load:41-43` renames a corrupt sidecar aside).
+- **`world:getVobFolders` wrote under a read validation — FIXED 2026-09-11.**
+  `WorldFoldersService.load` renames a corrupt sidecar aside before falling
+  back, so the read handler writes. It now validates `{ write: true }` like the
+  save handler, which is the stronger check — a read validation does not refuse
+  a final component that is itself a symlink, so the two handlers disagreed
+  about the same file.
 - **Encoding**: `Utf16ToWindows1252` (`encoding.cc:66`) cannot re-encode the
   five undefined bytes the decoder emits as U+0081/8D/8F/90/9D, so a name
   carrying one reads out and is then refused as a guard — the 08-29 finding-2
@@ -712,17 +716,21 @@ hypothetical: a test that passes a world handle to `vfsList` segfaults the
 process before the fix, and `napi_type_tag_object` (through node-addon-api's
 `TypeTag`/`CheckTypeTag`) closes it with a UUID per handle kind.
 
-**§2.15's remainder**, none of them urgent: the structural-refresh window
-between `indexRefreshed` and `setVisuals`, `surfaceDialogOpen`'s three missing
-modals (fixed), the `mergeChunks` `lights === null` mismatch (latent, masked
-by the worker), the GMBT dirty-check/launch-target disagreement,
-`world:getVobFolders` writing under a read validation, the cp1252 round-trip
-hole for five undefined bytes, `loadWorld` on a directory path,
-`decodeTexture`'s ignored non-number `level`, `vobAtIndexPath`'s lenient
-parsing, and the dead `close` op in `zenkit.worker.ts` — left alone
-deliberately: wiring it risks hanging `close()` on a stuck worker, and
-deleting it discards a documented Windows mapped-file concern. A person should
-pick.
+**§2.15's remainder.** Four of its items landed 2026-09-11 — `loadWorld` on a
+directory (a SIGABRT, not merely wrong), `decodeTexture`'s ignored non-number
+`level` with `openVfs`'s `overwrite` beside it, and `world:getVobFolders`
+writing under a read validation. What is left, none of it urgent: the
+structural-refresh window between `indexRefreshed` and `setVisuals`,
+`surfaceDialogOpen`'s three missing modals (fixed), the `mergeChunks`
+`lights === null` mismatch (latent, masked by the worker), the GMBT
+dirty-check/launch-target disagreement — a world opened from the install and
+saved back reads clean while `gmbt test` runs the mod's copy, because the
+launch passes a *basename* and a cwd and nothing checks the opened path is
+under `gmbtProjectDir` — the cp1252 round-trip hole for five undefined bytes,
+`vobAtIndexPath`'s lenient parsing, and the dead `close` op in
+`zenkit.worker.ts`, left alone deliberately: wiring it risks hanging `close()`
+on a stuck worker, and deleting it discards a documented Windows mapped-file
+concern. A person should pick.
 
 **§5 is closed.** Items 8, 9, 10, 17, 18, 19, 20, 21, 22 and 23 all landed
 2026-09-11 — see each item for what was done and, for 19 and 22, for what the

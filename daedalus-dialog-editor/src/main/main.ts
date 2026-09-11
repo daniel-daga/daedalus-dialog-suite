@@ -1064,7 +1064,14 @@ export function setupIpcHandlers() {
   ipcMain.handle('world:getVobFolders', async (_event, request: unknown) => {
     try {
       assertVobFoldersGetRequest(request);
-      await pathValidator.validatePathResolved(worldFoldersService.sidecarPath(request.worldPath));
+      // `{ write: true }` on a *read*, and deliberately: `load` renames a
+      // corrupt sidecar aside before falling back, so this handler writes —
+      // and the two handlers have to agree about the same file, which a read
+      // check cannot do because it does not refuse a symlinked final component
+      // (review 2026-09-04 §2.15).
+      await pathValidator.validatePathResolved(
+        worldFoldersService.sidecarPath(request.worldPath), { write: true },
+      );
       return await worldFoldersService.load(request.worldPath);
     } catch (error) {
       if (error instanceof PathValidationError) {
