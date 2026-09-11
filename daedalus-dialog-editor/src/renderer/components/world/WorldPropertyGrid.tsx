@@ -685,7 +685,15 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
   const visualType = reader.visualType(selectedVob);
   const position = reader.position(selectedVob)!;
   const rotation = reader.rotation(selectedVob)!;
-  const flags = reader.flags(selectedVob);
+  /** Each flag across the whole selection: true or false where they agree, null
+   *  where they do not. One VOB always agrees with itself, so this is the
+   *  anchor's own answer for a selection of one — which is what it replaced. */
+  const flagAgreement: Record<typeof FLAG_ORDER[number], boolean | null> = Object.fromEntries(
+    FLAG_ORDER.map((flag) => {
+      const held = selection.map((vob) => reader.flags(vob)[flag]);
+      return [flag, held.every((on) => on === held[0]) ? held[0] : null];
+    }),
+  ) as Record<typeof FLAG_ORDER[number], boolean | null>;
   const parent = tree.parent(selectedVob);
   const children = tree.children(selectedVob).length;
   // The catalogue's own order and its own descriptors. It answers [] for a class
@@ -795,7 +803,7 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
           data-testid="world-prop-edit-scope"
           sx={{ display: 'block', mb: 0.5 }}
         >
-          {`An edit here is applied to all ${selection.length} selected VOBs.`}
+          {`A flag is set on all ${selection.length} selected VOBs. A typed coordinate or angle moves them together — only this VOB lands on the value typed.`}
         </Typography>
       )}
       <Field label="Name" name="name">
@@ -914,7 +922,15 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
       <Field label="Flags" name="flags">
         {/* Named, not a bit word: printing 3 tells nobody that a VOB is a
             visible static. Every flag is shown rather than only the set ones,
-            because an unset flag is now something to click. */}
+            because an unset flag is now something to click.
+
+            A flag is the one thing here written to the whole selection, so it
+            is also the one thing that can *disagree* across it. The box then
+            shows indeterminate rather than the anchor's answer, and a click
+            resolves the disagreement upwards — the write already went to every
+            selected VOB, and taking the value off the anchor alone meant a
+            click on a flag only the anchor had cleared it everywhere (§5.2
+            item 9 of the 2026-09-04 review). */}
         <Stack direction="column" sx={{ my: -0.75 }}>
           {FLAG_ORDER.map((flag) => (
             <FormControlLabel
@@ -922,9 +938,17 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
               control={(
                 <Checkbox
                   size="small"
-                  checked={flags[flag]}
+                  checked={flagAgreement[flag] === true}
+                  indeterminate={flagAgreement[flag] === null}
+                  // MUI's `indeterminate` draws the dash and sets a data
+                  // attribute; the DOM property is what a screen reader reads,
+                  // and only a ref can set it. Re-run on every render, which is
+                  // what keeps it in step with the selection.
+                  inputRef={(node: HTMLInputElement | null) => {
+                    if (node !== null) node.indeterminate = flagAgreement[flag] === null;
+                  }}
                   inputProps={{ 'data-testid': `world-prop-flag-${flag}` } as React.InputHTMLAttributes<HTMLInputElement>}
-                  onChange={(event) => onEditProps({ [flag]: event.target.checked })}
+                  onChange={() => onEditProps({ [flag]: flagAgreement[flag] !== true })}
                 />
               )}
               label={<Typography variant="caption">{flag}</Typography>}

@@ -378,6 +378,33 @@ describe('NavController — the keys', () => {
     expect(h.framedSelection).toBe(0);
   });
 
+  it('a framing key pressed inside a popover belongs to the popover', () => {
+    // §5.4 item 20 of `docs/plans/level-editor-review-2026-09-04.md`. MUI
+    // renders a `Select`'s options as `li[role="option"]` inside a listbox and
+    // a dialog's buttons as plain `button`s — neither is an INPUT, so Home
+    // pressed while picking a snap step framed the whole world behind the open
+    // menu. The surface's own shortcuts have always guarded this; the camera's
+    // did not.
+    const h = stand();
+    const listbox = document.createElement('ul');
+    listbox.setAttribute('role', 'listbox');
+    const option = document.createElement('li');
+    option.setAttribute('role', 'option');
+    listbox.appendChild(option);
+    document.body.appendChild(listbox);
+
+    option.dispatchEvent(new KeyboardEvent('keydown', {
+      code: 'Home', key: 'Home', bubbles: true, cancelable: true,
+    }));
+    option.dispatchEvent(new KeyboardEvent('keydown', {
+      code: 'NumpadDecimal', key: '.', bubbles: true, cancelable: true,
+    }));
+
+    expect(h.framedAll).toBe(0);
+    expect(h.framedSelection).toBe(0);
+    listbox.remove();
+  });
+
   it('another view is on screen: framing a camera nobody can see takes the key for nothing', () => {
     const h = stand();
     h.pause();

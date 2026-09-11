@@ -345,6 +345,18 @@ describe('WorldPropertyGrid, editing', () => {
     expect(edits).toEqual([{ showVisual: false }]);
   });
 
+  it('sets a disagreeing flag on the whole selection rather than inverting the anchor', () => {
+    // §5.2 item 9 of `docs/plans/level-editor-review-2026-09-04.md`. The write
+    // always went to every selected VOB; the *value* came from the anchor
+    // alone, so clicking a flag that only the anchor had cleared it everywhere
+    // — the opposite of what a click on a half-on checkbox means.
+    render(<WorldPropertyGrid summary={WORLD} selection={[0, 1]} {...wiring} />);
+
+    fireEvent.click(screen.getByTestId('world-prop-flag-showVisual'));
+
+    expect(edits).toEqual([{ showVisual: true }]);
+  });
+
   it('refuses to rename a visual the VOB does not have', () => {
     // 15,749 of the 41,393 retail VOBs carry a visual object with an empty name
     // and type UNKNOWN, and the binding refuses to name one: giving a VOB a
@@ -415,6 +427,31 @@ describe('WorldPropertyGrid, editing', () => {
   it('says an edit will take the whole selection with it', () => {
     render(<WorldPropertyGrid summary={WORLD} selection={[0, 1]} {...wiring} />);
     expect(screen.getByTestId('world-prop-edit-scope')).toHaveTextContent(/2/);
+  });
+
+  it('does not claim a typed coordinate lands on every selected VOB', () => {
+    // §5.2 item 8 of `docs/plans/level-editor-review-2026-09-04.md`. The note
+    // covers position, rotation and flags, and it was only true of the flags: a
+    // typed coordinate or angle leaves as a *delta*, so the selection moves
+    // together and only this VOB arrives at the number typed.
+    render(<WorldPropertyGrid summary={WORLD} selection={[0, 1]} {...wiring} />);
+
+    const note = screen.getByTestId('world-prop-edit-scope');
+    expect(note).toHaveTextContent(/only this VOB/i);
+    expect(note).toHaveTextContent(/flag/i);
+  });
+
+  it('leaves a flag the selection disagrees on indeterminate', () => {
+    // §5.2 item 9. VOB 1 is a visible static and VOB 0 is neither, so an
+    // anchor-only checkbox says "on" for a selection that is half off.
+    render(<WorldPropertyGrid summary={WORLD} selection={[0, 1]} {...wiring} />);
+
+    const shown = screen.getByTestId('world-prop-flag-showVisual') as HTMLInputElement;
+    expect(shown.indeterminate).toBe(true);
+    // And a flag they agree on is not indeterminate — both are off here.
+    const dynamic = screen.getByTestId('world-prop-flag-cdDynamic') as HTMLInputElement;
+    expect(dynamic.indeterminate).toBe(false);
+    expect(dynamic).not.toBeChecked();
   });
 });
 

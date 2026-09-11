@@ -43,6 +43,7 @@ import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
 import { appendInsertNpc, findFunctionFile, startupFunctionFor } from './insertNpcScript';
 import { vobModelOf } from '../../world/vobModel';
+import { isTypingOrInPopover } from '../../world/keyboardTarget';
 import { AssetThumbnails } from '../../world/assetThumbnails';
 import { ThumbnailRenderer } from '../../world/ThumbnailRenderer';
 import { LiveTilePreview } from '../../world/LiveTilePreview';
@@ -81,28 +82,6 @@ const baseName = (filePath: string): string => filePath.split(/[\\/]/).pop() || 
  *  else, and inventing an orientation from a surface normal is a feature with
  *  its own decisions (which axis is up for this visual?) rather than a default. */
 const IDENTITY: ZenRotation = [1, 0, 0, 0, 1, 0, 0, 0, 1];
-
-/**
- * Whether a keystroke belongs to something *over* the surface rather than to
- * the surface itself — the guard every shortcut below shares.
- *
- * Two cases, and the second is the one a tagName check alone misses: MUI
- * renders a `Select`'s options as `li[role="option"]` inside a popover and a
- * `Dialog`'s buttons as plain `button`s, so arrowing through the Snap step
- * dropdown or pressing Delete inside the save confirm would otherwise reach
- * the surface's own handler — nudging a VOB (and recording an undo entry)
- * while the user believes they are only picking a menu item.
- */
-function isTypingOrInPopover(target: EventTarget | null): boolean {
-  const element = target as HTMLElement | null;
-  if (element?.isContentEditable) return true;
-  if (['INPUT', 'TEXTAREA', 'SELECT'].includes(element?.tagName ?? '')) return true;
-  // `event.target` is the bare `Window` for a shortcut fired with nothing
-  // focused, which has no `closest` — only an in-page element can be inside
-  // a popover.
-  return element instanceof Element
-    && element.closest('[role="listbox"], [role="menu"], [role="dialog"]') !== null;
-}
 
 /** Arrow-key nudge, in the world's own axes (ZenGin is Y-up): one unit of
  *  step per key, `[x, y, z]`. Keyed by the lower-cased `KeyboardEvent.key`. */
@@ -186,6 +165,18 @@ const DEFAULT_SPAWN_TIME = 8 * 60;
 const SCATTER_DEFAULT_RADIUS = 800;
 const SCATTER_DEFAULT_SPACING = 250;
 const SCATTER_LIMIT = 200;
+
+/**
+ * The smallest brush the tool will actually paint with, in cm.
+ *
+ * An emptied number field reads as `''`, and `Number('')` is 0 — so clearing
+ * the box to type a new radius handed the viewport a ring of nothing and the
+ * stroke a disc of nothing, which drops every candidate onto one point. Floored
+ * here rather than in the field, so a half-typed number is still a number the
+ * user can finish typing (§5.4 item 22 of the 2026-09-04 review). Spacing needs
+ * no floor: zero spacing means "no minimum distance", which is a real answer.
+ */
+const SCATTER_MIN_RADIUS = 1;
 
 /** What the place dialog collects. `parent` is a flat index or null for a
  *  root; where the VOB goes is the ground point, chosen before or after. */
@@ -750,6 +741,14 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   // tree has not been scrolled to.
   const handleSelect = useCallback((vob: number, additive: boolean) => {
     if (additive) toggleVob(vob); else selectVob(vob);
+    // The preview and the property grid share the right-hand panel, and the
+    // preview used to win it outright — so picking a VOB while the Assets tab
+    // was open went on showing the mesh being browsed, with nothing on screen
+    // saying the pick had landed (§5.2 item 10 of the 2026-09-04 review).
+    // Cleared on the pick rather than made to lose the panel: a pick is the
+    // user turning away from the asset, and the browser still has its own
+    // highlight to bring it back.
+    setSelectedAsset(null);
   }, [selectVob, toggleVob]);
 
   /**
@@ -1804,6 +1803,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const [scatterOn, setScatterOn] = useState(false);
   const [scatterRadius, setScatterRadius] = useState(SCATTER_DEFAULT_RADIUS);
   const [scatterSpacing, setScatterSpacing] = useState(SCATTER_DEFAULT_SPACING);
+  /** What the ring and the stroke actually use — see `SCATTER_MIN_RADIUS`. The
+   *  field keeps whatever was typed; only the tool is floored. */
+  const brushRadius = Math.max(SCATTER_MIN_RADIUS, scatterRadius || SCATTER_MIN_RADIUS);
 
   /**
    * A finished brush stroke, committed as **one batch and therefore one undo
@@ -1843,7 +1845,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
 
     const { candidates, capped } = strokeCandidates(
       samples,
-      { radius: scatterRadius, spacing: scatterSpacing, limit: SCATTER_LIMIT },
+      { radius: brushRadius, spacing: scatterSpacing, limit: SCATTER_LIMIT },
       palette.length,
       // The seed is the stroke's own: two strokes of the same shape should not
       // produce the same forest, and `strokeCandidates` is deterministic in it
@@ -1854,7 +1856,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     const placements: ScatterPlacement[] = [];
     for (const candidate of candidates) {
       const hit = viewport.raycastDown([
-        candidate.at[0], candidate.at[1] + scatterRadius, candidate.at[2],
+        candidate.at[0], candidate.at[1] + brushRadius, candidate.at[2],
       ]);
       if (hit === null) continue;
       placements.push({
@@ -1873,7 +1875,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     if (committed && capped) {
       editFailed(`The stroke was capped at ${SCATTER_LIMIT} VOBs — one stroke is one undo entry. Paint it in several passes for more.`);
     }
-  }, [commitOps, boundsOf, readClassProps, scatterOn, scatterRadius, scatterSpacing]);
+  }, [commitOps, boundsOf, readClassProps, scatterOn, brushRadius, scatterSpacing]);
 
   /**
    * The radius the viewport draws its ring at, and null for a brush that is not
@@ -1885,7 +1887,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    * inert until something is selected again, which is the state the toolbar's
    * own hint names.
    */
-  const scatterBrushRadius = scatterOn && selection.length > 0 ? scatterRadius : null;
+  const scatterBrushRadius = scatterOn && selection.length > 0 ? brushRadius : null;
 
   /**
    * User-created VOB folders (VOB folders slice) — a virtual grouping kept

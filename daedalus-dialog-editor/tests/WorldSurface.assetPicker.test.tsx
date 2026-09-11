@@ -43,6 +43,9 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
           <button type="button" data-testid="stub-pick-terrain" onClick={() => props.onPick(null, TERRAIN, false)}>
             pick terrain
           </button>
+          <button type="button" data-testid="stub-pick-vob" onClick={() => props.onPick(1, null, false)}>
+            pick VOB 1
+          </button>
         </div>
       );
     }),
@@ -86,6 +89,25 @@ beforeEach(() => {
 afterEach(() => {
   useWorldStore.getState().reset();
   useProjectStore.getState().closeProject();
+});
+
+describe('the preview and the property grid share one panel', () => {
+  it('a viewport pick takes the panel back from the previewed asset', async () => {
+    // §5.2 item 10 of `docs/plans/level-editor-review-2026-09-04.md`. The
+    // preview won the panel outright while the Assets tab was open, so picking
+    // a VOB in the viewport to see what it *is* went on showing the mesh the
+    // user had been browsing — with no sign the pick had landed at all.
+    await openWorld();
+    await previewCrate();
+    expect(screen.getByTestId('world-asset-preview-name')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('stub-pick-vob'));
+
+    await waitFor(() => expect(
+      screen.queryByTestId('world-asset-preview-name'),
+    ).not.toBeInTheDocument());
+    expect(useWorldStore.getState().selection).toEqual([1]);
+  });
 });
 
 describe('the Assets panel as a picker', () => {
