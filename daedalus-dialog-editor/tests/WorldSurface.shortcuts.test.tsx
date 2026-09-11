@@ -344,6 +344,51 @@ describe('arrow-key nudge', () => {
     tree.remove();
   });
 
+  it('drops the repeats that arrive while a commit is still in flight', async () => {
+    // §2.7 of `docs/plans/level-editor-review-2026-09-04.md`. Auto-repeat fires
+    // keydown again long before the first `applyWorldOps` resolves, and every
+    // builder reads `from` out of a projection that is only written once the
+    // round trip is back — so three presses used to become three ops carrying
+    // the *same* `from`, which is one step of movement and three undo entries.
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    let release: () => void = () => undefined;
+    api.applyWorldOps.mockImplementationOnce(
+      () => new Promise<void>((resolve) => { release = () => resolve(); }) as never,
+    );
+
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    await act(async () => undefined);
+
+    expect(api.applyWorldOps).toHaveBeenCalledTimes(1);
+    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp([20, 20, 30])]);
+    await act(async () => { release(); });
+  });
+
+  it('nudges from the position the dropped-through commit left behind', async () => {
+    // The other half of the guard: it has to be *released*, and the press that
+    // follows has to read the column the applied op wrote — not the one the
+    // world had when the first press was made.
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    let release: () => void = () => undefined;
+    api.applyWorldOps.mockImplementationOnce(
+      () => new Promise<void>((resolve) => { release = () => resolve(); }) as never,
+    );
+
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    await act(async () => { release(); });
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(2));
+    expect(api.applyWorldOps.mock.calls[1][0]).toMatchObject([
+      { op: 'MoveVob', vob: 1, path: '1', from: [20, 20, 30], to: [30, 20, 30] },
+    ]);
+  });
+
   it('does nothing while a MUI Select popover has focus', async () => {
     // The bug this pins: a Select's options are `li[role="option"]` inside
     // a `[role="listbox"]` — not INPUT/TEXTAREA/SELECT, not inside the

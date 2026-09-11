@@ -1274,45 +1274,71 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     }
   }, [applied, refreshHistoryDepth]);
 
-  /** @returns whether the world took the edit — false is a refusal, and the
-   *   banner has already been set. A caller that has something to do *after* a
-   *   commit needs it: the paste selects what it pasted, and there is nothing
-   *   to select when nothing landed. */
-  const commitOps = useCallback(async (ops: WorldOp[]): Promise<boolean> => {
+  /**
+   * Put the screen back where an edit did not happen — shared by the refusal
+   * and by the in-flight drop below, which differ only in whether there is a
+   * banner to show.
+   *
+   * **Let go of the class fields here, and not only in the re-read effect.**
+   * The grid's inputs are uncontrolled and are put right by *remounting*
+   * through a key that carries the value — so an edit that did not land is only
+   * undone on screen if the fields unmount, and the value the re-read answers is
+   * by definition the value they already had: the key does not change, and
+   * nothing but a `null` in between takes the typed number off the screen.
+   *
+   * The effect below sets that `null` too, but a render later and in the same
+   * tick as the read that fills it back in — so whether it is ever *committed*
+   * depends on whether React happens to flush between the two, which any
+   * unrelated pending update in this component can change (adding a MUI
+   * `Select` to the bar above did exactly that). Set here it is committed before
+   * the read is even issued, which is what makes the revert a rule rather than a
+   * coincidence.
+   */
+  const putTheViewBack = useCallback((ops: readonly WorldOp[]) => {
+    setClassProps(null);
+    // And re-key the base fields for the same reason: they read from the
+    // columnar index, which an edit that did not land leaves exactly as it was,
+    // so no value change remounts them and a typed number would stay on screen.
+    setEditRefusals((at) => at + 1);
+    // The viewport has already drawn the drag; left alone, the VOB would sit
+    // where nothing else in the app agrees it is. Through `invertOp` rather
+    // than by swapping `from` and `to` here: a rotation carries a box for each
+    // pose, and swapping only the matrix is half an inverse.
+    //
+    // A barrier op is dropped rather than inverted, and needs no inverse here:
+    // what this puts back is the viewport's *optimistic* draw of a gizmo drag,
+    // and a delete is never drawn before the main process has taken it.
+    setAppliedOps(ops.filter((op) => !isBarrierOp(op)).map(invertOp));
+  }, []);
+
+  /**
+   * Whether a batch is out at the main process — the guard that makes a commit
+   * one-at-a-time (`docs/plans/level-editor-review-2026-09-04.md` §2.7).
+   *
+   * Every builder reads `from` out of the columnar projection, and that
+   * projection is only written once the round trip is back (`applied`). So two
+   * commits overlapping is two ops built from the *same* `from`: a held arrow
+   * key moved the VOB one step and recorded N identical undo entries, and the
+   * second click of a double-click Duplicate built its `AddVob` against a path
+   * the first had already taken, which the main process refused with an
+   * internal message.
+   *
+   * A `ref` rather than state because it is read and written inside one
+   * synchronous run of the handler, before React could re-render.
+   */
+  const commitInFlight = useRef(false);
+
+  /** The commit itself, guarded by `commitOps` below — never called directly.
+   *  @returns whether the world took the edit; false is a refusal, and the
+   *   banner has already been set. */
+  const sendOps = useCallback(async (ops: WorldOp[]): Promise<boolean> => {
     const { editFailed } = useWorldStore.getState();
     const generation = openGeneration.current;
     try {
       await window.editorAPI.applyWorldOps(ops);
     } catch (failure) {
       editFailed(failure instanceof Error ? failure.message : String(failure));
-      // **Let go of the class fields here, and not only in the re-read effect.**
-      // The grid's inputs are uncontrolled and are put right by *remounting*
-      // through a key that carries the value — so a refused edit is only undone
-      // on screen if the fields unmount, and the value the re-read answers is by
-      // definition the value they already had: the key does not change, and
-      // nothing but a `null` in between takes the typed number off the screen.
-      //
-      // The effect below sets that `null` too, but a render later and in the
-      // same tick as the read that fills it back in — so whether it is ever
-      // *committed* depends on whether React happens to flush between the two,
-      // which any unrelated pending update in this component can change (adding
-      // a MUI `Select` to the bar above did exactly that). Set here it is
-      // committed before the read is even issued, which is what makes the revert
-      // a rule rather than a coincidence.
-      setClassProps(null);
-      // And re-key the base fields for the same reason: they read from the
-      // columnar index, which a refusal leaves exactly as it was, so no value
-      // change remounts them and a typed number would stay on screen.
-      setEditRefusals((at) => at + 1);
-      // The viewport has already drawn the drag; left alone, the VOB would sit
-      // where nothing else in the app agrees it is. Through `invertOp` rather
-      // than by swapping `from` and `to` here: a rotation carries a box for each
-      // pose, and swapping only the matrix is half an inverse.
-      //
-      // A barrier op is dropped rather than inverted, and needs no inverse here:
-      // what this puts back is the viewport's *optimistic* draw of a gizmo drag,
-      // and a delete is never drawn before the main process has taken it.
-      setAppliedOps(ops.filter((op) => !isBarrierOp(op)).map(invertOp));
+      putTheViewBack(ops);
       return false;
     }
 
@@ -1347,7 +1373,32 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     // The world holds the edit either way — a stale view is not a refusal, and
     // the message above says so.
     return true;
-  }, [applied]);
+  }, [applied, putTheViewBack]);
+
+  /** @returns whether the world took the edit — false is a refusal, and the
+   *   banner has already been set, or the drop of a commit that arrived while
+   *   another was still out, which says nothing at all. A caller that has
+   *   something to do *after* a commit needs it: the paste selects what it
+   *   pasted, and there is nothing to select when nothing landed. */
+  const commitOps = useCallback(async (ops: WorldOp[]): Promise<boolean> => {
+    // Dropped, and silently: this is auto-repeat and double-clicks, so a banner
+    // per dropped press would be noise about nothing the user did wrong. The
+    // screen is put back for the same reason a refusal puts it back — the
+    // viewport may already have drawn the gizmo drag that got here.
+    if (commitInFlight.current) {
+      putTheViewBack(ops);
+      return false;
+    }
+    commitInFlight.current = true;
+    // In a `finally`, and that is the point of the split: `sendOps` has three
+    // exits, and one of them forgetting to clear the flag would wedge every
+    // edit in the app for the rest of the session.
+    try {
+      return await sendOps(ops);
+    } finally {
+      commitInFlight.current = false;
+    }
+  }, [sendOps, putTheViewBack]);
 
   // One gizmo drives the whole selection, so a drag arrives as a delta rather
   // than a destination and becomes one op per VOB in one batch — which is one
@@ -2444,8 +2495,10 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
 
       // World-axis nudge — ZenGin is Y-up, so ArrowLeft/Right move X,
       // ArrowUp/Down move Z and PageUp/Down move Y, ×10 while Shift is held.
-      // One keypress is one undo entry — no coalescing, same as a single
-      // gizmo drag.
+      // One keypress is one undo entry, same as a single gizmo drag — but only
+      // the presses that reach the world: auto-repeat while a commit is out is
+      // dropped by `commitOps`' in-flight guard, because the op it would build
+      // reads a `from` the round trip has not written yet.
       if (NUDGE_DELTAS[key]) {
         if (isTypingOrInPopover(event.target) || surfaceDialogOpen) return;
         // Reserves the arrow keys for the scene tree's own navigation.

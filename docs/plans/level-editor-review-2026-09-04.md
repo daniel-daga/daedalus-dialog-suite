@@ -152,7 +152,7 @@ records that tolerance and says "nothing dereferences one" — true of
 whose other endpoint the user barrier-deletes segfaults the worker.
 `removeWaypointEdge` (`:1019`) is safe.
 
-### 2.7 `commitOps` has no in-flight guard; every builder reads `from` from a projection that updates after the round trip — **confirmed**, timing-dependent
+### 2.7 `commitOps` has no in-flight guard; every builder reads `from` from a projection that updates after the round trip — **FIXED 2026-09-11**
 
 `WorldSurface.tsx:1096-1099, 1162-1168`; `ops.ts:683-693, 2179-2181`. Holding
 an arrow key auto-repeats keydown; every press before the first
@@ -161,6 +161,18 @@ moves one step while the main process records N identical undo entries.
 Double-click Duplicate or held Ctrl+V builds the second `AddVob` from the
 stale reader with the same `path`, which the `landed !== op.path` guard
 refuses with an internal message.
+
+**Coalesced rather than queued** (Daniel, 2026-09-11): `commitOps` holds an
+in-flight flag and drops a commit that arrives while one is out. It is a split —
+`sendOps` is the commit, `commitOps` is the guard around it, and the flag is
+cleared in a `finally` because `sendOps` has three exits and one of them
+forgetting would wedge every edit for the session. A dropped commit gets the
+refusal's screen revert and no banner. Queueing, which lands every press by
+deferring the *builder* rather than the op array, was the alternative and was
+not taken. Held by two cases in `WorldSurface.shortcuts.test.tsx` (the repeats
+dropped, and the press after the release reading the position the applied op
+wrote) and one in `WorldSurface.editing.test.tsx` (the double-click). Durable
+outcome in `docs/architecture/level-editor.md` §7.
 
 ### 2.8 `runHistory` catches nothing — **FIXED 2026-09-04**
 
@@ -643,10 +655,6 @@ jsdom" claim did not survive contact with one.
 reference cannot be produced through the API — it comes from a malformed file,
 and no fixture expresses one. Producing one means byte-surgery on a BinSafe
 archive's waynet chunk.
-
-**§2.7, no in-flight guard on `commitOps`.** Held key-repeat still builds N
-ops from one stale `from`. The open-generation counter (§2.4) does not cover
-it: this is two edits racing each other, not an edit racing an open.
 
 **§2.12, untagged `Napi::External` handles.** Memory-unsafe if a caller ever
 swaps a VFS handle for a world handle. `napi_type_tag_object` closes it; no

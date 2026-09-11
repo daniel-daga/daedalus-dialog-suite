@@ -1328,6 +1328,20 @@ What the shape had to get right, none of it obvious from either side alone:
   replayed against the next one it resolves to whatever sits at that path.
   Nothing is recorded until the worker confirms it, and the stacks move only
   after a replay is confirmed too.
+- **A commit is one at a time, and the repeats are dropped** (2026-09-11).
+  `WorldService` serialises edits on the main side; this is the renderer's half,
+  and it is not the same guarantee. Every builder reads `from` out of the
+  columnar projection, and that projection is only written when the round trip
+  is back — so two commits overlapping is two ops built from the *same* `from`.
+  A held arrow key moved the VOB one step and recorded N identical undo entries;
+  the second click of a double-click Duplicate built its `AddVob` against a path
+  the first had already taken, and the main process refused it with an internal
+  message. `commitOps` now holds an in-flight flag and drops a commit that
+  arrives while one is out, putting the screen back exactly as a refusal does
+  but showing no banner: auto-repeat is not something the user did wrong. The
+  alternative — queueing each press and re-building it against a fresh reader —
+  was considered and not taken (Daniel, 2026-09-11): it lands every press, at
+  the cost of turning every call site's op array into a closure.
 
 **No fidelity claim had moved when this was written.** Nothing here touches the
 writer: an op mutates the in-memory ZenKit world exactly as the engine-accepted
