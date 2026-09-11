@@ -132,6 +132,13 @@ const WorldAssetPreview: React.FC<WorldAssetPreviewProps> = ({
     renderer.setClearColor(0x2b2b2b, 1);
     const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
     const controls = new OrbitControls(camera, canvas);
+    // Kept on, decided 2026-09-11 (#234) — the viewport turned its own damping
+    // off (#228) and this did not follow. That one is a level, where a coasting
+    // camera reads as lag and neither Spacer nor Blender coasts; this is one
+    // small object in a thumbnail, where the coast is the feel of spinning it.
+    // The draw loop below is gated on `controls.update()` having work to do,
+    // and its comment names the damping as half of what that work is — so the
+    // flag is not the only line an answer the other way would touch.
     controls.enableDamping = true;
     controls.target.copy(frameVisual(camera, visual.bounds));
     controls.update();
