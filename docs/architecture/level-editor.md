@@ -1112,6 +1112,20 @@ browser.
   keep it beside the merged one, which is what `openVfs` does. What it costs is
   in §9.
 
+  **`vfsFind` is the one recursive walk there is, and it exists because the
+  listing refuses to be one.** One level at a time is right for browsing and
+  wrong for finding: the thing a modder knows about an asset is its name, and
+  the thing they do not know is which of thousands of directories holds it — so
+  a filter over the current directory made an asset that *is* mounted read as
+  missing, which is exactly how the first outside user reported it (#241). The
+  call takes a needle and a cap, walks the merged tree breadth-first and answers
+  at most 500 hits, each carrying the directory it was found in and the same
+  per-mount provenance a listing carries. Directories come first, as in a
+  listing, and a truncated answer says so rather than pretending it saw
+  everything. The browser's filter box *is* this call: hits from elsewhere name
+  their directory on the row, and opening one goes to its own path rather than
+  to the path being browsed.
+
 - **Waynet overlay.** `getWaynet` is to `normalizeWorld`'s waynet section what
   `vobIndex` is to the VOB dump: the dump sorts waypoints by name and sorts each
   edge pair because order is noise to a diff, while an overlay needs stored

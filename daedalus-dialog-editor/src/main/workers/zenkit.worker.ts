@@ -29,6 +29,7 @@ import type {
   WorldMeshPayload,
   WorldSummary,
   VfsEntry,
+  VfsSearch,
   WaynetPayload,
   PortalFindingsPayload,
   WorldWorkerRequest,
@@ -214,6 +215,16 @@ function assets(payload: { path: string }): { result: VfsEntry[] | null; transfe
   return { result: zenkit.vfsList(vfs!, payload.path), transfer: [] };
 }
 
+/** The one recursive walk of the namespace there is (#241). `vfsList` answers
+ *  a directory, so a name whose directory the user does not know is
+ *  unreachable — which is how an asset that is mounted reads as missing. The
+ *  needle and the cap are what keep the walk from being the whole install. */
+function assetSearch(payload: { query: string }): { result: VfsSearch; transfer: ArrayBuffer[] } {
+  // The cap is the binding's own default: nothing here has a reason to want a
+  // different one, and an option that exists only to be passed is scaffolding.
+  return { result: zenkit.vfsFind(vfs!, payload.query), transfer: [] };
+}
+
 /** The waynet as a drawable graph. Small next to the geometry — NewWorld's is
  *  a few thousand points — so the buffers are copied rather than transferred,
  *  and the worker keeps its own world intact. */
@@ -381,6 +392,7 @@ function run(message: WorldWorkerRequest): { result: unknown; transfer: ArrayBuf
     case 'visuals': return visuals();
     case 'texture': return texture(message.payload as { name: string; maxSize: number });
     case 'assets': return assets(message.payload as { path: string });
+    case 'assetSearch': return assetSearch(message.payload as { query: string });
     case 'waynet': return waynet();
     case 'portalFindings': return portalFindings();
     case 'visualBounds': return boundsOfVisual(message.payload as VisualBoundsRequest);

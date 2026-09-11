@@ -2407,7 +2407,10 @@ the VFS plumbing:
   `VisualPreviewScene`'s scene — same geometry, lights, `frameVisual` — once
   into one reused offscreen `WebGLRenderer` (a context per tile would exhaust
   the browser's budget inside one directory), textures fetched at 64 px
-  before the draw; a `.TEX` is a 2D scale. Cached **machine-locally** in
+  before the draw; a `.TEX` is a 2D scale **into a second canvas of its own** —
+  a canvas keeps the first context kind it is handed and one canvas for both
+  drew whichever tile kind came second as a silently failed tile
+  (`level-editor-review-2026-09-04.md` §3.4, fixed 2026-09-11). Cached **machine-locally** in
   `userData/asset-thumbnails/<sha256>.png` (`ThumbnailCacheService.ts`),
   never beside the project: the key is the name plus each mount's path and
   mtime in mount order, since the VFS answers "which file" and nothing else,
@@ -3135,45 +3138,25 @@ verbatim; what they share is the cause, and the cause is worth stating once.
 where things are.** Every piece worked as designed and the designs did not add
 up to "put a fence in my world".
 
-Three of the five are done and `git log` carries them (#242, #243, #244). What
-they settled, because row 1 has to be designed next to it:
+Four of the five are done and `git log` carries them (#241, #242, #243, #244);
+the settled outcomes are architecture §6 and §7. Row numbers are the ones the
+issues cite and do not move.
 
-- **The catalogue filter matches a visual, not only a category path.** The whole
-  catalogue is in memory, so the field above the Categories list keeps a
-  category whose path matches *or* which holds a matching visual, and says how
-  many of its visuals did — which is how `NW_NATURE_GRASSGROUP_01.3DS` is found
-  under *Pflanzen* by typing "grassgroup". The filter survives the step into a
-  category and resets between Favorites and Categories, which are different
-  corpora. This is the catalogue only; it never reads the VFS, so it is not
-  row 1.
-- **The star is one control** (`FavoriteStar`, `WorldAssetGrid.tsx`), on the
-  grid tile and on the browser's list row alike, dimmed rather than hidden.
-- **Placing is a right-click** (`usePlaceMenu`), on a row and a tile in all
-  three views, arming the same placement the preview panel's button arms. Drag
-  into the viewport was the other candidate and was not taken.
+**One row is left.**
 
-The two that remain:
-
-1. **Nothing finds an asset by name (#241).** `WorldAssetBrowser`'s filter is
-   the current directory only — deliberately, by the same "one level at a time"
-   rule the listing itself has. The catalogue half of this is closed (above);
-   what is still missing is finding a *mounted* file whose directory you are not
-   standing in. **Triage step before any design**: open Categories, type
-   "grassgroup", and look at the `NW_NATURE_GRASSGROUP_01.3DS` tile. A drawn
-   thumbnail means the file is mounted and this is purely a search gap; a marked
-   tile means the mount list is short and the search would have found nothing
-   anyway. The catalogue seed proves nothing about an install — it ships 1,396
-   names regardless of what is mounted.
 5. **What the browse root actually looks like on a retail install is unknown
    (#245).** Florian could not steer into folders. `gothicAssetSources` mounts
    each loose `_compiled` tree at the namespace root, so those files are flat by
    construction; what the six VDFs contribute is an open question nobody in this
-   repo has looked at, and it decides whether row 1's search is a filter over a
-   listing or an index over the whole namespace. Needs a Gothic install —
-   Daniel's machine, not CI.
+   repo has looked at. Row 1's search no longer waits on the answer — `vfsFind`
+   walks the whole namespace either way — but whether the *navigation* complaint
+   is a UI problem or simply an accurate description of a flat namespace still
+   does.
 
-Row numbers are the ones the issues cite and do not move; 2, 3 and 4 are the
-three above.
+   `zenkit-node/scripts/describe-vfs-root.js --install <dir>` is the
+   measurement: it prints the top level counted folders-against-files, the shape
+   below it, and whether the names from the report are mounted at all. Needs a
+   Gothic install — Daniel's machine, not CI.
 
 ### 16.39 The extent of a sound, a light or a zone is invisible too (2026-09-10; #248)
 

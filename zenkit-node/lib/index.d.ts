@@ -115,6 +115,24 @@ export interface VfsEntry {
   sources: number[];
 }
 
+export interface VfsMatch {
+  name: string;
+  /** The directory holding it, as a path into the merged namespace — `'/'` at
+   *  the root. Join it with `name` to reach the entry. */
+  directory: string;
+  type: 'file' | 'directory';
+  /** Every mounted source holding it, exactly as {@link VfsEntry.sources}. */
+  sources: number[];
+}
+
+export interface VfsSearch {
+  /** Directories first, then files; breadth-first inside each half, so a match
+   *  near the root is answered before one buried deep. */
+  matches: VfsMatch[];
+  /** True when the walk stopped at `limit` and there are more matches. */
+  truncated: boolean;
+}
+
 export interface VisualPayload {
   source: string;
   chunks: MeshChunk[];
@@ -173,6 +191,14 @@ export function openVfs(paths: string[], options?: { overwrite?: 'all' | 'newer'
 export function vfsResolve(vfs: VfsHandle, name: string): string | null;
 /** The children of one directory, or null when the path is absent or is a file. */
 export function vfsList(vfs: VfsHandle, path?: string): VfsEntry[] | null;
+/**
+ * Every entry anywhere in the mounted namespace whose name contains `query`,
+ * case-insensitively. This is the recursive walk `vfsList` refuses to do: it
+ * takes a needle and a cap (default 500) so a three-letter query on a retail
+ * install answers a search box rather than the whole install. Throws on an
+ * empty query.
+ */
+export function vfsFind(vfs: VfsHandle, query: string, options?: { limit?: number }): VfsSearch;
 export function extractVisual(vfs: VfsHandle, name: string): VisualPayload | null;
 export function decodeTexture(vfs: VfsHandle, name: string, level: number): TexturePayload | null;
 /**

@@ -75,6 +75,7 @@ contextBridge.exposeInMainWorld('editorAPI', {
   getWorldMesh: () => ipcRenderer.invoke('world:mesh'),
   getWorldVisuals: () => ipcRenderer.invoke('world:visuals'),
   listWorldAssets: (path: string) => ipcRenderer.invoke('world:assets', { path }),
+  searchWorldAssets: (query: string) => ipcRenderer.invoke('world:assetSearch', { query }),
   getWorldWaynet: () => ipcRenderer.invoke('world:waynet'),
   getWorldPortalFindings: () => ipcRenderer.invoke('world:portalFindings'),
   getVisualBounds: (name: string) => ipcRenderer.invoke('world:visualBounds', { name }),

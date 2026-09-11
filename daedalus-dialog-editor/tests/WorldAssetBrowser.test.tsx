@@ -75,6 +75,24 @@ function listing() {
   return { list, calls };
 }
 
+/** The whole-namespace search, stubbed over the same fixture tree: every entry
+ *  at every depth whose name contains the needle, with the directory it was
+ *  found in — which is what `vfsFind` answers and what a listing cannot. */
+function searching() {
+  const queries: string[] = [];
+  const search = jest.fn(async (query: string) => {
+    queries.push(query);
+    const needle = query.trim().toLowerCase();
+    const matches = Object.entries(TREE).flatMap(([directory, entries]) => (entries ?? [])
+      .filter((entry) => entry.name.toLowerCase().includes(needle))
+      .map((entry) => ({ ...entry, directory })));
+    // Directories first, as the binding orders them.
+    matches.sort((a, b) => (a.type === b.type ? 0 : a.type === 'directory' ? -1 : 1));
+    return { matches, truncated: false };
+  });
+  return { search, queries };
+}
+
 /** The thumbnail queue, stubbed: what it draws is the renderer's business,
  *  and what a tile owes it is which name and when. */
 function thumbnails(states: Record<string, ThumbnailState> = {}) {
@@ -379,6 +397,16 @@ describe('WorldAssetBrowser', () => {
       expect(await screen.findByTestId('world-asset-filter-empty')).toBeInTheDocument();
       // Distinct from the directory actually being empty.
       expect(screen.queryByTestId('world-asset-empty')).not.toBeInTheDocument();
+    });
+
+    // Without `searchAssets` the box is the directory filter it always was —
+    // the browser harness has no mounted VFS to search.
+    it('stays the directory filter when no search is wired in', async () => {
+      const { list } = listing();
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} />);
+      await screen.findByTestId('world-asset-Meshes');
+
+      expect(screen.getByTestId('world-asset-filter')).toHaveAttribute('aria-label', 'Filter this directory');
     });
 
     it('resets on navigation, rather than hiding everything in the next directory', async () => {
@@ -922,6 +950,129 @@ describe('WorldAssetBrowser', () => {
 
       await screen.findByTestId('world-asset-Meshes');
       expect(calls).toEqual(['/', 'Meshes', 'Meshes/_compiled', '/']);
+    });
+  });
+
+  // The whole-namespace search (#241; level-editor.md §16.37 row 1). The
+  // directory-only filter is what made an asset that IS mounted read as
+  // missing: the one thing a modder knows is the name, and the one thing they
+  // do not is which of tens of thousands of directories holds it.
+  describe('the search', () => {
+    it('finds a file in a directory the browser is not standing in', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const { search } = searching();
+      render(<WorldAssetBrowser listAssets={list} searchAssets={search} onPreview={jest.fn()} />);
+      await screen.findByTestId('world-asset-Meshes');
+      // Nothing at the root is called NW_CRATE.MRM; it is two levels down.
+      expect(screen.queryByTestId('world-asset-NW_CRATE.MRM')).not.toBeInTheDocument();
+
+      await user.type(screen.getByTestId('world-asset-filter'), 'crate');
+
+      expect(await screen.findByTestId('world-asset-NW_CRATE.MRM')).toBeInTheDocument();
+      expect(search).toHaveBeenCalledWith('crate');
+    });
+
+    it('says where a hit lives, since that is the thing that was missing', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const { search } = searching();
+      render(<WorldAssetBrowser listAssets={list} searchAssets={search} onPreview={jest.fn()} />);
+      await screen.findByTestId('world-asset-Meshes');
+
+      await user.type(screen.getByTestId('world-asset-filter'), 'crate');
+
+      expect(await screen.findByTestId('world-asset-where-NW_CRATE.MRM'))
+        .toHaveTextContent('Meshes/_compiled');
+    });
+
+    it('previews a hit at its own path, not at the path being browsed', async () => {
+      const user = userEvent.setup();
+      const onPreview = jest.fn();
+      const { list } = listing();
+      const { search } = searching();
+      render(<WorldAssetBrowser listAssets={list} searchAssets={search} onPreview={onPreview} />);
+      await screen.findByTestId('world-asset-Meshes');
+
+      await user.type(screen.getByTestId('world-asset-filter'), 'crate');
+      await user.click(await screen.findByTestId('world-asset-NW_CRATE.MRM'));
+
+      expect(onPreview).toHaveBeenCalledWith('Meshes/_compiled/NW_CRATE.MRM');
+    });
+
+    it('descends into a directory hit at its own path', async () => {
+      const user = userEvent.setup();
+      const { list, calls } = listing();
+      const { search } = searching();
+      render(<WorldAssetBrowser listAssets={list} searchAssets={search} onPreview={jest.fn()} />);
+      await screen.findByTestId('world-asset-Meshes');
+
+      await user.type(screen.getByTestId('world-asset-filter'), 'compiled');
+      await user.click(await screen.findByTestId('world-asset-_compiled'));
+
+      expect(await screen.findByTestId('world-asset-NW_CRATE.MRM')).toBeInTheDocument();
+      expect(calls).toContain('Meshes/_compiled');
+      // The needle is spent: the directory it led to is what is wanted now.
+      expect(screen.getByTestId('world-asset-filter')).toHaveValue('');
+    });
+
+    it('walks the namespace once, after the typing stops', async () => {
+      // Every keystroke would otherwise walk tens of thousands of entries, and
+      // only the walk after the last letter was ever wanted.
+      const user = userEvent.setup();
+      const { list } = listing();
+      const { search, queries } = searching();
+      render(<WorldAssetBrowser listAssets={list} searchAssets={search} onPreview={jest.fn()} />);
+      await screen.findByTestId('world-asset-Meshes');
+
+      await user.type(screen.getByTestId('world-asset-filter'), 'crate');
+      await screen.findByTestId('world-asset-NW_CRATE.MRM');
+
+      expect(queries).toEqual(['crate']);
+    });
+
+    it('counts the matches, and says when the walk was cut short', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const search = jest.fn(async () => ({
+        matches: [{ name: 'NW_CRATE.MRM', type: 'file' as const, directory: 'Meshes/_compiled' }],
+        truncated: true,
+      }));
+      render(<WorldAssetBrowser listAssets={list} searchAssets={search} onPreview={jest.fn()} />);
+      await screen.findByTestId('world-asset-Meshes');
+
+      await user.type(screen.getByTestId('world-asset-filter'), 'e');
+
+      // "first", because the number is not how many there are.
+      expect(await screen.findByTestId('world-asset-count')).toHaveTextContent('first 1 matches');
+    });
+
+    it('says nothing anywhere matches, rather than showing an empty list', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const { search } = searching();
+      render(<WorldAssetBrowser listAssets={list} searchAssets={search} onPreview={jest.fn()} />);
+      await screen.findByTestId('world-asset-Meshes');
+
+      await user.type(screen.getByTestId('world-asset-filter'), 'zzzz');
+
+      const empty = await screen.findByTestId('world-asset-filter-empty');
+      expect(empty).toHaveTextContent('Nothing in the mounted assets matches.');
+      // Distinct from the directory being empty, which it is not.
+      expect(screen.queryByTestId('world-asset-empty')).not.toBeInTheDocument();
+    });
+
+    it('reports a refused search as a failure, not as "nothing matches"', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const search = jest.fn(async () => { throw new Error('No world is open'); });
+      render(<WorldAssetBrowser listAssets={list} searchAssets={search} onPreview={jest.fn()} />);
+      await screen.findByTestId('world-asset-Meshes');
+
+      await user.type(screen.getByTestId('world-asset-filter'), 'crate');
+
+      expect(await screen.findByTestId('world-asset-error')).toHaveTextContent('No world is open');
+      expect(screen.queryByTestId('world-asset-filter-empty')).not.toBeInTheDocument();
     });
   });
 });

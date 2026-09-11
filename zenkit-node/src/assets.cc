@@ -78,6 +78,11 @@ VfsNode const* FindFirst(Vfs const& vfs,
   return nullptr;
 }
 
+// How many matches `vfsFind` walks to before it stops. A retail install mounts
+// tens of thousands of entries and a three-letter needle matches thousands of
+// them; a search box that answers all of them has answered nothing.
+constexpr std::size_t DEFAULT_FIND_LIMIT = 500;
+
 VfsHandle* UnwrapVfs(Napi::Env env, Napi::Value value) {
   if (!value.IsExternal()) {
     throw Napi::TypeError::New(env, "expected a VFS handle returned by openVfs()");
@@ -228,6 +233,129 @@ Napi::Value VfsList(Napi::CallbackInfo const& info) {
     entries.Set(at++, entry);
   }
   return entries;
+}
+
+Napi::Value VfsFind(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapVfs(env, info[0]);
+
+  auto const raw = StringArg(env, info[1], "query");
+  auto const first = raw.find_first_not_of(" \t\r\n");
+  auto const last = raw.find_last_not_of(" \t\r\n");
+  if (first == std::string::npos) {
+    // An empty needle matches every one of the tens of thousands of entries a
+    // retail install mounts. The caller wanting all of them wants `vfsList`.
+    throw Napi::TypeError::New(env, "vfsFind(handle, query) needs a non-empty query");
+  }
+  auto const needle = Upper(raw.substr(first, last - first + 1));
+
+  std::size_t limit = DEFAULT_FIND_LIMIT;
+  if (info[2].IsObject()) {
+    auto value = info[2].As<Napi::Object>().Get("limit");
+    if (value.IsNumber()) {
+      auto const asked = value.As<Napi::Number>().Int64Value();
+      if (asked <= 0) throw Napi::TypeError::New(env, "limit must be a positive integer");
+      limit = static_cast<std::size_t>(asked);
+    }
+  }
+
+  // One directory of the merged tree, with the same directory in each source
+  // beside it — resolved once per directory rather than once per match, for
+  // the reason VfsList gives. Null where a source has no such directory.
+  struct Frame {
+    VfsNode const* node;
+    std::vector<VfsNode const*> per_source;
+    std::string path;
+  };
+
+  Frame root {handle->vfs.resolve("/"), {}, "/"};
+  if (root.node == nullptr || root.node->type() != VfsNodeType::DIRECTORY) {
+    auto empty = Napi::Object::New(env);
+    empty.Set("matches", Napi::Array::New(env, 0));
+    empty.Set("truncated", Napi::Boolean::New(env, false));
+    return empty;
+  }
+  root.per_source.reserve(handle->sources.size());
+  for (auto const& source : handle->sources) {
+    auto const* at_source = source->resolve("/");
+    root.per_source.push_back(
+        at_source != nullptr && at_source->type() == VfsNodeType::DIRECTORY ? at_source : nullptr);
+  }
+
+  struct Match {
+    std::string name;
+    std::string directory;
+    bool is_directory;
+    std::vector<std::uint32_t> sources;
+  };
+  std::vector<Match> matches;
+  bool truncated = false;
+
+  // Breadth-first, so what is near the root is found first: a search box is
+  // asked for a name, and the shallower answer is the likelier one.
+  std::vector<Frame> queue;
+  queue.push_back(std::move(root));
+  for (std::size_t at = 0; at < queue.size() && !truncated; ++at) {
+    // Taken by value: the loop below pushes onto `queue`, and a reallocation
+    // would leave a reference into the freed buffer to walk the rest of the
+    // directory through. The copy is a handful of pointers and one path.
+    Frame const frame = queue[at];
+    for (auto const& child : frame.node->children()) {
+      bool const is_directory = child.type() == VfsNodeType::DIRECTORY;
+      auto const child_path =
+          frame.path == "/" ? child.name() : frame.path + "/" + child.name();
+
+      if (Upper(child.name()).find(needle) != std::string::npos) {
+        if (matches.size() == limit) {
+          truncated = true;
+          break;
+        }
+        std::vector<std::uint32_t> holders;
+        for (std::uint32_t i = 0; i < frame.per_source.size(); ++i) {
+          if (frame.per_source[i] == nullptr) continue;
+          if (frame.per_source[i]->child(child.name()) == nullptr) continue;
+          holders.push_back(i);
+        }
+        matches.push_back(Match {child.name(), frame.path, is_directory, std::move(holders)});
+      }
+
+      if (!is_directory) continue;
+      Frame next {&child, {}, child_path};
+      next.per_source.reserve(frame.per_source.size());
+      for (auto const* at_source : frame.per_source) {
+        auto const* below = at_source == nullptr ? nullptr : at_source->child(child.name());
+        next.per_source.push_back(
+            below != nullptr && below->type() == VfsNodeType::DIRECTORY ? below : nullptr);
+      }
+      queue.push_back(std::move(next));
+    }
+  }
+
+  // Directories first, the order a listing is sorted into: descending is the
+  // useful action on a directory hit and one buried among the files is a hunt.
+  // Stable, so the breadth-first order survives inside each half.
+  std::stable_partition(matches.begin(), matches.end(),
+                        [](Match const& match) { return match.is_directory; });
+
+  auto found = Napi::Array::New(env, matches.size());
+  for (std::uint32_t at = 0; at < matches.size(); ++at) {
+    auto const& match = matches[at];
+    auto entry = Napi::Object::New(env);
+    entry.Set("name", Napi::String::New(env, match.name));
+    entry.Set("directory", Napi::String::New(env, match.directory));
+    entry.Set("type", Napi::String::New(env, match.is_directory ? "directory" : "file"));
+    auto sources = Napi::Array::New(env, match.sources.size());
+    for (std::uint32_t held = 0; held < match.sources.size(); ++held) {
+      sources.Set(held, Napi::Number::New(env, match.sources[held]));
+    }
+    entry.Set("sources", sources);
+    found.Set(at, entry);
+  }
+
+  auto result = Napi::Object::New(env);
+  result.Set("matches", found);
+  result.Set("truncated", Napi::Boolean::New(env, truncated));
+  return result;
 }
 
 Napi::Value VfsRead(Napi::CallbackInfo const& info) {

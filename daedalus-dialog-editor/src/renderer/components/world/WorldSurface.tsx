@@ -695,6 +695,11 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     [],
   );
 
+  const searchAssets = useCallback(
+    (query: string) => window.editorAPI.searchWorldAssets(query),
+    [],
+  );
+
   const loadTexture = useCallback(
     (name: string, maxSize: number) => window.editorAPI.getWorldTexture(name, maxSize),
     [],
@@ -2895,6 +2900,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                 <Box sx={{ flex: 1, minHeight: 0 }}>
                   <WorldAssetBrowser
                     listAssets={listAssets}
+                    searchAssets={searchAssets}
                     onPreview={setSelectedAsset}
                     thumbnails={thumbnails ?? undefined}
                     catalog={assetCatalogProps}

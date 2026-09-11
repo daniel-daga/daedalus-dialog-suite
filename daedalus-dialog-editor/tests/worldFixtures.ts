@@ -1,6 +1,6 @@
 import type { VobIndex } from 'zen-world';
 import type {
-  AssetCatalog, PortalFinding, VobFolders, WaynetPayload, WorldOp, WorldSummary,
+  AssetCatalog, PortalFinding, VfsSearch, VobFolders, WaynetPayload, WorldOp, WorldSummary,
 } from '../src/shared/worldTypes';
 import type { AppendInsertNpcResult } from '../src/shared/types';
 
@@ -141,6 +141,9 @@ export function makeWorldEditorApi() {
     getWorldVisuals: jest.fn(),
     getWorldTexture: jest.fn(async () => null),
     listWorldAssets: jest.fn(async () => null),
+    // The whole-namespace search behind the browser's filter box (#241).
+    // Nothing by default: a suite that wants hits stubs them.
+    searchWorldAssets: jest.fn(async (): Promise<VfsSearch> => ({ matches: [], truncated: false })),
     getWorldVisual: jest.fn(async () => null),
     getAssetThumbnail: jest.fn(async (): Promise<{ key: string; dataUrl: string | null }> => ({ key: 'k', dataUrl: null })),
     putAssetThumbnail: jest.fn(async () => undefined),

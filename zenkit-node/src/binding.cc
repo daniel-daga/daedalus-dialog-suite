@@ -3412,6 +3412,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("openVfs", Napi::Function::New(env, zenkit_node::OpenVfs));
   exports.Set("vfsResolve", Napi::Function::New(env, zenkit_node::VfsResolve));
   exports.Set("vfsList", Napi::Function::New(env, zenkit_node::VfsList));
+  exports.Set("vfsFind", Napi::Function::New(env, zenkit_node::VfsFind));
   exports.Set("vfsRead", Napi::Function::New(env, zenkit_node::VfsRead));
   exports.Set("extractVisual", Napi::Function::New(env, zenkit_node::ExtractVisual));
   exports.Set("decodeTexture", Napi::Function::New(env, zenkit_node::DecodeTexture));
