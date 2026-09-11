@@ -2043,6 +2043,12 @@ fires exactly once over the corpus: `P:CAPTAIN_`, on NewWorld (polygon
 85–88 % and pass, which is what a genuinely reversed one-sided portal looks
 like from the other side.
 
+**0.25 stands (2026-09-11, Daniel; #222).** It was the one number he had
+reserved the right to move, and he left it where the corpus put it. So the
+threshold is settled rather than provisional, and what is left of #222 is the
+other half: framing a portal polygon from a finding is still nobody's card
+(§16.22 above).
+
 What the script does, so the next run does not re-derive it. Two numbers per
 portal polygon: **spread**, `max(n·p) - min(n·p)` over the corners with the
 stored plane normal — how far from flat the polygon is, independent of how
