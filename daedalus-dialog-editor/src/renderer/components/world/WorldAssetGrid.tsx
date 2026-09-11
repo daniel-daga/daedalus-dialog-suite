@@ -152,6 +152,72 @@ export interface TileCatalogActions {
   removable?: (name: string) => boolean;
 }
 
+/** What a right-click on an asset can do with it (§16.37 row 4). Undefined
+ *  where there is nothing to place into — every surface with no world open. */
+export interface AssetPlacement {
+  /** Whether a placement can be made of this name — `isPlaceableVisual`. */
+  canPlace: (name: string) => boolean;
+  /** Arm the placement; the next ground click puts it down. */
+  onPlace: (name: string) => void;
+}
+
+/** The context menu the tile and the browser's list row share. The verb used
+ *  to live only in the preview panel on the far side of the viewport, in the
+ *  panel that otherwise shows the selected VOB's properties — so it read as
+ *  being about that VOB, and placing from a category read as impossible. */
+export function usePlaceMenu(name: string, placement?: AssetPlacement): {
+  onContextMenu?: (event: React.MouseEvent) => void;
+  menu: React.ReactNode;
+} {
+  const [at, setAt] = useState<{ top: number; left: number } | null>(null);
+  if (placement === undefined || !placement.canPlace(name)) return { menu: null };
+  return {
+    onContextMenu: (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setAt({ top: event.clientY, left: event.clientX });
+    },
+    menu: at === null ? null : (
+      <Menu
+        open
+        anchorReference="anchorPosition"
+        anchorPosition={at}
+        onClose={() => setAt(null)}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <MenuItem
+          dense
+          data-testid="world-asset-place-menu"
+          onClick={() => { setAt(null); placement.onPlace(name); }}
+        >
+          Place in world
+        </MenuItem>
+      </Menu>
+    ),
+  };
+}
+
+/** The star, shared by the grid tile and the browser's list row (§16.37 row
+ *  2). One control, so the two views cannot drift on what a favorite looks
+ *  like or on which name it toggles. */
+export const FavoriteStar: React.FC<{ name: string; actions: TileCatalogActions }> = ({ name, actions }) => {
+  const favorite = actions.isFavorite(name);
+  return (
+    <IconButton
+      size="small"
+      aria-label={favorite ? 'Remove from favorites' : 'Add to favorites'}
+      aria-pressed={favorite}
+      data-testid="world-asset-star"
+      onClick={() => actions.onToggleFavorite(name)}
+      sx={{ p: 0.25 }}
+    >
+      {favorite
+        ? <StarIcon sx={{ fontSize: 16, color: 'warning.main' }} />
+        : <StarBorderIcon sx={{ fontSize: 16 }} />}
+    </IconButton>
+  );
+};
+
 /** The file-into menu: every known category, plus a field for a new one. */
 const FileIntoMenu: React.FC<{
   anchor: HTMLElement | null; name: string; actions: TileCatalogActions; onClose: () => void;
@@ -204,11 +270,13 @@ export const AssetTile: React.FC<{
   onOpen: (entry: VfsEntry) => void;
   actions?: TileCatalogActions;
   origin?: TileOrigin;
+  placement?: AssetPlacement;
   style?: React.CSSProperties;
-}> = ({ entry, thumbnails, onOpen, actions, origin, style }) => {
+}> = ({ entry, thumbnails, onOpen, actions, origin, placement, style }) => {
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const isFile = entry.type === 'file';
   const favorite = isFile && actions !== undefined && actions.isFavorite(entry.name);
+  const place = usePlaceMenu(isFile ? entry.name : '', placement);
 
   return (
     <Box
@@ -216,6 +284,7 @@ export const AssetTile: React.FC<{
       data-testid={`world-asset-tile-${entry.name}`}
       {...(origin?.overridden === true ? { 'data-overridden': 'true' } : {})}
       onClick={() => onOpen(entry)}
+      onContextMenu={place.onContextMenu}
       style={style}
       sx={{
         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5, p: 1, cursor: 'pointer',
@@ -255,18 +324,7 @@ export const AssetTile: React.FC<{
           sx={{ position: 'absolute', top: 4, left: 4, right: 4, display: 'flex', justifyContent: 'space-between', opacity: 0 }}
           onClick={(event) => event.stopPropagation()}
         >
-          <IconButton
-            size="small"
-            aria-label={favorite ? 'Remove from favorites' : 'Add to favorites'}
-            aria-pressed={favorite}
-            data-testid="world-asset-star"
-            onClick={() => actions.onToggleFavorite(entry.name)}
-            sx={{ p: 0.25 }}
-          >
-            {favorite
-              ? <StarIcon sx={{ fontSize: 16, color: 'warning.main' }} />
-              : <StarBorderIcon sx={{ fontSize: 16 }} />}
-          </IconButton>
+          <FavoriteStar name={entry.name} actions={actions} />
           <Box>
             {actions.onUnfile !== undefined && (actions.removable?.(entry.name) ?? true) && (
               <IconButton
@@ -294,6 +352,7 @@ export const AssetTile: React.FC<{
           )}
         </Box>
       )}
+      {place.menu}
     </Box>
   );
 };
@@ -305,6 +364,7 @@ interface CellData {
   onOpen: (entry: VfsEntry) => void;
   actions?: TileCatalogActions;
   originOf?: (entry: VfsEntry) => TileOrigin | undefined;
+  placement?: AssetPlacement;
 }
 
 const Cell = memo(({ columnIndex, rowIndex, style, data }: GridChildComponentProps<CellData>) => {
@@ -317,6 +377,7 @@ const Cell = memo(({ columnIndex, rowIndex, style, data }: GridChildComponentPro
       onOpen={data.onOpen}
       actions={data.actions}
       origin={data.originOf?.(entry)}
+      placement={data.placement}
       style={style}
     />
   );
@@ -331,9 +392,10 @@ export interface WorldAssetGridProps {
   /** Absent where provenance is unknown — the favorites and category views name
    *  assets that were never listed out of a directory. */
   originOf?: (entry: VfsEntry) => TileOrigin | undefined;
+  placement?: AssetPlacement;
 }
 
-const WorldAssetGrid: React.FC<WorldAssetGridProps> = ({ entries, thumbnails, onOpen, actions, originOf }) => (
+const WorldAssetGrid: React.FC<WorldAssetGridProps> = ({ entries, thumbnails, onOpen, actions, originOf, placement }) => (
   <AutoSizer>
     {({ height, width }) => {
       const columns = Math.max(1, Math.floor(width / TILE_WIDTH));
@@ -341,6 +403,7 @@ const WorldAssetGrid: React.FC<WorldAssetGridProps> = ({ entries, thumbnails, on
         <SizedGrid
           height={height} width={width} columns={columns}
           entries={entries} thumbnails={thumbnails} onOpen={onOpen} actions={actions} originOf={originOf}
+          placement={placement}
         />
       );
     }}
@@ -348,11 +411,11 @@ const WorldAssetGrid: React.FC<WorldAssetGridProps> = ({ entries, thumbnails, on
 );
 
 const SizedGrid: React.FC<WorldAssetGridProps & { height: number; width: number; columns: number }> = ({
-  height, width, columns, entries, thumbnails, onOpen, actions, originOf,
+  height, width, columns, entries, thumbnails, onOpen, actions, originOf, placement,
 }) => {
   const itemData = useMemo<CellData>(
-    () => ({ entries, columns, thumbnails, onOpen, actions, originOf }),
-    [entries, columns, thumbnails, onOpen, actions, originOf],
+    () => ({ entries, columns, thumbnails, onOpen, actions, originOf, placement }),
+    [entries, columns, thumbnails, onOpen, actions, originOf, placement],
   );
   return (
     <Grid

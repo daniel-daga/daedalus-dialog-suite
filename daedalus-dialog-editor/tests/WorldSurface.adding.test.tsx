@@ -195,6 +195,28 @@ describe('Place in world from the Assets panel', () => {
   });
 });
 
+describe('Place in world from an asset row', () => {
+  it('arms the placement from the row context menu, without the preview panel', async () => {
+    // The verb used to be reachable only through the preview panel on the far
+    // side of the viewport (level-editor.md §16.37 row 4; #244).
+    await openWorld();
+    api.listWorldAssets.mockResolvedValue([{ name: 'NW_CRATE.MRM', type: 'file' }] as never);
+    fireEvent.click(screen.getByTestId('world-panel-assets'));
+
+    fireEvent.contextMenu(await screen.findByTestId('world-asset-NW_CRATE.MRM'));
+    fireEvent.click(await screen.findByTestId('world-asset-place-menu'));
+
+    expect(screen.queryByTestId('world-asset-preview-name')).toBeNull();
+    expect(hint()).toHaveTextContent('NW_CRATE.MRM');
+
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    expect(firstOps()[0]).toMatchObject({
+      op: 'AddVob', to: { visual: 'NW_CRATE.MRM', position: TERRAIN },
+    });
+  });
+});
+
 describe('Insert NPC… from the toolbar', () => {
   const instanceField = () =>
     within(screen.getByTestId('world-insert-npc-instance')).getByRole('combobox');

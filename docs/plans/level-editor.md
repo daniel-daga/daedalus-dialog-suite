@@ -2484,8 +2484,11 @@ bare name, no extension, case-folded — because the VFS lists `NW_CRATE.MRM`,
 a VOB carries `NW_CRATE.3DS` and vobbilder stores neither. The UI is a
 Browse / Favorites / Categories switch on the Assets panel once a project is
 loaded; every tile carries a star and a file-into menu (any known category,
-or a new one typed in place); a category view can unfile the project's own
-entries and not the seed's. **Not done, by choice:** no removal or renaming
+or a new one typed in place), a browse row carries the same star, and a row
+and a tile alike place their mesh from a right-click (§16.37); a category view
+can unfile the project's own entries and not the seed's. Favorites and
+Categories carry a text filter, which at the category list matches a visual as
+well as a path. **Not done, by choice:** no removal or renaming
 of seed categories, no nesting beyond the path string, no export of the
 merged tree — a category's tiles ask the binding for the seed's `.3DS`
 names, so a seed entry the mounted sources lack is a marked tile, which is
@@ -3124,45 +3127,43 @@ Daniel's machine, not CI: no runner has a Gothic install.
 ### 16.37 The asset browser's first outside user could not work it (2026-09-10, Florian via Signal)
 
 Seven messages in a row, all about the Assets panel, from the one person using
-the editor who did not build it. Each is filed as its own issue with the German
+the editor who did not build it. Each was filed as its own issue with the German
 verbatim; what they share is the cause, and the cause is worth stating once.
 
 **The panel was built as a namespace explorer and grew a catalogue on top
 (§16.26 row 1), and neither half was ever walked by somebody who did not know
-where things are.** Every piece works as designed and the designs do not add up
-to "put a fence in my world": browse can only filter the directory you are
-standing in, the catalogue can only be scrolled, marking a favorite is a
-hover-only button in a view that is not the default, and the one control that
-places a mesh lives in the far right panel rather than on the tile.
+where things are.** Every piece worked as designed and the designs did not add
+up to "put a fence in my world".
+
+Three of the five are done and `git log` carries them (#242, #243, #244). What
+they settled, because row 1 has to be designed next to it:
+
+- **The catalogue filter matches a visual, not only a category path.** The whole
+  catalogue is in memory, so the field above the Categories list keeps a
+  category whose path matches *or* which holds a matching visual, and says how
+  many of its visuals did — which is how `NW_NATURE_GRASSGROUP_01.3DS` is found
+  under *Pflanzen* by typing "grassgroup". The filter survives the step into a
+  category and resets between Favorites and Categories, which are different
+  corpora. This is the catalogue only; it never reads the VFS, so it is not
+  row 1.
+- **The star is one control** (`FavoriteStar`, `WorldAssetGrid.tsx`), on the
+  grid tile and on the browser's list row alike, dimmed rather than hidden.
+- **Placing is a right-click** (`usePlaceMenu`), on a row and a tile in all
+  three views, arming the same placement the preview panel's button arms. Drag
+  into the viewport was the other candidate and was not taken.
+
+The two that remain:
 
 1. **Nothing finds an asset by name (#241).** `WorldAssetBrowser`'s filter is
    the current directory only — deliberately, by the same "one level at a time"
-   rule the listing itself has — and the Favorites and Categories views have no
-   filter at all. Florian: assets he knows by name read as missing. **Triage
-   step before any design**: open Categories → *Pflanzen* and look at
-   `NW_NATURE_GRASSGROUP_01.3DS`. A drawn thumbnail means the file is mounted
-   and this is purely a search gap; a marked tile means the mount list is short
-   and the search would have found nothing anyway. The catalogue seed proves
-   nothing about an install — it ships 1,396 names regardless of what is
-   mounted.
-2. **Favorites cannot be starred from the default view (#242).** The star is a
-   `tile-actions` button on a grid tile, revealed on hover (`WorldAssetGrid.tsx`);
-   `view` defaults to `'list'`, and a list row has no star. So the Favorites tab
-   exists, is empty, and the only text that says how to fill it is the empty
-   state behind that tab. Two ways out — a star on the row, or grid as the
-   default view — and picking one is a small design call, not a fix.
-3. **The catalogue cannot be filtered (#243).** 32 seed categories and 1,396
-   entries, drawn as a plain `List` and a grid (`WorldAssetCatalogView.tsx`),
-   with no text field on either. The smallest of the seven and the one with no
-   design question in it.
-4. **Nothing places from a catalogue tile (#244).** The route exists — click the
-   tile, and the right-hand panel's `WorldAssetPreview` offers *Place in world*
-   for any name `isPlaceableVisual` accepts, seed `.3DS` names included — but
-   the tile's own hover actions are star and file-into, and the panel that
-   carries the verb is the properties panel on the other side of the viewport,
-   collapsible and easy to read as being about the selected VOB. Read as "you
-   cannot insert from categories". Shape of the answer: put the verb on the
-   tile (context menu, or drag into the viewport), where the eye already is.
+   rule the listing itself has. The catalogue half of this is closed (above);
+   what is still missing is finding a *mounted* file whose directory you are not
+   standing in. **Triage step before any design**: open Categories, type
+   "grassgroup", and look at the `NW_NATURE_GRASSGROUP_01.3DS` tile. A drawn
+   thumbnail means the file is mounted and this is purely a search gap; a marked
+   tile means the mount list is short and the search would have found nothing
+   anyway. The catalogue seed proves nothing about an install — it ships 1,396
+   names regardless of what is mounted.
 5. **What the browse root actually looks like on a retail install is unknown
    (#245).** Florian could not steer into folders. `gothicAssetSources` mounts
    each loose `_compiled` tree at the namespace root, so those files are flat by
@@ -3170,6 +3171,9 @@ places a mesh lives in the far right panel rather than on the tile.
    repo has looked at, and it decides whether row 1's search is a filter over a
    listing or an index over the whole namespace. Needs a Gothic install —
    Daniel's machine, not CI.
+
+Row numbers are the ones the issues cite and do not move; 2, 3 and 4 are the
+three above.
 
 ### 16.39 The extent of a sound, a light or a zone is invisible too (2026-09-10; #248)
 

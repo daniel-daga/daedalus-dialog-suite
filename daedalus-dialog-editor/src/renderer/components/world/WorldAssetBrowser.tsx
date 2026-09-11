@@ -13,7 +13,9 @@ import AutoSizer from 'react-virtualized-auto-sizer';
 import { isFavorite } from 'zen-world';
 import type { AssetCatalog, VfsEntry } from '../../../shared/worldTypes';
 import type { AssetThumbnails } from '../../world/assetThumbnails';
-import WorldAssetGrid, { type TileCatalogActions, type TileOrigin } from './WorldAssetGrid';
+import WorldAssetGrid, {
+  FavoriteStar, usePlaceMenu, type AssetPlacement, type TileCatalogActions, type TileOrigin,
+} from './WorldAssetGrid';
 import WorldAssetCatalogView from './WorldAssetCatalogView';
 
 // The asset browser over the mounted VFS (level-editor.md §6).
@@ -77,6 +79,10 @@ interface RowData {
   onOpen: (entry: VfsEntry) => void;
   sourceLabels: readonly string[];
   only: number | null;
+  /** The same actions the tiles get, or undefined with no project sidecar
+   *  loaded — then a row carries no star, as a tile carries none. */
+  actions?: TileCatalogActions;
+  placement?: AssetPlacement;
 }
 
 const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
@@ -84,6 +90,13 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
   const isDirectory = entry.type === 'directory';
   const from = origin(entry, data.sourceLabels, data.only);
   const overridden = from?.overridden === true;
+  // The star on the row (§16.37 row 2). It used to live on a grid tile only,
+  // and this is the view the panel opens in — so the Favorites tab was
+  // reachable, always empty, and unfillable from anything on screen.
+  const actions = isDirectory ? undefined : data.actions;
+  // A row places what a tile places (§16.37 row 4): list is the view the panel
+  // opens in, so leaving it out would put the verb behind a view switch.
+  const place = usePlaceMenu(isDirectory ? '' : entry.name, data.placement);
 
   return (
     <Box
@@ -91,10 +104,15 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
       data-testid={`world-asset-${entry.name}`}
       {...(overridden ? { 'data-overridden': 'true' } : {})}
       onClick={() => data.onOpen(entry)}
+      onContextMenu={place.onContextMenu}
       style={style}
       sx={{
         display: 'flex', alignItems: 'center', gap: 0.75, px: 1, cursor: 'pointer',
         whiteSpace: 'nowrap', '&:hover': { bgcolor: 'action.hover' },
+        // Dim rather than hidden: a control nobody can see is the bug this
+        // row is fixing. A starred row keeps its star at full strength.
+        '& .row-star': { opacity: 0.25 },
+        '&:hover .row-star, &:focus-within .row-star, & .row-star.on': { opacity: 1 },
         // Shaded, not hidden: the copy in this mount is real, it is just not
         // the one the engine reads.
         ...(overridden ? { opacity: 0.45 } : {}),
@@ -116,6 +134,16 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
           {from.label}
         </Typography>
       )}
+      {actions !== undefined && (
+        <Box
+          className={`row-star${actions.isFavorite(entry.name) ? ' on' : ''}`}
+          sx={{ display: 'flex' }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <FavoriteStar name={entry.name} actions={actions} />
+        </Box>
+      )}
+      {place.menu}
     </Box>
   );
 }, areEqual);
@@ -135,6 +163,9 @@ export interface WorldAssetBrowserProps {
    *  entry's `sources` index into (architecture §6). Absent, the browser is the merged
    *  listing it has always been, with nothing to name a row with. */
   sources?: readonly string[];
+  /** Placing a mesh straight off its row or tile (§16.37 row 4). Absent — no
+   *  world open — nothing here offers the verb. */
+  placement?: AssetPlacement;
 }
 
 export interface AssetCatalogProps {
@@ -148,7 +179,7 @@ export interface AssetCatalogProps {
 }
 
 const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
-  listAssets, onPreview, thumbnails, catalog, sources = NO_SOURCES,
+  listAssets, onPreview, thumbnails, catalog, sources = NO_SOURCES, placement,
 }) => {
   const [path, setPath] = useState('/');
   const [view, setView] = useState<'list' | 'grid'>('list');
@@ -255,8 +286,8 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
   }, [path]);
 
   const itemData = useMemo<RowData>(
-    () => ({ entries: filtered, onOpen, sourceLabels, only }),
-    [filtered, onOpen, sourceLabels, only],
+    () => ({ entries: filtered, onOpen, sourceLabels, only, actions: tileActions, placement }),
+    [filtered, onOpen, sourceLabels, only, tileActions, placement],
   );
   const originOf = useCallback(
     (entry: VfsEntry) => origin(entry, sourceLabels, only),
@@ -288,6 +319,7 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
           removable={catalog.removable}
           onRemoveFromCategory={catalog.onRemoveFromCategory}
           onPreview={onPreview}
+          placement={placement}
         />
       )}
       {mode === 'browse' && (<>
@@ -475,6 +507,7 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
             onOpen={onOpen}
             actions={tileActions}
             originOf={originOf}
+            placement={placement}
           />
         </Box>
       )}

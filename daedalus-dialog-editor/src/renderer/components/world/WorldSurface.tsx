@@ -1851,6 +1851,12 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     () => mergeCatalogs(parseAssetCatalog(assetCategorySeed), assetCatalog),
     [assetCatalog],
   );
+  // The place verb on an asset row or tile (§16.37 row 4). The same arming the
+  // preview panel's button does, offered where the pointer already is.
+  const assetPlacement = useMemo(() => ({
+    canPlace: isPlaceableVisual,
+    onPlace: (name: string) => setArmed({ kind: 'place', spec: { ...FRESH_PLACE, visual: name } }),
+  }), []);
   const assetCatalogProps = useMemo<AssetCatalogProps | undefined>(() => (
     projectFilePath === null ? undefined : {
       catalog: mergedAssetCatalog,
@@ -2893,6 +2899,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                     thumbnails={thumbnails ?? undefined}
                     catalog={assetCatalogProps}
                     sources={summary?.assetSources}
+                    placement={assetPlacement}
                   />
                 </Box>
               )}

@@ -656,6 +656,134 @@ describe('WorldAssetBrowser', () => {
       expect(within(screen.getByTestId('world-asset-tile-ITMW_SWORD.3DS')).queryByTestId('world-asset-unfile')).not.toBeInTheDocument();
     });
 
+    // The star on a row (level-editor.md §16.37 row 2; #242). It lived only on
+    // a grid tile, revealed on hover, and the panel opens in list view — so the
+    // Favorites tab was reachable, always empty, and unfillable from anything
+    // on screen.
+    it('stars a file from the list row, which is the view the panel opens in', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const props = catalogProps({ catalog: { favorites: ['MOD_ONLY.3DS'], categories: [] } });
+      const onPreview = jest.fn();
+      render(<WorldAssetBrowser listAssets={list} onPreview={onPreview} thumbnails={queue()} catalog={props} />);
+      await screen.findByTestId('world-asset-MOD_ONLY.MRM');
+
+      // `MOD_ONLY.3DS` is the source name of the compiled `MOD_ONLY.MRM`.
+      const star = within(screen.getByTestId('world-asset-MOD_ONLY.MRM')).getByTestId('world-asset-star');
+      expect(star).toHaveAttribute('aria-pressed', 'true');
+      await user.click(star);
+
+      expect(props.onToggleFavorite).toHaveBeenCalledWith('MOD_ONLY.MRM');
+      // The row opens a file on click, and the star sits inside the row.
+      expect(onPreview).not.toHaveBeenCalled();
+    });
+
+    it('puts no star on a directory row, nor on any row without a catalogue', async () => {
+      const { list } = listing();
+      const { unmount } = render(
+        <WorldAssetBrowser listAssets={list} onPreview={jest.fn()} thumbnails={queue()} catalog={catalogProps()} />,
+      );
+      await screen.findByTestId('world-asset-Meshes');
+      expect(within(screen.getByTestId('world-asset-Meshes')).queryByTestId('world-asset-star')).not.toBeInTheDocument();
+      unmount();
+
+      render(<WorldAssetBrowser listAssets={listing().list} onPreview={jest.fn()} thumbnails={queue()} />);
+      await screen.findByTestId('world-asset-MOD_ONLY.MRM');
+      expect(within(screen.getByTestId('world-asset-MOD_ONLY.MRM')).queryByTestId('world-asset-star')).not.toBeInTheDocument();
+    });
+
+    // The catalogue filter (level-editor.md §16.37 row 3; #243). The seed
+    // ships 1,396 visuals over 32 categories and neither list had a text
+    // field, so an asset you know the name of could only be found by
+    // scrolling — which is how a present asset reads as missing.
+    describe('the catalogue filter', () => {
+      const pflanzen: AssetCatalogProps = {
+        catalog: {
+          favorites: ['NW_BARREL.3DS', 'ITMW_SWORD.3DS'],
+          categories: [
+            { path: 'Pflanzen', visuals: ['NW_NATURE_GRASSGROUP_01.3DS', 'NW_NATURE_BUSH_01.3DS'] },
+            { path: 'Items/Schwerter', visuals: ['ITMW_SWORD.3DS'] },
+          ],
+        },
+        removable: () => false,
+        onToggleFavorite: jest.fn(),
+        onAddToCategory: jest.fn(),
+        onRemoveFromCategory: jest.fn(),
+      };
+
+      async function categories() {
+        const user = userEvent.setup();
+        const { list } = listing();
+        render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} thumbnails={queue()} catalog={pflanzen} />);
+        await screen.findByTestId('world-asset-Meshes');
+        await user.click(screen.getByTestId('world-asset-mode-categories'));
+        return user;
+      }
+
+      it('finds the category holding a visual named nowhere in its path', async () => {
+        const user = await categories();
+
+        await user.type(screen.getByTestId('world-asset-catalog-filter'), 'grassgroup');
+
+        // Nothing about "Pflanzen" matches "grassgroup" — the visual inside it does.
+        expect(screen.getByTestId('world-asset-category-Pflanzen')).toBeInTheDocument();
+        expect(screen.queryByTestId('world-asset-category-Items/Schwerter')).not.toBeInTheDocument();
+        // And it says how much of the category matched, so the count is not a lie.
+        expect(screen.getByTestId('world-asset-category-Pflanzen')).toHaveTextContent('1 of 2 visuals');
+      });
+
+      it('carries the filter into the category, so the match is what is on screen', async () => {
+        const user = await categories();
+        await user.type(screen.getByTestId('world-asset-catalog-filter'), 'grassgroup');
+
+        await user.click(screen.getByTestId('world-asset-category-Pflanzen'));
+
+        expect(screen.getByTestId('world-asset-tile-NW_NATURE_GRASSGROUP_01.3DS')).toBeInTheDocument();
+        expect(screen.queryByTestId('world-asset-tile-NW_NATURE_BUSH_01.3DS')).not.toBeInTheDocument();
+      });
+
+      it('narrows the category list by path too, case-insensitively', async () => {
+        const user = await categories();
+
+        await user.type(screen.getByTestId('world-asset-catalog-filter'), 'schwert');
+
+        expect(screen.getByTestId('world-asset-category-Items/Schwerter')).toBeInTheDocument();
+        expect(screen.queryByTestId('world-asset-category-Pflanzen')).not.toBeInTheDocument();
+      });
+
+      it('narrows the favorites grid as well', async () => {
+        const user = userEvent.setup();
+        const { list } = listing();
+        render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} thumbnails={queue()} catalog={pflanzen} />);
+        await screen.findByTestId('world-asset-Meshes');
+        await user.click(screen.getByTestId('world-asset-mode-favorites'));
+
+        await user.type(screen.getByTestId('world-asset-catalog-filter'), 'sword');
+
+        expect(screen.getByTestId('world-asset-tile-ITMW_SWORD.3DS')).toBeInTheDocument();
+        expect(screen.queryByTestId('world-asset-tile-NW_BARREL.3DS')).not.toBeInTheDocument();
+      });
+
+      it('says nothing matched rather than showing an empty list', async () => {
+        const user = await categories();
+
+        await user.type(screen.getByTestId('world-asset-catalog-filter'), 'zzzz');
+
+        expect(screen.getByTestId('world-asset-catalog-filter-empty')).toBeInTheDocument();
+        expect(screen.queryByTestId('world-asset-category-Pflanzen')).not.toBeInTheDocument();
+      });
+
+      it('resets when the other catalogue view is chosen, which is a different corpus', async () => {
+        const user = await categories();
+        await user.type(screen.getByTestId('world-asset-catalog-filter'), 'grassgroup');
+
+        await user.click(screen.getByTestId('world-asset-mode-favorites'));
+
+        expect(screen.getByTestId('world-asset-catalog-filter')).toHaveValue('');
+        expect(screen.getByTestId('world-asset-tile-NW_BARREL.3DS')).toBeInTheDocument();
+      });
+    });
+
     it('files a tile into an existing category, or a new one, from its menu', async () => {
       const user = userEvent.setup();
       const { list } = listing();
@@ -671,6 +799,90 @@ describe('WorldAssetBrowser', () => {
       await user.click(within(screen.getByTestId('world-asset-tile-MOD_ONLY.MRM')).getByTestId('world-asset-file'));
       await user.type(await screen.findByTestId('world-asset-file-new'), 'Mine/Barrels{Enter}');
       expect(props.onAddToCategory).toHaveBeenCalledWith('Mine/Barrels', 'MOD_ONLY.MRM');
+    });
+  });
+
+  // Placing from the tile (level-editor.md §16.37 row 4; #244). The verb
+  // existed, on the far side of the viewport in the panel that otherwise shows
+  // the selected VOB's properties, and reads as being about that VOB. Here it
+  // is where the pointer already is.
+  describe('placing from an asset', () => {
+    const queue = () => ({
+      get: () => undefined, request: jest.fn(), redraw: jest.fn(), cancelPending: jest.fn(),
+      subscribe: () => () => {},
+    }) as unknown as AssetThumbnails;
+    const catalog = {
+      catalog: { favorites: [], categories: [{ path: 'Mine/Crates', visuals: ['NW_CRATE.MRM'] }] },
+      removable: () => false,
+      onToggleFavorite: jest.fn(),
+      onAddToCategory: jest.fn(),
+      onRemoveFromCategory: jest.fn(),
+    };
+    /** A stand-in for `isPlaceableVisual`: a mesh is placeable, a texture is not. */
+    const placement = () => ({
+      canPlace: (name: string) => /\.(MRM|3DS)$/i.test(name),
+      onPlace: jest.fn(),
+    });
+
+    it('places a category tile from its context menu', async () => {
+      const user = userEvent.setup();
+      const place = placement();
+      render(
+        <WorldAssetBrowser
+          listAssets={listing().list} onPreview={jest.fn()} thumbnails={queue()}
+          catalog={catalog} placement={place}
+        />,
+      );
+      await screen.findByTestId('world-asset-Meshes');
+      await user.click(screen.getByTestId('world-asset-mode-categories'));
+      await user.click(screen.getByTestId('world-asset-category-Mine/Crates'));
+
+      fireEvent.contextMenu(screen.getByTestId('world-asset-tile-NW_CRATE.MRM'));
+      await user.click(await screen.findByTestId('world-asset-place-menu'));
+
+      expect(place.onPlace).toHaveBeenCalledWith('NW_CRATE.MRM');
+    });
+
+    it('places a browse row too, which is the view the panel opens in', async () => {
+      const user = userEvent.setup();
+      const place = placement();
+      render(
+        <WorldAssetBrowser
+          listAssets={listing().list} onPreview={jest.fn()} thumbnails={queue()} placement={place}
+        />,
+      );
+      await screen.findByTestId('world-asset-MOD_ONLY.MRM');
+
+      fireEvent.contextMenu(screen.getByTestId('world-asset-MOD_ONLY.MRM'));
+      await user.click(await screen.findByTestId('world-asset-place-menu'));
+
+      expect(place.onPlace).toHaveBeenCalledWith('MOD_ONLY.MRM');
+    });
+
+    it('offers nothing for a directory, or for a name no mesh can be made of', async () => {
+      const user = userEvent.setup();
+      const place = placement();
+      render(
+        <WorldAssetBrowser
+          listAssets={listing().list} onPreview={jest.fn()} thumbnails={queue()} placement={place}
+        />,
+      );
+      await screen.findByTestId('world-asset-Meshes');
+
+      fireEvent.contextMenu(screen.getByTestId('world-asset-Meshes'));
+      expect(screen.queryByTestId('world-asset-place-menu')).not.toBeInTheDocument();
+
+      await user.click(screen.getByTestId('world-asset-Textures'));
+      fireEvent.contextMenu(await screen.findByTestId('world-asset-NW_WOOD-C.TEX'));
+      expect(screen.queryByTestId('world-asset-place-menu')).not.toBeInTheDocument();
+    });
+
+    it('offers nothing at all where there is no world to place into', async () => {
+      render(<WorldAssetBrowser listAssets={listing().list} onPreview={jest.fn()} thumbnails={queue()} />);
+      await screen.findByTestId('world-asset-MOD_ONLY.MRM');
+
+      fireEvent.contextMenu(screen.getByTestId('world-asset-MOD_ONLY.MRM'));
+      expect(screen.queryByTestId('world-asset-place-menu')).not.toBeInTheDocument();
     });
   });
 
