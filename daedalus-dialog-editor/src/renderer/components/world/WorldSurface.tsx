@@ -21,13 +21,13 @@ import {
   renumbersPaths,
   reparentVob, rotateVob, rotateVobs, scatterVobs, setVobClassProp, setVobProp, setVobProps,
   strokeCandidates, topLevelVobs,
-  translateVobs, vobAtIndexPath, vobIndexPath,
+  translateVobs, vobAtIndexPath, vobExtentOf, vobIndexPath,
   addToCategory, assetKey, emptyAssetCatalog, mergeCatalogs, parseAssetCatalog, removeFromCategory,
   toggleFavorite, visualsOf,
   type AddVob,
   type AuthorableVobClass, type ClassProps, type NewVob, type ReadProps,
   type ScatterPlacement,
-  type VobProps, type VobReader, type VobSubtree,
+  type VobExtent, type VobProps, type VobReader, type VobSubtree,
   type ZenBounds,
   type ZenPosition, type ZenRotation,
 } from 'zen-world';
@@ -1052,6 +1052,25 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       .catch(() => { if (current) setClassProps(null); });
     return () => { current = false; };
   }, [summary, primary, appliedOps]);
+
+  /**
+   * How far the selected VOB reaches (§16.39, #248) — a sound's `radius`, a
+   * light's `range`.
+   *
+   * Off the props `classProps` already holds, so the sphere costs no round trip
+   * of its own: the read the property grid makes on every selection change is
+   * the same read. Null for every class whose extent is a bounding box instead,
+   * which `vobExtentOf` decides — the index carries no bbox column, so a sphere
+   * there would be a confident wrong answer.
+   */
+  const selectedExtent = useMemo<{ vob: number; extent: VobExtent } | null>(() => {
+    if (summary === null || primary === null) return null;
+    if (classProps === null || classProps.vob !== primary) return null;
+    const className = vobModelOf(summary).reader.className(primary);
+    if (className === null) return null;
+    const extent = vobExtentOf(className, classProps.props);
+    return extent === null ? null : { vob: primary, extent };
+  }, [summary, primary, classProps]);
 
   // ── saving (level-editor.md §5) ───────────────────────────────────────────
   //
@@ -2989,6 +3008,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               exposure={exposure}
               hiddenVobs={hiddenVobs}
               outlineMode={outlineMode}
+              selectedExtent={selectedExtent}
               snapGrid={snapGrid}
               snapAngle={(snapAngleDegrees * Math.PI) / 180}
               scatterRadius={scatterBrushRadius}

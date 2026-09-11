@@ -1064,3 +1064,57 @@ describe('WorldScene', () => {
     expect(disposed).toHaveBeenCalled();
   });
 });
+
+// How far the selected VOB reaches (level-editor.md §16.39, #248). The marker
+// layer says where a sound stands; the radius is what the modder is tuning, and
+// the scene's job is to put a sphere of that radius exactly where the VOB is —
+// including for a VOB the scene draws only as a marker, which is every sound
+// and every light in a retail world.
+describe('the selected VOB\'s extent', () => {
+  it('puts nothing in the scene until something is selected', () => {
+    // The root's children are what the world is made of; an invisible node
+    // parked in it is one more thing every reader of the graph has to skip.
+    const scene = new WorldScene();
+
+    expect(scene.root.children.find((child) => child.type === 'LineSegments')).toBeUndefined();
+    scene.dispose();
+  });
+
+  it("puts the sphere on a marker-only VOB, which is every sound there is", () => {
+    // An empty visual name is what "no visual" is on disk, and it is the whole
+    // of the sound family: a sphere that could only follow an instance would
+    // draw for none of them.
+    const scene = new WorldScene();
+    scene.setVobMarkers(vobIndex([[0, 0, 0], [400, 500, 600]], 'zCVobSound', undefined, undefined, ['', '']));
+
+    scene.showExtent(1, { radius: 3000, kind: 'sound' });
+
+    const wireframe = scene.root.children.find((child) => child.type === 'LineSegments');
+    expect(wireframe?.visible).toBe(true);
+    expect(wireframe?.position.toArray()).toEqual([400, 500, 600]);
+    expect(wireframe?.scale.toArray()).toEqual([3000, 3000, 3000]);
+    scene.dispose();
+  });
+
+  it('draws nothing for a VOB it cannot place, rather than a sphere at the origin', () => {
+    // A sphere at [0,0,0] for a VOB that is somewhere else is worse than none.
+    const scene = new WorldScene();
+    scene.setVobMarkers(vobIndex([[400, 500, 600]], 'zCVobSound', undefined, undefined, ['']));
+
+    scene.showExtent(99, { radius: 3000, kind: 'sound' });
+
+    expect(scene.root.children.find((child) => child.type === 'LineSegments')).toBeUndefined();
+    scene.dispose();
+  });
+
+  it('takes the sphere away again', () => {
+    const scene = new WorldScene();
+    scene.setVobMarkers(vobIndex([[0, 0, 0]], 'zCVobLight', undefined, undefined, ['']));
+    scene.showExtent(0, { radius: 800, kind: 'light' });
+
+    scene.hideExtent();
+
+    expect(scene.root.children.find((child) => child.type === 'LineSegments')).toBeUndefined();
+    scene.dispose();
+  });
+});

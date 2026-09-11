@@ -12,7 +12,7 @@
 import {
   AUTHORABLE_VOB_CLASSES, CLASS_FIELDS, DECAL_FIELDS, baseFieldOf, classPropKeys,
   CLASS_ENUM_FIELDS, EnumValueDescriptor, decalFieldOf, decalSubKey, enumValuesOf, fieldOf,
-  isAuthorableVobClass,
+  isAuthorableVobClass, vobExtentOf,
 } from '../src/model';
 
 describe('the per-class field catalogue', () => {
@@ -649,5 +649,38 @@ describe('the enum sets (level-editor.md §16.21)', () => {
         expect(values.every((v) => Number.isInteger(v.value) && v.value >= 0)).toBe(true);
       }
     }
+  });
+});
+
+// The sphere a sound or a light reaches (#248). The reach IS the object for
+// these two, and the marker that landed with #247 says only where the origin
+// is — so this is the one field lookup the viewport needs to draw it.
+describe('the extent a VOB is', () => {
+  it("reads a sound's radius, and the daytime sound's inherited one", () => {
+    expect(vobExtentOf('zCVobSound', { radius: 3000 })).toEqual({ radius: 3000, kind: 'sound' });
+    expect(vobExtentOf('zCVobSoundDaytime', { radius: 1500 }))
+      .toEqual({ radius: 1500, kind: 'sound' });
+  });
+
+  it("reads a light's range, which is the same shape under a different key", () => {
+    expect(vobExtentOf('zCVobLight', { range: 800 })).toEqual({ radius: 800, kind: 'light' });
+    // The sound's key on a light is not the light's reach.
+    expect(vobExtentOf('zCVobLight', { radius: 800 })).toBeNull();
+  });
+
+  it('answers null for every class whose extent is a box, not a radius', () => {
+    // A zone or a trigger is its bbox, and the index has no column for one —
+    // a different problem, and drawing a sphere for it would be a lie.
+    for (const className of ['oCZoneMusic', 'zCZoneZFog', 'zCTrigger', 'oCItem', 'zCVob']) {
+      expect(vobExtentOf(className, { radius: 500, range: 500 })).toBeNull();
+    }
+  });
+
+  it('draws nothing for a radius of zero or less, or one that is not a number', () => {
+    // A sphere of radius zero is the point the marker already draws.
+    expect(vobExtentOf('zCVobSound', { radius: 0 })).toBeNull();
+    expect(vobExtentOf('zCVobSound', { radius: -5 })).toBeNull();
+    expect(vobExtentOf('zCVobSound', {})).toBeNull();
+    expect(vobExtentOf('zCVobSound', { radius: 'loud' })).toBeNull();
   });
 });

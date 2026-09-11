@@ -1,8 +1,9 @@
 import * as THREE from 'three';
-import { ROOT_MATRIX, threeIndexOrder } from 'zen-world';
+import { ROOT_MATRIX, threeIndexOrder, type VobExtent } from 'zen-world';
 import type {
   DrawGroup, InstancedPayload, VobIndex, WorldMeshPayload, DecodedTexture,
 } from '../../shared/worldTypes';
+import { VobExtentOverlay } from './VobExtentOverlay';
 import { VobMarkerLayer } from './VobMarkerLayer';
 
 // The Three.js projection of a world (level-editor.md §7: "the renderer is a
@@ -352,6 +353,16 @@ export class WorldScene {
 
   private markerLayer: VobMarkerLayer | null = null;
 
+  /**
+   * How far the selected VOB reaches, when the reach is a radius (§16.39,
+   * #248). One wireframe for the whole scene, because only the selection is
+   * ever drawn: 1,237 sound radii at once is a screen of overlapping spheres.
+   *
+   * Under the mirrored root with everything else, so `showExtent` takes the
+   * same coordinates `positionOf` answers in.
+   */
+  private readonly extentOverlay = new VobExtentOverlay();
+
   private textures = new Map<string, TextureSlot>();
   private instanceVobIds = new WeakMap<THREE.InstancedMesh, Uint32Array>();
   /** The visual's own bounds, per mesh — what a rotation refits a bbox from.
@@ -468,6 +479,30 @@ export class WorldScene {
   setVobMarkers(index: VobIndex): void {
     this.markerLayer = new VobMarkerLayer(index);
     this.root.add(this.markerLayer.markers);
+  }
+
+  /**
+   * Draw the reach of one VOB, or nothing (§16.39). The caller decides which
+   * VOB and reads the radius off its class props — `vobExtentOf` is where a
+   * class with no radius is told from one with a box, and this only draws.
+   *
+   * Silently nothing for a VOB the scene cannot place: a sphere at the origin
+   * for a VOB that is somewhere else is worse than no sphere.
+   */
+  showExtent(vob: number, extent: VobExtent): void {
+    const position = this.positionOf(vob);
+    if (position === null) { this.hideExtent(); return; }
+    this.extentOverlay.show(position, extent);
+    // Attached only while it is drawing something. The root's children are
+    // what the world is made of, and a permanent invisible node in it is one
+    // more thing every reader of the graph has to know to skip.
+    if (this.extentOverlay.wireframe.parent === null) this.root.add(this.extentOverlay.wireframe);
+  }
+
+  /** Nothing selected, or a selection whose extent is not a radius. */
+  hideExtent(): void {
+    this.extentOverlay.hide();
+    this.root.remove(this.extentOverlay.wireframe);
   }
 
   /** The VOB an instance came from — a pick returns nothing else that identifies it. */
@@ -860,6 +895,7 @@ export class WorldScene {
     // one sprite, shared with the spawn markers.
     this.markerLayer?.dispose();
     this.markerLayer = null;
+    this.extentOverlay.dispose();
 
     this.geometries = [];
     this.materials = [];

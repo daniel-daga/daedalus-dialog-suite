@@ -3158,37 +3158,31 @@ issues cite and do not move.
    below it, and whether the names from the report are mounted at all. Needs a
    Gothic install — Daniel's machine, not CI.
 
-### 16.39 The extent of a sound, a light or a zone is invisible too (2026-09-10; #248)
+### 16.39 A zone's or a trigger's extent is a box nothing holds (2026-09-10; #248)
 
-A marker says where the origin is and nothing about how far the thing reaches,
-and for this family the reach *is* the object: a `zCVobSound` is its `radius`, a
-`zCVobLight` its `range` and `color`, a `zCZoneZFog` its `rangeCenter` and
-`innerRangePercentage`, an `oCZoneMusic` its volume, a `zCTrigger` its box. With
-the marker layer landed (§7), tuning any of them is still a save-and-play loop.
+The sphere half is done and `git log` carries it — a `zCVobSound`'s `radius` and
+a `zCVobLight`'s `range` are drawn round the selection as a wireframe sphere,
+off the `getVobProps` read the property grid already makes. The durable outcome
+is architecture §7.
 
-**The sphere half is drawable from data already in hand.** `radius` and `range`
-are catalogued class fields (`CLASS_FIELDS`, `zen-world/src/model/vobClasses.ts`)
-and reach the renderer through `getVobProps` — the round trip
-`WorldPropertyGrid` already makes when a selection changes. A wireframe sphere
-at the marker, radius from the field, needs nothing new.
+**What is left has no data source.** `ops.ts` states it: *"The bbox is not in
+the index at all — there is no column for it."* A zone's or a trigger's volume
+*is* that bbox, so drawing one means either a new index column — paid for by
+every world load, 41,393 × 6 floats — or a per-selection fetch that does not
+exist. That is the decision this section is really holding, and it is why the
+two halves were not landed together.
 
-**The box half has no source.** `ops.ts` states it: *"The bbox is not in the
-index at all — there is no column for it."* A zone's or a trigger's volume is
-that bbox, so drawing one means either a new index column — paid for by every
-world load, 41,393 × 6 floats — or a per-selection fetch that does not exist.
-That is the decision this section is really holding, and it is why the two
-halves should not land together.
-
-Three things to settle with it:
+Two things to settle with it:
 
 - **`oCZoneMusic.ellipsoid` makes one box mean two shapes**, and it is a
   catalogued bool, so the shape follows a field the user can flip.
 - **`zCZoneZFog` has no radius field at all** — `rangeCenter` is a distance
   along the view, not an extent — so a fog zone's shape is its bbox like the
   others, and `rangeCenter` is something the grid says and the viewport cannot.
-- **Selection only, first.** The corpus holds 1,237 sound VOBs across the three
-  retail worlds; every radius drawn at once is a screen of overlapping spheres,
-  and drawing the selection is what a modder tuning one sound actually wants.
+
+A light's `color` is the other half of what a light *is* and is equally
+invisible; it is a tint on the sphere rather than a shape, and nothing has been
+decided about it.
 
 ### 16.40 A decal and a particle effect draw nothing either (2026-09-10; #249)
 

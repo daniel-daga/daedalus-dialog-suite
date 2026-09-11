@@ -2793,8 +2793,44 @@ which the instance ids are momentarily the old ones.
 class is a decision by omission, and nothing has answered whether 15,749 dots
 at once is the right default in a world that size — the per-class hide is the
 only control over it, which is at least a control the old behaviour did not
-have. The extent of a sound, a light or a zone (plan §16.39, #248) is separate
-work and is what a modder tuning one of them actually wants.
+have.
+
+#### How far the selection reaches (2026-09-11)
+
+A marker says where a VOB is, and for one family that is the smaller half of
+the fact: a `zCVobSound` **is** its `radius` and a `zCVobLight` **is** its
+`range`, so tuning either was still a save-and-play loop with the marker on
+screen. `VobExtentOverlay` draws that reach as a wireframe sphere at the
+selected VOB.
+
+**It costs no new data and no new call.** `radius` and `range` are catalogued
+class fields and already cross on the `getVobProps` read the property grid
+makes whenever the selection changes; `vobExtentOf` (zen-world) is the lookup
+that turns a class name and those props into a radius, and the renderer only
+draws. A unit sphere is built once and scaled per selection rather than rebuilt
+per radius.
+
+**Only where the extent IS a radius.** A zone's or a trigger's extent is its
+bounding box, and the index carries no column for one — `ops.ts` says so
+outright. Drawing a sphere there would be a confident wrong answer rather than
+a missing one, so `vobExtentOf` answers null for every such class and the box
+half stays open (plan §16.39): it needs either a new index column, paid for by
+every world load at 41,393 × 6 floats, or a per-selection fetch that does not
+exist yet. `oCZoneMusic.ellipsoid` making one box mean two shapes, and
+`zCZoneZFog` having no extent field at all, are part of that same open
+decision.
+
+**The selection only, and attached only while it draws.** The three retail
+worlds hold 1,237 sound VOBs between them, so every radius at once is a screen
+of overlapping spheres; the modder tuning one sound wants that one. The
+wireframe joins the scene root when it has something to show and leaves when it
+does not — the root's children are what the world is made of, and a permanent
+invisible node in it is one more thing every reader of the graph has to know to
+skip. It never answers a raycast, so a click still reaches the VOB inside it.
+
+The decal and the particle effect are still drawn as nothing at all: they *have*
+a visual name that resolves to no geometry, which is a third case again (plan
+§16.40, #249).
 
 ---
 

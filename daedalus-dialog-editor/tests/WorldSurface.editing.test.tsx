@@ -41,6 +41,9 @@ let mockTerrainPoint: [number, number, number] | null | undefined;
 let mockExposure: number | undefined;
 /** Which VOBs the viewport is told not to draw — one byte per VOB, or null. */
 let mockHiddenVobs: Uint8Array | null | undefined;
+/** The sphere the viewport is told to draw round the selection (#248), or null
+ *  when the selected VOB's extent is not a radius. */
+let mockSelectedExtent: { vob: number; extent: { radius: number; kind: string } } | null | undefined;
 /** The payload the overlay draws, and the one a committed waypoint drag builds
  *  its op out of. */
 let mockWaynet: WaynetPayload | null | undefined;
@@ -102,6 +105,7 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
     terrainPoint: [number, number, number] | null;
     exposure: number;
     hiddenVobs: Uint8Array | null;
+    selectedExtent: { vob: number; extent: { radius: number; kind: string } } | null;
     snapGrid: number;
     snapAngle: number;
     waynet: WaynetPayload | null;
@@ -128,6 +132,7 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
     mockTerrainPoint = props.terrainPoint;
     mockExposure = props.exposure;
     mockHiddenVobs = props.hiddenVobs;
+    mockSelectedExtent = props.selectedExtent;
     mockSnapGrid = props.snapGrid;
     mockSnapAngle = props.snapAngle;
     mockWaynet = props.waynet;
@@ -3892,5 +3897,36 @@ describe('a focus request from outside the surface', () => {
 
       expect(screen.getByTestId('world-terrain-hint')).toHaveTextContent('OW_PATH_42');
     });
+  });
+});
+
+// How far the selected VOB reaches (level-editor.md §16.39, #248). The marker
+// layer put a dot where a light stands; the range is what a modder is actually
+// tuning, and until it is drawn tuning one is a save-and-play loop.
+describe('the sphere round the selection', () => {
+  it("hands the viewport a light's range, off the props the grid already read", async () => {
+    // No round trip of its own: this is the same `getVobProps` the property
+    // grid makes on every selection change.
+    mockVobProps = LIGHT_PROPS;
+    await openWorld(['zCVob', 'zCVobLight']);
+
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    await waitFor(() => expect(api.getVobProps).toHaveBeenCalled());
+
+    await waitFor(() => expect(mockSelectedExtent)
+      .toEqual({ vob: 1, extent: { radius: LIGHT_PROPS.range, kind: 'light' } }));
+  });
+
+  it('hands it nothing for a class whose extent is a box rather than a radius', async () => {
+    // An `oCItem` has no reach at all, and a zone's is its bbox — for which
+    // the index holds no column. A sphere there would be a confident wrong
+    // answer rather than a missing one.
+    mockVobProps = ITEM_PROPS;
+    await openWorld(['zCVob', 'oCItem']);
+
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    await waitFor(() => expect(api.getVobProps).toHaveBeenCalled());
+
+    await waitFor(() => expect(mockSelectedExtent).toBeNull());
   });
 });
