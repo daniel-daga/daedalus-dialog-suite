@@ -76,7 +76,18 @@ trusting master for a release, not after.
   them back when writing (never on the deprecated member itself: it has no
   initializer, so a fresh object would merge indeterminate bits).
 - **Never `dynamic_cast` ZenKit types** — node-gyp compiles `/GR-` on Windows.
-- Nested ZenKit submodules must be initialised recursively.
+- **Nested ZenKit submodules must be initialised recursively, and the failure is
+  a download rather than an error.** `vendor/ZenKit/vendor/{doctest,libsquish}`
+  are submodules of the submodule, and ZenKit's `vendor/CMakeLists.txt` uses a
+  local checkout only `if (EXISTS <name>/CMakeLists.txt)` — an empty directory
+  falls through to `FetchContent` and a GitHub zip. On a machine that cannot
+  reach `github.com/*/archive` the configure dies mid-download with
+  `Configuring incomplete`, and `build-zenkit.js` then reports the *missing*
+  `zenkit-abi.json` instead, which points at the wrong step. `git submodule
+  update --init --recursive` is the fix. `miniz` is not a submodule at all and
+  is always fetched when `ZK_ENABLE_ZIPPED_VDF` is on; a clone of
+  `richgel999/miniz` at tag `3.1.1` into `vendor/ZenKit/vendor/miniz` satisfies
+  the same `EXISTS` check where the zip cannot be reached.
 - **An MSVC compile can hang.** One `cl.exe` sat 15 minutes at 31 s CPU with no
   output. Kill the `cl.exe` / `Tracker.exe` / driver chain and re-run.
 - **Smart App Control blocks a freshly linked `.node` or `.exe` for ~5 minutes**
@@ -85,6 +96,16 @@ trusting master for a release, not after.
   needing a Windows reinstall.
 - **`zen-world` must be built before the editor typechecks**, and rebuilt after
   any `coords` change: the editor consumes the build, not the source.
+- **`daedalus-parser` must be *built* before the editor's Jest suite**, for the
+  same reason and with two symptoms that look like ordinary failures. Its
+  subpath exports (`./semantic-model`, `./semantic-code-generator`) resolve into
+  `dist/`, so an uncompiled workspace fails suites with `Cannot find module`;
+  and its tree-sitter `.node` is not built by `pnpm install` either, so the
+  suites that reach the real parser abort the whole worker with `No native build
+  was found for platform=…`. Jest counts both among the failed tests, so a
+  fresh checkout reports dozens of failures that are one missing build each.
+  `pnpm --filter daedalus-parser build`, then `npm run build:ts` and
+  `npx node-gyp rebuild` in that workspace.
 - **The renderer bundle is what `verify-world-edit.js` drives.** `build:main`
   alone leaves it stale, and the symptom is an edit refused by a validator that
   the renderer is a version behind. Run the full `build`.
