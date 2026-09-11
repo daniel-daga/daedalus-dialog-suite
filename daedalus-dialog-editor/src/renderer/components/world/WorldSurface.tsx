@@ -13,7 +13,7 @@ import {
   addVob, addVobsToFolder, classPropKeys, addWaypoint, alignVobsToNormal, applyWaypointNames,
   applyWaypointPositions,
   connectWaypoints, createFolder, deleteFolder, disconnectWaypoints,
-  deleteVob, deleteWaypoint, dropVobsToGround,
+  deleteVobs, deleteWaypoint, dropVobsToGround,
   duplicateVobSubtree, duplicateVobs, emptyVobFolders,
   invertOp, isBarrierOp, isStructuralOp,
   matchVobs,
@@ -238,7 +238,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   /** The VOB the delete warning is about, or null when it is closed. A flat
    *  index rather than a boolean: the dialog names what it is about to remove,
    *  and the selection can change under an open dialog. */
-  const [deleting, setDeleting] = useState<number | null>(null);
+  /** The VOBs the confirm dialog is about — the whole selection since #253,
+   *  not the primary of it. */
+  const [deleting, setDeleting] = useState<readonly number[] | null>(null);
   // The left panel is the scene *or* the mounted assets, and the right panel
   // follows it: a VOB's properties belong beside the tree, an asset's preview
   // beside the browser.
@@ -2396,14 +2398,17 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    * the inverse: the user is told first. That is the dialog below, and it is why
    * this is the only edit in the surface behind a confirm.
    *
-   * One VOB, never a selection of them, and alone in its batch: a delete
-   * renumbers every VOB after it, so a second one in the same batch would
-   * address a VOB that had moved.
+   * The whole selection, in one batch (#253). It was one VOB at a time because
+   * a delete renumbers; `deleteVobs` answers that with the *order* rather than
+   * with a refusal — back to front, so each removal leaves the paths still to
+   * be used exactly where they were resolved. One batch is one round trip and
+   * one clearing of the history, which is the whole of what one entry can mean
+   * for an op with no inverse.
    */
-  const removeVob = useCallback(async (vob: number) => {
+  const removeVobs = useCallback(async (vobs: readonly number[]) => {
     const { summary: current } = useWorldStore.getState();
-    if (current === null) return;
-    await commitOps([deleteVob(vobModelOf(current).reader, vob)]);
+    if (current === null || vobs.length === 0) return;
+    await commitOps(deleteVobs(vobModelOf(current).reader, vobs));
   }, [commitOps]);
 
   /** Any of the surface's own modal surfaces is up, so the window-level
@@ -2467,9 +2472,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         if (currentWaypoint !== null && waynet !== null) {
           event.preventDefault();
           setDeletingWaypoint({ waypoint: currentWaypoint, name: waynet.names[currentWaypoint] });
-        } else if (currentSelection.length === 1) {
+        } else if (currentSelection.length > 0) {
           event.preventDefault();
-          setDeleting(currentSelection[0]);
+          setDeleting(currentSelection);
         }
         return;
       }
@@ -2581,7 +2586,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   /** The Delete button — opens the same confirm the Delete key does, never
    *  a direct removal. */
   const requestDeleteSelection = useCallback(
-    () => setDeleting(selection[0]),
+    () => setDeleting(selection),
     [selection],
   );
 
@@ -2794,7 +2799,14 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
           with it. Spacer has no undo at all, which is why the op ships; it is
           not why the warning is optional. */}
       <Dialog open={deleting !== null} onClose={() => setDeleting(null)} maxWidth="xs" fullWidth>
-        <DialogTitle>Delete {labelOf(deleting)}?</DialogTitle>
+        {/* Named when it is one and counted when it is several: five labels
+            in a title is not a title, and "Delete VOB?" over a selection of
+            five is the surprise the dialog exists to prevent (#253). */}
+        <DialogTitle data-testid="world-delete-title">
+          {deleting !== null && deleting.length > 1
+            ? `Delete ${deleting.length} VOBs?`
+            : `Delete ${labelOf(deleting?.[0] ?? null)}?`}
+        </DialogTitle>
         <DialogContent>
           <DialogContentText component="div" variant="body2" data-testid="world-delete-warning">
             <p>
@@ -2804,8 +2816,10 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               because every entry in it addresses VOBs by numbers this delete has just changed.
             </p>
             <p>
-              The VOB and everything below it in the scene tree is removed. The world in the editor
-              changes; the file on disk does not until it is saved.
+              {deleting !== null && deleting.length > 1
+                ? 'Each VOB and everything below it in the scene tree is removed.'
+                : 'The VOB and everything below it in the scene tree is removed.'}
+              {' '}The world in the editor changes; the file on disk does not until it is saved.
             </p>
           </DialogContentText>
         </DialogContent>
@@ -2816,9 +2830,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
             variant="contained"
             data-testid="world-delete-confirm"
             onClick={() => {
-              const vob = deleting;
+              const vobs = deleting;
               setDeleting(null);
-              if (vob !== null) void removeVob(vob);
+              if (vobs !== null) void removeVobs(vobs);
             }}
           >
             Delete

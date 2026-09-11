@@ -1994,6 +1994,48 @@ export function deleteVob(reader: VobReader, vob: number): DeleteVob {
 }
 
 /**
+ * Compare two index paths in **document order** — the order the flat VOB
+ * enumeration visits them in.
+ *
+ * Slot by slot and numerically, so `'2'` sorts after `'10'` nowhere; a path that
+ * is a prefix of another is its ancestor, and an ancestor is visited first.
+ */
+function compareIndexPaths(a: string, b: string): number {
+  const left = a.split('/');
+  const right = b.split('/');
+  for (let at = 0; at < Math.min(left.length, right.length); at += 1) {
+    const difference = Number(left[at]) - Number(right[at]);
+    if (difference !== 0) return difference;
+  }
+  return left.length - right.length;
+}
+
+/**
+ * Delete a whole selection as **one batch** (#253).
+ *
+ * A delete used to be one VOB at a time because it renumbers: every op carries
+ * a path resolved before the batch ran, and a removal moves the VOBs after it.
+ * A batch of deletes escapes that by being applied **back to front** — removing
+ * a subtree shifts only the slots *after* it, so each delete leaves every path
+ * still to be used exactly where it was resolved. `commitOps` checks that shape
+ * rather than trusting this builder, because a batch can be hand-built.
+ *
+ * Descendants of another selected VOB are dropped, for `duplicateVobs`' reason
+ * turned around: a delete takes the subtree with it, so a selected child of a
+ * selected parent is already gone by the time its own op would run and would
+ * address a slot that no longer exists.
+ *
+ * It stays one *barrier*: N deletes are one clearing of both history stacks
+ * rather than N, which is the whole of what "one undo entry" can mean for an op
+ * with no inverse (§15).
+ */
+export function deleteVobs(reader: VobReader, vobs: readonly number[]): DeleteVob[] {
+  return topLevelVobs(reader, vobs)
+    .map((vob) => deleteVob(reader, vob))
+    .sort((a, b) => compareIndexPaths(b.path, a.path));
+}
+
+/**
  * Where a reparented VOB's **old parent** sits once the move has happened —
  * the address its own undo has to name.
  *
@@ -2295,19 +2337,54 @@ export function commitOps(binding: OpBinding, ops: readonly WorldOp[]): void {
   // covered by the renumbering rule below; `DeleteWaypoint` renumbers the
   // *waynet*, which no path names, so it needs this sentence rather than that
   // one.
-  if (ops.length > 1 && ops.some(isBarrierOp)) {
+  //
+  // **A batch of deletes is the second exception** (#253), and like the first it
+  // is a shape rather than a list of op names: every op a `DeleteVob`, and the
+  // paths in strictly *descending* document order. Removing a subtree shifts
+  // only the slots after it, so a batch in that order leaves every path still to
+  // be used exactly where it was resolved — which is the renumbering objection
+  // answered, not waived. The barrier objection does not apply either: both
+  // history stacks are cleared for one delete exactly as for five, so a batch is
+  // one clearing rather than five, which is the whole of what one entry can mean
+  // for an op with no inverse. `deleteVobs` builds this shape; the check is here
+  // because a batch can be hand-built.
+  const deletes = ops.length > 1 && ops.every((op) => op.op === 'DeleteVob')
+    && ops.every((op, at) => at === 0 || compareIndexPaths(ops[at - 1].path!, op.path!) > 0);
+
+  if (ops.length > 1 && !deletes && ops.some(isBarrierOp)) {
     throw new RangeError(
       'a barrier op cannot be unwound: it has to be the only op in its batch',
     );
   }
 
   const appends = ops.every((op) => op.op === 'AddVob' || op.op === 'SetVobClassProp');
-  const renumbering = ops.length > 1 && !appends ? ops.find(renumbersPaths) : undefined;
+  const renumbering = ops.length > 1 && !appends && !deletes
+    ? ops.find(renumbersPaths) : undefined;
   if (renumbering !== undefined) {
     throw new RangeError(
       `a ${renumbering.op} that renumbers invalidates every path after it: `
       + 'it has to be the only op in its batch',
     );
+  }
+
+  // The one batch that cannot be made all-or-nothing, and it says so instead of
+  // pretending. The unwind below replays `'from'`, which a delete refuses — so a
+  // batch that stops part way has removed everything before the failure and
+  // there is nothing to put any of it back with. The first op failing is still
+  // the ordinary refusal, because nothing has happened yet.
+  if (deletes) {
+    for (let at = 0; at < ops.length; at += 1) {
+      try {
+        writeOp(binding, ops[at], 'to');
+      } catch (error) {
+        if (at === 0) throw error;
+        throw new RangeError(
+          `the delete of ${ops[at].path} failed after ${at} of ${ops.length} were removed: `
+          + 'the world holds those, and a delete cannot be put back — re-open it to resync',
+        );
+      }
+    }
+    return;
   }
 
   const applied: WorldOp[] = [];

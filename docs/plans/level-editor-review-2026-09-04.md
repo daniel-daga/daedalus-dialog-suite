@@ -512,14 +512,13 @@ the session, not the repo; what they showed is stated as such.
    session. Fix: one status row under the toolbar with `onClose`, `savedTo`
    cleared inside `applied`, "edited" shown from `unsavedEdits` beside Save,
    Ctrl+S bound to `setConfirmingSave(true)`.
-5. **Delete with N>1 selected silently does nothing** — the Delete key
-   (`WorldSurface.tsx:2183-2190`), the context menu
-   (`WorldVobContextMenu.tsx:188`) and the toolbar (`WorldEditControls.tsx`)
-   all gate on exactly one VOB, while Duplicate, Copy, Drop and Align take
-   the whole selection. The only text is "Delete VOB… (Del)"; the disabled
-   state gives no reason, and no plan section records the one-at-a-time
-   decision. Smallest fix: a tooltip saying so; the real fix is a per-VOB
-   batch, which §15 leaves open.
+5. **Delete with N>1 selected silently does nothing — FIXED 2026-09-11.**
+   The Delete key, the context menu and the toolbar all gated on exactly one
+   VOB while Duplicate, Copy, Drop and Align took the whole selection, and the
+   disabled state gave no reason. Daniel chose the batch over the tooltip: a
+   selection now deletes in one batch, applied back to front so the
+   renumbering cannot invalidate a path that is still to be used. The
+   decision and what it costs are `docs/plans/level-editor.md` §15.
 6. **Camera-slot store/recall gives no feedback** (§16.27 item 3, still open).
 
 ### 5.2 Property grid
@@ -719,12 +718,13 @@ deliberately: wiring it risks hanging `close()` on a stuck worker, and
 deleting it discards a documented Windows mapped-file concern. A person should
 pick.
 
-**§5's remainder is closed.** Items 8, 9, 10, 17, 18, 19, 20, 21, 22 and 23
-all landed 2026-09-11 — see each item for what was done and, for 19 and 22,
-for what the finding got wrong. What is left of §5 is one thing, and it is a
-decision rather than a fix: **Delete-with-N>1** (§5.1 item 5) is still one VOB
-at a time and still says nothing about why. The tooltip is trivial; whether a
-batch delete should exist at all is §15's call.
+**§5 is closed.** Items 8, 9, 10, 17, 18, 19, 20, 21, 22 and 23 all landed
+2026-09-11 — see each item for what was done and, for 19 and 22, for what the
+finding got wrong. **Delete-with-N>1** (§5.1 item 5) was the last of them and
+was a decision rather than a fix: Daniel took the batch over the tooltip on
+2026-09-11, and a selection now deletes in one batch (§15). What is left of
+#253 is the other half of it — Duplicate is bound to no key, and Spacer's own
+binding is worth checking before one is invented.
 
 ## 7. What is not in this document
 

@@ -285,6 +285,23 @@ confirm is enough; the fallback is the user's own save file either way.
 Serializing the subtree into the op, or snapshotting the world around it, stay
 open as later improvements. Neither is a prerequisite.
 
+**A selection deletes in one batch (2026-09-11, Daniel; #253).** Delete was one
+VOB at a time because a delete renumbers, and every op carries a path resolved
+before the batch ran. The answer is the *order*, not a refusal: a batch applied
+**back to front** — strictly descending document order — removes only slots that
+come after every path still to be used, so each one stays exactly where it was
+resolved. `deleteVobs` builds that shape and `commitOps` checks it, because a
+batch can be hand-built; descendants of another selected VOB are dropped, since
+a delete takes the subtree with it.
+
+"One undo entry" for N deletes means one clearing of both stacks rather than
+N — which is all it can mean for an op with no inverse — plus one round trip and
+one confirm naming the count. The cost is the one thing a delete batch cannot
+have: it is not all-or-nothing. There is nothing to unwind a delete with, so a
+batch that stops part way has removed everything before the failure, and
+`commitOps` says exactly that instead of the ordinary refusal. A failure on the
+*first* op is still the ordinary refusal, because nothing has happened yet.
+
 ---
 
 ## 16. Open findings (2026-08-28)

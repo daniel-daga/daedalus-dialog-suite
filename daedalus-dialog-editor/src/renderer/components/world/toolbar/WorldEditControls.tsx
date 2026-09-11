@@ -240,19 +240,19 @@ const WorldEditControls: React.FC<WorldEditControlsProps> = ({
       )}
     </Stack>
     {/* The one destructive edit in the surface, and the only one behind a
-        confirm. Exactly one VOB, never a selection: it renumbers, so each
-        would need its own batch, and a button that removed only the
-        primary of five is the surprise the dialog exists to prevent. The
-        tooltip carries the Delete-key shortcut (slice 1) beside the label. */}
-    <Tooltip title="Delete VOB… (Del)">
+        confirm. The whole selection since #253: a delete renumbers, which
+        `deleteVobs` answers with the order the batch is applied in rather
+        than with a refusal. The tooltip carries the Delete-key shortcut
+        (slice 1) beside the label, and the count when there is one. */}
+    <Tooltip title={selectionCount > 1 ? `Delete ${selectionCount} VOBs… (Del)` : 'Delete VOB… (Del)'}>
       <span>
         <IconButton
           size="small"
           color="error"
-          disabled={!hasWorld || selectionCount !== 1}
+          disabled={!hasWorld || selectionCount === 0}
           onClick={onDeleteRequest}
           data-testid="world-delete-vob"
-          aria-label="Delete VOB"
+          aria-label={selectionCount > 1 ? `Delete ${selectionCount} VOBs` : 'Delete VOB'}
         >
           <DeleteIcon fontSize="small" />
         </IconButton>

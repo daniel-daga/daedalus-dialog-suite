@@ -1039,12 +1039,10 @@ describe('deleting a VOB', () => {
     await waitFor(() => expect(screen.queryByTestId('world-delete-warning')).not.toBeInTheDocument());
   });
 
-  it('is offered for exactly one VOB, never for a selection of them', async () => {
-    // Every other edit here applies to the whole selection — one gizmo drags
-    // all of them. A delete cannot: it renumbers, so each one would need its own
-    // batch against a re-read index, and a button that deleted only the primary
-    // of five would be a surprise of exactly the kind this dialog exists to
-    // prevent.
+  it('is offered for a selection of any size, and for nothing selected never', async () => {
+    // It used to be exactly one VOB, because a delete renumbers. #253 answered
+    // that with the order rather than with a refusal: a batch applied back to
+    // front leaves every path still to be used where it was resolved.
     await openWorld();
 
     act(() => useWorldStore.getState().selectVob(null));
@@ -1056,7 +1054,42 @@ describe('deleting a VOB', () => {
     expect(screen.getByTestId('world-delete-vob')).toBeEnabled();
 
     await act(async () => { useWorldStore.getState().toggleVob(1); });
-    expect(screen.getByTestId('world-delete-vob')).toBeDisabled();
+    expect(screen.getByTestId('world-delete-vob')).toBeEnabled();
+  });
+
+  it('deletes the whole selection as one batch, back to front (#253)', async () => {
+    // One batch, so one round trip and one clearing of the history — which is
+    // the whole of what "one undo entry" can mean for an op with no inverse.
+    // Back to front, because that is what makes the second path still valid
+    // after the first VOB is gone.
+    const summary = await openWorld();
+    api.refreshWorldIndex.mockResolvedValueOnce(
+      { ...summary, vobIndex: vobIndex([]) } as never,
+    );
+    api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+
+    await act(async () => { useWorldStore.getState().selectVob(0); });
+    await act(async () => { useWorldStore.getState().toggleVob(1); });
+    fireEvent.click(await screen.findByTestId('world-delete-vob'));
+    fireEvent.click(screen.getByTestId('world-delete-confirm'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    expect(api.applyWorldOps).toHaveBeenCalledTimes(1);
+    const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    expect(ops).toEqual([
+      { op: 'DeleteVob', vob: 1, path: '1' },
+      { op: 'DeleteVob', vob: 0, path: '0' },
+    ]);
+  });
+
+  it('says how many it is about to delete, so the warning is not about one VOB', async () => {
+    await openWorld();
+
+    await act(async () => { useWorldStore.getState().selectVob(0); });
+    await act(async () => { useWorldStore.getState().toggleVob(1); });
+    fireEvent.click(await screen.findByTestId('world-delete-vob'));
+
+    expect(screen.getByTestId('world-delete-title')).toHaveTextContent(/2 VOBs/);
   });
 
   it('re-reads the index and drops the selection, because it renumbers', async () => {
@@ -1267,11 +1300,11 @@ describe('duplicating a VOB', () => {
     expect((ops[0] as { to: Record<string, unknown> }).to).not.toHaveProperty('bbox');
   });
 
-  it('is offered for a selection of any size, unlike the delete beside it', async () => {
-    // D4 (level-editor.md §16.14). A delete stays at one because it renumbers
-    // paths and each would need its own batch; an append moves no path, so a
-    // selection duplicates whole — and the button that used to copy only the
-    // primary of five is what that removes.
+  it('is offered for a selection of any size', async () => {
+    // D4 (level-editor.md §16.14). An append moves no path, so a selection
+    // duplicates whole — and the button that used to copy only the primary of
+    // five is what that removes. The delete beside it was the counter-example
+    // until #253 gave a delete batch an order that survives the renumbering.
     await openWorld();
 
     act(() => useWorldStore.getState().selectVob(null));
@@ -1284,7 +1317,7 @@ describe('duplicating a VOB', () => {
     // would be describing an edit the button no longer makes — in the
     // accessible name now, an icon button having no visible text of its own.
     expect(screen.getByTestId('world-duplicate-vob')).toHaveAccessibleName('Duplicate 2 VOBs');
-    expect(screen.getByTestId('world-delete-vob')).toBeDisabled();
+    expect(screen.getByTestId('world-delete-vob')).toHaveAccessibleName('Delete 2 VOBs');
   });
 
   it('brings the whole subtree, at paths the batch computes forward', async () => {

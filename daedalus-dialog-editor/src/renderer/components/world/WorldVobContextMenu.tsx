@@ -21,8 +21,8 @@ import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
  *
  * Every item only calls a handler `WorldSurface` already has — this
  * component adds no new edit logic of its own, only the menu around
- * existing ones. Enablement mirrors the toolbar's own rules (Delete:
- * exactly one VOB selected).
+ * existing ones. Enablement mirrors the toolbar's own rules (Delete: any
+ * non-empty selection, since #253).
  */
 export interface WorldVobContextMenuProps {
   open: boolean;
@@ -199,12 +199,12 @@ const WorldVobContextMenu: React.FC<WorldVobContextMenuProps> = ({
       <Divider />
       <MenuItem
         onClick={run(onDeleteRequest)}
-        disabled={selectionCount !== 1}
+        disabled={selectionCount === 0}
         data-testid="world-context-delete"
         sx={{ color: 'error.main' }}
       >
         <ListItemIcon sx={{ color: 'error.main' }}><DeleteIcon fontSize="small" /></ListItemIcon>
-        <ListItemText>Delete VOB…</ListItemText>
+        <ListItemText>{selectionCount > 1 ? `Delete ${selectionCount} VOBs…` : 'Delete VOB…'}</ListItemText>
         <Shortcut keys="Del" />
       </MenuItem>
     </Menu>

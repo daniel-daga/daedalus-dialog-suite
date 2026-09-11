@@ -81,9 +81,19 @@ describe('the Delete key', () => {
     expect(ops).toMatchObject([{ op: 'DeleteVob', vob: 1 }]);
   });
 
-  it('does nothing with a multi-VOB selection', async () => {
+  it('opens the confirm for a multi-VOB selection too, naming the count (#253)', async () => {
     await openWorld();
     await act(async () => { useWorldStore.getState().selectVobs([0, 1]); });
+
+    fireEvent.keyDown(window, { key: 'Delete' });
+
+    expect(screen.getByTestId('world-delete-warning')).toBeVisible();
+    expect(screen.getByTestId('world-delete-title')).toHaveTextContent(/2 VOBs/);
+  });
+
+  it('does nothing with nothing selected', async () => {
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(null); });
 
     fireEvent.keyDown(window, { key: 'Delete' });
 
