@@ -10,7 +10,7 @@
 // addon and without a Gothic install.
 
 import {
-  buildInstancedVisuals, buildVisual, buildWorldMesh, visualBounds,
+  buildDecalBillboards, buildInstancedVisuals, buildVisual, buildWorldMesh, visualBounds,
   type SceneBinding, type VobIndex,
 } from '../src/scene';
 import type { MeshChunk } from '../src/render';
@@ -32,7 +32,11 @@ function chunk(texture: string): MeshChunk {
 }
 
 /** A VOB table in the columnar shape `vobIndex` emits. */
-function vobIndex(vobs: Array<{ cls?: string; visual?: string; visualType?: string; pos?: number[]; rot?: number[] }>): VobIndex {
+function vobIndex(vobs: Array<{
+  cls?: string; visual?: string; visualType?: string; pos?: number[]; rot?: number[];
+  /** The visual's own `decalDimension`, a half extent. Present on a DECAL. */
+  decal?: [number, number];
+}>): VobIndex {
   const classes: string[] = [];
   const visuals: string[] = [];
   const visualTypes: string[] = [];
@@ -67,6 +71,8 @@ function vobIndex(vobs: Array<{ cls?: string; visual?: string; visualType?: stri
     names: [''], nameIndex: new Uint32Array(vobs.length).buffer,
     visuals, visualIndex: visualIndex.buffer,
     visualTypes, visualTypeIndex: visualTypeIndex.buffer,
+    decalVobs: new Uint32Array(vobs.flatMap((vob, i) => (vob.decal === undefined ? [] : [i]))).buffer,
+    decalDimensions: new Float32Array(vobs.flatMap((vob) => vob.decal ?? [])).buffer,
   };
 }
 
@@ -320,5 +326,74 @@ describe('zen-world/scene — buildInstancedVisuals', () => {
     const b = binding(() => []);
     const built = buildInstancedVisuals(b, VFS, vobIndex([{ visual: 'EMPTY.3DS' }]));
     expect(built.visuals).toEqual([]);
+  });
+});
+
+// The decals, drawn as themselves (#249; level-editor.md §16.40). `.TGA` is a
+// texture, not geometry, so `extractVisual` answers null for all 1,932 retail
+// decals and `buildInstancedVisuals` places none of them. What a decal is
+// instead is a camera-facing quad of its own size, and its size is the one
+// per-VOB fact the index carries a side table for.
+describe('the decals', () => {
+  it('draws one quad per decal VOB, at twice its half extent', () => {
+    // OpenGothic, which reimplements the ZenGin renderer, builds the sprite as
+    // `2 * decal->dimension` and spans it -0.5..0.5, so `decalDimension` is a
+    // HALF extent and the drawn quad is twice it across.
+    const built = buildDecalBillboards(vobIndex([
+      { visual: 'NW_WEB.TGA', visualType: 'DECAL', decal: [25, 40], pos: [10, 20, 30] },
+    ]));
+
+    expect(built.groups).toHaveLength(1);
+    const [group] = built.groups;
+    expect(group.texture).toBe('NW_WEB.TGA');
+    expect(group.count).toBe(1);
+    expect(Array.from(new Float32Array(group.positions))).toEqual([10, 20, 30]);
+    expect(Array.from(new Float32Array(group.sizes))).toEqual([50, 80]);
+    expect(Array.from(new Uint32Array(group.vobIds))).toEqual([0]);
+  });
+
+  it('groups by texture, so each one is a single draw', () => {
+    // 1,932 decals across the retail worlds name 23 textures on NewWorld alone;
+    // a quad each would be 1,932 draw calls against a budget under 1,500.
+    const built = buildDecalBillboards(vobIndex([
+      { visual: 'NW_WEB.TGA', visualType: 'DECAL', decal: [1, 1] },
+      { visual: 'NW_BLOOD.TGA', visualType: 'DECAL', decal: [2, 2] },
+      { visual: 'NW_WEB.TGA', visualType: 'DECAL', decal: [3, 3] },
+    ]));
+
+    expect(built.groups.map((group) => group.texture).sort())
+      .toEqual(['NW_BLOOD.TGA', 'NW_WEB.TGA']);
+    const web = built.groups.find((group) => group.texture === 'NW_WEB.TGA')!;
+    expect(web.count).toBe(2);
+    expect(Array.from(new Uint32Array(web.vobIds))).toEqual([0, 2]);
+    expect(built.stats).toEqual({ decals: 3, textures: 2 });
+  });
+
+  it('leaves every VOB that is not a decal alone', () => {
+    // The three kinds partition the index: a mesh is instanced, a decal is a
+    // quad, and everything else is a marker. Two of them drawing the same VOB
+    // is two things in one place.
+    const built = buildDecalBillboards(vobIndex([
+      { visual: 'BARREL.3DS' },
+      { visual: '' },
+      { visual: 'FIRE.PFX', visualType: 'PARTICLE_EFFECT' },
+    ]));
+
+    expect(built.groups).toEqual([]);
+    expect(built.stats).toEqual({ decals: 0, textures: 0 });
+  });
+
+  it('skips a decal with no size, which would draw nothing anyway', () => {
+    // A zero half extent is a quad with no area. It is still a VOB and still
+    // gets picked and gizmoed — through the marker layer, not through a quad
+    // nobody can see or click.
+    const built = buildDecalBillboards(vobIndex([
+      { visual: 'NW_WEB.TGA', visualType: 'DECAL', decal: [0, 0] },
+      { visual: 'NW_WEB.TGA', visualType: 'DECAL', decal: [25, 25] },
+    ]));
+
+    expect(built.groups).toHaveLength(1);
+    expect(Array.from(new Uint32Array(built.groups[0].vobIds))).toEqual([1]);
+    expect(built.stats.decals).toBe(1);
   });
 });

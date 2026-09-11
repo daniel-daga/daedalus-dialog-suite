@@ -1,10 +1,16 @@
 import * as THREE from 'three';
 import { ROOT_MATRIX, threeIndexOrder, type VobExtent } from 'zen-world';
 import type {
-  DrawGroup, InstancedPayload, VobIndex, WorldMeshPayload, DecodedTexture,
+  DecalScene, DrawGroup, InstancedPayload, VobIndex, WorldMeshPayload, DecodedTexture,
 } from '../../shared/worldTypes';
+import { DecalLayer } from './DecalLayer';
+import { HIDDEN_ATTRIBUTE, SELECTED_ATTRIBUTE } from './instanceAttributes';
 import { VobExtentOverlay } from './VobExtentOverlay';
 import { VobMarkerLayer } from './VobMarkerLayer';
+
+// Re-exported where they used to be declared: every other reader imports them
+// from here, and moving the declaration is not a reason to move them all.
+export { HIDDEN_ATTRIBUTE, SELECTED_ATTRIBUTE } from './instanceAttributes';
 
 // The Three.js projection of a world (level-editor.md §7: "the renderer is a
 // projection, never the model"). Deliberately free of React and of
@@ -77,15 +83,7 @@ const SELECT_COLOR = 'vec3( 1.0, 0.55, 0.12 )';
  *  read at a glance, low enough to leave the texture recognisable. */
 const SELECT_TINT = 0.28;
 
-/**
- * The name of the per-instance "this one is selected" attribute.
- *
- * A sibling of {@link HIDDEN_ATTRIBUTE}, for the reason given there: a VOB is
- * one instance inside an `InstancedMesh` shared with every other VOB of the
- * same visual, so neither `mesh.visible` nor anything on the material can say
- * something about *one* of them.
- */
-export const SELECTED_ATTRIBUTE = 'instanceSelected';
+
 
 /**
  * The define a blended VOB material carries.
@@ -211,19 +209,7 @@ function exposeBakedLight(
   }`;
 }
 
-/**
- * The name of the per-instance "do not draw this one" attribute, shared by the
- * drawn mesh and by the pick pass's proxy for it.
- *
- * Per-class visibility (level-editor.md §16.16) cannot be `mesh.visible`: a VOB
- * is one instance inside an `InstancedMesh` shared with every other VOB of the
- * same visual. Nor can it be a zero-scale instance matrix, tempting as that is
- * — the instance matrix is what `positionOf` and `rotationOf` read a VOB's pose
- * back out of, so collapsing it would put the gizmo of a hidden VOB at the
- * origin and make an op carry it there. So the flag is an attribute beside the
- * matrix, and hiding is one float per instance rather than anything structural.
- */
-export const HIDDEN_ATTRIBUTE = 'instanceHidden';
+
 
 /**
  * The hide half of the VOB vertex shader: a hidden instance is pushed outside
@@ -352,6 +338,16 @@ export class WorldScene {
   }
 
   private markerLayer: VobMarkerLayer | null = null;
+
+  /**
+   * The decals, drawn as the quads they are (§16.40, #249) — null until
+   * `setDecals`, which is a world without decals as readily as a world before
+   * the build.
+   *
+   * A sibling of the marker layer rather than part of it: a decal is *drawn*,
+   * with a texture and a size, and the marker at its centre is only the handle.
+   */
+  private decalLayer: DecalLayer | null = null;
 
   /**
    * How far the selected VOB reaches, when the reach is a radius (§16.39,
@@ -505,6 +501,24 @@ export class WorldScene {
     this.root.remove(this.extentOverlay.wireframe);
   }
 
+  /**
+   * Draw the decals (§16.40, #249).
+   *
+   * `buildDecalBillboards` has already grouped them by texture and doubled the
+   * half extent, so what is left here is one `InstancedMesh` per group and a
+   * texture slot per name — the same slot machinery every other material takes,
+   * which is what makes a decal's `.TGA` load through the path that was already
+   * loading the world's.
+   *
+   * Called once per scene build beside `setInstancedVisuals`, for the same
+   * reason: an instance cannot be appended to an allocated `InstancedMesh`, so
+   * a placed decal arrives with a rebuilt scene.
+   */
+  setDecals(scene: DecalScene): void {
+    this.decalLayer = new DecalLayer(scene, (texture) => this.decalMaterial(texture));
+    for (const mesh of this.decalLayer.meshes) this.root.add(mesh);
+  }
+
   /** The VOB an instance came from — a pick returns nothing else that identifies it. */
   /**
    * Move a VOB in the scene, in **ZenGin space** — an edit arriving from the op
@@ -556,6 +570,10 @@ export class WorldScene {
     // either instanced or markered and never both, and writing whichever exists
     // is one statement rather than a branch that has to stay true.
     if (this.markerLayer?.setPosition(vob, position) === true) moved = true;
+    // A decal is the one VOB that is both: its quad is the picture and its
+    // marker is the handle, so a drag has to carry the two together or the
+    // preview leaves the quad where the decal used to be.
+    if (this.decalLayer?.setPosition(vob, position) === true) moved = true;
 
     return moved;
   }
@@ -656,6 +674,7 @@ export class WorldScene {
     }
 
     this.markerLayer?.setHidden(hidden);
+    this.decalLayer?.setHidden(hidden);
   }
 
   /**
@@ -769,8 +788,9 @@ export class WorldScene {
    * could have stood on.
    *
    * That used to mean "the last one with an instance", and a sound VOB was the
-   * example: it has a marker now, and a marker has a position, so the set this
-   * steps over is down to the decal and the particle effect (§16.38, §16.40).
+   * example: it has a marker now, and so does a decal and a particle effect
+   * (§16.38, §16.40). The set this steps over is down to a visual the VFS did
+   * not hold — a missing asset rather than a kind of object.
    */
   anchorOf(vobs: readonly number[]): [number, number, number] | null {
     for (let at = vobs.length - 1; at >= 0; at--) {
@@ -895,6 +915,10 @@ export class WorldScene {
     // one sprite, shared with the spawn markers.
     this.markerLayer?.dispose();
     this.markerLayer = null;
+    // Its geometries only: the materials are in `this.materials` with every
+    // other one the scene made, and hold texture slots it owns.
+    this.decalLayer?.dispose();
+    this.decalLayer = null;
     this.extentOverlay.dispose();
 
     this.geometries = [];
@@ -935,17 +959,7 @@ export class WorldScene {
         SRGB_TO_LINEAR[group.color[0]], SRGB_TO_LINEAR[group.color[1]], SRGB_TO_LINEAR[group.color[2]],
       );
     } else {
-      const name = group.texture.toUpperCase();
-      let slot = this.textures.get(name);
-      if (slot === undefined) {
-        // Already decoded for this world, if a previous scene decoded it: the
-        // slot starts filled, `pendingTextureNames` never names it, and the
-        // material below is textured before the first frame is drawn.
-        slot = { texture: this.textureCache?.get(name) ?? null, materials: [] };
-        this.textures.set(name, slot);
-      }
-      slot.materials.push(material);
-      material.map = slot.texture;
+      this.texture(group.texture, material);
     }
 
     if (group.alphaFunc === 1) material.alphaTest = ALPHA_TEST;
@@ -960,6 +974,39 @@ export class WorldScene {
 
     this.materials.push(material);
     return material;
+  }
+
+  /**
+   * A decal's material: one per texture, made here rather than in `DecalLayer`
+   * so a decal's `.TGA` goes through the same slot every other texture does and
+   * `loadPendingTextures` fills it without knowing what a decal is.
+   *
+   * The layer owns everything about how it is *drawn* — the billboard, the
+   * cut-out, the depth write — because those are facts about a decal rather
+   * than about a texture.
+   */
+  private decalMaterial(texture: string): THREE.MeshBasicMaterial {
+    const material = new THREE.MeshBasicMaterial();
+    this.texture(texture, material);
+    this.materials.push(material);
+    return material;
+  }
+
+  /** Point one material at a named texture, decoding it later if nobody has.
+   *  The one place a texture slot is created, so a caller never has to know
+   *  whether this world has already decoded the name. */
+  private texture(name: string, material: THREE.MeshBasicMaterial): void {
+    const key = name.toUpperCase();
+    let slot = this.textures.get(key);
+    if (slot === undefined) {
+      // Already decoded for this world, if a previous scene decoded it: the
+      // slot starts filled, `pendingTextureNames` never names it, and the
+      // material is textured before the first frame is drawn.
+      slot = { texture: this.textureCache?.get(key) ?? null, materials: [] };
+      this.textures.set(key, slot);
+    }
+    slot.materials.push(material);
+    material.map = slot.texture;
   }
 }
 

@@ -94,6 +94,8 @@ const BBOX = [0, 0, 0, 100, 100, 100];
 function instancedPayload(): InstancedPayload {
   return {
     visuals: [],
+    // Nothing about a decal here; `DecalLayer.test.ts` is where one is drawn.
+    decals: mockWorldViewport.noDecals(),
     stats: {
       visualsSeen: 0,
       visualsResolved: 0,

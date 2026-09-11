@@ -143,6 +143,8 @@ function vobIndex(vobs: Spec[]): VobIndex {
     names: names.dictionary, nameIndex: names.index,
     visuals: visuals.dictionary, visualIndex: visuals.index,
     visualTypes: ['MULTI_RESOLUTION_MESH'], visualTypeIndex: new Uint32Array(vobs.length).buffer,
+    // No decals: an op never touches one, so the side table is empty here.
+    decalVobs: new Uint32Array(0).buffer, decalDimensions: new Float32Array(0).buffer,
   };
 }
 

@@ -4,10 +4,14 @@
 // boundary needs — the request/response envelope and the summary.
 
 import type {
-  AssetCatalog, DrawGroup, InstancedVisual, PortalFinding, VisualScene, VobFolders, VobIndex, WorldOp,
+  AssetCatalog, DecalGroup, DecalScene, DrawGroup, InstancedVisual, PortalFinding, VisualScene,
+  VobFolders, VobIndex, WorldOp,
 } from 'zen-world';
 
-export type { AssetCatalog, DrawGroup, InstancedVisual, PortalFinding, VisualScene, VobFolders, VobIndex, WorldOp };
+export type {
+  AssetCatalog, DecalGroup, DecalScene, DrawGroup, InstancedVisual, PortalFinding, VisualScene,
+  VobFolders, VobIndex, WorldOp,
+};
 
 export type GameVersion = 'g1' | 'g2';
 
@@ -69,6 +73,13 @@ export interface WorldMeshPayload {
 
 export interface InstancedPayload {
   visuals: InstancedVisual[];
+  /**
+   * The decals, as quads (#249). Beside the instanced visuals rather than behind
+   * an op of their own, because they are built from the same index and rebuilt
+   * by the same structural op: a decal placed or deleted has to arrive with the
+   * scene the placement rebuilt, not one round trip later.
+   */
+  decals: DecalScene;
   stats: {
     visualsSeen: number;
     visualsResolved: number;

@@ -3184,43 +3184,29 @@ A light's `color` is the other half of what a light *is* and is equally
 invisible; it is a tint on the sphere rather than a shape, and nothing has been
 decided about it.
 
-### 16.40 A decal and a particle effect draw nothing either (2026-09-10; #249)
+### 16.40 Six of a decal's seven fields are still invisible (2026-09-10; #249)
 
-Same hole, different cause, and it is worth keeping apart from the marker layer
-that closed the other half (§7): these VOBs **have** a visual name, and the
-layer keys on the name being *empty*, so not one of them gets a marker either.
-`extractVisual` cannot turn a `.TGA` or a `.PFX` into geometry, so
-`buildInstancedVisuals` counts them into `unresolvedByType` and places nothing
-— **1,932 decals and 1,391 particle effects** across the three retail worlds,
-49 unique names of the two on NewWorld (23 DECAL, 26 PARTICLE_EFFECT), which is
-the unresolved-visual table in
-`docs/architecture/level-editor.md` §3.
+The decals are drawn and `git log` carries it — a camera-facing quad of the
+size the decal states, one instanced mesh per texture, and a marker at each
+centre for the pick and the gizmo. A particle effect gets the marker and nothing
+more, which is all a Daedalus script can be given. The durable outcome is
+architecture §7, including the two facts it rests on: `decalDimension` is a half
+extent, and a decal is oriented by the camera rather than by its VOB.
 
-**A decal is not a mystery and should be drawn as itself, not as an icon.** All
-seven of its fields have been readable and writable since V2 (§14.1 1.8):
-`decalDimension` gives its size (measured 10–550 across the corpus),
-`decalOffset` its shift (every retail one is [0,0]), and `decalTwoSided`,
-`decalAlphaFunc` and `decalAlphaWeight` say how it blends. The texture is a
-`.TGA` the VFS already decodes for the world mesh, through the same
-`decodeTexture` path. So the work is a quad per decal VOB in
-`buildInstancedVisuals`/`WorldScene`, and it hands those seven fields their
-first visual feedback — none of them is in any engine witness either, per the
-acceptance record's *"What is still not witnessed"*.
+**What is left is the other six fields.** `decalDimension` has visual feedback;
+`decalOffset`, `decalTwoSided`, `decalAlphaFunc`, `decalTextureAnimFps`,
+`decalAlphaWeight` and `decalIgnoreDaylight` change nothing on screen, and none
+of the seven has an engine witness (§16.2).
 
-Two facts to check before writing that quad, neither of which this repo has
-established: **whether `decalDimension` is a half-extent or a full one**, and
-**how a decal is oriented** — the VOB's own rotation, or camera-aligned by
-`visualCamAlign`. Both are one ZenKit read and one look at a retail wall.
+Two of the six are settled by the shape rather than open: a billboard is never
+seen from behind, so `decalTwoSided` has no side to hide, and
+`decalIgnoreDaylight` is about a lighting model the viewport does not have. The
+other four are per-VOB where the material is per texture, so drawing them means
+either a per-instance attribute for alpha and offset, or a material per
+*decal*, which is the 1,405 draw calls the grouping exists to avoid. That is the
+decision this section is holding.
 
-The decal is also the case that breaks a class-keyed marker table: every one of
-the 1,932 sits on a plain `zCVob`, so the key here is the **visual type**, not
-the class.
-
-**A `.PFX` is not drawable.** It is a particle script, not geometry, and
-nothing in the binding turns one into vertices. So a `zCPFXController` deserves
-a marker and nothing more — which is the honest answer rather than a faked puff
-of smoke, and it is *this* section's work: `VobMarkerLayer` draws a VOB with no
-visual name, and a `zCPFXController` has one. Giving the layer a second
-criterion — a visual that resolved to nothing — is the whole of that half, and
-its colour keys on the **visual type** rather than the class, for the reason the
-decal above gives.
+`visualCamAlign` is the other loose end. The engine picks between a full
+billboard and a yaw-locked one from that base field; the viewport draws every
+decal as a full billboard, which is right for the common case and wrong for a
+decal authored yaw-locked. Nobody has counted how many of the 1,932 are.

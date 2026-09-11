@@ -102,6 +102,9 @@ const meshPayload = (): WorldMeshPayload => ({ groups: [group()], bbox: [0, 0, 0
 
 const visualsPayload = (): InstancedPayload => ({
   visuals: [visual()],
+  // No decals: this fixture is about the mesh, the instances and the pick.
+  // `DecalLayer.test.ts` is where a decal payload is exercised.
+  decals: { groups: [], stats: { decals: 0, textures: 0 } },
   stats: {
     visualsSeen: 1,
     visualsResolved: 1,

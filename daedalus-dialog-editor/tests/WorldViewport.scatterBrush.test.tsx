@@ -70,6 +70,8 @@ const MESH: WorldMeshPayload = { groups: [GROUND], bbox: [-5000, 0, -5000, 5000,
 
 const NO_VISUALS: InstancedPayload = {
   visuals: [],
+  // Nothing about a decal here; `DecalLayer.test.ts` is where one is drawn.
+  decals: mockWorldViewport.noDecals(),
   stats: {
     visualsSeen: 0,
     visualsResolved: 0,

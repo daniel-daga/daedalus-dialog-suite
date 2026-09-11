@@ -111,6 +111,8 @@ a VOB is drawn: **9.2 ms and 1.69 MB** of transferables.
   names, nameIndex,
   visuals, visualIndex,
   visualTypes, visualTypeIndex,
+  decalVobs,       // ArrayBuffer, Uint32 ×1 — the VOBs whose visual is a zCDecal
+  decalDimensions, // ArrayBuffer, Float32 ×2 per row — decalDimension, a HALF extent
 }
 ```
 
@@ -122,6 +124,19 @@ single VOB being edited, rather than building 23,288 path strings on load.
 A VOB with no visual object interns as the empty string; `normalizeWorld`
 reports `null` there. `''` and "a visual named `''`" are the same thing to a
 renderer, and a dictionary column has no null.
+
+**The decal table is the one sparse pair here, and it is sparse on purpose.** A
+`zCDecal` is one object *per VOB* rather than per name, so its size is in no
+column and no dictionary — and it is the one thing a renderer needs to draw a
+decal, because a decal is a flat texture of a stated size and nothing else.
+Dense it would be 331 KB on a retail world for the 4.7 % of VOBs that are
+decals; as two rows it is 23 KB. Always present, empty where a world has no
+decal: a consumer reads it unconditionally.
+
+`decalDimension` is a **half** extent — the drawn quad is twice it across.
+OpenGothic, which reimplements the ZenGin renderer, builds the sprite at
+`2 * decal->dimension` and spans it -0.5..0.5 of that. The doubling is the
+consumer's; this reports what the archive holds.
 
 ### `getWaynet(handle)`
 

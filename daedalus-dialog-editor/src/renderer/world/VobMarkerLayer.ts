@@ -23,11 +23,14 @@ import { NO_POINT, pickPoint } from './pickWaypoint';
 //
 // Three decisions in it are load-bearing:
 //
-//   - **which VOBs.** Exactly the ones with an empty visual name, which is what
-//     "this VOB has no visual" is on disk. A VOB whose visual is a *name* that
-//     resolves to no geometry — a decal's `.TGA`, a `.PFX` — is a different
-//     cause with a different answer (§16.40) and is deliberately not here: a
-//     decal should be drawn as itself.
+//   - **which VOBs.** Everything that resolves to no geometry, which is two
+//     causes rather than one. An empty visual name is what "this VOB has no
+//     visual" is on disk. A `.TGA` or a `.PFX` is a *name* that resolves to no
+//     geometry, which was a different answer (§16.40, #249) and now shares this
+//     one: the decal is drawn as itself, as a quad, and the particle effect is
+//     not drawn at all — but both still need a handle, and the pick, the gizmo
+//     and `positionOf` all come through here. The quad is the picture and the
+//     pip at its centre is the handle.
 //   - **the colour is the whole of what tells two markers apart.** One shape at
 //     one size for all of them, and a class table for the colour: a sound, a
 //     trigger volume and a startpoint are three unrelated objects and the dot
@@ -63,6 +66,18 @@ const TRIGGER = 0xff5252;
 const POINT = 0x76ff03;
 /** Everything else, a bare `zCVob` included. */
 const OTHER = 0xcfd8dc;
+/** A decal — its quad says where it is and how big; the pip is the handle. */
+const DECAL = 0xffab91;
+/** A particle effect: a `.PFX` is a Daedalus script, so the pip is all there is. */
+const PARTICLE = 0xea80fc;
+
+/**
+ * The visual types that resolve to no geometry, and so are drawn by nobody
+ * else. Exactly the two `buildInstancedVisuals` counts into `unresolvedByType`
+ * on every retail world — 1,932 decals and 1,391 particle effects across the
+ * three of them.
+ */
+const UNDRAWABLE_VISUALS = new Set(['DECAL', 'PARTICLE_EFFECT']);
 
 const MARKER_COLORS = new Map<string, number>([
   ['zCVobSound', SOUND],
@@ -103,7 +118,12 @@ const MARKER_COLORS = new Map<string, number>([
  * own class, or one nobody has catalogued yet, is exactly the object somebody
  * needs to find.
  */
-export function markerColorOf(className: string): number {
+export function markerColorOf(className: string, visualType?: string): number {
+  // The visual wins where there is one, because the class does not say: every
+  // retail decal sits on a plain `zCVob`, so colouring those by class would
+  // make 1,932 of them the same grey as everything uncatalogued.
+  if (visualType === 'DECAL') return DECAL;
+  if (visualType === 'PARTICLE_EFFECT') return PARTICLE;
   return MARKER_COLORS.get(className) ?? OTHER;
 }
 
@@ -140,10 +160,15 @@ export class VobMarkerLayer {
     const classIndex = new Uint32Array(index.classIndex);
     const visualIndex = new Uint32Array(index.visualIndex);
 
+    const visualTypeIndex = new Uint32Array(index.visualTypeIndex);
     const markered: number[] = [];
     for (let vob = 0; vob < index.count; vob++) {
-      // The one criterion, and the same line `buildInstancedVisuals` skips on.
-      if (index.visuals[visualIndex[vob]] !== '') continue;
+      // The criterion is "nothing else draws this VOB". An empty name is the
+      // line `buildInstancedVisuals` skips on; the two visual types below are
+      // the ones it counts into `unresolvedByType` on every retail world,
+      // because a texture and a particle script are not geometry.
+      const name = index.visuals[visualIndex[vob]];
+      if (name !== '' && !UNDRAWABLE_VISUALS.has(index.visualTypes[visualTypeIndex[vob]])) continue;
       markered.push(vob);
     }
 
@@ -158,7 +183,9 @@ export class VobMarkerLayer {
       this.source[slot * 3] = positions[vob * 3];
       this.source[slot * 3 + 1] = positions[vob * 3 + 1];
       this.source[slot * 3 + 2] = positions[vob * 3 + 2];
-      color.set(markerColorOf(index.classes[classIndex[vob]]));
+      color.set(markerColorOf(
+        index.classes[classIndex[vob]], index.visualTypes[visualTypeIndex[vob]],
+      ));
       this.colors[slot * 3] = color.r;
       this.colors[slot * 3 + 1] = color.g;
       this.colors[slot * 3 + 2] = color.b;

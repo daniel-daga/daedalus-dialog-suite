@@ -75,6 +75,7 @@ function vobIndex(vobs: Spec[]): VobIndex {
     names, nameIndex: nameIndex.buffer,
     visuals, visualIndex: visualIndex.buffer,
     visualTypes, visualTypeIndex: visualTypeIndex.buffer,
+    decalVobs: new Uint32Array(0).buffer, decalDimensions: new Float32Array(0).buffer,
   };
 }
 

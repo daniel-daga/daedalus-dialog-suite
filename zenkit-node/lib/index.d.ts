@@ -59,6 +59,16 @@ export interface VobIndex {
   visualIndex: ArrayBuffer;
   visualTypes: string[];
   visualTypeIndex: ArrayBuffer;
+  /**
+   * The decals, sparsely: Uint32 x1, the VOBs whose visual is a `zCDecal`, in
+   * index order. A decal's size is on its *visual* — one object per VOB, not
+   * per name — so it is in no column and no dictionary, and it is the one
+   * thing a renderer needs to draw a decal at the size it actually is.
+   */
+  decalVobs: ArrayBuffer;
+  /** Float32 x2 per row of `decalVobs` — `decalDimension`, which is a **half**
+   *  extent: the drawn quad is twice this across. */
+  decalDimensions: ArrayBuffer;
 }
 
 export interface WaynetGraph {

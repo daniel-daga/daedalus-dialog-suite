@@ -80,7 +80,13 @@ function markerIndex() {
   classes[4] = 'zCVobSound';
   const visuals = positions.map(() => 'BARREL.3DS');
   visuals[4] = '';
-  visuals[5] = 'BLOOD.TGA';
+  // A mesh the VFS does not hold: a drawable *kind* of visual that resolved to
+  // nothing, which is the one case left with neither an instance nor a marker.
+  visuals[5] = 'MISSING.3DS';
+  // A decal and a particle effect, which resolve to no geometry either and are
+  // marked for it (#249).
+  visuals[6] = 'BLOOD.TGA';
+  visuals[8] = 'FIRE.PFX';
   return vobIndex(positions, classes, undefined, undefined, visuals);
 }
 
@@ -974,9 +980,9 @@ describe('WorldScene', () => {
   // reach that layer through: those three read `positionOf`, `setHiddenVobs`
   // and `moveVob` and must not learn what a marker is.
   //
-  // What stays null is the VOB whose visual is a *name* that resolves to no
-  // geometry — a decal, a `.PFX` — because that is a different cause with a
-  // different answer (§16.40).
+  // What stays null is a VOB whose visual is a drawable *kind* that the VFS did
+  // not hold — a `.3DS` nothing resolved. A decal and a `.PFX` are marked, on
+  // the same terms: nothing else draws them either (§16.40, #249).
 
   test('a VOB with no visual reports where its marker is drawn', () => {
     const scene = new WorldScene();
@@ -988,8 +994,11 @@ describe('WorldScene', () => {
     // An instanced VOB still answers from its instance — the marker layer has
     // no entry for it, and a second answer in the same place would be a bug.
     expect(scene.positionOf(7)).toEqual([10, 20, 30]);
-    // The decal: it has a visual name, so no marker, and it resolved to no
-    // geometry, so no instance either. Null is still the honest answer.
+    // A decal is marked as well: its quad is the picture, and this is the only
+    // handle a pick or a gizmo has on it.
+    expect(scene.positionOf(6)).toEqual([600, 0, 0]);
+    // A mesh the VFS did not hold: no instance, and nothing says it should have
+    // a marker either. Null is still the honest answer.
     expect(scene.positionOf(5)).toBeNull();
   });
 
@@ -1003,14 +1012,16 @@ describe('WorldScene', () => {
 
     expect(scene.moveVob(4, [1, 2, 3])).toBe(true);
     expect(scene.positionOf(4)).toEqual([1, 2, 3]);
-    // Still nothing to move for a decal, and still said out loud.
+    // Still nothing to move for a mesh that resolved to nothing, and still said
+    // out loud.
     expect(scene.moveVob(5, [1, 2, 3])).toBe(false);
   });
 
   test('a marker anchors the gizmo and counts towards the selection centre', () => {
     // The rule `anchorOf` and `centroidOf` document is "the ones that are
     // actually drawn", and a marker is drawn: the VOBs they step over are the
-    // ones with no position at all, which is now the decal and the `.PFX` alone.
+    // ones with no position at all, which since #249 is a visual the VFS simply
+    // did not hold.
     const scene = new WorldScene();
     scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
     scene.setVobMarkers(markerIndex());
@@ -1040,13 +1051,15 @@ describe('WorldScene', () => {
 
     scene.setHiddenVobs(hidden);
 
-    expect(scene.markers!.drawn).toBe(0);
+    // The sound, the decal and the particle effect are marked; one of the three
+    // is now switched off.
+    expect(scene.markers!.drawn).toBe(2);
     // Hidden is not gone: the scene tree still lists it and the gizmo still
     // goes on it, exactly as for a hidden instance.
     expect(scene.positionOf(4)).toEqual([400, 0, 0]);
 
     scene.setHiddenVobs(null);
-    expect(scene.markers!.drawn).toBe(1);
+    expect(scene.markers!.drawn).toBe(3);
   });
 
   test('the marker layer hangs under the mirrored root, and goes with the scene', () => {
@@ -1115,6 +1128,79 @@ describe('the selected VOB\'s extent', () => {
     scene.hideExtent();
 
     expect(scene.root.children.find((child) => child.type === 'LineSegments')).toBeUndefined();
+    scene.dispose();
+  });
+});
+
+// The decals, drawn as themselves (level-editor.md §16.40, #249). The layer's
+// own spec is `DecalLayer.test.ts`; what the scene owes it is that everything
+// asking about a VOB — the drag, the class filter, the texture load — reaches a
+// decal without learning what a quad is.
+describe("WorldScene and the decals", () => {
+  const decalScene = () => ({
+    groups: [{
+      texture: 'BLOOD.TGA',
+      count: 1,
+      positions: new Float32Array([600, 0, 0]).buffer,
+      sizes: new Float32Array([50, 50]).buffer,
+      vobIds: new Uint32Array([6]).buffer,
+    }],
+    stats: { decals: 1, textures: 1 },
+  });
+
+  test('hangs the quads under the mirrored root, in ZenGin centimetres', () => {
+    const scene = new WorldScene();
+    scene.setDecals(decalScene());
+
+    const quads = scene.root.children.filter((child) => (child as THREE.InstancedMesh).isInstancedMesh);
+    expect(quads).toHaveLength(1);
+    scene.dispose();
+  });
+
+  test("asks for the decal's texture through the slot every other one uses", () => {
+    // A decal's `.TGA` is loaded by the path that was already loading the
+    // world's textures; nothing in the decal layer decodes anything.
+    const scene = new WorldScene();
+    scene.setDecals(decalScene());
+
+    expect(scene.pendingTextureNames()).toContain('BLOOD.TGA');
+    scene.dispose();
+  });
+
+  test('a drag carries the quad and the marker together', () => {
+    // A decal is the one VOB that is both drawn and marked: the quad is the
+    // picture and the pip is the handle, so a preview that moved one and not
+    // the other would leave the decal visibly behind its own gizmo.
+    const scene = new WorldScene();
+    scene.setVobMarkers(markerIndex());
+    scene.setDecals(decalScene());
+
+    expect(scene.moveVob(6, [1, 2, 3])).toBe(true);
+    // The marker is what `positionOf` answers from, and it moved.
+    expect(scene.positionOf(6)).toEqual([1, 2, 3]);
+    // And so did the quad.
+    const matrix = new THREE.Matrix4();
+    const quad = scene.root.children.find(
+      (child) => (child as THREE.InstancedMesh).isInstancedMesh,
+    ) as THREE.InstancedMesh;
+    quad.getMatrixAt(0, matrix);
+    expect([matrix.elements[12], matrix.elements[13], matrix.elements[14]]).toEqual([1, 2, 3]);
+    scene.dispose();
+  });
+
+  test('the per-class filter reaches the quads as well as the markers', () => {
+    const scene = new WorldScene();
+    scene.setVobMarkers(markerIndex());
+    scene.setDecals(decalScene());
+    const hidden = new Uint8Array(10);
+    hidden[6] = 1;
+
+    scene.setHiddenVobs(hidden);
+
+    const quad = scene.root.children.find(
+      (child) => (child as THREE.InstancedMesh).isInstancedMesh,
+    ) as THREE.InstancedMesh;
+    expect(Array.from(quad.geometry.getAttribute('instanceHidden').array)).toEqual([1]);
     scene.dispose();
   });
 });

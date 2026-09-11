@@ -2,6 +2,7 @@ import { parentPort } from 'worker_threads';
 import * as zenkit from 'zenkit-node';
 import {
   applyOps,
+  buildDecalBillboards,
   buildInstancedVisuals,
   buildVisual,
   buildWorldMesh,
@@ -169,11 +170,18 @@ function takeWorldMesh(): { result: WorldMeshPayload; transfer: ArrayBuffer[] } 
 
 function visuals(): { result: InstancedPayload; transfer: ArrayBuffer[] } {
   const built = phase('visuals', () => buildInstancedVisuals(binding, vfs!, index!));
+  // Beside the meshes, not behind an op of its own: both are built from the one
+  // index, and a placed or deleted decal has to arrive with the scene the
+  // placement rebuilt rather than a round trip later (#249).
+  const decals = phase('decals', () => buildDecalBillboards(index!));
   const transfer: ArrayBuffer[] = [];
   for (const visual of built.visuals) {
     transfer.push(visual.matrices, visual.vobIds, ...groupTransferables(visual.groups));
   }
-  return { result: built, transfer };
+  for (const group of decals.groups) {
+    transfer.push(group.positions, group.sizes, group.vobIds);
+  }
+  return { result: { ...built, decals }, transfer };
 }
 
 function texture(payload: { name: string; maxSize: number }): {

@@ -37,6 +37,12 @@ export interface VobIndex {
   visualIndex: ArrayBuffer;
   visualTypes: string[];
   visualTypeIndex: ArrayBuffer;
+  /** Uint32 x1 — the VOBs whose visual is a `zCDecal`, in index order. Sparse:
+   *  95 % of a world is not a decal, and their size is on the visual rather
+   *  than in any column. */
+  decalVobs: ArrayBuffer;
+  /** Float32 x2 per row of `decalVobs` — `decalDimension`, a **half** extent. */
+  decalDimensions: ArrayBuffer;
 }
 
 // Opaque native handles. Deliberately not branded: `zen-world` never looks
@@ -120,6 +126,91 @@ export interface InstancedScene {
      */
     unresolvedByType: Record<string, number>;
   };
+}
+
+/** One decal texture and every VOB drawing it. */
+export interface DecalGroup {
+  /** The texture as the VOB names it — a `.TGA`, which the asset compiler
+   *  turned into a `-C.TEX`; `decodeTexture` already maps between them. */
+  texture: string;
+  count: number;
+  /** Float32 x3 per decal — ZenGin space, unconverted like everything here. */
+  positions: ArrayBuffer;
+  /** Float32 x2 per decal — the size the quad is **drawn** at, which is twice
+   *  `decalDimension`. */
+  sizes: ArrayBuffer;
+  /** Uint32 x1 per decal — which VOB each quad is, for the pick and the gizmo. */
+  vobIds: ArrayBuffer;
+}
+
+export interface DecalScene {
+  groups: DecalGroup[];
+  stats: { decals: number; textures: number };
+}
+
+/**
+ * The decals, as the quads they are (level-editor.md §16.40, #249).
+ *
+ * `extractVisual` cannot turn a `.TGA` into geometry, so every one of the 1,932
+ * decals across the three retail worlds lands in `unresolvedByType` and
+ * `buildInstancedVisuals` places none of them. They are not missing geometry:
+ * a `zCDecal` **is** a flat texture of a stated size, and the size is per-VOB —
+ * one `zCDecal` object per VOB, not per name — which is why the index carries a
+ * side table for it and nothing else does.
+ *
+ * **`decalDimension` is a half extent.** OpenGothic, which reimplements the
+ * ZenGin renderer, builds the sprite at `2 * decal->dimension` and spans it
+ * -0.5..0.5 of that, so the drawn quad is twice the stored value across. The
+ * doubling is done here, once, so nothing downstream has to remember it.
+ *
+ * Grouped by texture, because one quad per decal would be 1,932 draw calls
+ * against a budget under 1,500 — the same reason VOBs sharing a visual are
+ * instanced. Nothing here decides how a quad is *oriented*: in the engine a
+ * decal faces the camera, which is a renderer's business and not a payload's.
+ */
+export function buildDecalBillboards(index: VobIndex): DecalScene {
+  const decalVobs = new Uint32Array(index.decalVobs);
+  const dimensions = new Float32Array(index.decalDimensions);
+  const positions = new Float32Array(index.positions);
+  const visualIndex = new Uint32Array(index.visualIndex);
+
+  const byTexture = new Map<string, { positions: number[]; sizes: number[]; vobIds: number[] }>();
+  let decals = 0;
+
+  for (let row = 0; row < decalVobs.length; row++) {
+    const width = dimensions[row * 2] * 2;
+    const height = dimensions[row * 2 + 1] * 2;
+    // A quad with no area draws nothing; the VOB is still reachable as a marker.
+    if (!(width > 0) || !(height > 0)) continue;
+
+    const vob = decalVobs[row];
+    const texture = index.visuals[visualIndex[vob]];
+    if (texture === '') continue;
+
+    let group = byTexture.get(texture);
+    if (group === undefined) {
+      group = { positions: [], sizes: [], vobIds: [] };
+      byTexture.set(texture, group);
+    }
+    const p = vob * 3;
+    group.positions.push(positions[p], positions[p + 1], positions[p + 2]);
+    group.sizes.push(width, height);
+    group.vobIds.push(vob);
+    decals++;
+  }
+
+  const groups: DecalGroup[] = [];
+  for (const [texture, group] of byTexture) {
+    groups.push({
+      texture,
+      count: group.vobIds.length,
+      positions: new Float32Array(group.positions).buffer,
+      sizes: new Float32Array(group.sizes).buffer,
+      vobIds: new Uint32Array(group.vobIds).buffer,
+    });
+  }
+
+  return { groups, stats: { decals, textures: groups.length } };
 }
 
 /**

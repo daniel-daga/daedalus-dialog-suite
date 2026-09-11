@@ -82,6 +82,8 @@ function instancedPayload(): InstancedPayload {
       groups: [GROUP],
       bounds: [0, 0, 0, 0, 0, 0],
     }],
+    // Nothing about a decal here; `DecalLayer.test.ts` is where one is drawn.
+    decals: mockWorldViewport.noDecals(),
     stats: { visualsSeen: 1, visualsResolved: 1, vobsPlaced: 1, instancedDrawGroups: 1, levelCompos: 0, unresolvedByType: {} },
   };
 }
