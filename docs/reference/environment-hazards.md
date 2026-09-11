@@ -61,6 +61,26 @@ trusting master for a release, not after.
   2026-09-11 in a cloud container. `zen-world` still has to be built by hand
   afterwards (`pnpm --filter zen-world build`); `daedalus-parser` builds itself
   in its own postinstall.
+- **In a Claude Code cloud container the addon *can* be built, and the one
+  thing in the way is a single download.** The egress proxy refuses GitHub
+  repositories outside the session's scope, so ZenKit's CMake dies on
+  `FetchContent` of miniz (`Each download failed!`, HTTP 403) — while `git
+  clone` of the same repository goes through, because the git proxy is a
+  different path. `px_add_dependency` prefers a checkout already sitting at
+  `vendor/ZenKit/vendor/<name>/` over its URL, which is why `doctest` and
+  `libsquish` never hit this: they are nested submodules. So:
+
+  ```
+  git submodule update --init --recursive zenkit-node/vendor/ZenKit
+  git clone --depth 1 --branch 3.1.1 https://github.com/richgel999/miniz.git \
+      zenkit-node/vendor/ZenKit/vendor/miniz
+  cd zenkit-node && node scripts/build-zenkit.js && npx node-gyp rebuild
+  ```
+
+  The miniz checkout is untracked inside a submodule that is never committed,
+  and `build-zenkit.js`'s reset (`git checkout -- .`) leaves untracked
+  directories alone, so it survives a rebuild. About four minutes. Verified
+  2026-09-11: 438 of `zenkit-node`'s 439 tests pass, one skipped.
 - **Run `node scripts/build-zenkit.js` before `node-gyp`** — it resets the
   submodule, applies `patches/*.patch` and writes `zenkit-abi.json`.
 - **That reset destroys any edit in `vendor/ZenKit` that is not a patch file.**
