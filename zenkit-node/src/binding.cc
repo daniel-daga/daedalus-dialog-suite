@@ -607,6 +607,11 @@ Napi::Value GetVobProps(Napi::CallbackInfo const& info) {
   auto vob = ResolveVob(env, *handle, indices, "indexPath");
   auto props = zenkit_node::VobProps(env, *vob);
   props.Set("class", Napi::String::New(env, zenkit_node::VobClassName(vob->type)));
+  // And the box, for `class`'s reason: the columnar index has position and
+  // rotation and no bbox column, so this read is the only place the renderer
+  // can learn how far a zone or a trigger actually extends (#248). Here rather
+  // than in `VobProps` so the dump keeps one `bbox` per VOB instead of two.
+  props.Set("bbox", zenkit_node::BboxArr(env, vob->bbox));
   return props;
 }
 

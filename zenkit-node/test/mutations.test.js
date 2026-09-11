@@ -357,6 +357,36 @@ test('setVobProp refuses a wrongly typed value', () => {
 // alignment is 0-3 — 3 being one past the `SpriteAlignment` enum's three named
 // values, which is why the bound is the layout's and not the enum's.
 
+test('getVobProps carries the bounding box, which the index has no column for', () => {
+  // The per-selection fetch #248 chose over a new index column: a zone's or a
+  // trigger's extent *is* its bbox, and nothing the renderer already holds
+  // carries one — the columnar index has position and rotation and no box. It
+  // rides on `getVobProps` rather than on a read of its own because the
+  // property grid already makes that call on every selection change.
+  const handle = load();
+
+  const props = zenkit.getVobProps(handle, '0/1');
+
+  // The same six numbers the dump reports for the same VOB, in the same order.
+  assert.deepStrictEqual(props.bbox, vobAt(dumpOf(handle), '0/1').bbox);
+  assert.strictEqual(props.bbox.length, 6);
+});
+
+test('the bbox getVobProps reports follows a move', () => {
+  // `setVobPosition` translates the box by the same delta, so a stale read here
+  // would draw a zone's volume where the zone used to be.
+  const handle = load();
+  const before = zenkit.getVobProps(handle, '0/1').bbox;
+
+  zenkit.setVobPosition(handle, '0/1', [
+    zenkit.getVobProps(handle, '0/1').position?.[0] ?? 0, 0, 0,
+  ]);
+
+  const after = zenkit.getVobProps(handle, '0/1').bbox;
+  assert.notDeepStrictEqual(after, before);
+  assert.deepStrictEqual(after, vobAt(dumpOf(handle), '0/1').bbox);
+});
+
 test('setVobProp writes the preset name, the camera alignment and the depth bias', () => {
   const handle = load();
 
@@ -1741,12 +1771,18 @@ test('getVobProps reads the item instance the fixture authored', () => {
 test('getVobProps answers exactly what normalizeWorld reports for the same vob', () => {
   // The one assertion that stops the two readers drifting. They are the same
   // function; if this ever fails, someone gave the op path its own mapping.
+  //
+  // `class` and `bbox` are peeled because neither is a *property*: the dump
+  // carries both on the VOB entry rather than inside `props`, and
+  // `getVobProps` flattens them in because it answers one object. They are
+  // checked against the entry, so nothing here is merely skipped.
   const handle = load();
   const dump = dumpOf(handle);
 
   for (const at of ['0', '0/0', '0/0/0', '0/1', '0/2']) {
-    const { class: className, ...props } = zenkit.getVobProps(handle, at);
+    const { class: className, bbox, ...props } = zenkit.getVobProps(handle, at);
     assert.strictEqual(className, vobAt(dump, at).class, at);
+    assert.deepStrictEqual(bbox, vobAt(dump, at).bbox, at);
     assert.deepStrictEqual(props, vobAt(dump, at).props, at);
   }
 });

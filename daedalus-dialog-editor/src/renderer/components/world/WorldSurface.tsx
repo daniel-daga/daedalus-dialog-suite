@@ -1055,14 +1055,15 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   }, [summary, primary, appliedOps]);
 
   /**
-   * How far the selected VOB reaches (§16.39, #248) — a sound's `radius`, a
-   * light's `range`.
+   * The volume the selected VOB *is* (§16.39, #248) — a sound's `radius`, a
+   * light's `range`, a zone's or a trigger's bounding box.
    *
-   * Off the props `classProps` already holds, so the sphere costs no round trip
-   * of its own: the read the property grid makes on every selection change is
-   * the same read. Null for every class whose extent is a bounding box instead,
-   * which `vobExtentOf` decides — the index carries no bbox column, so a sphere
-   * there would be a confident wrong answer.
+   * All of it off the props `classProps` already holds, so it costs no round
+   * trip of its own: the read the property grid makes on every selection change
+   * is the same read. That is the whole of the per-selection fetch Daniel chose
+   * over a bbox column in the index, which every world load would have paid
+   * 41,393 × 6 floats for. `vobExtentOf` decides which shape a class is, and
+   * answers null for the classes that are no volume anybody places.
    */
   const selectedExtent = useMemo<{ vob: number; extent: VobExtent } | null>(() => {
     if (summary === null || primary === null) return null;

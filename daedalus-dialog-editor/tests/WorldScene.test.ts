@@ -1139,7 +1139,7 @@ describe('the selected VOB\'s extent', () => {
     const scene = new WorldScene();
     scene.setVobMarkers(vobIndex([[0, 0, 0], [400, 500, 600]], 'zCVobSound', undefined, undefined, ['', '']));
 
-    scene.showExtent(1, { radius: 3000, kind: 'sound' });
+    scene.showExtent(1, { shape: 'sphere', radius: 3000, kind: 'sound' });
 
     const wireframe = scene.root.children.find((child) => child.type === 'LineSegments');
     expect(wireframe?.visible).toBe(true);
@@ -1153,16 +1153,31 @@ describe('the selected VOB\'s extent', () => {
     const scene = new WorldScene();
     scene.setVobMarkers(vobIndex([[400, 500, 600]], 'zCVobSound', undefined, undefined, ['']));
 
-    scene.showExtent(99, { radius: 3000, kind: 'sound' });
+    scene.showExtent(99, { shape: 'sphere', radius: 3000, kind: 'sound' });
 
     expect(scene.root.children.find((child) => child.type === 'LineSegments')).toBeUndefined();
+    scene.dispose();
+  });
+
+  it("draws a zone's box even for a VOB it cannot place, because the box says where", () => {
+    // The asymmetry the two shapes have (#248): a radius is a length around the
+    // VOB and needs its position, a bounding box is already world space. A zone
+    // the marker layer has no row for would otherwise lose its volume too.
+    const scene = new WorldScene();
+
+    scene.showExtent(99, { shape: 'box', kind: 'zone', bbox: [-100, 0, -50, 100, 400, 50] });
+
+    const wireframe = scene.root.children.find((child) => child.type === 'LineSegments');
+    expect(wireframe?.visible).toBe(true);
+    expect(wireframe?.position.toArray()).toEqual([0, 200, 0]);
+    expect(wireframe?.scale.toArray()).toEqual([100, 200, 50]);
     scene.dispose();
   });
 
   it('takes the sphere away again', () => {
     const scene = new WorldScene();
     scene.setVobMarkers(vobIndex([[0, 0, 0]], 'zCVobLight', undefined, undefined, ['']));
-    scene.showExtent(0, { radius: 800, kind: 'light' });
+    scene.showExtent(0, { shape: 'sphere', radius: 800, kind: 'light' });
 
     scene.hideExtent();
 

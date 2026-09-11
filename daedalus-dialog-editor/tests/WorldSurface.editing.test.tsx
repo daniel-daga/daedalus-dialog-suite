@@ -41,9 +41,9 @@ let mockTerrainPoint: [number, number, number] | null | undefined;
 let mockExposure: number | undefined;
 /** Which VOBs the viewport is told not to draw — one byte per VOB, or null. */
 let mockHiddenVobs: Uint8Array | null | undefined;
-/** The sphere the viewport is told to draw round the selection (#248), or null
- *  when the selected VOB's extent is not a radius. */
-let mockSelectedExtent: { vob: number; extent: { radius: number; kind: string } } | null | undefined;
+/** The volume the viewport is told to draw round the selection (#248) — a
+ *  sphere or a box — or null when the selected VOB is neither. */
+let mockSelectedExtent: { vob: number; extent: Record<string, unknown> } | null | undefined;
 /** The payload the overlay draws, and the one a committed waypoint drag builds
  *  its op out of. */
 let mockWaynet: WaynetPayload | null | undefined;
@@ -105,7 +105,7 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
     terrainPoint: [number, number, number] | null;
     exposure: number;
     hiddenVobs: Uint8Array | null;
-    selectedExtent: { vob: number; extent: { radius: number; kind: string } } | null;
+    selectedExtent: { vob: number; extent: Record<string, unknown> } | null;
     snapGrid: number;
     snapAngle: number;
     waynet: WaynetPayload | null;
@@ -206,6 +206,14 @@ const LIGHT_PROPS = {
   lightType: 0, quality: 2, ...BASE_PROPS,
 };
 const ITEM_PROPS = { class: 'oCItem', instance: 'ITMW_1H_SWORD_01', ...BASE_PROPS };
+/** A music zone as `getVobProps` answers one — `bbox` is the per-selection
+ *  fetch #248 chose over an index column, and `ellipsoid` is the catalogued
+ *  bool that makes those same six numbers mean two shapes. */
+const ZONE_PROPS = {
+  class: 'oCZoneMusic', enabled: true, priority: 5, ellipsoid: false,
+  reverb: 0, volume: 1, loop: true,
+  bbox: [-1000, 0, -500, 1000, 800, 500], ...BASE_PROPS,
+};
 
 /** What the main process hands back for an undo of a visual swap: the op the
  *  edit was, with its sides already exchanged. Not structural — no VOB came or
@@ -3972,7 +3980,7 @@ describe('a focus request from outside the surface', () => {
 // How far the selected VOB reaches (level-editor.md §16.39, #248). The marker
 // layer put a dot where a light stands; the range is what a modder is actually
 // tuning, and until it is drawn tuning one is a save-and-play loop.
-describe('the sphere round the selection', () => {
+describe('the volume round the selection', () => {
   it("hands the viewport a light's range, off the props the grid already read", async () => {
     // No round trip of its own: this is the same `getVobProps` the property
     // grid makes on every selection change.
@@ -3983,13 +3991,39 @@ describe('the sphere round the selection', () => {
     await waitFor(() => expect(api.getVobProps).toHaveBeenCalled());
 
     await waitFor(() => expect(mockSelectedExtent)
-      .toEqual({ vob: 1, extent: { radius: LIGHT_PROPS.range, kind: 'light' } }));
+      .toEqual({ vob: 1, extent: { shape: 'sphere', radius: LIGHT_PROPS.range, kind: 'light' } }));
   });
 
-  it('hands it nothing for a class whose extent is a box rather than a radius', async () => {
-    // An `oCItem` has no reach at all, and a zone's is its bbox — for which
-    // the index holds no column. A sphere there would be a confident wrong
-    // answer rather than a missing one.
+  it("hands it a zone's box off the same read, which is the fetch #248 chose", () => {
+    // The bbox is in no column of the index, so drawing a zone means either
+    // paying 41,393 × 6 floats at every world load or fetching per selection.
+    // This is the second, and its whole cost is that `getVobProps` answers one
+    // more key.
+    mockVobProps = ZONE_PROPS;
+    return openWorld(['zCVob', 'oCZoneMusic']).then(async () => {
+      await act(async () => { useWorldStore.getState().selectVob(1); });
+      await waitFor(() => expect(api.getVobProps).toHaveBeenCalled());
+
+      await waitFor(() => expect(mockSelectedExtent).toEqual({
+        vob: 1,
+        extent: { shape: 'box', kind: 'zone', bbox: ZONE_PROPS.bbox },
+      }));
+    });
+  });
+
+  it("follows the zone's own ellipsoid flag, because one box means two shapes", async () => {
+    mockVobProps = { ...ZONE_PROPS, ellipsoid: true };
+    await openWorld(['zCVob', 'oCZoneMusic']);
+
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    await waitFor(() => expect(api.getVobProps).toHaveBeenCalled());
+
+    await waitFor(() => expect(mockSelectedExtent?.extent.shape).toBe('ellipsoid'));
+  });
+
+  it('hands it nothing for a class that is no volume at all', async () => {
+    // An `oCItem` has no reach and no volume anybody places it for; its bbox is
+    // its model's, which the model already draws.
     mockVobProps = ITEM_PROPS;
     await openWorld(['zCVob', 'oCItem']);
 

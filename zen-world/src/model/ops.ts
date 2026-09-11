@@ -1316,7 +1316,9 @@ export function addVob(reader: VobReader, spec: NewVob, parent: number | null = 
  *
  * The **bbox is not in the index at all** — there is no column for it — so it
  * comes in as `bounds`, the visual's own box, which the caller already holds
- * for a rotation. It is fitted through the row's own pose, so a turned VOB
+ * for a rotation. `getVobProps` does answer one per VOB since #248, and that is
+ * not a way out of this: it is a round trip per VOB, and a batch builder makes
+ * none. It is fitted through the row's own pose, so a turned VOB
  * duplicates with the box it had; without bounds there is nothing honest to
  * fit, and the VOB gets the binding's default exactly as a placement does.
  *

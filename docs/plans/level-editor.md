@@ -3175,31 +3175,21 @@ issues cite and do not move.
    below it, and whether the names from the report are mounted at all. Needs a
    Gothic install — Daniel's machine, not CI.
 
-### 16.39 A zone's or a trigger's extent is a box nothing holds (2026-09-10; #248)
+### 16.39 A light's colour is still invisible (2026-09-10; #248)
 
-The sphere half is done and `git log` carries it — a `zCVobSound`'s `radius` and
-a `zCVobLight`'s `range` are drawn round the selection as a wireframe sphere,
-off the `getVobProps` read the property grid already makes. The durable outcome
-is architecture §7.
+**Both extent halves have landed** and `git log` carries them. The sphere:
+a `zCVobSound`'s `radius` and a `zCVobLight`'s `range`, drawn round the
+selection. The box (2026-09-11): a zone's or a trigger's bounding box, which the
+columnar index has no column for — Daniel chose the per-selection fetch over a
+new column, and `getVobProps` now answers `bbox` beside `class`, so the read the
+grid already makes carries it and no call was added. `oCZoneMusic.ellipsoid` is
+followed, and `zCZoneZFog`'s shape is its bbox like the others. The durable
+outcome is architecture §7.
 
-**What is left has no data source.** `ops.ts` states it: *"The bbox is not in
-the index at all — there is no column for it."* A zone's or a trigger's volume
-*is* that bbox, so drawing one means either a new index column — paid for by
-every world load, 41,393 × 6 floats — or a per-selection fetch that does not
-exist. That is the decision this section is really holding, and it is why the
-two halves were not landed together.
-
-Two things to settle with it:
-
-- **`oCZoneMusic.ellipsoid` makes one box mean two shapes**, and it is a
-  catalogued bool, so the shape follows a field the user can flip.
-- **`zCZoneZFog` has no radius field at all** — `rangeCenter` is a distance
-  along the view, not an extent — so a fog zone's shape is its bbox like the
-  others, and `rangeCenter` is something the grid says and the viewport cannot.
-
-A light's `color` is the other half of what a light *is* and is equally
-invisible; it is a tint on the sphere rather than a shape, and nothing has been
-decided about it.
+**What is left is a light's `color`.** It is the other half of what a light *is*
+and is equally invisible, and unlike the two extents it is a tint on the sphere
+rather than a shape — so nothing about how to draw it has been decided. It is
+the whole of what #248 still holds.
 
 ### 16.40 Six of a decal's seven fields are still invisible (2026-09-10; #249)
 

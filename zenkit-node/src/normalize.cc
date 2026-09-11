@@ -109,17 +109,6 @@ Napi::Array Mat4RowMajor(Napi::Env env, Mat4 const& m) {
   return arr;
 }
 
-Napi::Array BboxArr(Napi::Env env, AxisAlignedBoundingBox const& bbox) {
-  auto arr = Napi::Array::New(env, 6);
-  arr.Set(0u, NumF(env, bbox.min.x));
-  arr.Set(1u, NumF(env, bbox.min.y));
-  arr.Set(2u, NumF(env, bbox.min.z));
-  arr.Set(3u, NumF(env, bbox.max.x));
-  arr.Set(4u, NumF(env, bbox.max.y));
-  arr.Set(5u, NumF(env, bbox.max.z));
-  return arr;
-}
-
 // ---------------------------------------------------------------------------
 // Canonical little-endian byte serialization for the bulk-data hashes.
 
@@ -302,6 +291,21 @@ std::uint32_t BspTreeDepth(BspTree const& bsp) {
 // different vocabulary the moment either side gained a class.
 
 }  // namespace
+
+// Out of the anonymous namespace for `VobClassName`'s reason: `getVobProps`
+// answers with a VOB's box as well as its fields (#248), and a second copy of
+// this mapping in the mutation path would be a second place for the component
+// order to be got wrong.
+Napi::Array BboxArr(Napi::Env env, zenkit::AxisAlignedBoundingBox const& bbox) {
+  auto arr = Napi::Array::New(env, 6);
+  arr.Set(0u, NumF(env, bbox.min.x));
+  arr.Set(1u, NumF(env, bbox.min.y));
+  arr.Set(2u, NumF(env, bbox.min.z));
+  arr.Set(3u, NumF(env, bbox.max.x));
+  arr.Set(4u, NumF(env, bbox.max.y));
+  arr.Set(5u, NumF(env, bbox.max.z));
+  return arr;
+}
 
 char const* VobClassName(zenkit::VirtualObjectType type) {
   using namespace zenkit;

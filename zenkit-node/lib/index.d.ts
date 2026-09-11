@@ -311,13 +311,19 @@ export function setVobProp(handle: WorldHandle, indexPath: string, props: VobPro
  * class adds — under the same camelCase keys `normalizeWorld` dumps, because it
  * is the same reader. `class` is the ZenGin class identifier.
  *
- * The shape is per class and is therefore left open: `zen-world`'s field
- * catalogue decides which of these keys are editable, and it is the only place
- * that decision is written down.
+ * `bbox` is the VOB's axis-aligned box, min xyz then max xyz. Neither it nor
+ * `class` is a *property* — the dump carries both on the VOB entry rather than
+ * inside `props` — and both are here because this call is what a per-selection
+ * read costs: the columnar index has no bbox column, so a zone's or a trigger's
+ * extent can be learned nowhere else (#248).
+ *
+ * The rest of the shape is per class and is therefore left open: `zen-world`'s
+ * field catalogue decides which of these keys are editable, and it is the only
+ * place that decision is written down.
  */
 export function getVobProps(
   handle: WorldHandle, indexPath: string,
-): { class: string } & Record<string, unknown>;
+): { class: string; bbox: number[] } & Record<string, unknown>;
 /**
  * Set the properties one VOB has because of the class it *is*, rather than
  * because it is a `zCVob` — `oCItem.instance`, `zCVobLight.range`/`color`.

@@ -478,15 +478,18 @@ export class WorldScene {
   }
 
   /**
-   * Draw the reach of one VOB, or nothing (§16.39). The caller decides which
-   * VOB and reads the radius off its class props — `vobExtentOf` is where a
-   * class with no radius is told from one with a box, and this only draws.
+   * Draw the volume of one VOB, or nothing (§16.39). The caller decides which
+   * VOB and reads the radius or the box off its props — `vobExtentOf` is where
+   * one shape is told from the other, and this only draws.
    *
-   * Silently nothing for a VOB the scene cannot place: a sphere at the origin
-   * for a VOB that is somewhere else is worse than no sphere.
+   * **A sphere needs the VOB's position and a box does not**: a radius is a
+   * length around the VOB, a bounding box is already world space. So a VOB the
+   * scene cannot place gets no sphere — one at the origin for a VOB that is
+   * somewhere else is worse than none — while its box is drawn regardless,
+   * which is what a zone with no marker needs.
    */
   showExtent(vob: number, extent: VobExtent): void {
-    const position = this.positionOf(vob);
+    const position = extent.shape === 'sphere' ? this.positionOf(vob) : [0, 0, 0] as const;
     if (position === null) { this.hideExtent(); return; }
     this.extentOverlay.show(position, extent);
     // Attached only while it is drawing something. The root's children are
@@ -495,7 +498,7 @@ export class WorldScene {
     if (this.extentOverlay.wireframe.parent === null) this.root.add(this.extentOverlay.wireframe);
   }
 
-  /** Nothing selected, or a selection whose extent is not a radius. */
+  /** Nothing selected, or a selection with no volume to draw. */
   hideExtent(): void {
     this.extentOverlay.hide();
     this.root.remove(this.extentOverlay.wireframe);
