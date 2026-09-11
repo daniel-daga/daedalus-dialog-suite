@@ -7,7 +7,13 @@ import { buildVisualPreview, frameVisual } from './VisualPreviewScene';
 //
 // One small canvas and one WebGLRenderer, reused for every thumbnail: a
 // context per tile would exhaust the browser's context budget inside one
-// directory. What is drawn is `VisualPreviewScene`'s scene — the same
+// directory.
+//
+// A texture tile draws through a SECOND canvas, never this one. A canvas
+// keeps the first context kind it is asked for and answers null for every
+// other one forever after, so a 2D draw onto the WebGL canvas would take
+// whichever kind the session happened to ask for first and silently fail
+// every tile of the other kind from then on (#223). What is drawn is `VisualPreviewScene`'s scene — the same
 // geometry, lights and materials the panel's preview shows — framed by the
 // same `frameVisual`, so a thumbnail is the preview at 96 px and not a third
 // renderer's opinion of the crate. Textures are fetched at the tile's own
@@ -27,6 +33,9 @@ export type TextureLoader = (name: string, maxSize: number) => Promise<DecodedTe
 
 export class ThumbnailRenderer {
   readonly canvas: HTMLCanvasElement;
+  /** The destination of a texture tile's 2D draw — separate from `canvas`,
+   *  which belongs to the WebGL renderer and can never serve both kinds. */
+  private readonly tile: HTMLCanvasElement;
   private renderer: THREE.WebGLRenderer | null = null;
   private readonly camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
 
@@ -34,6 +43,9 @@ export class ThumbnailRenderer {
     this.canvas = document.createElement('canvas');
     this.canvas.width = size;
     this.canvas.height = size;
+    this.tile = document.createElement('canvas');
+    this.tile.width = size;
+    this.tile.height = size;
   }
 
   /** The preview scene of one visual, drawn once and read back as a PNG. */
@@ -58,7 +70,8 @@ export class ThumbnailRenderer {
     }
   }
 
-  /** A decoded texture scaled into the tile — a 2D draw, no GL. Nearest
+  /** A decoded texture scaled into the tile — a 2D draw, on `tile` and never
+   *  on the WebGL canvas. Nearest
    *  sampling, since a Gothic texture is 256-px era and smoothing it shows
    *  something the game never draws. */
   renderTexture(decoded: DecodedTexture): string {
@@ -66,14 +79,14 @@ export class ThumbnailRenderer {
     source.width = decoded.width;
     source.height = decoded.height;
     const sourceContext = source.getContext('2d');
-    const context = this.canvas.getContext('2d');
+    const context = this.tile.getContext('2d');
     if (sourceContext === null || context === null) throw new Error('No 2D canvas context');
     sourceContext.putImageData(
       new ImageData(new Uint8ClampedArray(decoded.rgba), decoded.width, decoded.height), 0, 0,
     );
     context.imageSmoothingEnabled = false;
-    context.drawImage(source, 0, 0, this.canvas.width, this.canvas.height);
-    return this.canvas.toDataURL('image/png');
+    context.drawImage(source, 0, 0, this.tile.width, this.tile.height);
+    return this.tile.toDataURL('image/png');
   }
 
   dispose(): void {
