@@ -16,7 +16,7 @@ import * as THREE from 'three';
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 
 import { NavController } from '../src/renderer/world/NavController';
-import { CameraSlots } from '../src/renderer/world/cameraSlots';
+import { CameraSlots, type CameraSlotOutcome } from '../src/renderer/world/cameraSlots';
 
 const WIDTH = 800;
 const HEIGHT = 600;
@@ -77,6 +77,7 @@ function harness({ hasMesh = true, ceiling = CEILING, deferLock = false } = {}) 
   Object.defineProperty(document, 'pointerLockElement', { get: () => locked, configurable: true });
 
   const remembered: THREE.Vector3[] = [];
+  const slotReports: Array<[CameraSlotOutcome, number]> = [];
   let framedSelection = 0;
   let framedAll = 0;
   let paused = false;
@@ -94,6 +95,7 @@ function harness({ hasMesh = true, ceiling = CEILING, deferLock = false } = {}) 
     ceiling,
     paused: () => paused,
     rememberPick: (at) => { remembered.push(at.clone()); },
+    onCameraSlot: (outcome, slot) => { slotReports.push([outcome, slot]); },
     frameSelection: () => { framedSelection += 1; },
     frameAll: () => { framedAll += 1; },
   });
@@ -107,6 +109,7 @@ function harness({ hasMesh = true, ceiling = CEILING, deferLock = false } = {}) 
     get framedSelection() { return framedSelection; },
     get framedAll() { return framedAll; },
     remembered,
+    slotReports,
     pause: () => { paused = true; },
     /** The lock going away for a reason other than F3 — Escape, a window
      *  switch. */
@@ -459,5 +462,49 @@ describe('NavController — teardown', () => {
     h.nav.dispose();
     key('keydown', 'Home', { key: 'Home' });
     expect(h.framedAll).toBe(0);
+  });
+});
+
+describe('NavController — the camera slots say so', () => {
+  // §5.1 item 6 of the 09-04 review: the slots were the one navigation that
+  // moved the camera — or pointedly did not — without a word. The controller
+  // is where the three outcomes are distinguishable at all: `CameraSlots`
+  // itself only answers a boolean, and by the time the surface sees anything
+  // the camera has already moved or not.
+
+  it('a store says which slot it went into', () => {
+    const made = stand();
+    key('keydown', 'Digit1', { ctrlKey: true, shiftKey: true });
+    expect(made.slotReports).toEqual([['stored', 0]]);
+  });
+
+  it('a recall of a stored slot says it was recalled', () => {
+    const made = stand();
+    key('keydown', 'Digit2', { ctrlKey: true, shiftKey: true });
+    key('keydown', 'Digit2', { ctrlKey: true });
+    expect(made.slotReports).toEqual([['stored', 1], ['recalled', 1]]);
+  });
+
+  it('a recall of a slot nothing is in says so — the silence this is for', () => {
+    const made = stand();
+    key('keydown', 'Digit4', { ctrlKey: true });
+    expect(made.slotReports).toEqual([['empty', 3]]);
+  });
+
+  it('a key the slots do not own reports nothing', () => {
+    const made = stand();
+    // Past the slot count, an Alt-modified digit, and a bare digit: each is
+    // handed back rather than taken, so none of them is an outcome.
+    key('keydown', 'Digit5', { ctrlKey: true });
+    key('keydown', 'Digit1', { ctrlKey: true, altKey: true });
+    key('keydown', 'Digit1');
+    expect(made.slotReports).toEqual([]);
+  });
+
+  it('a paused viewport reports nothing — the keystroke was never the slots\'', () => {
+    const made = stand();
+    made.pause();
+    key('keydown', 'Digit1', { ctrlKey: true, shiftKey: true });
+    expect(made.slotReports).toEqual([]);
   });
 });

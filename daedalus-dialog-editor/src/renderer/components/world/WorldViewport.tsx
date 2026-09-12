@@ -31,7 +31,7 @@ import {
   attachBlenderNav, frameOn, frameVobs, navFor, pivotAt, type Nav,
 } from '../../world/cameraNav';
 import { NavController } from '../../world/NavController';
-import { CameraSlots } from '../../world/cameraSlots';
+import { CameraSlots, type CameraSlotOutcome } from '../../world/cameraSlots';
 import {
   runViewportBenchmark,
   type BenchmarkOptions,
@@ -176,6 +176,11 @@ export interface WorldViewportProps {
   /** The texture names that could not be decoded, once per scene build. White
    *  geometry is otherwise a fact the user has to reverse-engineer. */
   onTextureFailures?: (names: string[]) => void;
+  /** What a camera-slot keystroke did (09-04 review §5.1 item 6). The slots
+   *  are handled inside `NavController`, so the surface hears about them only
+   *  through here — and it has to, because a stored, a recalled and an empty
+   *  slot can all leave the screen exactly as it was. */
+  onCameraSlot?: (outcome: CameraSlotOutcome, slot: number) => void;
   /**
    * A click's result: the VOB that was hit, or the point on the world mesh in
    * **ZenGin space** when the click landed on terrain instead. Both null means
@@ -437,7 +442,7 @@ interface Gizmo {
 
 const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(({
   mesh, visuals, vobIndex, bbox, waynet, showWaynet, spawns, showSpawns, routines, spawnTime, spawnState,
-  showWaypointNames, loadTexture, onTextureFailures, onPick, onVobContextMenu,
+  showWaypointNames, loadTexture, onTextureFailures, onCameraSlot, onPick, onVobContextMenu,
   selection, onTranslateSelection, gizmoMode, onRotateSelection, appliedOps,
   selectedWaypoint, terrainPoint, exposure, hiddenVobs, outlineMode, snapGrid, snapAngle,
   selectedExtent = null,
@@ -550,6 +555,8 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   loadTextureRef.current = loadTexture;
   const textureFailuresRef = useRef(onTextureFailures);
   textureFailuresRef.current = onTextureFailures;
+  const cameraSlotRef = useRef(onCameraSlot);
+  cameraSlotRef.current = onCameraSlot;
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
   // Set by the scene effect, because the camera and the controls live inside
@@ -899,6 +906,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       ceiling: box.max[1],
       paused: () => pausedRef.current,
       rememberPick,
+      onCameraSlot: (outcome, slot) => cameraSlotRef.current?.(outcome, slot),
       // Defined below, and called through the closure for that reason.
       frameSelection: () => { frameSelection(); },
       frameAll: () => { frameAll(); },

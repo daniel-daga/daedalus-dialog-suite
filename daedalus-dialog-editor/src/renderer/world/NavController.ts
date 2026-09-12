@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { pivotAt } from './cameraNav';
 import { isTypingOrInPopover } from './keyboardTarget';
-import { cameraSlotFor, type CameraSlots } from './cameraSlots';
+import { cameraSlotFor, type CameraSlotOutcome, type CameraSlots } from './cameraSlots';
 import { Fly, flyMoveFor, flySpeedFor, pivotAhead } from './flyNav';
 import { Walk, walkMoveFor, findWalkEntry, WALK_EXIT_PIVOT_DISTANCE } from './walkNav';
 
@@ -60,6 +60,11 @@ export interface NavControllerOptions {
   /** Where the view came to rest, in three space: the fallback pivot for a
    *  later drag that begins over the sky. */
   rememberPick: (at: THREE.Vector3) => void;
+  /** What a slot keystroke did, so the surface can say it. Called only for a
+   *  press the slots actually took: a digit past the slot count, an
+   *  Alt-modified one and a bare one are handed back, and a paused viewport
+   *  never reaches the slots at all. */
+  onCameraSlot?: (outcome: CameraSlotOutcome, slot: number) => void;
   frameSelection: () => void;
   frameAll: () => void;
 }
@@ -330,13 +335,19 @@ export class NavController {
     const slot = cameraSlotFor(event);
     if (slot !== null) {
       event.preventDefault();
+      let outcome: CameraSlotOutcome;
       if (slot.action === 'store') {
         slots.store(slot.slot, camera.position, controls.target);
+        outcome = 'stored';
       } else if (slots.recall(slot.slot, camera.position, controls.target)) {
         controls.update();
         // The sky-fallback pivot too, as `frameFramables` does.
         this.options.rememberPick(controls.target);
+        outcome = 'recalled';
+      } else {
+        outcome = 'empty';
       }
+      this.options.onCameraSlot?.(outcome, slot.slot);
       return;
     }
     if (event.ctrlKey || event.metaKey || event.altKey) return;

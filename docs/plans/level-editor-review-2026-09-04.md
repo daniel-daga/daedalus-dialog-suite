@@ -557,7 +557,18 @@ the session, not the repo; what they showed is stated as such.
    selection now deletes in one batch, applied back to front so the
    renumbering cannot invalidate a path that is still to be used. The
    decision and what it costs are `docs/plans/level-editor.md` §15.
-6. **Camera-slot store/recall gives no feedback** (§16.27 item 3, still open).
+6. **Camera-slot store/recall gives no feedback — FIXED 2026-09-12.**
+   `NavController` reports the outcome of a slot press — `stored`, `recalled`
+   or `empty` — and the surface says it in a transient Snackbar naming the
+   one-based key. The outcome is the controller's to report because
+   `CameraSlots.recall` only answers a boolean and the surface sees the
+   keystroke's aftermath, not the keystroke. `empty` is the case the finding
+   was about: it leaves the screen exactly as a recall onto the current pose
+   does, so silence made a working shortcut look dead — which is how §16.27
+   item 3 came to be filed as a bug. Transient rather than a fourth Alert in
+   the stack: the three up there are about a world and push the viewport
+   down, and a notice that a keystroke worked must not reflow the view it is
+   about.
 
 ### 5.2 Property grid
 
@@ -814,6 +825,11 @@ vertices, which is a rule about the teardown as much as a saving.
 **§3.4, `ThumbnailRenderer`'s shared canvas — fixed 2026-09-11.** See §3.4: a
 texture tile draws into its own canvas, and the "no test can see it under
 jsdom" claim did not survive contact with one.
+
+**§5.1 item 6, the camera slots' silence — fixed 2026-09-12.** The last of the
+silent-feedback cluster. See the item for the shape; `NavController.test.ts`
+holds the outcome rule and `WorldSurface.cameraSlots.test.tsx` holds the
+surface's half.
 
 **§2.6 has no test.** The null-endpoint guard landed, but a dangling edge
 reference cannot be produced through the API — it comes from a malformed file,

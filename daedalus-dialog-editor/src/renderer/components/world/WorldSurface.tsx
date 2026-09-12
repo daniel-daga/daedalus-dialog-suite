@@ -3,7 +3,7 @@ import React, {
 } from 'react';
 import {
   Alert, Autocomplete, Box, Button, Checkbox, Dialog, DialogActions, DialogContent,
-  DialogContentText, DialogTitle, FormControlLabel, IconButton, Paper, Stack, Tab, Tabs,
+  DialogContentText, DialogTitle, FormControlLabel, IconButton, Paper, Snackbar, Stack, Tab, Tabs,
   TextField, Tooltip, Typography,
 } from '@mui/material';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
@@ -55,6 +55,7 @@ import WorldToolbar from './toolbar/WorldToolbar';
 import { OUTLINE_MODE_ORDER } from './toolbar/WorldViewControls';
 import WorldStatusStats from './toolbar/WorldStatusStats';
 import type { OutlineMode } from '../../world/VobOutline';
+import type { CameraSlotOutcome } from '../../world/cameraSlots';
 import WorldPickerDialog from './WorldPickerDialog';
 import InsertNpcDialog from './InsertNpcDialog';
 import ErrorBoundary from '../ErrorBoundary';
@@ -484,6 +485,31 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       + `${names.slice(0, 3).join(', ')}${names.length > 3 ? '…' : ''}. `
       + 'A source .TGA in a mod folder resolves by name but is not a compiled ZenGin texture.',
     );
+  }, []);
+
+  /**
+   * What the last camera-slot keystroke did (09-04 review §5.1 item 6). The
+   * slots were the one navigation that said nothing, and a recall is exactly
+   * the case where silence is ambiguous: an empty slot moves nothing, and so
+   * does a recall onto the pose you are already at. The message is the only
+   * difference between "that shortcut does nothing" and "that slot is empty".
+   *
+   * Transient, unlike the three Alerts above the viewport: those are about a
+   * world and stand until dismissed, this is about a keystroke. The nonce
+   * makes a repeated outcome a fresh notice — pressing Ctrl+2 twice on an
+   * empty slot has to say so twice, and the message alone is unchanged.
+   */
+  const [cameraSlotNotice, setCameraSlotNotice] =
+    useState<{ text: string; nonce: number } | null>(null);
+  const reportCameraSlot = useCallback((outcome: CameraSlotOutcome, slot: number) => {
+    // The slot is zero-based; the key the user pressed is one higher.
+    const named = `Camera slot ${slot + 1}`;
+    setCameraSlotNotice((previous) => ({
+      text: outcome === 'stored' ? `${named} stored`
+        : outcome === 'recalled' ? `${named} recalled`
+          : `${named} is empty`,
+      nonce: (previous?.nonce ?? 0) + 1,
+    }));
   }, []);
 
   const pickWorld = useCallback((worldPath: string) => {
@@ -1683,6 +1709,25 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         </Alert>
       )}
 
+      {/* The camera slots' one word (09-04 review §5.1 item 6). A Snackbar
+          rather than a fourth Alert in the stack above: the three up there are
+          about the world and push the viewport down, and a notice that a
+          keystroke worked must not reflow the view it is about. `key` is the
+          nonce, so a repeated outcome restarts the timer instead of sitting
+          out the first one's. */}
+      {cameraSlotNotice !== null && (
+        <Snackbar
+          key={cameraSlotNotice.nonce}
+          open
+          autoHideDuration={3000}
+          onClose={() => setCameraSlotNotice(null)}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+          transitionDuration={0}
+          message={cameraSlotNotice.text}
+          data-testid="world-camera-slot"
+        />
+      )}
+
       {/* The warnings belong before the write, not after it: they are about
           whether to save at all. Both are the brief's (§7) and both are facts
           about ZenGin rather than about this editor. */}
@@ -2068,6 +2113,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               showWaypointNames={showWaypointNames}
               loadTexture={loadTexture}
               onTextureFailures={reportTextureFailures}
+              onCameraSlot={reportCameraSlot}
               onPick={handlePick}
               onVobContextMenu={openVobContextMenu}
               selection={selection}

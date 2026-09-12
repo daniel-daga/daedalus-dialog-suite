@@ -11,6 +11,14 @@ import type * as THREE from 'three';
 
 export const CAMERA_SLOT_COUNT = 4;
 
+/**
+ * What a slot keystroke did, for the surface to say out loud (09-04 review
+ * §5.1 item 6). `empty` is the one that matters: a recall of a slot nothing is
+ * in moves nothing, and without a word that is indistinguishable from a dead
+ * shortcut — which is what it was taken for.
+ */
+export type CameraSlotOutcome = 'stored' | 'recalled' | 'empty';
+
 export interface CameraSlotAction {
   action: 'store' | 'recall';
   /** Zero-based; the key is `slot + 1`. */

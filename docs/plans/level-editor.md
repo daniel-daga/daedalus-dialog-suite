@@ -2803,6 +2803,17 @@ candidate. **Confirmed working, 2026-09-02 (Daniel), after retest.** No code
 change — the silent-feedback theory stands as the likely reason it first
 looked broken.
 
+**The silence itself closed 2026-09-12.** `NavController` now reports which of
+the three things a slot keystroke did — `stored`, `recalled`, `empty` — and the
+surface says it in a transient Snackbar naming the one-based key. The
+controller is where the three are distinguishable at all: `CameraSlots.recall`
+answers a boolean, and by the time the surface sees anything the camera has
+already moved or not. `empty` is the row that mattered: a recall of a slot
+nothing is in leaves the screen exactly as a successful recall onto the current
+pose does, which is what made a working shortcut look dead. Not one of the
+Alerts above the viewport — those are about a world and push the view down;
+this is about a keystroke and must not reflow the view it is about.
+
 **4. Fly speed** — "a bit fast by default" on first look (Daniel), then
 **confirmed fine, 2026-09-02** on further use. `flySpeedFor`
 (`renderer/world/flyNav.ts`) derives speed from the distance to the orbit
