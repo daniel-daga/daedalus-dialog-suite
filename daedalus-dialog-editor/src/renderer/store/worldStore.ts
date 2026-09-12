@@ -44,7 +44,14 @@ export type WorldFocus =
    * already open, which is every request the Problems panel makes.
    */
   | { kind: 'waypoint'; name: string; inWorld?: string }
-  | { kind: 'add-waypoint'; name: string };
+  | { kind: 'add-waypoint'; name: string }
+  /**
+   * A portal polygon, framed and outlined (#222). It carries its own geometry
+   * because nothing on this side can recover it: the scene holds merged draw
+   * groups with no polygon mapping, so the index alone would frame nothing.
+   * ZenGin space, like every other position that crosses this boundary.
+   */
+  | { kind: 'polygon'; polygon: number; corners: readonly (readonly [number, number, number])[] };
 
 /**
  * The focus a world locus asks for, or null when the locus names nothing the
@@ -54,6 +61,11 @@ export type WorldFocus =
 export const worldFocusOf = (locus: WorldLocus): WorldFocus | null => {
   if (locus.vob !== undefined) return { kind: 'vob', vob: locus.vob };
   if (locus.waypoint !== undefined) return { kind: 'waypoint', name: locus.waypoint };
+  // Last, and only with corners: a polygon index on its own addresses nothing
+  // the surface can reach, which is what the portal findings used to be.
+  if (locus.polygon !== undefined && locus.polygonCorners !== undefined) {
+    return { kind: 'polygon', polygon: locus.polygon, corners: locus.polygonCorners };
+  }
   return null;
 };
 

@@ -134,6 +134,49 @@ describe('a Problems click on a world finding', () => {
     expect(useUISelectionStore.getState().activeView).toBe('world');
   });
 
+  it('jumps to a portal polygon, carrying the corners the finding brought', async () => {
+    // The scene holds merged draw groups with no polygon mapping, so the index
+    // alone addresses nothing — the geometry is what makes the row clickable
+    // at all (#222).
+    const corners = [[10, 0, 0], [10, 100, 0], [10, 100, 100], [10, 0, 100]] as const;
+    act(() => {
+      useWorldStore.setState({ status: 'ready' });
+      useProblemsStore.setState({
+        problems: [worldProblem({ kind: 'world', polygon: 456754, polygonCorners: corners })],
+        hasScanned: true,
+        requestScan: jest.fn(),
+      });
+    });
+    render(<ProblemsPanel />);
+
+    await userEvent.click(screen.getByText(/names no sector/));
+
+    expect(useWorldStore.getState().focusRequest)
+      .toEqual({ kind: 'polygon', polygon: 456754, corners });
+    expect(useUISelectionStore.getState().activeView).toBe('world');
+  });
+
+  it('does not jump for a portal finding no face carries', async () => {
+    act(() => {
+      useWorldStore.setState({ status: 'ready' });
+      useProblemsStore.setState({
+        problems: [worldProblem({ kind: 'world' })],
+        hasScanned: true,
+        requestScan: jest.fn(),
+      });
+    });
+    render(<ProblemsPanel />);
+
+    expect(screen.getByTestId('problem-row-0')).toHaveAttribute('aria-disabled', 'true');
+    // Past the pointer-events guard, as the no-world case above: what is
+    // asserted is that the click leads nowhere.
+    await userEvent
+      .setup({ pointerEventsCheck: PointerEventsCheckLevel.Never })
+      .click(screen.getByText(/names no sector/));
+
+    expect(useWorldStore.getState().focusRequest).toBeNull();
+  });
+
   it('asks for a second jump to the same place — the camera has moved since', async () => {
     act(() => {
       useWorldStore.setState({ status: 'ready' });

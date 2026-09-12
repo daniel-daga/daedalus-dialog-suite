@@ -6,6 +6,7 @@ import { orphanedFunctionRule } from './rules/orphanedFunction';
 import { voiceIdRule } from './rules/voiceId';
 import { waypointNotInWorldRule } from './rules/waypointNotInWorld';
 import { duplicateSpawnRule } from './rules/duplicateSpawn';
+import { routineOverlapRule } from './rules/routineOverlap';
 import { portalsRule } from './rules/portals';
 
 /** Every lint rule the Problems panel runs, in declaration order. */
@@ -17,6 +18,7 @@ export const ALL_RULES: readonly LintRule[] = [
   voiceIdRule,
   waypointNotInWorldRule,
   duplicateSpawnRule,
+  routineOverlapRule,
   portalsRule
 ];
 

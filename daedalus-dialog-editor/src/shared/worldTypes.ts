@@ -159,9 +159,14 @@ export type WorldWorkerOp =
 
 /**
  * The portal checks' findings (level-editor.md §16.20 slice 3, §16.22 q1–q3),
- * computed in the worker over `getPortals` and crossing as data. The renderer
- * gets findings and not geometry: nothing frames a polygon (decided
- * 2026-09-02), so nothing on this side has a use for 5 MB of corners.
+ * computed in the worker over `getPortals` and crossing as data.
+ *
+ * Each finding carries the corners of the one polygon it names, which is what
+ * lets the Problems panel frame it (#222, 2026-09-12). This is not the 5 MB of
+ * mesh corners the first cut refused: findings are the polygons that are
+ * *wrong*, and retail's four worlds produce one between them. See
+ * `PortalLocus` in `zen-world`'s `validate/portals.ts` for why the geometry
+ * cannot be recovered on this side instead.
  */
 export type PortalFindingsPayload = readonly PortalFinding[];
 

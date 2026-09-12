@@ -250,31 +250,50 @@ describe('checkPortalOrientation', () => {
 });
 
 describe('checkPortals', () => {
-  it('runs every check over one payload and gives each finding a polygon', () => {
+  it('runs every check over one payload and gives each finding a polygon and its corners', () => {
+    const folded: Array<[number, number, number]> = [
+      [10, 0, 0], [10, 100, 0], [40, 100, 100], [10, 0, 100],
+    ];
     const payload = payloadOf([
       // Unknown sector Z, and no mirror `P:Z_A`.
       { polygon: 1, material: 0, plane: [10, 1, 0, 0], corners: wallAt(10) },
       // Folded, and reversed (B is at x < 10).
-      { polygon: 2, material: 1, plane: [10, 1, 0, 0],
-        corners: [[10, 0, 0], [10, 100, 0], [40, 100, 100], [10, 0, 100]] },
+      { polygon: 2, material: 1, plane: [10, 1, 0, 0], corners: folded },
       sectorFace(10, 2, 50), sectorFace(12, 3, -50),
     ], ['P:A_Z', 'P:B_A', 'S:A_STONE', 'S:B_STONE'], ['A', 'B']);
 
     expect(checkPortals(payload)).toEqual([
-      { kind: 'portal-material-unknown-sector', material: 'P:A_Z', sector: 'Z', polygon: 1 },
-      { kind: 'portal-unpaired', material: 'P:A_Z', wanted: 'P:Z_A', polygon: 1 },
-      { kind: 'portal-unpaired', material: 'P:B_A', wanted: 'P:A_B', polygon: 2 },
-      { kind: 'portal-non-planar', material: 'P:B_A', polygon: 2, spread: 30 },
-      { kind: 'portal-reversed', material: 'P:B_A', polygon: 2, sector: 'B' },
+      { kind: 'portal-material-unknown-sector', material: 'P:A_Z', sector: 'Z', polygon: 1, corners: wallAt(10) },
+      { kind: 'portal-unpaired', material: 'P:A_Z', wanted: 'P:Z_A', polygon: 1, corners: wallAt(10) },
+      { kind: 'portal-unpaired', material: 'P:B_A', wanted: 'P:A_B', polygon: 2, corners: folded },
+      { kind: 'portal-non-planar', material: 'P:B_A', polygon: 2, spread: 30, corners: folded },
+      { kind: 'portal-reversed', material: 'P:B_A', polygon: 2, sector: 'B', corners: folded },
     ]);
   });
 
-  it('gives a material finding no polygon when no portal face carries the material', () => {
+  it('gives a material finding no polygon and no corners when no portal face carries the material', () => {
     // A `P:` material every polygon has stopped referencing is still in the
-    // list — the mesh keeps unused materials — and still a finding.
+    // list — the mesh keeps unused materials — and still a finding. There is
+    // no face to frame, which is the one case the panel leaves unclickable.
     const payload = payloadOf([], ['P:_'], []);
     expect(checkPortals(payload)).toEqual([
-      { kind: 'portal-material-malformed', material: 'P:_', polygon: null },
+      { kind: 'portal-material-malformed', material: 'P:_', polygon: null, corners: null },
+    ]);
+  });
+
+  it('carries the corners of the face the finding names, not of the first portal in the mesh', () => {
+    // The pin is per material: a finding on the second material must frame the
+    // second material's face. A bug that always took row 0 passes the test
+    // above, where the first finding happens to be on polygon 1.
+    const payload = payloadOf([
+      { polygon: 1, material: 0, plane: [10, 1, 0, 0], corners: wallAt(10) },
+      { polygon: 2, material: 1, plane: [60, 1, 0, 0], corners: wallAt(60) },
+    ], ['P:A_B', 'P:C_D'], ['A', 'B', 'C', 'D']);
+
+    const unpaired = checkPortals(payload).filter((f) => f.kind === 'portal-unpaired');
+    expect(unpaired.map((f) => [f.material, f.corners])).toEqual([
+      ['P:A_B', wallAt(10)],
+      ['P:C_D', wallAt(60)],
     ]);
   });
 

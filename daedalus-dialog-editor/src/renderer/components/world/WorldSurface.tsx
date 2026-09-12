@@ -937,6 +937,21 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
 
     if (focusRequest.kind === 'vob') { focusVob(focusRequest.vob); return; }
 
+    // A portal finding (#222). It carries its own geometry because the scene
+    // has none to look up, and the viewport draws it as well as flies to it —
+    // a portal is an invisible face, so framing alone shows a wall.
+    if (focusRequest.kind === 'polygon') {
+      const viewport = viewportRef.current;
+      // Reported rather than optional-chained away, for §16.24 5's reason: a
+      // locator that has stopped working must not look like one that jumped to
+      // something already on screen.
+      const outcome = viewport === null
+        ? 'no-scene'
+        : viewport.framePolygon(focusRequest.corners);
+      if (outcome !== null) console.warn(`Could not jump to polygon ${focusRequest.polygon}: ${outcome}`);
+      return;
+    }
+
     // A world the request names and this surface is not showing (#226): the
     // dialog editor knows which `.ZEN` an NPC lives in but cannot open one, so
     // the open happens here and the jump is re-issued on the other side of it.
@@ -1055,7 +1070,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   }, [summary, primary, appliedOps]);
 
   /**
-   * The volume the selected VOB *is* (§16.39, #248) — a sound's `radius`, a
+   * The volume the selected VOB *is* (architecture §7) — a sound's `radius`, a
    * light's `range`, a zone's or a trigger's bounding box.
    *
    * All of it off the props `classProps` already holds, so it costs no round
@@ -2462,6 +2477,21 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         return;
       }
 
+      // Ctrl+D — what Blender, Unity and Unreal duplicate with, and the key
+      // Duplicate had none of until #253, which is why the context menu showed
+      // it the one blank shortcut slot. Guarded like Ctrl+C above: this is a
+      // window listener, and in a text field the browser owns the chord.
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && key === 'd') {
+        if (isTypingOrInPopover(event.target) || surfaceDialogOpen) return;
+        // Nothing selected is not this surface's keystroke: a duplicate of
+        // nothing would be an empty batch that is still an undo entry, and the
+        // chord is the browser's bookmark otherwise.
+        if (useWorldStore.getState().selection.length === 0) return;
+        event.preventDefault();
+        void duplicateSelection();
+        return;
+      }
+
       // Delete — opens the confirm dialog that already gates a destructive
       // edit (§15) rather than committing anything itself; the two dialogs
       // stay the only place either delete is actually sent. Waypoint checked
@@ -2557,7 +2587,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [
-    summary, hidden, runHistory, copySelection, pasteClipboard, waynet, selectVob,
+    summary, hidden, runHistory, copySelection, pasteClipboard, duplicateSelection, waynet, selectVob,
     surfaceDialogOpen, snapGrid, gizmoMode, handleTranslateSelection, armed,
   ]);
 

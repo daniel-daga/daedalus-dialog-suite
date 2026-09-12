@@ -36,6 +36,48 @@ describe('VobExtentOverlay', () => {
     overlay.dispose();
   });
 
+  it("draws a light's sphere in the light's own colour (#248)", () => {
+    // The other half of what a light is. Unlike the two extents it is a tint
+    // rather than a shape, so it rides the wireframe that is already drawn.
+    const overlay = new VobExtentOverlay();
+    const material = overlay.wireframe.material as THREE.LineBasicMaterial;
+
+    overlay.show([0, 0, 0], {
+      shape: 'sphere', radius: 800, kind: 'light', color: [255, 160, 60],
+    });
+
+    // Through sRGB, as every other authored colour in this scene is read.
+    expect(material.color.getHex(THREE.SRGBColorSpace)).toBe(0xffa03c);
+    expect(material.color.getHex()).not.toBe(EXTENT_COLORS.light);
+    overlay.dispose();
+  });
+
+  it('falls back to the palette for a light with no usable colour', () => {
+    // `vobExtentOf` drops a colour that is missing, malformed or black; what
+    // reaches here is an extent with no `color`, and the sphere is then the
+    // yellow it was before #248 rather than nothing.
+    const overlay = new VobExtentOverlay();
+    const material = overlay.wireframe.material as THREE.LineBasicMaterial;
+
+    overlay.show([0, 0, 0], { shape: 'sphere', radius: 800, kind: 'light' });
+
+    expect(material.color.getHex()).toBe(EXTENT_COLORS.light);
+    overlay.dispose();
+  });
+
+  it('takes the tint off again when the next selection has none', () => {
+    // One material is reused across selections, so a colour left behind would
+    // paint the next light — or the next sound — in the last one's tint.
+    const overlay = new VobExtentOverlay();
+    const material = overlay.wireframe.material as THREE.LineBasicMaterial;
+
+    overlay.show([0, 0, 0], { shape: 'sphere', radius: 800, kind: 'light', color: [255, 0, 0] });
+    overlay.show([0, 0, 0], { shape: 'sphere', radius: 800, kind: 'light' });
+
+    expect(material.color.getHex()).toBe(EXTENT_COLORS.light);
+    overlay.dispose();
+  });
+
   it('colours the sphere by what is reaching, as the marker under it is coloured', () => {
     const overlay = new VobExtentOverlay();
     const material = overlay.wireframe.material as THREE.LineBasicMaterial;

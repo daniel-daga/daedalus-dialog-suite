@@ -2478,6 +2478,29 @@ changed it: a duplicate spawn is script-locus and an occupancy overlap is
 *both*, so two panels would split siblings apart and make one mod's problems two
 places to look. Long form and what it unblocks: §16.20.
 
+**A portal finding carries the geometry it is framed by** (2026-09-12, Daniel;
+#222). The polygon *index* in a world locus addresses nothing the renderer can
+reach: the scene holds merged draw groups keyed by material, with no polygon
+mapping, so a finding that named only an index was listed without a jump for ten
+days after the rest of slice 2 landed. Three answers were on the table — a
+`_drillMesh` window per click, a readout of every portal polygon in the world,
+or the finding bringing its own corners. **The corners ride along**, because a
+finding is a polygon that is *wrong*: the four retail worlds produce one finding
+between them across five rules, so this is kilobytes of a world's defects and
+never the megabytes of its mesh that the first cut refused. `checkPortals`
+attaches them in the worker where the geometry already is; the corners reach
+`WorldLocus.polygonCorners`, and `worldFocusOf` answers a `polygon` focus only
+when they are there — a finding on a material no portal face carries has no face
+to frame and stays the one unclickable portal row.
+
+**And framing draws.** A portal is an invisible face inside solid geometry, so a
+camera flown to its centroid alone shows a wall — the picture the user already
+had. `PortalOutline` draws the polygon as a depth-test-free line loop under the
+mirrored root and answers the centroid and bounds the camera is framed with, so
+the outline and the camera cannot end up on different polygons; the next pick in
+the viewport puts it away. The centroid is of the *corners*, not of the bounding
+box, because retail ships 7-gons and 12-gons whose box centre is off the polygon.
+
 **An enum property is an editable combobox, never a plain dropdown**
 (2026-08-29, Daniel). The objection that held §14.1 1.4 shut — retail carries
 out-of-range values a dropdown would destroy — is an argument against *coercion*,
@@ -2858,9 +2881,31 @@ ellipsoid is the sphere wireframe under the box's own uneven scale, which makes
 it the one inscribed in that box rather than an approximation. `zCZoneZFog` has
 no extent field at all, so its shape is its bbox like the others.
 
-A light's `color` is still the other half of what a light *is* and is still
-invisible: it is a tint on the sphere rather than a shape, and nothing has been
-decided about it (plan §16.39).
+**And a light's `color` tints its own sphere (2026-09-12, Daniel; #248).** It
+is the other half of what a light *is*, and unlike the two extents it is a tint
+rather than a shape — so it rides the wireframe that is already there instead of
+adding anything to the scene. It costs nothing new for the third time: `color`
+is as catalogued a `zCVobLight` field as `range`, so it crosses on the same
+`getVobProps` read.
+
+`vobExtentOf` drops a colour the drawer cannot use and the sphere then keeps the
+class palette: not four numbers, a channel outside 0-255, and **black** — which
+is a legal value whose wireframe is invisible, and invisibility is the whole
+complaint #248 exists to answer. The alpha is dropped always, because a light's
+alpha is not its tint. The colour is read through sRGB, as every other authored
+colour in this scene is.
+
+A light is the one class whose volume leaves `VobMarkerLayer`'s palette, and
+deliberately: there the colour *is* the datum rather than a code for the class,
+and the marker inside the sphere still carries the palette, so nothing about
+telling a light from a sound is lost.
+
+**What a light's colour is not.** It is not a light in the scene. The viewport
+is unlit on purpose — `MeshBasicMaterial` throughout, ZenGin's lighting baked
+into the vertex colours, and brightness is `setExposure` rather than a lamp —
+so a dynamic light would be added on top of its own baked contribution and draw
+a room lit twice. Asked and answered 2026-09-12 (Daniel); the toggleable
+light-preview idea is #256, not part of this.
 
 **The selection only, and attached only while it draws.** The three retail
 worlds hold 1,237 sound VOBs between them, so every radius at once is a screen
@@ -3266,10 +3311,13 @@ hold — it holds one world at a time.
   main that `CLAUDE.md` records the main process deliberately not having. The
   dummy is the answer to that gap, not a placeholder waiting on it.
 - **Occupancy is dead** — measured, a cliff and no tail (§16.22 q4). **Gap and
-  overlap survive the measurement**, each as its own card: the overlap is a
-  minute the scripts do not determine and needs only the saying (§16.33), the
-  gap is a threshold nobody has set and is a measurement before it is a rule
-  (§16.34). `coverageOf` and its script compute what both rest on.
+  overlap survived the measurement**, and have since parted: the overlap is a
+  minute the scripts do not determine, which left only the saying, and it
+  **landed 2026-09-12 as a warning** (#235) over `coverageOf` — any minute
+  covered twice is one finding, because a precedence between two `TA` entries
+  would be a rule the game does not have. The gap is a threshold nobody has
+  set and is a measurement before it is a rule (§16.34). `coverageOf` and its
+  script compute what both rest on.
 - **Chapter-conditional presence.** `B_Enter_OldWorld.d`'s 302 spawns are one
   `if (Kapitel …)` after another, indexed since the nested-call fix but drawn
   unconditionally at every minute and every state. It needs the guard, and

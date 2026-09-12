@@ -75,6 +75,9 @@ const mockFrameVob = jest.fn() as jest.Mock<void, [number]>;
 /** And the same jump onto a bare position — what a waypoint gets, having no
  *  row in the VOB index (§16.20 slice 2). */
 const mockFramePoint = jest.fn() as jest.Mock<void, [[number, number, number]]>;
+const mockFramePolygon = jest.fn() as jest.Mock<
+  void, [readonly (readonly [number, number, number])[]]
+>;
 /** A quarter turn about Y, row-major — asymmetric, so a transpose would show. */
 const TURN: number[] = [0, 0, 1, 0, 1, 0, -1, 0, 0];
 /** The pose every VOB in the fixture index has. */
@@ -123,7 +126,7 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
     ) => void;
   }, ref: React.Ref<{
     raycastDown: typeof mockRaycastDown; frameVob: typeof mockFrameVob;
-    framePoint: typeof mockFramePoint;
+    framePoint: typeof mockFramePoint; framePolygon: typeof mockFramePolygon;
   }>) => {
     mockAppliedOps = props.appliedOps;
     mockSelection = props.selection;
@@ -149,6 +152,7 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
     // raycast or a real camera.
     ReactActual.useImperativeHandle(ref, () => ({
       raycastDown: mockRaycastDown, frameVob: mockFrameVob, framePoint: mockFramePoint,
+      framePolygon: mockFramePolygon,
     }));
     return (
       <div data-testid="world-viewport-stub">
@@ -304,6 +308,7 @@ beforeEach(() => {
   mockWaynet = undefined;
   mockShowWaynet = undefined;
   mockFramePoint.mockReset();
+  mockFramePolygon.mockReset();
   mockVobProps = { class: 'zCVob', ...BASE_PROPS };
   mockRaycastDown.mockReset();
   mockFrameVob.mockReset();
@@ -1326,6 +1331,55 @@ describe('duplicating a VOB', () => {
     // accessible name now, an icon button having no visible text of its own.
     expect(screen.getByTestId('world-duplicate-vob')).toHaveAccessibleName('Duplicate 2 VOBs');
     expect(screen.getByTestId('world-delete-vob')).toHaveAccessibleName('Delete 2 VOBs');
+  });
+
+  it('is bound to Ctrl+D, the key every level editor duplicates with (#253)', async () => {
+    // It was bound to nothing, so the context menu showed a blank shortcut
+    // slot beside Frame, Copy, Paste and Delete. Daniel, 2026-09-12: Ctrl+D.
+    const summary = await openWorld();
+    api.refreshWorldIndex.mockResolvedValueOnce(summary as never);
+
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    await act(async () => { fireEvent.keyDown(window, { key: 'd', ctrlKey: true }); });
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    expect(ops[0]).toMatchObject({ op: 'AddVob' });
+  });
+
+  it('duplicates the whole selection on Ctrl+D, as the button does', async () => {
+    const summary = await openWorld();
+    api.refreshWorldIndex.mockResolvedValueOnce(summary as never);
+
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    await act(async () => { useWorldStore.getState().toggleVob(0); });
+    await act(async () => { fireEvent.keyDown(window, { key: 'd', ctrlKey: true }); });
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    expect(ops.filter((op) => op.op === 'AddVob')).toHaveLength(2);
+  });
+
+  it('does nothing on Ctrl+D with nothing selected', async () => {
+    // A duplicate of nothing is an empty batch, which would still be an undo
+    // entry — and Ctrl+D in a browser is a bookmark, so an unclaimed keystroke
+    // is better left unclaimed.
+    await openWorld();
+
+    await act(async () => { useWorldStore.getState().selectVob(null); });
+    await act(async () => { fireEvent.keyDown(window, { key: 'd', ctrlKey: true }); });
+
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+  });
+
+  it('leaves Ctrl+D alone in a text field, as it leaves Ctrl+C', async () => {
+    // The same window-listener guard every other shortcut here carries.
+    await openWorld();
+
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    await act(async () => { fireEvent.keyDown(coordinate('x'), { key: 'd', ctrlKey: true }); });
+
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
   });
 
   it('brings the whole subtree, at paths the batch computes forward', async () => {
@@ -3764,6 +3818,45 @@ describe('a focus request from outside the surface', () => {
     expect(useWorldStore.getState().focusRequest).toBeNull();
   });
 
+  it('frames and outlines the portal polygon a finding names (#222)', async () => {
+    await openWorld();
+    mockFramePolygon.mockReturnValue(null as never);
+    const corners = [[10, 0, 0], [10, 100, 0], [10, 100, 100], [10, 0, 100]] as const;
+    const selectionWas = useWorldStore.getState().selection;
+
+    await act(async () => {
+      useWorldStore.getState().requestFocus({ kind: 'polygon', polygon: 456754, corners });
+    });
+
+    // The geometry, not the index: the scene holds merged draw groups and
+    // cannot turn one into the other.
+    expect(mockFramePolygon).toHaveBeenCalledWith(corners);
+    // A portal has no row in the VOB index and no dot in the waynet, so
+    // neither selection moves — the outline is the whole of what is shown.
+    expect(useWorldStore.getState().selection).toEqual(selectionWas);
+    expect(useWorldStore.getState().selectedWaypoint).toBeNull();
+    expect(mockFrameVob).not.toHaveBeenCalled();
+    expect(mockFramePoint).not.toHaveBeenCalled();
+    expect(useWorldStore.getState().focusRequest).toBeNull();
+  });
+
+  it('says so when a portal jump lands nowhere, rather than failing silently', async () => {
+    // §16.24 5: a locator that has stopped working must not be indistinguishable
+    // from one that jumped to something already on screen.
+    await openWorld();
+    mockFramePolygon.mockReturnValue('not-drawn' as never);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await act(async () => {
+      useWorldStore.getState().requestFocus({
+        kind: 'polygon', polygon: 456754, corners: [[0, 0, 0], [1, 0, 0], [0, 1, 0]],
+      });
+    });
+
+    expect(warn).toHaveBeenCalledWith('Could not jump to polygon 456754: not-drawn');
+    warn.mockRestore();
+  });
+
   it('takes the request and jumps nowhere for a name this waynet has not', async () => {
     await openWorld();
 
@@ -3981,17 +4074,22 @@ describe('a focus request from outside the surface', () => {
 // layer put a dot where a light stands; the range is what a modder is actually
 // tuning, and until it is drawn tuning one is a save-and-play loop.
 describe('the volume round the selection', () => {
-  it("hands the viewport a light's range, off the props the grid already read", async () => {
+  it("hands the viewport a light's range and its colour, off the props the grid already read", async () => {
     // No round trip of its own: this is the same `getVobProps` the property
-    // grid makes on every selection change.
+    // grid makes on every selection change, and `color` is as catalogued a
+    // field of `zCVobLight` as `range` is — so the second half of #248 cost
+    // the same nothing the first did.
     mockVobProps = LIGHT_PROPS;
     await openWorld(['zCVob', 'zCVobLight']);
 
     await act(async () => { useWorldStore.getState().selectVob(1); });
     await waitFor(() => expect(api.getVobProps).toHaveBeenCalled());
 
-    await waitFor(() => expect(mockSelectedExtent)
-      .toEqual({ vob: 1, extent: { shape: 'sphere', radius: LIGHT_PROPS.range, kind: 'light' } }));
+    await waitFor(() => expect(mockSelectedExtent).toEqual({
+      vob: 1,
+      // The alpha is dropped: a light's alpha is not its tint.
+      extent: { shape: 'sphere', radius: LIGHT_PROPS.range, kind: 'light', color: [255, 220, 180] },
+    }));
   });
 
   it("hands it a zone's box off the same read, which is the fetch #248 chose", () => {

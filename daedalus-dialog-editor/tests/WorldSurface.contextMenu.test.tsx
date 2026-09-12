@@ -97,6 +97,9 @@ describe('the VOB context menu', () => {
     expect(screen.getByTestId('world-context-copy')).toHaveTextContent('Ctrl+C');
     expect(screen.getByTestId('world-context-paste')).toHaveTextContent('Ctrl+V');
     expect(screen.getByTestId('world-context-delete')).toHaveTextContent('Del');
+    // Duplicate had the one blank slot in this list, because it was bound to
+    // nothing (#253). Ctrl+D now, as every level editor binds it.
+    expect(screen.getByTestId('world-context-duplicate')).toHaveTextContent('Ctrl+D');
   });
 
   it('selects the row first when it was outside the selection', async () => {

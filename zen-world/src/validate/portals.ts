@@ -287,30 +287,63 @@ export function checkPortalOrientation(rows: readonly PortalRow[]): PortalOrient
 // All of them, pinned to a polygon
 
 /**
- * A portal finding with the polygon it stands on — the first portal face
- * carrying the material for a name finding, and null when no face does (the
- * mesh keeps a material no polygon references, and the name is still wrong).
+ * Where a finding stands: the polygon, and that polygon's own corners.
+ *
+ * The polygon is the first portal face carrying the material for a name
+ * finding, and null when no face does — the mesh keeps a material no polygon
+ * references, and the name is still wrong. `corners` is null in exactly that
+ * case and only there, because a polygon the readout named has corners by
+ * construction.
+ *
+ * **Why the geometry rides along** (#222, decided 2026-09-12). A finding used
+ * to cross as names and numbers alone, on the reasoning that nothing framed a
+ * polygon and the renderer had no use for 5 MB of corners. The first half is
+ * what changed; the second was never the choice on the table. A portal polygon
+ * is an invisible face inside merged draw groups, and the renderer holds no
+ * polygon → geometry mapping to recover one from an index — so either the
+ * corners come with the finding or every click pays a round trip. Findings are
+ * the few polygons that are *wrong*: zero on all four retail worlds for three
+ * of the five rules, one for the other two. This is kilobytes of a world's
+ * defects, not megabytes of its mesh.
  */
+interface PortalLocus {
+  polygon: number | null;
+  corners: readonly Vec3[] | null;
+}
+
+/** A portal finding with the face the panel can frame it by. */
 export type PortalFinding =
-  | (PortalMaterialProblem & { polygon: number | null })
-  | (PortalPairingProblem & { polygon: number | null })
-  | PortalPlanarityProblem
-  | PortalOrientationProblem;
+  | (PortalMaterialProblem & PortalLocus)
+  | (PortalPairingProblem & PortalLocus)
+  | (PortalPlanarityProblem & PortalLocus)
+  | (PortalOrientationProblem & PortalLocus);
 
 export function checkPortals(payload: PortalPolygons): PortalFinding[] {
   const rows = portalRows(payload);
 
   const firstFace = new Map<string, number>();
+  const cornersOf = new Map<number, readonly Vec3[]>();
   for (const row of rows) {
     if (row.kind !== 0 && !firstFace.has(row.material)) firstFace.set(row.material, row.polygon);
+    // Every row, portal face or sector face: a geometry check names its own
+    // polygon and does not go through `firstFace`.
+    if (!cornersOf.has(row.polygon)) cornersOf.set(row.polygon, row.corners);
   }
-  const pinned = <T extends { material: string }>(problem: T): T & { polygon: number | null } =>
-    ({ ...problem, polygon: firstFace.get(problem.material) ?? null });
+
+  /** A finding that knows its polygon already — the two geometry checks. */
+  const located = <T extends { polygon: number }>(problem: T): T & PortalLocus =>
+    ({ ...problem, corners: cornersOf.get(problem.polygon) ?? null });
+
+  /** A finding that knows only a material — the three name checks. */
+  const pinned = <T extends { material: string }>(problem: T): T & PortalLocus => {
+    const polygon = firstFace.get(problem.material) ?? null;
+    return { ...problem, polygon, corners: polygon === null ? null : cornersOf.get(polygon) ?? null };
+  };
 
   return [
     ...checkPortalMaterials({ materials: payload.materials, sectorNames: payload.sectorNames }).map(pinned),
     ...checkPortalPairing({ materials: payload.materials }).map(pinned),
-    ...checkPortalPlanarity(rows),
-    ...checkPortalOrientation(rows),
+    ...checkPortalPlanarity(rows).map(located),
+    ...checkPortalOrientation(rows).map(located),
   ];
 }

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { VobExtent } from 'zen-world';
 
 // How far a sound, a light, a zone or a trigger actually reaches, drawn
-// (level-editor.md §16.39, #248).
+// (`docs/architecture/level-editor.md` §7).
 //
 // The markers that landed with #247 say where a VOB with no visual stands, and
 // for this family that is the smaller half of the fact: a `zCVobSound` **is**
@@ -38,7 +38,12 @@ import type { VobExtent } from 'zen-world';
 // centimetres, unconverted. The mirror on X is invisible on a sphere.
 
 /** The four colours, taken from `VobMarkerLayer`'s table on purpose: the volume
- *  belongs to the marker inside it and a second palette would break that. */
+ *  belongs to the marker inside it and a second palette would break that.
+ *
+ *  A light is the one that gets overridden, and only when it has a colour of
+ *  its own to be drawn in (#248) — there the colour *is* the datum rather than
+ *  a code for the class, and the marker inside the sphere still carries the
+ *  palette, so nothing about telling a light from a sound is lost. */
 export const EXTENT_COLORS: Record<VobExtent['kind'], number> = {
   sound: 0x00e5ff,
   light: 0xffe082,
@@ -135,7 +140,18 @@ export class VobExtentOverlay {
       this.wireframe.position.set((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2);
       this.wireframe.scale.set((maxX - minX) / 2, (maxY - minY) / 2, (maxZ - minZ) / 2);
     }
-    this.material.color.setHex(EXTENT_COLORS[extent.kind]);
+    // A light's own colour where there is one, and the palette otherwise —
+    // `vobExtentOf` has already dropped a colour that is missing, malformed or
+    // black, so a colour that arrives here is one worth drawing in. Set every
+    // time rather than only when tinting: one material is reused across
+    // selections, and a colour left behind would paint the next VOB in the
+    // last one's light.
+    const tint = extent.shape === 'sphere' ? extent.color : undefined;
+    if (tint === undefined) this.material.color.setHex(EXTENT_COLORS[extent.kind]);
+    // Through sRGB, as every other authored colour in this scene is read: the
+    // four channels come out of the archive as 0-255 sRGB, and `setHex` above
+    // converts the palette the same way.
+    else this.material.color.setRGB(tint[0] / 255, tint[1] / 255, tint[2] / 255, THREE.SRGBColorSpace);
     this.wireframe.visible = true;
   }
 

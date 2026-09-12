@@ -246,7 +246,7 @@ would survive it (§7).
   inventory never had a row for it; carded 2026-09-10 in three parts. The
   marker itself *landed 2026-09-10 (§7)* — every VOB with no visual name is
   drawn, pickable, hideable by class and gizmo-attachable. What is left is the
-  **extent** of a sound, a light or a zone (§16.39) and the VOBs whose visual
+  **extent** of a sound, a light or a zone (architecture §7) and the VOBs whose visual
   is a name that resolves to no geometry (§16.40, decals and particle
   effects).
 
@@ -1806,8 +1806,10 @@ the gap and left it open; §16.18 added two more behind it; the Phase 1c overlay
      unrelated waynet re-read.
    - **`worldFocusOf` is the one predicate**, and both halves read it: the list
      to disable a row, the panel to build the request. A locus it answers `null`
-     for is listed and not clickable, which is the honest state for a polygon —
-     framing one needs the mesh and is slice 3's, with the rule that emits it.
+     for is listed and not clickable, which was the honest state for a polygon
+     until the corners started riding along with the finding (#222, 2026-09-12);
+     a polygon locus with no corners still answers `null`, and that is now the
+     one portal row without a jump.
    - **A waypoint is not a VOB**, so the handle grew `framePoint(at)` beside
      `frameVob`: no row in the columnar index, no bounds, and `frameVobs`
      already reads `bounds: null` as "a point". The lookup is by name and
@@ -1883,21 +1885,22 @@ the gap and left it open; §16.18 added two more behind it; the Phase 1c overlay
    - **`problems/domain`** — two new `ProblemRuleId`s, the rule, `runRules`, and
      `ProjectView`'s new input.
 
-   And one part is not just big but **unspecified**: slice 2 assigned polygon
-   *framing* to this slice ("framing one needs the mesh"), and nothing says what
-   framing a polygon means. The renderer holds merged draw groups with no
-   polygon mapping, so it would be a `_drillMesh` window per finding or a new
-   readout — a design decision, not an implementation of one. Without it the
-   findings are listed and not clickable, which `worldFocusOf` already does
-   correctly for a polygon locus; whether that is an acceptable slice 3 is a
-   human's call, not a run's. (It was: Daniel, 2026-09-02, above.)
+   And one part was not just big but **unspecified**: slice 2 assigned polygon
+   *framing* to this slice ("framing one needs the mesh"), and nothing said what
+   framing a polygon meant. Listed-and-not-clickable was accepted as slice 3
+   (Daniel, 2026-09-02) and **framing landed 2026-09-12** (#222) on the third
+   of the three options — neither a `_drillMesh` window per finding nor a new
+   readout of every portal, but the finding carrying the corners of its own
+   polygon. The durable outcome is architecture §7.
 
 **What this does *not* unblock, and must not be smuggled in.** Leak
 flood-fill, intersections and triangle limits are still Phase 2 with their own
 Gate 3 (§11); pairing, planarity and orientation joined the card only because
-§16.22 had measured them. Occupancy and overlap checks become *possible* here
-and stay uncarded: §8 lists them among Phase 1c's unreached deliverables, and
-they want the spawn index they now have plus a rule nobody has specified.
+§16.22 had measured them. Occupancy and overlap checks became *possible* here
+and were left uncarded, and the two have since diverged on their measurements
+rather than on this card: occupancy is dead (§16.22 q4 — a cliff, not a tail),
+and **overlap landed 2026-09-12 as a warning** (#235). The gap check is still
+nobody's, and for its own reason (#236).
 
 ### 16.22 The measurement tranche (§11 Phase 2, decided 2026-08-29)
 
@@ -2044,10 +2047,10 @@ fires exactly once over the corpus: `P:CAPTAIN_`, on NewWorld (polygon
 like from the other side.
 
 **0.25 stands (2026-09-11, Daniel; #222).** It was the one number he had
-reserved the right to move, and he left it where the corpus put it. So the
-threshold is settled rather than provisional, and what is left of #222 is the
-other half: framing a portal polygon from a finding is still nobody's card
-(§16.22 above).
+reserved the right to move, and he left it where the corpus put it, so the
+threshold is settled rather than provisional. **The other half — framing a
+portal polygon from a finding — landed 2026-09-12**, and #222 closed with it;
+the design is architecture §7.
 
 What the script does, so the next run does not re-derive it. Two numbers per
 portal polygon: **spread**, `max(n·p) - min(n·p)` over the corners with the
@@ -3050,50 +3053,10 @@ lists and loads.
 
 ---
 
-### 16.33 Routine overlap — the finding the measurement supports (#235)
-
-`coverageOf` (`src/renderer/routines/routineSchedule.ts`) reports, per routine,
-which minutes of a day it leaves uncovered and which it covers twice. The
-overlap half has a principled finding and the gap half (#236) does not, which is
-why they are two cards and not one.
-
-**Why an overlap is reportable.** `placementsAt` returns *every* entry in force
-at a minute rather than one, deliberately: nothing in the format, in ZenKit or
-in this repo says which the engine picks, so a precedence would be a rule the
-game does not have (`docs/architecture/level-editor.md` §8). That is exactly
-what makes the overlap a finding — the NPC's position at that minute is
-undefined by anything the editor can read, and an author almost certainly did
-not mean it to be. No threshold and no discriminator: any minute covered twice
-is one.
-
-**What retail does.** 8 of the 1,137 routines with an indexed entry cover a
-window twice, one window each. No tail — which is why §16.22's precedent left
-this uncarded rather than killing it, as it killed occupancy. A rule would fire
-8 times on the whole of Gothic II.
-
-**What is missing is the saying, not the number.** Its wording, its severity,
-and whether 8 findings on retail is a rule worth having or noise a modder learns
-to scroll past. A person's call, which is the `needs-decision` label.
-
-**What it costs once said.** The eighth Problems rule, beside
-`duplicateSpawnRule` in `src/renderer/problems/domain/rules/`, over
-`routineSiteIndex`. The locus is a script one — file, function, line — so it
-fits the panel's navigation model as it stands, the same property that made the
-duplicate-spawn rule the cross-validation slice worth taking first.
-
-**One caveat on the 8.** The distribution was measured 2026-09-01, before
-`prototype_declaration` took `$.block` and lifted the routine index from 81% to
-99% of the corpus's `TA` calls. The 1,128 entries that fix recovered are
-`DMT_DementorAmbient.d`'s 17 walker routines, and whether any of them overlaps is
-unknown. Re-run `daedalus-dialog-editor/scripts/check-routine-coverage.js` before
-writing the rule; the corpus is `mdk/Content`, which is Daniel's machine and not
-CI, so this is not work an unattended run can take.
-
----
-
 ### 16.34 Routine gap — a hole in the day, and the threshold nobody has set (#236)
 
-The other half of `coverageOf`, and it is not the overlap's twin (#235).
+The other half of `coverageOf`, and it is not the twin of the overlap check
+that landed 2026-09-12 (#235, `problems/domain/rules/routineOverlap.ts`).
 
 **A hole is not undefined behaviour.** It is legal and common at half-day
 scale: an NPC with a twelve-hour routine is elsewhere the other twelve, and the
@@ -3180,22 +3143,6 @@ issues cite and do not move.
    measurement: it prints the top level counted folders-against-files, the shape
    below it, and whether the names from the report are mounted at all. Needs a
    Gothic install — Daniel's machine, not CI.
-
-### 16.39 A light's colour is still invisible (2026-09-10; #248)
-
-**Both extent halves have landed** and `git log` carries them. The sphere:
-a `zCVobSound`'s `radius` and a `zCVobLight`'s `range`, drawn round the
-selection. The box (2026-09-11): a zone's or a trigger's bounding box, which the
-columnar index has no column for — Daniel chose the per-selection fetch over a
-new column, and `getVobProps` now answers `bbox` beside `class`, so the read the
-grid already makes carries it and no call was added. `oCZoneMusic.ellipsoid` is
-followed, and `zCZoneZFog`'s shape is its bbox like the others. The durable
-outcome is architecture §7.
-
-**What is left is a light's `color`.** It is the other half of what a light *is*
-and is equally invisible, and unlike the two extents it is a tint on the sphere
-rather than a shape — so nothing about how to draw it has been decided. It is
-the whole of what #248 still holds.
 
 ### 16.40 Six of a decal's seven fields are still invisible (2026-09-10; #249)
 

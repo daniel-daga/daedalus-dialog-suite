@@ -673,6 +673,34 @@ describe('the extent a VOB is', () => {
     expect(vobExtentOf('zCVobLight', { radius: 800 })).toBeNull();
   });
 
+  it("carries a light's own colour, which is the other half of what a light is (#248)", () => {
+    // RGBA 0-255 as the binding reads it; the alpha is dropped, because a
+    // light's alpha is not its tint.
+    expect(vobExtentOf('zCVobLight', { range: 800, color: [255, 160, 60, 255] }))
+      .toEqual({ shape: 'sphere', radius: 800, kind: 'light', color: [255, 160, 60] });
+  });
+
+  it('carries no colour for a sound, whose radius is not a colour of anything', () => {
+    expect(vobExtentOf('zCVobSound', { radius: 3000, color: [255, 0, 0, 255] }))
+      .toEqual({ shape: 'sphere', radius: 3000, kind: 'sound' });
+  });
+
+  it('carries no colour where there is no usable one to carry', () => {
+    // Each of these leaves the sphere at the palette colour rather than
+    // drawing an invisible or a nonsense wireframe.
+    const cases: Array<unknown> = [
+      undefined,               // a world written before the field, or a read that missed it
+      [255, 160],              // not four channels
+      [0, 0, 0, 255],          // black: an unlit wireframe is the invisibility #248 is about
+      ['255', '160', '60', 0], // not numbers
+      [300, -1, 60, 255],      // outside the catalogue's own 0-255 bounds
+    ];
+    for (const color of cases) {
+      expect(vobExtentOf('zCVobLight', { range: 800, color } as never))
+        .toEqual({ shape: 'sphere', radius: 800, kind: 'light' });
+    }
+  });
+
   it('never answers a sphere for a class whose extent is a box', () => {
     // A zone or a trigger is its bbox, and a sphere for one would be a lie
     // about where it stops.

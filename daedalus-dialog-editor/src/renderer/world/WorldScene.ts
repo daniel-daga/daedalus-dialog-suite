@@ -6,6 +6,7 @@ import type {
 import { DecalLayer } from './DecalLayer';
 import { HIDDEN_ATTRIBUTE, SELECTED_ATTRIBUTE } from './instanceAttributes';
 import { VobExtentOverlay } from './VobExtentOverlay';
+import { PortalOutline } from './PortalOutline';
 import { VobMarkerLayer } from './VobMarkerLayer';
 
 // Re-exported where they used to be declared: every other reader imports them
@@ -350,7 +351,7 @@ export class WorldScene {
   private decalLayer: DecalLayer | null = null;
 
   /**
-   * How far the selected VOB reaches, when the reach is a radius (§16.39,
+   * How far the selected VOB reaches, when the reach is a radius (architecture §7,
    * #248). One wireframe for the whole scene, because only the selection is
    * ever drawn: 1,237 sound radii at once is a screen of overlapping spheres.
    *
@@ -358,6 +359,7 @@ export class WorldScene {
    * same coordinates `positionOf` answers in.
    */
   private readonly extentOverlay = new VobExtentOverlay();
+  private readonly portalOutline = new PortalOutline();
 
   private textures = new Map<string, TextureSlot>();
   private instanceVobIds = new WeakMap<THREE.InstancedMesh, Uint32Array>();
@@ -478,7 +480,7 @@ export class WorldScene {
   }
 
   /**
-   * Draw the volume of one VOB, or nothing (§16.39). The caller decides which
+   * Draw the volume of one VOB, or nothing (architecture §7). The caller decides which
    * VOB and reads the radius or the box off its props — `vobExtentOf` is where
    * one shape is told from the other, and this only draws.
    *
@@ -502,6 +504,33 @@ export class WorldScene {
   hideExtent(): void {
     this.extentOverlay.hide();
     this.root.remove(this.extentOverlay.wireframe);
+  }
+
+  /**
+   * Draw the portal polygon a Problems finding named, and answer what to frame
+   * the camera on (#222). Null for a polygon with too few corners to be one,
+   * which draws nothing and frames nothing.
+   *
+   * The corners arrive with the finding — the scene holds merged draw groups
+   * and cannot map a polygon index to geometry, which is why this takes the
+   * geometry rather than the index the finding also carries.
+   */
+  showPortal(corners: readonly (readonly [number, number, number])[]): {
+    at: [number, number, number]; bounds: number[];
+  } | null {
+    const framed = this.portalOutline.show(corners);
+    if (framed === null) { this.hidePortal(); return null; }
+    // Attached only while it is drawing something, exactly as the extent
+    // wireframe is: a permanent invisible node in the root is one more thing
+    // every reader of the graph has to know to skip.
+    if (this.portalOutline.outline.parent === null) this.root.add(this.portalOutline.outline);
+    return framed;
+  }
+
+  /** No portal framed — nothing has been jumped to, or the user has moved on. */
+  hidePortal(): void {
+    this.portalOutline.hide();
+    this.root.remove(this.portalOutline.outline);
   }
 
   /**
@@ -929,6 +958,7 @@ export class WorldScene {
     this.decalLayer?.dispose();
     this.decalLayer = null;
     this.extentOverlay.dispose();
+    this.portalOutline.dispose();
 
     this.geometries = [];
     this.materials = [];
