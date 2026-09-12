@@ -400,9 +400,13 @@ drawn mesh's.
   `flew`, set on release; the comment at `:1310` concedes `contextmenu` fires
   after release on Windows only). On Linux/macOS every right-button hold that
   starts on a VOB also opens the menu; the ubuntu Electron e2e job runs there.
-- **F3 twice inside the pointer-lock grant latency** leaves the lock engaged
-  with no walk (`:1389`, `:1415`, `:1440`): locked until Escape, clicks at
-  frozen coordinates. Narrow.
+- **F3 twice inside the pointer-lock grant latency — FIXED 2026-09-12.** It
+  left the lock engaged with no walk: locked until Escape, clicks at frozen
+  coordinates. `exitWalk` had no lock to give back yet, and the grant then
+  landed on nobody. `NavController.onPointerLockChange` now releases a lock it
+  finds on the canvas with no walk running — nothing else here ever asks for
+  one. The spec is a deferred grant in the jsdom harness (`deferLock`), which
+  is the only way to get between the request and the answer.
 - **Per-frame allocations with labels on**: `SpawnOverlay.labelledPoints`
   (`:245`) spreads two arrays per frame; `chooseWaypointLabels`
   (`waypointLabels.ts:77-107`) allocates per on-screen waypoint plus a sort.

@@ -286,7 +286,16 @@ export class NavController {
   };
 
   private readonly onPointerLockChange = () => {
-    if (this.walk !== null && document.pointerLockElement !== this.options.canvas) this.exitWalk();
+    const locked = document.pointerLockElement === this.options.canvas;
+    if (this.walk !== null) {
+      if (!locked) this.exitWalk();
+      return;
+    }
+    // A grant that arrives after the walk it was for has ended — F3 twice
+    // inside the grant latency, where `exitWalk` had no lock to give back yet.
+    // Nothing reads the deltas now, and nothing else here ever asks for the
+    // lock, so it is ours to release.
+    if (locked) document.exitPointerLock();
   };
 
   private readonly onPointerLockError = () => { this.exitWalk(); };

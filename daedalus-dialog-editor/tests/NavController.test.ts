@@ -45,7 +45,7 @@ function key(type: 'keydown' | 'keyup', code: string, modifiers: Partial<Keyboar
   return event;
 }
 
-function harness({ hasMesh = true, ceiling = CEILING } = {}) {
+function harness({ hasMesh = true, ceiling = CEILING, deferLock = false } = {}) {
   const host = document.createElement('div');
   const canvas = document.createElement('canvas');
   host.appendChild(canvas);
@@ -70,7 +70,9 @@ function harness({ hasMesh = true, ceiling = CEILING } = {}) {
   let locked: Element | null = null;
   let lockRequests = 0;
   let lockExits = 0;
-  canvas.requestPointerLock = () => { lockRequests += 1; locked = canvas; };
+  // A real grant is asynchronous — the browser answers the request a frame or
+  // more later — and `deferLock` is how a test gets between the two.
+  canvas.requestPointerLock = () => { lockRequests += 1; if (!deferLock) locked = canvas; };
   document.exitPointerLock = () => { lockExits += 1; locked = null; };
   Object.defineProperty(document, 'pointerLockElement', { get: () => locked, configurable: true });
 
@@ -115,6 +117,11 @@ function harness({ hasMesh = true, ceiling = CEILING } = {}) {
     lockError: () => {
       locked = null;
       document.dispatchEvent(new Event('pointerlockerror'));
+    },
+    /** The browser answering a `deferLock` request, whenever it gets to it. */
+    grantLock: () => {
+      locked = canvas;
+      document.dispatchEvent(new Event('pointerlockchange'));
     },
     /** One press-move-release of the fly, without the release. */
     beginFly: () => press(canvas, 2),
@@ -255,6 +262,24 @@ describe('NavController — the walk', () => {
     expect(h.gizmo.helperVisible).toBe(false);
     expect(h.lockExits).toBe(1);
     expect(h.remembered).toHaveLength(1);
+  });
+
+  // F3 twice inside the grant latency: the walk ends before the lock it asked
+  // for exists, so the exit has nothing to give back and the grant lands on
+  // nobody. Left alone the canvas stays locked with no walk reading the
+  // deltas — a pointer captured until Escape, clicking at frozen coordinates.
+  it('gives back a lock that lands after the walk it was for has ended', () => {
+    const h = stand({ deferLock: true });
+    key('keydown', 'F3');
+    expect(h.nav.walking()).toBe(true);
+    key('keydown', 'F3');
+    expect(h.nav.walking()).toBe(false);
+    expect(h.lockExits).toBe(0);
+
+    h.grantLock();
+
+    expect(h.lockExits).toBe(1);
+    expect(document.pointerLockElement).toBeNull();
   });
 
   it('a camera with nowhere to stand enters nothing and touches nothing', () => {
