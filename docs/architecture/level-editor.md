@@ -2462,11 +2462,32 @@ which is what `BuildVisualVobTree`'s `1/20` is for. The one trap in the C++:
 struct, which shadows the member it inherits — `list.target` is a *type*, and
 the assignment has to be qualified.
 
-Out of this slice by decision: the `targets` and `slaves` **lists** (still the
-op set's unbounded-payload question), and the movable-object family's own
-`target` — a mob's target is what it fires when it is used, and the family's
-other cross-references (`item`, `key`) are Daedalus item instances that would
-need the renderer's *other* index.
+**The movable-object family joined a day later (2026-09-12, #259).**
+`VInteractiveObject.target` is the same kind of string — a `vobName` in this
+world — and it is what a mob fires when it is *used*, so it takes the same three
+decisions above unchanged: a `string` in the catalogue and in the validator, a
+warning in the grid, no branch anywhere. It was held out only because the
+family's *other* cross-references (`item`, and a door's `key`) are Daedalus item
+instances that would need the renderer's other index, and that reason never
+applied to the target. It sits where `VInteractiveObject` declares it rather
+than at the front of the class: a trigger is opened to see what it fires, a mob
+is opened to see what it is. `item` and `key` are still out.
+
+The same day closed `oCTriggerScript`'s gap: it is a `VTrigger` and carried only
+its own `function` plus the pair of targets, because §16.3 catalogued the class
+by that one field and the targets landing beside it did not change that. It has
+the base fourteen now, so the class is complete — nothing on it is a list, an
+enum or save-game-only. `zCTriggerWorldStart` was never this case: it derives
+from `zCVob` and has no base to be missing.
+
+Out of this slice by decision: the `targets` and `slaves` **lists**, still the
+op set's unbounded-payload question.
+
+One thing this left behind. The `VTrigger` base is now read and assigned field
+by field in **five** `SetVobClassProp` cases, twenty-six near-identical lines
+each, and the interactive-object base in four more. It is the shape the switch
+has had since the catalogue began and no case has ever drifted, but it is the
+largest copy-paste in `binding.cc` — `docs/refactoring-targets.md` carries it.
 
 #### What a VOB's bbox is, and why there is no scale gizmo (measured 2026-08-26)
 

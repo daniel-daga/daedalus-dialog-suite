@@ -318,3 +318,27 @@ cannot be torn down, and is not visible from the one place that claims to hold
 the wiring. Fix direction: move the history cleanup subscription into
 `initStoreSync` beside the other two; `useAutoSave.ts:167` is a hook-scoped
 subscription with its own lifecycle and stays where it is.
+
+---
+
+### 16. `SetVobClassProp`'s switch copies each base class's fields per case
+**Files:** `zenkit-node/src/binding.cc` (`ApplyClassProps`' switch)
+
+Every class reads and assigns its inherited fields in full, so the `VTrigger`
+base is spelled out five times — `zCTrigger`, `zCTriggerList`, `zCMover`,
+`oCTriggerChangeLevel`, `oCTriggerScript` — at twenty-six near-identical lines
+each, and `VMovableObject`/`VInteractiveObject` four more times across the
+`oCMob*` family. The read side does not: `normalize.cc` has
+`PutTriggerProps`/`PutMovableObjectProps`/`PutInteractiveObjectProps` and each
+case calls them.
+
+Nothing has drifted — the round-trip table in `test/mutations.test.js` holds
+every catalogued key of every class, so a case that forgot one fails — and the
+cost is paid per *class*, not per field, so it does not grow with the catalogue.
+But a class added to the trigger family is a twenty-six-line paste, which is
+where drift would start. Fix direction: the writer's mirror of the readers —
+`ApplyTriggerProps(env, props, VTrigger&)` and the two movable-object ones,
+each keeping the member-by-member assignment that the "leaves every other field
+alone" test exists to protect. `RequireClassKeys` takes the key list by value,
+so its lists want the same treatment in the same change or they become the new
+place two spellings can disagree.

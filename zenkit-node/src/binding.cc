@@ -1926,19 +1926,54 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (target) untouch.target = std::move(*target);
       break;
     }
-    // The one field this op writes: the script function it calls when it is
-    // about to fire an `OnTrigger`. `target` and the rest of the base
-    // `VTrigger` fields are held out with the rest of the trigger family —
-    // the same "one field, nothing else to hold out yet" shape as
-    // `zCTriggerWorldStart`'s.
+    // The base `VTrigger` fourteen, plus this class's own one: the script
+    // function it calls when it is about to fire an `OnTrigger`. The base
+    // arrived late (2026-09-12) — §16.3 catalogued the class by `function`
+    // alone and the targets landing beside it did not change that, so this was
+    // the one `VTrigger` whose delays and react-to flags nothing could reach.
+    // `s_*` is save-game only, so the class is now complete.
     case zenkit::VirtualObjectType::oCTriggerScript: {
-      RequireClassKeys(env, props, {"target", "vobTarget", "function"}, class_name);
+      RequireClassKeys(env, props,
+                       {"target", "vobTarget", "startEnabled", "sendUntrigger",
+                        "reactToOnTrigger", "reactToOnTouch",
+                        "reactToOnDamage", "respondToObject", "respondToPc", "respondToNpc",
+                        "maxActivationCount", "retriggerDelaySec", "damageThreshold",
+                        "fireDelaySec", "function"},
+                       class_name);
       auto target = OptionalCp1252String(env, props, "target");
       auto vob_target = OptionalCp1252String(env, props, "vobTarget");
+      auto const start_enabled = OptionalBool(env, props, "startEnabled");
+      auto const send_untrigger = OptionalBool(env, props, "sendUntrigger");
+      auto const react_to_on_trigger = OptionalBool(env, props, "reactToOnTrigger");
+      auto const react_to_on_touch = OptionalBool(env, props, "reactToOnTouch");
+      auto const react_to_on_damage = OptionalBool(env, props, "reactToOnDamage");
+      auto const respond_to_object = OptionalBool(env, props, "respondToObject");
+      auto const respond_to_pc = OptionalBool(env, props, "respondToPc");
+      auto const respond_to_npc = OptionalBool(env, props, "respondToNpc");
+      auto const max_activation_count =
+          OptionalInt32(env, props, "maxActivationCount", std::nullopt, std::nullopt);
+      auto const retrigger_delay_sec =
+          OptionalFloatIn(env, props, "retriggerDelaySec", 0, std::nullopt);
+      auto const damage_threshold = OptionalFloatIn(env, props, "damageThreshold", 0, std::nullopt);
+      auto const fire_delay_sec = OptionalFloatIn(env, props, "fireDelaySec", 0, std::nullopt);
       auto function = OptionalCp1252String(env, props, "function");
       auto& trigger_script = static_cast<zenkit::VTriggerScript&>(*vob);
       if (target) trigger_script.target = std::move(*target);
       if (vob_target) trigger_script.vob_target = std::move(*vob_target);
+      if (start_enabled.has_value()) trigger_script.start_enabled = *start_enabled;
+      if (send_untrigger.has_value()) trigger_script.send_untrigger = *send_untrigger;
+      if (react_to_on_trigger.has_value()) trigger_script.react_to_on_trigger = *react_to_on_trigger;
+      if (react_to_on_touch.has_value()) trigger_script.react_to_on_touch = *react_to_on_touch;
+      if (react_to_on_damage.has_value()) trigger_script.react_to_on_damage = *react_to_on_damage;
+      if (respond_to_object.has_value()) trigger_script.respond_to_object = *respond_to_object;
+      if (respond_to_pc.has_value()) trigger_script.respond_to_pc = *respond_to_pc;
+      if (respond_to_npc.has_value()) trigger_script.respond_to_npc = *respond_to_npc;
+      if (max_activation_count.has_value()) {
+        trigger_script.max_activation_count = *max_activation_count;
+      }
+      if (retrigger_delay_sec.has_value()) trigger_script.retrigger_delay_sec = *retrigger_delay_sec;
+      if (damage_threshold.has_value()) trigger_script.damage_threshold = *damage_threshold;
+      if (fire_delay_sec.has_value()) trigger_script.fire_delay_sec = *fire_delay_sec;
       if (function) trigger_script.function = std::move(*function);
       break;
     }
@@ -2116,7 +2151,7 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       RequireClassKeys(env, props,
                        {"focusName", "hp", "damage", "movable", "takable", "focusOverride",
                         "soundMaterial", "visualDestroyed", "owner", "ownerGuild", "destroyed", "stateCount",
-                        "conditionFunction", "onStateChangeFunction", "rewind"},
+                        "target", "conditionFunction", "onStateChangeFunction", "rewind"},
                        class_name);
       auto focus_name = OptionalCp1252String(env, props, "focusName");
       auto const hp = OptionalInt32(env, props, "hp", std::nullopt, std::nullopt);
@@ -2131,6 +2166,11 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       auto owner_guild = OptionalCp1252String(env, props, "ownerGuild");
       auto const destroyed = OptionalBool(env, props, "destroyed");
       auto const state_count = OptionalInt32(env, props, "stateCount", std::nullopt, std::nullopt);
+      // What this mob fires when it is used. The same kind of value as the
+      // trigger family's — a `vobName` in this world — so it is refused where
+      // the world is known (the renderer) and not here. Its siblings `item`
+      // and a door's `key` are Daedalus item instances and stay out.
+      auto target = OptionalCp1252String(env, props, "target");
       auto condition_function = OptionalCp1252String(env, props, "conditionFunction");
       auto on_state_change_function = OptionalCp1252String(env, props, "onStateChangeFunction");
       auto const rewind = OptionalBool(env, props, "rewind");
@@ -2147,6 +2187,7 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (owner_guild) mob.owner_guild = std::move(*owner_guild);
       if (destroyed.has_value()) mob.destroyed = *destroyed;
       if (state_count.has_value()) mob.state_count = *state_count;
+      if (target) mob.target = std::move(*target);
       if (condition_function) mob.condition_function = std::move(*condition_function);
       if (on_state_change_function) mob.on_state_change_function = std::move(*on_state_change_function);
       if (rewind.has_value()) mob.rewind = *rewind;
@@ -2156,7 +2197,7 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       RequireClassKeys(env, props,
                        {"focusName", "hp", "damage", "movable", "takable", "focusOverride",
                         "soundMaterial", "visualDestroyed", "owner", "ownerGuild", "destroyed", "stateCount",
-                        "conditionFunction", "onStateChangeFunction", "rewind", "slot", "vobTree"},
+                        "target", "conditionFunction", "onStateChangeFunction", "rewind", "slot", "vobTree"},
                        class_name);
       auto focus_name = OptionalCp1252String(env, props, "focusName");
       auto const hp = OptionalInt32(env, props, "hp", std::nullopt, std::nullopt);
@@ -2171,6 +2212,11 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       auto owner_guild = OptionalCp1252String(env, props, "ownerGuild");
       auto const destroyed = OptionalBool(env, props, "destroyed");
       auto const state_count = OptionalInt32(env, props, "stateCount", std::nullopt, std::nullopt);
+      // What this mob fires when it is used. The same kind of value as the
+      // trigger family's — a `vobName` in this world — so it is refused where
+      // the world is known (the renderer) and not here. Its siblings `item`
+      // and a door's `key` are Daedalus item instances and stay out.
+      auto target = OptionalCp1252String(env, props, "target");
       auto condition_function = OptionalCp1252String(env, props, "conditionFunction");
       auto on_state_change_function = OptionalCp1252String(env, props, "onStateChangeFunction");
       auto const rewind = OptionalBool(env, props, "rewind");
@@ -2189,6 +2235,7 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (owner_guild) mob.owner_guild = std::move(*owner_guild);
       if (destroyed.has_value()) mob.destroyed = *destroyed;
       if (state_count.has_value()) mob.state_count = *state_count;
+      if (target) mob.target = std::move(*target);
       if (condition_function) mob.condition_function = std::move(*condition_function);
       if (on_state_change_function) mob.on_state_change_function = std::move(*on_state_change_function);
       if (rewind.has_value()) mob.rewind = *rewind;
@@ -2200,7 +2247,7 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       RequireClassKeys(env, props,
                        {"focusName", "hp", "damage", "movable", "takable", "focusOverride",
                         "soundMaterial", "visualDestroyed", "owner", "ownerGuild", "destroyed", "stateCount",
-                        "conditionFunction", "onStateChangeFunction", "rewind", "locked",
+                        "target", "conditionFunction", "onStateChangeFunction", "rewind", "locked",
                         "pickString", "contents"},
                        class_name);
       auto focus_name = OptionalCp1252String(env, props, "focusName");
@@ -2216,6 +2263,11 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       auto owner_guild = OptionalCp1252String(env, props, "ownerGuild");
       auto const destroyed = OptionalBool(env, props, "destroyed");
       auto const state_count = OptionalInt32(env, props, "stateCount", std::nullopt, std::nullopt);
+      // What this mob fires when it is used. The same kind of value as the
+      // trigger family's — a `vobName` in this world — so it is refused where
+      // the world is known (the renderer) and not here. Its siblings `item`
+      // and a door's `key` are Daedalus item instances and stay out.
+      auto target = OptionalCp1252String(env, props, "target");
       auto condition_function = OptionalCp1252String(env, props, "conditionFunction");
       auto on_state_change_function = OptionalCp1252String(env, props, "onStateChangeFunction");
       auto const rewind = OptionalBool(env, props, "rewind");
@@ -2239,6 +2291,7 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (owner_guild) mob.owner_guild = std::move(*owner_guild);
       if (destroyed.has_value()) mob.destroyed = *destroyed;
       if (state_count.has_value()) mob.state_count = *state_count;
+      if (target) mob.target = std::move(*target);
       if (condition_function) mob.condition_function = std::move(*condition_function);
       if (on_state_change_function) mob.on_state_change_function = std::move(*on_state_change_function);
       if (rewind.has_value()) mob.rewind = *rewind;
@@ -2251,7 +2304,7 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       RequireClassKeys(env, props,
                        {"focusName", "hp", "damage", "movable", "takable", "focusOverride",
                         "soundMaterial", "visualDestroyed", "owner", "ownerGuild", "destroyed", "stateCount",
-                        "conditionFunction", "onStateChangeFunction", "rewind", "locked",
+                        "target", "conditionFunction", "onStateChangeFunction", "rewind", "locked",
                         "pickString"},
                        class_name);
       auto focus_name = OptionalCp1252String(env, props, "focusName");
@@ -2267,6 +2320,11 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       auto owner_guild = OptionalCp1252String(env, props, "ownerGuild");
       auto const destroyed = OptionalBool(env, props, "destroyed");
       auto const state_count = OptionalInt32(env, props, "stateCount", std::nullopt, std::nullopt);
+      // What this mob fires when it is used. The same kind of value as the
+      // trigger family's — a `vobName` in this world — so it is refused where
+      // the world is known (the renderer) and not here. Its siblings `item`
+      // and a door's `key` are Daedalus item instances and stay out.
+      auto target = OptionalCp1252String(env, props, "target");
       auto condition_function = OptionalCp1252String(env, props, "conditionFunction");
       auto on_state_change_function = OptionalCp1252String(env, props, "onStateChangeFunction");
       auto const rewind = OptionalBool(env, props, "rewind");
@@ -2285,6 +2343,7 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (owner_guild) mob.owner_guild = std::move(*owner_guild);
       if (destroyed.has_value()) mob.destroyed = *destroyed;
       if (state_count.has_value()) mob.state_count = *state_count;
+      if (target) mob.target = std::move(*target);
       if (condition_function) mob.condition_function = std::move(*condition_function);
       if (on_state_change_function) mob.on_state_change_function = std::move(*on_state_change_function);
       if (rewind.has_value()) mob.rewind = *rewind;

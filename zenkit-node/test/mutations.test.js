@@ -2007,8 +2007,14 @@ const CLASS_PROP_ROUND_TRIP = [
   // `zCTriggerWorldStart` carries the target and no `vobTarget`: it derives
   // from `zCVob`, not from `VTrigger` (`Trigger.hh`).
   ['1/10', 'zCTriggerWorldStart', { target: 'OTHER_WORLDSTART_TARGET_ÄÖÜ', fireOnce: false }],
+  // Its own `function` plus the base `VTrigger` twelve, which §16.3 never gave
+  // it — the values differ from `1/12`'s so a case that reached the wrong
+  // object could not pass.
   ['1/11', 'oCTriggerScript', {
     target: 'OTHER_SCRIPT_TARGET', vobTarget: 'OTHER_SCRIPT_VOBTARGET_ÄÖÜ',
+    startEnabled: true, sendUntrigger: true, reactToOnTrigger: true, reactToOnTouch: false,
+    reactToOnDamage: true, respondToObject: false, respondToPc: true, respondToNpc: false,
+    maxActivationCount: 7, retriggerDelaySec: 2.5, damageThreshold: 13.25, fireDelaySec: 1.5,
     function: 'SCRIPTFUNC_OTHER_ÄÖÜ',
   }],
   ['1/12', 'zCTrigger', {
@@ -2048,6 +2054,9 @@ const CLASS_PROP_ROUND_TRIP = [
     owner: 'PC_OTHER',
     ownerGuild: 'GIL_NOV', destroyed: true, stateCount: 4, conditionFunction: 'OTHER_CONDITION',
     onStateChangeFunction: 'OTHER_ON_STATE_CHANGE', rewind: false,
+    // What a mob fires when it is *used*, catalogued 2026-09-12 on
+    // `VInteractiveObject` — so every row below carries one too.
+    target: 'OTHER_LEVER_TARGET_ÄÖÜ',
   }],
   ['1/17', 'oCMobFire', {
     focusName: 'FOCUS_OTHER_CAMPFIRE_ÄÖÜ', hp: 1, damage: 0, movable: false, takable: false,
@@ -2055,6 +2064,7 @@ const CLASS_PROP_ROUND_TRIP = [
     owner: 'PC_OTHER',
     ownerGuild: 'GIL_NOV', destroyed: true, stateCount: 2, conditionFunction: 'OTHER_CONDITION',
     onStateChangeFunction: 'OTHER_ON_STATE_CHANGE', rewind: true,
+    target: 'OTHER_FIRE_TARGET',
     slot: 'BIP01 OTHER FIRE ÄÖÜ', vobTree: 'FIRETREE_OTHER.ZEN',
   }],
   ['1/18', 'oCMobContainer', {
@@ -2063,6 +2073,7 @@ const CLASS_PROP_ROUND_TRIP = [
     owner: 'PC_OTHER',
     ownerGuild: 'GIL_NOV', destroyed: true, stateCount: 2, conditionFunction: 'OTHER_CONDITION',
     onStateChangeFunction: 'OTHER_ON_STATE_CHANGE', rewind: true,
+    target: 'OTHER_CHEST_TARGET',
     locked: false, pickString: 'RLLR ÄÖÜ',
     // The archive's own `contains` string, written as given (§16.26 row 2);
     // the fixture chest holds 'ItMi_Gold:75, ItFo_Fish:2'.
@@ -2078,6 +2089,7 @@ const CLASS_PROP_ROUND_TRIP = [
     owner: 'PC_OTHER',
     ownerGuild: 'GIL_NOV', destroyed: true, stateCount: 2, conditionFunction: 'OTHER_CONDITION',
     onStateChangeFunction: 'OTHER_ON_STATE_CHANGE', rewind: true,
+    target: 'OTHER_DOOR_TARGET_ÄÖÜ',
     locked: false, pickString: 'LLRR ÄÖÜ',
   }],
 ];
@@ -2138,7 +2150,7 @@ test('setVobClassProp writes every oCMobInter field on a placed oCMobBed', () =>
   const props = {
     focusName: 'FOCUS_OTHER_BED_ÄÖÜ', hp: 33, damage: 2, movable: true, takable: true,
     focusOverride: true, visualDestroyed: 'BED_OTHER_DESTROYED.MMS', owner: 'PC_OTHER',
-    ownerGuild: 'GIL_NOV', destroyed: true, stateCount: 3,
+    ownerGuild: 'GIL_NOV', destroyed: true, stateCount: 3, target: 'OTHER_BED_TARGET_ÄÖÜ',
     conditionFunction: 'OTHER_CONDITION', onStateChangeFunction: 'OTHER_ON_STATE_CHANGE',
     rewind: true,
   };
@@ -2150,10 +2162,10 @@ test('setVobClassProp writes every oCMobInter field on a placed oCMobBed', () =>
     assert.deepStrictEqual(read[key], value, `oCMobBed.${key}`);
   }
   // And the fields of the class this op deliberately cannot reach: an enum and
-  // the two cross-reference strings held out of the catalogue. A case that
-  // assigned a whole struct rather than member by member would reset them.
+  // `item`, the one cross-reference string still held out of the catalogue —
+  // `target` joined it 2026-09-12 and is written above. A case that assigned a
+  // whole struct rather than member by member would reset them.
   assert.strictEqual(read.soundMaterial, 0);
-  assert.strictEqual(read.target, '');
   assert.strictEqual(read.item, '');
 });
 
@@ -2161,7 +2173,7 @@ test('setVobClassProp refuses a foreign key on an oCMobBed, naming the bed', () 
   const handle = load();
   const at = zenkit.insertVob(handle, null, { class: 'oCMobBed', position: [0, 0, 0] });
 
-  // A door's, a fire's and a light's — the bed takes the interactive fourteen
+  // A door's, a fire's and a light's — the bed takes the interactive fifteen
   // and nothing beside them.
   assert.throws(() => zenkit.setVobClassProp(handle, at, { locked: false }), /oCMobBed/);
   assert.throws(() => zenkit.setVobClassProp(handle, at, { slot: 'X' }), /oCMobBed/);

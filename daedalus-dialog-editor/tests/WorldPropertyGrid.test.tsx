@@ -147,7 +147,7 @@ const CHEST: ClassProps = {
   class: 'oCMobContainer',
   focusName: '', hp: 20, damage: 0, movable: false, takable: false,
   focusOverride: false, soundMaterial: 0, visualDestroyed: '', owner: '', ownerGuild: '',
-  destroyed: false, stateCount: 1, conditionFunction: '',
+  destroyed: false, stateCount: 1, conditionFunction: '', target: '',
   onStateChangeFunction: '', rewind: false, locked: false, pickString: '',
   ...BASE_READ,
 };
@@ -155,7 +155,7 @@ const BED: ClassProps = {
   class: 'oCMobBed',
   focusName: '', hp: 20, damage: 0, movable: false, takable: false,
   focusOverride: false, soundMaterial: 0, visualDestroyed: '', owner: '', ownerGuild: '',
-  destroyed: false, stateCount: 1, conditionFunction: '',
+  destroyed: false, stateCount: 1, conditionFunction: '', target: '',
   onStateChangeFunction: '', rewind: false, ...BASE_READ,
 };
 /** A trigger wired to the mover above it. Only the two targets matter here;
@@ -1504,6 +1504,42 @@ describe('WorldPropertyGrid, typed rotation', () => {
         <WorldPropertyGrid summary={WORLD} selection={[9]} {...wiring} classProps={{ ...TRIGGER, target: '' }} />,
       );
 
+      expect(screen.queryByTestId('world-prop-class-target-warning')).not.toBeInTheDocument();
+    });
+
+    // The movable-object family's own target, catalogued 2026-09-12: a mob
+    // fires it when it is *used*, and it is the same kind of `vobName`, so the
+    // grid's check is the same one — by key, not by class.
+    it('warns on a mob`s target too, which is what the mob fires when used', () => {
+      // 8, the bed — not 9: the grid takes the class from the world's own
+      // index, so a mob's props rendered against the trigger at 9 would draw
+      // the trigger's catalogue and prove nothing about the mob's.
+      render(
+        <WorldPropertyGrid
+          summary={WORLD}
+          selection={[8]}
+          {...wiring}
+          classProps={{ ...BED, target: 'GATE_MOVR' }}
+        />,
+      );
+
+      expect(screen.getByTestId('world-prop-class-target-warning')).toBeInTheDocument();
+      expect(input('class-target').value).toBe('GATE_MOVR');
+    });
+
+    it('says nothing about a mob wired to a VOB that is there', () => {
+      render(
+        <WorldPropertyGrid
+          summary={WORLD}
+          selection={[8]}
+          {...wiring}
+          classProps={{ ...BED, target: 'GATE_MOVER' }}
+        />,
+      );
+
+      // The field itself, so a catalogue that dropped the key could not pass
+      // this by drawing nothing at all.
+      expect(input('class-target').value).toBe('GATE_MOVER');
       expect(screen.queryByTestId('world-prop-class-target-warning')).not.toBeInTheDocument();
     });
 

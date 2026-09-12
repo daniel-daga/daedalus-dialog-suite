@@ -373,6 +373,14 @@ is still a question only a candidate answers.
 `oCZoneMusic.volume` is dropped by decision, below. And five of the
 27 authorable classes have been seen in an engine.
 
+**And the cross-reference strings, since 2026-09-12** — the trigger family's
+`target`/`vobTarget`/`failureTarget` and, with #259, `VInteractiveObject`'s own
+`target`. These are scalar `string` writes on classes Gate 2b already played, so
+the pipeline half is the same one it witnessed; what no candidate has shown is
+an authored wiring *firing* — a trigger written here actually reaching the mover
+it names, or a mob firing what it was given. That is one candidate away and
+worth folding into the next one.
+
 **Why, and the candidate that answers it — `06-minimal-frame`, built
 2026-08-28.** The instrument, not the ops: retail NewWorld masks every one of
 those signals, and a candidate is only an A/B if the edit is the only thing in
@@ -474,8 +482,8 @@ longer the constraint and the class list is again. Left: the rest of the trigger
 family, `oCMob*` — each one C++ case plus one `CLASS_FIELDS` entry plus its
 tests.
 
-**The trigger family's targets landed 2026-09-12**, which retires most of the
-"held out with the rest of the family's target strings" sentences below: read
+**The trigger family's targets landed 2026-09-12**, which retires every
+"held out with the rest of the family's target strings" sentence below: read
 them as history. `target` and `vobTarget` are catalogued on every `VTrigger`
 class, `target` alone on `zCTriggerWorldStart` and `zCTriggerUntouch` (neither
 derives from `VTrigger`), `target` on `zCMessageFilter`, and `target` plus
@@ -483,8 +491,17 @@ derives from `VTrigger`), `target` on `zCMessageFilter`, and `target` plus
 entry and a C++ case for the first time. The decisions — why the IPC validator
 gained nothing, why a dangling target warns instead of refusing, and the
 `VTriggerList::target` shadowing trap — are architecture §7, *"What a trigger
-fires at"*. Still out: the `targets` and `slaves` lists, and the movable-object
-family's own `target`.
+fires at"*.
+
+**The two remainders closed the same day (#259).** `VInteractiveObject.target`
+is catalogued too, so every `oCMob*` class but the plain `oCMOB` can be wired to
+what it fires when used; and `oCTriggerScript` has the base `VTrigger` fourteen
+it never got here, which makes it the complete class it always could have been.
+Both took the trigger change's three decisions unchanged — no validator branch,
+a grid warning by key rather than by class, member-by-member C++ — and the
+architecture entry carries them. Still out, and by a rule none of this touches:
+the `targets` and `slaves` **lists**, and the family's item-instance strings
+`item` and a door's `key`, which want the renderer's *other* index.
 
 `zCVobAnimate` landed 2026-08-28: its one field, `startOn`, needed no enum and
 no decision — `s_is_running` is save-game only, exactly as the header marks
@@ -503,8 +520,8 @@ stays out with the rest of the trigger family's target strings, and
 `oCTriggerScript` landed its one non-enum, non-list field 2026-08-28:
 `function` (the script function it calls before firing an `OnTrigger`),
 already read on the get side (`normalize.cc`'s `PutTriggerProps`/case). The
-base `VTrigger` fields it inherits (`target` among them) stay out with the
-rest of the family's target strings and base fields. `zCTriggerUntouch` and
+base `VTrigger` fields it inherits followed on 2026-09-12 (#259), which is
+what the note at the top of this section is about. `zCTriggerUntouch` and
 `zCTriggerList` turned out to have **no** eligible field at all once enums,
 lists and `target` were excluded — `zCTriggerUntouch` is `target` alone, and
 `zCTriggerList` is `mode` (enum) and `targets` (list). **The enum half of that
@@ -589,10 +606,11 @@ empty `struct : VInteractiveObject` in `MovableObject.hh`, so they share
 `oCMobInter`'s exact field set and its C++ case, one `case` label falling
 through to the next). The base nine plus `oCMobInter`'s own four eligible
 fields — `stateCount`, `conditionFunction`, `onStateChangeFunction`, `rewind`.
-`target` stays out with the rest of the family's cross-reference strings; the
-`item` decision flagged above was resolved the same way — held out, for the
-same reason: the editor's `oCItem.instance` index check does not extend to it,
-and a class-property write is not the layer to grow that check in. Appended to
+`target` joined them 2026-09-12 (#259), in the position the class declares it;
+the `item` decision flagged above was resolved the other way — held out,
+because the editor's `oCItem.instance` index check does not extend to it, and a
+class-property write is not the layer to grow that check in. The target never
+needed that check: it names a VOB in this world, not a script symbol. Appended to
 `BuildVisualVobTree` at path `1/16` (one fixture VOB of type `oCMobInter`
 stands in for all four — the C++ case and the field set are identical for the
 other three, so a second fixture would round-trip the same code path).
@@ -1511,18 +1529,19 @@ four of the five.
 say `zCTrigger…`. The spoken forms stay refused, and both test suites keep
 `zCTriggerScript` in their bad-class list for exactly that reason.
 
-**A placed trigger fires at nothing, and that is the finding to carry forward.**
-`target` and `vobTarget` are held out of the catalogue with the rest of the
-family's cross-reference strings, so nothing in the editor can tell a placed
-trigger where to send its `OnTrigger`. It is not a defect of the construction —
-the same is true of every retail trigger the grid can already *edit* — but it
-does mean placement alone does not yet produce a working trigger. Three of the
-seven go further: `zCTriggerList`, `zCCodeMaster` and `zCMessageFilter` are
-configured only by lists (`targets`, `slaves`) and enums (`mode`,
-`onTrigger`/`onUntrigger`), and the catalogue holds neither, so a placed one has
-**no editable field of its own at all**. Authorable-with-nothing-catalogued is
-therefore a real state since I3, and `zen-world`'s invariant test now says so
-rather than forbidding it. The one member that works unaided is `zCMover`: it
+**A placed trigger fired at nothing, and that was the finding to carry forward
+— closed 2026-09-12.** `target` and `vobTarget` were held out of the catalogue
+with the rest of the family's cross-reference strings, so nothing in the editor
+could tell a placed trigger where to send its `OnTrigger`, and the same was true
+of every retail trigger the grid could already *edit*. Both are catalogued now
+(§16.3, and architecture §7 for the decisions), so placement alone produces a
+trigger that can be wired. What is still not editable on a placed one is the
+lists: `zCTriggerList`'s `targets` and `zCCodeMaster`'s `slaves`. The enums that
+were the other half of this finding landed 2026-08-30, so
+authorable-with-nothing-catalogued is no longer a state any trigger class is in
+— `zen-world`'s invariant test permits it rather than forbidding it, and the
+classes left in it declare no field at all (`zCVob`, `zCVobSpot`,
+`zCVobStartpoint`). The one member that works unaided is still `zCMover`: it
 runs its visual's animation, needing neither a target nor keyframes.
 
 **One default is chosen against its own measurement, and the round-trip test is

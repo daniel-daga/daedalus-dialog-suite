@@ -130,7 +130,13 @@ describe('the per-class field catalogue', () => {
     // has of its own — see "leaves the rest of VTrigger out" below.
     expect(classPropKeys('zCTriggerWorldStart')).toEqual(['target', 'fireOnce']);
     expect(fieldOf('zCTriggerWorldStart', 'fireOnce')).toEqual({ key: 'fireOnce', kind: 'bool' });
-    expect(classPropKeys('oCTriggerScript')).toEqual(['target', 'vobTarget', 'function']);
+    expect(classPropKeys('oCTriggerScript')).toEqual([
+      'target', 'vobTarget',
+      'startEnabled', 'sendUntrigger', 'reactToOnTrigger', 'reactToOnTouch', 'reactToOnDamage',
+      'respondToObject', 'respondToPc', 'respondToNpc', 'maxActivationCount',
+      'retriggerDelaySec', 'damageThreshold', 'fireDelaySec',
+      'function',
+    ]);
     expect(fieldOf('oCTriggerScript', 'function')).toEqual({ key: 'function', kind: 'string' });
     expect(classPropKeys('zCTrigger')).toEqual([
       'target', 'vobTarget',
@@ -192,22 +198,22 @@ describe('the per-class field catalogue', () => {
     expect(fieldOf('oCMOB', 'owner')).toEqual({ key: 'owner', kind: 'string' });
     expect(fieldOf('oCMOB', 'soundMaterial'))
       .toEqual({ key: 'soundMaterial', kind: 'enum' });
-    // `oCMobInter` — the base nine plus its own four; `target` (a cross-
-    // reference, held out with the rest of the family's target strings) and
-    // `item` (a script item-instance name, a decision point of its own) stay
-    // out. `oCMobBed`/`Ladder`/`Switch`/`Wheel` add nothing beyond `oCMobInter`,
-    // so they share the same key set.
+    // `oCMobInter` — the base nine plus its own five, `target` among them in
+    // the position `VInteractiveObject` declares it. `item` (a script
+    // item-instance name, a decision point of its own) is the one field of the
+    // class still out. `oCMobBed`/`Ladder`/`Switch`/`Wheel` add nothing beyond
+    // `oCMobInter`, so they share the same key set.
     const OC_MOB_INTER_KEYS = [
       'focusName', 'hp', 'damage', 'movable', 'takable', 'focusOverride',
       'soundMaterial', 'visualDestroyed', 'owner', 'ownerGuild', 'destroyed',
-      'stateCount', 'conditionFunction', 'onStateChangeFunction', 'rewind',
+      'stateCount', 'target', 'conditionFunction', 'onStateChangeFunction', 'rewind',
     ];
     for (const className of ['oCMobInter', 'oCMobBed', 'oCMobLadder', 'oCMobSwitch', 'oCMobWheel']) {
       expect(classPropKeys(className)).toEqual(OC_MOB_INTER_KEYS);
     }
     expect(fieldOf('oCMobInter', 'stateCount')).toEqual({ key: 'stateCount', kind: 'int' });
     expect(fieldOf('oCMobInter', 'rewind')).toEqual({ key: 'rewind', kind: 'bool' });
-    expect(fieldOf('oCMobInter', 'target')).toBeNull();
+    expect(fieldOf('oCMobInter', 'target')).toEqual({ key: 'target', kind: 'string' });
     expect(fieldOf('oCMobInter', 'item')).toBeNull();
     // `oCMobFire` — the base nine plus its own two plain strings (a rigged
     // model's bone, and the fire-effect template file). Neither names a script
@@ -358,21 +364,37 @@ describe('the per-class field catalogue', () => {
     }
   });
 
-  // The two classes whose own fields are the pair's exception: their targets
-  // are in and the other ten `VTrigger` fields are not, which is the state
-  // §16.3 left them in and is not what this change is about.
-  it('leaves the rest of VTrigger out of oCTriggerScript, which is a VTrigger', () => {
-    expect(classPropKeys('oCTriggerScript')).toEqual(['target', 'vobTarget', 'function']);
+  // `oCTriggerScript` is a `VTrigger` and carried three of its fourteen fields:
+  // the pair of targets the change above gave the whole family, and its own
+  // `function`. The other twelve were never added when §16.3 catalogued the
+  // class, which left it the one `VTrigger` a designer could set no delay and
+  // no react-to flag on.
+  it('gives oCTriggerScript the whole VTrigger base, not just its targets', () => {
+    expect(classPropKeys('oCTriggerScript'))
+      .toEqual([...classPropKeys('zCTrigger'), 'function']);
+    expect(fieldOf('oCTriggerScript', 'fireDelaySec'))
+      .toEqual({ key: 'fireDelaySec', kind: 'float', min: 0 });
+    expect(fieldOf('oCTriggerScript', 'respondToNpc'))
+      .toEqual({ key: 'respondToNpc', kind: 'bool' });
   });
 
-  // The movable-object family's own `target` is the same kind of string and is
-  // deliberately not in this slice: a mob's target is what it fires when it is
-  // *used*, and the family's other cross-references (`item`, `key`) are
-  // Daedalus symbols the renderer would have to check a different index for.
-  it('leaves the movable-object family`s target where it was', () => {
-    for (const className of ['oCMobInter', 'oCMobDoor', 'oCMobContainer']) {
-      expect(fieldOf(className, 'target')).toBeNull();
+  // The movable-object family's own `target` is the same kind of string as the
+  // trigger family's — a `vobName` in this world — and it is what a mob fires
+  // when it is *used*. It arrives with `VInteractiveObject`, so every `oCMob*`
+  // class but the plain `oCMOB` carries it.
+  it('gives the interactive-object family its own target, and still not `item`', () => {
+    for (const className of ['oCMobInter', 'oCMobBed', 'oCMobLadder', 'oCMobSwitch',
+      'oCMobWheel', 'oCMobFire', 'oCMobDoor', 'oCMobContainer']) {
+      expect(fieldOf(className, 'target')).toEqual({ key: 'target', kind: 'string' });
+      // Still out, and by a rule this change does not touch: `item` and a
+      // door's `key` are Daedalus item instances, which the renderer would
+      // have to check against the project's item index rather than against
+      // the world's own names.
+      expect(fieldOf(className, 'item')).toBeNull();
     }
+    // A plain movable object is a `VMovableObject` and declares no target at
+    // all — the field arrives one level down.
+    expect(fieldOf('oCMOB', 'target')).toBeNull();
   });
 
   it('places the whole trigger family, under the names the archive uses', () => {

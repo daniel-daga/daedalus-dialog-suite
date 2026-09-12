@@ -830,6 +830,44 @@ describe('assertApplyOpsRequest', () => {
       }
     });
 
+    it('accepts what a VOB is wired to, on a trigger and on a mob alike', () => {
+      // The layer every other suite mocks past, on the two key sets that
+      // arrived 2026-09-12: the `VTrigger` base `oCTriggerScript` never got,
+      // and `VInteractiveObject.target`. There is no branch here for either —
+      // a `vobName` has no grammar, so the catalogue's `string` kind is the
+      // whole shape check — which is exactly why the catalogue entry has to be
+      // pinned from this side too.
+      const wired: Array<[string, string, unknown, unknown]> = [
+        ['oCTriggerScript', 'target', 'OLD_GATE', 'GATE_MOVER'],
+        ['oCTriggerScript', 'fireDelaySec', 0, 1.5],
+        ['oCTriggerScript', 'respondToNpc', false, true],
+        ['oCTriggerScript', 'maxActivationCount', -1, 3],
+        ['oCMobInter', 'target', '', 'GATE MOVER'],
+        ['oCMobBed', 'target', '', 'SLEEPER'],
+        ['oCMobDoor', 'target', '', 'DOOR_TRIGGER_ÄÖÜ'],
+        ['oCMobContainer', 'target', '', 'CHEST_TRIGGER'],
+        ['oCMobFire', 'target', '', 'FIRE_TRIGGER'],
+      ];
+      for (const [className, key, from, to] of wired) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{
+            op: 'SetVobClassProp', vob: 3, path: '0/4', className, from: { [key]: from }, to: { [key]: to },
+          }],
+        })).not.toThrow();
+      }
+      // And the one the family still holds out, so this stays a statement about
+      // `target` rather than about cross-references in general: `item` and a
+      // door's `key` are Daedalus item instances, and the index that would
+      // answer for them is the renderer's.
+      for (const [className, key] of [['oCMobInter', 'item'], ['oCMobDoor', 'key']]) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{
+            op: 'SetVobClassProp', vob: 3, path: '0/4', className, from: { [key]: '' }, to: { [key]: 'ITKE_X' },
+          }],
+        })).toThrow(new RegExp(`has no class property ${key}`));
+      }
+    });
+
     it('refuses an item instance that is not the shape of a Daedalus symbol', () => {
       // `oCItem.instance` is the one class field whose value is a *name in
       // another file*, and ZenGin crashes on one no script declares

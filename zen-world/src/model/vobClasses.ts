@@ -312,13 +312,17 @@ const ZC_TRIGGER_UNTOUCH_FIELDS = [
   { key: 'target', kind: 'string' },
 ] as const satisfies readonly FieldDescriptor[];
 
-/** The one non-enum, non-list field `oCTriggerScript` has beyond the base
- *  `VTrigger` fields it holds out with the rest of the family: the script
- *  function it calls when it is about to fire an `OnTrigger`. `target` stays
- *  out with the rest of the family's target strings — the same "one field,
- *  nothing else to hold out yet" shape as `zCTriggerWorldStart`'s. */
+/** The base `VTrigger` fourteen, plus the one field `oCTriggerScript` declares
+ *  of its own: the script function it calls when it is about to fire an
+ *  `OnTrigger`.
+ *
+ *  The base was missing until 2026-09-12 — §16.3 catalogued the class by its
+ *  own field alone and the targets landing beside it did not change that, so
+ *  this was the one `VTrigger` whose delays and react-to flags no grid could
+ *  reach. Nothing on the class is held out now: `s_*` is save-game only, and
+ *  it declares no list and no enum. */
 const OC_TRIGGER_SCRIPT_FIELDS = [
-  ...VTRIGGER_TARGET_FIELDS,
+  ...ZC_TRIGGER_FIELDS,
   { key: 'function', kind: 'string' },
 ] as const satisfies readonly FieldDescriptor[];
 
@@ -465,16 +469,26 @@ const OC_MOB_FIELDS = [
   { key: 'destroyed', kind: 'bool' },
 ] as const satisfies readonly FieldDescriptor[];
 
-/** The base nine plus the four `VInteractiveObject` adds. `target` stays out
- *  with the rest of the family's cross-reference strings; `item` (a script
- *  item-instance name) is a decision point of its own — the editor's
- *  `oCItem.instance` index check does not currently extend to it. Nothing else
- *  is a list or save-game-only. `oCMobBed`, `oCMobLadder`, `oCMobSwitch` and
- *  `oCMobWheel` add nothing of their own beyond `oCMobInter`, so they share
- *  this array. */
+/** The base nine plus the five `VInteractiveObject` adds, `target` among them
+ *  since 2026-09-12 and in the position the class declares it — this is the
+ *  same kind of string the trigger family's is, a `vobName` in this world, and
+ *  it is what a mob fires when it is *used*. It is checked the same way, too:
+ *  a `string` here and in the IPC validator, and a warning in the grid when
+ *  the world holds no VOB by that name (architecture §7).
+ *
+ *  Unlike the trigger family's it is *not* moved to the front of the class: a
+ *  trigger is opened to see what it fires, a mob is opened to see what it is.
+ *
+ *  `item` (a script item-instance name) is the one field of the class still
+ *  out, and it is a decision point of its own — it would be checked against
+ *  the project's item index the way `oCItem.instance` is, not against the
+ *  world's names. Nothing else is a list or save-game-only. `oCMobBed`,
+ *  `oCMobLadder`, `oCMobSwitch` and `oCMobWheel` add nothing of their own
+ *  beyond `oCMobInter`, so they share this array. */
 const OC_MOB_INTER_FIELDS = [
   ...OC_MOB_FIELDS,
   { key: 'stateCount', kind: 'int' },
+  { key: 'target', kind: 'string' },
   { key: 'conditionFunction', kind: 'string' },
   { key: 'onStateChangeFunction', kind: 'string' },
   { key: 'rewind', kind: 'bool' },
