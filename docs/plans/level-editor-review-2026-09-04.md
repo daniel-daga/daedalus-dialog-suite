@@ -220,17 +220,27 @@ a caller bug (the worker or the blender bridge swapping arguments), but it is
 the one argument hole that is memory-unsafe rather than a wrong answer.
 `napi_type_tag_object`/`CheckTypeTag` closes it.
 
-### 2.13 `zCVob` position/rotation/bbox accept NaN and ±Infinity in the binding — **PART FIXED 2026-09-04**
+### 2.13 `zCVob` position/rotation/bbox accept NaN and ±Infinity in the binding — **FIXED, bar one diagnostic (re-read 2026-09-12)**
 
-`Vec3FromValue` (`binding.cc:595`) and `FloatsFromValue` (`:1055`) cast
-unchecked, unlike every class-prop float. `ipcValidation.ts:585` guards the
-app's path; the blender bridge does not (`JSON.parse('1e400')` is `Infinity`
-and `session.js` forwards `params.position` straight through). The README
-calls the binding's bounds "the copy that is load-bearing" — here it is not.
-Two unchecked `double → size_t` casts are UB besides (`:3191` `reparentVob`
-slot admits `1e300`/`Infinity`; `:339` `_drillMesh` offset admits NaN), and
-waypoint indices go through `Int64Value()` with no integrality check
-(`:663, :704, :832, :920`).
+As written, this said `Vec3FromValue` and `FloatsFromValue` cast unchecked and
+that two `double → size_t` casts were UB besides. **Three of the four are now
+closed and the text above was stale:** both float helpers reject a non-finite
+component by name, with the comment saying why — a NaN or an infinity is a
+number the engine reads back and computes with — and `reparentVob`'s slot
+refuses anything not a non-negative whole number before the cast.
+
+What is left is `_drillMesh`'s window (`read_size`), which rejects a negative
+but not a NaN or an infinity, so the `static_cast<std::size_t>` is still UB.
+It is **not on any path a user reaches**: `_drillMesh` is exported for the
+fidelity harness and its own tests, and nothing in the editor, `zen-world` or
+the blender bridge calls it. So it is a latent defect in a diagnostic, which is
+why it has not been given an issue of its own — a `std::isfinite` check beside
+the `number < 0` one closes it in a line whenever that file is next open.
+
+Waypoint indices still go through `Int64Value()` with no integrality check, so
+`1.5` truncates to `1` rather than being refused. Every one of them is
+range-checked against the payload afterwards, so the effect is leniency, not a
+bad index.
 
 ### 2.14 `WorldFoldersService.save` is unserialized with a fixed temp name — **FIXED 2026-09-04**
 
