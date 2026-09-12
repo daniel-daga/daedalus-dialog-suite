@@ -736,9 +736,11 @@ concern. A person should pick.
 2026-09-11 — see each item for what was done and, for 19 and 22, for what the
 finding got wrong. **Delete-with-N>1** (§5.1 item 5) was the last of them and
 was a decision rather than a fix: Daniel took the batch over the tooltip on
-2026-09-11, and a selection now deletes in one batch (§15). What is left of
-#253 is the other half of it — Duplicate is bound to no key, and Spacer's own
-binding is worth checking before one is invented.
+2026-09-11, and a selection now deletes in one batch (§15). The other half of
+it — Duplicate bound to no key — **landed 2026-09-12** and closed #253:
+**Ctrl+D**, taken as the convention Blender, Unity and Unreal share rather than
+from Spacer, whose own binding nobody here has been able to check. If Spacer
+turns out to disagree, this is one line to change.
 
 ## 7. What is not in this document
 

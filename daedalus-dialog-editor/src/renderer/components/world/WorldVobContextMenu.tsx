@@ -50,9 +50,10 @@ export interface WorldVobContextMenuProps {
   onCreateFolderWithSelection: (name: string) => void;
 }
 
-/** The key a menu item names, set to the right of its label. Only where one
- *  exists: Duplicate is bound to nothing, and a hint invented for it would be
- *  a shortcut that does not work. */
+/** The key a menu item names, set to the right of its label. Every item that
+ *  has one shows it — Duplicate was the exception until it got Ctrl+D (#253),
+ *  because a hint invented for an unbound command is a shortcut that does not
+ *  work. */
 const Shortcut: React.FC<{ keys: string }> = ({ keys }) => (
   <Typography variant="caption" color="text.secondary" sx={{ ml: 3 }}>{keys}</Typography>
 );
@@ -113,6 +114,7 @@ const WorldVobContextMenu: React.FC<WorldVobContextMenuProps> = ({
       <MenuItem onClick={run(onDuplicate)} disabled={selectionCount === 0} data-testid="world-context-duplicate">
         <ListItemIcon><ContentCopyIcon fontSize="small" /></ListItemIcon>
         <ListItemText>{selectionCount > 1 ? `Duplicate ${selectionCount} VOBs` : 'Duplicate VOB'}</ListItemText>
+        <Shortcut keys="Ctrl+D" />
       </MenuItem>
       <MenuItem onClick={run(onCopy)} disabled={selectionCount === 0} data-testid="world-context-copy">
         <ListItemIcon><ContentCopyIcon fontSize="small" /></ListItemIcon>

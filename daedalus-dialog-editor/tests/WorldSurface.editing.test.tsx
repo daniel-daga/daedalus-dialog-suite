@@ -1333,6 +1333,55 @@ describe('duplicating a VOB', () => {
     expect(screen.getByTestId('world-delete-vob')).toHaveAccessibleName('Delete 2 VOBs');
   });
 
+  it('is bound to Ctrl+D, the key every level editor duplicates with (#253)', async () => {
+    // It was bound to nothing, so the context menu showed a blank shortcut
+    // slot beside Frame, Copy, Paste and Delete. Daniel, 2026-09-12: Ctrl+D.
+    const summary = await openWorld();
+    api.refreshWorldIndex.mockResolvedValueOnce(summary as never);
+
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    await act(async () => { fireEvent.keyDown(window, { key: 'd', ctrlKey: true }); });
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    expect(ops[0]).toMatchObject({ op: 'AddVob' });
+  });
+
+  it('duplicates the whole selection on Ctrl+D, as the button does', async () => {
+    const summary = await openWorld();
+    api.refreshWorldIndex.mockResolvedValueOnce(summary as never);
+
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    await act(async () => { useWorldStore.getState().toggleVob(0); });
+    await act(async () => { fireEvent.keyDown(window, { key: 'd', ctrlKey: true }); });
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    expect(ops.filter((op) => op.op === 'AddVob')).toHaveLength(2);
+  });
+
+  it('does nothing on Ctrl+D with nothing selected', async () => {
+    // A duplicate of nothing is an empty batch, which would still be an undo
+    // entry — and Ctrl+D in a browser is a bookmark, so an unclaimed keystroke
+    // is better left unclaimed.
+    await openWorld();
+
+    await act(async () => { useWorldStore.getState().selectVob(null); });
+    await act(async () => { fireEvent.keyDown(window, { key: 'd', ctrlKey: true }); });
+
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+  });
+
+  it('leaves Ctrl+D alone in a text field, as it leaves Ctrl+C', async () => {
+    // The same window-listener guard every other shortcut here carries.
+    await openWorld();
+
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    await act(async () => { fireEvent.keyDown(coordinate('x'), { key: 'd', ctrlKey: true }); });
+
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+  });
+
   it('brings the whole subtree, at paths the batch computes forward', async () => {
     // D5 (level-editor.md §16.14). VOB 1 is a child of VOB 0 here, so
     // duplicating VOB 0 is two adds: the root's copy beside it, and the child's
