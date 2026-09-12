@@ -194,17 +194,22 @@ function headerSection(headerLines) {
 }
 
 // Dispatch on the archive format. BinSafe is walked here; ASCII — the other 24
-// .zen files in a retail G2 install — by lib/container-ascii.js. BINARY has no
-// walker, and saying so in the dump is the point: an archive nothing can read
-// must report reduced COVERAGE, not a section that happens to match on both
-// sides. The require is deliberately lazy, because container-ascii.js shares
-// this module's helpers and a top-level cycle would hand it an empty exports.
+// .zen files in a retail G2 install — by lib/container-ascii.js; BINARY, since
+// #227, by lib/container-binary.js, which covers what that format admits (its
+// object frames) and says what it does not (entry names, which BINARY simply
+// does not write). Anything else reports reduced COVERAGE rather than a section
+// that happens to match on both sides, which is what an archive nothing can
+// read is owed. The requires are deliberately lazy, because both modules share
+// this one's helpers and a top-level cycle would hand them an empty exports.
 function containerFromBuffer(buf) {
   const raw = readHeader(buf);
   const archiver = raw.lines[2];
   const format = raw.lines[3];
   if (format === 'ASCII') {
     return require('./container-ascii.js').containerFromAsciiBuffer(buf);
+  }
+  if (format === 'BINARY') {
+    return require('./container-binary.js').containerFromBinaryBuffer(buf);
   }
   if (format !== 'BIN_SAFE') {
     return { archiver, format, covered: false, header: headerSection(raw.lines) };

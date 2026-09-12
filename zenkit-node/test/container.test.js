@@ -195,20 +195,28 @@ test('containerFromBuffer describes the fixture archive', () => {
 // worlds have. Reading anything else used to throw out of `readHashTable`,
 // which took `normalizeWorld` down with it. The instrument must instead say, in
 // the dump, that it does not cover this archive: an uncovered container section
-// is a coverage fact, never silent agreement. ASCII has its own walker
-// (lib/container-ascii.js) and is covered; BINARY still has none.
+// is a coverage fact, never silent agreement.
+//
+// All three formats ZenGin writes are covered now — ASCII by
+// lib/container-ascii.js, BINARY by lib/container-binary.js since #227 — so the
+// archive under test here is one no format line names. The stand-in is the
+// BINARY fixture with its format line overwritten in place, same length, so
+// every offset after it stays where it was and the only thing wrong with the
+// file is the word.
 test('containerFromBuffer reports an archive it has no walker for as uncovered instead of throwing', () => {
   withTmpDir((dir) => {
     const binary = path.join(dir, 'binary.zen');
     zenkit._authorFixtureWorld(binary, 'binary', 'g2');
-    const container = containerFromBuffer(fs.readFileSync(binary));
+    const buf = fs.readFileSync(binary);
+    buf.write('ZZZZZZ', buf.indexOf(Buffer.from('BINARY', 'latin1')), 'latin1');
+    const container = containerFromBuffer(buf);
 
     assert.strictEqual(container.covered, false);
     assert.strictEqual(container.archiver, 'zCArchiverGeneric');
-    assert.strictEqual(container.format, 'BINARY');
+    assert.strictEqual(container.format, 'ZZZZZZ');
     // The BINARY writer emits no date/user stamp at all — verbatim means verbatim.
     assert.deepStrictEqual(container.header.lines, [
-      'ZenGin Archive', 'ver 1', 'zCArchiverGeneric', 'BINARY', 'saveGame 0', 'END',
+      'ZenGin Archive', 'ver 1', 'zCArchiverGeneric', 'ZZZZZZ', 'saveGame 0', 'END',
     ]);
     // Nothing beyond the text header may be claimed.
     assert.deepStrictEqual(Object.keys(container).sort(), ['archiver', 'covered', 'format', 'header']);
@@ -224,7 +232,7 @@ test('classifyDumps reports whether the container instrument covered the pair', 
   assert.strictEqual(covered.classification, 'identical');
   assert.strictEqual(covered.containerCoverage, true);
 
-  const uncovered = { ...baseline, container: { archiver: 'zCArchiverGeneric', format: 'BINARY', covered: false, header: { lines: [], date: '', user: '' } } };
+  const uncovered = { ...baseline, container: { archiver: 'zCArchiverGeneric', format: 'ZZZZZZ', covered: false, header: { lines: [], date: '', user: '' } } };
   const result = classifyDumps(uncovered, JSON.parse(JSON.stringify(uncovered)));
   assert.strictEqual(result.classification, 'identical');
   assert.strictEqual(result.containerCoverage, false);

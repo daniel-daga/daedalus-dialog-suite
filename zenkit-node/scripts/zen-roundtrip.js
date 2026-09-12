@@ -15,13 +15,21 @@
 // A green run in --fixtures mode is NEVER a fidelity result. The report says
 // which claim it carries, and the summary prints it.
 //
-// COVERAGE IS PART OF THE RESULT. The container instrument walks BinSafe
-// (`lib/container.js`) and ASCII (`lib/container-ascii.js`) — between them the
-// 28 .zen files of a retail G2 install — but BINARY has no walker at all, and
-// on such a world the only instrument is the struct dump, which is blind to
-// container facts by construction. Those worlds are reported as `struct-only`,
-// never as a clean fidelity pass, because a diff that cannot see a region must
-// not be allowed to call it identical.
+// COVERAGE IS PART OF THE RESULT. The container instrument walks all three
+// formats ZenGin writes — BinSafe (`lib/container.js`), ASCII
+// (`lib/container-ascii.js`) and, since #227, BINARY
+// (`lib/container-binary.js`). A world in a format none of them reads is
+// measured by the struct dump alone, which is blind to container facts by
+// construction, and is reported as `struct-only`, never as a clean fidelity
+// pass: a diff that cannot see a region must not be allowed to call it
+// identical.
+//
+// BINARY coverage is coarser than the other two and the report does not say so
+// per row, so it is worth knowing here: that format writes no entry names, no
+// type tags and no lengths, so the instrument aligns by object frame and a
+// changed byte is named by the object it sits in rather than by the field it
+// is. Nothing is unexamined — the frames tile the stream — but a `full` row on
+// a BINARY world is a coarser claim than a `full` row on the other two.
 //
 // Each world is measured in a CHILD PROCESS. ZenKit can abort the process on
 // malformed input (a hard 0xC0000409 has been observed on the ASCII path), and
@@ -312,8 +320,8 @@ function summarize(rows, claim) {
     `${partial.length ? ` — ${[...new Set(partial.map((r) => r.archiver))].join(', ')}` : ''}),` +
     ` ${crashed.length} crashed, ${unreadable.length} unreadable, ${skipped.length} skipped (not worlds)`);
   if (partial.length) {
-    lines.push('  A struct-only row is NOT a fidelity pass: the container instrument walks BinSafe');
-    lines.push('  and ASCII, so on those worlds nothing checked the archive container.');
+    lines.push('  A struct-only row is NOT a fidelity pass: the container instrument walks BinSafe,');
+    lines.push('  ASCII and BINARY, so on those worlds nothing checked the archive container.');
   }
   const byVerdict = new Map();
   for (const row of rows) {

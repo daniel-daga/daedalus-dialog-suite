@@ -823,9 +823,37 @@ two facts only that format has: the top-level `objects` line **verbatim**
 until patch 0025 — defect A4) and whether `write_indent()`'s leading tabs match
 the object depth. A RAW payload is hashed as the **hex text** the file holds,
 not the bytes it decodes to, because A1 was a corruption of that text and a
-hash of the decoded bytes could not have seen it. **BINARY has no walker**: for it the section is
-`{ archiver, format, covered: false, header }` and nothing more, and
-`classifyDumps` returns `containerCoverage: false` for the pair.
+hash of the decoded bytes could not have seen it.
+
+**BINARY has a walker since #227** (`lib/container-binary.js`), and it is
+coarser than the other two because the format is. A BINARY entry carries no
+name, no type tag and no length — `write_int` writes four bytes and drops the
+name — so there is no entry stream to walk, and nothing in the file tells an
+entry apart from the first four bytes of a child object's size. Only object
+frames are recoverable, so the section carries the frames, their per-class
+version counts and sequence hash, the `objects N` field verbatim (nine-character
+padded, like ASCII's), the `MeshAndBsp` blob digest, and a SHA-256 per class
+over the frames' own bytes. It has **no `schemas` section**, and says so with
+`entryNames: false` — a reader has to be able to tell "these archives agree on
+every entry name" from "neither archive has entry names".
+
+Frames are found by scanning, so the walk proves itself before claiming
+coverage: `objects N` is the writer's own count of the frames it numbered, and
+`write_object_begin` hands out `0, 1, 2 …` in file order, so a candidate whose
+index does not continue that sequence is a run of payload bytes rather than a
+frame. A walk that ends with a different count, that overlaps, or whose
+outermost frame does not span to EOF returns `{ covered: false, reason }`, and
+`classifyDumps` returns `containerCoverage: false` for the pair. Archives in a
+format none of the three walkers reads still get
+`{ archiver, format, covered: false, header }` and nothing more.
+
+The byte diff (`lib/container-diff.js`) aligns BINARY by object frame for the
+same reason, so a changed byte is named by the object it sits in rather than by
+the field it is. Nothing goes unexamined — the frames tile the stream and the
+coverage gap is 0 — but a `full` row on a BINARY world is a coarser claim than
+a `full` row on the other two. What is still open on BINARY is unchanged by
+this: there is no BINARY world on any machine here but the authored fixture,
+and the writer path has no engine verdict (§10.3).
 
 **The ASCII writer is certified for preservation saves.** Patches 0024–0026,
 0045–0052 cover raw hex entries, integer tokens, packed and unpacked VOBs,

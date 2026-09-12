@@ -8,10 +8,15 @@
 //
 // It dispatches on the archive format exactly as `containerFromBuffer` does:
 // BinSafe through `lib/container.js`'s `walk`, ASCII through
-// `lib/container-ascii.js`'s `walkAscii`, and BINARY not at all — for that one
-// the caller gets a `whole-file` verdict, which is an honest "nothing looked
-// inside these bytes" rather than a diff that skipped a region and called it
-// clean.
+// `lib/container-ascii.js`'s `walkAscii`, and BINARY — since #227 — through
+// `lib/container-binary.js`'s `walkBinary`. That last one aligns by object
+// frame rather than by entry, because a BINARY entry has no name, no type and
+// no length; a changed byte is therefore named by the object it sits in and not
+// by the field it is. Coarser than the other two, and still the difference
+// between a located change and the `whole-file` verdict every BINARY pair used
+// to get. A format with no walker at all still gets `whole-file`, which is an
+// honest "nothing looked inside these bytes" rather than a diff that skipped a
+// region and called it clean.
 //
 // It lives here because there were two copies: `tools/bytediff.js` (the CLI)
 // and `scripts/zen-roundtrip.js` (library form, feeding the report). Only the
@@ -24,6 +29,7 @@
 
 const { walk, readHeader } = require('./container.js');
 const { walkAscii } = require('./container-ascii.js');
+const { walkBinary } = require('./container-binary.js');
 
 // Every ZenGin archive header carries a `date`/`user` stamp taken from the clock
 // at write time, and a world nests archives — the `MeshAndBsp` blob has a header
@@ -57,6 +63,7 @@ function walkerFor(buf) {
   const format = readHeader(buf).lines[3];
   if (format === 'BIN_SAFE') return walk;
   if (format === 'ASCII') return walkAscii;
+  if (format === 'BINARY') return walkBinary;
   return null;
 }
 
