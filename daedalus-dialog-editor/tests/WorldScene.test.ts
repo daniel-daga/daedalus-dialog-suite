@@ -15,7 +15,7 @@
  */
 
 import * as THREE from 'three';
-import { ROOT_MATRIX } from 'zen-world';
+import { ROOT_MATRIX, ZEN_TO_THREE_SCALE } from 'zen-world';
 import type { DecodedTexture, DrawGroup, InstancedVisual } from '../src/shared/worldTypes';
 import { DEFAULT_EXPOSURE, WORLD_LAYER, WorldScene, textureCacheFor } from '../src/renderer/world/WorldScene';
 import { vobIndex } from './worldFixtures';
@@ -96,7 +96,7 @@ function compile(material: THREE.MeshBasicMaterial) {
   const shader = {
     vertexShader: THREE.ShaderLib.basic.vertexShader,
     fragmentShader: THREE.ShaderLib.basic.fragmentShader,
-    uniforms: {} as Record<string, { value: number }>,
+    uniforms: {} as Record<string, { value: unknown }>,
   };
   material.onBeforeCompile(
     shader as unknown as THREE.WebGLProgramParametersWithUniforms,
@@ -859,7 +859,12 @@ describe('WorldScene', () => {
     // attachment a program never writes is undefined, not zero, and a wall
     // that left garbage in the mask would grow an outline.
     const worldShader = compile(world);
-    expect(worldShader.vertexShader).toBe(THREE.ShaderLib.basic.vertexShader);
+    // The mask is fragment-only on the world mesh — no key varying, no vertex
+    // work. This used to assert the vertex shader was the stock one byte for
+    // byte; the light preview (#256) injects a world position into both
+    // material kinds, so the claim is now the mask's own.
+    expect(worldShader.vertexShader).not.toContain('vVobKey');
+    expect(worldShader.vertexShader).toContain('vPreviewWorldPos');
     expect(worldShader.fragmentShader).toContain('layout(location = 1) out highp vec4 vobMask;');
     expect(worldShader.fragmentShader).toMatch(/vobMask = vec4\( 0\.0 \);/);
     expect(worldShader.fragmentShader).not.toContain('vVobKey');
@@ -902,6 +907,73 @@ describe('WorldScene', () => {
     for (const mesh of [...scene.worldMeshes, ...scene.instancedMeshes]) {
       expect(mesh.layers.mask).toBe(worldLayer.mask);
     }
+  });
+
+  // The selected light, previewed as a lamp (#256). The viewport is unlit on
+  // purpose and this does not change that: the term is added to the finished
+  // picture after the exposure multiply, so the room keeps the light ZenGin
+  // baked into it and gains a preview of what this one light reaches.
+  test('the selected light previews as an additive term, and only when one is selected', () => {
+    const scene = new WorldScene();
+    scene.setWorldMesh({ groups: [group()], bbox: [] });
+    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    scene.setVobMarkers(vobIndex([[0, 0, 0], [400, 500, 600]], 'zCVobLight', undefined, undefined, ['', '']));
+
+    const worldMesh = scene.root.children[0] as THREE.Mesh;
+    const worldShader = compile(worldMesh.material as THREE.MeshBasicMaterial);
+    const vobShader = compile(scene.instancedMeshes[0].material as THREE.MeshBasicMaterial);
+
+    // Off is a range of zero, not a second uniform: one number the shader
+    // branches on, and the same one the preview writes.
+    expect(worldShader.uniforms.uPreviewLightRange.value).toBe(0);
+    // One uniform object for the whole scene, as `uExposure` is.
+    expect(worldShader.uniforms.uPreviewLightRange).toBe(vobShader.uniforms.uPreviewLightRange);
+    expect(worldShader.uniforms.uPreviewLightPosition).toBe(vobShader.uniforms.uPreviewLightPosition);
+
+    // Added after the exposure multiply: it is not baked light, so a
+    // brightness of 0.5 must not halve it too.
+    for (const shader of [worldShader, vobShader]) {
+      expect(shader.fragmentShader).toContain('uPreviewLightRange');
+      expect(shader.fragmentShader.indexOf('outgoingLight *= uExposure;'))
+        .toBeLessThan(shader.fragmentShader.indexOf('uPreviewLightColor *'));
+      // The distance is measured in world space, so the fragment has to carry
+      // its own — `MeshBasicMaterial` has no such varying of its own.
+      expect(shader.vertexShader).toContain('vPreviewWorldPos');
+      expect(shader.fragmentShader).toContain('varying vec3 vPreviewWorldPos;');
+    }
+    // One injection serves both material kinds and the define decides which
+    // branch survives, exactly as three's own `worldpos_vertex` does.
+    expect(vobShader.vertexShader).toContain('#ifdef USE_INSTANCING');
+    expect(vobShader.vertexShader).toContain('instanceMatrix * previewWorldPos');
+
+    scene.setLightPreview({ vob: 1, extent: { shape: 'sphere', radius: 500, kind: 'light', color: [255, 0, 0] } });
+
+    // The uniforms are in Three.js space — metres, X mirrored — because the
+    // fragment's own position is. The wireframe beside it is under the root and
+    // is not.
+    const position = worldShader.uniforms.uPreviewLightPosition.value as THREE.Vector3;
+    expect(position.toArray()).toEqual([-400 * ZEN_TO_THREE_SCALE, 500 * ZEN_TO_THREE_SCALE, 600 * ZEN_TO_THREE_SCALE]);
+    expect(worldShader.uniforms.uPreviewLightRange.value).toBeCloseTo(500 * ZEN_TO_THREE_SCALE);
+    const color = worldShader.uniforms.uPreviewLightColor.value as THREE.Color;
+    expect(color.r).toBeCloseTo(1);
+    expect(color.g).toBe(0);
+    expect(color.b).toBe(0);
+
+    // A sound has a radius too, and it is not a light: only a light lights.
+    scene.setLightPreview({ vob: 1, extent: { shape: 'sphere', radius: 500, kind: 'sound' } });
+    expect(worldShader.uniforms.uPreviewLightRange.value).toBe(0);
+
+    scene.setLightPreview({ vob: 1, extent: { shape: 'sphere', radius: 500, kind: 'light' } });
+    expect(worldShader.uniforms.uPreviewLightRange.value).toBeCloseTo(500 * ZEN_TO_THREE_SCALE);
+    scene.setLightPreview(null);
+    expect(worldShader.uniforms.uPreviewLightRange.value).toBe(0);
+
+    // A VOB the scene cannot place gets no lamp, for the reason it gets no
+    // sphere: one at the origin is a light that is somewhere else.
+    scene.setLightPreview({ vob: 99, extent: { shape: 'sphere', radius: 500, kind: 'light' } });
+    expect(worldShader.uniforms.uPreviewLightRange.value).toBe(0);
+
+    scene.dispose();
   });
 
   test('brightness is one shared uniform that lifts the picture and nothing else', () => {

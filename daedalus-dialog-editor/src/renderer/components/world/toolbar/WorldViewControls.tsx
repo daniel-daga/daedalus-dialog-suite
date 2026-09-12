@@ -7,6 +7,7 @@ import CenterFocusStrongIcon from '@mui/icons-material/CenterFocusStrong';
 import CropFreeIcon from '@mui/icons-material/CropFree';
 import GroupsIcon from '@mui/icons-material/Groups';
 import LabelIcon from '@mui/icons-material/Label';
+import LightbulbIcon from '@mui/icons-material/Lightbulb';
 import RouteIcon from '@mui/icons-material/Route';
 import ScheduleIcon from '@mui/icons-material/Schedule';
 import SelectAllIcon from '@mui/icons-material/SelectAll';
@@ -58,6 +59,8 @@ export interface WorldViewControlsProps {
   onCycleOutlineMode: () => void;
   exposure: number;
   onExposureChange: (value: number) => void;
+  lightPreview: boolean;
+  onToggleLightPreview: () => void;
   hiddenClasses: readonly string[];
   onHiddenClassesChange: (classes: readonly string[]) => void;
   classOptions: readonly string[];
@@ -81,7 +84,8 @@ const WorldViewControls: React.FC<WorldViewControlsProps> = ({
   spawnTime, onToggleTime, onSpawnTimeChange, spawnState, onSpawnStateChange,
   stateOptions, spawnStateReach, showWaypointNames, onToggleWaypointNames,
   outlineMode, onCycleOutlineMode,
-  exposure, onExposureChange, hiddenClasses, onHiddenClassesChange, classOptions,
+  exposure, onExposureChange, lightPreview, onToggleLightPreview,
+  hiddenClasses, onHiddenClassesChange, classOptions,
 }) => (
   <>
     <Tooltip title="Waynet — draw the waypoints and their edges">
@@ -293,6 +297,27 @@ const WorldViewControls: React.FC<WorldViewControlsProps> = ({
           data-testid="world-exposure"
         />
       </Stack>
+    </Tooltip>
+    {/* The selected light, lit (#256). Beside brightness because it is the
+        same kind of setting — a term on the finished picture, no op, nothing
+        saved — and off by default because the room already carries this
+        light's baked contribution, so what this draws is its reach rather
+        than the lighting the engine will show. */}
+    <Tooltip title="Light preview — the selected light lit on the picture; nothing is saved">
+      <span>
+        <ToggleButton
+          size="small"
+          value="light-preview"
+          selected={lightPreview}
+          disabled={!hasWorld}
+          onChange={onToggleLightPreview}
+          data-testid="world-light-preview-toggle"
+          aria-label={`Light preview: ${lightPreview ? 'on' : 'off'}`}
+          sx={toggleSx}
+        >
+          <LightbulbIcon fontSize="small" />
+        </ToggleButton>
+      </span>
     </Tooltip>
     {/* Spacer's per-class show/hide, beside the other view controls because
         that is what it is: the world still holds every VOB, the scene tree

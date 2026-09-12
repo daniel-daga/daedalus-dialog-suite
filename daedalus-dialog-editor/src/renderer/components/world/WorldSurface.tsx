@@ -361,6 +361,15 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    */
   const [exposure, setExposure] = useState(DEFAULT_EXPOSURE);
   /**
+   * Whether the selected `zCVobLight` is drawn as a lamp on the picture (#256).
+   *
+   * The same kind of setting as `exposure` and off for a reason of its own: the
+   * room already holds this light's baked contribution, so the preview shows
+   * what one light reaches rather than what the engine will draw. It reads the
+   * range and colour the sphere already reads, and writes nothing.
+   */
+  const [lightPreview, setLightPreview] = useState(false);
+  /**
    * VOB classes switched off in the viewport — Spacer's per-class show/hide.
    *
    * The same kind of setting as `exposure`: it decides what is drawn, never
@@ -2661,6 +2670,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         onCycleOutlineMode={cycleOutlineMode}
         exposure={exposure}
         onExposureChange={setExposure}
+        lightPreview={lightPreview}
+        onToggleLightPreview={() => setLightPreview((on) => !on)}
         hiddenClasses={hiddenClasses}
         onHiddenClassesChange={setHiddenClasses}
         classOptions={classOptions}
@@ -3125,6 +3136,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               selectedWaypoint={selectedWaypoint}
               terrainPoint={terrainPoint}
               exposure={exposure}
+              lightPreview={lightPreview}
               hiddenVobs={hiddenVobs}
               outlineMode={outlineMode}
               selectedExtent={selectedExtent}

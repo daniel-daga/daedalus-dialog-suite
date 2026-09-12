@@ -2904,8 +2904,36 @@ telling a light from a sound is lost.
 is unlit on purpose — `MeshBasicMaterial` throughout, ZenGin's lighting baked
 into the vertex colours, and brightness is `setExposure` rather than a lamp —
 so a dynamic light would be added on top of its own baked contribution and draw
-a room lit twice. Asked and answered 2026-09-12 (Daniel); the toggleable
-light-preview idea is #256, not part of this.
+a room lit twice. Asked and answered 2026-09-12 (Daniel).
+
+**The light preview, which is the rest of that question (#256, 2026-09-12).**
+Daniel took the smallest honest version: a World-bar toggle, **off by default**,
+that lights the picture with the **selected** light and nothing else. What it is
+is one additive term at the same fragment hook `exposeBakedLight` uses, applied
+*after* the exposure multiply — the reach of one light drawn on the finished
+picture, not a lighting model.
+
+Three facts decided its shape, and each is a thing it deliberately does not do.
+The room already contains this light's baked contribution, so the preview is
+off until it is asked for and the picture nobody asked about is unchanged.
+`MeshBasicMaterial` has no normal in its fragment shader, so there is no N·L
+term: the falloff is distance only, squared, which reads as a lamp where a
+linear ramp reads as a disc with an edge. And every light at once is past
+three.js's forward per-material light budget and would want culling, while the
+modder tuning one light wants that one — the same argument the range sphere
+settled two sections up.
+
+Two mechanics worth knowing before touching it. The fragment needs its own
+world position and `MeshBasicMaterial` carries no such varying — three's
+`worldpos_vertex` is compiled out unless an envmap, a shadow or transmission
+asked for it — so the injection adds one, in both material kinds, with the
+instance transform behind `#ifdef USE_INSTANCING` exactly as three's own chunk
+does. And the uniforms are in **Three.js space**, metres with X mirrored, while
+everything under the root is in ZenGin centimetres: a uniform is not a child of
+anything, so `setLightPreview` applies `ROOT_MATRIX` itself. A range of zero is
+the off state — one number the shader branches on, rather than a second uniform
+saying whether the first counts. A light whose colour the reader dropped (black,
+or malformed) previews white, because what the preview is for is the reach.
 
 **The selection only, and attached only while it draws.** The three retail
 worlds hold 1,237 sound VOBs between them, so every radius at once is a screen

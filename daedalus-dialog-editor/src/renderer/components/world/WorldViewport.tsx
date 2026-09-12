@@ -264,6 +264,14 @@ export interface WorldViewportProps {
    */
   selectedExtent?: { vob: number; extent: VobExtent } | null;
   /**
+   * Light the picture with the selected light (#256). A view setting like
+   * `exposure` — uniforms, no op, nothing saved — and **off unless asked for**:
+   * the room already carries the light ZenGin baked into it, so this is a
+   * preview of one light's reach rather than a lighting model. Optional for the
+   * reason `selectedExtent` is: every spec that predates it leaves it out.
+   */
+  lightPreview?: boolean;
+  /**
    * Which VOBs carry the outline (#229). A view setting like `exposure`: one
    * uniform on the pass, no op, nothing saved with the world.
    */
@@ -433,6 +441,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   selection, onTranslateSelection, gizmoMode, onRotateSelection, appliedOps,
   selectedWaypoint, terrainPoint, exposure, hiddenVobs, outlineMode, snapGrid, snapAngle,
   selectedExtent = null,
+  lightPreview = false,
   scatterRadius, onScatterStroke,
   onSelectWaypoint, onMoveWaypoint, paused = false,
 }, ref) => {
@@ -1413,6 +1422,14 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     if (selectedExtent === null) world.hideExtent();
     else world.showExtent(selectedExtent.vob, selectedExtent.extent);
   }, [selectedExtent, mesh, visuals, appliedOps]);
+
+  // The same selection, lit rather than outlined (#256). Its own effect and not
+  // the sphere's, because the toggle is a view setting the sphere has no say
+  // in — and on the same dependencies for the same reasons, `appliedOps`
+  // included: a light that was dragged lights where it is now.
+  useEffect(() => {
+    sceneRef.current?.setLightPreview(lightPreview ? selectedExtent : null);
+  }, [lightPreview, selectedExtent, mesh, visuals, appliedOps]);
 
   // An edit the main process has taken — a commit, an undo, a redo, or the
   // reversal of a refused one. The scene is a projection and has to follow it;

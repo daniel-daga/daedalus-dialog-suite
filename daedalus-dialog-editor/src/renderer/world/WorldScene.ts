@@ -1,5 +1,7 @@
 import * as THREE from 'three';
-import { ROOT_MATRIX, threeIndexOrder, type VobExtent } from 'zen-world';
+import {
+  ROOT_MATRIX, ZEN_TO_THREE_SCALE, threeIndexOrder, type VobExtent,
+} from 'zen-world';
 import type {
   DecalScene, DrawGroup, InstancedPayload, VobIndex, WorldMeshPayload, DecodedTexture,
 } from '../../shared/worldTypes';
@@ -194,6 +196,76 @@ export const MAX_EXPOSURE = 4;
 /** The shared uniform, in the shape `shader.uniforms` takes. */
 type Exposure = { value: number };
 
+/**
+ * The selected light, previewed as an actual lamp (#256).
+ *
+ * The viewport is unlit on purpose — see `DEFAULT_EXPOSURE` — and this does not
+ * change that. The room already carries the light ZenGin baked into its vertex
+ * colours, so the term below is **added to the finished picture**, after the
+ * exposure multiply: it draws what one light reaches, it does not relight the
+ * room. That is also why it is the selection only and off by default. Two
+ * things it is deliberately not: there is no N·L term, because
+ * `MeshBasicMaterial` has no normal in its fragment shader, and no second light
+ * is ever on, because a scene of 1,000 lights is past three.js's forward
+ * budget and what a modder tuning one light wants is that one.
+ *
+ * A range of zero is the off state, which is one uniform the shader branches on
+ * rather than a second one saying whether the first counts.
+ */
+interface LightPreviewUniforms {
+  /** Three.js space — metres, X mirrored — because the fragment's own position
+   *  is. `setLightPreview` is where the root's transform is applied. */
+  position: { value: THREE.Vector3 };
+  color: { value: THREE.Color };
+  /** Metres. Zero is "nothing selected", and draws nothing. */
+  range: { value: number };
+}
+
+/** `ROOT_MATRIX` as a matrix, for the one position that has to cross out of the
+ *  root's space: a uniform is not a child of anything. */
+const ROOT_TRANSFORM = new THREE.Matrix4().fromArray([...ROOT_MATRIX]);
+
+function previewSelectedLight(
+  shader: THREE.WebGLProgramParametersWithUniforms, light: LightPreviewUniforms,
+): void {
+  shader.uniforms.uPreviewLightPosition = light.position;
+  shader.uniforms.uPreviewLightColor = light.color;
+  shader.uniforms.uPreviewLightRange = light.range;
+  // The fragment needs its own world position and `MeshBasicMaterial` carries
+  // no such varying: three's own `worldpos_vertex` is compiled out unless an
+  // envmap, a shadow or transmission asked for it. `transformed` is
+  // `begin_vertex`'s, so this sits after it either way.
+  shader.vertexShader = `varying vec3 vPreviewWorldPos;\n${
+    shader.vertexShader.replace(
+      '#include <project_vertex>',
+      `#include <project_vertex>
+  vec4 previewWorldPos = vec4( transformed, 1.0 );
+  #ifdef USE_INSTANCING
+    previewWorldPos = instanceMatrix * previewWorldPos;
+  #endif
+  vPreviewWorldPos = ( modelMatrix * previewWorldPos ).xyz;`,
+    )
+  }`;
+  // Distance only, squared, and additive. Distance only because there is no
+  // normal to take a cosine against; squared because a linear ramp reads as a
+  // disc with an edge rather than as a lamp.
+  shader.fragmentShader = `uniform vec3 uPreviewLightPosition;
+uniform vec3 uPreviewLightColor;
+uniform float uPreviewLightRange;
+varying vec3 vPreviewWorldPos;
+${
+  shader.fragmentShader.replace(
+    '#include <opaque_fragment>',
+    `if ( uPreviewLightRange > 0.0 ) {
+    float previewReach = 1.0 - distance( vPreviewWorldPos, uPreviewLightPosition ) / uPreviewLightRange;
+    previewReach = clamp( previewReach, 0.0, 1.0 );
+    outgoingLight += uPreviewLightColor * previewReach * previewReach;
+  }
+  #include <opaque_fragment>`,
+  )
+}`;
+}
+
 function exposeBakedLight(
   shader: THREE.WebGLProgramParametersWithUniforms, exposure: Exposure,
 ): void {
@@ -244,18 +316,20 @@ ${
  * hands the same function to every material of that kind, so the sharing is the
  * reason rather than the coincidence.
  */
-function worldShading(exposure: Exposure) {
+function worldShading(exposure: Exposure, light: LightPreviewUniforms) {
   return (shader: THREE.WebGLProgramParametersWithUniforms): void => {
     maskWorld(shader);
     exposeBakedLight(shader, exposure);
+    previewSelectedLight(shader, light);
   };
 }
 
-function vobShading(exposure: Exposure) {
+function vobShading(exposure: Exposure, light: LightPreviewUniforms) {
   return (shader: THREE.WebGLProgramParametersWithUniforms): void => {
     maskVobs(shader);
     hideInstances(shader);
     exposeBakedLight(shader, exposure);
+    previewSelectedLight(shader, light);
   };
 }
 
@@ -377,8 +451,14 @@ export class WorldScene {
 
   /** The one exposure uniform every material in this scene points at. */
   private readonly exposure: Exposure = { value: DEFAULT_EXPOSURE };
-  private readonly shadeWorld = worldShading(this.exposure);
-  private readonly shadeVob = vobShading(this.exposure);
+  /** And the one light preview, shared the same way (#256). */
+  private readonly lightPreview: LightPreviewUniforms = {
+    position: { value: new THREE.Vector3() },
+    color: { value: new THREE.Color(1, 1, 1) },
+    range: { value: 0 },
+  };
+  private readonly shadeWorld = worldShading(this.exposure, this.lightPreview);
+  private readonly shadeVob = vobShading(this.exposure, this.lightPreview);
 
   /** @param textureCache decoded pixels kept across the rebuild a structural op
    *   forces, and the owner of their disposal. Null decodes from scratch and
@@ -397,6 +477,39 @@ export class WorldScene {
    */
   setExposure(value: number): void {
     this.exposure.value = value;
+  }
+
+  /**
+   * Light the picture with the selected light, or with nothing (#256).
+   *
+   * Takes the same `{ vob, extent }` the sphere does, because it is the same
+   * two numbers — a `zCVobLight`'s `range` and `color`, off the `getVobProps`
+   * read the property grid already makes — and nothing else is fetched for it.
+   * Everything that is not a placeable light previews as nothing: a sound's
+   * radius, a zone's box, and a light at a VOB this scene cannot place, which
+   * would otherwise put the lamp at the origin.
+   *
+   * A light whose colour the reader dropped — black, or malformed (#248) —
+   * previews white. What the preview is for is the reach.
+   */
+  setLightPreview(selected: { vob: number; extent: VobExtent } | null): void {
+    const extent = selected?.extent;
+    if (extent === undefined || extent.shape !== 'sphere' || extent.kind !== 'light') {
+      this.lightPreview.range.value = 0;
+      return;
+    }
+    const position = this.positionOf((selected as { vob: number }).vob);
+    if (position === null) { this.lightPreview.range.value = 0; return; }
+    this.lightPreview.position.value
+      .set(position[0], position[1], position[2])
+      .applyMatrix4(ROOT_TRANSFORM);
+    const [red, green, blue] = extent.color ?? [255, 255, 255];
+    // Through the same table the baked vertex colours go through: a colour
+    // added to a linear picture has to be linear, or it reads far too bright.
+    this.lightPreview.color.value.setRGB(
+      SRGB_TO_LINEAR[Math.round(red)], SRGB_TO_LINEAR[Math.round(green)], SRGB_TO_LINEAR[Math.round(blue)],
+    );
+    this.lightPreview.range.value = extent.radius * ZEN_TO_THREE_SCALE;
   }
 
   setWorldMesh(payload: WorldMeshPayload): void {

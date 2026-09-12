@@ -150,6 +150,23 @@ describe('the World bar', () => {
       .toContainElement(screen.getByTestId('world-outlines-toggle'));
   });
 
+  // #256: a `zCVobLight` can be previewed as a real lamp on the picture. Off by
+  // default and staying off until it is asked for, because the room already
+  // carries this light's baked contribution — see architecture §7.
+  it('offers the light preview off, and turns it on and off again', async () => {
+    await openWorld();
+
+    const button = screen.getByTestId('world-light-preview-toggle');
+    expect(screen.getByTestId('world-toolbar-view')).toContainElement(button);
+    expect(button).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(button);
+    expect(button).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.click(button);
+    expect(button).toHaveAttribute('aria-pressed', 'false');
+  });
+
   it('puts the counts in the status bar once a world is open, not in the toolbar', async () => {
     await openWorld();
 
@@ -180,6 +197,7 @@ describe('the World bar', () => {
 
     for (const testId of [
       'world-save', 'world-waynet-toggle', 'world-spawns-toggle', 'world-outlines-toggle',
+      'world-light-preview-toggle',
       'world-gizmo-translate', 'world-gizmo-rotate',
       'world-drop-to-ground', 'world-align-to-normal', 'world-duplicate-vob',
       'world-delete-vob', 'world-undo', 'world-redo',
