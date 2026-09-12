@@ -10,7 +10,7 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import {
   AUTHORABLE_VOB_CLASSES,
-  addVob, classPropKeys, addWaypoint, alignVobsToNormal, applyWaypointNames,
+  addVob, classPropKeys, alignVobsToNormal, applyWaypointNames,
   applyWaypointPositions,
   deleteVobs, dropVobsToGround,
   duplicateVobs, emptyVobFolders,
@@ -18,41 +18,30 @@ import {
   matchVobs,
   placeBounds,
   renumbersPaths,
-  reparentVob, rotateVob, rotateVobs, scatterVobs, setVobClassProp, setVobProp, setVobProps,
-  strokeCandidates, topLevelVobs,
+  reparentVob, rotateVob, rotateVobs, setVobClassProp, setVobProp, setVobProps,
+  topLevelVobs,
   translateVobs, vobExtentOf, vobIndexPath,
-  addToCategory, assetKey, emptyAssetCatalog, mergeCatalogs, parseAssetCatalog, removeFromCategory,
-  toggleFavorite, visualsOf,
   type AuthorableVobClass, type ClassProps, type NewVob, type ReadProps,
-  type ScatterPlacement,
   type VobExtent, type VobProps, type VobReader,
   type ZenBounds,
   type ZenPosition, type ZenRotation,
 } from 'zen-world';
 import type {
-  AssetCatalog, DiscoveredWorld, InstancedPayload, WaynetPayload,
+  DiscoveredWorld, InstancedPayload, WaynetPayload,
   WorldMeshPayload, WorldOp,
 } from '../../../shared/worldTypes';
 import { findFreePointVob, primaryVob, useWorldStore } from '../../store/worldStore';
 import { stateOptions, stateReach } from '../../routines/routineSchedule';
 import { useProjectStore } from '../../store/projectStore';
-import { hasUnsavedChanges, useFileStore } from '../../store/fileStore';
-import VariableAutocomplete from '../common/VariableAutocomplete';
-import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
-import { appendInsertNpc, findFunctionFile, startupFunctionFor } from './insertNpcScript';
 import { vobModelOf } from '../../world/vobModel';
 import { isTypingOrInPopover } from '../../world/keyboardTarget';
-import { AssetThumbnails } from '../../world/assetThumbnails';
-import { ThumbnailRenderer } from '../../world/ThumbnailRenderer';
-import { LiveTilePreview } from '../../world/LiveTilePreview';
 import { LiveTileContext } from './WorldAssetGrid';
 import { DEFAULT_EXPOSURE } from '../../world/WorldScene';
 import WorldViewport, { type GizmoMode, type WorldViewportHandle } from './WorldViewport';
 import WorldSceneTree from './WorldSceneTree';
 import WorldFolderTree from './WorldFolderTree';
 import WorldPropertyGrid from './WorldPropertyGrid';
-import WorldAssetBrowser, { type AssetCatalogProps } from './WorldAssetBrowser';
-import assetCategorySeed from '../../../shared/assetCategorySeed.json';
+import WorldAssetBrowser from './WorldAssetBrowser';
 import WorldAssetPreview, { NAME_OF, isPlaceableVisual } from './WorldAssetPreview';
 import WaypointPanel from './WaypointPanel';
 import WorldVobContextMenu from './WorldVobContextMenu';
@@ -61,11 +50,15 @@ import { usePanelLayout, COLLAPSED_PANEL_WIDTH } from './hooks/usePanelLayout';
 import { useWaynetEditing } from './hooks/useWaynetEditing';
 import { useVobFolders } from './hooks/useVobFolders';
 import { useVobClipboard, type VobClipboardInput } from './hooks/useVobClipboard';
+import { useScatterBrush } from './hooks/useScatterBrush';
+import { useInsertNpc } from './hooks/useInsertNpc';
+import { useAssetCatalog } from './hooks/useAssetCatalog';
 import WorldToolbar from './toolbar/WorldToolbar';
 import { OUTLINE_MODE_ORDER } from './toolbar/WorldViewControls';
 import WorldStatusStats from './toolbar/WorldStatusStats';
 import type { OutlineMode } from '../../world/VobOutline';
 import WorldPickerDialog from './WorldPickerDialog';
+import InsertNpcDialog from './InsertNpcDialog';
 import ErrorBoundary from '../ErrorBoundary';
 
 // The World surface (level-editor.md §6): a new top-level view of the existing
@@ -75,10 +68,6 @@ import ErrorBoundary from '../ErrorBoundary';
 // This shell owns the IPC calls and hands the viewport finished payloads; the
 // viewport owns the Three.js lifetime. Nothing here keeps a geometry buffer in
 // React state.
-
-/** The file name a banner shows for a script path — the whole path is noise
- *  next to a reason. */
-const baseName = (filePath: string): string => filePath.split(/[\\/]/).pop() || filePath;
 
 /** A new VOB is placed unrotated: the terrain click gives a point and nothing
  *  else, and inventing an orientation from a surface normal is a feature with
@@ -114,37 +103,6 @@ interface WorldSurfaceProps {
  */
 const DEFAULT_SPAWN_TIME = 8 * 60;
 
-/**
- * The scatter brush's defaults and its cap, all in ZenGin centimetres
- * (level-editor.md §16.25).
- *
- * 8 m across with 2.5 m between trunks is a copse rather than a hedge, which is
- * the shape the tool was asked for — and both are fields, so the numbers only
- * have to be a sane place to start rather than right.
- *
- * **The cap is not a preference and is deliberately not a field.** A stroke is
- * one batch and therefore one undo entry, and neither §15's undo bar nor the
- * structural re-read (§16.24's two rebuilds per paste is the same machinery)
- * has ever been shown a batch this size, let alone the thousands one drag over
- * a hillside would otherwise produce. Raising it is a measurement somebody has
- * to make, not a number a user should be able to type.
- */
-const SCATTER_DEFAULT_RADIUS = 800;
-const SCATTER_DEFAULT_SPACING = 250;
-const SCATTER_LIMIT = 200;
-
-/**
- * The smallest brush the tool will actually paint with, in cm.
- *
- * An emptied number field reads as `''`, and `Number('')` is 0 — so clearing
- * the box to type a new radius handed the viewport a ring of nothing and the
- * stroke a disc of nothing, which drops every candidate onto one point. Floored
- * here rather than in the field, so a half-typed number is still a number the
- * user can finish typing (§5.4 item 22 of the 2026-09-04 review). Spacing needs
- * no floor: zero spacing means "no minimum distance", which is a real answer.
- */
-const SCATTER_MIN_RADIUS = 1;
-
 /** What the place dialog collects. `parent` is a flat index or null for a
  *  root; where the VOB goes is the ground point, chosen before or after. */
 interface PlaceSpec {
@@ -169,7 +127,6 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const selectedWaypoint = useWorldStore((s) => s.selectedWaypoint);
   const waypointSiteIndex = useProjectStore((s) => s.waypointSiteIndex);
   const spawnSiteIndex = useProjectStore((s) => s.spawnSiteIndex);
-  const npcList = useProjectStore((s) => s.npcList);
   const routineSiteIndex = useProjectStore((s) => s.routineSiteIndex);
   const routineNpcIndex = useProjectStore((s) => s.routineNpcIndex);
   const routineStateIndex = useProjectStore((s) => s.routineStateIndex);
@@ -231,50 +188,17 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    *  (#226) — see `openWorldNamed`. */
   const [pendingJump, setPendingJump] = useState<string | null>(null);
   const [showWaynet, setShowWaynet] = useState(false);
-  /**
-   * The asset browser's favorites and categories (§16.26, "Wanted on top"),
-   * the project's own half: the `<project>.assets.json` sidecar, loaded when
-   * a project is, persisted on every change the way folders are. The shipped
-   * seed is merged in for display and never written back, so the sidecar
-   * stays the project's diff against it.
-   */
-  const projectFilePath = useProjectStore((s) => s.projectFilePath);
-  const [assetCatalog, setAssetCatalog] = useState<AssetCatalog>(emptyAssetCatalog());
-  useEffect(() => {
-    let current = true;
-    setAssetCatalog(emptyAssetCatalog());
-    if (projectFilePath === null) return undefined;
-    window.editorAPI.getAssetCatalog(projectFilePath)
-      .then((loaded) => { if (current) setAssetCatalog(loaded); })
-      .catch((failure) => { console.error('[World] Failed to read the asset catalog:', failure); });
-    return () => { current = false; };
-  }, [projectFilePath]);
-  const persistAssetCatalog = useCallback((next: AssetCatalog) => {
-    setAssetCatalog(next);
-    if (projectFilePath === null) return;
-    window.editorAPI.saveAssetCatalog(projectFilePath, next).catch((failure) => {
-      console.error('[World] Failed to save the asset catalog:', failure);
-    });
-  }, [projectFilePath]);
-  const mergedAssetCatalog = useMemo(
-    () => mergeCatalogs(parseAssetCatalog(assetCategorySeed), assetCatalog),
-    [assetCatalog],
-  );
+  const {
+    listAssets, searchAssets, loadTexture, loadVisual, thumbnails, liveTile,
+    catalogProps: assetCatalogProps,
+  } = useAssetCatalog();
+
   // The place verb on an asset row or tile (§16.37 row 4). The same arming the
   // preview panel's button does, offered where the pointer already is.
   const assetPlacement = useMemo(() => ({
     canPlace: isPlaceableVisual,
     onPlace: (name: string) => setArmed({ kind: 'place', spec: { ...FRESH_PLACE, visual: name } }),
   }), []);
-  const assetCatalogProps = useMemo<AssetCatalogProps | undefined>(() => (
-    projectFilePath === null ? undefined : {
-      catalog: mergedAssetCatalog,
-      removable: (path, name) => visualsOf(assetCatalog, path).some((visual) => assetKey(visual) === assetKey(name)),
-      onToggleFavorite: (name) => persistAssetCatalog(toggleFavorite(assetCatalog, name)),
-      onAddToCategory: (path, name) => persistAssetCatalog(addToCategory(assetCatalog, path, name)),
-      onRemoveFromCategory: (path, name) => persistAssetCatalog(removeFromCategory(assetCatalog, path, name)),
-    }
-  ), [projectFilePath, mergedAssetCatalog, assetCatalog, persistAssetCatalog]);
 
   /** The clipboard is cleared when a world opens, and `openWorldAt` is well
    *  above `commitOps` and the two readers a copy needs — so the hook is called
@@ -346,14 +270,6 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    * name is spent by that click today.
    */
   const [pendingWaypointName, setPendingWaypointName] = useState<string | null>(null);
-  /**
-   * The Insert-NPC dialog's draft, or null when it is closed (§16.19, slice 16
-   * D): the instance being typed and the waypoint the spawn names. `existing`
-   * is the waypoint panel's variant — the point is already in the world, so
-   * the name is fixed and no `AddWaypoint` precedes the script write.
-   */
-  const [insertingNpc, setInsertingNpc] =
-    useState<{ instance: string; waypoint: string; existing: boolean } | null>(null);
   /** The waypoint the delete warning is about, as an index+name pair, or null
    *  when it is closed. The name is kept beside the index for the dialog to
    *  show and for the op to be guarded by: it is read when the dialog opens,
@@ -697,58 +613,6 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     if (next && waynet === null) await readWaynetInto(setWaynet);
   }, [showSpawns, waynet, readWaynetInto]);
 
-  const listAssets = useCallback(
-    (assetPath: string) => window.editorAPI.listWorldAssets(assetPath),
-    [],
-  );
-
-  const searchAssets = useCallback(
-    (query: string) => window.editorAPI.searchWorldAssets(query),
-    [],
-  );
-
-  const loadTexture = useCallback(
-    (name: string, maxSize: number) => window.editorAPI.getWorldTexture(name, maxSize),
-    [],
-  );
-
-  const loadVisual = useCallback(
-    (name: string) => window.editorAPI.getWorldVisual(name),
-    [],
-  );
-
-  // The thumbnail queue (§16.26 row 1) — one per open world, since its cache
-  // keys are the open world's mounts. Built lazily: the offscreen renderer
-  // holds a GL context, and a surface with no Assets tab open owes none.
-  const thumbnailsRef = useRef<AssetThumbnails | null>(null);
-  const thumbnails = useMemo(() => {
-    thumbnailsRef.current?.dispose();
-    thumbnailsRef.current = summary === null ? null : new AssetThumbnails({
-      getThumbnail: (name) => window.editorAPI.getAssetThumbnail(name),
-      putThumbnail: (key, dataUrl) => window.editorAPI.putAssetThumbnail(key, dataUrl),
-      loadVisual,
-      loadTexture,
-      renderer: new ThumbnailRenderer(),
-    });
-    return thumbnailsRef.current;
-    // Keyed on the world, not the summary object: a refreshed index after a
-    // structural op is the same world over the same mounts.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [summary?.worldPath, loadVisual, loadTexture]);
-  useEffect(() => () => { thumbnailsRef.current?.dispose(); }, []);
-
-  // The tile under the pointer turns (§16.26 row 1) — one live scene for the
-  // whole grid, the still PNG everywhere else. Same lifetime as the queue and
-  // for the same reason: its GL context and the one visual it keeps between
-  // hovers belong to the open world's mounts.
-  const liveTileRef = useRef<LiveTilePreview | null>(null);
-  const liveTile = useMemo(() => {
-    liveTileRef.current?.dispose();
-    liveTileRef.current = summary === null ? null : new LiveTilePreview({ loadVisual, loadTexture });
-    return liveTileRef.current;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [summary?.worldPath, loadVisual, loadTexture]);
-  useEffect(() => () => { liveTileRef.current?.dispose(); }, []);
 
   // A plain click replaces the selection; Shift, Ctrl or Cmd adds to it. One
   // rule for
@@ -1825,101 +1689,12 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     await commitOps(duplicateVobs(reader, selected, boundsOf, classProps));
   }, [commitOps, boundsOf, readClassProps]);
 
-  /**
-   * The scatter brush (level-editor.md §16.25) — off until the toolbar toggle
-   * is pressed, and **paints with the selection**: the palette is assembled by
-   * selecting a handful of already-placed VOBs rather than from a typed name or
-   * a stored blob, so there is nothing to persist and nothing to keep in sync
-   * with a world that can be closed under it.
-   */
-  const [scatterOn, setScatterOn] = useState(false);
-  const [scatterRadius, setScatterRadius] = useState(SCATTER_DEFAULT_RADIUS);
-  const [scatterSpacing, setScatterSpacing] = useState(SCATTER_DEFAULT_SPACING);
-  /** What the ring and the stroke actually use — see `SCATTER_MIN_RADIUS`. The
-   *  field keeps whatever was typed; only the tool is floored. */
-  const brushRadius = Math.max(SCATTER_MIN_RADIUS, scatterRadius || SCATTER_MIN_RADIUS);
-
-  /**
-   * A finished brush stroke, committed as **one batch and therefore one undo
-   * entry** — which is the whole reason the stroke is capped (§16.25, the
-   * density decision): §15's undo bar and the structural re-read have never
-   * been shown a batch of thousands, and a stroke over a hillside is one
-   * gesture away from that.
-   *
-   * The three layers meet here. `strokeCandidates` says where to try, knowing
-   * nothing of the world; each try is raycast **down from a candidate lifted by
-   * the brush radius**, so a candidate that fell uphill of the cursor still
-   * finds the ground above it rather than the inside of the slope; and
-   * `scatterVobs` turns the survivors into ordinary `AddVob`s.
-   *
-   * A candidate that hits nothing is dropped, not refused — the brush is a
-   * disc and the ground under it is not, so a stroke along a ridge legitimately
-   * throws half its tries away. That is the same rule a drop-to-ground follows
-   * for a VOB over the sky.
-   */
-  const handleScatterStroke = useCallback(async (
-    samples: Array<[number, number, number]>,
-  ) => {
-    const { summary: current, selection, editFailed } = useWorldStore.getState();
-    const viewport = viewportRef.current;
-    if (current === null || viewport === null || selection.length === 0) return;
-    // The viewport fires no stroke with a null radius, so this is belt and
-    // braces — but a stroke is delivered from outside React's render path and
-    // can outlive the toggle that allowed it, and what it would commit is 200
-    // VOBs the user did not ask for.
-    if (!scatterOn) return;
-
-    const { reader } = vobModelOf(current);
-    // Pruned as a duplicate prunes it: a member carries its own subtree, so a
-    // parent and its child both selected would paint that child twice.
-    const palette = topLevelVobs(reader, selection);
-    if (palette.length === 0) return;
-
-    const { candidates, capped } = strokeCandidates(
-      samples,
-      { radius: brushRadius, spacing: scatterSpacing, limit: SCATTER_LIMIT },
-      palette.length,
-      // The seed is the stroke's own: two strokes of the same shape should not
-      // produce the same forest, and `strokeCandidates` is deterministic in it
-      // so a stroke stays reproducible from the one number.
-      Date.now() >>> 0,
-    );
-
-    const placements: ScatterPlacement[] = [];
-    for (const candidate of candidates) {
-      const hit = viewport.raycastDown([
-        candidate.at[0], candidate.at[1] + brushRadius, candidate.at[2],
-      ]);
-      if (hit === null) continue;
-      placements.push({
-        source: palette[candidate.member],
-        position: hit.point,
-        normal: hit.normal,
-        yaw: candidate.yaw,
-      });
-    }
-    if (placements.length === 0) return;
-
-    const classProps = await readClassProps(reader, palette);
-    const committed = await commitOps(scatterVobs(reader, placements, boundsOf, classProps));
-    // Said only for a stroke that landed: a refusal already has the banner, and
-    // overwriting it with the cap would replace the reason with a footnote.
-    if (committed && capped) {
-      editFailed(`The stroke was capped at ${SCATTER_LIMIT} VOBs — one stroke is one undo entry. Paint it in several passes for more.`);
-    }
-  }, [commitOps, boundsOf, readClassProps, scatterOn, brushRadius, scatterSpacing]);
-
-  /**
-   * The radius the viewport draws its ring at, and null for a brush that is not
-   * live.
-   *
-   * The brush paints with the selection, so a pressed toggle over an empty
-   * selection is a brush with nothing to place: it stays pressed — clearing a
-   * selection mid-session should not silently turn the tool off — and goes
-   * inert until something is selected again, which is the state the toolbar's
-   * own hint names.
-   */
-  const scatterBrushRadius = scatterOn && selection.length > 0 ? brushRadius : null;
+  const {
+    scatterOn, toggleScatter, scatterRadius, setScatterRadius,
+    scatterSpacing, setScatterSpacing, scatterBrushRadius, handleScatterStroke,
+  } = useScatterBrush({
+    commitOps, boundsOf, readClassProps, viewport: viewportRef,
+  });
 
   clipboardInput.current = { commitOps, boundsOf, readClassProps };
 
@@ -1939,80 +1714,18 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     waynet, selectedWaypoint, spawnSiteIndex, waypointSiteIndex, commitOps,
   });
 
-  /**
-   * Spawn an NPC at a waypoint by writing `Wld_InsertNpc` into the open
-   * project's `STARTUP_<world>` (level-editor.md §16.19, slice 16 D and E) —
-   * the first edit here that reaches a file this surface is not editing.
-   *
-   * Waypoint op first, script second: a spawn naming a point the world has
-   * not got is the worse half-state. The op goes through `commitOps`, so a
-   * refusal there is already on the banner and the script is left alone; a
-   * refusal *after* it says the waypoint stands.
-   *
-   * The refusals before anything is written are the renderer's, because main
-   * holds no picture of the project (slice A's resolver) and none of which
-   * files the dialog editor has open (E). A `Startup.d` open and dirty is
-   * refused rather than merged: the flow's mtime guard compares against its
-   * own read, so the editor's stale model would save straight over the spawn.
-   * Open and clean, it is reloaded the way an external change is. The cached
-   * model in `parsedFiles` gets slice A's edit — the renderer's picture of the
-   * one line C spliced — so a reader of the function's actions is not one
-   * spawn behind and no parse round trip is spent on it.
-   */
-  const insertNpcAt = useCallback(async (
-    instance: string, spawnPoint: string, existing: boolean, point: [number, number, number] | null,
-  ) => {
-    const { editFailed, summary: current } = useWorldStore.getState();
-    if (current === null) return;
-    const functionName = startupFunctionFor(current.worldPath);
-    const found = findFunctionFile(useProjectStore.getState().parsedFiles, functionName);
-    if (!found.ok) {
-      const { refusal } = found;
-      editFailed(refusal.kind === 'no-project'
-        ? 'No script project is open — Wld_InsertNpc needs a STARTUP_<world> function to go in.'
-        : refusal.kind === 'no-startup-function'
-          ? `No file in the project declares ${refusal.functionName}.`
-          : `${baseName(refusal.filePath)} has syntax errors; fix them before a spawn is appended.`);
-      return;
-    }
-    const { filePath } = found;
-    const open = useFileStore.getState().openFiles.get(filePath);
-    if (open !== undefined && hasUnsavedChanges(open)) {
-      editFailed(`${baseName(filePath)} is open in the dialog editor with unsaved changes — save or discard them first.`);
-      return;
-    }
-
-    if (!existing) {
-      if (waynet === null || point === null) return;
-      if (!await commitOps([addWaypoint(waynet.names, spawnPoint, point)])) return;
-    }
-
-    const half = existing ? '' : `Waypoint ${spawnPoint} was added, but `;
-    let result;
-    try {
-      result = await window.editorAPI.appendInsertNpc(filePath, found.functionName, instance, spawnPoint);
-    } catch (failure) {
-      editFailed(half + (failure instanceof Error ? failure.message : String(failure)));
-      return;
-    }
-    if (!result.ok) {
-      const { reason } = result;
-      editFailed(half + (reason.kind === 'parse-errors'
-        ? `${baseName(filePath)} has syntax errors on disk: ${reason.errors.join('; ')}`
-        : reason.kind === 'function-not-found'
-          ? `${reason.functionName} is not in ${baseName(filePath)} on disk.`
-          : `${baseName(filePath)} changed on disk while the spawn was being appended — nothing was written.`));
-      return;
-    }
-
-    const project = useProjectStore.getState();
-    project.addSpawnSite({
-      instance: instance.toUpperCase(), spawnPoint: spawnPoint.toUpperCase(),
-      filePath, functionName: found.functionName, line: result.line,
-    });
-    project.updateFileModel(filePath, appendInsertNpc(found.model, found.functionName, instance, spawnPoint));
-    if (open !== undefined) await useFileStore.getState().reloadFile(filePath);
-  }, [commitOps, waynet]);
+  const {
+    draft: insertingNpc,
+    openAtWaypoint: openInsertNpcAtWaypoint,
+    openForNewWaypoint: openInsertNpcForNewWaypoint,
+    editDraft: editInsertNpcDraft,
+    closeDraft: closeInsertNpcDraft,
+    insertNpcAt,
+    startupFunctionName,
+    targetExists: insertTargetExists,
+    unknownInstance: unknownInsertInstance,
+    duplicateSpawn: duplicateInsertSpawn,
+  } = useInsertNpc({ waynet, commitOps });
 
   /**
    * The overlay, switched on for an action whose result is a waypoint: only
@@ -2051,36 +1764,6 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    */
   const duplicateWaypointName = addingWaypoint !== null
     && (waynet?.names.includes(addingWaypoint.trim()) ?? false);
-  /** The same refusal for the Insert-NPC dialog's waypoint — only when it is
-   *  authoring one; the panel's variant names a point the world already has. */
-  /** Whether the typed waypoint is one the world already has — then the NPC
-   *  spawns there and no waypoint is authored. Not a clash: the name field
-   *  offers the world's own names for exactly this. */
-  const insertTargetExists = insertingNpc !== null && !insertingNpc.existing
-    && (waynet?.names.includes(insertingNpc.waypoint.trim()) ?? false);
-  const startupFunctionName = summary === null ? '' : startupFunctionFor(summary.worldPath);
-  /**
-   * The typed instance is not one the project index declares — a warning, not
-   * a refusal: an empty index means "nothing is known", never "nothing is
-   * legal", and an instance declared in a file the index has not parsed is
-   * legal too. Case-insensitive, since Daedalus is.
-   */
-  const unknownInsertInstance = insertingNpc !== null && npcList.length > 0
-    && insertingNpc.instance.trim() !== ''
-    && !npcList.some((npc) => npc.toUpperCase() === insertingNpc.instance.trim().toUpperCase());
-  /**
-   * The site the index already holds for this instance on this point, if any —
-   * keyed uppercase, the index's own casing. A warning that wants an explicit
-   * confirm, not a refusal: retail spawns the same NPC on a point more than
-   * once (chapter re-entry).
-   */
-  const duplicateInsertSpawn = useMemo(() => {
-    if (insertingNpc === null) return null;
-    const instance = insertingNpc.instance.trim().toUpperCase();
-    const spawnPoint = insertingNpc.waypoint.trim().toUpperCase();
-    if (instance === '' || spawnPoint === '') return null;
-    return spawnSiteIndex.find((site) => site.instance === instance && site.spawnPoint === spawnPoint) ?? null;
-  }, [insertingNpc, spawnSiteIndex]);
 
   /**
    * Remove a VOB and its whole subtree — **the one edit here that cannot be
@@ -2315,9 +1998,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         onPlaceVob={() => setPlacing(FRESH_PLACE)}
         onInsertNpc={() => {
           ensureWaynetShown();
-          setInsertingNpc(selectedWaypoint !== null && waynet !== null
-            ? { instance: '', waypoint: waynet.names[selectedWaypoint], existing: true }
-            : { instance: '', waypoint: suggestedWaypointName(), existing: false });
+          if (selectedWaypoint !== null && waynet !== null) {
+            openInsertNpcAtWaypoint(waynet.names[selectedWaypoint]);
+          } else openInsertNpcForNewWaypoint(suggestedWaypointName());
         }}
         onAddWaypoint={() => {
           ensureWaynetShown();
@@ -2360,7 +2043,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         onUndo={() => void runHistory('undo')}
         onRedo={() => void runHistory('redo')}
         scatterOn={scatterOn}
-        onScatterToggle={() => setScatterOn((on) => !on)}
+        onScatterToggle={toggleScatter}
         scatterRadius={scatterRadius}
         scatterSpacing={scatterSpacing}
         onScatterRadiusChange={setScatterRadius}
@@ -2896,9 +2579,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                       onDelete={() => setDeletingWaypoint({
                         waypoint: selectedWaypoint, name: waynet.names[selectedWaypoint],
                       })}
-                      onInsertNpc={() => setInsertingNpc({
-                        instance: '', waypoint: waynet.names[selectedWaypoint], existing: true,
-                      })}
+                      onInsertNpc={() => openInsertNpcAtWaypoint(waynet.names[selectedWaypoint])}
                     />
                   )
                   : (
@@ -3041,7 +2722,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                     size="small"
                     onClick={() => {
                       ensureWaynetShown();
-                      setInsertingNpc({ instance: '', waypoint: suggestedWaypointName(), existing: false });
+                      openInsertNpcForNewWaypoint(suggestedWaypointName());
                     }}
                     data-testid="world-insert-npc"
                   >
@@ -3124,106 +2805,25 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         </DialogActions>
       </Dialog>
 
-      <Dialog
-        open={insertingNpc !== null}
-        onClose={() => setInsertingNpc(null)}
-        maxWidth="xs"
-        fullWidth
-        data-testid="world-insert-npc-dialog"
-      >
-        <DialogTitle>Insert NPC</DialogTitle>
-        <DialogContent>
-          <DialogContentText variant="caption" sx={{ display: 'block', mb: 1.5 }}>
-            {/* The one thing this dialog does that no other here does: it
-                writes a script. Said up front, with where. */}
-            {insertingNpc?.existing || insertTargetExists
-              ? `A Wld_InsertNpc line is appended to ${startupFunctionName} in the open project.`
-              : `The waypoint is appended as a free point ${terrainPoint === null
-                ? 'where you next click the ground'
-                : `at ${terrainPoint.map((v) => Math.round(v)).join(', ')}`}, `
-                + `then a Wld_InsertNpc line is appended to ${startupFunctionName} in the open project.`}
-          </DialogContentText>
-          <Box data-testid="world-insert-npc-instance" sx={{ mb: 1.5 }}>
-            <VariableAutocomplete
-              label="NPC instance"
-              value={insertingNpc?.instance ?? ''}
-              onChange={(instance) => setInsertingNpc((draft) => draft && { ...draft, instance })}
-              fullWidth
-              allowCreation={false}
-              showNavigation={false}
-              {...AUTOCOMPLETE_POLICIES.actions.npc}
-            />
-            {unknownInsertInstance && (
-              <Typography
-                variant="caption"
-                color="warning.main"
-                data-testid="world-insert-npc-instance-warning"
-                sx={{ display: 'block', mt: 0.25 }}
-              >
-                {`${insertingNpc.instance.trim()} is not an NPC instance this project declares.`}
-              </Typography>
-            )}
-          </Box>
-          {/* The world's own names are the options: an existing one means
-              "spawn there", a new one means "author it". Opened from a
-              waypoint's panel the field is that waypoint and locked. */}
-          <Autocomplete
-            freeSolo
-            fullWidth
-            size="small"
-            disabled={insertingNpc?.existing ?? false}
-            options={waynet?.names ?? []}
-            inputValue={insertingNpc?.waypoint ?? ''}
-            onInputChange={(_event, value) => setInsertingNpc((draft) => draft && { ...draft, waypoint: value })}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                label="Waypoint"
-                helperText={insertingNpc?.existing
-                  ? ' '
-                  : insertTargetExists
-                    ? 'Already in this world — the NPC spawns there.'
-                    : 'Not in this world yet — a free point is added for it.'}
-                inputProps={{ ...params.inputProps, 'data-testid': 'world-insert-npc-waypoint', spellCheck: false }}
-              />
-            )}
-          />
-          {duplicateInsertSpawn !== null && (
-            <Typography
-              variant="caption"
-              color="warning.main"
-              data-testid="world-insert-npc-duplicate-warning"
-              sx={{ display: 'block' }}
-            >
-              {`${duplicateInsertSpawn.instance} already spawns at ${duplicateInsertSpawn.spawnPoint} `
-                + `(${baseName(duplicateInsertSpawn.filePath)}:${duplicateInsertSpawn.line}).`}
-            </Typography>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setInsertingNpc(null)}>Cancel</Button>
-          <Button
-            variant="contained"
-            disabled={insertingNpc === null || insertingNpc.instance.trim() === ''
-              || insertingNpc.waypoint.trim() === ''}
-            onClick={() => {
-              const draft = insertingNpc;
-              setInsertingNpc(null);
-              if (draft === null) return;
-              const instance = draft.instance.trim();
-              const waypoint = draft.waypoint.trim();
-              if (draft.existing || insertTargetExists) void insertNpcAt(instance, waypoint, true, null);
-              else if (terrainPoint !== null) void insertNpcAt(instance, waypoint, false, terrainPoint);
-              else setArmed({ kind: 'insert-npc', instance, waypoint });
-            }}
-            data-testid="world-insert-npc-confirm"
-          >
-            {duplicateInsertSpawn === null
-              ? (insertingNpc?.existing || insertTargetExists || terrainPoint !== null ? 'Insert' : 'Insert on next click')
-              : 'Insert anyway'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <InsertNpcDialog
+        draft={insertingNpc}
+        waypointNames={waynet?.names ?? []}
+        startupFunctionName={startupFunctionName}
+        targetExists={insertTargetExists}
+        unknownInstance={unknownInsertInstance}
+        duplicateSpawn={duplicateInsertSpawn}
+        terrainPoint={terrainPoint}
+        onChange={editInsertNpcDraft}
+        onCancel={closeInsertNpcDraft}
+        onConfirm={(instance, waypoint, target) => {
+          closeInsertNpcDraft();
+          if (target.existing) void insertNpcAt(instance, waypoint, true, null);
+          else if (target.point !== null) void insertNpcAt(instance, waypoint, false, target.point);
+          // Nowhere to put the waypoint yet, so the spawn waits for the click
+          // that chooses one — the status bar names the armed action.
+          else setArmed({ kind: 'insert-npc', instance, waypoint });
+        }}
+      />
 
       <Dialog open={placing !== null} onClose={() => setPlacing(null)} maxWidth="xs" fullWidth>
         <DialogTitle>Place a VOB</DialogTitle>
