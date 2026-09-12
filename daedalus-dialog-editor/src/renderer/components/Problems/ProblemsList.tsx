@@ -38,10 +38,11 @@ const secondaryText = ({ locus }: Problem): string => {
 /**
  * Whether clicking the row leads anywhere. A script problem always does. A
  * world problem needs the world open — the editor holds one at a time — and an
- * address the World surface can jump to; a polygon locus has neither a row in
- * the VOB index nor a name in the waynet, and is listed without a jump —
- * §16.20 slice 3 landed the portal findings that way on purpose (Daniel,
- * 2026-09-02): framing a polygon is not designed, and not built.
+ * address the World surface can jump to. A polygon locus has neither a row in
+ * the VOB index nor a name in the waynet, so it is an address only when the
+ * finding brought the polygon's corners with it (#222); the portal finding
+ * that names a material no face carries brings none, and is still listed
+ * without a jump.
  */
 const isNavigable = (problem: Problem, worldOpen: boolean): boolean => (
   problem.locus.kind !== 'world'

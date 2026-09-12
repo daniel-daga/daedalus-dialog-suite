@@ -937,6 +937,21 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
 
     if (focusRequest.kind === 'vob') { focusVob(focusRequest.vob); return; }
 
+    // A portal finding (#222). It carries its own geometry because the scene
+    // has none to look up, and the viewport draws it as well as flies to it —
+    // a portal is an invisible face, so framing alone shows a wall.
+    if (focusRequest.kind === 'polygon') {
+      const viewport = viewportRef.current;
+      // Reported rather than optional-chained away, for §16.24 5's reason: a
+      // locator that has stopped working must not look like one that jumped to
+      // something already on screen.
+      const outcome = viewport === null
+        ? 'no-scene'
+        : viewport.framePolygon(focusRequest.corners);
+      if (outcome !== null) console.warn(`Could not jump to polygon ${focusRequest.polygon}: ${outcome}`);
+      return;
+    }
+
     // A world the request names and this surface is not showing (#226): the
     // dialog editor knows which `.ZEN` an NPC lives in but cannot open one, so
     // the open happens here and the jump is re-issued on the other side of it.

@@ -374,6 +374,24 @@ export interface WorldViewportHandle {
    */
   framePoint: (at: ZenPosition) => FrameFailure | null;
   /**
+   * Frame a portal polygon and draw its outline — the Problems panel's click
+   * on a portal finding (#222).
+   *
+   * It takes the polygon's corners rather than its index because the scene
+   * cannot turn one into the other: the world mesh is merged draw groups with
+   * no polygon mapping, which is why the portal findings were listed without a
+   * jump until the corners started riding along with them.
+   *
+   * Drawing is half the command and not a garnish. A portal is an invisible
+   * face inside solid geometry, so a camera flown to its centroid with nothing
+   * drawn shows a wall — the same picture the user had before the click.
+   *
+   * `not-drawn` for a polygon with fewer than three corners; a no-op while the
+   * scene effect is between a teardown and its rebuild, exactly as
+   * {@link frameVob} is.
+   */
+  framePolygon: (corners: readonly (readonly [number, number, number])[]) => FrameFailure | null;
+  /**
    * The camera's own position, in ZenGin space — what the scene tree's
    * "within reach of the camera" filter measures VOBs against.
    *
@@ -465,6 +483,9 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     // answers, and `??` would turn every landed jump into a reported failure.
     frameVob: (vob) => (frameVobRef.current === null ? 'no-scene' : frameVobRef.current(vob)),
     framePoint: (at) => (framePointRef.current === null ? 'no-scene' : framePointRef.current(at)),
+    framePolygon: (corners) => (
+      framePolygonRef.current === null ? 'no-scene' : framePolygonRef.current(corners)
+    ),
     cameraPosition: () => (cameraPositionRef.current === null ? null : cameraPositionRef.current()),
   }), []);
 
@@ -527,6 +548,9 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   // calls it through the ref rather than closing over it.
   const frameVobRef = useRef<((vob: number) => FrameFailure | null) | null>(null);
   const framePointRef = useRef<((at: ZenPosition) => FrameFailure | null) | null>(null);
+  const framePolygonRef = useRef<
+    ((corners: readonly (readonly [number, number, number])[]) => FrameFailure | null) | null
+  >(null);
   const cameraPositionRef = useRef<(() => ZenPosition) | null>(null);
   // Read by the draw loop, which lives outside React's render path: going off
   // screen must not tear the scene down and rebuild 31 MB of buffers — that
@@ -822,7 +846,13 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       },
       consumeFly: () => nav.consumeFly(),
       contextMenu: () => onVobContextMenuRef.current,
-      onPick: (vob, terrain, additive) => onPickRef.current(vob, terrain, additive),
+      onPick: (vob, terrain, additive) => {
+        // The outline is the answer to one click in the Problems panel, not a
+        // layer the user turned on: the next thing they touch in the viewport
+        // is them moving on from it (#222).
+        world.hidePortal();
+        onPickRef.current(vob, terrain, additive);
+      },
       onSelectWaypoint: (waypoint) => onSelectWaypointRef.current(waypoint),
       rememberPick,
       onPivot: (at, zen) => {
@@ -902,6 +932,14 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     // A waypoint carries its own position and has no size: `bounds: null` is
     // what `frameVobs` already reads as "a point".
     framePointRef.current = (at: ZenPosition) => frameFramables([{ at, bounds: null }]);
+    // Drawn first, then framed off what was drawn — one call answers both, so
+    // the outline and the camera can never disagree about which polygon this
+    // is. A polygon too degenerate to draw is `not-drawn`, the same answer a
+    // VOB the scene places nothing for gets.
+    framePolygonRef.current = (corners) => {
+      const framed = world.showPortal(corners);
+      return framed === null ? 'not-drawn' : frameFramables([framed]);
+    };
     // Same math as `window.__worldViewport.cameraPosition()` below — this is
     // the production path, that one is the debug/test double for scripting
     // the viewport without a ref.
@@ -1129,6 +1167,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       gizmoRef.current = null;
       frameVobRef.current = null;
       framePointRef.current = null;
+      framePolygonRef.current = null;
       cameraPositionRef.current = null;
       delete window.__worldViewport;
       drawLoopRef.current = null;

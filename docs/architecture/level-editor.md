@@ -2478,6 +2478,29 @@ changed it: a duplicate spawn is script-locus and an occupancy overlap is
 *both*, so two panels would split siblings apart and make one mod's problems two
 places to look. Long form and what it unblocks: §16.20.
 
+**A portal finding carries the geometry it is framed by** (2026-09-12, Daniel;
+#222). The polygon *index* in a world locus addresses nothing the renderer can
+reach: the scene holds merged draw groups keyed by material, with no polygon
+mapping, so a finding that named only an index was listed without a jump for ten
+days after the rest of slice 2 landed. Three answers were on the table — a
+`_drillMesh` window per click, a readout of every portal polygon in the world,
+or the finding bringing its own corners. **The corners ride along**, because a
+finding is a polygon that is *wrong*: the four retail worlds produce one finding
+between them across five rules, so this is kilobytes of a world's defects and
+never the megabytes of its mesh that the first cut refused. `checkPortals`
+attaches them in the worker where the geometry already is; the corners reach
+`WorldLocus.polygonCorners`, and `worldFocusOf` answers a `polygon` focus only
+when they are there — a finding on a material no portal face carries has no face
+to frame and stays the one unclickable portal row.
+
+**And framing draws.** A portal is an invisible face inside solid geometry, so a
+camera flown to its centroid alone shows a wall — the picture the user already
+had. `PortalOutline` draws the polygon as a depth-test-free line loop under the
+mirrored root and answers the centroid and bounds the camera is framed with, so
+the outline and the camera cannot end up on different polygons; the next pick in
+the viewport puts it away. The centroid is of the *corners*, not of the bounding
+box, because retail ships 7-gons and 12-gons whose box centre is off the polygon.
+
 **An enum property is an editable combobox, never a plain dropdown**
 (2026-08-29, Daniel). The objection that held §14.1 1.4 shut — retail carries
 out-of-range values a dropdown would destroy — is an argument against *coercion*,

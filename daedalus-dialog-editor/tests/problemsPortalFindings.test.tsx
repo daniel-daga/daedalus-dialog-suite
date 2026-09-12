@@ -5,8 +5,8 @@
  * the way it reads `waynetNames`, and the scan re-runs when they change.
  *
  * The findings are computed in the zenkit worker, where the mesh is, and
- * cross the IPC as data; the renderer never sees the portal geometry, because
- * framing a polygon is deliberately not built (§16.20 slice 3, 2026-09-02).
+ * cross the IPC as data — including the corners of the one polygon each
+ * finding names, which is what makes the row clickable (#222, 2026-09-12).
  *
  * @jest-environment jsdom
  */
@@ -14,15 +14,22 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { useWorldStore } from '../src/renderer/store/worldStore';
+import { useWorldStore, worldFocusOf } from '../src/renderer/store/worldStore';
 import { useProblemsStore } from '../src/renderer/store/problemsStore';
 import { useProjectStore } from '../src/renderer/store/projectStore';
 import { initStoreSync } from '../src/renderer/store/storeSync';
 import * as scanProjectModule from '../src/renderer/problems/application/scanProject';
 import ProblemsList from '../src/renderer/components/Problems/ProblemsList';
 import type { PortalFinding } from '../src/shared/worldTypes';
+import type { Problem } from '../src/renderer/problems/domain/types';
 
-const REVERSED: PortalFinding = { kind: 'portal-reversed', material: 'P:CAPTAIN_', polygon: 456754, sector: 'CAPTAIN' };
+/** One portal face, as `getPortals` reads it — ZenGin centimetres. */
+const CORNERS: ReadonlyArray<readonly [number, number, number]> = [
+  [10, 0, 0], [10, 100, 0], [10, 100, 100], [10, 0, 100],
+];
+const REVERSED: PortalFinding = {
+  kind: 'portal-reversed', material: 'P:CAPTAIN_', polygon: 456754, sector: 'CAPTAIN', corners: CORNERS,
+};
 
 beforeEach(() => {
   useProjectStore.setState({
@@ -65,7 +72,7 @@ describe('the Problems scan over an open world', () => {
 
     const found = useProblemsStore.getState().problems.filter((p) => p.rule === 'portal-reversed');
     expect(found).toHaveLength(1);
-    expect(found[0].locus).toEqual({ kind: 'world', polygon: 456754 });
+    expect(found[0].locus).toEqual({ kind: 'world', polygon: 456754, polygonCorners: CORNERS });
   });
 
   it('hands the scan the stored findings rather than recomputing anything', () => {
@@ -119,27 +126,68 @@ describe('the re-scan trigger', () => {
   });
 });
 
+const portalProblem = (locus: Problem['locus']): Problem => ({
+  id: 'portal-reversed:456754',
+  rule: 'portal-reversed',
+  severity: 'warning',
+  message: 'Portal polygon 456754 ("P:CAPTAIN_") faces away from sector "CAPTAIN".',
+  locus,
+});
+
 describe('a portal row in the Problems list', () => {
-  it('is listed under its own label and is not clickable, even with the world open', () => {
-    // Daniel, 2026-09-02: listed but not clickable is slice 3. `worldFocusOf`
-    // answers null for a polygon locus, so the row is disabled; nothing here
-    // frames a polygon.
+  it('is listed under its own label, and a finding carrying corners is clickable', () => {
     render(
       <ProblemsList
         worldOpen
         onSelect={jest.fn()}
-        problems={[{
-          id: 'portal-reversed:456754',
-          rule: 'portal-reversed',
-          severity: 'warning',
-          message: 'Portal polygon 456754 ("P:CAPTAIN_") faces away from sector "CAPTAIN".',
-          locus: { kind: 'world', polygon: 456754 },
-        }]}
+        problems={[portalProblem({ kind: 'world', polygon: 456754, polygonCorners: CORNERS })]}
       />,
     );
 
     expect(screen.getByText('Portal reversed')).toBeInTheDocument();
     expect(screen.getByText('World · polygon 456754')).toBeInTheDocument();
+    expect(screen.getByTestId('problem-row-0')).not.toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('stays unclickable for a name finding no face carries', () => {
+    // `P:_` on a material no polygon references: a real finding with nothing
+    // to frame, which is the one row that keeps §16.20 slice 3's behaviour.
+    render(
+      <ProblemsList
+        worldOpen
+        onSelect={jest.fn()}
+        problems={[portalProblem({ kind: 'world' })]}
+      />,
+    );
     expect(screen.getByTestId('problem-row-0')).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('stays unclickable while no world is open, corners or not', () => {
+    render(
+      <ProblemsList
+        worldOpen={false}
+        onSelect={jest.fn()}
+        problems={[portalProblem({ kind: 'world', polygon: 456754, polygonCorners: CORNERS })]}
+      />,
+    );
+    expect(screen.getByTestId('problem-row-0')).toHaveAttribute('aria-disabled', 'true');
+  });
+});
+
+describe('worldFocusOf over a polygon locus', () => {
+  it('asks the World surface to frame the polygon, corners and all', () => {
+    expect(worldFocusOf({ kind: 'world', polygon: 456754, polygonCorners: CORNERS }))
+      .toEqual({ kind: 'polygon', polygon: 456754, corners: CORNERS });
+  });
+
+  it('answers null for a polygon with no corners — there is nothing to frame', () => {
+    expect(worldFocusOf({ kind: 'world', polygon: 456754 })).toBeNull();
+  });
+
+  it('leaves the VOB and waypoint addresses ahead of it', () => {
+    // A locus never carries two addresses, but the order is the contract the
+    // panel's click depends on and a polygon must not overtake either.
+    expect(worldFocusOf({ kind: 'world', vob: 7, polygon: 1, polygonCorners: CORNERS }))
+      .toEqual({ kind: 'vob', vob: 7 });
   });
 });

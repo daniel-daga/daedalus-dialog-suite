@@ -9,8 +9,9 @@ import { PORTAL_PLANARITY_TOLERANCE } from 'zen-world';
  * world's mesh; what reaches this rule is their findings, one per defect, each
  * pinned to a polygon where one carries the material. This rule only turns a
  * finding into a `Problem`: an id, a severity, a message and a **world locus
- * by polygon** — which the panel lists and does not make clickable, because
- * framing a polygon is deliberately not built (Daniel, 2026-09-02).
+ * by polygon**, carrying that polygon's corners so the panel's click can frame
+ * it (#222, Daniel 2026-09-12). A finding whose material no portal face
+ * carries has neither, and is the one portal row still listed without a jump.
  *
  * **No world open means no findings**, exactly as `waypoint-not-in-world`: an
  * absent list is nothing known, never nothing legal.
@@ -37,8 +38,11 @@ export const portalsRule: LintRule = (view): Problem[] => {
   return problems;
 };
 
-const locusOf = (polygon: number | null): ProblemLocus =>
-  (polygon === null ? { kind: 'world' } : { kind: 'world', polygon });
+const locusOf = (finding: PortalFinding): ProblemLocus => (
+  finding.polygon === null || finding.corners === null
+    ? { kind: 'world' }
+    : { kind: 'world', polygon: finding.polygon, polygonCorners: finding.corners }
+);
 
 function problemOf(finding: PortalFinding): Problem {
   switch (finding.kind) {
@@ -48,7 +52,7 @@ function problemOf(finding: PortalFinding): Problem {
         rule: finding.kind,
         severity: 'error',
         message: `Portal material "${finding.material}" is not P:<sector>_<sector>.`,
-        locus: locusOf(finding.polygon),
+        locus: locusOf(finding),
       };
     case 'portal-material-unknown-sector':
       return {
@@ -56,7 +60,7 @@ function problemOf(finding: PortalFinding): Problem {
         rule: finding.kind,
         severity: 'error',
         message: `Portal material "${finding.material}" names sector "${finding.sector}", which this world does not have.`,
-        locus: locusOf(finding.polygon),
+        locus: locusOf(finding),
       };
     case 'portal-unpaired':
       return {
@@ -64,7 +68,7 @@ function problemOf(finding: PortalFinding): Problem {
         rule: finding.kind,
         severity: 'warning',
         message: `Portal material "${finding.material}" has no mirror "${finding.wanted}".`,
-        locus: locusOf(finding.polygon),
+        locus: locusOf(finding),
       };
     case 'portal-non-planar':
       return {
@@ -72,7 +76,7 @@ function problemOf(finding: PortalFinding): Problem {
         rule: finding.kind,
         severity: 'warning',
         message: `Portal polygon ${finding.polygon} ("${finding.material}") is ${finding.spread.toFixed(1)} units off its own plane; retail stays within ${PORTAL_PLANARITY_TOLERANCE}.`,
-        locus: locusOf(finding.polygon),
+        locus: locusOf(finding),
       };
     case 'portal-reversed':
       return {
@@ -80,7 +84,7 @@ function problemOf(finding: PortalFinding): Problem {
         rule: finding.kind,
         severity: 'warning',
         message: `Portal polygon ${finding.polygon} ("${finding.material}") faces away from sector "${finding.sector}".`,
-        locus: locusOf(finding.polygon),
+        locus: locusOf(finding),
       };
   }
 }

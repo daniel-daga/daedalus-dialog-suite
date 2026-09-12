@@ -64,6 +64,16 @@ export interface WorldLocus {
   vob?: number;
   /** Index of the offending world-mesh polygon, as of the scan. */
   polygon?: number;
+  /**
+   * That polygon's corners, in ZenGin space — what the World surface frames
+   * and outlines (#222).
+   *
+   * Carried beside the index rather than looked up from it, because there is
+   * nothing on the renderer side to look it up in: the scene holds merged draw
+   * groups with no polygon mapping. Absent when the finding names a material no
+   * portal face carries, which is the one portal row that stays unclickable.
+   */
+  polygonCorners?: readonly (readonly [number, number, number])[];
 }
 
 /** Where a problem is. */

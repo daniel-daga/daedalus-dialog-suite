@@ -75,6 +75,9 @@ const mockFrameVob = jest.fn() as jest.Mock<void, [number]>;
 /** And the same jump onto a bare position — what a waypoint gets, having no
  *  row in the VOB index (§16.20 slice 2). */
 const mockFramePoint = jest.fn() as jest.Mock<void, [[number, number, number]]>;
+const mockFramePolygon = jest.fn() as jest.Mock<
+  void, [readonly (readonly [number, number, number])[]]
+>;
 /** A quarter turn about Y, row-major — asymmetric, so a transpose would show. */
 const TURN: number[] = [0, 0, 1, 0, 1, 0, -1, 0, 0];
 /** The pose every VOB in the fixture index has. */
@@ -123,7 +126,7 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
     ) => void;
   }, ref: React.Ref<{
     raycastDown: typeof mockRaycastDown; frameVob: typeof mockFrameVob;
-    framePoint: typeof mockFramePoint;
+    framePoint: typeof mockFramePoint; framePolygon: typeof mockFramePolygon;
   }>) => {
     mockAppliedOps = props.appliedOps;
     mockSelection = props.selection;
@@ -149,6 +152,7 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
     // raycast or a real camera.
     ReactActual.useImperativeHandle(ref, () => ({
       raycastDown: mockRaycastDown, frameVob: mockFrameVob, framePoint: mockFramePoint,
+      framePolygon: mockFramePolygon,
     }));
     return (
       <div data-testid="world-viewport-stub">
@@ -304,6 +308,7 @@ beforeEach(() => {
   mockWaynet = undefined;
   mockShowWaynet = undefined;
   mockFramePoint.mockReset();
+  mockFramePolygon.mockReset();
   mockVobProps = { class: 'zCVob', ...BASE_PROPS };
   mockRaycastDown.mockReset();
   mockFrameVob.mockReset();
@@ -3762,6 +3767,45 @@ describe('a focus request from outside the surface', () => {
     // the same reason switching it off clears the selected waypoint.
     expect(mockShowWaynet).toBe(true);
     expect(useWorldStore.getState().focusRequest).toBeNull();
+  });
+
+  it('frames and outlines the portal polygon a finding names (#222)', async () => {
+    await openWorld();
+    mockFramePolygon.mockReturnValue(null as never);
+    const corners = [[10, 0, 0], [10, 100, 0], [10, 100, 100], [10, 0, 100]] as const;
+    const selectionWas = useWorldStore.getState().selection;
+
+    await act(async () => {
+      useWorldStore.getState().requestFocus({ kind: 'polygon', polygon: 456754, corners });
+    });
+
+    // The geometry, not the index: the scene holds merged draw groups and
+    // cannot turn one into the other.
+    expect(mockFramePolygon).toHaveBeenCalledWith(corners);
+    // A portal has no row in the VOB index and no dot in the waynet, so
+    // neither selection moves — the outline is the whole of what is shown.
+    expect(useWorldStore.getState().selection).toEqual(selectionWas);
+    expect(useWorldStore.getState().selectedWaypoint).toBeNull();
+    expect(mockFrameVob).not.toHaveBeenCalled();
+    expect(mockFramePoint).not.toHaveBeenCalled();
+    expect(useWorldStore.getState().focusRequest).toBeNull();
+  });
+
+  it('says so when a portal jump lands nowhere, rather than failing silently', async () => {
+    // §16.24 5: a locator that has stopped working must not be indistinguishable
+    // from one that jumped to something already on screen.
+    await openWorld();
+    mockFramePolygon.mockReturnValue('not-drawn' as never);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await act(async () => {
+      useWorldStore.getState().requestFocus({
+        kind: 'polygon', polygon: 456754, corners: [[0, 0, 0], [1, 0, 0], [0, 1, 0]],
+      });
+    });
+
+    expect(warn).toHaveBeenCalledWith('Could not jump to polygon 456754: not-drawn');
+    warn.mockRestore();
   });
 
   it('takes the request and jumps nowhere for a name this waynet has not', async () => {

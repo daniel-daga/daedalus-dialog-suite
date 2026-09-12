@@ -1806,8 +1806,10 @@ the gap and left it open; §16.18 added two more behind it; the Phase 1c overlay
      unrelated waynet re-read.
    - **`worldFocusOf` is the one predicate**, and both halves read it: the list
      to disable a row, the panel to build the request. A locus it answers `null`
-     for is listed and not clickable, which is the honest state for a polygon —
-     framing one needs the mesh and is slice 3's, with the rule that emits it.
+     for is listed and not clickable, which was the honest state for a polygon
+     until the corners started riding along with the finding (#222, 2026-09-12);
+     a polygon locus with no corners still answers `null`, and that is now the
+     one portal row without a jump.
    - **A waypoint is not a VOB**, so the handle grew `framePoint(at)` beside
      `frameVob`: no row in the columnar index, no bounds, and `frameVobs`
      already reads `bounds: null` as "a point". The lookup is by name and
@@ -1883,14 +1885,13 @@ the gap and left it open; §16.18 added two more behind it; the Phase 1c overlay
    - **`problems/domain`** — two new `ProblemRuleId`s, the rule, `runRules`, and
      `ProjectView`'s new input.
 
-   And one part is not just big but **unspecified**: slice 2 assigned polygon
-   *framing* to this slice ("framing one needs the mesh"), and nothing says what
-   framing a polygon means. The renderer holds merged draw groups with no
-   polygon mapping, so it would be a `_drillMesh` window per finding or a new
-   readout — a design decision, not an implementation of one. Without it the
-   findings are listed and not clickable, which `worldFocusOf` already does
-   correctly for a polygon locus; whether that is an acceptable slice 3 is a
-   human's call, not a run's. (It was: Daniel, 2026-09-02, above.)
+   And one part was not just big but **unspecified**: slice 2 assigned polygon
+   *framing* to this slice ("framing one needs the mesh"), and nothing said what
+   framing a polygon meant. Listed-and-not-clickable was accepted as slice 3
+   (Daniel, 2026-09-02) and **framing landed 2026-09-12** (#222) on the third
+   of the three options — neither a `_drillMesh` window per finding nor a new
+   readout of every portal, but the finding carrying the corners of its own
+   polygon. The durable outcome is architecture §7.
 
 **What this does *not* unblock, and must not be smuggled in.** Leak
 flood-fill, intersections and triangle limits are still Phase 2 with their own
@@ -2044,10 +2045,10 @@ fires exactly once over the corpus: `P:CAPTAIN_`, on NewWorld (polygon
 like from the other side.
 
 **0.25 stands (2026-09-11, Daniel; #222).** It was the one number he had
-reserved the right to move, and he left it where the corpus put it. So the
-threshold is settled rather than provisional, and what is left of #222 is the
-other half: framing a portal polygon from a finding is still nobody's card
-(§16.22 above).
+reserved the right to move, and he left it where the corpus put it, so the
+threshold is settled rather than provisional. **The other half — framing a
+portal polygon from a finding — landed 2026-09-12**, and #222 closed with it;
+the design is architecture §7.
 
 What the script does, so the next run does not re-derive it. Two numbers per
 portal polygon: **spread**, `max(n·p) - min(n·p)` over the corners with the
