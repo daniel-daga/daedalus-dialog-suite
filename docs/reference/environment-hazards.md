@@ -61,6 +61,23 @@ trusting master for a release, not after.
   2026-09-11 in a cloud container. `zen-world` still has to be built by hand
   afterwards (`pnpm --filter zen-world build`); `daedalus-parser` builds itself
   in its own postinstall.
+- **`pnpm --filter zen-world build` is owed again after every edit to
+  `zen-world`, and forgetting it fails somewhere else.** The editor compiles
+  and tests against `zen-world/dist`, not its sources, so a changed type or a
+  widened return reaches the editor only through that build. What it looks
+  like when you forget: `typecheck:renderer` reporting a property that "does
+  not exist" on a type you are looking at, or a Jest expectation failing
+  against the *old* shape while the same assertion passes in `zen-world`'s own
+  suite. Seen twice in one session, 2026-09-12.
+- **`CI=1` also skips Electron's own binary download, and one editor suite
+  needs it.** `appendInsertNpcFlow.test.ts` imports `FileService`, which
+  imports `electron`, and the stub throws *"Electron failed to install
+  correctly"* — one failing suite in an otherwise green 299. Fix it in place
+  with `node install.js` inside
+  `node_modules/.pnpm/electron@<version>/node_modules/electron`. It failed on
+  the first run and succeeded on an immediate retry with no other change, so
+  retry once before believing the container cannot reach the download.
+  Verified 2026-09-12.
 - **In a Claude Code cloud container the addon *can* be built, and the one
   thing in the way is a single download.** The egress proxy refuses GitHub
   repositories outside the session's scope, so ZenKit's CMake dies on
