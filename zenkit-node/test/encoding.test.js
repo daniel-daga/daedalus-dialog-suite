@@ -101,3 +101,61 @@ test('a waypoint name windows-1252 cannot represent is refused, not mangled', ()
   const handle = zenkit.loadWorld(FIXTURE, 'g2');
   assert.throws(() => zenkit.addWaypoint(handle, 'WP_ЖУК', [1, 2, 3]), /windows-1252/);
 });
+
+// windows-1252 leaves five bytes undefined — 0x81, 0x8D, 0x8F, 0x90, 0x9D — and
+// the decoder passes each through as its Latin-1 code point by decision, which
+// is what the engine's own fonts show. The encoder had no matching branch, so a
+// name carrying one read out of a world and was then refused on the way back
+// in: a name the editor displays that no op will accept, and a world that
+// cannot be re-saved with the name it was loaded with.
+const UNDEFINED_BYTES = [0x81, 0x8d, 0x8f, 0x90, 0x9d];
+
+test('a name carrying an undefined windows-1252 byte survives the round trip', () => {
+  for (const byte of UNDEFINED_BYTES) {
+    withTmpDir((dir) => {
+      // Byte surgery rather than an authored name: authoring one goes through
+      // the encoder, which is the half under test. Written in place so the
+      // string's own length prefix still describes it.
+      const bytes = fs.readFileSync(FIXTURE);
+      const at = bytes.indexOf(Buffer.from('WP_FIXTURE_B', 'latin1'));
+      assert.ok(at > 0, 'the fixture no longer carries WP_FIXTURE_B');
+      bytes[at + 'WP_FIXTURE_'.length] = byte;
+      const patched = path.join(dir, `undefined-${byte.toString(16)}.zen`);
+      fs.writeFileSync(patched, bytes);
+
+      const handle = zenkit.loadWorld(patched, 'g2');
+      const names = zenkit.getWaynet(handle).names;
+      const expected = `WP_FIXTURE_${String.fromCharCode(byte)}`;
+      const index = names.indexOf(expected);
+      assert.ok(index >= 0, `expected ${JSON.stringify(expected)} in ${JSON.stringify(names)}`);
+
+      // The name the world just handed out is the name every waynet op is
+      // addressed with, so a name that cannot be encoded cannot be operated on.
+      zenkit.setWaypointPosition(handle, index, expected, [4, 5, 6]);
+      // By name, not by index: the dump lists every waypoint while `getWaynet`
+      // emits the filtered, stored-order list the ops are addressed with.
+      const moved = zenkit.normalizeWorld(handle).waynet.waypoints
+        .find((waypoint) => waypoint.name === expected);
+      assert.ok(moved, 'the dump no longer carries the renamed waypoint');
+      assert.deepStrictEqual(moved.position, [4, 5, 6]);
+
+      // And it goes back to the file as the one byte it came in as.
+      const out = path.join(dir, 'resaved.zen');
+      zenkit.saveWorld(handle, out);
+      assert.ok(
+        fs.readFileSync(out).includes(Buffer.from(expected, 'latin1')),
+        `the name was not written back as byte 0x${byte.toString(16)}`,
+      );
+    });
+  }
+});
+
+// The refusal above is still correct for a character windows-1252 genuinely
+// cannot hold — but it printed the code point in decimal after a "U+", which
+// spells a different, valid code point rather than an obviously wrong number.
+test('a code point windows-1252 cannot hold is named in hex, as U+ promises', () => {
+  const handle = zenkit.loadWorld(FIXTURE, 'g2');
+  // Ж is U+0416; in decimal that is 1046, which reads as U+1046 — a real
+  // character, and not this one.
+  assert.throws(() => zenkit.addWaypoint(handle, 'WP_ЖУК', [1, 2, 3]), /U\+0416/);
+});

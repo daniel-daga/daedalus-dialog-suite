@@ -204,6 +204,40 @@ test('vfsList returns null for a file and for a path that is not there', () => {
   assert.strictEqual(zenkit.vfsList(handle, 'NoSuchDirectory'), null);
 });
 
+// A name whose bytes are not ASCII. Every other string the binding emits goes
+// through `Str`, which decodes windows-1252 — the encoding a VDF and a Gothic
+// asset folder are both written in. `vfsList` handed its entry names straight
+// to `Napi::String::New(std::string)`, which reads them as UTF-8, so a retail
+// archive's accented name reached the asset browser as replacement characters
+// and no longer matched the name on disk.
+//
+// The names are laid down as raw bytes: a JS string path would be written
+// UTF-8 by the filesystem layer, which is the encoding this test exists to
+// show is wrong.
+const ACCENTED = path.join(root, 'accented');
+const cp1252 = (text) => Buffer.from(text, 'latin1');
+const under = (...parts) => Buffer.concat(
+  [cp1252(ACCENTED), ...parts.flatMap((part) => [cp1252(path.sep), part])],
+);
+fs.mkdirSync(under(cp1252('B\xc4UME')), { recursive: true });
+fs.writeFileSync(under(cp1252('B\xc4UME'), cp1252('GR\xdcN_\xd6L.TEX')), 'x');
+
+test('vfsList decodes entry names as windows-1252, like every other name', () => {
+  const handle = zenkit.openVfs([ACCENTED]);
+
+  assert.deepStrictEqual(
+    zenkit.vfsList(handle, '/'),
+    [{ name: 'B\u00c4UME', type: 'directory', sources: [0] }],
+  );
+
+  // And the same for a name below the root, which is a different walk — and
+  // one the caller can only reach by spelling the decoded name back.
+  assert.deepStrictEqual(
+    zenkit.vfsList(handle, 'B\u00c4UME'),
+    [{ name: 'GR\u00dcN_\u00d6L.TEX', type: 'file', sources: [0] }],
+  );
+});
+
 // --- vfsFind -------------------------------------------------------------
 
 test('vfsFind finds a file in a directory the caller is not standing in', () => {

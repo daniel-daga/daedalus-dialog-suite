@@ -1,6 +1,7 @@
 #include "encoding.hh"
 
 #include <cstdint>
+#include <cstdio>
 
 namespace zenkit_node {
 
@@ -67,6 +68,16 @@ std::string Utf16ToWindows1252(std::u16string_view input) {
       out.push_back(static_cast<char>(cp));
       continue;
     }
+    // The five undefined bytes, back the way the decoder brought them. It passes
+    // 0x81, 0x8D, 0x8F, 0x90 and 0x9D through as their own Latin-1 code point,
+    // so the inverse is the identity for exactly the slots the table leaves
+    // empty — and without this a name that decodes out of a world cannot be
+    // written back into one. The 27 defined slots cannot reach here: every one
+    // of them decodes to a code point above U+0151.
+    if (cp >= 0x80 && cp <= 0x9F && kCp1252High[cp - 0x80] == 0) {
+      out.push_back(static_cast<char>(cp));
+      continue;
+    }
     bool mapped = false;
     for (int i = 0; i < 32; ++i) {
       if (kCp1252High[i] != 0 && kCp1252High[i] == unit) {
@@ -76,11 +87,23 @@ std::string Utf16ToWindows1252(std::u16string_view input) {
       }
     }
     if (!mapped) {
-      throw EncodingError("string contains U+" + std::to_string(cp) +
+      // Hex, because "U+" promises hex: the decimal this used to print is
+      // itself a readable code point, so U+0416 was reported as U+1046.
+      char digits[8];
+      std::snprintf(digits, sizeof digits, "%04X", cp);
+      throw EncodingError(std::string {"string contains U+"} + digits +
                           " which cannot be encoded as windows-1252");
     }
   }
   return out;
+}
+
+std::optional<std::string> TryUtf16ToWindows1252(std::u16string_view input) {
+  try {
+    return Utf16ToWindows1252(input);
+  } catch (EncodingError const&) {
+    return std::nullopt;
+  }
 }
 
 }  // namespace zenkit_node

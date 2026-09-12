@@ -1,6 +1,7 @@
 // windows-1252 <-> UTF-16 conversion at the binding edge (docs/plans/level-editor-phase-0.md T3).
 #pragma once
 
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -25,5 +26,11 @@ std::string Windows1252ToUtf8(std::string_view input);
 // characters (including any code point outside the BMP, which arrives as a
 // surrogate pair).
 std::string Utf16ToWindows1252(std::u16string_view input);
+
+// The same, answering "not expressible" instead of throwing. For a string that
+// is a *lookup key* rather than a value to store: a name windows-1252 cannot
+// hold names nothing in a world or an archive, so the honest answer is the one
+// an absent name already gets, not an error.
+std::optional<std::string> TryUtf16ToWindows1252(std::u16string_view input);
 
 }  // namespace zenkit_node

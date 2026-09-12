@@ -286,13 +286,23 @@ aside as corrupt on next load and the folders come back empty.
   save handler, which is the stronger check — a read validation does not refuse
   a final component that is itself a symlink, so the two handlers disagreed
   about the same file.
-- **Encoding**: `Utf16ToWindows1252` (`encoding.cc:66`) cannot re-encode the
-  five undefined bytes the decoder emits as U+0081/8D/8F/90/9D, so a name
-  carrying one reads out and is then refused as a guard — the 08-29 finding-2
-  shape, reopened for one byte class; `:79` prints the code point in decimal
-  after "U+". `vfsList` (`assets.cc:185`) emits entry names as UTF-8 via
-  `Napi::String::New(std::string)`, not `Str()`, so a non-ASCII VDF name is
-  U+FFFD. Edge messages at `binding.cc:976, 1014` quote raw cp1252.
+- **Encoding — FIXED 2026-09-12.** All three halves. The encoder now mirrors
+  the decoder for the five undefined bytes (0x81/8D/8F/90/9D), so a name that
+  reads out of a world can be written back into one; the refusal that remains,
+  for a code point windows-1252 genuinely cannot hold, spells it in hex, since
+  the decimal it used to print was itself a readable code point (U+0416 was
+  reported as U+1046). And `assets.cc` was the one surface treating VFS names as
+  UTF-8 in **both** directions — emitted with `Napi::String::New(std::string)`
+  rather than `Str`, so an accented archive name arrived as U+FFFD, and read
+  with `Utf8Value()`, so a name the addon had just listed addressed nothing when
+  handed back. An unencodable *lookup* argument now answers "not found" rather
+  than throwing; a value being stored still throws. Held by
+  `test/encoding.test.js` (byte surgery on the fixture, since authoring such a
+  name goes through the half under test) and `test/assets.test.js` (a loose tree
+  whose names are laid down as raw bytes, because a JS string path would be
+  written UTF-8 — the encoding the test exists to show is wrong). Durable
+  outcome: architecture §4. Edge messages at `binding.cc:976, 1014` still quote
+  raw cp1252.
 - **`loadWorld` on a directory path — FIXED 2026-09-11.** `ifstream` opened a
   directory on Linux, `tellg()` answered −1 or something enormous, and the
   `vector` constructor threw outside any `try`: SIGABRT from a `bad_alloc`, no
@@ -731,11 +741,7 @@ directory (a SIGABRT, not merely wrong), `decodeTexture`'s ignored non-number
 writing under a read validation. What is left, none of it urgent: the
 structural-refresh window between `indexRefreshed` and `setVisuals`,
 `surfaceDialogOpen`'s three missing modals (fixed), the `mergeChunks`
-`lights === null` mismatch (latent, masked by the worker), the GMBT
-dirty-check/launch-target disagreement — a world opened from the install and
-saved back reads clean while `gmbt test` runs the mod's copy, because the
-launch passes a *basename* and a cwd and nothing checks the opened path is
-under `gmbtProjectDir` — the cp1252 round-trip hole for five undefined bytes,
+`lights === null` mismatch (latent, masked by the worker),
 `vobAtIndexPath`'s lenient parsing, and the dead `close` op in
 `zenkit.worker.ts`, left alone deliberately: wiring it risks hanging `close()`
 on a stuck worker, and deleting it discards a documented Windows mapped-file

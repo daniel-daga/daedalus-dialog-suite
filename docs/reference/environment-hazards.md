@@ -61,6 +61,28 @@ trusting master for a release, not after.
   2026-09-11 in a cloud container. `zen-world` still has to be built by hand
   afterwards (`pnpm --filter zen-world build`); `daedalus-parser` builds itself
   in its own postinstall.
+- **Actually building the addon in a cloud container needs miniz put there by
+  hand.** With the submodule initialised, `build-zenkit.js` still dies in CMake:
+  ZenKit's `vendor/CMakeLists.txt` fetches doctest, libsquish and miniz as
+  release *zips* off `github.com`, and the container's egress answers **403** to
+  an archive download while allowing `git clone`. doctest and libsquish are also
+  nested submodules, so `git submodule update --init --recursive` already
+  satisfies them; miniz is not, and `ZK_ENABLE_ZIPPED_VDF` is ABI-affecting and
+  must stay on. `px_add_dependency` prefers a directory that is already there,
+  so the whole fix is to clone it into the slot it looks in first:
+
+  ```
+  git clone --depth 1 --branch 3.1.1 https://github.com/richgel999/miniz.git \
+    zenkit-node/vendor/ZenKit/vendor/miniz
+  ```
+
+  Then `node scripts/build-zenkit.js` and `node-gyp rebuild` both succeed —
+  about four minutes for the ZenKit static library. `install.js` resolves
+  node-gyp through `require.resolve`, so run it that way rather than assuming a
+  `node_modules/node-gyp` path; pnpm puts it under `.pnpm/`. Verified
+  2026-09-12: full `zenkit-node` suite green (456 pass, 1 skipped) in a cloud
+  container. Everything under `vendor/` is untracked or a submodule, so none of
+  this is a repo change.
 - **`pnpm --filter zen-world build` is owed again after every edit to
   `zen-world`, and forgetting it fails somewhere else.** The editor compiles
   and tests against `zen-world/dist`, not its sources, so a changed type or a

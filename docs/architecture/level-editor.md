@@ -759,6 +759,29 @@ Strings cross the boundary as windows-1252 bytes decoded/encoded at the
 binding edge with the repo's existing `iconv-lite` conventions — never
 "probably UTF-8".
 
+**Both directions, on every surface** (2026-09-12). Two facts were settled by
+fixing them, and they are what a new string path has to keep:
+
+- **The five undefined bytes round-trip.** windows-1252 leaves 0x81, 0x8D,
+  0x8F, 0x90 and 0x9D undefined; the decoder passes each through as its own
+  Latin-1 code point, because that is what the engine's fonts show. The encoder
+  had no matching branch, so a name carrying one decoded out of a world and was
+  then *refused* on the way back in — a name the editor displays that no op will
+  accept, and a world that cannot be re-saved with the name it was loaded with.
+  The inverse is the identity for exactly the slots the table leaves empty, and
+  the 27 defined slots cannot collide with it: every one of them decodes above
+  U+0151.
+- **A VFS name is a windows-1252 name too.** `assets.cc` was the one surface
+  that treated its names as UTF-8 in both directions: entries were emitted with
+  `Napi::String::New(std::string)` rather than `Str`, so an accented archive
+  name reached the asset browser as replacement characters, and arguments were
+  read with `Utf8Value()`, so a name the addon had just *listed* addressed
+  nothing when handed back. An unencodable *lookup* argument answers "not
+  found" rather than throwing (`TryUtf16ToWindows1252`) — it names nothing in
+  the namespace, which is what an absent name already answers. A value being
+  *stored* still throws, and the refusal now spells the code point in hex,
+  since "U+" promises hex: U+0416 used to be reported as U+1046.
+
 ---
 
 ## 5. Round-trip strategy — open question 2, Gate 1

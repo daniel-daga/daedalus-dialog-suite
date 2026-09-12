@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <exception>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -99,11 +100,21 @@ VfsHandle* UnwrapVfs(Napi::Env env, Napi::Value value) {
   return handle;
 }
 
-std::string StringArg(Napi::Env env, Napi::Value value, char const* what) {
+// A name, a path or a query addressing the mounted namespace. ZenKit holds
+// every VFS name as raw windows-1252 bytes — a VDF and a Gothic asset folder
+// are both written in it — so the caller's string has to be encoded the same
+// way to compare equal to one, exactly as a waypoint name does (binding.cc,
+// RequiredCp1252Arg). Read as UTF-8 it was two bytes where the archive has one,
+// so a name this addon had just *listed* addressed nothing.
+//
+// A string windows-1252 cannot hold comes back empty rather than throwing: it
+// names nothing here, and "nothing here" is what every one of these functions
+// already answers for a name that is simply absent.
+std::optional<std::string> NameArg(Napi::Env env, Napi::Value value, char const* what) {
   if (!value.IsString()) {
     throw Napi::TypeError::New(env, std::string {what} + " must be a string");
   }
-  return value.As<Napi::String>().Utf8Value();
+  return zenkit_node::TryUtf16ToWindows1252(value.As<Napi::String>().Utf16Value());
 }
 
 std::filesystem::path PathArg(Napi::Env env, Napi::Value value) {
@@ -178,26 +189,29 @@ Napi::Value OpenVfs(Napi::CallbackInfo const& info) {
 Napi::Value VfsResolve(Napi::CallbackInfo const& info) {
   Napi::Env env = info.Env();
   auto* handle = UnwrapVfs(env, info[0]);
-  auto name = StringArg(env, info[1], "name");
+  auto const name = NameArg(env, info[1], "name");
+  if (!name) return env.Null();
 
   std::string resolved;
-  auto candidates = VisualCandidates(name);
-  auto const& textures = TextureCandidates(name);
+  auto candidates = VisualCandidates(*name);
+  auto const& textures = TextureCandidates(*name);
   candidates.insert(candidates.end(), textures.begin(), textures.end());
 
   if (FindFirst(handle->vfs, candidates, &resolved) == nullptr) return env.Null();
-  return Napi::String::New(env, resolved);
+  return Str(env, resolved);
 }
 
 Napi::Value VfsList(Napi::CallbackInfo const& info) {
   Napi::Env env = info.Env();
   auto* handle = UnwrapVfs(env, info[0]);
-  auto const path = info[1].IsUndefined() ? std::string {"/"} : StringArg(env, info[1], "path");
+  std::optional<std::string> path {"/"};
+  if (!info[1].IsUndefined()) path = NameArg(env, info[1], "path");
+  if (!path) return env.Null();
 
   // `resolve` answers for "/" as well as for any node below it, so the root
   // needs no special case — a sabotage that removed one proved it was never
   // reached.
-  VfsNode const* node = handle->vfs.resolve(path);
+  VfsNode const* node = handle->vfs.resolve(*path);
 
   // A file is not a listing failure the caller should have to tell apart from
   // a missing path — both mean "there is nothing here to list".
@@ -213,7 +227,7 @@ Napi::Value VfsList(Napi::CallbackInfo const& info) {
   std::vector<VfsNode const*> per_source;
   per_source.reserve(handle->sources.size());
   for (auto const& source : handle->sources) {
-    auto const* at_source = source->resolve(path);
+    auto const* at_source = source->resolve(*path);
     per_source.push_back(at_source != nullptr && at_source->type() == VfsNodeType::DIRECTORY
                              ? at_source
                              : nullptr);
@@ -226,7 +240,7 @@ Napi::Value VfsList(Napi::CallbackInfo const& info) {
   std::uint32_t at = 0;
   for (auto const& child : children) {
     auto entry = Napi::Object::New(env);
-    entry.Set("name", Napi::String::New(env, child.name()));
+    entry.Set("name", Str(env, child.name()));
     entry.Set("type", Napi::String::New(
                           env, child.type() == VfsNodeType::DIRECTORY ? "directory" : "file"));
 
@@ -255,10 +269,20 @@ Napi::Value VfsFind(Napi::CallbackInfo const& info) {
   Napi::Env env = info.Env();
   auto* handle = UnwrapVfs(env, info[0]);
 
-  auto const raw = StringArg(env, info[1], "query");
+  auto const query = NameArg(env, info[1], "query");
+  // An empty query is still the caller's mistake and still refused below; a
+  // query windows-1252 cannot hold is a search that matches nothing, which is
+  // an ordinary empty result and not an error.
+  auto const raw = query.value_or(std::string {});
   auto const first = raw.find_first_not_of(" \t\r\n");
   auto const last = raw.find_last_not_of(" \t\r\n");
   if (first == std::string::npos) {
+    if (!query) {
+      auto empty = Napi::Object::New(env);
+      empty.Set("matches", Napi::Array::New(env, 0));
+      empty.Set("truncated", Napi::Boolean::New(env, false));
+      return empty;
+    }
     // An empty needle matches every one of the tens of thousands of entries a
     // retail install mounts. The caller wanting all of them wants `vfsList`.
     throw Napi::TypeError::New(env, "vfsFind(handle, query) needs a non-empty query");
@@ -357,8 +381,8 @@ Napi::Value VfsFind(Napi::CallbackInfo const& info) {
   for (std::uint32_t at = 0; at < matches.size(); ++at) {
     auto const& match = matches[at];
     auto entry = Napi::Object::New(env);
-    entry.Set("name", Napi::String::New(env, match.name));
-    entry.Set("directory", Napi::String::New(env, match.directory));
+    entry.Set("name", Str(env, match.name));
+    entry.Set("directory", Str(env, match.directory));
     entry.Set("type", Napi::String::New(env, match.is_directory ? "directory" : "file"));
     auto sources = Napi::Array::New(env, match.sources.size());
     for (std::uint32_t held = 0; held < match.sources.size(); ++held) {
@@ -377,12 +401,13 @@ Napi::Value VfsFind(Napi::CallbackInfo const& info) {
 Napi::Value VfsRead(Napi::CallbackInfo const& info) {
   Napi::Env env = info.Env();
   auto* handle = UnwrapVfs(env, info[0]);
-  auto name = StringArg(env, info[1], "name");
+  auto const name = NameArg(env, info[1], "name");
+  if (!name) return env.Null();
 
   // Vfs::find is a by-name lookup over the whole tree, and ZenKit stores names
   // as the archive spells them (upper case in every retail VDF) — the same
   // normalisation VisualCandidates and TextureCandidates apply.
-  auto const* node = handle->vfs.find(Upper(name));
+  auto const* node = handle->vfs.find(Upper(*name));
   if (node == nullptr || node->type() != VfsNodeType::FILE) return env.Null();
 
   try {
@@ -393,23 +418,26 @@ Napi::Value VfsRead(Napi::CallbackInfo const& info) {
 
     auto buffer = Napi::Buffer<std::uint8_t>::New(env, size);
     if (size > 0 && reader->read(buffer.Data(), size) != size) {
-      throw Napi::Error::New(env, "short read from VFS entry: " + name);
+      throw Napi::Error::New(env,
+                             "short read from VFS entry: " + zenkit_node::Windows1252ToUtf8(*name));
     }
     return buffer;
   } catch (Napi::Error const&) {
     throw;
   } catch (std::exception const& e) {
-    throw Napi::Error::New(env, std::string {"cannot read VFS entry "} + name + ": " + e.what());
+    throw Napi::Error::New(env, std::string {"cannot read VFS entry "}
+                                    + zenkit_node::Windows1252ToUtf8(*name) + ": " + e.what());
   }
 }
 
 Napi::Value ExtractVisual(Napi::CallbackInfo const& info) {
   Napi::Env env = info.Env();
   auto* handle = UnwrapVfs(env, info[0]);
-  auto name = StringArg(env, info[1], "name");
+  auto const name = NameArg(env, info[1], "name");
+  if (!name) return env.Null();
 
   std::string resolved;
-  auto const* node = FindFirst(handle->vfs, VisualCandidates(name), &resolved);
+  auto const* node = FindFirst(handle->vfs, VisualCandidates(*name), &resolved);
   if (node == nullptr) return env.Null();
 
   try {
@@ -464,7 +492,7 @@ Napi::Value ExtractVisual(Napi::CallbackInfo const& info) {
       return env.Null();
     }
 
-    payload.Set("source", Napi::String::New(env, resolved));
+    payload.Set("source", Str(env, resolved));
     return payload;
   } catch (Napi::Error&) {
     throw;
@@ -477,7 +505,7 @@ Napi::Value ExtractVisual(Napi::CallbackInfo const& info) {
 Napi::Value DecodeTexture(Napi::CallbackInfo const& info) {
   Napi::Env env = info.Env();
   auto* handle = UnwrapVfs(env, info[0]);
-  auto name = StringArg(env, info[1], "name");
+  auto const name = NameArg(env, info[1], "name");
 
   std::uint32_t level = 0;
   // Absent, `undefined` and `null` all mean "no level" — the idiom the optional
@@ -501,8 +529,13 @@ Napi::Value DecodeTexture(Napi::CallbackInfo const& info) {
     level = static_cast<std::uint32_t>(requested);
   }
 
+  // After the level check, not before it: a level that is not a number is the
+  // caller's bug and says so, where a name windows-1252 cannot hold is only a
+  // lookup that finds nothing.
+  if (!name) return env.Null();
+
   std::string resolved;
-  auto const* node = FindFirst(handle->vfs, TextureCandidates(name), &resolved);
+  auto const* node = FindFirst(handle->vfs, TextureCandidates(*name), &resolved);
   if (node == nullptr) return env.Null();
 
   try {
@@ -522,7 +555,7 @@ Napi::Value DecodeTexture(Napi::CallbackInfo const& info) {
     auto rgba = texture.as_rgba8(level);
 
     auto payload = Napi::Object::New(env);
-    payload.Set("source", Napi::String::New(env, resolved));
+    payload.Set("source", Str(env, resolved));
     payload.Set("width", Napi::Number::New(env, texture.mipmap_width(level)));
     payload.Set("height", Napi::Number::New(env, texture.mipmap_height(level)));
     payload.Set("mipmaps", Napi::Number::New(env, texture.mipmaps()));
