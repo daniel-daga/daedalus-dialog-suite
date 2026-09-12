@@ -1097,8 +1097,8 @@ when a world project opens; all level-editor domain logic lives in
 tripwire response is a mechanical split into a separate app shell — the
 domain and binding packages move unchanged.
 
-Naming note: the app's product identity ("Daedalus Dialog Editor") will need
-revisiting when the World surface ships; defer.
+Naming note: settled 2026-09-12 — the app is **Dandelion**, which is what its
+UI always said; `productName` and the packaged `.exe` now agree with it.
 
 #### The Phase 1a panels, landed (2026-08-26)
 

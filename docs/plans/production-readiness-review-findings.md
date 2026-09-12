@@ -48,8 +48,8 @@ done; only the §3 P3 measure-first items remain. **The §5 post-release
 fast-follow list is now empty too** (F2, F6, and CSP landed 2026-08-23 — see
 the table row below). What is still open: the §5 pre-release items, §3 P3, and
 the §4 UI/UX findings from F8 onward. Owner decisions still outstanding: app
-icons, the Dandelion vs. "Daedalus Dialog Editor" naming split, and code
-signing.
+icons (the artwork itself, not a decision) and code signing — the naming split
+was decided 2026-09-12 in favour of **Dandelion** and is closed.
 
 ### Environment note for a fresh session
 
@@ -627,9 +627,19 @@ Pre-release (gates first public build):
    (`useManualSave`, honest tooltips) and Close Project → welcome screen
    (`closeProject` now also resets `questFiles`) (F1 + F5).
 3. Quest decision §1: Option A **done**; Option B **done 2026-08-23**.
-4. Icons + naming decision (Dandelion vs. Daedalus Dialog Editor) — still
-   open. **DONE 2026-08-23**: stale editor `pnpm-lock.yaml` and npm shadow
-   lockfiles deleted.
+4. **Naming decided 2026-09-12 by Daniel: Dandelion.** It is what the UI and
+   the welcome screen already said, so the split closed by moving the other
+   three — `productName`, the mock generator's header, and the three packaged
+   `.exe` paths in `build-windows.yml`'s smokes, which are named off
+   `productName` and would have failed the release build. Deliberately *not*
+   renamed: `appId` (`com.gothicmodding.daedalusdialog`, an install identity,
+   not branding) and the release asset `daedalus-dialog-editor-windows-latest.exe`,
+   which is the update feed's own mutable-tag name and is the updater's to
+   change. **Icons are still open and are the half a decision cannot close** —
+   electron-builder wants raster assets under `directories.buildResources`
+   (`assets/`, which does not exist), so the installer still ships the default
+   Electron icon until somebody supplies real artwork. **DONE 2026-08-23**:
+   stale editor `pnpm-lock.yaml` and npm shadow lockfiles deleted.
 5. Signing + R1 release sequencing per the existing release checklist.
 6. Packaged-app smoke that opens a real project and parses (closes the
    asar/native-module blind spot).

@@ -232,7 +232,7 @@ jobs:
     - name: Smoke-test packaged app startup
       shell: pwsh
       run: |
-        $exe = "daedalus-dialog-editor/dist/win-unpacked/Daedalus Dialog Editor.exe"
+        $exe = "daedalus-dialog-editor/dist/win-unpacked/Dandelion.exe"
         if (-not (Test-Path $exe)) {
           throw "Packaged app executable not found: $exe"
         }
@@ -256,7 +256,7 @@ jobs:
     - name: Smoke-test packaged app opens a world
       shell: pwsh
       run: |
-        $exe = "daedalus-dialog-editor/dist/win-unpacked/Daedalus Dialog Editor.exe"
+        $exe = "daedalus-dialog-editor/dist/win-unpacked/Dandelion.exe"
         $fixture = (Resolve-Path "zenkit-node/test/fixtures/minimal.g2.zen").Path
         $resultPath = Join-Path $env:RUNNER_TEMP "smoke-open-world.json"
         Remove-Item $resultPath -Force -ErrorAction SilentlyContinue
@@ -294,7 +294,7 @@ jobs:
     - name: Smoke-test packaged app parses a script
       shell: pwsh
       run: |
-        $exe = "daedalus-dialog-editor/dist/win-unpacked/Daedalus Dialog Editor.exe"
+        $exe = "daedalus-dialog-editor/dist/win-unpacked/Dandelion.exe"
         $fixture = (Resolve-Path "daedalus-parser/test/fixtures/corpus/declaration-order.d").Path
         $resultPath = Join-Path $env:RUNNER_TEMP "smoke-parse.json"
         Remove-Item $resultPath -Force -ErrorAction SilentlyContinue
