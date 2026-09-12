@@ -708,7 +708,7 @@ different judgement from the one this finding made and is not carried here.
 `WorldSurface.tsx` and `binding.cc` (3,388, with ~250 duplicated
 lines in one switch) are the same shape of debt with lower risk.
 
-**`WorldSurface.tsx` is under way, 2026-09-12.** Three of the nine concerns are
+**`WorldSurface.tsx` is under way, 2026-09-12.** Four of the nine concerns are
 out, each with the unit spec the extraction was for and no behaviour changed:
 `world/hooks/usePanelLayout` (the panel widths, their collapse and the one
 place the widths are written back — the review's own "would go first"),
@@ -717,7 +717,9 @@ the panel draws, which reach the world only through `commitOps` and so are
 assertable as values) and `world/hooks/useVobFolders` (the sidecar, which is
 editor metadata rather than a `WorldOp` and so has its own persistence rule to
 hold: one place that both sets state and writes, a fire-and-forget save, and a
-selection stored as index paths). The file is **3,455 lines from 3,705** — it
+selection stored as index paths) and `world/hooks/useVobClipboard` (copy, paste,
+and the rule that a clipboard does not cross worlds). The file is
+**3,376 lines from 3,705** — it
 had *grown* 515 lines past the 3,190 this review measured before any cut, which
 is the number worth carrying forward: the count here is a reading, not a budget.
 
@@ -728,7 +730,17 @@ tab's create button makes an empty folder whatever is selected, while the
 context menu's takes the selection with it; that difference was invisible
 inline and is now two named functions with a test each.
 
-The six left are the ones the review named, and the edit core is still the one
+The clipboard cost one piece of machinery worth knowing about: `openWorldAt`
+clears it, and sits well above the `commitOps`, bounds and class-prop reads a
+copy needs, so the hook is called high and handed its inputs through a ref
+further down. That is `useStableHandlers`' own late binding, and it makes every
+function the hook returns identity-stable besides. The first attempt passed them
+at the call site instead and hit a temporal dead zone that **typecheck did not
+catch and 344 tests did**, which is the useful part: an ordering bug in a
+dependency array is a runtime fact, so the full suite is the gate here, not
+`tsc`.
+
+The five left are the ones the review named, and the edit core is still the one
 that has to go last.
 
 **§3.3, the BVH rebuilt per structural op. Landed 2026-09-08.** §3.2 removed

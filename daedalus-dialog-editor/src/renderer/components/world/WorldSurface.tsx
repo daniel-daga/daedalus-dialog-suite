@@ -13,20 +13,19 @@ import {
   addVob, classPropKeys, addWaypoint, alignVobsToNormal, applyWaypointNames,
   applyWaypointPositions,
   deleteVobs, dropVobsToGround,
-  duplicateVobSubtree, duplicateVobs, emptyVobFolders,
+  duplicateVobs, emptyVobFolders,
   invertOp, isBarrierOp, isStructuralOp,
   matchVobs,
-  pasteVobs, placeBounds,
+  placeBounds,
   renumbersPaths,
   reparentVob, rotateVob, rotateVobs, scatterVobs, setVobClassProp, setVobProp, setVobProps,
   strokeCandidates, topLevelVobs,
-  translateVobs, vobAtIndexPath, vobExtentOf, vobIndexPath,
+  translateVobs, vobExtentOf, vobIndexPath,
   addToCategory, assetKey, emptyAssetCatalog, mergeCatalogs, parseAssetCatalog, removeFromCategory,
   toggleFavorite, visualsOf,
-  type AddVob,
   type AuthorableVobClass, type ClassProps, type NewVob, type ReadProps,
   type ScatterPlacement,
-  type VobExtent, type VobProps, type VobReader, type VobSubtree,
+  type VobExtent, type VobProps, type VobReader,
   type ZenBounds,
   type ZenPosition, type ZenRotation,
 } from 'zen-world';
@@ -61,6 +60,7 @@ import PanelSplitter from './PanelSplitter';
 import { usePanelLayout, COLLAPSED_PANEL_WIDTH } from './hooks/usePanelLayout';
 import { useWaynetEditing } from './hooks/useWaynetEditing';
 import { useVobFolders } from './hooks/useVobFolders';
+import { useVobClipboard, type VobClipboardInput } from './hooks/useVobClipboard';
 import WorldToolbar from './toolbar/WorldToolbar';
 import { OUTLINE_MODE_ORDER } from './toolbar/WorldViewControls';
 import WorldStatusStats from './toolbar/WorldStatusStats';
@@ -276,6 +276,14 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     }
   ), [projectFilePath, mergedAssetCatalog, assetCatalog, persistAssetCatalog]);
 
+  /** The clipboard is cleared when a world opens, and `openWorldAt` is well
+   *  above `commitOps` and the two readers a copy needs — so the hook is called
+   *  here and handed its inputs further down, through this ref. */
+  const clipboardInput = useRef<VobClipboardInput | null>(null);
+  const {
+    copySelection, pasteClipboard, hasClipboard, clearClipboard,
+  } = useVobClipboard(clipboardInput);
+
   const {
     vobFolders,
     setVobFolders,
@@ -470,10 +478,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     // nobody is looking at any more is noise.
     setSavedTo(null);
     setSaveError(null);
-    // The clipboard holds positions in the world it was copied from — pasting
-    // them into another world puts VOBs at coordinates nobody chose. A
-    // cross-world clipboard is not a feature anybody asked for.
-    clipboard.current = [];
+    clearClipboard();
     // An asset previewed out of the previous world's mounts, which the new
     // world's may not even have.
     setSelectedAsset(null);
@@ -550,7 +555,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         failure instanceof Error ? failure.message : String(failure),
       );
     }
-  }, [beginOpen, openSucceeded, openFailed, refreshHistoryDepth, setVobFolders]);
+  }, [beginOpen, openSucceeded, openFailed, refreshHistoryDepth, setVobFolders, clearClipboard]);
 
   /**
    * The world picker (level-editor.md §16.31): the worlds the project's own
@@ -1916,91 +1921,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    */
   const scatterBrushRadius = scatterOn && selection.length > 0 ? brushRadius : null;
 
-  /**
-   * The clipboard copy and paste share (level-editor.md §16.14, D3).
-   *
-   * **In-process, and a `ref` rather than state**: nothing on screen changes
-   * when it is filled, so a render would be for nothing, and it is deliberately
-   * not the OS clipboard — a VOB subtree has no serialization anybody else reads,
-   * and giving it one is the cross-world clipboard nobody has asked for.
-   */
-  const clipboard = useRef<VobSubtree[]>([]);
-
-  /**
-   * Copy the selection — the same subtrees a duplicate commits, read at the
-   * copy and held as values.
-   *
-   * That is the whole difference between the two verbs. `duplicateVobs` reads a
-   * VOB and appends it in one step, so it can only ever put a copy back beside
-   * its original; here the reading happens now and the placing happens at the
-   * paste, so the clipboard outlives the selection, and outlives the VOBs it
-   * was read from being deleted. It loses exactly what a duplicate loses —
-   * `physicsEnabled`, the class properties, and the class of an `oCItem` or of
-   * anything `insertVob` cannot construct.
-   */
-  const copySelection = useCallback(async () => {
-    const { summary: current, selection: selected } = useWorldStore.getState();
-    if (current === null || selected.length === 0) return;
-
-    const { reader } = vobModelOf(current);
-    // Awaited before the clipboard is filled, so a copy is the fields the VOBs
-    // had when Ctrl+C was pressed — the same instant the rest of the subtree is
-    // read at, and the whole point of the clipboard being values.
-    const classProps = await readClassProps(reader, selected);
-    // Pruned as a duplicate's selection is, and for the same reason: a child
-    // whose parent is also copied is already inside its parent's subtree.
-    clipboard.current = topLevelVobs(reader, selected)
-      .map((vob) => duplicateVobSubtree(reader, vob, boundsOf, classProps));
-  }, [boundsOf, readClassProps]);
-
-  /**
-   * Paste the clipboard into the selection's own list — beside it, not inside
-   * it — and into the roots when nothing is selected.
-   *
-   * The *root* of each copied subtree, that is: its descendants go under it,
-   * wherever it landed.
-   *
-   * A sibling rather than a child because that is what makes a paste undo a
-   * copy's place: the copy lands where the thing it was copied from lives. A
-   * paste *into* the selected VOB is the other reading, and it is the one that
-   * cannot be taken back by selecting something else — every VOB is somewhere's
-   * child, so there would be no way to ask for a root.
-   *
-   * The clipboard is not consumed: pasting twice is two copies, as everywhere
-   * else. And it is one batch of pure adds, so it is one undo entry — the same
-   * relaxation `duplicateVobs` needed, for the same reason.
-   */
-  const pasteClipboard = useCallback(async () => {
-    const { summary: current, selection: selected } = useWorldStore.getState();
-    if (current === null || clipboard.current.length === 0) return;
-
-    const { reader } = vobModelOf(current);
-    const into = primaryVob(selected);
-    const parent = into === null ? -1 : reader.columns.parent[into];
-    const parentPath = parent < 0 ? null : vobIndexPath(reader, parent);
-    const ops = pasteVobs(reader, clipboard.current, parent < 0 ? null : parent);
-
-    if (!await commitOps(ops)) return;
-
-    // The copies, selected (§16.24 4) — a paste used to leave the *source*
-    // selected, so the thing that had just landed could only be reached by
-    // hunting for it in the scene tree.
-    //
-    // By path, and only after the re-read: the flat index an `AddVob` carries
-    // is the enumeration as it was, and appending changes every index after the
-    // insertion point. The roots of the paste are the ops whose parent is the
-    // list the paste chose; a descendant's parent is its own root's new path.
-    const { summary: after } = useWorldStore.getState();
-    if (after === null) return;
-
-    const refreshed = vobModelOf(after).reader;
-    const pasted = ops
-      .filter((op): op is AddVob => op.op === 'AddVob' && op.parentPath === parentPath)
-      .map((op) => vobAtIndexPath(refreshed, op.path))
-      .filter((vob): vob is number => vob !== null);
-
-    if (pasted.length > 0) useWorldStore.getState().selectVobs(pasted);
-  }, [commitOps]);
+  clipboardInput.current = { commitOps, boundsOf, readClassProps };
 
   const {
     moveWaypointTo,
@@ -2589,7 +2510,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         position={contextMenu?.position ?? null}
         onClose={() => setContextMenu(null)}
         selectionCount={selection.length}
-        canPaste={clipboard.current.length > 0}
+        canPaste={hasClipboard()}
         onFrame={() => { if (contextMenu !== null) focusVob(contextMenu.vob); }}
         onDuplicate={() => void duplicateSelection()}
         onCopy={() => void copySelection()}
