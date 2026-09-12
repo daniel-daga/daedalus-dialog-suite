@@ -134,17 +134,20 @@ the input goes on showing the number the user typed as though it had been taken.
   apart in the same tick, so whether the `null` is ever *committed* depends on
   React happening to flush between them. Adding an unrelated MUI `Select` to the
   World bar (the snap step, 2026-08-28) changed that flush and the revert
-  silently stopped happening; `WorldSurface`'s refusal path now sets
-  `setClassProps(null)` itself, before the read is issued, so the revert is a
-  rule rather than a coincidence. **Measured**, not reasoned: with the probe in
+  silently stopped happening; the refusal path now sets `classProps` to `null`
+  itself, before the read is issued, so the revert is a rule rather than a
+  coincidence. That path is `useWorldEditPipeline`'s `putTheViewBack` since the
+  2026-09-12 split (#263), reaching the surface's own state through the
+  `forgetClassProps` callback it is handed; the state itself stays on
+  `WorldSurface`, because the re-read effect is declared above the pipeline. **Measured**, not reasoned: with the probe in
   place the failing order is `effect run → fetch resolved → one render`, against
   `effect run → render(null) → fetch resolved → render(props)` before.
 - **The base fields had it too, and are fixed the first way (2026-08-28).** The
   measured bug: type `999` into position X, have `applyWorldOps` reject, and
   the field kept `999` while the world holds `10` — same for the name and the
   visual, which read out of the columnar index, never `null`, so no unmount
-  saved them. The fix is the refusal generation: `WorldSurface` bumps
-  `editRefusals` in `commitOps`' catch (beside the `setClassProps(null)` above)
+  saved them. The fix is the refusal generation: the pipeline bumps
+  `editRefusals` in `putTheViewBack` (beside the `forgetClassProps` above)
   and the grid folds `refusalGeneration` into every editable field's key —
   position, name, visual, the class fields and the rotation angles — so a
   main-process refusal remounts them showing the world's own values, no value

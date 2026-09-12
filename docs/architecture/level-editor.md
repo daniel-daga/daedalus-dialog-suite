@@ -3781,9 +3781,11 @@ groups is a border on the group's own container rather than a standalone
 to see. A priority-"More" overflow menu was **rejected** too: it needs
 `ResizeObserver` measurement jsdom cannot exercise, and moving controls into
 a `Menu` breaks the synchronous `getByTestId` the large editing suite depends
-on. Groups are pure props-down/callbacks-up; all state stays in
-`WorldSurface`, and rules that touch two pieces of state at once are passed
-down as one named callback rather than reassembled in a child.
+on. Groups are pure props-down/callbacks-up; no state lives in a group — it is the
+surface's, or one of the hooks the surface calls (`useScatterBrush` holds the
+brush's own three values since #263) — and rules that touch two pieces of state
+at once are passed down as one named callback rather than reassembled in a
+child.
 
 **The status bar under the viewport is the ground on the left and the counts
 on the right.** It is the old terrain bar with the toolbar's chips moved

@@ -715,23 +715,70 @@ What is left in that effect is wiring rather than mechanism: the six units
 being handed each other, the framing callbacks, the draw loop, the benchmark
 probe and the `window.__worldViewport` harness. Splitting *that* further is a
 different judgement from the one this finding made and is not carried here.
-`WorldSurface.tsx` and `binding.cc` (3,388, with ~250 duplicated
-lines in one switch) are the same shape of debt with lower risk.
+`WorldSurface.tsx` was the same shape of debt with lower risk, and is now split
+too — see below. `binding.cc` (3,388, with ~250 duplicated lines in one switch)
+is the one left.
 
-**`WorldSurface.tsx` is under way, 2026-09-12.** Four of the nine concerns are
-out, each with the unit spec the extraction was for and no behaviour changed:
-`world/hooks/usePanelLayout` (the panel widths, their collapse and the one
-place the widths are written back — the review's own "would go first"),
-`world/hooks/useWaynetEditing` (the six waynet edits and the five derivations
-the panel draws, which reach the world only through `commitOps` and so are
-assertable as values) and `world/hooks/useVobFolders` (the sidecar, which is
+**`WorldSurface.tsx` — all nine concerns are out, 2026-09-12.** The file is
+**2,567 lines from 3,705**, and it had *grown* 515 lines past the 3,190 this
+review measured before any cut, which is the number worth carrying forward: a
+count here is a reading, not a budget. Each unit came with the unit spec the
+extraction was for and none changed behaviour.
+
+The first four: `world/hooks/usePanelLayout` (the panel widths, their collapse
+and the one place the widths are written back — the review's own "would go
+first"), `world/hooks/useWaynetEditing` (the six waynet edits and the five
+derivations the panel draws, which reach the world only through `commitOps` and
+so are assertable as values), `world/hooks/useVobFolders` (the sidecar, which is
 editor metadata rather than a `WorldOp` and so has its own persistence rule to
 hold: one place that both sets state and writes, a fire-and-forget save, and a
 selection stored as index paths) and `world/hooks/useVobClipboard` (copy, paste,
-and the rule that a clipboard does not cross worlds). The file is
-**3,376 lines from 3,705** — it
-had *grown* 515 lines past the 3,190 this review measured before any cut, which
-is the number worth carrying forward: the count here is a reading, not a budget.
+and the rule that a clipboard does not cross worlds).
+
+The remaining five, in #263's own order:
+
+- `world/hooks/useScatterBrush` — the toggle, the two fields, the floored brush
+  radius and the stroke. Its spec is what a mounted viewport used to hide: the
+  ray starts a brush radius *above* the candidate rather than at it, a candidate
+  hitting nothing is dropped rather than refusing the stroke, and the cap notice
+  never overwrites a refusal's own banner.
+- `world/hooks/useInsertNpc` + `world/InsertNpcDialog` — the draft, the four
+  things derived from it and the write, with the dialog presentational and taking
+  those four booleans so they cannot drift from what the confirm is disabled by.
+  It is the one edit here that reaches a file the surface is not editing, which
+  is why it has a refusal ladder rather than a single `commitOps`; every rung of
+  that ladder is already driven through the surface by
+  `WorldSurface.insertNpc.test.tsx`, so the split deliberately adds no second
+  copy of it.
+- `world/hooks/useAssetCatalog` — the `<project>.assets.json` sidecar, the four
+  asset reads, the thumbnail queue and the live tile. Two lifetimes meet in it
+  and neither is the surface's: the catalogue is the project's, the renderers are
+  the open world's. Its spec is the lifetime half, which needed a GL context
+  through the surface — which entries `removable` says yes to and why the seed's
+  are not among them, one renderer pair per open *world* rather than per summary,
+  disposed on a world change and again on unmount, and a sidecar read that lands
+  after the project changed under it.
+- `world/hooks/useWorldShortcuts` — the dispatch only. Every verb is handed in,
+  and the two destructive ones stay *requests*: Delete and Ctrl+S open the
+  confirms that already gate them (§15) rather than committing anything. Its spec
+  is the rule all eleven chords are built on and that no per-branch test states
+  as one thing — which keystrokes the surface claims and which it hands back to
+  the browser, with `preventDefault` as the observable.
+- `world/hooks/useWorldEditPipeline` — `commitOps`, the in-flight guard,
+  `applied` and `putTheViewBack`. Last, as this review said it had to be: it is
+  where §2.7's guard and the refusal path live, and every other unit above is
+  handed its `commitOps`. Its spec is the three rules the rest of the surface is
+  built on, each of which was a bug once — a failure before the commit point is a
+  refusal and past it is a stale view, one commit at a time, and a round trip
+  that comes back into a different world is dropped on both the commit and the
+  history path.
+
+What the pipeline's extraction could *not* take with it is worth knowing before
+the next one. `openGeneration` and `refreshHistoryDepth` stay the surface's,
+because `openWorldAt` is declared well above the pipeline and uses both; the same
+goes for `appliedOps`, which the class-prop re-read effect keys on from above.
+So the hook takes a ref and three callbacks rather than owning that state, and
+the one piece it does own — `editRefusals` — is the one nothing above it reads.
 
 Two things the cutting turned up, neither a defect. The folders docblock sat
 above the *asset catalog*'s code rather than its own — the same misplacement
@@ -748,12 +795,8 @@ function the hook returns identity-stable besides. The first attempt passed them
 at the call site instead and hit a temporal dead zone that **typecheck did not
 catch and 344 tests did**, which is the useful part: an ordering bug in a
 dependency array is a runtime fact, so the full suite is the gate here, not
-`tsc`.
-
-The five left are the ones the review named — scatter, Insert-NPC and its
-dialog, the asset catalogue, the keyboard effect, and the edit pipeline core,
-which has to go last because it is where the in-flight guard and the refusal
-path live. Tracked as **#263**.
+`tsc`. Nothing in the five above repeated it — every one of them typechecked and
+then ran the whole editor suite before it was believed.
 
 **§3.3, the BVH rebuilt per structural op. Landed 2026-09-08.** §3.2 removed
 the *duplicate* rebuild; the remaining one discarded and rebuilt all 352 trees
