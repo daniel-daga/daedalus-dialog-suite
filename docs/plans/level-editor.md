@@ -282,8 +282,16 @@ Spacer simply has no stack — but because ours works everywhere else, so a dele
 that quietly made the previous twenty edits unundoable is the surprise. A
 confirm is enough; the fallback is the user's own save file either way.
 
-Serializing the subtree into the op, or snapshotting the world around it, stay
-open as later improvements. Neither is a prerequisite.
+**Superseded in part 2026-09-12 (Daniel; #271): a delete *should* be undoable.**
+What holds is the gate — an op that cannot describe its own inverse may still
+ship, and `DeleteVob` shipping on that rule was right. What is withdrawn is the
+*nice-to-have*: an undoable delete is wanted, and is believed possible, so the
+barrier is a **stopgap rather than the end state**. Serializing the subtree into
+the op, or snapshotting the world around it, are no longer "later improvements"
+but the two candidate routes; §16.42 carries what either needs and the questions
+each opens. Nothing about today's behaviour changes until one lands — a barrier
+still owes the user the confirm and the cleared stacks, and a half-measure that
+restored a VOB without its old position would be worse than the barrier.
 
 **A selection deletes in one batch (2026-09-11, Daniel; #253).** Delete was one
 VOB at a time because a delete renumbers, and every op carries a path resolved
@@ -3332,3 +3340,68 @@ both want the same machine and neither wants a candidate world.
 
 A row that fails here is a defect and gets its own issue; this list only records
 that nobody has looked.
+
+---
+
+### 16.42 A delete should be undoable — the barrier is a stopgap (2026-09-12, Daniel; #271)
+
+§15 shipped `DeleteVob` and `DeleteWaypoint` as barriers that clear both undo
+stacks, on the reasoning that Spacer has no undo at all so ours need not have
+one here. **That is now a stopgap by decision: an undoable delete is wanted.**
+This section is what it would take; nothing has been built.
+
+**What exists today.** The op carries an address and nothing else. `invertOp`
+and `writeOp`'s reverse direction both refuse it through one shared error, the
+surface's `commitOps` catch filters barrier ops out of its optimistic rollback,
+and `WorldService.applyOps` clears both stacks once the worker confirms
+(architecture §7, *"The delete, and the barrier that replaces its inverse"*).
+The reason it is not an `AddVob` with a null side is the same one that makes an
+inverse hard: that shape's `NewVob` spec means *"this op describes the VOB
+completely"*, which is true of a VOB we authored and false of every retail one.
+
+**Three pieces, and the third is free once the first two exist.**
+
+1. **A serializer the op set does not have.** `getVobProps` reads the catalogued
+   fields of the classes we catalogue; a restore needs *everything* on the VOB —
+   its children, the classes `insertVob` cannot construct, and the members no
+   layer here models at all (AI, event manager, and whatever a class carries
+   that `CLASS_FIELDS` has never had a reason to name). The shape that avoids
+   modelling all of it is an **opaque blob the binding produces and consumes**:
+   serialize the subtree in C++ before the delete, reinsert it verbatim on undo.
+   That keeps the editor out of the business of describing every class, and it
+   makes the history hold *data* for the first time — everywhere else it holds
+   ops and not snapshots, by design.
+2. **An insert at an index.** `AddVob` appends, which is exactly why it
+   renumbers nothing. A restore has to land back in the slot it came from, or
+   every path in the older history is still misaddressed — so the restoring op
+   is "insert this subtree at this path", a new op with its own
+   `assertApplyOpsRequest` branch, and `renumbersPaths` is true for it. This is
+   the piece that makes the undo *correct* rather than merely present.
+3. **Then the barrier can go.** With 1 and 2, the delete has an inverse and the
+   stacks no longer have to clear. Until both exist, clearing is the right
+   behaviour: restoring a VOB at the wrong index would leave every older entry
+   pointing at a VOB that is not the one it edited, which is worse than losing
+   the stack.
+
+**The waynet is the smaller case, not the same one.** A waypoint is a small
+record — name, position, direction, and its edges — so serializing it is cheap
+and needs no blob. What is not cheap is that a delete renumbers the whole list
+(2,895 waypoints in a retail world) and the edges are index pairs, so the
+restore has to put the name back at its old index *and* rebuild the edges that
+referenced it. Worth treating as its own increment; it is likely the cheaper
+one to ship first.
+
+**Open, and each one a decision rather than work:**
+
+- **Blob or spec.** An opaque binding-owned blob is the only form that restores
+  a retail VOB faithfully; a `NewVob`-style spec is inspectable, testable and
+  diffable, and would restore the classes we catalogue and silently flatten the
+  rest. The blob is the honest one; nothing else in the op set works that way.
+- **What bounds the history.** A subtree blob per delete is unbounded memory in
+  a session that deletes a lot. A cap on retained bytes (dropping the oldest
+  restorable delete back to a barrier) is the obvious answer and needs a number.
+- **Whether an undo survives a save.** It does not today for anything, and a
+  restored VOB is no different — worth stating rather than discovering.
+- **What the confirm becomes.** §15's confirm exists because the stacks clear.
+  If they no longer clear, the dialog is only a destructive-action warning, and
+  whether it stays at all is a UI call.

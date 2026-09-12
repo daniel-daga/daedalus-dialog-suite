@@ -1949,6 +1949,11 @@ has existed.
 `DeleteVob` landed — the first op that ships **without** an inverse, on §15's
 decision. What it settled, in the order the code forced the questions:
 
+**The barrier is a stopgap since 2026-09-12 (Daniel; #271)** — an undoable
+delete is wanted, and §16.42 holds what an inverse would need. Everything below
+is still what the code does and why; read it as the current behaviour, not as
+the end state.
+
 **It is not an `AddVob` with a null `to`, and that was the whole design
 question.** §7 built that shape deliberately: a null side means "not in the
 world", so `invertOp` turns an add into a delete by swapping the sides and
