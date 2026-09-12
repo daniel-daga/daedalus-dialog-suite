@@ -868,6 +868,56 @@ describe('assertApplyOpsRequest', () => {
       }
     });
 
+    it('accepts a mover controller and a lens flare, the two classes #260 catalogued', () => {
+      // Both were readable and uncatalogued, so a selected one drew an empty
+      // property section — and this validator is the layer that would have
+      // refused the first op either of them sent, whatever the grid offered.
+      expect(() => assertApplyOpsRequest({
+        ops: [{
+          op: 'SetVobClassProp', vob: 3, path: '0/4', className: 'zCMoverController',
+          from: { target: 'OLD_GATE', message: 0, key: 0 },
+          to: { target: 'GATE_MOVER', message: 3, key: 7 },
+        }],
+      })).not.toThrow();
+      expect(() => assertApplyOpsRequest({
+        ops: [{
+          op: 'SetVobClassProp', vob: 3, path: '0/4', className: 'zCVobLensFlare',
+          from: { fx: '' }, to: { fx: 'SUN_FLARE' },
+        }],
+      })).not.toThrow();
+
+      // `message` is an enum, so it is bounded by nothing — a world may hold a
+      // value the set does not name and an undo has to write it back — but a
+      // fraction still truncates on the cast in C++ and is refused here.
+      expect(() => assertApplyOpsRequest({
+        ops: [{
+          op: 'SetVobClassProp', vob: 3, path: '0/4', className: 'zCMoverController',
+          from: { message: 0 }, to: { message: 97 },
+        }],
+      })).not.toThrow();
+      expect(() => assertApplyOpsRequest({
+        ops: [{
+          op: 'SetVobClassProp', vob: 3, path: '0/4', className: 'zCMoverController',
+          from: { message: 0 }, to: { message: 1.5 },
+        }],
+      })).toThrow(/to\.message must be a whole number/);
+
+      // And the class name is what makes a key legal: a lens flare has no
+      // target, a controller has no `fx`.
+      expect(() => assertApplyOpsRequest({
+        ops: [{
+          op: 'SetVobClassProp', vob: 3, path: '0/4', className: 'zCVobLensFlare',
+          from: { target: '' }, to: { target: 'X' },
+        }],
+      })).toThrow(/has no class property target/);
+      expect(() => assertApplyOpsRequest({
+        ops: [{
+          op: 'SetVobClassProp', vob: 3, path: '0/4', className: 'zCMoverController',
+          from: { fx: '' }, to: { fx: 'X' },
+        }],
+      })).toThrow(/has no class property fx/);
+    });
+
     it('refuses an item instance that is not the shape of a Daedalus symbol', () => {
       // `oCItem.instance` is the one class field whose value is a *name in
       // another file*, and ZenGin crashes on one no script declares

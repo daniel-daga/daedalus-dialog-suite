@@ -1916,6 +1916,34 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (fire_once.has_value()) world_start.fire_once = *fire_once;
       break;
     }
+    // What a mover controller controls, what it tells it, and which keyframe
+    // (#260). `target` is the same cross-reference the trigger family's is — a
+    // `vobName`, refused where the world is known rather than here — and the
+    // class declares nothing else, so this writes all of it. `message` is
+    // unconditional: `VMoverController::save` has no keyframe guard, unlike the
+    // two `zCMover` enums the catalogue holds out for that reason.
+    case zenkit::VirtualObjectType::zCMoverController: {
+      RequireClassKeys(env, props, {"target", "message", "key"}, class_name);
+      auto target = OptionalCp1252String(env, props, "target");
+      auto const message = OptionalEnum<zenkit::MoverMessageType>(env, props, "message");
+      auto const key = OptionalInt32(env, props, "key", std::nullopt, std::nullopt);
+      auto& controller = static_cast<zenkit::VMoverController&>(*vob);
+      if (target) controller.target = std::move(*target);
+      if (message) controller.message = *message;
+      if (key.has_value()) controller.key = *key;
+      break;
+    }
+    // A lens flare is the effect it names and nothing else. Plain config rather
+    // than a cross-reference: the name has to be one of the effects in
+    // `Presets/Lensflare.zen`, a file nothing here reads, and no VOB in the
+    // world answers to it.
+    case zenkit::VirtualObjectType::zCVobLensFlare: {
+      RequireClassKeys(env, props, {"fx"}, class_name);
+      auto fx = OptionalCp1252String(env, props, "fx");
+      auto& flare = static_cast<zenkit::VLensFlare&>(*vob);
+      if (fx) flare.fx = std::move(*fx);
+      break;
+    }
     // The one field this class has, and it is the target — which is why it had
     // no case at all while the targets were held out. It derives from
     // `VirtualObject` too, so there is no `vobTarget` here either.

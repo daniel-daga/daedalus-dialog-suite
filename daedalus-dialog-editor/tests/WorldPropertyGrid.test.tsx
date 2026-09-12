@@ -119,6 +119,8 @@ const WORLD = summaryOf(vobIndex([
   // exist to wire together (2026-09-12).
   { name: 'TRIGGER_GATE', cls: 'zCTrigger', visualType: 'UNKNOWN' },
   { name: 'GATE_MOVER', cls: 'zCMover', visual: 'GATE.3DS' },
+  // The VOB between the two, catalogued 2026-09-12 (#260).
+  { name: 'GATE_CONTROLLER', cls: 'zCMoverController', visualType: 'UNKNOWN' },
 ]));
 
 /**
@@ -1556,8 +1558,9 @@ describe('WorldPropertyGrid, typed rotation', () => {
 
         fireEvent.change(input('class-target'), { target: { value: 'GATE' } });
 
-        // Both VOBs whose name holds GATE, and nothing else in the world.
-        expect(options()).toEqual(['GATE_MOVER', 'TRIGGER_GATE']);
+        // Every VOB whose name holds GATE and nothing else in the world, in the
+        // sorted order the dictionary is kept in rather than archive order.
+        expect(options()).toEqual(['GATE_CONTROLLER', 'GATE_MOVER', 'TRIGGER_GATE']);
       });
 
       it('matches without regard to case, as the engine`s own lookup does', () => {
@@ -1633,8 +1636,31 @@ describe('WorldPropertyGrid, typed rotation', () => {
 
         fireEvent.change(input('class-target'), { target: { value: 'GATE' } });
 
-        expect(options()).toEqual(['GATE_MOVER', 'TRIGGER_GATE']);
+        expect(options()).toEqual(['GATE_CONTROLLER', 'GATE_MOVER', 'TRIGGER_GATE']);
       });
+    });
+
+    // A mover controller's `target` names the mover it drives, so it is the same
+    // cross-reference and gets the same two affordances by key rather than by
+    // class — which is what the key-based check was for.
+    it('warns and suggests on a mover controller`s target, which names a mover', () => {
+      render(
+        <WorldPropertyGrid
+          summary={WORLD}
+          selection={[11]}
+          {...wiring}
+          classProps={{ class: 'zCMoverController', target: 'GATE_MOVR', message: 0, key: 0, ...BASE_READ }}
+        />,
+      );
+
+      expect(screen.getByTestId('world-prop-class-target-warning')).toBeInTheDocument();
+
+      fireEvent.change(input('class-target'), { target: { value: 'MOVER' } });
+      expect(
+        Array.from(
+          screen.getByTestId('world-prop-class-target-suggestions').querySelectorAll('option'),
+        ).map((option) => option.getAttribute('value')),
+      ).toEqual(['GATE_MOVER']);
     });
 
     it('warns about the second target too, which is the other half of the pair', () => {

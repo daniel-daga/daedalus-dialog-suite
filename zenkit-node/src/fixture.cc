@@ -1048,9 +1048,31 @@ std::shared_ptr<VirtualObject> BuildVisualVobTree() {
   untouch->bbox = AxisAlignedBoundingBox {Vec3 {445.0f, 3.0f, 455.0f}, Vec3 {447.0f, 5.0f, 457.0f}};
   untouch->target = "VOB_INDEX_MOVER";
 
+  // The VOB between a trigger and a mover: it says which keyframe the mover
+  // named by `target` goes to. `insertVob` cannot construct one either, so this
+  // is the only place its write path is reachable (#260).
+  auto mover_controller = std::make_shared<VMoverController>();
+  mover_controller->type = VirtualObjectType::zCMoverController;
+  mover_controller->vob_name = "VOB_INDEX_MOVER_CONTROLLER";
+  mover_controller->position = Vec3 {456.0f, 4.0f, 466.0f};
+  mover_controller->bbox =
+      AxisAlignedBoundingBox {Vec3 {455.0f, 3.0f, 465.0f}, Vec3 {457.0f, 5.0f, 467.0f}};
+  mover_controller->target = "VOB_INDEX_MOVER";
+  mover_controller->message = MoverMessageType::FIXED_DIRECT;
+  mover_controller->key = 0;
+
+  // One string, and the class is complete.
+  auto lens_flare = std::make_shared<VLensFlare>();
+  lens_flare->type = VirtualObjectType::zCVobLensFlare;
+  lens_flare->vob_name = "VOB_INDEX_LENS_FLARE";
+  lens_flare->position = Vec3 {466.0f, 4.0f, 476.0f};
+  lens_flare->bbox =
+      AxisAlignedBoundingBox {Vec3 {465.0f, 3.0f, 475.0f}, Vec3 {467.0f, 5.0f, 477.0f}};
+  lens_flare->fx = "FIXTURE_LENSFLARE_SUN";
+
   root->children = {a, b, c, sound, daytime, far_plane, fog, music, animate, pfx, world_start,
                      trigger_script, trigger, change_level, mover, mob, mob_inter, mob_fire,
-                     mob_container, mob_door, untouch};
+                     mob_container, mob_door, untouch, mover_controller, lens_flare};
   return root;
 }
 

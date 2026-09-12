@@ -36,9 +36,9 @@ describe('the per-class field catalogue', () => {
       'oCItem', 'oCMOB', 'oCMobBed', 'oCMobContainer', 'oCMobDoor', 'oCMobFire', 'oCMobInter',
       'oCMobLadder', 'oCMobSwitch', 'oCMobWheel', 'oCTouchDamage', 'oCTriggerChangeLevel',
       'oCTriggerScript', 'oCZoneMusic', 'zCCodeMaster', 'zCMessageFilter', 'zCMover',
-      'zCPFXController', 'zCTrigger', 'zCTriggerList', 'zCTriggerUntouch', 'zCTriggerWorldStart',
-      'zCVobAnimate', 'zCVobLight', 'zCVobSound', 'zCVobSoundDaytime', 'zCZoneVobFarPlane',
-      'zCZoneZFog',
+      'zCMoverController', 'zCPFXController', 'zCTrigger', 'zCTriggerList', 'zCTriggerUntouch',
+      'zCTriggerWorldStart', 'zCVobAnimate', 'zCVobLensFlare', 'zCVobLight', 'zCVobSound',
+      'zCVobSoundDaytime', 'zCZoneVobFarPlane', 'zCZoneZFog',
     ]);
     expect(classPropKeys('oCItem')).toEqual(['instance']);
     expect(classPropKeys('zCVobLight')).toEqual(['lightType', 'range', 'color', 'quality']);
@@ -397,6 +397,50 @@ describe('the per-class field catalogue', () => {
     expect(fieldOf('oCMOB', 'target')).toBeNull();
   });
 
+  // What tells a mover which keyframe to go to (#260). A trigger fires a mover;
+  // this is the VOB between them, and it was readable and uneditable — a
+  // selected one drew an empty property section.
+  it('catalogues the mover controller whole: what it controls, what it says, and which key', () => {
+    expect(classPropKeys('zCMoverController')).toEqual(['target', 'message', 'key']);
+    // The same cross-reference the trigger family got, so the grid's warning and
+    // its name suggestions cover it by key rather than by class.
+    expect(fieldOf('zCMoverController', 'target')).toEqual({ key: 'target', kind: 'string' });
+    expect(fieldOf('zCMoverController', 'message')).toEqual({ key: 'message', kind: 'enum' });
+    expect(fieldOf('zCMoverController', 'key')).toEqual({ key: 'key', kind: 'int' });
+    // Nothing on `VMoverController` is a list or save-game-only, so the class is
+    // complete — there is no fourth field being held out.
+    expect(fieldOf('zCMoverController', 'keyframes')).toBeNull();
+  });
+
+  it('offers the four messages a mover controller can send', () => {
+    expect(enumValuesOf('zCMoverController', 'message')).toEqual([
+      { value: 0, label: 'FIXED_DIRECT' },
+      { value: 1, label: 'FIXED_ORDER' },
+      { value: 2, label: 'NEXT' },
+      { value: 3, label: 'PREVIOUS' },
+    ]);
+  });
+
+  it('catalogues a lens flare, whose whole class is the effect it names', () => {
+    expect(classPropKeys('zCVobLensFlare')).toEqual(['fx']);
+    expect(fieldOf('zCVobLensFlare', 'fx')).toEqual({ key: 'fx', kind: 'string' });
+  });
+
+  // `amplitude` is a float triple, and the catalogue's two array kinds are
+  // `color` (four integers) and `vec2` (two floats). A third is a decision, so
+  // the class stays out whole rather than half-catalogued.
+  it('leaves the earthquake out, for the one kind it would need', () => {
+    expect(classPropKeys('zCEarthquake')).toEqual([]);
+  });
+
+  // Editing a VOB a world already holds is not placing one. Neither class is
+  // constructible and this does not make it so — `insertVob`'s set is its own
+  // question.
+  it('catalogues neither class into the authorable set', () => {
+    expect(AUTHORABLE_VOB_CLASSES).not.toContain('zCMoverController');
+    expect(AUTHORABLE_VOB_CLASSES).not.toContain('zCVobLensFlare');
+  });
+
   it('places the whole trigger family, under the names the archive uses', () => {
     // I3 (level-editor.md §16.15). The two `oC*` names are the trap: the board
     // card and everyday speech say `zCTriggerScript` and `zCTriggerChangeLevel`,
@@ -593,7 +637,8 @@ describe('the enum sets (level-editor.md §16.21)', () => {
     expect(Object.keys(CLASS_ENUM_FIELDS).sort()).toEqual([
       'oCMOB', 'oCMobBed', 'oCMobContainer', 'oCMobDoor', 'oCMobFire', 'oCMobInter',
       'oCMobLadder', 'oCMobSwitch', 'oCMobWheel', 'oCTouchDamage', 'zCMessageFilter',
-      'zCMover', 'zCTriggerList', 'zCVobLight', 'zCVobSound', 'zCVobSoundDaytime',
+      'zCMover', 'zCMoverController', 'zCTriggerList', 'zCVobLight', 'zCVobSound',
+      'zCVobSoundDaytime',
     ]);
     for (const [className, fields] of Object.entries(CLASS_ENUM_FIELDS)) {
       expect(Object.keys(CLASS_FIELDS)).toContain(className);

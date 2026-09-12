@@ -2083,6 +2083,13 @@ const CLASS_PROP_ROUND_TRIP = [
   // `insertVob` cannot construct — so this fixture VOB is the only place its
   // write path is reachable (2026-09-12).
   ['1/20', 'zCTriggerUntouch', { target: 'OTHER_UNTOUCH_TARGET_ÄÖÜ' }],
+  // The VOB between a trigger and a mover, and a lens flare — both readable and
+  // uncatalogued until #260, and both unconstructible by `insertVob`, so their
+  // write paths are reachable only through fixture VOBs.
+  ['1/21', 'zCMoverController', {
+    target: 'OTHER_MOVER_CONTROLLER_TARGET_ÄÖÜ', message: 3, key: 7,
+  }],
+  ['1/22', 'zCVobLensFlare', { fx: 'OTHER_LENSFLARE_ÄÖÜ' }],
   ['1/19', 'oCMobDoor', {
     focusName: 'FOCUS_OTHER_DOOR_ÄÖÜ', hp: 60, damage: 0, movable: false, takable: false,
     focusOverride: true, soundMaterial: 5, visualDestroyed: 'DOOR_OTHER_DESTROYED.MMS',

@@ -339,6 +339,37 @@ const ZC_TRIGGER_LIST_FIELDS = [
   { key: 'mode', kind: 'enum' },
 ] as const satisfies readonly FieldDescriptor[];
 
+/**
+ * What a mover controller controls, what it tells it, and which keyframe.
+ *
+ * The VOB between a trigger and a mover, and the one the trigger targets landing
+ * (2026-09-12) made worth catalogueing: a trigger can be wired to a mover now,
+ * and this is what says *where the mover goes*. `target` is the same kind of
+ * cross-reference — a `vobName` in this world, named `triggerTarget` in the
+ * archive and `target` on the object — so the grid's dangling warning and its
+ * name suggestions cover it by key, and the IPC validator gains nothing here
+ * either.
+ *
+ * The whole class: `VMoverController` declares these three and nothing else, so
+ * nothing is held out. `key` matters only for the two `FIXED_*` messages, and
+ * that is left as it is rather than made a cross-field rule — `randomDelay`
+ * beside a non-RANDOM `mode` set the precedent, and the one exception
+ * (`zCZoneZFog.color`) is a switch drawn one row up.
+ */
+const ZC_MOVER_CONTROLLER_FIELDS = [
+  { key: 'target', kind: 'string' },
+  { key: 'message', kind: 'enum' },
+  { key: 'key', kind: 'int' },
+] as const satisfies readonly FieldDescriptor[];
+
+/** A lens flare is the effect it names, and nothing else: `VLensFlare` declares
+ *  one field. It is plain config rather than a cross-reference — the name has
+ *  to be one of the effects in `Presets/Lensflare.zen`, which is a file this
+ *  editor does not read, and nothing in the world names it back. */
+const ZC_VOB_LENS_FLARE_FIELDS = [
+  { key: 'fx', kind: 'string' },
+] as const satisfies readonly FieldDescriptor[];
+
 /** The three booleans that steer a code master's slave sequence. It derives
  *  straight from `zCVob`, so there is no base set to spread.
  *
@@ -679,6 +710,8 @@ export const CLASS_FIELDS = {
   oCTriggerScript: OC_TRIGGER_SCRIPT_FIELDS,
   oCTriggerChangeLevel: OC_TRIGGER_CHANGE_LEVEL_FIELDS,
   zCMover: ZC_MOVER_FIELDS,
+  zCMoverController: ZC_MOVER_CONTROLLER_FIELDS,
+  zCVobLensFlare: ZC_VOB_LENS_FLARE_FIELDS,
   oCMOB: OC_MOB_FIELDS,
   oCMobInter: OC_MOB_INTER_FIELDS,
   oCMobBed: OC_MOB_INTER_FIELDS,
@@ -1077,6 +1110,19 @@ export const CLASS_ENUM_FIELDS = {
       { value: 2, label: 'OPEN_TIME' },
       { value: 3, label: 'LOOP' },
       { value: 4, label: 'SINGLE_KEYS' },
+    ],
+  },
+  zCMoverController: {
+    // What the controller sends the mover it names. The two `FIXED_*` values are
+    // the ones `key` means anything for; `NEXT` and `PREVIOUS` step from
+    // wherever the mover is. Unlike `zCMover`'s other two enums this one is
+    // written unconditionally — `VMoverController::save` has no keyframe guard —
+    // so nothing here is a legal write the engine drops.
+    message: [
+      { value: 0, label: 'FIXED_DIRECT' },
+      { value: 1, label: 'FIXED_ORDER' },
+      { value: 2, label: 'NEXT' },
+      { value: 3, label: 'PREVIOUS' },
     ],
   },
   oCMOB: MOVABLE_OBJECT_ENUMS,
