@@ -21,6 +21,7 @@ handovers cost an hour a session:
 | machine and toolchain hazards | `docs/reference/environment-hazards.md` |
 | a known wart nobody is fixing yet | `docs/refactoring-targets.md` |
 | the Gate 2 checklist | `zenkit-node/docs/engine-acceptance-2026-08-25.md` §8 |
+| **what still needs an engine, and has no witness yet** | `docs/plans/level-editor.md` **§16.41** — a running list, added to as work lands |
 | **work a run can take unattended** | the `agent-ready` label |
 | a 2026-08-29 review finding | `docs/plans/world-editor-review-2026-08-29.md` |
 | **a 2026-09-04 review finding** — the second pass the 08-29 review never got | `docs/plans/level-editor-review-2026-09-04.md` |

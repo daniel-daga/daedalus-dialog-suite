@@ -3263,3 +3263,44 @@ decision this section is holding.
 billboard and a yaw-locked one from that base field; the viewport draws every
 decal as a full billboard, which is right for the common case and wrong for a
 decal authored yaw-locked. Nobody has counted how many of the 1,932 are.
+
+### 16.41 The standing engine-witness list (2026-09-12; #261)
+
+**One place to collect what only a Gothic install can answer, so it stops being
+re-derived per session.** Gate 2 and Gate 2b proved every op the editor shipped
+*then*; this section carries what has landed since, plus the remainder those
+gates left. It is a running list: a change that writes something new to a world
+adds its row here in the same commit, and a row leaves when it has been seen.
+The issue that points here stays open until the list is empty.
+
+**The staging is no longer the expensive part.** Gate 2b built candidate worlds
+with `zenkit-node/tools/mutate.js` and played them through
+`tools/engine-batch.ps1`, and that is still the way to test something the editor
+cannot author. Everything below, though, is an edit the editor can make: open the
+world, make it, save, and press the GMBT quick-test button (§16.29). The
+acceptance record's discipline still applies to whatever is claimed from it —
+confirm the staged file's hash, and keep a control run in the same session
+(`zenkit-node/docs/engine-acceptance-2026-08-25.md` §8, and
+`environment-hazards.md`, *GMBT*, for the two traps that voided a run).
+
+| # | What has never been seen in the engine | Landed | Where it came from |
+|---|---|---|---|
+| 1 | The seven decal fields on `SetVobProp` — `decalDimension` and the six that change nothing on screen | 2026-08-28 | Gate 2b remainder; §16.40 |
+| 2 | **Any enum write at all.** `lightType`, `quality`, a sound's `mode` and `volumeType`, `soundMaterial`, a filter's two actions, a trigger list's `mode`, a mover's `behavior`, a mover controller's `message` | 2026-08-30 | Gate 2b remainder; architecture §7, *"Class properties"* |
+| 3 | 22 of the 27 authorable classes — five have been placed and seen | 2026-08-29 | Gate 2b remainder; §16.15 |
+| 4 | A written chest `contents` — the archive's `contains` string, spawning the items it names | 2026-09-03 | #223; §16.26 row 2 |
+| 5 | A trigger firing **what it is wired to**: `target` and `vobTarget` on the `VTrigger` classes, `zCTriggerWorldStart` and `zCTriggerUntouch`, `zCMessageFilter.target`, `zCCodeMaster.target` and `failureTarget` | 2026-09-12 | architecture §7, *"What a trigger fires at"* |
+| 6 | A mob firing its `target` **when used**, which is the `VInteractiveObject` half of the same change | 2026-09-12 | #259 |
+| 7 | `zCMoverController` driving a mover to the keyframe its `key` names, under each `message` | 2026-09-12 | #260 |
+| 8 | `zCVobLensFlare.fx` — a written effect name resolving against `Presets/Lensflare.zen` | 2026-09-12 | #260 |
+| 9 | A mob's `item` gating its use, and a lock's `key` opening a chest or a door | 2026-09-12 | this section, above |
+| 10 | `zCEarthquake` — a written `radius`, `duration` and `amplitude` shaking the camera | 2026-09-12 | this section, above |
+
+**Out of this list by decision, not by omission.** `oCZoneMusic.volume` is
+unclaimed rather than tested badly: no ear can rank two music volumes in a live
+world (§16.2). And the two things that need a real **GPU** rather than the engine
+— how the thumbnail grid looks, how the walk feels — are #223's, not this list's;
+both want the same machine and neither wants a candidate world.
+
+A row that fails here is a defect and gets its own issue; this list only records
+that nobody has looked.
