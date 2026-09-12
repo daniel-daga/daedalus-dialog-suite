@@ -1131,6 +1131,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   // does not show is the one outcome worth a click to avoid.
   const gmbtConfigured = useProjectStore((s) => s.gmbtProjectDir !== null);
   const [quickTestBlocked, setQuickTestBlocked] = useState(false);
+  const [quickTestRefusal, setQuickTestRefusal] = useState<string | null>(null);
 
   const startQuickTest = useCallback(async () => {
     if (unsavedEdits) {
@@ -1140,11 +1141,10 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     try {
       await window.editorAPI.startGmbtQuickTest();
     } catch (failure) {
-      // The banner over the surface, not a `status: 'error'`: the world is
-      // still open, and a launch that did not happen changed nothing.
-      useWorldStore.getState().editFailed(
-        failure instanceof Error ? failure.message : String(failure),
-      );
+      // A dialog, not the edit banner: nothing was edited, and every way main
+      // refuses a launch — GMBT missing, the open world outside the project
+      // folder — is an explanation with a path in it that has to be read.
+      setQuickTestRefusal(failure instanceof Error ? failure.message : String(failure));
     }
   }, [unsavedEdits]);
 
@@ -2434,7 +2434,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    *  the dialog focused yet) would pass that test and fail this one. */
   const surfaceDialogOpen = deleting !== null || deletingWaypoint !== null
     || placing !== null || confirmingSave || addingWaypoint !== null || contextMenu !== null
-    || insertingNpc !== null || pickerOpen || quickTestBlocked;
+    || insertingNpc !== null || pickerOpen || quickTestBlocked || quickTestRefusal !== null;
 
   useEffect(() => {
     if (summary === null) return undefined;
@@ -2801,6 +2801,24 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
             onClick={() => { setQuickTestBlocked(false); setConfirmingSave(true); }}
           >
             Save world…
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* `gmbt test` is a basename plus a working directory, so it always plays
+          the GMBT project's own copy. Main refuses a world from anywhere else
+          and names both paths; they are the whole point of the dialog, so they
+          keep their own lines. */}
+      <Dialog open={quickTestRefusal !== null} onClose={() => setQuickTestRefusal(null)}>
+        <DialogTitle>The quick test did not start</DialogTitle>
+        <DialogContent>
+          <DialogContentText variant="body2" sx={{ whiteSpace: 'pre-line' }} data-testid="world-gmbt-refused">
+            {quickTestRefusal}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button variant="contained" onClick={() => setQuickTestRefusal(null)} data-testid="world-gmbt-refused-close">
+            Close
           </Button>
         </DialogActions>
       </Dialog>

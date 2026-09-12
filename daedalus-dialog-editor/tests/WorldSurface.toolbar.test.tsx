@@ -105,6 +105,26 @@ describe('the World bar GMBT quick test (§16.29)', () => {
     await screen.findByTestId('world-save-confirm');
   });
 
+  // A launch main refused is a two-path explanation the user has to read, so
+  // it gets a dialog rather than the edit banner — the banner is for a world
+  // edit that failed, and no edit was attempted here.
+  it('puts a refused launch in a dialog, with both paths readable', async () => {
+    await openWorld();
+    await act(async () => { useProjectStore.setState({ gmbtProjectDir: 'C:/mod/gmbt' }); });
+    api.startGmbtQuickTest.mockRejectedValueOnce(new Error(
+      "This world is not inside the GMBT project folder, and a quick test plays that folder's own copy:"
+      + '\n\nOpen world:\nC:\\Gothic\\NewWorld.zen\n\nGMBT project folder:\nC:\\mod\\gmbt\n\n'
+      + 'gmbt would load a file of the same name from the project folder instead.',
+    ) as never);
+
+    fireEvent.click(screen.getByTestId('world-gmbt-test'));
+
+    const refusal = await screen.findByTestId('world-gmbt-refused');
+    expect(refusal).toHaveTextContent('C:\\Gothic\\NewWorld.zen');
+    expect(refusal).toHaveTextContent('C:\\mod\\gmbt');
+    expect(useWorldStore.getState().editError).toBeNull();
+  });
+
   it('launches again once the edits are saved over the opened world', async () => {
     await openWorld();
     await act(async () => { useProjectStore.setState({ gmbtProjectDir: 'C:/mod/gmbt' }); });

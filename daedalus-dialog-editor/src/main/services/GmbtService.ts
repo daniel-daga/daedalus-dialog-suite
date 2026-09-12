@@ -74,11 +74,47 @@ export function quickTestArguments(worldFileName: string): string[] {
   return ['test', `--world=${worldFileName}`, ...QUICK_TEST_FLAGS];
 }
 
+/**
+ * Whether the open world is a file GMBT would actually play.
+ *
+ * The launch is a *basename* plus a working directory, so `gmbt test` always
+ * loads the GMBT project's own copy of that filename. A world opened from the
+ * Gothic install and saved back therefore reads clean in this app while the
+ * engine shows different bytes — the one failure mode a quick test cannot
+ * report, because both halves succeeded.
+ *
+ * Case is folded on Windows: the folder is typed into the project file and the
+ * world arrives from the open dialog, so their casing routinely disagrees on a
+ * filesystem that does not care.
+ */
+export function worldIsInsideGmbtProject(
+  gmbtProjectDir: string,
+  worldPath: string,
+  deps: { platform?: NodeJS.Platform } = {},
+): boolean {
+  const isWindows = (deps.platform ?? process.platform) === 'win32';
+  const paths = isWindows ? path.win32 : path.posix;
+  const fold = (candidate: string) => (isWindows ? candidate.toLowerCase() : candidate);
+  const relative = paths.relative(fold(gmbtProjectDir), fold(worldPath));
+  return relative !== '' && !relative.startsWith('..') && !paths.isAbsolute(relative);
+}
+
 export function startGmbtQuickTest(
   gmbtProjectDir: string,
-  worldFileName: string,
+  worldPath: string,
   deps: GmbtLaunchDeps = {},
 ): void {
+  if (!worldIsInsideGmbtProject(gmbtProjectDir, worldPath, deps)) {
+    throw new Error(
+      'This world is not inside the GMBT project folder, and a quick test plays that folder\'s own copy:\n\n'
+      + `Open world:\n${worldPath}\n\nGMBT project folder:\n${gmbtProjectDir}\n\n`
+      + 'gmbt would load a file of the same name from the project folder instead, so the test would not show these edits. '
+      + 'Open the world from inside the GMBT project folder, or point the project file at the folder this world belongs to.',
+    );
+  }
+  const worldFileName = (deps.platform ?? process.platform) === 'win32'
+    ? path.win32.basename(worldPath)
+    : path.posix.basename(worldPath);
   const executable = resolveGmbtExecutable(deps);
   if (executable === null) {
     throw new Error('gmbt was not found on PATH or in %APPDATA%\\GMBT\\bin — install GMBT to run a quick test');

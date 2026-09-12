@@ -932,7 +932,7 @@ export function setupIpcHandlers() {
     if (gmbtProjectDir === null) {
       throw new Error('Set "gmbtProjectDir" in the project file to a GMBT project folder to run a quick test');
     }
-    startGmbtQuickTest(gmbtProjectDir, path.basename(worldService.openWorldPath()), {
+    startGmbtQuickTest(gmbtProjectDir, worldService.openWorldPath(), {
       // Fire-and-forget, so this is the only record a failed launch leaves —
       // and the log file is the one the app can actually show.
       onError: (error) => logService.log(

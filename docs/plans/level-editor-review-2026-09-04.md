@@ -271,10 +271,15 @@ aside as corrupt on next load and the folders come back empty.
   extension including `.BAT`/`.CMD`, which Node ≥ 20.12 refuses to spawn
   without `shell` (EINVAL); skip those extensions, never add `shell: true`. A
   spawn failure after the handler returns (`main.ts:920`) is console-only —
-  the renderer sees success. And the dirty check and the launch can disagree
-  about which file the engine plays: a world opened from the install's list
-  and saved back clears `unsavedEdits`, yet GMBT runs the mod's copy; nothing
-  checks the opened path is under `gmbtProjectDir`.
+  the renderer sees success. **The launch-target half is FIXED 2026-09-12**:
+  the dirty check and the launch could disagree about which file the engine
+  plays, because `gmbt test` takes a *basename* and a working directory, so a
+  world opened from the install's list and saved back cleared `unsavedEdits`
+  while GMBT ran the mod's copy — both halves succeeding, and the edit simply
+  not there. `startGmbtQuickTest` now takes the open world's full path and
+  refuses one that is not under `gmbtProjectDir`, naming both paths; the
+  refusal, and every other way a launch is refused, is a dialog rather than the
+  edit banner, which is for an edit that failed.
 - **`world:getVobFolders` wrote under a read validation — FIXED 2026-09-11.**
   `WorldFoldersService.load` renames a corrupt sidecar aside before falling
   back, so the read handler writes. It now validates `{ write: true }` like the
