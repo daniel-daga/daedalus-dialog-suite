@@ -76,31 +76,31 @@ loads the addon.
 
 ---
 
-### 5. The world payload types live on both sides of the boundary
+### 5. The world payload types lived on both sides of the boundary — done
 **Files:** `daedalus-dialog-editor/src/shared/worldTypes.ts`,
-`zen-world/src/model/`
+`zen-world/src/scene/waynet.ts`
 
-`VobIndex` is defined in `zen-world` and re-exported by the editor
-(`worldTypes.ts:6-8`); `WaynetPayload` is defined in the editor instead
-(`worldTypes.ts:71-82`), even though both are shapes the binding emits and the
-domain reasons about. The split is historical, not designed.
+`VobIndex` was defined in `zen-world` and re-exported by the editor;
+`WaynetPayload` was defined in the editor instead, even though both are shapes
+the binding emits and the domain reasons about. The split was historical, not
+designed.
 
 Noticed while adding `MoveWaypoint` (2026-08-27) and deliberately not fixed
 there: the op needed no cross-package type at all once its factory took the
 payload's own columns — `(positions, names, waypoint, to)` — so moving
 `WaynetPayload` would have been adjacent refactoring the change did not need.
+It was predicted to start costing something at the waypoint gizmo slice and it
+did not (landed 2026-08-28), for the same reason: the store holds
+`selectedWaypoint: number | null` and names nothing, and the two `zen-world`
+functions the slice uses take `Float32Array` and `string[]`.
 
-**It was predicted to start costing something at the waypoint gizmo slice, and
-it did not** (landed 2026-08-28). The prediction assumed the store would have to
-name the type; it holds `selectedWaypoint: number | null` and names nothing, the
-overlay and the viewport are both editor-side already, and the two `zen-world`
-functions the slice uses take the payload's raw columns — `Float32Array` and
-`string[]` — for the same reason `moveWaypoint`'s factory does. So the split is
-still only a wart, with no slice yet identified that pays for it.
-
-Fix direction, unchanged: `WaynetPayload` moves to `zen-world` beside `VobIndex`
-and the editor re-exports it, matching what already happened for the VOB index.
-Small, but it touches every waynet import, so it wants its own commit.
+**Landed 2026-09-12, still with no slice that pays for it** — a wart closed
+because it was cheap, not because it had started costing. `WaynetPayload` and
+the two `WAYNET_FLAG_*` constants are `zen-world/src/scene/waynet.ts`, beside
+`VobIndex`, and `worldTypes.ts` re-exports all three exactly as it already did
+for the VOB index — so every consumer still imports from `worldTypes` and not
+one of them changed. The constants need a *value* re-export rather than an
+`export type`: the waynet overlay and the Problems scan read them at runtime.
 
 ### 6. `ParserService.dispose()` leaves the service permanently dead, and now silently
 **File:** `daedalus-dialog-editor/src/main/services/ParserService.ts`
