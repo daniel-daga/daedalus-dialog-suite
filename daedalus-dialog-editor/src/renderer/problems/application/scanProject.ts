@@ -1,4 +1,4 @@
-import type { SemanticModel, SpawnSite } from '../../../shared/types';
+import type { RoutineSite, SemanticModel, SpawnSite } from '../../../shared/types';
 import type { PortalFinding } from '../../../shared/worldTypes';
 import type {
   FileFacts,
@@ -40,6 +40,9 @@ export interface ProjectScanInput {
   /** The open world's portal findings, computed in the zenkit worker. Absent
    *  when no world is open, and the portal rule then returns nothing. */
   portalFindings?: readonly PortalFinding[];
+  /** Every `TA` entry the project index read — what `routine-overlap` sweeps.
+   *  Absent is an index that has not loaded, and the rule then says nothing. */
+  routineSites?: readonly RoutineSite[];
 }
 
 export interface ProjectScanResult {
@@ -55,6 +58,7 @@ export function scanProject(input: ProjectScanInput): ProjectScanResult {
     factsCache: input.factsCache,
     waypointSites: input.waypointSites,
     spawnSites: input.spawnSites,
+    routineSites: input.routineSites,
     npcsWithDialogs: input.npcsWithDialogs,
     world: input.world,
     portalFindings: input.portalFindings

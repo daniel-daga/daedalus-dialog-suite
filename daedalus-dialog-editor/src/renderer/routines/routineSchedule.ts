@@ -270,10 +270,13 @@ export function placementWaypointsAt(
  * more than once — §11's gap and overlap checks, as a measurement rather than
  * as a rule.
  *
- * It is deliberately not a Problems rule: §16.19 records those as uncarded
- * because nobody has said what the finding should be, and §16.22's precedent is
- * that the number comes first and the check second. This is the instrument that
- * number comes from.
+ * §16.22's precedent is that the number comes first and the check second, and
+ * this is the instrument the numbers came from. The **overlap** half now also
+ * feeds a rule — `problems/domain/rules/routineOverlap.ts`, a warning since
+ * 2026-09-12 (#235) — because a minute covered twice is undefined behaviour
+ * with nothing left to threshold. The **gap** half still feeds nobody: a hole
+ * is legal at half-day scale, so it is a threshold question and no threshold
+ * has been measured or chosen (#236).
  *
  * A minute at a time rather than interval arithmetic, because the day is a
  * circle and every wrap-around edge case an interval merge would have to get

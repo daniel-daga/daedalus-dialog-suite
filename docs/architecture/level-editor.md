@@ -3289,10 +3289,13 @@ hold — it holds one world at a time.
   main that `CLAUDE.md` records the main process deliberately not having. The
   dummy is the answer to that gap, not a placeholder waiting on it.
 - **Occupancy is dead** — measured, a cliff and no tail (§16.22 q4). **Gap and
-  overlap survive the measurement**, each as its own card: the overlap is a
-  minute the scripts do not determine and needs only the saying (§16.33), the
-  gap is a threshold nobody has set and is a measurement before it is a rule
-  (§16.34). `coverageOf` and its script compute what both rest on.
+  overlap survived the measurement**, and have since parted: the overlap is a
+  minute the scripts do not determine, which left only the saying, and it
+  **landed 2026-09-12 as a warning** (#235) over `coverageOf` — any minute
+  covered twice is one finding, because a precedence between two `TA` entries
+  would be a rule the game does not have. The gap is a threshold nobody has
+  set and is a measurement before it is a rule (§16.34). `coverageOf` and its
+  script compute what both rest on.
 - **Chapter-conditional presence.** `B_Enter_OldWorld.d`'s 302 spawns are one
   `if (Kapitel …)` after another, indexed since the nested-call fix but drawn
   unconditionally at every minute and every state. It needs the guard, and

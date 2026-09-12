@@ -1896,9 +1896,11 @@ the gap and left it open; §16.18 added two more behind it; the Phase 1c overlay
 **What this does *not* unblock, and must not be smuggled in.** Leak
 flood-fill, intersections and triangle limits are still Phase 2 with their own
 Gate 3 (§11); pairing, planarity and orientation joined the card only because
-§16.22 had measured them. Occupancy and overlap checks become *possible* here
-and stay uncarded: §8 lists them among Phase 1c's unreached deliverables, and
-they want the spawn index they now have plus a rule nobody has specified.
+§16.22 had measured them. Occupancy and overlap checks became *possible* here
+and were left uncarded, and the two have since diverged on their measurements
+rather than on this card: occupancy is dead (§16.22 q4 — a cliff, not a tail),
+and **overlap landed 2026-09-12 as a warning** (#235). The gap check is still
+nobody's, and for its own reason (#236).
 
 ### 16.22 The measurement tranche (§11 Phase 2, decided 2026-08-29)
 
@@ -3051,50 +3053,10 @@ lists and loads.
 
 ---
 
-### 16.33 Routine overlap — the finding the measurement supports (#235)
-
-`coverageOf` (`src/renderer/routines/routineSchedule.ts`) reports, per routine,
-which minutes of a day it leaves uncovered and which it covers twice. The
-overlap half has a principled finding and the gap half (#236) does not, which is
-why they are two cards and not one.
-
-**Why an overlap is reportable.** `placementsAt` returns *every* entry in force
-at a minute rather than one, deliberately: nothing in the format, in ZenKit or
-in this repo says which the engine picks, so a precedence would be a rule the
-game does not have (`docs/architecture/level-editor.md` §8). That is exactly
-what makes the overlap a finding — the NPC's position at that minute is
-undefined by anything the editor can read, and an author almost certainly did
-not mean it to be. No threshold and no discriminator: any minute covered twice
-is one.
-
-**What retail does.** 8 of the 1,137 routines with an indexed entry cover a
-window twice, one window each. No tail — which is why §16.22's precedent left
-this uncarded rather than killing it, as it killed occupancy. A rule would fire
-8 times on the whole of Gothic II.
-
-**What is missing is the saying, not the number.** Its wording, its severity,
-and whether 8 findings on retail is a rule worth having or noise a modder learns
-to scroll past. A person's call, which is the `needs-decision` label.
-
-**What it costs once said.** The eighth Problems rule, beside
-`duplicateSpawnRule` in `src/renderer/problems/domain/rules/`, over
-`routineSiteIndex`. The locus is a script one — file, function, line — so it
-fits the panel's navigation model as it stands, the same property that made the
-duplicate-spawn rule the cross-validation slice worth taking first.
-
-**One caveat on the 8.** The distribution was measured 2026-09-01, before
-`prototype_declaration` took `$.block` and lifted the routine index from 81% to
-99% of the corpus's `TA` calls. The 1,128 entries that fix recovered are
-`DMT_DementorAmbient.d`'s 17 walker routines, and whether any of them overlaps is
-unknown. Re-run `daedalus-dialog-editor/scripts/check-routine-coverage.js` before
-writing the rule; the corpus is `mdk/Content`, which is Daniel's machine and not
-CI, so this is not work an unattended run can take.
-
----
-
 ### 16.34 Routine gap — a hole in the day, and the threshold nobody has set (#236)
 
-The other half of `coverageOf`, and it is not the overlap's twin (#235).
+The other half of `coverageOf`, and it is not the twin of the overlap check
+that landed 2026-09-12 (#235, `problems/domain/rules/routineOverlap.ts`).
 
 **A hole is not undefined behaviour.** It is legal and common at half-day
 scale: an NPC with a twelve-hour routine is elsewhere the other twelve, and the

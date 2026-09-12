@@ -15,6 +15,7 @@ const RULE_LABEL: Record<ProblemRuleId, string> = {
   'duplicate-spawn': 'NPC spawned twice',
   'portal-material-malformed': 'Malformed portal name',
   'portal-material-unknown-sector': 'Portal names unknown sector',
+  'routine-overlap': 'Routine overlap',
   'portal-unpaired': 'Portal unpaired',
   'portal-non-planar': 'Portal not flat',
   'portal-reversed': 'Portal reversed'

@@ -1,5 +1,6 @@
 import type { SemanticModel, SpawnSite } from '../../../shared/types';
 import type { PortalFinding } from '../../../shared/worldTypes';
+import type { RoutineSite } from '../../../shared/types';
 
 /**
  * Domain types for the project-wide Problems panel.
@@ -22,6 +23,7 @@ export type ProblemRuleId =
   | 'duplicate-spawn'
   // The portal checks (level-editor.md §16.18 slice 1, §16.22 q1–q3), one id
   // per `zen-world` finding kind. All world-locus, by polygon.
+  | 'routine-overlap'
   | 'portal-material-malformed'
   | 'portal-material-unknown-sector'
   | 'portal-unpaired'
@@ -188,6 +190,13 @@ export interface ProjectView {
    * scan runs on every debounced keystroke.
    */
   portalFindings?: readonly PortalFinding[];
+  /**
+   * Every `TA` entry the project index read, across every routine — what
+   * `routine-overlap` sweeps (#235). From the index's whole-project pass
+   * rather than the parsed files, for the reason the waypoint and spawn rules
+   * take theirs there: `parsedFiles` is capped by what has been opened.
+   */
+  routineSites: readonly RoutineSite[];
 }
 
 /**

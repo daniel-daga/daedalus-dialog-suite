@@ -116,6 +116,7 @@ export const useProblemsStore = create<ProblemsStore>((set, get) => {
         factsCache,
         waypointSites: project.waypointSiteIndex,
         spawnSites: project.spawnSiteIndex,
+        routineSites: project.routineSiteIndex,
         npcsWithDialogs: npcsWithDialogs(project.dialogIndex),
         world,
         portalFindings
