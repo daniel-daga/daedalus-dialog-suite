@@ -109,25 +109,16 @@ mob `item`/`key`, and `oCMobContainer.contents` (index-backed picker).
 ### C1. A delete still cannot be undone (#271)
 
 Spacer has no undo at all; we have one everywhere **except** the op the report
-names first. `DeleteVob` and `DeleteWaypoint` are barriers that clear the stack
-by decision (plan §15) — so a bad drag no longer costs work, and a bad delete
-still does, with the user's own save file as the only fallback.
+names first. `DeleteVob` and `DeleteWaypoint` are barriers that clear both
+stacks, so a bad drag no longer costs work and a bad delete still does, with the
+user's own save file as the only fallback.
 
-**Why it has no inverse** (architecture §7, *"The delete, and the barrier that
-replaces its inverse"*): the op carries an address and nothing else. The shape
-that would have made it invertible — an `AddVob` with a null side — was
-considered and rejected, because its `NewVob` spec means "this op describes the
-VOB completely", which is true of a VOB we authored and false of every retail
-one: undoing the delete of an `oCMobInter` would insert a bare `zCVob` wearing
-its name and visual and report success. A real inverse needs the subtree
-serialized out of the binding *before* the delete, in a form `AddVob` can
-rebuild — including the members nothing here models (AI, event manager) and the
-classes `insertVob` cannot construct. The stack-clearing is a second, separate
-reason: a delete renumbers every path after it, so entries already on the stack
-address VOBs that have moved.
-
-So it is a cost decision, not a defect: snapshot the subtree into the op (or the
-world around it), which §15 left open, or leave the barrier.
+**Decided 2026-09-12 (Daniel): this one is wanted, not a nice-to-have.** An
+undoable delete is desirable and is believed possible; the barrier is a stopgap.
+What it needs is a serializer for the subtree, an insert-at-index op to put it
+back in its old slot, and only then the removal of the barrier — plan §15 for
+the withdrawn half of the original decision, §16.42 for the design and the four
+questions it leaves open.
 
 ### C2. A malformed world crashes the reader, and says nothing about why (#272)
 
