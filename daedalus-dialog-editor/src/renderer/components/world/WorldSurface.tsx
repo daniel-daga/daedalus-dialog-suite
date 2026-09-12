@@ -10,14 +10,13 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import {
   AUTHORABLE_VOB_CLASSES,
-  addVob, addVobsToFolder, classPropKeys, addWaypoint, alignVobsToNormal, applyWaypointNames,
+  addVob, classPropKeys, addWaypoint, alignVobsToNormal, applyWaypointNames,
   applyWaypointPositions,
-  createFolder, deleteFolder,
   deleteVobs, dropVobsToGround,
   duplicateVobSubtree, duplicateVobs, emptyVobFolders,
   invertOp, isBarrierOp, isStructuralOp,
   matchVobs,
-  pasteVobs, placeBounds, removeVobFromFolder, renameFolder,
+  pasteVobs, placeBounds,
   renumbersPaths,
   reparentVob, rotateVob, rotateVobs, scatterVobs, setVobClassProp, setVobProp, setVobProps,
   strokeCandidates, topLevelVobs,
@@ -32,7 +31,7 @@ import {
   type ZenPosition, type ZenRotation,
 } from 'zen-world';
 import type {
-  AssetCatalog, DiscoveredWorld, InstancedPayload, VobFolders, WaynetPayload,
+  AssetCatalog, DiscoveredWorld, InstancedPayload, WaynetPayload,
   WorldMeshPayload, WorldOp,
 } from '../../../shared/worldTypes';
 import { findFreePointVob, primaryVob, useWorldStore } from '../../store/worldStore';
@@ -61,6 +60,7 @@ import WorldVobContextMenu from './WorldVobContextMenu';
 import PanelSplitter from './PanelSplitter';
 import { usePanelLayout, COLLAPSED_PANEL_WIDTH } from './hooks/usePanelLayout';
 import { useWaynetEditing } from './hooks/useWaynetEditing';
+import { useVobFolders } from './hooks/useVobFolders';
 import WorldToolbar from './toolbar/WorldToolbar';
 import { OUTLINE_MODE_ORDER } from './toolbar/WorldViewControls';
 import WorldStatusStats from './toolbar/WorldStatusStats';
@@ -231,11 +231,61 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    *  (#226) — see `openWorldNamed`. */
   const [pendingJump, setPendingJump] = useState<string | null>(null);
   const [showWaynet, setShowWaynet] = useState(false);
-  /** User-created VOB folders (VOB folders slice) — never a `WorldOp`, so it
-   *  is loaded/persisted beside `waynet` rather than through `commitOps`'s
-   *  history. Read fresh on every open; a fresh open's default is no folders,
-   *  same as `waynet`'s null. */
-  const [vobFolders, setVobFolders] = useState<VobFolders>(emptyVobFolders());
+  /**
+   * The asset browser's favorites and categories (§16.26, "Wanted on top"),
+   * the project's own half: the `<project>.assets.json` sidecar, loaded when
+   * a project is, persisted on every change the way folders are. The shipped
+   * seed is merged in for display and never written back, so the sidecar
+   * stays the project's diff against it.
+   */
+  const projectFilePath = useProjectStore((s) => s.projectFilePath);
+  const [assetCatalog, setAssetCatalog] = useState<AssetCatalog>(emptyAssetCatalog());
+  useEffect(() => {
+    let current = true;
+    setAssetCatalog(emptyAssetCatalog());
+    if (projectFilePath === null) return undefined;
+    window.editorAPI.getAssetCatalog(projectFilePath)
+      .then((loaded) => { if (current) setAssetCatalog(loaded); })
+      .catch((failure) => { console.error('[World] Failed to read the asset catalog:', failure); });
+    return () => { current = false; };
+  }, [projectFilePath]);
+  const persistAssetCatalog = useCallback((next: AssetCatalog) => {
+    setAssetCatalog(next);
+    if (projectFilePath === null) return;
+    window.editorAPI.saveAssetCatalog(projectFilePath, next).catch((failure) => {
+      console.error('[World] Failed to save the asset catalog:', failure);
+    });
+  }, [projectFilePath]);
+  const mergedAssetCatalog = useMemo(
+    () => mergeCatalogs(parseAssetCatalog(assetCategorySeed), assetCatalog),
+    [assetCatalog],
+  );
+  // The place verb on an asset row or tile (§16.37 row 4). The same arming the
+  // preview panel's button does, offered where the pointer already is.
+  const assetPlacement = useMemo(() => ({
+    canPlace: isPlaceableVisual,
+    onPlace: (name: string) => setArmed({ kind: 'place', spec: { ...FRESH_PLACE, visual: name } }),
+  }), []);
+  const assetCatalogProps = useMemo<AssetCatalogProps | undefined>(() => (
+    projectFilePath === null ? undefined : {
+      catalog: mergedAssetCatalog,
+      removable: (path, name) => visualsOf(assetCatalog, path).some((visual) => assetKey(visual) === assetKey(name)),
+      onToggleFavorite: (name) => persistAssetCatalog(toggleFavorite(assetCatalog, name)),
+      onAddToCategory: (path, name) => persistAssetCatalog(addToCategory(assetCatalog, path, name)),
+      onRemoveFromCategory: (path, name) => persistAssetCatalog(removeFromCategory(assetCatalog, path, name)),
+    }
+  ), [projectFilePath, mergedAssetCatalog, assetCatalog, persistAssetCatalog]);
+
+  const {
+    vobFolders,
+    setVobFolders,
+    addSelectionToFolder,
+    createEmptyFolder,
+    createFolderWithSelection,
+    renameFolder: renameFolderHandler,
+    deleteFolder: deleteFolderHandler,
+    removeVobFromFolder: removeVobFromFolderHandler,
+  } = useVobFolders();
   /** How many batches the main process can undo/redo — the World bar's
    *  buttons' only way to know, since the stacks are private to
    *  `WorldService` (§7). Refreshed after every applied batch and after a
@@ -500,7 +550,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         failure instanceof Error ? failure.message : String(failure),
       );
     }
-  }, [beginOpen, openSucceeded, openFailed, refreshHistoryDepth]);
+  }, [beginOpen, openSucceeded, openFailed, refreshHistoryDepth, setVobFolders]);
 
   /**
    * The world picker (level-editor.md §16.31): the worlds the project's own
@@ -1867,107 +1917,6 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const scatterBrushRadius = scatterOn && selection.length > 0 ? brushRadius : null;
 
   /**
-   * User-created VOB folders (VOB folders slice) — a virtual grouping kept
-   * beside the world file, never a `WorldOp`. `persistFolders` is the one
-   * place state is set and the sidecar written; every mutation below goes
-   * through it rather than calling `setVobFolders`/`saveVobFolders` itself.
-   *
-   * The save is fire-and-forget: folders are low-stakes editor metadata, not
-   * the world itself, so a failed write is logged rather than surfaced the
-   * way a refused world edit is.
-   */
-  /**
-   * The asset browser's favorites and categories (§16.26, "Wanted on top"),
-   * the project's own half: the `<project>.assets.json` sidecar, loaded when
-   * a project is, persisted on every change the way folders are. The shipped
-   * seed is merged in for display and never written back, so the sidecar
-   * stays the project's diff against it.
-   */
-  const projectFilePath = useProjectStore((s) => s.projectFilePath);
-  const [assetCatalog, setAssetCatalog] = useState<AssetCatalog>(emptyAssetCatalog());
-  useEffect(() => {
-    let current = true;
-    setAssetCatalog(emptyAssetCatalog());
-    if (projectFilePath === null) return undefined;
-    window.editorAPI.getAssetCatalog(projectFilePath)
-      .then((loaded) => { if (current) setAssetCatalog(loaded); })
-      .catch((failure) => { console.error('[World] Failed to read the asset catalog:', failure); });
-    return () => { current = false; };
-  }, [projectFilePath]);
-  const persistAssetCatalog = useCallback((next: AssetCatalog) => {
-    setAssetCatalog(next);
-    if (projectFilePath === null) return;
-    window.editorAPI.saveAssetCatalog(projectFilePath, next).catch((failure) => {
-      console.error('[World] Failed to save the asset catalog:', failure);
-    });
-  }, [projectFilePath]);
-  const mergedAssetCatalog = useMemo(
-    () => mergeCatalogs(parseAssetCatalog(assetCategorySeed), assetCatalog),
-    [assetCatalog],
-  );
-  // The place verb on an asset row or tile (§16.37 row 4). The same arming the
-  // preview panel's button does, offered where the pointer already is.
-  const assetPlacement = useMemo(() => ({
-    canPlace: isPlaceableVisual,
-    onPlace: (name: string) => setArmed({ kind: 'place', spec: { ...FRESH_PLACE, visual: name } }),
-  }), []);
-  const assetCatalogProps = useMemo<AssetCatalogProps | undefined>(() => (
-    projectFilePath === null ? undefined : {
-      catalog: mergedAssetCatalog,
-      removable: (path, name) => visualsOf(assetCatalog, path).some((visual) => assetKey(visual) === assetKey(name)),
-      onToggleFavorite: (name) => persistAssetCatalog(toggleFavorite(assetCatalog, name)),
-      onAddToCategory: (path, name) => persistAssetCatalog(addToCategory(assetCatalog, path, name)),
-      onRemoveFromCategory: (path, name) => persistAssetCatalog(removeFromCategory(assetCatalog, path, name)),
-    }
-  ), [projectFilePath, mergedAssetCatalog, assetCatalog, persistAssetCatalog]);
-
-  const persistFolders = useCallback((next: VobFolders) => {
-    setVobFolders(next);
-    const worldPath = useWorldStore.getState().summary?.worldPath;
-    if (worldPath === undefined) return;
-    window.editorAPI.saveVobFolders(worldPath, next).catch((failure) => {
-      console.error('[World] Failed to save VOB folders:', failure);
-    });
-  }, []);
-
-  /** The selection's `vobIndexPath` addresses — what a folder actually
-   *  stores. A VOB with no summary to resolve it against contributes nothing,
-   *  the same "drop rather than guess" rule `vobIndexPath` itself follows. */
-  const selectionPaths = useCallback((): string[] => {
-    const { summary: current, selection: selected } = useWorldStore.getState();
-    if (current === null) return [];
-    const { reader } = vobModelOf(current);
-    return selected
-      .map((vob) => vobIndexPath(reader, vob))
-      .filter((path): path is string => path !== null);
-  }, []);
-
-  const addSelectionToFolder = useCallback((id: string) => {
-    const paths = selectionPaths();
-    if (paths.length === 0) return;
-    persistFolders(addVobsToFolder(vobFolders, id, paths));
-  }, [selectionPaths, persistFolders, vobFolders]);
-
-  const createFolderWithSelection = useCallback((name: string) => {
-    const id = crypto.randomUUID();
-    const paths = selectionPaths();
-    const withFolder = createFolder(vobFolders, id, name);
-    persistFolders(paths.length === 0 ? withFolder : addVobsToFolder(withFolder, id, paths));
-  }, [selectionPaths, persistFolders, vobFolders]);
-
-  const renameFolderHandler = useCallback((id: string, name: string) => {
-    persistFolders(renameFolder(vobFolders, id, name));
-  }, [persistFolders, vobFolders]);
-
-  const deleteFolderHandler = useCallback((id: string) => {
-    persistFolders(deleteFolder(vobFolders, id));
-  }, [persistFolders, vobFolders]);
-
-  const removeVobFromFolderHandler = useCallback((id: string, vobPath: string) => {
-    persistFolders(removeVobFromFolder(vobFolders, id, vobPath));
-  }, [persistFolders, vobFolders]);
-
-  /**
    * The clipboard copy and paste share (level-editor.md §16.14, D3).
    *
    * **In-process, and a `ref` rather than state**: nothing on screen changes
@@ -2870,7 +2819,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                     selection={selection}
                     onSelect={handleSelect}
                     onFocus={focusVob}
-                    onCreateFolder={(name) => persistFolders(createFolder(vobFolders, crypto.randomUUID(), name))}
+                    onCreateFolder={createEmptyFolder}
                     onRenameFolder={renameFolderHandler}
                     onDeleteFolder={deleteFolderHandler}
                     onRemoveFromFolder={removeVobFromFolderHandler}

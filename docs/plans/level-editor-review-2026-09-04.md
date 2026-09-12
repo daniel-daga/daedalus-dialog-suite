@@ -708,17 +708,28 @@ different judgement from the one this finding made and is not carried here.
 `WorldSurface.tsx` and `binding.cc` (3,388, with ~250 duplicated
 lines in one switch) are the same shape of debt with lower risk.
 
-**`WorldSurface.tsx` is under way, 2026-09-12.** Two of the nine concerns are
+**`WorldSurface.tsx` is under way, 2026-09-12.** Three of the nine concerns are
 out, each with the unit spec the extraction was for and no behaviour changed:
 `world/hooks/usePanelLayout` (the panel widths, their collapse and the one
-place the widths are written back — the review's own "would go first") and
+place the widths are written back — the review's own "would go first"),
 `world/hooks/useWaynetEditing` (the six waynet edits and the five derivations
 the panel draws, which reach the world only through `commitOps` and so are
-assertable as values). The file is **3,506 lines from 3,705** — it had *grown*
-199 lines past the 3,190 this review measured before either cut, which is the
-number worth carrying forward: the count here is a reading, not a budget.
-The seven left are the ones the review named, and the edit core is still the
-one that has to go last.
+assertable as values) and `world/hooks/useVobFolders` (the sidecar, which is
+editor metadata rather than a `WorldOp` and so has its own persistence rule to
+hold: one place that both sets state and writes, a fire-and-forget save, and a
+selection stored as index paths). The file is **3,455 lines from 3,705** — it
+had *grown* 515 lines past the 3,190 this review measured before any cut, which
+is the number worth carrying forward: the count here is a reading, not a budget.
+
+Two things the cutting turned up, neither a defect. The folders docblock sat
+above the *asset catalog*'s code rather than its own — the same misplacement
+this section notes for `ops.ts`, and now fixed by the move. And the Folders
+tab's create button makes an empty folder whatever is selected, while the
+context menu's takes the selection with it; that difference was invisible
+inline and is now two named functions with a test each.
+
+The six left are the ones the review named, and the edit core is still the one
+that has to go last.
 
 **§3.3, the BVH rebuilt per structural op. Landed 2026-09-08.** §3.2 removed
 the *duplicate* rebuild; the remaining one discarded and rebuilt all 352 trees
