@@ -283,20 +283,36 @@ trusting master for a release, not after.
 
 ## Playwright in the Claude Code cloud container
 
-- **The browser-harness suite cannot run there at all, and the failure does not
-  say so.** The image ships Playwright's browser build **1194** under
-  `/opt/pw-browsers`; the pinned `playwright` (1.58.1) wants **1208**, so every
-  spec fails at launch with `Executable doesn't exist at
-  …/chromium_headless_shell-1208/…`. Every spec failing at once, including ones
-  the change never touched, is the tell — check that before reading it as a
-  regression. Confirmed 2026-08-30 by re-running the same specs with the work
-  stashed: identical failure on a clean tree.
-- `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` at the image's own
-  `chromium-1194/chrome-linux/chrome` **does not fix it** — the headless-shell
-  channel is resolved separately and is what the run asks for.
-- The container's own instructions say not to run `playwright install`, so the
-  suite is simply unavailable in that environment. Verify a UI change with Jest
-  and leave the E2E to CI and to Windows.
+- **The pinned browser build is not the one the image ships.** The image ships
+  Playwright's build **1194** under `/opt/pw-browsers`; the pinned `playwright`
+  (1.58.1) wants **1208**, so out of the box every spec fails at launch with
+  `Executable doesn't exist at …/chromium_headless_shell-1208/…`. Every spec
+  failing at once, including ones the change never touched, is the tell — check
+  that before reading it as a regression.
+- **It does run, with the executable named directly.** A config that spreads
+  the base one and sets `use.launchOptions.executablePath` to
+  `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`, passed with
+  `-c`, launches the shipped Chromium and the harness behaves normally —
+  `keyboard-dnd-reorder.spec.ts`, six specs, green in 13 s on 2026-09-12.
+  Keep that config out of the commit; it is a fact about one container, not
+  about the repo.
+  **`PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` still does not work** — that is what
+  the 2026-08-30 note tried and why this section used to say the suite was
+  unavailable here. The env var leaves the headless-shell channel resolving on
+  its own, and the channel is what the run asks for; `launchOptions` replaces
+  the launch outright, which is the difference.
+- The container's own instructions say not to run `playwright install`. Nothing
+  above needs it.
+- **A cold clone needs `zen-world` built before the harness resolves at all.**
+  `pnpm install --ignore-scripts` skips its `postinstall` `tsc`, so vite fails
+  every renderer import with `Failed to resolve entry for package "zen-world"`
+  and the page never mounts — a spec then dies on its first locator with no
+  mention of the real cause. `pnpm --filter zen-world build` first.
+  The same clone runs 14 of the editor's Jest suites red with
+  `No native build was found for platform=linux … abi=127`: that is tree-sitter,
+  and `npx node-gyp rebuild` in `daedalus-parser` (about a minute, after
+  `pnpm --filter daedalus-parser build:ts`) closes it. Neither is a regression,
+  and both look like one.
 
 ## Playwright in a worktree
 
