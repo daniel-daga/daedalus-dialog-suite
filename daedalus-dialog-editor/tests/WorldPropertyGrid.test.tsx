@@ -1543,6 +1543,100 @@ describe('WorldPropertyGrid, typed rotation', () => {
       expect(screen.queryByTestId('world-prop-class-target-warning')).not.toBeInTheDocument();
     });
 
+    // Knowing the name is the other half of wiring one (#258). The warning above
+    // catches a wrong name; this offers the right one without a round trip
+    // through the scene tree.
+    describe('the names a target field suggests', () => {
+      const options = () => Array.from(
+        screen.getByTestId('world-prop-class-target-suggestions').querySelectorAll('option'),
+      ).map((option) => option.getAttribute('value'));
+
+      it('offers the world`s own names that match what has been typed', () => {
+        render(<WorldPropertyGrid summary={WORLD} selection={[9]} {...wiring} classProps={TRIGGER} />);
+
+        fireEvent.change(input('class-target'), { target: { value: 'GATE' } });
+
+        // Both VOBs whose name holds GATE, and nothing else in the world.
+        expect(options()).toEqual(['GATE_MOVER', 'TRIGGER_GATE']);
+      });
+
+      it('matches without regard to case, as the engine`s own lookup does', () => {
+        render(<WorldPropertyGrid summary={WORLD} selection={[9]} {...wiring} classProps={TRIGGER} />);
+
+        fireEvent.change(input('class-target'), { target: { value: 'gate_mo' } });
+
+        expect(options()).toEqual(['GATE_MOVER']);
+      });
+
+      it('matches anywhere in the name, not only at the front', () => {
+        // Retail names carry a prefix far more often than not — NW_, OC_, a
+        // chapter number — so a prefix match would suggest nothing for the part
+        // of the name anybody actually remembers.
+        render(<WorldPropertyGrid summary={WORLD} selection={[9]} {...wiring} classProps={TRIGGER} />);
+
+        fireEvent.change(input('class-target'), { target: { value: 'MOVER' } });
+
+        expect(options()).toEqual(['GATE_MOVER']);
+      });
+
+      it('offers nothing at all until something is typed', () => {
+        // A world's whole name dictionary is thousands of entries, and an
+        // arbitrary first fifty of them is a worse answer than none: browsing
+        // is what the scene tree is for.
+        render(
+          <WorldPropertyGrid summary={WORLD} selection={[9]} {...wiring} classProps={{ ...TRIGGER, target: '' }} />,
+        );
+
+        expect(screen.queryByTestId('world-prop-class-target-suggestions')).not.toBeInTheDocument();
+      });
+
+      it('commits nothing while typing — the op is still the blur', () => {
+        // The reason architecture §7 ruled `VariableAutocomplete` out for this
+        // grid: it calls `onChange` per keystroke, and this grid turns every
+        // change into an undoable op.
+        // Opened on a trigger wired to nothing, so the typed value really is a
+        // change and a commit on keystroke would be visible.
+        render(
+          <WorldPropertyGrid summary={WORLD} selection={[9]} {...wiring} classProps={{ ...TRIGGER, target: '' }} />,
+        );
+
+        fireEvent.change(input('class-target'), { target: { value: 'GATE_MOVE' } });
+        fireEvent.change(input('class-target'), { target: { value: 'GATE_MOVER' } });
+        expect(classEdits).toEqual([]);
+
+        fireEvent.blur(input('class-target'));
+        expect(classEdits).toEqual([{ target: 'GATE_MOVER' }]);
+      });
+
+      it('caps the list, so a retail world cannot put thousands of options in the DOM', () => {
+        const many = summaryOf(vobIndex([
+          { name: 'TRIGGER_GATE', cls: 'zCTrigger' },
+          ...Array.from({ length: 300 }, (unused, i) => ({ name: `GATE_MOVER_${i}`, cls: 'zCMover' })),
+        ]));
+        render(<WorldPropertyGrid summary={many} selection={[0]} {...wiring} classProps={TRIGGER} />);
+
+        fireEvent.change(input('class-target'), { target: { value: 'GATE_MOVER' } });
+
+        expect(options()).toHaveLength(50);
+      });
+
+      it('suggests nothing on a string field that is not a target', () => {
+        render(<WorldPropertyGrid summary={WORLD} selection={[8]} {...wiring} classProps={BED} />);
+
+        fireEvent.change(input('class-focusName'), { target: { value: 'GATE' } });
+
+        expect(screen.queryByTestId('world-prop-class-focusName-suggestions')).not.toBeInTheDocument();
+      });
+
+      it('suggests on a mob`s target too, which is the same kind of name', () => {
+        render(<WorldPropertyGrid summary={WORLD} selection={[8]} {...wiring} classProps={BED} />);
+
+        fireEvent.change(input('class-target'), { target: { value: 'GATE' } });
+
+        expect(options()).toEqual(['GATE_MOVER', 'TRIGGER_GATE']);
+      });
+    });
+
     it('warns about the second target too, which is the other half of the pair', () => {
       render(
         <WorldPropertyGrid

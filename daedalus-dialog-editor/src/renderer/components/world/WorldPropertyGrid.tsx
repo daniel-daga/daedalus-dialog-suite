@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   Box, Checkbox, Chip, FormControlLabel, IconButton, Stack, TextField, Tooltip, Typography,
 } from '@mui/material';
@@ -100,31 +100,60 @@ const EditableField: React.FC<{
   refusal?: string | null;
   onRefusalSeen?: () => void;
   onCommit: (value: string) => void;
-}> = ({ name, label, value, disabled, helper, refusal, onRefusalSeen, onCommit }) => (
-  <TextField
-    variant="standard"
-    size="small"
-    fullWidth
-    label={label}
-    defaultValue={value}
-    disabled={disabled}
-    error={refusal != null}
-    helperText={refusal ?? helper}
-    inputProps={{ 'data-testid': `world-prop-${name}-input`, spellCheck: false }}
-    onFocus={() => { if (refusal != null) onRefusalSeen?.(); }}
-    onBlur={(event) => { if (event.target.value !== value) onCommit(event.target.value); }}
-    onKeyDown={(event) => {
-      const target = event.target as HTMLInputElement;
-      if (event.key === 'Enter') {
-        if (target.value !== value) onCommit(target.value);
-        target.blur();
-      } else if (event.key === 'Escape') {
-        target.value = value;
-        target.blur();
-      }
-    }}
-  />
-);
+  /** What to offer for the text typed so far, or absent for a field with
+   *  nothing to offer — which is every field but a target (#258). It returns a
+   *  list rather than taking one because the list is a *filter* of the world's
+   *  whole name dictionary: see `suggestVobNames`. */
+  suggest?: (typed: string) => readonly string[];
+}> = ({ name, label, value, disabled, helper, refusal, onRefusalSeen, onCommit, suggest }) => {
+  // Typed text, kept for the suggestion filter and for nothing else — the
+  // field stays uncontrolled and the commit is still the blur or the Enter.
+  // A controlled value here would be the `VariableAutocomplete` mistake
+  // (architecture §7): this grid turns each commit into an undoable op, so a
+  // commit per keystroke is an undo stack per word.
+  const [typed, setTyped] = React.useState(value);
+  const options = suggest?.(typed) ?? [];
+  const listId = `world-prop-${name}-suggestions`;
+
+  return (
+    <>
+      <TextField
+        variant="standard"
+        size="small"
+        fullWidth
+        label={label}
+        defaultValue={value}
+        disabled={disabled}
+        error={refusal != null}
+        helperText={refusal ?? helper}
+        inputProps={{
+          'data-testid': `world-prop-${name}-input`,
+          spellCheck: false,
+          list: options.length > 0 ? listId : undefined,
+        }}
+        onFocus={() => { if (refusal != null) onRefusalSeen?.(); }}
+        onChange={suggest === undefined ? undefined : (event) => setTyped(event.target.value)}
+        onBlur={(event) => { if (event.target.value !== value) onCommit(event.target.value); }}
+        onKeyDown={(event) => {
+          const target = event.target as HTMLInputElement;
+          if (event.key === 'Enter') {
+            if (target.value !== value) onCommit(target.value);
+            target.blur();
+          } else if (event.key === 'Escape') {
+            target.value = value;
+            setTyped(value);
+            target.blur();
+          }
+        }}
+      />
+      {options.length > 0 && (
+        <datalist id={listId} data-testid={listId}>
+          {options.map((option) => <option key={option} value={option} />)}
+        </datalist>
+      )}
+    </>
+  );
+};
 
 /**
  * The state a field keeps about its own refusals: a counter that remounts it
@@ -283,9 +312,14 @@ const ClassField: React.FC<{
   /** A field the engine would not read as the VOB stands — see `disabledFor`
    *  below. Text kinds only: no catalogued bool or enum is governed by another. */
   disabled?: boolean;
+  /** Passed straight through to the text field for a `target` (#258); every
+   *  other field has nothing to offer and leaves it absent. It stops here
+   *  rather than being looked up, for the same reason `values` does: this
+   *  component knows nothing about which class it is drawing. */
+  suggest?: (typed: string) => readonly string[];
   onCommit: (value: ClassPropValue) => void;
 }> = ({
-  vob, group = 'class', field, value, knownValues, values, helper, disabled, onCommit,
+  vob, group = 'class', field, value, knownValues, values, helper, disabled, suggest, onCommit,
 }) => {
   const { generation: refusals, reason: refusal, refuse, clear } = useRefusal();
 
@@ -347,6 +381,7 @@ const ClassField: React.FC<{
       disabled={disabled}
       helper={helper}
       refusal={refusal}
+      suggest={suggest}
       onRefusalSeen={clear}
       onCommit={(typed) => {
         const parsed = parse(field, typed);
@@ -411,6 +446,42 @@ const FocusNameWarning: React.FC<{ className: string; value: ClassPropValue }> =
  * about the dangling targets a world arrived with.
  */
 const VOB_TARGET_KEYS: ReadonlySet<string> = new Set(['target', 'vobTarget', 'failureTarget']);
+
+/**
+ * How many names a target field offers at once (#258).
+ *
+ * The warning above says a typed name is wrong; this is the half that offers a
+ * right one, so that wiring a trigger does not mean knowing the name already or
+ * hunting it in the scene tree first. The dictionary it draws from is the same
+ * `vobIndex.names` the warning reads — interned, so it is the distinct names
+ * rather than one entry per VOB — and how large that is on a retail world is
+ * still unmeasured. Capping sidesteps the question: fifty options is a list a
+ * person reads, and the browser renders, whether the world holds two hundred
+ * distinct names or five thousand.
+ */
+const VOB_NAME_SUGGESTIONS = 50;
+
+/**
+ * The names worth offering for the text typed so far.
+ *
+ * Substring rather than prefix, because retail names almost all carry one — a
+ * `NW_`, an `OC_`, a chapter number — and the part anybody remembers is in the
+ * middle. Case-insensitive, as the engine's own lookup is and as the warning
+ * beside it already is. Nothing at all for an empty field: a world's dictionary
+ * runs to thousands, and an arbitrary first fifty of them is a worse answer than
+ * none — browsing is what the scene tree is for.
+ */
+function suggestVobNames(names: readonly string[], typed: string): readonly string[] {
+  const needle = typed.trim().toUpperCase();
+  if (needle === '') return [];
+
+  const found: string[] = [];
+  for (const name of names) {
+    if (name.toUpperCase().includes(needle)) found.push(name);
+    if (found.length === VOB_NAME_SUGGESTIONS) break;
+  }
+  return found;
+}
 
 const DanglingTargetWarning: React.FC<{
   field: string; value: ClassPropValue; names: ReadonlySet<string>;
@@ -708,6 +779,18 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
   const vobNames = useMemo(
     () => new Set(summary.vobIndex.names.filter((name) => name !== '').map((n) => n.toUpperCase())),
     [summary],
+  );
+  // The same dictionary, as the user sees it: original casing, sorted, so a
+  // target field's suggestions read in one order and the cap takes a stable
+  // fifty rather than whichever fifty the archive happened to write first.
+  const sortedVobNames = useMemo(
+    () => summary.vobIndex.names.filter((name) => name !== '')
+      .sort((a, b) => a.toUpperCase().localeCompare(b.toUpperCase())),
+    [summary],
+  );
+  const suggestTarget = useCallback(
+    (typed: string) => suggestVobNames(sortedVobNames, typed),
+    [sortedVobNames],
   );
   const selectedVob = selection.length === 0 ? null : selection[selection.length - 1];
 
@@ -1156,6 +1239,7 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
                       ? undefined
                       : 'Must be an item instance declared by the loaded scripts.')}
                   disabled={disabledFor(classField.key) !== undefined}
+                  suggest={VOB_TARGET_KEYS.has(classField.key) ? suggestTarget : undefined}
                   onCommit={(value) => onEditClassProps({ [classField.key]: value })}
                 />
                   )}

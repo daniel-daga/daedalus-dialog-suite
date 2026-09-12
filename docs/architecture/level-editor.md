@@ -2483,11 +2483,38 @@ from `zCVob` and has no base to be missing.
 Out of this slice by decision: the `targets` and `slaves` **lists**, still the
 op set's unbounded-payload question.
 
-One thing this left behind. The `VTrigger` base is now read and assigned field
-by field in **five** `SetVobClassProp` cases, twenty-six near-identical lines
-each, and the interactive-object base in four more. It is the shape the switch
-has had since the catalogue began and no case has ever drifted, but it is the
-largest copy-paste in `binding.cc` — `docs/refactoring-targets.md` carries it.
+**The other half of a target field is knowing the name (#258, 2026-09-12).** The
+warning says a typed name is wrong; a `<datalist>` on the same input offers a
+right one, so wiring a trigger no longer means remembering the name or finding
+it in the scene tree first. Three things decided it:
+
+`VariableAutocomplete` stays ruled out, and the datalist is not a lesser version
+of it — it is the control that fits a grid whose fields commit on blur. The
+input remains uncontrolled and the commit remains the blur or the Enter; the
+only thing the typed text drives is the filter, which is local state in the
+field and reaches no store. A control that called `onChange` per keystroke would
+build an undo stack per word.
+
+**It is filtered, not enumerated, and that is what let it land without the
+measurement the issue asked for.** How many distinct names a retail world holds
+is still unknown. Offering only the names matching what has been typed, capped
+at fifty, costs the same at any world size, so the number stops being a
+blocker — it would only decide whether a *full* list was affordable. The match
+is a case-insensitive substring, because retail names nearly all carry a prefix
+(`NW_`, `OC_`, a chapter number) and the memorable part is in the middle; the
+sort is alphabetical so the cap takes a stable fifty rather than archive order.
+
+**An empty field offers nothing**, deliberately. A browser shows a datalist in
+full on focus, so an arbitrary first fifty of a thousands-strong dictionary
+would be a list nobody could use and a claim the field cannot back. Browsing is
+what the scene tree is for.
+
+One thing all this left behind. The `VTrigger` base is now read and assigned
+field by field in **five** `SetVobClassProp` cases, twenty-six near-identical
+lines each, and the interactive-object base in four more. It is the shape the
+switch has had since the catalogue began and no case has ever drifted, but it is
+the largest copy-paste in `binding.cc` — `docs/refactoring-targets.md` carries
+it.
 
 #### What a VOB's bbox is, and why there is no scale gizmo (measured 2026-08-26)
 
