@@ -445,7 +445,7 @@ are idempotent).
   payload), `GizmoController`, `PickController`, `NavController`,
   `ScatterBrush`. A `ScatterBrush` taking a raycaster factory is a unit test;
   §3.1 inside a 1,300-line effect was reachable only through a mocked viewport.
-- **`WorldSurface.tsx` (3,190 lines) holds nine concerns** that share only
+- **`WorldSurface.tsx` (3,190 lines at review time) holds nine concerns** that share only
   `commitOps`/`applied`: open/lifecycle (`395-548`), the edit pipeline core
   (`966-1160`), VOB op builders (`1162-1480, 1554-1625`), clipboard
   (`1748-1825`), scatter (`1627-1690`), waynet edits and derived data
@@ -705,8 +705,20 @@ What is left in that effect is wiring rather than mechanism: the six units
 being handed each other, the framing callbacks, the draw loop, the benchmark
 probe and the `window.__worldViewport` harness. Splitting *that* further is a
 different judgement from the one this finding made and is not carried here.
-`WorldSurface.tsx` (3,190 lines) and `binding.cc` (3,388, with ~250 duplicated
+`WorldSurface.tsx` and `binding.cc` (3,388, with ~250 duplicated
 lines in one switch) are the same shape of debt with lower risk.
+
+**`WorldSurface.tsx` is under way, 2026-09-12.** Two of the nine concerns are
+out, each with the unit spec the extraction was for and no behaviour changed:
+`world/hooks/usePanelLayout` (the panel widths, their collapse and the one
+place the widths are written back — the review's own "would go first") and
+`world/hooks/useWaynetEditing` (the six waynet edits and the five derivations
+the panel draws, which reach the world only through `commitOps` and so are
+assertable as values). The file is **3,506 lines from 3,705** — it had *grown*
+199 lines past the 3,190 this review measured before either cut, which is the
+number worth carrying forward: the count here is a reading, not a budget.
+The seven left are the ones the review named, and the edit core is still the
+one that has to go last.
 
 **§3.3, the BVH rebuilt per structural op. Landed 2026-09-08.** §3.2 removed
 the *duplicate* rebuild; the remaining one discarded and rebuilt all 352 trees
