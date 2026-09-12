@@ -2004,20 +2004,28 @@ const CLASS_PROP_ROUND_TRIP = [
   ['1/9', 'zCPFXController', {
     pfxName: 'PFX_CAMPFIRE_ÄÖÜ', killWhenDone: false, initiallyRunning: false,
   }],
-  ['1/10', 'zCTriggerWorldStart', { fireOnce: false }],
-  ['1/11', 'oCTriggerScript', { function: 'SCRIPTFUNC_OTHER_ÄÖÜ' }],
+  // `zCTriggerWorldStart` carries the target and no `vobTarget`: it derives
+  // from `zCVob`, not from `VTrigger` (`Trigger.hh`).
+  ['1/10', 'zCTriggerWorldStart', { target: 'OTHER_WORLDSTART_TARGET_ÄÖÜ', fireOnce: false }],
+  ['1/11', 'oCTriggerScript', {
+    target: 'OTHER_SCRIPT_TARGET', vobTarget: 'OTHER_SCRIPT_VOBTARGET_ÄÖÜ',
+    function: 'SCRIPTFUNC_OTHER_ÄÖÜ',
+  }],
   ['1/12', 'zCTrigger', {
+    target: 'OTHER_TRIGGER_TARGET_ÄÖÜ', vobTarget: 'OTHER_TRIGGER_VOBTARGET',
     startEnabled: false, sendUntrigger: true, reactToOnTrigger: false, reactToOnTouch: true,
     reactToOnDamage: false, respondToObject: true, respondToPc: false, respondToNpc: true,
     maxActivationCount: -1, retriggerDelaySec: 0, damageThreshold: 99.5, fireDelaySec: 0.25,
   }],
   ['1/13', 'oCTriggerChangeLevel', {
+    target: 'OTHER_CHANGELEVEL_TARGET', vobTarget: 'OTHER_CHANGELEVEL_VOBTARGET',
     startEnabled: false, sendUntrigger: true, reactToOnTrigger: false, reactToOnTouch: true,
     reactToOnDamage: false, respondToObject: true, respondToPc: false, respondToNpc: true,
     maxActivationCount: -1, retriggerDelaySec: 0, damageThreshold: 99.5, fireDelaySec: 0.25,
     levelName: 'OTHERWORLD.ZEN', startVob: 'OTHER_START_VOB',
   }],
   ['1/14', 'zCMover', {
+    target: 'OTHER_MOVER_TARGET', vobTarget: 'OTHER_MOVER_VOBTARGET_ÄÖÜ',
     startEnabled: false, sendUntrigger: true, reactToOnTrigger: false, reactToOnTouch: true,
     reactToOnDamage: false, respondToObject: true, respondToPc: false, respondToNpc: true,
     maxActivationCount: -1, retriggerDelaySec: 0, damageThreshold: 99.5, fireDelaySec: 0.25,
@@ -2060,6 +2068,10 @@ const CLASS_PROP_ROUND_TRIP = [
     // the fixture chest holds 'ItMi_Gold:75, ItFo_Fish:2'.
     contents: 'ItMi_Gold:100,ItPo_Health_01',
   }],
+  // The class whose only field is the target, and the one trigger class
+  // `insertVob` cannot construct — so this fixture VOB is the only place its
+  // write path is reachable (2026-09-12).
+  ['1/20', 'zCTriggerUntouch', { target: 'OTHER_UNTOUCH_TARGET_ÄÖÜ' }],
   ['1/19', 'oCMobDoor', {
     focusName: 'FOCUS_OTHER_DOOR_ÄÖÜ', hp: 60, damage: 0, movable: false, takable: false,
     focusOverride: true, soundMaterial: 5, visualDestroyed: 'DOOR_OTHER_DESTROYED.MMS',
@@ -2193,25 +2205,28 @@ const LATE_CLASS_WRITES = {
       startEnabled: false, sendUntrigger: true, reactToOnTrigger: false, reactToOnTouch: true,
       reactToOnDamage: true, respondToObject: false, respondToPc: false, respondToNpc: false,
       maxActivationCount: 3, retriggerDelaySec: 1.5, damageThreshold: 42.5, fireDelaySec: 0.25,
-      mode: 2,
+      mode: 2, target: 'LIST_TARGET', vobTarget: 'LIST_VOBTARGET',
     },
-    // The list and the two target strings the catalogue still holds out. A case
-    // that assigned a whole struct rather than member by member would clear
-    // them, and nothing above C++ would notice.
-    untouched: { target: '', vobTarget: '', targets: [] },
+    // The `targets` list is what the catalogue still holds out. A case that
+    // assigned a whole struct rather than member by member would clear it, and
+    // nothing above C++ would notice.
+    untouched: { targets: [] },
   },
   // The one of the four with no enum at all: three booleans that were held out
   // with the slaves they steer. All three false on the construction.
   zCCodeMaster: {
-    props: { ordered: true, firstFalseIsFailure: true, untriggeredCancels: true },
-    untouched: { target: '', failureTarget: '', slaves: [] },
+    props: {
+      ordered: true, firstFalseIsFailure: true, untriggeredCancels: true,
+      target: 'MASTER_TARGET', failureTarget: 'MASTER_FAILURE_TARGET_ÄÖÜ',
+    },
+    untouched: { slaves: [] },
   },
   // Both actions, and `onUntrigger` to NONE (0) -- the one value of the six no
   // retail filter holds, which is exactly why it may be written: the catalogue
   // offers the set without confining a world to it.
   zCMessageFilter: {
-    props: { onTrigger: 5, onUntrigger: 0 },
-    untouched: { target: '' },
+    props: { onTrigger: 5, onUntrigger: 0, target: 'FILTER_TARGET_ÄÖÜ' },
+    untouched: {},
   },
   // Twelve fields and the class is complete: nothing on `VTouchDamage` is a
   // list, a cross-reference string or save-game-only. Every boolean is the
@@ -2268,11 +2283,11 @@ for (const [className, { props, untouched }] of Object.entries(LATE_CLASS_WRITES
     const handle = load();
     const at = zenkit.insertVob(handle, null, { class: className, position: [0, 0, 0] });
 
-    // A light's, and the two the catalogue holds out on these very classes: a
-    // target string and a list. "Real on some other class" is the mistake this
-    // op carries a class name to catch.
-    for (const bad of [{ range: 500 }, { target: 'X' }, { targets: [] }, { slaves: [] }]) {
-      if (className === 'zCTriggerList' && 'targets' in bad) continue;
+    // A light's, and the two lists the catalogue holds out on these very
+    // classes. "Real on some other class" is the mistake this op carries a
+    // class name to catch. `target` is no longer among them — it is catalogued
+    // on every class in this table since 2026-09-12.
+    for (const bad of [{ range: 500 }, { fireOnce: true }, { targets: [] }, { slaves: [] }]) {
       assert.throws(() => zenkit.setVobClassProp(handle, at, bad),
         new RegExp(className), `${className} ${Object.keys(bad)[0]}`);
     }

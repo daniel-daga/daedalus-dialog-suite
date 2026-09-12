@@ -115,6 +115,10 @@ const WORLD = summaryOf(vobIndex([
   // is the whole of the focus-name warning below.
   { name: 'CHEST', cls: 'oCMobContainer', visual: 'CHESTBIG.MDS' },
   { name: 'BED', cls: 'oCMobBed', visual: 'BEDHIGH.MDS' },
+  // A trigger and the mover it is meant to fire — the pair the target fields
+  // exist to wire together (2026-09-12).
+  { name: 'TRIGGER_GATE', cls: 'zCTrigger', visualType: 'UNKNOWN' },
+  { name: 'GATE_MOVER', cls: 'zCMover', visual: 'GATE.3DS' },
 ]));
 
 /**
@@ -153,6 +157,16 @@ const BED: ClassProps = {
   focusOverride: false, soundMaterial: 0, visualDestroyed: '', owner: '', ownerGuild: '',
   destroyed: false, stateCount: 1, conditionFunction: '',
   onStateChangeFunction: '', rewind: false, ...BASE_READ,
+};
+/** A trigger wired to the mover above it. Only the two targets matter here;
+ *  the rest is what the archive holds on any `zCTrigger`. */
+const TRIGGER: ClassProps = {
+  class: 'zCTrigger',
+  target: 'GATE_MOVER', vobTarget: '',
+  startEnabled: true, sendUntrigger: false, reactToOnTrigger: true, reactToOnTouch: false,
+  reactToOnDamage: false, respondToObject: true, respondToPc: true, respondToNpc: false,
+  maxActivationCount: -1, retriggerDelaySec: 0, damageThreshold: 0, fireDelaySec: 0,
+  ...BASE_READ,
 };
 const FOG: ClassProps = {
   class: 'zCZoneZFog',
@@ -1449,6 +1463,62 @@ describe('WorldPropertyGrid, typed rotation', () => {
 
     expect(screen.getByTestId('world-prop-rotation-unavailable')).toBeInTheDocument();
     expect(screen.queryByTestId('world-prop-rotation-yaw-input')).not.toBeInTheDocument();
+  });
+
+  // What a trigger fires at, and whether anything answers to that name
+  // (2026-09-12). A dangling target is **not** refused the way an unknown item
+  // instance is: an item instance no script declares crashes ZenGin, while a
+  // target no VOB answers to is a trigger that does nothing — and a modder may
+  // legitimately wire a trigger to a VOB before placing it.
+  describe('a trigger target that names no VOB in this world', () => {
+    it('warns on the target field, and does not refuse the value', () => {
+      render(
+        <WorldPropertyGrid
+          summary={WORLD}
+          selection={[9]}
+          {...wiring}
+          classProps={{ ...TRIGGER, target: 'GATE_MOVR' }}
+        />,
+      );
+
+      expect(screen.getByTestId('world-prop-class-target-warning')).toBeInTheDocument();
+      // Still an ordinary editable field: nothing here is disabled or refused.
+      expect(input('class-target').value).toBe('GATE_MOVR');
+    });
+
+    it('says nothing when a VOB carries the name, whatever its casing', () => {
+      // ZenGin resolves a target by name without regard to case, and retail
+      // writes both — so a match that was case-sensitive would warn about
+      // working worlds.
+      for (const target of ['GATE_MOVER', 'gate_mover']) {
+        const { unmount } = render(
+          <WorldPropertyGrid summary={WORLD} selection={[9]} {...wiring} classProps={{ ...TRIGGER, target }} />,
+        );
+        expect(screen.queryByTestId('world-prop-class-target-warning')).not.toBeInTheDocument();
+        unmount();
+      }
+    });
+
+    it('says nothing about an empty target, which is a trigger that fires at nothing', () => {
+      render(
+        <WorldPropertyGrid summary={WORLD} selection={[9]} {...wiring} classProps={{ ...TRIGGER, target: '' }} />,
+      );
+
+      expect(screen.queryByTestId('world-prop-class-target-warning')).not.toBeInTheDocument();
+    });
+
+    it('warns about the second target too, which is the other half of the pair', () => {
+      render(
+        <WorldPropertyGrid
+          summary={WORLD}
+          selection={[9]}
+          {...wiring}
+          classProps={{ ...TRIGGER, vobTarget: 'NOBODY' }}
+        />,
+      );
+
+      expect(screen.getByTestId('world-prop-class-vobTarget-warning')).toBeInTheDocument();
+    });
   });
 
   // A mob the crosshair cannot find (level-editor.md §16.15). The engine finds

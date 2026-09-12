@@ -398,6 +398,40 @@ const FocusNameWarning: React.FC<{ className: string; value: ClassPropValue }> =
   );
 };
 
+/**
+ * The class fields whose value is the `vobName` of another VOB in this world —
+ * what a trigger fires at (level-editor.md §14.1 1.4, 2026-09-12).
+ *
+ * ZenGin resolves them by name, so a name nothing answers to is a trigger that
+ * does nothing. That is **not** the `oCItem.instance` case and is deliberately
+ * not treated like one: an instance no script declares crashes the engine, so
+ * the grid refuses it, while a dangling target is inert — and a modder may
+ * legitimately wire a trigger to a VOB they have not placed yet. So this is a
+ * warning beside the field, on the value the world holds, which also says so
+ * about the dangling targets a world arrived with.
+ */
+const VOB_TARGET_KEYS: ReadonlySet<string> = new Set(['target', 'vobTarget', 'failureTarget']);
+
+const DanglingTargetWarning: React.FC<{
+  field: string; value: ClassPropValue; names: ReadonlySet<string>;
+}> = ({ field, value, names }) => {
+  // Whitespace is empty, as it is for a focus name: the engine matches the
+  // string, and " " finds nothing — which is what an empty target means anyway.
+  if (typeof value !== 'string' || value.trim() === '') return null;
+  if (names.has(value.trim().toUpperCase())) return null;
+
+  return (
+    <Typography
+      variant="caption"
+      color="warning.main"
+      data-testid={`world-prop-class-${field}-warning`}
+      sx={{ display: 'block', mt: 0.25 }}
+    >
+      No VOB in this world carries that name, so this fires at nothing.
+    </Typography>
+  );
+};
+
 /** The axes, in the order the index stores them. */
 const AXES = ['x', 'y', 'z'] as const;
 
@@ -667,6 +701,14 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
   },
 ) => {
   const { tree, reader } = useMemo(() => vobModelOf(summary), [summary]);
+  // Every name in the world, uppercased — the index's own interned dictionary,
+  // so this is a walk over the distinct names rather than over 41,393 VOBs.
+  // Nothing is plumbed in for it: the grid already has the summary, which is
+  // exactly the difference between this check and the item index's.
+  const vobNames = useMemo(
+    () => new Set(summary.vobIndex.names.filter((name) => name !== '').map((n) => n.toUpperCase())),
+    [summary],
+  );
   const selectedVob = selection.length === 0 ? null : selection[selection.length - 1];
 
   if (selectedVob === null || reader.className(selectedVob) === null) {
@@ -1119,6 +1161,13 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
                   )}
                 {classField.key === 'focusName' && (
                   <FocusNameWarning className={className} value={classProps[classField.key]} />
+                )}
+                {VOB_TARGET_KEYS.has(classField.key) && (
+                  <DanglingTargetWarning
+                    field={classField.key}
+                    value={classProps[classField.key]}
+                    names={vobNames}
+                  />
                 )}
               </Field>
             ))}

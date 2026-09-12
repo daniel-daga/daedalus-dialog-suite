@@ -36,7 +36,7 @@ describe('the per-class field catalogue', () => {
       'oCItem', 'oCMOB', 'oCMobBed', 'oCMobContainer', 'oCMobDoor', 'oCMobFire', 'oCMobInter',
       'oCMobLadder', 'oCMobSwitch', 'oCMobWheel', 'oCTouchDamage', 'oCTriggerChangeLevel',
       'oCTriggerScript', 'oCZoneMusic', 'zCCodeMaster', 'zCMessageFilter', 'zCMover',
-      'zCPFXController', 'zCTrigger', 'zCTriggerList', 'zCTriggerWorldStart',
+      'zCPFXController', 'zCTrigger', 'zCTriggerList', 'zCTriggerUntouch', 'zCTriggerWorldStart',
       'zCVobAnimate', 'zCVobLight', 'zCVobSound', 'zCVobSoundDaytime', 'zCZoneVobFarPlane',
       'zCZoneZFog',
     ]);
@@ -126,11 +126,14 @@ describe('the per-class field catalogue', () => {
       .toEqual({ key: 'killWhenDone', kind: 'bool' });
     expect(fieldOf('zCPFXController', 'initiallyRunning'))
       .toEqual({ key: 'initiallyRunning', kind: 'bool' });
-    expect(classPropKeys('zCTriggerWorldStart')).toEqual(['fireOnce']);
+    // The pair of targets is ahead of the one field each of these two classes
+    // has of its own — see "leaves the rest of VTrigger out" below.
+    expect(classPropKeys('zCTriggerWorldStart')).toEqual(['target', 'fireOnce']);
     expect(fieldOf('zCTriggerWorldStart', 'fireOnce')).toEqual({ key: 'fireOnce', kind: 'bool' });
-    expect(classPropKeys('oCTriggerScript')).toEqual(['function']);
+    expect(classPropKeys('oCTriggerScript')).toEqual(['target', 'vobTarget', 'function']);
     expect(fieldOf('oCTriggerScript', 'function')).toEqual({ key: 'function', kind: 'string' });
     expect(classPropKeys('zCTrigger')).toEqual([
+      'target', 'vobTarget',
       'startEnabled', 'sendUntrigger', 'reactToOnTrigger', 'reactToOnTouch', 'reactToOnDamage',
       'respondToObject', 'respondToPc', 'respondToNpc', 'maxActivationCount',
       'retriggerDelaySec', 'damageThreshold', 'fireDelaySec',
@@ -285,26 +288,24 @@ describe('the per-class field catalogue', () => {
     for (const key of classPropKeys('zCTrigger')) {
       expect(fieldOf('zCTriggerList', key)).toEqual(fieldOf('zCTrigger', key));
     }
-    // The list itself and the target strings stay out, by the rules at the top
-    // of the catalogue.
+    // The `targets` **list** stays out — it is the unbounded payload the op set
+    // has no shape for. The single `target` string is in, inherited with the
+    // rest of `VTrigger`.
     expect(fieldOf('zCTriggerList', 'targets')).toBeNull();
-    expect(fieldOf('zCTriggerList', 'target')).toBeNull();
+    expect(fieldOf('zCTriggerList', 'target')).toEqual({ key: 'target', kind: 'string' });
   });
 
-  it('catalogues the code master`s three booleans and neither its slaves nor its targets', () => {
-    // The one of the four with no enum at all: what held it out was the
-    // `slaves` list and the two cross-reference strings, and the three
-    // booleans that steer the sequence were held out with them.
+  it('catalogues the code master`s two targets and its three booleans, and not its slaves', () => {
+    // Both of its strings name a VOB in the same world, so both are in; the
+    // failure target sits beside the target it is the other half of. `slaves`
+    // is the list, and lists are still out.
     expect(classPropKeys('zCCodeMaster'))
-      .toEqual(['ordered', 'firstFalseIsFailure', 'untriggeredCancels']);
-    for (const key of ['slaves', 'target', 'failureTarget']) {
-      expect(fieldOf('zCCodeMaster', key)).toBeNull();
-    }
+      .toEqual(['target', 'failureTarget', 'ordered', 'firstFalseIsFailure', 'untriggeredCancels']);
+    expect(fieldOf('zCCodeMaster', 'slaves')).toBeNull();
   });
 
-  it('catalogues the message filter`s two enums and not the target they relay to', () => {
-    expect(classPropKeys('zCMessageFilter')).toEqual(['onTrigger', 'onUntrigger']);
-    expect(fieldOf('zCMessageFilter', 'target')).toBeNull();
+  it('catalogues the message filter`s target ahead of the two enums that relay to it', () => {
+    expect(classPropKeys('zCMessageFilter')).toEqual(['target', 'onTrigger', 'onUntrigger']);
   });
 
   it('catalogues a damage volume whole — eleven scalars and the collision enum', () => {
@@ -325,6 +326,53 @@ describe('the per-class field catalogue', () => {
     expect(fieldOf('oCTouchDamage', 'volumeScale'))
       .toEqual({ key: 'volumeScale', kind: 'float', min: 0 });
     expect(fieldOf('oCTouchDamage', 'blunt')).toEqual({ key: 'blunt', kind: 'bool' });
+  });
+
+  // What a trigger fires at, editable (2026-09-12). Until now nothing in the
+  // editor could wire a trigger to a mover: every `target` was held out of the
+  // catalogue as a cross-reference, on the rule `oCItem.instance` has since
+  // replaced — a shape check where the world is not known, an existence check
+  // where it is.
+  it('gives every VTrigger class the pair of targets, ahead of its own fields', () => {
+    for (const className of ['zCTrigger', 'zCTriggerList', 'zCMover', 'oCTriggerChangeLevel',
+      'oCTriggerScript']) {
+      expect(classPropKeys(className).slice(0, 2)).toEqual(['target', 'vobTarget']);
+      expect(fieldOf(className, 'target')).toEqual({ key: 'target', kind: 'string' });
+      expect(fieldOf(className, 'vobTarget')).toEqual({ key: 'vobTarget', kind: 'string' });
+    }
+  });
+
+  it('catalogues zCTriggerUntouch, whose only field is the target', () => {
+    // The class had no entry at all while `target` was held out — it declares
+    // nothing else — so this is the first thing the editor can say about one.
+    expect(classPropKeys('zCTriggerUntouch')).toEqual(['target']);
+  });
+
+  // ZenKit's hierarchy, not a guess from the family name: `VTriggerUntouch` and
+  // `VTriggerWorldStart` derive from `VirtualObject`, so a `vobTarget` on
+  // either would be a key the object does not have.
+  it('gives no vobTarget to the two classes that are not VTriggers', () => {
+    for (const className of ['zCTriggerUntouch', 'zCTriggerWorldStart']) {
+      expect(fieldOf(className, 'target')).toEqual({ key: 'target', kind: 'string' });
+      expect(fieldOf(className, 'vobTarget')).toBeNull();
+    }
+  });
+
+  // The two classes whose own fields are the pair's exception: their targets
+  // are in and the other ten `VTrigger` fields are not, which is the state
+  // §16.3 left them in and is not what this change is about.
+  it('leaves the rest of VTrigger out of oCTriggerScript, which is a VTrigger', () => {
+    expect(classPropKeys('oCTriggerScript')).toEqual(['target', 'vobTarget', 'function']);
+  });
+
+  // The movable-object family's own `target` is the same kind of string and is
+  // deliberately not in this slice: a mob's target is what it fires when it is
+  // *used*, and the family's other cross-references (`item`, `key`) are
+  // Daedalus symbols the renderer would have to check a different index for.
+  it('leaves the movable-object family`s target where it was', () => {
+    for (const className of ['oCMobInter', 'oCMobDoor', 'oCMobContainer']) {
+      expect(fieldOf(className, 'target')).toBeNull();
+    }
   });
 
   it('places the whole trigger family, under the names the archive uses', () => {

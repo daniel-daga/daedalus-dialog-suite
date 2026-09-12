@@ -1856,16 +1856,21 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (initially_running.has_value()) pfx.initially_running = *initially_running;
       break;
     }
-    // The eight bools and four numerics VTrigger itself declares — this
-    // class's entire non-string surface. `target` and `vobTarget` are held
-    // out with the rest of the trigger family's target strings.
+    // The two targets, the eight bools and the four numerics VTrigger itself
+    // declares — the whole class. `target` and `vobTarget` name a VObject in
+    // this world by its `vobName`, which is how ZenGin resolves them; a name no
+    // VOB answers to is a trigger that fires at nothing, so it is refused where
+    // the world is known (the renderer) rather than here.
     case zenkit::VirtualObjectType::zCTrigger: {
       RequireClassKeys(env, props,
-                       {"startEnabled", "sendUntrigger", "reactToOnTrigger", "reactToOnTouch",
+                       {"target", "vobTarget", "startEnabled", "sendUntrigger",
+                        "reactToOnTrigger", "reactToOnTouch",
                         "reactToOnDamage", "respondToObject", "respondToPc", "respondToNpc",
                         "maxActivationCount", "retriggerDelaySec", "damageThreshold",
                         "fireDelaySec"},
                        class_name);
+      auto target = OptionalCp1252String(env, props, "target");
+      auto vob_target = OptionalCp1252String(env, props, "vobTarget");
       auto const start_enabled = OptionalBool(env, props, "startEnabled");
       auto const send_untrigger = OptionalBool(env, props, "sendUntrigger");
       auto const react_to_on_trigger = OptionalBool(env, props, "reactToOnTrigger");
@@ -1881,6 +1886,8 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       auto const damage_threshold = OptionalFloatIn(env, props, "damageThreshold", 0, std::nullopt);
       auto const fire_delay_sec = OptionalFloatIn(env, props, "fireDelaySec", 0, std::nullopt);
       auto& trigger = static_cast<zenkit::VTrigger&>(*vob);
+      if (target) trigger.target = std::move(*target);
+      if (vob_target) trigger.vob_target = std::move(*vob_target);
       if (start_enabled.has_value()) trigger.start_enabled = *start_enabled;
       if (send_untrigger.has_value()) trigger.send_untrigger = *send_untrigger;
       if (react_to_on_trigger.has_value()) trigger.react_to_on_trigger = *react_to_on_trigger;
@@ -1895,16 +1902,28 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (fire_delay_sec.has_value()) trigger.fire_delay_sec = *fire_delay_sec;
       break;
     }
-    // The one field this op writes: whether the `OnTrigger` this class fires
-    // at level load fires only the first time the level loads. `target` is
-    // held out with the rest of the trigger family's target strings, and
-    // `s_has_fired` is save-game only, exactly as the header marks it — the
-    // same shape as `zCVobAnimate`'s one field.
+    // What this class fires at when the world loads, and whether it fires only
+    // the first time. **No `vobTarget`**: `VTriggerWorldStart` derives from
+    // `VirtualObject` rather than from `VTrigger` (`Trigger.hh`), so the target
+    // is its own member and the rest of the family's base is not there at all.
+    // `s_has_fired` is save-game only, exactly as the header marks it.
     case zenkit::VirtualObjectType::zCTriggerWorldStart: {
-      RequireClassKeys(env, props, {"fireOnce"}, class_name);
+      RequireClassKeys(env, props, {"target", "fireOnce"}, class_name);
+      auto target = OptionalCp1252String(env, props, "target");
       auto const fire_once = OptionalBool(env, props, "fireOnce");
       auto& world_start = static_cast<zenkit::VTriggerWorldStart&>(*vob);
+      if (target) world_start.target = std::move(*target);
       if (fire_once.has_value()) world_start.fire_once = *fire_once;
+      break;
+    }
+    // The one field this class has, and it is the target — which is why it had
+    // no case at all while the targets were held out. It derives from
+    // `VirtualObject` too, so there is no `vobTarget` here either.
+    case zenkit::VirtualObjectType::zCTriggerUntouch: {
+      RequireClassKeys(env, props, {"target"}, class_name);
+      auto target = OptionalCp1252String(env, props, "target");
+      auto& untouch = static_cast<zenkit::VTriggerUntouch&>(*vob);
+      if (target) untouch.target = std::move(*target);
       break;
     }
     // The one field this op writes: the script function it calls when it is
@@ -1913,9 +1932,13 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
     // the same "one field, nothing else to hold out yet" shape as
     // `zCTriggerWorldStart`'s.
     case zenkit::VirtualObjectType::oCTriggerScript: {
-      RequireClassKeys(env, props, {"function"}, class_name);
+      RequireClassKeys(env, props, {"target", "vobTarget", "function"}, class_name);
+      auto target = OptionalCp1252String(env, props, "target");
+      auto vob_target = OptionalCp1252String(env, props, "vobTarget");
       auto function = OptionalCp1252String(env, props, "function");
       auto& trigger_script = static_cast<zenkit::VTriggerScript&>(*vob);
+      if (target) trigger_script.target = std::move(*target);
+      if (vob_target) trigger_script.vob_target = std::move(*vob_target);
       if (function) trigger_script.function = std::move(*function);
       break;
     }
@@ -1926,11 +1949,14 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
     // with the rest of the family's target strings.
     case zenkit::VirtualObjectType::oCTriggerChangeLevel: {
       RequireClassKeys(env, props,
-                       {"startEnabled", "sendUntrigger", "reactToOnTrigger", "reactToOnTouch",
+                       {"target", "vobTarget", "startEnabled", "sendUntrigger",
+                        "reactToOnTrigger", "reactToOnTouch",
                         "reactToOnDamage", "respondToObject", "respondToPc", "respondToNpc",
                         "maxActivationCount", "retriggerDelaySec", "damageThreshold",
                         "fireDelaySec", "levelName", "startVob"},
                        class_name);
+      auto target = OptionalCp1252String(env, props, "target");
+      auto vob_target = OptionalCp1252String(env, props, "vobTarget");
       auto const start_enabled = OptionalBool(env, props, "startEnabled");
       auto const send_untrigger = OptionalBool(env, props, "sendUntrigger");
       auto const react_to_on_trigger = OptionalBool(env, props, "reactToOnTrigger");
@@ -1948,6 +1974,8 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       auto level_name = OptionalCp1252String(env, props, "levelName");
       auto start_vob = OptionalCp1252String(env, props, "startVob");
       auto& change_level = static_cast<zenkit::VTriggerChangeLevel&>(*vob);
+      if (target) change_level.target = std::move(*target);
+      if (vob_target) change_level.vob_target = std::move(*vob_target);
       if (start_enabled.has_value()) change_level.start_enabled = *start_enabled;
       if (send_untrigger.has_value()) change_level.send_untrigger = *send_untrigger;
       if (react_to_on_trigger.has_value()) change_level.react_to_on_trigger = *react_to_on_trigger;
@@ -1976,7 +2004,8 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
     // ignores" note.
     case zenkit::VirtualObjectType::zCMover: {
       RequireClassKeys(env, props,
-                       {"startEnabled", "sendUntrigger", "reactToOnTrigger", "reactToOnTouch",
+                       {"target", "vobTarget", "startEnabled", "sendUntrigger",
+                        "reactToOnTrigger", "reactToOnTouch",
                         "reactToOnDamage", "respondToObject", "respondToPc", "respondToNpc",
                         "maxActivationCount", "retriggerDelaySec", "damageThreshold",
                         "fireDelaySec", "behavior", "touchBlockerDamage", "stayOpenTimeSec",
@@ -1985,6 +2014,8 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
                         "sfxTransitioning", "sfxCloseStart", "sfxCloseEnd", "sfxLock",
                         "sfxUnlock", "sfxUseLocked"},
                        class_name);
+      auto target = OptionalCp1252String(env, props, "target");
+      auto vob_target = OptionalCp1252String(env, props, "vobTarget");
       auto const start_enabled = OptionalBool(env, props, "startEnabled");
       auto const send_untrigger = OptionalBool(env, props, "sendUntrigger");
       auto const react_to_on_trigger = OptionalBool(env, props, "reactToOnTrigger");
@@ -2016,6 +2047,8 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       auto sfx_unlock = OptionalCp1252String(env, props, "sfxUnlock");
       auto sfx_use_locked = OptionalCp1252String(env, props, "sfxUseLocked");
       auto& mover = static_cast<zenkit::VMover&>(*vob);
+      if (target) mover.target = std::move(*target);
+      if (vob_target) mover.vob_target = std::move(*vob_target);
       if (start_enabled.has_value()) mover.start_enabled = *start_enabled;
       if (send_untrigger.has_value()) mover.send_untrigger = *send_untrigger;
       if (react_to_on_trigger.has_value()) mover.react_to_on_trigger = *react_to_on_trigger;
@@ -2267,11 +2300,14 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
     // enums landed.
     case zenkit::VirtualObjectType::zCTriggerList: {
       RequireClassKeys(env, props,
-                       {"startEnabled", "sendUntrigger", "reactToOnTrigger", "reactToOnTouch",
+                       {"target", "vobTarget", "startEnabled", "sendUntrigger",
+                        "reactToOnTrigger", "reactToOnTouch",
                         "reactToOnDamage", "respondToObject", "respondToPc", "respondToNpc",
                         "maxActivationCount", "retriggerDelaySec", "damageThreshold",
                         "fireDelaySec", "mode"},
                        class_name);
+      auto target = OptionalCp1252String(env, props, "target");
+      auto vob_target = OptionalCp1252String(env, props, "vobTarget");
       auto const start_enabled = OptionalBool(env, props, "startEnabled");
       auto const send_untrigger = OptionalBool(env, props, "sendUntrigger");
       auto const react_to_on_trigger = OptionalBool(env, props, "reactToOnTrigger");
@@ -2288,6 +2324,11 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       auto const fire_delay_sec = OptionalFloatIn(env, props, "fireDelaySec", 0, std::nullopt);
       auto const mode = OptionalEnum<zenkit::TriggerBatchMode>(env, props, "mode");
       auto& list = static_cast<zenkit::VTriggerList&>(*vob);
+      // Qualified, and it has to be: `VTriggerList` declares a deprecated
+      // `using target = Target` for its per-entry struct, which shadows the
+      // member name it inherits — `list.target` is a *type* here.
+      if (target) list.zenkit::VTrigger::target = std::move(*target);
+      if (vob_target) list.vob_target = std::move(*vob_target);
       if (start_enabled.has_value()) list.start_enabled = *start_enabled;
       if (send_untrigger.has_value()) list.send_untrigger = *send_untrigger;
       if (react_to_on_trigger.has_value()) list.react_to_on_trigger = *react_to_on_trigger;
@@ -2303,17 +2344,24 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (mode) list.mode = *mode;
       break;
     }
-    // The three booleans that steer the slave sequence -- the one class of this
-    // group with no enum at all. What held it out is `slaves`, an unbounded
-    // list, and the two target strings that go with the rest of the family's;
-    // these three were held out with them.
+    // The two targets and the three booleans that steer the slave sequence --
+    // the one class of this group with no enum at all. `slaves`, the unbounded
+    // list, is what is still held out; the target it fires on success and the
+    // one it fires on failure are both plain VObject names, in since
+    // 2026-09-12.
     case zenkit::VirtualObjectType::zCCodeMaster: {
-      RequireClassKeys(env, props, {"ordered", "firstFalseIsFailure", "untriggeredCancels"},
+      RequireClassKeys(env, props,
+                       {"target", "failureTarget", "ordered", "firstFalseIsFailure",
+                        "untriggeredCancels"},
                        class_name);
+      auto target = OptionalCp1252String(env, props, "target");
+      auto failure_target = OptionalCp1252String(env, props, "failureTarget");
       auto const ordered = OptionalBool(env, props, "ordered");
       auto const first_false_is_failure = OptionalBool(env, props, "firstFalseIsFailure");
       auto const untriggered_cancels = OptionalBool(env, props, "untriggeredCancels");
       auto& master = static_cast<zenkit::VCodeMaster&>(*vob);
+      if (target) master.target = std::move(*target);
+      if (failure_target) master.failure_target = std::move(*failure_target);
       if (ordered.has_value()) master.ordered = *ordered;
       if (first_false_is_failure.has_value()) {
         master.first_false_is_failure = *first_false_is_failure;
@@ -2321,17 +2369,18 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (untriggered_cancels.has_value()) master.untriggered_cancels = *untriggered_cancels;
       break;
     }
-    // Both of this class's fields, and both are enums: what an incoming
-    // `OnTrigger` and an incoming `OnUntrigger` are turned into before being
-    // passed on. `target` is the third field and is held out with the rest of
-    // the family's cross-reference strings, which is why the class carried
-    // nothing editable at all until the enums landed.
+    // The whole class: the VObject it relays to, and what an incoming
+    // `OnTrigger` and `OnUntrigger` are turned into on the way. The two enums
+    // landed first and the target with the rest of the family's on 2026-09-12,
+    // so nothing on this class is held out now.
     case zenkit::VirtualObjectType::zCMessageFilter: {
-      RequireClassKeys(env, props, {"onTrigger", "onUntrigger"}, class_name);
+      RequireClassKeys(env, props, {"target", "onTrigger", "onUntrigger"}, class_name);
+      auto target = OptionalCp1252String(env, props, "target");
       auto const on_trigger = OptionalEnum<zenkit::MessageFilterAction>(env, props, "onTrigger");
       auto const on_untrigger =
           OptionalEnum<zenkit::MessageFilterAction>(env, props, "onUntrigger");
       auto& filter = static_cast<zenkit::VMessageFilter&>(*vob);
+      if (target) filter.target = std::move(*target);
       if (on_trigger) filter.on_trigger = *on_trigger;
       if (on_untrigger) filter.on_untrigger = *on_untrigger;
       break;

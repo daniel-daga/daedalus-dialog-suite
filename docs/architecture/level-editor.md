@@ -2421,6 +2421,53 @@ none. What is written back is canonical (no spaces, a count only above one);
 what is read is whatever the archive holds, and a string the grammar cannot
 read is shown as it is and can be cleared, never rewritten by being looked at.
 
+#### What a trigger fires at (2026-09-12)
+
+The third kind of cross-reference a class field holds, and the one that breaks
+the pattern the two above set. `target`, `vobTarget` and `failureTarget` name a
+**VObject in this same world**, by its `vobName`, which is how ZenGin resolves
+them — so the index that decides whether a value is real is the world itself,
+not a script project. Until now every one of them was held out of the catalogue
+as "a target string", which is why nothing in the editor could wire a trigger to
+a mover at all.
+
+Three things came out of doing it.
+
+**The main process has nothing to add.** For `instance` the validator holds a
+grammar, because a Daedalus symbol has one. A `vobName` does not: retail carries
+names with spaces in them, and any string the archive can hold is a legal name.
+So the catalogue's `string` kind *is* the whole shape check, and
+`assertApplyOpsRequest` gained no branch — the first cross-reference field where
+the main-process half of the split is empty, and that is a fact about the value,
+not an omission.
+
+**A dangling target is a warning, not a refusal**, which is the opposite of
+`instance` and for a reason worth keeping: an item instance no script declares
+crashes ZenGin when the item spawns, while a target no VOB answers to is a
+trigger that does nothing. Refusing it would also block a real order of work —
+wiring a trigger to a VOB that is not placed yet. So the grid warns beside the
+field, against the **world's own interned name dictionary** (`vobIndex.names`,
+which the grid already has in the summary — nothing is plumbed in for it), and
+the warning describes the value the world holds rather than only what was just
+typed, so it also flags the dangling targets a world arrived with. Matching is
+case-insensitive because the engine's is.
+
+**The family is not the hierarchy.** `zCTriggerWorldStart` and `zCTriggerUntouch`
+derive from `zCVob`, not from `VTrigger` (`Trigger.hh`), so each has `target`
+and no `vobTarget` at all — and `zCTriggerUntouch`, whose only field is that
+target, had no catalogue entry of any kind until this landed. `insertVob` cannot
+construct one either, so its write path is reachable only through a fixture VOB,
+which is what `BuildVisualVobTree`'s `1/20` is for. The one trap in the C++:
+`VTriggerList` declares a deprecated `using target = Target` for its per-entry
+struct, which shadows the member it inherits — `list.target` is a *type*, and
+the assignment has to be qualified.
+
+Out of this slice by decision: the `targets` and `slaves` **lists** (still the
+op set's unbounded-payload question), and the movable-object family's own
+`target` — a mob's target is what it fires when it is used, and the family's
+other cross-references (`item`, `key`) are Daedalus item instances that would
+need the renderer's *other* index.
+
 #### What a VOB's bbox is, and why there is no scale gizmo (measured 2026-08-26)
 
 Rotation is the next op, and it cannot be built the way `MoveVob` was.

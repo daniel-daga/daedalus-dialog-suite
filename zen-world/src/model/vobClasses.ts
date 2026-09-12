@@ -242,11 +242,11 @@ const ZC_PFX_CONTROLLER_FIELDS = [
 ] as const satisfies readonly FieldDescriptor[];
 
 /**
- * The eight bools and four numerics `VTrigger` itself declares — the base
- * every other class in the trigger family inherits, `zCTriggerWorldStart` and
- * `zCTriggerUntouch` excepted (neither derives from `VTrigger`). `target` and
- * `vobTarget` stay out with the rest of the family's target strings, in the
- * order the archive stores them so the grid draws like the file.
+ * The two targets, then the eight bools and four numerics `VTrigger` itself
+ * declares — the base every other class in the trigger family inherits,
+ * `zCTriggerWorldStart` and `zCTriggerUntouch` excepted (neither derives from
+ * `VTrigger`, and each carries the target alone). The twelve are in the order
+ * the archive stores them, so the grid draws like the file.
  *
  * `maxActivationCount` is left unbounded: ZenKit documents `-1` as "process an
  * infinite number of events", so a floor at 0 would refuse the one negative
@@ -255,7 +255,28 @@ const ZC_PFX_CONTROLLER_FIELDS = [
  * — none of "seconds to wait" or "damage to react to" has a meaning below
  * zero.
  */
+/**
+ * What a trigger fires at, and what it fires it *from* — the pair every
+ * `VTrigger` carries, and the first thing a designer sets on one.
+ *
+ * Both name a VOB in the same world by its `vobName`, which is how ZenGin
+ * resolves them, so the check splits exactly the way `oCItem.instance`'s does:
+ * this package holds no world, the IPC validator holds the shape a name can
+ * have, and the renderer — which has the world's own name index — refuses one
+ * no VOB answers to. An empty string is the ordinary "fires at nothing".
+ *
+ * At the front of the class rather than in the archive's own order, for the
+ * reason a fog zone's `overrideColor` sits next to the colour it governs: the
+ * catalogue's order is the order the grid draws, and what a trigger is wired to
+ * is what a designer opens it to see.
+ */
+const VTRIGGER_TARGET_FIELDS = [
+  { key: 'target', kind: 'string' },
+  { key: 'vobTarget', kind: 'string' },
+] as const satisfies readonly FieldDescriptor[];
+
 const ZC_TRIGGER_FIELDS = [
+  ...VTRIGGER_TARGET_FIELDS,
   { key: 'startEnabled', kind: 'bool' },
   { key: 'sendUntrigger', kind: 'bool' },
   { key: 'reactToOnTrigger', kind: 'bool' },
@@ -277,7 +298,18 @@ const ZC_TRIGGER_FIELDS = [
  *  save-game-only `s_has_fired` needs nothing held out either, the same shape
  *  as `zCVobAnimate`'s one field. */
 const ZC_TRIGGER_WORLD_START_FIELDS = [
+  { key: 'target', kind: 'string' },
   { key: 'fireOnce', kind: 'bool' },
+] as const satisfies readonly FieldDescriptor[];
+
+/** `zCTriggerUntouch` declares one field and it is the target, which is why the
+ *  class had no catalogue entry at all while the targets were held out.
+ *
+ *  It carries no `vobTarget`, and neither does `zCTriggerWorldStart`: both
+ *  derive straight from `zCVob` rather than from `VTrigger`, so they have the
+ *  target the family is named for and none of the rest of its base. */
+const ZC_TRIGGER_UNTOUCH_FIELDS = [
+  { key: 'target', kind: 'string' },
 ] as const satisfies readonly FieldDescriptor[];
 
 /** The one non-enum, non-list field `oCTriggerScript` has beyond the base
@@ -286,6 +318,7 @@ const ZC_TRIGGER_WORLD_START_FIELDS = [
  *  out with the rest of the family's target strings — the same "one field,
  *  nothing else to hold out yet" shape as `zCTriggerWorldStart`'s. */
 const OC_TRIGGER_SCRIPT_FIELDS = [
+  ...VTRIGGER_TARGET_FIELDS,
   { key: 'function', kind: 'string' },
 ] as const satisfies readonly FieldDescriptor[];
 
@@ -315,6 +348,8 @@ const ZC_TRIGGER_LIST_FIELDS = [
  *  `ordered` and `firstFalseIsFailure` are true on the same single master and
  *  false on the other six, and no retail master lets an untrigger cancel. */
 const ZC_CODE_MASTER_FIELDS = [
+  { key: 'target', kind: 'string' },
+  { key: 'failureTarget', kind: 'string' },
   { key: 'ordered', kind: 'bool' },
   { key: 'firstFalseIsFailure', kind: 'bool' },
   { key: 'untriggeredCancels', kind: 'bool' },
@@ -330,6 +365,7 @@ const ZC_CODE_MASTER_FIELDS = [
  *  `NONE` — so this is the class with the widest spread of stored enum values in
  *  the corpus, and none of it is outside the set. */
 const ZC_MESSAGE_FILTER_FIELDS = [
+  { key: 'target', kind: 'string' },
   { key: 'onTrigger', kind: 'enum' },
   { key: 'onUntrigger', kind: 'enum' },
 ] as const satisfies readonly FieldDescriptor[];
@@ -625,6 +661,7 @@ export const CLASS_FIELDS = {
   zCTrigger: ZC_TRIGGER_FIELDS,
   zCTriggerList: ZC_TRIGGER_LIST_FIELDS,
   zCTriggerWorldStart: ZC_TRIGGER_WORLD_START_FIELDS,
+  zCTriggerUntouch: ZC_TRIGGER_UNTOUCH_FIELDS,
   oCTriggerScript: OC_TRIGGER_SCRIPT_FIELDS,
   oCTriggerChangeLevel: OC_TRIGGER_CHANGE_LEVEL_FIELDS,
   zCMover: ZC_MOVER_FIELDS,

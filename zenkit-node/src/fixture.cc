@@ -1038,9 +1038,19 @@ std::shared_ptr<VirtualObject> BuildVisualVobTree() {
   mob_door->key = "ItKeyDoor";
   mob_door->pick_string = "RLRL";
 
+  // The one class whose only field is its target, and the one trigger class
+  // `insertVob` cannot construct — so a fixture VOB is the only way its write
+  // path is reachable at all (2026-09-12).
+  auto untouch = std::make_shared<VTriggerUntouch>();
+  untouch->type = VirtualObjectType::zCTriggerUntouch;
+  untouch->vob_name = "VOB_INDEX_TRIGGER_UNTOUCH";
+  untouch->position = Vec3 {446.0f, 4.0f, 456.0f};
+  untouch->bbox = AxisAlignedBoundingBox {Vec3 {445.0f, 3.0f, 455.0f}, Vec3 {447.0f, 5.0f, 457.0f}};
+  untouch->target = "VOB_INDEX_MOVER";
+
   root->children = {a, b, c, sound, daytime, far_plane, fog, music, animate, pfx, world_start,
                      trigger_script, trigger, change_level, mover, mob, mob_inter, mob_fire,
-                     mob_container, mob_door};
+                     mob_container, mob_door, untouch};
   return root;
 }
 
