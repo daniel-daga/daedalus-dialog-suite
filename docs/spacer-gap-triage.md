@@ -3,7 +3,8 @@
 A community report on the original Spacer, read against this tree. It lists what
 a modder suffers in Spacer; this file lists only the parts of it **we do not
 answer today**, so each can be triaged into an issue or dropped. Nothing here is
-a decision — no issue was filed and no priority assigned.
+a decision: every item below is an issue now (#264-#275), untriaged, and the
+priority labels are a first guess.
 
 The last section says which of the report's complaints are already answered or
 structurally cannot apply to us, so triage does not rediscover them.
@@ -12,7 +13,7 @@ structurally cannot apply to us, so triage does not rediscover them.
 
 ## A. The script pipeline — the largest block, and the least started
 
-### A1. OutputUnits: nothing exists
+### A1. OutputUnits: nothing exists (#264)
 
 Not one line in the tree reads or writes `OU.BIN`, `OU.CSL` or `OUINFO.INF`. The
 report's "worst of it" — reparsing does not update the OUs, so a new dialog
@@ -32,14 +33,14 @@ least a consistency check between scripts and an existing `OU.csl`"* — and
 nothing has landed. The consistency check is the cheap half and would catch the
 beginner trap without writing a binary.
 
-### A2. A language mismatch has nothing to notice it
+### A2. A language mismatch has nothing to notice it (#265)
 
 "Reparsing with the MDK's German scripts silently reverts your English text" is
 the same class as A1 and needs the same data. We hold no notion of two language
 variants of a line; localization export/import is `feature-suggestions.md` P3
 item 11, unstarted. Worth triaging *with* A1, not separately.
 
-### A3. A quick test that fails tells the user nothing
+### A3. A quick test that fails tells the user nothing (#266)
 
 The report's "using play-the-game from inside Spacer is itself a crash source"
 is answered structurally — we launch GMBT, not an editor-hosted engine — but our
@@ -53,7 +54,7 @@ Also still true: **no quick test has ever been launched from that button on this
 machine.** The argv and both lookup paths are covered against an injected
 `spawn`; that is not a witness.
 
-### A4. Parse errors are per-file and have no line
+### A4. Parse errors are per-file and have no line (#267)
 
 Better than `U:PAR:` lines in Notepad — the active file's syntax errors render
 in `SyntaxErrorsDisplay` and the Problems panel lints the whole project — but two
@@ -67,7 +68,7 @@ gaps the report's complaint still touches:
   a line — there is no jump-to-line for anything the panel finds. Threading
   positions through the linking visitor is the prerequisite.
 
-### A5. Native parser crash still takes the main process
+### A5. Native parser crash still takes the main process (#268)
 
 Spacer's "access violation on Reparse Scripts" has our analogue: a tree-sitter
 segfault in the `worker_threads` pool kills the Electron main process.
@@ -77,7 +78,7 @@ done. Listed here only so triage sees it beside the rest.
 
 ---
 
-## B. World → script references — one direction left
+## B. World → script references — one direction left (#269, #270)
 
 The report's list (waypoint names, `triggerTarget`, container contents, item
 instances, `scemeName`) is **mostly closed**, and the remainder is narrow and
@@ -105,15 +106,30 @@ mob `item`/`key`, and `oCMobContainer.contents` (index-backed picker).
 
 ## C. Recovery and stability
 
-### C1. A delete still cannot be undone
+### C1. A delete still cannot be undone (#271)
 
 Spacer has no undo at all; we have one everywhere **except** the op the report
 names first. `DeleteVob` and `DeleteWaypoint` are barriers that clear the stack
 by decision (plan §15) — so a bad drag no longer costs work, and a bad delete
-still does, with the user's own save file as the only fallback. Serializing the
-subtree into the op is named as open there and has not been taken.
+still does, with the user's own save file as the only fallback.
 
-### C2. A malformed world crashes the reader, and says nothing about why
+**Why it has no inverse** (architecture §7, *"The delete, and the barrier that
+replaces its inverse"*): the op carries an address and nothing else. The shape
+that would have made it invertible — an `AddVob` with a null side — was
+considered and rejected, because its `NewVob` spec means "this op describes the
+VOB completely", which is true of a VOB we authored and false of every retail
+one: undoing the delete of an `oCMobInter` would insert a bare `zCVob` wearing
+its name and visual and report success. A real inverse needs the subtree
+serialized out of the binding *before* the delete, in a form `AddVob` can
+rebuild — including the members nothing here models (AI, event manager) and the
+classes `insertVob` cannot construct. The stack-clearing is a second, separate
+reason: a delete renumbers every path after it, so entries already on the stack
+address VOBs that have moved.
+
+So it is a cost decision, not a defect: snapshot the subtree into the op (or the
+world around it), which §15 left open, or leave the barrier.
+
+### C2. A malformed world crashes the reader, and says nothing about why (#272)
 
 The worker isolation holds (the app survives with *"the world worker died —
 reopen the world"*), but the VOB readers are still unbounded (plan §16.11), and
@@ -121,7 +137,7 @@ the message carries no reason. The report's "you're reading zSpy to find out
 why" therefore half-applies: we do not crash the app, and we do not diagnose
 either.
 
-### C3. A world that loads but is missing assets has no report
+### C3. A world that loads but is missing assets has no report (#273)
 
 `unresolvedByType` is counted on the summary and consumed by the scene layers;
 nothing shows the user "these N visuals did not resolve, here they are". For a
@@ -129,14 +145,14 @@ custom-asset map — the exact case the report says simply will not load in Spac
 — that list is the diagnosis.
 
 Adjacent and already tracked: #245 (what the browse root looks like on a retail
-install), #16.37 in the plan (the asset browser's first outside user could not
+install), the plan's §16.37 (the asset browser's first outside user could not
 work it), #239 (per-source mount cost unmeasured).
 
 ---
 
 ## D. Unknowns we cannot cost yet
 
-### D1. Union-added object classes
+### D1. Union-added object classes (#274)
 
 The report names this as Spacer's own gap, and it is ours too: nobody has
 opened a world containing Union classes. ZenKit models the vanilla set, the
@@ -145,10 +161,10 @@ What actually happens — dropped, read as a base `zCVob`, or a load failure —
 **unmeasured**. This needs a measurement before it can be a work item; a Union
 world and one load is the whole first step.
 
-### D2. No in-app help or onboarding
+### D2. No in-app help or onboarding (#275)
 
 Spacer's empty help window has our equivalent: nothing. Not a complaint we have
-received in those words, but #16.37 (an outside user could not work the asset
+received in those words, but the plan's §16.37 (an outside user could not work the asset
 browser unaided) is the same failure in a smaller frame.
 
 ---
