@@ -167,6 +167,30 @@ test.describe('Keyboard drag-and-drop reorder under one hoisted context (U5)', (
     }).toPass({ timeout: 5000 });
   });
 
+  test('a reorder inside the choice sub-list is visible in it', async ({ page }) => {
+    // refactoring-targets.md #3: the sub-list is nested inside a Choice ActionCard
+    // whose memo comparator ignores the semantic model, so a reorder of the *target
+    // function* changes nothing the comparator looks at. The sub-editor must
+    // therefore read the model from the store itself, or it renders a stale order.
+    await page.getByRole('button', { name: 'Expand choice actions' }).click();
+    await expect(async () => {
+      const values = await textOrder(page);
+      expect(values.indexOf('CHOICE_A')).toBeGreaterThan(-1);
+      expect(values.indexOf('CHOICE_A')).toBeLessThan(values.indexOf('CHOICE_B'));
+    }).toPass({ timeout: 5000 });
+
+    await keyboardMoveDown(page, 'choice_a');
+
+    await expect(async () => {
+      const after = await textOrder(page);
+      expect(after.indexOf('CHOICE_B')).toBeLessThan(after.indexOf('CHOICE_A'));
+      // The reorder stays inside the sub-list: the top-level lines keep their order
+      // and still precede it.
+      expect(after.indexOf('TOP_A')).toBeLessThan(after.indexOf('TOP_B'));
+      expect(after.indexOf('TOP_B')).toBeLessThan(after.indexOf('CHOICE_B'));
+    }).toPass({ timeout: 5000 });
+  });
+
   test('the InlineChoiceEditor sub-list joins the one hoisted context and lifts a drag', async ({ page }) => {
     // Expand the choice to mount its inline sub-list (a different target function).
     await page.getByRole('button', { name: 'Expand choice actions' }).click();

@@ -23,25 +23,31 @@ the consumers that only manage files.
 
 ---
 
-### 3. InlineChoiceEditor sub-list does not re-render on target-function structural changes
+### 3. InlineChoiceEditor sub-list did not re-render on target-function structural changes — done
 **Files:** `daedalus-dialog-editor/src/renderer/components/ActionCard.tsx` (memo comparator),
 `daedalus-dialog-editor/src/renderer/components/InlineChoiceEditor.tsx`
 
 Surfaced during fix-05 §2.5. `ActionCard`'s `React.memo` comparator intentionally
 ignores `semanticModel` (a deliberate perf guard — the model is large and changes on
-every edit). For a `Choice` action, that means when the choice's *target function*
-changes structurally (e.g. its actions are reordered) but the `ChoiceAction` itself is
-unchanged, the `ActionCard` — and therefore the nested `InlineChoiceEditor` — does not
-re-render, so the sub-list shows a stale order. Drag reorder inside a choice sub-list
-dispatches and commits correctly (verified: the move handler runs with the right
-source/dest under the single hoisted `DragDropContext`), but the UI does not reflect it.
+every edit). For a `Choice` action, that meant when the choice's *target function*
+changed structurally (e.g. its actions were reordered) but the `ChoiceAction` itself was
+unchanged, the `ActionCard` — and therefore the nested `InlineChoiceEditor` — did not
+re-render, so the sub-list showed a stale order.
 
-This is pre-existing (not introduced by the context hoist) and out of scope for slice 5.
-Fix option: have `InlineChoiceEditor` subscribe to its target function directly from the
-store (a granular selector) instead of reading it from the memo-stale `semanticModel`
-prop, so it re-renders on target-function changes without re-rendering all `ActionCard`s.
-The fix-05 Playwright spec asserts the choice sub-list joins the single context and lifts
-a drag; the visible-reorder assertion is deferred to this fix.
+**Landed with fix-07 §2.8, which fixed the whole class rather than this case.** The
+comparator became honest about ignoring model data, and the rule that pays for it is
+that model data must not cross the boundary at all: `InlineChoiceEditor` self-resolves
+the edited file's model from the store (`fileStore.openFiles`, falling back to the
+merged model's `dialogs`/`functions`), and `ChoiceRenderer` reads its one function
+through `useResolvedFunction`. A memo-blocked card therefore cannot show a stale
+sub-list — the sub-editor's own subscription re-renders it.
+
+The deferred assertion this entry was waiting on is now in the fix-05 spec:
+`tests/e2e/keyboard-dnd-reorder.spec.ts`, *"a reorder inside the choice sub-list is
+visible in it"* — a real keyboard drag inside the sub-list, asserting the visible order
+flips and stays inside the sub-list. It was confirmed to catch the original bug by
+freezing `InlineChoiceEditor`'s model at mount (the pre-fix-07 prop path) and watching
+it fail, which is the only way to tell this test from one that passes on its own.
 
 ---
 
