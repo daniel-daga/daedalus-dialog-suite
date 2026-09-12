@@ -29,6 +29,7 @@ handovers cost an hour a session:
 | a production-readiness finding | `docs/plans/production-readiness-review-findings.md` |
 | a 2026-07 code-review item | `docs/plans/code-review-2026-07-remediation.md` |
 | the VOB folders design | `docs/plans/vob-folders.md` |
+| **a Spacer complaint we have not answered yet** | `docs/spacer-gap-triage.md` — the 2026-09-12 report, triaged; untriaged, no issues filed |
 
 ## How an issue is written
 
