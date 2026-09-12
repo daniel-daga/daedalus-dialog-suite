@@ -34,7 +34,6 @@ import { findFreePointVob, primaryVob, useWorldStore } from '../../store/worldSt
 import { stateOptions, stateReach } from '../../routines/routineSchedule';
 import { useProjectStore } from '../../store/projectStore';
 import { vobModelOf } from '../../world/vobModel';
-import { isTypingOrInPopover } from '../../world/keyboardTarget';
 import { LiveTileContext } from './WorldAssetGrid';
 import { DEFAULT_EXPOSURE } from '../../world/WorldScene';
 import WorldViewport, { type GizmoMode, type WorldViewportHandle } from './WorldViewport';
@@ -53,6 +52,7 @@ import { useVobClipboard, type VobClipboardInput } from './hooks/useVobClipboard
 import { useScatterBrush } from './hooks/useScatterBrush';
 import { useInsertNpc } from './hooks/useInsertNpc';
 import { useAssetCatalog } from './hooks/useAssetCatalog';
+import { useWorldShortcuts } from './hooks/useWorldShortcuts';
 import WorldToolbar from './toolbar/WorldToolbar';
 import { OUTLINE_MODE_ORDER } from './toolbar/WorldViewControls';
 import WorldStatusStats from './toolbar/WorldStatusStats';
@@ -73,17 +73,6 @@ import ErrorBoundary from '../ErrorBoundary';
  *  else, and inventing an orientation from a surface normal is a feature with
  *  its own decisions (which axis is up for this visual?) rather than a default. */
 const IDENTITY: ZenRotation = [1, 0, 0, 0, 1, 0, 0, 0, 1];
-
-/** Arrow-key nudge, in the world's own axes (ZenGin is Y-up): one unit of
- *  step per key, `[x, y, z]`. Keyed by the lower-cased `KeyboardEvent.key`. */
-const NUDGE_DELTAS: Record<string, [number, number, number]> = {
-  arrowleft: [-1, 0, 0],
-  arrowright: [1, 0, 0],
-  arrowup: [0, 0, -1],
-  arrowdown: [0, 0, 1],
-  pageup: [0, 1, 0],
-  pagedown: [0, -1, 0],
-};
 
 interface WorldSurfaceProps {
   /**
@@ -1790,169 +1779,31 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     await commitOps(deleteVobs(vobModelOf(current).reader, vobs));
   }, [commitOps]);
 
-  /** Any of the surface's own modal surfaces is up, so the window-level
-   *  shortcuts below are not the keystroke's owner — the dialog or menu is.
-   *  Checked in addition to `isTypingOrInPopover`, which only sees where
-   *  focus *is*: a shortcut fired with focus still on `window` (nothing in
-   *  the dialog focused yet) would pass that test and fail this one. */
+  /** Any of the surface's own modal surfaces is up — what
+   *  `useWorldShortcuts` takes as `dialogOpen`, and why it takes it. */
   const surfaceDialogOpen = deleting !== null || deletingWaypoint !== null
     || placing !== null || confirmingSave || addingWaypoint !== null || contextMenu !== null
     || insertingNpc !== null || pickerOpen || quickTestBlocked || quickTestRefusal !== null;
 
-  useEffect(() => {
-    if (summary === null) return undefined;
-    // Every shortcut below is a *window* listener, and the surface stays
-    // mounted behind whichever view is on screen (refactoring-targets.md §8) —
-    // so bound while hidden, Ctrl+Z in the dialog view would undo a world edit
-    // as well as the dialog edit `MainLayout` performs, and W would swallow a
-    // keystroke on a view that has never heard of a gizmo.
-    if (hidden) return undefined;
-
-    const handler = (event: KeyboardEvent) => {
-      // Lower-cased because holding Shift changes the letter itself: Ctrl+Shift+Z
-      // arrives as `key: 'Z'`, and a comparison against 'z' never fires.
-      const key = event.key.toLowerCase();
-
-      // W and E, as every 3D editor binds them. Bare letters, so unlike the
-      // undo shortcut they have to keep out of the way of anything that takes
-      // typing — the World surface has no text field of its own, but this is a
-      // window listener and the app is full of them.
-      if (!event.ctrlKey && !event.metaKey && !event.altKey && (key === 'w' || key === 'e')) {
-        if (isTypingOrInPopover(event.target) || surfaceDialogOpen) return;
-        event.preventDefault();
-        setGizmoMode(key === 'w' ? 'translate' : 'rotate');
-        return;
-      }
-
-      // Ctrl+C / Ctrl+V, guarded like W and E above and for the same reason:
-      // this is a window listener, and in a text field a copy belongs to the
-      // browser.
-      if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey
-        && (key === 'c' || key === 'v')) {
-        if (isTypingOrInPopover(event.target) || surfaceDialogOpen) return;
-        // And with nothing selected a copy is the browser's too, rather than a
-        // swallowed keystroke: the surface shows text — the install path, a VOB
-        // name — that a user may well be trying to copy. It leaves whatever is
-        // already on the clipboard standing.
-        if (key === 'c' && useWorldStore.getState().selection.length === 0) return;
-        event.preventDefault();
-        if (key === 'c') void copySelection(); else void pasteClipboard();
-        return;
-      }
-
-      // Ctrl+D — what Blender, Unity and Unreal duplicate with, and the key
-      // Duplicate had none of until #253, which is why the context menu showed
-      // it the one blank shortcut slot. Guarded like Ctrl+C above: this is a
-      // window listener, and in a text field the browser owns the chord.
-      if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && key === 'd') {
-        if (isTypingOrInPopover(event.target) || surfaceDialogOpen) return;
-        // Nothing selected is not this surface's keystroke: a duplicate of
-        // nothing would be an empty batch that is still an undo entry, and the
-        // chord is the browser's bookmark otherwise.
-        if (useWorldStore.getState().selection.length === 0) return;
-        event.preventDefault();
-        void duplicateSelection();
-        return;
-      }
-
-      // Delete — opens the confirm dialog that already gates a destructive
-      // edit (§15) rather than committing anything itself; the two dialogs
-      // stay the only place either delete is actually sent. Waypoint checked
-      // first: VOB and waypoint selection are mutually exclusive in the
-      // store, so only one of the two branches below can ever apply.
-      if (key === 'delete') {
-        if (isTypingOrInPopover(event.target) || surfaceDialogOpen) return;
-        const { selection: currentSelection, selectedWaypoint: currentWaypoint } = useWorldStore.getState();
-        if (currentWaypoint !== null && waynet !== null) {
-          event.preventDefault();
-          setDeletingWaypoint({ waypoint: currentWaypoint, name: waynet.names[currentWaypoint] });
-        } else if (currentSelection.length > 0) {
-          event.preventDefault();
-          setDeleting(currentSelection);
-        }
-        return;
-      }
-
-      // Escape — clears the selection, but not while a surface dialog is
-      // showing: every one of them already closes on Escape (MUI's own
-      // Modal), and this is a second, independent listener on the same
-      // keydown — without the guard it would also discard the selection the
-      // open dialog is about, out from under the dialog that is closing.
-      if (key === 'escape') {
-        if (isTypingOrInPopover(event.target) || surfaceDialogOpen) return;
-        // An armed add is the more recent intent, and the one Escape is
-        // most likely aimed at; the selection survives it.
-        if (armed !== null) {
-          event.preventDefault();
-          setArmed(null);
-          return;
-        }
-        const { selection: currentSelection, selectedWaypoint: currentWaypoint } = useWorldStore.getState();
-        if (currentSelection.length === 0 && currentWaypoint === null) return;
-        event.preventDefault();
-        selectVob(null);
-        return;
-      }
-
-      // World-axis nudge — ZenGin is Y-up, so ArrowLeft/Right move X,
-      // ArrowUp/Down move Z and PageUp/Down move Y, ×10 while Shift is held.
-      // One keypress is one undo entry, same as a single gizmo drag — but only
-      // the presses that reach the world: auto-repeat while a commit is out is
-      // dropped by `commitOps`' in-flight guard, because the op it would build
-      // reads a `from` the round trip has not written yet.
-      if (NUDGE_DELTAS[key]) {
-        if (isTypingOrInPopover(event.target) || surfaceDialogOpen) return;
-        // Reserves the arrow keys for the scene tree's own navigation.
-        const target = event.target as HTMLElement | null;
-        if (target instanceof Element && target.closest('[role="tree"]')) return;
-        // Read *before* `preventDefault`, as the Escape branch does: with
-        // nothing selected this key is nobody's, and swallowing it would
-        // stop the asset list scrolling for a nudge that never happens.
-        if (useWorldStore.getState().selection.length === 0) return;
-        event.preventDefault();
-        // A nudge translates, so it takes the *translate* step — and only
-        // while that is the step the Snap control is actually showing. In
-        // rotate mode that control edits the angle instead, so a `snapGrid`
-        // left over from translate mode would be an invisible value driving
-        // a visible key: 45° on screen, 5 m under the arrow.
-        const grid = gizmoMode === 'translate' ? snapGrid : 0;
-        const step = (grid > 0 ? grid : 10) * (event.shiftKey ? 10 : 1);
-        const [dx, dy, dz] = NUDGE_DELTAS[key];
-        handleTranslateSelection([dx * step, dy * step, dz * step]);
-        return;
-      }
-
-      // Ctrl+S, the shortcut every editor has and this one did not. It opens
-      // the confirm rather than saving: the warnings there are about whether to
-      // save at all, and a keystroke is not a reason to skip them.
-      if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && key === 's') {
-        if (isTypingOrInPopover(event.target) || surfaceDialogOpen) return;
-        event.preventDefault();
-        setConfirmingSave(true);
-        return;
-      }
-
-      const undo = (event.ctrlKey || event.metaKey) && key === 'z' && !event.shiftKey;
-      const redo = (event.ctrlKey || event.metaKey)
-        && (key === 'y' || (key === 'z' && event.shiftKey));
-      if (!undo && !redo) return;
-      // The same pair of guards every branch above takes, and this one wants
-      // them most: in a text field Ctrl+Z is the field's own undo, and with a
-      // confirm open the dialog owns the keystroke — the delete confirm names a
-      // VOB by flat index, and an undo that renumbers would leave it pointing at
-      // whatever moved into that index.
-      if (isTypingOrInPopover(event.target) || surfaceDialogOpen) return;
-
-      event.preventDefault();
-      void runHistory(undo ? 'undo' : 'redo');
-    };
-
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [
-    summary, hidden, runHistory, copySelection, pasteClipboard, duplicateSelection, waynet, selectVob,
-    surfaceDialogOpen, snapGrid, gizmoMode, handleTranslateSelection, armed,
-  ]);
+  useWorldShortcuts({
+    hasWorld: summary !== null,
+    hidden,
+    dialogOpen: surfaceDialogOpen,
+    waynet,
+    armed: armed !== null,
+    gizmoMode,
+    snapGrid,
+    setGizmoMode,
+    onCopy: () => void copySelection(),
+    onPaste: () => void pasteClipboard(),
+    onDuplicate: () => void duplicateSelection(),
+    onRequestDeleteVobs: setDeleting,
+    onRequestDeleteWaypoint: (waypoint, name) => setDeletingWaypoint({ waypoint, name }),
+    onDisarm: () => setArmed(null),
+    onRequestSave: () => setConfirmingSave(true),
+    onNudge: handleTranslateSelection,
+    onHistory: (direction) => void runHistory(direction),
+  });
 
   // The World bar's own combined-state rules (WorldToolbar §5): each collapses
   // a pair of related setters, or an event's shape, into the one callback the
