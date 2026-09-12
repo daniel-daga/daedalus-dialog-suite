@@ -750,8 +750,10 @@ catch and 344 tests did**, which is the useful part: an ordering bug in a
 dependency array is a runtime fact, so the full suite is the gate here, not
 `tsc`.
 
-The five left are the ones the review named, and the edit core is still the one
-that has to go last.
+The five left are the ones the review named — scatter, Insert-NPC and its
+dialog, the asset catalogue, the keyboard effect, and the edit pipeline core,
+which has to go last because it is where the in-flight guard and the refusal
+path live. Tracked as **#263**.
 
 **§3.3, the BVH rebuilt per structural op. Landed 2026-09-08.** §3.2 removed
 the *duplicate* rebuild; the remaining one discarded and rebuilt all 352 trees
