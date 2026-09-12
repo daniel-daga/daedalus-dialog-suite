@@ -2832,15 +2832,35 @@ that turns a class name and those props into a radius, and the renderer only
 draws. A unit sphere is built once and scaled per selection rather than rebuilt
 per radius.
 
-**Only where the extent IS a radius.** A zone's or a trigger's extent is its
-bounding box, and the index carries no column for one — `ops.ts` says so
-outright. Drawing a sphere there would be a confident wrong answer rather than
-a missing one, so `vobExtentOf` answers null for every such class and the box
-half stays open (plan §16.39): it needs either a new index column, paid for by
-every world load at 41,393 × 6 floats, or a per-selection fetch that does not
-exist yet. `oCZoneMusic.ellipsoid` making one box mean two shapes, and
-`zCZoneZFog` having no extent field at all, are part of that same open
-decision.
+**And a box where the extent IS a box (2026-09-11, Daniel; #248).** A zone's or
+a trigger's volume is its bounding box, which the columnar index has no column
+for. The two ways to draw one were a new index column — 41,393 × 6 floats paid
+by every world load — and a per-selection fetch. Daniel chose the fetch, and it
+turned out to cost nothing new either: `getVobProps` now answers `bbox` beside
+`class`, so the read the grid already makes on every selection change carries
+it. Neither is a *property* — the dump keeps both on the VOB entry rather than
+inside `props` — which is why both are set in `GetVobProps` rather than in the
+shared `VobProps`.
+
+`BOX_EXTENT_KINDS` (zen-world) is the list: the three placed zones and the
+trigger family, `zCMover` and `oCTouchDamage` with it, and the `…Default` zone
+variants out for the reason they are out of `CLASS_FIELDS`. A box is refused
+when it is not six finite numbers or encloses nothing on any axis — a zone flat
+in one axis is a plane with no inside, and a malformed box is a read that went
+wrong rather than a volume of zero.
+
+**Two facts the shapes do not share.** A box carries its own position and a
+radius does not: six world-space numbers already say where the volume is, so a
+box drawn at the VOB would sit wherever that VOB's origin happens to be inside
+its own volume — and a VOB the scene cannot place still gets its box, where it
+gets no sphere. And `oCZoneMusic.ellipsoid` makes one box mean two shapes: the
+ellipsoid is the sphere wireframe under the box's own uneven scale, which makes
+it the one inscribed in that box rather than an approximation. `zCZoneZFog` has
+no extent field at all, so its shape is its bbox like the others.
+
+A light's `color` is still the other half of what a light *is* and is still
+invisible: it is a tint on the sphere rather than a shape, and nothing has been
+decided about it (plan §16.39).
 
 **The selection only, and attached only while it draws.** The three retail
 worlds hold 1,237 sound VOBs between them, so every radius at once is a screen

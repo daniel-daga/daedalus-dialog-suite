@@ -80,6 +80,28 @@ test('the asset functions reject anything that is not a VFS handle', () => {
   assert.throws(() => zenkit.vfsResolve(vfs(), 42), /name must be a string/);
 });
 
+test('a world handle is not a VFS handle, and the binding says so rather than reading it', () => {
+  // Both are `Napi::External`, and `IsExternal()` cannot tell them apart: the
+  // pointer inside one used to be cast to whichever struct the callee wanted
+  // and dereferenced (review 2026-09-04 §2.12). That is memory-unsafe, not
+  // merely wrong — the two structs share no layout.
+  const world = zenkit.loadWorld(
+    path.join(__dirname, 'fixtures', 'minimal.g2.zen'), 'g2',
+  );
+
+  assert.throws(() => zenkit.vfsList(world, '/'), /expected a VFS handle/);
+  assert.throws(() => zenkit.vfsResolve(world, 'EX_CRATE.3DS'), /expected a VFS handle/);
+  assert.throws(() => zenkit.decodeTexture(world, 'EX_CRATE.TGA'), /expected a VFS handle/);
+});
+
+test('a VFS handle is not a world handle either', () => {
+  const handle = vfs();
+
+  assert.throws(() => zenkit.vobIndex(handle), /expected a world handle/);
+  assert.throws(() => zenkit.getVobProps(handle, '0'), /expected a world handle/);
+  assert.throws(() => zenkit.extractWorldMesh(handle), /expected a world handle/);
+});
+
 // --- name mapping --------------------------------------------------------
 
 test('vfsResolve maps a VOB source asset name to the compiled one', () => {
@@ -542,6 +564,42 @@ test('decodeTexture refuses a mipmap level that is not a whole number in range',
       `level ${level} was accepted`,
     );
   }
+});
+
+test('decodeTexture refuses a level that is not a number at all', () => {
+  // The other half of the same finding (review 2026-09-04 §2.15): a level that
+  // is not a number was *ignored*, and mipmap 0 came back reporting success for
+  // a level the caller never asked for. Absent is still the default — that is
+  // what "no level" means — but `'1'` is a caller who meant something.
+  for (const level of ['1', true, [1], {}]) {
+    assert.throws(
+      () => zenkit.decodeTexture(vfs(), 'EX_CRATE.TGA', level),
+      /mipmap level must be a number/,
+      `level ${JSON.stringify(level)} was accepted`,
+    );
+  }
+  // Absent, undefined and null are all "no level given" — the idiom the
+  // rotation's optional bbox already uses.
+  assert.strictEqual(zenkit.decodeTexture(vfs(), 'EX_CRATE.TGA', undefined).width, 2);
+  assert.strictEqual(zenkit.decodeTexture(vfs(), 'EX_CRATE.TGA', null).width, 2);
+});
+
+test('openVfs refuses an overwrite mode that is not a string', () => {
+  // `overwrite` decides which mounted source wins a name collision, so a value
+  // silently ignored is a namespace the caller did not ask for — and `openVfs`
+  // already refuses an unknown *string*, which is the same mistake spelled
+  // differently.
+  for (const overwrite of [1, true, ['all'], {}]) {
+    assert.throws(
+      () => zenkit.openVfs([root], { overwrite }),
+      /overwrite must be/,
+      `overwrite ${JSON.stringify(overwrite)} was accepted`,
+    );
+  }
+  // Absent, undefined and null keep the default.
+  assert.ok(zenkit.openVfs([root], { overwrite: undefined }));
+  assert.ok(zenkit.openVfs([root], { overwrite: null }));
+  assert.ok(zenkit.openVfs([root], {}));
 });
 
 // --- vfsRead ---------------------------------------------------------------

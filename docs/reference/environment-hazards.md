@@ -61,6 +61,64 @@ trusting master for a release, not after.
   2026-09-11 in a cloud container. `zen-world` still has to be built by hand
   afterwards (`pnpm --filter zen-world build`); `daedalus-parser` builds itself
   in its own postinstall.
+- **In a Claude Code cloud container the addon *can* be built, and the one
+  thing in the way is a single download.** The egress proxy refuses GitHub
+  repositories outside the session's scope, so ZenKit's CMake dies on
+  `FetchContent` of miniz (`Each download failed!`, HTTP 403) — while `git
+  clone` of the same repository goes through, because the git proxy is a
+  different path. `px_add_dependency` prefers a checkout already sitting at
+  `vendor/ZenKit/vendor/<name>/` over its URL, which is why `doctest` and
+  `libsquish` never hit this: they are nested submodules. So:
+
+  ```
+  git submodule update --init --recursive zenkit-node/vendor/ZenKit
+  git clone --depth 1 --branch 3.1.1 https://github.com/richgel999/miniz.git \
+      zenkit-node/vendor/ZenKit/vendor/miniz
+  cd zenkit-node && node scripts/build-zenkit.js && npx node-gyp rebuild
+  ```
+
+  The miniz checkout is untracked inside a submodule that is never committed,
+  and `build-zenkit.js`'s reset (`git checkout -- .`) leaves untracked
+  directories alone, so it survives a rebuild. About four minutes. Verified
+  2026-09-11: 438 of `zenkit-node`'s 439 tests pass, one skipped.
+- **The browser-harness Playwright suite finds no browser in a cloud
+  container.** The pre-installed Chromium under `/opt/pw-browsers` is a
+  different build than this repo's Playwright pins, so every spec fails with
+  *"Executable doesn't exist at /opt/pw-browsers/chromium-1208/…"* — 178 of
+  them, and the message never says the two are simply different builds. Do
+  **not** run `playwright install`; point the existing one at it instead, with
+  a config that is never committed:
+
+  ```ts
+  // playwright.local.config.ts — delete it when you are done
+  import base from './playwright.config';
+  export default { ...base, projects: (base.projects ?? []).map((p) => ({
+    ...p, use: { ...p.use, launchOptions: { executablePath: '/opt/pw-browsers/chromium' } },
+  })) };
+  ```
+
+  `pnpm exec playwright test -c playwright.local.config.ts`. Verified
+  2026-09-11: 177 passed.
+- **The real-Electron World specs need software GL in a container.** With no
+  GPU, Chromium blocklists WebGL2 outright (`ContextResult::kFatalFailure:
+  WebGL2 blocklisted`) and every spec that opens a world times out waiting for
+  a viewport that never mounts — seven of them, and the failure names none of
+  this. `DDE_E2E_SOFTWARE_GL=1` adds `--use-gl=angle --use-angle=swiftshader`
+  in `tests/e2e-electron/harness.ts`. Opt-in rather than always on, because
+  forcing swiftshader on a machine that *has* a GPU would hide the very thing
+  `world-render.spec.ts` exists to watch. The whole run, with the addon built
+  as above:
+
+  ```
+  cd daedalus-dialog-editor && npm run build
+  DDE_E2E_SOFTWARE_GL=1 xvfb-run --auto-servernum \
+      pnpm exec playwright test -c playwright.electron.config.ts
+  ```
+
+  `pnpm exec`, not `npx`: `npx` picks the root Playwright and the specs resolve
+  another copy, which fails as *"Playwright Test did not expect test.describe()
+  to be called here"* and finds no tests at all. Verified 2026-09-11: 32 passed,
+  1 skipped.
 - **Run `node scripts/build-zenkit.js` before `node-gyp`** — it resets the
   submodule, applies `patches/*.patch` and writes `zenkit-abi.json`.
 - **That reset destroys any edit in `vendor/ZenKit` that is not a patch file.**

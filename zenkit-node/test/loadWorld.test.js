@@ -72,6 +72,19 @@ test('loadWorld rejects an invalid gameVersion argument', () => {
   assert.throws(() => zenkit.loadWorld(FIXTURE, 'g3'));
 });
 
+test('loadWorld refuses a directory rather than terminating the process', () => {
+  // `ifstream` opens a directory on Linux and `tellg()` answers a huge value or
+  // -1, so the `vector` constructor that follows throws `length_error` or
+  // `bad_alloc` — neither of which is a `Napi::Error`, and both of which reach
+  // `std::terminate` from inside the binding. Windows refuses directories, so
+  // this is the platform CI runs the Electron E2E on and the one nothing
+  // caught it on (review 2026-09-04 §2.15).
+  assert.throws(
+    () => zenkit.loadWorld(path.join(__dirname, 'fixtures'), 'g2'),
+    /not a regular file/i,
+  );
+});
+
 test('loadWorld turns a ZenKit parse failure into a JS error rather than killing the process', () => {
   // The distinction every other throwing test here misses. All of them trip a
   // check the *binding* makes and get a `Napi::Error`; this one gets past the

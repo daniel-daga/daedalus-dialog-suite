@@ -211,7 +211,7 @@ new thread running unreferenced. The test double's `terminate()` never emits
 closes it. A code-0 exit is also ignored entirely (`:369-371`): every pending
 request then waits the full 120 s.
 
-### 2.12 `Napi::External` handles are not type-tagged — **confirmed** hazard
+### 2.12 `Napi::External` handles are not type-tagged — **FIXED 2026-09-11**
 
 `binding.cc:114` (`UnwrapHandle`) and `assets.cc:81` (`UnwrapVfs`) check
 `IsExternal()` only. `zenkit.vobIndex(vfs)` reinterprets a `zenkit::Vfs` as a
@@ -275,8 +275,12 @@ aside as corrupt on next load and the folders come back empty.
   about which file the engine plays: a world opened from the install's list
   and saved back clears `unsavedEdits`, yet GMBT runs the mod's copy; nothing
   checks the opened path is under `gmbtProjectDir`.
-- **`world:getVobFolders` writes under a read validation** (`main.ts:1043`,
-  `WorldFoldersService.load:41-43` renames a corrupt sidecar aside).
+- **`world:getVobFolders` wrote under a read validation — FIXED 2026-09-11.**
+  `WorldFoldersService.load` renames a corrupt sidecar aside before falling
+  back, so the read handler writes. It now validates `{ write: true }` like the
+  save handler, which is the stronger check — a read validation does not refuse
+  a final component that is itself a symlink, so the two handlers disagreed
+  about the same file.
 - **Encoding**: `Utf16ToWindows1252` (`encoding.cc:66`) cannot re-encode the
   five undefined bytes the decoder emits as U+0081/8D/8F/90/9D, so a name
   carrying one reads out and is then refused as a guard — the 08-29 finding-2
@@ -284,11 +288,16 @@ aside as corrupt on next load and the folders come back empty.
   after "U+". `vfsList` (`assets.cc:185`) emits entry names as UTF-8 via
   `Napi::String::New(std::string)`, not `Str()`, so a non-ASCII VDF name is
   U+FFFD. Edge messages at `binding.cc:976, 1014` quote raw cp1252.
-- **`loadWorld` on a directory path** (`binding.cc:73-78`): `ifstream` opens a
-  directory on Linux, `tellg()` is huge or −1, the `vector` constructor throws
-  outside any `try` — `std::terminate`. Windows refuses directories.
-- **`decodeTexture` ignores a non-number `level`** (`assets.cc:299`) and
-  returns mipmap 0 as success; `openVfs`'s `overwrite` likewise.
+- **`loadWorld` on a directory path — FIXED 2026-09-11.** `ifstream` opened a
+  directory on Linux, `tellg()` answered −1 or something enormous, and the
+  `vector` constructor threw outside any `try`: SIGABRT from a `bad_alloc`, no
+  JS error, process gone. Windows refuses directories, which is why the
+  platform that ships never saw it. `is_regular_file` before the stream, and a
+  negative `tellg()` refused as well.
+- **`decodeTexture` ignored a non-number `level` and `openVfs` a non-string
+  `overwrite` — FIXED 2026-09-11.** Both returned the default reporting
+  success. Absent, `undefined` and `null` still mean "not given" — the idiom
+  the optional bbox in `setVobRotation` uses — and anything else is refused.
 - **`vobAtIndexPath` parses leniently** (`ops.ts:627-648`): `'0//1'` and
   `'1e0'` resolve; folder sidecars are the only external source of paths and
   `parseVobFolders` does not validate shape.
@@ -362,16 +371,23 @@ that sees it is the shape worth reusing: jsdom has neither context, but it does
 have `getContext`, so a spy that records **which canvas** each `'2d'` request
 was made of catches the collision without either context existing.
 
-### 3.5 GPU buffers never released — **confirmed**
+### 3.5 GPU buffers never released — **FIXED 2026-09-11**
 
-`WorldScene.dispose()` (`WorldScene.ts:776-793`) never calls `dispose()` on
-its ~724 `InstancedMesh`es, so their `instanceMatrix`/`instanceColor` buffers
-are freed only by GC; `SpawnOverlay.dispose()` (`:379-390`) the same for
-`dummies`. ~1 MB per rebuild — small, but the 08-29 "resource lifecycle found
-clean" is wrong on this point. And `VobPicker.setInstancedMeshes` deep-clones
-every geometry (`VobPicker.ts:272`) — the comment at `:270-271` claiming "no
-extra vertex memory" is wrong; a `BufferGeometry` sharing the attribute
-objects and adding only `pickColor` is the fix.
+`WorldScene.dispose()` never called `dispose()` on its ~724 `InstancedMesh`es,
+so their `instanceMatrix`/`instanceColor` buffers were freed only by GC;
+`SpawnOverlay.dispose()` the same for `dummies`, and `DecalLayer.dispose()`
+for its quads, which the finding missed. ~1 MB per rebuild — small, but the
+08-29 "resource lifecycle found clean" was wrong on this point. All three now
+dispose the mesh as well as its geometry.
+
+`VobPicker.setInstancedMeshes` deep-cloned every geometry while its comment
+claimed "no extra vertex memory". It now builds a `BufferGeometry` that shares
+`position`, `uv` and the index with the drawn mesh and adds only `pickColor`.
+**That put a rule on the teardown**, which is the part worth knowing before
+touching either: three frees the GPU buffer of every attribute a disposed
+geometry still holds, so `clear()` gives the shared ones back before disposing,
+and the proxy itself is never disposed at all — its `instanceMatrix` is the
+drawn mesh's.
 
 ### 3.6 Smaller items
 
@@ -505,14 +521,13 @@ the session, not the repo; what they showed is stated as such.
    session. Fix: one status row under the toolbar with `onClose`, `savedTo`
    cleared inside `applied`, "edited" shown from `unsavedEdits` beside Save,
    Ctrl+S bound to `setConfirmingSave(true)`.
-5. **Delete with N>1 selected silently does nothing** — the Delete key
-   (`WorldSurface.tsx:2183-2190`), the context menu
-   (`WorldVobContextMenu.tsx:188`) and the toolbar (`WorldEditControls.tsx`)
-   all gate on exactly one VOB, while Duplicate, Copy, Drop and Align take
-   the whole selection. The only text is "Delete VOB… (Del)"; the disabled
-   state gives no reason, and no plan section records the one-at-a-time
-   decision. Smallest fix: a tooltip saying so; the real fix is a per-VOB
-   batch, which §15 leaves open.
+5. **Delete with N>1 selected silently does nothing — FIXED 2026-09-11.**
+   The Delete key, the context menu and the toolbar all gated on exactly one
+   VOB while Duplicate, Copy, Drop and Align took the whole selection, and the
+   disabled state gave no reason. Daniel chose the batch over the tooltip: a
+   selection now deletes in one batch, applied back to front so the
+   renumbering cannot invalidate a path that is still to be used. The
+   decision and what it costs are `docs/plans/level-editor.md` §15.
 6. **Camera-slot store/recall gives no feedback** (§16.27 item 3, still open).
 
 ### 5.2 Property grid
@@ -683,6 +698,10 @@ effect, which `settle()`s the builds it abandoned rather than disposing it.
 Held by `bvhCache.test.ts`. Not measured in the app — no GPU here — so the
 saving is the review's own 145-590 ms figure, not a fresh one.
 
+**§3.5, the unreleased GPU buffers — fixed 2026-09-11.** The instance buffers
+and the picker's cloned geometry, in §3.5; the pick proxies now share the drawn
+vertices, which is a rule about the teardown as much as a saving.
+
 **§3.4, `ThumbnailRenderer`'s shared canvas — fixed 2026-09-11.** See §3.4: a
 texture tile draws into its own canvas, and the "no test can see it under
 jsdom" claim did not survive contact with one.
@@ -692,28 +711,34 @@ reference cannot be produced through the API — it comes from a malformed file,
 and no fixture expresses one. Producing one means byte-surgery on a BinSafe
 archive's waynet chunk.
 
-**§2.12, untagged `Napi::External` handles.** Memory-unsafe if a caller ever
-swaps a VFS handle for a world handle. `napi_type_tag_object` closes it; no
-current caller does it.
+**§2.12, untagged `Napi::External` handles — fixed 2026-09-11.** It was not
+hypothetical: a test that passes a world handle to `vfsList` segfaults the
+process before the fix, and `napi_type_tag_object` (through node-addon-api's
+`TypeTag`/`CheckTypeTag`) closes it with a UUID per handle kind.
 
-**§2.15's remainder**, none of them urgent: the structural-refresh window
-between `indexRefreshed` and `setVisuals`, `surfaceDialogOpen`'s three missing
-modals (fixed), the `mergeChunks` `lights === null` mismatch (latent, masked
-by the worker), the GMBT dirty-check/launch-target disagreement,
-`world:getVobFolders` writing under a read validation, the cp1252 round-trip
-hole for five undefined bytes, `loadWorld` on a directory path,
-`decodeTexture`'s ignored non-number `level`, `vobAtIndexPath`'s lenient
-parsing, and the dead `close` op in `zenkit.worker.ts` — left alone
-deliberately: wiring it risks hanging `close()` on a stuck worker, and
-deleting it discards a documented Windows mapped-file concern. A person should
-pick.
+**§2.15's remainder.** Four of its items landed 2026-09-11 — `loadWorld` on a
+directory (a SIGABRT, not merely wrong), `decodeTexture`'s ignored non-number
+`level` with `openVfs`'s `overwrite` beside it, and `world:getVobFolders`
+writing under a read validation. What is left, none of it urgent: the
+structural-refresh window between `indexRefreshed` and `setVisuals`,
+`surfaceDialogOpen`'s three missing modals (fixed), the `mergeChunks`
+`lights === null` mismatch (latent, masked by the worker), the GMBT
+dirty-check/launch-target disagreement — a world opened from the install and
+saved back reads clean while `gmbt test` runs the mod's copy, because the
+launch passes a *basename* and a cwd and nothing checks the opened path is
+under `gmbtProjectDir` — the cp1252 round-trip hole for five undefined bytes,
+`vobAtIndexPath`'s lenient parsing, and the dead `close` op in
+`zenkit.worker.ts`, left alone deliberately: wiring it risks hanging `close()`
+on a stuck worker, and deleting it discards a documented Windows mapped-file
+concern. A person should pick.
 
-**§5's remainder is closed.** Items 8, 9, 10, 17, 18, 19, 20, 21, 22 and 23
-all landed 2026-09-11 — see each item for what was done and, for 19 and 22,
-for what the finding got wrong. What is left of §5 is one thing, and it is a
-decision rather than a fix: **Delete-with-N>1** (§5.1 item 5) is still one VOB
-at a time and still says nothing about why. The tooltip is trivial; whether a
-batch delete should exist at all is §15's call.
+**§5 is closed.** Items 8, 9, 10, 17, 18, 19, 20, 21, 22 and 23 all landed
+2026-09-11 — see each item for what was done and, for 19 and 22, for what the
+finding got wrong. **Delete-with-N>1** (§5.1 item 5) was the last of them and
+was a decision rather than a fix: Daniel took the batch over the tooltip on
+2026-09-11, and a selection now deletes in one batch (§15). What is left of
+#253 is the other half of it — Duplicate is bound to no key, and Spacer's own
+binding is worth checking before one is invented.
 
 ## 7. What is not in this document
 

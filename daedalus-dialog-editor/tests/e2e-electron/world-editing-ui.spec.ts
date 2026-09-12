@@ -129,6 +129,30 @@ test.describe('World surface UI workflows in a real window', () => {
     await expect(page.getByTestId(ROOT_VOB_ROW)).toBeVisible();
   });
 
+  test('Delete takes the whole selection, in one confirm and one batch (#253)', async () => {
+    // A delete renumbers, which is why it was one VOB at a time; #253 answered
+    // that with the order the batch is applied in. The fixture's two leaf
+    // children of the root are the case that used to be refused outright.
+    const { page } = fixture;
+    await openWorld();
+
+    // Both are children of the fixture's one root, which the tree starts
+    // collapsed on.
+    await page.getByTestId('world-vob-toggle-0').click();
+    await page.getByTestId('world-vob-row-3').click();
+    await page.getByTestId('world-vob-row-4').click({ modifiers: ['Control'] });
+
+    await page.keyboard.press('Delete');
+    await expect(page.getByTestId('world-delete-title')).toHaveText(/2 VOBs/);
+    await page.getByTestId('world-delete-confirm').click();
+
+    // Both gone, and the root that held them still standing — a delete takes
+    // its own subtree and nothing else.
+    await expect(page.getByText('ITEM_SWORD_01')).toHaveCount(0);
+    await expect(page.getByText('CHEST_01')).toHaveCount(0);
+    await expect(page.getByTestId(ROOT_VOB_ROW)).toBeVisible();
+  });
+
   test('dragging the left splitter changes the scene panel width', async () => {
     const { page } = fixture;
     await openWorld();

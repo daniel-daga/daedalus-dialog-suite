@@ -41,9 +41,9 @@ let mockTerrainPoint: [number, number, number] | null | undefined;
 let mockExposure: number | undefined;
 /** Which VOBs the viewport is told not to draw — one byte per VOB, or null. */
 let mockHiddenVobs: Uint8Array | null | undefined;
-/** The sphere the viewport is told to draw round the selection (#248), or null
- *  when the selected VOB's extent is not a radius. */
-let mockSelectedExtent: { vob: number; extent: { radius: number; kind: string } } | null | undefined;
+/** The volume the viewport is told to draw round the selection (#248) — a
+ *  sphere or a box — or null when the selected VOB is neither. */
+let mockSelectedExtent: { vob: number; extent: Record<string, unknown> } | null | undefined;
 /** The payload the overlay draws, and the one a committed waypoint drag builds
  *  its op out of. */
 let mockWaynet: WaynetPayload | null | undefined;
@@ -105,7 +105,7 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
     terrainPoint: [number, number, number] | null;
     exposure: number;
     hiddenVobs: Uint8Array | null;
-    selectedExtent: { vob: number; extent: { radius: number; kind: string } } | null;
+    selectedExtent: { vob: number; extent: Record<string, unknown> } | null;
     snapGrid: number;
     snapAngle: number;
     waynet: WaynetPayload | null;
@@ -206,6 +206,14 @@ const LIGHT_PROPS = {
   lightType: 0, quality: 2, ...BASE_PROPS,
 };
 const ITEM_PROPS = { class: 'oCItem', instance: 'ITMW_1H_SWORD_01', ...BASE_PROPS };
+/** A music zone as `getVobProps` answers one — `bbox` is the per-selection
+ *  fetch #248 chose over an index column, and `ellipsoid` is the catalogued
+ *  bool that makes those same six numbers mean two shapes. */
+const ZONE_PROPS = {
+  class: 'oCZoneMusic', enabled: true, priority: 5, ellipsoid: false,
+  reverb: 0, volume: 1, loop: true,
+  bbox: [-1000, 0, -500, 1000, 800, 500], ...BASE_PROPS,
+};
 
 /** What the main process hands back for an undo of a visual swap: the op the
  *  edit was, with its sides already exchanged. Not structural — no VOB came or
@@ -1039,12 +1047,10 @@ describe('deleting a VOB', () => {
     await waitFor(() => expect(screen.queryByTestId('world-delete-warning')).not.toBeInTheDocument());
   });
 
-  it('is offered for exactly one VOB, never for a selection of them', async () => {
-    // Every other edit here applies to the whole selection — one gizmo drags
-    // all of them. A delete cannot: it renumbers, so each one would need its own
-    // batch against a re-read index, and a button that deleted only the primary
-    // of five would be a surprise of exactly the kind this dialog exists to
-    // prevent.
+  it('is offered for a selection of any size, and for nothing selected never', async () => {
+    // It used to be exactly one VOB, because a delete renumbers. #253 answered
+    // that with the order rather than with a refusal: a batch applied back to
+    // front leaves every path still to be used where it was resolved.
     await openWorld();
 
     act(() => useWorldStore.getState().selectVob(null));
@@ -1056,7 +1062,42 @@ describe('deleting a VOB', () => {
     expect(screen.getByTestId('world-delete-vob')).toBeEnabled();
 
     await act(async () => { useWorldStore.getState().toggleVob(1); });
-    expect(screen.getByTestId('world-delete-vob')).toBeDisabled();
+    expect(screen.getByTestId('world-delete-vob')).toBeEnabled();
+  });
+
+  it('deletes the whole selection as one batch, back to front (#253)', async () => {
+    // One batch, so one round trip and one clearing of the history — which is
+    // the whole of what "one undo entry" can mean for an op with no inverse.
+    // Back to front, because that is what makes the second path still valid
+    // after the first VOB is gone.
+    const summary = await openWorld();
+    api.refreshWorldIndex.mockResolvedValueOnce(
+      { ...summary, vobIndex: vobIndex([]) } as never,
+    );
+    api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+
+    await act(async () => { useWorldStore.getState().selectVob(0); });
+    await act(async () => { useWorldStore.getState().toggleVob(1); });
+    fireEvent.click(await screen.findByTestId('world-delete-vob'));
+    fireEvent.click(screen.getByTestId('world-delete-confirm'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    expect(api.applyWorldOps).toHaveBeenCalledTimes(1);
+    const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    expect(ops).toEqual([
+      { op: 'DeleteVob', vob: 1, path: '1' },
+      { op: 'DeleteVob', vob: 0, path: '0' },
+    ]);
+  });
+
+  it('says how many it is about to delete, so the warning is not about one VOB', async () => {
+    await openWorld();
+
+    await act(async () => { useWorldStore.getState().selectVob(0); });
+    await act(async () => { useWorldStore.getState().toggleVob(1); });
+    fireEvent.click(await screen.findByTestId('world-delete-vob'));
+
+    expect(screen.getByTestId('world-delete-title')).toHaveTextContent(/2 VOBs/);
   });
 
   it('re-reads the index and drops the selection, because it renumbers', async () => {
@@ -1267,11 +1308,11 @@ describe('duplicating a VOB', () => {
     expect((ops[0] as { to: Record<string, unknown> }).to).not.toHaveProperty('bbox');
   });
 
-  it('is offered for a selection of any size, unlike the delete beside it', async () => {
-    // D4 (level-editor.md §16.14). A delete stays at one because it renumbers
-    // paths and each would need its own batch; an append moves no path, so a
-    // selection duplicates whole — and the button that used to copy only the
-    // primary of five is what that removes.
+  it('is offered for a selection of any size', async () => {
+    // D4 (level-editor.md §16.14). An append moves no path, so a selection
+    // duplicates whole — and the button that used to copy only the primary of
+    // five is what that removes. The delete beside it was the counter-example
+    // until #253 gave a delete batch an order that survives the renumbering.
     await openWorld();
 
     act(() => useWorldStore.getState().selectVob(null));
@@ -1284,7 +1325,7 @@ describe('duplicating a VOB', () => {
     // would be describing an edit the button no longer makes — in the
     // accessible name now, an icon button having no visible text of its own.
     expect(screen.getByTestId('world-duplicate-vob')).toHaveAccessibleName('Duplicate 2 VOBs');
-    expect(screen.getByTestId('world-delete-vob')).toBeDisabled();
+    expect(screen.getByTestId('world-delete-vob')).toHaveAccessibleName('Delete 2 VOBs');
   });
 
   it('brings the whole subtree, at paths the batch computes forward', async () => {
@@ -3939,7 +3980,7 @@ describe('a focus request from outside the surface', () => {
 // How far the selected VOB reaches (level-editor.md §16.39, #248). The marker
 // layer put a dot where a light stands; the range is what a modder is actually
 // tuning, and until it is drawn tuning one is a save-and-play loop.
-describe('the sphere round the selection', () => {
+describe('the volume round the selection', () => {
   it("hands the viewport a light's range, off the props the grid already read", async () => {
     // No round trip of its own: this is the same `getVobProps` the property
     // grid makes on every selection change.
@@ -3950,13 +3991,39 @@ describe('the sphere round the selection', () => {
     await waitFor(() => expect(api.getVobProps).toHaveBeenCalled());
 
     await waitFor(() => expect(mockSelectedExtent)
-      .toEqual({ vob: 1, extent: { radius: LIGHT_PROPS.range, kind: 'light' } }));
+      .toEqual({ vob: 1, extent: { shape: 'sphere', radius: LIGHT_PROPS.range, kind: 'light' } }));
   });
 
-  it('hands it nothing for a class whose extent is a box rather than a radius', async () => {
-    // An `oCItem` has no reach at all, and a zone's is its bbox — for which
-    // the index holds no column. A sphere there would be a confident wrong
-    // answer rather than a missing one.
+  it("hands it a zone's box off the same read, which is the fetch #248 chose", () => {
+    // The bbox is in no column of the index, so drawing a zone means either
+    // paying 41,393 × 6 floats at every world load or fetching per selection.
+    // This is the second, and its whole cost is that `getVobProps` answers one
+    // more key.
+    mockVobProps = ZONE_PROPS;
+    return openWorld(['zCVob', 'oCZoneMusic']).then(async () => {
+      await act(async () => { useWorldStore.getState().selectVob(1); });
+      await waitFor(() => expect(api.getVobProps).toHaveBeenCalled());
+
+      await waitFor(() => expect(mockSelectedExtent).toEqual({
+        vob: 1,
+        extent: { shape: 'box', kind: 'zone', bbox: ZONE_PROPS.bbox },
+      }));
+    });
+  });
+
+  it("follows the zone's own ellipsoid flag, because one box means two shapes", async () => {
+    mockVobProps = { ...ZONE_PROPS, ellipsoid: true };
+    await openWorld(['zCVob', 'oCZoneMusic']);
+
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    await waitFor(() => expect(api.getVobProps).toHaveBeenCalled());
+
+    await waitFor(() => expect(mockSelectedExtent?.extent.shape).toBe('ellipsoid'));
+  });
+
+  it('hands it nothing for a class that is no volume at all', async () => {
+    // An `oCItem` has no reach and no volume anybody places it for; its bbox is
+    // its model's, which the model already draws.
     mockVobProps = ITEM_PROPS;
     await openWorld(['zCVob', 'oCItem']);
 

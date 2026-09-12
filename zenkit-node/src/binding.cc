@@ -66,11 +66,28 @@ std::filesystem::path PathFromValue(Napi::Env env, Napi::Value value) {
 }
 
 std::vector<std::byte> ReadFileBytes(Napi::Env env, std::filesystem::path const& path) {
+  // Before the stream, and this is not belt-and-braces: `ifstream` *opens* a
+  // directory on Linux, and `tellg()` then answers -1 or something enormous —
+  // so the vector below throws `bad_alloc` or `length_error`, neither of which
+  // is a `Napi::Error`, and both of which reach `std::terminate` from inside
+  // the binding. The process dies with SIGABRT and no JS error is ever thrown.
+  // Windows refuses to open a directory, which is why the platform that ships
+  // never saw it (review 2026-09-04 §2.15).
+  std::error_code status;
+  if (!std::filesystem::is_regular_file(path, status)) {
+    throw Napi::Error::New(env, "not a regular file: " + path.string());
+  }
+
   std::ifstream stream {path, std::ios::binary | std::ios::ate};
   if (!stream) {
     throw Napi::Error::New(env, "failed to open world file: " + path.string());
   }
   auto size = stream.tellg();
+  // And a size that could not be read, for the same reason: `static_cast` of -1
+  // to `size_t` is the largest allocation the machine can be asked for.
+  if (size < 0) {
+    throw Napi::Error::New(env, "failed to size world file: " + path.string());
+  }
   stream.seekg(0, std::ios::beg);
   std::vector<std::byte> bytes(static_cast<std::size_t>(size));
   if (size > 0 && !stream.read(reinterpret_cast<char*>(bytes.data()), size)) {
@@ -111,8 +128,17 @@ zenkit::GameVersion DetectWorldVersion(zenkit::Read* r) {
       "cannot verify the world's game version: no MeshAndBsp section found in the archive"};
 }
 
+// Every handle this binding hands out is a `Napi::External`, and `IsExternal()`
+// cannot tell one kind from another: a VFS handle passed where a world handle
+// belongs used to have its pointer cast to `WorldHandle*` and dereferenced,
+// which is a segfault rather than an error (review 2026-09-04 §2.12). The tag
+// is a UUID V8 stores on the value itself, so the check costs nothing and
+// cannot be forged by a caller.
+constexpr napi_type_tag kWorldHandleTag = {0x9a3f47c1d2b84e06ULL, 0xb5e1c07a6f294d38ULL};
+
 WorldHandle* UnwrapHandle(Napi::Env env, Napi::Value value) {
-  if (!value.IsExternal()) {
+  if (!value.IsExternal() || !value.As<Napi::External<WorldHandle>>().CheckTypeTag(
+          &kWorldHandleTag)) {
     throw Napi::TypeError::New(env, "expected a world handle returned by loadWorld()");
   }
   auto* handle = value.As<Napi::External<WorldHandle>>().Data();
@@ -161,8 +187,10 @@ Napi::Value LoadWorld(Napi::CallbackInfo const& info) {
     handle->world = std::make_shared<zenkit::World>();
     handle->world->load(world_read.get(), requested);
 
-    return Napi::External<WorldHandle>::New(env, handle.release(),
-                                            [](Napi::Env, WorldHandle* data) { delete data; });
+    auto external = Napi::External<WorldHandle>::New(
+        env, handle.release(), [](Napi::Env, WorldHandle* data) { delete data; });
+    external.TypeTag(&kWorldHandleTag);
+    return external;
   } catch (Napi::Error&) {
     throw;
   } catch (std::exception const& e) {
@@ -607,6 +635,11 @@ Napi::Value GetVobProps(Napi::CallbackInfo const& info) {
   auto vob = ResolveVob(env, *handle, indices, "indexPath");
   auto props = zenkit_node::VobProps(env, *vob);
   props.Set("class", Napi::String::New(env, zenkit_node::VobClassName(vob->type)));
+  // And the box, for `class`'s reason: the columnar index has position and
+  // rotation and no bbox column, so this read is the only place the renderer
+  // can learn how far a zone or a trigger actually extends (#248). Here rather
+  // than in `VobProps` so the dump keeps one `bbox` per VOB instead of two.
+  props.Set("bbox", zenkit_node::BboxArr(env, vob->bbox));
   return props;
 }
 

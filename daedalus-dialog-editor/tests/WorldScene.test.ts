@@ -297,6 +297,45 @@ describe('WorldScene', () => {
     expect(scene.root.children).toHaveLength(0);
   });
 
+  test('dispose releases the instance buffers too, not only the geometries', () => {
+    // `InstancedMesh.instanceMatrix` and `instanceColor` are GPU buffers the
+    // geometry does not hold, so disposing the geometry frees neither: a
+    // retail world's ~724 instanced meshes left about a megabyte per rebuild
+    // to the garbage collector, which frees the JS object and never the
+    // buffer (§3.5). A structural edit rebuilds the scene, so this is per
+    // edit, not per world open.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    const mesh = scene.instancedMeshes[0];
+    const disposed = jest.spyOn(mesh, 'dispose');
+
+    scene.dispose();
+
+    expect(disposed).toHaveBeenCalled();
+  });
+
+  test('a decal quad is an instanced mesh, and its buffers go the same way', () => {
+    const scene = new WorldScene();
+    scene.setDecals({
+      groups: [{
+        texture: 'BLOOD.TGA',
+        count: 1,
+        positions: new Float32Array([600, 0, 0]).buffer,
+        sizes: new Float32Array([50, 50]).buffer,
+        vobIds: new Uint32Array([6]).buffer,
+      }],
+      stats: { decals: 1, textures: 1 },
+    });
+    const quad = scene.root.children.find(
+      (child) => (child as THREE.InstancedMesh).isInstancedMesh,
+    ) as THREE.InstancedMesh;
+    const disposed = jest.spyOn(quad, 'dispose');
+
+    scene.dispose();
+
+    expect(disposed).toHaveBeenCalled();
+  });
+
   // ── decoded textures across a rebuild (level-editor.md §7) ────────────────
   //
   // A structural op rebuilds the scene, because an instance cannot be appended
@@ -1100,7 +1139,7 @@ describe('the selected VOB\'s extent', () => {
     const scene = new WorldScene();
     scene.setVobMarkers(vobIndex([[0, 0, 0], [400, 500, 600]], 'zCVobSound', undefined, undefined, ['', '']));
 
-    scene.showExtent(1, { radius: 3000, kind: 'sound' });
+    scene.showExtent(1, { shape: 'sphere', radius: 3000, kind: 'sound' });
 
     const wireframe = scene.root.children.find((child) => child.type === 'LineSegments');
     expect(wireframe?.visible).toBe(true);
@@ -1114,16 +1153,31 @@ describe('the selected VOB\'s extent', () => {
     const scene = new WorldScene();
     scene.setVobMarkers(vobIndex([[400, 500, 600]], 'zCVobSound', undefined, undefined, ['']));
 
-    scene.showExtent(99, { radius: 3000, kind: 'sound' });
+    scene.showExtent(99, { shape: 'sphere', radius: 3000, kind: 'sound' });
 
     expect(scene.root.children.find((child) => child.type === 'LineSegments')).toBeUndefined();
+    scene.dispose();
+  });
+
+  it("draws a zone's box even for a VOB it cannot place, because the box says where", () => {
+    // The asymmetry the two shapes have (#248): a radius is a length around the
+    // VOB and needs its position, a bounding box is already world space. A zone
+    // the marker layer has no row for would otherwise lose its volume too.
+    const scene = new WorldScene();
+
+    scene.showExtent(99, { shape: 'box', kind: 'zone', bbox: [-100, 0, -50, 100, 400, 50] });
+
+    const wireframe = scene.root.children.find((child) => child.type === 'LineSegments');
+    expect(wireframe?.visible).toBe(true);
+    expect(wireframe?.position.toArray()).toEqual([0, 200, 0]);
+    expect(wireframe?.scale.toArray()).toEqual([100, 200, 50]);
     scene.dispose();
   });
 
   it('takes the sphere away again', () => {
     const scene = new WorldScene();
     scene.setVobMarkers(vobIndex([[0, 0, 0]], 'zCVobLight', undefined, undefined, ['']));
-    scene.showExtent(0, { radius: 800, kind: 'light' });
+    scene.showExtent(0, { shape: 'sphere', radius: 800, kind: 'light' });
 
     scene.hideExtent();
 

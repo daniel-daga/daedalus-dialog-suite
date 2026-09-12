@@ -656,23 +656,32 @@ describe('the enum sets (level-editor.md §16.21)', () => {
 // these two, and the marker that landed with #247 says only where the origin
 // is — so this is the one field lookup the viewport needs to draw it.
 describe('the extent a VOB is', () => {
+  /** Six numbers as `getVobProps` answers them — min xyz then max xyz. */
+  const BOX = [-100, 0, -50, 100, 200, 50] as const;
+
   it("reads a sound's radius, and the daytime sound's inherited one", () => {
-    expect(vobExtentOf('zCVobSound', { radius: 3000 })).toEqual({ radius: 3000, kind: 'sound' });
+    expect(vobExtentOf('zCVobSound', { radius: 3000 }))
+      .toEqual({ shape: 'sphere', radius: 3000, kind: 'sound' });
     expect(vobExtentOf('zCVobSoundDaytime', { radius: 1500 }))
-      .toEqual({ radius: 1500, kind: 'sound' });
+      .toEqual({ shape: 'sphere', radius: 1500, kind: 'sound' });
   });
 
   it("reads a light's range, which is the same shape under a different key", () => {
-    expect(vobExtentOf('zCVobLight', { range: 800 })).toEqual({ radius: 800, kind: 'light' });
+    expect(vobExtentOf('zCVobLight', { range: 800 }))
+      .toEqual({ shape: 'sphere', radius: 800, kind: 'light' });
     // The sound's key on a light is not the light's reach.
     expect(vobExtentOf('zCVobLight', { radius: 800 })).toBeNull();
   });
 
-  it('answers null for every class whose extent is a box, not a radius', () => {
-    // A zone or a trigger is its bbox, and the index has no column for one —
-    // a different problem, and drawing a sphere for it would be a lie.
-    for (const className of ['oCZoneMusic', 'zCZoneZFog', 'zCTrigger', 'oCItem', 'zCVob']) {
-      expect(vobExtentOf(className, { radius: 500, range: 500 })).toBeNull();
+  it('never answers a sphere for a class whose extent is a box', () => {
+    // A zone or a trigger is its bbox, and a sphere for one would be a lie
+    // about where it stops.
+    for (const className of ['oCZoneMusic', 'zCZoneZFog', 'zCTrigger']) {
+      expect(vobExtentOf(className, { radius: 500, range: 500 })?.shape).not.toBe('sphere');
+    }
+    // And a class that is no volume at all gets nothing, box or sphere.
+    for (const className of ['oCItem', 'zCVob']) {
+      expect(vobExtentOf(className, { radius: 500, range: 500, bbox: BOX })).toBeNull();
     }
   });
 
@@ -682,5 +691,55 @@ describe('the extent a VOB is', () => {
     expect(vobExtentOf('zCVobSound', { radius: -5 })).toBeNull();
     expect(vobExtentOf('zCVobSound', {})).toBeNull();
     expect(vobExtentOf('zCVobSound', { radius: 'loud' })).toBeNull();
+  });
+
+  // The box half (#248). A zone's or a trigger's volume *is* its bounding box,
+  // and the columnar index has no column for one — so it arrives on the
+  // `getVobProps` read the property grid already makes, which is the
+  // per-selection fetch Daniel chose over paying 41,393 × 6 floats at every
+  // world load.
+  it("reads a zone's box off the props, because nothing else carries one", () => {
+    for (const className of ['zCZoneZFog', 'zCZoneVobFarPlane']) {
+      expect(vobExtentOf(className, { bbox: BOX })).toEqual({
+        shape: 'box', kind: 'zone', bbox: BOX,
+      });
+    }
+  });
+
+  it('reads a trigger box for the whole family, movers and touch damage with it', () => {
+    for (const className of [
+      'zCTrigger', 'zCTriggerList', 'oCTriggerScript', 'oCTriggerChangeLevel',
+      'zCMover', 'zCTriggerWorldStart', 'zCTriggerUntouch', 'oCTouchDamage',
+    ]) {
+      expect(vobExtentOf(className, { bbox: BOX })).toEqual({
+        shape: 'box', kind: 'trigger', bbox: BOX,
+      });
+    }
+  });
+
+  it("follows oCZoneMusic's own ellipsoid flag, because one box means two shapes", () => {
+    // The catalogued bool the user can flip: the same six numbers are a box or
+    // the ellipsoid inscribed in it, and the engine reads the flag.
+    expect(vobExtentOf('oCZoneMusic', { bbox: BOX, ellipsoid: true })).toEqual({
+      shape: 'ellipsoid', kind: 'zone', bbox: BOX,
+    });
+    expect(vobExtentOf('oCZoneMusic', { bbox: BOX, ellipsoid: false })).toEqual({
+      shape: 'box', kind: 'zone', bbox: BOX,
+    });
+    // Absent is a box: `false` is the archive's own default for the flag.
+    expect(vobExtentOf('oCZoneMusic', { bbox: BOX })?.shape).toBe('box');
+  });
+
+  it('draws nothing for a box that is missing, malformed or flat', () => {
+    // A zero-volume box is the marker's point again, and a box arriving as
+    // anything but six finite numbers is a read that went wrong rather than a
+    // volume of zero.
+    expect(vobExtentOf('zCTrigger', {})).toBeNull();
+    expect(vobExtentOf('zCTrigger', { bbox: [0, 0, 0] })).toBeNull();
+    expect(vobExtentOf('zCTrigger', { bbox: 'wide' })).toBeNull();
+    expect(vobExtentOf('zCTrigger', { bbox: [0, 0, 0, Infinity, 1, 1] })).toBeNull();
+    expect(vobExtentOf('zCTrigger', { bbox: [5, 5, 5, 5, 5, 5] })).toBeNull();
+    // Inverted on one axis is degenerate the same way.
+    expect(vobExtentOf('zCTrigger', { bbox: [0, 0, 0, 10, -1, 10] })).toBeNull();
   });
 });

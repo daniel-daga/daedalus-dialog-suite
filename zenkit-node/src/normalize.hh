@@ -30,6 +30,12 @@ Napi::Object NormalizeWorld(Napi::Env env, WorldHandle const& handle);
 // the mutation path and the dump cannot disagree about what a VOB is.
 char const* VobClassName(zenkit::VirtualObjectType type);
 
+// A VOB's or a mesh's axis-aligned box as six numbers — min xyz then max xyz.
+// Shared with the mutation path for `VobClassName`'s reason: `getVobProps`
+// answers with a box (#248) and a second copy of the component order would be
+// a second place to get it wrong.
+Napi::Array BboxArr(Napi::Env env, zenkit::AxisAlignedBoundingBox const& bbox);
+
 // Every property of one VOB: the base `zCVob` fields plus whatever its concrete
 // class adds, with the same camelCase keys the dump's per-VOB `props` object
 // carries — because it *is* that object. Exported rather than reimplemented: a

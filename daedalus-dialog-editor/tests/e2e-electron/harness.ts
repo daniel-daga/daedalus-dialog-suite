@@ -60,7 +60,18 @@ export async function launchApp(options: LaunchAppOptions = {}): Promise<AppFixt
   const app = await electron.launch({
     // `.` loads the app at cwd (reads `main` from package.json -> dist/main/main.js).
     // `--no-sandbox` mirrors the `dev:electron` script and is required on CI runners.
-    args: ['.', '--no-sandbox'],
+    //
+    // `DDE_E2E_SOFTWARE_GL=1` adds software GL, and is opt-in rather than always
+    // on: a container with no GPU blocklists WebGL2 outright ("WebGL2
+    // blocklisted"), so every World spec times out waiting for a viewport that
+    // never mounts — while on a machine that *has* a GPU, forcing swiftshader
+    // would hide the very thing `world-render.spec.ts` exists to watch.
+    args: [
+      '.', '--no-sandbox',
+      ...(process.env.DDE_E2E_SOFTWARE_GL === '1'
+        ? ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader']
+        : []),
+    ],
     cwd: EDITOR_DIR,
     env: {
       ...process.env,

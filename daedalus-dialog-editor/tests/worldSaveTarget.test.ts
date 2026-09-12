@@ -145,4 +145,22 @@ describe('world:save — overwrite the open world only', () => {
     // directory grant gave away — these are retail game folders.
     await expect(invoke('file:read', worlds.sibling)).rejects.toThrow();
   });
+
+  it('validates the folder *read* for write, because it can rename', async () => {
+    // `WorldFoldersService.load` preserves a corrupt sidecar aside before
+    // falling back, which is a `rename` — a write, under a validation that
+    // asked only for read (review 2026-09-04 §2.15). The two handlers have to
+    // agree about the same file, and the write check is the stronger one: it
+    // also refuses a final component that is itself a symlink.
+    await openThroughDialog();
+    const sidecar = path.join(worlds.dir, 'NEWWORLD.folders.json');
+    fs.symlinkSync(worlds.sibling, sidecar);
+
+    await expect(invoke('world:getVobFolders', { worldPath: worlds.opened }))
+      .rejects.toThrow(/symbolic link/i);
+    // And the save side already refused it, which is the agreement being made.
+    await expect(invoke('world:saveVobFolders', {
+      worldPath: worlds.opened, folders: { folders: [], byVob: {} },
+    })).rejects.toThrow(/symbolic link/i);
+  });
 });

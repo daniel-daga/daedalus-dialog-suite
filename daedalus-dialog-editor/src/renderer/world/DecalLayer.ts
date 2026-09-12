@@ -186,7 +186,12 @@ export class DecalLayer {
   /** The geometries only. The materials are the scene's — they hold texture
    *  slots it fills — and it disposes them with the rest. */
   dispose(): void {
-    for (const mesh of this.meshes) mesh.geometry.dispose();
+    // Both: the geometry is the quad, and `dispose` on the mesh is what frees
+    // the instance buffers hanging off it (WorldScene.dispose says why).
+    for (const mesh of this.meshes) {
+      mesh.geometry.dispose();
+      mesh.dispose();
+    }
     this.geometry.dispose();
     this.meshes.length = 0;
     this.slots.clear();

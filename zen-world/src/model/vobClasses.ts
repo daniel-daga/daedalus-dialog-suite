@@ -482,26 +482,41 @@ const OC_MOB_DOOR_FIELDS = [
 ] as const satisfies readonly FieldDescriptor[];
 
 /**
- * The reach a VOB *is*, for the classes where the reach is the object (#248).
+ * The volume a VOB *is*, for the classes where the volume is the object (#248).
  *
  * A marker says where a sound's origin is and nothing about how far it carries,
- * and the radius is the whole of what a modder is tuning — so tuning one was a
- * save-and-play loop even after the markers landed (level-editor.md §16.39).
+ * and a zone's marker says even less: the reach is the whole of what a modder
+ * is tuning, so tuning one was a save-and-play loop even after the markers
+ * landed (level-editor.md §16.39).
  *
- * Only the classes whose extent is a **radius**, which is to say a sphere:
- * `zCVobSound.radius` and `zCVobLight.range`, both of them catalogued fields
- * that already reach the renderer through `getVobProps`. A zone's or a
- * trigger's extent is its bounding box, and the index carries no column for
- * one — a different problem, deliberately not answered here.
+ * **Two shapes, from two data sources.** A sound and a light are a *radius* —
+ * `zCVobSound.radius` and `zCVobLight.range`, catalogued fields that ride on
+ * the `getVobProps` read the property grid already makes. A zone or a trigger
+ * is its *bounding box*, which the columnar index has no column for: it rides
+ * on the same read, which is the per-selection fetch chosen over paying
+ * 41,393 × 6 floats at every world load.
+ *
+ * `oCZoneMusic` is the one class where the same six numbers mean two shapes:
+ * its catalogued `ellipsoid` bool says whether the engine treats the box as an
+ * ellipsoid inscribed in it, and the flag is one the user can flip.
  */
-export interface VobExtent {
-  /** ZenGin centimetres, like every other length in a world. */
-  radius: number;
-  /** What is reaching that far, which is what tells two spheres apart. */
-  kind: 'sound' | 'light';
-}
+export type VobExtent =
+  | {
+    shape: 'sphere';
+    /** ZenGin centimetres, like every other length in a world. */
+    radius: number;
+    /** What is reaching that far, which is what tells two spheres apart. */
+    kind: 'sound' | 'light';
+  }
+  | {
+    shape: 'box' | 'ellipsoid';
+    /** World-space min xyz then max xyz, exactly as `getVobProps` answers it —
+     *  so it carries its own position and the drawer needs no other. */
+    bbox: readonly number[];
+    kind: 'zone' | 'trigger';
+  };
 
-const EXTENT_FIELDS: Record<string, { key: string; kind: VobExtent['kind'] }> = {
+const EXTENT_FIELDS: Record<string, { key: string; kind: 'sound' | 'light' }> = {
   zCVobSound: { key: 'radius', kind: 'sound' },
   // Derives from `zCVobSound` and inherits the radius, as CLASS_FIELDS does.
   zCVobSoundDaytime: { key: 'radius', kind: 'sound' },
@@ -509,18 +524,53 @@ const EXTENT_FIELDS: Record<string, { key: string; kind: VobExtent['kind'] }> = 
 };
 
 /**
- * The sphere to draw around one VOB, or null when there is none to draw.
+ * The classes whose extent is the bounding box — every zone and every trigger.
  *
- * Null for every class without a radius field, and also for a radius of zero
- * or less: a sound that carries nowhere has no extent to show, and a sphere of
- * radius zero is a point the marker is already drawing.
+ * The `…Default` zone variants are out for the reason they are out of
+ * `CLASS_FIELDS`: a world's fallback fog, far plane and music is one object
+ * each rather than something a designer places, and it has no meaningful box.
+ * `oCTouchDamage` is in, and is not a trigger by descent — it is the other
+ * volume a designer places by hand, which is what this table is about.
+ */
+const BOX_EXTENT_KINDS: Record<string, 'zone' | 'trigger'> = {
+  oCZoneMusic: 'zone',
+  zCZoneZFog: 'zone',
+  zCZoneVobFarPlane: 'zone',
+  zCTrigger: 'trigger',
+  zCTriggerList: 'trigger',
+  oCTriggerScript: 'trigger',
+  oCTriggerChangeLevel: 'trigger',
+  zCMover: 'trigger',
+  zCTriggerWorldStart: 'trigger',
+  zCTriggerUntouch: 'trigger',
+  oCTouchDamage: 'trigger',
+};
+
+/**
+ * The volume to draw around one VOB, or null when there is none to draw.
+ *
+ * Null for every class in neither table, and for a degenerate volume in either:
+ * a radius of zero or less, and a box that is missing, is not six finite
+ * numbers, or encloses nothing. A sound that carries nowhere and a zone with no
+ * thickness are both the point the marker is already drawing, and a box that
+ * arrives malformed is a read that went wrong rather than a volume of zero.
  */
 export function vobExtentOf(className: string, props: ClassProps): VobExtent | null {
   const field = EXTENT_FIELDS[className];
-  if (field === undefined) return null;
-  const value = props[field.key];
-  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return null;
-  return { radius: value, kind: field.kind };
+  if (field !== undefined) {
+    const value = props[field.key];
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return null;
+    return { shape: 'sphere', radius: value, kind: field.kind };
+  }
+
+  const kind = BOX_EXTENT_KINDS[className];
+  if (kind === undefined) return null;
+  const bbox = props.bbox;
+  if (!Array.isArray(bbox) || bbox.length !== 6) return null;
+  if (!bbox.every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
+  // Every axis, because a zone flat in one is a plane with no inside.
+  if (![0, 1, 2].every((axis) => bbox[axis + 3] > bbox[axis])) return null;
+  return { shape: props.ellipsoid === true ? 'ellipsoid' : 'box', bbox, kind };
 }
 
 /**

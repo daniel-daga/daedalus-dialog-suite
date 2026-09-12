@@ -334,6 +334,19 @@ describe('SpawnOverlay', () => {
     // what makes a spawn findable with the whole map in frame, and a solid body
     // cannot keep that property.
 
+    it('releases its instance buffers when disposed', () => {
+      // The dummies are an `InstancedMesh`, so their `instanceMatrix` and
+      // `instanceColor` are GPU buffers the geometry does not hold: disposing
+      // the geometry frees neither, and the overlay is rebuilt whenever the
+      // waynet changes (§3.5).
+      const overlay = new SpawnOverlay(waynet(), [site('GRD_200_XARDAS', 'WP_MIDDLE')], NO_ROUTINES);
+      const disposed = jest.spyOn(overlay.dummies, 'dispose');
+
+      overlay.dispose();
+
+      expect(disposed).toHaveBeenCalled();
+    });
+
     it('draws one dummy at each occupied point, feet on the waypoint', () => {
       const overlay = new SpawnOverlay(waynet(), [site('GRD_200_XARDAS', 'WP_MIDDLE')], NO_ROUTINES);
 

@@ -26,6 +26,7 @@ import {
   commitOps,
   createVobReader,
   deleteVob,
+  deleteVobs,
   deleteWaypoint,
   dropVobsToGround,
   duplicateVobSpec,
@@ -2141,6 +2142,111 @@ describe('a delete op', () => {
   it('cannot be applied to the projection, and says so', () => {
     const live = reader();
     expect(() => applyOps(live, [deleteVob(live, 1)])).toThrow(/structural|re-read/i);
+  });
+});
+
+describe('deleting a whole selection (#253)', () => {
+  //  vob 0 (root 0) ── vob 1 (slot 0) ── vob 2 (slot 0)
+  //                 └─ vob 3 (slot 1)
+  //  vob 4 (root 1)
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0, name: 'ROOT_A' },
+    { parent: 0, childIndex: 0, name: 'BRANCH' },
+    { parent: 1, childIndex: 0, name: 'LEAF' },
+    { parent: 0, childIndex: 1, name: 'SIBLING' },
+    { childIndex: 1, name: 'ROOT_B' },
+  ]));
+
+  const deleteBinding = (log: string[]): OpBinding => ({
+    addWaypoint: () => { throw new Error('not a waypoint add'); },
+    removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+    addWaypointEdge: () => { throw new Error('not an edge add'); },
+    removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+    setVobPosition: () => { throw new Error('not a move'); },
+    setVobRotation: () => { throw new Error('not a turn'); },
+    setVobProp: () => { throw new Error('not a property change'); },
+    setVobClassProp: () => { throw new Error('not a class property change'); },
+    insertVob: () => { throw new Error('not an insert'); },
+    deleteVob: (path) => { log.push(path); },
+    reparentVob: () => { throw new Error('not a reparent'); },
+    setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+    setWaypointName: () => { throw new Error('not a waypoint rename'); },
+  });
+
+  it('orders the batch back to front, so no delete moves the next one', () => {
+    // The whole of why a batch of deletes is safe where a batch of anything
+    // else is not: removing a subtree shifts only the slots *after* it, so a
+    // batch applied in reverse document order leaves every path still to be
+    // used exactly where it was resolved.
+    const ops = deleteVobs(reader(), [3, 1, 4]);
+
+    expect(ops.map((op) => op.path)).toEqual(['1', '0/1', '0/0']);
+  });
+
+  it('drops a VOB whose ancestor is going too — the subtree carries it', () => {
+    // `deleteVob` takes the subtree with it, so a selected child of a selected
+    // parent is already gone by the time its own op would run; sent anyway it
+    // addresses a slot that no longer exists.
+    expect(deleteVobs(reader(), [0, 1, 2]).map((op) => op.path)).toEqual(['0']);
+  });
+
+  it('reaches the binding once per VOB, in that order', () => {
+    const log: string[] = [];
+
+    commitOps(deleteBinding(log), deleteVobs(reader(), [1, 4]));
+
+    expect(log).toEqual(['1', '0/0']);
+  });
+
+  it('is still one batch, and still a barrier', () => {
+    // One entry in the history — which for a barrier is one clearing of both
+    // stacks rather than one undo — instead of N of them (#253).
+    const ops = deleteVobs(reader(), [3, 4]);
+    expect(ops).toHaveLength(2);
+    expect(ops.every(isBarrierOp)).toBe(true);
+  });
+
+  it('refuses a delete batch that is not in reverse order', () => {
+    // The exception is the *shape*, not the op: a hand-built batch in
+    // document order would have its second path moved by its first.
+    const live = reader();
+    const ops = [deleteVob(live, 0), deleteVob(live, 4)];
+
+    expect(() => commitOps(deleteBinding([]), ops)).toThrow(/only op in its batch/);
+  });
+
+  it('still refuses a delete beside any other op', () => {
+    const live = reader();
+    const move: WorldOp = { op: 'MoveVob', vob: 4, path: '1', from: [0, 0, 0], to: [1, 1, 1] };
+
+    expect(() => commitOps(deleteBinding([]), [...deleteVobs(live, [3]), move]))
+      .toThrow(/only op in its batch/);
+  });
+
+  it('says the world is part-changed when one of them fails, rather than unwinding', () => {
+    // There is nothing to unwind a delete with, so a batch that stops half way
+    // is the one case `commitOps` cannot make all-or-nothing. It says so in
+    // place of the ordinary refusal, which would tell the user nothing had
+    // happened.
+    const log: string[] = [];
+    const binding = deleteBinding(log);
+    binding.deleteVob = (path) => {
+      log.push(path);
+      if (log.length === 2) throw new Error('no such path');
+    };
+
+    expect(() => commitOps(binding, deleteVobs(reader(), [1, 3, 4])))
+      .toThrow(/re-open/i);
+    expect(log).toEqual(['1', '0/1']);
+  });
+
+  it('refuses the first one the ordinary way, having changed nothing', () => {
+    const log: string[] = [];
+    const binding = deleteBinding(log);
+    binding.deleteVob = () => { throw new Error('no such path'); };
+
+    expect(() => commitOps(binding, deleteVobs(reader(), [0, 4])))
+      .toThrow(/no such path/);
   });
 });
 

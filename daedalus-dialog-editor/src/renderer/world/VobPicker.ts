@@ -284,15 +284,29 @@ export class VobPicker {
         colors.set(encodePickId(vobId), i * 3);
       }
 
-      // The geometry is shared with the visible mesh — only the id attribute is
-      // new, so the pick pass costs no extra vertex memory.
-      const geometry = mesh.geometry.clone();
-      geometry.setAttribute('pickColor', new THREE.InstancedBufferAttribute(colors, 3));
-      // Shared, not the clone's copy: `setHiddenVobs` writes into the drawn
-      // mesh's attribute, and a copy would answer with whatever was hidden when
-      // the scene was built.
+      // The vertices are *shared* with the visible mesh rather than cloned, so
+      // the pick pass really does cost no extra vertex memory — a clone here
+      // was a second upload of every position and uv the world's props have.
+      // Only what the pick shader reads is carried over: `position` and `uv`
+      // (§3.5). `setHiddenVobs` writes into the drawn mesh's attribute, so
+      // sharing that one is also what keeps the proxy honest about what is
+      // hidden *now* rather than at the moment the scene was built.
+      const geometry = new THREE.BufferGeometry();
+      geometry.setIndex(mesh.geometry.getIndex());
+      geometry.setAttribute('position', mesh.geometry.getAttribute('position'));
+      const uv = mesh.geometry.getAttribute('uv');
+      if (uv) geometry.setAttribute('uv', uv);
       const hidden = mesh.geometry.getAttribute(HIDDEN_ATTRIBUTE);
       if (hidden) geometry.setAttribute(HIDDEN_ATTRIBUTE, hidden);
+      // Drawn whole, like the mesh it stands for: a draw range or a group set
+      // would otherwise be lost with the attributes they were read beside.
+      geometry.groups = mesh.geometry.groups;
+      geometry.drawRange = { ...mesh.geometry.drawRange };
+      geometry.boundingSphere = mesh.geometry.boundingSphere;
+      geometry.boundingBox = mesh.geometry.boundingBox;
+
+      // The picker's own, and the only attribute its teardown may free.
+      geometry.setAttribute('pickColor', new THREE.InstancedBufferAttribute(colors, 3));
 
       const drawn = mesh.material as THREE.MeshBasicMaterial;
       const exact = drawn.alphaTest > 0 ? this.propCutoutMaterial(drawn) : this.material;
@@ -427,6 +441,15 @@ export class VobPicker {
   private clear(): void {
     for (const proxy of this.proxies) {
       this.scene.remove(proxy);
+      // Given back before the geometry goes: three frees the GPU buffer of
+      // every attribute a disposed geometry still holds, and all of these but
+      // `pickColor` belong to the visible scene, which is still drawing them.
+      // The proxy itself is never `dispose`d for the same reason — its
+      // `instanceMatrix` is the drawn mesh's.
+      proxy.geometry.setIndex(null);
+      for (const name of Object.keys(proxy.geometry.attributes)) {
+        if (name !== 'pickColor') proxy.geometry.deleteAttribute(name);
+      }
       proxy.geometry.dispose();
     }
     // The cut-out materials are the picker's own, unlike the shared geometry.
