@@ -3237,7 +3237,7 @@ issues cite and do not move.
    below it, and whether the names from the report are mounted at all. Needs a
    Gothic install — Daniel's machine, not CI.
 
-### 16.40 Six of a decal's seven fields are still invisible (2026-09-10; #249)
+### 16.40 Six of a decal's seven fields are still invisible (2026-09-10; #249, #262)
 
 The decals are drawn and `git log` carries it — a camera-facing quad of the
 size the decal states, one instanced mesh per texture, and a marker at each
@@ -3273,7 +3273,7 @@ re-derive it.
   texture, which is a bounded multiplier on the group count and **not** a
   material per decal. Nobody has counted how many funcs retail decals actually
   use, so the multiplier is unmeasured; that measurement is the next step, not
-  more shader work.
+  more shader work, and it is **#262**.
 - **`decalTextureAnimFps` needs multi-frame textures.** OpenGothic's
   `loadFrames(decal.name, decal.texture_anim_fps)` walks a numbered texture
   series. The viewport loads one texture per name and has no frame clock, so
