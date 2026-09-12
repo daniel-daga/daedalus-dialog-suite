@@ -204,3 +204,28 @@ test('vobIndex carries each decal VOB and the size of its visual', () => {
     );
   }
 });
+
+// `decalAlphaWeight` rides the same side table, because it is the one other
+// decal field the viewport can draw *per VOB* against a material that is per
+// texture: OpenGothic's fragment shader does `tex.a *= alphaWeight` with
+// `alphaWeight = alpha_weight / 255`, which is a multiply and nothing else.
+// A byte per row rather than a float: that is what the archive holds.
+test('vobIndex carries each decal VOB alpha weight, beside its size', () => {
+  const world = handle();
+  const ix = zenkit.vobIndex(world);
+  const at = paths(ix);
+
+  const decalVobs = u32(ix.decalVobs);
+  assert.ok(ix.decalAlphaWeights instanceof ArrayBuffer);
+  const weights = new Uint8Array(ix.decalAlphaWeights);
+  assert.strictEqual(weights.length, decalVobs.length);
+  assert.ok(decalVobs.length > 0, 'the fixture authors a decal');
+
+  for (const [row, vob] of decalVobs.entries()) {
+    const props = zenkit.getVobProps(world, at[vob]);
+    assert.strictEqual(weights[row], props.decal.alphaWeight, `alpha weight of vob ${vob}`);
+  }
+  // The fixture's own decal is deliberately not opaque, so a consumer that
+  // dropped the field would still be drawing something visibly different.
+  assert.ok(weights.includes(200), `expected the fixture's 200 in ${weights}`);
+});

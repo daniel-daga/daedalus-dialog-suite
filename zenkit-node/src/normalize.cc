@@ -1121,6 +1121,11 @@ struct VobColumns {
   // column because 95 % of a world is not a decal.
   std::vector<std::uint32_t> decal_vobs;
   std::vector<float> decal_dimensions;
+  // The one other decal field the viewport can draw per VOB against a material
+  // that is per texture: OpenGothic's fragment shader does `tex.a *=
+  // alphaWeight` with `alphaWeight = alpha_weight / 255`. A byte, because that
+  // is what the archive holds — the divide belongs where the multiply is.
+  std::vector<std::uint8_t> decal_alpha_weights;
 
   std::vector<std::string> classes;
   std::vector<std::string> names;
@@ -1207,6 +1212,7 @@ void CollectVobColumns(std::vector<std::shared_ptr<VirtualObject>> const& vobs,
       out.decal_vobs.push_back(static_cast<std::uint32_t>(self));
       out.decal_dimensions.insert(out.decal_dimensions.end(),
                                   {decal->dimension.x, decal->dimension.y});
+      out.decal_alpha_weights.push_back(decal->alpha_weight);
     }
 
     stack.push_back({&vob->children, 0, self});  // invalidates `top`
@@ -1386,6 +1392,7 @@ Napi::Object VobIndex(Napi::Env env, WorldHandle const& handle) {
   // them for a case that is only "no decals here".
   out.Set("decalVobs", Buffer(env, columns.decal_vobs));
   out.Set("decalDimensions", Buffer(env, columns.decal_dimensions));
+  out.Set("decalAlphaWeights", Buffer(env, columns.decal_alpha_weights));
   return out;
 }
 

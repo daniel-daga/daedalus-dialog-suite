@@ -36,6 +36,8 @@ function vobIndex(vobs: Array<{
   cls?: string; visual?: string; visualType?: string; pos?: number[]; rot?: number[];
   /** The visual's own `decalDimension`, a half extent. Present on a DECAL. */
   decal?: [number, number];
+  /** The visual's own `decalAlphaWeight`, 0-255. Defaults to opaque. */
+  decalAlpha?: number;
 }>): VobIndex {
   const classes: string[] = [];
   const visuals: string[] = [];
@@ -73,6 +75,9 @@ function vobIndex(vobs: Array<{
     visualTypes, visualTypeIndex: visualTypeIndex.buffer,
     decalVobs: new Uint32Array(vobs.flatMap((vob, i) => (vob.decal === undefined ? [] : [i]))).buffer,
     decalDimensions: new Float32Array(vobs.flatMap((vob) => vob.decal ?? [])).buffer,
+    decalAlphaWeights: new Uint8Array(
+      vobs.flatMap((vob) => (vob.decal === undefined ? [] : [vob.decalAlpha ?? 255])),
+    ).buffer,
   };
 }
 
@@ -350,6 +355,37 @@ describe('the decals', () => {
     expect(Array.from(new Float32Array(group.positions))).toEqual([10, 20, 30]);
     expect(Array.from(new Float32Array(group.sizes))).toEqual([50, 80]);
     expect(Array.from(new Uint32Array(group.vobIds))).toEqual([0]);
+  });
+
+  it('carries each decal alpha weight as the 0-1 multiplier a shader wants', () => {
+    // OpenGothic's fragment shader is `tex.a *= alphaWeight` with
+    // `alphaWeight = alpha_weight / 255`, so the divide belongs here — once,
+    // beside the doubling — rather than in the renderer that multiplies.
+    const built = buildDecalBillboards(vobIndex([
+      { visual: 'NW_WEB.TGA', visualType: 'DECAL', decal: [1, 1], decalAlpha: 200 },
+      { visual: 'NW_WEB.TGA', visualType: 'DECAL', decal: [1, 1], decalAlpha: 0 },
+      { visual: 'NW_WEB.TGA', visualType: 'DECAL', decal: [1, 1] },
+    ]));
+
+    const [group] = built.groups;
+    const weights = Array.from(new Float32Array(group.alphaWeights));
+    // Float32, so the fraction is compared as one: 200/255 is not representable.
+    expect(weights).toHaveLength(3);
+    expect(weights[0]).toBeCloseTo(200 / 255, 6);
+    expect(weights.slice(1)).toEqual([0, 1]);
+  });
+
+  it('keeps a decal whose alpha weight is zero, unlike one with no size', () => {
+    // A zero weight is invisible and a zero size is not a quad, but they are
+    // different facts: the weight is a property the grid edits back up, so
+    // dropping the row would make a decal the user turned down unrecoverable
+    // in the viewport. The size skip is about geometry that cannot exist.
+    const built = buildDecalBillboards(vobIndex([
+      { visual: 'NW_WEB.TGA', visualType: 'DECAL', decal: [25, 25], decalAlpha: 0 },
+    ]));
+
+    expect(built.stats.decals).toBe(1);
+    expect(Array.from(new Float32Array(built.groups[0].alphaWeights))).toEqual([0]);
   });
 
   it('groups by texture, so each one is a single draw', () => {

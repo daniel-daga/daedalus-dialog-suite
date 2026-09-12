@@ -15,14 +15,16 @@
 
 import * as THREE from 'three';
 import type { DecalScene } from 'zen-world';
-import { DecalLayer } from '../src/renderer/world/DecalLayer';
+import { DECAL_ALPHA_ATTRIBUTE, DecalLayer } from '../src/renderer/world/DecalLayer';
 import { HIDDEN_ATTRIBUTE } from '../src/renderer/world/WorldScene';
 
 /** One decal group, in the shape `buildDecalBillboards` emits — sizes already
  *  doubled out of the half extent, as it does. */
 function group(
   texture: string,
-  decals: Array<{ vob: number; pos: [number, number, number]; size: [number, number] }>,
+  decals: Array<{
+    vob: number; pos: [number, number, number]; size: [number, number]; alpha?: number;
+  }>,
 ) {
   return {
     texture,
@@ -30,6 +32,7 @@ function group(
     positions: new Float32Array(decals.flatMap((decal) => decal.pos)).buffer,
     sizes: new Float32Array(decals.flatMap((decal) => decal.size)).buffer,
     vobIds: new Uint32Array(decals.map((decal) => decal.vob)).buffer,
+    alphaWeights: new Float32Array(decals.map((decal) => decal.alpha ?? 1)).buffer,
   };
 }
 
@@ -41,7 +44,7 @@ function scene(...groups: ReturnType<typeof group>[]): DecalScene {
 }
 
 const WEB = group('NW_WEB.TGA', [
-  { vob: 7, pos: [100, 200, 300], size: [50, 80] },
+  { vob: 7, pos: [100, 200, 300], size: [50, 80], alpha: 200 / 255 },
   { vob: 9, pos: [0, 0, 0], size: [10, 10] },
 ]);
 const BLOOD = group('NW_BLOOD.TGA', [{ vob: 3, pos: [-5, 0, 5], size: [20, 20] }]);
@@ -168,6 +171,33 @@ describe('DecalLayer', () => {
     expect(shader.vertexShader).toContain('length( instanceMatrix[0].xyz )');
     // And the hide is compiled in with it, since it replaced the same include.
     expect(shader.vertexShader).toContain(`attribute float ${HIDDEN_ATTRIBUTE}`);
+    layer.dispose();
+  });
+
+  it('dims each quad by its own alpha weight, which the material cannot', () => {
+    // `decalAlphaWeight` is per VOB and the material is per texture, so the
+    // only way to draw it without one material per decal — 1,405 draw calls —
+    // is a per-instance attribute. OpenGothic's own fragment shader is
+    // `tex.a *= alphaWeight`, so that is what this compiles in, and it goes in
+    // before the alpha test: a weight of 0 must discard, not draw black.
+    const { made, materialFor } = materials();
+    const layer = new DecalLayer(scene(WEB), materialFor);
+
+    const weights = layer.meshes[0].geometry.getAttribute(DECAL_ALPHA_ATTRIBUTE);
+    expect(Array.from(weights.array)).toEqual(Array.from(new Float32Array([200 / 255, 1])));
+
+    const shader = {
+      vertexShader: 'void main() {\n#include <project_vertex>\n}',
+      fragmentShader: 'void main() {\n#include <map_fragment>\n#include <alphatest_fragment>\n}',
+      uniforms: {},
+    } as unknown as THREE.WebGLProgramParametersWithUniforms;
+    made[0].material.onBeforeCompile!(shader, null as unknown as THREE.WebGLRenderer);
+
+    expect(shader.vertexShader).toContain(`attribute float ${DECAL_ALPHA_ATTRIBUTE}`);
+    expect(shader.fragmentShader).toContain('diffuseColor.a *=');
+    // Before the discard, not after it.
+    expect(shader.fragmentShader.indexOf('diffuseColor.a *='))
+      .toBeLessThan(shader.fragmentShader.indexOf('<alphatest_fragment>'));
     layer.dispose();
   });
 

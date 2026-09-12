@@ -3246,18 +3246,46 @@ more, which is all a Daedalus script can be given. The durable outcome is
 architecture §7, including the two facts it rests on: `decalDimension` is a half
 extent, and a decal is oriented by the camera rather than by its VOB.
 
-**What is left is the other six fields.** `decalDimension` has visual feedback;
-`decalOffset`, `decalTwoSided`, `decalAlphaFunc`, `decalTextureAnimFps`,
-`decalAlphaWeight` and `decalIgnoreDaylight` change nothing on screen, and none
-of the seven has an engine witness (§16.2).
+**The held decision was taken 2026-09-12: per-instance attributes.** Daniel
+chose it over a material per decal, which is the 1,405 draw calls the grouping
+exists to avoid. Reading OpenGothic for each of the four then narrowed it to
+one, and the narrowing is the durable part of this section — nobody should
+re-derive it.
 
-Two of the six are settled by the shape rather than open: a billboard is never
-seen from behind, so `decalTwoSided` has no side to hide, and
-`decalIgnoreDaylight` is about a lighting model the viewport does not have. The
-other four are per-VOB where the material is per texture, so drawing them means
-either a per-instance attribute for alpha and offset, or a material per
-*decal*, which is the 1,405 draw calls the grouping exists to avoid. That is the
-decision this section is holding.
+- **`decalAlphaWeight` landed.** OpenGothic's decal material is
+  `alphaWeight = float(decal.alpha_weight)/255` and its fragment shader is
+  `tex.a *= alphaWeight` (`common/graphics/material.cpp`,
+  `shader/materials/main.frag`). A plain multiply on the texture's alpha is
+  exactly an instance attribute, so it rides the group: the index emits a
+  `decalAlphaWeights` byte column beside `decalDimensions`,
+  `buildDecalBillboards` divides by 255 once, and `DecalLayer` multiplies
+  `diffuseColor.a` *before* `<alphatest_fragment>` so a decal turned all the
+  way down is discarded rather than drawn black.
+- **`decalOffset` is not a per-instance attribute, because nothing knows what
+  it means.** OpenGothic never reads it — not in `implDecalMesh`, not in
+  `Material`, nowhere in the tree. There is no reference reading to copy, and
+  this section's two established facts were both taken from OpenGothic rather
+  than guessed. Drawing it would be an invention.
+- **`decalAlphaFunc` is material state, not instance data.** It selects a
+  blend path — BLEND to Transparent, ADD and SUBTRACT to AdditiveLight,
+  MULTIPLY and MULTIPLY_ALT to two Multiply modes, DEFAULT and NONE to
+  AlphaTest. Drawing it means grouping by (texture, alphaFunc) rather than by
+  texture, which is a bounded multiplier on the group count and **not** a
+  material per decal. Nobody has counted how many funcs retail decals actually
+  use, so the multiplier is unmeasured; that measurement is the next step, not
+  more shader work.
+- **`decalTextureAnimFps` needs multi-frame textures.** OpenGothic's
+  `loadFrames(decal.name, decal.texture_anim_fps)` walks a numbered texture
+  series. The viewport loads one texture per name and has no frame clock, so
+  this is a texture-pipeline feature rather than a decal one.
+
+Two more are settled by the shape rather than open: a billboard is never seen
+from behind, so `decalTwoSided` has no side to hide, and `decalIgnoreDaylight`
+is about a lighting model the viewport does not have.
+
+**None of the seven has an engine witness** (§16.2, and §16.41 row 1) — the
+alpha weight included, so what landed is OpenGothic's reading of the field and
+not a played one.
 
 `visualCamAlign` is the other loose end. The engine picks between a full
 billboard and a yaw-locked one from that base field; the viewport draws every

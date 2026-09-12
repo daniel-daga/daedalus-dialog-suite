@@ -43,6 +43,9 @@ export interface VobIndex {
   decalVobs: ArrayBuffer;
   /** Float32 x2 per row of `decalVobs` — `decalDimension`, a **half** extent. */
   decalDimensions: ArrayBuffer;
+  /** Uint8 x1 per row of `decalVobs` — `decalAlphaWeight`, as the archive holds
+   *  it: 0-255, not a fraction. */
+  decalAlphaWeights: ArrayBuffer;
 }
 
 // Opaque native handles. Deliberately not branded: `zen-world` never looks
@@ -141,6 +144,9 @@ export interface DecalGroup {
   sizes: ArrayBuffer;
   /** Uint32 x1 per decal — which VOB each quad is, for the pick and the gizmo. */
   vobIds: ArrayBuffer;
+  /** Float32 x1 per decal — `decalAlphaWeight` as the **0-1 multiplier** a
+   *  shader wants, the archive's byte over 255. */
+  alphaWeights: ArrayBuffer;
 }
 
 export interface DecalScene {
@@ -163,6 +169,12 @@ export interface DecalScene {
  * -0.5..0.5 of that, so the drawn quad is twice the stored value across. The
  * doubling is done here, once, so nothing downstream has to remember it.
  *
+ * **`decalAlphaWeight` is a plain multiply on the texture's alpha.** OpenGothic
+ * does `tex.a *= alphaWeight` with `alphaWeight = alpha_weight / 255`, so it is
+ * per-VOB data against a material that is per texture — which is exactly what a
+ * per-instance attribute is for, and why it rides the group rather than
+ * splitting one. The divide is done here for the same reason the doubling is.
+ *
  * Grouped by texture, because one quad per decal would be 1,932 draw calls
  * against a budget under 1,500 — the same reason VOBs sharing a visual are
  * instanced. Nothing here decides how a quad is *oriented*: in the engine a
@@ -171,10 +183,13 @@ export interface DecalScene {
 export function buildDecalBillboards(index: VobIndex): DecalScene {
   const decalVobs = new Uint32Array(index.decalVobs);
   const dimensions = new Float32Array(index.decalDimensions);
+  const alphaWeights = new Uint8Array(index.decalAlphaWeights);
   const positions = new Float32Array(index.positions);
   const visualIndex = new Uint32Array(index.visualIndex);
 
-  const byTexture = new Map<string, { positions: number[]; sizes: number[]; vobIds: number[] }>();
+  const byTexture = new Map<string, {
+    positions: number[]; sizes: number[]; vobIds: number[]; alphaWeights: number[];
+  }>();
   let decals = 0;
 
   for (let row = 0; row < decalVobs.length; row++) {
@@ -189,13 +204,14 @@ export function buildDecalBillboards(index: VobIndex): DecalScene {
 
     let group = byTexture.get(texture);
     if (group === undefined) {
-      group = { positions: [], sizes: [], vobIds: [] };
+      group = { positions: [], sizes: [], vobIds: [], alphaWeights: [] };
       byTexture.set(texture, group);
     }
     const p = vob * 3;
     group.positions.push(positions[p], positions[p + 1], positions[p + 2]);
     group.sizes.push(width, height);
     group.vobIds.push(vob);
+    group.alphaWeights.push(alphaWeights[row] / 255);
     decals++;
   }
 
@@ -207,6 +223,7 @@ export function buildDecalBillboards(index: VobIndex): DecalScene {
       positions: new Float32Array(group.positions).buffer,
       sizes: new Float32Array(group.sizes).buffer,
       vobIds: new Uint32Array(group.vobIds).buffer,
+      alphaWeights: new Float32Array(group.alphaWeights).buffer,
     });
   }
 

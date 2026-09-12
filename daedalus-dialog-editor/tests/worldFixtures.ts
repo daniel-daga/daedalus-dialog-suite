@@ -124,6 +124,9 @@ function visualTypeColumns(vobVisuals: readonly string[]) {
     visualTypeIndex: Uint32Array.from(perVob.map((type) => visualTypes.indexOf(type))).buffer,
     decalVobs: Uint32Array.from(decals).buffer,
     decalDimensions: Float32Array.from(decals.flatMap(() => [25, 25])).buffer,
+    // Opaque, which is what the archive's default is: a fixture that dimmed
+    // its decals would make every viewport assertion read through a filter.
+    decalAlphaWeights: Uint8Array.from(decals.map(() => 255)).buffer,
   };
 }
 

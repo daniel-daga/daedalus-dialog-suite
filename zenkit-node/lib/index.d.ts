@@ -69,6 +69,9 @@ export interface VobIndex {
   /** Float32 x2 per row of `decalVobs` — `decalDimension`, which is a **half**
    *  extent: the drawn quad is twice this across. */
   decalDimensions: ArrayBuffer;
+  /** Uint8 x1 per row of `decalVobs` — `decalAlphaWeight` as the archive holds
+   *  it, 0-255. A renderer multiplies the texture's alpha by `weight / 255`. */
+  decalAlphaWeights: ArrayBuffer;
 }
 
 export interface WaynetGraph {

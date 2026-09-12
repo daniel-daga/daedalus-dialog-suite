@@ -3113,7 +3113,7 @@ particle effects** across the three retail worlds landed in `unresolvedByType`
 and nothing was drawn where they stand. They are not missing assets: a `zCDecal`
 **is** a flat texture of a stated size, and drawing it as one is the answer.
 
-Two facts decide the shape, and both were read out of OpenGothic, which
+Three facts decide the shape, and all three were read out of OpenGothic, which
 reimplements the ZenGin renderer rather than guessing at it:
 
 - **`decalDimension` is a half extent.** OpenGothic builds the sprite at
@@ -3126,13 +3126,22 @@ reimplements the ZenGin renderer rather than guessing at it:
   why this is a billboard in the vertex shader rather than a plane placed by an
   instance matrix: a fixed quad would be edge-on and invisible from half the
   angles a modder looks from.
+- **`decalAlphaWeight` is a plain multiply on the texture's alpha.** The decal
+  material is `alphaWeight = float(decal.alpha_weight)/255` and the fragment
+  shader is `tex.a *= alphaWeight`. Per-VOB data against a material that is per
+  texture, which is what a per-instance attribute is for — so it rides the group
+  rather than splitting one, and the multiply goes in *before* the alpha test so
+  a decal turned all the way down is discarded instead of drawn black.
 
 **The size is per-VOB, so the index grew a side table for it.** A `zCDecal` is
 one object per VOB rather than per name, so `decalDimension` is in no column and
 no dictionary, and drawing 1,932 decals at their real size through `getVobProps`
-would have been 1,932 round trips. `vobIndex` answers `decalVobs` and
-`decalDimensions` — sparse, since 95 % of a world is not a decal, which is 23 KB
-on a retail world against the 331 KB a dense column would cost.
+would have been 1,932 round trips. `vobIndex` answers `decalVobs`,
+`decalDimensions` and `decalAlphaWeights` — sparse, since 95 % of a world is not
+a decal, which is 23 KB on a retail world against the 331 KB a dense column
+would cost. The weight is a **byte** across the boundary, as the archive holds
+it; the divide by 255 happens once, in `buildDecalBillboards`, beside the
+doubling and for the same reason.
 
 The quads are grouped by texture, one `InstancedMesh` each, for the reason VOBs
 sharing a visual are instanced at all: 23 textures carry 1,405 decal VOBs on
@@ -3152,12 +3161,16 @@ and the marker together rather than one or the other.
 A particle effect gets the marker and nothing more: a `.PFX` is a Daedalus
 script, not geometry, so there is nothing to draw it as.
 
-**What is still invisible is six of a decal's seven fields.** `decalDimension`
-is drawn; `decalOffset`, `decalTwoSided`, `decalAlphaFunc`, `decalTextureAnimFps`,
-`decalAlphaWeight` and `decalIgnoreDaylight` change nothing on screen. Two of
-them cannot come up — a billboard is never seen from behind, so `decalTwoSided`
-has no side to hide — and the rest are per-VOB where the material is per
-texture, which is the next decision rather than an omission.
+**Five of a decal's seven fields are still invisible, and four of those five for
+a settled reason** (the whole narrowing is `docs/plans/level-editor.md` §16.40).
+`decalDimension` and `decalAlphaWeight` are drawn. `decalTwoSided` cannot come
+up, since a billboard is never seen from behind, and `decalIgnoreDaylight` is
+about a lighting model the viewport does not have. **`decalOffset` is read by
+nothing in OpenGothic**, so there is no reference reading to copy and drawing it
+would be an invention. `decalAlphaFunc` is material state rather than instance
+data — it selects a blend path — so it wants grouping by (texture, alphaFunc),
+whose cost nobody has measured. `decalTextureAnimFps` wants a numbered texture
+series and a frame clock, which is a texture-pipeline feature.
 
 ---
 

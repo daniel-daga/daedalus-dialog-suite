@@ -35,6 +35,15 @@ import { HIDDEN_ATTRIBUTE } from './instanceAttributes';
  *  without this is a rectangle of black where the texture is empty. */
 const DECAL_ALPHA_TEST = 0.02;
 
+/** Each decal's own `decalAlphaWeight`, already divided to 0-1 by
+ *  `buildDecalBillboards`. Per instance, because the field is per VOB and the
+ *  material is per texture — a material per decal would be the 1,405 draw calls
+ *  the grouping exists to avoid. */
+export const DECAL_ALPHA_ATTRIBUTE = 'aDecalAlpha';
+
+/** The vertex shader hands it to the fragment shader; nothing else reads it. */
+const DECAL_ALPHA_VARYING = 'vDecalAlpha';
+
 /** The unit quad every decal is a scaled, camera-facing copy of. One geometry
  *  for the whole layer: only the instance matrix differs. */
 function unitQuad(): THREE.PlaneGeometry {
@@ -52,10 +61,13 @@ function unitQuad(): THREE.PlaneGeometry {
  */
 function billboard(shader: THREE.WebGLProgramParametersWithUniforms): void {
   shader.vertexShader = `attribute float ${HIDDEN_ATTRIBUTE};
+attribute float ${DECAL_ALPHA_ATTRIBUTE};
+varying float ${DECAL_ALPHA_VARYING};
 ${
     shader.vertexShader.replace(
       '#include <project_vertex>',
-      `vec4 mvPosition = modelViewMatrix * instanceMatrix * vec4( 0.0, 0.0, 0.0, 1.0 );
+      `${DECAL_ALPHA_VARYING} = ${DECAL_ALPHA_ATTRIBUTE};
+  vec4 mvPosition = modelViewMatrix * instanceMatrix * vec4( 0.0, 0.0, 0.0, 1.0 );
   // The root node is the only thing in the graph with a scale, and it is the
   // unit change: one ZenGin centimetre in the units the view is working in.
   float decalUnit = length( modelViewMatrix[0].xyz );
@@ -65,6 +77,20 @@ ${
   // Outside the clip volume in every direction, at w = 1: clipped whole,
   // whatever the camera is doing. The scene's own hide, for the same reason.
   if ( ${HIDDEN_ATTRIBUTE} > 0.5 ) gl_Position = vec4( 2.0, 2.0, 2.0, 1.0 );`,
+    )
+  }`;
+
+  // OpenGothic's own decal fragment shader, which is the whole of what this
+  // field does: `tex.a *= alphaWeight`. Before `<alphatest_fragment>` rather
+  // than after it, so a decal turned all the way down is *discarded* like an
+  // empty texel instead of drawn as a black rectangle the cut-out test would
+  // have caught.
+  shader.fragmentShader = `varying float ${DECAL_ALPHA_VARYING};
+${
+    shader.fragmentShader.replace(
+      '#include <alphatest_fragment>',
+      `diffuseColor.a *= ${DECAL_ALPHA_VARYING};
+  #include <alphatest_fragment>`,
     )
   }`;
 }
@@ -114,6 +140,10 @@ export class DecalLayer {
       const hidden = new THREE.InstancedBufferAttribute(new Float32Array(group.count), 1);
       geometry.setAttribute(HIDDEN_ATTRIBUTE, hidden);
       this.hidden.push(hidden);
+      geometry.setAttribute(
+        DECAL_ALPHA_ATTRIBUTE,
+        new THREE.InstancedBufferAttribute(new Float32Array(group.alphaWeights), 1),
+      );
 
       const mesh = new THREE.InstancedMesh(geometry, material, group.count);
       // The quads are drawn where the index says, in ZenGin centimetres: the
