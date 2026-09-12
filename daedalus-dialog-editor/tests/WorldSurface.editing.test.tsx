@@ -4025,17 +4025,22 @@ describe('a focus request from outside the surface', () => {
 // layer put a dot where a light stands; the range is what a modder is actually
 // tuning, and until it is drawn tuning one is a save-and-play loop.
 describe('the volume round the selection', () => {
-  it("hands the viewport a light's range, off the props the grid already read", async () => {
+  it("hands the viewport a light's range and its colour, off the props the grid already read", async () => {
     // No round trip of its own: this is the same `getVobProps` the property
-    // grid makes on every selection change.
+    // grid makes on every selection change, and `color` is as catalogued a
+    // field of `zCVobLight` as `range` is — so the second half of #248 cost
+    // the same nothing the first did.
     mockVobProps = LIGHT_PROPS;
     await openWorld(['zCVob', 'zCVobLight']);
 
     await act(async () => { useWorldStore.getState().selectVob(1); });
     await waitFor(() => expect(api.getVobProps).toHaveBeenCalled());
 
-    await waitFor(() => expect(mockSelectedExtent)
-      .toEqual({ vob: 1, extent: { shape: 'sphere', radius: LIGHT_PROPS.range, kind: 'light' } }));
+    await waitFor(() => expect(mockSelectedExtent).toEqual({
+      vob: 1,
+      // The alpha is dropped: a light's alpha is not its tint.
+      extent: { shape: 'sphere', radius: LIGHT_PROPS.range, kind: 'light', color: [255, 220, 180] },
+    }));
   });
 
   it("hands it a zone's box off the same read, which is the fetch #248 chose", () => {

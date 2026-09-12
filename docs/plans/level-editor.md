@@ -246,7 +246,7 @@ would survive it (§7).
   inventory never had a row for it; carded 2026-09-10 in three parts. The
   marker itself *landed 2026-09-10 (§7)* — every VOB with no visual name is
   drawn, pickable, hideable by class and gizmo-attachable. What is left is the
-  **extent** of a sound, a light or a zone (§16.39) and the VOBs whose visual
+  **extent** of a sound, a light or a zone (architecture §7) and the VOBs whose visual
   is a name that resolves to no geometry (§16.40, decals and particle
   effects).
 
@@ -3143,22 +3143,6 @@ issues cite and do not move.
    measurement: it prints the top level counted folders-against-files, the shape
    below it, and whether the names from the report are mounted at all. Needs a
    Gothic install — Daniel's machine, not CI.
-
-### 16.39 A light's colour is still invisible (2026-09-10; #248)
-
-**Both extent halves have landed** and `git log` carries them. The sphere:
-a `zCVobSound`'s `radius` and a `zCVobLight`'s `range`, drawn round the
-selection. The box (2026-09-11): a zone's or a trigger's bounding box, which the
-columnar index has no column for — Daniel chose the per-selection fetch over a
-new column, and `getVobProps` now answers `bbox` beside `class`, so the read the
-grid already makes carries it and no call was added. `oCZoneMusic.ellipsoid` is
-followed, and `zCZoneZFog`'s shape is its bbox like the others. The durable
-outcome is architecture §7.
-
-**What is left is a light's `color`.** It is the other half of what a light *is*
-and is equally invisible, and unlike the two extents it is a tint on the sphere
-rather than a shape — so nothing about how to draw it has been decided. It is
-the whole of what #248 still holds.
 
 ### 16.40 Six of a decal's seven fields are still invisible (2026-09-10; #249)
 

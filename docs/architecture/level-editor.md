@@ -2881,9 +2881,31 @@ ellipsoid is the sphere wireframe under the box's own uneven scale, which makes
 it the one inscribed in that box rather than an approximation. `zCZoneZFog` has
 no extent field at all, so its shape is its bbox like the others.
 
-A light's `color` is still the other half of what a light *is* and is still
-invisible: it is a tint on the sphere rather than a shape, and nothing has been
-decided about it (plan §16.39).
+**And a light's `color` tints its own sphere (2026-09-12, Daniel; #248).** It
+is the other half of what a light *is*, and unlike the two extents it is a tint
+rather than a shape — so it rides the wireframe that is already there instead of
+adding anything to the scene. It costs nothing new for the third time: `color`
+is as catalogued a `zCVobLight` field as `range`, so it crosses on the same
+`getVobProps` read.
+
+`vobExtentOf` drops a colour the drawer cannot use and the sphere then keeps the
+class palette: not four numbers, a channel outside 0-255, and **black** — which
+is a legal value whose wireframe is invisible, and invisibility is the whole
+complaint #248 exists to answer. The alpha is dropped always, because a light's
+alpha is not its tint. The colour is read through sRGB, as every other authored
+colour in this scene is.
+
+A light is the one class whose volume leaves `VobMarkerLayer`'s palette, and
+deliberately: there the colour *is* the datum rather than a code for the class,
+and the marker inside the sphere still carries the palette, so nothing about
+telling a light from a sound is lost.
+
+**What a light's colour is not.** It is not a light in the scene. The viewport
+is unlit on purpose — `MeshBasicMaterial` throughout, ZenGin's lighting baked
+into the vertex colours, and brightness is `setExposure` rather than a lamp —
+so a dynamic light would be added on top of its own baked contribution and draw
+a room lit twice. Asked and answered 2026-09-12 (Daniel); the toggleable
+light-preview idea is #256, not part of this.
 
 **The selection only, and attached only while it draws.** The three retail
 worlds hold 1,237 sound VOBs between them, so every radius at once is a screen

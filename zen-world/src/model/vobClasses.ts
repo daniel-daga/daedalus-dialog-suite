@@ -487,7 +487,7 @@ const OC_MOB_DOOR_FIELDS = [
  * A marker says where a sound's origin is and nothing about how far it carries,
  * and a zone's marker says even less: the reach is the whole of what a modder
  * is tuning, so tuning one was a save-and-play loop even after the markers
- * landed (level-editor.md §16.39).
+ * landed (`docs/architecture/level-editor.md` §7).
  *
  * **Two shapes, from two data sources.** A sound and a light are a *radius* —
  * `zCVobSound.radius` and `zCVobLight.range`, catalogued fields that ride on
@@ -507,6 +507,15 @@ export type VobExtent =
     radius: number;
     /** What is reaching that far, which is what tells two spheres apart. */
     kind: 'sound' | 'light';
+    /**
+     * A light's own RGB, 0-255, alpha dropped — the other half of what a
+     * light *is* and equally invisible until #248 (2026-09-12). Absent on a
+     * sound, which has no colour, and on a light whose `color` is missing,
+     * malformed, out of the catalogue's bounds, or black: each of those would
+     * draw an invisible or a nonsense wireframe, so the drawer falls back to
+     * the class palette instead, which is the answer it already had.
+     */
+    color?: readonly [number, number, number];
   }
   | {
     shape: 'box' | 'ellipsoid';
@@ -560,7 +569,10 @@ export function vobExtentOf(className: string, props: ClassProps): VobExtent | n
   if (field !== undefined) {
     const value = props[field.key];
     if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return null;
-    return { shape: 'sphere', radius: value, kind: field.kind };
+    const sphere = { shape: 'sphere', radius: value, kind: field.kind } as const;
+    if (field.kind !== 'light') return sphere;
+    const color = lightColorOf(props.color);
+    return color === null ? sphere : { ...sphere, color };
   }
 
   const kind = BOX_EXTENT_KINDS[className];
@@ -571,6 +583,26 @@ export function vobExtentOf(className: string, props: ClassProps): VobExtent | n
   // Every axis, because a zone flat in one is a plane with no inside.
   if (![0, 1, 2].every((axis) => bbox[axis + 3] > bbox[axis])) return null;
   return { shape: props.ellipsoid === true ? 'ellipsoid' : 'box', bbox, kind };
+}
+
+/**
+ * A `zCVobLight.color` fit to tint its own sphere with, or null (#248).
+ *
+ * The binding reads the field as RGBA 0-255 in that order (`ColorArr`), and
+ * the catalogue bounds every channel at 0-255. Null for anything that is not
+ * four numbers in those bounds — and for **black**, which is the one valid
+ * value this cannot use: a wireframe drawn in it is invisible, which is the
+ * very complaint #248 exists to answer. Falling back to the palette colour is
+ * strictly better there than drawing nothing.
+ */
+function lightColorOf(value: unknown): readonly [number, number, number] | null {
+  if (!Array.isArray(value) || value.length !== 4) return null;
+  const channels = value.slice(0, 3);
+  const usable = channels.every(
+    (c) => typeof c === 'number' && Number.isFinite(c) && c >= 0 && c <= 255,
+  );
+  if (!usable || channels.every((c) => c === 0)) return null;
+  return [channels[0], channels[1], channels[2]];
 }
 
 /**

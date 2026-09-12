@@ -252,7 +252,7 @@ export interface WorldViewportProps {
    */
   hiddenVobs: Uint8Array | null;
   /**
-   * How far the selected VOB reaches, when its reach is a radius (§16.39,
+   * How far the selected VOB reaches, when its reach is a radius (architecture §7,
    * #248): a `zCVobSound`'s `radius`, a `zCVobLight`'s `range`, read off the
    * `getVobProps` the property grid already makes. Null for every other class,
    * for a multi-select, and while the read is in flight — a sphere is drawn
@@ -1402,7 +1402,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     sceneRef.current?.setSelectedVobs(selection);
   }, [selection, mesh, visuals]);
 
-  // The selected VOB's reach (§16.39). On `mesh`/`visuals` for the reason the
+  // The selected VOB's reach (architecture §7). On `mesh`/`visuals` for the reason the
   // effects above take them, and on `appliedOps` as well: the radius is a field
   // an op writes and the VOB is something a move takes elsewhere, so the sphere
   // has to be redrawn from the committed position rather than the one it was

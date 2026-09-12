@@ -351,7 +351,7 @@ export class WorldScene {
   private decalLayer: DecalLayer | null = null;
 
   /**
-   * How far the selected VOB reaches, when the reach is a radius (§16.39,
+   * How far the selected VOB reaches, when the reach is a radius (architecture §7,
    * #248). One wireframe for the whole scene, because only the selection is
    * ever drawn: 1,237 sound radii at once is a screen of overlapping spheres.
    *
@@ -480,7 +480,7 @@ export class WorldScene {
   }
 
   /**
-   * Draw the volume of one VOB, or nothing (§16.39). The caller decides which
+   * Draw the volume of one VOB, or nothing (architecture §7). The caller decides which
    * VOB and reads the radius or the box off its props — `vobExtentOf` is where
    * one shape is told from the other, and this only draws.
    *

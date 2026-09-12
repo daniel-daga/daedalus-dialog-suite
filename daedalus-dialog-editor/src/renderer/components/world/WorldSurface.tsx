@@ -1070,7 +1070,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   }, [summary, primary, appliedOps]);
 
   /**
-   * The volume the selected VOB *is* (§16.39, #248) — a sound's `radius`, a
+   * The volume the selected VOB *is* (architecture §7) — a sound's `radius`, a
    * light's `range`, a zone's or a trigger's bounding box.
    *
    * All of it off the props `classProps` already holds, so it costs no round
