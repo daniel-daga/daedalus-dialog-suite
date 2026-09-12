@@ -1274,6 +1274,37 @@ std::optional<zenkit::Vec2> OptionalVec2(
   return zenkit::Vec2 {parts[0], parts[1]};
 }
 
+// An earthquake's amplitude: exactly three finite floats, and none of them
+// floored. A component is the displacement along its axis rather than a
+// distance, so a negative one shakes the camera the other way — which is why
+// this takes no `non_negative` the way `OptionalVec2` does.
+//
+// Its own helper rather than a widened `OptionalVec2` because the arity is read
+// positionally into the struct: a function that took the length as an argument
+// would be one whose caller could pass the wrong one.
+std::optional<zenkit::Vec3> OptionalVec3(Napi::Env env, Napi::Object props, char const* key) {
+  Napi::Value const value = props.Get(key);
+  if (value.IsUndefined()) return std::nullopt;
+  if (!value.IsArray() || value.As<Napi::Array>().Length() != 3) {
+    throw Napi::TypeError::New(env, std::string {"props."} + key + " must be three numbers");
+  }
+  auto arr = value.As<Napi::Array>();
+  float parts[3];
+  for (std::uint32_t i = 0; i < 3; ++i) {
+    Napi::Value const element = arr.Get(i);
+    if (!element.IsNumber()) {
+      throw Napi::TypeError::New(env, std::string {"props."} + key + " must be three numbers");
+    }
+    double const number = element.As<Napi::Number>().DoubleValue();
+    if (!std::isfinite(number)) {
+      throw Napi::Error::New(env,
+                             std::string {"props."} + key + " must be three finite numbers");
+    }
+    parts[i] = static_cast<float>(number);
+  }
+  return zenkit::Vec3 {parts[0], parts[1], parts[2]};
+}
+
 // A decal's texture animation rate — frames per minute, so a finite float that is
 // not negative. Its own helper rather than `OptionalFloat` below because that one
 // has no bound and is declared for `setVobClassProp`, further down the file.
@@ -1944,6 +1975,24 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (fx) flare.fx = std::move(*fx);
       break;
     }
+    // A shaking camera: how far the shake reaches, how long it lasts, and how
+    // far the camera is thrown on each axis. The third is the class's whole
+    // reason for arriving late — `amplitude` is a `Vec3`, and the catalogue had
+    // no float-triple kind until one was taken as a decision (2026-09-12).
+    case zenkit::VirtualObjectType::zCEarthquake: {
+      RequireClassKeys(env, props, {"radius", "duration", "amplitude"}, class_name);
+      // Both floored, unlike the amplitude: a radius is how far the effect
+      // reaches and a duration how long it lasts, and neither has a negative
+      // that means anything.
+      auto const radius = OptionalFloatIn(env, props, "radius", 0, std::nullopt);
+      auto const duration = OptionalFloatIn(env, props, "duration", 0, std::nullopt);
+      auto const amplitude = OptionalVec3(env, props, "amplitude");
+      auto& quake = static_cast<zenkit::VEarthquake&>(*vob);
+      if (radius) quake.radius = *radius;
+      if (duration) quake.duration = *duration;
+      if (amplitude) quake.amplitude = *amplitude;
+      break;
+    }
     // The one field this class has, and it is the target — which is why it had
     // no case at all while the targets were held out. It derives from
     // `VirtualObject` too, so there is no `vobTarget` here either.
@@ -2179,7 +2228,7 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       RequireClassKeys(env, props,
                        {"focusName", "hp", "damage", "movable", "takable", "focusOverride",
                         "soundMaterial", "visualDestroyed", "owner", "ownerGuild", "destroyed", "stateCount",
-                        "target", "conditionFunction", "onStateChangeFunction", "rewind"},
+                        "target", "item", "conditionFunction", "onStateChangeFunction", "rewind"},
                        class_name);
       auto focus_name = OptionalCp1252String(env, props, "focusName");
       auto const hp = OptionalInt32(env, props, "hp", std::nullopt, std::nullopt);
@@ -2194,11 +2243,15 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       auto owner_guild = OptionalCp1252String(env, props, "ownerGuild");
       auto const destroyed = OptionalBool(env, props, "destroyed");
       auto const state_count = OptionalInt32(env, props, "stateCount", std::nullopt, std::nullopt);
-      // What this mob fires when it is used. The same kind of value as the
-      // trigger family's — a `vobName` in this world — so it is refused where
-      // the world is known (the renderer) and not here. Its siblings `item`
-      // and a door's `key` are Daedalus item instances and stay out.
+      // Two cross-references on one class, checked against two different
+      // indexes and neither of them here. `target` is what this mob fires when
+      // it is used — a `vobName` in this world, so the renderer refuses a
+      // dangling one. `item` is what the player has to be carrying to use it —
+      // a Daedalus item instance, so the *project's* item index is what can
+      // refuse it, exactly as for `oCItem.instance`. The binding knows neither
+      // and writes both as the cp1252 strings the archive holds.
       auto target = OptionalCp1252String(env, props, "target");
+      auto item = OptionalCp1252String(env, props, "item");
       auto condition_function = OptionalCp1252String(env, props, "conditionFunction");
       auto on_state_change_function = OptionalCp1252String(env, props, "onStateChangeFunction");
       auto const rewind = OptionalBool(env, props, "rewind");
@@ -2216,6 +2269,7 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (destroyed.has_value()) mob.destroyed = *destroyed;
       if (state_count.has_value()) mob.state_count = *state_count;
       if (target) mob.target = std::move(*target);
+      if (item) mob.item = std::move(*item);
       if (condition_function) mob.condition_function = std::move(*condition_function);
       if (on_state_change_function) mob.on_state_change_function = std::move(*on_state_change_function);
       if (rewind.has_value()) mob.rewind = *rewind;
@@ -2225,7 +2279,7 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       RequireClassKeys(env, props,
                        {"focusName", "hp", "damage", "movable", "takable", "focusOverride",
                         "soundMaterial", "visualDestroyed", "owner", "ownerGuild", "destroyed", "stateCount",
-                        "target", "conditionFunction", "onStateChangeFunction", "rewind", "slot", "vobTree"},
+                        "target", "item", "conditionFunction", "onStateChangeFunction", "rewind", "slot", "vobTree"},
                        class_name);
       auto focus_name = OptionalCp1252String(env, props, "focusName");
       auto const hp = OptionalInt32(env, props, "hp", std::nullopt, std::nullopt);
@@ -2240,11 +2294,15 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       auto owner_guild = OptionalCp1252String(env, props, "ownerGuild");
       auto const destroyed = OptionalBool(env, props, "destroyed");
       auto const state_count = OptionalInt32(env, props, "stateCount", std::nullopt, std::nullopt);
-      // What this mob fires when it is used. The same kind of value as the
-      // trigger family's — a `vobName` in this world — so it is refused where
-      // the world is known (the renderer) and not here. Its siblings `item`
-      // and a door's `key` are Daedalus item instances and stay out.
+      // Two cross-references on one class, checked against two different
+      // indexes and neither of them here. `target` is what this mob fires when
+      // it is used — a `vobName` in this world, so the renderer refuses a
+      // dangling one. `item` is what the player has to be carrying to use it —
+      // a Daedalus item instance, so the *project's* item index is what can
+      // refuse it, exactly as for `oCItem.instance`. The binding knows neither
+      // and writes both as the cp1252 strings the archive holds.
       auto target = OptionalCp1252String(env, props, "target");
+      auto item = OptionalCp1252String(env, props, "item");
       auto condition_function = OptionalCp1252String(env, props, "conditionFunction");
       auto on_state_change_function = OptionalCp1252String(env, props, "onStateChangeFunction");
       auto const rewind = OptionalBool(env, props, "rewind");
@@ -2264,6 +2322,7 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (destroyed.has_value()) mob.destroyed = *destroyed;
       if (state_count.has_value()) mob.state_count = *state_count;
       if (target) mob.target = std::move(*target);
+      if (item) mob.item = std::move(*item);
       if (condition_function) mob.condition_function = std::move(*condition_function);
       if (on_state_change_function) mob.on_state_change_function = std::move(*on_state_change_function);
       if (rewind.has_value()) mob.rewind = *rewind;
@@ -2275,8 +2334,8 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       RequireClassKeys(env, props,
                        {"focusName", "hp", "damage", "movable", "takable", "focusOverride",
                         "soundMaterial", "visualDestroyed", "owner", "ownerGuild", "destroyed", "stateCount",
-                        "target", "conditionFunction", "onStateChangeFunction", "rewind", "locked",
-                        "pickString", "contents"},
+                        "target", "item", "conditionFunction", "onStateChangeFunction", "rewind", "locked",
+                        "key", "pickString", "contents"},
                        class_name);
       auto focus_name = OptionalCp1252String(env, props, "focusName");
       auto const hp = OptionalInt32(env, props, "hp", std::nullopt, std::nullopt);
@@ -2291,15 +2350,22 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       auto owner_guild = OptionalCp1252String(env, props, "ownerGuild");
       auto const destroyed = OptionalBool(env, props, "destroyed");
       auto const state_count = OptionalInt32(env, props, "stateCount", std::nullopt, std::nullopt);
-      // What this mob fires when it is used. The same kind of value as the
-      // trigger family's — a `vobName` in this world — so it is refused where
-      // the world is known (the renderer) and not here. Its siblings `item`
-      // and a door's `key` are Daedalus item instances and stay out.
+      // Two cross-references on one class, checked against two different
+      // indexes and neither of them here. `target` is what this mob fires when
+      // it is used — a `vobName` in this world, so the renderer refuses a
+      // dangling one. `item` is what the player has to be carrying to use it —
+      // a Daedalus item instance, so the *project's* item index is what can
+      // refuse it, exactly as for `oCItem.instance`. The binding knows neither
+      // and writes both as the cp1252 strings the archive holds.
       auto target = OptionalCp1252String(env, props, "target");
+      auto item = OptionalCp1252String(env, props, "item");
       auto condition_function = OptionalCp1252String(env, props, "conditionFunction");
       auto on_state_change_function = OptionalCp1252String(env, props, "onStateChangeFunction");
       auto const rewind = OptionalBool(env, props, "rewind");
       auto const locked = OptionalBool(env, props, "locked");
+      // The item instance that unlocks it — the class's own item-instance
+      // string, checked where `item` above is and written here as it is given.
+      auto lock_key = OptionalCp1252String(env, props, "key");
       auto pick_string = OptionalCp1252String(env, props, "pickString");
       // The archive's own `contains` string, `INSTANCE[:COUNT],…` — written
       // as given. The grammar is the editor's to check (`ipcValidation`), the
@@ -2320,10 +2386,12 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (destroyed.has_value()) mob.destroyed = *destroyed;
       if (state_count.has_value()) mob.state_count = *state_count;
       if (target) mob.target = std::move(*target);
+      if (item) mob.item = std::move(*item);
       if (condition_function) mob.condition_function = std::move(*condition_function);
       if (on_state_change_function) mob.on_state_change_function = std::move(*on_state_change_function);
       if (rewind.has_value()) mob.rewind = *rewind;
       if (locked.has_value()) mob.locked = *locked;
+      if (lock_key) mob.key = std::move(*lock_key);
       if (pick_string) mob.pick_string = std::move(*pick_string);
       if (contents) mob.contents = std::move(*contents);
       break;
@@ -2332,8 +2400,8 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       RequireClassKeys(env, props,
                        {"focusName", "hp", "damage", "movable", "takable", "focusOverride",
                         "soundMaterial", "visualDestroyed", "owner", "ownerGuild", "destroyed", "stateCount",
-                        "target", "conditionFunction", "onStateChangeFunction", "rewind", "locked",
-                        "pickString"},
+                        "target", "item", "conditionFunction", "onStateChangeFunction", "rewind", "locked",
+                        "key", "pickString"},
                        class_name);
       auto focus_name = OptionalCp1252String(env, props, "focusName");
       auto const hp = OptionalInt32(env, props, "hp", std::nullopt, std::nullopt);
@@ -2348,15 +2416,22 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       auto owner_guild = OptionalCp1252String(env, props, "ownerGuild");
       auto const destroyed = OptionalBool(env, props, "destroyed");
       auto const state_count = OptionalInt32(env, props, "stateCount", std::nullopt, std::nullopt);
-      // What this mob fires when it is used. The same kind of value as the
-      // trigger family's — a `vobName` in this world — so it is refused where
-      // the world is known (the renderer) and not here. Its siblings `item`
-      // and a door's `key` are Daedalus item instances and stay out.
+      // Two cross-references on one class, checked against two different
+      // indexes and neither of them here. `target` is what this mob fires when
+      // it is used — a `vobName` in this world, so the renderer refuses a
+      // dangling one. `item` is what the player has to be carrying to use it —
+      // a Daedalus item instance, so the *project's* item index is what can
+      // refuse it, exactly as for `oCItem.instance`. The binding knows neither
+      // and writes both as the cp1252 strings the archive holds.
       auto target = OptionalCp1252String(env, props, "target");
+      auto item = OptionalCp1252String(env, props, "item");
       auto condition_function = OptionalCp1252String(env, props, "conditionFunction");
       auto on_state_change_function = OptionalCp1252String(env, props, "onStateChangeFunction");
       auto const rewind = OptionalBool(env, props, "rewind");
       auto const locked = OptionalBool(env, props, "locked");
+      // The item instance that unlocks it — the class's own item-instance
+      // string, checked where `item` above is and written here as it is given.
+      auto lock_key = OptionalCp1252String(env, props, "key");
       auto pick_string = OptionalCp1252String(env, props, "pickString");
       auto& mob = static_cast<zenkit::VDoor&>(*vob);
       if (focus_name) mob.name = std::move(*focus_name);
@@ -2372,10 +2447,12 @@ Napi::Value SetVobClassProp(Napi::CallbackInfo const& info) {
       if (destroyed.has_value()) mob.destroyed = *destroyed;
       if (state_count.has_value()) mob.state_count = *state_count;
       if (target) mob.target = std::move(*target);
+      if (item) mob.item = std::move(*item);
       if (condition_function) mob.condition_function = std::move(*condition_function);
       if (on_state_change_function) mob.on_state_change_function = std::move(*on_state_change_function);
       if (rewind.has_value()) mob.rewind = *rewind;
       if (locked.has_value()) mob.locked = *locked;
+      if (lock_key) mob.key = std::move(*lock_key);
       if (pick_string) mob.pick_string = std::move(*pick_string);
       break;
     }

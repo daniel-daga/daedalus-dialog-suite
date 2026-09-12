@@ -630,6 +630,52 @@ describe('assertApplyOpsRequest', () => {
       }
     });
 
+    it('holds a mob\'s item and a lock\'s key to the Daedalus symbol shape', () => {
+      // The third and fourth fields whose value names a script symbol
+      // (level-editor.md §16.3). Same split as `instance` and `contents`: the
+      // shape here, the project's item index in the renderer — and `to` only,
+      // so a world that already holds something odd can still be repaired.
+      const mob = (className: string, to: Record<string, unknown>) => ({
+        op: 'SetVobClassProp',
+        vob: 16,
+        path: '0/17',
+        className,
+        from: Object.fromEntries(Object.keys(to).map((key) => [key, ''])),
+        to,
+      });
+
+      expect(() => assertApplyOpsRequest({ ops: [mob('oCMobInter', { item: 'ItKe_Lockpick' })] }))
+        .not.toThrow();
+      expect(() => assertApplyOpsRequest({
+        ops: [mob('oCMobDoor', { item: 'ItKe_Lockpick', key: 'ItKe_DoorKey' })],
+      })).not.toThrow();
+
+      // Empty is legal on both, unlike on `instance`: a mob usable bare-handed
+      // needs no item and an unlocked door no key.
+      expect(() => assertApplyOpsRequest({ ops: [mob('oCMobContainer', { item: '', key: '' })] }))
+        .not.toThrow();
+
+      for (const bad of ['It Ke_Lockpick', '1ItKe', 'ItKe-Lockpick', 'ItKe;Lockpick']) {
+        expect(() => assertApplyOpsRequest({ ops: [mob('oCMobInter', { item: bad })] }))
+          .toThrow(/item/);
+        expect(() => assertApplyOpsRequest({ ops: [mob('oCMobDoor', { key: bad })] }))
+          .toThrow(/key/);
+      }
+
+      // A mover controller's `key` is a keyframe number and is not touched by
+      // any of this — the shape check is per class, like the catalogue.
+      expect(() => assertApplyOpsRequest({
+        ops: [{
+          op: 'SetVobClassProp',
+          vob: 17,
+          path: '0/18',
+          className: 'zCMoverController',
+          from: { key: 0 },
+          to: { key: 3 },
+        }],
+      })).not.toThrow();
+    });
+
     it('rejects sides that do not carry the same properties', () => {
       // The inverse is `from` and `to` swapped. Sides that disagree give an
       // undo that restores a different set of fields than the op wrote, and
@@ -755,9 +801,49 @@ describe('assertApplyOpsRequest', () => {
       to: { reverb: -10, volume: 0.9 },
     };
 
+    // The third array kind (level-editor.md §16.3, decided 2026-09-12). An
+    // earthquake's amplitude is a float triple where the two array kinds before
+    // it were four whole channels and two floats, so what this pins is the
+    // arity: the binding reads the three positionally into a `Vec3`, and a
+    // two-element or four-element array would leave a component to whatever the
+    // struct held.
+    const earthquake = {
+      op: 'SetVobClassProp',
+      vob: 15,
+      path: '0/16',
+      className: 'zCEarthquake',
+      from: { radius: 2000, duration: 5, amplitude: [10, 4, 10] },
+      to: { radius: 3500, duration: 2.5, amplitude: [-20, 40, 0] },
+    };
+
     it('accepts an item instance and a light', () => {
       expect(() => assertApplyOpsRequest({ ops: [instance] })).not.toThrow();
       expect(() => assertApplyOpsRequest({ ops: [light] })).not.toThrow();
+    });
+
+    it('takes an earthquake, and holds its amplitude to three finite numbers', () => {
+      expect(() => assertApplyOpsRequest({ ops: [earthquake] })).not.toThrow();
+
+      const bad: Record<string, unknown[]> = {
+        // Arity first, in both directions, because that is the whole reason a
+        // third kind exists rather than a reused `vec2`.
+        amplitude: [[1, 2], [1, 2, 3, 4], [1, 2, NaN], [1, 2, Infinity], 'x', 5, null, []],
+        radius: [-1, Infinity, '2000'],
+        duration: [-0.5, NaN, '5'],
+      };
+      for (const [key, values] of Object.entries(bad)) {
+        for (const value of values) {
+          expect(() => assertApplyOpsRequest({
+            ops: [{ ...earthquake, from: { [key]: value }, to: { [key]: value } }],
+          })).toThrow(new RegExp(key));
+        }
+      }
+
+      // A negative component is legal and a negative radius is not: the
+      // amplitude is a displacement per axis, the radius a distance.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...earthquake, from: { amplitude: [0, 0, 0] }, to: { amplitude: [-30, -1, -0.5] } }],
+      })).not.toThrow();
     });
 
     it('holds a chest’s contents to the archive grammar, on `to` only (§16.26 row 2)', () => {
@@ -855,17 +941,23 @@ describe('assertApplyOpsRequest', () => {
           }],
         })).not.toThrow();
       }
-      // And the one the family still holds out, so this stays a statement about
-      // `target` rather than about cross-references in general: `item` and a
-      // door's `key` are Daedalus item instances, and the index that would
-      // answer for them is the renderer's.
-      for (const [className, key] of [['oCMobInter', 'item'], ['oCMobDoor', 'key']]) {
-        expect(() => assertApplyOpsRequest({
-          ops: [{
-            op: 'SetVobClassProp', vob: 3, path: '0/4', className, from: { [key]: '' }, to: { [key]: 'ITKE_X' },
-          }],
-        })).toThrow(new RegExp(`has no class property ${key}`));
-      }
+      // The family's two item-instance strings are no longer the pointed
+      // absence here — they are catalogued (2026-09-12) and are checked by the
+      // Daedalus-symbol shape below, not by this `vobName` rule. A class that
+      // does not declare one is still refused, which is what keeps this a
+      // statement about the catalogue rather than about strings in general.
+      expect(() => assertApplyOpsRequest({
+        ops: [{
+          op: 'SetVobClassProp', vob: 3, path: '0/4', className: 'oCMOB',
+          from: { item: '' }, to: { item: 'ITKE_X' },
+        }],
+      })).toThrow(/has no class property item/);
+      expect(() => assertApplyOpsRequest({
+        ops: [{
+          op: 'SetVobClassProp', vob: 3, path: '0/4', className: 'oCMobInter',
+          from: { key: '' }, to: { key: 'ITKE_X' },
+        }],
+      })).toThrow(/has no class property key/);
     });
 
     it('accepts a mover controller and a lens flare, the two classes #260 catalogued', () => {

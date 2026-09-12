@@ -1070,9 +1070,23 @@ std::shared_ptr<VirtualObject> BuildVisualVobTree() {
       AxisAlignedBoundingBox {Vec3 {465.0f, 3.0f, 475.0f}, Vec3 {467.0f, 5.0f, 477.0f}};
   lens_flare->fx = "FIXTURE_LENSFLARE_SUN";
 
+  // A shaking camera, and the only class carrying a float triple — which is
+  // what the catalogue's third array kind was added for (2026-09-12).
+  // `insertVob` cannot construct one, so this fixture VOB is again the only
+  // place its write path is reachable.
+  auto earthquake = std::make_shared<VEarthquake>();
+  earthquake->type = VirtualObjectType::zCEarthquake;
+  earthquake->vob_name = "VOB_INDEX_EARTHQUAKE";
+  earthquake->position = Vec3 {476.0f, 4.0f, 486.0f};
+  earthquake->bbox =
+      AxisAlignedBoundingBox {Vec3 {475.0f, 3.0f, 485.0f}, Vec3 {477.0f, 5.0f, 487.0f}};
+  earthquake->radius = 1500.0f;
+  earthquake->duration = 4.0f;
+  earthquake->amplitude = Vec3 {10.0f, 4.0f, 10.0f};
+
   root->children = {a, b, c, sound, daytime, far_plane, fog, music, animate, pfx, world_start,
                      trigger_script, trigger, change_level, mover, mob, mob_inter, mob_fire,
-                     mob_container, mob_door, untouch, mover_controller, lens_flare};
+                     mob_container, mob_door, untouch, mover_controller, lens_flare, earthquake};
   return root;
 }
 

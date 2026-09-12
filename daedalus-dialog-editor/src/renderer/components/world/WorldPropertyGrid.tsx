@@ -4,7 +4,8 @@ import {
 } from '@mui/material';
 import MyLocationIcon from '@mui/icons-material/MyLocation';
 import {
-  BASE_FIELDS, DECAL_FIELDS, classPropKeys, decalSubKey, enumValuesOf, eulerDeltaRotation,
+  ARRAY_ARITY, BASE_FIELDS, DECAL_FIELDS, classPropKeys, decalSubKey, enumValuesOf,
+  eulerDeltaRotation, isArrayKind,
   eulerToZenRotation, fieldOf, focusNameExpectation,
   zenRotationToEuler,
   type ClassPropValue, type ClassProps, type EnumValueDescriptor, type FieldDescriptor,
@@ -198,7 +199,9 @@ function refusalFor(field: FieldDescriptor, text: string): string {
   if (field.kind === 'color') {
     return `Four whole channels, comma separated${bounds === '' ? '' : `, each ${bounds}`}.`;
   }
-  if (field.kind === 'vec2') return 'Two numbers, comma separated.';
+  if (field.kind === 'vec2' || field.kind === 'vec3') {
+    return `${field.kind === 'vec2' ? 'Two' : 'Three'} numbers, comma separated${bounds === '' ? '' : `, each ${bounds}`}.`;
+  }
   return 'Not a value this field can hold.';
 }
 
@@ -249,9 +252,19 @@ const parse = (field: FieldDescriptor, text: string): ClassPropValue | null => {
     return field.kind === 'int' && !Number.isInteger(value) ? null : value;
   }
 
-  // The two array kinds: a colour is four whole channels, a decal's size or
-  // offset is two float32s. Arity and wholeness differ, nothing else does.
-  const arity = field.kind === 'color' ? 4 : 2;
+  // The three array kinds: a colour is four whole channels, a decal's size or
+  // offset two float32s, an earthquake's amplitude three. Arity and wholeness
+  // differ, nothing else does — and the arity is read off the catalogue's own
+  // table rather than written here, so a fourth kind is one entry and not a
+  // fourth ternary.
+  //
+  // The guard is for the type rather than for a case that happens: an `enum`
+  // is drawn as a select and a `bool` as a checkbox, so neither reaches text
+  // parsing — but the compiler has to be told which kinds index the table, and
+  // the alternative is a cast that would stop telling anyone when a fourth kind
+  // arrives.
+  if (!isArrayKind(field.kind)) return null;
+  const arity = ARRAY_ARITY[field.kind];
   const parts = text.split(',');
   if (parts.length !== arity) return null;
   // The same rule the float branch above states, and for the same reason:
@@ -302,6 +315,9 @@ const ClassField: React.FC<{
    * case-folded; the value committed is the one the user typed.
    */
   knownValues?: ReadonlySet<string>;
+  /** Whether an empty value is exempt from `knownValues` — true for the fields
+   *  where "no item" is a legal answer, false for the one where it is not. */
+  emptyMeansNone?: boolean;
   /** The values an `enum` field's class names for it, out of the catalogue's
    *  fourth table — undefined for every other kind. It is passed in rather than
    *  looked up here so this component goes on knowing nothing about which class
@@ -319,7 +335,8 @@ const ClassField: React.FC<{
   suggest?: (typed: string) => readonly string[];
   onCommit: (value: ClassPropValue) => void;
 }> = ({
-  vob, group = 'class', field, value, knownValues, values, helper, disabled, suggest, onCommit,
+  vob, group = 'class', field, value, knownValues, emptyMeansNone = false, values, helper,
+  disabled, suggest, onCommit,
 }) => {
   const { generation: refusals, reason: refusal, refuse, clear } = useRefusal();
 
@@ -389,7 +406,20 @@ const ClassField: React.FC<{
         // the field cannot hold is: nothing is sent, and the field remounts
         // showing what the world has. They differ only in what they say.
         if (parsed === null) refuse(refusalFor(field, typed));
-        else if (knownValues !== undefined && !knownValues.has(String(parsed).toUpperCase())) {
+        // An empty value names no instance, and on two of the three fields that
+        // is the common case rather than an omission — a mob usable bare-handed
+        // carries no `item`, an unlocked chest no `key` — so refusing it would
+        // leave a user unable to clear either. It is *not* exempt on
+        // `oCItem.instance`, where there is no such thing as an item that spawns
+        // nothing, which is why the exemption is passed in by the caller that
+        // knows the class rather than decided from the value.
+        //
+        // Exactly empty, not blank: `assertApplyOpsRequest` exempts the same
+        // one string, and a field that took "  " here would commit something
+        // the main process then refuses — and, if it got through, two spaces
+        // into the archive where an item name belongs.
+        else if (knownValues !== undefined && !(emptyMeansNone && parsed === '')
+          && !knownValues.has(String(parsed).toUpperCase())) {
           refuse('No script in this project declares that instance.');
         } else onCommit(parsed);
       }}
@@ -836,14 +866,22 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
     ? decalRecord as unknown as Record<string, ClassPropValue>
     : null;
 
-  // The one catalogued field whose legal values are a set this app already
-  // holds. Undefined for every other field and for every class, so nothing else
-  // is constrained: a sound name is a file in the VFS and a light's range is a
-  // number, and neither is in an item index.
+  // The catalogued fields whose legal values are a set this app already holds:
+  // the three that name a Daedalus item instance. Undefined for every other
+  // field, so nothing else is constrained — a sound name is a file in the VFS
+  // and a light's range is a number, and neither is in an item index.
+  //
+  // **Keyed by class and key together, never by key alone.** A container's and
+  // a door's `key` is the item instance that unlocks it; a `zCMoverController`'s
+  // `key` is the keyframe number it drives a mover to, and a check that matched
+  // on the name would refuse every number typed into that one.
+  const itemInstanceKeys: readonly string[] = className === 'oCItem'
+    ? ['instance']
+    : (className === 'oCMobContainer' || className === 'oCMobDoor'
+      ? ['item', 'key']
+      : (fieldOf(className, 'item') === null ? [] : ['item']));
   const knownValuesFor = (key: string): ReadonlySet<string> | undefined => (
-    className === 'oCItem' && key === 'instance' && itemInstances.size > 0
-      ? itemInstances
-      : undefined
+    itemInstanceKeys.includes(key) && itemInstances.size > 0 ? itemInstances : undefined
   );
 
   // The one cross-field rule the grid has (decided 2026-09-02, level-editor.md
@@ -1230,6 +1268,9 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
                   value={classProps[classField.key]}
                   values={enumValuesOf(className, classField.key) ?? undefined}
                   knownValues={knownValuesFor(classField.key)}
+                  // `item` and a lock's `key` are legally empty; an `oCItem`
+                  // that spawns nothing is not a thing, so `instance` is not.
+                  emptyMeansNone={classField.key !== 'instance'}
                   // Stated up front rather than only on a refusal: a field that
                   // silently declines what was typed is the complaint the
                   // refusal idiom's remount already comes close to, and the rule

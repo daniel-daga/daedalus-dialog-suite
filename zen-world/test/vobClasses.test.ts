@@ -35,7 +35,7 @@ describe('the per-class field catalogue', () => {
     expect(Object.keys(CLASS_FIELDS).sort()).toEqual([
       'oCItem', 'oCMOB', 'oCMobBed', 'oCMobContainer', 'oCMobDoor', 'oCMobFire', 'oCMobInter',
       'oCMobLadder', 'oCMobSwitch', 'oCMobWheel', 'oCTouchDamage', 'oCTriggerChangeLevel',
-      'oCTriggerScript', 'oCZoneMusic', 'zCCodeMaster', 'zCMessageFilter', 'zCMover',
+      'oCTriggerScript', 'oCZoneMusic', 'zCCodeMaster', 'zCEarthquake', 'zCMessageFilter', 'zCMover',
       'zCMoverController', 'zCPFXController', 'zCTrigger', 'zCTriggerList', 'zCTriggerUntouch',
       'zCTriggerWorldStart', 'zCVobAnimate', 'zCVobLensFlare', 'zCVobLight', 'zCVobSound',
       'zCVobSoundDaytime', 'zCZoneVobFarPlane', 'zCZoneZFog',
@@ -198,15 +198,14 @@ describe('the per-class field catalogue', () => {
     expect(fieldOf('oCMOB', 'owner')).toEqual({ key: 'owner', kind: 'string' });
     expect(fieldOf('oCMOB', 'soundMaterial'))
       .toEqual({ key: 'soundMaterial', kind: 'enum' });
-    // `oCMobInter` — the base nine plus its own five, `target` among them in
-    // the position `VInteractiveObject` declares it. `item` (a script
-    // item-instance name, a decision point of its own) is the one field of the
-    // class still out. `oCMobBed`/`Ladder`/`Switch`/`Wheel` add nothing beyond
-    // `oCMobInter`, so they share the same key set.
+    // `oCMobInter` — the base nine plus its own six, in the order
+    // `VInteractiveObject` declares them: `target` since 2026-09-12 and `item`
+    // since the item-instance decision was taken. `oCMobBed`/`Ladder`/`Switch`/
+    // `Wheel` add nothing beyond `oCMobInter`, so they share the same key set.
     const OC_MOB_INTER_KEYS = [
       'focusName', 'hp', 'damage', 'movable', 'takable', 'focusOverride',
       'soundMaterial', 'visualDestroyed', 'owner', 'ownerGuild', 'destroyed',
-      'stateCount', 'target', 'conditionFunction', 'onStateChangeFunction', 'rewind',
+      'stateCount', 'target', 'item', 'conditionFunction', 'onStateChangeFunction', 'rewind',
     ];
     for (const className of ['oCMobInter', 'oCMobBed', 'oCMobLadder', 'oCMobSwitch', 'oCMobWheel']) {
       expect(classPropKeys(className)).toEqual(OC_MOB_INTER_KEYS);
@@ -214,7 +213,7 @@ describe('the per-class field catalogue', () => {
     expect(fieldOf('oCMobInter', 'stateCount')).toEqual({ key: 'stateCount', kind: 'int' });
     expect(fieldOf('oCMobInter', 'rewind')).toEqual({ key: 'rewind', kind: 'bool' });
     expect(fieldOf('oCMobInter', 'target')).toEqual({ key: 'target', kind: 'string' });
-    expect(fieldOf('oCMobInter', 'item')).toBeNull();
+    expect(fieldOf('oCMobInter', 'item')).toEqual({ key: 'item', kind: 'string' });
     // `oCMobFire` — the base nine plus its own two plain strings (a rigged
     // model's bone, and the fire-effect template file). Neither names a script
     // symbol, so nothing on it is held out.
@@ -224,20 +223,23 @@ describe('the per-class field catalogue', () => {
     // `oCMobContainer` — the base nine plus `locked`, `pickString` and, since
     // §16.26 row 2, `contents`: the archive's own `contains` string, a string
     // at this layer exactly as `oCItem.instance` is, with its grammar checked
-    // by the IPC validator and its instances by the renderer. `key` (the item
-    // instance that unlocks it) stays out with `item`.
+    // by the IPC validator and its instances by the renderer. `key` — the item
+    // instance that unlocks it — is in since the same decision that brought
+    // `item` in, and sits where `VContainer` declares it, between `locked` and
+    // `pickString`.
     expect(classPropKeys('oCMobContainer'))
-      .toEqual([...OC_MOB_INTER_KEYS, 'locked', 'pickString', 'contents']);
+      .toEqual([...OC_MOB_INTER_KEYS, 'locked', 'key', 'pickString', 'contents']);
     expect(fieldOf('oCMobContainer', 'locked')).toEqual({ key: 'locked', kind: 'bool' });
     expect(fieldOf('oCMobContainer', 'pickString')).toEqual({ key: 'pickString', kind: 'string' });
     expect(fieldOf('oCMobContainer', 'contents')).toEqual({ key: 'contents', kind: 'string' });
-    expect(fieldOf('oCMobContainer', 'key')).toBeNull();
-    // `oCMobDoor` — the base nine plus `locked` and `pickString`; `key` stays
-    // out for the same cross-reference reason as the container's.
-    expect(classPropKeys('oCMobDoor')).toEqual([...OC_MOB_INTER_KEYS, 'locked', 'pickString']);
+    expect(fieldOf('oCMobContainer', 'key')).toEqual({ key: 'key', kind: 'string' });
+    // `oCMobDoor` — the base nine plus `locked`, `key` and `pickString`, in
+    // `VDoor`'s own order.
+    expect(classPropKeys('oCMobDoor'))
+      .toEqual([...OC_MOB_INTER_KEYS, 'locked', 'key', 'pickString']);
     expect(fieldOf('oCMobDoor', 'locked')).toEqual({ key: 'locked', kind: 'bool' });
     expect(fieldOf('oCMobDoor', 'pickString')).toEqual({ key: 'pickString', kind: 'string' });
-    expect(fieldOf('oCMobDoor', 'key')).toBeNull();
+    expect(fieldOf('oCMobDoor', 'key')).toEqual({ key: 'key', kind: 'string' });
   });
 
   it('puts a fog zone\'s overrideColor next to the colour it governs', () => {
@@ -382,19 +384,29 @@ describe('the per-class field catalogue', () => {
   // trigger family's — a `vobName` in this world — and it is what a mob fires
   // when it is *used*. It arrives with `VInteractiveObject`, so every `oCMob*`
   // class but the plain `oCMOB` carries it.
-  it('gives the interactive-object family its own target, and still not `item`', () => {
+  it('gives the interactive-object family its own target and its own item', () => {
     for (const className of ['oCMobInter', 'oCMobBed', 'oCMobLadder', 'oCMobSwitch',
       'oCMobWheel', 'oCMobFire', 'oCMobDoor', 'oCMobContainer']) {
       expect(fieldOf(className, 'target')).toEqual({ key: 'target', kind: 'string' });
-      // Still out, and by a rule this change does not touch: `item` and a
-      // door's `key` are Daedalus item instances, which the renderer would
-      // have to check against the project's item index rather than against
-      // the world's own names.
-      expect(fieldOf(className, 'item')).toBeNull();
+      // The two are the same `string` kind here and are checked against
+      // different indexes above: `target` is a `vobName` in this world,
+      // `item` a Daedalus item instance in the project. The catalogue cannot
+      // express that difference and deliberately does not try — `zen-world`
+      // holds neither index.
+      expect(fieldOf(className, 'item')).toEqual({ key: 'item', kind: 'string' });
     }
-    // A plain movable object is a `VMovableObject` and declares no target at
-    // all — the field arrives one level down.
+    // A plain movable object is a `VMovableObject` and declares neither — both
+    // fields arrive one level down.
     expect(fieldOf('oCMOB', 'target')).toBeNull();
+    expect(fieldOf('oCMOB', 'item')).toBeNull();
+  });
+
+  // A name that means two different things on two classes, which is why the
+  // renderer's item-index check cannot key on the field name alone: a mover
+  // controller's `key` is a keyframe number.
+  it('keeps a lock\'s key and a mover controller\'s key apart', () => {
+    expect(fieldOf('oCMobDoor', 'key')).toEqual({ key: 'key', kind: 'string' });
+    expect(fieldOf('zCMoverController', 'key')).toEqual({ key: 'key', kind: 'int' });
   });
 
   // What tells a mover which keyframe to go to (#260). A trigger fires a mover;
@@ -426,11 +438,21 @@ describe('the per-class field catalogue', () => {
     expect(fieldOf('zCVobLensFlare', 'fx')).toEqual({ key: 'fx', kind: 'string' });
   });
 
-  // `amplitude` is a float triple, and the catalogue's two array kinds are
-  // `color` (four integers) and `vec2` (two floats). A third is a decision, so
-  // the class stays out whole rather than half-catalogued.
-  it('leaves the earthquake out, for the one kind it would need', () => {
-    expect(classPropKeys('zCEarthquake')).toEqual([]);
+  // `amplitude` is a float triple, which the catalogue's two array kinds —
+  // `color` (four integers) and `vec2` (two floats) — could not express. The
+  // third kind was taken as a decision (Daniel, 2026-09-12) rather than leaving
+  // the class half-catalogued, and `vec3` is what the class is now whole by.
+  it('catalogues the earthquake, the third array kind included', () => {
+    expect(classPropKeys('zCEarthquake')).toEqual(['radius', 'duration', 'amplitude']);
+    expect(fieldOf('zCEarthquake', 'radius')).toEqual({ key: 'radius', kind: 'float', min: 0 });
+    expect(fieldOf('zCEarthquake', 'duration')).toEqual({ key: 'duration', kind: 'float', min: 0 });
+    // Unfloored, and it is not an oversight: the amplitude is a displacement per
+    // axis, so a negative component shakes the camera the other way rather than
+    // describing a distance that cannot be one.
+    expect(fieldOf('zCEarthquake', 'amplitude')).toEqual({ key: 'amplitude', kind: 'vec3' });
+    // Editable, not placeable: `insertVob` has no construction for it, which is
+    // the authorable set's own question and not this one.
+    expect(AUTHORABLE_VOB_CLASSES).not.toContain('zCEarthquake');
   });
 
   // Editing a VOB a world already holds is not placing one. Neither class is

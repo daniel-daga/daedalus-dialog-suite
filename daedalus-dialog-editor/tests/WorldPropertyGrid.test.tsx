@@ -121,6 +121,8 @@ const WORLD = summaryOf(vobIndex([
   { name: 'GATE_MOVER', cls: 'zCMover', visual: 'GATE.3DS' },
   // The VOB between the two, catalogued 2026-09-12 (#260).
   { name: 'GATE_CONTROLLER', cls: 'zCMoverController', visualType: 'UNKNOWN' },
+  // The class the third array kind was added for (2026-09-12).
+  { name: 'QUAKE', cls: 'zCEarthquake', visualType: 'UNKNOWN' },
 ]));
 
 /**
@@ -149,15 +151,15 @@ const CHEST: ClassProps = {
   class: 'oCMobContainer',
   focusName: '', hp: 20, damage: 0, movable: false, takable: false,
   focusOverride: false, soundMaterial: 0, visualDestroyed: '', owner: '', ownerGuild: '',
-  destroyed: false, stateCount: 1, conditionFunction: '', target: '',
-  onStateChangeFunction: '', rewind: false, locked: false, pickString: '',
+  destroyed: false, stateCount: 1, conditionFunction: '', target: '', item: '',
+  onStateChangeFunction: '', rewind: false, locked: false, key: '', pickString: '',
   ...BASE_READ,
 };
 const BED: ClassProps = {
   class: 'oCMobBed',
   focusName: '', hp: 20, damage: 0, movable: false, takable: false,
   focusOverride: false, soundMaterial: 0, visualDestroyed: '', owner: '', ownerGuild: '',
-  destroyed: false, stateCount: 1, conditionFunction: '', target: '',
+  destroyed: false, stateCount: 1, conditionFunction: '', target: '', item: '',
   onStateChangeFunction: '', rewind: false, ...BASE_READ,
 };
 /** A trigger wired to the mover above it. Only the two targets matter here;
@@ -169,6 +171,11 @@ const TRIGGER: ClassProps = {
   reactToOnDamage: false, respondToObject: true, respondToPc: true, respondToNpc: false,
   maxActivationCount: -1, retriggerDelaySec: 0, damageThreshold: 0, fireDelaySec: 0,
   ...BASE_READ,
+};
+/** An earthquake, which is the only class carrying a `vec3` — a float triple
+ *  where a colour is four whole channels and a decal's size is two floats. */
+const QUAKE: ClassProps = {
+  class: 'zCEarthquake', radius: 2000, duration: 5, amplitude: [10, 4, 10], ...BASE_READ,
 };
 const FOG: ClassProps = {
   class: 'zCZoneZFog',
@@ -673,6 +680,20 @@ describe('WorldPropertyGrid, class fields', () => {
     expect(classEdits).toEqual([{ instance: 'itmw_2h_axe_01' }]);
   });
 
+  it('still refuses an empty instance, which names nothing to spawn', () => {
+    // The exemption that lets a mob's `item` and a lock's `key` be cleared does
+    // not reach here: an `oCItem` is the instance it spawns, so an empty one is
+    // not "no item required" but an item VOB that cannot become anything.
+    render(
+      <WorldPropertyGrid summary={WORLD} selection={[4]} {...wiring} classProps={ITEM} itemInstances={ITEMS} />,
+    );
+
+    fireEvent.change(input('class-instance'), { target: { value: '' } });
+    fireEvent.blur(input('class-instance'));
+
+    expect(classEdits).toEqual([]);
+  });
+
   it('writes any instance at all when no script project is loaded', () => {
     // A world can legitimately be opened with no project behind it, and an empty
     // index is "nothing is known", never "nothing is legal". The field is free
@@ -714,6 +735,86 @@ describe('WorldPropertyGrid, class fields', () => {
       <WorldPropertyGrid summary={WORLD} selection={[4]} {...wiring} classProps={ITEM} itemInstances={new Set()} />,
     );
     expect(field('class-instance')).not.toHaveTextContent(/item instance/i);
+  });
+
+  // The other two item-instance strings (level-editor.md §16.3, 2026-09-12).
+  // `item` is what the player must be carrying to use a mob and a container's
+  // or door's `key` is what unlocks it, so both name a Daedalus item instance
+  // exactly as `oCItem.instance` does — and are checked against the same index,
+  // in the same layer, for the same reason.
+  it('checks a mob\'s item and a chest\'s key against the item index too', () => {
+    const chest = render(
+      <WorldPropertyGrid
+        summary={WORLD}
+        selection={[7]}
+        {...wiring}
+        classProps={CHEST}
+        itemInstances={ITEMS}
+      />,
+    );
+
+    fireEvent.change(input('class-item'), { target: { value: 'ITMW_1H_SWROD_01' } });
+    fireEvent.blur(input('class-item'));
+    fireEvent.change(input('class-key'), { target: { value: 'NOT_A_KEY' } });
+    fireEvent.blur(input('class-key'));
+    expect(classEdits).toEqual([]);
+
+    fireEvent.change(input('class-item'), { target: { value: 'ITMW_1H_SWORD_01' } });
+    fireEvent.blur(input('class-item'));
+    fireEvent.change(input('class-key'), { target: { value: 'itmw_2h_axe_01' } });
+    fireEvent.blur(input('class-key'));
+    expect(classEdits).toEqual([{ item: 'ITMW_1H_SWORD_01' }, { key: 'itmw_2h_axe_01' }]);
+    chest.unmount();
+  });
+
+  it('lets both be emptied, because no item required is the common case', () => {
+    // The difference from `oCItem.instance`, which always names something: a
+    // mob usable bare-handed carries an empty `item`, and an unlocked chest an
+    // empty `key`. An index check that refused the empty string would make
+    // clearing either field impossible.
+    render(
+      <WorldPropertyGrid
+        summary={WORLD}
+        selection={[7]}
+        {...wiring}
+        classProps={{ ...CHEST, item: 'ITMW_1H_SWORD_01', key: 'ITMW_2H_AXE_01' }}
+        itemInstances={ITEMS}
+      />,
+    );
+
+    fireEvent.change(input('class-item'), { target: { value: '' } });
+    fireEvent.blur(input('class-item'));
+    fireEvent.change(input('class-key'), { target: { value: '' } });
+    fireEvent.blur(input('class-key'));
+
+    expect(classEdits).toEqual([{ item: '' }, { key: '' }]);
+
+    // Blank is not empty, and is refused: `assertApplyOpsRequest` exempts the
+    // empty string alone, so committing spaces here would send an op the main
+    // process rejects.
+    fireEvent.change(input('class-item'), { target: { value: '   ' } });
+    fireEvent.blur(input('class-item'));
+    expect(classEdits).toEqual([{ item: '' }, { key: '' }]);
+  });
+
+  it('leaves a mover controller\'s key alone: same name, different field', () => {
+    // `zCMoverController.key` is a keyframe number, not an item instance. A
+    // check that keyed on the field name rather than on the class would refuse
+    // every number typed into it.
+    render(
+      <WorldPropertyGrid
+        summary={WORLD}
+        selection={[11]}
+        {...wiring}
+        classProps={{ class: 'zCMoverController', target: 'GATE_MOVER', message: 0, key: 0, ...BASE_READ }}
+        itemInstances={ITEMS}
+      />,
+    );
+
+    fireEvent.change(input('class-key'), { target: { value: '3' } });
+    fireEvent.blur(input('class-key'));
+
+    expect(classEdits).toEqual([{ key: 3 }]);
   });
 
   it('says the class section is about the primary VOB alone', () => {
@@ -1068,6 +1169,43 @@ describe('WorldPropertyGrid, the decal fields', () => {
     fireEvent.change(input('decal-decalOffset'), { target: { value: '-3, 7' } });
     fireEvent.blur(input('decal-decalOffset'));
     expect(baseEdits).toEqual([{ decalOffset: [-3, 7] }]);
+  });
+});
+
+describe('WorldPropertyGrid, the third array kind', () => {
+  // An earthquake's amplitude is a float triple (level-editor.md §16.3, decided
+  // 2026-09-12). The grid draws every array kind as one comma-separated text
+  // field, so what is new here is only the arity — and the arity is the whole
+  // risk, since a two-number amplitude would reach C++ and leave the third
+  // component to whatever the struct held.
+  it('draws and commits an amplitude as three comma-separated numbers', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[12]} {...wiring} classProps={QUAKE} />);
+
+    expect(input('class-amplitude').value).toBe('10, 4, 10');
+    expect(input('class-radius').value).toBe('2000');
+
+    fireEvent.change(input('class-amplitude'), { target: { value: '-20, 40, 0' } });
+    fireEvent.blur(input('class-amplitude'));
+
+    expect(classEdits).toEqual([{ amplitude: [-20, 40, 0] }]);
+  });
+
+  it('refuses an amplitude of any other arity, and a negative radius', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[12]} {...wiring} classProps={QUAKE} />);
+
+    for (const bad of ['10, 4', '10, 4, 10, 2', '10, , 10', 'a, b, c', '10']) {
+      fireEvent.change(input('class-amplitude'), { target: { value: bad } });
+      fireEvent.blur(input('class-amplitude'));
+    }
+    fireEvent.change(input('class-radius'), { target: { value: '-1' } });
+    fireEvent.blur(input('class-radius'));
+
+    expect(classEdits).toEqual([]);
+    // Negative components are legal: an amplitude is a displacement per axis,
+    // not a distance, so the sign is a direction.
+    fireEvent.change(input('class-amplitude'), { target: { value: '-5, -5, -5' } });
+    fireEvent.blur(input('class-amplitude'));
+    expect(classEdits).toEqual([{ amplitude: [-5, -5, -5] }]);
   });
 });
 

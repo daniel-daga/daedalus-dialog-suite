@@ -7,7 +7,8 @@
  */
 
 import {
-  baseFieldOf, classPropKeys, decalFieldOf, fieldOf, isAuthorableVobClass, isContainerContents,
+  ARRAY_ARITY, baseFieldOf, classPropKeys, decalFieldOf, fieldOf, isAuthorableVobClass,
+  isContainerContents,
   type FieldDescriptor,
 } from 'zen-world';
 
@@ -358,14 +359,19 @@ function assertClassPropValue(field: FieldDescriptor, side: string, value: unkno
     }
     return;
   }
-  // A decal's size or offset: two float32s, so finite rather than whole, and
-  // fixed arity for `color`'s reason — the binding reads them positionally.
-  if (field.kind === 'vec2') {
-    const ok = Array.isArray(value) && value.length === 2
+  // The float arrays: a decal's size or offset (two) and an earthquake's
+  // amplitude (three). Finite rather than whole, and fixed arity for `color`'s
+  // reason — the binding reads them positionally, so an array of the wrong
+  // length leaves a component to whatever the struct held. The arity comes off
+  // the catalogue's own table rather than a literal here, which is what kept
+  // the third kind from being a fourth place to get it wrong.
+  if (field.kind === 'vec2' || field.kind === 'vec3') {
+    const arity = ARRAY_ARITY[field.kind];
+    const ok = Array.isArray(value) && value.length === arity
       && value.every((part) => typeof part === 'number' && Number.isFinite(part)
         && (field.min === undefined || part >= field.min));
     if (!ok) {
-      throw new Error(`Invalid op: ${where} must be two finite numbers${field.min === undefined ? '' : `, ${field.min} or greater`}`);
+      throw new Error(`Invalid op: ${where} must be ${arity === 2 ? 'two' : 'three'} finite numbers${field.min === undefined ? '' : `, ${field.min} or greater`}`);
     }
     return;
   }
@@ -920,6 +926,25 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
         throw new Error(
           `Invalid op: to.instance must be a Daedalus instance name, not ${JSON.stringify(to.instance)}`,
         );
+      }
+      // The third and fourth (§16.3, 2026-09-12), and the same split again: a
+      // mob's `item` is what the player must be carrying to use it, and a
+      // container's or door's `key` is the item instance that unlocks it. The
+      // catalogue is what says which classes declare them, so the check reads
+      // it rather than listing the classes a second time — and `key` on a
+      // `zCMoverController` is an `int` keyframe, which `fieldOf` separates
+      // from these by kind without anything here knowing about it.
+      //
+      // **Empty passes, unlike `instance`.** No item required is the ordinary
+      // state of a mob, and an unlocked chest has no key.
+      for (const key of ['item', 'key']) {
+        const field = fieldOf(className, key);
+        if (field?.kind !== 'string' || typeof to[key] !== 'string') continue;
+        if (to[key] !== '' && !DAEDALUS_INSTANCE.test(to[key] as string)) {
+          throw new Error(
+            `Invalid op: to.${key} must be a Daedalus instance name, not ${JSON.stringify(to[key])}`,
+          );
+        }
       }
       // The second such field (§16.26 row 2): a chest's `contents` is a list
       // of item instances with counts, in the archive's own string. The same

@@ -33,7 +33,8 @@
 
 import type { VobReader } from './vobTree';
 import {
-  baseFieldOf, classPropKeys, decalFieldOf, decalSubKey, fieldOf, isAuthorableVobClass,
+  ARRAY_ARITY, baseFieldOf, classPropKeys, decalFieldOf, decalSubKey, fieldOf, isArrayKind,
+  isAuthorableVobClass,
   type AuthorableVobClass, type ClassPropValue, type ClassProps, type FieldDescriptor,
   type ReadProps,
 } from './vobClasses';
@@ -1088,10 +1089,11 @@ function baseFrom(key: string, current: ReadProps | null): ClassPropValue {
     throw new RangeError(`no current value for ${key}: its inverse would restore nothing`);
   }
   const { kind } = decalField ?? baseFieldOf(key)!;
-  if (kind === 'vec2') {
-    if (!Array.isArray(value) || value.length !== 2
+  if (isArrayKind(kind)) {
+    const arity = ARRAY_ARITY[kind];
+    if (!Array.isArray(value) || value.length !== arity
       || value.some((part) => typeof part !== 'number')) {
-      throw new RangeError(`the current ${key} is not two numbers`);
+      throw new RangeError(`the current ${key} is not ${arity} numbers`);
     }
     return value as readonly number[];
   }
@@ -1425,10 +1427,10 @@ function copiedClassProps(spec: NewVob, current: ReadProps | null): ClassProps |
 function isCarriableValue(field: FieldDescriptor, value: ReadProps[string]): value is ClassPropValue {
   if (field.kind === 'string') return typeof value === 'string';
   if (field.kind === 'bool') return typeof value === 'boolean';
-  if (field.kind === 'color' || field.kind === 'vec2') {
+  if (isArrayKind(field.kind)) {
     // Fixed arity, because the binding reads the channels positionally — a
     // three-element colour would leave one to whatever the struct held.
-    const arity = field.kind === 'color' ? 4 : 2;
+    const arity = ARRAY_ARITY[field.kind];
     const whole = field.kind === 'color';
     return Array.isArray(value) && value.length === arity
       && value.every((part) => typeof part === 'number'

@@ -2057,6 +2057,10 @@ const CLASS_PROP_ROUND_TRIP = [
     // What a mob fires when it is *used*, catalogued 2026-09-12 on
     // `VInteractiveObject` — so every row below carries one too.
     target: 'OTHER_LEVER_TARGET_ÄÖÜ',
+    // The item the player has to be carrying to use this mob — a Daedalus
+    // item instance, catalogued 2026-09-12 and checked against the project's
+    // item index in the renderer rather than here.
+    item: 'ItKe_Lockpick',
   }],
   ['1/17', 'oCMobFire', {
     focusName: 'FOCUS_OTHER_CAMPFIRE_ÄÖÜ', hp: 1, damage: 0, movable: false, takable: false,
@@ -2064,7 +2068,7 @@ const CLASS_PROP_ROUND_TRIP = [
     owner: 'PC_OTHER',
     ownerGuild: 'GIL_NOV', destroyed: true, stateCount: 2, conditionFunction: 'OTHER_CONDITION',
     onStateChangeFunction: 'OTHER_ON_STATE_CHANGE', rewind: true,
-    target: 'OTHER_FIRE_TARGET',
+    target: 'OTHER_FIRE_TARGET', item: 'ItMi_Torch',
     slot: 'BIP01 OTHER FIRE ÄÖÜ', vobTree: 'FIRETREE_OTHER.ZEN',
   }],
   ['1/18', 'oCMobContainer', {
@@ -2073,8 +2077,10 @@ const CLASS_PROP_ROUND_TRIP = [
     owner: 'PC_OTHER',
     ownerGuild: 'GIL_NOV', destroyed: true, stateCount: 2, conditionFunction: 'OTHER_CONDITION',
     onStateChangeFunction: 'OTHER_ON_STATE_CHANGE', rewind: true,
-    target: 'OTHER_CHEST_TARGET',
-    locked: false, pickString: 'RLLR ÄÖÜ',
+    target: 'OTHER_CHEST_TARGET', item: 'ItMi_Crowbar',
+    // The item instance that unlocks it — the third item-instance string,
+    // catalogued with `item`.
+    locked: false, key: 'ItKe_ChestKey', pickString: 'RLLR ÄÖÜ',
     // The archive's own `contains` string, written as given (§16.26 row 2);
     // the fixture chest holds 'ItMi_Gold:75, ItFo_Fish:2'.
     contents: 'ItMi_Gold:100,ItPo_Health_01',
@@ -2090,14 +2096,19 @@ const CLASS_PROP_ROUND_TRIP = [
     target: 'OTHER_MOVER_CONTROLLER_TARGET_ÄÖÜ', message: 3, key: 7,
   }],
   ['1/22', 'zCVobLensFlare', { fx: 'OTHER_LENSFLARE_ÄÖÜ' }],
+  // The class the catalogue's third array kind exists for: `amplitude` is a
+  // float triple where a colour is four whole channels and a decal's size is
+  // two floats. A negative component is legal and is written here on purpose —
+  // an amplitude is a displacement per axis, so its sign is a direction.
+  ['1/23', 'zCEarthquake', { radius: 2500, duration: 1.5, amplitude: [-20, 40, 0.5] }],
   ['1/19', 'oCMobDoor', {
     focusName: 'FOCUS_OTHER_DOOR_ÄÖÜ', hp: 60, damage: 0, movable: false, takable: false,
     focusOverride: true, soundMaterial: 5, visualDestroyed: 'DOOR_OTHER_DESTROYED.MMS',
     owner: 'PC_OTHER',
     ownerGuild: 'GIL_NOV', destroyed: true, stateCount: 2, conditionFunction: 'OTHER_CONDITION',
     onStateChangeFunction: 'OTHER_ON_STATE_CHANGE', rewind: true,
-    target: 'OTHER_DOOR_TARGET_ÄÖÜ',
-    locked: false, pickString: 'LLRR ÄÖÜ',
+    target: 'OTHER_DOOR_TARGET_ÄÖÜ', item: 'ItKe_DoorHandle',
+    locked: false, key: 'ItKe_DoorKey_ÄÖÜ', pickString: 'LLRR ÄÖÜ',
   }],
 ];
 

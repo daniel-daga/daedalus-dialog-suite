@@ -37,13 +37,18 @@
 /**
  * What a class field's value can be.
  *
- * Seven kinds: a plain string, a finite scalar, a whole number, an enumerator, a
- * flag, a small
- * fixed-arity array of integers (`color`, four channels) and one of floats
- * (`vec2`, the two components of a decal's size or offset). Nothing here is a
+ * Eight kinds: a plain string, a finite scalar, a whole number, an enumerator, a
+ * flag, and three small fixed-arity arrays — of integers (`color`, four
+ * channels) and of floats (`vec2`, the two components of a decal's size or
+ * offset; `vec3`, an earthquake's amplitude per axis). Nothing here is a
  * nested record, which is what keeps the op's IPC assertion a flat walk over
  * keys — `DECAL_FIELDS` below is flat for exactly that reason, even though the
  * props record answers those seven fields nested.
+ *
+ * The arity is the kind's and not the field's, which is why a third one was
+ * added rather than a length on the descriptor: every layer below reads these
+ * arrays positionally into a C++ struct, so an arity the catalogue could vary
+ * per field would be one the binding could not.
  *
  * `int` is not a `float` with a rule attached. A `float` field whose archive
  * member is an `int32_t` truncates on write and reports success, so the two are
@@ -88,7 +93,7 @@ export interface ReadProps {
  */
 export interface FieldDescriptor {
   key: string;
-  kind: 'string' | 'float' | 'int' | 'enum' | 'bool' | 'color' | 'vec2';
+  kind: 'string' | 'float' | 'int' | 'enum' | 'bool' | 'color' | 'vec2' | 'vec3';
   min?: number;
   max?: number;
 }
@@ -370,13 +375,31 @@ const ZC_VOB_LENS_FLARE_FIELDS = [
   { key: 'fx', kind: 'string' },
 ] as const satisfies readonly FieldDescriptor[];
 
+/** An earthquake is a shaking camera, and `VEarthquake` declares exactly what
+ *  shakes it: how far the effect reaches, how long it lasts, and how far the
+ *  camera is thrown on each axis.
+ *
+ *  **`amplitude` is why the `vec3` kind exists** (Daniel, 2026-09-12). The class
+ *  was readable and uncatalogued for the one reason that its third field is a
+ *  float triple where the catalogue had a four-integer `color` and a two-float
+ *  `vec2` — so the choice was a third array kind or half a class, and the kind
+ *  won. Unfloored, unlike the other two: a component is a displacement along its
+ *  axis, so a negative one is a direction rather than a distance that cannot be
+ *  negative. */
+const ZC_EARTHQUAKE_FIELDS = [
+  { key: 'radius', kind: 'float', min: 0 },
+  { key: 'duration', kind: 'float', min: 0 },
+  { key: 'amplitude', kind: 'vec3' },
+] as const satisfies readonly FieldDescriptor[];
+
 /** The three booleans that steer a code master's slave sequence. It derives
  *  straight from `zCVob`, so there is no base set to spread.
  *
  *  The one of the four late classes with **no enum at all**: what held it out
  *  was `slaves`, an unbounded list, and the two cross-reference strings
- *  (`target`, `failureTarget`) that go with the rest of the family's. The three
- *  booleans were held out with them and are all that is eligible.
+ *  (`target`, `failureTarget`), which joined the rest of the family's
+ *  2026-09-12. The three booleans were held out with them, and `slaves` is
+ *  what is left.
  *  `s_num_triggered_slaves` is save-game only.
  *
  *  Retail places 7, and one of them is the odd one out on two fields at once:
@@ -392,9 +415,9 @@ const ZC_CODE_MASTER_FIELDS = [
 
 /** What a message filter turns an incoming `OnTrigger` and `OnUntrigger` into
  *  before passing it on. Both are `MessageFilterAction`s, and they were the
- *  whole of the class: `target` is the third field and stays out with the rest
- *  of the family's cross-reference strings, which is why this class carried
- *  nothing catalogued until the enums landed.
+ *  whole of the class until `target` joined them 2026-09-12 with the rest of the
+ *  family's — which is why this class carried nothing catalogued until the
+ *  enums landed.
  *
  *  Retail's 26 filters use five of the six values on each field — every one but
  *  `NONE` — so this is the class with the widest spread of stored enum values in
@@ -510,16 +533,19 @@ const OC_MOB_FIELDS = [
  *  Unlike the trigger family's it is *not* moved to the front of the class: a
  *  trigger is opened to see what it fires, a mob is opened to see what it is.
  *
- *  `item` (a script item-instance name) is the one field of the class still
- *  out, and it is a decision point of its own — it would be checked against
- *  the project's item index the way `oCItem.instance` is, not against the
- *  world's names. Nothing else is a list or save-game-only. `oCMobBed`,
- *  `oCMobLadder`, `oCMobSwitch` and `oCMobWheel` add nothing of their own
- *  beyond `oCMobInter`, so they share this array. */
+ *  `item` — the item the player or an NPC must be carrying to use this mob —
+ *  is in since 2026-09-12, and it is the second kind of cross-reference on the
+ *  same class: a Daedalus item instance, checked against the project's item
+ *  index the way `oCItem.instance` is, where `target` is checked against the
+ *  world's own names. The catalogue says `string` for both and cannot say more,
+ *  since this package holds neither index. Nothing else on the class is a list
+ *  or save-game-only. `oCMobBed`, `oCMobLadder`, `oCMobSwitch` and `oCMobWheel`
+ *  add nothing of their own beyond `oCMobInter`, so they share this array. */
 const OC_MOB_INTER_FIELDS = [
   ...OC_MOB_FIELDS,
   { key: 'stateCount', kind: 'int' },
   { key: 'target', kind: 'string' },
+  { key: 'item', kind: 'string' },
   { key: 'conditionFunction', kind: 'string' },
   { key: 'onStateChangeFunction', kind: 'string' },
   { key: 'rewind', kind: 'bool' },
@@ -535,9 +561,11 @@ const OC_MOB_FIRE_FIELDS = [
   { key: 'vobTree', kind: 'string' },
 ] as const satisfies readonly FieldDescriptor[];
 
-/** The base thirteen plus `VContainer`'s `locked`, `pickString` and
- *  `contents`. `key` (the item instance that unlocks it) stays out with
- *  `item`, the same cross-reference decision.
+/** The base fourteen plus `VContainer`'s `locked`, `key`, `pickString` and
+ *  `contents`. `key` is the item instance that unlocks it, so it is the third
+ *  item-instance string and came in with `item` — it sits between `locked` and
+ *  `pickString` because that is where `VContainer` declares it, and because all
+ *  three only matter while the container is locked.
  *
  *  `contents` was held out by that decision too and is in since §16.26 row 2
  *  reopened it (2026-09-03): it travels as the archive's own `contains`
@@ -550,15 +578,18 @@ const OC_MOB_FIRE_FIELDS = [
 const OC_MOB_CONTAINER_FIELDS = [
   ...OC_MOB_INTER_FIELDS,
   { key: 'locked', kind: 'bool' },
+  { key: 'key', kind: 'string' },
   { key: 'pickString', kind: 'string' },
   { key: 'contents', kind: 'string' },
 ] as const satisfies readonly FieldDescriptor[];
 
-/** The base thirteen plus `VDoor`'s `locked` and `pickString`; `key` stays out
- *  for the same cross-reference reason as the container's. */
+/** The base fourteen plus `VDoor`'s `locked`, `key` and `pickString` — the
+ *  container's three without the contents, in the same order and for the same
+ *  reasons. */
 const OC_MOB_DOOR_FIELDS = [
   ...OC_MOB_INTER_FIELDS,
   { key: 'locked', kind: 'bool' },
+  { key: 'key', kind: 'string' },
   { key: 'pickString', kind: 'string' },
 ] as const satisfies readonly FieldDescriptor[];
 
@@ -712,6 +743,7 @@ export const CLASS_FIELDS = {
   zCMover: ZC_MOVER_FIELDS,
   zCMoverController: ZC_MOVER_CONTROLLER_FIELDS,
   zCVobLensFlare: ZC_VOB_LENS_FLARE_FIELDS,
+  zCEarthquake: ZC_EARTHQUAKE_FIELDS,
   oCMOB: OC_MOB_FIELDS,
   oCMobInter: OC_MOB_INTER_FIELDS,
   oCMobBed: OC_MOB_INTER_FIELDS,
@@ -743,14 +775,12 @@ export const CLASS_FIELDS = {
  * itself and cannot be shared; a per-class insertion test in `zenkit-node` is
  * what ties the two lists together.
  *
- * **Every trigger I3 added is inert until its `target` is reachable, and
- * `target` is not in the catalogue.** A trigger's whole purpose is the
- * `OnTrigger` it forwards, and the field naming where it goes is held out with
- * the rest of the family's cross-reference strings — so a placed `zCTrigger`
- * fires at nothing and the grid offers no way to change that. Not a defect of
- * the construction: the same holds for every retail trigger the editor can
- * already *edit*. A `zCMover` is the one member that does something on its own,
- * since it moves along its visual's animation.
+ * **Every trigger I3 added was inert while its `target` stayed out of the
+ * catalogue, and that closed 2026-09-12.** A trigger's whole purpose is the
+ * `OnTrigger` it forwards, and the field naming where it goes is catalogued on
+ * every class that declares one — so a placed `zCTrigger` can be wired to what
+ * it fires. Before that a `zCMover` was the one member that did anything on its
+ * own, since it moves along its visual's animation.
  *
  * Three of the seven used to go further and carry no catalogued field at all —
  * `zCTriggerList`, `zCCodeMaster` and `zCMessageFilter` — because what
@@ -758,9 +788,11 @@ export const CLASS_FIELDS = {
  * `onTrigger`/`onUntrigger`), and the catalogue held neither. **The enum half
  * of that is over** (2026-08-30): all three are catalogued above, the filter by
  * its two actions, the list by its `mode` plus the twelve it inherits, and the
- * master by the three booleans that were held out with its slaves. The lists
- * and the target strings are still out. Authorable with no editable field is
- * still a real state, but only for the classes that declare no field at all —
+ * master by the three booleans that were held out with its slaves. The target
+ * strings came in 2026-09-12 and the item-instance strings with them, so what
+ * is still out is the **lists** — `targets` and `slaves` — the one held-out
+ * shape the catalogue has left. Authorable with no editable field is still a
+ * real state, but only for the classes that declare no field at all —
  * `zCVob` and the two markers.
  */
 export const AUTHORABLE_VOB_CLASSES = [
@@ -912,6 +944,25 @@ export const BASE_FIELDS = [
   { key: 'bias', kind: 'int', min: 0, max: 31 },
   { key: 'dynamicShadows', kind: 'int', min: 0, max: 3 },
 ] as const satisfies readonly FieldDescriptor[];
+
+/**
+ * How many numbers each array kind holds.
+ *
+ * One table because four layers used to carry the same ternary — the op
+ * builder's carriable check, the IPC assertion, the property grid's parse and
+ * the binding's reader — and a third kind is exactly the change that makes a
+ * ternary wrong in three places at once. The arity belongs to the kind rather
+ * than to the field for the reason `ClassPropValue` gives: every one of those
+ * layers reads the array positionally into a C++ struct.
+ */
+export const ARRAY_ARITY = { color: 4, vec2: 2, vec3: 3 } as const;
+
+/** Whether a field's value is one of the fixed-arity arrays. */
+export function isArrayKind(
+  kind: FieldDescriptor['kind'],
+): kind is keyof typeof ARRAY_ARITY {
+  return kind in ARRAY_ARITY;
+}
 
 /** The descriptor for a base field, or null for a key that is not one — the
  *  `fieldOf` of the fields no class owns. */

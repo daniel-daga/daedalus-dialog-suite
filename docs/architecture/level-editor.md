@@ -2471,7 +2471,7 @@ family's *other* cross-references (`item`, and a door's `key`) are Daedalus item
 instances that would need the renderer's other index, and that reason never
 applied to the target. It sits where `VInteractiveObject` declares it rather
 than at the front of the class: a trigger is opened to see what it fires, a mob
-is opened to see what it is. `item` and `key` are still out.
+is opened to see what it is.
 
 The same day closed `oCTriggerScript`'s gap: it is a `VTrigger` and carried only
 its own `function` plus the pair of targets, because §16.3 catalogued the class
@@ -2482,6 +2482,51 @@ from `zCVob` and has no base to be missing.
 
 Out of this slice by decision: the `targets` and `slaves` **lists**, still the
 op set's unbounded-payload question.
+
+#### What a mob needs to be used, and what unlocks a lock (2026-09-12)
+
+The item-instance cross-reference, everywhere else it occurs.
+`VInteractiveObject.item` is what the player or an NPC has to be carrying to use
+a mob; `VContainer.key` and `VDoor.key` are the item instance that unlocks it.
+Both name a Daedalus symbol, so both take `oCItem.instance`'s split unchanged —
+the *shape* in `assertApplyOpsRequest`, which holds no item index, and the
+*existence* check in the renderer, which does. Two things about them are not
+`instance`'s, and both are decisions.
+
+**Empty is legal, and exempt from the index.** A mob usable bare-handed carries
+no `item` and an unlocked chest no `key`, so the empty string is the ordinary
+state of both fields rather than an omission — an index check that refused it
+would leave a user unable to clear either. It is *not* exempt on
+`oCItem.instance`: an item VOB that spawns nothing is not a thing. So the
+exemption is passed into the field by the caller that knows the class, never
+inferred from the value.
+
+**The check is keyed by class and key together.** `zCMoverController.key` is an
+`int` — the keyframe it drives a mover to — so a rule matching on the field name
+alone would refuse every number typed into it. Both layers therefore read the
+catalogue (`fieldOf(className, key)`) rather than listing the classes a second
+time, which is also what keeps them from drifting apart.
+
+#### The third array kind (2026-09-12)
+
+`zCEarthquake` was readable and uncatalogued for one reason: its `amplitude` is a
+float triple, where the catalogue's array kinds were `color` (four integers) and
+`vec2` (two floats). Daniel took the third kind over half a class, so `vec3`
+exists and the class is whole — `radius`, `duration`, `amplitude`.
+
+What the kind cost is one table. `ARRAY_ARITY` is exported from `vobClasses.ts`
+and read by the op builder's carriable check, the IPC assertion and the property
+grid's parse; each of the three used to carry its own `? 4 : 2`, and a third
+kind is exactly the change that makes a ternary wrong in three places at once.
+The arity belongs to the *kind* and not to the field because every layer below
+reads these arrays positionally into a C++ struct — an arity a field could vary
+is one the binding could not.
+
+`radius` and `duration` are floored at 0 and `amplitude` is not: a component is
+the displacement along its axis, so a negative one is a direction rather than a
+distance that cannot be negative. The class is editable and not authorable —
+`insertVob` has no construction for it — so its write path is reachable only
+through the fixture VOB `1/23`.
 
 **The other half of a target field is knowing the name (#258, 2026-09-12).** The
 warning says a typed name is wrong; a `<datalist>` on the same input offers a

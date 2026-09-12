@@ -499,9 +499,49 @@ what it fires when used; and `oCTriggerScript` has the base `VTrigger` fourteen
 it never got here, which makes it the complete class it always could have been.
 Both took the trigger change's three decisions unchanged — no validator branch,
 a grid warning by key rather than by class, member-by-member C++ — and the
-architecture entry carries them. Still out, and by a rule none of this touches:
-the `targets` and `slaves` **lists**, and the family's item-instance strings
-`item` and a door's `key`, which want the renderer's *other* index.
+architecture entry carries them.
+
+**The item-instance strings landed 2026-09-12, and with them a third array
+kind.** Three changes in one session, each closing one of the two things this
+section still named:
+
+- **`item` and a lock's `key`.** `VInteractiveObject.item` is what the player
+  or an NPC must be carrying to use a mob, and `VContainer`/`VDoor.key` is the
+  item instance that unlocks it — so all three of them, with `oCItem.instance`,
+  are the same cross-reference and are now checked the same way: the
+  Daedalus-symbol *shape* in `assertApplyOpsRequest`, the *existence* check in
+  the renderer against the project's item index. Two things are new against
+  `instance`, and both are decisions rather than mechanics. **Empty is legal**
+  on `item` and `key` and is exempt from the index check — a mob usable
+  bare-handed carries no item and an unlocked chest no key — where an `oCItem`
+  that spawns nothing is not a thing, so the exemption is passed in by the
+  layer that knows the class rather than inferred from the value. And **the
+  check is keyed by class and key together**: `zCMoverController.key` is an
+  `int` keyframe, so a rule matching on the field name alone would refuse every
+  number typed into it. That trap is the reason to read the catalogue rather
+  than list the classes twice, which is what both layers do.
+- **`zCEarthquake`, and the `vec3` kind it needed** (Daniel's call, 2026-09-12).
+  The class was readable and uncatalogued for one reason: `amplitude` is a float
+  triple where the catalogue's array kinds were `color` (four integers) and
+  `vec2` (two floats). The kind was taken over half a class. Its arity now lives
+  in one exported table, `ARRAY_ARITY` — four layers used to carry the same
+  `? 4 : 2` ternary (the op builder's carriable check, the IPC assertion, the
+  grid's parse, and C++), and a third kind is precisely the change that makes a
+  ternary wrong in three places at once. `radius` and `duration` are floored and
+  `amplitude` is not: a component is a displacement along its axis, so its sign
+  is a direction. Not authorable — `insertVob` has no construction for it — so
+  its write path is reachable only through a new fixture VOB, `1/23`.
+
+Noticed and not done: an earthquake's `radius` is a reach, the same shape as a
+sound's and a light's, and `EXTENT_FIELDS` would draw it as a sphere for one
+entry. It is out of this change because which classes get a drawn volume is that
+table's question and not the catalogue's — and because nobody has said whether a
+volume that only matters while the effect is firing is worth the clutter.
+
+**What is left of this section is the lists**, `targets` and `slaves`, and they
+are the catalogue's one remaining held-out shape: they are the first payloads
+with no length to cap, which is the rule §14.1 1.4 stated and nothing since has
+had to revisit. Closing them is a decision about that bound, not a class.
 
 **Two classes that were readable and uncatalogued landed 2026-09-12 (#260).**
 `getVobProps` answered every field of each and the grid drew an empty section
