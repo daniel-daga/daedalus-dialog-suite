@@ -946,6 +946,31 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
           );
         }
       }
+      // The fifth, sixth and seventh (#269): the fields whose value is a
+      // *function* in another file. `oCTriggerScript.function` is what the
+      // trigger calls when it fires; a `VInteractiveObject`'s `conditionFunction`
+      // gates whether the player may use it and `onStateChangeFunction` runs
+      // when it moves. A typo in any of them is a trigger or a mob that does
+      // nothing, with no complaint from the game — the report's own words.
+      //
+      // Same split as `instance`, for the same reason: which functions a project
+      // declares is the renderer's question (`ProjectIndex.functions` is the
+      // index it reads), and this is the half that holds with no project open.
+      // The catalogue is what says which classes declare the fields, so the
+      // check reads it rather than listing the mob family twice.
+      //
+      // Empty passes, as it does for `item`/`key`: a trigger with no function
+      // and a mob with no condition are ordinary, and clearing has to stay
+      // possible.
+      for (const key of ['function', 'conditionFunction', 'onStateChangeFunction']) {
+        const field = fieldOf(className, key);
+        if (field?.kind !== 'string' || typeof to[key] !== 'string') continue;
+        if (to[key] !== '' && !DAEDALUS_INSTANCE.test(to[key] as string)) {
+          throw new Error(
+            `Invalid op: to.${key} must be a Daedalus function name, not ${JSON.stringify(to[key])}`,
+          );
+        }
+      }
       // The second such field (§16.26 row 2): a chest's `contents` is a list
       // of item instances with counts, in the archive's own string. The same
       // split as `instance` — the grammar here, the index in the renderer —

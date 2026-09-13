@@ -64,6 +64,26 @@ describe('MetadataWorkerPool worker lifecycle', () => {
     expect(activeMessagePorts()).toBe(0);
   });
 
+  it('carries every metadata field back from the worker, not only the first few', async () => {
+    // The pool rebuilds the result field by field rather than spreading the
+    // message, so a field the extractor and the worker both learned about is
+    // dropped here unless it is named — and Jest's inline path hides that,
+    // because it spreads. `functions` (#269) and `parseErrors` (#267) are the
+    // two newest; the older ones are here so the next one added is noticed.
+    const pool = makePool('metadata-fields.worker.js');
+
+    const result: any = await pool.processFile('Story/Triggers.d');
+
+    expect(result.functions).toEqual(['TriggerFunc_Gate']);
+    expect(result.parseErrors).toMatchObject({ filePath: 'Story/Triggers.d', total: 3 });
+    expect(result.parseErrors.errors[0]).toMatchObject({ line: 4, column: 1 });
+    expect(result.routines).toEqual(['RTN_START_A']);
+    expect(result.voiceIds).toEqual([{ id: 'DIA_A_01_00', functionName: 'DIA_A_Info' }]);
+    expect(result.isQuestFile).toBe(true);
+    expect(result.mtimeMs).toBe(1234);
+    expect(result.semanticModel).toBeDefined();
+  });
+
   it('settles a file as failure when its worker exits mid-task', async () => {
     const pool = makePool('exit.worker.js');
 

@@ -315,6 +315,18 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     [items],
   );
   /**
+   * The functions the loaded script project declares — what the grid checks a
+   * trigger's `function` and a mob's two script hooks against (#269).
+   *
+   * Off the **project index**, not the merged model the item names come from:
+   * the merged model covers the global files plus the selected NPC's, and a
+   * trigger function is neither. The index rides `buildProjectIndex`'s
+   * worker-pool pass over every file, is already UPPERCASED and sorted, and is
+   * replaced only on load or reindex — so this memo runs about once a project.
+   */
+  const functionList = useProjectStore((s) => s.functionList);
+  const scriptFunctions = useMemo(() => new Set(functionList), [functionList]);
+  /**
    * Which world the surface is showing, bumped by every open.
    *
    * An edit is sent, awaited, and only then applied to the projection — so an
@@ -2230,6 +2242,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                       onEditClassProps={handleEditClassProps}
                       onEditBaseProps={handleEditBaseProps}
                       itemInstances={itemInstances}
+                      scriptFunctions={scriptFunctions}
                       itemVisuals={itemVisuals}
                       thumbnails={thumbnails}
                     />

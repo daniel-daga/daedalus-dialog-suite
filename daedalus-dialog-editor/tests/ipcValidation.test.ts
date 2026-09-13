@@ -1030,6 +1030,50 @@ describe('assertApplyOpsRequest', () => {
       }
     });
 
+    it('refuses a script function name that is not the shape of a Daedalus symbol', () => {
+      // The three fields whose value is a *function* in another file (#269):
+      // `oCTriggerScript.function` is what the trigger calls, and a
+      // `VInteractiveObject`'s two are what gates its use and what runs when it
+      // changes state. Which functions exist is the renderer's question — this
+      // process holds the function index no more than it holds the item one —
+      // so what it refuses here is the shape.
+      const trigger = {
+        op: 'SetVobClassProp', vob: 3, path: '0/4', className: 'oCTriggerScript',
+        from: { function: 'TriggerFunc_Door' }, to: { function: 'TriggerFunc_Gate' },
+      };
+      for (const bad of ['Trigger Func', '1Func', 'Func-Door', 'Func\n', '"F"']) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...trigger, to: { function: bad } }],
+        })).toThrow(/to\.function must be a Daedalus function name/);
+      }
+      for (const good of ['_HiddenFunc', 'TriggerFunc_Door', 'F']) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...trigger, to: { function: good } }],
+        })).not.toThrow();
+      }
+      // Empty passes, as it does for `item` and `key` and unlike `instance`: a
+      // trigger with no script function, and a mob with no condition, are the
+      // ordinary state of both — and clearing the field has to stay possible.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...trigger, to: { function: '' } }],
+      })).not.toThrow();
+
+      const mob = {
+        op: 'SetVobClassProp', vob: 3, path: '0/4', className: 'oCMobDoor',
+        from: { conditionFunction: '' }, to: { conditionFunction: 'Cond Door' },
+      };
+      expect(() => assertApplyOpsRequest({ ops: [mob] }))
+        .toThrow(/to\.conditionFunction must be a Daedalus function name/);
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...mob, from: { onStateChangeFunction: '' }, to: { onStateChangeFunction: 'On Change' } }],
+      })).toThrow(/to\.onStateChangeFunction must be a Daedalus function name/);
+      // And `from` is not checked, for the reason `instance`'s is not: it is
+      // what the world already holds.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...trigger, from: { function: 'has a space' }, to: { function: 'Fixed' } }],
+      })).not.toThrow();
+    });
+
     it('takes an op that repairs an instance the world already holds', () => {
       // `to` is checked and `from` deliberately is not. `from` is the value the
       // world *has*, and a third-party or hand-edited world is free to hold

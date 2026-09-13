@@ -478,6 +478,50 @@ const FocusNameWarning: React.FC<{ className: string; value: ClassPropValue }> =
 const VOB_TARGET_KEYS: ReadonlySet<string> = new Set(['target', 'vobTarget', 'failureTarget']);
 
 /**
+ * The class fields whose value is a **script function** (#269).
+ *
+ * `oCTriggerScript.function` is what the trigger calls when it fires; a
+ * `VInteractiveObject`'s `conditionFunction` gates whether the player may use
+ * it and `onStateChangeFunction` runs when it moves. A typo in any of them is
+ * the report's own complaint — "a silently dead trigger or empty chest in
+ * game", with no warning anywhere.
+ *
+ * A **warning**, not the refusal `oCItem.instance` gets, and the difference is
+ * the consequence: an instance no script declares crashes ZenGin, while a
+ * function nothing declares is inert. The index is also weaker than the item
+ * one in the way that matters here — `ProjectIndex.functions` is built at
+ * project load and not refreshed on save, so a function the user wrote a minute
+ * ago is not in it, and a refusal would block the name that is about to be
+ * right. Same shape as the dangling-target warning beside it.
+ */
+const SCRIPT_FUNCTION_KEYS: ReadonlySet<string> = new Set([
+  'function', 'conditionFunction', 'onStateChangeFunction',
+]);
+
+const UnknownFunctionWarning: React.FC<{
+  field: string; value: ClassPropValue; functions: ReadonlySet<string>;
+}> = ({ field, value, functions }) => {
+  // An empty index is a project that is not loaded, or one whose scripts this
+  // app has not indexed: nothing is known, never that nothing is legal.
+  if (functions.size === 0) return null;
+  // Whitespace is empty, as it is for a target: no function is the ordinary
+  // state of all three fields.
+  if (typeof value !== 'string' || value.trim() === '') return null;
+  if (functions.has(value.trim().toUpperCase())) return null;
+
+  return (
+    <Typography
+      variant="caption"
+      color="warning.main"
+      data-testid={`world-prop-class-${field}-warning`}
+      sx={{ display: 'block', mt: 0.25 }}
+    >
+      No script in this project declares that function, so this does nothing.
+    </Typography>
+  );
+};
+
+/**
  * How many names a target field offers at once (#258).
  *
  * The warning above says a typed name is wrong; this is the half that offers a
@@ -747,6 +791,13 @@ export interface WorldPropertyGridProps {
    * whether an index it does not have would have allowed the name.
    */
   itemInstances: ReadonlySet<string>;
+  /**
+   * The functions the loaded script project declares, UPPERCASED — the project
+   * index's own set, which is whole-project rather than capped by what has been
+   * opened, because a trigger's function almost always lives in a file nobody
+   * opens. Empty is no project, and warns about nothing (#269).
+   */
+  scriptFunctions: ReadonlySet<string>;
   /** Uppercased item instance → the visual its script declares — what the
    *  chest-contents picker draws (§16.26 row 2). Absent with no project. */
   itemVisuals?: ReadonlyMap<string, string>;
@@ -797,7 +848,7 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
   {
     summary, selection, refusalGeneration,
     onEditProps, onFocus, classProps, onEditClassProps, onEditBaseProps, itemInstances,
-    itemVisuals, thumbnails,
+    scriptFunctions, itemVisuals, thumbnails,
     onTranslate, onRotate, onRotateSelection,
   },
 ) => {
@@ -1292,6 +1343,13 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
                     field={classField.key}
                     value={classProps[classField.key]}
                     names={vobNames}
+                  />
+                )}
+                {SCRIPT_FUNCTION_KEYS.has(classField.key) && (
+                  <UnknownFunctionWarning
+                    field={classField.key}
+                    value={classProps[classField.key]}
+                    functions={scriptFunctions}
                   />
                 )}
               </Field>

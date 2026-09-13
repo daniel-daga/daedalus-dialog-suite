@@ -82,22 +82,21 @@ done. Listed here only so triage sees it beside the rest.
 
 ---
 
-## B. World → script references — one direction left (#269, #270)
+## B. World → script references — one field left (#270)
 
 The report's list (waypoint names, `triggerTarget`, container contents, item
-instances, `scemeName`) is **mostly closed**, and the remainder is narrow and
-uses machinery that already exists.
+instances, `scemeName`) is **closed but for one field**, and that one uses
+machinery that already exists.
 
 Left:
 
-- **Script *function* names are free text.** `oCTriggerScript.function`,
-  `VInteractiveObject.conditionFunction` and `.onStateChangeFunction` are
-  `kind: 'string'` in the catalogue with no existence check — a typo is a
-  silently dead trigger, exactly the report's complaint. The item-instance
-  pattern is the template (shape check in `assertApplyOpsRequest`, existence
-  check in the renderer against the project index), but it needs a **function
-  index in `ProjectIndex`**, which does not exist today — the index carries
-  npcs, dialogs, routines and voice ids, not functions.
+- ~~**Script *function* names are free text.**~~ **Closed 2026-09-13**:
+  `ProjectIndex.functions` is the index that was missing, and the three fields
+  take `oCItem.instance`'s split — shape in `assertApplyOpsRequest`, existence
+  in the renderer. The renderer's half is a **warning** rather than a refusal,
+  because a dead trigger is inert where a bad instance crashes, and because the
+  index goes stale the moment a function is written. `docs/architecture/level-editor.md`,
+  *"A script function name stops being free text"*, carries the decision.
 - **`scemeName` is not catalogued at all** — not editable, not checked, not
   readable in the grid.
 

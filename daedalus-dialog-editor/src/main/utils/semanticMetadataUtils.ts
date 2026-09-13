@@ -21,6 +21,14 @@ export interface ParsedFileMetadata {
    */
   semanticModel?: SemanticModel;
   /**
+   * Every function the file declares, in the casing it was written. The World
+   * surface checks a `oCTriggerScript.function` against the aggregate (#269),
+   * and it comes from here rather than from the site indexes because those read
+   * only clean-parse models — a file that fails to parse still declares real
+   * functions before the point it fails at.
+   */
+  functions: string[];
+  /**
    * The file's syntax errors, present only when it has any. The model above is
    * withheld for exactly these files, so without this the errors this pass
    * already found would be computed and thrown away (#267).
@@ -603,6 +611,7 @@ export function extractFileMetadataFromSource(sourceCode: string, filePath: stri
     prototypes,
     isQuestFile: hasQuestTopicConstants(semanticModel) || hasQuestStateVariables(semanticModel),
     routines: extractDailyRoutines(semanticModel),
+    functions: Object.keys(semanticModel.functions || {}),
     voiceIds: extractVoiceIds(semanticModel),
     semanticModel: modelComplete && !semanticModel.hasErrors ? semanticModel : undefined,
     parseErrors: collectParseErrors(semanticModel, filePath)

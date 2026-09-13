@@ -94,6 +94,11 @@ interface ProjectState {
   routineStateIndex: Record<string, { id: number; states: Record<string, string> }>;
   // Files whose metadata extraction failed during the index build (degraded but openable)
   metadataFailures: Array<{ filePath: string; error: string }>;
+  // Every function the project declares, UPPERCASED and sorted — the whole
+  // project, not only what has been ingested, which is what the World surface
+  // needs to tell a typo in a trigger's script function from a function
+  // declared in a file nobody opened (#269). Same lifecycle as routineList.
+  functionList: string[];
   // Syntax errors per broken file, from the index pass — the only pass that
   // sees every file, which is what the Problems panel's `parse-error` rule
   // needs (#267). Same lifecycle as spawnSiteIndex.
@@ -437,6 +442,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   routineNpcIndex: {},
   routineStateIndex: {},
   metadataFailures: [],
+  functionList: [],
   parseErrorIndex: [],
   parsedFiles: new Map(),
   parseGeneration: 0,
@@ -499,6 +505,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         routineNpcIndex: rawIndex.routinesByNpc || {},
         routineStateIndex: rawIndex.routineStatesByNpc || {},
         metadataFailures: rawIndex.metadataFailures || [],
+        functionList: rawIndex.functions || [],
         parseErrorIndex: rawIndex.parseErrors || [],
         isLoading: false,
         parsedFiles: new Map(), // Clear any previous cache
@@ -746,6 +753,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       routineNpcIndex: {},
       routineStateIndex: {},
       metadataFailures: [],
+      functionList: [],
       parseErrorIndex: [],
       parsedFiles: new Map(),
       parseGeneration: get().parseGeneration + 1,

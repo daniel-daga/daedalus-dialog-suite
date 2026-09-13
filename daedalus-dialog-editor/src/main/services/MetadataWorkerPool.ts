@@ -17,6 +17,8 @@ export interface MetadataResult {
   prototypes: Array<{ name: string; parent: string }>;
   isQuestFile: boolean;
   routines: string[];
+  /** Every function the file declares, in its own casing (see ParsedFileMetadata). */
+  functions: string[];
   voiceIds: Array<{ id: string; functionName: string }>;
   /** Full semantic model, present only for clean parses (see ParsedFileMetadata). */
   semanticModel?: SemanticModel;
@@ -156,8 +158,10 @@ export class MetadataWorkerPool {
       prototypes?: Array<{ name: string; parent: string }>;
       isQuestFile?: boolean;
       routines?: string[];
+      functions?: string[];
       voiceIds?: Array<{ id: string; functionName: string }>;
       semanticModel?: SemanticModel;
+      parseErrors?: FileParseErrors;
       mtimeMs?: number;
       error?: string;
     }) => {
@@ -188,12 +192,17 @@ export class MetadataWorkerPool {
     prototypes?: Array<{ name: string; parent: string }>;
     isQuestFile?: boolean;
     routines?: string[];
+    functions?: string[];
     voiceIds?: Array<{ id: string; functionName: string }>;
     semanticModel?: SemanticModel;
+    parseErrors?: FileParseErrors;
     mtimeMs?: number;
     error?: string;
   }) {
-    const { id, dialogs, instances, prototypes, isQuestFile, routines, voiceIds, semanticModel, mtimeMs, error } = message;
+    const {
+      id, dialogs, instances, prototypes, isQuestFile, routines, functions, voiceIds, semanticModel,
+      parseErrors, mtimeMs, error,
+    } = message;
 
     const inFlight = this.inFlightByWorker.get(worker);
     if (inFlight && inFlight.id === id) {
@@ -214,8 +223,10 @@ export class MetadataWorkerPool {
           prototypes: prototypes || [],
           isQuestFile: !!isQuestFile,
           routines: routines || [],
+          functions: functions || [],
           voiceIds: voiceIds || [],
           semanticModel,
+          parseErrors,
           mtimeMs,
         });
       }

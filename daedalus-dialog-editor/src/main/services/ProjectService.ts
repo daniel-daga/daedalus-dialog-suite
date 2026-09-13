@@ -156,6 +156,7 @@ class ProjectService {
     const allNpcs = new Set<string>();
     const questFiles: string[] = [];
     const allRoutines = new Set<string>();
+    const allFunctions = new Set<string>();
     const voiceIds: Record<string, Array<{ filePath: string; functionName: string }>> = {};
     const metadataFailures: Array<{ filePath: string; error: string }> = [];
     const parseErrors: FileParseErrors[] = [];
@@ -174,7 +175,10 @@ class ProjectService {
       )).map((result) => {
         if ('ok' in result) {
           metadataFailures.push({ filePath: result.filePath, error: result.error });
-          return { dialogs: [], instances: [], prototypes: [], isQuestFile: false, routines: [], voiceIds: [] };
+          return {
+            dialogs: [], instances: [], prototypes: [], isQuestFile: false, routines: [],
+            functions: [], voiceIds: [],
+          };
         }
         return result;
       });
@@ -263,6 +267,14 @@ class ProjectService {
           allRoutines.add(routine);
         }
 
+        // Every function the project declares, uppercased because Daedalus is
+        // case-insensitive and the World surface compares against typed text
+        // (#269). Whole-project by construction: this pass reads every file,
+        // which the renderer's parsed models do not.
+        for (const func of result.functions || []) {
+          allFunctions.add(func.toUpperCase());
+        }
+
         // Aggregate AI_Output voice ids, keyed case-insensitively (Daedalus is
         // case-insensitive); entries keep the original casing.
         for (const voiceId of result.voiceIds || []) {
@@ -287,6 +299,7 @@ class ProjectService {
       allFiles,
       questFiles,
       routines: Array.from(allRoutines).sort(),
+      functions: Array.from(allFunctions).sort(),
       npcPrototypes,
       voiceIds,
       waypointSites: extractWaypointSites(fileModelsForSiteIndexes),

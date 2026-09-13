@@ -2535,6 +2535,40 @@ alone would refuse every number typed into it. Both layers therefore read the
 catalogue (`fieldOf(className, key)`) rather than listing the classes a second
 time, which is also what keeps them from drifting apart.
 
+#### A script function name stops being free text (2026-09-13)
+
+The last of the world → script cross-references (#269). `oCTriggerScript.function`
+is what the trigger calls when it fires; `VInteractiveObject.conditionFunction`
+gates whether the player may use a mob and `.onStateChangeFunction` runs when it
+moves. All three were `kind: 'string'` with nothing checking them, and the
+report's complaint is exactly what that costs: *"a typo produces no warning in
+the editor and a silently dead trigger or empty chest in game."*
+
+**It needed an index that did not exist.** `ProjectIndex` carried npcs, dialogs,
+routines and voice ids and no functions at all, so unlike the item case there
+was nothing for the renderer to check against either — the merged semantic model
+covers the global files plus the selected NPC's, and a trigger function is
+neither. `ProjectIndex.functions` is that index: every function of every file,
+UPPERCASED and sorted, off the metadata pass's own per-file models rather than
+off the site indexes, so a file that fails to parse still contributes the
+functions it declares before the point it fails at.
+
+**A warning, not a refusal — and that is the decision.** The split itself is
+`oCItem.instance`'s unchanged (shape in `assertApplyOpsRequest`, existence in
+the renderer), but the renderer's half is a warning beside the field, the shape
+the dangling `target` already has. Two reasons, and the second is the one that
+generalises:
+
+- An instance no script declares **crashes** ZenGin; a function nothing declares
+  is inert. The consequence sets the severity, as it did for `target`.
+- The index is **staler than the item one where it matters**. It is built at
+  project load and reindex, so a function written a minute ago is not in it —
+  and a refusal would block the name that is about to be right, on the exact
+  workflow the field exists for.
+
+Empty passes at both layers, for `item`/`key`'s reason: a trigger with no script
+function and a mob with no condition are ordinary.
+
 #### The third array kind (2026-09-12)
 
 `zCEarthquake` was readable and uncatalogued for one reason: its `amplitude` is a

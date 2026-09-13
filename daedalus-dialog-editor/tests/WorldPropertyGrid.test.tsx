@@ -123,6 +123,9 @@ const WORLD = summaryOf(vobIndex([
   { name: 'GATE_CONTROLLER', cls: 'zCMoverController', visualType: 'UNKNOWN' },
   // The class the third array kind was added for (2026-09-12).
   { name: 'QUAKE', cls: 'zCEarthquake', visualType: 'UNKNOWN' },
+  // The trigger whose value is a *script function* rather than a VOB name
+  // (#269) — the field the project's function index is checked against.
+  { name: 'TRIGGER_SCRIPT', cls: 'oCTriggerScript', visualType: 'UNKNOWN' },
 ]));
 
 /**
@@ -218,6 +221,17 @@ beforeEach(() => {
 /** The wiring every render needs. `classProps` is null by default because that
  *  is what a VOB of an uncatalogued class gets — nothing is fetched for one —
  *  and the tests that are about the class section hand it values themselves. */
+/** The one field `oCTriggerScript` adds to the `zCTrigger` fourteen. */
+const TRIGGER_SCRIPT: ClassProps = {
+  class: 'oCTriggerScript',
+  function: 'TriggerFunc_Gate',
+  target: '', vobTarget: '',
+  startEnabled: true, sendUntrigger: false, reactToOnTrigger: true, reactToOnTouch: false,
+  reactToOnDamage: false, respondToObject: true, respondToPc: true, respondToNpc: false,
+  maxActivationCount: -1, retriggerDelaySec: 0, damageThreshold: 0, fireDelaySec: 0,
+  ...BASE_READ,
+};
+
 const wiring = {
   onEditProps: onEdit,
   onEditClassProps: onEditClass,
@@ -232,7 +246,12 @@ const wiring = {
   /** No script project loaded, which is what a world opened on its own has —
    *  the tests that are about the item index hand it names themselves. */
   itemInstances: new Set<string>(),
+  /** Same, for the function index the script-function fields read (#269). */
+  scriptFunctions: new Set<string>(),
 };
+
+/** Where the trigger-script VOB sits in `WORLD`. */
+const TRIGGER_SCRIPT_VOB = 13;
 
 describe('WorldPropertyGrid', () => {
   it('says nothing is selected rather than showing an empty grid', () => {
@@ -1603,6 +1622,110 @@ describe('WorldPropertyGrid, typed rotation', () => {
 
     expect(screen.getByTestId('world-prop-rotation-unavailable')).toBeInTheDocument();
     expect(screen.queryByTestId('world-prop-rotation-yaw-input')).not.toBeInTheDocument();
+  });
+
+  /**
+   * A script function name nobody declares (#269).
+   *
+   * Like the dangling target above and unlike an unknown item instance: a typo
+   * here is a trigger or a mob that silently does nothing, not a crash, and the
+   * index it is checked against is built at project load and goes stale the
+   * moment a function is written. So it warns and never refuses — a refusal
+   * would block a name the user has just declared.
+   */
+  describe('a script function no loaded script declares', () => {
+    const withFunctions = { ...wiring, scriptFunctions: new Set(['TRIGGERFUNC_GATE', 'COND_DOOR']) };
+
+    it('warns on a trigger`s function, and leaves the field editable', () => {
+      render(
+        <WorldPropertyGrid
+          summary={WORLD}
+          selection={[TRIGGER_SCRIPT_VOB]}
+          {...withFunctions}
+          classProps={{ ...TRIGGER_SCRIPT, function: 'TriggerFunc_Gat' }}
+        />,
+      );
+
+      expect(screen.getByTestId('world-prop-class-function-warning')).toBeInTheDocument();
+      expect(input('class-function').value).toBe('TriggerFunc_Gat');
+    });
+
+    it('says nothing when a script declares it, whatever the casing', () => {
+      // Daedalus is case-insensitive, and the index is uppercased for it.
+      for (const name of ['TriggerFunc_Gate', 'TRIGGERFUNC_GATE', 'triggerfunc_gate']) {
+        const { unmount } = render(
+          <WorldPropertyGrid
+            summary={WORLD}
+            selection={[TRIGGER_SCRIPT_VOB]}
+            {...withFunctions}
+            classProps={{ ...TRIGGER_SCRIPT, function: name }}
+          />,
+        );
+        expect(screen.queryByTestId('world-prop-class-function-warning')).not.toBeInTheDocument();
+        unmount();
+      }
+    });
+
+    it('says nothing at all with no project loaded', () => {
+      // An empty index means nothing is known, never that nothing is legal —
+      // the rule every script-backed check here follows. A world may be edited
+      // with no scripts open at all.
+      render(
+        <WorldPropertyGrid
+          summary={WORLD}
+          selection={[TRIGGER_SCRIPT_VOB]}
+          {...wiring}
+          classProps={{ ...TRIGGER_SCRIPT, function: 'Anything_At_All' }}
+        />,
+      );
+
+      expect(screen.queryByTestId('world-prop-class-function-warning')).not.toBeInTheDocument();
+    });
+
+    it('says nothing about an empty function, which is a trigger that calls none', () => {
+      render(
+        <WorldPropertyGrid
+          summary={WORLD}
+          selection={[TRIGGER_SCRIPT_VOB]}
+          {...withFunctions}
+          classProps={{ ...TRIGGER_SCRIPT, function: '' }}
+        />,
+      );
+
+      expect(screen.queryByTestId('world-prop-class-function-warning')).not.toBeInTheDocument();
+    });
+
+    it('warns on a mob`s condition and state-change hooks too', () => {
+      // 8, the bed: the same two fields every `VInteractiveObject` carries, and
+      // the check is by key against the catalogue rather than by class.
+      render(
+        <WorldPropertyGrid
+          summary={WORLD}
+          selection={[8]}
+          {...withFunctions}
+          classProps={{ ...BED, conditionFunction: 'Cond_Dor', onStateChangeFunction: 'Cond_Door' }}
+        />,
+      );
+
+      expect(screen.getByTestId('world-prop-class-conditionFunction-warning')).toBeInTheDocument();
+      expect(screen.queryByTestId('world-prop-class-onStateChangeFunction-warning')).not.toBeInTheDocument();
+    });
+
+    it('leaves a field that names no function alone', () => {
+      // `focusName` is a display string and `target` is a VOB name; neither is
+      // a symbol, and a check that matched on every string would warn on both.
+      render(
+        <WorldPropertyGrid
+          summary={WORLD}
+          selection={[8]}
+          {...withFunctions}
+          classProps={{ ...BED, focusName: 'MOBNAME_BED', target: 'GATE_MOVER' }}
+        />,
+      );
+
+      expect(screen.queryByTestId('world-prop-class-focusName-warning')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('world-prop-class-target-warning')).not.toBeInTheDocument();
+    });
   });
 
   // What a trigger fires at, and whether anything answers to that name

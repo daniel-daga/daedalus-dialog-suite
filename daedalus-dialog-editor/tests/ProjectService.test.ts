@@ -405,6 +405,47 @@ INSTANCE DIA_Arog_Greeting (C_INFO)
       expect(index.parseErrors).toEqual([]);
     });
 
+    it('indexes every function name in the project, uppercased and sorted', async () => {
+      // The index pass is the only one that sees every file, which is what the
+      // World surface needs to tell a typo in `oCTriggerScript.function` from a
+      // function declared somewhere nobody has opened (#269). Daedalus is
+      // case-insensitive, so the index is uppercased, as `routinesByNpc` and
+      // `voiceIds` already are.
+      const dir = path.join(tempDir, 'Story');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'Triggers.d'), [
+        'FUNC VOID TriggerFunc_Gate() {};',
+        'FUNC INT Cond_Door() { return TRUE; };'
+      ].join('\n'));
+      fs.writeFileSync(path.join(dir, 'DIA_Farim.d'), [
+        'INSTANCE DIA_Farim_Hallo (C_INFO) { npc = SLD_Farim; information = DIA_Farim_Hallo_Info; };',
+        'FUNC VOID DIA_Farim_Hallo_Info() {};'
+      ].join('\n'));
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.functions).toEqual([
+        'COND_DOOR', 'DIA_FARIM_HALLO_INFO', 'TRIGGERFUNC_GATE'
+      ]);
+    });
+
+    it('keeps the functions a broken file declares before its syntax error', async () => {
+      // The metadata pass builds as much model as it can out of a file that
+      // does not parse and withholds only the whole model; the functions it did
+      // reach are real, and dropping them would make the World surface call a
+      // correct name a typo.
+      fs.writeFileSync(path.join(tempDir, 'Half.d'), [
+        'FUNC VOID Reachable_Func() {};',
+        'FUNC VOID Broken_Func() @@@ {};'
+      ].join('\n'));
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.functions).toContain('REACHABLE_FUNC');
+    });
+
     it('should sort NPCs alphabetically', async () => {
       const dialogDir = path.join(tempDir, 'Dialoge');
       fs.mkdirSync(dialogDir, { recursive: true });

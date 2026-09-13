@@ -98,6 +98,19 @@ export interface ProjectIndex {
   allFiles: string[];
   questFiles: string[];
   routines: string[];
+  /**
+   * Every function the project declares, UPPERCASED and sorted — Daedalus is
+   * case-insensitive, and this is compared against text a user typed.
+   *
+   * Whole-project by construction, which is the point: the World surface checks
+   * `oCTriggerScript.function` and a `VInteractiveObject`'s two script hooks
+   * against it (#269), and a trigger function almost always lives in a file
+   * nobody has opened, so the renderer's parsed models cannot answer. Built at
+   * project load/reindex time, same as voiceIds — so a function written since
+   * the last reindex is not in it, which is why the surface warns rather than
+   * refuses.
+   */
+  functions: string[];
   /** Prototype names (normalized uppercase) whose parent chain reaches C_NPC */
   npcPrototypes: string[];
   /**
