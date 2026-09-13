@@ -44,6 +44,27 @@ describe('ProblemsList', () => {
     expect(onSelect).toHaveBeenCalledWith(problems[1]);
   });
 
+  it('shows a syntax error\'s line where another row shows its declaration', () => {
+    // A syntax error is the one finding with a position and no declaration
+    // (#267). Nothing jumps to the line — the row opens the file — but it is
+    // what tells two errors in one file apart.
+    render(
+      <ProblemsList
+        problems={[{
+          id: 'parse-error:Story/NPC/Broken.d:0',
+          rule: 'parse-error',
+          severity: 'error',
+          message: 'Syntax error at line 12, column 5 — npc == SLD',
+          locus: { kind: 'script', filePath: 'Story/NPC/Broken.d', line: 12 }
+        }]}
+        onSelect={() => {}}
+      />
+    );
+
+    expect(screen.getByTestId('problem-row-0')).toHaveTextContent('Syntax error');
+    expect(screen.getByTestId('problem-row-0')).toHaveTextContent('Broken.d · line 12');
+  });
+
   it('shows an empty state when there are no problems', () => {
     render(<ProblemsList problems={[]} onSelect={() => {}} />);
 

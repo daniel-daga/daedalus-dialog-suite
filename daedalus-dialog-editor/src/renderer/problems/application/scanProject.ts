@@ -1,4 +1,4 @@
-import type { RoutineSite, SemanticModel, SpawnSite } from '../../../shared/types';
+import type { FileParseErrors, RoutineSite, SemanticModel, SpawnSite } from '../../../shared/types';
 import type { PortalFinding } from '../../../shared/worldTypes';
 import type {
   FileFacts,
@@ -43,6 +43,9 @@ export interface ProjectScanInput {
   /** Every `TA` entry the project index read — what `routine-overlap` sweeps.
    *  Absent is an index that has not loaded, and the rule then says nothing. */
   routineSites?: readonly RoutineSite[];
+  /** The index pass's per-file syntax errors — what `parse-error` reports. It
+   *  is the only pass that sees a file nobody opened. */
+  parseErrors?: readonly FileParseErrors[];
 }
 
 export interface ProjectScanResult {
@@ -61,7 +64,8 @@ export function scanProject(input: ProjectScanInput): ProjectScanResult {
     routineSites: input.routineSites,
     npcsWithDialogs: input.npcsWithDialogs,
     world: input.world,
-    portalFindings: input.portalFindings
+    portalFindings: input.portalFindings,
+    parseErrors: input.parseErrors
   });
   return { problems: runRules(view), scannedFileCount: input.files.length };
 }

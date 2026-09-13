@@ -338,6 +338,73 @@ INSTANCE DIA_Arog_Greeting (C_INFO)
       expect(index.allFiles).toHaveLength(1); // File still tracked
     });
 
+    it('records the syntax errors of a file, with their lines', async () => {
+      // The index pass parses every file in the project, so it is the only
+      // place that sees a broken file nobody has opened (#267). It already
+      // called `checkForSyntaxErrors` and then dropped the model; this keeps
+      // what that pass found.
+      fs.writeFileSync(path.join(tempDir, 'Good.d'), 'INSTANCE DIA_A (C_INFO) { npc = Alpha; };');
+      fs.writeFileSync(path.join(tempDir, 'Broken.d'), [
+        'INSTANCE DIA_B (C_INFO)',
+        '{',
+        '    npc = Beta;',
+        '};',
+        '',
+        'FUNC VOID DIA_B_Info() @@@ {',
+        '};'
+      ].join('\n'));
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.parseErrors.map((file: any) => path.basename(file.filePath))).toEqual(['Broken.d']);
+      const broken = index.parseErrors[0];
+      expect(broken.total).toBeGreaterThan(0);
+      expect(broken.errors.length).toBe(broken.total);
+      // The junk sits on line 6; every carried error names a 1-based line.
+      expect(broken.errors.every((error: any) => error.line >= 1)).toBe(true);
+      expect(broken.errors.some((error: any) => error.line === 6)).toBe(true);
+    });
+
+    it('caps the errors it carries per file but keeps the true count', async () => {
+      // A file broken declaration by declaration yields one ERROR node each —
+      // 50 of them here — and the Problems list is not virtualized.
+      const lines = [];
+      for (let i = 0; i < 50; i++) lines.push(`FUNC VOID F${i}() { var int x@@; };`);
+      fs.writeFileSync(path.join(tempDir, 'Junk.d'), lines.join('\n'));
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.parseErrors).toHaveLength(1);
+      const junk = index.parseErrors[0];
+      expect(junk.errors).toHaveLength(20);
+      expect(junk.total).toBe(50);
+    });
+
+    it('truncates the offending source it quotes', async () => {
+      // Tree-sitter collapses a mis-encoded file into a single ERROR node whose
+      // text is the whole file, so the cap that matters there is on the text.
+      fs.writeFileSync(path.join(tempDir, 'Binary.d'), String.fromCharCode(0x7f).repeat(4096));
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.parseErrors).toHaveLength(1);
+      for (const error of index.parseErrors[0].errors) {
+        expect(error.text.length).toBeLessThanOrEqual(120);
+      }
+    });
+
+    it('reports no parse errors for a clean project', async () => {
+      fs.writeFileSync(path.join(tempDir, 'Good.d'), 'INSTANCE DIA_A (C_INFO) { npc = Alpha; };');
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.parseErrors).toEqual([]);
+    });
+
     it('should sort NPCs alphabetically', async () => {
       const dialogDir = path.join(tempDir, 'Dialoge');
       fs.mkdirSync(dialogDir, { recursive: true });

@@ -13,6 +13,42 @@ export interface DialogMetadata {
 }
 
 
+/**
+ * One syntax error the index pass found, flattened out of the semantic model's
+ * `SyntaxError` so it survives IPC as plain data. `line`/`column` are 1-based,
+ * as the parser reports them.
+ */
+export interface ParseErrorSite {
+  type: string;
+  message: string;
+  line: number;
+  column: number;
+  /** The offending source, truncated (see {@link PARSE_ERROR_TEXT_LIMIT}). */
+  text: string;
+}
+
+/**
+ * The syntax errors of one file, as the whole-project index pass saw them.
+ *
+ * Both caps exist because the Problems list is not virtualized and this data
+ * crosses IPC: tree-sitter collapses a mis-encoded file into a *single* ERROR
+ * node whose text is the whole file (so `text` is truncated), while a file
+ * broken declaration by declaration yields one node each (so `errors` is
+ * capped). `total` is what the parse actually found, which is what keeps the
+ * panel honest about the ones it is not showing.
+ */
+export interface FileParseErrors {
+  filePath: string;
+  errors: ParseErrorSite[];
+  total: number;
+}
+
+/** Most syntax errors carried per file; the rest are reported as a count. */
+export const PARSE_ERROR_LIMIT = 20;
+
+/** Longest offending-source snippet carried with a syntax error. */
+export const PARSE_ERROR_TEXT_LIMIT = 120;
+
 /** One statically resolvable spawn: names are UPPERCASED, line is 1-based. */
 export interface SpawnSite {
   instance: string;
@@ -121,6 +157,15 @@ export interface ProjectIndex {
   exchangeSites: ExchangeSite[];
   /** Files whose metadata extraction failed (read/parse error, timeout, crash). */
   metadataFailures: Array<{ filePath: string; error: string }>;
+  /**
+   * Syntax errors per broken file — one entry per file that has any, none for a
+   * clean project. This pass is the only one that sees every file, which is why
+   * the Problems panel's `parse-error` rule reads its errors here rather than
+   * off `parsedFiles`: those hold only what has been opened, so a project with
+   * a broken file nobody opened used to look clean (#267). Built at project
+   * load/reindex time, same as voiceIds.
+   */
+  parseErrors: FileParseErrors[];
 }
 
 export interface RecentProject {

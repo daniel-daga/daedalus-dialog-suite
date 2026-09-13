@@ -1,4 +1,4 @@
-import type { SemanticModel, SpawnSite } from '../../../shared/types';
+import type { FileParseErrors, SemanticModel, SpawnSite } from '../../../shared/types';
 import type { PortalFinding } from '../../../shared/worldTypes';
 import type { RoutineSite } from '../../../shared/types';
 
@@ -13,6 +13,7 @@ import type { RoutineSite } from '../../../shared/types';
 export type ProblemSeverity = 'error' | 'warning';
 
 export type ProblemRuleId =
+  | 'parse-error'
   | 'npc-not-found'
   | 'knowsinfo-dangling'
   | 'choice-no-clearchoices'
@@ -44,6 +45,14 @@ export interface ScriptLocus {
   dialogName?: string;
   /** Function the problem points at, used for navigation. */
   functionName?: string;
+  /**
+   * 1-based source line, for the findings that have one. Only `parse-error`
+   * does today: the semantic model keeps positions on top-level declarations
+   * alone, so every other rule can name a dialog or a function and no line
+   * (#267's second half). Nothing jumps to it — there is no source view — but
+   * the panel shows it, which is what tells two syntax errors apart.
+   */
+  line?: number;
   /**
    * The waypoint name a `waypoint-not-in-world` finding names, in the script's
    * own casing. Carried so the Problems panel's "Add to world" action has a
@@ -190,6 +199,14 @@ export interface ProjectView {
    * scan runs on every debounced keystroke.
    */
   portalFindings?: readonly PortalFinding[];
+  /**
+   * The syntax errors the project index pass found, one entry per broken file.
+   * Taken from the index for the reason the waypoint and spawn sites are: it
+   * is the pass that sees every file, and a broken file nobody opened is
+   * precisely the case `parse-error` exists for. Empty is a clean project or
+   * an index that has not loaded — the rule says nothing either way.
+   */
+  parseErrors: readonly FileParseErrors[];
   /**
    * Every `TA` entry the project index read, across every routine — what
    * `routine-overlap` sweeps (#235). From the index's whole-project pass

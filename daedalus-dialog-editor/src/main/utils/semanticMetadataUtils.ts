@@ -1,4 +1,5 @@
-import type { DialogMetadata, RoutineSite, SemanticModel, SpawnSite } from '../../shared/types';
+import type { DialogMetadata, FileParseErrors, RoutineSite, SemanticModel, SpawnSite } from '../../shared/types';
+import { PARSE_ERROR_LIMIT, PARSE_ERROR_TEXT_LIMIT } from '../../shared/types';
 import { SemanticModelBuilderVisitor } from 'daedalus-parser/semantic-visitor';
 
 import DaedalusParser from 'daedalus-parser';
@@ -19,7 +20,37 @@ export interface ParsedFileMetadata {
    * Error files stay on the parse path, which returns an errors-only model.
    */
   semanticModel?: SemanticModel;
+  /**
+   * The file's syntax errors, present only when it has any. The model above is
+   * withheld for exactly these files, so without this the errors this pass
+   * already found would be computed and thrown away (#267).
+   */
+  parseErrors?: FileParseErrors;
 }
+
+/**
+ * The parse's syntax errors as plain, bounded, IPC-safe data. See
+ * {@link FileParseErrors} for why both caps are here.
+ */
+const collectParseErrors = (
+  semanticModel: SemanticModel,
+  filePath: string
+): FileParseErrors | undefined => {
+  const errors = semanticModel.errors || [];
+  if (errors.length === 0) return undefined;
+
+  return {
+    filePath,
+    total: errors.length,
+    errors: errors.slice(0, PARSE_ERROR_LIMIT).map((error) => ({
+      type: error.type,
+      message: error.message,
+      line: error.position?.row ?? 0,
+      column: error.position?.column ?? 0,
+      text: (error.text || '').slice(0, PARSE_ERROR_TEXT_LIMIT)
+    }))
+  };
+};
 
 const hasQuestTopicConstants = (semanticModel: SemanticModel): boolean => {
   const constantNames = Object.keys(semanticModel.constants || {});
@@ -573,6 +604,7 @@ export function extractFileMetadataFromSource(sourceCode: string, filePath: stri
     isQuestFile: hasQuestTopicConstants(semanticModel) || hasQuestStateVariables(semanticModel),
     routines: extractDailyRoutines(semanticModel),
     voiceIds: extractVoiceIds(semanticModel),
-    semanticModel: modelComplete && !semanticModel.hasErrors ? semanticModel : undefined
+    semanticModel: modelComplete && !semanticModel.hasErrors ? semanticModel : undefined,
+    parseErrors: collectParseErrors(semanticModel, filePath)
   };
 }

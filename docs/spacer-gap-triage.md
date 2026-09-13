@@ -60,13 +60,17 @@ Better than `U:PAR:` lines in Notepad — the active file's syntax errors render
 in `SyntaxErrorsDisplay` and the Problems panel lints the whole project — but two
 gaps the report's complaint still touches:
 
-- **Per-file parse errors are not in the Problems panel** (explicitly deferred,
-  `docs/architecture/problems-panel.md`, *Deferred*). A project with a broken
-  file the user has not opened looks clean.
-- **No problem carries a line.** The semantic model keeps positions only on
-  top-level declarations, so every problem points at a dialog or a function, not
-  a line — there is no jump-to-line for anything the panel finds. Threading
-  positions through the linking visitor is the prerequisite.
+- ~~**Per-file parse errors are not in the Problems panel.**~~ **Closed
+  2026-09-13**: the index pass already parsed every file and dropped what it
+  found, so the `parse-error` rule now reports it — a broken file nobody opened
+  no longer reads as clean. `docs/architecture/problems-panel.md` carries the
+  decisions.
+- **No problem carries a line**, except that one. The semantic model keeps
+  positions only on top-level declarations, so every *semantic* problem points
+  at a dialog or a function — there is no jump-to-line for anything else the
+  panel finds, and a syntax error's line is shown rather than jumped to.
+  Threading positions through the linking visitor is the prerequisite, and the
+  larger half of #267.
 
 ### A5. Native parser crash still takes the main process (#268)
 

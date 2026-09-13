@@ -13,7 +13,7 @@ if (parentPort) {
       const stat = await fs.stat(filePath);
       const buffer = await fs.readFile(filePath);
       const { content } = decodeBuffer(buffer);
-      const { dialogs, instances, prototypes, isQuestFile, routines, voiceIds, semanticModel } =
+      const { dialogs, instances, prototypes, isQuestFile, routines, voiceIds, semanticModel, parseErrors } =
         extractFileMetadataFromSource(content, filePath);
 
       parentPort!.postMessage({
@@ -25,6 +25,7 @@ if (parentPort) {
         routines,
         voiceIds,
         semanticModel,
+        parseErrors,
         mtimeMs: stat.mtimeMs
       });
     } catch (error) {

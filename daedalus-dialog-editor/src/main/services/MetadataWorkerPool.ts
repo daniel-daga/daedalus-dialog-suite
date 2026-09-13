@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
 import { randomUUID } from 'crypto';
-import type { DialogMetadata, SemanticModel } from '../../shared/types';
+import type { DialogMetadata, FileParseErrors, SemanticModel } from '../../shared/types';
 import { promises as fsPromises } from 'fs';
 import { decodeBuffer } from '../utils/encodingUtils';
 import { WorkerRequestError } from './WorkerRequestError';
@@ -20,6 +20,8 @@ export interface MetadataResult {
   voiceIds: Array<{ id: string; functionName: string }>;
   /** Full semantic model, present only for clean parses (see ParsedFileMetadata). */
   semanticModel?: SemanticModel;
+  /** The file's syntax errors, present only when it has any. */
+  parseErrors?: FileParseErrors;
   /** File mtime captured before the content read — the hand-off cache key. */
   mtimeMs?: number;
 }

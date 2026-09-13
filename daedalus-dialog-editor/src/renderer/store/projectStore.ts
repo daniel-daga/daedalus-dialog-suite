@@ -11,7 +11,7 @@
 import { create } from 'zustand';
 import { enableMapSet } from 'immer';
 import type { DialogMetadata, SemanticModel } from '../types/global';
-import type { RoutineSite, SpawnSite } from '../../shared/types';
+import type { FileParseErrors, RoutineSite, SpawnSite } from '../../shared/types';
 import type { GothicProjectFileV1, ProjectConfigWarning } from '../../shared/projectConfigTypes';
 import { getQuestUsage } from '../utils/questAnalyzer';
 import { deserialiseIpcMap } from '../utils/ipcSerialisation';
@@ -94,6 +94,10 @@ interface ProjectState {
   routineStateIndex: Record<string, { id: number; states: Record<string, string> }>;
   // Files whose metadata extraction failed during the index build (degraded but openable)
   metadataFailures: Array<{ filePath: string; error: string }>;
+  // Syntax errors per broken file, from the index pass — the only pass that
+  // sees every file, which is what the Problems panel's `parse-error` rule
+  // needs (#267). Same lifecycle as spawnSiteIndex.
+  parseErrorIndex: FileParseErrors[];
 
   // Cached parsed files (full semantic models)
   parsedFiles: Map<string, ParsedFileCache>;
@@ -433,6 +437,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   routineNpcIndex: {},
   routineStateIndex: {},
   metadataFailures: [],
+  parseErrorIndex: [],
   parsedFiles: new Map(),
   parseGeneration: 0,
   mergedSemanticModel: createEmptySemanticModel(),
@@ -494,6 +499,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         routineNpcIndex: rawIndex.routinesByNpc || {},
         routineStateIndex: rawIndex.routineStatesByNpc || {},
         metadataFailures: rawIndex.metadataFailures || [],
+        parseErrorIndex: rawIndex.parseErrors || [],
         isLoading: false,
         parsedFiles: new Map(), // Clear any previous cache
         parseGeneration: get().parseGeneration + 1,
@@ -740,6 +746,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       routineNpcIndex: {},
       routineStateIndex: {},
       metadataFailures: [],
+      parseErrorIndex: [],
       parsedFiles: new Map(),
       parseGeneration: get().parseGeneration + 1,
       mergedSemanticModel: createEmptySemanticModel(),

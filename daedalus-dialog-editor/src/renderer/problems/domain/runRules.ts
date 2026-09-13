@@ -1,4 +1,5 @@
 import type { LintRule, Problem, ProjectView } from './types';
+import { parseErrorRule } from './rules/parseError';
 import { npcNotFoundRule } from './rules/npcNotFound';
 import { knowsInfoDanglingRule } from './rules/knowsInfoDangling';
 import { choiceNoClearChoicesRule } from './rules/choiceNoClearChoices';
@@ -11,6 +12,7 @@ import { portalsRule } from './rules/portals';
 
 /** Every lint rule the Problems panel runs, in declaration order. */
 export const ALL_RULES: readonly LintRule[] = [
+  parseErrorRule,
   npcNotFoundRule,
   knowsInfoDanglingRule,
   choiceNoClearChoicesRule,

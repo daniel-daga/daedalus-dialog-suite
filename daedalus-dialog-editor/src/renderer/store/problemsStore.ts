@@ -118,6 +118,7 @@ export const useProblemsStore = create<ProblemsStore>((set, get) => {
         spawnSites: project.spawnSiteIndex,
         routineSites: project.routineSiteIndex,
         npcsWithDialogs: npcsWithDialogs(project.dialogIndex),
+        parseErrors: project.parseErrorIndex,
         world,
         portalFindings
       });

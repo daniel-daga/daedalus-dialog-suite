@@ -43,10 +43,11 @@ mid-ingestion window.
 
 ## Rules
 
-All seven read only structured, typed data:
+All read only structured, typed data:
 
 | Rule | Severity | Detection |
 |---|---|---|
+| `parse-error` | error | a file the index pass could not parse, one row per syntax error |
 | `npc-not-found` | error | dialog `npc` not in the known-NPC set |
 | `knowsinfo-dangling` | error | `NpcKnowsInfoCondition.dialogRef` names no known dialog |
 | `choice-no-clearchoices` | warning | an `Info_AddChoice` with no `Info_ClearChoices` reachable via the choice-target chain |
@@ -55,7 +56,19 @@ All seven read only structured, typed data:
 | `waypoint-not-in-world` | warning | a script site names a waypoint the open world's waynet has no point for; silent when no world is open, and free points are matched by prefix because the engine matches them that way |
 | `duplicate-spawn` | warning | one NPC is statically inserted at two different spawn points, so both sites running puts two copies in the world |
 
-Three decisions worth keeping:
+Four decisions worth keeping:
+
+- **`parse-error` reads the index, not the parsed files.** It is the only rule
+  about a file that *has* no model: `extractFileMetadataFromSource` calls
+  `checkForSyntaxErrors` on every file in the project and then withholds the
+  model of any file that has errors, so the errors were found and dropped, and
+  a project with a broken file nobody had opened reported clean (#267). The
+  index carries them now (`ProjectIndex.parseErrors`), bounded twice, because
+  the list is not virtualized and this crosses IPC: tree-sitter collapses a
+  mis-encoded file into one ERROR node whose text is the whole file (so the
+  quoted source is truncated at 120 chars), while a file broken declaration by
+  declaration yields one node each (so 20 errors per file are carried, and the
+  true count with them — the rule reports the remainder as its own row).
 
 - **Reachability, not per-function, for choices.** The standard Daedalus pattern
   adds a choice in the info function but clears it in the *target* function. The
@@ -98,10 +111,14 @@ point at a dialog/function (not an exact line) — the same granularity
 `ValidationService` reports. Precise in-body focus (an action-path jump) is a
 possible follow-up if positions are later threaded through the linking visitor.
 
+`parse-error` is the exception and does not lift the limitation: a syntax error
+has a position and nothing else, so it fills `ScriptLocus.line` and the panel
+shows it. Nothing *jumps* to a line — there is no source view — so the click
+opens the file, which renders `SyntaxErrorsDisplay`.
+
 ## Deferred
 
 Undeclared `MIS_`/`TOPIC_` identifiers (references buried in raw condition/
 action text need string scanning) and unsatisfiable dialog conditions (only
 simple AND/OR bodies are structurally analyzable) were scoped out of the first
-cut. Surfacing existing per-file parse errors in the same panel, list
-virtualization, and a bottom-docked variant are also open.
+cut. List virtualization and a bottom-docked variant are also open.

@@ -5,6 +5,7 @@ import type { Problem, ProblemRuleId } from '../../problems/domain/types';
 import { worldFocusOf } from '../../store/worldStore';
 
 const RULE_LABEL: Record<ProblemRuleId, string> = {
+  'parse-error': 'Syntax error',
   'npc-not-found': 'Missing NPC',
   'knowsinfo-dangling': 'Dangling KnowsInfo',
   'choice-no-clearchoices': 'No ClearChoices',
@@ -31,7 +32,10 @@ const secondaryText = ({ locus }: Problem): string => {
     return 'World';
   }
   const parts = [baseName(locus.filePath)];
-  if (locus.dialogName) parts.push(locus.dialogName);
+  // A syntax error has a line and no declaration; everything else is the other
+  // way round (`ScriptLocus.line`).
+  if (locus.line !== undefined) parts.push(`line ${locus.line}`);
+  else if (locus.dialogName) parts.push(locus.dialogName);
   else if (locus.functionName) parts.push(locus.functionName);
   return parts.join(' · ');
 };

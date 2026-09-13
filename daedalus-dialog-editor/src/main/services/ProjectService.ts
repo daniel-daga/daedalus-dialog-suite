@@ -9,7 +9,7 @@
 
 import { promises as fs } from 'fs';
 import * as path from 'path';
-import type { DialogMetadata, ProjectIndex, SemanticModel } from '../../shared/types';
+import type { DialogMetadata, FileParseErrors, ProjectIndex, SemanticModel } from '../../shared/types';
 
 // Re-export types for consumers of this service
 export type { DialogMetadata, ProjectIndex } from '../../shared/types';
@@ -158,6 +158,7 @@ class ProjectService {
     const allRoutines = new Set<string>();
     const voiceIds: Record<string, Array<{ filePath: string; functionName: string }>> = {};
     const metadataFailures: Array<{ filePath: string; error: string }> = [];
+    const parseErrors: FileParseErrors[] = [];
     const fileModelsForSiteIndexes: Array<{ filePath: string; semanticModel: SemanticModel }> = [];
     let npcPrototypes: string[] = [];
 
@@ -221,6 +222,14 @@ class ProjectService {
         }
         if (result.semanticModel) {
           fileModelsForSiteIndexes.push({ filePath, semanticModel: result.semanticModel });
+        }
+
+        // The metadata pass withholds the model of a file that failed to parse,
+        // so this is the only place the project ever learns that file is broken
+        // (#267). The worker reports the path it was given; the index reports
+        // the one it scanned, and they are the same file.
+        if (result.parseErrors) {
+          parseErrors.push({ ...result.parseErrors, filePath });
         }
 
         // Track NPC instances from dialogs and prototype inheritance chains.
@@ -289,7 +298,8 @@ class ProjectService {
       // function of every file, and once a load is enough.
       routineStatesByNpc: extractRoutineStatesByNpc(fileModelsForSiteIndexes, routineSites),
       exchangeSites: extractExchangeSites(fileModelsForSiteIndexes),
-      metadataFailures
+      metadataFailures,
+      parseErrors
     };
   }
 
