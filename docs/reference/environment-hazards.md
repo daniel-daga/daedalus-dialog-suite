@@ -99,7 +99,11 @@ trusting master for a release, not after.
   `node_modules/.pnpm/electron@<version>/node_modules/electron`. It failed on
   the first run and succeeded on an immediate retry with no other change, so
   retry once before believing the container cannot reach the download.
-  Verified 2026-09-12.
+  Verified 2026-09-12. **It did not happen at all on 2026-09-13** — a plain
+  `CI=1 pnpm install` in a fresh cloud container left `electron/dist` in place
+  and all 312 editor suites passed, `appendInsertNpcFlow` included. So expect
+  the failure, but check before applying the fix: the entry above is a trap that
+  *can* fire, not one that always does.
 - **In a Claude Code cloud container the addon *can* be built, and the one
   thing in the way is a single download.** The egress proxy refuses GitHub
   repositories outside the session's scope, so ZenKit's CMake dies on
