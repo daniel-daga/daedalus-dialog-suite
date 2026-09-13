@@ -91,6 +91,14 @@ export interface InstancedPayload {
     instancedDrawGroups: number;
     levelCompos: number;
     unresolvedByType: Record<string, number>;
+    /**
+     * The unresolved visuals themselves — distinct name, the type it was used
+     * as, how many VOBs wanted it, ordered by that count. The counts above say
+     * a world is missing something; for a custom-asset map that will not draw,
+     * these names are the diagnosis (#273). Mirrors `zen-world`'s
+     * `UnresolvedVisual`.
+     */
+    unresolved: Array<{ name: string; type: string; count: number }>;
   };
 }
 

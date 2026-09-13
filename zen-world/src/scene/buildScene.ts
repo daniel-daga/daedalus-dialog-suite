@@ -87,6 +87,14 @@ export function buildWorldMesh(binding: SceneBinding, handle: WorldHandle): Worl
   };
 }
 
+/** One visual the VFS could not answer for: its name, the type it was used as,
+ *  and how many VOBs wanted it. */
+export interface UnresolvedVisual {
+  name: string;
+  type: string;
+  count: number;
+}
+
 export interface InstancedVisual {
   name: string;
   source: string;
@@ -128,6 +136,17 @@ export interface InstancedScene {
      * which is the table in level-editor.md §3).
      */
     unresolvedByType: Record<string, number>;
+    /**
+     * The unresolved visuals themselves: one entry per distinct name, the type
+     * it was used as, and how many VOBs wanted it — ordered by that count,
+     * descending, then by name.
+     *
+     * The counts above say a world is missing *something*; a custom-asset map
+     * that will not draw needs the names, and they are the whole diagnosis
+     * (#273). Distinct names, not VOBs: a fence wanted 400 times is one thing
+     * to go and find.
+     */
+    unresolved: UnresolvedVisual[];
   };
 }
 
@@ -333,6 +352,7 @@ export function buildInstancedVisuals(
   const resolved = new Map<string, { source: string; chunks: MeshChunk[] } | null>();
   const placements = new Map<string, { matrices: number[]; vobIds: number[] }>();
   const unresolvedByType: Record<string, number> = {};
+  const unresolved = new Map<string, UnresolvedVisual>();
   const levelCompos = new Set<string>();
 
   for (let vob = 0; vob < index.count; vob++) {
@@ -351,6 +371,12 @@ export function buildInstancedVisuals(
     if (visual === null) {
       const type = index.visualTypes[visualTypeIndex[vob]];
       unresolvedByType[type] = (unresolvedByType[type] ?? 0) + 1;
+      // Keyed by name: the type is the first VOB's, because a name used under
+      // two visual types is not a thing any world in the corpus does and a
+      // second entry for one would read as a second missing asset.
+      const seen = unresolved.get(name);
+      if (seen === undefined) unresolved.set(name, { name, type, count: 1 });
+      else seen.count += 1;
       continue;
     }
 
@@ -403,6 +429,9 @@ export function buildInstancedVisuals(
       instancedDrawGroups,
       levelCompos: levelCompos.size,
       unresolvedByType,
+      unresolved: [...unresolved.values()].sort(
+        (a, b) => b.count - a.count || a.name.localeCompare(b.name),
+      ),
     },
   };
 }

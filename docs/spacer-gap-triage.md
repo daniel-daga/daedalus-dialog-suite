@@ -131,12 +131,16 @@ the message carries no reason. The report's "you're reading zSpy to find out
 why" therefore half-applies: we do not crash the app, and we do not diagnose
 either.
 
-### C3. A world that loads but is missing assets has no report (#273)
+### C3. A world that loads but is missing assets has no report (~~#273~~)
 
-`unresolvedByType` is counted on the summary and consumed by the scene layers;
-nothing shows the user "these N visuals did not resolve, here they are". For a
-custom-asset map — the exact case the report says simply will not load in Spacer
-— that list is the diagnosis.
+**Closed 2026-09-13.** The scene now names what it could not resolve, not only
+how many there were: `buildInstancedVisuals` carries `stats.unresolved` — one
+entry per distinct visual name, the type it was used as, and how many VOBs
+wanted it, most-wanted first — and the World status bar counts them and lists
+them on click. Decals and particle effects are held out of both the count and
+the list: they name a texture and a Daedalus instance rather than a mesh, so
+every retail world counts thousands, and a bar that shouted on those would stop
+being read.
 
 Adjacent and already tracked: #245 (what the browse root looks like on a retail
 install), the plan's §16.37 (the asset browser's first outside user could not

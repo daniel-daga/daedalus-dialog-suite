@@ -3834,6 +3834,19 @@ is mounted whether or not there is a point, and reserves the height of the
 buttons it only sometimes carries, because a bar that changes height shoves
 the picture out from under the cursor that just picked it.
 
+**The counts carry the missing-asset report (#273, 2026-09-13).** A world whose
+assets are not mounted loads and draws holes, and the scene already knew which
+visuals it could not resolve — it counted them by type and the layers drew
+around them, and nothing ever said so. `buildInstancedVisuals` now carries the
+names too (`stats.unresolved`: distinct name, the type it was used as, how many
+VOBs wanted it, most-wanted first), and the bar shows the count as a link to a
+list of them. **Decals and particle effects are held out of both**, because a
+decal names a texture and a `.pfx` a Daedalus instance: neither is a mesh the
+VFS could answer for, every retail world counts thousands, and a bar that warned
+on those would be warning on every world there is. Distinct visuals rather than
+VOBs, because the number that means something is how many things there are to go
+and find.
+
 **Adding things: the dialog first, the ground click second.** The add group
 offers Place VOB…, Insert NPC… and Add waypoint… the moment a world is
 open. Each opens its dialog straight away; where the result goes is the

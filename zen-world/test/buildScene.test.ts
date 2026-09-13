@@ -255,6 +255,33 @@ describe('zen-world/scene — buildInstancedVisuals', () => {
     expect(built.stats.vobsPlaced).toBe(1);
   });
 
+  test('names the unresolved visuals, not only how many there were', () => {
+    // The counts say a custom-asset world is missing something; the names are
+    // what a user can act on (#273). Distinct name, the type it was used as,
+    // and how many VOBs wanted it — ordered by that count, because the one
+    // wanted 400 times is the one to find first.
+    const b = binding((name) => (name === 'BARREL.3DS' ? [chunk('A.TGA')] : null));
+    const built = buildInstancedVisuals(b, VFS, vobIndex([
+      { visual: 'SMOKE.PFX', visualType: 'PARTICLE_EFFECT' },
+      { visual: 'BLOOD.TGA', visualType: 'DECAL' },
+      { visual: 'BLOOD.TGA', visualType: 'DECAL' },
+      { visual: 'BARREL.3DS' },
+      { visual: 'FENCE.3DS' },
+    ]));
+
+    expect(built.stats.unresolved).toEqual([
+      { name: 'BLOOD.TGA', type: 'DECAL', count: 2 },
+      { name: 'FENCE.3DS', type: 'MULTI_RESOLUTION_MESH', count: 1 },
+      { name: 'SMOKE.PFX', type: 'PARTICLE_EFFECT', count: 1 },
+    ]);
+  });
+
+  test('a world whose every visual resolves names none', () => {
+    const b = binding(() => [chunk('A.TGA')]);
+    const built = buildInstancedVisuals(b, VFS, vobIndex([{ visual: 'BARREL.3DS' }]));
+    expect(built.stats.unresolved).toEqual([]);
+  });
+
   test('each instance carries its placement and the VOB it came from', () => {
     // Selection needs the VOB behind an instance: a pick returns an
     // (InstancedMesh, instanceId) pair and nothing else identifies the object.
