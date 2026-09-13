@@ -2,6 +2,9 @@ name: Deploy GitHub Pages
 
 on:
   push:
+    # Default branch only: without a branches filter, a push on ANY branch
+    # touching gh-pages/index.html published to Pages.
+    branches: [master]
     paths:
       - 'gh-pages/index.html'
       - '.github/workflows/deploy-pages.yml'
