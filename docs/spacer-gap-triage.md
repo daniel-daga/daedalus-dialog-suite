@@ -86,8 +86,8 @@ done. Listed here only so triage sees it beside the rest.
 ## B. World → script references — one field left (#270)
 
 The report's list (waypoint names, `triggerTarget`, container contents, item
-instances, `scemeName`) is **closed but for one field**, and that one uses
-machinery that already exists.
+instances, `scemeName`) is **closed but for one field**, and that one turned out
+not to use machinery that already exists — see below.
 
 Left:
 
@@ -99,7 +99,30 @@ Left:
   index goes stale the moment a function is written. `docs/architecture/level-editor.md`,
   *"A script function name stops being free text"*, carries the decision.
 - **`scemeName` is not catalogued at all** — not editable, not checked, not
-  readable in the grid.
+  readable in the grid. **And the shape this was carded as is wrong
+  (2026-09-13):** it is not "one catalogue entry plus one C++ case", because
+  there is no VOB field to catalogue. ZenKit models no `scemeName` on any VOB —
+  `VMovableObject` and `VInteractiveObject` between them carry `focusName`,
+  `hitpoints`, `damage`, `moveable`, `takeable`, `focusOverride`,
+  `soundMaterial`, `visualDestroyed`, `owner`, `ownerGuild`, `isDestroyed`,
+  `stateNum`, `triggerTarget`, `useWithItem`, `conditionFunc`, `onStateFunc`
+  and `rewind`, and `load`/`save` read and write exactly those. The only
+  `scemeName` anywhere in the dependency is `C_ITEM.SCEMENAME` in
+  `addon/daedalus.hh` — a **Daedalus script** field on an item instance, which
+  is the dialog editor's side of the tree and not a world VOB at all.
+
+  So the question ahead of the work is whether a retail `.zen` carries the entry
+  and ZenKit drops it, or whether ZenGin derives the scheme from the visual name
+  and never stores one. The corpus round-trips clean under Plan A — whole-world
+  re-serialization, with no splice for unread entries — which is evidence for
+  the second, because a dropped archive entry is exactly what that gate sees.
+  Evidence, not proof: nobody has looked at an `oCMobInter` in a retail world
+  and listed its entries.
+
+  That is one command against a retail world and therefore Daniel's machine
+  rather than CI, like #245 and #261. If the entry is there, closing this is
+  **upstream ZenKit work** — a new field with its `load`/`save`, the shape #225
+  has — and not the small in-tree change this was filed as.
 
 Not left, for the record: waypoint names both directions (the
 `waypoint-not-in-world` rule plus the waypoint panel's routine/spawn list),
