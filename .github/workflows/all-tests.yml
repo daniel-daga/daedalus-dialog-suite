@@ -60,6 +60,11 @@ jobs:
     # fixtures (claim C2) — NOT a fidelity claim about real Gothic worlds (C1).
     # See zenkit-node/README.md.
     runs-on: windows-2022
+    # The whole job is ~5 minutes, most of it the addon build. A cap because a
+    # test process that never exits is a real failure mode here — one wedged the
+    # suite for four pushes in a row on 2026-09-12 — and without this the job
+    # holds a Windows runner for the six-hour default before anyone is told.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:

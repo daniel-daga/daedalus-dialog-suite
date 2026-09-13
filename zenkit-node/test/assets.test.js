@@ -209,18 +209,62 @@ test('vfsList returns null for a file and for a path that is not there', () => {
 // asset folder are both written in. `vfsList` handed its entry names straight
 // to `Napi::String::New(std::string)`, which reads them as UTF-8, so a retail
 // archive's accented name reached the asset browser as replacement characters
-// and no longer matched the name on disk.
+// and no longer matched the name in the archive.
 //
-// The names are laid down as raw bytes: a JS string path would be written
-// UTF-8 by the filesystem layer, which is the encoding this test exists to
-// show is wrong.
-const ACCENTED = path.join(root, 'accented');
-const cp1252 = (text) => Buffer.from(text, 'latin1');
-const under = (...parts) => Buffer.concat(
-  [cp1252(ACCENTED), ...parts.flatMap((part) => [cp1252(path.sep), part])],
-);
-fs.mkdirSync(under(cp1252('B\xc4UME')), { recursive: true });
-fs.writeFileSync(under(cp1252('B\xc4UME'), cp1252('GR\xdcN_\xd6L.TEX')), 'x');
+// The bytes go in a VDF's catalog and not into a filename, because a filename
+// cannot carry them on both platforms: on POSIX it is bytes and node writes a
+// JS string as UTF-8, which is the encoding this test exists to show is wrong,
+// while on Windows it is UTF-16 and has no byte spelling at all. A VDF is also
+// where a real accented name comes from.
+//
+// The archive is written by hand: ZenKit has a VDF writer, the binding does not
+// expose it, and one fixture is not a reason to. An uncompressed Gothic II
+// volume is a 296-byte header, one 80-byte catalog entry per node, then the
+// file data. An entry is a 64-byte name padded with spaces (the reader trims
+// trailing whitespace), then offset, size, type and attributes. `type` carries
+// 0x80000000 for a directory and 0x40000000 for the last entry of a listing,
+// and `offset` is the catalog index of the first child for a directory and a
+// byte offset into the archive for a file.
+const VDF_HEADER_SIZE = 296;
+const VDF_ENTRY_SIZE = 80;
+const VDF_DIRECTORY = 0x80000000;
+const VDF_LAST = 0x40000000;
+
+const vdfEntry = (name, offset, size, type) => {
+  const entry = Buffer.alloc(VDF_ENTRY_SIZE);
+  entry.fill(0x20, 0, 64);
+  // latin1 is windows-1252 over the code points this fixture uses — the two
+  // differ only in 0x80-0x9F, which no name here reaches.
+  entry.write(name, 0, 'latin1');
+  entry.writeUInt32LE(offset, 64);
+  entry.writeUInt32LE(size, 68);
+  // `>>> 0` because JS bitwise operators answer in signed 32 bits, and the
+  // directory bit is 0x80000000 — an OR of the two flags is negative without it.
+  entry.writeUInt32LE(type >>> 0, 72);
+  return entry; // attributes stay 0
+};
+
+const ACCENTED = path.join(root, 'accented.vdf');
+{
+  const content = Buffer.from('x');
+  const dataOffset = VDF_HEADER_SIZE + 2 * VDF_ENTRY_SIZE;
+  const catalog = Buffer.concat([
+    vdfEntry('B\xc4UME', 1, 0, VDF_DIRECTORY | VDF_LAST),
+    vdfEntry('GR\xdcN_\xd6L.TEX', dataOffset, content.length, VDF_LAST),
+  ]);
+
+  const header = Buffer.alloc(VDF_HEADER_SIZE, 0x1a); // the comment's own padding
+  header.write('zenkit-node test fixture', 0, 'latin1');
+  header.write('PSVDSC_V2.00\n\r\n\r', 256, 'latin1'); // the Gothic II signature
+  header.writeUInt32LE(2, 272); // entries
+  header.writeUInt32LE(1, 276); // of which files
+  header.writeUInt32LE(0, 280); // timestamp, in DOS form
+  header.writeUInt32LE(dataOffset + content.length, 284); // archive size
+  header.writeUInt32LE(VDF_HEADER_SIZE, 288); // where the catalog starts
+  header.writeUInt32LE(0x50, 292); // volume flags: file data stored uncompressed
+
+  fs.writeFileSync(ACCENTED, Buffer.concat([header, catalog, content]));
+}
 
 test('vfsList decodes entry names as windows-1252, like every other name', () => {
   const handle = zenkit.openVfs([ACCENTED]);
