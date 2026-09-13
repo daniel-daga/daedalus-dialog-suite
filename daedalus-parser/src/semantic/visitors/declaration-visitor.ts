@@ -83,6 +83,7 @@ export class DeclarationVisitor {
         }
         func.leadingComments = [...this.pendingLeadingComments];
         func.range = { startIndex: node.startIndex, endIndex: node.endIndex };
+        func.line = node.startPosition.row + 1;
         this.semanticModel.functions[func.name] = func;
         this.semanticModel.declarationOrder?.push({ type: 'function', name: func.name });
         this.functionNameMap.set(func.name.toLowerCase(), func.name);
@@ -104,6 +105,7 @@ export class DeclarationVisitor {
           }
           dialog.spaceBeforeParen = new RegExp(`${nameNode.text}\\s+\\(`).test(firstLine);
           dialog.leadingComments = [...this.pendingLeadingComments];
+          dialog.line = node.startPosition.row + 1;
           this.semanticModel.dialogs[dialog.name] = dialog;
           this.semanticModel.declarationOrder?.push({ type: 'dialog', name: dialog.name });
         } else {

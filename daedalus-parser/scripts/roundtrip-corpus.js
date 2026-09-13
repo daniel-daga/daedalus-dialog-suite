@@ -137,7 +137,10 @@ function canonicalize(value) {
 
   const out = {};
   const keys = Object.keys(value)
-    .filter((k) => !['node', 'sourceNode', 'rawNode'].includes(k))
+    // `line` is where an action was written, not what it is (#267). The
+    // regenerated file formats to its own line numbers, so keeping it in the
+    // signature would report every reflow as action drift.
+    .filter((k) => !['node', 'sourceNode', 'rawNode', 'line'].includes(k))
     .sort();
   for (const key of keys) {
     const v = value[key];

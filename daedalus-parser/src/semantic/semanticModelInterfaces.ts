@@ -25,3 +25,16 @@ export interface CodeGeneratable {
   toDisplayString(): string;
   getTypeName(): string;
 }
+
+/**
+ * The 1-based source line a construct was parsed from.
+ *
+ * Intersected into the `DialogAction` and `DialogCondition` unions rather than
+ * declared on each of the 35 action and condition classes: the linking visitor
+ * stamps it in one place from the node it already holds, and nothing else ever
+ * sets it. Optional because a model can also be built by hand or deserialized
+ * from an editor edit, neither of which has a source line to give (#267).
+ */
+export interface SourceLine {
+  line?: number;
+}

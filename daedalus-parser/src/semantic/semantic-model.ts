@@ -7,8 +7,8 @@ import { Type, plainToInstance, ClassConstructor } from 'class-transformer';
 // SHARED INTERFACES (re-exported for backward compatibility)
 // ===================================================================
 
-export type { CodeGenOptions, CodeGeneratable } from './semanticModelInterfaces';
-import type { CodeGenOptions, CodeGeneratable } from './semanticModelInterfaces';
+export type { CodeGenOptions, CodeGeneratable, SourceLine } from './semanticModelInterfaces';
+import type { CodeGenOptions, CodeGeneratable, SourceLine } from './semanticModelInterfaces';
 
 // ===================================================================
 // DOMAIN ACTION CLASSES (imported + re-exported for backward compatibility)
@@ -574,7 +574,7 @@ export class GivePlayerXPAction implements CodeGeneratable {
 // ACTION UNION TYPE + DISCRIMINATOR + DESERIALIZER
 // ===================================================================
 
-export type DialogAction =
+export type DialogAction = (
   | DialogLine
   | CreateTopic
   | LogEntry
@@ -601,7 +601,8 @@ export type DialogAction =
   | RemoveInventoryItemsAction
   | InsertNpcAction
   | HeroFollowsAction
-  | SetRefuseTalkAction;
+  | SetRefuseTalkAction
+) & SourceLine;
 
 /**
  * Discriminator table shape used by class-transformer's polymorphic @Type() decorator.
@@ -830,6 +831,8 @@ export class DialogFunction {
     startIndex: number;
     endIndex: number;
   };
+  /** 1-based line the declaration starts on — its `func` keyword (#267). */
+  public line?: number;
   public calls: string[];
   public callSites: FunctionCallSite[];
 
@@ -913,6 +916,8 @@ export class Dialog {
   /** Standalone comments after the last property, before the closing `};`. */
   public trailingBodyComments?: string[];
   public actions: DialogAction[];
+  /** 1-based line the declaration starts on — its `instance` keyword (#267). */
+  public line?: number;
 
   constructor(name: string, parent: string | null) {
     this.name = name;
@@ -950,6 +955,9 @@ export class Dialog {
     }
     if (Array.isArray(json.trailingBodyComments)) {
       dialog.trailingBodyComments = json.trailingBodyComments;
+    }
+    if (typeof json.line === 'number') {
+      dialog.line = json.line;
     }
 
     // --- function-reference linking: resolve property values to live DialogFunction instances ---

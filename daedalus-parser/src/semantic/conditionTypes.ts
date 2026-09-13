@@ -6,7 +6,7 @@
  * structured condition the parser can emit.
  */
 
-import type { CodeGenOptions, CodeGeneratable } from './semanticModelInterfaces';
+import type { CodeGenOptions, CodeGeneratable, SourceLine } from './semanticModelInterfaces';
 
 /**
  * Represents a condition that checks if the player knows a specific dialog
@@ -316,7 +316,7 @@ export class QuestStateCondition implements CodeGeneratable {
   }
 }
 
-export type DialogCondition =
+export type DialogCondition = (
   | NpcKnowsInfoCondition
   | NpcHasItemsCondition
   | NpcIsInStateCondition
@@ -325,4 +325,5 @@ export type DialogCondition =
   | NpcGetTalentSkillCondition
   | Condition
   | VariableCondition
-  | QuestStateCondition;
+  | QuestStateCondition
+) & SourceLine;

@@ -243,3 +243,103 @@ test('records call sites nested in if/else bodies, not only a body\'s top-level 
   // `calls` follows callSites, so an orphaned-function check sees them too.
   assert.ok(func.calls.includes('Wld_InsertItem'));
 });
+
+// ---------------------------------------------------------------------------
+// Source lines (#267): a semantic problem can only name a line if the model
+// carries one, and the model used to carry positions on top-level declarations
+// alone.
+// ---------------------------------------------------------------------------
+
+test('a dialog and a function carry the 1-based line of their declaration', () => {
+  const source = [
+    '// a leading comment',            // 1
+    'instance DIA_Test(C_INFO) {',     // 2
+    '  npc = TEST_NPC;',               // 3
+    '  nr = 1;',                       // 4
+    '  information = DIA_Test_Info;',  // 5
+    '};',                              // 6
+    '',                                // 7
+    'func void DIA_Test_Info() {',     // 8
+    '  AI_StopProcessInfos(self);',    // 9
+    '};'                               // 10
+  ].join('\n');
+
+  const model = parseSemanticModel(source);
+
+  assert.strictEqual(model.dialogs.DIA_Test.line, 2, 'the dialog names its own line, not its comment');
+  assert.strictEqual(model.functions.DIA_Test_Info.line, 8);
+});
+
+test('every action carries the line of the statement it was parsed from', () => {
+  const source = [
+    'func void DIA_Test_Info() {',                    // 1
+    '  AI_Output(self, other, "DIA_Test_01");',       // 2
+    '  Info_ClearChoices(DIA_Test);',                 // 3
+    '  Info_AddChoice(DIA_Test, "Go on", DIA_Test_Go);', // 4
+    '  // a standalone comment',                      // 5
+    '  B_GiveInvItems(self, other, ItMi_Gold, 10);',  // 6
+    '};'                                              // 7
+  ].join('\n');
+
+  const model = parseSemanticModel(source);
+  const { actions } = model.functions.DIA_Test_Info;
+
+  assert.deepStrictEqual(
+    actions.map((action) => [action.type, action.line]),
+    [
+      ['DialogLine', 2],
+      ['ClearChoicesAction', 3],
+      ['Choice', 4],
+      ['CommentAction', 5],
+      ['GiveInventoryItems', 6]
+    ]
+  );
+});
+
+test('an action nested in a conditional branch carries its own line, not the if\'s', () => {
+  const source = [
+    'func void DIA_Test_Info() {',                       // 1
+    '  if (Kapitel == 1) {',                             // 2
+    '    AI_Output(self, other, "DIA_Test_01");',        // 3
+    '  } else {',                                        // 4
+    '    AI_Output(self, other, "DIA_Test_02");',        // 5
+    '  };',                                              // 6
+    '};'                                                 // 7
+  ].join('\n');
+
+  const model = parseSemanticModel(source);
+  const [conditional] = model.functions.DIA_Test_Info.actions;
+
+  assert.strictEqual(conditional.type, 'ConditionalAction');
+  assert.strictEqual(conditional.line, 2);
+  assert.strictEqual(conditional.thenActions[0].line, 3);
+  assert.strictEqual(conditional.elseActions[0].line, 5);
+});
+
+test('a condition carries the line of the expression it was parsed from', () => {
+  const source = [
+    'instance DIA_Test(C_INFO) {',                       // 1
+    '  npc = TEST_NPC;',                                 // 2
+    '  condition = DIA_Test_Condition;',                 // 3
+    '};',                                                // 4
+    '',                                                  // 5
+    'func int DIA_Test_Condition() {',                   // 6
+    '  if (Npc_KnowsInfo(other, DIA_Test_Hallo))',       // 7
+    '  && (Npc_IsDead(SLD_99003_Farim))',                // 8
+    '  {',                                               // 9
+    '    return TRUE;',                                  // 10
+    '  };',                                              // 11
+    '};'                                                 // 12
+  ].join('\n');
+
+  const model = parseSemanticModel(source);
+  const { conditions } = model.functions.DIA_Test_Condition;
+
+  assert.deepStrictEqual(
+    conditions.map((condition) => [condition.type, condition.line]),
+    [
+      ['NpcKnowsInfoCondition', 7],
+      ['NpcIsDeadCondition', 8]
+    ]
+  );
+});

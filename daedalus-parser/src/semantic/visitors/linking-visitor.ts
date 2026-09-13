@@ -10,6 +10,7 @@ import {
   DialogLine,
   DialogAction,
   ConditionalAction,
+  SourceLine,
   getDialogProperty
 } from '../semantic-model';
 import { ActionParsers } from '../parsers/action-parsers';
@@ -26,6 +27,17 @@ import {
 } from '../parsers/ast-constants';
 import { parseLiteralOrIdentifier } from '../parsers/literal-parsing';
 import { namesEqual } from '../name-utils';
+
+/**
+ * Stamp a parsed action or condition with the 1-based line of the node it came
+ * from, so a Problems finding can name one (#267). Every construction site in
+ * this file already holds the node; nothing else in the pipeline does.
+ */
+const atLine = <T>(item: T, node: TreeSitterNode): T & SourceLine => {
+  const located = item as T & SourceLine;
+  located.line = node.startPosition.row + 1;
+  return located;
+};
 
 export class LinkingVisitor {
   private dialogs: SemanticModel['dialogs'];
@@ -262,7 +274,7 @@ export class LinkingVisitor {
       if (type === 'if_statement') {
         const conditionalAction = this.parseConditionalAction(node);
         if (conditionalAction) {
-          this.recordActionForCurrentFunction(conditionalAction);
+          this.recordActionForCurrentFunction(atLine(conditionalAction, node));
         } else {
           this.preserveUnsupportedStatement(node);
         }
@@ -290,7 +302,7 @@ export class LinkingVisitor {
         this.isFunctionTopLevelComment(node) &&
         !this.consumedCommentRanges.has(`${node.startIndex}:${node.endIndex}`)
       ) {
-        this.recordActionForCurrentFunction(new CommentAction(node.text));
+        this.recordActionForCurrentFunction(atLine(new CommentAction(node.text), node));
       }
       return;
     }
@@ -522,7 +534,7 @@ export class LinkingVisitor {
         return;
       }
 
-      this.recordActionForCurrentFunction(action);
+      this.recordActionForCurrentFunction(atLine(action, node));
     }
   }
 
@@ -563,7 +575,7 @@ export class LinkingVisitor {
 
     const action = ActionParsers.parseSemanticAction(node, functionName);
     if (action) {
-      this.recordActionForCurrentFunction(action);
+      this.recordActionForCurrentFunction(atLine(action, node));
       // Track the same-line comment absorbed as this AI_Output's subtitle so it
       // is not also emitted as a standalone CommentAction.
       if (action instanceof DialogLine && action.inlineComment) {
@@ -637,7 +649,7 @@ export class LinkingVisitor {
 
     const condition = ConditionParsers.parseSemanticCondition(node, functionName);
     if (condition) {
-      this.currentFunction.conditions.push(condition);
+      this.currentFunction.conditions.push(atLine(condition, node));
     }
   }
 
@@ -676,7 +688,7 @@ export class LinkingVisitor {
     ranges.add(rangeKey);
 
     const action = new Action(topLevel.text.trim());
-    this.recordActionForCurrentFunction(action);
+    this.recordActionForCurrentFunction(atLine(action, topLevel));
   }
 
   private getTopLevelStatement(node: TreeSitterNode): TreeSitterNode | null {
@@ -706,7 +718,7 @@ export class LinkingVisitor {
             // Standalone comments between top-level statements in a raw-mode
             // condition body are preserved in position (P6/N5).
             if (!this.consumedCommentRanges.has(`${child.startIndex}:${child.endIndex}`)) {
-              this.recordActionForCurrentFunction(new CommentAction(child.text));
+              this.recordActionForCurrentFunction(atLine(new CommentAction(child.text), child));
             }
           } else if (this.isTopLevelStatement(child)) {
             this.preserveConditionStatement(child);
@@ -862,7 +874,7 @@ export class LinkingVisitor {
    */
   private preserveUnsupportedStatement(node: TreeSitterNode): void {
     const action = new Action(node.text.trim());
-    this.recordActionForCurrentFunction(action);
+    this.recordActionForCurrentFunction(atLine(action, node));
   }
 
   private parseConditionalAction(node: TreeSitterNode): ConditionalAction | null {
@@ -906,7 +918,7 @@ export class LinkingVisitor {
           continue;
         }
         // Preserve standalone comments in conditional branch bodies in position.
-        actions.push(new CommentAction(child.text));
+        actions.push(atLine(new CommentAction(child.text), child));
         continue;
       }
 
@@ -914,7 +926,7 @@ export class LinkingVisitor {
       if (!action) {
         return null;
       }
-      actions.push(action);
+      actions.push(atLine(action, child));
       subtitleRow = action instanceof DialogLine && action.inlineComment ? child.endPosition.row : -1;
     }
 
