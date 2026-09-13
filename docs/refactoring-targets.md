@@ -351,3 +351,23 @@ each keeping the member-by-member assignment that the "leaves every other field
 alone" test exists to protect. `RequireClassKeys` takes the key list by value,
 so its lists want the same treatment in the same change or they become the new
 place two spellings can disagree.
+
+---
+
+### 17. `MetadataWorkerPool` rebuilds the worker's reply field by field
+**Files:** `daedalus-dialog-editor/src/main/services/MetadataWorkerPool.ts`
+(`spawnWorker`'s message handler and `handleMessage`)
+
+A field added to `ParsedFileMetadata` and posted by `metadata.worker.ts` is
+**silently dropped in production** unless it is also named in two inline message
+types and in the object `handleMessage` resolves with. Jest never sees it: the
+pool takes the inline path under test (`isLikelyTestRuntime`), and that path
+spreads the extractor's result whole. `parseErrors` was lost exactly this way
+between two commits on 2026-09-13.
+
+`tests/services/MetadataWorkerPool.test.ts`, *"carries every metadata field back
+from the worker, not only the first few"*, is the guard: a stub worker posting a
+full payload, asserted field by field. It catches the omission but does not
+prevent it — fix direction is for the handler to take the payload as one
+`MetadataResult`-shaped object and forward it, so there is one spelling of the
+shape rather than four.
