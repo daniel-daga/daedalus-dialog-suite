@@ -1,6 +1,6 @@
 import type { RoutineSite } from '../../../../shared/types';
 import type { LintRule, Problem } from '../types';
-import { coverageOf, type RoutineWindow } from '../../../routines/routineSchedule';
+import { coverageOf, windowCovers, type RoutineWindow } from '../../../routines/routineSchedule';
 
 /**
  * `routine-overlap`: two `TA` entries of one routine in force at the same
@@ -42,14 +42,21 @@ export const routineOverlapRule: LintRule = (view): Problem[] => {
   // Grouped rather than filtered per routine: `coverageOf` filters the whole
   // list by name, so calling it for N routines over a flat list is N passes
   // over every entry in the project.
-  const first = new Map<string, RoutineSite>();
+  const byRoutine = new Map<string, RoutineSite[]>();
   for (const site of routineSites) {
-    if (!first.has(site.routine)) first.set(site.routine, site);
+    const sites = byRoutine.get(site.routine);
+    if (sites) sites.push(site);
+    else byRoutine.set(site.routine, [site]);
   }
 
   const problems: Problem[] = [];
-  for (const [routine, anchor] of first) {
+  for (const [routine, sites] of byRoutine) {
     for (const window of coverageOf(routineSites, routine).overlaps) {
+      // The first of the entries actually in force at the overlap's start:
+      // the routine's own first entry is often not one of them, and the row
+      // is about the entries that collide.
+      const covering = sites.filter((site) => windowCovers(site, window.startMinute));
+      const anchor = covering[0] ?? sites[0];
       problems.push({
         // The window's start, so the id is stable across a re-scan and two
         // overlapping windows in one routine are two rows.
@@ -63,7 +70,7 @@ export const routineOverlapRule: LintRule = (view): Problem[] => {
         // The entries of one routine are inside the function that declares it
         // — a `TA` call is in the routine it names — so any entry's file is
         // the routine's file, and the function name is the routine itself.
-        locus: { kind: 'script', filePath: anchor.filePath, functionName: routine },
+        locus: { kind: 'script', filePath: anchor.filePath, functionName: routine, line: anchor.line },
       });
     }
   }

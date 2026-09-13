@@ -11,8 +11,11 @@ export interface ParsedFileMetadata {
   prototypes: Array<{ name: string; parent: string }>;
   isQuestFile: boolean;
   routines: string[];
-  /** Literal AI_Output voice ids (expression-valued ids are skipped). */
-  voiceIds: Array<{ id: string; functionName: string }>;
+  /**
+   * Literal AI_Output voice ids (expression-valued ids are skipped), each with
+   * the 1-based line it was written on, so a voice-id finding names it (#267).
+   */
+  voiceIds: Array<{ id: string; functionName: string; line?: number }>;
   /**
    * The full semantic model the metadata pass already built — present only
    * when the parse was clean and both visitor passes completed, so it can be
@@ -124,7 +127,7 @@ const extractDailyRoutines = (semanticModel: SemanticModel): string[] => {
 const collectDialogLineVoiceIds = (
   actions: any[],
   functionName: string,
-  collected: Array<{ id: string; functionName: string }>
+  collected: Array<{ id: string; functionName: string; line?: number }>
 ): void => {
   for (const action of actions || []) {
     if (!action) {
@@ -132,7 +135,7 @@ const collectDialogLineVoiceIds = (
     }
     if (action.type === 'DialogLine') {
       if (typeof action.id === 'string' && action.id && !action.idIsExpression) {
-        collected.push({ id: action.id, functionName });
+        collected.push({ id: action.id, functionName, line: action.line });
       }
       continue;
     }
@@ -143,8 +146,8 @@ const collectDialogLineVoiceIds = (
   }
 };
 
-const extractVoiceIds = (semanticModel: SemanticModel): Array<{ id: string; functionName: string }> => {
-  const voiceIds: Array<{ id: string; functionName: string }> = [];
+const extractVoiceIds = (semanticModel: SemanticModel): Array<{ id: string; functionName: string; line?: number }> => {
+  const voiceIds: Array<{ id: string; functionName: string; line?: number }> = [];
   for (const [functionName, func] of Object.entries(semanticModel.functions || {})) {
     collectDialogLineVoiceIds(func.actions || [], functionName, voiceIds);
   }
@@ -198,15 +201,17 @@ export function buildWaypointParamIndex(fileModels: Array<{ semanticModel: Seman
 /**
  * Waypoint name literals passed to a call site resolved through
  * buildWaypointParamIndex, keyed by UPPERCASED waypoint name (Daedalus is
- * case-insensitive) with the calling routine's own file/function location.
+ * case-insensitive) with the calling routine's own file/function location and
+ * the call's 1-based line, which is what a `waypoint-not-in-world` finding
+ * names (#267).
  * Needs every file's semantic model at once — a project helper's waypoint
  * parameter can be declared in one file and called from another.
  */
 export function extractWaypointSites(
   fileModels: Array<{ filePath: string; semanticModel: SemanticModel }>
-): Record<string, Array<{ filePath: string; functionName: string }>> {
+): Record<string, Array<{ filePath: string; functionName: string; line: number }>> {
   const paramIndex = buildWaypointParamIndex(fileModels);
-  const sites: Record<string, Array<{ filePath: string; functionName: string }>> = {};
+  const sites: Record<string, Array<{ filePath: string; functionName: string; line: number }>> = {};
 
   for (const { filePath, semanticModel } of fileModels) {
     for (const [functionName, func] of Object.entries(semanticModel.functions || {})) {
@@ -221,7 +226,7 @@ export function extractWaypointSites(
         if (!sites[key]) {
           sites[key] = [];
         }
-        sites[key].push({ filePath, functionName });
+        sites[key].push({ filePath, functionName, line: call.position.startLine });
       }
     }
   }

@@ -301,6 +301,17 @@ trusting master for a release, not after.
   unavailable here. The env var leaves the headless-shell channel resolving on
   its own, and the channel is what the run asks for; `launchOptions` replaces
   the launch outright, which is the difference.
+- **`npx playwright test` fails the whole run in the editor workspace; the
+  workspace's own binary does not.** `npx` resolves the hoisted root
+  `playwright` package, which loads a different `@playwright/test` than the
+  specs import, and every spec dies at its `test.describe` with *"Playwright
+  Test did not expect test.describe() to be called here"* and then *"No tests
+  found"*. It reads like a broken spec file and is not — the message's own
+  third cause ("two different versions of @playwright/test") is the real one.
+  Run `./node_modules/.bin/playwright test …` from `daedalus-dialog-editor`
+  instead. Seen 2026-09-13; 179 harness specs then ran, 178 green with one
+  parallel-load flake (`file-opening.spec.ts` › *should have window.editorAPI
+  available*, green on its own).
 - The container's own instructions say not to run `playwright install`. Nothing
   above needs it.
 - **A cold clone needs `zen-world` built before the harness resolves at all.**

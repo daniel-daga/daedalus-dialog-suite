@@ -46,11 +46,13 @@ export interface ScriptLocus {
   /** Function the problem points at, used for navigation. */
   functionName?: string;
   /**
-   * 1-based source line, for the findings that have one. Only `parse-error`
-   * does today: the semantic model keeps positions on top-level declarations
-   * alone, so every other rule can name a dialog or a function and no line
-   * (#267's second half). Nothing jumps to it — there is no source view — but
-   * the panel shows it, which is what tells two syntax errors apart.
+   * 1-based source line of the construct the finding is about — the action, the
+   * condition or the call where there is one, the declaration otherwise (#267).
+   * Nothing *jumps* to it, because there is no source view; the panel shows it,
+   * which is what tells two findings in one function apart.
+   *
+   * Still optional: a model the editor built or edited carries no source line,
+   * and the index a rule reads may predate the field.
    */
   line?: number;
   /**
@@ -113,6 +115,8 @@ export interface FileModel {
  */
 export interface DialogFacts {
   name: string;
+  /** 1-based line of the `instance` declaration, when the model carries one. */
+  line?: number;
   /** Raw `npc` property when it is a string (may be empty/whitespace). */
   npc?: string;
   /** Function name of the `information` property, when present. */
@@ -127,6 +131,8 @@ export interface DialogFacts {
  */
 export interface FunctionFacts {
   name: string;
+  /** 1-based line of the `func` declaration, when the model carries one. */
+  line?: number;
   /** True when the function contains at least one `Choice` action. */
   hasChoice: boolean;
   /** True when the function contains at least one `ClearChoicesAction`. */
@@ -135,10 +141,10 @@ export interface FunctionFacts {
   choiceTargets: string[];
   /** The function's `calls` list. */
   calls: string[];
-  /** Non-empty `Npc_KnowsInfo` dialog refs with their condition index. */
-  knowsInfoRefs: Array<{ index: number; dialogRef: string }>;
-  /** Literal, non-empty voice ids in encounter order. */
-  voiceIds: string[];
+  /** Non-empty `Npc_KnowsInfo` dialog refs with their condition index and line. */
+  knowsInfoRefs: Array<{ index: number; dialogRef: string; line?: number }>;
+  /** Literal, non-empty voice ids in encounter order, with the line each was written on. */
+  voiceIds: Array<{ id: string; line?: number }>;
 }
 
 /**
@@ -223,7 +229,7 @@ export interface ProjectView {
  * project, while the per-file models this view is otherwise built from are
  * capped and depend on what has been opened.
  */
-export type WaypointSites = Record<string, Array<{ filePath: string; functionName: string }>>;
+export type WaypointSites = Record<string, Array<{ filePath: string; functionName: string; line?: number }>>;
 
 /**
  * The waynet of the world that is currently open, as a set of names. This is

@@ -54,23 +54,24 @@ Also still true: **no quick test has ever been launched from that button on this
 machine.** The argv and both lookup paths are covered against an injected
 `spawn`; that is not a witness.
 
-### A4. Parse errors are per-file and have no line (#267)
+### A4. Parse errors are per-file and have no line (#267) — closed
 
 Better than `U:PAR:` lines in Notepad — the active file's syntax errors render
-in `SyntaxErrorsDisplay` and the Problems panel lints the whole project — but two
-gaps the report's complaint still touches:
+in `SyntaxErrorsDisplay` and the Problems panel lints the whole project — and
+the two gaps the report's complaint touched are both closed:
 
 - ~~**Per-file parse errors are not in the Problems panel.**~~ **Closed
   2026-09-13**: the index pass already parsed every file and dropped what it
   found, so the `parse-error` rule now reports it — a broken file nobody opened
   no longer reads as clean. `docs/architecture/problems-panel.md` carries the
   decisions.
-- **No problem carries a line**, except that one. The semantic model keeps
-  positions only on top-level declarations, so every *semantic* problem points
-  at a dialog or a function — there is no jump-to-line for anything else the
-  panel finds, and a syntax error's line is shown rather than jumped to.
-  Threading positions through the linking visitor is the prerequisite, and the
-  larger half of #267.
+- ~~**No problem carries a line**, except that one.~~ **Closed 2026-09-13**:
+  the linking visitor stamps a 1-based line on every action and condition, the
+  declaration visitor on every dialog and function, and each rule fills
+  `ScriptLocus.line` from the finest construct it is actually about. Nothing
+  *jumps* to a line — there is still no source view — so the row shows the line
+  beside the declaration the click navigates to.
+  `docs/architecture/problems-panel.md` carries the decisions.
 
 ### A5. Native parser crash still takes the main process (#268)
 

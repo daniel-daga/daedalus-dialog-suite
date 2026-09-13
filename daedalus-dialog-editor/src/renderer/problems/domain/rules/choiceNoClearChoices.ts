@@ -22,7 +22,7 @@ export const choiceNoClearChoicesRule: LintRule = (view: ProjectView): Problem[]
         rule: 'choice-no-clearchoices',
         severity: 'warning',
         message: `Function "${entry.func.name}" opens a choice menu (Info_AddChoice) with no Info_ClearChoices in any reachable choice target.`,
-        locus: { kind: 'script', filePath: entry.filePath, functionName: entry.func.name }
+        locus: { kind: 'script', filePath: entry.filePath, functionName: entry.func.name, line: entry.func.line }
       });
     }
   }

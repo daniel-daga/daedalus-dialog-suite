@@ -13,7 +13,7 @@ export const knowsInfoDanglingRule: LintRule = (view): Problem[] => {
 
   for (const file of view.fileFacts) {
     for (const func of file.facts.functions) {
-      for (const { index, dialogRef } of func.knowsInfoRefs) {
+      for (const { index, dialogRef, line } of func.knowsInfoRefs) {
         if (view.dialogNameKeys.has(dialogRef.trim().toLowerCase())) {
           continue;
         }
@@ -22,7 +22,7 @@ export const knowsInfoDanglingRule: LintRule = (view): Problem[] => {
           rule: 'knowsinfo-dangling',
           severity: 'error',
           message: `Function "${func.name}" checks Npc_KnowsInfo for "${dialogRef}", which is not a known dialog.`,
-          locus: { kind: 'script', filePath: file.filePath, functionName: func.name }
+          locus: { kind: 'script', filePath: file.filePath, functionName: func.name, line }
         });
       }
     }

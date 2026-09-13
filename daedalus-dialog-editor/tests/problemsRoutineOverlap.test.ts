@@ -70,7 +70,9 @@ describe('routineOverlapRule', () => {
         'Routine "RTN_START_DIEGO" has two entries in force from 12:00 to 14:00. '
         + 'Nothing in the format says which the engine runs, so the NPC\'s position over '
         + 'that window is undefined.',
-      locus: { kind: 'script', filePath: 'Story/Rtn_Diego.d', functionName: 'RTN_START_DIEGO' },
+      locus: {
+        kind: 'script', filePath: 'Story/Rtn_Diego.d', functionName: 'RTN_START_DIEGO', line: 10,
+      },
     });
   });
 
@@ -115,17 +117,20 @@ describe('routineOverlapRule', () => {
     expect(problems[0].message).toContain('RTN_START_MUD');
   });
 
-  it('points at the file and function of the routine, not of one entry', () => {
+  it('names the routine for its file and function, and a colliding entry for its line', () => {
     // The entries of one routine are in one function by construction — a `TA`
-    // call is inside the routine it names — so the first entry's file is the
-    // routine's file, and the function name is the routine itself.
+    // call is inside the routine it names — so any entry's file is the
+    // routine's file, and the function name is the routine itself. The line
+    // is finer than that and has to be: it is the first entry actually in
+    // force at the overlap, which is what the row is about (#267).
     const problems = routineOverlapRule(view([
-      site('RTN_START_DIEGO', 0, 13 * 60, 10),
-      site('RTN_START_DIEGO', 12 * 60, 24 * 60, 11),
+      site('RTN_START_DIEGO', 0, 6 * 60, 9),
+      site('RTN_START_DIEGO', 12 * 60, 20 * 60, 10),
+      site('RTN_START_DIEGO', 13 * 60, 24 * 60, 11),
     ]));
 
     expect(problems[0].locus).toEqual({
-      kind: 'script', filePath: 'Story/Rtn_Diego.d', functionName: 'RTN_START_DIEGO',
+      kind: 'script', filePath: 'Story/Rtn_Diego.d', functionName: 'RTN_START_DIEGO', line: 10,
     });
   });
 });

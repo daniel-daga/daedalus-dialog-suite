@@ -103,18 +103,37 @@ falls back to `problem.filePath`, the one thing every problem carries: the
 panel opens that file, selects the function and switches to the dialog view.
 Without it the click is a no-op on a view that occupies the whole main area.
 
-## Position limitation
+## Source lines
 
-The semantic model persists source positions only on top-level declarations;
-dialogs, functions, actions, and conditions carry none. Problems therefore
-point at a dialog/function (not an exact line) — the same granularity
-`ValidationService` reports. Precise in-body focus (an action-path jump) is a
-possible follow-up if positions are later threaded through the linking visitor.
+Every finding names a line (#267). The semantic model used to keep positions on
+top-level declarations alone, so `parse-error` was the only rule with one; the
+linking visitor now stamps a 1-based `line` on every action and condition as it
+parses them, and the declaration visitor stamps one on every dialog and
+function. `ScriptLocus.line` is what the rules fill from it.
 
-`parse-error` is the exception and does not lift the limitation: a syntax error
-has a position and nothing else, so it fills `ScriptLocus.line` and the panel
-shows it. Nothing *jumps* to a line — there is no source view — so the click
-opens the file, which renders `SyntaxErrorsDisplay`.
+Three things follow from how the line is chosen:
+
+- **The finest construct the rule is actually about**, not the declaration that
+  contains it. `knowsinfo-dangling` names the condition, a voice-id finding the
+  `AI_Output`, `waypoint-not-in-world` the call, `duplicate-spawn` the spawn,
+  `routine-overlap` the first entry in force over the overlap. Only the rules
+  that *are* about a declaration — `npc-not-found`, `orphaned-function`,
+  `choice-no-clearchoices` — name one.
+- **The line does not replace the declaration; the row shows both.** The
+  declaration is what the click navigates to, and the line is what tells two
+  findings inside one function apart. `parse-error` shows a line and no
+  declaration because a syntax error has no declaration to name.
+- **Nothing *jumps* to a line.** There is no source view, so the click still
+  opens the file and selects the symbol; the line is read, not followed.
+
+It stays optional at every layer. A model the editor built or edited carries no
+source line, the browser harness's stand-in parser computes its own, and a
+project index written before the field existed has none — so an absent line is
+a row without one, never a refusal.
+
+The signature the roundtrip corpus compares actions by excludes `line`
+(`scripts/roundtrip-corpus.js`): regenerated source formats to its own line
+numbers, and where an action was written is not what it is.
 
 ## Deferred
 

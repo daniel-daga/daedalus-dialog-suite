@@ -52,6 +52,7 @@ export const waypointNotInWorldRule: LintRule = (view): Problem[] => {
         // case-sensitive even though the lookup above is not.
         locus: {
           kind: 'script', filePath: site.filePath, functionName: site.functionName, waypoint: name,
+          line: site.line,
         }
       });
     }

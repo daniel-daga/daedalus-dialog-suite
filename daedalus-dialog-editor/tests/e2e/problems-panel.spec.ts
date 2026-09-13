@@ -59,6 +59,10 @@ test.describe('Problems panel', () => {
     await expect(firstRow).toBeVisible({ timeout: 15000 });
     await expect(firstRow).toContainText('BadVoiceId');
     await expect(firstRow).toContainText('Malformed voice ID');
+    // The row names the declaration the click navigates to — the owning dialog,
+    // which `runRules` enriched it with — *and* the line the offending
+    // AI_Output is on, #267's second half. That call is the fixture's 17th line.
+    await expect(firstRow).toContainText('dia.d · DIA_Prob_Test · line 17');
 
     // Clicking the problem jumps to the dialog view with the dialog selected.
     await firstRow.click();

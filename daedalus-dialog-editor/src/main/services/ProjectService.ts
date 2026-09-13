@@ -157,7 +157,7 @@ class ProjectService {
     const questFiles: string[] = [];
     const allRoutines = new Set<string>();
     const allFunctions = new Set<string>();
-    const voiceIds: Record<string, Array<{ filePath: string; functionName: string }>> = {};
+    const voiceIds: Record<string, Array<{ filePath: string; functionName: string; line?: number }>> = {};
     const metadataFailures: Array<{ filePath: string; error: string }> = [];
     const parseErrors: FileParseErrors[] = [];
     const fileModelsForSiteIndexes: Array<{ filePath: string; semanticModel: SemanticModel }> = [];
@@ -282,7 +282,7 @@ class ProjectService {
           if (!voiceIds[key]) {
             voiceIds[key] = [];
           }
-          voiceIds[key].push({ filePath, functionName: voiceId.functionName });
+          voiceIds[key].push({ filePath, functionName: voiceId.functionName, line: voiceId.line });
         }
       }
     } finally {

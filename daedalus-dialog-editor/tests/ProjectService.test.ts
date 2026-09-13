@@ -710,11 +710,11 @@ FUNC VOID DIA_Bengar_Hallo_Info()
 
       const shared = index.voiceIds['DIA_ALRIK_HALLO_15_00'];
       expect(shared).toHaveLength(2);
-      expect(shared).toContainEqual({ filePath: fileA, functionName: 'DIA_Alrik_Hallo_Info' });
-      expect(shared).toContainEqual({ filePath: fileB, functionName: 'DIA_Bengar_Hallo_Info' });
+      expect(shared).toContainEqual({ filePath: fileA, functionName: 'DIA_Alrik_Hallo_Info', line: 4 });
+      expect(shared).toContainEqual({ filePath: fileB, functionName: 'DIA_Bengar_Hallo_Info', line: 4 });
 
       expect(index.voiceIds['DIA_BENGAR_HALLO_15_01']).toEqual([
-        { filePath: fileB, functionName: 'DIA_Bengar_Hallo_Info' }
+        { filePath: fileB, functionName: 'DIA_Bengar_Hallo_Info', line: 5 }
       ]);
     });
 
@@ -746,10 +746,10 @@ FUNC VOID TA_Guard_Day()
       const index = await service.buildProjectIndex(tempDir);
 
       expect(index.waypointSites['FP_BAKER_OVEN']).toEqual([
-        { filePath: fileA, functionName: 'TA_Baker_Day' }
+        { filePath: fileA, functionName: 'TA_Baker_Day', line: 4 }
       ]);
       expect(index.waypointSites['WP_GUARD_POST']).toEqual([
-        { filePath: fileB, functionName: 'TA_Guard_Day' }
+        { filePath: fileB, functionName: 'TA_Guard_Day', line: 9 }
       ]);
     });
 
@@ -814,8 +814,12 @@ FUNC VOID TA_Guard_Day()
         { filePath: '/test/TA_Guard.d', semanticModel: fileB.semanticModel! }
       ]);
 
-      expect(sites['FP_BAKER_OVEN']).toEqual([{ filePath: '/test/TA_Baker.d', functionName: 'TA_Baker_Day' }]);
-      expect(sites['WP_GUARD_POST']).toEqual([{ filePath: '/test/TA_Guard.d', functionName: 'TA_Guard_Day' }]);
+      expect(sites['FP_BAKER_OVEN']).toEqual([
+        { filePath: '/test/TA_Baker.d', functionName: 'TA_Baker_Day', line: 4 }
+      ]);
+      expect(sites['WP_GUARD_POST']).toEqual([
+        { filePath: '/test/TA_Guard.d', functionName: 'TA_Guard_Day', line: 9 }
+      ]);
     });
 
     // The dominant corpus shape (level-editor.md §16.8): a daily routine calls a
@@ -853,11 +857,13 @@ FUNC VOID Rtn_Start_1234()
         { filePath: '/test/Rtn_Guard.d', semanticModel: rtnFile.semanticModel! }
       ]);
 
+      // Two calls in one function, and the lines tell them apart — which is
+      // the whole point of carrying one (#267).
       expect(sites['NW_CITY_HABOUR_02']).toEqual([
-        { filePath: '/test/Rtn_Guard.d', functionName: 'Rtn_Start_1234' }
+        { filePath: '/test/Rtn_Guard.d', functionName: 'Rtn_Start_1234', line: 4 }
       ]);
       expect(sites['NW_CITY_HABOUR_03']).toEqual([
-        { filePath: '/test/Rtn_Guard.d', functionName: 'Rtn_Start_1234' }
+        { filePath: '/test/Rtn_Guard.d', functionName: 'Rtn_Start_1234', line: 5 }
       ]);
     });
 
@@ -888,7 +894,7 @@ FUNC VOID Rtn_Start_99()
       ]);
 
       expect(sites['NW_TAVERN_BAR']).toEqual([
-        { filePath: '/test/TA_Cased.d', functionName: 'Rtn_Start_99' }
+        { filePath: '/test/TA_Cased.d', functionName: 'Rtn_Start_99', line: 9 }
       ]);
     });
 
@@ -920,10 +926,15 @@ FUNC VOID Startup_NewWorld()
         { filePath: '/test/Startup.d', semanticModel: file.semanticModel! }
       ]);
 
-      for (const name of [
-        'WP_TELEPORT', 'WP_STARTSTATE', 'WP_TA', 'WP_TA_MIN', 'WP_SPAWN_NPC', 'WP_SPAWN_ITEM'
-      ]) {
-        expect(sites[name]).toEqual([{ filePath: '/test/Startup.d', functionName: 'Startup_NewWorld' }]);
+      // One call per line, in the order written, so the expected line is also
+      // a check that each name came off its own call and not a neighbour's.
+      for (const [name, line] of [
+        ['WP_TELEPORT', 4], ['WP_STARTSTATE', 5], ['WP_TA', 6],
+        ['WP_TA_MIN', 7], ['WP_SPAWN_NPC', 8], ['WP_SPAWN_ITEM', 9]
+      ] as Array<[string, number]>) {
+        expect(sites[name]).toEqual([
+          { filePath: '/test/Startup.d', functionName: 'Startup_NewWorld', line }
+        ]);
       }
     });
 
@@ -1476,9 +1487,10 @@ FUNC VOID DIA_Test_Bye_Info()
 
       const metadata = extractFileMetadataFromSource(content, '/test/DIA_Test.d');
 
-      expect(metadata.voiceIds).toContainEqual({ id: 'DIA_Test_Hallo_15_00', functionName: 'DIA_Test_Hallo_Info' });
-      expect(metadata.voiceIds).toContainEqual({ id: 'DIA_Test_Hallo_15_01', functionName: 'DIA_Test_Hallo_Info' });
-      expect(metadata.voiceIds).toContainEqual({ id: 'DIA_Test_Bye_15_00', functionName: 'DIA_Test_Bye_Info' });
+      // The nested id's line is the `AI_Output` inside the `if`, not the `if`.
+      expect(metadata.voiceIds).toContainEqual({ id: 'DIA_Test_Hallo_15_00', functionName: 'DIA_Test_Hallo_Info', line: 4 });
+      expect(metadata.voiceIds).toContainEqual({ id: 'DIA_Test_Hallo_15_01', functionName: 'DIA_Test_Hallo_Info', line: 7 });
+      expect(metadata.voiceIds).toContainEqual({ id: 'DIA_Test_Bye_15_00', functionName: 'DIA_Test_Bye_Info', line: 13 });
       // The expression-valued id is skipped
       expect(metadata.voiceIds).toHaveLength(3);
     });

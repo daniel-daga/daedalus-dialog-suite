@@ -16,6 +16,7 @@ const refName = (ref: string | { name?: string } | undefined): string | undefine
 export function extractFileFacts(model: SemanticModel): FileFacts {
   const dialogs: DialogFacts[] = Object.values(model.dialogs || {}).map((dialog) => ({
     name: dialog.name,
+    line: dialog.line,
     npc: typeof dialog.properties?.npc === 'string' ? dialog.properties.npc : undefined,
     informationRef: refName(dialog.properties?.information),
     conditionRef: refName(dialog.properties?.condition)
@@ -25,7 +26,7 @@ export function extractFileFacts(model: SemanticModel): FileFacts {
     let hasChoice = false;
     let hasClearChoices = false;
     const choiceTargets: string[] = [];
-    const voiceIds: string[] = [];
+    const voiceIds: Array<{ id: string; line?: number }> = [];
     forEachAction(func.actions, (action) => {
       if (action.type === 'Choice') {
         hasChoice = true;
@@ -33,14 +34,14 @@ export function extractFileFacts(model: SemanticModel): FileFacts {
       } else if (action.type === 'ClearChoicesAction') {
         hasClearChoices = true;
       } else if (action.type === 'DialogLine') {
-        const line = action as DialogLineAction;
-        if (typeof line.id === 'string' && line.id.trim() !== '' && !line.idIsExpression) {
-          voiceIds.push(line.id);
+        const dialogLine = action as DialogLineAction;
+        if (typeof dialogLine.id === 'string' && dialogLine.id.trim() !== '' && !dialogLine.idIsExpression) {
+          voiceIds.push({ id: dialogLine.id, line: action.line });
         }
       }
     });
 
-    const knowsInfoRefs: Array<{ index: number; dialogRef: string }> = [];
+    const knowsInfoRefs: Array<{ index: number; dialogRef: string; line?: number }> = [];
     // `conditions` is guaranteed by the native parser but may be absent on
     // partial/error models or the browser-harness mock — tolerate that.
     (func.conditions || []).forEach((condition, index) => {
@@ -49,12 +50,13 @@ export function extractFileFacts(model: SemanticModel): FileFacts {
       }
       const { dialogRef } = condition as NpcKnowsInfoCondition;
       if (typeof dialogRef === 'string' && dialogRef.length > 0) {
-        knowsInfoRefs.push({ index, dialogRef });
+        knowsInfoRefs.push({ index, dialogRef, line: condition.line });
       }
     });
 
     return {
       name: func.name,
+      line: func.line,
       hasChoice,
       hasClearChoices,
       choiceTargets,

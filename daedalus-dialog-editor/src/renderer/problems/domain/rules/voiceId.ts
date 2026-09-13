@@ -5,6 +5,8 @@ interface VoiceIdOccurrence {
   id: string;
   filePath: string;
   functionName: string;
+  /** The `AI_Output` line itself — a function holds many, and they differ. */
+  line?: number;
 }
 
 /** Vanilla voice ids end in `_<number>_<number>`, e.g. `DIA_Alrik_Teach_15_00`. */
@@ -26,8 +28,8 @@ export const voiceIdRule: LintRule = (view): Problem[] => {
 
   for (const file of view.fileFacts) {
     for (const func of file.facts.functions) {
-      for (const id of func.voiceIds) {
-        occurrences.push({ id, filePath: file.filePath, functionName: func.name });
+      for (const { id, line } of func.voiceIds) {
+        occurrences.push({ id, filePath: file.filePath, functionName: func.name, line });
       }
     }
   }
@@ -55,7 +57,7 @@ export const voiceIdRule: LintRule = (view): Problem[] => {
         rule: 'voice-id-duplicate',
         severity: 'warning',
         message: `Voice ID "${occ.id}" is used ${group.length} times across the project.`,
-        locus: { kind: 'script', filePath: occ.filePath, functionName: occ.functionName }
+        locus: { kind: 'script', filePath: occ.filePath, functionName: occ.functionName, line: occ.line }
       });
     }
   }
@@ -69,7 +71,7 @@ export const voiceIdRule: LintRule = (view): Problem[] => {
       rule: 'voice-id-malformed',
       severity: 'warning',
       message: `Voice ID "${occ.id}" does not match the expected naming pattern (…_<number>_<number>).`,
-      locus: { kind: 'script', filePath: occ.filePath, functionName: occ.functionName }
+      locus: { kind: 'script', filePath: occ.filePath, functionName: occ.functionName, line: occ.line }
     });
   }
 

@@ -119,7 +119,7 @@ export interface ProjectIndex {
    * Built at project load/reindex time — not refreshed on every save, so it can
    * be stale until the next reindex.
    */
-  voiceIds: Record<string, Array<{ filePath: string; functionName: string }>>;
+  voiceIds: Record<string, Array<{ filePath: string; functionName: string; line?: number }>>;
   /**
    * Waypoint name literals passed to one of the engine externals that take a
    * place name (`ENGINE_EXTERNAL_WAYPOINT_ARG_INDEX`, measured against the G2
@@ -128,7 +128,7 @@ export interface ProjectIndex {
    * entries keep the original file/function locations. Built at project
    * load/reindex time, same as voiceIds.
    */
-  waypointSites: Record<string, Array<{ filePath: string; functionName: string }>>;
+  waypointSites: Record<string, Array<{ filePath: string; functionName: string; line: number }>>;
   /**
    * Static NPC/item spawns: every `Wld_InsertNpc`/`Wld_InsertItem` call whose
    * instance and spawn point are both literals. Dynamic sites are excluded
@@ -385,9 +385,21 @@ export interface ConditionalAction {
 }
 
 /**
+ * The 1-based source line a construct was parsed from.
+ *
+ * Intersected into the action and condition unions rather than declared on each
+ * of their members: the parser stamps it in one place, and this is what lets a
+ * Problems finding name a line instead of only a declaration (#267). Optional
+ * — a model the editor built or edited has no source line to give.
+ */
+export interface SourceLine {
+  line?: number;
+}
+
+/**
  * Union type for all possible dialog actions
  */
-export type DialogAction =
+export type DialogAction = (
   | DialogLineAction
   | ChoiceAction
   | LogEntryAction
@@ -415,7 +427,8 @@ export type DialogAction =
   | ConditionalAction
   | Action
   | CommentActionType
-  | CustomAction;
+  | CustomAction
+) & SourceLine;
 
 // ============================================================================
 // Semantic Model Types - Conditions
@@ -490,7 +503,7 @@ export interface QuestStateCondition {
   state: 'LOG_RUNNING' | 'LOG_SUCCESS' | 'LOG_FAILED' | 'LOG_OBSOLETE';
 }
 
-export type DialogCondition =
+export type DialogCondition = (
   | NpcKnowsInfoCondition
   | VariableCondition
   | NpcHasItemsCondition
@@ -500,7 +513,8 @@ export type DialogCondition =
   | NpcGetTalentSkillCondition
   | Condition
   | GenericCondition
-  | QuestStateCondition;
+  | QuestStateCondition
+) & SourceLine;
 
 // ============================================================================
 // Semantic Model Types - Functions and Dialogs
@@ -540,6 +554,8 @@ export interface DialogFunction {
     startIndex: number;
     endIndex: number;
   };
+  /** 1-based line the declaration starts on — its `func` keyword (#267). */
+  line?: number;
 }
 
 /**
@@ -584,6 +600,8 @@ export interface Dialog {
   propertyTrailingComments?: { [key: string]: string };
   /** Standalone comments after the last property, before the closing `};`. */
   trailingBodyComments?: string[];
+  /** 1-based line the declaration starts on — its `instance` keyword (#267). */
+  line?: number;
 }
 
 export interface ParseError {

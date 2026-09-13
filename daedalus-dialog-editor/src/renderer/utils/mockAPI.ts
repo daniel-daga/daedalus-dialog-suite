@@ -204,6 +204,20 @@ function extractInjectedModel(sourceCode: string): any | null {
   }
 }
 
+/**
+ * 1-based line of a source offset. The real parser stamps every declaration and
+ * action with one (#267) and the Problems panel shows it, so the harness's
+ * stand-in parser has to as well or the panel reads differently here than in
+ * the app.
+ */
+function lineAt(sourceCode: string, offset: number): number {
+  let line = 1;
+  for (let i = 0; i < offset && i < sourceCode.length; i++) {
+    if (sourceCode[i] === '\n') line++;
+  }
+  return line;
+}
+
 function parseSource(sourceCode: string): any {
   const injected = extractInjectedModel(sourceCode);
   if (injected) {
@@ -256,6 +270,7 @@ function parseSource(sourceCode: string): any {
         name: dialogName,
         parent: 'C_INFO',
         properties,
+        line: lineAt(sourceCode, match.index),
       };
     }
   }
@@ -269,6 +284,7 @@ function parseSource(sourceCode: string): any {
     const body = match[3];
 
     // Parse AI_Output calls
+    const bodyStart = match.index + match[0].lastIndexOf(body);
     const actions: any[] = [];
     const aiOutputRegex = /AI_Output\s*\([^,]+,\s*[^,]+,\s*"([^"]+)"\s*\)/g;
     let actionMatch;
@@ -280,6 +296,7 @@ function parseSource(sourceCode: string): any {
         text: textId,
         id: textId,
         type: 'DialogLine',
+        line: lineAt(sourceCode, bodyStart + actionMatch.index),
       });
     }
 
@@ -288,6 +305,7 @@ function parseSource(sourceCode: string): any {
       returnType,
       actions,
       calls: [],
+      line: lineAt(sourceCode, match.index),
     };
   }
 

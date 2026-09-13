@@ -44,7 +44,29 @@ describe('ProblemsList', () => {
     expect(onSelect).toHaveBeenCalledWith(problems[1]);
   });
 
-  it('shows a syntax error\'s line where another row shows its declaration', () => {
+  it('shows the declaration and the line together where a finding has both', () => {
+    // Every rule names a line now (#267), and the declaration is still what
+    // the click navigates to — so the row shows both rather than trading one
+    // for the other.
+    render(
+      <ProblemsList
+        problems={[{
+          id: 'voice-id-malformed:Story/Dialoge/a.d:DIA_X_Info:DIA_X_HELLO',
+          rule: 'voice-id-malformed',
+          severity: 'warning',
+          message: 'Voice ID "DIA_X_Hello" does not match the expected naming pattern.',
+          locus: {
+            kind: 'script', filePath: 'Story/Dialoge/a.d', functionName: 'DIA_X_Info', line: 52
+          }
+        }]}
+        onSelect={() => {}}
+      />
+    );
+
+    expect(screen.getByTestId('problem-row-0')).toHaveTextContent('a.d · DIA_X_Info · line 52');
+  });
+
+  it('shows a syntax error\'s line alone, because it has no declaration', () => {
     // A syntax error is the one finding with a position and no declaration
     // (#267). Nothing jumps to the line — the row opens the file — but it is
     // what tells two errors in one file apart.

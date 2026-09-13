@@ -22,7 +22,7 @@ export const npcNotFoundRule: LintRule = (view) => {
         rule: 'npc-not-found',
         severity: 'error',
         message: `Dialog "${dialog.name}" references NPC "${npc}", which is not defined in the project.`,
-        locus: { kind: 'script', filePath: file.filePath, dialogName: dialog.name, npc }
+        locus: { kind: 'script', filePath: file.filePath, dialogName: dialog.name, npc, line: dialog.line }
       });
     }
   }

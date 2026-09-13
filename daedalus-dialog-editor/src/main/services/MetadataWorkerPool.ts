@@ -19,7 +19,7 @@ export interface MetadataResult {
   routines: string[];
   /** Every function the file declares, in its own casing (see ParsedFileMetadata). */
   functions: string[];
-  voiceIds: Array<{ id: string; functionName: string }>;
+  voiceIds: Array<{ id: string; functionName: string; line?: number }>;
   /** Full semantic model, present only for clean parses (see ParsedFileMetadata). */
   semanticModel?: SemanticModel;
   /** The file's syntax errors, present only when it has any. */
@@ -159,7 +159,7 @@ export class MetadataWorkerPool {
       isQuestFile?: boolean;
       routines?: string[];
       functions?: string[];
-      voiceIds?: Array<{ id: string; functionName: string }>;
+      voiceIds?: Array<{ id: string; functionName: string; line?: number }>;
       semanticModel?: SemanticModel;
       parseErrors?: FileParseErrors;
       mtimeMs?: number;
@@ -193,7 +193,7 @@ export class MetadataWorkerPool {
     isQuestFile?: boolean;
     routines?: string[];
     functions?: string[];
-    voiceIds?: Array<{ id: string; functionName: string }>;
+    voiceIds?: Array<{ id: string; functionName: string; line?: number }>;
     semanticModel?: SemanticModel;
     parseErrors?: FileParseErrors;
     mtimeMs?: number;

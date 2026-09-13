@@ -32,11 +32,13 @@ const secondaryText = ({ locus }: Problem): string => {
     return 'World';
   }
   const parts = [baseName(locus.filePath)];
-  // A syntax error has a line and no declaration; everything else is the other
-  // way round (`ScriptLocus.line`).
-  if (locus.line !== undefined) parts.push(`line ${locus.line}`);
-  else if (locus.dialogName) parts.push(locus.dialogName);
+  // Both, where there are both: the declaration is what the click navigates to,
+  // and the line is what tells two findings inside it apart (`ScriptLocus.line`).
+  // A syntax error has only the line; a model the editor built has only the
+  // declaration.
+  if (locus.dialogName) parts.push(locus.dialogName);
   else if (locus.functionName) parts.push(locus.functionName);
+  if (locus.line !== undefined) parts.push(`line ${locus.line}`);
   return parts.join(' · ');
 };
 
