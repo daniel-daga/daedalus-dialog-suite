@@ -328,6 +328,53 @@ function isZenPosition(value: unknown): value is [number, number, number] {
   return isFiniteNumbers(value, 3);
 }
 
+/**
+ * The side of a `DeleteWaypoint` that exists — everything the restore hands
+ * `insertWaypoint` (§16.42).
+ *
+ * Checked in full rather than waved through as the op's own payload, for the
+ * reason the other four waynet ops are checked at all: this is the boundary, and
+ * the fields go straight into a `WayPoint` the next save writes. The edges are
+ * the part that earns the walk — each is an index+name pair the binding resolves
+ * against a list this process cannot see, so the shape is all this layer can
+ * say and the binding makes the refusal.
+ */
+function assertWaypointRecord(record: unknown): void {
+  if (!isPlainObject(record)) {
+    throw new Error('Invalid op: the waypoint record must be an object');
+  }
+  for (const field of ['position', 'direction'] as const) {
+    if (!isZenPosition(record[field])) {
+      throw new Error(`Invalid op: ${field} must be three finite numbers`);
+    }
+  }
+  // Whole, because the archive stores it as an integer and a fraction would be
+  // truncated by the binding rather than refused here.
+  if (typeof record.waterDepth !== 'number' || !Number.isInteger(record.waterDepth)) {
+    throw new Error('Invalid op: waterDepth must be a whole number');
+  }
+  for (const flag of ['underWater', 'freePoint'] as const) {
+    if (typeof record[flag] !== 'boolean') {
+      throw new Error(`Invalid op: ${flag} must be a boolean`);
+    }
+  }
+  if (!Array.isArray(record.edges)) {
+    throw new Error('Invalid op: edges must be an array of index+name pairs');
+  }
+  for (const edge of record.edges) {
+    if (!isPlainObject(edge)) {
+      throw new Error('Invalid op: each edge must be an object');
+    }
+    if (typeof edge.waypoint !== 'number' || !Number.isInteger(edge.waypoint)
+      || edge.waypoint < 0) {
+      throw new Error("Invalid op: each edge's waypoint must be a non-negative integer");
+    }
+    if (typeof edge.name !== 'string' || edge.name.length === 0) {
+      throw new Error("Invalid op: each edge's name must be that waypoint's name");
+    }
+  }
+}
+
 /** A colour is four channels — r, g, b and the alpha ZenGin keeps — each a whole
  *  number, because the archive stores each in a byte. Fixed arity, since the
  *  binding reads them positionally: a three-element colour would leave one
@@ -662,11 +709,11 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
       continue;
     }
 
-    // The fifth waynet op, and the waynet's own `DeleteVob` (§16.7, W4). Beside
-    // its siblings for their reason — it has neither a `vob` nor a `path` — and
-    // exhaustive about its keys for the delete's: it is a barrier, so a side
-    // arriving on it is an inverse somebody expected it to have, and a field
-    // waved through here is that expectation reaching the binding unchallenged.
+    // The fifth waynet op, and the waynet's own `DeleteVob` (§16.7, W4) — until
+    // it gained an inverse (§16.42). Beside its siblings for their reason (it
+    // has neither a `vob` nor a `path`), and shaped like `AddWaypoint`: a null
+    // side means "not in the waynet", and the side that exists is the whole
+    // waypoint rather than a position.
     if (op.op === 'DeleteWaypoint') {
       if (typeof op.waypoint !== 'number' || !Number.isInteger(op.waypoint) || op.waypoint < 0) {
         throw new Error('Invalid op: waypoint must be a non-negative integer');
@@ -677,10 +724,27 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
       if (typeof op.name !== 'string' || op.name.length === 0) {
         throw new Error('Invalid op: name must be the waypoint\'s name');
       }
+      // **It crosses this boundary as a delete, never as its own inverse**, for
+      // `AddVob`'s reason turned the other way up. The restore direction is a
+      // real direction — `writeOp` reads a record as `insertWaypoint` — but it
+      // is built by `invertOp` off the undo stack in the main process and is not
+      // a request. Arriving here it would be an *insert at an index* from the
+      // renderer: the one call in the waynet that renumbers on purpose, with a
+      // record naming edges nothing in this process can check, to put back a
+      // waypoint nothing here saw deleted.
+      if (op.from === null) {
+        throw new Error('Invalid op: a DeleteWaypoint with a null from is a restore — undo it');
+      }
+      if (op.to !== null) {
+        throw new Error('Invalid op: a DeleteWaypoint deletes — to must be null');
+      }
+      assertWaypointRecord(op.from);
       for (const key of Object.keys(op)) {
-        if (key !== 'op' && key !== 'waypoint' && key !== 'name') {
+        if (key !== 'op' && key !== 'waypoint' && key !== 'name'
+          && key !== 'from' && key !== 'to') {
           throw new Error(
-            `Invalid op: a DeleteWaypoint carries only a waypoint and a name, not ${key}`,
+            `Invalid op: a DeleteWaypoint carries a waypoint, a name and its two sides, `
+            + `not ${key}`,
           );
         }
       }

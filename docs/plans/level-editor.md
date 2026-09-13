@@ -289,9 +289,14 @@ ship, and `DeleteVob` shipping on that rule was right. What is withdrawn is the
 barrier is a **stopgap rather than the end state**. Serializing the subtree into
 the op, or snapshotting the world around it, are no longer "later improvements"
 but the two candidate routes; §16.42 carries what either needs and the questions
-each opens. Nothing about today's behaviour changes until one lands — a barrier
-still owes the user the confirm and the cleared stacks, and a half-measure that
-restored a VOB without its old position would be worse than the barrier.
+each opens.
+
+**The waynet half of that landed 2026-09-13.** `DeleteWaypoint` is no longer a
+barrier: a waypoint is a small enough record for the op to carry the whole of
+one, so it has an inverse and the stacks survive it. `DeleteVob` is unchanged and
+everything above still describes it — a barrier still owes the user the confirm
+and the cleared stacks, and a half-measure that restored a VOB without its old
+position would still be worse than the barrier.
 
 **A selection deletes in one batch (2026-09-11, Daniel; #253).** Delete was one
 VOB at a time because a delete renumbers, and every op carries a path resolved
@@ -3342,6 +3347,7 @@ confirm the staged file's hash, and keep a control run in the same session
 | 8 | `zCVobLensFlare.fx` — a written effect name resolving against `Presets/Lensflare.zen` | 2026-09-12 | #260 |
 | 9 | A mob's `item` gating its use, and a lock's `key` opening a chest or a door | 2026-09-12 | this section, above |
 | 10 | `zCEarthquake` — a written `radius`, `duration` and `amplitude` shaking the camera | 2026-09-12 | this section, above |
+| 11 | A waypoint deleted **and undone**, then saved — the restored point back in its own slot with its edges, and NPC routines still reaching it | 2026-09-13 | §16.42 |
 
 **Out of this list by decision, not by omission.** `oCZoneMusic.volume` is
 unclaimed rather than tested badly: no ear can rank two music volumes in a live
@@ -3394,25 +3400,66 @@ completely"*, which is true of a VOB we authored and false of every retail one.
    pointing at a VOB that is not the one it edited, which is worse than losing
    the stack.
 
-**The waynet is the smaller case, not the same one.** A waypoint is a small
-record — name, position, direction, and its edges — so serializing it is cheap
-and needs no blob. What is not cheap is that a delete renumbers the whole list
-(2,895 waypoints in a retail world) and the edges are index pairs, so the
-restore has to put the name back at its old index *and* rebuild the edges that
-referenced it. Worth treating as its own increment; it is likely the cheaper
-one to ship first.
+**The waynet was the smaller case, and it landed 2026-09-13.** A waypoint is a
+small record — name, position, direction, water depth, two flags and its edges —
+so serializing it needed no blob: `WaypointRecord` in `zen-world` is the whole of
+one, and `DeleteWaypoint` now carries it on the side that exists, with a null
+side meaning "not in the waynet" exactly as `AddWaypoint`'s null position does.
+`invertOp` is the plain swap, `isBarrierOp` is `DeleteVob` alone, and the new
+`renumbersWaypoints` carries the batch rule that was always the half of the
+barrier that was not about the inverse.
 
-**Open, and each one a decision rather than work:**
+The two pieces below, in the waynet's own size:
+
+1. **The serializer is the record**, not a blob. Nothing on a waypoint is
+   invisible to this layer, which is the whole difference from a VOB.
+2. **The insert at an index is the op's other direction**, not an op of its own —
+   `insertWaypoint` in the binding, the one waynet call that may land a point
+   anywhere but the tail. It goes back into the slot it came from, which is what
+   makes the entries already on the stack address the waypoints they were made
+   against again; the edge indices on the record are the pre-delete enumeration,
+   which is the one the restore recreates, so the binding shifts them down by one
+   while the point is out of the list.
+
+Three things the increment settled that the VOB half will meet again:
+
+- **Which direction may cross the IPC.** `assertApplyOpsRequest` takes the delete
+  and refuses the restore, `AddVob`'s rule turned the other way up: an insert at
+  an index arriving from the renderer would renumber the waynet to put back a
+  waypoint nothing in the main process saw deleted. The restore is built by
+  `invertOp` off the undo stack, which never passes the validator.
+- **The optimistic rollback still drops it.** `putTheViewBack` inverts what the
+  viewport drew ahead of the round trip, and a delete is never drawn ahead of
+  one — so it is filtered by `renumbersWaypoints` now rather than by
+  `isBarrierOp`, for the same reason and not for the missing inverse.
+- **What the confirm became.** The dialog stays and now warns about the edges
+  alone: "every edge into this waypoint is removed with it; Ctrl+Z puts it back".
+  §15's requirement was that the user knows the *stack* goes, and that is no
+  longer true here.
+
+What it does **not** restore, both inherited rather than new: a neighbour the
+delete promoted to a free point stays free (`SetWaypointEdge`'s documented
+asymmetry — the undo is exact for the graph and not for that flag), and the edge
+*order* in the file changes, which nothing reads.
+
+Unwitnessed in an engine: a world saved after a delete **and its undo**. Row 11
+of §16.41.
+
+**Open, and each one a decision rather than work — all four are the VOB half's
+now, the waynet having answered the last two for itself:**
 
 - **Blob or spec.** An opaque binding-owned blob is the only form that restores
   a retail VOB faithfully; a `NewVob`-style spec is inspectable, testable and
   diffable, and would restore the classes we catalogue and silently flatten the
   rest. The blob is the honest one; nothing else in the op set works that way.
+  The waynet did not face this — its record *is* the waypoint.
 - **What bounds the history.** A subtree blob per delete is unbounded memory in
   a session that deletes a lot. A cap on retained bytes (dropping the oldest
   restorable delete back to a barrier) is the obvious answer and needs a number.
+  A waypoint record is tens of bytes, so the waynet needs no cap.
 - **Whether an undo survives a save.** It does not today for anything, and a
-  restored VOB is no different — worth stating rather than discovering.
-- **What the confirm becomes.** §15's confirm exists because the stacks clear.
-  If they no longer clear, the dialog is only a destructive-action warning, and
-  whether it stays at all is a UI call.
+  restored VOB is no different — worth stating rather than discovering. The
+  waynet restore is no different either: the stacks are the session's.
+- **What the confirm becomes.** Answered for the waynet above — it stays, and
+  warns about the edges rather than the history. The VOB dialog is untouched,
+  because the VOB delete still clears the stacks.

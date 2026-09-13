@@ -3220,10 +3220,11 @@ describe('a waypoint dragged in the viewport', () => {
   });
 
   describe('deleted in that panel', () => {
-    // W4 (§16.7) — the one waynet op that renumbers, so the one that arrives
-    // with §15's barrier: the undo history goes with it and the user is told
-    // first, exactly as a VOB delete does. It lives in the panel for W1's
-    // reason — that is the only UI a waypoint has.
+    // W4 (§16.7) — the one waynet op that renumbers. §15 shipped it as a
+    // barrier and §16.42 withdrew that: the op carries the whole waypoint now,
+    // so the confirm is a destructive-action warning rather than a notice that
+    // the history is about to go. It lives in the panel for W1's reason — that
+    // is the only UI a waypoint has.
     async function pickMiddle(): Promise<WaynetPayload> {
       const payload = await openWithWaynet();
       fireEvent.click(screen.getByTestId('stub-pick-waypoint'));
@@ -3236,7 +3237,10 @@ describe('a waypoint dragged in the viewport', () => {
       fireEvent.click(await screen.findByTestId('world-waypoint-delete'));
     }
 
-    it('is a DeleteWaypoint guarded by the name, once the warning is confirmed', async () => {
+    it('carries the whole waypoint, once the warning is confirmed', async () => {
+      // The op the surface actually sends, end to end: the fixture's middle
+      // waypoint, its position, both its edges, and `to: null` for the direction
+      // this side is allowed to ask for.
       await pickMiddle();
       api.getWorldWaynet.mockResolvedValueOnce(waynetPayload() as never);
 
@@ -3244,24 +3248,33 @@ describe('a waypoint dragged in the viewport', () => {
       fireEvent.click(screen.getByTestId('world-waypoint-delete-confirm'));
 
       await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledWith([{
-        op: 'DeleteWaypoint', waypoint: 1, name: 'WP_MIDDLE',
+        op: 'DeleteWaypoint',
+        waypoint: 1,
+        name: 'WP_MIDDLE',
+        from: {
+          position: WAYPOINT_WAS,
+          direction: [0, 0, 1],
+          waterDepth: 0,
+          underWater: false,
+          freePoint: false,
+          edges: [{ waypoint: 0, name: 'WP_START' }, { waypoint: 2, name: 'WP_END' }],
+        },
+        to: null,
       }]));
     });
 
-    it('warns that the edit cannot be undone and that the history goes with it', async () => {
-      // The requirement §15 put in place of an inverse, and the same one a VOB
-      // delete carries: every other edit in this surface undoes, so the thing
-      // the user has to be told is that this one clears the stack.
+    it('warns about the edges, and says the delete undoes', async () => {
+      // What replaced §15's "this clears your history" (§16.42). The edges are
+      // still the part a user cannot see coming from the point on screen, and
+      // that is now the whole of what the dialog is for.
       await pickMiddle();
 
       await askToDelete();
 
       const warning = screen.getByTestId('world-waypoint-delete-warning');
-      expect(warning).toHaveTextContent(/cannot be undone/i);
-      expect(warning).toHaveTextContent(/undo history|undo stack|earlier edits/i);
-      // And that the edges go too — the part a user cannot see coming from the
-      // point on screen.
       expect(warning).toHaveTextContent(/edge/i);
+      expect(warning).toHaveTextContent(/ctrl\+z|undo/i);
+      expect(warning).not.toHaveTextContent(/cannot be undone/i);
       expect(api.applyWorldOps).not.toHaveBeenCalled();
     });
 

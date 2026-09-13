@@ -980,6 +980,179 @@ Napi::Value RemoveWaypoint(Napi::CallbackInfo const& info) {
   return env.Undefined();
 }
 
+// insertWaypoint(handle, waypoint, name, record) — RemoveWaypoint's barrier
+// direction, run backwards (level-editor.md §16.42).
+//
+// **The one call here that may land a waypoint anywhere but the tail.** Every
+// other waynet mutation earns the bare index `getWaynet` emits by leaving that
+// enumeration alone, and `AddWaypoint`'s comment says why an insert in the
+// middle would not. This one renumbers on purpose: it exists to put a deleted
+// waypoint back in the slot it came from, so that the ops already on the undo
+// stack — all made against the enumeration the delete changed — address the
+// waypoints they were made against again. Landing it at the tail instead would
+// restore the point and misaddress everything else, which is the "undo that
+// looks like it worked" the whole op model is written against.
+//
+// It is safe as a *history* op and unsafe as an edit, which is the distinction
+// the caller keeps rather than this layer: `zen-world`'s `renumbersWaypoints`
+// holds a `DeleteWaypoint` alone in its batch, in both directions.
+//
+// **The record is the whole waypoint, unlike `AddWaypoint`'s two arguments.**
+// An append authors a *new* point, so fixing the other four fields is what makes
+// a redo reproduce it exactly; a restore is handed what the point actually was,
+// down to the under-water flag and the water depth, and has no business
+// defaulting any of it.
+//
+// The edges are rebuilt here rather than by a batch of `AddWaypointEdge` calls
+// after it, because a waypoint that reaches `WayNet::save` as neither a free
+// point nor an edge endpoint is not written at all — an insert and its edges
+// are one restoration, and a caller that could do half of it could save in
+// between.
+//
+// **What it does not put back:** a neighbour promoted to a free point because
+// the delete left it in no edge stays free, exactly as `AddWaypointEdge` leaves
+// it. It is `RemoveWaypointEdge`'s documented asymmetry, inherited: the undo is
+// exact for the graph and not for that one flag, and the flag only ever gains
+// points for the writer rather than losing them.
+Napi::Value InsertWaypoint(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapHandle(env, info[0]);
+  if (!info[1].IsNumber()) {
+    throw Napi::TypeError::New(env, "waypoint must be a number");
+  }
+  auto const requested = info[1].As<Napi::Number>().Int64Value();
+  auto const name = RequiredCp1252Arg(env, info[2], "name");
+  if (!info[3].IsObject() || info[3].IsArray()) {
+    throw Napi::TypeError::New(env, "the waypoint record must be an object");
+  }
+  auto const record = info[3].As<Napi::Object>();
+
+  if (name.empty()) {
+    throw Napi::Error::New(env, "a waypoint name cannot be empty");
+  }
+
+  auto points = CollectWaypoints(*handle);
+  // One past the end is legal and is the append: a waypoint deleted from the
+  // tail is restored to the tail. Two past it is a hole, and a list this op was
+  // not made against.
+  if (requested < 0 || static_cast<std::size_t>(requested) > points.size()) {
+    throw Napi::Error::New(env, "no waypoint slot at " + std::to_string(requested));
+  }
+  auto const at = static_cast<std::size_t>(requested);
+
+  // `AddWaypoint`'s refusal, owed here for its reason: a duplicate makes every
+  // by-name lookup ambiguous, and the index+name guard every other waynet op
+  // stands on is one of them.
+  for (std::size_t other = 0; other < points.size(); ++other) {
+    if (points[other]->name == name) {
+      throw Napi::Error::New(
+          env, "waypoint " + std::to_string(other) + " is already named " + Named(name));
+    }
+  }
+
+  auto const water_depth_value = record.Get("waterDepth");
+  if (!water_depth_value.IsNumber()) {
+    throw Napi::TypeError::New(env, "waterDepth must be a number");
+  }
+  auto const under_water = record.Get("underWater");
+  auto const free_point = record.Get("freePoint");
+  if (!under_water.IsBoolean() || !free_point.IsBoolean()) {
+    throw Napi::TypeError::New(env, "underWater and freePoint must be booleans");
+  }
+  auto const edges_value = record.Get("edges");
+  if (!edges_value.IsArray()) {
+    throw Napi::TypeError::New(env, "edges must be an array of index+name pairs");
+  }
+  auto const edges = edges_value.As<Napi::Array>();
+
+  auto point = std::make_shared<zenkit::WayPoint>();
+  point->name = name;
+  point->position = Vec3FromValue(env, record.Get("position"), "position");
+  point->direction = Vec3FromValue(env, record.Get("direction"), "direction");
+  point->water_depth =
+      static_cast<std::int32_t>(record.Get("waterDepth").As<Napi::Number>().Int64Value());
+  point->under_water = under_water.As<Napi::Boolean>().Value();
+  point->free_point = free_point.As<Napi::Boolean>().Value();
+
+  // Both endpoints of every edge are resolved *before* anything is inserted, so
+  // an edge naming a waypoint that is no longer there refuses the whole restore
+  // rather than leaving a point in the list with half its edges. They are
+  // resolved against the enumeration the op was made against — which is the one
+  // the insert is about to recreate — so an index past `at` is the neighbour it
+  // will be once the point is back, and one at or before `at` is the neighbour
+  // it already is.
+  std::vector<std::shared_ptr<zenkit::WayPoint>> neighbours;
+  neighbours.reserve(edges.Length());
+  for (std::uint32_t i = 0; i < edges.Length(); ++i) {
+    Napi::Value const entry = edges.Get(i);
+    if (!entry.IsObject()) {
+      throw Napi::TypeError::New(env, "each edge must be an object with a waypoint and a name");
+    }
+    auto const end = entry.As<Napi::Object>();
+    auto const index_value = end.Get("waypoint");
+    if (!index_value.IsNumber()) {
+      throw Napi::TypeError::New(env, "each edge's waypoint must be a number");
+    }
+    auto const neighbour_name = RequiredCp1252Arg(env, end.Get("name"), "the edge's name");
+    auto neighbour = index_value.As<Napi::Number>().Int64Value();
+    if (neighbour == requested) {
+      throw Napi::Error::New(env, Named(name) + " cannot be joined to itself");
+    }
+    // Back into the enumeration as it stands *now*: the restored waypoint is not
+    // in the list yet, so every neighbour past its slot currently sits one lower.
+    if (neighbour > requested) neighbour -= 1;
+    if (neighbour < 0 || static_cast<std::size_t>(neighbour) >= points.size()) {
+      throw Napi::Error::New(
+          env, "no waypoint at " + std::to_string(index_value.As<Napi::Number>().Int64Value())
+                 + " to join " + Named(name) + " to");
+    }
+    auto const& resolved = points[static_cast<std::size_t>(neighbour)];
+    if (resolved->name != neighbour_name) {
+      throw Napi::Error::New(env, "waypoint " + std::to_string(neighbour) + " is "
+                                    + Named(resolved->name) + ", not " + Named(neighbour_name)
+                                    + " — the waynet has changed under this op");
+    }
+    neighbours.push_back(resolved);
+  }
+
+  // A world with no waynet at all gets one, for `AddWaypoint`'s reason: the
+  // section is optional in the format. It can only happen when the delete this
+  // undoes took the last waypoint.
+  if (handle->world->way_net == nullptr) {
+    handle->world->way_net = std::make_shared<zenkit::WayNet>();
+  }
+
+  // The stored list and the collected one are the same list minus its null
+  // slots, so the slot `at` names has to be counted rather than indexed —
+  // `CollectWaypoints` is the one definition of what a waypoint index means, and
+  // an insert that used the raw offset would land the point somewhere else on
+  // the first world that has a null in it.
+  auto& stored = handle->world->way_net->points;
+  std::size_t live = 0;
+  auto slot = stored.begin();
+  for (; slot != stored.end(); ++slot) {
+    if (*slot == nullptr) continue;
+    if (live == at) break;
+    live += 1;
+  }
+  stored.insert(slot, point);
+
+  for (auto const& neighbour : neighbours) {
+    handle->world->way_net->edges.emplace_back(point, neighbour);
+  }
+
+  // Recomputed rather than assumed, exactly as `AddWaypoint` does: the caller
+  // checks it against the index its op claims, and a mismatch is the op being
+  // replayed against a list it was not made against.
+  auto const landed = CollectWaypoints(*handle);
+  for (std::size_t i = 0; i < landed.size(); ++i) {
+    if (landed[i].get() == point.get()) {
+      return Napi::Number::New(env, static_cast<double>(i));
+    }
+  }
+  throw Napi::Error::New(env, "the restored waypoint is not in the point list");
+}
+
 // The two endpoints of an edge op, each resolved by the index+name pair every
 // waynet op is addressed by (see SetWaypointPosition). Shared by the add and
 // the remove so the two cannot drift into checking different things — a pair
@@ -3676,6 +3849,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("setWaypointName", Napi::Function::New(env, SetWaypointName));
   exports.Set("addWaypoint", Napi::Function::New(env, AddWaypoint));
   exports.Set("removeWaypoint", Napi::Function::New(env, RemoveWaypoint));
+  exports.Set("insertWaypoint", Napi::Function::New(env, InsertWaypoint));
   exports.Set("addWaypointEdge", Napi::Function::New(env, AddWaypointEdge));
   exports.Set("removeWaypointEdge", Napi::Function::New(env, RemoveWaypointEdge));
   exports.Set("_authorFixtureWorld", Napi::Function::New(env, AuthorFixtureWorld));

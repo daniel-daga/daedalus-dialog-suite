@@ -1951,8 +1951,11 @@ decision. What it settled, in the order the code forced the questions:
 
 **The barrier is a stopgap since 2026-09-12 (Daniel; #271)** — an undoable
 delete is wanted, and §16.42 holds what an inverse would need. Everything below
-is still what the code does and why; read it as the current behaviour, not as
-the end state.
+is still what `DeleteVob` does and why; read it as the current behaviour, not as
+the end state. **The waynet half landed 2026-09-13**: `DeleteWaypoint` is not a
+barrier any more (the waypoint section below), so the paragraphs here about
+`isBarrierOp`, the cleared stacks and the filtered optimistic rollback are the
+VOB delete's alone.
 
 **It is not an `AddVob` with a null `to`, and that was the whole design
 question.** §7 built that shape deliberately: a null side means "not in the
@@ -2759,10 +2762,21 @@ added beside them:
   address may not key on a name; a read-only jump may. The alternative stays on
   record: a stable synthetic id every op carries, which is what a future
   capability needing undo across a delete would have to buy.
-- **W4 renumbers, so it is a barrier** (§15) — it clears both undo stacks
-  instead of buying that id. `isBarrierOp` is true for exactly `DeleteVob` and
-  `DeleteWaypoint`, a barrier travels alone in its batch, and `barrier` is
+- **W4 renumbers, so it travels alone in its batch** — but it is no longer a
+  barrier (2026-09-13; plan §16.42). It was one under §15, and what bought it an
+  inverse was not the synthetic id above: a waypoint is a small enough record for
+  the op to carry the whole of one — position, direction, water depth, both flags
+  and every edge, as `WaypointRecord` — so the delete's other direction is
+  `insertWaypoint`, the one waynet call that lands a point anywhere but the tail.
+  The restore goes back into the slot it came from, which is what makes the
+  entries already on the stack address the waypoints they were made against
+  again. `isBarrierOp` is now true for `DeleteVob` alone and
+  `renumbersWaypoints` carries the batch rule, which was always the half of the
+  barrier that was not about the inverse. `barrier` on `removeWaypoint` is still
   **never defaulted**: a caller that did not say must not get either.
+  Two things the restore does not put back, both inherited and both documented
+  where they are: a neighbour promoted to a free point stays free (the
+  asymmetry below), and the edge *order* is the graph's, not the file's.
 - **`WayNet::save` writes only free points plus edge endpoints**, and
   `free_point` is not a stored field — so a non-free waypoint in no edge is
   **dropped at save**. Any op that can leave a waypoint edgeless owes it the

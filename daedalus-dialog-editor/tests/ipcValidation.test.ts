@@ -1768,16 +1768,29 @@ describe('assertApplyOpsRequest', () => {
   });
 
   describe('a waypoint delete', () => {
-    // The fifth waynet op (§16.7, W4), and the waynet's `DeleteVob`: an index,
-    // the name that guards it, and nothing else. The exhaustive key check is
-    // here for the reason it is on a VOB delete — this op is a barrier, so a
-    // side arriving on it is somebody reaching for an inverse it has not got,
-    // and an ignored field would let that through as an ordinary delete.
-    const remove = { op: 'DeleteWaypoint', waypoint: 12, name: 'WP_CITY_01' };
+    // The fifth waynet op (§16.7, W4). It stopped being a barrier when it gained
+    // an inverse (§16.42), so it now carries the waypoint on the side that
+    // exists — and the direction is what this boundary is exhaustive about: the
+    // restore is the one waynet call that renumbers on purpose, and it is built
+    // in the main process off the undo stack, never asked for from here.
+    const record = {
+      position: [1, 2, 3],
+      direction: [0, 0, 1],
+      waterDepth: 0,
+      underWater: false,
+      freePoint: true,
+      edges: [{ waypoint: 4, name: 'WP_CITY_02' }],
+    };
+    const remove = {
+      op: 'DeleteWaypoint', waypoint: 12, name: 'WP_CITY_01', from: record, to: null,
+    };
 
     it('is accepted carrying no vob and no path at all', () => {
       expect(() => assertApplyOpsRequest({ ops: [remove] })).not.toThrow();
       expect(() => assertApplyOpsRequest({ ops: [{ ...remove, waypoint: 0 }] })).not.toThrow();
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...remove, from: { ...record, edges: [] } }],
+      })).not.toThrow();
     });
 
     it('rejects a waypoint that is not a non-negative integer', () => {
@@ -1788,15 +1801,51 @@ describe('assertApplyOpsRequest', () => {
     });
 
     it('rejects a missing or empty name', () => {
-      // The guard the bare index needs, and the one thing the barrier does not
-      // buy off: a stale index resolves to *a* waypoint and this op deletes it.
+      // The guard the bare index needs: a stale index resolves to *a* waypoint
+      // and this op deletes it.
       for (const bad of [undefined, null, 12, {}, '']) {
         expect(() => assertApplyOpsRequest({ ops: [{ ...remove, name: bad }] })).toThrow(/name/);
       }
     });
 
-    it('rejects anything beyond the address it is allowed to carry', () => {
-      for (const extra of ['from', 'to', 'vob', 'path']) {
+    it('rejects the restore direction, which is the main process\'s to build', () => {
+      // `AddVob`'s rule the other way up. An insert at an index arriving from the
+      // renderer would renumber the waynet to put back a waypoint nothing here
+      // saw deleted, with an edge list nothing here can check.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ ...remove, from: null, to: record }],
+      })).toThrow(/restore/);
+      expect(() => assertApplyOpsRequest({ ops: [{ ...remove, to: record }] }))
+        .toThrow(/to must be null/);
+      expect(() => assertApplyOpsRequest({ ops: [{ ...remove, from: null }] }))
+        .toThrow(/restore/);
+    });
+
+    it('rejects a record that is not a whole waypoint', () => {
+      // Every field goes straight into a `WayPoint` the next save writes, so
+      // each one is checked here rather than left to the binding.
+      const broken: Array<Record<string, unknown>> = [
+        { position: [1, 2] }, { position: 'here' },
+        { direction: null }, { direction: [Infinity, 0, 0] },
+        { waterDepth: 1.5 }, { waterDepth: '0' },
+        { underWater: 'yes' }, { freePoint: null },
+        { edges: null }, { edges: [3] },
+        { edges: [{ waypoint: -1, name: 'WP' }] },
+        { edges: [{ waypoint: 1.5, name: 'WP' }] },
+        { edges: [{ waypoint: 1, name: '' }] },
+        { edges: [{ waypoint: 1 }] },
+      ];
+      for (const change of broken) {
+        expect(() => assertApplyOpsRequest({
+          ops: [{ ...remove, from: { ...record, ...change } }],
+        })).toThrow(/Invalid op/);
+      }
+      expect(() => assertApplyOpsRequest({ ops: [{ ...remove, from: 'a waypoint' }] }))
+        .toThrow(/record must be an object/);
+    });
+
+    it('rejects anything beyond the address and the two sides', () => {
+      for (const extra of ['vob', 'path']) {
         expect(() => assertApplyOpsRequest({ ops: [{ ...remove, [extra]: null }] }))
           .toThrow(new RegExp(extra));
       }

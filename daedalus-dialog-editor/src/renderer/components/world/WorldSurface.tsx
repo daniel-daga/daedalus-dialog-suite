@@ -1899,12 +1899,14 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         </DialogActions>
       </Dialog>
 
-      {/* The waynet's own barrier warning (§16.7, W4). Separate from the VOB
-          one rather than folded into it: they warn about different losses —
-          this one takes the waypoint's *edges* with it, which is the part a
-          user cannot see coming from the point on screen, and there is no
-          subtree to speak of. The undo half of the warning is the same, because
-          the barrier is. */}
+      {/* The waynet's own delete warning (§16.7, W4). Separate from the VOB one
+          rather than folded into it: they warn about different losses — this
+          one takes the waypoint's *edges* with it, which is the part a user
+          cannot see coming from the point on screen, and there is no subtree to
+          speak of. **It no longer warns about the history**, because the delete
+          is undoable (§16.42) and the VOB one is not; what is left is a plain
+          destructive-action confirm, which §15 says is the dialog's other half
+          and is why it stays at all. */}
       <Dialog
         open={deletingWaypoint !== null}
         onClose={() => setDeletingWaypoint(null)}
@@ -1919,9 +1921,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
             data-testid="world-waypoint-delete-warning"
           >
             <p>
-              <strong>This cannot be undone.</strong> Every edge into this waypoint is removed
-              with it, and the earlier edits go too: the undo history is cleared, because every
-              entry in it addresses waypoints by numbers this delete has just changed.
+              <strong>Every edge into this waypoint is removed with it.</strong> Ctrl+Z puts
+              the waypoint back where it was, with its edges — the earlier edits are kept.
             </p>
             <p>
               A routine or a script that names the waypoint is not changed and is not warned

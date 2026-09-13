@@ -28,10 +28,18 @@
 // at all, so an unundoable delete is already parity). `isBarrierOp` is the
 // predicate that says so, and everything else here is still invertible.
 //
-// Of §7's list only the waynet *edge* ops are still missing; they arrive when
-// the binding call for them does, not before.
+// All of §7's list is in. The waynet's own delete was the second barrier until
+// 2026-09-13 (§16.42): a waypoint is a small enough record for the op to carry
+// the whole of one, so it has an inverse and `DeleteVob` is alone in having
+// none.
 
 import type { VobReader } from './vobTree';
+// The module rather than the barrel: `../scene` re-exports `buildScene`, which
+// imports back into `../model` for its types — a value import through the
+// barrel would be a runtime cycle where the type-only ones are not. These two
+// constants are `getWaynet`'s own bit meanings, and a private copy here that
+// drifted from them would misread a flag rather than fail.
+import { WAYNET_FLAG_FREE_POINT, WAYNET_FLAG_UNDER_WATER } from '../scene/waynet';
 import {
   ARRAY_ARITY, baseFieldOf, classPropKeys, decalFieldOf, decalSubKey, fieldOf, isArrayKind,
   isAuthorableVobClass,
@@ -449,28 +457,69 @@ export interface SetWaypointEdge {
 }
 
 /**
- * The removal of one waypoint, edges and all (§16.7, W4).
+ * Everything a deleted waypoint has to be given back — the side of
+ * {@link DeleteWaypoint} that exists (§16.42).
  *
- * **The only waynet op that renumbers, and the second op with no inverse.** A
- * waypoint's address is its index into the point list `getWaynet` emits, and
- * every other waynet op earns that address by leaving the enumeration alone —
- * a move, a rename, an append and an edge insert, delete and reorder nothing.
- * This one takes a waypoint out of the middle, so every index after it names a
- * different waypoint afterwards, and the ops already on the undo stack were all
- * made against the enumeration it has just changed.
+ * **A waypoint is a small record, which is the whole reason the waynet delete
+ * gets an inverse and the VOB delete does not.** A `zCVob` carries per-class
+ * properties, children, an AI and an event manager that no layer here models,
+ * so describing one takes an opaque blob out of the binding; a waypoint is five
+ * scalars and a set of edges, and this type is all of it. `getWaynet` emits
+ * exactly these columns, so a record built from the payload the overlay is
+ * drawing is the waypoint, not an approximation of it.
+ */
+export interface WaypointRecord {
+  position: ZenPosition;
+  /** The facing ZenGin stores per point — `(0, 0, 1)` on everything retail and
+   *  on everything `AddWaypoint` authors, and carried rather than assumed
+   *  because a restore that assumed it would be silently wrong on the first
+   *  world that does not. */
+  direction: ZenPosition;
+  waterDepth: number;
+  underWater: boolean;
+  freePoint: boolean;
+  /**
+   * The other end of every edge the waypoint was in, as the index+name pair
+   * every waynet op is addressed by.
+   *
+   * The indices are the enumeration the op was *made* against, which is also
+   * the one the restore lands back into: the delete takes every index after it
+   * down by one and the insert puts them back up, so a neighbour that was 40
+   * before the delete is 40 again once the waypoint is returned to its slot.
+   */
+  edges: ReadonlyArray<{ waypoint: number; name: string }>;
+}
+
+/**
+ * The removal of one waypoint, edges and all (§16.7, W4) — **and its restore,
+ * which is the same op with its sides swapped** (§16.42).
  *
- * §15 answers that the way `DeleteVob` is answered rather than with a synthetic
- * id every op would have to carry: `isBarrierOp` is true, the history clears
- * both stacks instead of replaying against a waynet that has moved, and the
- * user is told before it lands. Spacer has no undo at all, so a barrier with a
- * warning is more than the tool this is parity with gives back — and a stable
- * id scheme stays on record for the day something needs undo across a waypoint
- * delete specifically.
+ * **The only waynet op that renumbers.** A waypoint's address is its index into
+ * the point list `getWaynet` emits, and every other waynet op earns that
+ * address by leaving the enumeration alone — a move, a rename, an append and an
+ * edge insert, delete and reorder nothing. This one takes a waypoint out of the
+ * middle, so every index after it names a different waypoint afterwards.
  *
- * It carries no side describing the waypoint, for the delete's usual reason:
- * the five scalar fields could be carried, but the edge memberships would have
- * to be too, and an inverse that restored the point without its edges would
- * look like it worked. The name is still the guard the bare index needs.
+ * §15 shipped it as a *barrier* for `DeleteVob`'s reason, and 2026-09-12 that
+ * was withdrawn for this half: an undoable delete is wanted, and the waynet is
+ * the case where it is cheap. The two things §16.42 says an inverse needs are
+ * both small here — the serializer is {@link WaypointRecord}, because a
+ * waypoint has no subtree and no members this layer cannot see, and the insert
+ * at an index is the restore direction of this op rather than an op of its own.
+ * So the sides are nullable records and a null one means "not in the waynet",
+ * exactly as {@link AddWaypoint}'s null position does, and `invertOp` is the
+ * plain swap.
+ *
+ * It still has to be **alone in its batch**, which is the half of the barrier
+ * that was never about the inverse: the other ops in a batch carry indices read
+ * before it ran, and this is the one op that moves them. `renumbersWaypoints`
+ * is where that is read. The history stacks survive it because the entries on
+ * them are unwound newest first — an older entry is replayed only after this
+ * op's own inverse has put the enumeration back.
+ *
+ * The name stays at the top level rather than on a side, for `AddWaypoint`'s
+ * reason: it is the description on the side that exists and the index's guard
+ * on the side that does not, and it is the same waypoint either way.
  */
 export interface DeleteWaypoint {
   op: 'DeleteWaypoint';
@@ -478,6 +527,8 @@ export interface DeleteWaypoint {
   waypoint: number;
   /** The name that index had when the op was made — checked, never resolved. */
   name: string;
+  from: WaypointRecord | null;
+  to: WaypointRecord | null;
 }
 
 /**
@@ -580,18 +631,40 @@ export function renumbersPaths(op: WorldOp): boolean {
 }
 
 /**
+ * Does this op move the indices every *waynet* op is addressed by?
+ *
+ * `renumbersPaths`' counterpart, and a separate predicate rather than a widened
+ * one because the two invalidate different addresses and have different
+ * readers: an index path names no waypoint, and the World surface clears the
+ * VOB selection off the first while the waynet's own selection follows this.
+ *
+ * Only the delete: a move, a rename, an edge and an *append* all leave the
+ * enumeration where they found it, which is what lets them stand on a bare
+ * index at all. It is why the delete is alone in its batch — the other ops in
+ * one would carry indices read before it ran (§16.42).
+ */
+export function renumbersWaypoints(op: WorldOp): op is DeleteWaypoint {
+  return op.op === 'DeleteWaypoint';
+}
+
+/**
  * Is this op a barrier — one the history cannot replay backwards?
  *
  * The predicate that replaced `invertOp` as the gate (§15). `WorldService` reads
  * it to clear both stacks instead of pushing a batch it could never undo, and
  * the World surface reads it to warn before the op lands. The point of asking
  * by predicate rather than by name is that an uninvertible op joins it without
- * either caller learning a second name — which is what `DeleteWaypoint` did,
- * for the waynet's version of the same reason: the entries on the stack address
- * waypoints by indices it has just moved.
+ * either caller learning a second name.
+ *
+ * **`DeleteWaypoint` left it 2026-09-12** (§16.42). It was here for the
+ * waynet's version of `DeleteVob`'s reason, and only half of that reason was
+ * ever the inverse: a waypoint is a small enough record to describe completely,
+ * so it has one now. The other half — that it moves the indices its own batch
+ * is addressed by — is `renumbersWaypoints`, which is a batch rule and not a
+ * history one.
  */
-export function isBarrierOp(op: WorldOp): op is DeleteVob | DeleteWaypoint {
-  return op.op === 'DeleteVob' || op.op === 'DeleteWaypoint';
+export function isBarrierOp(op: WorldOp): op is DeleteVob {
+  return op.op === 'DeleteVob';
 }
 
 /** Why a barrier op has no inverse — thrown by both dispatches that would need
@@ -937,23 +1010,70 @@ export function disconnectWaypoints(
 }
 
 /**
- * Delete a waypoint — the barrier op of the waynet (§16.7, W4).
+ * The columns `deleteWaypoint` reads a waypoint out of — `getWaynet`'s own, as
+ * the typed arrays its buffers are read through.
  *
- * The whole builder is an address, like `deleteVob`'s: what it would have to
- * carry to be invertible is the waypoint's edge memberships as well as its
- * fields, and a restored point with no edges is an undo that looks like it
- * worked. The name comes off the payload the overlay is holding, for the reason
- * every waynet factory reads it there — it is the guard the bare index needs,
- * and it has to be read where the op is made rather than at apply time.
+ * The whole payload rather than the names alone, which is what every other
+ * waynet factory takes: this is the one op that has to *describe* a waypoint
+ * and not merely address one, and the description is these columns at one
+ * index. The alternative — reading the fields back out of the world when the
+ * undo runs — is the snapshot-beside-the-history this model exists to avoid.
+ */
+export interface WaypointColumns {
+  names: readonly string[];
+  positions: Float32Array;
+  directions: Float32Array;
+  waterDepths: Int32Array;
+  /** {@link WAYNET_FLAG_FREE_POINT} and {@link WAYNET_FLAG_UNDER_WATER}. */
+  flags: Uint32Array;
+  /** The flat pair buffer — the same one the overlay draws its lines from. */
+  edges: Uint32Array;
+}
+
+/**
+ * Delete a waypoint, with everything needed to put it back (§16.7, W4;
+ * §16.42).
+ *
+ * The edges are walked out of the payload the overlay is already holding rather
+ * than asked for, exactly as the waypoint panel walks them for the selection: a
+ * waynet is thousands of points, the buffer is the one on screen, and a round
+ * trip could only disagree with it.
+ *
+ * The name comes off the same payload for the reason every waynet factory reads
+ * it there — it is the guard the bare index needs, and it has to be read where
+ * the op is made rather than at apply time.
  */
 export function deleteWaypoint(
-  names: readonly string[], waypoint: number,
+  waynet: WaypointColumns, waypoint: number,
 ): DeleteWaypoint {
+  const { names, positions, directions, waterDepths, flags, edges } = waynet;
   if (waypoint < 0 || waypoint >= names.length) {
     throw new RangeError(`no waypoint ${waypoint} in the waynet`);
   }
 
-  return { op: 'DeleteWaypoint', waypoint, name: names[waypoint] };
+  const neighbours: Array<{ waypoint: number; name: string }> = [];
+  for (let pair = 0; pair < edges.length; pair += 2) {
+    const [left, right] = [edges[pair], edges[pair + 1]];
+    if (left !== waypoint && right !== waypoint) continue;
+    const other = left === waypoint ? right : left;
+    neighbours.push({ waypoint: other, name: names[other] });
+  }
+
+  const at = waypoint * 3;
+  return {
+    op: 'DeleteWaypoint',
+    waypoint,
+    name: names[waypoint],
+    from: {
+      position: [positions[at], positions[at + 1], positions[at + 2]],
+      direction: [directions[at], directions[at + 1], directions[at + 2]],
+      waterDepth: waterDepths[waypoint],
+      underWater: (flags[waypoint] & WAYNET_FLAG_UNDER_WATER) !== 0,
+      freePoint: (flags[waypoint] & WAYNET_FLAG_FREE_POINT) !== 0,
+      edges: neighbours,
+    },
+    to: null,
+  };
 }
 
 /**
@@ -2075,7 +2195,7 @@ function parentAfterInsert(op: ReparentVob): string | null {
 /** The op that undoes `op` — pure, and an ordinary op in its own right, for
  *  every op that has one. A barrier does not, and is refused rather than given
  *  an inverse that would restore something else. */
-export function invertOp(op: WorldOp): Exclude<WorldOp, DeleteVob | DeleteWaypoint> {
+export function invertOp(op: WorldOp): Exclude<WorldOp, DeleteVob> {
   if (isBarrierOp(op)) throw barrierError(op);
   // The box is half of what these two write. Swapping only the matrix — or only
   // the props — undoes the visible half and leaves the VOB culled by a box
@@ -2126,6 +2246,14 @@ export function invertOp(op: WorldOp): Exclude<WorldOp, DeleteVob | DeleteWaypoi
     // op is going — so only the two booleans swap.
     return { ...op, from: op.to, to: op.from };
   }
+  if (op.op === 'DeleteWaypoint') {
+    // A null side means "not in the waynet", so the swap turns the delete into
+    // the insert that puts the waypoint back at the index it came from, edges
+    // and all — and back again for redo. The index and the name are not sides:
+    // the restore lands at the index the delete emptied, and a waypoint keeps
+    // its name across both directions (§16.42).
+    return { ...op, from: op.to, to: op.from };
+  }
   if (op.op === 'MoveVob') {
     return { ...op, from: op.to, to: op.from };
   }
@@ -2173,6 +2301,12 @@ export interface OpBinding {
    *  only, refusing a waypoint any edge names; `true` is `DeleteWaypoint`, which
    *  may take any index — renumbering the rest — and takes its edges with it. */
   removeWaypoint(waypoint: number, name: string, barrier: boolean): void;
+  /** Puts a deleted waypoint back at `waypoint`, rebuilding every edge the
+   *  record names, and answers with the index it landed at — checked against the
+   *  one the op claims, the same guard an append gets. It is an *insert*, so it
+   *  renumbers: it is the one call here that may land a waypoint anywhere but
+   *  the tail, and it exists only as `DeleteWaypoint`'s other direction. */
+  insertWaypoint(waypoint: number, name: string, record: WaypointRecord): number;
   /** Joins two waypoints, each addressed by the same index+name pair. Refuses a
    *  waypoint joined to itself and an edge already there in either orientation
    *  — the two things only the edge list can see. */
@@ -2280,11 +2414,26 @@ function writeOp(binding: OpBinding, op: WorldOp, direction: 'to' | 'from'): voi
     return;
   }
   if (op.op === 'DeleteWaypoint') {
-    // Forward only, for `DeleteVob`'s reason and with its error: the batch guard
-    // keeps a barrier alone, so there is no later op to fail and unwind it — and
-    // nothing to unwind it with.
-    if (direction === 'from') throw barrierError(op);
-    binding.removeWaypoint(op.waypoint, op.name, true);
+    const record = op[direction];
+    if (record === null) {
+      // The barrier direction of the removal: it may take an index in the
+      // middle, and it takes the edges naming the waypoint with it. Both are
+      // what the restore below puts back.
+      binding.removeWaypoint(op.waypoint, op.name, true);
+      return;
+    }
+    // The same guard an appended waypoint and an inserted VOB get. An insert
+    // lands where it is told, so a mismatch means the point list was not the one
+    // this op was made against — and the delete it would invert back to would
+    // then remove somebody else.
+    const landed = binding.insertWaypoint(op.waypoint, op.name, record);
+    if (landed !== op.waypoint) {
+      binding.removeWaypoint(landed, op.name, true);
+      throw new RangeError(
+        `the restored waypoint landed at ${landed}, not ${op.waypoint}`
+        + ' — the waynet has changed under this op',
+      );
+    }
     return;
   }
   if (op.op === 'DeleteVob') {
@@ -2337,10 +2486,10 @@ export function commitOps(binding: OpBinding, ops: readonly WorldOp[]): void {
   // back, `physicsEnabled`'s follow-up included.
   // A barrier is alone for a reason of its own, beyond the paths: it cannot be
   // unwound, so a later op failing in the same batch would leave the world with
-  // an edit applied and no history entry describing it. `DeleteVob` was already
-  // covered by the renumbering rule below; `DeleteWaypoint` renumbers the
-  // *waynet*, which no path names, so it needs this sentence rather than that
-  // one.
+  // an edit applied and no history entry describing it. `DeleteVob` is already
+  // covered by the renumbering rule below, and this is where it was said for
+  // `DeleteWaypoint` too until that op gained an inverse (§16.42) — it is now
+  // alone for the renumbering alone, which `renumbersWaypoints` says below.
   //
   // **A batch of deletes is the second exception** (#253), and like the first it
   // is a shape rather than a list of op names: every op a `DeleteVob`, and the
@@ -2367,6 +2516,18 @@ export function commitOps(binding: OpBinding, ops: readonly WorldOp[]): void {
   if (renumbering !== undefined) {
     throw new RangeError(
       `a ${renumbering.op} that renumbers invalidates every path after it: `
+      + 'it has to be the only op in its batch',
+    );
+  }
+
+  // The waynet's own version of the rule above, and separate for the reason
+  // `renumbersWaypoints` is: the indices it moves are not paths, so the check
+  // over paths cannot see them. It survived the barrier it used to be folded
+  // into — an inverse makes the op replayable, not its neighbours' addresses
+  // right (§16.42).
+  if (ops.length > 1 && ops.some(renumbersWaypoints)) {
+    throw new RangeError(
+      'a DeleteWaypoint renumbers every waypoint after it: '
       + 'it has to be the only op in its batch',
     );
   }

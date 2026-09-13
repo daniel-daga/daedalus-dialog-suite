@@ -25,12 +25,19 @@ export const WAYNET_FLAG_UNDER_WATER = 0b10;
 export interface WaynetPayload {
   count: number;
   names: string[];
+  /** `Float32Array`, three per waypoint. */
   positions: ArrayBuffer;
+  /** `Float32Array`, three per waypoint. */
   directions: ArrayBuffer;
+  /** `Int32Array`, one per waypoint — the archive stores a whole number, and a
+   *  fixture that reads its zeroes through a `Float32Array` says nothing about a
+   *  payload whose depths are not zero (`deleteWaypoint` reads this column). */
   waterDepths: ArrayBuffer;
-  /** {@link WAYNET_FLAG_FREE_POINT} and {@link WAYNET_FLAG_UNDER_WATER}. */
+  /** `Uint32Array`, one per waypoint: {@link WAYNET_FLAG_FREE_POINT} and
+   *  {@link WAYNET_FLAG_UNDER_WATER}. */
   flags: ArrayBuffer;
   edgeCount: number;
+  /** `Uint32Array`, a flat pair buffer of waypoint indices. */
   edges: ArrayBuffer;
   danglingEdges: number;
 }

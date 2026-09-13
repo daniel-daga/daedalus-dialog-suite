@@ -33,7 +33,9 @@ export function waynetPayload(): WaynetPayload {
     count: 3,
     names: ['WP_START', 'WP_MIDDLE', 'WP_END'],
     positions: new Float32Array([0, 0, 0, ...WAYPOINT_WAS, 2000, 0, 2000]).buffer,
-    directions: new Float32Array(9).buffer,
+    // The resting facing every retail point and every `AddWaypoint` carries —
+    // zeroes here would let a `deleteWaypoint` that dropped the column pass.
+    directions: new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]).buffer,
     waterDepths: new Int32Array(3).buffer,
     flags: new Uint32Array(3).buffer,
     edgeCount: 2,

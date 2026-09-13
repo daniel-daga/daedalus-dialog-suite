@@ -17,17 +17,34 @@ import type { WaynetPayload } from '../src/shared/worldTypes';
 import type { SpawnSite } from '../src/shared/types';
 import { useWaynetEditing } from '../src/renderer/components/world/hooks/useWaynetEditing';
 
-/** A three-point net: 0—1 joined, 2 free. Positions are ZenGin centimetres. */
+/**
+ * A three-point net: 0—1 joined, 2 free. Positions are ZenGin centimetres.
+ *
+ * Every column is the element type `getWaynet` actually emits — the depths
+ * `Int32Array` above all, which was a `Float32Array` here until `deleteWaypoint`
+ * started reading them: a fixture whose zeroes read the same through either view
+ * says nothing about a payload whose values do not.
+ */
 function waynetOf(names: string[], edges: number[] = [0, 1]): WaynetPayload {
   const positions = new Float32Array(names.length * 3);
-  names.forEach((_, at) => { positions.set([at * 100, 0, 0], at * 3); });
+  const directions = new Float32Array(names.length * 3);
+  const waterDepths = new Int32Array(names.length);
+  const flags = new Uint32Array(names.length);
+  names.forEach((_, at) => {
+    positions.set([at * 100, 0, 0], at * 3);
+    directions.set([0, 0, 1], at * 3);
+    // Free and dry, except the middle point — the one row where a restore that
+    // defaulted the flags or the depth would be visibly wrong.
+    waterDepths[at] = at === 1 ? 250 : 0;
+    flags[at] = at === 1 ? 0b10 : 0b01;
+  });
   return {
     count: names.length,
     names,
     positions: positions.buffer,
-    directions: new Float32Array(names.length * 3).buffer,
-    waterDepths: new Float32Array(names.length).buffer,
-    flags: new Uint32Array(names.length).buffer,
+    directions: directions.buffer,
+    waterDepths: waterDepths.buffer,
+    flags: flags.buffer,
     edgeCount: edges.length / 2,
     edges: new Uint32Array(edges).buffer,
     danglingEdges: 0,
@@ -92,11 +109,37 @@ describe('useWaynetEditing — the six edits', () => {
     });
   });
 
-  test('a delete commits one delete op', () => {
+  test('a delete carries the whole waypoint, so it can be undone', () => {
+    // §16.42: the op is no longer an address. It has to come out of this hook
+    // carrying what the waypoint *was* — the two vectors, the depth, both flags
+    // and every edge — because the undo replays the op and never reads the
+    // world back.
+    const { result, commitOps } = mount();
+    act(() => { result.current.removeWaypoint(1); });
+    const [ops] = commitOps.mock.calls[0] as [Record<string, unknown>[]];
+
+    expect(ops).toEqual([{
+      op: 'DeleteWaypoint',
+      waypoint: 1,
+      name: 'WP_MIDDLE',
+      from: {
+        position: [100, 0, 0],
+        direction: [0, 0, 1],
+        waterDepth: 250,
+        underWater: true,
+        freePoint: false,
+        edges: [{ waypoint: 0, name: 'WP_START' }],
+      },
+      to: null,
+    }]);
+  });
+
+  test('a delete of a waypoint in no edge carries an empty edge list', () => {
     const { result, commitOps } = mount();
     act(() => { result.current.removeWaypoint(2); });
-    const [ops] = commitOps.mock.calls[0] as [{ op: string }[]];
-    expect(ops[0].op).toBe('DeleteWaypoint');
+    const [ops] = commitOps.mock.calls[0] as [{ from: { edges: unknown[] } }[]];
+
+    expect(ops[0].from.edges).toEqual([]);
   });
 
   test('with no waynet loaded, every edit is a no-op rather than a throw', () => {

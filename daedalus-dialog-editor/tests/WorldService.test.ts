@@ -529,26 +529,40 @@ describe('the op log', () => {
     service.close();
   });
 
-  test('a waypoint delete is a barrier too, and clears the same way', async () => {
-    // §16.7's W4. The predicate is what the service reads, not a name, so this
-    // op joined the rule without the service learning a second one — but the
-    // wiring is what a user loses an undo stack to, so it is pinned here rather
-    // than left to `isBarrierOp`'s own tests. The reason is the waynet's
-    // version of the VOB one: every recorded op addresses a waypoint by an
-    // index this delete has just moved.
+  test('a waypoint delete is recorded, and undoes as the restore', async () => {
+    // §16.7's W4, and §16.42: it was a barrier here until the op gained an
+    // inverse. The predicate is what the service reads, not a name, so the op
+    // left the rule without the service learning anything — but an undo stack
+    // kept or lost is what a user actually feels, so the wiring is pinned here
+    // rather than left to `isBarrierOp`'s own tests.
+    const RECORD = {
+      position: [1, 2, 3] as [number, number, number],
+      direction: [0, 0, 1] as [number, number, number],
+      waterDepth: 0,
+      underWater: false,
+      freePoint: true,
+      edges: [{ waypoint: 2, name: 'WP_CITY_00' }],
+    };
     const { worker, service } = await openedService();
     await applied(service, worker, [A]);
 
-    const removing = service.applyOps([
-      { op: 'DeleteWaypoint' as const, waypoint: 3, name: 'WP_CITY_01' },
-    ]);
+    const removing = service.applyOps([{
+      op: 'DeleteWaypoint' as const, waypoint: 3, name: 'WP_CITY_01', from: RECORD, to: null,
+    }]);
     await tick();
     worker.replyLast('applyOps', null);
     await removing;
 
-    await expect(service.undo()).resolves.toBeNull();
-    await expect(service.redo()).resolves.toBeNull();
-    expect(worker.sent.filter((m) => m.op === 'applyOps')).toHaveLength(2);
+    // The batch before it survived — that is the half the barrier used to take.
+    expect(service.historyDepth()).toEqual({ undo: 2, redo: 0 });
+
+    const undone = service.undo();
+    await tick();
+    worker.replyLast('applyOps', null);
+    await expect(undone).resolves.toEqual([{
+      op: 'DeleteWaypoint', waypoint: 3, name: 'WP_CITY_01', from: null, to: RECORD,
+    }]);
+    expect(service.historyDepth()).toEqual({ undo: 1, redo: 1 });
     service.close();
   });
 

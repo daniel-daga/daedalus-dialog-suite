@@ -180,18 +180,29 @@ export function useWaynetEditing({
   }, [commitOps, selectedWaypoint, waynet]);
 
   /**
-   * Delete a waypoint (§16.7, W4) — **the waynet's one uninvertible edit.**
+   * Delete a waypoint (§16.7, W4) — **and it is undoable** (§16.42).
    *
-   * It renumbers every waypoint after it, which is what no other waynet op does
-   * and what the index+name pair every one of them is addressed by could not
-   * survive. §15 settled it the way it settled the VOB delete: the history
-   * clears rather than replaying entries against an enumeration that has moved,
-   * and the user is told first — the dialog below, the second and last confirm
-   * in this surface.
+   * It renumbers every waypoint after it, which is what no other waynet op
+   * does; §15 answered that with a barrier and 2026-09-12 withdrew that half,
+   * because a waypoint is a small enough record for the op to carry the whole
+   * of one. So the factory is handed the payload's columns rather than its
+   * names alone: the position, the direction, the depth, both flags and every
+   * edge the waypoint is in — read here, where the user is looking at them,
+   * and not out of the world when the undo runs.
+   *
+   * The confirm dialog stays, now as a plain destructive-action warning rather
+   * than the notice that the history is about to go.
    */
   const removeWaypoint = useCallback((waypoint: number) => {
     if (waynet === null) return;
-    void commitOps([deleteWaypoint(waynet.names, waypoint)]);
+    void commitOps([deleteWaypoint({
+      names: waynet.names,
+      positions: new Float32Array(waynet.positions),
+      directions: new Float32Array(waynet.directions),
+      waterDepths: new Int32Array(waynet.waterDepths),
+      flags: new Uint32Array(waynet.flags),
+      edges: new Uint32Array(waynet.edges),
+    }, waypoint)]);
   }, [commitOps, waynet]);
 
   /** The name the dialog opens with: `FP_` because a waypoint this authors is a

@@ -545,6 +545,39 @@ export function addWaypoint(
 export function removeWaypoint(
   handle: WorldHandle, waypoint: number, name: string, barrier: boolean,
 ): void;
+/** Everything a deleted waypoint has to be given back — `insertWaypoint`'s
+ *  fourth argument, and the reason the waynet delete has an inverse where the
+ *  VOB delete does not: a waypoint is five scalars and a set of edges, so this
+ *  is the whole of one rather than an approximation. */
+export interface WaypointRecord {
+  position: [number, number, number];
+  direction: [number, number, number];
+  waterDepth: number;
+  underWater: boolean;
+  freePoint: boolean;
+  /** The other end of every edge, as the index+name pair every waynet op is
+   *  addressed by, in the enumeration the delete was made against. */
+  edges: ReadonlyArray<{ waypoint: number; name: string }>;
+}
+/**
+ * Put a deleted waypoint back where it was, edges and all (§16.42) — the
+ * barrier removal run backwards, and the answer is the index it landed at.
+ *
+ * **The one waynet call that may land a waypoint anywhere but the tail.** It
+ * renumbers on purpose: the ops on the undo stack were made against the
+ * enumeration the delete changed, so a restore at the tail would put the point
+ * back and misaddress everything else. That makes it a history op rather than
+ * an edit — `zen-world`'s `renumbersWaypoints` keeps it alone in its batch.
+ *
+ * Refuses an empty name, a name another waypoint carries, a slot past the end
+ * of the list, and an edge whose other end is not the waypoint the record says
+ * it is — the whole restore, so a point is never left with half its edges. A
+ * neighbour the delete promoted to a free point stays free, exactly as
+ * `addWaypointEdge` leaves one.
+ */
+export function insertWaypoint(
+  handle: WorldHandle, waypoint: number, name: string, record: WaypointRecord,
+): number;
 /**
  * Join two waypoints with an edge (§16.7, W3).
  *

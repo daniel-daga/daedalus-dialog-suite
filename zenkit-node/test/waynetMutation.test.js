@@ -653,6 +653,191 @@ test('a barrier removal keeps the index+name guard, and the flag is required', (
   assert.strictEqual(zenkit.getWaynet(handle).count, count);
 });
 
+// insertWaypoint — the barrier removal run backwards (§16.42).
+//
+// The delete stopped being a barrier when it gained this: a waypoint is five
+// scalars and a set of edges, so the op can carry the whole of one, and the
+// restore lands it back in the slot it came from rather than at the tail. The
+// slot is the load-bearing half — every op on the undo stack was made against
+// the enumeration the delete changed, so a restore at the tail would put the
+// point back and misaddress everything else.
+
+/** The record `zen-world`'s `deleteWaypoint` would build for `name`, read out of
+ *  the world before it is deleted — so a delete-then-restore here exercises the
+ *  same values the editor's op carries. */
+function recordOf(handle, name) {
+  const waynet = zenkit.getWaynet(handle);
+  const at = waynet.names.indexOf(name);
+  const positions = new Float32Array(waynet.positions);
+  const directions = new Float32Array(waynet.directions);
+  const flags = new Uint32Array(waynet.flags)[at];
+  const pairs = new Uint32Array(waynet.edges);
+
+  const edges = [];
+  for (let pair = 0; pair < pairs.length; pair += 2) {
+    const [left, right] = [pairs[pair], pairs[pair + 1]];
+    if (left !== at && right !== at) continue;
+    const other = left === at ? right : left;
+    edges.push({ waypoint: other, name: waynet.names[other] });
+  }
+
+  return {
+    waypoint: at,
+    record: {
+      position: [positions[at * 3], positions[at * 3 + 1], positions[at * 3 + 2]],
+      direction: [directions[at * 3], directions[at * 3 + 1], directions[at * 3 + 2]],
+      waterDepth: new Int32Array(waynet.waterDepths)[at],
+      underWater: (flags & 2) !== 0,
+      freePoint: (flags & 1) !== 0,
+      edges,
+    },
+  };
+}
+
+test('a delete and its restore leave the waynet exactly as it was', () => {
+  // The whole point of the op, and the assertion that would catch every partial
+  // restore: the names in order, the edges, and every scalar on every waypoint.
+  const handle = load();
+  const before = zenkit.normalizeWorld(load());
+  const { waypoint, record } = recordOf(handle, 'WP_FIXTURE_A');
+
+  zenkit.removeWaypoint(handle, waypoint, 'WP_FIXTURE_A', true);
+  const landed = zenkit.insertWaypoint(handle, waypoint, 'WP_FIXTURE_A', record);
+
+  assert.strictEqual(landed, waypoint);
+  const after = zenkit.normalizeWorld(handle);
+  assert.deepStrictEqual(after.waynet.waypoints, before.waynet.waypoints);
+  // Edge *order* is not restored — the two A edges are rebuilt after the one
+  // that never named A — so the set is what is compared, which is what an
+  // undirected graph means. The pairs themselves are compared oriented, because
+  // the restore puts the returning waypoint first in each and nothing reads an
+  // orientation.
+  const key = (edges) => edges.map((edge) => [...edge].sort().join('-')).sort();
+  assert.deepStrictEqual(key(after.waynet.edges), key(before.waynet.edges));
+});
+
+test('a restored waypoint goes back into its own slot, not onto the end', () => {
+  // The renumbering undone. A tail restore would pass every test above and leave
+  // WP_FIXTURE_B at 1 where every op on the undo stack expects it at 2.
+  const handle = load();
+  const { waypoint, record } = recordOf(handle, 'WP_FIXTURE_A');
+
+  zenkit.removeWaypoint(handle, waypoint, 'WP_FIXTURE_A', true);
+  assert.deepStrictEqual(zenkit.getWaynet(handle).names,
+    ['FP_FIXTURE_FREE', 'WP_FIXTURE_B', 'WP_FIXTURE_C']);
+
+  zenkit.insertWaypoint(handle, waypoint, 'WP_FIXTURE_A', record);
+
+  assert.deepStrictEqual(zenkit.getWaynet(handle).names,
+    ['FP_FIXTURE_FREE', 'WP_FIXTURE_A', 'WP_FIXTURE_B', 'WP_FIXTURE_C']);
+});
+
+test('a restore carries the scalars the record holds, not addWaypoint\'s defaults', () => {
+  // `addWaypoint` fixes the direction, the depth and both flags because it is
+  // authoring a new point. A restore is handed what the point *was*, and a
+  // restore that defaulted any of it would be silently wrong on every retail
+  // waypoint that is not a resting free point.
+  const handle = load();
+  const restored = zenkit.insertWaypoint(handle, 1, 'WP_FIXTURE_D', {
+    position: [1.5, 2.5, 3.5],
+    direction: [0, 1, 0],
+    waterDepth: 400,
+    underWater: true,
+    freePoint: false,
+    edges: [],
+  });
+
+  assert.strictEqual(restored, 1);
+  const point = zenkit.normalizeWorld(handle).waynet.waypoints
+    .find((candidate) => candidate.name === 'WP_FIXTURE_D');
+  assert.deepStrictEqual(point.position, [1.5, 2.5, 3.5]);
+  assert.deepStrictEqual(point.direction, [0, 1, 0]);
+  assert.strictEqual(point.waterDepth, 400);
+  assert.strictEqual(point.underWater, true);
+  assert.strictEqual(point.freePoint, false);
+});
+
+test('a restore rebuilds every edge the record names, in the pre-delete enumeration', () => {
+  // The indices on the record are the ones the *delete* was made against, which
+  // are one higher than the list the insert is handed for every neighbour past
+  // the slot — WP_FIXTURE_B is 2 on the record and 1 in the world when the
+  // insert runs. Getting that wrong joins the waypoint to the wrong neighbour
+  // rather than failing, which is why it has a test of its own.
+  const handle = load();
+  const { waypoint, record } = recordOf(handle, 'WP_FIXTURE_A');
+  assert.deepStrictEqual(record.edges,
+    [{ waypoint: 2, name: 'WP_FIXTURE_B' }, { waypoint: 3, name: 'WP_FIXTURE_C' }]);
+
+  zenkit.removeWaypoint(handle, waypoint, 'WP_FIXTURE_A', true);
+  zenkit.insertWaypoint(handle, waypoint, 'WP_FIXTURE_A', record);
+
+  const edges = zenkit.normalizeWorld(handle).waynet.edges
+    .map((edge) => [...edge].sort().join('-')).sort();
+  assert.deepStrictEqual(edges,
+    ['WP_FIXTURE_A-WP_FIXTURE_B', 'WP_FIXTURE_A-WP_FIXTURE_C', 'WP_FIXTURE_B-WP_FIXTURE_C']);
+});
+
+test('a restore refuses a slot past the end, an empty name and a name already taken', () => {
+  const handle = load();
+  const count = zenkit.getWaynet(handle).count;
+  const record = { position: [0, 0, 0], direction: [0, 0, 1], waterDepth: 0,
+    underWater: false, freePoint: true, edges: [] };
+
+  // One past the end is the append and is legal — a waypoint deleted from the
+  // tail is restored to the tail.
+  assert.throws(() => zenkit.insertWaypoint(handle, count + 1, 'FP_NEW', record),
+    /no waypoint slot/);
+  assert.throws(() => zenkit.insertWaypoint(handle, -1, 'FP_NEW', record), /no waypoint slot/);
+  assert.throws(() => zenkit.insertWaypoint(handle, 0, '', record), /cannot be empty/);
+  assert.throws(() => zenkit.insertWaypoint(handle, 0, 'WP_FIXTURE_A', record),
+    /already named/);
+  assert.strictEqual(zenkit.getWaynet(handle).count, count);
+});
+
+test('a restore refuses an edge whose other end has moved, and inserts nothing', () => {
+  // Every endpoint is resolved before the point goes in, so a stale edge refuses
+  // the whole restore. The alternative is a waypoint in the list with half its
+  // edges, which the next save would write.
+  const handle = load();
+  const { waypoint, record } = recordOf(handle, 'WP_FIXTURE_A');
+  zenkit.removeWaypoint(handle, waypoint, 'WP_FIXTURE_A', true);
+
+  const stale = { ...record, edges: [{ waypoint: 2, name: 'FP_FIXTURE_FREE' }] };
+  assert.throws(() => zenkit.insertWaypoint(handle, waypoint, 'WP_FIXTURE_A', stale),
+    /changed under this op/);
+  assert.throws(
+    () => zenkit.insertWaypoint(handle, waypoint, 'WP_FIXTURE_A',
+      { ...record, edges: [{ waypoint: 9, name: 'WP_FIXTURE_B' }] }),
+    /no waypoint at 9/
+  );
+  assert.deepStrictEqual(zenkit.getWaynet(handle).names,
+    ['FP_FIXTURE_FREE', 'WP_FIXTURE_B', 'WP_FIXTURE_C']);
+});
+
+test('a restored waypoint survives a save and a reload, edges intact', () => {
+  const handle = load();
+  const { waypoint, record } = recordOf(handle, 'WP_FIXTURE_A');
+  zenkit.removeWaypoint(handle, waypoint, 'WP_FIXTURE_A', true);
+  zenkit.insertWaypoint(handle, waypoint, 'WP_FIXTURE_A', record);
+
+  const saved = path.join(
+    require('node:os').tmpdir(), `zenkit-waynet-restore-${process.pid}.zen`
+  );
+  try {
+    zenkit.saveWorld(handle, saved);
+    const dump = zenkit.normalizeWorld(zenkit.loadWorld(saved, 'g2'));
+
+    assert.deepStrictEqual(dump.waynet.waypoints.map((point) => point.name),
+      ['FP_FIXTURE_FREE', 'WP_FIXTURE_A', 'WP_FIXTURE_B', 'WP_FIXTURE_C']);
+    assert.deepStrictEqual(
+      dump.waynet.edges.map((edge) => [...edge].sort().join('-')).sort(),
+      ['WP_FIXTURE_A-WP_FIXTURE_B', 'WP_FIXTURE_A-WP_FIXTURE_C', 'WP_FIXTURE_B-WP_FIXTURE_C']
+    );
+  } finally {
+    require('node:fs').rmSync(saved, { force: true });
+  }
+});
+
 test('every waynet mutator marks the handle mutated, so container is null', () => {
   // `container` is computed from the archive BYTES the handle was loaded from,
   // so any mutation must clear it — a waynet op no less than a VOB op. Reporting
@@ -663,6 +848,7 @@ test('every waynet mutator marks the handle mutated, so container is null', () =
     ['setWaypointName', (h) => zenkit.setWaypointName(h, indexOf(h, 'WP_FIXTURE_B'), 'WP_FIXTURE_B', 'WP_RENAMED')],
     ['addWaypoint', (h) => zenkit.addWaypoint(h, 'FP_ADDED', [1, 2, 3])],
     ['removeWaypoint', (h) => zenkit.removeWaypoint(h, zenkit.addWaypoint(h, 'FP_ADDED', [1, 2, 3]), 'FP_ADDED', false)],
+    ['insertWaypoint', (h) => zenkit.insertWaypoint(h, 0, 'FP_RESTORED', { position: [1, 2, 3], direction: [0, 0, 1], waterDepth: 0, underWater: false, freePoint: true, edges: [] })],
     ['addWaypointEdge', (h) => zenkit.addWaypointEdge(h, indexOf(h, 'FP_FIXTURE_FREE'), 'FP_FIXTURE_FREE', indexOf(h, 'WP_FIXTURE_A'), 'WP_FIXTURE_A')],
     ['removeWaypointEdge', (h) => zenkit.removeWaypointEdge(h, indexOf(h, 'WP_FIXTURE_A'), 'WP_FIXTURE_A', indexOf(h, 'WP_FIXTURE_B'), 'WP_FIXTURE_B')],
   ];
