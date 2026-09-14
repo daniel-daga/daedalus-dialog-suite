@@ -1530,23 +1530,21 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     && (waynet?.names.includes(addingWaypoint.trim()) ?? false);
 
   /**
-   * Remove a VOB and its whole subtree — **the one edit here that cannot be
-   * undone** (level-editor.md §15).
+   * Remove a VOB and its whole subtree.
    *
    * The op carries an address and nothing else, because what it would need to
    * carry to be invertible is what no op can describe: an `oCMobInter`'s
-   * per-class properties, its children, its AI, its event manager. §15 settled
-   * that this ships anyway — the original Spacer has no undo at all, so an
-   * unundoable delete is already parity — and put one requirement in place of
-   * the inverse: the user is told first. That is the dialog below, and it is why
-   * this is the only edit in the surface behind a confirm.
+   * per-class properties, its children, its AI, its event manager. §15 shipped
+   * it unundoable on that basis; §7 found the way round — the binding keeps
+   * the subtree's pointer, so the inverse needs no description either. So this
+   * undoes like everything else here, and the confirm below stays for a smaller
+   * reason than the one it was put there for.
    *
    * The whole selection, in one batch (#253). It was one VOB at a time because
    * a delete renumbers; `deleteVobs` answers that with the *order* rather than
    * with a refusal — back to front, so each removal leaves the paths still to
    * be used exactly where they were resolved. One batch is one round trip and
-   * one clearing of the history, which is the whole of what one entry can mean
-   * for an op with no inverse.
+   * one undo entry, whose inverse is the restores in ascending order.
    */
   const removeVobs = useCallback(async (vobs: readonly number[]) => {
     const { summary: current } = useWorldStore.getState();
@@ -1852,11 +1850,13 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         onCreateFolderWithSelection={createFolderWithSelection}
       />
 
-      {/* The requirement §15 put in place of an inverse. Every other edit in
-          this surface undoes, so the thing the user has to be told is not that
-          a delete is destructive — it is that this one takes the undo stack
-          with it. Spacer has no undo at all, which is why the op ships; it is
-          not why the warning is optional. */}
+      {/* §15 put this here in place of an inverse, to say that the delete took
+          the undo stack with it. The delete has an inverse now (§7) and the
+          earlier edits survive it, so that sentence is gone rather than
+          softened — a dialog asserting something false is worse than none. The
+          dialog stays for what is left, which is the waypoint dialog's reason
+          (§7): the part a user cannot see coming from the selection on
+          screen is that everything *below* it goes too. */}
       <Dialog open={deleting !== null} onClose={() => setDeleting(null)} maxWidth="xs" fullWidth>
         {/* Named when it is one and counted when it is several: five labels
             in a title is not a title, and "Delete VOB?" over a selection of
@@ -1869,16 +1869,13 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         <DialogContent>
           <DialogContentText component="div" variant="body2" data-testid="world-delete-warning">
             <p>
-              <strong>This cannot be undone.</strong> A deleted VOB carries per-class properties,
-              children, an AI and an event manager that an op has no way to describe, so there is
-              nothing to put back — and the earlier edits go with it: the undo history is cleared,
-              because every entry in it addresses VOBs by numbers this delete has just changed.
-            </p>
-            <p>
               {deleting !== null && deleting.length > 1
                 ? 'Each VOB and everything below it in the scene tree is removed.'
                 : 'The VOB and everything below it in the scene tree is removed.'}
-              {' '}The world in the editor changes; the file on disk does not until it is saved.
+              {' '}<strong>Ctrl+Z puts it back</strong>, subtree and all.
+            </p>
+            <p>
+              The world in the editor changes; the file on disk does not until it is saved.
             </p>
           </DialogContentText>
         </DialogContent>
@@ -1904,7 +1901,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
           one takes the waypoint's *edges* with it, which is the part a user
           cannot see coming from the point on screen, and there is no subtree to
           speak of. **It no longer warns about the history**, because the delete
-          is undoable (§16.42) and the VOB one is not; what is left is a plain
+          is undoable (§7) and the VOB one is not; what is left is a plain
           destructive-action confirm, which §15 says is the dialog's other half
           and is why it stays at all. */}
       <Dialog

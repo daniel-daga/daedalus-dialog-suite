@@ -981,7 +981,7 @@ Napi::Value RemoveWaypoint(Napi::CallbackInfo const& info) {
 }
 
 // insertWaypoint(handle, waypoint, name, record) — RemoveWaypoint's barrier
-// direction, run backwards (level-editor.md §16.42).
+// direction, run backwards (level-editor.md §7).
 //
 // **The one call here that may land a waypoint anywhere but the tail.** Every
 // other waynet mutation earns the bare index `getWaynet` emits by leaving that
@@ -3598,16 +3598,28 @@ Napi::Value InsertVob(Napi::CallbackInfo const& info) {
   return Napi::String::New(env, landed);
 }
 
-// deleteVob(handle, indexPath) — removes the vob and its whole subtree.
+// deleteVob(handle, indexPath, retain) — removes the vob and its whole subtree.
 //
 // The subtree goes with it because a child is reachable only through its parent:
 // leaving one behind would orphan it into a tree nothing enumerates. Callers
 // that mean to keep the children have to move them first, which is the reparent
-// this does not yet have.
+// beside this one.
+//
+// `retain` says which of the two deletes this is, and is **never defaulted**,
+// for `removeWaypoint`'s `barrier` reason: the two mean different things to the
+// history and a caller that says neither has not decided. `true` moves the
+// subtree onto the handle for `restoreVob` to put back, which is what gives
+// `DeleteVob` an inverse (§7); `false` frees it, which is what an `AddVob`'s
+// undo wants — the VOB it removes is described completely by the op that made
+// it, so retaining it would hold a subtree nothing will ever ask for.
 Napi::Value DeleteVob(Napi::CallbackInfo const& info) {
   Napi::Env env = info.Env();
   auto* handle = UnwrapHandle(env, info[0]);
   auto indices = ParseIndexPath(env, info[1], "indexPath");
+  if (!info[2].IsBoolean()) {
+    throw Napi::TypeError::New(env, "retain must be a boolean");
+  }
+  bool const retain = info[2].As<Napi::Boolean>().Value();
 
   // Resolve the parent's list and the slot inside it, rather than the vob: the
   // vob itself does not know where it is held.
@@ -3624,8 +3636,76 @@ Napi::Value DeleteVob(Napi::CallbackInfo const& info) {
   if (slot >= list->size() || (*list)[slot] == nullptr) {
     throw Napi::Error::New(env, "no vob at indexPath");
   }
+  // Held before the erase, not copied: the point of the retain is that the
+  // restore puts the same object back, members and all.
+  if (retain) handle->retained.push_back({indices, (*list)[slot]});
   list->erase(list->begin() + static_cast<std::ptrdiff_t>(slot));
   return env.Undefined();
+}
+
+// restoreVob(handle, indexPath) — puts the most recently retained subtree back
+// at the slot it came from, and answers with the index path it landed at.
+//
+// `DeleteVob`'s other direction, and the one call here that inserts a vob
+// anywhere but the tail — which is why it renumbers on purpose and why nothing
+// outside this process may ask for it (`assertApplyOpsRequest` refuses it). It
+// is built by `invertOp` off the undo stack, where the delete it undoes is the
+// entry immediately above.
+//
+// It takes no token. The retained subtrees are a stack and the history is well
+// nested — batches replay strictly LIFO and a delete is alone in its batch — so
+// the subtree a restore wants is always the top one. The path is checked against
+// where that subtree came from rather than used to find it: a mismatch means the
+// history and the world have stopped agreeing, and putting a subtree into a slot
+// it never occupied is the one outcome worse than refusing.
+Napi::Value RestoreVob(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapHandle(env, info[0]);
+  auto indices = ParseIndexPath(env, info[1], "indexPath");
+
+  if (handle->retained.empty()) {
+    throw Napi::Error::New(env, "no retained vob to restore");
+  }
+
+  auto const& top = handle->retained.back();
+  if (top.path != indices) {
+    std::string was;
+    for (std::size_t at = 0; at < top.path.size(); ++at) {
+      if (at != 0) was += "/";
+      was += std::to_string(top.path[at]);
+    }
+    throw Napi::Error::New(
+        env, "the retained vob came from " + was + ", not the path this restore names");
+  }
+
+  // The parent's list, resolved exactly as the delete resolved it — and the
+  // parent may itself have been renumbered since, which is what makes this a
+  // refusal rather than a search.
+  auto* list = &handle->world->world_vobs;
+  for (std::size_t at = 0; at + 1 < indices.size(); ++at) {
+    std::size_t const index = indices[at];
+    if (index >= list->size() || (*list)[index] == nullptr) {
+      throw Napi::Error::New(env, "no vob at indexPath");
+    }
+    list = &(*list)[index]->children;
+  }
+
+  // One past the end is the delete having taken the tail; two is a gap, and a
+  // gap is what the writer cannot represent.
+  std::size_t const slot = indices.back();
+  if (slot > list->size()) {
+    throw Napi::Error::New(env, "slot is out of range for the restored vob's parent");
+  }
+
+  list->insert(list->begin() + static_cast<std::ptrdiff_t>(slot), top.vob);
+  handle->retained.pop_back();
+
+  std::string landed;
+  for (std::size_t at = 0; at < indices.size(); ++at) {
+    if (at != 0) landed += "/";
+    landed += std::to_string(indices[at]);
+  }
+  return Napi::String::New(env, landed);
 }
 
 // reparentVob(handle, fromPath, toParentPath | null, slot) — moves a vob and its
@@ -3844,6 +3924,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("setVobClassProp", Napi::Function::New(env, SetVobClassProp));
   exports.Set("insertVob", Napi::Function::New(env, InsertVob));
   exports.Set("deleteVob", Napi::Function::New(env, DeleteVob));
+  exports.Set("restoreVob", Napi::Function::New(env, RestoreVob));
   exports.Set("reparentVob", Napi::Function::New(env, ReparentVob));
   exports.Set("setWaypointPosition", Napi::Function::New(env, SetWaypointPosition));
   exports.Set("setWaypointName", Napi::Function::New(env, SetWaypointName));

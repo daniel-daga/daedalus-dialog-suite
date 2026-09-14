@@ -2,7 +2,7 @@ import { Worker } from 'worker_threads';
 import * as path from 'path';
 import * as fs from 'fs';
 import { randomUUID } from 'crypto';
-import { invertOp, isBarrierOp } from 'zen-world';
+import { invertOp } from 'zen-world';
 import { WorkerRequestError } from './WorkerRequestError';
 import type {
   DecodedTexture,
@@ -264,20 +264,14 @@ export class WorldService {
       // opened and replay the wrong edit backwards into it.
       if (this.generation !== generation) return;
 
-      // A barrier op has no inverse (§15), and recording it would leave `undo`
-      // reaching for one. Both stacks go, not just the entry it would have
-      // made: a barrier is structural and renumbers, so every batch already on
-      // the undo stack addresses VOBs by indices and paths this edit has just
-      // moved — replaying one would edit whatever has since taken that address.
-      // Cleared *after* the worker confirms, so a refused delete costs the user
-      // nothing. The World surface warns before it lands; this is only the
-      // half that cannot be worked around.
-      if (ops.some(isBarrierOp)) {
-        this.undoStack.length = 0;
-        this.redoStack.length = 0;
-        return;
-      }
-
+      // **No batch is special any more.** A `DeleteVob` used to clear both
+      // stacks here: it had no inverse, and recording it would have left `undo`
+      // reaching for one — and the *earlier* batches addressed VOBs by indices
+      // and paths the delete had just moved, so replaying one would have edited
+      // whatever had since taken that address. §7 closed both halves with
+      // one change: `invertOp` answers a `RestoreVob` that puts the retained
+      // subtree back in the slot it came from, which is the enumeration every
+      // older entry was recorded against.
       this.undoStack.push([...ops]);
       this.redoStack.length = 0;
     });

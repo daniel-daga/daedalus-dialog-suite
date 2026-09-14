@@ -330,7 +330,7 @@ function isZenPosition(value: unknown): value is [number, number, number] {
 
 /**
  * The side of a `DeleteWaypoint` that exists — everything the restore hands
- * `insertWaypoint` (§16.42).
+ * `insertWaypoint` (§7).
  *
  * Checked in full rather than waved through as the op's own payload, for the
  * reason the other four waynet ops are checked at all: this is the boundary, and
@@ -602,6 +602,18 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
       && op.op !== 'MoveWaypoint' && op.op !== 'RenameWaypoint' && op.op !== 'AddWaypoint'
       && op.op !== 'SetWaypointEdge' && op.op !== 'DeleteWaypoint'
       && op.op !== 'DeleteVob') {
+      // **`RestoreVob` is deliberately not on that list**, and it gets its own
+      // message rather than "unknown op": it is a real op that this boundary
+      // refuses, which is a different fact from a typo (§7). It is
+      // `DeleteVob`'s inverse, so it inserts a VOB at an index on purpose —
+      // renumbering the tree to put back a subtree nothing in this process saw
+      // deleted — and the subtree it would restore is held by the *binding*, so
+      // there is nothing a caller could send that would make it restore
+      // anything in particular. `invertOp` builds it off the main process's own
+      // undo stack, which never passes through here.
+      if (op.op === 'RestoreVob') {
+        throw new Error('Invalid op: a RestoreVob is a delete\'s inverse — undo it');
+      }
       throw new Error(`Invalid op: unknown op ${String(op.op)}`);
     }
 
@@ -710,7 +722,7 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
     }
 
     // The fifth waynet op, and the waynet's own `DeleteVob` (§16.7, W4) — until
-    // it gained an inverse (§16.42). Beside its siblings for their reason (it
+    // it gained an inverse (§7). Beside its siblings for their reason (it
     // has neither a `vob` nor a `path`), and shaped like `AddWaypoint`: a null
     // side means "not in the waynet", and the side that exists is the whole
     // waypoint rather than a position.
@@ -771,11 +783,13 @@ export function assertApplyOpsRequest(request: unknown): asserts request is { op
 
     if (op.op === 'DeleteVob') {
       // A `vob` and a `path`, both already checked above, and **nothing else**.
-      // The exhaustive key check is not tidiness here: this is the one op with
-      // no inverse (§15), so a delete arriving with a `from` is either a
-      // mislabelled `AddVob` — whose null-side rule means "the op describes the
-      // VOB completely" — or something reaching for an inverse that does not
-      // exist. Ignoring the field would let both through as an ordinary delete.
+      // The exhaustive key check is not tidiness here: a delete describes
+      // nothing it removed, by decision (§7), so one arriving with a `from`
+      // is either a mislabelled `AddVob` — whose null-side rule means "the op
+      // describes the VOB completely" — or something reaching for an inverse
+      // built out of fields. Ignoring the field would let both through as an
+      // ordinary delete. The real inverse carries nothing either, and is
+      // refused above rather than shaped here.
       for (const key of Object.keys(op)) {
         if (key !== 'op' && key !== 'vob' && key !== 'path') {
           throw new Error(`Invalid op: a DeleteVob carries only a vob and a path, not ${key}`);

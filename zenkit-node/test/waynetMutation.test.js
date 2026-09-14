@@ -653,7 +653,7 @@ test('a barrier removal keeps the index+name guard, and the flag is required', (
   assert.strictEqual(zenkit.getWaynet(handle).count, count);
 });
 
-// insertWaypoint — the barrier removal run backwards (§16.42).
+// insertWaypoint — the barrier removal run backwards (§7).
 //
 // The delete stopped being a barrier when it gained this: a waypoint is five
 // scalars and a set of edges, so the op can carry the whole of one, and the

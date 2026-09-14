@@ -3,10 +3,9 @@ import {
   applyWaypointNames,
   applyWaypointPositions,
   invertOp,
-  isBarrierOp,
+  isDeleteOp,
   isStructuralOp,
   renumbersPaths,
-  renumbersWaypoints,
   type WorldOp,
 } from 'zen-world';
 import type { InstancedPayload, WaynetPayload } from '../../../../shared/worldTypes';
@@ -259,15 +258,14 @@ export function useWorldEditPipeline({
     // than by swapping `from` and `to` here: a rotation carries a box for each
     // pose, and swapping only the matrix is half an inverse.
     //
-    // A delete is dropped rather than inverted, whether or not it has an
-    // inverse: what this puts back is the viewport's *optimistic* draw of a
-    // gizmo drag, and a delete is never drawn before the main process has taken
-    // it. `DeleteWaypoint` gained an inverse (§16.42) and is still dropped for
-    // that reason — inverting it here would feed the scene an insert nothing
-    // ever removed.
-    setAppliedOps(
-      ops.filter((op) => !isBarrierOp(op) && !renumbersWaypoints(op)).map(invertOp),
-    );
+    // A delete is dropped rather than inverted, and now that both deletes have
+    // an inverse (§7) that is the *only* reason left: what this puts back is
+    // the viewport's optimistic draw of a gizmo drag, and a delete is never
+    // drawn before the main process has taken it — so inverting one here would
+    // feed the scene a restore nothing ever removed. `isDeleteOp` asks that
+    // question directly, where the two predicates it replaces each happened to
+    // have the right membership for a different reason.
+    setAppliedOps(ops.filter((op) => !isDeleteOp(op)).map(invertOp));
   }, [forgetClassProps, setAppliedOps]);
 
   /**

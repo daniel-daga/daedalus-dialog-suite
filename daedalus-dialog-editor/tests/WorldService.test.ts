@@ -440,8 +440,9 @@ describe('the op log', () => {
   };
 
   const A = move(1, '0/4', [0, 0, 0], [10, 0, 0]);
-  /** The one op with no inverse (§15) — it addresses a VOB and carries nothing
-   *  a replay could use. */
+  /** The last op to gain an inverse (§7). It addresses a VOB and carries
+   *  nothing else — what a replay uses is the subtree the *binding* retained,
+   *  which is why the inverse can be a bare `RestoreVob`. */
   const DELETE = { op: 'DeleteVob' as const, vob: 1, path: '0/4' };
   const B = move(2, '0/5', [0, 0, 0], [20, 0, 0]);
 
@@ -478,13 +479,16 @@ describe('the op log', () => {
     expect(service.historyDepth()).toEqual({ undo: 0, redo: 0 });
   });
 
-  test('a barrier op clears the history rather than being recorded in it', async () => {
-    // §15: a delete has no inverse, so the history cannot replay it backwards.
-    // What it must not do is leave the *earlier* batches undoable — they were
-    // recorded against an enumeration a delete has just renumbered, so undoing
-    // one now would move whatever VOB has since taken that index. Cleared both
-    // ways, and the user is told before the op lands, which is the surface's
-    // half of the same decision.
+  test('a VOB delete is recorded, and undoes as the restore', async () => {
+    // §15 cleared both stacks here, because a delete could not be replayed
+    // backwards and the *earlier* batches addressed an enumeration it had just
+    // renumbered. §7 closed both halves at once: the restore puts the
+    // subtree back in the slot it came from, so the enumeration the older
+    // entries were recorded against is the one they are replayed into.
+    //
+    // The service reads a predicate rather than a name, so the op left the
+    // barrier rule without this file learning anything — but an undo stack kept
+    // or lost is what a user actually feels, so the wiring is pinned here.
     const { worker, service } = await openedService();
     await applied(service, worker, [A]);
 
@@ -493,15 +497,50 @@ describe('the op log', () => {
     worker.replyLast('applyOps', null);
     await removing;
 
-    // Not the delete itself, and not the move that came before it.
-    await expect(service.undo()).resolves.toBeNull();
-    await expect(service.redo()).resolves.toBeNull();
-    // The world really was edited — the clearing is the history's, not a refusal.
-    expect(worker.sent.filter((m) => m.op === 'applyOps')).toHaveLength(2);
+    // The batch before it survived — that is the half the barrier used to take.
+    expect(service.historyDepth()).toEqual({ undo: 2, redo: 0 });
+
+    const undone = service.undo();
+    await tick();
+    worker.replyLast('applyOps', null);
+    await expect(undone).resolves.toEqual([{ op: 'RestoreVob', vob: 1, path: '0/4' }]);
+    expect(service.historyDepth()).toEqual({ undo: 1, redo: 1 });
+
+    // And redo is the delete again, so the stacks can be walked either way.
+    const redone = service.redo();
+    await tick();
+    worker.replyLast('applyOps', null);
+    await expect(redone).resolves.toEqual([DELETE]);
     service.close();
   });
 
-  test("historyDepth reports each stack's length, and 0/0 once a barrier clears them", async () => {
+  test('a multi-VOB delete undoes as one batch of restores, in ascending order', async () => {
+    // #253 made N deletes one entry, which for a barrier meant one clearing
+    // rather than one undo. Now it means what it means everywhere else — and the
+    // restores have to refill the slots in the order `replayOne` produces, which
+    // is the batch reversed.
+    const { worker, service } = await openedService();
+
+    const removing = service.applyOps([
+      { op: 'DeleteVob' as const, vob: 5, path: '1' },
+      { op: 'DeleteVob' as const, vob: 1, path: '0/4' },
+    ]);
+    await tick();
+    worker.replyLast('applyOps', null);
+    await removing;
+    expect(service.historyDepth()).toEqual({ undo: 1, redo: 0 });
+
+    const undone = service.undo();
+    await tick();
+    worker.replyLast('applyOps', null);
+    await expect(undone).resolves.toEqual([
+      { op: 'RestoreVob', vob: 1, path: '0/4' },
+      { op: 'RestoreVob', vob: 5, path: '1' },
+    ]);
+    service.close();
+  });
+
+  test("historyDepth reports each stack's length across an undo", async () => {
     // The World bar's undo/redo buttons have no other way to know whether
     // there is anything to do — the stacks themselves stay private to this
     // service (§7).
@@ -520,17 +559,19 @@ describe('the op log', () => {
     await undone;
     expect(service.historyDepth()).toEqual({ undo: 1, redo: 1 });
 
+    // A new edit takes the redo stack with it, as every new edit does — the
+    // delete is no longer special here (§7).
     const removing = service.applyOps([DELETE]);
     await tick();
     worker.replyLast('applyOps', null);
     await removing;
-    expect(service.historyDepth()).toEqual({ undo: 0, redo: 0 });
+    expect(service.historyDepth()).toEqual({ undo: 2, redo: 0 });
 
     service.close();
   });
 
   test('a waypoint delete is recorded, and undoes as the restore', async () => {
-    // §16.7's W4, and §16.42: it was a barrier here until the op gained an
+    // §16.7's W4, and §7: it was a barrier here until the op gained an
     // inverse. The predicate is what the service reads, not a name, so the op
     // left the rule without the service learning anything — but an undo stack
     // kept or lost is what a user actually feels, so the wiring is pinned here
@@ -566,10 +607,9 @@ describe('the op log', () => {
     service.close();
   });
 
-  test('a barrier the worker refused leaves the history alone', async () => {
-    // The stacks are cleared only once the world has actually changed. A delete
-    // that never happened renumbered nothing, so the batches before it are still
-    // undoable — and throwing them away would be a data loss caused by an error.
+  test('a delete the worker refused is not recorded', async () => {
+    // Nothing is recorded until the worker confirms it: the inverse of an edit
+    // that never happened would restore a subtree that was never taken.
     const { worker, service } = await openedService();
     await applied(service, worker, [A]);
 

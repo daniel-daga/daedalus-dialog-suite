@@ -153,6 +153,43 @@ test.describe('World surface UI workflows in a real window', () => {
     await expect(page.getByTestId(ROOT_VOB_ROW)).toBeVisible();
   });
 
+  test('a deleted VOB comes back on Ctrl+Z, subtree and all', async () => {
+    // The workflow §15 said would never exist and #271 asked for. It is only
+    // observable here: every other suite mocks past the binding, and the
+    // binding is where the retained subtree lives — so a restore that put back
+    // a hollow VOB, or the wrong one, or nothing, is green everywhere else.
+    //
+    // The fixture's root carries the whole tree, so undoing its delete is also
+    // the subtree case: `FP_CAMPFIRE_ÄÖÜ_01` and the light under it are two
+    // levels down and come back with it or not at all.
+    const { page } = fixture;
+    await openWorld();
+
+    await page.getByTestId('world-vob-toggle-0').click();
+    await expect(page.getByText('ITEM_SWORD_01')).toHaveCount(1);
+
+    await page.getByTestId(ROOT_VOB_ROW).click();
+    await page.keyboard.press('Delete');
+    // The confirm now promises the undo rather than warning that the history
+    // goes — the claim the rest of this test has to make good on.
+    await expect(page.getByTestId('world-delete-warning')).toContainText(/ctrl\+z/i);
+    await page.getByTestId('world-delete-confirm').click();
+
+    await expect(page.getByTestId(ROOT_VOB_ROW)).toHaveCount(0);
+    await expect(page.getByText('ITEM_SWORD_01')).toHaveCount(0);
+
+    await page.keyboard.press('Control+z');
+
+    // Back, and the subtree with it. The tree re-reads its index after a
+    // structural op, so the root is collapsed again and has to be reopened —
+    // which is itself the check that the row is real rather than stale.
+    await expect(page.getByTestId(ROOT_VOB_ROW)).toBeVisible();
+    await page.getByTestId('world-vob-toggle-0').click();
+    await expect(page.getByText('ITEM_SWORD_01')).toHaveCount(1);
+    await expect(page.getByText('CHEST_01')).toHaveCount(1);
+    await expect(page.getByText('FP_CAMPFIRE_ÄÖÜ_01')).toHaveCount(1);
+  });
+
   test('dragging the left splitter changes the scene panel width', async () => {
     const { page } = fixture;
     await openWorld();

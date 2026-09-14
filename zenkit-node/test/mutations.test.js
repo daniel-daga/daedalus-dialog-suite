@@ -708,7 +708,7 @@ test('deleteVob undoes a parented insert exactly, through the writer', () => {
     name: 'TEMPORARY_CHILD', visual: 'A.3DS', position: [7, 8, 9],
   });
   assert.strictEqual(at, '0/3');
-  zenkit.deleteVob(handle, at);
+  zenkit.deleteVob(handle, at, false);
 
   const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'zk-child-')), 'deleted.zen');
   zenkit.saveWorld(handle, out);
@@ -832,7 +832,7 @@ test('deleteVob removes the vob and its whole subtree', () => {
   // under-count the subtree.
   const descendants = dumpOf(handle).vobs.filter((v) => v.path.startsWith('0/')).length;
 
-  zenkit.deleteVob(handle, '0');
+  zenkit.deleteVob(handle, '0', true);
 
   assert.strictEqual(zenkit.worldStats(handle).vobCount, before - (1 + descendants));
   assert.strictEqual(dumpOf(handle).vobs.find((v) => v.path === '0/0'), undefined);
@@ -847,7 +847,7 @@ test('deleteVob undoes an insert exactly, leaving the world as it was', () => {
   const at = zenkit.insertVob(handle, null, {
     name: 'TEMPORARY', visual: 'A.3DS', position: [7, 8, 9],
   });
-  zenkit.deleteVob(handle, at);
+  zenkit.deleteVob(handle, at, false);
 
   const after = dumpOf(handle);
   assert.strictEqual(after.vobs.length, before.vobs.length);
@@ -875,8 +875,152 @@ test('deleteVob undoes an insert exactly, leaving the world as it was', () => {
 test('deleteVob throws on a bad index path', () => {
   const handle = load();
   for (const bad of ['9', '0/9', '0/1/0', 'abc', '', '0//1', '-1']) {
-    assert.throws(() => zenkit.deleteVob(handle, bad), Error, bad);
+    assert.throws(() => zenkit.deleteVob(handle, bad, true), Error, bad);
   }
+});
+
+// deleteVob's retain / restoreVob — the pair that gives the delete an inverse
+// (level-editor.md §7, #271).
+//
+// **The restore is the VOB itself, not a description of it.** `deleteVob`'s
+// `retain` moves the subtree's `shared_ptr` onto the handle instead of dropping
+// it, and `restoreVob` puts that same object back in the slot it came from — so
+// what comes back is every member ZenKit read, including the AI, the event
+// manager, the per-class fields and the classes nothing in this repo catalogues.
+// That is the whole reason this shape was chosen over serialising a subtree: a
+// description can only carry the fields somebody thought to name, and a retail
+// VOB has more than that.
+//
+// `retain` is never defaulted, for `removeWaypoint`'s `barrier` reason: the two
+// deletes mean different things to the history, and a caller that says neither
+// is a caller that has not decided. `AddVob`'s undo passes `false` — the VOB it
+// removes is described completely by the op that made it, so keeping it would
+// retain a subtree nothing will ever ask for.
+
+test('restoreVob puts a retained subtree back exactly as it was', () => {
+  // The strongest claim the dump can carry, and the middle of a child list
+  // rather than the tail: the fixture's root holds three children and one
+  // grandchild, so restoring `0/1` has to land *between* two siblings and take
+  // its own child with it. A restore that appended would read as a different
+  // world here.
+  const handle = load();
+  const before = dumpOf(load());
+
+  zenkit.deleteVob(handle, '0/1', true);
+  assert.notDeepStrictEqual(dumpOf(handle).vobs, before.vobs);
+
+  const landed = zenkit.restoreVob(handle, '0/1');
+
+  assert.strictEqual(landed, '0/1');
+  const after = dumpOf(handle);
+  assert.strictEqual(after.vobs.length, before.vobs.length);
+  for (let i = 0; i < before.vobs.length; i++) {
+    assert.deepStrictEqual(after.vobs[i], before.vobs[i], `vob ${i} came back changed`);
+  }
+  assert.deepStrictEqual(after.waynet, before.waynet);
+});
+
+test('a restored subtree survives the writer, hole-free', () => {
+  // The half the dump cannot see, for the reason the delete's own test gives:
+  // `CollectVobs` and `CountVobs` both skip a null child, so a restore that put
+  // the pointer somewhere the writer disagrees with reads identical in every
+  // assertion above.
+  // `0/0` rather than the root: it is the fixture's only child with a child of
+  // its own *and* it has siblings after it, so an insert and an append land in
+  // different places. The lone root does not discriminate between them.
+  const handle = load();
+  const before = dumpOf(load());
+
+  zenkit.deleteVob(handle, '0/0', true);
+  zenkit.restoreVob(handle, '0/0');
+
+  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'zk-restore-')), 'restored.zen');
+  zenkit.saveWorld(handle, out);
+  const reloaded = dumpOf(zenkit.loadWorld(out, 'g2'));
+  assert.strictEqual(reloaded.vobs.length, before.vobs.length);
+  for (let i = 0; i < before.vobs.length; i++) {
+    assert.deepStrictEqual(reloaded.vobs[i], before.vobs[i], `vob ${i} did not survive`);
+  }
+});
+
+test('a restore takes the whole subtree back, children and all', () => {
+  const handle = load();
+  const subtree = dumpOf(handle).vobs.filter((v) => v.path === '0/0' || v.path.startsWith('0/0/'));
+  assert.ok(subtree.length > 1, '0/0 must have children for this to mean anything');
+
+  zenkit.deleteVob(handle, '0/0', true);
+  zenkit.restoreVob(handle, '0/0');
+
+  const after = dumpOf(handle);
+  for (const was of subtree) {
+    assert.deepStrictEqual(vobAt(after, was.path), was, `${was.path} came back changed`);
+  }
+});
+
+test('a delete that does not retain cannot be restored', () => {
+  // `retain: false` is the `AddVob` undo's delete, and it frees the subtree.
+  // The refusal is what says so: there is nothing held, so there is nothing to
+  // put back and the call cannot quietly restore somebody else.
+  const handle = load();
+
+  zenkit.deleteVob(handle, '0/1', false);
+
+  assert.throws(() => zenkit.restoreVob(handle, '0/1'), /no retained vob/);
+});
+
+test('restoreVob refuses a path the retained subtree did not come from', () => {
+  // The guard every op in this binding has some form of: the retained subtree
+  // knows where it was, and a restore addressed anywhere else is a history that
+  // has lost track of the world rather than a relocation. It is not a reparent.
+  const handle = load();
+
+  zenkit.deleteVob(handle, '0/1', true);
+
+  assert.throws(() => zenkit.restoreVob(handle, '0/2'), /came from 0\/1/);
+  // And the refusal changed nothing: the subtree is still held, so the correct
+  // restore still works.
+  assert.strictEqual(zenkit.restoreVob(handle, '0/1'), '0/1');
+});
+
+test('retained subtrees come back last-in first-out', () => {
+  // What makes one stack enough, and why no token has to cross any boundary:
+  // `WorldService` replays batches strictly LIFO and a delete is alone in its
+  // batch, so the deletes and restores against a handle are well nested.
+  const handle = load();
+  const before = dumpOf(load());
+
+  // The middle child and then the first, so the *first* restore has to land
+  // ahead of a sibling that is still there — which an append would not.
+  zenkit.deleteVob(handle, '0/1', true);
+  zenkit.deleteVob(handle, '0/0', true);
+
+  // Out of order is refused rather than silently restoring the wrong subtree.
+  assert.throws(() => zenkit.restoreVob(handle, '0/1'), /came from 0\/0/);
+
+  zenkit.restoreVob(handle, '0/0');
+  zenkit.restoreVob(handle, '0/1');
+
+  const after = dumpOf(handle);
+  assert.strictEqual(after.vobs.length, before.vobs.length);
+  for (let i = 0; i < before.vobs.length; i++) {
+    assert.deepStrictEqual(after.vobs[i], before.vobs[i], `vob ${i} came back changed`);
+  }
+});
+
+test('restoreVob throws when nothing is retained, and on a bad index path', () => {
+  const handle = load();
+  assert.throws(() => zenkit.restoreVob(handle, '0'), /no retained vob/);
+
+  zenkit.deleteVob(handle, '0/1', true);
+  for (const bad of ['abc', '', '0//1', '-1']) {
+    assert.throws(() => zenkit.restoreVob(handle, bad), Error, bad);
+  }
+});
+
+test('deleteVob refuses a missing retain rather than choosing one', () => {
+  const handle = load();
+  assert.throws(() => zenkit.deleteVob(handle, '0/1'), /retain/);
+  assert.throws(() => zenkit.deleteVob(handle, '0/1', 'yes'), /retain/);
 });
 
 test('an inserted vob survives a save and reload', () => {

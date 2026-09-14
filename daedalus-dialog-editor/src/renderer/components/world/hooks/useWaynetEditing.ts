@@ -180,7 +180,7 @@ export function useWaynetEditing({
   }, [commitOps, selectedWaypoint, waynet]);
 
   /**
-   * Delete a waypoint (§16.7, W4) — **and it is undoable** (§16.42).
+   * Delete a waypoint (§16.7, W4) — **and it is undoable** (§7).
    *
    * It renumbers every waypoint after it, which is what no other waynet op
    * does; §15 answered that with a barrier and 2026-09-12 withdrew that half,

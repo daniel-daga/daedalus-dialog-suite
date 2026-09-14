@@ -20,18 +20,19 @@
 // which is what would make undo depend on the world still being the one the op
 // was recorded against.
 //
-// **One op has no inverse**, and it is the exception the other two facts are
-// stated before. `DeleteVob` cannot describe what it removed — a retail VOB
-// carries per-class properties, children, an AI and an event manager that no op
-// has a field for — so it ships as a *barrier*: `invertOp` refuses it and the
-// history clears rather than replaying it (§15; the original Spacer has no undo
-// at all, so an unundoable delete is already parity). `isBarrierOp` is the
-// predicate that says so, and everything else here is still invertible.
+// **Every op has an inverse.** `DeleteVob` was the last one without: it cannot
+// *describe* what it removed — a retail VOB carries per-class properties,
+// children, an AI and an event manager that no op has a field for — so it
+// shipped as a *barrier* that cleared both history stacks (§15). What closed it
+// is that a restore never needed a description (§7): the binding keeps the
+// deleted subtree's pointer instead of freeing it, and {@link RestoreVob} puts
+// that same object back in the slot it came from. So the op set holds no
+// barriers, `isBarrierOp` is gone, and the one thing a delete still owes its
+// batch is the renumbering rule every structural op owes — `renumbersPaths`.
 //
-// All of §7's list is in. The waynet's own delete was the second barrier until
-// 2026-09-13 (§16.42): a waypoint is a small enough record for the op to carry
-// the whole of one, so it has an inverse and `DeleteVob` is alone in having
-// none.
+// All of §7's list is in. The waynet's own delete went first, 2026-09-13
+// (§7): a waypoint is a small enough record for the op to carry the whole of
+// one, so it needed no retained pointer.
 
 import type { VobReader } from './vobTree';
 // The module rather than the barrel: `../scene` re-exports `buildScene`, which
@@ -458,7 +459,7 @@ export interface SetWaypointEdge {
 
 /**
  * Everything a deleted waypoint has to be given back — the side of
- * {@link DeleteWaypoint} that exists (§16.42).
+ * {@link DeleteWaypoint} that exists (§7).
  *
  * **A waypoint is a small record, which is the whole reason the waynet delete
  * gets an inverse and the VOB delete does not.** A `zCVob` carries per-class
@@ -492,7 +493,7 @@ export interface WaypointRecord {
 
 /**
  * The removal of one waypoint, edges and all (§16.7, W4) — **and its restore,
- * which is the same op with its sides swapped** (§16.42).
+ * which is the same op with its sides swapped** (§7).
  *
  * **The only waynet op that renumbers.** A waypoint's address is its index into
  * the point list `getWaynet` emits, and every other waynet op earns that
@@ -502,7 +503,7 @@ export interface WaypointRecord {
  *
  * §15 shipped it as a *barrier* for `DeleteVob`'s reason, and 2026-09-12 that
  * was withdrawn for this half: an undoable delete is wanted, and the waynet is
- * the case where it is cheap. The two things §16.42 says an inverse needs are
+ * the case where it is cheap. The two things §7 says an inverse needs are
  * both small here — the serializer is {@link WaypointRecord}, because a
  * waypoint has no subtree and no members this layer cannot see, and the insert
  * at an index is the restore direction of this op rather than an op of its own.
@@ -532,23 +533,28 @@ export interface DeleteWaypoint {
 }
 
 /**
- * The removal of a VOB and its whole subtree — **the one op with no inverse.**
+ * The removal of a VOB and its whole subtree. Its inverse is
+ * {@link RestoreVob}.
  *
- * Deliberately not an `AddVob` with a null `to`. That shape carries a `NewVob`
- * on its other side and means "this op describes the VOB completely", which is
- * true of a VOB the editor itself authored and false of every retail one: an
+ * Deliberately not an `AddVob` with a null `to`, and it still carries no side
+ * at all. That shape means "this op describes the VOB completely", which is true
+ * of a VOB the editor itself authored and false of every retail one: an
  * `oCMobInter` carries per-class properties, children, an AI and an event
  * manager that a `NewVob` has no field for. An inverse built out of the columns
  * would insert a bare `zCVob` wearing its name, and the undo would look like it
  * worked.
  *
- * So it ships uninvertible, which §15 settled: the original Spacer has no undo
- * at all, so an unundoable delete is already parity, and `invertOp` is no longer
- * the gate a new op has to pass. What replaces it is narrower and is the whole
- * of what this op owes — `isBarrierOp` is true, the history clears its stacks
- * rather than recording something it cannot replay, and the user is told before
- * it lands. Serialising the subtree into the op stays open as an improvement;
- * it is not a prerequisite.
+ * **So the inverse carries no description either** (§7). `invertOp` answers
+ * a `RestoreVob` naming the same path, and what actually comes back is held by
+ * the binding: a retaining delete keeps the subtree's pointer rather than
+ * freeing it, and the restore puts that same object back. The history holds an
+ * op, as it does everywhere else — the *subtree* is what is held on the side,
+ * and it is held where it was already resident.
+ *
+ * The consequence worth naming: an undo of a delete only works in the process
+ * that made it, because that is where the pointer is. Nothing else here is
+ * process-bound, and it is why `writeOp`'s `'from'` direction is the only way to
+ * reach a restore.
  */
 export interface DeleteVob {
   op: 'DeleteVob';
@@ -556,10 +562,34 @@ export interface DeleteVob {
   path: string;
 }
 
+/**
+ * Put a deleted VOB and its subtree back where it was — `DeleteVob`'s inverse,
+ * and **never a request** (§7).
+ *
+ * It is the VOB half of the shape the waynet reached first: an insert at an
+ * index, rather than the append `AddVob` is limited to. That is what makes the
+ * undo *correct* rather than merely present — a subtree put back at the end of
+ * its parent's children is a different world, and every entry still on the undo
+ * stack addresses VOBs by paths the delete moved and the restore has to move
+ * back.
+ *
+ * It carries no subtree, for the reason {@link DeleteVob} gives: the binding
+ * holds the pointer. So there is nothing in this op a caller could supply to
+ * make it restore anything — which is half of why `assertApplyOpsRequest`
+ * refuses it outright, the other half being that it renumbers on purpose. It is
+ * built by `invertOp` off the main process's own undo stack and reaches the
+ * binding from there.
+ */
+export interface RestoreVob {
+  op: 'RestoreVob';
+  vob: number;
+  path: string;
+}
+
 export type WorldOp =
   MoveVob | RotateVob | SetVobProp | SetVobClassProp | AddVob | ReparentVob
   | MoveWaypoint | RenameWaypoint | AddWaypoint | SetWaypointEdge | DeleteWaypoint
-  | DeleteVob;
+  | DeleteVob | RestoreVob;
 
 /** The ops that write the waynet rather than a VOB — what `isWaynetOp` narrows
  *  to, and the only ops `applyOps` has no column for. */
@@ -588,8 +618,11 @@ function unreachableOp(op: never): never {
  * writes into columns that already exist; this one changes how many there are,
  * so the renderer's projection cannot follow it and has to be re-read.
  */
-export function isStructuralOp(op: WorldOp): op is AddVob | ReparentVob | DeleteVob {
-  return op.op === 'AddVob' || op.op === 'ReparentVob' || op.op === 'DeleteVob';
+export function isStructuralOp(
+  op: WorldOp,
+): op is AddVob | ReparentVob | DeleteVob | RestoreVob {
+  return op.op === 'AddVob' || op.op === 'ReparentVob'
+    || op.op === 'DeleteVob' || op.op === 'RestoreVob';
 }
 
 /**
@@ -625,8 +658,10 @@ export function isWaynetOp(op: WorldOp): op is WaynetOp {
 export function renumbersPaths(op: WorldOp): boolean {
   // A delete has no exception to match the appended root's. An add can be
   // enumerated last and shift nothing; a removal takes every VOB after it down
-  // by one wherever it sits, roots included.
-  return op.op === 'ReparentVob' || op.op === 'DeleteVob'
+  // by one wherever it sits, roots included. A restore is the same statement
+  // upwards: it is an insert at an index on purpose, so there is no slot it
+  // could take that shifts nothing.
+  return op.op === 'ReparentVob' || op.op === 'DeleteVob' || op.op === 'RestoreVob'
     || (op.op === 'AddVob' && op.parentPath !== null);
 }
 
@@ -641,38 +676,29 @@ export function renumbersPaths(op: WorldOp): boolean {
  * Only the delete: a move, a rename, an edge and an *append* all leave the
  * enumeration where they found it, which is what lets them stand on a bare
  * index at all. It is why the delete is alone in its batch — the other ops in
- * one would carry indices read before it ran (§16.42).
+ * one would carry indices read before it ran (§7).
  */
 export function renumbersWaypoints(op: WorldOp): op is DeleteWaypoint {
   return op.op === 'DeleteWaypoint';
 }
 
 /**
- * Is this op a barrier — one the history cannot replay backwards?
+ * Is this op a removal — of a VOB or of a waypoint?
  *
- * The predicate that replaced `invertOp` as the gate (§15). `WorldService` reads
- * it to clear both stacks instead of pushing a batch it could never undo, and
- * the World surface reads it to warn before the op lands. The point of asking
- * by predicate rather than by name is that an uninvertible op joins it without
- * either caller learning a second name.
+ * What is left of `isBarrierOp`, which both deletes have now left (§7), and
+ * it answers a question the barrier predicate was only ever standing in for:
+ * **is this an op the viewport never drew ahead of the round trip?** Every other
+ * op is drawn optimistically and put back by `putTheViewBack` inverting it; a
+ * delete is only ever drawn once the main process has taken it, so inverting one
+ * there would feed the scene a restore nothing had removed.
  *
- * **`DeleteWaypoint` left it 2026-09-12** (§16.42). It was here for the
- * waynet's version of `DeleteVob`'s reason, and only half of that reason was
- * ever the inverse: a waypoint is a small enough record to describe completely,
- * so it has one now. The other half — that it moves the indices its own batch
- * is addressed by — is `renumbersWaypoints`, which is a batch rule and not a
- * history one.
+ * By predicate rather than by name so that a third removal joins without its
+ * caller learning a third name — which is how `DeleteWaypoint` came to be
+ * filtered by `renumbersWaypoints`, a batch rule that happened to have the same
+ * membership for none of the same reasons.
  */
-export function isBarrierOp(op: WorldOp): op is DeleteVob {
-  return op.op === 'DeleteVob';
-}
-
-/** Why a barrier op has no inverse — thrown by both dispatches that would need
- *  one, so the two cannot drift into disagreeing about it. */
-function barrierError(op: WorldOp): RangeError {
-  return new RangeError(
-    `${op.op} is a barrier: it has no inverse, and the history clears rather than replaying it`,
-  );
+export function isDeleteOp(op: WorldOp): op is DeleteVob | DeleteWaypoint {
+  return op.op === 'DeleteVob' || op.op === 'DeleteWaypoint';
 }
 
 /**
@@ -1032,7 +1058,7 @@ export interface WaypointColumns {
 
 /**
  * Delete a waypoint, with everything needed to put it back (§16.7, W4;
- * §16.42).
+ * §7).
  *
  * The edges are walked out of the payload the overlay is already holding rather
  * than asked for, exactly as the waypoint panel walks them for the selection: a
@@ -2149,9 +2175,11 @@ function compareIndexPaths(a: string, b: string): number {
  * selected parent is already gone by the time its own op would run and would
  * address a slot that no longer exists.
  *
- * It stays one *barrier*: N deletes are one clearing of both history stacks
- * rather than N, which is the whole of what "one undo entry" can mean for an op
- * with no inverse (§15).
+ * It is one undo entry, and since §7 gave the delete an inverse that means what
+ * it means everywhere else: `invertOp` over the reversed batch is the restores
+ * in ascending order, which `commitOps` allows as the mirror of the descending
+ * shape this builds. Under §15 it could only mean one *clearing* of both stacks
+ * rather than N.
  */
 export function deleteVobs(reader: VobReader, vobs: readonly number[]): DeleteVob[] {
   return topLevelVobs(reader, vobs)
@@ -2192,11 +2220,10 @@ function parentAfterInsert(op: ReparentVob): string | null {
   return segments.join('/');
 }
 
-/** The op that undoes `op` — pure, and an ordinary op in its own right, for
- *  every op that has one. A barrier does not, and is refused rather than given
- *  an inverse that would restore something else. */
-export function invertOp(op: WorldOp): Exclude<WorldOp, DeleteVob> {
-  if (isBarrierOp(op)) throw barrierError(op);
+/** The op that undoes `op` — pure, and an ordinary op in its own right. Total
+ *  over `WorldOp` since the delete gained its inverse (§7); there is no
+ *  longer an op it refuses. */
+export function invertOp(op: WorldOp): WorldOp {
   // The box is half of what these two write. Swapping only the matrix — or only
   // the props — undoes the visible half and leaves the VOB culled by a box
   // fitted to something it is no longer. The two branches are written out
@@ -2251,8 +2278,22 @@ export function invertOp(op: WorldOp): Exclude<WorldOp, DeleteVob> {
     // the insert that puts the waypoint back at the index it came from, edges
     // and all — and back again for redo. The index and the name are not sides:
     // the restore lands at the index the delete emptied, and a waypoint keeps
-    // its name across both directions (§16.42).
+    // its name across both directions (§7).
     return { ...op, from: op.to, to: op.from };
+  }
+  if (op.op === 'DeleteVob') {
+    // The one inverse with nothing to swap, because the op has no sides: what
+    // comes back is the subtree the binding retained, and this only says where
+    // it goes. A separate op kind rather than a nullable side for exactly that
+    // reason — there is no value to put on a side, and `AddVob`'s null-side
+    // idiom means "the op describes the VOB completely", which is the claim
+    // §7 exists to avoid making.
+    return { op: 'RestoreVob', vob: op.vob, path: op.path };
+  }
+  if (op.op === 'RestoreVob') {
+    // And back, so redo is the delete again — which re-retains the subtree, so
+    // the stacks can be walked as often as the user likes.
+    return { op: 'DeleteVob', vob: op.vob, path: op.path };
   }
   if (op.op === 'MoveVob') {
     return { ...op, from: op.to, to: op.from };
@@ -2278,7 +2319,17 @@ export interface OpBinding {
    *  with the index path it landed at, which `commitOps` checks against the one
    *  the op claims. */
   insertVob(spec: NewVob, parentPath: string | null): string;
-  deleteVob(path: string): void;
+  /** `retain` says which delete this is and is never defaulted: `true` keeps the
+   *  subtree on the handle for `restoreVob`, which is what makes `DeleteVob`
+   *  invertible; `false` frees it, which is what an `AddVob`'s undo wants — the
+   *  VOB it removes is described completely by the op that made it. */
+  deleteVob(path: string, retain: boolean): void;
+  /** Puts the most recently retained subtree back at `path` and answers with the
+   *  index path it landed at, checked against the one the op claims. It takes no
+   *  token: the retained subtrees are a stack and the history is well nested, so
+   *  a restore always wants the top one, and `path` is the guard rather than the
+   *  address. */
+  restoreVob(path: string): string;
   /** Moves a VOB and its subtree into `parentPath` at `slot` — null for a root
    *  — and answers with the index path it landed at, which `commitOps` checks
    *  against the one the op predicted. */
@@ -2356,7 +2407,10 @@ function writeOp(binding: OpBinding, op: WorldOp, direction: 'to' | 'from'): voi
   if (op.op === 'AddVob') {
     const spec = op[direction];
     if (spec === null) {
-      binding.deleteVob(op.path);
+      // Freed rather than retained: this op *does* describe the VOB completely
+      // — that is what its null side means — so its own other direction makes
+      // the VOB again and a retained subtree would be held for nothing.
+      binding.deleteVob(op.path, false);
       return;
     }
     // The guard the enumeration needs. If the list it is appended to has gained
@@ -2364,7 +2418,7 @@ function writeOp(binding: OpBinding, op: WorldOp, direction: 'to' | 'from'): voi
     // this op's own inverse would then delete somebody else.
     const landed = binding.insertVob(spec, op.parentPath);
     if (landed !== op.path) {
-      binding.deleteVob(landed);
+      binding.deleteVob(landed, false);
       throw new RangeError(
         `the new vob landed at ${landed}, not ${op.path} — the list it was appended to has changed`,
       );
@@ -2436,14 +2490,33 @@ function writeOp(binding: OpBinding, op: WorldOp, direction: 'to' | 'from'): voi
     }
     return;
   }
-  if (op.op === 'DeleteVob') {
-    // Forward only. `renumbersPaths` keeps a delete alone in its batch, so there
-    // is no later op to fail and unwind it — and nothing to unwind it *with*,
-    // which is the same refusal `invertOp` makes and deliberately the same
-    // error, because two dispatches disagreeing about it is how a barrier would
-    // quietly become half-invertible.
-    if (direction === 'from') throw barrierError(op);
-    binding.deleteVob(op.path);
+  if (op.op === 'DeleteVob' || op.op === 'RestoreVob') {
+    // One branch for the pair, because they are one op in two directions and
+    // splitting them is how the two could come to disagree about which
+    // direction retains. A `DeleteVob` going forward and a `RestoreVob`
+    // unwinding are the same call.
+    const removing = (op.op === 'DeleteVob') === (direction === 'to');
+    if (removing) {
+      // Always retaining. This is the delete whose inverse is a restore, and
+      // the subtree it holds is what that restore puts back — including on the
+      // unwind of a refused batch, which replays `'from'`.
+      binding.deleteVob(op.path, true);
+      return;
+    }
+    // The guard the enumeration needs, in `insertWaypoint`'s idiom. A restore
+    // lands where it is told, so a mismatch means the tree was not the one the
+    // delete was made against — and the delete this would invert back to would
+    // then remove somebody else. The binding refuses a path the retained
+    // subtree did not come from, so this is the second of two checks rather
+    // than the only one.
+    const landed = binding.restoreVob(op.path);
+    if (landed !== op.path) {
+      binding.deleteVob(landed, true);
+      throw new RangeError(
+        `the restored vob landed at ${landed}, not ${op.path}`
+        + ' — the world has changed under this op',
+      );
+    }
     return;
   }
   if (op.op === 'MoveVob') {
@@ -2484,34 +2557,33 @@ export function commitOps(binding: OpBinding, ops: readonly WorldOp[]): void {
   // the reason the adds are safe in each other's: it is addressed by an index
   // path, and an append moves none. Any other op in the batch and the refusal is
   // back, `physicsEnabled`'s follow-up included.
-  // A barrier is alone for a reason of its own, beyond the paths: it cannot be
-  // unwound, so a later op failing in the same batch would leave the world with
-  // an edit applied and no history entry describing it. `DeleteVob` is already
-  // covered by the renumbering rule below, and this is where it was said for
-  // `DeleteWaypoint` too until that op gained an inverse (§16.42) — it is now
-  // alone for the renumbering alone, which `renumbersWaypoints` says below.
-  //
   // **A batch of deletes is the second exception** (#253), and like the first it
   // is a shape rather than a list of op names: every op a `DeleteVob`, and the
   // paths in strictly *descending* document order. Removing a subtree shifts
   // only the slots after it, so a batch in that order leaves every path still to
   // be used exactly where it was resolved — which is the renumbering objection
-  // answered, not waived. The barrier objection does not apply either: both
-  // history stacks are cleared for one delete exactly as for five, so a batch is
-  // one clearing rather than five, which is the whole of what one entry can mean
-  // for an op with no inverse. `deleteVobs` builds this shape; the check is here
+  // answered, not waived. `deleteVobs` builds this shape; the check is here
   // because a batch can be hand-built.
+  //
+  // **And a batch of restores is its mirror**, in strictly *ascending* order —
+  // which is the shape `WorldService` produces, because it undoes a batch by
+  // reversing it. It has to be allowed or a multi-VOB delete would be
+  // uninvertible as a *batch* while each of its ops has an inverse (§7):
+  // refilling the slots in ascending order puts each subtree back at the address
+  // the delete recorded, for the same reason emptying them in descending order
+  // left those addresses standing.
+  //
+  // Both are written out rather than shared: the `every` is what narrows `ops`
+  // to the one kind, and that narrowing is what lets the ordering check read a
+  // `path` at all — a helper taking the direction would be reaching for a field
+  // `ReparentVob` does not have.
   const deletes = ops.length > 1 && ops.every((op) => op.op === 'DeleteVob')
-    && ops.every((op, at) => at === 0 || compareIndexPaths(ops[at - 1].path!, op.path!) > 0);
-
-  if (ops.length > 1 && !deletes && ops.some(isBarrierOp)) {
-    throw new RangeError(
-      'a barrier op cannot be unwound: it has to be the only op in its batch',
-    );
-  }
+    && ops.every((op, at) => at === 0 || compareIndexPaths(ops[at - 1].path, op.path) > 0);
+  const restores = ops.length > 1 && ops.every((op) => op.op === 'RestoreVob')
+    && ops.every((op, at) => at === 0 || compareIndexPaths(ops[at - 1].path, op.path) < 0);
 
   const appends = ops.every((op) => op.op === 'AddVob' || op.op === 'SetVobClassProp');
-  const renumbering = ops.length > 1 && !appends && !deletes
+  const renumbering = ops.length > 1 && !appends && !deletes && !restores
     ? ops.find(renumbersPaths) : undefined;
   if (renumbering !== undefined) {
     throw new RangeError(
@@ -2524,7 +2596,7 @@ export function commitOps(binding: OpBinding, ops: readonly WorldOp[]): void {
   // `renumbersWaypoints` is: the indices it moves are not paths, so the check
   // over paths cannot see them. It survived the barrier it used to be folded
   // into — an inverse makes the op replayable, not its neighbours' addresses
-  // right (§16.42).
+  // right (§7).
   if (ops.length > 1 && ops.some(renumbersWaypoints)) {
     throw new RangeError(
       'a DeleteWaypoint renumbers every waypoint after it: '
@@ -2532,26 +2604,13 @@ export function commitOps(binding: OpBinding, ops: readonly WorldOp[]): void {
     );
   }
 
-  // The one batch that cannot be made all-or-nothing, and it says so instead of
-  // pretending. The unwind below replays `'from'`, which a delete refuses — so a
-  // batch that stops part way has removed everything before the failure and
-  // there is nothing to put any of it back with. The first op failing is still
-  // the ordinary refusal, because nothing has happened yet.
-  if (deletes) {
-    for (let at = 0; at < ops.length; at += 1) {
-      try {
-        writeOp(binding, ops[at], 'to');
-      } catch (error) {
-        if (at === 0) throw error;
-        throw new RangeError(
-          `the delete of ${ops[at].path} failed after ${at} of ${ops.length} were removed: `
-          + 'the world holds those, and a delete cannot be put back — re-open it to resync',
-        );
-      }
-    }
-    return;
-  }
-
+  // No exception below this line. A batch of deletes used to be the one batch
+  // that could not be made all-or-nothing — the unwind replays `'from'`, which a
+  // delete refused — so a batch stopping part way had removed everything before
+  // the failure with nothing to put any of it back with, and it said so instead
+  // of pretending. The retained subtree is what closed that (§7): `'from'`
+  // on a delete is a restore, and the unwind below walks the applied ops back to
+  // front, which is exactly the order the retain stack hands them back in.
   const applied: WorldOp[] = [];
   try {
     for (const op of ops) {

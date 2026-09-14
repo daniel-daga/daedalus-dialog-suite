@@ -357,21 +357,27 @@ async function verifyEnumWrite(service, index) {
 }
 
 /**
- * The delete, and the barrier it puts in the history (level-editor.md §15).
+ * The delete, and the restore that undoes it (level-editor.md §7).
  *
- * The op with no inverse, so what this proves is the half that is not a round
- * trip: the world really loses the VOB *and its subtree*, and the history is
- * left with nothing to replay — including the perfectly good edit made just
- * before it, which addressed VOBs by indices this delete has renumbered.
+ * The op that had no inverse until the binding stopped freeing what it removed,
+ * so what this proves is the half no unit test can: the *real* subtree comes
+ * back. Every other layer mocks past the binding — the renderer suite stubs the
+ * IPC, the op suite injects a fake binding — so a restore that put back a
+ * hollowed-out VOB, or the wrong one, or nothing at all, would be green
+ * everywhere and only visible here.
  *
  * A real retail VOB rather than one the driver placed. An added VOB is
- * describable by the op that made it, which is exactly the case §15 is not
+ * describable by the op that made it, which is exactly the case §7 is not
  * about; a retail one carries per-class properties, children and an AI that no
- * op describes, and it is the one this feature had to be unblocked for.
+ * op describes, and it is the one the retained pointer exists for.
  *
- * It runs last and never undoes, so nothing after it may assume the world is
- * the one that was opened. The file on disk is untouched — this driver never
- * saves.
+ * The ordinary edit before it is not decoration either: §15 cleared both stacks
+ * on a delete, and the thing that says the barrier is really gone is that the
+ * *earlier* batch is still undoable afterwards.
+ *
+ * It runs last and undoes everything it did, but nothing after it may assume
+ * the world is the one that was opened. The file on disk is untouched — this
+ * driver never saves.
  */
 async function verifyDelete(service, index) {
   const reader = createVobReader(index);
@@ -383,24 +389,67 @@ async function verifyDelete(service, index) {
 
   const label = reader.name(last) || reader.visual(last) || reader.className(last);
   const op = deleteVob(reader, last);
+  // What the restore has to bring back, read before it is gone. The class and
+  // the visual are the columns that would still look right if the restore had
+  // inserted a bare `zCVob` wearing the name — which is the failure §7
+  // exists to rule out.
+  const was = {
+    className: reader.className(last),
+    visual: reader.visual(last),
+    position: reader.position(last),
+  };
 
-  // An ordinary, invertible edit first — the thing the barrier has to take with
-  // it. Without one the cleared stack is indistinguishable from an empty one.
+  // An ordinary, invertible edit first — the thing the barrier used to take with
+  // it. Without one, a surviving stack is indistinguishable from never having
+  // had anything on it.
   const from = reader.position(0);
   await service.applyOps([moveVob(reader, 0, [from[0] + 100, from[1], from[2]])]);
 
   await service.applyOps([op]);
-  const after = await service.refreshIndex();
-  check(after.vobIndex.count < index.count, 'the delete removed no VOB at all');
+  const deleted = await service.refreshIndex();
+  check(deleted.vobIndex.count < index.count, 'the delete removed no VOB at all');
 
-  check(await service.undo() === null, 'the delete left the history undoable — the barrier did not clear it');
-  check(await service.redo() === null, 'the delete left a redo stack behind');
+  const undone = await service.undo();
+  check(undone !== null, 'the delete left nothing to undo — the barrier is still there');
+  check(
+    undone !== null && undone.length === 1 && undone[0].op === 'RestoreVob',
+    'the delete undid as something other than a RestoreVob',
+  );
+
+  const restored = await service.refreshIndex();
+  check(
+    restored.vobIndex.count === index.count,
+    `the restore brought back ${restored.vobIndex.count - deleted.vobIndex.count} VOBs, `
+    + `not the ${index.count - deleted.vobIndex.count} the delete took`,
+  );
+
+  // The subtree is back *and it is the one that left*. The path is the same, so
+  // the columns at it have to describe the same VOB.
+  const back = createVobReader(restored.vobIndex);
+  const at = back.count > last ? last : -1;
+  check(at !== -1 && back.className(at) === was.className,
+    `the restored VOB is a ${at === -1 ? 'nothing' : back.className(at)}, not a ${was.className}`);
+  check(at !== -1 && back.visual(at) === was.visual, 'the restored VOB lost its visual');
+  check(
+    at !== -1 && back.position(at).every((value, axis) => Math.abs(value - was.position[axis]) < 1e-3),
+    'the restored VOB came back somewhere else',
+  );
+
+  // And the half that says the barrier is gone rather than merely quieter: the
+  // edit made *before* the delete is still on the stack, at the indices it was
+  // recorded against — which is only true because the restore refilled the slot
+  // instead of appending.
+  const earlier = await service.undo();
+  check(earlier !== null, 'the delete still took the earlier edit with it');
+  check(await service.undo() === null, 'the history had more in it than this driver put there');
 
   const row = (label_, value) => console.log(`  ${String(label_).padEnd(34)}${value}`);
-  console.log('\none delete, and the history barrier\n');
+  console.log('\none delete, and the restore that undoes it\n');
   row('VOB', `${op.vob} at ${op.path} — ${label}`);
-  row('VOBs before / after', `${index.count} -> ${after.vobIndex.count}`);
-  row('History after it', 'nothing to undo, nothing to redo');
+  row('VOBs before / after / restored',
+    `${index.count} -> ${deleted.vobIndex.count} -> ${restored.vobIndex.count}`);
+  row('Class back', `${was.className} (visual ${was.visual || '—'})`);
+  row('Earlier edit', 'still undoable — no barrier');
 }
 
 main().catch((error) => { console.error('FAILED:', error); process.exit(1); });

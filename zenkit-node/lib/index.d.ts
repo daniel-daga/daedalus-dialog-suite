@@ -447,12 +447,30 @@ export function insertVob(
 /**
  * Remove a VOB and its whole subtree.
  *
- * The exact inverse of `insertVob` for a VOB `insertVob` created — which is what
- * makes an add op invertible. It is **not** an invertible operation on an
- * arbitrary retail VOB: an `oCMobInter` carries per-class properties, children,
- * an AI and an event manager that no op describes.
+ * `retain` says which of the two deletes this is, and there is no default: the
+ * two mean different things to the history and a caller that says neither has
+ * not decided. `false` frees the subtree, which is the exact inverse of
+ * `insertVob` for a VOB `insertVob` created. `true` keeps it on the handle for
+ * {@link restoreVob}, which is what makes a delete of an *arbitrary* VOB
+ * invertible — an `oCMobInter` carries per-class properties, children, an AI and
+ * an event manager that no op describes, and holding the pointer is what avoids
+ * having to describe any of them.
  */
-export function deleteVob(handle: WorldHandle, indexPath: string): void;
+export function deleteVob(handle: WorldHandle, indexPath: string, retain: boolean): void;
+/**
+ * Put the most recently retained subtree back at the slot it came from, and
+ * answer with the index path it landed at.
+ *
+ * The other direction of a retaining {@link deleteVob}, and the one call here
+ * that inserts a VOB anywhere but the tail — so it renumbers on purpose, and it
+ * is reachable only from the main process's own undo stack.
+ *
+ * No token: the retained subtrees are a stack and the history is well nested, so
+ * a restore always wants the top one. `indexPath` is the guard rather than the
+ * address — it is checked against where that subtree came from, and a mismatch
+ * is refused rather than resolved.
+ */
+export function restoreVob(handle: WorldHandle, indexPath: string): string;
 /**
  * Move a VOB and its whole subtree into `parentPath` at `slot` — `null` for a
  * root — and answer with the index path it landed at.
@@ -560,7 +578,7 @@ export interface WaypointRecord {
   edges: ReadonlyArray<{ waypoint: number; name: string }>;
 }
 /**
- * Put a deleted waypoint back where it was, edges and all (§16.42) — the
+ * Put a deleted waypoint back where it was, edges and all (§7) — the
  * barrier removal run backwards, and the answer is the index it landed at.
  *
  * **The one waynet call that may land a waypoint anywhere but the tail.** It

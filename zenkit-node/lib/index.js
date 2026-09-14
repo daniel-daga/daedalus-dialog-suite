@@ -66,6 +66,12 @@ function deleteVob(handle, ...rest) {
   return result;
 }
 
+function restoreVob(handle, ...rest) {
+  const result = addon.restoreVob(handle, ...rest);
+  markMutated(handle);
+  return result;
+}
+
 function reparentVob(handle, ...rest) {
   const result = addon.reparentVob(handle, ...rest);
   markMutated(handle);
@@ -87,6 +93,6 @@ module.exports = {
   ...addon,
   loadWorld, normalizeWorld,
   setVobPosition, setVobRotation, setVobProp, setVobClassProp,
-  insertVob, deleteVob, reparentVob,
+  insertVob, deleteVob, restoreVob, reparentVob,
   ...waynetMutators,
 };

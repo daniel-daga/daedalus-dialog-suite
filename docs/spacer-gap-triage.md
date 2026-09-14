@@ -135,17 +135,18 @@ mob `item`/`key`, and `oCMobContainer.contents` (index-backed picker).
 
 ### C1. A delete still cannot be undone (#271)
 
-Spacer has no undo at all; we have one everywhere **except** the op the report
-names first. `DeleteVob` and `DeleteWaypoint` are barriers that clear both
-stacks, so a bad drag no longer costs work and a bad delete still does, with the
-user's own save file as the only fallback.
+Spacer has no undo at all; we had one everywhere **except** the op the report
+names first. `DeleteVob` and `DeleteWaypoint` were barriers that cleared both
+stacks, so a bad drag cost no work and a bad delete still did, with the user's
+own save file as the only fallback.
 
-**Decided 2026-09-12 (Daniel): this one is wanted, not a nice-to-have.** An
-undoable delete is desirable and is believed possible; the barrier is a stopgap.
-What it needs is a serializer for the subtree, an insert-at-index op to put it
-back in its old slot, and only then the removal of the barrier — plan §15 for
-the withdrawn half of the original decision, §16.42 for the design and the four
-questions it leaves open.
+**Answered.** 2026-09-12 Daniel decided an undoable delete was wanted rather
+than a nice-to-have; `DeleteWaypoint` gained an inverse 2026-09-13 and
+`DeleteVob` 2026-09-14, and there is no barrier left in the op set. The
+serializer this row expected to need was never written: the binding retains the
+deleted subtree's pointer instead of describing it, and the restore puts that
+same object back at its old slot. Architecture §7, *"The delete, and the restore
+that inverts it"*; plan §15 for the withdrawn half of the original decision.
 
 ### C2. A malformed world crashes the reader, and says nothing about why (#272)
 

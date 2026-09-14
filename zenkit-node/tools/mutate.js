@@ -242,7 +242,7 @@ sheet('05-deletes-waynet', 'Load-safety only - 07a/07b/07c are its two observati
   const torch = at(before, TORCH_SUBTREE);
   const kids = before.vobs.filter((v) => v.path.startsWith(`${TORCH_SUBTREE}/`)).length;
   if (kids < 5) throw new Error(`${TORCH_SUBTREE} has ${kids} children, expected 5`);
-  zk.deleteVob(handle, TORCH_SUBTREE);
+  zk.deleteVob(handle, TORCH_SUBTREE, false);
 
   // Our own waypoint first: appended, so every index measured above is still
   // valid until the arbitrary delete at the end.
@@ -393,7 +393,7 @@ The frame around the spawn cleared of every light and sound, with three authored
     .map((v) => v.path)
     .sort(byPathDesc);
   if (doomed.length < 10) throw new Error(`only ${doomed.length} VOBs to clear — re-measure, the frame is not being cleared`);
-  for (const p of doomed) zk.deleteVob(handle, p);
+  for (const p of doomed) zk.deleteVob(handle, p, false);
 
   // The sharpest gap in §16.2, given a frame it can actually be seen in: an
   // authored zone, its own box around the spawn, red and overriding. Both ops in
@@ -623,7 +623,7 @@ const torchGone = stage('07b-frame-torch-deleted');
     // a root goes with its children still under it — which is the subtree
     // delete this row exists to witness, not five deletes and a sixth.
     const order = [...doomed, ...otherTorches, ...(deleteTorch ? [TORCH_SUBTREE] : [])].sort(byPathDesc);
-    for (const p of order) zk.deleteVob(handle, p);
+    for (const p of order) zk.deleteVob(handle, p, false);
     zk.saveWorld(handle, file);
 
     const after = zk.normalizeWorld(zk.loadWorld(file, 'g2'));

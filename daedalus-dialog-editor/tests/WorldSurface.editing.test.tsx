@@ -1000,10 +1000,10 @@ describe('saving the world', () => {
 });
 
 describe('deleting a VOB', () => {
-  // The op §15 unblocked, and the half of it that is *not* the op: a delete has
-  // no inverse, so the history clears rather than recording it — and the one
-  // requirement §15 put in place of invertibility is that the user knows that
-  // before it lands, because ours undoes everything else.
+  // The op §15 unblocked, and the half of it that is *not* the op. §15's
+  // requirement in place of invertibility was that the user knows the history
+  // goes before the delete lands; the delete has an inverse since 2026-09-14
+  // (§7), so the confirm stays for the subtree instead.
 
   /** Select one VOB and ask to delete it, without confirming. */
   async function askToDelete(vob: number) {
@@ -1026,18 +1026,21 @@ describe('deleting a VOB', () => {
     expect(ops).toEqual([{ op: 'DeleteVob', vob: 1, path: '1' }]);
   });
 
-  it('warns that the edit cannot be undone and that the history goes with it', async () => {
-    // Not decoration and not a generic "are you sure": every other edit in this
-    // surface is undoable, so a delete that quietly made the previous twenty
-    // unundoable is the surprise. Spacer has no undo at all, which is why the
-    // op ships — not why the warning is optional.
+  it('warns about the subtree, and says the delete undoes', async () => {
+    // What replaced §15's "this clears your history", following the waypoint
+    // dialog (§7). The claim it used to make is now false — the delete has
+    // an inverse and the earlier edits survive it — and a dialog asserting that
+    // would be worse than none. What is left is the part a user cannot see
+    // coming from the selection on screen: everything *below* it goes too.
     await openWorld();
 
     await askToDelete(1);
 
     const warning = screen.getByTestId('world-delete-warning');
-    expect(warning).toHaveTextContent(/cannot be undone/i);
-    expect(warning).toHaveTextContent(/undo history|undo stack|earlier edits/i);
+    expect(warning).toHaveTextContent(/scene tree|below it/i);
+    expect(warning).toHaveTextContent(/ctrl\+z|undo/i);
+    expect(warning).not.toHaveTextContent(/cannot be undone/i);
+    expect(warning).not.toHaveTextContent(/history is cleared|undo history/i);
     expect(api.applyWorldOps).not.toHaveBeenCalled();
   });
 
@@ -1071,10 +1074,10 @@ describe('deleting a VOB', () => {
   });
 
   it('deletes the whole selection as one batch, back to front (#253)', async () => {
-    // One batch, so one round trip and one clearing of the history — which is
-    // the whole of what "one undo entry" can mean for an op with no inverse.
-    // Back to front, because that is what makes the second path still valid
-    // after the first VOB is gone.
+    // One batch, so one round trip and one undo entry — which since §7 means
+    // an actual undo rather than one clearing of the history. Back to front,
+    // because that is what makes the second path still valid after the first
+    // VOB is gone.
     const summary = await openWorld();
     api.refreshWorldIndex.mockResolvedValueOnce(
       { ...summary, vobIndex: vobIndex([]) } as never,
@@ -3221,7 +3224,7 @@ describe('a waypoint dragged in the viewport', () => {
 
   describe('deleted in that panel', () => {
     // W4 (§16.7) — the one waynet op that renumbers. §15 shipped it as a
-    // barrier and §16.42 withdrew that: the op carries the whole waypoint now,
+    // barrier and §7 withdrew that: the op carries the whole waypoint now,
     // so the confirm is a destructive-action warning rather than a notice that
     // the history is about to go. It lives in the panel for W1's reason — that
     // is the only UI a waypoint has.
@@ -3264,7 +3267,7 @@ describe('a waypoint dragged in the viewport', () => {
     });
 
     it('warns about the edges, and says the delete undoes', async () => {
-      // What replaced §15's "this clears your history" (§16.42). The edges are
+      // What replaced §15's "this clears your history" (§7). The edges are
       // still the part a user cannot see coming from the point on screen, and
       // that is now the whole of what the dialog is for.
       await pickMiddle();

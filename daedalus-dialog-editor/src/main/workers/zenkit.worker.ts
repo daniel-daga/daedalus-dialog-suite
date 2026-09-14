@@ -317,7 +317,8 @@ function applyOpsRequest(payload: ApplyOpsRequest): { result: null; transfer: Ar
       setVobProp: (path, props) => zenkit.setVobProp(handle!, path, props),
       setVobClassProp: (path, props) => zenkit.setVobClassProp(handle!, path, props),
       insertVob: (spec, parentPath) => zenkit.insertVob(handle!, parentPath, spec),
-      deleteVob: (path) => zenkit.deleteVob(handle!, path),
+      deleteVob: (path, retain) => zenkit.deleteVob(handle!, path, retain),
+      restoreVob: (path) => zenkit.restoreVob(handle!, path),
       reparentVob: (from, parentPath, slot) => zenkit.reparentVob(handle!, from, parentPath, slot),
       setWaypointPosition: (waypoint, name, to) =>
         zenkit.setWaypointPosition(handle!, waypoint, name, to),

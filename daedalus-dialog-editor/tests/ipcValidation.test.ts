@@ -1376,9 +1376,9 @@ describe('assertApplyOpsRequest', () => {
       // Its inverse — the sides swapped, which is a delete — is built by
       // `invertOp` in the main process off the undo stack and never sent. As a
       // request it is a subtree delete wearing an add's name: it skips every
-      // `DeleteVob` guard, `isBarrierOp` is false so the history records it as
-      // invertible, and undoing it inserts a bare `zCVob` where a retail
-      // `oCMobContainer` and its children stood.
+      // `DeleteVob` guard, and undoing it inserts a bare `zCVob` where a retail
+      // `oCMobContainer` and its children stood — which is exactly the false
+      // restore §7's retained subtree exists to avoid.
       expect(() => assertApplyOpsRequest({
         ops: [{ ...add, from: add.to, to: null }],
       })).toThrow(/DeleteVob/);
@@ -1550,10 +1550,11 @@ describe('assertApplyOpsRequest', () => {
   });
 
   describe('a delete', () => {
-    // The op with no inverse (§15). It carries a `vob` and a `path` and nothing
-    // else, which makes it the one op where an extra field is the interesting
-    // case: a `from` on it would be somebody constructing an `AddVob`-shaped
-    // delete, and that shape means "this op describes the VOB completely".
+    // It carries a `vob` and a `path` and nothing else — which makes it the one
+    // op where an extra field is the interesting case: a `from` on it would be
+    // somebody constructing an `AddVob`-shaped delete, and that shape means
+    // "this op describes the VOB completely". Its real inverse describes nothing
+    // either (§7), so that stays true now that it has one.
     const remove = { op: 'DeleteVob', vob: 5, path: '2/1' };
 
     it('is accepted with just a vob and a path', () => {
@@ -1578,14 +1579,39 @@ describe('assertApplyOpsRequest', () => {
     });
 
     it('rejects anything beyond the address it is allowed to carry', () => {
-      // The op is uninvertible on purpose, and a delete that arrived carrying a
-      // `from` is either a mislabelled `AddVob` or something reaching for an
-      // inverse this op does not have. Either way the honest answer is a
-      // refusal at the boundary rather than a field the writer silently ignores.
+      // The op describes nothing it removed, by decision, and a delete that
+      // arrived carrying a `from` is either a mislabelled `AddVob` or something
+      // reaching for an inverse built out of fields. Either way the honest
+      // answer is a refusal at the boundary rather than a field the writer
+      // silently ignores.
       for (const extra of ['from', 'to', 'parentPath', 'fromBbox']) {
         expect(() => assertApplyOpsRequest({ ops: [{ ...remove, [extra]: null }] }))
           .toThrow(new RegExp(extra));
       }
+    });
+
+    it('crosses this boundary as a delete, never as its own inverse', () => {
+      // `AddVob`'s rule turned the other way up (§7). The restore is a real
+      // direction — `writeOp` sends it to `restoreVob` — but it is built by
+      // `invertOp` off the main process's own undo stack and is not a request.
+      // Arriving here it would be an insert at an index from the renderer: the
+      // one VOB call that renumbers on purpose, to put back a subtree nothing in
+      // this process saw deleted. And the subtree it restores is held by the
+      // binding, so there is nothing a caller could send that would say *which*.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ op: 'RestoreVob', vob: 5, path: '2/1' }],
+      })).toThrow(/RestoreVob is a delete's inverse/);
+    });
+
+    it('names a RestoreVob rather than calling it unknown', () => {
+      // A refused op and a typo are different facts, and the message is the
+      // only place the difference shows.
+      expect(() => assertApplyOpsRequest({
+        ops: [{ op: 'RestoreVob', vob: 5, path: '2/1' }],
+      })).not.toThrow(/unknown op/);
+      expect(() => assertApplyOpsRequest({
+        ops: [{ op: 'RestoreVobb', vob: 5, path: '2/1' }],
+      })).toThrow(/unknown op/);
     });
   });
 
@@ -1769,7 +1795,7 @@ describe('assertApplyOpsRequest', () => {
 
   describe('a waypoint delete', () => {
     // The fifth waynet op (§16.7, W4). It stopped being a barrier when it gained
-    // an inverse (§16.42), so it now carries the waypoint on the side that
+    // an inverse (§7), so it now carries the waypoint on the side that
     // exists — and the direction is what this boundary is exhaustive about: the
     // restore is the one waynet call that renumbers on purpose, and it is built
     // in the main process off the undo stack, never asked for from here.

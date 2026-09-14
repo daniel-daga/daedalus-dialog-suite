@@ -1719,9 +1719,10 @@ The consequences worth keeping:
   nothing is snapshotted beside the history. That is emphatically **not** true of
   an arbitrary retail VOB — an `oCMobInter` carries per-class properties,
   children, an AI and an event manager that no op describes. *(That is why
-  deleting one is `DeleteVob` rather than this shape with a null `to`, and why it
-  is the one op with no inverse. It landed on 2026-08-27 — "The delete, and the
-  barrier that replaces its inverse" below.)*
+  deleting one is `DeleteVob` rather than this shape with a null `to`. It landed
+  on 2026-08-27 with no inverse and gained one on 2026-09-14, by having the
+  binding retain the subtree rather than describe it — "The delete, and the
+  restore that inverts it" below.)*
 - **The projection cannot follow it.** The columnar index cannot grow, so
   `applyOps` refuses a structural op *by name* rather than skipping it, and the
   index is re-read whole (`refreshIndex` — from the world the worker already
@@ -1859,12 +1860,13 @@ VOB into a *later sibling* of itself, which is the only shape that exercises it.
 Still missing: **deleting an arbitrary retail VOB** — which is not blocked by
 renumbering at all but by invertibility: an `oCMobInter` carries per-class
 properties, children, an AI and an event manager that no op describes, so undo
-cannot rebuild one. That needs a way to snapshot a subtree, and it is a
-different feature. *(Placing a VOB under a parent and the between-rows drop both
-landed on 2026-08-28 — below. **The invertibility objection was withdrawn on
-2026-08-27 — §15**, and the delete landed the same day with a history barrier in
-place of an inverse — below. The subtree snapshot stays open as an improvement,
-not as a prerequisite.)*
+cannot rebuild one *from an op*. *(Placing a VOB under a parent and the
+between-rows drop both landed on 2026-08-28 — below. **The invertibility
+objection was withdrawn on 2026-08-27 — §15**, and the delete landed the same
+day with a history barrier in place of an inverse. It has a real inverse since
+2026-09-14, and the snapshot this paragraph expected to need turned out to be
+unnecessary: the binding retains the subtree's pointer instead of describing it
+— below.)*
 
 #### The reparent that never reached the binding, and the parent an insert can now take (2026-08-28)
 
@@ -1944,18 +1946,12 @@ quietly lost some of them is worse than one that says it is empty. `worldStore`
 documented the opposite ("there is no such op yet") for as long as `ReparentVob`
 has existed.
 
-#### The delete, and the barrier that replaces its inverse (2026-08-27)
+#### The delete, and the restore that inverts it (2026-08-27, inverted 2026-09-14)
 
-`DeleteVob` landed — the first op that ships **without** an inverse, on §15's
-decision. What it settled, in the order the code forced the questions:
-
-**The barrier is a stopgap since 2026-09-12 (Daniel; #271)** — an undoable
-delete is wanted, and §16.42 holds what an inverse would need. Everything below
-is still what `DeleteVob` does and why; read it as the current behaviour, not as
-the end state. **The waynet half landed 2026-09-13**: `DeleteWaypoint` is not a
-barrier any more (the waypoint section below), so the paragraphs here about
-`isBarrierOp`, the cleared stacks and the filtered optimistic rollback are the
-VOB delete's alone.
+`DeleteVob` landed as the first op that shipped **without** an inverse, on §15's
+decision. **It has one since 2026-09-14** (#271), and the way past
+the objection was to stop trying to describe what was removed. Both halves are
+below, because the first is why the second has the shape it does.
 
 **It is not an `AddVob` with a null `to`, and that was the whole design
 question.** §7 built that shape deliberately: a null side means "not in the
@@ -1966,57 +1962,109 @@ the editor authored from a spec, false of every retail one. Reusing it would
 have made the delete of an `oCMobInter` look invertible: the undo would insert a
 bare `zCVob` wearing its name and visual, and would have thrown its class, its
 children, its AI and its event manager away while reporting success. So a
-separate op, carrying an address and nothing else, and `invertOp` refuses it.
-`AddVob`'s null-side rule is untouched and still the inverse of a placement.
+separate op, carrying an address and nothing else.
+
+**The inverse carries no description either — the binding keeps the subtree.**
+Which is what made it possible at all. `deleteVob` used to `erase` the slot,
+dropping the last `shared_ptr` to the subtree; it now takes a `retain` flag and
+moves that pointer onto the handle instead, and `restoreVob` puts *the same
+object* back at the slot it came from. So what comes back is what left, members
+and all — the AI, the event manager, the per-class fields, the classes nothing
+here catalogues. The two candidates #271 weighed, an opaque serialized blob
+and a `NewVob`-style spec, were both answered by not serializing anything.
+
+Three consequences worth stating rather than discovering:
+
+- **It costs no memory a delete had not already spent.** The subtree was
+  resident before the call; the retain only declines to free it. So the memory
+  cap #271 expected to need has no reason to exist.
+- **An undo of a delete only works in the process that made it**, because that
+  is where the pointer is. Nothing else in the op set is process-bound.
+- **The retained subtrees are a stack, and no token crosses a boundary.** The
+  history is well nested — `WorldService` replays batches strictly LIFO and a
+  delete is alone in its batch — so a restore always wants the most recent
+  delete. `restoreVob` takes the index path as a *guard* rather than as an
+  address and refuses one the retained subtree did not come from.
+
+**`RestoreVob` is an insert at an index, which is what makes the undo correct
+rather than merely present.** `AddVob` appends, and that is exactly why it
+renumbers nothing. A subtree put back at the end of its parent's children is a
+different world, and every entry still on the undo stack addresses VOBs by paths
+the delete moved — so the restore has to move them back. `renumbersPaths` is
+true for it, and `isStructuralOp` is too.
 
 **`renumbersPaths` has no exception for a deleted root**, which is where it
 stops being the mirror of an add. An appended root is enumerated last and shifts
 nothing — that is the distinction the predicate was introduced to keep. A
 *removed* root takes every VOB after it down by one, and there is no position in
-the tree where a delete does not renumber. So a delete is always alone in its
-batch.
+the tree where a delete does not renumber. So a delete is alone in its batch,
+with the two exceptions below.
 
-**The barrier is the history's, not the op's.** `WorldService.applyOps` clears
-**both** stacks when a batch contains one, and clearing only the entry it would
-have made is not enough: every batch already on the undo stack addresses VOBs by
-flat indices and index paths that this delete has just moved, so replaying one
-would edit whatever has since taken that address. Cleared after the worker
-confirms, so a refused delete costs the user nothing.
+**Two batch shapes, and they are mirrors.** A batch of deletes in strictly
+*descending* document order is allowed (#253): removing a subtree shifts only
+the slots after it, so each delete leaves every path still to be used where it
+was resolved. A batch of `RestoreVob` in strictly *ascending* order is allowed
+for the same reason upwards, and it has to be — `replayOne` undoes a batch by
+reversing it, so a multi-VOB delete would otherwise be uninvertible *as a batch*
+while each of its ops has an inverse.
 
-**Three dispatches, not one, and only one of them is `invertOp`.** The refusal
-lives in `invertOp` and in `writeOp`'s reverse direction, sharing one error
-because two dispatches disagreeing about a barrier is how one quietly becomes
-half-invertible. The third was found by a failing test rather than by reading:
-the World surface's `commitOps` catch does `ops.map(invertOp)` to put the
-viewport's *optimistic* draw back when an op is refused, and it threw on a
-refused delete. Barrier ops are filtered out there — nothing is drawn before the
-main process takes a delete, so there is nothing to put back.
+**The barrier is gone, and with it the one batch that could not be
+all-or-nothing.** `WorldService.applyOps` used to clear **both** stacks when a
+batch contained a delete — clearing only the entry it would have made was never
+enough, because every batch already on the undo stack addressed VOBs by indices
+and paths the delete had just moved. The restore refills the slot, so the
+enumeration those older entries were recorded against is the one they are
+replayed into, and the delete is recorded like any other edit. `commitOps`'
+unwind of a refused batch works on deletes too now: `'from'` on a delete is a
+restore, and the unwind walks the applied ops back to front, which is exactly
+the order the retain stack hands them back in. The "the world holds those, and a
+delete cannot be put back — re-open it to resync" error is gone.
 
-**The validator refuses a delete carrying anything but its address.** The usual
-reason plus one: an extra `from` on a `DeleteVob` is either a mislabelled
-`AddVob` or something reaching for the inverse this op does not have, and both
-are better refused at the boundary than silently ignored by the writer. Same
-lesson as `ReparentVob` — `assertApplyOpsRequest` is the one layer every suite
-mocks past, so the branch and its cases landed in the same change as the op.
+**`isBarrierOp` is gone; `isDeleteOp` is what is left.** The predicate had one
+consumer whose question it was only standing in for: the World surface's
+`commitOps` catch does `ops.map(invertOp)` to put the viewport's *optimistic*
+draw back when an op is refused, and a delete must be dropped there — not
+because it lacks an inverse, but because a delete is never drawn before the main
+process has taken it, so inverting one would feed the scene a restore nothing
+ever removed. `isDeleteOp` asks that directly, over both deletes; it replaced a
+pair of predicates (`isBarrierOp` and `renumbersWaypoints`) that happened to
+have the right membership for two different reasons.
 
-**The UI half is a confirm, and it is the only one in the surface.** §15's
-requirement is not "warn that delete is destructive" — it is that the user knows
-the undo stack goes with it, because everything else here undoes. Exactly one
-VOB, never a selection: each delete renumbers, so a second would need its own
-batch against a re-read index, and a button that removed only the primary of
-five is the surprise the dialog exists to prevent.
+**The validator takes the delete and refuses the restore.** `AddVob`'s rule
+turned the other way up. A `RestoreVob` arriving from the renderer would be an
+insert at an index — the one VOB call that renumbers on purpose — to put back a
+subtree nothing in the main process saw deleted, and it carries nothing that
+could say *which* subtree, since the binding holds it. It is built by `invertOp`
+off the main process's own undo stack, which never passes the validator. It gets
+its own message rather than "unknown op", because a refused op and a typo are
+different facts. The `DeleteVob` branch is unchanged and still refuses an extra
+`from`: that is a mislabelled `AddVob` or an inverse built out of fields, and
+both are better refused than silently ignored by the writer. Same lesson as
+`ReparentVob` — `assertApplyOpsRequest` is the one layer every suite mocks past,
+so the branch and its cases landed in the same change as the op.
+
+**The confirm stays, for a smaller reason than the one it was put there for.**
+§15's requirement was that the user knows the undo stack goes with the delete.
+That is now false, so the sentence is gone rather than softened — a dialog
+asserting something untrue is worse than none. What is left is the part a user
+cannot see coming from the selection on screen: everything *below* it goes too,
+and Ctrl+Z puts it back. Same move the waypoint dialog made. It is
+offered for a selection of any size (#253), named when it is one and counted
+when it is several.
 
 **Proved end to end on NewWorld**, not on a fixture:
-`verify-world-pipeline.js` now deletes the last root through the real
-`WorldService`, after an ordinary invertible edit so that a cleared stack is
-distinguishable from an empty one. 23,288 VOBs → 18,828: the subtree really goes
-with the VOB, which no unit test observes because no fixture has a 4,460-VOB
-child list. It runs last and never undoes — nothing after it may assume the
-world is the one that was opened.
+`verify-world-pipeline.js` deletes the last root through the real
+`WorldService`, after an ordinary invertible edit, then undoes it and checks that
+the VOB count comes back, that the restored VOB is the *same class and visual*
+rather than a bare `zCVob` wearing the name, and that the earlier edit is still
+undoable. 23,288 VOBs → 18,828 under §15's run: the subtree really goes with the
+VOB, which no unit test observes because no fixture has a 4,460-VOB child list.
+That driver needs a Gothic install; the restore's fidelity is also pinned in CI
+by `zenkit-node`'s own suite, which is the only other place the real binding
+runs — the middle of a child list, the writer, and the LIFO discipline.
 
-Still open, and neither a prerequisite: serialising the subtree into the op, and
-the describe-it-completely fallback. Both would turn the barrier back into an
-inverse.
+**Unwitnessed in an engine**: a world saved after a VOB delete *and* its undo.
+Row 12 of §16.41.
 
 #### The waypoint gizmo — the UI for an op that had none (2026-08-28)
 
@@ -2763,17 +2811,20 @@ added beside them:
   record: a stable synthetic id every op carries, which is what a future
   capability needing undo across a delete would have to buy.
 - **W4 renumbers, so it travels alone in its batch** — but it is no longer a
-  barrier (2026-09-13; plan §16.42). It was one under §15, and what bought it an
+  barrier (2026-09-13; #271). It was one under §15, and what bought it an
   inverse was not the synthetic id above: a waypoint is a small enough record for
   the op to carry the whole of one — position, direction, water depth, both flags
   and every edge, as `WaypointRecord` — so the delete's other direction is
   `insertWaypoint`, the one waynet call that lands a point anywhere but the tail.
   The restore goes back into the slot it came from, which is what makes the
   entries already on the stack address the waypoints they were made against
-  again. `isBarrierOp` is now true for `DeleteVob` alone and
-  `renumbersWaypoints` carries the batch rule, which was always the half of the
-  barrier that was not about the inverse. `barrier` on `removeWaypoint` is still
-  **never defaulted**: a caller that did not say must not get either.
+  again. `renumbersWaypoints` carries the batch rule, which was always the half
+  of the barrier that was not about the inverse; `isBarrierOp` narrowed to
+  `DeleteVob` alone and then went altogether when that op gained its own inverse
+  on 2026-09-14 (`isDeleteOp` is what the one caller actually needed). `barrier`
+  on `removeWaypoint` is still **never defaulted**: a caller that did not say
+  must not get either — and `retain` on `deleteVob` is the same rule for the same
+  reason.
   Two things the restore does not put back, both inherited and both documented
   where they are: a neighbour promoted to a free point stays free (the
   asymmetry below), and the edge *order* is the graph's, not the file's.

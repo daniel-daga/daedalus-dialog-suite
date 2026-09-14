@@ -179,7 +179,7 @@ feedback, the Daedalus overlay, the multi-part workspace); that is §11's job.
 
 | # | Missing | Status | Note |
 |---|---|---|---|
-| 1.1 | **Delete an arbitrary retail VOB** | **landed** (§7) | `DeleteVob`, the history barrier and the confirm. The one op with no inverse. |
+| 1.1 | **Delete an arbitrary retail VOB** | **landed** (§7) | `DeleteVob` and the confirm. It shipped 2026-08-27 as the one op with no inverse; it has one since 2026-09-14 (§7) — the binding retains the deleted subtree's pointer and `RestoreVob` puts it back at its old slot, so the history barrier is gone. |
 | 1.2 | **Copy / paste / duplicate**, incl. subtree | **done, less `physicsEnabled`** (§7) | The most-used Spacer verb after move. D1 (duplicate one VOB in place), D4 (a selection as one batch, one undo) and D3 (copy and paste as verbs) all landed 2026-08-28, as ordinary `AddVob`s with no new op. D2's class half landed 2026-08-28 on top of I1/I2 — a copy carries its **class** for the classes `insertVob` can construct, and drops it for the rest (and for `oCItem`, whose instance is not in the index) rather than have the op refused. D5 (the subtree) landed 2026-08-28 as N appends in one batch. **D2's other half landed 2026-08-30** (unattended queue row 46): a copy carries the class *properties* too, as one `SetVobClassProp` per copy in the same batch — the surface fetches them with `getVobProps` (only for VOBs whose class has catalogued fields), `duplicateVobSubtree` puts them on the clipboard, and `commitOps` takes them beside the adds because an append moves no index path. Two rules the copy inherits from the dropped class: a copy that has no class carries no class fields, and a value outside its catalogue bounds is dropped rather than refused, because the IPC assertion would cost the whole copy for one field. What is left is `physicsEnabled`; a cross-world clipboard only if part-to-part copying is wanted. One consequence to know: **Ctrl+C is now asynchronous**, so a paste issued inside the fetch pastes the clipboard as it was. |
 | 1.3 | **Class-specific insertion** | **landed** (§16.15) | I1–I5 landed 2026-08-28 and Gate 2b saw `AddVob` author 27 classes; `focusName`'s measured warning followed 2026-08-29. This row used to read "`insertVob` authors `zCVob` and nothing else" and named the list that §16.15 then worked through: `oCItem`, `zCVobLight`, `zCVobSound`/`Daytime`, the trigger family (`zCTrigger`, `zCTriggerList`, `zCTriggerScript`, `zCMover`, `zCCodeMaster`, `zCMessageFilter`, `zCTriggerChangeLevel`), `oCMobInter`/`Container`/`Door`/`Bed`/`Ladder`/`Switch`/`Wheel`, `oCTouchDamage`, `zCPFXController`, the zones (`oCZoneMusic`, `zCZoneZFog`, `zCZoneVobFarPlane`), `zCVobStartpoint`/`zCVobSpot`, `zCVobAnimate`. |
 | 1.4 | **Class-specific property editing** | **partial** (§7) — *targets, `oCTriggerScript`'s base and the mover controller landed 2026-09-12; the note below predates them, see §16.3* | Seven classes so far. Increment 2 (2026-08-28) added the sound family and the zones — `zCVobSound`, `zCVobSoundDaytime` (which inherits the base four), `zCZoneVobFarPlane`, `zCZoneZFog`, `oCZoneMusic` — with no change to the validator, the op builder or the grid, which is increment 1's catalogue claim holding. What it exposed is that the value kinds, not the classes, were the limit — and increment 3 (2026-08-28) answered it with a `bool` kind and an `int` kind, which took the nine fields those five classes were holding back: the three sound booleans, the two fog booleans, and `oCZoneMusic`'s `enabled`/`ellipsoid`/`loop` plus its `int32` `priority`. `oCZoneMusic` and `zCZoneZFog` are complete — the enums that were the last of it landed 2026-08-29 as eight keys over thirteen classes, a fourth table (`CLASS_ENUM_FIELDS`) the validator reads generically so no per-key list can drift, and a field that offers the known values without coercing to them: an unrecognised value is kept, shown as such, and committed by nothing. No engine has seen any of the eight written (§16.2). **Increment 3's one open question closed 2026-09-02 (Daniel)**: `zCZoneZFog.color` is now disabled, with the reason as its helper, while `overrideColor` is false — the grid's first and only cross-field rule (`disabledFor` in `WorldPropertyGrid.tsx`, deliberately not generalised into the catalogue for one field). `randomDelay` beside a non-RANDOM `mode` keeps the same shape and stays enabled, because there the two are separate commits on one VOB rather than a switch drawn one row up. **`oCItem.instance` is no longer free text** (2026-08-28): the grid refuses a name the loaded project's item index does not declare and the IPC validator refuses a `to.instance` that is not a Daedalus symbol — see "The item instance stops being free text" in §7 for why the enforcement is split and why the main process cannot hold the index. Increment 1 (2026-08-28) landed `oCItem.instance` and `zCVobLight`'s `range` and `color` — 23.4 % of the 41,393 retail VOBs, and the three value kinds (cp1252 string, bounded float, fixed-arity integer array) the machinery needed. The whole path exists now — `getVobProps` exporting the reader `normalizeWorld` already had, the `SetVobClassProp` op, the `CLASS_FIELDS` catalogue every layer reads, the validator branch, the grid section — so each further class is one C++ case plus one catalogue entry plus its tests. Out by decision, not by time: `isStatic` (changes which fields the archive contains, so its inverse does not restore the world), list fields (first unbounded payloads in the op set — **narrowed 2026-09-03**: `oCMobContainer.contents` is in, because the archive holds it as one string and the validator bounds that string at 4 KB, so it is a `string` field with a grammar rather than a list payload; `keyframes` and any field the archive stores as a counted list stay out), base-`zCVob` widening (item 1.8, and the `farClipScale` junk it would write back), and class-specific insertion (item 1.3, which is `AddVob`). Still the largest volume of work in this section. |
@@ -214,10 +214,12 @@ drag.
 did not carry is the actual work: **addressing**. `MoveWaypoint` addresses a
 waypoint by its index into the list `getWaynet` emits, safe only because a move
 inserts, deletes and reorders nothing — and W1, W2 and W3 all earned that same
-address, because a rename, an append and an edge renumber nothing either. W4 was the
-one op that renumbers, and it is answered by §15's barrier rather than by an
-identity scheme: it clears the undo history instead of buying an address that
-would survive it (§7).
+address, because a rename, an append and an edge renumber nothing either. W4 is
+the one op that renumbers, and it is answered by keeping it alone in its batch
+rather than by an identity scheme — it went in as §15's barrier and gained an
+inverse 2026-09-13, the restore landing back in the slot it came from, which is
+what makes the entries already on the stack address the waypoints they were made
+against again (§7).
 
 ### 14.3 World-level
 
@@ -282,21 +284,23 @@ Spacer simply has no stack — but because ours works everywhere else, so a dele
 that quietly made the previous twenty edits unundoable is the surprise. A
 confirm is enough; the fallback is the user's own save file either way.
 
-**Superseded in part 2026-09-12 (Daniel; #271): a delete *should* be undoable.**
-What holds is the gate — an op that cannot describe its own inverse may still
-ship, and `DeleteVob` shipping on that rule was right. What is withdrawn is the
-*nice-to-have*: an undoable delete is wanted, and is believed possible, so the
-barrier is a **stopgap rather than the end state**. Serializing the subtree into
-the op, or snapshotting the world around it, are no longer "later improvements"
-but the two candidate routes; §16.42 carries what either needs and the questions
-each opens.
+**Superseded 2026-09-12 (Daniel; #271), and closed out 2026-09-14: both deletes
+are undoable and there is no barrier left.** What holds is the gate — an op that
+cannot describe its own inverse may still ship, and `DeleteVob` shipping on that
+rule was right, because shipping it is what made the inverse worth finding. What
+is withdrawn is everything that followed from "a barrier is the end state":
 
-**The waynet half of that landed 2026-09-13.** `DeleteWaypoint` is no longer a
-barrier: a waypoint is a small enough record for the op to carry the whole of
-one, so it has an inverse and the stacks survive it. `DeleteVob` is unchanged and
-everything above still describes it — a barrier still owes the user the confirm
-and the cleared stacks, and a half-measure that restored a VOB without its old
-position would still be worse than the barrier.
+- `DeleteWaypoint` gained an inverse 2026-09-13. A waypoint is a small enough
+  record for the op to carry the whole of one.
+- `DeleteVob` gained one 2026-09-14, and **neither candidate route above was
+  taken**. Serializing the subtree and snapshotting the world were both answered
+  by not describing the subtree at all: the binding keeps its `shared_ptr`
+  instead of freeing it, and `RestoreVob` puts that same object back in the slot
+  it came from. §7, *"The delete, and the restore that inverts it"*, is the
+  record; #271's own thread carries the decision.
+- So the requirement below — that the user knows the undo stack was cleared —
+  is **void**, because no stack is cleared. The confirm stays for the subtree,
+  which is the part a user cannot see coming from the selection on screen.
 
 **A selection deletes in one batch (2026-09-11, Daniel; #253).** Delete was one
 VOB at a time because a delete renumbers, and every op carries a path resolved
@@ -307,12 +311,17 @@ resolved. `deleteVobs` builds that shape and `commitOps` checks it, because a
 batch can be hand-built; descendants of another selected VOB are dropped, since
 a delete takes the subtree with it.
 
-"One undo entry" for N deletes means one clearing of both stacks rather than
-N — which is all it can mean for an op with no inverse — plus one round trip and
-one confirm naming the count. The cost is the one thing a delete batch cannot
-have: it is not all-or-nothing. There is nothing to unwind a delete with, so a
-batch that stops part way has removed everything before the failure, and
-`commitOps` says exactly that instead of the ordinary refusal. A failure on the
+"One undo entry" for N deletes meant one clearing of both stacks rather than N
+— all it could mean for an op with no inverse — plus one round trip and one
+confirm naming the count. **Since 2026-09-14 it means an actual undo** (§7): the
+batch inverts to the restores in ascending order, and the cost below is paid
+off with it — a delete batch *is* all-or-nothing now, because `'from'` on a
+delete is a restore. What follows described the old behaviour: there was nothing
+to unwind a delete with, so a batch that stopped part way had removed everything
+before the failure, and
+`commitOps` said exactly that instead of the ordinary refusal. That error is
+gone; the unwind replays the applied deletes as restores, back to front, which
+is the order the binding's retain stack hands them back in. A failure on the
 *first* op is still the ordinary refusal, because nothing has happened yet.
 
 ---
@@ -2337,8 +2346,9 @@ exists, not a new op.
 and the tool was built the same session; what follows the decision list is the
 record of what it became. The three that shaped it: **spacing plus a capped
 batch** (a stroke is one batch, so the cap bounds what §15's undo bar is
-handed), **no erase** (`DeleteVob` is the one op with no inverse and a history
-barrier — an erase that cleared the undo history was judged worse than none),
+handed), **no erase** (`DeleteVob` was then the one op with no inverse and a
+history barrier — an erase that cleared the undo history was judged worse than
+none; the reason expired 2026-09-14, see the erase note below),
 and **random yaw plus ground align** (no scale: `zCVob` has no scale field).
 The fourth, whether the palette persists across strokes, was decided in the
 build: **it does not**. The palette is read off the live selection every
@@ -2437,13 +2447,16 @@ an engine: a scattered subtree, though it reaches the world down the same
   machinery) — so the cap is what keeps a stroke inside sizes that *have* been
   shown. Raising it is a measurement, not a preference, which is why it is a
   constant and not a field.
-- **Erase — settled 2026-09-03 (Daniel): not in this version.** The reasoning
-  is unchanged and is why: the natural inverse of a paint stroke is a delete
-  stroke, `DeleteVob` is the one op with no inverse and a history barrier
-  (§14.1 1.1), and a scatter tool whose erase clears the undo history is worse
-  than no erase. **This is the one piece of the tool still wanted**, and it is
-  blocked on giving `DeleteVob` an inverse rather than on anything about the
-  brush.
+- **Erase — settled 2026-09-03 (Daniel): not in this version, and the reason
+  has since expired.** The reasoning was that the natural inverse of a paint
+  stroke is a delete stroke, `DeleteVob` was the one op with no inverse and a
+  history barrier (§14.1 1.1), and a scatter tool whose erase clears the undo
+  history is worse than no erase. **`DeleteVob` gained an inverse 2026-09-14**
+  (§7), so the blocker is gone: an erase stroke would be a batch of deletes
+  in descending document order, which `commitOps` already allows and already
+  undoes as one entry. **This is the one piece of the tool still wanted**, and it
+  is now unblocked work rather than blocked work — it needs the brush's own
+  hit-testing against placed VOBs, and nothing from the op set.
 
 **Landed 2026-09-03, and unwitnessed in two ways:** how a stroke actually looks
 on a real GPU, and what draping the brush ring over the mesh costs there.
@@ -3347,7 +3360,8 @@ confirm the staged file's hash, and keep a control run in the same session
 | 8 | `zCVobLensFlare.fx` — a written effect name resolving against `Presets/Lensflare.zen` | 2026-09-12 | #260 |
 | 9 | A mob's `item` gating its use, and a lock's `key` opening a chest or a door | 2026-09-12 | this section, above |
 | 10 | `zCEarthquake` — a written `radius`, `duration` and `amplitude` shaking the camera | 2026-09-12 | this section, above |
-| 11 | A waypoint deleted **and undone**, then saved — the restored point back in its own slot with its edges, and NPC routines still reaching it | 2026-09-13 | §16.42 |
+| 11 | A waypoint deleted **and undone**, then saved — the restored point back in its own slot with its edges, and NPC routines still reaching it | 2026-09-13 | §7 |
+| 12 | A **VOB** deleted and undone, then saved — a retail `oCMobInter` or the like back in its own slot with its subtree, still usable in game. The restore is the retained pointer rather than a rebuild, so what this witnesses is the *save* after it: that the writer emits a re-inserted subtree as it found it | 2026-09-14 | §7 |
 
 **Out of this list by decision, not by omission.** `oCZoneMusic.volume` is
 unclaimed rather than tested badly: no ear can rank two music volumes in a live
@@ -3359,107 +3373,3 @@ A row that fails here is a defect and gets its own issue; this list only records
 that nobody has looked.
 
 ---
-
-### 16.42 A delete should be undoable — the barrier is a stopgap (2026-09-12, Daniel; #271)
-
-§15 shipped `DeleteVob` and `DeleteWaypoint` as barriers that clear both undo
-stacks, on the reasoning that Spacer has no undo at all so ours need not have
-one here. **That is now a stopgap by decision: an undoable delete is wanted.**
-This section is what it would take; nothing has been built.
-
-**What exists today.** The op carries an address and nothing else. `invertOp`
-and `writeOp`'s reverse direction both refuse it through one shared error, the
-surface's `commitOps` catch filters barrier ops out of its optimistic rollback,
-and `WorldService.applyOps` clears both stacks once the worker confirms
-(architecture §7, *"The delete, and the barrier that replaces its inverse"*).
-The reason it is not an `AddVob` with a null side is the same one that makes an
-inverse hard: that shape's `NewVob` spec means *"this op describes the VOB
-completely"*, which is true of a VOB we authored and false of every retail one.
-
-**Three pieces, and the third is free once the first two exist.**
-
-1. **A serializer the op set does not have.** `getVobProps` reads the catalogued
-   fields of the classes we catalogue; a restore needs *everything* on the VOB —
-   its children, the classes `insertVob` cannot construct, and the members no
-   layer here models at all (AI, event manager, and whatever a class carries
-   that `CLASS_FIELDS` has never had a reason to name). The shape that avoids
-   modelling all of it is an **opaque blob the binding produces and consumes**:
-   serialize the subtree in C++ before the delete, reinsert it verbatim on undo.
-   That keeps the editor out of the business of describing every class, and it
-   makes the history hold *data* for the first time — everywhere else it holds
-   ops and not snapshots, by design.
-2. **An insert at an index.** `AddVob` appends, which is exactly why it
-   renumbers nothing. A restore has to land back in the slot it came from, or
-   every path in the older history is still misaddressed — so the restoring op
-   is "insert this subtree at this path", a new op with its own
-   `assertApplyOpsRequest` branch, and `renumbersPaths` is true for it. This is
-   the piece that makes the undo *correct* rather than merely present.
-3. **Then the barrier can go.** With 1 and 2, the delete has an inverse and the
-   stacks no longer have to clear. Until both exist, clearing is the right
-   behaviour: restoring a VOB at the wrong index would leave every older entry
-   pointing at a VOB that is not the one it edited, which is worse than losing
-   the stack.
-
-**The waynet was the smaller case, and it landed 2026-09-13.** A waypoint is a
-small record — name, position, direction, water depth, two flags and its edges —
-so serializing it needed no blob: `WaypointRecord` in `zen-world` is the whole of
-one, and `DeleteWaypoint` now carries it on the side that exists, with a null
-side meaning "not in the waynet" exactly as `AddWaypoint`'s null position does.
-`invertOp` is the plain swap, `isBarrierOp` is `DeleteVob` alone, and the new
-`renumbersWaypoints` carries the batch rule that was always the half of the
-barrier that was not about the inverse.
-
-The two pieces below, in the waynet's own size:
-
-1. **The serializer is the record**, not a blob. Nothing on a waypoint is
-   invisible to this layer, which is the whole difference from a VOB.
-2. **The insert at an index is the op's other direction**, not an op of its own —
-   `insertWaypoint` in the binding, the one waynet call that may land a point
-   anywhere but the tail. It goes back into the slot it came from, which is what
-   makes the entries already on the stack address the waypoints they were made
-   against again; the edge indices on the record are the pre-delete enumeration,
-   which is the one the restore recreates, so the binding shifts them down by one
-   while the point is out of the list.
-
-Three things the increment settled that the VOB half will meet again:
-
-- **Which direction may cross the IPC.** `assertApplyOpsRequest` takes the delete
-  and refuses the restore, `AddVob`'s rule turned the other way up: an insert at
-  an index arriving from the renderer would renumber the waynet to put back a
-  waypoint nothing in the main process saw deleted. The restore is built by
-  `invertOp` off the undo stack, which never passes the validator.
-- **The optimistic rollback still drops it.** `putTheViewBack` inverts what the
-  viewport drew ahead of the round trip, and a delete is never drawn ahead of
-  one — so it is filtered by `renumbersWaypoints` now rather than by
-  `isBarrierOp`, for the same reason and not for the missing inverse.
-- **What the confirm became.** The dialog stays and now warns about the edges
-  alone: "every edge into this waypoint is removed with it; Ctrl+Z puts it back".
-  §15's requirement was that the user knows the *stack* goes, and that is no
-  longer true here.
-
-What it does **not** restore, both inherited rather than new: a neighbour the
-delete promoted to a free point stays free (`SetWaypointEdge`'s documented
-asymmetry — the undo is exact for the graph and not for that flag), and the edge
-*order* in the file changes, which nothing reads.
-
-Unwitnessed in an engine: a world saved after a delete **and its undo**. Row 11
-of §16.41.
-
-**Open, and each one a decision rather than work — all four are the VOB half's
-now, the waynet having answered the last two for itself:**
-
-- **Blob or spec.** An opaque binding-owned blob is the only form that restores
-  a retail VOB faithfully; a `NewVob`-style spec is inspectable, testable and
-  diffable, and would restore the classes we catalogue and silently flatten the
-  rest. The blob is the honest one; nothing else in the op set works that way.
-  The waynet did not face this — its record *is* the waypoint.
-- **What bounds the history.** A subtree blob per delete is unbounded memory in
-  a session that deletes a lot. A cap on retained bytes (dropping the oldest
-  restorable delete back to a barrier) is the obvious answer and needs a number.
-  A waypoint record is tens of bytes, so the waynet needs no cap.
-- **Whether an undo survives a save.** It does not today for anything, and a
-  restored VOB is no different — worth stating rather than discovering. The
-  waynet restore is no different either: the stacks are the session's.
-- **What the confirm becomes.** Answered for the waynet above — it stays, and
-  warns about the edges rather than the history. The VOB dialog is untouched,
-  because the VOB delete still clears the stacks.

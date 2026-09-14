@@ -110,7 +110,7 @@ describe('useWaynetEditing — the six edits', () => {
   });
 
   test('a delete carries the whole waypoint, so it can be undone', () => {
-    // §16.42: the op is no longer an address. It has to come out of this hook
+    // §7: the op is no longer an address. It has to come out of this hook
     // carrying what the waypoint *was* — the two vectors, the depth, both flags
     // and every edge — because the undo replays the op and never reads the
     // world back.

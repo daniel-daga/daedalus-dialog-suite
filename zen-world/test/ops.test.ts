@@ -35,7 +35,7 @@ import {
   pasteVobs,
   PASTE_MIN_OFFSET,
   invertOp,
-  isBarrierOp,
+  isDeleteOp,
   isStructuralOp,
   isWaynetOp,
   moveVob,
@@ -216,8 +216,11 @@ describe('a move op', () => {
     const op = moveVob(reader(), 1, [11, 22, 33]);
     const undo = invertOp(op);
 
-    expect(undo.from).toEqual([11, 22, 33]);
-    expect(undo.to).toEqual([10, 20, 30]);
+    // Narrowed for the reason the `vob` line below gives, now true of the sides
+    // too: `invertOp` is total over `WorldOp` since the delete gained an inverse
+    // (§7), and a `RestoreVob` carries no sides at all.
+    expect(undo.op === 'MoveVob' && undo.from).toEqual([11, 22, 33]);
+    expect(undo.op === 'MoveVob' && undo.to).toEqual([10, 20, 30]);
     // Same VOB, same native address: an inverse is an op like any other and
     // goes through the same path.
     // Narrowed for the same reason the line below is: `vob` stopped being a
@@ -441,6 +444,7 @@ describe('a rotate op', () => {
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => { throw new Error('no structural ops in this batch'); },
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
@@ -467,6 +471,7 @@ describe('a rotate op', () => {
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => { throw new Error('no structural ops in this batch'); },
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
@@ -1058,6 +1063,7 @@ describe('a class-property op', () => {
       setVobClassProp: (path, props) => { calls.push([path, props]); },
       insertVob: () => { throw new Error('no structural ops in this batch'); },
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
@@ -1090,6 +1096,7 @@ describe('a class-property op', () => {
       setVobClassProp: (path, props) => { calls.push([path, props]); },
       insertVob: () => { throw new Error('no structural ops in this batch'); },
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
@@ -1111,7 +1118,7 @@ describe('a class-property op', () => {
     expect(isStructuralOp(op)).toBe(false);
     expect(isWaynetOp(op)).toBe(false);
     expect(renumbersPaths(op)).toBe(false);
-    expect(isBarrierOp(op)).toBe(false);
+    expect(isDeleteOp(op)).toBe(false);
   });
 
   it('touches the VOB in the projection and writes nothing into it', () => {
@@ -1229,6 +1236,7 @@ describe('an add op', () => {
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: (_spec, parentPath) => (parentPath === null ? '2' : `${parentPath}/1`),
       deleteVob: () => {},
+      restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
@@ -1257,6 +1265,7 @@ describe('an add op', () => {
         return '0/1';
       },
       deleteVob: (path) => { calls.push(`delete ${path}`); },
+      restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
@@ -1286,6 +1295,7 @@ describe('an add op', () => {
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: (spec) => { seen = spec; return '2'; },
       deleteVob: () => {},
+      restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
@@ -1313,6 +1323,7 @@ describe('an add op', () => {
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: (spec) => { calls.push(`insert ${spec.name}`); return '2'; },
       deleteVob: (path) => { calls.push(`delete ${path}`); },
+      restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
@@ -1339,6 +1350,7 @@ describe('an add op', () => {
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => '7',
       deleteVob: () => {},
+      restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
@@ -1360,6 +1372,7 @@ describe('an add op', () => {
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => { calls.push('insert'); return '2'; },
       deleteVob: (path) => { calls.push(`delete ${path}`); },
+      restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
@@ -1582,6 +1595,7 @@ describe('a selection duplicated as one batch', () => {
         return path;
       },
       deleteVob: (path) => { landed.splice(landed.indexOf(path), 1); },
+      restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
@@ -1609,6 +1623,7 @@ describe('a selection duplicated as one batch', () => {
       setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => '0/2', deleteVob: () => {},
+      restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
@@ -1855,6 +1870,7 @@ describe('a duplicate that carries the subtree', () => {
         return path;
       },
       deleteVob: (path) => { world.delete(path); },
+      restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
@@ -2042,6 +2058,7 @@ describe('a duplicate that carries the class properties', () => {
         return path;
       },
       deleteVob: (path) => { world.delete(path); },
+      restoreVob: () => { throw new Error('not a restore'); },
       setVobClassProp: (path, values) => { written.push(`${path} ${JSON.stringify(values)}`); },
     };
 
@@ -2066,11 +2083,16 @@ describe('a duplicate that carries the class properties', () => {
 describe('a delete op', () => {
   // The op §15 unblocked. The objection was never renumbering, it was
   // invertibility — an `oCMobInter` carries per-class properties, children, an
-  // AI and an event manager that no op describes. §15 withdrew it: the original
-  // Spacer has no undo at all, so an unundoable delete is already parity. What
-  // replaces `invertOp` as the gate is narrower and is the whole of what this op
-  // owes — the history has to record it as a **barrier**, and the user has to be
-  // told before it lands.
+  // AI and an event manager that no op describes. §15 shipped it as a
+  // **barrier** on the reasoning that the original Spacer has no undo at all, so
+  // an unundoable delete is already parity.
+  //
+  // **2026-09-14 it has an inverse** (§7, #271), and the way past the
+  // objection was to stop trying to describe the subtree: the binding keeps its
+  // pointer, `RestoreVob` puts that same object back at the slot it came from,
+  // and the op itself still carries an address and nothing else. So there is no
+  // barrier left in the op set, and what this op owes its batch is the
+  // renumbering rule every structural op owes.
   const reader = () => createVobReader(vobIndex([
     { childIndex: 0, name: 'ROOT_A' },
     { parent: 0, childIndex: 0, name: 'CHILD' },
@@ -2100,17 +2122,42 @@ describe('a delete op', () => {
     expect(isStructuralOp(deleteVob(reader(), 1))).toBe(true);
   });
 
-  it('has no inverse, and says so rather than inventing one', () => {
-    // An inverse built from the columns would insert a bare `zCVob` with the
-    // name and visual of an `oCMobInter` — the undo would look like it worked
-    // and would have thrown the VOB's class, its children and its AI away.
-    expect(() => invertOp(deleteVob(reader(), 1))).toThrow(/barrier|inverse/i);
-    expect(isBarrierOp(deleteVob(reader(), 1))).toBe(true);
-    expect(isBarrierOp(addVob(reader(), SPEC))).toBe(false);
-    expect(isBarrierOp(moveVob(reader(), 0, [1, 2, 3]))).toBe(false);
+  it('inverts to a restore of the same path, carrying no description of the VOB', () => {
+    // The shape the whole decision turns on. An inverse built from the columns
+    // would insert a bare `zCVob` with the name and visual of an `oCMobInter` —
+    // the undo would look like it worked and would have thrown the VOB's class,
+    // its children and its AI away. So the inverse describes *nothing*: it names
+    // a path, and what comes back is the subtree the binding retained.
+    const op = deleteVob(reader(), 1);
+
+    expect(invertOp(op)).toEqual({ op: 'RestoreVob', vob: 1, path: '0/0' });
+    // And back, so redo is the delete again and the stacks can be walked as
+    // often as the user likes.
+    expect(invertOp(invertOp(op))).toEqual(op);
   });
 
-  it('reaches the binding as a delete of the path it carries', () => {
+  it('is a removal for the viewport, where an add and a move are not', () => {
+    // `isDeleteOp` is what is left of `isBarrierOp`, and it answers the question
+    // that predicate was standing in for: this is the op the viewport never drew
+    // ahead of the round trip, so `putTheViewBack` must not invert it.
+    expect(isDeleteOp(deleteVob(reader(), 1))).toBe(true);
+    expect(isDeleteOp(addVob(reader(), SPEC))).toBe(false);
+    expect(isDeleteOp(moveVob(reader(), 0, [1, 2, 3]))).toBe(false);
+  });
+
+  it('renumbers as a restore too, and is structural', () => {
+    // There is no slot a restore could take that shifts nothing — it is an
+    // insert at an index on purpose, which is the half that makes the undo
+    // *correct* rather than merely present.
+    const restore = invertOp(deleteVob(reader(), 1));
+
+    expect(renumbersPaths(restore)).toBe(true);
+    expect(isStructuralOp(restore)).toBe(true);
+    expect(isWaynetOp(restore)).toBe(false);
+    expect(isDeleteOp(restore)).toBe(false);
+  });
+
+  it('reaches the binding as a delete of the path it carries, retaining it', () => {
     const calls: string[] = [];
     const binding: OpBinding = {
       addWaypoint: () => { throw new Error('not a waypoint add'); },
@@ -2123,7 +2170,8 @@ describe('a delete op', () => {
       setVobProp: () => { throw new Error('not a property change'); },
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => { throw new Error('not an insert'); },
-      deleteVob: (path) => { calls.push(`delete ${path}`); return undefined; },
+      deleteVob: (path, retain) => { calls.push(`delete ${path} retain=${retain}`); },
+      restoreVob: (path) => { calls.push(`restore ${path}`); return path; },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
@@ -2131,7 +2179,69 @@ describe('a delete op', () => {
 
     commitOps(binding, [deleteVob(reader(), 1)]);
 
-    expect(calls).toEqual(['delete 0/0']);
+    // `retain=true`, always: this is the delete whose inverse is a restore, and
+    // the retained subtree is what that restore puts back.
+    expect(calls).toEqual(['delete 0/0 retain=true']);
+  });
+
+  it('reaches the binding as a restore when it is undone, and deletes again on redo', () => {
+    const calls: string[] = [];
+    const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+      insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+      setVobPosition: () => { throw new Error('not a move'); },
+      setVobRotation: () => { throw new Error('not a turn'); },
+      setVobProp: () => { throw new Error('not a property change'); },
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: () => { throw new Error('not an insert'); },
+      deleteVob: (path, retain) => { calls.push(`delete ${path} retain=${retain}`); },
+      restoreVob: (path) => { calls.push(`restore ${path}`); return path; },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+    };
+    const op = deleteVob(reader(), 1);
+
+    commitOps(binding, [op]);
+    commitOps(binding, [invertOp(op)]);
+    commitOps(binding, [invertOp(invertOp(op))]);
+
+    expect(calls).toEqual([
+      'delete 0/0 retain=true', 'restore 0/0', 'delete 0/0 retain=true',
+    ]);
+  });
+
+  it('refuses a restore that lands somewhere else, and puts it back', () => {
+    // The guard the enumeration needs, in `insertWaypoint`'s idiom: a restore
+    // lands where it is told, so a mismatch means the tree was not the one the
+    // delete was made against — and the delete this inverts back to would then
+    // remove somebody else.
+    const calls: string[] = [];
+    const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+      insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+      setVobPosition: () => { throw new Error('not a move'); },
+      setVobRotation: () => { throw new Error('not a turn'); },
+      setVobProp: () => { throw new Error('not a property change'); },
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: () => { throw new Error('not an insert'); },
+      deleteVob: (path, retain) => { calls.push(`delete ${path} retain=${retain}`); },
+      restoreVob: () => { calls.push('restore'); return '1/7'; },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+    };
+
+    expect(() => commitOps(binding, [invertOp(deleteVob(reader(), 1))]))
+      .toThrow(/landed at 1\/7, not 0\/0/);
+    // Put back before reporting, so a refused op changes nothing.
+    expect(calls).toEqual(['restore', 'delete 1/7 retain=true']);
   });
 
   it('has to be alone in its batch', () => {
@@ -2147,6 +2257,7 @@ describe('a delete op', () => {
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => '2',
       deleteVob: () => {},
+      restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
@@ -2187,6 +2298,7 @@ describe('deleting a whole selection (#253)', () => {
     setVobClassProp: () => { throw new Error('not a class property change'); },
     insertVob: () => { throw new Error('not an insert'); },
     deleteVob: (path) => { log.push(path); },
+    restoreVob: () => { throw new Error('not a restore'); },
     reparentVob: () => { throw new Error('not a reparent'); },
     setWaypointPosition: () => { throw new Error('not a waypoint move'); },
     setWaypointName: () => { throw new Error('not a waypoint rename'); },
@@ -2217,12 +2329,47 @@ describe('deleting a whole selection (#253)', () => {
     expect(log).toEqual(['1', '0/0']);
   });
 
-  it('is still one batch, and still a barrier', () => {
-    // One entry in the history — which for a barrier is one clearing of both
-    // stacks rather than one undo — instead of N of them (#253).
+  it('is still one batch, and now one undo rather than one clearing', () => {
+    // One entry in the history instead of N of them (#253) — which used to mean
+    // one clearing of both stacks and now means what it means everywhere else,
+    // because each of these has an inverse (§7).
     const ops = deleteVobs(reader(), [3, 4]);
+
     expect(ops).toHaveLength(2);
-    expect(ops.every(isBarrierOp)).toBe(true);
+    expect(ops.every(isDeleteOp)).toBe(true);
+    // And the batch inverts the way `WorldService.replayOne` inverts one:
+    // reversed, so the restores refill the slots in ascending order.
+    expect([...ops].reverse().map(invertOp)).toEqual([
+      { op: 'RestoreVob', vob: 3, path: '0/1' },
+      { op: 'RestoreVob', vob: 4, path: '1' },
+    ]);
+  });
+
+  it('undoes as a batch of restores in ascending order', () => {
+    // The mirror of the shape that makes the delete batch safe, and it has to be
+    // allowed or a multi-VOB delete would be uninvertible as a *batch* while
+    // each of its ops has an inverse. Refilling the slots in ascending order
+    // puts each subtree back at the address the delete recorded.
+    const log: string[] = [];
+    const binding = deleteBinding(log);
+    binding.restoreVob = (path) => { log.push(`restore ${path}`); return path; };
+    const ops = deleteVobs(reader(), [1, 3, 4]);
+
+    commitOps(binding, ops);
+    commitOps(binding, [...ops].reverse().map(invertOp));
+
+    expect(log).toEqual([
+      '1', '0/1', '0/0',
+      'restore 0/0', 'restore 0/1', 'restore 1',
+    ]);
+  });
+
+  it('refuses a batch of restores that is not in ascending order', () => {
+    // The exception is the shape, not the op — exactly as it is for the deletes.
+    const log: string[] = [];
+    const ops = deleteVobs(reader(), [1, 4]).map(invertOp);
+
+    expect(() => commitOps(deleteBinding(log), ops)).toThrow(/only op in its batch/);
   });
 
   it('refuses a delete batch that is not in reverse order', () => {
@@ -2242,21 +2389,29 @@ describe('deleting a whole selection (#253)', () => {
       .toThrow(/only op in its batch/);
   });
 
-  it('says the world is part-changed when one of them fails, rather than unwinding', () => {
-    // There is nothing to unwind a delete with, so a batch that stops half way
-    // is the one case `commitOps` cannot make all-or-nothing. It says so in
-    // place of the ordinary refusal, which would tell the user nothing had
-    // happened.
+  it('unwinds the deletes it already made when one of them fails', () => {
+    // This used to be the one batch `commitOps` could not make all-or-nothing —
+    // the unwind replays `'from'`, which a delete refused, so a batch that
+    // stopped half way had removed everything before the failure with nothing to
+    // put any of it back with, and it said so instead of pretending. The
+    // retained subtrees closed it (§7): `'from'` on a delete is a restore,
+    // and the unwind walks the applied ops back to front, which is the order the
+    // retain stack hands them back in.
     const log: string[] = [];
     const binding = deleteBinding(log);
     binding.deleteVob = (path) => {
       log.push(path);
-      if (log.length === 2) throw new Error('no such path');
+      if (log.filter((entry) => !entry.startsWith('restore')).length === 2) {
+        throw new Error('no such path');
+      }
     };
+    binding.restoreVob = (path) => { log.push(`restore ${path}`); return path; };
 
     expect(() => commitOps(binding, deleteVobs(reader(), [1, 3, 4])))
-      .toThrow(/re-open/i);
-    expect(log).toEqual(['1', '0/1']);
+      .toThrow(/no such path/);
+    // The first delete went through and was put back; the second failed, so it
+    // has nothing to undo.
+    expect(log).toEqual(['1', '0/1', 'restore 1']);
   });
 
   it('refuses the first one the ordinary way, having changed nothing', () => {
@@ -2330,7 +2485,9 @@ describe('a reparent op', () => {
     const op = reparentVob(reader(), 2, null, 0);
 
     expect(op.from.parentPath).toBe('0');
-    expect(invertOp(op).to).toEqual({ path: '0/1', parentPath: '1', slot: 1 });
+    const undo = invertOp(op);
+    expect(undo.op === 'ReparentVob' && undo.to)
+      .toEqual({ path: '0/1', parentPath: '1', slot: 1 });
   });
 
   it('reaches the binding from the path the VOB is at, each way round', () => {
@@ -2349,6 +2506,7 @@ describe('a reparent op', () => {
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => { throw new Error('not an insert'); },
       deleteVob: () => { throw new Error('not a delete'); },
+      restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: (from, parent, slot) => {
         calls.push(`${from} -> ${parent}[${slot}]`);
         return parent === null ? String(slot) : `${parent}/${slot}`;
@@ -2413,6 +2571,7 @@ describe('a reparent op', () => {
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => { throw new Error('not an insert'); },
       deleteVob: () => { throw new Error('not a delete'); },
+      restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: (from, parentPath, slot) => {
         const segments = from.split('/').map(Number);
         const sourceList = listAt(segments.length === 1 ? null : segments.slice(0, -1).join('/'));
@@ -2486,6 +2645,7 @@ describe('a reparent op', () => {
       setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => '0', deleteVob: () => {},
+      restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => '9/9',
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
@@ -2530,6 +2690,7 @@ describe('a reparent op', () => {
       setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => '2', deleteVob: () => {}, reparentVob: () => '0/0/0',
+      restoreVob: () => { throw new Error('not a restore'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
     };
@@ -2677,6 +2838,7 @@ describe('committing ops to the world', () => {
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => { throw new Error('no structural ops in this batch'); },
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
@@ -2731,6 +2893,7 @@ describe('committing ops to the world', () => {
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => { throw new Error('no structural ops in this batch'); },
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
@@ -2765,6 +2928,7 @@ describe('committing ops to the world', () => {
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => { throw new Error('no structural ops in this batch'); },
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
@@ -2814,6 +2978,7 @@ describe('moving a waypoint', () => {
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => { throw new Error('no structural ops in this batch'); },
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: (waypoint, name, to) => {
         if (name === refuse) throw new Error(`no waypoint ${name}`);
@@ -2959,6 +3124,7 @@ describe('renaming a waypoint', () => {
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => { throw new Error('no structural ops in this batch'); },
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
       setWaypointName: (waypoint, name, to) => {
@@ -3073,6 +3239,7 @@ describe('adding a waypoint', () => {
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => { throw new Error('no structural ops in this batch'); },
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
@@ -3148,7 +3315,7 @@ describe('adding a waypoint', () => {
 
     expect(isStructuralOp(op)).toBe(false);
     expect(renumbersPaths(op)).toBe(false);
-    expect(isBarrierOp(op)).toBe(false);
+    expect(isDeleteOp(op)).toBe(false);
     expect(isWaynetOp(op)).toBe(true);
   });
 
@@ -3179,6 +3346,7 @@ describe('joining and unjoining two waypoints', () => {
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => { throw new Error('no structural ops in this batch'); },
       deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
@@ -3257,7 +3425,7 @@ describe('joining and unjoining two waypoints', () => {
 
     expect(isStructuralOp(op)).toBe(false);
     expect(renumbersPaths(op)).toBe(false);
-    expect(isBarrierOp(op)).toBe(false);
+    expect(isDeleteOp(op)).toBe(false);
     expect(isWaynetOp(op)).toBe(true);
   });
 
@@ -3272,7 +3440,7 @@ describe('joining and unjoining two waypoints', () => {
 
 describe('deleting a waypoint', () => {
   // W4 (§16.7) — the one waynet op that renumbers, and **the delete that got an
-  // inverse** (§16.42). §15 shipped it as a barrier for `DeleteVob`'s reason;
+  // inverse** (§7). §15 shipped it as a barrier for `DeleteVob`'s reason;
   // 2026-09-12 withdrew that for this half, because the two things an inverse
   // needs are both cheap here: a waypoint is five scalars and a set of edges, so
   // the record is the waypoint rather than an approximation of it, and the
@@ -3312,6 +3480,7 @@ describe('deleting a waypoint', () => {
       setVobClassProp: () => { throw new Error('not a class property change'); },
       insertVob: () => { throw new Error('no structural ops in this batch'); },
       deleteVob: () => { throw new Error('not a vob delete'); },
+      restoreVob: () => { throw new Error('not a restore'); },
       reparentVob: () => { throw new Error('not a reparent'); },
       setWaypointPosition: () => { throw new Error('not a waypoint move'); },
       setWaypointName: () => { throw new Error('not a waypoint rename'); },
@@ -3365,7 +3534,7 @@ describe('deleting a waypoint', () => {
       op: 'DeleteWaypoint', waypoint: 1, name: 'WP_FIXTURE_A', from: null, to: RECORD,
     });
     expect(invertOp(restore)).toEqual(op);
-    expect(isBarrierOp(op)).toBe(false);
+    expect(isDeleteOp(op)).toBe(true);
   });
 
   it('is a waynet op that renumbers waypoints and nothing else', () => {
@@ -3669,7 +3838,7 @@ describe('a scatter stroke', () => {
     ]);
 
     expect(ops.every((op) => op.op === 'AddVob' || op.op === 'SetVobClassProp')).toBe(true);
-    expect(ops.some((op) => isBarrierOp(op as WorldOp))).toBe(false);
+    expect(ops.some((op) => isDeleteOp(op as WorldOp))).toBe(false);
   });
 
   it('refuses the whole stroke when a source is not in the index', () => {
