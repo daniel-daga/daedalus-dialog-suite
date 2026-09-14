@@ -286,6 +286,31 @@ trusting master for a release, not after.
   regression the stubs cannot express — the lock refused, the deltas'
   sign, Escape — needs a pass in the real app.
 
+## The local `master` in a cloud container is not master
+
+- **Observed 2026-09-14: the container's local `master` ref had an unrelated
+  history to `origin/master`** — 122 commits on one side, 83 on the other, and
+  `git merge` refusing with *"refusing to merge unrelated histories"*. Its tip
+  was a `Merge pull request #233` commit, so it is a lineage from before master
+  became the linear history it is now. `origin/master` is the authoritative one;
+  the local ref was never checked out or updated by anything in the session.
+- **This is a destructive trap, not an inconvenience.** The obvious next move
+  after that refusal — force-pushing the local branch, or `git push --force`
+  from a checked-out `master` — would overwrite the real master with a lineage
+  missing every commit since the migration off pull requests.
+- **Land work by pushing the ref, and check the ancestry first.** The remote
+  fast-forward needs no local `master` at all:
+
+  ```
+  git fetch origin master
+  git merge-base --is-ancestor origin/master HEAD   # must succeed
+  git push origin <your-branch>:master              # no --force, ever
+  ```
+
+  If `--is-ancestor` fails, master really has moved and the branch wants a
+  merge of `origin/master` into it — which is a different thing from the stale
+  local ref above, and the only one worth acting on.
+
 ## Playwright in the Claude Code cloud container
 
 - **The pinned browser build is not the one the image ships.** The image ships
