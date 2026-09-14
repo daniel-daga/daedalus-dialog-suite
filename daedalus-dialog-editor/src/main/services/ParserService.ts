@@ -1,7 +1,7 @@
-import { Worker } from 'worker_threads';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import * as os from 'os';
+import { ForkedWorker, describeExit } from './ForkedWorker';
 import { WorkerRequestError } from './WorkerRequestError';
 import { workerPoolSize } from './workerPoolSize';
 
@@ -31,10 +31,10 @@ export interface ParserServiceOptions {
 }
 
 export class ParserService {
-  private workers: Worker[] = [];
-  private idleWorkers: Worker[] = [];
+  private workers: ForkedWorker[] = [];
+  private idleWorkers: ForkedWorker[] = [];
   private requestQueue: QueuedRequest[] = [];
-  private inFlightByWorker: Map<Worker, InFlight> = new Map();
+  private inFlightByWorker: Map<ForkedWorker, InFlight> = new Map();
   private pendingRequests: Map<string, PendingRequest> = new Map();
   private readonly workerPath: string;
   private readonly timeoutMs: number;
@@ -43,11 +43,11 @@ export class ParserService {
   private restartTimestamps: number[] = [];
   private degraded = false;
   /**
-   * `terminate()` is asynchronous: the thread is still alive — and its
-   * MessagePort still an open handle in this process — until the returned
-   * promise settles. A worker retired mid-run is therefore remembered here so
-   * `dispose()` can wait for it too; otherwise teardown returns while a thread
-   * is still running and nothing can tell when the process is free to exit.
+   * `terminate()` is asynchronous: the child is still alive — and its IPC pipe
+   * still an open handle in this process — until the returned promise settles.
+   * A worker retired mid-run is therefore remembered here so `dispose()` can
+   * wait for it too; otherwise teardown returns while a child is still running
+   * and nothing can tell when the process is free to exit.
    */
   private pendingTerminations: Array<Promise<number>> = [];
 
@@ -60,7 +60,7 @@ export class ParserService {
     this.workerCount = options.workerCount ?? workerPoolSize(os.cpus().length);
   }
 
-  /** Threads this pool runs once started. */
+  /** Child processes this pool runs once started. */
   get poolSize(): number {
     return this.workerCount;
   }
@@ -69,7 +69,7 @@ export class ParserService {
    * The pool is not spawned until something actually asks for a parse — the
    * same laziness WorldService has, and for the same reason: `main.ts`
    * constructs this service at module load, and a dialog-only session (or a
-   * test that only imports `main.ts`) should not inherit eight live threads.
+   * test that only imports `main.ts`) should not inherit eight live processes.
    */
   private startPool() {
     this.started = true;
@@ -82,12 +82,8 @@ export class ParserService {
     }
   }
 
-  private spawnWorker(): Worker {
-    const worker = new Worker(this.workerPath, {
-      // Runaway memory becomes a catchable ERR_WORKER_OUT_OF_MEMORY 'error'
-      // event instead of an OS-level kill of the shared main process.
-      resourceLimits: { maxOldGenerationSizeMb: 512 },
-    });
+  private spawnWorker(): ForkedWorker {
+    const worker = new ForkedWorker(this.workerPath);
 
     worker.on('message', (message: { id: string; result?: any; error?: string }) => {
       this.handleMessage(worker, message);
@@ -102,21 +98,17 @@ export class ParserService {
     // treating a clean exit as normal left that request waiting out the 30 s
     // timeout. `retireWorker` is a no-op for a worker already out of the array,
     // so a deliberate `terminate()` — retire, or `dispose()` — stays quiet.
-    worker.on('exit', (code) => {
-      this.handleWorkerDeath(worker, `exit code ${code}`);
-    });
-
-    worker.on('messageerror', (err) => {
-      // No request id is available on this event; the per-request timeout is the
-      // backstop that settles the orphaned request.
-      console.error('[ParserService] worker messageerror:', err);
+    // A native crash arrives here and nowhere else, which is why the signal is
+    // named: `killed by SIGSEGV` is the whole diagnosis the user gets.
+    worker.on('exit', (code, signal) => {
+      this.handleWorkerDeath(worker, describeExit(code, signal));
     });
 
     this.workers.push(worker);
     return worker;
   }
 
-  private handleMessage(worker: Worker, message: { id: string; result?: any; error?: string }) {
+  private handleMessage(worker: ForkedWorker, message: { id: string; result?: any; error?: string }) {
     const { id, result, error } = message;
 
     const inFlight = this.inFlightByWorker.get(worker);
@@ -138,13 +130,13 @@ export class ParserService {
     this.workerBecameIdle(worker);
   }
 
-  private assignRequest(worker: Worker, request: QueuedRequest) {
+  private assignRequest(worker: ForkedWorker, request: QueuedRequest) {
     const timer = setTimeout(() => this.handleTimeout(worker, request.id), this.timeoutMs);
     this.inFlightByWorker.set(worker, { id: request.id, timer });
     worker.postMessage({ id: request.id, sourceCode: request.sourceCode });
   }
 
-  private workerBecameIdle(worker: Worker) {
+  private workerBecameIdle(worker: ForkedWorker) {
     if (!this.workers.includes(worker)) return; // retired worker
 
     const request = this.requestQueue.shift();
@@ -155,7 +147,7 @@ export class ParserService {
     }
   }
 
-  private handleTimeout(worker: Worker, id: string) {
+  private handleTimeout(worker: ForkedWorker, id: string) {
     const inFlight = this.inFlightByWorker.get(worker);
     if (!inFlight || inFlight.id !== id) return; // already settled
 
@@ -167,19 +159,19 @@ export class ParserService {
       pending.reject(new WorkerRequestError('Parser request timed out', 'timeout'));
     }
 
-    // A hung native parse cannot be cancelled; terminate() is best-effort (a
-    // thread wedged inside tree-sitter native code may not die until it
-    // returns). Removing the worker from rotation is the real protection.
+    // A hung native parse cannot be cancelled from inside, but the child holds
+    // nothing this process needs, so SIGKILL ends it outright. Removing the
+    // worker from rotation is what keeps the pool usable either way.
     this.retireWorker(worker, 'Parser worker terminated after a request timed out');
   }
 
-  private handleWorkerDeath(worker: Worker, reason: string) {
+  private handleWorkerDeath(worker: ForkedWorker, reason: string) {
     // error + exit can both fire for one crash; retireWorker is a no-op the
     // second time because the worker is already out of the array.
     this.retireWorker(worker, `Parser worker crashed (${reason})`);
   }
 
-  private retireWorker(worker: Worker, crashMessage: string) {
+  private retireWorker(worker: ForkedWorker, crashMessage: string) {
     const index = this.workers.indexOf(worker);
     if (index === -1) return;
 
@@ -257,7 +249,7 @@ export class ParserService {
   /**
    * Terminate all workers and clear pending state (test/teardown helper).
    *
-   * Resolves only once every thread has actually exited, so a caller can know
+   * Resolves only once every child has actually exited, so a caller can know
    * the process holds no worker handles any more.
    */
   async dispose(): Promise<void> {

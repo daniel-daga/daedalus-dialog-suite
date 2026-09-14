@@ -2,7 +2,7 @@
  * MetadataWorkerPool worker-lifecycle tests (D2).
  *
  * forceWorkerMode bypasses the inline-processing test shortcut so real
- * worker_threads run against stub worker scripts.
+ * worker processes run against stub worker scripts.
  *
  * @jest-environment node
  */
@@ -15,9 +15,6 @@ import { WorkerRequestError } from '../../src/main/services/WorkerRequestError';
 
 const FIXTURE_DIR = path.join(__dirname, '../fixtures/workers');
 const workerFixture = (name: string) => path.join(FIXTURE_DIR, name);
-
-const once = (emitter: { once: (e: string, cb: (...a: any[]) => void) => void }, event: string) =>
-  new Promise<void>((resolve) => emitter.once(event, () => resolve()));
 
 describe('MetadataWorkerPool worker lifecycle', () => {
   const pools: MetadataWorkerPool[] = [];
@@ -40,28 +37,37 @@ describe('MetadataWorkerPool worker lifecycle', () => {
     }
   });
 
-  // A worker thread that is still alive keeps a MessagePort open in the parent,
+  // A worker process that is still alive keeps its IPC pipe open in the parent,
   // and that handle keeps the whole Jest worker *process* from exiting. Jest
   // force-kills it after 500 ms and prints "A worker process has failed to exit
   // gracefully". `terminate()` therefore has to be awaitable: firing
-  // `worker.terminate()` and returning leaves the port open past the end of the
-  // test file.
-  const activeMessagePorts = () =>
-    (process as unknown as { _getActiveHandles(): unknown[] })
-      ._getActiveHandles()
-      .filter((h) => (h as { constructor?: { name?: string } })?.constructor?.name === 'MessagePort')
-      .length;
+  // `worker.terminate()` and returning leaves the child running past the end of
+  // the test file. `kill(pid, 0)` is how that is observed from outside — and it
+  // is not fooled by a zombie, because the exit event `terminate()` waits on is
+  // the same one that reaps the child.
+  const workerPids = (pool: unknown): number[] =>
+    (pool as { workers: Array<{ child: { pid: number } }> }).workers.map((w) => w.child.pid);
+  const isAlive = (pid: number) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
 
-  it('terminate() resolves only once every worker thread has exited', async () => {
+  it('terminate() resolves only once every worker process has exited', async () => {
     const pool = makePool('echo.worker.js');
     await pool.processFile('warm-the-pool');
 
-    // Guard against a vacuous pass: the pool must really be running threads.
-    expect(activeMessagePorts()).toBeGreaterThan(0);
+    // Guard against a vacuous pass: the pool must really be running children.
+    const pids = workerPids(pool);
+    expect(pids.length).toBeGreaterThan(0);
+    expect(pids.every(isAlive)).toBe(true);
 
     await pool.terminate();
 
-    expect(activeMessagePorts()).toBe(0);
+    expect(pids.filter(isAlive)).toEqual([]);
   });
 
   it('carries every metadata field back from the worker, not only the first few', async () => {
@@ -104,6 +110,21 @@ describe('MetadataWorkerPool worker lifecycle', () => {
     expect(result.filePath).toBe('__EXIT0__');
   });
 
+  // The other half of #268: this pool loads the same native parser, so it is
+  // behind the same process boundary. On `worker_threads` the fixture's fatal
+  // signal killed the Jest runner rather than failing this test.
+  it('survives a hard native crash in a worker', async () => {
+    const pool = makePool('abort.worker.js');
+
+    // The retry lands on a replacement, which the same file kills again; the
+    // poison-file guard then records it as a failure rather than looping.
+    const result: any = await pool.processFile('__ABORT__');
+    expect(result.ok).toBe(false);
+
+    // The pool — and this process — are still here to serve the next file.
+    await expect(pool.processFile('after')).resolves.toBeDefined();
+  });
+
   it('recovers when a worker dies while idle and still processes the next task', async () => {
     const pool = makePool('echo.worker.js');
 
@@ -112,14 +133,9 @@ describe('MetadataWorkerPool worker lifecycle', () => {
 
     // Kill every worker while idle. Buggy code leaves the dead workers in the
     // idle pool with no replacement, so the next task hangs.
+    // `terminate()` settles only once the child is actually gone.
     const workers: any[] = (pool as any).workers.slice();
-    await Promise.all(
-      workers.map((w) => {
-        const exited = once(w, 'exit');
-        w.terminate();
-        return exited;
-      }),
-    );
+    await Promise.all(workers.map((w) => w.terminate()));
 
     await expect(pool.processFile('second')).resolves.toBeDefined();
   });

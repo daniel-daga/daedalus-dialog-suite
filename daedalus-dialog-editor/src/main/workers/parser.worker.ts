@@ -1,4 +1,3 @@
-import { parentPort } from 'worker_threads';
 import { SemanticModelBuilderVisitor } from 'daedalus-parser/semantic-visitor';
 
 import DaedalusParser from 'daedalus-parser';
@@ -8,8 +7,13 @@ import DaedalusParser from 'daedalus-parser';
 // This avoids "Invalid argument" errors caused by mismatched tree-sitter versions.
 const daedalusWrapper = new DaedalusParser();
 
-if (parentPort) {
-  parentPort.on('message', (message: { id: string; sourceCode: string }) => {
+// This runs as a forked child process, not a worker thread: a SIGSEGV inside
+// tree-sitter must not be able to reach the Electron main process. See
+// `ForkedWorker`.
+const send = process.send?.bind(process);
+
+if (send) {
+  process.on('message', (message: { id: string; sourceCode: string }) => {
     try {
       const { id, sourceCode } = message;
 
@@ -28,7 +32,7 @@ if (parentPort) {
 
       // If there are syntax errors, return the model with errors immediately
       if (visitor.semanticModel.hasErrors) {
-        parentPort!.postMessage({ id, result: visitor.semanticModel });
+        send({ id, result: visitor.semanticModel });
         return;
       }
 
@@ -37,10 +41,10 @@ if (parentPort) {
       visitor.pass2_analyzeAndLink(tree.rootNode as any);
 
       // Return the semantic model
-      parentPort!.postMessage({ id, result: visitor.semanticModel });
+      send({ id, result: visitor.semanticModel });
     } catch (error) {
       console.error('[Worker] Error during parsing:', error);
-      parentPort!.postMessage({
+      send({
         id: message.id,
         error: error instanceof Error ? error.message : 'Unknown worker error'
       });

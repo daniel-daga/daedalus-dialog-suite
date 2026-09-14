@@ -15,18 +15,17 @@ jest.mock('os', () => ({
   cpus: () => Array.from({ length: cpuCount }, () => ({ model: 'stub' })),
 }));
 
-// No thread is ever started: a fake Worker keeps the count test cheap at 32 cores.
-jest.mock('worker_threads', () => {
+// No child is ever forked: a fake keeps the count test cheap at 32 cores.
+jest.mock('child_process', () => {
   const { EventEmitter } = jest.requireActual('events');
-  class FakeWorker extends EventEmitter {
-    threadId = 0;
-    postMessage() {}
-    terminate() {
-      return Promise.resolve(0);
+  class FakeChild extends EventEmitter {
+    send() {}
+    kill() {
+      this.emit('exit', 0, null);
+      return true;
     }
-    unref() {}
   }
-  return { ...jest.requireActual('worker_threads'), Worker: FakeWorker };
+  return { ...jest.requireActual('child_process'), fork: () => new FakeChild() };
 });
 
 import { ParserService } from '../../src/main/services/ParserService';

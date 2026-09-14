@@ -131,13 +131,12 @@ Currently preserved only as verbatim raw `Action` entries
 richer structural editing of condition/info functions and keeps biting features
 like the if/else editor (#145). **Effort:** medium (parser + editor).
 
-### 10. Native parser process isolation
+### 10. Native parser process isolation — done
 
-Already documented in `docs/refactoring-targets.md` §4: a tree-sitter segfault
-in a `worker_threads` pool kills the whole Electron main process. Move the
-native parser into a `utilityProcess` so a crash kills only the child. Worth
-doing before a public release rather than after the first crash report.
-**Effort:** large (new process boundary + IPC).
+Landed 2026-09-14 (#268): both parser pools fork a child process per worker, so
+a tree-sitter segfault kills only that child. `child_process.fork` rather than
+`utilityProcess`. See `docs/architecture/worker-reliability.md`, "Process
+isolation".
 
 ### 11. Localization export/import
 

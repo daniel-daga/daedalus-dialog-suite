@@ -1,14 +1,14 @@
 /**
- * Importing `main.ts` must not spawn a worker thread.
+ * Importing `main.ts` must not spawn a worker process.
  *
  * `WorldService` has always been lazy this way — constructed eagerly, but its
  * worker (and the native addon behind it) only starts when a world is opened.
  * `ParserService` was not: its constructor spawned an 8-worker pool at module
- * load, so any test that imports `main.ts` inherited eight live threads and the
+ * load, so any test that imports `main.ts` inherited eight live workers and the
  * "A worker process has failed to exit gracefully" warning that comes with them.
  *
- * The assertion is on the real thing — `worker_threads.Worker` constructions —
- * not on a proxy for it.
+ * The assertion is on the real thing — `child_process.fork` calls — not on a
+ * proxy for it.
  *
  * @jest-environment node
  */
@@ -18,23 +18,27 @@ import * as os from 'os';
 
 type Handler = (event: unknown, ...args: unknown[]) => unknown;
 
-jest.mock('worker_threads', () => {
-  const actual = jest.requireActual<typeof import('worker_threads')>('worker_threads');
+jest.mock('child_process', () => {
+  const actual = jest.requireActual<typeof import('child_process')>('child_process');
   const { EventEmitter: EE } = jest.requireActual<typeof import('events')>('events');
-  const constructed: string[] = [];
-  class FakeWorker extends EE {
-    constructor(scriptPath: string) {
-      super();
-      constructed.push(String(scriptPath));
-    }
-    postMessage() {
+  const forked: string[] = [];
+  class FakeChild extends EE {
+    send() {
       /* the pool never gets an answer here; no test below awaits one */
     }
-    terminate() {
-      return Promise.resolve(0);
+    kill() {
+      this.emit('exit', 0, null);
+      return true;
     }
   }
-  return { ...actual, Worker: FakeWorker, __constructed: constructed };
+  return {
+    ...actual,
+    fork: (scriptPath: string) => {
+      forked.push(String(scriptPath));
+      return new FakeChild();
+    },
+    __forked: forked,
+  };
 });
 
 jest.mock('electron', () => ({
@@ -54,29 +58,29 @@ jest.mock('electron', () => ({
   shell: {},
 }));
 
-const workerThreads = jest.requireMock('worker_threads') as { __constructed: string[] };
+const childProcess = jest.requireMock('child_process') as { __forked: string[] };
 
 describe('main.ts startup cost', () => {
   beforeEach(() => {
-    workerThreads.__constructed.length = 0;
+    childProcess.__forked.length = 0;
   });
 
-  it('constructs no worker thread at import time', async () => {
+  it('forks no worker process at import time', async () => {
     await import('../src/main/main');
 
-    expect(workerThreads.__constructed).toEqual([]);
+    expect(childProcess.__forked).toEqual([]);
   });
 
   it('still spawns the parser pool on the first parse', async () => {
     const { ParserService } = await import('../src/main/services/ParserService');
 
     const service = new ParserService({ workerCount: 2, workerPath: '/fake/parser.worker.js' });
-    expect(workerThreads.__constructed).toEqual([]);
+    expect(childProcess.__forked).toEqual([]);
 
     // Deliberately not awaited: the fake worker never answers. The point is
     // that asking for a parse is what brings the pool up.
     void service.parseSource('func void x() {};');
-    expect(workerThreads.__constructed).toEqual(['/fake/parser.worker.js', '/fake/parser.worker.js']);
+    expect(childProcess.__forked).toEqual(['/fake/parser.worker.js', '/fake/parser.worker.js']);
 
     await service.dispose();
   });

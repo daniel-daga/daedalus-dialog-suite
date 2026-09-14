@@ -51,28 +51,24 @@ it fail, which is the only way to tell this test from one that passes on its own
 
 ---
 
-### 4. Native parser isolation — survive a hard tree-sitter crash (SIGSEGV)
-**Files:** `daedalus-dialog-editor/src/main/services/ParserService.ts`,
+### 4. Native parser isolation — survive a hard tree-sitter crash (SIGSEGV) — done
+**Files:** `daedalus-dialog-editor/src/main/services/ForkedWorker.ts`,
+`daedalus-dialog-editor/src/main/services/ParserService.ts`,
+`daedalus-dialog-editor/src/main/services/MetadataWorkerPool.ts`,
 `daedalus-dialog-editor/src/main/workers/parser.worker.ts`,
 `daedalus-dialog-editor/src/main/workers/metadata.worker.ts`
 
-Documented as the "Known limitation: native SIGSEGV" in
-[`architecture/worker-reliability.md`](./architecture/worker-reliability.md). The parser
-pools run tree-sitter in Node `worker_threads`, which are threads in the **same** process.
-A hard native crash (SIGSEGV/abort) inside tree-sitter kills the entire Electron main
-process — no `error`/`exit` event fires, so the slice-3 restart-with-replacement machinery
-cannot help. Slice 3's defenses cover only the recoverable modes (JS exceptions escaping
-the worker, OOM via `resourceLimits`, self-exit, timeout hangs); slice 8 added crash
-*visibility* (`render-process-gone`/`child-process-gone` handlers + `LogService`) but not
-recovery. So a malformed input that segfaults the native parser takes down the whole app.
-
-Not a worker-reliability bug — an architecture boundary. Fix option: move the native
-parser out of the main process into an isolated **`utilityProcess`** (or `child_process`),
-so a native crash kills only that child and the existing pool can respawn it, instead of
-`worker_threads` sharing the main process's fate. Larger effort (new process boundary + IPC
-serialization for parse requests/results); deferred until a real segfault is observed in
-practice. Note the NAPI `npmRebuild: false` invariant still applies to whatever process
-loads the addon.
+Landed 2026-09-14 (#268). Both pools fork a child process per worker instead of
+spawning a `worker_threads` thread, so a SIGSEGV inside tree-sitter kills only that
+child and arrives as the `exit` event the restart-with-replacement machinery already
+handles. `ForkedWorker` is the whole boundary — a `Worker`-shaped wrapper around
+`child_process.fork` — so the timeouts, restart caps, idle dispatch and failure
+classification are untouched. `child_process` rather than `utilityProcess`, because
+`utilityProcess` exists only inside a ready Electron app and the pool-lifecycle tests
+are the safety net. The decisions and what is still unwitnessed (a fork out of a
+packaged `app.asar`) are in
+[`architecture/worker-reliability.md`](./architecture/worker-reliability.md),
+"Process isolation".
 
 ---
 

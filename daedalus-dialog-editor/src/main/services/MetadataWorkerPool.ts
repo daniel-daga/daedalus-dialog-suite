@@ -1,4 +1,3 @@
-import { Worker } from 'worker_threads';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
@@ -6,6 +5,7 @@ import { randomUUID } from 'crypto';
 import type { DialogMetadata, FileParseErrors, SemanticModel } from '../../shared/types';
 import { promises as fsPromises } from 'fs';
 import { decodeBuffer } from '../utils/encodingUtils';
+import { ForkedWorker } from './ForkedWorker';
 import { WorkerRequestError } from './WorkerRequestError';
 import { workerPoolSize } from './workerPoolSize';
 
@@ -69,21 +69,20 @@ function isLikelyTestRuntime(): boolean {
 }
 
 export class MetadataWorkerPool {
-  private workers: Worker[] = [];
+  private workers: ForkedWorker[] = [];
   private pendingRequests: Map<string, PendingTask> = new Map();
-  private idleWorkers: Worker[] = [];
+  private idleWorkers: ForkedWorker[] = [];
   private taskQueue: Task[] = [];
-  private inFlightByWorker: Map<Worker, InFlight> = new Map();
+  private inFlightByWorker: Map<ForkedWorker, InFlight> = new Map();
   private isTerminated = false;
   private isDegraded = false;
   private useInlineProcessing = false;
   /**
-   * `terminate()` is asynchronous: the thread is still alive — and its
-   * MessagePort still an open handle in this process — until the returned
-   * promise settles. A worker replaced mid-run is therefore remembered here so
-   * `terminate()` can wait for it too; otherwise teardown returns while a
-   * thread is still running and nothing can tell when the process is free to
-   * exit.
+   * `terminate()` is asynchronous: the child is still alive — and its IPC pipe
+   * still an open handle in this process — until the returned promise settles.
+   * A worker replaced mid-run is therefore remembered here so `terminate()` can
+   * wait for it too; otherwise teardown returns while a child is still running
+   * and nothing can tell when the process is free to exit.
    */
   private pendingTerminations: Array<Promise<number>> = [];
   private workerPath = '';
@@ -114,7 +113,7 @@ export class MetadataWorkerPool {
     }
   }
 
-  /** Threads this pool runs; 0 when it processes inline. */
+  /** Child processes this pool runs; 0 when it processes inline. */
   get poolSize(): number {
     return this.workerCount;
   }
@@ -146,10 +145,8 @@ export class MetadataWorkerPool {
     return workerPath;
   }
 
-  private spawnWorker(): Worker {
-    const worker = new Worker(this.workerPath, {
-      resourceLimits: { maxOldGenerationSizeMb: 512 },
-    });
+  private spawnWorker(): ForkedWorker {
+    const worker = new ForkedWorker(this.workerPath);
 
     worker.on('message', (message: {
       id: string;
@@ -177,15 +174,11 @@ export class MetadataWorkerPool {
       this.handleWorkerDeath(worker);
     });
 
-    worker.on('messageerror', (err) => {
-      console.error('[MetadataWorkerPool] worker messageerror:', err);
-    });
-
     this.workers.push(worker);
     return worker;
   }
 
-  private handleMessage(worker: Worker, message: {
+  private handleMessage(worker: ForkedWorker, message: {
     id: string;
     dialogs?: DialogMetadata[];
     instances?: Array<{ name: string; parent: string }>;
@@ -235,13 +228,13 @@ export class MetadataWorkerPool {
     this.workerBecameIdle(worker);
   }
 
-  private assignTask(worker: Worker, task: Task) {
+  private assignTask(worker: ForkedWorker, task: Task) {
     const timer = setTimeout(() => this.handleTimeout(worker, task), this.taskTimeoutMs);
     this.inFlightByWorker.set(worker, { id: task.id, filePath: task.filePath, retries: task.retries, timer });
     worker.postMessage({ id: task.id, filePath: task.filePath });
   }
 
-  private workerBecameIdle(worker: Worker) {
+  private workerBecameIdle(worker: ForkedWorker) {
     if (this.isTerminated) return;
     if (!this.workers.includes(worker)) return; // retired worker
 
@@ -253,7 +246,7 @@ export class MetadataWorkerPool {
     }
   }
 
-  private handleTimeout(worker: Worker, task: Task) {
+  private handleTimeout(worker: ForkedWorker, task: Task) {
     const inFlight = this.inFlightByWorker.get(worker);
     if (!inFlight || inFlight.id !== task.id) return; // already settled
 
@@ -265,11 +258,12 @@ export class MetadataWorkerPool {
       pending.resolve({ ok: false, filePath: task.filePath, error: 'Metadata worker timed out' });
     }
 
-    // A hung native parse cannot be cancelled; terminate() is best-effort.
+    // A hung native parse cannot be cancelled from inside; SIGKILL ends the
+    // child outright.
     this.replaceDeadWorker(worker, null);
   }
 
-  private handleWorkerDeath(worker: Worker) {
+  private handleWorkerDeath(worker: ForkedWorker) {
     if (this.isTerminated) return;
     if (!this.workers.includes(worker)) return; // error + exit double-fire, or already handled
 
@@ -300,7 +294,7 @@ export class MetadataWorkerPool {
     this.replaceDeadWorker(worker, retryTask);
   }
 
-  private replaceDeadWorker(worker: Worker, retryTask: Task | null) {
+  private replaceDeadWorker(worker: ForkedWorker, retryTask: Task | null) {
     const wi = this.workers.indexOf(worker);
     if (wi !== -1) this.workers.splice(wi, 1);
     const ii = this.idleWorkers.indexOf(worker);

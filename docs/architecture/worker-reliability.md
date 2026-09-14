@@ -3,7 +3,8 @@
 This document captures the durable decisions for the two worker pools in the
 editor's main process: the long-lived `ParserService` pool and the per-build
 `MetadataWorkerPool`. Both run tree-sitter + the semantic visitor passes in
-Node `worker_threads`.
+**forked child processes** (`ForkedWorker`), one OS process per worker — see
+"Process isolation" below for why that is not `worker_threads`.
 
 ## Pool lifecycle
 
@@ -35,7 +36,8 @@ alive for the session:
 
 Both pools cap at `Math.max(1, Math.min(os.cpus().length - 1, 8))` — one core is
 left for the main thread/event loop, and the cap bounds native parser instances
-(each loads the parser and uses tens of MB) on high-core machines. The rule is
+(each loads the parser and uses tens of MB, and since the isolation change each
+is a process rather than a thread) on high-core machines. The rule is
 one function, `workerPoolSize` in `src/main/services/workerPoolSize.ts`, and
 both pools call it (`ParserService` only when no `workerCount` is passed).
 
@@ -88,7 +90,7 @@ Encoding detection/decoding lives in the pure helper
 windows-1250 Central-European heuristic + iconv). `FileService.readFile`
 delegates to it, and `metadata.worker.ts` / the inline metadata path decode
 through it as well — workers must not import `FileService` (it pulls in
-Electron's `dialog`, unavailable in worker threads). The metadata path
+Electron's `dialog`, unavailable in a worker). The metadata path
 deliberately does **not** populate FileService's encoding cache:
 write-encoding decisions stay owned by FileService's read-before-write flow.
 
@@ -118,14 +120,53 @@ this. The `editor-e2e-electron` CI job (real Electron, `playwright.electron.conf
 is the safety net that exercises a real parse through the worker under the
 shipped runtime and would catch an ABI break.
 
-## Known limitation: native SIGSEGV
+## Process isolation (#268, 2026-09-14)
 
-`worker_threads` are threads in the **same process**. A hard native crash
-(SIGSEGV/abort) inside tree-sitter kills the entire Electron main process — no
-`error`/`exit` event fires and no in-process restart can help. The defenses here
-cover JS exceptions escaping the worker, worker OOM (via `resourceLimits`),
-self-exit, and — via timeout — pathological-input hangs. Process-level crash
-handling was out of scope for this slice; slice 8 later added crash *visibility*
-(a local crash log via `LogService`, plus `render-process-gone` /
-`child-process-gone` handlers) but not automatic relaunch — see
+Both pools used to run `worker_threads`, which are threads in the **same**
+process. A hard native crash (SIGSEGV/abort) inside tree-sitter therefore killed
+the entire Electron main process: no `error` and no `exit` event fired, so none
+of the restart machinery above could see it, and a malformed file took the whole
+app down. That was the one failure mode the defenses here did not cover.
+
+A worker is now a forked child process. `src/main/services/ForkedWorker.ts` is
+the whole boundary — it wraps `child_process.fork` in the `Worker`-shaped
+surface (`postMessage` / `on` / `terminate`) the pools already held, so the
+timeouts, the restart caps, the idle dispatch and the failure classification are
+unchanged. A native crash now arrives as the `exit` event the pools already know
+how to recover from, and the death names its signal: `Parser worker crashed
+(killed by SIGSEGV)`.
+
+What the boundary costs and what it required:
+
+- **One OS process per worker**, up to the cap above, instead of one thread.
+  Spawn is slower and the resident cost higher; both pools are lazy or
+  per-build, which is what makes that affordable.
+- **`serialization: 'advanced'`** — the V8 structured-clone serializer, so a
+  semantic model crosses the boundary with the fidelity `postMessage` gave it.
+  The default JSON serializer would flatten cycles, Maps and Sets.
+- **`--max-old-space-size=512`** replaces `resourceLimits`. Runaway memory now
+  aborts the child rather than raising a catchable `ERR_WORKER_OUT_OF_MEMORY`;
+  an abort is a death like any other.
+- **`stdio: ['ignore', 'inherit', 'inherit', 'ipc']`** — nothing reads a
+  child's pipes, and an unread pipe fills up and blocks the writer mid-parse.
+- **`ELECTRON_RUN_AS_NODE=1`** in the child's env: under Electron
+  `process.execPath` is the app binary, and only this makes the fork a plain
+  Node process. The **`npmRebuild: false` invariant above still applies** — it
+  is the same NAPI addon, loaded in a different process.
+
+`utilityProcess` was the other option and was not taken: it exists only inside a
+ready Electron app, so every one of the pool-lifecycle tests would have had to
+mock it. `fork` runs identically under Jest, plain Node and Electron, which is
+what keeps that suite the safety net.
+
+Crash *visibility* is unchanged and still worth having — a local crash log via
+`LogService` plus `render-process-gone` / `child-process-gone` handlers, see
 [`../plans/code-review-remediation.md`](../plans/code-review-remediation.md).
+
+**What still has no witness:** a fork out of a *packaged* app, where the worker
+script lives inside `app.asar`. The gate for it exists — `build-windows.yml`'s
+packaged parse smoke (`DDE_SMOKE_PARSE`) drives `ParserService.parseSource` in
+the packaged app — but that workflow is `workflow_dispatch` only. Dispatch it
+before trusting a release. The unpackaged path is covered on every push by
+`editor-e2e-electron`, which parses real files through the forked worker under
+real Electron.

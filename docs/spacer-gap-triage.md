@@ -73,13 +73,13 @@ the two gaps the report's complaint touched are both closed:
   beside the declaration the click navigates to.
   `docs/architecture/problems-panel.md` carries the decisions.
 
-### A5. Native parser crash still takes the main process (#268)
+### A5. Native parser crash still takes the main process (#268) — closed
 
-Spacer's "access violation on Reparse Scripts" has our analogue: a tree-sitter
-segfault in the `worker_threads` pool kills the Electron main process.
-`utilityProcess` isolation is already written down twice
-(`docs/refactoring-targets.md` §4, `feature-suggestions.md` P3 item 10) and not
-done. Listed here only so triage sees it beside the rest.
+Spacer's "access violation on Reparse Scripts" had our analogue: a tree-sitter
+segfault in the `worker_threads` pool killed the Electron main process. Closed
+2026-09-14 — both pools now fork a child process per worker, so the segfault
+kills only that child and the pool respawns it. The reasoning is in
+`docs/architecture/worker-reliability.md`, "Process isolation".
 
 ---
 

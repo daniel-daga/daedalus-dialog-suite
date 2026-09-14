@@ -10,6 +10,7 @@
 import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
+import { describeExit } from '../../src/main/services/ForkedWorker';
 import { ParserService } from '../../src/main/services/ParserService';
 import { WorkerRequestError } from '../../src/main/services/WorkerRequestError';
 
@@ -38,28 +39,37 @@ describe('ParserService worker lifecycle', () => {
     }
   });
 
-  // A worker thread that is still alive keeps a MessagePort open in the parent,
+  // A worker process that is still alive keeps its IPC pipe open in the parent,
   // and that handle keeps the whole Jest worker *process* from exiting. Jest
   // force-kills it after 500 ms and prints "A worker process has failed to exit
   // gracefully". `dispose()` therefore has to be awaitable: firing
-  // `worker.terminate()` and returning leaves the port open past the end of the
-  // test file.
-  const activeMessagePorts = () =>
-    (process as unknown as { _getActiveHandles(): unknown[] })
-      ._getActiveHandles()
-      .filter((h) => (h as { constructor?: { name?: string } })?.constructor?.name === 'MessagePort')
-      .length;
+  // `worker.terminate()` and returning leaves the child running past the end of
+  // the test file. `kill(pid, 0)` is how that is observed from outside — and it
+  // is not fooled by a zombie, because the exit event `terminate()` waits on is
+  // the same one that reaps the child.
+  const workerPids = (pool: unknown): number[] =>
+    (pool as { workers: Array<{ child: { pid: number } }> }).workers.map((w) => w.child.pid);
+  const isAlive = (pid: number) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
 
-  it('dispose() resolves only once every worker thread has exited', async () => {
+  it('dispose() resolves only once every worker process has exited', async () => {
     const svc = makeService('echo.worker.js');
     await svc.parseSource('warm-the-pool');
 
-    // Guard against a vacuous pass: the pool must really be running threads.
-    expect(activeMessagePorts()).toBeGreaterThan(0);
+    // Guard against a vacuous pass: the pool must really be running children.
+    const pids = workerPids(svc);
+    expect(pids).toHaveLength(2);
+    expect(pids.every(isAlive)).toBe(true);
 
     await svc.dispose();
 
-    expect(activeMessagePorts()).toBe(0);
+    expect(pids.filter(isAlive)).toEqual([]);
   });
 
   it('rejects with a timeout error when the worker never responds', async () => {
@@ -126,6 +136,27 @@ describe('ParserService worker lifecycle', () => {
     await expect(svc.parseSource('normal')).resolves.toBeDefined();
   });
 
+  // The regression this pins is the whole point of #268: with the pools on
+  // `worker_threads` the fixture's fatal signal killed the Jest runner itself,
+  // so this file did not fail — it segfaulted.
+  it('survives a hard native crash in a worker', async () => {
+    const svc = makeService('abort.worker.js');
+    // Warm both lanes so the crash lands on a worker the pool is tracking.
+    await svc.parseSource('warm-the-pool');
+
+    const err = await svc.parseSource('__ABORT__').then(
+      () => {
+        throw new Error('expected parseSource to reject');
+      },
+      (e) => e as WorkerRequestError,
+    );
+    expect(err).toBeInstanceOf(WorkerRequestError);
+    expect(err.kind).toBe('worker-crashed');
+
+    // The pool replaced the dead worker — and this process is still alive to ask.
+    await expect(svc.parseSource('still-here')).resolves.toBeDefined();
+  });
+
   it('recovers after a crash: all subsequent requests settle', async () => {
     const marker = path.join(
       os.tmpdir(),
@@ -153,7 +184,7 @@ describe('ParserService worker lifecycle', () => {
   it('dispatches to an idle worker instead of queueing behind a busy one', async () => {
     const svc = makeService('block.worker.js', { timeoutMs: 1000 });
 
-    // Occupy one worker with a slow job that blocks its thread until well past
+    // Occupy one worker with a slow job that blocks that child until well past
     // the timeout; it eventually settles as a timeout rejection.
     const slow = svc.parseSource('__SLOW__').then(
       () => {
@@ -200,5 +231,15 @@ describe('ParserService worker lifecycle', () => {
     );
     expect(err).toBeInstanceOf(WorkerRequestError);
     expect(err.message).toMatch(/crash-looping/);
+  });
+});
+
+describe('describeExit', () => {
+  // What the user is told when a worker dies. A native crash reaches them only
+  // through this string, so the signal has to be in it.
+  it('names the signal when one killed the worker, and the code otherwise', () => {
+    expect(describeExit(null, 'SIGSEGV')).toBe('killed by SIGSEGV');
+    expect(describeExit(1, null)).toBe('exit code 1');
+    expect(describeExit(0, null)).toBe('exit code 0');
   });
 });

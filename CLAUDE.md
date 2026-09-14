@@ -191,7 +191,7 @@ Visual desktop editor (Electron + React) for editing, validating, and generating
 | `src/renderer/simulator/` | Dialog simulator domain and session state |
 | `src/renderer/types/questGraph.ts` | Quest graph type definitions |
 | `src/main/services/` | Main-process services (File, Parser, Project, Updater, etc.) |
-| `src/main/workers/` | Worker threads (`metadata.worker.ts`, `parser.worker.ts`, `zenkit.worker.ts`) |
+| `src/main/workers/` | Worker entry points — the two parser ones are forked child processes (`metadata.worker.ts`, `parser.worker.ts`), `zenkit.worker.ts` is still a thread |
 | `src/renderer/world/` | Three.js projection of a world (`WorldScene`, `VobPicker`, `BvhBuilder`, `cameraNav`) — no React |
 | `src/renderer/components/world/` | The World surface (`WorldSurface`, `WorldViewport`), lazily loaded |
 | `tests/e2e/` | Playwright browser-harness spec files |
@@ -224,6 +224,7 @@ Visual desktop editor (Electron + React) for editing, validating, and generating
 | `WorldService.ts` | Owns the one stateful `zenkit.worker` holding a ZenGin world |
 | `ValidationService.ts` | Dialog/script validation |
 | `PathValidationService.ts` | File path validation |
+| `ForkedWorker.ts` | The parser pools' process boundary — `child_process.fork` in a `Worker`-shaped wrapper, so a native segfault kills only the child |
 | `serviceRegistry.ts` | Constructs the main-process services (MCP plan's Phase 0) |
 | `SaveFileFlow.ts` | The `generator:saveFile` body, lifted out of the IPC handler |
 | `LogService.ts` | Main-process logging |

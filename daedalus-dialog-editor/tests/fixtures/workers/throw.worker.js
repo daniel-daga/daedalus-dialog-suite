@@ -1,20 +1,19 @@
-// Stub worker: throws an uncaught exception (fires the 'error' event) when the
-// payload signals a crash, otherwise echo. Uses setImmediate so the throw
-// escapes the message handler and reaches the worker's uncaught handler.
-const { parentPort } = require('worker_threads');
+// Stub worker: throws an uncaught exception when the payload signals a crash,
+// otherwise echo. Uses setImmediate so the throw escapes the message handler
+// and reaches the default uncaught handler, which ends the process with code 1.
 
 function isCrash(msg) {
   return !!msg && (msg.sourceCode === '__CRASH__' || msg.filePath === '__CRASH__');
 }
 
-parentPort.on('message', (msg) => {
+process.on('message', (msg) => {
   if (isCrash(msg)) {
     setImmediate(() => {
       throw new Error('boom');
     });
     return;
   }
-  parentPort.postMessage({
+  process.send({
     id: msg && msg.id,
     result: {},
     dialogs: [],

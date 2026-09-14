@@ -4,10 +4,9 @@
 // rather than spreading the message, so a field added to the extractor and the
 // worker but not here is silently dropped in production while every inline
 // (Jest) path keeps working.
-const { parentPort } = require('worker_threads');
 
-parentPort.on('message', (msg) => {
-  parentPort.postMessage({
+process.on('message', (msg) => {
+  process.send({
     id: msg && msg.id,
     dialogs: [{ dialogName: 'DIA_A', npc: 'SLD_A', filePath: msg.filePath }],
     instances: [{ name: 'SLD_A', parent: 'C_NPC' }],

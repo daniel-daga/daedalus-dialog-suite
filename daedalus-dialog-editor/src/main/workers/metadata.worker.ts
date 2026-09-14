@@ -1,10 +1,12 @@
-import { parentPort } from 'worker_threads';
 import { promises as fs } from 'fs';
 import { extractFileMetadataFromSource } from '../utils/semanticMetadataUtils';
 import { decodeBuffer } from '../utils/encodingUtils';
 
-if (parentPort) {
-  parentPort.on('message', async (message: { id: string; filePath: string }) => {
+// A forked child process rather than a worker thread — see `ForkedWorker`.
+const send = process.send?.bind(process);
+
+if (send) {
+  process.on('message', async (message: { id: string; filePath: string }) => {
     const { id, filePath } = message;
 
     try {
@@ -16,7 +18,7 @@ if (parentPort) {
       const { dialogs, instances, prototypes, isQuestFile, routines, functions, voiceIds, semanticModel, parseErrors } =
         extractFileMetadataFromSource(content, filePath);
 
-      parentPort!.postMessage({
+      send({
         id,
         dialogs,
         instances,
@@ -30,7 +32,7 @@ if (parentPort) {
         mtimeMs: stat.mtimeMs
       });
     } catch (error) {
-      parentPort!.postMessage({
+      send({
         id,
         error: error instanceof Error ? error.message : String(error)
       });

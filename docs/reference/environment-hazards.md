@@ -103,7 +103,11 @@ trusting master for a release, not after.
   `CI=1 pnpm install` in a fresh cloud container left `electron/dist` in place
   and all 312 editor suites passed, `appendInsertNpcFlow` included. So expect
   the failure, but check before applying the fix: the entry above is a trap that
-  *can* fire, not one that always does.
+  *can* fire, not one that always does. **2026-09-14 added a third shape:** the
+  suite failed on `appendInsertNpcFlow` with the same *"Electron failed to
+  install correctly"* under a full parallel `npm test`, then passed — the whole
+  312 suites green — on an immediate re-run with nothing changed and `install.js`
+  never run. So run the suite twice before reaching for the fix.
 - **In a Claude Code cloud container the addon *can* be built, and the one
   thing in the way is a single download.** The egress proxy refuses GitHub
   repositories outside the session's scope, so ZenKit's CMake dies on
