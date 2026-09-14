@@ -150,11 +150,40 @@ that inverts it"*; plan §15 for the withdrawn half of the original decision.
 
 ### C2. A malformed world crashes the reader, and says nothing about why (#272)
 
-The worker isolation holds (the app survives with *"the world worker died —
-reopen the world"*), but the VOB readers are still unbounded (plan §16.11), and
-the message carries no reason. The report's "you're reading zSpy to find out
-why" therefore half-applies: we do not crash the app, and we do not diagnose
-either.
+**Measured 2026-09-14, and both halves of this row were already out of date.**
+The claim was that the VOB readers are still unbounded and that the message
+carries no reason. Neither survives a look:
+
+- **Nothing crashes the reader that this repo can reproduce.** `tools/fuzz-world.js`
+  at both its documented baselines: 0 of 200 entry-stream seeds failed to throw
+  cleanly, and the `--counts` sweep found 0 of 147 INTEGER entries that crashed,
+  hung or loaded slowly across all four fixture variants. Fifteen bounding
+  patches (`0027`, `0029`–`0043`) did that, and plan §16.11 carries the
+  re-measurement with its three caveats — the fixtures are small and BinSafe, a
+  sweep reaches only the fields its fixture carries, and no retail BINARY world
+  is checked in. So it is the *instrument* that is silent, not the class that is
+  provably closed, and the worker isolation stays load-bearing.
+- **A clean throw already carries its reason all the way to the user**, and the
+  reason is specific: *"hash table entry count exceeds the bytes left in the
+  file"*, *"leaf node polygon index range exceeds the polygon list"*, *"reached
+  the end of the archive without a mesh end chunk (0xB060)"*. Four hops could
+  have flattened it to "something went wrong" — ZenKit's throw, the worker's
+  `postMessage`, `world:open`'s wrapper, the renderer's `openFailed` — and a
+  real-Electron spec now pins that they do not (`world-editing-ui.spec.ts`, *"a
+  malformed world names what was wrong with it"*), because the browser harness
+  mocks `openWorld` and can only prove the alert renders what it was handed.
+
+What is genuinely left is narrower than the row, and is one measurement rather
+than a feature: **a retail world, in the BINARY container, fuzzed with
+`--file`.** That is where §16.11 says the remaining unvalidated counts live, and
+it needs an install, so it is Daniel's machine's — #261's kind of row, not CI's.
+
+The one message still without a reason is the crash path itself: *"the world
+worker died (zenkit worker exited with code N) — reopen the world"* names
+neither the file nor the phase it died in. The main process knows the in-flight
+request and the worker could report its phase before dying, so it is
+implementable — but it is diagnosis for a failure mode 347 seeded attempts could
+not produce, so it is a judgement call rather than obvious work.
 
 ### C3. A world that loads but is missing assets has no report (~~#273~~)
 

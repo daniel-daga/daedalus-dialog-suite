@@ -190,6 +190,48 @@ test.describe('World surface UI workflows in a real window', () => {
     await expect(page.getByText('FP_CAMPFIRE_ÄÖÜ_01')).toHaveCount(1);
   });
 
+  test('a malformed world names what was wrong with it', async () => {
+    // #272, from the Spacer report: *"Custom-asset maps simply won't load unless
+    // everything's in place, often with no useful diagnostic — you're reading
+    // zSpy to find out why."*
+    //
+    // The reason has to survive four hops to be worth anything — ZenKit's throw,
+    // the worker's `postMessage`, `world:open`'s wrapper, the renderer's
+    // `openFailed` — and every one of them is a place a message becomes
+    // "something went wrong". Only a real window with a real reader can say that
+    // it does: the browser harness mocks `openWorld`, so it can only prove the
+    // alert renders whatever it was handed.
+    //
+    // Truncation rather than random corruption, so the message is stable: the
+    // BinSafe header's hash table count outruns the file, which is patch
+    // `0043`'s own check talking.
+    const { page } = fixture;
+    const broken = path.join(projectDir, 'truncated.g2.zen');
+    fs.writeFileSync(broken, fs.readFileSync(FIXTURE_WORLD).subarray(0, 2048));
+    // Only the world dialog is re-pointed; the project folder still has to come
+    // back as a folder or the project never loads.
+    await fixture.app.evaluate(({ dialog }, paths) => {
+      (dialog as { showOpenDialog: (o: { title: string }) => unknown }).showOpenDialog = async (
+        options: { title: string },
+      ) => ({
+        canceled: false,
+        filePaths: [options.title === 'Open a ZenGin world' ? paths.broken : paths.project],
+      });
+    }, { project: projectDir, broken });
+
+    await page.getByRole('button', { name: /Open Project/i }).first().click();
+    await page.getByTestId('world-toggle').click();
+    await page.getByTestId('world-open').click();
+    await page.getByTestId('world-picker-browse').click();
+
+    const alert = page.getByTestId('world-error');
+    await expect(alert).toBeVisible();
+    // The cause itself, not merely that something failed.
+    await expect(alert).toContainText('hash table entry count exceeds the bytes left in the file');
+    // And no half-open surface behind it.
+    await expect(page.getByTestId('world-viewport')).toHaveCount(0);
+  });
+
   test('dragging the left splitter changes the scene panel width', async () => {
     const { page } = fixture;
     await openWorld();

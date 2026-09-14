@@ -1347,6 +1347,37 @@ evidence.
   the cause. There is none in the record, and the frontier the last three patches
   actually found is the opposite direction: fields no sweep and no seed can reach.
 
+**Re-measured 2026-09-14, and the instrument now finds nothing** (#272). Both
+modes of `tools/fuzz-world.js` at their documented baselines, against the
+current addon: **0 of 200** entry-stream seeds failed to throw cleanly, and the
+`--counts` sweep found **0 of 147** INTEGER entries that crashed, hung or loaded
+slowly across all four fixture variants (`minimal` 21, `npc` 76, `camera` 29,
+`corrupt-mesh` 21). The 200-seed run is the same one that found six failures
+(two crashes, four hangs) in two minutes after `0032`; it is now silent.
+
+So the sentence this section opens with — that a malformed world still takes the
+worker down by segfault — **is no longer true of anything this repo can
+reproduce**, and #272's premise rests on it. Three caveats keep it from being a
+closure of the class rather than of the instrument:
+
+- **The fixtures are small and BinSafe.** No retail world is checked in and none
+  can be without an install (`scripts/extract-worlds.js`), so the BINARY
+  container and a 50 MB mesh and BSP are unmeasured — `--file` against an
+  extracted world is the run that would say, and it is Daniel's machine's.
+- **A sweep reaches only the fields its fixture carries**, which is the limit
+  the tool states about itself and the reason `0040` needed the `npc` variant.
+  The frontier named above — fields no sweep and no seed can reach — is
+  untouched by this measurement and is why 0-of-everything is not proof.
+- **A whole-file fuzz still proves nothing**, and this was re-learned the hard
+  way: 180 whole-file seeds over three corruption models also came back clean,
+  which looks like strong evidence and is not, for the reason two paragraphs
+  above already gave — the text header is rejected before any reader runs. Use
+  `--whole` only to reproduce that contrast, as its own comment says.
+
+**The worker isolation therefore stays load-bearing.** It is cheap, it is
+already built, and what retired the crashes is fifteen bounding patches rather
+than a proof that none is left.
+
 ### 16.12 Two viewport constants only Daniel's hands can settle
 
 Both landed with numbers chosen by reasoning, and neither had a test that could
