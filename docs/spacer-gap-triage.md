@@ -29,9 +29,38 @@ load→update→refresh→save window, and "you cannot add a single dialogue". W
 every `AI_Output` id and its subtitle text already.
 
 `docs/feature-suggestions.md` P1 item 3.3 names it — *"OU generation, or at
-least a consistency check between scripts and an existing `OU.csl`"* — and
-nothing has landed. The consistency check is the cheap half and would catch the
-beginner trap without writing a binary.
+least a consistency check between scripts and an existing `OU.csl`"* — and the
+cut between the two was taken on 2026-09-17: **check first, generate after.**
+
+**Two things about the cost were wrong when this was written.**
+
+First, "generating the binary is the expensive one" does not hold: ZenKit's
+`CutsceneLibrary` (`zenkit/CutsceneLibrary.hh`) models a `zCCSLib` completely and
+every one of its objects carries `save` beside `load`, for the binary and the
+ASCII flavour both. Generating is building the library from the `AI_Output` ids
+and subtitle text we already hold and calling it. What that would cost is a new
+`zenkit-node` binding, which is ordinary N-API work, not a format problem.
+
+Second, the *check* needs no native code at all. An OU database is a ZenGin
+archive, and all three archive flavours already have pure-JS walkers here
+(`lib/container.js`, `-ascii.js`, `-binary.js` — the last since #227). So
+`zenkit-node/lib/output-units.js` reads `OU.CSL` and `OU.BIN` in JS:
+`readOutputUnits(buf)` returns one `{ name, text, wav }` per `zCCSBlock`, in file
+order. ASCII is read through `walkAscii`; BINARY carries no entry names at all,
+so it is descended positionally against `CutsceneLibrary::load`'s read order —
+note `write_enum` is one byte there and four in the other two formats.
+
+**Its fixtures are hand-authored, and that is the open risk.** No retail OU file
+is in this tree, so the reader has never met one. A disagreement with a real
+`OU.BIN` is the reader's fault before it is the file's, and confirming that is a
+machine with Gothic installed — the same split Gate 2 used: build in CI, witness
+afterwards.
+
+One more thing worth knowing about where it lives: `zenkit-node`'s suite runs
+only in `zenkit-node.yml`, which is windows-only, path-filtered and **does not
+gate a release** (`CLAUDE.md`, CI table). The reader sits beside the walkers it
+depends on, which is its right home, but it is covered by weaker CI than editor
+code is.
 
 ### A2. A language mismatch has nothing to notice it (#265)
 
