@@ -26,7 +26,7 @@ export function extractFileFacts(model: SemanticModel): FileFacts {
     let hasChoice = false;
     let hasClearChoices = false;
     const choiceTargets: string[] = [];
-    const voiceIds: Array<{ id: string; line?: number }> = [];
+    const voiceIds: Array<{ id: string; text: string; line?: number }> = [];
     forEachAction(func.actions, (action) => {
       if (action.type === 'Choice') {
         hasChoice = true;
@@ -36,7 +36,7 @@ export function extractFileFacts(model: SemanticModel): FileFacts {
       } else if (action.type === 'DialogLine') {
         const dialogLine = action as DialogLineAction;
         if (typeof dialogLine.id === 'string' && dialogLine.id.trim() !== '' && !dialogLine.idIsExpression) {
-          voiceIds.push({ id: dialogLine.id, line: action.line });
+          voiceIds.push({ id: dialogLine.id, text: dialogLine.text ?? '', line: action.line });
         }
       }
     });

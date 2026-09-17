@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('editorAPI', {
   parseDialogFile: (filePath: string) => ipcRenderer.invoke('project:parseDialogFile', filePath),
   addAllowedPath: (folderPath: string) => ipcRenderer.invoke('project:addAllowedPath', folderPath),
   loadProjectConfig: (projectRoot: string) => ipcRenderer.invoke('project:loadConfig', projectRoot),
+  readOutputUnits: () => ipcRenderer.invoke('project:readOutputUnits'),
   selectAssetSourceFolder: (defaultPath?: string) => ipcRenderer.invoke('project:selectAssetSourceFolder', defaultPath),
   saveProjectAssetSources: (projectFilePath: string, assetSources: string[], gmbtProjectDir?: string | null) =>
     ipcRenderer.invoke('project:saveAssetSources', projectFilePath, assetSources, gmbtProjectDir),

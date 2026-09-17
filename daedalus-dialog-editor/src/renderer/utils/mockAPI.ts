@@ -489,6 +489,13 @@ export const mockEditorAPI: EditorAPI = {
     return path || null;
   },
 
+  // The browser harness has no Gothic install, so it has no OU database — the
+  // same answer a real machine without one gives, and the drift rule reads it
+  // as "nothing is known" rather than reporting every line as missing.
+  async readOutputUnits(): Promise<null> {
+    return null;
+  },
+
   async loadProjectConfig(projectRoot: string): Promise<OpenedProjectConfig> {
     return {
       projectFilePath: `${projectRoot}/mock.gothicproject.json`, projectRoot, scriptsRoot: projectRoot,

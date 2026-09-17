@@ -12,6 +12,8 @@ const RULE_LABEL: Record<ProblemRuleId, string> = {
   'orphaned-function': 'Orphaned function',
   'voice-id-duplicate': 'Duplicate voice ID',
   'voice-id-malformed': 'Malformed voice ID',
+  'output-unit-stale': 'Subtitle not in the OUs',
+  'output-unit-missing': 'Line not in the OUs',
   'waypoint-not-in-world': 'Waypoint not in world',
   'duplicate-spawn': 'NPC spawned twice',
   'portal-material-malformed': 'Malformed portal name',

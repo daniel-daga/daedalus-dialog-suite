@@ -33,6 +33,7 @@ import { appendInsertNpcFlow } from './services/AppendInsertNpcFlow';
 import { findInstallShaped, ProjectConfigService } from './services/ProjectConfigService';
 import { startGmbtQuickTest } from './services/GmbtService';
 import { readGmbtDefaultWorld } from './services/gmbtProject';
+import { readProjectOutputUnits } from './services/outputUnits';
 import { discoverWorlds } from './services/worldDiscovery';
 import type { OpenedProjectConfig } from '../shared/projectConfigTypes';
 
@@ -603,6 +604,15 @@ export function setupIpcHandlers() {
     );
     registerProjectConfig(descriptor);
     return descriptor;
+  });
+
+  /**
+   * The project's OutputUnit database — the subtitles the game actually shows
+   * (#264). Read on demand rather than watched: GMBT rewrites it outside this
+   * app, and the Problems panel asks again on each project open.
+   */
+  ipcMain.handle('project:readOutputUnits', async () => {
+    return readProjectOutputUnits(await settingsService.getGothicInstallPath());
   });
 
   ipcMain.handle('project:buildIndex', async (_event, folderPath: string) => {

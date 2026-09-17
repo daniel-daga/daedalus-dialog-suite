@@ -110,6 +110,11 @@ export const useProblemsStore = create<ProblemsStore>((set, get) => {
       const world = useWorldStore.getState().waynetNames ?? undefined;
       const portalFindings = useWorldStore.getState().portalFindings ?? undefined;
 
+      // Null database stays undefined here: the rule distinguishes "no database
+      // was found" from "the database is empty", and only the second is a
+      // project whose every line is missing.
+      const outputUnits = project.outputUnits?.units;
+
       const { problems, scannedFileCount } = scanProject({
         files,
         knownNpcNames,
@@ -120,7 +125,8 @@ export const useProblemsStore = create<ProblemsStore>((set, get) => {
         npcsWithDialogs: npcsWithDialogs(project.dialogIndex),
         parseErrors: project.parseErrorIndex,
         world,
-        portalFindings
+        portalFindings,
+        outputUnits
       });
 
       set({

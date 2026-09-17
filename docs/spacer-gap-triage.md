@@ -60,7 +60,34 @@ One more thing worth knowing about where it lives: `zenkit-node`'s suite runs
 only in `zenkit-node.yml`, which is windows-only, path-filtered and **does not
 gate a release** (`CLAUDE.md`, CI table). The reader sits beside the walkers it
 depends on, which is its right home, but it is covered by weaker CI than editor
-code is.
+code is. Everything downstream of it is not: the rule, the main-process lookup
+and the wiring are all in the editor's gated suite.
+
+**What landed (2026-09-17).** `output-unit-stale` and `output-unit-missing` in
+`src/renderer/problems/domain/rules/outputUnitDrift.ts`: every literal
+`AI_Output` id in the project against the database, ids matched
+case-insensitively (Daedalus is, and the writer upper-cases) and subtitles
+compared verbatim (the subtitle is what the player reads, so a changed capital
+is a real edit the OU has missed). An entry the database holds that no script
+claims is ignored — a retail OU carries every vanilla line, and reporting those
+would bury the two findings that matter.
+
+The file comes from `src/main/services/outputUnits.ts`:
+`<gothic install>/_work/Data/Scripts/content/CUTSCENE/`, `OU.BIN` before
+`OU.CSL` because the binary is the one the engine loads, each path segment
+matched case-insensitively because a real install's casing varies. Read once per
+project open, off the critical section — a project with no install behind it
+opens exactly as fast as before, and a database that will not parse leaves
+`outputUnits` null rather than taking the whole scan down.
+
+**Null is "nothing is known", never "nothing is legal"**, the same rule the
+project index follows: no install, no database, no findings.
+
+**What is NOT built:** generating or updating the OUs. That is the other half of
+the cut, and until it lands the panel can tell a user their subtitles are stale
+but not fix them — the GMBT quick test still passes `--noupdatesubtitles`
+(§A3), so our own button still reproduces the stale subtitle rather than
+exposing it.
 
 ### A2. A language mismatch has nothing to notice it (#265)
 

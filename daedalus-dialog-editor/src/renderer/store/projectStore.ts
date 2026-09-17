@@ -11,7 +11,7 @@
 import { create } from 'zustand';
 import { enableMapSet } from 'immer';
 import type { DialogMetadata, SemanticModel } from '../types/global';
-import type { FileParseErrors, RoutineSite, SpawnSite } from '../../shared/types';
+import type { FileParseErrors, ProjectOutputUnits, RoutineSite, SpawnSite } from '../../shared/types';
 import type { GothicProjectFileV1, ProjectConfigWarning } from '../../shared/projectConfigTypes';
 import { getQuestUsage } from '../utils/questAnalyzer';
 import { deserialiseIpcMap } from '../utils/ipcSerialisation';
@@ -65,6 +65,13 @@ interface ProjectState {
   gmbtAssetSources: string[];
   /** The machine's Gothic installation, mounted under every project (§9). */
   gothicInstallPath: string | null;
+  /**
+   * The project's OutputUnit database, or null when the install has none —
+   * what `output-unit-stale` compares the scripts against (#264). Null is
+   * "nothing is known": the rule then reports nothing, because a project opens
+   * legitimately with no Gothic install behind it.
+   */
+  outputUnits: ProjectOutputUnits | null;
   projectWarnings: ProjectConfigWarning[];
 
   // Project index (lightweight)
@@ -428,6 +435,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   gmbtProjectDir: null,
   gmbtAssetSources: [],
   gothicInstallPath: null,
+  outputUnits: null,
   projectWarnings: [],
   npcList: [],
   routineList: [],
@@ -510,11 +518,20 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         isLoading: false,
         parsedFiles: new Map(), // Clear any previous cache
         parseGeneration: get().parseGeneration + 1,
-        selectedNpc: null
+        selectedNpc: null,
+        outputUnits: null
       });
 
       // Start background ingestion
       get().startBackgroundIngestion();
+
+      // The OU database is read after the index rather than with it: it is one
+      // small file, nothing blocks on it, and a project with no Gothic install
+      // behind it must open exactly as fast as it did before. A failure here
+      // leaves `outputUnits` null, which the rule reads as "nothing is known".
+      void window.editorAPI.readOutputUnits()
+        .then((outputUnits) => set({ outputUnits }))
+        .catch((error) => console.warn('[projectStore] could not read the OU database:', error));
 
     } catch (error) {
       set({
@@ -739,6 +756,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   gmbtProjectDir: null,
   gmbtAssetSources: [],
   gothicInstallPath: null,
+  outputUnits: null,
       projectWarnings: [],
       npcList: [],
       routineList: [],

@@ -5,6 +5,7 @@ import { knowsInfoDanglingRule } from './rules/knowsInfoDangling';
 import { choiceNoClearChoicesRule } from './rules/choiceNoClearChoices';
 import { orphanedFunctionRule } from './rules/orphanedFunction';
 import { voiceIdRule } from './rules/voiceId';
+import { outputUnitDriftRule } from './rules/outputUnitDrift';
 import { waypointNotInWorldRule } from './rules/waypointNotInWorld';
 import { duplicateSpawnRule } from './rules/duplicateSpawn';
 import { routineOverlapRule } from './rules/routineOverlap';
@@ -18,6 +19,7 @@ export const ALL_RULES: readonly LintRule[] = [
   choiceNoClearChoicesRule,
   orphanedFunctionRule,
   voiceIdRule,
+  outputUnitDriftRule,
   waypointNotInWorldRule,
   duplicateSpawnRule,
   routineOverlapRule,

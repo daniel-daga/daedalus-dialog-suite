@@ -20,6 +20,9 @@ export type ProblemRuleId =
   | 'orphaned-function'
   | 'voice-id-duplicate'
   | 'voice-id-malformed'
+  // The scripts against the OutputUnit database the game reads (#264).
+  | 'output-unit-stale'
+  | 'output-unit-missing'
   | 'waypoint-not-in-world'
   | 'duplicate-spawn'
   // The portal checks (level-editor.md §16.18 slice 1, §16.22 q1–q3), one id
@@ -144,7 +147,9 @@ export interface FunctionFacts {
   /** Non-empty `Npc_KnowsInfo` dialog refs with their condition index and line. */
   knowsInfoRefs: Array<{ index: number; dialogRef: string; line?: number }>;
   /** Literal, non-empty voice ids in encounter order, with the line each was written on. */
-  voiceIds: Array<{ id: string; line?: number }>;
+  /** Literal, non-empty voice ids, each with the subtitle written beside it —
+   *  the text is what `output-unit-stale` compares against the OU database. */
+  voiceIds: Array<{ id: string; text: string; line?: number }>;
 }
 
 /**
@@ -195,6 +200,13 @@ export interface ProjectView {
    * Empty means nothing is known, never that nothing is legal.
    */
   dialogNpcKeys: ReadonlySet<string>;
+  /**
+   * The subtitle the OutputUnit database holds for each voice id, keyed by
+   * UPPERCASED id — or undefined when no database was found, which means
+   * nothing is known rather than that nothing is legal. A project may be open
+   * with no Gothic install behind it, and that must raise no findings.
+   */
+  outputUnits?: ReadonlyMap<string, string>;
   /** The open world's waynet names, or undefined when no world is open. */
   world?: WorldWaynetView;
   /**

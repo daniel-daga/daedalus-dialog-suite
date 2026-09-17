@@ -795,3 +795,26 @@ export interface SaveResult {
   encoding?: string;
   validationResult?: ValidationResult;
 }
+
+/**
+ * One block of the project's OutputUnit database — a single spoken line as the
+ * database records it (#264). Subtitles come from this file at runtime, not
+ * from the scripts, which is why the Problems panel compares the two.
+ */
+export interface OutputUnit {
+  /** The `AI_Output` id the block is named for, e.g. `DIA_Alrik_Teach_15_00`. */
+  name: string;
+  /** The subtitle the game shows for it. */
+  text: string;
+  /** The WAV the block names. */
+  wav: string;
+}
+
+/** The database that was found and read, and where it was. */
+export interface ProjectOutputUnits {
+  /** The file actually read, so the panel can say which database it means. */
+  filePath: string;
+  /** The archive flavour: `ASCII` or `BINARY`. */
+  format: string;
+  units: OutputUnit[];
+}

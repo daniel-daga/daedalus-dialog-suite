@@ -1,4 +1,4 @@
-import type { FileParseErrors, RoutineSite, SemanticModel, SpawnSite } from '../../../shared/types';
+import type { FileParseErrors, OutputUnit, RoutineSite, SemanticModel, SpawnSite } from '../../../shared/types';
 import type { PortalFinding } from '../../../shared/worldTypes';
 import type {
   FileFacts,
@@ -46,6 +46,10 @@ export interface ProjectScanInput {
   /** The index pass's per-file syntax errors — what `parse-error` reports. It
    *  is the only pass that sees a file nobody opened. */
   parseErrors?: readonly FileParseErrors[];
+  /** The project's OU database, which `output-unit-stale` compares the scripts
+   *  against. Absent when the install has none, and the rule then says nothing
+   *  rather than calling every line missing. */
+  outputUnits?: readonly OutputUnit[];
 }
 
 export interface ProjectScanResult {
@@ -65,7 +69,8 @@ export function scanProject(input: ProjectScanInput): ProjectScanResult {
     npcsWithDialogs: input.npcsWithDialogs,
     world: input.world,
     portalFindings: input.portalFindings,
-    parseErrors: input.parseErrors
+    parseErrors: input.parseErrors,
+    outputUnits: input.outputUnits
   });
   return { problems: runRules(view), scannedFileCount: input.files.length };
 }

@@ -85,7 +85,8 @@ export type {
   ValidationResult,
   SaveResult,
   RecentProject,
-  AppendInsertNpcResult
+  AppendInsertNpcResult,
+  ProjectOutputUnits
 } from '../../shared/types';
 
 // Import types needed for EditorAPI definition
@@ -144,6 +145,8 @@ export interface EditorAPI {
   parseDialogFile: (filePath: string) => Promise<SemanticModel>;
   addAllowedPath: (folderPath: string) => Promise<void>;
   loadProjectConfig: (projectRoot: string) => Promise<OpenedProjectConfig>;
+  /** The project's OutputUnit database, or null when the install has none (#264). */
+  readOutputUnits: () => Promise<ProjectOutputUnits | null>;
   selectAssetSourceFolder: (defaultPath?: string) => Promise<string | null>;
   /** Writes the Asset sources dialog's two paths. `gmbtProjectDir` is null to
    *  clear it and omitted to leave it as it is. */

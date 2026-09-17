@@ -38,10 +38,12 @@ export function buildProjectView(input: {
   portalFindings?: readonly PortalFinding[];
   routineSites?: readonly RoutineSite[];
   parseErrors?: readonly FileParseErrors[];
+  /** Every block of the project's OU database, or absent when none was read. */
+  outputUnits?: readonly { name: string; text: string; wav: string }[];
 }): ProjectView {
   const {
     files, knownNpcNames, factsCache, waypointSites, spawnSites, npcsWithDialogs, world, portalFindings,
-    routineSites, parseErrors,
+    routineSites, parseErrors, outputUnits,
   } = input;
 
   const fileFacts: FileFactsEntry[] = files.map(({ filePath, model }) => {
@@ -77,6 +79,9 @@ export function buildProjectView(input: {
     waypointSites: waypointSites ?? {},
     spawnSites: spawnSites ?? [],
     dialogNpcKeys: new Set((npcsWithDialogs ?? []).map((name) => name.trim().toUpperCase())),
+    // Absent stays absent: an empty map would say the database holds nothing,
+    // which is a different claim from not having one.
+    outputUnits: outputUnits && new Map(outputUnits.map((u) => [u.name.trim().toUpperCase(), u.text])),
     world,
     portalFindings,
     routineSites: routineSites ?? [],
