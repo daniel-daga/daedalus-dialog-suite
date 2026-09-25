@@ -385,7 +385,7 @@ export function setupIpcHandlers() {
 
   ipcMain.handle('generator:saveFile', async (_event, filePath: string, model: any, settings: any, options?: SaveFileFlowOptions) =>
     saveFileFlow(
-      { pathValidator, validationService, codeGeneratorService, parserService, fileService, fileWatcherService },
+      { pathValidator, validationService, codeGeneratorService, parserService, fileService },
       filePath,
       model,
       settings,
@@ -415,8 +415,6 @@ export function setupIpcHandlers() {
       await pathValidator.validatePathResolved(filePath, { write: true });
 
       const writeResult = await fileService.writeFile(filePath, content, { expectUnchanged: !options?.overwriteExternal });
-      // Arm self-write suppression only after an actual write succeeds
-      fileWatcherService.notifySelfWrite(filePath);
       return writeResult;
     } catch (error) {
       if (error instanceof PathValidationError) {
@@ -1154,7 +1152,7 @@ export function setupIpcHandlers() {
   ipcMain.handle('script:appendInsertNpc', async (_event, request: unknown) => {
     assertAppendInsertNpcRequest(request);
     return appendInsertNpcFlow(
-      { pathValidator, fileService, parserService, fileWatcherService },
+      { pathValidator, fileService, parserService },
       request.filePath, request.functionName, request.npcInstance, request.spawnPoint,
     );
   });

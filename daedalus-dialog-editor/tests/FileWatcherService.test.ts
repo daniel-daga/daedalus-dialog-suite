@@ -8,6 +8,9 @@
  */
 
 import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 // ---------------------------------------------------------------------------
 // Mock chokidar before importing the service under test
@@ -79,14 +82,20 @@ function makeMockWindow(destroyed = false) {
 
 describe('FileWatcherService', () => {
   let service: FileWatcherService;
+  let tempDir: string;
+  let watchedFile: string;
 
   beforeEach(() => {
     service = new FileWatcherService();
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'watch-self-write-'));
+    watchedFile = path.join(tempDir, 'DIA_Test.d');
+    fs.writeFileSync(watchedFile, 'editor write');
     jest.clearAllMocks();
   });
 
   afterEach(async () => {
     await service.stopWatching();
+    fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
   // -------------------------------------------------------------------------
@@ -257,8 +266,10 @@ describe('FileWatcherService', () => {
       service.setWindow(win as any);
       await service.startWatching('/project');
 
-      service.notifySelfWrite('/project/DIA_Test.d');
-      mockWatcher._emit('change', '/project/DIA_Test.d');
+      const stat = fs.statSync(watchedFile);
+      const token = service.beginSelfWrite(watchedFile, { mtimeMs: stat.mtimeMs, size: stat.size });
+      service.finishSelfWrite(token, true);
+      mockWatcher._emit('change', watchedFile);
 
       expect(cb).not.toHaveBeenCalled();
     });
@@ -268,88 +279,142 @@ describe('FileWatcherService', () => {
   // Self-write suppression
   // -------------------------------------------------------------------------
 
-  describe('notifySelfWrite', () => {
-    it('suppresses the next change event for the notified path', async () => {
+  describe('self-write suppression', () => {
+    const signature = () => {
+      const stat = fs.statSync(watchedFile);
+      return { mtimeMs: stat.mtimeMs, size: stat.size };
+    };
+
+    it('suppresses delayed and duplicate events while disk still matches the write', async () => {
       const win = makeMockWindow();
       service.setWindow(win as any);
-      await service.startWatching('/project');
+      await service.startWatching(tempDir);
 
-      service.notifySelfWrite('/project/DIA_Test.d');
-      mockWatcher._emit('change', '/project/DIA_Test.d');
+      const token = service.beginSelfWrite(watchedFile, signature());
+      service.finishSelfWrite(token, true);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      mockWatcher._emit('change', watchedFile);
+      mockWatcher._emit('change', watchedFile);
 
       expect(win.webContents.send).not.toHaveBeenCalled();
     });
 
-    it('suppresses only the first event — subsequent events come through', async () => {
+    it('forwards an event when the current metadata differs', async () => {
       const win = makeMockWindow();
       service.setWindow(win as any);
-      await service.startWatching('/project');
+      const cb = jest.fn();
+      service.setOnExternalChange(cb);
+      await service.startWatching(tempDir);
 
-      service.notifySelfWrite('/project/DIA_Test.d');
-      mockWatcher._emit('change', '/project/DIA_Test.d'); // suppressed
-      mockWatcher._emit('change', '/project/DIA_Test.d'); // should fire
+      const token = service.beginSelfWrite(watchedFile, signature());
+      service.finishSelfWrite(token, true);
+      fs.writeFileSync(watchedFile, 'external content with different size');
+      mockWatcher._emit('change', watchedFile);
 
+      expect(cb).toHaveBeenCalledWith(watchedFile, 'change');
       expect(win.webContents.send).toHaveBeenCalledTimes(1);
     });
 
-    it('only suppresses the notified path, not other paths', async () => {
-      const win = makeMockWindow();
-      service.setWindow(win as any);
-      await service.startWatching('/project');
+    it('forwards an event when the signature path can no longer be statted', async () => {
+      const cb = jest.fn();
+      service.setOnExternalChange(cb);
+      await service.startWatching(tempDir);
+      const token = service.beginSelfWrite(watchedFile, signature());
+      service.finishSelfWrite(token, true);
+      fs.unlinkSync(watchedFile);
 
-      service.notifySelfWrite('/project/DIA_Test.d');
-      mockWatcher._emit('change', '/project/DIA_Other.d'); // different file → should fire
+      mockWatcher._emit('change', watchedFile);
 
-      expect(win.webContents.send).toHaveBeenCalledWith('fileWatcher:changed', {
-        type: 'change',
-        filePath: '/project/DIA_Other.d',
-      });
+      expect(cb).toHaveBeenCalledWith(watchedFile, 'change');
     });
 
-    it('suppresses self-writes regardless of path separator', async () => {
+    it('queues events until the atomic rename outcome is known', async () => {
       const win = makeMockWindow();
       service.setWindow(win as any);
-      await service.startWatching('/project');
+      const cb = jest.fn();
+      service.setOnExternalChange(cb);
+      await service.startWatching(tempDir);
 
-      // The notifier may use backslashes while the watcher reports forward
-      // slashes (common on Windows) — suppression must still match.
-      service.notifySelfWrite('C:\\Project\\DIA_Test.d');
-      mockWatcher._emit('change', 'C:/Project/DIA_Test.d');
+      const token = service.beginSelfWrite(watchedFile, signature());
+      mockWatcher._emit('change', watchedFile);
+      expect(cb).not.toHaveBeenCalled();
+      expect(win.webContents.send).not.toHaveBeenCalled();
+      service.finishSelfWrite(token, true);
 
+      expect(cb).not.toHaveBeenCalled();
       expect(win.webContents.send).not.toHaveBeenCalled();
     });
 
-    it('does not keep the event loop alive for the two-second expiry', async () => {
-      // The expiry timer outlives the call by two seconds. Left referenced it
-      // keeps its whole process alive — in production the Electron main
-      // process, and under Jest the worker process, which is force-killed
-      // after 500 ms with "A worker process has failed to exit gracefully".
-      // `getActiveResourcesInfo()` lists only resources that keep the loop
-      // alive, so an unref'd timer does not appear here.
-      const loopKeepingTimers = () =>
-        process.getActiveResourcesInfo().filter((r) => r === 'Timeout').length;
-
-      const before = loopKeepingTimers();
-      service.notifySelfWrite('/project/DIA_Test.d');
-
-      expect(loopKeepingTimers()).toBe(before);
-    });
-
-    it('stopWatching clears the self-written paths set', async () => {
+    it('forwards queued events against disk after a failed rename', async () => {
       const win = makeMockWindow();
       service.setWindow(win as any);
-      await service.startWatching('/project');
+      const cb = jest.fn();
+      service.setOnExternalChange(cb);
+      await service.startWatching(tempDir);
 
-      service.notifySelfWrite('/project/DIA_Test.d');
+      const token = service.beginSelfWrite(watchedFile, { mtimeMs: 0, size: 99 });
+      mockWatcher._emit('change', watchedFile);
+      service.finishSelfWrite(token, false);
+
+      expect(cb).toHaveBeenCalledWith(watchedFile, 'change');
+    });
+
+    it('preserves an external event observed during a write even if the rename later replaces it', async () => {
+      const cb = jest.fn();
+      service.setOnExternalChange(cb);
+      await service.startWatching(tempDir);
+      const staged = path.join(tempDir, 'staged.tmp');
+      fs.writeFileSync(staged, 'editor output');
+      const stagedStat = fs.statSync(staged);
+      const token = service.beginSelfWrite(watchedFile, {
+        mtimeMs: stagedStat.mtimeMs,
+        size: stagedStat.size,
+      });
+
+      fs.writeFileSync(watchedFile, 'external edit with a distinct size');
+      mockWatcher._emit('change', watchedFile);
+      fs.renameSync(staged, watchedFile);
+      service.finishSelfWrite(token, true);
+
+      expect(cb).toHaveBeenCalledWith(watchedFile, 'change');
+    });
+
+    it('does not discard a queued unlink when the target is recreated by the write', async () => {
+      const cb = jest.fn();
+      service.setOnExternalChange(cb);
+      await service.startWatching(tempDir);
+      const staged = path.join(tempDir, 'staged.tmp');
+      fs.writeFileSync(staged, 'editor output');
+      const stagedStat = fs.statSync(staged);
+      const token = service.beginSelfWrite(watchedFile, {
+        mtimeMs: stagedStat.mtimeMs,
+        size: stagedStat.size,
+      });
+
+      fs.unlinkSync(watchedFile);
+      mockWatcher._emit('unlink', watchedFile);
+      fs.renameSync(staged, watchedFile);
+      service.finishSelfWrite(token, true);
+
+      expect(cb).toHaveBeenCalledWith(watchedFile, 'unlink');
+    });
+
+    it('clears committed signatures and pending events on stop/restart', async () => {
+      const win = makeMockWindow();
+      service.setWindow(win as any);
+      await service.startWatching(tempDir);
+
+      const token = service.beginSelfWrite(watchedFile, signature());
+      mockWatcher._emit('change', watchedFile);
       await service.stopWatching();
+      service.finishSelfWrite(token, true);
 
-      // Restart and emit — the notified path should no longer be suppressed
-      await service.startWatching('/project');
-      mockWatcher._emit('change', '/project/DIA_Test.d');
+      await service.startWatching(tempDir);
+      mockWatcher._emit('change', watchedFile);
 
       expect(win.webContents.send).toHaveBeenCalledWith('fileWatcher:changed', {
         type: 'change',
-        filePath: '/project/DIA_Test.d',
+        filePath: watchedFile,
       });
     });
   });

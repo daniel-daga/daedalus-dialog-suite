@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useProjectStore } from '../store/projectStore';
 import { useFileStore, hasUnsavedChanges } from '../store/fileStore';
 import { planExitDialogsForAddedFile } from '../utils/npcExitDialog';
+import { flushAllPendingEdits } from '../utils/pendingEditFlushRegistry';
 import type { FileChangeEvent, SemanticModel } from '../types/global';
 
 // Batch window for external 'change' events. A bulk operation (git checkout,
@@ -120,6 +121,10 @@ async function flushChangedFiles(): Promise<void> {
   const paths = Array.from(pendingChangedPaths);
   pendingChangedPaths.clear();
   if (paths.length === 0) return;
+
+  // Bring debounced editor controls into the store before deciding whether a
+  // disk change may reload the open file or must raise a conflict.
+  flushAllPendingEdits();
 
   const fileStore = useFileStore.getState();
   if (!useProjectStore.getState().projectPath) {

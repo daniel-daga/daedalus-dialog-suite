@@ -5,6 +5,12 @@ import { dialog } from 'electron';
 import { decodeBuffer, encodeWithRoundtripCheck } from '../utils/encodingUtils';
 import { canonicalPathKey } from '../utils/pathKey';
 import { LruMap } from '../utils/lruMap';
+import type { SelfWriteSignature } from './FileWatcherService';
+
+export interface SelfWriteLifecycleObserver {
+  begin(filePath: string, signature: SelfWriteSignature): unknown;
+  finish(token: unknown, succeeded: boolean): void;
+}
 
 /**
  * Error types for FileService operations
@@ -81,7 +87,11 @@ async function renameWithRetry(from: string, to: string): Promise<void> {
  * The temp name deliberately does NOT end in `.d` so the file watcher's ignore
  * predicate (which only watches `.d` files) never emits events for the churn.
  */
-async function writeFileAtomic(filePath: string, buffer: Buffer): Promise<void> {
+async function writeFileAtomic(
+  filePath: string,
+  buffer: Buffer,
+  selfWriteObserver?: SelfWriteLifecycleObserver
+): Promise<void> {
   const dir = path.dirname(filePath);
   const base = path.basename(filePath);
   const tmp = path.join(
@@ -90,14 +100,38 @@ async function writeFileAtomic(filePath: string, buffer: Buffer): Promise<void> 
   );
 
   let handle: FileHandle | undefined;
+  let writeToken: unknown;
+  let renameStarted = false;
   try {
     handle = await fs.open(tmp, 'w');
     await handle.write(buffer);
     await handle.sync();
+    const stagedStat = await handle.stat();
     await handle.close();
     handle = undefined;
+    try {
+      writeToken = selfWriteObserver?.begin(filePath, {
+        mtimeMs: stagedStat.mtimeMs,
+        size: stagedStat.size,
+      });
+    } catch {
+      // Watch bookkeeping must not prevent a successful file write.
+    }
+    renameStarted = true;
     await renameWithRetry(tmp, filePath);
+    try {
+      if (writeToken !== undefined) selfWriteObserver?.finish(writeToken, true);
+    } catch {
+      // The disk write succeeded; observer failures cannot turn it into a save error.
+    }
   } catch (error) {
+    if (renameStarted && writeToken !== undefined) {
+      try {
+        selfWriteObserver?.finish(writeToken, false);
+      } catch {
+        // Preserve the original write failure.
+      }
+    }
     if (handle) {
       try {
         await handle.close();
@@ -149,6 +183,11 @@ export async function acquireLock<T>(filePath: string, operation: () => Promise<
  * Automatically detects and preserves file encodings
  */
 export class FileService {
+  private selfWriteObserver: SelfWriteLifecycleObserver | undefined;
+
+  setSelfWriteObserver(observer: SelfWriteLifecycleObserver | undefined): void {
+    this.selfWriteObserver = observer;
+  }
   /**
    * Read a file from the file system with automatic encoding detection
    * @param filePath - Absolute path to the file
@@ -304,7 +343,7 @@ export class FileService {
 
       // --- Atomic write (E5) ------------------------------------------------
       try {
-        await writeFileAtomic(filePath, buffer);
+        await writeFileAtomic(filePath, buffer, this.selfWriteObserver);
 
         // Refresh the cached mtime so a subsequent expectUnchanged write does
         // not misfire on our own write.

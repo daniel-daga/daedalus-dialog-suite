@@ -80,8 +80,8 @@ test.describe('External change -> reload / conflict (real watcher, disk truth)',
     const { page } = fixture;
     await openProjectDialog(fixture, projectDir);
 
-    // Modify the file from the test process (genuine external change — the
-    // editor never called notifySelfWrite for it).
+    // Modify the file from the test process (genuine external change — it did
+    // not pass through FileService's self-write lifecycle).
     fs.writeFileSync(savedFile, externalContent(RELOAD_MARKER), 'latin1');
 
     // The real chokidar watcher (awaitWriteFinish debounce) fires; the clean
@@ -111,5 +111,47 @@ test.describe('External change -> reload / conflict (real watcher, disk truth)',
 
     // Nothing was silently overwritten: the user's edit is still in the editor.
     await expect(firstLine).toHaveValue('DIA_Arog_DIRTY_EDIT_MARKER');
+  });
+});
+
+test.describe('Editor self-write echo (real watcher, delayed delivery)', () => {
+  let fixture: AppFixture;
+  let projectDir: string;
+  let savedFile: string;
+
+  test.beforeEach(async () => {
+    projectDir = seedProjectDir(['sample-dialog.d']);
+    savedFile = path.join(projectDir, 'sample-dialog.d');
+    fixture = await launchApp({ delayFileWatcherEventMs: 2500 });
+  });
+
+  test.afterEach(async () => {
+    await fixture?.cleanup();
+  });
+
+  test('keeps a fresh edit when an auto-save echo arrives after the former expiry', async () => {
+    const { page } = fixture;
+    await openProjectDialog(fixture, projectDir);
+
+    const text = page.getByLabel('Text').first();
+    const firstEdit = `${ORIGINAL_TEXT} SELF_WRITE_ECHO_A`;
+    await text.fill(firstEdit);
+
+    // Wait for the editor's real auto-save to reach disk. Chokidar is real;
+    // the harness delays only callback delivery beyond the old 2 s expiry.
+    await expect.poll(
+      () => fs.readFileSync(savedFile, 'latin1').includes('SELF_WRITE_ECHO_A'),
+      { timeout: 20000, intervals: [100, 200, 500] },
+    ).toBe(true);
+
+    // This local edit lands while that save's watcher event is still held.
+    const completeValue = `${firstEdit} SELF_WRITE_ECHO_B`;
+    await text.fill(completeValue);
+    await expect(text).toHaveValue(completeValue);
+
+    // Let the delayed event reach the renderer and settle its batch.
+    await page.waitForTimeout(3200);
+    await expect(text).toHaveValue(completeValue);
+    await expect(page.getByTestId('external-conflict-dialog')).toHaveCount(0);
   });
 });

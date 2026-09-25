@@ -1,5 +1,4 @@
 import type { FileService } from './FileService';
-import type { FileWatcherService } from './FileWatcherService';
 import type { ParserService } from './ParserService';
 import type { CodeGeneratorService } from './CodeGeneratorService';
 import type { ValidationService } from './ValidationService';
@@ -21,7 +20,6 @@ export interface SaveFileDeps {
   codeGeneratorService: Pick<CodeGeneratorService, 'generateCode'>;
   parserService: Pick<ParserService, 'parseSource'>;
   fileService: Pick<FileService, 'writeFile'>;
-  fileWatcherService: Pick<FileWatcherService, 'notifySelfWrite'>;
 }
 
 export interface SaveFileFlowOptions {
@@ -69,8 +67,6 @@ export async function saveFileFlow(
       // Use pre-generated code from validation if available
       if (validationResult.generatedCode) {
         const writeResult = await deps.fileService.writeFile(filePath, validationResult.generatedCode, { expectUnchanged, backupBeforeWrite });
-        // Arm self-write suppression only after an actual write succeeds
-        deps.fileWatcherService.notifySelfWrite(filePath);
         return {
           ...writeResult,
           validationResult
@@ -102,8 +98,6 @@ export async function saveFileFlow(
     }
 
     const writeResult = await deps.fileService.writeFile(filePath, code, { expectUnchanged, backupBeforeWrite });
-    // Arm self-write suppression only after an actual write succeeds
-    deps.fileWatcherService.notifySelfWrite(filePath);
     return writeResult;
   } catch (error) {
     if (error instanceof PathValidationError) {

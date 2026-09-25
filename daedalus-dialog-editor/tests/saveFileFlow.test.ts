@@ -3,8 +3,7 @@
  * (mcp-server.md §2, Phase 0).
  *
  * The flow — assert the payload shapes, validate the path, validate the model,
- * write the code validation already generated, and arm the watcher's
- * self-write suppression only after a write actually succeeded — was reachable
+ * write the code validation already generated — was reachable
  * only through `ipcMain.handle`. It is a function now, so a second caller gets
  * the same pipeline rather than a second copy of it.
  *
@@ -26,7 +25,6 @@ type Calls = {
   generateCode: jest.Mock;
   parseSource: jest.Mock;
   writeFile: jest.Mock;
-  notifySelfWrite: jest.Mock;
 };
 
 function makeDeps(overrides: Partial<Calls> = {}): { deps: SaveFileDeps; calls: Calls } {
@@ -41,7 +39,6 @@ function makeDeps(overrides: Partial<Calls> = {}): { deps: SaveFileDeps; calls: 
     generateCode: jest.fn(() => 'fallback code'),
     parseSource: jest.fn(async () => ({ hasErrors: false })),
     writeFile: jest.fn(async () => ({ success: true, encoding: 'windows-1252' })),
-    notifySelfWrite: jest.fn(() => undefined),
     ...overrides,
   } as Calls;
 
@@ -51,7 +48,6 @@ function makeDeps(overrides: Partial<Calls> = {}): { deps: SaveFileDeps; calls: 
     codeGeneratorService: { generateCode: calls.generateCode },
     parserService: { parseSource: calls.parseSource },
     fileService: { writeFile: calls.writeFile },
-    fileWatcherService: { notifySelfWrite: calls.notifySelfWrite },
   } as unknown as SaveFileDeps;
 
   return { deps, calls };
@@ -63,7 +59,7 @@ describe('saveFileFlow', () => {
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
   });
 
-  it('writes the code validation generated and then arms self-write suppression', async () => {
+  it('writes the code validation generated', async () => {
     const { deps, calls } = makeDeps();
 
     const result = await saveFileFlow(deps, 'C:/proj/DIA_Test.d', MODEL, SETTINGS);
@@ -74,7 +70,6 @@ describe('saveFileFlow', () => {
       'INSTANCE DIA_Test (C_INFO) {};',
       { expectUnchanged: true, backupBeforeWrite: false }
     );
-    expect(calls.notifySelfWrite).toHaveBeenCalledWith('C:/proj/DIA_Test.d');
     expect(calls.generateCode).not.toHaveBeenCalled();
     expect(result).toMatchObject({ success: true, validationResult: { isValid: true } });
   });
@@ -95,7 +90,6 @@ describe('saveFileFlow', () => {
       validationResult: { isValid: false, errors: [{ type: 'missing_reference', message: 'nope' }], warnings: [] },
     });
     expect(calls.writeFile).not.toHaveBeenCalled();
-    expect(calls.notifySelfWrite).not.toHaveBeenCalled();
   });
 
   it('force-on-errors writes anyway, backs the file up first, and never expects it unchanged when overwriting', async () => {

@@ -11,6 +11,7 @@
 
 import { watch, type FSWatcher } from 'chokidar';
 import type { BrowserWindow } from 'electron';
+import { statSync } from 'fs';
 import { canonicalPathKey } from '../utils/pathKey';
 
 interface PathStats {
@@ -25,17 +26,33 @@ export interface FileChangeEvent {
   filePath: string;
 }
 
+export interface SelfWriteSignature {
+  mtimeMs: number;
+  size: number;
+}
+
+interface SelfWriteToken {
+  key: string;
+  generation: number;
+  id: number;
+  signature: SelfWriteSignature;
+}
+
+interface PendingFileEvent {
+  event: FileChangeEvent;
+  observedSignature?: SelfWriteSignature;
+}
+
 export class FileWatcherService {
   private watcher: FSWatcher | null = null;
   private window: BrowserWindow | null = null;
   private watchedPath: string | null = null;
 
-  /**
-   * Paths recently written by the editor itself.
-   * Entries are removed after a short timeout so that rapid external edits
-   * immediately after an editor save are still detected.
-   */
-  private selfWrittenPaths = new Set<string>();
+  private generation = 0;
+  private nextSelfWriteId = 1;
+  private selfWriteSignatures = new Map<string, SelfWriteSignature>();
+  private inFlightWrites = new Map<string, Set<number>>();
+  private pendingEvents = new Map<string, PendingFileEvent[]>();
 
   /**
    * Optional hook invoked for genuine external changes (after self-write
@@ -59,21 +76,38 @@ export class FileWatcherService {
     this.onExternalChange = cb;
   }
 
-  /**
-   * Mark a file path as "just written by the editor" so the next change
-   * event for it is suppressed. The mark expires after 2 seconds.
-   */
-  notifySelfWrite(filePath: string): void {
+  /** Start deferring watcher events until an atomic write's rename resolves. */
+  beginSelfWrite(filePath: string, signature: SelfWriteSignature): SelfWriteToken | null {
+    if (!this.watcher) return null;
     const key = canonicalPathKey(filePath);
-    this.selfWrittenPaths.add(key);
-    // Unref'd: expiring a suppression mark is never a reason to hold the
-    // process open. Referenced, each call pins its process for two seconds —
-    // the Electron main process in production, and a Jest worker under test,
-    // which is force-killed after 500 ms ("A worker process has failed to exit
-    // gracefully").
-    setTimeout(() => {
-      this.selfWrittenPaths.delete(key);
-    }, 2000).unref();
+    const id = this.nextSelfWriteId++;
+    const writes = this.inFlightWrites.get(key) ?? new Set<number>();
+    writes.add(id);
+    this.inFlightWrites.set(key, writes);
+    return { key, generation: this.generation, id, signature };
+  }
+
+  /** Finish a write and classify events that arrived while its rename was pending. */
+  finishSelfWrite(token: SelfWriteToken | null, succeeded: boolean): void {
+    if (!token) return;
+    if (token.generation !== this.generation) return;
+    const writes = this.inFlightWrites.get(token.key);
+    if (!writes?.delete(token.id)) return;
+    if (writes.size === 0) this.inFlightWrites.delete(token.key);
+    if (succeeded) {
+      this.selfWriteSignatures.set(token.key, token.signature);
+    }
+    if (!this.inFlightWrites.has(token.key)) {
+      const queued = this.pendingEvents.get(token.key) ?? [];
+      this.pendingEvents.delete(token.key);
+      for (const pending of queued) {
+        const wasDifferentAtDelivery = succeeded &&
+          (pending.event.type === 'unlink' || !pending.observedSignature ||
+            pending.observedSignature.mtimeMs !== token.signature.mtimeMs ||
+            pending.observedSignature.size !== token.signature.size);
+        this.classifyEvent(pending.event, wasDifferentAtDelivery);
+      }
+    }
   }
 
   /**
@@ -105,9 +139,10 @@ export class FileWatcherService {
       },
     });
 
-    this.watcher.on('change', (filePath: string) => this.handleEvent('change', filePath));
-    this.watcher.on('add', (filePath: string) => this.handleEvent('add', filePath));
-    this.watcher.on('unlink', (filePath: string) => this.handleEvent('unlink', filePath));
+    const generation = this.generation;
+    this.watcher.on('change', (filePath: string) => this.receiveEvent('change', filePath, generation));
+    this.watcher.on('add', (filePath: string) => this.receiveEvent('add', filePath, generation));
+    this.watcher.on('unlink', (filePath: string) => this.receiveEvent('unlink', filePath, generation));
 
     this.watcher.on('error', (error: unknown) => {
       console.error('[FileWatcher] Error:', error instanceof Error ? error.message : error);
@@ -118,11 +153,14 @@ export class FileWatcherService {
    * Stop watching (e.g. when project is closed).
    */
   async stopWatching(): Promise<void> {
+    this.generation++;
+    this.selfWriteSignatures.clear();
+    this.inFlightWrites.clear();
+    this.pendingEvents.clear();
     if (this.watcher) {
       await this.watcher.close();
       this.watcher = null;
       this.watchedPath = null;
-      this.selfWrittenPaths.clear();
     }
   }
 
@@ -134,20 +172,67 @@ export class FileWatcherService {
   }
 
   private handleEvent(type: FileChangeType, filePath: string): void {
-    // Skip events triggered by the editor's own writes
     const key = canonicalPathKey(filePath);
-    if (this.selfWrittenPaths.has(key)) {
-      this.selfWrittenPaths.delete(key);
+    if (this.inFlightWrites.has(key)) {
+      const queued = this.pendingEvents.get(key) ?? [];
+      let observedSignature: SelfWriteSignature | undefined;
+      try {
+        const stat = statSync(filePath);
+        observedSignature = { mtimeMs: stat.mtimeMs, size: stat.size };
+      } catch {
+        // Keep unknown observations queued; a failed stat must never discard an event.
+      }
+      queued.push({ event: { type, filePath }, observedSignature });
+      this.pendingEvents.set(key, queued);
       return;
     }
 
+    this.classifyEvent({ type, filePath });
+  }
+
+  private receiveEvent(type: FileChangeType, filePath: string, generation: number): void {
+    if (generation !== this.generation) return;
+    // Controlled delay for the real-Electron regression spec. The environment
+    // variable is only set by that harness; normal app event delivery stays
+    // synchronous with chokidar's callback.
+    const delay = Number(process.env.DDE_E2E_DELAY_FILE_WATCHER_EVENT_MS);
+    if (Number.isFinite(delay) && delay > 0) {
+      setTimeout(() => {
+        if (generation === this.generation) this.handleEvent(type, filePath);
+      }, delay);
+      return;
+    }
+    this.handleEvent(type, filePath);
+  }
+
+  private classifyEvent(event: FileChangeEvent, forceExternal = false): void {
+    const { filePath } = event;
+    const key = canonicalPathKey(filePath);
+    const signature = this.selfWriteSignatures.get(key);
+    if (forceExternal) {
+      this.forwardExternalEvent(event);
+      return;
+    }
+    if (signature) {
+      try {
+        const current = statSync(filePath);
+        if (current.mtimeMs === signature.mtimeMs && current.size === signature.size) return;
+      } catch {
+        // Missing/unreadable files are external changes and must reach renderer.
+      }
+      this.selfWriteSignatures.delete(key);
+    }
+
+    this.forwardExternalEvent(event);
+  }
+
+  private forwardExternalEvent(event: FileChangeEvent): void {
+    const { filePath, type } = event;
     // Genuine external change: invalidate main-process caches before notifying
     // the renderer, so a self-write never nukes its own fresh cache entry.
     if (this.onExternalChange) {
       this.onExternalChange(filePath, type);
     }
-
-    const event: FileChangeEvent = { type, filePath };
 
     // Send to renderer via IPC
     if (this.window && !this.window.isDestroyed()) {

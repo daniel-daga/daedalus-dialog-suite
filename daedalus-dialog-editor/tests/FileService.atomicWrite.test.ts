@@ -45,6 +45,56 @@ describe('FileService atomic write (E5)', () => {
     expect(entries).toEqual(['DIA_Test.d']);
   });
 
+  it('publishes staged metadata before rename and completes the observer before the cache stat', async () => {
+    const lifecycle: Array<{ phase: string; token?: unknown; signature?: { mtimeMs: number; size: number }; succeeded?: boolean }> = [];
+    service.setSelfWriteObserver({
+      begin: (_filePath, signature) => {
+        const token = {};
+        lifecycle.push({ phase: 'begin', token, signature });
+        return token;
+      },
+      finish: (token, succeeded) => lifecycle.push({ phase: 'finish', token, succeeded }),
+    });
+
+    await service.writeFile(target, 'updated content');
+
+    expect(lifecycle).toHaveLength(2);
+    expect(lifecycle[0].phase).toBe('begin');
+    expect(lifecycle[1]).toMatchObject({ phase: 'finish', token: lifecycle[0].token, succeeded: true });
+    expect(lifecycle[0].signature).toEqual({
+      mtimeMs: (await fs.stat(target)).mtimeMs,
+      size: Buffer.byteLength('updated content'),
+    });
+  });
+
+  it('does not adopt an external replacement made before the post-write cache stat', async () => {
+    let selfWriteSignature: { mtimeMs: number; size: number } | undefined;
+    service.setSelfWriteObserver({
+      begin: (_filePath, signature) => {
+        selfWriteSignature = signature;
+        return {};
+      },
+      finish: () => undefined,
+    });
+    const realStat = fs.stat.bind(fs);
+    let statCalls = 0;
+    jest.spyOn(fs, 'stat').mockImplementation(async (...args: any[]) => {
+      statCalls += 1;
+      // This write has no expectUnchanged precondition; replace the target on
+      // the post-rename cache refresh.
+      if (statCalls === 1) {
+        await fs.writeFile(target, 'external replacement with another size');
+      }
+      return (realStat as any)(...args);
+    });
+
+    await service.writeFile(target, 'editor content');
+
+    const externalStat = await realStat(target);
+    expect(selfWriteSignature).toBeDefined();
+    expect(selfWriteSignature).not.toEqual({ mtimeMs: externalStat.mtimeMs, size: externalStat.size });
+  });
+
   it('leaves the original file intact when the write fails mid-way', async () => {
     const original = await fs.readFile(target, 'utf8');
 
@@ -89,11 +139,17 @@ describe('FileService atomic write (E5)', () => {
 
   it('throws and preserves the original when rename fails persistently', async () => {
     const original = await fs.readFile(target, 'utf8');
+    const finish = jest.fn();
+    service.setSelfWriteObserver({
+      begin: () => 'write-token',
+      finish: (token, succeeded) => finish(token, succeeded),
+    });
     jest.spyOn(fs, 'rename').mockImplementation(async () => {
       throw Object.assign(new Error('EBUSY: resource busy'), { code: 'EBUSY' });
     });
 
     await expect(service.writeFile(target, 'never persists')).rejects.toThrow();
+    expect(finish).toHaveBeenCalledWith('write-token', false);
     jest.restoreAllMocks();
 
     expect(await fs.readFile(target, 'utf8')).toBe(original);

@@ -73,7 +73,6 @@ type Calls = {
   readFile: jest.Mock;
   parseSource: jest.Mock;
   writeFile: jest.Mock;
-  notifySelfWrite: jest.Mock;
 };
 
 function makeDeps(source: string, overrides: Partial<Calls> = {}): { deps: AppendInsertNpcDeps; calls: Calls } {
@@ -82,14 +81,12 @@ function makeDeps(source: string, overrides: Partial<Calls> = {}): { deps: Appen
     readFile: jest.fn(async () => source),
     parseSource: jest.fn(async (src: string) => parseLikeTheWorker(src)),
     writeFile: jest.fn(async () => ({ success: true, encoding: 'windows-1252' })),
-    notifySelfWrite: jest.fn(() => undefined),
     ...overrides,
   } as Calls;
   const deps = {
     pathValidator: { validatePathResolved: calls.validatePathResolved },
     fileService: { readFile: calls.readFile, writeFile: calls.writeFile },
     parserService: { parseSource: calls.parseSource },
-    fileWatcherService: { notifySelfWrite: calls.notifySelfWrite },
   } as unknown as AppendInsertNpcDeps;
   return { deps, calls };
 }
@@ -117,7 +114,6 @@ describe('appendInsertNpcFlow', () => {
     expect(out).not.toMatch(/[^\r]\n/);
     expect(result).toEqual({ ok: true, line: 12 });
     expect(calls.writeFile).toHaveBeenCalledWith(FILE, out, { expectUnchanged: true });
-    expect(calls.notifySelfWrite).toHaveBeenCalledWith(FILE);
   });
 
   it('keeps LF and takes the indent the body already uses', async () => {
@@ -143,7 +139,6 @@ describe('appendInsertNpcFlow', () => {
 
     expect(result).toMatchObject({ ok: false, reason: { kind: 'parse-errors' } });
     expect(calls.writeFile).not.toHaveBeenCalled();
-    expect(calls.notifySelfWrite).not.toHaveBeenCalled();
   });
 
   it('refuses when the function is not in the file', async () => {
@@ -156,7 +151,7 @@ describe('appendInsertNpcFlow', () => {
   });
 
   it('reports the mtime-guard conflict as a refusal, not a throw', async () => {
-    const { deps, calls } = makeDeps(STARTUP_CRLF, {
+    const { deps } = makeDeps(STARTUP_CRLF, {
       writeFile: jest.fn(async () => {
         throw new FileServiceError(`EXTERNAL_MODIFICATION: ${FILE} was modified on disk since it was last read`, 'EXTERNAL_MODIFICATION', FILE);
       }) as Calls['writeFile'],
@@ -165,7 +160,6 @@ describe('appendInsertNpcFlow', () => {
     const result = await appendInsertNpcFlow(deps, FILE, 'STARTUP_NewWorld', 'BAU_900_Lobart', 'NW_FARM1_LOBART');
 
     expect(result).toEqual({ ok: false, reason: { kind: 'external-modification' } });
-    expect(calls.notifySelfWrite).not.toHaveBeenCalled();
   });
 
   it('surfaces a path-validation refusal with its own message', async () => {

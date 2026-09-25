@@ -1,5 +1,4 @@
 import type { FileService } from './FileService';
-import type { FileWatcherService } from './FileWatcherService';
 import type { ParserService } from './ParserService';
 import { PathValidationError, type PathValidationService } from './PathValidationService';
 import type { AppendInsertNpcResult } from '../../shared/types';
@@ -21,7 +20,6 @@ export interface AppendInsertNpcDeps {
   pathValidator: Pick<PathValidationService, 'validatePathResolved'>;
   fileService: Pick<FileService, 'readFile' | 'writeFile'>;
   parserService: Pick<ParserService, 'parseSource'>;
-  fileWatcherService: Pick<FileWatcherService, 'notifySelfWrite'>;
 }
 
 export async function appendInsertNpcFlow(
@@ -56,7 +54,6 @@ export async function appendInsertNpcFlow(
       }
       throw error;
     }
-    deps.fileWatcherService.notifySelfWrite(filePath);
     return { ok: true, line };
   } catch (error) {
     if (error instanceof PathValidationError) {

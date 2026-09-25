@@ -51,15 +51,21 @@ function createServiceRegistry(): ServiceRegistry {
   const parserService = new ParserService();
   const codeGeneratorService = new CodeGeneratorService();
   const settingsService = new SettingsService();
+  const fileService = new FileService();
+  const fileWatcherService = new FileWatcherService();
+  fileService.setSelfWriteObserver({
+    begin: (filePath, signature) => fileWatcherService.beginSelfWrite(filePath, signature),
+    finish: (token, succeeded) => fileWatcherService.finishSelfWrite(token as any, succeeded),
+  });
 
   return {
-    fileService: new FileService(),
+    fileService,
     parserService,
     codeGeneratorService,
     validationService: new ValidationService(parserService, codeGeneratorService),
     projectService: new ProjectService(),
     settingsService,
-    fileWatcherService: new FileWatcherService(),
+    fileWatcherService,
     updaterService: new UpdaterService(settingsService),
     // Constructed eagerly, but it does not spawn its worker — and therefore
     // does not load the native addon — until a world is actually opened (§6).

@@ -35,6 +35,8 @@ export interface AppFixture {
 export interface LaunchAppOptions {
   /** Initial settings persisted before Electron starts and constructs SettingsService. */
   settings?: Record<string, unknown>;
+  /** Delay real chokidar callbacks to exercise self-write latency handling. */
+  delayFileWatcherEventMs?: number;
 }
 
 const tempDirs: string[] = [];
@@ -77,6 +79,9 @@ export async function launchApp(options: LaunchAppOptions = {}): Promise<AppFixt
       ...process.env,
       NODE_ENV: 'production',
       DDE_E2E_USER_DATA: userDataDir,
+      ...(options.delayFileWatcherEventMs
+        ? { DDE_E2E_DELAY_FILE_WATCHER_EVENT_MS: String(options.delayFileWatcherEventMs) }
+        : {}),
     },
   });
 

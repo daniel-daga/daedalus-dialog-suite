@@ -6,38 +6,19 @@ gating, the write itself, external-change conflicts, and window close.
 
 ## Dirty-state model
 
-`FileState` tracks two independent kinds of unsaved work:
-
-- **Model-dirty** — `isDirty`: the semantic model differs from disk.
-- **Source-dirty** — derived, never stored: `isSourceDirty(fs)` =
-  `workingCode !== undefined && workingCode !== originalCode`.
-
-Every discard decision (project switch, watcher reload, close guard) goes
-through the derived helper `hasUnsavedChanges(fs)` =
-`isDirty || isSourceDirty(fs) || !!externalConflict` — exported from
-`src/renderer/store/fileStore.ts`. Do not test `isDirty` alone.
-
-**Source-vs-model reconciliation (refuse-and-reconcile):** while a file is
-source-dirty, model mutations no-op and set the transient
-`blockedBySourceEdit` hint — they never wipe typed source. Reconciliation is
-explicit via `adoptWorkingCode(filePath)`: parse `workingCode`; on success
-adopt the model and set `isDirty`; on parse errors keep `workingCode` and
-return the errors. `SourceEditsPendingBanner` (Apply / Discard) is the UX.
-Mutation sites still clear `workingCode` when it equals `originalCode`
-(lossless). Auto-save deliberately **excludes** source-dirty files — auto-
-writing half-typed source would persist broken intermediate states and wipe
-undo history on every tick; the App-bar indicator shows "unsaved source
-changes — Ctrl+S to save" instead. Note the `SourceCodeEditor` view itself is
-currently unmounted in `MainLayout.tsx`; re-enabling it requires no further
-store work (these semantics are the prerequisite that used to be missing).
+`FileState.isDirty` records model edits. External conflicts are stored
+separately in `externalConflict`. Every discard decision uses
+`hasUnsavedChanges(fs) = fs.isDirty || !!fs.externalConflict`, exported from
+`src/renderer/store/fileStore.ts`. The source-edit state described by earlier
+versions of this document has been removed.
 
 ## `hasErrors` lifecycle
 
 **`semanticModel.hasErrors` is the single source of truth for "this model is a
 partial parse"; no editor mutation may clear it** — nothing a mutation does can
 make a partial model whole. `fileState.hasErrors`/`errors` are a parse-state
-mirror, set only where a fresh parse lands (`openFile`, `saveSource`,
-`adoptWorkingCode`). Validation failures live in the separate
+mirror, set only where a fresh parse lands (`openFile`, `reloadFile`).
+Validation failures live in the separate
 `autoSaveError` field (cleared by the next mutation), never in `hasErrors`.
 
 Auto-save candidacy (`isAutoSaveCandidate` in `useAutoSave.ts`):
@@ -81,12 +62,21 @@ until the next reindex.
 `FileService.writeFile` stages to a sibling temp file
 `.<basename>.<pid>.<random>.tmp` — the name must **not** end in `.d`, so the
 chokidar watcher (which only watches `.d`) never sees temp churn — then
-`write → fsync → close → rename`. The rename retries 3× with 50 ms backoff for
-transient Windows `EPERM`/`EBUSY` (AV locks). Every failure mode leaves the
-original file untouched and best-effort unlinks the temp. The rename's single
-fast `change` event lands well inside the watcher's 2 s self-write suppression
-window (residual risk: an event stabilizing >2 s after `notifySelfWrite` is
-still misclassified as external — accepted).
+`write → fsync → stat staged file → close → begin watcher write → rename`. The
+rename retries 3× with 50 ms backoff for transient Windows `EPERM`/`EBUSY` (AV
+locks). Every failure mode leaves the original file untouched and best-effort
+unlinks the temp. `FileService` captures the staged `{ mtimeMs, size }` before
+rename and begins an in-flight watcher write immediately before rename. Events
+for that path are queued until rename succeeds or fails. Success commits the
+staged signature and classifies queued events; failure aborts it and classifies
+them against disk. The lifecycle lives in `FileService`, so
+`generator:saveFile`, `file:write`, and `script:appendInsertNpc` share it.
+There is no timer or event-count limit: repeated and delayed events are
+suppressed while current mtime and size match. A mismatch or failed stat is
+external and invalidates caches before notifying the renderer. Metadata
+equality is a heuristic, not byte identity: different bytes with the same size
+and mtime on a coarse-timestamp or timestamp-preserving filesystem/tool can
+remain suppressed until metadata changes or watching stops.
 
 **Backup before destructive force-save:** the force-on-errors path overwrites
 the file with generated code that silently drops content the parser could not
@@ -112,22 +102,26 @@ Before writing, `encodeWithRoundtripCheck` (in
   offending characters with positions. `?`-substitution never reaches disk.
 
 The per-file encoding cache is invalidated on external changes:
-`FileWatcherService.setOnExternalChange(cb)` fires after the self-write
-suppression check and `main.ts` wires it to `clearEncodingCache` (and the
-stat cache below).
+`FileWatcherService.setOnExternalChange(cb)` fires after self-write
+classification and `main.ts` wires it to `clearEncodingCache` (and the stat
+cache below).
 
 ## External-modification conflicts
 
 Policy: **suspend auto-save AND prompt** — suspension is the safety mechanism
 (a prompt alone loses the race with the 2 s auto-save tick).
 
-- Watcher layer: a `change` for a file with `hasUnsavedChanges` sets
+- Before handling a batched change, the renderer flushes registered pending
+  component edits. A change for a file with `hasUnsavedChanges` then sets
   `FileState.externalConflict { detectedAt, fileMissing? }` (which excludes it
   from auto-save) instead of reloading; `unlink` on a dirty file marks a
   `fileMissing` conflict instead of destroying the FileState. Clean files
   reload via `reloadFile(filePath)`, which reuses the FileState slot and
   preserves `activeFile` (no focus steal); `openFile` keeps activate-on-open
   for genuine opens.
+  A keystroke made after this flush but before a clean-file reload completes
+  can still be replaced by the loaded model; preserving that local component
+  state across model replacement is a separate behavior change.
 - `ExternalChangeConflictDialog` resolves: **Keep mine** =
   `saveFile(fp, { overwriteExternal: true })`; **Reload from disk** =
   `reloadFile(fp)` (fileMissing variant: Restore / Discard). Background-file
@@ -166,9 +160,7 @@ per kind).
 `saveFile` captures the model reference before the IPC await and only clears
 `isDirty` if the file's current `semanticModel` is still reference-equal
 (compared outside `set()` — Immer drafts are never reference-equal). Edits
-landing mid-save stay dirty for the next tick. `saveSource` likewise keeps a
-`workingCode` that changed during the await (file stays source-dirty) instead
-of wiping it.
+landing mid-save stay dirty for the next tick.
 
 ## Pending-edit flush registry
 
@@ -177,7 +169,8 @@ invisible to the store until their timer fires. The registry
 `src/renderer/utils/pendingEditFlushRegistry.ts`
 (`registerPendingEditFlusher(fn): unregister`, `flushAllPendingEdits()`) is
 co-owned with slice 5. Rule: **every save/discard *and undo/redo* decision entry
-point calls `flushAllPendingEdits()` first, always at the UI layer — the store
+point calls `flushAllPendingEdits()` first, including the watcher before it
+decides whether to reload, always at the UI layer — the store
 never flushes.** A flusher no-ops unless its timer is pending, then runs the exact
 timer body (ref-resolved), so flush and natural fire are byte-identical. The
 shared body also no-ops when the local edit shallow-equals the store value (the

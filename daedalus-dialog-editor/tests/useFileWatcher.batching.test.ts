@@ -13,6 +13,7 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import { useFileWatcher } from '../src/renderer/hooks/useFileWatcher';
 import { useProjectStore } from '../src/renderer/store/projectStore';
 import { useFileStore } from '../src/renderer/store/fileStore';
+import { registerPendingEditFlusher } from '../src/renderer/utils/pendingEditFlushRegistry';
 import type { FileChangeEvent } from '../src/renderer/types/global';
 
 const PROJ_PATH = 'C:/project';
@@ -87,6 +88,38 @@ const emit = (event: FileChangeEvent) => {
 };
 
 describe('useFileWatcher — change batching', () => {
+  test('flushes a pending editor edit before deciding whether an open file can reload', async () => {
+    useFileStore.setState({
+      activeFile: FILE_A,
+      openFiles: new Map([[FILE_A, {
+        filePath: FILE_A,
+        semanticModel: EMPTY_MODEL as any,
+        isDirty: false,
+        lastSaved: new Date(),
+        originalCode: '// original',
+      }]]),
+    });
+    const unregister = registerPendingEditFlusher(() => {
+      useFileStore.setState((state) => ({
+        openFiles: new Map(state.openFiles).set(FILE_A, {
+          ...state.openFiles.get(FILE_A)!,
+          isDirty: true,
+        }),
+      }));
+    });
+    const { unmount } = await setupHook();
+
+    emit({ type: 'change', filePath: FILE_A });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    });
+
+    expect(useFileStore.getState().openFiles.get(FILE_A)?.externalConflict).toBeDefined();
+    expect(mockParseDialogFile).not.toHaveBeenCalled();
+    unregister();
+    unmount();
+  });
+
   test('N change events in one window: one parse per unique path, one store cascade', async () => {
     const { unmount } = await setupHook();
     const generationBefore = useProjectStore.getState().parseGeneration;
