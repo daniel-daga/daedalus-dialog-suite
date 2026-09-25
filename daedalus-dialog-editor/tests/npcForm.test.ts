@@ -128,6 +128,50 @@ describe('npcForm', () => {
 
   it('lists the statements no control covers, in source order', () => {
     expect(uncoveredStatements(ONAR).map((s) => s.kind === 'other' ? s.text : s.kind === 'call' ? s.name : s.field))
-      .toEqual(['EquipItem', 'aivar', 'if (Kapitel >= 2) { level = 3; };']);
+      .toEqual(['aivar', 'if (Kapitel >= 2) { level = 3; };']);
+  });
+
+  describe('equipment', () => {
+    // Retail equips one weapon per EquipItem call; which control a call
+    // belongs to is read off its item's prefix.
+    const LEE: NpcDefinition = {
+      name: 'SLD_800_Lee',
+      parent: 'Npc_Default',
+      closingBraceIndex: 0,
+      statements: [
+        call('EquipItem', ['self', 'ItRw_Sld_Bow']),
+        call('EquipItem', ['self', 'itmw_1h_sld_sword']),
+        call('EquipItem', ['self', 'ItMw_2h_Sld_Axe']),
+      ],
+    };
+
+    it('reads the first melee and the first ranged weapon', () => {
+      const values = formValuesFrom(LEE);
+      expect(values.meleeWeapon).toBe('itmw_1h_sld_sword');
+      expect(values.rangedWeapon).toBe('ItRw_Sld_Bow');
+    });
+
+    it('edits the call a control read, addressed by its occurrence', () => {
+      const before = formValuesFrom(LEE);
+      expect(editsBetween(LEE, before, { ...before, meleeWeapon: 'ItMw_1h_Sld_Axe' })).toEqual([
+        { op: 'setCall', name: 'EquipItem', occurrence: 1, args: ['self', 'ItMw_1h_Sld_Axe'] },
+      ]);
+      expect(editsBetween(LEE, before, { ...before, rangedWeapon: '' })).toEqual([
+        { op: 'removeCall', name: 'EquipItem', occurrence: 0 },
+      ]);
+    });
+
+    it('adds a call for a weapon the NPC had none of', () => {
+      const bare: NpcDefinition = { ...LEE, statements: [call('EquipItem', ['self', 'ItMw_1h_Sld_Sword'])] };
+      const before = formValuesFrom(bare);
+      expect(before.rangedWeapon).toBe('');
+      expect(editsBetween(bare, before, { ...before, rangedWeapon: 'ItRw_Sld_Bow' })).toEqual([
+        { op: 'addCall', name: 'EquipItem', args: ['self', 'ItRw_Sld_Bow'] },
+      ]);
+    });
+
+    it('leaves a second weapon of the same kind to the other statements', () => {
+      expect(uncoveredStatements(LEE)).toEqual([LEE.statements[2]]);
+    });
   });
 });

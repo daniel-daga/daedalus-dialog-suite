@@ -1929,6 +1929,21 @@ describe('assertNpcApplyEditsRequest', () => {
     ]))).not.toThrow();
   });
 
+  it('accepts an occurrence on a call edit, and addCall', () => {
+    expect(() => assertNpcApplyEditsRequest(ok([
+      { op: 'setCall', name: 'EquipItem', occurrence: 1, args: ['self', 'ItRw_Sld_Bow'] },
+      { op: 'removeCall', name: 'EquipItem', occurrence: 0 },
+      { op: 'addCall', name: 'EquipItem', args: ['self', 'ItMw_1h_Sld_Sword'] },
+    ]))).not.toThrow();
+  });
+
+  it('refuses an occurrence that is not a non-negative integer, and addCall without args', () => {
+    expect(() => assertNpcApplyEditsRequest(ok([{ op: 'removeCall', name: 'F', occurrence: -1 }]))).toThrow(/occurrence/);
+    expect(() => assertNpcApplyEditsRequest(ok([{ op: 'removeCall', name: 'F', occurrence: 1.5 }]))).toThrow(/occurrence/);
+    expect(() => assertNpcApplyEditsRequest(ok([{ op: 'setCall', name: 'F', occurrence: '1', args: ['a'] }]))).toThrow(/occurrence/);
+    expect(() => assertNpcApplyEditsRequest(ok([{ op: 'addCall', name: 'F' }]))).toThrow(/args/);
+  });
+
   it('refuses a missing source or a non-array edit list', () => {
     expect(() => assertNpcApplyEditsRequest({ edits: [] })).toThrow(/sourceText/);
     expect(() => assertNpcApplyEditsRequest({ sourceText: 'x', edits: {} })).toThrow(/edits/);

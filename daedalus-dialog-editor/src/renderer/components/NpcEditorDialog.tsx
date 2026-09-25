@@ -43,6 +43,7 @@ const GROUPS: Array<{ id: NpcFormField['group']; title: string }> = [
   { id: 'hitChance', title: 'Hit chance' },
   { id: 'protection', title: 'Protection' },
   { id: 'visual', title: 'Visual (B_SetNpcVisual)' },
+  { id: 'equipment', title: 'Equipment (EquipItem)' },
 ];
 
 function findInstanceKey(model: SemanticModel, npcName: string): string | undefined {

@@ -70,8 +70,11 @@ export interface NpcDefinition {
 export type NpcEdit =
   | { op: 'set'; field: string; index?: string; value: string }
   | { op: 'remove'; field: string; index?: string }
-  | { op: 'setCall'; name: string; args: string[] }
-  | { op: 'removeCall'; name: string };
+  /** `occurrence` picks which call of that name, 0-based; it defaults to 0. */
+  | { op: 'setCall'; name: string; args: string[]; occurrence?: number }
+  | { op: 'removeCall'; name: string; occurrence?: number }
+  /** Always a new call, even when the name is already called. */
+  | { op: 'addCall'; name: string; args: string[] };
 
 export function extractNpcDefinition(source: string): NpcDefinition {
   const { tree } = DaedalusParser.parseSource(source);
@@ -159,9 +162,9 @@ interface Splice {
  * Apply `edits` to an NPC instance's source. Every edit is resolved against
  * the *original* statements, so edits in one call do not see each other.
  * An absent field is inserted on a line of its own after the last field, an
- * absent call after the last statement; removing an absent one does nothing.
- * Calls match by name and the first one wins — retail calls `EquipItem` once
- * per weapon, so a caller editing one of several needs more than a name.
+ * absent call after the last call of its name or else the last statement;
+ * removing an absent one does nothing. Calls match by name and `occurrence`,
+ * because retail calls `EquipItem` once per weapon.
  */
 export function applyNpcEdits(source: string, edits: NpcEdit[]): string {
   if (edits.length === 0) return source;
@@ -170,7 +173,12 @@ export function applyNpcEdits(source: string, edits: NpcEdit[]): string {
   const calls = npc.statements.filter((s): s is NpcCallStatement => s.kind === 'call');
   const findField = (field: string, index?: string) =>
     fields.find((s) => same(s.field, field) && same(s.index, index));
-  const findCall = (name: string) => calls.find((s) => same(s.name, name));
+  const callsNamed = (name: string) => calls.filter((s) => same(s.name, name));
+  const findCall = (name: string, occurrence = 0) => callsNamed(name)[occurrence];
+  const newCall = (name: string, args: string[], order: number) => {
+    const named = callsNamed(name);
+    return insertAfter(source, npc, named[named.length - 1], `${name} (${args.join(', ')});`, order);
+  };
 
   const splices: Splice[] = edits.map((edit, order) => {
     switch (edit.op) {
@@ -185,15 +193,17 @@ export function applyNpcEdits(source: string, edits: NpcEdit[]): string {
       case 'remove':
         return removal(source, findField(edit.field, edit.index), order);
       case 'setCall': {
-        const existing = findCall(edit.name);
-        const args = `(${edit.args.join(', ')})`;
+        const existing = findCall(edit.name, edit.occurrence);
         if (existing) {
+          const args = `(${edit.args.join(', ')})`;
           return { start: existing.argsRange.startIndex, end: existing.argsRange.endIndex, text: args, order };
         }
-        return insertAfter(source, npc, undefined, `${edit.name} ${args};`, order);
+        return newCall(edit.name, edit.args, order);
       }
+      case 'addCall':
+        return newCall(edit.name, edit.args, order);
       case 'removeCall':
-        return removal(source, findCall(edit.name), order);
+        return removal(source, findCall(edit.name, edit.occurrence), order);
     }
   });
 

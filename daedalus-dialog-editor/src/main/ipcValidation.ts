@@ -95,7 +95,7 @@ export function assertNpcApplyEditsRequest(
       throw new Error('Invalid npc:applyEdits request: each edit must be a plain object');
     }
     const isField = edit.op === 'set' || edit.op === 'remove';
-    const isCall = edit.op === 'setCall' || edit.op === 'removeCall';
+    const isCall = edit.op === 'setCall' || edit.op === 'removeCall' || edit.op === 'addCall';
     if (!isField && !isCall) {
       throw new Error('Invalid npc:applyEdits request: unknown op');
     }
@@ -111,7 +111,10 @@ export function assertNpcApplyEditsRequest(
     if (edit.op === 'set' && !isOneLine(edit.value)) {
       throw new Error('Invalid npc:applyEdits request: value must be one non-empty line');
     }
-    if (edit.op === 'setCall' && (!Array.isArray(edit.args) || !edit.args.every(isOneLine))) {
+    if (edit.occurrence !== undefined && !(Number.isInteger(edit.occurrence) && (edit.occurrence as number) >= 0)) {
+      throw new Error('Invalid npc:applyEdits request: occurrence must be a non-negative integer');
+    }
+    if ((edit.op === 'setCall' || edit.op === 'addCall') && (!Array.isArray(edit.args) || !edit.args.every(isOneLine))) {
       throw new Error('Invalid npc:applyEdits request: args must be non-empty single-line strings');
     }
   }

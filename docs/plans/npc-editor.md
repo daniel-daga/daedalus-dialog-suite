@@ -93,10 +93,10 @@ Tests (TDD, `daedalus-parser/test/`):
   `daedalus-parser/npc-definition` subpath (API in `daedalus-parser/API.md`).
   The renderer imports nothing from `daedalus-parser` today, so Phase 2 reaches
   both functions through main.
-- **Open for Phase 2:** `setCall`/`removeCall` match a call by name and take
-  the first. Retail calls `EquipItem` once per weapon, so the equipment
-  controls need a call addressed by position (or by its first non-`self`
-  argument) before they can edit the second one.
+- **A repeated call is addressed by occurrence.** Retail calls `EquipItem`
+  once per weapon, so `setCall`/`removeCall` take a 0-based `occurrence`
+  among the calls of that name, and `addCall` always inserts (after the last
+  call of that name) rather than overwriting the first.
 
 ## 3. Phase 2 — the form editor
 
@@ -113,7 +113,9 @@ NPC's instance. What it rests on:
   gained an `npc` request kind — so no native parse runs in Electron main.
 - `src/renderer/npc/npcForm.ts` — the pure half: which controls exist
   (main info, attributes, hit chance, protection, the five `B_SetNpcVisual`
-  arguments), reading them from a definition, turning a changed form into
+  arguments, and a melee and a ranged weapon — the first `EquipItem` whose item
+  starts `ItMw_`/`ItRw_`, edited by its occurrence; a third weapon stays among
+  the other statements), reading them from a definition, turning a changed form into
   edits, validating it, and listing the statements no control covers (shown
   read-only as "Other statements"). String controls (name, head mesh) show a
   literal's content and write it back quoted; a constant that stood there
@@ -128,12 +130,9 @@ free text.
 
 **Still open in Phase 2:**
 
-- **Equipment.** `EquipItem` is repeated per weapon and `setCall` addresses a
-  call by name (the last bullet of Phase 1 above), so the weapon row of the NPC
-  Generator screenshot is not in the form yet.
 - **Asset-backed suggestions** — head meshes and walk overlays from the VFS
   (`HUM_HEAD_*.MMB`, `HUMANS_*.MDS`) — and splitting items by category flags
-  rather than by the `ITAR_` prefix.
+  rather than by the `ITAR_`/`ItMw_`/`ItRw_` prefixes.
 - **Routines tab**, read-only first: the NPC's `Rtn_*_<id>` functions and
   their `TA_*` entries from the existing index, with jumps to them.
 - **Create NPC**: a new instance from a template into a chosen file, offering

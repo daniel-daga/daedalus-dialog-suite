@@ -263,7 +263,8 @@ instance.sourceText = applyNpcEdits(instance.sourceText, [
   { op: 'set', field: 'protection', index: 'PROT_EDGE', value: '100' },
   { op: 'remove', field: 'flags' },
   { op: 'setCall', name: 'Mdl_SetModelFatness', args: ['self', '1'] },
-  { op: 'removeCall', name: 'EquipItem' },
+  { op: 'removeCall', name: 'EquipItem', occurrence: 1 },
+  { op: 'addCall', name: 'EquipItem', args: ['self', 'ItRw_Sld_Bow'] },
 ]);
 ```
 
@@ -275,8 +276,9 @@ instance.sourceText = applyNpcEdits(instance.sourceText, [
 - A `set`/`setCall` for an absent statement inserts a line after the last
   field (or last statement), indented like it; removing an absent one is a no-op.
 - All edits in one call resolve against the original source.
-- `setCall`/`removeCall` act on the *first* call of that name; a repeated call
-  such as retail's one `EquipItem` per weapon cannot yet be told apart.
+- `setCall`/`removeCall` take an optional 0-based `occurrence` (default 0) to
+  address one of several calls of a name, such as retail's one `EquipItem` per
+  weapon; `addCall` always inserts, after the last call of that name.
 - `extractNpcDefinition` throws on a syntax error or on source that is not a
   single instance declaration. It does not check that the parent resolves to
   `C_NPC` — that needs the project's prototype chains.

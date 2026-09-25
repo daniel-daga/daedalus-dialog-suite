@@ -15,6 +15,7 @@ const NPC_FILE = `INSTANCE BAU_900_Onar (C_NPC)
 	guild = GIL_BAU;
 	level = 20;
 	B_SetNpcVisual (self, MALE, "Hum_Head_Fatbald", Face_N_Weak_Orry, BodyTex_N, ITAR_Vlk_H);
+	EquipItem (self, ItMw_1h_Bau_Mace);
 	daily_routine = Rtn_Start_900;
 };
 `;
@@ -57,6 +58,8 @@ test.describe('NPC editor', () => {
     await expect(editor.getByLabel('Daily routine')).toHaveValue('Rtn_Start_900');
     await expect(editor.getByLabel('Head mesh')).toHaveValue('Hum_Head_Fatbald');
     await expect(editor.getByLabel('Armor')).toHaveValue('ITAR_Vlk_H');
+    await expect(editor.getByLabel('Melee weapon')).toHaveValue('ItMw_1h_Bau_Mace');
+    await expect(editor.getByLabel('Ranged weapon')).toHaveValue('');
     // Absent from the script, so empty — not a default the editor invented.
     await expect(editor.getByLabel('Strength')).toHaveValue('');
   });
@@ -76,6 +79,26 @@ test.describe('NPC editor', () => {
     await expect(editor.getByLabel('Strength')).toHaveValue('80');
     await expect(editor.getByLabel('Armor')).toHaveValue('ITAR_Sld_M');
     await expect(editor.getByLabel('Name', { exact: true })).toHaveValue('Onar');
+  });
+
+  test('a second weapon is added beside the first, and each keeps its own call', async ({ page }) => {
+    let editor = await openEditor(page);
+    await editor.getByLabel('Ranged weapon').fill('ItRw_Sld_Bow');
+    await editor.getByRole('button', { name: 'Save' }).click();
+    await expect(editor).toBeHidden();
+
+    editor = await openEditor(page);
+    await expect(editor.getByLabel('Melee weapon')).toHaveValue('ItMw_1h_Bau_Mace');
+    await expect(editor.getByLabel('Ranged weapon')).toHaveValue('ItRw_Sld_Bow');
+
+    // Editing the ranged weapon must not touch the melee one's call.
+    await editor.getByLabel('Ranged weapon').fill('ItRw_Crossbow_L_01');
+    await editor.getByRole('button', { name: 'Save' }).click();
+    await expect(editor).toBeHidden();
+
+    editor = await openEditor(page);
+    await expect(editor.getByLabel('Melee weapon')).toHaveValue('ItMw_1h_Bau_Mace');
+    await expect(editor.getByLabel('Ranged weapon')).toHaveValue('ItRw_Crossbow_L_01');
   });
 
   test('Cancel discards the edit', async ({ page }) => {

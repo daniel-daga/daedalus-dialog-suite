@@ -494,13 +494,26 @@ export const mockEditorAPI: EditorAPI = {
           out = insert(out, `${edit.index ? `${edit.field}[${edit.index}]` : edit.field} = ${edit.value};`);
         }
       } else {
-        const pattern = new RegExp(`^([ \\t]*${escape(edit.name)}\\s*)\\([^)]*\\)\\s*;.*$`, 'im');
-        if (edit.op === 'removeCall') {
-          out = out.replace(new RegExp(`${pattern.source}\\n?`, 'im'), '');
-        } else if (pattern.test(out)) {
-          out = out.replace(pattern, (_line, head) => `${head}(${edit.args.join(', ')});`);
-        } else {
-          out = insert(out, `${edit.name} (${edit.args.join(', ')});`);
+        // Every line calling edit.name, so an occurrence can pick one.
+        const pattern = new RegExp(`^([ \\t]*${escape(edit.name)}\\s*)\\([^)]*\\)\\s*;.*$`, 'gim');
+        const lines = [...out.matchAll(pattern)];
+        const target = edit.op === 'addCall' ? undefined : lines[edit.occurrence ?? 0];
+        const newLine = edit.op === 'removeCall' ? '' : `${edit.name} (${edit.args.join(', ')});`;
+        if (target) {
+          const start = target.index!;
+          const end = start + target[0].length;
+          out = edit.op === 'removeCall'
+            ? out.slice(0, start) + out.slice(out[end] === '\n' ? end + 1 : end)
+            : `${out.slice(0, start)}${target[1]}(${edit.args.join(', ')});${out.slice(end)}`;
+        } else if (edit.op !== 'removeCall') {
+          const last = lines[lines.length - 1];
+          if (last) {
+            const end = last.index! + last[0].length;
+            const indent = /^[ \t]*/.exec(last[0])![0];
+            out = `${out.slice(0, end)}\n${indent}${newLine}${out.slice(end)}`;
+          } else {
+            out = insert(out, newLine);
+          }
         }
       }
     }

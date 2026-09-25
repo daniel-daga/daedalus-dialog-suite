@@ -214,6 +214,64 @@ test('removing a call deletes its line', () => {
   });
 });
 
+// Retail calls EquipItem once per weapon, so a call is addressed by which
+// occurrence of its name it is, and a second one can be added beside the first.
+const ARMED = [
+  'instance SLD_800_Lee (Npc_Default)',
+  '{',
+  '\tEquipItem (self, ItMw_1h_Sld_Sword);',
+  '\tEquipItem (self, ItRw_Sld_Bow);',
+  '\tdaily_routine = Rtn_Start_800;',
+  '};'
+].join('\n');
+
+test('setCall and removeCall can address a later occurrence of a repeated call', () => {
+  const edited = applyNpcEdits(ARMED, [
+    { op: 'setCall', name: 'EquipItem', occurrence: 1, args: ['self', 'ItRw_Crossbow_L_01'] }
+  ]);
+  assert.deepEqual(changedLines(ARMED, edited), {
+    removed: ['\tEquipItem (self, ItRw_Sld_Bow);'],
+    added: ['\tEquipItem (self, ItRw_Crossbow_L_01);']
+  });
+
+  const removed = applyNpcEdits(ARMED, [{ op: 'removeCall', name: 'equipitem', occurrence: 1 }]);
+  assert.deepEqual(changedLines(ARMED, removed), { removed: ['\tEquipItem (self, ItRw_Sld_Bow);'], added: [] });
+});
+
+test('an occurrence that does not exist is a no-op for removeCall and an insert for setCall', () => {
+  assert.equal(applyNpcEdits(ARMED, [{ op: 'removeCall', name: 'EquipItem', occurrence: 2 }]), ARMED);
+  const edited = applyNpcEdits(ARMED, [
+    { op: 'setCall', name: 'EquipItem', occurrence: 2, args: ['self', 'ItMw_2h_Sld_Axe'] }
+  ]);
+  assert.deepEqual(changedLines(ARMED, edited).added, ['\tEquipItem (self, ItMw_2h_Sld_Axe);']);
+});
+
+test('addCall always inserts, even when the name is already called', () => {
+  const unarmed = ARMED.replace('\tEquipItem (self, ItRw_Sld_Bow);\n', '');
+  const edited = applyNpcEdits(unarmed, [{ op: 'addCall', name: 'EquipItem', args: ['self', 'ItRw_Sld_Bow'] }]);
+  assert.deepEqual(changedLines(unarmed, edited), { removed: [], added: ['\tEquipItem (self, ItRw_Sld_Bow);'] });
+  const calls = extractNpcDefinition(edited).statements.filter((s) => s.kind === 'call');
+  assert.deepEqual(calls.map((s) => s.args[1]), ['ItMw_1h_Sld_Sword', 'ItRw_Sld_Bow']);
+});
+
+test('addCall goes after the last call of that name, not after the last statement', () => {
+  const edited = applyNpcEdits(ARMED, [{ op: 'addCall', name: 'EquipItem', args: ['self', 'ItMw_2h_Sld_Axe'] }]);
+  assert.ok(edited.includes(
+    'EquipItem (self, ItRw_Sld_Bow);\n\tEquipItem (self, ItMw_2h_Sld_Axe);\n\tdaily_routine'
+  ));
+});
+
+test('removing one occurrence and editing the next in one call both resolve against the original', () => {
+  const edited = applyNpcEdits(ARMED, [
+    { op: 'removeCall', name: 'EquipItem', occurrence: 0 },
+    { op: 'setCall', name: 'EquipItem', occurrence: 1, args: ['self', 'ItRw_Crossbow_L_01'] }
+  ]);
+  assert.deepEqual(changedLines(ARMED, edited), {
+    removed: ['\tEquipItem (self, ItMw_1h_Sld_Sword);', '\tEquipItem (self, ItRw_Sld_Bow);'],
+    added: ['\tEquipItem (self, ItRw_Crossbow_L_01);']
+  });
+});
+
 test('several edits in one call apply against the original ranges', () => {
   const edited = applyNpcEdits(ONAR, [
     { op: 'set', field: 'voice', value: '9' },

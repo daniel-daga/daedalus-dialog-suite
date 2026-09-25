@@ -700,8 +700,9 @@ export interface NpcDefinition {
 export type NpcEdit =
   | { op: 'set'; field: string; index?: string; value: string }
   | { op: 'remove'; field: string; index?: string }
-  | { op: 'setCall'; name: string; args: string[] }
-  | { op: 'removeCall'; name: string };
+  | { op: 'setCall'; name: string; args: string[]; occurrence?: number }
+  | { op: 'removeCall'; name: string; occurrence?: number }
+  | { op: 'addCall'; name: string; args: string[] };
 
 export interface GlobalInstance {
   name: string;

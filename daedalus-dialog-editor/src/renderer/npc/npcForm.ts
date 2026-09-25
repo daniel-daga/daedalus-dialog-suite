@@ -14,15 +14,18 @@ import type { NpcDefinition, NpcEdit, NpcFieldStatement, NpcCallStatement, NpcSt
 // then edited as the expression it is.
 
 export const VISUAL_CALL = 'B_SetNpcVisual';
+export const EQUIP_CALL = 'EquipItem';
 
 type Target =
   | { kind: 'field'; field: string; index?: string }
-  | { kind: 'visualArg'; arg: number };
+  | { kind: 'visualArg'; arg: number }
+  /** The first `EquipItem(slf, item)` whose item starts with `prefix`. */
+  | { kind: 'equip'; prefix: string };
 
 export interface NpcFormField {
   key: string;
   label: string;
-  group: 'main' | 'attributes' | 'hitChance' | 'protection' | 'visual';
+  group: 'main' | 'attributes' | 'hitChance' | 'protection' | 'visual' | 'equipment';
   target: Target;
   /** Shown without quotes and written back as a string literal. */
   string?: true;
@@ -67,6 +70,10 @@ export const NPC_FORM_FIELDS: NpcFormField[] = [
   v('faceTexture', 'Face texture', 3, { constantPrefix: 'Face' }),
   v('bodyTexture', 'Body texture', 4, { constantPrefix: 'BodyTex' }),
   v('armor', 'Armor', 5, { itemPrefix: 'ITAR_' }),
+  // Retail names weapons by kind — ItMw_ melee, ItRw_ ranged — and equips
+  // each with its own EquipItem call.
+  { key: 'meleeWeapon', label: 'Melee weapon', group: 'equipment', target: { kind: 'equip', prefix: 'ITMW_' }, options: { itemPrefix: 'ITMW_' } },
+  { key: 'rangedWeapon', label: 'Ranged weapon', group: 'equipment', target: { kind: 'equip', prefix: 'ITRW_' }, options: { itemPrefix: 'ITRW_' } },
 ];
 
 const VISUAL_FIELDS = NPC_FORM_FIELDS.filter((field) => field.target.kind === 'visualArg');
@@ -85,14 +92,21 @@ function findVisualCall(npc: NpcDefinition): NpcCallStatement | undefined {
   return npc.statements.find((s): s is NpcCallStatement => s.kind === 'call' && same(s.name, VISUAL_CALL));
 }
 
+/** The equip call a control reads, and which `EquipItem` occurrence it is. */
+function findEquip(npc: NpcDefinition, prefix: string): { call: NpcCallStatement; occurrence: number } | undefined {
+  const equips = npc.statements.filter((s): s is NpcCallStatement => s.kind === 'call' && same(s.name, EQUIP_CALL));
+  const occurrence = equips.findIndex((call) => (call.args[1] ?? '').toUpperCase().startsWith(prefix));
+  return occurrence === -1 ? undefined : { call: equips[occurrence], occurrence };
+}
+
 const isStringLiteral = (value: string) => /^"[^"]*"$/.test(value);
 
 /** The expression the script has for `field`, or undefined when absent. */
 function writtenValue(npc: NpcDefinition, field: NpcFormField): string | undefined {
   const { target } = field;
-  return target.kind === 'field'
-    ? findField(npc, target.field, target.index)?.value
-    : findVisualCall(npc)?.args[target.arg];
+  if (target.kind === 'field') return findField(npc, target.field, target.index)?.value;
+  if (target.kind === 'equip') return findEquip(npc, target.prefix)?.call.args[1];
+  return findVisualCall(npc)?.args[target.arg];
 }
 
 /** What a typed value is written as: quoted for a `string` control, unless a
@@ -144,6 +158,21 @@ export function editsBetween(npc: NpcDefinition, before: NpcFormValues, after: N
       : { op: 'set', ...target, value: toExpression(npc, field, typed) });
   }
 
+  for (const field of NPC_FORM_FIELDS) {
+    if (field.target.kind !== 'equip' || !changed(field.key)) continue;
+    const typed = (after[field.key] ?? '').trim();
+    const existing = findEquip(npc, field.target.prefix);
+    if (!existing) {
+      if (typed !== '') edits.push({ op: 'addCall', name: EQUIP_CALL, args: ['self', typed] });
+    } else if (typed === '') {
+      edits.push({ op: 'removeCall', name: EQUIP_CALL, occurrence: existing.occurrence });
+    } else {
+      edits.push({
+        op: 'setCall', name: EQUIP_CALL, occurrence: existing.occurrence, args: [existing.call.args[0], typed],
+      });
+    }
+  }
+
   if (VISUAL_FIELDS.some((field) => changed(field.key))) {
     const typed = VISUAL_FIELDS.map((field) => (after[field.key] ?? '').trim());
     if (typed.every((arg) => arg === '')) {
@@ -162,8 +191,10 @@ export function uncoveredStatements(npc: NpcDefinition): NpcStatement[] {
   const visual = findVisualCall(npc);
   const covered = new Set<NpcStatement>(visual ? [visual] : []);
   for (const field of NPC_FORM_FIELDS) {
-    if (field.target.kind !== 'field') continue;
-    const statement = findField(npc, field.target.field, field.target.index);
+    const { target } = field;
+    const statement = target.kind === 'field' ? findField(npc, target.field, target.index)
+      : target.kind === 'equip' ? findEquip(npc, target.prefix)?.call
+        : undefined;
     if (statement) covered.add(statement);
   }
   return npc.statements.filter((s) => !covered.has(s));
