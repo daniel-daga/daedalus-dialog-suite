@@ -1,6 +1,6 @@
 # NPC Editor
 
-**Status:** proposed, 2026-09-25. No code exists.
+**Status:** Phase 1 built (#284, 2026-09-25); Phases 2–4 not started.
 
 An editor for `C_NPC` instances inside the dialog editor, covering what the
 community's standalone *NPC Generator* covers (main info, attributes, protection,
@@ -75,10 +75,28 @@ Tests (TDD, `daedalus-parser/test/`):
 - editing one field changes exactly one line; adding and removing a field
   touch only their own line.
 
-**Open question:** does `NpcDefinition` hang off `GlobalInstance` (computed in
-the declaration pass) or get computed on demand in the renderer? On demand
-avoids growing every parse for the minority of files that hold NPCs; measure
-the parse cost on a full G2 script tree before deciding.
+**Decided while building it** (#284):
+
+- **On demand, not in the declaration pass.** `extractNpcDefinition(sourceText)`
+  re-parses one instance. Whether an instance is an NPC is decided through
+  prototype chains that usually live in another file (`Npc_Default` is
+  declared once, used everywhere), which a per-file parse cannot see; the
+  project index already resolves them (`ProjectService`'s `isNpcParent`). So
+  the caller decides, and no parse pays for instances nobody opens.
+- **Classified by shape, not by a name list.** Every body statement is a
+  `field` (`x = …`, `x[i] = …`), a `call` (`Name(…)`), or `other`. The table
+  above is what the form will offer controls for, not what the parser
+  recognises.
+- **The writer edits `sourceText`**, so an edited NPC saves through the
+  existing generator with no change to it. It is pure string work over
+  ranges from the original parse, and lives in the parser package as the
+  `daedalus-parser/npc-definition` subpath (API in `daedalus-parser/API.md`).
+  The renderer imports nothing from `daedalus-parser` today, so Phase 2 reaches
+  both functions through main.
+- **Open for Phase 2:** `setCall`/`removeCall` match a call by name and take
+  the first. Retail calls `EquipItem` once per weapon, so the equipment
+  controls need a call addressed by position (or by its first non-`self`
+  argument) before they can edit the second one.
 
 ## 3. Phase 2 — the form editor
 

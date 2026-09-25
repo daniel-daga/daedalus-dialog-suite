@@ -53,6 +53,11 @@
       "require": "./dist/semantic/semantic-visitor.js",
       "import": "./dist/semantic/semantic-visitor.js"
     },
+    "./npc-definition": {
+      "types": "./dist/semantic/npc-definition.d.ts",
+      "require": "./dist/semantic/npc-definition.js",
+      "import": "./dist/semantic/npc-definition.js"
+    },
     "./semantic-code-generator": {
       "types": "./dist/codegen/generator.d.ts",
       "require": "./dist/codegen/generator.js",

@@ -11,6 +11,7 @@
     "src/semantic/semantic-model.ts",
     "src/semantic/semantic-visitor.ts",
     "src/semantic/semantic-visitor-index.ts",
+    "src/semantic/npc-definition.ts",
     "src/semantic/parsers/action-parsers.ts",
     "src/semantic/parsers/condition-parsers.ts",
     "src/codegen/generator.ts",

@@ -7,6 +7,7 @@ Complete API reference for the Daedalus Parser library, featuring semantic model
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Semantic Model API](#semantic-model-api)
+- [NPC Instance API](#npc-instance-api)
 - [Code Generation API](#code-generation-api)
 - [Type Definitions](#type-definitions)
 - [Examples](#examples)
@@ -241,6 +242,44 @@ class LogEntry {
 - `SetRefuseTalkAction` - Npc_SetRefuseTalk calls
 - `ClearChoicesAction` - Info_ClearChoices calls
 - `Action` - Generic action (any other function call)
+
+## NPC Instance API
+
+Reads and edits the body of an NPC instance through its verbatim `sourceText`
+(the text `GlobalInstance` carries and the generator re-emits), so an edit is a
+new `sourceText` that saves through the normal generator.
+
+```javascript
+const { extractNpcDefinition, applyNpcEdits } = require('daedalus-parser/npc-definition');
+
+const npc = extractNpcDefinition(instance.sourceText);
+// npc.statements: in source order, comments excluded —
+//   { kind: 'field', field: 'attribute', index: 'ATR_STRENGTH', value: '50', ... }
+//   { kind: 'call',  name: 'B_SetNpcVisual', args: ['self', 'MALE', ...], ... }
+//   { kind: 'other', text: 'if (Kapitel >= 2) { ... };', ... }
+
+instance.sourceText = applyNpcEdits(instance.sourceText, [
+  { op: 'set', field: 'guild', value: 'GIL_SLD' },
+  { op: 'set', field: 'protection', index: 'PROT_EDGE', value: '100' },
+  { op: 'remove', field: 'flags' },
+  { op: 'setCall', name: 'Mdl_SetModelFatness', args: ['self', '1'] },
+  { op: 'removeCall', name: 'EquipItem' },
+]);
+```
+
+- Statements are classified by shape, not by a list of known names; values and
+  arguments are the expressions as written.
+- Edits patch only the statement they touch; comments, alignment and every
+  other statement stay byte-identical. Names and indices match
+  case-insensitively.
+- A `set`/`setCall` for an absent statement inserts a line after the last
+  field (or last statement), indented like it; removing an absent one is a no-op.
+- All edits in one call resolve against the original source.
+- `setCall`/`removeCall` act on the *first* call of that name; a repeated call
+  such as retail's one `EquipItem` per weapon cannot yet be told apart.
+- `extractNpcDefinition` throws on a syntax error or on source that is not a
+  single instance declaration. It does not check that the parent resolves to
+  `C_NPC` — that needs the project's prototype chains.
 
 ## Code Generation API
 
