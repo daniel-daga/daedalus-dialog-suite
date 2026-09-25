@@ -7,6 +7,10 @@ contextBridge.exposeInMainWorld('editorAPI', {
   // Parser API
   parseSource: (sourceCode: string) => ipcRenderer.invoke('parser:parseSource', sourceCode),
 
+  // NPC editor API
+  extractNpc: (sourceText: string) => ipcRenderer.invoke('npc:extract', sourceText),
+  applyNpcEdits: (sourceText: string, edits: unknown[]) => ipcRenderer.invoke('npc:applyEdits', { sourceText, edits }),
+
   // Validation API
   validateModel: (model: any, settings: any, options?: any) => ipcRenderer.invoke('validation:validate', model, settings, options),
 

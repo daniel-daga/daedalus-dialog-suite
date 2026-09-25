@@ -133,4 +133,24 @@ describe('NPCList', () => {
 
     expect(screen.queryByRole('button', { name: 'Add NPC' })).not.toBeInTheDocument();
   });
+  it('offers Edit NPC only on rows it is told are editable, and edits without selecting', async () => {
+    const user = userEvent.setup();
+    const onEditNPC = jest.fn();
+    render(
+      <NPCList
+        npcs={mockNpcs}
+        npcMap={mockNpcMap}
+        selectedNPC={null}
+        onSelectNPC={mockOnSelectNPC}
+        canEditNPC={(npc) => npc === 'Gorn'}
+        onEditNPC={onEditNPC}
+      />
+    );
+
+    expect(screen.queryByRole('button', { name: 'Edit NPC Diego' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Edit NPC Gorn' }));
+
+    expect(onEditNPC).toHaveBeenCalledWith('Gorn');
+    expect(mockOnSelectNPC).not.toHaveBeenCalled();
+  });
 });

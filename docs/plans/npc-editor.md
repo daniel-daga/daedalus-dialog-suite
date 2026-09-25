@@ -1,6 +1,6 @@
 # NPC Editor
 
-**Status:** Phase 1 built (#284, 2026-09-25); Phases 2–4 not started.
+**Status:** Phase 1 built (#284); Phase 2 in progress (#285) — editing an existing NPC works; Phases 3–4 not started.
 
 An editor for `C_NPC` instances inside the dialog editor, covering what the
 community's standalone *NPC Generator* covers (main info, attributes, protection,
@@ -100,35 +100,54 @@ Tests (TDD, `daedalus-parser/test/`):
 
 ## 3. Phase 2 — the form editor
 
-A new NPC surface in the renderer, reached from `NPCList` / `NpcColumn` ("Edit
-NPC"). It opens the file holding the instance, as a dialog opens today, so it
-works from that file's semantic model and needs nothing new from main.
+**First slice built (#285, 2026-09-25): edit an existing NPC.** An "Edit NPC"
+button on an `NPCList` row opens `NpcEditorDialog`, a modal form over that
+NPC's instance. What it rests on:
 
-Every control's options come from the project, never a hard-coded list:
+- `ProjectIndex.npcFiles` — UPPERCASED NPC instance → declaring file, built in
+  `ProjectService` beside `npcPrototypes`; the renderer holds it as
+  `projectStore.npcFileIndex`. Only an NPC with an instance gets the button.
+- Two IPC channels, `npc:extract` and `npc:applyEdits`, validated by
+  `assertNpcApplyEditsRequest` (identifiers for names, one non-empty line per
+  value) and answered by the **forked parser pool** — `parser.worker.ts`
+  gained an `npc` request kind — so no native parse runs in Electron main.
+- `src/renderer/npc/npcForm.ts` — the pure half: which controls exist
+  (main info, attributes, hit chance, protection, the five `B_SetNpcVisual`
+  arguments), reading them from a definition, turning a changed form into
+  edits, validating it, and listing the statements no control covers (shown
+  read-only as "Other statements"). String controls (name, head mesh) show a
+  literal's content and write it back quoted; a constant that stood there
+  stays an expression.
+- The save opens the file through the file store (keeping the main view's
+  active file), replaces the instance's `sourceText` in its model and runs the
+  ordinary `saveFile` — validation, conflict handling and store sync included.
 
-| Control | Source |
-|---|---|
-| guild, flags, NPC type, fight tactic, voice | script constants (`GIL_*`, `NPC_FLAG_*`, `NPCTYPE_*`, `FAI_*`) and the existing voice ids |
-| face / body texture | script constants (`Face_*`, `BodyTex_*`) |
-| head mesh, walk overlay | the asset VFS (`HUM_HEAD_*.MMB`, `HUMANS_*.MDS`) |
-| weapons, armour | the items index, split by the item's category flags |
+Suggestions come from what the project has already ingested
+(`mergedSemanticModel.constants`/`items`, `routineList`); every control stays
+free text.
 
-With no project constants for a field the control degrades to free text; with
-no asset sources configured the VFS-backed controls degrade the same way. An
-empty index means "nothing is known", never "nothing is legal" — the same rule
-the World surface follows for `oCItem.instance`.
+**Still open in Phase 2:**
 
-The routines tab is read-only at first: it lists the NPC's `Rtn_*_<id>`
-functions and their `TA_*` entries from the existing index, and jumps to them.
-Editing routines is its own later slice.
+- **Equipment.** `EquipItem` is repeated per weapon and `setCall` addresses a
+  call by name (the last bullet of Phase 1 above), so the weapon row of the NPC
+  Generator screenshot is not in the form yet.
+- **Asset-backed suggestions** — head meshes and walk overlays from the VFS
+  (`HUM_HEAD_*.MMB`, `HUMANS_*.MDS`) — and splitting items by category flags
+  rather than by the `ITAR_` prefix.
+- **Routines tab**, read-only first: the NPC's `Rtn_*_<id>` functions and
+  their `TA_*` entries from the existing index, with jumps to them.
+- **Create NPC**: a new instance from a template into a chosen file, offering
+  the existing `Wld_InsertNpc` insertion, with the next free `id` proposed.
+- **A real-Electron disk-truth spec** (`tests/e2e-electron/`). The browser
+  harness proves the flow only; byte fidelity is proven below it, by the
+  parser suite and by `tests/parserWorkerNpc.test.ts` against the real
+  parser. Not run here: the container had no Electron binary.
 
-**Create NPC** writes a new instance from a template into a chosen file and
-offers the existing `Wld_InsertNpc` insertion. The `id` is proposed as the next
-free one in the project.
-
-This is a new UI workflow: Playwright spec first (`tests/e2e/`) — open an NPC,
-change its guild and level, save, and assert the file changed only on those two
-lines.
+**Known limit, not the NPC editor's:** a save re-emits the whole file through
+the generator, which drops blank lines between top-level declarations (the
+corpus's Tier-2 byte drift, `docs/architecture/parser-fidelity.md`). An NPC
+file is usually one instance, so it rarely shows; a file with several will
+lose the blank lines between them on its first save.
 
 ## 4. Phase 3 — the visual preview
 

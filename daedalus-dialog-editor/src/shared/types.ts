@@ -114,6 +114,12 @@ export interface ProjectIndex {
   /** Prototype names (normalized uppercase) whose parent chain reaches C_NPC */
   npcPrototypes: string[];
   /**
+   * UPPERCASED NPC instance name to the file that declares it — what the NPC
+   * editor opens (docs/plans/npc-editor.md, Phase 2). Only NPCs with an
+   * instance: a name that appears only as a dialog's `npc` has no file here.
+   */
+  npcFiles: Record<string, string>;
+  /**
    * AI_Output voice ids across the project, keyed by UPPERCASED id (Daedalus is
    * case-insensitive); entries keep the original file/function locations.
    * Built at project load/reindex time — not refreshed on every save, so it can
@@ -647,6 +653,55 @@ export interface GlobalVariable {
     endIndex: number;
   };
 }
+
+// ============================================================================
+// NPC instance bodies — mirrors daedalus-parser/npc-definition, which the
+// renderer does not import (docs/plans/npc-editor.md, Phase 2)
+// ============================================================================
+
+export interface NpcRange {
+  startIndex: number;
+  endIndex: number;
+}
+
+interface NpcStatementBase {
+  text: string;
+  range: NpcRange;
+}
+
+export interface NpcFieldStatement extends NpcStatementBase {
+  kind: 'field';
+  field: string;
+  index?: string;
+  value: string;
+  valueRange: NpcRange;
+}
+
+export interface NpcCallStatement extends NpcStatementBase {
+  kind: 'call';
+  name: string;
+  args: string[];
+  argsRange: NpcRange;
+}
+
+export interface NpcOtherStatement extends NpcStatementBase {
+  kind: 'other';
+}
+
+export type NpcStatement = NpcFieldStatement | NpcCallStatement | NpcOtherStatement;
+
+export interface NpcDefinition {
+  name: string;
+  parent: string;
+  statements: NpcStatement[];
+  closingBraceIndex: number;
+}
+
+export type NpcEdit =
+  | { op: 'set'; field: string; index?: string; value: string }
+  | { op: 'remove'; field: string; index?: string }
+  | { op: 'setCall'; name: string; args: string[] }
+  | { op: 'removeCall'; name: string };
 
 export interface GlobalInstance {
   name: string;

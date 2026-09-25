@@ -13,7 +13,8 @@ import {
 } from '@mui/material';
 import {
   FilterList as FilterListIcon,
-  Clear as ClearIcon
+  Clear as ClearIcon,
+  Edit as EditIcon
 } from '@mui/icons-material';
 import { NPCListProps } from './dialogTypes';
 import { useSearchStore } from '../store/searchStore';
@@ -30,11 +31,24 @@ import {
 } from './common/searchablePaneStyles';
 
 const Row = ({ index, style, data }: ListChildComponentProps) => {
-  const { filteredNpcs, selectedNPC, onSelectNPC, npcMap } = data;
+  const { filteredNpcs, selectedNPC, onSelectNPC, npcMap, canEditNPC, onEditNPC } = data;
   const npc = filteredNpcs[index];
+  const editable = !!onEditNPC && !!canEditNPC?.(npc);
 
   return (
-    <ListItem style={style} key={npc} disablePadding component='div'>
+    <ListItem
+      style={style}
+      key={npc}
+      disablePadding
+      component='div'
+      secondaryAction={editable ? (
+        <Tooltip title='Edit NPC'>
+          <IconButton edge='end' size='small' aria-label={`Edit NPC ${npc}`} onClick={() => onEditNPC(npc)}>
+            <EditIcon fontSize='small' />
+          </IconButton>
+        </Tooltip>
+      ) : undefined}
+    >
       <ListItemButton
         selected={selectedNPC === npc}
         onClick={() => onSelectNPC(npc)}
@@ -49,7 +63,7 @@ const Row = ({ index, style, data }: ListChildComponentProps) => {
   );
 };
 
-const NPCList: React.FC<NPCListProps> = ({ npcs, npcMap, selectedNPC, onSelectNPC }) => {
+const NPCList: React.FC<NPCListProps> = ({ npcs, npcMap, selectedNPC, onSelectNPC, canEditNPC, onEditNPC }) => {
   const npcFilter = useSearchStore((s) => s.npcFilter);
   const setNpcFilter = useSearchStore((s) => s.setNpcFilter);
   const filterNpcs = useSearchStore((s) => s.filterNpcs);
@@ -62,8 +76,10 @@ const NPCList: React.FC<NPCListProps> = ({ npcs, npcMap, selectedNPC, onSelectNP
     filteredNpcs,
     selectedNPC,
     onSelectNPC,
-    npcMap
-  }), [filteredNpcs, selectedNPC, onSelectNPC, npcMap]);
+    npcMap,
+    canEditNPC,
+    onEditNPC
+  }), [filteredNpcs, selectedNPC, onSelectNPC, npcMap, canEditNPC, onEditNPC]);
 
   const handleClear = () => {
     setNpcFilter('');

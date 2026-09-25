@@ -4,6 +4,7 @@ import * as os from 'os';
 import { ForkedWorker, describeExit } from './ForkedWorker';
 import { WorkerRequestError } from './WorkerRequestError';
 import { workerPoolSize } from './workerPoolSize';
+import type { NpcDefinition, NpcEdit } from 'daedalus-parser/npc-definition';
 
 const DEFAULT_PARSE_TIMEOUT_MS = 30000;
 const RESTART_WINDOW_MS = 60000;
@@ -16,7 +17,8 @@ interface PendingRequest {
 
 interface QueuedRequest {
   id: string;
-  sourceCode: string;
+  /** Posted to the worker beside `id` — see `ParserRequest` in parser.worker.ts. */
+  payload: { sourceCode: string; npc?: 'extract' | 'apply'; edits?: NpcEdit[] };
 }
 
 interface InFlight {
@@ -133,7 +135,7 @@ export class ParserService {
   private assignRequest(worker: ForkedWorker, request: QueuedRequest) {
     const timer = setTimeout(() => this.handleTimeout(worker, request.id), this.timeoutMs);
     this.inFlightByWorker.set(worker, { id: request.id, timer });
-    worker.postMessage({ id: request.id, sourceCode: request.sourceCode });
+    worker.postMessage({ id: request.id, ...request.payload });
   }
 
   private workerBecameIdle(worker: ForkedWorker) {
@@ -224,6 +226,20 @@ export class ParserService {
    * Offloads parsing to a worker thread pool to avoid blocking the main process.
    */
   async parseSource(sourceCode: string): Promise<any> {
+    return this.request({ sourceCode });
+  }
+
+  /** An NPC instance's body as statements (`daedalus-parser/npc-definition`). */
+  async extractNpc(sourceText: string): Promise<NpcDefinition> {
+    return this.request({ sourceCode: sourceText, npc: 'extract' });
+  }
+
+  /** An NPC instance's source with `edits` patched in. */
+  async applyNpcEdits(sourceText: string, edits: NpcEdit[]): Promise<string> {
+    return this.request({ sourceCode: sourceText, npc: 'apply', edits });
+  }
+
+  private request(payload: QueuedRequest['payload']): Promise<any> {
     if (this.degraded) {
       return Promise.reject(
         new WorkerRequestError('Parser workers are crash-looping — restart the app', 'worker-crashed'),
@@ -236,7 +252,7 @@ export class ParserService {
       const id = randomUUID();
       this.pendingRequests.set(id, { resolve, reject });
 
-      const request: QueuedRequest = { id, sourceCode };
+      const request: QueuedRequest = { id, payload };
       const worker = this.idleWorkers.pop();
       if (worker) {
         this.assignRequest(worker, request);

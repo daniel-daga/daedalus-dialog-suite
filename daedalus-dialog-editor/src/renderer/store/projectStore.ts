@@ -82,6 +82,9 @@ interface ProjectState {
   questFiles: string[];
   // Prototype names (normalized uppercase) whose parent chain reaches C_NPC
   npcPrototypes: string[];
+  // UPPERCASED NPC instance → the file declaring it; what the NPC editor opens.
+  // Same lifecycle as npcPrototypes.
+  npcFileIndex: Record<string, string>;
   // AI_Output voice ids across the project, keyed by UPPERCASED id (built at
   // project load/reindex time — can be stale until the next reindex)
   voiceIdIndex: Record<string, Array<{ filePath: string; functionName: string }>>;
@@ -443,6 +446,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   allDialogFiles: [],
   questFiles: [],
   npcPrototypes: [],
+  npcFileIndex: {},
   voiceIdIndex: {},
   waypointSiteIndex: {},
   spawnSiteIndex: [],
@@ -506,6 +510,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         allDialogFiles: rawIndex.allFiles || [],
         questFiles: rawIndex.questFiles || [],
         npcPrototypes: rawIndex.npcPrototypes || [],
+        npcFileIndex: rawIndex.npcFiles || {},
         voiceIdIndex: rawIndex.voiceIds || {},
         waypointSiteIndex: rawIndex.waypointSites || {},
         spawnSiteIndex: rawIndex.spawnSites || [],
@@ -764,6 +769,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       allDialogFiles: [],
       questFiles: [],
       npcPrototypes: [],
+      npcFileIndex: {},
       voiceIdIndex: {},
       waypointSiteIndex: {},
       spawnSiteIndex: [],

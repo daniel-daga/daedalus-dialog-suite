@@ -16,6 +16,7 @@ import {
  *  under 200 characters. */
 const CONTAINER_CONTENTS_MAX = 4096;
 import type { WorldOp } from '../shared/worldTypes';
+import type { NpcEdit } from 'daedalus-parser/npc-definition';
 import { PROJECT_ASSET_SOURCE_LIMITS } from '../shared/projectConfigTypes';
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -68,6 +69,51 @@ export function assertDialogName(name: unknown): asserts name is string {
 export function assertParseSourcePayload(source: unknown): asserts source is string {
   if (typeof source !== 'string') {
     throw new Error('Invalid source payload: expected a string');
+  }
+}
+
+const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const isOneLine = (value: unknown): value is string =>
+  typeof value === 'string' && value.trim() !== '' && !/[\r\n]/.test(value);
+
+/**
+ * Assert an `npc:applyEdits` request (docs/plans/npc-editor.md, Phase 2).
+ * Names must be identifiers and every value one non-empty line, so an edit can
+ * only ever rewrite its own statement.
+ */
+export function assertNpcApplyEditsRequest(
+  request: unknown,
+): asserts request is { sourceText: string; edits: NpcEdit[] } {
+  if (!isPlainObject(request) || typeof request.sourceText !== 'string') {
+    throw new Error('Invalid npc:applyEdits request: sourceText must be a string');
+  }
+  if (!Array.isArray(request.edits)) {
+    throw new Error('Invalid npc:applyEdits request: edits must be an array');
+  }
+  for (const edit of request.edits as unknown[]) {
+    if (!isPlainObject(edit)) {
+      throw new Error('Invalid npc:applyEdits request: each edit must be a plain object');
+    }
+    const isField = edit.op === 'set' || edit.op === 'remove';
+    const isCall = edit.op === 'setCall' || edit.op === 'removeCall';
+    if (!isField && !isCall) {
+      throw new Error('Invalid npc:applyEdits request: unknown op');
+    }
+    if (isField && (typeof edit.field !== 'string' || !IDENTIFIER.test(edit.field))) {
+      throw new Error('Invalid npc:applyEdits request: field must be an identifier');
+    }
+    if (isField && edit.index !== undefined && (typeof edit.index !== 'string' || !IDENTIFIER.test(edit.index))) {
+      throw new Error('Invalid npc:applyEdits request: index must be an identifier');
+    }
+    if (isCall && (typeof edit.name !== 'string' || !IDENTIFIER.test(edit.name))) {
+      throw new Error('Invalid npc:applyEdits request: name must be an identifier');
+    }
+    if (edit.op === 'set' && !isOneLine(edit.value)) {
+      throw new Error('Invalid npc:applyEdits request: value must be one non-empty line');
+    }
+    if (edit.op === 'setCall' && (!Array.isArray(edit.args) || !edit.args.every(isOneLine))) {
+      throw new Error('Invalid npc:applyEdits request: args must be non-empty single-line strings');
+    }
   }
 }
 

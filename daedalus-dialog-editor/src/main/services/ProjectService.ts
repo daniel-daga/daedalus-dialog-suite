@@ -162,6 +162,7 @@ class ProjectService {
     const parseErrors: FileParseErrors[] = [];
     const fileModelsForSiteIndexes: Array<{ filePath: string; semanticModel: SemanticModel }> = [];
     let npcPrototypes: string[] = [];
+    const npcFiles: Record<string, string> = {};
 
     // Use worker pool to process files in parallel
     const pool = new MetadataWorkerPool();
@@ -243,6 +244,7 @@ class ProjectService {
           }
 
           allNpcs.add(instance.name);
+          npcFiles[instance.name.toUpperCase()] = filePath;
           if (!dialogsByNpc.has(instance.name)) {
             dialogsByNpc.set(instance.name, []);
           }
@@ -301,6 +303,7 @@ class ProjectService {
       routines: Array.from(allRoutines).sort(),
       functions: Array.from(allFunctions).sort(),
       npcPrototypes,
+      npcFiles,
       voiceIds,
       waypointSites: extractWaypointSites(fileModelsForSiteIndexes),
       spawnSites: extractSpawnSites(fileModelsForSiteIndexes),

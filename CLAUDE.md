@@ -316,7 +316,7 @@ But know what that layer **cannot** check: the main process holds no semantic mo
 
 **Active plan:** [`docs/plans/vob-folders.md`](docs/plans/vob-folders.md) — user-created VOB folders in the World scene tree: a virtual, editor-only grouping (never a VOB, never touching the `.zen` file) persisted as a `<worldname>.folders.json` sidecar beside the world file. Landed 2026-08-31 — create/rename/delete a folder, add/remove VOBs via the context menu, a new Folders tab; no nesting, no undo/redo, no drag-and-drop-in by design. Awaiting real-world use before extraction into `docs/architecture/level-editor.md`.
 
-**Active plan:** [`docs/plans/npc-editor.md`](docs/plans/npc-editor.md) — an NPC editor: a structured `C_NPC` model in the parser with patch-in-place saves, a form editor, a bind-pose visual preview, then real NPC meshes in the World surface. Phase 1 (#284) is the parser's `daedalus-parser/npc-definition` reader/writer.
+**Active plan:** [`docs/plans/npc-editor.md`](docs/plans/npc-editor.md) — an NPC editor: a structured `C_NPC` model in the parser with patch-in-place saves, a form editor, a bind-pose visual preview, then real NPC meshes in the World surface. Phase 1 (#284) is the parser's `daedalus-parser/npc-definition` reader/writer; Phase 2 (#285) is `NpcEditorDialog`, opened from the NPC list, over `npc:extract`/`npc:applyEdits` in the parser pool.
 
 When a plan is complete, extract durable decisions into canonical docs and delete the plan file.
 

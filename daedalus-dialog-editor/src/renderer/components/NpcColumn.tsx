@@ -1,5 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import NPCList from './NPCList';
+import NpcEditorDialog from './NpcEditorDialog';
+import { useProjectStore } from '../store/projectStore';
 import type { SemanticModel, DialogMetadata } from '../types/global';
 
 interface NpcColumnProps {
@@ -43,13 +45,30 @@ const NpcColumn: React.FC<NpcColumnProps> = ({
     return { npcMap: map, npcs: npcList };
   }, [isProjectMode, projectNpcs, dialogIndex, semanticModelDialogs]);
 
+  // Only an NPC the index knows a declaring file for can be edited — a name
+  // that appears only as a dialog's `npc` has no instance to open.
+  const npcFileIndex = useProjectStore((s) => s.npcFileIndex);
+  const [editing, setEditing] = useState<string | null>(null);
+  const canEditNPC = useCallback(
+    (npc: string) => isProjectMode && !!npcFileIndex[npc.toUpperCase()],
+    [isProjectMode, npcFileIndex],
+  );
+  const editingFile = editing ? npcFileIndex[editing.toUpperCase()] : undefined;
+
   return (
-    <NPCList
-      npcs={npcs}
-      npcMap={npcMap}
-      selectedNPC={selectedNPC}
-      onSelectNPC={onSelectNPC}
-    />
+    <>
+      <NPCList
+        npcs={npcs}
+        npcMap={npcMap}
+        selectedNPC={selectedNPC}
+        onSelectNPC={onSelectNPC}
+        canEditNPC={canEditNPC}
+        onEditNPC={setEditing}
+      />
+      {editing && editingFile && (
+        <NpcEditorDialog npcName={editing} filePath={editingFile} onClose={() => setEditing(null)} />
+      )}
+    </>
   );
 };
 

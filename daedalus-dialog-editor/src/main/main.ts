@@ -12,6 +12,7 @@ import {
   assertModelShape,
   assertDialogName,
   assertParseSourcePayload,
+  assertNpcApplyEditsRequest,
   assertOpenWorldRequest,
   assertTextureRequest,
   assertVisualRequest,
@@ -347,6 +348,28 @@ export function setupIpcHandlers() {
     } catch (error) {
       console.error('[IPC] parser:parseSource error:', error);
       throw new Error(`Failed to parse source: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  });
+
+  // NPC editor (docs/plans/npc-editor.md, Phase 2). Both parse, so both go to
+  // the forked parser pool like parseSource does.
+  ipcMain.handle('npc:extract', async (_event, sourceText: unknown) => {
+    try {
+      assertParseSourcePayload(sourceText);
+      return await parserService.extractNpc(sourceText);
+    } catch (error) {
+      console.error('[IPC] npc:extract error:', error);
+      throw new Error(`Failed to read NPC: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  });
+
+  ipcMain.handle('npc:applyEdits', async (_event, request: unknown) => {
+    try {
+      assertNpcApplyEditsRequest(request);
+      return await parserService.applyNpcEdits(request.sourceText, request.edits);
+    } catch (error) {
+      console.error('[IPC] npc:applyEdits error:', error);
+      throw new Error(`Failed to edit NPC: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   });
 
