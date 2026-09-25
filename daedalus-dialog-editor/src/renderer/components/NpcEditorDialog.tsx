@@ -24,6 +24,7 @@ import {
   type NpcFormField,
   type NpcFormValues,
 } from '../npc/npcForm';
+import { npcRoutines, formatMinute, type NpcRoutine } from '../npc/npcRoutines';
 
 // The NPC editor (docs/plans/npc-editor.md, Phase 2): a form over one NPC
 // instance's body. It opens the declaring file through the file store — so
@@ -63,6 +64,31 @@ function optionsFor(field: NpcFormField): string[] {
   const prefix = ('constantPrefix' in options ? options.constantPrefix : options.itemPrefix).toUpperCase();
   return names.filter((name) => name.toUpperCase().startsWith(prefix)).sort();
 }
+
+/** Read-only: the project index's routines for the NPC, as of the last
+ *  project load or reindex. */
+export const NpcRoutinesSection: React.FC<{ routines: NpcRoutine[] }> = ({ routines }) => (
+  <Box sx={{ mb: 2 }}>
+    <Typography variant="subtitle2">Routines</Typography>
+    {routines.length === 0 && (
+      <Typography variant="caption" color="text.secondary">No routine in the project index.</Typography>
+    )}
+    {routines.map(({ label, routine, entries }) => (
+      <Box key={routine} component="ul" aria-label={`${label}: ${routine}`} sx={{ m: 0, mt: 0.5, pl: 0, listStyle: 'none' }}>
+        <Typography component="li" variant="body2" sx={{ fontWeight: 500 }}>{`${label}: ${routine}`}</Typography>
+        {entries.length === 0 && (
+          <Typography component="li" variant="caption" color="text.secondary">No TA entries indexed</Typography>
+        )}
+        {entries.map((entry) => (
+          <Box component="li" key={`${entry.startMinute}-${entry.waypoint}`} sx={{ display: 'flex', gap: 2, fontSize: 12 }}>
+            <span>{`${formatMinute(entry.startMinute)}–${formatMinute(entry.endMinute)}`}</span>
+            <span>{entry.waypoint}</span>
+          </Box>
+        ))}
+      </Box>
+    ))}
+  </Box>
+);
 
 const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, onClose }) => {
   const [definition, setDefinition] = useState<NpcDefinition | null>(null);
@@ -107,6 +133,14 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
     [],
   );
   const uncovered = useMemo(() => (definition ? uncoveredStatements(definition) : []), [definition]);
+  const routines = useMemo(() => {
+    const project = useProjectStore.getState();
+    return npcRoutines({
+      sites: project.routineSiteIndex,
+      routinesByNpc: project.routineNpcIndex,
+      statesByNpc: project.routineStateIndex,
+    }, npcName);
+  }, [npcName]);
   const invalid = definition ? validateNpcForm(values) : null;
 
   const handleSave = async () => {
@@ -188,6 +222,7 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
                 </Box>
               </Box>
             ))}
+            <NpcRoutinesSection routines={routines} />
             {uncovered.length > 0 && (
               <Box>
                 <Typography variant="subtitle2">Other statements</Typography>

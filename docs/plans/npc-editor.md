@@ -133,8 +133,14 @@ free text.
 - **Asset-backed suggestions** — head meshes and walk overlays from the VFS
   (`HUM_HEAD_*.MMB`, `HUMANS_*.MDS`) — and splitting items by category flags
   rather than by the `ITAR_`/`ItMw_`/`ItRw_` prefixes.
-- **Routines tab**, read-only first: the NPC's `Rtn_*_<id>` functions and
-  their `TA_*` entries from the existing index, with jumps to them.
+- **Jumps from the routines section.** It lists (read-only, built
+  2026-09-25) the declared routine and each state variant with their time
+  windows and waypoints, from `routineSiteIndex`/`routineNpcIndex`/
+  `routineStateIndex` via `npc/npcRoutines.ts` — as of the last project load,
+  so a routine edited since is stale until reindex. Still missing: jumping to
+  the routine's source line or to the waypoint in the World surface
+  (`npcWorldJump.ts` already resolves the latter for spawns), and the TA state
+  name (`TA_Sit`, …), which `RoutineSite` does not carry.
 - **Create NPC**: a new instance from a template into a chosen file, offering
   the existing `Wld_InsertNpc` insertion, with the next free `id` proposed.
 - **A real-Electron disk-truth spec** (`tests/e2e-electron/`). The browser
