@@ -79,6 +79,13 @@ in the lookups.
 2. **Byte fidelity (reported, non-failing):** equality after line-ending
    normalization; indentation preservation is the remaining gap (known:
    `CreateTopic`/`LogEntry` blank-line padding, N3).
+   **Known gap — blank lines between top-level declarations (#286).** The
+   generator does not record them: consecutive globals (constants,
+   variables, instances, classes, prototypes) are joined with none, and
+   dialog/function sections with exactly one, whatever the source had. Every
+   save re-emits the whole file, so the first save of a file normalizes its
+   spacing — e.g. two NPC instances separated by a blank line come back
+   adjacent. Tokens are untouched, which is why the strict tier stays green.
 3. **Semantic drift + idempotence:** model summaries (including
    class/prototype/global name sets) across reparse.
 

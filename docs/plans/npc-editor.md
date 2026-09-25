@@ -144,8 +144,8 @@ free text.
   parser. Not run here: the container had no Electron binary.
 
 **Known limit, not the NPC editor's:** a save re-emits the whole file through
-the generator, which drops blank lines between top-level declarations (the
-corpus's Tier-2 byte drift, `docs/architecture/parser-fidelity.md`). An NPC
+the generator, which normalizes blank lines between top-level declarations
+(#286, documented in `docs/architecture/parser-fidelity.md`). An NPC
 file is usually one instance, so it rarely shows; a file with several will
 lose the blank lines between them on its first save.
 
