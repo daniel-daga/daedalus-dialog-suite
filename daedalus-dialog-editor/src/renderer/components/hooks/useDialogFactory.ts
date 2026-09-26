@@ -148,11 +148,13 @@ export function useDialogFactory(config: DialogFactoryConfig) {
       existingFunctionNames.add(infoFunctionName);
       const conditionFunctionName = makeUniqueName(`${dialogName}_Condition`, existingFunctionNames);
 
+      // The EXIT dialog sits at 999 so it stays last in the choice list;
+      // counting it would put every new dialog below it (#279).
       const nextNr =
         Object.values(latestModel.dialogs || {}).reduce((maxNr, dialog) => {
           if (dialog?.properties?.npc !== npcName) return maxNr;
           const nr = typeof dialog.properties?.nr === 'number' ? dialog.properties.nr : 0;
-          return Math.max(maxNr, nr);
+          return nr >= 999 ? maxNr : Math.max(maxNr, nr);
         }, 0) + 1;
 
       const newDialog: Dialog = {

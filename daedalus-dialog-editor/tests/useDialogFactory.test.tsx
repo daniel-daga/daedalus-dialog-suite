@@ -62,3 +62,50 @@ describe('useDialogFactory.createDialogForNpc', () => {
     writeFile.mockRestore();
   });
 });
+
+// #279: the EXIT dialog every NPC gets is nr 999, so "highest nr + 1" put each
+// new dialog at 1000 — below EXIT in the game's choice list.
+describe('useDialogFactory.createDialogForNpc — nr of the new dialog', () => {
+  const dialog = (name: string, npc: string, nr: number) => ({
+    name, parent: 'C_INFO', properties: { npc, nr }, actions: []
+  });
+
+  const createdNr = async (dialogs: Record<string, unknown>) => {
+    const updateModel = jest.fn();
+    const model = { ...emptyModel(), dialogs };
+    const { result } = renderHook(() =>
+      useDialogFactory({
+        projectPath: null,
+        activeFile: FILE,
+        filePath: FILE,
+        allDialogFiles: [FILE],
+        isProjectMode: false,
+        semanticModel: model as any,
+        dialogIndex: new Map(),
+        selectedNPC: 'PC_Fremder',
+        openFile: jest.fn(),
+        getFileState: () => ({ semanticModel: model as any }),
+        updateModel,
+        addDialogToIndex: jest.fn(),
+        selectNpc: jest.fn(),
+        loadAndMergeNpcModels: jest.fn(),
+        setSelectedNPC: jest.fn(),
+        onDialogCreated: jest.fn()
+      })
+    );
+    await result.current.createDialogForNpc('PC_Fremder', 'DIA_Fremder_Hello');
+    return updateModel.mock.calls[0][1].dialogs.DIA_Fremder_Hello.properties.nr;
+  };
+
+  test('the first dialog after the EXIT dialog is nr 1', async () => {
+    expect(await createdNr({ DIA_Fremder_EXIT: dialog('DIA_Fremder_EXIT', 'PC_Fremder', 999) })).toBe(1);
+  });
+
+  test('later dialogs count up from the highest nr below EXIT', async () => {
+    expect(await createdNr({
+      DIA_Fremder_EXIT: dialog('DIA_Fremder_EXIT', 'PC_Fremder', 999),
+      DIA_Fremder_Job: dialog('DIA_Fremder_Job', 'PC_Fremder', 3),
+      DIA_Other_Job: dialog('DIA_Other_Job', 'PC_Other', 7)
+    })).toBe(4);
+  });
+});
