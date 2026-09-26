@@ -7,6 +7,7 @@
  */
 
 import type { EditorAPI, ValidationResult, SaveResult, FileChangeEvent, AppendInsertNpcResult, OpenedProjectConfig, NpcDefinition, NpcStatement, NpcEdit, ProjectOutputUnits } from '../types/global';
+import type { RoutineSite } from '../../shared/types';
 
 // Captured file-change callback (see onFileChanged). Lets E2E tests inject
 // external change/unlink events through the `__mockEmitFileChange` window hook.
@@ -630,10 +631,33 @@ export const mockEditorAPI: EditorAPI = {
     // Files carrying quest topic constants are prioritized by ingestion and merged
     // into the base model by loadQuestData so the QuestList can see the topics.
     const questFiles: string[] = [];
+    // Routines, as simply as the rest of this mock reads a file: every
+    // `TA_*(h,m,h,m,"WP")` inside a `Rtn_*` function, and every instance's
+    // `daily_routine` — what the NPC editor's routines section shows (#285).
+    const routineSites: RoutineSite[] = [];
+    const routinesByNpc: Record<string, string> = {};
 
     for (const filePath of files) {
       const content = MockFileSystem.readFile(filePath);
       const model = parseSource(content);
+
+      for (const fn of content.matchAll(/func\s+void\s+(Rtn_\w+)\s*\(\s*\)\s*\{([\s\S]*?)\n\};/gi)) {
+        const bodyStart = fn.index! + fn[0].indexOf('{');
+        for (const ta of fn[2].matchAll(/TA_\w+\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*"(\w+)"\s*\)/gi)) {
+          const offset = bodyStart + 1 + ta.index!;
+          routineSites.push({
+            routine: fn[1].toUpperCase(),
+            startMinute: Number(ta[1]) * 60 + Number(ta[2]),
+            endMinute: Number(ta[3]) * 60 + Number(ta[4]),
+            waypoint: ta[5],
+            filePath,
+            line: content.slice(0, offset).split('\n').length,
+          });
+        }
+      }
+      for (const inst of content.matchAll(/INSTANCE\s+(\w+)\s*\([^)]*\)\s*\{[^}]*?daily_routine\s*=\s*(\w+)\s*;/gi)) {
+        routinesByNpc[inst[1].toUpperCase()] = inst[2].toUpperCase();
+      }
 
       const hasQuestTopic = Object.keys(model.constants || {})
         .some((name) => /^topic_/i.test(name));
@@ -673,7 +697,9 @@ export const mockEditorAPI: EditorAPI = {
       allFiles: files,
       questFiles,
       npcPrototypes: [],
-      npcFiles
+      npcFiles,
+      routineSites,
+      routinesByNpc
     };
   },
 

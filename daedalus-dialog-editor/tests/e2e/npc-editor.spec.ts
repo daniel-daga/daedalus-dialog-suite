@@ -160,3 +160,47 @@ test.describe('NPC editor', () => {
   });
 });
 
+
+// #285: a routine entry's "World" jump goes to its waypoint in the World
+// surface, and says why not when it cannot. It leaves the NPC editor, so it
+// waits for an unsaved form to be saved or cancelled. The browser harness has no
+// world, so the jump itself is tests/NpcRoutinesSection.test.tsx's.
+const ROUTINE_FILE = `FUNC VOID Rtn_Start_900 ()
+{
+\tTA_Stand_ArmsCrossed (08,00,20,00,"NW_BIGFARM_HOUSE_ONAR");
+\tTA_Sleep (20,00,08,00,"NW_BIGFARM_HOUSE_ONAR_BED");
+};
+`;
+
+test.describe('NPC editor: routine jumps', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
+    await page.evaluate(({ npc, routine }) => {
+      localStorage.setItem('mockapi_file_project/NPC/BAU_900_Onar.d', npc);
+      localStorage.setItem('mockapi_file_project/Rtn/Rtn_Onar.d', routine);
+    }, { npc: NPC_FILE, routine: ROUTINE_FILE });
+    page.on('dialog', async (dialog) => {
+      if (dialog.message().includes('project folder path')) await dialog.accept('project');
+      else await dialog.dismiss();
+    });
+    await page.getByRole('button', { name: /Open Project/i }).first().click();
+    await expect(page.getByText('BAU_900_Onar')).toBeVisible({ timeout: 15000 });
+  });
+
+  test('lists the routine and says why a waypoint cannot be shown while no world is open', async ({ page }) => {
+    const editor = await openEditor(page);
+    const daily = editor.getByRole('list', { name: 'Daily: RTN_START_900' });
+    await expect(daily).toContainText('08:00–20:00');
+    await expect(daily).toContainText('NW_BIGFARM_HOUSE_ONAR_BED');
+    const show = editor.getByRole('button', { name: 'Show NW_BIGFARM_HOUSE_ONAR in the world' });
+    await expect(show).toBeDisabled();
+    await expect(editor.getByTitle('No world is open').first()).toBeVisible();
+  });
+
+  test('waits for unsaved changes before leaving the editor', async ({ page }) => {
+    const editor = await openEditor(page);
+    await editor.getByLabel('Level').fill('30');
+    await expect(editor.getByTitle('Save or cancel your changes first').first()).toBeVisible();
+  });
+});

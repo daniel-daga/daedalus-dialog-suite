@@ -156,10 +156,14 @@ surface's insert already does that, and it needs a waypoint.
   2026-09-25) the declared routine and each state variant with their time
   windows and waypoints, from `routineSiteIndex`/`routineNpcIndex`/
   `routineStateIndex` via `npc/npcRoutines.ts` — as of the last project load,
-  so a routine edited since is stale until reindex. Still missing: jumping to
-  the routine's source line or to the waypoint in the World surface
-  (`npcWorldJump.ts` already resolves the latter for spawns), and the TA state
-  name (`TA_Sit`, …), which `RoutineSite` does not carry.
+  so a routine edited since is stale until reindex. **Each entry's waypoint now
+  jumps to the World surface (2026-09-26)**, with the insert-NPC button's
+  reasons when it cannot (`waypointJumpReason` in `components/npcWorldJump.ts`,
+  shared by both), and is held while the form has unsaved changes, since the
+  jump closes the dialog. Still missing: a jump to the routine's **source**,
+  which has nowhere to land — the dialog view shows a function only inside a
+  dialog, and there is no source view (`spacer-gap-triage.md` §A4) — and the
+  TA state name (`TA_Sit`, …), which `RoutineSite` does not carry.
 - **A real-Electron disk-truth spec** (`tests/e2e-electron/`). The browser
   harness proves the flow only; byte fidelity is proven below it, by the
   parser suite and by `tests/parserWorkerNpc.test.ts` against the real

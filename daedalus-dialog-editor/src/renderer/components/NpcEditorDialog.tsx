@@ -25,6 +25,9 @@ import {
   type NpcFormValues,
 } from '../npc/npcForm';
 import { npcRoutines, formatMinute, type NpcRoutine } from '../npc/npcRoutines';
+import { useWorldStore } from '../store/worldStore';
+import { useUISelectionStore } from '../store/uiSelectionStore';
+import { waypointJumpReason } from './npcWorldJump';
 
 // The NPC editor (docs/plans/npc-editor.md, Phase 2): a form over one NPC
 // instance's body. It opens the declaring file through the file store — so
@@ -67,7 +70,30 @@ function optionsFor(field: NpcFormField): string[] {
 
 /** Read-only: the project index's routines for the NPC, as of the last
  *  project load or reindex. */
-export const NpcRoutinesSection: React.FC<{ routines: NpcRoutine[] }> = ({ routines }) => (
+interface NpcRoutinesSectionProps {
+  routines: NpcRoutine[];
+  /** Go to a TA entry's waypoint in the World surface (#285). */
+  onShowWaypoint?: (waypoint: string) => void;
+  /** Why a waypoint cannot be shown — the insert-NPC jump's answers. */
+  waypointReason?: (waypoint: string) => string | null;
+  /** Why neither jump may leave the editor now, e.g. unsaved changes. */
+  blockedReason?: string | null;
+}
+
+/** A jump button that says why it is off, rather than just being off. */
+const JumpButton: React.FC<{ label: string; reason: string | null; onClick: () => void; children: React.ReactNode }> = (
+  { label, reason, onClick, children },
+) => (
+  <span title={reason ?? label}>
+    <Button size="small" sx={{ minWidth: 0, py: 0, fontSize: 11 }} aria-label={label} disabled={reason !== null} onClick={onClick}>
+      {children}
+    </Button>
+  </span>
+);
+
+export const NpcRoutinesSection: React.FC<NpcRoutinesSectionProps> = (
+  { routines, onShowWaypoint, waypointReason, blockedReason = null },
+) => (
   <Box sx={{ mb: 2 }}>
     <Typography variant="subtitle2">Routines</Typography>
     {routines.length === 0 && (
@@ -83,6 +109,15 @@ export const NpcRoutinesSection: React.FC<{ routines: NpcRoutine[] }> = ({ routi
           <Box component="li" key={`${entry.startMinute}-${entry.waypoint}`} sx={{ display: 'flex', gap: 2, fontSize: 12 }}>
             <span>{`${formatMinute(entry.startMinute)}–${formatMinute(entry.endMinute)}`}</span>
             <span>{entry.waypoint}</span>
+            {onShowWaypoint && (
+              <JumpButton
+                label={`Show ${entry.waypoint} in the world`}
+                reason={blockedReason ?? waypointReason?.(entry.waypoint) ?? null}
+                onClick={() => onShowWaypoint(entry.waypoint)}
+              >
+                World
+              </JumpButton>
+            )}
           </Box>
         ))}
       </Box>
@@ -142,6 +177,17 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
     }, npcName);
   }, [npcName]);
   const invalid = definition ? validateNpcForm(values) : null;
+
+  // #285: a TA entry's waypoint, shown in the World surface. The jump leaves
+  // this dialog, which is why an unsaved form blocks it rather than being
+  // thrown away. (A jump to the routine's source waits for a source view: the
+  // dialog view shows a function only inside a dialog.)
+  const world = useWorldStore((s) => (s.status === 'ready' ? (s.waynetNames ?? null) : null));
+  const showWaypoint = (waypoint: string) => {
+    useWorldStore.getState().requestFocus({ kind: 'waypoint', name: waypoint });
+    useUISelectionStore.getState().setActiveView('world');
+    onClose();
+  };
 
   const handleSave = async () => {
     if (!definition) return;
@@ -222,7 +268,14 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
                 </Box>
               </Box>
             ))}
-            <NpcRoutinesSection routines={routines} />
+            <NpcRoutinesSection
+              routines={routines}
+              onShowWaypoint={showWaypoint}
+              waypointReason={(waypoint) => waypointJumpReason(waypoint, world)}
+              blockedReason={definition && editsBetween(definition, initial, values).length > 0
+                ? 'Save or cancel your changes first'
+                : null}
+            />
             {uncovered.length > 0 && (
               <Box>
                 <Typography variant="subtitle2">Other statements</Typography>

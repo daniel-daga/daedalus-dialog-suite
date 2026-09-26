@@ -98,3 +98,22 @@ export function npcJumpPlan(
   if (world === null) return { kind: 'disabled', reason: 'No world is open' };
   return { kind: 'disabled', reason: `${spawnPoint} is not in the open world` };
 }
+
+/**
+ * Why a waypoint jump cannot land, or null when it can — the insert-NPC action's
+ * button and the NPC editor's routines section (#285) give the same answers.
+ * "No such waypoint anywhere" stays reserved: the editor holds one world and
+ * has no index of the others, so a reason never says missing.
+ */
+export const waypointJumpReason = (spawnPoint: string, world: WorldWaynetView | null): string | null => {
+  if (!spawnPoint) return 'This action names no spawn point';
+  if (world === null) return 'No world is open';
+  // `worldHasPoint` and not a set lookup here: a spawn point is a waypoint
+  // **or a free point**, 704 of the retail scripts' 3,722 `Wld_InsertNpc`
+  // literals are the latter, and matching exactly against the waynet called
+  // every one of them missing while the Problems rule beside it stayed quiet.
+  // The name comes out of a script, where Daedalus is case-insensitive; the
+  // store uppercased the world's own spelling once, on load.
+  if (!worldHasPoint(world, spawnPoint)) return `${spawnPoint} is not in the open world`;
+  return null;
+};

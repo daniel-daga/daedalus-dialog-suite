@@ -9,8 +9,7 @@ import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
 import { createRowTabHandlers } from './rowTabNavigation';
 import { useWorldStore } from '../../store/worldStore';
 import { useUISelectionStore } from '../../store/uiSelectionStore';
-import { worldHasPoint } from '../../problems/domain/types';
-import type { WorldWaynetView } from '../../problems/domain/types';
+import { waypointJumpReason as jumpReason } from '../npcWorldJump';
 
 /**
  * Why the jump lives here (level-editor.md §16.23, W4 of §16.8): this is the
@@ -22,18 +21,6 @@ import type { WorldWaynetView } from '../../problems/domain/types';
  * waypoint anywhere" stays reserved — the editor holds one world and has no
  * index of the others — so the disabled reason never says missing.
  */
-const jumpReason = (spawnPoint: string, world: WorldWaynetView | null): string | null => {
-  if (!spawnPoint) return 'This action names no spawn point';
-  if (world === null) return 'No world is open';
-  // `worldHasPoint` and not a set lookup here: a spawn point is a waypoint
-  // **or a free point**, 704 of the retail scripts' 3,722 `Wld_InsertNpc`
-  // literals are the latter, and matching exactly against the waynet called
-  // every one of them missing while the Problems rule beside it stayed quiet.
-  // The name comes out of a script, where Daedalus is case-insensitive; the
-  // store uppercased the world's own spelling once, on load.
-  if (!worldHasPoint(world, spawnPoint)) return `${spawnPoint} is not in the open world`;
-  return null;
-};
 
 // Hoisted so VariableAutocomplete's memo sees a stable sx identity (slice 4).
 const NPC_INSTANCE_FIELD_SX = { minWidth: 220 };
