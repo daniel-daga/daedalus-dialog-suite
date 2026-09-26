@@ -105,13 +105,20 @@ export function schemeOf(visual: string): string {
   return cut < 0 ? key : key.slice(0, cut);
 }
 
+/** The `focusName` a fresh placement of `cls` is given, however the class was
+ *  chosen: retail's measured name for a container, a door or a switch. An
+ *  `oCMobInter`'s depends on what it is, so it gets none. */
+export function placementFocusName(cls: string): string | undefined {
+  return cls === 'oCMobInter' ? undefined : focusNameExpectation(cls)?.example;
+}
+
 /** The MOB class a placement of `visual` should be, or null for a plain VOB. */
 export function mobClassOf(visual: string): MobSuggestion | null {
   if (!isModelVisual(visual)) return null;
   const scheme = schemeOf(visual);
   const cls = MOB_SCHEMES[scheme];
   if (cls === undefined) return null;
-  const focusName = cls === 'oCMobInter' ? undefined : focusNameExpectation(cls)?.example;
+  const focusName = placementFocusName(cls);
   return focusName === undefined ? { scheme, class: cls } : { scheme, class: cls, focusName };
 }
 

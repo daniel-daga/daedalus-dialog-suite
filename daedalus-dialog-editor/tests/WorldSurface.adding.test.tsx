@@ -294,6 +294,85 @@ describe('the class a placement from an asset gets', () => {
   });
 });
 
+// One placement, two ways in: the asset browser arms it in a click, the Place
+// VOB dialog takes a name and a parent too — and both choose the class by the
+// same rule.
+describe('the Place VOB dialog chooses the class the way the asset browser does', () => {
+  const classField = () => screen.getByTestId('world-place-class') as HTMLSelectElement;
+  const typeVisual = (value: string) =>
+    fireEvent.change(screen.getByTestId('world-place-visual'), { target: { value } });
+
+  it('proposes the class the visual names, and follows the visual while nobody chose one', async () => {
+    await openWorld();
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    fireEvent.click(await screen.findByTestId('world-place-vob'));
+
+    typeVisual('CHESTBIG_OCCHESTLARGE.MDS');
+    expect(classField().value).toBe('oCMobContainer');
+    typeVisual('NW_ROCK_01.3DS');
+    expect(classField().value).toBe('zCVob');
+    typeVisual('CHESTBIG_OCCHESTLARGE.MDS');
+    fireEvent.click(screen.getByTestId('world-place-confirm'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    const [add, name] = firstOps();
+    expect(add).toMatchObject({ op: 'AddVob', to: { class: 'oCMobContainer', visual: 'CHESTBIG_OCCHESTLARGE.MDS' } });
+    expect(name).toMatchObject({ op: 'SetVobClassProp', to: { focusName: 'MOBNAME_CHEST' } });
+  });
+
+  it('keeps a class chosen by hand, whatever visual follows', async () => {
+    await openWorld();
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    fireEvent.click(await screen.findByTestId('world-place-vob'));
+
+    fireEvent.change(classField(), { target: { value: 'oCMobInter' } });
+    typeVisual('CHESTBIG_OCCHESTLARGE.MDS');
+    expect(classField().value).toBe('oCMobInter');
+    fireEvent.click(screen.getByTestId('world-place-confirm'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    expect(firstOps()).toHaveLength(1);
+    expect(firstOps()[0]).toMatchObject({ op: 'AddVob', to: { class: 'oCMobInter' } });
+  });
+
+  it('gives a container chosen by hand retail\'s focus name, as an armed one gets', async () => {
+    await openWorld();
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    fireEvent.click(await screen.findByTestId('world-place-vob'));
+
+    fireEvent.change(classField(), { target: { value: 'oCMobContainer' } });
+    typeVisual('MOD_BOX.MDS');
+    fireEvent.click(screen.getByTestId('world-place-confirm'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    expect(firstOps()[1]).toMatchObject({
+      op: 'SetVobClassProp', className: 'oCMobContainer', to: { focusName: 'MOBNAME_CHEST' },
+    });
+  });
+
+  it('opens from an asset row prefilled, so a name goes with the placement', async () => {
+    await openWorld();
+    api.listWorldAssets.mockResolvedValue([{ name: 'CHESTBIG_OCCHESTLARGE.MDS', type: 'file' }] as never);
+    fireEvent.click(screen.getByTestId('world-panel-assets'));
+    fireEvent.contextMenu(await screen.findByTestId('world-asset-CHESTBIG_OCCHESTLARGE.MDS'));
+    fireEvent.click(await screen.findByTestId('world-asset-place-options-menu'));
+
+    expect(screen.getByTestId('world-place-visual')).toHaveValue('CHESTBIG_OCCHESTLARGE.MDS');
+    expect(classField().value).toBe('oCMobContainer');
+    fireEvent.change(screen.getByTestId('world-place-name'), { target: { value: 'CHEST_SMITH' } });
+    fireEvent.click(screen.getByTestId('world-place-confirm'));
+    expect(hint()).toHaveTextContent('as oCMobContainer');
+
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    const [add, name] = firstOps();
+    expect(add).toMatchObject({
+      op: 'AddVob', to: { class: 'oCMobContainer', name: 'CHEST_SMITH', position: TERRAIN },
+    });
+    expect(name).toMatchObject({ op: 'SetVobClassProp', to: { focusName: 'MOBNAME_CHEST' } });
+  });
+});
+
 describe('Insert NPC… from the toolbar', () => {
   const instanceField = () =>
     within(screen.getByTestId('world-insert-npc-instance')).getByRole('combobox');

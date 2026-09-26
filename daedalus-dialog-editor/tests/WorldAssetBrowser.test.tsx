@@ -1248,6 +1248,7 @@ describe('WorldAssetBrowser', () => {
     const placement = () => ({
       canPlace: (name: string) => /\.(MRM|3DS)$/i.test(name),
       onPlace: jest.fn(),
+      onPlaceWithOptions: jest.fn(),
     });
 
     it('places a category tile from its context menu', async () => {

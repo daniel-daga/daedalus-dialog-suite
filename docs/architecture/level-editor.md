@@ -2658,6 +2658,13 @@ rock or a bush a `zCVob`.
   An `oCMobInter` gets none: its name depends on what it is, 30-odd values. The
   Place VOB dialog stays the override, and takes a visual for the MOB classes
   now as well as for `zCVob`.
+- **One rule for both ways in (2026-09-26).** The dialog chooses the class the
+  way the asset browser does: until the class is picked by hand, it follows the
+  visual field, typed or "Use previewed". The focus name is read off the final
+  class (`placementFocusName`), so a door, container or switch chosen in the
+  dialog gets it too. An asset's context menu offers **Place with options…**
+  beside Place in world: the dialog prefilled with the asset and its class, for
+  a placement that wants a name or a parent.
 - **The property grid warns on a static mesh carrying a MOB class** — Florian's
   rocks placed as `oCMobInter`. It is certain for a mesh and said about nothing
   else: a model whose scheme the table does not know may be a mod's own. The

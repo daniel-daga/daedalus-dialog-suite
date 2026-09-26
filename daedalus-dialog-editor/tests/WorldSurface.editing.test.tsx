@@ -2076,7 +2076,15 @@ describe('placing a VOB', () => {
 
       await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
       const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
-      expect(ops).toHaveLength(1);
+      // The three MOBs retail names consistently get that name in the add's
+      // own batch, however the class was chosen; nothing else gets a second op.
+      const focusName = ({
+        oCMobDoor: 'MOBNAME_DOOR', oCMobContainer: 'MOBNAME_CHEST', oCMobSwitch: 'MOBNAME_SWITCH',
+      } as Record<string, string>)[className];
+      expect(ops).toHaveLength(focusName === undefined ? 1 : 2);
+      if (focusName !== undefined) {
+        expect(ops[1]).toMatchObject({ op: 'SetVobClassProp', className, to: { focusName } });
+      }
       expect(ops[0]).toMatchObject({ op: 'AddVob', to: { class: className, position: TERRAIN } });
       const { to } = ops[0] as { to: Record<string, unknown> };
       expect(to).not.toHaveProperty('instance');

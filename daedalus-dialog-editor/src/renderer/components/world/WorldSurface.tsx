@@ -14,7 +14,7 @@ import {
   deleteVobs, dropSubtreesToGround,
   duplicateVobs, emptyVobFolders,
   matchVobs,
-  placeBounds, placementCollision,
+  placeBounds, placementCollision, placementFocusName,
   landedPaths, reparentVob, reparentVobs, rotateSubtrees, rotateSubtreeTo, subtreeMembers, setVobClassProp, setVobProp, setVobProps,
   topLevelVobs,
   translateSubtrees, vobAtIndexPath, vobExtentOf, vobIndexPath,
@@ -101,23 +101,19 @@ const DEFAULT_SPAWN_TIME = 8 * 60;
 interface PlaceSpec {
   vobClass: AuthorableVobClass; name: string; visual: string; instance: string;
   parent: number | null;
-  /** A MOB's `focusName`, set in the same batch as the add — only where
-   *  `mobClassOf` has retail's name for the class to give (#290). */
-  focusName?: string;
 }
 const FRESH_PLACE: PlaceSpec = { vobClass: 'zCVob', name: '', visual: '', instance: '', parent: null };
 /**
- * What a placement of `visual` from the asset browser arms (#290): the class
- * its interaction scheme names — a chest an `oCMobContainer`, a bench an
- * `oCMobInter` — or a plain `zCVob` for a static mesh or any model with no
- * scheme. The Place VOB dialog is still where any other class is chosen.
+ * `spec` carrying `visual` (#290). Unless someone chose the class by hand, it
+ * becomes the class the visual's interaction scheme names — a chest an
+ * `oCMobContainer`, a bench an `oCMobInter` — or a plain `zCVob` for a static
+ * mesh or any model with no scheme. The one rule for the asset browser's
+ * one-click placement and for the Place VOB dialog's visual field.
  */
-function placeSpecFor(visual: string): PlaceSpec {
-  const mob = mobClassOf(visual);
-  return mob === null
-    ? { ...FRESH_PLACE, visual }
-    : { ...FRESH_PLACE, visual, vobClass: mob.class, ...(mob.focusName === undefined ? {} : { focusName: mob.focusName }) };
+function withVisual(spec: PlaceSpec, visual: string, classChosen: boolean): PlaceSpec {
+  return classChosen ? { ...spec, visual } : { ...spec, visual, vobClass: mobClassOf(visual)?.class ?? 'zCVob' };
 }
+const placeSpecFor = (visual: string): PlaceSpec => withVisual(FRESH_PLACE, visual, false);
 /** How the status bar names an armed placement: the visual or the instance
  *  when there is one, the class otherwise — and a MOB's class beside its
  *  visual, so a chest that will be placed as a chest says so (#290). */
@@ -166,6 +162,13 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    * the user meant, and appending a root is the case that renumbers nothing.
    */
   const [placing, setPlacing] = useState<PlaceSpec | null>(null);
+  /** Whether the dialog's class was picked by hand — until it is, the class
+   *  follows the visual, as a one-click placement's does. */
+  const [classChosen, setClassChosen] = useState(false);
+  const openPlaceDialog = useCallback((spec: PlaceSpec) => {
+    setClassChosen(false);
+    setPlacing(spec);
+  }, []);
   /**
    * An add action waiting for its ground click (level-editor.md §17, "Adding
    * things"): the toolbar's three dialogs confirm into this when no ground
@@ -224,11 +227,14 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   }, [compileAssetCatalog]);
 
   // The place verb on an asset row or tile (§16.37 row 4). The same arming the
-  // preview panel's button does, offered where the pointer already is.
+  // preview panel's button does, offered where the pointer already is — and
+  // the Place VOB dialog, prefilled, for a placement that wants a name or a
+  // parent too.
   const assetPlacement = useMemo(() => ({
     canPlace: isPlaceableVisual,
     onPlace: (name: string) => setArmed({ kind: 'place', spec: placeSpecFor(name) }),
-  }), []);
+    onPlaceWithOptions: (name: string) => openPlaceDialog(placeSpecFor(name)),
+  }), [openPlaceDialog]);
 
   /** The clipboard is cleared when a world opens, and `openWorldAt` is well
    *  above `commitOps` and the two readers a copy needs — so the hook is called
@@ -1538,15 +1544,17 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     const add = addVob(vobModelOf(current).reader, placed, spec.parent);
     // Retail's name for a chest or a door, in the same batch — the engine's
     // crosshair finds a MOB through it, and an empty one is a chest nobody can
-    // open. `from` is `to`, as a copy's is: the add's own inverse removes the
-    // VOB, so there is no earlier value to write back.
-    const named: WorldOp[] = spec.focusName === undefined || spec.vobClass === 'zCVob' ? [] : [{
+    // open. Read off the class, so a container chosen in the dialog gets it as
+    // an armed one does. `from` is `to`, as a copy's is: the add's own inverse
+    // removes the VOB, so there is no earlier value to write back.
+    const focusName = placementFocusName(spec.vobClass);
+    const named: WorldOp[] = focusName === undefined ? [] : [{
       op: 'SetVobClassProp',
       vob: add.vob,
       path: add.path,
       className: spec.vobClass,
-      from: { focusName: spec.focusName },
-      to: { focusName: spec.focusName },
+      from: { focusName },
+      to: { focusName },
     }];
     await commitOps([add, ...named]);
   }, [commitOps, assetCatalogProps]);
@@ -1916,7 +1924,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         unsavedEdits={unsavedEdits}
         gmbtConfigured={gmbtConfigured}
         onQuickTest={() => void startQuickTest()}
-        onPlaceVob={() => setPlacing(FRESH_PLACE)}
+        onPlaceVob={() => openPlaceDialog(FRESH_PLACE)}
         onInsertNpc={() => {
           ensureWaynetShown();
           if (selectedWaypoint !== null && waynet !== null) {
@@ -2692,7 +2700,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                 </Typography>
                 <Button
                   size="small"
-                  onClick={() => setPlacing(FRESH_PLACE)}
+                  onClick={() => openPlaceDialog(FRESH_PLACE)}
                   data-testid="world-place-vob"
                 >
                   Place VOB here…
@@ -2872,9 +2880,12 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
             variant="standard"
             label="Class"
             value={placing?.vobClass ?? 'zCVob'}
-            onChange={(event) => setPlacing((was) => (was === null ? was : {
-              ...was, vobClass: event.target.value as AuthorableVobClass,
-            }))}
+            onChange={(event) => {
+              setClassChosen(true);
+              setPlacing((was) => (was === null ? was : {
+                ...was, vobClass: event.target.value as AuthorableVobClass,
+              }));
+            }}
             SelectProps={{ native: true, inputProps: { 'data-testid': 'world-place-class' } }}
             sx={{ mb: 1 }}
           >
@@ -2922,9 +2933,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                 variant="standard"
                 label="Visual"
                 placeholder="NW_CRATE.3DS"
-                helperText="Its class comes from the extension. A .TGA decal is refused — it carries settings this does not take."
+                helperText="Until a class is picked, the class follows the visual. A .TGA decal is refused — it carries settings this does not take."
                 value={placing?.visual ?? ''}
-                onChange={(event) => setPlacing((was) => (was === null ? was : { ...was, visual: event.target.value }))}
+                onChange={(event) => setPlacing((was) => (was === null ? was : withVisual(was, event.target.value, classChosen)))}
                 inputProps={{ 'data-testid': 'world-place-visual' }}
               />
               {/* The Assets panel as a picker (§16.26 row 1): the mesh it last
@@ -2942,7 +2953,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                     disabled={selectedAsset === null || !isPlaceableVisual(selectedAsset)}
                     onClick={() => setPlacing((was) => (was === null || selectedAsset === null
                       ? was
-                      : { ...was, visual: NAME_OF(selectedAsset) }))}
+                      : withVisual(was, NAME_OF(selectedAsset), classChosen)))}
                     data-testid="world-place-use-previewed"
                     sx={{ mt: 1.5, whiteSpace: 'nowrap' }}
                   >

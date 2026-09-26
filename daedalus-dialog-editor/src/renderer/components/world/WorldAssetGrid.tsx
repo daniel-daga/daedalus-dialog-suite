@@ -166,6 +166,8 @@ export interface AssetPlacement {
   canPlace: (name: string) => boolean;
   /** Arm the placement; the next ground click puts it down. */
   onPlace: (name: string) => void;
+  /** Open the Place VOB dialog prefilled with it, for a name or a parent. */
+  onPlaceWithOptions: (name: string) => void;
 }
 
 /** The context menu the tile and the browser's list row share. The verb used
@@ -198,6 +200,13 @@ export function usePlaceMenu(name: string, placement?: AssetPlacement): {
           onClick={() => { setAt(null); placement.onPlace(name); }}
         >
           Place in world
+        </MenuItem>
+        <MenuItem
+          dense
+          data-testid="world-asset-place-options-menu"
+          onClick={() => { setAt(null); placement.onPlaceWithOptions(name); }}
+        >
+          Place with options…
         </MenuItem>
       </Menu>
     ),
