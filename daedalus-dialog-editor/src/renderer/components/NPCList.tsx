@@ -14,7 +14,8 @@ import {
 import {
   FilterList as FilterListIcon,
   Clear as ClearIcon,
-  Edit as EditIcon
+  Edit as EditIcon,
+  Add as AddIcon
 } from '@mui/icons-material';
 import { NPCListProps } from './dialogTypes';
 import { useSearchStore } from '../store/searchStore';
@@ -63,7 +64,7 @@ const Row = ({ index, style, data }: ListChildComponentProps) => {
   );
 };
 
-const NPCList: React.FC<NPCListProps> = ({ npcs, npcMap, selectedNPC, onSelectNPC, coverageNote, canEditNPC, onEditNPC }) => {
+const NPCList: React.FC<NPCListProps> = ({ npcs, npcMap, selectedNPC, onSelectNPC, coverageNote, canEditNPC, onEditNPC, onCreateNPC }) => {
   const npcFilter = useSearchStore((s) => s.npcFilter);
   const setNpcFilter = useSearchStore((s) => s.setNpcFilter);
   const filterNpcs = useSearchStore((s) => s.filterNpcs);
@@ -93,10 +94,19 @@ const NPCList: React.FC<NPCListProps> = ({ npcs, npcMap, selectedNPC, onSelectNP
     >
       <Box sx={searchablePaneHeaderSx}>
         {/* The former "Add NPC" button was removed (issue #141): it created
-            NPC instances with incorrect parameters. NPCs are added by placing
-            an NPC .d file in the project; the editor then auto-creates the
-            EXIT dialog file. */}
-        <Typography variant='h6'>NPCs</Typography>
+            NPC instances with parameters of its own, which a mod need not
+            define. "New NPC" (#285) copies an NPC the project already has
+            instead. */}
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Typography variant='h6'>NPCs</Typography>
+          {onCreateNPC && (
+            <Tooltip title='New NPC (a copy of an existing one)'>
+              <IconButton size='small' aria-label='New NPC' onClick={onCreateNPC}>
+                <AddIcon fontSize='small' />
+              </IconButton>
+            </Tooltip>
+          )}
+        </Box>
         <Typography variant='caption' color='text.secondary'>
           {filteredNpcs.length} of {npcs.length} shown
         </Typography>

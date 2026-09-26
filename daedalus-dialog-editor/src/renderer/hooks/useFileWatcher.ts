@@ -183,9 +183,11 @@ async function flushChangedFiles(): Promise<void> {
 }
 
 /**
- * A new .d file was added to the project — parse and index it.
+ * A new .d file was added to the project — parse and index it. Exported for
+ * the editor's own new files (Create NPC), which the watcher suppresses as
+ * self-writes.
  */
-async function handleFileAdded(
+export async function handleFileAdded(
   filePath: string,
   projectStore: ReturnType<typeof useProjectStore.getState>
 ): Promise<void> {

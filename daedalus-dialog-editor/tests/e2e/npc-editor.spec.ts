@@ -110,4 +110,53 @@ test.describe('NPC editor', () => {
     editor = await openEditor(page);
     await expect(editor.getByLabel('Name', { exact: true })).toHaveValue('Onar');
   });
+
+  // #285, Create NPC: a new NPC is a copy of one the project already has, so
+  // it only uses what the mod defines (#141 removed an Add NPC that did not).
+  test('a new NPC copied from another is written, listed and opened for editing', async ({ page }) => {
+    await page.getByRole('button', { name: 'New NPC' }).click();
+    const create = page.getByRole('dialog', { name: 'New NPC' });
+    await expect(create).toBeVisible();
+
+    await expect(create.getByLabel('Copy of')).toHaveValue('BAU_900_Onar');
+    await create.getByLabel('Instance').fill('BAU_901_Harald');
+    await create.getByLabel('Name', { exact: true }).fill('Harald');
+    // Offered from the template and the project, and editable.
+    await expect(create.getByLabel('Guild')).toHaveValue('GIL_BAU');
+    await expect(create.getByLabel('Id')).toHaveValue('901');
+    await expect(create.getByLabel('File')).toHaveValue('project/NPC/BAU_901_Harald.d');
+    await create.getByRole('button', { name: 'Create' }).click();
+    await expect(create).toBeHidden();
+
+    const editor = page.getByRole('dialog', { name: /BAU_901_Harald/ });
+    await expect(editor).toBeVisible();
+    await expect(editor.getByLabel('Name', { exact: true })).toHaveValue('Harald');
+    await expect(editor.getByLabel('Melee weapon')).toHaveValue('ItMw_1h_Bau_Mace');
+    await expect(editor.getByLabel('Daily routine')).toHaveValue('');
+    await editor.getByRole('button', { name: 'Cancel' }).click();
+
+    await expect(page.getByText('BAU_901_Harald')).toBeVisible();
+    const written = await page.evaluate(() => localStorage.getItem('mockapi_file_project/NPC/BAU_901_Harald.d'));
+    expect(written).toContain('INSTANCE BAU_901_Harald (C_NPC)');
+    expect(written).toContain('name = "Harald";');
+    expect(written).toContain('id = 901;');
+    expect(written).not.toContain('daily_routine');
+    // Like an NPC file dropped into the folder (#141), it gets its EXIT dialog.
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('mockapi_file_project/NPC/DIA_BAU_901_Harald.d')))
+      .toContain('\tnpc\t\t\t= BAU_901_Harald;');
+    // The template is untouched.
+    const template = await page.evaluate(() => localStorage.getItem('mockapi_file_project/NPC/BAU_900_Onar.d'));
+    expect(template).toContain('name = "Onar";');
+  });
+
+  test('a new NPC refuses an instance the project already has', async ({ page }) => {
+    await page.getByRole('button', { name: 'New NPC' }).click();
+    const create = page.getByRole('dialog', { name: 'New NPC' });
+    await create.getByLabel('Instance').fill('bau_900_onar');
+    await create.getByLabel('Name', { exact: true }).fill('Onar again');
+    await create.getByRole('button', { name: 'Create' }).click();
+    await expect(create.getByText(/already exists/)).toBeVisible();
+    await expect(create).toBeVisible();
+  });
 });
+

@@ -133,6 +133,20 @@ Suggestions come from what the project has already ingested
 (`mergedSemanticModel.constants`/`items`, `routineList`); every control stays
 free text.
 
+**Create NPC built (#285, 2026-09-26).** "New NPC" in the NPC list's header
+opens `CreateNpcDialog`: the new instance is a **copy of an NPC the project
+already has**, not a template of ours — #141 removed an Add NPC that wrote
+parameters a mod need not define, and a copy uses only what the mod does
+(Daniel's call, 2026-09-26). `npc/npcTemplate.ts` renames the instance header
+and the parser's writer sets `name`, `guild` and `id` and removes
+`daily_routine` (the template's day is its own NPC's). The id offered is one
+past the highest in retail-style names (`BAU_900_Onar` → 901); the file is
+`<instance>.d` in the folder most NPC files live in. The new file goes through
+the file watcher's `handleFileAdded`, since the watcher suppresses the
+editor's own writes, so it is indexed and gets its EXIT dialog (#141) like a
+dropped-in file. The `Wld_InsertNpc` offer is not part of it: the World
+surface's insert already does that, and it needs a waypoint.
+
 **Still open in Phase 2:**
 
 - **Asset-backed suggestions** — head meshes and walk overlays from the VFS
@@ -146,8 +160,6 @@ free text.
   the routine's source line or to the waypoint in the World surface
   (`npcWorldJump.ts` already resolves the latter for spawns), and the TA state
   name (`TA_Sit`, …), which `RoutineSite` does not carry.
-- **Create NPC**: a new instance from a template into a chosen file, offering
-  the existing `Wld_InsertNpc` insertion, with the next free `id` proposed.
 - **A real-Electron disk-truth spec** (`tests/e2e-electron/`). The browser
   harness proves the flow only; byte fidelity is proven below it, by the
   parser suite and by `tests/parserWorkerNpc.test.ts` against the real

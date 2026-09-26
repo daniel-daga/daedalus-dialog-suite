@@ -72,6 +72,8 @@ export interface NPCListProps {
   /** Rows for which this returns true get an "Edit NPC" button (npc-editor Phase 2). */
   canEditNPC?: (npc: string) => boolean;
   onEditNPC?: (npc: string) => void;
+  /** Shown as a "New NPC" button when given (#285). */
+  onCreateNPC?: () => void;
 }
 
 export interface DialogTreeProps {

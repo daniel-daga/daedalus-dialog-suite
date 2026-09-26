@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import NPCList from './NPCList';
 import NpcEditorDialog from './NpcEditorDialog';
+import CreateNpcDialog from './CreateNpcDialog';
 import { useProjectStore } from '../store/projectStore';
 import type { SemanticModel, DialogMetadata } from '../types/global';
 import type { ProjectIndex } from '../../shared/types';
@@ -75,6 +76,10 @@ const NpcColumn: React.FC<NpcColumnProps> = ({
     [isProjectMode, npcFileIndex],
   );
   const editingFile = editing ? npcFileIndex[editing.toUpperCase()] : undefined;
+  // A new NPC is a copy of one with a declaring file (#285), so there must be one.
+  const [creating, setCreating] = useState(false);
+  const canCreate = isProjectMode && Object.keys(npcFileIndex).length > 0;
+  const openCreate = useCallback(() => setCreating(true), []);
 
   return (
     <>
@@ -86,7 +91,18 @@ const NpcColumn: React.FC<NpcColumnProps> = ({
         coverageNote={coverageNote}
         canEditNPC={canEditNPC}
         onEditNPC={setEditing}
+        onCreateNPC={canCreate ? openCreate : undefined}
       />
+      {creating && (
+        <CreateNpcDialog
+          initialTemplate={selectedNPC}
+          onClose={() => setCreating(false)}
+          onCreated={(npc) => {
+            setCreating(false);
+            setEditing(npc);
+          }}
+        />
+      )}
       {editing && editingFile && (
         <NpcEditorDialog npcName={editing} filePath={editingFile} onClose={() => setEditing(null)} />
       )}

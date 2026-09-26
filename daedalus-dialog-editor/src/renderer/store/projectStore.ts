@@ -225,6 +225,9 @@ interface ProjectActions {
 
   // Register a newly created dialog in the project index
   addDialogToIndex: (metadata: DialogMetadata) => void;
+  // Create NPC (#285): list a newly written NPC and make it editable, until
+  // the next reindex rebuilds both from disk
+  addNpcToIndex: (npc: string, filePath: string) => void;
   // A spawn the World surface just wrote (level-editor.md §16.19, slice 16 E):
   // the index is built at project load and never refreshed by a file update.
   addSpawnSite: (site: SpawnSite) => void;
@@ -1317,6 +1320,18 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         allDialogFiles: nextAllDialogFiles
       };
     });
+  },
+
+  addNpcToIndex: (npc: string, filePath: string) => {
+    set((state) => ({
+      npcList: state.npcList.includes(npc)
+        ? state.npcList
+        : [...state.npcList, npc].sort((a, b) => a.localeCompare(b)),
+      npcFileIndex: { ...state.npcFileIndex, [npc.toUpperCase()]: filePath },
+      allDialogFiles: state.allDialogFiles.includes(filePath)
+        ? state.allDialogFiles
+        : [...state.allDialogFiles, filePath]
+    }));
   },
 
   addSpawnSite: (site: SpawnSite) => {
