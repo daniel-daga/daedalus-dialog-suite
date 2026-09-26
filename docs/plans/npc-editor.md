@@ -1,6 +1,6 @@
 # NPC Editor
 
-**Status:** Phase 1 built (#284); Phase 2 in progress (#285) — editing an existing NPC works; Phases 3–4 not started.
+**Status:** Phase 1 built (#284); Phase 2 in progress (#285) — editing an existing NPC works; Phase 3 started (#298); Phase 4 not started.
 
 An editor for `C_NPC` instances inside the dialog editor, covering what the
 community's standalone *NPC Generator* covers (main info, attributes, protection,
@@ -171,7 +171,35 @@ surface's insert already does that, and it needs a waypoint.
 
 ## 4. Phase 3 — the visual preview
 
-A bind-pose preview beside the form, reusing `VisualPreviewScene`. It needs:
+A bind-pose preview beside the form, reusing `VisualPreviewScene` (#298).
+
+**Built so far (2026-09-26):**
+
+- **Binding: `extractHierarchy(vfs, model)`** — a hierarchy's nodes with
+  transforms accumulated to the root, row-major; `.MDH` first, else the
+  hierarchy inside the `.MDL`. The first question below is settled by it: a
+  body `.MDM` has no `.MDH` beside it (every human body hangs on
+  `HUMANS.MDH`), and `extractVisual` emits transforms only for attachments,
+  so the head could not be placed from JS without it. The head `.MMB` and the
+  body `.MDM` are still extracted by `extractVisual`; JS composes them.
+- **`src/renderer/npc/npcVisual.ts`** — `resolveNpcVisual` reads the engine
+  externals (`Mdl_SetVisual`, `Mdl_SetVisualBody`, `Mdl_SetModelFatness`; the
+  last call wins, as the engine runs them in order) with integer constants
+  resolved through a project lookup, and `variantTextureName` does the
+  `_V<n>_C<n>` substitution. An NPC whose visual `B_SetNpcVisual` sets last is
+  reported undrawable, not guessed: its retail body (body mesh per gender,
+  skin, the STR-dependent width `SLD_99003_Farim.d`'s comment mentions) is not
+  in the repo to confirm against. Once it is, the mapping goes where that
+  refusal is.
+
+**Still open:** the `B_SetNpcVisual` mapping; armour (`visual_change` from the
+item's `sourceText`, as the World item picker already does); an IPC path from
+the renderer to `extractHierarchy`; the scene composition and the dialog
+panel. Whether a soft-skin body's stored positions are its bind pose in model
+space (they are drawn as-is by `WorldAssetPreview` today) has not been checked
+against a real `HUM_BODY_NAKED0.MDM`.
+
+It needs:
 
 1. **Resolve the visual from the definition.** From `Mdl_SetVisual` +
    `Mdl_SetVisualBody` directly, or from the vanilla `B_SetNpcVisual(slf,
