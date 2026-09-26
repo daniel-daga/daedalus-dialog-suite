@@ -24,7 +24,7 @@ import * as mockWorldViewport from './worldViewportMocks';
 
 jest.mock('three/examples/jsm/controls/TransformControls.js', () => mockWorldViewport.mockTransformControls());
 
-import { GizmoController, type GizmoMode } from '../src/renderer/world/GizmoController';
+import { GizmoController, type GizmoControllerOptions, type GizmoMode } from '../src/renderer/world/GizmoController';
 import type { WaynetOverlay } from '../src/renderer/world/WaynetOverlay';
 import type { WorldScene } from '../src/renderer/world/WorldScene';
 
@@ -64,6 +64,7 @@ function harness({
   snapAngle = 0,
   positions = { 1: [100, 0, 0] as [number, number, number], 2: [300, 0, 0] as [number, number, number] },
   waypoints = { 7: [50, 60, 70] as [number, number, number] },
+  membersOf = undefined as GizmoControllerOptions['membersOf'],
 } = {}) {
   const world = fakeWorld(positions);
   const controls = { enabled: true };
@@ -91,6 +92,7 @@ function harness({
     onTranslate: (delta) => { translated.push(delta); },
     onRotate: (delta) => { rotated.push(delta); },
     onMoveWaypoint: (waypoint, from, to) => { waypointMoves.push([waypoint, from, to]); },
+    membersOf,
   });
 
   return { gizmo, world, controls, translated, rotated, waypointMoves, waypoints };
@@ -186,6 +188,45 @@ describe('GizmoController', () => {
     expect(zx).toBeCloseTo(-1, 6);
     expect(zz).toBeCloseTo(0, 6);
     expect(world.turned.map(([vob]) => vob)).toEqual([1, 2]);
+  });
+
+  // #292: the ops carry each selected VOB's subtree, so the preview has to as
+  // well — or the children stand still for the length of the drag and jump
+  // on release.
+  describe('with a subtree under the selection', () => {
+    const family = {
+      positions: {
+        1: [100, 0, 0] as [number, number, number],
+        3: [110, 0, 0] as [number, number, number],
+      },
+      membersOf: (vobs: readonly number[]) => vobs.flatMap((vob) => (
+        vob === 1 ? [{ vob: 1, root: 1 }, { vob: 3, root: 1 }] : [{ vob, root: vob }]
+      )),
+    };
+
+    it('previews the children moving with the parent, and still commits one delta', () => {
+      const { gizmo, translated, world } = harness(family);
+      gizmo.attach([1]);
+      // The gizmo stands on the selection, not on the children under it.
+      expect(gizmo.position()).toEqual([100, 0, 0]);
+      gizmo.dragTo([150, 10, 0]);
+
+      expect(translated).toEqual([[50, 10, 0]]);
+      expect(world.moved).toEqual([[1, [150, 10, 0]], [3, [160, 10, 0]]]);
+    });
+
+    it('previews the children turning with the parent and swinging round its origin', () => {
+      const { gizmo, rotated, world } = harness({ ...family, mode: 'rotate' });
+      gizmo.attach([1]);
+      gizmo.turnBy([0, 1, 0], Math.PI / 2);
+
+      expect(rotated).toHaveLength(1);
+      expect(world.turned.map(([vob]) => vob)).toEqual([1, 3]);
+      // 10 cm along +X from the parent, a quarter turn about Y: 10 cm along -Z.
+      const [[vob, at]] = world.moved;
+      expect(vob).toBe(3);
+      [100, 0, -10].forEach((value, axis) => expect(at[axis]).toBeCloseTo(value, 4));
+    });
   });
 
   it('commits nothing for a turn that turned nothing', () => {

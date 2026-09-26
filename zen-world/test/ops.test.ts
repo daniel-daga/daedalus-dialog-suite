@@ -18,6 +18,7 @@
 
 import {
   addVob,
+  alignSubtreesToNormal,
   alignVobsToNormal,
   applyOps,
   applyWaypointNames,
@@ -28,6 +29,7 @@ import {
   deleteVob,
   deleteVobs,
   deleteWaypoint,
+  dropSubtreesToGround,
   dropVobsToGround,
   duplicateVobSpec,
   duplicateVobSubtree,
@@ -48,12 +50,16 @@ import {
   placeBounds,
   renumbersPaths,
   renumbersWaypoints,
+  rotateSubtrees,
+  rotateSubtreeTo,
   rotateVob,
   rotateVobs,
   scatterVobs,
   setVobClassProp,
   setVobProp,
   setVobProps,
+  subtreeMembers,
+  translateSubtrees,
   translateVobs,
   vobIndexPath,
   vobAtIndexPath,
@@ -3850,5 +3856,155 @@ describe('a scatter stroke', () => {
 
   it('emits nothing for a stroke that placed nothing', () => {
     expect(scatterVobs(reader(), [])).toEqual([]);
+  });
+});
+
+// #292: ZenGin VOB positions are world-space, so a parent moved alone leaves its
+// children standing where they were. Every transform of a selection carries the
+// selection's subtrees with it, rigidly.
+describe('transforms that carry a subtree (#292)', () => {
+  // Two trees and a bystander: A (0) holds a child (1) holding a grandchild
+  // (2); B (3) holds one child (4).
+  const reader = () => createVobReader(vobIndex([
+    { pos: [100, 0, 0] },
+    { parent: 0, pos: [110, 0, 0] },
+    { parent: 1, pos: [110, 0, 10] },
+    { childIndex: 1, pos: [0, 0, 0] },
+    { parent: 3, pos: [5, 0, 0] },
+  ]));
+  /** A quarter turn about the world up axis, row-major: +X goes to -Z. */
+  const QUARTER: ZenRotation = [0, 0, 1, 0, 1, 0, -1, 0, 0];
+  const IDENTITY: ZenRotation = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  const near = (actual: readonly number[] | null | undefined, expected: readonly number[]) => {
+    expect(actual).not.toBeNull();
+    expected.forEach((value, at) => expect(actual![at]).toBeCloseTo(value, 4));
+  };
+
+  describe('subtreeMembers', () => {
+    it('is each selected VOB and every descendant, tagged with the root it turns about', () => {
+      expect(subtreeMembers(reader(), [0])).toEqual([
+        { vob: 0, root: 0 }, { vob: 1, root: 0 }, { vob: 2, root: 0 },
+      ]);
+    });
+
+    it('takes a VOB once when it is selected alongside its own ancestor', () => {
+      expect(subtreeMembers(reader(), [2, 0])).toEqual([
+        { vob: 0, root: 0 }, { vob: 1, root: 0 }, { vob: 2, root: 0 },
+      ]);
+    });
+
+    it('roots a subtree at a selected child, and leaves unselected trees alone', () => {
+      expect(subtreeMembers(reader(), [1, 3])).toEqual([
+        { vob: 1, root: 1 }, { vob: 2, root: 1 }, { vob: 3, root: 3 }, { vob: 4, root: 3 },
+      ]);
+    });
+  });
+
+  describe('translateSubtrees', () => {
+    it('moves the parent and every descendant by the same delta, one batch', () => {
+      const ops = translateSubtrees(reader(), [0], [1, 2, 3]);
+      expect(ops.map((op) => [op.vob, op.path, op.from, op.to])).toEqual([
+        [0, '0', [100, 0, 0], [101, 2, 3]],
+        [1, '0/0', [110, 0, 0], [111, 2, 3]],
+        [2, '0/0/0', [110, 0, 10], [111, 2, 13]],
+      ]);
+    });
+
+    it('moves a child that is also selected only once', () => {
+      expect(translateSubtrees(reader(), [0, 2], [1, 0, 0]).map((op) => op.vob)).toEqual([0, 1, 2]);
+    });
+
+    it('is exactly translateVobs for a selection with no children', () => {
+      const lone = createVobReader(vobIndex([{ pos: [1, 2, 3] }, { childIndex: 1, pos: [4, 5, 6] }]));
+      expect(translateSubtrees(lone, [0, 1], [1, 1, 1])).toEqual(translateVobs(lone, [0, 1], [1, 1, 1]));
+    });
+  });
+
+  describe('rotateSubtrees', () => {
+    it('turns the parent in place and swings each descendant round the parent’s origin', () => {
+      const ops = rotateSubtrees(reader(), [0], QUARTER, () => null);
+      // The root turns about its own origin, as `rotateVobs` turns it.
+      expect(ops[0]).toMatchObject({ op: 'RotateVob', vob: 0, to: QUARTER });
+      // A descendant turns by the same delta and is carried round the root:
+      // 10 cm along +X from the root lands 10 cm along -Z.
+      const child = ops.filter((op) => op.vob === 1);
+      expect(child.map((op) => op.op)).toEqual(['RotateVob', 'MoveVob']);
+      near(child[0].to as ZenRotation, QUARTER);
+      near(child[1].to as number[], [100, 0, -10]);
+      const grandchild = ops.filter((op) => op.vob === 2);
+      near(grandchild[1].to as number[], [110, 0, -10]);
+      expect(ops.some((op) => op.vob === 3 || op.vob === 4)).toBe(false);
+    });
+
+    it('refits a descendant’s box for its new pose where it will stand', () => {
+      const box: ZenBounds = [-1, 0, -2, 1, 1, 2];
+      const [, turn, move] = rotateSubtrees(reader(), [1], QUARTER, () => box);
+      // The turn fits the box at the old position and the move carries it —
+      // `setVobPosition` translates the box by the delta — so together they
+      // land on the box fitted at the new one.
+      expect(turn).toMatchObject({ op: 'RotateVob', vob: 2, fromBbox: placeBounds(box, IDENTITY, [110, 0, 10]) });
+      const at = move.to as [number, number, number];
+      const landed = (turn as RotateVob).toBbox!.map((value, axis) => value + at[axis % 3] - [110, 0, 10][axis % 3]);
+      near(landed, placeBounds(box, QUARTER, at));
+    });
+
+    it('is put back exactly by undo, which replays the batch inverted back to front', () => {
+      const live = reader();
+      const before = { positions: [...live.columns.positions], rotations: [...live.columns.rotations] };
+      const ops = rotateSubtrees(live, [0], QUARTER, () => null);
+      applyOps(live, ops);
+      near([...live.columns.positions].slice(3, 6), [100, 0, -10]);
+      // `WorldService`'s undo: the inverse of each op, last op first.
+      applyOps(live, [...ops].reverse().map(invertOp));
+      near([...live.columns.positions], before.positions);
+      near([...live.columns.rotations], before.rotations);
+    });
+
+    it('is exactly rotateVobs for a selection with no children', () => {
+      const lone = createVobReader(vobIndex([{ pos: [1, 2, 3] }]));
+      expect(rotateSubtrees(lone, [0], QUARTER, () => null)).toEqual(rotateVobs(lone, [0], QUARTER, () => null));
+    });
+  });
+
+  describe('rotateSubtreeTo', () => {
+    it('gives the VOB exactly the pose typed, and turns its children by the change', () => {
+      const tilted = createVobReader(vobIndex([
+        { pos: [0, 0, 0], rot: QUARTER },
+        { parent: 0, pos: [0, 0, -10], rot: QUARTER },
+      ]));
+      // From a quarter turn back to identity is a quarter turn the other way.
+      const ops = rotateSubtreeTo(tilted, 0, IDENTITY, () => null);
+      expect(ops[0]).toMatchObject({ op: 'RotateVob', vob: 0, to: IDENTITY });
+      near(ops[1].to as ZenRotation, IDENTITY);
+      near(ops[2].to as number[], [10, 0, 0]);
+    });
+  });
+
+  describe('dropSubtreesToGround', () => {
+    it('drops the parent onto its ground point and carries its children by the same drop', () => {
+      const ops = dropSubtreesToGround(reader(), [{ vob: 0, ground: [100, -50, 0] }]);
+      expect(ops.map((op) => [op.vob, op.to])).toEqual([
+        [0, [100, -50, 0]], [1, [110, -50, 0]], [2, [110, -50, 10]],
+      ]);
+    });
+
+    it('moves a descendant with its ancestor’s drop, not a ground point of its own', () => {
+      // Dropping each to its own ground would pull the tree apart.
+      const ops = dropSubtreesToGround(reader(), [
+        { vob: 0, ground: [100, -50, 0] }, { vob: 1, ground: [110, -7, 0] },
+      ]);
+      expect(ops.find((op) => op.vob === 1)?.to).toEqual([110, -50, 0]);
+      expect(ops.filter((op) => op.vob === 1)).toHaveLength(1);
+    });
+  });
+
+  describe('alignSubtreesToNormal', () => {
+    it('stands the parent up as alignVobsToNormal does, and swings its children with it', () => {
+      const normal: [number, number, number] = [1, 0, 0];
+      const ops = alignSubtreesToNormal(reader(), [{ vob: 0, normal }], () => null);
+      expect(ops[0]).toEqual(alignVobsToNormal(reader(), [{ vob: 0, normal }], () => null)[0]);
+      // Up is carried onto +X, so the child 10 cm along +X goes 10 cm down.
+      near(ops.find((op) => op.op === 'MoveVob' && op.vob === 1)?.to as number[], [100, -10, 0]);
+    });
   });
 });

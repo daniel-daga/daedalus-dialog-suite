@@ -1582,8 +1582,18 @@ What made it more than "the same again with a different verb":
   deliberately neither.
 - **A selection turns about each VOB's own origin**, not about the selection's
   pivot: turning about a pivot moves the VOBs as well as turning them, which is
-  a batch of two op kinds and a different feature. The delta composes **on the
-  left**, so differently-oriented VOBs all turn the same way on screen.
+  a different feature. The delta composes **on the left**, so
+  differently-oriented VOBs all turn the same way on screen.
+- **A selected VOB's subtree comes along** (#292). ZenGin positions are
+  world-space, so a parent moved alone left its children standing. Every
+  transform of a selection — the gizmo's drag and turn, the nudge, a typed
+  position or rotation, drop to ground, align to normal — goes through the
+  subtree counterpart in `zen-world/src/model/subtreeTransforms.ts`: a
+  descendant moves by the same delta, or turns by the same delta *and* swings
+  round its selected ancestor's origin, which is a `RotateVob` then a
+  `MoveVob` for it in the same batch (the move carries the box the turn
+  refitted). A child selected with its parent moves once, and the gizmo's
+  preview drives the same members the ops are built from.
 - **W and E switch the gizmo**, as every 3D editor binds them — bare letters on
   a window listener, so they step aside for anything that takes typing.
 

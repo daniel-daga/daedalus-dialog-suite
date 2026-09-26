@@ -1,5 +1,7 @@
 import * as THREE from 'three';
-import { multiplyRotation, mirrorRotation, type ZenRotation } from 'zen-world';
+import {
+  multiplyRotation, mirrorRotation, turnAbout, type SubtreeMember, type ZenRotation,
+} from 'zen-world';
 import { DampedTransformControls } from './DampedTransformControls';
 import { snapDelta, snapTurn } from './snapping';
 import type { WaynetOverlay } from './WaynetOverlay';
@@ -43,6 +45,13 @@ export interface GizmoControllerOptions {
     from: [number, number, number],
     to: [number, number, number],
   ) => void;
+  /**
+   * What a drag of `vobs` moves: each of them and its descendants, with the
+   * selected VOB each turns about (#292) — `subtreeMembers` over the index, the
+   * same answer the ops are built from, so the preview is the commit. Absent,
+   * a drag moves the selection alone.
+   */
+  membersOf?: (vobs: readonly number[]) => readonly SubtreeMember[];
 }
 
 /** A rotation as ZenGin reads it — row-major — out of three's column-major
@@ -73,6 +82,9 @@ export class GizmoController {
   private waypointFrom: [number, number, number] | null = null;
   private readonly dragFrom = new Map<number, [number, number, number]>();
   private readonly turnFrom = new Map<number, ZenRotation>();
+  /** The selected VOB each dragged one turns about — itself for a selected
+   *  VOB, its selected ancestor for a descendant carried along (#292). */
+  private readonly rootOf = new Map<number, number>();
   private readonly proxyFrom = new THREE.Vector3();
   private readonly proxyTurnFrom = new THREE.Quaternion();
   // Scratch, so a drag frame allocates nothing.
@@ -222,7 +234,11 @@ export class GizmoController {
       this.proxyTurnFrom.copy(this.proxy.quaternion);
       this.dragFrom.clear();
       this.turnFrom.clear();
-      for (const vob of this.vobs) {
+      this.rootOf.clear();
+      const members = this.options.membersOf?.(this.vobs)
+        ?? this.vobs.map((vob) => ({ vob, root: vob }));
+      for (const { vob, root } of members) {
+        this.rootOf.set(vob, root);
         const position = this.options.world.positionOf(vob);
         if (position !== null) this.dragFrom.set(vob, position);
         const rotation = this.options.world.rotationOf(vob);
@@ -344,6 +360,15 @@ export class GizmoController {
       if (delta === null) return;
       for (const [vob, from] of this.turnFrom) {
         this.options.world.rotateVob(vob, multiplyRotation(delta, from));
+        // A descendant also swings round the selected VOB it belongs to, as
+        // `rotateSubtrees` swings it. One whose root is not drawn has no
+        // origin to swing round here, and waits for the commit.
+        const root = this.rootOf.get(vob) ?? vob;
+        const at = this.dragFrom.get(vob);
+        const origin = this.dragFrom.get(root);
+        if (root !== vob && at !== undefined && origin !== undefined) {
+          this.options.world.moveVob(vob, turnAbout(at, origin, delta));
+        }
       }
       return;
     }

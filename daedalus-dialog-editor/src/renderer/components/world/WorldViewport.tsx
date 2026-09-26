@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { acceleratedRaycast } from 'three-mesh-bvh';
 import {
   threeToZen, zenToThree, zenBoxToThree,
-  isWaynetOp, type VobExtent, type ZenPosition, type ZenRotation,
+  isWaynetOp, type SubtreeMember, type VobExtent, type ZenPosition, type ZenRotation,
 } from 'zen-world';
 import type {
   DecodedTexture, InstancedPayload, VobIndex, WaynetPayload, WorldMeshPayload, WorldOp,
@@ -219,6 +219,12 @@ export interface WorldViewportProps {
    * the same way on screen and each about its own origin.
    */
   onRotateSelection: (delta: ZenRotation) => void;
+  /**
+   * What a drag of the selection moves, so the preview carries each selected
+   * VOB's children as the commit will (#292) — the shell's `subtreeMembers`
+   * over its own index. Absent, a drag previews the selection alone.
+   */
+  membersOf?: (vobs: readonly number[]) => readonly SubtreeMember[];
   /** Ops the main process has applied — a committed edit, an undo, a redo, or
    *  the reversal of a refused one. The scene follows them. */
   appliedOps: WorldOp[] | null;
@@ -443,7 +449,7 @@ interface Gizmo {
 const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(({
   mesh, visuals, vobIndex, bbox, waynet, showWaynet, spawns, showSpawns, routines, spawnTime, spawnState,
   showWaypointNames, loadTexture, onTextureFailures, onCameraSlot, onPick, onVobContextMenu,
-  selection, onTranslateSelection, gizmoMode, onRotateSelection, appliedOps,
+  selection, onTranslateSelection, gizmoMode, onRotateSelection, membersOf, appliedOps,
   selectedWaypoint, terrainPoint, exposure, hiddenVobs, outlineMode, snapGrid, snapAngle,
   selectedExtent = null,
   lightPreview = false,
@@ -510,6 +516,8 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   onTranslateRef.current = onTranslateSelection;
   const onRotateRef = useRef(onRotateSelection);
   onRotateRef.current = onRotateSelection;
+  const membersOfRef = useRef(membersOf);
+  membersOfRef.current = membersOf;
   const onSelectWaypointRef = useRef(onSelectWaypoint);
   onSelectWaypointRef.current = onSelectWaypoint;
   const vobIndexRef = useRef(vobIndex);
@@ -750,6 +758,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       snapAngle: () => snapAngleRef.current,
       onTranslate: (delta) => onTranslateRef.current(delta),
       onRotate: (delta) => onRotateRef.current(delta),
+      membersOf: (vobs) => membersOfRef.current?.(vobs) ?? vobs.map((vob) => ({ vob, root: vob })),
       onMoveWaypoint: (waypoint, from, to) => onMoveWaypointRef.current(waypoint, from, to),
     });
     gizmoRef.current = gizmo;

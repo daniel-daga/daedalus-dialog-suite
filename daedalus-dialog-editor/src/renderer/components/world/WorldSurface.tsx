@@ -10,14 +10,14 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import {
   AUTHORABLE_VOB_CLASSES,
-  addVob, classPropKeys, alignVobsToNormal,
-  deleteVobs, dropVobsToGround,
+  addVob, classPropKeys, alignSubtreesToNormal,
+  deleteVobs, dropSubtreesToGround,
   duplicateVobs, emptyVobFolders,
   matchVobs,
   placeBounds, placementCollision,
-  reparentVob, rotateVob, rotateVobs, setVobClassProp, setVobProp, setVobProps,
+  reparentVob, rotateSubtrees, rotateSubtreeTo, subtreeMembers, setVobClassProp, setVobProp, setVobProps,
   topLevelVobs,
-  translateVobs, vobExtentOf, vobIndexPath,
+  translateSubtrees, vobExtentOf, vobIndexPath,
   type AuthorableVobClass, type ClassProps, type NewVob, type ReadProps,
   type VobExtent, type VobProps, type VobReader,
   type ZenBounds,
@@ -1069,8 +1069,17 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     // Each op's `from` comes out of the index before anything is applied to it,
     // which is what lets the batch be inverted without a snapshot beside the
     // history — and what keeps a selection's spacing across an undo.
-    void commitOps(translateVobs(vobModelOf(current).reader, selected, delta));
+    // Each selected VOB's children come along (#292): a ZenGin position is
+    // world-space, so a parent moved alone leaves them standing.
+    void commitOps(translateSubtrees(vobModelOf(current).reader, selected, delta));
   }, [commitOps]);
+
+  /** What a drag of the selection previews moving: the same members
+   *  `translateSubtrees` and `rotateSubtrees` build their ops over (#292). */
+  const membersOfSelection = useCallback((vobs: readonly number[]) => {
+    const { summary: current } = useWorldStore.getState();
+    return current === null ? [] : subtreeMembers(vobModelOf(current).reader, vobs);
+  }, []);
 
   // What the gizmo does. There is no scale: `zCVob` has no scale field, and
   // measured across all 41,393 VOB transforms in the three retail worlds
@@ -1130,7 +1139,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       if (hit !== null) drops.push({ vob, ground: hit.point });
     }
     if (drops.length === 0) return;
-    void commitOps(dropVobsToGround(reader, drops));
+    // A dropped VOB's children fall with it by the same drop (#292).
+    void commitOps(dropSubtreesToGround(reader, drops));
   }, [commitOps]);
 
   /**
@@ -1152,7 +1162,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       if (hit !== null) hits.push({ vob, normal: hit.normal });
     }
     if (hits.length === 0) return;
-    void commitOps(alignVobsToNormal(reader, hits, boundsOf));
+    // Its children swing round it by the same turn (#292).
+    void commitOps(alignSubtreesToNormal(reader, hits, boundsOf));
   }, [commitOps, boundsOf]);
 
   /**
@@ -1199,8 +1210,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     const { summary: current, selection: selected } = useWorldStore.getState();
     if (current === null || selected.length === 0) return;
     // Each VOB turns about its own origin, and the delta composes on the left
-    // so a selection of differently-oriented VOBs all turn the same way.
-    void commitOps(rotateVobs(vobModelOf(current).reader, selected, delta, boundsOf));
+    // so a selection of differently-oriented VOBs all turn the same way. Its
+    // children swing round that origin with it (#292).
+    void commitOps(rotateSubtrees(vobModelOf(current).reader, selected, delta, boundsOf));
   }, [commitOps, boundsOf]);
 
   /**
@@ -1214,7 +1226,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     const { summary: current, selection: selected } = useWorldStore.getState();
     if (current === null || selected.length !== 1) return;
     const vob = selected[0];
-    void commitOps([rotateVob(vobModelOf(current).reader, vob, to, boundsOf(vob))]);
+    void commitOps(rotateSubtreeTo(vobModelOf(current).reader, vob, to, boundsOf));
   }, [commitOps, boundsOf]);
 
   /**
@@ -2132,6 +2144,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               onVobContextMenu={openVobContextMenu}
               selection={selection}
               onTranslateSelection={handleTranslateSelection}
+              membersOf={membersOfSelection}
               gizmoMode={gizmoMode}
               onRotateSelection={handleRotateSelection}
               appliedOps={appliedOps}

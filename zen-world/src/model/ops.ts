@@ -886,7 +886,7 @@ function rotationBetween(from: ZenPosition, to: ZenPosition): ZenRotation {
  * applying. Neither normalises the column it reads, and neither has to: that is
  * `rotationBetween`'s job now, which is the one place it can be got right.
  */
-function standUpDelta(rotation: ZenRotation, normal: ZenPosition): ZenRotation {
+export function standUpDelta(rotation: ZenRotation, normal: ZenPosition): ZenRotation {
   return rotationBetween([rotation[1], rotation[4], rotation[7]], normal);
 }
 

@@ -754,6 +754,40 @@ describe('a multi-select drag', () => {
   });
 });
 
+// #292: ZenGin positions are world-space, so a parent moved alone left its
+// children standing where they were.
+describe('a drag or a turn of a parent', () => {
+  it('moves the children with it, in the same one batch', async () => {
+    await openWorld(undefined, [-1, 0]);
+    act(() => useWorldStore.getState().selectVob(0));
+
+    fireEvent.click(screen.getByTestId('stub-drag'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    const [[ops]] = api.applyWorldOps.mock.calls as unknown as [[WorldOp[]]];
+    expect(ops.map((op) => [op.op, (op as { path: string }).path, (op as { to: unknown }).to])).toEqual([
+      ['MoveVob', '0', [1, 2, 3]],
+      ['MoveVob', '0/0', [11, 22, 33]],
+    ]);
+  });
+
+  it('turns the children with it, round the parent’s origin', async () => {
+    await openWorld(undefined, [-1, 0]);
+    act(() => useWorldStore.getState().selectVob(0));
+
+    fireEvent.click(screen.getByTestId('stub-turn'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    const [[ops]] = api.applyWorldOps.mock.calls as unknown as [[WorldOp[]]];
+    expect(ops.map((op) => [op.op, (op as { path: string }).path])).toEqual([
+      ['RotateVob', '0'], ['RotateVob', '0/0'], ['MoveVob', '0/0'],
+    ]);
+    // The child at [10, 20, 30], a quarter turn about Y round the parent at
+    // the origin: +Z goes to +X and +X to -Z.
+    expect((ops[2] as { to: number[] }).to).toEqual([30, 20, -10]);
+  });
+});
+
 describe('a turn of the gizmo', () => {
   it('becomes a RotateVob carrying both matrices and both boxes', async () => {
     // The box is half of what a rotation writes: the engine culls by it, and an
