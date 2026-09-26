@@ -16,6 +16,7 @@ import { useUISelectionStore } from '../../store/uiSelectionStore';
 import { useWorldStore, worldFocusOf } from '../../store/worldStore';
 import { useNavigation } from '../../hooks/useNavigation';
 import type { Problem } from '../../problems/domain/types';
+import { looksLikeAnotherLanguage } from '../../problems/domain/rules/outputUnitDrift';
 import ProblemsList from './ProblemsList';
 
 /**
@@ -118,6 +119,15 @@ const ProblemsPanel: React.FC = () => {
     }
     return [...lines.values()];
   }, [problems]);
+  // #265: German scripts over an English OU make every line stale, and the
+  // update would then overwrite the English. Said once, above the rows.
+  const outputUnitAgreement = useProblemsStore((s) => s.outputUnitAgreement);
+  const otherLanguage = outputUnitAgreement !== null && looksLikeAnotherLanguage(outputUnitAgreement);
+  const otherLanguageText = otherLanguage
+    ? `${outputUnitAgreement.stale} of ${outputUnitAgreement.compared} lines your scripts share with the OU database `
+      + 'disagree — more than editing changes. The OU may be in another language than your scripts '
+      + '(German MDK scripts over an English game, or the reverse).'
+    : null;
   const [confirmingOuUpdate, setConfirmingOuUpdate] = useState(false);
   const [ouUpdating, setOuUpdating] = useState(false);
   const [ouUpdateError, setOuUpdateError] = useState<string | null>(null);
@@ -175,6 +185,11 @@ const ProblemsPanel: React.FC = () => {
           {ingestionIncomplete ? ` · ${scannedFileCount}/${totalFileCount} files scanned` : ''}
         </Typography>
       </Box>
+      {otherLanguageText && (
+        <Alert severity="warning" data-testid="problems-ou-language" sx={{ mx: 1, mb: 1 }}>
+          {otherLanguageText}
+        </Alert>
+      )}
       <Box sx={searchablePaneContentSx}>
         <ProblemsList
           problems={problems}
@@ -191,6 +206,11 @@ const ProblemsPanel: React.FC = () => {
         <DialogTitle id="problems-update-ous-title">Update the OU database</DialogTitle>
         <DialogContent>
           {ouUpdateError && <Alert severity="error" sx={{ mb: 1 }}>{ouUpdateError}</Alert>}
+          {otherLanguageText && (
+            <Alert severity="warning" sx={{ mb: 1 }}>
+              {`${otherLanguageText} Updating would overwrite it with your scripts' text.`}
+            </Alert>
+          )}
           <DialogContentText variant="body2" sx={{ whiteSpace: 'pre-line' }}>
             {`Writes ${outputUnitLines.length} subtitle${outputUnitLines.length === 1 ? '' : 's'} from your scripts into\n${outputUnitFile}\n`
               + 'and its OU.CSL twin if there is one, which is what the game shows.\n\n'
@@ -199,8 +219,13 @@ const ProblemsPanel: React.FC = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setConfirmingOuUpdate(false)} disabled={ouUpdating}>Cancel</Button>
-          <Button variant="contained" onClick={() => void handleUpdateOutputUnits()} disabled={ouUpdating}>
-            Update
+          <Button
+            variant="contained"
+            color={otherLanguage ? 'warning' : 'primary'}
+            onClick={() => void handleUpdateOutputUnits()}
+            disabled={ouUpdating}
+          >
+            {otherLanguage ? 'Overwrite anyway' : 'Update'}
           </Button>
         </DialogActions>
       </Dialog>

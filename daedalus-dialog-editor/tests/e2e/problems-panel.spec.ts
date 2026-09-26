@@ -153,3 +153,80 @@ test.describe('Problems panel: updating the OU database', () => {
     expect(byName.get('DIA_XARDAS_14_00')).toBe('Vanilla.');
   });
 });
+
+// #265: German MDK scripts over an English OU. Every line reads as stale, and
+// "Update OUs" would overwrite the English — the report's complaint exactly. So
+// the panel names the likely cause, and the confirmation repeats it.
+test.describe('Problems panel: an OU in another language', () => {
+  test('says the OU may be in another language, and warns before overwriting it', async ({ page }) => {
+    const ids = Array.from({ length: 24 }, (_, i) => `DIA_Lang_Test_15_${String(i).padStart(2, '0')}`);
+    const dialog = `INSTANCE DIA_Lang_Test(C_INFO)
+{
+\tnpc = SLD_LangNpc;
+\tnr = 1;
+\tcondition = DIA_Lang_Test_Condition;
+\tinformation = DIA_Lang_Test_Info;
+\timportant = FALSE;
+};
+
+FUNC INT DIA_Lang_Test_Condition()
+{
+\treturn TRUE;
+};
+
+FUNC VOID DIA_Lang_Test_Info()
+{
+${ids.map((id) => `\tAI_Output(self, other, "${id}"); //Deutscher Satz.`).join('\n')}
+};
+`;
+    await page.goto('/');
+    await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
+    await page.evaluate(({ content, units }) => {
+      localStorage.setItem('mockapi_file_langtest/dia.d', content);
+      localStorage.setItem('mockapi_output_units', JSON.stringify({
+        filePath: 'C:/Gothic/_work/Data/Scripts/content/CUTSCENE/OU.BIN', format: 'BINARY', units,
+      }));
+    }, { content: dialog, units: ids.map((id) => ({ name: id.toUpperCase(), text: 'An English sentence.', wav: `${id.toUpperCase()}.WAV` })) });
+    page.on('dialog', async (d) => {
+      if (d.message().includes('project folder path')) await d.accept('langtest');
+      else await d.dismiss();
+    });
+    await page.getByRole('button', { name: /Open Project/i }).first().click();
+    await expect(page.getByText('SLD_LangNpc')).toBeVisible({ timeout: 15000 });
+
+    await page.getByTestId('problems-toggle').click();
+    const panel = page.getByTestId('problems-panel');
+    const banner = panel.getByTestId('problems-ou-language');
+    await expect(banner).toBeVisible({ timeout: 15000 });
+    await expect(banner).toContainText('24 of 24');
+    await expect(banner).toContainText(/another language/);
+
+    await panel.getByRole('button', { name: /Update OUs/ }).click();
+    const confirm = page.getByRole('dialog', { name: 'Update the OU database' });
+    await expect(confirm).toContainText(/another language/);
+    await expect(confirm.getByRole('button', { name: 'Overwrite anyway' })).toBeVisible();
+  });
+
+  test('says nothing of languages when only a few lines were edited', async ({ page }) => {
+    // The first describe's fixture: one stale line and one missing one.
+    await page.goto('/');
+    await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
+    await page.evaluate((content) => {
+      localStorage.setItem('mockapi_file_outest/dia.d', content);
+      localStorage.setItem('mockapi_output_units', JSON.stringify({
+        filePath: 'C:/Gothic/_work/Data/Scripts/content/CUTSCENE/OU.BIN', format: 'BINARY',
+        units: [{ name: 'DIA_OU_TEST_15_00', text: 'Alter Text.', wav: 'DIA_OU_TEST_15_00.WAV' }],
+      }));
+    }, OU_DIALOG);
+    page.on('dialog', async (d) => {
+      if (d.message().includes('project folder path')) await d.accept('outest');
+      else await d.dismiss();
+    });
+    await page.getByRole('button', { name: /Open Project/i }).first().click();
+    await expect(page.getByText('SLD_OuNpc')).toBeVisible({ timeout: 15000 });
+    await page.getByTestId('problems-toggle').click();
+    const panel = page.getByTestId('problems-panel');
+    await expect(panel.getByText(/still holds "Alter Text\."/)).toBeVisible({ timeout: 15000 });
+    await expect(panel.getByTestId('problems-ou-language')).toHaveCount(0);
+  });
+});

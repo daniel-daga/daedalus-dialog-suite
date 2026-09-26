@@ -11,7 +11,11 @@
  * The rule is a check, not a fix: #264's cut is check first, generate after.
  */
 
-import { outputUnitDriftRule } from '../src/renderer/problems/domain/rules/outputUnitDrift';
+import {
+  outputUnitAgreement,
+  looksLikeAnotherLanguage,
+  outputUnitDriftRule,
+} from '../src/renderer/problems/domain/rules/outputUnitDrift';
 import { buildProjectView } from '../src/renderer/problems/domain/projectView';
 import type { Problem } from '../src/renderer/problems/domain/types';
 import type { SemanticModel } from '../src/shared/types';
@@ -167,3 +171,37 @@ describe('outputUnitDriftRule', () => {
     expect(outputUnitDriftRule(view)).toEqual([]);
   });
 });
+
+// #265: German MDK scripts over an English OU. Every line then reads as stale,
+// which is true line by line and wrong as a diagnosis — and "Update OUs" would
+// do exactly what the report complains of, overwrite the English with German.
+// So the panel is told when the disagreement is too wide to be edits.
+describe('a database in another language than the scripts', () => {
+  const lines = (n: number, text: (i: number) => string) =>
+    Array.from({ length: n }, (_, i) => ({ id: `DIA_T_15_${String(i).padStart(2, '0')}`, text: text(i) }));
+  const units = (n: number, text: (i: number) => string) =>
+    lines(n, text).map(({ id, text: t }) => ({ name: id, text: t, wav: `${id}.WAV` }));
+
+  it('counts the lines both hold, and how many of those disagree — a missing line is neither', () => {
+    const view = viewOf(
+      [...lines(3, (i) => `Satz ${i}.`), { id: 'DIA_NEW_00', text: 'Neu.' }],
+      units(3, (i) => (i === 0 ? 'Sentence 0.' : `Satz ${i}.`)),
+    );
+    expect(outputUnitAgreement(view)).toEqual({ compared: 3, stale: 1 });
+  });
+
+  it('is nothing to count without a database', () => {
+    expect(outputUnitAgreement(viewOf(lines(3, () => 'x')))).toBeNull();
+  });
+
+  it('calls it another language when most of many shared lines disagree', () => {
+    expect(looksLikeAnotherLanguage({ compared: 40, stale: 38 })).toBe(true);
+    expect(looksLikeAnotherLanguage({ compared: 40, stale: 20 })).toBe(true);
+  });
+
+  it('does not for an edit session, however busy, nor for a handful of lines', () => {
+    expect(looksLikeAnotherLanguage({ compared: 400, stale: 60 })).toBe(false);
+    expect(looksLikeAnotherLanguage({ compared: 5, stale: 5 })).toBe(false);
+  });
+});
+

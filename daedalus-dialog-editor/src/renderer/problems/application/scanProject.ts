@@ -9,6 +9,7 @@ import type {
 } from '../domain/types';
 import { buildProjectView } from '../domain/projectView';
 import { runRules } from '../domain/runRules';
+import { outputUnitAgreement } from '../domain/rules/outputUnitDrift';
 
 /**
  * Application-layer adapter for the Problems panel. Store-agnostic: it takes the
@@ -56,6 +57,9 @@ export interface ProjectScanResult {
   problems: Problem[];
   /** How many parsed files the scan actually saw. */
   scannedFileCount: number;
+  /** Lines the scripts and the OU database share, and how many disagree —
+   *  null without a database (#265). */
+  outputUnitAgreement: { compared: number; stale: number } | null;
 }
 
 export function scanProject(input: ProjectScanInput): ProjectScanResult {
@@ -72,5 +76,9 @@ export function scanProject(input: ProjectScanInput): ProjectScanResult {
     parseErrors: input.parseErrors,
     outputUnits: input.outputUnits
   });
-  return { problems: runRules(view), scannedFileCount: input.files.length };
+  return {
+    problems: runRules(view),
+    scannedFileCount: input.files.length,
+    outputUnitAgreement: outputUnitAgreement(view)
+  };
 }

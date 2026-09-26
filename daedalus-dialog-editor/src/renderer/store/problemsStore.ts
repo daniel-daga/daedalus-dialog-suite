@@ -46,6 +46,8 @@ interface ProblemsState {
   scannedFileCount: number;
   /** Total dialog files in the project index (may exceed scannedFileCount mid-ingestion). */
   totalFileCount: number;
+  /** Lines the scripts and the OU database share, and how many disagree (#265). */
+  outputUnitAgreement: { compared: number; stale: number } | null;
 }
 
 interface ProblemsActions {
@@ -70,7 +72,8 @@ const initialState: ProblemsState = {
   isScanning: false,
   hasScanned: false,
   scannedFileCount: 0,
-  totalFileCount: 0
+  totalFileCount: 0,
+  outputUnitAgreement: null
 };
 
 export const useProblemsStore = create<ProblemsStore>((set, get) => {
@@ -115,7 +118,7 @@ export const useProblemsStore = create<ProblemsStore>((set, get) => {
       // project whose every line is missing.
       const outputUnits = project.outputUnits?.units;
 
-      const { problems, scannedFileCount } = scanProject({
+      const { problems, scannedFileCount, outputUnitAgreement } = scanProject({
         files,
         knownNpcNames,
         factsCache,
@@ -134,7 +137,8 @@ export const useProblemsStore = create<ProblemsStore>((set, get) => {
         isScanning: false,
         hasScanned: true,
         scannedFileCount,
-        totalFileCount: project.allDialogFiles.length
+        totalFileCount: project.allDialogFiles.length,
+        outputUnitAgreement
       });
     },
 

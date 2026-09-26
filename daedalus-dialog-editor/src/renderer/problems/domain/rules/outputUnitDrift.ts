@@ -62,3 +62,38 @@ export const outputUnitDriftRule: LintRule = (view): Problem[] => {
 
   return problems;
 };
+
+/**
+ * How many of the project's `AI_Output` lines the database also holds, and how
+ * many of those disagree (#265). A line the database lacks is neither: it says
+ * nothing about which language the database is in. Null without a database.
+ */
+export function outputUnitAgreement(view: Parameters<LintRule>[0]): { compared: number; stale: number } | null {
+  const units = view.outputUnits;
+  if (!units) return null;
+  let compared = 0;
+  let stale = 0;
+  for (const file of view.fileFacts) {
+    for (const func of file.facts.functions) {
+      for (const { id, text } of func.voiceIds) {
+        const recorded = units.get(id.trim().toUpperCase());
+        if (recorded === undefined) continue;
+        compared += 1;
+        if (recorded !== text) stale += 1;
+      }
+    }
+  }
+  return { compared, stale };
+}
+
+/**
+ * Whether the disagreement is too wide to be edits: German MDK scripts over an
+ * English OU (#265), or the reverse. Every line then reads as stale, which is
+ * true line by line and wrong as a diagnosis — and "Update OUs" would overwrite
+ * the database with the other language. No edit session touches half of the
+ * lines a mod shares with its OU; twenty is the floor so a tiny project's two
+ * edited lines are not called a language.
+ */
+export function looksLikeAnotherLanguage({ compared, stale }: { compared: number; stale: number }): boolean {
+  return compared >= 20 && stale * 2 >= compared;
+}

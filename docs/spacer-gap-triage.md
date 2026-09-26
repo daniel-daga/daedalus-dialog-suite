@@ -115,7 +115,18 @@ but not fix them — the GMBT quick test still passes `--noupdatesubtitles`
 (§A3), so our own button still reproduces the stale subtitle rather than
 exposing it.
 
-### A2. A language mismatch has nothing to notice it (#265)
+### A2. A language mismatch has nothing to notice it (#265) — closed
+
+**Closed 2026-09-26**, with A1's data as the triage said. The Problems scan
+counts the lines the scripts and the OU database share and how many disagree
+(`outputUnitAgreement`); at 20 or more shared lines with half or more
+disagreeing — no edit session touches half of a mod's lines — the panel says the
+OU may be in another language than the scripts, and *Update OUs* repeats it and
+becomes *Overwrite anyway*, because updating is exactly the revert the report
+complains of. It does not know which language either side is; localization
+export/import (`feature-suggestions.md` P3 item 11) is still unstarted. The
+finding as filed:
+
 
 "Reparsing with the MDK's German scripts silently reverts your English text" is
 the same class as A1 and needs the same data. We hold no notion of two language
