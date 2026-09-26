@@ -87,6 +87,7 @@ contextBridge.exposeInMainWorld('editorAPI', {
   getWorldPortalFindings: () => ipcRenderer.invoke('world:portalFindings'),
   getVisualBounds: (name: string) => ipcRenderer.invoke('world:visualBounds', { name }),
   getWorldVisual: (name: string) => ipcRenderer.invoke('world:visual', { name }),
+  getNpcBody: (request: unknown) => ipcRenderer.invoke('world:npcBody', request),
   getAssetThumbnail: (name: string) => ipcRenderer.invoke('world:getThumbnail', { name }),
   getAssetCatalog: (projectFilePath: string) =>
     ipcRenderer.invoke('project:getAssetCatalog', { projectFilePath }),

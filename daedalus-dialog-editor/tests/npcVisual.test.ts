@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import type { NpcDefinition, NpcStatement } from '../src/shared/types';
-import { resolveNpcVisual, variantTextureName } from '../src/renderer/npc/npcVisual';
+import { npcBodyRequest, resolveNpcVisual, withEdits } from '../src/renderer/npc/npcVisual';
 
 const range = { startIndex: 0, endIndex: 0 };
 const call = (name: string, args: string[]): NpcStatement => ({
@@ -146,13 +146,97 @@ describe('resolveNpcVisual through retail B_SetNpcVisual', () => {
   });
 });
 
-describe('variantTextureName', () => {
-  it('substitutes the variation and colour channels as ZenGin does', () => {
-    expect(variantTextureName('HUM_BODY_NAKED_V0_C0.TGA', 1, 2)).toBe('HUM_BODY_NAKED_V1_C2.TGA');
-    expect(variantTextureName('Hum_Head_V0_C0', 137, 0)).toBe('Hum_Head_V137_C0');
+describe('npcBodyRequest', () => {
+  const VISUAL = {
+    model: 'HUMANS.MDS', bodyMesh: 'hum_body_Naked0', bodyTexture: 1, skinColor: 0,
+    headMesh: 'Hum_Head_Bald', headTexture: 12, teethTexture: 0, armor: 'ITAR_Vlk_H',
+    fatness: 0, scale: [0.9, 1, 1] as [number, number, number], notes: [],
+  };
+  const ITEMS: Record<string, string> = {
+    ITAR_VLK_H: 'INSTANCE ITAR_Vlk_H (C_Item)\n{\n\tvisual = "ItAr_Vlk_H.3ds";\n\tvisual_change = "Armor_Vlk_H.asc";\n};',
+    ITAR_BROKEN: 'INSTANCE ITAR_Broken (C_Item)\n{\n\tvisual = "ItAr_Broken.3ds";\n};',
+  };
+  const itemSource = (name: string) => ITEMS[name.toUpperCase()];
+
+  it('draws the armour mesh in place of the naked body, as the engine does', () => {
+    expect(npcBodyRequest(VISUAL, itemSource)).toEqual({
+      request: {
+        model: 'HUMANS.MDS', body: 'Armor_Vlk_H.asc', bodyTexture: 1, skinColor: 0,
+        head: 'Hum_Head_Bald', headTexture: 12, teethTexture: 0, scale: [0.9, 1, 1],
+      },
+      notes: [],
+    });
   });
 
-  it('leaves a texture without those channels alone', () => {
-    expect(variantTextureName('HUM_TEETH.TGA', 3, 1)).toBe('HUM_TEETH.TGA');
+  it('draws the naked body when there is no armour', () => {
+    expect(npcBodyRequest({ ...VISUAL, armor: null }, itemSource).request.body).toBe('hum_body_Naked0');
+  });
+
+  it('draws the naked body, and says why, for an armour it cannot find a visual_change for', () => {
+    expect(npcBodyRequest({ ...VISUAL, armor: 'ITAR_Broken' }, itemSource)).toMatchObject({
+      request: { body: 'hum_body_Naked0' },
+      notes: ['Armour ITAR_Broken has no visual_change, so it is not drawn'],
+    });
+    expect(npcBodyRequest({ ...VISUAL, armor: 'ITAR_Mod' }, itemSource).notes)
+      .toEqual(['Armour ITAR_Mod is not an item the project defines, so it is not drawn']);
+  });
+
+  it('says a fatness is not drawn, rather than drawing the NPC thin', () => {
+    expect(npcBodyRequest({ ...VISUAL, armor: null, fatness: 2 }, itemSource).notes)
+      .toEqual(['Fatness 2 is not drawn yet']);
+  });
+
+  it('keeps the notes the visual already carries', () => {
+    expect(npcBodyRequest({ ...VISUAL, armor: null, notes: ['Width assumed normal'] }, itemSource).notes)
+      .toEqual(['Width assumed normal']);
+  });
+});
+
+describe('withEdits', () => {
+  const strength = (value: string): NpcStatement => ({
+    kind: 'field', field: 'attribute', index: 'ATR_STRENGTH', value, text: '', range, valueRange: range,
+  });
+  const helper = call('B_SetNpcVisual', ['self', 'MALE', '"Hum_Head_Fatbald"', 'Face_N_Weak_Orry', 'BodyTex_N', 'NO_ARMOR']);
+  const values = (npcDef: NpcDefinition) => npcDef.statements.map((s) =>
+    (s.kind === 'field' ? `${s.field}[${s.index}]=${s.value}` : s.kind === 'call' ? `${s.name}(${s.args.join(',')})` : s.text));
+
+  it('previews unsaved form edits where the writer would put them', () => {
+    const before = npc(strength('50'), helper);
+    const after = withEdits(before, [
+      { op: 'set', field: 'attribute', index: 'atr_strength', value: '120' },
+      { op: 'setCall', name: 'B_SetNpcVisual', args: ['self', 'MALE', '"Hum_Head_Bald"', '3', 'BodyTex_N', 'NO_ARMOR'] },
+    ]);
+    expect(values(after)).toEqual([
+      'attribute[ATR_STRENGTH]=120',
+      'B_SetNpcVisual(self,MALE,"Hum_Head_Bald",3,BodyTex_N,NO_ARMOR)',
+    ]);
+    // The definition it was given is untouched.
+    expect(values(before)[0]).toBe('attribute[ATR_STRENGTH]=50');
+  });
+
+  it('adds where the writer does, and removes by occurrence', () => {
+    const equip = (item: string) => call('EquipItem', ['self', item]);
+    const after = withEdits(npc(helper, equip('ItMw_A'), equip('ItRw_B')), [
+      { op: 'set', field: 'level', value: '3' },
+      { op: 'removeCall', name: 'EquipItem', occurrence: 1 },
+      { op: 'addCall', name: 'EquipItem', args: ['self', 'ItRw_C'] },
+      { op: 'remove', field: 'guild' },
+    ]);
+    expect(values(after)).toEqual([
+      'B_SetNpcVisual(self,MALE,"Hum_Head_Fatbald",Face_N_Weak_Orry,BodyTex_N,NO_ARMOR)',
+      'EquipItem(self,ItMw_A)',
+      'EquipItem(self,ItRw_C)',
+      'level[undefined]=3',
+    ]);
+  });
+
+  it('puts a new field after the last field, and a set on an absent call inserts it', () => {
+    const after = withEdits(npc(strength('50'), call('Mdl_SetModelFatness', ['self', '1'])), [
+      { op: 'set', field: 'level', value: '3' },
+      { op: 'setCall', name: 'B_SetNpcVisual', args: ['self', 'MALE'] },
+    ]);
+    expect(values(after)).toEqual([
+      'attribute[ATR_STRENGTH]=50', 'level[undefined]=3', 'Mdl_SetModelFatness(self,1)', 'B_SetNpcVisual(self,MALE)',
+    ]);
   });
 });

@@ -835,6 +835,7 @@ export const mockEditorAPI: EditorAPI = {
   async getVisualBounds(): Promise<null> { return null; },
   // Null is what the real call returns for a visual the binding cannot extract.
   async getWorldVisual(): Promise<null> { return null; },
+  async getNpcBody(): Promise<null> { return null; },
   async getAssetThumbnail(): Promise<never> {
     throw new Error('No world is open');
   },

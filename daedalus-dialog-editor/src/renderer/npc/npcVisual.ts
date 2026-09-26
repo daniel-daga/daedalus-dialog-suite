@@ -1,4 +1,5 @@
-import type { NpcDefinition, NpcCallStatement } from '../../shared/types';
+import type { NpcDefinition, NpcCallStatement, NpcEdit, NpcStatement } from '../../shared/types';
+import type { NpcBodyRequest } from '../../shared/worldTypes';
 
 // What the NPC preview draws, read from the NPC's own statements
 // (docs/plans/npc-editor.md §4). Pure: no React, no IPC, no assets.
@@ -152,9 +153,87 @@ function expandHelpers(npc: NpcDefinition, int: (expr: string | undefined) => nu
 }
 
 /**
- * A texture as a body or head variant: ZenGin replaces the `_V0` (variation)
- * and `_C0` (colour) channels of the mesh's base texture name.
+ * What the worker assembles for `visual`. An armour item's `visual_change`
+ * replaces the naked body mesh, as it does in the engine; `itemSource` answers
+ * an item instance's source text, or undefined when the project has none.
  */
-export function variantTextureName(name: string, variation: number, color: number): string {
-  return name.replace(/_V\d+/i, `_V${variation}`).replace(/_C\d+/i, `_C${color}`);
+export function npcBodyRequest(
+  visual: NpcVisual,
+  itemSource: (instance: string) => string | undefined,
+): { request: NpcBodyRequest; notes: string[] } {
+  const notes = [...visual.notes];
+  if (visual.fatness !== 0) notes.push(`Fatness ${visual.fatness} is not drawn yet`);
+  let body = visual.bodyMesh;
+  if (visual.armor !== null) {
+    const source = itemSource(visual.armor);
+    const change = source === undefined ? null : /\bvisual_change\s*=\s*"([^"]+)"/i.exec(source);
+    if (source === undefined) notes.push(`Armour ${visual.armor} is not an item the project defines, so it is not drawn`);
+    else if (change === null) notes.push(`Armour ${visual.armor} has no visual_change, so it is not drawn`);
+    else body = change[1];
+  }
+  return {
+    request: {
+      model: visual.model,
+      body,
+      bodyTexture: visual.bodyTexture,
+      skinColor: visual.skinColor,
+      head: visual.headMesh,
+      headTexture: visual.headTexture,
+      teethTexture: visual.teethTexture,
+      scale: visual.scale,
+    },
+    notes,
+  };
+}
+
+/**
+ * `npc` with `edits` applied in memory — what the preview draws while the form
+ * is unsaved. Statements land where the parser's writer puts them (a field
+ * after the last field, a call after the last call of its name, else last),
+ * because order is what `resolveNpcVisual` reads. Text and ranges are not
+ * maintained: nothing here is written back.
+ */
+export function withEdits(npc: NpcDefinition, edits: readonly NpcEdit[]): NpcDefinition {
+  let statements: NpcStatement[] = [...npc.statements];
+  const range = { startIndex: 0, endIndex: 0 };
+  const isField = (s: NpcStatement, field: string, index?: string) =>
+    s.kind === 'field' && same(s.field, field) && same(s.index ?? '', index ?? '');
+  const callsOf = (name: string) => statements.filter((s): s is NpcCallStatement => s.kind === 'call' && same(s.name, name));
+  const insertAfterLast = (statement: NpcStatement, match: (s: NpcStatement) => boolean) => {
+    const at = statements.map(match).lastIndexOf(true);
+    statements.splice(at === -1 ? statements.length : at + 1, 0, statement);
+  };
+
+  for (const edit of edits) {
+    if (edit.op === 'set') {
+      const at = statements.findIndex((s) => isField(s, edit.field, edit.index));
+      const statement: NpcStatement = {
+        kind: 'field', field: edit.field, index: edit.index, value: edit.value, text: '', range, valueRange: range,
+      };
+      if (at !== -1) statements[at] = { ...statements[at], value: edit.value } as NpcStatement;
+      else insertAfterLast(statement, (s) => s.kind === 'field');
+    } else if (edit.op === 'remove') {
+      statements = statements.filter((s) => !isField(s, edit.field, edit.index));
+    } else if (edit.op === 'addCall') {
+      insertAfterLast(
+        { kind: 'call', name: edit.name, args: edit.args, text: '', range, argsRange: range },
+        (s) => s.kind === 'call' && same(s.name, edit.name),
+      );
+    } else {
+      const target = callsOf(edit.name)[edit.occurrence ?? 0];
+      if (target === undefined) {
+        if (edit.op === 'setCall') {
+          insertAfterLast(
+            { kind: 'call', name: edit.name, args: edit.args, text: '', range, argsRange: range },
+            (s) => s.kind === 'call' && same(s.name, edit.name),
+          );
+        }
+        continue;
+      }
+      const at = statements.indexOf(target);
+      if (edit.op === 'setCall') statements[at] = { ...target, args: edit.args };
+      else statements.splice(at, 1);
+    }
+  }
+  return { ...npc, statements };
 }

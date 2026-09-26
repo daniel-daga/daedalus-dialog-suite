@@ -16,6 +16,7 @@ import {
   assertOpenWorldRequest,
   assertTextureRequest,
   assertVisualRequest,
+  assertNpcBodyRequest,
   assertAssetResolveRequest,
   assertThumbnailGetRequest,
   assertThumbnailPutRequest,
@@ -1063,6 +1064,13 @@ export function setupIpcHandlers() {
   ipcMain.handle('world:visual', async (_event, request: unknown) => {
     assertVisualRequest(request);
     return worldService.getVisual(request.name);
+  });
+
+  // The NPC editor's preview (npc-editor.md §4): names inside the mounted VFS
+  // namespace, like `world:visual`, so it needs a world open.
+  ipcMain.handle('world:npcBody', async (_event, request: unknown) => {
+    assertNpcBodyRequest(request);
+    return worldService.getNpcBody(request);
   });
 
   // The thumbnail cache (level-editor.md §16.26 row 1). A read answers the key

@@ -17,6 +17,7 @@ import {
   assertOpenWorldRequest,
   assertTextureRequest,
   assertVisualRequest,
+  assertNpcBodyRequest,
   assertThumbnailGetRequest,
   assertThumbnailPutRequest,
   THUMBNAIL_DATA_URL_MAX,
@@ -318,6 +319,27 @@ describe('assertVisualRequest', () => {
       expect(() => assertVisualRequest({ name: bad })).toThrow(/visual name/i);
     }
     expect(() => assertVisualRequest('NW_CRATE.MRM')).toThrow(/plain object/i);
+  });
+});
+
+describe('assertNpcBodyRequest', () => {
+  const GOOD = {
+    model: 'HUMANS.MDS', body: 'hum_body_Naked0', bodyTexture: 1, skinColor: 0,
+    head: 'Hum_Head_Bald', headTexture: 12, teethTexture: 0, scale: [1, 1, 1],
+  };
+
+  it('accepts what resolveNpcVisual produces', () => {
+    expect(() => assertNpcBodyRequest(GOOD)).not.toThrow();
+  });
+
+  it('rejects an empty name, a non-integer variant and a scale that is not three finite numbers', () => {
+    expect(() => assertNpcBodyRequest({ ...GOOD, head: '' })).toThrow(/head/);
+    expect(() => assertNpcBodyRequest({ ...GOOD, model: 7 })).toThrow(/model/);
+    expect(() => assertNpcBodyRequest({ ...GOOD, bodyTexture: 1.5 })).toThrow(/bodyTexture/);
+    expect(() => assertNpcBodyRequest({ ...GOOD, skinColor: '0' })).toThrow(/skinColor/);
+    expect(() => assertNpcBodyRequest({ ...GOOD, scale: [1, 1] })).toThrow(/scale/);
+    expect(() => assertNpcBodyRequest({ ...GOOD, scale: [1, 1, Infinity] })).toThrow(/scale/);
+    expect(() => assertNpcBodyRequest('HUMANS.MDS')).toThrow(/plain object/);
   });
 });
 
