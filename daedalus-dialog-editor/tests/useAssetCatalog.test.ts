@@ -56,6 +56,7 @@ const api = {
   saveAssetCatalog: jest.fn(async () => undefined),
   listWorldAssets: jest.fn(async () => []),
   searchWorldAssets: jest.fn(async () => []),
+  resolveWorldAssets: jest.fn(async (names: string[]) => names.map((): string | null => null)),
   getWorldTexture: jest.fn(async () => null),
   getWorldVisual: jest.fn(async () => null),
   getAssetThumbnail: jest.fn(async () => null),
@@ -216,11 +217,19 @@ describe('useAssetCatalog — the reads it passes through', () => {
     await act(async () => { await result.current.searchAssets('crate'); });
     await act(async () => { await result.current.loadTexture('NW_STONE.TEX', 256); });
     await act(async () => { await result.current.loadVisual('NW_CRATE.MRM'); });
+    await act(async () => { await result.current.resolveAssets(['KM_BUSH.3DS', 'NW_WOOD.TGA']); });
+    api.resolveWorldAssets.mockResolvedValueOnce(['NW_CRATE.MRM'] as never);
+    let one: string | null = null;
+    await act(async () => { one = await result.current.resolveAsset('NW_CRATE.3DS'); });
 
     expect(api.listWorldAssets).toHaveBeenCalledWith('Meshes');
     expect(api.searchWorldAssets).toHaveBeenCalledWith('crate');
     expect(api.getWorldTexture).toHaveBeenCalledWith('NW_STONE.TEX', 256);
     expect(api.getWorldVisual).toHaveBeenCalledWith('NW_CRATE.MRM');
+    expect(api.resolveWorldAssets).toHaveBeenCalledWith(['KM_BUSH.3DS', 'NW_WOOD.TGA']);
+    // One name is the same call with one name in it, answered with its one entry.
+    expect(api.resolveWorldAssets).toHaveBeenLastCalledWith(['NW_CRATE.3DS']);
+    expect(one).toBe('NW_CRATE.MRM');
 
     // Stable, which is what keeps the renderers from being rebuilt by a render.
     rerender();

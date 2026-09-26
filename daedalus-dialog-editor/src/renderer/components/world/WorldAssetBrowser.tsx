@@ -10,11 +10,11 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import ViewListIcon from '@mui/icons-material/ViewList';
 import { FixedSizeList as List, type ListChildComponentProps, areEqual } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
-import { isFavorite } from 'zen-world';
+import { compileState, isFavorite, isSourceAsset } from 'zen-world';
 import type { AssetCatalog, VfsEntry, VfsSearch } from '../../../shared/worldTypes';
 import type { AssetThumbnails } from '../../world/assetThumbnails';
 import WorldAssetGrid, {
-  FavoriteStar, usePlaceMenu, type AssetPlacement, type TileCatalogActions, type TileOrigin,
+  FavoriteStar, UncompiledTag, usePlaceMenu, type AssetPlacement, type TileCatalogActions, type TileOrigin,
 } from './WorldAssetGrid';
 import WorldAssetCatalogView from './WorldAssetCatalogView';
 
@@ -109,6 +109,8 @@ interface RowData {
    *  used to say which of them that was (§5.4 item 17 of the 2026-09-04
    *  review), so a preview and the list could disagree with no sign of it. */
   previewing?: string | null;
+  /** The source files on screen with no compiled half (#294), by name. */
+  uncompiled: ReadonlySet<string>;
 }
 
 const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
@@ -178,6 +180,7 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
           {entry.directory}
         </Typography>
       )}
+      {data.uncompiled.has(entry.name) && !isDirectory && <UncompiledTag name={entry.name} />}
       {from !== undefined && (
         <Typography
           variant="caption"
@@ -230,6 +233,12 @@ export interface WorldAssetBrowserProps {
    *  Owned by the surface rather than tracked here: the surface clears it on a
    *  viewport pick, and a copy kept in the browser would go stale. */
   previewing?: string | null;
+  /**
+   * What each name resolves to in the mounted namespace (`vfsResolve`), in one
+   * call per listing — how a mod's source file a GMBT build has not compiled
+   * yet is told from one it has (#294). Absent, nothing is tagged.
+   */
+  resolveAssets?: (names: string[]) => Promise<(string | null)[]>;
 }
 
 export interface AssetCatalogProps {
@@ -247,7 +256,7 @@ export interface AssetCatalogProps {
 
 const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
   listAssets, searchAssets, onPreview, thumbnails, catalog, sources = NO_SOURCES, placement,
-  previewing = null,
+  previewing = null, resolveAssets,
 }) => {
   const [path, setPath] = useState('/');
   const [view, setView] = useState<'list' | 'grid'>('list');
@@ -369,6 +378,32 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
     ? (search.status === 'error' ? search.message : null)
     : (state.status === 'error' ? state.message : null);
 
+  // The source files on screen that no compiled file answers for (#294). Asked
+  // once per listing or search, for the source files only — a retail listing
+  // holds none and asks nothing. A failed ask tags nothing: this is advice
+  // about a file, and no advice is better than a wrong one.
+  const [uncompiled, setUncompiled] = useState<ReadonlySet<string>>(() => new Set());
+  // Keyed on the names rather than on `base`, so a re-render with the same
+  // listing does not ask again.
+  const sourceKey = useMemo(() => [...new Set(
+    base.filter((entry) => entry.type === 'file' && isSourceAsset(entry.name)).map((entry) => entry.name),
+  )].join('\n'), [base]);
+  const sourceNames = useMemo(() => (sourceKey === '' ? [] : sourceKey.split('\n')), [sourceKey]);
+  useEffect(() => {
+    setUncompiled(new Set());
+    if (resolveAssets === undefined || sourceNames.length === 0) return undefined;
+    let current = true;
+    resolveAssets(sourceNames)
+      .then((resolved) => {
+        if (!current) return;
+        setUncompiled(new Set(sourceNames.filter((name, at) => (
+          compileState(name, resolved[at] ?? null) === 'uncompiled'
+        ))));
+      })
+      .catch(() => undefined);
+    return () => { current = false; };
+  }, [resolveAssets, sourceNames]);
+
   const onOpen = useCallback((entry: VfsEntry) => {
     const child = pathOf(entry, path);
     if (entry.type === 'directory') setPath(child);
@@ -401,9 +436,9 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
   const itemData = useMemo<RowData>(
     () => ({
       entries: filtered, onOpen, path, sourceLabels, only,
-      actions: tileActions, placement, previewing,
+      actions: tileActions, placement, previewing, uncompiled,
     }),
-    [filtered, onOpen, path, sourceLabels, only, tileActions, placement, previewing],
+    [filtered, onOpen, path, sourceLabels, only, tileActions, placement, previewing, uncompiled],
   );
   const originOf = useCallback(
     (entry: VfsEntry) => origin(entry, sourceLabels, only),
@@ -633,6 +668,7 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
             onOpen={onOpen}
             actions={tileActions}
             originOf={originOf}
+            uncompiled={uncompiled}
             placement={placement}
           />
         </Box>

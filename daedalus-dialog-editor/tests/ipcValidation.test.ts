@@ -30,6 +30,8 @@ import {
   sanitizeRendererErrorPayload,
   RENDERER_ERROR_MESSAGE_MAX,
   RENDERER_ERROR_STACK_MAX,
+  assertAssetResolveRequest,
+  ASSET_RESOLVE_MAX,
 } from '../src/main/ipcValidation';
 
 describe('project config IPC payloads', () => {
@@ -314,6 +316,24 @@ describe('assertVisualRequest', () => {
       expect(() => assertVisualRequest({ name: bad })).toThrow(/visual name/i);
     }
     expect(() => assertVisualRequest('NW_CRATE.MRM')).toThrow(/plain object/i);
+  });
+});
+
+// #294: whether a listing's source files have compiled halves, asked in one
+// call per listing. Resolved inside the mounted namespace, never on disk.
+describe('assertAssetResolveRequest', () => {
+  it('accepts a list of names, empty included', () => {
+    expect(() => assertAssetResolveRequest({ names: ['KM_VOB_BIG_BUSH_01.3DS', 'NW_WOOD.TGA'] })).not.toThrow();
+    expect(() => assertAssetResolveRequest({ names: [] })).not.toThrow();
+  });
+
+  it('rejects anything but an array of non-empty strings, and more than one listing asks for', () => {
+    for (const bad of [undefined, 'X.3DS', [''], [42], [null]]) {
+      expect(() => assertAssetResolveRequest({ names: bad })).toThrow(/asset resolve/i);
+    }
+    expect(() => assertAssetResolveRequest(['X.3DS'])).toThrow(/plain object/i);
+    const many = Array.from({ length: ASSET_RESOLVE_MAX + 1 }, (_, at) => `X${at}.3DS`);
+    expect(() => assertAssetResolveRequest({ names: many })).toThrow(/at most/i);
   });
 });
 

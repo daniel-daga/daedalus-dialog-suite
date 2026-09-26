@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Box, Button, CircularProgress, Stack, Tooltip, Typography } from '@mui/material';
 import * as THREE from 'three';
 import type { DecodedTexture, VisualScene } from '../../../shared/worldTypes';
+import { compileState, isSourceAsset } from 'zen-world';
 import { buildVisualPreview, frameVisual } from '../../world/VisualPreviewScene';
 
 // What a mounted asset looks like (level-editor.md §6, §16.26 row 1).
@@ -40,7 +41,11 @@ export function isPlaceableVisual(name: string): boolean {
 }
 
 function kindOf(name: string): AssetKind {
-  if (name.toUpperCase().endsWith('.TEX')) return 'texture';
+  // A `.TGA` too: the binding decodes a texture by its source name, resolving
+  // `NW_WOOD.TGA` to `NW_WOOD-C.TEX` — and a mod's own textures are listed by
+  // that name, because its folder is mounted as it is (#294).
+  const upper = name.toUpperCase();
+  if (upper.endsWith('.TEX') || upper.endsWith('.TGA')) return 'texture';
   if (isPlaceableVisual(name)) return 'mesh';
   return 'other';
 }
@@ -60,6 +65,13 @@ export interface WorldAssetPreviewProps {
    *  things"): the next ground click places a `zCVob` carrying it, with no
    *  dialog in between. */
   onPlace?: (name: string) => void;
+  /**
+   * What a name resolves to in the mounted namespace (`vfsResolve`), asked only
+   * once a source file has come back with nothing — so that a mod's `.3DS` a
+   * GMBT build has not compiled yet says so, rather than reading as a broken
+   * asset (#294). Absent, a failure is a failure.
+   */
+  resolveAsset?: (name: string) => Promise<string | null>;
 }
 
 const PREVIEW_MAX_SIZE = 256;
@@ -69,7 +81,7 @@ const MESH_CANVAS_FALLBACK = 256;
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
 
 const WorldAssetPreview: React.FC<WorldAssetPreviewProps> = ({
-  path, loadTexture, loadVisual, selectionCount = 0, onUseAsVisual, onPlace,
+  path, loadTexture, loadVisual, selectionCount = 0, onUseAsVisual, onPlace, resolveAsset,
 }) => {
   const name = NAME_OF(path);
   const kind = kindOf(name);
@@ -77,6 +89,7 @@ const WorldAssetPreview: React.FC<WorldAssetPreviewProps> = ({
   const [decoded, setDecoded] = useState<DecodedTexture | null>(null);
   const [visual, setVisual] = useState<VisualScene | null>(null);
   const [failed, setFailed] = useState(false);
+  const [uncompiled, setUncompiled] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const meshCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -84,22 +97,36 @@ const WorldAssetPreview: React.FC<WorldAssetPreviewProps> = ({
     setDecoded(null);
     setVisual(null);
     setFailed(false);
+    setUncompiled(false);
     if (kind === 'other') return;
 
     let current = true;
+    // Nothing came back. For a source file, ask whether that is because it has
+    // not been compiled — and say "failed" only once the answer is no, so the
+    // panel does not flash one verdict and then the other.
+    const nothing = () => {
+      if (resolveAsset === undefined || !isSourceAsset(name)) { setFailed(true); return; }
+      resolveAsset(name)
+        .then((resolved) => {
+          if (!current) return;
+          if (compileState(name, resolved) === 'uncompiled') setUncompiled(true);
+          else setFailed(true);
+        })
+        .catch(() => { if (current) setFailed(true); });
+    };
     const request: Promise<DecodedTexture | VisualScene | null> = kind === 'texture'
       ? loadTexture(name, PREVIEW_MAX_SIZE)
       : loadVisual(name);
     void request
       .then((result) => {
         if (!current) return;
-        if (result === null) setFailed(true);
+        if (result === null) nothing();
         else if (kind === 'texture') setDecoded(result as DecodedTexture);
         else setVisual(result as VisualScene);
       })
-      .catch(() => { if (current) setFailed(true); });
+      .catch(() => { if (current) nothing(); });
     return () => { current = false; };
-  }, [name, kind, loadTexture, loadVisual]);
+  }, [name, kind, loadTexture, loadVisual, resolveAsset]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -307,13 +334,20 @@ const WorldAssetPreview: React.FC<WorldAssetPreviewProps> = ({
           seconds rather than a flicker — and the panel used to show a name, a
           path and nothing else for all of it, which reads exactly like a mesh
           that resolved to nothing (§5.4 item 17 of the 2026-09-04 review). */}
-      {kind !== 'other' && !failed && decoded === null && visual === null && (
+      {kind !== 'other' && !failed && !uncompiled && decoded === null && visual === null && (
         <Stack direction="row" spacing={1} alignItems="center" data-testid="world-asset-preview-loading">
           <CircularProgress size={14} />
           <Typography variant="caption" color="text.secondary">
             {kind === 'texture' ? 'Decoding…' : 'Extracting…'}
           </Typography>
         </Stack>
+      )}
+
+      {uncompiled && (
+        <Typography variant="caption" color="warning.main" data-testid="world-asset-preview-uncompiled">
+          {`This file has not been compiled yet. ZenGin reads the compiled ${kind === 'texture' ? '-C.TEX' : '.MRM or .MDL'}, and so does this preview; a GMBT build writes it into _work/Data/*/_compiled.`}
+          {kind === 'mesh' && ' It can still be placed: the VOB names this source file, and it shows up once it is compiled.'}
+        </Typography>
       )}
 
       {failed && (

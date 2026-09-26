@@ -161,6 +161,59 @@ describe('WorldAssetPreview', () => {
     await waitFor(() => expect(load).toHaveBeenCalledWith('NW_WOOD.TGA', 256));
   });
 
+  // #294: a mod's source file a GMBT build has not compiled yet resolves to
+  // nothing, and "the binding resolves no geometry for it" read as a broken
+  // asset rather than as a step not taken.
+  describe('a source that has not been compiled', () => {
+    it('says it is not compiled yet, and what compiles it, instead of that it failed', async () => {
+      const resolveAsset = jest.fn(async (name: string) => name);
+      render(
+        <WorldAssetPreview
+          path="mod/Meshes/Archolos_stuff/KM_VOB_BIG_BUSH_01.3DS"
+          loadTexture={async () => null}
+          loadVisual={async () => null}
+          resolveAsset={resolveAsset}
+        />,
+      );
+
+      const note = await screen.findByTestId('world-asset-preview-uncompiled');
+      expect(note).toHaveTextContent(/not been compiled/);
+      expect(note).toHaveTextContent(/GMBT build/);
+      expect(resolveAsset).toHaveBeenCalledWith('KM_VOB_BIG_BUSH_01.3DS');
+      expect(screen.queryByTestId('world-asset-preview-failed')).not.toBeInTheDocument();
+    });
+
+    it('decodes a .TGA as a texture, and says the same when it has no compiled half', async () => {
+      const loadTexture = jest.fn(async () => null);
+      render(
+        <WorldAssetPreview
+          path="mod/Textures/NEW_WALL.TGA"
+          loadTexture={loadTexture}
+          loadVisual={async () => null}
+          resolveAsset={async () => null}
+        />,
+      );
+
+      await screen.findByTestId('world-asset-preview-uncompiled');
+      expect(loadTexture).toHaveBeenCalledWith('NEW_WALL.TGA', 256);
+      expect(screen.queryByTestId('world-asset-preview-unsupported')).not.toBeInTheDocument();
+    });
+
+    it('still reports a failure for a source whose compiled half is there', async () => {
+      render(
+        <WorldAssetPreview
+          path="Meshes/NW_CRATE.3DS"
+          loadTexture={async () => null}
+          loadVisual={async () => null}
+          resolveAsset={async () => 'NW_CRATE.MRM'}
+        />,
+      );
+
+      await screen.findByTestId('world-asset-preview-failed');
+      expect(screen.queryByTestId('world-asset-preview-uncompiled')).not.toBeInTheDocument();
+    });
+  });
+
   it('shows the source a name resolved to when it differs', async () => {
     const loadVisual = jest.fn(async () => ({ ...crate(), name: 'NW_CRATE.3DS', source: 'NW_CRATE.MRM' }));
     render(<WorldAssetPreview path="Meshes/NW_CRATE.3DS" loadTexture={noVisual} loadVisual={loadVisual} />);

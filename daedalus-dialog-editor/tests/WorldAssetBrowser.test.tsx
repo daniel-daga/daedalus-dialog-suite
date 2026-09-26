@@ -461,6 +461,61 @@ describe('WorldAssetBrowser', () => {
 
   // The thumbnail grid (level-editor.md §16.26 row 1) — the same listing as
   // tiles, each asking the queue for its picture as it comes on screen.
+  // #294: a mod's raw `.3DS` is listed — the project root is always mounted —
+  // and then resolves to nothing, because ZenKit reads only compiled files.
+  // Without a word about it, that read as "the tool is missing my assets".
+  describe('a source that has not been compiled', () => {
+    const MOD: VfsEntry[] = [
+      { name: 'KM_VOB_BIG_BUSH_01.3DS', type: 'file' },
+      { name: 'NW_CRATE.3DS', type: 'file' },
+      { name: 'NW_CRATE.MRM', type: 'file' },
+      { name: 'Archolos_stuff', type: 'directory' },
+    ];
+    const list = jest.fn(async () => MOD);
+    // The crate has its compiled half; the bush resolves only to itself.
+    const resolve = jest.fn(async (names: string[]) => names.map((name) => (
+      name === 'NW_CRATE.3DS' ? 'NW_CRATE.MRM' : name
+    )));
+
+    it('says so on its row, and asks only about the source files in one call', async () => {
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} resolveAssets={resolve} />);
+
+      const tag = await screen.findByTestId('world-asset-uncompiled-KM_VOB_BIG_BUSH_01.3DS');
+      expect(tag).toHaveTextContent('not compiled');
+      expect(tag.getAttribute('title')).toMatch(/GMBT build/);
+      expect(screen.queryByTestId('world-asset-uncompiled-NW_CRATE.3DS')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('world-asset-uncompiled-NW_CRATE.MRM')).not.toBeInTheDocument();
+      expect(resolve).toHaveBeenCalledTimes(1);
+      expect(resolve).toHaveBeenCalledWith(['KM_VOB_BIG_BUSH_01.3DS', 'NW_CRATE.3DS']);
+    });
+
+    it('says so on its tile in the grid', async () => {
+      const user = userEvent.setup();
+      const { queue } = thumbnails();
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} thumbnails={queue} resolveAssets={resolve} />);
+      await screen.findByTestId('world-asset-uncompiled-KM_VOB_BIG_BUSH_01.3DS');
+
+      await user.click(screen.getByTestId('world-asset-view-grid'));
+
+      expect(within(screen.getByTestId('world-asset-tile-KM_VOB_BIG_BUSH_01.3DS'))
+        .getByTestId('world-asset-uncompiled-KM_VOB_BIG_BUSH_01.3DS')).toBeInTheDocument();
+      expect(screen.queryByTestId('world-asset-uncompiled-NW_CRATE.3DS')).not.toBeInTheDocument();
+    });
+
+    it('asks nothing when the listing holds no source file, and tags nothing without a resolver', async () => {
+      const { list: plain } = listing();
+      const quiet = jest.fn(async (names: string[]) => names.map(() => null));
+      const { unmount } = render(<WorldAssetBrowser listAssets={plain} onPreview={jest.fn()} resolveAssets={quiet} />);
+      await screen.findByTestId('world-asset-Meshes');
+      expect(quiet).not.toHaveBeenCalled();
+      unmount();
+
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} />);
+      await screen.findByTestId('world-asset-KM_VOB_BIG_BUSH_01.3DS');
+      expect(screen.queryByTestId('world-asset-uncompiled-KM_VOB_BIG_BUSH_01.3DS')).not.toBeInTheDocument();
+    });
+  });
+
   describe('the grid', () => {
     it('is not offered without a queue to draw from', async () => {
       const { list } = listing();

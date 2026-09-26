@@ -15,6 +15,7 @@ import {
   assertOpenWorldRequest,
   assertTextureRequest,
   assertVisualRequest,
+  assertAssetResolveRequest,
   assertThumbnailGetRequest,
   assertThumbnailPutRequest,
   assertAssetCatalogGetRequest,
@@ -981,6 +982,13 @@ export function setupIpcHandlers() {
       throw new Error('Invalid asset search request: query must be a non-empty string');
     }
     return worldService.searchAssets(query);
+  });
+
+  // Names resolved inside the same namespace — never on disk — so the shape
+  // check is the boundary, as for a visual (#294).
+  ipcMain.handle('world:assetResolve', async (_event, request: unknown) => {
+    assertAssetResolveRequest(request);
+    return worldService.resolveAssets(request.names);
   });
 
   ipcMain.handle('world:waynet', async () => worldService.getWaynet());

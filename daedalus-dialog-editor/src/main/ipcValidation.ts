@@ -239,6 +239,29 @@ export function assertVisualRequest(request: unknown): asserts request is { name
   }
 }
 
+/** How many names one resolve request may carry — a directory listing's or a
+ *  capped search's worth (`vfsFind` stops at 500), with room to spare. */
+export const ASSET_RESOLVE_MAX = 5000;
+
+/**
+ * Names to resolve against the mounted namespace — whether each source file in
+ * a listing has a compiled half (#294). Resolved by the VFS and never on disk,
+ * so, as for a visual, the shape is the whole boundary; the cap keeps one call
+ * a listing's worth.
+ */
+export function assertAssetResolveRequest(request: unknown): asserts request is { names: string[] } {
+  if (!isPlainObject(request)) {
+    throw new Error('Invalid asset resolve request: expected a plain object');
+  }
+  const { names } = request;
+  if (!Array.isArray(names) || names.some((name) => typeof name !== 'string' || name === '')) {
+    throw new Error('Invalid asset resolve request: names must be an array of non-empty strings');
+  }
+  if (names.length > ASSET_RESOLVE_MAX) {
+    throw new Error(`Invalid asset resolve request: at most ${ASSET_RESOLVE_MAX} names`);
+  }
+}
+
 /** Assert a request to read the `<project>.assets.json` sidecar (§16.26). */
 export function assertAssetCatalogGetRequest(
   request: unknown,

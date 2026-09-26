@@ -188,6 +188,12 @@ export class WorldService {
     return this.requestOnOpenWorld<VfsSearch>('assetSearch', { query });
   }
 
+  /** What each name resolves to in the mounted namespace, or null — how the
+   *  asset browser tells a mod's uncompiled source from a compiled one (#294). */
+  resolveAssets(names: readonly string[]): Promise<(string | null)[]> {
+    return this.requestOnOpenWorld<(string | null)[]>('assetResolve', { names: [...names] });
+  }
+
   /** The waynet as a drawable graph. Requested on demand: an overlay nobody
    *  turned on should not be in the cold open. */
   getWaynet(): Promise<WaynetPayload> {

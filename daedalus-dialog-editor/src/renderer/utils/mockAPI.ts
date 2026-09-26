@@ -693,6 +693,8 @@ export const mockEditorAPI: EditorAPI = {
   async searchWorldAssets(): Promise<{ matches: []; truncated: false }> {
     return { matches: [], truncated: false };
   },
+  // Nothing is mounted in browser mode, so nothing resolves.
+  async resolveWorldAssets(names: string[]): Promise<null[]> { return names.map(() => null); },
   async getWorldWaynet(): Promise<never> {
     throw new Error('No world is open');
   },

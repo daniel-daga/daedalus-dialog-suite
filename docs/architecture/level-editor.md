@@ -3807,6 +3807,22 @@ compiled is invisible in the editor. A stock install has no `_work` and pays
 nothing; the 2,170 ms measurement that motivated preferring archives was an
 install with no archives at all, which still takes that path.
 
+**What has not been compiled yet says so (#294).** The project root is always
+a source, so the browser lists a mod's raw `.3DS`, `.ASC`, `.MMS` and `.TGA`
+as they sit in its folders — and ZenKit reads only the compiled halves a GMBT
+build writes into `_work/Data/*/_compiled`, so such a file previewed as
+nothing, which read as "the tool is missing my assets". Each listing and each
+search now asks `world:assetResolve` about its source files in one call
+(`vfsResolve` per name), and `compileState` reads the answers: a name that
+resolves to nothing, or only to itself — `vfsResolve` falls back to the name
+as given — is **not compiled**, and its row, its tile and the preview panel say
+so and name the GMBT build. A mesh stays placeable: the VOB names the source
+file, as retail's do. `.MDS` is left out, since a model script compiles to an
+`.MSB` nothing here resolves. The preview decodes a `.TGA` as a texture now,
+by the source name the binding already maps to `-C.TEX`. What this does not
+do is compile anything: a "compile assets" action, and previewing a `.3DS`
+directly, were the two larger answers #294 named and are not built.
+
 **Worlds come off the same source list.** `world:listWorlds` scans each
 configured source *as a folder* — `resolvedAssetRoots`, the list before an
 install-shaped source expands into its archives — for `Worlds/`,

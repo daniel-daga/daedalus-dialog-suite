@@ -177,6 +177,9 @@ export function makeWorldEditorApi() {
     // The whole-namespace search behind the browser's filter box (#241).
     // Nothing by default: a suite that wants hits stubs them.
     searchWorldAssets: jest.fn(async (): Promise<VfsSearch> => ({ matches: [], truncated: false })),
+    // Nothing resolves unless a test says otherwise, so a listed source file
+    // reads as not compiled — the tests that care queue their own answer.
+    resolveWorldAssets: jest.fn(async (names: string[]): Promise<(string | null)[]> => names.map(() => null)),
     getWorldVisual: jest.fn(async () => null),
     getAssetThumbnail: jest.fn(async (): Promise<{ key: string; dataUrl: string | null }> => ({ key: 'k', dataUrl: null })),
     putAssetThumbnail: jest.fn(async () => undefined),

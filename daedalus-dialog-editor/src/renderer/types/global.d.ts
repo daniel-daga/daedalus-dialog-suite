@@ -194,6 +194,8 @@ export interface EditorAPI {
   /** One level of the mounted VFS; null for a missing path and for a file. */
   listWorldAssets: (path: string) => Promise<VfsEntry[] | null>;
   searchWorldAssets: (query: string) => Promise<VfsSearch>;
+  /** What each name resolves to in the mounted namespace, or null (#294). */
+  resolveWorldAssets: (names: string[]) => Promise<(string | null)[]>;
   getWorldWaynet: () => Promise<WaynetPayload>;
   /** The portal checks' findings over the open world's mesh, computed in the
    *  worker (level-editor.md §16.20 slice 3). Findings only, never geometry. */

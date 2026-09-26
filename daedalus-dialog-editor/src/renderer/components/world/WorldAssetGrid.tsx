@@ -258,6 +258,24 @@ const FileIntoMenu: React.FC<{
  *  copy a later mount overrides (architecture level-editor.md §6). A badge
  *  over the thumbnail rather than a caption under it: the grid's row height is
  *  fixed, and a tile is 96 px wide. */
+/** What a "not compiled" tag says when hovered — the row and the tile share it
+ *  (#294), so the two cannot give different answers. */
+export const UNCOMPILED_TITLE = 'Not compiled yet. ZenGin and this editor read the compiled file (.MRM, .MDL, -C.TEX); a GMBT build writes it into _work/Data/*/_compiled. It can still be placed: the VOB names this source file.';
+
+/** The "not compiled" tag on a source file a GMBT build has not compiled (#294). */
+export const UncompiledTag: React.FC<{ name: string; sx?: object }> = ({ name, sx }) => (
+  <Typography
+    variant="caption"
+    noWrap
+    color="warning.main"
+    data-testid={`world-asset-uncompiled-${name}`}
+    title={UNCOMPILED_TITLE}
+    sx={{ fontSize: 10, ...sx }}
+  >
+    not compiled
+  </Typography>
+);
+
 export interface TileOrigin {
   label: string;
   overridden: boolean;
@@ -270,9 +288,11 @@ export const AssetTile: React.FC<{
   onOpen: (entry: VfsEntry) => void;
   actions?: TileCatalogActions;
   origin?: TileOrigin;
+  /** A source file with no compiled half yet (#294). */
+  uncompiled?: boolean;
   placement?: AssetPlacement;
   style?: React.CSSProperties;
-}> = ({ entry, thumbnails, onOpen, actions, origin, placement, style }) => {
+}> = ({ entry, thumbnails, onOpen, actions, origin, uncompiled = false, placement, style }) => {
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const isFile = entry.type === 'file';
   const favorite = isFile && actions !== undefined && actions.isFavorite(entry.name);
@@ -306,6 +326,15 @@ export const AssetTile: React.FC<{
           </Box>
         )}
       <Typography variant="caption" noWrap sx={{ maxWidth: '100%' }} title={entry.name}>{entry.name}</Typography>
+      {uncompiled && (
+        <UncompiledTag
+          name={entry.name}
+          sx={{
+            position: 'absolute', top: THUMBNAIL_SIZE / 2, left: 8, right: 8, textAlign: 'center',
+            bgcolor: 'rgba(0,0,0,0.55)', borderRadius: 0.5, pointerEvents: 'auto',
+          }}
+        />
+      )}
       {origin !== undefined && (
         <Typography
           variant="caption"
@@ -367,6 +396,7 @@ interface CellData {
   onOpen: (entry: VfsEntry) => void;
   actions?: TileCatalogActions;
   originOf?: (entry: VfsEntry) => TileOrigin | undefined;
+  uncompiled?: ReadonlySet<string>;
   placement?: AssetPlacement;
 }
 
@@ -380,6 +410,7 @@ const Cell = memo(({ columnIndex, rowIndex, style, data }: GridChildComponentPro
       onOpen={data.onOpen}
       actions={data.actions}
       origin={data.originOf?.(entry)}
+      uncompiled={data.uncompiled?.has(entry.name) ?? false}
       placement={data.placement}
       style={style}
     />
@@ -395,10 +426,14 @@ export interface WorldAssetGridProps {
   /** Absent where provenance is unknown — the favorites and category views name
    *  assets that were never listed out of a directory. */
   originOf?: (entry: VfsEntry) => TileOrigin | undefined;
+  /** The source files in `entries` with no compiled half (#294), by name. */
+  uncompiled?: ReadonlySet<string>;
   placement?: AssetPlacement;
 }
 
-const WorldAssetGrid: React.FC<WorldAssetGridProps> = ({ entries, thumbnails, onOpen, actions, originOf, placement }) => (
+const WorldAssetGrid: React.FC<WorldAssetGridProps> = ({
+  entries, thumbnails, onOpen, actions, originOf, uncompiled, placement,
+}) => (
   <AutoSizer>
     {({ height, width }) => {
       const columns = Math.max(1, Math.floor(width / TILE_WIDTH));
@@ -406,7 +441,7 @@ const WorldAssetGrid: React.FC<WorldAssetGridProps> = ({ entries, thumbnails, on
         <SizedGrid
           height={height} width={width} columns={columns}
           entries={entries} thumbnails={thumbnails} onOpen={onOpen} actions={actions} originOf={originOf}
-          placement={placement}
+          uncompiled={uncompiled} placement={placement}
         />
       );
     }}
@@ -414,11 +449,11 @@ const WorldAssetGrid: React.FC<WorldAssetGridProps> = ({ entries, thumbnails, on
 );
 
 const SizedGrid: React.FC<WorldAssetGridProps & { height: number; width: number; columns: number }> = ({
-  height, width, columns, entries, thumbnails, onOpen, actions, originOf, placement,
+  height, width, columns, entries, thumbnails, onOpen, actions, originOf, uncompiled, placement,
 }) => {
   const itemData = useMemo<CellData>(
-    () => ({ entries, columns, thumbnails, onOpen, actions, originOf, placement }),
-    [entries, columns, thumbnails, onOpen, actions, originOf, placement],
+    () => ({ entries, columns, thumbnails, onOpen, actions, originOf, uncompiled, placement }),
+    [entries, columns, thumbnails, onOpen, actions, originOf, uncompiled, placement],
   );
   return (
     <Grid

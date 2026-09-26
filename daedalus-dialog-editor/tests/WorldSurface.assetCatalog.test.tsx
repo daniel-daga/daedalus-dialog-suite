@@ -120,6 +120,20 @@ describe('the asset catalog on the surface', () => {
     expect(screen.getByTestId('world-asset-category-collision')).toHaveValue('on');
   });
 
+  it('tags a listed mod source that has not been compiled (#294)', async () => {
+    // The project root is mounted as it is, so the browser lists a raw `.3DS`
+    // — and nothing resolves for it until a GMBT build has compiled it.
+    api.listWorldAssets.mockResolvedValue([
+      { name: 'KM_VOB_BIG_BUSH_01.3DS', type: 'file' }, { name: 'NW_CRATE.MRM', type: 'file' },
+    ] as never);
+    api.resolveWorldAssets.mockResolvedValue([null] as never);
+    await openWorld();
+    fireEvent.click(screen.getByTestId('world-panel-assets'));
+
+    expect(await screen.findByTestId('world-asset-uncompiled-KM_VOB_BIG_BUSH_01.3DS')).toHaveTextContent('not compiled');
+    expect(api.resolveWorldAssets).toHaveBeenCalledWith(['KM_VOB_BIG_BUSH_01.3DS']);
+  });
+
   it('offers no favorites or categories with no project loaded', async () => {
     useProjectStore.setState({ projectFilePath: null } as never);
     await openWorld();

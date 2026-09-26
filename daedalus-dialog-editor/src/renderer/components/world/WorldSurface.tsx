@@ -177,7 +177,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const [pendingJump, setPendingJump] = useState<string | null>(null);
   const [showWaynet, setShowWaynet] = useState(false);
   const {
-    listAssets, searchAssets, loadTexture, loadVisual, thumbnails, liveTile,
+    listAssets, searchAssets, resolveAssets, resolveAsset, loadTexture, loadVisual, thumbnails, liveTile,
     catalogProps: assetCatalogProps,
   } = useAssetCatalog();
 
@@ -2114,6 +2114,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                   <WorldAssetBrowser
                     listAssets={listAssets}
                     searchAssets={searchAssets}
+                    resolveAssets={resolveAssets}
                     onPreview={setSelectedAsset}
                     thumbnails={thumbnails ?? undefined}
                     catalog={assetCatalogProps}
@@ -2273,6 +2274,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                     path={selectedAsset}
                     loadTexture={loadTexture}
                     loadVisual={loadVisual}
+                    resolveAsset={resolveAsset}
                     selectionCount={selection.length}
                     onUseAsVisual={useAssetAsVisual}
                     onPlace={(name) => setArmed({ kind: 'place', spec: { ...FRESH_PLACE, visual: name } })}

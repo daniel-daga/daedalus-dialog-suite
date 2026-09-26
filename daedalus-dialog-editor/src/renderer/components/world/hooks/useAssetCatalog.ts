@@ -16,6 +16,11 @@ export interface AssetCatalogSurface {
   /** The four reads the browser and the preview panel make, straight through. */
   listAssets: (assetPath: string) => ReturnType<typeof window.editorAPI.listWorldAssets>;
   searchAssets: (query: string) => ReturnType<typeof window.editorAPI.searchWorldAssets>;
+  /** What each name resolves to in the mounted namespace — how a mod's source
+   *  file a GMBT build has not compiled is told from one it has (#294). */
+  resolveAssets: (names: string[]) => ReturnType<typeof window.editorAPI.resolveWorldAssets>;
+  /** The same for one name, for the preview panel. */
+  resolveAsset: (name: string) => Promise<string | null>;
   loadTexture: (name: string, maxSize: number) => ReturnType<typeof window.editorAPI.getWorldTexture>;
   loadVisual: (name: string) => ReturnType<typeof window.editorAPI.getWorldVisual>;
   /** The thumbnail queue, and null with no world open. */
@@ -103,6 +108,16 @@ export function useAssetCatalog(): AssetCatalogSurface {
     [],
   );
 
+  const resolveAssets = useCallback(
+    (names: string[]) => window.editorAPI.resolveWorldAssets(names),
+    [],
+  );
+
+  const resolveAsset = useCallback(
+    async (name: string) => (await window.editorAPI.resolveWorldAssets([name]))[0] ?? null,
+    [],
+  );
+
   const loadTexture = useCallback(
     (name: string, maxSize: number) => window.editorAPI.getWorldTexture(name, maxSize),
     [],
@@ -142,5 +157,7 @@ export function useAssetCatalog(): AssetCatalogSurface {
   }, [worldPath, loadVisual, loadTexture]);
   useEffect(() => () => { liveTileRef.current?.dispose(); }, []);
 
-  return { listAssets, searchAssets, loadTexture, loadVisual, thumbnails, liveTile, catalogProps };
+  return {
+    listAssets, searchAssets, resolveAssets, resolveAsset, loadTexture, loadVisual, thumbnails, liveTile, catalogProps,
+  };
 }

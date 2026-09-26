@@ -233,6 +233,14 @@ function assetSearch(payload: { query: string }): { result: VfsSearch; transfer:
   return { result: zenkit.vfsFind(vfs!, payload.query), transfer: [] };
 }
 
+/** What each name resolves to in the mounted namespace — the compiled file
+ *  `vfsResolve` finds for a source name, or null (#294). One call per listing:
+ *  each lookup is a hash probe, and the answer is how the browser tells a
+ *  source that has not been compiled from one that has. */
+function assetResolve(payload: { names: string[] }): { result: (string | null)[]; transfer: ArrayBuffer[] } {
+  return { result: payload.names.map((name) => zenkit.vfsResolve(vfs!, name)), transfer: [] };
+}
+
 /** The waynet as a drawable graph. Small next to the geometry — NewWorld's is
  *  a few thousand points — so the buffers are copied rather than transferred,
  *  and the worker keeps its own world intact. */
@@ -404,6 +412,7 @@ function run(message: WorldWorkerRequest): { result: unknown; transfer: ArrayBuf
     case 'texture': return texture(message.payload as { name: string; maxSize: number });
     case 'assets': return assets(message.payload as { path: string });
     case 'assetSearch': return assetSearch(message.payload as { query: string });
+    case 'assetResolve': return assetResolve(message.payload as { names: string[] });
     case 'waynet': return waynet();
     case 'portalFindings': return portalFindings();
     case 'visualBounds': return boundsOfVisual(message.payload as VisualBoundsRequest);
