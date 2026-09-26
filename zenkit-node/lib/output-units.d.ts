@@ -13,7 +13,8 @@ export interface OutputUnit {
 }
 
 export interface OutputUnitDatabase {
-  /** The archive flavour it was read from: `ASCII` or `BINARY`. */
+  /** The archive flavour it was read from: `ASCII`, `BIN_SAFE` (the retail
+   *  `OU.BIN`) or `BINARY`. */
   format: string;
   /** Every block, in file order. */
   units: OutputUnit[];

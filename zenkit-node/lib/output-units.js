@@ -17,13 +17,13 @@
 //       zCCSAtomicBlock
 //         oCMsgConversation   subType=enum, text=string, name=string:<the wav>
 //
-// The read order is `CutsceneLibrary::load`'s, which is the contract the
-// engine's own writer obeys. **Checked against hand-authored fixtures only** —
-// no retail `OU.BIN` is in this tree (#264 leaves that to a machine that has
-// Gothic installed), so treat a disagreement with a real file as this reader's
-// fault before the file's.
+// The read order is `CutsceneLibrary::load`'s. **Checked against real files
+// since 2026-09-26**: the MDK's retail `OU.BIN` (BIN_SAFE) and `OU.CSL` (ASCII),
+// 20,826 lines each, and an engine-rebuilt pair — all read whole, both formats
+// agree, and a rewrite with nothing to change is byte-identical. BINARY has
+// still met only hand-built fixtures; no real OU in that format has been seen.
 
-const { readHeader } = require('./container.js');
+const { readHeader, walk: walkBinSafe, readHashTable } = require('./container.js');
 const { walkAscii } = require('./container-ascii.js');
 const { readBinaryHeader } = require('./container-binary.js');
 
@@ -55,21 +55,33 @@ function encode1252(text) {
   return bytes.subarray(0, n);
 }
 
-/** A `zCCSBlock` whose message has been read, or is still being read. `time`
- *  and `subType` are carried only so a rewrite writes back what it read. */
+/** A `zCCSBlock` whose message has been read, or is still being read. `time`,
+ *  `subType` and `messageClass` are carried only so a rewrite writes back what
+ *  it read. */
 function emptyUnit() {
-  return { name: '', text: '', wav: '', time: undefined, subType: 0 };
+  return { name: '', text: '', wav: '', time: undefined, subType: 0, messageClass: undefined };
 }
+
+// The engine writes the message's whole class chain —
+// `oCMsgConversation:oCNpcMessage:zCEventMessage` in the retail OU, BinSafe and
+// ASCII alike — and ZenGin resolves a chain to the first class it knows. So the
+// base class is what identifies a message, and the chain as written is what
+// goes back out. A new entry takes the chain the file already uses.
+const MESSAGE_CLASS = 'oCMsgConversation';
+const RETAIL_MESSAGE_CHAIN = 'oCMsgConversation:oCNpcMessage:zCEventMessage';
+const isMessageClass = (cls) => cls.split(':')[0] === MESSAGE_CLASS;
 
 const publicUnit = ({ name, text, wav }) => ({ name, text, wav });
 
-function readAsciiUnits(buf) {
+/** ASCII and BinSafe name every entry and their walkers yield the same events,
+ *  so one reader serves both; `value` turns an entry into its string or number. */
+function readNamedUnits(events, value) {
   const units = [];
   let unit = null;
   let sawLib = false;
   let inMessage = false;
 
-  for (const ev of walkAscii(buf)) {
+  for (const ev of events) {
     if (ev.kind === 'objectBegin') {
       const cls = ev.frame.cls;
       if (ev.objectDepth === 0) {
@@ -80,19 +92,20 @@ function readAsciiUnits(buf) {
       } else if (cls === 'zCCSBlock' && ev.objectDepth === 1) {
         unit = emptyUnit();
         units.push(unit);
-      } else if (cls === 'oCMsgConversation') {
+      } else if (isMessageClass(cls) && unit) {
         inMessage = true;
+        unit.messageClass = cls;
       }
     } else if (ev.kind === 'objectEnd') {
       // The end frame carries the depth it closed *to*, so a message ends at
       // the depth its own frame began at.
       if (inMessage && ev.objectDepth === 3) inMessage = false;
     } else if (ev.kind === 'entry' && unit) {
-      if (ev.entryName === 'blockName') unit.name = entryValue(buf, ev);
-      else if (ev.entryName === 'subBlock0' && unit.time === undefined) unit.time = entryValue(buf, ev);
-      else if (inMessage && ev.entryName === 'subType') unit.subType = Number(entryValue(buf, ev));
-      else if (inMessage && ev.entryName === 'text') unit.text = entryValue(buf, ev);
-      else if (inMessage && ev.entryName === 'name') unit.wav = entryValue(buf, ev);
+      if (ev.entryName === 'blockName') unit.name = value(ev);
+      else if (ev.entryName === 'subBlock0' && unit.time === undefined) unit.time = value(ev);
+      else if (inMessage && ev.entryName === 'subType') unit.subType = Number(value(ev));
+      else if (inMessage && ev.entryName === 'text') unit.text = value(ev);
+      else if (inMessage && ev.entryName === 'name') unit.wav = value(ev);
     }
   }
 
@@ -106,6 +119,13 @@ function readAsciiUnits(buf) {
 // the value.
 function entryValue(buf, ev) {
   return decode1252(buf, ev.payloadOffset, ev.payloadOffset + ev.payloadLength);
+}
+
+/** A BinSafe entry is typed: a string as ASCII's is, a number as its bytes. */
+function binSafeValue(buf, ev) {
+  if (ev.entryType === 'STRING') return entryValue(buf, ev);
+  if (ev.entryType === 'FLOAT') return buf.readFloatLE(ev.payloadOffset);
+  return buf.readInt32LE(ev.payloadOffset);
 }
 
 // BINARY carries no entry names, no type tags and no lengths — an entry is
@@ -216,11 +236,15 @@ function readBinaryMessage(block) {
   if (frame.cls !== 'zCCSAtomicBlock') {
     throw new Error(`not an OutputUnit database: a block holds a \`${frame.cls}\``);
   }
-  const message = expectFrame(frame.body, 'oCMsgConversation');
+  const messageFrame = frame.body.frame();
+  if (!isMessageClass(messageFrame.cls)) {
+    throw new Error(`not an OutputUnit database: expected a \`${MESSAGE_CLASS}\` object, found \`${messageFrame.cls}\``);
+  }
+  const message = messageFrame.body;
   const subType = message.byte(); // one byte here, four in ASCII and BinSafe
   const text = message.string();
   const wav = message.string();
-  return { text, wav, subType };
+  return { text, wav, subType, messageClass: messageFrame.cls };
 }
 
 /**
@@ -247,7 +271,8 @@ function readOutputUnits(buf) {
 }
 
 function readUnits(buf, format) {
-  if (format === 'ASCII') return readAsciiUnits(buf);
+  if (format === 'ASCII') return readNamedUnits(walkAscii(buf), (ev) => entryValue(buf, ev));
+  if (format === 'BIN_SAFE') return readNamedUnits(walkBinSafe(buf), (ev) => binSafeValue(buf, ev));
   if (format === 'BINARY') return readBinaryUnits(buf, readBinaryHeader(buf).entryStart);
   throw new Error(`cannot read an OutputUnit database in ${format} format yet`);
 }
@@ -272,6 +297,19 @@ function commonSubType(units) {
   return best;
 }
 
+/** The message class chain most of the file's entries carry — what a new entry
+ *  gets. The retail chain when there is no entry to ask. */
+function commonMessageClass(units) {
+  const counts = new Map();
+  for (const { messageClass } of units) counts.set(messageClass, (counts.get(messageClass) ?? 0) + 1);
+  let best = RETAIL_MESSAGE_CHAIN;
+  let bestCount = 0;
+  for (const [messageClass, count] of counts) {
+    if (count > bestCount) { best = messageClass; bestCount = count; }
+  }
+  return best;
+}
+
 /**
  * Set `lines` into the database: an entry whose name matches (case-insensitive,
  * as Daedalus is) takes the new text; a name the database lacks is added,
@@ -281,6 +319,7 @@ function commonSubType(units) {
 function mergeUnits(units, lines) {
   const wasSorted = units.every((unit, i) => i === 0 || byName(units[i - 1], unit) <= 0);
   const subType = commonSubType(units);
+  const messageClass = commonMessageClass(units);
   const index = new Map(units.map((unit) => [unit.name.toUpperCase(), unit]));
   for (const { name, text } of lines) {
     const key = name.toUpperCase();
@@ -288,7 +327,7 @@ function mergeUnits(units, lines) {
     if (unit) {
       unit.text = text;
     } else {
-      const added = { name: key, text, wav: `${key}.WAV`, time: undefined, subType };
+      const added = { name: key, text, wav: `${key}.WAV`, time: undefined, subType, messageClass };
       units.push(added);
       index.set(key, added);
     }
@@ -320,7 +359,7 @@ function binaryBody(units) {
   const blocks = units.map((unit) => {
     const blockIndex = index++;
     const atomicIndex = index++;
-    const message = binaryFrame('oCMsgConversation', index++, Buffer.concat([
+    const message = binaryFrame(unit.messageClass, index++, Buffer.concat([
       Buffer.from([unit.subType]), str0(unit.text), str0(unit.wav),
     ]));
     return binaryFrame('zCCSBlock', blockIndex, Buffer.concat([
@@ -328,6 +367,63 @@ function binaryBody(units) {
     ]));
   });
   return binaryFrame('zCCSLib', 0, Buffer.concat([i32(units.length), ...blocks]));
+}
+
+// BinSafe: an object frame is a STRING `[% class 0 index]`; an entry is 0x12,
+// the uint32 index of its name in the hash table, a type byte and the value.
+// Every OU uses the same seven names, so the original's hash table goes back out
+// as it was — its hashes are ZenGin's, and nothing here has to compute one.
+const BS_STRING = 0x01;
+const BS_INT = 0x02;
+const BS_FLOAT = 0x03;
+const BS_ENUM = 0x11;
+const BS_HASH = 0x12;
+
+function bsString(text) {
+  const bytes = cp1252(text);
+  return Buffer.concat([Buffer.from([BS_STRING]), u16(bytes.length), bytes]);
+}
+
+function binSafeBody(units, hashTable) {
+  const keyIndex = new Map(hashTable.entries.map((entry, i) => [entry.key, i]));
+  const entry = (key, payload) => {
+    const i = keyIndex.get(key);
+    if (i === undefined) throw new Error(`cannot write \`${key}\`: the database's hash table has no such name`);
+    return Buffer.concat([Buffer.from([BS_HASH]), u32(i), payload]);
+  };
+  const int = (type, v) => Buffer.concat([Buffer.from([type]), i32(v)]);
+  const end = bsString('[]');
+
+  const parts = [bsString('[% zCCSLib 0 0]'), entry('NumOfItems', int(BS_INT, units.length))];
+  let index = 1;
+  for (const unit of units) {
+    parts.push(
+      bsString(`[% zCCSBlock 0 ${index++}]`),
+      entry('blockName', bsString(unit.name)),
+      entry('numOfBlocks', int(BS_INT, 1)),
+      entry('subBlock0', Buffer.concat([Buffer.from([BS_FLOAT]), f32(unit.time ?? 0)])),
+      bsString(`[% zCCSAtomicBlock 0 ${index++}]`),
+      bsString(`[% ${unit.messageClass} 0 ${index++}]`),
+      entry('subType', int(BS_ENUM, unit.subType)),
+      entry('text', bsString(unit.text)),
+      entry('name', bsString(unit.wav)),
+      end, end, end,
+    );
+  }
+  parts.push(end);
+  return Buffer.concat(parts);
+}
+
+/** The text header as it was, then `uint32 version, objects, hash table
+ *  offset`, the entries, and the original hash table. */
+function rewriteBinSafe(original, header, units) {
+  const body = binSafeBody(units, readHashTable(original, header.hashTableOffset));
+  return Buffer.concat([
+    original.subarray(0, header.entryStart - 12),
+    u32(header.bsVersion), u32(1 + units.length * 3), u32(header.entryStart + body.length),
+    body,
+    original.subarray(header.hashTableOffset),
+  ]);
 }
 
 function asciiBody(units, eol) {
@@ -340,7 +436,7 @@ function asciiBody(units, eol) {
       '\t\tnumOfBlocks=int:1',
       `\t\tsubBlock0=float:${unit.time ?? '0'}`,
       `\t\t[% zCCSAtomicBlock 0 ${index++}]`,
-      `\t\t\t[% oCMsgConversation 0 ${index++}]`,
+      `\t\t\t[% ${unit.messageClass} 0 ${index++}]`,
       `\t\t\t\tsubType=enum:${unit.subType}`,
       `\t\t\t\ttext=string:${unit.text}`,
       `\t\t\t\tname=string:${unit.wav}`,
@@ -361,7 +457,7 @@ function asciiBody(units, eol) {
  * endings — with only the object count changed, padded to the width it had.
  * Nested block chains, which `readOutputUnits` follows to their message, come
  * back as one block per line: the shape every OU the engine writes has.
- * **Checked against hand-authored fixtures only**, like the reader.
+ * A no-op rewrite of the real files is byte-identical; see the reader.
  *
  * @param {Buffer} original the whole `OU.CSL` / `OU.BIN` file
  * @param {Array<{ name: string, text: string }>} lines
@@ -371,6 +467,7 @@ function rewriteOutputUnits(original, lines) {
   const header = readHeader(original);
   const format = header.lines[3];
   const units = mergeUnits(readUnits(original, format), lines);
+  if (format === 'BIN_SAFE') return rewriteBinSafe(original, header, units);
 
   // Header up to its first END, then `objects N`, then everything up to the
   // body — the second END and whatever blank line the file put after it.

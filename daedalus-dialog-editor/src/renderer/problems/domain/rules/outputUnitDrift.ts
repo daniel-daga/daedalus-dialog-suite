@@ -26,11 +26,13 @@ export const outputUnitDriftRule: LintRule = (view): Problem[] => {
 
   for (const file of view.fileFacts) {
     for (const func of file.facts.functions) {
-      for (const { id, text, line } of func.voiceIds) {
+      for (const { id, text: comment, line } of func.voiceIds) {
         // Ids are matched case-insensitively because Daedalus is and the OU
         // writer upper-cases; the subtitle is compared verbatim because it is
-        // what the player reads, so a changed capital is a real edit.
-        const recorded = units.get(id.trim().toUpperCase());
+        // what the player reads, so a changed capital is a real edit. Only the
+        // ends are trimmed: the retail OU holds `// Text. ` as `Text.`.
+        const text = comment.trim();
+        const recorded = units.get(id.trim().toUpperCase())?.trim();
         const locus = { kind: 'script' as const, filePath: file.filePath, functionName: func.name, line };
 
         if (recorded === undefined) {
@@ -79,7 +81,7 @@ export function outputUnitAgreement(view: Parameters<LintRule>[0]): { compared: 
         const recorded = units.get(id.trim().toUpperCase());
         if (recorded === undefined) continue;
         compared += 1;
-        if (recorded !== text) stale += 1;
+        if (recorded.trim() !== text.trim()) stale += 1;
       }
     }
   }

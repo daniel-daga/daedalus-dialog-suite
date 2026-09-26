@@ -13,15 +13,24 @@
 // BINARY entries carry nothing at all, which is why that format is read
 // positionally against the schema instead.
 //
-// **The fixtures here are hand-authored, not retail.** They are built from
-// ZenKit's `CutsceneLibrary::load` read order, which is the same contract the
-// engine's writer obeys — but nobody has checked this reader against a real
-// `OU.BIN` yet, and #264 says that is Daniel's machine rather than CI.
+// **The fixtures are hand-built, in the retail layout.** They were first built
+// from ZenKit's `CutsceneLibrary::load` read order alone, and the retail
+// `OU.BIN` (2026-09-26, the MDK's, 20,826 lines) disagreed twice: it is
+// **BIN_SAFE**, which the reader refused, and its message class is the whole
+// chain `oCMsgConversation:oCNpcMessage:zCEventMessage`, which the reader did
+// not recognise — so every subtitle read back empty. `binSafeOu` below is that
+// file's layout, hash table included; the last test reads the real files
+// wherever a Gothic install has them.
 
+const fs = require('node:fs');
+const path = require('node:path');
 const test = require('node:test');
 const assert = require('node:assert');
 
 const { readOutputUnits, rewriteOutputUnits } = require('../lib/output-units.js');
+
+/** The class chain every retail OU writes for its messages. */
+const CHAIN = 'oCMsgConversation:oCNpcMessage:zCEventMessage';
 
 /** `WriteArchiveBinary`'s frame: uint32 size, uint16 version, uint32 index,
  *  string0 objectName, string0 className — the size patched at the end to span
@@ -48,14 +57,14 @@ const str0 = (v) => Buffer.concat([Buffer.from(v, 'latin1'), Buffer.from([0])]);
 
 /** The same database as `asciiOu`, in the format the game actually loads.
  *  Note `write_enum` is ONE byte here and four in the other two formats. */
-function binaryOu(messages) {
+function binaryOu(messages, cls = CHAIN) {
   // Numbered parent first, the order the archive writes objects in — the same
   // numbering `asciiOu` gives.
   let index = 1;
   const blocks = messages.map((m) => {
     const blockIndex = index++;
     const atomicIndex = index++;
-    const message = binFrame('oCMsgConversation', index++, Buffer.concat([
+    const message = binFrame(cls, index++, Buffer.concat([
       u8(0), str0(m.text), str0(m.wav),
     ]));
     const atomic = binFrame('zCCSAtomicBlock', atomicIndex, message);
@@ -71,8 +80,52 @@ function binaryOu(messages) {
   return Buffer.concat([head, lib]);
 }
 
+/** The retail `OU.BIN`'s own format. Every entry is `0x12`, the index of its
+ *  name in the hash table, a type byte and the value; object frames are STRING
+ *  entries. The hash table is the retail file's exactly — names in insertion
+ *  order, ZenGin's hash values, and the physical order it writes them in. */
+const RETAIL_KEYS = [
+  ['NumOfItems', 93], ['blockName', 68], ['numOfBlocks', 39], ['subBlock0', 50],
+  ['subType', 74], ['text', 13], ['name', 41],
+];
+const RETAIL_KEY_ORDER = [5, 2, 6, 3, 1, 4, 0];
+
+function binSafeOu(messages) {
+  const bsStr = (v) => { const b = Buffer.from(v, 'latin1'); return Buffer.concat([u8(1), u16(b.length), b]); };
+  const key = (name) => Buffer.concat([u8(0x12), u32(RETAIL_KEYS.findIndex(([k]) => k === name))]);
+  const end = bsStr('[]');
+  const parts = [bsStr('[% zCCSLib 0 0]'), key('NumOfItems'), u8(2), i32(messages.length)];
+  let index = 1;
+  for (const m of messages) {
+    parts.push(
+      bsStr(`[% zCCSBlock 0 ${index++}]`),
+      key('blockName'), bsStr(m.name),
+      key('numOfBlocks'), u8(2), i32(1),
+      key('subBlock0'), u8(3), f32(0),
+      bsStr(`[% zCCSAtomicBlock 0 ${index++}]`),
+      bsStr(`[% ${CHAIN} 0 ${index++}]`),
+      key('subType'), u8(0x11), u32(0),
+      key('text'), bsStr(m.text),
+      key('name'), bsStr(m.wav),
+      end, end, end,
+    );
+  }
+  parts.push(end);
+  const body = Buffer.concat(parts);
+  const text = Buffer.from([
+    'ZenGin Archive', 'ver 1', 'zCArchiverBinSafe', 'BIN_SAFE', 'saveGame 0',
+    'date 17.10.2003 12:57:16', 'user bjoern.pankratz', 'END',
+  ].join('\n') + '\n', 'latin1');
+  const hashTable = Buffer.concat([u32(RETAIL_KEYS.length), ...RETAIL_KEY_ORDER.map((i) => {
+    const [name, hash] = RETAIL_KEYS[i];
+    return Buffer.concat([u16(name.length), u16(i), u32(hash), Buffer.from(name, 'latin1')]);
+  })]);
+  const counts = Buffer.concat([u32(2), u32(1 + messages.length * 3), u32(text.length + 12 + body.length)]);
+  return Buffer.concat([text, counts, body, hashTable]);
+}
+
 /** A `zCCSLib` ASCII archive holding one message per entry given. */
-function asciiOu(messages) {
+function asciiOu(messages, cls = CHAIN) {
   const objects = 1 + messages.length * 3;
   const head = [
     'ZenGin Archive', 'ver 1', 'zCArchiverGeneric', 'ASCII', 'saveGame 0', 'END',
@@ -86,7 +139,7 @@ function asciiOu(messages) {
     body.push('\t\tnumOfBlocks=int:1');
     body.push('\t\tsubBlock0=float:0');
     body.push(`\t\t[% zCCSAtomicBlock 0 ${index++}]`);
-    body.push(`\t\t\t[% oCMsgConversation 0 ${index++}]`);
+    body.push(`\t\t\t[% ${cls} 0 ${index++}]`);
     body.push('\t\t\t\tsubType=enum:0');
     body.push(`\t\t\t\ttext=string:${m.text}`);
     body.push(`\t\t\t\tname=string:${m.wav}`);
@@ -177,6 +230,35 @@ test('reads the same database identically whichever format it is in', () => {
     readOutputUnits(binaryOu(messages)).units,
     readOutputUnits(asciiOu(messages)).units,
   );
+  assert.deepStrictEqual(
+    readOutputUnits(binSafeOu(messages)).units,
+    readOutputUnits(asciiOu(messages)).units,
+  );
+});
+
+test('reads a BIN_SAFE OU database — the format the retail OU.BIN is in', () => {
+  const buf = binSafeOu([
+    { name: 'DIA_TEST_HELLO_15_00', text: 'Was willst du?', wav: 'DIA_TEST_HELLO_15_00.WAV' },
+    { name: 'DIA_TEST_HELLO_15_01', text: 'Nichts.', wav: 'DIA_TEST_HELLO_15_01.WAV' },
+  ]);
+
+  const ou = readOutputUnits(buf);
+
+  assert.strictEqual(ou.format, 'BIN_SAFE');
+  assert.deepStrictEqual(ou.units, [
+    { name: 'DIA_TEST_HELLO_15_00', text: 'Was willst du?', wav: 'DIA_TEST_HELLO_15_00.WAV' },
+    { name: 'DIA_TEST_HELLO_15_01', text: 'Nichts.', wav: 'DIA_TEST_HELLO_15_01.WAV' },
+  ]);
+});
+
+test('a message is known by its base class, whether or not its chain is written', () => {
+  // The retail file writes the chain; reading only the bare class name left
+  // every retail subtitle empty, which reported the whole project as stale.
+  const m = [{ name: 'DIA_A_00', text: 'Eins.', wav: 'DIA_A_00.WAV' }];
+  for (const cls of [CHAIN, 'oCMsgConversation']) {
+    assert.deepStrictEqual(readOutputUnits(asciiOu(m, cls)).units, m, `ASCII, ${cls}`);
+    assert.deepStrictEqual(readOutputUnits(binaryOu(m, cls)).units, m, `BINARY, ${cls}`);
+  }
 });
 
 test('refuses a truncated BINARY database instead of reporting short', () => {
@@ -201,7 +283,7 @@ test('refuses a truncated BINARY database instead of reporting short', () => {
 const VANILLA = { name: 'DIA_XARDAS_HELLO_14_00', text: 'Du bist zurück.', wav: 'DIA_XARDAS_HELLO_14_00.WAV' };
 const OURS = { name: 'DIA_HARALD_HELLO_15_00', text: 'Alter Text.', wav: 'DIA_HARALD_HELLO_15_00.WAV' };
 
-for (const [format, build] of [['ASCII', asciiOu], ['BINARY', binaryOu]]) {
+for (const [format, build] of [['ASCII', asciiOu], ['BINARY', binaryOu], ['BIN_SAFE', binSafeOu]]) {
   test(`${format}: with nothing to change, the file comes back byte-identical`, () => {
     // The writer and the hand-built fixture agree byte for byte: the writer is
     // checked against the same read order as the reader, not against itself.
@@ -221,12 +303,41 @@ for (const [format, build] of [['ASCII', asciiOu], ['BINARY', binaryOu]]) {
     const original = build([OURS, VANILLA]);
     const rewritten = rewriteOutputUnits(original, [{ name: 'Dia_Harald_Hello_15_01', text: 'Noch was.' }]);
 
-    assert.deepStrictEqual(readOutputUnits(rewritten).units, [
-      OURS,
-      { name: 'DIA_HARALD_HELLO_15_01', text: 'Noch was.', wav: 'DIA_HARALD_HELLO_15_01.WAV' },
-      VANILLA,
-    ]);
+    const added = { name: 'DIA_HARALD_HELLO_15_01', text: 'Noch was.', wav: 'DIA_HARALD_HELLO_15_01.WAV' };
+    assert.deepStrictEqual(readOutputUnits(rewritten).units, [OURS, added, VANILLA]);
+    // The new entry carries the class chain its neighbours do.
+    assert.strictEqual(rewritten.toString('latin1').split(CHAIN).length - 1, 3);
   });
+}
+
+// The real files, wherever an install has them: the GMBT-managed OU under
+// `_work`, and the MDK's retail copy the engine harness carries. Both formats
+// must read to the same lines, and writing nothing back must change no byte.
+const G2_ROOT = process.env.ZENKIT_G2_ROOT
+  || 'C:/Program Files (x86)/Steam/steamapps/common/Gothic II';
+const REAL_OU_DIRS = [
+  path.join(G2_ROOT, '_work', 'Data', 'Scripts', 'Content', 'Cutscene'),
+  path.join(__dirname, '..', 'tools', 'gmbt', 'mdk', 'Scripts', 'Content', 'Cutscene'),
+];
+for (const dir of REAL_OU_DIRS) {
+  const files = fs.existsSync(dir)
+    ? fs.readdirSync(dir).filter((f) => /^ou\.(bin|csl)$/i.test(f)).map((f) => path.join(dir, f))
+    : [];
+  test(`a real OU database reads whole and rewrites byte-identical (${dir})`,
+    { skip: files.length === 2 ? false : 'no OU.BIN + OU.CSL here' }, () => {
+      const read = files.map((f) => {
+        const bytes = fs.readFileSync(f);
+        assert.deepStrictEqual(rewriteOutputUnits(bytes, []), bytes, `${f} survives a no-op rewrite`);
+        return readOutputUnits(bytes);
+      });
+      assert.deepStrictEqual(read.map((r) => r.format).sort(), ['ASCII', 'BIN_SAFE']);
+      assert.ok(read[0].units.length > 0);
+      assert.ok(read[0].units.every((u) => u.text !== '' && u.wav !== ''), 'no line reads back empty');
+      // As sets: an OU.BIN the engine rebuilt from a newer OU.CSL comes out
+      // sorted by name, while the CSL keeps script order.
+      const names = (r) => r.units.map((u) => u.name).sort();
+      assert.deepStrictEqual(names(read[0]), names(read[1]));
+    });
 }
 
 test('a database that was sorted stays sorted; one that was not keeps its order and gains at the end', () => {
@@ -270,7 +381,7 @@ test('the header the file had is kept — date, user and line endings — with t
 test('subtitles are windows-1252 both ways: „quotes“, dashes and the euro sign survive', () => {
   const text = '„Nimm das“ – für 5 € … klar?';
   const original = asciiOu([{ name: 'DIA_Q_00', text: 'alt', wav: 'DIA_Q_00.WAV' }]);
-  for (const build of [asciiOu, binaryOu]) {
+  for (const build of [asciiOu, binaryOu, binSafeOu]) {
     const rewritten = rewriteOutputUnits(build([{ name: 'DIA_Q_00', text: 'alt', wav: 'DIA_Q_00.WAV' }]), [{ name: 'DIA_Q_00', text }]);
     assert.strictEqual(readOutputUnits(rewritten).units[0].text, text);
   }

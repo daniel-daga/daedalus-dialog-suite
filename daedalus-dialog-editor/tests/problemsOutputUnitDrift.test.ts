@@ -70,6 +70,29 @@ describe('outputUnitDriftRule', () => {
     expect(outputUnitDriftRule(view)).toEqual([]);
   });
 
+  it('does not count whitespace at the ends of the comment as an edit', () => {
+    // The retail OU holds its lines trimmed while 65 retail MDK scripts carry
+    // `// Text. ` — every one of them read as stale against the real OU.BIN.
+    const view = viewOf(
+      [{ id: 'DIA_TEST_15_00', text: 'Was willst du? ' }],
+      [{ name: 'DIA_TEST_15_00', text: 'Was willst du?', wav: 'DIA_TEST_15_00.WAV' }],
+    );
+
+    expect(outputUnitDriftRule(view)).toEqual([]);
+    expect(outputUnitAgreement(view)).toEqual({ compared: 1, stale: 0 });
+  });
+
+  it('asks for the trimmed line to be written, as the OU tools write it', () => {
+    const view = viewOf(
+      [{ id: 'DIA_TEST_15_00', text: 'Was willst du denn? ' }],
+      [{ name: 'DIA_TEST_15_00', text: 'Was willst du?', wav: 'DIA_TEST_15_00.WAV' }],
+    );
+
+    expect(outputUnitDriftRule(view).map((p) => p.outputUnitLine)).toEqual([
+      { name: 'DIA_TEST_15_00', text: 'Was willst du denn?' },
+    ]);
+  });
+
   it('flags a line whose subtitle the database still holds the old text for', () => {
     const view = viewOf(
       [{ id: 'DIA_TEST_15_00', text: 'Was willst du denn?' }],
