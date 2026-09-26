@@ -337,6 +337,106 @@ export function buildVisual(
   return { name, source: visual.source, groups, bounds: groupBounds(groups), triangleCount };
 }
 
+/** What `buildNpcBody` needs of the binding: a visual, and a hierarchy's
+ *  nodes with their root-accumulated, row-major transforms. */
+export interface NpcBinding extends Pick<SceneBinding, 'extractVisual'> {
+  extractHierarchy(vfs: VfsHandle, name: string): { nodes: Array<{ name: string; transform: number[] }> } | null;
+}
+
+/** The engine's half of `Mdl_SetVisual` + `Mdl_SetVisualBody` + `Mdl_SetModelScale`. */
+export interface NpcBodyRequest {
+  /** The model whose hierarchy places the head — `HUMANS.MDS`. */
+  model: string;
+  /** The body mesh as scripts name it (`hum_body_Naked0`), or an armour's
+   *  `visual_change` (`Armor_Vlk_H.asc`). */
+  body: string;
+  bodyTexture: number;
+  skinColor: number;
+  head: string;
+  headTexture: number;
+  teethTexture: number;
+  /** Width, height, depth. */
+  scale: readonly [number, number, number];
+}
+
+export interface NpcBodyScene extends VisualScene {
+  /** What could not be drawn and why — the body is drawn without it. */
+  missing: string[];
+}
+
+const HEAD_NODE = 'BIP01 HEAD';
+
+/**
+ * A texture as a body or head variant: ZenGin replaces the `_V0` (variation)
+ * and `_C0` (colour) channels of the mesh's base texture name.
+ */
+export function variantTextureName(name: string, variation: number, color: number): string {
+  return name.replace(/_V\d+/i, `_V${variation}`).replace(/_C\d+/i, `_C${color}`);
+}
+
+function multiply(a: readonly number[], b: readonly number[]): number[] {
+  const out = new Array<number>(16).fill(0);
+  for (let row = 0; row < 4; row++) {
+    for (let col = 0; col < 4; col++) {
+      for (let k = 0; k < 4; k++) out[row * 4 + col] += a[row * 4 + k] * b[k * 4 + col];
+    }
+  }
+  return out;
+}
+
+/**
+ * An NPC as the engine assembles it (npc-editor.md §4): the body model, the head
+ * morph mesh hung on `BIP01 HEAD` of the model's hierarchy, both in the texture
+ * variants `Mdl_SetVisualBody` picks and scaled by `Mdl_SetModelScale`.
+ *
+ * Null when the body does not resolve. A head that cannot be placed is left
+ * off and named in `missing`, because a body alone still shows the armour and
+ * build — a guessed head position would show something the engine never does.
+ */
+export function buildNpcBody(binding: NpcBinding, vfs: VfsHandle, request: NpcBodyRequest): NpcBodyScene | null {
+  const [sx, sy, sz] = request.scale;
+  const scale = [sx, 0, 0, 0, 0, sy, 0, 0, 0, 0, sz, 0, 0, 0, 0, 1];
+  const withExtension = (name: string, extension: string) => (/\.[^.\\/]+$/.test(name) ? name : name + extension);
+
+  const body = binding.extractVisual(vfs, withExtension(request.body, '.ASC'));
+  if (body === null || body.chunks.length === 0) return null;
+  const chunks: MeshChunk[] = body.chunks.map((chunk) => ({
+    ...chunk,
+    texture: variantTextureName(chunk.texture, request.bodyTexture, request.skinColor),
+    transform: chunk.transform ? multiply(scale, chunk.transform) : scale,
+  }));
+
+  const missing: string[] = [];
+  const node = binding.extractHierarchy(vfs, request.model)?.nodes
+    .find((candidate) => candidate.name.toUpperCase() === HEAD_NODE);
+  if (node === undefined) {
+    missing.push(`${request.model} has no ${HEAD_NODE} node to hang the head on`);
+  } else {
+    const head = binding.extractVisual(vfs, withExtension(request.head, '.MMS'));
+    if (head === null) {
+      missing.push(`Head mesh ${request.head} did not resolve`);
+    } else {
+      const placed = multiply(scale, node.transform);
+      for (const chunk of head.chunks) {
+        // The teeth are their own texture in the head mesh, with their own variant.
+        const variation = /TEETH/i.test(chunk.texture) ? request.teethTexture : request.headTexture;
+        chunks.push({
+          ...chunk,
+          texture: variantTextureName(chunk.texture, variation, request.skinColor),
+          transform: placed,
+        });
+      }
+    }
+  }
+
+  const groups = mergeChunks(chunks);
+  let triangleCount = 0;
+  for (const group of groups) triangleCount += group.triangleCount;
+  return {
+    name: request.body, source: body.source, groups, bounds: groupBounds(groups), triangleCount, missing,
+  };
+}
+
 export function buildInstancedVisuals(
   binding: SceneBinding,
   vfs: VfsHandle,

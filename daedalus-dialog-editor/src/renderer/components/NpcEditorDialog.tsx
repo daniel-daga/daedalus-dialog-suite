@@ -28,6 +28,7 @@ import { npcRoutines, formatMinute, type NpcRoutine } from '../npc/npcRoutines';
 import { useWorldStore } from '../store/worldStore';
 import { useUISelectionStore } from '../store/uiSelectionStore';
 import { waypointJumpReason } from './npcWorldJump';
+import NpcVisualPreview from './NpcVisualPreview';
 
 // The NPC editor (docs/plans/npc-editor.md, Phase 2): a form over one NPC
 // instance's body. It opens the declaring file through the file store — so
@@ -66,6 +67,35 @@ function optionsFor(field: NpcFormField): string[] {
     : Object.keys(project.mergedSemanticModel.items ?? {});
   const prefix = ('constantPrefix' in options ? options.constantPrefix : options.itemPrefix).toUpperCase();
   return names.filter((name) => name.toUpperCase().startsWith(prefix)).sort();
+}
+
+/** Every ingested file's semantic model — the whole project, where
+ *  `mergedSemanticModel` holds only the globals and the selected NPC's files. */
+function parsedModels(): SemanticModel[] {
+  return [...useProjectStore.getState().parsedFiles.values()].map((file) => file.semanticModel);
+}
+
+/** An integer constant's value in the project, by case-insensitive name. */
+function projectConstantLookup(): (name: string) => number | undefined {
+  const values = new Map<string, number>();
+  for (const model of parsedModels()) {
+    for (const [name, constant] of Object.entries(model.constants ?? {})) {
+      const value = Number(constant.value);
+      if (typeof constant.value !== 'boolean' && Number.isInteger(value)) values.set(name.toUpperCase(), value);
+    }
+  }
+  return (name) => values.get(name.toUpperCase());
+}
+
+/** An item instance's source text in the project, by case-insensitive name. */
+function projectItemSource(): (instance: string) => string | undefined {
+  const sources = new Map<string, string>();
+  for (const model of parsedModels()) {
+    for (const [name, item] of Object.entries(model.items ?? {})) {
+      if (item.sourceText) sources.set(name.toUpperCase(), item.sourceText);
+    }
+  }
+  return (instance) => sources.get(instance.toUpperCase());
 }
 
 /** Read-only: the project index's routines for the NPC, as of the last
@@ -177,6 +207,14 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
     }, npcName);
   }, [npcName]);
   const invalid = definition ? validateNpcForm(values) : null;
+  // Rebuilt as background ingestion parses more of the project.
+  const parseGeneration = useProjectStore((s) => s.parseGeneration);
+  const lookupConstant = useMemo(projectConstantLookup, [parseGeneration]);
+  const itemSource = useMemo(projectItemSource, [parseGeneration]);
+  const pendingEdits = useMemo(
+    () => (definition ? editsBetween(definition, initial, values) : []),
+    [definition, initial, values],
+  );
 
   // #285: a TA entry's waypoint, shown in the World surface. The jump leaves
   // this dialog, which is why an unsaved form blocks it rather than being
@@ -253,41 +291,53 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
   };
 
   return (
-    <Dialog open onClose={saving ? undefined : onClose} maxWidth="md" fullWidth aria-labelledby="npc-editor-title">
+    <Dialog open onClose={saving ? undefined : onClose} maxWidth="lg" fullWidth aria-labelledby="npc-editor-title">
       <DialogTitle id="npc-editor-title">{`NPC ${npcName}`}</DialogTitle>
       <DialogContent dividers>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
         {!definition && !error && <CircularProgress size={24} />}
         {definition && (
-          <>
-            {GROUPS.map((group) => (
-              <Box key={group.id} sx={{ mb: 2 }}>
-                <Typography variant="subtitle2" sx={{ mb: 1 }}>{group.title}</Typography>
-                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 1.5 }}>
-                  {NPC_FORM_FIELDS.filter((field) => field.group === group.id).map(renderField)}
+          // The preview beside the form rather than above it, and sticky, so
+          // it stays in view while the visual fields near the bottom change.
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) 300px' }, gap: 3 }}>
+            <Box sx={{ minWidth: 0 }}>
+              {GROUPS.map((group) => (
+                <Box key={group.id} sx={{ mb: 2 }}>
+                  <Typography variant="subtitle2" sx={{ mb: 1 }}>{group.title}</Typography>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 1.5 }}>
+                    {NPC_FORM_FIELDS.filter((field) => field.group === group.id).map(renderField)}
+                  </Box>
                 </Box>
-              </Box>
-            ))}
-            <NpcRoutinesSection
-              routines={routines}
-              onShowWaypoint={showWaypoint}
-              waypointReason={(waypoint) => waypointJumpReason(waypoint, world)}
-              blockedReason={definition && editsBetween(definition, initial, values).length > 0
-                ? 'Save or cancel your changes first'
-                : null}
-            />
-            {uncovered.length > 0 && (
-              <Box>
-                <Typography variant="subtitle2">Other statements</Typography>
-                <Typography variant="caption" color="text.secondary">
-                  Kept exactly as written; edit them in the script.
-                </Typography>
-                <Box component="pre" sx={{ m: 0, mt: 0.5, fontSize: 12, whiteSpace: 'pre-wrap' }}>
-                  {uncovered.map((statement) => statement.text).join('\n')}
+              ))}
+              <NpcRoutinesSection
+                routines={routines}
+                onShowWaypoint={showWaypoint}
+                waypointReason={(waypoint) => waypointJumpReason(waypoint, world)}
+                blockedReason={pendingEdits.length > 0
+                  ? 'Save or cancel your changes first'
+                  : null}
+              />
+              {uncovered.length > 0 && (
+                <Box>
+                  <Typography variant="subtitle2">Other statements</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Kept exactly as written; edit them in the script.
+                  </Typography>
+                  <Box component="pre" sx={{ m: 0, mt: 0.5, fontSize: 12, whiteSpace: 'pre-wrap' }}>
+                    {uncovered.map((statement) => statement.text).join('\n')}
+                  </Box>
                 </Box>
-              </Box>
-            )}
-          </>
+              )}
+            </Box>
+            <Box sx={{ position: { md: 'sticky' }, top: 0, alignSelf: 'start', order: { xs: -1, md: 0 } }}>
+              <NpcVisualPreview
+                definition={definition}
+                edits={pendingEdits}
+                lookupConstant={lookupConstant}
+                itemSource={itemSource}
+              />
+            </Box>
+          </Box>
         )}
       </DialogContent>
       <DialogActions>

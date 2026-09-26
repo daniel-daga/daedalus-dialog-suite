@@ -4,6 +4,7 @@ import {
   applyOps,
   buildDecalBillboards,
   buildInstancedVisuals,
+  buildNpcBody,
   buildVisual,
   buildWorldMesh,
   checkPortals,
@@ -15,6 +16,9 @@ import {
   isWaynetOp,
   visualBounds,
   type MeshChunk,
+  type NpcBinding,
+  type NpcBodyRequest,
+  type NpcBodyScene,
   type SceneBinding,
   type VisualScene,
   type ZenBounds,
@@ -87,6 +91,11 @@ const binding: SceneBinding = {
     },
     name,
   ),
+};
+
+const npcBinding: NpcBinding = {
+  extractVisual: binding.extractVisual,
+  extractHierarchy: (vfsHandle, name) => zenkit.extractHierarchy(vfsHandle as zenkit.VfsHandle, name),
 };
 
 const timings: Record<string, number> = {};
@@ -303,6 +312,12 @@ function visualOf(payload: VisualRequest): { result: VisualScene | null; transfe
   return { result: built, transfer: built === null ? [] : groupTransferables(built.groups) };
 }
 
+/** An NPC's body and head for the NPC editor's preview (npc-editor.md §4). */
+function npcBodyOf(payload: NpcBodyRequest): { result: NpcBodyScene | null; transfer: ArrayBuffer[] } {
+  const built = buildNpcBody(npcBinding, vfs!, payload);
+  return { result: built, transfer: built === null ? [] : groupTransferables(built.groups) };
+}
+
 /**
  * The per-class fields of one VOB — what a `SetVobClassProp` needs for its
  * `from` and what the grid shows.
@@ -437,6 +452,7 @@ function run(message: WorldWorkerRequest): { result: unknown; transfer: ArrayBuf
     case 'portalFindings': return portalFindings();
     case 'visualBounds': return boundsOfVisual(message.payload as VisualBoundsRequest);
     case 'visual': return visualOf(message.payload as VisualRequest);
+    case 'npcBody': return npcBodyOf(message.payload as NpcBodyRequest);
     case 'vobProps': return propsOfVob(message.payload as VobPropsRequest);
     case 'refreshIndex': return refreshIndex();
     case 'applyOps': return applyOpsRequest(message.payload as ApplyOpsRequest);

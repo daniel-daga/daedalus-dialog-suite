@@ -204,3 +204,63 @@ test.describe('NPC editor: routine jumps', () => {
     await expect(editor.getByTitle('Save or cancel your changes first').first()).toBeVisible();
   });
 });
+
+
+// #298: the preview beside the form. The harness mounts no assets (a world
+// needs the native binding), so what this proves is the half above the
+// worker: the visual read from the script and the project, following unsaved
+// edits, and the panel saying why it draws no mesh. The worker request itself
+// is tests/NpcVisualPreview.test.tsx's.
+// The harness's regex parser reads neither constants nor items, so both files
+// carry their model through the mock-model seam.
+const constant = (name: string, value: number) => ({ name, type: 'int', value });
+const CONSTANTS_FILE = `//__MOCK_MODEL__${JSON.stringify({
+  constants: Object.fromEntries([
+    constant('MALE', 0), constant('FEMALE', 1), constant('NO_ARMOR', -1),
+    constant('BodyTex_N', 1), constant('Face_N_Weak_Orry', 42),
+  ].map((c) => [c.name, c])),
+})}\n`;
+const ARMOR_FILE = `//__MOCK_MODEL__${JSON.stringify({
+  items: {
+    ITAR_Vlk_H: {
+      name: 'ITAR_Vlk_H', parent: 'C_Item',
+      sourceText: 'INSTANCE ITAR_Vlk_H (C_Item)\n{\n\tvisual = "ItAr_Vlk_H.3ds";\n\tvisual_change = "Armor_Vlk_H.asc";\n};',
+    },
+  },
+})}\n`;
+
+test.describe('NPC editor: preview', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
+    await page.evaluate(({ npc, constants, armor }) => {
+      localStorage.setItem('mockapi_file_project/NPC/BAU_900_Onar.d', npc);
+      localStorage.setItem('mockapi_file_project/Constants.d', constants);
+      localStorage.setItem('mockapi_file_project/Items/IT_Armor.d', armor);
+    }, { npc: NPC_FILE, constants: CONSTANTS_FILE, armor: ARMOR_FILE });
+    page.on('dialog', async (dialog) => {
+      if (dialog.message().includes('project folder path')) await dialog.accept('project');
+      else await dialog.dismiss();
+    });
+    await page.getByRole('button', { name: /Open Project/i }).first().click();
+    await expect(page.getByText('BAU_900_Onar')).toBeVisible({ timeout: 15000 });
+  });
+
+  test('shows what it would draw, follows the form, and says it needs a world', async ({ page }) => {
+    const editor = await openEditor(page);
+    const preview = editor.getByTestId('npc-preview');
+
+    // The armour's visual_change replaces the naked body, as in the engine.
+    await expect(preview.getByTestId('npc-preview-summary')).toHaveText('Armor_Vlk_H.asc · head Hum_Head_Fatbald');
+    await expect(preview.getByTestId('npc-preview-no-world')).toBeVisible();
+
+    // Unsaved edits are previewed: no armour is the naked male body.
+    await editor.getByLabel('Armor').fill('NO_ARMOR');
+    await editor.getByLabel('Head mesh').fill('Hum_Head_Bald');
+    await expect(preview.getByTestId('npc-preview-summary')).toHaveText('hum_body_Naked0 · head Hum_Head_Bald');
+
+    // A constant the project does not define is why it cannot draw.
+    await editor.getByLabel('Face texture').fill('Face_Unknown');
+    await expect(preview.getByTestId('npc-preview-reason')).toContainText('Face_Unknown is not a known integer constant');
+  });
+});

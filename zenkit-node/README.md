@@ -226,7 +226,7 @@ The one world-level thing a `.zen` *does* carry is the start position, and it
 is not an `oCWorld` field either — it is a `zCVobStartpoint` in the vob tree
 and/or a waypoint named `START`. The same script reports both.
 
-### The asset layer — `openVfs`, `vfsResolve`, `vfsFind`, `extractVisual`, `decodeTexture`
+### The asset layer — `openVfs`, `vfsResolve`, `vfsFind`, `extractVisual`, `extractHierarchy`, `decodeTexture`
 
 ```js
 const vfs = openVfs([vdfOrDirectory, ...], { overwrite: 'all' });
@@ -234,6 +234,7 @@ vfsResolve(vfs, 'NW_CRATE.3DS');        // -> 'NW_CRATE.MRM' | null
 vfsList(vfs, '/');                      // -> [{ name, type, sources: number[] }] | null
 vfsFind(vfs, 'grassgroup', { limit: 20 }); // -> { matches: [{ name, directory, type, sources }], truncated }
 extractVisual(vfs, 'NW_CRATE.3DS');     // -> the chunk payload above | null
+extractHierarchy(vfs, 'HUMANS.MDS');    // -> { source, nodes: [{ name, parent, transform }] } | null
 decodeTexture(vfs, 'NW_WOOD.TGA', 0);   // -> { source, width, height, mipmaps, rgba } | null
 ```
 

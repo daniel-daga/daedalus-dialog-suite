@@ -109,6 +109,7 @@ import type {
   NpcEdit
 } from '../../shared/types';
 
+import type { NpcBodyRequest, NpcBodyScene } from '../../shared/worldTypes';
 import type { UpdateCheckResult } from '../../shared/updater-types';
 import type { OpenedProjectConfig } from '../../shared/projectConfigTypes';
 export type { GothicProjectFileV1, GothicTarget, OpenedProjectConfig, ProjectConfigWarning } from '../../shared/projectConfigTypes';
@@ -224,6 +225,7 @@ export interface EditorAPI {
   /** One visual by name for the Assets panel's mesh preview — its merged draw
    *  groups and bounds. Null for a name the binding cannot extract. */
   getWorldVisual: (name: string) => Promise<VisualScene | null>;
+  getNpcBody: (request: NpcBodyRequest) => Promise<NpcBodyScene | null>;
   /** The machine-local thumbnail cache (level-editor.md §16.26 row 1): a read
    *  answers the key the name was looked up under and the PNG data URL drawn
    *  for it, or null when nothing has been — in which case the renderer draws

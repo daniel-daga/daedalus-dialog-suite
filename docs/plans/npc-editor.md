@@ -1,6 +1,6 @@
 # NPC Editor
 
-**Status:** Phase 1 built (#284); Phase 2 in progress (#285) — editing an existing NPC works; Phases 3–4 not started.
+**Status:** Phase 1 built (#284); Phase 2 in progress (#285) — editing an existing NPC works; Phase 3 started (#298); Phase 4 not started.
 
 An editor for `C_NPC` instances inside the dialog editor, covering what the
 community's standalone *NPC Generator* covers (main info, attributes, protection,
@@ -171,7 +171,59 @@ surface's insert already does that, and it needs a waypoint.
 
 ## 4. Phase 3 — the visual preview
 
-A bind-pose preview beside the form, reusing `VisualPreviewScene`. It needs:
+A bind-pose preview beside the form, reusing `VisualPreviewScene` (#298).
+
+**Built so far (2026-09-26):**
+
+- **Binding: `extractHierarchy(vfs, model)`** — a hierarchy's nodes with
+  transforms accumulated to the root, row-major; `.MDH` first, else the
+  hierarchy inside the `.MDL`. The first question below is settled by it: a
+  body `.MDM` has no `.MDH` beside it (every human body hangs on
+  `HUMANS.MDH`), and `extractVisual` emits transforms only for attachments,
+  so the head could not be placed from JS without it.
+- **`zen-world`'s `buildNpcBody`** composes body and head in the world worker
+  (IPC `world:npcBody`): the body model (`.ASC` appended to a bare script
+  name), the head `.MMB` placed by `BIP01 HEAD`'s transform, the `_V<n>_C<n>`
+  texture variants (`variantTextureName`; a teeth texture takes the teeth
+  variant), and `Mdl_SetModelScale` applied to both. A head it cannot place is
+  left off and named in `missing`, never guessed at.
+- **`src/renderer/npc/npcVisual.ts`** — `resolveNpcVisual` reads the engine
+  externals (`Mdl_SetVisual`, `Mdl_SetVisualBody`, `Mdl_SetModelFatness`; the
+  last call wins, as the engine runs them in order) with integer constants
+  resolved through a project lookup. `B_SetNpcVisual` is expanded in place into the
+  engine calls its **retail** body makes (Daniel supplied it, 2026-09-26):
+  `HUMANS.MDS`; a man on `hum_body_Naked0`, width 0.9 below 50 strength and
+  1.1 above 100 (no scale between); a woman on `Hum_Body_Babe0` with a male
+  body texture 0–3 moved up by 4; skin colour and teeth always 0. The width
+  needs the strength *where the helper runs*: only a literal
+  `attribute[ATR_STRENGTH]` before it counts, and any script call or
+  unclassified statement in between (`B_SetAttributesToChapter` sets it) makes
+  it unknown — then the width is assumed normal and the result carries a note
+  saying so. A mod that rewrote the helper is drawn by the retail mapping
+  regardless; checking the project's own helper body against it is not done.
+
+- **Armour**: `npcBodyRequest` replaces the body with the armour item's
+  `visual_change`, read from the item's `sourceText` as the World item picker
+  reads `visual`; an armour it cannot find is named and not drawn.
+- **The panel**, `NpcVisualPreview`, sits in a sticky column beside the form
+  and follows unsaved edits (`withEdits` applies the form's pending edits in
+  memory, where the writer would put them, since statement order is what the
+  width rule reads). Constants and items come from every parsed file, not
+  `mergedSemanticModel`, which holds only the globals and the selected NPC's
+  files. The meshes come from the world worker's VFS, **which exists only
+  while a world is open** — so with none open the panel says what it would
+  draw and asks for a world. Mounting the asset sources without a world is
+  the fix if that proves to be in the way.
+
+**Still open:** fatness is not drawn (the panel says so) — it scales the
+torso, which needs per-node skinning. **Unchecked against real assets:**
+whether a soft-skin body's stored positions are its bind pose in model space.
+`ZenKit`'s `SoftSkinMesh` also carries per-vertex node weights with
+node-local positions, which suggests the engine skins from those; if the
+body draws collapsed or scattered, skinning from the weights is the fix, in
+`ExtractModelMesh`. Nothing in this container can open `HUM_BODY_NAKED0.MDM`.
+
+It needs:
 
 1. **Resolve the visual from the definition.** From `Mdl_SetVisual` +
    `Mdl_SetVisualBody` directly, or from the vanilla `B_SetNpcVisual(slf,

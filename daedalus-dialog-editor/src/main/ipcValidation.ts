@@ -15,7 +15,7 @@ import {
 /** `oCMobContainer.contents` is one archive string; retail's longest chest is
  *  under 200 characters. */
 const CONTAINER_CONTENTS_MAX = 4096;
-import type { WorldOp } from '../shared/worldTypes';
+import type { NpcBodyRequest, WorldOp } from '../shared/worldTypes';
 import type { NpcEdit } from 'daedalus-parser/npc-definition';
 import { PROJECT_ASSET_SOURCE_LIMITS } from '../shared/projectConfigTypes';
 
@@ -304,6 +304,27 @@ export function assertVisualRequest(request: unknown): asserts request is { name
   }
   if (typeof request.name !== 'string' || request.name.trim() === '') {
     throw new Error('Invalid visual name: expected a non-empty string');
+  }
+}
+
+/** An NPC preview's body request — names resolved by the VFS, never on disk. */
+export function assertNpcBodyRequest(request: unknown): asserts request is NpcBodyRequest {
+  if (!isPlainObject(request)) {
+    throw new Error('Invalid NPC body request: expected a plain object');
+  }
+  for (const key of ['model', 'body', 'head'] as const) {
+    if (typeof request[key] !== 'string' || (request[key] as string).trim() === '') {
+      throw new Error(`Invalid NPC body ${key}: expected a non-empty string`);
+    }
+  }
+  for (const key of ['bodyTexture', 'skinColor', 'headTexture', 'teethTexture'] as const) {
+    if (!Number.isInteger(request[key])) {
+      throw new Error(`Invalid NPC body ${key}: expected an integer`);
+    }
+  }
+  const { scale } = request;
+  if (!Array.isArray(scale) || scale.length !== 3 || !scale.every((v) => typeof v === 'number' && Number.isFinite(v))) {
+    throw new Error('Invalid NPC body scale: expected three finite numbers');
   }
 }
 

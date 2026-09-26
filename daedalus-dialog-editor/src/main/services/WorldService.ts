@@ -8,6 +8,8 @@ import type {
   DecodedTexture,
   VisualScene,
   InstancedPayload,
+  NpcBodyRequest,
+  NpcBodyScene,
   ResolvedOpenWorldRequest,
   VfsEntry,
   VfsSearch,
@@ -230,6 +232,12 @@ export class WorldService {
    *  panel's mesh preview. Null for a name the binding cannot extract. */
   getVisual(name: string): Promise<VisualScene | null> {
     return this.requestOnOpenWorld<VisualScene | null>('visual', { name });
+  }
+
+  /** An NPC's body and head as the engine assembles them, for the NPC editor's
+   *  preview (npc-editor.md §4). Null when the body does not resolve. */
+  getNpcBody(request: NpcBodyRequest): Promise<NpcBodyScene | null> {
+    return this.requestOnOpenWorld<NpcBodyScene | null>('npcBody', request);
   }
 
   /**

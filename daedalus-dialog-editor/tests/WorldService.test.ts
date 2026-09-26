@@ -159,6 +159,20 @@ describe('WorldService', () => {
     service.close();
   });
 
+  test('an NPC body is built in the worker from the request as sent', async () => {
+    const { worker, service } = await openedService();
+    const request = {
+      model: 'HUMANS.MDS', body: 'hum_body_Naked0', bodyTexture: 1, skinColor: 0,
+      head: 'Hum_Head_Bald', headTexture: 12, teethTexture: 0, scale: [1, 1, 1] as [number, number, number],
+    };
+
+    const body = service.getNpcBody(request);
+    expect(worker.sent.find((m) => m.op === 'npcBody')?.payload).toEqual(request);
+    worker.reply('npcBody', null);
+    await expect(body).resolves.toBeNull();
+    service.close();
+  });
+
   test('a per-request failure rejects only that request', async () => {
     const { worker, service } = await openedService();
 

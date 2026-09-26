@@ -4,13 +4,13 @@
 // boundary needs — the request/response envelope and the summary.
 
 import type {
-  AssetCatalog, DecalGroup, DecalScene, DrawGroup, InstancedVisual, PortalFinding, VisualScene,
-  VobFolders, VobIndex, WaynetPayload, WorldOp,
+  AssetCatalog, DecalGroup, DecalScene, DrawGroup, InstancedVisual, NpcBodyRequest, NpcBodyScene, PortalFinding,
+  VisualScene, VobFolders, VobIndex, WaynetPayload, WorldOp,
 } from 'zen-world';
 
 export type {
-  AssetCatalog, DecalGroup, DecalScene, DrawGroup, InstancedVisual, PortalFinding, VisualScene,
-  VobFolders, VobIndex, WaynetPayload, WorldOp,
+  AssetCatalog, DecalGroup, DecalScene, DrawGroup, InstancedVisual, NpcBodyRequest, NpcBodyScene, PortalFinding,
+  VisualScene, VobFolders, VobIndex, WaynetPayload, WorldOp,
 };
 
 // Values, not types, so they are re-exported as values: the overlay and the
@@ -140,7 +140,7 @@ export interface VfsSearch {
 
 export type WorldWorkerOp =
   | 'open' | 'worldMesh' | 'visuals' | 'texture' | 'assets' | 'assetSearch' | 'assetResolve' | 'remountVfs' | 'waynet' | 'portalFindings'
-  | 'visualBounds' | 'visual' | 'vobProps' | 'refreshIndex' | 'applyOps' | 'save' | 'close';
+  | 'visualBounds' | 'visual' | 'npcBody' | 'vobProps' | 'refreshIndex' | 'applyOps' | 'save' | 'close';
 
 /**
  * The portal checks' findings (level-editor.md §16.20 slice 3, §16.22 q1–q3),

@@ -559,6 +559,36 @@ test('extractVisual takes a .MDM\'s hierarchy from its sibling .MDH', () => {
   );
 });
 
+// --- extractHierarchy -----------------------------------------------------
+// A body .MDM has no .MDH beside it — every human body hangs on HUMANS.MDH — so
+// placing a head at BIP01 HEAD needs the hierarchy on its own (npc-editor.md §4).
+
+test('extractHierarchy returns every node with its transform accumulated to the root', () => {
+  const payload = zenkit.extractHierarchy(vfs(), 'EX_RIG.MDS');
+
+  assert.strictEqual(payload.source, 'EX_RIG.MDH');
+  assert.deepStrictEqual(payload.nodes.map((n) => [n.name, n.parent]), [['BASE', -1], ['HEAD', 0]]);
+  // HEAD sits a further (0, 20, 0) below BASE at (5, 0, 0): a node read without
+  // its parent would report (0, 20, 0).
+  const head = payload.nodes[1].transform;
+  assert.strictEqual(head.length, 16);
+  assert.deepStrictEqual([head[3], head[7], head[11]], [5, 20, 0]);
+});
+
+test('extractHierarchy reads the hierarchy inside a .MDL when there is no .MDH', () => {
+  const payload = zenkit.extractHierarchy(vfs(), 'EX_PROP.ASC');
+
+  assert.strictEqual(payload.source, 'EX_PROP.MDL');
+  assert.deepStrictEqual(
+    payload.nodes.map((n) => [n.name, n.transform[3], n.transform[7], n.transform[11]]),
+    [['BSPROOT', 1, 2, 3], ['LID', 1, 12, 3], ['SPARE', 1, 2, 10]],
+  );
+});
+
+test('extractHierarchy returns null for a model nothing maps to', () => {
+  assert.strictEqual(zenkit.extractHierarchy(vfs(), 'EX_MISSING.MDS'), null);
+});
+
 test('extractVisual returns null for a name nothing maps to', () => {
   assert.strictEqual(zenkit.extractVisual(vfs(), 'EX_MISSING.3DS'), null);
   // A texture is not a visual: the visual candidates never reach a .TEX.

@@ -151,6 +151,20 @@ export interface VisualPayload {
   chunks: MeshChunk[];
 }
 
+export interface HierarchyNode {
+  name: string;
+  /** Index into `nodes`; -1 for a root. */
+  parent: number;
+  /** Row-major, accumulated from the root — the matrix a mesh hung on this node
+   *  is placed by. */
+  transform: number[];
+}
+
+export interface HierarchyPayload {
+  source: string;
+  nodes: HierarchyNode[];
+}
+
 export interface TexturePayload {
   source: string;
   width: number;
@@ -218,6 +232,12 @@ export function extractVisual(vfs: VfsHandle, name: string): VisualPayload | nul
  *  is mounted. */
 export function vfsRead(vfs: VfsHandle, name: string): Uint8Array | null;
 export function decodeTexture(vfs: VfsHandle, name: string, level: number): TexturePayload | null;
+/**
+ * A model's node hierarchy on its own — `HUMANS.MDS` → `HUMANS.MDH`, else the
+ * hierarchy inside its `.MDL`. A body `.MDM` has no `.MDH` beside it, so this is
+ * what places a separately extracted head at `BIP01 HEAD`.
+ */
+export function extractHierarchy(vfs: VfsHandle, name: string): HierarchyPayload | null;
 /**
  * Move one VOB, addressed by its index path down the children lists ("0/2"),
  * to a position in ZenGin space. Translates the bbox by the same delta — the

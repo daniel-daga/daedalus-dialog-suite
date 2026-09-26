@@ -10,8 +10,8 @@
 // addon and without a Gothic install.
 
 import {
-  buildDecalBillboards, buildInstancedVisuals, buildVisual, buildWorldMesh, visualBounds,
-  type SceneBinding, type VobIndex,
+  buildDecalBillboards, buildInstancedVisuals, buildNpcBody, buildVisual, buildWorldMesh, variantTextureName,
+  visualBounds, type NpcBinding, type SceneBinding, type VobIndex,
 } from '../src/scene';
 import type { MeshChunk } from '../src/render';
 
@@ -188,6 +188,102 @@ describe('zen-world/scene — buildVisual', () => {
   test("visualBounds is buildVisual's bounds — one path, not two that agree", () => {
     const b = binding(() => [chunk('A.TGA')]);
     expect(visualBounds(b, VFS, 'BARREL.3DS')).toEqual(buildVisual(b, VFS, 'BARREL.3DS')!.bounds);
+  });
+});
+
+describe('zen-world/scene — buildNpcBody', () => {
+  // An NPC as the engine assembles it (npc-editor.md §4): the body mesh, the
+  // head hung on BIP01 HEAD of the model's hierarchy, and the texture variants
+  // Mdl_SetVisualBody picks.
+  const HEAD_AT = [1, 0, 0, 0, 0, 1, 0, 160, 0, 0, 1, 0, 0, 0, 0, 1];
+  const REQUEST = {
+    model: 'HUMANS.MDS', body: 'hum_body_Naked0', bodyTexture: 1, skinColor: 2,
+    head: 'Hum_Head_Bald', headTexture: 12, teethTexture: 3, scale: [1, 1, 1] as [number, number, number],
+  };
+
+  function npcBinding(
+    meshes: Record<string, MeshChunk[]>,
+    nodes: Array<{ name: string; transform: number[] }> | null = [{ name: 'BIP01 HEAD', transform: HEAD_AT }],
+  ): NpcBinding & { calls: string[] } {
+    const calls: string[] = [];
+    return {
+      calls,
+      extractVisual: (_vfs, name) => {
+        calls.push(name);
+        const chunks = meshes[name.toUpperCase()];
+        return chunks === undefined ? null : { source: name.toUpperCase(), chunks };
+      },
+      extractHierarchy: (_vfs, name) => {
+        calls.push(name);
+        return nodes === null ? null : { nodes };
+      },
+    };
+  }
+  const MESHES = {
+    'HUM_BODY_NAKED0.ASC': [chunk('HUM_BODY_NAKED_V0_C0.TGA')],
+    'HUM_HEAD_BALD.MMS': [chunk('HUM_HEAD_V0_C0.TGA'), chunk('HUM_TEETH_V0.TGA')],
+  };
+  const texturesOf = (scene: { groups: Array<{ texture: string }> }) => scene.groups.map((g) => g.texture);
+
+  test('dresses the body and the head in the variants the NPC names', () => {
+    const b = npcBinding(MESHES);
+    const scene = buildNpcBody(b, VFS, REQUEST)!;
+
+    // A body's mesh is named without extension in scripts; it is a model, as
+    // a head is a morph mesh.
+    expect(b.calls).toEqual(['hum_body_Naked0.ASC', 'HUMANS.MDS', 'Hum_Head_Bald.MMS']);
+    expect(texturesOf(scene)).toEqual(['HUM_BODY_NAKED_V1_C2.TGA', 'HUM_HEAD_V12_C2.TGA', 'HUM_TEETH_V3.TGA']);
+    expect(scene.missing).toEqual([]);
+  });
+
+  test('hangs the head on BIP01 HEAD, and leaves the body where it is', () => {
+    const scene = buildNpcBody(npcBinding(MESHES), VFS, REQUEST)!;
+    expect(new Float32Array(scene.groups[0].positions)[7]).toBeCloseTo(1);
+    // The head chunk's vertex (0, 1, 0) lands at (0, 161, 0).
+    expect(new Float32Array(scene.groups[1].positions)[7]).toBeCloseTo(161);
+    expect(scene.bounds[4]).toBeCloseTo(161);
+  });
+
+  test('scales body and head alike, head position included', () => {
+    const scene = buildNpcBody(npcBinding(MESHES), VFS, { ...REQUEST, scale: [2, 1, 1] })!;
+    expect(new Float32Array(scene.groups[0].positions)[3]).toBeCloseTo(2);
+    expect(new Float32Array(scene.groups[1].positions)[3]).toBeCloseTo(2);
+    expect(new Float32Array(scene.groups[1].positions)[7]).toBeCloseTo(161);
+  });
+
+  test('keeps a body name that already has an extension — an armour visual_change', () => {
+    const b = npcBinding({ ...MESHES, 'ARMOR_VLK_H.ASC': [chunk('ARMOR_VLK_H_V0_C0.TGA')] });
+    const scene = buildNpcBody(b, VFS, { ...REQUEST, body: 'Armor_Vlk_H.asc' })!;
+    expect(b.calls[0]).toBe('Armor_Vlk_H.asc');
+    expect(texturesOf(scene)[0]).toBe('ARMOR_VLK_H_V1_C2.TGA');
+  });
+
+  test('is null when the body does not resolve', () => {
+    expect(buildNpcBody(npcBinding({}), VFS, REQUEST)).toBeNull();
+  });
+
+  test('draws the body alone, and says why, when the head cannot be placed', () => {
+    const noHead = buildNpcBody(npcBinding({ 'HUM_BODY_NAKED0.ASC': MESHES['HUM_BODY_NAKED0.ASC'] }), VFS, REQUEST)!;
+    expect(noHead.groups).toHaveLength(1);
+    expect(noHead.missing).toEqual(['Head mesh Hum_Head_Bald did not resolve']);
+
+    const noNode = buildNpcBody(npcBinding(MESHES, [{ name: 'BIP01', transform: HEAD_AT }]), VFS, REQUEST)!;
+    expect(noNode.groups).toHaveLength(1);
+    expect(noNode.missing).toEqual(['HUMANS.MDS has no BIP01 HEAD node to hang the head on']);
+
+    const noModel = buildNpcBody(npcBinding(MESHES, null), VFS, REQUEST)!;
+    expect(noModel.missing).toEqual(['HUMANS.MDS has no BIP01 HEAD node to hang the head on']);
+  });
+});
+
+describe('zen-world/scene — variantTextureName', () => {
+  test('substitutes the variation and colour channels as ZenGin does', () => {
+    expect(variantTextureName('HUM_BODY_NAKED_V0_C0.TGA', 1, 2)).toBe('HUM_BODY_NAKED_V1_C2.TGA');
+    expect(variantTextureName('Hum_Head_V0_C0', 137, 0)).toBe('Hum_Head_V137_C0');
+  });
+
+  test('leaves a texture without those channels alone', () => {
+    expect(variantTextureName('HUM_TEETH.TGA', 3, 1)).toBe('HUM_TEETH.TGA');
   });
 });
 
