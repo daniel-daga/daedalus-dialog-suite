@@ -149,11 +149,11 @@ test.describe('Mock API Integration', () => {
   test('should have window.editorAPI available', async ({ page }) => {
     await page.goto('/');
 
-    // Check that editorAPI is defined
-    const hasAPI = await page.evaluate(() => {
-      return typeof window.editorAPI !== 'undefined';
-    });
-
-    expect(hasAPI).toBeTruthy();
+    // main.tsx injects it after the bundle runs, so read it once it has — an
+    // immediate read races the boot and fails under load.
+    await expect(async () => {
+      const hasAPI = await page.evaluate(() => typeof window.editorAPI !== 'undefined');
+      expect(hasAPI).toBeTruthy();
+    }).toPass({ timeout: 5000 });
   });
 });

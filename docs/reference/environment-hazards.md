@@ -344,8 +344,9 @@ trusting master for a release, not after.
   third cause ("two different versions of @playwright/test") is the real one.
   Run `./node_modules/.bin/playwright test …` from `daedalus-dialog-editor`
   instead. Seen 2026-09-13; 179 harness specs then ran, 178 green with one
-  parallel-load flake (`file-opening.spec.ts` › *should have window.editorAPI
-  available*, green on its own).
+  failure (`file-opening.spec.ts` › *should have window.editorAPI available*),
+  which was a race in the spec — it read `window.editorAPI` straight after
+  `goto` — and has waited for it since 2026-09-26.
 - The container's own instructions say not to run `playwright install`. Nothing
   above needs it.
 - **A cold clone needs `zen-world` built before the harness resolves at all.**
