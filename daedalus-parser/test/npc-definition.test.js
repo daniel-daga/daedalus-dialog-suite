@@ -301,6 +301,36 @@ test('an edited instance saves through the model: the generator re-emits its sou
   assert.ok(!out.includes('GIL_BAU'));
 });
 
+// #284's acceptance, on the corpus file rather than a snippet: a whole file
+// with several declarations saves through the generator, and an edit to one
+// NPC changes exactly its own line of that file. Held since #286 made the file
+// itself round-trip byte-identical.
+test('a corpus NPC edited and saved changes exactly one line of its file', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const { SemanticCodeGenerator } = require('../dist/codegen/generator');
+  const file = fs.readFileSync(path.join(__dirname, 'fixtures', 'corpus', 'items-npcs-mds.d'), 'utf8');
+  const save = (edits) => {
+    const model = parseSemanticModel(file);
+    const onar = model.instances.BAU_900_Onar;
+    onar.sourceText = applyNpcEdits(onar.sourceText, edits);
+    return new SemanticCodeGenerator({ includeComments: true, sectionHeaders: false, preserveSourceStyle: true })
+      .generateSemanticModel(model);
+  };
+
+  assert.equal(save([]), file, 'unedited, the file saves byte-identical');
+  assert.deepEqual(changedLines(file, save([{ op: 'set', field: 'guild', value: 'GIL_SLD' }])), {
+    removed: ['\tguild \t\t= GIL_BAU;'],
+    added: ['\tguild \t\t= GIL_SLD;']
+  });
+  assert.deepEqual(changedLines(file, save([{ op: 'set', field: 'level', value: '10' }])).removed, []);
+  assert.deepEqual(changedLines(file, save([{ op: 'set', field: 'level', value: '10' }])).added.length, 1);
+  assert.deepEqual(changedLines(file, save([{ op: 'remove', field: 'voice' }])), {
+    removed: ['\tvoice \t\t= 14;'],
+    added: []
+  });
+});
+
 test('refuses source that is not a single well-formed instance', () => {
   assert.throws(() => extractNpcDefinition('func void X() {};'), /instance/);
   assert.throws(() => extractNpcDefinition('instance A (C_Npc) { name = ; };'), /syntax/i);

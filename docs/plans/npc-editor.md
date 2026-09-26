@@ -37,6 +37,11 @@ What already exists and this plan reuses:
 
 ## 2. Phase 1 — a structured NPC model in the parser
 
+**Built (#284).** Its acceptance is held by `test/npc-definition.test.js`: the
+corpus file `items-npcs-mds.d` saves byte-identical unedited, and a set, add or
+remove on its retail-shaped Onar changes exactly one line of the file. That
+last check needed #286 (blank lines between declarations) first.
+
 This is the only large phase; the others are thin on top of it.
 
 An extractor over an instance whose parent resolves to `C_NPC` (directly or
