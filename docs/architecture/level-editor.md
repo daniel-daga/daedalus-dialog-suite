@@ -3870,8 +3870,24 @@ so and name the GMBT build. A mesh stays placeable: the VOB names the source
 file, as retail's do. `.MDS` is left out, since a model script compiles to an
 `.MSB` nothing here resolves. The preview decodes a `.TGA` as a texture now,
 by the source name the binding already maps to `-C.TEX`. The tag itself
-compiles nothing; previewing a `.3DS` directly, with no compile at all, is
-#297.
+compiles nothing.
+
+**A raw `.3DS` is read anyway (#297).** When the binding extracts nothing for a
+`.3DS` — no compiled half is mounted — the worker reads the file's bytes
+(`vfsRead`) and `parse3ds` in `zen-world/src/assets/threeDs.ts` turns them into
+the same `{ source, chunks }` a compiled mesh gives, so the merge, the preview,
+the thumbnails, `visualBounds` for a placement's box and the viewport take it
+unchanged; `extractVisualOrRaw3ds` is the one place that decides, and a
+compiled half always wins. The conversion is **Y and Z swapped** — 3ds Max is
+right-handed Z-up, ZenGin left-handed Y-up — which, being a mirror, also turns
+Max's counter-clockwise faces into ZenGin's clockwise ones, so the face order is
+kept; **V is flipped** (3DS bottom-left, Direct3D top-left); normals are
+averaged per vertex, reversed from the right-hand cross because of that
+winding. The winding was checked against how the editor draws retail meshes
+(mirrored X, back faces culled), but the convention as a whole was not checked
+against a compiled `.MRM` of the same source — no such pair is here
+(§16.41). The row keeps its "not compiled" tag and the preview says it is
+showing the source. Models (`.ASC`) and raw textures (`.TGA`) are not read.
 
 **And a button runs the compile (#296).** Once a source on screen is not
 compiled, the browser offers **Compile**, which runs

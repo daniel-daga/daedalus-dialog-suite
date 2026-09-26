@@ -214,6 +214,25 @@ describe('WorldAssetPreview', () => {
     });
   });
 
+  // #297: a raw `.3DS` is read by the editor itself now, and the preview says
+  // it is looking at the source rather than at what the game will load.
+  it('says when the mesh was read from the uncompiled .3DS itself', async () => {
+    const loadVisual = jest.fn(async () => ({ ...crate(), name: 'KM_BUSH.3DS', source: 'KM_BUSH.3DS' }));
+    render(<WorldAssetPreview path="mod/Meshes/KM_BUSH.3DS" loadTexture={noVisual} loadVisual={loadVisual} />);
+
+    await screen.findByTestId('world-asset-preview-mesh');
+    expect(screen.getByTestId('world-asset-preview-raw')).toHaveTextContent(/uncompiled \.3DS/);
+    expect(screen.getByTestId('world-asset-preview-raw')).toHaveTextContent(/GMBT build/);
+  });
+
+  it('says nothing of the kind for a compiled mesh', async () => {
+    const loadVisual = jest.fn(async () => ({ ...crate(), name: 'NW_CRATE.3DS', source: 'NW_CRATE.MRM' }));
+    render(<WorldAssetPreview path="Meshes/NW_CRATE.3DS" loadTexture={noVisual} loadVisual={loadVisual} />);
+
+    await screen.findByTestId('world-asset-preview-mesh');
+    expect(screen.queryByTestId('world-asset-preview-raw')).not.toBeInTheDocument();
+  });
+
   it('shows the source a name resolved to when it differs', async () => {
     const loadVisual = jest.fn(async () => ({ ...crate(), name: 'NW_CRATE.3DS', source: 'NW_CRATE.MRM' }));
     render(<WorldAssetPreview path="Meshes/NW_CRATE.3DS" loadTexture={noVisual} loadVisual={loadVisual} />);

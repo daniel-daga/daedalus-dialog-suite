@@ -9,6 +9,7 @@ import {
   checkPortals,
   commitOps,
   createVobReader,
+  extractVisualOrRaw3ds,
   groupTransferables,
   isStructuralOp,
   isWaynetOp,
@@ -73,10 +74,19 @@ const binding: SceneBinding = {
     const mesh = zenkit.extractWorldMesh(world as zenkit.WorldHandle);
     return { ...mesh, chunks: mesh.chunks.map(withLights) };
   },
-  extractVisual: (vfsHandle, name) => {
-    const visual = zenkit.extractVisual(vfsHandle as zenkit.VfsHandle, name);
-    return visual === null ? null : { source: visual.source, chunks: visual.chunks.map(withLights) };
-  },
+  // A mod's `.3DS` that no GMBT build has compiled yet is read raw (#297), so
+  // it previews, thumbnails and draws; a compiled half wins where there is one.
+  extractVisual: (vfsHandle, name) => extractVisualOrRaw3ds(
+    (wanted) => {
+      const visual = zenkit.extractVisual(vfsHandle as zenkit.VfsHandle, wanted);
+      return visual === null ? null : { source: visual.source, chunks: visual.chunks.map(withLights) };
+    },
+    (wanted) => {
+      const bytes = zenkit.vfsRead(vfsHandle as zenkit.VfsHandle, wanted);
+      return bytes === null ? null : bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    },
+    name,
+  ),
 };
 
 const timings: Record<string, number> = {};

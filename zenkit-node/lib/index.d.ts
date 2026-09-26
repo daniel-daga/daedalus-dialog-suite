@@ -213,6 +213,10 @@ export function vfsList(vfs: VfsHandle, path?: string): VfsEntry[] | null;
  */
 export function vfsFind(vfs: VfsHandle, query: string, options?: { limit?: number }): VfsSearch;
 export function extractVisual(vfs: VfsHandle, name: string): VisualPayload | null;
+/** The bytes of one mounted file, found by name anywhere in the namespace as
+ *  `vfsResolve` finds one — a Node `Buffer` — or null when nothing by that name
+ *  is mounted. */
+export function vfsRead(vfs: VfsHandle, name: string): Uint8Array | null;
 export function decodeTexture(vfs: VfsHandle, name: string, level: number): TexturePayload | null;
 /**
  * Move one VOB, addressed by its index path down the children lists ("0/2"),

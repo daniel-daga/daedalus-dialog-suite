@@ -290,7 +290,7 @@ export const RoleFacet: React.FC<{
 
 /** What a "not compiled" tag says when hovered — the row and the tile share it
  *  (#294), so the two cannot give different answers. */
-export const UNCOMPILED_TITLE = 'Not compiled yet. ZenGin and this editor read the compiled file (.MRM, .MDL, -C.TEX); a GMBT build writes it into _work/Data/*/_compiled — the Compile button above the list runs one. It can still be placed: the VOB names this source file.';
+export const UNCOMPILED_TITLE = 'Not compiled yet. ZenGin reads the compiled file (.MRM, .MDL, -C.TEX) — this editor shows a raw .3DS anyway; a GMBT build writes it into _work/Data/*/_compiled — the Compile button above the list runs one. It can still be placed: the VOB names this source file.';
 
 /** The "not compiled" tag on a source file a GMBT build has not compiled (#294). */
 export const UncompiledTag: React.FC<{ name: string; sx?: object }> = ({ name, sx }) => (

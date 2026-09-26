@@ -324,6 +324,13 @@ const WorldAssetPreview: React.FC<WorldAssetPreviewProps> = ({
             {plural(visual.triangleCount, 'triangle')} · {plural(visual.groups.length, 'draw group')}
             {visual.source.toUpperCase() !== name.toUpperCase() && ` · resolved to ${visual.source}`}
           </Typography>
+          {/* Read raw (#297): the compiled half is what the game loads, and a
+              preview of the source says so rather than passing for it. */}
+          {visual.source.toUpperCase().endsWith('.3DS') && (
+            <Typography variant="caption" color="warning.main" sx={{ display: 'block' }} data-testid="world-asset-preview-raw">
+              Read from the uncompiled .3DS itself — the game loads the .MRM a GMBT build makes of it.
+            </Typography>
+          )}
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
             Drag to orbit, wheel to zoom, right-drag to pan.
           </Typography>
@@ -345,7 +352,7 @@ const WorldAssetPreview: React.FC<WorldAssetPreviewProps> = ({
 
       {uncompiled && (
         <Typography variant="caption" color="warning.main" data-testid="world-asset-preview-uncompiled">
-          {`This file has not been compiled yet. ZenGin reads the compiled ${kind === 'texture' ? '-C.TEX' : '.MRM or .MDL'}, and so does this preview; a GMBT build writes it into _work/Data/*/_compiled — Compile, above the asset list, runs one.`}
+          {`This file has not been compiled yet. ZenGin reads the compiled ${kind === 'texture' ? '-C.TEX' : '.MRM or .MDL'}, and this preview can read only a raw .3DS without it; a GMBT build writes it into _work/Data/*/_compiled — Compile, above the asset list, runs one.`}
           {kind === 'mesh' && ' It can still be placed: the VOB names this source file, and it shows up once it is compiled.'}
         </Typography>
       )}
