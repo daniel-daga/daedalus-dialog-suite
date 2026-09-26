@@ -3394,6 +3394,7 @@ confirm the staged file's hash, and keep a control run in the same session
 | 11 | A waypoint deleted **and undone**, then saved — the restored point back in its own slot with its edges, and NPC routines still reaching it | 2026-09-13 | §7 |
 | 12 | A **VOB** deleted and undone, then saved — a retail `oCMobInter` or the like back in its own slot with its subtree, still usable in game. The restore is the retained pointer rather than a rebuild, so what this witnesses is the *save* after it: that the writer emits a re-inserted subtree as it found it | 2026-09-14 | §7 |
 | 13 | Placement collision: a placed bush or grass (`cdStatic`/`cdDynamic` false) walked through, a placed crate or tree (both true) stopping the player. And the name lists in `zen-world/src/model/placementCollision.ts` checked against the flags the retail worlds carry per visual — a disagreement means the lists are wrong, and a table read off those worlds would replace them | 2026-09-26 | #291 |
+| 14 | A MOB placed from the asset browser: a chest (`oCMobContainer`, `focusName` `MOBNAME_CHEST`) opened, a door used, a bench (`oCMobInter`) sat on — and the scheme table in `zen-world/src/model/mobClasses.ts` checked against the class each retail visual is placed as. Also whether a static mesh on `oCMobInter` costs anything, which Florian asked and nobody has measured | 2026-09-26 | #290 |
 
 **Out of this list by decision, not by omission.** `oCZoneMusic.volume` is
 unclaimed rather than tested badly: no ear can rank two music volumes in a live

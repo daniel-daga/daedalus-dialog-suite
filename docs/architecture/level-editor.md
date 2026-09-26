@@ -2610,6 +2610,46 @@ alone would refuse every number typed into it. Both layers therefore read the
 catalogue (`fieldOf(className, key)`) rather than listing the classes a second
 time, which is also what keeps them from drifting apart.
 
+#### Which class a visual is placed as, and what a MOB is (2026-09-26; #288, #290)
+
+**ZenGin reads a MOB's scheme off its visual's name** — the part before the
+first underscore, `BENCH_1_OC.ASC` is `BENCH` — and plays that scheme's
+animations; no `scemeName` is stored anywhere (spacer-gap-triage.md, B). So one
+rule in `zen-world/src/model/mobClasses.ts` answers both questions Florian
+asked: an **animated model** (`.ASC`, `.MDS`, `.MDL`, `.MDM`, `.MSB`) whose
+scheme the table knows is a MOB, and the scheme names its class — `CHESTBIG`
+and `CHESTSMALL` an `oCMobContainer`, `DOOR` an `oCMobDoor`, `LADDER` an
+`oCMobLadder`, `LEVER`/`TOUCHPLATE`/`TURNSWITCH` an `oCMobSwitch`, `VWHEEL` an
+`oCMobWheel`, and seats, beds, work places and shrines a plain `oCMobInter`.
+Beds included: retail has 7 `oCMobBed` against its `oCMobInter` beds, so the
+majority is what an author gets. **A static mesh is never a MOB**, whatever it
+is called — it has no animations for a scheme to play — which is what keeps a
+rock or a bush a `zCVob`.
+
+- **The asset browser's VOB / MOB facet (#288)** is `assetRole` over that rule,
+  in the directory walk and in the Favorites and Categories views alike;
+  directories stay, and a file that is neither (a texture, a script) is not
+  what either answer asked for.
+- **A placement from the asset browser (#290)** arms the class, and the status
+  bar says it (`CHESTBIG_OCCHESTLARGE.MDS as oCMobContainer`). A container or a
+  door also gets retail's `focusName` — the measured example in
+  `focusNameExpectation` — as a `SetVobClassProp` in the add's own batch,
+  `from` equal to `to` as a copy's is, since the add's inverse removes the VOB.
+  An `oCMobInter` gets none: its name depends on what it is, 30-odd values. The
+  Place VOB dialog stays the override, and takes a visual for the MOB classes
+  now as well as for `zCVob`.
+- **The property grid warns on a static mesh carrying a MOB class** — Florian's
+  rocks placed as `oCMobInter`. It is certain for a mesh and said about nothing
+  else: a model whose scheme the table does not know may be a mod's own. The
+  class cannot be changed in place (`AddVob` decides it), so the warning says to
+  place it again.
+
+The scheme table is the modding community's list of Gothic II's schemes, not a
+measurement; reading which class each retail visual is placed as wants a Gothic
+install, and would replace the table rather than sit beside it (§16.41).
+Whether a static mesh on `oCMobInter` costs the engine anything — Florian's
+performance worry — is not measured either.
+
 #### A script function name stops being free text (2026-09-13)
 
 The last of the world → script cross-references (#269). `oCTriggerScript.function`

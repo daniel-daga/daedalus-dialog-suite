@@ -7,3 +7,4 @@ export * from './assetCatalog';
 export * from './containerContents';
 export * from './placementCollision';
 export * from './subtreeTransforms';
+export * from './mobClasses';

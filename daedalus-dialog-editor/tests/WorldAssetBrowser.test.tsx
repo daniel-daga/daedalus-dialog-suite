@@ -516,6 +516,49 @@ describe('WorldAssetBrowser', () => {
     });
   });
 
+  // #288: Florian's "Filtern nach vob und Mob". A MOB is an animated model
+  // whose name starts with an interaction scheme; any other visual is a VOB.
+  describe('the VOB / MOB facet', () => {
+    const MIXED: VfsEntry[] = [
+      { name: 'Sub', type: 'directory' },
+      { name: 'CHESTBIG_OCCHESTLARGE.MDS', type: 'file' },
+      { name: 'BENCH_1_OC.ASC', type: 'file' },
+      { name: 'NW_CRATE.MRM', type: 'file' },
+      { name: 'SHEEP.MDL', type: 'file' },
+      { name: 'NW_WOOD-C.TEX', type: 'file' },
+    ];
+    const list = jest.fn(async () => MIXED);
+    const shown = () => ['Sub', 'CHESTBIG_OCCHESTLARGE.MDS', 'BENCH_1_OC.ASC', 'NW_CRATE.MRM', 'SHEEP.MDL', 'NW_WOOD-C.TEX']
+      .filter((name) => screen.queryByTestId(`world-asset-${name}`) !== null);
+
+    it('narrows the files to MOBs or to VOBs, keeps the directories, and says it is narrowing', async () => {
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} />);
+      await screen.findByTestId('world-asset-NW_CRATE.MRM');
+      const facet = screen.getByTestId('world-asset-role');
+      expect(facet).toHaveValue('all');
+
+      fireEvent.change(facet, { target: { value: 'mob' } });
+      expect(shown()).toEqual(['Sub', 'CHESTBIG_OCCHESTLARGE.MDS', 'BENCH_1_OC.ASC']);
+      expect(screen.getByTestId('world-asset-count')).toHaveTextContent('3 of 6');
+
+      // A texture is neither, so a VOB listing leaves it out too.
+      fireEvent.change(facet, { target: { value: 'vob' } });
+      expect(shown()).toEqual(['Sub', 'NW_CRATE.MRM', 'SHEEP.MDL']);
+    });
+
+    it('holds across a navigation, as the source facet does', async () => {
+      const user = userEvent.setup();
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} />);
+      await screen.findByTestId('world-asset-NW_CRATE.MRM');
+      fireEvent.change(screen.getByTestId('world-asset-role'), { target: { value: 'mob' } });
+
+      await user.click(screen.getByTestId('world-asset-Sub'));
+      await screen.findByTestId('world-asset-CHESTBIG_OCCHESTLARGE.MDS');
+      expect(screen.getByTestId('world-asset-role')).toHaveValue('mob');
+      expect(screen.queryByTestId('world-asset-NW_CRATE.MRM')).not.toBeInTheDocument();
+    });
+  });
+
   describe('the grid', () => {
     it('is not offered without a queue to draw from', async () => {
       const { list } = listing();
@@ -941,6 +984,27 @@ describe('WorldAssetBrowser', () => {
       render(<WorldAssetBrowser listAssets={listing().list} onPreview={jest.fn()} thumbnails={queue()} />);
       await screen.findByTestId('world-asset-MOD_ONLY.MRM');
       expect(within(screen.getByTestId('world-asset-MOD_ONLY.MRM')).queryByTestId('world-asset-star')).not.toBeInTheDocument();
+    });
+
+    it('narrows a category to its MOBs with the same facet (#288)', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const props = catalogProps({
+        catalog: {
+          favorites: [],
+          categories: [{ path: 'Einrichtung', visuals: ['BENCH_1_OC.ASC', 'NW_CITY_TABLE_01.3DS'] }],
+        },
+      });
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} thumbnails={queue()} catalog={props} />);
+      await screen.findByTestId('world-asset-Meshes');
+      await user.click(screen.getByTestId('world-asset-mode-categories'));
+      await user.click(screen.getByTestId('world-asset-category-Einrichtung'));
+      expect(screen.getByTestId('world-asset-tile-NW_CITY_TABLE_01.3DS')).toBeInTheDocument();
+
+      fireEvent.change(screen.getByTestId('world-asset-catalog-role'), { target: { value: 'mob' } });
+
+      expect(screen.getByTestId('world-asset-tile-BENCH_1_OC.ASC')).toBeInTheDocument();
+      expect(screen.queryByTestId('world-asset-tile-NW_CITY_TABLE_01.3DS')).not.toBeInTheDocument();
     });
 
     // The catalogue filter (level-editor.md §16.37 row 3; #243). The seed

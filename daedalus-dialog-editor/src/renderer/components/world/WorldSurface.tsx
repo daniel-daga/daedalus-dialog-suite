@@ -10,7 +10,7 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import {
   AUTHORABLE_VOB_CLASSES,
-  addVob, classPropKeys, alignSubtreesToNormal,
+  addVob, carriesVisual, classPropKeys, alignSubtreesToNormal, mobClassOf,
   deleteVobs, dropSubtreesToGround,
   duplicateVobs, emptyVobFolders,
   matchVobs,
@@ -96,12 +96,29 @@ const DEFAULT_SPAWN_TIME = 8 * 60;
 interface PlaceSpec {
   vobClass: AuthorableVobClass; name: string; visual: string; instance: string;
   parent: number | null;
+  /** A MOB's `focusName`, set in the same batch as the add — only where
+   *  `mobClassOf` has retail's name for the class to give (#290). */
+  focusName?: string;
 }
 const FRESH_PLACE: PlaceSpec = { vobClass: 'zCVob', name: '', visual: '', instance: '', parent: null };
+/**
+ * What a placement of `visual` from the asset browser arms (#290): the class
+ * its interaction scheme names — a chest an `oCMobContainer`, a bench an
+ * `oCMobInter` — or a plain `zCVob` for a static mesh or any model with no
+ * scheme. The Place VOB dialog is still where any other class is chosen.
+ */
+function placeSpecFor(visual: string): PlaceSpec {
+  const mob = mobClassOf(visual);
+  return mob === null
+    ? { ...FRESH_PLACE, visual }
+    : { ...FRESH_PLACE, visual, vobClass: mob.class, ...(mob.focusName === undefined ? {} : { focusName: mob.focusName }) };
+}
 /** How the status bar names an armed placement: the visual or the instance
- *  when there is one, the class otherwise. */
+ *  when there is one, the class otherwise — and a MOB's class beside its
+ *  visual, so a chest that will be placed as a chest says so (#290). */
 function placeLabel(spec: PlaceSpec): string {
   if (spec.vobClass === 'zCVob' && spec.visual.trim() !== '') return spec.visual.trim();
+  if (carriesVisual(spec.vobClass) && spec.visual.trim() !== '') return `${spec.visual.trim()} as ${spec.vobClass}`;
   if (spec.vobClass === 'oCItem' && spec.instance.trim() !== '') return spec.instance.trim();
   return spec.vobClass;
 }
@@ -185,7 +202,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   // preview panel's button does, offered where the pointer already is.
   const assetPlacement = useMemo(() => ({
     canPlace: isPlaceableVisual,
-    onPlace: (name: string) => setArmed({ kind: 'place', spec: { ...FRESH_PLACE, visual: name } }),
+    onPlace: (name: string) => setArmed({ kind: 'place', spec: placeSpecFor(name) }),
   }), []);
 
   /** The clipboard is cleared when a world opens, and `openWorldAt` is well
@@ -1404,13 +1421,14 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     const { summary: current } = useWorldStore.getState();
     if (current === null) return;
 
-    // Only a `zCVob` carries a visual from this dialog. An item has none in the
-    // file — the engine derives one from its script instance — and a light or a
-    // sound *is* what it does rather than something drawn, so for all three
-    // there is nothing to resolve a box from either, and they keep the binding's
-    // default exactly as a VOB with an unresolvable visual does.
+    // Only a `zCVob` and the MOB family carry a visual from here. An item has
+    // none in the file — the engine derives one from its script instance — and
+    // a light or a sound *is* what it does rather than something drawn, so for
+    // those there is nothing to resolve a box from either, and they keep the
+    // binding's default exactly as a VOB with an unresolvable visual does.
     const item = spec.vobClass === 'oCItem';
-    const visual = spec.vobClass === 'zCVob' ? spec.visual.trim() : '';
+    // A MOB's visual is what ZenGin reads its scheme off (#290).
+    const visual = carriesVisual(spec.vobClass) ? spec.visual.trim() : '';
     const bounds = visual === '' ? null : await window.editorAPI.getVisualBounds(visual)
       .catch(() => null);
 
@@ -1429,7 +1447,20 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       }),
     };
 
-    await commitOps([addVob(vobModelOf(current).reader, placed, spec.parent)]);
+    const add = addVob(vobModelOf(current).reader, placed, spec.parent);
+    // Retail's name for a chest or a door, in the same batch — the engine's
+    // crosshair finds a MOB through it, and an empty one is a chest nobody can
+    // open. `from` is `to`, as a copy's is: the add's own inverse removes the
+    // VOB, so there is no earlier value to write back.
+    const named: WorldOp[] = spec.focusName === undefined || spec.vobClass === 'zCVob' ? [] : [{
+      op: 'SetVobClassProp',
+      vob: add.vob,
+      path: add.path,
+      className: spec.vobClass,
+      from: { focusName: spec.focusName },
+      to: { focusName: spec.focusName },
+    }];
+    await commitOps([add, ...named]);
   }, [commitOps, assetCatalogProps]);
 
   /**
@@ -2277,7 +2308,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                     resolveAsset={resolveAsset}
                     selectionCount={selection.length}
                     onUseAsVisual={useAssetAsVisual}
-                    onPlace={(name) => setArmed({ kind: 'place', spec: { ...FRESH_PLACE, visual: name } })}
+                    onPlace={(name) => setArmed({ kind: 'place', spec: placeSpecFor(name) })}
                   />
                 )
                 : selectedWaypoint !== null && waynet
@@ -2627,7 +2658,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               sx={{ mt: 2 }}
             />
           )}
-          {placing?.vobClass === 'zCVob' && (
+          {placing !== null && carriesVisual(placing.vobClass) && (
             <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mt: 2 }}>
               <TextField
                 fullWidth

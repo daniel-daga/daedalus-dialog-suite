@@ -217,6 +217,65 @@ describe('Place in world from an asset row', () => {
   });
 });
 
+// #290: "je nach Asset von selbst checkt welche art vob/mob es sein soll" —
+// placing from the asset browser arms the class the visual's scheme names.
+describe('the class a placement from an asset gets', () => {
+  async function placeFromRow(name: string) {
+    await openWorld();
+    api.listWorldAssets.mockResolvedValue([{ name, type: 'file' }] as never);
+    fireEvent.click(screen.getByTestId('world-panel-assets'));
+    fireEvent.contextMenu(await screen.findByTestId(`world-asset-${name}`));
+    fireEvent.click(await screen.findByTestId('world-asset-place-menu'));
+  }
+
+  it('is oCMobContainer for a chest, with retail\'s focus name, in one batch', async () => {
+    await placeFromRow('CHESTBIG_OCCHESTLARGE.MDS');
+    // The status bar says what it will be, so it is no surprise.
+    expect(hint()).toHaveTextContent('CHESTBIG_OCCHESTLARGE.MDS');
+    expect(hint()).toHaveTextContent('oCMobContainer');
+
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    const [add, name] = firstOps();
+    expect(add).toMatchObject({
+      op: 'AddVob', to: { class: 'oCMobContainer', visual: 'CHESTBIG_OCCHESTLARGE.MDS', position: TERRAIN },
+    });
+    expect(name).toMatchObject({
+      op: 'SetVobClassProp', path: (add as { path: string }).path, className: 'oCMobContainer',
+      to: { focusName: 'MOBNAME_CHEST' },
+    });
+  });
+
+  it('is oCMobInter for a bench, with no focus name to guess', async () => {
+    await placeFromRow('BENCH_1_OC.ASC');
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    expect(firstOps()).toHaveLength(1);
+    expect(firstOps()[0]).toMatchObject({ op: 'AddVob', to: { class: 'oCMobInter', visual: 'BENCH_1_OC.ASC' } });
+  });
+
+  it('stays a plain zCVob for a rock, whatever it is called', async () => {
+    await placeFromRow('BENCH_ROCK.3DS');
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    const [add] = firstOps();
+    expect(add).toMatchObject({ op: 'AddVob', to: { visual: 'BENCH_ROCK.3DS' } });
+    expect((add as { to: { class?: string } }).to.class).toBeUndefined();
+  });
+
+  it('can still be anything the Place VOB dialog says — a MOB class there takes a visual too', async () => {
+    await openWorld();
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    fireEvent.click(await screen.findByTestId('world-place-vob'));
+    fireEvent.change(screen.getByTestId('world-place-class'), { target: { value: 'oCMobInter' } });
+    fireEvent.change(screen.getByTestId('world-place-visual'), { target: { value: 'NW_CITY_TABLE_01.3DS' } });
+    fireEvent.click(screen.getByTestId('world-place-confirm'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    expect(firstOps()[0]).toMatchObject({ op: 'AddVob', to: { class: 'oCMobInter', visual: 'NW_CITY_TABLE_01.3DS' } });
+  });
+});
+
 describe('Insert NPC… from the toolbar', () => {
   const instanceField = () =>
     within(screen.getByTestId('world-insert-npc-instance')).getByRole('combobox');

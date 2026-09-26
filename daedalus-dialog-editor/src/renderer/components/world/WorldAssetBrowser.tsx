@@ -11,11 +11,11 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import ViewListIcon from '@mui/icons-material/ViewList';
 import { FixedSizeList as List, type ListChildComponentProps, areEqual } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
-import { compileState, isFavorite, isSourceAsset } from 'zen-world';
+import { assetRole, compileState, isFavorite, isSourceAsset } from 'zen-world';
 import type { AssetCatalog, VfsEntry, VfsSearch } from '../../../shared/worldTypes';
 import type { AssetThumbnails } from '../../world/assetThumbnails';
 import WorldAssetGrid, {
-  FavoriteStar, FileIntoMenu, UncompiledTag, markClick, usePlaceMenu, type AssetPlacement, type TileCatalogActions, type TileOrigin,
+  FavoriteStar, FileIntoMenu, RoleFacet, UncompiledTag, markClick, usePlaceMenu, type AssetRoleFilter, type AssetPlacement, type TileCatalogActions, type TileOrigin,
 } from './WorldAssetGrid';
 import WorldAssetCatalogView from './WorldAssetCatalogView';
 import { isPlaceableVisual } from './WorldAssetPreview';
@@ -381,12 +381,19 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
     const lower = needle.toLowerCase();
     return lower === '' ? sorted : sorted.filter((entry) => entry.name.toLowerCase().includes(lower));
   }, [searching, search, sorted, needle]);
+  // The VOB / MOB facet (#288). Like the source facet it survives a navigation:
+  // it is a lens on the whole install. Directories stay, so the lens can be
+  // carried into one; a file that is neither — a texture, a script — is not
+  // what either answer asked for.
+  const [role, setRole] = useState<AssetRoleFilter>('all');
   const filtered = useMemo(() => {
-    if (only === null) return base;
     // Everything the mount holds, including what a later one shadows — the
     // shadowed copy is the whole point of asking about one mount.
-    return base.filter((entry) => entry.sources?.includes(only) ?? false);
-  }, [base, only]);
+    const fromSource = only === null ? base : base.filter((entry) => entry.sources?.includes(only) ?? false);
+    return role === 'all'
+      ? fromSource
+      : fromSource.filter((entry) => entry.type === 'directory' || assetRole(entry.name) === role);
+  }, [base, only, role]);
   // One status for the surface below, because a search and a listing are the
   // two things it can be showing and each has its own loading and its own
   // refusal.
@@ -597,6 +604,7 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
             }}
             sx={{ flex: 1, minWidth: 0, '& .MuiInputBase-input': { fontSize: 12, py: 0.5 } }}
           />
+          <RoleFacet value={role} onChange={setRole} testId="world-asset-role" />
           {/* One mount is no facet: there is nothing to narrow to and nothing
               can be overridden. */}
           {sources.length > 1 && (

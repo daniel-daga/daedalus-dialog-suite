@@ -263,6 +263,31 @@ export const FileIntoMenu: React.FC<{
   );
 };
 
+/** What the VOB / MOB facet narrows to (#288). */
+export type AssetRoleFilter = 'all' | 'vob' | 'mob';
+
+/** The VOB / MOB facet (#288) — `assetRole` in `zen-world` says which a visual
+ *  is: an animated model named for an interaction scheme is a MOB, any other
+ *  visual a VOB. Shared by the directory walk and the catalogue views. */
+export const RoleFacet: React.FC<{
+  value: AssetRoleFilter; onChange: (next: AssetRoleFilter) => void; testId: string;
+}> = ({ value, onChange, testId }) => (
+  <TextField
+    select
+    size="small"
+    value={value}
+    onChange={(event) => onChange(event.target.value as AssetRoleFilter)}
+    SelectProps={{ native: true }}
+    inputProps={{ 'data-testid': testId, 'aria-label': 'VOBs or MOBs' }}
+    title="A MOB is an animated model named for an interaction scheme (BENCH_, CHESTBIG_, DOOR_ …); any other visual is a VOB"
+    sx={{ minWidth: 72, '& .MuiInputBase-input': { fontSize: 12, py: 0.5 } }}
+  >
+    <option value="all">All</option>
+    <option value="vob">VOBs</option>
+    <option value="mob">MOBs</option>
+  </TextField>
+);
+
 /** What a "not compiled" tag says when hovered — the row and the tile share it
  *  (#294), so the two cannot give different answers. */
 export const UNCOMPILED_TITLE = 'Not compiled yet. ZenGin and this editor read the compiled file (.MRM, .MDL, -C.TEX); a GMBT build writes it into _work/Data/*/_compiled. It can still be placed: the VOB names this source file.';

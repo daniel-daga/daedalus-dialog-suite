@@ -1938,6 +1938,35 @@ describe('WorldPropertyGrid, typed rotation', () => {
     });
   });
 
+  // #290, Florian's worry: rocks and bushes placed as oCMobInter by accident.
+  // A static mesh has no animations for a scheme to play, so on a MOB class it
+  // is a rock the crosshair finds and nothing happens.
+  describe('a static mesh on a MOB class', () => {
+    const MISPLACED = summaryOf(vobIndex([
+      { name: 'ROCK', cls: 'oCMobInter', visual: 'NW_NATURE_STONE_01.3DS' },
+      { name: 'SEAT', cls: 'oCMobInter', visual: 'BENCH_1_OC.ASC' },
+      { name: 'STONE', cls: 'zCVob', visual: 'NW_NATURE_STONE_01.3DS' },
+      // A model whose scheme the list does not know may be a mod's own: no
+      // warning, because the list is not the measure of what a mod can add.
+      { name: 'ODD', cls: 'oCMobInter', visual: 'KM_ODDSCHEME_01.ASC' },
+    ]));
+
+    it('says a plain zCVob would do, and that it has to be placed again as one', () => {
+      render(<WorldPropertyGrid summary={MISPLACED} selection={[0]} {...wiring} />);
+      const warning = screen.getByTestId('world-prop-mob-static-warning');
+      expect(warning).toHaveTextContent(/static mesh/);
+      expect(warning).toHaveTextContent(/zCVob/);
+    });
+
+    it('says nothing for a model, for a zCVob, or for a model with a scheme it does not know', () => {
+      for (const vob of [1, 2, 3]) {
+        const { unmount } = render(<WorldPropertyGrid summary={MISPLACED} selection={[vob]} {...wiring} />);
+        expect([vob, screen.queryByTestId('world-prop-mob-static-warning')]).toEqual([vob, null]);
+        unmount();
+      }
+    });
+  });
+
   // A mob the crosshair cannot find (level-editor.md §16.15). The engine finds
   // one through `focusName`, and `insertVob` cannot default it — retail sets it
   // per class, and two of the family carry nothing on purpose — so the editor's

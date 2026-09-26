@@ -6,7 +6,7 @@ import MyLocationIcon from '@mui/icons-material/MyLocation';
 import {
   ARRAY_ARITY, BASE_FIELDS, DECAL_FIELDS, classPropKeys, decalSubKey, enumValuesOf,
   eulerDeltaRotation, isArrayKind,
-  eulerToZenRotation, fieldOf, focusNameExpectation,
+  carriesVisual, eulerToZenRotation, fieldOf, focusNameExpectation, isModelVisual,
   zenRotationToEuler,
   type ClassPropValue, type ClassProps, type EnumValueDescriptor, type FieldDescriptor,
   type VobProps, type ZenEulerDegrees, type ZenPosition, type ZenRotation,
@@ -1045,6 +1045,20 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
             : undefined}
           onCommit={(value) => onEditProps({ visual: value })}
         />
+        {/* A MOB class on a static mesh (#290): what Florian did to rocks and
+            bushes by accident. Only a model has animations for a scheme to
+            play, so this is certain for a mesh and said about nothing else —
+            a model whose scheme the editor does not know may be a mod's own. */}
+        {className !== 'zCVob' && carriesVisual(className) && visual && !isModelVisual(visual) && (
+          <Typography
+            variant="caption"
+            color="warning.main"
+            data-testid="world-prop-mob-static-warning"
+            sx={{ display: 'block', mt: 0.25 }}
+          >
+            {`A static mesh has no animations for a ${className} to play, so the crosshair finds it and nothing happens. A plain zCVob does the same job; a class cannot be changed in place, so delete it and place it again.`}
+          </Typography>
+        )}
       </Field>
       <Field label="Type" name="visualType">
         <Typography variant="caption">{visualType}</Typography>

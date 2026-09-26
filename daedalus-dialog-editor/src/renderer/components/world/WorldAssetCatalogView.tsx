@@ -1,8 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Box, List, ListItemButton, ListItemText, TextField, Typography } from '@mui/material';
+import { assetRole } from 'zen-world';
 import type { AssetCatalog, VfsEntry } from '../../../shared/worldTypes';
 import type { AssetThumbnails } from '../../world/assetThumbnails';
-import WorldAssetGrid, { type AssetPlacement, type TileCatalogActions } from './WorldAssetGrid';
+import WorldAssetGrid, {
+  RoleFacet, type AssetPlacement, type AssetRoleFilter, type TileCatalogActions,
+} from './WorldAssetGrid';
 
 // Favorites and categories on the asset browser (level-editor.md §16.26,
 // "Wanted on top") — two views over the merged catalogue (vobbilder's seed
@@ -35,8 +38,9 @@ export interface WorldAssetCatalogViewProps {
 
 const asEntries = (names: readonly string[]): VfsEntry[] => names.map((name) => ({ name, type: 'file' }));
 
-const matching = (names: readonly string[], needle: string): readonly string[] => (
-  needle === '' ? names : names.filter((name) => name.toLowerCase().includes(needle))
+const matching = (names: readonly string[], needle: string, role: AssetRoleFilter = 'all'): readonly string[] => (
+  names.filter((name) => (needle === '' || name.toLowerCase().includes(needle))
+    && (role === 'all' || assetRole(name) === role))
 );
 
 const WorldAssetCatalogView: React.FC<WorldAssetCatalogViewProps> = ({
@@ -51,24 +55,29 @@ const WorldAssetCatalogView: React.FC<WorldAssetCatalogViewProps> = ({
   const [filter, setFilter] = useState('');
   useEffect(() => { setFilter(''); }, [mode]);
   const needle = filter.trim().toLowerCase();
+  // The VOB / MOB facet (#288), as the directory walk has it — and kept across
+  // the views, since it is a lens rather than a question about one list.
+  const [role, setRole] = useState<AssetRoleFilter>('all');
 
   // A category left behind takes its queued draws with it, as a directory does.
   useEffect(() => { thumbnails.cancelPending(); }, [thumbnails, selected, mode]);
 
   const entries = useMemo(
-    () => asEntries(matching(mode === 'favorites' ? catalog.favorites : category?.visuals ?? [], needle)),
-    [mode, catalog.favorites, category, needle],
+    () => asEntries(matching(mode === 'favorites' ? catalog.favorites : category?.visuals ?? [], needle, role)),
+    [mode, catalog.favorites, category, needle, role],
   );
   // A category survives the filter when its own path matches or it holds a
   // visual that does; the count then says how much of it did, because "32
   // visuals" over a list showing one is the number nobody can trust.
   const categories = useMemo(() => catalog.categories.map((entry) => ({
     entry,
-    matched: entry.path.toLowerCase().includes(needle) ? entry.visuals.length : matching(entry.visuals, needle).length,
-  })).filter(({ matched }) => needle === '' || matched > 0), [catalog.categories, needle]);
+    matched: entry.path.toLowerCase().includes(needle)
+      ? matching(entry.visuals, '', role).length
+      : matching(entry.visuals, needle, role).length,
+  })).filter(({ matched }) => (needle === '' && role === 'all') || matched > 0), [catalog.categories, needle, role]);
 
   const field = (
-    <Box sx={{ px: 0.5, py: 0.25, borderBottom: 1, borderColor: 'divider' }}>
+    <Box sx={{ display: 'flex', gap: 0.5, px: 0.5, py: 0.25, borderBottom: 1, borderColor: 'divider' }}>
       <TextField
         size="small"
         variant="outlined"
@@ -80,8 +89,9 @@ const WorldAssetCatalogView: React.FC<WorldAssetCatalogViewProps> = ({
           'data-testid': 'world-asset-catalog-filter',
           'aria-label': mode === 'favorites' ? 'Filter favorites' : 'Filter categories and visuals',
         }}
-        sx={{ '& .MuiInputBase-input': { fontSize: 12, py: 0.5 } }}
+        sx={{ flex: 1, '& .MuiInputBase-input': { fontSize: 12, py: 0.5 } }}
       />
+      <RoleFacet value={role} onChange={setRole} testId="world-asset-catalog-role" />
     </Box>
   );
   const noMatches = (
