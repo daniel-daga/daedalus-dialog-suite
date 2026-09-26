@@ -160,6 +160,10 @@ export interface EditorAPI {
   loadProjectConfig: (projectRoot: string) => Promise<OpenedProjectConfig>;
   /** The project's OutputUnit database, or null when the install has none (#264). */
   readOutputUnits: () => Promise<ProjectOutputUnits | null>;
+  /** Write the scripts' lines into every OU file under the install, each backed
+   *  up to `.bak` first; resolves with the files written and the database as it
+   *  now reads (#264). */
+  updateOutputUnits: (lines: Array<{ name: string; text: string }>) => Promise<{ written: string[]; outputUnits: ProjectOutputUnits | null }>;
   selectAssetSourceFolder: (defaultPath?: string) => Promise<string | null>;
   /** Writes the Asset sources dialog's two paths. `gmbtProjectDir` is null to
    *  clear it and omitted to leave it as it is. */

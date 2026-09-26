@@ -11,8 +11,8 @@ import type { LintRule, Problem } from '../types';
  * stale subtitle rather than exposing it. To a user who does not know the OU
  * mechanic that reads as this editor's bug. Nothing here could notice it.
  *
- * This is the check half of #264. It reports the drift; regenerating the
- * database is the other half and is not built.
+ * This is the check half of #264. Each finding also carries the line the
+ * database should hold, which the panel's "Update OUs" writes — the fix half.
  *
  * `view.outputUnits` absent means no database was found — nothing is known, so
  * nothing is reported. That is not the same as an empty database, and a project
@@ -40,8 +40,9 @@ export const outputUnitDriftRule: LintRule = (view): Problem[] => {
             severity: 'warning',
             message:
               `"${id}" is not in the OutputUnit database, so the game has no subtitle for it. ` +
-              'Regenerate the OUs before testing this line.',
-            locus
+              'Update the OUs before testing this line.',
+            locus,
+            outputUnitLine: { name: id, text }
           });
         } else if (recorded !== text) {
           problems.push({
@@ -51,7 +52,8 @@ export const outputUnitDriftRule: LintRule = (view): Problem[] => {
             message:
               `"${id}" says "${text}" here, but the OutputUnit database still holds "${recorded}" — ` +
               'which is what the game will show.',
-            locus
+            locus,
+            outputUnitLine: { name: id, text }
           });
         }
       }

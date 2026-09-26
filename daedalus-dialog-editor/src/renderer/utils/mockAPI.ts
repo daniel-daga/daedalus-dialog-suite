@@ -6,7 +6,7 @@
  * file persistence and includes sample dialog data for testing.
  */
 
-import type { EditorAPI, ValidationResult, SaveResult, FileChangeEvent, AppendInsertNpcResult, OpenedProjectConfig, NpcDefinition, NpcStatement, NpcEdit } from '../types/global';
+import type { EditorAPI, ValidationResult, SaveResult, FileChangeEvent, AppendInsertNpcResult, OpenedProjectConfig, NpcDefinition, NpcStatement, NpcEdit, ProjectOutputUnits } from '../types/global';
 
 // Captured file-change callback (see onFileChanged). Lets E2E tests inject
 // external change/unlink events through the `__mockEmitFileChange` window hook.
@@ -575,8 +575,25 @@ export const mockEditorAPI: EditorAPI = {
   // The browser harness has no Gothic install, so it has no OU database — the
   // same answer a real machine without one gives, and the drift rule reads it
   // as "nothing is known" rather than reporting every line as missing.
-  async readOutputUnits(): Promise<null> {
-    return null;
+  // Test seam: a spec seeds `mockapi_output_units` with a database, and the
+  // update applies lines to it. The real rewrite is the zenkit-node and
+  // main-process suites'; this stands in for the file (#264).
+  async readOutputUnits(): Promise<ProjectOutputUnits | null> {
+    const seeded = localStorage.getItem('mockapi_output_units');
+    return seeded ? JSON.parse(seeded) as ProjectOutputUnits : null;
+  },
+
+  async updateOutputUnits(lines: Array<{ name: string; text: string }>): Promise<{ written: string[]; outputUnits: ProjectOutputUnits | null }> {
+    const database = await this.readOutputUnits();
+    if (!database) throw new Error('There is no OU database (OU.BIN or OU.CSL) under the install');
+    for (const { name, text } of lines) {
+      const key = name.toUpperCase();
+      const unit = database.units.find((u: { name: string }) => u.name.toUpperCase() === key);
+      if (unit) unit.text = text;
+      else database.units.push({ name: key, text, wav: `${key}.WAV` });
+    }
+    localStorage.setItem('mockapi_output_units', JSON.stringify(database));
+    return { written: [database.filePath], outputUnits: database };
   },
 
   async loadProjectConfig(projectRoot: string): Promise<OpenedProjectConfig> {

@@ -3,7 +3,7 @@ import path from 'node:path';
 
 // Reached past `zenkit-node`'s index deliberately: that entry loads the native
 // addon, and reading an OU database is pure JS over the container walkers.
-import { readOutputUnits } from 'zenkit-node/lib/output-units.js';
+import { readOutputUnits, rewriteOutputUnits, type OutputUnitLine } from 'zenkit-node/lib/output-units.js';
 
 import type { ProjectOutputUnits } from '../../shared/types';
 
@@ -45,6 +45,26 @@ async function resolveCaseInsensitive(root: string, segments: string[]): Promise
   return current;
 }
 
+/** Every OU file under `installPath`, `OU.BIN` first. */
+async function findOutputUnitFiles(installPath: string | null): Promise<string[]> {
+  if (installPath === null || installPath.trim() === '') return [];
+
+  const dir = await resolveCaseInsensitive(installPath, CUTSCENE_DIR);
+  if (dir === null) return [];
+
+  let entries: string[];
+  try {
+    entries = await fs.readdir(dir);
+  } catch {
+    return [];
+  }
+
+  return OU_NAMES.flatMap((wanted) => {
+    const match = entries.find((entry) => entry.toLowerCase() === wanted.toLowerCase());
+    return match === undefined ? [] : [path.join(dir, match)];
+  });
+}
+
 /**
  * Read the OU database under `installPath`, or null when there is none.
  *
@@ -53,31 +73,47 @@ async function resolveCaseInsensitive(root: string, segments: string[]): Promise
  * and a scan that threw would take every other rule's findings with it.
  */
 export async function readProjectOutputUnits(installPath: string | null): Promise<ProjectOutputUnits | null> {
-  if (installPath === null || installPath.trim() === '') return null;
-
-  const dir = await resolveCaseInsensitive(installPath, CUTSCENE_DIR);
-  if (dir === null) return null;
-
-  let entries: string[];
+  const [filePath] = await findOutputUnitFiles(installPath);
+  if (filePath === undefined) return null;
   try {
-    entries = await fs.readdir(dir);
-  } catch {
+    const { format, units } = readOutputUnits(await fs.readFile(filePath));
+    return { filePath, format, units };
+  } catch (error) {
+    console.warn(`[outputUnits] could not read ${filePath}:`, error);
     return null;
   }
+}
 
-  for (const wanted of OU_NAMES) {
-    const match = entries.find((entry) => entry.toLowerCase() === wanted.toLowerCase());
-    if (match === undefined) continue;
-
-    const filePath = path.join(dir, match);
-    try {
-      const { format, units } = readOutputUnits(await fs.readFile(filePath));
-      return { filePath, format, units };
-    } catch (error) {
-      console.warn(`[outputUnits] could not read ${filePath}:`, error);
-      return null;
-    }
+/**
+ * Set the scripts' lines into the OU database (#264's second half) — every OU
+ * file under the install, `OU.BIN` and its text twin `OU.CSL` alike, so the two
+ * cannot disagree. Each is copied to `<name>.bak` before it is written, and
+ * every file is rewritten in memory first, so one that will not read leaves
+ * all of them untouched.
+ *
+ * Returns the files written and the database as it now reads, which is what the
+ * Problems panel should compare against next.
+ */
+export async function updateProjectOutputUnits(
+  installPath: string | null,
+  lines: OutputUnitLine[],
+): Promise<{ written: string[]; outputUnits: ProjectOutputUnits | null }> {
+  if (installPath === null || installPath.trim() === '') {
+    throw new Error('Set the Gothic install to update its OU database');
+  }
+  const files = await findOutputUnitFiles(installPath);
+  if (files.length === 0) {
+    throw new Error(`There is no OU database (OU.BIN or OU.CSL) under ${installPath}`);
   }
 
-  return null;
+  const rewrites = await Promise.all(files.map(async (filePath) => {
+    const original = await fs.readFile(filePath);
+    return { filePath, original, rewritten: rewriteOutputUnits(original, lines) };
+  }));
+  for (const { filePath, original, rewritten } of rewrites) {
+    await fs.writeFile(`${filePath}.bak`, original);
+    await fs.writeFile(filePath, rewritten);
+  }
+
+  return { written: files, outputUnits: await readProjectOutputUnits(installPath) };
 }

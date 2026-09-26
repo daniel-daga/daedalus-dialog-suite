@@ -20,3 +20,13 @@ export interface OutputUnitDatabase {
 }
 
 export function readOutputUnits(buf: Buffer): OutputUnitDatabase;
+
+/** A line the scripts hold: the `AI_Output` id and the subtitle beside it. */
+export interface OutputUnitLine {
+  name: string;
+  text: string;
+}
+
+/** The file with `lines` set into it, in the format it was in (#264): matching
+ *  entries take the new text, missing ones are added, every other entry kept. */
+export function rewriteOutputUnits(original: Buffer, lines: OutputUnitLine[]): Buffer;

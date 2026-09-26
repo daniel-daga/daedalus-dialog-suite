@@ -10,6 +10,7 @@ import {
   assertDialogName,
   assertParseSourcePayload,
   assertNpcApplyEditsRequest,
+  assertOutputUnitLines,
   assertExternalUrl,
   assertSaveFileSettings,
   assertSaveFileOptions,
@@ -1986,5 +1987,30 @@ describe('assertNpcApplyEditsRequest', () => {
     expect(() => assertNpcApplyEditsRequest(ok([{ op: 'set', field: 'level', value: '1;\nx = 2' }]))).toThrow(/value/);
     expect(() => assertNpcApplyEditsRequest(ok([{ op: 'setCall', name: 'F', args: ['a', 3] }]))).toThrow(/args/);
     expect(() => assertNpcApplyEditsRequest(ok([{ op: 'setCall', name: 'F', args: ['a\rb'] }]))).toThrow(/args/);
+  });
+});
+
+// #264: the lines "Update OUs" writes come from the renderer. A line break in a
+// subtitle would end the ASCII entry early and a NUL would end the BINARY
+// string early — either one corrupts every entry after it in the file the game
+// loads, so the shape is refused here.
+describe('assertOutputUnitLines', () => {
+  it('accepts voice ids with their subtitles, empty text included', () => {
+    expect(() => assertOutputUnitLines([
+      { name: 'DIA_Harald_Hello_15_00', text: 'Nun: 10 Erz = 1 Gold, „klar“?' },
+      { name: 'DIA_X_00', text: '' },
+    ])).not.toThrow();
+  });
+
+  it.each([
+    ['not an array', { name: 'DIA_X_00', text: 'x' }],
+    ['a line that is not an object', ['DIA_X_00']],
+    ['an id that is not a voice id', [{ name: '../OU.BIN', text: 'x' }]],
+    ['a subtitle with a line break', [{ name: 'DIA_X_00', text: 'eins\nzwei' }]],
+    ['a subtitle with a carriage return', [{ name: 'DIA_X_00', text: 'eins\rzwei' }]],
+    ['a subtitle with a NUL', [{ name: 'DIA_X_00', text: 'eins\u0000zwei' }]],
+    ['a subtitle that is not a string', [{ name: 'DIA_X_00', text: 3 }]],
+  ])('refuses %s', (_what, lines) => {
+    expect(() => assertOutputUnitLines(lines)).toThrow(/project:updateOutputUnits/);
   });
 });

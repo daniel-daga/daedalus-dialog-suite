@@ -13,7 +13,33 @@ structurally cannot apply to us, so triage does not rediscover them.
 
 ## A. The script pipeline — the largest block, and the least started
 
-### A1. OutputUnits: nothing exists (#264)
+### A1. OutputUnits: nothing exists (#264) — closed
+
+**Closed 2026-09-26: both halves built.** The check (below, 2026-09-17), and
+now the write: the Problems panel's *Update OUs* sets every line the OU rules
+found into the database. `rewriteOutputUnits(original, lines)` in
+`zenkit-node/lib/output-units.js` — pure JS again, the reader's schema written
+in its read order, so no binding was needed after all. It keeps the file's
+header byte for byte (date, user, line endings) with only the object count
+changed, keeps each entry's `subType` and `subBlock0`, adds a missing id
+upper-cased with `<ID>.WAV`, keeps every entry no script claims, and keeps a
+sorted file sorted. `updateProjectOutputUnits` in `outputUnits.ts` writes
+`OU.BIN` and `OU.CSL` alike when both exist, each copied to `.bak` first and
+all rewritten in memory before any is written. The rewrite is exercised from the
+editor's gated suite (`tests/outputUnitsUpdate.test.ts`), not only from
+`zenkit-node.yml`.
+
+Found on the way: the reader decoded **latin1**, and Gothic writes
+windows-1252. They differ exactly at 0x80–0x9F, where `„ “ – … €` live, so
+every German line using them read as drift. Both directions are windows-1252
+now.
+
+**The witness is still a Gothic install** — `docs/plans/level-editor.md`
+§16.41 row 18: run *Update OUs* against a copy of a real `OU.BIN`, read it
+back, and see the new subtitle in game.
+
+What follows is the finding as filed and the check half as it landed.
+
 
 Not one line in the tree reads or writes `OU.BIN`, `OU.CSL` or `OUINFO.INF`. The
 report's "worst of it" — reparsing does not update the OUs, so a new dialog

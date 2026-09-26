@@ -104,6 +104,9 @@ export interface Problem {
   message: string;
   /** Where the problem is, and what navigating to it means. */
   locus: ProblemLocus;
+  /** The OU rules only (#264): the line the database should hold, which the
+   *  panel's "Update OUs" writes. */
+  outputUnitLine?: { name: string; text: string };
 }
 
 /** One parsed file: its path and full semantic model. */

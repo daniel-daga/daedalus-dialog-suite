@@ -125,6 +125,25 @@ export function assertNpcApplyEditsRequest(
  * `file:` path, a `javascript:` scheme, a bare string — is refused: the
  * renderer hands the main process a link, not a command.
  */
+/**
+ * The lines `project:updateOutputUnits` writes into the OU database (#264). A
+ * line break ends an ASCII entry early and a NUL ends a BINARY string early, so
+ * either would corrupt every entry after it in the file the game loads.
+ */
+export function assertOutputUnitLines(lines: unknown): asserts lines is Array<{ name: string; text: string }> {
+  if (!Array.isArray(lines)) {
+    throw new Error('Invalid project:updateOutputUnits request: lines must be an array');
+  }
+  for (const line of lines as unknown[]) {
+    if (!isPlainObject(line) || typeof line.name !== 'string' || !/^[A-Za-z0-9_]+$/.test(line.name)) {
+      throw new Error('Invalid project:updateOutputUnits request: each line needs a voice id');
+    }
+    if (typeof line.text !== 'string' || /[\r\n\0]/.test(line.text)) {
+      throw new Error('Invalid project:updateOutputUnits request: a subtitle must be one line of text');
+    }
+  }
+}
+
 export function assertExternalUrl(url: unknown): asserts url is string {
   let parsed: URL | null = null;
   if (typeof url === 'string') {

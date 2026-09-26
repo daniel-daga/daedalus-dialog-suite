@@ -30,12 +30,13 @@ import {
   assertAssetSourcesPayload,
   assertOptionalFolderPath,
   assertExternalUrl,
+  assertOutputUnitLines,
 } from './ipcValidation';
 import { appendInsertNpcFlow } from './services/AppendInsertNpcFlow';
 import { findInstallShaped, ProjectConfigService } from './services/ProjectConfigService';
 import { runGmbtCompile, startGmbtQuickTest } from './services/GmbtService';
 import { readGmbtDefaultWorld } from './services/gmbtProject';
-import { readProjectOutputUnits } from './services/outputUnits';
+import { readProjectOutputUnits, updateProjectOutputUnits } from './services/outputUnits';
 import { discoverWorlds } from './services/worldDiscovery';
 import type { OpenedProjectConfig } from '../shared/projectConfigTypes';
 
@@ -633,6 +634,14 @@ export function setupIpcHandlers() {
    * (#264). Read on demand rather than watched: GMBT rewrites it outside this
    * app, and the Problems panel asks again on each project open.
    */
+  // Writing the scripts' lines into the OU database (#264). The lines come from
+  // the renderer, which is the side holding the scripts; where they are written
+  // does not — the install is main's own setting.
+  ipcMain.handle('project:updateOutputUnits', async (_event, lines: unknown) => {
+    assertOutputUnitLines(lines);
+    return updateProjectOutputUnits(await settingsService.getGothicInstallPath(), lines);
+  });
+
   ipcMain.handle('project:readOutputUnits', async () => {
     return readProjectOutputUnits(await settingsService.getGothicInstallPath());
   });

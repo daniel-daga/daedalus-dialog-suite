@@ -1,5 +1,7 @@
-import React, { useEffect, useMemo } from 'react';
-import { Box, Button, Typography } from '@mui/material';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Typography,
+} from '@mui/material';
 import { Refresh as RefreshIcon } from '@mui/icons-material';
 import {
   SEARCHABLE_PANE_PATTERN,
@@ -105,6 +107,37 @@ const ProblemsPanel: React.FC = () => {
 
   const ingestionIncomplete = totalFileCount > scannedFileCount;
 
+  // #264's fix half: the lines the OU findings say the database should hold,
+  // one per voice id — a repeated id is one entry in the database.
+  const outputUnitFile = useProjectStore((s) => s.outputUnits?.filePath ?? null);
+  const outputUnitLines = useMemo(() => {
+    const lines = new Map<string, { name: string; text: string }>();
+    for (const problem of problems) {
+      const line = problem.outputUnitLine;
+      if (line && !lines.has(line.name.toUpperCase())) lines.set(line.name.toUpperCase(), line);
+    }
+    return [...lines.values()];
+  }, [problems]);
+  const [confirmingOuUpdate, setConfirmingOuUpdate] = useState(false);
+  const [ouUpdating, setOuUpdating] = useState(false);
+  const [ouUpdateError, setOuUpdateError] = useState<string | null>(null);
+
+  const handleUpdateOutputUnits = async (): Promise<void> => {
+    setOuUpdating(true);
+    setOuUpdateError(null);
+    try {
+      const { outputUnits } = await window.editorAPI.updateOutputUnits(outputUnitLines);
+      // What is on disk now is what the next scan compares against.
+      useProjectStore.setState({ outputUnits });
+      runScan();
+      setConfirmingOuUpdate(false);
+    } catch (error) {
+      setOuUpdateError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setOuUpdating(false);
+    }
+  };
+
   return (
     <Box
       data-testid="problems-panel"
@@ -114,6 +147,16 @@ const ProblemsPanel: React.FC = () => {
       <Box sx={searchablePaneHeaderSx}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
           <Typography variant="subtitle2">Problems</Typography>
+          {outputUnitLines.length > 0 && outputUnitFile && (
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => { setOuUpdateError(null); setConfirmingOuUpdate(true); }}
+              data-testid="problems-update-ous"
+            >
+              {`Update OUs (${outputUnitLines.length} line${outputUnitLines.length === 1 ? '' : 's'})`}
+            </Button>
+          )}
           <Button
             size="small"
             startIcon={<RefreshIcon />}
@@ -140,6 +183,27 @@ const ProblemsPanel: React.FC = () => {
           onAddToWorld={handleAddToWorld}
         />
       </Box>
+      <Dialog
+        open={confirmingOuUpdate}
+        onClose={() => !ouUpdating && setConfirmingOuUpdate(false)}
+        aria-labelledby="problems-update-ous-title"
+      >
+        <DialogTitle id="problems-update-ous-title">Update the OU database</DialogTitle>
+        <DialogContent>
+          {ouUpdateError && <Alert severity="error" sx={{ mb: 1 }}>{ouUpdateError}</Alert>}
+          <DialogContentText variant="body2" sx={{ whiteSpace: 'pre-line' }}>
+            {`Writes ${outputUnitLines.length} subtitle${outputUnitLines.length === 1 ? '' : 's'} from your scripts into\n${outputUnitFile}\n`
+              + 'and its OU.CSL twin if there is one, which is what the game shows.\n\n'
+              + 'Each file is copied to <name>.bak first. Lines no script of yours claims stay as they are.'}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmingOuUpdate(false)} disabled={ouUpdating}>Cancel</Button>
+          <Button variant="contained" onClick={() => void handleUpdateOutputUnits()} disabled={ouUpdating}>
+            Update
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

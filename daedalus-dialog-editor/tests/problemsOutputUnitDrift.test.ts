@@ -85,6 +85,19 @@ describe('outputUnitDriftRule', () => {
     expect(problems[0].message).toContain('Was willst du?');
   });
 
+  // The fix half of #264: each finding carries the line the database should
+  // hold, which is what "Update OUs" writes — the script's text, never the OU's.
+  it('carries the line to write: the script\'s id and its text', () => {
+    const view = viewOf(
+      [{ id: 'DIA_TEST_15_00', text: 'Neu.' }, { id: 'DIA_TEST_15_01', text: 'Dazu.' }],
+      [{ name: 'DIA_TEST_15_00', text: 'Alt.', wav: 'DIA_TEST_15_00.WAV' }],
+    );
+    expect(outputUnitDriftRule(view).map((p) => p.outputUnitLine)).toEqual([
+      { name: 'DIA_TEST_15_00', text: 'Neu.' },
+      { name: 'DIA_TEST_15_01', text: 'Dazu.' },
+    ]);
+  });
+
   it('flags a line the database has never heard of', () => {
     const view = viewOf(
       [{ id: 'DIA_TEST_15_01', text: 'Neu.' }],
