@@ -21,6 +21,10 @@ export interface AssetCatalogSurface {
   resolveAssets: (names: string[]) => ReturnType<typeof window.editorAPI.resolveWorldAssets>;
   /** The same for one name, for the preview panel. */
   resolveAsset: (name: string) => Promise<string | null>;
+  /** `gmbt compile --full` and a remount (#296), then every read above handed
+   *  out afresh and the renderers rebuilt, so the browser, the preview and the
+   *  thumbnails all ask again. Rejects with GMBT's reason and changes nothing. */
+  compileAssets: () => Promise<void>;
   loadTexture: (name: string, maxSize: number) => ReturnType<typeof window.editorAPI.getWorldTexture>;
   loadVisual: (name: string) => ReturnType<typeof window.editorAPI.getWorldVisual>;
   /** The thumbnail queue, and null with no world open. */
@@ -104,35 +108,49 @@ export function useAssetCatalog(): AssetCatalogSurface {
     }
   ), [projectFilePath, mergedAssetCatalog, assetCatalog, persistAssetCatalog]);
 
+  // Bumped by a GMBT compile (#296). Every read below depends on it, so each
+  // is handed out afresh and everything keyed on one asks again: the browser
+  // re-lists, the preview re-extracts, the thumbnail queue — which remembers a
+  // mesh that failed — is rebuilt. The files under the mounts are not the ones
+  // any of them saw.
+  const [generation, setGeneration] = useState(0);
+  const compileAssets = useCallback(async () => {
+    await window.editorAPI.compileWorldAssets();
+    setGeneration((was) => was + 1);
+  }, []);
+
+  /* eslint-disable react-hooks/exhaustive-deps -- `generation` is the point:
+     a fresh identity after a compile, with nothing of it read inside. */
   const listAssets = useCallback(
     (assetPath: string) => window.editorAPI.listWorldAssets(assetPath),
-    [],
+    [generation],
   );
 
   const searchAssets = useCallback(
     (query: string) => window.editorAPI.searchWorldAssets(query),
-    [],
+    [generation],
   );
 
   const resolveAssets = useCallback(
     (names: string[]) => window.editorAPI.resolveWorldAssets(names),
-    [],
+    [generation],
   );
 
   const resolveAsset = useCallback(
     async (name: string) => (await window.editorAPI.resolveWorldAssets([name]))[0] ?? null,
-    [],
+    [generation],
   );
 
   const loadTexture = useCallback(
     (name: string, maxSize: number) => window.editorAPI.getWorldTexture(name, maxSize),
-    [],
+    [generation],
   );
 
   const loadVisual = useCallback(
     (name: string) => window.editorAPI.getWorldVisual(name),
-    [],
+    [generation],
   );
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   // The thumbnail queue (§16.26 row 1) — one per open world, since its cache
   // keys are the open world's mounts. Built lazily: the offscreen renderer
@@ -164,6 +182,7 @@ export function useAssetCatalog(): AssetCatalogSurface {
   useEffect(() => () => { liveTileRef.current?.dispose(); }, []);
 
   return {
-    listAssets, searchAssets, resolveAssets, resolveAsset, loadTexture, loadVisual, thumbnails, liveTile, catalogProps,
+    listAssets, searchAssets, resolveAssets, resolveAsset, compileAssets,
+    loadTexture, loadVisual, thumbnails, liveTile, catalogProps,
   };
 }

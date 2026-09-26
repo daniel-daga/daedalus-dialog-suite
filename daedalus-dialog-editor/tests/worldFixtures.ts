@@ -196,6 +196,7 @@ export function makeWorldEditorApi() {
     getWorldHistoryDepth: jest.fn(async (): Promise<{ undo: number; redo: number }> => ({ undo: 0, redo: 0 })),
     saveWorld: jest.fn(async () => undefined),
     startGmbtQuickTest: jest.fn(async () => undefined),
+    compileWorldAssets: jest.fn(async () => undefined),
     getVobFolders: jest.fn(async (): Promise<VobFolders> => ({ folders: [] })),
     saveVobFolders: jest.fn(async () => undefined),
     closeWorld: jest.fn(),

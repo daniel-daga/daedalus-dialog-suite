@@ -161,6 +161,26 @@ describe('the asset catalog on the surface', () => {
     });
   });
 
+  it('compiles from the browser, then re-lists and re-reads the world\'s visuals (#296)', async () => {
+    // A bush placed before it was compiled drew as nothing; once GMBT has
+    // compiled it the viewport has to ask for the visuals again to draw it.
+    api.listWorldAssets.mockResolvedValue([{ name: 'KM_VOB_BIG_BUSH_01.3DS', type: 'file' }] as never);
+    api.resolveWorldAssets.mockResolvedValue([null] as never);
+    await openWorld();
+    fireEvent.click(screen.getByTestId('world-panel-assets'));
+    await screen.findByTestId('world-asset-uncompiled-KM_VOB_BIG_BUSH_01.3DS');
+    const listed = api.listWorldAssets.mock.calls.length;
+    const visuals = api.getWorldVisuals.mock.calls.length;
+    api.getWorldVisuals.mockResolvedValue({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+
+    fireEvent.click(screen.getByTestId('world-asset-compile'));
+    await act(async () => { fireEvent.click(await screen.findByTestId('world-asset-compile-confirm')); });
+
+    await waitFor(() => expect(api.compileWorldAssets).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.getWorldVisuals.mock.calls.length).toBe(visuals + 1));
+    await waitFor(() => expect(api.listWorldAssets.mock.calls.length).toBeGreaterThan(listed));
+  });
+
   it('offers no favorites or categories with no project loaded', async () => {
     useProjectStore.setState({ projectFilePath: null } as never);
     await openWorld();

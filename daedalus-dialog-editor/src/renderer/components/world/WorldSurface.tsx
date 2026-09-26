@@ -194,9 +194,19 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const [pendingJump, setPendingJump] = useState<string | null>(null);
   const [showWaynet, setShowWaynet] = useState(false);
   const {
-    listAssets, searchAssets, resolveAssets, resolveAsset, loadTexture, loadVisual, thumbnails, liveTile,
+    listAssets, searchAssets, resolveAssets, resolveAsset, compileAssets: compileAssetCatalog,
+    loadTexture, loadVisual, thumbnails, liveTile,
     catalogProps: assetCatalogProps,
   } = useAssetCatalog();
+
+  // A GMBT compile (#296), then the world's visuals read again: a VOB placed
+  // from a source that was not compiled drew as nothing, and the worker now
+  // resolves it. The browser and the preview re-read on their own, off the
+  // fresh reads `useAssetCatalog` hands out.
+  const compileAssets = useCallback(async () => {
+    await compileAssetCatalog();
+    setVisuals(await window.editorAPI.getWorldVisuals());
+  }, [compileAssetCatalog]);
 
   // The place verb on an asset row or tile (§16.37 row 4). The same arming the
   // preview panel's button does, offered where the pointer already is.
@@ -2146,6 +2156,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                     listAssets={listAssets}
                     searchAssets={searchAssets}
                     resolveAssets={resolveAssets}
+                    compileAssets={compileAssets}
                     onPreview={setSelectedAsset}
                     thumbnails={thumbnails ?? undefined}
                     catalog={assetCatalogProps}

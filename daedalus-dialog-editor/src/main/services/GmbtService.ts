@@ -99,6 +99,62 @@ export function worldIsInsideGmbtProject(
   return relative !== '' && !relative.startsWith('..') && !paths.isAbsolute(relative);
 }
 
+/**
+ * `gmbt compile --full`: what turns a mod's `.3DS`/`.ASC`/`.TGA` sources into the
+ * compiled files ZenKit — and so the editor — can read (#296).
+ *
+ * `--full` because only it converts everything: GMBT's `Compile.cs` passes
+ * `-zconvertall -ztexconvert -zautoconvertdata` to the game in full mode only,
+ * and a quick compile leaves meshes to be converted in game. `--noupdatesubtitles`
+ * for the quick test's reason: GMBT 0.22 throws in `UpdateDialogs()` on the
+ * retail script set. What it does to the install is GMBT's usual, and the
+ * editor says so before it runs it: the project's asset folders are merged into
+ * `<gothicRoot>/_work/Data`, then Gothic runs headless and compiles into
+ * `_work/Data/*\/_compiled` (environment-hazards.md, "GMBT empties `_work`").
+ */
+export function compileAssetsArguments(): string[] {
+  return ['compile', '--full', '--noupdatesubtitles'];
+}
+
+/** How much of GMBT's output a failure carries — its last lines are where it
+ *  says what went wrong, and the whole log is minutes of progress lines. */
+const COMPILE_OUTPUT_TAIL = 4000;
+
+/**
+ * Run `gmbt compile --full` in the GMBT project folder and wait for it (#296).
+ *
+ * Awaited, unlike the quick test: the editor remounts its VFS once GMBT is done,
+ * and a failure has to reach the person who pressed the button rather than a
+ * log file. It rejects with GMBT's exit code and the end of what it printed.
+ */
+export function runGmbtCompile(gmbtProjectDir: string, deps: GmbtLaunchDeps = {}): Promise<void> {
+  const executable = resolveGmbtExecutable(deps);
+  if (executable === null) {
+    return Promise.reject(new Error(
+      'gmbt was not found on PATH or in %APPDATA%\\GMBT\\bin — install GMBT to compile assets',
+    ));
+  }
+  const spawn = deps.spawn ?? nodeSpawn;
+  return new Promise<void>((resolve, reject) => {
+    let output = '';
+    const keep = (chunk: Buffer | string) => {
+      output = (output + chunk.toString()).slice(-COMPILE_OUTPUT_TAIL);
+    };
+    const child = spawn(executable, compileAssetsArguments(), {
+      cwd: gmbtProjectDir,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+    child.stdout?.on('data', keep);
+    child.stderr?.on('data', keep);
+    child.on('error', (error) => reject(error instanceof Error ? error : new Error(String(error))));
+    child.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`gmbt compile exited with code ${String(code)}:\n${output.trim()}`));
+    });
+  });
+}
+
 export function startGmbtQuickTest(
   gmbtProjectDir: string,
   worldPath: string,

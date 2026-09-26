@@ -98,6 +98,7 @@ contextBridge.exposeInMainWorld('editorAPI', {
   // The GMBT quick test (§16.29). No arguments: main names the world and the
   // GMBT project folder itself.
   startGmbtQuickTest: () => ipcRenderer.invoke('world:gmbtQuickTest'),
+  compileWorldAssets: () => ipcRenderer.invoke('world:compileAssets'),
   // VOB folders (VOB folders slice) — a virtual grouping kept beside the
   // world file, never in it; see zen-world's vobFolders.ts.
   getVobFolders: (worldPath: string) => ipcRenderer.invoke('world:getVobFolders', { worldPath }),

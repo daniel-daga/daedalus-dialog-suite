@@ -233,6 +233,15 @@ function assetSearch(payload: { query: string }): { result: VfsSearch; transfer:
   return { result: zenkit.vfsFind(vfs!, payload.query), transfer: [] };
 }
 
+/** The VFS opened again over the same sources (#296). A mount maps the files
+ *  that are there when it opens, so the ones a GMBT compile has just written
+ *  are invisible until this. Nothing else here holds on to the old one: every
+ *  visual and texture is extracted per request. */
+function remountVfs(): { result: null; transfer: ArrayBuffer[] } {
+  vfs = phase('openVfs', () => zenkit.openVfs(openedSources, { overwrite: 'all' }));
+  return { result: null, transfer: [] };
+}
+
 /** What each name resolves to in the mounted namespace — the compiled file
  *  `vfsResolve` finds for a source name, or null (#294). One call per listing:
  *  each lookup is a hash probe, and the answer is how the browser tells a
@@ -413,6 +422,7 @@ function run(message: WorldWorkerRequest): { result: unknown; transfer: ArrayBuf
     case 'assets': return assets(message.payload as { path: string });
     case 'assetSearch': return assetSearch(message.payload as { query: string });
     case 'assetResolve': return assetResolve(message.payload as { names: string[] });
+    case 'remountVfs': return remountVfs();
     case 'waynet': return waynet();
     case 'portalFindings': return portalFindings();
     case 'visualBounds': return boundsOfVisual(message.payload as VisualBoundsRequest);

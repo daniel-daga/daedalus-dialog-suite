@@ -129,6 +129,19 @@ describe('WorldService', () => {
     service.close();
   });
 
+  test('remounting the assets reopens the VFS in the worker and keeps the world open (#296)', async () => {
+    // After a GMBT compile the files under the mounts have changed, and a VFS
+    // maps them once, at open. The world, its handle and its history stay.
+    const { worker, service } = await openedService();
+
+    const remounted = service.remountAssets();
+    expect(worker.sent.find((m) => m.op === 'remountVfs')?.payload).toEqual({});
+    worker.reply('remountVfs', null);
+    await expect(remounted).resolves.toBeNull();
+    expect(worker.sent.filter((m) => m.op === 'open')).toHaveLength(1);
+    service.close();
+  });
+
   test('a visual is asked for by name and comes back as the worker built it', async () => {
     // The asset preview's mesh (level-editor.md §16.26 row 1): one `visual`
     // request per name, and null passes through — an unresolvable name is a

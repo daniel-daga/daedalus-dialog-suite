@@ -32,7 +32,7 @@ import {
 } from './ipcValidation';
 import { appendInsertNpcFlow } from './services/AppendInsertNpcFlow';
 import { findInstallShaped, ProjectConfigService } from './services/ProjectConfigService';
-import { startGmbtQuickTest } from './services/GmbtService';
+import { runGmbtCompile, startGmbtQuickTest } from './services/GmbtService';
 import { readGmbtDefaultWorld } from './services/gmbtProject';
 import { readProjectOutputUnits } from './services/outputUnits';
 import { discoverWorlds } from './services/worldDiscovery';
@@ -948,6 +948,33 @@ export function setupIpcHandlers() {
         'error', 'main', `GMBT quick test failed to start: ${error.message}`, error.stack,
       ),
     });
+  });
+
+  // Compile the project's uncompiled sources (#296): `gmbt compile --full` in
+  // the project's GMBT folder, awaited, then the VFS remounted so the compiled
+  // files are what the browser, the previews and the viewport read. No payload,
+  // for the quick test's reason — the folder is state this process owns — and
+  // one at a time: two GMBT runs over one `_work` would fight over it.
+  let compiling = false;
+  ipcMain.handle('world:compileAssets', async () => {
+    const registered = activeProjectFileKey === null
+      ? undefined
+      : registeredProjectConfigs.get(activeProjectFileKey);
+    const gmbtProjectDir = registered?.descriptor.gmbtProjectDir ?? null;
+    if (gmbtProjectDir === null) {
+      throw new Error('Set "gmbtProjectDir" in the project file to a GMBT project folder to compile assets');
+    }
+    if (compiling) throw new Error('A GMBT compile is already running');
+    compiling = true;
+    try {
+      await runGmbtCompile(gmbtProjectDir);
+    } catch (error) {
+      logService.log('error', 'main', `GMBT compile failed: ${error instanceof Error ? error.message : String(error)}`);
+      throw error;
+    } finally {
+      compiling = false;
+    }
+    await worldService.remountAssets();
   });
 
   ipcMain.handle('world:mesh', async () => worldService.getWorldMesh());

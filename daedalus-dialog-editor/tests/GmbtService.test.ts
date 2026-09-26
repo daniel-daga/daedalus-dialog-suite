@@ -1,9 +1,12 @@
 import path from 'node:path';
 import type { ChildProcess } from 'node:child_process';
 
+import { EventEmitter } from 'node:events';
 import {
+  compileAssetsArguments,
   quickTestArguments,
   resolveGmbtExecutable,
+  runGmbtCompile,
   startGmbtQuickTest,
   worldIsInsideGmbtProject,
 } from '../src/main/services/GmbtService';
@@ -160,5 +163,59 @@ describe('worldIsInsideGmbtProject', () => {
   it('is false for a folder above it, and for the folder itself', () => {
     expect(worldIsInsideGmbtProject('C:\\mod\\gmbt', 'C:\\mod\\W.ZEN', { platform: 'win32' })).toBe(false);
     expect(worldIsInsideGmbtProject('C:\\mod\\gmbt', 'C:\\mod\\gmbt', { platform: 'win32' })).toBe(false);
+  });
+});
+
+// #296: compile the project's uncompiled sources from the editor. Unlike the
+// quick test this is awaited: the editor remounts its VFS once GMBT is done,
+// and a failure has to reach the user rather than a log nobody reads.
+describe('compileAssetsArguments', () => {
+  it('is a full compile, so meshes, models and textures are all converted, without the subtitle step', () => {
+    // A quick compile leaves meshes to be converted in game; only `--full`
+    // passes -zconvertall -ztexconvert (GMBT's Compile.cs). And GMBT 0.22
+    // throws in UpdateDialogs() on the retail scripts, as the quick test found.
+    expect(compileAssetsArguments()).toEqual(['compile', '--full', '--noupdatesubtitles']);
+  });
+});
+
+describe('runGmbtCompile', () => {
+  const exe = path.win32.join('C:\\tools', 'gmbt.EXE');
+  const deps = (child: EventEmitter, spawn = jest.fn(() => child)) => ({
+    env: WINDOWS_ENV, platform: 'win32' as const, exists: (candidate: string) => candidate === exe,
+    spawn: spawn as never,
+  });
+  const child = () => Object.assign(new EventEmitter(), { stdout: new EventEmitter(), stderr: new EventEmitter() });
+
+  it('runs in the GMBT project folder and resolves when gmbt exits cleanly', async () => {
+    const proc = child();
+    const spawn = jest.fn(() => proc);
+    const done = runGmbtCompile('C:\\mods\\beppo', deps(proc, spawn));
+    expect(spawn).toHaveBeenCalledWith(exe, compileAssetsArguments(), expect.objectContaining({ cwd: 'C:\\mods\\beppo' }));
+    proc.emit('close', 0);
+    await expect(done).resolves.toBeUndefined();
+  });
+
+  it('rejects with the exit code and the end of what gmbt printed', async () => {
+    const proc = child();
+    const done = runGmbtCompile('C:\\mods\\beppo', deps(proc));
+    proc.stdout.emit('data', Buffer.from('Merging assets...\n'));
+    proc.stderr.emit('data', Buffer.from('SYSTEM\\MUSIC.SRC not found\n'));
+    proc.emit('close', 3);
+    await expect(done).rejects.toThrow(/exited with code 3[\s\S]*MUSIC\.SRC not found/);
+  });
+
+  it('rejects when gmbt cannot be started', async () => {
+    const proc = child();
+    const done = runGmbtCompile('C:\\mods\\beppo', deps(proc));
+    proc.emit('error', new Error('spawn EACCES'));
+    await expect(done).rejects.toThrow(/EACCES/);
+  });
+
+  it('rejects before spawning when gmbt is not installed', async () => {
+    const spawn = jest.fn();
+    await expect(runGmbtCompile('C:\\mods\\beppo', {
+      env: WINDOWS_ENV, platform: 'win32', exists: () => false, spawn: spawn as never,
+    })).rejects.toThrow(/gmbt was not found/);
+    expect(spawn).not.toHaveBeenCalled();
   });
 });

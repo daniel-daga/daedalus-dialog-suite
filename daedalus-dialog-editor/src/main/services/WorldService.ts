@@ -188,6 +188,13 @@ export class WorldService {
     return this.requestOnOpenWorld<VfsSearch>('assetSearch', { query });
   }
 
+  /** Reopen the VFS over the same sources (#296): a GMBT compile has written
+   *  files under them, and a VFS maps what is there once, when it opens. The
+   *  world, its handle and its history are untouched. */
+  remountAssets(): Promise<null> {
+    return this.requestOnOpenWorld<null>('remountVfs', {});
+  }
+
   /** What each name resolves to in the mounted namespace, or null — how the
    *  asset browser tells a mod's uncompiled source from a compiled one (#294). */
   resolveAssets(names: readonly string[]): Promise<(string | null)[]> {

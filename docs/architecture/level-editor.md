@@ -3869,9 +3869,27 @@ as given — is **not compiled**, and its row, its tile and the preview panel sa
 so and name the GMBT build. A mesh stays placeable: the VOB names the source
 file, as retail's do. `.MDS` is left out, since a model script compiles to an
 `.MSB` nothing here resolves. The preview decodes a `.TGA` as a texture now,
-by the source name the binding already maps to `-C.TEX`. What this does not
-do is compile anything: a "compile assets" action (#296) and previewing a
-`.3DS` directly (#297) were the two larger answers #294 named, and are filed.
+by the source name the binding already maps to `-C.TEX`. The tag itself
+compiles nothing; previewing a `.3DS` directly, with no compile at all, is
+#297.
+
+**And a button runs the compile (#296).** Once a source on screen is not
+compiled, the browser offers **Compile**, which runs
+`gmbt compile --full --noupdatesubtitles` in the project's `gmbtProjectDir` —
+GMBT's own source (`Compile.cs`) is where the flags come from: only `--full`
+passes `-zconvertall -ztexconvert` to the headless game, and a quick compile
+leaves meshes for the game to convert on the fly. The dialog says first what
+GMBT does to the install (it rebuilds what it manages in `_work/Data` from the
+project's asset folders — environment-hazards.md, "GMBT empties `_work`").
+Unlike the quick test it is **awaited**: `world:compileAssets` fails with GMBT's
+exit code and the tail of its output, which the dialog shows, and on success
+the worker **remounts its VFS** over the same sources (`remountVfs`) — a mount
+maps the files that are there when it opens, and the world, its handle and its
+history stay as they are. `useAssetCatalog` then hands every VFS read out
+afresh and rebuilds the thumbnail queue, so the listing, the tags, the preview
+and a failed thumbnail all ask again, and the surface re-reads the world's
+visuals so a VOB placed from the uncompiled source draws. One run at a time,
+refused with no `gmbtProjectDir`, like the quick test.
 
 **Worlds come off the same source list.** `world:listWorlds` scans each
 configured source *as a folder* — `resolvedAssetRoots`, the list before an

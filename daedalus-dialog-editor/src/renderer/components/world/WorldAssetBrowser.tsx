@@ -1,6 +1,7 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Box, Breadcrumbs, IconButton, Link, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
+  Box, Breadcrumbs, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
+  IconButton, Link, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import FolderIcon from '@mui/icons-material/Folder';
@@ -255,6 +256,12 @@ export interface WorldAssetBrowserProps {
    * yet is told from one it has (#294). Absent, nothing is tagged.
    */
   resolveAssets?: (names: string[]) => Promise<(string | null)[]>;
+  /**
+   * Run `gmbt compile --full` for the project and remount (#296) — offered once
+   * a source on screen is not compiled. Absent, the tag names the GMBT build
+   * and that is all.
+   */
+  compileAssets?: () => Promise<void>;
 }
 
 export interface AssetCatalogProps {
@@ -275,7 +282,7 @@ export interface AssetCatalogProps {
 
 const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
   listAssets, searchAssets, onPreview, thumbnails, catalog, sources = NO_SOURCES, placement,
-  previewing = null, resolveAssets,
+  previewing = null, resolveAssets, compileAssets,
 }) => {
   const [path, setPath] = useState('/');
   const [view, setView] = useState<'list' | 'grid'>('list');
@@ -466,6 +473,20 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
     if (!range) setAnchor(entry.name);
   }, [filtered, anchor]);
   const [fileMenu, setFileMenu] = useState<HTMLElement | null>(null);
+  // The compile dialog (#296): closed, open, running, or open with GMBT's
+  // failure in it. A failure keeps the dialog up — it is the only place the
+  // reason is shown, and GMBT's last lines are the reason.
+  const [compile, setCompile] = useState<{ running: boolean; error: string | null } | null>(null);
+  const runCompile = useCallback(async () => {
+    if (compileAssets === undefined) return;
+    setCompile({ running: true, error: null });
+    try {
+      await compileAssets();
+      setCompile(null);
+    } catch (failure) {
+      setCompile({ running: false, error: failure instanceof Error ? failure.message : String(failure) });
+    }
+  }, [compileAssets]);
 
   const onOpen = useCallback((entry: VfsEntry) => {
     const child = pathOf(entry, path);
@@ -670,6 +691,20 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
                   : `${filtered.length.toLocaleString()} of ${sorted.length.toLocaleString()}`)}
             </Typography>
           )}
+          {compileAssets !== undefined && uncompiled.size > 0 && (
+            <Tooltip title="Compile the project's assets with GMBT, so the ones marked not compiled can be previewed">
+              <Button
+                size="small"
+                variant="outlined"
+                color="warning"
+                data-testid="world-asset-compile"
+                onClick={() => setCompile({ running: false, error: null })}
+                sx={{ py: 0, minWidth: 0, fontSize: 11, textTransform: 'none' }}
+              >
+                Compile
+              </Button>
+            </Tooltip>
+          )}
           {catalog !== undefined && ready && (
             <>
               <Tooltip title={marked.size === 0
@@ -734,6 +769,54 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
           )}
         </Box>
       </Box>
+
+      <Dialog
+        open={compile !== null}
+        onClose={() => { if (compile?.running !== true) setCompile(null); }}
+        data-testid="world-asset-compile-dialog"
+      >
+        <DialogTitle>Compile assets with GMBT</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" gutterBottom>
+            Runs <code>gmbt compile --full</code> in the project's GMBT folder. GMBT merges the project's
+            asset folders into the Gothic install's <code>_work/Data</code> — rebuilding what it manages
+            there — and then starts Gothic without a window to compile every mesh, model and texture.
+            It takes a few minutes.
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            The open world stays open. Afterwards the asset list, the previews and the viewport read
+            the compiled files.
+          </Typography>
+          {compile?.running === true && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1.5 }} data-testid="world-asset-compile-running">
+              <CircularProgress size={16} />
+              <Typography variant="body2">Compiling…</Typography>
+            </Box>
+          )}
+          {compile?.error != null && (
+            <Typography
+              variant="body2"
+              color="error"
+              component="pre"
+              data-testid="world-asset-compile-error"
+              sx={{ mt: 1.5, whiteSpace: 'pre-wrap', fontSize: 12, maxHeight: 240, overflow: 'auto' }}
+            >
+              {compile.error}
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCompile(null)} disabled={compile?.running === true}>Close</Button>
+          <Button
+            variant="contained"
+            data-testid="world-asset-compile-confirm"
+            disabled={compile?.running === true}
+            onClick={() => { void runCompile(); }}
+          >
+            {compile?.error != null ? 'Try again' : 'Compile'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {failure !== null && (
         <Typography

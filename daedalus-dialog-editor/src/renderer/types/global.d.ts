@@ -244,6 +244,9 @@ export interface EditorAPI {
    *  Rejects when no GMBT project folder is configured, when no world is open,
    *  or when `gmbt` is not installed. */
   startGmbtQuickTest: () => Promise<void>;
+  /** `gmbt compile --full` in the project's GMBT folder, then the VFS remounted
+   *  (#296). Rejects with GMBT's exit code and its last output. */
+  compileWorldAssets: () => Promise<void>;
   /** The `<worldname>.folders.json` sidecar — user-created, editor-only VOB
    *  groupings kept beside the world file, never in it. */
   getVobFolders: (worldPath: string) => Promise<VobFolders>;

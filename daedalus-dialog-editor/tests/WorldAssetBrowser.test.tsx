@@ -502,6 +502,57 @@ describe('WorldAssetBrowser', () => {
       expect(screen.queryByTestId('world-asset-uncompiled-NW_CRATE.3DS')).not.toBeInTheDocument();
     });
 
+    // #296: the tag named the GMBT build as the fix; this runs it.
+    describe('compiling them from here', () => {
+      it('offers Compile once something shown is not compiled, and says what GMBT will do first', async () => {
+        const user = userEvent.setup();
+        const compile = jest.fn(async () => undefined);
+        render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} resolveAssets={resolve} compileAssets={compile} />);
+        await screen.findByTestId('world-asset-uncompiled-KM_VOB_BIG_BUSH_01.3DS');
+
+        await user.click(screen.getByTestId('world-asset-compile'));
+        const confirm = await screen.findByTestId('world-asset-compile-dialog');
+        expect(confirm).toHaveTextContent('gmbt compile --full');
+        expect(confirm).toHaveTextContent('_work/Data');
+        expect(compile).not.toHaveBeenCalled();
+
+        await user.click(screen.getByTestId('world-asset-compile-confirm'));
+        expect(compile).toHaveBeenCalledTimes(1);
+        await waitFor(() => expect(screen.queryByTestId('world-asset-compile-dialog')).not.toBeInTheDocument());
+      });
+
+      it('says it is running while it runs, and keeps the dialog open with GMBT\'s words when it fails', async () => {
+        const user = userEvent.setup();
+        let fail: (error: Error) => void = () => undefined;
+        const compile = jest.fn(() => new Promise<void>((_resolve, reject) => { fail = reject; }));
+        render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} resolveAssets={resolve} compileAssets={compile} />);
+        await screen.findByTestId('world-asset-uncompiled-KM_VOB_BIG_BUSH_01.3DS');
+        await user.click(screen.getByTestId('world-asset-compile'));
+        await user.click(await screen.findByTestId('world-asset-compile-confirm'));
+
+        expect(screen.getByTestId('world-asset-compile-running')).toBeInTheDocument();
+        expect(screen.getByTestId('world-asset-compile-confirm')).toBeDisabled();
+
+        await act(async () => { fail(new Error('gmbt compile exited with code 3:\nSYSTEM\\MUSIC.SRC not found')); });
+        expect(screen.getByTestId('world-asset-compile-error')).toHaveTextContent('MUSIC.SRC not found');
+        expect(screen.queryByTestId('world-asset-compile-running')).not.toBeInTheDocument();
+      });
+
+      it('offers nothing when everything shown is compiled, or without a way to compile', async () => {
+        const compiled = jest.fn(async (names: string[]) => names.map((name) => name.replace('.3DS', '.MRM')));
+        const { unmount } = render(
+          <WorldAssetBrowser listAssets={list} onPreview={jest.fn()} resolveAssets={compiled} compileAssets={jest.fn()} />,
+        );
+        await waitFor(() => expect(compiled).toHaveBeenCalled());
+        expect(screen.queryByTestId('world-asset-compile')).not.toBeInTheDocument();
+        unmount();
+
+        render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} resolveAssets={resolve} />);
+        await screen.findByTestId('world-asset-uncompiled-KM_VOB_BIG_BUSH_01.3DS');
+        expect(screen.queryByTestId('world-asset-compile')).not.toBeInTheDocument();
+      });
+    });
+
     it('asks nothing when the listing holds no source file, and tags nothing without a resolver', async () => {
       const { list: plain } = listing();
       const quiet = jest.fn(async (names: string[]) => names.map(() => null));

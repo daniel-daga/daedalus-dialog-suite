@@ -345,7 +345,7 @@ const WorldAssetPreview: React.FC<WorldAssetPreviewProps> = ({
 
       {uncompiled && (
         <Typography variant="caption" color="warning.main" data-testid="world-asset-preview-uncompiled">
-          {`This file has not been compiled yet. ZenGin reads the compiled ${kind === 'texture' ? '-C.TEX' : '.MRM or .MDL'}, and so does this preview; a GMBT build writes it into _work/Data/*/_compiled.`}
+          {`This file has not been compiled yet. ZenGin reads the compiled ${kind === 'texture' ? '-C.TEX' : '.MRM or .MDL'}, and so does this preview; a GMBT build writes it into _work/Data/*/_compiled — Compile, above the asset list, runs one.`}
           {kind === 'mesh' && ' It can still be placed: the VOB names this source file, and it shows up once it is compiled.'}
         </Typography>
       )}

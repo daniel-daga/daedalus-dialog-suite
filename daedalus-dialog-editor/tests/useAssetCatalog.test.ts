@@ -57,6 +57,7 @@ const api = {
   listWorldAssets: jest.fn(async () => []),
   searchWorldAssets: jest.fn(async () => []),
   resolveWorldAssets: jest.fn(async (names: string[]) => names.map((): string | null => null)),
+  compileWorldAssets: jest.fn(async () => undefined),
   getWorldTexture: jest.fn(async () => null),
   getWorldVisual: jest.fn(async () => null),
   getAssetThumbnail: jest.fn(async () => null),
@@ -196,6 +197,37 @@ describe('useAssetCatalog — the renderers’ lifetime', () => {
     expect(disposed).toEqual(['thumbnails', 'liveTile']);
     expect(built).toEqual(['thumbnails', 'liveTile', 'thumbnails', 'liveTile']);
     expect(result.current.thumbnails).not.toBe(queue);
+  });
+
+  test('a GMBT compile rebuilds both and hands out fresh reads, so everything asks again (#296)', async () => {
+    // The files under the mounts changed: a queue holding "failed" for a mesh
+    // that is compiled now, or a listing kept by identity, would keep saying
+    // what is no longer true.
+    const { result } = renderHook(() => useAssetCatalog());
+    act(() => { openAt('C:/g2/Data/Worlds/NEWWORLD.ZEN'); });
+    const before = result.current;
+
+    await act(async () => { await result.current.compileAssets(); });
+
+    expect(api.compileWorldAssets).toHaveBeenCalledTimes(1);
+    expect(disposed).toEqual(['thumbnails', 'liveTile']);
+    expect(result.current.thumbnails).not.toBe(before.thumbnails);
+    for (const read of ['listAssets', 'searchAssets', 'resolveAssets', 'resolveAsset', 'loadTexture', 'loadVisual'] as const) {
+      expect([read, result.current[read] === before[read]]).toEqual([read, false]);
+    }
+  });
+
+  test('a compile that fails leaves everything as it was, and says why', async () => {
+    api.compileWorldAssets.mockRejectedValueOnce(new Error('gmbt compile exited with code 3'));
+    const { result } = renderHook(() => useAssetCatalog());
+    act(() => { openAt('C:/g2/Data/Worlds/NEWWORLD.ZEN'); });
+    const queue = result.current.thumbnails;
+
+    await act(async () => {
+      await expect(result.current.compileAssets()).rejects.toThrow(/code 3/);
+    });
+    expect(result.current.thumbnails).toBe(queue);
+    expect(disposed).toEqual([]);
   });
 
   test('unmounting gives the GL contexts back', () => {
