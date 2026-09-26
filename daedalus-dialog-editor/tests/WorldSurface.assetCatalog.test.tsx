@@ -134,6 +134,33 @@ describe('the asset catalog on the surface', () => {
     expect(api.resolveWorldAssets).toHaveBeenCalledWith(['KM_VOB_BIG_BUSH_01.3DS']);
   });
 
+  it('files every mesh in a listing into a category with one sidecar write (#295)', async () => {
+    api.listWorldAssets.mockResolvedValue([
+      { name: 'KM_BUSH_01.MRM', type: 'file' }, { name: 'KM_BUSH_02.MRM', type: 'file' },
+      { name: 'NW_CRATE.MRM', type: 'file' },
+    ] as never);
+    await openWorld();
+    fireEvent.click(screen.getByTestId('world-panel-assets'));
+    await screen.findByTestId('world-asset-KM_BUSH_01.MRM');
+
+    fireEvent.click(screen.getByTestId('world-asset-file-many'));
+    fireEvent.change(await screen.findByTestId('world-asset-file-new'), { target: { value: 'Archolos/Büsche' } });
+    await act(async () => {
+      fireEvent.keyDown(screen.getByTestId('world-asset-file-new'), { key: 'Enter' });
+    });
+
+    // Every mesh shown goes in, the crate too — a visual may sit in two
+    // categories. One write, and only the project's own: never the seed.
+    await waitFor(() => expect(api.saveAssetCatalog).toHaveBeenCalledTimes(1));
+    expect(api.saveAssetCatalog).toHaveBeenCalledWith(PROJECT, {
+      favorites: [],
+      categories: [
+        { path: 'Mine/Crates', visuals: ['NW_CRATE.MRM'] },
+        { path: 'Archolos/Büsche', visuals: ['KM_BUSH_01.MRM', 'KM_BUSH_02.MRM', 'NW_CRATE.MRM'] },
+      ],
+    });
+  });
+
   it('offers no favorites or categories with no project loaded', async () => {
     useProjectStore.setState({ projectFilePath: null } as never);
     await openWorld();

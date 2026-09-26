@@ -78,6 +78,30 @@ export function addToCategory(state: AssetCatalog, path: string, name: string): 
   };
 }
 
+/** `addToCategory` for many names in one change (#295) — one sidecar write
+ *  for a directory's or a search's worth of visuals. Order is the caller's; a
+ *  name already filed there, or given twice, is filed once. Nothing new to file
+ *  answers the state it was given, so the caller can skip the write. */
+export function addManyToCategory(state: AssetCatalog, path: string, names: readonly string[]): AssetCatalog {
+  const withCategory = createCategory(state, path);
+  const existing = withCategory.categories.find((category) => category.path === path)!;
+  const keys = new Set(existing.visuals.map(assetKey));
+  const fresh: string[] = [];
+  for (const name of names) {
+    const key = assetKey(name);
+    if (keys.has(key)) continue;
+    keys.add(key);
+    fresh.push(name);
+  }
+  if (fresh.length === 0) return state;
+  return {
+    ...withCategory,
+    categories: withCategory.categories.map((category) => (
+      category.path === path ? { ...category, visuals: [...category.visuals, ...fresh] } : category
+    )),
+  };
+}
+
 export function removeFromCategory(state: AssetCatalog, path: string, name: string): AssetCatalog {
   const key = assetKey(name);
   return {

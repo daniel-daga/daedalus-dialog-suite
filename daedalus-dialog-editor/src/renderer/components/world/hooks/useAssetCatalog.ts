@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  addToCategory, assetKey, emptyAssetCatalog, mergeCatalogs, parseAssetCatalog,
+  addManyToCategory, addToCategory, assetKey, emptyAssetCatalog, mergeCatalogs, parseAssetCatalog,
   removeFromCategory, setCategoryCollision, toggleFavorite, visualsOf,
 } from 'zen-world';
 import type { AssetCatalog } from '../../../../shared/worldTypes';
@@ -92,6 +92,12 @@ export function useAssetCatalog(): AssetCatalogSurface {
       onToggleFavorite: (name) => persistAssetCatalog(toggleFavorite(assetCatalog, name)),
       onAddToCategory: (path, name) => persistAssetCatalog(addToCategory(assetCatalog, path, name)),
       onRemoveFromCategory: (path, name) => persistAssetCatalog(removeFromCategory(assetCatalog, path, name)),
+      // One write for the lot (#295). Nothing new to file answers the same
+      // state, and a write that changes nothing is skipped.
+      onAddManyToCategory: (path, names) => {
+        const next = addManyToCategory(assetCatalog, path, names);
+        if (next !== assetCatalog) persistAssetCatalog(next);
+      },
       onSetCategoryCollision: (path, collision) => (
         persistAssetCatalog(setCategoryCollision(assetCatalog, path, collision))
       ),

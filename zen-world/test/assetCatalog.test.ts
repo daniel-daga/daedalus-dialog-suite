@@ -3,7 +3,7 @@
 // as a project sidecar and seeded from vobbilder's category tree.
 
 import {
-  addToCategory, assetKey, createCategory, emptyAssetCatalog, isFavorite, mergeCatalogs,
+  addManyToCategory, addToCategory, assetKey, createCategory, emptyAssetCatalog, isFavorite, mergeCatalogs,
   parseAssetCatalog, removeFromCategory, toggleFavorite, visualsOf,
 } from '../src/model';
 
@@ -85,5 +85,26 @@ describe('parseAssetCatalog', () => {
       favorites: ['A.MRM', 3, null],
       categories: [{ path: 'P', visuals: ['B.MRM', 7] }, { path: 4 }, 'x', { path: 'Q', visuals: 'no' }],
     })).toEqual({ favorites: ['A.MRM'], categories: [{ path: 'P', visuals: ['B.MRM'] }] });
+  });
+});
+
+// #295: the Archolos set is hundreds of visuals, and filing was one tile at a
+// time — one sidecar write each.
+describe('addManyToCategory', () => {
+  it('files every name at once, creating the category, in the order given', () => {
+    const next = addManyToCategory(emptyAssetCatalog(), 'Archolos/Büsche', ['KM_BUSH_01.MRM', 'KM_BUSH_02.MRM']);
+    expect(next.categories).toEqual([{ path: 'Archolos/Büsche', visuals: ['KM_BUSH_01.MRM', 'KM_BUSH_02.MRM'] }]);
+  });
+
+  it('skips what is already filed there, and a name given twice, by key', () => {
+    const filed = addToCategory(emptyAssetCatalog(), 'Mine', 'NW_CRATE.3DS');
+    const next = addManyToCategory(filed, 'Mine', ['nw_crate.mrm', 'KM_BUSH_01.MRM', 'KM_BUSH_01.3DS']);
+    expect(visualsOf(next, 'Mine')).toEqual(['NW_CRATE.3DS', 'KM_BUSH_01.MRM']);
+  });
+
+  it('leaves other categories alone, and the state unchanged when there is nothing new', () => {
+    const filed = addToCategory(addToCategory(emptyAssetCatalog(), 'A', 'X.MRM'), 'B', 'Y.MRM');
+    expect(addManyToCategory(filed, 'A', ['X.3DS'])).toBe(filed);
+    expect(visualsOf(addManyToCategory(filed, 'A', ['Z.MRM']), 'B')).toEqual(['Y.MRM']);
   });
 });

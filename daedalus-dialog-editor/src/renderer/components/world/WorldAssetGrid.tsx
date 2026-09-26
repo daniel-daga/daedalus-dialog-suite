@@ -21,6 +21,13 @@ import { thumbnailKindOf, type AssetThumbnails, type ThumbnailState } from '../.
 // past. The same tile serves the favorites and category views ("Wanted on
 // top"), which is where its star and its file-into menu come from.
 
+/** Whether a click on a row or tile marks it for "file many" (#295) rather than
+ *  opening it: Ctrl or Cmd toggles one, Shift marks the run from the last one
+ *  marked — a file manager's gestures. */
+export const markClick = (event: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }) => (
+  event.ctrlKey || event.metaKey || event.shiftKey
+);
+
 export const TILE_WIDTH = THUMBNAIL_SIZE + 16;
 export const TILE_HEIGHT = THUMBNAIL_SIZE + 36;
 
@@ -218,19 +225,21 @@ export const FavoriteStar: React.FC<{ name: string; actions: TileCatalogActions 
   );
 };
 
-/** The file-into menu: every known category, plus a field for a new one. */
-const FileIntoMenu: React.FC<{
-  anchor: HTMLElement | null; name: string; actions: TileCatalogActions; onClose: () => void;
-}> = ({ anchor, name, actions, onClose }) => {
+/** The file-into menu: every known category, plus a field for a new one. One
+ *  tile's menu and the browser's "file many" menu (#295) are the same menu with
+ *  a different `onFile`. */
+export const FileIntoMenu: React.FC<{
+  anchor: HTMLElement | null; paths: readonly string[]; onFile: (path: string) => void; onClose: () => void;
+}> = ({ anchor, paths, onFile, onClose }) => {
   const [fresh, setFresh] = useState('');
   return (
     <Menu open={anchor !== null} anchorEl={anchor} onClose={onClose}>
-      {actions.categoryPaths.map((path) => (
+      {paths.map((path) => (
         <MenuItem
           key={path}
           dense
           data-testid={`world-asset-file-into-${path}`}
-          onClick={() => { actions.onAddToCategory(path, name); onClose(); }}
+          onClick={() => { onFile(path); onClose(); }}
         >
           {path}
         </MenuItem>
@@ -245,7 +254,7 @@ const FileIntoMenu: React.FC<{
           inputProps={{ 'data-testid': 'world-asset-file-new' }}
           onKeyDown={(event) => {
             if (event.key !== 'Enter' || fresh.trim() === '') return;
-            actions.onAddToCategory(fresh.trim(), name);
+            onFile(fresh.trim());
             onClose();
           }}
         />
@@ -254,10 +263,6 @@ const FileIntoMenu: React.FC<{
   );
 };
 
-/** Where a tile's asset is served from, and whether this listing is showing a
- *  copy a later mount overrides (architecture level-editor.md §6). A badge
- *  over the thumbnail rather than a caption under it: the grid's row height is
- *  fixed, and a tile is 96 px wide. */
 /** What a "not compiled" tag says when hovered — the row and the tile share it
  *  (#294), so the two cannot give different answers. */
 export const UNCOMPILED_TITLE = 'Not compiled yet. ZenGin and this editor read the compiled file (.MRM, .MDL, -C.TEX); a GMBT build writes it into _work/Data/*/_compiled. It can still be placed: the VOB names this source file.';
@@ -276,6 +281,10 @@ export const UncompiledTag: React.FC<{ name: string; sx?: object }> = ({ name, s
   </Typography>
 );
 
+/** Where a tile's asset is served from, and whether this listing is showing a
+ *  copy a later mount overrides (architecture level-editor.md §6). A badge
+ *  over the thumbnail rather than a caption under it: the grid's row height is
+ *  fixed, and a tile is 96 px wide. */
 export interface TileOrigin {
   label: string;
   overridden: boolean;
@@ -290,9 +299,12 @@ export const AssetTile: React.FC<{
   origin?: TileOrigin;
   /** A source file with no compiled half yet (#294). */
   uncompiled?: boolean;
+  /** Marked for "file many" (#295), and the Ctrl/Shift-click that marks it. */
+  marked?: boolean;
+  onMark?: (entry: VfsEntry, range: boolean) => void;
   placement?: AssetPlacement;
   style?: React.CSSProperties;
-}> = ({ entry, thumbnails, onOpen, actions, origin, uncompiled = false, placement, style }) => {
+}> = ({ entry, thumbnails, onOpen, actions, origin, uncompiled = false, marked = false, onMark, placement, style }) => {
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const isFile = entry.type === 'file';
   const favorite = isFile && actions !== undefined && actions.isFavorite(entry.name);
@@ -303,12 +315,17 @@ export const AssetTile: React.FC<{
       role="listitem"
       data-testid={`world-asset-tile-${entry.name}`}
       {...(origin?.overridden === true ? { 'data-overridden': 'true' } : {})}
-      onClick={() => onOpen(entry)}
+      {...(marked ? { 'aria-selected': 'true' } : {})}
+      onClick={(event) => {
+        if (markClick(event) && isFile && onMark !== undefined) { onMark(entry, event.shiftKey); return; }
+        onOpen(entry);
+      }}
       onContextMenu={place.onContextMenu}
       style={style}
       sx={{
         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5, p: 1, cursor: 'pointer',
         position: 'relative', '&:hover': { bgcolor: 'action.hover' },
+        ...(marked ? { bgcolor: 'action.selected' } : {}),
         // `:focus-within` as well as `:hover`: the star and the place verb are
         // buttons, and a tile reached by keyboard used to hide the very controls
         // the focus had just landed on (§5.4 item 17 of the 2026-09-04 review).
@@ -380,7 +397,12 @@ export const AssetTile: React.FC<{
             </IconButton>
           </Box>
           {menuAnchor !== null && (
-            <FileIntoMenu anchor={menuAnchor} name={entry.name} actions={actions} onClose={() => setMenuAnchor(null)} />
+            <FileIntoMenu
+              anchor={menuAnchor}
+              paths={actions.categoryPaths}
+              onFile={(path) => actions.onAddToCategory(path, entry.name)}
+              onClose={() => setMenuAnchor(null)}
+            />
           )}
         </Box>
       )}
@@ -397,6 +419,8 @@ interface CellData {
   actions?: TileCatalogActions;
   originOf?: (entry: VfsEntry) => TileOrigin | undefined;
   uncompiled?: ReadonlySet<string>;
+  marked?: ReadonlySet<string>;
+  onMark?: (entry: VfsEntry, range: boolean) => void;
   placement?: AssetPlacement;
 }
 
@@ -411,6 +435,8 @@ const Cell = memo(({ columnIndex, rowIndex, style, data }: GridChildComponentPro
       actions={data.actions}
       origin={data.originOf?.(entry)}
       uncompiled={data.uncompiled?.has(entry.name) ?? false}
+      marked={data.marked?.has(entry.name) ?? false}
+      onMark={data.onMark}
       placement={data.placement}
       style={style}
     />
@@ -428,11 +454,15 @@ export interface WorldAssetGridProps {
   originOf?: (entry: VfsEntry) => TileOrigin | undefined;
   /** The source files in `entries` with no compiled half (#294), by name. */
   uncompiled?: ReadonlySet<string>;
+  /** The files marked for "file many" (#295), by name, and what marks one.
+   *  Absent, a modified click opens the tile like any other. */
+  marked?: ReadonlySet<string>;
+  onMark?: (entry: VfsEntry, range: boolean) => void;
   placement?: AssetPlacement;
 }
 
 const WorldAssetGrid: React.FC<WorldAssetGridProps> = ({
-  entries, thumbnails, onOpen, actions, originOf, uncompiled, placement,
+  entries, thumbnails, onOpen, actions, originOf, uncompiled, marked, onMark, placement,
 }) => (
   <AutoSizer>
     {({ height, width }) => {
@@ -441,7 +471,7 @@ const WorldAssetGrid: React.FC<WorldAssetGridProps> = ({
         <SizedGrid
           height={height} width={width} columns={columns}
           entries={entries} thumbnails={thumbnails} onOpen={onOpen} actions={actions} originOf={originOf}
-          uncompiled={uncompiled} placement={placement}
+          uncompiled={uncompiled} marked={marked} onMark={onMark} placement={placement}
         />
       );
     }}
@@ -449,11 +479,11 @@ const WorldAssetGrid: React.FC<WorldAssetGridProps> = ({
 );
 
 const SizedGrid: React.FC<WorldAssetGridProps & { height: number; width: number; columns: number }> = ({
-  height, width, columns, entries, thumbnails, onOpen, actions, originOf, uncompiled, placement,
+  height, width, columns, entries, thumbnails, onOpen, actions, originOf, uncompiled, marked, onMark, placement,
 }) => {
   const itemData = useMemo<CellData>(
-    () => ({ entries, columns, thumbnails, onOpen, actions, originOf, uncompiled, placement }),
-    [entries, columns, thumbnails, onOpen, actions, originOf, uncompiled, placement],
+    () => ({ entries, columns, thumbnails, onOpen, actions, originOf, uncompiled, marked, onMark, placement }),
+    [entries, columns, thumbnails, onOpen, actions, originOf, uncompiled, marked, onMark, placement],
   );
   return (
     <Grid

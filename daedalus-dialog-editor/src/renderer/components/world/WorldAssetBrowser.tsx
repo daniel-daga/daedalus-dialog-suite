@@ -6,6 +6,7 @@ import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import FolderIcon from '@mui/icons-material/Folder';
 import GridViewIcon from '@mui/icons-material/GridView';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
+import LabelOutlinedIcon from '@mui/icons-material/LabelOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ViewListIcon from '@mui/icons-material/ViewList';
 import { FixedSizeList as List, type ListChildComponentProps, areEqual } from 'react-window';
@@ -14,9 +15,10 @@ import { compileState, isFavorite, isSourceAsset } from 'zen-world';
 import type { AssetCatalog, VfsEntry, VfsSearch } from '../../../shared/worldTypes';
 import type { AssetThumbnails } from '../../world/assetThumbnails';
 import WorldAssetGrid, {
-  FavoriteStar, UncompiledTag, usePlaceMenu, type AssetPlacement, type TileCatalogActions, type TileOrigin,
+  FavoriteStar, FileIntoMenu, UncompiledTag, markClick, usePlaceMenu, type AssetPlacement, type TileCatalogActions, type TileOrigin,
 } from './WorldAssetGrid';
 import WorldAssetCatalogView from './WorldAssetCatalogView';
+import { isPlaceableVisual } from './WorldAssetPreview';
 
 // The asset browser over the mounted VFS (level-editor.md §6).
 //
@@ -111,6 +113,10 @@ interface RowData {
   previewing?: string | null;
   /** The source files on screen with no compiled half (#294), by name. */
   uncompiled: ReadonlySet<string>;
+  /** Marked for "file many" (#295), by name, and the modified click that
+   *  marks one — absent with no catalogue to file into. */
+  marked: ReadonlySet<string>;
+  onMark?: (entry: VfsEntry, range: boolean) => void;
 }
 
 const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
@@ -128,6 +134,7 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
   // The same path `onOpen` would hand up, so the two cannot drift apart.
   const showing = data.previewing !== null && data.previewing !== undefined
     && data.previewing === pathOf(entry, data.path);
+  const marked = data.marked.has(entry.name);
 
   return (
     <Box
@@ -135,6 +142,7 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
       data-testid={`world-asset-${entry.name}`}
       {...(overridden ? { 'data-overridden': 'true' } : {})}
       {...(showing ? { 'aria-current': 'true' } : {})}
+      {...(marked ? { 'aria-selected': 'true' } : {})}
       // A row was a `div` with an `onClick` and nothing else: not reachable by
       // keyboard, let alone activatable. Space as well as Enter, and with
       // `preventDefault` — Space scrolls a list otherwise, which here is the
@@ -145,13 +153,19 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
         event.preventDefault();
         data.onOpen(entry);
       }}
-      onClick={() => data.onOpen(entry)}
+      onClick={(event) => {
+        if (markClick(event) && !isDirectory && data.onMark !== undefined) {
+          data.onMark(entry, event.shiftKey);
+          return;
+        }
+        data.onOpen(entry);
+      }}
       onContextMenu={place.onContextMenu}
       style={style}
       sx={{
         display: 'flex', alignItems: 'center', gap: 0.75, px: 1, cursor: 'pointer',
         whiteSpace: 'nowrap', '&:hover': { bgcolor: 'action.hover' },
-        ...(showing ? { bgcolor: 'action.selected' } : {}),
+        ...(showing || marked ? { bgcolor: 'action.selected' } : {}),
         // Dim rather than hidden: a control nobody can see is the bug this
         // row is fixing. A starred row keeps its star at full strength.
         '& .row-star': { opacity: 0.25 },
@@ -249,6 +263,9 @@ export interface AssetCatalogProps {
   onToggleFavorite: (name: string) => void;
   onAddToCategory: (path: string, name: string) => void;
   onRemoveFromCategory: (path: string, name: string) => void;
+  /** File many visuals at once (#295) — one sidecar write for a directory's or a
+   *  search's worth, rather than one per tile. */
+  onAddManyToCategory: (path: string, names: string[]) => void;
   /** A category's collision override (#291): true on, false off, undefined
    *  back to the name rule in `placementCollision`. */
   onSetCategoryCollision: (path: string, collision: boolean | undefined) => void;
@@ -404,6 +421,39 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
     return () => { current = false; };
   }, [resolveAssets, sourceNames]);
 
+  // Files marked for "file many" (#295), by name, in the order they are shown.
+  // A navigation, a new needle or another source is a different list, and a
+  // mark carried into it would file something the user can no longer see.
+  const [marked, setMarked] = useState<ReadonlySet<string>>(() => new Set());
+  const [anchor, setAnchor] = useState<string | null>(null);
+  useEffect(() => { setMarked(new Set()); setAnchor(null); }, [path, needle, only]);
+  // What "file many" files: the marked meshes, or every mesh shown when none
+  // is marked. Meshes only — a category is a list of visuals to place, and a
+  // texture or a script filed into one would be a tile that places nothing.
+  const fileable = useMemo(
+    () => filtered.filter((entry) => entry.type === 'file' && isPlaceableVisual(entry.name)),
+    [filtered],
+  );
+  const toFile = useMemo(() => {
+    const names = fileable.map((entry) => entry.name);
+    return marked.size === 0 ? [...new Set(names)] : [...new Set(names.filter((name) => marked.has(name)))];
+  }, [fileable, marked]);
+  const onMark = useCallback((entry: VfsEntry, range: boolean) => {
+    const order = filtered.filter((shown) => shown.type === 'file').map((shown) => shown.name);
+    setMarked((current) => {
+      const next = new Set(current);
+      if (range && anchor !== null && order.includes(anchor)) {
+        const [from, to] = [order.indexOf(anchor), order.indexOf(entry.name)].sort((a, b) => a - b);
+        for (const name of order.slice(from, to + 1)) next.add(name);
+        return next;
+      }
+      if (!next.delete(entry.name)) next.add(entry.name);
+      return next;
+    });
+    if (!range) setAnchor(entry.name);
+  }, [filtered, anchor]);
+  const [fileMenu, setFileMenu] = useState<HTMLElement | null>(null);
+
   const onOpen = useCallback((entry: VfsEntry) => {
     const child = pathOf(entry, path);
     if (entry.type === 'directory') setPath(child);
@@ -437,8 +487,10 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
     () => ({
       entries: filtered, onOpen, path, sourceLabels, only,
       actions: tileActions, placement, previewing, uncompiled,
+      marked, onMark: catalog === undefined ? undefined : onMark,
     }),
-    [filtered, onOpen, path, sourceLabels, only, tileActions, placement, previewing, uncompiled],
+    [filtered, onOpen, path, sourceLabels, only, tileActions, placement, previewing, uncompiled,
+      marked, onMark, catalog],
   );
   const originOf = useCallback(
     (entry: VfsEntry) => origin(entry, sourceLabels, only),
@@ -590,6 +642,38 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
                   : `${filtered.length.toLocaleString()} of ${sorted.length.toLocaleString()}`)}
             </Typography>
           )}
+          {catalog !== undefined && ready && (
+            <>
+              <Tooltip title={marked.size === 0
+                ? `File all ${toFile.length} meshes shown into a category (Ctrl- or Shift-click to mark some)`
+                : `File the ${toFile.length} marked meshes into a category`}
+              >
+                <span>
+                  <IconButton
+                    size="small"
+                    data-testid="world-asset-file-many"
+                    aria-label="File into a category"
+                    disabled={toFile.length === 0}
+                    onClick={(event) => setFileMenu(event.currentTarget)}
+                    sx={{ gap: 0.25 }}
+                  >
+                    <LabelOutlinedIcon sx={{ fontSize: 16 }} />
+                    <Typography variant="caption">{toFile.length.toLocaleString()}</Typography>
+                  </IconButton>
+                </span>
+              </Tooltip>
+              <FileIntoMenu
+                anchor={fileMenu}
+                paths={catalog.catalog.categories.map((category) => category.path)}
+                onFile={(target) => {
+                  catalog.onAddManyToCategory(target, toFile);
+                  setMarked(new Set());
+                  setAnchor(null);
+                }}
+                onClose={() => setFileMenu(null)}
+              />
+            </>
+          )}
           {thumbnails !== undefined && (
             <>
               <ToggleButtonGroup
@@ -669,6 +753,8 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
             actions={tileActions}
             originOf={originOf}
             uncompiled={uncompiled}
+            marked={marked}
+            onMark={catalog === undefined ? undefined : onMark}
             placement={placement}
           />
         </Box>

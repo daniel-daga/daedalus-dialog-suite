@@ -706,6 +706,7 @@ describe('WorldAssetBrowser', () => {
         onAddToCategory: jest.fn(),
         onRemoveFromCategory: jest.fn(),
         onSetCategoryCollision: jest.fn(),
+        onAddManyToCategory: jest.fn(),
         ...overrides,
       };
     }
@@ -807,6 +808,105 @@ describe('WorldAssetBrowser', () => {
       expect(props.onSetCategoryCollision).toHaveBeenLastCalledWith('Mine/Crates', undefined);
     });
 
+    // #295: the Archolos set is hundreds of visuals, and filing was one tile
+    // at a time through that tile's own menu.
+    describe('filing many at once', () => {
+      const MESHES: VfsEntry[] = [
+        { name: 'KM_BUSH_01.MRM', type: 'file' },
+        { name: 'KM_BUSH_02.MRM', type: 'file' },
+        { name: 'KM_BUSH_03.MRM', type: 'file' },
+        { name: 'KM_BARK-C.TEX', type: 'file' },
+        { name: 'Sub', type: 'directory' },
+      ];
+      const list = jest.fn(async () => MESHES);
+      const button = () => screen.getByTestId('world-asset-file-many');
+
+      it('files every mesh shown when nothing is marked, textures and directories left out', async () => {
+        const user = userEvent.setup();
+        const props = catalogProps({ onAddManyToCategory: jest.fn() });
+        render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} catalog={props} />);
+        await screen.findByTestId('world-asset-KM_BUSH_01.MRM');
+
+        expect(button()).toHaveTextContent('3');
+        await user.click(button());
+        await user.click(await screen.findByTestId('world-asset-file-into-Mine/Crates'));
+
+        expect(props.onAddManyToCategory).toHaveBeenCalledWith(
+          'Mine/Crates', ['KM_BUSH_01.MRM', 'KM_BUSH_02.MRM', 'KM_BUSH_03.MRM'],
+        );
+      });
+
+      it('files only the marked ones: Ctrl-click marks one, Shift-click a run, and neither opens it', async () => {
+        const user = userEvent.setup();
+        const onPreview = jest.fn();
+        const props = catalogProps({ onAddManyToCategory: jest.fn() });
+        render(<WorldAssetBrowser listAssets={list} onPreview={onPreview} catalog={props} />);
+        await screen.findByTestId('world-asset-KM_BUSH_01.MRM');
+
+        await user.keyboard('{Control>}');
+        await user.click(screen.getByTestId('world-asset-KM_BUSH_01.MRM'));
+        await user.keyboard('{/Control}');
+        expect(screen.getByTestId('world-asset-KM_BUSH_01.MRM')).toHaveAttribute('aria-selected', 'true');
+        await user.keyboard('{Shift>}');
+        await user.click(screen.getByTestId('world-asset-KM_BUSH_03.MRM'));
+        await user.keyboard('{/Shift}');
+        expect(onPreview).not.toHaveBeenCalled();
+        expect(button()).toHaveTextContent('3');
+
+        // Ctrl-click again unmarks.
+        await user.keyboard('{Control>}');
+        await user.click(screen.getByTestId('world-asset-KM_BUSH_02.MRM'));
+        await user.keyboard('{/Control}');
+        expect(button()).toHaveTextContent('2');
+
+        await user.click(button());
+        await user.click(await screen.findByTestId('world-asset-file-into-Items/Schwerter'));
+        expect(props.onAddManyToCategory).toHaveBeenCalledWith(
+          'Items/Schwerter', ['KM_BUSH_01.MRM', 'KM_BUSH_03.MRM'],
+        );
+        // Filed, so the marks go.
+        expect(screen.getByTestId('world-asset-KM_BUSH_01.MRM')).not.toHaveAttribute('aria-selected');
+      });
+
+      it('files into a new category named in the menu', async () => {
+        const user = userEvent.setup();
+        const props = catalogProps({ onAddManyToCategory: jest.fn() });
+        render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} catalog={props} />);
+        await screen.findByTestId('world-asset-KM_BUSH_01.MRM');
+
+        await user.click(button());
+        await user.type(await screen.findByTestId('world-asset-file-new'), 'Archolos/Büsche{Enter}');
+        expect(props.onAddManyToCategory).toHaveBeenCalledWith(
+          'Archolos/Büsche', ['KM_BUSH_01.MRM', 'KM_BUSH_02.MRM', 'KM_BUSH_03.MRM'],
+        );
+      });
+
+      it('is not offered without a catalogue, and a plain click still opens', async () => {
+        const user = userEvent.setup();
+        const onPreview = jest.fn();
+        render(<WorldAssetBrowser listAssets={list} onPreview={onPreview} />);
+        await screen.findByTestId('world-asset-KM_BUSH_01.MRM');
+
+        expect(screen.queryByTestId('world-asset-file-many')).not.toBeInTheDocument();
+        await user.click(screen.getByTestId('world-asset-KM_BUSH_01.MRM'));
+        expect(onPreview).toHaveBeenCalledWith('KM_BUSH_01.MRM');
+      });
+
+      it('marks tiles in the grid the same way', async () => {
+        const user = userEvent.setup();
+        const props = catalogProps({ onAddManyToCategory: jest.fn() });
+        render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} thumbnails={queue()} catalog={props} />);
+        await screen.findByTestId('world-asset-KM_BUSH_01.MRM');
+        await user.click(screen.getByTestId('world-asset-view-grid'));
+
+        await user.keyboard('{Control>}');
+        await user.click(screen.getByTestId('world-asset-tile-KM_BUSH_02.MRM'));
+        await user.keyboard('{/Control}');
+        expect(screen.getByTestId('world-asset-tile-KM_BUSH_02.MRM')).toHaveAttribute('aria-selected', 'true');
+        expect(button()).toHaveTextContent('1');
+      });
+    });
+
     // The star on a row (level-editor.md §16.37 row 2; #242). It lived only on
     // a grid tile, revealed on hover, and the panel opens in list view — so the
     // Favorites tab was reachable, always empty, and unfillable from anything
@@ -861,6 +961,7 @@ describe('WorldAssetBrowser', () => {
         onAddToCategory: jest.fn(),
         onRemoveFromCategory: jest.fn(),
         onSetCategoryCollision: jest.fn(),
+        onAddManyToCategory: jest.fn(),
       };
 
       async function categories() {
@@ -970,6 +1071,7 @@ describe('WorldAssetBrowser', () => {
       onAddToCategory: jest.fn(),
       onRemoveFromCategory: jest.fn(),
       onSetCategoryCollision: jest.fn(),
+      onAddManyToCategory: jest.fn(),
     };
     /** A stand-in for `isPlaceableVisual`: a mesh is placeable, a texture is not. */
     const placement = () => ({

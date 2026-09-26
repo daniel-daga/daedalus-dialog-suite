@@ -3820,8 +3820,8 @@ so and name the GMBT build. A mesh stays placeable: the VOB names the source
 file, as retail's do. `.MDS` is left out, since a model script compiles to an
 `.MSB` nothing here resolves. The preview decodes a `.TGA` as a texture now,
 by the source name the binding already maps to `-C.TEX`. What this does not
-do is compile anything: a "compile assets" action, and previewing a `.3DS`
-directly, were the two larger answers #294 named and are not built.
+do is compile anything: a "compile assets" action (#296) and previewing a
+`.3DS` directly (#297) were the two larger answers #294 named, and are filed.
 
 **Worlds come off the same source list.** `world:listWorlds` scans each
 configured source *as a folder* — `resolvedAssetRoots`, the list before an
@@ -3853,6 +3853,19 @@ rest on. A world-scoped sidecar keeps the world's name instead
 through a stateless service that takes the owning file's path per call,
 validated against the exact sidecar path, written temp-file-and-rename, and a
 corrupt one is preserved aside and read as empty.
+
+**Filing many at once (#295).** A mod's own set — Archolos' is hundreds of
+visuals — was filed one tile at a time, one sidecar write each. The browse
+view's "file many" button files every mesh shown, or only the marked ones
+(Ctrl/Cmd-click toggles a row or tile, Shift-click marks the run from the last
+one), into any category or a new one, as one `addManyToCategory` and one write.
+"Every mesh shown" is whatever the listing is narrowed to — a directory, a
+search, one asset source — which is what stands in for a rule-based import: a
+search for a mod's prefix, filed, is that rule applied once. Marks clear on
+navigation, a new needle or another source, since a mark carried into a
+different list would file something no longer on screen. Textures and scripts
+are left out: a category is a list of visuals to place. The team shares its
+filing the way it shares the project file, by committing the sidecar beside it.
 
 **What is machine-local and stays out of the project:** thumbnails.
 `userData/asset-thumbnails/` holds PNGs the renderer drew of mounted visuals,
