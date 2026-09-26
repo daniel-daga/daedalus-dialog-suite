@@ -14,7 +14,7 @@ import {
   deleteVobs, dropVobsToGround,
   duplicateVobs, emptyVobFolders,
   matchVobs,
-  placeBounds,
+  placeBounds, placementCollision,
   reparentVob, rotateVob, rotateVobs, setVobClassProp, setVobProp, setVobProps,
   topLevelVobs,
   translateVobs, vobExtentOf, vobIndexPath,
@@ -1358,6 +1358,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       ...(item ? { instance: spec.instance.trim() } : {}),
       ...(spec.name.trim() === '' ? {} : { name: spec.name.trim() }),
       ...(visual === '' ? {} : { visual }),
+      // Collision on, except for soft vegetation (#291) — named on the op
+      // rather than left to the binding, which defaults every VOB to on.
+      ...(visual === '' ? {} : placementCollision(visual)),
       ...(bounds === null ? {} : {
         bbox: placeBounds(bounds as ZenBounds, IDENTITY, point),
       }),

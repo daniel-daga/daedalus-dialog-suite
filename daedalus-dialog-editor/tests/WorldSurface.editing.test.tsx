@@ -1791,6 +1791,24 @@ describe('placing a VOB', () => {
     });
   });
 
+  it('gives a placed VOB collision, except when its visual is a bush or grass (#291)', async () => {
+    // Said explicitly on the op rather than left to the binding's default, so
+    // the op says what the user gets and a change of default cannot move it.
+    const summary = await openWorld();
+    api.refreshWorldIndex.mockResolvedValue(summary as never);
+    api.getWorldVisuals.mockResolvedValue({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+
+    await place('NW_CRATE.3DS');
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    const [crate] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    expect(crate[0]).toMatchObject({ to: { visual: 'NW_CRATE.3DS', cdStatic: true, cdDynamic: true } });
+
+    await place('NW_NATURE_BUSH_01.3DS');
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(2));
+    const [bush] = api.applyWorldOps.mock.calls[1] as unknown as [WorldOp[]];
+    expect(bush[0]).toMatchObject({ to: { visual: 'NW_NATURE_BUSH_01.3DS', cdStatic: false, cdDynamic: false } });
+  });
+
   it('becomes an AddVob under the selected VOB when the dialog is told to', async () => {
     // The parent is the selected VOB rather than anything chosen in the dialog:
     // a terrain point survives a click in the scene tree — only a viewport pick

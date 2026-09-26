@@ -5,3 +5,4 @@ export * from './scatter';
 export * from './vobFolders';
 export * from './assetCatalog';
 export * from './containerContents';
+export * from './placementCollision';
