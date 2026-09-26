@@ -240,6 +240,9 @@ export interface AssetCatalogProps {
   onToggleFavorite: (name: string) => void;
   onAddToCategory: (path: string, name: string) => void;
   onRemoveFromCategory: (path: string, name: string) => void;
+  /** A category's collision override (#291): true on, false off, undefined
+   *  back to the name rule in `placementCollision`. */
+  onSetCategoryCollision: (path: string, collision: boolean | undefined) => void;
 }
 
 const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
@@ -431,6 +434,7 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
           actions={tileActions}
           removable={catalog.removable}
           onRemoveFromCategory={catalog.onRemoveFromCategory}
+          onSetCategoryCollision={catalog.onSetCategoryCollision}
           onPreview={onPreview}
           placement={placement}
         />

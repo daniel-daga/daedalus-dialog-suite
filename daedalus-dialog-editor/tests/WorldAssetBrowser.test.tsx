@@ -650,6 +650,7 @@ describe('WorldAssetBrowser', () => {
         onToggleFavorite: jest.fn(),
         onAddToCategory: jest.fn(),
         onRemoveFromCategory: jest.fn(),
+        onSetCategoryCollision: jest.fn(),
         ...overrides,
       };
     }
@@ -717,6 +718,40 @@ describe('WorldAssetBrowser', () => {
       expect(within(screen.getByTestId('world-asset-tile-ITMW_SWORD.3DS')).queryByTestId('world-asset-unfile')).not.toBeInTheDocument();
     });
 
+    // The per-category collision override (#291): the name rule decides unless
+    // the project says otherwise for a category, and this is where it says so.
+    it('sets, shows and clears a category\'s collision override', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const props = catalogProps({
+        catalog: {
+          favorites: [],
+          categories: [
+            { path: 'Items/Schwerter', visuals: ['ITMW_SWORD.3DS'] },
+            { path: 'Mine/Crates', visuals: ['NW_CRATE.MRM'], collision: false },
+          ],
+        },
+      });
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} thumbnails={queue()} catalog={props} />);
+      await screen.findByTestId('world-asset-Meshes');
+      await user.click(screen.getByTestId('world-asset-mode-categories'));
+
+      await user.click(screen.getByTestId('world-asset-category-Items/Schwerter'));
+      const auto = screen.getByTestId('world-asset-category-collision');
+      expect(auto).toHaveValue('auto');
+      await user.selectOptions(auto, 'off');
+      expect(props.onSetCategoryCollision).toHaveBeenLastCalledWith('Items/Schwerter', false);
+
+      await user.click(screen.getByTestId('world-asset-category-back'));
+      await user.click(screen.getByTestId('world-asset-category-Mine/Crates'));
+      const off = screen.getByTestId('world-asset-category-collision');
+      expect(off).toHaveValue('off');
+      await user.selectOptions(off, 'on');
+      expect(props.onSetCategoryCollision).toHaveBeenLastCalledWith('Mine/Crates', true);
+      await user.selectOptions(off, 'auto');
+      expect(props.onSetCategoryCollision).toHaveBeenLastCalledWith('Mine/Crates', undefined);
+    });
+
     // The star on a row (level-editor.md §16.37 row 2; #242). It lived only on
     // a grid tile, revealed on hover, and the panel opens in list view — so the
     // Favorites tab was reachable, always empty, and unfillable from anything
@@ -770,6 +805,7 @@ describe('WorldAssetBrowser', () => {
         onToggleFavorite: jest.fn(),
         onAddToCategory: jest.fn(),
         onRemoveFromCategory: jest.fn(),
+        onSetCategoryCollision: jest.fn(),
       };
 
       async function categories() {
@@ -878,6 +914,7 @@ describe('WorldAssetBrowser', () => {
       onToggleFavorite: jest.fn(),
       onAddToCategory: jest.fn(),
       onRemoveFromCategory: jest.fn(),
+      onSetCategoryCollision: jest.fn(),
     };
     /** A stand-in for `isPlaceableVisual`: a mesh is placeable, a texture is not. */
     const placement = () => ({

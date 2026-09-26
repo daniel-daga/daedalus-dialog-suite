@@ -21,6 +21,13 @@ export interface AssetCategory {
   /** A path with `/` separators, as vobbilder keys them: `Items/Schwerter`. */
   path: string;
   visuals: string[];
+  /**
+   * The collision a visual in this category is placed with (#291): true on,
+   * false off, and absent — the ordinary case — leaves it to the name rule in
+   * `placementCollision.ts`. Only the project's sidecar ever carries one; the
+   * seed does not, and `mergeCatalogs` lets the project's win.
+   */
+  collision?: boolean;
 }
 
 export interface AssetCatalog {
@@ -94,6 +101,7 @@ export function mergeCatalogs(seed: AssetCatalog, user: AssetCatalog): AssetCata
       categories.push({ ...own, visuals: [...own.visuals] });
       continue;
     }
+    if (own.collision !== undefined) existing.collision = own.collision;
     const keys = new Set(existing.visuals.map(assetKey));
     for (const visual of own.visuals) {
       if (!keys.has(assetKey(visual))) {
@@ -103,6 +111,23 @@ export function mergeCatalogs(seed: AssetCatalog, user: AssetCatalog): AssetCata
     }
   }
   return { favorites: [...seed.favorites, ...user.favorites], categories };
+}
+
+/** Sets or, with undefined, clears a category's collision override, creating
+ *  the category if it is not there — which is how a seed category gets one:
+ *  the sidecar holds the path with no visuals of its own. */
+export function setCategoryCollision(
+  state: AssetCatalog, path: string, collision: boolean | undefined,
+): AssetCatalog {
+  const withCategory = createCategory(state, path);
+  return {
+    ...withCategory,
+    categories: withCategory.categories.map((category) => {
+      if (category.path !== path) return category;
+      const next: AssetCategory = { path: category.path, visuals: category.visuals };
+      return collision === undefined ? next : { ...next, collision };
+    }),
+  };
 }
 
 export function visualsOf(state: AssetCatalog, path: string): string[] {
@@ -121,9 +146,9 @@ export function parseAssetCatalog(raw: unknown): AssetCatalog {
   if (Array.isArray(categories)) {
     for (const entry of categories) {
       if (typeof entry !== 'object' || entry === null) continue;
-      const { path, visuals } = entry as Record<string, unknown>;
+      const { path, visuals, collision } = entry as Record<string, unknown>;
       if (typeof path !== 'string' || !Array.isArray(visuals)) continue;
-      parsed.push({ path, visuals: strings(visuals) });
+      parsed.push({ path, visuals: strings(visuals), ...(typeof collision === 'boolean' ? { collision } : {}) });
     }
   }
   return { favorites: strings(favorites), categories: parsed };

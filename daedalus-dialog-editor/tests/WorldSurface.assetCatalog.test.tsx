@@ -98,6 +98,28 @@ describe('the asset catalog on the surface', () => {
     expect(within(screen.getByTestId('world-asset-tile-NW_CRATE.MRM')).getByTestId('world-asset-star')).toHaveAttribute('aria-pressed', 'true');
   });
 
+  it('writes a category’s collision override to the sidecar, a seed category included (#291)', async () => {
+    await openWorld();
+    fireEvent.click(screen.getByTestId('world-panel-assets'));
+    fireEvent.click(await screen.findByTestId('world-asset-mode-categories'));
+    fireEvent.click(await screen.findByTestId('world-asset-category-Pflanzen'));
+
+    await act(async () => {
+      fireEvent.change(screen.getByTestId('world-asset-category-collision'), { target: { value: 'on' } });
+    });
+
+    // The seed's visuals stay in the seed: the sidecar gets the path and the
+    // setting, and nothing it did not write.
+    await waitFor(() => expect(api.saveAssetCatalog).toHaveBeenCalledWith(PROJECT, {
+      favorites: [],
+      categories: [
+        { path: 'Mine/Crates', visuals: ['NW_CRATE.MRM'] },
+        { path: 'Pflanzen', visuals: [], collision: true },
+      ],
+    }));
+    expect(screen.getByTestId('world-asset-category-collision')).toHaveValue('on');
+  });
+
   it('offers no favorites or categories with no project loaded', async () => {
     useProjectStore.setState({ projectFilePath: null } as never);
     await openWorld();

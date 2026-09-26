@@ -1809,6 +1809,24 @@ describe('placing a VOB', () => {
     expect(bush[0]).toMatchObject({ to: { visual: 'NW_NATURE_BUSH_01.3DS', cdStatic: false, cdDynamic: false } });
   });
 
+  it('takes the project’s category override over the name rule (#291)', async () => {
+    // The sidecar files the crate under a category set to "off" — by its
+    // compiled name, which is the same visual as the source name placed.
+    useProjectStore.setState({ projectFilePath: 'C:/mod/mymod.gothicproject.json' } as never);
+    api.getAssetCatalog.mockResolvedValue({
+      favorites: [], categories: [{ path: 'Mine/Walkthrough', visuals: ['NW_CRATE.MRM'], collision: false }],
+    } as never);
+    const summary = await openWorld();
+    api.refreshWorldIndex.mockResolvedValue(summary as never);
+    api.getWorldVisuals.mockResolvedValue({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+    await waitFor(() => expect(api.getAssetCatalog).toHaveBeenCalled());
+
+    await place('NW_CRATE.3DS');
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    expect(ops[0]).toMatchObject({ to: { visual: 'NW_CRATE.3DS', cdStatic: false, cdDynamic: false } });
+  });
+
   it('becomes an AddVob under the selected VOB when the dialog is told to', async () => {
     // The parent is the selected VOB rather than anything chosen in the dialog:
     // a terrain point survives a click in the scene tree — only a viewport pick

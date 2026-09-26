@@ -3804,7 +3804,11 @@ project file, never as a section of the project file (whose schema every
 reader validates strictly) and never in `userData`: `<project>.assets.json`
 holds the asset browser's favorites and user categories — what the project
 added on top of the shipped vobbilder seed, which is merged in at read time
-and never written back. A world-scoped sidecar keeps the world's name instead
+and never written back — and any category's collision override for placement
+(`collision`, #291; a seed category gets one as a path with no visuals of its
+own, and the project's setting wins the merge). A placement without an
+override takes `placementCollision`'s name rule: soft vegetation off, the
+rest on. A world-scoped sidecar keeps the world's name instead
 (`<worldname>.folders.json`, `docs/plans/vob-folders.md`). Both are read
 through a stateless service that takes the owning file's path per call,
 validated against the exact sidecar path, written temp-file-and-rename, and a

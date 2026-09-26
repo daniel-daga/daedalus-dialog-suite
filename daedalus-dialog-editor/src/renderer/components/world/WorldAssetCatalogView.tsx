@@ -26,6 +26,8 @@ export interface WorldAssetCatalogViewProps {
   /** Whether `name` under `path` is the project's own entry, and so removable. */
   removable: (path: string, name: string) => boolean;
   onRemoveFromCategory: (path: string, name: string) => void;
+  /** A category's collision override (#291); undefined clears it. */
+  onSetCategoryCollision: (path: string, collision: boolean | undefined) => void;
   onPreview: (name: string) => void;
   /** Placing from a tile (§16.37 row 4) — absent with no world open. */
   placement?: AssetPlacement;
@@ -38,7 +40,7 @@ const matching = (names: readonly string[], needle: string): readonly string[] =
 );
 
 const WorldAssetCatalogView: React.FC<WorldAssetCatalogViewProps> = ({
-  mode, catalog, thumbnails, actions, removable, onRemoveFromCategory, onPreview, placement,
+  mode, catalog, thumbnails, actions, removable, onRemoveFromCategory, onSetCategoryCollision, onPreview, placement,
 }) => {
   const [selected, setSelected] = useState<string | null>(null);
   const category = catalog.categories.find((entry) => entry.path === selected) ?? null;
@@ -160,6 +162,29 @@ const WorldAssetCatalogView: React.FC<WorldAssetCatalogViewProps> = ({
           ‹ Categories
         </Typography>
         <Typography variant="caption" noWrap sx={{ flex: 1 }}>{category.path}</Typography>
+        {/* What a visual placed from this category collides with (#291).
+            Auto is the name rule — bushes and grass off, the rest on — and a
+            project sets On or Off for what the names get wrong. */}
+        <TextField
+          select
+          size="small"
+          value={category.collision === undefined ? 'auto' : (category.collision ? 'on' : 'off')}
+          onChange={(event) => {
+            const next = event.target.value;
+            onSetCategoryCollision(category.path, next === 'auto' ? undefined : next === 'on');
+          }}
+          SelectProps={{ native: true }}
+          inputProps={{
+            'data-testid': 'world-asset-category-collision',
+            'aria-label': 'Collision when placed from this category',
+          }}
+          title="Collision when placed from this category"
+          sx={{ minWidth: 112, '& .MuiInputBase-input': { fontSize: 11, py: 0.25 } }}
+        >
+          <option value="auto">Collision: auto</option>
+          <option value="on">Collision: on</option>
+          <option value="off">Collision: off</option>
+        </TextField>
       </Box>
       {field}
       {entries.length === 0 && noMatches}

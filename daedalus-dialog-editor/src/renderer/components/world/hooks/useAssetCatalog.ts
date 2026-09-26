@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   addToCategory, assetKey, emptyAssetCatalog, mergeCatalogs, parseAssetCatalog,
-  removeFromCategory, toggleFavorite, visualsOf,
+  removeFromCategory, setCategoryCollision, toggleFavorite, visualsOf,
 } from 'zen-world';
 import type { AssetCatalog } from '../../../../shared/worldTypes';
 import assetCategorySeed from '../../../../shared/assetCategorySeed.json';
@@ -87,6 +87,9 @@ export function useAssetCatalog(): AssetCatalogSurface {
       onToggleFavorite: (name) => persistAssetCatalog(toggleFavorite(assetCatalog, name)),
       onAddToCategory: (path, name) => persistAssetCatalog(addToCategory(assetCatalog, path, name)),
       onRemoveFromCategory: (path, name) => persistAssetCatalog(removeFromCategory(assetCatalog, path, name)),
+      onSetCategoryCollision: (path, collision) => (
+        persistAssetCatalog(setCategoryCollision(assetCatalog, path, collision))
+      ),
     }
   ), [projectFilePath, mergedAssetCatalog, assetCatalog, persistAssetCatalog]);
 

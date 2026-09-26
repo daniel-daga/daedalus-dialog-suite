@@ -1358,16 +1358,17 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       ...(item ? { instance: spec.instance.trim() } : {}),
       ...(spec.name.trim() === '' ? {} : { name: spec.name.trim() }),
       ...(visual === '' ? {} : { visual }),
-      // Collision on, except for soft vegetation (#291) — named on the op
-      // rather than left to the binding, which defaults every VOB to on.
-      ...(visual === '' ? {} : placementCollision(visual)),
+      // Collision on, except for soft vegetation, unless the project's
+      // category says otherwise (#291) — named on the op rather than left to
+      // the binding, which defaults every VOB to on.
+      ...(visual === '' ? {} : placementCollision(visual, assetCatalogProps?.catalog)),
       ...(bounds === null ? {} : {
         bbox: placeBounds(bounds as ZenBounds, IDENTITY, point),
       }),
     };
 
     await commitOps([addVob(vobModelOf(current).reader, placed, spec.parent)]);
-  }, [commitOps]);
+  }, [commitOps, assetCatalogProps]);
 
   /**
    * The class fields of every VOB a copy of `vobs` would bring, keyed by flat
