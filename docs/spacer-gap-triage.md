@@ -162,7 +162,19 @@ Left:
   because a dead trigger is inert where a bad instance crashes, and because the
   index goes stale the moment a function is written. `docs/architecture/level-editor.md`,
   *"A script function name stops being free text"*, carries the decision.
-- **`scemeName` is not catalogued at all** — not editable, not checked, not
+- ~~**`scemeName` is not catalogued at all.**~~ **Closed 2026-09-26 (#270):
+  there is no world field, and the grid now shows the derived scheme.**
+  OpenGothic answers the question below the way the Plan A evidence pointed:
+  it reads no scheme from the world, and derives one from the visual's name —
+  `ProtoMesh::setupScheme` takes the name up to its first `_` (else up to the
+  extension), and `Interactive::schemeName()` returns that, which then picks
+  the `T_<SCHEME>_…` animations. `zen-world`'s `schemeOf` already did the same
+  for placement (#290). So the property grid shows a *Scheme* row, read-only,
+  on a MOB class whose visual is a model, and says it changes with the visual.
+  What is still not measured is the scheme table itself against retail — that
+  is §16.41 row 14, not this. The finding as filed follows.
+
+  Not catalogued — not editable, not checked, not
   readable in the grid. **And the shape this was carded as is wrong
   (2026-09-13):** it is not "one catalogue entry plus one C++ case", because
   there is no VOB field to catalogue. ZenKit models no `scemeName` on any VOB —

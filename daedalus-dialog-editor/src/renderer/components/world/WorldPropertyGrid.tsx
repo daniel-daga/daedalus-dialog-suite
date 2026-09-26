@@ -6,7 +6,7 @@ import MyLocationIcon from '@mui/icons-material/MyLocation';
 import {
   ARRAY_ARITY, BASE_FIELDS, DECAL_FIELDS, classPropKeys, decalSubKey, enumValuesOf,
   eulerDeltaRotation, isArrayKind,
-  carriesVisual, eulerToZenRotation, fieldOf, focusNameExpectation, isModelVisual,
+  carriesVisual, eulerToZenRotation, fieldOf, focusNameExpectation, isModelVisual, schemeOf,
   zenRotationToEuler,
   type ClassPropValue, type ClassProps, type EnumValueDescriptor, type FieldDescriptor,
   type VobProps, type ZenEulerDegrees, type ZenPosition, type ZenRotation,
@@ -1063,6 +1063,19 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
       <Field label="Type" name="visualType">
         <Typography variant="caption">{visualType}</Typography>
       </Field>
+      {/* #270: Spacer's `scemeName` is stored nowhere — not in the .zen, not in
+          ZenKit — ZenGin reads it off the visual's name and plays that
+          scheme's animations. So it is shown where one looks for it, and
+          changing it means changing the visual. Only on a model: a static
+          mesh has nothing to play (the warning above). */}
+      {className !== 'zCVob' && carriesVisual(className) && visual && isModelVisual(visual) && (
+        <Field label="Scheme" name="scheme">
+          <Typography variant="caption">{schemeOf(visual)}</Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            Read off the visual&apos;s name, up to its first underscore — rename the visual to change it.
+          </Typography>
+        </Field>
+      )}
       <Field label="Position (cm)" name="position">
         {/* ZenGin space, centimetres — see the note at the top of this file.
             Typed, and it leaves as a delta: the destination is this axis

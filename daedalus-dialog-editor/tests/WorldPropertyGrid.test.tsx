@@ -1965,6 +1965,26 @@ describe('WorldPropertyGrid, typed rotation', () => {
         unmount();
       }
     });
+
+    // #270: what Spacer calls `scemeName` is stored nowhere — ZenGin reads it
+    // off the visual's name — so the grid shows it, read-only, where a user
+    // looks for it.
+    it('shows a model mob\'s scheme, read off its visual — a known one and a mod\'s own alike', () => {
+      const { unmount } = render(<WorldPropertyGrid summary={MISPLACED} selection={[1]} {...wiring} />);
+      expect(screen.getByTestId('world-prop-scheme')).toHaveTextContent('BENCH');
+      expect(screen.getByTestId('world-prop-scheme')).toHaveTextContent(/visual/);
+      unmount();
+      render(<WorldPropertyGrid summary={MISPLACED} selection={[3]} {...wiring} />);
+      expect(screen.getByTestId('world-prop-scheme')).toHaveTextContent('KM');
+    });
+
+    it('shows no scheme where there is nothing to play it: a static mesh, or a zCVob', () => {
+      for (const vob of [0, 2]) {
+        const { unmount } = render(<WorldPropertyGrid summary={MISPLACED} selection={[vob]} {...wiring} />);
+        expect([vob, screen.queryByTestId('world-prop-scheme')]).toEqual([vob, null]);
+        unmount();
+      }
+    });
   });
 
   // A mob the crosshair cannot find (level-editor.md §16.15). The engine finds
