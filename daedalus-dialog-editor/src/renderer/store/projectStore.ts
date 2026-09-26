@@ -21,6 +21,7 @@ import {
   buildTopicDeclarationBlock,
   buildNoteDeclarationBlock,
   insertIntoCloseTopicsFunction,
+  insertIntoNoteSection,
   topicBaseName
 } from '../utils/questLogFiles';
 
@@ -191,11 +192,13 @@ interface ProjectActions {
     closeTopicsFilePath: string;
   }) => Promise<void>;
 
-  // #278: a LOG_NOTE is declared as its TOPIC_ constant alone
+  // #278: a LOG_NOTE is declared as its TOPIC_ constant alone, optionally
+  // under one of the file's `//` section headers
   registerNoteInLogFiles: (options: {
     topicName: string;
     title: string;
     constantsFilePath: string;
+    section?: string;
   }) => Promise<void>;
 
   // Add a new global variable or constant
@@ -398,20 +401,25 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   };
 
   /**
-   * Append a TOPIC_ declaration block to the constants file, refusing when the
+   * Add a TOPIC_ declaration to the constants file, refusing when the
    * constant is already declared there. Anchored on the declaration itself so
    * commented-out lines or mere usages of the constant don't count.
    */
-  const appendTopicDeclaration = (constantsFilePath: string, topicName: string, block: string) => {
+  const addTopicDeclaration = (
+    constantsFilePath: string,
+    topicName: string,
+    place: (content: string) => string
+  ) => {
     const base = topicBaseName(topicName);
     return mutateQuestFile(constantsFilePath, (c) => {
       if (new RegExp(`^\\s*const\\s+string\\s+TOPIC_${escapeRegExp(base)}\\b`, 'im').test(c)) {
         throw new Error(`TOPIC_${base} is already declared in ${constantsFilePath}`);
       }
-      if (!c.endsWith('\n')) c += '\n';
-      return c + block;
+      return place(c);
     });
   };
+
+  const appendBlock = (block: string) => (c: string) => (c.endsWith('\n') ? c : `${c}\n`) + block;
 
   // The merged model carries an AGGREGATE hasErrors flag summarising its inputs.
   // When it is re-fed as a base into another merge it must be cleared first:
@@ -1020,10 +1028,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         closeTopicLine
       );
 
-      const constantsModel = await appendTopicDeclaration(
+      const constantsModel = await addTopicDeclaration(
         constantsFilePath,
         topicName,
-        buildTopicDeclarationBlock(topicName, title)
+        appendBlock(buildTopicDeclarationBlock(topicName, title))
       );
       const closeTopicsModel = await mutateQuestFile(closeTopicsFilePath, (c) =>
         insertIntoCloseTopicsFunction(c, closeTopicLine)
@@ -1041,13 +1049,14 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     }
   },
 
-  registerNoteInLogFiles: async ({ topicName, title, constantsFilePath }) => {
+  registerNoteInLogFiles: async ({ topicName, title, constantsFilePath, section }) => {
     try {
       set({ isLoading: true });
-      const constantsModel = await appendTopicDeclaration(
+      const block = buildNoteDeclarationBlock(topicName, title);
+      const constantsModel = await addTopicDeclaration(
         constantsFilePath,
         topicName,
-        buildNoteDeclarationBlock(topicName, title)
+        section ? (c) => insertIntoNoteSection(c, section, block.trim()) : appendBlock(block)
       );
       mergeUpdatedQuestFileModels([{ filePath: constantsFilePath, model: constantsModel }]);
       set({ isLoading: false });
