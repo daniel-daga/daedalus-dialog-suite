@@ -23,6 +23,8 @@ interface RegisterTopicDialogProps {
   onClose: () => void;
   /** The TOPIC_… name from the Create Topic action */
   topicName: string;
+  /** #278: a LOG_NOTE is registered as its TOPIC_ constant alone */
+  topicType?: string;
 }
 
 /**
@@ -31,7 +33,9 @@ interface RegisterTopicDialogProps {
  * a B_CloseTopic call (gated on chapter start/end) into the B_CloseTopics
  * function.
  */
-const RegisterTopicDialog: React.FC<RegisterTopicDialogProps> = ({ open, onClose, topicName }) => {
+const RegisterTopicDialog: React.FC<RegisterTopicDialogProps> = ({ open, onClose, topicName, topicType }) => {
+  const isNote = topicType === 'LOG_NOTE';
+  const kind = isNote ? 'Note' : 'Quest';
   // Granular selectors: the merged model is large and recreated frequently,
   // and one instance of this dialog is hosted per Create Topic action card, so
   // gate the whole-model subscription on `open` — a closed instance then no
@@ -39,6 +43,7 @@ const RegisterTopicDialog: React.FC<RegisterTopicDialogProps> = ({ open, onClose
   const mergedSemanticModel = useProjectStore((s) => (open ? s.mergedSemanticModel : null));
   const parsedFiles = useProjectStore((s) => s.parsedFiles);
   const registerTopicInLogFiles = useProjectStore((s) => s.registerTopicInLogFiles);
+  const registerNoteInLogFiles = useProjectStore((s) => s.registerNoteInLogFiles);
   const isLoading = useProjectStore((s) => s.isLoading);
 
   const [title, setTitle] = useState('');
@@ -49,8 +54,8 @@ const RegisterTopicDialog: React.FC<RegisterTopicDialogProps> = ({ open, onClose
   const [error, setError] = useState<string | null>(null);
 
   const constantsSuggestions = useMemo(
-    () => (mergedSemanticModel ? suggestTopicConstantFiles(mergedSemanticModel) : []),
-    [mergedSemanticModel]
+    () => (mergedSemanticModel ? suggestTopicConstantFiles(mergedSemanticModel, topicType) : []),
+    [mergedSemanticModel, topicType]
   );
   const closeTopicsSuggestions = useMemo(
     () => suggestCloseTopicsFiles(parsedFiles),
@@ -80,7 +85,12 @@ const RegisterTopicDialog: React.FC<RegisterTopicDialogProps> = ({ open, onClose
     const start = parseInt(chapterStart, 10);
     const end = parseInt(chapterEnd, 10);
 
-    if (!title.trim() || !constantsFile.trim() || !closeTopicsFile.trim()) {
+    if (isNote) {
+      if (!title.trim() || !constantsFile.trim()) {
+        setError('Note title and target file are required.');
+        return;
+      }
+    } else if (!title.trim() || !constantsFile.trim() || !closeTopicsFile.trim()) {
       setError('Quest title and both target files are required.');
       return;
     }
@@ -94,6 +104,15 @@ const RegisterTopicDialog: React.FC<RegisterTopicDialogProps> = ({ open, onClose
     }
 
     try {
+      if (isNote) {
+        await registerNoteInLogFiles({
+          topicName,
+          title: title.trim(),
+          constantsFilePath: constantsFile.trim()
+        });
+        onClose();
+        return;
+      }
       await registerTopicInLogFiles({
         topicName,
         title: title.trim(),
@@ -104,51 +123,60 @@ const RegisterTopicDialog: React.FC<RegisterTopicDialogProps> = ({ open, onClose
       });
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to register the quest.');
+      setError(e instanceof Error ? e.message : `Failed to register the ${kind.toLowerCase()}.`);
     }
   };
 
   return (
     <Dialog open={open} onClose={() => !isLoading && onClose()} fullWidth maxWidth='sm'>
-      <DialogTitle>Register Quest in Log Files</DialogTitle>
+      <DialogTitle>Register {kind} in Log Files</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 1 }}>
           {error && <Alert severity='error'>{error}</Alert>}
 
-          <Typography variant='body2' color='text.secondary'>
-            Adds <code>const string {`TOPIC_${topicBaseName(topicName)}`}</code> and{' '}
-            <code>var int {`MIS_${topicBaseName(topicName)}`}</code> to the quest definition
-            file, and a <code>B_CloseTopic</code> call to the close-topics function.
-          </Typography>
+          {isNote ? (
+            <Typography variant='body2' color='text.secondary'>
+              Adds <code>const string {`TOPIC_${topicBaseName(topicName)}`}</code> to the note
+              definition file.
+            </Typography>
+          ) : (
+            <Typography variant='body2' color='text.secondary'>
+              Adds <code>const string {`TOPIC_${topicBaseName(topicName)}`}</code> and{' '}
+              <code>var int {`MIS_${topicBaseName(topicName)}`}</code> to the quest definition
+              file, and a <code>B_CloseTopic</code> call to the close-topics function.
+            </Typography>
+          )}
 
           <TextField
             autoFocus
             fullWidth
-            label='Quest Title'
+            label={`${kind} Title`}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             disabled={isLoading}
-            helperText='Shown in the in-game quest log'
+            helperText='Shown in the in-game log'
           />
 
-          <Stack direction='row' spacing={2}>
-            <TextField
-              label='Chapter Start'
-              type='number'
-              value={chapterStart}
-              onChange={(e) => setChapterStart(e.target.value)}
-              disabled={isLoading}
-              helperText='0 = always'
-            />
-            <TextField
-              label='Chapter End'
-              type='number'
-              value={chapterEnd}
-              onChange={(e) => setChapterEnd(e.target.value)}
-              disabled={isLoading}
-              helperText='Must be finished by'
-            />
-          </Stack>
+          {!isNote && (
+            <Stack direction='row' spacing={2}>
+              <TextField
+                label='Chapter Start'
+                type='number'
+                value={chapterStart}
+                onChange={(e) => setChapterStart(e.target.value)}
+                disabled={isLoading}
+                helperText='0 = always'
+              />
+              <TextField
+                label='Chapter End'
+                type='number'
+                value={chapterEnd}
+                onChange={(e) => setChapterEnd(e.target.value)}
+                disabled={isLoading}
+                helperText='Must be finished by'
+              />
+            </Stack>
+          )}
 
           <Autocomplete
             freeSolo
@@ -157,20 +185,22 @@ const RegisterTopicDialog: React.FC<RegisterTopicDialogProps> = ({ open, onClose
             onInputChange={(_e, value) => setConstantsFile(value)}
             disabled={isLoading}
             renderInput={(params) => (
-              <TextField {...params} label='Quest Definition File (TOPIC_)' fullWidth />
+              <TextField {...params} label={`${kind} Definition File (TOPIC_)`} fullWidth />
             )}
           />
 
-          <Autocomplete
-            freeSolo
-            options={closeTopicsSuggestions}
-            inputValue={closeTopicsFile}
-            onInputChange={(_e, value) => setCloseTopicsFile(value)}
-            disabled={isLoading}
-            renderInput={(params) => (
-              <TextField {...params} label='Close Topics File (B_CloseTopics)' fullWidth />
-            )}
-          />
+          {!isNote && (
+            <Autocomplete
+              freeSolo
+              options={closeTopicsSuggestions}
+              inputValue={closeTopicsFile}
+              onInputChange={(_e, value) => setCloseTopicsFile(value)}
+              disabled={isLoading}
+              renderInput={(params) => (
+                <TextField {...params} label='Close Topics File (B_CloseTopics)' fullWidth />
+              )}
+            />
+          )}
         </Stack>
       </DialogContent>
       <DialogActions>

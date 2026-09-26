@@ -18,7 +18,10 @@ regression tests live next to the cited modules in
 - Inserting a Create Topic action auto-appends a Log Set Status action (preset
   `LOG_RUNNING`) and a Log Entry with the same topic; editing the Create Topic
   topic keeps those siblings in sync while their topics still match (#140,
-  #111). Source: `components/hooks/useActionManagement.ts`.
+  #111). Switching the topic type to `LOG_NOTE` removes the Log Set Status
+  that directly follows it (a note has no Running/Success/Failed); switching
+  back to `LOG_MISSION` restores one preset `LOG_RUNNING` (#278). Source:
+  `components/hooks/useActionManagement.ts`.
 - Topic names are normalized on input: spaces become underscores and a
   `TOPIC_` prefix is enforced (#111). Source:
   `components/actionRenderers/CreateTopicRenderer.tsx`.
@@ -34,6 +37,11 @@ regression tests live next to the cited modules in
   background-ingestion updates must not clobber user input. Sources:
   `utils/questLogFiles.ts`, `projectStore.registerTopicInLogFiles`,
   `components/RegisterTopicDialog.tsx`.
+- For a `LOG_NOTE` the same icon reads "Register note in log files" and writes
+  only `const string TOPIC_X = "…";` — no `MIS_` variable, no chapters, no
+  `B_CloseTopic` call. Files whose name contains "note" (e.g.
+  `LOG_Constants_Notes.d`) are suggested first (#278). Source:
+  `projectStore.registerNoteInLogFiles`.
 
 ## Choices
 

@@ -70,4 +70,34 @@ describe('RegisterTopicDialog', () => {
     });
     expect(commits).toBe(afterMount);
   });
+
+  test('a LOG_NOTE asks only for a title and a file, and registers a note (#278)', async () => {
+    const registerNoteInLogFiles = jest.fn(async () => {});
+    const registerTopicInLogFiles = jest.fn(async () => {});
+    useProjectStore.setState({ registerNoteInLogFiles, registerTopicInLogFiles } as any);
+    const onClose = jest.fn();
+
+    render(<RegisterTopicDialog open onClose={onClose} topicName='TOPIC_AlteMine' topicType='LOG_NOTE' />);
+
+    expect(screen.getByRole('heading', { name: 'Register Note in Log Files' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Chapter Start')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Close Topics File (B_CloseTopics)')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Note Title'), { target: { value: 'Die alte Mine' } });
+    fireEvent.change(screen.getByLabelText('Note Definition File (TOPIC_)'), {
+      target: { value: 'C:/project/LOG_Constants_Notes.d' }
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Register' }));
+    });
+
+    expect(registerNoteInLogFiles).toHaveBeenCalledWith({
+      topicName: 'TOPIC_AlteMine',
+      title: 'Die alte Mine',
+      constantsFilePath: 'C:/project/LOG_Constants_Notes.d'
+    });
+    expect(registerTopicInLogFiles).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
+  });
 });
+

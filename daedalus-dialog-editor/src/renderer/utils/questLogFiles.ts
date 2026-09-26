@@ -19,6 +19,13 @@ export function buildTopicDeclarationBlock(topicName: string, title: string): st
   return `\n// Quest: ${safeTitle}\nconst string TOPIC_${base} = "${safeTitle}";\nvar int MIS_${base};\n`;
 }
 
+/** #278: a LOG_NOTE has no status, so it is declared without a MIS_ variable. */
+export function buildNoteDeclarationBlock(topicName: string, title: string): string {
+  const base = topicBaseName(topicName);
+  const safeTitle = sanitizeDaedalusString(title);
+  return `\nconst string TOPIC_${base} = "${safeTitle}";\n`;
+}
+
 export function buildCloseTopicLine(topicName: string, chapterStart: number, chapterEnd: number): string {
   const base = topicBaseName(topicName);
   return `\tB_CloseTopic (TOPIC_${base}, MIS_${base}, ${chapterStart}, ${chapterEnd});`;
@@ -76,17 +83,20 @@ export function insertIntoCloseTopicsFunction(content: string, callLine: string)
 
 /**
  * Files that declare TOPIC_ constants, most-used first — the natural home
- * for new quest declarations (e.g. LOG_Constants_<project>.d).
+ * for new quest declarations (e.g. LOG_Constants_<project>.d). For a LOG_NOTE,
+ * files named for notes (LOG_Constants_Notes.d) come first (#278).
  */
-export function suggestTopicConstantFiles(model: SemanticModel): string[] {
+export function suggestTopicConstantFiles(model: SemanticModel, topicType?: string): string[] {
   const counts = new Map<string, number>();
   for (const constant of Object.values(model.constants || {})) {
     if (constant.name?.toUpperCase().startsWith('TOPIC_') && constant.filePath) {
       counts.set(constant.filePath, (counts.get(constant.filePath) || 0) + 1);
     }
   }
+  const noteRank = (filePath: string) =>
+    topicType === 'LOG_NOTE' && /note/i.test(filePath.split(/[\\/]/).pop() || '') ? 0 : 1;
   return Array.from(counts.entries())
-    .sort((a, b) => b[1] - a[1])
+    .sort((a, b) => noteRank(a[0]) - noteRank(b[0]) || b[1] - a[1])
     .map(([filePath]) => filePath);
 }
 

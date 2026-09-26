@@ -192,6 +192,31 @@ export function useActionManagement(config: ActionManagementConfig) {
         }
       }
 
+      // #278: a LOG_NOTE has no Running/Success/Failed, so switching the topic
+      // type drops the status row that follows it, and switching back restores it.
+      if (
+        updatedAction.type === 'CreateTopic' &&
+        previousAction?.type === 'CreateTopic' &&
+        updatedAction.topicType !== previousAction.topicType
+      ) {
+        const lastIndex = path[path.length - 1];
+        if (typeof lastIndex === 'number') {
+          const parentPath = path.slice(0, -1);
+          const nextPath: ActionPath = [...parentPath, lastIndex + 1];
+          const next = getActionAtPath(updatedActions, nextPath);
+          const hasStatusRow = next?.type === 'LogSetTopicStatus' && next.topic === updatedAction.topic;
+          if (updatedAction.topicType === 'LOG_NOTE' && hasStatusRow) {
+            updatedActions = deleteNestedActionAtPath(updatedActions, nextPath);
+          } else if (updatedAction.topicType === 'LOG_MISSION' && !hasStatusRow) {
+            updatedActions = insertActionAfterPath(updatedActions, path, {
+              ...createAction('logSetTopicStatus', { dialogName: contextName, currentAction: undefined }),
+              topic: updatedAction.topic,
+              status: 'LOG_RUNNING',
+            } as DialogAction);
+          }
+        }
+      }
+
       if (
         updatedAction.type === 'Choice' &&
         previousAction?.type === 'Choice' &&

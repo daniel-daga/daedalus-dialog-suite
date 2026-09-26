@@ -105,3 +105,60 @@ describe('useActionManagement – updateAction topic sync', () => {
     expect((actions[2] as { topic: string }).topic).toBe('TOPIC_NEW');
   });
 });
+
+// ---------------------------------------------------------------------------
+// updateAction – #278: a LOG_NOTE has no Running/Success/Failed status
+// ---------------------------------------------------------------------------
+
+describe('useActionManagement – updateAction topic type', () => {
+  test('switching to LOG_NOTE removes the status row that follows the topic', () => {
+    const initialActions: DialogAction[] = [
+      { type: 'CreateTopic', topic: 'TOPIC_Mine', topicType: 'LOG_MISSION' },
+      { type: 'LogSetTopicStatus', topic: 'TOPIC_Mine', status: 'LOG_RUNNING' },
+      { type: 'LogEntry', topic: 'TOPIC_Mine', text: 'Ore' },
+    ];
+    const { result, getActions } = renderManagement(initialActions);
+
+    act(() => {
+      result.current.updateAction([0], { type: 'CreateTopic', topic: 'TOPIC_Mine', topicType: 'LOG_NOTE' });
+    });
+
+    expect(getActions()).toEqual([
+      { type: 'CreateTopic', topic: 'TOPIC_Mine', topicType: 'LOG_NOTE' },
+      { type: 'LogEntry', topic: 'TOPIC_Mine', text: 'Ore' },
+    ]);
+  });
+
+  test('switching to LOG_NOTE leaves a status row for a different topic alone', () => {
+    const initialActions: DialogAction[] = [
+      { type: 'CreateTopic', topic: 'TOPIC_Mine', topicType: 'LOG_MISSION' },
+      { type: 'LogSetTopicStatus', topic: 'TOPIC_Other', status: 'LOG_SUCCESS' },
+    ];
+    const { result, getActions } = renderManagement(initialActions);
+
+    act(() => {
+      result.current.updateAction([0], { type: 'CreateTopic', topic: 'TOPIC_Mine', topicType: 'LOG_NOTE' });
+    });
+
+    expect(getActions()).toHaveLength(2);
+    expect(getActions()[1]).toMatchObject({ type: 'LogSetTopicStatus', topic: 'TOPIC_Other' });
+  });
+
+  test('switching back to LOG_MISSION restores a LOG_RUNNING status row after the topic', () => {
+    const initialActions: DialogAction[] = [
+      { type: 'CreateTopic', topic: 'TOPIC_Mine', topicType: 'LOG_NOTE' },
+      { type: 'LogEntry', topic: 'TOPIC_Mine', text: 'Ore' },
+    ];
+    const { result, getActions } = renderManagement(initialActions);
+
+    act(() => {
+      result.current.updateAction([0], { type: 'CreateTopic', topic: 'TOPIC_Mine', topicType: 'LOG_MISSION' });
+    });
+
+    expect(getActions()).toMatchObject([
+      { type: 'CreateTopic', topic: 'TOPIC_Mine', topicType: 'LOG_MISSION' },
+      { type: 'LogSetTopicStatus', topic: 'TOPIC_Mine', status: 'LOG_RUNNING' },
+      { type: 'LogEntry', topic: 'TOPIC_Mine', text: 'Ore' },
+    ]);
+  });
+});

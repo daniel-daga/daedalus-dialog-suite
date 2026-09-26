@@ -90,4 +90,78 @@ test.describe('Register quest in log files', () => {
       expect(insertedAt).toBeLessThan(files.closeTopics!.lastIndexOf('};'));
     }).toPass({ timeout: 5000 });
   });
+
+  // #278: a note has no Running/Success/Failed, and registers as its TOPIC_
+  // constant alone.
+  test('a note drops its status row and registers without MIS_ or a close call', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
+
+    await page.evaluate(({ dialog, constants, notes, closeTopics }) => {
+      localStorage.setItem('mockapi_file_project/dialogs/quest.d', dialog);
+      localStorage.setItem('mockapi_file_project/dialogs/LOG_Constants_Test.d', constants);
+      localStorage.setItem('mockapi_file_project/dialogs/LOG_Constants_Notes.d', notes);
+      localStorage.setItem('mockapi_file_project/dialogs/B_CloseTopicsTest.d', closeTopics);
+    }, {
+      dialog: DIALOG_FILE,
+      constants: CONSTANTS_FILE,
+      notes: 'const string TOPIC_Haendler = "Händler";\n',
+      closeTopics: CLOSE_TOPICS_FILE
+    });
+
+    page.on('dialog', async (dialog) => {
+      if (dialog.message().includes('project folder path')) {
+        await dialog.accept('project/dialogs');
+      } else {
+        await dialog.dismiss();
+      }
+    });
+
+    await page.getByRole('button', { name: /Open Project/i }).first().click();
+    await expect(page.getByText('SLD_66666_Quester').first()).toBeVisible({ timeout: 15000 });
+    await page.getByText('SLD_66666_Quester').first().click();
+    await page.getByRole('button', { name: /DIA_Quest_Test/ }).click();
+    await expect(page.getByRole('heading', { name: 'DIA_Quest_Test', exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Add action' }).click();
+    await page.getByRole('menuitem', { name: 'Create Topic', exact: true }).click();
+    await page.getByLabel('Topic', { exact: true }).first().fill('AlteMine');
+
+    // A new topic is a mission, with its status row
+    const statusFields = page.getByLabel('Status', { exact: true });
+    await expect(statusFields).toHaveCount(1);
+
+    await page.getByLabel('Topic Type').click();
+    await page.getByRole('option', { name: 'LOG_NOTE' }).click();
+    await expect(statusFields).toHaveCount(0);
+
+    // Back to a mission restores it
+    await page.getByLabel('Topic Type').click();
+    await page.getByRole('option', { name: 'LOG_MISSION' }).click();
+    await expect(statusFields).toHaveCount(1);
+
+    await page.getByLabel('Topic Type').click();
+    await page.getByRole('option', { name: 'LOG_NOTE' }).click();
+    await expect(statusFields).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Register note in log files' }).click();
+    await expect(page.getByRole('heading', { name: 'Register Note in Log Files' })).toBeVisible();
+    await expect(page.getByLabel('Close Topics File (B_CloseTopics)')).toHaveCount(0);
+    await page.getByLabel('Note Definition File (TOPIC_)').fill('project/dialogs/LOG_Constants_Notes.d');
+    await page.getByLabel('Note Title').fill('Die alte Mine');
+    await page.getByRole('button', { name: 'Register', exact: true }).click();
+
+    await expect(page.getByRole('heading', { name: 'Register Note in Log Files' })).toBeHidden();
+    await expect(async () => {
+      const files = await page.evaluate(() => ({
+        notes: localStorage.getItem('mockapi_file_project/dialogs/LOG_Constants_Notes.d'),
+        closeTopics: localStorage.getItem('mockapi_file_project/dialogs/B_CloseTopicsTest.d')
+      }));
+      expect(files.notes).toContain('const string TOPIC_AlteMine = "Die alte Mine";');
+      expect(files.notes).not.toContain('MIS_AlteMine');
+      expect(files.notes).toContain('TOPIC_Haendler'); // existing content preserved
+      expect(files.closeTopics).not.toContain('TOPIC_AlteMine');
+    }).toPass({ timeout: 5000 });
+  });
 });
+

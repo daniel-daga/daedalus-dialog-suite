@@ -9,6 +9,7 @@ import {
   suggestTopicConstantFiles,
   suggestCloseTopicsFiles,
   buildTopicDeclarationBlock,
+  buildNoteDeclarationBlock,
   buildCloseTopicLine
 } from '../src/renderer/utils/questLogFiles';
 
@@ -98,6 +99,13 @@ describe('declaration builders', () => {
     expect(block).toContain("// Quest: Der 'Boss' Quest");
   });
 
+  test('buildNoteDeclarationBlock emits the TOPIC_ constant only (#278)', () => {
+    // A note has no status, so no MIS_ variable to track it.
+    const block = buildNoteDeclarationBlock('TOPIC_AlteMine', 'Die "alte" Mine');
+    expect(block).toContain("const string TOPIC_AlteMine = \"Die 'alte' Mine\";");
+    expect(block).not.toContain('MIS_');
+  });
+
   test('buildCloseTopicLine emits the chapter-gated close call', () => {
     expect(buildCloseTopicLine('TOPIC_DalvinsSpitzhacken', 0, 2)).toBe(
       '\tB_CloseTopic (TOPIC_DalvinsSpitzhacken, MIS_DalvinsSpitzhacken, 0, 2);'
@@ -116,6 +124,18 @@ describe('file suggestions', () => {
       }
     };
     expect(suggestTopicConstantFiles(model)).toEqual(['C:/p/Log_Constants.d', 'C:/p/Other.d']);
+  });
+
+  test('for a LOG_NOTE, files named for notes come first (#278)', () => {
+    const model: any = {
+      constants: {
+        TOPIC_A: { name: 'TOPIC_A', filePath: 'C:/p/Log_Constants.d' },
+        TOPIC_B: { name: 'TOPIC_B', filePath: 'C:/p/Log_Constants.d' },
+        TOPIC_C: { name: 'TOPIC_C', filePath: 'C:/p/LOG_Constants_Notes.d' }
+      }
+    };
+    expect(suggestTopicConstantFiles(model, 'LOG_NOTE')).toEqual(['C:/p/LOG_Constants_Notes.d', 'C:/p/Log_Constants.d']);
+    expect(suggestTopicConstantFiles(model, 'LOG_MISSION')).toEqual(['C:/p/Log_Constants.d', 'C:/p/LOG_Constants_Notes.d']);
   });
 
   test('suggestCloseTopicsFiles finds files with a B_CloseTopics function or B_CloseTopic calls', () => {

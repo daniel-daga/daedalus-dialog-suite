@@ -141,4 +141,30 @@ describe('projectStore.registerTopicInLogFiles', () => {
     const constantsWrite = mockWriteFile.mock.calls.find(([p]) => p === CONSTANTS_FILE);
     expect(constantsWrite![1]).toContain('const string TOPIC_Dalvins = "Dalvins Spitzhacken";');
   });
+
+  test('a note writes only its TOPIC_ constant — no MIS_, no close call (#278)', async () => {
+    await useProjectStore.getState().registerNoteInLogFiles({
+      topicName: 'TOPIC_AlteMine',
+      title: 'Die alte Mine',
+      constantsFilePath: CONSTANTS_FILE
+    });
+
+    expect(mockWriteFile).toHaveBeenCalledTimes(1);
+    const [path, content] = mockWriteFile.mock.calls[0];
+    expect(path).toBe(CONSTANTS_FILE);
+    expect(content).toContain('const string TOPIC_AlteMine = "Die alte Mine";');
+    expect(content).not.toContain('MIS_AlteMine');
+    expect(content).toContain('TOPIC_Old'); // existing content preserved
+  });
+
+  test('a note already declared is rejected without a write', async () => {
+    await expect(
+      useProjectStore.getState().registerNoteInLogFiles({
+        topicName: 'TOPIC_Old',
+        title: 'Old',
+        constantsFilePath: CONSTANTS_FILE
+      })
+    ).rejects.toThrow(/already/i);
+    expect(mockWriteFile).not.toHaveBeenCalled();
+  });
 });

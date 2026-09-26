@@ -32,6 +32,9 @@ const CreateTopicRenderer: React.FC<BaseActionRendererProps> = ({
   const typedAction = action as CreateTopicAction;
   const isProjectMode = useProjectStore((s) => !!s.projectPath);
   const [isRegisterOpen, setIsRegisterOpen] = React.useState(false);
+  const registerLabel = typedAction.topicType === 'LOG_NOTE'
+    ? 'Register note in log files'
+    : 'Register quest in log files';
 
   const handleTopicChange = React.useCallback(
     (value: string) => handleUpdate({ ...typedAction, topic: normalizeTopicName(value) }),
@@ -70,11 +73,11 @@ const CreateTopicRenderer: React.FC<BaseActionRendererProps> = ({
         <MenuItem value="LOG_NOTE">LOG_NOTE</MenuItem>
       </TextField>
       {isProjectMode && (
-        <Tooltip title="Register quest in log files">
+        <Tooltip title={registerLabel}>
           <span>
             <IconButton
               size="small"
-              aria-label="Register quest in log files"
+              aria-label={registerLabel}
               tabIndex={-1}
               disabled={!typedAction.topic}
               onClick={() => setIsRegisterOpen(true)}
@@ -93,6 +96,7 @@ const CreateTopicRenderer: React.FC<BaseActionRendererProps> = ({
           open={isRegisterOpen}
           onClose={() => setIsRegisterOpen(false)}
           topicName={typedAction.topic || ''}
+          topicType={typedAction.topicType}
         />
       )}
     </ActionFieldContainer>

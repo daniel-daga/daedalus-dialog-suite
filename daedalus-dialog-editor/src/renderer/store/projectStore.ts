@@ -19,6 +19,7 @@ import { escapeRegExp } from '../utils/pathAndIdentifierUtils';
 import {
   buildCloseTopicLine,
   buildTopicDeclarationBlock,
+  buildNoteDeclarationBlock,
   insertIntoCloseTopicsFunction,
   topicBaseName
 } from '../utils/questLogFiles';
@@ -188,6 +189,13 @@ interface ProjectActions {
     chapterEnd: number;
     constantsFilePath: string;
     closeTopicsFilePath: string;
+  }) => Promise<void>;
+
+  // #278: a LOG_NOTE is declared as its TOPIC_ constant alone
+  registerNoteInLogFiles: (options: {
+    topicName: string;
+    title: string;
+    constantsFilePath: string;
   }) => Promise<void>;
 
   // Add a new global variable or constant
@@ -387,6 +395,22 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     await window.editorAPI.writeFile(filePath, newContent);
     invalidateCacheForFile(filePath);
     return get().getSemanticModel(filePath);
+  };
+
+  /**
+   * Append a TOPIC_ declaration block to the constants file, refusing when the
+   * constant is already declared there. Anchored on the declaration itself so
+   * commented-out lines or mere usages of the constant don't count.
+   */
+  const appendTopicDeclaration = (constantsFilePath: string, topicName: string, block: string) => {
+    const base = topicBaseName(topicName);
+    return mutateQuestFile(constantsFilePath, (c) => {
+      if (new RegExp(`^\\s*const\\s+string\\s+TOPIC_${escapeRegExp(base)}\\b`, 'im').test(c)) {
+        throw new Error(`TOPIC_${base} is already declared in ${constantsFilePath}`);
+      }
+      if (!c.endsWith('\n')) c += '\n';
+      return c + block;
+    });
   };
 
   // The merged model carries an AGGREGATE hasErrors flag summarising its inputs.
@@ -981,7 +1005,6 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
   registerTopicInLogFiles: async (options) => {
     const { topicName, title, chapterStart, chapterEnd, constantsFilePath, closeTopicsFilePath } = options;
-    const base = topicBaseName(topicName);
 
     try {
       set({ isLoading: true });
@@ -997,16 +1020,11 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         closeTopicLine
       );
 
-      const constantsModel = await mutateQuestFile(constantsFilePath, (c) => {
-        // Guard against duplicate declarations before writing; anchored on
-        // the declaration itself so commented-out lines or mere usages of
-        // the constant don't count.
-        if (new RegExp(`^\\s*const\\s+string\\s+TOPIC_${escapeRegExp(base)}\\b`, 'im').test(c)) {
-          throw new Error(`TOPIC_${base} is already declared in ${constantsFilePath}`);
-        }
-        if (!c.endsWith('\n')) c += '\n';
-        return c + buildTopicDeclarationBlock(topicName, title);
-      });
+      const constantsModel = await appendTopicDeclaration(
+        constantsFilePath,
+        topicName,
+        buildTopicDeclarationBlock(topicName, title)
+      );
       const closeTopicsModel = await mutateQuestFile(closeTopicsFilePath, (c) =>
         insertIntoCloseTopicsFunction(c, closeTopicLine)
       );
@@ -1019,6 +1037,22 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       set({ isLoading: false });
     } catch (error) {
       set({ isLoading: false, loadError: error instanceof Error ? error.message : 'Failed to register topic' });
+      throw error;
+    }
+  },
+
+  registerNoteInLogFiles: async ({ topicName, title, constantsFilePath }) => {
+    try {
+      set({ isLoading: true });
+      const constantsModel = await appendTopicDeclaration(
+        constantsFilePath,
+        topicName,
+        buildNoteDeclarationBlock(topicName, title)
+      );
+      mergeUpdatedQuestFileModels([{ filePath: constantsFilePath, model: constantsModel }]);
+      set({ isLoading: false });
+    } catch (error) {
+      set({ isLoading: false, loadError: error instanceof Error ? error.message : 'Failed to register note' });
       throw error;
     }
   },
