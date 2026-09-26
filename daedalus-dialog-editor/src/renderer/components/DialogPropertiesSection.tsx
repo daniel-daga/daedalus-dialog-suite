@@ -18,6 +18,7 @@ import {
 import VariableAutocomplete from './common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from './common/autocompletePolicies';
 import type { Dialog, SemanticModel } from '../types/global';
+import { dialogFlagKey, readDialogFlag } from '../utils/dialogFlags';
 
 interface DialogPropertiesSectionProps {
   dialog: Dialog;
@@ -135,12 +136,12 @@ const DialogPropertiesSection: React.FC<DialogPropertiesSectionProps> = ({
               control={(
                 <Checkbox
                   size="small"
-                  checked={Boolean(dialog.properties?.important)}
+                  checked={readDialogFlag(dialog.properties ?? {}, 'important')}
                   onChange={(event) => {
                     const checked = event.target.checked;
                     onDialogPropertyChange((existingDialog) => ({
                       ...existingDialog,
-                      properties: { ...existingDialog.properties, important: checked }
+                      properties: { ...existingDialog.properties, [dialogFlagKey(existingDialog.properties, 'important')]: checked }
                     }));
                   }}
                 />
@@ -151,12 +152,12 @@ const DialogPropertiesSection: React.FC<DialogPropertiesSectionProps> = ({
               control={(
                 <Checkbox
                   size="small"
-                  checked={Boolean(dialog.properties?.permanent)}
+                  checked={readDialogFlag(dialog.properties ?? {}, 'permanent')}
                   onChange={(event) => {
                     const checked = event.target.checked;
                     onDialogPropertyChange((existingDialog) => ({
                       ...existingDialog,
-                      properties: { ...existingDialog.properties, permanent: checked }
+                      properties: { ...existingDialog.properties, [dialogFlagKey(existingDialog.properties, 'permanent')]: checked }
                     }));
                   }}
                 />

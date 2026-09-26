@@ -128,3 +128,18 @@ describe('simulator fed real parser output (condition-idioms.d)', () => {
     expect(availabilityOf('DIA_Baz', ['dia_foo']).value).toBe('false');
   });
 });
+
+// #283: `TRUE`/`FALSE` reach the model as identifier strings, not booleans, and
+// the property keeps its source casing — `Boolean("FALSE")` is true, and a
+// `Permanent` key is not the `permanent` the projection reads.
+describe('simulator fed real parser output (dialog flags)', () => {
+  test('FALSE is not important, and a flag spelled Permanent is still read', () => {
+    const parsed = parseWithRealParser(
+      'instance DIA_Flags (C_INFO) { npc = PC_Hero; nr = 1; important = FALSE; Permanent = TRUE; };'
+    );
+    expect(parsed.hasErrors).toBe(false);
+    const [entry] = createSimulatorModel(parsed.model).dialogs;
+    expect(entry.important).toBe(false);
+    expect(entry.permanent).toBe(true);
+  });
+});

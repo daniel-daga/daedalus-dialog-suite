@@ -1,5 +1,6 @@
 import type { SemanticModel } from '../../../shared/types';
 import { extractFunctionName } from '../../utils/pathAndIdentifierUtils';
+import { readDialogFlag } from '../../utils/dialogFlags';
 import { canonicalizeIdentifier } from './identifier';
 import type { SimDialogEntry, SimulatorModel } from './types';
 
@@ -42,8 +43,8 @@ export const createSimulatorModel = (source: SemanticModel): SimulatorModel => {
       nr: typeof properties.nr === 'number' ? properties.nr : 0,
       ...(conditionFunction ? { conditionFunction } : {}),
       ...(informationFunction ? { informationFunction } : {}),
-      important: Boolean(properties.important),
-      permanent: Boolean(properties.permanent),
+      important: readDialogFlag(properties, 'important'),
+      permanent: readDialogFlag(properties, 'permanent'),
       sourceOrder
     });
   });

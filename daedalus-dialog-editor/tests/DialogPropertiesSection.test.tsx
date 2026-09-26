@@ -96,4 +96,53 @@ describe('DialogPropertiesSection', () => {
     expect(updatedDialog.properties.permanent).toBe(true);
     expect(updatedDialog.properties.important).toBe(false);
   });
+
+  // #283: the parser hands `FALSE` over as the identifier string "FALSE" and
+  // keeps the property's source casing (`Permanent`).
+  test('shows FALSE flags unchecked and TRUE flags checked as the parser delivers them', () => {
+    const dialog = {
+      name: 'DIA_Test',
+      parent: 'C_INFO',
+      properties: { npc: 'PC_HERO', nr: 1, description: 'Hello', important: 'FALSE', Permanent: 'TRUE' }
+    };
+
+    render(
+      <DialogPropertiesSection
+        dialog={dialog as any}
+        semanticModel={{ dialogs: {}, functions: {} }}
+        propertiesExpanded
+        onToggleExpanded={jest.fn()}
+        onDialogPropertyChange={jest.fn()}
+      />
+    );
+
+    expect(screen.getByRole('checkbox', { name: /important/i })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /permanent/i })).toBeChecked();
+  });
+
+  test('toggling a flag writes back to its source-cased key rather than adding a second one', () => {
+    const onDialogPropertyChange = jest.fn();
+    const dialog = {
+      name: 'DIA_Test',
+      parent: 'C_INFO',
+      properties: { npc: 'PC_HERO', nr: 1, description: 'Hello', Permanent: 'TRUE' } as Record<string, unknown>
+    };
+
+    render(
+      <DialogPropertiesSection
+        dialog={dialog as any}
+        semanticModel={{ dialogs: {}, functions: {} }}
+        propertiesExpanded
+        onToggleExpanded={jest.fn()}
+        onDialogPropertyChange={onDialogPropertyChange}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /permanent/i }));
+
+    const updater = onDialogPropertyChange.mock.calls[0][0] as (existingDialog: typeof dialog) => typeof dialog;
+    const updated = updater(dialog);
+    expect(updated.properties.Permanent).toBe(false);
+    expect(updated.properties).not.toHaveProperty('permanent');
+  });
 });
