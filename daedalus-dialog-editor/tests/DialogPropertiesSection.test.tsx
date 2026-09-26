@@ -145,4 +145,64 @@ describe('DialogPropertiesSection', () => {
     expect(updated.properties.Permanent).toBe(false);
     expect(updated.properties).not.toHaveProperty('permanent');
   });
+
+  // A typed description is a string: unquoted, a single word was emitted as a
+  // bare identifier (`description = Hallo;`). A constant keeps its bare form.
+  test.each([
+    ['Hallo', '"Hallo"'],
+    ['Hallo du', '"Hallo du"'],
+    ['"Schon zitiert"', '"Schon zitiert"'],
+    ['DIALOG_ENDE', 'DIALOG_ENDE'],
+    ['MY_TEXT', 'MY_TEXT']
+  ])('writes a typed description %s as %s', (typed, written) => {
+    const onDialogPropertyChange = jest.fn();
+    const dialog = {
+      name: 'DIA_Test',
+      parent: 'C_INFO',
+      properties: { npc: 'PC_HERO', nr: 1, description: '' }
+    };
+
+    render(
+      <DialogPropertiesSection
+        dialog={dialog}
+        semanticModel={{ dialogs: {}, functions: {} }}
+        propertiesExpanded
+        onToggleExpanded={jest.fn()}
+        onDialogPropertyChange={onDialogPropertyChange}
+      />
+    );
+
+    const field = screen.getByRole('textbox', { name: 'Description' });
+    fireEvent.change(field, { target: { value: typed } });
+    fireEvent.blur(field);
+
+    const updater = onDialogPropertyChange.mock.calls[0][0] as (existingDialog: typeof dialog) => typeof dialog;
+    expect(updater(dialog).properties.description).toBe(written);
+  });
+
+  test('a lowercase constant the file declares keeps its bare form', () => {
+    const onDialogPropertyChange = jest.fn();
+    const dialog = {
+      name: 'DIA_Test',
+      parent: 'C_INFO',
+      properties: { npc: 'PC_HERO', nr: 1, description: '' }
+    };
+
+    render(
+      <DialogPropertiesSection
+        dialog={dialog}
+        semanticModel={{ dialogs: {}, functions: {}, constants: { Dialog_Weiter: { name: 'Dialog_Weiter' } } } as any}
+        propertiesExpanded
+        onToggleExpanded={jest.fn()}
+        onDialogPropertyChange={onDialogPropertyChange}
+      />
+    );
+
+    const field = screen.getByRole('textbox', { name: 'Description' });
+    fireEvent.change(field, { target: { value: 'dialog_weiter' } });
+    fireEvent.blur(field);
+
+    const updater = onDialogPropertyChange.mock.calls[0][0] as (existingDialog: typeof dialog) => typeof dialog;
+    expect(updater(dialog).properties.description).toBe('dialog_weiter');
+  });
 });

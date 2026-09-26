@@ -30,6 +30,21 @@ export const isDescriptionInSync = (description: unknown, lineText: string): boo
 /** Written quoted: an unquoted single word would be emitted as an identifier. */
 export const descriptionFromLine = (lineText: string): string => `"${lineText}"`;
 
+/**
+ * A description typed into the panel, as it is stored. Quoted unless it is
+ * already, or it names a constant — one the file declares, or one spelled the
+ * way Daedalus spells them (`DIALOG_ENDE`), since the usual ones live in a file
+ * that is not open.
+ */
+export const descriptionFromInput = (text: string, constants: object = {}): string => {
+  if (text.startsWith('"') && text.endsWith('"') && text.length >= 2) return text;
+  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(text)) {
+    const declared = Object.keys(constants).some((name) => name.toLowerCase() === text.toLowerCase());
+    if (declared || (text.includes('_') && text === text.toUpperCase())) return text;
+  }
+  return `"${text}"`;
+};
+
 const functionNameOf = (ref: unknown): string | undefined =>
   typeof ref === 'string' ? ref : (ref as { name?: string } | null)?.name;
 

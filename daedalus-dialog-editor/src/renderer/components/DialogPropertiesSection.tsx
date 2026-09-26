@@ -22,7 +22,7 @@ import VariableAutocomplete from './common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from './common/autocompletePolicies';
 import type { Dialog, SemanticModel } from '../types/global';
 import { dialogFlagKey, readDialogFlag } from '../utils/dialogFlags';
-import { descriptionFromLine, isDescriptionInSync } from './descriptionSync';
+import { descriptionFromInput, descriptionFromLine, isDescriptionInSync } from './descriptionSync';
 
 interface DialogPropertiesSectionProps {
   dialog: Dialog;
@@ -132,7 +132,10 @@ const DialogPropertiesSection: React.FC<DialogPropertiesSectionProps> = ({
               if (localDescription !== (dialog.properties?.description || '')) {
                 onDialogPropertyChange((existingDialog) => ({
                   ...existingDialog,
-                  properties: { ...existingDialog.properties, description: localDescription }
+                  properties: {
+                    ...existingDialog.properties,
+                    description: descriptionFromInput(localDescription, semanticModel?.constants)
+                  }
                 }));
               }
             }}

@@ -84,7 +84,7 @@ test.describe('In sync with the first line (#277)', () => {
     // Past the line editor's debounce, so a follow would have landed by now;
     // the re-sync below reading 'Hallo Fremder' proves the edit itself did.
     await page.waitForTimeout(1000);
-    await expect(description(page)).toHaveValue('Wer bist du?');
+    await expect(description(page)).toHaveValue('"Wer bist du?"');
 
     await resync.click();
 
