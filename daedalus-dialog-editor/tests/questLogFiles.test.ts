@@ -10,8 +10,6 @@ import {
   suggestCloseTopicsFiles,
   buildTopicDeclarationBlock,
   buildNoteDeclarationBlock,
-  listNoteSections,
-  insertIntoNoteSection,
   buildCloseTopicLine
 } from '../src/renderer/utils/questLogFiles';
 
@@ -152,65 +150,5 @@ describe('file suggestions', () => {
       }]
     ]);
     expect(suggestCloseTopicsFiles(parsedFiles)).toEqual(['C:/p/B_CloseTopicsBeppo.d']);
-  });
-});
-
-// #278: a notes file is grouped by `//` headers (Lehrer, Händler, Sonstiges).
-// The diary itself is flat; the grouping lives only in the script.
-const NOTES_FILE = [
-  '//****************************',
-  '//\tLehrer',
-  '//****************************',
-  'const string TOPIC_CityTeacher = "Lehrer in der Stadt";',
-  'const string TOPIC_OutTeacher = "Lehrer außerhalb";',
-  '',
-  '// ---- Händler ----',
-  'const string TOPIC_CityTrader = "Händler in der Stadt"; // Khorinis',
-  '// const string TOPIC_Old = "auskommentiert";',
-  '',
-  '',
-  '// Sonstiges',
-  ''
-].join('\n');
-
-describe('note sections', () => {
-  test('listNoteSections reads the header titles, merging decoration lines and skipping commented-out code', () => {
-    expect(listNoteSections(NOTES_FILE)).toEqual(['Lehrer', 'Händler', 'Sonstiges']);
-  });
-
-  test('a file without headers has no sections', () => {
-    expect(listNoteSections('const string TOPIC_A = "A";\n')).toEqual([]);
-  });
-
-  test('insertIntoNoteSection puts the declaration after the last line of that section', () => {
-    const line = 'const string TOPIC_NewTeacher = "Neuer Lehrer";';
-    const result = insertIntoNoteSection(NOTES_FILE, 'Lehrer', line).split('\n');
-    expect(result.indexOf(line)).toBe(result.indexOf('const string TOPIC_OutTeacher = "Lehrer außerhalb";') + 1);
-    // the blank line separating the sections is kept
-    expect(result[result.indexOf(line) + 1]).toBe('');
-  });
-
-  test('a commented-out line inside a section does not end it', () => {
-    const line = 'const string TOPIC_Smith = "Schmied";';
-    const result = insertIntoNoteSection(NOTES_FILE, 'Händler', line).split('\n');
-    expect(result.indexOf(line)).toBe(result.indexOf('// const string TOPIC_Old = "auskommentiert";') + 1);
-    expect(result.indexOf(line)).toBeLessThan(result.indexOf('// Sonstiges'));
-  });
-
-  test('an empty last section takes the declaration right under its header', () => {
-    const line = 'const string TOPIC_AlteMine = "Die alte Mine";';
-    const result = insertIntoNoteSection(NOTES_FILE, 'Sonstiges', line).split('\n');
-    expect(result.indexOf(line)).toBe(result.indexOf('// Sonstiges') + 1);
-  });
-
-  test('keeps CRLF line endings', () => {
-    const crlf = NOTES_FILE.replace(/\n/g, '\r\n');
-    const result = insertIntoNoteSection(crlf, 'Lehrer', 'const string TOPIC_X = "X";');
-    expect(result).toContain('"Lehrer außerhalb";\r\nconst string TOPIC_X = "X";\r\n');
-    expect(result.replace(/\r\n/g, '')).not.toContain('\n');
-  });
-
-  test('throws when the section is not in the file', () => {
-    expect(() => insertIntoNoteSection(NOTES_FILE, 'Talente', 'const string TOPIC_X = "X";')).toThrow(/Talente/);
   });
 });

@@ -167,21 +167,4 @@ describe('projectStore.registerTopicInLogFiles', () => {
     ).rejects.toThrow(/already/i);
     expect(mockWriteFile).not.toHaveBeenCalled();
   });
-
-  test('a note given a section lands under that header, not at the end (#278)', async () => {
-    files[CONSTANTS_FILE] =
-      '// Lehrer\nconst string TOPIC_CityTeacher = "Lehrer";\n\n// Händler\nconst string TOPIC_CityTrader = "Händler";\n';
-
-    await useProjectStore.getState().registerNoteInLogFiles({
-      topicName: 'TOPIC_NewTeacher',
-      title: 'Neuer Lehrer',
-      constantsFilePath: CONSTANTS_FILE,
-      section: 'Lehrer'
-    });
-
-    expect(mockWriteFile.mock.calls[0][1]).toBe(
-      '// Lehrer\nconst string TOPIC_CityTeacher = "Lehrer";\nconst string TOPIC_NewTeacher = "Neuer Lehrer";\n\n// Händler\nconst string TOPIC_CityTrader = "Händler";\n'
-    );
-  });
 });
-
