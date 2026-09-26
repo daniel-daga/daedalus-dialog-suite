@@ -411,6 +411,70 @@ describe('WorldSceneTree', () => {
     expect(onReparent).toHaveBeenCalledWith(0, 4, 0);
   });
 
+  // #293: twenty bushes put under one of them was twenty drags.
+  describe('dragging a multi-selection', () => {
+    const strip = (edge: string, vob: number) => screen.getByTestId(`world-vob-drop-${edge}-${vob}`);
+
+    function tree(selection: number[]) {
+      const onReparent = jest.fn();
+      const onReparentSelection = jest.fn();
+      render(<WorldSceneTree
+        summary={NESTED}
+        selection={selection}
+        onSelect={jest.fn()}
+        onReparent={onReparent}
+        onReparentSelection={onReparentSelection}
+      />);
+      fireEvent.click(screen.getByTestId('world-vob-toggle-0'));
+      return { onReparent, onReparentSelection };
+    }
+
+    it('drops the whole selection onto a row, as that row’s last children', () => {
+      const { onReparent, onReparentSelection } = tree([1, 4]);
+
+      fireEvent.dragStart(row(4)!);
+      fireEvent.dragOver(row(2)!);
+      fireEvent.drop(row(2)!);
+
+      expect(onReparentSelection).toHaveBeenCalledWith(2, null);
+      expect(onReparent).not.toHaveBeenCalled();
+    });
+
+    it('drops the selection between rows, before the first row under the line it is not moving', () => {
+      const { onReparentSelection } = tree([1, 4]);
+
+      // The line above GATE is inside CASTLE's list, and GATE is itself
+      // moving — so the run lands before the compo, the next one staying.
+      fireEvent.dragStart(row(4)!);
+      fireEvent.drop(strip('before', 1));
+
+      expect(onReparentSelection).toHaveBeenCalledWith(0, 2);
+    });
+
+    it('refuses a drop onto a selected row, or into a selected VOB’s subtree', () => {
+      const { onReparentSelection } = tree([0, 4]);
+
+      fireEvent.dragStart(row(4)!);
+      fireEvent.drop(row(0)!);
+      fireEvent.dragStart(row(4)!);
+      fireEvent.drop(row(1)!);
+      fireEvent.dragStart(row(4)!);
+      fireEvent.drop(strip('before', 2));
+
+      expect(onReparentSelection).not.toHaveBeenCalled();
+    });
+
+    it('drags a row outside the selection on its own, as it always has', () => {
+      const { onReparent, onReparentSelection } = tree([1, 2]);
+
+      fireEvent.dragStart(row(4)!);
+      fireEvent.drop(row(0)!);
+
+      expect(onReparent).toHaveBeenCalledWith(4, 0, 2);
+      expect(onReparentSelection).not.toHaveBeenCalled();
+    });
+  });
+
   describe('a drop between rows', () => {
     // The gesture the "drop onto a row" rule could not express: a position in a
     // list, rather than the end of one. Every gap is read as "immediately before

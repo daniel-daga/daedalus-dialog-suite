@@ -2128,6 +2128,135 @@ function landingPath(from: string, parentPath: string | null, slot: number): str
 }
 
 /**
+ * Move a whole selection into one parent in one gesture (#293) — twenty bushes
+ * put under one of them — as a batch `commitOps` takes whole.
+ *
+ * What moves is the selection's top level, in document order, landing as one
+ * run at the end of `toParent`'s children or immediately before `before`, which
+ * has to be one of them and not itself moving. A selected VOB under another
+ * selected one stays where it is inside it. Nothing is made for a selection that
+ * already stands exactly where it would land.
+ *
+ * **Each op is resolved against the world the ones before it leave**, because
+ * each one renumbers: a VOB leaving a list ahead of the destination moves the
+ * destination's own path up, and the second op of a batch resolved against the
+ * original world would address a different VOB. So the tree is simulated here,
+ * slot by slot, and every op carries exactly what `reparentVob` would build
+ * against the world it is applied to — its `vob` included, for the same reason
+ * every op has one. `WorldService` undoes the batch back to front, which walks
+ * the same worlds in reverse, and `invertOp` inverts each op as it would a lone
+ * one.
+ */
+export function reparentVobs(
+  reader: VobReader, vobs: readonly number[], toParent: number | null, before: number | null = null,
+): ReparentVob[] {
+  const { parent, childIndex } = reader.columns;
+  const inIndex = (vob: number) => vob >= 0 && vob < reader.count;
+  for (const vob of vobs) if (!inIndex(vob)) throw new RangeError(`no VOB ${vob} in this world`);
+  if (toParent !== null && !inIndex(toParent)) {
+    throw new RangeError(`no VOB ${toParent} in this world to reparent under`);
+  }
+
+  const movers = topLevelVobs(reader, vobs).sort((a, b) => a - b);
+  const moving = new Set(movers);
+  for (let up = toParent ?? -1; up >= 0; up = parent[up]) {
+    if (moving.has(up)) {
+      throw new RangeError(`VOB ${up} cannot be reparented into itself or its own descendant`);
+    }
+  }
+  if (before !== null && (!inIndex(before) || moving.has(before) || (parent[before] < 0 ? null : parent[before]) !== toParent)) {
+    throw new RangeError(`VOB ${before} is not a child of the destination to land before`);
+  }
+
+  // The tree as lists of children, keyed by parent (-1 for the roots) and in
+  // slot order — the one shape both an index path and a pre-order index can be
+  // read off as the moves change it.
+  const lists = new Map<number, number[]>();
+  const holder = new Map<number, number>();
+  for (let vob = 0; vob < reader.count; vob++) {
+    const key = parent[vob];
+    holder.set(vob, key);
+    const list = lists.get(key) ?? [];
+    list[childIndex[vob]] = vob;
+    lists.set(key, list);
+  }
+  const listOf = (key: number) => {
+    let list = lists.get(key);
+    if (list === undefined) { list = []; lists.set(key, list); }
+    return list;
+  };
+  const pathOf = (vob: number): string => {
+    const slots: number[] = [];
+    for (let at = vob; at >= 0; at = holder.get(at)!) slots.push(listOf(holder.get(at)!).indexOf(at));
+    return slots.reverse().join('/');
+  };
+  const flatIndexOf = (vob: number): number => {
+    let index = 0;
+    let found = -1;
+    const walk = (key: number): boolean => {
+      for (const child of listOf(key)) {
+        if (child === vob) { found = index; return true; }
+        index += 1;
+        if (walk(child)) return true;
+      }
+      return false;
+    };
+    walk(-1);
+    return found;
+  };
+
+  const destinationKey = toParent ?? -1;
+  const destination = listOf(destinationKey);
+  const staying = destination.filter((vob) => !moving.has(vob));
+  const at = before === null ? staying.length : staying.indexOf(before);
+  const wanted = [...staying.slice(0, at), ...movers, ...staying.slice(at)];
+  if (wanted.length === destination.length && wanted.every((vob, slot) => destination[slot] === vob)) return [];
+
+  return movers.map((vob) => {
+    const holding = holder.get(vob)!;
+    const from = {
+      path: pathOf(vob),
+      parentPath: holding < 0 ? null : pathOf(holding),
+      slot: listOf(holding).indexOf(vob),
+    };
+    const flat = flatIndexOf(vob);
+    // The destination as it reads *before* this op's removal — `reparentVob`'s
+    // convention and the binding's; `landingPath` is its adjustment.
+    const parentPath = toParent === null ? null : pathOf(toParent);
+
+    listOf(holding).splice(from.slot, 1);
+    const slot = before === null ? destination.length : destination.indexOf(before);
+    destination.splice(slot, 0, vob);
+    holder.set(vob, destinationKey);
+
+    return {
+      op: 'ReparentVob' as const,
+      vob: flat,
+      from,
+      to: { path: landingPath(from.path, parentPath, slot), parentPath, slot },
+    };
+  });
+}
+
+/**
+ * Where each VOB a `reparentVobs` batch moved stands once the whole batch has
+ * landed, in the batch's order — what the surface reselects them by, after the
+ * re-read.
+ *
+ * Not each op's own `to.path`: a later op leaving a list ahead of the
+ * destination moves every earlier arrival with it. The run is contiguous and
+ * nothing moves after the last op, so the last landing names the list and the
+ * slot the run ends at.
+ */
+export function landedPaths(ops: readonly ReparentVob[]): string[] {
+  if (ops.length === 0) return [];
+  const last = ops[ops.length - 1].to;
+  const cut = last.path.lastIndexOf('/');
+  const list = cut < 0 ? '' : `${last.path.slice(0, cut)}/`;
+  return ops.map((_op, at) => `${list}${last.slot - (ops.length - 1 - at)}`);
+}
+
+/**
  * Remove a VOB, and with it every VOB under it — the binding erases the slot
  * rather than blanking it, so no hole is left for the writer to trip over.
  *
@@ -2391,8 +2520,12 @@ function writeOp(binding: OpBinding, op: WorldOp, direction: 'to' | 'from'): voi
   }
   if (op.op === 'ReparentVob') {
     // Undo moves the VOB from where the op *put* it, not from where it started —
-    // which is the half swapping `from` and `to` does not give for free.
-    const [source, destination] = direction === 'to' ? [op.from, op.to] : [op.to, op.from];
+    // which is the half swapping `from` and `to` does not give for free. The
+    // other half is the old parent, which the move itself may have renumbered:
+    // `'from'` is `invertOp`'s inverse, not a swap, so that a batch of reparents
+    // unwinding part way (#293) names each old parent where the move left it.
+    const move = direction === 'to' ? op : invertOp(op) as ReparentVob;
+    const [source, destination] = [move.from, move.to];
     const landed = binding.reparentVob(source.path, destination.parentPath, destination.slot);
     if (landed !== destination.path) {
       // Put it back before reporting, so a refused op changes nothing — the same
@@ -2582,8 +2715,17 @@ export function commitOps(binding: OpBinding, ops: readonly WorldOp[]): void {
   const restores = ops.length > 1 && ops.every((op) => op.op === 'RestoreVob')
     && ops.every((op, at) => at === 0 || compareIndexPaths(ops[at - 1].path, op.path) < 0);
 
+  // **And a batch of reparents** (#293), which is a different kind of answer:
+  // not an order in which no op disturbs another, but a chain in which each op
+  // was resolved against the world the ones before it leave — `reparentVobs`
+  // builds it that way, and `WorldService` undoes it back to front, which walks
+  // the same worlds in reverse. Nothing in a path can prove it was resolved like
+  // that, so the landing check in `writeOp` is what stands behind it: an op
+  // addressed by a stale path lands somewhere else and the batch is unwound.
+  const reparents = ops.length > 1 && ops.every((op) => op.op === 'ReparentVob');
+
   const appends = ops.every((op) => op.op === 'AddVob' || op.op === 'SetVobClassProp');
-  const renumbering = ops.length > 1 && !appends && !deletes && !restores
+  const renumbering = ops.length > 1 && !appends && !deletes && !restores && !reparents
     ? ops.find(renumbersPaths) : undefined;
   if (renumbering !== undefined) {
     throw new RangeError(

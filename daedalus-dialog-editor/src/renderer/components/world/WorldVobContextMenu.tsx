@@ -7,6 +7,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import ContentPasteIcon from '@mui/icons-material/ContentPaste';
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder';
 import DeleteIcon from '@mui/icons-material/Delete';
+import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import ExploreIcon from '@mui/icons-material/Explore';
 import FolderIcon from '@mui/icons-material/Folder';
 import MyLocationIcon from '@mui/icons-material/MyLocation';
@@ -41,6 +42,12 @@ export interface WorldVobContextMenuProps {
   onDropToGround: () => void;
   onAlignToNormal: () => void;
   onHideClass: () => void;
+  /**
+   * Put the rest of the selection under the right-clicked VOB (#293), and how
+   * many that is. Absent when it is not on offer — a lone VOB, or one the rest
+   * of the selection already holds, which would be a VOB put inside itself.
+   */
+  makeChildren?: { count: number; onMake: () => void };
   /** Existing folders (VOB folders slice) — just enough to list them, not the
    *  member paths, which this menu never reads. */
   folders: readonly { id: string; name: string }[];
@@ -61,7 +68,7 @@ const Shortcut: React.FC<{ keys: string }> = ({ keys }) => (
 const WorldVobContextMenu: React.FC<WorldVobContextMenuProps> = ({
   open, position, onClose, selectionCount, canPaste,
   onFrame, onDuplicate, onCopy, onPaste, onDeleteRequest, onDropToGround, onAlignToNormal, onHideClass,
-  folders, onAddSelectionToFolder, onCreateFolderWithSelection,
+  makeChildren, folders, onAddSelectionToFolder, onCreateFolderWithSelection,
 }) => {
   /** Every item takes its action and closes the menu — nothing here stays
    *  open after a click, including Delete, which only opens the existing
@@ -193,6 +200,14 @@ const WorldVobContextMenu: React.FC<WorldVobContextMenuProps> = ({
         <ListItemIcon><ExploreIcon fontSize="small" /></ListItemIcon>
         <ListItemText>Align to normal</ListItemText>
       </MenuItem>
+      {makeChildren !== undefined && (
+        <MenuItem onClick={run(makeChildren.onMake)} data-testid="world-context-make-children">
+          <ListItemIcon><AccountTreeIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>
+            {`Make the other ${makeChildren.count === 1 ? 'VOB a child' : `${makeChildren.count} VOBs children`} of this one`}
+          </ListItemText>
+        </MenuItem>
+      )}
       <Divider />
       <MenuItem onClick={run(onHideClass)} data-testid="world-context-hide-class">
         <ListItemIcon><VisibilityOffIcon fontSize="small" /></ListItemIcon>

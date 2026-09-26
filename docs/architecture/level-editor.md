@@ -1847,6 +1847,20 @@ belong:
   would have broken the batches it already appears in. `renumbersPaths` is the
   narrower predicate.
 
+  **The exception is a batch of reparents alone (#293)** — a selection moved
+  under one VOB in one gesture, from the scene tree's multi-row drag or the
+  context menu's "Make the other N VOBs children of this one". `reparentVobs`
+  builds it as a *chain*: it simulates the tree and resolves each op against
+  the world the ones before it leave, so every op is exactly what
+  `reparentVob` would build against the world it is applied to (the
+  destination's own path moves as VOBs ahead of it leave its list). Undo walks
+  the same worlds back to front. Nothing in a path can prove it was resolved
+  that way, so the landing check stands behind it, and `commitOps`' unwind of
+  a refused chain goes through `invertOp` — a raw swap of `from` and `to`
+  names the old parent where it was, not where the move left it, which a lone
+  reparent never had to unwind. `landedPaths` says where the run stands once
+  the whole chain has landed, which is what the surface reselects by.
+
 `reparentVob(handle, fromPath, parentPath | null, slot)` takes a **slot** rather
 than appending, because that is what makes it invertible: putting a VOB back at
 the end of the list it came from is a different world from the one it left. Two

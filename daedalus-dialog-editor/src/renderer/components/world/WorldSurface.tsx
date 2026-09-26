@@ -15,9 +15,9 @@ import {
   duplicateVobs, emptyVobFolders,
   matchVobs,
   placeBounds, placementCollision,
-  reparentVob, rotateSubtrees, rotateSubtreeTo, subtreeMembers, setVobClassProp, setVobProp, setVobProps,
+  landedPaths, reparentVob, reparentVobs, rotateSubtrees, rotateSubtreeTo, subtreeMembers, setVobClassProp, setVobProp, setVobProps,
   topLevelVobs,
-  translateSubtrees, vobExtentOf, vobIndexPath,
+  translateSubtrees, vobAtIndexPath, vobExtentOf, vobIndexPath,
   type AuthorableVobClass, type ClassProps, type NewVob, type ReadProps,
   type VobExtent, type VobProps, type VobReader,
   type ZenBounds,
@@ -1332,6 +1332,56 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   }, [commitOps]);
 
   /**
+   * Move the whole selection under `toParent` in one batch (#293) — the scene
+   * tree's multi-row drag and the context menu's "Make … children of this one".
+   * `reparentVobs` resolves each op against the world the ones before it leave;
+   * the batch is one undo entry.
+   *
+   * Afterwards the moved VOBs — or, with `selectParent`, the parent they went
+   * under — are selected again **by path** after the re-read, the way a paste
+   * selects its copies: a renumbering batch leaves every flat index naming
+   * something else.
+   */
+  const reparentVobsUnder = useCallback(async (
+    vobs: readonly number[], toParent: number | null, before: number | null, selectParent: boolean,
+  ) => {
+    const { summary: current } = useWorldStore.getState();
+    if (current === null || vobs.length === 0) return;
+    const ops = reparentVobs(vobModelOf(current).reader, vobs, toParent, before);
+    if (ops.length === 0 || !await commitOps(ops)) return;
+
+    const { summary: after } = useWorldStore.getState();
+    if (after === null) return;
+    const refreshed = vobModelOf(after).reader;
+    const landed = landedPaths(ops);
+    const paths = selectParent && toParent !== null
+      ? [landed[0].slice(0, landed[0].lastIndexOf('/'))]
+      : landed;
+    const found = paths.map((path) => vobAtIndexPath(refreshed, path)).filter((vob): vob is number => vob !== null);
+    if (found.length > 0) useWorldStore.getState().selectVobs(found);
+  }, [commitOps]);
+
+  const reparentSelection = useCallback((toParent: number | null, before: number | null) => {
+    void reparentVobsUnder(useWorldStore.getState().selection, toParent, before, false);
+  }, [reparentVobsUnder]);
+
+  /** "Make the other N VOBs children of this one" — offered only when it can
+   *  land: over a VOB inside a multi-selection that no other selected VOB is an
+   *  ancestor of, which would be a VOB put inside itself. */
+  const makeChildren = useMemo(() => {
+    if (contextMenu === null || summary === null || selection.length < 2
+      || !selection.includes(contextMenu.vob)) return undefined;
+    const target = contextMenu.vob;
+    const others = selection.filter((vob) => vob !== target);
+    const { parent } = vobModelOf(summary).reader.columns;
+    for (let up = parent[target]; up >= 0; up = parent[up]) if (others.includes(up)) return undefined;
+    return {
+      count: others.length,
+      onMake: () => { void reparentVobsUnder(others, target, null, true); },
+    };
+  }, [contextMenu, summary, selection, reparentVobsUnder]);
+
+  /**
    * Place a new VOB at the last point picked on the terrain.
    *
    * The terrain point rather than the camera or the origin, because it is the
@@ -1861,6 +1911,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         onDropToGround={handleDropToGround}
         onAlignToNormal={handleAlignToNormal}
         onHideClass={hideVobClass}
+        makeChildren={makeChildren}
         folders={vobFolders.folders}
         onAddSelectionToFolder={addSelectionToFolder}
         onCreateFolderWithSelection={createFolderWithSelection}
@@ -2051,6 +2102,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                   onSelect={handleSelect}
                   onFocus={focusVob}
                   onReparent={reparent}
+                  onReparentSelection={reparentSelection}
                   onContextMenu={openVobContextMenu}
                   getCameraPosition={getCameraPosition}
                 />

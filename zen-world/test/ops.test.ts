@@ -24,6 +24,8 @@ import {
   applyWaypointNames,
   applyWaypointPositions,
   reparentVob,
+  reparentVobs,
+  landedPaths,
   commitOps,
   createVobReader,
   deleteVob,
@@ -2639,6 +2641,125 @@ describe('a reparent op', () => {
 
     commitOps(binding, [invertOp(op)]);
     expect(shape(roots)).toEqual(before);
+  });
+
+  // #293: a whole selection moved in one gesture — twenty bushes put under one
+  // of them. Each op renumbers, so each is resolved against the world the ones
+  // before it leave; the round trips below run through the tree binding, where
+  // an op addressed by a stale path would land somewhere else and be refused.
+  describe('a batch of them (#293)', () => {
+    //  a b c d e — five roots, vobs 0..4
+    const flat = () => createVobReader(vobIndex([0, 1, 2, 3, 4].map((childIndex) => ({ childIndex }))));
+    const flatTree = (): Node[] => ['a', 'b', 'c', 'd', 'e'].map((name) => ({ name, children: [] }));
+    /** WorldService's undo: each op inverted, last op first. */
+    const undo = (ops: readonly WorldOp[]) => [...ops].reverse().map(invertOp);
+
+    it('puts the selection under one VOB as its last children, in document order, and undoes', () => {
+      const roots = tree();
+      const binding = makeTreeBinding(roots);
+      const ops = reparentVobs(reader(), [3, 2], 1);
+
+      commitOps(binding, ops);
+      expect(shape(roots)).toBe('v0(v1(v2 v3))');
+      commitOps(binding, undo(ops));
+      expect(shape(roots)).toBe('v0(v1 v2) v3');
+    });
+
+    it('follows the destination as the moves ahead of it renumber it', () => {
+      // `c` is root 2, then 1, then 0 as the VOBs before it leave the roots —
+      // a batch resolved against the original world would address `a`, `b`
+      // and then nothing.
+      const roots = flatTree();
+      const binding = makeTreeBinding(roots);
+      const ops = reparentVobs(flat(), [0, 1, 3, 4], 2);
+
+      expect(ops.map((op) => op.to.parentPath)).toEqual(['2', '1', '0', '0']);
+      commitOps(binding, ops);
+      expect(shape(roots)).toBe('c(a b d e)');
+      commitOps(binding, undo(ops));
+      expect(shape(roots)).toBe('a b c d e');
+    });
+
+    it('lands the selection as one run before a sibling, when given one', () => {
+      const roots = flatTree();
+      const binding = makeTreeBinding(roots);
+      const ops = reparentVobs(flat(), [4, 0], null, 2);
+
+      commitOps(binding, ops);
+      expect(shape(roots)).toBe('b a e c d');
+      commitOps(binding, undo(ops));
+      expect(shape(roots)).toBe('a b c d e');
+    });
+
+    it('moves a selected child with its selected parent rather than out of it', () => {
+      const roots = tree();
+      const binding = makeTreeBinding(roots);
+      const ops = reparentVobs(reader(), [0, 1], 3);
+
+      expect(ops).toHaveLength(1);
+      commitOps(binding, ops);
+      expect(shape(roots)).toBe('v3(v0(v1 v2))');
+    });
+
+    it('makes no op for a VOB already where it would land', () => {
+      // v1 and v2 are v0's children already, in that order, at the end.
+      expect(reparentVobs(reader(), [1, 2], 0)).toEqual([]);
+    });
+
+    it('carries each VOB’s flat index in the world its op is applied to', () => {
+      // `e` is vob 4 in the original world, and the fourth op in: by then `a`,
+      // `b` and `d` sit under `c` and it is enumerated right after them.
+      const ops = reparentVobs(flat(), [0, 1, 3, 4], 2);
+      expect(ops.map((op) => op.vob)).toEqual([0, 0, 3, 4]);
+    });
+
+    it('says where each moved VOB stands once the whole batch has landed', () => {
+      // Not each op's own `to.path`: `a` landed at 1/0 and was 0/0 by the end,
+      // once `b` and `d` had left the roots ahead of `c`.
+      const roots = flatTree();
+      const binding = makeTreeBinding(roots);
+      const ops = reparentVobs(flat(), [0, 1, 3, 4], 2);
+      commitOps(binding, ops);
+
+      expect(landedPaths(ops)).toEqual(['0/0', '0/1', '0/2', '0/3']);
+      const named = (path: string) => path.split('/').map(Number)
+        .reduce<Node | undefined>((node, slot, at) => (at === 0 ? roots[slot] : node?.children[slot]), undefined)?.name;
+      expect(landedPaths(ops).map(named)).toEqual(['a', 'b', 'd', 'e']);
+      expect(landedPaths(reparentVobs(flat(), [4, 0], null, 2))).toEqual(['1', '2']);
+      expect(landedPaths([])).toEqual([]);
+    });
+
+    it('refuses a destination inside the selection, and a sibling that is not the destination’s', () => {
+      expect(() => reparentVobs(reader(), [0], 1)).toThrow(/itself|descendant/i);
+      expect(() => reparentVobs(reader(), [3, 0], 0)).toThrow(/itself|descendant/i);
+      expect(() => reparentVobs(flat(), [0], null, 0)).toThrow(/before/i);
+      expect(() => reparentVobs(reader(), [3], 0, 3)).toThrow(/before/i);
+    });
+
+    it('is a batch commitOps takes whole, and still unwinds whole when one op is refused', () => {
+      const roots = flatTree();
+      const binding = makeTreeBinding(roots);
+      const ops = reparentVobs(flat(), [0, 1, 3], 2);
+      // The last op's source path no longer names anything: the binding
+      // refuses it, and the two that landed are put back.
+      const broken = [...ops.slice(0, -1), { ...ops[2], from: { ...ops[2].from, path: '9' } }];
+
+      expect(() => commitOps(binding, broken)).toThrow();
+      expect(shape(roots)).toBe('a b c d e');
+    });
+
+    it('unwinds a move that renumbered its own old parent back into that parent', () => {
+      // v1 leaves v0 for the front of the roots, so v0 is root 1 by the time
+      // the second op is refused. The unwind has to say so — a raw swap of the
+      // op's sides names root 0, which is v1 itself.
+      const roots = tree();
+      const binding = makeTreeBinding(roots);
+      const ops = reparentVobs(reader(), [1, 2], null, 0);
+      const broken = [ops[0], { ...ops[1], from: { ...ops[1].from, path: '9' } }];
+
+      expect(() => commitOps(binding, broken)).toThrow(/9/);
+      expect(shape(roots)).toBe('v0(v1 v2) v3');
+    });
   });
 
   it('refuses a move that did not land where the op says it would', () => {

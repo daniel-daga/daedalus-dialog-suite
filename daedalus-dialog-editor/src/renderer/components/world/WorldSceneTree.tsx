@@ -279,6 +279,15 @@ export interface WorldSceneTreeProps {
    * list".
    */
   onReparent?: (vob: number, toParent: number | null, slot: number) => void;
+  /**
+   * Move the whole selection into `toParent` (#293) — what a drag reaches when
+   * the row it starts on is one of several selected. `before` is the child of
+   * `toParent` the run lands in front of, and null for the end of its list; a
+   * VOB, not a slot, because a slot in a list the selection is also leaving
+   * would have to account for every one of them. Absent, a drag moves its own
+   * row whatever else is selected.
+   */
+  onReparentSelection?: (toParent: number | null, before: number | null) => void;
   /** Right-click on a row — threaded to `RowData.onContextMenu`. Absent
    *  when the surface offers no menu. */
   onContextMenu?: (vob: number, position: { left: number; top: number }) => void;
@@ -311,7 +320,7 @@ export interface WorldSceneTreeProps {
 }
 
 const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
-  summary, selection, onSelect, onFocus, onReparent, onContextMenu, appliedOps = null,
+  summary, selection, onSelect, onFocus, onReparent, onReparentSelection, onContextMenu, appliedOps = null,
   getCameraPosition,
 }) => {
   const { tree, reader } = useMemo(() => vobModelOf(summary), [summary]);
@@ -443,12 +452,23 @@ const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
   /** The one gap the insertion line is drawn in, while a drag is over it. */
   const [hovering, setHovering] = useState<{ vob: number; edge: DropEdge } | null>(null);
 
+  // A drag that starts on one of several selected rows carries all of them
+  // (#293); one that starts anywhere else is its own row, as it always was.
+  const group = dragging !== null && onReparentSelection !== undefined
+    && selection.length > 1 && selected.has(dragging);
+  const moving = useMemo(
+    () => (dragging === null ? new Set<number>() : (group ? selected : new Set([dragging]))),
+    [dragging, group, selected],
+  );
   // A VOB dropped into its own subtree is unreachable from the roots: not
   // enumerated, not counted, not written. The op refuses it and so does the
   // binding — this is the layer that must not offer it in the first place.
+  const insideMoving = useCallback((vob: number) => (
+    moving.has(vob) || tree.ancestors(vob).some((up) => moving.has(up))
+  ), [moving, tree]);
   const canDropOn = useCallback((target: number) => (
-    dragging !== null && target !== dragging && !tree.ancestors(target).includes(dragging)
-  ), [dragging, tree]);
+    dragging !== null && !insideMoving(target)
+  ), [dragging, insideMoving]);
 
   const onDropOn = useCallback((target: number) => {
     const vob = dragging;
@@ -457,9 +477,11 @@ const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
     // Checked again rather than trusted: `canDropOn` gates the browser's drop
     // cursor, and a drop can still be delivered by anything that dispatches the
     // event itself.
-    if (vob === null || onReparent === undefined || !canDropOn(target)) return;
+    if (vob === null || !canDropOn(target)) return;
+    if (group) { onReparentSelection?.(target, null); return; }
+    if (onReparent === undefined) return;
     onReparent(vob, target, tree.children(target).length);
-  }, [dragging, onReparent, tree, canDropOn]);
+  }, [dragging, onReparent, onReparentSelection, group, tree, canDropOn]);
 
   const onDragEnd = useCallback(() => {
     setDragging(null);
@@ -489,6 +511,15 @@ const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
     if (dragging === null) return null;
 
     const { parent, siblings } = listOf(target);
+    if (group) {
+      // A selection lands as one run in front of the first sibling at the line
+      // that is staying where it is — a moving one is not there to land before
+      // once the run has left. No slot: `reparentVobs` resolves one per op.
+      if (parent !== null && insideMoving(parent)) return null;
+      const start = siblings.indexOf(target) + (edge === 'after' ? 1 : 0);
+      const before = siblings.slice(start).find((sibling) => !moving.has(sibling)) ?? null;
+      return { parent, slot: -1, before };
+    }
     // The destination's *parent* is what must not be inside the dragged
     // subtree — a root has none, and is always reachable.
     if (parent !== null
@@ -506,8 +537,8 @@ const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
       // in already.
       if (was === slot) return null;
     }
-    return { parent, slot };
-  }, [dragging, listOf, tree]);
+    return { parent, slot, before: null };
+  }, [dragging, listOf, tree, group, insideMoving, moving]);
 
   const canDropBetween = useCallback(
     (target: number, edge: DropEdge) => landingAt(target, edge) !== null,
@@ -522,9 +553,11 @@ const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
     // Checked through `landingAt` again for the same reason `onDropOn` re-checks:
     // dragover gates the browser's drop cursor, not anything that dispatches the
     // event itself.
-    if (vob === null || onReparent === undefined || landing === null) return;
+    if (vob === null || landing === null) return;
+    if (group) { onReparentSelection?.(landing.parent, landing.before); return; }
+    if (onReparent === undefined) return;
     onReparent(vob, landing.parent, landing.slot);
-  }, [dragging, landingAt, onReparent]);
+  }, [dragging, landingAt, onReparent, onReparentSelection, group]);
 
   const itemData = useMemo<RowData>(
     () => ({
