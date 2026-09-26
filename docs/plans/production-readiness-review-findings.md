@@ -663,3 +663,61 @@ off the jsdelivr CDN to the app's own origin).
 document is the pre-release list above (icons + naming, signing + R1
 sequencing, packaged-app parse smoke), §3's P3 measure-first items, and the
 §4 P1-P3 UI/UX findings from F8 onward.
+
+## Editor follow-up review (2026-09-26)
+
+Reviewed editor source at `7a481e1c`, focusing on edit preservation and
+cross-view save handling. This is a code and component-behavior review, not a
+visual audit of a packaged application. No production implementation changed.
+The world-close finding lives in `docs/plans/level-editor.md` §16.42.
+
+Validation: four temporary Jest regressions reproduced all four findings
+(assertions for preserving edits/refusing the unintended action failed at the
+expected points). The existing close-guard, watcher-conflict, watcher-batching,
+save-race, world-shortcut hook and mounted world-shortcut suites all passed:
+**135 tests in six suites**. `npm run typecheck:renderer`, `npm run docs:check`
+and `git diff --check` passed. The temporary regression file is retained locally
+at `reports/ui-review/uiReview20260926.test.tsx` in the review worktree; copy it
+to `daedalus-dialog-editor/tests/` to rerun with the workspace's Jest command.
+It is not part of the normal test suite or this documentation-only commit.
+
+### R26-A: Disk reload can overwrite a newer local edit (P1, #300)
+
+`daedalus-dialog-editor/src/renderer/store/fileStore.ts:833–853` awaits a disk
+read and parse, then replaces the current model and clears `isDirty` without
+checking whether the file changed during those awaits. The watcher's clean-file
+check happens before entering this asynchronous operation.
+
+Reproduce with an initially clean open file: start its external-change reload,
+hold `parseSource` pending, make a visual edit, then resolve the parse with the
+external model. The newer edit is replaced and the file is marked clean, so it
+will not be saved or included in the close guard. Capture the file/model
+identity at reload start and recheck before applying; turn a concurrent local
+edit into an external conflict instead. Preserve the explicit discard behavior
+of `reloadTheirs` while rejecting changes made after that discard started.
+
+### R26-B: External deletion drops an unflushed edit (P2, #301)
+
+`daedalus-dialog-editor/src/renderer/hooks/useFileWatcher.ts:267–284` tests
+`hasUnsavedChanges` on unlink without draining the pending-edit registry.
+Unlike the `change` path, the unlink path can therefore close a file whose
+latest keystrokes still live in a 300 ms component debounce. A later timer or
+unmount flush cannot update a file slot that has already been removed.
+
+Reproduce with a clean open file and a registered pending edit, then deliver
+`{ type: 'unlink', filePath }` before its timer fires. The file is removed
+instead of retained with `externalConflict.fileMissing`. Flush pending edits
+before obtaining the live file state and deciding whether unlink may close it.
+
+### R26-C: World Ctrl+S also saves the background script (P2, #302)
+
+`daedalus-dialog-editor/src/renderer/hooks/useManualSave.ts:60–68` handles
+Ctrl+S in every view without checking the active view or event ownership. The
+World surface independently handles the same event in `useWorldShortcuts`.
+`preventDefault` does not stop the second window listener.
+
+Reproduce with a dirty active script, auto-save disabled, and the World view
+visible: press Ctrl+S in the viewport. The world save confirmation opens, but
+the script save IPC also runs immediately; cancelling the world confirmation
+does not undo that script write. Route the shortcut by the active view so World
+owns it, including while a world dialog or property field has focus.

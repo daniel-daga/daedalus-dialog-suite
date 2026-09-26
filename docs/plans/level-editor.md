@@ -3416,3 +3416,19 @@ A row that fails here is a defect and gets its own issue; this list only records
 that nobody has looked.
 
 ---
+
+### 16.42 Window close ignores unsaved world edits (2026-09-26 review, P1, #299)
+
+At `7a481e1c`, `useWindowCloseGuard.tsx:77–85` computes unsaved work only from
+`useFileStore.openFiles`. World edits set the component-local `unsavedEdits`
+flag in `WorldSurface.tsx:1028,1079`, which the guard never reads. The main
+process accepts `app:approveClose` and closes the window; it does not perform
+a second world-dirty check.
+
+Reproduce: open a world, nudge a VOB, verify the Save world button says
+"edited", and close the application with no dirty scripts. The guard approves
+immediately, losing the world session without offering save/discard/cancel.
+If scripts are dirty, Save and close saves those scripts and still abandons
+the world. Make world dirtiness available to the application close guard and
+include it in both the initial decision and the save-and-close path; a failed
+world save must keep the application open.
