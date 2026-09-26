@@ -114,6 +114,14 @@ export interface ProjectIndex {
   /** Prototype names (normalized uppercase) whose parent chain reaches C_NPC */
   npcPrototypes: string[];
   /**
+   * How much of the project's NPC set the scanned folder could see (#281).
+   * `npcInstancesFound` counts NPC instance declarations (not dialog `npc`
+   * references); `missingPrototypes` are the types NPCs recognised only by
+   * their `daily_routine` derive from but the folder does not declare — so
+   * NPCs under them with no routine are not listed.
+   */
+  npcCoverage: { npcInstancesFound: number; missingPrototypes: string[] };
+  /**
    * AI_Output voice ids across the project, keyed by UPPERCASED id (Daedalus is
    * case-insensitive); entries keep the original file/function locations.
    * Built at project load/reindex time — not refreshed on every save, so it can

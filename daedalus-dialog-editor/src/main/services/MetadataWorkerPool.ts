@@ -13,7 +13,7 @@ const DEFAULT_TASK_TIMEOUT_MS = 30000;
 
 export interface MetadataResult {
   dialogs: DialogMetadata[];
-  instances: Array<{ name: string; parent: string }>;
+  instances: Array<{ name: string; parent: string; hasDailyRoutine?: boolean }>;
   prototypes: Array<{ name: string; parent: string }>;
   isQuestFile: boolean;
   routines: string[];

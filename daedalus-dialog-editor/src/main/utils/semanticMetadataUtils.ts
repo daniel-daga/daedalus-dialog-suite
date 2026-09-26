@@ -7,7 +7,8 @@ const daedalusWrapper = new DaedalusParser();
 
 export interface ParsedFileMetadata {
   dialogs: DialogMetadata[];
-  instances: Array<{ name: string; parent: string }>;
+  /** `hasDailyRoutine`: the body sets `daily_routine`, which only a C_NPC has (#281). */
+  instances: Array<{ name: string; parent: string; hasDailyRoutine?: boolean }>;
   prototypes: Array<{ name: string; parent: string }>;
   isQuestFile: boolean;
   routines: string[];
@@ -93,18 +94,20 @@ const extractDialogs = (semanticModel: SemanticModel, filePath: string): DialogM
 };
 
 const extractInstanceAndPrototypeDeclarations = (
-  parseResult: any
-): { instances: Array<{ name: string; parent: string }>; prototypes: Array<{ name: string; parent: string }> } => {
+  parseResult: any,
+  semanticModel: SemanticModel
+): { instances: ParsedFileMetadata['instances']; prototypes: Array<{ name: string; parent: string }> } => {
   const declarations = typeof daedalusWrapper.extractDeclarations === 'function'
     ? daedalusWrapper.extractDeclarations(parseResult)
     : [];
 
-  const instances: Array<{ name: string; parent: string }> = [];
+  const instances: ParsedFileMetadata['instances'] = [];
   const prototypes: Array<{ name: string; parent: string }> = [];
   for (const declaration of declarations) {
     if (!declaration?.name || !declaration.parent) continue;
     if (declaration.type === 'instance') {
-      instances.push({ name: declaration.name, parent: declaration.parent });
+      const hasDailyRoutine = Boolean(semanticModel.instances?.[declaration.name]?.dailyRoutine);
+      instances.push({ name: declaration.name, parent: declaration.parent, ...(hasDailyRoutine ? { hasDailyRoutine } : {}) });
     } else if (declaration.type === 'prototype') {
       prototypes.push({ name: declaration.name, parent: declaration.parent });
     }
@@ -608,7 +611,7 @@ export function extractFileMetadataFromSource(sourceCode: string, filePath: stri
   }
 
   const semanticModel = visitor.semanticModel as SemanticModel;
-  const { instances, prototypes } = extractInstanceAndPrototypeDeclarations(parseResult);
+  const { instances, prototypes } = extractInstanceAndPrototypeDeclarations(parseResult, semanticModel);
 
   return {
     dialogs: extractDialogs(semanticModel, filePath),

@@ -162,6 +162,8 @@ class ProjectService {
     const parseErrors: FileParseErrors[] = [];
     const fileModelsForSiteIndexes: Array<{ filePath: string; semanticModel: SemanticModel }> = [];
     let npcPrototypes: string[] = [];
+    let npcInstancesFound = 0;
+    const missingNpcPrototypes = new Map<string, string>();
 
     // Use worker pool to process files in parallel
     const pool = new MetadataWorkerPool();
@@ -190,25 +192,29 @@ class ProjectService {
         });
       });
 
-      const isNpcParent = (parentName: string): boolean => {
+      // Where a parent chain ends: C_NPC for an NPC, otherwise the first type
+      // the scanned folder does not declare as a prototype (or a cycle).
+      const chainEnd = (parentName: string): string => {
         const visited = new Set<string>();
         let currentParent = parentName;
 
-        while (currentParent) {
+        for (;;) {
           const normalizedParent = normalizeIdentifier(currentParent);
-          if (normalizedParent === 'C_NPC') {
-            return true;
-          }
-          if (visited.has(normalizedParent)) {
-            return false;
+          if (normalizedParent === 'C_NPC' || visited.has(normalizedParent)) {
+            return currentParent;
           }
 
           visited.add(normalizedParent);
-          currentParent = parentByType.get(normalizedParent) || '';
+          const next = parentByType.get(normalizedParent);
+          if (!next) {
+            return currentParent;
+          }
+          currentParent = next;
         }
-
-        return false;
       };
+
+      const isNpcParent = (parentName: string): boolean =>
+        normalizeIdentifier(chainEnd(parentName)) === 'C_NPC';
 
       npcPrototypes = Array.from(parentByType.keys())
         .filter((prototypeName) => isNpcParent(prototypeName))
@@ -237,11 +243,20 @@ class ProjectService {
         }
 
         // Track NPC instances from dialogs and prototype inheritance chains.
+        // An instance setting `daily_routine` — a C_NPC-only field — is an NPC
+        // even when its prototype is outside the scanned folder (#281); the
+        // prototype it needed is reported so the NPC list can say why others
+        // may be missing.
         result.instances.forEach((instance) => {
           if (!isNpcParent(instance.parent)) {
-            return;
+            if (!instance.hasDailyRoutine) {
+              return;
+            }
+            const missing = chainEnd(instance.parent);
+            missingNpcPrototypes.set(normalizeIdentifier(missing), missing);
           }
 
+          npcInstancesFound++;
           allNpcs.add(instance.name);
           if (!dialogsByNpc.has(instance.name)) {
             dialogsByNpc.set(instance.name, []);
@@ -301,6 +316,10 @@ class ProjectService {
       routines: Array.from(allRoutines).sort(),
       functions: Array.from(allFunctions).sort(),
       npcPrototypes,
+      npcCoverage: {
+        npcInstancesFound,
+        missingPrototypes: Array.from(missingNpcPrototypes.values()).sort()
+      },
       voiceIds,
       waypointSites: extractWaypointSites(fileModelsForSiteIndexes),
       spawnSites: extractSpawnSites(fileModelsForSiteIndexes),

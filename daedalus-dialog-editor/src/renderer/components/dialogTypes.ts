@@ -67,6 +67,8 @@ export interface NPCListProps {
   npcMap: Map<string, string[]>;
   selectedNPC: string | null;
   onSelectNPC: (npc: string) => void;
+  /** Why the list may be incomplete — the opened folder misses NPC files (#281). */
+  coverageNote?: string | null;
 }
 
 export interface DialogTreeProps {

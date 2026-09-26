@@ -515,6 +515,47 @@ INSTANCE VLK_99064_Schurfer (Npc_Default)
       expect(index.allFiles).toContain(path.join(npcDir, 'VLK_99064_Schurfer.d'));
     });
 
+    // #281: a folder opened below the one holding Npc_Default leaves every NPC
+    // under it with a chain that never reaches C_NPC. `daily_routine` is a
+    // C_NPC field and nothing else's, so an instance setting it is an NPC
+    // whatever its prototype resolves to — and the index says what is missing.
+    it('lists an instance with a daily routine as an NPC when its prototype is not in the folder (#281)', async () => {
+      const npcDir = path.join(tempDir, 'NPC');
+      fs.mkdirSync(npcDir, { recursive: true });
+
+      fs.writeFileSync(path.join(npcDir, 'BAU_900_Onar.d'), `
+INSTANCE BAU_900_Onar (Npc_Default)
+{
+    name = "Onar";
+    daily_routine = Rtn_Start_900;
+};
+      `);
+      fs.writeFileSync(path.join(npcDir, 'Weapons.d'), `
+INSTANCE ItMw_Club (Weapon_Default)
+{
+    name = "Club";
+};
+      `);
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.npcs).toEqual(['BAU_900_Onar']);
+      expect(index.npcCoverage).toEqual({ npcInstancesFound: 1, missingPrototypes: ['Npc_Default'] });
+    });
+
+    it('reports a folder with dialogs but no NPC instance files (#281)', async () => {
+      const dialogDir = path.join(tempDir, 'Dialoge');
+      fs.mkdirSync(dialogDir, { recursive: true });
+      fs.writeFileSync(path.join(dialogDir, 'DIA_Onar.d'), 'INSTANCE DIA_Onar_Hello (C_INFO) { npc = BAU_900_Onar; };');
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.npcs).toEqual(['BAU_900_Onar']);
+      expect(index.npcCoverage).toEqual({ npcInstancesFound: 0, missingPrototypes: [] });
+    });
+
     it('exposes prototypes deriving from C_NPC as npcPrototypes (issue #141)', async () => {
       const storyDir = path.join(tempDir, 'Story');
       fs.mkdirSync(storyDir, { recursive: true });

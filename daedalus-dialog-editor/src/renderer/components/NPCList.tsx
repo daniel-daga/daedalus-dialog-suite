@@ -49,7 +49,7 @@ const Row = ({ index, style, data }: ListChildComponentProps) => {
   );
 };
 
-const NPCList: React.FC<NPCListProps> = ({ npcs, npcMap, selectedNPC, onSelectNPC }) => {
+const NPCList: React.FC<NPCListProps> = ({ npcs, npcMap, selectedNPC, onSelectNPC, coverageNote }) => {
   const npcFilter = useSearchStore((s) => s.npcFilter);
   const setNpcFilter = useSearchStore((s) => s.setNpcFilter);
   const filterNpcs = useSearchStore((s) => s.filterNpcs);
@@ -84,6 +84,11 @@ const NPCList: React.FC<NPCListProps> = ({ npcs, npcMap, selectedNPC, onSelectNP
         <Typography variant='caption' color='text.secondary'>
           {filteredNpcs.length} of {npcs.length} shown
         </Typography>
+        {coverageNote && (
+          <Typography variant='caption' color='warning.main' sx={{ display: 'block' }}>
+            {coverageNote}
+          </Typography>
+        )}
       </Box>
 
       <Box sx={searchablePaneFilterStripSx}>

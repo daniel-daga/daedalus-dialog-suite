@@ -11,7 +11,7 @@
 import { create } from 'zustand';
 import { enableMapSet } from 'immer';
 import type { DialogMetadata, SemanticModel } from '../types/global';
-import type { FileParseErrors, ProjectOutputUnits, RoutineSite, SpawnSite } from '../../shared/types';
+import type { FileParseErrors, ProjectIndex, ProjectOutputUnits, RoutineSite, SpawnSite } from '../../shared/types';
 import type { GothicProjectFileV1, ProjectConfigWarning } from '../../shared/projectConfigTypes';
 import { getQuestUsage } from '../utils/questAnalyzer';
 import { deserialiseIpcMap } from '../utils/ipcSerialisation';
@@ -82,6 +82,8 @@ interface ProjectState {
   questFiles: string[];
   // Prototype names (normalized uppercase) whose parent chain reaches C_NPC
   npcPrototypes: string[];
+  // What of the NPC set the opened folder could see (#281); null outside a project
+  npcCoverage: ProjectIndex['npcCoverage'] | null;
   // AI_Output voice ids across the project, keyed by UPPERCASED id (built at
   // project load/reindex time — can be stale until the next reindex)
   voiceIdIndex: Record<string, Array<{ filePath: string; functionName: string }>>;
@@ -443,6 +445,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   allDialogFiles: [],
   questFiles: [],
   npcPrototypes: [],
+  npcCoverage: null,
   voiceIdIndex: {},
   waypointSiteIndex: {},
   spawnSiteIndex: [],
@@ -506,6 +509,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         allDialogFiles: rawIndex.allFiles || [],
         questFiles: rawIndex.questFiles || [],
         npcPrototypes: rawIndex.npcPrototypes || [],
+        npcCoverage: rawIndex.npcCoverage ?? null,
         voiceIdIndex: rawIndex.voiceIds || {},
         waypointSiteIndex: rawIndex.waypointSites || {},
         spawnSiteIndex: rawIndex.spawnSites || [],
@@ -764,6 +768,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       allDialogFiles: [],
       questFiles: [],
       npcPrototypes: [],
+      npcCoverage: null,
       voiceIdIndex: {},
       waypointSiteIndex: {},
       spawnSiteIndex: [],
