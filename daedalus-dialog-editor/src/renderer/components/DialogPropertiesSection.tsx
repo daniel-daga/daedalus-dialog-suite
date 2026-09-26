@@ -9,16 +9,20 @@ import {
   Tooltip,
   Chip,
   Checkbox,
-  FormControlLabel
+  FormControlLabel,
+  InputAdornment
 } from '@mui/material';
 import {
   ExpandMore as ExpandMoreIcon,
-  ChevronRight as ChevronRightIcon
+  ChevronRight as ChevronRightIcon,
+  Link as LinkIcon,
+  LinkOff as LinkOffIcon
 } from '@mui/icons-material';
 import VariableAutocomplete from './common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from './common/autocompletePolicies';
 import type { Dialog, SemanticModel } from '../types/global';
 import { dialogFlagKey, readDialogFlag } from '../utils/dialogFlags';
+import { descriptionFromLine, isDescriptionInSync } from './descriptionSync';
 
 interface DialogPropertiesSectionProps {
   dialog: Dialog;
@@ -26,6 +30,8 @@ interface DialogPropertiesSectionProps {
   propertiesExpanded: boolean;
   onToggleExpanded: () => void;
   onDialogPropertyChange: (updater: (dialog: Dialog) => Dialog) => void;
+  /** Text of the information function's first dialog line, which the description follows (#277). */
+  firstLineText?: string;
 }
 
 const DialogPropertiesSection: React.FC<DialogPropertiesSectionProps> = ({
@@ -33,7 +39,8 @@ const DialogPropertiesSection: React.FC<DialogPropertiesSectionProps> = ({
   semanticModel,
   propertiesExpanded,
   onToggleExpanded,
-  onDialogPropertyChange
+  onDialogPropertyChange,
+  firstLineText = ''
 }) => {
   const [localDescription, setLocalDescription] = useState(dialog.properties?.description || '');
 
@@ -45,6 +52,8 @@ const DialogPropertiesSection: React.FC<DialogPropertiesSectionProps> = ({
     ...existingDialog,
     properties: { ...existingDialog.properties, npc: value }
   })), [onDialogPropertyChange]);
+
+  const descriptionInSync = isDescriptionInSync(dialog.properties?.description, firstLineText);
 
   return (
     <Paper sx={{ p: 2, mb: 2 }}>
@@ -130,6 +139,30 @@ const DialogPropertiesSection: React.FC<DialogPropertiesSectionProps> = ({
             multiline
             rows={2}
             size="small"
+            InputProps={{
+              endAdornment: (
+                <InputAdornment position="end">
+                  {descriptionInSync ? (
+                    <Tooltip title="Follows the first line of the dialog">
+                      <LinkIcon fontSize="small" color="action" aria-label="In sync with the first line" />
+                    </Tooltip>
+                  ) : (
+                    <Tooltip title="Differs from the first line of the dialog — click to sync it again">
+                      <IconButton
+                        size="small"
+                        aria-label="Sync with the first line"
+                        onClick={() => onDialogPropertyChange((existingDialog) => ({
+                          ...existingDialog,
+                          properties: { ...existingDialog.properties, description: descriptionFromLine(firstLineText) }
+                        }))}
+                      >
+                        <LinkOffIcon fontSize="small" color="warning" />
+                      </IconButton>
+                    </Tooltip>
+                  )}
+                </InputAdornment>
+              )
+            }}
           />
           <Stack direction="row" spacing={2}>
             <FormControlLabel

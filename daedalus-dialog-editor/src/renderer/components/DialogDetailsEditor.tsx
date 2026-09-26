@@ -29,6 +29,7 @@ import { resolveNpcSpawnSite, expectedWorldNameFor, worldToOpenFor, npcJumpPlan 
 import ValidationErrorDialog from './ValidationErrorDialog';
 import { flushAllPendingEdits } from '../utils/pendingEditFlushRegistry';
 import DialogPropertiesSection from './DialogPropertiesSection';
+import { firstLineText } from './descriptionSync';
 import ConditionSection from './ConditionSection';
 import DialogActionsSection from './DialogActionsSection';
 import { useFocusNavigation } from './hooks/useFocusNavigation';
@@ -67,6 +68,9 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   const currentFunction = currentFunctionName
     ? semanticModel?.functions?.[currentFunctionName] || null
     : null;
+  const informationFirstLine = firstLineText(
+    informationFunctionName ? semanticModel?.functions?.[informationFunctionName] : null
+  );
 
   // NPC/Dialog → World (§16.23 W4's other half). `InsertNpcActionRenderer`
   // already jumps from a script's own spawn-point literal; this resolves the
@@ -284,6 +288,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
             propertiesExpanded={uiState.propertiesExpanded}
             onToggleExpanded={() => uiState.setPropertiesExpanded(!uiState.propertiesExpanded)}
             onDialogPropertyChange={handleDialogPropertyChange}
+            firstLineText={informationFirstLine}
           />
           <ConditionSection
             dialogName={dialogName}

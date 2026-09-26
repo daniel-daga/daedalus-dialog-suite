@@ -8,6 +8,7 @@ import {
   computeDialogDeletionSet,
   resolveFunctionRef
 } from '../components/dialogUtils';
+import { firstLineText, followFirstLine } from '../components/descriptionSync';
 import { useUISelectionStore } from './uiSelectionStore';
 import { useProjectStore } from './projectStore';
 import type {
@@ -457,6 +458,7 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       if (!fileState) {
         return;
       }
+      followFirstLine(fileState.semanticModel, functionName, firstLineText(fileState.semanticModel.functions[functionName]), func);
       fileState.semanticModel.functions[functionName] = func;
       fileState.isDirty = true;
       fileState.autoSaveError = undefined;
@@ -476,11 +478,14 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
         return;
       }
 
+      // Read before the updater runs: it may edit the draft in place.
+      const oldFirstLine = firstLineText(existingFunction);
       const updatedFunction = updater(existingFunction);
       if (!updatedFunction) {
         return;
       }
 
+      followFirstLine(fileState.semanticModel, functionName, oldFirstLine, updatedFunction);
       fileState.semanticModel.functions[functionName] = updatedFunction;
       fileState.isDirty = true;
       fileState.autoSaveError = undefined;
