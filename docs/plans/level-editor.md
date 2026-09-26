@@ -2976,7 +2976,13 @@ Gate pass has done so far.
   a prompt to save first, rather than auto-saving or launching stale bytes.
 - **Run mode: fire-and-forget.** The editor launches the process and does not
   track it, show a running indicator, or capture its output — no watcher, no
-  exit-code handling.
+  exit-code handling. **Amended 2026-09-26 (Daniel, #266):** still detached,
+  unwaited and without an indicator, but gmbt's output now goes to
+  `<userData>/gmbt-quick-test.log` (a file, not a pipe, so the run can outlive
+  the editor), and a non-zero exit is pushed to the window
+  (`world:gmbtQuickTestFailed`) with the log's tail, into the dialog a refused
+  launch uses. A spawn failure takes the same path; before, it reached only the
+  app log. Exit 0 stays silent.
 - **Not configured: disabled with a tooltip.** No GMBT project directory set,
   or the path doesn't resolve, and the button is greyed out with a tooltip
   naming the setting — never an error toast on click.
@@ -3013,9 +3019,9 @@ Three things in it are load-bearing:
   granted at load like an asset source there.
 
 Unwitnessed: no quick test has been launched from the button on this machine —
-the launcher's argv and its two lookup paths are covered by
+the launcher's argv, its two lookup paths and its exit reporting are covered by
 `tests/GmbtService.test.ts` against an injected `spawn`, which is not the same
-as GMBT having started a game.
+as GMBT having started a game. It is §16.41's row 17.
 
 ### 16.30 The point markers get a sprite (2026-09-03)
 
@@ -3397,6 +3403,7 @@ confirm the staged file's hash, and keep a control run in the same session
 | 14 | A MOB placed from the asset browser: a chest (`oCMobContainer`, `focusName` `MOBNAME_CHEST`) opened, a door used, a bench (`oCMobInter`) sat on — and the scheme table in `zen-world/src/model/mobClasses.ts` checked against the class each retail visual is placed as. Also whether a static mesh on `oCMobInter` costs anything, which Florian asked and nobody has measured | 2026-09-26 | #290 |
 | 15 | The asset browser's **Compile** button against a real GMBT project: `gmbt compile --full --noupdatesubtitles` finishing, the tags clearing after the remount, and a VOB placed from the uncompiled source drawing. Only its argument list and its exit handling are tested — no GMBT and no Windows here, so nothing has ever run it | 2026-09-26 | #296 |
 | 16 | A raw `.3DS` read by `parse3ds` (#297) against the `.MRM` GMBT compiles from it: same orientation (Y/Z swapped), same facing (winding and normals), same texture placement (V flipped), same size. The convention is the modding community's account of ZenGin's importer, checked here only against how the editor draws retail meshes | 2026-09-26 | #297 |
+| 17 | The GMBT quick test from the button: a world played, and a run with a broken script showing *"The quick test failed"* with GMBT's log tail. Only an injected `spawn` has run it. Whether `gmbt test` exits non-zero on a failed reparse is itself unmeasured — the #266 report rests on it | 2026-09-26 | #266; §16.29 |
 
 **Out of this list by decision, not by omission.** `oCZoneMusic.volume` is
 unclaimed rather than tested badly: no ear can rank two music volumes in a live

@@ -252,11 +252,14 @@ export interface EditorAPI {
   getWorldHistoryDepth: () => Promise<{ undo: number; redo: number }>;
   /** Atomically overwrite the world currently open in the main process. */
   saveWorld: () => Promise<void>;
-  /** Start a GMBT quick test over the open world (§16.29). Fire-and-forget:
-   *  it resolves once the process has been launched, and nothing tracks it.
-   *  Rejects when no GMBT project folder is configured, when no world is open,
-   *  or when `gmbt` is not installed. */
+  /** Start a GMBT quick test over the open world (§16.29). It resolves once
+   *  the process has been launched; nothing waits on the run. Rejects when no
+   *  GMBT project folder is configured, when no world is open, or when `gmbt`
+   *  is not installed. */
   startGmbtQuickTest: () => Promise<void>;
+  /** A quick test that failed after the launch resolved — a spawn that never
+   *  happened, or a non-zero exit with the end of gmbt's log (#266). */
+  onGmbtQuickTestFailed: (callback: (message: string) => void) => () => void;
   /** `gmbt compile --full` in the project's GMBT folder, then the VFS remounted
    *  (#296). Rejects with GMBT's exit code and its last output. */
   compileWorldAssets: () => Promise<void>;

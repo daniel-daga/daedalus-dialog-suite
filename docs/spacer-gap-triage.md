@@ -96,7 +96,15 @@ the same class as A1 and needs the same data. We hold no notion of two language
 variants of a line; localization export/import is `feature-suggestions.md` P3
 item 11, unstarted. Worth triaging *with* A1, not separately.
 
-### A3. A quick test that fails tells the user nothing (#266)
+### A3. A quick test that fails tells the user nothing (#266) — closed
+
+**Closed 2026-09-26**: gmbt's output goes to a log file, and a non-zero exit
+or a failed spawn opens *"The quick test failed"* with the log's tail
+(`docs/plans/level-editor.md` §16.29, amended). The witness half moved to
+§16.41 row 17: nobody has launched it on a real install, or seen whether
+`gmbt test` exits non-zero on a failed reparse. What follows is the finding as
+filed.
+
 
 The report's "using play-the-game from inside Spacer is itself a crash source"
 is answered structurally — we launch GMBT, not an editor-hosted engine — but our

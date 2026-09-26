@@ -826,6 +826,9 @@ export const mockEditorAPI: EditorAPI = {
   async startGmbtQuickTest(): Promise<never> {
     throw new Error('No world is open');
   },
+  onGmbtQuickTestFailed(_callback: (message: string) => void): () => void {
+    return () => undefined;
+  },
   async getVobFolders(): Promise<never> {
     throw new Error('No world is open');
   },

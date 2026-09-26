@@ -1,5 +1,5 @@
 import { spawn as nodeSpawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 /**
@@ -12,8 +12,9 @@ import path from 'node:path';
  * run. `--full` is never passed — GMBT refuses it without a prior reparse, and
  * dropping `--noreparse` already gets one.
  *
- * Fire-and-forget by decision: the child is detached and unref'd, nothing
- * watches it, and its exit code is nobody's business here.
+ * Detached and unref'd, so nothing waits on it and it outlives the editor. Its
+ * output goes to a log file, and a non-zero exit is reported with the end of
+ * that log (#266): a failed script reparse used to show nothing at all.
  */
 export const QUICK_TEST_FLAGS = ['--nomenu', '-D', '--noupdatesubtitles'] as const;
 
@@ -22,10 +23,17 @@ export interface GmbtLaunchDeps {
   exists?: (candidate: string) => boolean;
   spawn?: typeof nodeSpawn;
   platform?: NodeJS.Platform;
-  /** A launch that failed after this call returned. The quick test is
-   *  fire-and-forget by design (§16.29), so there is no promise to reject —
-   *  and a packaged build shows nobody its stdout. */
+  /** A launch that failed after this call returned: a spawn that never
+   *  happened, or a run gmbt ended with a non-zero code. Nothing awaits the
+   *  quick test (§16.29), so there is no promise to reject — and a packaged
+   *  build shows nobody its stdout. */
   onError?: (error: Error) => void;
+}
+
+export interface GmbtQuickTestDeps extends GmbtLaunchDeps {
+  /** Where gmbt's output goes, emptied at each launch. A file rather than a
+   *  pipe: the run outlives the editor, and a pipe would break under it. */
+  logPath: string;
 }
 
 /**
@@ -119,6 +127,7 @@ export function compileAssetsArguments(): string[] {
 /** How much of GMBT's output a failure carries — its last lines are where it
  *  says what went wrong, and the whole log is minutes of progress lines. */
 const COMPILE_OUTPUT_TAIL = 4000;
+const QUICK_TEST_OUTPUT_TAIL = 2000;
 
 /**
  * Run `gmbt compile --full` in the GMBT project folder and wait for it (#296).
@@ -158,7 +167,7 @@ export function runGmbtCompile(gmbtProjectDir: string, deps: GmbtLaunchDeps = {}
 export function startGmbtQuickTest(
   gmbtProjectDir: string,
   worldPath: string,
-  deps: GmbtLaunchDeps = {},
+  deps: GmbtQuickTestDeps,
 ): void {
   if (!worldIsInsideGmbtProject(gmbtProjectDir, worldPath, deps)) {
     throw new Error(
@@ -176,11 +185,19 @@ export function startGmbtQuickTest(
     throw new Error('gmbt was not found on PATH or in %APPDATA%\\GMBT\\bin — install GMBT to run a quick test');
   }
   const spawn = deps.spawn ?? nodeSpawn;
-  const child = spawn(executable, quickTestArguments(worldFileName), {
-    cwd: gmbtProjectDir,
-    detached: true,
-    stdio: 'ignore',
-  });
+  // The child gets its own copy of the descriptor, so this one is closed once
+  // it is handed over.
+  const log = openSync(deps.logPath, 'w');
+  let child;
+  try {
+    child = spawn(executable, quickTestArguments(worldFileName), {
+      cwd: gmbtProjectDir,
+      detached: true,
+      stdio: ['ignore', log, log],
+    });
+  } finally {
+    closeSync(log);
+  }
   // Nothing awaits the child, so a spawn failure arrives as an unhandled
   // 'error' event — which would take the main process down rather than the
   // quick test. It is reported through `onError` as well as the console: in a
@@ -189,6 +206,13 @@ export function startGmbtQuickTest(
   child.on('error', (error) => {
     console.error('[GMBT] quick test failed to start:', error);
     deps.onError?.(error instanceof Error ? error : new Error(String(error)));
+  });
+  child.on('exit', (code) => {
+    if (code === 0 || code === null) return;
+    const tail = readFileSync(deps.logPath, 'utf8').slice(-QUICK_TEST_OUTPUT_TAIL).trim();
+    deps.onError?.(new Error(
+      `gmbt test exited with code ${code}. The end of its log (${deps.logPath}):\n\n${tail}`,
+    ));
   });
   child.unref();
 }

@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import type { ChildProcess } from 'node:child_process';
 
@@ -28,6 +30,14 @@ function fakeChild() {
   };
   return child as unknown as ChildProcess & { on: jest.Mock; unref: jest.Mock };
 }
+
+/** A child whose events a test can fire, for the quick test's exit (#266). */
+function emittingChild() {
+  const child = Object.assign(new EventEmitter(), { unref: jest.fn() });
+  return child as unknown as ChildProcess & EventEmitter & { unref: jest.Mock };
+}
+
+const freshLogPath = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'gmbt-log-')), 'gmbt-quick-test.log');
 
 describe('resolveGmbtExecutable', () => {
   it('takes gmbt off PATH, extension by extension, before the APPDATA fallback', () => {
@@ -80,6 +90,7 @@ describe('startGmbtQuickTest', () => {
     startGmbtQuickTest('C:\\mod\\gmbt', 'C:\\mod\\gmbt\\_work\\Data\\Worlds\\MYWORLD.ZEN', {
       env: WINDOWS_ENV, platform: 'win32', exists: () => true,
       spawn: spawn as unknown as typeof import('node:child_process').spawn,
+      logPath: freshLogPath(),
     });
 
     const [executable, args, options] = spawn.mock.calls[0] as unknown as [string, string[], Record<string, unknown>];
@@ -89,11 +100,62 @@ describe('startGmbtQuickTest', () => {
     // app have to be recompiled by the run that tests them.
     expect(args).not.toContain('--noreparse');
     expect(args).not.toContain('--full');
-    expect(options).toMatchObject({ cwd: 'C:\\mod\\gmbt', detached: true, stdio: 'ignore' });
-    // Fire-and-forget: nothing waits on it, so the process is let go of and a
-    // spawn failure has a listener rather than taking main down.
+    expect(options).toMatchObject({ cwd: 'C:\\mod\\gmbt', detached: true });
+    // Its output goes to a file, not a pipe (#266): a pipe would break under
+    // GMBT the moment the editor closed, and the run is meant to outlive it.
+    expect(options.stdio).toEqual(['ignore', expect.any(Number), expect.any(Number)]);
+    // Nothing waits on it, so the process is let go of and a spawn failure has
+    // a listener rather than taking main down.
     expect(child.unref).toHaveBeenCalled();
     expect(child.on).toHaveBeenCalledWith('error', expect.any(Function));
+  });
+
+  // #266: a quick test that fails — a script reparse, a world GMBT cannot
+  // find — used to show nothing at all; the game simply did not appear.
+  describe('when gmbt exits', () => {
+    const launch = (onError: jest.Mock) => {
+      const child = emittingChild();
+      const logPath = freshLogPath();
+      startGmbtQuickTest('/mod/gmbt', '/mod/gmbt/Worlds/MYWORLD.ZEN', {
+        env: { PATH: '/tools' }, platform: 'linux', exists: () => true,
+        spawn: (() => child) as unknown as typeof import('node:child_process').spawn,
+        logPath, onError,
+      });
+      return { child, logPath };
+    };
+
+    it('reports a non-zero exit with the end of the log and where the log is', () => {
+      const onError = jest.fn();
+      const { child, logPath } = launch(onError);
+      fs.appendFileSync(logPath, 'Parsing scripts...\nU:PAR: DIA_Harald.d(12): syntax error\n');
+      child.emit('exit', 1, null);
+
+      expect(onError).toHaveBeenCalledTimes(1);
+      const { message } = onError.mock.calls[0][0] as Error;
+      expect(message).toContain('exited with code 1');
+      expect(message).toContain('U:PAR: DIA_Harald.d(12): syntax error');
+      expect(message).toContain(logPath);
+    });
+
+    it('says nothing when gmbt exits cleanly', () => {
+      const onError = jest.fn();
+      const { child } = launch(onError);
+      child.emit('exit', 0, null);
+      expect(onError).not.toHaveBeenCalled();
+    });
+
+    it('starts each run with an empty log', () => {
+      const onError = jest.fn();
+      const first = launch(onError);
+      fs.appendFileSync(first.logPath, 'old run\n');
+      const child = emittingChild();
+      startGmbtQuickTest('/mod/gmbt', '/mod/gmbt/Worlds/MYWORLD.ZEN', {
+        env: { PATH: '/tools' }, platform: 'linux', exists: () => true,
+        spawn: (() => child) as unknown as typeof import('node:child_process').spawn,
+        logPath: first.logPath, onError,
+      });
+      expect(fs.readFileSync(first.logPath, 'utf8')).toBe('');
+    });
   });
 
   // `gmbt test` takes a *basename* and a working directory, so it always plays
@@ -108,6 +170,7 @@ describe('startGmbtQuickTest', () => {
     let message = '';
     try {
       startGmbtQuickTest('C:\\mod\\gmbt', outside, {
+        logPath: freshLogPath(),
         env: WINDOWS_ENV, platform: 'win32', exists: () => true,
         spawn: spawn as unknown as typeof import('node:child_process').spawn,
       });
@@ -121,7 +184,7 @@ describe('startGmbtQuickTest', () => {
 
   it('refuses before it looks for gmbt, so the mismatch is what it reports', () => {
     expect(() => startGmbtQuickTest('C:\\mod\\gmbt', 'C:\\Gothic II\\Worlds\\W.ZEN', {
-      env: WINDOWS_ENV, platform: 'win32', exists: () => false,
+      env: WINDOWS_ENV, platform: 'win32', exists: () => false, logPath: freshLogPath(),
       spawn: jest.fn() as unknown as typeof import('node:child_process').spawn,
     })).toThrow(/not inside the GMBT project folder/i);
   });
@@ -129,7 +192,7 @@ describe('startGmbtQuickTest', () => {
   it('refuses rather than spawning when gmbt is not installed', () => {
     const spawn = jest.fn();
     expect(() => startGmbtQuickTest('C:\\mod\\gmbt', 'C:\\mod\\gmbt\\_work\\Data\\Worlds\\MYWORLD.ZEN', {
-      env: WINDOWS_ENV, platform: 'win32', exists: () => false,
+      env: WINDOWS_ENV, platform: 'win32', exists: () => false, logPath: freshLogPath(),
       spawn: spawn as unknown as typeof import('node:child_process').spawn,
     })).toThrow(/gmbt was not found/i);
     expect(spawn).not.toHaveBeenCalled();

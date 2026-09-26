@@ -125,6 +125,22 @@ describe('the World bar GMBT quick test (§16.29)', () => {
     expect(useWorldStore.getState().editError).toBeNull();
   });
 
+  // #266: a run gmbt ended with an error — a failed script reparse — used to
+  // show nothing; the game simply did not appear. Main pushes it after the
+  // launch returned, and it lands in the same dialog, headed for what it is.
+  it('shows a quick test gmbt ended with an error, with the end of its log', async () => {
+    await openWorld();
+    const push = api.onGmbtQuickTestFailed.mock.calls[0][0] as (message: string) => void;
+    act(() => {
+      push('gmbt test exited with code 1. The end of its log (C:\\logs\\gmbt-quick-test.log):\n\nU:PAR: DIA_Harald.d(12): syntax error');
+    });
+
+    const failure = await screen.findByTestId('world-gmbt-refused');
+    expect(failure).toHaveTextContent('U:PAR: DIA_Harald.d(12): syntax error');
+    expect(failure).toHaveTextContent('C:\\logs\\gmbt-quick-test.log');
+    expect(screen.getByText('The quick test failed')).toBeInTheDocument();
+  });
+
   it('launches again once the edits are saved over the opened world', async () => {
     await openWorld();
     await act(async () => { useProjectStore.setState({ gmbtProjectDir: 'C:/mod/gmbt' }); });

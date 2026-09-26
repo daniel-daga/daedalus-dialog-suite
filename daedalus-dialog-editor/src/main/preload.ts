@@ -102,6 +102,12 @@ contextBridge.exposeInMainWorld('editorAPI', {
   // The GMBT quick test (§16.29). No arguments: main names the world and the
   // GMBT project folder itself.
   startGmbtQuickTest: () => ipcRenderer.invoke('world:gmbtQuickTest'),
+  // A quick test that failed after the launch returned (#266).
+  onGmbtQuickTestFailed: (callback: (message: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, message: string) => callback(message);
+    ipcRenderer.on('world:gmbtQuickTestFailed', listener);
+    return () => { ipcRenderer.removeListener('world:gmbtQuickTestFailed', listener); };
+  },
   compileWorldAssets: () => ipcRenderer.invoke('world:compileAssets'),
   // VOB folders (VOB folders slice) — a virtual grouping kept beside the
   // world file, never in it; see zen-world's vobFolders.ts.

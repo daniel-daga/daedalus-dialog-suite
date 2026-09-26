@@ -1046,13 +1046,16 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
 
   // ── the GMBT quick test (level-editor.md §16.29) ──────────────────────────
   //
-  // Fire-and-forget: main launches `gmbt test` over the open world and nothing
-  // here tracks the process, its output or its exit code. A dirty world is
-  // refused rather than auto-saved — launching the engine at bytes the screen
-  // does not show is the one outcome worth a click to avoid.
+  // Main launches `gmbt test` over the open world and nothing here waits on it;
+  // a run gmbt ends with an error is pushed back afterwards (#266). A dirty
+  // world is refused rather than auto-saved — launching the engine at bytes
+  // the screen does not show is the one outcome worth a click to avoid.
   const gmbtConfigured = useProjectStore((s) => s.gmbtProjectDir !== null);
   const [quickTestBlocked, setQuickTestBlocked] = useState(false);
-  const [quickTestRefusal, setQuickTestRefusal] = useState<string | null>(null);
+  const [quickTestRefusal, setQuickTestRefusal] = useState<{ heading: string; message: string } | null>(null);
+  useEffect(() => window.editorAPI.onGmbtQuickTestFailed((message) => {
+    setQuickTestRefusal({ heading: 'The quick test failed', message });
+  }), []);
 
   const startQuickTest = useCallback(async () => {
     if (unsavedEdits) {
@@ -1065,7 +1068,10 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       // A dialog, not the edit banner: nothing was edited, and every way main
       // refuses a launch — GMBT missing, the open world outside the project
       // folder — is an explanation with a path in it that has to be read.
-      setQuickTestRefusal(failure instanceof Error ? failure.message : String(failure));
+      setQuickTestRefusal({
+        heading: 'The quick test did not start',
+        message: failure instanceof Error ? failure.message : String(failure),
+      });
     }
   }, [unsavedEdits]);
 
@@ -1925,10 +1931,10 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
           and names both paths; they are the whole point of the dialog, so they
           keep their own lines. */}
       <Dialog open={quickTestRefusal !== null} onClose={() => setQuickTestRefusal(null)}>
-        <DialogTitle>The quick test did not start</DialogTitle>
+        <DialogTitle>{quickTestRefusal?.heading}</DialogTitle>
         <DialogContent>
           <DialogContentText variant="body2" sx={{ whiteSpace: 'pre-line' }} data-testid="world-gmbt-refused">
-            {quickTestRefusal}
+            {quickTestRefusal?.message}
           </DialogContentText>
         </DialogContent>
         <DialogActions>

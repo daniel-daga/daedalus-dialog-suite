@@ -965,11 +965,14 @@ export function setupIpcHandlers() {
       throw new Error('Set "gmbtProjectDir" in the project file to a GMBT project folder to run a quick test');
     }
     startGmbtQuickTest(gmbtProjectDir, worldService.openWorldPath(), {
-      // Fire-and-forget, so this is the only record a failed launch leaves —
-      // and the log file is the one the app can actually show.
-      onError: (error) => logService.log(
-        'error', 'main', `GMBT quick test failed to start: ${error.message}`, error.stack,
-      ),
+      logPath: path.join(app.getPath('userData'), 'gmbt-quick-test.log'),
+      // Nothing awaits the run, so a spawn that never happened or a run gmbt
+      // ended with an error arrives here, after the IPC returned (#266): it is
+      // logged, and pushed to the window that pressed the button.
+      onError: (error) => {
+        logService.log('error', 'main', `GMBT quick test failed: ${error.message}`, error.stack);
+        mainWindow?.webContents.send('world:gmbtQuickTestFailed', error.message);
+      },
     });
   });
 
