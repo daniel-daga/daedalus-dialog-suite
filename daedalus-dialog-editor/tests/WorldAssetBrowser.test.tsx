@@ -559,6 +559,62 @@ describe('WorldAssetBrowser', () => {
     });
   });
 
+  // #289: "Bzw auch nach File format (3ds, TGA, asc,..)". A group is the kind
+  // of asset, so a source and what the compiler made of it land together.
+  describe('the format facet', () => {
+    const FILES: VfsEntry[] = [
+      { name: 'Sub', type: 'directory' },
+      { name: 'NEW_WALL.TGA', type: 'file' },
+      { name: 'NW_WOOD-C.TEX', type: 'file' },
+      { name: 'NW_CRATE.3DS', type: 'file' },
+      { name: 'NW_CRATE.MRM', type: 'file' },
+      { name: 'BENCH_1_OC.ASC', type: 'file' },
+      { name: 'CHEST.MDL', type: 'file' },
+      { name: 'README.TXT', type: 'file' },
+    ];
+    const list = jest.fn(async () => FILES);
+    const shown = () => FILES.map((entry) => entry.name)
+      .filter((name) => screen.queryByTestId(`world-asset-${name}`) !== null);
+
+    it('offers every group with both spellings, and narrows to one, keeping the directories', async () => {
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} />);
+      await screen.findByTestId('world-asset-NW_CRATE.MRM');
+      const facet = screen.getByTestId('world-asset-format');
+      expect(facet).toHaveValue('all');
+      expect(within(facet).getByRole('option', { name: 'Textures (TGA → TEX)' })).toBeInTheDocument();
+
+      fireEvent.change(facet, { target: { value: 'texture' } });
+      expect(shown()).toEqual(['Sub', 'NEW_WALL.TGA', 'NW_WOOD-C.TEX']);
+      expect(screen.getByTestId('world-asset-count')).toHaveTextContent('3 of 8');
+
+      fireEvent.change(facet, { target: { value: 'model' } });
+      expect(shown()).toEqual(['Sub', 'BENCH_1_OC.ASC', 'CHEST.MDL']);
+
+      fireEvent.change(facet, { target: { value: 'other' } });
+      expect(shown()).toEqual(['Sub', 'README.TXT']);
+    });
+
+    it('narrows a search too, and holds across a navigation', async () => {
+      const user = userEvent.setup();
+      const { search } = searching();
+      const { list: tree } = listing();
+      render(<WorldAssetBrowser listAssets={tree} searchAssets={search} onPreview={jest.fn()} />);
+      await screen.findByTestId('world-asset-Meshes');
+      fireEvent.change(screen.getByTestId('world-asset-format'), { target: { value: 'model' } });
+
+      await user.type(screen.getByTestId('world-asset-filter'), 'c');
+      // `c` matches the crate mesh, the chest model and the directories named
+      // with one; the facet leaves the model and those directories.
+      await screen.findByTestId('world-asset-CHESTBIG.MDL');
+      expect(screen.queryByTestId('world-asset-NW_CRATE.MRM')).not.toBeInTheDocument();
+
+      await user.clear(screen.getByTestId('world-asset-filter'));
+      await user.click(await screen.findByTestId('world-asset-Meshes'));
+      await screen.findByTestId('world-asset-_compiled');
+      expect(screen.getByTestId('world-asset-format')).toHaveValue('model');
+    });
+  });
+
   describe('the grid', () => {
     it('is not offered without a queue to draw from', async () => {
       const { list } = listing();

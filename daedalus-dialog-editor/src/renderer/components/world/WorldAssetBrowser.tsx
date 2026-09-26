@@ -11,7 +11,9 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import ViewListIcon from '@mui/icons-material/ViewList';
 import { FixedSizeList as List, type ListChildComponentProps, areEqual } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
-import { assetRole, compileState, isFavorite, isSourceAsset } from 'zen-world';
+import {
+  ASSET_FORMATS, assetFormat, assetRole, compileState, isFavorite, isSourceAsset, type AssetFormat,
+} from 'zen-world';
 import type { AssetCatalog, VfsEntry, VfsSearch } from '../../../shared/worldTypes';
 import type { AssetThumbnails } from '../../world/assetThumbnails';
 import WorldAssetGrid, {
@@ -386,14 +388,18 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
   // carried into one; a file that is neither — a texture, a script — is not
   // what either answer asked for.
   const [role, setRole] = useState<AssetRoleFilter>('all');
+  // The format facet (#289), a lens of the same kind: the kind of asset, so a
+  // `.3DS` and the `.MRM` compiled from it land in one group.
+  const [format, setFormat] = useState<AssetFormat | 'all'>('all');
   const filtered = useMemo(() => {
     // Everything the mount holds, including what a later one shadows — the
     // shadowed copy is the whole point of asking about one mount.
     const fromSource = only === null ? base : base.filter((entry) => entry.sources?.includes(only) ?? false);
-    return role === 'all'
-      ? fromSource
-      : fromSource.filter((entry) => entry.type === 'directory' || assetRole(entry.name) === role);
-  }, [base, only, role]);
+    return fromSource.filter((entry) => entry.type === 'directory' || (
+      (role === 'all' || assetRole(entry.name) === role)
+      && (format === 'all' || assetFormat(entry.name) === format)
+    ));
+  }, [base, only, role, format]);
   // One status for the surface below, because a search and a listing are the
   // two things it can be showing and each has its own loading and its own
   // refusal.
@@ -605,6 +611,20 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
             sx={{ flex: 1, minWidth: 0, '& .MuiInputBase-input': { fontSize: 12, py: 0.5 } }}
           />
           <RoleFacet value={role} onChange={setRole} testId="world-asset-role" />
+          <TextField
+            select
+            size="small"
+            value={format}
+            onChange={(event) => setFormat(event.target.value as AssetFormat | 'all')}
+            SelectProps={{ native: true }}
+            inputProps={{ 'data-testid': 'world-asset-format', 'aria-label': 'File format' }}
+            sx={{ minWidth: 80, '& .MuiInputBase-input': { fontSize: 12, py: 0.5 } }}
+          >
+            <option value="all">All formats</option>
+            {ASSET_FORMATS.map((group) => (
+              <option key={group.id} value={group.id}>{group.label}</option>
+            ))}
+          </TextField>
           {/* One mount is no facet: there is nothing to narrow to and nothing
               can be overridden. */}
           {sources.length > 1 && (

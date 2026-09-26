@@ -2630,6 +2630,16 @@ rock or a bush a `zCVob`.
   in the directory walk and in the Favorites and Categories views alike;
   directories stay, and a file that is neither (a texture, a script) is not
   what either answer asked for.
+- **The format facet (#289)** sits beside it and groups by the *kind* of
+  asset rather than by extension — `assetFormat` in `zen-world/src/assets`:
+  meshes (`3DS → MRM, MSH`), models (`ASC, MDS → MDL, MDM, MDH, MSB`), morph
+  meshes (`MMS → MMB`), textures (`TGA → TEX`), animations (`MAN`) and the rest.
+  A modder asks for the source format and the namespace mostly holds the
+  compiled one, so a facet over raw extensions would offer `3DS` and find
+  nothing in a retail install; a group finds both. It narrows a search as it
+  does a listing, and holds across a navigation. The Favorites and Categories
+  views do not carry it: a category is a list of visuals, which the VOB / MOB
+  facet already splits.
 - **A placement from the asset browser (#290)** arms the class, and the status
   bar says it (`CHESTBIG_OCCHESTLARGE.MDS as oCMobContainer`). A container or a
   door also gets retail's `focusName` — the measured example in
