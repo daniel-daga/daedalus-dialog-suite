@@ -163,5 +163,45 @@ test.describe('Register quest in log files', () => {
       expect(files.closeTopics).not.toContain('TOPIC_AlteMine');
     }).toPass({ timeout: 5000 });
   });
+
+  // #278: the diary files an entry under the topic's title, so the card names it.
+  test('a Log Entry names the diary title of its topic', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
+
+    await page.evaluate(({ dialog, constants }) => {
+      localStorage.setItem('mockapi_file_project/dialogs/quest.d', dialog);
+      localStorage.setItem('mockapi_file_project/dialogs/LOG_Constants_Test.d', constants);
+    }, {
+      dialog: DIALOG_FILE,
+      // The harness's regex parser reads no constants; inject the model the
+      // real parser would produce (string literals keep their quotes).
+      constants: `//__MOCK_MODEL__ ${JSON.stringify({
+        constants: { TOPIC_Old: { name: 'TOPIC_Old', type: 'string', value: '"Old Quest"' } }
+      })}\n`
+    });
+
+    page.on('dialog', async (dialog) => {
+      if (dialog.message().includes('project folder path')) {
+        await dialog.accept('project/dialogs');
+      } else {
+        await dialog.dismiss();
+      }
+    });
+
+    await page.getByRole('button', { name: /Open Project/i }).first().click();
+    await expect(page.getByText('SLD_66666_Quester').first()).toBeVisible({ timeout: 15000 });
+    await page.getByText('SLD_66666_Quester').first().click();
+    await page.getByRole('button', { name: /DIA_Quest_Test/ }).click();
+    await expect(page.getByRole('heading', { name: 'DIA_Quest_Test', exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Add action' }).click();
+    await page.getByRole('menuitem', { name: 'Log Entry', exact: true }).click();
+    const topic = page.getByLabel('Topic', { exact: true }).first();
+    await topic.fill('Old');
+    await topic.blur();
+
+    await expect(page.getByText('In the diary under "Old Quest"')).toBeVisible();
+  });
 });
 

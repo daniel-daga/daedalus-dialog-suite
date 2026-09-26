@@ -5,6 +5,7 @@ import { ActionFieldContainer, ActionTextField, ActionDeleteButton } from '../co
 import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
 import { createRowTabHandlers } from './rowTabNavigation';
+import { useProjectStore } from '../../store/projectStore';
 
 // Hoisted so VariableAutocomplete's memo sees a stable sx identity (slice 4).
 const TOPIC_FIELD_SX = { minWidth: 180 };
@@ -32,6 +33,18 @@ const LogEntryRenderer: React.FC<BaseActionRendererProps> = ({
     [handleUpdate, typedAction]
   );
 
+  // #278: the diary shows a topic by its title (`TOPIC_CityTeacher` is
+  // "Lehrer in der Stadt"), so name it. The selector returns the one string,
+  // not the model, so an unrelated merge does not re-render the card.
+  const topicTitle = useProjectStore((s) => {
+    const value = typedAction.topic ? s.mergedSemanticModel?.constants?.[typedAction.topic]?.value : undefined;
+    return typeof value === 'string' ? value.replace(/^"(.*)"$/s, '$1') : undefined;
+  });
+  const topicFieldProps = useMemo(
+    () => (topicTitle ? { helperText: `In the diary under "${topicTitle}"` } : undefined),
+    [topicTitle]
+  );
+
   // #183 follow-up: Tab walks Topic -> Text; only the row edges hand off to
   // card-to-card navigation.
   const fieldKeyDown = useMemo(() => createRowTabHandlers(handleKeyDown, 2), [handleKeyDown]);
@@ -47,6 +60,7 @@ const LogEntryRenderer: React.FC<BaseActionRendererProps> = ({
         isMainField
         mainFieldRef={mainFieldRef}
         sx={TOPIC_FIELD_SX}
+        textFieldProps={topicFieldProps}
         {...AUTOCOMPLETE_POLICIES.actions.topic}
       />
       <ActionTextField
