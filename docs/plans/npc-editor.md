@@ -186,13 +186,19 @@ A bind-pose preview beside the form, reusing `VisualPreviewScene` (#298).
   externals (`Mdl_SetVisual`, `Mdl_SetVisualBody`, `Mdl_SetModelFatness`; the
   last call wins, as the engine runs them in order) with integer constants
   resolved through a project lookup, and `variantTextureName` does the
-  `_V<n>_C<n>` substitution. An NPC whose visual `B_SetNpcVisual` sets last is
-  reported undrawable, not guessed: its retail body (body mesh per gender,
-  skin, the STR-dependent width `SLD_99003_Farim.d`'s comment mentions) is not
-  in the repo to confirm against. Once it is, the mapping goes where that
-  refusal is.
+  `_V<n>_C<n>` substitution. `B_SetNpcVisual` is expanded in place into the
+  engine calls its **retail** body makes (Daniel supplied it, 2026-09-26):
+  `HUMANS.MDS`; a man on `hum_body_Naked0`, width 0.9 below 50 strength and
+  1.1 above 100 (no scale between); a woman on `Hum_Body_Babe0` with a male
+  body texture 0–3 moved up by 4; skin colour and teeth always 0. The width
+  needs the strength *where the helper runs*: only a literal
+  `attribute[ATR_STRENGTH]` before it counts, and any script call or
+  unclassified statement in between (`B_SetAttributesToChapter` sets it) makes
+  it unknown — then the width is assumed normal and the result carries a note
+  saying so. A mod that rewrote the helper is drawn by the retail mapping
+  regardless; checking the project's own helper body against it is not done.
 
-**Still open:** the `B_SetNpcVisual` mapping; armour (`visual_change` from the
+**Still open:** armour (`visual_change` from the
 item's `sourceText`, as the World item picker already does); an IPC path from
 the renderer to `extractHierarchy`; the scene composition and the dialog
 panel. Whether a soft-skin body's stored positions are its bind pose in model

@@ -10,7 +10,7 @@ const npc = (...statements: NpcStatement[]): NpcDefinition => ({
   name: 'BAU_900_Onar', parent: 'Npc_Default', closingBraceIndex: 0, statements,
 });
 
-const CONSTANTS: Record<string, number> = { NO_ARMOR: -1, BODYTEX_N: 1, FACE_N_WEAK_ORRY: 42 };
+const CONSTANTS: Record<string, number> = { MALE: 0, FEMALE: 1, NO_ARMOR: -1, BODYTEX_N: 1, FACE_N_WEAK_ORRY: 42 };
 const lookup = (name: string) => CONSTANTS[name.toUpperCase()];
 
 const EXPLICIT = [
@@ -32,6 +32,8 @@ describe('resolveNpcVisual', () => {
         teethTexture: 0,
         armor: null,
         fatness: 1.5,
+        scale: [1, 1, 1],
+        notes: [],
       },
     });
   });
@@ -65,14 +67,82 @@ describe('resolveNpcVisual', () => {
     expect(resolveNpcVisual(npc(EXPLICIT[0]), lookup)).toEqual({ ok: false, reason: 'No Mdl_SetVisualBody call' });
   });
 
-  it('does not guess what B_SetNpcVisual does when it is the last word on the body', () => {
-    const helper = call('B_SetNpcVisual', ['self', 'MALE', '"Hum_Head_Fatbald"', 'Face_N_Weak_Orry', 'BodyTex_N', 'NO_ARMOR']);
-    expect(resolveNpcVisual(npc(...EXPLICIT, helper), lookup)).toEqual({
-      ok: false,
-      reason: 'The visual is set by B_SetNpcVisual, whose body is a script function the preview does not read yet',
+  it('reads a Mdl_SetModelScale, and is at scale 1 without one', () => {
+    const scaled = resolveNpcVisual(npc(...EXPLICIT, call('Mdl_SetModelScale', ['self', '0.9', '1', '1.2'])), lookup);
+    expect(scaled.ok && scaled.visual.scale).toEqual([0.9, 1, 1.2]);
+    const plain = resolveNpcVisual(npc(...EXPLICIT), lookup);
+    expect(plain.ok && plain.visual.scale).toEqual([1, 1, 1]);
+    expect(plain.ok && plain.visual.notes).toEqual([]);
+  });
+});
+
+describe('resolveNpcVisual through retail B_SetNpcVisual', () => {
+  const strength = (value: string): NpcStatement => ({
+    kind: 'field', field: 'attribute', index: 'ATR_STRENGTH', value, text: '', range, valueRange: range,
+  });
+  const helper = (gender: string, bodyTex = 'BodyTex_N') =>
+    call('B_SetNpcVisual', ['self', gender, '"Hum_Head_Fatbald"', 'Face_N_Weak_Orry', bodyTex, 'ITAR_Vlk_H']);
+
+  it('draws a man on the male naked body with skin and teeth 0', () => {
+    const result = resolveNpcVisual(npc(strength('50'), helper('MALE')), lookup);
+    expect(result).toEqual({
+      ok: true,
+      visual: {
+        model: 'HUMANS.MDS',
+        bodyMesh: 'hum_body_Naked0',
+        bodyTexture: 1,
+        skinColor: 0,
+        headMesh: 'Hum_Head_Fatbald',
+        headTexture: 42,
+        teethTexture: 0,
+        armor: 'ITAR_Vlk_H',
+        fatness: 0,
+        scale: [1, 1, 1],
+        notes: [],
+      },
     });
-    // Engine calls after it overwrite whatever it set, so they are drawable.
-    expect(resolveNpcVisual(npc(helper, ...EXPLICIT), lookup).ok).toBe(true);
+  });
+
+  it('makes a weak man narrow and a strong one broad, by the strength set before the call', () => {
+    const weak = resolveNpcVisual(npc(strength('49'), helper('MALE')), lookup);
+    expect(weak.ok && weak.visual.scale).toEqual([0.9, 1, 1]);
+    const strong = resolveNpcVisual(npc(strength('101'), helper('MALE')), lookup);
+    expect(strong.ok && strong.visual.scale).toEqual([1.1, 1, 1]);
+    const edge = resolveNpcVisual(npc(strength('100'), helper('MALE')), lookup);
+    expect(edge.ok && edge.visual.scale).toEqual([1, 1, 1]);
+    // Between 50 and 100 the helper sets no scale, so an earlier one stands.
+    const kept = resolveNpcVisual(
+      npc(call('Mdl_SetModelScale', ['self', '1', '1.2', '1']), strength('100'), helper('MALE')), lookup);
+    expect(kept.ok && kept.visual.scale).toEqual([1, 1.2, 1]);
+  });
+
+  it('says so when the strength that sets the width is not known where the helper runs', () => {
+    // Set after the call, as the Farim reference warns against — the helper saw
+    // whatever strength the prototype left, which a preview cannot know.
+    const late = resolveNpcVisual(npc(helper('MALE'), strength('20')), lookup);
+    expect(late.ok && late.visual.scale).toEqual([1, 1, 1]);
+    expect(late.ok && late.visual.notes).toEqual([
+      'Width assumed normal: strength is not a known value where B_SetNpcVisual runs',
+    ]);
+  });
+
+  it('draws a woman on the female body, moving a male body texture to its female variant', () => {
+    const result = resolveNpcVisual(npc(strength('10'), helper('FEMALE')), lookup);
+    expect(result.ok && result.visual.bodyMesh).toBe('Hum_Body_Babe0');
+    expect(result.ok && result.visual.bodyTexture).toBe(5);
+    // No width scaling for women, whatever the strength.
+    expect(result.ok && result.visual.scale).toEqual([1, 1, 1]);
+    expect(result.ok && result.visual.notes).toEqual([]);
+
+    const own = resolveNpcVisual(npc(helper('FEMALE', '10')), lookup);
+    expect(own.ok && own.visual.bodyTexture).toBe(10);
+  });
+
+  it('lets engine calls after the helper overwrite what it set', () => {
+    const result = resolveNpcVisual(npc(helper('MALE'), ...EXPLICIT, call('Mdl_SetModelScale', ['self', '1', '1', '1'])), lookup);
+    expect(result.ok && result.visual.bodyTexture).toBe(1);
+    expect(result.ok && result.visual.headMesh).toBe('Hum_Head_Bald');
+    expect(result.ok && result.visual.notes).toEqual([]);
   });
 });
 
