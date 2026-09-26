@@ -6,7 +6,7 @@
  * file persistence and includes sample dialog data for testing.
  */
 
-import type { EditorAPI, ValidationResult, SaveResult, FileChangeEvent, AppendInsertNpcResult, OpenedProjectConfig } from '../types/global';
+import type { EditorAPI, ValidationResult, SaveResult, FileChangeEvent, AppendInsertNpcResult, OpenedProjectConfig, NpcDefinition, NpcStatement, NpcEdit } from '../types/global';
 
 // Captured file-change callback (see onFileChanged). Lets E2E tests inject
 // external change/unlink events through the `__mockEmitFileChange` window hook.
@@ -261,9 +261,12 @@ function parseSource(sourceCode: string): any {
     }
 
     if (parent === 'C_NPC') {
+      const end = match.index + match[0].length;
+      const sourceText = sourceCode.slice(match.index, sourceCode[end] === ';' ? end + 1 : end);
       npcs[dialogName] = {
         name: dialogName,
         parent: 'C_NPC',
+        sourceText,
       };
     } else {
       dialogs[dialogName] = {
@@ -313,6 +316,9 @@ function parseSource(sourceCode: string): any {
     dialogs,
     functions,
     npcs,
+    // The real parser keeps an NPC in both maps; the NPC editor edits
+    // `instances`, which is what the generator emits.
+    instances: { ...npcs },
     hasErrors: false,
     errors: [],
   };
@@ -357,6 +363,12 @@ function generateCode(model: any, settings: any): string {
     }
 
     code += '};\n\n';
+  }
+
+  // Non-dialog instances are re-emitted verbatim, as the real generator does
+  for (const name in model.instances || {}) {
+    const text = model.instances[name].sourceText;
+    if (text) code += `${text}\n\n`;
   }
 
   // Generate functions
@@ -435,6 +447,77 @@ export const mockEditorAPI: EditorAPI = {
         ],
       };
     }
+  },
+
+  // A line-based stand-in for daedalus-parser/npc-definition: enough for the
+  // harness to drive the NPC editor's flow, never a fidelity claim (see
+  // tests/e2e/README.md).
+  async extractNpc(sourceText: string): Promise<NpcDefinition> {
+    const header = /INSTANCE\s+(\w+)\s*\(\s*(\w+)\s*\)/i.exec(sourceText);
+    if (!header) throw new Error('NPC source must be a single instance declaration');
+    const range = { startIndex: 0, endIndex: 0 };
+    const body = sourceText.slice(sourceText.indexOf('{') + 1, sourceText.lastIndexOf('}'));
+    const statements: NpcStatement[] = [];
+    for (const raw of body.split('\n')) {
+      const text = raw.trim();
+      if (text === '' || text.startsWith('//')) continue;
+      const field = /^(\w+)(?:\[(\w+)\])?\s*=\s*(.+?)\s*;/.exec(text);
+      const call = /^(\w+)\s*\((.*)\)\s*;/.exec(text);
+      if (field) {
+        statements.push({ kind: 'field', field: field[1], index: field[2], value: field[3], text, range, valueRange: range });
+      } else if (call) {
+        const args = call[2].trim() === '' ? [] : call[2].split(',').map((a) => a.trim());
+        statements.push({ kind: 'call', name: call[1], args, text, range, argsRange: range });
+      } else {
+        statements.push({ kind: 'other', text, range });
+      }
+    }
+    return { name: header[1], parent: header[2], statements, closingBraceIndex: sourceText.lastIndexOf('}') };
+  },
+
+  async applyNpcEdits(sourceText: string, edits: NpcEdit[]): Promise<string> {
+    const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const insert = (text: string, line: string) => {
+      const close = text.lastIndexOf('}');
+      return `${text.slice(0, close)}\t${line}\n${text.slice(close)}`;
+    };
+    let out = sourceText;
+    for (const edit of edits) {
+      if (edit.op === 'set' || edit.op === 'remove') {
+        const target = edit.index ? `${escape(edit.field)}\\s*\\[\\s*${escape(edit.index)}\\s*\\]` : escape(edit.field);
+        const pattern = new RegExp(`^([ \\t]*${target}\\s*=\\s*)[^;]*;.*$`, 'im');
+        if (edit.op === 'remove') {
+          out = out.replace(new RegExp(`${pattern.source}\\n?`, 'im'), '');
+        } else if (pattern.test(out)) {
+          out = out.replace(pattern, (_line, head) => `${head}${edit.value};`);
+        } else {
+          out = insert(out, `${edit.index ? `${edit.field}[${edit.index}]` : edit.field} = ${edit.value};`);
+        }
+      } else {
+        // Every line calling edit.name, so an occurrence can pick one.
+        const pattern = new RegExp(`^([ \\t]*${escape(edit.name)}\\s*)\\([^)]*\\)\\s*;.*$`, 'gim');
+        const lines = [...out.matchAll(pattern)];
+        const target = edit.op === 'addCall' ? undefined : lines[edit.occurrence ?? 0];
+        const newLine = edit.op === 'removeCall' ? '' : `${edit.name} (${edit.args.join(', ')});`;
+        if (target) {
+          const start = target.index!;
+          const end = start + target[0].length;
+          out = edit.op === 'removeCall'
+            ? out.slice(0, start) + out.slice(out[end] === '\n' ? end + 1 : end)
+            : `${out.slice(0, start)}${target[1]}(${edit.args.join(', ')});${out.slice(end)}`;
+        } else if (edit.op !== 'removeCall') {
+          const last = lines[lines.length - 1];
+          if (last) {
+            const end = last.index! + last[0].length;
+            const indent = /^[ \t]*/.exec(last[0])![0];
+            out = `${out.slice(0, end)}\n${indent}${newLine}${out.slice(end)}`;
+          } else {
+            out = insert(out, newLine);
+          }
+        }
+      }
+    }
+    return out;
   },
 
   async generateDialogCode(model: any, _dialogName: string, settings: any): Promise<string> {
@@ -525,6 +608,7 @@ export const mockEditorAPI: EditorAPI = {
     // Scan all files in the mock file system to build an index
     const files = MockFileSystem.listFiles();
     const npcs = new Set<string>();
+    const npcFiles: Record<string, string> = {};
     const dialogsByNpc: Record<string, any[]> = {};
     // Files carrying quest topic constants are prioritized by ingestion and merged
     // into the base model by loadQuestData so the QuestList can see the topics.
@@ -542,6 +626,7 @@ export const mockEditorAPI: EditorAPI = {
 
       for (const npcName in model.npcs || {}) {
         npcs.add(npcName);
+        npcFiles[npcName.toUpperCase()] = filePath;
         if (!dialogsByNpc[npcName]) {
           dialogsByNpc[npcName] = [];
         }
@@ -570,7 +655,8 @@ export const mockEditorAPI: EditorAPI = {
       dialogsByNpc, // Return as object, projectStore handles conversion
       allFiles: files,
       questFiles,
-      npcPrototypes: []
+      npcPrototypes: [],
+      npcFiles
     };
   },
 

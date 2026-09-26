@@ -164,6 +164,7 @@ class ProjectService {
     let npcPrototypes: string[] = [];
     let npcInstancesFound = 0;
     const missingNpcPrototypes = new Map<string, string>();
+    const npcFiles: Record<string, string> = {};
 
     // Use worker pool to process files in parallel
     const pool = new MetadataWorkerPool();
@@ -258,6 +259,7 @@ class ProjectService {
 
           npcInstancesFound++;
           allNpcs.add(instance.name);
+          npcFiles[instance.name.toUpperCase()] = filePath;
           if (!dialogsByNpc.has(instance.name)) {
             dialogsByNpc.set(instance.name, []);
           }
@@ -320,6 +322,7 @@ class ProjectService {
         npcInstancesFound,
         missingPrototypes: Array.from(missingNpcPrototypes.values()).sort()
       },
+      npcFiles,
       voiceIds,
       waypointSites: extractWaypointSites(fileModelsForSiteIndexes),
       spawnSites: extractSpawnSites(fileModelsForSiteIndexes),

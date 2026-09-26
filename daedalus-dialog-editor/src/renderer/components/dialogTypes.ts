@@ -69,6 +69,9 @@ export interface NPCListProps {
   onSelectNPC: (npc: string) => void;
   /** Why the list may be incomplete — the opened folder misses NPC files (#281). */
   coverageNote?: string | null;
+  /** Rows for which this returns true get an "Edit NPC" button (npc-editor Phase 2). */
+  canEditNPC?: (npc: string) => boolean;
+  onEditNPC?: (npc: string) => void;
 }
 
 export interface DialogTreeProps {

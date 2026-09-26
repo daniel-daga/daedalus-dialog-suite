@@ -556,6 +556,36 @@ INSTANCE ItMw_Club (Weapon_Default)
       expect(index.npcCoverage).toEqual({ npcInstancesFound: 0, missingPrototypes: [] });
     });
 
+    it('maps each NPC instance to the file that declares it, keyed uppercased (npc-editor Phase 2)', async () => {
+      fs.writeFileSync(path.join(tempDir, 'Prototypes.d'), `
+PROTOTYPE Npc_Default(C_NPC)
+{
+    name = "";
+};
+      `);
+      fs.writeFileSync(path.join(tempDir, 'BAU_900_Onar.d'), `
+INSTANCE BAU_900_Onar (Npc_Default)
+{
+    name = "Onar";
+};
+      `);
+      fs.writeFileSync(path.join(tempDir, 'DIA_Other.d'), `
+INSTANCE DIA_Other_Hello (C_INFO)
+{
+    npc = VLK_1_NoInstance;
+};
+INSTANCE ItMi_Gold (C_Item)
+{
+    name = "Gold";
+};
+      `);
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.npcFiles).toEqual({ BAU_900_ONAR: path.join(tempDir, 'BAU_900_Onar.d') });
+    });
+
     it('exposes prototypes deriving from C_NPC as npcPrototypes (issue #141)', async () => {
       const storyDir = path.join(tempDir, 'Story');
       fs.mkdirSync(storyDir, { recursive: true });

@@ -232,6 +232,20 @@ describe('ParserService worker lifecycle', () => {
     expect(err).toBeInstanceOf(WorkerRequestError);
     expect(err.message).toMatch(/crash-looping/);
   });
+
+  it('posts NPC requests to a worker with their payload', async () => {
+    const svc = makeService('request-echo.worker.js');
+
+    const extract = await svc.extractNpc('instance A (C_Npc) {};');
+    expect(extract).toMatchObject({ npc: 'extract', sourceCode: 'instance A (C_Npc) {};' });
+
+    const edits = [{ op: 'set' as const, field: 'level', value: '3' }];
+    const apply = await svc.applyNpcEdits('instance A (C_Npc) {};', edits);
+    expect(apply).toMatchObject({ npc: 'apply', sourceCode: 'instance A (C_Npc) {};', edits });
+
+    const parse = await svc.parseSource('func void x() {};');
+    expect(parse).toEqual({ id: expect.any(String), sourceCode: 'func void x() {};' });
+  });
 });
 
 describe('describeExit', () => {

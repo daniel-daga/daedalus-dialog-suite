@@ -86,7 +86,13 @@ export type {
   SaveResult,
   RecentProject,
   AppendInsertNpcResult,
-  ProjectOutputUnits
+  ProjectOutputUnits,
+  NpcDefinition,
+  NpcStatement,
+  NpcFieldStatement,
+  NpcCallStatement,
+  NpcOtherStatement,
+  NpcEdit
 } from '../../shared/types';
 
 // Import types needed for EditorAPI definition
@@ -98,7 +104,9 @@ import type {
   ValidationOptions,
   SaveResult,
   RecentProject,
-  AppendInsertNpcResult
+  AppendInsertNpcResult,
+  NpcDefinition,
+  NpcEdit
 } from '../../shared/types';
 
 import type { UpdateCheckResult } from '../../shared/updater-types';
@@ -124,6 +132,11 @@ export interface SaveOptions {
 export interface EditorAPI {
   // Parser API - runs in main process (has access to native modules)
   parseSource: (sourceCode: string) => Promise<SemanticModel>;
+
+  // NPC editor - an instance's body as statements, and edits patched into its
+  // source; both run in the parser pool (docs/plans/npc-editor.md, Phase 2)
+  extractNpc: (sourceText: string) => Promise<NpcDefinition>;
+  applyNpcEdits: (sourceText: string, edits: NpcEdit[]) => Promise<string>;
 
   // Validation API - validates model before saving
   validateModel: (model: SemanticModel, settings: CodeGenerationSettings, options?: ValidationOptions) => Promise<ValidationResult>;

@@ -85,6 +85,9 @@ interface ProjectState {
   npcPrototypes: string[];
   // What of the NPC set the opened folder could see (#281); null outside a project
   npcCoverage: ProjectIndex['npcCoverage'] | null;
+  // UPPERCASED NPC instance → the file declaring it; what the NPC editor opens.
+  // Same lifecycle as npcPrototypes.
+  npcFileIndex: Record<string, string>;
   // AI_Output voice ids across the project, keyed by UPPERCASED id (built at
   // project load/reindex time — can be stale until the next reindex)
   voiceIdIndex: Record<string, Array<{ filePath: string; functionName: string }>>;
@@ -470,6 +473,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   questFiles: [],
   npcPrototypes: [],
   npcCoverage: null,
+  npcFileIndex: {},
   voiceIdIndex: {},
   waypointSiteIndex: {},
   spawnSiteIndex: [],
@@ -534,6 +538,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         questFiles: rawIndex.questFiles || [],
         npcPrototypes: rawIndex.npcPrototypes || [],
         npcCoverage: rawIndex.npcCoverage ?? null,
+        npcFileIndex: rawIndex.npcFiles || {},
         voiceIdIndex: rawIndex.voiceIds || {},
         waypointSiteIndex: rawIndex.waypointSites || {},
         spawnSiteIndex: rawIndex.spawnSites || [],
@@ -793,6 +798,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       questFiles: [],
       npcPrototypes: [],
       npcCoverage: null,
+      npcFileIndex: {},
       voiceIdIndex: {},
       waypointSiteIndex: {},
       spawnSiteIndex: [],

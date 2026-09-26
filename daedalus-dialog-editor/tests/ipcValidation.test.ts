@@ -9,6 +9,7 @@ import {
   assertModelShape,
   assertDialogName,
   assertParseSourcePayload,
+  assertNpcApplyEditsRequest,
   assertExternalUrl,
   assertSaveFileSettings,
   assertSaveFileOptions,
@@ -1932,5 +1933,58 @@ describe('assertAppendInsertNpcRequest', () => {
     expect(() => assertAppendInsertNpcRequest({ ...good, npcInstance: 'X);Wld_InsertNpc(Y' })).toThrow(/npcInstance/);
     expect(() => assertAppendInsertNpcRequest({ ...good, spawnPoint: 'WP"' })).toThrow(/spawnPoint/);
     expect(() => assertAppendInsertNpcRequest({ ...good, spawnPoint: 'WP\nX' })).toThrow(/spawnPoint/);
+  });
+});
+
+describe('assertNpcApplyEditsRequest', () => {
+  const ok = (edits: unknown[]) => ({ sourceText: 'instance A (C_Npc) {};', edits });
+
+  it('accepts each edit op', () => {
+    expect(() => assertNpcApplyEditsRequest(ok([
+      { op: 'set', field: 'guild', value: 'GIL_SLD' },
+      { op: 'set', field: 'attribute', index: 'ATR_STRENGTH', value: '50' },
+      { op: 'remove', field: 'flags' },
+      { op: 'setCall', name: 'B_SetNpcVisual', args: ['self', 'MALE', '"Hum_Head_Bald"'] },
+      { op: 'removeCall', name: 'EquipItem' },
+    ]))).not.toThrow();
+  });
+
+  it('accepts an occurrence on a call edit, and addCall', () => {
+    expect(() => assertNpcApplyEditsRequest(ok([
+      { op: 'setCall', name: 'EquipItem', occurrence: 1, args: ['self', 'ItRw_Sld_Bow'] },
+      { op: 'removeCall', name: 'EquipItem', occurrence: 0 },
+      { op: 'addCall', name: 'EquipItem', args: ['self', 'ItMw_1h_Sld_Sword'] },
+    ]))).not.toThrow();
+  });
+
+  it('refuses an occurrence that is not a non-negative integer, and addCall without args', () => {
+    expect(() => assertNpcApplyEditsRequest(ok([{ op: 'removeCall', name: 'F', occurrence: -1 }]))).toThrow(/occurrence/);
+    expect(() => assertNpcApplyEditsRequest(ok([{ op: 'removeCall', name: 'F', occurrence: 1.5 }]))).toThrow(/occurrence/);
+    expect(() => assertNpcApplyEditsRequest(ok([{ op: 'setCall', name: 'F', occurrence: '1', args: ['a'] }]))).toThrow(/occurrence/);
+    expect(() => assertNpcApplyEditsRequest(ok([{ op: 'addCall', name: 'F' }]))).toThrow(/args/);
+  });
+
+  it('refuses a missing source or a non-array edit list', () => {
+    expect(() => assertNpcApplyEditsRequest({ edits: [] })).toThrow(/sourceText/);
+    expect(() => assertNpcApplyEditsRequest({ sourceText: 'x', edits: {} })).toThrow(/edits/);
+  });
+
+  it('refuses an unknown op', () => {
+    expect(() => assertNpcApplyEditsRequest(ok([{ op: 'rename', field: 'x' }]))).toThrow(/op/);
+  });
+
+  it('refuses a field, index or call name that is not an identifier', () => {
+    expect(() => assertNpcApplyEditsRequest(ok([{ op: 'set', field: 'a b', value: '1' }]))).toThrow(/field/);
+    expect(() => assertNpcApplyEditsRequest(ok([{ op: 'remove', field: 'x', index: '1]' }]))).toThrow(/index/);
+    expect(() => assertNpcApplyEditsRequest(ok([{ op: 'removeCall', name: 'x()' }]))).toThrow(/name/);
+  });
+
+  // A value is an expression the user typed, but one that breaks the line
+  // would let a single field edit write more than its own statement.
+  it('refuses a value or argument that is empty or spans lines', () => {
+    expect(() => assertNpcApplyEditsRequest(ok([{ op: 'set', field: 'level', value: '' }]))).toThrow(/value/);
+    expect(() => assertNpcApplyEditsRequest(ok([{ op: 'set', field: 'level', value: '1;\nx = 2' }]))).toThrow(/value/);
+    expect(() => assertNpcApplyEditsRequest(ok([{ op: 'setCall', name: 'F', args: ['a', 3] }]))).toThrow(/args/);
+    expect(() => assertNpcApplyEditsRequest(ok([{ op: 'setCall', name: 'F', args: ['a\rb'] }]))).toThrow(/args/);
   });
 });
