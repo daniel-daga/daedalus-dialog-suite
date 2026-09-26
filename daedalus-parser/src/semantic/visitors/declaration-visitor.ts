@@ -37,11 +37,28 @@ export class DeclarationVisitor {
 
     // Optimization: Handle root node specifically to skip non-declaration children
     if (node.type === 'program' || node.type === 'source_file') {
+      // #286: the blank lines before each declaration (and its leading
+      // comments) are recorded on its declarationOrder entry, so a save emits
+      // the spacing the source had instead of a normalized one. Blank lines
+      // inside the comment block, or between it and the declaration, are kept
+      // as empty entries in leadingComments, which render as blank lines.
+      let previousEndRow = -1;
+      let groupStartRow: number | null = null;
+      let lastCommentEndRow = -1;
+      const padSinceLastComment = (row: number) => {
+        if (this.pendingLeadingComments.length === 0) return;
+        for (let gap = row - lastCommentEndRow - 1; gap > 0; gap--) {
+          this.pendingLeadingComments.push('');
+        }
+      };
       if (cursor.gotoFirstChild()) {
         do {
           const child = cursor.currentNode;
           if (child.type === 'comment') {
+            padSinceLastComment(child.startPosition.row);
             this.pendingLeadingComments.push(child.text);
+            groupStartRow ??= child.startPosition.row;
+            lastCommentEndRow = child.endPosition.row;
             continue;
           }
           // Only recurse into declarations we care about
@@ -50,11 +67,18 @@ export class DeclarationVisitor {
               child.type === 'variable_declaration' ||
               child.type === 'class_declaration' ||
               child.type === 'prototype_declaration') {
+            padSinceLastComment(child.startPosition.row);
+            const order = this.semanticModel.declarationOrder;
+            const firstEntry = order ? order.length : 0;
             this.createObjectsRecursively(cursor);
-            this.pendingLeadingComments = [];
-          } else {
-            this.pendingLeadingComments = [];
+            if (order && order.length > firstEntry) {
+              const startRow = groupStartRow ?? child.startPosition.row;
+              order[firstEntry].blankLinesBefore = Math.max(0, startRow - previousEndRow - 1);
+            }
           }
+          this.pendingLeadingComments = [];
+          groupStartRow = null;
+          previousEndRow = child.endPosition.row;
         } while (cursor.gotoNextSibling());
         cursor.gotoParent();
       }

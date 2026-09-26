@@ -776,7 +776,12 @@ export interface GlobalPrototype {
 export interface SemanticModel {
   dialogs: Record<string, Dialog>;
   functions: Record<string, DialogFunction>;
-  declarationOrder?: Array<{ type: 'dialog' | 'function' | 'constant' | 'variable' | 'instance' | 'class' | 'prototype'; name: string }>;
+  declarationOrder?: Array<{
+    type: 'dialog' | 'function' | 'constant' | 'variable' | 'instance' | 'class' | 'prototype';
+    name: string;
+    /** Blank lines before the declaration and its leading comments, as parsed (#286) */
+    blankLinesBefore?: number;
+  }>;
   constants?: Record<string, GlobalConstant>;
   variables?: Record<string, GlobalVariable>;
   instances?: Record<string, GlobalInstance>;

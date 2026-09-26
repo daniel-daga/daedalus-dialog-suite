@@ -29,12 +29,29 @@ const GREEN_FIXTURES = [
   'condition-idioms.d',  // fix-01 step 9 (P6/N5 standalone comment inside a condition body)
   'globals.d',           // fix-01 step 9 (P6 trailing/EOF comment preservation)
   'items-npcs-mds.d',    // fix-01 step 9 (P6 trailing comment preservation)
-  'encoding-1252.d'      // fix-01 step 9 (P6 comment preservation, windows-1252 encoded)
+  'encoding-1252.d',     // fix-01 step 9 (P6 comment preservation, windows-1252 encoded)
+  'blank-lines.d'        // #286 blank lines between top-level declarations
 ];
 
 // The whole synthetic corpus is now Tier-1 token-clean. New fidelity gaps land
 // here as a fresh red fixture; fix and promote to GREEN in the same change.
 const KNOWN_RED_FIXTURES = [];
+
+// Tier-2 byte ratchet: fixtures that must also round-trip byte-identical
+// (after line-ending normalization). Byte drift is otherwise only reported;
+// these fixtures pin the formatting fixes that have landed so a regression
+// fails here instead of vanishing into a report.
+const BYTE_EXACT_FIXTURES = [
+  'arity-variants.d',
+  'case-drift.d',
+  'class-prototype.d',   // #286
+  'declaration-order.d',
+  'encoding-1252.d',
+  'globals.d',
+  'items-npcs-mds.d',    // #286 blank line between a comment and its declaration
+  'numeric-args.d',
+  'blank-lines.d'        // #286
+];
 
 const corpusDir = path.resolve(__dirname, 'fixtures', 'corpus');
 const scriptPath = path.resolve(__dirname, '..', 'scripts', 'roundtrip-corpus.js');
@@ -117,5 +134,16 @@ test('full corpus token-fidelity matches the ratchet (GREEN clean, KNOWN_RED sti
   // must fail (Tier-1 token drift or generated syntax errors).
   if (KNOWN_RED_FIXTURES.length > 0) {
     assert.notEqual(exitCode, 0, 'strict run should fail while known-red fixtures remain');
+  }
+});
+
+test('BYTE_EXACT fixtures round-trip byte-identical', () => {
+  const reportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-smoke-bytes-'));
+  const { byName } = runCorpus(corpusDir, reportDir, 'smoke-bytes');
+
+  for (const name of BYTE_EXACT_FIXTURES) {
+    const detail = byName.get(name);
+    assert.ok(detail, `missing report entry for ${name}`);
+    assert.equal(detail.drift.byteFidelityDrift, false, `${name} should round-trip byte-identical`);
   }
 });

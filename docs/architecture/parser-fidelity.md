@@ -79,17 +79,19 @@ in the lookups.
 2. **Byte fidelity (reported, non-failing):** equality after line-ending
    normalization; indentation preservation is the remaining gap (known:
    `CreateTopic`/`LogEntry` blank-line padding, N3).
-   **Known gap — blank lines between top-level declarations (#286).** The
-   generator does not record them: consecutive globals (constants,
-   variables, instances, classes, prototypes) are joined with none, and
-   dialog/function sections with exactly one, whatever the source had. Every
-   save re-emits the whole file, so the first save of a file normalizes its
-   spacing — e.g. two NPC instances separated by a blank line come back
-   adjacent. Tokens are untouched, which is why the strict tier stays green.
+   **Blank lines between top-level declarations are kept (#286).** The
+   declaration pass records on each `declarationOrder` entry the blank lines
+   before the declaration and its leading comments (`blankLinesBefore`), and
+   blank lines inside a leading-comment block or between it and its
+   declaration as empty `leadingComments` entries. A model built in code has
+   no record and keeps the old spacing: none between consecutive globals, one
+   otherwise. The smoke test's `BYTE_EXACT_FIXTURES` pins the fixtures that
+   round-trip byte-identical, so byte drift in them fails rather than only
+   being reported.
 3. **Semantic drift + idempotence:** model summaries (including
    class/prototype/global name sets) across reparse.
 
-The committed fixture corpus (`test/fixtures/corpus/`, 11 files, one per
+The committed fixture corpus (`test/fixtures/corpus/`, 12 files, one per
 construct family) runs fully strict via `test/roundtrip-corpus-smoke.test.js`
 — all fixtures are in the green set and the test fails if any regresses.
 The real MDK corpus is licensed/gitignored; run it locally with

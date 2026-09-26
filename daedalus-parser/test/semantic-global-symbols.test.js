@@ -147,11 +147,11 @@ instance ItFo_TestApple(C_Item)
   assert.equal(model.hasErrors, false, 'Should parse without errors');
 
   assert.deepEqual(model.declarationOrder, [
-    { type: 'constant', name: 'MAX_GOLD' },
-    { type: 'variable', name: 'MIS_Test' },
-    { type: 'function', name: 'TestFunc' },
-    { type: 'instance', name: 'ItFo_TestApple' }
-  ], 'Order should include globals interleaved with functions');
+    { type: 'constant', name: 'MAX_GOLD', blankLinesBefore: 0 },
+    { type: 'variable', name: 'MIS_Test', blankLinesBefore: 0 },
+    { type: 'function', name: 'TestFunc', blankLinesBefore: 1 },
+    { type: 'instance', name: 'ItFo_TestApple', blankLinesBefore: 1 }
+  ], 'Order should include globals interleaved with functions, with the blank lines before each (#286)');
 
   assert.equal(model.constants.MAX_GOLD.sourceText, 'const int MAX_GOLD = 1000;');
   assert.equal(model.variables.MIS_Test.sourceText, 'var int MIS_Test;');

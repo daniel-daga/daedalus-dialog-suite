@@ -124,14 +124,20 @@ export class SemanticCodeGenerator {
     const emittedFunctions = new Set<string>();
     const emittedGlobals = new Set<string>();
 
-    // Consecutive globals are grouped into one section so adjacent constants
-    // stay adjacent instead of being separated by blank lines.
-    const globalBuffer: string[] = [];
-    const flushGlobals = () => {
-      if (globalBuffer.length > 0) {
-        sections.push(globalBuffer.join('\n') + '\n');
-        globalBuffer.length = 0;
-      }
+    // The ordered declarations are emitted into one section. Each is preceded
+    // by the blank lines the parse recorded before it (#286); an entry without
+    // a record (a model built in code) gets the old spacing — none between
+    // consecutive globals, one otherwise.
+    let ordered = '';
+    let previousWasGlobal: boolean | null = null;
+    const emitOrdered = (text: string, isGlobal: boolean, blankLinesBefore: number | undefined) => {
+      const blank = blankLinesBefore ?? (previousWasGlobal === null || (isGlobal && previousWasGlobal) ? 0 : 1);
+      ordered += '\n'.repeat(blank) + (text.endsWith('\n') ? text : `${text}\n`);
+      previousWasGlobal = isGlobal;
+    };
+    const withLeading = (comments: string[] | undefined, text: string) => {
+      const leading = this.renderLeadingComments(comments);
+      return leading ? `${leading}\n${text}` : text;
     };
 
     // N10 — declaration-order fidelity: when the model carries a declaration
@@ -151,7 +157,7 @@ export class SemanticCodeGenerator {
         const symbol = this.lookupGlobalSymbol(declaration.type, declaration.name, model);
         const key = `${declaration.type}:${declaration.name}`;
         if (symbol && !emittedGlobals.has(key)) {
-          globalBuffer.push(this.generateGlobalDeclaration(declaration.type, symbol));
+          emitOrdered(this.generateGlobalDeclaration(declaration.type, symbol), true, declaration.blankLinesBefore);
           emittedGlobals.add(key);
         }
         continue;
@@ -160,30 +166,22 @@ export class SemanticCodeGenerator {
       if (declaration.type === 'dialog') {
         const dialog = model.dialogs[declaration.name];
         if (dialog && !emittedDialogs.has(dialog.name)) {
-          flushGlobals();
           // Emit leading comments verbatim; do NOT synthesize a section header
           // for a dialog that has its own order entry (invented content).
-          const leading = this.renderLeadingComments(dialog.leadingComments);
-          if (leading) {
-            sections.push(leading);
-          }
-          sections.push(this.generateDialog(dialog));
+          emitOrdered(withLeading(dialog.leadingComments, this.generateDialog(dialog)), false, declaration.blankLinesBefore);
           emittedDialogs.add(dialog.name);
         }
       } else if (declaration.type === 'function') {
         const func = model.functions[declaration.name];
         if (func && !emittedFunctions.has(func.name)) {
-          flushGlobals();
-          const leading = this.renderLeadingComments(func.leadingComments);
-          if (leading) {
-            sections.push(leading);
-          }
-          sections.push(this.generateFunction(func));
+          emitOrdered(withLeading(func.leadingComments, this.generateFunction(func)), false, declaration.blankLinesBefore);
           emittedFunctions.add(func.name);
         }
       }
     }
-    flushGlobals();
+    if (ordered) {
+      sections.push(ordered);
+    }
 
     // Keep legacy robustness for manually constructed models that might miss order entries.
     for (const dialogName in model.dialogs) {

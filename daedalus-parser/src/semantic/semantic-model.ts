@@ -984,7 +984,12 @@ export interface SyntaxError {
 export interface SemanticModel {
   dialogs: { [key: string]: Dialog };
   functions: { [key: string]: DialogFunction };
-  declarationOrder?: Array<{ type: 'dialog' | 'function' | 'constant' | 'variable' | 'instance' | 'class' | 'prototype'; name: string }>;
+  declarationOrder?: Array<{
+    type: 'dialog' | 'function' | 'constant' | 'variable' | 'instance' | 'class' | 'prototype';
+    name: string;
+    /** Blank lines before the declaration and its leading comments, as parsed (#286) */
+    blankLinesBefore?: number;
+  }>;
   constants?: { [key: string]: GlobalConstant };
   variables?: { [key: string]: GlobalVariable };
   instances?: { [key: string]: GlobalInstance };

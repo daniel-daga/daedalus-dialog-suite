@@ -45,15 +45,14 @@ const GREEN_FIXTURES = [
   'encoding-1252.d',    // globals-only + EOF comment, windows-1252 (EOF newline fix)
   'globals.d',          // consecutive globals + EOF comment (EOF newline fix)
   'numeric-args.d',     // numeric literal fidelity in call arguments
+  'class-prototype.d',  // blank lines between top-level declarations (#286)
+  'items-npcs-mds.d',   // blank lines between declarations and after comments (#286)
+  'blank-lines.d',      // #286: 0/1/2+ blank lines before every declaration kind
 ];
 
 // Token-equal but not byte-identical through the editor path. Each entry names
 // what still gates it; fixing the cause must promote the fixture to GREEN.
 const KNOWN_GAP_FIXTURES: Array<{ file: string; reason: string }> = [
-  // Blank lines between consecutive top-level declarations are dropped: the
-  // generator packs consecutive globals (class/prototype/instance) with a single
-  // newline and the model does not track inter-declaration blank lines.
-  { file: 'class-prototype.d', reason: 'inter-global blank lines not preserved' },
   // A trailing inline comment on a non-AI_Output statement is modeled by the
   // parser as a standalone CommentAction (only DialogLine absorbs inline
   // comments), so it regenerates on its own line instead of inline. fix-01
@@ -63,9 +62,6 @@ const KNOWN_GAP_FIXTURES: Array<{ file: string; reason: string }> = [
   // indentation on continuation lines, then generateFunction re-indents every
   // line uniformly, double-indenting the block body.
   { file: 'condition-idioms.d', reason: 'raw multi-line statement continuation lines double-indented' },
-  // Same inter-declaration blank-line loss as class-prototype (blank line between
-  // the two instance declarations is dropped).
-  { file: 'items-npcs-mds.d', reason: 'inter-global blank lines not preserved' },
   // CreateTopic / LogEntry / InsertNpc action renderers emit surrounding blank
   // lines, inserting spurious blanks between packed statements.
   { file: 'quoting.d', reason: 'topic/log/insert action renderers emit surrounding blank lines' },
