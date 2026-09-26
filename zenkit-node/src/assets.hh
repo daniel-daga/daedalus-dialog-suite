@@ -66,4 +66,9 @@ Napi::Value ExtractVisual(Napi::CallbackInfo const& info);
 // decodeTexture(handle, name) — a ZTEX decoded to RGBA8. Null when absent.
 Napi::Value DecodeTexture(Napi::CallbackInfo const& info);
 
+// extractHierarchy(vfs, name) -> { source, nodes: [{ name, parent, transform }] }
+// | null. `name` is a model name (`HUMANS.MDS`); its .MDH, else the hierarchy
+// inside its .MDL. Transforms are accumulated to the root, row-major.
+Napi::Value ExtractHierarchyFromVfs(Napi::CallbackInfo const& info);
+
 }  // namespace zenkit_node

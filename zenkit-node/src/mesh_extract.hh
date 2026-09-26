@@ -39,4 +39,10 @@ Napi::Object ExtractModelMesh(Napi::Env env,
                               zenkit::ModelMesh const& model,
                               zenkit::ModelHierarchy const& hierarchy);
 
+// A hierarchy on its own: every node's name, parent index and transform
+// accumulated down to the root, row-major — the matrices ExtractModelMesh puts
+// on its attachment chunks, for every node rather than only those carrying
+// geometry. What places a separately extracted mesh (an NPC head) on a node.
+Napi::Object ExtractHierarchy(Napi::Env env, zenkit::ModelHierarchy const& hierarchy);
+
 }  // namespace zenkit_node

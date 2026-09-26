@@ -225,6 +225,18 @@ namespace {
 // Multiplies two column-stored matrices: result = a * b, so applying `result`
 // applies `b` first and then `a` — the order a child's transform composes with
 // its parent's.
+// Row-major, like every other matrix the binding emits.
+Napi::Array RowMajor(Napi::Env env, Mat4 const& m) {
+  auto matrix = Napi::Array::New(env, 16);
+  std::uint32_t at = 0;
+  for (unsigned row = 0; row < 4; ++row) {
+    for (unsigned col = 0; col < 4; ++col) {
+      matrix.Set(at++, Napi::Number::New(env, m.columns[col][row]));
+    }
+  }
+  return matrix;
+}
+
 Mat4 Multiply(Mat4 const& a, Mat4 const& b) {
   Mat4 out {};
   for (unsigned col = 0; col < 4; ++col) {
@@ -301,14 +313,7 @@ void AppendSubMeshChunks(Napi::Env env,
       // than baked into the positions, for the same reason the coordinate
       // convention is not applied here: it is the model's own fact, and the
       // projection layer is where facts become pixels.
-      auto matrix = Napi::Array::New(env, 16);
-      std::uint32_t at = 0;
-      for (unsigned row = 0; row < 4; ++row) {
-        for (unsigned col = 0; col < 4; ++col) {
-          matrix.Set(at++, Napi::Number::New(env, transform->columns[col][row]));
-        }
-      }
-      entry.Set("transform", matrix);
+      entry.Set("transform", RowMajor(env, *transform));
     }
 
     entry.Set("vertexCount", Napi::Number::New(env, static_cast<double>(sub.wedges.size())));
@@ -322,6 +327,19 @@ void AppendSubMeshChunks(Napi::Env env,
     total_triangles += sub.triangles.size();
     out.Set(out_index++, entry);
   }
+}
+
+std::vector<Mat4> Accumulate(ModelHierarchy const& hierarchy) {
+  std::vector<Mat4> world(hierarchy.nodes.size(), Mat4::identity());
+  for (std::size_t i = 0; i < hierarchy.nodes.size(); ++i) {
+    auto const& node = hierarchy.nodes[i];
+    // A parent always precedes its children in a ZenGin hierarchy, so one pass
+    // in order is enough; a forward or self reference would be a broken file.
+    world[i] = node.parent_index >= 0 && static_cast<std::size_t>(node.parent_index) < i
+        ? Multiply(world[node.parent_index], node.transform)
+        : node.transform;
+  }
+  return world;
 }
 
 Napi::Object FinishPayload(Napi::Env env,
@@ -377,15 +395,7 @@ Napi::Object ExtractModelMesh(Napi::Env env,
                         total_vertices, total_triangles);
   }
 
-  std::vector<Mat4> world(hierarchy.nodes.size(), Mat4::identity());
-  for (std::size_t i = 0; i < hierarchy.nodes.size(); ++i) {
-    auto const& node = hierarchy.nodes[i];
-    // A parent always precedes its children in a ZenGin hierarchy, so one pass
-    // in order is enough; a forward or self reference would be a broken file.
-    world[i] = node.parent_index >= 0 && static_cast<std::size_t>(node.parent_index) < i
-        ? Multiply(world[node.parent_index], node.transform)
-        : node.transform;
-  }
+  auto const world = Accumulate(hierarchy);
 
   for (std::size_t i = 0; i < hierarchy.nodes.size(); ++i) {
     auto const found = model.attachments.find(hierarchy.nodes[i].name);
@@ -395,6 +405,21 @@ Napi::Object ExtractModelMesh(Napi::Env env,
   }
 
   return FinishPayload(env, out, extent, total_vertices, total_triangles);
+}
+
+Napi::Object ExtractHierarchy(Napi::Env env, ModelHierarchy const& hierarchy) {
+  auto const world = Accumulate(hierarchy);
+  auto nodes = Napi::Array::New(env, hierarchy.nodes.size());
+  for (std::size_t i = 0; i < hierarchy.nodes.size(); ++i) {
+    auto entry = Napi::Object::New(env);
+    entry.Set("name", Napi::String::New(env, hierarchy.nodes[i].name));
+    entry.Set("parent", Napi::Number::New(env, hierarchy.nodes[i].parent_index));
+    entry.Set("transform", RowMajor(env, world[i]));
+    nodes.Set(static_cast<std::uint32_t>(i), entry);
+  }
+  auto result = Napi::Object::New(env);
+  result.Set("nodes", nodes);
+  return result;
 }
 
 }  // namespace zenkit_node

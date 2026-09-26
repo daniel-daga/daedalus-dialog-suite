@@ -502,6 +502,40 @@ Napi::Value ExtractVisual(Napi::CallbackInfo const& info) {
   }
 }
 
+Napi::Value ExtractHierarchyFromVfs(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapVfs(env, info[0]);
+  auto const name = NameArg(env, info[1], "name");
+  if (!name) return env.Null();
+
+  // A standalone .MDH first: human bodies are .MDM files with no .MDH of their
+  // own, all hung on HUMANS.MDH, which is named after the .MDS, not the mesh.
+  auto const stem = StripExtension(Upper(*name));
+  std::string resolved;
+  auto const* node = FindFirst(handle->vfs, {stem + ".MDH", stem + ".MDL"}, &resolved);
+  if (node == nullptr) return env.Null();
+
+  try {
+    auto reader = node->open_read();
+    ModelHierarchy hierarchy {};
+    if (EndsWith(resolved, ".MDL")) {
+      Model full {};
+      full.load(reader.get());
+      hierarchy = std::move(full.hierarchy);
+    } else {
+      hierarchy.load(reader.get());
+    }
+    auto payload = zenkit_node::ExtractHierarchy(env, hierarchy);
+    payload.Set("source", Str(env, resolved));
+    return payload;
+  } catch (Napi::Error&) {
+    throw;
+  } catch (std::exception& e) {
+    throw Napi::Error::New(env,
+                           "failed to extract hierarchy '" + resolved + "': " + std::string {e.what()});
+  }
+}
+
 Napi::Value DecodeTexture(Napi::CallbackInfo const& info) {
   Napi::Env env = info.Env();
   auto* handle = UnwrapVfs(env, info[0]);

@@ -1249,7 +1249,12 @@ void AuthorFixtureAssets(std::filesystem::path const& dir) {
     mesh.save(w.get(), GameVersion::GOTHIC_2);
 
     ModelHierarchy hierarchy {};
-    hierarchy.nodes = {ModelHierarchyNode {-1, "BASE", Translation(5.0f, 0.0f, 0.0f)}};
+    // HEAD is a child with no attachment: a hierarchy read on its own
+    // (extractHierarchy) has to accumulate it down from BASE.
+    hierarchy.nodes = {
+        ModelHierarchyNode {-1, "BASE", Translation(5.0f, 0.0f, 0.0f)},
+        ModelHierarchyNode {0, "HEAD", Translation(0.0f, 20.0f, 0.0f)},
+    };
     hierarchy.source_date = Date {2024, 1, 1, 0, 0, 0, 0};
     hierarchy.source_path = "EX_RIG.ASC";
     auto wh = Write::to(dir / "EX_RIG.MDH");
