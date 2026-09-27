@@ -74,6 +74,11 @@ export interface NPCListProps {
   onEditNPC?: (npc: string) => void;
   /** Shown as a "New NPC" button when given (#285). */
   onCreateNPC?: () => void;
+  /** Folders (project-relative) the list can be narrowed to; a picker is shown when given. */
+  npcFolders?: string[];
+  /** The chosen folder, '' for all. */
+  npcFolder?: string;
+  onNpcFolderChange?: (folder: string) => void;
 }
 
 export interface DialogTreeProps {

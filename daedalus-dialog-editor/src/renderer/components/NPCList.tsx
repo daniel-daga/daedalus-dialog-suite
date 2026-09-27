@@ -9,7 +9,9 @@ import {
   TextField,
   InputAdornment,
   IconButton,
-  Tooltip
+  Tooltip,
+  Select,
+  MenuItem
 } from '@mui/material';
 import {
   FilterList as FilterListIcon,
@@ -64,7 +66,10 @@ const Row = ({ index, style, data }: ListChildComponentProps) => {
   );
 };
 
-const NPCList: React.FC<NPCListProps> = ({ npcs, npcMap, selectedNPC, onSelectNPC, coverageNote, canEditNPC, onEditNPC, onCreateNPC }) => {
+const NPCList: React.FC<NPCListProps> = ({
+  npcs, npcMap, selectedNPC, onSelectNPC, coverageNote, canEditNPC, onEditNPC, onCreateNPC,
+  npcFolders, npcFolder = '', onNpcFolderChange
+}) => {
   const npcFilter = useSearchStore((s) => s.npcFilter);
   const setNpcFilter = useSearchStore((s) => s.setNpcFilter);
   const filterNpcs = useSearchStore((s) => s.filterNpcs);
@@ -147,6 +152,22 @@ const NPCList: React.FC<NPCListProps> = ({ npcs, npcMap, selectedNPC, onSelectNP
           }}
           sx={searchablePaneTextFieldSx}
         />
+        {npcFolders && onNpcFolderChange && (
+          <Select
+            size='small'
+            fullWidth
+            displayEmpty
+            value={npcFolder}
+            onChange={(e) => onNpcFolderChange(e.target.value)}
+            inputProps={{ 'aria-label': 'NPC folder' }}
+            sx={{ mt: 1 }}
+          >
+            <MenuItem value=''>All folders</MenuItem>
+            {npcFolders.map((folder) => (
+              <MenuItem key={folder} value={folder}>{folder}</MenuItem>
+            ))}
+          </Select>
+        )}
       </Box>
 
       <Box sx={searchablePaneContentSx}>
