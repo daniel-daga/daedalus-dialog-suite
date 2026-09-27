@@ -1,6 +1,6 @@
 # NPC Editor
 
-**Status:** Phases 1–3 built (#284, #285, #298); Phase 4 — rendering real NPCs in the World surface — remains.
+**Status:** Phases 1–4 built (#284, #285, #298, #309). NPC bodies now render at world spawn and routine placements.
 
 An editor for `C_NPC` instances inside the dialog editor, covering what the
 community's standalone *NPC Generator* covers (main info, attributes, protection,
@@ -247,14 +247,15 @@ and why. It does not guess.
 
 ## 5. Phase 4 — real NPCs in the world
 
-**Not started.** This is the remaining NPC-editor phase, tracked as #309.
+**Complete** (#309).
 
-With Phases 1 and 3 in place, `SpawnOverlay`'s capsule dummy can become the
-NPC's mesh. This needs the per-NPC visual available where the World surface is,
-which is the renderer: resolve the definitions of the NPCs actually spawned in
-the open world, instance the meshes by visual (many NPCs share a body), and keep
-the dummy as the fallback for any NPC Phase 3 cannot draw. This closes the
-"NPC-Rendering im Viewport" item of `docs/plans/level-editor-design-brief.md`.
+The World surface resolves only spawned NPC definitions, requests their composed
+bodies through the open world's VFS, and draws the body groups as instanced
+meshes at static spawns or routine placements. NPCs sharing a body and texture
+groups share batches. The capsule remains for definitions or assets that cannot
+be resolved, and the spawn marker remains visible beside each body. This closes
+the "NPC-Rendering im Viewport" item of
+`docs/plans/level-editor-design-brief.md`.
 
 ## 6. Order and size
 

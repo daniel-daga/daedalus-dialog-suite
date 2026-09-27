@@ -21,7 +21,7 @@
  */
 
 import * as THREE from 'three';
-import type { WaynetPayload } from '../src/shared/worldTypes';
+import type { NpcBodyScene, WaynetPayload } from '../src/shared/worldTypes';
 import type { RoutineSite, SpawnSite } from '../src/shared/types';
 import { SpawnOverlay } from '../src/renderer/world/SpawnOverlay';
 import { markerDotTexture } from '../src/renderer/world/markerSprite';
@@ -76,6 +76,26 @@ const NO_ROUTINES = { sites: [] as RoutineSite[], routinesByNpc: {} };
 const at = (hour: number) => hour * 60;
 
 describe('SpawnOverlay', () => {
+  it('draws a resolved NPC body at the waypoint instead of a capsule', () => {
+    const group = {
+      positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]).buffer,
+      normals: new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]).buffer,
+      uvs: new Float32Array(6).buffer,
+      indices: new Uint32Array([0, 1, 2]).buffer,
+      lights: null,
+      vertexCount: 3, triangleCount: 1, materials: 1,
+      texture: '', color: [255, 255, 255], alphaFunc: 0,
+    } as unknown as NpcBodyScene['groups'][number];
+    const body = { name: 'HUM_BODY_NAKED0', source: 'HUM_BODY_NAKED0.ASC', groups: [group], bounds: [0, 0, 0, 1, 1, 1], triangleCount: 1, missing: [] } as NpcBodyScene;
+    const overlay = new SpawnOverlay(
+      waynet(), [site('GRD_200_XARDAS', 'WP_MIDDLE')], NO_ROUTINES,
+      new Map([['GRD_200_XARDAS', body]]),
+    );
+
+    expect(overlay.dummies.count).toBe(0);
+    expect(overlay.root.children.some((child) => child instanceof THREE.InstancedMesh && child !== overlay.dummies && child.count === 1)).toBe(true);
+  });
+
   it('draws one marker at each spawn point, in ZenGin space', () => {
     const overlay = new SpawnOverlay(waynet(), [site('GRD_200_XARDAS', 'WP_MIDDLE')], NO_ROUTINES);
     const positions = overlay.markers.geometry.getAttribute('position');

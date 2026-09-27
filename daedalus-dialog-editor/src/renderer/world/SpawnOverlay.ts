@@ -1,17 +1,18 @@
 import * as THREE from 'three';
-import type { WaynetPayload } from '../../shared/worldTypes';
+import type { DecodedTexture, NpcBodyScene, WaynetPayload } from '../../shared/worldTypes';
 import type { SpawnSite } from '../../shared/types';
 import { placementWaypointsAt, spawnOccupants, type RoutineIndex } from '../routines/routineSchedule';
 import { markerDotTexture } from './markerSprite';
+import { ALPHA_TEST, dataTexture, drawGroupGeometry } from './WorldScene';
 
 // The project's static spawns, drawn over the world (level-editor.md §16.19
 // slice 4) — and, once a time is set, where the daily routines put the NPCs
 // instead (slice 5).
 //
-// Markers, not NPCs: `ProjectIndex` carries instance *names* and no instance
-// bodies, so the `B_SetNpcVisual` chain that would resolve a mesh has nothing
-// to walk (§16.19). A marker needs only the position, and the position is the
-// waypoint the spawn — or the routine entry — names.
+// Spawn points and routine placements come from `ProjectIndex`; visual bodies
+// are resolved separately from parsed NPC definitions. NPCs sharing a body and
+// texture groups share instanced draw batches. A marker remains beside each
+// figure because its fixed-pixel size and through-wall visibility are useful.
 //
 // It hangs under the same mirrored root the world mesh, the VOBs and the waynet
 // do, so the positions stay exactly as `getWaynet` emitted them — ZenGin
@@ -101,11 +102,15 @@ export class SpawnOverlay {
   /** The waypoints each layer stands on, in the order they are drawn. */
   private points: number[] = [];
   private unknownPoints: number[] = [];
+  private npcMeshes: THREE.InstancedMesh[] = [];
+  private npcTextures = new Map<string, THREE.DataTexture>();
 
   constructor(
     waynet: WaynetPayload,
     private sites: readonly SpawnSite[],
     private routines: RoutineIndex,
+    bodies: ReadonlyMap<string, NpcBodyScene> = new Map(),
+    textures: ReadonlyMap<string, DecodedTexture> = new Map(),
   ) {
     this.source = new Float32Array(waynet.positions);
 
@@ -171,8 +176,6 @@ export class SpawnOverlay {
     // and a stray hit here would only ever be a bug in something else's cast.
     this.dummies.raycast = () => undefined;
 
-    this.writePositions();
-
     this.material = new THREE.PointsMaterial({
       // Larger than the waynet's 3.5: a spawn is rare where a waypoint is
       // everywhere, and it has to be findable with the whole world in frame.
@@ -216,7 +219,46 @@ export class SpawnOverlay {
     this.root.add(this.markers);
     this.root.add(this.unknownMarkers);
     this.root.add(this.dummies);
+    const visualMeshes = new Map<string, THREE.InstancedMesh[]>();
+    for (const site of sites) {
+      const body = bodies.get(site.instance.toUpperCase());
+      if (!body) continue;
+      const visualKey = JSON.stringify([body.name, body.groups.map((group) => group.texture.toUpperCase())]);
+      let meshes = visualMeshes.get(visualKey);
+      if (meshes) {
+        for (const mesh of meshes) (mesh.userData.npcs as Set<string>).add(site.instance.toUpperCase());
+        continue;
+      }
+      meshes = [];
+      visualMeshes.set(visualKey, meshes);
+      for (const group of body.groups) {
+        const material = new THREE.MeshBasicMaterial({ side: THREE.FrontSide });
+        if (group.texture) {
+          const decoded = textures.get(group.texture.toUpperCase());
+          if (decoded) {
+            let texture = this.npcTextures.get(group.texture.toUpperCase());
+            if (!texture) {
+              texture = dataTexture(decoded, false);
+              this.npcTextures.set(group.texture.toUpperCase(), texture);
+            }
+            material.map = texture;
+          }
+        }
+        if (group.alphaFunc === 1) material.alphaTest = ALPHA_TEST;
+        if (group.alphaFunc === 2 || group.alphaFunc === 3) material.transparent = true;
+        const mesh = new THREE.InstancedMesh(drawGroupGeometry(group), material, waynet.count);
+        mesh.userData.npcs = new Set([site.instance.toUpperCase()]);
+        mesh.count = 0;
+        mesh.matrixAutoUpdate = false;
+        mesh.raycast = () => undefined;
+        mesh.renderOrder = RENDER_ORDER;
+        this.npcMeshes.push(mesh);
+        meshes.push(mesh);
+        this.root.add(mesh);
+      }
+    }
     this.root.matrixAutoUpdate = false;
+    this.writePositions();
     // Hidden until asked for, like the waynet: it costs a buffer and a draw call.
     this.root.visible = false;
   }
@@ -339,8 +381,10 @@ export class SpawnOverlay {
     const matrix = new THREE.Matrix4();
     let instance = 0;
 
+    const resolved = (point: number) => (this.occupants.get(point) ?? []).some((name) => this.npcMeshes.some((mesh) => (mesh.userData.npcs as Set<string>).has(name)));
     const write = (points: readonly number[], color: THREE.Color) => {
       for (const point of points) {
+        if (resolved(point)) continue;
         matrix.setPosition(this.source[point * 3], this.source[point * 3 + 1], this.source[point * 3 + 2]);
         this.dummies.setMatrixAt(instance, matrix);
         this.dummies.setColorAt(instance, color);
@@ -357,6 +401,18 @@ export class SpawnOverlay {
     // has one to flag stale.
     if (this.dummies.instanceColor) this.dummies.instanceColor.needsUpdate = true;
     this.dummies.computeBoundingSphere();
+    for (const mesh of this.npcMeshes) mesh.count = 0;
+    for (const point of [...this.points, ...this.unknownPoints]) {
+      const occupants = this.occupants.get(point) ?? [];
+      for (const name of occupants) {
+        for (const mesh of this.npcMeshes) {
+          if (!(mesh.userData.npcs as Set<string>).has(name)) continue;
+          const matrix = new THREE.Matrix4().setPosition(this.source[point * 3], this.source[point * 3 + 1], this.source[point * 3 + 2]);
+          mesh.setMatrixAt(mesh.count++, matrix);
+        }
+      }
+    }
+    for (const mesh of this.npcMeshes) { mesh.instanceMatrix.needsUpdate = true; mesh.computeBoundingSphere(); }
   }
 
   private writeLayer(geometry: THREE.BufferGeometry, points: readonly number[]): void {
@@ -388,6 +444,9 @@ export class SpawnOverlay {
     // And the instance buffers, which neither of those two holds
     // (`WorldScene.dispose` says why).
     this.dummies.dispose();
+    for (const mesh of this.npcMeshes) { mesh.geometry.dispose(); (mesh.material as THREE.Material).dispose(); }
+    for (const texture of this.npcTextures.values()) texture.dispose();
+    this.npcTextures.clear();
     this.root.clear();
   }
 }

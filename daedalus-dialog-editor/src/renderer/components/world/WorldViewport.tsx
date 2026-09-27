@@ -7,7 +7,7 @@ import {
   isWaynetOp, type SubtreeMember, type VobExtent, type ZenPosition, type ZenRotation,
 } from 'zen-world';
 import type {
-  DecodedTexture, InstancedPayload, VobIndex, WaynetPayload, WorldMeshPayload, WorldOp,
+  DecodedTexture, InstancedPayload, NpcBodyRequest, VobIndex, WaynetPayload, WorldMeshPayload, WorldOp,
 } from '../../../shared/worldTypes';
 import type { SpawnSite } from '../../../shared/types';
 import { WaynetOverlay } from '../../world/WaynetOverlay';
@@ -146,6 +146,7 @@ export interface WorldViewportProps {
    * for the positions and shows nothing without it.
    */
   spawns: readonly SpawnSite[];
+  npcBodyRequests?: ReadonlyMap<string, NpcBodyRequest>;
   showSpawns: boolean;
   /**
    * The project's daily routines, for the time slider (§16.19 slice 5). Empty
@@ -447,7 +448,7 @@ interface Gizmo {
 }
 
 const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(({
-  mesh, visuals, vobIndex, bbox, waynet, showWaynet, spawns, showSpawns, routines, spawnTime, spawnState,
+  mesh, visuals, vobIndex, bbox, waynet, showWaynet, spawns, npcBodyRequests = new Map(), showSpawns, routines, spawnTime, spawnState,
   showWaypointNames, loadTexture, onTextureFailures, onCameraSlot, onPick, onVobContextMenu,
   selection, onTranslateSelection, gizmoMode, onRotateSelection, membersOf, appliedOps,
   selectedWaypoint, terrainPoint, exposure, hiddenVobs, outlineMode, snapGrid, snapAngle,
@@ -552,6 +553,10 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   showNamesRef.current = showWaypointNames;
   const showSpawnsRef = useRef(showSpawns);
   showSpawnsRef.current = showSpawns;
+  const spawnTimeRef = useRef(spawnTime);
+  spawnTimeRef.current = spawnTime;
+  const spawnStateRef = useRef(spawnState);
+  spawnStateRef.current = spawnState;
   const labelLayerRef = useRef<WaypointLabelLayer | null>(null);
   // Read through refs so a parent re-render cannot tear the scene down and
   // rebuild 31 MB of buffers just because a callback identity changed.
@@ -1322,17 +1327,32 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   useEffect(() => {
     const world = sceneRef.current;
     if (world === null || waynet === null) return;
-
-    const overlay = new SpawnOverlay(waynet, spawns, routines);
-    spawnOverlayRef.current = overlay;
-    world.root.add(overlay.root);
-
+    let cancelled = false;
+    let overlay: SpawnOverlay | null = null;
+    void (async () => {
+      const requests = [...npcBodyRequests.entries()];
+      const scenes = await Promise.all(requests.map(async ([name, request]) => {
+        try { return [name, await window.editorAPI.getNpcBody(request)] as const; }
+        catch { return [name, null] as const; }
+      }));
+      if (cancelled) return;
+      const bodies = new Map(scenes.filter((entry): entry is readonly [string, NonNullable<(typeof entry)[1]>] => entry[1] !== null));
+      const textureNames = new Set([...bodies.values()].flatMap((body) => body.groups.map((group) => group.texture.toUpperCase()).filter(Boolean)));
+      const decoded = await Promise.all([...textureNames].map(async (name) => [name, await loadTextureRef.current(name, 256)] as const));
+      if (cancelled) return;
+      const textures = new Map(decoded.filter((entry): entry is readonly [string, DecodedTexture] => entry[1] !== null));
+      overlay = new SpawnOverlay(waynet, spawns, routines, bodies, textures);
+      overlay.setVisible(showSpawnsRef.current);
+      overlay.setTime(spawnTimeRef.current, spawnStateRef.current);
+      spawnOverlayRef.current = overlay;
+      world.root.add(overlay.root);
+    })();
     return () => {
-      world.root.remove(overlay.root);
-      overlay.dispose();
+      cancelled = true;
+      if (overlay) { world.root.remove(overlay.root); overlay.dispose(); }
       spawnOverlayRef.current = null;
     };
-  }, [waynet, spawns, routines, mesh, visuals]);
+  }, [waynet, spawns, routines, npcBodyRequests, mesh, visuals]);
 
   useEffect(() => {
     spawnOverlayRef.current?.setVisible(showSpawns);

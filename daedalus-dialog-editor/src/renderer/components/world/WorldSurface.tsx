@@ -24,7 +24,7 @@ import {
   type ZenPosition, type ZenRotation,
 } from 'zen-world';
 import type {
-  DiscoveredWorld, InstancedPayload, WaynetPayload,
+  DiscoveredWorld, InstancedPayload, NpcBodyRequest, WaynetPayload,
   WorldMeshPayload, WorldOp,
 } from '../../../shared/worldTypes';
 import { findFreePointVob, primaryVob, useWorldStore } from '../../store/worldStore';
@@ -50,6 +50,7 @@ import { useScatterBrush } from './hooks/useScatterBrush';
 import { useInsertNpc } from './hooks/useInsertNpc';
 import { useAssetCatalog } from './hooks/useAssetCatalog';
 import { useWorldShortcuts } from './hooks/useWorldShortcuts';
+import { spawnNpcBodyRequests } from '../../npc/spawnNpcVisuals';
 import { useWorldEditPipeline } from './hooks/useWorldEditPipeline';
 import WorldToolbar from './toolbar/WorldToolbar';
 import { OUTLINE_MODE_ORDER } from './toolbar/WorldViewControls';
@@ -132,6 +133,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const selectedWaypoint = useWorldStore((s) => s.selectedWaypoint);
   const waypointSiteIndex = useProjectStore((s) => s.waypointSiteIndex);
   const spawnSiteIndex = useProjectStore((s) => s.spawnSiteIndex);
+  const parsedFiles = useProjectStore((s) => s.parsedFiles);
   const routineSiteIndex = useProjectStore((s) => s.routineSiteIndex);
   const routineNpcIndex = useProjectStore((s) => s.routineNpcIndex);
   const routineStateIndex = useProjectStore((s) => s.routineStateIndex);
@@ -248,6 +250,24 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    *  are the script's opinion of it, and reading one against the other is
    *  exactly the comparison a story author is making. */
   const [showSpawns, setShowSpawns] = useState(false);
+  const [spawnBodyRequests, setSpawnBodyRequests] = useState<Map<string, NpcBodyRequest>>(() => new Map());
+  useEffect(() => {
+    let current = true;
+    if (!showSpawns || waynet === null) {
+      setSpawnBodyRequests(new Map());
+      return () => { current = false; };
+    }
+    const waypoints = new Set(waynet.names.map((name) => name.toUpperCase()));
+    const inWorld = spawnSiteIndex.filter((site) => waypoints.has(site.spawnPoint.toUpperCase()));
+    const models = [...parsedFiles.values()].map((file) => file.semanticModel);
+    void spawnNpcBodyRequests(inWorld, models, (sourceText) => window.editorAPI.extractNpc(sourceText))
+      .then((requests) => { if (current) setSpawnBodyRequests(requests); })
+      .catch((error: unknown) => {
+        if (current) setSpawnBodyRequests(new Map());
+        console.warn('Could not resolve NPC visuals for the World viewport:', error);
+      });
+    return () => { current = false; };
+  }, [showSpawns, waynet, spawnSiteIndex, parsedFiles]);
   /** The minute of the day the spawn layer is showing, or null for the static
    *  spawns (§16.19 slice 5). Null is the slider off rather than midnight: where
    *  an NPC stands at 00:00 is a thing the routines answer, and "no time chosen"
@@ -2233,6 +2253,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               waynet={waynet}
               showWaynet={showWaynet}
               spawns={spawnSiteIndex}
+              npcBodyRequests={spawnBodyRequests}
               showSpawns={showSpawns}
               routines={routines}
               spawnTime={spawnTime}
