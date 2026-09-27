@@ -91,7 +91,10 @@ export function buildVisualPreview(visual: VisualScene): VisualPreview {
     applyTexture(decoded) {
       const slot = textures.get(decoded.name.toUpperCase());
       if (!slot || slot.texture !== null) return;
-      const texture = dataTexture(decoded);
+      // Preview meshes use the V origin stored in their proto-mesh UVs. The
+      // world's flipped DataTexture maps the retail NPC face and body onto the
+      // wrong halves of their textures, leaving a bald scalp and black neck.
+      const texture = dataTexture(decoded, false);
       slot.texture = texture;
       for (const material of slot.materials) {
         material.map = texture;

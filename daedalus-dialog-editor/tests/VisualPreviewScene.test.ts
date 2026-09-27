@@ -107,6 +107,22 @@ describe('buildVisualPreview', () => {
     expect(preview.pendingTextureNames()).toEqual([]);
   });
 
+  it('uses the stored V origin for head, body, and armor preview maps', () => {
+    const preview = buildVisualPreview(visual({
+      groups: [
+        group({ texture: 'HUM_HEAD_V18_C0.TGA' }),
+        group({ texture: 'HUM_BODY_NAKED_V1_C0.TGA' }),
+        group({ texture: 'HUM_WACHE_V1.TGA' }),
+      ],
+    }));
+    for (const name of ['HUM_HEAD_V18_C0.TGA', 'HUM_BODY_NAKED_V1_C0.TGA', 'HUM_WACHE_V1.TGA']) {
+      preview.applyTexture({ name, width: 1, height: 1, rgba: new Uint8Array([1, 2, 3, 255]).buffer });
+    }
+
+    expect(preview.meshes.map((m) => (m.material as THREE.MeshLambertMaterial).map!.flipY))
+      .toEqual([false, false, false]);
+  });
+
   it('takes alpha the way the world does: cut-out tests, blend and add draw transparent', () => {
     const preview = buildVisualPreview(visual({
       groups: [group({ alphaFunc: 1 }), group({ alphaFunc: 2 }), group({ alphaFunc: 3 })],

@@ -1185,9 +1185,9 @@ export function drawGroupGeometry(group: DrawGroup): THREE.BufferGeometry {
   return geometry;
 }
 
-/** Decoded RGBA8 as a GPU texture, set up the way every ZenGin texture is drawn:
- *  sRGB, repeating, mipmapped, flipped to the engine's UV origin. */
-export function dataTexture(decoded: DecodedTexture): THREE.DataTexture {
+/** Decoded RGBA8 as a GPU texture. World mesh UVs use the flipped origin;
+ *  standalone preview meshes use the stored V coordinate directly. */
+export function dataTexture(decoded: DecodedTexture, flipY = true): THREE.DataTexture {
   const texture = new THREE.DataTexture(
     new Uint8Array(decoded.rgba), decoded.width, decoded.height,
   );
@@ -1200,7 +1200,7 @@ export function dataTexture(decoded: DecodedTexture): THREE.DataTexture {
   texture.minFilter = THREE.LinearMipmapLinearFilter;
   texture.generateMipmaps = true;
   texture.anisotropy = 4;
-  texture.flipY = true;
+  texture.flipY = flipY;
   texture.needsUpdate = true;
   return texture;
 }

@@ -218,14 +218,18 @@ A bind-pose preview beside the form, reusing `VisualPreviewScene` (#298).
   draw and asks for a world. Mounting the asset sources without a world is
   the fix if that proves to be in the way.
 
-**Verified against Gothic II Gold retail assets (2026-09-27):** the Nameless
-Hero's `PC_L10` test definition, `Hum_Head_Pony`, and light militia armor
-(`ITAR_MIL_L` → `Armor_Mil_L.asc`) assemble upright in the real Electron
-preview. This confirmed the extracted body pose is usable and exposed texture
-selection bugs: the NPC body variation had been applied to armor materials,
-and the face variation to the shared mouth material, leaving their textures
-unresolved. The preview now selects the skin, face, and teeth variants
-independently.
+**Retail asset check (2026-09-27):** the Nameless Hero's `PC_L10` test
+definition, `Hum_Head_Pony`, and light militia armor (`ITAR_MIL_L` →
+`Armor_Mil_L.asc`) resolve and render in Electron. The initial image looked
+bald and had an almost black neck because the preview flipped every model
+texture vertically. Retail head, skin and armor maps all use the stored UV
+origin, unlike the world mesh maps. The NPC body variation had also been
+applied to armor materials, and the face variation to the shared mouth
+material. Those variants are now selected independently. The body mesh's
+stored positions already form its static pose: applying soft-skin weights to
+those positions distorted the retail armor and was discarded. The join of the
+low-poly head and neck still needs an in-engine comparison before claiming
+visual fidelity.
 
 **Still open:** fatness is not drawn (the panel says so) — it scales the
 torso, which needs per-node skinning.
