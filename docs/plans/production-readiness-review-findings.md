@@ -734,3 +734,8 @@ visible: press Ctrl+S in the viewport. The world save confirmation opens, but
 the script save IPC also runs immediately; cancelling the world confirmation
 does not undo that script write. Route the shortcut by the active view so World
 owns it, including while a world dialog or property field has focus.
+
+**Resolved 2026-09-27:** `useManualSave` now claims Ctrl+S without saving the
+active script whenever the World view is active, leaving the shortcut to the
+World save flow. Covered by
+`tests/useManualSave.worldShortcut.test.tsx`.
