@@ -15,6 +15,7 @@ import React from 'react';
 import { render, screen, act, waitFor } from '@testing-library/react';
 import { useWindowCloseGuard } from '../src/renderer/hooks/useWindowCloseGuard';
 import { useFileStore } from '../src/renderer/store/fileStore';
+import { useWorldStore } from '../src/renderer/store/worldStore';
 import { registerPendingEditFlusher } from '../src/renderer/utils/pendingEditFlushRegistry';
 
 const FILE_PATH = 'C:/project/DIA_Test.d';
@@ -36,6 +37,7 @@ const ackSpy = jest.spyOn(window.editorAPI, 'ackCloseRequest');
 const approveSpy = jest.spyOn(window.editorAPI, 'approveClose');
 const cancelSpy = jest.spyOn(window.editorAPI, 'cancelClose');
 const saveFileSpy = jest.spyOn(window.editorAPI, 'saveFile');
+const saveWorldSpy = jest.spyOn(window.editorAPI, 'saveWorld');
 
 jest.spyOn(window.editorAPI, 'onCloseRequested').mockImplementation((cb) => {
   capturedCloseRequested = cb as () => void;
@@ -77,11 +79,14 @@ beforeEach(() => {
   approveSpy.mockClear();
   cancelSpy.mockClear();
   saveFileSpy.mockClear().mockResolvedValue({ success: true, validationResult: { isValid: true, errors: [], warnings: [] } } as any);
+  saveWorldSpy.mockReset().mockResolvedValue();
   useFileStore.setState({ openFiles: new Map(), activeFile: null } as any);
+  useWorldStore.setState({ hasUnsavedEdits: false } as any);
 });
 
 afterEach(() => {
   saveFileSpy.mockReset();
+  saveWorldSpy.mockReset();
 });
 
 describe('useWindowCloseGuard', () => {
@@ -109,6 +114,52 @@ describe('useWindowCloseGuard', () => {
     expect(approveSpy).not.toHaveBeenCalled();
     expect(screen.getByTestId('close-guard-dialog')).toBeInTheDocument();
     expect(screen.getByText(/DIA_Test\.d/)).toBeInTheDocument();
+  });
+
+  test('renders the close dialog when the open world has unsaved edits', async () => {
+    useWorldStore.setState({ hasUnsavedEdits: true } as any);
+    render(<Harness />);
+    await waitFor(() => expect(capturedCloseRequested).not.toBeNull());
+
+    await fireCloseRequested();
+
+    expect(approveSpy).not.toHaveBeenCalled();
+    expect(screen.getByTestId('close-guard-dialog')).toBeInTheDocument();
+    expect(screen.getByText('Current world')).toBeInTheDocument();
+  });
+
+  test('"Save and close" saves the dirty world before approving', async () => {
+    useWorldStore.setState({ hasUnsavedEdits: true } as any);
+    render(<Harness />);
+    await waitFor(() => expect(capturedCloseRequested).not.toBeNull());
+    await fireCloseRequested();
+
+    await act(async () => {
+      screen.getByTestId('close-guard-save').click();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(approveSpy).toHaveBeenCalledTimes(1));
+    expect(saveWorldSpy).toHaveBeenCalledTimes(1);
+    expect(useWorldStore.getState().hasUnsavedEdits).toBe(false);
+  });
+
+  test('a world save failure keeps the close dialog open', async () => {
+    useWorldStore.setState({ hasUnsavedEdits: true } as any);
+    saveWorldSpy.mockRejectedValue(new Error('world writer failed'));
+    render(<Harness />);
+    await waitFor(() => expect(capturedCloseRequested).not.toBeNull());
+    await fireCloseRequested();
+
+    await act(async () => {
+      screen.getByTestId('close-guard-save').click();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(screen.getByTestId('close-guard-error')).toHaveTextContent('Current world: world writer failed'));
+    expect(approveSpy).not.toHaveBeenCalled();
+    expect(screen.getByTestId('close-guard-dialog')).toBeInTheDocument();
+    expect(useWorldStore.getState().hasUnsavedEdits).toBe(true);
   });
 
   test('"Save and close" awaits the save then approves', async () => {
