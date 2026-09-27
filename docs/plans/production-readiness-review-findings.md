@@ -668,8 +668,9 @@ sequencing, packaged-app parse smoke), §3's P3 measure-first items, and the
 
 Reviewed editor source at `7a481e1c`, focusing on edit preservation and
 cross-view save handling. This is a code and component-behavior review, not a
-visual audit of a packaged application. No production implementation changed.
-The world-close finding lives in `docs/plans/level-editor.md` §16.42.
+visual audit of a packaged application. No production implementation changed
+in that review. The world-close finding was tracked as #299 and fixed in
+`bd79ce15`; its plan subsection was removed when the issue closed.
 
 Validation: four temporary Jest regressions reproduced all four findings
 (assertions for preserving edits/refusing the unintended action failed at the
@@ -696,6 +697,13 @@ identity at reload start and recheck before applying; turn a concurrent local
 edit into an external conflict instead. Preserve the explicit discard behavior
 of `reloadTheirs` while rejecting changes made after that discard started.
 
+**Resolved 2026-09-27.** `reloadFile` now snapshots the open model and file
+baseline before its asynchronous read/parse. If they change before the parse
+returns, it keeps the current model and records an external conflict when local
+work remains unsaved. `reloadTheirs` still discards work present when that
+choice starts, while a newer edit made during its parse is retained. Covered by
+the in-flight reload cases in `useFileWatcher.conflict.test.ts`.
+
 ### R26-B: External deletion drops an unflushed edit (P2, #301)
 
 `daedalus-dialog-editor/src/renderer/hooks/useFileWatcher.ts:267–284` tests
@@ -709,6 +717,11 @@ Reproduce with a clean open file and a registered pending edit, then deliver
 instead of retained with `externalConflict.fileMissing`. Flush pending edits
 before obtaining the live file state and deciding whether unlink may close it.
 
+**Resolved 2026-09-27.** The unlink path now drains pending edit flushers before
+reading the live file state, so a debounced edit marks the file dirty and it is
+retained with a `fileMissing` conflict. The regression is covered in
+`useFileWatcher.conflict.test.ts`.
+
 ### R26-C: World Ctrl+S also saves the background script (P2, #302)
 
 `daedalus-dialog-editor/src/renderer/hooks/useManualSave.ts:60–68` handles
@@ -721,3 +734,8 @@ visible: press Ctrl+S in the viewport. The world save confirmation opens, but
 the script save IPC also runs immediately; cancelling the world confirmation
 does not undo that script write. Route the shortcut by the active view so World
 owns it, including while a world dialog or property field has focus.
+
+**Resolved 2026-09-27:** `useManualSave` now claims Ctrl+S without saving the
+active script whenever the World view is active, leaving the shortcut to the
+World save flow. Covered by
+`tests/useManualSave.worldShortcut.test.tsx`.

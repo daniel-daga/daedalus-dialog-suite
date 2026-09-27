@@ -14,6 +14,7 @@ import { useFileWatcher } from '../src/renderer/hooks/useFileWatcher';
 import { useProjectStore } from '../src/renderer/store/projectStore';
 import { useFileStore } from '../src/renderer/store/fileStore';
 import type { FileChangeEvent } from '../src/renderer/types/global';
+import { registerPendingEditFlusher } from '../src/renderer/utils/pendingEditFlushRegistry';
 
 const PROJ_PATH = 'C:/project';
 const FILE_A = 'C:/project/DIA_Test.d';
@@ -166,9 +167,93 @@ describe('useFileWatcher — external conflict (change)', () => {
     expect(useFileStore.getState().activeFile).toBe(FILE_A);
     unmount();
   });
+
+  test('keeps a local edit made while an external reload is parsing and records a conflict', async () => {
+    let finishParse: ((model: typeof PARSED_MODEL) => void) | undefined;
+    mockParseSource.mockImplementationOnce(() => new Promise((resolve) => {
+      finishParse = resolve as (model: typeof PARSED_MODEL) => void;
+    }) as any);
+    const originalModel = { ...PARSED_MODEL, dialogs: { ...PARSED_MODEL.dialogs } };
+    useFileStore.setState({
+      activeFile: FILE_A,
+      openFiles: new Map([[FILE_A, {
+        filePath: FILE_A,
+        semanticModel: originalModel as any,
+        isDirty: false,
+        lastSaved: new Date(),
+        originalCode: '// original',
+      }]]),
+    });
+
+    const { unmount } = await setupHook();
+    await emitFileChange({ type: 'change', filePath: FILE_A });
+    await waitFor(() => expect(mockParseSource).toHaveBeenCalledWith('// reloaded source'));
+
+    act(() => {
+      useFileStore.getState().updateDialog(FILE_A, 'DIA_Test', {
+        ...PARSED_MODEL.dialogs.DIA_Test,
+        properties: { ...PARSED_MODEL.dialogs.DIA_Test.properties, npc: 'LOCAL_EDIT' },
+      } as any);
+    });
+
+    const externalModel = {
+      ...PARSED_MODEL,
+      dialogs: {
+        ...PARSED_MODEL.dialogs,
+        DIA_Test: {
+          ...PARSED_MODEL.dialogs.DIA_Test,
+          properties: { ...PARSED_MODEL.dialogs.DIA_Test.properties, npc: 'EXTERNAL_EDIT' },
+        },
+      },
+    };
+    await act(async () => {
+      finishParse!(externalModel);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(useFileStore.getState().openFiles.get(FILE_A)?.externalConflict).toBeDefined());
+    const file = useFileStore.getState().openFiles.get(FILE_A)!;
+    expect(file.semanticModel.dialogs.DIA_Test.properties.npc).toBe('LOCAL_EDIT');
+    expect(file.isDirty).toBe(true);
+    expect(file.originalCode).toBe('// original');
+    unmount();
+  });
 });
 
 describe('useFileWatcher — external conflict (unlink, N5)', () => {
+  test('flushes a pending edit before deciding whether unlink can close a clean file', async () => {
+    useFileStore.setState({
+      activeFile: FILE_A,
+      openFiles: new Map([[FILE_A, {
+        filePath: FILE_A,
+        semanticModel: { ...PARSED_MODEL, dialogs: { ...PARSED_MODEL.dialogs } } as any,
+        isDirty: false,
+        lastSaved: new Date(),
+        originalCode: '// original',
+      }]]),
+    });
+    const unregister = registerPendingEditFlusher(() => {
+      useFileStore.getState().updateDialog(FILE_A, 'DIA_Test', {
+        ...PARSED_MODEL.dialogs.DIA_Test,
+        properties: { ...PARSED_MODEL.dialogs.DIA_Test.properties, npc: 'PENDING_EDIT' },
+      } as any);
+    });
+
+    const { unmount } = await setupHook();
+    try {
+      await emitFileChange({ type: 'unlink', filePath: FILE_A });
+
+      const file = useFileStore.getState().openFiles.get(FILE_A);
+      expect(file).toBeDefined();
+      expect(file?.semanticModel.dialogs.DIA_Test.properties.npc).toBe('PENDING_EDIT');
+      expect(file?.isDirty).toBe(true);
+      expect(file?.externalConflict?.fileMissing).toBe(true);
+    } finally {
+      unregister();
+      unmount();
+    }
+  });
+
   test('retains a dirty file with a fileMissing conflict on unlink', async () => {
     useFileStore.setState({
       activeFile: FILE_A,
@@ -260,6 +345,57 @@ describe('resolveExternalConflict', () => {
     expect(fs?.externalConflict).toBeUndefined();
     expect(fs?.isDirty).toBe(false);
     expect(fs?.originalCode).toBe('// reloaded source');
+  });
+
+  test('reloadTheirs does not overwrite an edit made after the discard started', async () => {
+    let finishParse: ((model: typeof PARSED_MODEL) => void) | undefined;
+    mockParseSource.mockImplementationOnce(() => new Promise((resolve) => {
+      finishParse = resolve as (model: typeof PARSED_MODEL) => void;
+    }) as any);
+    useFileStore.setState({
+      activeFile: FILE_A,
+      openFiles: new Map([[FILE_A, {
+        filePath: FILE_A,
+        semanticModel: { ...PARSED_MODEL, dialogs: { ...PARSED_MODEL.dialogs } } as any,
+        isDirty: true,
+        lastSaved: new Date(),
+        originalCode: '// original',
+        externalConflict: { detectedAt: 'x' },
+      }]]),
+    });
+
+    let reload: Promise<void>;
+    act(() => {
+      reload = useFileStore.getState().resolveExternalConflict(FILE_A, 'reloadTheirs');
+    });
+    await waitFor(() => expect(mockParseSource).toHaveBeenCalledWith('// reloaded source'));
+
+    act(() => {
+      useFileStore.getState().updateDialog(FILE_A, 'DIA_Test', {
+        ...PARSED_MODEL.dialogs.DIA_Test,
+        properties: { ...PARSED_MODEL.dialogs.DIA_Test.properties, npc: 'NEWER_LOCAL_EDIT' },
+      } as any);
+    });
+
+    const externalModel = {
+      ...PARSED_MODEL,
+      dialogs: {
+        ...PARSED_MODEL.dialogs,
+        DIA_Test: {
+          ...PARSED_MODEL.dialogs.DIA_Test,
+          properties: { ...PARSED_MODEL.dialogs.DIA_Test.properties, npc: 'EXTERNAL_EDIT' },
+        },
+      },
+    };
+    await act(async () => {
+      finishParse!(externalModel);
+      await reload!;
+    });
+
+    const file = useFileStore.getState().openFiles.get(FILE_A)!;
+    expect(file.semanticModel.dialogs.DIA_Test.properties.npc).toBe('NEWER_LOCAL_EDIT');
+    expect(file.isDirty).toBe(true);
+    expect(file.externalConflict).toBeDefined();
   });
 
   test('reloadTheirs on a fileMissing conflict discards by closing the file', async () => {

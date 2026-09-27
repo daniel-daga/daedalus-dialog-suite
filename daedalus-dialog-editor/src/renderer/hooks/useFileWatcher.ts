@@ -80,7 +80,6 @@ export function useFileWatcher(): void {
 async function handleFileChange(event: FileChangeEvent): Promise<void> {
   const { type, filePath } = event;
   const projectStore = useProjectStore.getState();
-  const fileStore = useFileStore.getState();
 
   switch (type) {
     case 'change':
@@ -96,7 +95,11 @@ async function handleFileChange(event: FileChangeEvent): Promise<void> {
     case 'unlink':
       // A queued change must not resurrect the removed file.
       pendingChangedPaths.delete(filePath);
-      handleFileRemoved(filePath, projectStore, fileStore);
+      // Drain editor debounces before checking whether the open file has
+      // unsaved work. Read the store after flushing so the pending text cannot
+      // be lost when the file slot is closed.
+      flushAllPendingEdits();
+      handleFileRemoved(filePath, useProjectStore.getState(), useFileStore.getState());
       break;
   }
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useFileStore } from '../store/fileStore';
+import { useUISelectionStore } from '../store/uiSelectionStore';
 import { flushAllPendingEdits } from '../utils/pendingEditFlushRegistry';
 import { classifySaveError, describeSaveError } from '../utils/saveError';
 
@@ -65,6 +66,11 @@ export function useManualSave(onError: (message: string) => void): ManualSave {
       // Always claim Ctrl+S so the browser's save dialog never appears; with
       // nothing dirty or no active file, saveActiveFile is a silent no-op.
       e.preventDefault();
+      // World has its own save flow (including a confirmation dialog). Keep
+      // this global shortcut from saving the background script in that view.
+      if (useUISelectionStore.getState().activeView === 'world') {
+        return;
+      }
       void saveActiveFile();
     };
     window.addEventListener('keydown', handler);

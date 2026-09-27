@@ -18,6 +18,7 @@ import {
   hasUnsavedChanges,
   type FileState,
 } from '../store/fileStore';
+import { useWorldStore } from '../store/worldStore';
 import { flushAllPendingEdits } from '../utils/pendingEditFlushRegistry';
 import { classifySaveError, describeSaveError } from '../utils/saveError';
 
@@ -47,6 +48,7 @@ export function useWindowCloseGuard(): React.ReactElement | null {
   // The set of file paths captured when the close was requested. `null` means
   // the dialog is closed (idle).
   const [pendingPaths, setPendingPaths] = useState<string[] | null>(null);
+  const [pendingWorldEdits, setPendingWorldEdits] = useState(false);
   // §3 P1: subscribe to `openFiles` only while the dialog is showing — while
   // idle (the common case) the selector yields a constant `null`, so edit
   // flushes (which give the Map a fresh identity) do not re-render the host
@@ -78,15 +80,18 @@ export function useWindowCloseGuard(): React.ReactElement | null {
       const unsaved = Array.from(files.values())
         .filter(hasUnsavedChanges)
         .map((fs) => fs.filePath);
+      const worldIsDirty = useWorldStore.getState().hasUnsavedEdits;
 
-      if (unsaved.length === 0) {
+      if (unsaved.length === 0 && !worldIsDirty) {
         window.editorAPI.approveClose();
         setPendingPaths(null);
+        setPendingWorldEdits(false);
         return;
       }
 
       setFailure(null);
       setPendingPaths(unsaved);
+      setPendingWorldEdits(worldIsDirty);
     });
     return unsubscribe;
   }, []);
@@ -159,23 +164,32 @@ export function useWindowCloseGuard(): React.ReactElement | null {
         }
       }
 
+      if (pendingWorldEdits && useWorldStore.getState().hasUnsavedEdits) {
+        currentPath = 'Current world';
+        await window.editorAPI.saveWorld();
+        useWorldStore.getState().setHasUnsavedEdits(false);
+      }
+
       window.editorAPI.approveClose();
       setPendingPaths(null);
+      setPendingWorldEdits(false);
     } catch (error) {
       setFailure({ filePath: currentPath, message: describeError(error) });
     } finally {
       setBusy(false);
     }
-  }, [pendingPaths, describeError]);
+  }, [pendingPaths, pendingWorldEdits, describeError]);
 
   const handleCloseWithoutSaving = useCallback(() => {
     window.editorAPI.approveClose();
     setPendingPaths(null);
+    setPendingWorldEdits(false);
   }, []);
 
   const handleCancel = useCallback(() => {
     window.editorAPI.cancelClose();
     setPendingPaths(null);
+    setPendingWorldEdits(false);
   }, []);
 
   if (pendingPaths === null) {
@@ -204,9 +218,14 @@ export function useWindowCloseGuard(): React.ReactElement | null {
       <DialogTitle id="close-guard-title">Unsaved changes</DialogTitle>
       <DialogContent>
         <DialogContentText id="close-guard-description">
-          You have unsaved changes in the following file{liveStates.length === 1 ? '' : 's'}:
+          You have unsaved changes in:
         </DialogContentText>
         <List dense>
+          {pendingWorldEdits && (
+            <ListItem disableGutters>
+              <ListItemText primary="Current world" secondary="Unsaved changes" />
+            </ListItem>
+          )}
           {liveStates.map((fs) => (
             <ListItem
               key={fs.filePath}

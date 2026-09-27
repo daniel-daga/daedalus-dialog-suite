@@ -89,6 +89,8 @@ const sameKeys = (a: ReadonlySet<string>, b: ReadonlySet<string>): boolean =>
 interface WorldStore {
   status: WorldStatus;
   summary: WorldSummary | null;
+  /** The open world has edits that have not been written to disk. */
+  hasUnsavedEdits: boolean;
   error: string | null;
   /**
    * Indices into `summary.vobIndex`, not names — names are not unique.
@@ -142,6 +144,7 @@ interface WorldStore {
   beginOpen: () => void;
   openSucceeded: (summary: WorldSummary) => void;
   openFailed: (error: string) => void;
+  setHasUnsavedEdits: (dirty: boolean) => void;
   /** Replace the selection — a plain click. `null` clears it. */
   selectVob: (vob: number | null) => void;
   /**
@@ -186,6 +189,7 @@ interface WorldStore {
 const EMPTY = {
   status: 'idle' as WorldStatus,
   summary: null,
+  hasUnsavedEdits: false,
   error: null,
   selection: [] as readonly number[],
   selectedWaypoint: null as number | null,
@@ -268,6 +272,7 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
   beginOpen: () => set({ ...EMPTY, status: 'opening' }),
   openSucceeded: (summary) => set({ ...EMPTY, status: 'ready', summary }),
   openFailed: (error) => set({ ...EMPTY, status: 'error', error }),
+  setHasUnsavedEdits: (hasUnsavedEdits) => set({ hasUnsavedEdits }),
   // Both VOB picks drop the waypoint, and the waypoint pick drops them, for the
   // reason `selectedWaypoint` documents: one gizmo.
   selectVob: (vob) => set({ selection: vob === null ? [] : [vob], selectedWaypoint: null }),

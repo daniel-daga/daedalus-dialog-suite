@@ -405,7 +405,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     // The previous world's edits are not this one's, and a quick test over the
     // new world has nothing to be stale about yet. The generation goes with it:
     // an edit still in flight belongs to the world being left behind.
-    setUnsavedEdits(false);
+    useWorldStore.getState().setHasUnsavedEdits(false);
     openGeneration.current += 1;
     // And neither are the previous world's *reports*: "Saved to …" standing
     // over a world that was never saved is a lie, and a save error about a file
@@ -1025,7 +1025,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const [savedTo, setSavedTo] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   /** Whether an edit has landed that the world file on disk does not have. */
-  const [unsavedEdits, setUnsavedEdits] = useState(false);
+  const unsavedEdits = useWorldStore((state) => state.hasUnsavedEdits);
 
   const saveWorld = useCallback(async () => {
     setConfirmingSave(false);
@@ -1036,7 +1036,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     try {
       await window.editorAPI.saveWorld();
       setSavedTo(summary.worldPath);
-      setUnsavedEdits(false);
+      useWorldStore.getState().setHasUnsavedEdits(false);
     } catch (failure) {
       // The binding's own refusal — "only the binsafe writer path is verified" —
       // is the message worth showing, so it is not replaced with a generic one.
@@ -1076,7 +1076,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   }, [unsavedEdits]);
 
   /** An edit landed, so the bytes on disk are no longer what is on screen. */
-  const markEdited = useCallback(() => setUnsavedEdits(true), []);
+  const markEdited = useCallback(() => useWorldStore.getState().setHasUnsavedEdits(true), []);
   /** The class fields let go, so a refusal remounts them — `putTheViewBack`'s
    *  half of the rule `editRefusals` is the other half of. */
   const forgetClassProps = useCallback(() => setClassProps(null), []);

@@ -164,10 +164,12 @@ surface's insert already does that, and it needs a waypoint.
   which has nowhere to land — the dialog view shows a function only inside a
   dialog, and there is no source view (`spacer-gap-triage.md` §A4) — and the
   TA state name (`TA_Sit`, …), which `RoutineSite` does not carry.
-- **A real-Electron disk-truth spec** (`tests/e2e-electron/`). The browser
-  harness proves the flow only; byte fidelity is proven below it, by the
-  parser suite and by `tests/parserWorkerNpc.test.ts` against the real
-  parser. Not run here: the container had no Electron binary.
+- **Real-Electron disk truth is covered (2026-09-27).**
+  `tests/e2e-electron/npc-editor-disk-truth.spec.ts` edits an NPC field through
+  the real app, checks the bytes on disk, and reparses them through the real
+  parser. The remaining Phase 2 gaps are asset-backed suggestions and a jump
+  from a routine to its source; the latter needs a raw source view that can
+  open an arbitrary function file and line.
 
 ## 4. Phase 3 — the visual preview
 

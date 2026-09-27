@@ -831,12 +831,48 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
    * external conflict is cleared — the editor now matches disk.
    */
   reloadFile: async (filePath: string) => {
+    const reloadStartedFor = get().openFiles.get(filePath);
+    if (!reloadStartedFor) return;
+    // A clean-file watcher reload can detect an edit through the dirty flag.
+    // A deliberate reloadTheirs starts dirty, so retain a content snapshot to
+    // distinguish the edits the user chose to discard from newer ones.
+    const startedModel = reloadStartedFor.isDirty
+      ? JSON.stringify(reloadStartedFor.semanticModel)
+      : null;
+    const startedOriginalCode = reloadStartedFor.originalCode;
+    const startedLastSaved = reloadStartedFor.lastSaved.getTime();
+    const startedDirty = reloadStartedFor.isDirty;
+    const startedConflict = reloadStartedFor.externalConflict
+      ? `${reloadStartedFor.externalConflict.detectedAt}:${!!reloadStartedFor.externalConflict.fileMissing}`
+      : null;
+
     const sourceCode = await window.editorAPI.readFile(filePath);
     const processedModel = await parseSourceWithIds(sourceCode);
 
     set((state) => {
       const currentFileState = state.openFiles.get(filePath);
       if (!currentFileState) {
+        return;
+      }
+      // The disk read and parse are asynchronous. Do not apply their snapshot
+      // over a FileState that changed while they were in flight. This also
+      // preserves the explicit reloadTheirs choice: the dirty state captured
+      // above may be discarded, but any edit made after that choice changes
+      // the model snapshot and wins over this older parse.
+      const currentConflict = currentFileState.externalConflict
+        ? `${currentFileState.externalConflict.detectedAt}:${!!currentFileState.externalConflict.fileMissing}`
+        : null;
+      const modelChangedDuringReload = startedModel !== null
+        && JSON.stringify(currentFileState.semanticModel) !== startedModel;
+      const changedDuringReload = modelChangedDuringReload
+        || currentFileState.originalCode !== startedOriginalCode
+        || currentFileState.lastSaved.getTime() !== startedLastSaved
+        || currentFileState.isDirty !== startedDirty
+        || currentConflict !== startedConflict;
+      if (changedDuringReload) {
+        if (hasUnsavedChanges(currentFileState)) {
+          currentFileState.externalConflict ??= { detectedAt: new Date().toISOString() };
+        }
         return;
       }
       currentFileState.semanticModel = processedModel;
