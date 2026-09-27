@@ -391,19 +391,44 @@ Napi::Object ExtractProtoMesh(Napi::Env env, MultiResolutionMesh const& mesh) {
 // product down the chain from the root.
 Napi::Object ExtractModelMesh(Napi::Env env,
                               ModelMesh const& model,
-                              ModelHierarchy const& hierarchy) {
+                              ModelHierarchy const& hierarchy,
+                              bool skin_pose) {
   auto out = Napi::Array::New(env);
   std::uint32_t out_index = 0;
   std::size_t total_vertices = 0;
   std::size_t total_triangles = 0;
   Extent extent;
 
+  auto const world = Accumulate(hierarchy);
   for (auto const& skin : model.meshes) {
-    AppendSubMeshChunks(env, skin.mesh, nullptr, nullptr, out, out_index, extent,
+    if (!skin_pose || world.empty()) {
+      AppendSubMeshChunks(env, skin.mesh, nullptr, nullptr, out, out_index, extent,
+                          total_vertices, total_triangles);
+      continue;
+    }
+    auto posed = skin.mesh;
+    for (std::size_t i = 0; i < posed.positions.size() && i < skin.weights.size(); ++i) {
+      auto const& influences = skin.weights[i];
+      zenkit::Vec3 position {};
+      float weight_sum = 0;
+      for (auto const& influence : influences) {
+        if (influence.node_index >= world.size()) continue;
+        auto const& matrix = world[influence.node_index];
+        auto const& local = influence.position;
+        position.x += influence.weight * (matrix.columns[0].x * local.x +
+            matrix.columns[1].x * local.y + matrix.columns[2].x * local.z + matrix.columns[3].x);
+        position.y += influence.weight * (matrix.columns[0].y * local.x +
+            matrix.columns[1].y * local.y + matrix.columns[2].y * local.z + matrix.columns[3].y);
+        position.z += influence.weight * (matrix.columns[0].z * local.x +
+            matrix.columns[1].z * local.y + matrix.columns[2].z * local.z + matrix.columns[3].z);
+        weight_sum += influence.weight;
+      }
+      if (weight_sum > 0) posed.positions[i] = zenkit::Vec3 {
+          position.x / weight_sum, position.y / weight_sum, position.z / weight_sum};
+    }
+    AppendSubMeshChunks(env, posed, nullptr, nullptr, out, out_index, extent,
                         total_vertices, total_triangles);
   }
-
-  auto const world = Accumulate(hierarchy);
 
   for (std::size_t i = 0; i < hierarchy.nodes.size(); ++i) {
     auto const found = model.attachments.find(hierarchy.nodes[i].name);

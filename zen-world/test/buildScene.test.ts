@@ -204,18 +204,20 @@ describe('zen-world/scene — buildNpcBody', () => {
   function npcBinding(
     meshes: Record<string, MeshChunk[]>,
     nodes: Array<{ name: string; transform: number[] }> | null = [{ name: 'BIP01 HEAD', transform: HEAD_AT }],
+    bodyNodes: Array<{ name: string; transform: number[] }> | null = null,
   ): NpcBinding & { calls: string[] } {
     const calls: string[] = [];
     return {
       calls,
-      extractVisual: (_vfs, name) => {
-        calls.push(name);
+      extractVisual: (_vfs, name, skeleton) => {
+        calls.push(skeleton ? `${name}@${skeleton}` : name);
         const chunks = meshes[name.toUpperCase()];
         return chunks === undefined ? null : { source: name.toUpperCase(), chunks };
       },
       extractHierarchy: (_vfs, name) => {
         calls.push(name);
-        return nodes === null ? null : { nodes };
+        const selected = name === 'HUMANS.MDS' ? nodes : bodyNodes;
+        return selected === null ? null : { nodes: selected };
       },
     };
   }
@@ -231,7 +233,7 @@ describe('zen-world/scene — buildNpcBody', () => {
 
     // A body's mesh is named without extension in scripts; it is a model, as
     // a head is a morph mesh.
-    expect(b.calls).toEqual(['hum_body_Naked0.ASC', 'HUMANS.MDS', 'Hum_Head_Bald.MMS']);
+    expect(b.calls).toEqual(['hum_body_Naked0.ASC@HUMANS.MDS', 'hum_body_Naked0', 'HUMANS.MDS', 'Hum_Head_Bald.MMS']);
     expect(texturesOf(scene)).toEqual([
       'HUM_BODY_NAKED_V1_C2.TGA', 'HUM_HEAD_V12_C2.TGA', 'HUM_MOUTH_V0.TGA', 'HUM_TEETH_V3.TGA',
     ]);
@@ -256,7 +258,7 @@ describe('zen-world/scene — buildNpcBody', () => {
   test('keeps a body name that already has an extension — an armour visual_change', () => {
     const b = npcBinding({ ...MESHES, 'ARMOR_VLK_H.ASC': [chunk('ARMOR_VLK_H_V0_C0.TGA')] });
     const scene = buildNpcBody(b, VFS, { ...REQUEST, body: 'Armor_Vlk_H.asc' })!;
-    expect(b.calls[0]).toBe('Armor_Vlk_H.asc');
+    expect(b.calls[0]).toBe('Armor_Vlk_H.asc@HUMANS.MDS');
     expect(texturesOf(scene)[0]).toBe('ARMOR_VLK_H_V0_C0.TGA');
   });
 
@@ -279,6 +281,19 @@ describe('zen-world/scene — buildNpcBody', () => {
       'HUM_MOUTH_V0.TGA',
       'HUM_TEETH_V3.TGA',
     ]);
+  });
+
+  test('places an armored head on the armor hierarchy', () => {
+    const armorHead = [1, 0, 0, 0, 0, 1, 0, 140, 0, 0, 1, -4, 0, 0, 0, 1];
+    const b = npcBinding(
+      { ...MESHES, 'ARMOR_MIL_L.ASC': [chunk('HUM_BODY_NAKED_V0_C0.TGA')] },
+      [{ name: 'BIP01 HEAD', transform: HEAD_AT }],
+      [{ name: 'BIP01 HEAD', transform: armorHead }],
+    );
+    const scene = buildNpcBody(b, VFS, { ...REQUEST, body: 'Armor_Mil_L.asc' })!;
+    expect(new Float32Array(scene.groups[1].positions)[7]).toBeCloseTo(141);
+    expect(new Float32Array(scene.groups[1].positions)[8]).toBeCloseTo(-4);
+    expect(b.calls).not.toContain('HUMANS.MDS');
   });
 
   test('is null when the body does not resolve', () => {

@@ -435,6 +435,11 @@ Napi::Value ExtractVisual(Napi::CallbackInfo const& info) {
   auto* handle = UnwrapVfs(env, info[0]);
   auto const name = NameArg(env, info[1], "name");
   if (!name) return env.Null();
+  std::optional<std::string> skeleton_name;
+  if (!info[2].IsUndefined() && !info[2].IsNull()) {
+    skeleton_name = NameArg(env, info[2], "skeleton");
+    if (!skeleton_name) return env.Null();
+  }
 
   std::string resolved;
   auto const* node = FindFirst(handle->vfs, VisualCandidates(*name), &resolved);
@@ -458,8 +463,8 @@ Napi::Value ExtractVisual(Napi::CallbackInfo const& info) {
       mesh.load(reader.get());
       payload = ExtractProtoMesh(env, mesh.mesh);
     } else if (EndsWith(resolved, ".MDM") || EndsWith(resolved, ".MDL")) {
-      // The bind pose only: soft-skin weights and animation are not the
-      // editor's concern yet. But a model's geometry is in two places, and a
+      // The default extraction keeps stored positions; NPC previews can ask
+      // for a skinned rest pose. A model's geometry is in two places, and a
       // static prop's is entirely in the second: `meshes` holds soft-skin
       // bodies, `attachments` holds rigid sub-meshes hung on hierarchy nodes.
       ModelMesh model {};
@@ -486,8 +491,23 @@ Napi::Value ExtractVisual(Napi::CallbackInfo const& info) {
         }
       }
 
+      if (skeleton_name && hierarchy.nodes.empty()) {
+        auto const stem = StripExtension(Upper(*skeleton_name));
+        std::string skeleton_resolved;
+        auto const* skeleton = FindFirst(handle->vfs, {stem + ".MDH", stem + ".MDL"}, &skeleton_resolved);
+        if (skeleton == nullptr) return env.Null();
+        auto skeleton_reader = skeleton->open_read();
+        if (EndsWith(skeleton_resolved, ".MDL")) {
+          Model full {};
+          full.load(skeleton_reader.get());
+          hierarchy = std::move(full.hierarchy);
+        } else {
+          hierarchy.load(skeleton_reader.get());
+        }
+      }
+
       if (model.meshes.empty() && model.attachments.empty()) return env.Null();
-      payload = ExtractModelMesh(env, model, hierarchy);
+      payload = ExtractModelMesh(env, model, hierarchy, skeleton_name.has_value());
     } else {
       return env.Null();
     }

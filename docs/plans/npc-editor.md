@@ -226,16 +226,19 @@ texture vertically. Retail head, skin and armor maps all use the stored UV
 origin, unlike the world mesh maps. The NPC body variation had also been
 applied to armor materials, and the face variation to the shared mouth
 material. Those variants are now selected independently. The body mesh's
-stored positions already form its static pose: applying soft-skin weights to
-those positions distorted the retail armor and was discarded. The join of the
-low-poly head and neck still needs an in-engine comparison before claiming
-visual fidelity.
+stored positions are not its rendered rest pose. Each soft-skin vertex is
+weighted from its bone-local positions into the model hierarchy, as in
+OpenGothic's renderer. A naked body uses `HUMANS.MDH`; compiled armor models
+use their own embedded hierarchy. The head attaches to that same hierarchy's
+`BIP01 HEAD`. This joins the head and neck in front and rear Electron captures
+of both naked and militia-armored `PC_L10`. A running Gothic II comparison is
+still needed to claim exact engine fidelity.
 
 **Still open:** fatness is not drawn (the panel says so) — it scales the
 torso, which needs per-node skinning.
 
-Animation (idle pose, walk overlay) is out of scope: it needs `.MAN` reading in
-the binding and a skinning path in the renderer.
+Animation (idle pose, walk overlay) is out of scope: it needs `.MAN` reading and
+animated bone transforms. The preview currently skins once into the rest pose.
 
 **The main risk is mods.** `B_SetNpcVisual` and the attribute helpers are
 script functions and mods rewrite them. Recognise the vanilla signatures only;

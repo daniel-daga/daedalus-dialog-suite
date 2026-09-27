@@ -26,18 +26,20 @@ Napi::Object ExtractWorldMesh(Napi::Env env, WorldHandle const& handle);
 Napi::Object ExtractMesh(Napi::Env env, zenkit::Mesh const& mesh, bool is_g2);
 
 // The same projection over a zCProgMeshProto (.MRM) and everything that
-// embeds one (.MSH attachments, .MDM/.MDL soft-skin bind poses, .MMB). Its
+// embeds one (.MSH attachments, .MDM/.MDL soft-skin meshes, .MMB). Its
 // wedges are already de-duplicated render vertices, so no lights/flags
 // buffers: a VOB visual carries no baked ZenGin light word.
 Napi::Object ExtractProtoMesh(Napi::Env env, zenkit::MultiResolutionMesh const& mesh);
 
-// A whole model: its soft-skin meshes, then one chunk group per attachment in
+// A whole model: its soft-skin meshes, optionally posed by the hierarchy's
+// bone matrices, then one chunk group per attachment in
 // hierarchy-node order, each carrying `node` and the accumulated `transform`.
 // Static props keep all their geometry in attachments, so a model read without
 // its hierarchy is usually a model read as nothing at all.
 Napi::Object ExtractModelMesh(Napi::Env env,
                               zenkit::ModelMesh const& model,
-                              zenkit::ModelHierarchy const& hierarchy);
+                              zenkit::ModelHierarchy const& hierarchy,
+                              bool skin_pose = false);
 
 // A hierarchy on its own: every node's name, parent index and transform
 // accumulated down to the root, row-major — the matrices ExtractModelMesh puts

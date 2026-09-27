@@ -80,9 +80,9 @@ const binding: SceneBinding = {
   },
   // A mod's `.3DS` that no GMBT build has compiled yet is read raw (#297), so
   // it previews, thumbnails and draws; a compiled half wins where there is one.
-  extractVisual: (vfsHandle, name) => extractVisualOrRaw3ds(
+  extractVisual: (vfsHandle, name, skeleton) => extractVisualOrRaw3ds(
     (wanted) => {
-      const visual = zenkit.extractVisual(vfsHandle as zenkit.VfsHandle, wanted);
+      const visual = zenkit.extractVisual(vfsHandle as zenkit.VfsHandle, wanted, skeleton);
       return visual === null ? null : { source: visual.source, chunks: visual.chunks.map(withLights) };
     },
     (wanted) => {

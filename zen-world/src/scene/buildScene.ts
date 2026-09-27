@@ -63,7 +63,7 @@ export interface SceneBinding {
     triangleCount: number;
     chunks: MeshChunk[];
   };
-  extractVisual(vfs: VfsHandle, name: string): { source: string; chunks: MeshChunk[] } | null;
+  extractVisual(vfs: VfsHandle, name: string, skeleton?: string): { source: string; chunks: MeshChunk[] } | null;
 }
 
 export interface WorldMeshScene {
@@ -337,15 +337,15 @@ export function buildVisual(
   return { name, source: visual.source, groups, bounds: groupBounds(groups), triangleCount };
 }
 
-/** What `buildNpcBody` needs of the binding: a visual, and a hierarchy's
- *  nodes with their root-accumulated, row-major transforms. */
+/** What `buildNpcBody` needs of the binding: a visual whose model skin can be
+ *  posed with a skeleton, and hierarchy nodes with accumulated transforms. */
 export interface NpcBinding extends Pick<SceneBinding, 'extractVisual'> {
   extractHierarchy(vfs: VfsHandle, name: string): { nodes: Array<{ name: string; transform: number[] }> } | null;
 }
 
 /** The engine's half of `Mdl_SetVisual` + `Mdl_SetVisualBody` + `Mdl_SetModelScale`. */
 export interface NpcBodyRequest {
-  /** The model whose hierarchy places the head — `HUMANS.MDS`. */
+  /** The default skeleton — `HUMANS.MDS` for a human. Armor can own its rig. */
   model: string;
   /** The body mesh as scripts name it (`hum_body_Naked0`), or an armour's
    *  `visual_change` (`Armor_Vlk_H.asc`). */
@@ -386,7 +386,7 @@ function multiply(a: readonly number[], b: readonly number[]): number[] {
 
 /**
  * An NPC as the engine assembles it (npc-editor.md §4): the body model, the head
- * morph mesh hung on `BIP01 HEAD` of the model's hierarchy, both in the texture
+ * morph mesh hung on `BIP01 HEAD` of the body's hierarchy, both in the texture
  * variants `Mdl_SetVisualBody` picks and scaled by `Mdl_SetModelScale`.
  *
  * Null when the body does not resolve. A head that cannot be placed is left
@@ -398,7 +398,7 @@ export function buildNpcBody(binding: NpcBinding, vfs: VfsHandle, request: NpcBo
   const scale = [sx, 0, 0, 0, 0, sy, 0, 0, 0, 0, sz, 0, 0, 0, 0, 1];
   const withExtension = (name: string, extension: string) => (/\.[^.\\/]+$/.test(name) ? name : name + extension);
 
-  const body = binding.extractVisual(vfs, withExtension(request.body, '.ASC'));
+  const body = binding.extractVisual(vfs, withExtension(request.body, '.ASC'), request.model);
   if (body === null || body.chunks.length === 0) return null;
   const chunks: MeshChunk[] = body.chunks.map((chunk) => ({
     ...chunk,
@@ -413,10 +413,12 @@ export function buildNpcBody(binding: NpcBinding, vfs: VfsHandle, request: NpcBo
   }));
 
   const missing: string[] = [];
-  const node = binding.extractHierarchy(vfs, request.model)?.nodes
+  const bodyHierarchy = binding.extractHierarchy(vfs, request.body);
+  const headHierarchy = bodyHierarchy ?? binding.extractHierarchy(vfs, request.model);
+  const node = headHierarchy?.nodes
     .find((candidate) => candidate.name.toUpperCase() === HEAD_NODE);
   if (node === undefined) {
-    missing.push(`${request.model} has no ${HEAD_NODE} node to hang the head on`);
+    missing.push(`${bodyHierarchy ? request.body : request.model} has no ${HEAD_NODE} node to hang the head on`);
   } else {
     const head = binding.extractVisual(vfs, withExtension(request.head, '.MMS'));
     if (head === null) {

@@ -226,7 +226,10 @@ export function vfsList(vfs: VfsHandle, path?: string): VfsEntry[] | null;
  * empty query.
  */
 export function vfsFind(vfs: VfsHandle, query: string, options?: { limit?: number }): VfsSearch;
-export function extractVisual(vfs: VfsHandle, name: string): VisualPayload | null;
+/** Model soft skins use stored positions by default. With a skeleton name they
+ * are posed from bone-local weights; an embedded or sibling hierarchy takes
+ * precedence over the named fallback. Other visual formats are unchanged. */
+export function extractVisual(vfs: VfsHandle, name: string, skeleton?: string): VisualPayload | null;
 /** The bytes of one mounted file, found by name anywhere in the namespace as
  *  `vfsResolve` finds one — a Node `Buffer` — or null when nothing by that name
  *  is mounted. */
