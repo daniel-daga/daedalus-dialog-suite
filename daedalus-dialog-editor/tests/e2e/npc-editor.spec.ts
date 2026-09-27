@@ -315,4 +315,20 @@ test.describe('NPC editor: preview', () => {
     await editor.getByLabel('Face texture').fill('Face_Unknown');
     await expect(preview.getByTestId('npc-preview-reason')).toContainText('Face_Unknown is not a known integer constant');
   });
+
+  test('lets the user enable and scrub the idle animation', async ({ page }) => {
+    const editor = await openEditor(page);
+    const preview = editor.getByTestId('npc-preview');
+
+    await expect(preview.getByRole('slider', { name: 'Idle animation frame' })).toHaveCount(0);
+    await preview.getByText('Scrub idle animation').click();
+    const scrubber = preview.getByRole('slider', { name: 'Idle animation frame' });
+    await expect(scrubber).toBeVisible();
+    await expect(scrubber).toHaveAttribute('aria-valuenow', '0');
+    await scrubber.focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(scrubber).not.toHaveAttribute('aria-valuenow', '0');
+    await preview.getByText('Scrub idle animation').click();
+    await expect(scrubber).toHaveCount(0);
+  });
 });

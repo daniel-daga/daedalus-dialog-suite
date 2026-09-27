@@ -1,0 +1,9 @@
+diff --git a/src/ModelMesh.cc b/src/ModelMesh.cc
+--- a/src/ModelMesh.cc
++++ b/src/ModelMesh.cc
+@@ -99,4 +99,5 @@ namespace zenkit {
+ 		proto::write_chunk(w, ModelMeshChunkType::SOFTSKINS, [&](Write* wr) {
+ 			wr->write_uint(this->checksum);
++			wr->write_ushort(static_cast<std::uint16_t>(this->meshes.size()));
+ 
+ 			for (auto& msh : this->meshes) {

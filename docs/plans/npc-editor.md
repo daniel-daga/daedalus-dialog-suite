@@ -234,11 +234,19 @@ use their own embedded hierarchy. The head attaches to that same hierarchy's
 of both naked and militia-armored `PC_L10`. Daniel accepts the visual result;
 the preview is not claimed as an exact engine reproduction.
 
-**Still open:** fatness is not drawn (the panel says so) — it scales the
-torso, which needs per-node skinning.
+**Remaining preview work:**
 
-Animation (idle pose, walk overlay) is out of scope: it needs `.MAN` reading and
-animated bone transforms. The preview currently skins once into the rest pose.
+- **Fatness (#310):** now deforms spine/pelvis weighted vertices in the
+  procedural skinning path, independently of `Mdl_SetModelScale`. The current
+  preview mapping changes local torso breadth by 10% per script unit; compare
+  against a retail in-game capture before treating that mapping as engine
+  faithful.
+- **Animation (#311):** selecting “Scrub idle animation” loads the `S_IDLE`
+  `.MAN` referenced by the model's `.MDS` script and samples its frames through
+  the existing skinning path. The normalized frame slider and native fixture
+  test cover selection and sampling; playback, walk overlays, and animation
+  events remain future work. This preview path has not been compared against a
+  retail in-game animation capture.
 
 **The main risk is mods.** `B_SetNpcVisual` and the attribute helpers are
 script functions and mods rewrite them. Recognise the vanilla signatures only;

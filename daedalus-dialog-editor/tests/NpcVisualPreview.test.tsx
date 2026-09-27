@@ -9,6 +9,7 @@
 
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { NpcDefinition, NpcStatement } from '../src/shared/types';
 import type { NpcBodyScene } from '../src/shared/worldTypes';
 import * as mockWorldViewport from './worldViewportMocks';
@@ -74,7 +75,7 @@ describe('NpcVisualPreview', () => {
 
     await waitFor(() => expect(getNpcBody).toHaveBeenCalledWith({
       model: 'HUMANS.MDS', body: 'Armor_Vlk_H.asc', bodyTexture: 1, skinColor: 0,
-      head: 'Hum_Head_Fatbald', headTexture: 42, teethTexture: 0, scale: [1, 1, 1],
+      head: 'Hum_Head_Fatbald', headTexture: 42, teethTexture: 0, fatness: 0, scale: [1, 1, 1],
     }));
     expect(await screen.findByTestId('npc-preview-canvas')).toBeInTheDocument();
     expect(screen.getByTestId('npc-preview-notes')).toHaveTextContent('Head mesh Hum_Head_Fatbald did not resolve');
@@ -88,6 +89,16 @@ describe('NpcVisualPreview', () => {
     renderPreview();
     expect(await screen.findByTestId('npc-preview-failed'))
       .toHaveTextContent('Armor_Vlk_H.asc does not resolve in the mounted assets');
+  });
+
+  it('lets me enable and scrub the NPC idle pose', async () => {
+    useWorldStore.setState({ status: 'ready' });
+    getNpcBody.mockResolvedValue(scene([]));
+    renderPreview();
+    await waitFor(() => expect(getNpcBody).toHaveBeenCalled());
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Scrub idle animation' }));
+    await waitFor(() => expect(getNpcBody).toHaveBeenLastCalledWith(expect.objectContaining({ animationPhase: 0 })));
+    expect(screen.getByRole('slider', { name: 'Idle animation frame' })).toBeInTheDocument();
   });
 
   it('says why it cannot draw an NPC whose visual it cannot read, and asks nothing', () => {

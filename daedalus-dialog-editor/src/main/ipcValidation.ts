@@ -326,6 +326,12 @@ export function assertNpcBodyRequest(request: unknown): asserts request is NpcBo
   if (!Array.isArray(scale) || scale.length !== 3 || !scale.every((v) => typeof v === 'number' && Number.isFinite(v))) {
     throw new Error('Invalid NPC body scale: expected three finite numbers');
   }
+  if (request.fatness !== undefined && (typeof request.fatness !== 'number' || !Number.isFinite(request.fatness))) {
+    throw new Error('Invalid NPC body fatness: expected a finite number');
+  }
+  if (request.animationPhase !== undefined && (typeof request.animationPhase !== 'number' || !Number.isFinite(request.animationPhase) || request.animationPhase < 0 || request.animationPhase > 1)) {
+    throw new Error('Invalid NPC body animation phase: expected a number from 0 to 1');
+  }
 }
 
 /** How many names one resolve request may carry — a directory listing's or a

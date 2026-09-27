@@ -6,6 +6,7 @@
 #include <zenkit/ModelMesh.hh>
 #include <zenkit/World.hh>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <unordered_map>
@@ -392,7 +393,8 @@ Napi::Object ExtractProtoMesh(Napi::Env env, MultiResolutionMesh const& mesh) {
 Napi::Object ExtractModelMesh(Napi::Env env,
                               ModelMesh const& model,
                               ModelHierarchy const& hierarchy,
-                              bool skin_pose) {
+                              bool skin_pose,
+                              float fatness) {
   auto out = Napi::Array::New(env);
   std::uint32_t out_index = 0;
   std::size_t total_vertices = 0;
@@ -414,7 +416,19 @@ Napi::Object ExtractModelMesh(Napi::Env env,
       for (auto const& influence : influences) {
         if (influence.node_index >= world.size()) continue;
         auto const& matrix = world[influence.node_index];
-        auto const& local = influence.position;
+        auto local = influence.position;
+        // Fatness is a torso-local breadth adjustment. Apply it in the local
+        // space of spine/pelvis weights, before the hierarchy rotates them into
+        // model space; limb weights and the head remain unaffected. A 0.1
+        // breadth step per script unit keeps common 0..2 values visibly
+        // procedural without confusing fatness with global model scale.
+        auto const& node_name = hierarchy.nodes[influence.node_index].name;
+        auto const torso = node_name.rfind("BIP01 SPINE", 0) == 0 || node_name == "BIP01 PELVIS";
+        if (torso && fatness != 0.0f) {
+          auto const breadth = std::max(0.1f, 1.0f + fatness * 0.1f);
+          local.x *= breadth;
+          local.z *= breadth;
+        }
         position.x += influence.weight * (matrix.columns[0].x * local.x +
             matrix.columns[1].x * local.y + matrix.columns[2].x * local.z + matrix.columns[3].x);
         position.y += influence.weight * (matrix.columns[0].y * local.x +

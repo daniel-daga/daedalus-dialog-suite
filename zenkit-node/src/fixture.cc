@@ -6,6 +6,7 @@
 #include <zenkit/ModelHierarchy.hh>
 #include <zenkit/ModelMesh.hh>
 #include <zenkit/MultiResolutionMesh.hh>
+#include <zenkit/SoftSkinMesh.hh>
 #include <zenkit/Stream.hh>
 #include <zenkit/Texture.hh>
 #include <zenkit/World.hh>
@@ -1260,6 +1261,29 @@ void AuthorFixtureAssets(std::filesystem::path const& dir) {
     hierarchy.source_path = "EX_RIG.ASC";
     auto wh = Write::to(dir / "EX_RIG.MDH");
     hierarchy.save(wh.get());
+  }
+
+  // A weighted torso mesh for the fatness projection test. Its four visible
+  // vertices are all weighted to the spine so lean/neutral/fuller results are
+  // directly comparable, while the fifth visible wedge remains unmodified by
+  // the non-torso node in the hierarchy.
+  {
+    Model model {};
+    model.hierarchy.nodes = {
+        ModelHierarchyNode {-1, "BIP01 SPINE", Translation(0.0f, 0.0f, 0.0f)},
+        ModelHierarchyNode {0, "BIP01 ARM", Translation(0.0f, 0.0f, 0.0f)},
+    };
+    SoftSkinMesh torso {};
+    torso.mesh = proto;
+    torso.nodes = {0, 1};
+    torso.weights.resize(torso.mesh.positions.size());
+    for (std::size_t i = 0; i < torso.mesh.positions.size(); ++i) {
+      auto node = static_cast<std::uint8_t>(i == 4 ? 1 : 0);
+      torso.weights[i].push_back(SoftSkinWeightEntry {1.0f, torso.mesh.positions[i], node});
+    }
+    model.mesh.meshes.push_back(std::move(torso));
+    auto w = Write::to(dir / "EX_SKIN.MDL");
+    model.save(w.get(), GameVersion::GOTHIC_2);
   }
 
   // Name resolution never opens the file it resolves to, so these hold no real

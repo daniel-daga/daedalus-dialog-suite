@@ -39,7 +39,8 @@ Napi::Object ExtractProtoMesh(Napi::Env env, zenkit::MultiResolutionMesh const& 
 Napi::Object ExtractModelMesh(Napi::Env env,
                               zenkit::ModelMesh const& model,
                               zenkit::ModelHierarchy const& hierarchy,
-                              bool skin_pose = false);
+                              bool skin_pose = false,
+                              float fatness = 0.0f);
 
 // A hierarchy on its own: every node's name, parent index and transform
 // accumulated down to the root, row-major — the matrices ExtractModelMesh puts

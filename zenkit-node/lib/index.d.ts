@@ -229,7 +229,7 @@ export function vfsFind(vfs: VfsHandle, query: string, options?: { limit?: numbe
 /** Model soft skins use stored positions by default. With a skeleton name they
  * are posed from bone-local weights; an embedded or sibling hierarchy takes
  * precedence over the named fallback. Other visual formats are unchanged. */
-export function extractVisual(vfs: VfsHandle, name: string, skeleton?: string): VisualPayload | null;
+export function extractVisual(vfs: VfsHandle, name: string, skeleton?: string, fatness?: number, animation?: string, phase?: number): VisualPayload | null;
 /** The bytes of one mounted file, found by name anywhere in the namespace as
  *  `vfsResolve` finds one — a Node `Buffer` — or null when nothing by that name
  *  is mounted. */
@@ -240,7 +240,7 @@ export function decodeTexture(vfs: VfsHandle, name: string, level: number): Text
  * hierarchy inside its `.MDL`. A body `.MDM` has no `.MDH` beside it, so this is
  * what places a separately extracted head at `BIP01 HEAD`.
  */
-export function extractHierarchy(vfs: VfsHandle, name: string): HierarchyPayload | null;
+export function extractHierarchy(vfs: VfsHandle, name: string, animation?: string, phase?: number): HierarchyPayload | null;
 /**
  * Move one VOB, addressed by its index path down the children lists ("0/2"),
  * to a position in ZenGin space. Translates the bbox by the same delta — the

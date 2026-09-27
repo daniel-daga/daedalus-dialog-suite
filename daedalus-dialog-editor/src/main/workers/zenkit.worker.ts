@@ -80,9 +80,9 @@ const binding: SceneBinding = {
   },
   // A mod's `.3DS` that no GMBT build has compiled yet is read raw (#297), so
   // it previews, thumbnails and draws; a compiled half wins where there is one.
-  extractVisual: (vfsHandle, name, skeleton) => extractVisualOrRaw3ds(
+  extractVisual: (vfsHandle, name, skeleton, fatness, animation, phase) => extractVisualOrRaw3ds(
     (wanted) => {
-      const visual = zenkit.extractVisual(vfsHandle as zenkit.VfsHandle, wanted, skeleton);
+      const visual = zenkit.extractVisual(vfsHandle as zenkit.VfsHandle, wanted, skeleton, fatness, animation, phase);
       return visual === null ? null : { source: visual.source, chunks: visual.chunks.map(withLights) };
     },
     (wanted) => {
@@ -95,7 +95,7 @@ const binding: SceneBinding = {
 
 const npcBinding: NpcBinding = {
   extractVisual: binding.extractVisual,
-  extractHierarchy: (vfsHandle, name) => zenkit.extractHierarchy(vfsHandle as zenkit.VfsHandle, name),
+  extractHierarchy: (vfsHandle, name, animation, phase) => zenkit.extractHierarchy(vfsHandle as zenkit.VfsHandle, name, animation, phase),
 };
 
 const timings: Record<string, number> = {};

@@ -162,7 +162,7 @@ describe('npcBodyRequest', () => {
     expect(npcBodyRequest(VISUAL, itemSource)).toEqual({
       request: {
         model: 'HUMANS.MDS', body: 'Armor_Vlk_H.asc', bodyTexture: 1, skinColor: 0,
-        head: 'Hum_Head_Bald', headTexture: 12, teethTexture: 0, scale: [0.9, 1, 1],
+        head: 'Hum_Head_Bald', headTexture: 12, teethTexture: 0, fatness: 0, scale: [0.9, 1, 1],
       },
       notes: [],
     });
@@ -181,9 +181,8 @@ describe('npcBodyRequest', () => {
       .toEqual(['Armour ITAR_Mod is not an item the project defines, so it is not drawn']);
   });
 
-  it('says a fatness is not drawn, rather than drawing the NPC thin', () => {
-    expect(npcBodyRequest({ ...VISUAL, armor: null, fatness: 2 }, itemSource).notes)
-      .toEqual(['Fatness 2 is not drawn yet']);
+  it('passes fatness through to the weighted body skinning request', () => {
+    expect(npcBodyRequest({ ...VISUAL, armor: null, fatness: 2 }, itemSource).request.fatness).toBe(2);
   });
 
   it('keeps the notes the visual already carries', () => {

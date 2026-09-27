@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Box, CircularProgress, Stack, Typography } from '@mui/material';
+import { Box, CircularProgress, FormControlLabel, Slider, Stack, Switch, Typography } from '@mui/material';
 import type { NpcDefinition, NpcEdit } from '../../shared/types';
 import type { NpcBodyScene } from '../../shared/worldTypes';
 import { npcBodyRequest, resolveNpcVisual, withEdits } from '../npc/npcVisual';
@@ -32,9 +32,15 @@ const NpcVisualPreview: React.FC<NpcVisualPreviewProps> = ({ definition, edits, 
     () => resolveNpcVisual(withEdits(definition, edits), lookupConstant),
     [definition, edits, lookupConstant],
   );
+  const [idlePhase, setIdlePhase] = useState<number | null>(null);
   const body = useMemo(
-    () => (resolved.ok ? npcBodyRequest(resolved.visual, itemSource) : null),
-    [resolved, itemSource],
+    () => {
+      if (!resolved.ok) return null;
+      const request = npcBodyRequest(resolved.visual, itemSource);
+      if (idlePhase !== null) request.request.animationPhase = idlePhase;
+      return request;
+    },
+    [resolved, itemSource, idlePhase],
   );
   const requestKey = body ? JSON.stringify(body.request) : null;
 
@@ -75,6 +81,25 @@ const NpcVisualPreview: React.FC<NpcVisualPreviewProps> = ({ definition, edits, 
         <Typography variant="caption" sx={{ display: 'block' }} data-testid="npc-preview-summary">
           {`${body.request.body} · head ${body.request.head}`}
         </Typography>
+      )}
+      {body && (
+        <Box sx={{ mt: 0.5, maxWidth: 300 }} data-testid="npc-animation-controls">
+          <FormControlLabel
+            control={<Switch checked={idlePhase !== null} onChange={(_, checked) => setIdlePhase(checked ? 0 : null)} size="small" />}
+            label={<Typography variant="caption">Scrub idle animation</Typography>}
+          />
+          {idlePhase !== null && (
+            <Slider
+              aria-label="Idle animation frame"
+              data-testid="npc-animation-scrubber"
+              size="small"
+              min={0}
+              max={100}
+              value={Math.round(idlePhase * 100)}
+              onChange={(_, value) => setIdlePhase(Number(value) / 100)}
+            />
+          )}
+        </Box>
       )}
       {body && !worldReady && (
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }} data-testid="npc-preview-no-world">

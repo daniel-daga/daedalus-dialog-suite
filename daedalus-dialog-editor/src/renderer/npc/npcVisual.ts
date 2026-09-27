@@ -162,7 +162,6 @@ export function npcBodyRequest(
   itemSource: (instance: string) => string | undefined,
 ): { request: NpcBodyRequest; notes: string[] } {
   const notes = [...visual.notes];
-  if (visual.fatness !== 0) notes.push(`Fatness ${visual.fatness} is not drawn yet`);
   let body = visual.bodyMesh;
   if (visual.armor !== null) {
     const source = itemSource(visual.armor);
@@ -180,6 +179,7 @@ export function npcBodyRequest(
       head: visual.headMesh,
       headTexture: visual.headTexture,
       teethTexture: visual.teethTexture,
+      fatness: visual.fatness,
       scale: visual.scale,
     },
     notes,

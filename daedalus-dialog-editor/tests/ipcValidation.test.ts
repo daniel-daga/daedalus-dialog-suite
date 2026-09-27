@@ -325,7 +325,7 @@ describe('assertVisualRequest', () => {
 describe('assertNpcBodyRequest', () => {
   const GOOD = {
     model: 'HUMANS.MDS', body: 'hum_body_Naked0', bodyTexture: 1, skinColor: 0,
-    head: 'Hum_Head_Bald', headTexture: 12, teethTexture: 0, scale: [1, 1, 1],
+    head: 'Hum_Head_Bald', headTexture: 12, teethTexture: 0, fatness: 0, scale: [1, 1, 1],
   };
 
   it('accepts what resolveNpcVisual produces', () => {
@@ -339,6 +339,7 @@ describe('assertNpcBodyRequest', () => {
     expect(() => assertNpcBodyRequest({ ...GOOD, skinColor: '0' })).toThrow(/skinColor/);
     expect(() => assertNpcBodyRequest({ ...GOOD, scale: [1, 1] })).toThrow(/scale/);
     expect(() => assertNpcBodyRequest({ ...GOOD, scale: [1, 1, Infinity] })).toThrow(/scale/);
+    expect(() => assertNpcBodyRequest({ ...GOOD, fatness: Infinity })).toThrow(/fatness/);
     expect(() => assertNpcBodyRequest('HUMANS.MDS')).toThrow(/plain object/);
   });
 });

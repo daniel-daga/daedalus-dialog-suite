@@ -16,6 +16,16 @@ const zenkit = require('..');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'zenkit-assets-'));
 const ASSETS = path.join(root, 'assets');
 zenkit._authorFixtureAssets(ASSETS);
+fs.writeFileSync(path.join(ASSETS, 'EX_SKIN.MDS'), `Model("EX_SKIN") {
+  meshAndTree("EX_SKIN.ASC" DONT_USE_MESH)
+  aniEnum {
+    ani("S_IDLE" 0 "" 0 0 M. "EX_IDLE.MAN" F 0 1)
+  }
+}`);
+fs.copyFileSync(
+  path.join(__dirname, '../vendor/ZenKit/tests/samples/G1/HUMANS-S_FISTRUN.MAN'),
+  path.join(ASSETS, 'EX_IDLE.MAN'),
+);
 
 // A second mount source, to observe what mount order does. Loose files are
 // enough: resolution never opens the file it resolves to.
@@ -557,6 +567,27 @@ test('extractVisual takes a .MDM\'s hierarchy from its sibling .MDH', () => {
       payload.chunks[0].transform[11]],
     [15, 30, 50],
   );
+});
+
+test('extractVisual applies model fatness to torso-weighted vertices only', () => {
+  const lean = zenkit.extractVisual(vfs(), 'EX_SKIN.ASC', 'EX_SKIN.MDS', -1);
+  const defaultBody = zenkit.extractVisual(vfs(), 'EX_SKIN.ASC', 'EX_SKIN.MDS', 0);
+  const heavier = zenkit.extractVisual(vfs(), 'EX_SKIN.ASC', 'EX_SKIN.MDS', 2);
+  const x = (payload) => f32(payload.chunks[0].positions)[6];
+  const z = (payload) => f32(payload.chunks[0].positions)[8];
+
+  assert.ok(x(lean) < x(defaultBody));
+  assert.ok(z(lean) < z(defaultBody));
+  assert.ok(x(heavier) > x(defaultBody));
+  assert.ok(z(heavier) > z(defaultBody));
+  const vertices = heavier.chunks.flatMap((chunk) => f32(chunk.positions));
+  assert.ok(vertices.some((value, index) => value === 5 && vertices[index + 1] === 20 && vertices[index + 2] === 5));
+});
+
+test('extractVisual samples the selected idle animation frame through the model script', () => {
+  const first = zenkit.extractVisual(vfs(), 'EX_SKIN.ASC', 'EX_SKIN.MDS', 0, 'S_IDLE', 0);
+  const last = zenkit.extractVisual(vfs(), 'EX_SKIN.ASC', 'EX_SKIN.MDS', 0, 'S_IDLE', 1);
+  assert.notDeepStrictEqual(f32(first.chunks[0].positions), f32(last.chunks[0].positions));
 });
 
 // --- extractHierarchy -----------------------------------------------------

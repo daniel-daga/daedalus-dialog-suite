@@ -63,7 +63,7 @@ export interface SceneBinding {
     triangleCount: number;
     chunks: MeshChunk[];
   };
-  extractVisual(vfs: VfsHandle, name: string, skeleton?: string): { source: string; chunks: MeshChunk[] } | null;
+  extractVisual(vfs: VfsHandle, name: string, skeleton?: string, fatness?: number, animation?: string, phase?: number): { source: string; chunks: MeshChunk[] } | null;
 }
 
 export interface WorldMeshScene {
@@ -340,7 +340,7 @@ export function buildVisual(
 /** What `buildNpcBody` needs of the binding: a visual whose model skin can be
  *  posed with a skeleton, and hierarchy nodes with accumulated transforms. */
 export interface NpcBinding extends Pick<SceneBinding, 'extractVisual'> {
-  extractHierarchy(vfs: VfsHandle, name: string): { nodes: Array<{ name: string; transform: number[] }> } | null;
+  extractHierarchy(vfs: VfsHandle, name: string, animation?: string, phase?: number): { nodes: Array<{ name: string; transform: number[] }> } | null;
 }
 
 /** The engine's half of `Mdl_SetVisual` + `Mdl_SetVisualBody` + `Mdl_SetModelScale`. */
@@ -355,6 +355,10 @@ export interface NpcBodyRequest {
   head: string;
   headTexture: number;
   teethTexture: number;
+  /** Procedural torso breadth, in Daedalus script units. */
+  fatness?: number;
+  /** Normalized sample position in the S_IDLE clip, when set. */
+  animationPhase?: number;
   /** Width, height, depth. */
   scale: readonly [number, number, number];
 }
@@ -398,7 +402,10 @@ export function buildNpcBody(binding: NpcBinding, vfs: VfsHandle, request: NpcBo
   const scale = [sx, 0, 0, 0, 0, sy, 0, 0, 0, 0, sz, 0, 0, 0, 0, 1];
   const withExtension = (name: string, extension: string) => (/\.[^.\\/]+$/.test(name) ? name : name + extension);
 
-  const body = binding.extractVisual(vfs, withExtension(request.body, '.ASC'), request.model);
+  const animation = request.animationPhase === undefined ? undefined : 'S_IDLE';
+  const body = binding.extractVisual(
+    vfs, withExtension(request.body, '.ASC'), request.model, request.fatness ?? 0, animation, request.animationPhase,
+  );
   if (body === null || body.chunks.length === 0) return null;
   const chunks: MeshChunk[] = body.chunks.map((chunk) => ({
     ...chunk,
@@ -413,8 +420,8 @@ export function buildNpcBody(binding: NpcBinding, vfs: VfsHandle, request: NpcBo
   }));
 
   const missing: string[] = [];
-  const bodyHierarchy = binding.extractHierarchy(vfs, request.body);
-  const headHierarchy = bodyHierarchy ?? binding.extractHierarchy(vfs, request.model);
+  const bodyHierarchy = binding.extractHierarchy(vfs, request.body, animation, request.animationPhase);
+  const headHierarchy = bodyHierarchy ?? binding.extractHierarchy(vfs, request.model, animation, request.animationPhase);
   const node = headHierarchy?.nodes
     .find((candidate) => candidate.name.toUpperCase() === HEAD_NODE);
   if (node === undefined) {

@@ -2,8 +2,10 @@
 
 #include <zenkit/Mesh.hh>
 #include <zenkit/Model.hh>
+#include <zenkit/ModelAnimation.hh>
 #include <zenkit/ModelHierarchy.hh>
 #include <zenkit/ModelMesh.hh>
+#include <zenkit/ModelScript.hh>
 #include <zenkit/MorphMesh.hh>
 #include <zenkit/MultiResolutionMesh.hh>
 #include <zenkit/Stream.hh>
@@ -77,6 +79,63 @@ VfsNode const* FindFirst(Vfs const& vfs,
     }
   }
   return nullptr;
+}
+
+Mat4 AnimationTransform(AnimationSample const& sample) {
+  auto const& q = sample.rotation;
+  auto const xx = q.x * q.x, yy = q.y * q.y, zz = q.z * q.z;
+  auto const xy = q.x * q.y, xz = q.x * q.z, yz = q.y * q.z;
+  auto const wx = q.w * q.x, wy = q.w * q.y, wz = q.w * q.z;
+  Mat4 out {};
+  out.columns[0] = Vec4 {1 - 2 * (yy + zz), 2 * (xy + wz), 2 * (xz - wy), 0};
+  out.columns[1] = Vec4 {2 * (xy - wz), 1 - 2 * (xx + zz), 2 * (yz + wx), 0};
+  out.columns[2] = Vec4 {2 * (xz + wy), 2 * (yz - wx), 1 - 2 * (xx + yy), 0};
+  out.columns[3] = Vec4 {sample.position.x, sample.position.y, sample.position.z, 1};
+  return out;
+}
+
+bool ApplyAnimation(Vfs const& vfs, std::string const& model_name,
+                    std::string const& clip_name, float phase,
+                    ModelHierarchy& hierarchy) {
+  auto const stem = StripExtension(Upper(model_name));
+  auto const* script_node = FindFirst(vfs, {stem + ".MSB", stem + ".MDS"}, nullptr);
+  if (script_node == nullptr) return false;
+  ModelScript script {};
+  auto script_reader = script_node->open_read();
+  script.load(script_reader.get());
+
+  auto wanted = Upper(clip_name);
+  MdsAnimation const* source = nullptr;
+  for (std::size_t depth = 0; depth <= script.aliases.size(); ++depth) {
+    auto const animation = std::find_if(script.animations.begin(), script.animations.end(), [&](auto const& item) {
+      return Upper(item.name) == wanted;
+    });
+    if (animation != script.animations.end()) { source = &*animation; break; }
+    auto const alias = std::find_if(script.aliases.begin(), script.aliases.end(), [&](auto const& item) {
+      return Upper(item.name) == wanted;
+    });
+    if (alias == script.aliases.end() || Upper(alias->alias) == wanted) break;
+    wanted = Upper(alias->alias);
+  }
+  if (source == nullptr || source->model.empty()) return false;
+  auto const* animation_node = FindFirst(vfs, {source->model}, nullptr);
+  if (animation_node == nullptr) return false;
+  ModelAnimation animation {};
+  auto animation_reader = animation_node->open_read();
+  animation.load(animation_reader.get());
+  if (animation.frame_count == 0 || animation.node_count == 0 || animation.samples.empty()) return false;
+
+  auto const frame = static_cast<std::uint32_t>(std::round(
+      std::clamp(phase, 0.0f, 1.0f) * static_cast<float>(animation.frame_count - 1)));
+  for (std::uint32_t node = 0; node < animation.node_count; ++node) {
+    if (node >= animation.node_indices.size()) break;
+    auto const hierarchy_node = animation.node_indices[node];
+    if (hierarchy_node >= hierarchy.nodes.size()) continue;
+    auto const sample_index = static_cast<std::size_t>(frame) * animation.node_count + node;
+    if (sample_index >= animation.samples.size()) continue;
+    hierarchy.nodes[hierarchy_node].transform = AnimationTransform(animation.samples[sample_index]);
+  }
+  return true;
 }
 
 // How many matches `vfsFind` walks to before it stops. A retail install mounts
@@ -440,6 +499,24 @@ Napi::Value ExtractVisual(Napi::CallbackInfo const& info) {
     skeleton_name = NameArg(env, info[2], "skeleton");
     if (!skeleton_name) return env.Null();
   }
+  float fatness = 0.0f;
+  if (!info[3].IsUndefined() && !info[3].IsNull()) {
+    if (!info[3].IsNumber() || !std::isfinite(info[3].As<Napi::Number>().FloatValue())) {
+      throw Napi::TypeError::New(env, "fatness must be a finite number");
+    }
+    fatness = info[3].As<Napi::Number>().FloatValue();
+  }
+  std::optional<std::string> animation_name;
+  if (!info[4].IsUndefined() && !info[4].IsNull()) {
+    animation_name = NameArg(env, info[4], "animation");
+    if (!animation_name) return env.Null();
+  }
+  float animation_phase = 0.0f;
+  if (!info[5].IsUndefined() && !info[5].IsNull()) {
+    if (!info[5].IsNumber() || !std::isfinite(info[5].As<Napi::Number>().FloatValue()))
+      throw Napi::TypeError::New(env, "animation phase must be a finite number");
+    animation_phase = info[5].As<Napi::Number>().FloatValue();
+  }
 
   std::string resolved;
   auto const* node = FindFirst(handle->vfs, VisualCandidates(*name), &resolved);
@@ -506,8 +583,11 @@ Napi::Value ExtractVisual(Napi::CallbackInfo const& info) {
         }
       }
 
+      if (animation_name && skeleton_name)
+        ApplyAnimation(handle->vfs, *skeleton_name, *animation_name, animation_phase, hierarchy);
+
       if (model.meshes.empty() && model.attachments.empty()) return env.Null();
-      payload = ExtractModelMesh(env, model, hierarchy, skeleton_name.has_value());
+      payload = ExtractModelMesh(env, model, hierarchy, skeleton_name.has_value(), fatness);
     } else {
       return env.Null();
     }
@@ -527,6 +607,17 @@ Napi::Value ExtractHierarchyFromVfs(Napi::CallbackInfo const& info) {
   auto* handle = UnwrapVfs(env, info[0]);
   auto const name = NameArg(env, info[1], "name");
   if (!name) return env.Null();
+  std::optional<std::string> animation_name;
+  if (!info[2].IsUndefined() && !info[2].IsNull()) {
+    animation_name = NameArg(env, info[2], "animation");
+    if (!animation_name) return env.Null();
+  }
+  float animation_phase = 0.0f;
+  if (!info[3].IsUndefined() && !info[3].IsNull()) {
+    if (!info[3].IsNumber() || !std::isfinite(info[3].As<Napi::Number>().FloatValue()))
+      throw Napi::TypeError::New(env, "animation phase must be a finite number");
+    animation_phase = info[3].As<Napi::Number>().FloatValue();
+  }
 
   // A standalone .MDH first: human bodies are .MDM files with no .MDH of their
   // own, all hung on HUMANS.MDH, which is named after the .MDS, not the mesh.
@@ -545,6 +636,8 @@ Napi::Value ExtractHierarchyFromVfs(Napi::CallbackInfo const& info) {
     } else {
       hierarchy.load(reader.get());
     }
+    if (animation_name)
+      ApplyAnimation(handle->vfs, *name, *animation_name, animation_phase, hierarchy);
     auto payload = zenkit_node::ExtractHierarchy(env, hierarchy);
     payload.Set("source", Str(env, resolved));
     return payload;
