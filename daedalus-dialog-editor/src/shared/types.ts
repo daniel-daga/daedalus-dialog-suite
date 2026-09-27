@@ -74,6 +74,8 @@ export interface SpawnSite {
  */
 export interface RoutineSite {
   routine: string;
+  /** TA-family call name as written, uppercased (for example `TA_SIT`). */
+  stateName?: string;
   startMinute: number;
   endMinute: number;
   waypoint: string;

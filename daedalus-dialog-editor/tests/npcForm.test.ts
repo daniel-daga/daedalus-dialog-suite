@@ -173,6 +173,26 @@ describe('npcForm', () => {
     it('leaves a second weapon of the same kind to the other statements', () => {
       expect(uncoveredStatements(LEE)).toEqual([LEE.statements[2]]);
     });
+
+    it('matches nonstandard item names by their parsed category when available', () => {
+      const npc: NpcDefinition = {
+        name: 'SLD_800_Lee', parent: 'Npc_Default', closingBraceIndex: 0,
+        statements: [
+          call('EquipItem', ['self', 'Bow_NoPrefix']),
+          call('EquipItem', ['self', 'Blade_NoPrefix']),
+        ],
+      };
+      const categoryOf = (name: string) => ({
+        BOW_NOPREFIX: 'rangedWeapon' as const,
+        BLADE_NOPREFIX: 'meleeWeapon' as const,
+      }[name.toUpperCase()]);
+      const before = formValuesFrom(npc, categoryOf);
+      expect(before.rangedWeapon).toBe('Bow_NoPrefix');
+      expect(before.meleeWeapon).toBe('Blade_NoPrefix');
+      expect(editsBetween(npc, before, { ...before, meleeWeapon: 'Blade_Updated' }, categoryOf)).toEqual([
+        { op: 'setCall', name: 'EquipItem', occurrence: 1, args: ['self', 'Blade_Updated'] },
+      ]);
+    });
   });
 
   describe('walk overlays', () => {

@@ -1,4 +1,5 @@
 import type { NpcDefinition, NpcEdit, NpcFieldStatement, NpcCallStatement, NpcStatement } from '../../shared/types';
+import type { NpcItemCategory } from './npcItemCategories';
 
 // What the NPC editor's form shows, and how its values become edits
 // (docs/plans/npc-editor.md, Phase 2). Pure: no React, no IPC.
@@ -20,8 +21,8 @@ type Target =
   | { kind: 'field'; field: string; index?: string }
   | { kind: 'visualArg'; arg: number }
   | { kind: 'overlay' }
-  /** The first `EquipItem(slf, item)` whose item starts with `prefix`. */
-  | { kind: 'equip'; prefix: string };
+  /** The first EquipItem whose item source declares this category. */
+  | { kind: 'equip'; category: NpcItemCategory };
 
 export interface NpcFormField {
   key: string;
@@ -32,7 +33,7 @@ export interface NpcFormField {
   string?: true;
   /** Where the control's suggestions come from; free text is always allowed. */
   options?: { constantPrefix: string } | { itemPrefix: string } | { routines: true } | { values: string[] }
-    | { assets: 'headMesh' | 'walkOverlay' };
+    | { assets: 'headMesh' | 'walkOverlay' } | { itemCategory: NpcItemCategory };
 }
 
 const f = (
@@ -73,11 +74,9 @@ export const NPC_FORM_FIELDS: NpcFormField[] = [
     string: true, options: { assets: 'walkOverlay' } },
   v('faceTexture', 'Face texture', 3, { constantPrefix: 'Face' }),
   v('bodyTexture', 'Body texture', 4, { constantPrefix: 'BodyTex' }),
-  v('armor', 'Armor', 5, { itemPrefix: 'ITAR_' }),
-  // Retail names weapons by kind — ItMw_ melee, ItRw_ ranged — and equips
-  // each with its own EquipItem call.
-  { key: 'meleeWeapon', label: 'Melee weapon', group: 'equipment', target: { kind: 'equip', prefix: 'ITMW_' }, options: { itemPrefix: 'ITMW_' } },
-  { key: 'rangedWeapon', label: 'Ranged weapon', group: 'equipment', target: { kind: 'equip', prefix: 'ITRW_' }, options: { itemPrefix: 'ITRW_' } },
+  v('armor', 'Armor', 5, { itemCategory: 'armor' }),
+  { key: 'meleeWeapon', label: 'Melee weapon', group: 'equipment', target: { kind: 'equip', category: 'meleeWeapon' }, options: { itemCategory: 'meleeWeapon' } },
+  { key: 'rangedWeapon', label: 'Ranged weapon', group: 'equipment', target: { kind: 'equip', category: 'rangedWeapon' }, options: { itemCategory: 'rangedWeapon' } },
 ];
 
 const VISUAL_FIELDS = NPC_FORM_FIELDS.filter((field) => field.target.kind === 'visualArg');
@@ -96,10 +95,25 @@ function findVisualCall(npc: NpcDefinition): NpcCallStatement | undefined {
   return npc.statements.find((s): s is NpcCallStatement => s.kind === 'call' && same(s.name, VISUAL_CALL));
 }
 
-/** The equip call a control reads, and which `EquipItem` occurrence it is. */
-function findEquip(npc: NpcDefinition, prefix: string): { call: NpcCallStatement; occurrence: number } | undefined {
+export type NpcItemCategoryLookup = (instance: string) => NpcItemCategory | undefined;
+
+const LEGACY_EQUIP_PREFIX: Record<NpcItemCategory, string> = {
+  armor: 'ITAR_', meleeWeapon: 'ITMW_', rangedWeapon: 'ITRW_',
+};
+
+/** The category's equip call and its occurrence among all EquipItem calls. */
+function findEquip(
+  npc: NpcDefinition,
+  category: NpcItemCategory,
+  categoryOfItem?: NpcItemCategoryLookup,
+): { call: NpcCallStatement; occurrence: number } | undefined {
   const equips = npc.statements.filter((s): s is NpcCallStatement => s.kind === 'call' && same(s.name, EQUIP_CALL));
-  const occurrence = equips.findIndex((call) => (call.args[1] ?? '').toUpperCase().startsWith(prefix));
+  const occurrence = equips.findIndex((call) => {
+    const item = (call.args[1] ?? '').trim().replace(/^"|"$/g, '');
+    const parsedCategory = categoryOfItem?.(item);
+    return parsedCategory === category
+      || (parsedCategory === undefined && item.toUpperCase().startsWith(LEGACY_EQUIP_PREFIX[category]));
+  });
   return occurrence === -1 ? undefined : { call: equips[occurrence], occurrence };
 }
 
@@ -118,26 +132,26 @@ function findWalkOverlay(npc: NpcDefinition): { call: NpcCallStatement; occurren
 const isStringLiteral = (value: string) => /^"[^"]*"$/.test(value);
 
 /** The expression the script has for `field`, or undefined when absent. */
-function writtenValue(npc: NpcDefinition, field: NpcFormField): string | undefined {
+function writtenValue(npc: NpcDefinition, field: NpcFormField, categoryOfItem?: NpcItemCategoryLookup): string | undefined {
   const { target } = field;
   if (target.kind === 'field') return findField(npc, target.field, target.index)?.value;
-  if (target.kind === 'equip') return findEquip(npc, target.prefix)?.call.args[1];
+  if (target.kind === 'equip') return findEquip(npc, target.category, categoryOfItem)?.call.args[1];
   if (target.kind === 'overlay') return findWalkOverlay(npc)?.call.args[1];
   return findVisualCall(npc)?.args[target.arg];
 }
 
 /** What a typed value is written as: quoted for a `string` control, unless a
  *  non-literal stood there. */
-function toExpression(npc: NpcDefinition, field: NpcFormField, typed: string): string {
+function toExpression(npc: NpcDefinition, field: NpcFormField, typed: string, categoryOfItem?: NpcItemCategoryLookup): string {
   if (!field.string) return typed;
-  const existing = writtenValue(npc, field);
+  const existing = writtenValue(npc, field, categoryOfItem);
   return existing !== undefined && !isStringLiteral(existing) ? typed : `"${typed}"`;
 }
 
-export function formValuesFrom(npc: NpcDefinition): NpcFormValues {
+export function formValuesFrom(npc: NpcDefinition, categoryOfItem?: NpcItemCategoryLookup): NpcFormValues {
   const values: NpcFormValues = {};
   for (const field of NPC_FORM_FIELDS) {
-    const written = writtenValue(npc, field) ?? '';
+    const written = writtenValue(npc, field, categoryOfItem) ?? '';
     values[field.key] = field.string && isStringLiteral(written) ? written.slice(1, -1) : written;
   }
   return values;
@@ -161,7 +175,12 @@ export function validateNpcForm(values: NpcFormValues): string | null {
 }
 
 /** The edits that turn `before` into `after`, in form order. */
-export function editsBetween(npc: NpcDefinition, before: NpcFormValues, after: NpcFormValues): NpcEdit[] {
+export function editsBetween(
+  npc: NpcDefinition,
+  before: NpcFormValues,
+  after: NpcFormValues,
+  categoryOfItem?: NpcItemCategoryLookup,
+): NpcEdit[] {
   const edits: NpcEdit[] = [];
   const changed = (key: string) => (before[key] ?? '').trim() !== (after[key] ?? '').trim();
 
@@ -178,7 +197,7 @@ export function editsBetween(npc: NpcDefinition, before: NpcFormValues, after: N
   for (const field of NPC_FORM_FIELDS) {
     if (field.target.kind !== 'equip' || !changed(field.key)) continue;
     const typed = (after[field.key] ?? '').trim();
-    const existing = findEquip(npc, field.target.prefix);
+    const existing = findEquip(npc, field.target.category, categoryOfItem);
     if (!existing) {
       if (typed !== '') edits.push({ op: 'addCall', name: EQUIP_CALL, args: ['self', typed] });
     } else if (typed === '') {
@@ -220,13 +239,13 @@ export function editsBetween(npc: NpcDefinition, before: NpcFormValues, after: N
 }
 
 /** The statements no control reads — shown read-only, and never touched. */
-export function uncoveredStatements(npc: NpcDefinition): NpcStatement[] {
+export function uncoveredStatements(npc: NpcDefinition, categoryOfItem?: NpcItemCategoryLookup): NpcStatement[] {
   const visual = findVisualCall(npc);
   const covered = new Set<NpcStatement>(visual ? [visual] : []);
   for (const field of NPC_FORM_FIELDS) {
     const { target } = field;
     const statement = target.kind === 'field' ? findField(npc, target.field, target.index)
-      : target.kind === 'equip' ? findEquip(npc, target.prefix)?.call
+      : target.kind === 'equip' ? findEquip(npc, target.category, categoryOfItem)?.call
         : target.kind === 'overlay' ? findWalkOverlay(npc)?.call
         : undefined;
     if (statement) covered.add(statement);

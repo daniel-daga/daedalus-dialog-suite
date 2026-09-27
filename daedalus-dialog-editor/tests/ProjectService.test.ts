@@ -1184,6 +1184,7 @@ FUNC VOID Rtn_Mixed()
       ).toEqual([
         {
           routine: 'RTN_START_99003',
+          stateName: 'TA_MIN',
           startMinute: 8 * 60,
           endMinute: 22 * 60 + 30,
           waypoint: 'WP_FARIM_01',
@@ -1212,6 +1213,7 @@ FUNC VOID Rtn_Mixed()
       expect(sites).toHaveLength(1);
       expect(sites[0].startMinute).toBe(8 * 60);
       expect(sites[0].endMinute).toBe(22 * 60);
+      expect(sites[0].stateName).toBe('TA');
       expect(sites[0].waypoint).toBe('WP_HOURS_ONLY');
     });
 
@@ -1243,6 +1245,7 @@ FUNC VOID Rtn_Start_99003()
       expect(sites).toEqual([
         {
           routine: 'RTN_START_99003',
+          stateName: 'TA_SIT_CHAIR',
           startMinute: 6 * 60 + 15,
           endMinute: 22 * 60 + 45,
           waypoint: 'WP_FARIM_01_SIT',

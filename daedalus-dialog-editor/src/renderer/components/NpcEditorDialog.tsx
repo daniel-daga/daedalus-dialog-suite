@@ -23,13 +23,16 @@ import {
   validateNpcForm,
   type NpcFormField,
   type NpcFormValues,
+  type NpcItemCategoryLookup,
 } from '../npc/npcForm';
+import { itemCategoriesOf, itemNamesForCategory } from '../npc/npcItemCategories';
 import { npcRoutines, formatMinute, type NpcRoutine } from '../npc/npcRoutines';
 import { useWorldStore } from '../store/worldStore';
 import { useUISelectionStore } from '../store/uiSelectionStore';
 import { waypointJumpReason } from './npcWorldJump';
 import NpcVisualPreview from './NpcVisualPreview';
 import { npcAssetSuggestions, type NpcAssetSuggestions } from '../npc/npcAssets';
+import NpcRoutineSourceDialog, { type NpcRoutineSourceTarget } from './NpcRoutineSourceDialog';
 
 // The NPC editor (docs/plans/npc-editor.md, Phase 2): a form over one NPC
 // instance's body. It opens the declaring file through the file store — so
@@ -62,6 +65,9 @@ function optionsFor(field: NpcFormField): string[] {
   if (!options) return [];
   if ('values' in options) return options.values;
   if ('assets' in options) return [];
+  if ('itemCategory' in options) {
+    return itemNamesForCategory(parsedModels(), options.itemCategory, projectConstantLookup());
+  }
   const project = useProjectStore.getState();
   if ('routines' in options) return project.routineList;
   const names = 'constantPrefix' in options
@@ -89,6 +95,12 @@ function projectConstantLookup(): (name: string) => number | undefined {
   return (name) => values.get(name.toUpperCase());
 }
 
+/** A project item instance name to its parsed mainflag category. */
+function projectItemCategoryLookup(): NpcItemCategoryLookup {
+  const categories = itemCategoriesOf(parsedModels(), projectConstantLookup());
+  return (instance) => categories.get(instance.toUpperCase());
+}
+
 /** An item instance's source text in the project, by case-insensitive name. */
 function projectItemSource(): (instance: string) => string | undefined {
   const sources = new Map<string, string>();
@@ -106,6 +118,8 @@ interface NpcRoutinesSectionProps {
   routines: NpcRoutine[];
   /** Go to a TA entry's waypoint in the World surface (#285). */
   onShowWaypoint?: (waypoint: string) => void;
+  /** Read the routine source file at an indexed TA call (#285). */
+  onShowSource?: (routine: string, filePath: string, line: number) => void;
   /** Why a waypoint cannot be shown — the insert-NPC jump's answers. */
   waypointReason?: (waypoint: string) => string | null;
   /** Why neither jump may leave the editor now, e.g. unsaved changes. */
@@ -124,7 +138,7 @@ const JumpButton: React.FC<{ label: string; reason: string | null; onClick: () =
 );
 
 export const NpcRoutinesSection: React.FC<NpcRoutinesSectionProps> = (
-  { routines, onShowWaypoint, waypointReason, blockedReason = null },
+  { routines, onShowWaypoint, onShowSource, waypointReason, blockedReason = null },
 ) => (
   <Box sx={{ mb: 2 }}>
     <Typography variant="subtitle2">Routines</Typography>
@@ -139,6 +153,7 @@ export const NpcRoutinesSection: React.FC<NpcRoutinesSectionProps> = (
         )}
         {entries.map((entry) => (
           <Box component="li" key={`${entry.startMinute}-${entry.waypoint}`} sx={{ display: 'flex', gap: 2, fontSize: 12 }}>
+            {entry.stateName && <span>{entry.stateName}</span>}
             <span>{`${formatMinute(entry.startMinute)}–${formatMinute(entry.endMinute)}`}</span>
             <span>{entry.waypoint}</span>
             {onShowWaypoint && (
@@ -149,6 +164,16 @@ export const NpcRoutinesSection: React.FC<NpcRoutinesSectionProps> = (
               >
                 World
               </JumpButton>
+            )}
+            {onShowSource && (
+              <Button
+                size="small"
+                sx={{ minWidth: 0, py: 0, fontSize: 11 }}
+                aria-label={`Show source for ${routine} at line ${entry.line}`}
+                onClick={() => onShowSource(routine, entry.filePath, entry.line)}
+              >
+                Source
+              </Button>
             )}
           </Box>
         ))}
@@ -163,7 +188,10 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
   const [values, setValues] = useState<NpcFormValues>({});
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [routineSource, setRoutineSource] = useState<NpcRoutineSourceTarget | null>(null);
   const [assetSuggestions, setAssetSuggestions] = useState<NpcAssetSuggestions>({ headMeshes: [], walkOverlays: [] });
+  const parseGeneration = useProjectStore((s) => s.parseGeneration);
+  const categoryOfItem = useMemo(projectItemCategoryLookup, [parseGeneration]);
 
   useEffect(() => {
     let cancelled = false;
@@ -185,7 +213,7 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
         }
         const npc = await window.editorAPI.extractNpc(sourceText);
         if (cancelled) return;
-        const read = formValuesFrom(npc);
+        const read = formValuesFrom(npc, projectItemCategoryLookup());
         setDefinition(npc);
         setInitial(read);
         setValues(read);
@@ -198,7 +226,8 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
 
   const options = useMemo(
     () => Object.fromEntries(NPC_FORM_FIELDS.map((field) => [field.key, optionsFor(field)])),
-    [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- parseGeneration invalidates optionsFor's project-store snapshot.
+    [parseGeneration],
   );
   const worldReady = useWorldStore((s) => s.status === 'ready');
   useEffect(() => {
@@ -217,7 +246,10 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
     });
     return () => { current = false; };
   }, [worldReady]);
-  const uncovered = useMemo(() => (definition ? uncoveredStatements(definition) : []), [definition]);
+  const uncovered = useMemo(
+    () => (definition ? uncoveredStatements(definition, categoryOfItem) : []),
+    [definition, categoryOfItem],
+  );
   const routines = useMemo(() => {
     const project = useProjectStore.getState();
     return npcRoutines({
@@ -228,18 +260,17 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
   }, [npcName]);
   const invalid = definition ? validateNpcForm(values) : null;
   // Rebuilt as background ingestion parses more of the project.
-  const parseGeneration = useProjectStore((s) => s.parseGeneration);
   const lookupConstant = useMemo(projectConstantLookup, [parseGeneration]);
   const itemSource = useMemo(projectItemSource, [parseGeneration]);
   const pendingEdits = useMemo(
-    () => (definition ? editsBetween(definition, initial, values) : []),
-    [definition, initial, values],
+    () => (definition ? editsBetween(definition, initial, values, categoryOfItem) : []),
+    [definition, initial, values, categoryOfItem],
   );
 
   // #285: a TA entry's waypoint, shown in the World surface. The jump leaves
   // this dialog, which is why an unsaved form blocks it rather than being
-  // thrown away. (A jump to the routine's source waits for a source view: the
-  // dialog view shows a function only inside a dialog.)
+  // thrown away. The source jump stays inside the editor and opens the routine
+  // file at the indexed TA line in a read-only view.
   const world = useWorldStore((s) => (s.status === 'ready' ? (s.waynetNames ?? null) : null));
   const showWaypoint = (waypoint: string) => {
     useWorldStore.getState().requestFocus({ kind: 'waypoint', name: waypoint });
@@ -249,7 +280,7 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
 
   const handleSave = async () => {
     if (!definition) return;
-    const edits = editsBetween(definition, initial, values);
+    const edits = editsBetween(definition, initial, values, categoryOfItem);
     if (edits.length === 0) {
       onClose();
       return;
@@ -334,6 +365,7 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
               <NpcRoutinesSection
                 routines={routines}
                 onShowWaypoint={showWaypoint}
+                onShowSource={(routine, sourceFilePath, line) => setRoutineSource({ routine, filePath: sourceFilePath, line })}
                 waypointReason={(waypoint) => waypointJumpReason(waypoint, world)}
                 blockedReason={pendingEdits.length > 0
                   ? 'Save or cancel your changes first'
@@ -369,6 +401,9 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
           Save
         </Button>
       </DialogActions>
+      {routineSource && (
+        <NpcRoutineSourceDialog target={routineSource} onClose={() => setRoutineSource(null)} />
+      )}
     </Dialog>
   );
 };

@@ -21,12 +21,15 @@ const NPC_FILE = `INSTANCE BAU_900_Onar (C_NPC)
 };
 `;
 
-async function openProject(page: Page) {
+async function openProject(page: Page, extraFiles: Record<string, string> = {}) {
   await page.goto('/');
   await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
-  await page.evaluate((content) => {
+  await page.evaluate(({ content, files }) => {
     localStorage.setItem('mockapi_file_project/NPC/BAU_900_Onar.d', content);
-  }, NPC_FILE);
+    for (const [path, source] of Object.entries(files)) {
+      localStorage.setItem(`mockapi_file_project/${path}`, source);
+    }
+  }, { content: NPC_FILE, files: extraFiles });
   page.on('dialog', async (dialog) => {
     if (dialog.message().includes('project folder path')) {
       await dialog.accept('project');
@@ -198,16 +201,59 @@ test.describe('NPC editor: routine jumps', () => {
     const editor = await openEditor(page);
     const daily = editor.getByRole('list', { name: 'Daily: RTN_START_900' });
     await expect(daily).toContainText('08:00–20:00');
+    await expect(daily).toContainText('TA_STAND_ARMSCROSSED');
     await expect(daily).toContainText('NW_BIGFARM_HOUSE_ONAR_BED');
     const show = editor.getByRole('button', { name: 'Show NW_BIGFARM_HOUSE_ONAR in the world' });
     await expect(show).toBeDisabled();
     await expect(editor.getByTitle('No world is open').first()).toBeVisible();
   });
 
+  test('opens the routine source at the indexed TA line', async ({ page }) => {
+    const editor = await openEditor(page);
+    await editor.getByRole('button', { name: 'Show source for RTN_START_900 at line 3' }).click();
+
+    const source = page.getByRole('dialog', { name: 'Routine source: RTN_START_900' });
+    await expect(source).toBeVisible();
+    await expect(source.getByTestId('npc-routine-source-target')).toHaveAttribute('data-line', '3');
+    await expect(source.getByTestId('npc-routine-source-target')).toContainText('TA_Stand_ArmsCrossed');
+  });
+
   test('waits for unsaved changes before leaving the editor', async ({ page }) => {
     const editor = await openEditor(page);
     await editor.getByLabel('Level').fill('30');
     await expect(editor.getByTitle('Save or cancel your changes first').first()).toBeVisible();
+  });
+});
+
+// Item names are mod-defined; categories come from each item's mainflag.
+const ITEM_CATEGORIES_FILE = `//__MOCK_MODEL__${JSON.stringify({
+  items: {
+    ChainArmor: { name: 'ChainArmor', parent: 'C_Item', sourceText: 'INSTANCE ChainArmor (C_Item)\n{\n\tmainflag = ITEM_KAT_ARMOR;\n};' },
+    OddSword: { name: 'OddSword', parent: 'C_Item', sourceText: 'INSTANCE OddSword (C_Item)\n{\n\tmainflag = ITEM_KAT_NF;\n};' },
+    OddBow: { name: 'OddBow', parent: 'C_Item', sourceText: 'INSTANCE OddBow (C_Item)\n{\n\tmainflag = ITEM_KAT_FF;\n};' },
+    ITAR_WrongCategory: { name: 'ITAR_WrongCategory', parent: 'C_Item', sourceText: 'INSTANCE ITAR_WrongCategory (C_Item)\n{\n\tmainflag = ITEM_KAT_NF;\n};' },
+  },
+})}\n`;
+
+test.describe('NPC editor: item categories', () => {
+  test('suggests armor and weapons from item flags, regardless of item names', async ({ page }) => {
+    await openProject(page, { 'Items/Custom.d': ITEM_CATEGORIES_FILE });
+    await expect(page.getByTestId('project-opening-overlay')).toBeHidden({ timeout: 15000 });
+    const editor = await openEditor(page);
+
+    await editor.getByLabel('Armor').fill('');
+    await editor.getByLabel('Armor').press('ArrowDown');
+    await expect(page.getByRole('option', { name: 'ChainArmor' })).toBeVisible();
+    await expect(page.getByRole('option', { name: 'OddSword' })).toHaveCount(0);
+
+    await editor.getByLabel('Melee weapon').fill('');
+    await editor.getByLabel('Melee weapon').press('ArrowDown');
+    await expect(page.getByRole('option', { name: 'OddSword' })).toBeVisible();
+    await expect(page.getByRole('option', { name: 'ITAR_WrongCategory' })).toBeVisible();
+
+    await editor.getByLabel('Ranged weapon').fill('');
+    await editor.getByLabel('Ranged weapon').press('ArrowDown');
+    await expect(page.getByRole('option', { name: 'OddBow' })).toBeVisible();
   });
 });
 

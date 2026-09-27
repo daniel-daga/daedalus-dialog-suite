@@ -643,13 +643,14 @@ export const mockEditorAPI: EditorAPI = {
 
       for (const fn of content.matchAll(/func\s+void\s+(Rtn_\w+)\s*\(\s*\)\s*\{([\s\S]*?)\n\};/gi)) {
         const bodyStart = fn.index! + fn[0].indexOf('{');
-        for (const ta of fn[2].matchAll(/TA_\w+\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*"(\w+)"\s*\)/gi)) {
+        for (const ta of fn[2].matchAll(/(TA_\w+)\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*"(\w+)"\s*\)/gi)) {
           const offset = bodyStart + 1 + ta.index!;
           routineSites.push({
             routine: fn[1].toUpperCase(),
-            startMinute: Number(ta[1]) * 60 + Number(ta[2]),
-            endMinute: Number(ta[3]) * 60 + Number(ta[4]),
-            waypoint: ta[5],
+            stateName: ta[1].toUpperCase(),
+            startMinute: Number(ta[2]) * 60 + Number(ta[3]),
+            endMinute: Number(ta[4]) * 60 + Number(ta[5]),
+            waypoint: ta[6],
             filePath,
             line: content.slice(0, offset).split('\n').length,
           });

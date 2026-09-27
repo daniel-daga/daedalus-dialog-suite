@@ -147,14 +147,14 @@ editor's own writes, so it is indexed and gets its EXIT dialog (#141) like a
 dropped-in file. The `Wld_InsertNpc` offer is not part of it: the World
 surface's insert already does that, and it needs a waypoint.
 
-**Still open in Phase 2:**
+**Phase 2 completed (2026-09-27):**
 
 - **VFS suggestions are built (2026-09-27).** With a World open, head mesh and
   walk overlay suggestions come from `HUM_HEAD_*.MMB` and `HUMANS_*.MDS` VFS
   searches; without one, both controls remain free text. The form edits the
   first matching `Mdl_ApplyOverlayMds` call and leaves other overlays alone.
-  Still open: filter armor and weapons by parsed item category flags instead of
-  the `ITAR_`/`ItMw_`/`ItRw_` name prefixes.
+  Armor and weapon suggestions are filtered by each item's parsed `mainflag`
+  category, so custom item names work without relying on Gothic's usual prefixes.
 - **Jumps from the routines section.** It lists (read-only, built
   2026-09-25) the declared routine and each state variant with their time
   windows and waypoints, from `routineSiteIndex`/`routineNpcIndex`/
@@ -163,16 +163,13 @@ surface's insert already does that, and it needs a waypoint.
   jumps to the World surface (2026-09-26)**, with the insert-NPC button's
   reasons when it cannot (`waypointJumpReason` in `components/npcWorldJump.ts`,
   shared by both), and is held while the form has unsaved changes, since the
-  jump closes the dialog. Still missing: a jump to the routine's **source**,
-  which has nowhere to land — the dialog view shows a function only inside a
-  dialog, and there is no source view (`spacer-gap-triage.md` §A4) — and the
-  TA state name (`TA_Sit`, …), which `RoutineSite` does not carry.
+  jump closes the dialog. **A source jump is built (2026-09-27):** it opens the
+  routine's raw file at the indexed TA line in a read-only view and highlights
+  that line, and labels each entry with its TA state name (`TA_Sit`, …).
 - **Real-Electron disk truth is covered (2026-09-27).**
   `tests/e2e-electron/npc-editor-disk-truth.spec.ts` edits an NPC field through
   the real app, checks the bytes on disk, and reparses them through the real
-  parser. The remaining Phase 2 gaps are asset-backed suggestions and a jump
-  from a routine to its source; the latter needs a raw source view that can
-  open an arbitrary function file and line.
+  parser.
 
 ## 4. Phase 3 — the visual preview
 

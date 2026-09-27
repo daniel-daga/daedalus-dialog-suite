@@ -446,6 +446,7 @@ export function extractRoutineSites(
 
         sites.push({
           routine: functionName.toUpperCase(),
+          stateName: call.functionName.toUpperCase(),
           startMinute,
           endMinute,
           waypoint: waypointArg.value.toUpperCase(),
