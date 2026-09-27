@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import App from './App';
+import { parseBuildChanges } from './components/WhatChangedDialog';
 import { themes, THEME_STORAGE_KEY, ThemeMode } from './theme';
 import { ThemeModeContext } from './themeContext';
 
@@ -11,6 +12,8 @@ import { ThemeModeContext } from './themeContext';
 // server). Gated on DEV so the production build drops the shim — Vite replaces
 // `import.meta.env.DEV` with a constant and Rollup removes the dead branch,
 // dynamic import and all (§3 P3; pinned by tests/bundleContents.test.ts).
+const buildChanges = parseBuildChanges(import.meta.env.VITE_WHAT_CHANGED);
+
 async function installBrowserMockApi(): Promise<void> {
   // Two plain guards, not one `||`: Rollup only proves the tail unreachable
   // when the constant stands alone in its own `if`.
@@ -66,7 +69,7 @@ const Root: React.FC = () => {
     <ThemeModeContext.Provider value={themeContextValue}>
       <ThemeProvider theme={themes[mode]}>
         <CssBaseline />
-        <App />
+        <App buildChanges={buildChanges} />
       </ThemeProvider>
     </ThemeModeContext.Provider>
   );

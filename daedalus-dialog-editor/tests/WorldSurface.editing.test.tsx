@@ -3613,7 +3613,12 @@ describe('a class property edited in the grid', () => {
     await openLight();
     mockVobProps = { ...LIGHT_PROPS, range: 3000 };
 
+    const readsBeforeCommit = api.getVobProps.mock.calls.length;
     commitRange('3000');
+    // The commit's own re-read, not the typed value: that is on screen before
+    // the commit lands, and swapping the mock below ahead of the re-read would
+    // have it answer 2000 as well — the undo's read then changes nothing.
+    await waitFor(() => expect(api.getVobProps.mock.calls.length).toBeGreaterThan(readsBeforeCommit));
     await waitFor(() => expect(rangeInput().value).toBe('3000'));
 
     mockVobProps = LIGHT_PROPS;

@@ -33,7 +33,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { IngestedFilesDialog } from './components/IngestedFilesDialog';
 import ProjectOpeningOverlay from './components/ProjectOpeningOverlay';
 import UpdateNotification from './components/UpdateNotification';
-import WhatChangedDialog, { parseBuildChanges } from './components/WhatChangedDialog';
+import WhatChangedDialog, { type BuildChange } from './components/WhatChangedDialog';
 import { RecentProject } from './types/global';
 import { ThemeMode } from './theme';
 import { useThemeMode } from './themeContext';
@@ -52,15 +52,18 @@ import { useWorldStore } from './store/worldStore';
 // cache via a Zustand subscription rather than direct imports.
 initStoreSync();
 
+interface AppProps {
+  /** This build's notes. Read from `import.meta.env` in main.tsx, which Jest never loads. */
+  buildChanges?: BuildChange[];
+}
+
 const themeOptions: Array<{ value: ThemeMode; label: string; icon: JSX.Element }> = [
   { value: 'dark', label: 'Dark', icon: <DarkModeIcon fontSize="small" /> },
   { value: 'light', label: 'Light', icon: <LightModeIcon fontSize="small" /> },
   { value: 'gothic', label: 'Gothic', icon: <AutoAwesomeIcon fontSize="small" /> },
 ];
 
-const buildChanges = parseBuildChanges(import.meta.env.VITE_WHAT_CHANGED);
-
-const AppContent: React.FC = () => {
+const AppContent: React.FC<AppProps> = ({ buildChanges = [] }) => {
   const { openFile, activeFile, resetEditorSession } = useEditorStore((state) => ({
     openFile: state.openFile,
     activeFile: state.activeFile,
@@ -653,9 +656,9 @@ const AppContent: React.FC = () => {
  * window down with it (production review §2). This outer boundary catches those;
  * the inner one still keeps the chrome alive when only MainLayout fails.
  */
-const App: React.FC = () => (
+const App: React.FC<AppProps> = ({ buildChanges }) => (
   <ErrorBoundary>
-    <AppContent />
+    <AppContent buildChanges={buildChanges} />
   </ErrorBoundary>
 );
 
