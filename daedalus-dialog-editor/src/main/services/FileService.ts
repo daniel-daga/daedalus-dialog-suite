@@ -357,9 +357,12 @@ export class FileService {
       } catch (error) {
         const err = error as NodeJS.ErrnoException;
 
-        if (err.code === 'EACCES') {
+        if (err.code === 'EACCES' || err.code === 'EPERM' || err.code === 'EBUSY') {
+          const message = process.platform === 'win32'
+            ? `Windows could not replace ${filePath}. Check that the file is not read-only or open in another program. Projects under Program Files may require administrator access; moving the mod to a user-writable folder usually avoids this.`
+            : `Could not replace ${filePath}. Check file permissions and whether another program is holding the file open.`;
           throw new FileServiceError(
-            `Permission denied: ${filePath}`,
+            message,
             'PERMISSION_DENIED',
             filePath,
             err
