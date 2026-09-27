@@ -19,6 +19,7 @@ export const EQUIP_CALL = 'EquipItem';
 type Target =
   | { kind: 'field'; field: string; index?: string }
   | { kind: 'visualArg'; arg: number }
+  | { kind: 'overlay' }
   /** The first `EquipItem(slf, item)` whose item starts with `prefix`. */
   | { kind: 'equip'; prefix: string };
 
@@ -30,7 +31,8 @@ export interface NpcFormField {
   /** Shown without quotes and written back as a string literal. */
   string?: true;
   /** Where the control's suggestions come from; free text is always allowed. */
-  options?: { constantPrefix: string } | { itemPrefix: string } | { routines: true } | { values: string[] };
+  options?: { constantPrefix: string } | { itemPrefix: string } | { routines: true } | { values: string[] }
+    | { assets: 'headMesh' | 'walkOverlay' };
 }
 
 const f = (
@@ -66,7 +68,9 @@ export const NPC_FORM_FIELDS: NpcFormField[] = [
   f('protectionFly', 'Fly', 'protection', 'protection', 'PROT_FLY'),
   f('protectionMagic', 'Magic', 'protection', 'protection', 'PROT_MAGIC'),
   v('gender', 'Gender', 1, { values: ['MALE', 'FEMALE'] }),
-  { ...v('headMesh', 'Head mesh', 2), string: true },
+  { ...v('headMesh', 'Head mesh', 2, { assets: 'headMesh' }), string: true },
+  { key: 'walkOverlay', label: 'Walk overlay', group: 'visual', target: { kind: 'overlay' },
+    string: true, options: { assets: 'walkOverlay' } },
   v('faceTexture', 'Face texture', 3, { constantPrefix: 'Face' }),
   v('bodyTexture', 'Body texture', 4, { constantPrefix: 'BodyTex' }),
   v('armor', 'Armor', 5, { itemPrefix: 'ITAR_' }),
@@ -99,6 +103,18 @@ function findEquip(npc: NpcDefinition, prefix: string): { call: NpcCallStatement
   return occurrence === -1 ? undefined : { call: equips[occurrence], occurrence };
 }
 
+/** The first `Mdl_ApplyOverlayMds` using a mounted HUMANS_ walk overlay. */
+function findWalkOverlay(npc: NpcDefinition): { call: NpcCallStatement; occurrence: number } | undefined {
+  const overlays = npc.statements.filter(
+    (s): s is NpcCallStatement => s.kind === 'call' && same(s.name, 'Mdl_ApplyOverlayMds'),
+  );
+  const occurrence = overlays.findIndex((call) => {
+    const argument = (call.args[1] ?? '').trim().replace(/^"|"$/g, '');
+    return argument.toUpperCase().startsWith('HUMANS_') && argument.toUpperCase().endsWith('.MDS');
+  });
+  return occurrence === -1 ? undefined : { call: overlays[occurrence], occurrence };
+}
+
 const isStringLiteral = (value: string) => /^"[^"]*"$/.test(value);
 
 /** The expression the script has for `field`, or undefined when absent. */
@@ -106,6 +122,7 @@ function writtenValue(npc: NpcDefinition, field: NpcFormField): string | undefin
   const { target } = field;
   if (target.kind === 'field') return findField(npc, target.field, target.index)?.value;
   if (target.kind === 'equip') return findEquip(npc, target.prefix)?.call.args[1];
+  if (target.kind === 'overlay') return findWalkOverlay(npc)?.call.args[1];
   return findVisualCall(npc)?.args[target.arg];
 }
 
@@ -173,6 +190,22 @@ export function editsBetween(npc: NpcDefinition, before: NpcFormValues, after: N
     }
   }
 
+  for (const field of NPC_FORM_FIELDS) {
+    if (field.target.kind !== 'overlay' || !changed(field.key)) continue;
+    const typed = (after[field.key] ?? '').trim();
+    const existing = findWalkOverlay(npc);
+    if (!existing) {
+      if (typed !== '') edits.push({ op: 'addCall', name: 'Mdl_ApplyOverlayMds', args: ['self', toExpression(npc, field, typed)] });
+    } else if (typed === '') {
+      edits.push({ op: 'removeCall', name: 'Mdl_ApplyOverlayMds', occurrence: existing.occurrence });
+    } else {
+      edits.push({
+        op: 'setCall', name: 'Mdl_ApplyOverlayMds', occurrence: existing.occurrence,
+        args: [existing.call.args[0], toExpression(npc, field, typed)],
+      });
+    }
+  }
+
   if (VISUAL_FIELDS.some((field) => changed(field.key))) {
     const typed = VISUAL_FIELDS.map((field) => (after[field.key] ?? '').trim());
     if (typed.every((arg) => arg === '')) {
@@ -194,6 +227,7 @@ export function uncoveredStatements(npc: NpcDefinition): NpcStatement[] {
     const { target } = field;
     const statement = target.kind === 'field' ? findField(npc, target.field, target.index)
       : target.kind === 'equip' ? findEquip(npc, target.prefix)?.call
+        : target.kind === 'overlay' ? findWalkOverlay(npc)?.call
         : undefined;
     if (statement) covered.add(statement);
   }

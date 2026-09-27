@@ -29,6 +29,7 @@ import { useWorldStore } from '../store/worldStore';
 import { useUISelectionStore } from '../store/uiSelectionStore';
 import { waypointJumpReason } from './npcWorldJump';
 import NpcVisualPreview from './NpcVisualPreview';
+import { npcAssetSuggestions, type NpcAssetSuggestions } from '../npc/npcAssets';
 
 // The NPC editor (docs/plans/npc-editor.md, Phase 2): a form over one NPC
 // instance's body. It opens the declaring file through the file store — so
@@ -60,6 +61,7 @@ function optionsFor(field: NpcFormField): string[] {
   const { options } = field;
   if (!options) return [];
   if ('values' in options) return options.values;
+  if ('assets' in options) return [];
   const project = useProjectStore.getState();
   if ('routines' in options) return project.routineList;
   const names = 'constantPrefix' in options
@@ -161,6 +163,7 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
   const [values, setValues] = useState<NpcFormValues>({});
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [assetSuggestions, setAssetSuggestions] = useState<NpcAssetSuggestions>({ headMeshes: [], walkOverlays: [] });
 
   useEffect(() => {
     let cancelled = false;
@@ -197,6 +200,23 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
     () => Object.fromEntries(NPC_FORM_FIELDS.map((field) => [field.key, optionsFor(field)])),
     [],
   );
+  const worldReady = useWorldStore((s) => s.status === 'ready');
+  useEffect(() => {
+    if (!worldReady) {
+      setAssetSuggestions({ headMeshes: [], walkOverlays: [] });
+      return undefined;
+    }
+    let current = true;
+    void Promise.all([
+      window.editorAPI.searchWorldAssets('HUM_HEAD_'),
+      window.editorAPI.searchWorldAssets('HUMANS_'),
+    ]).then(([heads, overlays]) => {
+      if (current) setAssetSuggestions(npcAssetSuggestions(heads.matches, overlays.matches));
+    }).catch(() => {
+      if (current) setAssetSuggestions({ headMeshes: [], walkOverlays: [] });
+    });
+    return () => { current = false; };
+  }, [worldReady]);
   const uncovered = useMemo(() => (definition ? uncoveredStatements(definition) : []), [definition]);
   const routines = useMemo(() => {
     const project = useProjectStore.getState();
@@ -265,7 +285,9 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
   const renderField = (field: NpcFormField) => {
     const value = values[field.key] ?? '';
     const onChange = (next: string) => setValues((current) => ({ ...current, [field.key]: next }));
-    const fieldOptions = options[field.key];
+    const fieldOptions = field.options && 'assets' in field.options
+      ? (field.options.assets === 'headMesh' ? assetSuggestions.headMeshes : assetSuggestions.walkOverlays)
+      : options[field.key];
     if (fieldOptions.length === 0) {
       return (
         <TextField

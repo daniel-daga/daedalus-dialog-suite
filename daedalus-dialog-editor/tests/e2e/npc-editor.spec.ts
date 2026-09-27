@@ -15,6 +15,7 @@ const NPC_FILE = `INSTANCE BAU_900_Onar (C_NPC)
 	guild = GIL_BAU;
 	level = 20;
 	B_SetNpcVisual (self, MALE, "Hum_Head_Fatbald", Face_N_Weak_Orry, BodyTex_N, ITAR_Vlk_H);
+	Mdl_ApplyOverlayMds (self, "HUMANS_S1.MDS");
 	EquipItem (self, ItMw_1h_Bau_Mace);
 	daily_routine = Rtn_Start_900;
 };
@@ -62,6 +63,11 @@ test.describe('NPC editor', () => {
     await expect(editor.getByLabel('Ranged weapon')).toHaveValue('');
     // Absent from the script, so empty — not a default the editor invented.
     await expect(editor.getByLabel('Strength')).toHaveValue('');
+  });
+
+  test('shows the declared walk overlay as an editable visual field', async ({ page }) => {
+    const editor = await openEditor(page);
+    await expect(editor.getByLabel('Walk overlay')).toHaveValue('HUMANS_S1.MDS');
   });
 
   test('an edit survives save and reopen', async ({ page }) => {

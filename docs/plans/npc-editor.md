@@ -149,9 +149,12 @@ surface's insert already does that, and it needs a waypoint.
 
 **Still open in Phase 2:**
 
-- **Asset-backed suggestions** — head meshes and walk overlays from the VFS
-  (`HUM_HEAD_*.MMB`, `HUMANS_*.MDS`) — and splitting items by category flags
-  rather than by the `ITAR_`/`ItMw_`/`ItRw_` prefixes.
+- **VFS suggestions are built (2026-09-27).** With a World open, head mesh and
+  walk overlay suggestions come from `HUM_HEAD_*.MMB` and `HUMANS_*.MDS` VFS
+  searches; without one, both controls remain free text. The form edits the
+  first matching `Mdl_ApplyOverlayMds` call and leaves other overlays alone.
+  Still open: filter armor and weapons by parsed item category flags instead of
+  the `ITAR_`/`ItMw_`/`ItRw_` name prefixes.
 - **Jumps from the routines section.** It lists (read-only, built
   2026-09-25) the declared routine and each state variant with their time
   windows and waypoints, from `routineSiteIndex`/`routineNpcIndex`/

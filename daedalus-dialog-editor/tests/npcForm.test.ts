@@ -174,4 +174,43 @@ describe('npcForm', () => {
       expect(uncoveredStatements(LEE)).toEqual([LEE.statements[2]]);
     });
   });
+
+  describe('walk overlays', () => {
+    const npc: NpcDefinition = {
+      name: 'SLD_800_Lee', parent: 'Npc_Default', closingBraceIndex: 0,
+      statements: [
+        call('Mdl_ApplyOverlayMds', ['self', '"HUMANS_S1.MDS"']),
+        call('Mdl_ApplyOverlayMds', ['self', '"HUMANS_MAGE.MDS"']),
+        call('Mdl_ApplyOverlayMds', ['self', '"HUMANS_EXTRA.MDS"']),
+      ],
+    };
+
+    it('reads the first walk overlay and edits only that call', () => {
+      const before = formValuesFrom(npc);
+      expect(before.walkOverlay).toBe('HUMANS_S1.MDS');
+      expect(editsBetween(npc, before, { ...before, walkOverlay: 'HUMANS_S2.MDS' })).toEqual([
+        { op: 'setCall', name: 'Mdl_ApplyOverlayMds', occurrence: 0, args: ['self', '"HUMANS_S2.MDS"'] },
+      ]);
+    });
+
+    it('removes only the first walk overlay when cleared', () => {
+      const before = formValuesFrom(npc);
+      expect(editsBetween(npc, before, { ...before, walkOverlay: '' })).toEqual([
+        { op: 'removeCall', name: 'Mdl_ApplyOverlayMds', occurrence: 0 },
+      ]);
+    });
+
+    it('adds a walk overlay without changing unrelated overlays', () => {
+      const bare: NpcDefinition = {
+        ...npc,
+        statements: [call('Mdl_ApplyOverlayMds', ['self', '"MDS_EXTRA.MDS"'])],
+      };
+      const before = formValuesFrom(bare);
+      expect(before.walkOverlay).toBe('');
+      expect(uncoveredStatements(bare)).toEqual(bare.statements);
+      expect(editsBetween(bare, before, { ...before, walkOverlay: 'HUMANS_S1.MDS' })).toEqual([
+        { op: 'addCall', name: 'Mdl_ApplyOverlayMds', args: ['self', '"HUMANS_S1.MDS"'] },
+      ]);
+    });
+  });
 });
