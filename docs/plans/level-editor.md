@@ -1378,6 +1378,14 @@ closure of the class rather than of the instrument:
 already built, and what retired the crashes is fifteen bounding patches rather
 than a proof that none is left.
 
+**A worker crash names its world and phase (#272, 2026-09-27).** Before each
+synchronous ZenKit phase, `zenkit.worker` reports the request id and phase to
+`WorldService`. The service retains that phase beside the request and world
+path; if the worker exits, the error now says which operation was running, which
+world it was operating on, and the last reported phase. `WorldService.test.ts`
+pins a crash during `open` at `vobIndex`. The retail `--file` fuzz run remains
+machine-local and is still outstanding.
+
 ### 16.12 Two viewport constants only Daniel's hands can settle
 
 Both landed with numbers chosen by reasoning, and neither had a test that could

@@ -61,6 +61,9 @@ interface Pending {
   reject: (reason: Error) => void;
   resolve: (value: never) => void;
   timer: NodeJS.Timeout;
+  op: WorldWorkerOp;
+  worldPath: string | null;
+  phase: string;
 }
 
 export class WorldService {
@@ -71,6 +74,8 @@ export class WorldService {
   private worldPath: string | null = null;
   private assetSources: readonly string[] | null = null;
   private failure: WorkerRequestError | null = null;
+  /** The worker's latest phase message identifies its synchronous call. */
+  private activeRequestId: string | null = null;
   // The authoritative history (§7). A batch is one entry. Both stacks belong to
   // the world that is open: an op addresses a VOB by its index path down *that*
   // world's tree, and replayed against the next one it would resolve to
@@ -408,6 +413,7 @@ export class WorldService {
 
   private startWorker(): void {
     this.failure = null;
+    this.activeRequestId = null;
     const worker = this.createWorker();
     // Every handler is scoped to the worker it was registered for. `close()`
     // and `handleTimeout` terminate and null `this.worker`, and `exit` arrives
@@ -445,18 +451,40 @@ export class WorldService {
       const id = randomUUID();
       const timer = setTimeout(() => this.handleTimeout(op), this.requestTimeoutMs);
 
-      this.pending.set(id, { resolve: resolve as (value: never) => void, reject, timer });
+      const requestedWorldPath = op === 'open'
+        && payload !== null
+        && typeof payload === 'object'
+        && 'worldPath' in payload
+        && typeof payload.worldPath === 'string'
+        ? payload.worldPath
+        : this.worldPath;
+      this.pending.set(id, {
+        resolve: resolve as (value: never) => void,
+        reject,
+        timer,
+        op,
+        worldPath: requestedWorldPath,
+        phase: op,
+      });
       this.worker!.postMessage({ id, op, payload });
     });
   }
 
   private handleMessage(message: WorldWorkerResponse): void {
     const pending = this.pending.get(message.id);
+    if (!('ok' in message)) {
+      if (pending) {
+        pending.phase = message.phase;
+        this.activeRequestId = message.id;
+      }
+      return;
+    }
     // A reply to a request that already timed out: the caller has been told it
     // failed, so resurrecting it here would settle a promise twice.
     if (!pending) return;
 
     this.pending.delete(message.id);
+    if (this.activeRequestId === message.id) this.activeRequestId = null;
     clearTimeout(pending.timer);
     if (message.ok) pending.resolve(message.result as never);
     else pending.reject(new Error(message.error));
@@ -499,8 +527,17 @@ export class WorldService {
 
   private handleWorkerDeath(error: Error): void {
     if (this.failure !== null) return; // error + exit double-fire
+    const inFlight = this.activeRequestId === null
+      ? this.pending.values().next().value as Pending | undefined
+      : this.pending.get(this.activeRequestId);
+    const context = inFlight === undefined
+      ? ''
+      : ` during ${inFlight.op}${inFlight.worldPath === null
+        ? ''
+        : ` for ${JSON.stringify(inFlight.worldPath)}`} at ${inFlight.phase}`;
+    this.activeRequestId = null;
     this.failure = new WorkerRequestError(
-      `The world worker died (${error.message}) — reopen the world`, 'world-crashed',
+      `The world worker died${context} (${error.message}) — reopen the world`, 'world-crashed',
     );
     this.rejectAll(this.failure);
     this.worldPath = null;

@@ -47,6 +47,11 @@ class FakeWorker implements WorldWorker {
     this.emit('message', { id: message.id, ok: false, error });
   }
 
+  progress(op: string, phase: string) {
+    const message = [...this.sent].reverse().find((m) => m.op === op)!;
+    this.emit('message', { id: message.id, type: 'phase', phase });
+  }
+
   emit(event: string, arg: unknown) {
     for (const handler of this.handlers.get(event) ?? []) handler(arg);
   }
@@ -197,6 +202,30 @@ describe('WorldService', () => {
 
     await expect(mesh).rejects.toThrow(WorkerRequestError);
     await expect(visuals).rejects.toThrow(WorkerRequestError);
+    service.close();
+  });
+
+  test('a worker crash identifies the open world and native phase', async () => {
+    const { worker, service } = makeService();
+    const opening = service.openWorld(OPEN);
+    worker.progress('open', 'vobIndex');
+    worker.emit('error', new Error('addon aborted'));
+
+    await expect(opening).rejects.toThrow(
+      'The world worker died during open for "C:/Gothic/NewWorld.zen" at vobIndex (addon aborted)',
+    );
+    service.close();
+  });
+
+  test('a worker crash after open keeps the opened world path in its report', async () => {
+    const { worker, service } = await openedService();
+    const mesh = service.getWorldMesh();
+    worker.progress('worldMesh', 'extractWorldMesh');
+    worker.emit('error', new Error('native abort'));
+
+    await expect(mesh).rejects.toThrow(
+      'The world worker died during worldMesh for "C:/Gothic/NewWorld.zen" at extractWorldMesh (native abort)',
+    );
     service.close();
   });
 

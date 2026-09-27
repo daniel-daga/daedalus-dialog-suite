@@ -99,7 +99,11 @@ const npcBinding: NpcBinding = {
 };
 
 const timings: Record<string, number> = {};
+let currentRequestId: string | null = null;
 function phase<T>(name: string, run: () => T): T {
+  if (currentRequestId !== null) {
+    parentPort?.postMessage({ id: currentRequestId, type: 'phase', phase: name });
+  }
   const started = Date.now();
   const value = run();
   timings[name] = Date.now() - started;
@@ -425,6 +429,7 @@ function close(): { result: null; transfer: ArrayBuffer[] } {
 
 if (parentPort) {
   parentPort.on('message', (message: WorldWorkerRequest) => {
+    currentRequestId = message.id;
     try {
       const { result, transfer } = run(message);
       parentPort!.postMessage({ id: message.id, ok: true, result }, transfer);
@@ -434,6 +439,8 @@ if (parentPort) {
         ok: false,
         error: error instanceof Error ? error.message : String(error),
       });
+    } finally {
+      currentRequestId = null;
     }
   });
 }

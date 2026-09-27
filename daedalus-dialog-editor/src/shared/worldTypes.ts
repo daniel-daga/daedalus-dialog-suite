@@ -210,5 +210,6 @@ export interface WorldWorkerRequest {
 }
 
 export type WorldWorkerResponse =
+  | { id: string; type: 'phase'; phase: string }
   | { id: string; ok: true; result: unknown }
   | { id: string; ok: false; error: string };
