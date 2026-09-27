@@ -9,12 +9,10 @@
 
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import type { NpcDefinition, NpcStatement } from '../src/shared/types';
 import type { NpcBodyScene } from '../src/shared/worldTypes';
 import * as mockWorldViewport from './worldViewportMocks';
 import NpcVisualPreview from '../src/renderer/components/NpcVisualPreview';
-import { useWorldStore } from '../src/renderer/store/worldStore';
 
 jest.mock('three', () => mockWorldViewport.mockThree());
 jest.mock('three/examples/jsm/controls/OrbitControls.js', () => mockWorldViewport.mockOrbitControls());
@@ -53,23 +51,28 @@ beforeEach(() => {
     getNpcBody,
     getWorldTexture: jest.fn(async () => null),
   };
-  useWorldStore.setState({ status: 'idle' });
 });
 
 const renderPreview = (definition = ONAR) => render(
-  <NpcVisualPreview definition={definition} edits={[]} lookupConstant={lookupConstant} itemSource={itemSource} />,
+  <NpcVisualPreview
+    definition={definition}
+    edits={[]}
+    lookupConstant={lookupConstant}
+    itemSource={itemSource}
+    assetsReady
+    assetsError={null}
+  />,
 );
 
 describe('NpcVisualPreview', () => {
-  it('says what it would draw, and that it needs a world for the meshes', () => {
+  it('requests the NPC body when project assets are mounted without a world open', async () => {
+    getNpcBody.mockResolvedValue(null);
     renderPreview();
     expect(screen.getByTestId('npc-preview-summary')).toHaveTextContent('Armor_Vlk_H.asc · head Hum_Head_Fatbald');
-    expect(screen.getByTestId('npc-preview-no-world')).toBeInTheDocument();
-    expect(getNpcBody).not.toHaveBeenCalled();
+    await waitFor(() => expect(getNpcBody).toHaveBeenCalled());
   });
 
   it('asks the world worker for the body and draws it, with what it could not place', async () => {
-    useWorldStore.setState({ status: 'ready' });
     getNpcBody.mockResolvedValue(scene(['Head mesh Hum_Head_Fatbald did not resolve']));
     renderPreview();
 
@@ -84,25 +87,21 @@ describe('NpcVisualPreview', () => {
   });
 
   it('says the body did not resolve when the worker finds nothing', async () => {
-    useWorldStore.setState({ status: 'ready' });
     getNpcBody.mockResolvedValue(null);
     renderPreview();
     expect(await screen.findByTestId('npc-preview-failed'))
       .toHaveTextContent('Armor_Vlk_H.asc does not resolve in the mounted assets');
   });
 
-  it('lets me enable and scrub the NPC idle pose', async () => {
-    useWorldStore.setState({ status: 'ready' });
+  it('does not show idle animation controls', async () => {
     getNpcBody.mockResolvedValue(scene([]));
     renderPreview();
     await waitFor(() => expect(getNpcBody).toHaveBeenCalled());
-    await userEvent.click(screen.getByRole('checkbox', { name: 'Scrub idle animation' }));
-    await waitFor(() => expect(getNpcBody).toHaveBeenLastCalledWith(expect.objectContaining({ animationPhase: 0 })));
-    expect(screen.getByRole('slider', { name: 'Idle animation frame' })).toBeInTheDocument();
+    expect(screen.queryByTestId('npc-animation-controls')).not.toBeInTheDocument();
+    expect(screen.queryByRole('slider', { name: 'Idle animation frame' })).not.toBeInTheDocument();
   });
 
   it('says why it cannot draw an NPC whose visual it cannot read, and asks nothing', () => {
-    useWorldStore.setState({ status: 'ready' });
     renderPreview({ ...ONAR, statements: [] });
     expect(screen.getByTestId('npc-preview-reason')).toHaveTextContent('No Mdl_SetVisual call');
     expect(getNpcBody).not.toHaveBeenCalled();

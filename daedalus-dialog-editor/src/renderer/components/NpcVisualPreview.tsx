@@ -1,16 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Box, CircularProgress, FormControlLabel, Slider, Stack, Switch, Typography } from '@mui/material';
+import { Box, CircularProgress, Stack, Typography } from '@mui/material';
 import type { NpcDefinition, NpcEdit } from '../../shared/types';
 import type { NpcBodyScene } from '../../shared/worldTypes';
 import { npcBodyRequest, resolveNpcVisual, withEdits } from '../npc/npcVisual';
-import { useWorldStore } from '../store/worldStore';
 import { useVisualPreviewCanvas } from './world/hooks/useVisualPreviewCanvas';
 
 // The NPC as the engine would draw it, beside the form (npc-editor.md §4).
 // It follows the form: unsaved edits are applied in memory before the visual
-// is resolved. The meshes and textures come from the world worker's VFS, which
-// exists only while a world is open — so without one the panel says what it
-// would draw and why it cannot yet.
+// is resolved. The project assets are mounted on demand for this preview, even
+// when no level is open in the World surface.
 
 interface NpcVisualPreviewProps {
   definition: NpcDefinition;
@@ -18,6 +16,8 @@ interface NpcVisualPreviewProps {
   edits: NpcEdit[];
   lookupConstant: (name: string) => number | undefined;
   itemSource: (instance: string) => string | undefined;
+  assetsReady: boolean;
+  assetsError: string | null;
 }
 
 const TEXTURE_SIZE = 256;
@@ -26,21 +26,19 @@ const DEBOUNCE_MS = 250;
 
 const loadTexture = (name: string, maxSize: number) => window.editorAPI.getWorldTexture(name, maxSize);
 
-const NpcVisualPreview: React.FC<NpcVisualPreviewProps> = ({ definition, edits, lookupConstant, itemSource }) => {
-  const worldReady = useWorldStore((s) => s.status === 'ready');
+const NpcVisualPreview: React.FC<NpcVisualPreviewProps> = (
+  { definition, edits, lookupConstant, itemSource, assetsReady, assetsError },
+) => {
   const resolved = useMemo(
     () => resolveNpcVisual(withEdits(definition, edits), lookupConstant),
     [definition, edits, lookupConstant],
   );
-  const [idlePhase, setIdlePhase] = useState<number | null>(null);
   const body = useMemo(
     () => {
       if (!resolved.ok) return null;
-      const request = npcBodyRequest(resolved.visual, itemSource);
-      if (idlePhase !== null) request.request.animationPhase = idlePhase;
-      return request;
+      return npcBodyRequest(resolved.visual, itemSource);
     },
-    [resolved, itemSource, idlePhase],
+    [resolved, itemSource],
   );
   const requestKey = body ? JSON.stringify(body.request) : null;
 
@@ -51,7 +49,7 @@ const NpcVisualPreview: React.FC<NpcVisualPreviewProps> = ({ definition, edits, 
   useEffect(() => {
     setScene(null);
     setState('idle');
-    if (!worldReady || requestKey === null) return;
+    if (!assetsReady || requestKey === null || assetsError !== null) return;
     let current = true;
     setState('loading');
     const timer = setTimeout(() => {
@@ -64,7 +62,7 @@ const NpcVisualPreview: React.FC<NpcVisualPreviewProps> = ({ definition, edits, 
         .catch(() => { if (current) setState('failed'); });
     }, DEBOUNCE_MS);
     return () => { current = false; clearTimeout(timer); };
-  }, [worldReady, requestKey]);
+  }, [assetsReady, assetsError, requestKey]);
 
   useVisualPreviewCanvas(canvasRef, scene, loadTexture, TEXTURE_SIZE);
 
@@ -82,28 +80,15 @@ const NpcVisualPreview: React.FC<NpcVisualPreviewProps> = ({ definition, edits, 
           {`${body.request.body} · head ${body.request.head}`}
         </Typography>
       )}
-      {body && (
-        <Box sx={{ mt: 0.5, maxWidth: 300 }} data-testid="npc-animation-controls">
-          <FormControlLabel
-            control={<Switch checked={idlePhase !== null} onChange={(_, checked) => setIdlePhase(checked ? 0 : null)} size="small" />}
-            label={<Typography variant="caption">Scrub idle animation</Typography>}
-          />
-          {idlePhase !== null && (
-            <Slider
-              aria-label="Idle animation frame"
-              data-testid="npc-animation-scrubber"
-              size="small"
-              min={0}
-              max={100}
-              value={Math.round(idlePhase * 100)}
-              onChange={(_, value) => setIdlePhase(Number(value) / 100)}
-            />
-          )}
-        </Box>
+      {body && !assetsReady && !assetsError && (
+        <Stack direction="row" spacing={1} alignItems="center">
+          <CircularProgress size={14} />
+          <Typography variant="caption" color="text.secondary">Loading project assets…</Typography>
+        </Stack>
       )}
-      {body && !worldReady && (
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }} data-testid="npc-preview-no-world">
-          Open a world to see it: the game&apos;s meshes and textures are mounted with the world.
+      {body && assetsError && (
+        <Typography variant="caption" color="error" sx={{ display: 'block' }} data-testid="npc-preview-assets-error">
+          {`Could not load project assets: ${assetsError}`}
         </Typography>
       )}
       {state === 'loading' && (
@@ -122,7 +107,7 @@ const NpcVisualPreview: React.FC<NpcVisualPreviewProps> = ({ definition, edits, 
           ref={canvasRef}
           data-testid="npc-preview-canvas"
           style={{
-            width: '100%', maxWidth: 320, aspectRatio: '1 / 1', display: 'block', marginTop: 4,
+            width: '100%', maxWidth: 320, height: 400, display: 'block', marginTop: 4,
             border: '1px solid rgba(128,128,128,0.4)', touchAction: 'none',
           }}
         />

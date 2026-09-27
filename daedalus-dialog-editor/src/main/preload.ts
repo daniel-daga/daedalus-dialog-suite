@@ -80,6 +80,7 @@ contextBridge.exposeInMainWorld('editorAPI', {
     ipcRenderer.invoke('world:open', request),
   getWorldMesh: () => ipcRenderer.invoke('world:mesh'),
   getWorldVisuals: () => ipcRenderer.invoke('world:visuals'),
+  ensureNpcPreviewAssets: () => ipcRenderer.invoke('world:ensureNpcPreviewAssets'),
   listWorldAssets: (path: string) => ipcRenderer.invoke('world:assets', { path }),
   searchWorldAssets: (query: string) => ipcRenderer.invoke('world:assetSearch', { query }),
   resolveWorldAssets: (names: string[]) => ipcRenderer.invoke('world:assetResolve', { names }),

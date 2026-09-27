@@ -445,9 +445,18 @@ if (parentPort) {
   });
 }
 
+/** Mount the active project's configured assets without loading a level. The
+ *  NPC preview needs the VFS for meshes and textures, but not a world handle. */
+function mountAssets(payload: { assetSources: string[] }): { result: null; transfer: ArrayBuffer[] } {
+  vfs = phase('openVfs', () => zenkit.openVfs(payload.assetSources, { overwrite: 'all' }));
+  openedSources = [...payload.assetSources];
+  return { result: null, transfer: [] };
+}
+
 function run(message: WorldWorkerRequest): { result: unknown; transfer: ArrayBuffer[] } {
   switch (message.op) {
     case 'open': return open(message.payload as ResolvedOpenWorldRequest);
+    case 'mountAssets': return mountAssets(message.payload as { assetSources: string[] });
     case 'worldMesh': return takeWorldMesh();
     case 'visuals': return visuals();
     case 'texture': return texture(message.payload as { name: string; maxSize: number });

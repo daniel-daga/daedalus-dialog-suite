@@ -31,8 +31,9 @@ export interface NpcFormField {
   target: Target;
   /** Shown without quotes and written back as a string literal. */
   string?: true;
-  /** Where the control's suggestions come from; free text is always allowed. */
-  options?: { constantPrefix: string } | { itemPrefix: string } | { routines: true } | { values: string[] }
+  /** Where the control's selectable choices come from. */
+  options?: { constantPrefix: string; values?: string[] } | { itemPrefix: string } | { routines: true }
+    | { npcField: 'voice' } | { values: string[] }
     | { assets: 'headMesh' | 'walkOverlay' } | { itemCategory: NpcItemCategory };
 }
 
@@ -48,8 +49,8 @@ export const NPC_FORM_FIELDS: NpcFormField[] = [
   { ...f('name', 'Name', 'main', 'name'), string: true },
   f('guild', 'Guild', 'main', 'guild', undefined, { constantPrefix: 'GIL_' }),
   f('id', 'ID', 'main', 'id'),
-  f('voice', 'Voice', 'main', 'voice'),
-  f('flags', 'Flags', 'main', 'flags', undefined, { constantPrefix: 'NPC_FLAG_' }),
+  f('voice', 'Voice', 'main', 'voice', undefined, { npcField: 'voice' }),
+  f('flags', 'Flags', 'main', 'flags', undefined, { constantPrefix: 'NPC_FLAG_', values: ['0'] }),
   f('npctype', 'NPC type', 'main', 'npctype', undefined, { constantPrefix: 'NPCTYPE_' }),
   f('level', 'Level', 'main', 'level'),
   f('fightTactic', 'Fight tactic', 'main', 'fight_tactic', undefined, { constantPrefix: 'FAI_' }),

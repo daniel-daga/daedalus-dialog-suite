@@ -206,6 +206,8 @@ export interface EditorAPI {
   selectGothicInstall: () => Promise<OpenedProjectConfig | null>;
   clearGothicInstall: () => Promise<OpenedProjectConfig | null>;
   openWorld: (request: OpenWorldRequest) => Promise<WorldSummary>;
+  /** Mount configured project assets for the NPC preview without opening a level. */
+  ensureNpcPreviewAssets: () => Promise<void>;
   getWorldMesh: () => Promise<WorldMeshPayload>;
   getWorldVisuals: () => Promise<InstancedPayload>;
   getWorldTexture: (name: string, maxSize: number) => Promise<DecodedTexture | null>;

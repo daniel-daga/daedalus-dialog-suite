@@ -129,9 +129,9 @@ NPC's instance. What it rests on:
   active file), replaces the instance's `sourceText` in its model and runs the
   ordinary `saveFile` — validation, conflict handling and store sync included.
 
-Suggestions come from what the project has already ingested
-(`mergedSemanticModel.constants`/`items`, `routineList`); every control stays
-free text.
+Combo box choices come from the parsed project files, indexed routines, and
+mounted assets. Typing filters a field's choices; selecting one changes the NPC.
+Reopening the field shows the full list. Fields without an option source remain text inputs.
 
 **Create NPC built (#285, 2026-09-26).** "New NPC" in the NPC list's header
 opens `CreateNpcDialog`: the new instance is a **copy of an NPC the project
@@ -149,9 +149,9 @@ surface's insert already does that, and it needs a waypoint.
 
 **Phase 2 completed (2026-09-27):**
 
-- **VFS suggestions are built (2026-09-27).** With a World open, head mesh and
-  walk overlay suggestions come from `HUM_HEAD_*.MMB` and `HUMANS_*.MDS` VFS
-  searches; without one, both controls remain free text. The form edits the
+- **VFS suggestions are built (2026-09-27).** Head mesh and walk overlay
+  choices come from `HUM_HEAD_*.MMB` and `HUMANS_*.MDS` VFS searches after
+  NPC preview assets are mounted. The form edits the
   first matching `Mdl_ApplyOverlayMds` call and leaves other overlays alone.
   Armor and weapon suggestions are filtered by each item's parsed `mainflag`
   category, so custom item names work without relying on Gothic's usual prefixes.
@@ -213,10 +213,9 @@ A bind-pose preview beside the form, reusing `VisualPreviewScene` (#298).
   memory, where the writer would put them, since statement order is what the
   width rule reads). Constants and items come from every parsed file, not
   `mergedSemanticModel`, which holds only the globals and the selected NPC's
-  files. The meshes come from the world worker's VFS, **which exists only
-  while a world is open** — so with none open the panel says what it would
-  draw and asks for a world. Mounting the asset sources without a world is
-  the fix if that proves to be in the way.
+  files. The meshes come from the world worker's VFS. The NPC editor mounts
+  the active project's configured asset sources on demand when no world is
+  open, so previewing an NPC does not require opening a level.
 
 **Retail asset check (2026-09-27, accepted by Daniel):** the Nameless Hero's `PC_L10` test
 definition, `Hum_Head_Pony`, and light militia armor (`ITAR_MIL_L` →

@@ -9,6 +9,7 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  MenuItem,
   TextField,
   Typography,
 } from '@mui/material';
@@ -63,18 +64,34 @@ function findInstanceKey(model: SemanticModel, npcName: string): string | undefi
 function optionsFor(field: NpcFormField): string[] {
   const { options } = field;
   if (!options) return [];
-  if ('values' in options) return options.values;
   if ('assets' in options) return [];
+  if ('values' in options && !('constantPrefix' in options)) return options.values;
   if ('itemCategory' in options) {
-    return itemNamesForCategory(parsedModels(), options.itemCategory, projectConstantLookup());
+    const names = itemNamesForCategory(parsedModels(), options.itemCategory, projectConstantLookup());
+    return options.itemCategory === 'armor' ? ['NO_ARMOR', ...names] : names;
   }
   const project = useProjectStore.getState();
   if ('routines' in options) return project.routineList;
+  if ('npcField' in options) return npcFieldValues(options.npcField);
   const names = 'constantPrefix' in options
-    ? Object.keys(project.mergedSemanticModel.constants ?? {})
-    : Object.keys(project.mergedSemanticModel.items ?? {});
+    ? parsedModels().flatMap((model) => Object.keys(model.constants ?? {}))
+    : parsedModels().flatMap((model) => Object.keys(model.items ?? {}));
   const prefix = ('constantPrefix' in options ? options.constantPrefix : options.itemPrefix).toUpperCase();
-  return names.filter((name) => name.toUpperCase().startsWith(prefix)).sort();
+  const matched = names.filter((name) => name.toUpperCase().startsWith(prefix));
+  const additional = 'constantPrefix' in options ? options.values ?? [] : [];
+  return [...new Set([...matched, ...additional])].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+}
+
+/** Values used by project NPCs, such as their numeric voice bank IDs. */
+function npcFieldValues(field: string): string[] {
+  const values = new Set<string>();
+  for (const model of parsedModels()) {
+    for (const npc of Object.values(model.npcs ?? {})) {
+      const expression = new RegExp(`\\b${field}\\s*=\\s*([^;\\r\\n]+)`, 'i').exec(npc.sourceText ?? '')?.[1]?.trim();
+      if (expression) values.add(expression);
+    }
+  }
+  return [...values].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
 }
 
 /** Every ingested file's semantic model — the whole project, where
@@ -190,6 +207,8 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
   const [saving, setSaving] = useState(false);
   const [routineSource, setRoutineSource] = useState<NpcRoutineSourceTarget | null>(null);
   const [assetSuggestions, setAssetSuggestions] = useState<NpcAssetSuggestions>({ headMeshes: [], walkOverlays: [] });
+  const [previewAssetsReady, setPreviewAssetsReady] = useState(false);
+  const [previewAssetsError, setPreviewAssetsError] = useState<string | null>(null);
   const parseGeneration = useProjectStore((s) => s.parseGeneration);
   const categoryOfItem = useMemo(projectItemCategoryLookup, [parseGeneration]);
 
@@ -229,23 +248,32 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
     // eslint-disable-next-line react-hooks/exhaustive-deps -- parseGeneration invalidates optionsFor's project-store snapshot.
     [parseGeneration],
   );
-  const worldReady = useWorldStore((s) => s.status === 'ready');
   useEffect(() => {
-    if (!worldReady) {
-      setAssetSuggestions({ headMeshes: [], walkOverlays: [] });
-      return undefined;
-    }
     let current = true;
-    void Promise.all([
-      window.editorAPI.searchWorldAssets('HUM_HEAD_'),
-      window.editorAPI.searchWorldAssets('HUMANS_'),
-    ]).then(([heads, overlays]) => {
-      if (current) setAssetSuggestions(npcAssetSuggestions(heads.matches, overlays.matches));
-    }).catch(() => {
-      if (current) setAssetSuggestions({ headMeshes: [], walkOverlays: [] });
-    });
+    setPreviewAssetsReady(false);
+    setPreviewAssetsError(null);
+    void (async () => {
+      try {
+        await window.editorAPI.ensureNpcPreviewAssets();
+      } catch (failure) {
+        if (!current) return;
+        setPreviewAssetsError(failure instanceof Error ? failure.message : String(failure));
+        return;
+      }
+      if (!current) return;
+      setPreviewAssetsReady(true);
+      try {
+        const [heads, overlays] = await Promise.all([
+          window.editorAPI.searchWorldAssets('HUM_HEAD_'),
+          window.editorAPI.searchWorldAssets('HUMANS_'),
+        ]);
+        if (current) setAssetSuggestions(npcAssetSuggestions(heads.matches, overlays.matches));
+      } catch {
+        if (current) setAssetSuggestions({ headMeshes: [], walkOverlays: [] });
+      }
+    })();
     return () => { current = false; };
-  }, [worldReady]);
+  }, []);
   const uncovered = useMemo(
     () => (definition ? uncoveredStatements(definition, categoryOfItem) : []),
     [definition, categoryOfItem],
@@ -319,6 +347,39 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
     const fieldOptions = field.options && 'assets' in field.options
       ? (field.options.assets === 'headMesh' ? assetSuggestions.headMeshes : assetSuggestions.walkOverlays)
       : options[field.key];
+    if (field.options && 'values' in field.options && !('constantPrefix' in field.options)) {
+      const choices = [...new Set([...fieldOptions, ...(value && !fieldOptions.includes(value) ? [value] : [])])];
+      return (
+        <TextField
+          key={field.key}
+          select
+          label={field.label}
+          size="small"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        >
+          <MenuItem value=""><em>Unset</em></MenuItem>
+          {choices.map((choice) => <MenuItem key={choice} value={choice}>{choice}</MenuItem>)}
+        </TextField>
+      );
+    }
+    if (field.options) {
+      const choices = value && !fieldOptions.some((option) => option.toUpperCase() === value.toUpperCase())
+        ? [...fieldOptions, value]
+        : fieldOptions;
+      return (
+        <Autocomplete
+          key={field.key}
+          openOnFocus
+          autoHighlight
+          size="small"
+          options={choices}
+          value={value || null}
+          onChange={(_e, next) => onChange(next ?? '')}
+          renderInput={(params) => <TextField {...params} label={field.label} />}
+        />
+      );
+    }
     if (fieldOptions.length === 0) {
       return (
         <TextField
@@ -330,34 +391,24 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
         />
       );
     }
-    return (
-      <Autocomplete
-        key={field.key}
-        freeSolo
-        size="small"
-        options={fieldOptions}
-        inputValue={value}
-        onInputChange={(_e, next) => onChange(next)}
-        renderInput={(params) => <TextField {...params} label={field.label} />}
-      />
-    );
+    return <TextField key={field.key} label={field.label} size="small" value={value} onChange={(e) => onChange(e.target.value)} />;
   };
 
   return (
-    <Dialog open onClose={saving ? undefined : onClose} maxWidth="lg" fullWidth aria-labelledby="npc-editor-title">
-      <DialogTitle id="npc-editor-title">{`NPC ${npcName}`}</DialogTitle>
-      <DialogContent dividers>
+    <Dialog open onClose={saving ? undefined : onClose} maxWidth="xl" fullWidth aria-labelledby="npc-editor-title">
+      <DialogTitle id="npc-editor-title" sx={{ py: 1.25 }}>{`NPC ${npcName}`}</DialogTitle>
+      <DialogContent dividers sx={{ p: 1.5 }}>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
         {!definition && !error && <CircularProgress size={24} />}
         {definition && (
           // The preview beside the form rather than above it, and sticky, so
           // it stays in view while the visual fields near the bottom change.
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) 300px' }, gap: 3 }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) 260px' }, gap: 2 }}>
             <Box sx={{ minWidth: 0 }}>
               {GROUPS.map((group) => (
-                <Box key={group.id} sx={{ mb: 2 }}>
-                  <Typography variant="subtitle2" sx={{ mb: 1 }}>{group.title}</Typography>
-                  <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 1.5 }}>
+                <Box key={group.id} sx={{ mb: 1 }}>
+                  <Typography variant="subtitle2" sx={{ mb: 0.5 }}>{group.title}</Typography>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 1 }}>
                     {NPC_FORM_FIELDS.filter((field) => field.group === group.id).map(renderField)}
                   </Box>
                 </Box>
@@ -389,6 +440,8 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
                 edits={pendingEdits}
                 lookupConstant={lookupConstant}
                 itemSource={itemSource}
+                assetsReady={previewAssetsReady}
+                assetsError={previewAssetsError}
               />
             </Box>
           </Box>

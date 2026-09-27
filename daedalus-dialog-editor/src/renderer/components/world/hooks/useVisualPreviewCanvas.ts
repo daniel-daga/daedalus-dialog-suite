@@ -52,8 +52,11 @@ export function useVisualPreviewCanvas(
     let frame = 0;
 
     const size = () => {
-      const edge = canvas.clientWidth || CANVAS_FALLBACK;
-      renderer.setSize(edge, edge, false);
+      const width = canvas.clientWidth || CANVAS_FALLBACK;
+      const height = canvas.clientHeight || CANVAS_FALLBACK;
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      renderer.setSize(width, height, false);
       dirty = true;
     };
     size();

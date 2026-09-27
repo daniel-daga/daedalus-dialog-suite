@@ -813,6 +813,7 @@ export const mockEditorAPI: EditorAPI = {
   async getWorldMesh(): Promise<never> {
     throw new Error('No world is open');
   },
+  async ensureNpcPreviewAssets(): Promise<void> {},
   async getWorldVisuals(): Promise<never> {
     throw new Error('No world is open');
   },

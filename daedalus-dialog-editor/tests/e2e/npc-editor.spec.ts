@@ -21,6 +21,20 @@ const NPC_FILE = `INSTANCE BAU_900_Onar (C_NPC)
 };
 `;
 
+const CHOICES_FILE = `//__MOCK_MODEL__${JSON.stringify({
+  constants: {
+    GIL_BAU: { name: 'GIL_BAU', type: 'int', value: 1 },
+    GIL_SLD: { name: 'GIL_SLD', type: 'int', value: 2 },
+  },
+  items: Object.fromEntries([
+    ['ITAR_Sld_M', 'ITEM_KAT_ARMOR'],
+    ['ItRw_Sld_Bow', 'ITEM_KAT_FF'],
+    ['ItRw_Crossbow_L_01', 'ITEM_KAT_FF'],
+  ].map(([name, mainflag]) => [name, {
+    name, parent: 'C_Item', sourceText: `INSTANCE ${name} (C_Item)\n{\n\tmainflag = ${mainflag};\n};`,
+  }])),
+})}\n`;
+
 async function openProject(page: Page, extraFiles: Record<string, string> = {}) {
   await page.goto('/');
   await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
@@ -39,6 +53,7 @@ async function openProject(page: Page, extraFiles: Record<string, string> = {}) 
   });
   await page.getByRole('button', { name: /Open Project/i }).first().click();
   await expect(page.getByText('BAU_900_Onar')).toBeVisible({ timeout: 15000 });
+  await expect(page.getByTestId('project-opening-overlay')).toBeHidden({ timeout: 15000 });
 }
 
 async function openEditor(page: Page) {
@@ -48,9 +63,14 @@ async function openEditor(page: Page) {
   return editor;
 }
 
+async function selectChoice(page: Page, editor: ReturnType<Page['getByRole']>, label: string, choice: string) {
+  await editor.getByRole('combobox', { name: label }).click();
+  await page.getByRole('option', { name: choice, exact: true }).click();
+}
+
 test.describe('NPC editor', () => {
   test.beforeEach(async ({ page }) => {
-    await openProject(page);
+    await openProject(page, { 'Choices.d': CHOICES_FILE });
   });
 
   test('shows the NPC as its script declares it', async ({ page }) => {
@@ -73,12 +93,34 @@ test.describe('NPC editor', () => {
     await expect(editor.getByLabel('Walk overlay')).toHaveValue('HUMANS_S1.MDS');
   });
 
+  test('combo box searches choices without changing the value and shows all choices when reopened', async ({ page }) => {
+    const editor = await openEditor(page);
+    const guild = editor.getByRole('combobox', { name: 'Guild' });
+
+    await guild.click();
+    await expect(page.getByRole('option', { name: 'GIL_BAU' })).toBeVisible();
+    await expect(page.getByRole('option', { name: 'GIL_SLD' })).toBeVisible();
+    await guild.fill('SLD');
+    await expect(page.getByRole('option', { name: 'GIL_SLD' })).toBeVisible();
+    await expect(page.getByRole('option', { name: 'GIL_BAU' })).toHaveCount(0);
+    await guild.press('Escape');
+    await editor.getByLabel('Level').click();
+    await expect(guild).toHaveValue('GIL_BAU');
+
+    await guild.click();
+    await page.getByRole('option', { name: 'GIL_SLD' }).click();
+    await expect(guild).toHaveValue('GIL_SLD');
+    await guild.click();
+    await expect(page.getByRole('option', { name: 'GIL_BAU' })).toBeVisible();
+    await expect(page.getByRole('option', { name: 'GIL_SLD' })).toBeVisible();
+  });
+
   test('an edit survives save and reopen', async ({ page }) => {
     let editor = await openEditor(page);
-    await editor.getByLabel('Guild').fill('GIL_SLD');
+    await selectChoice(page, editor, 'Guild', 'GIL_SLD');
     await editor.getByLabel('Level').fill('25');
     await editor.getByLabel('Strength').fill('80');
-    await editor.getByLabel('Armor').fill('ITAR_Sld_M');
+    await selectChoice(page, editor, 'Armor', 'ITAR_Sld_M');
     await editor.getByRole('button', { name: 'Save' }).click();
     await expect(editor).toBeHidden();
 
@@ -92,7 +134,7 @@ test.describe('NPC editor', () => {
 
   test('a second weapon is added beside the first, and each keeps its own call', async ({ page }) => {
     let editor = await openEditor(page);
-    await editor.getByLabel('Ranged weapon').fill('ItRw_Sld_Bow');
+    await selectChoice(page, editor, 'Ranged weapon', 'ItRw_Sld_Bow');
     await editor.getByRole('button', { name: 'Save' }).click();
     await expect(editor).toBeHidden();
 
@@ -101,7 +143,7 @@ test.describe('NPC editor', () => {
     await expect(editor.getByLabel('Ranged weapon')).toHaveValue('ItRw_Sld_Bow');
 
     // Editing the ranged weapon must not touch the melee one's call.
-    await editor.getByLabel('Ranged weapon').fill('ItRw_Crossbow_L_01');
+    await selectChoice(page, editor, 'Ranged weapon', 'ItRw_Crossbow_L_01');
     await editor.getByRole('button', { name: 'Save' }).click();
     await expect(editor).toBeHidden();
 
@@ -258,11 +300,10 @@ test.describe('NPC editor: item categories', () => {
 });
 
 
-// #298: the preview beside the form. The harness mounts no assets (a world
-// needs the native binding), so what this proves is the half above the
-// worker: the visual read from the script and the project, following unsaved
-// edits, and the panel saying why it draws no mesh. The worker request itself
-// is tests/NpcVisualPreview.test.tsx's.
+// #298: the preview beside the form. The harness mounts no native assets, so
+// this proves the visual read from the script and project follows unsaved
+// edits, and that an unresolved mock mesh gets a clear preview message. The
+// worker request itself is tests/NpcVisualPreview.test.tsx's.
 // The harness's regex parser reads neither constants nor items, so both files
 // carry their model through the mock-model seam.
 const constant = (name: string, value: number) => ({ name, type: 'int', value });
@@ -298,37 +339,24 @@ test.describe('NPC editor: preview', () => {
     await expect(page.getByText('BAU_900_Onar')).toBeVisible({ timeout: 15000 });
   });
 
-  test('shows what it would draw, follows the form, and says it needs a world', async ({ page }) => {
+  test('shows what it would draw and follows the form without requiring a world open', async ({ page }) => {
     const editor = await openEditor(page);
     const preview = editor.getByTestId('npc-preview');
 
     // The armour's visual_change replaces the naked body, as in the engine.
     await expect(preview.getByTestId('npc-preview-summary')).toHaveText('Armor_Vlk_H.asc · head Hum_Head_Fatbald');
-    await expect(preview.getByTestId('npc-preview-no-world')).toBeVisible();
+    await expect(preview.getByTestId('npc-preview-failed')).toBeVisible();
 
     // Unsaved edits are previewed: no armour is the naked male body.
-    await editor.getByLabel('Armor').fill('NO_ARMOR');
-    await editor.getByLabel('Head mesh').fill('Hum_Head_Bald');
-    await expect(preview.getByTestId('npc-preview-summary')).toHaveText('hum_body_Naked0 · head Hum_Head_Bald');
-
-    // A constant the project does not define is why it cannot draw.
-    await editor.getByLabel('Face texture').fill('Face_Unknown');
-    await expect(preview.getByTestId('npc-preview-reason')).toContainText('Face_Unknown is not a known integer constant');
+    await selectChoice(page, editor, 'Armor', 'NO_ARMOR');
+    await expect(preview.getByTestId('npc-preview-summary')).toHaveText('hum_body_Naked0 · head Hum_Head_Fatbald');
   });
 
-  test('lets the user enable and scrub the idle animation', async ({ page }) => {
+  test('hides idle animation controls', async ({ page }) => {
     const editor = await openEditor(page);
     const preview = editor.getByTestId('npc-preview');
 
     await expect(preview.getByRole('slider', { name: 'Idle animation frame' })).toHaveCount(0);
-    await preview.getByText('Scrub idle animation').click();
-    const scrubber = preview.getByRole('slider', { name: 'Idle animation frame' });
-    await expect(scrubber).toBeVisible();
-    await expect(scrubber).toHaveAttribute('aria-valuenow', '0');
-    await scrubber.focus();
-    await page.keyboard.press('ArrowRight');
-    await expect(scrubber).not.toHaveAttribute('aria-valuenow', '0');
-    await preview.getByText('Scrub idle animation').click();
-    await expect(scrubber).toHaveCount(0);
+    await expect(preview.getByTestId('npc-animation-controls')).toHaveCount(0);
   });
 });

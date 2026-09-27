@@ -1016,6 +1016,26 @@ export function setupIpcHandlers() {
   ipcMain.handle('world:mesh', async () => worldService.getWorldMesh());
   ipcMain.handle('world:visuals', async () => worldService.getInstancedVisuals());
 
+  // The NPC preview needs the project's VFS, not a loaded level. Mount the
+  // active project's already-configured sources on demand, without opening the
+  // GMBT default as the visible/editable World surface.
+  ipcMain.handle('world:ensureNpcPreviewAssets', async () => {
+    const registered = activeProjectFileKey
+      ? registeredProjectConfigs.get(activeProjectFileKey)
+      : undefined;
+    if (!registered) throw new Error('Load a project before previewing NPCs');
+    const assetSources = registered.descriptor.resolvedAssetSources;
+    if (assetSources.length === 0) {
+      throw new Error('Configure at least one available asset source before previewing NPCs.');
+    }
+    for (const source of assetSources) {
+      if (!isConfiguredWorldMount(registered, source)) {
+        throw new Error(`World asset mount is not configured for the active project: ${source}`);
+      }
+    }
+    await worldService.ensureAssetVfs(assetSources);
+  });
+
   ipcMain.handle('world:texture', async (_event, request: unknown) => {
     assertTextureRequest(request);
     return worldService.getTexture(request.name, request.maxSize);

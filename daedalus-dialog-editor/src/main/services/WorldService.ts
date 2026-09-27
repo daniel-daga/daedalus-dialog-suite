@@ -31,8 +31,8 @@ import type {
 //   - it is never restarted behind the caller's back. The world it held is
 //     gone, along with any op applied to it, and silently re-loading would turn
 //     a crash into lost work with no report.
-//   - it is not spawned until a world is opened, so the native addon stays out
-//     of dialog-only sessions (§6: the World surface is lazily loaded).
+//   - it is spawned only when a world opens or an NPC preview requests the
+//     project's assets, so dialog-only sessions still avoid loading the addon.
 //
 // One honest limit on the isolation §7 claims: a worker thread survives a JS
 // throw in the addon, but ZenKit can also abort the process outright
@@ -73,6 +73,7 @@ export class WorldService {
   private readonly createWorker: () => WorldWorker;
   private worldPath: string | null = null;
   private assetSources: readonly string[] | null = null;
+  private openingWorld: Promise<WorldSummary> | null = null;
   private failure: WorkerRequestError | null = null;
   /** The worker's latest phase message identifies its synchronous call. */
   private activeRequestId: string | null = null;
@@ -124,13 +125,38 @@ export class WorldService {
   async openWorld(request: ResolvedOpenWorldRequest): Promise<WorldSummary> {
     if (this.worker === null) this.startWorker();
     this.worldPath = null;
+    this.assetSources = null;
     this.generation += 1;
     this.undoStack = [];
     this.redoStack = [];
-    const summary = await this.request<WorldSummary>('open', request);
-    this.worldPath = request.worldPath;
-    this.assetSources = request.assetSources;
-    return summary;
+    const opening = this.request<WorldSummary>('open', request);
+    this.openingWorld = opening;
+    try {
+      const summary = await opening;
+      this.worldPath = request.worldPath;
+      this.assetSources = request.assetSources;
+      return summary;
+    } finally {
+      if (this.openingWorld === opening) this.openingWorld = null;
+    }
+  }
+
+  /** Mount project assets for previews when no editable world is open. */
+  async ensureAssetVfs(assetSources: readonly string[]): Promise<void> {
+    if (this.openingWorld !== null) {
+      await this.openingWorld;
+      return;
+    }
+    if (this.worldPath !== null) return;
+    if (assetSources.length === 0) throw new Error('Configure at least one available asset source before previewing NPCs.');
+    if (this.assetSources !== null
+      && this.assetSources.length === assetSources.length
+      && this.assetSources.every((source, index) => source === assetSources[index])) return;
+
+    if (this.worker === null) this.startWorker();
+    const generation = this.generation;
+    await this.request<null>('mountAssets', { assetSources: [...assetSources] });
+    if (this.generation === generation && this.worldPath === null) this.assetSources = [...assetSources];
   }
 
   /**
@@ -171,7 +197,7 @@ export class WorldService {
    * scene used 256 — the caller decides, because it is a projection-layer call.
    */
   getTexture(name: string, maxSize = 256): Promise<DecodedTexture | null> {
-    return this.requestOnOpenWorld<DecodedTexture | null>('texture', { name, maxSize });
+    return this.requestOnMountedVfs<DecodedTexture | null>('texture', { name, maxSize });
   }
 
   /**
@@ -192,7 +218,7 @@ export class WorldService {
    * whose directory the user does not already know (#241).
    */
   searchAssets(query: string): Promise<VfsSearch> {
-    return this.requestOnOpenWorld<VfsSearch>('assetSearch', { query });
+    return this.requestOnMountedVfs<VfsSearch>('assetSearch', { query });
   }
 
   /** Reopen the VFS over the same sources (#296): a GMBT compile has written
@@ -242,7 +268,7 @@ export class WorldService {
   /** An NPC's body and head as the engine assembles them, for the NPC editor's
    *  preview (npc-editor.md §4). Null when the body does not resolve. */
   getNpcBody(request: NpcBodyRequest): Promise<NpcBodyScene | null> {
-    return this.requestOnOpenWorld<NpcBodyScene | null>('npcBody', request);
+    return this.requestOnMountedVfs<NpcBodyScene | null>('npcBody', request);
   }
 
   /**
@@ -400,6 +426,8 @@ export class WorldService {
     this.failure ??= new WorkerRequestError('The world was closed', 'world-closed');
     this.rejectAll(this.failure);
     this.worldPath = null;
+    this.assetSources = null;
+    this.openingWorld = null;
     // The stacks belong to the world that was open — `openWorld` says why —
     // and closing ends that world as surely as opening the next one does.
     // Left standing they are not just stale but *readable*: `historyDepth`
@@ -440,6 +468,13 @@ export class WorldService {
     // whatever world is opened next.
     if (this.worldPath === null && this.failure === null) {
       return Promise.reject(new Error('No world is open'));
+    }
+    return this.request<T>(op, payload);
+  }
+
+  private requestOnMountedVfs<T>(op: WorldWorkerOp, payload?: unknown): Promise<T> {
+    if (this.assetSources === null && this.failure === null) {
+      return Promise.reject(new Error('World assets are not mounted'));
     }
     return this.request<T>(op, payload);
   }
