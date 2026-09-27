@@ -265,7 +265,11 @@ jobs:
       # Builds dist/main + dist/renderer, which the harness launches with
       # NODE_ENV=production. Electron itself comes from the pnpm install
       # postinstall — no `playwright install` (Electron is the browser here).
+      # The notes what-changed.spec.ts expects — the same fixture as
+      # build-windows.yml's e2e-electron-windows job.
       - name: Build editor
+        env:
+          VITE_WHAT_CHANGED: '[{"issue":123,"description":"E2E release note fixture"}]'
         run: pnpm --filter daedalus-dialog-editor run build
 
       - name: Run real-Electron E2E suite
