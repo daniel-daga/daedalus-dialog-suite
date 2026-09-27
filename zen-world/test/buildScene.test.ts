@@ -221,7 +221,7 @@ describe('zen-world/scene — buildNpcBody', () => {
   }
   const MESHES = {
     'HUM_BODY_NAKED0.ASC': [chunk('HUM_BODY_NAKED_V0_C0.TGA')],
-    'HUM_HEAD_BALD.MMS': [chunk('HUM_HEAD_V0_C0.TGA'), chunk('HUM_TEETH_V0.TGA')],
+    'HUM_HEAD_BALD.MMS': [chunk('HUM_HEAD_V0_C0.TGA'), chunk('HUM_MOUTH_V0.TGA'), chunk('HUM_TEETH_V0.TGA')],
   };
   const texturesOf = (scene: { groups: Array<{ texture: string }> }) => scene.groups.map((g) => g.texture);
 
@@ -232,7 +232,9 @@ describe('zen-world/scene — buildNpcBody', () => {
     // A body's mesh is named without extension in scripts; it is a model, as
     // a head is a morph mesh.
     expect(b.calls).toEqual(['hum_body_Naked0.ASC', 'HUMANS.MDS', 'Hum_Head_Bald.MMS']);
-    expect(texturesOf(scene)).toEqual(['HUM_BODY_NAKED_V1_C2.TGA', 'HUM_HEAD_V12_C2.TGA', 'HUM_TEETH_V3.TGA']);
+    expect(texturesOf(scene)).toEqual([
+      'HUM_BODY_NAKED_V1_C2.TGA', 'HUM_HEAD_V12_C2.TGA', 'HUM_MOUTH_V0.TGA', 'HUM_TEETH_V3.TGA',
+    ]);
     expect(scene.missing).toEqual([]);
   });
 
@@ -255,7 +257,28 @@ describe('zen-world/scene — buildNpcBody', () => {
     const b = npcBinding({ ...MESHES, 'ARMOR_VLK_H.ASC': [chunk('ARMOR_VLK_H_V0_C0.TGA')] });
     const scene = buildNpcBody(b, VFS, { ...REQUEST, body: 'Armor_Vlk_H.asc' })!;
     expect(b.calls[0]).toBe('Armor_Vlk_H.asc');
-    expect(texturesOf(scene)[0]).toBe('ARMOR_VLK_H_V1_C2.TGA');
+    expect(texturesOf(scene)[0]).toBe('ARMOR_VLK_H_V0_C0.TGA');
+  });
+
+  test('varies the naked body inside an armor visual without changing the armor texture variant', () => {
+    const b = npcBinding({
+      'ARMOR_MIL_L.ASC': [
+        chunk('HUM_BODY_NAKED_V0_C0.TGA'),
+        chunk('HUM_GRDL2_ARMOR_V0.TGA'),
+        chunk('HUM_WACHE_V1.TGA'),
+      ],
+      ...MESHES,
+    });
+    const scene = buildNpcBody(b, VFS, { ...REQUEST, body: 'Armor_Mil_L.asc' })!;
+
+    expect(texturesOf(scene)).toEqual([
+      'HUM_BODY_NAKED_V1_C2.TGA',
+      'HUM_GRDL2_ARMOR_V0.TGA',
+      'HUM_WACHE_V1.TGA',
+      'HUM_HEAD_V12_C2.TGA',
+      'HUM_MOUTH_V0.TGA',
+      'HUM_TEETH_V3.TGA',
+    ]);
   });
 
   test('is null when the body does not resolve', () => {

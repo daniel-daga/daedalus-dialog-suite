@@ -402,7 +402,13 @@ export function buildNpcBody(binding: NpcBinding, vfs: VfsHandle, request: NpcBo
   if (body === null || body.chunks.length === 0) return null;
   const chunks: MeshChunk[] = body.chunks.map((chunk) => ({
     ...chunk,
-    texture: variantTextureName(chunk.texture, request.bodyTexture, request.skinColor),
+    // An armor visual_change contains both the naked skin mesh and armor
+    // geometry. Mdl_SetVisualBody's body texture/color select only that skin;
+    // the armor materials already name their own variation, and changing it
+    // can point at a texture that does not exist (for example GRDL2_ARMOR_V1).
+    texture: /HUM_BODY_(?:NAKED|BABE)_/i.test(chunk.texture)
+      ? variantTextureName(chunk.texture, request.bodyTexture, request.skinColor)
+      : chunk.texture,
     transform: chunk.transform ? multiply(scale, chunk.transform) : scale,
   }));
 
@@ -418,11 +424,17 @@ export function buildNpcBody(binding: NpcBinding, vfs: VfsHandle, request: NpcBo
     } else {
       const placed = multiply(scale, node.transform);
       for (const chunk of head.chunks) {
-        // The teeth are their own texture in the head mesh, with their own variant.
-        const variation = /TEETH/i.test(chunk.texture) ? request.teethTexture : request.headTexture;
+        // Head skin, mouth and teeth are separate materials. Only the facial
+        // skin uses the face variation; the mouth texture stays at its shared
+        // V0 and teeth use their own setting.
+        const texture = /TEETH/i.test(chunk.texture)
+          ? variantTextureName(chunk.texture, request.teethTexture, request.skinColor)
+          : /HUM_HEAD_/i.test(chunk.texture)
+            ? variantTextureName(chunk.texture, request.headTexture, request.skinColor)
+            : chunk.texture;
         chunks.push({
           ...chunk,
-          texture: variantTextureName(chunk.texture, variation, request.skinColor),
+          texture,
           transform: placed,
         });
       }

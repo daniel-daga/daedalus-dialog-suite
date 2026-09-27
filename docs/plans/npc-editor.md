@@ -185,10 +185,11 @@ A bind-pose preview beside the form, reusing `VisualPreviewScene` (#298).
   so the head could not be placed from JS without it.
 - **`zen-world`'s `buildNpcBody`** composes body and head in the world worker
   (IPC `world:npcBody`): the body model (`.ASC` appended to a bare script
-  name), the head `.MMB` placed by `BIP01 HEAD`'s transform, the `_V<n>_C<n>`
-  texture variants (`variantTextureName`; a teeth texture takes the teeth
-  variant), and `Mdl_SetModelScale` applied to both. A head it cannot place is
-  left off and named in `missing`, never guessed at.
+  name), the head `.MMB` placed by `BIP01 HEAD`'s transform, and
+  `Mdl_SetModelScale` applied to both. Body variation is applied only to naked
+  skin materials, face variation only to head skin, and the teeth setting only
+  to teeth; armor and mouth materials keep their own texture names. A head it
+  cannot place is left off and named in `missing`, never guessed at.
 - **`src/renderer/npc/npcVisual.ts`** — `resolveNpcVisual` reads the engine
   externals (`Mdl_SetVisual`, `Mdl_SetVisualBody`, `Mdl_SetModelFatness`; the
   last call wins, as the engine runs them in order) with integer constants
@@ -217,34 +218,17 @@ A bind-pose preview beside the form, reusing `VisualPreviewScene` (#298).
   draw and asks for a world. Mounting the asset sources without a world is
   the fix if that proves to be in the way.
 
+**Verified against Gothic II Gold retail assets (2026-09-27):** the Nameless
+Hero's `PC_L10` test definition, `Hum_Head_Pony`, and light militia armor
+(`ITAR_MIL_L` → `Armor_Mil_L.asc`) assemble upright in the real Electron
+preview. This confirmed the extracted body pose is usable and exposed texture
+selection bugs: the NPC body variation had been applied to armor materials,
+and the face variation to the shared mouth material, leaving their textures
+unresolved. The preview now selects the skin, face, and teeth variants
+independently.
+
 **Still open:** fatness is not drawn (the panel says so) — it scales the
-torso, which needs per-node skinning. **Unchecked against real assets:**
-whether a soft-skin body's stored positions are its bind pose in model space.
-`ZenKit`'s `SoftSkinMesh` also carries per-vertex node weights with
-node-local positions, which suggests the engine skins from those; if the
-body draws collapsed or scattered, skinning from the weights is the fix, in
-`ExtractModelMesh`. Nothing in this container can open `HUM_BODY_NAKED0.MDM`.
-
-It needs:
-
-1. **Resolve the visual from the definition.** From `Mdl_SetVisual` +
-   `Mdl_SetVisualBody` directly, or from the vanilla `B_SetNpcVisual(slf,
-   gender, head, face, bodyTex, armor)` arguments by the same mapping that
-   helper's body applies. Confirm that mapping against retail scripts before
-   coding it.
-2. **Body:** the body mesh (`HUM_BODY_NAKED0` → `.MDM` + `HUMANS.MDH`), or the
-   armour item's `visual_change` mesh when armour is equipped.
-3. **Head:** the head `.MMB` attached at the head node (`BIP01 HEAD`) of the
-   hierarchy.
-4. **Textures:** ZenGin's variant renaming — the base texture name with
-   `_V<variant>_C<skin>` substituted — applied to body and head textures,
-   resolved through the VFS.
-5. **Fatness** as a scale on the torso, matching `Mdl_SetModelFatness`.
-
-Binding work: `zenkit-node` extracts a model or a morph mesh on its own today;
-the preview needs the head placed at a named node of the body's hierarchy and
-the node transforms exposed to JS. Whether that is a new binding call or a JS
-composition of two existing extractions is the first thing to settle.
+torso, which needs per-node skinning.
 
 Animation (idle pose, walk overlay) is out of scope: it needs `.MAN` reading in
 the binding and a skinning path in the renderer.
