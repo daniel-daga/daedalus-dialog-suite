@@ -226,6 +226,57 @@ test.describe('World surface UI workflows in a real window', () => {
     await expect.poll(async () => await readPosition('world-vob-row-3')).toEqual(childBefore);
   });
 
+  test('multi-select can reparent from the tree menu and the saved tree reopens that way (#293)', async () => {
+    const { page } = fixture;
+    await openWorld();
+
+    await page.getByTestId('world-vob-toggle-0').click();
+    const sword = page.getByRole('treeitem').filter({ hasText: 'ITEM_SWORD_01' });
+    const chest = page.getByRole('treeitem').filter({ hasText: 'CHEST_01' });
+    await expect(sword).toHaveAttribute('aria-level', '2');
+    await expect(chest).toHaveAttribute('aria-level', '2');
+
+    await sword.click();
+    await chest.click({ modifiers: ['Control'] });
+    await sword.click({ button: 'right' });
+    const makeChild = page.getByTestId('world-context-make-children');
+    await expect(makeChild).toHaveText('Make the other VOB a child of this one');
+    await makeChild.click();
+
+    // Check that the selected target now owns the other selected VOB.
+    const reopenedSword = page.getByRole('treeitem').filter({ hasText: 'ITEM_SWORD_01' });
+    const reparentedChest = page.getByRole('treeitem').filter({ hasText: 'CHEST_01' });
+    await expect(reopenedSword).toHaveAttribute('aria-level', '2');
+    if (await reparentedChest.count() === 0) {
+      const swordId = await reopenedSword.getAttribute('id');
+      if (swordId === null) throw new Error('sword tree row has no id');
+      await page.getByTestId(`world-vob-toggle-${swordId.replace('world-vob-row-', '')}`).click();
+    }
+    await expect(reparentedChest).toHaveAttribute('aria-level', '3');
+
+    await page.getByTestId('world-save').click();
+    const confirmation = page.getByRole('dialog', { name: 'Save this world?' });
+    await confirmation.getByRole('button', { name: 'Overwrite opened file' }).click();
+    await expect(page.getByText(`Saved to ${worldPath}`)).toBeVisible();
+
+    // Reopening the just-written file makes this a persistence check, rather
+    // than a claim based only on the in-memory tree.
+    await page.getByTestId('world-open').click();
+    await page.getByTestId('world-picker-browse').click();
+    await page.getByTestId('world-viewport').waitFor();
+    await page.waitForFunction(() => window.__worldViewport !== undefined);
+    await page.getByTestId('world-vob-toggle-0').click();
+    const savedSword = page.getByRole('treeitem').filter({ hasText: 'ITEM_SWORD_01' });
+    const savedChest = page.getByRole('treeitem').filter({ hasText: 'CHEST_01' });
+    await expect(savedSword).toHaveAttribute('aria-level', '2');
+    if (await savedChest.count() === 0) {
+      const swordId = await savedSword.getAttribute('id');
+      if (swordId === null) throw new Error('saved sword tree row has no id');
+      await page.getByTestId(`world-vob-toggle-${swordId.replace('world-vob-row-', '')}`).click();
+    }
+    await expect(savedChest).toHaveAttribute('aria-level', '3');
+  });
+
   test('a malformed world names what was wrong with it', async () => {
     // #272, from the Spacer report: *"Custom-asset maps simply won't load unless
     // everything's in place, often with no useful diagnostic — you're reading
