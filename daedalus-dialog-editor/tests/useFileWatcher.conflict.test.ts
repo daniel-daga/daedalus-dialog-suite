@@ -14,6 +14,7 @@ import { useFileWatcher } from '../src/renderer/hooks/useFileWatcher';
 import { useProjectStore } from '../src/renderer/store/projectStore';
 import { useFileStore } from '../src/renderer/store/fileStore';
 import type { FileChangeEvent } from '../src/renderer/types/global';
+import { registerPendingEditFlusher } from '../src/renderer/utils/pendingEditFlushRegistry';
 
 const PROJ_PATH = 'C:/project';
 const FILE_A = 'C:/project/DIA_Test.d';
@@ -220,6 +221,39 @@ describe('useFileWatcher — external conflict (change)', () => {
 });
 
 describe('useFileWatcher — external conflict (unlink, N5)', () => {
+  test('flushes a pending edit before deciding whether unlink can close a clean file', async () => {
+    useFileStore.setState({
+      activeFile: FILE_A,
+      openFiles: new Map([[FILE_A, {
+        filePath: FILE_A,
+        semanticModel: { ...PARSED_MODEL, dialogs: { ...PARSED_MODEL.dialogs } } as any,
+        isDirty: false,
+        lastSaved: new Date(),
+        originalCode: '// original',
+      }]]),
+    });
+    const unregister = registerPendingEditFlusher(() => {
+      useFileStore.getState().updateDialog(FILE_A, 'DIA_Test', {
+        ...PARSED_MODEL.dialogs.DIA_Test,
+        properties: { ...PARSED_MODEL.dialogs.DIA_Test.properties, npc: 'PENDING_EDIT' },
+      } as any);
+    });
+
+    const { unmount } = await setupHook();
+    try {
+      await emitFileChange({ type: 'unlink', filePath: FILE_A });
+
+      const file = useFileStore.getState().openFiles.get(FILE_A);
+      expect(file).toBeDefined();
+      expect(file?.semanticModel.dialogs.DIA_Test.properties.npc).toBe('PENDING_EDIT');
+      expect(file?.isDirty).toBe(true);
+      expect(file?.externalConflict?.fileMissing).toBe(true);
+    } finally {
+      unregister();
+      unmount();
+    }
+  });
+
   test('retains a dirty file with a fileMissing conflict on unlink', async () => {
     useFileStore.setState({
       activeFile: FILE_A,

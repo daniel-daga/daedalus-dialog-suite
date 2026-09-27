@@ -717,6 +717,11 @@ Reproduce with a clean open file and a registered pending edit, then deliver
 instead of retained with `externalConflict.fileMissing`. Flush pending edits
 before obtaining the live file state and deciding whether unlink may close it.
 
+**Resolved 2026-09-27.** The unlink path now drains pending edit flushers before
+reading the live file state, so a debounced edit marks the file dirty and it is
+retained with a `fileMissing` conflict. The regression is covered in
+`useFileWatcher.conflict.test.ts`.
+
 ### R26-C: World Ctrl+S also saves the background script (P2, #302)
 
 `daedalus-dialog-editor/src/renderer/hooks/useManualSave.ts:60–68` handles
