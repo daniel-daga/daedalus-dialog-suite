@@ -190,6 +190,42 @@ test.describe('World surface UI workflows in a real window', () => {
     await expect(page.getByText('FP_CAMPFIRE_ÄÖÜ_01')).toHaveCount(1);
   });
 
+  test('moving a parent moves its child and one undo restores both (#292)', async () => {
+    const { page } = fixture;
+    await openWorld();
+
+    // The first two fixture children are real rows below the root. Read their
+    // world-space coordinates from the same property grid a user sees.
+    await page.getByTestId('world-vob-toggle-0').click();
+    const readPosition = async (row: string): Promise<number[]> => {
+      await page.getByTestId(row).click();
+      return Promise.all(['x', 'y', 'z'].map(async (axis) => Number(
+        await page.getByTestId(`world-prop-position-${axis}-input`).inputValue(),
+      )));
+    };
+    const childBefore = await readPosition('world-vob-row-3');
+    const parentBefore = await readPosition(ROOT_VOB_ROW);
+
+    // Drive the real TransformControls/gizmo commit seam, then let the native
+    // worker apply the batch. The drag preview itself is covered by
+    // GizmoController.test.ts; this test crosses the Electron IPC and writer.
+    const delta = [17, 23, 31];
+    await page.evaluate((position) => {
+      window.__worldViewport?.dragGizmo(position as [number, number, number]);
+    }, parentBefore.map((coordinate, axis) => coordinate + delta[axis]));
+
+    await expect.poll(async () => await readPosition(ROOT_VOB_ROW)).toEqual(
+      parentBefore.map((coordinate, axis) => coordinate + delta[axis]),
+    );
+    await expect.poll(async () => await readPosition('world-vob-row-3')).toEqual(
+      childBefore.map((coordinate, axis) => coordinate + delta[axis]),
+    );
+
+    await page.keyboard.press('Control+z');
+    await expect.poll(async () => await readPosition(ROOT_VOB_ROW)).toEqual(parentBefore);
+    await expect.poll(async () => await readPosition('world-vob-row-3')).toEqual(childBefore);
+  });
+
   test('a malformed world names what was wrong with it', async () => {
     // #272, from the Spacer report: *"Custom-asset maps simply won't load unless
     // everything's in place, often with no useful diagnostic — you're reading
