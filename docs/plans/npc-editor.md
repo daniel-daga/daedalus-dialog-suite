@@ -1,6 +1,6 @@
 # NPC Editor
 
-**Status:** Phase 1 built (#284); Phase 2 in progress (#285) — editing an existing NPC works; Phase 3 started (#298); Phase 4 not started.
+**Status:** Phases 1–3 built (#284, #285, #298); Phase 4 — rendering real NPCs in the World surface — remains.
 
 An editor for `C_NPC` instances inside the dialog editor, covering what the
 community's standalone *NPC Generator* covers (main info, attributes, protection,
@@ -218,7 +218,7 @@ A bind-pose preview beside the form, reusing `VisualPreviewScene` (#298).
   draw and asks for a world. Mounting the asset sources without a world is
   the fix if that proves to be in the way.
 
-**Retail asset check (2026-09-27):** the Nameless Hero's `PC_L10` test
+**Retail asset check (2026-09-27, accepted by Daniel):** the Nameless Hero's `PC_L10` test
 definition, `Hum_Head_Pony`, and light militia armor (`ITAR_MIL_L` →
 `Armor_Mil_L.asc`) resolve and render in Electron. The initial image looked
 bald and had an almost black neck because the preview flipped every model
@@ -231,8 +231,8 @@ weighted from its bone-local positions into the model hierarchy, as in
 OpenGothic's renderer. A naked body uses `HUMANS.MDH`; compiled armor models
 use their own embedded hierarchy. The head attaches to that same hierarchy's
 `BIP01 HEAD`. This joins the head and neck in front and rear Electron captures
-of both naked and militia-armored `PC_L10`. A running Gothic II comparison is
-still needed to claim exact engine fidelity.
+of both naked and militia-armored `PC_L10`. Daniel accepts the visual result;
+the preview is not claimed as an exact engine reproduction.
 
 **Still open:** fatness is not drawn (the panel says so) — it scales the
 torso, which needs per-node skinning.
@@ -246,6 +246,8 @@ when an NPC's visual is set any other way, the preview says it cannot draw it
 and why. It does not guess.
 
 ## 5. Phase 4 — real NPCs in the world
+
+**Not started.** This is the remaining NPC-editor phase, tracked as #309.
 
 With Phases 1 and 3 in place, `SpawnOverlay`'s capsule dummy can become the
 NPC's mesh. This needs the per-NPC visual available where the World surface is,
