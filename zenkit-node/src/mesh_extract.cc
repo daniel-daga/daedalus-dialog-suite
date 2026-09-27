@@ -331,13 +331,21 @@ void AppendSubMeshChunks(Napi::Env env,
 
 std::vector<Mat4> Accumulate(ModelHierarchy const& hierarchy) {
   std::vector<Mat4> world(hierarchy.nodes.size(), Mat4::identity());
+  auto root = Mat4::identity();
+  root.columns[3] = Vec4 {hierarchy.root_translation.x,
+                          hierarchy.root_translation.y,
+                          hierarchy.root_translation.z,
+                          1.0f};
   for (std::size_t i = 0; i < hierarchy.nodes.size(); ++i) {
     auto const& node = hierarchy.nodes[i];
     // A parent always precedes its children in a ZenGin hierarchy, so one pass
     // in order is enough; a forward or self reference would be a broken file.
+    // `root_translation` is the hierarchy's base-space offset and has to be in
+    // every accumulated node transform (HUMANS.MDH uses it to lift BIP01 HEAD
+    // from the hips to the neck).
     world[i] = node.parent_index >= 0 && static_cast<std::size_t>(node.parent_index) < i
         ? Multiply(world[node.parent_index], node.transform)
-        : node.transform;
+        : Multiply(root, node.transform);
   }
   return world;
 }

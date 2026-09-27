@@ -555,7 +555,7 @@ test('extractVisual takes a .MDM\'s hierarchy from its sibling .MDH', () => {
   assert.deepStrictEqual(
     [payload.chunks[0].transform[3], payload.chunks[0].transform[7],
       payload.chunks[0].transform[11]],
-    [5, 0, 0],
+    [15, 30, 50],
   );
 });
 
@@ -568,11 +568,12 @@ test('extractHierarchy returns every node with its transform accumulated to the 
 
   assert.strictEqual(payload.source, 'EX_RIG.MDH');
   assert.deepStrictEqual(payload.nodes.map((n) => [n.name, n.parent]), [['BASE', -1], ['HEAD', 0]]);
-  // HEAD sits a further (0, 20, 0) below BASE at (5, 0, 0): a node read without
-  // its parent would report (0, 20, 0).
+  // HEAD sits a further (0, 20, 0) below BASE at (5, 0, 0), and the hierarchy's
+  // root translation is (10, 30, 50): a node read without its parent or the
+  // model root would report neither offset.
   const head = payload.nodes[1].transform;
   assert.strictEqual(head.length, 16);
-  assert.deepStrictEqual([head[3], head[7], head[11]], [5, 20, 0]);
+  assert.deepStrictEqual([head[3], head[7], head[11]], [15, 50, 50]);
 });
 
 test('extractHierarchy reads the hierarchy inside a .MDL when there is no .MDH', () => {

@@ -1255,6 +1255,7 @@ void AuthorFixtureAssets(std::filesystem::path const& dir) {
         ModelHierarchyNode {-1, "BASE", Translation(5.0f, 0.0f, 0.0f)},
         ModelHierarchyNode {0, "HEAD", Translation(0.0f, 20.0f, 0.0f)},
     };
+    hierarchy.root_translation = Vec3 {10.0f, 30.0f, 50.0f};
     hierarchy.source_date = Date {2024, 1, 1, 0, 0, 0, 0};
     hierarchy.source_path = "EX_RIG.ASC";
     auto wh = Write::to(dir / "EX_RIG.MDH");
