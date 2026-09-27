@@ -696,6 +696,13 @@ identity at reload start and recheck before applying; turn a concurrent local
 edit into an external conflict instead. Preserve the explicit discard behavior
 of `reloadTheirs` while rejecting changes made after that discard started.
 
+**Resolved 2026-09-27.** `reloadFile` now snapshots the open model and file
+baseline before its asynchronous read/parse. If they change before the parse
+returns, it keeps the current model and records an external conflict when local
+work remains unsaved. `reloadTheirs` still discards work present when that
+choice starts, while a newer edit made during its parse is retained. Covered by
+the in-flight reload cases in `useFileWatcher.conflict.test.ts`.
+
 ### R26-B: External deletion drops an unflushed edit (P2, #301)
 
 `daedalus-dialog-editor/src/renderer/hooks/useFileWatcher.ts:267–284` tests
