@@ -2,6 +2,11 @@ name: Build Windows
 
 on:
   workflow_dispatch:
+    inputs:
+      what_changed:
+        description: 'One line per change, formatted as #123: Short description'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -70,6 +75,8 @@ jobs:
       # NODE_ENV=production. Electron comes from the pnpm install postinstall —
       # no `playwright install` (Electron is the browser here).
       - name: Build editor
+        env:
+          VITE_WHAT_CHANGED: '[{"issue":123,"description":"E2E release note fixture"}]'
         run: pnpm --filter daedalus-dialog-editor run build
 
       # No xvfb on Windows: the runner has a real desktop session, so Electron
@@ -157,7 +164,28 @@ jobs:
     - name: Build Parser
       run: pnpm --filter daedalus-parser run build
 
+    - name: Validate and prepare build notes
+      id: changes
+      shell: pwsh
+      env:
+        WHAT_CHANGED_INPUT: ${{ inputs.what_changed }}
+      run: |
+        $entries = @()
+        foreach ($line in ($env:WHAT_CHANGED_INPUT -split "`r?`n")) {
+          if ([string]::IsNullOrWhiteSpace($line)) { continue }
+          if ($line -notmatch '^\s*#([1-9]\d*)\s*:\s*(\S.*\S|\S)\s*$') {
+            throw "Invalid change note '$line'. Use one line per item: #123: Short description"
+          }
+          if ($Matches[2].Length -gt 120) { throw 'Change descriptions must be 120 characters or fewer.' }
+          $entries += [ordered]@{ issue = [int]$Matches[1]; description = $Matches[2] }
+        }
+        if ($entries.Count -eq 0) { throw 'Add at least one change note with an issue number.' }
+        $json = ConvertTo-Json -InputObject @($entries) -Compress
+        "json=$json" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
     - name: Build Editor
+      env:
+        VITE_WHAT_CHANGED: ${{ steps.changes.outputs.json }}
       run: pnpm --filter daedalus-dialog-editor run build
 
     - name: Package Editor
@@ -386,6 +414,10 @@ jobs:
           **Base version:** `${{ steps.version.outputs.BASE_VERSION }}`
           **Build number:** #${{ github.run_number }}
           **Commit:** `${{ github.sha }}`
+
+          **What's changed**
+
+          ${{ inputs.what_changed }}
 
           Download `daedalus-dialog-editor-windows-latest.exe` from this release.
         prerelease: true

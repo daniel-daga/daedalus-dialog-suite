@@ -33,6 +33,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { IngestedFilesDialog } from './components/IngestedFilesDialog';
 import ProjectOpeningOverlay from './components/ProjectOpeningOverlay';
 import UpdateNotification from './components/UpdateNotification';
+import WhatChangedDialog, { parseBuildChanges } from './components/WhatChangedDialog';
 import { RecentProject } from './types/global';
 import { ThemeMode } from './theme';
 import { useThemeMode } from './themeContext';
@@ -56,6 +57,8 @@ const themeOptions: Array<{ value: ThemeMode; label: string; icon: JSX.Element }
   { value: 'light', label: 'Light', icon: <LightModeIcon fontSize="small" /> },
   { value: 'gothic', label: 'Gothic', icon: <AutoAwesomeIcon fontSize="small" /> },
 ];
+
+const buildChanges = parseBuildChanges(import.meta.env.VITE_WHAT_CHANGED);
 
 const AppContent: React.FC = () => {
   const { openFile, activeFile, resetEditorSession } = useEditorStore((state) => ({
@@ -256,6 +259,7 @@ const AppContent: React.FC = () => {
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+      {appVersion && <WhatChangedDialog version={appVersion} changes={buildChanges} />}
       <AppBar position="static">
         <Toolbar>
           <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
