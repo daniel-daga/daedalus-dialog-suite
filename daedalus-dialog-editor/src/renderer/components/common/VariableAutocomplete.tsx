@@ -56,6 +56,7 @@ type OptionType = VariableOption;
 const MAX_RESULTS = 200;
 const LARGE_LIST_THRESHOLD = 2000;
 const MIN_CHARS_FOR_LARGE_LIST = 2;
+const PRIMITIVE_TYPES = ['int', 'string', 'float'];
 
 const filter = createFilterOptions<OptionType>({
   stringify: (option) => `${option.name} ${option.type} ${option.value !== undefined ? option.value : ''}`,
@@ -124,6 +125,28 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
       }
     }
   };
+
+  // Propose what the field's own symbols look like: a TOPIC_ field is a
+  // `const string` in the file that already holds the topics, not `var int`
+  // in whatever file sorts first.
+  const creationDefaults = useMemo(() => {
+    const singleType = typeof typeFilter === 'string' ? typeFilter.toLowerCase() : undefined;
+    const type = singleType && PRIMITIVE_TYPES.includes(singleType) ? singleType : 'int';
+    const constant = type === 'string' ||
+      (pendingCreationName.toUpperCase() === pendingCreationName && pendingCreationName.includes('_'));
+    let targetFile: string | undefined;
+    if (namePrefix) {
+      const counts = new Map<string, number>();
+      for (const o of options) {
+        if ((o.source === 'constant' || o.source === 'variable') && o.filePath) {
+          counts.set(o.filePath, (counts.get(o.filePath) ?? 0) + 1);
+        }
+      }
+      let best = 0;
+      counts.forEach((n, file) => { if (n > best) { best = n; targetFile = file; } });
+    }
+    return { type, constant, targetFile };
+  }, [typeFilter, namePrefix, options, pendingCreationName]);
 
   const handleCreateNew = (name: string) => {
     setPendingCreationName(name);
@@ -279,7 +302,9 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
         open={creationDialogOpen}
         onClose={() => setCreationDialogOpen(false)}
         initialName={pendingCreationName}
-        isConstant={pendingCreationName.toUpperCase() === pendingCreationName && pendingCreationName.includes('_')}
+        initialType={creationDefaults.type}
+        isConstant={creationDefaults.constant}
+        initialTargetFile={creationDefaults.targetFile}
       />
     </>
   );

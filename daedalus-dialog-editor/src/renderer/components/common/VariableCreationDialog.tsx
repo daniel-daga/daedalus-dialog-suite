@@ -23,6 +23,8 @@ export interface VariableCreationDialogProps {
   initialName?: string;
   initialType?: string;
   isConstant?: boolean;
+  /** File to preselect; falls back to a name-based guess when absent or unknown. */
+  initialTargetFile?: string;
 }
 
 const VariableCreationDialog: React.FC<VariableCreationDialogProps> = ({
@@ -31,6 +33,7 @@ const VariableCreationDialog: React.FC<VariableCreationDialogProps> = ({
   initialName = '',
   initialType = 'int',
   isConstant: initialIsConstant = false,
+  initialTargetFile,
 }) => {
   const addVariable = useProjectStore((s) => s.addVariable);
   const questFiles = useProjectStore((s) => s.questFiles);
@@ -49,6 +52,7 @@ const VariableCreationDialog: React.FC<VariableCreationDialogProps> = ({
       setNewName(initialName);
       setNewType(initialType);
       setIsConstant(initialIsConstant);
+      setTargetFile('');
       setError(null);
     }
   }, [open, initialName, initialType, initialIsConstant]);
@@ -61,6 +65,10 @@ const VariableCreationDialog: React.FC<VariableCreationDialogProps> = ({
   // Try to pick a default file (e.g. from questFiles if available)
   useEffect(() => {
     if (open && !targetFile && availableFiles.length > 0) {
+      if (initialTargetFile && availableFiles.includes(initialTargetFile)) {
+        setTargetFile(initialTargetFile);
+        return;
+      }
       // Prefer files with "Constants" or "Vars" in name
       const defaultFile = availableFiles.find(f => 
         f.toLowerCase().includes('constants') || 
@@ -69,7 +77,7 @@ const VariableCreationDialog: React.FC<VariableCreationDialogProps> = ({
       ) || availableFiles[0];
       setTargetFile(defaultFile);
     }
-  }, [open, availableFiles, targetFile]);
+  }, [open, availableFiles, targetFile, initialTargetFile]);
 
   const handleAddSubmit = async () => {
     if (!newName || !targetFile) {

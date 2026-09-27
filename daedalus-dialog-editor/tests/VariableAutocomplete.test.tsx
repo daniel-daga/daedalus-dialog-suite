@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import VariableAutocomplete from '../src/renderer/components/common/VariableAutocomplete';
 import { useProjectStore } from '../src/renderer/store/projectStore';
@@ -372,6 +372,55 @@ describe('VariableAutocomplete', () => {
 
     await waitFor(() => {
       expect(onChange).toHaveBeenCalledWith('Diego');
+    });
+  });
+  describe('creation dialog defaults', () => {
+    const openCreationDialog = async (props: Partial<React.ComponentProps<typeof VariableAutocomplete>>, typed: string) => {
+      render(<VariableAutocomplete value="" onChange={jest.fn()} label="Field" {...props} />);
+      const input = screen.getByLabelText('Field');
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: typed } });
+      fireEvent.click(await screen.findByText(`Add "${typed}"`));
+      return screen.findByRole('dialog');
+    };
+
+    beforeEach(() => {
+      // B_Constants.d is what the dialog's own name heuristic would pick; the
+      // field's existing symbols live elsewhere, and that must win.
+      mockStore({
+        mergedSemanticModel: {
+          variables: {
+            MIS_Quest1: { name: 'MIS_Quest1', type: 'int', filePath: 'Story/Mis_Vars.d' }
+          },
+          constants: {
+            TOPIC_DasMagischeErz: { name: 'TOPIC_DasMagischeErz', type: 'string', value: 'Das magische Erz', filePath: 'Story/Log_Entries/Topics.d' }
+          },
+          instances: {}
+        },
+        dialogIndex: new Map(),
+        npcList: [],
+        questFiles: ['Story/B_Constants.d', 'Story/Log_Entries/Topics.d', 'Story/Mis_Vars.d'],
+        allDialogFiles: ['Story/Dialoge/DIA_Alchemist.d'],
+        isLoading: false,
+        addVariable: jest.fn()
+      });
+    });
+
+    test('a topic field proposes a string constant in the file holding the other topics', async () => {
+      const dialog = await openCreationDialog({ typeFilter: 'string', namePrefix: 'TOPIC_' }, 'TOPIC_DasMinental');
+
+      expect(within(dialog).getByText('string')).toBeInTheDocument();
+      expect(within(dialog).getByRole('checkbox', { name: 'Constant' })).toBeChecked();
+      expect(within(dialog).getByLabelText('Value')).toBeInTheDocument();
+      expect(within(dialog).getByText('Topics.d')).toBeInTheDocument();
+    });
+
+    test('a quest-variable field proposes an int variable in the file holding the other MIS_ variables', async () => {
+      const dialog = await openCreationDialog({ namePrefix: 'MIS_' }, 'MIS_NewQuest');
+
+      expect(within(dialog).getByText('int')).toBeInTheDocument();
+      expect(within(dialog).getByRole('checkbox', { name: 'Constant' })).not.toBeChecked();
+      expect(within(dialog).getByText('Mis_Vars.d')).toBeInTheDocument();
     });
   });
 });
