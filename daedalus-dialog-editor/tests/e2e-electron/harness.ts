@@ -37,6 +37,8 @@ export interface LaunchAppOptions {
   settings?: Record<string, unknown>;
   /** Delay real chokidar callbacks to exercise self-write latency handling. */
   delayFileWatcherEventMs?: number;
+  /** Leave the first-launch build notes open for the notes-flow spec. */
+  dismissWhatChanged?: boolean;
 }
 
 const tempDirs: string[] = [];
@@ -97,6 +99,12 @@ export async function launchApp(options: LaunchAppOptions = {}): Promise<AppFixt
 
   const page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
+  if (options.dismissWhatChanged !== false) {
+    const notesDialog = page.getByRole('dialog', { name: 'What changed' });
+    await notesDialog.waitFor({ state: 'visible', timeout: 1000 }).then(async () => {
+      await page.getByRole('button', { name: 'Got it' }).click();
+    }).catch(() => {});
+  }
 
   /** Print the main process output, but only for a test that did not pass. */
   const reportMainOutput = () => {

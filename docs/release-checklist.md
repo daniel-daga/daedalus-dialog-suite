@@ -72,6 +72,11 @@ prototyping.
 
 ## 3. Release-gating dispatch verification
 
+Each `build-windows` dispatch requires a `What's changed` entry: one line per
+change in `#123: Short description` format. The build embeds these entries in
+the first-launch dialog for that build and repeats them in the rolling release
+notes. Use the issue number for the tracked work item.
+
 The release pipeline is structurally gated (see
 [`architecture/security-model.md`](./architecture/security-model.md) →
 "Release gating"): `build-windows.yml` runs the full `all-tests.yml` matrix +
