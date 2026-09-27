@@ -1149,6 +1149,16 @@ browser.
   their directory on the row, and opening one goes to its own path rather than
   to the path being browsed.
 
+  **Retail root measurement (Steam Gothic II, 2026-09-27):** `describe-vfs-root.js`
+  mounted six retail VDFs and the three loose `_compiled` trees. The merged
+  root has one folder (`_WORK/`) and 144 files; the namespace contains 9,020
+  files in 13 directories over six levels. `GRASSGROUP` is present once under
+  `_WORK/DATA/MESHES/_COMPILED`; `FENCE` is present eight times across compiled
+  meshes and textures. The retail namespace is nested, so the report that the
+  browser has no folders is not explained by a flat root or missing mounts.
+  Browsing remains one level at a time; the existing row, Up, and breadcrumb
+  navigation paths cover the hierarchy.
+
 - **Waynet overlay.** `getWaynet` is to `normalizeWorld`'s waynet section what
   `vobIndex` is to the VOB dump: the dump sorts waypoints by name and sorts each
   edge pair because order is noise to a diff, while an overlay needs stored

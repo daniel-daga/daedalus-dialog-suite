@@ -2664,7 +2664,8 @@ a VOB carries `NW_CRATE.3DS` and vobbilder stores neither. The UI is a
 Browse / Favorites / Categories switch on the Assets panel once a project is
 loaded; every tile carries a star and a file-into menu (any known category,
 or a new one typed in place), a browse row carries the same star, and a row
-and a tile alike place their mesh from a right-click (§16.37); a category view
+and a tile alike place their mesh from a right-click; retail VFS shape is
+measured in architecture §6. A category view
 can unfile the project's own entries and not the seed's. Favorites and
 Categories carry a text filter, which at the category list matches a visual as
 well as a path. **Not done, by choice:** no removal or renaming
@@ -3279,37 +3280,6 @@ the per-source mounts lazily, on the browser's first provenance request, so the
 world open pays nothing for a panel nobody opened.
 
 Daniel's machine, not CI: no runner has a Gothic install.
-
-### 16.37 The asset browser's first outside user could not work it (2026-09-10, Florian via Signal)
-
-Seven messages in a row, all about the Assets panel, from the one person using
-the editor who did not build it. Each was filed as its own issue with the German
-verbatim; what they share is the cause, and the cause is worth stating once.
-
-**The panel was built as a namespace explorer and grew a catalogue on top
-(§16.26 row 1), and neither half was ever walked by somebody who did not know
-where things are.** Every piece worked as designed and the designs did not add
-up to "put a fence in my world".
-
-Four of the five are done and `git log` carries them (#241, #242, #243, #244);
-the settled outcomes are architecture §6 and §7. Row numbers are the ones the
-issues cite and do not move.
-
-**One row is left.**
-
-5. **What the browse root actually looks like on a retail install is unknown
-   (#245).** Florian could not steer into folders. `gothicAssetSources` mounts
-   each loose `_compiled` tree at the namespace root, so those files are flat by
-   construction; what the six VDFs contribute is an open question nobody in this
-   repo has looked at. Row 1's search no longer waits on the answer — `vfsFind`
-   walks the whole namespace either way — but whether the *navigation* complaint
-   is a UI problem or simply an accurate description of a flat namespace still
-   does.
-
-   `zenkit-node/scripts/describe-vfs-root.js --install <dir>` is the
-   measurement: it prints the top level counted folders-against-files, the shape
-   below it, and whether the names from the report are mounted at all. Needs a
-   Gothic install — Daniel's machine, not CI.
 
 ### 16.40 Six of a decal's seven fields are still invisible (2026-09-10; #249, #262)
 

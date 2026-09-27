@@ -28,8 +28,18 @@
 //      a given install contains, so the catalogue proves nothing by itself.
 
 const path = require('node:path');
+const fs = require('node:fs');
 
 const zenkit = require('..');
+
+function resolveInstallSources(install, mods, exists = fs.existsSync) {
+  // This script lives in zenkit-node, which intentionally does not depend on
+  // the level-editor domain package. Resolve that sibling workspace directly
+  // so the documented one-off command works under pnpm's isolated linker.
+  const { gothicAssetSources } = require(path.resolve(__dirname, '../../zen-world'));
+  return gothicAssetSources(install.replace(/\\/g, '/'), exists, mods)
+    .map((candidate) => path.normalize(candidate));
+}
 
 /** The names the report is about unless the caller names others — the two from
  *  the original report, verbatim. */
@@ -86,12 +96,7 @@ function main() {
 
   let sources = paths;
   if (install !== null) {
-    // Lazily, as `bench-vfs-sources.js` does: a bare-path run must not depend
-    // on the sibling workspace having been built.
-    const { gothicAssetSources } = require('zen-world');
-    const fs = require('node:fs');
-    sources = gothicAssetSources(install.replace(/\\/g, '/'), (candidate) => fs.existsSync(candidate), mods)
-      .map((candidate) => path.normalize(candidate));
+    sources = resolveInstallSources(install, mods);
   }
   if (sources.length === 0) {
     console.error('nothing to mount: pass --install <dir> or one or more paths');
@@ -129,4 +134,6 @@ function main() {
   }
 }
 
-main();
+module.exports = { parseArgs, resolveInstallSources, shape };
+
+if (require.main === module) main();

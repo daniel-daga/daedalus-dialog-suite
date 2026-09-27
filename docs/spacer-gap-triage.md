@@ -309,9 +309,8 @@ the list: they name a texture and a Daedalus instance rather than a mesh, so
 every retail world counts thousands, and a bar that shouted on those would stop
 being read.
 
-Adjacent and already tracked: #245 (what the browse root looks like on a retail
-install), the plan's §16.37 (the asset browser's first outside user could not
-work it), #239 (per-source mount cost unmeasured).
+Adjacent and already tracked: #245's retail-root measurement (architecture §6)
+and #239 (per-source mount cost unmeasured).
 
 ---
 
@@ -329,8 +328,9 @@ world and one load is the whole first step.
 ### D2. No in-app help or onboarding (#275)
 
 Spacer's empty help window has our equivalent: nothing. Not a complaint we have
-received in those words, but the plan's §16.37 (an outside user could not work the asset
-browser unaided) is the same failure in a smaller frame.
+received in those words, but an outside user's asset-browser report was
+investigated against the retail VFS (architecture §6); whether the UI needs
+onboarding remains a separate question.
 
 ---
 
