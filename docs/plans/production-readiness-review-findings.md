@@ -668,8 +668,9 @@ sequencing, packaged-app parse smoke), §3's P3 measure-first items, and the
 
 Reviewed editor source at `7a481e1c`, focusing on edit preservation and
 cross-view save handling. This is a code and component-behavior review, not a
-visual audit of a packaged application. No production implementation changed.
-The world-close finding lives in `docs/plans/level-editor.md` §16.42.
+visual audit of a packaged application. No production implementation changed
+in that review. The world-close finding was tracked as #299 and fixed in
+`bd79ce15`; its plan subsection was removed when the issue closed.
 
 Validation: four temporary Jest regressions reproduced all four findings
 (assertions for preserving edits/refusing the unintended action failed at the
