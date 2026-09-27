@@ -1,17 +1,17 @@
-import { useCallback } from 'react';
-import { Box, Typography } from '@mui/material';
+import React, { useCallback } from 'react';
+import { Box, FormControlLabel, Switch, Typography } from '@mui/material';
 import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
 import type { ConditionEditorCondition } from '../dialogTypes';
 import type { ConditionFieldsProps } from './conditionRegistry';
 
-type C = { type: 'NpcKnowsInfoCondition'; npc: string; dialogRef: string; getTypeName?: () => string };
+type C = { type: 'NpcKnowsInfoCondition'; npc: string; dialogRef: string; negated?: boolean; getTypeName?: () => string };
 
 // Hoisted so VariableAutocomplete's memo sees stable sx identities (slice 4).
 const NPC_FIELD_SX = { flex: '1 1 30%', minWidth: 120 };
 const DIALOG_FIELD_SX = { flex: '1 1 60%', minWidth: 150 };
 
-export default function NpcKnowsInfoFields({ condition, handleUpdate, flushUpdate, mainFieldRef }: ConditionFieldsProps) {
+export default function NpcKnowsInfoFields({ condition, handleUpdate, handleImmediateUpdate, flushUpdate, mainFieldRef }: ConditionFieldsProps) {
   const c = condition as unknown as C;
   const upd = useCallback(
     (patch: Partial<C>): ConditionEditorCondition => ({ ...c, ...patch } as unknown as ConditionEditorCondition),
@@ -27,6 +27,17 @@ export default function NpcKnowsInfoFields({ condition, handleUpdate, flushUpdat
   );
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
+      <FormControlLabel
+        control={
+          <Switch
+            checked={c.negated || false}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleImmediateUpdate(upd({ negated: e.target.checked }))}
+            size="small"
+          />
+        }
+        label="NOT"
+        sx={{ mr: 1 }}
+      />
       <VariableAutocomplete
         label="NPC"
         value={c.npc || ''}

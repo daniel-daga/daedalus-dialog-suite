@@ -195,6 +195,45 @@ test('deserializeSemanticModel should preserve conditionOperator OR through dese
   );
 });
 
+test('deserializeSemanticModel keeps a negated NpcKnowsInfoCondition from the editor through code generation', () => {
+  const { SemanticCodeGenerator } = require('../dist/codegen/generator');
+
+  // The editor's NOT switch sends `negated: true` on the plain condition:
+  // "the NPC was met elsewhere, but not in Hallo1".
+  const plainJson = {
+    functions: {
+      DIA_Albert_Hallo3_Condition: {
+        name: 'DIA_Albert_Hallo3_Condition',
+        returnType: 'int',
+        actions: [],
+        conditions: [
+          { type: 'NpcKnowsInfoCondition', npc: 'other', dialogRef: 'DIA_Albert_Hallo2' },
+          { type: 'NpcKnowsInfoCondition', npc: 'other', dialogRef: 'DIA_Albert_Hallo1', negated: true }
+        ],
+        calls: []
+      }
+    },
+    dialogs: {
+      DIA_Albert_Hallo3: {
+        name: 'DIA_Albert_Hallo3',
+        parent: 'C_INFO',
+        properties: {
+          npc: 'VLK_99107_Albert',
+          nr: 3,
+          condition: { name: 'DIA_Albert_Hallo3_Condition', returnType: 'int' },
+          information: 'DIA_Albert_Hallo3_Info'
+        }
+      }
+    }
+  };
+
+  const code = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false })
+    .generateSemanticModel(deserializeSemanticModel(plainJson));
+
+  assert.ok(code.includes('!Npc_KnowsInfo(other, DIA_Albert_Hallo1)'), `negated condition lost, got:\n${code}`);
+  assert.ok(/[^!]Npc_KnowsInfo\(other, DIA_Albert_Hallo2\)/.test(code), `plain condition changed, got:\n${code}`);
+});
+
 test('deserializeSemanticModel should handle global constants and variables', () => {
   const plainJson = {
     functions: {},
