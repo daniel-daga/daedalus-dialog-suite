@@ -56,6 +56,13 @@ Two layers remain, with a one-way import direction (UI → domain):
 - `conditionExpressionCodec.ts` — parse/serialize between condition expression
   strings and structured `DialogCondition[]`. Shared: the dialog simulator
   (`simulator/domain/conditionEvaluator.ts`) consumes the parser.
+- `questSteps.ts` — quest steps (#322): folds a contiguous run of vanilla
+  quest lines (`Log_CreateTopic`, `Log_SetTopicStatus`, `B_LogEntry`,
+  `MIS_X = LOG_…`, a trailing `B_GivePlayerXP`) into one step, builds the lines
+  for a new step, and edits a step in place. A step is a view over existing
+  actions, not a new action type, so an unedited file saves unchanged. Only the
+  `LOG_…` constant names count as lifecycle states (`MIS_Counter = 3` is a
+  counter).
 
 The graph node/edge types in `types/questGraph.ts` are editor-owned and carry
 no rendering-library dependency. The domain imports only model types

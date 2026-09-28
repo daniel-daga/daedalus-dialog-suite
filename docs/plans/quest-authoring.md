@@ -54,8 +54,9 @@ status, so the two cannot drift apart. Add note writes
 A recogniser folds a contiguous run of those lines, in any order, back into
 one quest-step card. A run that does not match stays as raw cards. Every
 quest-step card has a "show script" toggle that expands it into its raw lines.
-The recogniser is pure domain logic in `quest/domain/`. It has to be tested on
-the vanilla variants in the parser corpus before anything relies on it.
+The recogniser, the builders and the step edits have landed in
+`quest/domain/questSteps.ts`, tested on real parser output. The cards, the
+picker and the automatic declarations are still to do.
 
 The quest picker shows diary titles (the `TOPIC_` constant's value) and offers
 "New quest…" inline. The first use of a new quest writes `TOPIC_X`, `MIS_X` and
