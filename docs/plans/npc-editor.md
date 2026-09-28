@@ -192,7 +192,7 @@ A bind-pose preview beside the form, reusing `VisualPreviewScene` (#298).
   to teeth; armor and mouth materials keep their own texture names. A head it
   cannot place is left off and named in `missing`, never guessed at.
 - **`src/renderer/npc/npcVisual.ts`** — `resolveNpcVisual` reads the engine
-  externals (`Mdl_SetVisual`, `Mdl_SetVisualBody`, `Mdl_SetModelFatness`; the
+  externals (`Mdl_SetVisual`, `Mdl_SetVisualBody`, `Mdl_SetModelScale`; the
   last call wins, as the engine runs them in order) with integer constants
   resolved through a project lookup. `B_SetNpcVisual` is expanded in place into the
   engine calls its **retail** body makes (Daniel supplied it, 2026-09-26):
@@ -236,11 +236,16 @@ the preview is not claimed as an exact engine reproduction.
 
 **Remaining preview work:**
 
-- **Fatness (#310):** now deforms spine/pelvis weighted vertices in the
-  procedural skinning path, independently of `Mdl_SetModelScale`. The current
-  preview mapping changes local torso breadth by 10% per script unit; compare
-  against a retail in-game capture before treating that mapping as engine
-  faithful.
+- **Fatness (#310) is deferred** (Daniel, 2026-09-28). The editor ignores
+  `Mdl_SetModelFatness`: `resolveNpcVisual` does not read it and the body
+  request carries none, so every preview and world body is drawn unfattened.
+  What stays for when it comes back is the binding's: `extractVisual`'s
+  `fatness` argument deforms spine/pelvis weighted vertices, independently of
+  `Mdl_SetModelScale`, by 10% of local torso breadth per script unit — a
+  mapping never compared against a retail in-game capture, which is the work
+  left. Restoring it is the resolver reading the call again and
+  `npcBodyRequest` passing it on; `zen-world`'s `NpcBodyRequest.fatness` and
+  the main-process validator still accept it.
 - **Animation (#311):** selecting “Scrub idle animation” loads the `S_IDLE`
   `.MAN` referenced by the model's `.MDS` script and samples its frames through
   the existing skinning path. The normalized frame slider and native fixture

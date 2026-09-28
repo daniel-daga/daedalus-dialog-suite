@@ -41,7 +41,7 @@ test('resolves only spawned NPCs and uses project constants and armor source tex
   expect(extractNpc).toHaveBeenCalledWith('npc source');
   expect(requests.get('PC_TEST')).toEqual({
     model: 'HUMANS.MDS', body: 'Armor_Mil_L.asc', bodyTexture: 1, skinColor: 0,
-    head: 'Hum_Head_Pony', headTexture: 18, teethTexture: 0, fatness: 0, scale: [1, 1, 1],
+    head: 'Hum_Head_Pony', headTexture: 18, teethTexture: 0, scale: [1, 1, 1],
   });
 });
 

@@ -78,7 +78,7 @@ describe('NpcVisualPreview', () => {
 
     await waitFor(() => expect(getNpcBody).toHaveBeenCalledWith({
       model: 'HUMANS.MDS', body: 'Armor_Vlk_H.asc', bodyTexture: 1, skinColor: 0,
-      head: 'Hum_Head_Fatbald', headTexture: 42, teethTexture: 0, fatness: 0, scale: [1, 1, 1],
+      head: 'Hum_Head_Fatbald', headTexture: 42, teethTexture: 0, scale: [1, 1, 1],
     }));
     expect(await screen.findByTestId('npc-preview-canvas')).toBeInTheDocument();
     expect(screen.getByTestId('npc-preview-notes')).toHaveTextContent('Head mesh Hum_Head_Fatbald did not resolve');

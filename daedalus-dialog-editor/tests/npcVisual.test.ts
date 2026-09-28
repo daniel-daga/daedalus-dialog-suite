@@ -20,7 +20,7 @@ const EXPLICIT = [
 
 describe('resolveNpcVisual', () => {
   it('reads the engine calls, resolving constants through the project', () => {
-    expect(resolveNpcVisual(npc(...EXPLICIT, call('Mdl_SetModelFatness', ['self', '1.5'])), lookup)).toEqual({
+    expect(resolveNpcVisual(npc(...EXPLICIT), lookup)).toEqual({
       ok: true,
       visual: {
         model: 'HUMANS.MDS',
@@ -31,18 +31,16 @@ describe('resolveNpcVisual', () => {
         headTexture: 12,
         teethTexture: 0,
         armor: null,
-        fatness: 1.5,
         scale: [1, 1, 1],
         notes: [],
       },
     });
   });
 
-  it('keeps the armour instance, and a fatness of 0 when the script sets none', () => {
+  it('keeps the armour instance', () => {
     const body = call('Mdl_SetVisualBody', ['self', '"hum_body_Naked0"', '0', '0', '"Hum_Head_Bald"', '0', '0', 'ITAR_Vlk_H']);
     const result = resolveNpcVisual(npc(EXPLICIT[0], body), lookup);
     expect(result.ok && result.visual.armor).toBe('ITAR_Vlk_H');
-    expect(result.ok && result.visual.fatness).toBe(0);
   });
 
   it('lets the later call win, as the engine runs them in order', () => {
@@ -57,9 +55,12 @@ describe('resolveNpcVisual', () => {
       .toEqual({ ok: false, reason: 'BodyTex_Mod is not a known integer constant' });
   });
 
-  it('does not read a fatness it cannot evaluate as zero', () => {
-    expect(resolveNpcVisual(npc(...EXPLICIT, call('Mdl_SetModelFatness', ['self', 'FAT_ONAR'])), lookup))
-      .toEqual({ ok: false, reason: 'FAT_ONAR is not a number literal' });
+  // Fatness is deferred (#310): the preview draws the body unfattened, so a
+  // value it cannot evaluate is no reason not to draw.
+  it('does not read Mdl_SetModelFatness, even one it could not evaluate', () => {
+    const result = resolveNpcVisual(npc(...EXPLICIT, call('Mdl_SetModelFatness', ['self', 'FAT_ONAR'])), lookup);
+    expect(result.ok).toBe(true);
+    expect(result.ok && 'fatness' in result.visual).toBe(false);
   });
 
   it('draws nothing without a model or a body, and says which is missing', () => {
@@ -96,7 +97,6 @@ describe('resolveNpcVisual through retail B_SetNpcVisual', () => {
         headTexture: 42,
         teethTexture: 0,
         armor: 'ITAR_Vlk_H',
-        fatness: 0,
         scale: [1, 1, 1],
         notes: [],
       },
@@ -150,7 +150,7 @@ describe('npcBodyRequest', () => {
   const VISUAL = {
     model: 'HUMANS.MDS', bodyMesh: 'hum_body_Naked0', bodyTexture: 1, skinColor: 0,
     headMesh: 'Hum_Head_Bald', headTexture: 12, teethTexture: 0, armor: 'ITAR_Vlk_H',
-    fatness: 0, scale: [0.9, 1, 1] as [number, number, number], notes: [],
+    scale: [0.9, 1, 1] as [number, number, number], notes: [],
   };
   const ITEMS: Record<string, string> = {
     ITAR_VLK_H: 'INSTANCE ITAR_Vlk_H (C_Item)\n{\n\tvisual = "ItAr_Vlk_H.3ds";\n\tvisual_change = "Armor_Vlk_H.asc";\n};',
@@ -162,7 +162,7 @@ describe('npcBodyRequest', () => {
     expect(npcBodyRequest(VISUAL, itemSource)).toEqual({
       request: {
         model: 'HUMANS.MDS', body: 'Armor_Vlk_H.asc', bodyTexture: 1, skinColor: 0,
-        head: 'Hum_Head_Bald', headTexture: 12, teethTexture: 0, fatness: 0, scale: [0.9, 1, 1],
+        head: 'Hum_Head_Bald', headTexture: 12, teethTexture: 0, scale: [0.9, 1, 1],
       },
       notes: [],
     });
@@ -181,9 +181,6 @@ describe('npcBodyRequest', () => {
       .toEqual(['Armour ITAR_Mod is not an item the project defines, so it is not drawn']);
   });
 
-  it('passes fatness through to the weighted body skinning request', () => {
-    expect(npcBodyRequest({ ...VISUAL, armor: null, fatness: 2 }, itemSource).request.fatness).toBe(2);
-  });
 
   it('keeps the notes the visual already carries', () => {
     expect(npcBodyRequest({ ...VISUAL, armor: null, notes: ['Width assumed normal'] }, itemSource).notes)

@@ -23,7 +23,6 @@ export interface NpcVisual {
   teethTexture: number;
   /** The armour item instance, or null for `NO_ARMOR` (-1). */
   armor: string | null;
-  fatness: number;
   /** `Mdl_SetModelScale` — width, height, depth. */
   scale: [number, number, number];
   /** What the preview had to assume, in words for the user. */
@@ -73,7 +72,6 @@ export function resolveNpcVisual(
 
     const [, bodyMesh, bodyTex, skin, headMesh, headTex, teeth, armor] = body.args;
     const armorExpr = (armor ?? '').trim();
-    const fatness = last('Mdl_SetModelFatness')?.args[1];
     const scale = last('Mdl_SetModelScale');
     return {
       ok: true,
@@ -87,7 +85,6 @@ export function resolveNpcVisual(
         teethTexture: int(teeth),
         // An armour argument is an item instance, which is no integer constant.
         armor: armorExpr === '' || armorExpr === '-1' || lookup(armorExpr) === -1 ? null : armorExpr,
-        fatness: fatness === undefined ? 0 : float(fatness),
         scale: scale ? [float(scale.args[1]), float(scale.args[2]), float(scale.args[3])] : [1, 1, 1],
         notes: scale && assumedWidth.has(scale) ? [ASSUMED_WIDTH] : [],
       },
@@ -179,7 +176,6 @@ export function npcBodyRequest(
       head: visual.headMesh,
       headTexture: visual.headTexture,
       teethTexture: visual.teethTexture,
-      fatness: visual.fatness,
       scale: visual.scale,
     },
     notes,
