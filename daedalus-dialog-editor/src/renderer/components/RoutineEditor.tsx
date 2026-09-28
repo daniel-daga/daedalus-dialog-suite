@@ -497,6 +497,7 @@ export const RoutineEditorPanel: React.FC<RoutineEditorPanelProps> = (
             <>
               <Autocomplete
                 size="small"
+                openOnFocus
                 options={stateOptions}
                 value={newActivity}
                 onChange={(_event, value) => setNewActivity(value)}
@@ -609,6 +610,7 @@ export const RoutineEditorPanel: React.FC<RoutineEditorPanelProps> = (
               <Typography variant="caption">{index + 1}</Typography>
               <Autocomplete
                 size="small"
+                openOnFocus
                 options={stateOptions}
                 value={entry.state}
                 disableClearable

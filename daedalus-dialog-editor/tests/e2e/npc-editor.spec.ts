@@ -200,6 +200,22 @@ test.describe('NPC editor', () => {
     expect(template).toContain('name = "Onar";');
   });
 
+  // #280: Log Entry's Topic field was reported as missing autocomplete when it
+  // was in fact just undiscoverable -- MUI already opens an Autocomplete's
+  // list on a mouse click, but not when the field is *tabbed* into (this app's
+  // action cards are built around Tab navigation between fields, see
+  // createRowTabHandlers). "Copy of" gets the same combo-box fix as every
+  // other autocomplete field: its options show the moment it receives focus,
+  // by keyboard or otherwise.
+  test('the Copy of field opens its options on focus alone, not just on click', async ({ page }) => {
+    await page.getByRole('button', { name: 'New NPC' }).click();
+    const create = page.getByRole('dialog', { name: 'New NPC' });
+
+    await create.getByLabel('Copy of').focus();
+
+    await expect(page.getByRole('option', { name: 'BAU_900_Onar' })).toBeVisible();
+  });
+
   test('a new NPC refuses an instance the project already has', async ({ page }) => {
     await page.getByRole('button', { name: 'New NPC' }).click();
     const create = page.getByRole('dialog', { name: 'New NPC' });

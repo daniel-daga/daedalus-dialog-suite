@@ -198,6 +198,18 @@ test.describe('Routine editor', () => {
     await expect(gap).toHaveAttribute('title', 'Gap 21:00–22:00');
   });
 
+  // #280: the same combo-box fix given to the Topic field on Log Entry --
+  // MUI already opens an Autocomplete's list on a mouse click, but not when
+  // the field is tabbed into, which is how this dense grid of activity rows
+  // is meant to be worked through.
+  test('the Activity field opens its options on focus alone, not just on click', async ({ page }) => {
+    const editor = await openRoutineEditor(page);
+
+    await activity(editor, 2).getByLabel('Activity', { exact: true }).focus();
+
+    await expect(page.getByRole('option', { name: 'TA_Stand_Guarding', exact: true })).toBeVisible();
+  });
+
   test('Cancel leaves the file as it was', async ({ page }) => {
     const before = await savedFile(page);
     const editor = await openRoutineEditor(page);

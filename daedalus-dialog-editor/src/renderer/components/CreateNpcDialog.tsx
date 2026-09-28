@@ -123,6 +123,7 @@ const CreateNpcDialog: React.FC<CreateNpcDialogProps> = ({ initialTemplate, onCl
             copied; everything else can be edited next.
           </Typography>
           <Autocomplete
+            openOnFocus
             options={templates}
             value={template || null}
             onChange={(_e, value) => setTemplate(value ?? '')}
