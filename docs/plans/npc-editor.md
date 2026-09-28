@@ -448,9 +448,13 @@ Not done, and each needs something first:
   guard, so it reads as no chapter. Recording it is a metadata change, and
   how often retail and mods switch that way is unmeasured
   (`check-routine-states.js` over `mdk/Content`, Daniel's machine).
-- **Creating a chapter routine**: a new variant and the call that switches to
-  it, written into the chapter's function. Which function a mod uses for
-  that is a convention the editor does not know yet. Slice 5 (#316).
+- **Creating a chapter routine is dropped** (Daniel, 2026-09-28, revising
+  the above). Routines change at any point a script switches them, quests
+  as much as chapters, and the editor cannot know when a condition holds.
+  What matters is managing several routines per NPC. So slice 5 creates a
+  variant and nothing else; the switch is written where it is triggered, with
+  the dialog editor's existing exchange-routine action. The chapter label
+  stays a hint read off names, never inferred from conditions.
 
 ### Decided before slice 4 (Daniel, 2026-09-28)
 
