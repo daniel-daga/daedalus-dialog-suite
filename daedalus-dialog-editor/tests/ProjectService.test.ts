@@ -430,6 +430,33 @@ INSTANCE DIA_Arog_Greeting (C_INFO)
       ]);
     });
 
+    it('indexes where each routine call keeps its window and waypoint, uppercased', async () => {
+      // Routine authoring (npc-editor.md §6) rewrites a `TA_*` call's times and
+      // waypoint in place, and offers the project's own wrappers as the state
+      // picker, so it needs the layout the routine index already derives —
+      // not just the minutes it derives from it.
+      fs.writeFileSync(path.join(tempDir, 'TA.d'), [
+        'FUNC VOID TA_Sit_Chair(var int a, var int b, var int c, var int d, var string place)',
+        '{',
+        '\tTA_MIN (self, a, b, c, d, ZS_Sit_Chair, place);',
+        '};',
+        'FUNC VOID Not_A_Wrapper(var int a) { Print(a); };'
+      ].join('\n'));
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      // `name` is the spelling the project declares it with, which is what a
+      // new call is written with; the externals are not declared here.
+      expect(index.routineLayouts.TA_SIT_CHAIR).toEqual({
+        startH: 0, startM: 1, stopH: 2, stopM: 3, waypoint: 4, name: 'TA_Sit_Chair'
+      });
+      expect(index.routineLayouts.TA_MIN).toEqual({
+        startH: 1, startM: 2, stopH: 3, stopM: 4, waypoint: 6
+      });
+      expect(index.routineLayouts.NOT_A_WRAPPER).toBeUndefined();
+    });
+
     it('keeps the functions a broken file declares before its syntax error', async () => {
       // The metadata pass builds as much model as it can out of a file that
       // does not parse and withholds only the whole model; the functions it did
@@ -1192,6 +1219,33 @@ FUNC VOID Rtn_Mixed()
           line: 3
         }
       ]);
+    });
+
+    // A routine save re-indexes the one file it wrote (npc-editor.md §6). The
+    // wrapper that file calls is declared elsewhere, so its layout comes in
+    // from the whole-project index rather than being derived from the file.
+    it('reads one file\'s routine sites with layouts the project index derived', async () => {
+      const { extractFileMetadataFromSource, routineSitesOfFile } = await load();
+
+      const file = extractFileMetadataFromSource(
+        `FUNC VOID Rtn_Start_900()
+{
+	TA_Sit_Throne (07,00,21,30,"NW_THRONE");
+};`,
+        '/test/Onar.d'
+      );
+      const layouts = { TA_SIT_THRONE: { startH: 0, startM: 1, stopH: 2, stopM: 3, waypoint: 4 } };
+
+      expect(routineSitesOfFile('/test/Onar.d', file.semanticModel!, layouts)).toEqual([{
+        routine: 'RTN_START_900',
+        stateName: 'TA_SIT_THRONE',
+        startMinute: 7 * 60,
+        endMinute: 21 * 60 + 30,
+        waypoint: 'NW_THRONE',
+        filePath: '/test/Onar.d',
+        line: 3
+      }]);
+      expect(routineSitesOfFile('/test/Onar.d', file.semanticModel!, {})).toEqual([]);
     });
 
     // `TA` is the hour-only external: its waypoint sits at argument 4, not 6,

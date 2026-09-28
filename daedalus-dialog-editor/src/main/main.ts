@@ -13,6 +13,7 @@ import {
   assertDialogName,
   assertParseSourcePayload,
   assertNpcApplyEditsRequest,
+  assertRoutineSitesOfFileRequest,
   assertOpenWorldRequest,
   assertTextureRequest,
   assertVisualRequest,
@@ -34,6 +35,7 @@ import {
   assertOutputUnitLines,
 } from './ipcValidation';
 import { appendInsertNpcFlow } from './services/AppendInsertNpcFlow';
+import { routineSitesOfFile } from './utils/semanticMetadataUtils';
 import { findInstallShaped, ProjectConfigService } from './services/ProjectConfigService';
 import { runGmbtCompile, startGmbtQuickTest } from './services/GmbtService';
 import { readGmbtDefaultWorld } from './services/gmbtProject';
@@ -684,6 +686,26 @@ export function setupIpcHandlers() {
       }
       console.error('[IPC] project:parseDialogFile error:', error);
       throw new Error(`Failed to parse dialog file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  });
+
+  // A routine save's re-index (docs/plans/npc-editor.md §6): the saved file's
+  // routine sites, read the way the index build reads them, with the layouts
+  // it derived — the wrappers live in another file than the routine.
+  ipcMain.handle('project:routineSitesOfFile', async (_event, request: unknown) => {
+    try {
+      assertRoutineSitesOfFileRequest(request);
+      await pathValidator.validatePathResolved(request.filePath);
+      const content = await fileService.readFile(request.filePath);
+      const model = await parserService.parseSource(content);
+      return routineSitesOfFile(request.filePath, model, request.layouts);
+    } catch (error) {
+      if (error instanceof PathValidationError) {
+        console.error('[IPC] project:routineSitesOfFile - Path validation failed:', error.message);
+        throw new Error(error.message);
+      }
+      console.error('[IPC] project:routineSitesOfFile error:', error);
+      throw new Error(`Failed to index routines: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   });
 

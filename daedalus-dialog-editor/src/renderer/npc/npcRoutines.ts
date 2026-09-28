@@ -1,4 +1,4 @@
-import type { RoutineSite } from '../../shared/types';
+import type { ExchangeSite, RoutineSite } from '../../shared/types';
 import type { RoutineIndex } from '../routines/routineSchedule';
 
 // The NPC editor's read-only routines section (docs/plans/npc-editor.md,
@@ -27,6 +27,34 @@ export function npcRoutines(index: RoutineIndex, npc: string): NpcRoutine[] {
     routines.push({ label: state, routine, entries: entriesOf(routine) });
   }
   return routines;
+}
+
+export interface VariantSwitch extends ExchangeSite {
+  /** The chapter the switching function or the state is named for, if any. */
+  chapter: number | null;
+  /** Targets `self`, which the index cannot resolve to this NPC. */
+  maybeOtherNpc: boolean;
+}
+
+const CHAPTER = /KAPITEL_?(\d+)$/i;
+
+/**
+ * The literal calls that switch `npc` to `state` (npc-editor.md §6). A routine
+ * changes with the chapter only because a script switches to a variant, so
+ * the chapter a variant belongs to is read off the switch: a function named
+ * for the chapter (`B_Enter_NewWorld_Kapitel_3`) or a state named for it
+ * (`Kapitel4`). Anything else is `null` — never guessed.
+ */
+export function variantSwitches(sites: readonly ExchangeSite[], npc: string, state: string): VariantSwitch[] {
+  const target = npc.toUpperCase();
+  const wanted = state.toUpperCase();
+  const stateChapter = CHAPTER.exec(wanted);
+  return sites
+    .filter((site) => site.state === wanted && (site.target === target || site.target === 'SELF'))
+    .map((site) => {
+      const chapter = CHAPTER.exec(site.functionName) ?? stateChapter;
+      return { ...site, chapter: chapter ? Number(chapter[1]) : null, maybeOtherNpc: site.target === 'SELF' };
+    });
 }
 
 export function formatMinute(minute: number): string {

@@ -17,6 +17,7 @@ import {
 const CONTAINER_CONTENTS_MAX = 4096;
 import type { NpcBodyRequest, WorldOp } from '../shared/worldTypes';
 import type { NpcEdit } from 'daedalus-parser/npc-definition';
+import type { RoutineArgIndex } from '../shared/types';
 import { PROJECT_ASSET_SOURCE_LIMITS } from '../shared/projectConfigTypes';
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -116,6 +117,34 @@ export function assertNpcApplyEditsRequest(
     }
     if ((edit.op === 'setCall' || edit.op === 'addCall') && (!Array.isArray(edit.args) || !edit.args.every(isOneLine))) {
       throw new Error('Invalid npc:applyEdits request: args must be non-empty single-line strings');
+    }
+  }
+}
+
+const isPosition = (value: unknown) => Number.isInteger(value) && (value as number) >= 0;
+
+/**
+ * Assert a `project:routineSitesOfFile` request (docs/plans/npc-editor.md §6):
+ * a file path, and the project's routine layouts — UPPERCASED callee to the
+ * argument positions of its window and waypoint, `startM`/`stopM` optional.
+ */
+export function assertRoutineSitesOfFileRequest(
+  request: unknown,
+): asserts request is { filePath: string; layouts: Record<string, RoutineArgIndex> } {
+  if (!isPlainObject(request) || typeof request.filePath !== 'string' || request.filePath === '') {
+    throw new Error('Invalid project:routineSitesOfFile request: filePath must be a non-empty string');
+  }
+  if (!isPlainObject(request.layouts)) {
+    throw new Error('Invalid project:routineSitesOfFile request: layouts must be a plain object');
+  }
+  for (const [callee, layout] of Object.entries(request.layouts)) {
+    if (!IDENTIFIER.test(callee) || !isPlainObject(layout)) {
+      throw new Error('Invalid project:routineSitesOfFile request: each layout must be keyed by an identifier');
+    }
+    const required = [layout.startH, layout.stopH, layout.waypoint];
+    const optional = [layout.startM, layout.stopM].filter((position) => position !== undefined);
+    if (![...required, ...optional].every(isPosition)) {
+      throw new Error('Invalid project:routineSitesOfFile request: positions must be non-negative integers');
     }
   }
 }

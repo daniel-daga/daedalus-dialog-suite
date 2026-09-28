@@ -11,7 +11,7 @@
 import { create } from 'zustand';
 import { enableMapSet } from 'immer';
 import type { DialogMetadata, SemanticModel } from '../types/global';
-import type { FileParseErrors, ProjectIndex, ProjectOutputUnits, RoutineSite, SpawnSite } from '../../shared/types';
+import type { ExchangeSite, FileParseErrors, ProjectIndex, ProjectOutputUnits, RoutineArgIndex, RoutineSite, SpawnSite } from '../../shared/types';
 import type { GothicProjectFileV1, ProjectConfigWarning } from '../../shared/projectConfigTypes';
 import { getQuestUsage } from '../utils/questAnalyzer';
 import { deserialiseIpcMap } from '../utils/ipcSerialisation';
@@ -105,6 +105,12 @@ interface ProjectState {
   // The routine variants quest state swaps in, keyed by UPPERCASED NPC. Read by
   // the World surface's State lens; same lifecycle as routineSiteIndex.
   routineStateIndex: Record<string, { id: number; states: Record<string, string> }>;
+  // Where each routine-carrying call keeps its window and waypoint, keyed by
+  // UPPERCASED callee. Read by routine authoring; same lifecycle as the above.
+  routineLayoutIndex: Record<string, RoutineArgIndex>;
+  // Literal-state `Npc_ExchangeRoutine`/`B_StartOtherRoutine` calls — where a
+  // routine variant is switched to. Same lifecycle as the above.
+  exchangeSiteIndex: ExchangeSite[];
   // Files whose metadata extraction failed during the index build (degraded but openable)
   metadataFailures: Array<{ filePath: string; error: string }>;
   // Every function the project declares, UPPERCASED and sorted — the whole
@@ -218,6 +224,9 @@ interface ProjectActions {
 
   // Update a cached semantic model for a file
   updateFileModel: (filePath: string, model: SemanticModel) => void;
+  /** Re-read one saved file's routine sites in main and replace that file's
+   *  entries in `routineSiteIndex` (npc-editor.md §6). */
+  reindexRoutineSites: (filePath: string) => Promise<void>;
 
   // Batch variant: apply many file models with a single parsedFiles clone,
   // dialogIndex scan, parseGeneration bump, and (conditional) re-merge
@@ -483,6 +492,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   routineSiteIndex: [],
   routineNpcIndex: {},
   routineStateIndex: {},
+  routineLayoutIndex: {},
+  exchangeSiteIndex: [],
   metadataFailures: [],
   functionList: [],
   parseErrorIndex: [],
@@ -548,6 +559,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         routineSiteIndex: rawIndex.routineSites || [],
         routineNpcIndex: rawIndex.routinesByNpc || {},
         routineStateIndex: rawIndex.routineStatesByNpc || {},
+        routineLayoutIndex: rawIndex.routineLayouts || {},
+        exchangeSiteIndex: rawIndex.exchangeSites || [],
         metadataFailures: rawIndex.metadataFailures || [],
         functionList: rawIndex.functions || [],
         parseErrorIndex: rawIndex.parseErrors || [],
@@ -808,6 +821,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       routineSiteIndex: [],
       routineNpcIndex: {},
       routineStateIndex: {},
+      routineLayoutIndex: {},
+      exchangeSiteIndex: [],
       metadataFailures: [],
       functionList: [],
       parseErrorIndex: [],
@@ -1186,6 +1201,13 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     resetMergeCache();
     resetParsedFileRecency();
     set((state) => ({ parsedFiles: new Map(), parseGeneration: state.parseGeneration + 1 }));
+  },
+
+  reindexRoutineSites: async (filePath: string) => {
+    const sites = await window.editorAPI.routineSitesOfFile(filePath, get().routineLayoutIndex);
+    set((state) => ({
+      routineSiteIndex: [...state.routineSiteIndex.filter((site) => site.filePath !== filePath), ...sites],
+    }));
   },
 
   updateFileModel: (filePath: string, model: SemanticModel) => {
