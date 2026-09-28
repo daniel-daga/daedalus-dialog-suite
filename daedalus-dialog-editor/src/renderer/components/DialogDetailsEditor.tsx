@@ -36,7 +36,7 @@ import { useFocusNavigation } from './hooks/useFocusNavigation';
 import { useActionManagement } from './hooks/useActionManagement';
 import { useDialogEditorUIState } from './hooks/useDialogEditorUIState';
 import { useDialogEditorCommands } from './hooks/useDialogEditorCommands';
-import { flattenActionPaths } from './nestedActionUtils';
+import { flattenVisibleActionPaths } from './nestedActionUtils';
 
 // Monaco lives behind this dialog and is the heaviest thing the renderer can
 // load; keep it out of the entry chunk and off the first paint (§3 P3).
@@ -159,7 +159,8 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
     addActionAfter,
     addActionToEnd,
     addActionToBranchEnd,
-    moveAction
+    moveAction,
+    patchActionsAtLevel
   } = useActionManagement({
     setFunction,
     focusAction,
@@ -174,7 +175,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
   });
 
   const visibleActionPaths = useMemo(
-    () => flattenActionPaths(currentFunction?.actions || []),
+    () => flattenVisibleActionPaths(currentFunction?.actions || []),
     [currentFunction?.actions]
   );
 
@@ -312,6 +313,7 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
           addActionAfterPath={addActionAfter}
           addActionToBranchEnd={addActionToBranchEnd}
           moveAction={moveAction}
+          patchActionsAtLevel={patchActionsAtLevel}
           focusActionAtPath={focusAction}
           registerActionRef={registerActionRef}
           getVisibleActionPaths={() => visibleActionPaths}

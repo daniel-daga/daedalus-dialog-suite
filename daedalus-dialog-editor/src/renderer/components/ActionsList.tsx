@@ -5,8 +5,12 @@ import ActionCard from './ActionCard';
 import type { ActionTypeId } from './actionTypes';
 import type { DialogAction } from '../types/global';
 import type { ActionBranchKey, ActionPath } from './nestedActionUtils';
-import { actionPathToKey } from './nestedActionUtils';
+import { actionPathToKey, getActionListItems, moveActionListItem } from './nestedActionUtils';
+import type { ActionListItem } from './nestedActionUtils';
 import { DragDispatchContext } from './DragDispatchContext';
+import { ActionLevelPatchContext } from './ActionLevelPatchContext';
+import { applyQuestStepEdit, questStepScript } from '../quest/domain/questSteps';
+import type { QuestStepAction } from './actionTypes';
 
 interface ActionsListProps {
   actions: DialogAction[];
@@ -19,7 +23,7 @@ interface ActionsListProps {
   deleteActionAndFocusPrevAtPath: (path: ActionPath) => void;
   addActionAfterPath: (path: ActionPath, actionType: ActionTypeId) => void;
   addActionToBranchEnd?: (path: ActionPath, branch: ActionBranchKey, actionType: ActionTypeId) => void;
-  moveAction?: (pathPrefix: ActionPath, sourceIndex: number, destinationIndex: number) => void;
+  moveAction?: (pathPrefix: ActionPath, sourceIndex: number, destinationIndex: number) => void | number;
   registerActionRef: (path: ActionPath, element: HTMLInputElement | null) => void;
   getVisibleActionPaths: () => ActionPath[];
   onNavigateToFunction?: (functionName: string) => void;
@@ -130,6 +134,98 @@ const ActionsList = React.memo<ActionsListProps>(({
     }
   }, [renderedCount, actions.length]);
 
+  // #322: a recognised quest step renders as one card spanning its lines. Its
+  // edits, deletes and moves are list-level, so they go through the level patch
+  // the pane provides; without one (standalone render, unit test) every line
+  // keeps its own card.
+  const patchLevel = useContext(ActionLevelPatchContext);
+  const items = useMemo<ActionListItem[]>(
+    () => (patchLevel ? getActionListItems(actions) : actions.map((_, i) => ({ start: i, end: i + 1 }))),
+    [actions, patchLevel]
+  );
+  const stepActions = useMemo(() => {
+    const byStart = new Map<number, QuestStepAction>();
+    for (const { step } of items) {
+      if (!step) continue;
+      byStart.set(step.start, {
+        type: 'QuestStep',
+        kind: step.kind,
+        topic: step.topic,
+        text: step.text ?? '',
+        xp: step.xp ?? '',
+        start: step.start,
+        script: questStepScript(actions, step)
+      });
+    }
+    return byStart;
+  }, [actions, items]);
+
+  // Identity-stable wrappers (the ActionCard memo ignores function props): they
+  // read the latest list, props and level patch through a ref.
+  const latestRef = useRef({ items, stepActions, patchLevel, pathPrefix, updateActionAtPath, deleteActionAtPath, deleteActionAndFocusPrevAtPath, addActionAfterPath, addDialogLineAfterPath, moveAction, focusActionAtPath });
+  latestRef.current = { items, stepActions, patchLevel, pathPrefix, updateActionAtPath, deleteActionAtPath, deleteActionAndFocusPrevAtPath, addActionAfterPath, addDialogLineAfterPath, moveAction, focusActionAtPath };
+  const stepHandlers = useMemo(() => {
+    /** The step whose card sits at `path`, when the path is on this list's level. */
+    const stepAt = (path: ActionPath) => {
+      const { stepActions: steps, patchLevel: patch, pathPrefix: prefix } = latestRef.current;
+      if (!patch || path.length !== prefix.length + 1) return undefined;
+      if (prefix.some((part, i) => part !== path[i])) return undefined;
+      return steps.get(path[path.length - 1] as number);
+    };
+    const itemIndexOf = (start: number) => latestRef.current.items.findIndex((item) => item.start === start);
+    const removeStep = (step: QuestStepAction) => {
+      const { patchLevel: patch, pathPrefix: prefix } = latestRef.current;
+      patch?.(prefix, (list) => {
+        const item = getActionListItems(list).find((it) => it.start === step.start && it.step);
+        return item ? [...list.slice(0, item.start), ...list.slice(item.end)] : list;
+      });
+    };
+    const lastLineOf = (path: ActionPath, step: QuestStepAction): ActionPath => {
+      const item = latestRef.current.items[itemIndexOf(step.start)];
+      return [...path.slice(0, -1), item.end - 1];
+    };
+    return {
+      updateActionAtPath: (path: ActionPath, updated: DialogAction) => {
+        const step = updated.type === ('QuestStep' as string) ? stepAt(path) : undefined;
+        if (!step) return latestRef.current.updateActionAtPath(path, updated);
+        const edited = updated as unknown as QuestStepAction;
+        latestRef.current.patchLevel!(latestRef.current.pathPrefix, (list) =>
+          applyQuestStepEdit(list, step.start, { topic: edited.topic, text: edited.text, xp: edited.xp })
+        );
+      },
+      deleteActionAtPath: (path: ActionPath) => {
+        const step = stepAt(path);
+        if (!step) return latestRef.current.deleteActionAtPath(path);
+        removeStep(step);
+      },
+      deleteActionAndFocusPrevAtPath: (path: ActionPath) => {
+        const step = stepAt(path);
+        if (!step) return latestRef.current.deleteActionAndFocusPrevAtPath(path);
+        const previous = latestRef.current.items[itemIndexOf(step.start) - 1];
+        removeStep(step);
+        if (previous) latestRef.current.focusActionAtPath([...latestRef.current.pathPrefix, previous.start]);
+      },
+      addActionAfterPath: (path: ActionPath, actionType: ActionTypeId) => {
+        const step = stepAt(path);
+        latestRef.current.addActionAfterPath(step ? lastLineOf(path, step) : path, actionType);
+      },
+      addDialogLineAfterPath: (path: ActionPath, toggleSpeaker?: boolean) => {
+        const step = stepAt(path);
+        latestRef.current.addDialogLineAfterPath(step ? lastLineOf(path, step) : path, toggleSpeaker);
+      },
+      moveAction: (prefix: ActionPath, sourceIndex: number, destinationIndex: number): void | number => {
+        const { patchLevel: patch, items: current, moveAction: move } = latestRef.current;
+        if (!patch) return move?.(prefix, sourceIndex, destinationIndex);
+        // Keyboard move (Alt+Up/Down): one item up or down, by action index.
+        const from = itemIndexOf(sourceIndex);
+        const to = from + Math.sign(destinationIndex - sourceIndex);
+        if (from < 0 || to < 0 || to >= current.length) return sourceIndex;
+        patch(prefix, (list) => moveActionListItem(list, from, to));
+        return to < from ? current[to].start : sourceIndex + (current[to].end - current[to].start);
+      }
+    };
+  }, []);
+
   // Namespaced droppableId: unique across the single hoisted DragDropContext.
   // The local path disambiguates lists within one function (root vs. conditional
   // branches); the namespace disambiguates across functions (choice sub-lists).
@@ -157,8 +253,13 @@ const ActionsList = React.memo<ActionsListProps>(({
   // from a ref so re-registration only happens when the droppableId changes.
   const dragDispatch = useContext(DragDispatchContext);
   const moveRef = useRef<(s: number, d: number) => void>(() => {});
+  // Drag indices are item indices: a quest step drags as one block.
   moveRef.current = (sourceIndex: number, destinationIndex: number) => {
-    if (moveAction) moveAction(pathPrefix, sourceIndex, destinationIndex);
+    if (patchLevel) {
+      patchLevel(pathPrefix, (list) => moveActionListItem(list, sourceIndex, destinationIndex));
+    } else if (moveAction) {
+      moveAction(pathPrefix, sourceIndex, destinationIndex);
+    }
   };
   useEffect(() => {
     if (!dragDispatch) return;
@@ -166,16 +267,17 @@ const ActionsList = React.memo<ActionsListProps>(({
   }, [dragDispatch, droppableId]);
 
   const handleDragEnd = useCallback((result: DropResult) => {
-    if (!result.destination || !moveAction) return;
+    if (!result.destination) return;
     if (result.source.index === result.destination.index) return;
-    moveAction(pathPrefix, result.source.index, result.destination.index);
-  }, [moveAction, pathPrefix]);
+    moveRef.current(result.source.index, result.destination.index);
+  }, []);
 
   // For newly added items on large lists (renderedCount one behind), show the new
   // item immediately in the same render rather than waiting for the useEffect to
   // fire and increment renderedCount.
   const effectiveRendered = renderedCount >= actions.length - 1 ? actions.length : renderedCount;
-  const visibleActions = actions.slice(0, Math.max(effectiveRendered, actions.length <= IMMEDIATE_RENDER_THRESHOLD ? actions.length : 0));
+  const visibleCount = Math.max(effectiveRendered, actions.length <= IMMEDIATE_RENDER_THRESHOLD ? actions.length : 0);
+  const visibleItems = items.filter((item) => item.start < visibleCount);
 
   const droppable = (
     <Droppable droppableId={droppableId}>
@@ -186,11 +288,13 @@ const ActionsList = React.memo<ActionsListProps>(({
           {...provided.droppableProps}
           sx={{}}
         >
-          {visibleActions.map((action: DialogAction, idx: number) => {
+          {visibleItems.map(({ start: idx }, itemIndex: number) => {
+            const stepAction = stepActions.get(idx);
+            const action = stepAction ? (stepAction as unknown as DialogAction) : actions[idx];
             const identity = identities[idx];
             const draggableId = `${droppableId}-${identity}`;
             return (
-              <Draggable key={identity} draggableId={draggableId} index={idx}>
+              <Draggable key={identity} draggableId={draggableId} index={itemIndex}>
                 {(draggableProvided, snapshot) => (
                   <Box
                     ref={draggableProvided.innerRef}
@@ -208,14 +312,14 @@ const ActionsList = React.memo<ActionsListProps>(({
                       index={idx}
                       totalActions={actions.length}
                       npcName={npcName}
-                      updateActionAtPath={updateActionAtPath}
-                      deleteActionAtPath={deleteActionAtPath}
+                      updateActionAtPath={stepHandlers.updateActionAtPath}
+                      deleteActionAtPath={stepHandlers.deleteActionAtPath}
                       focusActionAtPath={focusActionAtPath}
-                      addDialogLineAfterPath={addDialogLineAfterPath}
-                      deleteActionAndFocusPrevAtPath={deleteActionAndFocusPrevAtPath}
-                      addActionAfterPath={addActionAfterPath}
+                      addDialogLineAfterPath={stepHandlers.addDialogLineAfterPath}
+                      deleteActionAndFocusPrevAtPath={stepHandlers.deleteActionAndFocusPrevAtPath}
+                      addActionAfterPath={stepHandlers.addActionAfterPath}
                       addActionToBranchEnd={addActionToBranchEnd}
-                      moveAction={moveAction}
+                      moveAction={moveAction ? stepHandlers.moveAction : undefined}
                       registerActionRef={registerActionRef}
                       getVisibleActionPaths={getVisibleActionPaths}
                       onNavigateToFunction={onNavigateToFunction}

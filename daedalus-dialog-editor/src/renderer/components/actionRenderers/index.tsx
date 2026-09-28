@@ -36,6 +36,7 @@ import HeroFollowsActionRenderer from './HeroFollowsActionRenderer';
 import ConditionalActionRenderer from './ConditionalActionRenderer';
 import CustomActionRenderer from './CustomActionRenderer';
 import CommentActionRenderer from './CommentActionRenderer';
+import QuestStepRenderer from './QuestStepRenderer';
 import UnknownActionRenderer from './UnknownActionRenderer';
 
 /**
@@ -68,6 +69,13 @@ export const ACTION_RENDERERS: Record<ActionTypeId, React.FC<BaseActionRendererP
   heroFollowsAction: HeroFollowsActionRenderer,
   conditionalAction: ConditionalActionRenderer,
   commentAction: CommentActionRenderer,
+  questStep: QuestStepRenderer,
+  // Menu-only ids (#322): no stored action carries them.
+  questStart: QuestStepRenderer,
+  questComplete: QuestStepRenderer,
+  questFail: QuestStepRenderer,
+  questCancel: QuestStepRenderer,
+  questNote: QuestStepRenderer,
   customAction: CustomActionRenderer
 };
 

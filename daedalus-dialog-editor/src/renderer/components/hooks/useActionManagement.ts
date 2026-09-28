@@ -1,7 +1,9 @@
 import { useCallback } from 'react';
 import { generateUniqueChoiceFunctionName, createEmptyFunction } from '../dialogUtils';
-import { createAction, createActionAfterIndex, createDialogLineId } from '../actionFactory';
-import type { ActionTypeId } from '../actionTypes';
+import { createAction, createActionAfterIndex, createDialogLineId, generateActionId } from '../actionFactory';
+import { QUEST_STEP_MENU_KINDS } from '../actionTypes';
+import type { ActionTypeId, QuestStepMenuId } from '../actionTypes';
+import { buildQuestStepActions } from '../../quest/domain/questSteps';
 import type { DialogAction, DialogFunction, DialogLineAction, SemanticModel } from '../../types/global';
 import type { FunctionUpdater } from '../dialogTypes';
 import type { ActionBranchKey, ActionPath } from '../nestedActionUtils';
@@ -12,9 +14,11 @@ import {
   collectDialogLineActions,
   deleteActionAtPath as deleteNestedActionAtPath,
   flattenActionPaths,
+  flattenVisibleActionPaths,
   getActionAtPath,
   insertActionAfterPath,
   moveActionWithinLevel,
+  patchActionsAtLevel as patchNestedActionsAtLevel,
   updateActionAtPath as updateNestedActionAtPath
 } from '../nestedActionUtils';
 
@@ -262,7 +266,7 @@ export function useActionManagement(config: ActionManagementConfig) {
     let focusTarget: ActionPath | null = null;
     setFunction((prev) => {
       if (!prev) return prev;
-      const visiblePaths = flattenActionPaths(prev.actions || []);
+      const visiblePaths = flattenVisibleActionPaths(prev.actions || []);
       const currentIndex = visiblePaths.findIndex((candidate) => actionPathToKey(candidate) === actionPathToKey(path));
       focusTarget = currentIndex > 0 ? visiblePaths[currentIndex - 1] : null;
       const newActions = deleteNestedActionAtPath(prev.actions || [], path);
@@ -306,7 +310,7 @@ export function useActionManagement(config: ActionManagementConfig) {
   /**
    * Insert an action after `path`, or append it to the root list when `path`
    * is null. The one seeding path for both flows: choice target-function
-   * creation and createTopic's log pair happen here and nowhere else.
+   * creation and a quest step's lines happen here and nowhere else.
    */
   const insertAction = useCallback((path: ActionPath | null, actionType: ActionTypeId) => {
     let nextPath: ActionPath | null = null;
@@ -319,7 +323,31 @@ export function useActionManagement(config: ActionManagementConfig) {
       return { actions: newActions, insertedPath: findInsertedPath(newActions, path) };
     };
 
-    if (actionType === 'choice' && semanticModel) {
+    if (actionType in QUEST_STEP_MENU_KINDS) {
+      // #322: a quest step is several vanilla lines; they show as one card.
+      const lines = buildQuestStepActions({
+        kind: QUEST_STEP_MENU_KINDS[actionType as QuestStepMenuId],
+        topic: 'TOPIC_',
+        text: ''
+      }).map((line) => ({ ...line, id: generateActionId() }) as DialogAction);
+      setFunction((prev) => {
+        if (!prev) return prev;
+        const actions = prev.actions || [];
+        // The lines are siblings of `path`; their paths are computed here, not
+        // found by walking the list, which would step into an If block's branch.
+        const anchor: ActionPath = path ?? [actions.length - 1];
+        const parent = anchor.slice(0, -1);
+        const first = (anchor[anchor.length - 1] as number) + 1;
+        let next = actions;
+        lines.forEach((line, i) => {
+          next = path === null && i === 0 && actions.length === 0
+            ? [line]
+            : insertActionAfterPath(next, [...parent, first + i - 1], line);
+        });
+        nextPath = [...parent, first];
+        return { ...prev, actions: next };
+      });
+    } else if (actionType === 'choice' && semanticModel) {
       // Choice creation: generate a fresh target function before inserting the action
       const newFunctionName = generateUniqueChoiceFunctionName(contextName, semanticModel);
       const newFunction = createEmptyFunction(newFunctionName);
@@ -384,31 +412,8 @@ export function useActionManagement(config: ActionManagementConfig) {
         }
 
         const inserted = insertAt(actions, newAction);
-        let newActions = inserted.actions;
-        const createTopicPath = inserted.insertedPath;
-
-        if (actionType === 'createTopic' && createTopicPath) {
-          const createTopicTopic = newAction.type === 'CreateTopic' ? newAction.topic : 'TOPIC_';
-          const logSetStatusAction = createAction('logSetTopicStatus', { dialogName: contextName, currentAction: undefined });
-          newActions = insertActionAfterPath(newActions, createTopicPath, {
-            ...logSetStatusAction,
-            topic: createTopicTopic,
-            status: 'LOG_RUNNING',
-          } as DialogAction);
-          const logSetStatusPath = findInsertedPath(newActions, createTopicPath);
-          const logEntryAction = createAction('logEntry', { dialogName: contextName, currentAction: undefined });
-          if (logSetStatusPath) {
-            newActions = insertActionAfterPath(newActions, logSetStatusPath, {
-              ...logEntryAction,
-              topic: createTopicTopic,
-            } as DialogAction);
-          }
-          nextPath = createTopicPath;
-        } else {
-          nextPath = createTopicPath;
-        }
-
-        return { ...prev, actions: newActions };
+        nextPath = inserted.insertedPath;
+        return { ...prev, actions: inserted.actions };
       });
     }
 
@@ -475,8 +480,16 @@ export function useActionManagement(config: ActionManagementConfig) {
     patchActions((actions) => moveActionWithinLevel(actions, pathPrefix, sourceIndex, destinationIndex));
   }, [patchActions]);
 
+  const patchActionsAtLevel = useCallback(
+    (pathPrefix: ActionPath, transform: (actions: DialogAction[]) => DialogAction[]) => {
+      patchActions((actions) => patchNestedActionsAtLevel(actions, pathPrefix, transform));
+    },
+    [patchActions]
+  );
+
   return {
     updateAction,
+    patchActionsAtLevel,
     deleteAction,
     deleteActionAndFocusPrev,
     addDialogLineAfter,

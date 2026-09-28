@@ -1,7 +1,7 @@
 /**
  * One add-action seeding path (2026-07 review, 3.3): appending an action is
  * inserting it after the last one, so `addActionToEnd` and `addActionAfter`
- * cannot seed companions (choice sub-function, createTopic's log pair,
+ * cannot seed companions (choice sub-function, a quest step's lines,
  * dialog-line ids) differently.
  */
 import { describe, test, expect, jest } from '@jest/globals';
@@ -54,7 +54,7 @@ const START: DialogAction[] = [
 ];
 
 describe('useActionManagement – addActionToEnd matches addActionAfter', () => {
-  const SEEDED: ActionTypeId[] = ['dialogLine', 'choice', 'createTopic', 'clearChoicesAction'];
+  const SEEDED: ActionTypeId[] = ['dialogLine', 'choice', 'questStart', 'clearChoicesAction'];
 
   test.each(SEEDED)('%s: appending equals inserting after the last action', (actionType) => {
     const append = renderManagement([...START]);
@@ -67,15 +67,15 @@ describe('useActionManagement – addActionToEnd matches addActionAfter', () => 
     expect(append.model.functions).toEqual(insert.model.functions);
   });
 
-  test('createTopic appended to an empty function seeds its log pair and focuses the topic', () => {
+  test('Start Quest appended to an empty function writes its lines and focuses the first', () => {
     jest.useFakeTimers();
     try {
       const { result, getActions, focusAction } = renderManagement([]);
 
-      act(() => { result.current.addActionToEnd('createTopic'); });
+      act(() => { result.current.addActionToEnd('questStart'); });
       act(() => { jest.runAllTimers(); });
 
-      expect(getActions().map((a) => a.type)).toEqual(['CreateTopic', 'LogSetTopicStatus', 'LogEntry']);
+      expect(getActions().map((a) => a.type)).toEqual(['CreateTopic', 'LogSetTopicStatus', 'LogEntry', 'SetVariableAction']);
       expect(focusAction).toHaveBeenCalledWith([0], true);
     } finally {
       jest.useRealTimers();

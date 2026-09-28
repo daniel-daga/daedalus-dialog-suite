@@ -17,7 +17,7 @@ import {
   type QuestLifecycleState
 } from '../../utils/questIdentity';
 
-export type QuestStepKind = 'start' | 'entry' | 'complete' | 'fail' | 'cancel' | 'note';
+export type QuestStepKind = 'start' | 'complete' | 'fail' | 'cancel' | 'note';
 
 /** Absolute indices of the lines a step is made of; absent means not written. */
 export interface QuestStepIndices {
@@ -132,7 +132,6 @@ function toStep(group: Group, start: number, end: number): QuestStep | null {
   if (create) kind = create.isNote ? 'note' : 'start';
   else if (group.state === 'running') kind = 'start';
   else if (group.state && END_STATES[group.state]) kind = END_STATES[group.state];
-  else if (get('entry')) kind = 'entry';
   else return null;
 
   const topic = create?.topic ?? get('status')?.topic ?? get('entry')?.topic
@@ -179,7 +178,9 @@ export function recognizeQuestSteps(actions: readonly DialogAction[]): QuestStep
       group.state = group.state ?? part.state;
       j++;
     }
-    const step = toStep(group, i, j);
+    // A lone line stays a raw card: a step is a run of two or more lines, so
+    // the raw Log Entry, Set Variable and Create Topic cards stay reachable.
+    const step = j - i >= 2 ? toStep(group, i, j) : null;
     if (step) steps.push(step);
     i = j;
   }
@@ -217,8 +218,6 @@ export function buildQuestStepActions({ kind, topic, text, xp }: QuestStepSpec):
         { type: 'CreateTopic', topic, topicType: 'LOG_NOTE' } as DialogAction,
         entryLine(topic, text ?? '')
       ];
-    case 'entry':
-      return [entryLine(topic, text ?? '')];
     default: {
       const status = STATE_CONSTANT[kind];
       const lines = [misLine(mis, status), topicStatusLine(topic, status)];
@@ -261,4 +260,59 @@ export function setQuestStepXp(actions: readonly DialogAction[], step: QuestStep
   }
   if (xp) return replaceAt(actions, index, { xpAmount: xp });
   return [...actions.slice(0, index), ...actions.slice(index + 1)];
+}
+
+export interface QuestStepEdit {
+  topic?: string;
+  text?: string;
+  /** Complete only; an empty string or null removes the XP line. */
+  xp?: string | null;
+}
+
+/**
+ * Apply a step card's edits to the step that starts at `start`. Re-recognises
+ * after each edit, since adding an entry line shifts the XP line. Returns the
+ * list unchanged when no step starts there any more (the list moved on while
+ * an edit was pending).
+ */
+export function applyQuestStepEdit(actions: readonly DialogAction[], start: number, edit: QuestStepEdit): DialogAction[] {
+  const at = (list: readonly DialogAction[]) => recognizeQuestSteps(list).find((s) => s.start === start);
+  let next = actions.slice();
+  let step = at(next);
+  if (!step) return next;
+
+  if (edit.topic !== undefined && edit.topic !== step.topic) {
+    next = setQuestStepTopic(next, step, edit.topic);
+    step = at(next);
+    if (!step) return next;
+  }
+  if (edit.text !== undefined && edit.text !== (step.text ?? '')) {
+    next = setQuestStepText(next, step, edit.text);
+    step = at(next);
+    if (!step) return next;
+  }
+  const xp = edit.xp || null;
+  if (edit.xp !== undefined && step.kind === 'complete' && xp !== (step.xp ?? null)) {
+    next = setQuestStepXp(next, step, xp);
+  }
+  return next;
+}
+
+/** The step's lines as Daedalus, for the card's "show script" view. */
+export function questStepScript(actions: readonly DialogAction[], step: QuestStep): string {
+  return actions.slice(step.start, step.end).map((action) => {
+    const a = action as unknown as Record<string, string>;
+    switch (a.type) {
+      case 'CreateTopic':
+        return a.topicType ? `Log_CreateTopic (${a.topic}, ${a.topicType});` : `Log_CreateTopic (${a.topic});`;
+      case 'LogSetTopicStatus':
+        return `Log_SetTopicStatus (${a.topic}, ${a.status});`;
+      case 'LogEntry':
+        return `B_LogEntry (${a.topic}, "${a.text}");`;
+      case 'SetVariableAction':
+        return `${a.variableName} = ${a.value};`;
+      default:
+        return `B_GivePlayerXP (${a.xpAmount});`;
+    }
+  }).join('\n');
 }

@@ -28,7 +28,13 @@ import {
   RemoveShoppingCart as RemoveShoppingCartIcon,
   Inventory2 as Inventory2Icon,
   DirectionsWalk as DirectionsWalkIcon,
-  Comment as CommentIcon
+  Comment as CommentIcon,
+  MenuBook as MenuBookIcon,
+  Flag as FlagIcon,
+  CheckCircle as CheckCircleIcon,
+  Cancel as CancelIcon,
+  DoNotDisturbOn as DoNotDisturbOnIcon,
+  StickyNote2 as StickyNote2Icon
 } from '@mui/icons-material';
 import type { ActionTypeId } from './actionTypes';
 
@@ -42,6 +48,12 @@ export interface ActionTypeEntry {
 export const ACTION_TYPE_REGISTRY: Record<ActionTypeId, ActionTypeEntry> = {
   dialogLine: { label: 'Dialog Line', icon: ChatIcon },
   choice: { label: 'Choice', icon: CallSplitIcon },
+  // #322: write a quest step's vanilla lines, shown as one quest step card.
+  questStart: { label: 'Start Quest', icon: FlagIcon },
+  questComplete: { label: 'Complete Quest', icon: CheckCircleIcon },
+  questFail: { label: 'Fail Quest', icon: CancelIcon },
+  questCancel: { label: 'Cancel Quest', icon: DoNotDisturbOnIcon },
+  questNote: { label: 'Note', icon: StickyNote2Icon },
   logEntry: { label: 'Log Entry', icon: DescriptionIcon },
   createTopic: { label: 'Create Topic', icon: LibraryBooksIcon },
   logSetTopicStatus: { label: 'Log Set Status', icon: DescriptionIcon },
@@ -67,6 +79,8 @@ export const ACTION_TYPE_REGISTRY: Record<ActionTypeId, ActionTypeEntry> = {
   conditionalAction: { label: 'If / Else Block', icon: CallSplitIcon },
   // Parser-preserved only: never offered in the add-action menu.
   commentAction: { label: 'Comment', icon: CommentIcon, addable: false },
+  // A view over recognised quest lines (#322), never added as such.
+  questStep: { label: 'Quest Step', icon: MenuBookIcon, addable: false },
   customAction: { label: 'Custom Action', icon: CodeIcon }
 };
 

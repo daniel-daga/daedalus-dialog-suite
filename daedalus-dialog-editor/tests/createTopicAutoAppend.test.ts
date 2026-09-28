@@ -1,8 +1,6 @@
 /**
- * TDD: createTopic auto-append behaviour
- *
- * When a CreateTopic action is added, a LogSetTopicStatus (LOG_RUNNING) should
- * be inserted directly after it, followed by a LogEntry.
+ * Quest lines from the add-action menu (#322), and the raw CreateTopic card's
+ * topic sync and #278 topic-type switch.
  */
 import { describe, test, expect, jest } from '@jest/globals';
 import { act, renderHook } from '@testing-library/react';
@@ -47,39 +45,61 @@ function renderManagement(initialActions: DialogAction[] = []) {
 }
 
 // ---------------------------------------------------------------------------
-// addActionAfter – createTopic inserts logSetTopicStatus + logEntry
+// addActionAfter – #322: the quest menu entries write the vanilla lines; the
+// raw Create Topic entry writes only its own line
 // ---------------------------------------------------------------------------
 
-describe('useActionManagement – addActionAfter createTopic', () => {
-  test('inserts LogSetTopicStatus(LOG_RUNNING) directly after CreateTopic, then LogEntry', () => {
-    const existingAction: DialogAction = { type: 'DialogLine', speaker: 'other', text: 'Hello', id: 'DIA_Test_15_00' };
+describe('useActionManagement – addActionAfter quest steps', () => {
+  const existingAction: DialogAction = { type: 'DialogLine', speaker: 'other', text: 'Hello', id: 'DIA_Test_15_00' };
+  const types = (actions: DialogAction[] | undefined) => (actions ?? []).map((a) => a.type);
+
+  test('Create Topic inserts the raw Log_CreateTopic line alone', () => {
     const { result, getActions } = renderManagement([existingAction]);
-
-    act(() => {
-      result.current.addActionAfter([0], 'createTopic');
-    });
-
-    const actions = getActions();
-    // Should be: [existingAction, CreateTopic, LogSetTopicStatus, LogEntry]
-    expect(actions).toHaveLength(4);
-    expect(actions[0]).toMatchObject({ type: 'DialogLine' });
-    expect(actions[1]).toMatchObject({ type: 'CreateTopic' });
-    expect(actions[2]).toMatchObject({ type: 'LogSetTopicStatus', status: 'LOG_RUNNING' });
-    expect(actions[3]).toMatchObject({ type: 'LogEntry' });
+    act(() => { result.current.addActionAfter([0], 'createTopic'); });
+    expect(types(getActions())).toEqual(['DialogLine', 'CreateTopic']);
   });
 
-  test('LogSetTopicStatus topic matches the CreateTopic topic', () => {
-    const existingAction: DialogAction = { type: 'DialogLine', speaker: 'other', text: 'Hello', id: 'DIA_Test_15_00' };
+  test('Start Quest inserts the vanilla start lines, each with an id, and focuses the first', () => {
+    jest.useFakeTimers();
+    try {
+      const { result, getActions, focusAction } = renderManagement([existingAction]);
+      act(() => { result.current.addActionAfter([0], 'questStart'); });
+      act(() => { jest.runAllTimers(); });
+
+      const actions = getActions();
+      expect(types(actions)).toEqual(['DialogLine', 'CreateTopic', 'LogSetTopicStatus', 'LogEntry', 'SetVariableAction']);
+      expect(actions[4]).toMatchObject({ variableName: 'MIS_', operator: '=', value: 'LOG_RUNNING' });
+      for (const action of actions.slice(1)) expect((action as { id?: string }).id).toMatch(/^action_/);
+      expect(focusAction).toHaveBeenCalledWith([1], true);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test.each([
+    ['questComplete', ['SetVariableAction', 'LogSetTopicStatus'], 'LOG_SUCCESS'],
+    ['questFail', ['SetVariableAction', 'LogSetTopicStatus'], 'LOG_FAILED'],
+    ['questCancel', ['SetVariableAction', 'LogSetTopicStatus'], 'LOG_OBSOLETE']
+  ] as const)('%s inserts the MIS_ and status lines for its state', (actionType, expected, state) => {
     const { result, getActions } = renderManagement([existingAction]);
+    act(() => { result.current.addActionAfter([0], actionType); });
+    expect(types(getActions()).slice(1)).toEqual(expected);
+    expect(getActions()[2]).toMatchObject({ status: state });
+  });
 
-    act(() => {
-      result.current.addActionAfter([0], 'createTopic');
-    });
+  test('Start Quest after an If block writes its lines beside it, not into its branch', () => {
+    const ifBlock = { type: 'ConditionalAction', condition: 'x', thenActions: [existingAction], elseActions: [] } as unknown as DialogAction;
+    const { result, getActions } = renderManagement([ifBlock]);
+    act(() => { result.current.addActionAfter([0], 'questStart'); });
+    expect(types(getActions())).toEqual(['ConditionalAction', 'CreateTopic', 'LogSetTopicStatus', 'LogEntry', 'SetVariableAction']);
+    expect((getActions()[0] as unknown as { thenActions: DialogAction[] }).thenActions).toEqual([existingAction]);
+  });
 
-    const actions = getActions();
-    const createTopic = actions[1] as { type: string; topic: string };
-    const logSetStatus = actions[2] as { type: string; topic: string };
-    expect(createTopic.topic).toBe(logSetStatus.topic);
+  test('Note inserts a LOG_NOTE topic and its entry, with no status or MIS_', () => {
+    const { result, getActions } = renderManagement([existingAction]);
+    act(() => { result.current.addActionAfter([0], 'questNote'); });
+    expect(types(getActions()).slice(1)).toEqual(['CreateTopic', 'LogEntry']);
+    expect(getActions()[1]).toMatchObject({ topicType: 'LOG_NOTE' });
   });
 });
 

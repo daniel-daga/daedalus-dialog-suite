@@ -6,7 +6,8 @@ import ActionsList from './ActionsList';
 import { useActionManagement } from './hooks/useActionManagement';
 import { useFocusNavigation } from './hooks/useFocusNavigation';
 import { useStableHandlers } from './hooks/useStableHandlers';
-import { flattenActionPaths } from './nestedActionUtils';
+import { flattenVisibleActionPaths } from './nestedActionUtils';
+import { ActionLevelPatchContext } from './ActionLevelPatchContext';
 import type { FunctionUpdater } from './dialogTypes';
 import type { SemanticModel } from '../types/global';
 
@@ -79,6 +80,7 @@ const InlineChoiceEditor: React.FC<InlineChoiceEditorProps> = ({
     addActionAfter,
     addActionToBranchEnd,
     moveAction,
+    patchActionsAtLevel,
   } = useActionManagement({
     setFunction,
     focusAction,
@@ -106,8 +108,9 @@ const InlineChoiceEditor: React.FC<InlineChoiceEditorProps> = ({
     addActionAfterPath: addActionAfter,
     addActionToBranchEnd,
     moveAction,
+    patchActionsAtLevel,
     registerActionRef,
-    getVisibleActionPaths: () => flattenActionPaths(targetFunction?.actions || []),
+    getVisibleActionPaths: () => flattenVisibleActionPaths(targetFunction?.actions || []),
     onNavigateToFunction: undefined,
     onRenameFunction: handleRenameFunction,
     onEscapeBackward,
@@ -155,6 +158,8 @@ const InlineChoiceEditor: React.FC<InlineChoiceEditorProps> = ({
       <Divider sx={{ mb: 1 }}>
         <Typography variant="caption" sx={{ fontWeight: 700 }}>{targetFunctionName}</Typography>
       </Divider>
+      {/* The choice's own function: its quest step cards patch it, not the dialog's (#322). */}
+      <ActionLevelPatchContext.Provider value={handlers.patchActionsAtLevel}>
       <ActionsList
         actions={actions}
         npcName={npcName}
@@ -176,6 +181,7 @@ const InlineChoiceEditor: React.FC<InlineChoiceEditorProps> = ({
         droppableNamespace={targetFunctionName}
         filePath={filePath}
       />
+      </ActionLevelPatchContext.Provider>
     </Box>
   );
 };

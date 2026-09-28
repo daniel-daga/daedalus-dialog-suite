@@ -5,8 +5,13 @@ import {
   deleteActionAtPath,
   flattenActionPaths,
   collectChoiceActions,
-  mapChoiceTargetFunctions
+  mapChoiceTargetFunctions,
+  getActionListItems,
+  moveActionListItem,
+  flattenVisibleActionPaths,
+  patchActionsAtLevel
 } from '../src/renderer/components/nestedActionUtils';
+import { buildQuestStepActions } from '../src/renderer/quest/domain/questSteps';
 
 describe('nestedActionUtils', () => {
   const createModel = () => ([
@@ -161,5 +166,52 @@ describe('nestedActionUtils', () => {
 
     expect(changed).toBe(false);
     expect(updated).toBe(actions);
+  });
+});
+
+describe('quest steps as list items (#322)', () => {
+  const line = (text: string) => ({ type: 'DialogLine', speaker: 'self', text, id: `L_${text}` }) as any;
+  const start = () => buildQuestStepActions({ kind: 'start', topic: 'TOPIC_Sheep', text: 'Find them.' });
+  // [A, start×4, B]
+  const list = () => [line('A'), ...start(), line('B')];
+
+  it('treats a quest step as one item spanning its lines', () => {
+    expect(getActionListItems(list()).map(({ start: s, end, step }) => [s, end, step?.kind ?? null]))
+      .toEqual([[0, 1, null], [1, 5, 'start'], [5, 6, null]]);
+  });
+
+  it('moves a step as a block, and a single action past a step', () => {
+    const actions = list();
+    const down = moveActionListItem(actions, 1, 2);
+    expect(down.map((a: any) => a.text ?? a.type)).toEqual(
+      ['A', 'B', 'CreateTopic', 'LogSetTopicStatus', 'Find them.', 'SetVariableAction']
+    );
+    const up = moveActionListItem(actions, 2, 0);
+    expect(up.map((a: any) => a.text ?? a.type)).toEqual(
+      ['B', 'A', 'CreateTopic', 'LogSetTopicStatus', 'Find them.', 'SetVariableAction']
+    );
+    expect(moveActionListItem(actions, 0, 1).map((a: any) => a.text ?? a.type)).toEqual(
+      ['CreateTopic', 'LogSetTopicStatus', 'Find them.', 'SetVariableAction', 'A', 'B']
+    );
+  });
+
+  it('lists only the first line of a step as a visible path, in branches too', () => {
+    const actions = [
+      ...list(),
+      { type: 'ConditionalAction', condition: 'x', thenActions: start(), elseActions: [] } as any
+    ];
+    expect(flattenVisibleActionPaths(actions)).toEqual([[0], [1], [5], [6], [6, 'then', 0]]);
+  });
+
+  it('patches the list at a nesting level', () => {
+    const actions = [
+      line('A'),
+      { type: 'ConditionalAction', condition: 'x', thenActions: [line('T')], elseActions: [line('E')] } as any
+    ];
+    const reversed = (l: any[]) => [...l, line('added')];
+    expect(patchActionsAtLevel(actions, [], reversed)).toHaveLength(3);
+    const nested = patchActionsAtLevel(actions, [1, 'else'], reversed);
+    expect(nested[1].elseActions.map((a: any) => a.text)).toEqual(['E', 'added']);
+    expect(nested[1].thenActions).toBe(actions[1].thenActions);
   });
 });

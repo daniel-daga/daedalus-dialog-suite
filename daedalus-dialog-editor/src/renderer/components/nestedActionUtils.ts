@@ -1,5 +1,6 @@
 import type { ConditionalAction, DialogAction } from '../types/global';
 import { resolveDialogNameForLineId } from './actionFactory';
+import { recognizeQuestSteps, type QuestStep } from '../quest/domain/questSteps';
 
 export type ActionBranchKey = 'then' | 'else';
 export type ActionPath = Array<number | ActionBranchKey>;
@@ -167,6 +168,76 @@ export function flattenActionPaths(actions: DialogAction[], prefix: ActionPath =
   });
 
   return paths;
+}
+
+/**
+ * The list as the editor shows it (#322): a recognised quest step is one item
+ * spanning its lines, every other action is an item of its own.
+ */
+export interface ActionListItem {
+  start: number;
+  end: number;
+  step?: QuestStep;
+}
+
+export function getActionListItems(actions: readonly DialogAction[]): ActionListItem[] {
+  const items: ActionListItem[] = [];
+  const steps = recognizeQuestSteps(actions);
+  let next = 0;
+  for (let i = 0; i < actions.length;) {
+    const step = steps[next]?.start === i ? steps[next++] : undefined;
+    const end = step ? step.end : i + 1;
+    items.push(step ? { start: i, end, step } : { start: i, end });
+    i = end;
+  }
+  return items;
+}
+
+/** Move item `from` to item position `to`, carrying all of a step's lines. */
+export function moveActionListItem(actions: readonly DialogAction[], from: number, to: number): DialogAction[] {
+  const items = getActionListItems(actions);
+  const source = items[from];
+  if (!source || from === to || to < 0 || to >= items.length) return actions.slice();
+  const block = actions.slice(source.start, source.end);
+  const rest = [...actions.slice(0, source.start), ...actions.slice(source.end)];
+  const others = items.filter((_, i) => i !== from);
+  const count = source.end - source.start;
+  const at = to < others.length
+    ? others[to].start - (others[to].start > source.start ? count : 0)
+    : rest.length;
+  return [...rest.slice(0, at), ...block, ...rest.slice(at)];
+}
+
+/**
+ * Paths a keyboard walk visits: like flattenActionPaths, but a quest step is
+ * visited once, at its first line — the others have no card.
+ */
+export function flattenVisibleActionPaths(actions: DialogAction[], prefix: ActionPath = []): ActionPath[] {
+  const paths: ActionPath[] = [];
+  for (const { start } of getActionListItems(actions)) {
+    const action = actions[start];
+    const path = [...prefix, start];
+    paths.push(path);
+    if (isConditionalAction(action)) {
+      paths.push(...flattenVisibleActionPaths(action.thenActions, [...path, 'then']));
+      paths.push(...flattenVisibleActionPaths(action.elseActions, [...path, 'else']));
+    }
+  }
+  return paths;
+}
+
+/** Replace the list at `pathPrefix` (the root, or a conditional branch) with `transform` of it. */
+export function patchActionsAtLevel(
+  actions: DialogAction[],
+  pathPrefix: ActionPath,
+  transform: (actions: DialogAction[]) => DialogAction[]
+): DialogAction[] {
+  if (pathPrefix.length === 0) return transform(actions);
+  const parentPath = pathPrefix.slice(0, -1);
+  const branch = pathPrefix[pathPrefix.length - 1];
+  const parent = getActionAtPath(actions, parentPath);
+  if ((branch !== 'then' && branch !== 'else') || !isConditionalAction(parent)) return actions;
+  return updateActionAtPath(actions, parentPath, cloneBranchWithChildren(parent, branch, transform(parent[branchProperty(branch)])));
 }
 
 export function moveActionWithinLevel(

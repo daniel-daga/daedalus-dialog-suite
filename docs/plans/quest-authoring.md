@@ -1,6 +1,6 @@
 # Quest authoring — a quest-level interface over topics, entries and `MIS_` state
 
-Agreed 2026-09-28. Nothing is built yet.
+Agreed 2026-09-28. Phase 1 (#322) is in progress; phases 2–4 are #323–#325.
 
 ## Problem
 
@@ -42,21 +42,30 @@ the Variable Manager stay available but are never required.
 
 ### Phase 1 — quest steps and automatic declarations
 
-The action picker gets a Quest group with these actions: Start quest, Add
-diary entry, Complete quest, Fail quest, Cancel quest, and Add note.
+**Landed:** the add-action menu has Start Quest, Complete Quest, Fail Quest,
+Cancel Quest and Note. Each one writes the vanilla lines. Start writes
+`Log_CreateTopic(TOPIC_X, LOG_MISSION)`, `Log_SetTopicStatus(TOPIC_X,
+LOG_RUNNING)`, `B_LogEntry` and `MIS_X = LOG_RUNNING`. Complete, Fail and Cancel
+set both `MIS_X` and the topic status, so the two cannot drift apart; Complete
+has an optional XP field. Note writes `Log_CreateTopic(TOPIC_X, LOG_NOTE)` +
+`B_LogEntry`.
 
-Each action writes the vanilla lines. Start writes `Log_CreateTopic(TOPIC_X,
-LOG_MISSION)`, `Log_SetTopicStatus(TOPIC_X, LOG_RUNNING)`, `B_LogEntry` and
-`MIS_X = LOG_RUNNING`. Complete, Fail and Cancel set both `MIS_X` and the topic
-status, so the two cannot drift apart. Add note writes
-`Log_CreateTopic(TOPIC_X, LOG_NOTE)` + `B_LogEntry`.
+A recogniser (`quest/domain/questSteps.ts`) folds a contiguous run of those
+lines, in any order, into one quest step card. Its edits, deletes and moves
+change all of its lines. The card has a "show script" view that shows the lines
+(read-only; the raw lines are edited in the source view). Decided while
+building:
 
-A recogniser folds a contiguous run of those lines, in any order, back into
-one quest-step card. A run that does not match stays as raw cards. Every
-quest-step card has a "show script" toggle that expands it into its raw lines.
-The recogniser, the builders and the step edits have landed in
-`quest/domain/questSteps.ts`, tested on real parser output. The cards, the
-picker and the automatic declarations are still to do.
+- **Only runs of two or more lines fold.** A lone line keeps its raw card, so
+  Log Entry (already titled with its diary name), Set Variable and Create Topic
+  stay reachable. "Add diary entry" is therefore the existing Log Entry card,
+  not a step of its own.
+- **The Create Topic menu entry writes only its own line** (it used to add a
+  status and an entry line too); Start Quest does the full start.
+- Start and Note cards carry the "Register in log files" button (#114) until
+  declarations are automatic.
+
+**Still to do:** the quest picker and the automatic declarations below.
 
 The quest picker shows diary titles (the `TOPIC_` constant's value) and offers
 "New quest…" inline. The first use of a new quest writes `TOPIC_X`, `MIS_X` and

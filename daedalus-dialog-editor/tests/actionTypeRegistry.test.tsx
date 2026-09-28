@@ -9,9 +9,12 @@ import { render, screen } from '@testing-library/react';
 import { ACTION_TYPE_REGISTRY, ADDABLE_ACTION_TYPES } from '../src/renderer/components/actionTypeRegistry';
 import { getActionTypeLabel } from '../src/renderer/components/actionRenderers';
 import ActionTypeMenu from '../src/renderer/components/common/ActionTypeMenu';
-import type { ActionTypeId } from '../src/renderer/components/actionTypes';
+import { QUEST_STEP_MENU_KINDS } from '../src/renderer/components/actionTypes';
+import type { ActionTypeId, QuestStepMenuId } from '../src/renderer/components/actionTypes';
 
-const TYPE_FIELD_BY_ID: Record<ActionTypeId, string> = {
+// Quest step menu entries (#322) write several lines that show as one
+// "Quest Step" card, so no stored action carries their ids.
+const TYPE_FIELD_BY_ID: Record<Exclude<ActionTypeId, QuestStepMenuId>, string> = {
   dialogLine: 'DialogLine',
   choice: 'Choice',
   logEntry: 'LogEntry',
@@ -38,6 +41,7 @@ const TYPE_FIELD_BY_ID: Record<ActionTypeId, string> = {
   heroFollowsAction: 'HeroFollowsAction',
   conditionalAction: 'ConditionalAction',
   commentAction: 'CommentAction',
+  questStep: 'QuestStep',
   customAction: 'Action'
 };
 
@@ -56,7 +60,9 @@ describe('actionTypeRegistry', () => {
     for (const id of ADDABLE_ACTION_TYPES) {
       const registryLabel = ACTION_TYPE_REGISTRY[id].label;
       // The card tooltip (getActionTypeLabel) and the registry agree.
-      expect(getActionTypeLabel({ type: TYPE_FIELD_BY_ID[id] })).toBe(registryLabel);
+      if (!(id in QUEST_STEP_MENU_KINDS)) {
+        expect(getActionTypeLabel({ type: TYPE_FIELD_BY_ID[id as Exclude<ActionTypeId, QuestStepMenuId>] })).toBe(registryLabel);
+      }
       // The add-action menu and the registry agree.
       expect(menuLabels).toContain(registryLabel);
     }
@@ -70,6 +76,9 @@ describe('actionTypeRegistry', () => {
     // Comments are parser-preserved only: never offered, but still labelled.
     expect(ADDABLE_ACTION_TYPES).not.toContain('commentAction');
     expect(getActionTypeLabel({ type: 'CommentAction' })).toBe('Comment');
+    // Nor is the quest step card itself: its lines come from the quest entries.
+    expect(ADDABLE_ACTION_TYPES).not.toContain('questStep');
+    expect(getActionTypeLabel({ type: 'QuestStep' })).toBe('Quest Step');
   });
 
   test('the menu renders the registry icon for each item', () => {

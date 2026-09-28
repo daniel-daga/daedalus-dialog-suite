@@ -14,6 +14,8 @@ import { DragDropContext, DropResult } from '@hello-pangea/dnd';
 import ActionsList from './ActionsList';
 import ActionTypeMenu from './common/ActionTypeMenu';
 import { DragDispatchContext } from './DragDispatchContext';
+import { ActionLevelPatchContext } from './ActionLevelPatchContext';
+import type { ActionLevelPatch } from './ActionLevelPatchContext';
 import type { DragMoveHandler, DragDispatchContextValue } from './DragDispatchContext';
 import { useStableHandlers } from './hooks/useStableHandlers';
 import type { ActionTypeId } from './actionTypes';
@@ -31,6 +33,8 @@ interface DialogActionsSectionProps {
   addActionAfterPath: (path: ActionPath, actionType: ActionTypeId) => void;
   addActionToBranchEnd: (path: ActionPath, branch: ActionBranchKey, actionType: ActionTypeId) => void;
   moveAction: (pathPrefix: ActionPath, sourceIndex: number, destinationIndex: number) => void;
+  /** List-level patch for quest step cards (#322). */
+  patchActionsAtLevel: ActionLevelPatch;
   focusActionAtPath: (path: ActionPath, scrollIntoView?: boolean) => void;
   registerActionRef: (path: ActionPath, element: HTMLInputElement | null) => void;
   getVisibleActionPaths: () => ActionPath[];
@@ -51,6 +55,7 @@ const DialogActionsSection: React.FC<DialogActionsSectionProps> = ({
   addActionAfterPath,
   addActionToBranchEnd,
   moveAction,
+  patchActionsAtLevel,
   focusActionAtPath,
   registerActionRef,
   getVisibleActionPaths,
@@ -75,6 +80,7 @@ const DialogActionsSection: React.FC<DialogActionsSectionProps> = ({
     addActionAfterPath,
     addActionToBranchEnd,
     moveAction,
+    patchActionsAtLevel,
     registerActionRef,
     getVisibleActionPaths,
     onNavigateToFunction,
@@ -151,6 +157,7 @@ const DialogActionsSection: React.FC<DialogActionsSectionProps> = ({
         </Box>
       ) : (
         <DragDispatchContext.Provider value={dragDispatch}>
+          <ActionLevelPatchContext.Provider value={handlers.patchActionsAtLevel}>
           <DragDropContext onDragEnd={handleDragEnd}>
             <ActionsList
               actions={currentFunction.actions || []}
@@ -172,6 +179,7 @@ const DialogActionsSection: React.FC<DialogActionsSectionProps> = ({
               filePath={filePath}
             />
           </DragDropContext>
+          </ActionLevelPatchContext.Provider>
         </DragDispatchContext.Provider>
       )}
     </Paper>

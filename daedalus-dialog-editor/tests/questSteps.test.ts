@@ -16,6 +16,8 @@ import {
   setQuestStepTopic,
   setQuestStepText,
   setQuestStepXp,
+  applyQuestStepEdit,
+  questStepScript,
   type QuestStep
 } from '../src/renderer/quest/domain/questSteps';
 import type { DialogAction } from '../src/renderer/types/global';
@@ -88,13 +90,23 @@ func void DIA_Split_Info()
 func void DIA_TwoQuests_Info()
 {
 	Log_CreateTopic (TOPIC_A, LOG_MISSION);
+	Log_SetTopicStatus (TOPIC_A, LOG_RUNNING);
 	Log_CreateTopic (TOPIC_B, LOG_MISSION);
+	Log_SetTopicStatus (TOPIC_B, LOG_RUNNING);
 };
 
 func void DIA_StrayXp_Info()
 {
 	Log_CreateTopic (TOPIC_A, LOG_MISSION);
+	Log_SetTopicStatus (TOPIC_A, LOG_RUNNING);
 	B_GivePlayerXP (100);
+};
+
+func void DIA_Lone_Info()
+{
+	B_LogEntry (TOPIC_A, "Just an entry.");
+	AI_Output (self, other, "DIA_Lone_05_00"); //Between.
+	MIS_A = LOG_SUCCESS;
 };
 
 func void DIA_NoQuest_Info()
@@ -141,30 +153,30 @@ describe('recognizeQuestSteps on vanilla scripts', () => {
       .toEqual([{ kind: 'cancel', topic: 'TOPIC_Lobart_Rueben', start: 0, end: 2 }]);
   });
 
-  it('keeps a run broken by an unrelated line as two steps', () => {
-    expect(shape(recognizeQuestSteps(fns.DIA_Split_Info))).toEqual([
-      { kind: 'start', topic: 'TOPIC_A', start: 0, end: 1 },
-      { kind: 'start', topic: 'TOPIC_A', start: 2, end: 3 }
-    ]);
+  it('leaves a run broken by an unrelated line as raw lines', () => {
+    expect(recognizeQuestSteps(fns.DIA_Split_Info)).toEqual([]);
+  });
+
+  it('leaves a lone quest line raw, so its own card stays reachable', () => {
+    expect(recognizeQuestSteps(fns.DIA_Lone_Info)).toEqual([]);
   });
 
   it('does not merge two quests created back to back', () => {
     expect(shape(recognizeQuestSteps(fns.DIA_TwoQuests_Info))).toEqual([
-      { kind: 'start', topic: 'TOPIC_A', start: 0, end: 1 },
-      { kind: 'start', topic: 'TOPIC_B', start: 1, end: 2 }
+      { kind: 'start', topic: 'TOPIC_A', start: 0, end: 2 },
+      { kind: 'start', topic: 'TOPIC_B', start: 2, end: 4 }
     ]);
   });
 
   it('leaves XP raw unless it follows a quest ending', () => {
     expect(shape(recognizeQuestSteps(fns.DIA_StrayXp_Info)))
-      .toEqual([{ kind: 'start', topic: 'TOPIC_A', start: 0, end: 1 }]);
+      .toEqual([{ kind: 'start', topic: 'TOPIC_A', start: 0, end: 2 }]);
     expect(recognizeQuestSteps(fns.DIA_NoQuest_Info)).toEqual([]);
   });
 
-  it('reads the Farim example: a start followed by a second entry, and a note', () => {
+  it('reads the Farim example: a start whose second entry stays raw, and a note', () => {
     expect(shape(recognizeQuestSteps(farim.DIA_Farim_Hallo_Verletzung))).toEqual([
-      { kind: 'start', topic: 'TOPIC_SaveBeppo', start: 11, end: 14 },
-      { kind: 'entry', topic: 'TOPIC_SaveBeppo', start: 14, end: 15 }
+      { kind: 'start', topic: 'TOPIC_SaveBeppo', start: 11, end: 14 }
     ]);
     // Log_CreateTopic (TOPIC_Diebesgilde, LOG_NOTE) + status + an entry
     // spelled Topic_Diebesgilde: one note, the casing drift tolerated.
@@ -200,8 +212,8 @@ describe('buildQuestStepActions', () => {
     expect(recognizeQuestSteps(note)[0]).toMatchObject({ kind: 'note', end: 2 });
   });
 
-  it('reads back fail, cancel and entry', () => {
-    for (const kind of ['fail', 'cancel', 'entry'] as const) {
+  it('reads back fail and cancel', () => {
+    for (const kind of ['fail', 'cancel'] as const) {
       const actions = buildQuestStepActions({ kind, topic: 'TOPIC_Sheep', text: 'x' });
       expect(shape(recognizeQuestSteps(actions)))
         .toEqual([{ kind, topic: 'TOPIC_Sheep', start: 0, end: actions.length }]);
@@ -251,5 +263,44 @@ describe('quest step edits', () => {
 
     const off = setQuestStepXp(on, withXp, null);
     expect(off).toEqual(actions);
+  });
+});
+
+describe('applyQuestStepEdit', () => {
+  const before = { type: 'DialogLine', speaker: 'self', text: 'Before', id: 'L1' } as DialogAction;
+
+  it('applies topic, text and XP together to the step at a position', () => {
+    const actions = [before, ...buildQuestStepActions({ kind: 'complete', topic: 'TOPIC_Sheep' })];
+    const next = applyQuestStepEdit(actions, 1, { topic: 'TOPIC_Goats', text: 'Goats home.', xp: 'XP_Goats' });
+    expect(next[0]).toBe(before);
+    expect(next.slice(1)).toEqual(
+      buildQuestStepActions({ kind: 'complete', topic: 'TOPIC_Goats', text: 'Goats home.', xp: 'XP_Goats' })
+    );
+  });
+
+  it('removes XP on an empty value and ignores XP outside a completion', () => {
+    const done = buildQuestStepActions({ kind: 'complete', topic: 'TOPIC_Sheep', xp: '100' });
+    expect(applyQuestStepEdit(done, 0, { xp: '' })).toEqual(buildQuestStepActions({ kind: 'complete', topic: 'TOPIC_Sheep' }));
+
+    const start = buildQuestStepActions({ kind: 'start', topic: 'TOPIC_Sheep', text: 't' });
+    expect(applyQuestStepEdit(start, 0, { xp: '100' })).toEqual(start);
+  });
+
+  it('leaves the list alone when no step starts at the position', () => {
+    const actions = [before, ...buildQuestStepActions({ kind: 'note', topic: 'TOPIC_Sheep', text: 't' })];
+    expect(applyQuestStepEdit(actions, 0, { text: 'x' })).toEqual(actions);
+    expect(applyQuestStepEdit(actions, 2, { text: 'x' })).toEqual(actions);
+  });
+});
+
+describe('questStepScript', () => {
+  it('prints the step lines as Daedalus', () => {
+    const actions = buildQuestStepActions({ kind: 'complete', topic: 'TOPIC_Sheep', text: 'Done.', xp: 'XP_Sheep' });
+    expect(questStepScript(actions, recognizeQuestSteps(actions)[0])).toBe([
+      'MIS_Sheep = LOG_SUCCESS;',
+      'Log_SetTopicStatus (TOPIC_Sheep, LOG_SUCCESS);',
+      'B_LogEntry (TOPIC_Sheep, "Done.");',
+      'B_GivePlayerXP (XP_Sheep);'
+    ].join('\n'));
   });
 });

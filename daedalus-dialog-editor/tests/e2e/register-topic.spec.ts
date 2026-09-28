@@ -92,8 +92,9 @@ test.describe('Register quest in log files', () => {
   });
 
   // #278: a note has no Running/Success/Failed, and registers as its TOPIC_
-  // constant alone.
-  test('a note drops its status row and registers without MIS_ or a close call', async ({ page }) => {
+  // constant alone. #322: a note is written from the menu as one Note card
+  // (Log_CreateTopic LOG_NOTE + its entry), which carries the register button.
+  test('a Note card registers without MIS_ or a close call', async ({ page }) => {
     await page.goto('/');
     await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
 
@@ -124,25 +125,13 @@ test.describe('Register quest in log files', () => {
     await expect(page.getByRole('heading', { name: 'DIA_Quest_Test', exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: 'Add action' }).click();
-    await page.getByRole('menuitem', { name: 'Create Topic', exact: true }).click();
-    await page.getByLabel('Topic', { exact: true }).first().fill('AlteMine');
-
-    // A new topic is a mission, with its status row
-    const statusFields = page.getByLabel('Status', { exact: true });
-    await expect(statusFields).toHaveCount(1);
-
-    await page.getByLabel('Topic Type').click();
-    await page.getByRole('option', { name: 'LOG_NOTE' }).click();
-    await expect(statusFields).toHaveCount(0);
-
-    // Back to a mission restores it
-    await page.getByLabel('Topic Type').click();
-    await page.getByRole('option', { name: 'LOG_MISSION' }).click();
-    await expect(statusFields).toHaveCount(1);
-
-    await page.getByLabel('Topic Type').click();
-    await page.getByRole('option', { name: 'LOG_NOTE' }).click();
-    await expect(statusFields).toHaveCount(0);
+    await page.getByRole('menuitem', { name: 'Note', exact: true }).click();
+    const card = page.getByTestId('quest-step-card');
+    await expect(card.getByRole('heading', { name: 'Note', exact: true })).toBeVisible();
+    await card.getByLabel('Note topic').fill('AlteMine');
+    await card.getByLabel('Note topic').blur();
+    // A note has no status line
+    await expect(page.getByLabel('Status', { exact: true })).toHaveCount(0);
 
     await page.getByRole('button', { name: 'Register note in log files' }).click();
     await expect(page.getByRole('heading', { name: 'Register Note in Log Files' })).toBeVisible();

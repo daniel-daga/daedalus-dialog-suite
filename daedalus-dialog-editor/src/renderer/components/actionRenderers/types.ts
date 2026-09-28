@@ -26,7 +26,8 @@ export interface BaseActionRendererProps {
   deleteActionAndFocusPrevAtPath?: (path: ActionPath) => void;
   addActionAfterPath?: (path: ActionPath, actionType: ActionTypeId) => void;
   addActionToBranchEnd?: (path: ActionPath, branch: ActionBranchKey, actionType: ActionTypeId) => void;
-  moveAction?: (pathPrefix: ActionPath, sourceIndex: number, destinationIndex: number) => void;
+  /** May return the index the moved card now starts at (a quest step moves as a block). */
+  moveAction?: (pathPrefix: ActionPath, sourceIndex: number, destinationIndex: number) => void | number;
   registerActionRef?: (path: ActionPath, element: HTMLInputElement | null) => void;
   getVisibleActionPaths?: () => ActionPath[];
   filePath?: string | null;

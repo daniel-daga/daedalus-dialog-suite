@@ -243,9 +243,10 @@ const ActionCard = React.memo(React.forwardRef<HTMLInputElement, ActionCardProps
       if (destination < 0 || destination >= totalActions) return;
       flushUpdate();
       const pathPrefix = path.slice(0, -1);
-      moveAction(pathPrefix, index, destination);
+      const moved = moveAction(pathPrefix, index, destination);
       // The card remounts at its new index; focus follows once its ref is re-registered.
-      setTimeout(() => focusActionAtPath([...pathPrefix, destination]), 0);
+      const focusIndex = typeof moved === 'number' ? moved : destination;
+      setTimeout(() => focusActionAtPath([...pathPrefix, focusIndex]), 0);
     } else if (e.key === 'Escape') {
       e.preventDefault();
       flushUpdate();

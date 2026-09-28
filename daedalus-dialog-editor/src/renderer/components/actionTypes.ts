@@ -175,6 +175,24 @@ export interface CommentAction {
   text: string;
 }
 
+/**
+ * A quest step card (#322). Never stored in the model: ActionsList builds it
+ * from the lines a recognised step spans, and turns its edits back into those
+ * lines (quest/domain/questSteps.ts).
+ */
+export interface QuestStepAction {
+  type: 'QuestStep';
+  kind: 'start' | 'complete' | 'fail' | 'cancel' | 'note';
+  topic: string;
+  text: string;
+  /** Empty when the step gives no XP. */
+  xp: string;
+  /** Index of the step's first line in its list. */
+  start: number;
+  /** The step's lines as Daedalus, for "show script". */
+  script: string;
+}
+
 export interface ConditionalAction {
   type: 'ConditionalAction';
   condition: string;
@@ -245,7 +263,23 @@ export type ActionTypeId =
   | 'heroFollowsAction'
   | 'conditionalAction'
   | 'commentAction'
+  | 'questStep'
+  | QuestStepMenuId
   | 'customAction';
+
+/**
+ * Add-action menu entries that write a quest step's lines (#322). Menu-only:
+ * no stored action has these types, the lines they write show as a step card.
+ */
+export type QuestStepMenuId = 'questStart' | 'questComplete' | 'questFail' | 'questCancel' | 'questNote';
+
+export const QUEST_STEP_MENU_KINDS: Record<QuestStepMenuId, 'start' | 'complete' | 'fail' | 'cancel' | 'note'> = {
+  questStart: 'start',
+  questComplete: 'complete',
+  questFail: 'fail',
+  questCancel: 'cancel',
+  questNote: 'note'
+};
 
 export type UnknownDialogAction = Record<string, unknown>;
 
@@ -283,6 +317,7 @@ const TYPE_TO_ID: Record<string, ActionTypeId> = {
   'ConditionalAction': 'conditionalAction',
   'Action': 'customAction',
   'CommentAction': 'commentAction',
+  'QuestStep': 'questStep',
   'CustomAction': 'customAction',
 };
 

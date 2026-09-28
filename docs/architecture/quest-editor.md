@@ -62,7 +62,12 @@ Two layers remain, with a one-way import direction (UI → domain):
   for a new step, and edits a step in place. A step is a view over existing
   actions, not a new action type, so an unedited file saves unchanged. Only the
   `LOG_…` constant names count as lifecycle states (`MIS_Counter = 3` is a
-  counter).
+  counter), and only runs of two or more lines fold, so a lone line keeps its
+  raw card. The dialog editor shows a step as one card: `ActionsList` groups
+  the lines into list items (`nestedActionUtils.getActionListItems`) and hands
+  the card a synthetic `QuestStep` action that is never stored; the card's
+  edits, deletes and moves become list-level patches through
+  `ActionLevelPatchContext`, provided per edited function.
 
 The graph node/edge types in `types/questGraph.ts` are editor-owned and carry
 no rendering-library dependency. The domain imports only model types
