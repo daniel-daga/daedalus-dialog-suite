@@ -3400,7 +3400,7 @@ Everything else in the bullets holds: `daedalus-parser` stays game-agnostic, the
 excluded-never-guessed rule is enforced at each extractor, and `WorldState`'s
 role is played by the time/state lens below.
 
-Six `ProjectIndex` fields carry the overlay, all built in that pass, all
+Seven `ProjectIndex` fields carry the overlay, all built in that pass, all
 reaching the renderer through `projectStore`:
 
 | Field | Carries | Renderer |
@@ -3410,7 +3410,8 @@ reaching the renderer through `projectStore`:
 | `routineSites` | every `TA`-family entry — window, waypoint, call location | `routineSiteIndex` |
 | `routinesByNpc` | instance → the `daily_routine` it declares | `routineNpcIndex` |
 | `routineStatesByNpc` | instance → `{ id, states: state → routine function }` | `routineStateIndex` |
-| `exchangeSites` | literal-state `Npc_ExchangeRoutine` / `B_StartOtherRoutine` calls | no consumer yet |
+| `exchangeSites` | literal-state `Npc_ExchangeRoutine` / `B_StartOtherRoutine` calls | `exchangeSiteIndex` |
+| `routineLayouts` | UPPERCASED routine-carrying callee → where its window and waypoint sit, plus its declared spelling | `routineLayoutIndex` |
 
 Every name in every one of them is UPPERCASED at extraction, and every lookup
 uppercases to match. `spawnSites` is deliberately flat and deliberately not a
@@ -3424,8 +3425,20 @@ every other entry there acts on `self` and would index a mover as a spawn.
 Consumers, all one-way from the index: `SpawnOverlay` and `WaypointLabelLayer`
 (`src/renderer/world/`), `routineSchedule.ts` (`src/renderer/routines/`, pure —
 the split `quest/domain` and `problems/domain` keep), `duplicateSpawnRule`
-(`problems/domain/rules/`), `WaypointPanel`, `npcWorldJump.ts`, and
-`components/world/insertNpcScript.ts`.
+(`problems/domain/rules/`), `WaypointPanel`, `npcWorldJump.ts`,
+`components/world/insertNpcScript.ts`, and the routine editor
+(`components/RoutineEditor.tsx`, `docs/plans/npc-editor.md` §6), which reads
+`routineLayouts` to rewrite a `TA_*` call in its own layout and `exchangeSites`
+to say which calls switch an NPC to a variant.
+
+**The routine sites are re-read per file after a routine save.** Everything
+here is otherwise as of the last project load. A save from the routine editor
+asks main for that file's sites (`project:routineSitesOfFile`, run through
+`routineSitesOfFile` with the renderer's `routineLayouts`, since the wrappers
+a routine calls live in another file) and replaces that file's entries in
+`routineSiteIndex`; a routine the editor creates is added to
+`routineNpcIndex`/`routineStateIndex` by `registerRoutine`. An external edit
+to a routine file still waits for the next load.
 
 #### The four derivation rules, and why each is what it is
 

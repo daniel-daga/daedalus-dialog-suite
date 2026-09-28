@@ -463,6 +463,13 @@ Not done, and each needs something first:
   the dialog editor's existing exchange-routine action. The chapter label
   stays a hint read off names, never inferred from conditions.
 
+### Compact rows (Daniel, 2026-09-28)
+
+A day runs to 10+ activities, so each is one dense line: the fields carry no
+floating label (it stays their `aria-label`) and the column names are said
+once above the rows, which share one grid with them. Held by the "long day"
+case in `tests/e2e/routine-editor.spec.ts`: twelve rows, each at most 36 px.
+
 ### Gaps are errors in the editor (Daniel, 2026-09-28)
 
 A stretch of the day no activity covers is drawn red over the whole height of

@@ -66,6 +66,15 @@ const COLORS = ROUTINE_COLORS;
 
 const windowLabel = (window: RoutineWindow) => `${formatMinute(window.startMinute)}–${formatMinute(window.endMinute)}`;
 
+/** One line per activity: a day runs to 10+ of them (Daniel, 2026-09-28), so
+ *  the fields carry no floating label — the column header says it once — and
+ *  no more padding than a click needs. The label stays as `aria-label`. */
+const DENSE = {
+  '& .MuiInputBase-root': { fontSize: 13, py: 0 },
+  '& .MuiInputBase-input': { py: '3px', px: '6px' },
+  '& .MuiAutocomplete-inputRoot': { py: '0 !important' },
+};
+
 /** A time field that commits on blur or Enter and shows the value again when
  *  what was typed is not a time. */
 const TimeField: React.FC<{ label: string; minute: number; onCommit: (minute: number) => void }> = (
@@ -80,10 +89,10 @@ const TimeField: React.FC<{ label: string; minute: number; onCommit: (minute: nu
   };
   return (
     <TextField
-      label={label}
       size="small"
       value={draft}
-      sx={{ width: 84 }}
+      inputProps={{ 'aria-label': label }}
+      sx={DENSE}
       onChange={(event) => setDraft(event.target.value)}
       onBlur={commit}
       onKeyDown={(event) => { if (event.key === 'Enter') commit(); }}
@@ -102,10 +111,10 @@ const WaypointText: React.FC<{ value: string; onCommit: (waypoint: string) => vo
   };
   return (
     <TextField
-      label="Waypoint"
       size="small"
       value={draft}
-      sx={{ flex: 1, minWidth: 160 }}
+      inputProps={{ 'aria-label': 'Waypoint' }}
+      sx={DENSE}
       onChange={(event) => setDraft(event.target.value)}
       onBlur={commit}
       onKeyDown={(event) => { if (event.key === 'Enter') commit(); }}
@@ -369,6 +378,12 @@ export const RoutineEditorPanel: React.FC<RoutineEditorPanelProps> = (
   }, [layouts, entries]);
 
   const coverage = useMemo(() => coverageOf(asSites(entries), 'DRAFT'), [entries]);
+  // The activity rows and their header share one grid; "Pick" has a column
+  // only where the World surface offers it.
+  const rowGrid = {
+    display: 'grid', alignItems: 'center', columnGap: 0.5, px: 0.5,
+    gridTemplateColumns: `18px minmax(120px, 1.2fr) 60px 60px minmax(120px, 2fr)${onPickWaypoint ? ' auto' : ''} 26px`,
+  };
 
   const addActivity = () => {
     if (selected === null) return;
@@ -575,6 +590,12 @@ export const RoutineEditorPanel: React.FC<RoutineEditorPanelProps> = (
             <Button size="small" onClick={addActivity} disabled={selected === null}>Add activity</Button>
           </Box>
 
+          <Box
+            data-testid="routine-columns"
+            sx={{ ...rowGrid, typography: 'caption', color: 'text.secondary', borderLeft: 3, borderColor: 'transparent' }}
+          >
+            <span>#</span><span>Activity</span><span>Start</span><span>End</span><span>Waypoint</span>
+          </Box>
           {entries.map((entry, index) => (
             <Box
               key={index}
@@ -582,12 +603,12 @@ export const RoutineEditorPanel: React.FC<RoutineEditorPanelProps> = (
               aria-label={`Activity ${index + 1}`}
               onClick={() => setSelected(index)}
               sx={{
-                display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1, p: 1, mb: 0.5, borderRadius: 1,
-                borderLeft: 4, borderColor: COLORS[index % COLORS.length],
+                ...rowGrid, py: 0.25, mb: 0.25, borderRadius: 0.5,
+                borderLeft: 3, borderColor: COLORS[index % COLORS.length],
                 bgcolor: selected === index ? 'action.selected' : 'transparent',
               }}
             >
-              <Typography variant="caption" sx={{ width: 16 }}>{index + 1}</Typography>
+              <Typography variant="caption">{index + 1}</Typography>
               <Autocomplete
                 size="small"
                 options={stateOptions}
@@ -595,8 +616,10 @@ export const RoutineEditorPanel: React.FC<RoutineEditorPanelProps> = (
                 disableClearable
                 isOptionEqualToValue={(option, value) => option.toUpperCase() === value.toUpperCase()}
                 onChange={(_event, value) => { if (value) commit(setState(entries, index, value)); }}
-                sx={{ width: 220 }}
-                renderInput={(params) => <TextField {...params} label="Activity" />}
+                sx={DENSE}
+                renderInput={(params) => (
+                  <TextField {...params} inputProps={{ ...params.inputProps, 'aria-label': 'Activity' }} />
+                )}
               />
               <TimeField label="Start" minute={entry.startMinute}
                 onCommit={(minute) => commit(moveBoundary(entries, index, 'start', minute))} />
@@ -610,8 +633,10 @@ export const RoutineEditorPanel: React.FC<RoutineEditorPanelProps> = (
                   disableClearable
                   isOptionEqualToValue={(option, value) => option.toUpperCase() === value.toUpperCase()}
                   onChange={(_event, value) => { if (value) commit(setWaypoint(entries, index, value)); }}
-                  sx={{ flex: 1, minWidth: 160 }}
-                  renderInput={(params) => <TextField {...params} label="Waypoint" />}
+                  sx={DENSE}
+                  renderInput={(params) => (
+                    <TextField {...params} inputProps={{ ...params.inputProps, 'aria-label': 'Waypoint' }} />
+                  )}
                 />
               ) : (
                 <WaypointText value={entry.waypoint} onCommit={(waypoint) => commit(setWaypoint(entries, index, waypoint))} />
@@ -619,6 +644,7 @@ export const RoutineEditorPanel: React.FC<RoutineEditorPanelProps> = (
               {onPickWaypoint && (
                 <Button
                   size="small"
+                  sx={{ minWidth: 0, px: 0.5, py: 0 }}
                   aria-label={`Pick the waypoint of activity ${index + 1} in the world`}
                   onClick={(event) => {
                     event.stopPropagation();
@@ -635,6 +661,7 @@ export const RoutineEditorPanel: React.FC<RoutineEditorPanelProps> = (
               )}
               <IconButton
                 size="small"
+                sx={{ p: 0.25 }}
                 aria-label="Remove activity"
                 onClick={(event) => {
                   event.stopPropagation();

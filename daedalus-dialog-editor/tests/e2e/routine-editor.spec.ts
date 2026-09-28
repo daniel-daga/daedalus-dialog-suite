@@ -43,14 +43,14 @@ const TA_FILE = `FUNC VOID TA_Stand_Guarding(var int start_h, var int start_m, v
 
 const NPC_PATH = 'project/NPC/BAU_900_Onar.d';
 
-async function openProject(page: Page, extraFiles: Record<string, string> = {}) {
+async function openProject(page: Page, extraFiles: Record<string, string> = {}, npcFile = NPC_FILE) {
   await page.goto('/');
   await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
   await page.evaluate(({ npc, ta, npcPath, files }) => {
     localStorage.setItem(`mockapi_file_${npcPath}`, npc);
     localStorage.setItem('mockapi_file_project/AI/TA.d', ta);
     for (const [path, source] of Object.entries(files)) localStorage.setItem(`mockapi_file_project/${path}`, source);
-  }, { npc: NPC_FILE, ta: TA_FILE, npcPath: NPC_PATH, files: extraFiles });
+  }, { npc: npcFile, ta: TA_FILE, npcPath: NPC_PATH, files: extraFiles });
   page.on('dialog', async (dialog) => {
     if (dialog.message().includes('project folder path')) await dialog.accept('project');
     else await dialog.dismiss();
@@ -69,7 +69,7 @@ async function openRoutineEditor(page: Page) {
   return editor;
 }
 
-const activity = (editor: ReturnType<Page['getByRole']>, n: number) => editor.getByRole('group', { name: `Activity ${n}` });
+const activity = (editor: ReturnType<Page['getByRole']>, n: number) => editor.getByRole('group', { name: `Activity ${n}`, exact: true });
 const savedFile = (page: Page) => page.evaluate((path) => localStorage.getItem(`mockapi_file_${path}`), NPC_PATH);
 
 test.describe('Routine editor', () => {
@@ -294,5 +294,25 @@ test.describe('Routine editor: creating routines', () => {
     await form.getByLabel('Name').fill('Start');
     await expect(form.getByText('Rtn_Start_900 already exists')).toBeVisible();
     await expect(form.getByRole('button', { name: 'Create routine' })).toBeDisabled();
+  });
+});
+
+test.describe('Routine editor: a long day', () => {
+  test('twelve activities stay one compact line each, with the column names said once', async ({ page }) => {
+    // Retail days run to 10+ activities (Daniel, 2026-09-28).
+    const lines = Array.from({ length: 12 }, (_, i) => {
+      const hour = (h: number) => String(h % 24).padStart(2, '0');
+      return `\tTA_Sleep (${hour(i * 2)},00,${hour(i * 2 + 2)},00,"WP_${i}");`;
+    });
+    const longDay = NPC_FILE.replace(/(FUNC VOID Rtn_Start_900\(\)\n\{\n)[\s\S]*?(\n\};)/, `$1${lines.join('\n')}$2`);
+    await openProject(page, {}, longDay);
+    const editor = await openRoutineEditor(page);
+
+    await expect(activity(editor, 12).getByLabel('Waypoint')).toHaveValue('WP_11');
+    for (const n of [1, 6, 12]) {
+      const box = (await activity(editor, n).boundingBox())!;
+      expect(box.height).toBeLessThanOrEqual(36);
+    }
+    await expect(editor.getByTestId('routine-columns')).toContainText('Activity');
   });
 });
