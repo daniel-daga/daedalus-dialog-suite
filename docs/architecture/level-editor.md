@@ -3438,7 +3438,7 @@ asks main for that file's sites (`project:routineSitesOfFile`, run through
 a routine calls live in another file) and replaces that file's entries in
 `routineSiteIndex`; a routine the editor creates is added to
 `routineNpcIndex`/`routineStateIndex` by `registerRoutine`. An external edit
-to a routine file still waits for the next load.
+to a routine file still waits for the next load (#319).
 
 #### The four derivation rules, and why each is what it is
 
