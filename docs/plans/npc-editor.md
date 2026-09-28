@@ -267,7 +267,8 @@ the "NPC-Rendering im Viewport" item of
 
 ## 6. Phase 5 — authoring routines
 
-**Proposed (workshop with Daniel, 2026-09-28).** Nothing below is built.
+**Proposed (workshop with Daniel, 2026-09-28).** Nothing below is built;
+the slices are #312–#318, and #315 waits on the three open questions below.
 
 Everything a routine editor reads already exists: `routineSites`,
 `routinesByNpc` and `routineStatesByNpc` in the project index, the World
@@ -323,7 +324,7 @@ FUNC VOID Rtn_Start_900 ()
 
 ### Slices
 
-1. **Parser: `daedalus-parser/routine-definition`**, built like
+1. **Parser: `daedalus-parser/routine-definition`** (#312), built like
    `npc-definition`: a reader returning the routine's entries (callee, the
    four time arguments, the waypoint, each with its source range) and every
    other statement verbatim, and a writer that patches in place — set a time,
@@ -338,14 +339,14 @@ FUNC VOID Rtn_Start_900 ()
    `DialogFunction` carries no `sourceText`, unlike `GlobalInstance`, so the
    reader needs the function's text from somewhere: either the model gains it,
    or the worker cuts the range from the file. Decided when building it.
-2. **IPC**: `routine:extract` and `routine:applyEdits` in the forked parser
+2. **IPC** (#313): `routine:extract` and `routine:applyEdits` in the forked parser
    pool, validated like `assertNpcApplyEditsRequest`.
-3. **Pure domain** in `src/renderer/routines/`: the draft operations
+3. **Pure domain** (#314) in `src/renderer/routines/`: the draft operations
    (partition-preserving boundary move, split an entry at a minute to add a
    stop, remove a stop and give its window to a neighbour, set state, set
    waypoint) and `waynetRoute(waynet, from, to)` over the payload's positions
    and edge pairs. Jest.
-4. **Routine mode in the World surface.** A Playwright test first. The NPC's
+4. **Routine mode in the World surface** (#315). A Playwright test first. The NPC's
    stops are drawn numbered at their waypoints, with routes between them. A
    24-hour timeline bar sits under the viewport, one block per entry labelled
    with its state; drag a boundary, click a block to select it. With a block
@@ -354,15 +355,15 @@ FUNC VOID Rtn_Start_900 ()
    own `TA_*` wrappers from the index, never a hardcoded list. Gaps and
    overlaps are highlighted live with `coverageOf`. Plus a real-Electron
    disk-truth spec like `npc-editor-disk-truth.spec.ts`.
-5. **An NPC with no routine.** "Create routine" appends
+5. **An NPC with no routine** (#316). "Create routine" appends
    `FUNC VOID Rtn_Start_<id> ()` to the end of the NPC's file with one
    whole-day entry at its spawn waypoint and sets `daily_routine` through
    `npc-definition`'s writer. A new variant is `Rtn_<State>_<id>` with the
    state name typed. Both need a literal `id`; an NPC without one is refused,
    with that reason.
-6. **The NPC editor's table**: the read-only routine list becomes editable
+6. **The NPC editor's table** (#317): the read-only routine list becomes editable
    (time, state, waypoint) for editing without a world open.
-7. **Later: the state-needs check** (see the last decision above).
+7. **Later: the state-needs check** (#318) (see the last decision above).
 
 ### Open, not decided
 
