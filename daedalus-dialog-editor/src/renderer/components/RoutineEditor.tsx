@@ -4,6 +4,7 @@ import {
   Autocomplete,
   Box,
   Button,
+  Chip,
   CircularProgress,
   Dialog,
   DialogContent,
@@ -15,7 +16,7 @@ import {
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import { useProjectStore } from '../store/projectStore';
-import { npcRoutines, formatMinute } from '../npc/npcRoutines';
+import { npcRoutines, formatMinute, variantSwitches } from '../npc/npcRoutines';
 import { coverageOf, type RoutineWindow } from '../routines/routineSchedule';
 import type { RoutineEntry } from '../routines/routineEntries';
 import { moveBoundary, removeEntry, setState, setWaypoint, splitEntry } from '../routines/routineDraft';
@@ -335,9 +336,6 @@ export const RoutineEditorPanel: React.FC<RoutineEditorPanelProps> = (
 
   const coverage = useMemo(() => coverageOf(asSites(entries), 'DRAFT'), [entries]);
 
-  const triggers = (label: string) => exchangeSites.filter((site) =>
-    site.state === label.toUpperCase() && (site.target === npc.toUpperCase() || site.target === 'SELF'));
-
   const addActivity = () => {
     if (selected === null) return;
     const entry = entries[selected];
@@ -377,7 +375,8 @@ export const RoutineEditorPanel: React.FC<RoutineEditorPanelProps> = (
           <Typography variant="caption" color="text.secondary">No routine in the project index.</Typography>
         )}
         {routines.map((r) => {
-          const switched = r.label === 'Daily' ? null : triggers(r.label);
+          const switches = r.label === 'Daily' ? null : variantSwitches(exchangeSites, npc, r.label);
+          const chapters = [...new Set((switches ?? []).map((sw) => sw.chapter).filter((c): c is number => c !== null))];
           return (
             <Box key={r.routine} title={dirty && r.routine !== routine ? 'Save or cancel this routine first' : undefined}>
               <ToggleButton
@@ -390,11 +389,14 @@ export const RoutineEditorPanel: React.FC<RoutineEditorPanelProps> = (
               >
                 {`${r.label}: ${r.routine}`}
               </ToggleButton>
-              {switched && (
+              {chapters.length > 0 && (
+                <Chip size="small" label={`Chapter ${chapters.join(', ')}`} sx={{ ml: 0.5, height: 18, fontSize: 10 }} />
+              )}
+              {switches && (
                 <Typography variant="caption" display="block" color="text.secondary" sx={{ fontSize: 10 }}>
-                  {switched.length === 0
+                  {switches.length === 0
                     ? 'Nothing in the scripts switches to it by name'
-                    : `Switched to at ${switched.slice(0, 2).map((site) => `${site.filePath.split(/[\\/]/).pop()}:${site.line}`).join(', ')}${switched.length > 2 ? ` +${switched.length - 2}` : ''}`}
+                    : `Switched to in ${switches.slice(0, 2).map((sw) => `${sw.functionName}${sw.maybeOtherNpc ? ' (self)' : ''}`).join(', ')}${switches.length > 2 ? ` +${switches.length - 2}` : ''}`}
                 </Typography>
               )}
             </Box>

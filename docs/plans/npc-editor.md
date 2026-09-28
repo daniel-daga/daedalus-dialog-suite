@@ -1,7 +1,7 @@
 # NPC Editor
 
 **Status:** Phases 1–4 built (#284, #285, #298, #309). NPC bodies now render at world spawn and routine placements.
-Phase 5 (authoring routines) is in progress — its model and draft operations are built (#312, #314).
+Phase 5 (authoring routines) is in progress — the model, the draft operations and the routine editor panel are built (#312, #314, #317); the World surface's routine mode is next (#315).
 
 An editor for `C_NPC` instances inside the dialog editor, covering what the
 community's standalone *NPC Generator* covers (main info, attributes, protection,
@@ -267,9 +267,9 @@ the "NPC-Rendering im Viewport" item of
 
 ## 6. Phase 5 — authoring routines
 
-**Workshop with Daniel, 2026-09-28.** Slices 1 and 3 are built, slice 2
-turned out not to be needed; the rest are #315–#318, and #315 waits on the
-three open questions below.
+**Workshop with Daniel, 2026-09-28.** Slices 1, 3 and 6 are built, slice 2
+turned out not to be needed, and slice 4's panel is built; the rest are
+#315, #316 and #318.
 
 Everything a routine editor reads already exists: `routineSites`,
 `routinesByNpc` and `routineStatesByNpc` in the project index, the World
@@ -336,8 +336,8 @@ is the project's wrapper list. So the routine-mode panel and the NPC editor's
 table take that layout, and the UI says *activity* for an entry. Two things it
 adds:
 
-- **Minutes matter.** 13:30–14:00 is a half-hour activity, which weighs on the
-  snap question below.
+- **Minutes matter.** 13:30–14:00 is a half-hour activity, which settled the
+  snap step below.
 - **A variant does nothing until a script switches to it.** Retail has no
   chapter routines; a chapter is a spawn guard, and a routine changes through
   `Npc_ExchangeRoutine` / `B_StartOtherRoutine` at a story event
@@ -384,38 +384,77 @@ adds:
    towards whichever end of the allowed arc the pointer is nearer.
    `routines/waynetRoute.ts`: Dijkstra by straight-line edge length over the
    payload, `null` when there is no route or no such waypoint.
-4. **Routine mode in the World surface** (#315). A Playwright test first. The NPC's
-   stops are drawn numbered at their waypoints, with routes between them. A
-   24-hour timeline bar sits under the viewport, one block per entry labelled
-   with its state; drag a boundary, click a block to select it. With a block
-   selected, clicking a waypoint in the viewport sets its waypoint (an armed
-   pick, like the insert-NPC placement). The state picker lists the project's
-   own `TA_*` wrappers from the index, never a hardcoded list. Gaps and
-   overlaps are highlighted live with `coverageOf`. Plus a real-Electron
-   disk-truth spec like `npc-editor-disk-truth.spec.ts`.
+4. **Routine mode in the World surface** (#315). **The panel is built
+   (2026-09-28)**; the World half is not. `components/RoutineEditor.tsx`'s
+   `RoutineEditorPanel` holds the routines at the top (each variant with its
+   chapter and switches, see "Chapters"), a 24-hour timeline whose boundaries
+   drag in quarter hours (Alt detaches, arrow keys step), and one row per
+   activity: state, typed start and end, waypoint, remove. The draft has its
+   own undo; Save goes through `components/routineSave.ts` and re-indexes the
+   file. The state picker lists every layout an activity alone can fill,
+   spelled as declared (`routineLayouts[…].name`), so `TA` and `TA_MIN` are
+   not offered. Covered by `tests/e2e/routine-editor.spec.ts` in the browser
+   harness, which has no world by design, so the panel is driven from the NPC
+   editor there.
+   **Still to build**, in the World surface over the same panel: the stops
+   numbered on the map with routes along the waynet (`waynetRoute`), the
+   panel's `waypoints` restricted to the saved waynet, its `onPickWaypoint`
+   as an armed viewport pick, an "Edit routine in world" button in the NPC
+   editor, and a click on an NPC body or marker. Those parts get Jest
+   scene-graph tests like `SpawnOverlay`'s, plus the real-Electron disk-truth
+   spec.
 5. **An NPC with no routine** (#316). "Create routine" appends
    `FUNC VOID Rtn_Start_<id> ()` to the end of the NPC's file with one
    whole-day entry at its spawn waypoint and sets `daily_routine` through
    `npc-definition`'s writer. A new variant is `Rtn_<State>_<id>` with the
    state name typed. Both need a literal `id`; an NPC without one is refused,
    with that reason.
-6. **The NPC editor's table** (#317): the read-only routine list becomes editable
-   (time, state, waypoint) for editing without a world open.
+6. **Editing without a world** (#317). **Built 2026-09-28** as the same panel
+   in a modal, `RoutineEditorDialog`, opened by "Edit" beside each routine
+   in the NPC editor's routines section. That section now follows the index,
+   so a saved routine shows there without reopening.
 7. **Later: the state-needs check** (#318) (see the last decision above).
 
-### Open, not decided
+### Chapters (Daniel, 2026-09-28: "differences in chapters are important")
 
-- **Snap** while dragging a boundary: 5 minutes, 15, or whole hours with a
-  typed field for exact minutes.
-- **Index freshness after Save.** `routineSiteIndex` is as of the last project
-  load, and the file watcher suppresses the editor's own writes. After a
-  routine save the overlay, the lens and the Problems rules must see the new
-  entries, so the saved file has to be re-indexed the way Create NPC goes
-  through `handleFileAdded`. The mechanism for an *edited* file (not an added
-  one) is not chosen.
-- **A waypoint added this session and not yet saved** to the `.zen` is in the
-  open waynet, so routine mode would offer it. Either offer it and say the
-  world is unsaved, or offer saved waypoints only.
+Retail has no chapter routine: a routine changes only because a script calls
+`B_StartOtherRoutine`/`Npc_ExchangeRoutine` with a state name, and a chapter
+change is one place such a call sits (architecture §8, "States are events,
+not chapters"). So a chapter routine is a `Rtn_<State>_<id>` variant plus the
+call that switches to it, and the editor shows it that way. **Built
+2026-09-28:** `variantSwitches` (`npc/npcRoutines.ts`) lists, for each
+variant, the literal calls that switch this NPC to it (a `self` target is
+kept and marked, since the index cannot resolve it), and reads the chapter
+off the switching function's name (`B_Enter_NewWorld_Kapitel_3`) or the
+state's (`Kapitel4`). The routine editor shows "Chapter N" and "Switched to
+in …" under each variant, from the index's `exchangeSites`, which had no
+consumer before.
+
+Not done, and each needs something first:
+
+- **A switch under an `if (Kapitel == 3)` guard** in a function not named
+  for the chapter. The exchange-site index does not record the enclosing
+  guard, so it reads as no chapter. Recording it is a metadata change, and
+  how often retail and mods switch that way is unmeasured
+  (`check-routine-states.js` over `mdk/Content`, Daniel's machine).
+- **Creating a chapter routine**: a new variant and the call that switches to
+  it, written into the chapter's function. Which function a mod uses for
+  that is a convention the editor does not know yet. Slice 5 (#316).
+
+### Decided before slice 4 (Daniel, 2026-09-28)
+
+- **Snap: 15 minutes, plus typed fields.** A dragged boundary snaps to the
+  quarter hour; each activity also has start and end fields for an exact
+  minute (13:05).
+- **Re-index in main after Save.** Nothing re-indexed routines after a load
+  before this, not even for an external edit. After a routine save the
+  renderer asks main for the saved file's routine sites
+  (`project:routineSitesOfFile`, with the current `routineLayouts`, since the
+  wrappers live in another file), and replaces that file's entries in
+  `routineSiteIndex` — one source of truth, the same extraction the load runs.
+- **Saved waypoints only.** Routine mode offers the waypoints the world file
+  on disk has: the waynet's names as of the last open or save. A waypoint
+  added since is not offered until the world is saved.
 
 ## 7. Order and size
 
@@ -424,4 +463,4 @@ top of it; 3 is mostly asset plumbing that already exists; 4 is small once 3
 works. Phase 3 can start in parallel with 2 once Phase 1's `NpcDefinition`
 shape is fixed.
 
-Phase 5's remaining slices run in order: 4, then 5 and 6.
+Phase 5's remaining work: slice 4's World half, then 5.

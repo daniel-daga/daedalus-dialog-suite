@@ -24,6 +24,18 @@ FUNC VOID Rtn_Start_900()
 };
 `;
 
+const CHAPTER_FILE = `FUNC VOID Rtn_Kapitel3_900()
+{
+	TA_Stand_Guarding (08,00,20,00,"NW_GATE");
+	TA_Sleep (20,00,08,00,"NW_BED");
+};
+
+FUNC VOID B_Enter_NewWorld_Kapitel_3()
+{
+	B_StartOtherRoutine (BAU_900_Onar, "Kapitel3");
+};
+`;
+
 const TA_FILE = `FUNC VOID TA_Stand_Guarding(var int start_h, var int start_m, var int stop_h, var int stop_m, var string waypoint)
 {
 };
@@ -31,13 +43,14 @@ const TA_FILE = `FUNC VOID TA_Stand_Guarding(var int start_h, var int start_m, v
 
 const NPC_PATH = 'project/NPC/BAU_900_Onar.d';
 
-async function openProject(page: Page) {
+async function openProject(page: Page, extraFiles: Record<string, string> = {}) {
   await page.goto('/');
   await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
-  await page.evaluate(({ npc, ta, npcPath }) => {
+  await page.evaluate(({ npc, ta, npcPath, files }) => {
     localStorage.setItem(`mockapi_file_${npcPath}`, npc);
     localStorage.setItem('mockapi_file_project/AI/TA.d', ta);
-  }, { npc: NPC_FILE, ta: TA_FILE, npcPath: NPC_PATH });
+    for (const [path, source] of Object.entries(files)) localStorage.setItem(`mockapi_file_project/${path}`, source);
+  }, { npc: NPC_FILE, ta: TA_FILE, npcPath: NPC_PATH, files: extraFiles });
   page.on('dialog', async (dialog) => {
     if (dialog.message().includes('project folder path')) await dialog.accept('project');
     else await dialog.dismiss();
@@ -160,5 +173,30 @@ test.describe('Routine editor', () => {
     await expect(editor).toBeHidden();
 
     expect(await savedFile(page)).toBe(before);
+  });
+});
+
+// A routine changes with the chapter only because a script switches to a
+// variant at the chapter change; the editor names that switch, and the
+// chapter it is for, beside the variant.
+test.describe('Routine editor: chapter variants', () => {
+  test('lists the variant with the chapter that switches to it, and edits it like the daily routine', async ({ page }) => {
+    await openProject(page, { 'Story/Kapitel3.d': CHAPTER_FILE });
+    const editor = await openRoutineEditor(page);
+
+    const variant = editor.getByRole('button', { name: 'KAPITEL3: RTN_KAPITEL3_900' });
+    await expect(variant).toBeVisible();
+    await expect(editor.getByText('Chapter 3')).toBeVisible();
+    await expect(editor.getByText('Switched to in B_ENTER_NEWWORLD_KAPITEL_3')).toBeVisible();
+
+    await variant.click();
+    await expect(activity(editor, 1).getByLabel('Activity', { exact: true })).toHaveValue('TA_Stand_Guarding');
+    await activity(editor, 1).getByLabel('Waypoint').fill('NW_TOWER');
+    await activity(editor, 1).getByLabel('Waypoint').blur();
+    await editor.getByRole('button', { name: 'Save' }).click();
+    await expect(editor).toBeHidden();
+
+    const saved = await page.evaluate(() => localStorage.getItem('mockapi_file_project/Story/Kapitel3.d'));
+    expect(saved).toContain('TA_Stand_Guarding (08,00,20,00,"NW_TOWER");');
   });
 });

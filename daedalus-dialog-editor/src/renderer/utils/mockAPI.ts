@@ -7,7 +7,7 @@
  */
 
 import type { EditorAPI, ValidationResult, SaveResult, FileChangeEvent, AppendInsertNpcResult, OpenedProjectConfig, NpcDefinition, NpcStatement, NpcEdit, ProjectOutputUnits } from '../types/global';
-import type { RoutineSite } from '../../shared/types';
+import type { ExchangeSite, RoutineSite } from '../../shared/types';
 
 // Captured file-change callback (see onFileChanged). Lets E2E tests inject
 // external change/unlink events through the `__mockEmitFileChange` window hook.
@@ -672,6 +672,8 @@ export const mockEditorAPI: EditorAPI = {
     const routineSites: RoutineSite[] = [];
     const routinesByNpc: Record<string, string> = {};
     const wrapperNames = new Map<string, string>();
+    const exchangeSites: ExchangeSite[] = [];
+    const npcIds = new Map<string, number>();
 
     for (const filePath of files) {
       const content = MockFileSystem.readFile(filePath);
@@ -680,6 +682,17 @@ export const mockEditorAPI: EditorAPI = {
       routineSites.push(...mockRoutineSites(filePath, content));
       for (const wrapper of content.matchAll(/func\s+void\s+(TA_\w+)\s*\(\s*var\s+int/gi)) {
         wrapperNames.set(wrapper[1].toUpperCase(), wrapper[1]);
+      }
+      for (const call of content.matchAll(/B_StartOtherRoutine\s*\(\s*(\w+)\s*,\s*"(\w+)"\s*\)/gi)) {
+        const enclosing = [...content.slice(0, call.index).matchAll(/func\s+\w+\s+(\w+)/gi)].pop();
+        exchangeSites.push({
+          target: call[1].toUpperCase(), state: call[2].toUpperCase(),
+          functionName: (enclosing?.[1] ?? '').toUpperCase(), filePath,
+          line: content.slice(0, call.index).split('\n').length,
+        });
+      }
+      for (const inst of content.matchAll(/INSTANCE\s+(\w+)\s*\([^)]*\)\s*\{[^}]*?\bid\s*=\s*(\d+)\s*;/gi)) {
+        npcIds.set(inst[1].toUpperCase(), Number(inst[2]));
       }
       for (const inst of content.matchAll(/INSTANCE\s+(\w+)\s*\([^)]*\)\s*\{[^}]*?daily_routine\s*=\s*(\w+)\s*;/gi)) {
         routinesByNpc[inst[1].toUpperCase()] = inst[2].toUpperCase();
@@ -726,6 +739,15 @@ export const mockEditorAPI: EditorAPI = {
       npcFiles,
       routineSites,
       routinesByNpc,
+      exchangeSites,
+      // The engine's RTN_<state>_<id> rule over the routines found, as the
+      // real index enumerates variants.
+      routineStatesByNpc: Object.fromEntries([...npcIds].flatMap(([npc, id]) => {
+        const states = Object.fromEntries([...new Set(routineSites.map((site) => site.routine))]
+          .map((routine) => [new RegExp(`^RTN_(\\w+)_${id}$`).exec(routine)?.[1], routine] as const)
+          .filter(([state]) => state !== undefined));
+        return Object.keys(states).length > 0 ? [[npc, { id, states }]] : [];
+      })),
       // Every TA_ wrapper declared or called, in retail's layout.
       routineLayouts: Object.fromEntries([
         ...routineSites.map((site) => [site.stateName ?? '', MOCK_WRAPPER_LAYOUT] as const),
