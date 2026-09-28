@@ -613,6 +613,36 @@ INSTANCE ItMi_Gold (C_Item)
       expect(index.npcFiles).toEqual({ BAU_900_ONAR: path.join(tempDir, 'BAU_900_Onar.d') });
     });
 
+    // The renderer re-derives an NPC's routine variants after a file changes
+    // (#319), and the variant can sit in another file than the NPC — so it
+    // needs every NPC's id, not just those of the file that changed.
+    it('exposes each NPC\'s literal id as npcIds, and no other instance\'s', async () => {
+      fs.writeFileSync(path.join(tempDir, 'Npc_Default.d'), `
+PROTOTYPE Npc_Default (C_NPC)
+{
+    name = "";
+};
+      `);
+      fs.writeFileSync(path.join(tempDir, 'NPCs.d'), `
+INSTANCE BAU_900_Onar (Npc_Default)
+{
+    id = 900;
+};
+INSTANCE BAU_901_Bauer (Npc_Default)
+{
+    id = SOME_CONST;
+};
+INSTANCE ItMi_Gold (C_Item)
+{
+    id = 5;
+};
+      `);
+
+      const index = await new ProjectService().buildProjectIndex(tempDir);
+
+      expect(index.npcIds).toEqual({ BAU_900_ONAR: 900 });
+    });
+
     it('exposes prototypes deriving from C_NPC as npcPrototypes (issue #141)', async () => {
       const storyDir = path.join(tempDir, 'Story');
       fs.mkdirSync(storyDir, { recursive: true });
@@ -1221,31 +1251,84 @@ FUNC VOID Rtn_Mixed()
       ]);
     });
 
-    // A routine save re-indexes the one file it wrote (npc-editor.md §6). The
-    // wrapper that file calls is declared elsewhere, so its layout comes in
-    // from the whole-project index rather than being derived from the file.
-    it('reads one file\'s routine sites with layouts the project index derived', async () => {
-      const { extractFileMetadataFromSource, routineSitesOfFile } = await load();
+    // A routine save, and a script changed outside the editor, re-index the one
+    // file (#319). The wrapper that file calls is declared elsewhere, so its
+    // layout comes in from the whole-project index rather than being derived
+    // from the file.
+    it('reads one file\'s share of the index, with layouts the project index derived', async () => {
+      const { indexFile, extractFileMetadataFromSource } = await load();
 
-      const file = extractFileMetadataFromSource(
-        `FUNC VOID Rtn_Start_900()
+      const source = `INSTANCE BAU_900_Onar (Npc_Default)
+{
+	id = 900;
+	daily_routine = Rtn_Start_900;
+};
+
+FUNC VOID Rtn_Start_900()
 {
 	TA_Sit_Throne (07,00,21,30,"NW_THRONE");
-};`,
-        '/test/Onar.d'
-      );
+};
+
+FUNC VOID B_Kapitel3()
+{
+	Wld_InsertNpc (BAU_900_Onar, "NW_FARM");
+	B_StartOtherRoutine (BAU_900_Onar, "Tot");
+};`;
+      const model = extractFileMetadataFromSource(source, '/test/Onar.d').semanticModel!;
       const layouts = { TA_SIT_THRONE: { startH: 0, startM: 1, stopH: 2, stopM: 3, waypoint: 4 } };
 
-      expect(routineSitesOfFile('/test/Onar.d', file.semanticModel!, layouts)).toEqual([{
-        routine: 'RTN_START_900',
-        stateName: 'TA_SIT_THRONE',
-        startMinute: 7 * 60,
-        endMinute: 21 * 60 + 30,
-        waypoint: 'NW_THRONE',
-        filePath: '/test/Onar.d',
-        line: 3
-      }]);
-      expect(routineSitesOfFile('/test/Onar.d', file.semanticModel!, {})).toEqual([]);
+      expect(indexFile('/test/Onar.d', model, layouts)).toEqual({
+        routineSites: [{
+          routine: 'RTN_START_900',
+          stateName: 'TA_SIT_THRONE',
+          startMinute: 7 * 60,
+          endMinute: 21 * 60 + 30,
+          waypoint: 'NW_THRONE',
+          filePath: '/test/Onar.d',
+          line: 9
+        }],
+        spawnSites: [{
+          instance: 'BAU_900_ONAR', spawnPoint: 'NW_FARM', filePath: '/test/Onar.d', functionName: 'B_Kapitel3', line: 14
+        }],
+        exchangeSites: [{
+          target: 'BAU_900_ONAR', state: 'TOT', filePath: '/test/Onar.d', functionName: 'B_KAPITEL3', line: 15
+        }],
+        instances: [{ name: 'BAU_900_Onar', parent: 'Npc_Default', npcId: 900, dailyRoutine: 'Rtn_Start_900' }],
+      });
+      expect(indexFile('/test/Onar.d', model, {}).routineSites).toEqual([]);
+    });
+
+    // The load reads sites off clean parses only; a file broken mid-edit must
+    // not keep entries the load would not have, but its NPCs stay declared.
+    it('reads no sites off a file that does not parse, but keeps its instances', async () => {
+      const { indexFile } = await load();
+
+      const call = (functionName: string, raws: string[]) => ({
+        functionName,
+        args: raws.map((raw) => ({ raw, isString: raw.startsWith('"'), value: raw.replace(/"/g, '') })),
+        position: { startLine: 3 },
+      });
+      const model = {
+        hasErrors: true,
+        errors: [{ type: 'syntax_error', message: 'x' }],
+        dialogs: {},
+        instances: { BAU_900_Onar: { name: 'BAU_900_Onar', parent: 'Npc_Default', npcId: 900 } },
+        functions: {
+          Rtn_Start_900: {
+            name: 'Rtn_Start_900',
+            callSites: [
+              call('TA_MIN', ['self', '7', '0', '21', '0', 'ZS', '"WP"']),
+              call('Wld_InsertNpc', ['BAU_900_Onar', '"WP"']),
+            ],
+          },
+        },
+      } as any;
+      const layouts = { TA_MIN: { startH: 1, startM: 2, stopH: 3, stopM: 4, waypoint: 6 } };
+
+      expect(indexFile('/test/Onar.d', model, layouts)).toEqual({
+        routineSites: [], spawnSites: [], exchangeSites: [],
+        instances: [{ name: 'BAU_900_Onar', parent: 'Npc_Default', npcId: 900 }],
+      });
     });
 
     // `TA` is the hour-only external: its waypoint sits at argument 4, not 6,
@@ -1424,12 +1507,14 @@ INSTANCE ItMi_Gold (C_Item)
   describe('routine state extraction (semanticMetadataUtils)', () => {
     const load = () => import('../src/main/utils/semanticMetadataUtils');
 
-    /** The two-argument call, with the sites the caller in ProjectService has. */
-    const statesOf = (
-      extractStates: any,
-      extractSites: any,
-      fileModels: Array<{ filePath: string; semanticModel: any }>
-    ) => extractStates(fileModels, extractSites(fileModels));
+    /** The shared rule, fed the way ProjectService feeds it. */
+    const statesOf = async (fileModels: Array<{ filePath: string; semanticModel: any }>) => {
+      const { extractNpcIds, extractRoutinesByNpc, extractRoutineSites } = await load();
+      const { routineStatesOf } = await import('../src/shared/routineStates');
+      return routineStatesOf(
+        extractNpcIds(fileModels), extractRoutinesByNpc(fileModels), extractRoutineSites(fileModels)
+      );
+    };
 
     const models = async (files: Array<[string, string]>) => {
       const { extractFileMetadataFromSource } = await load();
@@ -1440,8 +1525,6 @@ INSTANCE ItMi_Gold (C_Item)
     };
 
     it('groups RTN_<state>_<id> variants under the NPC whose id they carry', async () => {
-      const { extractRoutineStatesByNpc, extractRoutineSites } = await load();
-
       const fileModels = await models([
         ['/test/Diego.d', `INSTANCE SLD_200_Diego (Npc_Default)
 {
@@ -1465,9 +1548,7 @@ FUNC VOID Rtn_Kapitel3_200()
 };`]
       ]);
 
-      expect(
-        extractRoutineStatesByNpc(fileModels, extractRoutineSites(fileModels))
-      ).toEqual({
+      expect(await statesOf(fileModels)).toEqual({
         SLD_200_DIEGO: {
           id: 200,
           states: { TOT: 'RTN_TOT_200', KAPITEL3: 'RTN_KAPITEL3_200' }
@@ -1479,9 +1560,7 @@ FUNC VOID Rtn_Kapitel3_200()
     // a digit survives. Guessing where the state name ended would cut
     // `ADDON_TOT` at the underscore.
     it('splits on the id, so an underscored state name survives whole', async () => {
-      const { extractRoutineStatesByNpc, extractRoutineSites } = await load();
-
-      const states = statesOf(extractRoutineStatesByNpc, extractRoutineSites, await models([
+      const states = await statesOf(await models([
         ['/test/Addon.d', `INSTANCE BAU_4300_Cavalorn (Npc_Default)
 {
 	id = 4300;
@@ -1501,9 +1580,7 @@ FUNC VOID Rtn_Addon_Tot_4300()
     // from the name — it is excluded here so the picker's "Declared" default
     // and its state options never name the same thing twice.
     it('excludes the declared routine from the variants', async () => {
-      const { extractRoutineStatesByNpc, extractRoutineSites } = await load();
-
-      const states = statesOf(extractRoutineStatesByNpc, extractRoutineSites, await models([
+      const states = await statesOf(await models([
         ['/test/D.d', `INSTANCE VLK_500_Test (Npc_Default)
 {
 	id = 500;
@@ -1523,9 +1600,7 @@ FUNC VOID Rtn_Start_500()
     // without one there is nothing to split a name on, so the NPC simply has no
     // states. Excluded, never guessed — slice 5's rule.
     it('yields no states for an NPC whose id is not a literal', async () => {
-      const { extractRoutineStatesByNpc, extractRoutineSites } = await load();
-
-      const states = statesOf(extractRoutineStatesByNpc, extractRoutineSites, await models([
+      const states = await statesOf(await models([
         ['/test/NoId.d', `INSTANCE MOB_1_Nameless (Npc_Default)
 {
 	id = SOME_CONST;
@@ -1545,9 +1620,7 @@ FUNC VOID Rtn_Tot_1()
     // state worth offering: choosing it would empty the world with no
     // explanation. Only functions present in routineSites qualify.
     it('ignores a variant whose routine has no indexed entries', async () => {
-      const { extractRoutineStatesByNpc, extractRoutineSites } = await load();
-
-      const states = statesOf(extractRoutineStatesByNpc, extractRoutineSites, await models([
+      const states = await statesOf(await models([
         ['/test/Empty.d', `INSTANCE VLK_600_Test (Npc_Default)
 {
 	id = 600;

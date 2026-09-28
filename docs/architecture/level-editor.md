@@ -3431,14 +3431,26 @@ the split `quest/domain` and `problems/domain` keep), `duplicateSpawnRule`
 `routineLayouts` to rewrite a `TA_*` call in its own layout and `exchangeSites`
 to say which calls switch an NPC to a variant.
 
-**The routine sites are re-read per file after a routine save.** Everything
-here is otherwise as of the last project load. A save from the routine editor
-asks main for that file's sites (`project:routineSitesOfFile`, run through
-`routineSitesOfFile` with the renderer's `routineLayouts`, since the wrappers
-a routine calls live in another file) and replaces that file's entries in
-`routineSiteIndex`; a routine the editor creates is added to
-`routineNpcIndex`/`routineStateIndex` by `registerRoutine`. An external edit
-to a routine file still waits for the next load (#319).
+**A file's share of the index is re-read when it changes (#319).** A save from
+the routine editor, and a `.d` file changed, added or removed outside the
+editor (`useFileWatcher`), ask main for that file's share
+(`project:indexFile`, run through `indexFile` with the renderer's
+`routineLayouts`, since the wrappers a routine calls live in another file):
+its routine, spawn and exchange sites, off a clean parse only as at load, and
+the instances it declares. `projectStore.reindexFiles` replaces that file's
+entries in `routineSiteIndex`, `spawnSiteIndex` and `exchangeSiteIndex`,
+re-reads which NPCs it declares (the load's rule — parent C_NPC or a prototype
+reaching it, or a `daily_routine`) into `npcFileIndex`, `npcIdIndex` and
+`routineNpcIndex`, and derives `routineStateIndex` again over every file with
+`routineStatesOf` (`src/shared/routineStates.ts`, the rule main runs at load),
+since a variant may sit in another file than its NPC — which is why the index
+carries `npcIds`. A watcher batch is one read per unique path and one store
+update; a removed file is dropped without a read.
+
+What still waits for the next load: `routineLayouts` (a wrapper added since is
+not followed), `voiceIds`, `waypointSites`, `functions` and `parseErrors`; and
+an ordinary editor save, which the watcher suppresses as a self-write, so a
+spawn or exchange call written from the dialog editor is not indexed until then.
 
 #### The four derivation rules, and why each is what it is
 

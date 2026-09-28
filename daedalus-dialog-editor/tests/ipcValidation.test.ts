@@ -10,7 +10,7 @@ import {
   assertDialogName,
   assertParseSourcePayload,
   assertNpcApplyEditsRequest,
-  assertRoutineSitesOfFileRequest,
+  assertIndexFileRequest,
   assertOutputUnitLines,
   assertExternalUrl,
   assertSaveFileSettings,
@@ -2039,13 +2039,13 @@ describe('assertOutputUnitLines', () => {
   });
 });
 
-describe('assertRoutineSitesOfFileRequest', () => {
+describe('assertIndexFileRequest', () => {
   // The layouts cross from the renderer because a wrapper lives in another
   // file than the routine that calls it; each is a set of argument positions.
   const layout = { startH: 0, startM: 1, stopH: 2, stopM: 3, waypoint: 4 };
 
   it('accepts a path and layouts of non-negative integer positions', () => {
-    expect(() => assertRoutineSitesOfFileRequest({
+    expect(() => assertIndexFileRequest({
       filePath: '/p/Rtn.d',
       layouts: { TA_SIT: layout, TA: { startH: 1, stopH: 2, waypoint: 4 } },
     })).not.toThrow();
@@ -2060,6 +2060,6 @@ describe('assertRoutineSitesOfFileRequest', () => {
     ['a negative position', { filePath: '/p/Rtn.d', layouts: { TA_SIT: { ...layout, waypoint: -1 } } }],
     ['a fractional position', { filePath: '/p/Rtn.d', layouts: { TA_SIT: { ...layout, startM: 1.5 } } }],
   ])('refuses %s', (_label, request) => {
-    expect(() => assertRoutineSitesOfFileRequest(request)).toThrow(/project:routineSitesOfFile/);
+    expect(() => assertIndexFileRequest(request)).toThrow(/project:indexFile/);
   });
 });

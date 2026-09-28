@@ -231,6 +231,82 @@ describe('useFileWatcher — change event', () => {
   });
 });
 
+// #319: the site indexes were built at load and never touched again, so an
+// edit outside the editor left the routine editor, the World surface's spawn
+// and time layers and the Problems rules on the project as it opened.
+describe('useFileWatcher — re-indexes routines, spawns and NPCs', () => {
+  const siteIn = (filePath: string) => ({
+    routine: 'RTN_START_900', stateName: 'TA_SIT', startMinute: 60, endMinute: 120, waypoint: 'WP', filePath, line: 3,
+  });
+  const spawnIn = (filePath: string) => ({
+    instance: 'BAU_900_ONAR', spawnPoint: 'WP', filePath, functionName: 'STARTUP', line: 1,
+  });
+  const mockIndexFile = jest.spyOn(window.editorAPI, 'indexFile');
+
+  beforeEach(() => {
+    mockIndexFile.mockReset().mockImplementation(async (filePath: string) => ({
+      routineSites: [siteIn(filePath)], spawnSites: [], exchangeSites: [],
+      instances: [{ name: 'BAU_900_Onar', parent: 'C_NPC', npcId: 900, dailyRoutine: 'Rtn_Start_900' }],
+    }));
+    useProjectStore.setState({
+      npcFileIndex: {}, npcIdIndex: {}, routineNpcIndex: {}, routineStateIndex: {},
+      routineLayoutIndex: {}, routineSiteIndex: [], spawnSiteIndex: [], exchangeSiteIndex: [],
+    });
+  });
+
+  test('an external change to a background file re-reads its share of the index', async () => {
+    const { unmount } = await setupHook();
+    await emitFileChange({ type: 'change', filePath: FILE_B });
+
+    expect(mockIndexFile).toHaveBeenCalledWith(FILE_B, {});
+    const state = useProjectStore.getState();
+    expect(state.routineSiteIndex).toEqual([siteIn(FILE_B)]);
+    expect(state.npcFileIndex).toEqual({ BAU_900_ONAR: FILE_B });
+    expect(state.routineNpcIndex).toEqual({ BAU_900_ONAR: 'RTN_START_900' });
+    unmount();
+  });
+
+  // The index is the disk's: an open file reloads or goes into conflict, but
+  // what the scripts on disk now say is re-read either way.
+  test('an external change to an open file re-reads its share of the index too', async () => {
+    useFileStore.setState({
+      openFiles: new Map([[FILE_A, { filePath: FILE_A, semanticModel: PARSED_MODEL as any, isDirty: false, lastSaved: new Date() }]]),
+    });
+    const { unmount } = await setupHook();
+    await emitFileChange({ type: 'change', filePath: FILE_A });
+
+    expect(mockIndexFile).toHaveBeenCalledWith(FILE_A, {});
+    expect(useProjectStore.getState().routineSiteIndex).toEqual([siteIn(FILE_A)]);
+    unmount();
+  });
+
+  test('a new file is indexed', async () => {
+    const { unmount } = await setupHook();
+    await emitFileChange({ type: 'add', filePath: FILE_B });
+
+    expect(mockIndexFile).toHaveBeenCalledWith(FILE_B, {});
+    expect(useProjectStore.getState().routineSiteIndex).toEqual([siteIn(FILE_B)]);
+    unmount();
+  });
+
+  test("a removed file's entries are dropped", async () => {
+    useProjectStore.setState({
+      npcFileIndex: { BAU_900_ONAR: FILE_B },
+      routineSiteIndex: [siteIn(FILE_A), siteIn(FILE_B)],
+      spawnSiteIndex: [spawnIn(FILE_B)],
+    });
+    const { unmount } = await setupHook();
+    await emitFileChange({ type: 'unlink', filePath: FILE_B });
+
+    const state = useProjectStore.getState();
+    expect(mockIndexFile).not.toHaveBeenCalled();
+    expect(state.npcFileIndex).toEqual({});
+    expect(state.routineSiteIndex).toEqual([siteIn(FILE_A)]);
+    expect(state.spawnSiteIndex).toEqual([]);
+    unmount();
+  });
+});
+
 describe('useFileWatcher — add event', () => {
   test('registers the new file in allDialogFiles', async () => {
     const { unmount } = await setupHook();

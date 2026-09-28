@@ -60,7 +60,7 @@ export async function saveRoutine(filePath: string, routine: string, entries: re
     const firstError = result.validationResult?.errors?.[0]?.message;
     throw new Error(firstError ? `Save refused: ${firstError}` : 'Save failed');
   }
-  await useProjectStore.getState().reindexRoutineSites(filePath);
+  await useProjectStore.getState().reindexFiles([filePath]);
 }
 
 /** The engine's name for an NPC's routine under a state (architecture §8):
@@ -117,7 +117,7 @@ export async function createRoutine(npc: string, state: string | null, entries: 
     const firstError = result.validationResult?.errors?.[0]?.message;
     throw new Error(firstError ? `Save refused: ${firstError}` : 'Save failed');
   }
-  await useProjectStore.getState().reindexRoutineSites(filePath);
+  await useProjectStore.getState().reindexFiles([filePath]);
   useProjectStore.getState().registerRoutine(npc, name, state, instance.npcId);
   return name.toUpperCase();
 }

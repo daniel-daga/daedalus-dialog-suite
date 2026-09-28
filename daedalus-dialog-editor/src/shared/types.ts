@@ -109,6 +109,19 @@ export interface ExchangeSite {
   line: number;
 }
 
+/**
+ * One file's share of the project index, read again when that file is saved
+ * by the routine editor or changed outside the editor (#319). The sites are
+ * read off a clean parse only, as the load reads them; `instances` is every
+ * instance the file declares, and the renderer decides which are NPCs.
+ */
+export interface FileIndex {
+  routineSites: RoutineSite[];
+  spawnSites: SpawnSite[];
+  exchangeSites: ExchangeSite[];
+  instances: Array<{ name: string; parent: string; npcId?: number; dailyRoutine?: string }>;
+}
+
 export interface ProjectIndex {
   npcs: string[];
   dialogsByNpc: Map<string, DialogMetadata[]>;
@@ -163,15 +176,16 @@ export interface ProjectIndex {
   /**
    * Static NPC/item spawns: every `Wld_InsertNpc`/`Wld_InsertItem` call whose
    * instance and spawn point are both literals. Dynamic sites are excluded
-   * rather than guessed. Built at project load/reindex time, same as voiceIds.
+   * rather than guessed. Built at project load, and re-read per file when one
+   * changes (`FileIndex`).
    */
   spawnSites: SpawnSite[];
   /**
    * Every `TA`-family entry of every routine function, with its time window and
    * waypoint. Deliberately keyed by the *routine function*, not by the NPC: a
    * routine is shared (retail's generic guards all run one), and which NPC runs
-   * which is `routinesByNpc`. Built at project load/reindex time, same as
-   * voiceIds.
+   * which is `routinesByNpc`. Built at project load, and re-read per file when
+   * one changes (`FileIndex`).
    */
   routineSites: RoutineSite[];
   /**
@@ -193,6 +207,12 @@ export interface ProjectIndex {
    * `daily_routine`, which stays `routinesByNpc`'s answer.
    */
   routineStatesByNpc: Record<string, { id: number; states: Record<string, string> }>;
+  /**
+   * UPPERCASED NPC instance (one `npcFiles` has) to its literal `id` — what
+   * `routineStatesByNpc` splits on, kept so the renderer can derive it again
+   * when a file changes, since a variant may sit in another file than its NPC.
+   */
+  npcIds: Record<string, number>;
   /**
    * UPPERCASED routine-carrying function (`TA`, `TA_MIN` and every project
    * wrapper that passes its parameters into one) to where its window and

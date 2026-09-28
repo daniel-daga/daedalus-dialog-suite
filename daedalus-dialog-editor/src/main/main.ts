@@ -13,7 +13,7 @@ import {
   assertDialogName,
   assertParseSourcePayload,
   assertNpcApplyEditsRequest,
-  assertRoutineSitesOfFileRequest,
+  assertIndexFileRequest,
   assertOpenWorldRequest,
   assertTextureRequest,
   assertVisualRequest,
@@ -35,7 +35,7 @@ import {
   assertOutputUnitLines,
 } from './ipcValidation';
 import { appendInsertNpcFlow } from './services/AppendInsertNpcFlow';
-import { routineSitesOfFile } from './utils/semanticMetadataUtils';
+import { indexFile } from './utils/semanticMetadataUtils';
 import { findInstallShaped, ProjectConfigService } from './services/ProjectConfigService';
 import { runGmbtCompile, startGmbtQuickTest } from './services/GmbtService';
 import { readGmbtDefaultWorld } from './services/gmbtProject';
@@ -689,23 +689,24 @@ export function setupIpcHandlers() {
     }
   });
 
-  // A routine save's re-index (docs/plans/npc-editor.md §6): the saved file's
-  // routine sites, read the way the index build reads them, with the layouts
-  // it derived — the wrappers live in another file than the routine.
-  ipcMain.handle('project:routineSitesOfFile', async (_event, request: unknown) => {
+  // One file's share of the index, after a routine save or an edit outside
+  // the editor (docs/plans/npc-editor.md §6, #319): read the way the index
+  // build reads it, with the layouts it derived — the wrappers live in another
+  // file than the routine.
+  ipcMain.handle('project:indexFile', async (_event, request: unknown) => {
     try {
-      assertRoutineSitesOfFileRequest(request);
+      assertIndexFileRequest(request);
       await pathValidator.validatePathResolved(request.filePath);
       const content = await fileService.readFile(request.filePath);
       const model = await parserService.parseSource(content);
-      return routineSitesOfFile(request.filePath, model, request.layouts);
+      return indexFile(request.filePath, model, request.layouts);
     } catch (error) {
       if (error instanceof PathValidationError) {
-        console.error('[IPC] project:routineSitesOfFile - Path validation failed:', error.message);
+        console.error('[IPC] project:indexFile - Path validation failed:', error.message);
         throw new Error(error.message);
       }
-      console.error('[IPC] project:routineSitesOfFile error:', error);
-      throw new Error(`Failed to index routines: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error('[IPC] project:indexFile error:', error);
+      throw new Error(`Failed to index file: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   });
 

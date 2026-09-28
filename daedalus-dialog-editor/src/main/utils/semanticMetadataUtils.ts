@@ -1,5 +1,5 @@
 import type {
-  DialogMetadata, FileParseErrors, RoutineArgIndex, RoutineSite, SemanticModel, SpawnSite
+  DialogMetadata, FileIndex, FileParseErrors, RoutineArgIndex, RoutineSite, SemanticModel, SpawnSite
 } from '../../shared/types';
 import { PARSE_ERROR_LIMIT, PARSE_ERROR_TEXT_LIMIT } from '../../shared/types';
 import { SemanticModelBuilderVisitor } from 'daedalus-parser/semantic-visitor';
@@ -452,19 +452,31 @@ export function extractRoutineSites(
 }
 
 /**
- * One file's routine sites, read with layouts the whole-project index already
- * derived (`ProjectIndex.routineLayouts`, UPPERCASED keys) — what a routine
- * save re-indexes, since the wrappers its file calls are declared elsewhere.
+ * One file's share of the project index (#319), its routine sites read with
+ * layouts the whole-project index already derived (`ProjectIndex.routineLayouts`,
+ * UPPERCASED keys), since the wrappers a file calls are declared elsewhere.
+ * A file that does not parse clean yields no sites, as at load.
  */
-export function routineSitesOfFile(
+export function indexFile(
   filePath: string,
   semanticModel: SemanticModel,
   layouts: Record<string, RoutineArgIndex>
-): RoutineSite[] {
+): FileIndex {
   const argIndex = Object.fromEntries(
     Object.entries(layouts).map(([callee, layout]) => [callee.toLowerCase(), layout])
   );
-  return extractRoutineSites([{ filePath, semanticModel }], argIndex);
+  const fileModels = semanticModel.hasErrors ? [] : [{ filePath, semanticModel }];
+  return {
+    routineSites: extractRoutineSites(fileModels, argIndex),
+    spawnSites: extractSpawnSites(fileModels),
+    exchangeSites: extractExchangeSites(fileModels),
+    instances: Object.values(semanticModel.instances || {}).map(({ name, parent, npcId, dailyRoutine }) => ({
+      name,
+      parent,
+      ...(npcId === undefined ? {} : { npcId }),
+      ...(dailyRoutine ? { dailyRoutine } : {}),
+    })),
+  };
 }
 
 /**
@@ -496,63 +508,20 @@ export function extractRoutinesByNpc(
 }
 
 /**
- * The routine variants quest state swaps in, keyed by NPC (level-editor.md
- * §16.19 slice 11).
- *
- * **The grouping rule is the engine's, not an observed naming style.**
- * `Npc_ExchangeRoutine(npc, "X")` makes the engine run `RTN_X_<id>`, where
- * `id` is the C_NPC instance's own `id` field — so a variant is found by
- * stripping `RTN_` from the front of an indexed routine function and the NPC's
- * id from the back, and what is left is the state name. Splitting on the
- * *known* id rather than guessing where the state name ends is what keeps
- * `Rtn_Addon_Tot_4300` intact as `ADDON_TOT`.
- *
- * Variants are enumerated from the routine functions the index already read,
- * never from the exchange call sites: an exchange reaching a state through a
- * variable would be missed, and a variant nothing triggers is still a day the
- * scripts describe — which is what a lens is for. Two exclusions, both the
- * "excluded, never guessed" rule of slice 5: an NPC whose `id` is not a
- * literal has nothing to split on and gets no states, and a routine with no
- * entries the index could read is not offered, because choosing it would empty
- * the world with no explanation.
- *
- * The declared `daily_routine` is excluded — it is `routinesByNpc`'s answer,
- * and the picker's *Declared* default must not also appear as a state.
+ * UPPERCASED instance to its literal `id` — what the engine's `RTN_<state>_<id>`
+ * rule splits on (`routineStatesOf`). An `id` that is not a literal is absent:
+ * excluded, never guessed.
  */
-export function extractRoutineStatesByNpc(
-  fileModels: Array<{ semanticModel: SemanticModel }>,
-  routineSites: readonly RoutineSite[]
-): Record<string, { id: number; states: Record<string, string> }> {
-  // Only routines with entries the index could actually read qualify. Taken
-  // from the caller rather than recomputed: `extractRoutineSites` runs the
-  // wrapper fixed-point sweep over every function of every file, and the one
-  // caller in the project has already paid for it.
-  const indexedRoutines = new Set(routineSites.map((site) => site.routine));
-
-  const byNpc: Record<string, { id: number; states: Record<string, string> }> = {};
-
+export function extractNpcIds(
+  fileModels: Array<{ semanticModel: SemanticModel }>
+): Record<string, number> {
+  const ids: Record<string, number> = {};
   for (const { semanticModel } of fileModels) {
     for (const instance of Object.values(semanticModel.instances || {})) {
-      if (!instance.name || instance.npcId === undefined) continue;
-
-      const suffix = `_${instance.npcId}`;
-      const declared = instance.dailyRoutine?.toUpperCase();
-      const states: Record<string, string> = {};
-
-      for (const routine of indexedRoutines) {
-        if (routine === declared) continue;
-        if (!routine.startsWith('RTN_') || !routine.endsWith(suffix)) continue;
-        const state = routine.slice('RTN_'.length, routine.length - suffix.length);
-        if (state) states[state] = routine;
-      }
-
-      if (Object.keys(states).length > 0) {
-        byNpc[instance.name.toUpperCase()] = { id: instance.npcId, states };
-      }
+      if (instance.name && instance.npcId !== undefined) ids[instance.name.toUpperCase()] = instance.npcId;
     }
   }
-
-  return byNpc;
+  return ids;
 }
 
 const EXCHANGE_EXTERNAL_NAMES = new Set(['npc_exchangeroutine', 'b_startotherroutine']);
@@ -560,7 +529,7 @@ const EXCHANGE_EXTERNAL_NAMES = new Set(['npc_exchangeroutine', 'b_startotherrou
 /**
  * Every `Npc_ExchangeRoutine` / `B_StartOtherRoutine` call whose state name is
  * a string literal — which states the scripts actually *trigger*, as against
- * the states `extractRoutineStatesByNpc` finds written.
+ * the states `routineStatesOf` finds written.
  *
  * **Deliberately not consumed by the picker.** It is the ground truth the
  * slice 11 measurement compares variants against, and later the "what triggers

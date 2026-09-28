@@ -183,6 +183,10 @@ async function flushChangedFiles(): Promise<void> {
   if (updates.length > 0) {
     useProjectStore.getState().updateFileModels(updates);
   }
+
+  // The site indexes are the disk's, so every changed file is re-read —
+  // an open one too, whether it reloaded or went into conflict (#319).
+  await useProjectStore.getState().reindexFiles(paths);
 }
 
 /**
@@ -203,6 +207,7 @@ export async function handleFileAdded(
     injectFilePathIntoSymbols(semanticModel, filePath);
 
     projectStore.updateFileModel(filePath, semanticModel);
+    await projectStore.reindexFiles([filePath]);
 
     // If the file contains dialog metadata, add it to the dialog index
     if (semanticModel.dialogs) {
@@ -284,6 +289,8 @@ function handleFileRemoved(
       fileStore.closeFile(filePath);
     }
   }
+
+  projectStore.dropFileFromIndex(filePath);
 
   // Remove from project cache — clearing the cache entry is sufficient
   // since the project index will be rebuilt on next full reload

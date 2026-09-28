@@ -159,8 +159,8 @@ surface's insert already does that, and it needs a waypoint.
 - **Jumps from the routines section.** It lists (read-only, built
   2026-09-25) the declared routine and each state variant with their time
   windows and waypoints, from `routineSiteIndex`/`routineNpcIndex`/
-  `routineStateIndex` via `npc/npcRoutines.ts` — as of the last project load,
-  so a routine edited since is stale until reindex. **Each entry's waypoint now
+  `routineStateIndex` via `npc/npcRoutines.ts` — re-read per file after a
+  routine save or an edit outside the editor (#319, architecture §8). **Each entry's waypoint now
   jumps to the World surface (2026-09-26)**, with the insert-NPC button's
   reasons when it cannot (`waypointJumpReason` in `components/npcWorldJump.ts`,
   shared by both), and is held while the form has unsaved changes, since the

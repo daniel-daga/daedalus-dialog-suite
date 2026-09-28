@@ -161,6 +161,44 @@ describe('useFileWatcher — change batching', () => {
     unmount();
   });
 
+  // #319: the batch is re-indexed the way it is re-parsed — once per unique
+  // path, and applied to the site indexes in one update, not one per file.
+  test('N change events in one window: one index read per unique path, one site-index update', async () => {
+    const indexFile = jest.spyOn(window.editorAPI, 'indexFile').mockImplementation(async (filePath: string) => ({
+      routineSites: [{ routine: 'RTN_X', startMinute: 0, endMinute: 60, waypoint: 'WP', filePath, line: 1 }],
+      spawnSites: [], exchangeSites: [], instances: [],
+    }));
+    useProjectStore.setState({ routineSiteIndex: [] });
+    const { unmount } = await setupHook();
+
+    let siteIndexChanges = 0;
+    let lastSeen = useProjectStore.getState().routineSiteIndex;
+    const unsubscribe = useProjectStore.subscribe((state) => {
+      if (state.routineSiteIndex !== lastSeen) {
+        siteIndexChanges += 1;
+        lastSeen = state.routineSiteIndex;
+      }
+    });
+
+    emit({ type: 'change', filePath: FILE_A });
+    emit({ type: 'change', filePath: FILE_B });
+    emit({ type: 'change', filePath: FILE_A });
+    emit({ type: 'change', filePath: FILE_C });
+
+    await act(async () => {
+      await waitFor(
+        () => expect(useProjectStore.getState().routineSiteIndex).toHaveLength(3),
+        { timeout: 2000 }
+      );
+    });
+    unsubscribe();
+
+    expect(indexFile).toHaveBeenCalledTimes(3);
+    expect(siteIndexChanges).toBe(1);
+    indexFile.mockRestore();
+    unmount();
+  });
+
   test('a batch touching the selected NPC re-merges exactly once', async () => {
     useProjectStore.setState({ selectedNpc: 'TestNPC' });
     const { unmount } = await setupHook();

@@ -11,7 +11,8 @@
 import { create } from 'zustand';
 import { enableMapSet } from 'immer';
 import type { DialogMetadata, SemanticModel } from '../types/global';
-import type { ExchangeSite, FileParseErrors, ProjectIndex, ProjectOutputUnits, RoutineArgIndex, RoutineSite, SpawnSite } from '../../shared/types';
+import type { ExchangeSite, FileIndex, FileParseErrors, ProjectIndex, ProjectOutputUnits, RoutineArgIndex, RoutineSite, SpawnSite } from '../../shared/types';
+import { routineStatesOf } from '../../shared/routineStates';
 import type { GothicProjectFileV1, ProjectConfigWarning } from '../../shared/projectConfigTypes';
 import { getQuestUsage } from '../utils/questAnalyzer';
 import { deserialiseIpcMap } from '../utils/ipcSerialisation';
@@ -86,7 +87,7 @@ interface ProjectState {
   // What of the NPC set the opened folder could see (#281); null outside a project
   npcCoverage: ProjectIndex['npcCoverage'] | null;
   // UPPERCASED NPC instance → the file declaring it; what the NPC editor opens.
-  // Same lifecycle as npcPrototypes.
+  // Built at project load, and re-read per file when one changes (reindexFiles).
   npcFileIndex: Record<string, string>;
   // AI_Output voice ids across the project, keyed by UPPERCASED id (built at
   // project load/reindex time — can be stale until the next reindex)
@@ -95,7 +96,7 @@ interface ProjectState {
   // at project load/reindex time, same lifecycle as voiceIdIndex)
   waypointSiteIndex: Record<string, Array<{ filePath: string; functionName: string }>>;
   // Static NPC/item spawn sites across the project, same lifecycle as
-  // waypointSiteIndex; dynamic sites are excluded rather than guessed
+  // npcFileIndex; dynamic sites are excluded rather than guessed
   spawnSiteIndex: SpawnSite[];
   // Every TA-family routine entry across the project, keyed by routine function
   // rather than by NPC, with routineNpcIndex carrying which NPC runs which.
@@ -105,11 +106,14 @@ interface ProjectState {
   // The routine variants quest state swaps in, keyed by UPPERCASED NPC. Read by
   // the World surface's State lens; same lifecycle as routineSiteIndex.
   routineStateIndex: Record<string, { id: number; states: Record<string, string> }>;
+  // UPPERCASED NPC → literal `id`, what routineStateIndex is derived again
+  // from when a file changes. Same lifecycle as npcFileIndex.
+  npcIdIndex: Record<string, number>;
   // Where each routine-carrying call keeps its window and waypoint, keyed by
-  // UPPERCASED callee. Read by routine authoring; same lifecycle as the above.
+  // UPPERCASED callee. Read by routine authoring; built at project load only.
   routineLayoutIndex: Record<string, RoutineArgIndex>;
   // Literal-state `Npc_ExchangeRoutine`/`B_StartOtherRoutine` calls — where a
-  // routine variant is switched to. Same lifecycle as the above.
+  // routine variant is switched to. Same lifecycle as spawnSiteIndex.
   exchangeSiteIndex: ExchangeSite[];
   // Files whose metadata extraction failed during the index build (degraded but openable)
   metadataFailures: Array<{ filePath: string; error: string }>;
@@ -224,9 +228,13 @@ interface ProjectActions {
 
   // Update a cached semantic model for a file
   updateFileModel: (filePath: string, model: SemanticModel) => void;
-  /** Re-read one saved file's routine sites in main and replace that file's
-   *  entries in `routineSiteIndex` (npc-editor.md §6). */
-  reindexRoutineSites: (filePath: string) => Promise<void>;
+  /** Re-read each file's share of the index in main — its routine, spawn and
+   *  exchange sites and the NPCs it declares — and replace that file's entries
+   *  in one update (npc-editor.md §6, #319). A file main cannot read keeps
+   *  what it had. */
+  reindexFiles: (filePaths: readonly string[]) => Promise<void>;
+  /** Forget a removed file's share of the index (#319). */
+  dropFileFromIndex: (filePath: string) => void;
   /** A routine the editor just created: the NPC's declared one (`state` null)
    *  or a variant under `state`. UPPERCASED as the index is. */
   registerRoutine: (npc: string, routine: string, state: string | null, id: number) => void;
@@ -241,7 +249,7 @@ interface ProjectActions {
   // the next reindex rebuilds both from disk
   addNpcToIndex: (npc: string, filePath: string) => void;
   // A spawn the World surface just wrote (level-editor.md §16.19, slice 16 E):
-  // the index is built at project load and never refreshed by a file update.
+  // the watcher suppresses the editor's own writes, so nothing re-reads the file.
   addSpawnSite: (site: SpawnSite) => void;
 
   // Register a newly created project file path
@@ -252,6 +260,62 @@ interface ProjectActions {
 }
 
 type ProjectStore = ProjectState & ProjectActions;
+
+const REINDEX_CONCURRENCY = 8;
+
+const EMPTY_FILE_INDEX: FileIndex = { routineSites: [], spawnSites: [], exchangeSites: [], instances: [] };
+
+type FileIndexedState = Pick<ProjectState,
+  'npcList' | 'npcPrototypes' | 'npcFileIndex' | 'npcIdIndex' | 'routineNpcIndex'
+  | 'routineSiteIndex' | 'spawnSiteIndex' | 'exchangeSiteIndex'>;
+
+/**
+ * Replace each file's share of the index with `files` (#319). An instance is an
+ * NPC by the load's rule — its parent is C_NPC or a prototype reaching it, or it
+ * sets `daily_routine` — and the variants are derived again over every file,
+ * since a variant may sit in another file than its NPC.
+ */
+function withFileIndexes(state: FileIndexedState, files: ReadonlyMap<string, FileIndex>): Partial<ProjectState> {
+  const elsewhere = (entry: { filePath: string }) => !files.has(entry.filePath);
+  const declaredThere = new Set(Object.keys(state.npcFileIndex).filter((npc) => files.has(state.npcFileIndex[npc])));
+  const kept = <T>(record: Record<string, T>): Record<string, T> =>
+    Object.fromEntries(Object.entries(record).filter(([npc]) => !declaredThere.has(npc)));
+
+  const npcFileIndex = kept(state.npcFileIndex);
+  const npcIdIndex = kept(state.npcIdIndex);
+  const routineNpcIndex = kept(state.routineNpcIndex);
+  const npcPrototypes = new Set(state.npcPrototypes);
+  const listed = new Set(state.npcList.map((npc) => npc.toUpperCase()));
+  const added: string[] = [];
+
+  for (const [filePath, file] of files) {
+    for (const instance of file.instances) {
+      const parent = instance.parent.trim().toUpperCase();
+      if (parent !== 'C_NPC' && !npcPrototypes.has(parent) && !instance.dailyRoutine) continue;
+      const key = instance.name.toUpperCase();
+      npcFileIndex[key] = filePath;
+      if (instance.npcId !== undefined) npcIdIndex[key] = instance.npcId;
+      if (instance.dailyRoutine) routineNpcIndex[key] = instance.dailyRoutine.toUpperCase();
+      if (!listed.has(key)) {
+        listed.add(key);
+        added.push(instance.name);
+      }
+    }
+  }
+
+  const read = [...files.values()];
+  const routineSiteIndex = [...state.routineSiteIndex.filter(elsewhere), ...read.flatMap((file) => file.routineSites)];
+  return {
+    npcFileIndex,
+    npcIdIndex,
+    routineNpcIndex,
+    npcList: added.length === 0 ? state.npcList : [...state.npcList, ...added].sort((a, b) => a.localeCompare(b)),
+    routineSiteIndex,
+    spawnSiteIndex: [...state.spawnSiteIndex.filter(elsewhere), ...read.flatMap((file) => file.spawnSites)],
+    exchangeSiteIndex: [...state.exchangeSiteIndex.filter(elsewhere), ...read.flatMap((file) => file.exchangeSites)],
+    routineStateIndex: routineStatesOf(npcIdIndex, routineNpcIndex, routineSiteIndex),
+  };
+}
 
 // Categories merged by mergeSemanticModels (mirrors the historical set — does
 // not include classes/prototypes/declarationOrder/trailingComments).
@@ -495,6 +559,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   routineSiteIndex: [],
   routineNpcIndex: {},
   routineStateIndex: {},
+  npcIdIndex: {},
   routineLayoutIndex: {},
   exchangeSiteIndex: [],
   metadataFailures: [],
@@ -562,6 +627,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         routineSiteIndex: rawIndex.routineSites || [],
         routineNpcIndex: rawIndex.routinesByNpc || {},
         routineStateIndex: rawIndex.routineStatesByNpc || {},
+        npcIdIndex: rawIndex.npcIds || {},
         routineLayoutIndex: rawIndex.routineLayouts || {},
         exchangeSiteIndex: rawIndex.exchangeSites || [],
         metadataFailures: rawIndex.metadataFailures || [],
@@ -824,6 +890,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       routineSiteIndex: [],
       routineNpcIndex: {},
       routineStateIndex: {},
+      npcIdIndex: {},
       routineLayoutIndex: {},
       exchangeSiteIndex: [],
       metadataFailures: [],
@@ -1222,11 +1289,27 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     }));
   },
 
-  reindexRoutineSites: async (filePath: string) => {
-    const sites = await window.editorAPI.routineSitesOfFile(filePath, get().routineLayoutIndex);
-    set((state) => ({
-      routineSiteIndex: [...state.routineSiteIndex.filter((site) => site.filePath !== filePath), ...sites],
-    }));
+  reindexFiles: async (filePaths) => {
+    const { projectPath, routineLayoutIndex: layouts } = get();
+    const files = new Map<string, FileIndex>();
+    let next = 0;
+    const readNext = async (): Promise<void> => {
+      while (next < filePaths.length) {
+        const filePath = filePaths[next++];
+        try {
+          files.set(filePath, await window.editorAPI.indexFile(filePath, layouts));
+        } catch (err) {
+          console.error('[projectStore] Failed to re-index file:', filePath, err);
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(REINDEX_CONCURRENCY, filePaths.length) }, readNext));
+    // A read that lands after the project closed or changed belongs to no index.
+    if (files.size > 0 && get().projectPath === projectPath) set((state) => withFileIndexes(state, files));
+  },
+
+  dropFileFromIndex: (filePath) => {
+    set((state) => withFileIndexes(state, new Map([[filePath, EMPTY_FILE_INDEX]])));
   },
 
   updateFileModel: (filePath: string, model: SemanticModel) => {

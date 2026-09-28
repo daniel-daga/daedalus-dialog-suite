@@ -19,11 +19,12 @@ import {
   extractExchangeSites,
   extractRoutineSites,
   buildRoutineParamIndex,
-  extractRoutineStatesByNpc,
+  extractNpcIds,
   extractRoutinesByNpc,
   extractSpawnSites,
   extractWaypointSites
 } from '../utils/semanticMetadataUtils';
+import { routineStatesOf } from '../../shared/routineStates';
 import { MetadataWorkerPool } from './MetadataWorkerPool';
 import type { MetadataResult } from './MetadataWorkerPool';
 import { LruMap } from '../utils/lruMap';
@@ -324,6 +325,13 @@ class ProjectService {
       })
     );
 
+    const routinesByNpc = extractRoutinesByNpc(fileModelsForSiteIndexes);
+    // NPCs only: the renderer forgets a changed file's ids by the NPCs
+    // `npcFiles` says it declares (#319).
+    const npcIds = Object.fromEntries(
+      Object.entries(extractNpcIds(fileModelsForSiteIndexes)).filter(([npc]) => npc in npcFiles)
+    );
+
     return {
       npcs,
       dialogsByNpc,
@@ -341,11 +349,12 @@ class ProjectService {
       waypointSites: extractWaypointSites(fileModelsForSiteIndexes),
       spawnSites: extractSpawnSites(fileModelsForSiteIndexes),
       routineSites,
-      routinesByNpc: extractRoutinesByNpc(fileModelsForSiteIndexes),
+      routinesByNpc,
       // The state index reuses the sites above rather than recomputing them:
       // extractRoutineSites runs the wrapper fixed-point sweep over every
       // function of every file, and once a load is enough.
-      routineStatesByNpc: extractRoutineStatesByNpc(fileModelsForSiteIndexes, routineSites),
+      routineStatesByNpc: routineStatesOf(npcIds, routinesByNpc, routineSites),
+      npcIds,
       exchangeSites: extractExchangeSites(fileModelsForSiteIndexes),
       routineLayouts,
       metadataFailures,

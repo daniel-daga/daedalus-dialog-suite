@@ -31,7 +31,7 @@ contextBridge.exposeInMainWorld('editorAPI', {
   openProjectFolderDialog: () => ipcRenderer.invoke('project:openFolderDialog'),
   buildProjectIndex: (folderPath: string) => ipcRenderer.invoke('project:buildIndex', folderPath),
   parseDialogFile: (filePath: string) => ipcRenderer.invoke('project:parseDialogFile', filePath),
-  routineSitesOfFile: (filePath: string, layouts: unknown) => ipcRenderer.invoke('project:routineSitesOfFile', { filePath, layouts }),
+  indexFile: (filePath: string, layouts: unknown) => ipcRenderer.invoke('project:indexFile', { filePath, layouts }),
   addAllowedPath: (folderPath: string) => ipcRenderer.invoke('project:addAllowedPath', folderPath),
   loadProjectConfig: (projectRoot: string) => ipcRenderer.invoke('project:loadConfig', projectRoot),
   readOutputUnits: () => ipcRenderer.invoke('project:readOutputUnits'),
