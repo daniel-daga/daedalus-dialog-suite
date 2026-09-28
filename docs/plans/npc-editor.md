@@ -405,7 +405,8 @@ adds:
    pixels like a waypoint. `world/RoutineOverlay.ts` draws the draft: a
    stop per activity in its row's colour (`routineColor`, in
    `routineDraft.ts` so the NPC editor's bundle does not pull in three.js;
-   a golden-angle hue per activity, so a 10+ activity day never repeats one),
+   a golden-ratio step per activity over every hue but red, which is
+   reserved for a gap, so a 10+ activity day never repeats one),
    the selected one marked, routes along the waynet between consecutive stops
    of the day, and a leg with no route as a dashed straight line. "Pick" on
    an activity arms the next waypoint click; `worldStore.savedWaypoints` —

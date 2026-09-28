@@ -21,13 +21,17 @@ import type { RoutineEntry } from './routineEntries';
  * the map, so the two read as the same thing. Here rather than beside either
  * view, so the editor's bundle does not pull in three.js.
  *
- * The hue steps by the golden angle rather than cycling a palette: a day runs
- * to 10+ activities (Daniel, 2026-09-28), a six-colour palette repeated within
- * it, and this never lands on a hue it has used while keeping neighbours
- * 137.5° apart. Deterministic, so a row and its stop always agree.
+ * Not a cycled palette: a day runs to 10+ activities (Daniel, 2026-09-28) and
+ * a six-colour one repeated within it. Each index takes the next step of the
+ * golden-ratio sequence, which never repeats and keeps neighbours well apart,
+ * spread over the hues **outside red** — red is reserved for the error state,
+ * a gap in the day. Deterministic, so a row and its stop always agree.
  */
+const FIRST_HUE = 25;
+const LAST_HUE = 335;
 export function routineColor(index: number): string {
-  const hue = (220 + index * 137.508) % 360;
+  const step = (0.6 + index * 0.618034) % 1;
+  const hue = FIRST_HUE + step * (LAST_HUE - FIRST_HUE);
   return `hsl(${hue.toFixed(1)}, 65%, 55%)`;
 }
 

@@ -130,6 +130,14 @@ describe('routineColor', () => {
     }
   });
 
+  it('never uses red, which is the gap\'s error colour', () => {
+    // Daniel, 2026-09-28: red is reserved for the error state.
+    for (let i = 0; i < 50; i++) {
+      const hue = hueOf(routineColor(i));
+      expect(hue >= 25 && hue <= 335).toBe(true);
+    }
+  });
+
   it('is the same colour for the same activity every time', () => {
     expect(routineColor(7)).toBe(routineColor(7));
   });

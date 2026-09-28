@@ -173,7 +173,7 @@ const RoutineTimeline: React.FC<TimelineProps> = ({ entries, selected, onSelect,
         sx={label === 'Gap'
           ? {
             position: 'absolute', left: percent(a), width: percent(b - a), top: 0, bottom: 0,
-            bgcolor: 'error.main', opacity: 0.6, pointerEvents: 'none',
+            bgcolor: 'error.main', pointerEvents: 'none',
           }
           : { position: 'absolute', left: percent(a), width: percent(b - a), bottom: 0, height: 5, bgcolor: 'warning.main' }}
       />
