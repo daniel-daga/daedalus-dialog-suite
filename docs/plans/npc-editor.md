@@ -1,6 +1,7 @@
 # NPC Editor
 
 **Status:** Phases 1–4 built (#284, #285, #298, #309). NPC bodies now render at world spawn and routine placements.
+Phase 5 (authoring routines) is proposed — decisions from the 2026-09-28 workshop.
 
 An editor for `C_NPC` instances inside the dialog editor, covering what the
 community's standalone *NPC Generator* covers (main info, attributes, protection,
@@ -264,9 +265,125 @@ be resolved, and the spawn marker remains visible beside each body. This closes
 the "NPC-Rendering im Viewport" item of
 `docs/plans/level-editor-design-brief.md`.
 
-## 6. Order and size
+## 6. Phase 5 — authoring routines
+
+**Proposed (workshop with Daniel, 2026-09-28).** Nothing below is built.
+
+Everything a routine editor reads already exists: `routineSites`,
+`routinesByNpc` and `routineStatesByNpc` in the project index, the World
+surface's time and state lens (`docs/architecture/level-editor.md`, "The time
+and state controls are a lens"), the `routine-overlap` Problems rule, the NPC
+editor's read-only routine list with its waypoint and source jumps, and NPC
+bodies at routine placements (Phase 4). What is missing is the write side:
+today a routine can only be read.
+
+A routine in retail is a function at the bottom of the NPC's own file:
+
+```daedalus
+FUNC VOID Rtn_Start_900 ()
+{
+	TA_Sit_Throne	(07,00,22,00,"NW_BIGFARM_HOUSE_ONAR_SIT");
+	TA_Sleep		(22,00,07,00,"NW_BIGFARM_HOUSE_UP1_04");
+};
+```
+
+### Decisions (Daniel, 2026-09-28)
+
+- **World first.** Routines are authored in a *routine mode* of the World
+  surface. An editable table in the NPC editor comes after, over the same
+  model.
+- **Existing waypoints only.** A stop is placed on a waypoint the waynet
+  already has; routine mode never creates one (the waynet tools do). So a
+  routine save touches one `.d` file and never the `.zen`, and there is no
+  two-file transaction to design.
+- **The daily routine and its variants.** `Rtn_Start_<id>` and every
+  `Rtn_<State>_<id>` variant, the variant chosen through the existing State
+  picker. Same model for both; a variant is just another routine function.
+- **Paths follow the waynet.** Consecutive stops are joined by the shortest
+  route over the waynet's edges, not a straight line, so a stop the waynet
+  cannot reach is visible. A leg with no route is drawn as a straight dashed
+  line in the warning colour and named in the panel. What the engine does with
+  such a leg is unmeasured; the editor only says the waynet has no route.
+- **The day is edited as a partition.** Moving a boundary on the timeline
+  moves the neighbouring entry's edge with it, so an edit never creates a gap
+  or an overlap by accident; Alt-drag detaches one edge. A routine that
+  already has gaps or overlaps opens as it is and shows them. It is never
+  silently repaired.
+- **Draft + Save.** Routine mode edits a draft with its own undo; Save writes
+  the `.d` through the ordinary `saveFile` pipeline (validation, conflict
+  handling, store sync), as `NpcEditorDialog` does. Leaving the mode with
+  unsaved changes asks.
+- **Two ways in.** An "Edit routine in world" button in `NpcEditorDialog`,
+  and a click on an NPC body or spawn marker in the viewport. No NPC search
+  list in the first cut.
+- **The state-needs check is a later slice.** Warning when `TA_Sleep` has no
+  bed near its waypoint, or `TA_Sit` no bench, needs a state → mob-scheme
+  table measured against retail first (the §16.22 precedent in
+  `level-editor.md`: the number comes first, and it may kill the check).
+
+### Slices
+
+1. **Parser: `daedalus-parser/routine-definition`**, built like
+   `npc-definition`: a reader returning the routine's entries (callee, the
+   four time arguments, the waypoint, each with its source range) and every
+   other statement verbatim, and a writer that patches in place — set a time,
+   set the waypoint, change the state (the callee), add an entry after a given
+   one, remove one — plus the text of a new routine function. Classified by
+   shape. **The argument layout is the caller's input**, taken from the index's
+   `buildRoutineParamIndex` rather than a name convention (architecture §8,
+   "A wrapper's argument layout is found by following the call"), so `TA`
+   (hours only), `TA_MIN` and every wrapper are written in their own layout.
+   Times are written two-digit, as retail writes them. Tests: the corpus
+   round-trips byte-identical unedited; one edit changes one line.
+   `DialogFunction` carries no `sourceText`, unlike `GlobalInstance`, so the
+   reader needs the function's text from somewhere: either the model gains it,
+   or the worker cuts the range from the file. Decided when building it.
+2. **IPC**: `routine:extract` and `routine:applyEdits` in the forked parser
+   pool, validated like `assertNpcApplyEditsRequest`.
+3. **Pure domain** in `src/renderer/routines/`: the draft operations
+   (partition-preserving boundary move, split an entry at a minute to add a
+   stop, remove a stop and give its window to a neighbour, set state, set
+   waypoint) and `waynetRoute(waynet, from, to)` over the payload's positions
+   and edge pairs. Jest.
+4. **Routine mode in the World surface.** A Playwright test first. The NPC's
+   stops are drawn numbered at their waypoints, with routes between them. A
+   24-hour timeline bar sits under the viewport, one block per entry labelled
+   with its state; drag a boundary, click a block to select it. With a block
+   selected, clicking a waypoint in the viewport sets its waypoint (an armed
+   pick, like the insert-NPC placement). The state picker lists the project's
+   own `TA_*` wrappers from the index, never a hardcoded list. Gaps and
+   overlaps are highlighted live with `coverageOf`. Plus a real-Electron
+   disk-truth spec like `npc-editor-disk-truth.spec.ts`.
+5. **An NPC with no routine.** "Create routine" appends
+   `FUNC VOID Rtn_Start_<id> ()` to the end of the NPC's file with one
+   whole-day entry at its spawn waypoint and sets `daily_routine` through
+   `npc-definition`'s writer. A new variant is `Rtn_<State>_<id>` with the
+   state name typed. Both need a literal `id`; an NPC without one is refused,
+   with that reason.
+6. **The NPC editor's table**: the read-only routine list becomes editable
+   (time, state, waypoint) for editing without a world open.
+7. **Later: the state-needs check** (see the last decision above).
+
+### Open, not decided
+
+- **Snap** while dragging a boundary: 5 minutes, 15, or whole hours with a
+  typed field for exact minutes.
+- **Index freshness after Save.** `routineSiteIndex` is as of the last project
+  load, and the file watcher suppresses the editor's own writes. After a
+  routine save the overlay, the lens and the Problems rules must see the new
+  entries, so the saved file has to be re-indexed the way Create NPC goes
+  through `handleFileAdded`. The mechanism for an *edited* file (not an added
+  one) is not chosen.
+- **A waypoint added this session and not yet saved** to the `.zen` is in the
+  open waynet, so routine mode would offer it. Either offer it and say the
+  world is unsaved, or offer saved waypoints only.
+
+## 7. Order and size
 
 1 → 2 → 3 → 4. Phase 1 is the bulk and carries the fidelity risk; 2 is UI on
 top of it; 3 is mostly asset plumbing that already exists; 4 is small once 3
 works. Phase 3 can start in parallel with 2 once Phase 1's `NpcDefinition`
 shape is fixed.
+
+Phase 5's slices run in order; 1 and 3 can run in parallel, since the
+domain's draft operations do not need the writer.
