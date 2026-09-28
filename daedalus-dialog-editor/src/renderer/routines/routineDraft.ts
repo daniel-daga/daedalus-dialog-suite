@@ -16,11 +16,20 @@ import type { RoutineEntry } from './routineEntries';
  * short of that instead.
  */
 
-/** One colour per activity, by its index in the draft — the routine editor's
- *  rows and the stops on the map, so the two read as the same thing. Here
- *  rather than beside either view, so the editor's bundle does not pull in
- *  three.js. */
-export const ROUTINE_COLORS = ['#5b8def', '#e0a33a', '#4caf7d', '#c265d6', '#e0605a', '#3fb5c4'];
+/**
+ * The colour of activity `index` — the routine editor's rows and the stops on
+ * the map, so the two read as the same thing. Here rather than beside either
+ * view, so the editor's bundle does not pull in three.js.
+ *
+ * The hue steps by the golden angle rather than cycling a palette: a day runs
+ * to 10+ activities (Daniel, 2026-09-28), a six-colour palette repeated within
+ * it, and this never lands on a hue it has used while keeping neighbours
+ * 137.5° apart. Deterministic, so a row and its stop always agree.
+ */
+export function routineColor(index: number): string {
+  const hue = (220 + index * 137.508) % 360;
+  return `hsl(${hue.toFixed(1)}, 65%, 55%)`;
+}
 
 const DAY = 24 * 60;
 const mod =(n: number) => ((n % DAY) + DAY) % DAY;

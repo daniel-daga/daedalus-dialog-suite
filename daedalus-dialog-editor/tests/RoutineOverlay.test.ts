@@ -12,7 +12,7 @@
 
 import * as THREE from 'three';
 import { RoutineOverlay } from '../src/renderer/world/RoutineOverlay';
-import { ROUTINE_COLORS } from '../src/renderer/routines/routineDraft';
+import { routineColor } from '../src/renderer/routines/routineDraft';
 import { waynetGraph } from '../src/renderer/routines/waynetRoute';
 import type { RoutineEntry } from '../src/renderer/routines/routineEntries';
 import type { WaynetPayload } from '../src/shared/worldTypes';
@@ -57,7 +57,7 @@ describe('RoutineOverlay', () => {
 
     expect(vertices(overlay.stops)).toEqual([0, 0, 0, 2000, 0, 0]);
     const colors = Array.from(overlay.stops.geometry.getAttribute('color').array as Float32Array);
-    const expected = [0, 1].flatMap((i) => new THREE.Color(ROUTINE_COLORS[i]).toArray());
+    const expected = [0, 1].flatMap((i) => new THREE.Color(routineColor(i)).toArray());
     expect(colors).toEqual(expected.map((c) => Math.fround(c)));
   });
 

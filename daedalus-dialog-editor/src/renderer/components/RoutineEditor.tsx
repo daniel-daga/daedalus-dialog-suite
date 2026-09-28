@@ -20,7 +20,7 @@ import { npcRoutines, formatMinute, variantSwitches } from '../npc/npcRoutines';
 import { coverageOf, type RoutineWindow } from '../routines/routineSchedule';
 import type { RoutineEntry } from '../routines/routineEntries';
 import {
-  ROUTINE_COLORS, moveBoundary, removeEntry, setState, setWaypoint, splitEntry,
+  moveBoundary, removeEntry, routineColor, setState, setWaypoint, splitEntry,
 } from '../routines/routineDraft';
 import type { RoutineSite } from '../../shared/types';
 import {
@@ -61,8 +61,6 @@ const asSites = (entries: readonly RoutineEntry[]): RoutineSite[] => entries.map
 }));
 
 const NO_ENTRIES: RoutineEntry[] = [];
-
-const COLORS = ROUTINE_COLORS;
 
 const windowLabel = (window: RoutineWindow) => `${formatMinute(window.startMinute)}–${formatMinute(window.endMinute)}`;
 
@@ -204,7 +202,7 @@ const RoutineTimeline: React.FC<TimelineProps> = ({ entries, selected, onSelect,
             title={`${entry.state} ${formatMinute(entry.startMinute)}–${formatMinute(entry.endMinute)} ${entry.waypoint}`}
             sx={{
               position: 'absolute', left: percent(a), width: percent(b - a), top: 4, bottom: 8,
-              bgcolor: COLORS[index % COLORS.length], opacity: selected === index ? 1 : 0.7,
+              bgcolor: routineColor(index), opacity: selected === index ? 1 : 0.7,
               outline: selected === index ? '2px solid' : 'none', outlineColor: 'text.primary',
               overflow: 'hidden', fontSize: 10, color: '#fff', px: 0.5, cursor: 'pointer', whiteSpace: 'nowrap',
             }}
@@ -604,7 +602,7 @@ export const RoutineEditorPanel: React.FC<RoutineEditorPanelProps> = (
               onClick={() => setSelected(index)}
               sx={{
                 ...rowGrid, py: 0.25, mb: 0.25, borderRadius: 0.5,
-                borderLeft: 3, borderColor: COLORS[index % COLORS.length],
+                borderLeft: 3, borderColor: routineColor(index),
                 bgcolor: selected === index ? 'action.selected' : 'transparent',
               }}
             >

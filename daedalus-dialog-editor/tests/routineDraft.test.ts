@@ -1,5 +1,5 @@
 import {
-  moveBoundary, removeEntry, setState, setWaypoint, splitEntry,
+  moveBoundary, removeEntry, routineColor, setState, setWaypoint, splitEntry,
 } from '../src/renderer/routines/routineDraft';
 import type { RoutineEntry } from '../src/renderer/routines/routineEntries';
 
@@ -108,5 +108,29 @@ describe('setState / setWaypoint', () => {
     const changed = setWaypoint(setState(onar(), 1, 'TA_Stand_Guarding'), 1, 'GATE');
     expect(changed[1]).toEqual(entry('TA_Stand_Guarding', h(22), h(7), 'GATE', 2));
     expect(changed[0]).toEqual(onar()[0]);
+  });
+});
+
+describe('routineColor', () => {
+  // One colour per activity, shared by the editor's rows and the stops on the
+  // map. A fixed palette repeated every six activities, and a day runs to 10+
+  // (Daniel, 2026-09-28), so the hue steps by the golden angle instead: it
+  // never lands on a hue it has used, and neighbours stay far apart.
+  const hueOf = (color: string) => Number(/^hsl\((\d+(?:\.\d+)?)/.exec(color)![1]);
+
+  it('gives the first twenty activities twenty different colours', () => {
+    const colors = Array.from({ length: 20 }, (_, i) => routineColor(i));
+    expect(new Set(colors).size).toBe(20);
+  });
+
+  it('keeps neighbouring activities far apart in hue', () => {
+    for (let i = 0; i < 20; i++) {
+      const gap = Math.abs(hueOf(routineColor(i)) - hueOf(routineColor(i + 1)));
+      expect(Math.min(gap, 360 - gap)).toBeGreaterThan(90);
+    }
+  });
+
+  it('is the same colour for the same activity every time', () => {
+    expect(routineColor(7)).toBe(routineColor(7));
   });
 });

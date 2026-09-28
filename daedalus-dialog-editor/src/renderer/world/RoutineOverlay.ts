@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { WaynetPayload } from '../../shared/worldTypes';
 import type { RoutineEntry } from '../routines/routineEntries';
-import { ROUTINE_COLORS } from '../routines/routineDraft';
+import { routineColor } from '../routines/routineDraft';
 import { waynetRoute, type WaynetGraph } from '../routines/waynetRoute';
 
 // A routine draft drawn over the world (npc-editor.md §6): a stop at each
@@ -46,7 +46,7 @@ export class RoutineOverlay {
         return;
       }
       stopPositions.push(...at(waypoint));
-      stopColors.push(...new THREE.Color(ROUTINE_COLORS[i % ROUTINE_COLORS.length]).toArray());
+      stopColors.push(...new THREE.Color(routineColor(i)).toArray());
     });
     const chosen = selected === null ? undefined : entries[selected];
     const chosenWaypoint = chosen && indexOf(chosen.waypoint);
