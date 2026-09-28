@@ -227,6 +227,9 @@ interface ProjectActions {
   /** Re-read one saved file's routine sites in main and replace that file's
    *  entries in `routineSiteIndex` (npc-editor.md §6). */
   reindexRoutineSites: (filePath: string) => Promise<void>;
+  /** A routine the editor just created: the NPC's declared one (`state` null)
+   *  or a variant under `state`. UPPERCASED as the index is. */
+  registerRoutine: (npc: string, routine: string, state: string | null, id: number) => void;
 
   // Batch variant: apply many file models with a single parsedFiles clone,
   // dialogIndex scan, parseGeneration bump, and (conditional) re-merge
@@ -1201,6 +1204,22 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     resetMergeCache();
     resetParsedFileRecency();
     set((state) => ({ parsedFiles: new Map(), parseGeneration: state.parseGeneration + 1 }));
+  },
+
+  registerRoutine: (npc, routine, state, id) => {
+    const key = npc.toUpperCase();
+    const name = routine.toUpperCase();
+    set((current) => ({
+      functionList: [...new Set([...current.functionList, name])].sort(),
+      ...(state === null
+        ? { routineNpcIndex: { ...current.routineNpcIndex, [key]: name } }
+        : {
+          routineStateIndex: {
+            ...current.routineStateIndex,
+            [key]: { id, states: { ...current.routineStateIndex[key]?.states, [state.toUpperCase()]: name } },
+          },
+        }),
+    }));
   },
 
   reindexRoutineSites: async (filePath: string) => {

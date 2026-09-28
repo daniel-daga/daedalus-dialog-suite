@@ -1,7 +1,7 @@
 import { useEditorStore } from '../store/editorStore';
 import { useProjectStore } from '../store/projectStore';
 import type { SemanticModel } from '../types/global';
-import { readRoutine, writeRoutine, type RoutineEntry } from '../routines/routineEntries';
+import { readRoutine, withRoutineFunction, writeRoutine, type RoutineEntry } from '../routines/routineEntries';
 
 /**
  * Where a routine is read from and written to (npc-editor.md §6). The edit is
@@ -61,4 +61,63 @@ export async function saveRoutine(filePath: string, routine: string, entries: re
     throw new Error(firstError ? `Save refused: ${firstError}` : 'Save failed');
   }
   await useProjectStore.getState().reindexRoutineSites(filePath);
+}
+
+/** The engine's name for an NPC's routine under a state (architecture §8):
+ *  `Npc_ExchangeRoutine(npc, "Ship")` runs `Rtn_Ship_<id>`. */
+export const routineNameFor = (state: string, id: number) => `Rtn_${state}_${id}`;
+
+const instanceKey = (model: SemanticModel, npc: string) =>
+  Object.keys(model.instances ?? {}).find((name) => name.toUpperCase() === npc.toUpperCase());
+
+/** The NPC's literal `id`, or undefined when it has none a routine name can use. */
+export async function npcIdOf(npc: string): Promise<number | undefined> {
+  const filePath = useProjectStore.getState().npcFileIndex[npc.toUpperCase()];
+  if (!filePath) return undefined;
+  const model = await fileModel(filePath);
+  const key = instanceKey(model, npc);
+  return key ? model.instances![key].npcId : undefined;
+}
+
+/**
+ * Create a routine in the NPC's own file (npc-editor.md §6 slice 5, #316):
+ * `Rtn_<state>_<id>` holding `entries`, or with `state` null the daily
+ * `Rtn_Start_<id>`, which the instance's `daily_routine` is then set to.
+ * Nothing switches to a variant — that is the dialog editor's exchange-routine
+ * action, written where the story decides it. Returns the routine's name as
+ * the index keys it.
+ */
+export async function createRoutine(npc: string, state: string | null, entries: readonly RoutineEntry[]): Promise<string> {
+  const project = useProjectStore.getState();
+  const filePath = project.npcFileIndex[npc.toUpperCase()];
+  if (!filePath) throw new Error(`No file is known for ${npc}`);
+  const model = await fileModel(filePath);
+  const key = instanceKey(model, npc);
+  if (!key) throw new Error(`${npc} is not declared in ${filePath}`);
+  const instance = model.instances![key];
+  if (instance.npcId === undefined) throw new Error(`${npc} has no literal id, and a routine is named Rtn_<State>_<id>`);
+
+  const name = routineNameFor(state ?? 'Start', instance.npcId);
+  let next = withRoutineFunction(model, name, writeRoutine([], entries, project.routineLayoutIndex));
+  if (state === null) {
+    const sourceText = await window.editorAPI.applyNpcEdits(instance.sourceText!, [
+      { op: 'set', field: 'daily_routine', value: name },
+    ]);
+    const updated = { ...instance, sourceText };
+    next = {
+      ...next,
+      instances: { ...next.instances, [key]: updated },
+      ...(next.npcs?.[key] ? { npcs: { ...next.npcs, [key]: updated } } : {}),
+    };
+  }
+
+  useEditorStore.getState().updateModel(filePath, next);
+  const result = await useEditorStore.getState().saveFile(filePath);
+  if (!result.success) {
+    const firstError = result.validationResult?.errors?.[0]?.message;
+    throw new Error(firstError ? `Save refused: ${firstError}` : 'Save failed');
+  }
+  await useProjectStore.getState().reindexRoutineSites(filePath);
+  useProjectStore.getState().registerRoutine(npc, name, state, instance.npcId);
+  return name.toUpperCase();
 }

@@ -172,6 +172,32 @@ test.describe('Routine editor', () => {
     await expect(npcEditor.getByTitle('Open a world in the World view first')).toBeVisible();
   });
 
+  test('a gap in the day is an error, and red on the timeline', async ({ page }) => {
+    const editor = await openRoutineEditor(page);
+    await expect(editor.getByTestId('routine-gap')).toHaveCount(0);
+
+    // Alt detaches the boundary: Throne ends at 21:00, Sleep still starts at
+    // 22:00, and the hour between belongs to no activity.
+    const bar = editor.getByTestId('routine-timeline');
+    const handle = bar.getByRole('slider', { name: 'Boundary at 22:00' });
+    const box = (await bar.boundingBox())!;
+    const from = (await handle.boundingBox())!;
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.keyboard.down('Alt');
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * ((21 * 60) / 1440), from.y + from.height / 2, { steps: 8 });
+    await page.mouse.up();
+    await page.keyboard.up('Alt');
+
+    await expect(activity(editor, 2).getByLabel('Start')).toHaveValue('22:00');
+    const alert = editor.getByRole('alert');
+    await expect(alert).toContainText('Gap 21:00–22:00');
+    await expect(alert).toHaveClass(/MuiAlert-.*Error/);
+    const gap = editor.getByTestId('routine-gap');
+    await expect(gap).toHaveCount(1);
+    await expect(gap).toHaveAttribute('title', 'Gap 21:00–22:00');
+  });
+
   test('Cancel leaves the file as it was', async ({ page }) => {
     const before = await savedFile(page);
     const editor = await openRoutineEditor(page);
@@ -207,5 +233,66 @@ test.describe('Routine editor: chapter variants', () => {
 
     const saved = await page.evaluate(() => localStorage.getItem('mockapi_file_project/Story/Kapitel3.d'));
     expect(saved).toContain('TA_Stand_Guarding (08,00,20,00,"NW_TOWER");');
+  });
+});
+
+const FARMER_FILE = `INSTANCE BAU_901_Bauer (C_NPC)
+{
+	name = "Bauer";
+	id = 901;
+};
+`;
+
+// npc-editor.md §6 slice 5 (#316): a routine is created, never switched to by
+// the editor — the switch is the dialog editor's exchange-routine action,
+// written where the story decides it.
+test.describe('Routine editor: creating routines', () => {
+  test('creates a daily routine for an NPC that has none, and declares it', async ({ page }) => {
+    await openProject(page, { 'NPC/BAU_901_Bauer.d': FARMER_FILE });
+    await page.getByRole('button', { name: 'Edit NPC BAU_901_Bauer' }).click();
+    const npcEditor = page.getByRole('dialog', { name: /BAU_901_Bauer/ });
+    await npcEditor.getByRole('button', { name: 'Create routine' }).click();
+    const editor = page.getByRole('dialog', { name: 'Routines of BAU_901_Bauer' });
+
+    const form = editor.getByRole('group', { name: 'New routine' });
+    await form.getByLabel('Activity', { exact: true }).fill('TA_Stand_Guarding');
+    await page.getByRole('option', { name: 'TA_Stand_Guarding', exact: true }).click();
+    await form.getByLabel('Waypoint').fill('WP_FARM');
+    await form.getByRole('button', { name: 'Create daily routine' }).click();
+
+    await expect(editor.getByRole('button', { name: 'Daily: RTN_START_901' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(activity(editor, 1).getByLabel('Activity', { exact: true })).toHaveValue('TA_Stand_Guarding');
+    const saved = await page.evaluate(() => localStorage.getItem('mockapi_file_project/NPC/BAU_901_Bauer.d'));
+    expect(saved).toContain('daily_routine = Rtn_Start_901;');
+    expect(saved).toContain('TA_Stand_Guarding (00,00,00,00,"WP_FARM");');
+  });
+
+  test('a new routine starts as a copy of the one shown, and says nothing switches to it yet', async ({ page }) => {
+    await openProject(page);
+    const editor = await openRoutineEditor(page);
+
+    await editor.getByRole('button', { name: 'New routine' }).click();
+    const form = editor.getByRole('group', { name: 'New routine' });
+    await form.getByLabel('Name').fill('Ship');
+    await form.getByRole('button', { name: 'Create routine' }).click();
+
+    await expect(editor.getByRole('button', { name: 'SHIP: RTN_SHIP_900' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(editor.getByText('Nothing in the scripts switches to it by name')).toBeVisible();
+    await expect(activity(editor, 1).getByLabel('Activity', { exact: true })).toHaveValue('TA_Sit_Throne');
+    const saved = (await savedFile(page))!;
+    const ship = saved.slice(saved.indexOf('Rtn_Ship_900'));
+    expect(ship).toContain('TA_Sit_Throne (07,00,22,00,"NW_THRONE");');
+    expect(ship).toContain('TA_Sleep (22,00,07,00,"NW_BED");');
+  });
+
+  test('refuses a name whose routine already exists', async ({ page }) => {
+    await openProject(page);
+    const editor = await openRoutineEditor(page);
+
+    await editor.getByRole('button', { name: 'New routine' }).click();
+    const form = editor.getByRole('group', { name: 'New routine' });
+    await form.getByLabel('Name').fill('Start');
+    await expect(form.getByText('Rtn_Start_900 already exists')).toBeVisible();
+    await expect(form.getByRole('button', { name: 'Create routine' })).toBeDisabled();
   });
 });

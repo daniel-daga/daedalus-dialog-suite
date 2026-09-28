@@ -1,4 +1,4 @@
-import { readRoutine, writeRoutine, type RoutineEntry } from '../src/renderer/routines/routineEntries';
+import { readRoutine, withRoutineFunction, writeRoutine, type RoutineEntry } from '../src/renderer/routines/routineEntries';
 import type { RoutineArgIndex } from '../src/shared/types';
 
 // Routine authoring (npc-editor.md §6): a routine function's `TA_*` calls as
@@ -156,5 +156,32 @@ describe('writeRoutine', () => {
 
     expect(() => writeRoutine(actions, [{ ...throne, state: 'TA_MIN' }, sleep], layouts))
       .toThrow(/TA_MIN/);
+  });
+});
+
+describe('withRoutineFunction', () => {
+  // Creating a routine (npc-editor.md §6 slice 5, #316) appends a function to
+  // the NPC's file model; the save regenerates the file from it, so the
+  // function has to be in the declaration order or it lands wherever the
+  // generator's fallback puts leftovers.
+  const model = () => ({
+    dialogs: {},
+    functions: { Rtn_Start_900: { name: 'Rtn_Start_900', returnType: 'VOID', actions: [] } },
+    declarationOrder: [{ type: 'instance', name: 'BAU_900_Onar' }, { type: 'function', name: 'Rtn_Start_900' }],
+  });
+
+  it('appends a VOID function with the actions, last in the declaration order', () => {
+    const actions = [{ type: 'Action', action: 'TA_Sleep (00,00,00,00,"WP_BED")' }];
+    const next = withRoutineFunction(model() as never, 'Rtn_Ship_900', actions);
+
+    expect(next.functions.Rtn_Ship_900).toMatchObject({
+      name: 'Rtn_Ship_900', returnType: 'VOID', parameters: [], actions, conditions: [], calls: [], callSites: [],
+    });
+    expect(next.declarationOrder!.at(-1)).toEqual({ type: 'function', name: 'Rtn_Ship_900', blankLinesBefore: 1 });
+    expect(model().declarationOrder).toHaveLength(2);
+  });
+
+  it('refuses a name the file already declares, whatever its case', () => {
+    expect(() => withRoutineFunction(model() as never, 'RTN_START_900', [])).toThrow(/RTN_START_900 already exists/);
   });
 });

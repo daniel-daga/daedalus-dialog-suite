@@ -1,4 +1,4 @@
-import type { RoutineArgIndex } from '../../shared/types';
+import type { RoutineArgIndex, SemanticModel } from '../../shared/types';
 
 /**
  * A routine function's `TA_*` calls as entries an editor can change, and the
@@ -241,4 +241,27 @@ export function writeRoutine(
   });
   if (firstKept === undefined) out.push(...(following.get(-1) ?? []).map(written));
   return out;
+}
+
+/**
+ * `model` with a new routine function appended — `FUNC VOID <name>()` holding
+ * `actions` — and put last in the declaration order, so the save writes it at
+ * the end of the file, where retail keeps an NPC's routines. The action
+ * objects are plain, not parser classes: the model crosses the save IPC as
+ * JSON (as `appendInsertNpc`'s does). Throws when the file already declares
+ * the name.
+ */
+export function withRoutineFunction(model: SemanticModel, name: string, actions: unknown[]): SemanticModel {
+  if (Object.keys(model.functions).some((existing) => existing.toUpperCase() === name.toUpperCase())) {
+    throw new Error(`${name} already exists`);
+  }
+  const fn = {
+    name, returnType: 'VOID', parameters: [], actions, conditions: [], conditionOperator: 'AND',
+    calls: [], callSites: [],
+  };
+  return {
+    ...model,
+    functions: { ...model.functions, [name]: fn as unknown as SemanticModel['functions'][string] },
+    declarationOrder: [...(model.declarationOrder ?? []), { type: 'function', name, blankLinesBefore: 1 }],
+  };
 }

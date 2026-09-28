@@ -35,3 +35,29 @@ describe('ProjectStore - reindexRoutineSites', () => {
     ]);
   });
 });
+
+describe('ProjectStore - registerRoutine', () => {
+  // A routine the editor just created is known before any reindex: the NPC's
+  // declared routine, or a variant under its state, and a function name the
+  // project now declares.
+  beforeEach(() => {
+    useProjectStore.setState({
+      routineNpcIndex: { BAU_900_ONAR: 'RTN_START_900' },
+      routineStateIndex: { BAU_900_ONAR: { id: 900, states: { TOT: 'RTN_TOT_900' } } },
+      functionList: ['B_FOO', 'RTN_START_900', 'RTN_TOT_900'],
+    });
+  });
+
+  it('records a new variant under its state, beside the ones the NPC has', () => {
+    useProjectStore.getState().registerRoutine('BAU_900_Onar', 'Rtn_Ship_900', 'Ship', 900);
+
+    const state = useProjectStore.getState();
+    expect(state.routineStateIndex.BAU_900_ONAR).toEqual({ id: 900, states: { TOT: 'RTN_TOT_900', SHIP: 'RTN_SHIP_900' } });
+    expect(state.functionList).toEqual(['B_FOO', 'RTN_SHIP_900', 'RTN_START_900', 'RTN_TOT_900']);
+  });
+
+  it('records a daily routine as the one the NPC declares', () => {
+    useProjectStore.getState().registerRoutine('BAU_901_Bauer', 'Rtn_Start_901', null, 901);
+    expect(useProjectStore.getState().routineNpcIndex.BAU_901_BAUER).toBe('RTN_START_901');
+  });
+});

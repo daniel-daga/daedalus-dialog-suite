@@ -289,10 +289,12 @@ function parseSource(sourceCode: string): any {
     if (parent === 'C_NPC') {
       const end = match.index + match[0].length;
       const sourceText = sourceCode.slice(match.index, sourceCode[end] === ';' ? end + 1 : end);
+      const npcId = /\bid\s*=\s*(-?\d+)\s*;/i.exec(body)?.[1];
       npcs[dialogName] = {
         name: dialogName,
         parent: 'C_NPC',
         sourceText,
+        ...(npcId === undefined ? {} : { npcId: Number(npcId) }),
       };
     } else {
       dialogs[dialogName] = {

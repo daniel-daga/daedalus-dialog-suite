@@ -1,7 +1,7 @@
 # NPC Editor
 
 **Status:** Phases 1–4 built (#284, #285, #298, #309). NPC bodies now render at world spawn and routine placements.
-Phase 5 (authoring routines) is in progress — the model, the draft operations, the routine editor and the World surface's routine mode are built (#312, #314, #315, #317); creating a routine is next (#316).
+Phase 5 (authoring routines) is built — the model, the draft operations, the routine editor, the World surface's routine mode and creating routines (#312, #314–#317); the state-needs check (#318) is left.
 
 An editor for `C_NPC` instances inside the dialog editor, covering what the
 community's standalone *NPC Generator* covers (main info, attributes, protection,
@@ -267,8 +267,8 @@ the "NPC-Rendering im Viewport" item of
 
 ## 6. Phase 5 — authoring routines
 
-**Workshop with Daniel, 2026-09-28.** Slices 1, 3, 4 and 6 are built, slice
-2 turned out not to be needed; the rest are #316 and #318.
+**Workshop with Daniel, 2026-09-28.** Slices 1, 3, 4, 5 and 6 are built,
+slice 2 turned out not to be needed; #318 is left.
 
 Everything a routine editor reads already exists: `routineSites`,
 `routinesByNpc` and `routineStatesByNpc` in the project index, the World
@@ -414,12 +414,19 @@ adds:
    plan named (there is no text in the scene; the names layer is DOM and
    driven from the draw loop), and the real-Electron disk-truth spec, which
    needs a world the ubuntu job cannot open.
-5. **An NPC with no routine** (#316). "Create routine" appends
-   `FUNC VOID Rtn_Start_<id> ()` to the end of the NPC's file with one
-   whole-day entry at its spawn waypoint and sets `daily_routine` through
-   `npc-definition`'s writer. A new variant is `Rtn_<State>_<id>` with the
-   state name typed. Both need a literal `id`; an NPC without one is refused,
-   with that reason.
+5. **Creating a routine** (#316). **Built 2026-09-28.** In the routine
+   editor, an NPC with no routine gets a form for its daily one (activity and
+   waypoint, the waypoint defaulting to its spawn point) that writes
+   `FUNC VOID Rtn_Start_<id> ()` with one whole-day entry at the end of the
+   NPC's file and sets `daily_routine` through `npc-definition`'s writer; the
+   NPC editor offers "Create routine" for it. Otherwise "New routine" takes a
+   state name and writes `Rtn_<State>_<id>` as a copy of the routine shown.
+   Nothing switches to it — that stays the dialog editor's exchange-routine
+   action. The name is the engine's rule (`routineNameFor`), so an NPC with no
+   literal `id` is refused with that reason, and a name the project already
+   declares is refused before anything is written. `components/routineSave.ts`'s
+   `createRoutine` saves, re-indexes the file, and records the new routine in
+   `projectStore` (`registerRoutine`) so the list shows it without a reload.
 6. **Editing without a world** (#317). **Built 2026-09-28** as the same panel
    in a modal, `RoutineEditorDialog`, opened by "Edit" beside each routine
    in the NPC editor's routines section. That section now follows the index,
@@ -456,6 +463,14 @@ Not done, and each needs something first:
   the dialog editor's existing exchange-routine action. The chapter label
   stays a hint read off names, never inferred from conditions.
 
+### Gaps are errors in the editor (Daniel, 2026-09-28)
+
+A stretch of the day no activity covers is drawn red over the whole height of
+the timeline, with an error naming it (`Gap 21:00–22:00 — no activity covers
+this time.`); an overlap stays an orange strip. It does not block Save. This is
+the editor's view only: a Problems rule for gaps is still #236, whose
+threshold question is about retail's 11 one-hole routines.
+
 ### Decided before slice 4 (Daniel, 2026-09-28)
 
 - **Snap: 15 minutes, plus typed fields.** A dragged boundary snaps to the
@@ -478,4 +493,4 @@ top of it; 3 is mostly asset plumbing that already exists; 4 is small once 3
 works. Phase 3 can start in parallel with 2 once Phase 1's `NpcDefinition`
 shape is fixed.
 
-Phase 5's remaining work: slice 5, then the state-needs check (7).
+Phase 5's remaining work: the state-needs check (7).

@@ -144,6 +144,8 @@ interface NpcRoutinesSectionProps {
   blockedReason?: string | null;
   /** Open the routine editor on this routine (npc-editor.md §6). */
   onEditRoutine?: (routine: string) => void;
+  /** Open the routine editor to create the NPC's first routine (#316). */
+  onCreateRoutine?: () => void;
   /** Open this routine in the World surface's routine mode instead. */
   onEditRoutineInWorld?: (routine: string) => void;
   /** Why routine mode cannot be opened now, e.g. no world is open. */
@@ -164,13 +166,18 @@ const JumpButton: React.FC<{ label: string; reason: string | null; onClick: () =
 export const NpcRoutinesSection: React.FC<NpcRoutinesSectionProps> = (
   {
     routines, onShowWaypoint, onShowSource, waypointReason, blockedReason = null, onEditRoutine,
-    onEditRoutineInWorld, worldReason = null,
+    onEditRoutineInWorld, worldReason = null, onCreateRoutine,
   },
 ) => (
   <Box sx={{ mb: 2 }}>
     <Typography variant="subtitle2">Routines</Typography>
     {routines.length === 0 && (
-      <Typography variant="caption" color="text.secondary">No routine in the project index.</Typography>
+      <Typography variant="caption" color="text.secondary">
+        No routine in the project index.
+        {onCreateRoutine && (
+          <Button size="small" sx={{ py: 0, ml: 1, fontSize: 11 }} onClick={onCreateRoutine}>Create routine</Button>
+        )}
+      </Typography>
     )}
     {routines.map(({ label, routine, entries }) => (
       <Box key={routine} component="ul" aria-label={`${label}: ${routine}`} sx={{ m: 0, mt: 0.5, pl: 0, listStyle: 'none' }}>
@@ -465,6 +472,7 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
                   ? 'Save or cancel your changes first'
                   : null}
                 onEditRoutine={setEditingRoutine}
+                onCreateRoutine={() => setEditingRoutine('')}
                 onEditRoutineInWorld={editRoutineInWorld}
                 worldReason={worldOpen ? null : 'Open a world in the World view first'}
               />
@@ -503,8 +511,12 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
       {routineSource && (
         <NpcRoutineSourceDialog target={routineSource} onClose={() => setRoutineSource(null)} />
       )}
-      {editingRoutine && (
-        <RoutineEditorDialog npc={npcName} initialRoutine={editingRoutine} onClose={() => setEditingRoutine(null)} />
+      {editingRoutine !== null && (
+        <RoutineEditorDialog
+          npc={npcName}
+          initialRoutine={editingRoutine || undefined}
+          onClose={() => setEditingRoutine(null)}
+        />
       )}
     </Dialog>
   );

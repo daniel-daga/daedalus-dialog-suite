@@ -23,7 +23,9 @@ import {
   ROUTINE_COLORS, moveBoundary, removeEntry, setState, setWaypoint, splitEntry,
 } from '../routines/routineDraft';
 import type { RoutineSite } from '../../shared/types';
-import { loadRoutine, routineFileOf, saveRoutine } from './routineSave';
+import {
+  createRoutine, loadRoutine, npcIdOf, routineFileOf, routineNameFor, saveRoutine,
+} from './routineSave';
 
 /**
  * The routine editor (npc-editor.md §6): an NPC's routines at the top, the
@@ -153,12 +155,20 @@ const RoutineTimeline: React.FC<TimelineProps> = ({ entries, selected, onSelect,
   });
 
   const percent = (minute: number) => `${(minute / DAY) * 100}%`;
-  const marks = (windows: RoutineWindow[], color: string, label: string) => windows.flatMap((window, i) =>
+  const marks = (windows: RoutineWindow[], label: 'Gap' | 'Overlap') => windows.flatMap((window, i) =>
     segmentsOf({ state: '', waypoint: '', ...window }).map(([a, b], j) => (
       <Box
         key={`${label}-${i}-${j}`}
         title={`${label} ${windowLabel(window)}`}
-        sx={{ position: 'absolute', left: percent(a), width: percent(b - a), bottom: 0, height: 5, bgcolor: color }}
+        data-testid={label === 'Gap' ? 'routine-gap' : 'routine-overlap'}
+        // A gap is the whole height of the bar, in red: an hour no activity
+        // covers is the error (Daniel, 2026-09-28). An overlap is a strip.
+        sx={label === 'Gap'
+          ? {
+            position: 'absolute', left: percent(a), width: percent(b - a), top: 0, bottom: 0,
+            bgcolor: 'error.main', opacity: 0.6, pointerEvents: 'none',
+          }
+          : { position: 'absolute', left: percent(a), width: percent(b - a), bottom: 0, height: 5, bgcolor: 'warning.main' }}
       />
     )));
 
@@ -193,8 +203,8 @@ const RoutineTimeline: React.FC<TimelineProps> = ({ entries, selected, onSelect,
             {index + 1}
           </Box>
         )))}
-        {marks(gaps, 'warning.main', 'Gap')}
-        {marks(overlaps, 'error.main', 'Overlap')}
+        {marks(gaps, 'Gap')}
+        {marks(overlaps, 'Overlap')}
         {handles.map((handle) => (
           <Box
             key={`${handle.edge}-${handle.index}`}
@@ -281,6 +291,28 @@ export const RoutineEditorPanel: React.FC<RoutineEditorPanelProps> = (
   const [saving, setSaving] = useState(false);
   const dragStart = useRef<RoutineEntry[] | null>(null);
 
+  // Creating a routine (npc-editor.md §6 slice 5, #316). The id names it —
+  // `Rtn_<State>_<id>` is the engine's rule — so it is read up front:
+  // undefined while loading, null when the NPC has no literal one.
+  const functionList = useProjectStore((s) => s.functionList);
+  const spawnSites = useProjectStore((s) => s.spawnSiteIndex);
+  const [creating, setCreating] = useState(false);
+  const [npcId, setNpcId] = useState<number | null | undefined>(undefined);
+  const [newState, setNewState] = useState('');
+  const [newActivity, setNewActivity] = useState<string | null>(null);
+  const [newWaypoint, setNewWaypoint] = useState(
+    () => spawnSites.find((site) => site.instance === npc.toUpperCase())?.spawnPoint ?? '',
+  );
+  const [createBusy, setCreateBusy] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    npcIdOf(npc).then(
+      (id) => { if (!cancelled) setNpcId(id ?? null); },
+      () => { if (!cancelled) setNpcId(null); },
+    );
+    return () => { cancelled = true; };
+  }, [npc]);
+
   const filePath = routine ? routineFileOf(routine, npc) : null;
 
   useEffect(() => {
@@ -349,6 +381,37 @@ export const RoutineEditorPanel: React.FC<RoutineEditorPanelProps> = (
     setSelected(selected + 1);
   };
 
+  // With no routine at all, the daily one is what there is to create; after
+  // that, "New routine" makes a variant, copied from the routine shown.
+  const daily = routines.length === 0;
+  const createProblem = ((): string | null => {
+    if (npcId === undefined) return '';
+    if (npcId === null) return `${npc} has no literal id, and a routine is named Rtn_<State>_<id>`;
+    if (daily) return newActivity && newWaypoint.trim() ? null : '';
+    if (newState === '') return '';
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(newState)) return 'A name is letters, digits and _';
+    const name = routineNameFor(newState, npcId);
+    const known = new Set([...functionList, ...routines.map((r) => r.routine.toUpperCase())]);
+    return known.has(name.toUpperCase()) ? `${name} already exists` : null;
+  })();
+
+  const handleCreate = async () => {
+    setCreateBusy(true);
+    setError(null);
+    try {
+      const created = await createRoutine(npc, daily ? null : newState, daily
+        ? [{ state: newActivity!, startMinute: 0, endMinute: 0, waypoint: newWaypoint.trim() }]
+        : entries.map(({ source: _source, ...rest }) => rest));
+      setCreating(false);
+      setNewState('');
+      setRoutine(created);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCreateBusy(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!draft || !routine || !filePath) return;
     setSaving(true);
@@ -406,6 +469,70 @@ export const RoutineEditorPanel: React.FC<RoutineEditorPanelProps> = (
         })}
       </Box>
 
+      {!daily && !creating && (
+        <Box sx={{ mb: 1 }} title={dirty ? 'Save or cancel this routine first' : undefined}>
+          <Button size="small" onClick={() => setCreating(true)} disabled={dirty}>New routine</Button>
+        </Box>
+      )}
+      {(daily || creating) && (
+        <Box
+          role="group"
+          aria-label="New routine"
+          sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1, p: 1, mb: 1, border: 1, borderColor: 'divider', borderRadius: 1 }}
+        >
+          {daily ? (
+            <>
+              <Autocomplete
+                size="small"
+                options={stateOptions}
+                value={newActivity}
+                onChange={(_event, value) => setNewActivity(value)}
+                sx={{ width: 220 }}
+                renderInput={(params) => <TextField {...params} label="Activity" />}
+              />
+              {waypoints ? (
+                <Autocomplete
+                  size="small"
+                  options={waypoints as string[]}
+                  value={newWaypoint || null}
+                  onChange={(_event, value) => setNewWaypoint(value ?? '')}
+                  sx={{ flex: 1, minWidth: 160 }}
+                  renderInput={(params) => <TextField {...params} label="Waypoint" />}
+                />
+              ) : (
+                <TextField
+                  size="small"
+                  label="Waypoint"
+                  value={newWaypoint}
+                  onChange={(event) => setNewWaypoint(event.target.value)}
+                  sx={{ flex: 1, minWidth: 160 }}
+                />
+              )}
+            </>
+          ) : (
+            <TextField
+              size="small"
+              label="Name"
+              value={newState}
+              helperText={npcId != null && newState ? routineNameFor(newState, npcId) : 'The state a script switches to'}
+              onChange={(event) => setNewState(event.target.value.trim())}
+            />
+          )}
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() => void handleCreate()}
+            disabled={createProblem !== null || createBusy}
+          >
+            {daily ? 'Create daily routine' : 'Create routine'}
+          </Button>
+          {!daily && <Button size="small" onClick={() => { setCreating(false); setNewState(''); }}>Cancel</Button>}
+          {createProblem && (
+            <Typography variant="caption" color="error" sx={{ width: '100%' }}>{createProblem}</Typography>
+          )}
+        </Box>
+      )}
+
       {error && <Alert severity="error" sx={{ mb: 1 }}>{error}</Alert>}
       {routine && !draft && !error && <CircularProgress size={24} />}
 
@@ -430,12 +557,14 @@ export const RoutineEditorPanel: React.FC<RoutineEditorPanelProps> = (
                 : current));
             }}
           />
-          {(coverage.gaps.length > 0 || coverage.overlaps.length > 0) && (
+          {coverage.gaps.length > 0 && (
+            <Alert severity="error" sx={{ mb: 1 }}>
+              {`${coverage.gaps.map((w) => `Gap ${windowLabel(w)}`).join(' · ')} — no activity covers this time.`}
+            </Alert>
+          )}
+          {coverage.overlaps.length > 0 && (
             <Typography variant="caption" color="warning.main" sx={{ mb: 1 }}>
-              {[
-                ...coverage.gaps.map((w) => `Gap ${windowLabel(w)}`),
-                ...coverage.overlaps.map((w) => `Overlap ${windowLabel(w)}`),
-              ].join(' · ')}
+              {coverage.overlaps.map((w) => `Overlap ${windowLabel(w)}`).join(' · ')}
             </Typography>
           )}
 
