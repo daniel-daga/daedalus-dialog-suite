@@ -1,6 +1,6 @@
 # Quest authoring — a quest-level interface over topics, entries and `MIS_` state
 
-Proposed 2026-09-28. Nothing is built yet.
+Agreed 2026-09-28. Nothing is built yet.
 
 ## Problem
 
@@ -33,12 +33,10 @@ the Variable Manager stay available but are never required.
 - **Notes (`LOG_NOTE`) are included from phase 1.** "Add note" works the same
   way as a quest, but notes have no states and no `MIS_` variable.
 - **Named sub-stages come in a later phase** (see phase 4).
-
-## Open decision
-
-- **Existing implicit quests** (a `TOPIC_` constant and no `MIS_` variable):
-  either leave them as they are, or also offer a one-click upgrade that adds an
-  `MIS_` variable. New quests always get an `MIS_` variable either way.
+- **Existing implicit quests** (a `TOPIC_` constant, no `MIS_` variable) stay
+  readable as they are: their state is shown as "inferred from dialog X". The
+  quest page offers a one-click upgrade that declares `MIS_X` and sets it at
+  the quest's start and end points. New quests always get an `MIS_` variable.
 
 ## Phases
 
