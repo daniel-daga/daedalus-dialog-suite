@@ -447,8 +447,12 @@ interface Gizmo {
   setMode: (mode: GizmoMode) => void;
 }
 
+// One shared empty map: a fresh default each render is a new dependency each
+// render, and the spawn overlay would be rebuilt on every one.
+const NO_BODY_REQUESTS: ReadonlyMap<string, NpcBodyRequest> = new Map();
+
 const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(({
-  mesh, visuals, vobIndex, bbox, waynet, showWaynet, spawns, npcBodyRequests = new Map(), showSpawns, routines, spawnTime, spawnState,
+  mesh, visuals, vobIndex, bbox, waynet, showWaynet, spawns, npcBodyRequests = NO_BODY_REQUESTS, showSpawns, routines, spawnTime, spawnState,
   showWaypointNames, loadTexture, onTextureFailures, onCameraSlot, onPick, onVobContextMenu,
   selection, onTranslateSelection, gizmoMode, onRotateSelection, membersOf, appliedOps,
   selectedWaypoint, terrainPoint, exposure, hiddenVobs, outlineMode, snapGrid, snapAngle,
@@ -1329,7 +1333,17 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     if (world === null || waynet === null) return;
     let cancelled = false;
     let overlay: SpawnOverlay | null = null;
-    void (async () => {
+    const attach = (built: SpawnOverlay) => {
+      overlay = built;
+      built.setVisible(showSpawnsRef.current);
+      built.setTime(spawnTimeRef.current, spawnStateRef.current);
+      spawnOverlayRef.current = built;
+      world.root.add(built.root);
+    };
+    // With no bodies to fetch there is nothing to wait for, and the markers
+    // are there on the same render as the world they belong to.
+    if (npcBodyRequests.size === 0) attach(new SpawnOverlay(waynet, spawns, routines));
+    else void (async () => {
       const requests = [...npcBodyRequests.entries()];
       const scenes = await Promise.all(requests.map(async ([name, request]) => {
         try { return [name, await window.editorAPI.getNpcBody(request)] as const; }
@@ -1341,11 +1355,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       const decoded = await Promise.all([...textureNames].map(async (name) => [name, await loadTextureRef.current(name, 256)] as const));
       if (cancelled) return;
       const textures = new Map(decoded.filter((entry): entry is readonly [string, DecodedTexture] => entry[1] !== null));
-      overlay = new SpawnOverlay(waynet, spawns, routines, bodies, textures);
-      overlay.setVisible(showSpawnsRef.current);
-      overlay.setTime(spawnTimeRef.current, spawnStateRef.current);
-      spawnOverlayRef.current = overlay;
-      world.root.add(overlay.root);
+      attach(new SpawnOverlay(waynet, spawns, routines, bodies, textures));
     })();
     return () => {
       cancelled = true;
