@@ -1,4 +1,6 @@
-import type { DialogMetadata, FileParseErrors, RoutineSite, SemanticModel, SpawnSite } from '../../shared/types';
+import type {
+  DialogMetadata, FileParseErrors, RoutineArgIndex, RoutineSite, SemanticModel, SpawnSite
+} from '../../shared/types';
 import { PARSE_ERROR_LIMIT, PARSE_ERROR_TEXT_LIMIT } from '../../shared/types';
 import { SemanticModelBuilderVisitor } from 'daedalus-parser/semantic-visitor';
 
@@ -288,17 +290,6 @@ export function extractSpawnSites(
   return sites;
 }
 
-/**
- * Where a routine-carrying call keeps its time window and its waypoint.
- * `startM`/`stopM` are absent for `TA`, which is hour-only.
- */
-interface RoutineArgIndex {
-  startH: number;
-  startM?: number;
-  stopH: number;
-  stopM?: number;
-  waypoint: number;
-}
 
 /**
  * The two engine externals that actually install a routine entry, from their
@@ -410,9 +401,9 @@ export function buildRoutineParamIndex(
  * one against.
  */
 export function extractRoutineSites(
-  fileModels: Array<{ filePath: string; semanticModel: SemanticModel }>
+  fileModels: Array<{ filePath: string; semanticModel: SemanticModel }>,
+  argIndex: Record<string, RoutineArgIndex> = buildRoutineParamIndex(fileModels)
 ): RoutineSite[] {
-  const argIndex = buildRoutineParamIndex(fileModels);
   const sites: RoutineSite[] = [];
 
   const literalInt = (raw: string | undefined, isString: boolean | undefined): number | undefined => {

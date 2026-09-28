@@ -18,6 +18,7 @@ import {
   extractFileMetadataFromSource,
   extractExchangeSites,
   extractRoutineSites,
+  buildRoutineParamIndex,
   extractRoutineStatesByNpc,
   extractRoutinesByNpc,
   extractSpawnSites,
@@ -308,7 +309,11 @@ class ProjectService {
 
     // Extract and sort NPC list
     const npcs = Array.from(allNpcs).sort();
-    const routineSites = extractRoutineSites(fileModelsForSiteIndexes);
+    const routineArgIndex = buildRoutineParamIndex(fileModelsForSiteIndexes);
+    const routineSites = extractRoutineSites(fileModelsForSiteIndexes, routineArgIndex);
+    const routineLayouts = Object.fromEntries(
+      Object.entries(routineArgIndex).map(([name, layout]) => [name.toUpperCase(), layout])
+    );
 
     return {
       npcs,
@@ -333,6 +338,7 @@ class ProjectService {
       // function of every file, and once a load is enough.
       routineStatesByNpc: extractRoutineStatesByNpc(fileModelsForSiteIndexes, routineSites),
       exchangeSites: extractExchangeSites(fileModelsForSiteIndexes),
+      routineLayouts,
       metadataFailures,
       parseErrors
     };

@@ -430,6 +430,31 @@ INSTANCE DIA_Arog_Greeting (C_INFO)
       ]);
     });
 
+    it('indexes where each routine call keeps its window and waypoint, uppercased', async () => {
+      // Routine authoring (npc-editor.md §6) rewrites a `TA_*` call's times and
+      // waypoint in place, and offers the project's own wrappers as the state
+      // picker, so it needs the layout the routine index already derives —
+      // not just the minutes it derives from it.
+      fs.writeFileSync(path.join(tempDir, 'TA.d'), [
+        'FUNC VOID TA_Sit_Chair(var int a, var int b, var int c, var int d, var string place)',
+        '{',
+        '\tTA_MIN (self, a, b, c, d, ZS_Sit_Chair, place);',
+        '};',
+        'FUNC VOID Not_A_Wrapper(var int a) { Print(a); };'
+      ].join('\n'));
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.routineLayouts.TA_SIT_CHAIR).toEqual({
+        startH: 0, startM: 1, stopH: 2, stopM: 3, waypoint: 4
+      });
+      expect(index.routineLayouts.TA_MIN).toEqual({
+        startH: 1, startM: 2, stopH: 3, stopM: 4, waypoint: 6
+      });
+      expect(index.routineLayouts.NOT_A_WRAPPER).toBeUndefined();
+    });
+
     it('keeps the functions a broken file declares before its syntax error', async () => {
       // The metadata pass builds as much model as it can out of a file that
       // does not parse and withholds only the whole model; the functions it did

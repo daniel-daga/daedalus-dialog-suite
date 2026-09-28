@@ -83,6 +83,19 @@ export interface RoutineSite {
   line: number;
 }
 
+/**
+ * Where a routine-carrying call keeps its time window and its waypoint, as
+ * 0-based argument positions. `startM`/`stopM` are absent for `TA`, which is
+ * hour-only.
+ */
+export interface RoutineArgIndex {
+  startH: number;
+  startM?: number;
+  stopH: number;
+  stopM?: number;
+  waypoint: number;
+}
+
 /** One `Npc_ExchangeRoutine`/`B_StartOtherRoutine` call with a literal state. */
 export interface ExchangeSite {
   /** The call's first argument as written, UPPERCASED — `SELF` is left as-is. */
@@ -178,6 +191,13 @@ export interface ProjectIndex {
    * `daily_routine`, which stays `routinesByNpc`'s answer.
    */
   routineStatesByNpc: Record<string, { id: number; states: Record<string, string> }>;
+  /**
+   * UPPERCASED routine-carrying function (`TA`, `TA_MIN` and every project
+   * wrapper that passes its parameters into one) to where its window and
+   * waypoint sit — the layout `routineSites` was read with. Routine authoring
+   * rewrites a call in that layout and offers the wrappers as its states.
+   */
+  routineLayouts: Record<string, RoutineArgIndex>;
   /**
    * Every `Npc_ExchangeRoutine`/`B_StartOtherRoutine` call with a literal state
    * name — which states are actually *triggered*, as against those written.

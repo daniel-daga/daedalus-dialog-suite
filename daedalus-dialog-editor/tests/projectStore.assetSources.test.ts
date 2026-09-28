@@ -12,7 +12,7 @@ const descriptor = {
 const index = {
   npcs: [], routines: [], dialogsByNpc: {}, allFiles: [], questFiles: [], npcPrototypes: [],
   voiceIds: {}, waypointSites: {}, spawnSites: [], routineSites: [], routinesByNpc: {},
-  routineStatesByNpc: {}, metadataFailures: []
+  routineStatesByNpc: {}, routineLayouts: {}, metadataFailures: []
 };
 
 describe('ProjectStore - project asset sources', () => {

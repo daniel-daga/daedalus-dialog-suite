@@ -1,7 +1,7 @@
 # NPC Editor
 
 **Status:** Phases 1–4 built (#284, #285, #298, #309). NPC bodies now render at world spawn and routine placements.
-Phase 5 (authoring routines) is proposed — decisions from the 2026-09-28 workshop.
+Phase 5 (authoring routines) is in progress — its model and draft operations are built (#312, #314).
 
 An editor for `C_NPC` instances inside the dialog editor, covering what the
 community's standalone *NPC Generator* covers (main info, attributes, protection,
@@ -267,8 +267,9 @@ the "NPC-Rendering im Viewport" item of
 
 ## 6. Phase 5 — authoring routines
 
-**Proposed (workshop with Daniel, 2026-09-28).** Nothing below is built;
-the slices are #312–#318, and #315 waits on the three open questions below.
+**Workshop with Daniel, 2026-09-28.** Slices 1 and 3 are built, slice 2
+turned out not to be needed; the rest are #315–#318, and #315 waits on the
+three open questions below.
 
 Everything a routine editor reads already exists: `routineSites`,
 `routinesByNpc` and `routineStatesByNpc` in the project index, the World
@@ -348,28 +349,41 @@ adds:
 
 ### Slices
 
-1. **Parser: `daedalus-parser/routine-definition`** (#312), built like
-   `npc-definition`: a reader returning the routine's entries (callee, the
-   four time arguments, the waypoint, each with its source range) and every
-   other statement verbatim, and a writer that patches in place — set a time,
-   set the waypoint, change the state (the callee), add an entry after a given
-   one, remove one — plus the text of a new routine function. Classified by
-   shape. **The argument layout is the caller's input**, taken from the index's
-   `buildRoutineParamIndex` rather than a name convention (architecture §8,
-   "A wrapper's argument layout is found by following the call"), so `TA`
-   (hours only), `TA_MIN` and every wrapper are written in their own layout.
-   Times are written two-digit, as retail writes them. Tests: the corpus
-   round-trips byte-identical unedited; one edit changes one line.
-   `DialogFunction` carries no `sourceText`, unlike `GlobalInstance`, so the
-   reader needs the function's text from somewhere: either the model gains it,
-   or the worker cuts the range from the file. Decided when building it.
-2. **IPC** (#313): `routine:extract` and `routine:applyEdits` in the forked parser
-   pool, validated like `assertNpcApplyEditsRequest`.
-3. **Pure domain** (#314) in `src/renderer/routines/`: the draft operations
-   (partition-preserving boundary move, split an entry at a minute to add a
-   stop, remove a stop and give its window to a neighbour, set state, set
-   waypoint) and `waynetRoute(waynet, from, to)` over the payload's positions
-   and edge pairs. Jest.
+1. **Reader/writer** (#312). **Built 2026-09-28, in the renderer rather than
+   the parser.** The plan said a `routine-definition` subpath patching the
+   function's text, but the file's semantic model already keeps each body
+   statement verbatim as one `Action`, and a save regenerates the function
+   from its actions — as `insertNpcScript`'s `Wld_InsertNpc` append already
+   relies on. So `routines/routineEntries.ts` reads a routine function's
+   actions into entries and writes entries back as a new actions list, and
+   the save is the ordinary `saveFile`. No parser subpath, no IPC.
+   **The argument layout is `ProjectIndex.routineLayouts`**, the index's
+   `buildRoutineParamIndex` result now carried to the renderer (UPPERCASED
+   callee → argument positions), not a name convention (architecture §8, "A
+   wrapper's argument layout is found by following the call"). What the
+   writer decides:
+   - Within an action it rewrites only the tokens whose value changed, at
+     their original width, so alignment tabs, `08` against `8` and a `24` for
+     midnight survive every edit that does not touch them.
+   - An end at midnight is written as hour 24, as retail writes it, unless the
+     window starts at midnight too: `(00,00,00,00)` is the whole-day idiom.
+   - A new entry goes after the action of the entry before it, spaced like the
+     routine's first call (the gap before `(`, and whether `,` is followed by a
+     space), with two-digit times.
+   - A changed state whose layout matches is a rename of the callee; one whose
+     layout differs is rewritten from the entry alone, and **refused** when the
+     layout has positions an entry cannot fill (`TA_MIN` also wants `self` and
+     a `ZS_*` state). A minute on an hour-only `TA` is refused too.
+2. **IPC** (#313). **Not needed** — see slice 1; closed.
+3. **Pure domain** (#314). **Built 2026-09-28.** `routines/routineDraft.ts`:
+   `moveBoundary` (the neighbour sharing the boundary follows unless
+   detached), `splitEntry`, `removeEntry` (the window goes to the entry
+   ending where it started, else the one starting where it ended),
+   `setState`, `setWaypoint`. **No window may become empty**, because
+   `start === end` is the whole day: a move is clamped one minute inside,
+   towards whichever end of the allowed arc the pointer is nearer.
+   `routines/waynetRoute.ts`: Dijkstra by straight-line edge length over the
+   payload, `null` when there is no route or no such waypoint.
 4. **Routine mode in the World surface** (#315). A Playwright test first. The NPC's
    stops are drawn numbered at their waypoints, with routes between them. A
    24-hour timeline bar sits under the viewport, one block per entry labelled
@@ -410,5 +424,4 @@ top of it; 3 is mostly asset plumbing that already exists; 4 is small once 3
 works. Phase 3 can start in parallel with 2 once Phase 1's `NpcDefinition`
 shape is fixed.
 
-Phase 5's slices run in order; 1 and 3 can run in parallel, since the
-domain's draft operations do not need the writer.
+Phase 5's remaining slices run in order: 4, then 5 and 6.
