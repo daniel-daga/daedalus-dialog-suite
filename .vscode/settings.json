@@ -1,0 +1,42 @@
+{
+  // Each workspace package has its own flat ESLint config and its own
+  // installed plugins (pnpm workspace) — point the extension at each so it
+  // resolves the right config and node_modules instead of only the root.
+  "eslint.useFlatConfig": true,
+  "eslint.workingDirectories": [
+    { "pattern": "daedalus-dialog-editor" },
+    { "pattern": "daedalus-parser" },
+    { "pattern": "zenkit-node" },
+    { "pattern": "zen-world" }
+  ],
+  "eslint.validate": ["javascript", "typescript", "typescriptreact"],
+
+  // No Prettier in this repo — ESLint's own fixable rules are the only
+  // source of truth, so only auto-fix those on save (no reformatting).
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+  "editor.formatOnSave": false,
+
+  // Use the editor workspace's own TypeScript so version and lib behavior
+  // match what CI actually runs, not the VS Code built-in copy.
+  "typescript.tsdk": "daedalus-dialog-editor/node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+
+  "search.exclude": {
+    "**/.worktrees": true,
+    "**/dist": true,
+    "**/build": true,
+    "**/coverage": true,
+    "**/playwright-report": true,
+    "**/blob-report": true,
+    "**/all-blob-reports": true,
+    "**/test-results": true
+  },
+  "files.watcherExclude": {
+    "**/.worktrees/**": true,
+    "**/node_modules/**": true,
+    "**/dist/**": true,
+    "**/coverage/**": true
+  }
+}

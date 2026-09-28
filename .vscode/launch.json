@@ -1,0 +1,40 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Electron: Main",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/daedalus-dialog-editor",
+      "runtimeExecutable": "${workspaceFolder}/daedalus-dialog-editor/node_modules/.bin/electron",
+      "windows": {
+        "runtimeExecutable": "${workspaceFolder}/daedalus-dialog-editor/node_modules/.bin/electron.cmd"
+      },
+      "args": ["${workspaceFolder}/daedalus-dialog-editor", "--no-sandbox"],
+      "outputCapture": "std",
+      "preLaunchTask": "editor: build:main"
+    },
+    {
+      "name": "Editor: Jest (current file)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/daedalus-dialog-editor",
+      "runtimeExecutable": "node",
+      "program": "${workspaceFolder}/daedalus-dialog-editor/node_modules/.bin/jest",
+      "args": ["--runInBand", "--watchAll=false", "${fileBasenameNoExtension}"],
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen"
+    },
+    {
+      "name": "Parser: Jest (current file)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/daedalus-parser",
+      "runtimeExecutable": "node",
+      "program": "${workspaceFolder}/daedalus-parser/node_modules/.bin/jest",
+      "args": ["--runInBand", "--watchAll=false", "${fileBasenameNoExtension}"],
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen"
+    }
+  ]
+}
