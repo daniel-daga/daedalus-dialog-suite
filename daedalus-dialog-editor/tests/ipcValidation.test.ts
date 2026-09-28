@@ -10,6 +10,7 @@ import {
   assertDialogName,
   assertParseSourcePayload,
   assertNpcApplyEditsRequest,
+  assertRoutineSitesOfFileRequest,
   assertOutputUnitLines,
   assertExternalUrl,
   assertSaveFileSettings,
@@ -2035,5 +2036,30 @@ describe('assertOutputUnitLines', () => {
     ['a subtitle that is not a string', [{ name: 'DIA_X_00', text: 3 }]],
   ])('refuses %s', (_what, lines) => {
     expect(() => assertOutputUnitLines(lines)).toThrow(/project:updateOutputUnits/);
+  });
+});
+
+describe('assertRoutineSitesOfFileRequest', () => {
+  // The layouts cross from the renderer because a wrapper lives in another
+  // file than the routine that calls it; each is a set of argument positions.
+  const layout = { startH: 0, startM: 1, stopH: 2, stopM: 3, waypoint: 4 };
+
+  it('accepts a path and layouts of non-negative integer positions', () => {
+    expect(() => assertRoutineSitesOfFileRequest({
+      filePath: '/p/Rtn.d',
+      layouts: { TA_SIT: layout, TA: { startH: 1, stopH: 2, waypoint: 4 } },
+    })).not.toThrow();
+  });
+
+  it.each([
+    ['no path', { layouts: {} }],
+    ['an empty path', { filePath: '', layouts: {} }],
+    ['layouts that are not an object', { filePath: '/p/Rtn.d', layouts: [] }],
+    ['a callee that is not an identifier', { filePath: '/p/Rtn.d', layouts: { 'TA SIT': layout } }],
+    ['a missing position', { filePath: '/p/Rtn.d', layouts: { TA_SIT: { startH: 0, stopH: 2 } } }],
+    ['a negative position', { filePath: '/p/Rtn.d', layouts: { TA_SIT: { ...layout, waypoint: -1 } } }],
+    ['a fractional position', { filePath: '/p/Rtn.d', layouts: { TA_SIT: { ...layout, startM: 1.5 } } }],
+  ])('refuses %s', (_label, request) => {
+    expect(() => assertRoutineSitesOfFileRequest(request)).toThrow(/project:routineSitesOfFile/);
   });
 });

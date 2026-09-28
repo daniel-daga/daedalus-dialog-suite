@@ -446,8 +446,10 @@ INSTANCE DIA_Arog_Greeting (C_INFO)
       const service = new ProjectService();
       const index = await service.buildProjectIndex(tempDir);
 
+      // `name` is the spelling the project declares it with, which is what a
+      // new call is written with; the externals are not declared here.
       expect(index.routineLayouts.TA_SIT_CHAIR).toEqual({
-        startH: 0, startM: 1, stopH: 2, stopM: 3, waypoint: 4
+        startH: 0, startM: 1, stopH: 2, stopM: 3, waypoint: 4, name: 'TA_Sit_Chair'
       });
       expect(index.routineLayouts.TA_MIN).toEqual({
         startH: 1, startM: 2, stopH: 3, stopM: 4, waypoint: 6
@@ -1217,6 +1219,33 @@ FUNC VOID Rtn_Mixed()
           line: 3
         }
       ]);
+    });
+
+    // A routine save re-indexes the one file it wrote (npc-editor.md §6). The
+    // wrapper that file calls is declared elsewhere, so its layout comes in
+    // from the whole-project index rather than being derived from the file.
+    it('reads one file\'s routine sites with layouts the project index derived', async () => {
+      const { extractFileMetadataFromSource, routineSitesOfFile } = await load();
+
+      const file = extractFileMetadataFromSource(
+        `FUNC VOID Rtn_Start_900()
+{
+	TA_Sit_Throne (07,00,21,30,"NW_THRONE");
+};`,
+        '/test/Onar.d'
+      );
+      const layouts = { TA_SIT_THRONE: { startH: 0, startM: 1, stopH: 2, stopM: 3, waypoint: 4 } };
+
+      expect(routineSitesOfFile('/test/Onar.d', file.semanticModel!, layouts)).toEqual([{
+        routine: 'RTN_START_900',
+        stateName: 'TA_SIT_THRONE',
+        startMinute: 7 * 60,
+        endMinute: 21 * 60 + 30,
+        waypoint: 'NW_THRONE',
+        filePath: '/test/Onar.d',
+        line: 3
+      }]);
+      expect(routineSitesOfFile('/test/Onar.d', file.semanticModel!, {})).toEqual([]);
     });
 
     // `TA` is the hour-only external: its waypoint sits at argument 4, not 6,

@@ -94,6 +94,8 @@ export interface RoutineArgIndex {
   stopH: number;
   stopM?: number;
   waypoint: number;
+  /** The spelling the project declares it with, when it does. */
+  name?: string;
 }
 
 /** One `Npc_ExchangeRoutine`/`B_StartOtherRoutine` call with a literal state. */

@@ -177,6 +177,31 @@ class MockFileSystem {
   }
 }
 
+const MOCK_WRAPPER_LAYOUT = { startH: 0, startM: 1, stopH: 2, stopM: 3, waypoint: 4 };
+
+// Routines, as simply as the rest of this mock reads a file: every
+// `TA_*(h,m,h,m,"WP")` inside a `Rtn_*` function (#285, and the re-index a
+// routine save asks for).
+function mockRoutineSites(filePath: string, content: string): RoutineSite[] {
+  const sites: RoutineSite[] = [];
+  for (const fn of content.matchAll(/func\s+void\s+(Rtn_\w+)\s*\(\s*\)\s*\{([\s\S]*?)\n\};/gi)) {
+    const bodyStart = fn.index! + fn[0].indexOf('{');
+    for (const ta of fn[2].matchAll(/(TA_\w+)\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*"(\w+)"\s*\)/gi)) {
+      const offset = bodyStart + 1 + ta.index!;
+      sites.push({
+        routine: fn[1].toUpperCase(),
+        stateName: ta[1].toUpperCase(),
+        startMinute: (Number(ta[2]) * 60 + Number(ta[3])) % 1440,
+        endMinute: (Number(ta[4]) * 60 + Number(ta[5])) % 1440,
+        waypoint: ta[6],
+        filePath,
+        line: content.slice(0, offset).split('\n').length,
+      });
+    }
+  }
+  return sites;
+}
+
 // Simple parser that returns the sample model
 // In a real implementation, this could use tree-sitter WASM
 // Test seam: a seeded file may carry a hand-authored SemanticModel as JSON on a
@@ -293,6 +318,14 @@ function parseSource(sourceCode: string): any {
     const aiOutputRegex = /AI_Output\s*\([^,]+,\s*[^,]+,\s*"([^"]+)"\s*\)/g;
     let actionMatch;
 
+    // A routine's TA_ calls, verbatim, as the real model keeps every body
+    // statement it has no richer type for — what routine authoring edits.
+    if (/^Rtn_/i.test(funcName)) {
+      for (const ta of body.matchAll(/(TA_\w+\s*\([^;]*\))\s*;/gi)) {
+        actions.push({ type: 'Action', action: ta[1], line: lineAt(sourceCode, bodyStart + ta.index!) });
+      }
+    }
+
     while ((actionMatch = aiOutputRegex.exec(body)) !== null) {
       const textId = actionMatch[1];
       actions.push({
@@ -386,6 +419,8 @@ function generateCode(model: any, settings: any): string {
           // DialogLine: listener is the opposite of speaker
           const listener = action.speaker === 'other' ? 'self' : 'other';
           code += `${indent}AI_Output(${action.speaker}, ${listener}, "${action.id}");\n`;
+        } else if (action.type === 'Action' && typeof action.action === 'string') {
+          code += `${indent}${action.action};\n`;
         }
       }
     }
@@ -636,25 +671,15 @@ export const mockEditorAPI: EditorAPI = {
     // `daily_routine` — what the NPC editor's routines section shows (#285).
     const routineSites: RoutineSite[] = [];
     const routinesByNpc: Record<string, string> = {};
+    const wrapperNames = new Map<string, string>();
 
     for (const filePath of files) {
       const content = MockFileSystem.readFile(filePath);
       const model = parseSource(content);
 
-      for (const fn of content.matchAll(/func\s+void\s+(Rtn_\w+)\s*\(\s*\)\s*\{([\s\S]*?)\n\};/gi)) {
-        const bodyStart = fn.index! + fn[0].indexOf('{');
-        for (const ta of fn[2].matchAll(/(TA_\w+)\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*"(\w+)"\s*\)/gi)) {
-          const offset = bodyStart + 1 + ta.index!;
-          routineSites.push({
-            routine: fn[1].toUpperCase(),
-            stateName: ta[1].toUpperCase(),
-            startMinute: Number(ta[2]) * 60 + Number(ta[3]),
-            endMinute: Number(ta[4]) * 60 + Number(ta[5]),
-            waypoint: ta[6],
-            filePath,
-            line: content.slice(0, offset).split('\n').length,
-          });
-        }
+      routineSites.push(...mockRoutineSites(filePath, content));
+      for (const wrapper of content.matchAll(/func\s+void\s+(TA_\w+)\s*\(\s*var\s+int/gi)) {
+        wrapperNames.set(wrapper[1].toUpperCase(), wrapper[1]);
       }
       for (const inst of content.matchAll(/INSTANCE\s+(\w+)\s*\([^)]*\)\s*\{[^}]*?daily_routine\s*=\s*(\w+)\s*;/gi)) {
         routinesByNpc[inst[1].toUpperCase()] = inst[2].toUpperCase();
@@ -700,8 +725,17 @@ export const mockEditorAPI: EditorAPI = {
       npcPrototypes: [],
       npcFiles,
       routineSites,
-      routinesByNpc
+      routinesByNpc,
+      // Every TA_ wrapper declared or called, in retail's layout.
+      routineLayouts: Object.fromEntries([
+        ...routineSites.map((site) => [site.stateName ?? '', MOCK_WRAPPER_LAYOUT] as const),
+        ...[...wrapperNames].map(([key, name]) => [key, { ...MOCK_WRAPPER_LAYOUT, name }] as const),
+      ].filter(([key]) => key !== '')),
     };
+  },
+
+  async routineSitesOfFile(filePath: string): Promise<RoutineSite[]> {
+    return mockRoutineSites(filePath, MockFileSystem.readFile(filePath));
   },
 
   async parseDialogFile(filePath: string): Promise<any> {

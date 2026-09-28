@@ -106,7 +106,9 @@ import type {
   RecentProject,
   AppendInsertNpcResult,
   NpcDefinition,
-  NpcEdit
+  NpcEdit,
+  RoutineArgIndex,
+  RoutineSite
 } from '../../shared/types';
 
 import type { NpcBodyRequest, NpcBodyScene } from '../../shared/worldTypes';
@@ -157,6 +159,7 @@ export interface EditorAPI {
   openProjectFolderDialog: () => Promise<string | null>;
   buildProjectIndex: (folderPath: string) => Promise<ProjectIndex>;
   parseDialogFile: (filePath: string) => Promise<SemanticModel>;
+  routineSitesOfFile: (filePath: string, layouts: Record<string, RoutineArgIndex>) => Promise<RoutineSite[]>;
   addAllowedPath: (folderPath: string) => Promise<void>;
   loadProjectConfig: (projectRoot: string) => Promise<OpenedProjectConfig>;
   /** The project's OutputUnit database, or null when the install has none (#264). */

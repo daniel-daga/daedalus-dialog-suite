@@ -1,0 +1,164 @@
+import { test, expect, type Page } from '@playwright/test';
+
+/**
+ * Browser mock-harness spec for the routine editor (docs/plans/npc-editor.md
+ * §6; NOT end-to-end). The harness has no world, so this drives the editor
+ * from the NPC editor, where it needs none: the routines at the top, the
+ * selected routine's activities below, a 24-hour timeline, and a Save that
+ * writes the routine function and re-indexes it. What the mock cannot prove is
+ * byte fidelity — that is tests/routineEntries.test.ts, over the writer the
+ * real save runs.
+ */
+
+const NPC_FILE = `INSTANCE BAU_900_Onar (C_NPC)
+{
+	name = "Onar";
+	id = 900;
+	daily_routine = Rtn_Start_900;
+};
+
+FUNC VOID Rtn_Start_900()
+{
+	TA_Sit_Throne (07,00,22,00,"NW_THRONE");
+	TA_Sleep (22,00,07,00,"NW_BED");
+};
+`;
+
+const TA_FILE = `FUNC VOID TA_Stand_Guarding(var int start_h, var int start_m, var int stop_h, var int stop_m, var string waypoint)
+{
+};
+`;
+
+const NPC_PATH = 'project/NPC/BAU_900_Onar.d';
+
+async function openProject(page: Page) {
+  await page.goto('/');
+  await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
+  await page.evaluate(({ npc, ta, npcPath }) => {
+    localStorage.setItem(`mockapi_file_${npcPath}`, npc);
+    localStorage.setItem('mockapi_file_project/AI/TA.d', ta);
+  }, { npc: NPC_FILE, ta: TA_FILE, npcPath: NPC_PATH });
+  page.on('dialog', async (dialog) => {
+    if (dialog.message().includes('project folder path')) await dialog.accept('project');
+    else await dialog.dismiss();
+  });
+  await page.getByRole('button', { name: /Open Project/i }).first().click();
+  await expect(page.getByText('BAU_900_Onar')).toBeVisible({ timeout: 15000 });
+  await expect(page.getByTestId('project-opening-overlay')).toBeHidden({ timeout: 15000 });
+}
+
+async function openRoutineEditor(page: Page) {
+  await page.getByRole('button', { name: 'Edit NPC BAU_900_Onar' }).click();
+  const npcEditor = page.getByRole('dialog', { name: /BAU_900_Onar/ });
+  await npcEditor.getByRole('button', { name: 'Edit routine RTN_START_900' }).click();
+  const editor = page.getByRole('dialog', { name: 'Routines of BAU_900_Onar' });
+  await expect(editor).toBeVisible();
+  return editor;
+}
+
+const activity = (editor: ReturnType<Page['getByRole']>, n: number) => editor.getByRole('group', { name: `Activity ${n}` });
+const savedFile = (page: Page) => page.evaluate((path) => localStorage.getItem(`mockapi_file_${path}`), NPC_PATH);
+
+test.describe('Routine editor', () => {
+  test.beforeEach(async ({ page }) => {
+    await openProject(page);
+  });
+
+  test('shows the routine and its activities as the script declares them', async ({ page }) => {
+    const editor = await openRoutineEditor(page);
+
+    await expect(editor.getByRole('button', { name: 'Daily: RTN_START_900' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(activity(editor, 1).getByLabel('Activity', { exact: true })).toHaveValue('TA_Sit_Throne');
+    await expect(activity(editor, 1).getByLabel('Start')).toHaveValue('07:00');
+    await expect(activity(editor, 1).getByLabel('End')).toHaveValue('22:00');
+    await expect(activity(editor, 1).getByLabel('Waypoint')).toHaveValue('NW_THRONE');
+    await expect(activity(editor, 2).getByLabel('Activity', { exact: true })).toHaveValue('TA_Sleep');
+    await expect(activity(editor, 2).getByLabel('Start')).toHaveValue('22:00');
+  });
+
+  test('a typed end moves the next activity with it, and Save writes both and re-indexes', async ({ page }) => {
+    const editor = await openRoutineEditor(page);
+
+    await activity(editor, 1).getByLabel('End').fill('21:30');
+    await activity(editor, 1).getByLabel('End').blur();
+    await expect(activity(editor, 2).getByLabel('Start')).toHaveValue('21:30');
+
+    await editor.getByRole('button', { name: 'Save' }).click();
+    await expect(editor).toBeHidden();
+
+    const saved = await savedFile(page);
+    expect(saved).toContain('TA_Sit_Throne (07,00,21,30,"NW_THRONE");');
+    expect(saved).toContain('TA_Sleep (21,30,07,00,"NW_BED");');
+
+    // The NPC editor's list reads the index, which the save re-read.
+    const npcEditor = page.getByRole('dialog', { name: /BAU_900_Onar/ });
+    await expect(npcEditor.getByRole('list', { name: 'Daily: RTN_START_900' })).toContainText('07:00–21:30');
+  });
+
+  test('dragging a boundary on the timeline snaps to the quarter hour', async ({ page }) => {
+    const editor = await openRoutineEditor(page);
+    const bar = editor.getByTestId('routine-timeline');
+    const handle = bar.getByRole('slider', { name: 'Boundary at 22:00' });
+    const box = (await bar.boundingBox())!;
+    const from = (await handle.boundingBox())!;
+
+    // 20:37 on the bar's scale, which snaps to 20:30.
+    const x = box.x + box.width * ((20 * 60 + 37) / 1440);
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(x, from.y + from.height / 2, { steps: 8 });
+    await page.mouse.up();
+
+    await expect(activity(editor, 1).getByLabel('End')).toHaveValue('20:30');
+    await expect(activity(editor, 2).getByLabel('Start')).toHaveValue('20:30');
+  });
+
+  test('adding an activity splits the selected one, and it takes its own state and waypoint', async ({ page }) => {
+    const editor = await openRoutineEditor(page);
+
+    await activity(editor, 1).click();
+    await editor.getByRole('button', { name: 'Add activity' }).click();
+    await expect(activity(editor, 1).getByLabel('End')).toHaveValue('14:30');
+    await expect(activity(editor, 2).getByLabel('Start')).toHaveValue('14:30');
+    await expect(activity(editor, 2).getByLabel('End')).toHaveValue('22:00');
+
+    await activity(editor, 2).getByLabel('Activity', { exact: true }).fill('TA_Stand_Guarding');
+    await page.getByRole('option', { name: 'TA_Stand_Guarding', exact: true }).click();
+    await activity(editor, 2).getByLabel('Waypoint').fill('WP_GATE');
+    await activity(editor, 2).getByLabel('Waypoint').blur();
+
+    await editor.getByRole('button', { name: 'Save' }).click();
+    await expect(editor).toBeHidden();
+    const saved = (await savedFile(page))!;
+    const lines = saved.split('\n').map((line) => line.trim()).filter((line) => line.startsWith('TA_'));
+    expect(lines).toEqual([
+      'TA_Sit_Throne (07,00,14,30,"NW_THRONE");',
+      'TA_Stand_Guarding (14,30,22,00,"WP_GATE");',
+      'TA_Sleep (22,00,07,00,"NW_BED");',
+    ]);
+  });
+
+  test('removing an activity gives its time to the one before, and undo brings it back', async ({ page }) => {
+    const editor = await openRoutineEditor(page);
+
+    await activity(editor, 2).getByRole('button', { name: 'Remove activity' }).click();
+    await expect(activity(editor, 2)).toHaveCount(0);
+    await expect(activity(editor, 1).getByLabel('End')).toHaveValue('07:00');
+
+    await editor.getByRole('button', { name: 'Undo' }).click();
+    await expect(activity(editor, 2).getByLabel('Activity', { exact: true })).toHaveValue('TA_Sleep');
+    await expect(activity(editor, 1).getByLabel('End')).toHaveValue('22:00');
+  });
+
+  test('Cancel leaves the file as it was', async ({ page }) => {
+    const before = await savedFile(page);
+    const editor = await openRoutineEditor(page);
+
+    await activity(editor, 1).getByLabel('End').fill('21:00');
+    await activity(editor, 1).getByLabel('End').blur();
+    await editor.getByRole('button', { name: 'Cancel' }).click();
+    await expect(editor).toBeHidden();
+
+    expect(await savedFile(page)).toBe(before);
+  });
+});

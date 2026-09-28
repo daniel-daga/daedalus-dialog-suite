@@ -34,6 +34,7 @@ import { waypointJumpReason } from './npcWorldJump';
 import NpcVisualPreview from './NpcVisualPreview';
 import { npcAssetSuggestions, type NpcAssetSuggestions } from '../npc/npcAssets';
 import NpcRoutineSourceDialog, { type NpcRoutineSourceTarget } from './NpcRoutineSourceDialog';
+import RoutineEditorDialog from './RoutineEditor';
 
 // The NPC editor (docs/plans/npc-editor.md, Phase 2): a form over one NPC
 // instance's body. It opens the declaring file through the file store — so
@@ -141,6 +142,8 @@ interface NpcRoutinesSectionProps {
   waypointReason?: (waypoint: string) => string | null;
   /** Why neither jump may leave the editor now, e.g. unsaved changes. */
   blockedReason?: string | null;
+  /** Open the routine editor on this routine (npc-editor.md §6). */
+  onEditRoutine?: (routine: string) => void;
 }
 
 /** A jump button that says why it is off, rather than just being off. */
@@ -155,7 +158,7 @@ const JumpButton: React.FC<{ label: string; reason: string | null; onClick: () =
 );
 
 export const NpcRoutinesSection: React.FC<NpcRoutinesSectionProps> = (
-  { routines, onShowWaypoint, onShowSource, waypointReason, blockedReason = null },
+  { routines, onShowWaypoint, onShowSource, waypointReason, blockedReason = null, onEditRoutine },
 ) => (
   <Box sx={{ mb: 2 }}>
     <Typography variant="subtitle2">Routines</Typography>
@@ -164,7 +167,19 @@ export const NpcRoutinesSection: React.FC<NpcRoutinesSectionProps> = (
     )}
     {routines.map(({ label, routine, entries }) => (
       <Box key={routine} component="ul" aria-label={`${label}: ${routine}`} sx={{ m: 0, mt: 0.5, pl: 0, listStyle: 'none' }}>
-        <Typography component="li" variant="body2" sx={{ fontWeight: 500 }}>{`${label}: ${routine}`}</Typography>
+        <Typography component="li" variant="body2" sx={{ fontWeight: 500 }}>
+          {`${label}: ${routine}`}
+          {onEditRoutine && (
+            <Button
+              size="small"
+              sx={{ minWidth: 0, py: 0, ml: 1, fontSize: 11 }}
+              aria-label={`Edit routine ${routine}`}
+              onClick={() => onEditRoutine(routine)}
+            >
+              Edit
+            </Button>
+          )}
+        </Typography>
         {entries.length === 0 && (
           <Typography component="li" variant="caption" color="text.secondary">No TA entries indexed</Typography>
         )}
@@ -206,6 +221,7 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [routineSource, setRoutineSource] = useState<NpcRoutineSourceTarget | null>(null);
+  const [editingRoutine, setEditingRoutine] = useState<string | null>(null);
   const [assetSuggestions, setAssetSuggestions] = useState<NpcAssetSuggestions>({ headMeshes: [], walkOverlays: [] });
   const [previewAssetsReady, setPreviewAssetsReady] = useState(false);
   const [previewAssetsError, setPreviewAssetsError] = useState<string | null>(null);
@@ -278,14 +294,17 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
     () => (definition ? uncoveredStatements(definition, categoryOfItem) : []),
     [definition, categoryOfItem],
   );
+  // Subscribed, so a routine saved from the routine editor — which re-indexes
+  // its file — shows here without reopening.
+  const routineSites = useProjectStore((s) => s.routineSiteIndex);
   const routines = useMemo(() => {
     const project = useProjectStore.getState();
     return npcRoutines({
-      sites: project.routineSiteIndex,
+      sites: routineSites,
       routinesByNpc: project.routineNpcIndex,
       statesByNpc: project.routineStateIndex,
     }, npcName);
-  }, [npcName]);
+  }, [npcName, routineSites]);
   const invalid = definition ? validateNpcForm(values) : null;
   // Rebuilt as background ingestion parses more of the project.
   const lookupConstant = useMemo(projectConstantLookup, [parseGeneration]);
@@ -421,6 +440,7 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
                 blockedReason={pendingEdits.length > 0
                   ? 'Save or cancel your changes first'
                   : null}
+                onEditRoutine={setEditingRoutine}
               />
               {uncovered.length > 0 && (
                 <Box>
@@ -456,6 +476,9 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
       </DialogActions>
       {routineSource && (
         <NpcRoutineSourceDialog target={routineSource} onClose={() => setRoutineSource(null)} />
+      )}
+      {editingRoutine && (
+        <RoutineEditorDialog npc={npcName} initialRoutine={editingRoutine} onClose={() => setEditingRoutine(null)} />
       )}
     </Dialog>
   );

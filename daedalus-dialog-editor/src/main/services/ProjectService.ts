@@ -311,8 +311,17 @@ class ProjectService {
     const npcs = Array.from(allNpcs).sort();
     const routineArgIndex = buildRoutineParamIndex(fileModelsForSiteIndexes);
     const routineSites = extractRoutineSites(fileModelsForSiteIndexes, routineArgIndex);
+    // The spelling each wrapper is declared with, so a call written from the
+    // layout reads like the project's own (`TA_Sit_Throne`, not upper case).
+    const declaredNames = new Map<string, string>();
+    for (const { semanticModel } of fileModelsForSiteIndexes) {
+      for (const name of Object.keys(semanticModel.functions || {})) declaredNames.set(name.toLowerCase(), name);
+    }
     const routineLayouts = Object.fromEntries(
-      Object.entries(routineArgIndex).map(([name, layout]) => [name.toUpperCase(), layout])
+      Object.entries(routineArgIndex).map(([key, layout]) => {
+        const name = declaredNames.get(key);
+        return [key.toUpperCase(), name ? { ...layout, name } : layout];
+      })
     );
 
     return {

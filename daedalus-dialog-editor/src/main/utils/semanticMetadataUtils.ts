@@ -452,6 +452,22 @@ export function extractRoutineSites(
 }
 
 /**
+ * One file's routine sites, read with layouts the whole-project index already
+ * derived (`ProjectIndex.routineLayouts`, UPPERCASED keys) — what a routine
+ * save re-indexes, since the wrappers its file calls are declared elsewhere.
+ */
+export function routineSitesOfFile(
+  filePath: string,
+  semanticModel: SemanticModel,
+  layouts: Record<string, RoutineArgIndex>
+): RoutineSite[] {
+  const argIndex = Object.fromEntries(
+    Object.entries(layouts).map(([callee, layout]) => [callee.toLowerCase(), layout])
+  );
+  return extractRoutineSites([{ filePath, semanticModel }], argIndex);
+}
+
+/**
  * UPPERCASED NPC instance to the UPPERCASED `daily_routine` it declares — the
  * half of a schedule `extractRoutineSites` cannot carry, because a routine
  * function is shared and knows nothing about who runs it.
