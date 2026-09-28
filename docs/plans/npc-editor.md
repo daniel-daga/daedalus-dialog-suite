@@ -322,6 +322,30 @@ FUNC VOID Rtn_Start_900 ()
   table measured against retail first (the §16.22 precedent in
   `level-editor.md`: the number comes first, and it may kill the check).
 
+### What a user of another NPC editor expects (2026-09-28)
+
+Relayed by Daniel: routines listed at the top (for example one per chapter),
+and below them the selected routine's *Tätigkeiten* (activities), each picked
+from a dropdown and given a time window and a waypoint — "stand guarding,
+13:30–14:00, at WP_x". A second routine is where the day changes later.
+
+That is this model already: the routines are the daily routine and its
+`Rtn_<State>_<id>` variants, an activity is one `TA_*` entry, and the dropdown
+is the project's wrapper list. So the routine-mode panel and the NPC editor's
+table take that layout, and the UI says *activity* for an entry. Two things it
+adds:
+
+- **Minutes matter.** 13:30–14:00 is a half-hour activity, which weighs on the
+  snap question below.
+- **A variant does nothing until a script switches to it.** Retail has no
+  chapter routines; a chapter is a spawn guard, and a routine changes through
+  `Npc_ExchangeRoutine` / `B_StartOtherRoutine` at a story event
+  (architecture §8, "States are events, not chapters"). So each variant in the
+  list shows where it is triggered, from the index's `exchangeSites` (which has
+  no consumer yet), and says so when nothing literal triggers it. Writing the
+  trigger stays in the dialog editor, which already has the exchange-routine
+  action.
+
 ### Slices
 
 1. **Parser: `daedalus-parser/routine-definition`** (#312), built like
