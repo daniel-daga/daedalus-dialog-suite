@@ -85,6 +85,20 @@ jest.mock('../src/renderer/world/SpawnOverlay', () => {
   };
 });
 
+const mockRoutineOverlays: Array<{ root: THREE.Object3D }> = [];
+jest.mock('../src/renderer/world/RoutineOverlay', () => {
+  const actual = jest.requireActual('../src/renderer/world/RoutineOverlay');
+  return {
+    ...actual,
+    RoutineOverlay: class extends actual.RoutineOverlay {
+      constructor(...args: unknown[]) {
+        super(...args);
+        mockRoutineOverlays.push(this as unknown as { root: THREE.Object3D });
+      }
+    },
+  };
+});
+
 // Below the mocks, which jest hoists above it anyway.
 import WorldViewport from '../src/renderer/components/world/WorldViewport';
 
@@ -162,6 +176,7 @@ describe('WorldViewport — the waynet overlay across a structural rebuild', () 
     mockScenes.length = 0;
     mockOverlays.length = 0;
     mockSpawnOverlays.length = 0;
+    mockRoutineOverlays.length = 0;
     (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
       observe() {}
       disconnect() {}
@@ -271,6 +286,37 @@ describe('WorldViewport — the waynet overlay across a structural rebuild', () 
     const overlay = mockSpawnOverlays[mockSpawnOverlays.length - 1];
     expect(overlay.root.parent).toBe(mockScenes[1].root);
     expect(overlay.root.visible).toBe(true);
+
+    unmount();
+  });
+
+  it('draws routine mode\'s draft under that root too, and takes it away when the mode closes', () => {
+    // npc-editor.md §6: the draft's stops and routes hang off the same root, so
+    // they follow the rebuild for the waynet's reason.
+    const payload = waynet();
+    const draft = {
+      entries: [
+        { state: 'TA_Stand', startMinute: 8 * 60, endMinute: 20 * 60, waypoint: 'A' },
+        { state: 'TA_Sleep', startMinute: 20 * 60, endMinute: 8 * 60, waypoint: 'B' },
+      ],
+      selected: null,
+    };
+    const { rerender, unmount } = render(
+      <WorldViewport {...props(instancedPayload(), payload, true)} routineDraft={draft} />,
+    );
+    expect(mockRoutineOverlays).toHaveLength(1);
+    expect(mockRoutineOverlays[0].root.parent).toBe(mockScenes[0].root);
+
+    act(() => {
+      rerender(<WorldViewport {...props(instancedPayload(), payload, true)} routineDraft={draft} />);
+    });
+    const rebuilt = mockRoutineOverlays[mockRoutineOverlays.length - 1];
+    expect(rebuilt.root.parent).toBe(mockScenes[1].root);
+
+    act(() => {
+      rerender(<WorldViewport {...props(instancedPayload(), payload, true)} routineDraft={null} />);
+    });
+    expect(mockRoutineOverlays.every((overlay) => overlay.root.parent === null)).toBe(true);
 
     unmount();
   });

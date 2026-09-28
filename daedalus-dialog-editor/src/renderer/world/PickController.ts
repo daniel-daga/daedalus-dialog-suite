@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { threeToZen, zenToThree, type ZenPosition } from 'zen-world';
 import { NO_PICK } from './pickIds';
 import { pickWaypoint, NO_WAYPOINT } from './pickWaypoint';
+import type { SpawnOverlay } from './SpawnOverlay';
 import type { VobPicker } from './VobPicker';
 import type { WaynetOverlay } from './WaynetOverlay';
 import type { WorldScene } from './WorldScene';
@@ -65,6 +66,12 @@ export interface PickControllerOptions {
   rememberPick: (at: THREE.Vector3) => void;
   /** A double-click makes the point clicked the pivot. */
   onPivot: (at: THREE.Vector3, zen: ZenPosition) => void;
+  /** The spawn markers, read per click like the waynet — null while none are
+   *  drawn. Absent where the surface offers nothing for an NPC click. */
+  spawns?: () => { pickOccupants: SpawnOverlay['pickOccupants'] } | null;
+  /** A click on a spawn marker: who stands there, and where the click was, for
+   *  a menu to open at (npc-editor.md §6, routine mode). */
+  onPickNpcs?: (npcs: readonly string[], at: { left: number; top: number }) => void;
 }
 
 export class PickController {
@@ -172,6 +179,17 @@ export class PickController {
         overlay.positions, this.clip(), x, y, width, height,
       );
       if (waypoint !== NO_WAYPOINT) { o.onSelectWaypoint(waypoint); return; }
+    }
+
+    // Then the NPCs on a spawn marker: drawn on top like the waynet, and on the
+    // same points, so after it — the waynet's click is the older rule.
+    const spawns = o.spawns?.() ?? null;
+    if (spawns !== null && o.onPickNpcs) {
+      const npcs = spawns.pickOccupants(this.clip(), x, y, width, height);
+      if (npcs.length > 0) {
+        o.onPickNpcs(npcs, { left: event.clientX, top: event.clientY });
+        return;
+      }
     }
 
     // Then the markers for the VOBs that have no visual at all (§16.38): a

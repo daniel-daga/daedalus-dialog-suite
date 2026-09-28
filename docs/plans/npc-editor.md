@@ -1,7 +1,7 @@
 # NPC Editor
 
 **Status:** Phases 1–4 built (#284, #285, #298, #309). NPC bodies now render at world spawn and routine placements.
-Phase 5 (authoring routines) is in progress — the model, the draft operations and the routine editor panel are built (#312, #314, #317); the World surface's routine mode is next (#315).
+Phase 5 (authoring routines) is in progress — the model, the draft operations, the routine editor and the World surface's routine mode are built (#312, #314, #315, #317); creating a routine is next (#316).
 
 An editor for `C_NPC` instances inside the dialog editor, covering what the
 community's standalone *NPC Generator* covers (main info, attributes, protection,
@@ -267,9 +267,8 @@ the "NPC-Rendering im Viewport" item of
 
 ## 6. Phase 5 — authoring routines
 
-**Workshop with Daniel, 2026-09-28.** Slices 1, 3 and 6 are built, slice 2
-turned out not to be needed, and slice 4's panel is built; the rest are
-#315, #316 and #318.
+**Workshop with Daniel, 2026-09-28.** Slices 1, 3, 4 and 6 are built, slice
+2 turned out not to be needed; the rest are #316 and #318.
 
 Everything a routine editor reads already exists: `routineSites`,
 `routinesByNpc` and `routineStatesByNpc` in the project index, the World
@@ -396,13 +395,25 @@ adds:
    not offered. Covered by `tests/e2e/routine-editor.spec.ts` in the browser
    harness, which has no world by design, so the panel is driven from the NPC
    editor there.
-   **Still to build**, in the World surface over the same panel: the stops
-   numbered on the map with routes along the waynet (`waynetRoute`), the
-   panel's `waypoints` restricted to the saved waynet, its `onPickWaypoint`
-   as an armed viewport pick, an "Edit routine in world" button in the NPC
-   editor, and a click on an NPC body or marker. Those parts get Jest
-   scene-graph tests like `SpawnOverlay`'s, plus the real-Electron disk-truth
-   spec.
+   **The World half is built too (2026-09-28).** Routine mode takes the
+   World surface's right panel (`hooks/useRoutineMode.ts`), opened by "In
+   world" beside each routine in the NPC editor (a `routineRequest` in
+   `worldStore`, consumed once like `focusRequest`) or by a click on a spawn
+   marker, which lists who stands there. `PickController` asks the spawn
+   markers after the waynet — its click is the older rule and lands on the
+   same points — and before every VOB; `SpawnOverlay.pickOccupants` picks in
+   pixels like a waypoint. `world/RoutineOverlay.ts` draws the draft: a
+   stop per activity in its row's colour (`ROUTINE_COLORS`, in
+   `routineDraft.ts` so the NPC editor's bundle does not pull in three.js),
+   the selected one marked, routes along the waynet between consecutive stops
+   of the day, and a leg with no route as a dashed straight line. "Pick" on
+   an activity arms the next waypoint click; `worldStore.savedWaypoints` —
+   the first waynet an open reads, then whatever a save wrote — decides
+   whether it is taken, and one added since is refused in the status bar
+   with the reason. **Not done:** the stops carry colour, not the number the
+   plan named (there is no text in the scene; the names layer is DOM and
+   driven from the draw loop), and the real-Electron disk-truth spec, which
+   needs a world the ubuntu job cannot open.
 5. **An NPC with no routine** (#316). "Create routine" appends
    `FUNC VOID Rtn_Start_<id> ()` to the end of the NPC's file with one
    whole-day entry at its spawn waypoint and sets `daily_routine` through
@@ -463,4 +474,4 @@ top of it; 3 is mostly asset plumbing that already exists; 4 is small once 3
 works. Phase 3 can start in parallel with 2 once Phase 1's `NpcDefinition`
 shape is fixed.
 
-Phase 5's remaining work: slice 4's World half, then 5.
+Phase 5's remaining work: slice 5, then the state-needs check (7).

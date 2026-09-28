@@ -63,7 +63,7 @@ async function openProject(page: Page, extraFiles: Record<string, string> = {}) 
 async function openRoutineEditor(page: Page) {
   await page.getByRole('button', { name: 'Edit NPC BAU_900_Onar' }).click();
   const npcEditor = page.getByRole('dialog', { name: /BAU_900_Onar/ });
-  await npcEditor.getByRole('button', { name: 'Edit routine RTN_START_900' }).click();
+  await npcEditor.getByRole('button', { name: 'Edit routine RTN_START_900', exact: true }).click();
   const editor = page.getByRole('dialog', { name: 'Routines of BAU_900_Onar' });
   await expect(editor).toBeVisible();
   return editor;
@@ -161,6 +161,15 @@ test.describe('Routine editor', () => {
     await editor.getByRole('button', { name: 'Undo' }).click();
     await expect(activity(editor, 2).getByLabel('Activity', { exact: true })).toHaveValue('TA_Sleep');
     await expect(activity(editor, 1).getByLabel('End')).toHaveValue('22:00');
+  });
+
+  test('offers the routine in the World surface, and says a world has to be open first', async ({ page }) => {
+    // The harness has no world (tests/e2e/README.md), so this is as far as the
+    // browser suite reaches: the button is there and says why it is off.
+    await page.getByRole('button', { name: 'Edit NPC BAU_900_Onar' }).click();
+    const npcEditor = page.getByRole('dialog', { name: /BAU_900_Onar/ });
+    await expect(npcEditor.getByRole('button', { name: 'Edit routine RTN_START_900 in the world' })).toBeDisabled();
+    await expect(npcEditor.getByTitle('Open a world in the World view first')).toBeVisible();
   });
 
   test('Cancel leaves the file as it was', async ({ page }) => {

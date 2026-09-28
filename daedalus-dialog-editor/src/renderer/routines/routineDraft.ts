@@ -16,8 +16,14 @@ import type { RoutineEntry } from './routineEntries';
  * short of that instead.
  */
 
+/** One colour per activity, by its index in the draft — the routine editor's
+ *  rows and the stops on the map, so the two read as the same thing. Here
+ *  rather than beside either view, so the editor's bundle does not pull in
+ *  three.js. */
+export const ROUTINE_COLORS = ['#5b8def', '#e0a33a', '#4caf7d', '#c265d6', '#e0605a', '#3fb5c4'];
+
 const DAY = 24 * 60;
-const mod = (n: number) => ((n % DAY) + DAY) % DAY;
+const mod =(n: number) => ((n % DAY) + DAY) % DAY;
 /** Minutes a window lasts; an empty one is the whole day. */
 const lengthOf = (entry: RoutineEntry) => mod(entry.endMinute - entry.startMinute) || DAY;
 

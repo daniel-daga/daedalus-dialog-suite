@@ -3,7 +3,7 @@ import React, {
 } from 'react';
 import {
   Alert, Autocomplete, Box, Button, Checkbox, Dialog, DialogActions, DialogContent,
-  DialogContentText, DialogTitle, FormControlLabel, IconButton, Paper, Snackbar, Stack, Tab, Tabs,
+  DialogContentText, DialogTitle, FormControlLabel, IconButton, Menu, MenuItem, Paper, Snackbar, Stack, Tab, Tabs,
   TextField, Tooltip, Typography,
 } from '@mui/material';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
@@ -48,6 +48,8 @@ import { useVobFolders } from './hooks/useVobFolders';
 import { useVobClipboard, type VobClipboardInput } from './hooks/useVobClipboard';
 import { useScatterBrush } from './hooks/useScatterBrush';
 import { useInsertNpc } from './hooks/useInsertNpc';
+import { useRoutineMode } from './hooks/useRoutineMode';
+import { RoutineEditorPanel } from '../RoutineEditor';
 import { useAssetCatalog } from './hooks/useAssetCatalog';
 import { useWorldShortcuts } from './hooks/useWorldShortcuts';
 import { spawnNpcBodyRequests } from '../../npc/spawnNpcVisuals';
@@ -1057,12 +1059,14 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       await window.editorAPI.saveWorld();
       setSavedTo(summary.worldPath);
       useWorldStore.getState().setHasUnsavedEdits(false);
+      // What routine mode may now offer as a stop: the waynet just written.
+      if (waynet !== null) useWorldStore.getState().waynetSaved(waynet.names);
     } catch (failure) {
       // The binding's own refusal — "only the binsafe writer path is verified" —
       // is the message worth showing, so it is not replaced with a generic one.
       setSaveError(failure instanceof Error ? failure.message : String(failure));
     }
-  }, [summary]);
+  }, [summary, waynet]);
 
   // ── the GMBT quick test (level-editor.md §16.29) ──────────────────────────
   //
@@ -1635,6 +1639,17 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     if (waynet === null) void readWaynetInto(setWaynet);
   }, [showWaynet, waynet, readWaynetInto]);
 
+  const routineMode = useRoutineMode({ waynet, ensureWaynetShown });
+  useEffect(() => {
+    if (routineMode.mode !== null) setRightPanelCollapsed(false);
+  }, [routineMode.mode, setRightPanelCollapsed]);
+  /** A waypoint click: routine mode's pending pick takes it first. */
+  const { takeWaypointPick } = routineMode;
+  const handleSelectWaypoint = useCallback((waypoint: number | null) => {
+    if (waypoint !== null && takeWaypointPick(waypoint)) return;
+    selectWaypoint(waypoint);
+  }, [takeWaypointPick, selectWaypoint]);
+
   const handlePick = useCallback((
     vob: number | null, point: [number, number, number] | null, additive: boolean,
   ) => {
@@ -1689,6 +1704,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    *  `useWorldShortcuts` takes as `dialogOpen`, and why it takes it. */
   const surfaceDialogOpen = deleting !== null || deletingWaypoint !== null
     || placing !== null || confirmingSave || addingWaypoint !== null || contextMenu !== null
+    || routineMode.npcMenu !== null
     || insertingNpc !== null || pickerOpen || quickTestBlocked || quickTestRefusal !== null;
 
   useWorldShortcuts({
@@ -1983,6 +1999,19 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         onAddSelectionToFolder={addSelectionToFolder}
         onCreateFolderWithSelection={createFolderWithSelection}
       />
+
+      {/* Who stands on a clicked spawn marker (npc-editor.md §6): one entry
+          per NPC, since a point often carries several. */}
+      <Menu
+        open={routineMode.npcMenu !== null}
+        onClose={routineMode.closeNpcMenu}
+        anchorReference="anchorPosition"
+        anchorPosition={routineMode.npcMenu?.at}
+      >
+        {(routineMode.npcMenu?.npcs ?? []).map((npc) => (
+          <MenuItem key={npc} onClick={() => routineMode.open(npc)}>{`Edit routines of ${npc}`}</MenuItem>
+        ))}
+      </Menu>
 
       {/* §15 put this here in place of an inverse, to say that the delete took
           the undo stack with it. The delete has an inverse now (§7) and the
@@ -2281,7 +2310,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               snapAngle={(snapAngleDegrees * Math.PI) / 180}
               scatterRadius={scatterBrushRadius}
               onScatterStroke={handleScatterStroke}
-              onSelectWaypoint={selectWaypoint}
+              onSelectWaypoint={handleSelectWaypoint}
+              onPickNpcs={routineMode.openNpcMenu}
+              routineDraft={routineMode.draft}
               onMoveWaypoint={moveWaypointTo}
               paused={hidden}
             />
@@ -2336,8 +2367,25 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                 </IconButton>
               </Tooltip>
             </Box>
-            <Box sx={{ flex: 1, minHeight: 0 }}>
-              {panel === 'assets' && selectedAsset !== null
+            <Box sx={{ flex: 1, minHeight: 0, overflow: routineMode.mode !== null ? 'auto' : undefined }}>
+              {routineMode.mode !== null
+                ? (
+                  // Routine mode wins the panel while it is open: its draft is
+                  // on the map, and the pick it arms answers a waypoint click.
+                  <Box sx={{ p: 1 }} data-testid="world-routine-panel">
+                    <Typography variant="subtitle2" sx={{ mb: 1 }}>{`Routines of ${routineMode.mode.npc}`}</Typography>
+                    <RoutineEditorPanel
+                      key={`${routineMode.mode.npc}:${routineMode.mode.routine ?? ''}`}
+                      npc={routineMode.mode.npc}
+                      initialRoutine={routineMode.mode.routine}
+                      waypoints={routineMode.waypoints ?? []}
+                      onPickWaypoint={routineMode.onPickWaypoint}
+                      onDraftChange={routineMode.onDraftChange}
+                      onDone={routineMode.close}
+                    />
+                  </Box>
+                )
+                : panel === 'assets' && selectedAsset !== null
                 ? (
                   <WorldAssetPreview
                     path={selectedAsset}
@@ -2416,7 +2464,20 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               only sometimes carries: a bar that changes height is the same
               shove. */}
           <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
-            {armed !== null ? (
+            {routineMode.picking ? (
+              <>
+                <Typography
+                  variant="caption"
+                  color={routineMode.pickError ? 'error' : 'text.secondary'}
+                  data-testid="world-terrain-hint"
+                >
+                  {routineMode.pickError ?? 'Click a waypoint for the activity.'}
+                </Typography>
+                <Button size="small" onClick={routineMode.cancelPick} data-testid="world-routine-pick-cancel">
+                  Cancel
+                </Button>
+              </>
+            ) : armed !== null ? (
               <>
                 {/* An armed add speaks over the point: it is the more recent
                     intent, and the click it asks for is the same click that

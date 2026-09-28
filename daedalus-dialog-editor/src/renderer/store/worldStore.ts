@@ -33,6 +33,12 @@ export type WorldStatus = 'idle' | 'opening' | 'ready' | 'error';
  * is the overlay on and the name armed for the next terrain click, which is
  * the same placement `world-add-waypoint` already offers.
  */
+/** Edit an NPC's routines in the World surface, on `routine` if given. */
+export interface RoutineRequest {
+  npc: string;
+  routine?: string;
+}
+
 export type WorldFocus =
   | { kind: 'vob'; vob: number }
   /**
@@ -140,6 +146,16 @@ interface WorldStore {
    * so a request that stood would make the second click do nothing.
    */
   focusRequest: WorldFocus | null;
+  /**
+   * The waynet's names as the world file on disk has them — the first waynet
+   * an open reads, then whatever a save wrote — or null while none is known.
+   * Routine mode offers only these (npc-editor.md §6): a stop on a waypoint
+   * added since would be a script pointing at nothing until the world is saved.
+   */
+  savedWaypoints: readonly string[] | null;
+  /** Routine mode asked for from outside the surface (the NPC editor), not
+   *  yet taken — consumed once, like `focusRequest`. */
+  routineRequest: RoutineRequest | null;
 
   beginOpen: () => void;
   openSucceeded: (summary: WorldSummary) => void;
@@ -174,6 +190,10 @@ interface WorldStore {
   requestFocus: (focus: WorldFocus) => void;
   /** The surface took the request — clear it, so the next one is a new jump. */
   focusHandled: () => void;
+  /** The world was saved with this waynet. */
+  waynetSaved: (names: readonly string[]) => void;
+  requestRoutine: (request: RoutineRequest) => void;
+  routineRequestHandled: () => void;
   /** Apply ops the main process has already applied to the authoritative world. */
   applyEdit: (ops: readonly WorldOp[]) => void;
   /** A re-read of the VOB enumeration after a structural edit. The columns are
@@ -197,6 +217,8 @@ const EMPTY = {
   portalFindings: null as PortalFindingsPayload | null,
   editError: null,
   focusRequest: null as WorldFocus | null,
+  savedWaypoints: null as readonly string[] | null,
+  routineRequest: null as RoutineRequest | null,
 };
 
 /**
@@ -296,7 +318,15 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
   requestFocus: (focus) => set({ focusRequest: focus }),
   focusHandled: () => set({ focusRequest: null }),
 
+  waynetSaved: (names) => set({ savedWaypoints: [...names] }),
+  requestRoutine: (routineRequest) => set({ routineRequest }),
+  routineRequestHandled: () => set({ routineRequest: null }),
+
   waynetLoaded: (payload) => {
+    // The first waynet of an open is the file on disk: nothing can have edited
+    // a waynet nobody had read yet. After that, only a save moves it.
+    if (payload !== null && get().savedWaypoints === null) set({ savedWaypoints: [...payload.names] });
+
     // A payload with no points is stored as *no knowledge*, not as a world
     // whose every waypoint site is wrong: `normalize.cc` answers a world with
     // no waynet chunk with an empty point list rather than throwing, and null

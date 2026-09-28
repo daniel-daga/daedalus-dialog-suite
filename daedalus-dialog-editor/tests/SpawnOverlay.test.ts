@@ -76,6 +76,22 @@ const NO_ROUTINES = { sites: [] as RoutineSite[], routinesByNpc: {} };
 const at = (hour: number) => hour * 60;
 
 describe('SpawnOverlay', () => {
+  it('names the NPCs on the marker under the pointer, and nobody while hidden or off every marker', () => {
+    // Routine mode opens from a click on an NPC (npc-editor.md §6). A marker
+    // is a pixel-sized point like a waypoint, so it is picked the same way.
+    const overlay = new SpawnOverlay(
+      waynet(), [site('GRD_200_XARDAS', 'WP_MIDDLE'), site('BAU_900_ONAR', 'WP_MIDDLE')], NO_ROUTINES,
+    );
+    // ZenGin centimetres straight into clip space: WP_Middle lands at (55, 49)
+    // on a 100×100 canvas.
+    const toClip = new THREE.Matrix4().makeScale(1 / 10000, 1 / 10000, 1 / 10000);
+
+    expect(overlay.pickOccupants(toClip, 55, 49, 100, 100)).toEqual([]);
+    overlay.setVisible(true);
+    expect(overlay.pickOccupants(toClip, 55, 49, 100, 100)).toEqual(['BAU_900_ONAR', 'GRD_200_XARDAS']);
+    expect(overlay.pickOccupants(toClip, 5, 95, 100, 100)).toEqual([]);
+  });
+
   it('draws a resolved NPC body at the waypoint instead of a capsule', () => {
     const group = {
       positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]).buffer,

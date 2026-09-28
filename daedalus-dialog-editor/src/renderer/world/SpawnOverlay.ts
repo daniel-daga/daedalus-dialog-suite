@@ -3,6 +3,7 @@ import type { DecodedTexture, NpcBodyScene, WaynetPayload } from '../../shared/w
 import type { SpawnSite } from '../../shared/types';
 import { placementWaypointsAt, spawnOccupants, type RoutineIndex } from '../routines/routineSchedule';
 import { markerDotTexture } from './markerSprite';
+import { NO_POINT, WAYPOINT_PICK_RADIUS, pickPoint } from './pickWaypoint';
 import { ALPHA_TEST, dataTexture, drawGroupGeometry } from './WorldScene';
 
 // The project's static spawns, drawn over the world (level-editor.md §16.19
@@ -337,6 +338,21 @@ export class SpawnOverlay {
    */
   occupantsAt(point: number): readonly string[] {
     return this.occupants.get(point) ?? NOBODY;
+  }
+
+  /**
+   * Who stands on the marker under the pointer — empty off every marker and
+   * while the layer is hidden. Picked in pixels like a waypoint (`pickPoint`),
+   * because a marker is a pixel-sized point too; routine mode opens from it
+   * (npc-editor.md §6).
+   */
+  pickOccupants(toClip: THREE.Matrix4, x: number, y: number, width: number, height: number): readonly string[] {
+    if (!this.root.visible) return NOBODY;
+    const drawnPoints = this.labelledPoints;
+    const positions = new Float32Array(drawnPoints.length * 3);
+    drawnPoints.forEach((point, i) => positions.set(this.source.subarray(point * 3, point * 3 + 3), i * 3));
+    const hit = pickPoint(positions, toClip, x, y, width, height, WAYPOINT_PICK_RADIUS);
+    return hit === NO_POINT ? NOBODY : this.occupantsAt(drawnPoints[hit]);
   }
 
   /** A name-keyed occupancy re-keyed by payload index; unknown names dropped,

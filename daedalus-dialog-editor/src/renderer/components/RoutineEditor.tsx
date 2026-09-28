@@ -19,7 +19,9 @@ import { useProjectStore } from '../store/projectStore';
 import { npcRoutines, formatMinute, variantSwitches } from '../npc/npcRoutines';
 import { coverageOf, type RoutineWindow } from '../routines/routineSchedule';
 import type { RoutineEntry } from '../routines/routineEntries';
-import { moveBoundary, removeEntry, setState, setWaypoint, splitEntry } from '../routines/routineDraft';
+import {
+  ROUTINE_COLORS, moveBoundary, removeEntry, setState, setWaypoint, splitEntry,
+} from '../routines/routineDraft';
 import type { RoutineSite } from '../../shared/types';
 import { loadRoutine, routineFileOf, saveRoutine } from './routineSave';
 
@@ -58,7 +60,7 @@ const asSites = (entries: readonly RoutineEntry[]): RoutineSite[] => entries.map
 
 const NO_ENTRIES: RoutineEntry[] = [];
 
-const COLORS = ['#5b8def', '#e0a33a', '#4caf7d', '#c265d6', '#e0605a', '#3fb5c4'];
+const COLORS = ROUTINE_COLORS;
 
 const windowLabel = (window: RoutineWindow) => `${formatMinute(window.startMinute)}–${formatMinute(window.endMinute)}`;
 

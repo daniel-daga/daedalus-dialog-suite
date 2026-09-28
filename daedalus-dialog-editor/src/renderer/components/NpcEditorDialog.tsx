@@ -144,6 +144,10 @@ interface NpcRoutinesSectionProps {
   blockedReason?: string | null;
   /** Open the routine editor on this routine (npc-editor.md §6). */
   onEditRoutine?: (routine: string) => void;
+  /** Open this routine in the World surface's routine mode instead. */
+  onEditRoutineInWorld?: (routine: string) => void;
+  /** Why routine mode cannot be opened now, e.g. no world is open. */
+  worldReason?: string | null;
 }
 
 /** A jump button that says why it is off, rather than just being off. */
@@ -158,7 +162,10 @@ const JumpButton: React.FC<{ label: string; reason: string | null; onClick: () =
 );
 
 export const NpcRoutinesSection: React.FC<NpcRoutinesSectionProps> = (
-  { routines, onShowWaypoint, onShowSource, waypointReason, blockedReason = null, onEditRoutine },
+  {
+    routines, onShowWaypoint, onShowSource, waypointReason, blockedReason = null, onEditRoutine,
+    onEditRoutineInWorld, worldReason = null,
+  },
 ) => (
   <Box sx={{ mb: 2 }}>
     <Typography variant="subtitle2">Routines</Typography>
@@ -178,6 +185,15 @@ export const NpcRoutinesSection: React.FC<NpcRoutinesSectionProps> = (
             >
               Edit
             </Button>
+          )}
+          {onEditRoutineInWorld && (
+            <JumpButton
+              label={`Edit routine ${routine} in the world`}
+              reason={blockedReason ?? worldReason}
+              onClick={() => onEditRoutineInWorld(routine)}
+            >
+              In world
+            </JumpButton>
           )}
         </Typography>
         {entries.length === 0 && (
@@ -324,6 +340,14 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
     useUISelectionStore.getState().setActiveView('world');
     onClose();
   };
+  // npc-editor.md §6: the routine in the World surface's routine mode, which
+  // needs a world open to draw on and pick waypoints from.
+  const worldOpen = useWorldStore((s) => s.status === 'ready');
+  const editRoutineInWorld = (routine: string) => {
+    useWorldStore.getState().requestRoutine({ npc: npcName, routine });
+    useUISelectionStore.getState().setActiveView('world');
+    onClose();
+  };
 
   const handleSave = async () => {
     if (!definition) return;
@@ -441,6 +465,8 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
                   ? 'Save or cancel your changes first'
                   : null}
                 onEditRoutine={setEditingRoutine}
+                onEditRoutineInWorld={editRoutineInWorld}
+                worldReason={worldOpen ? null : 'Open a world in the World view first'}
               />
               {uncovered.length > 0 && (
                 <Box>

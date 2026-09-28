@@ -13,6 +13,9 @@ import type { SpawnSite } from '../../../shared/types';
 import { WaynetOverlay } from '../../world/WaynetOverlay';
 import { SpawnOverlay } from '../../world/SpawnOverlay';
 import type { RoutineIndex } from '../../routines/routineSchedule';
+import type { RoutineEntry } from '../../routines/routineEntries';
+import { waynetGraph } from '../../routines/waynetRoute';
+import { RoutineOverlay } from '../../world/RoutineOverlay';
 import { TerrainMarker, PIVOT_COLOR, PIVOT_SIZE } from '../../world/TerrainMarker';
 import { ScatterBrush } from '../../world/ScatterBrush';
 import {
@@ -324,6 +327,12 @@ export interface WorldViewportProps {
   onScatterStroke: (samples: Array<[number, number, number]>) => void;
   /** A click that hit a waypoint in the overlay. */
   onSelectWaypoint: (waypoint: number | null) => void;
+  /** A click on a spawn marker: who stands there, and where, for a menu
+   *  (npc-editor.md §6). Absent, a marker click falls through to the VOBs. */
+  onPickNpcs?: (npcs: readonly string[], at: { left: number; top: number }) => void;
+  /** The routine draft routine mode is editing, drawn as stops and routes
+   *  over the waynet; null outside routine mode. */
+  routineDraft?: { entries: readonly RoutineEntry[]; selected: number | null } | null;
   /**
    * A finished waypoint drag, in **ZenGin space** — a destination rather than a
    * delta, because one waypoint moves and there is no spacing to keep.
@@ -459,7 +468,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   selectedExtent = null,
   lightPreview = false,
   scatterRadius, onScatterStroke,
-  onSelectWaypoint, onMoveWaypoint, paused = false,
+  onSelectWaypoint, onMoveWaypoint, paused = false, onPickNpcs, routineDraft = null,
 }, ref) => {
   const hostRef = useRef<HTMLDivElement | null>(null);
   // The overlay is built and torn down independently of the scene, so asking
@@ -525,6 +534,8 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   membersOfRef.current = membersOf;
   const onSelectWaypointRef = useRef(onSelectWaypoint);
   onSelectWaypointRef.current = onSelectWaypoint;
+  const onPickNpcsRef = useRef(onPickNpcs);
+  onPickNpcsRef.current = onPickNpcs;
   const vobIndexRef = useRef(vobIndex);
   vobIndexRef.current = vobIndex;
   const onMoveWaypointRef = useRef(onMoveWaypoint);
@@ -888,6 +899,8 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
         onPickRef.current(vob, terrain, additive);
       },
       onSelectWaypoint: (waypoint) => onSelectWaypointRef.current(waypoint),
+      spawns: () => spawnOverlayRef.current,
+      onPickNpcs: (npcs, at) => onPickNpcsRef.current?.(npcs, at),
       rememberPick,
       onPivot: (at, zen) => {
         rememberPick(at);
@@ -1367,6 +1380,20 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   useEffect(() => {
     spawnOverlayRef.current?.setVisible(showSpawns);
   }, [showSpawns, waynet, spawns, routines, mesh, visuals]);
+
+  // Routine mode's draft (npc-editor.md §6), rebuilt per edit — a handful of
+  // stops — and with the scene for the waynet's reason: a structural op
+  // disposes the root it hangs under.
+  useEffect(() => {
+    const world = sceneRef.current;
+    if (world === null || waynet === null || routineDraft === null) return;
+    const overlay = new RoutineOverlay(waynet, waynetGraph(waynet), routineDraft.entries, routineDraft.selected);
+    world.root.add(overlay.root);
+    return () => {
+      world.root.remove(overlay.root);
+      overlay.dispose();
+    };
+  }, [waynet, routineDraft, mesh, visuals]);
 
   // The same rebuild dependencies as the two above, and for the third time the
   // same reason: a fresh overlay draws the static spawns, so without them a

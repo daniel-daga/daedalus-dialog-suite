@@ -41,6 +41,28 @@ describe('NpcRoutinesSection', () => {
     expect(screen.getByTitle('NW_NOWHERE is not in the open world')).toBeInTheDocument();
   });
 
+  // npc-editor.md §6: routine mode in the World surface, on this routine.
+  it('opens a routine in the world, and says why not when no world is open', () => {
+    const onEditRoutineInWorld = jest.fn();
+    const routines = [{ label: 'Daily', routine: 'RTN_START_900', entries: [entry(8 * 60, 20 * 60, 'NW_BIGFARM_HOUSE_ONAR')] }];
+    const { rerender } = render(<NpcRoutinesSection
+      routines={routines}
+      onEditRoutineInWorld={onEditRoutineInWorld}
+      worldReason={null}
+    />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit routine RTN_START_900 in the world' }));
+    expect(onEditRoutineInWorld).toHaveBeenCalledWith('RTN_START_900');
+
+    rerender(<NpcRoutinesSection
+      routines={routines}
+      onEditRoutineInWorld={onEditRoutineInWorld}
+      worldReason="Open a world in the World view first"
+    />);
+    expect(screen.getByRole('button', { name: 'Edit routine RTN_START_900 in the world' })).toBeDisabled();
+    expect(screen.getByTitle('Open a world in the World view first')).toBeInTheDocument();
+  });
+
   it('holds every jump while the form has unsaved changes, saying so', () => {
     render(<NpcRoutinesSection
       routines={[{ label: 'Daily', routine: 'RTN_START_900', entries: [entry(8 * 60, 20 * 60, 'NW_BIGFARM_HOUSE_ONAR')] }]}
