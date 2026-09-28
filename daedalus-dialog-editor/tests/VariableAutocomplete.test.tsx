@@ -66,6 +66,29 @@ describe('VariableAutocomplete', () => {
     });
   });
 
+  // #280: the field only revealed its suggestions once the user started
+  // typing, with no other affordance hinting they existed. NpcEditorDialog's
+  // fixed-choice fields already open on focus ("combo box" behavior); give
+  // VariableAutocomplete the same so a first-time user sees the list land
+  // the moment they click in, before typing anything.
+  test('opens the options list on focus alone, like a combo box', async () => {
+    render(
+      <VariableAutocomplete
+        value=""
+        onChange={jest.fn()}
+        namePrefix="MIS_"
+        label="Test Autocomplete"
+      />
+    );
+
+    const input = screen.getByLabelText('Test Autocomplete');
+    fireEvent.focus(input);
+
+    await waitFor(() => {
+      expect(screen.getByText('MIS_Quest1')).toBeInTheDocument();
+    });
+  });
+
   test('filters by namePrefix', async () => {
     const onChange = jest.fn();
     render(

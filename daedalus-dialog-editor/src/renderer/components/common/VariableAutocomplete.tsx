@@ -174,6 +174,7 @@ const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
           onChange(newInputValue);
         }}
         options={options}
+        openOnFocus
         getOptionLabel={(option) => {
           // Value selected with enter, right from the input
           if (typeof option === 'string') {
