@@ -20,6 +20,7 @@
 
 import DaedalusParser from '../core/parser';
 import { TreeSitterNode } from './semantic-model';
+import { getAssignmentOperator } from './parsers/ast-constants';
 
 export interface NpcRange {
   startIndex: number;
@@ -111,7 +112,7 @@ function rangeOf(node: TreeSitterNode): NpcRange {
 function toStatement(node: TreeSitterNode): NpcStatement {
   const base = { text: node.text, range: rangeOf(node) };
 
-  if (node.type === 'assignment_statement') {
+  if (node.type === 'assignment_statement' && getAssignmentOperator(node) === '=') {
     const left = node.childForFieldName('left');
     const right = node.childForFieldName('right');
     if (left && right) {
@@ -228,6 +229,11 @@ function insertAfter(
     const indent = /^[ \t]*/.exec(source.slice(lineStart))![0];
     let lineEnd = source.indexOf('\n', after.range.endIndex);
     if (lineEnd === -1) lineEnd = source.length;
+    // A compact instance can close on the anchor's line. Inserting at that
+    // line's end would append a top-level statement outside the instance.
+    if (lineEnd >= npc.closingBraceIndex) {
+      return { start: after.range.endIndex, end: after.range.endIndex, text: ` ${text}`, order };
+    }
     if (source[lineEnd - 1] === '\r') lineEnd -= 1;
     return { start: lineEnd, end: lineEnd, text: `\n${indent}${text}`, order };
   }

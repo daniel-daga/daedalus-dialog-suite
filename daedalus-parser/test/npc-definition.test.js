@@ -153,6 +153,30 @@ test('adding a missing indexed field writes the index', () => {
   assert.deepEqual(changedLines(ONAR, edited).added, ['\tprotection[PROT_EDGE] = 100;']);
 });
 
+test('adding fields and calls stays inside an instance whose closing brace shares the anchor line', () => {
+  for (const suffix of ['', '\n', ' // end\n']) {
+    const source = `instance A(Npc_Default) { level = 1; };${suffix}`;
+    const edited = applyNpcEdits(source, [
+      { op: 'set', field: 'name', value: '"New"' },
+      { op: 'addCall', name: 'EquipItem', args: ['self', 'Sword'] }
+    ]);
+    assert.equal(parseSemanticModel(edited).hasErrors, false, edited);
+    const npc = extractNpcDefinition(edited);
+    assert.equal(npc.statements.find(s => s.field === 'name').value, '"New"');
+    assert.equal(npc.statements.find(s => s.kind === 'call').name, 'EquipItem');
+    assert.ok(edited.endsWith(`};${suffix}`), edited);
+  }
+});
+
+test('compound assignments are retained as other statements rather than editable field definitions', () => {
+  const source = 'instance A(Npc_Default) { level += 1; attribute[0] *= 2; };';
+  assert.deepEqual(extractNpcDefinition(source).statements.map(s => s.kind), ['other', 'other']);
+  const edited = applyNpcEdits(source, [{ op: 'set', field: 'level', value: '10' }]);
+  const npc = extractNpcDefinition(edited);
+  assert.ok(edited.includes('level += 1;'), edited);
+  assert.equal(npc.statements.find(s => s.kind === 'field' && s.field === 'level').value, '10');
+});
+
 test('adding to a body with no fields inserts before the closing brace', () => {
   const src = 'instance A (Npc_Default)\n{\n\tB_GiveNpcTalents (self);\n};';
   const edited = applyNpcEdits(src, [{ op: 'set', field: 'guild', value: 'GIL_NONE' }]);
