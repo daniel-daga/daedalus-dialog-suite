@@ -36,8 +36,8 @@ building the native addon and TypeScript.
 - Native addon built locally; TypeScript build succeeded on Node 24.19.0/Linux.
 - Before the fixes, focused verification had 2 passing controls and 3 failing
   regressions; all 296 pre-existing tests passed.
-- After the fixes, all 5 focused checks passed. The full parser suite is being
-  rerun against the fixed code.
+- After the fixes, all 5 focused checks passed. The full parser suite passed:
+  301 tests, 0 failures.
 - `npm run typecheck` and the final `npm run lint` passed.
 
 Changes are on the local review branch and have not been published remotely.
