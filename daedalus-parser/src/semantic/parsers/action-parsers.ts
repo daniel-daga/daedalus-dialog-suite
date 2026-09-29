@@ -142,7 +142,7 @@ export class ActionParsers {
     if (!argsNode) return null;
 
     const args = parseArgumentsDetailed(argsNode);
-    if (args.length < 3) return null;
+    if (args.length !== 3) return null;
 
     const speaker = args[0].value;
     const listener = args[1].value;
