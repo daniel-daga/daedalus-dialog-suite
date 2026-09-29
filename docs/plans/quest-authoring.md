@@ -1,6 +1,6 @@
 # Quest authoring — a quest-level interface over topics, entries and `MIS_` state
 
-Agreed 2026-09-28. Phase 1 (#322) is in progress; phases 2–4 are #323–#325.
+Agreed 2026-09-28. Phase 1 (#322) has landed; phases 2–4 are #323–#325.
 
 ## Problem
 
@@ -62,17 +62,18 @@ building:
   not a step of its own.
 - **The Create Topic menu entry writes only its own line** (it used to add a
   status and an entry line too); Start Quest does the full start.
-- Start and Note cards carry the "Register in log files" button (#114) until
-  declarations are automatic.
-
-**Still to do:** the quest picker and the automatic declarations below.
-
-The quest picker shows diary titles (the `TOPIC_` constant's value) and offers
-"New quest…" inline. The first use of a new quest writes `TOPIC_X`, `MIS_X` and
-the `B_CloseTopic` registration, using the file choice
-`utils/questLogFiles.ts` already makes. The author is asked for a file only
-when that choice is empty. This replaces the Create Quest dialog's
-method/file form and the separate Register Topic step.
+**Landed:** the quest picker and the automatic declarations. A step card
+picks its quest by diary title (`components/common/QuestPicker.tsx`); a title
+no quest has becomes `New quest "…"`, which in a project opens
+`RegisterTopicDialog` in create mode: only the title is asked for, and the
+names (`questNameFromTitle`: "Die verlorenen Schafe" → `DieVerlorenenSchafe`),
+chapters and files are prefilled under Details, which opens by itself only
+when no definition file can be suggested. Without a project the step just
+takes the name. The quest panel's "Create New Quest" uses the same flow, and
+the old Create Quest dialog (Method A/B, file pickers) is gone. The
+`B_CloseTopic` call is optional when creating: vanilla has no `B_CloseTopics`
+function, so a project without one still gets `TOPIC_` + `MIS_`. An
+undeclared quest name on a card shows "Not declared" and a register button.
 
 ### Phase 2 — plain-language conditions
 

@@ -10,7 +10,7 @@ import { useProjectStore } from '../../store/projectStore';
 // Hoisted so VariableAutocomplete's memo sees a stable sx identity (slice 4).
 const TOPIC_FIELD_SX = { minWidth: 180 };
 
-export const normalizeTopicName = (value: string): string => {
+const normalizeTopicName = (value: string): string => {
   const normalized = value.replace(/ /g, '_');
   if (normalized && !normalized.startsWith('TOPIC_')) {
     return `TOPIC_${normalized}`;

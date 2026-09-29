@@ -59,6 +59,24 @@ describe('projectStore.registerTopicInLogFiles', () => {
     });
   });
 
+  // #322: B_CloseTopic is a mod convention, not vanilla; a project without a
+  // B_CloseTopics function still gets its quest declared.
+  test('without a close-topics file, writes the declarations only', async () => {
+    await useProjectStore.getState().registerTopicInLogFiles({
+      topicName: 'TOPIC_Dalvins',
+      title: 'Dalvins Spitzhacken',
+      chapterStart: 0,
+      chapterEnd: 2,
+      constantsFilePath: CONSTANTS_FILE,
+      closeTopicsFilePath: ''
+    });
+
+    expect(mockWriteFile.mock.calls.map(([p]) => p)).toEqual([CONSTANTS_FILE]);
+    expect(files[CONSTANTS_FILE]).toContain('var int MIS_Dalvins;');
+    expect(files[CLOSE_TOPICS_FILE]).toBe(CLOSE_TOPICS_CONTENT);
+    expect(useProjectStore.getState().mergedSemanticModel.constants?.TOPIC_Dalvins).toBeDefined();
+  });
+
   test('appends declarations and inserts the close call, then merges the models', async () => {
     await useProjectStore.getState().registerTopicInLogFiles({
       topicName: 'TOPIC_Dalvins',

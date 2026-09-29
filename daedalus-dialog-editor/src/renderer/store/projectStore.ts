@@ -192,7 +192,6 @@ interface ProjectActions {
   getQuestUsage: (questName: string) => SemanticModel;
 
   // Create a new quest
-  createQuest: (title: string, internalName: string, topicFilePath: string, variableFilePath: string) => Promise<void>;
 
   // Register a Create Topic quest in the external log files (issue #114)
   registerTopicInLogFiles: (options: {
@@ -201,6 +200,7 @@ interface ProjectActions {
     chapterStart: number;
     chapterEnd: number;
     constantsFilePath: string;
+    /** Empty: declare only, no B_CloseTopic call (#322). */
     closeTopicsFilePath: string;
   }) => Promise<void>;
 
@@ -453,7 +453,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
    * Read a quest file, apply a transformation, write it back, invalidate the
    * cache, and return the freshly-parsed semantic model.  Centralises the
    * read → modify → write → invalidate → re-parse sequence shared by
-   * createQuest, addVariable, updateGlobalConstant, and deleteVariable.
+   * the quest-log registration, addVariable, updateGlobalConstant, and deleteVariable.
    */
   const mutateQuestFile = async (
     filePath: string,
@@ -1054,79 +1054,43 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
   getQuestUsage: (questName: string) => getQuestUsage(get().parsedFiles, questName),
 
-  createQuest: async (title: string, internalName: string, topicFilePath: string, variableFilePath: string) => {
-
-    try {
-      set({ isLoading: true });
-
-      const hasVariable = !!variableFilePath;
-
-      if (hasVariable && topicFilePath === variableFilePath) {
-        // Both declarations go into the same file
-        const questBlock = `\n// Quest: ${title}\nconst string TOPIC_${internalName} = "${title}";\nvar int MIS_${internalName};\n`;
-        const combinedModel = await mutateQuestFile(topicFilePath, (c) => {
-          if (!c.endsWith('\n')) c += '\n';
-          return c + questBlock;
-        });
-        mergeUpdatedQuestFileModels([{ filePath: topicFilePath, model: combinedModel }]);
-      } else {
-        const constLine = `\nconst string TOPIC_${internalName} = "${title}";\n`;
-        const topicModel = await mutateQuestFile(topicFilePath, (c) => {
-          if (!c.endsWith('\n')) c += '\n';
-          return c + constLine;
-        });
-        const updates = [{ filePath: topicFilePath, model: topicModel }];
-
-        if (hasVariable) {
-          const varLine = `\nvar int MIS_${internalName};\n`;
-          const variableModel = await mutateQuestFile(variableFilePath, (c) => {
-            if (!c.endsWith('\n')) c += '\n';
-            return c + varLine;
-          });
-          updates.push({ filePath: variableFilePath, model: variableModel });
-        }
-
-        mergeUpdatedQuestFileModels(updates);
-      }
-
-      set({ isLoading: false });
-
-    } catch (error) {
-      set({ isLoading: false, loadError: error instanceof Error ? error.message : 'Failed to create quest' });
-      throw error; // Re-throw so UI can handle it
-    }
-  },
-
   registerTopicInLogFiles: async (options) => {
     const { topicName, title, chapterStart, chapterEnd, constantsFilePath, closeTopicsFilePath } = options;
 
     try {
       set({ isLoading: true });
 
-      const closeTopicLine = buildCloseTopicLine(topicName, chapterStart, chapterEnd);
+      // #322: B_CloseTopic is a mod convention; without a close-topics file
+      // the quest is declared (TOPIC_ + MIS_) and nothing else is written.
+      const closeTopicLine = closeTopicsFilePath
+        ? buildCloseTopicLine(topicName, chapterStart, chapterEnd)
+        : null;
 
       // Validate the close-topics insert before any write: a bad target
       // (wrong path, no B_CloseTopics function) must not leave the quest
       // half-registered with only the declarations appended — the duplicate
       // guard below would then block every retry.
-      insertIntoCloseTopicsFunction(
-        await window.editorAPI.readFile(closeTopicsFilePath),
-        closeTopicLine
-      );
+      if (closeTopicLine) {
+        insertIntoCloseTopicsFunction(
+          await window.editorAPI.readFile(closeTopicsFilePath),
+          closeTopicLine
+        );
+      }
 
       const constantsModel = await appendTopicDeclaration(
         constantsFilePath,
         topicName,
         buildTopicDeclarationBlock(topicName, title)
       );
-      const closeTopicsModel = await mutateQuestFile(closeTopicsFilePath, (c) =>
-        insertIntoCloseTopicsFunction(c, closeTopicLine)
-      );
+      const updates = [{ filePath: constantsFilePath, model: constantsModel }];
+      if (closeTopicLine) {
+        const closeTopicsModel = await mutateQuestFile(closeTopicsFilePath, (c) =>
+          insertIntoCloseTopicsFunction(c, closeTopicLine)
+        );
+        updates.push({ filePath: closeTopicsFilePath, model: closeTopicsModel });
+      }
 
-      mergeUpdatedQuestFileModels([
-        { filePath: constantsFilePath, model: constantsModel },
-        { filePath: closeTopicsFilePath, model: closeTopicsModel }
-      ]);
+      mergeUpdatedQuestFileModels(updates);
 
       set({ isLoading: false });
     } catch (error) {

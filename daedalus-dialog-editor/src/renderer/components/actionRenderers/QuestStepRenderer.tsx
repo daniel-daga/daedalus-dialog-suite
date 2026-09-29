@@ -1,15 +1,11 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { Box, IconButton, Tooltip, Typography } from '@mui/material';
-import { Code as CodeIcon, MenuBook as MenuBookIcon } from '@mui/icons-material';
+import { Code as CodeIcon } from '@mui/icons-material';
 import type { BaseActionRendererProps } from './types';
 import type { QuestStepAction } from '../actionTypes';
 import { ActionTextField, ActionDeleteButton } from '../common';
-import VariableAutocomplete from '../common/VariableAutocomplete';
-import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
+import QuestPicker from '../common/QuestPicker';
 import { createRowTabHandlers } from './rowTabNavigation';
-import { normalizeTopicName } from './LogEntryRenderer';
-import { useProjectStore } from '../../store/projectStore';
-import RegisterTopicDialog from '../RegisterTopicDialog';
 
 const KIND_LABEL: Record<QuestStepAction['kind'], string> = {
   start: 'Start quest',
@@ -19,7 +15,6 @@ const KIND_LABEL: Record<QuestStepAction['kind'], string> = {
   note: 'Note'
 };
 
-// Hoisted so VariableAutocomplete's memo sees a stable sx identity (slice 4).
 const QUEST_FIELD_SX = { flex: 1, minWidth: 180 };
 
 /**
@@ -36,30 +31,12 @@ const QuestStepRenderer: React.FC<BaseActionRendererProps> = ({
 }) => {
   const step = action as unknown as QuestStepAction;
   const [showScript, setShowScript] = useState(false);
-  const [isRegisterOpen, setIsRegisterOpen] = useState(false);
-  const isProjectMode = useProjectStore((s) => !!s.projectPath);
-  // Until declarations are automatic (#322), a start or note registers its
-  // topic in the log files the way the Create Topic card does (#114).
-  const canRegister = isProjectMode && (step.kind === 'start' || step.kind === 'note');
-  const registerLabel = step.kind === 'note' ? 'Register note in log files' : 'Register quest in log files';
   const update = useCallback(
     (patch: Partial<QuestStepAction>) => handleUpdate({ ...step, ...patch } as unknown as typeof action),
     [handleUpdate, step]
   );
 
-  // The diary shows a quest by its title, so name it (as LogEntryRenderer does).
-  const title = useProjectStore((s) => {
-    const value = step.topic ? s.mergedSemanticModel?.constants?.[step.topic]?.value : undefined;
-    return typeof value === 'string' ? value.replace(/^"(.*)"$/s, '$1') : undefined;
-  });
-  const questFieldProps = useMemo(
-    () => (title ? { helperText: `"${title}" in the diary` } : undefined),
-    [title]
-  );
-  const handleTopicChange = useCallback(
-    (value: string) => update({ topic: normalizeTopicName(value) }),
-    [update]
-  );
+  const handleTopicChange = useCallback((topic: string) => update({ topic }), [update]);
 
   const hasXp = step.kind === 'complete';
   const fieldKeyDown = useMemo(
@@ -73,17 +50,15 @@ const QuestStepRenderer: React.FC<BaseActionRendererProps> = ({
         <Typography variant="subtitle2" sx={{ minWidth: 110, pt: 1 }}>
           {KIND_LABEL[step.kind]}
         </Typography>
-        <VariableAutocomplete
+        <QuestPicker
           label={step.kind === 'note' ? 'Note topic' : 'Quest'}
+          kind={step.kind === 'note' ? 'note' : 'quest'}
           value={step.topic}
           onChange={handleTopicChange}
           onFlush={flushUpdate}
           onKeyDown={fieldKeyDown[0]}
-          isMainField
           mainFieldRef={mainFieldRef}
           sx={QUEST_FIELD_SX}
-          textFieldProps={questFieldProps}
-          {...AUTOCOMPLETE_POLICIES.actions.topic}
         />
         {hasXp && (
           <ActionTextField
@@ -95,21 +70,6 @@ const QuestStepRenderer: React.FC<BaseActionRendererProps> = ({
             onKeyDown={fieldKeyDown[1]}
             sx={{ width: 170 }}
           />
-        )}
-        {canRegister && (
-          <Tooltip title={registerLabel}>
-            <span>
-              <IconButton
-                size="small"
-                aria-label={registerLabel}
-                tabIndex={-1}
-                disabled={!step.topic || step.topic === 'TOPIC_'}
-                onClick={() => setIsRegisterOpen(true)}
-              >
-                <MenuBookIcon fontSize="small" />
-              </IconButton>
-            </span>
-          </Tooltip>
         )}
         <Tooltip title={showScript ? 'Hide script' : 'Show script'}>
           <IconButton
@@ -134,14 +94,6 @@ const QuestStepRenderer: React.FC<BaseActionRendererProps> = ({
         multiline
         minRows={1}
       />
-      {canRegister && isRegisterOpen && (
-        <RegisterTopicDialog
-          open={isRegisterOpen}
-          onClose={() => setIsRegisterOpen(false)}
-          topicName={step.topic}
-          topicType={step.kind === 'note' ? 'LOG_NOTE' : 'LOG_MISSION'}
-        />
-      )}
       {showScript && (
         <Box
           component="pre"

@@ -30,7 +30,7 @@ import {
 import AutoSizer from 'react-virtualized-auto-sizer';
 import { FixedSizeList as VirtualizedList, ListChildComponentProps, areEqual } from 'react-window';
 import type { SemanticModel, GlobalConstant } from '../types/global';
-import CreateQuestDialog from './CreateQuestDialog';
+import RegisterTopicDialog from './RegisterTopicDialog';
 import { useNavigation } from '../hooks/useNavigation';
 import { analyzeQuests, getUsedQuestTopics, QuestAnalysis } from '../quest/domain';
 import {
@@ -279,7 +279,11 @@ const QuestList: React.FC<QuestListProps> = ({ semanticModel, selectedQuest, onS
         )}
       </Box>
 
-      <CreateQuestDialog open={isCreateDialogOpen} onClose={() => setIsCreateDialogOpen(false)} />
+      {/* #322: the same create flow as a quest card's "New quest": the title is
+          asked for, names and files are prefilled under Details. */}
+      {isCreateDialogOpen && (
+        <RegisterTopicDialog open onClose={() => setIsCreateDialogOpen(false)} topicType='LOG_MISSION' initialTitle='' />
+      )}
     </Paper>
   );
 };

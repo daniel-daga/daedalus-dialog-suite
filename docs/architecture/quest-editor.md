@@ -4,10 +4,15 @@ This document captures the durable architecture decisions for quest editing in t
 
 ## Scope
 
-The quest surface is **read-only**: a quest list, a details panel, and a
-create-quest dialog (`components/QuestEditor.tsx`, `QuestList.tsx`,
-`QuestDetails.tsx`, `CreateQuestDialog.tsx`), backed by pure analysis and graph
-inference in `quest/domain/`.
+The quest surface is **read-only**: a quest list and a details panel
+(`components/QuestEditor.tsx`, `QuestList.tsx`, `QuestDetails.tsx`), backed by
+pure analysis and graph inference in `quest/domain/`. Its "Create New Quest"
+button opens the same create flow as a quest card's "New quest"
+(`RegisterTopicDialog` in create mode, #322): only the title is asked for; the
+`TOPIC_`/`MIS_` names (from `utils/questLogFiles.questNameFromTitle`), chapters
+and target files are prefilled under Details. New quests always get a `MIS_`
+variable; the `B_CloseTopic` call is written when a close-topics file exists
+(it is a mod convention, not vanilla).
 
 The litegraph-based Flow view (canvas + inspector + command write path) was
 **removed** per the production-readiness review (§1 Option B in
@@ -38,10 +43,10 @@ Two layers remain, with a one-way import direction (UI → domain):
   Electron APIs. Enforced by `tests/questDomainBoundary.test.ts`, which also
   asserts the command write path stays removed.
 
-2. Quest UI (`components/QuestEditor.tsx`, `QuestList.tsx`, `QuestDetails.tsx`,
-   `CreateQuestDialog.tsx`)
+2. Quest UI (`components/QuestEditor.tsx`, `QuestList.tsx`, `QuestDetails.tsx`)
 - Reads via `quest/domain` and the project store; performs no quest-model
-  mutation beyond `projectStore.createQuest`.
+  mutation beyond `projectStore.registerTopicInLogFiles` (through the create
+  flow).
 
 ### Physical Layout
 

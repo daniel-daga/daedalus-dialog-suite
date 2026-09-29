@@ -10,7 +10,8 @@ import {
   suggestCloseTopicsFiles,
   buildTopicDeclarationBlock,
   buildNoteDeclarationBlock,
-  buildCloseTopicLine
+  buildCloseTopicLine,
+  questNameFromTitle
 } from '../src/renderer/utils/questLogFiles';
 
 const CLOSE_TOPICS_FILE = `// Close topics for the mod
@@ -150,5 +151,22 @@ describe('file suggestions', () => {
       }]
     ]);
     expect(suggestCloseTopicsFiles(parsedFiles)).toEqual(['C:/p/B_CloseTopicsBeppo.d']);
+  });
+});
+
+describe('questNameFromTitle (#322)', () => {
+  it('turns a diary title into a PascalCase identifier', () => {
+    expect(questNameFromTitle('Die verlorenen Schafe')).toBe('DieVerlorenenSchafe');
+    expect(questNameFromTitle('lehrer in der stadt')).toBe('LehrerInDerStadt');
+  });
+
+  it('transliterates umlauts and drops what an identifier cannot hold', () => {
+    expect(questNameFromTitle('Händler für Öl & Süßes!')).toBe('HaendlerFuerOelSuesses');
+    expect(questNameFromTitle("Greg's 2nd job")).toBe('Gregs2ndJob');
+  });
+
+  it('never starts with a digit and is empty for a title with no letters', () => {
+    expect(questNameFromTitle('3 Wolves')).toBe('Q3Wolves');
+    expect(questNameFromTitle('!!!')).toBe('');
   });
 });

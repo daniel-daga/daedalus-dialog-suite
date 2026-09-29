@@ -13,6 +13,25 @@ export function topicBaseName(topicName: string): string {
   return topicName.replace(/^TOPIC_/i, '');
 }
 
+const UMLAUTS: Record<string, string> = { ä: 'ae', ö: 'oe', ü: 'ue', Ä: 'Ae', Ö: 'Oe', Ü: 'Ue', ß: 'ss' };
+
+/**
+ * #322: the identifier a new quest gets from its diary title —
+ * "Die verlorenen Schafe" → `DieVerlorenenSchafe` (for `TOPIC_`/`MIS_`).
+ * Daedalus identifiers are ASCII, so umlauts are transliterated and anything
+ * else outside [A-Za-z0-9] is dropped.
+ */
+export function questNameFromTitle(title: string): string {
+  const name = title
+    .replace(/[äöüÄÖÜß]/g, (c) => UMLAUTS[c])
+    .replace(/'/g, '')
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .map((word) => word[0].toUpperCase() + word.slice(1))
+    .join('');
+  return /^[0-9]/.test(name) ? `Q${name}` : name;
+}
+
 export function buildTopicDeclarationBlock(topicName: string, title: string): string {
   const base = topicBaseName(topicName);
   const safeTitle = sanitizeDaedalusString(title);

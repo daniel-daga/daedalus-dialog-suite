@@ -94,7 +94,7 @@ test.describe('Register quest in log files', () => {
   // #278: a note has no Running/Success/Failed, and registers as its TOPIC_
   // constant alone. #322: a note is written from the menu as one Note card
   // (Log_CreateTopic LOG_NOTE + its entry), which carries the register button.
-  test('a Note card registers without MIS_ or a close call', async ({ page }) => {
+  test('a new note is declared without MIS_ or a close call', async ({ page }) => {
     await page.goto('/');
     await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
 
@@ -106,7 +106,11 @@ test.describe('Register quest in log files', () => {
     }, {
       dialog: DIALOG_FILE,
       constants: CONSTANTS_FILE,
-      notes: 'const string TOPIC_Haendler = "Händler";\n',
+      // Injected so the notes file is the suggested target (the harness's
+      // regex parser reads no constants).
+      notes: `//__MOCK_MODEL__ ${JSON.stringify({
+        constants: { TOPIC_Haendler: { name: 'TOPIC_Haendler', type: 'string', value: '"Händler"', filePath: 'project/dialogs/LOG_Constants_Notes.d' } }
+      })}\nconst string TOPIC_Haendler = "Händler";\n`,
       closeTopics: CLOSE_TOPICS_FILE
     });
 
@@ -128,28 +132,29 @@ test.describe('Register quest in log files', () => {
     await page.getByRole('menuitem', { name: 'Note', exact: true }).click();
     const card = page.getByTestId('quest-step-card');
     await expect(card.getByRole('heading', { name: 'Note', exact: true })).toBeVisible();
-    await card.getByLabel('Note topic').fill('AlteMine');
-    await card.getByLabel('Note topic').blur();
     // A note has no status line
     await expect(page.getByLabel('Status', { exact: true })).toHaveCount(0);
 
-    await page.getByRole('button', { name: 'Register note in log files' }).click();
-    await expect(page.getByRole('heading', { name: 'Register Note in Log Files' })).toBeVisible();
+    // #322: a new note is created from its title; the notes file is the
+    // suggested target, so only the title is asked for.
+    await card.getByLabel('Note topic').fill('Die alte Mine');
+    await page.getByRole('option', { name: 'New note "Die alte Mine"' }).click();
+    await expect(page.getByRole('heading', { name: 'New Note' })).toBeVisible();
+    await page.getByRole('button', { name: 'Details' }).click();
     await expect(page.getByLabel('Close Topics File (B_CloseTopics)')).toHaveCount(0);
-    await page.getByLabel('Note Definition File (TOPIC_)').fill('project/dialogs/LOG_Constants_Notes.d');
-    await page.getByLabel('Note Title').fill('Die alte Mine');
-    await page.getByRole('button', { name: 'Register', exact: true }).click();
+    await expect(page.getByLabel('Note Definition File (TOPIC_)')).toHaveValue('project/dialogs/LOG_Constants_Notes.d');
+    await page.getByRole('button', { name: 'Create', exact: true }).click();
 
-    await expect(page.getByRole('heading', { name: 'Register Note in Log Files' })).toBeHidden();
+    await expect(page.getByRole('heading', { name: 'New Note' })).toBeHidden();
     await expect(async () => {
       const files = await page.evaluate(() => ({
         notes: localStorage.getItem('mockapi_file_project/dialogs/LOG_Constants_Notes.d'),
         closeTopics: localStorage.getItem('mockapi_file_project/dialogs/B_CloseTopicsTest.d')
       }));
-      expect(files.notes).toContain('const string TOPIC_AlteMine = "Die alte Mine";');
-      expect(files.notes).not.toContain('MIS_AlteMine');
+      expect(files.notes).toContain('const string TOPIC_DieAlteMine = "Die alte Mine";');
+      expect(files.notes).not.toContain('MIS_DieAlteMine');
       expect(files.notes).toContain('TOPIC_Haendler'); // existing content preserved
-      expect(files.closeTopics).not.toContain('TOPIC_AlteMine');
+      expect(files.closeTopics).not.toContain('TOPIC_DieAlteMine');
     }).toPass({ timeout: 5000 });
   });
 

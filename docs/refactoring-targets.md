@@ -298,10 +298,10 @@ per-action one inside `deserializeAction` is the one recursion into
 
 ### 14. The quest UI sits flat at `components/` root
 **Files:** `daedalus-dialog-editor/src/renderer/components/QuestEditor.tsx`,
-`QuestList.tsx`, `QuestDetails.tsx`, `CreateQuestDialog.tsx`
+`QuestList.tsx`, `QuestDetails.tsx`
 
 The other surfaces with several files own a folder — `Problems/`,
-`Simulator/`, `world/` — while the four quest files sit among some fifty
+`Simulator/`, `world/` — while the three quest files sit among some fifty
 siblings at the root. `docs/architecture/quest-editor.md` (§Scope, §Internal
 Boundaries) was aligned to the flat layout rather than the layout to a folder,
 and `tests/questDomainBoundary.test.ts` guards only the domain side (domain
