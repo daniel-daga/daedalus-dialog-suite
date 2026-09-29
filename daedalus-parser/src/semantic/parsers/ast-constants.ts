@@ -1,4 +1,6 @@
 export const COMPARISON_OPERATORS = new Set(['==', '!=', '<', '>', '<=', '>=']);
+const BINARY_OPERATORS = new Set(['||', '&&', '|', '^', '&', '==', '!=', '<', '<=', '>', '>=', '<<', '>>', '+', '-', '*', '/', '%']);
+const ASSIGNMENT_OPERATORS = new Set(['=', '+=', '-=', '*=', '/=']);
 export const CONDITION_MODE_BLOCKING_STATEMENTS = new Set(['if_statement', 'return_statement']);
 export const CONDITION_ALLOWED_PARENT_TYPES = new Set(['if_statement', 'parenthesized_expression']);
 export const ANCESTOR_TRAVERSAL_BOUNDARY_TYPES = new Set(['if_statement', 'block', 'function_declaration']);
@@ -12,13 +14,21 @@ export function isLogicalOperator(operator: string | null | undefined): boolean 
 }
 
 export function getBinaryOperator(node: { childCount: number; child(index: number): { text: string } }): string | null {
-  return node.childCount >= 2 ? node.child(1).text : null;
+  for (let index = 0; index < node.childCount; index += 1) {
+    const text = node.child(index).text;
+    if (BINARY_OPERATORS.has(text)) return text;
+  }
+  return null;
 }
 
-// assignment_statement children: [left, operator token, right, ';'].
-// The grammar assigns no field name to the operator, so extract it positionally.
+// Comments are Tree-sitter extras and can appear between operands and operator;
+// scan for the exact token instead of assuming a fixed child index.
 export function getAssignmentOperator(node: { childCount: number; child(index: number): { text: string } }): string {
-  return node.childCount >= 2 ? node.child(1).text : '=';
+  for (let index = 0; index < node.childCount; index += 1) {
+    const text = node.child(index).text;
+    if (ASSIGNMENT_OPERATORS.has(text)) return text;
+  }
+  return '=';
 }
 
 export function isConditionModeBlockingStatement(nodeType: string): boolean {

@@ -255,7 +255,13 @@ export class LinkingVisitor {
 
       if (type === 'return_statement') {
         if (this.isCanonicalTrueReturn(node)) {
-          if (this.isTopLevelStatement(node) && this.isTrivialTopLevelTrueReturn(node)) {
+          if (this.isTopLevelStatement(node)) {
+            if (this.isTrivialTopLevelTrueReturn(node)) {
+              return true;
+            }
+            // A top-level truthy return is an unconditional success path. The
+            // flat condition model cannot represent it alongside prior guards.
+            this.triggerConditionRawMode(node);
             return true;
           }
           // A nested TRUE return is the canonical body of a structured
@@ -338,6 +344,13 @@ export class LinkingVisitor {
       const operator = getBinaryOperator(node);
       if (isComparisonOperator(operator) && !this.hasComparisonBinaryAncestor(node)) {
         this.processCondition(node);
+      } else if (
+        operator &&
+        !isLogicalOperator(operator) &&
+        !this.hasComparisonBinaryAncestor(node)
+      ) {
+        const containingIf = this.findContainingIfCondition(node);
+        if (containingIf) this.triggerConditionRawMode(containingIf);
       }
       return;
     }
@@ -349,7 +362,9 @@ export class LinkingVisitor {
     const parent = node.parent;
     if (!parent) return;
 
-    if (type === 'identifier' && parent.type === 'unary_expression') return;
+    // The complete unary expression is captured as one condition. Its operands
+    // must not be appended separately (e.g. `!(A || B)` plus A plus B).
+    if (type === 'identifier' && this.hasAncestor(node, (ancestor) => ancestor.type === 'unary_expression')) return;
     if (this.hasNonLogicalBinaryAncestor(node)) return;
 
     let isAllowed = isConditionAllowedParentType(parent.type);
@@ -368,6 +383,16 @@ export class LinkingVisitor {
 
   private maybeSetConditionOperator(ifNode: TreeSitterNode): void {
     if (!this.isCurrentConditionFunction() || !this.currentFunction) return;
+    if (!this.isTopLevelStatement(ifNode)) {
+      // Nested all-AND guards can be flattened safely. An OR inside a nested
+      // guard cannot: its relationship to the enclosing guard is an AND that
+      // a single global operator cannot represent.
+      const condition = ifNode.childForFieldName('condition');
+      if (condition && this.collectLogicalOperators(condition).has('||')) {
+        this.triggerConditionRawMode(ifNode);
+      }
+      return;
+    }
     const functionKey = this.currentFunction.name.toLowerCase();
     if (this.isTopLevelStatement(ifNode)) {
       if (this.topLevelConditionIfs.has(functionKey)) {
@@ -388,6 +413,19 @@ export class LinkingVisitor {
       // Mixed operators — fall back to raw mode immediately
       this.triggerConditionRawMode(ifNode);
     }
+  }
+
+  private findContainingIfCondition(node: TreeSitterNode): TreeSitterNode | null {
+    let current: TreeSitterNode | null = node;
+    while (current) {
+      if (current.type === 'if_statement') {
+        const condition = current.childForFieldName('condition');
+        return condition && this.nodeIsWithin(node, condition) ? current : null;
+      }
+      if (current.type === 'block' || current.type === 'function_declaration') return null;
+      current = current.parent;
+    }
+    return null;
   }
 
   /**
