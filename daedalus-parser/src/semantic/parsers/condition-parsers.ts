@@ -82,13 +82,13 @@ export class ConditionParsers {
     // Normalize comparisons so VariableCondition always stores an identifier as variableName.
     if (left.type === 'identifier') {
       const parsedValue = ConditionParsers.parseBinaryValue(right);
-      return new VariableCondition(left.text, false, op, parsedValue);
+      return new VariableCondition(left.text, false, op, parsedValue, right.type === 'string');
     }
 
     if (right.type === 'identifier') {
       const parsedValue = ConditionParsers.parseBinaryValue(left);
       const normalizedOperator = ConditionParsers.invertComparisonOperator(op);
-      return new VariableCondition(right.text, false, normalizedOperator, parsedValue);
+      return new VariableCondition(right.text, false, normalizedOperator, parsedValue, left.type === 'string');
     }
 
     return null;
@@ -233,18 +233,19 @@ export class ConditionParsers {
 
     const args = ConditionParsers.parseRawCallArguments(callNode);
     const value = ConditionParsers.parseBinaryValue(otherNode);
+    const valueIsStringLiteral = otherNode.type === 'string';
 
     // Daedalus identifiers are case-insensitive, so dispatch on a normalized key.
     switch (fnName.toLowerCase()) {
       case 'npc_hasitems':
         if (args.length < 2) return null;
-        return new NpcHasItemsCondition(args[0], args[1], operator, value);
+        return new NpcHasItemsCondition(args[0], args[1], operator, value, valueIsStringLiteral);
       case 'npc_getdisttowp':
         if (args.length < 2) return null;
-        return new NpcGetDistToWpCondition(args[0], args[1], operator, value);
+        return new NpcGetDistToWpCondition(args[0], args[1], operator, value, valueIsStringLiteral);
       case 'npc_gettalentskill':
         if (args.length < 2) return null;
-        return new NpcGetTalentSkillCondition(args[0], args[1], operator, value);
+        return new NpcGetTalentSkillCondition(args[0], args[1], operator, value, valueIsStringLiteral);
       case 'npc_isdead':
         if (args.length < 1) return null;
         return ConditionParsers.parseBoolLikeComparisonAsNegation(

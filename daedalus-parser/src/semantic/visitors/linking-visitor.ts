@@ -47,9 +47,9 @@ export class LinkingVisitor {
   private currentFunction: DialogFunction | null;
   private conditionFunctions: Set<string>;
   private topLevelConditionIfs: Set<string>;
-  // Keyed by lowercase function name; a cached `null` records a proven miss
-  // (a function owned by no dialog) so the O(dialogs) scan runs at most once.
-  private functionToDialog: Map<string, Dialog | null>;
+  // Keyed by lowercase function name. A function can be shared by multiple
+  // dialogs, so cache all owners (including an empty array for a proven miss).
+  private functionToDialogs: Map<string, Dialog[]>;
   private conditionRawMode: Set<string>;
   private preservedStatementRanges: Map<string, Set<string>>;
   private currentFunctionBodyNode: TreeSitterNode | null;
@@ -66,7 +66,7 @@ export class LinkingVisitor {
     this.currentFunction = null;
     this.conditionFunctions = new Set<string>();
     this.topLevelConditionIfs = new Set<string>();
-    this.functionToDialog = new Map<string, Dialog | null>();
+    this.functionToDialogs = new Map<string, Dialog[]>();
     this.conditionRawMode = new Set<string>();
     this.preservedStatementRanges = new Map<string, Set<string>>;
     this.currentFunctionBodyNode = null;
@@ -119,9 +119,9 @@ export class LinkingVisitor {
         if (propertyKey === 'condition') {
           this.conditionFunctions.add(functionName);
         } else if (propertyKey === 'information' && dialog) {
-          // Pre-populate function→dialog links (PF4) so lookups resolve without
-          // an O(dialogs) scan regardless of declaration order.
-          this.functionToDialog.set(functionName.toLowerCase(), dialog);
+          // Pre-populate function→dialogs links so shared information
+          // functions resolve regardless of declaration order.
+          this.addDialogForFunction(functionName, dialog);
         }
       }
     }
@@ -408,47 +408,35 @@ export class LinkingVisitor {
    * Returns 'OR' if pure-OR, 'AND' if pure-AND or single condition, null if mixed.
    */
   private detectTopLevelConditionOperator(ifConditionNode: TreeSitterNode): 'AND' | 'OR' | null {
-    const node = this.unwrapParens(ifConditionNode);
-    if (node.type !== 'binary_expression') {
-      return 'AND'; // single condition, default to AND
-    }
-    const operator = getBinaryOperator(node);
-    if (!isLogicalOperator(operator)) {
-      return 'AND'; // comparison, default to AND
-    }
-
-    // binary_expression children: child(0)=left, child(1)=operator, child(2)=right
-    const leftNode = node.childCount >= 1 ? node.child(0) : null;
-    const rightNode = node.childCount >= 3 ? node.child(2) : null;
-
-    const leftOp = this.getTopLevelLogicalOperator(leftNode);
-    const rightOp = this.getTopLevelLogicalOperator(rightNode);
-
-    if (operator === '||') {
-      // All parts must be non-&& (i.e., no && in same level)
-      if ((leftOp === null || leftOp === '||') && (rightOp === null || rightOp === '||')) {
-        return 'OR';
-      }
-      return null; // mixed
-    }
-
-    if (operator === '&&') {
-      if ((leftOp === null || leftOp === '&&') && (rightOp === null || rightOp === '&&')) {
-        return 'AND';
-      }
-      return null; // mixed
-    }
-
-    return null;
+    const operators = this.collectLogicalOperators(ifConditionNode);
+    if (operators.size > 1) return null;
+    return operators.has('||') ? 'OR' : 'AND';
   }
 
-  private getTopLevelLogicalOperator(node: TreeSitterNode | null): '&&' | '||' | null {
-    if (!node) return null;
+  /**
+   * Collect logical operators that combine condition clauses, walking through
+   * nested logical expressions and parentheses. Stop at comparisons, calls,
+   * arithmetic, and other atomic clauses so their internal syntax is not
+   * mistaken for the condition's top-level combination.
+   */
+  private collectLogicalOperators(node: TreeSitterNode | null): Set<'&&' | '||'> {
+    const operators = new Set<'&&' | '||'>();
+    if (!node) return operators;
+
     const unwrapped = this.unwrapParens(node);
-    if (unwrapped.type !== 'binary_expression') return null;
-    const op = getBinaryOperator(unwrapped);
-    if (op === '&&' || op === '||') return op;
-    return null;
+    if (unwrapped.type !== 'binary_expression') return operators;
+
+    const operator = getBinaryOperator(unwrapped);
+    if (operator !== '&&' && operator !== '||') return operators;
+
+    operators.add(operator);
+    for (const childIndex of [0, 2]) {
+      if (childIndex >= unwrapped.childCount) continue;
+      for (const nested of this.collectLogicalOperators(unwrapped.child(childIndex))) {
+        operators.add(nested);
+      }
+    }
+    return operators;
   }
 
   /**
@@ -476,7 +464,7 @@ export class LinkingVisitor {
         if (this.functions[functionName]) {
           value = this.functions[functionName];
           if (propertyKey === 'information') {
-            this.functionToDialog.set(functionName.toLowerCase(), this.currentInstance);
+            this.addDialogForFunction(functionName, this.currentInstance);
             this.syncDialogActionsForFunction(functionName, this.currentInstance);
           }
         } else {
@@ -656,8 +644,7 @@ export class LinkingVisitor {
     if (!this.currentFunction) return;
     this.currentFunction.actions.push(action);
 
-    const dialog = this.findDialogForFunction(this.currentFunction.name);
-    if (dialog) {
+    for (const dialog of this.findDialogsForFunction(this.currentFunction.name)) {
       dialog.actions.push(action);
     }
   }
@@ -761,8 +748,7 @@ export class LinkingVisitor {
     if (!this.currentFunction) return;
     const removed = this.currentFunction.actions.splice(this.rawModeActionWatermark);
     if (removed.length === 0) return;
-    const dialog = this.findDialogForFunction(funcName);
-    if (dialog) {
+    for (const dialog of this.findDialogsForFunction(funcName)) {
       dialog.actions = dialog.actions.filter((action) => !removed.includes(action));
     }
   }
@@ -1012,18 +998,22 @@ export class LinkingVisitor {
     return trimmed.slice(1, -1).trim();
   }
 
-  /**
-   * Find which dialog uses a function as its information function
-   * Optimized to O(1) lookup using functionToDialog map
-   */
-  private findDialogForFunction(functionName: string): Dialog | null {
+  private addDialogForFunction(functionName: string, dialog: Dialog): void {
     const key = functionName.toLowerCase();
-    const cached = this.functionToDialog.get(key);
+    const dialogs = this.functionToDialogs.get(key) ?? [];
+    if (!dialogs.includes(dialog)) dialogs.push(dialog);
+    this.functionToDialogs.set(key, dialogs);
+  }
+
+  /** Find every dialog using a function, caching even unowned-function misses. */
+  private findDialogsForFunction(functionName: string): Dialog[] {
+    const key = functionName.toLowerCase();
+    const cached = this.functionToDialogs.get(key);
     if (cached !== undefined) {
-      // Includes cached misses (null) so the scan below runs at most once.
       return cached;
     }
 
+    const matches: Dialog[] = [];
     for (const dialog of Object.values(this.dialogs)) {
       const information = getDialogProperty(dialog.properties, 'information');
       const informationName = typeof information === 'string'
@@ -1033,12 +1023,11 @@ export class LinkingVisitor {
           : null);
 
       if (namesEqual(informationName, functionName)) {
-        this.functionToDialog.set(key, dialog);
-        return dialog;
+        matches.push(dialog);
       }
     }
 
-    this.functionToDialog.set(key, null);
-    return null;
+    this.functionToDialogs.set(key, matches);
+    return matches;
   }
 }
