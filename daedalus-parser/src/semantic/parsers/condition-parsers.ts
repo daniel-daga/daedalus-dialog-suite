@@ -79,6 +79,12 @@ export class ConditionParsers {
       return callComparison;
     }
 
+    // A declined call comparison must stay verbatim, including its argument
+    // list and operand order; it is not an editable variable comparison.
+    if (left.type === 'call_expression' || right.type === 'call_expression') {
+      return null;
+    }
+
     // Normalize comparisons so VariableCondition always stores an identifier as variableName.
     if (left.type === 'identifier') {
       const parsedValue = ConditionParsers.parseBinaryValue(right);
