@@ -178,6 +178,9 @@ export class LinkingVisitor {
       this.rawModeActionWatermark = this.currentFunction ? this.currentFunction.actions.length : 0;
       if (this.currentFunction && body) {
         this.currentFunction.hasExplicitBodyContent = body.namedChildren.length > 0;
+        // Index calls independently of semantic extraction, which can skip
+        // local declarations or preserve an entire condition body as raw text.
+        this.recordCallSitesInSubtree(body);
       }
     }
   }
@@ -247,7 +250,13 @@ export class LinkingVisitor {
 
       if (type === 'if_statement') {
         const alternative = node.childForFieldName('alternative');
-        if (alternative) {
+        const consequence = node.childForFieldName('consequence');
+        const statements = consequence?.namedChildren.filter(child => child.type !== 'comment') ?? [];
+        // A flat guard list represents a single success path. Empty branches,
+        // sibling guards and a return after a nested guard need the original
+        // control flow rather than an invented return or an AND of all guards.
+        if (alternative || statements.length !== 1 ||
+            (statements[0].type !== 'if_statement' && !this.isCanonicalTrueReturn(statements[0]))) {
           this.triggerConditionRawMode(node);
           return true;
         }
@@ -284,6 +293,18 @@ export class LinkingVisitor {
       return true;
     }
 
+    if (type === 'expression_statement' && this.currentFunction) {
+      const expressions = node.namedChildren.filter(child => child.type !== 'comment');
+      if (isConditionFunc) {
+        this.triggerConditionRawMode(node);
+        return true;
+      }
+      if (expressions.length !== 1 || expressions[0].type !== 'call_expression') {
+        this.preserveUnsupportedStatement(node);
+        return true;
+      }
+    }
+
     if (this.currentFunction && !isConditionFunc && isConditionModeBlockingStatement(type)) {
       if (type === 'if_statement') {
         const conditionalAction = this.parseConditionalAction(node);
@@ -292,12 +313,10 @@ export class LinkingVisitor {
         } else {
           this.preserveUnsupportedStatement(node);
         }
-        this.recordCallSitesInSkippedSubtree(node);
         return true;
       }
 
       this.preserveUnsupportedStatement(node);
-      this.recordCallSitesInSkippedSubtree(node);
       return true;
     }
 
@@ -340,6 +359,11 @@ export class LinkingVisitor {
       return;
     }
 
+    // Atomic clauses own their entire expression. Descendants of a captured
+    // negation, call, field access or array access must not become extra guards.
+    if (this.hasAncestor(node, ancestor =>
+      ['unary_expression', 'call_expression', 'member_access', 'array_access'].includes(ancestor.type))) return;
+
     if (type === 'binary_expression') {
       const operator = getBinaryOperator(node);
       if (isComparisonOperator(operator) && !this.hasComparisonBinaryAncestor(node)) {
@@ -355,16 +379,13 @@ export class LinkingVisitor {
       return;
     }
 
-    if (type !== 'identifier' && type !== 'unary_expression') {
+    if (!['identifier', 'unary_expression', 'number', 'boolean', 'string', 'member_access', 'array_access'].includes(type)) {
       return;
     }
 
     const parent = node.parent;
     if (!parent) return;
 
-    // The complete unary expression is captured as one condition. Its operands
-    // must not be appended separately (e.g. `!(A || B)` plus A plus B).
-    if (type === 'identifier' && this.hasAncestor(node, (ancestor) => ancestor.type === 'unary_expression')) return;
     if (this.hasNonLogicalBinaryAncestor(node)) return;
 
     let isAllowed = isConditionAllowedParentType(parent.type);
@@ -434,10 +455,10 @@ export class LinkingVisitor {
    */
   private unwrapParens(node: TreeSitterNode): TreeSitterNode {
     let current = node;
-    while (current.type === 'parenthesized_expression' && current.namedChildren.length === 1) {
-      const inner = current.namedChildren[0];
-      if (!inner) break;
-      current = inner;
+    while (current.type === 'parenthesized_expression') {
+      const children = current.namedChildren.filter(child => child.type !== 'comment');
+      if (children.length !== 1) break;
+      current = children[0];
     }
     return current;
   }
@@ -469,9 +490,8 @@ export class LinkingVisitor {
     if (operator !== '&&' && operator !== '||') return operators;
 
     operators.add(operator);
-    for (const childIndex of [0, 2]) {
-      if (childIndex >= unwrapped.childCount) continue;
-      for (const nested of this.collectLogicalOperators(unwrapped.child(childIndex))) {
+    for (const child of unwrapped.namedChildren.filter(child => child.type !== 'comment')) {
+      for (const nested of this.collectLogicalOperators(child)) {
         operators.add(nested);
       }
     }
@@ -590,8 +610,8 @@ export class LinkingVisitor {
    * Process function calls in function bodies
    */
   private processFunctionCall(node: TreeSitterNode): void {
-    const functionName = this.recordCallSite(node);
-    if (functionName === null || !this.currentFunction) {
+    const functionName = node.childForFieldName('function')?.text;
+    if (!functionName || !this.currentFunction) {
       return;
     }
 
@@ -600,7 +620,8 @@ export class LinkingVisitor {
         return;
       }
 
-      if (this.isNegatedCallHandledByUnaryCondition(node)) {
+      if (this.hasAncestor(node, ancestor =>
+        ['unary_expression', 'member_access', 'array_access'].includes(ancestor.type))) {
         return;
       }
 
@@ -665,17 +686,16 @@ export class LinkingVisitor {
   }
 
   /**
-   * Sweep a statement whose children the traversal is about to skip for the
-   * calls inside it. `callSites` is the project index's only view of a call,
-   * and a chapter-entry function is one `if` after another, so without this
-   * every `Wld_InsertNpc` written in a conditional block is invisible to it.
+   * Sweep the complete function body once for calls. `callSites` is the
+   * project index's only view of a call, including calls in local initializers
+   * and raw statements that semantic extraction does not descend into.
    */
-  private recordCallSitesInSkippedSubtree(node: TreeSitterNode): void {
+  private recordCallSitesInSubtree(node: TreeSitterNode): void {
     for (const child of node.namedChildren) {
       if (child.type === 'call_expression') {
         this.recordCallSite(child);
       }
-      this.recordCallSitesInSkippedSubtree(child);
+      this.recordCallSitesInSubtree(child);
     }
   }
 
@@ -807,7 +827,8 @@ export class LinkingVisitor {
       return false;
     }
 
-    return this.isCanonicalTrueReturn(node);
+    const statements = this.currentFunctionBodyNode?.namedChildren.filter(child => child.type !== 'comment') ?? [];
+    return statements.length === 1 && this.isCanonicalTrueReturn(node);
   }
 
   private isCallInsideIfCondition(node: TreeSitterNode): boolean {
@@ -898,16 +919,6 @@ export class LinkingVisitor {
     }
     const grandParent = parent.parent;
     return !!grandParent && grandParent.type === 'block';
-  }
-
-  private isNegatedCallHandledByUnaryCondition(node: TreeSitterNode): boolean {
-    const parent = node.parent;
-    if (!parent || parent.type !== 'unary_expression') {
-      return false;
-    }
-
-    const operator = parent.child(0);
-    return !!operator && operator.text === '!';
   }
 
   /**
