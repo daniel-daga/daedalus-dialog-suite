@@ -31,6 +31,8 @@ export class RoutineOverlay {
   readonly unroutedLegs: Array<[string, string]> = [];
   /** Stop waypoints the waynet does not have, as the draft names them. */
   readonly missing: string[] = [];
+  /** The stops drawn, in the draft's order, as the waynet spells them. */
+  readonly drawn: string[] = [];
 
   constructor(waynet: WaynetPayload, graph: WaynetGraph, entries: readonly RoutineEntry[], selected: number | null) {
     const positions = new Float32Array(waynet.positions);
@@ -45,6 +47,7 @@ export class RoutineOverlay {
         this.missing.push(entry.waypoint);
         return;
       }
+      this.drawn.push(waynet.names[waypoint]);
       stopPositions.push(...at(waypoint));
       stopColors.push(...new THREE.Color(routineColor(i)).toArray());
     });

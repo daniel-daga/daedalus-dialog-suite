@@ -63,7 +63,7 @@ function harness({
   hasMesh = true,
   markerUnderCursor = NO_PICK,
   vobPositions = { 5: [500, 60, 700] as ZenPosition, 8: [800, 10, 900] as ZenPosition },
-  npcsUnderCursor = null as string[] | null,
+  spawnUnderCursor = null as number | null,
 } = {}) {
   waypointPick.answer = waypointUnderCursor;
 
@@ -106,7 +106,6 @@ function harness({
   const menus: Array<[number, { left: number; top: number }]> = [];
   const remembered: THREE.Vector3[] = [];
   const pivots: Array<[THREE.Vector3, ZenPosition]> = [];
-  const npcs: Array<[readonly string[], { left: number; top: number }]> = [];
   let disposed = false;
 
   const controller = new PickController({
@@ -128,13 +127,12 @@ function harness({
     onSelectWaypoint: (waypoint) => { waypoints.push(waypoint); },
     rememberPick: (at) => { remembered.push(at.clone()); },
     onPivot: (at, zen) => { pivots.push([at.clone(), zen]); },
-    spawns: () => (npcsUnderCursor === null ? null : { pickOccupants: () => npcsUnderCursor }),
-    onPickNpcs: (names, at) => { npcs.push([names, at]); },
+    spawns: () => (spawnUnderCursor === null ? null : { pickWaypoint: () => spawnUnderCursor }),
   });
   controller.attach();
 
   return {
-    controller, canvas, controls, picked, waypoints, menus, remembered, pivots, npcs,
+    controller, canvas, controls, picked, waypoints, menus, remembered, pivots,
     picks: () => picks,
     markerPicks: () => markerPicks,
     dispose: () => { disposed = true; },
@@ -199,34 +197,30 @@ describe('PickController — a click', () => {
     expect(h.remembered).toHaveLength(1);
   });
 
-  it('names the NPCs on a spawn marker after the waynet, ahead of every VOB', async () => {
-    // Routine mode opens from a click on an NPC (npc-editor.md §6). The spawn
-    // markers draw on top like the waynet, so they are asked before anything
-    // the GPU pick answers — and after the waynet, whose click is older and
-    // lands on the same points.
-    const h = harness({ npcsUnderCursor: ['BAU_900_ONAR'], markerUnderCursor: 8, vobUnderCursor: 5 });
+  it('selects the waypoint a clicked spawn marker stands on, ahead of every VOB', async () => {
+    // A spawn marker is its waypoint (Daniel, 2026-09-29): the click does what
+    // a click on the waypoint does, with the waynet shown or not, so a layer
+    // switched on never changes what a click means. The markers draw on top
+    // like the waynet, so they are asked before anything the GPU pick answers.
+    const h = harness({
+      spawnUnderCursor: 4, showWaynet: false, markerUnderCursor: 8, vobUnderCursor: 5,
+    });
 
     click(h.canvas);
     await settle();
 
-    expect(h.npcs).toEqual([[['BAU_900_ONAR'], { left: WIDTH / 2, top: HEIGHT / 2 }]]);
+    expect(h.waypoints).toEqual([4]);
     expect(h.picked).toEqual([]);
     expect(h.picks()).toBe(0);
-
-    const onWaypoint = harness({ npcsUnderCursor: ['BAU_900_ONAR'], waypointUnderCursor: 3 });
-    click(onWaypoint.canvas);
-    await settle();
-    expect(onWaypoint.waypoints).toEqual([3]);
-    expect(onWaypoint.npcs).toEqual([]);
   });
 
-  it('goes on to the VOBs when no NPC stands under the cursor', async () => {
-    const h = harness({ npcsUnderCursor: [], vobUnderCursor: 5 });
+  it('goes on to the VOBs when no spawn marker is under the cursor', async () => {
+    const h = harness({ spawnUnderCursor: NO_PICK, vobUnderCursor: 5 });
 
     click(h.canvas);
     await settle();
 
-    expect(h.npcs).toEqual([]);
+    expect(h.waypoints).toEqual([]);
     expect(h.picked).toEqual([[5, null, false]]);
   });
 

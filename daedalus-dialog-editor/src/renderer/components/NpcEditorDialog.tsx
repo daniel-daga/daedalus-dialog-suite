@@ -30,7 +30,9 @@ import { itemCategoriesOf, itemNamesForCategory } from '../npc/npcItemCategories
 import { npcRoutines, formatMinute, type NpcRoutine } from '../npc/npcRoutines';
 import { useWorldStore } from '../store/worldStore';
 import { useUISelectionStore } from '../store/uiSelectionStore';
-import { waypointJumpReason } from './npcWorldJump';
+import {
+  waypointJumpReason, resolveNpcSpawnSite, expectedWorldNameFor, worldToOpenFor,
+} from './npcWorldJump';
 import NpcVisualPreview from './NpcVisualPreview';
 import { npcAssetSuggestions, type NpcAssetSuggestions } from '../npc/npcAssets';
 import NpcRoutineSourceDialog, { type NpcRoutineSourceTarget } from './NpcRoutineSourceDialog';
@@ -146,10 +148,9 @@ interface NpcRoutinesSectionProps {
   onEditRoutine?: (routine: string) => void;
   /** Open the routine editor to create the NPC's first routine (#316). */
   onCreateRoutine?: () => void;
-  /** Open this routine in the World surface's routine mode instead. */
+  /** Open this routine in the World surface's routine mode instead — which
+   *  opens a world for it when none is, so it is never off for want of one. */
   onEditRoutineInWorld?: (routine: string) => void;
-  /** Why routine mode cannot be opened now, e.g. no world is open. */
-  worldReason?: string | null;
 }
 
 /** A jump button that says why it is off, rather than just being off. */
@@ -166,7 +167,7 @@ const JumpButton: React.FC<{ label: string; reason: string | null; onClick: () =
 export const NpcRoutinesSection: React.FC<NpcRoutinesSectionProps> = (
   {
     routines, onShowWaypoint, onShowSource, waypointReason, blockedReason = null, onEditRoutine,
-    onEditRoutineInWorld, worldReason = null, onCreateRoutine,
+    onEditRoutineInWorld, onCreateRoutine,
   },
 ) => (
   <Box sx={{ mb: 2 }}>
@@ -196,7 +197,7 @@ export const NpcRoutinesSection: React.FC<NpcRoutinesSectionProps> = (
           {onEditRoutineInWorld && (
             <JumpButton
               label={`Edit routine ${routine} in the world`}
-              reason={blockedReason ?? worldReason}
+              reason={blockedReason}
               onClick={() => onEditRoutineInWorld(routine)}
             >
               In world
@@ -347,11 +348,15 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
     useUISelectionStore.getState().setActiveView('world');
     onClose();
   };
-  // npc-editor.md §6: the routine in the World surface's routine mode, which
-  // needs a world open to draw on and pick waypoints from.
-  const worldOpen = useWorldStore((s) => s.status === 'ready');
+  // npc-editor.md §6: the routine in the World surface's routine mode. It
+  // needs a world, and never dead-ends for want of one (Daniel, 2026-09-29):
+  // the world the NPC's STARTUP_ spawn names is opened, or the picker offered.
+  const spawnSites = useProjectStore((s) => s.spawnSiteIndex);
+  const openWorldPath = useWorldStore((s) => s.summary?.worldPath ?? null);
   const editRoutineInWorld = (routine: string) => {
-    useWorldStore.getState().requestRoutine({ npc: npcName, routine });
+    const site = resolveNpcSpawnSite(spawnSites, npcName);
+    const inWorld = worldToOpenFor(site ? expectedWorldNameFor(site.functionName) : null, openWorldPath);
+    useWorldStore.getState().requestRoutine(inWorld === null ? { npc: npcName, routine } : { npc: npcName, routine, inWorld });
     useUISelectionStore.getState().setActiveView('world');
     onClose();
   };
@@ -474,7 +479,6 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
                 onEditRoutine={setEditingRoutine}
                 onCreateRoutine={() => setEditingRoutine('')}
                 onEditRoutineInWorld={editRoutineInWorld}
-                worldReason={worldOpen ? null : 'Open a world in the World view first'}
               />
               {uncovered.length > 0 && (
                 <Box>

@@ -249,6 +249,13 @@ const RoutineTimeline: React.FC<TimelineProps> = ({ entries, selected, onSelect,
   );
 };
 
+/** The activity a waypoint pick is for, as the World surface's bar names it. */
+export interface RoutinePickTarget {
+  /** Zero-based. */
+  index: number;
+  state: string;
+}
+
 export interface RoutineEditorPanelProps {
   npc: string;
   /** The routine to open on; the declared daily routine when absent. */
@@ -256,9 +263,9 @@ export interface RoutineEditorPanelProps {
   /** The waypoints a stop may use — the saved world's — or null for free
    *  text, when no world is open to say which exist. */
   waypoints?: readonly string[] | null;
-  /** Hand the selected activity's waypoint to a pick elsewhere (the viewport);
-   *  the callback it is given sets it. */
-  onPickWaypoint?: (set: (waypoint: string) => void) => void;
+  /** Hand an activity's waypoint to a pick elsewhere (the viewport); the
+   *  callback it is given sets it, and `target` names the activity. */
+  onPickWaypoint?: (set: (waypoint: string) => void, target: RoutinePickTarget) => void;
   /** The draft as it changes, for a view that draws it. */
   onDraftChange?: (entries: readonly RoutineEntry[], selected: number | null) => void;
   /** Saved or cancelled. */
@@ -653,7 +660,7 @@ export const RoutineEditorPanel: React.FC<RoutineEditorPanelProps> = (
                       entries: setWaypoint(current.entries, index, waypoint),
                       past: [...current.past, current.entries],
                       future: [],
-                    })));
+                    })), { index, state: entry.state });
                   }}
                 >
                   Pick
@@ -684,14 +691,32 @@ export const RoutineEditorPanel: React.FC<RoutineEditorPanelProps> = (
   );
 };
 
-/** The editor as a modal, for the NPC editor, where no world is needed. */
-const RoutineEditorDialog: React.FC<{ npc: string; initialRoutine?: string; onClose: () => void }> = (
-  { npc, initialRoutine, onClose },
-) => (
-  <Dialog open onClose={onClose} maxWidth="md" fullWidth aria-labelledby="routine-editor-title">
+/**
+ * The editor as a modal — the one both the NPC editor and the World surface
+ * open (Daniel, 2026-09-29). Over a world it also takes the saved waypoints,
+ * the pick, and the draft the viewport draws; `hidden` puts it away while a
+ * pick waits for a click in the viewport, keeping its draft mounted.
+ */
+const RoutineEditorDialog: React.FC<{
+  npc: string;
+  initialRoutine?: string;
+  onClose: () => void;
+  waypoints?: readonly string[] | null;
+  onPickWaypoint?: RoutineEditorPanelProps['onPickWaypoint'];
+  onDraftChange?: RoutineEditorPanelProps['onDraftChange'];
+  hidden?: boolean;
+}> = ({ npc, initialRoutine, onClose, waypoints, onPickWaypoint, onDraftChange, hidden = false }) => (
+  <Dialog open={!hidden} keepMounted onClose={onClose} maxWidth="md" fullWidth aria-labelledby="routine-editor-title">
     <DialogTitle id="routine-editor-title">{`Routines of ${npc}`}</DialogTitle>
     <DialogContent dividers>
-      <RoutineEditorPanel npc={npc} initialRoutine={initialRoutine} onDone={onClose} />
+      <RoutineEditorPanel
+        npc={npc}
+        initialRoutine={initialRoutine}
+        waypoints={waypoints}
+        onPickWaypoint={onPickWaypoint}
+        onDraftChange={onDraftChange}
+        onDone={onClose}
+      />
     </DialogContent>
   </Dialog>
 );

@@ -163,13 +163,17 @@ test.describe('Routine editor', () => {
     await expect(activity(editor, 1).getByLabel('End')).toHaveValue('22:00');
   });
 
-  test('offers the routine in the World surface, and says a world has to be open first', async ({ page }) => {
-    // The harness has no world (tests/e2e/README.md), so this is as far as the
-    // browser suite reaches: the button is there and says why it is off.
+  test('"In world" with no world open, and none the NPC\'s spawn names, offers the world picker', async ({ page }) => {
+    // Never a dead end (Daniel, 2026-09-29). The harness has no world
+    // (tests/e2e/README.md) and Onar has no STARTUP_ spawn here, so this is
+    // the fallback: the World view, with its picker open. The auto-open is
+    // tests/e2e-electron/routine-in-world.spec.ts.
     await page.getByRole('button', { name: 'Edit NPC BAU_900_Onar' }).click();
     const npcEditor = page.getByRole('dialog', { name: /BAU_900_Onar/ });
-    await expect(npcEditor.getByRole('button', { name: 'Edit routine RTN_START_900 in the world' })).toBeDisabled();
-    await expect(npcEditor.getByTitle('Open a world in the World view first')).toBeVisible();
+    await npcEditor.getByRole('button', { name: 'Edit routine RTN_START_900 in the world' }).click();
+
+    await expect(npcEditor).toBeHidden();
+    await expect(page.getByTestId('world-picker')).toBeVisible();
   });
 
   test('a gap in the day is an error, and red on the timeline', async ({ page }) => {

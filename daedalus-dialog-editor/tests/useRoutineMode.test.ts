@@ -1,7 +1,7 @@
 /**
  * Routine mode's state in the World surface (npc-editor.md §6): which NPC's
- * routines are open, the draft the viewport draws, the waypoint pick the panel
- * hands to the viewport, and the menu a click on a spawn marker opens.
+ * routines are open, the draft the viewport draws, and the waypoint pick the
+ * editor modal hands to the viewport, naming the activity it is for.
  *
  * The pick is the rule worth a test: only a waypoint the world file on disk
  * has may become a stop (Daniel, 2026-09-28), so a click on one added since is
@@ -58,15 +58,6 @@ describe('useRoutineMode', () => {
     expect(hook.result.current.draft).toBeNull();
   });
 
-  test('takes a request from the NPC editor once', () => {
-    const { hook } = setup();
-
-    act(() => useWorldStore.getState().requestRoutine({ npc: 'BAU_900_ONAR' }));
-
-    expect(hook.result.current.mode).toEqual({ npc: 'BAU_900_ONAR' });
-    expect(useWorldStore.getState().routineRequest).toBeNull();
-  });
-
   test('offers the saved waypoints, sorted', () => {
     useWorldStore.getState().waynetSaved(['WP_Z', 'WP_A']);
     const { hook } = setup();
@@ -77,14 +68,17 @@ describe('useRoutineMode', () => {
     const { hook } = setup();
     const set = jest.fn();
 
-    act(() => hook.result.current.onPickWaypoint(set));
+    act(() => hook.result.current.onPickWaypoint(set, { index: 1, state: 'TA_Sleep' }));
     expect(hook.result.current.picking).toBe(true);
+    // What the bottom bar says the click is for.
+    expect(hook.result.current.pickTarget).toEqual({ index: 1, state: 'TA_Sleep' });
 
     let taken = false;
     act(() => { taken = hook.result.current.takeWaypointPick(0); });
     expect(taken).toBe(true);
     expect(set).toHaveBeenCalledWith('WP_A');
     expect(hook.result.current.picking).toBe(false);
+    expect(hook.result.current.pickTarget).toBeNull();
 
     // With no pick pending, the click is the surface's again.
     act(() => { taken = hook.result.current.takeWaypointPick(0); });
@@ -95,22 +89,11 @@ describe('useRoutineMode', () => {
     const { hook } = setup();
     const set = jest.fn();
 
-    act(() => hook.result.current.onPickWaypoint(set));
+    act(() => hook.result.current.onPickWaypoint(set, { index: 0, state: 'TA_Sit' }));
     act(() => { hook.result.current.takeWaypointPick(1); });
 
     expect(set).not.toHaveBeenCalled();
     expect(hook.result.current.pickError).toMatch(/WP_NEW.*save the world/);
     expect(hook.result.current.picking).toBe(true);
-  });
-
-  test('a click on a spawn marker opens a menu of who stands there, and choosing one opens its routines', () => {
-    const { hook } = setup();
-
-    act(() => hook.result.current.openNpcMenu(['BAU_900_ONAR', 'GRD_200_XARDAS'], { left: 10, top: 20 }));
-    expect(hook.result.current.npcMenu).toEqual({ npcs: ['BAU_900_ONAR', 'GRD_200_XARDAS'], at: { left: 10, top: 20 } });
-
-    act(() => hook.result.current.open('GRD_200_XARDAS'));
-    expect(hook.result.current.npcMenu).toBeNull();
-    expect(hook.result.current.mode).toEqual({ npc: 'GRD_200_XARDAS' });
   });
 });

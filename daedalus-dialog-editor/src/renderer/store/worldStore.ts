@@ -37,6 +37,11 @@ export type WorldStatus = 'idle' | 'opening' | 'ready' | 'error';
 export interface RoutineRequest {
   npc: string;
   routine?: string;
+  /** The `.ZEN` name (no extension) the NPC's `STARTUP_<WORLD>` spawn names,
+   *  when that is not the world open — the surface opens it first, asking
+   *  before it discards unsaved edits. Absent: edit in the open world, or
+   *  offer the picker when there is none. */
+  inWorld?: string;
 }
 
 export type WorldFocus =

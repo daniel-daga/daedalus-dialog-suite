@@ -87,6 +87,12 @@ declare global {
       /** Report a click that hit a waypoint in the waynet overlay. It stands in
        *  for `pickWaypoint`'s projection and nothing else. */
       pickWaypoint: (waypoint: number) => void;
+      /** The payload index of the waypoint with this name, or -1 — what a
+       *  spec needs to call `pickWaypoint` for a named point. */
+      waypointIndex: (name: string) => number;
+      /** The stops the routine overlay draws, as the waynet spells them, or
+       *  null while it draws none (npc-editor.md §6). */
+      routineStops: () => string[] | null;
       /** The anchor VOB's 3x3 as drawn, row-major, or null if detached. */
       gizmoRotation: () => number[] | null;
       /** Report a click that hit the world mesh rather than a VOB, at a point in
@@ -327,11 +333,8 @@ export interface WorldViewportProps {
   onScatterStroke: (samples: Array<[number, number, number]>) => void;
   /** A click that hit a waypoint in the overlay. */
   onSelectWaypoint: (waypoint: number | null) => void;
-  /** A click on a spawn marker: who stands there, and where, for a menu
-   *  (npc-editor.md §6). Absent, a marker click falls through to the VOBs. */
-  onPickNpcs?: (npcs: readonly string[], at: { left: number; top: number }) => void;
-  /** The routine draft routine mode is editing, drawn as stops and routes
-   *  over the waynet; null outside routine mode. */
+  /** The routine drawn as stops and routes over the waynet — routine mode's
+   *  draft, or a routine previewed from the waypoint panel; null for none. */
   routineDraft?: { entries: readonly RoutineEntry[]; selected: number | null } | null;
   /**
    * A finished waypoint drag, in **ZenGin space** — a destination rather than a
@@ -468,7 +471,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   selectedExtent = null,
   lightPreview = false,
   scatterRadius, onScatterStroke,
-  onSelectWaypoint, onMoveWaypoint, paused = false, onPickNpcs, routineDraft = null,
+  onSelectWaypoint, onMoveWaypoint, paused = false, routineDraft = null,
 }, ref) => {
   const hostRef = useRef<HTMLDivElement | null>(null);
   // The overlay is built and torn down independently of the scene, so asking
@@ -525,6 +528,9 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
 
   const overlayRef = useRef<WaynetOverlay | null>(null);
   const spawnOverlayRef = useRef<SpawnOverlay | null>(null);
+  const routineOverlayRef = useRef<RoutineOverlay | null>(null);
+  const waynetRef = useRef(waynet);
+  waynetRef.current = waynet;
   const gizmoRef = useRef<Gizmo | null>(null);
   const onTranslateRef = useRef(onTranslateSelection);
   onTranslateRef.current = onTranslateSelection;
@@ -534,8 +540,6 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   membersOfRef.current = membersOf;
   const onSelectWaypointRef = useRef(onSelectWaypoint);
   onSelectWaypointRef.current = onSelectWaypoint;
-  const onPickNpcsRef = useRef(onPickNpcs);
-  onPickNpcsRef.current = onPickNpcs;
   const vobIndexRef = useRef(vobIndex);
   vobIndexRef.current = vobIndex;
   const onMoveWaypointRef = useRef(onMoveWaypoint);
@@ -900,7 +904,6 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       },
       onSelectWaypoint: (waypoint) => onSelectWaypointRef.current(waypoint),
       spawns: () => spawnOverlayRef.current,
-      onPickNpcs: (npcs, at) => onPickNpcsRef.current?.(npcs, at),
       rememberPick,
       onPivot: (at, zen) => {
         rememberPick(at);
@@ -1155,6 +1158,9 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       // the projection in `pickWaypoint` — turning a pixel into an index — and
       // everything below it, including the gizmo, is the real thing.
       pickWaypoint: (waypoint) => onSelectWaypointRef.current(waypoint),
+      waypointIndex: (name) => waynetRef.current?.names
+        .findIndex((each) => each.toUpperCase() === name.toUpperCase()) ?? -1,
+      routineStops: () => (routineOverlayRef.current ? [...routineOverlayRef.current.drawn] : null),
       renderFrom: async (from, at) => {
         // A half-loaded scene is a different scene, and an untextured material
         // draws its flat colour — which a pixel check would read as ground that
@@ -1389,7 +1395,9 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     if (world === null || waynet === null || routineDraft === null) return;
     const overlay = new RoutineOverlay(waynet, waynetGraph(waynet), routineDraft.entries, routineDraft.selected);
     world.root.add(overlay.root);
+    routineOverlayRef.current = overlay;
     return () => {
+      routineOverlayRef.current = null;
       world.root.remove(overlay.root);
       overlay.dispose();
     };

@@ -67,11 +67,8 @@ export interface PickControllerOptions {
   /** A double-click makes the point clicked the pivot. */
   onPivot: (at: THREE.Vector3, zen: ZenPosition) => void;
   /** The spawn markers, read per click like the waynet — null while none are
-   *  drawn. Absent where the surface offers nothing for an NPC click. */
-  spawns?: () => { pickOccupants: SpawnOverlay['pickOccupants'] } | null;
-  /** A click on a spawn marker: who stands there, and where the click was, for
-   *  a menu to open at (npc-editor.md §6, routine mode). */
-  onPickNpcs?: (npcs: readonly string[], at: { left: number; top: number }) => void;
+   *  drawn. A marker's click selects the waypoint it stands on. */
+  spawns?: () => { pickWaypoint: SpawnOverlay['pickWaypoint'] } | null;
 }
 
 export class PickController {
@@ -181,15 +178,14 @@ export class PickController {
       if (waypoint !== NO_WAYPOINT) { o.onSelectWaypoint(waypoint); return; }
     }
 
-    // Then the NPCs on a spawn marker: drawn on top like the waynet, and on the
-    // same points, so after it — the waynet's click is the older rule.
+    // Then a spawn marker: drawn on top like the waynet and on the same points,
+    // and it *is* the waypoint it stands on — so its click is the waypoint's,
+    // whether or not the waynet is shown. Who stands there is the waypoint
+    // panel's to list.
     const spawns = o.spawns?.() ?? null;
-    if (spawns !== null && o.onPickNpcs) {
-      const npcs = spawns.pickOccupants(this.clip(), x, y, width, height);
-      if (npcs.length > 0) {
-        o.onPickNpcs(npcs, { left: event.clientX, top: event.clientY });
-        return;
-      }
+    if (spawns !== null) {
+      const waypoint = spawns.pickWaypoint(this.clip(), x, y, width, height);
+      if (waypoint !== NO_WAYPOINT) { o.onSelectWaypoint(waypoint); return; }
     }
 
     // Then the markers for the VOBs that have no visual at all (§16.38): a

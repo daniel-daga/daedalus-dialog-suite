@@ -3,7 +3,7 @@ import React, {
 } from 'react';
 import {
   Alert, Autocomplete, Box, Button, Checkbox, Dialog, DialogActions, DialogContent,
-  DialogContentText, DialogTitle, FormControlLabel, IconButton, Menu, MenuItem, Paper, Snackbar, Stack, Tab, Tabs,
+  DialogContentText, DialogTitle, FormControlLabel, IconButton, Paper, Snackbar, Stack, Tab, Tabs,
   TextField, Tooltip, Typography,
 } from '@mui/material';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
@@ -27,7 +27,7 @@ import type {
   DiscoveredWorld, InstancedPayload, NpcBodyRequest, WaynetPayload,
   WorldMeshPayload, WorldOp,
 } from '../../../shared/worldTypes';
-import { findFreePointVob, primaryVob, useWorldStore } from '../../store/worldStore';
+import { findFreePointVob, primaryVob, useWorldStore, type RoutineRequest } from '../../store/worldStore';
 import { stateOptions, stateReach } from '../../routines/routineSchedule';
 import { useProjectStore } from '../../store/projectStore';
 import { vobModelOf } from '../../world/vobModel';
@@ -49,7 +49,8 @@ import { useVobClipboard, type VobClipboardInput } from './hooks/useVobClipboard
 import { useScatterBrush } from './hooks/useScatterBrush';
 import { useInsertNpc } from './hooks/useInsertNpc';
 import { useRoutineMode } from './hooks/useRoutineMode';
-import { RoutineEditorPanel } from '../RoutineEditor';
+import RoutineEditorDialog from '../RoutineEditor';
+import { routineOwner, routinePreview } from '../../npc/npcRoutines';
 import { useAssetCatalog } from './hooks/useAssetCatalog';
 import { useWorldShortcuts } from './hooks/useWorldShortcuts';
 import { spawnNpcBodyRequests } from '../../npc/spawnNpcVisuals';
@@ -124,6 +125,13 @@ function placeLabel(spec: PlaceSpec): string {
   if (carriesVisual(spec.vobClass) && spec.visual.trim() !== '') return `${spec.visual.trim()} as ${spec.vobClass}`;
   if (spec.vobClass === 'oCItem' && spec.instance.trim() !== '') return spec.instance.trim();
   return spec.vobClass;
+}
+
+/** The project's world file called `worldName` (no extension), from the same
+ *  scan the picker lists (§16.31), or null when its sources hold none. */
+async function discoveredWorldNamed(worldName: string): Promise<DiscoveredWorld | null> {
+  const wanted = `${worldName.toUpperCase()}.ZEN`;
+  return (await window.editorAPI.listWorlds()).find((world) => world.name.toUpperCase() === wanted) ?? null;
 }
 
 const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
@@ -573,10 +581,28 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     }));
   }, []);
 
-  const pickWorld = useCallback((worldPath: string) => {
+  /**
+   * Routine mode waiting on the picker (npc-editor.md §6): asked for with no
+   * world open and none the NPC's spawn names. Started once the picked world
+   * has opened; a picker closed without one drops it.
+   */
+  const routineAwaitingPick = useRef<RoutineRequest | null>(null);
+  const [routineAfterOpen, setRoutineAfterOpen] = useState<RoutineRequest | null>(null);
+  const openPickedWorld = useCallback(async (worldPath: string) => {
     setPickerOpen(false);
-    void openWorldAt(worldPath);
+    await openWorldAt(worldPath);
+    const waiting = routineAwaitingPick.current;
+    routineAwaitingPick.current = null;
+    if (waiting !== null && useWorldStore.getState().status === 'ready') setRoutineAfterOpen(waiting);
   }, [openWorldAt]);
+  const closePicker = useCallback(() => {
+    routineAwaitingPick.current = null;
+    setPickerOpen(false);
+  }, []);
+
+  const pickWorld = useCallback((worldPath: string) => {
+    void openPickedWorld(worldPath);
+  }, [openPickedWorld]);
 
   /** Everything the list cannot reach — a world outside the sources. */
   const browseForWorld = useCallback(async () => {
@@ -588,9 +614,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       return;
     }
     if (!worldPath) return;
-    setPickerOpen(false);
-    void openWorldAt(worldPath);
-  }, [openWorldAt]);
+    void openPickedWorld(worldPath);
+  }, [openPickedWorld]);
 
   // The payload is the overlay's, and its *names* are also the Problems
   // scan's world input. Published from one effect rather than beside each of
@@ -824,9 +849,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    * say where worlds are.
    */
   const openWorldNamed = useCallback(async (worldName: string, thenFocus: string) => {
-    let worlds: DiscoveredWorld[];
+    let found: DiscoveredWorld | null;
     try {
-      worlds = await window.editorAPI.listWorlds();
+      found = await discoveredWorldNamed(worldName);
     } catch (failure) {
       useWorldStore.getState().editFailed(
         failure instanceof Error ? failure.message : String(failure),
@@ -834,7 +859,6 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       return;
     }
     const wanted = `${worldName.toUpperCase()}.ZEN`;
-    const found = worlds.find((world) => world.name.toUpperCase() === wanted) ?? null;
     if (found === null) {
       useWorldStore.getState().editFailed(
         `${wanted} is not among the project's asset sources — open it with Browse…, `
@@ -1640,9 +1664,67 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   }, [showWaynet, waynet, readWaynetInto]);
 
   const routineMode = useRoutineMode({ waynet, ensureWaynetShown });
+
+  /**
+   * Routine mode asked for from the NPC editor (npc-editor.md §6), which is
+   * never a dead end for want of a world (Daniel, 2026-09-29): the world the
+   * NPC's STARTUP_ spawn names is opened — after asking, when the open one has
+   * unsaved edits — and failing that the picker is offered. The editor opens
+   * over whichever world that lands on, framed on the routine's first stop.
+   */
+  const { open: openRoutineMode } = routineMode;
+  const startRoutine = useCallback((request: RoutineRequest) => {
+    openRoutineMode(request.npc, request.routine);
+    const routine = request.routine ?? routineNpcIndex[request.npc.toUpperCase()];
+    const first = routine === undefined ? undefined : routinePreview(routineSiteIndex, routine)[0];
+    if (first !== undefined) jumpToPoint(first.waypoint);
+  }, [openRoutineMode, routineNpcIndex, routineSiteIndex, jumpToPoint]);
+
+  const openRoutineWorld = useCallback(async (request: RoutineRequest) => {
+    let found: DiscoveredWorld | null = null;
+    if (request.inWorld !== undefined) {
+      try {
+        found = await discoveredWorldNamed(request.inWorld);
+      } catch {
+        // The picker below lists the worlds too, and says why it cannot.
+      }
+    }
+    if (found === null) {
+      routineAwaitingPick.current = request;
+      void openPicker();
+      return;
+    }
+    await openWorldAt(found.path);
+    if (useWorldStore.getState().status === 'ready') setRoutineAfterOpen(request);
+  }, [openPicker, openWorldAt]);
+
+  const [confirmingRoutineSwitch, setConfirmingRoutineSwitch] =
+    useState<RoutineRequest & { inWorld: string } | null>(null);
+  const routineRequest = useWorldStore((s) => s.routineRequest);
   useEffect(() => {
-    if (routineMode.mode !== null) setRightPanelCollapsed(false);
-  }, [routineMode.mode, setRightPanelCollapsed]);
+    if (routineRequest === null) return;
+    useWorldStore.getState().routineRequestHandled();
+    const { status, hasUnsavedEdits } = useWorldStore.getState();
+    if (routineRequest.inWorld === undefined && status === 'ready') startRoutine(routineRequest);
+    else if (routineRequest.inWorld !== undefined && status === 'ready' && hasUnsavedEdits) {
+      setConfirmingRoutineSwitch({ ...routineRequest, inWorld: routineRequest.inWorld });
+    } else void openRoutineWorld(routineRequest);
+  }, [routineRequest, startRoutine, openRoutineWorld]);
+
+  useEffect(() => {
+    if (routineAfterOpen === null) return;
+    setRoutineAfterOpen(null);
+    startRoutine(routineAfterOpen);
+  }, [routineAfterOpen, startRoutine]);
+
+  /** A routine drawn on the map from the waypoint panel, unedited; cleared
+   *  with the waypoint it was shown from. */
+  const [previewedRoutine, setPreviewedRoutine] = useState<{ npc: string; routine: string } | null>(null);
+  useEffect(() => { setPreviewedRoutine(null); }, [selectedWaypoint]);
+  const previewDraft = useMemo(() => (previewedRoutine === null
+    ? null
+    : { entries: routinePreview(routineSiteIndex, previewedRoutine.routine), selected: null }),
+  [previewedRoutine, routineSiteIndex]);
   /** A waypoint click: routine mode's pending pick takes it first. */
   const { takeWaypointPick } = routineMode;
   const handleSelectWaypoint = useCallback((waypoint: number | null) => {
@@ -1704,7 +1786,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    *  `useWorldShortcuts` takes as `dialogOpen`, and why it takes it. */
   const surfaceDialogOpen = deleting !== null || deletingWaypoint !== null
     || placing !== null || confirmingSave || addingWaypoint !== null || contextMenu !== null
-    || routineMode.npcMenu !== null
+    || (routineMode.mode !== null && !routineMode.picking) || confirmingRoutineSwitch !== null
     || insertingNpc !== null || pickerOpen || quickTestBlocked || quickTestRefusal !== null;
 
   useWorldShortcuts({
@@ -1901,7 +1983,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
           error={pickerError}
           onPick={pickWorld}
           onBrowse={() => void browseForWorld()}
-          onClose={() => setPickerOpen(false)}
+          onClose={closePicker}
         />
       )}
       <Dialog open={confirmingSave} onClose={() => setConfirmingSave(false)}>
@@ -2000,18 +2082,46 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         onCreateFolderWithSelection={createFolderWithSelection}
       />
 
-      {/* Who stands on a clicked spawn marker (npc-editor.md §6): one entry
-          per NPC, since a point often carries several. */}
-      <Menu
-        open={routineMode.npcMenu !== null}
-        onClose={routineMode.closeNpcMenu}
-        anchorReference="anchorPosition"
-        anchorPosition={routineMode.npcMenu?.at}
+      {routineMode.mode !== null && (
+        <RoutineEditorDialog
+          key={`${routineMode.mode.npc}:${routineMode.mode.routine ?? ''}`}
+          npc={routineMode.mode.npc}
+          initialRoutine={routineMode.mode.routine}
+          waypoints={routineMode.waypoints ?? []}
+          onPickWaypoint={routineMode.onPickWaypoint}
+          onDraftChange={routineMode.onDraftChange}
+          onClose={routineMode.close}
+          hidden={routineMode.picking}
+        />
+      )}
+
+      <Dialog
+        open={confirmingRoutineSwitch !== null}
+        onClose={() => setConfirmingRoutineSwitch(null)}
+        aria-labelledby="world-routine-switch-title"
       >
-        {(routineMode.npcMenu?.npcs ?? []).map((npc) => (
-          <MenuItem key={npc} onClick={() => routineMode.open(npc)}>{`Edit routines of ${npc}`}</MenuItem>
-        ))}
-      </Menu>
+        <DialogTitle id="world-routine-switch-title">Discard unsaved world edits?</DialogTitle>
+        <DialogContent>
+          <DialogContentText variant="body2">
+            {`${summary?.worldPath.split(/[\\/]/).pop() ?? 'The open world'} has unsaved edits. `}
+            {`${confirmingRoutineSwitch?.npc} is spawned in ${confirmingRoutineSwitch?.inWorld}.ZEN, `}
+            and opening it discards them.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmingRoutineSwitch(null)}>Cancel</Button>
+          <Button
+            color="error"
+            onClick={() => {
+              const request = confirmingRoutineSwitch;
+              setConfirmingRoutineSwitch(null);
+              if (request !== null) void openRoutineWorld(request);
+            }}
+          >
+            {`Discard and open ${confirmingRoutineSwitch?.inWorld}.ZEN`}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* §15 put this here in place of an inverse, to say that the delete took
           the undo stack with it. The delete has an inverse now (§7) and the
@@ -2311,8 +2421,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               scatterRadius={scatterBrushRadius}
               onScatterStroke={handleScatterStroke}
               onSelectWaypoint={handleSelectWaypoint}
-              onPickNpcs={routineMode.openNpcMenu}
-              routineDraft={routineMode.draft}
+              routineDraft={routineMode.draft ?? previewDraft}
               onMoveWaypoint={moveWaypointTo}
               paused={hidden}
             />
@@ -2367,25 +2476,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                 </IconButton>
               </Tooltip>
             </Box>
-            <Box sx={{ flex: 1, minHeight: 0, overflow: routineMode.mode !== null ? 'auto' : undefined }}>
-              {routineMode.mode !== null
-                ? (
-                  // Routine mode wins the panel while it is open: its draft is
-                  // on the map, and the pick it arms answers a waypoint click.
-                  <Box sx={{ p: 1 }} data-testid="world-routine-panel">
-                    <Typography variant="subtitle2" sx={{ mb: 1 }}>{`Routines of ${routineMode.mode.npc}`}</Typography>
-                    <RoutineEditorPanel
-                      key={`${routineMode.mode.npc}:${routineMode.mode.routine ?? ''}`}
-                      npc={routineMode.mode.npc}
-                      initialRoutine={routineMode.mode.routine}
-                      waypoints={routineMode.waypoints ?? []}
-                      onPickWaypoint={routineMode.onPickWaypoint}
-                      onDraftChange={routineMode.onDraftChange}
-                      onDone={routineMode.close}
-                    />
-                  </Box>
-                )
-                : panel === 'assets' && selectedAsset !== null
+            <Box sx={{ flex: 1, minHeight: 0 }}>
+              {panel === 'assets' && selectedAsset !== null
                 ? (
                   <WorldAssetPreview
                     path={selectedAsset}
@@ -2401,7 +2493,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                   ? (
                     <WaypointPanel
                       name={waynet.names[selectedWaypoint]}
-                      routines={waypointSiteIndex[waynet.names[selectedWaypoint].toUpperCase()] || []}
+                      routines={(waypointSiteIndex[waynet.names[selectedWaypoint].toUpperCase()] || [])
+                        .map((site) => ({ ...site, npc: routineOwner(routines, site.functionName) }))}
                       spawns={waypointSpawns}
                       onRename={(to) => renameWaypointTo(selectedWaypoint, to)}
                       neighbours={waypointEdges}
@@ -2412,6 +2505,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                         waypoint: selectedWaypoint, name: waynet.names[selectedWaypoint],
                       })}
                       onInsertNpc={() => openInsertNpcAtWaypoint(waynet.names[selectedWaypoint])}
+                      onEditRoutines={openRoutineMode}
+                      onPreviewRoutine={setPreviewedRoutine}
+                      previewRoutine={previewedRoutine?.routine ?? null}
                     />
                   )
                   : (
@@ -2465,18 +2561,24 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               shove. */}
           <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
             {routineMode.picking ? (
-              <>
+              // Routine edit mode (Daniel, 2026-09-29): the editor is put away
+              // for this one click, and the bar says what it is for and how
+              // to get back without it.
+              <Box data-testid="world-routine-pick-bar" sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                <Typography variant="caption" sx={{ fontWeight: 600 }}>Routine edit</Typography>
                 <Typography
                   variant="caption"
                   color={routineMode.pickError ? 'error' : 'text.secondary'}
                   data-testid="world-terrain-hint"
                 >
-                  {routineMode.pickError ?? 'Click a waypoint for the activity.'}
+                  {routineMode.pickError ?? (routineMode.pickTarget && routineMode.mode
+                    ? `Click a waypoint for activity ${routineMode.pickTarget.index + 1} (${routineMode.pickTarget.state}) of ${routineMode.mode.npc}.`
+                    : 'Click a waypoint for the activity.')}
                 </Typography>
                 <Button size="small" onClick={routineMode.cancelPick} data-testid="world-routine-pick-cancel">
-                  Cancel
+                  Abort
                 </Button>
-              </>
+              </Box>
             ) : armed !== null ? (
               <>
                 {/* An armed add speaks over the point: it is the more recent

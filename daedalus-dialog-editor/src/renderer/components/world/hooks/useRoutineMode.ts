@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type { WaynetPayload } from '../../../../shared/worldTypes';
 import type { RoutineEntry } from '../../../routines/routineEntries';
 import { useWorldStore, type RoutineRequest } from '../../../store/worldStore';
+import type { RoutinePickTarget } from '../../RoutineEditor';
 
 /**
  * Routine mode in the World surface (npc-editor.md §6): the NPC whose routines
- * the panel edits, the draft the viewport draws, the waypoint pick the panel
- * hands to the viewport, and the menu a spawn-marker click opens.
+ * the editor modal edits, the draft the viewport draws, and the waypoint pick
+ * the modal hands to the viewport — during which the modal is hidden and the
+ * bottom bar says what the next click does.
  *
  * A stop may only go on a waypoint the world file on disk has (Daniel,
  * 2026-09-28), so a pick is checked against `savedWaypoints`, and one added
@@ -18,14 +20,11 @@ export function useRoutineMode({ waynet, ensureWaynetShown }: {
 }) {
   const [mode, setMode] = useState<RoutineRequest | null>(null);
   const [draft, setDraft] = useState<{ entries: readonly RoutineEntry[]; selected: number | null } | null>(null);
-  const [pick, setPick] = useState<{ set: (waypoint: string) => void } | null>(null);
+  const [pick, setPick] = useState<{ set: (waypoint: string) => void; target: RoutinePickTarget } | null>(null);
   const [pickError, setPickError] = useState<string | null>(null);
-  const [npcMenu, setNpcMenu] = useState<{ npcs: readonly string[]; at: { left: number; top: number } } | null>(null);
   const saved = useWorldStore((s) => s.savedWaypoints);
-  const request = useWorldStore((s) => s.routineRequest);
 
   const open = useCallback((npc: string, routine?: string) => {
-    setNpcMenu(null);
     setDraft(null);
     setPick(null);
     setPickError(null);
@@ -40,18 +39,12 @@ export function useRoutineMode({ waynet, ensureWaynetShown }: {
     setPickError(null);
   }, []);
 
-  useEffect(() => {
-    if (request === null) return;
-    useWorldStore.getState().routineRequestHandled();
-    open(request.npc, request.routine);
-  }, [request, open]);
-
   const onDraftChange = useCallback((entries: readonly RoutineEntry[], selected: number | null) => {
     setDraft({ entries, selected });
   }, []);
 
-  const onPickWaypoint = useCallback((set: (waypoint: string) => void) => {
-    setPick({ set });
+  const onPickWaypoint = useCallback((set: (waypoint: string) => void, target: RoutinePickTarget) => {
+    setPick({ set, target });
     setPickError(null);
     ensureWaynetShown();
   }, [ensureWaynetShown]);
@@ -76,16 +69,11 @@ export function useRoutineMode({ waynet, ensureWaynetShown }: {
     return true;
   }, [pick, waynet, saved]);
 
-  const openNpcMenu = useCallback((npcs: readonly string[], at: { left: number; top: number }) => {
-    setNpcMenu({ npcs, at });
-  }, []);
-  const closeNpcMenu = useCallback(() => setNpcMenu(null), []);
-
   const waypoints = useMemo(() => (saved === null ? null : [...saved].sort()), [saved]);
 
   return {
     mode, open, close, draft, onDraftChange, waypoints,
-    picking: pick !== null, pickError, onPickWaypoint, cancelPick, takeWaypointPick,
-    npcMenu, openNpcMenu, closeNpcMenu,
+    picking: pick !== null, pickTarget: pick?.target ?? null, pickError,
+    onPickWaypoint, cancelPick, takeWaypointPick,
   };
 }

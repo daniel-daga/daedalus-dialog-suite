@@ -341,18 +341,20 @@ export class SpawnOverlay {
   }
 
   /**
-   * Who stands on the marker under the pointer — empty off every marker and
-   * while the layer is hidden. Picked in pixels like a waypoint (`pickPoint`),
-   * because a marker is a pixel-sized point too; routine mode opens from it
-   * (npc-editor.md §6).
+   * The waypoint (payload index) whose marker is under the pointer —
+   * `NO_POINT` off every marker and while the layer is hidden. A marker stands
+   * on its waypoint and is that waypoint (Daniel, 2026-09-29), so its click
+   * selects it and the NPCs on it are listed in the waypoint's panel. Picked in
+   * pixels like a waypoint (`pickPoint`), because a marker is a pixel-sized
+   * point too.
    */
-  pickOccupants(toClip: THREE.Matrix4, x: number, y: number, width: number, height: number): readonly string[] {
-    if (!this.root.visible) return NOBODY;
+  pickWaypoint(toClip: THREE.Matrix4, x: number, y: number, width: number, height: number): number {
+    if (!this.root.visible) return NO_POINT;
     const drawnPoints = this.labelledPoints;
     const positions = new Float32Array(drawnPoints.length * 3);
     drawnPoints.forEach((point, i) => positions.set(this.source.subarray(point * 3, point * 3 + 3), i * 3));
     const hit = pickPoint(positions, toClip, x, y, width, height, WAYPOINT_PICK_RADIUS);
-    return hit === NO_POINT ? NOBODY : this.occupantsAt(drawnPoints[hit]);
+    return hit === NO_POINT ? NO_POINT : drawnPoints[hit];
   }
 
   /** A name-keyed occupancy re-keyed by payload index; unknown names dropped,

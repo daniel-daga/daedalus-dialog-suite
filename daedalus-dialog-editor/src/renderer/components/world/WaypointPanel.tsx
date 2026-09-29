@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Box, Button, List, ListItem, ListItemText, Stack, TextField, Typography,
+  Box, Button, List, ListItem, ListItemButton, ListItemText, Stack, TextField, Typography,
 } from '@mui/material';
 
 /**
@@ -25,13 +25,20 @@ import {
  * because an edge needs a *second* selection and the surface has one; the name
  * is resolved by the caller, which is the side holding the point list.
  *
+ * Who stands here is also where a routine is edited from inside the world
+ * (npc-editor.md §6, Daniel 2026-09-29): a spawn marker's click selects this
+ * waypoint, so every NPC spawned here and every routine stopping here carries
+ * an "Edit routines" button, and a routine's row draws it on the map.
+ *
  * The delete is §16.7's W4 and is here for the same reason, but it is the one
  * control that does not commit: it *asks*, because the op is a barrier (§15)
  * and the surface owns the warning that has to come before it.
  */
 const WaypointPanel: React.FC<{
   name: string;
-  routines: Array<{ filePath: string; functionName: string }>;
+  /** `npc` is who runs the routine, where the function is one the index
+   *  knows as an NPC's daily routine or state variant. */
+  routines: Array<{ filePath: string; functionName: string; npc?: string | null }>;
   /** The statically resolvable spawns at this waypoint. Instance names are
    *  uppercase: that is what the index holds, and the script has no other. */
   spawns: Array<{ instance: string; filePath: string; functionName: string }>;
@@ -50,10 +57,26 @@ const WaypointPanel: React.FC<{
   /** Asks to spawn an NPC here (§16.19 slice 16 D) — the existing-waypoint
    *  variant of the terrain bar's "Insert NPC here…", so no waypoint op. */
   onInsertNpc: () => void;
+  /** Open routine mode on this NPC, on `routine` if given. */
+  onEditRoutines?: (npc: string, routine?: string) => void;
+  /** Draw this routine on the map, or stop drawing it (null). */
+  onPreviewRoutine?: (preview: { npc: string; routine: string } | null) => void;
+  /** The routine drawn on the map now, if one is. */
+  previewRoutine?: string | null;
 }> = ({
   name, routines, spawns, onRename, neighbours, resolveWaypoint, onConnect, onDisconnect,
-  onDelete, onInsertNpc,
+  onDelete, onInsertNpc, onEditRoutines, onPreviewRoutine, previewRoutine = null,
 }) => {
+  const editButton = (npc: string, routine?: string) => onEditRoutines && (
+    <Button
+      size="small"
+      sx={{ minWidth: 0, fontSize: 11 }}
+      aria-label={`Edit routines of ${npc}`}
+      onClick={() => onEditRoutines(npc, routine)}
+    >
+      Routines
+    </Button>
+  );
   const baseName = (filePath: string): string => filePath.split(/[\\/]/).pop() || filePath;
 
   // The field shows what the waynet payload says, and goes back to it the moment
@@ -132,7 +155,12 @@ const WaypointPanel: React.FC<{
       {spawns.length > 0 && (
         <List dense disablePadding data-testid="world-waypoint-spawns">
           {spawns.map((spawn, index) => (
-            <ListItem key={`${spawn.filePath}:${spawn.functionName}:${spawn.instance}:${index}`} disablePadding sx={{ py: 0.25 }}>
+            <ListItem
+              key={`${spawn.filePath}:${spawn.functionName}:${spawn.instance}:${index}`}
+              disablePadding
+              sx={{ py: 0.25 }}
+              secondaryAction={editButton(spawn.instance)}
+            >
               <ListItemText
                 primary={spawn.instance}
                 secondary={`spawned in ${spawn.functionName} — ${baseName(spawn.filePath)}`}
@@ -149,16 +177,39 @@ const WaypointPanel: React.FC<{
         </Typography>
       ) : (
         <List dense disablePadding data-testid="world-waypoint-sites">
-          {otherSites.map((routine, index) => (
-            <ListItem key={`${routine.filePath}:${routine.functionName}:${index}`} disablePadding sx={{ py: 0.25 }}>
+          {otherSites.map((routine, index) => {
+            const text = (
               <ListItemText
                 primary={routine.functionName}
-                secondary={baseName(routine.filePath)}
+                secondary={routine.npc ? `${routine.npc} — ${baseName(routine.filePath)}` : baseName(routine.filePath)}
                 primaryTypographyProps={{ variant: 'body2' }}
                 secondaryTypographyProps={{ variant: 'caption', color: 'text.secondary' }}
               />
-            </ListItem>
-          ))}
+            );
+            const npc = routine.npc;
+            const shown = previewRoutine !== null && previewRoutine.toUpperCase() === routine.functionName.toUpperCase();
+            return (
+              <ListItem
+                key={`${routine.filePath}:${routine.functionName}:${index}`}
+                disablePadding
+                sx={{ py: 0.25 }}
+                secondaryAction={npc ? editButton(npc, routine.functionName) : undefined}
+              >
+                {npc && onPreviewRoutine ? (
+                  <ListItemButton
+                    dense
+                    selected={shown}
+                    aria-pressed={shown}
+                    aria-label={`Show the routine ${routine.functionName} of ${npc}`}
+                    onClick={() => onPreviewRoutine(shown ? null : { npc, routine: routine.functionName })}
+                    sx={{ px: 0.5 }}
+                  >
+                    {text}
+                  </ListItemButton>
+                ) : text}
+              </ListItem>
+            );
+          })}
         </List>
       )}
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>

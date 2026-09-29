@@ -1,5 +1,6 @@
 import type { ExchangeSite, RoutineSite } from '../../shared/types';
 import type { RoutineIndex } from '../routines/routineSchedule';
+import type { RoutineEntry } from '../routines/routineEntries';
 
 // The NPC editor's read-only routines section (docs/plans/npc-editor.md,
 // Phase 2): the routine the instance declares, then every state variant the
@@ -27,6 +28,31 @@ export function npcRoutines(index: RoutineIndex, npc: string): NpcRoutine[] {
     routines.push({ label: state, routine, entries: entriesOf(routine) });
   }
   return routines;
+}
+
+/** The NPC (UPPERCASED) whose daily routine or state variant `routine` is,
+ *  or null when the index knows none — the waypoint panel's "whose stop". */
+export function routineOwner(index: RoutineIndex, routine: string): string | null {
+  const wanted = routine.toUpperCase();
+  for (const [npc, declared] of Object.entries(index.routinesByNpc)) {
+    if (declared.toUpperCase() === wanted) return npc;
+  }
+  for (const [npc, { states }] of Object.entries(index.statesByNpc ?? {})) {
+    if (Object.values(states).some((each) => each.toUpperCase() === wanted)) return npc;
+  }
+  return null;
+}
+
+/** A routine's stops as the index holds them, in script order — the order the
+ *  routine editor lists and colours them in — for drawing it unedited. */
+export function routinePreview(sites: readonly RoutineSite[], routine: string): RoutineEntry[] {
+  const wanted = routine.toUpperCase();
+  return sites
+    .filter((site) => site.routine.toUpperCase() === wanted)
+    .sort((a, b) => a.line - b.line)
+    .map((site) => ({
+      state: site.stateName ?? '', startMinute: site.startMinute, endMinute: site.endMinute, waypoint: site.waypoint,
+    }));
 }
 
 export interface VariantSwitch extends ExchangeSite {

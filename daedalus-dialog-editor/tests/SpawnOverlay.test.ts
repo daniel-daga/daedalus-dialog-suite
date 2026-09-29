@@ -24,6 +24,7 @@ import * as THREE from 'three';
 import type { NpcBodyScene, WaynetPayload } from '../src/shared/worldTypes';
 import type { RoutineSite, SpawnSite } from '../src/shared/types';
 import { SpawnOverlay } from '../src/renderer/world/SpawnOverlay';
+import { NO_POINT } from '../src/renderer/world/pickWaypoint';
 import { markerDotTexture } from '../src/renderer/world/markerSprite';
 
 /**
@@ -76,9 +77,11 @@ const NO_ROUTINES = { sites: [] as RoutineSite[], routinesByNpc: {} };
 const at = (hour: number) => hour * 60;
 
 describe('SpawnOverlay', () => {
-  it('names the NPCs on the marker under the pointer, and nobody while hidden or off every marker', () => {
-    // Routine mode opens from a click on an NPC (npc-editor.md §6). A marker
-    // is a pixel-sized point like a waypoint, so it is picked the same way.
+  it('answers the waypoint under a clicked marker, and none while hidden or off every marker', () => {
+    // A spawn marker stands on a waypoint and is that waypoint (Daniel,
+    // 2026-09-29): its click selects it, so the NPCs on it are listed in the
+    // waypoint's own panel. A marker is a pixel-sized point like a waypoint,
+    // so it is picked the same way.
     const overlay = new SpawnOverlay(
       waynet(), [site('GRD_200_XARDAS', 'WP_MIDDLE'), site('BAU_900_ONAR', 'WP_MIDDLE')], NO_ROUTINES,
     );
@@ -86,10 +89,10 @@ describe('SpawnOverlay', () => {
     // on a 100×100 canvas.
     const toClip = new THREE.Matrix4().makeScale(1 / 10000, 1 / 10000, 1 / 10000);
 
-    expect(overlay.pickOccupants(toClip, 55, 49, 100, 100)).toEqual([]);
+    expect(overlay.pickWaypoint(toClip, 55, 49, 100, 100)).toBe(NO_POINT);
     overlay.setVisible(true);
-    expect(overlay.pickOccupants(toClip, 55, 49, 100, 100)).toEqual(['BAU_900_ONAR', 'GRD_200_XARDAS']);
-    expect(overlay.pickOccupants(toClip, 5, 95, 100, 100)).toEqual([]);
+    expect(overlay.pickWaypoint(toClip, 55, 49, 100, 100)).toBe(1);
+    expect(overlay.pickWaypoint(toClip, 5, 95, 100, 100)).toBe(NO_POINT);
   });
 
   it('draws a resolved NPC body at the waypoint instead of a capsule', () => {
