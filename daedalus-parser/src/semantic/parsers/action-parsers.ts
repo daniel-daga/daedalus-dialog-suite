@@ -142,7 +142,7 @@ export class ActionParsers {
     if (!argsNode) return null;
 
     const args = parseArgumentsDetailed(argsNode);
-    if (args.length < 3) return null;
+    if (args.length !== 3) return null;
 
     const speaker = args[0].value;
     const listener = args[1].value;
@@ -172,7 +172,7 @@ export class ActionParsers {
     if (!argsNode) return null;
 
     const args = parseArgumentsDetailed(argsNode);
-    if (args.length < 3) return null;
+    if (args.length !== 3) return null;
 
     const choice = new Choice(args[0].value, args[1].value, args[2].value);
     choice.textIsExpression = !args[1].isString;

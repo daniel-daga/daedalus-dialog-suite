@@ -46,6 +46,7 @@ export class LinkingVisitor {
   private currentInstance: Dialog | null;
   private currentFunction: DialogFunction | null;
   private conditionFunctions: Set<string>;
+  private topLevelConditionIfs: Set<string>;
   // Keyed by lowercase function name; a cached `null` records a proven miss
   // (a function owned by no dialog) so the O(dialogs) scan runs at most once.
   private functionToDialog: Map<string, Dialog | null>;
@@ -64,6 +65,7 @@ export class LinkingVisitor {
     this.currentInstance = null;
     this.currentFunction = null;
     this.conditionFunctions = new Set<string>();
+    this.topLevelConditionIfs = new Set<string>();
     this.functionToDialog = new Map<string, Dialog | null>();
     this.conditionRawMode = new Set<string>();
     this.preservedStatementRanges = new Map<string, Set<string>>;
@@ -168,6 +170,7 @@ export class LinkingVisitor {
       const nameNode = node.childForFieldName('name');
       if (!nameNode) return;
       this.currentFunction = this.functions[nameNode.text];
+      this.topLevelConditionIfs.delete(nameNode.text.toLowerCase());
       const body = node.childForFieldName('body');
       this.currentFunctionBodyNode = body ?? null;
       // Watermark the actions already present so a later raw-mode trigger can
@@ -250,8 +253,13 @@ export class LinkingVisitor {
         }
       }
 
-      if (type === 'return_statement' && this.isTopLevelStatement(node)) {
-        if (this.isTrivialTopLevelTrueReturn(node)) {
+      if (type === 'return_statement') {
+        if (this.isCanonicalTrueReturn(node)) {
+          if (this.isTopLevelStatement(node) && this.isTrivialTopLevelTrueReturn(node)) {
+            return true;
+          }
+          // A nested TRUE return is the canonical body of a structured
+          // condition. It carries no additional condition data.
           return true;
         }
         this.triggerConditionRawMode(node);
@@ -360,6 +368,17 @@ export class LinkingVisitor {
 
   private maybeSetConditionOperator(ifNode: TreeSitterNode): void {
     if (!this.isCurrentConditionFunction() || !this.currentFunction) return;
+    const functionKey = this.currentFunction.name.toLowerCase();
+    if (this.isTopLevelStatement(ifNode)) {
+      if (this.topLevelConditionIfs.has(functionKey)) {
+        // Separate top-level if blocks return TRUE independently, so their
+        // conditions are alternatives (OR). Preserve the source body rather
+        // than flattening them into the single-condition generator model.
+        this.triggerConditionRawMode(ifNode);
+        return;
+      }
+      this.topLevelConditionIfs.add(functionKey);
+    }
     const condNode = ifNode.childForFieldName('condition');
     if (!condNode) return;
     const detectedOp = this.detectTopLevelConditionOperator(condNode);
@@ -424,8 +443,10 @@ export class LinkingVisitor {
   }
 
   private getTopLevelLogicalOperator(node: TreeSitterNode | null): '&&' | '||' | null {
-    if (!node || node.type !== 'binary_expression') return null;
-    const op = getBinaryOperator(node);
+    if (!node) return null;
+    const unwrapped = this.unwrapParens(node);
+    if (unwrapped.type !== 'binary_expression') return null;
+    const op = getBinaryOperator(unwrapped);
     if (op === '&&' || op === '||') return op;
     return null;
   }
@@ -552,7 +573,7 @@ export class LinkingVisitor {
         return;
       }
 
-      if (this.isNegatedCallHandledByUnaryCondition(node, functionName)) {
+      if (this.isNegatedCallHandledByUnaryCondition(node)) {
         return;
       }
 
@@ -746,6 +767,11 @@ export class LinkingVisitor {
     }
   }
 
+  private isCanonicalTrueReturn(node: TreeSitterNode): boolean {
+    const text = node.text.trim().replace(/\s+/g, ' ').toUpperCase();
+    return text === 'RETURN TRUE;' || text === 'RETURN 1;';
+  }
+
   private isTrivialTopLevelTrueReturn(node: TreeSitterNode): boolean {
     if (!this.currentFunction) {
       return false;
@@ -756,8 +782,7 @@ export class LinkingVisitor {
       return false;
     }
 
-    const text = node.text.trim().replace(/\s+/g, ' ').toUpperCase();
-    return text === 'RETURN TRUE;' || text === 'RETURN 1;';
+    return this.isCanonicalTrueReturn(node);
   }
 
   private isCallInsideIfCondition(node: TreeSitterNode): boolean {
@@ -850,16 +875,7 @@ export class LinkingVisitor {
     return !!grandParent && grandParent.type === 'block';
   }
 
-  private isNegatedCallHandledByUnaryCondition(node: TreeSitterNode, functionName: string): boolean {
-    const dispatchKey = functionName.toLowerCase();
-    if (
-      dispatchKey !== 'npc_isdead' &&
-      dispatchKey !== 'npc_isinstate' &&
-      dispatchKey !== 'npc_knowsinfo'
-    ) {
-      return false;
-    }
-
+  private isNegatedCallHandledByUnaryCondition(node: TreeSitterNode): boolean {
     const parent = node.parent;
     if (!parent || parent.type !== 'unary_expression') {
       return false;

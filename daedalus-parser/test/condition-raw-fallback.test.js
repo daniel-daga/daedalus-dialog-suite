@@ -276,3 +276,51 @@ test('condition function with local var declaration falls back to raw preservati
   const reparsed = parseSemanticModel(generated);
   assert.equal(reparsed.errors?.length || 0, 0, 'Generated function should parse without syntax errors');
 });
+
+test('condition function with nested FALSE return preserves the original control flow', () => {
+  const source = [
+    'instance DIA_False(C_INFO) { condition = DIA_False_Cond; };',
+    'func int DIA_False_Cond() {',
+    '  if (FlagA) { return FALSE; };',
+    '};'
+  ].join(String.fromCharCode(10));
+
+  const model = parseSemanticModel(source);
+  const func = model.functions.DIA_False_Cond;
+  assert.equal(func.conditions.length, 0, 'A noncanonical nested return requires raw preservation');
+  const generated = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false }).generateFunction(func);
+  assert.match(generated, /return FALSE;/);
+  assert.doesNotMatch(generated, /return TRUE;/);
+});
+
+test('condition function with separate top-level if blocks preserves OR control flow', () => {
+  const source = [
+    'instance DIA_Alternatives(C_INFO) { condition = DIA_Alternatives_Cond; };',
+    'func int DIA_Alternatives_Cond() {',
+    '  if (FlagA) { return TRUE; };',
+    '  if (FlagB) { return TRUE; };',
+    '};'
+  ].join(String.fromCharCode(10));
+
+  const model = parseSemanticModel(source);
+  const func = model.functions.DIA_Alternatives_Cond;
+  assert.equal(func.conditions.length, 0, 'Separate top-level branches must not be flattened into AND');
+  const generated = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false }).generateFunction(func);
+  assert.equal(generated.split('if (Flag').length - 1, 2);
+  assert.ok(generated.indexOf('FlagA') < generated.indexOf('FlagB'));
+});
+
+test('condition function with parenthesized mixed operators preserves its condition', () => {
+  const source = [
+    'instance DIA_Mixed(C_INFO) { condition = DIA_Mixed_Cond; };',
+    'func int DIA_Mixed_Cond() {',
+    '  if ((FlagA && FlagB) || FlagC) { return TRUE; };',
+    '};'
+  ].join(String.fromCharCode(10));
+
+  const model = parseSemanticModel(source);
+  const func = model.functions.DIA_Mixed_Cond;
+  assert.equal(func.conditions.length, 0, 'Mixed operators hidden by parentheses must use raw mode');
+  const generated = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false }).generateFunction(func);
+  assert.ok(generated.includes('(FlagA && FlagB) || FlagC'));
+});

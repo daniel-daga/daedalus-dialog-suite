@@ -113,6 +113,20 @@ const cases = [
       assert.equal(action.type, 'Action');
     }
   },
+  {
+    name: 'AI_Output with an extra argument falls back to a generic action',
+    body: 'AI_Output (self, other, "DIALOG_ID", EXTRA);',
+    assert: (action) => {
+      assert.equal(action.type, 'Action');
+    }
+  },
+  {
+    name: 'Info_AddChoice with an extra argument falls back to a generic action',
+    body: 'Info_AddChoice (DIA_Test, "Choice", DIA_Test_Choice, EXTRA);',
+    assert: (action) => {
+      assert.equal(action.type, 'Action');
+    }
+  },
   // P5: identifier routine argument must not be turned into a string literal.
   {
     name: 'Npc_ExchangeRoutine preserves an identifier routine argument (P5)',
