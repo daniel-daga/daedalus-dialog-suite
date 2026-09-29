@@ -26,7 +26,7 @@ import {
   isAncestorTraversalBoundaryType
 } from '../parsers/ast-constants';
 import { parseLiteralOrIdentifier } from '../parsers/literal-parsing';
-import { namesEqual } from '../name-utils';
+import { createNameRecord, namesEqual } from '../name-utils';
 
 /**
  * Stamp a parsed action or condition with the 1-based line of the node it came
@@ -199,7 +199,7 @@ export class LinkingVisitor {
     for (const child of body.namedChildren) {
       if (child.type === 'comment') {
         if (prevKey !== null && child.startPosition.row === prevEndRow) {
-          if (!dialog.propertyTrailingComments) dialog.propertyTrailingComments = {};
+          if (!dialog.propertyTrailingComments) dialog.propertyTrailingComments = createNameRecord();
           dialog.propertyTrailingComments[prevKey] = child.text;
         } else {
           pending.push(child.text);
@@ -210,7 +210,7 @@ export class LinkingVisitor {
         const left = child.childForFieldName('left');
         const key = left ? left.text : null;
         if (key !== null && pending.length > 0) {
-          if (!dialog.propertyLeadingComments) dialog.propertyLeadingComments = {};
+          if (!dialog.propertyLeadingComments) dialog.propertyLeadingComments = createNameRecord();
           dialog.propertyLeadingComments[key] = pending;
         }
         pending = [];
@@ -572,7 +572,7 @@ export class LinkingVisitor {
     if (!match) return;
 
     if (!this.currentInstance.propertyFormatting) {
-      this.currentInstance.propertyFormatting = {};
+      this.currentInstance.propertyFormatting = createNameRecord();
     }
 
     this.currentInstance.propertyFormatting[propertyName] = {

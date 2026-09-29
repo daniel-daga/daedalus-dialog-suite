@@ -6,6 +6,11 @@
  * casing in the model (fidelity by construction).
  */
 
+/** A dictionary in which every valid identifier, including __proto__, is data. */
+export function createNameRecord<T>(): Record<string, T> {
+  return Object.create(null);
+}
+
 /**
  * Compare two identifier names case-insensitively. Nullish inputs only match
  * when strictly equal (both nullish of the same kind).
@@ -27,7 +32,7 @@ const lowercaseIndexCache = new WeakMap<object, Map<string, string>>();
 export function resolveCaseInsensitive<T>(map: Record<string, T> | undefined, name: string): T | undefined {
   if (!map) return undefined;
   // Fast path: exact-case hit (the common case) avoids building the index.
-  const exact = map[name];
+  const exact = Object.prototype.hasOwnProperty.call(map, name) ? map[name] : undefined;
   if (exact !== undefined) return exact;
 
   let index = lowercaseIndexCache.get(map);
@@ -39,5 +44,13 @@ export function resolveCaseInsensitive<T>(map: Record<string, T> | undefined, na
     lowercaseIndexCache.set(map, index);
   }
   const canonicalKey = index.get(name.toLowerCase());
-  return canonicalKey !== undefined ? map[canonicalKey] : undefined;
+  if (canonicalKey !== undefined && Object.prototype.hasOwnProperty.call(map, canonicalKey)) {
+    return map[canonicalKey];
+  }
+  // Semantic models are mutable: an editor may add or rename a function after
+  // the first lookup. Recheck misses and deleted cached names against live keys.
+  const liveKey = Object.keys(map).find(key => key.toLowerCase() === name.toLowerCase());
+  if (liveKey === undefined) return undefined;
+  index.set(name.toLowerCase(), liveKey);
+  return map[liveKey];
 }

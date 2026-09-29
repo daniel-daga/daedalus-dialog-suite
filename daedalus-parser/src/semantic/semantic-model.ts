@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import { Type, plainToInstance, ClassConstructor } from 'class-transformer';
+import { createNameRecord, resolveCaseInsensitive } from './name-utils';
 
 // Semantic model classes and types for Daedalus dialog parsing
 
@@ -878,21 +879,21 @@ function linkPropertiesToFunctions(
   rawProperties: Record<string, any>,
   functionsMap: { [key: string]: DialogFunction },
 ): DialogProperties {
-  const linked: DialogProperties = {};
+  const linked: DialogProperties = createNameRecord();
   for (const key in rawProperties) {
     const value = rawProperties[key];
     if (typeof value === 'object' && value !== null && 'name' in value && 'returnType' in value) {
       // Property holds a serialised DialogFunction shape — resolve to the live instance.
-      const linkedFunc = functionsMap[value.name];
+      const linkedFunc = resolveCaseInsensitive(functionsMap, value.name);
       if (!linkedFunc) {
         console.warn(`Function '${value.name}' referenced in dialog '${dialogName}' but not found in model`);
         linked[key] = value.name;
       } else {
         linked[key] = linkedFunc;
       }
-    } else if (typeof value === 'string' && functionsMap[value]) {
+    } else if (typeof value === 'string' && resolveCaseInsensitive(functionsMap, value)) {
       // Property was already normalised to just the function name string.
-      linked[key] = functionsMap[value];
+      linked[key] = resolveCaseInsensitive(functionsMap, value)!;
     } else {
       linked[key] = value;
     }
@@ -923,8 +924,8 @@ export class Dialog {
     this.name = name;
     this.parent = parent;
     this.leadingComments = [];
-    this.properties = {};
-    this.propertyFormatting = {};
+    this.properties = createNameRecord();
+    this.propertyFormatting = createNameRecord();
     this.propertyExpressionKeys = [];
     this.actions = [];
   }
@@ -1007,17 +1008,17 @@ export interface SemanticModel {
 // Helper to deserialize full semantic model
 export function deserializeSemanticModel(json: any): SemanticModel {
   const model: SemanticModel = {
-    dialogs: {},
-    functions: {},
+    dialogs: createNameRecord(),
+    functions: createNameRecord(),
     declarationOrder: json.declarationOrder || [],
-    constants: {},
-    variables: {},
-    instances: {},
-    classes: {},
-    prototypes: {},
-    items: {},
-    npcs: {},
-    animations: {},
+    constants: createNameRecord(),
+    variables: createNameRecord(),
+    instances: createNameRecord(),
+    classes: createNameRecord(),
+    prototypes: createNameRecord(),
+    items: createNameRecord(),
+    npcs: createNameRecord(),
+    animations: createNameRecord(),
     trailingComments: json.trailingComments,
     errors: json.errors,
     hasErrors: json.hasErrors

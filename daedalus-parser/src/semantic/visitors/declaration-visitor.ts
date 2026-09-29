@@ -12,6 +12,7 @@ import {
   GlobalPrototype
 } from '../semantic-model';
 import { parseLiteralOrIdentifier } from '../parsers/literal-parsing';
+import { createNameRecord } from '../name-utils';
 
 export class DeclarationVisitor {
   private semanticModel: SemanticModel;
@@ -148,7 +149,7 @@ export class DeclarationVisitor {
           };
 
           if (!this.semanticModel.instances) {
-            this.semanticModel.instances = {};
+            this.semanticModel.instances = createNameRecord();
           }
           this.semanticModel.instances[instance.name] = instance;
           this.semanticModel.declarationOrder?.push({ type: 'instance', name: instance.name });
@@ -173,21 +174,21 @@ export class DeclarationVisitor {
 
           if (upperParent === 'C_ITEM') {
             if (!this.semanticModel.items) {
-              this.semanticModel.items = {};
+              this.semanticModel.items = createNameRecord();
             }
             this.semanticModel.items[instance.name] = instance;
           }
 
           if (upperParent === 'C_NPC') {
             if (!this.semanticModel.npcs) {
-              this.semanticModel.npcs = {};
+              this.semanticModel.npcs = createNameRecord();
             }
             this.semanticModel.npcs[instance.name] = instance;
           }
 
           if (upperParent === 'C_MDS') {
             if (!this.semanticModel.animations) {
-              this.semanticModel.animations = {};
+              this.semanticModel.animations = createNameRecord();
             }
             this.semanticModel.animations[instance.name] = instance;
           }
@@ -211,7 +212,7 @@ export class DeclarationVisitor {
         };
         globalClass.range = { startIndex: node.startIndex, endIndex: node.endIndex };
         if (!this.semanticModel.classes) {
-          this.semanticModel.classes = {};
+          this.semanticModel.classes = createNameRecord();
         }
         this.semanticModel.classes[globalClass.name] = globalClass;
         this.semanticModel.declarationOrder?.push({ type: 'class', name: globalClass.name });
@@ -232,7 +233,7 @@ export class DeclarationVisitor {
         };
         prototype.range = { startIndex: node.startIndex, endIndex: node.endIndex };
         if (!this.semanticModel.prototypes) {
-          this.semanticModel.prototypes = {};
+          this.semanticModel.prototypes = createNameRecord();
         }
         this.semanticModel.prototypes[prototype.name] = prototype;
         this.semanticModel.declarationOrder?.push({ type: 'prototype', name: prototype.name });
@@ -375,7 +376,7 @@ export class DeclarationVisitor {
       };
 
       if (!this.semanticModel.constants) {
-        this.semanticModel.constants = {};
+        this.semanticModel.constants = createNameRecord();
       }
       this.semanticModel.constants[name] = constant;
       this.semanticModel.declarationOrder?.push({ type: 'constant', name });
@@ -396,7 +397,7 @@ export class DeclarationVisitor {
       };
 
       if (!this.semanticModel.variables) {
-        this.semanticModel.variables = {};
+        this.semanticModel.variables = createNameRecord();
       }
       this.semanticModel.variables[name] = variable;
       this.semanticModel.declarationOrder?.push({ type: 'variable', name });

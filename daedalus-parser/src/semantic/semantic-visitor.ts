@@ -7,6 +7,7 @@ import {
 import { ErrorVisitor } from './visitors/error-visitor';
 import { DeclarationVisitor } from './visitors/declaration-visitor';
 import { LinkingVisitor } from './visitors/linking-visitor';
+import { createNameRecord } from './name-utils';
 
 export class SemanticModelBuilderVisitor {
   public semanticModel: SemanticModel;
@@ -14,13 +15,13 @@ export class SemanticModelBuilderVisitor {
 
   constructor() {
     this.semanticModel = {
-      dialogs: {},
-      functions: {},
+      dialogs: createNameRecord(),
+      functions: createNameRecord(),
       declarationOrder: [],
-      constants: {},
-      variables: {},
-      instances: {},
-      items: {},
+      constants: createNameRecord(),
+      variables: createNameRecord(),
+      instances: createNameRecord(),
+      items: createNameRecord(),
       hasErrors: false,
       errors: []
     };
