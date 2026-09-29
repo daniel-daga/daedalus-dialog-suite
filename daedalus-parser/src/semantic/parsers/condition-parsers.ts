@@ -203,7 +203,8 @@ export class ConditionParsers {
       }
     }
 
-    return null;
+    // Preserve unsupported negated calls and other unary expressions verbatim.
+    return new Condition(node.text.trim());
   }
 
   private static parseSupportedCallComparison(
