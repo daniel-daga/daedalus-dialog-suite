@@ -859,3 +859,21 @@ test('Should display a negated Npc_KnowsInfo condition', () => {
   assert.strictEqual(condition.generateCode({}), '!Npc_KnowsInfo(other, DIA_Farim_Hallo)');
   assert.strictEqual(condition.toDisplayString(), '[Not NpcKnowsInfo: other knows DIA_Farim_Hallo]');
 });
+
+test('unsupported negated condition call keeps the negation on round-trip', () => {
+  const source = [
+    'instance DIA_Custom(C_INFO) { condition = DIA_Custom_Cond; };',
+    'func int DIA_Custom_Cond() {',
+    '  if (!CustomCheck(other)) { return TRUE; };',
+    '};'
+  ].join(String.fromCharCode(10));
+
+  const model = parseAndBuildModel(source);
+  const func = model.functions.DIA_Custom_Cond;
+  assert.equal(func.conditions.length, 1);
+  assert.equal(func.conditions[0].constructor.name, 'Condition');
+  assert.equal(func.conditions[0].condition, '!CustomCheck(other)');
+  const generated = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false }).generateSemanticModel(model);
+  assert.ok(generated.includes('!CustomCheck(other)'));
+  assert.ok(!generated.includes('if (CustomCheck(other))'));
+});
