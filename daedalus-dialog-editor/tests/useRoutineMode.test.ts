@@ -31,9 +31,11 @@ function waynetOf(names: string[]): WaynetPayload {
 }
 
 const setup = (names = ['WP_A', 'WP_NEW']) => {
-  const ensureWaynetShown = jest.fn();
-  const hook = renderHook(() => useRoutineMode({ waynet: waynetOf(names), ensureWaynetShown }));
-  return { hook, ensureWaynetShown };
+  const loadWaynet = jest.fn();
+  const restoreWaynet = jest.fn();
+  const showWaynetForPick = jest.fn(() => restoreWaynet);
+  const hook = renderHook(() => useRoutineMode({ waynet: waynetOf(names), loadWaynet, showWaynetForPick }));
+  return { hook, loadWaynet, showWaynetForPick, restoreWaynet };
 };
 
 describe('useRoutineMode', () => {
@@ -43,12 +45,15 @@ describe('useRoutineMode', () => {
     useWorldStore.getState().waynetSaved(['WP_A']);
   });
 
-  test('opens on an NPC, shows the waynet, and closes with its draft', () => {
-    const { hook, ensureWaynetShown } = setup();
+  test('opens on an NPC with the waynet read but not drawn, and closes with its draft', () => {
+    // The whole waynet on screen reads as every routine's stops (Daniel,
+    // 2026-09-30): only the routine is drawn until a pick needs targets.
+    const { hook, loadWaynet, showWaynetForPick } = setup();
 
     act(() => hook.result.current.open('BAU_900_ONAR', 'RTN_START_900'));
     expect(hook.result.current.mode).toEqual({ npc: 'BAU_900_ONAR', routine: 'RTN_START_900' });
-    expect(ensureWaynetShown).toHaveBeenCalled();
+    expect(loadWaynet).toHaveBeenCalled();
+    expect(showWaynetForPick).not.toHaveBeenCalled();
 
     act(() => hook.result.current.onDraftChange([], null));
     expect(hook.result.current.draft).toEqual({ entries: [], selected: null });
@@ -65,13 +70,16 @@ describe('useRoutineMode', () => {
   });
 
   test('a waypoint click during a pick sets the activity\'s waypoint instead of selecting it', () => {
-    const { hook } = setup();
+    const { hook, showWaynetForPick, restoreWaynet } = setup();
     const set = jest.fn();
 
     act(() => hook.result.current.onPickWaypoint(set, { index: 1, state: 'TA_Sleep' }));
     expect(hook.result.current.picking).toBe(true);
     // What the bottom bar says the click is for.
     expect(hook.result.current.pickTarget).toEqual({ index: 1, state: 'TA_Sleep' });
+    // The waynet is the pick's targets, so it is drawn for the pick only.
+    expect(showWaynetForPick).toHaveBeenCalledTimes(1);
+    expect(restoreWaynet).not.toHaveBeenCalled();
 
     let taken = false;
     act(() => { taken = hook.result.current.takeWaypointPick(0); });
@@ -79,6 +87,7 @@ describe('useRoutineMode', () => {
     expect(set).toHaveBeenCalledWith('WP_A');
     expect(hook.result.current.picking).toBe(false);
     expect(hook.result.current.pickTarget).toBeNull();
+    expect(restoreWaynet).toHaveBeenCalledTimes(1);
 
     // With no pick pending, the click is the surface's again.
     act(() => { taken = hook.result.current.takeWaypointPick(0); });
@@ -95,5 +104,15 @@ describe('useRoutineMode', () => {
     expect(set).not.toHaveBeenCalled();
     expect(hook.result.current.pickError).toMatch(/WP_NEW.*save the world/);
     expect(hook.result.current.picking).toBe(true);
+  });
+
+  test('an aborted pick puts the waynet back as it was', () => {
+    const { hook, restoreWaynet } = setup();
+
+    act(() => hook.result.current.onPickWaypoint(jest.fn(), { index: 0, state: 'TA_Sit' }));
+    act(() => hook.result.current.cancelPick());
+
+    expect(hook.result.current.picking).toBe(false);
+    expect(restoreWaynet).toHaveBeenCalledTimes(1);
   });
 });

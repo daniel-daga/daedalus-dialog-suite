@@ -152,8 +152,12 @@ test.describe('Routine editing in the World surface', () => {
     await expect(page.getByTestId('world-picker')).toHaveCount(0);
     await expect(editor(page)).toBeVisible();
     await expect(activity(page, 1).getByLabel('Waypoint', { exact: true })).toHaveValue('WP_FIXTURE_A');
-    // The routine is drawn over the world while it is edited.
+    // The routine is drawn over the world while it is edited — and only the
+    // routine: the whole waynet would read as every routine's stops. Spawns
+    // are on, since that is who the routine is about (Daniel, 2026-09-30).
     await expect.poll(() => routineStops(page)).toEqual(['WP_FIXTURE_A', 'WP_FIXTURE_B']);
+    await expect(page.getByTestId('world-waynet-toggle')).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.getByTestId('world-spawns-toggle')).toHaveAttribute('aria-pressed', 'true');
   });
 
   test('Pick hides the editor and the bar says what to click; Abort returns, a waypoint fills the stop', async () => {
@@ -167,10 +171,13 @@ test.describe('Routine editing in the World surface', () => {
     const bar = page.getByTestId('world-routine-pick-bar');
     await expect(bar).toContainText('Routine edit');
     await expect(bar).toContainText('activity 1 (TA_Stand_Guarding)');
+    // The waynet is the pick's targets, drawn for the pick only.
+    await expect(page.getByTestId('world-waynet-toggle')).toHaveAttribute('aria-pressed', 'true');
 
     await bar.getByRole('button', { name: 'Abort' }).click();
     await expect(editor(page)).toBeVisible();
     await expect(page.getByTestId('world-routine-pick-bar')).toHaveCount(0);
+    await expect(page.getByTestId('world-waynet-toggle')).toHaveAttribute('aria-pressed', 'false');
     await expect(activity(page, 1).getByLabel('Waypoint', { exact: true })).toHaveValue('WP_FIXTURE_A');
 
     await activity(page, 1).getByRole('button', { name: 'Pick the waypoint of activity 1 in the world' }).click();

@@ -1663,22 +1663,42 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     if (waynet === null) void readWaynetInto(setWaynet);
   }, [showWaynet, waynet, readWaynetInto]);
 
-  const routineMode = useRoutineMode({ waynet, ensureWaynetShown });
+  /** Routine mode reads the waynet but draws it only for a pick, then puts
+   *  it back: the whole waynet reads as every routine's stops. */
+  const loadWaynet = useCallback(() => {
+    if (waynet === null) void readWaynetInto(setWaynet);
+  }, [waynet, readWaynetInto]);
+  const showWaynetForPick = useCallback(() => {
+    const wasShown = showWaynet;
+    ensureWaynetShown();
+    return () => { if (!wasShown) setShowWaynet(false); };
+  }, [showWaynet, ensureWaynetShown]);
+  const routineMode = useRoutineMode({ waynet, loadWaynet, showWaynetForPick });
 
   /**
    * Routine mode asked for from the NPC editor (npc-editor.md §6), which is
    * never a dead end for want of a world (Daniel, 2026-09-29): the world the
    * NPC's STARTUP_ spawn names is opened — after asking, when the open one has
    * unsaved edits — and failing that the picker is offered. The editor opens
-   * over whichever world that lands on, framed on the routine's first stop.
+   * over whichever world that lands on, with the spawns shown (Daniel,
+   * 2026-09-30) and the camera on the routine's first stop — framed only: a
+   * jump would select the waypoint and switch the whole waynet on.
    */
   const { open: openRoutineMode } = routineMode;
   const startRoutine = useCallback((request: RoutineRequest) => {
     openRoutineMode(request.npc, request.routine);
+    if (!showSpawns) void toggleSpawns();
     const routine = request.routine ?? routineNpcIndex[request.npc.toUpperCase()];
     const first = routine === undefined ? undefined : routinePreview(routineSiteIndex, routine)[0];
-    if (first !== undefined) jumpToPoint(first.waypoint);
-  }, [openRoutineMode, routineNpcIndex, routineSiteIndex, jumpToPoint]);
+    const wanted = first?.waypoint.toUpperCase();
+    const at = wanted === undefined || waynet === null
+      ? -1
+      : waynet.names.findIndex((name) => name.toUpperCase() === wanted);
+    if (waynet !== null && at >= 0) {
+      const positions = new Float32Array(waynet.positions);
+      viewportRef.current?.framePoint([positions[at * 3], positions[at * 3 + 1], positions[at * 3 + 2]]);
+    }
+  }, [openRoutineMode, showSpawns, toggleSpawns, routineNpcIndex, routineSiteIndex, waynet]);
 
   const openRoutineWorld = useCallback(async (request: RoutineRequest) => {
     let found: DiscoveredWorld | null = null;

@@ -10,49 +10,59 @@ import type { RoutinePickTarget } from '../../RoutineEditor';
  * the modal hands to the viewport — during which the modal is hidden and the
  * bottom bar says what the next click does.
  *
+ * The waynet is read for the routine but drawn only while a pick needs its
+ * points as targets, then put back as it was: the whole waynet on screen reads
+ * as every routine's stops (Daniel, 2026-09-30).
+ *
  * A stop may only go on a waypoint the world file on disk has (Daniel,
  * 2026-09-28), so a pick is checked against `savedWaypoints`, and one added
  * since is refused with the reason rather than written into the script.
  */
-export function useRoutineMode({ waynet, ensureWaynetShown }: {
+export function useRoutineMode({ waynet, loadWaynet, showWaynetForPick }: {
   waynet: WaynetPayload | null;
-  ensureWaynetShown: () => void;
+  /** Read the waynet payload if it is not, without drawing it. */
+  loadWaynet: () => void;
+  /** Draw the waynet; returns what puts it back as it was. */
+  showWaynetForPick: () => () => void;
 }) {
   const [mode, setMode] = useState<RoutineRequest | null>(null);
   const [draft, setDraft] = useState<{ entries: readonly RoutineEntry[]; selected: number | null } | null>(null);
-  const [pick, setPick] = useState<{ set: (waypoint: string) => void; target: RoutinePickTarget } | null>(null);
+  const [pick, setPick] = useState<{
+    set: (waypoint: string) => void; target: RoutinePickTarget; restore: () => void;
+  } | null>(null);
   const [pickError, setPickError] = useState<string | null>(null);
   const saved = useWorldStore((s) => s.savedWaypoints);
 
-  const open = useCallback((npc: string, routine?: string) => {
-    setDraft(null);
+  const endPick = useCallback(() => {
+    pick?.restore();
     setPick(null);
     setPickError(null);
+  }, [pick]);
+
+  const open = useCallback((npc: string, routine?: string) => {
+    endPick();
+    setDraft(null);
     setMode(routine === undefined ? { npc } : { npc, routine });
-    ensureWaynetShown();
-  }, [ensureWaynetShown]);
+    loadWaynet();
+  }, [endPick, loadWaynet]);
 
   const close = useCallback(() => {
+    endPick();
     setMode(null);
     setDraft(null);
-    setPick(null);
-    setPickError(null);
-  }, []);
+  }, [endPick]);
 
   const onDraftChange = useCallback((entries: readonly RoutineEntry[], selected: number | null) => {
     setDraft({ entries, selected });
   }, []);
 
   const onPickWaypoint = useCallback((set: (waypoint: string) => void, target: RoutinePickTarget) => {
-    setPick({ set, target });
+    // A second Pick while one waits keeps the first one's way back.
+    setPick({ set, target, restore: pick?.restore ?? showWaynetForPick() });
     setPickError(null);
-    ensureWaynetShown();
-  }, [ensureWaynetShown]);
+  }, [pick, showWaynetForPick]);
 
-  const cancelPick = useCallback(() => {
-    setPick(null);
-    setPickError(null);
-  }, []);
+  const cancelPick = endPick;
 
   /** A waypoint click, offered to a pending pick first; true when it took it. */
   const takeWaypointPick = useCallback((waypoint: number): boolean => {
@@ -64,10 +74,9 @@ export function useRoutineMode({ waynet, ensureWaynetShown }: {
       return true;
     }
     pick.set(name);
-    setPick(null);
-    setPickError(null);
+    endPick();
     return true;
-  }, [pick, waynet, saved]);
+  }, [pick, waynet, saved, endPick]);
 
   const waypoints = useMemo(() => (saved === null ? null : [...saved].sort()), [saved]);
 
