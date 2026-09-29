@@ -12,7 +12,7 @@ import {
   Condition,
   VariableCondition
 } from '../semantic-model';
-import { isArgumentNode, parseArguments } from './argument-parsing';
+import { isArgumentNode } from './argument-parsing';
 import { parseLiteralOrIdentifier } from './literal-parsing';
 import { getBinaryOperator, isComparisonOperator } from './ast-constants';
 
@@ -27,17 +27,17 @@ export class ConditionParsers {
     if (functionName) {
       switch (functionName.toLowerCase()) {
         case 'npc_knowsinfo':
-          return ConditionParsers.parseNpcKnowsInfoCall(node);
+          return ConditionParsers.parseNpcKnowsInfoCall(node) ?? ConditionParsers.parseGenericCondition(node);
         case 'npc_hasitems':
-          return ConditionParsers.parseNpcHasItemsCall(node);
+          return ConditionParsers.parseNpcHasItemsCall(node) ?? ConditionParsers.parseGenericCondition(node);
         case 'npc_isinstate':
-          return ConditionParsers.parseNpcIsInStateCall(node);
+          return ConditionParsers.parseNpcIsInStateCall(node) ?? ConditionParsers.parseGenericCondition(node);
         case 'npc_isdead':
-          return ConditionParsers.parseNpcIsDeadCall(node);
+          return ConditionParsers.parseNpcIsDeadCall(node) ?? ConditionParsers.parseGenericCondition(node);
         case 'npc_getdisttowp':
-          return ConditionParsers.parseNpcGetDistToWpCall(node);
+          return ConditionParsers.parseNpcGetDistToWpCall(node) ?? ConditionParsers.parseGenericCondition(node);
         case 'npc_gettalentskill':
-          return ConditionParsers.parseNpcGetTalentSkillCall(node);
+          return ConditionParsers.parseNpcGetTalentSkillCall(node) ?? ConditionParsers.parseGenericCondition(node);
         default:
           return ConditionParsers.parseGenericCondition(node);
       }
@@ -48,7 +48,7 @@ export class ConditionParsers {
       case 'identifier':
         return ConditionParsers.parseVariableCondition(node);
       case 'unary_expression':
-        return ConditionParsers.parseUnaryExpression(node);
+        return ConditionParsers.parseUnaryExpression(node) ?? ConditionParsers.parseGenericCondition(node);
       case 'binary_expression':
         return ConditionParsers.parseBinaryExpression(node) || ConditionParsers.parseGenericCondition(node);
       default:
@@ -60,12 +60,12 @@ export class ConditionParsers {
    * Parse binary expression (e.g. MIS_Test == LOG_RUNNING)
    */
   static parseBinaryExpression(node: TreeSitterNode): DialogCondition | null {
-    // binary_expression structure: [left, operator, right]
-    // The grammar does not assign field names to binary_expression parts
-    if (node.childCount < 3) return null;
+    // Operators are anonymous children; comments are named extras. Neither
+    // may be mistaken for an operand when comments appear around the operator.
+    const operands = node.namedChildren.filter(child => child.type !== 'comment');
+    if (operands.length !== 2) return null;
 
-    const left = node.child(0);
-    const right = node.child(2);
+    const [left, right] = operands;
 
     if (!left || !right) return null;
 
@@ -98,42 +98,39 @@ export class ConditionParsers {
    * Parse Npc_KnowsInfo function call
    */
   static parseNpcKnowsInfoCall(node: TreeSitterNode): NpcKnowsInfoCondition | null {
-    const argsNode = node.childForFieldName('arguments');
-    if (!argsNode) return null;
-
-    const args = parseArguments(argsNode);
-    if (args.length < 2) return null;
+    const args = ConditionParsers.parseRawCallArguments(node);
+    if (args.length !== 2) return null;
 
     return new NpcKnowsInfoCondition(args[0], args[1]);
   }
 
   static parseNpcHasItemsCall(node: TreeSitterNode): NpcHasItemsCondition | null {
     const args = ConditionParsers.parseRawCallArguments(node);
-    if (args.length < 2) return null;
+    if (args.length !== 2) return null;
     return new NpcHasItemsCondition(args[0], args[1]);
   }
 
   static parseNpcIsInStateCall(node: TreeSitterNode): NpcIsInStateCondition | null {
     const args = ConditionParsers.parseRawCallArguments(node);
-    if (args.length < 2) return null;
+    if (args.length !== 2) return null;
     return new NpcIsInStateCondition(args[0], args[1], false);
   }
 
   static parseNpcIsDeadCall(node: TreeSitterNode): NpcIsDeadCondition | null {
     const args = ConditionParsers.parseRawCallArguments(node);
-    if (args.length < 1) return null;
+    if (args.length !== 1) return null;
     return new NpcIsDeadCondition(args[0], false);
   }
 
   static parseNpcGetDistToWpCall(node: TreeSitterNode): NpcGetDistToWpCondition | null {
     const args = ConditionParsers.parseRawCallArguments(node);
-    if (args.length < 2) return null;
+    if (args.length !== 2) return null;
     return new NpcGetDistToWpCondition(args[0], args[1]);
   }
 
   static parseNpcGetTalentSkillCall(node: TreeSitterNode): NpcGetTalentSkillCondition | null {
     const args = ConditionParsers.parseRawCallArguments(node);
-    if (args.length < 2) return null;
+    if (args.length !== 2) return null;
     return new NpcGetTalentSkillCondition(args[0], args[1]);
   }
 
@@ -183,21 +180,21 @@ export class ConditionParsers {
       const dispatchKey = fnName.toLowerCase();
       if (dispatchKey === 'npc_isdead') {
         const parsed = ConditionParsers.parseNpcIsDeadCall(operand);
-        if (!parsed) return null;
+        if (!parsed) return ConditionParsers.parseGenericCondition(node);
         parsed.negated = true;
         return parsed;
       }
 
       if (dispatchKey === 'npc_isinstate') {
         const parsed = ConditionParsers.parseNpcIsInStateCall(operand);
-        if (!parsed) return null;
+        if (!parsed) return ConditionParsers.parseGenericCondition(node);
         parsed.negated = true;
         return parsed;
       }
 
       if (dispatchKey === 'npc_knowsinfo') {
         const parsed = ConditionParsers.parseNpcKnowsInfoCall(operand);
-        if (!parsed) return null;
+        if (!parsed) return ConditionParsers.parseGenericCondition(node);
         parsed.negated = true;
         return parsed;
       }
@@ -238,23 +235,23 @@ export class ConditionParsers {
     // Daedalus identifiers are case-insensitive, so dispatch on a normalized key.
     switch (fnName.toLowerCase()) {
       case 'npc_hasitems':
-        if (args.length < 2) return null;
+        if (args.length !== 2) return null;
         return new NpcHasItemsCondition(args[0], args[1], operator, value, valueIsStringLiteral);
       case 'npc_getdisttowp':
-        if (args.length < 2) return null;
+        if (args.length !== 2) return null;
         return new NpcGetDistToWpCondition(args[0], args[1], operator, value, valueIsStringLiteral);
       case 'npc_gettalentskill':
-        if (args.length < 2) return null;
+        if (args.length !== 2) return null;
         return new NpcGetTalentSkillCondition(args[0], args[1], operator, value, valueIsStringLiteral);
       case 'npc_isdead':
-        if (args.length < 1) return null;
+        if (args.length !== 1) return null;
         return ConditionParsers.parseBoolLikeComparisonAsNegation(
           new NpcIsDeadCondition(args[0], false),
           operator,
           value
         );
       case 'npc_isinstate':
-        if (args.length < 2) return null;
+        if (args.length !== 2) return null;
         return ConditionParsers.parseBoolLikeComparisonAsNegation(
           new NpcIsInStateCondition(args[0], args[1], false),
           operator,

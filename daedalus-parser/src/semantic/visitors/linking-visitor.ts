@@ -384,11 +384,12 @@ export class LinkingVisitor {
   private maybeSetConditionOperator(ifNode: TreeSitterNode): void {
     if (!this.isCurrentConditionFunction() || !this.currentFunction) return;
     if (!this.isTopLevelStatement(ifNode)) {
-      // Nested all-AND guards can be flattened safely. An OR inside a nested
-      // guard cannot: its relationship to the enclosing guard is an AND that
-      // a single global operator cannot represent.
+      // Nested all-AND guards can be flattened safely. An OR in either the
+      // enclosing guard or this guard cannot: the relationship between the
+      // guards is an AND that a single global operator cannot represent.
       const condition = ifNode.childForFieldName('condition');
-      if (condition && this.collectLogicalOperators(condition).has('||')) {
+      if (this.currentFunction.conditionOperator === 'OR' ||
+          (condition && this.collectLogicalOperators(condition).has('||'))) {
         this.triggerConditionRawMode(ifNode);
       }
       return;
