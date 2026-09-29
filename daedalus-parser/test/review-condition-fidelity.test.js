@@ -53,3 +53,31 @@ test('R6: preserve literal quotes in a string comparison', () => {
   const body = generatedConditionBody('if (name == "Hero") { return TRUE; };');
   assert.match(body, /name\s*==\s*"Hero"/);
 });
+
+test('R7: comments do not change comparison operands', () => {
+  assertTruthTable('if (A /* left */ == /* right */ B) { return TRUE; };');
+  assertTruthTable('if (1 /* left */ <= /* right */ flags) { return TRUE; };');
+});
+
+test('R8: preserve AND between an outer OR guard and a nested guard', () => {
+  assertTruthTable('if (A || B) { if (C) { return TRUE; }; };');
+});
+
+for (const call of [
+  'Npc_KnowsInfo(other, D, extra)',
+  'Npc_HasItems(other, item, extra)',
+  'Npc_IsInState(other, state, extra)',
+  'Npc_IsDead(other, extra)',
+  'Npc_GetDistToWP(other, "WP", extra)',
+  'Npc_GetTalentSkill(other, talent, extra)',
+  'Npc_KnowsInfo()',
+  'Npc_IsDead()',
+  '!Npc_IsDead(other, extra)',
+  'Npc_HasItems(other, item, extra) >= 1',
+  'Npc_IsInState(other, state, extra) == TRUE'
+]) {
+  test(`R9: preserve unsupported condition arity: ${call}`, () => {
+    const body = generatedConditionBody(`if (${call}) { return TRUE; };`);
+    assert.ok(body.includes(call), body);
+  });
+}
