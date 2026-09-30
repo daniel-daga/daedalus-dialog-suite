@@ -30,6 +30,46 @@ P1–P7, M1–M5, N1–N10). The governing principle:
   function has unexpected argument count in either direction
   (`Npc_RemoveInvItem` = 2 args vs `Npc_RemoveInvItems` = 3).
 
+## Conditions (2026-09 review, #328–#333)
+
+The flat condition model (one operator over a list of clauses) is used only
+when it reproduces the guard's truth table exactly; anything it cannot
+represent keeps the **original body verbatim (raw mode)**, never a
+simplified projection. Raw mode is triggered by:
+
+- mixed or nested logical operators — a nested `if` or an inner `||` under an
+  `&&` (`if (A) { if (B || C) … }`, `((A || B) && C) && D`); homogeneous
+  chains stay structured;
+- binary guards the model has no clause for (`flags & 1`) and call
+  comparisons it declines — operands and their order kept;
+- non-canonical control flow, including a non-trivial unconditional
+  top-level `return TRUE` after conditional returns.
+
+A captured expression is taken **once**: its operands are not collected again
+as separate clauses (`!(A || B)` must not also yield `A`, `B`).
+Condition calls need **exact arity**; a mismatch falls back to the verbatim
+call, as for actions. A comparison value that was a string literal keeps a
+literal flag so generation re-quotes it (`name == "Bob"`).
+
+## Statements and symbols
+
+- Operators and operands are found **by token, not child position** —
+  tree-sitter comment extras are children too (`value /* note */ += 1`).
+- Expression statements that are not calls are kept verbatim.
+- The call-site index is built once from the whole function body, so local
+  initializers and raw-mode condition bodies are indexed.
+- An information function shared by several `C_INFO` instances is projected
+  onto **every** referencing dialog, independent of declaration order.
+- Identifier tables are prototype-free dictionaries (names like
+  `__proto__`, `constructor` are ordinary symbols), lookups resolve own keys
+  only, and a cached case-insensitive miss is refreshed after model mutation.
+- NPC edits insert inside the instance body even when the anchor and closing
+  brace share a line; compound assignments (`+=`) are not field sets.
+
+Engine semantics were not checked for any of these — the guarantee is source
+fidelity (the regenerated guard has the same truth table), not that the
+source is valid Gothic.
+
 ## Comments
 
 - An AI_Output subtitle comment must be on the **same line** as the call;
