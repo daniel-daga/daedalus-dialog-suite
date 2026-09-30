@@ -14,7 +14,7 @@ import {
 } from '../semantic-model';
 import { isArgumentNode } from './argument-parsing';
 import { parseLiteralOrIdentifier } from './literal-parsing';
-import { getBinaryOperator, isComparisonOperator } from './ast-constants';
+import { getBinaryOperator, isComparisonOperator, hasComment } from './ast-constants';
 
 export class ConditionParsers {
 
@@ -22,6 +22,8 @@ export class ConditionParsers {
    * Parse a semantic condition based on node type
    */
   static parseSemanticCondition(node: TreeSitterNode, functionName?: string): DialogCondition | null {
+    // Structured fields cannot represent comments between operands/arguments.
+    if (hasComment(node)) return ConditionParsers.parseGenericCondition(node);
     // For call expressions, check function name. Daedalus identifiers are
     // case-insensitive, so dispatch on a normalized key.
     if (functionName) {
@@ -91,7 +93,7 @@ export class ConditionParsers {
       return new VariableCondition(left.text, false, op, parsedValue, right.type === 'string');
     }
 
-    if (right.type === 'identifier') {
+    if (right.type === 'identifier' && ConditionParsers.isReorderableLiteral(left)) {
       const parsedValue = ConditionParsers.parseBinaryValue(left);
       const normalizedOperator = ConditionParsers.invertComparisonOperator(op);
       return new VariableCondition(right.text, false, normalizedOperator, parsedValue, left.type === 'string');
@@ -218,7 +220,7 @@ export class ConditionParsers {
     if (left.type === 'call_expression') {
       return ConditionParsers.parseSupportedCallComparisonWithCall(left, right, operator);
     }
-    if (right.type === 'call_expression') {
+    if (right.type === 'call_expression' && ConditionParsers.isReorderableLiteral(left)) {
       const inverted = ConditionParsers.invertComparisonOperator(operator);
       return ConditionParsers.parseSupportedCallComparisonWithCall(right, left, inverted);
     }
@@ -250,14 +252,14 @@ export class ConditionParsers {
         if (args.length !== 2) return null;
         return new NpcGetTalentSkillCondition(args[0], args[1], operator, value, valueIsStringLiteral);
       case 'npc_isdead':
-        if (args.length !== 1) return null;
+        if (args.length !== 1 || valueIsStringLiteral) return null;
         return ConditionParsers.parseBoolLikeComparisonAsNegation(
           new NpcIsDeadCondition(args[0], false),
           operator,
           value
         );
       case 'npc_isinstate':
-        if (args.length !== 2) return null;
+        if (args.length !== 2 || valueIsStringLiteral) return null;
         return ConditionParsers.parseBoolLikeComparisonAsNegation(
           new NpcIsInStateCondition(args[0], args[1], false),
           operator,
@@ -305,6 +307,12 @@ export class ConditionParsers {
       }
     }
     return args;
+  }
+
+  // Reversing a compound operand can change associativity and evaluation order.
+  // Even an identifier read can observe a value changed by the other operand.
+  private static isReorderableLiteral(node: TreeSitterNode): boolean {
+    return ['number', 'boolean', 'string'].includes(node.type);
   }
 
   private static parseBinaryValue(node: TreeSitterNode): string | number | boolean {

@@ -4,9 +4,7 @@ const {
   parseSemanticModel,
   SemanticCodeGenerator,
   CommentAction,
-  DialogLine,
-  NpcKnowsInfoCondition,
-  NpcHasItemsCondition
+  DialogLine
 } = require('../dist/semantic/semantic-visitor-index');
 
 function generate(model) {
@@ -193,17 +191,14 @@ func void DIA_Foo_Hello_Info()
 };
 `;
   const model = parseSemanticModel(source);
-  const { conditions } = model.dialogs.DIA_Foo_Hello.properties.condition;
-
-  // parseArguments (Npc_KnowsInfo) and parseRawCallArguments (Npc_HasItems)
-  // are separate extractors; both used to shift on an interleaved comment.
-  const knowsInfo = conditions.find((c) => c instanceof NpcKnowsInfoCondition);
-  assert.ok(knowsInfo, 'the Npc_KnowsInfo condition is recognized');
-  assert.equal(knowsInfo.npc, 'other');
-  assert.equal(knowsInfo.dialogRef, 'DIA_Foo_Intro');
-
-  const hasItems = conditions.find((c) => c instanceof NpcHasItemsCondition);
-  assert.ok(hasItems, 'the Npc_HasItems condition is recognized');
-  assert.equal(hasItems.npc, 'other');
-  assert.equal(hasItems.item, 'ItMi_Gold');
+  const fn = model.dialogs.DIA_Foo_Hello.properties.condition;
+  // Preserve comment positions that the typed condition fields cannot express.
+  // Call metadata still indexes each actual argument, never a comment extra.
+  assert.equal(fn.conditions.length, 0);
+  assert.deepEqual(fn.callSites.map(call => call.args.map(arg => arg.raw)), [
+    ['other', 'DIA_Foo_Intro'], ['other', 'ItMi_Gold']
+  ]);
+  const generated = new SemanticCodeGenerator({ includeComments: true }).generateFunction(fn);
+  assert.ok(generated.includes('/* the info */ DIA_Foo_Intro'));
+  assert.ok(generated.includes('/* the item */ ItMi_Gold'));
 });

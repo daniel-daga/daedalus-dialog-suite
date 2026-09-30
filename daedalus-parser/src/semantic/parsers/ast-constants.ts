@@ -1,9 +1,13 @@
+import type { TreeSitterNode } from '../semantic-model';
+
+export function hasComment(node: TreeSitterNode): boolean {
+  return node.type === 'comment' || node.namedChildren.some(hasComment);
+}
+
 export const COMPARISON_OPERATORS = new Set(['==', '!=', '<', '>', '<=', '>=']);
 const BINARY_OPERATORS = new Set(['||', '&&', '|', '^', '&', '==', '!=', '<', '<=', '>', '>=', '<<', '>>', '+', '-', '*', '/', '%']);
 const ASSIGNMENT_OPERATORS = new Set(['=', '+=', '-=', '*=', '/=']);
 export const CONDITION_MODE_BLOCKING_STATEMENTS = new Set(['if_statement', 'return_statement']);
-export const CONDITION_ALLOWED_PARENT_TYPES = new Set(['if_statement', 'parenthesized_expression']);
-export const ANCESTOR_TRAVERSAL_BOUNDARY_TYPES = new Set(['if_statement', 'block', 'function_declaration']);
 
 export function isComparisonOperator(operator: string | null | undefined): operator is string {
   return !!operator && COMPARISON_OPERATORS.has(operator);
@@ -33,12 +37,4 @@ export function getAssignmentOperator(node: { childCount: number; child(index: n
 
 export function isConditionModeBlockingStatement(nodeType: string): boolean {
   return CONDITION_MODE_BLOCKING_STATEMENTS.has(nodeType);
-}
-
-export function isConditionAllowedParentType(nodeType: string): boolean {
-  return CONDITION_ALLOWED_PARENT_TYPES.has(nodeType);
-}
-
-export function isAncestorTraversalBoundaryType(nodeType: string): boolean {
-  return ANCESTOR_TRAVERSAL_BOUNDARY_TYPES.has(nodeType);
 }

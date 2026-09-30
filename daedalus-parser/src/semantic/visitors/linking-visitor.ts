@@ -19,11 +19,9 @@ import { parseArgumentsDetailed } from '../parsers/argument-parsing';
 import {
   getBinaryOperator,
   getAssignmentOperator,
-  isComparisonOperator,
   isLogicalOperator,
   isConditionModeBlockingStatement,
-  isConditionAllowedParentType,
-  isAncestorTraversalBoundaryType
+  hasComment
 } from '../parsers/ast-constants';
 import { parseLiteralOrIdentifier } from '../parsers/literal-parsing';
 import { createNameRecord, namesEqual } from '../name-utils';
@@ -46,14 +44,9 @@ export class LinkingVisitor {
   private currentInstance: Dialog | null;
   private currentFunction: DialogFunction | null;
   private conditionFunctions: Set<string>;
-  private topLevelConditionIfs: Set<string>;
   // Keyed by lowercase function name. A function can be shared by multiple
   // dialogs, so cache all owners (including an empty array for a proven miss).
   private functionToDialogs: Map<string, Dialog[]>;
-  private conditionRawMode: Set<string>;
-  private preservedStatementRanges: Map<string, Set<string>>;
-  private currentFunctionBodyNode: TreeSitterNode | null;
-  private rawModeActionWatermark: number;
   // Ranges (`startIndex:endIndex`) of comment nodes already consumed as an
   // AI_Output subtitle, so they are not also re-emitted as standalone comments.
   private consumedCommentRanges: Set<string>;
@@ -65,12 +58,7 @@ export class LinkingVisitor {
     this.currentInstance = null;
     this.currentFunction = null;
     this.conditionFunctions = new Set<string>();
-    this.topLevelConditionIfs = new Set<string>();
     this.functionToDialogs = new Map<string, Dialog[]>();
-    this.conditionRawMode = new Set<string>();
-    this.preservedStatementRanges = new Map<string, Set<string>>;
-    this.currentFunctionBodyNode = null;
-    this.rawModeActionWatermark = 0;
     this.consumedCommentRanges = new Set<string>();
   }
 
@@ -133,15 +121,10 @@ export class LinkingVisitor {
 
     this.enterDeclarationContext(type, node);
 
-    if (type === 'if_statement') {
-      this.maybeSetConditionOperator(node);
-    }
-
     const skipChildren = this.shouldSkipChildren(type, node);
 
     if (!skipChildren) {
       this.handleStatementNode(type, node);
-      this.handleConditionNode(type, node);
     }
 
     if (!skipChildren && cursor.gotoFirstChild()) {
@@ -170,12 +153,7 @@ export class LinkingVisitor {
       const nameNode = node.childForFieldName('name');
       if (!nameNode) return;
       this.currentFunction = this.functions[nameNode.text];
-      this.topLevelConditionIfs.delete(nameNode.text.toLowerCase());
       const body = node.childForFieldName('body');
-      this.currentFunctionBodyNode = body ?? null;
-      // Watermark the actions already present so a later raw-mode trigger can
-      // discard exactly the ones recorded during this function's traversal.
-      this.rawModeActionWatermark = this.currentFunction ? this.currentFunction.actions.length : 0;
       if (this.currentFunction && body) {
         this.currentFunction.hasExplicitBodyContent = body.namedChildren.length > 0;
         // Index calls independently of semantic extraction, which can skip
@@ -231,74 +209,26 @@ export class LinkingVisitor {
 
     if (type === 'function_declaration') {
       this.currentFunction = null;
-      this.currentFunctionBodyNode = null;
-      this.rawModeActionWatermark = 0;
     }
   }
 
   private shouldSkipChildren(type: string, node: TreeSitterNode): boolean {
     const isConditionFunc = this.isCurrentConditionFunction();
-    const currentFunctionName = this.currentFunction?.name;
-
-    if (isConditionFunc && currentFunctionName) {
-      if (this.conditionRawMode.has(currentFunctionName)) {
-        if (this.isTopLevelStatement(node)) {
-          this.preserveConditionStatement(node);
-        }
-        return true;
-      }
-
-      if (type === 'if_statement') {
-        const alternative = node.childForFieldName('alternative');
-        const consequence = node.childForFieldName('consequence');
-        const statements = consequence?.namedChildren.filter(child => child.type !== 'comment') ?? [];
-        // A flat guard list represents a single success path. Empty branches,
-        // sibling guards and a return after a nested guard need the original
-        // control flow rather than an invented return or an AND of all guards.
-        if (alternative || statements.length !== 1 ||
-            (statements[0].type !== 'if_statement' && !this.isCanonicalTrueReturn(statements[0]))) {
-          this.triggerConditionRawMode(node);
-          return true;
-        }
-      }
-
-      if (type === 'return_statement') {
-        if (this.isCanonicalTrueReturn(node)) {
-          if (this.isTopLevelStatement(node)) {
-            if (this.isTrivialTopLevelTrueReturn(node)) {
-              return true;
-            }
-            // A top-level truthy return is an unconditional success path. The
-            // flat condition model cannot represent it alongside prior guards.
-            this.triggerConditionRawMode(node);
-            return true;
-          }
-          // A nested TRUE return is the canonical body of a structured
-          // condition. It carries no additional condition data.
-          return true;
-        }
-        this.triggerConditionRawMode(node);
-        return true;
-      }
+    // A condition function is analyzed as a complete body, once. Never walk
+    // its expression descendants as statements or independent predicates.
+    if (isConditionFunc && type === 'function_declaration') {
+      const body = node.childForFieldName('body');
+      if (body) this.analyzeConditionBody(body);
+      return true;
     }
 
     if (type === 'variable_declaration' && this.currentFunction) {
-      // Local declarations are preserved textually; skipping children keeps
-      // initializer expressions from being misread as standalone actions.
-      if (isConditionFunc) {
-        this.triggerConditionRawMode(node);
-      } else {
-        this.preserveUnsupportedStatement(node);
-      }
+      this.preserveUnsupportedStatement(node);
       return true;
     }
 
     if (type === 'expression_statement' && this.currentFunction) {
       const expressions = node.namedChildren.filter(child => child.type !== 'comment');
-      if (isConditionFunc) {
-        this.triggerConditionRawMode(node);
-        return true;
-      }
       if (expressions.length !== 1 || expressions[0].type !== 'call_expression') {
         this.preserveUnsupportedStatement(node);
         return true;
@@ -354,146 +284,92 @@ export class LinkingVisitor {
     }
   }
 
-  private handleConditionNode(type: string, node: TreeSitterNode): void {
-    if (!this.isCurrentConditionFunction() || !this.currentFunction) {
-      return;
-    }
-
-    // Atomic clauses own their entire expression. Descendants of a captured
-    // negation, call, field access or array access must not become extra guards.
-    if (this.hasAncestor(node, ancestor =>
-      ['unary_expression', 'call_expression', 'member_access', 'array_access'].includes(ancestor.type))) return;
-
-    if (type === 'binary_expression') {
-      const operator = getBinaryOperator(node);
-      if (isComparisonOperator(operator) && !this.hasComparisonBinaryAncestor(node)) {
-        this.processCondition(node);
-      } else if (
-        operator &&
-        !isLogicalOperator(operator) &&
-        !this.hasComparisonBinaryAncestor(node)
-      ) {
-        const containingIf = this.findContainingIfCondition(node);
-        if (containingIf) this.triggerConditionRawMode(containingIf);
-      }
-      return;
-    }
-
-    if (!['identifier', 'unary_expression', 'number', 'boolean', 'string', 'member_access', 'array_access'].includes(type)) {
-      return;
-    }
-
-    const parent = node.parent;
-    if (!parent) return;
-
-    if (this.hasNonLogicalBinaryAncestor(node)) return;
-
-    let isAllowed = isConditionAllowedParentType(parent.type);
-
-    if (parent.type === 'binary_expression') {
-      const operator = getBinaryOperator(parent);
-      if (!isComparisonOperator(operator)) {
-        isAllowed = true;
-      }
-    }
-
-    if (isAllowed) {
-      this.processCondition(node);
-    }
-  }
-
-  private maybeSetConditionOperator(ifNode: TreeSitterNode): void {
-    if (!this.isCurrentConditionFunction() || !this.currentFunction) return;
-    if (!this.isTopLevelStatement(ifNode)) {
-      // Nested all-AND guards can be flattened safely. An OR in either the
-      // enclosing guard or this guard cannot: the relationship between the
-      // guards is an AND that a single global operator cannot represent.
-      const condition = ifNode.childForFieldName('condition');
-      if (this.currentFunction.conditionOperator === 'OR' ||
-          (condition && this.collectLogicalOperators(condition).has('||'))) {
-        this.triggerConditionRawMode(ifNode);
-      }
-      return;
-    }
-    const functionKey = this.currentFunction.name.toLowerCase();
-    if (this.isTopLevelStatement(ifNode)) {
-      if (this.topLevelConditionIfs.has(functionKey)) {
-        // Separate top-level if blocks return TRUE independently, so their
-        // conditions are alternatives (OR). Preserve the source body rather
-        // than flattening them into the single-condition generator model.
-        this.triggerConditionRawMode(ifNode);
-        return;
-      }
-      this.topLevelConditionIfs.add(functionKey);
-    }
-    const condNode = ifNode.childForFieldName('condition');
-    if (!condNode) return;
-    const detectedOp = this.detectTopLevelConditionOperator(condNode);
-    if (detectedOp === 'OR') {
-      this.currentFunction.conditionOperator = 'OR';
-    } else if (detectedOp === null) {
-      // Mixed operators — fall back to raw mode immediately
-      this.triggerConditionRawMode(ifNode);
-    }
-  }
-
-  private findContainingIfCondition(node: TreeSitterNode): TreeSitterNode | null {
-    let current: TreeSitterNode | null = node;
-    while (current) {
-      if (current.type === 'if_statement') {
-        const condition = current.childForFieldName('condition');
-        return condition && this.nodeIsWithin(node, condition) ? current : null;
-      }
-      if (current.type === 'block' || current.type === 'function_declaration') return null;
-      current = current.parent;
-    }
-    return null;
-  }
-
   /**
-   * Unwrap parenthesized_expression nodes to get the inner node.
+   * The flat editor model represents exactly one if/return-TRUE guard, or an
+   * unconditional TRUE return. Prove that shape before projecting expressions;
+   * everything else keeps the original statements in source order. In
+   * particular, nested branches must not become eager logical expressions.
    */
+  private analyzeConditionBody(body: TreeSitterNode): void {
+    if (!this.currentFunction) return;
+    const statements = body.namedChildren;
+    if (statements.length === 0) return;
+    const executable = statements.filter(statement => statement.type !== 'comment');
+    if (executable.length === 1 && this.isCanonicalTrueReturn(executable[0])) {
+      this.captureConditionBodyComments(statements, executable[0]);
+      return;
+    }
+
+    if (executable.length === 1 && executable[0].type === 'if_statement') {
+      const guard = executable[0];
+      const condition = guard.childForFieldName('condition');
+      const consequence = guard.childForFieldName('consequence');
+      const alternative = guard.childForFieldName('alternative');
+      const branch = consequence?.namedChildren ?? [];
+      // Only comments outside the guard have unambiguous metadata slots.
+      // Comments in its header or branch require the verbatim body instead.
+      if (condition && !hasComment(guard) && !alternative &&
+          branch.length === 1 && this.isCanonicalTrueReturn(branch[0])) {
+        const operators = this.collectLogicalOperators(condition);
+        if (operators.size <= 1) {
+          this.captureConditionBodyComments(statements, guard);
+          this.currentFunction.conditionOperator = operators.has('||') ? 'OR' : 'AND';
+          for (const clause of this.collectConditionClauses(condition)) {
+            const functionName = clause.type === 'call_expression'
+              ? clause.childForFieldName('function')?.text : undefined;
+            this.processCondition(clause, functionName);
+          }
+          return;
+        }
+      }
+    }
+
+    for (const statement of statements) {
+      const action = statement.type === 'comment'
+        ? new CommentAction(statement.text) : new Action(statement.text.trim());
+      this.recordActionForCurrentFunction(atLine(action, statement));
+    }
+  }
+
+  private captureConditionBodyComments(statements: TreeSitterNode[], statement: TreeSitterNode): void {
+    if (!this.currentFunction) return;
+    const index = statements.indexOf(statement);
+    this.currentFunction.conditionBodyLeadingComments = statements.slice(0, index).map(node => node.text);
+    this.currentFunction.conditionBodyTrailingComments = statements.slice(index + 1).map(node => node.text);
+  }
+
+  private isCanonicalTrueReturn(node: TreeSitterNode): boolean {
+    if (node.type !== 'return_statement') return false;
+    const text = node.text.trim().replace(/\s+/g, ' ').toUpperCase();
+    return text === 'RETURN TRUE;' || text === 'RETURN 1;';
+  }
+
   private unwrapParens(node: TreeSitterNode): TreeSitterNode {
     let current = node;
-    while (current.type === 'parenthesized_expression') {
-      const children = current.namedChildren.filter(child => child.type !== 'comment');
-      if (children.length !== 1) break;
-      current = children[0];
+    while (current.type === 'parenthesized_expression' && current.namedChildren.length === 1) {
+      current = current.namedChildren[0];
     }
     return current;
   }
 
-  /**
-   * Detect the top-level logical operator used in the if statement condition.
-   * Returns 'OR' if pure-OR, 'AND' if pure-AND or single condition, null if mixed.
-   */
-  private detectTopLevelConditionOperator(ifConditionNode: TreeSitterNode): 'AND' | 'OR' | null {
-    const operators = this.collectLogicalOperators(ifConditionNode);
-    if (operators.size > 1) return null;
-    return operators.has('||') ? 'OR' : 'AND';
+  /** Only logical composition is recursive; every other expression is atomic. */
+  private collectConditionClauses(node: TreeSitterNode): TreeSitterNode[] {
+    const expression = this.unwrapParens(node);
+    if (expression.type === 'binary_expression' && isLogicalOperator(getBinaryOperator(expression))) {
+      return expression.namedChildren.flatMap(child => this.collectConditionClauses(child));
+    }
+    return [expression];
   }
 
-  /**
-   * Collect logical operators that combine condition clauses, walking through
-   * nested logical expressions and parentheses. Stop at comparisons, calls,
-   * arithmetic, and other atomic clauses so their internal syntax is not
-   * mistaken for the condition's top-level combination.
-   */
-  private collectLogicalOperators(node: TreeSitterNode | null): Set<'&&' | '||'> {
-    const operators = new Set<'&&' | '||'>();
-    if (!node) return operators;
-
-    const unwrapped = this.unwrapParens(node);
-    if (unwrapped.type !== 'binary_expression') return operators;
-
-    const operator = getBinaryOperator(unwrapped);
-    if (operator !== '&&' && operator !== '||') return operators;
-
+  private collectLogicalOperators(node: TreeSitterNode): Set<string> {
+    const expression = this.unwrapParens(node);
+    const operators = new Set<string>();
+    if (expression.type !== 'binary_expression') return operators;
+    const operator = getBinaryOperator(expression);
+    if (!operator || !isLogicalOperator(operator)) return operators;
     operators.add(operator);
-    for (const child of unwrapped.namedChildren.filter(child => child.type !== 'comment')) {
-      for (const nested of this.collectLogicalOperators(child)) {
-        operators.add(nested);
-      }
+    for (const child of expression.namedChildren.filter(child => child.type !== 'comment')) {
+      for (const nested of this.collectLogicalOperators(child)) operators.add(nested);
     }
     return operators;
   }
@@ -597,11 +473,6 @@ export class LinkingVisitor {
 
       const action = new SetVariableAction(variableName, operator, value);
 
-      if (this.isCurrentConditionFunction()) {
-        this.triggerConditionRawMode(node);
-        return;
-      }
-
       this.recordActionForCurrentFunction(atLine(action, node));
     }
   }
@@ -612,29 +483,6 @@ export class LinkingVisitor {
   private processFunctionCall(node: TreeSitterNode): void {
     const functionName = node.childForFieldName('function')?.text;
     if (!functionName || !this.currentFunction) {
-      return;
-    }
-
-    if (this.isCurrentConditionFunction()) {
-      if (this.conditionRawMode.has(this.currentFunction.name)) {
-        return;
-      }
-
-      if (this.hasAncestor(node, ancestor =>
-        ['unary_expression', 'member_access', 'array_access'].includes(ancestor.type))) {
-        return;
-      }
-
-      if (!this.isCallInsideIfCondition(node)) {
-        this.triggerConditionRawMode(node);
-        return;
-      }
-
-      if (this.isCallInsideComparisonBinary(node) || this.isNestedCallArgument(node)) {
-        return;
-      }
-
-      this.processCondition(node, functionName);
       return;
     }
 
@@ -724,192 +572,11 @@ export class LinkingVisitor {
     return !!this.currentFunction && this.conditionFunctions.has(this.currentFunction.name);
   }
 
-  private isTopLevelStatement(node: TreeSitterNode): boolean {
-    if (!node.type.endsWith('_statement') && node.type !== 'variable_declaration') {
-      return false;
-    }
-    const parent = node.parent;
-    if (!parent || parent.type !== 'block') return false;
-    const grandParent = parent.parent;
-    return !!grandParent && grandParent.type === 'function_declaration';
-  }
-
   private isFunctionTopLevelComment(node: TreeSitterNode): boolean {
     const parent = node.parent;
     if (!parent || parent.type !== 'block') return false;
     const grandParent = parent.parent;
     return !!grandParent && grandParent.type === 'function_declaration';
-  }
-
-  private preserveConditionStatement(node: TreeSitterNode): void {
-    if (!this.currentFunction) return;
-    const topLevel = this.getTopLevelStatement(node) || node;
-    const rangeKey = `${topLevel.startIndex}:${topLevel.endIndex}`;
-    const funcName = this.currentFunction.name;
-    let ranges = this.preservedStatementRanges.get(funcName);
-    if (!ranges) {
-      ranges = new Set<string>();
-      this.preservedStatementRanges.set(funcName, ranges);
-    }
-    if (ranges.has(rangeKey)) return;
-    ranges.add(rangeKey);
-
-    const action = new Action(topLevel.text.trim());
-    this.recordActionForCurrentFunction(atLine(action, topLevel));
-  }
-
-  private getTopLevelStatement(node: TreeSitterNode): TreeSitterNode | null {
-    let current: TreeSitterNode | null = node;
-    while (current && current.parent) {
-      if (this.isTopLevelStatement(current)) return current;
-      current = current.parent;
-    }
-    return null;
-  }
-
-  private triggerConditionRawMode(node: TreeSitterNode): void {
-    if (!this.currentFunction) return;
-    const funcName = this.currentFunction.name;
-    if (!this.conditionRawMode.has(funcName)) {
-      this.conditionRawMode.add(funcName);
-      // Statements consumed into conditions (or recorded as actions) before this
-      // trigger must not be dropped: clear the structured conditions, discard any
-      // actions recorded during this function's traversal, and re-seed the whole
-      // body top-to-bottom in source order so the continuing traversal dedupes.
-      this.currentFunction.conditions = [];
-      this.discardRecordedActions(funcName);
-      const body = this.currentFunctionBodyNode;
-      if (body) {
-        for (const child of body.namedChildren) {
-          if (child.type === 'comment') {
-            // Standalone comments between top-level statements in a raw-mode
-            // condition body are preserved in position (P6/N5).
-            if (!this.consumedCommentRanges.has(`${child.startIndex}:${child.endIndex}`)) {
-              this.recordActionForCurrentFunction(atLine(new CommentAction(child.text), child));
-            }
-          } else if (this.isTopLevelStatement(child)) {
-            this.preserveConditionStatement(child);
-          }
-        }
-        return;
-      }
-    }
-    this.preserveConditionStatement(node);
-  }
-
-  /**
-   * Remove the actions recorded for the current function during this traversal
-   * (from the watermark captured on function entry) from both the function and
-   * its owning dialog, so the raw-mode whole-body sweep is the single source of
-   * truth and no statement is duplicated.
-   */
-  private discardRecordedActions(funcName: string): void {
-    if (!this.currentFunction) return;
-    const removed = this.currentFunction.actions.splice(this.rawModeActionWatermark);
-    if (removed.length === 0) return;
-    for (const dialog of this.findDialogsForFunction(funcName)) {
-      dialog.actions = dialog.actions.filter((action) => !removed.includes(action));
-    }
-  }
-
-  private isCanonicalTrueReturn(node: TreeSitterNode): boolean {
-    const text = node.text.trim().replace(/\s+/g, ' ').toUpperCase();
-    return text === 'RETURN TRUE;' || text === 'RETURN 1;';
-  }
-
-  private isTrivialTopLevelTrueReturn(node: TreeSitterNode): boolean {
-    if (!this.currentFunction) {
-      return false;
-    }
-
-    // Only skip raw mode if this function is literally just a top-level truthy return.
-    if (this.currentFunction.conditions.length > 0 || this.currentFunction.actions.length > 0) {
-      return false;
-    }
-
-    const statements = this.currentFunctionBodyNode?.namedChildren.filter(child => child.type !== 'comment') ?? [];
-    return statements.length === 1 && this.isCanonicalTrueReturn(node);
-  }
-
-  private isCallInsideIfCondition(node: TreeSitterNode): boolean {
-    let current: TreeSitterNode | null = node;
-    while (current && current.parent) {
-      const parent = current.parent;
-      if (parent.type === 'if_statement') {
-        const cond = parent.childForFieldName('condition');
-        return !!cond && this.nodeIsWithin(node, cond);
-      }
-      if (parent.type === 'block' || parent.type === 'function_declaration') {
-        return false;
-      }
-      current = parent;
-    }
-    return false;
-  }
-
-  private isCallInsideComparisonBinary(node: TreeSitterNode): boolean {
-    return this.hasAncestor(node, (ancestor) => {
-      if (ancestor.type !== 'binary_expression') {
-        return false;
-      }
-      const operator = getBinaryOperator(ancestor);
-      return isComparisonOperator(operator);
-    });
-  }
-
-  private hasNonLogicalBinaryAncestor(node: TreeSitterNode): boolean {
-    return this.hasAncestor(node, (ancestor) => {
-      if (ancestor.type !== 'binary_expression') {
-        return false;
-      }
-      const operator = getBinaryOperator(ancestor);
-      return !isLogicalOperator(operator);
-    });
-  }
-
-  private hasComparisonBinaryAncestor(node: TreeSitterNode): boolean {
-    return this.hasAncestor(node, (ancestor) => {
-      if (ancestor.type !== 'binary_expression') {
-        return false;
-      }
-      const operator = getBinaryOperator(ancestor);
-      return isComparisonOperator(operator);
-    });
-  }
-
-  private isNestedCallArgument(node: TreeSitterNode): boolean {
-    return this.hasAncestor(node, (ancestor) => {
-      if (ancestor.type !== 'call_expression') {
-        return false;
-      }
-      const args = ancestor.childForFieldName('arguments');
-      return !!args && this.nodeIsWithin(node, args);
-    });
-  }
-
-  private hasAncestor(node: TreeSitterNode, predicate: (ancestor: TreeSitterNode) => boolean): boolean {
-    let current: TreeSitterNode | null = node.parent;
-    while (current) {
-      if (predicate(current)) {
-        return true;
-      }
-
-      if (this.isAncestorTraversalBoundary(current)) {
-        break;
-      }
-
-      current = current.parent;
-    }
-
-    return false;
-  }
-
-  private isAncestorTraversalBoundary(node: TreeSitterNode): boolean {
-    return isAncestorTraversalBoundaryType(node.type);
-  }
-
-  private nodeIsWithin(node: TreeSitterNode, container: TreeSitterNode): boolean {
-    return node.startIndex >= container.startIndex && node.endIndex <= container.endIndex;
   }
 
   private isTopLevelCallStatement(node: TreeSitterNode): boolean {
@@ -952,7 +619,15 @@ export class LinkingVisitor {
       return null;
     }
 
-    return new ConditionalAction(this.normalizeIfCondition(conditionNode.text), thenActions, elseActions || []);
+    // Parentheses are syntax nodes, not characters to count: strings and
+    // comments may contain arbitrary parentheses. Preserve commented headers
+    // raw so trimming cannot move a closing delimiter into a line comment.
+    if (hasComment(conditionNode) || node.namedChildren.some(child => child.type === 'comment')) {
+      return null;
+    }
+    const conditionText = conditionNode.type === 'parenthesized_expression'
+      ? conditionNode.text.slice(1, -1).trim() : conditionNode.text.trim();
+    return new ConditionalAction(conditionText, thenActions, elseActions || []);
   }
 
   private parseActionsFromBlock(blockNode: TreeSitterNode): DialogAction[] | null {
@@ -1024,28 +699,6 @@ export class LinkingVisitor {
     }
 
     return null;
-  }
-
-  private normalizeIfCondition(conditionText: string): string {
-    const trimmed = conditionText.trim();
-    if (!trimmed.startsWith('(') || !trimmed.endsWith(')')) {
-      return trimmed;
-    }
-
-    let depth = 0;
-    for (let index = 0; index < trimmed.length; index += 1) {
-      const char = trimmed[index];
-      if (char === '(') {
-        depth += 1;
-      } else if (char === ')') {
-        depth -= 1;
-        if (depth === 0 && index < trimmed.length - 1) {
-          return trimmed;
-        }
-      }
-    }
-
-    return trimmed.slice(1, -1).trim();
   }
 
   private addDialogForFunction(functionName: string, dialog: Dialog): void {

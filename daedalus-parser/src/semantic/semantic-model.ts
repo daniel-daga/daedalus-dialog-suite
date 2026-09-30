@@ -455,7 +455,11 @@ export class ConditionalAction implements CodeGeneratable {
     const indentUnit = options.indentUnit || '\t';
     const lines: string[] = [];
 
-    lines.push(`if (${this.condition.trim()})`);
+    const condition = this.condition.trim();
+    // Editor-authored headers can end in a line comment. Close on a new line;
+    // a // inside a string merely adds harmless whitespace after the expression.
+    const closingLine = condition.includes('//') ? '\n' : '';
+    lines.push(`if (${condition}${closingLine})`);
     lines.push('{');
     lines.push(...this.renderBranch(this.thenActions, indentUnit, options));
 
@@ -825,6 +829,9 @@ export class DialogFunction {
   public keyword?: string;
   public spaceBeforeParen?: boolean;
   public leadingComments?: string[];
+  /** Body comments around a projected guard or unconditional TRUE return. */
+  public conditionBodyLeadingComments?: string[];
+  public conditionBodyTrailingComments?: string[];
   public hasExplicitBodyContent?: boolean;
   public parameters?: FunctionParameter[];
   /** Source range of the whole declaration node, `FUNC` through `};`. */

@@ -30,26 +30,51 @@ P1–P7, M1–M5, N1–N10). The governing principle:
   function has unexpected argument count in either direction
   (`Npc_RemoveInvItem` = 2 args vs `Npc_RemoveInvItems` = 3).
 
-## Conditions (2026-09 review, #328–#333)
+## Conditional projection boundary
 
-The flat condition model (one operator over a list of clauses) is used only
-when it reproduces the guard's truth table exactly; anything it cannot
-represent keeps the **original body verbatim (raw mode)**, never a
-simplified projection. Raw mode is triggered by:
+Condition functions are classified as whole bodies before extracting predicates.
+The flat editor representation is used for a single comment-free
+`if (expression) { return TRUE; };` with a uniform AND or OR operator, or an
+unconditional `return TRUE;` / `return 1;`. Standalone body comments surrounding
+that guard or return are retained in `conditionBodyLeadingComments` and
+`conditionBodyTrailingComments`, including through JSON hydration and predicate
+edits. They do not disable typed conditions or simulator evaluation.
+Only parentheses and logical
+composition are traversed when collecting clauses; calls, unary expressions,
+comparisons, arithmetic, member access and array access are atomic roots.
+Their descendants must never become extra predicates.
 
-- mixed or nested logical operators — a nested `if` or an inner `||` under an
-  `&&` (`if (A) { if (B || C) … }`, `((A || B) && C) && D`); homogeneous
-  chains stay structured;
-- binary guards the model has no clause for (`flags & 1`) and call
-  comparisons it declines — operands and their order kept;
-- non-canonical control flow, including a non-trivial unconditional
-  top-level `return TRUE` after conditional returns.
+Nested guards, alternative branches, additional statements, mixed AND/OR, and
+comments inside a guard's header or branch remain raw actions. This retains explicit branch boundaries
+without assuming that a compiler short-circuits logical operators. It also
+retains comment positions that the flat fields cannot express. The editor shows
+these bodies as raw actions rather than editable typed condition rows. Call-site
+indexing remains a separate full-body pass, including raw expressions.
 
-A captured expression is taken **once**: its operands are not collected again
-as separate clauses (`!(A || B)` must not also yield `A`, `B`).
-Condition calls need **exact arity**; a mismatch falls back to the verbatim
-call, as for actions. A comparison value that was a string literal keeps a
-literal flag so generation re-quotes it (`name == "Bob"`).
+Comparison normalization may swap operands only when the moved operand is a
+literal. Compound operands can change associativity, and calls or identifier
+reads can observe evaluation order. Quoted `"TRUE"` / `"FALSE"` values are not
+Boolean constants. Unsupported comparisons stay verbatim.
+
+The generator brackets generic condition clauses as individual operands and
+puts their closing delimiter on a new line so a trailing `//` cannot consume it.
+Conditional action headers use AST parentheses, never character counting;
+commented headers fall back to raw source. Editor-authored action headers also
+place their closing delimiter on a new line when `//` is present.
+
+Single-dialog export uses the shared choice-reachability walk. It includes
+choice targets in both structured conditional branches and their transitive
+sub-dialogs, handles case drift, and emits each target once even with cycles.
+
+`test/conditional-path-review.test.js` checks source-based truth tables, call
+order, explicit branch boundaries, comments, manual model edits, JSON hydration,
+and three parse/generate cycles. The JavaScript oracle is limited to the tested
+shared expression semantics; it does not establish Gothic engine behavior or
+replace a real mod corpus run.
+
+
+Condition calls still require exact arity; unsupported calls remain verbatim.
+String comparison values retain their literal flag when structured.
 
 ## Statements and symbols
 
