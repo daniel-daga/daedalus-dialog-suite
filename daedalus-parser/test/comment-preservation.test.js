@@ -60,7 +60,8 @@ test('same-line multiline block comment after AI_Output stays a comment', () => 
   const model = parseSemanticModel(source);
   const actions = model.functions.B_Foo.actions;
 
-  assert.ok(actions[0] instanceof DialogLine);
+  const [firstAction] = actions;
+  assert.ok(firstAction instanceof DialogLine);
   assert.ok(actions.some((action) => action instanceof CommentAction));
   assert.equal(actions.some((action) => action.type === 'GivePlayerXPAction'), false);
 

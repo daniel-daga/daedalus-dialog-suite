@@ -203,7 +203,7 @@ test('multiline string literal bytes survive repeated generation', () => {
       assert.deepEqual(
         tokenTexts(generated),
         tokenTexts(original),
-        'string token changed on cycle ' + (cycle + 1) + ':\n' + generated
+        `string token changed on cycle ${cycle + 1}:\n${generated}`
       );
       current = generated;
     }
