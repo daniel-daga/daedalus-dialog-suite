@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { Script } = require('node:vm');
 const {
   parseSemanticModel, deserializeSemanticModel, SemanticCodeGenerator,
-  DialogFunction, Condition, VariableCondition
+  DialogFunction, Condition, VariableCondition, ConditionalAction, Action
 } = require('../dist/semantic/semantic-visitor-index');
 
 const generator = new SemanticCodeGenerator({ includeComments: true, sectionHeaders: false });
@@ -125,6 +125,18 @@ test('generic clauses ending in a line comment cannot swallow generated delimite
   fn.conditions.pop();
   const single = generator.generateFunction(fn);
   assert.equal(parseSemanticModel(single).hasErrors, false, single);
+});
+
+test('edited conditional action headers cannot comment out their closing delimiter', () => {
+  const fn = new DialogFunction('Check', 'void');
+  fn.actions = [new ConditionalAction('A // edited guard', [new Action('Run();')])];
+  const model = { dialogs: {}, functions: { Check: fn } };
+  for (const candidate of [model, deserializeSemanticModel(JSON.parse(JSON.stringify(model)))]) {
+    const generated = generator.generateSemanticModel(candidate);
+    assert.equal(parseSemanticModel(generated).hasErrors, false, generated);
+    assert.ok(generated.includes('// edited guard'));
+    assert.ok(generated.includes('Run();'));
+  }
 });
 
 test('logical clause roots are captured once across expression families', () => {
