@@ -30,17 +30,6 @@ P1–P7, M1–M5, N1–N10). The governing principle:
   function has unexpected argument count in either direction
   (`Npc_RemoveInvItem` = 2 args vs `Npc_RemoveInvItems` = 3).
 
-## Comments
-
-- An AI_Output subtitle comment must be on the **same line** as the call;
-  next-line comments are standalone.
-- Standalone comments in function bodies (including raw-mode condition
-  bodies and conditional branches) become `CommentAction` entries —
-  first-class actions whose `generateCode()` is the comment text.
-- C_INFO instance bodies carry `propertyLeadingComments` /
-  `propertyTrailingComments` / `trailingBodyComments`; files carry
-  `SemanticModel.trailingComments` (EOF comments).
-
 ## Conditional projection boundary
 
 Condition functions are classified as whole bodies before extracting predicates.
@@ -68,11 +57,49 @@ puts their closing delimiter on a new line so a trailing `//` cannot consume it.
 Conditional action headers use AST parentheses, never character counting;
 commented headers fall back to raw source.
 
+Single-dialog export uses the shared choice-reachability walk. It includes
+choice targets in both structured conditional branches and their transitive
+sub-dialogs, handles case drift, and emits each target once even with cycles.
+
 `test/conditional-path-review.test.js` checks source-based truth tables, call
 order, explicit branch boundaries, comments, manual model edits, JSON hydration,
 and three parse/generate cycles. The JavaScript oracle is limited to the tested
 shared expression semantics; it does not establish Gothic engine behavior or
 replace a real mod corpus run.
+
+
+Condition calls still require exact arity; unsupported calls remain verbatim.
+String comparison values retain their literal flag when structured.
+
+## Statements and symbols
+
+- Operators and operands are found **by token, not child position** —
+  tree-sitter comment extras are children too (`value /* note */ += 1`).
+- Expression statements that are not calls are kept verbatim.
+- The call-site index is built once from the whole function body, so local
+  initializers and raw-mode condition bodies are indexed.
+- An information function shared by several `C_INFO` instances is projected
+  onto **every** referencing dialog, independent of declaration order.
+- Identifier tables are prototype-free dictionaries (names like
+  `__proto__`, `constructor` are ordinary symbols), lookups resolve own keys
+  only, and a cached case-insensitive miss is refreshed after model mutation.
+- NPC edits insert inside the instance body even when the anchor and closing
+  brace share a line; compound assignments (`+=`) are not field sets.
+
+Engine semantics were not checked for any of these — the guarantee is source
+fidelity (the regenerated guard has the same truth table), not that the
+source is valid Gothic.
+
+## Comments
+
+- An AI_Output subtitle comment must be on the **same line** as the call;
+  next-line comments are standalone.
+- Standalone comments in function bodies (including raw-mode condition
+  bodies and conditional branches) become `CommentAction` entries —
+  first-class actions whose `generateCode()` is the comment text.
+- C_INFO instance bodies carry `propertyLeadingComments` /
+  `propertyTrailingComments` / `trailingBodyComments`; files carry
+  `SemanticModel.trailingComments` (EOF comments).
 
 ## Generation order
 

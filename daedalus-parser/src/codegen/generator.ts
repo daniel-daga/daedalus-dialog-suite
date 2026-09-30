@@ -10,8 +10,7 @@ import {
   CodeGeneratable,
   getDialogProperty
 } from '../semantic/semantic-model';
-import { Choice } from '../semantic/dialogActions';
-import { resolveCaseInsensitive } from '../semantic/name-utils';
+import { collectReachableFunctions } from '../semantic/cross-references';
 
 // Structural shape shared by GlobalConstant / GlobalVariable / GlobalInstance
 // as far as code generation is concerned.
@@ -374,8 +373,8 @@ export class SemanticCodeGenerator {
    *   2. Information function
    *   3. Choice target functions (sub-dialog branches)
    *
-   * Choice target functions are discovered by inspecting Choice actions
-   * inside the information function.
+   * Choice targets include both conditional branches and transitive sub-dialogs;
+   * the shared reachability walk handles case drift and cycles.
    */
   private getAssociatedFunctions(dialog: Dialog, model: SemanticModel): DialogFunction[] {
     const funcs: DialogFunction[] = [];
@@ -395,17 +394,12 @@ export class SemanticCodeGenerator {
       seen.add(infoFunc.name);
     }
 
-    // Collect choice target functions from the information function's actions
+    // Use the same reachability boundary as reference/deletion analysis.
     if (infoFunc) {
-      for (const action of infoFunc.actions) {
-        if (action instanceof Choice && action.targetFunction) {
-          // Case-insensitive: a case-drifted choice target must still cluster
-          // (and, via generateDialogWithFunctions, still be emitted at all).
-          const targetFunc = resolveCaseInsensitive(model.functions, action.targetFunction);
-          if (targetFunc && !seen.has(targetFunc.name)) {
-            funcs.push(targetFunc);
-            seen.add(targetFunc.name);
-          }
+      for (const name of collectReachableFunctions(model, infoFunc.name)) {
+        if (!seen.has(name)) {
+          funcs.push(model.functions[name]);
+          seen.add(name);
         }
       }
     }
