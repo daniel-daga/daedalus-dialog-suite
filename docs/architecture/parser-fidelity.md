@@ -55,7 +55,8 @@ Boolean constants. Unsupported comparisons stay verbatim.
 The generator brackets generic condition clauses as individual operands and
 puts their closing delimiter on a new line so a trailing `//` cannot consume it.
 Conditional action headers use AST parentheses, never character counting;
-commented headers fall back to raw source.
+commented headers fall back to raw source. Editor-authored action headers also
+place their closing delimiter on a new line when `//` is present.
 
 Single-dialog export uses the shared choice-reachability walk. It includes
 choice targets in both structured conditional branches and their transitive

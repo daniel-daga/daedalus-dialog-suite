@@ -455,7 +455,11 @@ export class ConditionalAction implements CodeGeneratable {
     const indentUnit = options.indentUnit || '\t';
     const lines: string[] = [];
 
-    lines.push(`if (${this.condition.trim()})`);
+    const condition = this.condition.trim();
+    // Editor-authored headers can end in a line comment. Close on a new line;
+    // a // inside a string merely adds harmless whitespace after the expression.
+    const closingLine = condition.includes('//') ? '\n' : '';
+    lines.push(`if (${condition}${closingLine})`);
     lines.push('{');
     lines.push(...this.renderBranch(this.thenActions, indentUnit, options));
 
