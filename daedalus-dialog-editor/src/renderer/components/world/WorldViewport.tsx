@@ -337,7 +337,8 @@ export interface WorldViewportProps {
   /** A click that hit a waypoint in the overlay. */
   onSelectWaypoint: (waypoint: number | null) => void;
   /** The routine drawn as stops and routes over the waynet — routine mode's
-   *  draft, or a routine previewed from the waypoint panel; null for none. */
+   *  draft, or the routine of the NPC spawned on the selected waypoint; null
+   *  for none. */
   routineDraft?: { entries: readonly RoutineEntry[]; selected: number | null } | null;
   /**
    * A finished waypoint drag, in **ZenGin space** — a destination rather than a

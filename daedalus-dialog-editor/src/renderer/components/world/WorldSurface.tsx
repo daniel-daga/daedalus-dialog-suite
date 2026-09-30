@@ -1755,14 +1755,23 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     startRoutine(routineAfterOpen);
   }, [routineAfterOpen, startRoutine]);
 
-  /** A routine drawn on the map from the waypoint panel, unedited; cleared
-   *  with the waypoint it was shown from. */
-  const [previewedRoutine, setPreviewedRoutine] = useState<{ npc: string; routine: string } | null>(null);
-  useEffect(() => { setPreviewedRoutine(null); }, [selectedWaypoint]);
-  const previewDraft = useMemo(() => (previewedRoutine === null
+  /**
+   * Outside routine mode a routine is drawn only while its NPC's spawn
+   * waypoint is selected (Daniel, 2026-09-30): the daily routine of the first
+   * NPC spawned there that has one, or of the one chosen in the waypoint
+   * panel when several share the spawn.
+   */
+  const spawnRoutineNpcs = useMemo(() => [...new Set(waypointSpawns.map((site) => site.instance.toUpperCase()))]
+    .filter((npc) => routineNpcIndex[npc] !== undefined), [waypointSpawns, routineNpcIndex]);
+  const [chosenSpawnNpc, setChosenSpawnNpc] = useState<string | null>(null);
+  useEffect(() => { setChosenSpawnNpc(null); }, [selectedWaypoint]);
+  const shownSpawnNpc = chosenSpawnNpc !== null && spawnRoutineNpcs.includes(chosenSpawnNpc)
+    ? chosenSpawnNpc
+    : spawnRoutineNpcs[0] ?? null;
+  const spawnRoutineDraft = useMemo(() => (shownSpawnNpc === null
     ? null
-    : { entries: routinePreview(routineSiteIndex, previewedRoutine.routine), selected: null }),
-  [previewedRoutine, routineSiteIndex]);
+    : { entries: routinePreview(routineSiteIndex, routineNpcIndex[shownSpawnNpc]), selected: null }),
+  [shownSpawnNpc, routineSiteIndex, routineNpcIndex]);
   /** A waypoint click: routine mode's pending pick takes it first. */
   const { takeWaypointPick } = routineMode;
   const handleSelectWaypoint = useCallback((waypoint: number | null) => {
@@ -2459,7 +2468,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               scatterRadius={scatterBrushRadius}
               onScatterStroke={handleScatterStroke}
               onSelectWaypoint={handleSelectWaypoint}
-              routineDraft={routineMode.draft ?? previewDraft}
+              routineDraft={routineMode.mode !== null ? routineMode.draft : spawnRoutineDraft}
               onMoveWaypoint={moveWaypointTo}
               paused={hidden}
             />
@@ -2544,8 +2553,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                       })}
                       onInsertNpc={() => openInsertNpcAtWaypoint(waynet.names[selectedWaypoint])}
                       onEditRoutines={openRoutineMode}
-                      onPreviewRoutine={setPreviewedRoutine}
-                      previewRoutine={previewedRoutine?.routine ?? null}
+                      routineNpcs={spawnRoutineNpcs}
+                      shownRoutineNpc={shownSpawnNpc}
+                      onShowRoutineNpc={setChosenSpawnNpc}
                     />
                   )
                   : (

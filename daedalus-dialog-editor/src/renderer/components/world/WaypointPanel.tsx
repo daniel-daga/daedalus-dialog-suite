@@ -28,7 +28,9 @@ import {
  * Who stands here is also where a routine is edited from inside the world
  * (npc-editor.md §6, Daniel 2026-09-29): a spawn marker's click selects this
  * waypoint, so every NPC spawned here and every routine stopping here carries
- * an "Edit routines" button, and a routine's row draws it on the map.
+ * an "Edit routines" button. A spawn's NPC has its routine drawn while this
+ * waypoint is selected (Daniel, 2026-09-30); when several share it, their rows
+ * choose whose.
  *
  * The delete is §16.7's W4 and is here for the same reason, but it is the one
  * control that does not commit: it *asks*, because the op is a barrier (§15)
@@ -59,13 +61,15 @@ const WaypointPanel: React.FC<{
   onInsertNpc: () => void;
   /** Open routine mode on this NPC, on `routine` if given. */
   onEditRoutines?: (npc: string, routine?: string) => void;
-  /** Draw this routine on the map, or stop drawing it (null). */
-  onPreviewRoutine?: (preview: { npc: string; routine: string } | null) => void;
-  /** The routine drawn on the map now, if one is. */
-  previewRoutine?: string | null;
+  /** The NPCs spawned here whose daily routine can be drawn, uppercase. */
+  routineNpcs?: readonly string[];
+  /** Whose routine is drawn on the map now, if anyone's. */
+  shownRoutineNpc?: string | null;
+  /** Draw this NPC's routine instead, when several share the spawn. */
+  onShowRoutineNpc?: (npc: string) => void;
 }> = ({
   name, routines, spawns, onRename, neighbours, resolveWaypoint, onConnect, onDisconnect,
-  onDelete, onInsertNpc, onEditRoutines, onPreviewRoutine, previewRoutine = null,
+  onDelete, onInsertNpc, onEditRoutines, routineNpcs = [], shownRoutineNpc = null, onShowRoutineNpc,
 }) => {
   const editButton = (npc: string, routine?: string) => onEditRoutines && (
     <Button
@@ -154,54 +158,31 @@ const WaypointPanel: React.FC<{
       </Typography>
       {spawns.length > 0 && (
         <List dense disablePadding data-testid="world-waypoint-spawns">
-          {spawns.map((spawn, index) => (
-            <ListItem
-              key={`${spawn.filePath}:${spawn.functionName}:${spawn.instance}:${index}`}
-              disablePadding
-              sx={{ py: 0.25 }}
-              secondaryAction={editButton(spawn.instance)}
-            >
+          {spawns.map((spawn, index) => {
+            const text = (
               <ListItemText
                 primary={spawn.instance}
                 secondary={`spawned in ${spawn.functionName} — ${baseName(spawn.filePath)}`}
                 primaryTypographyProps={{ variant: 'body2' }}
                 secondaryTypographyProps={{ variant: 'caption', color: 'text.secondary' }}
               />
-            </ListItem>
-          ))}
-        </List>
-      )}
-      {otherSites.length === 0 && spawns.length === 0 ? (
-        <Typography variant="caption" color="text.secondary">
-          No script in this project names it.
-        </Typography>
-      ) : (
-        <List dense disablePadding data-testid="world-waypoint-sites">
-          {otherSites.map((routine, index) => {
-            const text = (
-              <ListItemText
-                primary={routine.functionName}
-                secondary={routine.npc ? `${routine.npc} — ${baseName(routine.filePath)}` : baseName(routine.filePath)}
-                primaryTypographyProps={{ variant: 'body2' }}
-                secondaryTypographyProps={{ variant: 'caption', color: 'text.secondary' }}
-              />
             );
-            const npc = routine.npc;
-            const shown = previewRoutine !== null && previewRoutine.toUpperCase() === routine.functionName.toUpperCase();
+            const npc = spawn.instance.toUpperCase();
+            const shown = shownRoutineNpc === npc;
             return (
               <ListItem
-                key={`${routine.filePath}:${routine.functionName}:${index}`}
+                key={`${spawn.filePath}:${spawn.functionName}:${spawn.instance}:${index}`}
                 disablePadding
                 sx={{ py: 0.25 }}
-                secondaryAction={npc ? editButton(npc, routine.functionName) : undefined}
+                secondaryAction={editButton(spawn.instance)}
               >
-                {npc && onPreviewRoutine ? (
+                {onShowRoutineNpc && routineNpcs.length > 1 && routineNpcs.includes(npc) ? (
                   <ListItemButton
                     dense
                     selected={shown}
                     aria-pressed={shown}
-                    aria-label={`Show the routine ${routine.functionName} of ${npc}`}
-                    onClick={() => onPreviewRoutine(shown ? null : { npc, routine: routine.functionName })}
+                    aria-label={`Show the routine of ${spawn.instance}`}
+                    onClick={() => onShowRoutineNpc(npc)}
                     sx={{ px: 0.5 }}
                   >
                     {text}
@@ -210,6 +191,29 @@ const WaypointPanel: React.FC<{
               </ListItem>
             );
           })}
+        </List>
+      )}
+      {otherSites.length === 0 && spawns.length === 0 ? (
+        <Typography variant="caption" color="text.secondary">
+          No script in this project names it.
+        </Typography>
+      ) : (
+        <List dense disablePadding data-testid="world-waypoint-sites">
+          {otherSites.map((routine, index) => (
+            <ListItem
+              key={`${routine.filePath}:${routine.functionName}:${index}`}
+              disablePadding
+              sx={{ py: 0.25 }}
+              secondaryAction={routine.npc ? editButton(routine.npc, routine.functionName) : undefined}
+            >
+              <ListItemText
+                primary={routine.functionName}
+                secondary={routine.npc ? `${routine.npc} — ${baseName(routine.filePath)}` : baseName(routine.filePath)}
+                primaryTypographyProps={{ variant: 'body2' }}
+                secondaryTypographyProps={{ variant: 'caption', color: 'text.secondary' }}
+              />
+            </ListItem>
+          ))}
         </List>
       )}
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>

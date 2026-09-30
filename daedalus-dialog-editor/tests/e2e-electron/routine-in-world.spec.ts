@@ -37,6 +37,20 @@ const OTHER_NPC_FILE = `INSTANCE BAU_901_Bauer (C_NPC)
 };
 `;
 
+// A second NPC on Onar's spawn, with a routine of his own.
+const SHARED_SPAWN_NPC_FILE = `INSTANCE BAU_902_Knecht (C_NPC)
+{
+	name = "Knecht";
+	id = 902;
+	daily_routine = Rtn_Start_902;
+};
+
+FUNC VOID Rtn_Start_902()
+{
+	TA_Sleep (00,00,00,00,"WP_FIXTURE_C");
+};
+`;
+
 const NPC_FILE = `INSTANCE BAU_900_Onar (C_NPC)
 {
 	name = "Onar";
@@ -70,6 +84,7 @@ const STARTUP_FILE = `FUNC VOID STARTUP_MINIMAL()
 {
 	Wld_InsertNpc (BAU_900_Onar, "WP_FIXTURE_A");
 	Wld_InsertNpc (BAU_901_Bauer, "WP_FIXTURE_C");
+	Wld_InsertNpc (BAU_902_Knecht, "WP_FIXTURE_A");
 };
 `;
 
@@ -96,6 +111,7 @@ test.describe('Routine editing in the World surface', () => {
     fs.copyFileSync(FIXTURE_WORLD, path.join(projectDir, 'OTHER.ZEN'));
     fs.writeFileSync(path.join(projectDir, 'Onar.d'), NPC_FILE, 'latin1');
     fs.writeFileSync(path.join(projectDir, 'Bauer.d'), OTHER_NPC_FILE, 'latin1');
+    fs.writeFileSync(path.join(projectDir, 'Knecht.d'), SHARED_SPAWN_NPC_FILE, 'latin1');
     fs.writeFileSync(path.join(projectDir, 'TA.d'), TA_FILE, 'latin1');
     fs.writeFileSync(path.join(projectDir, 'Startup.d'), STARTUP_FILE, 'latin1');
     fs.writeFileSync(
@@ -220,7 +236,34 @@ test.describe('Routine editing in the World surface', () => {
     await expect.poll(() => routineStops(page)).toEqual(['WP_FIXTURE_C', 'WP_FIXTURE_B']);
   });
 
-  test('a waypoint lists whose routine stops there; a row previews it, and its button opens the editor', async () => {
+  test('a routine is drawn only while its NPC\'s spawn waypoint is selected', async () => {
+    const { page } = fixture;
+    await openProject(page);
+    await openWorldFromPicker(page, 'MINIMAL.ZEN');
+    expect(await routineStops(page)).toBeNull();
+
+    // A spawn: the first NPC spawned there, drawn without asking.
+    await pickWaypoint(page, 'WP_FIXTURE_A');
+    const spawns = page.getByTestId('world-waypoint-spawns');
+    await expect(spawns).toContainText('BAU_902_KNECHT');
+    await expect.poll(() => routineStops(page)).toEqual(['WP_FIXTURE_A', 'WP_FIXTURE_B']);
+    // Two NPCs share it; the row says whose.
+    await spawns.getByRole('button', { name: 'Show the routine of BAU_902_KNECHT' }).click();
+    await expect.poll(() => routineStops(page)).toEqual(['WP_FIXTURE_C']);
+
+    // Only a stop of Onar's routine, no spawn: nothing drawn, nothing offered.
+    await pickWaypoint(page, 'WP_FIXTURE_B');
+    await expect(page.getByTestId('world-waypoint-panel')).toBeVisible();
+    await expect.poll(() => routineStops(page)).toBeNull();
+    await expect(page.getByRole('button', { name: /^Show the routine/ })).toHaveCount(0);
+
+    // A spawn whose NPC has no routine draws none.
+    await pickWaypoint(page, 'WP_FIXTURE_C');
+    await expect(spawns).toContainText('BAU_901_BAUER');
+    await expect.poll(() => routineStops(page)).toBeNull();
+  });
+
+  test('a routine stop is listed on its waypoint, and its button opens the editor', async () => {
     const { page } = fixture;
     await openProject(page);
     await openWorldFromPicker(page, 'MINIMAL.ZEN');
@@ -228,10 +271,6 @@ test.describe('Routine editing in the World surface', () => {
     await pickWaypoint(page, 'WP_FIXTURE_B');
     const panel = page.getByTestId('world-waypoint-panel');
     await expect(panel).toBeVisible();
-    expect(await routineStops(page)).toBeNull();
-
-    await panel.getByRole('button', { name: `Show the routine RTN_START_900 of ${NPC.toUpperCase()}` }).click();
-    await expect.poll(() => routineStops(page)).toEqual(['WP_FIXTURE_A', 'WP_FIXTURE_B']);
 
     await panel.getByRole('button', { name: `Edit routines of ${NPC.toUpperCase()}` }).first().click();
     await expect(editor(page)).toBeVisible();
