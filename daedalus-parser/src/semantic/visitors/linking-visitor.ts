@@ -59,7 +59,6 @@ export class LinkingVisitor {
     this.currentFunction = null;
     this.conditionFunctions = new Set<string>();
     this.functionToDialogs = new Map<string, Dialog[]>();
-    this.preservedStatementRanges = new Map<string, Set<string>>;
     this.consumedCommentRanges = new Set<string>();
   }
 

@@ -126,3 +126,30 @@ test('logical clause roots are captured once across expression families', () => 
     assertEquivalent(`if ((${atom}) ${operator} C) { return TRUE; };`);
   }
 });
+
+test('single-dialog export includes choices nested in branches and their transitive targets', () => {
+  const source = `
+    instance D(C_INFO) { information = Check; };
+    func void Check() {
+      if (A) { Info_AddChoice(D, "first", bRaNcH); }
+      else { Info_AddChoice(D, "second", Other); };
+    };
+    func void Branch() {
+      Info_AddChoice(D, "again", cHeCk);
+      Info_AddChoice(D, "deeper", Leaf);
+    };
+    func void Other() {};
+    func void Leaf() {};
+  `;
+  const model = parseSemanticModel(source);
+  assert.equal(model.hasErrors, false);
+  for (const candidate of [model, deserializeSemanticModel(JSON.parse(JSON.stringify(model)))]) {
+    const generated = generator.generateDialogWithFunctions('D', candidate);
+    const reparsed = parseSemanticModel(generated);
+    assert.equal(reparsed.hasErrors, false, generated);
+    assert.deepEqual(Object.keys(reparsed.functions).sort(), ['Branch', 'Check', 'Leaf', 'Other']);
+    for (const name of ['Branch', 'Check', 'Leaf', 'Other']) {
+      assert.equal(generated.split(`func void ${name}(`).length - 1, 1, generated);
+    }
+  }
+});
