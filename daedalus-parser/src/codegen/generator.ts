@@ -616,6 +616,10 @@ export class SemanticCodeGenerator {
    * Each action knows how to generate its own code
    */
   generateAction(action: DialogAction): string {
+    if (this.options.includeComments && 'sourceText' in action) {
+      const sourceText = (action as DialogAction & { sourceText?: string }).sourceText;
+      if (sourceText) return sourceText.trimEnd().endsWith(';') ? sourceText : sourceText + ';';
+    }
     return (action as CodeGeneratable).generateCode({
       includeComments: this.options.includeComments,
       indentUnit: this.indent()

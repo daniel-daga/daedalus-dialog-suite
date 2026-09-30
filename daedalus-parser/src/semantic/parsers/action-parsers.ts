@@ -28,6 +28,7 @@ import {
   InsertNpcAction
 } from '../semantic-model';
 import { parseArgumentsDetailed, parseNumericArg, ParsedArg } from './argument-parsing';
+import { hasComment } from './ast-constants';
 
 export class ActionParsers {
 
@@ -40,6 +41,12 @@ export class ActionParsers {
    */
   static parseSemanticAction(node: TreeSitterNode, functionName: string): DialogAction {
     const specific = ActionParsers.parseSpecificAction(node, functionName);
+    // Typed action models normalize arguments, so comments embedded in the
+    // call would otherwise disappear on generation. Keep the semantic type,
+    // but attach the complete call for the comment-aware generator path.
+    if (specific && hasComment(node)) {
+      (specific as DialogAction & { sourceText?: string }).sourceText = node.text.trim();
+    }
     return specific ?? ActionParsers.parseGenericAction(node);
   }
 
@@ -282,8 +289,8 @@ export class ActionParsers {
    * Parse Npc_SetRefuseTalk function call
    */
   static parseSetRefuseTalkCall(node: TreeSitterNode): SetRefuseTalkAction | null {
-    return ActionParsers.parseActionWithArgs(node, { min: 1, max: 2 }, (args) =>
-      new SetRefuseTalkAction(args[0].raw, parseNumericArg(args[1] ? args[1].raw : undefined, 300))
+    return ActionParsers.parseActionWithArgs(node, 2, (args) =>
+      new SetRefuseTalkAction(args[0].raw, parseNumericArg(args[1].raw, 300))
     );
   }
 

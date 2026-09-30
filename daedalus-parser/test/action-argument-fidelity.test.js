@@ -14,6 +14,7 @@ const { test } = require('node:test');
 const { strict: assert } = require('node:assert');
 const DaedalusParser = require('../src/core/parser');
 const { SemanticModelBuilderVisitor } = require('../dist/semantic/semantic-visitor');
+const { deserializeSemanticModel } = require('../dist/semantic/semantic-model');
 const { SemanticCodeGenerator } = require('../dist/codegen/generator');
 
 const parser = DaedalusParser.create();
@@ -73,6 +74,13 @@ const cases = [
     assert: (action) => {
       assert.equal(action.type, 'SetRefuseTalkAction');
       assert.equal(action.seconds, 'RefuseSeconds');
+    }
+  },
+  {
+    name: 'Npc_SetRefuseTalk with a missing seconds argument stays raw',
+    body: 'Npc_SetRefuseTalk (self);',
+    assert: (action) => {
+      assert.equal(action.type, 'Action');
     }
   },
   {
@@ -208,6 +216,37 @@ test('multiline string literal bytes survive repeated generation', () => {
       current = generated;
     }
   }
+});
+
+test('typed actions with embedded comments stay verbatim across generation', () => {
+  const source = wrapInInfoFunction(
+    'CreateInvItems (self, /* preserve this comment */ ItMi_Gold, 1);'
+  );
+  const model = buildModel(source);
+  const action = model.functions.DIA_T_Info.actions[0];
+  assert.equal(action.type, 'CreateInventoryItems');
+  assert.equal(action.sourceText, 'CreateInvItems (self, /* preserve this comment */ ItMi_Gold, 1)');
+  const generated = new SemanticCodeGenerator({
+    includeComments: true,
+    sectionHeaders: false,
+    preserveSourceStyle: true
+  }).generateSemanticModel(model);
+  assert.deepEqual(tokenTexts(generated), tokenTexts(source));
+  assert.match(generated, /preserve this comment/);
+});
+
+test('embedded action comments survive semantic-model hydration', () => {
+  const source = wrapInInfoFunction(
+    'CreateInvItems (self, /* preserve after IPC */ ItMi_Gold, 1);'
+  );
+  const hydrated = deserializeSemanticModel(JSON.parse(JSON.stringify(buildModel(source))));
+  const generated = new SemanticCodeGenerator({
+    includeComments: true,
+    sectionHeaders: false,
+    preserveSourceStyle: true
+  }).generateSemanticModel(hydrated);
+  assert.deepEqual(tokenTexts(generated), tokenTexts(source));
+  assert.match(generated, /preserve after IPC/);
 });
 
 for (const testCase of cases) {
