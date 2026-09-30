@@ -30,10 +30,14 @@ function assertEquivalent(body) {
   const expected = new Script(`(function () { ${body} })()`);
   roundtrips(sourceFor(body), (_model, generated) => {
     const actual = new Script(`(function () { ${bodyOf(generated)} })()`);
-    for (const A of [0, 1, 2]) for (const B of [0, 1, 2]) for (const C of [0, 1, 2]) {
-      const values = { A, B, C, TRUE: 1, FALSE: 0, other: 0, item: 0, Npc_HasItems: () => C };
-      assert.equal(Boolean(actual.runInNewContext(values)), Boolean(expected.runInNewContext(values)),
-        `${body}; A=${A}, B=${B}, C=${C}\n${generated}`);
+    for (const A of [0, 1, 2]) {
+      for (const B of [0, 1, 2]) {
+        for (const C of [0, 1, 2]) {
+          const values = { A, B, C, TRUE: 1, FALSE: 0, other: 0, item: 0, Npc_HasItems: () => C };
+          assert.equal(Boolean(actual.runInNewContext(values)), Boolean(expected.runInNewContext(values)),
+            `${body}; A=${A}, B=${B}, C=${C}\n${generated}`);
+        }
+      }
     }
   });
 }
@@ -85,8 +89,12 @@ for (const body of [
   test(`condition comments are preserved without inventing success: ${body}`, () => {
     const comments = body.match(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g);
     roundtrips(sourceFor(body), (_model, generated) => {
-      for (const comment of comments) assert.ok(generated.includes(comment), generated);
-      if (body.startsWith('// only')) assert.doesNotMatch(generated, /return\s+TRUE/i);
+      for (const comment of comments) {
+        assert.ok(generated.includes(comment), generated);
+      }
+      if (body.startsWith('// only')) {
+        assert.doesNotMatch(generated, /return\s+TRUE/i);
+      }
     });
   });
 }
@@ -122,8 +130,10 @@ test('generic clauses ending in a line comment cannot swallow generated delimite
 test('logical clause roots are captured once across expression families', () => {
   // Cover combinations rather than one fixture per recently reported syntax.
   const atoms = ['A', '!A', '!(A == B)', 'A < B < C', '(A + B)', '((A | B) == C)'];
-  for (const atom of atoms) for (const operator of ['&&', '||']) {
-    assertEquivalent(`if ((${atom}) ${operator} C) { return TRUE; };`);
+  for (const atom of atoms) {
+    for (const operator of ['&&', '||']) {
+      assertEquivalent(`if ((${atom}) ${operator} C) { return TRUE; };`);
+    }
   }
 });
 
