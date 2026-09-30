@@ -1682,12 +1682,17 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    * unsaved edits — and failing that the picker is offered. The editor opens
    * over whichever world that lands on, with the spawns shown (Daniel,
    * 2026-09-30) and the camera on the routine's first stop — framed only: a
-   * jump would select the waypoint and switch the whole waynet on.
+   * jump would select the waypoint and switch the whole waynet on. A spawn
+   * layer switched on here is switched off again when routine mode ends.
    */
   const { open: openRoutineMode } = routineMode;
+  const spawnsOnForRoutine = useRef(false);
   const startRoutine = useCallback((request: RoutineRequest) => {
     openRoutineMode(request.npc, request.routine);
-    if (!showSpawns) void toggleSpawns();
+    if (!showSpawns) {
+      spawnsOnForRoutine.current = true;
+      void toggleSpawns();
+    }
     const routine = request.routine ?? routineNpcIndex[request.npc.toUpperCase()];
     const first = routine === undefined ? undefined : routinePreview(routineSiteIndex, routine)[0];
     const wanted = first?.waypoint.toUpperCase();
@@ -1699,6 +1704,19 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       viewportRef.current?.framePoint([positions[at * 3], positions[at * 3 + 1], positions[at * 3 + 2]]);
     }
   }, [openRoutineMode, showSpawns, toggleSpawns, routineNpcIndex, routineSiteIndex, waynet]);
+
+  useEffect(() => {
+    if (routineMode.mode !== null || !spawnsOnForRoutine.current) return;
+    spawnsOnForRoutine.current = false;
+    if (showSpawns) void toggleSpawns();
+  }, [routineMode.mode, showSpawns, toggleSpawns]);
+  /** In routine mode the spawn layer is the routine's NPC alone: everyone's
+   *  spawn reads as clutter around the stops (Daniel, 2026-09-30). */
+  const routineNpc = routineMode.mode?.npc.toUpperCase() ?? null;
+  const shownSpawns = useMemo(() => (routineNpc === null
+    ? spawnSiteIndex
+    : spawnSiteIndex.filter((site) => site.instance.toUpperCase() === routineNpc)),
+  [spawnSiteIndex, routineNpc]);
 
   const openRoutineWorld = useCallback(async (request: RoutineRequest) => {
     let found: DiscoveredWorld | null = null;
@@ -2411,7 +2429,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               bbox={summary.bbox}
               waynet={waynet}
               showWaynet={showWaynet}
-              spawns={spawnSiteIndex}
+              spawns={shownSpawns}
               npcBodyRequests={spawnBodyRequests}
               showSpawns={showSpawns}
               routines={routines}

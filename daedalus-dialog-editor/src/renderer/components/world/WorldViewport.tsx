@@ -93,6 +93,9 @@ declare global {
       /** The stops the routine overlay draws, as the waynet spells them, or
        *  null while it draws none (npc-editor.md §6). */
       routineStops: () => string[] | null;
+      /** The waypoints the spawn layer marks, sorted, or null while it is
+       *  hidden. */
+      spawnMarkers: () => string[] | null;
       /** The anchor VOB's 3x3 as drawn, row-major, or null if detached. */
       gizmoRotation: () => number[] | null;
       /** Report a click that hit the world mesh rather than a VOB, at a point in
@@ -1161,6 +1164,12 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       waypointIndex: (name) => waynetRef.current?.names
         .findIndex((each) => each.toUpperCase() === name.toUpperCase()) ?? -1,
       routineStops: () => (routineOverlayRef.current ? [...routineOverlayRef.current.drawn] : null),
+      spawnMarkers: () => {
+        const overlay = spawnOverlayRef.current;
+        const names = waynetRef.current?.names;
+        if (!overlay?.root.visible || !names) return null;
+        return overlay.labelledPoints.map((point) => names[point]).sort();
+      },
       renderFrom: async (from, at) => {
         // A half-loaded scene is a different scene, and an untextured material
         // draws its flat colour — which a pixel check would read as ground that

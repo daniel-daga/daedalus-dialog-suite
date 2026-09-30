@@ -29,6 +29,14 @@ const FIXTURE_WORLD = path.resolve(
 
 const NPC = 'BAU_900_Onar';
 
+// Someone else in the same world, whose spawn routine mode must not draw.
+const OTHER_NPC_FILE = `INSTANCE BAU_901_Bauer (C_NPC)
+{
+	name = "Bauer";
+	id = 901;
+};
+`;
+
 const NPC_FILE = `INSTANCE BAU_900_Onar (C_NPC)
 {
 	name = "Onar";
@@ -61,6 +69,7 @@ FUNC VOID TA_Sleep(var int start_h, var int start_m, var int stop_h, var int sto
 const STARTUP_FILE = `FUNC VOID STARTUP_MINIMAL()
 {
 	Wld_InsertNpc (BAU_900_Onar, "WP_FIXTURE_A");
+	Wld_InsertNpc (BAU_901_Bauer, "WP_FIXTURE_C");
 };
 `;
 
@@ -86,6 +95,7 @@ test.describe('Routine editing in the World surface', () => {
     fs.copyFileSync(FIXTURE_WORLD, path.join(projectDir, 'MINIMAL.ZEN'));
     fs.copyFileSync(FIXTURE_WORLD, path.join(projectDir, 'OTHER.ZEN'));
     fs.writeFileSync(path.join(projectDir, 'Onar.d'), NPC_FILE, 'latin1');
+    fs.writeFileSync(path.join(projectDir, 'Bauer.d'), OTHER_NPC_FILE, 'latin1');
     fs.writeFileSync(path.join(projectDir, 'TA.d'), TA_FILE, 'latin1');
     fs.writeFileSync(path.join(projectDir, 'Startup.d'), STARTUP_FILE, 'latin1');
     fs.writeFileSync(
@@ -133,6 +143,7 @@ test.describe('Routine editing in the World surface', () => {
   }
 
   const routineStops = (page: Page) => page.evaluate(() => window.__worldViewport?.routineStops() ?? null);
+  const spawnMarkers = (page: Page) => page.evaluate(() => window.__worldViewport?.spawnMarkers() ?? null);
   const pickWaypoint = (page: Page, name: string) => page.evaluate((wanted) => {
     const viewport = window.__worldViewport!;
     viewport.pickWaypoint(viewport.waypointIndex(wanted));
@@ -154,10 +165,30 @@ test.describe('Routine editing in the World surface', () => {
     await expect(activity(page, 1).getByLabel('Waypoint', { exact: true })).toHaveValue('WP_FIXTURE_A');
     // The routine is drawn over the world while it is edited — and only the
     // routine: the whole waynet would read as every routine's stops. Spawns
-    // are on, since that is who the routine is about (Daniel, 2026-09-30).
+    // are on, since that is who the routine is about (Daniel, 2026-09-30) —
+    // and only this NPC's: everyone's clutters the map (Daniel, 2026-09-30).
     await expect.poll(() => routineStops(page)).toEqual(['WP_FIXTURE_A', 'WP_FIXTURE_B']);
     await expect(page.getByTestId('world-waynet-toggle')).toHaveAttribute('aria-pressed', 'false');
     await expect(page.getByTestId('world-spawns-toggle')).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(() => spawnMarkers(page)).toEqual(['WP_FIXTURE_A']);
+  });
+
+  test('closing the editor takes the routine off the map and puts the spawn layer back', async () => {
+    const { page } = fixture;
+    await openProject(page);
+    await editInWorldFromNpcEditor(page);
+    await expect(editor(page)).toBeVisible({ timeout: 30000 });
+    await expect.poll(() => routineStops(page)).toEqual(['WP_FIXTURE_A', 'WP_FIXTURE_B']);
+
+    await editor(page).getByRole('button', { name: 'Cancel' }).click();
+    await expect(editor(page)).toHaveCount(0);
+    await expect.poll(() => routineStops(page)).toBeNull();
+    // It was off before "In world" switched it on.
+    await expect(page.getByTestId('world-spawns-toggle')).toHaveAttribute('aria-pressed', 'false');
+
+    // Outside routine mode the layer is everyone's again.
+    await page.getByTestId('world-spawns-toggle').click();
+    await expect.poll(() => spawnMarkers(page)).toEqual(['WP_FIXTURE_A', 'WP_FIXTURE_C']);
   });
 
   test('Pick hides the editor and the bar says what to click; Abort returns, a waypoint fills the stop', async () => {
