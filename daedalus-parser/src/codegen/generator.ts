@@ -607,9 +607,12 @@ export class SemanticCodeGenerator {
    * Generate code for a dialog condition using polymorphism
    */
   private generateCondition(condition: DialogCondition): string {
-    return (condition as CodeGeneratable).generateCode({
+    const code = (condition as CodeGeneratable).generateCode({
       includeComments: this.options.includeComments
     });
+    // Raw/editor-authored clauses may contain lower-precedence operators or
+    // end in a line comment. Each is one operand, with a safe closing line.
+    return condition.type === 'Condition' ? `(${code}\n${this.indent()})` : code;
   }
 
   /**

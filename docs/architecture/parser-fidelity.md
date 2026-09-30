@@ -41,6 +41,39 @@ P1–P7, M1–M5, N1–N10). The governing principle:
   `propertyTrailingComments` / `trailingBodyComments`; files carry
   `SemanticModel.trailingComments` (EOF comments).
 
+## Conditional projection boundary
+
+Condition functions are classified as whole bodies before extracting predicates.
+The flat editor representation is used for a single comment-free
+`if (expression) { return TRUE; };` with a uniform AND or OR operator, or an
+unconditional `return TRUE;` / `return 1;`. Only parentheses and logical
+composition are traversed when collecting clauses; calls, unary expressions,
+comparisons, arithmetic, member access and array access are atomic roots.
+Their descendants must never become extra predicates.
+
+Nested guards, alternative branches, additional statements, mixed AND/OR, and
+commented bodies remain raw actions. This retains explicit branch boundaries
+without assuming that a compiler short-circuits logical operators. It also
+retains comment positions that the flat fields cannot express. The editor shows
+these bodies as raw actions rather than editable typed condition rows. Call-site
+indexing remains a separate full-body pass, including raw expressions.
+
+Comparison normalization may swap operands only when the moved operand is a
+literal. Compound operands can change associativity, and calls or identifier
+reads can observe evaluation order. Quoted `"TRUE"` / `"FALSE"` values are not
+Boolean constants. Unsupported comparisons stay verbatim.
+
+The generator brackets generic condition clauses as individual operands and
+puts their closing delimiter on a new line so a trailing `//` cannot consume it.
+Conditional action headers use AST parentheses, never character counting;
+commented headers fall back to raw source.
+
+`test/conditional-path-review.test.js` checks source-based truth tables, call
+order, explicit branch boundaries, comments, manual model edits, JSON hydration,
+and three parse/generate cycles. The JavaScript oracle is limited to the tested
+shared expression semantics; it does not establish Gothic engine behavior or
+replace a real mod corpus run.
+
 ## Generation order
 
 When a model has `declarationOrder` (i.e. it came from a parse), the

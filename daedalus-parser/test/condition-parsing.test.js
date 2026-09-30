@@ -189,7 +189,7 @@ test('Should generate condition function with if statement', () => {
     'Should return TRUE in if block');
 });
 
-test('Multiple conditions should be handled', () => {
+test('Nested condition guards retain their explicit control flow', () => {
   const dialogWithMultipleConditions = `
 instance DIA_Test_Multi(C_INFO)
 {
@@ -222,11 +222,12 @@ func void DIA_Test_Multi_Info()
   const dialog = model.dialogs['DIA_Test_Multi'];
   const conditionFunc = dialog.properties.condition;
 
-  assert.strictEqual(conditionFunc.conditions.length, 2, 'Should parse 2 conditions');
-  assert.ok(conditionFunc.conditions[0] instanceof NpcKnowsInfoCondition, 'First should be NpcKnowsInfo');
-  assert.ok(conditionFunc.conditions[1] instanceof NpcKnowsInfoCondition, 'Second should be NpcKnowsInfo');
-  assert.strictEqual(conditionFunc.conditions[0].dialogRef, 'DIA_First', 'First ref should be DIA_First');
-  assert.strictEqual(conditionFunc.conditions[1].dialogRef, 'DIA_Second', 'Second ref should be DIA_Second');
+  assert.strictEqual(conditionFunc.conditions.length, 0, 'A flat list cannot retain a branch boundary');
+  assert.strictEqual(conditionFunc.actions.length, 1);
+  const code = conditionFunc.actions[0].generateCode({});
+  assert.strictEqual((code.match(/\bif\s*\(/g) || []).length, 2);
+  assert.ok(code.indexOf('DIA_First') < code.indexOf('DIA_Second'));
+  assert.deepEqual(conditionFunc.calls, ['Npc_KnowsInfo', 'Npc_KnowsInfo']);
 });
 
 test('Should parse variable conditions with negation', () => {
