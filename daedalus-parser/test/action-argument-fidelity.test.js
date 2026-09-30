@@ -179,6 +179,37 @@ const cases = [
   }
 ];
 
+test('multiline string literal bytes survive repeated generation', () => {
+  const bodies = [
+    'Info_AddChoice (DIA_Test, "First\nSecond", DIA_Test_Choice);',
+    'B_LogEntry (TOPIC_Test, "First\nSecond");',
+    'AI_Output (self, other, "First\nSecond");',
+    'Npc_ExchangeRoutine (self, "First\nSecond");',
+    'AI_PlayAni (self, "First\nSecond");',
+    'Custom_Action ("First\nSecond");',
+    'if (TRUE) { Info_AddChoice (DIA_Test, "First\nSecond", DIA_Test_Choice); };'
+  ];
+
+  for (const body of bodies) {
+    const original = wrapInInfoFunction(body);
+    let current = original;
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const model = buildModel(current);
+      const generated = new SemanticCodeGenerator({
+        includeComments: true,
+        sectionHeaders: false,
+        preserveSourceStyle: true
+      }).generateSemanticModel(model);
+      assert.deepEqual(
+        tokenTexts(generated),
+        tokenTexts(original),
+        'string token changed on cycle ' + (cycle + 1) + ':\n' + generated
+      );
+      current = generated;
+    }
+  }
+});
+
 for (const testCase of cases) {
   test(`argument fidelity: ${testCase.name}`, () => {
     const source = wrapInInfoFunction(testCase.body);

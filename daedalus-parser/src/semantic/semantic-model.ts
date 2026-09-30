@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import { Type, plainToInstance, ClassConstructor } from 'class-transformer';
+import { indentGeneratedCode } from './code-formatting';
 import { createNameRecord, resolveCaseInsensitive } from './name-utils';
 
 // Semantic model classes and types for Daedalus dialog parsing
@@ -492,14 +493,7 @@ export class ConditionalAction implements CodeGeneratable {
         ...options,
         indentUnit
       });
-      const actionLines = actionCode.split('\n');
-      actionLines.forEach((line) => {
-        if (line.trim()) {
-          lines.push(`${indentUnit}${line}`);
-        } else {
-          lines.push('');
-        }
-      });
+      lines.push(...indentGeneratedCode(actionCode, indentUnit).split('\n'));
     }
 
     return lines;

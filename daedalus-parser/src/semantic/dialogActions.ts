@@ -26,7 +26,10 @@ export class DialogLine implements CodeGeneratable {
 
   generateCode(options: CodeGenOptions): string {
     const shouldEmitComment = options.includeComments && (this.inlineComment ?? this.text !== this.id);
-    const comment = shouldEmitComment ? ` //${this.text}` : '';
+    // A line comment ends at the next physical newline. Prefix every
+    // continuation line so edited subtitle text cannot become Daedalus code.
+    const commentText = this.text.replace(/(\r\n|\r|\n)/g, '$1//');
+    const comment = shouldEmitComment ? ` //${commentText}` : '';
     // Fall back to the speaker-derived default only for legacy serialized
     // lines that carry no listener field.
     const listener = this.listener ?? (this.speaker === 'other' ? 'self' : 'other');

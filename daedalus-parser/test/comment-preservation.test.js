@@ -48,6 +48,54 @@ test('same-line comment after AI_Output is the subtitle; next-line comment is st
   assert.ok(subtitleIdx < standaloneIdx && standaloneIdx < stopIdx, 'standalone comment stays in position');
 });
 
+test('same-line multiline block comment after AI_Output stays a comment', () => {
+  const source = [
+    'func void B_Foo()',
+    '{',
+    '\tAI_Output (self, other, "DIA_Foo_15_00"); /* note',
+    '\tB_GivePlayerXP (100); // */',
+    '};',
+    ''
+  ].join('\n');
+  const model = parseSemanticModel(source);
+  const actions = model.functions.B_Foo.actions;
+
+  assert.ok(actions[0] instanceof DialogLine);
+  assert.ok(actions.some((action) => action instanceof CommentAction));
+  assert.equal(actions.some((action) => action.type === 'GivePlayerXPAction'), false);
+
+  const generated = generate(model);
+  assert.ok(generated.includes('B_GivePlayerXP (100); // */'));
+  const reparsed = parseSemanticModel(generated);
+  assert.equal(reparsed.hasErrors, false);
+  assert.equal(
+    reparsed.functions.B_Foo.actions.some((action) => action.type === 'GivePlayerXPAction'),
+    false,
+    'commented source must not become an action after generation'
+  );
+});
+
+test('multiline edited AI_Output subtitles keep each line commented', () => {
+  const source = [
+    'func void B_Foo()',
+    '{',
+    '\tAI_Output (self, other, "DIA_Foo_15_00"); // first',
+    '};',
+    ''
+  ].join('\n');
+  const model = parseSemanticModel(source);
+  model.functions.B_Foo.actions[0].text = 'first\nB_GivePlayerXP (100);';
+  const generated = generate(model);
+
+  assert.ok(generated.includes('\n\t//B_GivePlayerXP (100);'));
+  const reparsed = parseSemanticModel(generated);
+  assert.equal(reparsed.hasErrors, false);
+  assert.equal(
+    reparsed.functions.B_Foo.actions.some((action) => action.type === 'GivePlayerXPAction'),
+    false
+  );
+});
+
 test('standalone comments in a raw-mode condition body regenerate in place', () => {
   const source = `func int DIA_Foo_Condition()
 {

@@ -11,6 +11,7 @@ import {
   getDialogProperty
 } from '../semantic/semantic-model';
 import { collectReachableFunctions } from '../semantic/cross-references';
+import { indentGeneratedCode } from '../semantic/code-formatting';
 
 // Structural shape shared by GlobalConstant / GlobalVariable / GlobalInstance
 // as far as code generation is concerned.
@@ -542,14 +543,7 @@ export class SemanticCodeGenerator {
       func.actions.forEach(action => {
         const actionCode = this.generateAction(action);
         if (actionCode) {
-          const actionLines = actionCode.split('\n');
-          actionLines.forEach(line => {
-            if (line.trim()) {
-              lines.push(`${indent}${line}`);
-            } else {
-              lines.push('');
-            }
-          });
+          lines.push(...indentGeneratedCode(actionCode, indent).split('\n'));
         }
       });
     } else {

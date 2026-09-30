@@ -407,8 +407,12 @@ export class ActionParsers {
     // Limit search distance to prevent O(N^2) complexity in large blocks
     for (let distance = 0; nextSibling && distance < MAX_SEARCH_DISTANCE; distance++) {
       if (nextSibling.type === 'comment') {
-        // Only a comment on the same row as the call is the subtitle.
-        if (nextSibling.startPosition.row === callNode.endPosition.row) {
+        // Only a same-line `//` comment is a subtitle. A block comment can span
+        // lines of source code, so keep it as a standalone comment action.
+        if (
+          nextSibling.text.startsWith('//') &&
+          nextSibling.startPosition.row === callNode.endPosition.row
+        ) {
           return nextSibling;
         }
         return null;
