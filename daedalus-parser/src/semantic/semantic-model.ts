@@ -829,6 +829,9 @@ export class DialogFunction {
   public keyword?: string;
   public spaceBeforeParen?: boolean;
   public leadingComments?: string[];
+  /** Body comments around a projected guard or unconditional TRUE return. */
+  public conditionBodyLeadingComments?: string[];
+  public conditionBodyTrailingComments?: string[];
   public hasExplicitBodyContent?: boolean;
   public parameters?: FunctionParameter[];
   /** Source range of the whole declaration node, `FUNC` through `};`. */

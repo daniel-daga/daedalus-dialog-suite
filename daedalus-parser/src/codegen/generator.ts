@@ -519,6 +519,13 @@ export class SemanticCodeGenerator {
       .join(', ');
     lines.push(`${funcKeyword} ${returnType} ${func.name}${spaceBeforeParen}(${parameters})`);
     lines.push('{');
+    const emitBodyComments = (comments?: string[]) => {
+      if (!this.options.includeComments || preservedBody) return;
+      for (const comment of comments || []) {
+        for (const line of comment.split('\n')) lines.push(`${indent}${line}`);
+      }
+    };
+    emitBodyComments(func.conditionBodyLeadingComments);
 
     // Use preserved body if provided
     if (preservedBody) {
@@ -560,6 +567,7 @@ export class SemanticCodeGenerator {
       }
     }
 
+    emitBodyComments(func.conditionBodyTrailingComments);
     lines.push('};');
     lines.push('');
 

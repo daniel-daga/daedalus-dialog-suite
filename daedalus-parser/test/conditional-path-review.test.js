@@ -109,6 +109,34 @@ test('nested guards retain their control-flow boundary across IPC and generation
   });
 });
 
+test('comments surrounding a simple gate retain its typed predicate and remain after edits', () => {
+  const source = sourceFor('// before gate\nif (!Npc_KnowsInfo(other, D)) { return TRUE; };\n// after gate\n');
+  roundtrips(source, (model, generated) => {
+    const fn = model.functions.Check;
+    assert.equal(fn.actions.length, 0);
+    assert.equal(fn.conditions.length, 1);
+    assert.equal(fn.conditions[0].type, 'NpcKnowsInfoCondition');
+    assert.equal(fn.conditions[0].negated, true);
+    assert.ok(generated.indexOf('// before gate') < generated.indexOf('if ('), generated);
+    assert.ok(generated.indexOf('// after gate') > generated.indexOf('return TRUE;'), generated);
+    // Use a separate hydrated copy so the repeated-roundtrip oracle is not mutated.
+    const edited = deserializeSemanticModel(JSON.parse(JSON.stringify(model)));
+    edited.functions.Check.conditions[0].dialogRef = 'Changed';
+    const code = generator.generateFunction(edited.functions.Check);
+    assert.match(code, /Npc_KnowsInfo\(other, Changed\)/);
+    assert.ok(code.includes('// before gate'));
+    assert.ok(code.includes('// after gate'));
+  });
+});
+
+test('comments surrounding an unconditional true return remain through JSON and regeneration', () => {
+  roundtrips(sourceFor('// before return\nreturn TRUE;\n// after return\n'), (model, generated) => {
+    assert.equal(model.functions.Check.actions.length, 0);
+    assert.ok(generated.indexOf('// before return') < generated.indexOf('return TRUE;'), generated);
+    assert.ok(generated.indexOf('// after return') > generated.indexOf('return TRUE;'), generated);
+  });
+});
+
 test('generic editor-created clauses retain grouping when combined', () => {
   const fn = new DialogFunction('Check', 'int');
   fn.conditions = [new Condition('A || B'), new VariableCondition('C')];

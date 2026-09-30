@@ -35,13 +35,17 @@ P1–P7, M1–M5, N1–N10). The governing principle:
 Condition functions are classified as whole bodies before extracting predicates.
 The flat editor representation is used for a single comment-free
 `if (expression) { return TRUE; };` with a uniform AND or OR operator, or an
-unconditional `return TRUE;` / `return 1;`. Only parentheses and logical
+unconditional `return TRUE;` / `return 1;`. Standalone body comments surrounding
+that guard or return are retained in `conditionBodyLeadingComments` and
+`conditionBodyTrailingComments`, including through JSON hydration and predicate
+edits. They do not disable typed conditions or simulator evaluation.
+Only parentheses and logical
 composition are traversed when collecting clauses; calls, unary expressions,
 comparisons, arithmetic, member access and array access are atomic roots.
 Their descendants must never become extra predicates.
 
 Nested guards, alternative branches, additional statements, mixed AND/OR, and
-commented bodies remain raw actions. This retains explicit branch boundaries
+comments inside a guard's header or branch remain raw actions. This retains explicit branch boundaries
 without assuming that a compiler short-circuits logical operators. It also
 retains comment positions that the flat fields cannot express. The editor shows
 these bodies as raw actions rather than editable typed condition rows. Call-site

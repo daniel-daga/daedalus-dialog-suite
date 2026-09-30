@@ -294,20 +294,25 @@ export class LinkingVisitor {
     if (!this.currentFunction) return;
     const statements = body.namedChildren;
     if (statements.length === 0) return;
-    if (statements.length === 1 && this.isCanonicalTrueReturn(statements[0])) return;
+    const executable = statements.filter(statement => statement.type !== 'comment');
+    if (executable.length === 1 && this.isCanonicalTrueReturn(executable[0])) {
+      this.captureConditionBodyComments(statements, executable[0]);
+      return;
+    }
 
-    if (statements.length === 1 && statements[0].type === 'if_statement') {
-      const guard = statements[0];
+    if (executable.length === 1 && executable[0].type === 'if_statement') {
+      const guard = executable[0];
       const condition = guard.childForFieldName('condition');
       const consequence = guard.childForFieldName('consequence');
       const alternative = guard.childForFieldName('alternative');
       const branch = consequence?.namedChildren ?? [];
-      // Comments have no slots in the flat condition model. Keep their body
-      // verbatim, including line breaks before generated closing delimiters.
+      // Only comments outside the guard have unambiguous metadata slots.
+      // Comments in its header or branch require the verbatim body instead.
       if (condition && !hasComment(guard) && !alternative &&
           branch.length === 1 && this.isCanonicalTrueReturn(branch[0])) {
         const operators = this.collectLogicalOperators(condition);
         if (operators.size <= 1) {
+          this.captureConditionBodyComments(statements, guard);
           this.currentFunction.conditionOperator = operators.has('||') ? 'OR' : 'AND';
           for (const clause of this.collectConditionClauses(condition)) {
             const functionName = clause.type === 'call_expression'
@@ -324,6 +329,13 @@ export class LinkingVisitor {
         ? new CommentAction(statement.text) : new Action(statement.text.trim());
       this.recordActionForCurrentFunction(atLine(action, statement));
     }
+  }
+
+  private captureConditionBodyComments(statements: TreeSitterNode[], statement: TreeSitterNode): void {
+    if (!this.currentFunction) return;
+    const index = statements.indexOf(statement);
+    this.currentFunction.conditionBodyLeadingComments = statements.slice(0, index).map(node => node.text);
+    this.currentFunction.conditionBodyTrailingComments = statements.slice(index + 1).map(node => node.text);
   }
 
   private isCanonicalTrueReturn(node: TreeSitterNode): boolean {
