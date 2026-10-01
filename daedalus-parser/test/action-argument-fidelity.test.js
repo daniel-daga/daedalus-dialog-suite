@@ -249,6 +249,93 @@ test('embedded action comments survive semantic-model hydration', () => {
   assert.match(generated, /preserve after IPC/);
 });
 
+test('commented actions retain edits and comments across hydration and repeated generation', () => {
+  const bodies = [
+    'CreateInvItems (self, /* item note */ ItMi_Gold, /* amount note */ 1);',
+    'CreateInvItems (self, ItMi_Gold, // amount note\n1);',
+    'CreateInvItems (self, ItMi_Gold, Amount /* expression note */ + 1);'
+  ];
+  const generator = new SemanticCodeGenerator({ includeComments: true, sectionHeaders: false });
+  for (const body of bodies) {
+    const original = buildModel(wrapInInfoFunction(body));
+    for (const model of [original, deserializeSemanticModel(JSON.parse(JSON.stringify(original)))]) {
+      const action = model.functions.DIA_T_Info.actions[0];
+      model.functions.DIA_T_Info.actions[0] = { ...action, item: 'ItFo_Apple', quantity: 5 };
+      let current = deserializeSemanticModel(JSON.parse(JSON.stringify(model)));
+      for (let cycle = 0; cycle < 3; cycle++) {
+        const generated = generator.generateSemanticModel(current);
+        assert.doesNotMatch(generated, /ItMi_Gold/);
+        for (const comment of body.match(/\/\*[^]*?\*\/|\/\/[^\n]*/g)) {
+          assert.ok(generated.includes(comment), generated);
+        }
+        current = buildModel(generated);
+        const edited = current.functions.DIA_T_Info.actions[0];
+        assert.equal(edited.item, 'ItFo_Apple');
+        assert.equal(edited.quantity, 5);
+        current = deserializeSemanticModel(JSON.parse(JSON.stringify(current)));
+      }
+    }
+  }
+});
+
+test('commented actions use the same generation path in then, else and nested branches', () => {
+  const call = 'CreateInvItems (self, /* nested note */ ItMi_Gold, 1);';
+  const bodies = [
+    `if (A) { ${call} };`,
+    `if (A) { Run(); } else { ${call} };`,
+    `if (A) { if (B) { ${call} }; };`
+  ];
+  const generator = new SemanticCodeGenerator({ includeComments: true, sectionHeaders: false });
+  for (const body of bodies) {
+    let model = buildModel(wrapInInfoFunction(body));
+    for (let cycle = 0; cycle < 3; cycle++) {
+      model = deserializeSemanticModel(JSON.parse(JSON.stringify(model)));
+      const generated = generator.generateSemanticModel(model);
+      assert.ok(generated.includes('/* nested note */'), generated);
+      assert.deepEqual(tokenTexts(generated), tokenTexts(wrapInInfoFunction(body)));
+      model = buildModel(generated);
+    }
+  }
+});
+
+test('AI_Output keeps embedded comments and current subtitle, speaker and id', () => {
+  const source = wrapInInfoFunction('AI_Output (self, /* voice note */ other, "DIA_T_01"); //Hallo');
+  const generator = new SemanticCodeGenerator({ includeComments: true, sectionHeaders: false });
+  const original = buildModel(source);
+  for (const candidate of [original, deserializeSemanticModel(JSON.parse(JSON.stringify(original)))]) {
+    assert.deepEqual(tokenTexts(generator.generateSemanticModel(candidate)), tokenTexts(source));
+    const model = deserializeSemanticModel(JSON.parse(JSON.stringify(candidate)));
+    Object.assign(model.functions.DIA_T_Info.actions[0], {
+      speaker: 'hero', id: 'DIA_T_02', text: 'Neu\nzweite Zeile'
+    });
+    const generated = generator.generateSemanticModel(model);
+    assert.ok(generated.includes('/* voice note */'), generated);
+    assert.ok(generated.includes('//Neu\n\t//zweite Zeile'), generated);
+    const line = buildModel(generated).functions.DIA_T_Info.actions[0];
+    assert.equal(line.speaker, 'hero');
+    assert.equal(line.id, 'DIA_T_02');
+    const withoutComments = new SemanticCodeGenerator({ includeComments: false }).generateSemanticModel(model);
+    assert.doesNotMatch(withoutComments, /voice note|Neu|zweite Zeile/);
+    assert.equal(buildModel(withoutComments).functions.DIA_T_Info.actions[0].id, 'DIA_T_02');
+  }
+});
+
+test('commented choice edits respect literal commas, parentheses, comment markers and backslashes', () => {
+  const source = wrapInInfoFunction('Info_AddChoice (DIA_T, /* choice note */ "old, (text) //", OldTarget);');
+  let model = buildModel(source);
+  const text = 'new, (text) /* literal */ C:\\';
+  Object.assign(model.functions.DIA_T_Info.actions[0], { text, targetFunction: 'NewTarget' });
+  const generator = new SemanticCodeGenerator({ includeComments: true, sectionHeaders: false });
+  for (let cycle = 0; cycle < 3; cycle++) {
+    model = deserializeSemanticModel(JSON.parse(JSON.stringify(model)));
+    const generated = generator.generateSemanticModel(model);
+    assert.ok(generated.includes('/* choice note */'), generated);
+    model = buildModel(generated);
+    assert.equal(model.functions.DIA_T_Info.actions[0].text, text);
+    assert.equal(model.functions.DIA_T_Info.actions[0].targetFunction, 'NewTarget');
+  }
+});
+
 for (const testCase of cases) {
   test(`argument fidelity: ${testCase.name}`, () => {
     const source = wrapInInfoFunction(testCase.body);
