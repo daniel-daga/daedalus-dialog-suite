@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { Type, plainToInstance, ClassConstructor } from 'class-transformer';
 import { indentGeneratedCode } from './code-formatting';
+import { generateActionCode } from './action-codegen';
 import { createNameRecord, resolveCaseInsensitive } from './name-utils';
 
 // Semantic model classes and types for Daedalus dialog parsing
@@ -489,7 +490,7 @@ export class ConditionalAction implements CodeGeneratable {
     const lines: string[] = [];
 
     for (const action of actions) {
-      const actionCode = (action as CodeGeneratable).generateCode({
+      const actionCode = generateActionCode(action as CodeGeneratable, {
         ...options,
         indentUnit
       });

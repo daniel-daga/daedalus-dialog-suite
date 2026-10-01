@@ -12,6 +12,7 @@ import {
 } from '../semantic/semantic-model';
 import { collectReachableFunctions } from '../semantic/cross-references';
 import { indentGeneratedCode } from '../semantic/code-formatting';
+import { generateActionCode } from '../semantic/action-codegen';
 
 // Structural shape shared by GlobalConstant / GlobalVariable / GlobalInstance
 // as far as code generation is concerned.
@@ -616,11 +617,7 @@ export class SemanticCodeGenerator {
    * Each action knows how to generate its own code
    */
   generateAction(action: DialogAction): string {
-    if (this.options.includeComments && 'sourceText' in action) {
-      const sourceText = (action as DialogAction & { sourceText?: string }).sourceText;
-      if (sourceText) return sourceText.trimEnd().endsWith(';') ? sourceText : sourceText + ';';
-    }
-    return (action as CodeGeneratable).generateCode({
+    return generateActionCode(action as CodeGeneratable, {
       includeComments: this.options.includeComments,
       indentUnit: this.indent()
     });
