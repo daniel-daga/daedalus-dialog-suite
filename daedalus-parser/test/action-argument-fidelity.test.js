@@ -433,3 +433,85 @@ test('unchanged commented integer spelling survives an adjacent action edit', ()
   assert.ok(generated.includes('/* integer note */'), generated);
   assert.equal(buildModel(generated).functions.DIA_T_Info.actions[0].quantity, 1);
 });
+
+test('commented Latin-1 identifier edits survive hydration and repeated generation in every branch', () => {
+  const edits = [
+    { body: 'CreateInvItems (self, COMMENTItMi_Gold, MengeÄ01);',
+      type: 'CreateInventoryItems', field: 'quantity', value: 'MengeÄ1' },
+    { body: 'CreateInvItems (self, COMMENTItMi_Gold, self.aivar[Ä01]);',
+      type: 'CreateInventoryItems', field: 'quantity', value: 'self.aivar[Ä1]' },
+    { body: 'CreateInvItems (self, COMMENTItMi_Ö01, 1);',
+      type: 'CreateInventoryItems', field: 'item', value: 'ItMi_Ö1' },
+    { body: 'Info_AddChoice (DIA_T, COMMENTGetChoiceText(é01), DIA_Target);',
+      type: 'Choice', field: 'text', value: 'GetChoiceText(é1)' },
+    { body: 'B_TeachCustom (self, COMMENTGetAmount(ß01));',
+      type: 'TeachAction', field: 'teachArgs', value: ['self', 'GetAmount(ß1)'] }
+  ];
+  const branches = [
+    (body) => body,
+    (body) => `if (A) { ${body} };`,
+    (body) => `if (A) { Run(); } else { ${body} };`,
+    (body) => `if (A) { if (B) { ${body} }; };`
+  ];
+  const findAction = (actions, type) => {
+    for (const action of actions) {
+      if (action.type === type) {
+        return action;
+      }
+      if (action.type === 'ConditionalAction') {
+        const nested = findAction([...action.thenActions, ...action.elseActions], type);
+        if (nested) {
+          return nested;
+        }
+      }
+    }
+    return undefined;
+  };
+  const generator = new SemanticCodeGenerator({ includeComments: true, sectionHeaders: false });
+
+  for (const edit of edits) {
+    for (const comment of ['/* identifier note */ ', '// identifier note\n']) {
+      for (const branch of branches) {
+        const source = wrapInInfoFunction(branch(edit.body.replace('COMMENT', comment)));
+        const original = buildModel(source);
+        const action = findAction(original.functions.DIA_T_Info.actions, edit.type);
+        assert.ok(action, source);
+        action[edit.field] = edit.value;
+        for (const candidate of [original, deserializeSemanticModel(JSON.parse(JSON.stringify(original)))]) {
+          let current = candidate;
+          for (let cycle = 0; cycle < 3; cycle++) {
+            const generated = generator.generateSemanticModel(current);
+            assert.ok(generated.includes(comment.trim()), generated);
+            current = buildModel(generated);
+            const edited = findAction(current.functions.DIA_T_Info.actions, edit.type);
+            assert.ok(edited, generated);
+            assert.deepEqual(edited[edit.field], edit.value, generated);
+            current = deserializeSemanticModel(JSON.parse(JSON.stringify(current)));
+          }
+        }
+      }
+    }
+  }
+});
+
+test('Latin-1 teach call names retain comment positions and argument edits', () => {
+  const source = wrapInInfoFunction('B_TeachÄ01 (self, /* call note */ GetAmount(ÿ01));');
+  const generator = new SemanticCodeGenerator({ includeComments: true, sectionHeaders: false });
+  const original = buildModel(source);
+  for (const candidate of [original, deserializeSemanticModel(JSON.parse(JSON.stringify(original)))]) {
+    assert.deepEqual(tokenTexts(generator.generateSemanticModel(candidate)), tokenTexts(source));
+    let current = deserializeSemanticModel(JSON.parse(JSON.stringify(candidate)));
+    Object.assign(current.functions.DIA_T_Info.actions[0], {
+      teachFunctionName: 'B_TeachÄ1', teachArgs: ['self', 'GetAmount(ÿ1)']
+    });
+    const expected = wrapInInfoFunction('B_TeachÄ1 (self, /* call note */ GetAmount(ÿ1));');
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const generated = generator.generateSemanticModel(current);
+      assert.deepEqual(tokenTexts(generated), tokenTexts(expected));
+      current = deserializeSemanticModel(JSON.parse(JSON.stringify(buildModel(generated))));
+      const action = current.functions.DIA_T_Info.actions[0];
+      assert.equal(action.teachFunctionName, 'B_TeachÄ1');
+      assert.deepEqual(action.teachArgs, ['self', 'GetAmount(ÿ1)']);
+    }
+  }
+});
