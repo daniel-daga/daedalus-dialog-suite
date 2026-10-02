@@ -363,3 +363,69 @@ for (const testCase of cases) {
     );
   });
 }
+
+test('commented decimal edits survive hydration and repeated generation in every branch', () => {
+  const edits = [
+    { body: 'CreateInvItems (self, /* decimal note */ ItMi_Gold, 1.01);',
+      type: 'CreateInventoryItems', field: 'quantity', value: 1.1 },
+    { body: 'CreateInvItems (self, /* decimal note */ ItMi_Gold, -1.001);',
+      type: 'CreateInventoryItems', field: 'quantity', value: '-1.1' },
+    { body: 'Info_AddChoice (DIA_T, /* decimal note */ GetChoiceText(0.09), DIA_Target);',
+      type: 'Choice', field: 'text', value: 'GetChoiceText(0.9)' },
+    { body: 'Info_AddChoice (DIA_T, GetChoiceText(/* decimal note */ 1.01), DIA_Target);',
+      type: 'Choice', field: 'text', value: 'GetChoiceText(1.1)' },
+    { body: 'B_TeachCustom (self, /* decimal note */ GetAmount(0.009));',
+      type: 'TeachAction', field: 'teachArgs', value: ['self', 'GetAmount(0.9)'] }
+  ];
+  const branches = [
+    (body) => body,
+    (body) => `if (A) { ${body} };`,
+    (body) => `if (A) { Run(); } else { ${body} };`,
+    (body) => `if (A) { if (B) { ${body} }; };`
+  ];
+  const findAction = (actions, type) => {
+    for (const action of actions) {
+      if (action.type === type) return action;
+      if (action.type === 'ConditionalAction') {
+        const nested = findAction([...action.thenActions, ...action.elseActions], type);
+        if (nested) return nested;
+      }
+    }
+    return undefined;
+  };
+  const generator = new SemanticCodeGenerator({ includeComments: true, sectionHeaders: false });
+
+  for (const edit of edits) {
+    for (const branch of branches) {
+      const original = buildModel(wrapInInfoFunction(branch(edit.body)));
+      const action = findAction(original.functions.DIA_T_Info.actions, edit.type);
+      assert.ok(action, edit.body);
+      action[edit.field] = edit.value;
+      for (const candidate of [original, deserializeSemanticModel(JSON.parse(JSON.stringify(original)))]) {
+        let current = candidate;
+        for (let cycle = 0; cycle < 3; cycle++) {
+          const generated = generator.generateSemanticModel(current);
+          assert.ok(generated.includes('/* decimal note */'), generated);
+          current = buildModel(generated);
+          const edited = findAction(current.functions.DIA_T_Info.actions, edit.type);
+          const expected = typeof edit.value === 'number' ? String(edit.value) : edit.value;
+          assert.deepEqual(edited[edit.field], expected, generated);
+          current = deserializeSemanticModel(JSON.parse(JSON.stringify(current)));
+        }
+      }
+    }
+  }
+});
+
+test('unchanged commented integer spelling survives an adjacent action edit', () => {
+  const model = buildModel(wrapInInfoFunction(
+    'CreateInvItems (self, /* integer note */ ItMi_Gold, 0001);'
+  ));
+  model.functions.DIA_T_Info.actions[0].item = 'ItFo_Apple';
+  const generator = new SemanticCodeGenerator({ includeComments: true, sectionHeaders: false });
+  const hydrated = deserializeSemanticModel(JSON.parse(JSON.stringify(model)));
+  const generated = generator.generateSemanticModel(hydrated);
+  assert.match(generated, /ItFo_Apple, 0001\);/);
+  assert.ok(generated.includes('/* integer note */'), generated);
+  assert.equal(buildModel(generated).functions.DIA_T_Info.actions[0].quantity, 1);
+});
