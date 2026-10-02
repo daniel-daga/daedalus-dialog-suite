@@ -379,7 +379,7 @@ test('commented decimal edits survive hydration and repeated generation in every
     { body: 'Info_AddChoice (DIA_T, /* decimal note */ GetChoiceText(0.09), DIA_Target);',
       type: 'Choice', field: 'text', value: 'GetChoiceText(0.9)' },
     { body: 'Info_AddChoice (DIA_T, GetChoiceText(/* decimal note */ 1.01), DIA_Target);',
-      type: 'Choice', field: 'text', value: 'GetChoiceText(1.1)' },
+      type: 'Choice', field: 'text', value: 'GetChoiceText(1.1)', replacesOwnedComment: true },
     { body: 'B_TeachCustom (self, /* decimal note */ GetAmount(0.009));',
       type: 'TeachAction', field: 'teachArgs', value: ['self', 'GetAmount(0.9)'] }
   ];
@@ -415,7 +415,7 @@ test('commented decimal edits survive hydration and repeated generation in every
         let current = candidate;
         for (let cycle = 0; cycle < 3; cycle++) {
           const generated = generator.generateSemanticModel(current);
-          assert.ok(generated.includes('/* decimal note */'), generated);
+          assert.equal(generated.includes('/* decimal note */'), !edit.replacesOwnedComment, generated);
           current = buildModel(generated);
           const edited = findAction(current.functions.DIA_T_Info.actions, edit.type);
           const expected = typeof edit.value === 'number' ? String(edit.value) : edit.value;

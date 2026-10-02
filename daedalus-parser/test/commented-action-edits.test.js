@@ -146,3 +146,24 @@ test('quoted punctuation and non-Latin string contents do not become call bounda
   assert.equal(findAction(model.functions.F.actions, 'Choice').text, choice.text);
   assert.ok(output.includes('/* outside */'), output);
 });
+
+test('repeated edits and reverting a field use the original argument baseline', () => {
+  const source = actionCases[0].body;
+  const model = buildModel(source);
+  const action = findAction(model.functions.F.actions, 'CreateInventoryItems');
+  action.quantity = 'Amount /* changed */ + 2';
+  assert.ok(generator.generateSemanticModel(model).includes('/* changed */'));
+  action.quantity = 5;
+  const next = generator.generateSemanticModel(model);
+  assert.ok(!next.includes('/* old */') && !next.includes('/* changed */'), next);
+  action.quantity = 'Amount /* old */ + 1';
+  assert.ok(generator.generateSemanticModel(model).includes(source));
+});
+
+test('malformed edited calls fail rather than replaying the old argument', () => {
+  for (const value of ['5 +', '5 // no closing newline', '5); Touch(); CreateInvItems(self, ItMi_Gold, 1']) {
+    const model = buildModel(actionCases[0].body);
+    findAction(model.functions.F.actions, 'CreateInventoryItems').quantity = value;
+    assert.throws(() => generator.generateSemanticModel(model), /valid single call/);
+  }
+});

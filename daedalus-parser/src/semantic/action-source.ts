@@ -17,12 +17,14 @@ export function parseActionCall(code: string): CallLayout {
   parser ??= DaedalusParser.create();
   const result = parser.parse(PREFIX + code + '\n};');
   const root = result.rootNode as TreeSitterNode;
-  const declaration = root.namedChildren.find(node => node.type === 'function_declaration');
+  const declarations = root.namedChildren.filter(node => node.type !== 'comment');
+  const declaration = declarations[0];
   const body = declaration?.childForFieldName('body');
   const statements = body?.namedChildren.filter(node => node.type !== 'comment') || [];
   const expressions = statements[0]?.namedChildren.filter(node => node.type !== 'comment') || [];
   const node = expressions[0];
-  if (result.hasErrors || statements.length !== 1 || statements[0].type !== 'expression_statement'
+  if (result.hasErrors || declarations.length !== 1 || declaration.type !== 'function_declaration'
+    || statements.length !== 1 || statements[0].type !== 'expression_statement'
     || expressions.length !== 1 || node.type !== 'call_expression') {
     throw new Error('Cannot reconcile commented action: generated statement must be a valid single call.');
   }
