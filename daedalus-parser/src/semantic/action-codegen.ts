@@ -17,8 +17,9 @@ interface Call {
 // backslash is literal and the next quote closes even a multiline string.
 function tokens(code: string): Token[] {
   const result: Token[] = [];
+  // Match grammar.js identifiers whole so their numeric suffixes stay significant.
   // Keep decimal literals whole: leading fractional zeros are significant.
-  const pattern = /\/\*[^]*?\*\/|\/\/[^\r\n]*|"[^"]*"|\s+|[A-Za-z_][A-Za-z0-9_]*|[0-9]+(?:\.[0-9]+)?|./g;
+  const pattern = /\/\*[^]*?\*\/|\/\/[^\r\n]*|"[^"]*"|\s+|[A-Za-z_\u0080-\u00FF][A-Za-z0-9_\u0080-\u00FF]*|[0-9]+(?:\.[0-9]+)?|./g;
   for (const match of code.matchAll(pattern)) {
     const text = match[0];
     if (/^\s+$/.test(text)) continue;
@@ -34,7 +35,7 @@ function tokens(code: string): Token[] {
 
 function callFromTokens(allTokens: Token[]): Call | null {
   const code = allTokens.filter(token => !token.comment);
-  if (!code[0] || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(code[0].text) || code[1]?.text !== '(') return null;
+  if (!code[0] || !/^[A-Za-z_\u0080-\u00FF][A-Za-z0-9_\u0080-\u00FF]*$/.test(code[0].text) || code[1]?.text !== '(') return null;
   const args: Token[][] = [];
   let current: Token[] = [];
   let depth = 1;
