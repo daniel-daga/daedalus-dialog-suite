@@ -17,7 +17,8 @@ interface Call {
 // backslash is literal and the next quote closes even a multiline string.
 function tokens(code: string): Token[] {
   const result: Token[] = [];
-  const pattern = /\/\*[^]*?\*\/|\/\/[^\r\n]*|"[^"]*"|\s+|[A-Za-z_][A-Za-z0-9_]*|[0-9]+|./g;
+  // Keep decimal literals whole: leading fractional zeros are significant.
+  const pattern = /\/\*[^]*?\*\/|\/\/[^\r\n]*|"[^"]*"|\s+|[A-Za-z_][A-Za-z0-9_]*|[0-9]+(?:\.[0-9]+)?|./g;
   for (const match of code.matchAll(pattern)) {
     const text = match[0];
     if (/^\s+$/.test(text)) continue;
