@@ -21,9 +21,20 @@ export interface CodeGenOptions {
  * code and display strings.
  */
 export interface CodeGeneratable {
+  sourceText?: string;
+  sourceCall?: SourceCall;
   generateCode(options: CodeGenOptions): string;
   toDisplayString(): string;
   getTypeName(): string;
+}
+
+/** JSON-safe ownership and baseline for a parsed, commented action call. */
+export interface SourceCall {
+  version: 1;
+  name: { start: number; end: number; initialValue: string };
+  closeEnd: number;
+  arguments: { start: number; end: number; initialValue: string }[];
+  outsideComments: string[];
 }
 
 /**

@@ -266,7 +266,13 @@ test('commented actions retain edits and comments across hydration and repeated 
         const generated = generator.generateSemanticModel(current);
         assert.doesNotMatch(generated, /ItMi_Gold/);
         for (const comment of body.match(/\/\*[^]*?\*\/|\/\/[^\n]*/g)) {
-          assert.ok(generated.includes(comment), generated);
+          // Replacing a complete editable expression also replaces its owned
+          // comments. Comments outside that expression remain source trivia.
+          if (comment === '/* expression note */') {
+            assert.ok(!generated.includes(comment), generated);
+          } else {
+            assert.ok(generated.includes(comment), generated);
+          }
         }
         current = buildModel(generated);
         const edited = current.functions.DIA_T_Info.actions[0];

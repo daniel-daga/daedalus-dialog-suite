@@ -30,6 +30,29 @@ P1–P7, M1–M5, N1–N10). The governing principle:
   function has unexpected argument count in either direction
   (`Npc_RemoveInvItem` = 2 args vs `Npc_RemoveInvItems` = 3).
 
+### Commented action edits
+
+Commented typed calls carry JSON-safe `sourceCall` metadata: the AST ranges of
+their original argument expressions, the original generated argument values,
+the function-name range, and comments outside those expressions. The generator
+uses the Daedalus grammar to read current call boundaries; there is no separate
+regex tokenizer or numeric normalization for detecting edits.
+
+An unchanged argument retains its original source spelling and comment layout.
+An edited argument is replaced by the current field's complete text, including
+new leading/trailing comments and the newline ending a line comment. Comments
+inside the old editable expression belong to that field: changing or deleting
+them takes effect, and replacing the whole expression replaces them too.
+Comments outside expression ranges stay in the source. An arity change keeps
+those outside comments ahead of the current call; argument comments come from
+the current fields. AI_Output subtitle text always comes from the current model.
+
+Older JSON carrying only `sourceText` recovers its original ranges and baseline
+with the same parser and action extraction, before applying current edits.
+Malformed edited calls fail visibly rather than replaying stale source.
+`test/commented-action-edits.test.js` covers ownership, official JSON hydration,
+legacy metadata, direct/then/else/nested calls and three parse/generate cycles.
+
 ## Conditional projection boundary
 
 Condition functions are classified as whole bodies before extracting predicates.

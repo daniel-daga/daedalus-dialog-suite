@@ -29,6 +29,8 @@ import {
 } from '../semantic-model';
 import { parseArgumentsDetailed, parseNumericArg, ParsedArg } from './argument-parsing';
 import { hasComment } from './ast-constants';
+import { captureActionSource } from '../action-source';
+import type { CodeGeneratable } from '../semanticModelInterfaces';
 
 export class ActionParsers {
 
@@ -45,7 +47,9 @@ export class ActionParsers {
     // call would otherwise disappear on generation. Keep the semantic type,
     // but attach the complete call for the comment-aware generator path.
     if (specific && hasComment(node)) {
-      (specific as DialogAction & { sourceText?: string }).sourceText = node.text.trim();
+      const action = specific as DialogAction & CodeGeneratable;
+      action.sourceText = node.text;
+      action.sourceCall = captureActionSource(node, action);
     }
     return specific ?? ActionParsers.parseGenericAction(node);
   }
