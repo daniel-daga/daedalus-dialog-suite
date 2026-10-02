@@ -385,10 +385,14 @@ test('commented decimal edits survive hydration and repeated generation in every
   ];
   const findAction = (actions, type) => {
     for (const action of actions) {
-      if (action.type === type) return action;
+      if (action.type === type) {
+        return action;
+      }
       if (action.type === 'ConditionalAction') {
         const nested = findAction([...action.thenActions, ...action.elseActions], type);
-        if (nested) return nested;
+        if (nested) {
+          return nested;
+        }
       }
     }
     return undefined;
