@@ -23,6 +23,7 @@ export interface CodeGenOptions {
 export interface CodeGeneratable {
   sourceText?: string;
   sourceCall?: SourceCall;
+  sourceAssignment?: SourceAssignment;
   generateCode(options: CodeGenOptions): string;
   toDisplayString(): string;
   getTypeName(): string;
@@ -35,6 +36,14 @@ export interface SourceCall {
   closeEnd: number;
   arguments: { start: number; end: number; initialValue: string }[];
   outsideComments: string[];
+}
+
+/** JSON-safe editable ranges and generated baseline for a commented assignment. */
+export interface SourceAssignment {
+  version: 1;
+  left: { start: number; end: number; initialValue: string };
+  operator: { start: number; end: number; initialValue: string };
+  right: { start: number; end: number; initialValue: string };
 }
 
 /**

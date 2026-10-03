@@ -53,6 +53,36 @@ Malformed edited calls fail visibly rather than replaying stale source.
 `test/commented-action-edits.test.js` covers ownership, official JSON hydration,
 legacy metadata, direct/then/else/nested calls and three parse/generate cycles.
 
+### Commented assignment edits (#344)
+
+The old assignment extractor retained only target, operator and value, so
+comments in the gaps between them had no model slot. Both top-level extraction
+and conditional-branch extraction now use the same constructor for
+`SetVariableAction`. Commented assignments carry their original `sourceText`
+and JSON-safe `sourceAssignment` ranges/baselines for the target, operator and
+value. Official hydration retains both.
+
+Generation reparses the current typed statement with the Daedalus grammar,
+requires exactly one valid assignment and patches only changed components.
+Original token-gap comments remain outside edits. Comments inside an edited
+target/value belong to that expression and are replaced with it; newly authored
+leading/trailing comments and the newline ending a line comment come from the
+current field. Numeric baselines compare generated values, so unchanged literal
+spelling survives but a real numeric edit cannot replay stale source.
+Unsupported metadata versions and malformed edited statements fail visibly.
+With `includeComments: false`, generation uses current canonical typed fields.
+
+Indentation also keeps the interior lines of block comments verbatim; adding
+indentation there on every cycle would alter their token text. This does not
+promise byte identity for all surrounding whitespace.
+`test/commented-assignment-edits.test.js` covers typed editing, exact single
+assignment replay, comment tokens over hydration and three cycles, direct,
+then/else/nested statements, all relevant token positions, multiline comments
+and strings, member/array targets, current operator/value edits, new comments
+and visible failures. Sixteen of seventeen regressions failed before the fix.
+The actual editor worker → JSON → CodeGeneratorService path retains an edited
+nested assignment's comment.
+
 ## Conditional projection boundary
 
 Condition functions are classified as whole bodies before extracting predicates.

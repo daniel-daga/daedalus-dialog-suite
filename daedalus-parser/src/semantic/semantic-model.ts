@@ -10,8 +10,8 @@ import { createNameRecord, resolveCaseInsensitive } from './name-utils';
 // SHARED INTERFACES (re-exported for backward compatibility)
 // ===================================================================
 
-export type { CodeGenOptions, CodeGeneratable, SourceLine } from './semanticModelInterfaces';
-import type { CodeGenOptions, CodeGeneratable, SourceLine } from './semanticModelInterfaces';
+export type { CodeGenOptions, CodeGeneratable, SourceLine, SourceAssignment } from './semanticModelInterfaces';
+import type { CodeGenOptions, CodeGeneratable, SourceLine, SourceAssignment } from './semanticModelInterfaces';
 
 // ===================================================================
 // DOMAIN ACTION CLASSES (imported + re-exported for backward compatibility)
@@ -526,6 +526,8 @@ export class ChapterTransitionAction implements CodeGeneratable {
 
 export class SetVariableAction implements CodeGeneratable {
   public readonly type = 'SetVariableAction';
+  public sourceText?: string;
+  public sourceAssignment?: SourceAssignment;
   public variableName: string;
   public operator: string;
   public value: string | number | boolean;

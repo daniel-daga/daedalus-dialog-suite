@@ -1,6 +1,7 @@
 import DaedalusParser from '../core/parser';
 import type { TreeSitterNode } from './semantic-model';
-import type { CodeGeneratable, SourceCall } from './semanticModelInterfaces';
+import type { CodeGeneratable, SourceCall, SourceAssignment } from './semanticModelInterfaces';
+import { getAssignmentOperator } from './parsers/ast-constants';
 
 interface CallLayout {
   node: TreeSitterNode;
@@ -11,6 +12,50 @@ interface CallLayout {
 
 let parser: DaedalusParser | undefined;
 const PREFIX = 'func void __action_source() {\n';
+
+function assignmentOperatorNode(node: TreeSitterNode): TreeSitterNode {
+  const operator = node.children.find(child => child.type === getAssignmentOperator(node));
+  if (!operator) throw new Error('Cannot reconcile commented assignment: missing assignment operator.');
+  return operator;
+}
+
+/** Read a current single assignment, including comments newly authored in its fields. */
+export function parseActionAssignment(code: string) {
+  parser ??= DaedalusParser.create();
+  const result = parser.parse(PREFIX + code + '\n};');
+  const root = result.rootNode as TreeSitterNode;
+  const declarations = root.namedChildren.filter(node => node.type !== 'comment');
+  const declaration = declarations[0];
+  const statements = declaration?.childForFieldName('body')?.namedChildren.filter(node => node.type !== 'comment') || [];
+  const node = statements[0];
+  if (result.hasErrors || declarations.length !== 1 || declaration.type !== 'function_declaration'
+    || statements.length !== 1 || node.type !== 'assignment_statement') {
+    throw new Error('Cannot reconcile commented assignment: generated statement must be a valid single assignment.');
+  }
+  const operator = assignmentOperatorNode(node);
+  const semicolon = node.children.find(child => child.type === ';')!;
+  return {
+    left: { text: code.slice(node.startIndex - PREFIX.length, operator.startIndex - PREFIX.length).trimStart() },
+    operator: { text: operator.text },
+    right: { text: code.slice(operator.endIndex - PREFIX.length, semicolon.startIndex - PREFIX.length).trimStart() }
+  };
+}
+
+/** Original expression ranges own their contents; comments in token gaps stay outside edits. */
+export function captureAssignmentSource(node: TreeSitterNode, action: CodeGeneratable): SourceAssignment {
+  const initial = parseActionAssignment(action.generateCode({ includeComments: true }));
+  const range = (part: TreeSitterNode, initialValue: string) => ({
+    start: part.startIndex - node.startIndex,
+    end: part.endIndex - node.startIndex,
+    initialValue: initialValue.trim()
+  });
+  return {
+    version: 1,
+    left: range(node.childForFieldName('left')!, initial.left.text),
+    operator: range(assignmentOperatorNode(node), initial.operator.text),
+    right: range(node.childForFieldName('right')!, initial.right.text)
+  };
+}
 
 /** Read generated call boundaries with the same grammar that parsed the file. */
 export function parseActionCall(code: string): CallLayout {

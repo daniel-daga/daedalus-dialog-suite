@@ -1,5 +1,5 @@
 import type { CodeGenOptions, CodeGeneratable } from './semanticModelInterfaces';
-import { captureActionSource, parseActionCall } from './action-source';
+import { captureActionSource, parseActionCall, parseActionAssignment } from './action-source';
 import { ActionParsers } from './parsers/action-parsers';
 
 /**
@@ -12,6 +12,19 @@ export function generateActionCode(action: CodeGeneratable, options: CodeGenOpti
   if (!options.includeComments || !action.sourceText) return generated;
 
   const source = action.sourceText;
+  if (action.sourceAssignment) {
+    const previous = action.sourceAssignment;
+    if (previous.version !== 1) throw new Error('Unsupported commented assignment source metadata.');
+    const current = parseActionAssignment(generated);
+    const replacements = (['left', 'operator', 'right'] as const)
+      .filter(key => previous[key].initialValue !== current[key].text.trim())
+      .map(key => ({ ...previous[key], text: current[key].text }));
+    let result = source;
+    for (const replacement of replacements.sort((a, b) => b.start - a.start)) {
+      result = result.slice(0, replacement.start) + replacement.text + result.slice(replacement.end);
+    }
+    return result;
+  }
   if (!action.sourceCall) {
     // Older IPC models only carry sourceText. Recover the original baseline
     // from that source, not from the already edited fields on this action.

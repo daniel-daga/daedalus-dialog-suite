@@ -247,6 +247,22 @@ class LogEntry {
 }
 ```
 
+#### SetVariableAction
+
+Typed assignment with editable `variableName`, `operator` and
+`value: string | number | boolean`. Parsed commented assignments additionally
+carry `sourceText` and JSON-safe `sourceAssignment` (version 1, original
+target/operator/value ranges and generated baselines). Keep those fields through
+IPC; `deserializeSemanticModel` retains them automatically.
+
+Use `SemanticCodeGenerator.generateAction` or whole-function/model generation
+to reconcile edits with original comments. Unchanged assignments replay their
+original spelling; changed components replace their own ranges while token-gap
+comments remain. Changing an expression replaces comments inside that expression;
+new comments in a field are effective. Invalid edited assignments throw rather
+than replaying stale source. `includeComments: false` emits current canonical
+typed fields without replay.
+
 #### Other Action Types
 
 - `LogSetTopicStatus` - Log_SetTopicStatus calls

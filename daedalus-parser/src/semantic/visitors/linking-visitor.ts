@@ -25,6 +25,7 @@ import {
   hasComment
 } from '../parsers/ast-constants';
 import { parseLiteralOrIdentifier } from '../parsers/literal-parsing';
+import { captureAssignmentSource } from '../action-source';
 import { createNameRecord, namesEqual } from '../name-utils';
 
 /**
@@ -501,7 +502,11 @@ export class LinkingVisitor {
    */
   private processFunctionAssignment(node: TreeSitterNode): void {
     if (!this.currentFunction) return;
+    const action = this.parseAssignmentAction(node);
+    if (action) this.recordActionForCurrentFunction(atLine(action, node));
+  }
 
+  private parseAssignmentAction(node: TreeSitterNode): SetVariableAction | null {
     const leftNode = node.childForFieldName('left');
     const rightNode = node.childForFieldName('right');
 
@@ -511,9 +516,13 @@ export class LinkingVisitor {
       const value = parseLiteralOrIdentifier(rightNode);
 
       const action = new SetVariableAction(variableName, operator, value);
-
-      this.recordActionForCurrentFunction(atLine(action, node));
+      if (hasComment(node)) {
+        action.sourceText = node.text;
+        action.sourceAssignment = captureAssignmentSource(node, action);
+      }
+      return action;
     }
+    return null;
   }
 
   /**
@@ -715,18 +724,7 @@ export class LinkingVisitor {
     }
 
     if (node.type === 'assignment_statement') {
-      const leftNode = node.childForFieldName('left');
-      const rightNode = node.childForFieldName('right');
-
-      if (!leftNode || !rightNode) {
-        return null;
-      }
-
-      return new SetVariableAction(
-        leftNode.text,
-        getAssignmentOperator(node),
-        parseLiteralOrIdentifier(rightNode)
-      );
+      return this.parseAssignmentAction(node);
     }
 
     if (node.type === 'if_statement') {
