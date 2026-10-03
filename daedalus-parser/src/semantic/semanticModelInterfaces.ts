@@ -48,6 +48,14 @@ export interface SourceAssignment {
   right: { start: number; end: number; initialValue: string };
 }
 
+/** Source ownership for editable function and dialog declaration headers. */
+export interface SourceHeader {
+  version: 1;
+  text: string;
+  fields: { key: string; start: number; end: number; initialValue: string }[];
+  comments: string[];
+}
+
 /**
  * The 1-based source line a construct was parsed from.
  *

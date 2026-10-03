@@ -13,6 +13,7 @@ import {
 } from '../semantic-model';
 import { parseLiteralOrIdentifier } from '../parsers/literal-parsing';
 import { createNameRecord } from '../name-utils';
+import { captureDeclarationHeader, parameterKeyword } from '../declaration-source';
 
 export class DeclarationVisitor {
   private semanticModel: SemanticModel;
@@ -97,6 +98,8 @@ export class DeclarationVisitor {
       const keywordNode = node.childForFieldName('keyword');
       if (nameNode && typeNode) {
         const func = new DialogFunction(nameNode.text, typeNode.text);
+        const sourceHeader = captureDeclarationHeader(node);
+        if (sourceHeader) func.sourceHeader = sourceHeader;
         const firstLine = node.text.split('\n')[0] || '';
         if (keywordNode) {
           func.keyword = keywordNode.text;
@@ -124,6 +127,8 @@ export class DeclarationVisitor {
 
         if (isDialogInstance) {
           const dialog = new Dialog(nameNode.text, parentNode ? parentNode.text : null);
+          const sourceHeader = captureDeclarationHeader(node);
+          if (sourceHeader) dialog.sourceHeader = sourceHeader;
           const firstLine = node.text.split('\n')[0] || '';
           if (keywordNode) {
             dialog.keyword = keywordNode.text;
@@ -262,9 +267,7 @@ export class DeclarationVisitor {
         continue;
       }
       const parameter: FunctionParameter = { type: typeNode.text, name: nameNode.text };
-      // The var/const keyword token is not exposed as a child node; recover it
-      // from the text preceding the type within the parameter span.
-      const keyword = child.text.slice(0, typeNode.startIndex - child.startIndex).trim();
+      const keyword = parameterKeyword(child)?.text;
       if (keyword) {
         parameter.keyword = keyword;
       }

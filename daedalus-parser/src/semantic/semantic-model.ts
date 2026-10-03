@@ -11,8 +11,8 @@ import { formatNumericValue } from './parsers/numeric-literals';
 // SHARED INTERFACES (re-exported for backward compatibility)
 // ===================================================================
 
-export type { CodeGenOptions, CodeGeneratable, SourceLine, SourceAssignment } from './semanticModelInterfaces';
-import type { CodeGenOptions, CodeGeneratable, SourceLine, SourceAssignment } from './semanticModelInterfaces';
+export type { CodeGenOptions, CodeGeneratable, SourceLine, SourceAssignment, SourceHeader } from './semanticModelInterfaces';
+import type { CodeGenOptions, CodeGeneratable, SourceLine, SourceAssignment, SourceHeader } from './semanticModelInterfaces';
 
 // ===================================================================
 // DOMAIN ACTION CLASSES (imported + re-exported for backward compatibility)
@@ -822,6 +822,7 @@ export interface FunctionCallSite {
 }
 
 export class DialogFunction {
+  public sourceHeader?: SourceHeader;
   public name: string;
   public returnType: string;
   public keyword?: string;
@@ -883,6 +884,7 @@ function linkPropertiesToFunctions(
   dialogName: string,
   rawProperties: Record<string, any>,
   functionsMap: { [key: string]: DialogFunction },
+  literalKeys: string[] = [],
 ): DialogProperties {
   const linked: DialogProperties = createNameRecord();
   for (const key in rawProperties) {
@@ -896,7 +898,7 @@ function linkPropertiesToFunctions(
       } else {
         linked[key] = linkedFunc;
       }
-    } else if (typeof value === 'string' && resolveCaseInsensitive(functionsMap, value)) {
+    } else if (typeof value === 'string' && !literalKeys.includes(key) && resolveCaseInsensitive(functionsMap, value)) {
       // Property was already normalised to just the function name string.
       linked[key] = resolveCaseInsensitive(functionsMap, value)!;
     } else {
@@ -923,6 +925,7 @@ export function snapshotDialogProperties(properties: DialogProperties): DialogSo
 }
 
 export class Dialog {
+  public sourceHeader?: SourceHeader;
   public name: string;
   public parent: string | null;
   public keyword?: string;
@@ -931,6 +934,8 @@ export class Dialog {
   public properties: DialogProperties;
   public propertyFormatting?: PropertyFormatting;
   public propertyExpressionKeys?: string[];
+  /** Source string literals keep their identity after edits, independently of spelling. */
+  public propertyLiteralKeys?: string[];
   public sourceBody?: DialogSourceBody;
   /** Standalone comments preceding a C_INFO property, keyed by property name. */
   public propertyLeadingComments?: { [key: string]: string[] };
@@ -949,12 +954,20 @@ export class Dialog {
     this.properties = createNameRecord();
     this.propertyFormatting = createNameRecord();
     this.propertyExpressionKeys = [];
+    this.propertyLiteralKeys = ['description'];
     this.actions = [];
   }
 
   static fromJSON(json: any, functionsMap: { [key: string]: DialogFunction }): Dialog {
     // --- property transformation: copy optional scalar fields ---
     const dialog = new Dialog(json.name, json.parent);
+    if (json.sourceHeader !== undefined) {
+      if (typeof json.sourceHeader?.text !== 'string' || !Array.isArray(json.sourceHeader.fields) ||
+          !Array.isArray(json.sourceHeader.comments)) {
+        throw new Error(`Dialog ${json.name} has invalid declaration header source metadata`);
+      }
+      dialog.sourceHeader = json.sourceHeader;
+    }
     if (typeof json.keyword === 'string') {
       dialog.keyword = json.keyword;
     }
@@ -969,6 +982,12 @@ export class Dialog {
     }
     if (Array.isArray(json.propertyExpressionKeys)) {
       dialog.propertyExpressionKeys = json.propertyExpressionKeys;
+    }
+    if (Array.isArray(json.propertyLiteralKeys)) {
+      dialog.propertyLiteralKeys = json.propertyLiteralKeys;
+    } else {
+      // Older JSON has no literal identity metadata; keep its legacy fallback.
+      delete dialog.propertyLiteralKeys;
     }
     if (json.sourceBody !== undefined) {
       if (typeof json.sourceBody?.text !== 'string' || !json.sourceBody.propertyValues ||
@@ -994,7 +1013,8 @@ export class Dialog {
     }
 
     // --- function-reference linking: resolve property values to live DialogFunction instances ---
-    dialog.properties = linkPropertiesToFunctions(json.name, json.properties ?? {}, functionsMap);
+    const literalKeys = (dialog.propertyLiteralKeys || []).filter(key => !dialog.propertyExpressionKeys?.includes(key));
+    dialog.properties = linkPropertiesToFunctions(json.name, json.properties ?? {}, functionsMap, literalKeys);
 
     return dialog;
   }

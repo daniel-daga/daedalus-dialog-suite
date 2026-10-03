@@ -131,6 +131,8 @@ class Dialog {
   parent: string | null;           // Parent class (usually C_INFO)
   properties: DialogProperties;    // Dialog properties
   propertyExpressionKeys?: string[]; // Keys whose string values are expressions
+  propertyLiteralKeys?: string[];    // Keys whose string values are string literals
+  sourceHeader?: SourceHeader;       // Commented header with editable token ranges
   sourceBody?: DialogSourceBody;   // Lossless executable constructor fallback
   actions: DialogAction[];         // Extracted semantic actions
 }
@@ -165,6 +167,12 @@ unique property-only bodies remain structurally editable.
 `preserveSourceStyle`; changing a marked value emits the current expression. Keep `sourceBody`
 through JSON/IPC; `deserializeSemanticModel` restores it automatically.
 
+`propertyLiteralKeys` records string-valued source assignments and keeps edited
+unquoted model text quoted during generation and JSON hydration, even when it
+matches a function name. A newly constructed `Dialog` marks `description` as a
+literal. Explicit `propertyExpressionKeys` take precedence; legacy JSON without
+literal metadata retains the previous value inference.
+
 **Example:**
 ```typescript
 const dialog = new Dialog('DIA_Merchant_Trade', 'C_INFO');
@@ -185,10 +193,20 @@ class DialogFunction {
   name: string;              // Function name
   returnType: string;        // Return type (int, void, etc.)
   parameters?: FunctionParameter[]; // Declared parameters ({ keyword?, type, name }), if any
+  sourceHeader?: SourceHeader; // Commented header with editable token ranges
   calls: string[];           // List of function calls made
   actions: DialogAction[];   // Semantic actions extracted
 }
 ```
+
+Both functions and dialogs retain comments inside their declaration header in
+optional JSON-safe `sourceHeader` metadata. It contains `version: 1`, original
+`text`, editable `fields` (`key`, `start`, `end`, `initialValue`) and comment
+tokens. Current names, types, keywords and parameters replace the corresponding
+tokens. If parameter count or keyword presence changes, comments move ahead of
+the current canonical header. `includeComments: false` omits this metadata's
+comments; `preserveSourceStyle: false` still retains them. Keep the metadata
+through JSON/IPC and use `deserializeSemanticModel` to restore model instances.
 
 **Example:**
 ```typescript
@@ -591,7 +609,13 @@ npm run semantic -- examples/DIA_Szmyk.d
 ```bash
 npm run format -- examples/DIA_Szmyk.d --verbose
 npm run format -- examples/DIA_Szmyk.d -o output.d
+npm run format -- input.d --encoding windows-1250 --output-encoding utf8 -o output.d
 ```
+
+Input defaults to valid UTF-8, otherwise Windows-1252. Output files default to
+the input encoding; stdout prints Unicode text. Invalid input/generated syntax
+or unrepresentable output text fails before replacing the destination. These
+checks run without `--verbose` as well.
 
 ### Formatter
 ```bash
@@ -602,6 +626,9 @@ npm run format -- examples/DIA_Szmyk.d
 ```bash
 npm run parse -- examples/DIA_Szmyk.d
 ```
+
+For machine-readable output, `node bin/daedalus-parse.js file.d --json` writes a
+single JSON document to stdout, without the human-readable parsing banner.
 
 ## Further Documentation
 

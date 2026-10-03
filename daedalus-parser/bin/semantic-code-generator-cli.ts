@@ -4,6 +4,7 @@
 // Demonstrates round-trip: Parse -> Semantic Model -> Generate
 
 import * as fs from 'fs';
+import * as iconv from 'iconv-lite';
 import { SemanticModelBuilderVisitor } from '../src/semantic/semantic-visitor-index';
 import { SemanticCodeGenerator, CodeGeneratorOptions } from '../src/codegen/generator';
 import { createDaedalusParser, validateDaedalusFile } from '../src/utils/parser-utils';
@@ -11,6 +12,8 @@ import { createDaedalusParser, validateDaedalusFile } from '../src/utils/parser-
 interface CLIOptions extends CodeGeneratorOptions {
   output?: string;
   verbose?: boolean;
+  encoding?: string;
+  outputEncoding?: string;
 }
 
 function main() {
@@ -36,6 +39,17 @@ function main() {
     const arg = args[i];
 
     switch (arg) {
+      case '--encoding':
+      case '--output-encoding': {
+        const encoding = args[++i];
+        if (!encoding || !iconv.encodingExists(encoding)) {
+          console.error(`Unknown or missing encoding for ${arg}: ${encoding ?? ''}`);
+          process.exit(1);
+        }
+        if (arg === '--encoding') options.encoding = encoding;
+        else options.outputEncoding = encoding;
+        break;
+      }
       case '--output':
       case '-o':
         options.output = args[++i];
@@ -90,8 +104,15 @@ function processFile(filename: string, options: CLIOptions) {
   // Validate file
   validateDaedalusFile(filename);
 
-  // Read source
-  const sourceCode = fs.readFileSync(filename, 'utf8');
+  // Short scripts do not provide enough language text for reliable statistical
+  // detection. Prefer valid UTF-8; otherwise use Gothic's Windows-1252 default.
+  // Other legacy encodings can be selected explicitly.
+  const buffer = fs.readFileSync(filename);
+  const utf8 = buffer.toString('utf8');
+  const inputEncoding = options.encoding ?? (Buffer.from(utf8, 'utf8').equals(buffer) ? 'utf8' : 'windows-1252');
+  const sourceCode = iconv.decode(buffer, inputEncoding);
+  const parser = createDaedalusParser();
+  const tree = parser.parse(sourceCode);
 
   if (options.verbose) {
     console.log(`📊 Source size: ${sourceCode.length} characters`);
@@ -99,11 +120,8 @@ function processFile(filename: string, options: CLIOptions) {
   }
 
   // Parse with tree-sitter
-  const parser = createDaedalusParser();
-  const tree = parser.parse(sourceCode);
-
-  if (tree.rootNode.hasError) {
-    console.warn('⚠️  Warning: Parse tree contains errors');
+  if (tree.hasErrors) {
+    throw new Error(`Source has syntax errors; refusing to format: ${tree.errors?.map(error => error.message).join('; ')}`);
   }
 
   // Build semantic model
@@ -112,6 +130,7 @@ function processFile(filename: string, options: CLIOptions) {
   }
 
   const visitor = new SemanticModelBuilderVisitor();
+  visitor.checkForSyntaxErrors(tree.rootNode);
   visitor.pass1_createObjects(tree.rootNode);
   visitor.pass2_analyzeAndLink(tree.rootNode);
 
@@ -139,24 +158,16 @@ function processFile(filename: string, options: CLIOptions) {
     console.log(`📝 Generated ${generatedCode.length} characters`);
   }
 
-  // Output
-  if (options.output) {
-    fs.writeFileSync(options.output, generatedCode, 'utf8');
-    console.log(`✅ Written to: ${options.output}`);
-  } else {
-    console.log(generatedCode);
+  // Validate before writing, even without verbose reporting. Malformed input
+  // and generated syntax must never replace an existing destination.
+  const tree2 = parser.parse(generatedCode);
+  if (tree2.hasErrors) {
+    throw new Error('Generated code has parse errors; refusing to write output');
   }
 
   // Verify round-trip if verbose
   if (options.verbose) {
     console.log('\n🔄 Verifying round-trip...');
-    const tree2 = parser.parse(generatedCode);
-
-    if (tree2.rootNode.hasError) {
-      console.error('❌ Generated code has parse errors!');
-      process.exit(1);
-    }
-
     const visitor2 = new SemanticModelBuilderVisitor();
     visitor2.pass1_createObjects(tree2.rootNode);
     visitor2.pass2_analyzeAndLink(tree2.rootNode);
@@ -171,6 +182,18 @@ function processFile(filename: string, options: CLIOptions) {
       process.exit(1);
     }
   }
+
+  if (options.output) {
+    const encoding = options.outputEncoding ?? inputEncoding;
+    const encoded = iconv.encode(generatedCode, encoding);
+    if (iconv.decode(encoded, encoding) !== generatedCode) {
+      throw new Error(`Output encoding ${encoding} cannot represent the generated source; refusing to write output`);
+    }
+    fs.writeFileSync(options.output, encoded);
+    console.log(`✅ Written to: ${options.output}`);
+  } else {
+    console.log(generatedCode);
+  }
 }
 
 function printHelp() {
@@ -182,6 +205,8 @@ function printHelp() {
   console.log('');
   console.log('Options:');
   console.log('  -o, --output <file>         Write output to file (default: stdout)');
+  console.log('  --encoding <name>           Input encoding (default: valid UTF-8, otherwise Windows-1252)');
+  console.log('  --output-encoding <name>    Output file encoding (default: source encoding)');
   console.log('  --indent-spaces <n>         Use spaces for indentation (default: tabs)');
   console.log('  --no-comments               Omit inline comments');
   console.log('  --no-headers                Omit section header comments');
