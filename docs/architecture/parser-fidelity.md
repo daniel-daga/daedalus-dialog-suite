@@ -99,6 +99,62 @@ replace a real mod corpus run.
 Condition calls still require exact arity; unsupported calls remain verbatim.
 String comparison values retain their literal flag when structured.
 
+## C_INFO constructor projection boundary (#340)
+
+A C_INFO body is a program, not necessarily a property initializer list. The
+old second pass recursively collected assignments anywhere in that program
+into `Dialog.properties`, overwriting repeated keys, discarding assignment
+operators, and ignoring instance-body calls. The declaration pass retained no
+original body. `generateDialog` then emitted the dictionary as unconditional
+`=` assignments. This was irreversible information loss before generation;
+different branch conditions and calls could produce the same model.
+
+Classify the whole body before projecting it. Only comments and unique,
+case-insensitive, direct identifier `=` assignments without embedded comments
+use the editable property representation. Branches, calls, declarations,
+returns, repeated writes, compound operators, member/array writes and embedded
+comments keep the complete block in JSON-safe `Dialog.sourceBody.text`.
+`Dialog.fromJSON` restores it across IPC and official model hydration.
+Generation emits that block verbatim, independently of formatting/comment
+options. This preserves statement order, operator spelling, comments and line
+endings; it does not attempt to evaluate a Gothic constructor.
+
+Only direct simple writes contribute property/reference metadata. Nested and
+compound writes are never represented as unconditional values or references;
+the metadata is not the constructor's final runtime state. The condition/info
+pre-scan follows the same boundary and only examines C_INFO declarations.
+
+`sourceBody.propertyValues` records the property baseline, with function
+references represented by name. Generation rejects changed, added or deleted
+properties and renamed function references rather than silently replaying stale
+source or flattening executable code. Edit the constructor source and reparse
+before changing such properties. Editing the bodies of directly linked
+functions still works. `allowPartialModel` does not bypass this fidelity check.
+Ordinary property-only dialogs retain their existing structured edit behavior.
+
+This addresses the representation failure, rather than special-casing `if` or
+`+=` in the generator. `test/dialog-instance-body-fidelity.test.js` covers
+multiple different programs with identical property projections, exact complete
+body preservation through JSON and three cycles, CRLF/Unicode comments,
+compound/member/array/repeated writes, visible edit rejection, linked function
+edits and normal structured property edits. The initial tests reproduced 14
+failures before the fix; all 18 final regressions pass with the real native Node
+binding and real class-transformer hydration.
+
+The actual editor parser worker → JSON → CodeGeneratorService path was also
+executed for preservation and forced-generation rejection. SaveFileFlow writes
+after generation/validation; its syntax-only reparse could not detect the old
+semantic loss because the corrupted program was still valid syntax. The new
+generator check reaches both its validation and fallback generation paths.
+No Gothic engine, licensed MDK corpus or interactive Electron UI run was made.
+
+Local validation used the committed native grammar and reconstructed offline
+dependencies: 417 non-CLI tests passed, including the fixture corpus; lint and
+typecheck passed. The two CLI help tests require unavailable `ts-node`, and
+`npm test` stops at the unavailable Tree-sitter CLI. Grammar sources were not
+changed. The exact CI toolchain must run the standard workspace commands before
+closing #340; the local offline tooling is not a substitute for that check.
+
 ## Statements and symbols
 
 - Operators and operands are found **by token, not child position** —

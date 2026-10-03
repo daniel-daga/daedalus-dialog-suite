@@ -903,6 +903,22 @@ function linkPropertiesToFunctions(
   return linked;
 }
 
+/** Lossless fallback for constructors that cannot be represented as property rows. */
+export interface DialogSourceBody {
+  text: string;
+  propertyValues: { [key: string]: string | number | boolean };
+}
+
+/** Function bodies can change independently; constructor references compare by name. */
+export function snapshotDialogProperties(properties: DialogProperties): DialogSourceBody['propertyValues'] {
+  const values = createNameRecord<string | number | boolean>();
+  for (const [key, value] of Object.entries(properties)) {
+    if (value === undefined) continue;
+    values[key] = value instanceof DialogFunction ? value.name : value;
+  }
+  return values;
+}
+
 export class Dialog {
   public name: string;
   public parent: string | null;
@@ -912,6 +928,7 @@ export class Dialog {
   public properties: DialogProperties;
   public propertyFormatting?: PropertyFormatting;
   public propertyExpressionKeys?: string[];
+  public sourceBody?: DialogSourceBody;
   /** Standalone comments preceding a C_INFO property, keyed by property name. */
   public propertyLeadingComments?: { [key: string]: string[] };
   /** Same-line trailing comment after a C_INFO property, keyed by property name. */
@@ -949,6 +966,16 @@ export class Dialog {
     }
     if (Array.isArray(json.propertyExpressionKeys)) {
       dialog.propertyExpressionKeys = json.propertyExpressionKeys;
+    }
+    if (json.sourceBody !== undefined) {
+      if (typeof json.sourceBody?.text !== 'string' || !json.sourceBody.propertyValues ||
+          typeof json.sourceBody.propertyValues !== 'object' || Array.isArray(json.sourceBody.propertyValues)) {
+        throw new Error(`Dialog ${json.name} has invalid preserved instance body metadata`);
+      }
+      dialog.sourceBody = {
+        text: json.sourceBody.text,
+        propertyValues: Object.assign(createNameRecord<string | number | boolean>(), json.sourceBody.propertyValues)
+      };
     }
     if (json.propertyLeadingComments && typeof json.propertyLeadingComments === 'object') {
       dialog.propertyLeadingComments = json.propertyLeadingComments;

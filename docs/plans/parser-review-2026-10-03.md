@@ -2,34 +2,13 @@
 
 Reviewed `daedalus-parser/` at `b2a31ab29179c853948967902a8e9e9eb20b6a4f`.
 Repository reads and writes use the GitHub connector; no direct HTTPS checkout.
-This document records five independent findings. Finding 1 is the investigation
-currently requested; findings 2–5 remain separate work.
-
-## Finding 1: C_INFO instance bodies
-
-**#340, P1.** Accepted executable instance bodies are reduced to a property
-dictionary. For example:
-
-```daedalus
-instance DIA_Test(C_INFO) {
-    nr = 1;
-    if (Flag) { nr = 2; };
-    Touch();
-};
-```
-
-The generated body contains only `nr = 2;`: the assignment becomes unconditional,
-and the call disappears. The independent variant `nr = 1; nr += 2;` also
-generates `nr = 2;`, losing the compound operator.
-
-Locations: `src/semantic/visitors/linking-visitor.ts`,
-`handleStatementNode` / `processAssignment`; `src/codegen/generator.ts`,
-`generateDialog`. These are accepted, error-free syntax trees. The fault is
-in the semantic projection, not grammar recovery. A dictionary cannot encode
-statement order, repeated assignments, compound operators or branch boundaries.
-The investigation must establish a lossless boundary while retaining intentional
-property edits; simply skipping nested assignments or dropping unsupported
-statements would still destroy the original program.
+Four findings remain open below (#341–#344). Finding 1 (#340), the lossy
+C_INFO constructor projection, is resolved by preserving complete executable
+bodies across the model, JSON hydration and generation. Its root cause,
+regression evidence and editing contract now live in
+[parser-fidelity.md](../architecture/parser-fidelity.md#c_info-constructor-projection-boundary-340).
+The original five-finding report remains in commit
+`072b3122723bf12f050c262dedd574d71886077d`.
 
 ## Finding 2: source style and expression types
 

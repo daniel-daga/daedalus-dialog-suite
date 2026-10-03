@@ -130,7 +130,13 @@ class Dialog {
   name: string;                    // Dialog instance name
   parent: string | null;           // Parent class (usually C_INFO)
   properties: DialogProperties;    // Dialog properties
+  sourceBody?: DialogSourceBody;   // Lossless executable constructor fallback
   actions: DialogAction[];         // Extracted semantic actions
+}
+
+interface DialogSourceBody {
+  text: string; // Complete original block, including braces
+  propertyValues: { [key: string]: string | number | boolean }; // Baseline; function references use names
 }
 
 // Function reference: bare name string, or the live DialogFunction once linked
@@ -147,6 +153,14 @@ interface DialogProperties {
   // ... other custom properties
 }
 ```
+
+Executable C_INFO constructors use `sourceBody` and regenerate verbatim, even
+when style/comment options are disabled. Their property metadata comes only
+from direct simple assignments and does not evaluate the constructor. Changing
+properties or renaming linked function references throws: edit the constructor
+source and reparse first. Linked function body edits remain supported. Ordinary
+unique property-only bodies remain structurally editable. Keep `sourceBody`
+through JSON/IPC; `deserializeSemanticModel` restores it automatically.
 
 **Example:**
 ```typescript

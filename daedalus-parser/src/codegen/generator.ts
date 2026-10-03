@@ -8,7 +8,8 @@ import {
   DialogAction,
   DialogCondition,
   CodeGeneratable,
-  getDialogProperty
+  getDialogProperty,
+  snapshotDialogProperties
 } from '../semantic/semantic-model';
 import { collectReachableFunctions } from '../semantic/cross-references';
 import { indentGeneratedCode } from '../semantic/code-formatting';
@@ -417,6 +418,15 @@ export class SemanticCodeGenerator {
     const instanceKeyword = this.resolveKeyword('instance', dialog.keyword);
     const spaceBeforeParen = this.options.preserveSourceStyle && dialog.spaceBeforeParen ? ' ' : '';
     const parent = dialog.parent || 'C_INFO';
+    if (dialog.sourceBody) {
+      const current = snapshotDialogProperties(dialog.properties);
+      const baseline = dialog.sourceBody.propertyValues;
+      if (Object.keys(current).length !== Object.keys(baseline).length ||
+          Object.keys(current).some(key => !Object.prototype.hasOwnProperty.call(baseline, key) || current[key] !== baseline[key])) {
+        throw new Error(`Dialog ${dialog.name} has a preserved executable instance body; edit its source before changing properties or function references`);
+      }
+      return `${instanceKeyword} ${dialog.name}${spaceBeforeParen}(${parent})\n${dialog.sourceBody.text};\n`;
+    }
     const lines: string[] = [];
 
     lines.push(`${instanceKeyword} ${dialog.name}${spaceBeforeParen}(${parent})`);

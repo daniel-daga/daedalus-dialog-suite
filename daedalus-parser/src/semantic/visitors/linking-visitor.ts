@@ -11,7 +11,8 @@ import {
   DialogAction,
   ConditionalAction,
   SourceLine,
-  getDialogProperty
+  getDialogProperty,
+  snapshotDialogProperties
 } from '../semantic-model';
 import { ActionParsers } from '../parsers/action-parsers';
 import { ConditionParsers } from '../parsers/condition-parsers';
@@ -96,8 +97,9 @@ export class LinkingVisitor {
       if (!body) continue;
       const nameNode = child.childForFieldName('name');
       const dialog = nameNode ? this.dialogs[nameNode.text] : undefined;
+      if (!dialog) continue;
       for (const stmt of body.namedChildren) {
-        if (stmt.type !== 'assignment_statement') continue;
+        if (!this.isDirectPropertyAssignment(stmt)) continue;
         const left = stmt.childForFieldName('left');
         const right = stmt.childForFieldName('right');
         if (!left || !right || right.type !== 'identifier') continue;
@@ -213,6 +215,12 @@ export class LinkingVisitor {
   }
 
   private shouldSkipChildren(type: string, node: TreeSitterNode): boolean {
+    if (type === 'instance_declaration') {
+      if (this.currentInstance) this.analyzeDialogBody(node, this.currentInstance);
+      // Instance bodies have their own projection boundary. Never recursively
+      // treat branch assignments or compound writes as unconditional properties.
+      return true;
+    }
     const isConditionFunc = this.isCurrentConditionFunction();
     // A condition function is analyzed as a complete body, once. Never walk
     // its expression descendants as statements or independent predicates.
@@ -251,6 +259,37 @@ export class LinkingVisitor {
     }
 
     return false;
+  }
+
+  private isDirectPropertyAssignment(node: TreeSitterNode): boolean {
+    return node.type === 'assignment_statement' &&
+      node.childForFieldName('left')?.type === 'identifier' &&
+      getAssignmentOperator(node) === '=';
+  }
+
+  private analyzeDialogBody(node: TreeSitterNode, dialog: Dialog): void {
+    const body = node.childForFieldName('body');
+    if (!body) return;
+    const seen = new Set<string>();
+    let representable = true;
+    for (const statement of body.namedChildren) {
+      if (statement.type === 'comment') continue;
+      if (!this.isDirectPropertyAssignment(statement)) {
+        representable = false;
+        continue;
+      }
+      const key = statement.childForFieldName('left')!.text.toLowerCase();
+      if (seen.has(key) || hasComment(statement)) representable = false;
+      seen.add(key);
+    }
+    // Metadata comes only from direct simple writes, even in raw mode. It is
+    // not an evaluation of the constructor's final runtime state.
+    for (const statement of body.namedChildren) {
+      if (this.isDirectPropertyAssignment(statement)) this.processAssignment(statement);
+    }
+    if (!representable) {
+      dialog.sourceBody = { text: body.text, propertyValues: snapshotDialogProperties(dialog.properties) };
+    }
   }
 
   private handleStatementNode(type: string, node: TreeSitterNode): void {
