@@ -61,8 +61,10 @@ function main() {
   const parser = new DaedalusParser();
 
   try {
-    console.log(`Parsing: ${filePath}`);
-    console.log('─'.repeat(50));
+    if (!options.json) {
+      console.log(`Parsing: ${filePath}`);
+      console.log('─'.repeat(50));
+    }
 
     const result = parser.parseFile(filePath);
 

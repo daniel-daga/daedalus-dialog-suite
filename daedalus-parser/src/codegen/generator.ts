@@ -15,6 +15,7 @@ import { collectReachableFunctions } from '../semantic/cross-references';
 import { indentGeneratedCode } from '../semantic/code-formatting';
 import { generateActionCode } from '../semantic/action-codegen';
 import { formatNumericValue } from '../semantic/parsers/numeric-literals';
+import { generateDeclarationHeader } from '../semantic/declaration-source';
 
 // Structural shape shared by GlobalConstant / GlobalVariable / GlobalInstance
 // as far as code generation is concerned.
@@ -189,8 +190,8 @@ export class SemanticCodeGenerator {
 
     // Keep legacy robustness for manually constructed models that might miss order entries.
     for (const dialogName in model.dialogs) {
-      if (!emittedDialogs.has(dialogName)) {
-        const dialog = model.dialogs[dialogName];
+      const dialog = model.dialogs[dialogName];
+      if (!emittedDialogs.has(dialog.name)) {
         const leading = this.renderLeadingComments(dialog.leadingComments);
         if (leading) {
           sections.push(leading);
@@ -198,7 +199,7 @@ export class SemanticCodeGenerator {
           sections.push(this.generateSectionHeader(this.extractDisplayName(dialog.name)));
         }
         sections.push(this.generateDialog(dialog));
-        emittedDialogs.add(dialogName);
+        emittedDialogs.add(dialog.name);
 
         // Also cluster associated functions for fallback dialogs
         const associatedFuncs = this.getAssociatedFunctions(dialog, model);
@@ -423,6 +424,9 @@ export class SemanticCodeGenerator {
     const instanceKeyword = this.resolveKeyword('instance', dialog.keyword);
     const spaceBeforeParen = this.options.preserveSourceStyle && dialog.spaceBeforeParen ? ' ' : '';
     const parent = dialog.parent || 'C_INFO';
+    const header = generateDeclarationHeader(
+      `${instanceKeyword} ${dialog.name}${spaceBeforeParen}(${parent})`, dialog.sourceHeader, this.options.includeComments
+    );
     if (dialog.sourceBody) {
       const current = snapshotDialogProperties(dialog.properties);
       const baseline = dialog.sourceBody.propertyValues;
@@ -430,11 +434,11 @@ export class SemanticCodeGenerator {
           Object.keys(current).some(key => !Object.prototype.hasOwnProperty.call(baseline, key) || current[key] !== baseline[key])) {
         throw new Error(`Dialog ${dialog.name} has a preserved executable instance body; edit its source before changing properties or function references`);
       }
-      return `${instanceKeyword} ${dialog.name}${spaceBeforeParen}(${parent})\n${dialog.sourceBody.text};\n`;
+      return `${header}\n${dialog.sourceBody.text};\n`;
     }
     const lines: string[] = [];
 
-    lines.push(`${instanceKeyword} ${dialog.name}${spaceBeforeParen}(${parent})`);
+    lines.push(header);
     lines.push('{');
 
     // Preserve original property insertion order to minimize style churn.
@@ -509,6 +513,9 @@ export class SemanticCodeGenerator {
     ) {
       return value;
     }
+    if (typeof value === 'string' && dialog.propertyLiteralKeys?.includes(key)) {
+      return value.startsWith('"') && value.endsWith('"') ? value : `"${value}"`;
+    }
     return this.formatValue(value);
   }
 
@@ -535,12 +542,15 @@ export class SemanticCodeGenerator {
     const parameters = (func.parameters || [])
       .map(p => [p.keyword, p.type, p.name].filter(Boolean).join(' '))
       .join(', ');
-    lines.push(`${funcKeyword} ${returnType} ${func.name}${spaceBeforeParen}(${parameters})`);
+    lines.push(generateDeclarationHeader(
+      `${funcKeyword} ${returnType} ${func.name}${spaceBeforeParen}(${parameters})`,
+      func.sourceHeader, this.options.includeComments
+    ));
     lines.push('{');
     const emitBodyComments = (comments?: string[]) => {
       if (!this.options.includeComments || preservedBody) return;
       for (const comment of comments || []) {
-        for (const line of comment.split('\n')) lines.push(`${indent}${line}`);
+        lines.push(indentGeneratedCode(comment, indent));
       }
     };
     emitBodyComments(func.conditionBodyLeadingComments);

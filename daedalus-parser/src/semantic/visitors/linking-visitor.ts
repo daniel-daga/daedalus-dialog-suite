@@ -462,6 +462,12 @@ export class LinkingVisitor {
       if (typeof value === 'string' && rightNode.type !== 'string') {
         this.markPropertyExpression(propertyName);
       }
+      if (rightNode.type === 'string') {
+        this.currentInstance.propertyLiteralKeys ??= [];
+        if (!this.currentInstance.propertyLiteralKeys.includes(propertyName)) {
+          this.currentInstance.propertyLiteralKeys.push(propertyName);
+        }
+      }
 
       this.currentInstance.properties[propertyName] = value;
     }

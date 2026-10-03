@@ -386,3 +386,40 @@ integer action-field types. All 489 non-CLI parser tests, `build:ts` and
 typecheck pass locally using the real native Node binding, committed grammar
 and real model hydration. The standard CI toolchain supplies Tree-sitter
 regeneration, lint with the pinned dependencies and the two CLI help tests.
+
+## Formatter safety and semantic header preservation
+
+Six further review findings were reproduced before implementation. The first
+regression run had 16 failures and three passing controls using the actual
+native grammar, CLI entry points and official model hydration.
+
+| Failure | Root cause | Contract after the fix |
+|---|---|---|
+| Malformed input replaces a destination with a partial reconstruction | The formatter only warned about parse errors, skipped the visitor error pass and wrote before optional verification | Reject source errors and validate generated syntax before writing, with or without verbose output |
+| Windows-1252 string text becomes replacement characters | The formatter always decoded bytes as UTF-8; replacement characters inside strings still parse | Prefer valid UTF-8, otherwise Windows-1252; accept explicit input/output encodings, preserve input encoding by default and reject unrepresentable output before writing |
+| Edited string properties become identifiers or function references | Generation inferred identity from spelling and JSON hydration linked matching strings to functions | Retain `propertyLiteralKeys`; expression metadata takes precedence, new descriptions default to literals and legacy JSON retains its inference behavior |
+| Function and C_INFO header comments disappear or contaminate parameter keywords | Reconstruction had no header trivia ownership; parameter keyword extraction included its whole commented prefix | Capture AST token ranges and comment text in JSON-safe `sourceHeader`; patch current typed tokens, recover only the real parameter keyword and honor `includeComments` |
+| Projected condition block comments gain indentation on each save | Generation indented every internal comment line | Indent the comment's first line only; preserve its interior text, including CRLF |
+| Parser JSON stdout cannot be parsed as JSON | Human-readable banners were emitted before the JSON document | Suppress those banners in JSON mode |
+
+Statistical encoding detection misclassified a German Windows-1252 regression
+as an unsupported encoding with high confidence. The formatter therefore uses
+the explicit UTF-8/Windows-1252 policy above rather than guessing other legacy
+encodings. Windows-1250 and other encodings require `--encoding`.
+
+Header comment metadata belongs to the declaration, separately from its editable
+signature. Changes in parameter count or keyword presence move the original
+comments ahead of the current canonical header. Ordinary token edits preserve
+their original comment gaps. The metadata survives JSON hydration and remains
+active when source-style preservation is disabled. An integration regression
+also exposed mixed dictionary-key/current-name tracking for renamed dialogs;
+generation now records the current declaration name consistently and emits it
+once.
+
+The 22 follow-up tests cover destination preservation (including in-place
+formatting), UTF-8 and legacy encoding paths, edited literals and function-name
+collisions, legacy JSON, expression precedence, header edits and arity changes,
+comment removal, LF/CRLF block comments and three hydrated roundtrip cycles.
+All 513 parser tests, grammar regeneration, lint, typecheck and the strict
+synthetic fixture corpus pass locally with the real native Node binding.
+No licensed MDK corpus or Gothic engine run was performed.

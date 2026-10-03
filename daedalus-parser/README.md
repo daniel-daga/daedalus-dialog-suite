@@ -137,10 +137,21 @@ npm run format -- examples/DIA_Szmyk.d --indent-spaces 4 --no-comments
 Options:
 - `--verbose, -v` - Show detailed statistics and verification
 - `--output, -o` - Write to file instead of stdout
+- `--encoding NAME` - Read a specific encoding (default: valid UTF-8, otherwise Windows-1252)
+- `--output-encoding NAME` - Set output file encoding (default: input encoding)
 - `--indent-spaces N` - Use N spaces instead of tabs
 - `--no-comments` - Omit inline comments
 - `--no-headers` - Omit section headers
 - `--uppercase` - Use uppercase keywords (INSTANCE, FUNC)
+
+The formatter validates input and generated syntax before writing, including
+without `--verbose`. Invalid syntax or an output encoding that cannot represent
+the generated text leaves an existing destination unchanged. Other legacy
+encodings, such as Windows-1250, require `--encoding`; stdout uses Unicode text.
+
+```bash
+npm run format -- input.d --encoding windows-1250 --output-encoding utf8 -o output.d
+```
 
 ### Code Formatter
 
