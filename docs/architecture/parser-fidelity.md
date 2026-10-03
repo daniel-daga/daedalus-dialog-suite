@@ -152,8 +152,10 @@ Local validation used the committed native grammar and reconstructed offline
 dependencies: 417 non-CLI tests passed, including the fixture corpus; lint and
 typecheck passed. The two CLI help tests require unavailable `ts-node`, and
 `npm test` stops at the unavailable Tree-sitter CLI. Grammar sources were not
-changed. The exact CI toolchain must run the standard workspace commands before
-closing #340; the local offline tooling is not a substitute for that check.
+changed. The standard CI toolchain subsequently passed all 419 tests (including both
+CLI help tests), grammar generation, lint and typecheck on fix commit
+`efd9c30d562cf1c2fffd3ed1a288a7ec26bb75ad`:
+[parser-tests job](https://github.com/daniel-daga/daedalus-dialog-suite/actions/runs/37113289639/job/111175181411).
 
 ## Statements and symbols
 
