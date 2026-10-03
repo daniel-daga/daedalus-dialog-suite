@@ -211,6 +211,18 @@ pull-forward, no synthesized section headers. Clustering and headers remain
 the fallback for models (or entries) without order data, e.g. editor-created
 content.
 
+The clustering fallback now uses one function-emission registry per export
+(#342), just as the declaration-order path does. Previously it recorded emitted
+associated functions but never checked the registry before the next dialog,
+so a shared condition, information function or choice target became duplicate
+declarations. Leftover functions also checked dictionary keys rather than
+declaration names. Both paths now identify declarations by their case-insensitive
+function name, check before emitting and record every emitted function.
+A single-dialog export gets its own registry; repeated exports remain independent.
+`test/shared-function-generation.test.js` covers shared condition/info functions,
+cyclic choices, absent/empty/partial/parsed order data and dictionary-key case
+drift through hydration. Three of five regressions failed before the fix.
+
 ## Errored models
 
 `generateSemanticModel` **throws** when `model.hasErrors` is truthy unless

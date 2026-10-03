@@ -340,7 +340,9 @@ const generator = new SemanticCodeGenerator({
 
 ##### `generateSemanticModel(model: SemanticModel): string`
 
-Generate complete Daedalus source file from semantic model.
+Generate complete Daedalus source file from semantic model. Shared condition,
+information and choice-target functions are emitted once per export by their
+case-insensitive declaration name, with or without `declarationOrder`.
 
 - **Parameters:**
   - `model` - Semantic model with dialogs and functions

@@ -98,9 +98,10 @@ export class SemanticCodeGenerator {
 
     // Generate any remaining functions not associated with dialogs
     for (const funcName in model.functions) {
-      if (!processedFunctions.has(funcName)) {
-        const func = model.functions[funcName];
+      const func = model.functions[funcName];
+      if (!processedFunctions.has(func.name.toLowerCase())) {
         sections.push(this.generateFunction(func));
+        processedFunctions.add(func.name.toLowerCase());
       }
     }
 
@@ -175,9 +176,9 @@ export class SemanticCodeGenerator {
         }
       } else if (declaration.type === 'function') {
         const func = model.functions[declaration.name];
-        if (func && !emittedFunctions.has(func.name)) {
+        if (func && !emittedFunctions.has(func.name.toLowerCase())) {
           emitOrdered(withLeading(func.leadingComments, this.generateFunction(func)), false, declaration.blankLinesBefore);
-          emittedFunctions.add(func.name);
+          emittedFunctions.add(func.name.toLowerCase());
         }
       }
     }
@@ -201,25 +202,26 @@ export class SemanticCodeGenerator {
         // Also cluster associated functions for fallback dialogs
         const associatedFuncs = this.getAssociatedFunctions(dialog, model);
         for (const func of associatedFuncs) {
-          if (!emittedFunctions.has(func.name)) {
+          if (!emittedFunctions.has(func.name.toLowerCase())) {
             const funcLeading = this.renderLeadingComments(func.leadingComments);
             if (funcLeading) {
               sections.push(funcLeading);
             }
             sections.push(this.generateFunction(func));
-            emittedFunctions.add(func.name);
+            emittedFunctions.add(func.name.toLowerCase());
           }
         }
       }
     }
     for (const funcName in model.functions) {
-      if (!emittedFunctions.has(funcName)) {
-        const func = model.functions[funcName];
+      const func = model.functions[funcName];
+      if (!emittedFunctions.has(func.name.toLowerCase())) {
         const leading = this.renderLeadingComments(func.leadingComments);
         if (leading) {
           sections.push(leading);
         }
         sections.push(this.generateFunction(func));
+        emittedFunctions.add(func.name.toLowerCase());
       }
     }
 
@@ -347,7 +349,9 @@ export class SemanticCodeGenerator {
     // Associated functions (condition, information)
     const associatedFuncs = this.getAssociatedFunctions(dialog, model);
     for (const func of associatedFuncs) {
-      processedFunctions.add(func.name);
+      const identity = func.name.toLowerCase();
+      if (processedFunctions.has(identity)) continue;
+      processedFunctions.add(identity);
       parts.push(this.generateFunction(func));
     }
 
