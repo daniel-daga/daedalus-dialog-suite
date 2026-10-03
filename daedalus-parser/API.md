@@ -130,6 +130,7 @@ class Dialog {
   name: string;                    // Dialog instance name
   parent: string | null;           // Parent class (usually C_INFO)
   properties: DialogProperties;    // Dialog properties
+  propertyExpressionKeys?: string[]; // Keys whose string values are expressions
   sourceBody?: DialogSourceBody;   // Lossless executable constructor fallback
   actions: DialogAction[];         // Extracted semantic actions
 }
@@ -159,7 +160,9 @@ when style/comment options are disabled. Their property metadata comes only
 from direct simple assignments and does not evaluate the constructor. Changing
 properties or renaming linked function references throws: edit the constructor
 source and reparse first. Linked function body edits remain supported. Ordinary
-unique property-only bodies remain structurally editable. Keep `sourceBody`
+unique property-only bodies remain structurally editable.
+`propertyExpressionKeys` retains expression identity regardless of
+`preserveSourceStyle`; changing a marked value emits the current expression. Keep `sourceBody`
 through JSON/IPC; `deserializeSemanticModel` restores it automatically.
 
 **Example:**
@@ -317,6 +320,7 @@ interface CodeGeneratorOptions {
   includeComments?: boolean;  // Default: true
   sectionHeaders?: boolean;   // Default: true
   uppercaseKeywords?: boolean; // Default: false
+  preserveSourceStyle?: boolean; // Default: true; formatting only, never expression identity
   allowPartialModel?: boolean; // Default: false
 }
 ```

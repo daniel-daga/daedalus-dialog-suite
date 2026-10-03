@@ -498,7 +498,6 @@ export class SemanticCodeGenerator {
 
   private formatDialogPropertyValue(dialog: Dialog, key: string, value: string | number | boolean | DialogFunction): string {
     if (
-      this.options.preserveSourceStyle &&
       typeof value === 'string' &&
       Array.isArray(dialog.propertyExpressionKeys) &&
       dialog.propertyExpressionKeys.includes(key)

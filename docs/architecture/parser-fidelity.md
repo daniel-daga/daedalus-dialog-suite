@@ -99,6 +99,22 @@ replace a real mod corpus run.
 Condition calls still require exact arity; unsupported calls remain verbatim.
 String comparison values retain their literal flag when structured.
 
+## Expression identity and formatting (#341)
+
+The expression marker `Dialog.propertyExpressionKeys` is semantic metadata.
+Previously `formatDialogPropertyValue` consulted it only with
+`preserveSourceStyle: true`, so disabling formatting preservation changed
+`nr = BASE + 2;` into `nr = "BASE + 2";`. The AST and JSON model already
+retained the correct expression; its type was lost only at emission.
+
+Expression values now emit verbatim for either style setting. Literal strings
+still use the normal string path, and edited marked values come from the current
+model. Formatting options cannot change expression identity.
+`test/dialog-property-expression-options.test.js` exercises arithmetic, calls,
+bitwise, array, member and unary expressions, literals alongside them, edits,
+official JSON hydration and three cycles with alternating style settings.
+All eight regressions failed before the fix and pass after it.
+
 ## C_INFO constructor projection boundary (#340)
 
 A C_INFO body is a program, not necessarily a property initializer list. The
