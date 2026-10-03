@@ -33,8 +33,6 @@ This directory is the canonical home for repository-level documentation.
 
 ## Active Plans
 
-- [plans/parser-review-2026-10-03.md](plans/parser-review-2026-10-03.md) — remaining parser review findings (#341–#344).
-
 - [plans/production-readiness-review-findings.md](plans/production-readiness-review-findings.md) — production-readiness, performance and UI/UX review findings; quest Flow-view deprecation decision and remaining work.
 
 ## Release

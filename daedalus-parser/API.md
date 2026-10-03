@@ -296,7 +296,10 @@ instance.sourceText = applyNpcEdits(instance.sourceText, [
   { op: 'set', field: 'protection', index: 'PROT_EDGE', value: '100' },
   { op: 'remove', field: 'flags' },
   { op: 'setCall', name: 'Mdl_SetModelFatness', args: ['self', '1'] },
-  { op: 'removeCall', name: 'EquipItem', occurrence: 0 },
+  { op: 'removeCall', name: 'EquipItem', occurrence: 1 },
+]);
+// A new call gets fresh insertion coordinates after removals have completed.
+instance.sourceText = applyNpcEdits(instance.sourceText, [
   { op: 'addCall', name: 'EquipItem', args: ['self', 'ItRw_Sld_Bow'] },
 ]);
 ```

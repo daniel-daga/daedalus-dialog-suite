@@ -56,7 +56,8 @@ legacy metadata, direct/then/else/nested calls and three parse/generate cycles.
 ### Commented assignment edits (#344)
 
 The old assignment extractor retained only target, operator and value, so
-comments in the gaps between them had no model slot. Both top-level extraction
+comments in the gaps between them had no model slot: `x /* keep */ = 1;`
+became `x = 1;` even with comments enabled. Both top-level extraction
 and conditional-branch extraction now use the same constructor for
 `SetVariableAction`. Commented assignments carry their original `sourceText`
 and JSON-safe `sourceAssignment` ranges/baselines for the target, operator and
@@ -328,3 +329,30 @@ construct family) runs fully strict via `test/roundtrip-corpus-smoke.test.js`
 The real MDK corpus is licensed/gitignored; run it locally with
 `npm run test:roundtrip-corpus -- --root <mdk path>`. Re-enabling the
 standalone CI corpus job is slice 8's call.
+
+## 2026-10-03 review validation
+
+The original five-finding review was recorded at
+[072b312](https://github.com/daniel-daga/daedalus-dialog-suite/blob/072b3122723bf12f050c262dedd574d71886077d/docs/plans/parser-review-2026-10-03.md).
+Its settled contracts now live above; the completed plan is removed.
+
+| Issue | Root boundary | Regression file | New tests |
+|---|---|---|---:|
+| #341 | Expression identity is independent of formatting | `test/dialog-property-expression-options.test.js` | 8 |
+| #342 | One declaration identity registry per export | `test/shared-function-generation.test.js` | 5 |
+| #343 | Original-coordinate patches require validated disjoint targets/ranges | `test/npc-edit-conflicts.test.js` | 14 |
+| #344 | Assignment trivia and edits need explicit AST ownership | `test/commented-assignment-edits.test.js` | 17 |
+
+These regressions reproduced 37 failures before their respective fixes; the
+seven remaining cases guarded existing behavior. Combined local validation:
+461 non-CLI parser tests, lint and typecheck passed using the real native binding
+and real model hydration. The local environment still lacks the Tree-sitter CLI
+and ts-node, so standard CI supplies grammar regeneration and both CLI tests.
+
+On source tip `779763e16765c506570daa33016b753a3e49e018`,
+[parser-tests](https://github.com/daniel-daga/daedalus-dialog-suite/actions/runs/37116593815/job/111184497434)
+passed all **463 tests**, grammar generation, lint and typecheck.
+The separate
+[strict fixture corpus](https://github.com/daniel-daga/daedalus-dialog-suite/actions/runs/37116593815/job/111184497600)
+also passed. The follow-up documentation commit changes no parser source.
+No licensed MDK corpus or Gothic engine run was performed.

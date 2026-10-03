@@ -25,7 +25,8 @@ handovers cost an hour a session:
 | **work a run can take unattended** | the `agent-ready` label |
 | a 2026-08-29 review finding | `docs/plans/world-editor-review-2026-08-29.md` |
 | **a 2026-09-04 review finding** — the second pass the 08-29 review never got | `docs/plans/level-editor-review-2026-09-04.md` |
-| a 2026-10-03 parser review finding | `docs/plans/parser-review-2026-10-03.md` |\n| a dialog-simulator finding | `docs/plans/dialog-simulator-review-findings.md` |
+| settled parser fidelity and 2026-10-03 review outcomes | `docs/architecture/parser-fidelity.md` |
+| a dialog-simulator finding | `docs/plans/dialog-simulator-review-findings.md` |
 | a production-readiness finding | `docs/plans/production-readiness-review-findings.md` |
 | a 2026-07 code-review item | `docs/plans/code-review-2026-07-remediation.md` |
 | the VOB folders design | `docs/plans/vob-folders.md` |
