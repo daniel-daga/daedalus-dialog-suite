@@ -31,6 +31,22 @@ P1–P7, M1–M5, N1–N10). The governing principle:
   function has unexpected argument count in either direction
   (`Npc_RemoveInvItem` = 2 args vs `Npc_RemoveInvItems` = 3).
 
+### Parsed call identity
+
+Semantic dispatch selects the editor's action or condition type; it does not
+own the emitted callee. Parsed calls carry JSON-safe `callIdentity` metadata
+with the original `sourceName` and the generator's `generatedName` baseline.
+A shared call renderer retains the source name while generating current
+arguments. It uses an explicitly edited callee when that differs from the
+baseline, independent of comment and source-style options. This includes
+structured predicates under negation and comparisons.
+
+`Log_AddEntry` and `B_LogEntry` may both project to `LogEntry`, but remain
+distinct calls on output. New actions and older JSON without source identity
+keep their constructor defaults. Older commented action JSON can recover the
+callee from its existing `sourceText`/`sourceCall` range. Unknown and declined
+calls continue to emit their verbatim action or condition text.
+
 ### Commented action edits
 
 Commented typed calls carry JSON-safe `sourceCall` metadata: the AST ranges of

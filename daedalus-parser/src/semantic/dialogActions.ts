@@ -1,3 +1,4 @@
+import { generateCallStatement } from './call-identity';
 /**
  * Dialog-specific action classes.
  *
@@ -34,7 +35,7 @@ export class DialogLine implements CodeGeneratable {
     // lines that carry no listener field.
     const listener = this.listener ?? (this.speaker === 'other' ? 'self' : 'other');
     const id = this.idIsExpression ? this.id : `"${this.id}"`;
-    return `AI_Output (${this.speaker}, ${listener}, ${id});${comment}`;
+    return `${generateCallStatement(this, 'AI_Output', [this.speaker, listener, id])}${comment}`;
   }
 
   toDisplayString(): string {
@@ -61,10 +62,10 @@ export class Choice implements CodeGeneratable {
 
   generateCode(_options: CodeGenOptions): string {
     if (this.textIsExpression) {
-      return `Info_AddChoice (${this.dialogRef}, ${this.text}, ${this.targetFunction});`;
+      return generateCallStatement(this, 'Info_AddChoice', [this.dialogRef, this.text, this.targetFunction]);
     }
     // Daedalus strings have no escape sequences: emit content verbatim.
-    return `Info_AddChoice (${this.dialogRef}, "${this.text}", ${this.targetFunction});`;
+    return generateCallStatement(this, 'Info_AddChoice', [this.dialogRef, `"${this.text}"`, this.targetFunction]);
   }
 
   toDisplayString(): string {
@@ -85,7 +86,7 @@ export class ClearChoicesAction implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `Info_ClearChoices (${this.dialog});`;
+    return generateCallStatement(this, 'Info_ClearChoices', [this.dialog]);
   }
 
   toDisplayString(): string {

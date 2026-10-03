@@ -16,12 +16,22 @@ import { isArgumentNode } from './argument-parsing';
 import { parseLiteralOrIdentifier } from './literal-parsing';
 import { getBinaryOperator, isComparisonOperator, hasComment } from './ast-constants';
 
+import { captureCallIdentity } from './call-identity';
+
 export class ConditionParsers {
 
   /**
    * Parse a semantic condition based on node type
    */
   static parseSemanticCondition(node: TreeSitterNode, functionName?: string): DialogCondition | null {
+    const condition = ConditionParsers.parseSpecificCondition(node, functionName);
+    if (condition && condition.type !== 'Condition' && condition.type !== 'VariableCondition') {
+      captureCallIdentity(condition, node);
+    }
+    return condition;
+  }
+
+  private static parseSpecificCondition(node: TreeSitterNode, functionName?: string): DialogCondition | null {
     // Structured fields cannot represent comments between operands/arguments.
     if (hasComment(node)) return ConditionParsers.parseGenericCondition(node);
     // For call expressions, check function name. Daedalus identifiers are

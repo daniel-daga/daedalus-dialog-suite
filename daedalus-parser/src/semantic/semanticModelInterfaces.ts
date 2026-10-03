@@ -1,3 +1,5 @@
+import type { CallIdentity } from './call-identity';
+
 /**
  * Shared interfaces for the semantic model.
  *
@@ -21,6 +23,7 @@ export interface CodeGenOptions {
  * code and display strings.
  */
 export interface CodeGeneratable {
+  callIdentity?: CallIdentity;
   sourceText?: string;
   sourceCall?: SourceCall;
   sourceAssignment?: SourceAssignment;
@@ -66,5 +69,6 @@ export interface SourceHeader {
  * from an editor edit, neither of which has a source line to give (#267).
  */
 export interface SourceLine {
+  callIdentity?: CallIdentity;
   line?: number;
 }

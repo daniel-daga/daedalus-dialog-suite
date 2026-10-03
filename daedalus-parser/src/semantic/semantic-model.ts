@@ -1,3 +1,5 @@
+export type { CallIdentity } from './call-identity';
+import { generateCallStatement } from './call-identity';
 import 'reflect-metadata';
 import { Type, plainToInstance, ClassConstructor } from 'class-transformer';
 import { indentGeneratedCode } from './code-formatting';
@@ -329,8 +331,8 @@ export class CreateTopic implements CodeGeneratable {
 
   generateCode(_options: CodeGenOptions): string {
     const code = this.topicType
-      ? `Log_CreateTopic (${this.topic}, ${this.topicType});`
-      : `Log_CreateTopic (${this.topic});`;
+      ? generateCallStatement(this, 'Log_CreateTopic', [this.topic, this.topicType])
+      : generateCallStatement(this, 'Log_CreateTopic', [this.topic]);
     return `\n${code}\n`;
   }
 
@@ -360,7 +362,7 @@ export class LogEntry implements CodeGeneratable {
 
   generateCode(_options: CodeGenOptions): string {
     const text = this.textIsExpression ? this.text : `"${this.text}"`;
-    return `\nB_LogEntry (${this.topic}, ${text});\n`;
+    return `\n${generateCallStatement(this, 'B_LogEntry', [this.topic, text])}\n`;
   }
 
   toDisplayString(): string {
@@ -383,7 +385,7 @@ export class LogSetTopicStatus implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `Log_SetTopicStatus (${this.topic}, ${this.status});`;
+    return generateCallStatement(this, 'Log_SetTopicStatus', [this.topic, this.status]);
   }
 
   toDisplayString(): string {
@@ -513,7 +515,7 @@ export class ChapterTransitionAction implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `B_Kapitelwechsel (${formatNumericValue(this.chapter)}, ${this.world});`;
+    return generateCallStatement(this, 'B_Kapitelwechsel', [formatNumericValue(this.chapter), this.world]);
   }
 
   toDisplayString(): string {
@@ -561,7 +563,7 @@ export class GivePlayerXPAction implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `B_GivePlayerXP (${this.xpAmount});`;
+    return generateCallStatement(this, 'B_GivePlayerXP', [this.xpAmount]);
   }
 
   toDisplayString(): string {

@@ -401,3 +401,8 @@ MIT License - see LICENSE file for details.
 - [Gothic Scripting Tutorial](https://wiki.worldofgothic.de/doku.php?id=quickstart:skripte)
 - [Tree-sitter](https://tree-sitter.github.io/tree-sitter/)
 
+
+Parsed action and condition calls preserve their original function names through
+JSON serialization and code generation, including when comments or source
+formatting are disabled. Argument edits keep the callee; explicit function-name
+edits replace it. See [the API reference](API.md#action-classes) for `callIdentity`.

@@ -28,6 +28,7 @@ import {
   InsertNpcAction
 } from '../semantic-model';
 import { parseArgumentsDetailed, parseNumericArg, ParsedArg } from './argument-parsing';
+import { captureCallIdentity } from './call-identity';
 import { hasComment } from './ast-constants';
 import { captureActionSource, getCallStatementSuffix } from '../action-source';
 import type { CodeGeneratable } from '../semanticModelInterfaces';
@@ -44,6 +45,7 @@ export class ActionParsers {
   static parseSemanticAction(node: TreeSitterNode, functionName: string): DialogAction {
     const specific = ActionParsers.parseSpecificAction(node, functionName);
     const action = (specific ?? ActionParsers.parseGenericAction(node)) as DialogAction & CodeGeneratable;
+    captureCallIdentity(action, node);
     // Typed action models normalize arguments, so comments embedded in the
     // call would otherwise disappear on generation. Keep the semantic type,
     // but attach the complete call for the comment-aware generator path.

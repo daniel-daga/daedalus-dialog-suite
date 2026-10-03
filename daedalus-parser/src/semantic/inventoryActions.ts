@@ -1,3 +1,4 @@
+import { generateCallStatement } from './call-identity';
 /**
  * Inventory action classes.
  *
@@ -21,7 +22,7 @@ export class CreateInventoryItems implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `CreateInvItems (${this.target}, ${this.item}, ${formatNumericValue(this.quantity)});`;
+    return generateCallStatement(this, 'CreateInvItems', [this.target, this.item, formatNumericValue(this.quantity)]);
   }
 
   toDisplayString(): string {
@@ -48,7 +49,7 @@ export class GiveInventoryItems implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `B_GiveInvItems (${this.giver}, ${this.receiver}, ${this.item}, ${formatNumericValue(this.quantity)});`;
+    return generateCallStatement(this, 'B_GiveInvItems', [this.giver, this.receiver, this.item, formatNumericValue(this.quantity)]);
   }
 
   toDisplayString(): string {
@@ -69,7 +70,7 @@ export class GiveTradeInventoryAction implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `B_GiveTradeInv (${this.tradeTarget});`;
+    return generateCallStatement(this, 'B_GiveTradeInv', [this.tradeTarget]);
   }
 
   toDisplayString(): string {
@@ -104,9 +105,9 @@ export class RemoveInventoryItemsAction implements CodeGeneratable {
 
   generateCode(_options: CodeGenOptions): string {
     const args = this.removeQuantity === undefined
-      ? `${this.removeNpc}, ${this.removeItem}`
-      : `${this.removeNpc}, ${this.removeItem}, ${this.removeQuantity}`;
-    return `${this.removeFunctionName} (${args});`;
+      ? [this.removeNpc, this.removeItem]
+      : [this.removeNpc, this.removeItem, this.removeQuantity];
+    return generateCallStatement(this, this.removeFunctionName, args);
   }
 
   toDisplayString(): string {

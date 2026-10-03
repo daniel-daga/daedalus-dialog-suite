@@ -49,8 +49,8 @@ func void DIA_Test_LogRoundtrip_Info()
   const generatedCode = generator.generateSemanticModel(visitor1.semanticModel);
 
   assert.ok(
-    generatedCode.includes('B_LogEntry (TOPIC_Test, "From AddEntry");'),
-    'Generated code should include normalized B_LogEntry form for Log_AddEntry semantics'
+    generatedCode.includes('Log_AddEntry (TOPIC_Test, "From AddEntry");'),
+    'Generated code should preserve the original Log_AddEntry callee'
   );
 
   const tree2 = parser.parse(generatedCode);

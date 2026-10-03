@@ -1,3 +1,4 @@
+import { generateCallExpression } from './call-identity';
 /**
  * Dialog condition classes and the DialogCondition union type.
  *
@@ -30,7 +31,7 @@ export class NpcKnowsInfoCondition implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    const call = `Npc_KnowsInfo(${this.npc}, ${this.dialogRef})`;
+    const call = generateCallExpression(this, 'Npc_KnowsInfo', [this.npc, this.dialogRef]);
     return this.negated ? `!${call}` : call;
   }
 
@@ -69,7 +70,7 @@ export class NpcHasItemsCondition implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    const call = `Npc_HasItems(${this.npc}, ${this.item})`;
+    const call = generateCallExpression(this, 'Npc_HasItems', [this.npc, this.item]);
     if (this.operator && this.value !== undefined) {
       return `${call} ${this.operator} ${formatComparisonValue(this.value, this.valueIsStringLiteral)}`;
     }
@@ -104,7 +105,7 @@ export class NpcIsInStateCondition implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    const call = `Npc_IsInState(${this.npc}, ${this.state})`;
+    const call = generateCallExpression(this, 'Npc_IsInState', [this.npc, this.state]);
     return this.negated ? `!${call}` : call;
   }
 
@@ -133,7 +134,7 @@ export class NpcIsDeadCondition implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    const call = `Npc_IsDead(${this.npc})`;
+    const call = generateCallExpression(this, 'Npc_IsDead', [this.npc]);
     return this.negated ? `!${call}` : call;
   }
 
@@ -172,7 +173,7 @@ export class NpcGetDistToWpCondition implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    const call = `Npc_GetDistToWP(${this.npc}, ${this.waypoint})`;
+    const call = generateCallExpression(this, 'Npc_GetDistToWP', [this.npc, this.waypoint]);
     if (this.operator && this.value !== undefined) {
       return `${call} ${this.operator} ${formatComparisonValue(this.value, this.valueIsStringLiteral)}`;
     }
@@ -215,7 +216,7 @@ export class NpcGetTalentSkillCondition implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    const call = `Npc_GetTalentSkill(${this.npc}, ${this.talent})`;
+    const call = generateCallExpression(this, 'Npc_GetTalentSkill', [this.npc, this.talent]);
     if (this.operator && this.value !== undefined) {
       return `${call} ${this.operator} ${formatComparisonValue(this.value, this.valueIsStringLiteral)}`;
     }

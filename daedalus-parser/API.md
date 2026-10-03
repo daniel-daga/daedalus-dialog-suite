@@ -215,6 +215,14 @@ console.log('Return type:', func.returnType);
 console.log('Actions:', func.actions);
 ```
 
+Parsed typed calls expose optional `callIdentity: { version: 1; sourceName: string;
+generatedName: string }` metadata on `DialogAction` and `DialogCondition`.
+Preserve it when serializing editor models. Shared call rendering uses the
+original callee with current arguments, even with `includeComments: false`
+or `preserveSourceStyle: false`. Existing editable function-name fields remain
+authoritative when changed from their parse baseline. Hand-built models and
+legacy JSON without identity metadata use their default function names.
+
 ### Action Classes
 
 Semantic actions extracted from function bodies:
@@ -256,7 +264,8 @@ class CreateTopic {
 
 #### LogEntry
 
-B_LogEntry call.
+`B_LogEntry` or `Log_AddEntry` call. Parsed actions retain the original callee;
+new `LogEntry` instances default to `B_LogEntry`.
 
 ```typescript
 class LogEntry {

@@ -1,3 +1,4 @@
+import { generateCallStatement } from './call-identity';
 /**
  * NPC action classes.
  *
@@ -23,7 +24,7 @@ export class AttackAction implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `B_Attack (${this.attacker}, ${this.target}, ${this.attackReason}, ${formatNumericValue(this.damage)});`;
+    return generateCallStatement(this, 'B_Attack', [this.attacker, this.target, this.attackReason, formatNumericValue(this.damage)]);
   }
 
   toDisplayString(): string {
@@ -46,7 +47,7 @@ export class SetAttitudeAction implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `B_SetAttitude (${this.target}, ${this.attitude});`;
+    return generateCallStatement(this, 'B_SetAttitude', [this.target, this.attitude]);
   }
 
   toDisplayString(): string {
@@ -75,7 +76,7 @@ export class ExchangeRoutineAction implements CodeGeneratable {
 
   generateCode(_options: CodeGenOptions): string {
     const routine = this.routineIsExpression ? this.routine : `"${this.routine}"`;
-    return `Npc_ExchangeRoutine (${this.target}, ${routine});`;
+    return generateCallStatement(this, 'Npc_ExchangeRoutine', [this.target, routine]);
   }
 
   toDisplayString(): string {
@@ -96,7 +97,7 @@ export class StopProcessInfosAction implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `AI_StopProcessInfos (${this.target});`;
+    return generateCallStatement(this, 'AI_StopProcessInfos', [this.target]);
   }
 
   toDisplayString(): string {
@@ -119,7 +120,7 @@ export class SetRefuseTalkAction implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `Npc_SetRefuseTalk (${this.target}, ${formatNumericValue(this.seconds)});`;
+    return generateCallStatement(this, 'Npc_SetRefuseTalk', [this.target, formatNumericValue(this.seconds)]);
   }
 
   toDisplayString(): string {
@@ -148,7 +149,7 @@ export class PlayAniAction implements CodeGeneratable {
 
   generateCode(_options: CodeGenOptions): string {
     const animationName = this.animationNameIsExpression ? this.animationName : `"${this.animationName}"`;
-    return `AI_PlayAni (${this.target}, ${animationName});`;
+    return generateCallStatement(this, 'AI_PlayAni', [this.target, animationName]);
   }
 
   toDisplayString(): string {
@@ -198,16 +199,16 @@ export class PickpocketAction implements CodeGeneratable {
     const name = this.sourceFunctionName ?? this.pickpocketMode;
 
     if (this.pickpocketArgs !== undefined) {
-      return `${name} (${this.pickpocketArgs.join(', ')});`;
+      return generateCallStatement(this, name, this.pickpocketArgs);
     }
 
     if (this.pickpocketMode === 'B_Beklauen') {
-      return `${name} ();`;
+      return generateCallStatement(this, name, []);
     }
 
     const min = this.minChance || '0';
     const max = this.maxChance || min;
-    return `${name} (${min}, ${max});`;
+    return generateCallStatement(this, name, [min, max]);
   }
 
   toDisplayString(): string {
@@ -246,7 +247,7 @@ export class StartOtherRoutineAction implements CodeGeneratable {
 
   generateCode(_options: CodeGenOptions): string {
     const routineName = this.routineNameIsExpression ? this.routineName : `"${this.routineName}"`;
-    return `${this.routineFunctionName} (${this.routineNpc}, ${routineName});`;
+    return generateCallStatement(this, this.routineFunctionName, [this.routineNpc, routineName]);
   }
 
   toDisplayString(): string {
@@ -269,7 +270,7 @@ export class TeachAction implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `${this.teachFunctionName} (${this.teachArgs.join(', ')});`;
+    return generateCallStatement(this, this.teachFunctionName, this.teachArgs);
   }
 
   toDisplayString(): string {
@@ -298,7 +299,7 @@ export class InsertNpcAction implements CodeGeneratable {
 
   generateCode(_options: CodeGenOptions): string {
     const spawnPoint = this.spawnPointIsExpression ? this.spawnPoint : `"${this.spawnPoint}"`;
-    return `Wld_InsertNpc (${this.npcInstance}, ${spawnPoint});`;
+    return generateCallStatement(this, 'Wld_InsertNpc', [this.npcInstance, spawnPoint]);
   }
 
   toDisplayString(): string {
