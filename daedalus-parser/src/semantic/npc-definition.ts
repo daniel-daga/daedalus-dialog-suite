@@ -166,10 +166,23 @@ interface Splice {
  * absent call after the last call of its name or else the last statement;
  * removing an absent one does nothing. Calls match by name and `occurrence`,
  * because retail calls `EquipItem` once per weapon.
+ * Duplicate targets and overlapping source patches are rejected before any
+ * change. Sequential changes to one target require separate calls.
  */
 export function applyNpcEdits(source: string, edits: NpcEdit[]): string {
   if (edits.length === 0) return source;
   const npc = extractNpcDefinition(source);
+  const targets = new Map<string, number>();
+  edits.forEach((edit, order) => {
+    const target = edit.op === 'addCall' ? undefined :
+      edit.op === 'set' || edit.op === 'remove'
+        ? JSON.stringify(['field', edit.field.toLowerCase(), (edit.index ?? '').toLowerCase()])
+        : JSON.stringify(['call', edit.name.toLowerCase(), edit.occurrence ?? 0]);
+    if (target === undefined) return;
+    const previous = targets.get(target);
+    if (previous !== undefined) throw conflictingEdits(previous, order);
+    targets.set(target, order);
+  });
   const fields = npc.statements.filter((s): s is NpcFieldStatement => s.kind === 'field');
   const calls = npc.statements.filter((s): s is NpcCallStatement => s.kind === 'call');
   const findField = (field: string, index?: string) =>
@@ -208,14 +221,29 @@ export function applyNpcEdits(source: string, edits: NpcEdit[]): string {
     }
   });
 
+  // Original-coordinate splicing requires disjoint replacements. A pure
+  // insertion inside a replacement (including its start) is also unsafe;
+  // multiple insertions at the same point remain ordered and compatible.
+  const patches = splices.filter(s => s.start !== s.end || s.text !== '');
+  patches.sort((a, b) => a.start - b.start || b.end - a.end);
+  let active: Splice | undefined;
+  for (const patch of patches) {
+    if (active && patch.start < active.end) throw conflictingEdits(active.order, patch.order);
+    if (patch.end > patch.start) active = patch;
+  }
+
   // Back to front, so an earlier splice's indices are still the original
   // ones; at one insertion point the earlier edit ends up first.
-  splices.sort((a, b) => b.start - a.start || b.order - a.order);
+  patches.sort((a, b) => b.start - a.start || b.order - a.order);
   let out = source;
-  for (const s of splices) {
+  for (const s of patches) {
     out = out.slice(0, s.start) + s.text + out.slice(s.end);
   }
   return out;
+}
+
+function conflictingEdits(first: number, second: number): Error {
+  return new Error(`Conflicting NPC edits ${Math.min(first, second)} and ${Math.max(first, second)}: duplicate target or overlapping source ranges; apply sequential changes in separate calls`);
 }
 
 /** Insert `text` on a new line after `anchor`'s line (default: the last

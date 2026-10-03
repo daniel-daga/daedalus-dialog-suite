@@ -192,6 +192,33 @@ Engine semantics were not checked for any of these — the guarantee is source
 fidelity (the regenerated guard has the same truth table), not that the
 source is valid Gothic.
 
+## NPC edit batch contract (#343)
+
+`applyNpcEdits` resolves all targets and ranges against the original source.
+Applying patches back to front preserves those coordinates only for disjoint
+replacements. The old writer never checked this prerequisite: two writes to
+`level = 1;`, first `2` and then `100`, could produce `200`.
+
+A batch now validates before changing the text. At most one set/remove operation
+may target a case-insensitively matched field/index or call-name/occurrence.
+This includes absent targets, for which a source-range check alone cannot find
+the conflict. Replacement ranges must be disjoint, and an insertion cannot sit
+inside or at the start of a replaced/removed range. Removing an anchor's line
+and inserting on that line is therefore a conflict too. Errors name the
+zero-based edit indices; no partial result is returned. Sequential intent must
+use separate calls so the second call obtains fresh ranges.
+
+Disjoint targets still resolve against the original source, including later call
+occurrences after removing earlier ones. Multiple pure insertions at one point
+are compatible and retain edit order; repeated `addCall` deliberately creates
+distinct calls. There is no silent last-write-wins rule.
+`test/npc-edit-conflicts.test.js` covers same/absent/indexed fields, call
+occurrences, set/remove conflicts, CRLF anchor deletion, different replacement
+lengths, Unicode, stable insertions and explicit sequential edits.
+Ten of fourteen regressions failed before the fix. The existing 28 NPC tests
+remain green. The actual editor parser worker also rejects a conflicting batch;
+the NPC dialog surfaces that error before assigning the result to sourceText.
+
 ## Comments
 
 - An AI_Output subtitle comment must be on the **same line** as the call;

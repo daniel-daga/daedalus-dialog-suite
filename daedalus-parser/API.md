@@ -280,7 +280,7 @@ instance.sourceText = applyNpcEdits(instance.sourceText, [
   { op: 'set', field: 'protection', index: 'PROT_EDGE', value: '100' },
   { op: 'remove', field: 'flags' },
   { op: 'setCall', name: 'Mdl_SetModelFatness', args: ['self', '1'] },
-  { op: 'removeCall', name: 'EquipItem', occurrence: 1 },
+  { op: 'removeCall', name: 'EquipItem', occurrence: 0 },
   { op: 'addCall', name: 'EquipItem', args: ['self', 'ItRw_Sld_Bow'] },
 ]);
 ```
@@ -292,7 +292,12 @@ instance.sourceText = applyNpcEdits(instance.sourceText, [
   case-insensitively.
 - A `set`/`setCall` for an absent statement inserts a line after the last
   field (or last statement), indented like it; removing an absent one is a no-op.
-- All edits in one call resolve against the original source.
+- All edits in one call resolve against the original source. Duplicate field/index
+  or call-name/occurrence targets and overlapping source patches throw before
+  any change, with the zero-based edit indices. This includes inserting inside
+  a removed anchor line. Apply sequential or conflicting changes in separate
+  calls against the returned source. Independent insertions at the same point
+  retain batch order; repeated `addCall` operations remain valid.
 - `setCall`/`removeCall` take an optional 0-based `occurrence` (default 0) to
   address one of several calls of a name, such as retail's one `EquipItem` per
   weapon; `addCall` always inserts, after the last call of that name.
