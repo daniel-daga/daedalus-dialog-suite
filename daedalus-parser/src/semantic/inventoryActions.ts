@@ -6,6 +6,7 @@
  */
 
 import type { CodeGenOptions, CodeGeneratable } from './semanticModelInterfaces';
+import { formatNumericValue } from './parsers/numeric-literals';
 
 export class CreateInventoryItems implements CodeGeneratable {
   public readonly type = 'CreateInventoryItems';
@@ -20,7 +21,7 @@ export class CreateInventoryItems implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `CreateInvItems (${this.target}, ${this.item}, ${this.quantity});`;
+    return `CreateInvItems (${this.target}, ${this.item}, ${formatNumericValue(this.quantity)});`;
   }
 
   toDisplayString(): string {
@@ -47,7 +48,7 @@ export class GiveInventoryItems implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `B_GiveInvItems (${this.giver}, ${this.receiver}, ${this.item}, ${this.quantity});`;
+    return `B_GiveInvItems (${this.giver}, ${this.receiver}, ${this.item}, ${formatNumericValue(this.quantity)});`;
   }
 
   toDisplayString(): string {

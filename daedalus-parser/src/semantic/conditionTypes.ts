@@ -7,10 +7,11 @@
  */
 
 import type { CodeGenOptions, CodeGeneratable, SourceLine } from './semanticModelInterfaces';
+import { formatNumericValue } from './parsers/numeric-literals';
 
 function formatComparisonValue(value: string | number | boolean, isStringLiteral = false): string {
   if (isStringLiteral) return `"${value}"`;
-  return String(value);
+  return formatNumericValue(value);
 }
 
 /**

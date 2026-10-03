@@ -22,8 +22,9 @@ P1–P7, M1–M5, N1–N10). The governing principle:
   `SetAttitude`, `Teach`, pickpocket args, targets/items). Never strip
   quotes without re-quoting on emit.
 - **`number | string` numeric fields** (`quantity`, `damage`, `seconds`,
-  `chapter`): plain integer literals stay numbers; identifiers/constant
-  names keep their raw text (`parseNumericArg`). Literal `0` is a number —
+  `chapter`): safe integer literals stay numbers; noncanonical spelling is
+  retained in `sourceCall`. Unsafe integers, other literals and
+  identifiers/constant names keep their raw text (`parseNumericArg`). Literal `0` is a number —
   falsy-coercion defaults are forbidden.
 - **Arity mismatch → generic fallback, never drop**: `parseSemanticAction`
   falls back to `parseGenericAction` (verbatim call text) when a recognized
@@ -252,7 +253,7 @@ the NPC dialog surfaces that error before assigning the result to sourceText.
 
 ## Comments
 
-- An AI_Output subtitle comment must be on the **same line** as the call;
+- An AI_Output subtitle comment must be on the **same line** as the completed statement;
   next-line comments are standalone.
 - Standalone comments in function bodies (including raw-mode condition
   bodies and conditional branches) become `CommentAction` entries —
@@ -356,3 +357,32 @@ The separate
 [strict fixture corpus](https://github.com/daniel-daga/daedalus-dialog-suite/actions/runs/37116593815/job/111184497600)
 also passed. The follow-up documentation commit changes no parser source.
 No licensed MDK corpus or Gothic engine run was performed.
+
+## Additional source-boundary review fixes
+
+The follow-up review identified five distinct information-loss boundaries.
+`test/review-source-boundaries.test.js` covers their fixes, current model edits,
+official JSON hydration, three parse/generate cycles and related controls.
+
+| Failure | Root cause | Contract after the fix |
+|---|---|---|
+| New NPC statements disappear inside block comments | Insertion used a physical newline without checking AST comment spans | Advance past complete trailing comments before inserting; retain CRLF and the instance boundary |
+| Unresolved Latin-1 identifiers become quoted strings | Extraction omitted expression identity and the legacy generator recognized only ASCII identifiers | Mark every non-string source expression and use the grammar's identifier alphabet for the legacy fallback |
+| Numeric spelling changes or becomes invalid exponent notation | Converting every literal to `Number` loses precision/spelling; JavaScript formats small/large values using unsupported exponents | Retain noncanonical tokens as strings or safe-integer action source metadata; expand edited finite numbers into decimal notation in properties, assignments, comparisons and numeric action fields |
+| Comments between `)` and `;` disappear | Action capture stopped at the call node, before statement-level comment extras | Optional JSON-safe `sourceCall.statementSuffix` retains that gap for typed and generic calls; typed edits and arity changes still use current fields |
+| Only the last trailing property comment survives | Each comment overwrote one dictionary slot | Keep the complete comment run, including its intervening whitespace, in the existing string slot |
+
+For commented calls, suffix trivia belongs to the statement, separately from
+the editable arguments. Subtitle ownership is determined using the completed
+expression statement's ending row, including when a suffix comment spans lines.
+With comments disabled, current canonical typed fields are generated as before.
+The numeric representation uses existing `number | string` model fields and
+expression flags rather than introducing a new JSON numeric wrapper. Non-finite
+edited JavaScript numbers fail visibly instead of generating invalid code.
+
+The initial 26 regressions failed before these fixes. The final 28 tests also
+cover edited numeric values that require decimal expansion and existing safe
+integer action-field types. All 489 non-CLI parser tests, `build:ts` and
+typecheck pass locally using the real native Node binding, committed grammar
+and real model hydration. The standard CI toolchain supplies Tree-sitter
+regeneration, lint with the pinned dependencies and the two CLI help tests.

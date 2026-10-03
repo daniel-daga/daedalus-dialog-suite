@@ -14,6 +14,7 @@ import {
 import { collectReachableFunctions } from '../semantic/cross-references';
 import { indentGeneratedCode } from '../semantic/code-formatting';
 import { generateActionCode } from '../semantic/action-codegen';
+import { formatNumericValue } from '../semantic/parsers/numeric-literals';
 
 // Structural shape shared by GlobalConstant / GlobalVariable / GlobalInstance
 // as far as code generation is concerned.
@@ -486,7 +487,7 @@ export class SemanticCodeGenerator {
       return value ? 'TRUE' : 'FALSE';
     }
     if (typeof value === 'number') {
-      return String(value);
+      return formatNumericValue(value);
     }
     // String - check if it looks like an identifier, already quoted, or needs quotes
     if (this.isIdentifier(value)) {
@@ -515,7 +516,9 @@ export class SemanticCodeGenerator {
    * Check if a string looks like an identifier (no spaces, special chars)
    */
   private isIdentifier(str: string): boolean {
-    return /^[A-Za-z_][A-Za-z0-9_]*$/.test(str);
+    // Legacy/hand-built properties may lack expression metadata. This fallback
+    // must accept the same identifier alphabet as grammar.js.
+    return /^[A-Za-z_\u0080-\u00FF][A-Za-z0-9_\u0080-\u00FF]*$/.test(str);
   }
 
   /**

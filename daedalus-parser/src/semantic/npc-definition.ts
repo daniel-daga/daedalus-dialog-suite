@@ -77,7 +77,16 @@ export type NpcEdit =
   /** Always a new call, even when the name is already called. */
   | { op: 'addCall'; name: string; args: string[] };
 
+interface ParsedNpcDefinition extends NpcDefinition {
+  commentRanges: NpcRange[];
+}
+
 export function extractNpcDefinition(source: string): NpcDefinition {
+  const { name, parent, statements, closingBraceIndex } = parseNpcDefinition(source);
+  return { name, parent, statements, closingBraceIndex };
+}
+
+function parseNpcDefinition(source: string): ParsedNpcDefinition {
   const { tree } = DaedalusParser.parseSource(source);
   const root = tree.rootNode as TreeSitterNode;
   if (root.hasError) {
@@ -102,6 +111,7 @@ export function extractNpcDefinition(source: string): NpcDefinition {
     parent: instance.childForFieldName('parent')?.text ?? '',
     statements,
     closingBraceIndex: body.child(body.childCount - 1).startIndex,
+    commentRanges: body.namedChildren.filter(n => n.type === 'comment').map(rangeOf),
   };
 }
 
@@ -171,7 +181,7 @@ interface Splice {
  */
 export function applyNpcEdits(source: string, edits: NpcEdit[]): string {
   if (edits.length === 0) return source;
-  const npc = extractNpcDefinition(source);
+  const npc = parseNpcDefinition(source);
   const targets = new Map<string, number>();
   edits.forEach((edit, order) => {
     const target = edit.op === 'addCall' ? undefined :
@@ -249,7 +259,7 @@ function conflictingEdits(first: number, second: number): Error {
 /** Insert `text` on a new line after `anchor`'s line (default: the last
  *  statement), indented like it; with no statement at all, before the `}`. */
 function insertAfter(
-  source: string, npc: NpcDefinition, anchor: NpcStatement | undefined, text: string, order: number
+  source: string, npc: ParsedNpcDefinition, anchor: NpcStatement | undefined, text: string, order: number
 ): Splice {
   const after = anchor ?? npc.statements[npc.statements.length - 1];
   if (after) {
@@ -257,18 +267,30 @@ function insertAfter(
     const indent = /^[ \t]*/.exec(source.slice(lineStart))![0];
     let lineEnd = source.indexOf('\n', after.range.endIndex);
     if (lineEnd === -1) lineEnd = source.length;
+    // A physical newline can still be inside a trailing block comment. Move
+    // past complete AST comment spans before choosing an insertion boundary;
+    // a second comment can begin on the first comment's closing line.
+    for (const comment of npc.commentRanges) {
+      if (comment.startIndex <= lineEnd && lineEnd < comment.endIndex) {
+        lineEnd = source.indexOf('\n', comment.endIndex);
+        if (lineEnd === -1) lineEnd = source.length;
+      }
+    }
     // A compact instance can close on the anchor's line. Inserting at that
     // line's end would append a top-level statement outside the instance.
     if (lineEnd >= npc.closingBraceIndex) {
       return { start: after.range.endIndex, end: after.range.endIndex, text: ` ${text}`, order };
     }
-    if (source[lineEnd - 1] === '\r') lineEnd -= 1;
-    return { start: lineEnd, end: lineEnd, text: `\n${indent}${text}`, order };
+    const newline = source[lineEnd - 1] === '\r' ? '\r\n' : '\n';
+    if (newline === '\r\n') lineEnd -= 1;
+    return { start: lineEnd, end: lineEnd, text: `${newline}${indent}${text}`, order };
   }
   const brace = npc.closingBraceIndex;
   const lineStart = source.lastIndexOf('\n', brace - 1) + 1;
   if (/^[ \t]*$/.test(source.slice(lineStart, brace))) {
-    return { start: lineStart, end: lineStart, text: `\t${text}\n`, order };
+    const firstNewline = source.indexOf('\n');
+    const newline = firstNewline > 0 && source[firstNewline - 1] === '\r' ? '\r\n' : '\n';
+    return { start: lineStart, end: lineStart, text: `\t${text}${newline}`, order };
   }
   return { start: brace, end: brace, text: ` ${text} `, order };
 }

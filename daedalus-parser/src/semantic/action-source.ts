@@ -93,6 +93,20 @@ export function parseActionCall(code: string): CallLayout {
   };
 }
 
+/** Comments after a call belong to its complete statement, not its argument list. */
+export function getCallStatementSuffix(node: TreeSitterNode): string | undefined {
+  const statement = node.parent;
+  if (statement?.type !== 'expression_statement' ||
+      !statement.namedChildren.some(child => child.type === 'comment' && child.startIndex >= node.endIndex)) {
+    return undefined;
+  }
+  const semicolon = statement.children.find(child => child.type === ';');
+  return statement.text.slice(
+    node.endIndex - statement.startIndex,
+    (semicolon?.startIndex ?? statement.endIndex) - statement.startIndex
+  );
+}
+
 /** Capture editable expression ranges and their original generated values. */
 export function captureActionSource(node: TreeSitterNode, action: CodeGeneratable): SourceCall {
   const initial = parseActionCall(action.generateCode({ includeComments: true }));
@@ -113,6 +127,7 @@ export function captureActionSource(node: TreeSitterNode, action: CodeGeneratabl
     current.namedChildren.forEach(collect);
   };
   collect(node);
+  const statementSuffix = getCallStatementSuffix(node);
   return {
     version: 1,
     name: { start: name.startIndex - offset, end: name.endIndex - offset, initialValue: initial.name.text },
@@ -122,6 +137,7 @@ export function captureActionSource(node: TreeSitterNode, action: CodeGeneratabl
       end: arg.endIndex - offset,
       initialValue: initial.arguments[index].text.trim()
     })),
-    outsideComments
+    outsideComments,
+    ...(statementSuffix === undefined ? {} : { statementSuffix })
   };
 }

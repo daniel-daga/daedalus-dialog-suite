@@ -29,7 +29,7 @@ import {
 } from '../semantic-model';
 import { parseArgumentsDetailed, parseNumericArg, ParsedArg } from './argument-parsing';
 import { hasComment } from './ast-constants';
-import { captureActionSource } from '../action-source';
+import { captureActionSource, getCallStatementSuffix } from '../action-source';
 import type { CodeGeneratable } from '../semanticModelInterfaces';
 
 export class ActionParsers {
@@ -43,15 +43,20 @@ export class ActionParsers {
    */
   static parseSemanticAction(node: TreeSitterNode, functionName: string): DialogAction {
     const specific = ActionParsers.parseSpecificAction(node, functionName);
+    const action = (specific ?? ActionParsers.parseGenericAction(node)) as DialogAction & CodeGeneratable;
     // Typed action models normalize arguments, so comments embedded in the
     // call would otherwise disappear on generation. Keep the semantic type,
     // but attach the complete call for the comment-aware generator path.
-    if (specific && hasComment(node)) {
-      const action = specific as DialogAction & CodeGeneratable;
+    // The enclosing statement also owns comments between `)` and `;`, which
+    // are outside the call node. Capture them for typed and generic calls alike.
+    const hasNumericSpelling = node.childForFieldName('arguments')?.namedChildren.some(arg =>
+      /^-?\d+$/.test(arg.text) && String(Number(arg.text)) !== arg.text
+    );
+    if ((specific && (hasComment(node) || hasNumericSpelling)) || getCallStatementSuffix(node) !== undefined) {
       action.sourceText = node.text;
       action.sourceCall = captureActionSource(node, action);
     }
-    return specific ?? ActionParsers.parseGenericAction(node);
+    return action;
   }
 
   /**
@@ -422,7 +427,7 @@ export class ActionParsers {
         // lines of source code, so keep it as a standalone comment action.
         if (
           nextSibling.text.startsWith('//') &&
-          nextSibling.startPosition.row === callNode.endPosition.row
+          nextSibling.startPosition.row === parent.endPosition.row
         ) {
           return nextSibling;
         }

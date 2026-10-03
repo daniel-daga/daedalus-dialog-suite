@@ -3,6 +3,7 @@ import { Type, plainToInstance, ClassConstructor } from 'class-transformer';
 import { indentGeneratedCode } from './code-formatting';
 import { generateActionCode } from './action-codegen';
 import { createNameRecord, resolveCaseInsensitive } from './name-utils';
+import { formatNumericValue } from './parsers/numeric-literals';
 
 // Semantic model classes and types for Daedalus dialog parsing
 
@@ -512,7 +513,7 @@ export class ChapterTransitionAction implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `B_Kapitelwechsel (${this.chapter}, ${this.world});`;
+    return `B_Kapitelwechsel (${formatNumericValue(this.chapter)}, ${this.world});`;
   }
 
   toDisplayString(): string {
@@ -539,7 +540,7 @@ export class SetVariableAction implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `${this.variableName} ${this.operator} ${this.value};`;
+    return `${this.variableName} ${this.operator} ${formatNumericValue(this.value)};`;
   }
 
   toDisplayString(): string {

@@ -69,12 +69,14 @@ export function normalizeArgumentText(node: TreeSitterNode): string {
 
 /**
  * Parse a numeric argument while preserving source fidelity: a plain integer
- * literal (including `0` and negatives) becomes a number; anything else (a
+ * literal (including `0` and negatives) becomes a number when it is a safe
+ * integer. Source-call metadata retains noncanonical spelling. Anything else (a
  * constant name, an expression, etc.) keeps its raw trimmed text so it can be
  * regenerated verbatim.
  */
 export function parseNumericArg(raw: string | undefined, fallback: number): number | string {
   if (raw === undefined || raw === '') return fallback;
   const trimmed = raw.trim();
-  return /^-?\d+$/.test(trimmed) ? Number(trimmed) : trimmed;
+  const value = Number(trimmed);
+  return /^-?\d+$/.test(trimmed) && Number.isSafeInteger(value) ? value : trimmed;
 }

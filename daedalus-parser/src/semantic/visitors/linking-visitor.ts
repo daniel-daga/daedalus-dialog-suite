@@ -177,11 +177,18 @@ export class LinkingVisitor {
     let pending: string[] = [];
     let prevKey: string | null = null;
     let prevEndRow = -1;
+    let trailingCommentStart = -1;
     for (const child of body.namedChildren) {
       if (child.type === 'comment') {
         if (prevKey !== null && child.startPosition.row === prevEndRow) {
           if (!dialog.propertyTrailingComments) dialog.propertyTrailingComments = createNameRecord();
-          dialog.propertyTrailingComments[prevKey] = child.text;
+          if (trailingCommentStart < 0) trailingCommentStart = child.startIndex;
+          // One string can hold the entire trailing comment run, including
+          // its original gaps. Keep the existing JSON shape, never overwrite
+          // an earlier token with a later one on the same property line.
+          dialog.propertyTrailingComments[prevKey] = body.text.slice(
+            trailingCommentStart - body.startIndex, child.endIndex - body.startIndex
+          );
         } else {
           pending.push(child.text);
         }
@@ -197,6 +204,7 @@ export class LinkingVisitor {
         pending = [];
         prevKey = key;
         prevEndRow = child.endPosition.row;
+        trailingCommentStart = -1;
       }
     }
     if (pending.length > 0) {
@@ -447,9 +455,12 @@ export class LinkingVisitor {
         }
       } else {
         value = parseLiteralOrIdentifier(rightNode);
-        if (!['number', 'boolean', 'string'].includes(rightNode.type)) {
-          this.markPropertyExpression(propertyName);
-        }
+      }
+
+      // Preserve AST identity for bare identifiers and verbatim numeric tokens
+      // as well as compound expressions. Only string literals may be quoted.
+      if (typeof value === 'string' && rightNode.type !== 'string') {
+        this.markPropertyExpression(propertyName);
       }
 
       this.currentInstance.properties[propertyName] = value;

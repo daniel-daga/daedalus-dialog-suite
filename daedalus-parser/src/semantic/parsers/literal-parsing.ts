@@ -1,5 +1,6 @@
 import { TreeSitterNode } from '../semantic-model';
 import { normalizeArgumentText } from './argument-parsing';
+import { parseNumericLiteral } from './numeric-literals';
 
 export type PrimitiveValue = string | number | boolean;
 
@@ -15,7 +16,7 @@ export function parseLiteralOrIdentifier(
   const { normalizeStringLiterals = false, trimNonLiterals = false } = options;
 
   if (node.type === 'number') {
-    return Number(node.text);
+    return parseNumericLiteral(node.text);
   }
 
   if (node.type === 'boolean') {

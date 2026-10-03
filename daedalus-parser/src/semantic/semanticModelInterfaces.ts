@@ -36,6 +36,8 @@ export interface SourceCall {
   closeEnd: number;
   arguments: { start: number; end: number; initialValue: string }[];
   outsideComments: string[];
+  /** Original gap after the closing `)` and before the statement's `;`. */
+  statementSuffix?: string;
 }
 
 /** JSON-safe editable ranges and generated baseline for a commented assignment. */

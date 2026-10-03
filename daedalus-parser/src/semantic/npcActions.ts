@@ -6,6 +6,7 @@
  */
 
 import type { CodeGenOptions, CodeGeneratable } from './semanticModelInterfaces';
+import { formatNumericValue } from './parsers/numeric-literals';
 
 export class AttackAction implements CodeGeneratable {
   public readonly type = 'AttackAction';
@@ -22,7 +23,7 @@ export class AttackAction implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `B_Attack (${this.attacker}, ${this.target}, ${this.attackReason}, ${this.damage});`;
+    return `B_Attack (${this.attacker}, ${this.target}, ${this.attackReason}, ${formatNumericValue(this.damage)});`;
   }
 
   toDisplayString(): string {
@@ -118,7 +119,7 @@ export class SetRefuseTalkAction implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    return `Npc_SetRefuseTalk (${this.target}, ${this.seconds});`;
+    return `Npc_SetRefuseTalk (${this.target}, ${formatNumericValue(this.seconds)});`;
   }
 
   toDisplayString(): string {

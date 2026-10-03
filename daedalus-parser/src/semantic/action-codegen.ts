@@ -35,12 +35,13 @@ export function generateActionCode(action: CodeGeneratable, options: CodeGenOpti
   const previous = action.sourceCall;
   if (previous.version !== 1) throw new Error('Unsupported commented action source metadata.');
   const current = parseActionCall(generated);
+  const suffix = (previous.statementSuffix ?? '') + generated.slice(current.closeEnd);
 
   if (previous.arguments.length !== current.arguments.length) {
     // A new arity has no positional correspondence. Preserve only comments
     // outside old editable expressions; argument comments come from the model.
     const comments = previous.outsideComments.map(text => text + (text.startsWith('//') ? '\n' : ' ')).join('');
-    return comments + generated;
+    return comments + generated.slice(0, current.closeEnd) + suffix;
   }
 
   const replacements: { start: number; end: number; text: string }[] = [];
@@ -59,5 +60,5 @@ export function generateActionCode(action: CodeGeneratable, options: CodeGenOpti
     result = result.slice(0, replacement.start) + replacement.text + result.slice(replacement.end);
   }
   // Keep the current semicolon/subtitle, including safe multiline subtitles.
-  return result + generated.slice(current.closeEnd);
+  return result + suffix;
 }
