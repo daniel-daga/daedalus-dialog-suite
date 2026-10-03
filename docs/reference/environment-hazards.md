@@ -167,6 +167,9 @@ trusting master for a release, not after.
   to be called here"* and finds no tests at all. Verified 2026-09-11: 32 passed,
   1 skipped; again 2026-09-14, 33 passed and 1 skipped, with the addon built by
   the recipe above.
+  `what-changed.spec.ts` fails unless the build had `VITE_WHAT_CHANGED` set, as
+  CI sets it (`all-tests.yml`); a plain `npm run build` leaves the splash
+  empty. Seen 2026-10-03: 46 passed, that one failed, 1 skipped.
 - **Run `node scripts/build-zenkit.js` before `node-gyp`** — it resets the
   submodule, applies `patches/*.patch` and writes `zenkit-abi.json`.
 - **That reset destroys any edit in `vendor/ZenKit` that is not a patch file.**
