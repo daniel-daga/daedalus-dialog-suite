@@ -127,6 +127,8 @@ function placeLabel(spec: PlaceSpec): string {
   return spec.vobClass;
 }
 
+const baseName = (filePath: string): string => filePath.split(/[\\/]/).pop() || filePath;
+
 /** The project's world file called `worldName` (no extension), from the same
  *  scan the picker lists (§16.31), or null when its sources hold none. */
 async function discoveredWorldNamed(worldName: string): Promise<DiscoveredWorld | null> {
@@ -413,7 +415,28 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     return visuals;
   }, [items]);
 
-  const openWorldAt = useCallback(async (worldPath: string) => {
+  /**
+   * Asked before anything replaces a world that has unsaved edits (#334).
+   * One guard in front of every open — the picker, Browse…, the dialog
+   * editor's jump and the routine flow — rather than a confirm per caller,
+   * which is how the routine flow came to be the only one that asked.
+   */
+  const [discardPrompt, setDiscardPrompt] =
+    useState<{ target: string; answer: (discard: boolean) => void } | null>(null);
+  const confirmDiscard = useCallback((worldPath: string): Promise<boolean> => {
+    const { status, hasUnsavedEdits } = useWorldStore.getState();
+    if (status !== 'ready' || !hasUnsavedEdits) return Promise.resolve(true);
+    return new Promise((resolve) => setDiscardPrompt({ target: baseName(worldPath), answer: resolve }));
+  }, []);
+  const answerDiscard = useCallback((discard: boolean) => {
+    discardPrompt?.answer(discard);
+    setDiscardPrompt(null);
+  }, [discardPrompt]);
+
+  /** False when the user kept the open world instead; a caller then has
+   *  nothing to do in a world it did not open. */
+  const openWorldAt = useCallback(async (worldPath: string): Promise<boolean> => {
+    if (!await confirmDiscard(worldPath)) return false;
     beginOpen();
     setMesh(null);
     setVisuals(null);
@@ -467,7 +490,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       setVisuals(await window.editorAPI.getWorldVisuals());
     } catch (failure) {
       openFailed(failure instanceof Error ? failure.message : String(failure));
-      return;
+      return true;
     }
 
     // **Outside the try above, and that is the whole point.** The waynet is read
@@ -519,7 +542,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         failure instanceof Error ? failure.message : String(failure),
       );
     }
-  }, [beginOpen, openSucceeded, openFailed, refreshHistoryDepth, setVobFolders, clearClipboard]);
+    return true;
+  }, [confirmDiscard, beginOpen, openSucceeded, openFailed, refreshHistoryDepth, setVobFolders, clearClipboard]);
 
   /**
    * The world picker (level-editor.md §16.31): the worlds the project's own
@@ -590,10 +614,10 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const [routineAfterOpen, setRoutineAfterOpen] = useState<RoutineRequest | null>(null);
   const openPickedWorld = useCallback(async (worldPath: string) => {
     setPickerOpen(false);
-    await openWorldAt(worldPath);
+    const opened = await openWorldAt(worldPath);
     const waiting = routineAwaitingPick.current;
     routineAwaitingPick.current = null;
-    if (waiting !== null && useWorldStore.getState().status === 'ready') setRoutineAfterOpen(waiting);
+    if (opened && waiting !== null && useWorldStore.getState().status === 'ready') setRoutineAfterOpen(waiting);
   }, [openWorldAt]);
   const closePicker = useCallback(() => {
     routineAwaitingPick.current = null;
@@ -866,10 +890,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       );
       return;
     }
-    await openWorldAt(found.path);
-    // A refused open has replaced the surface with its own error; a jump into
-    // it would be one nothing will ever take.
-    if (useWorldStore.getState().status !== 'ready') return;
+    // Kept the open world instead, or a refused open has replaced the surface
+    // with its own error; a jump into either would be one nothing asked for.
+    if (!await openWorldAt(found.path) || useWorldStore.getState().status !== 'ready') return;
     // Left to the effect below rather than jumped here, and both halves of
     // that are the point. Not here: React commits this open's mesh and visuals
     // on a task of its own, so at this line the viewport that owns the camera
@@ -1732,20 +1755,15 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       void openPicker();
       return;
     }
-    await openWorldAt(found.path);
-    if (useWorldStore.getState().status === 'ready') setRoutineAfterOpen(request);
+    if (await openWorldAt(found.path) && useWorldStore.getState().status === 'ready') setRoutineAfterOpen(request);
   }, [openPicker, openWorldAt]);
 
-  const [confirmingRoutineSwitch, setConfirmingRoutineSwitch] =
-    useState<RoutineRequest & { inWorld: string } | null>(null);
   const routineRequest = useWorldStore((s) => s.routineRequest);
   useEffect(() => {
     if (routineRequest === null) return;
     useWorldStore.getState().routineRequestHandled();
-    const { status, hasUnsavedEdits } = useWorldStore.getState();
-    if (routineRequest.inWorld === undefined && status === 'ready') startRoutine(routineRequest);
-    else if (routineRequest.inWorld !== undefined && status === 'ready' && hasUnsavedEdits) {
-      setConfirmingRoutineSwitch({ ...routineRequest, inWorld: routineRequest.inWorld });
+    if (routineRequest.inWorld === undefined && useWorldStore.getState().status === 'ready') {
+      startRoutine(routineRequest);
     } else void openRoutineWorld(routineRequest);
   }, [routineRequest, startRoutine, openRoutineWorld]);
 
@@ -1833,7 +1851,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    *  `useWorldShortcuts` takes as `dialogOpen`, and why it takes it. */
   const surfaceDialogOpen = deleting !== null || deletingWaypoint !== null
     || placing !== null || confirmingSave || addingWaypoint !== null || contextMenu !== null
-    || (routineMode.mode !== null && !routineMode.picking) || confirmingRoutineSwitch !== null
+    || (routineMode.mode !== null && !routineMode.picking) || discardPrompt !== null
     || insertingNpc !== null || pickerOpen || quickTestBlocked || quickTestRefusal !== null;
 
   useWorldShortcuts({
@@ -2143,29 +2161,21 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       )}
 
       <Dialog
-        open={confirmingRoutineSwitch !== null}
-        onClose={() => setConfirmingRoutineSwitch(null)}
-        aria-labelledby="world-routine-switch-title"
+        open={discardPrompt !== null}
+        onClose={() => answerDiscard(false)}
+        aria-labelledby="world-discard-title"
       >
-        <DialogTitle id="world-routine-switch-title">Discard unsaved world edits?</DialogTitle>
+        <DialogTitle id="world-discard-title">Discard unsaved world edits?</DialogTitle>
         <DialogContent>
           <DialogContentText variant="body2">
-            {`${summary?.worldPath.split(/[\\/]/).pop() ?? 'The open world'} has unsaved edits. `}
-            {`${confirmingRoutineSwitch?.npc} is spawned in ${confirmingRoutineSwitch?.inWorld}.ZEN, `}
-            and opening it discards them.
+            {`${summary ? baseName(summary.worldPath) : 'The open world'} has unsaved edits, `}
+            {`and opening ${discardPrompt?.target} discards them.`}
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setConfirmingRoutineSwitch(null)}>Cancel</Button>
-          <Button
-            color="error"
-            onClick={() => {
-              const request = confirmingRoutineSwitch;
-              setConfirmingRoutineSwitch(null);
-              if (request !== null) void openRoutineWorld(request);
-            }}
-          >
-            {`Discard and open ${confirmingRoutineSwitch?.inWorld}.ZEN`}
+          <Button onClick={() => answerDiscard(false)}>Cancel</Button>
+          <Button color="error" onClick={() => answerDiscard(true)}>
+            {`Discard and open ${discardPrompt?.target}`}
           </Button>
         </DialogActions>
       </Dialog>

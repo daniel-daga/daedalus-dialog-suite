@@ -404,6 +404,106 @@ describe('a VOB dragged in the viewport', () => {
     expect(api.applyWorldOps).not.toHaveBeenCalled();
   });
 
+  /**
+   * #334: every open replaced the world and its unsaved edits with no word.
+   * Only the routine flow asked first; the guard now stands in front of every
+   * open, so the picker and the dialog editor's jump ask too.
+   */
+  describe('opening another world over unsaved edits', () => {
+    const OTHER = { ...SUMMARY, worldPath: 'C:/Gothic/OldWorld.zen', vobIndex: vobIndex([[0, 0, 0]]) };
+    const stubOtherOpen = () => {
+      api.openWorld.mockResolvedValueOnce(OTHER as never);
+      api.getWorldMesh.mockResolvedValueOnce({ groups: [], bbox: OTHER.bbox } as never);
+      api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+    };
+    const editTheWorld = async () => {
+      fireEvent.click(screen.getByTestId('stub-drag'));
+      await waitFor(() => expect(useWorldStore.getState().hasUnsavedEdits).toBe(true));
+    };
+    const browseTo = async (worldPath: string) => {
+      api.openWorldDialog.mockResolvedValueOnce(worldPath as never);
+      fireEvent.click(screen.getByTestId('world-open'));
+      fireEvent.click(await screen.findByTestId('world-picker-browse'));
+    };
+
+    it('asks before Browse… replaces the world, and Cancel keeps it, edits and all', async () => {
+      const summary = await openWorld();
+      await editTheWorld();
+      api.openWorld.mockClear();
+
+      await browseTo('C:/Gothic/OldWorld.zen');
+
+      const confirm = await screen.findByRole('dialog', { name: 'Discard unsaved world edits?' });
+      expect(confirm).toHaveTextContent('NewWorld.zen');
+      expect(confirm).toHaveTextContent('OldWorld.zen');
+      fireEvent.click(within(confirm).getByRole('button', { name: 'Cancel' }));
+
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Discard unsaved world edits?' }))
+        .not.toBeInTheDocument());
+      expect(api.openWorld).not.toHaveBeenCalled();
+      expect(useWorldStore.getState().summary).toBe(summary);
+      expect(useWorldStore.getState().hasUnsavedEdits).toBe(true);
+    });
+
+    it('opens the world once the discard is confirmed', async () => {
+      await openWorld();
+      await editTheWorld();
+      stubOtherOpen();
+
+      await browseTo('C:/Gothic/OldWorld.zen');
+      fireEvent.click(await screen.findByRole('button', { name: 'Discard and open OldWorld.zen' }));
+
+      await waitFor(() => expect(useWorldStore.getState().summary).toBe(OTHER));
+      expect(useWorldStore.getState().hasUnsavedEdits).toBe(false);
+    });
+
+    it('asks before a listed world replaces it too', async () => {
+      await openWorld();
+      await editTheWorld();
+      api.openWorld.mockClear();
+      api.listWorlds.mockResolvedValueOnce([
+        { path: 'C:/Gothic/OldWorld.zen', name: 'OldWorld.zen', source: 'C:/Gothic', isDefault: false },
+      ] as never);
+
+      fireEvent.click(screen.getByTestId('world-open'));
+      fireEvent.click(await screen.findByTestId('world-picker-entry-OldWorld.zen'));
+
+      expect(await screen.findByRole('dialog', { name: 'Discard unsaved world edits?' })).toBeInTheDocument();
+      expect(api.openWorld).not.toHaveBeenCalled();
+    });
+
+    it('asks before the dialog editor\'s jump opens another world, and a Cancel makes no jump', async () => {
+      const summary = await openWorld();
+      await editTheWorld();
+      api.openWorld.mockClear();
+      api.listWorlds.mockResolvedValueOnce([
+        { path: 'C:/Gothic/OldWorld.zen', name: 'OldWorld.zen', source: 'C:/Gothic', isDefault: false },
+      ] as never);
+
+      await act(async () => {
+        useWorldStore.getState().requestFocus({ kind: 'waypoint', name: 'wp_middle', inWorld: 'OLDWORLD' });
+      });
+
+      const confirm = await screen.findByRole('dialog', { name: 'Discard unsaved world edits?' });
+      fireEvent.click(within(confirm).getByRole('button', { name: 'Cancel' }));
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Discard unsaved world edits?' }))
+        .not.toBeInTheDocument());
+      expect(api.openWorld).not.toHaveBeenCalled();
+      expect(useWorldStore.getState().summary).toBe(summary);
+      expect(mockFramePoint).not.toHaveBeenCalled();
+    });
+
+    it('does not ask when there is nothing to lose', async () => {
+      await openWorld();
+      stubOtherOpen();
+
+      await browseTo('C:/Gothic/OldWorld.zen');
+
+      await waitFor(() => expect(useWorldStore.getState().summary).toBe(OTHER));
+      expect(screen.queryByRole('dialog', { name: 'Discard unsaved world edits?' })).not.toBeInTheDocument();
+    });
+  });
+
   it('says so when an undo is refused, instead of failing silently', async () => {
     // Both callers are `void runHistory(...)`, so a rejected undo — a dead
     // worker, a refused replay — was an unhandled rejection: no banner, the

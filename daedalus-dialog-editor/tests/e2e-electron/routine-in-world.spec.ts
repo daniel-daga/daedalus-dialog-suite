@@ -10,7 +10,7 @@ import { launchApp, seedProjectDir, type AppFixture } from './harness';
  *
  * - The NPC editor's "In world" never dead-ends: with no world open it opens
  *   the one the NPC's `STARTUP_<WORLD>` spawn names, and asks before it
- *   throws away unsaved edits to another.
+ *   throws away unsaved edits to another — as the world picker does (#334).
  * - A waypoint's panel is the entry point from inside the world: it lists who
  *   spawns there and whose routine stops there, a row previews that routine on
  *   the map, and its button opens the editor.
@@ -319,5 +319,35 @@ test.describe('Routine editing in the World surface', () => {
     await expect(editor(page)).toBeVisible({ timeout: 30000 });
     // A fresh MINIMAL.ZEN: the rename was OTHER.ZEN's.
     await expect.poll(renamedIndex).toBe(-1);
+  });
+
+  // #334: the routine flow was the only open that asked. The picker is the
+  // one every user goes through, and it threw the edits away silently.
+  test('picking another world with unsaved edits asks before it switches', async () => {
+    const { page } = fixture;
+    await openProject(page);
+    await openWorldFromPicker(page, 'OTHER.ZEN');
+
+    await pickWaypoint(page, 'WP_FIXTURE_C');
+    const name = page.getByTestId('world-waypoint-name-input');
+    await name.fill('WP_FIXTURE_RENAMED');
+    await name.press('Enter');
+    const renamedIndex = () => page.evaluate(() => window.__worldViewport?.waypointIndex('WP_FIXTURE_RENAMED') ?? null);
+    await expect.poll(renamedIndex).not.toBe(-1);
+
+    await page.getByTestId('world-open').click();
+    await page.getByTestId('world-picker-entry-MINIMAL.ZEN').click();
+    const confirm = page.getByRole('dialog', { name: 'Discard unsaved world edits?' });
+    await expect(confirm).toContainText('OTHER.ZEN');
+    await expect(confirm).toContainText('MINIMAL.ZEN');
+    await confirm.getByRole('button', { name: 'Cancel' }).click();
+    await expect(confirm).toBeHidden();
+    expect(await renamedIndex()).not.toBe(-1);
+
+    await page.getByTestId('world-open').click();
+    await page.getByTestId('world-picker-entry-MINIMAL.ZEN').click();
+    await page.getByRole('dialog', { name: 'Discard unsaved world edits?' })
+      .getByRole('button', { name: 'Discard and open MINIMAL.ZEN' }).click();
+    await expect.poll(renamedIndex, { timeout: 30000 }).toBe(-1);
   });
 });
