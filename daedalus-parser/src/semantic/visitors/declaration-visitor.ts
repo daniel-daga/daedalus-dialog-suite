@@ -100,7 +100,8 @@ export class DeclarationVisitor {
         const func = new DialogFunction(nameNode.text, typeNode.text);
         const sourceHeader = captureDeclarationHeader(node);
         if (sourceHeader) func.sourceHeader = sourceHeader;
-        func.declarationSuffix = captureDeclarationSuffix(node);
+        const declarationSuffix = captureDeclarationSuffix(node);
+        if (declarationSuffix !== undefined) func.declarationSuffix = declarationSuffix;
         const firstLine = node.text.split('\n')[0] || '';
         if (keywordNode) {
           func.keyword = keywordNode.text;
@@ -130,7 +131,8 @@ export class DeclarationVisitor {
           const dialog = new Dialog(nameNode.text, parentNode ? parentNode.text : null);
           const sourceHeader = captureDeclarationHeader(node);
           if (sourceHeader) dialog.sourceHeader = sourceHeader;
-          dialog.declarationSuffix = captureDeclarationSuffix(node);
+          const declarationSuffix = captureDeclarationSuffix(node);
+          if (declarationSuffix !== undefined) dialog.declarationSuffix = declarationSuffix;
           const firstLine = node.text.split('\n')[0] || '';
           if (keywordNode) {
             dialog.keyword = keywordNode.text;
