@@ -60,6 +60,16 @@ export function captureDeclarationHeader(node: TreeSitterNode): SourceHeader | u
   return source.comments.length > 0 ? source : undefined;
 }
 
+/** The declaration, not its body/header, owns comments between `}` and `;`. */
+export function captureDeclarationSuffix(node: TreeSitterNode): string | undefined {
+  const body = node.childForFieldName('body');
+  if (!body || !node.namedChildren.some(child => child.type === 'comment' && child.startIndex >= body.endIndex)) {
+    return undefined;
+  }
+  const semicolon = node.children.find(child => child.type === ';' && child.startIndex >= body.endIndex);
+  return node.text.slice(body.endIndex - node.startIndex, (semicolon?.startIndex ?? node.endIndex) - node.startIndex);
+}
+
 let parser: DaedalusParser | undefined;
 
 /** Patch current typed tokens while original header trivia remains outside them. */

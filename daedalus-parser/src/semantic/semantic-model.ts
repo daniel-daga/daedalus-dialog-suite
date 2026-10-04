@@ -431,8 +431,8 @@ export class CommentAction implements CodeGeneratable {
     this.text = text;
   }
 
-  generateCode(_options: CodeGenOptions): string {
-    return this.text.trimEnd();
+  generateCode(options: CodeGenOptions): string {
+    return options.includeComments === false ? '' : this.text.trimEnd();
   }
 
   toDisplayString(): string {
@@ -825,6 +825,8 @@ export interface FunctionCallSite {
 
 export class DialogFunction {
   public sourceHeader?: SourceHeader;
+  /** Verbatim gap between the closing body brace and declaration semicolon. */
+  public declarationSuffix?: string;
   public name: string;
   public returnType: string;
   public keyword?: string;
@@ -928,6 +930,8 @@ export function snapshotDialogProperties(properties: DialogProperties): DialogSo
 
 export class Dialog {
   public sourceHeader?: SourceHeader;
+  /** Verbatim gap between the closing body brace and declaration semicolon. */
+  public declarationSuffix?: string;
   public name: string;
   public parent: string | null;
   public keyword?: string;
@@ -963,6 +967,9 @@ export class Dialog {
   static fromJSON(json: any, functionsMap: { [key: string]: DialogFunction }): Dialog {
     // --- property transformation: copy optional scalar fields ---
     const dialog = new Dialog(json.name, json.parent);
+    if (typeof json.declarationSuffix === 'string') {
+      dialog.declarationSuffix = json.declarationSuffix;
+    }
     if (json.sourceHeader !== undefined) {
       if (typeof json.sourceHeader?.text !== 'string' || !Array.isArray(json.sourceHeader.fields) ||
           !Array.isArray(json.sourceHeader.comments)) {

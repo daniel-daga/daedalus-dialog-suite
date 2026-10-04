@@ -13,7 +13,7 @@ import {
 } from '../semantic-model';
 import { parseLiteralOrIdentifier } from '../parsers/literal-parsing';
 import { createNameRecord } from '../name-utils';
-import { captureDeclarationHeader, parameterKeyword } from '../declaration-source';
+import { captureDeclarationHeader, captureDeclarationSuffix, parameterKeyword } from '../declaration-source';
 
 export class DeclarationVisitor {
   private semanticModel: SemanticModel;
@@ -100,6 +100,7 @@ export class DeclarationVisitor {
         const func = new DialogFunction(nameNode.text, typeNode.text);
         const sourceHeader = captureDeclarationHeader(node);
         if (sourceHeader) func.sourceHeader = sourceHeader;
+        func.declarationSuffix = captureDeclarationSuffix(node);
         const firstLine = node.text.split('\n')[0] || '';
         if (keywordNode) {
           func.keyword = keywordNode.text;
@@ -129,6 +130,7 @@ export class DeclarationVisitor {
           const dialog = new Dialog(nameNode.text, parentNode ? parentNode.text : null);
           const sourceHeader = captureDeclarationHeader(node);
           if (sourceHeader) dialog.sourceHeader = sourceHeader;
+          dialog.declarationSuffix = captureDeclarationSuffix(node);
           const firstLine = node.text.split('\n')[0] || '';
           if (keywordNode) {
             dialog.keyword = keywordNode.text;

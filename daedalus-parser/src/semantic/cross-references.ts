@@ -5,9 +5,10 @@
  * and cascade renames across functions and dialogs.
  */
 
-import type { SemanticModel } from './semantic-model';
+import type { SemanticModel, TreeSitterNode } from './semantic-model';
 import { getDialogProperty } from './semantic-model';
 import { namesEqual, resolveCaseInsensitive } from './name-utils';
+import DaedalusParser from '../core/parser';
 
 export interface DialogReference {
   /** The function name that contains the reference */
@@ -28,15 +29,16 @@ export interface FunctionReference {
   /**
    * Index of the top-level action (within the function's actions array) that
    * contains the choice — the choice itself may be nested inside a
-   * ConditionalAction branch at that index.
+   * ConditionalAction branch or preserved raw action at that index.
    */
   actionIndex?: number;
 }
 
 /**
  * Invokes `visit` for every Choice action reachable from `actions`, including
- * choices nested inside ConditionalAction then/else branches. `topLevelIndex`
- * is the index of the containing top-level action.
+ * choices nested inside ConditionalAction branches or preserved raw statements.
+ * `topLevelIndex` is the index of the containing top-level action. Always read
+ * current fields/text: the parsed callSites index is stale after model edits.
  */
 function forEachChoice(
   actions: any[],
@@ -51,9 +53,45 @@ function forEachChoice(
     if (action.type === 'ConditionalAction') {
       for (const nested of action.thenActions || []) walk(nested, topLevelIndex);
       for (const nested of action.elseActions || []) walk(nested, topLevelIndex);
+    } else if (action.type === 'Action' && typeof action.action === 'string') {
+      for (const targetFunction of rawChoiceTargets(action.action)) {
+        visit({ targetFunction }, topLevelIndex);
+      }
     }
   };
   actions.forEach((action, idx) => walk(action, idx));
+}
+
+let rawActionParser: DaedalusParser | undefined;
+
+/** Raw source owns its statements, but still contributes actual callback references. */
+function rawChoiceTargets(source: string): string[] {
+  rawActionParser ??= DaedalusParser.create();
+  const result = rawActionParser.parse(`func void __choice_references() {\n${source}\n};`);
+  const declarations = (result.rootNode as TreeSitterNode).namedChildren.filter(node => node.type !== 'comment');
+  const declaration = declarations[0];
+  if (result.hasErrors || declarations.length !== 1 || declaration.type !== 'function_declaration') {
+    throw new Error('Cannot analyze choice references: raw action must contain valid statements.');
+  }
+  const targets: string[] = [];
+  const walk = (node: TreeSitterNode): void => {
+    if (node.type === 'call_expression') {
+      const callee = node.childForFieldName('function');
+      const args = node.childForFieldName('arguments')?.namedChildren.filter(child => child.type !== 'comment') || [];
+      if (callee?.type === 'identifier' && namesEqual(callee.text, 'Info_AddChoice') && args.length === 3) {
+        let target = args[2];
+        while (target.type === 'parenthesized_expression') {
+          const operands = target.namedChildren.filter(child => child.type !== 'comment');
+          if (operands.length !== 1) break;
+          target = operands[0];
+        }
+        if (target.type === 'identifier') targets.push(target.text);
+      }
+    }
+    node.namedChildren.forEach(walk);
+  };
+  walk(declaration.childForFieldName('body')!);
+  return targets;
 }
 
 /**
@@ -80,7 +118,7 @@ export function findDialogReferences(
 /**
  * Finds all references to a named function across the model:
  * - dialog.properties.information / condition (string or object)
- * - Choice action targetFunction fields
+ * - Current choice targets in structured actions and preserved raw statements
  */
 export function findFunctionReferences(
   model: SemanticModel,

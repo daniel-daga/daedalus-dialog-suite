@@ -374,6 +374,33 @@ The separate
 also passed. The follow-up documentation commit changes no parser source.
 No licensed MDK corpus or Gothic engine run was performed.
 
+## Export and declaration boundaries (2026-10-04)
+
+The five review failures had distinct root causes, reproduced before their fixes
+in `daedalus-parser/test/review-export-boundaries.test.js`:
+
+| Failure | Root cause | Settled contract |
+|---|---|---|
+| Single-dialog export leaves choice callbacks undeclared | Reachability walked only typed choices, while commented headers and unsupported branch statements are preserved as raw actions | The shared reference walk parses current raw action text with the Daedalus grammar and follows actual `Info_AddChoice` callback identifiers, including transitive targets and cycles |
+| Function-key case drift crashes export | Reachability returns declaration names but export indexed the function dictionary by exact key | Resolve emitted definitions through the same case-insensitive lookup used by reachability |
+| Style normalization inserts a success return in empty functions | Default body generation was enabled by `preserveSourceStyle: false` even for parsed empty bodies | Explicit empty-body metadata controls behavior independently of formatting; new functions retain their defaults |
+| Comments after a body and before its semicolon disappear | Header and body capture left declaration footer trivia without an owner | Functions and dialogs carry JSON-safe `declarationSuffix` text, emitted after the current body and omitted with comments disabled |
+| Standalone comments ignore `includeComments: false` | `CommentAction` ignored the options passed to its generator | Explicit comment suppression applies to standalone actions in ordinary, nested and raw condition bodies |
+
+Raw choice analysis uses current action text rather than the historical
+`callSites` index, so editing a callback or deleting a choice cannot resurrect
+the old dependency. Strings, comment text, member-call names and declined
+argument counts do not become references. Structured choices still use their
+current editable fields. Invalid edited raw statements fail visibly rather
+than producing an incomplete dependency export. Raw source remains verbatim;
+this does not make its embedded comments structurally removable or turn its
+statements into editable typed actions.
+
+Footer trivia belongs to the declaration, independently of signature and body
+edits. Its LF/CRLF and comment text survive official JSON hydration and repeated
+parse/generate cycles. Existing JSON without footer metadata keeps its existing
+behavior. The grammar and native binding are unchanged.
+
 ## Additional source-boundary review fixes
 
 The follow-up review identified five distinct information-loss boundaries.

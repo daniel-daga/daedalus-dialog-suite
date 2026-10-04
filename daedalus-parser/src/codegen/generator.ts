@@ -16,6 +16,7 @@ import { indentGeneratedCode } from '../semantic/code-formatting';
 import { generateActionCode } from '../semantic/action-codegen';
 import { formatNumericValue } from '../semantic/parsers/numeric-literals';
 import { generateDeclarationHeader } from '../semantic/declaration-source';
+import { resolveCaseInsensitive } from '../semantic/name-utils';
 
 // Structural shape shared by GlobalConstant / GlobalVariable / GlobalInstance
 // as far as code generation is concerned.
@@ -407,7 +408,7 @@ export class SemanticCodeGenerator {
     if (infoFunc) {
       for (const name of collectReachableFunctions(model, infoFunc.name)) {
         if (!seen.has(name)) {
-          funcs.push(model.functions[name]);
+          funcs.push(resolveCaseInsensitive(model.functions, name)!);
           seen.add(name);
         }
       }
@@ -434,7 +435,7 @@ export class SemanticCodeGenerator {
           Object.keys(current).some(key => !Object.prototype.hasOwnProperty.call(baseline, key) || current[key] !== baseline[key])) {
         throw new Error(`Dialog ${dialog.name} has a preserved executable instance body; edit its source before changing properties or function references`);
       }
-      return `${header}\n${dialog.sourceBody.text};\n`;
+      return `${header}\n${dialog.sourceBody.text}${this.declarationTerminator(dialog.declarationSuffix)}\n`;
     }
     const lines: string[] = [];
 
@@ -466,7 +467,7 @@ export class SemanticCodeGenerator {
       }
     }
 
-    lines.push('};');
+    lines.push(`}${this.declarationTerminator(dialog.declarationSuffix)}`);
     lines.push('');
 
     return lines.join('\n');
@@ -576,20 +577,20 @@ export class SemanticCodeGenerator {
     } else {
       // Empty function - add a simple return or placeholder
       if (returnTypeLower === 'int') {
-        if (!this.options.preserveSourceStyle || func.hasExplicitBodyContent !== false) {
+        if (func.hasExplicitBodyContent !== false) {
           lines.push(`${indent}return TRUE;`);
         }
       } else if (returnTypeLower === 'void') {
         // N4: never invent a placeholder comment for a function that had an
         // empty body in source. Only emit the placeholder for hand-built models.
-        if (!this.options.preserveSourceStyle || func.hasExplicitBodyContent !== false) {
+        if (func.hasExplicitBodyContent !== false) {
           lines.push(`${indent}// T` + `ODO: Implement function body`);
         }
       }
     }
 
     emitBodyComments(func.conditionBodyTrailingComments);
-    lines.push('};');
+    lines.push(`}${this.declarationTerminator(func.declarationSuffix)}`);
     lines.push('');
 
     return lines.join('\n');
@@ -654,6 +655,11 @@ export class SemanticCodeGenerator {
    */
   private indent(level: number = 1): string {
     return this.options.indentChar.repeat(this.options.indentSize * level);
+  }
+
+  /** Footer trivia belongs after the current body, independently of its edits. */
+  private declarationTerminator(suffix?: string): string {
+    return `${this.options.includeComments ? suffix ?? '' : ''};`;
   }
 
   /**

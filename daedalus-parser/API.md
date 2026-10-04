@@ -194,6 +194,7 @@ class DialogFunction {
   returnType: string;        // Return type (int, void, etc.)
   parameters?: FunctionParameter[]; // Declared parameters ({ keyword?, type, name }), if any
   sourceHeader?: SourceHeader; // Commented header with editable token ranges
+  declarationSuffix?: string; // Commented gap between the closing body brace and semicolon
   calls: string[];           // List of function calls made
   actions: DialogAction[];   // Semantic actions extracted
 }
@@ -207,6 +208,15 @@ tokens. If parameter count or keyword presence changes, comments move ahead of
 the current canonical header. `includeComments: false` omits this metadata's
 comments; `preserveSourceStyle: false` still retains them. Keep the metadata
 through JSON/IPC and use `deserializeSemanticModel` to restore model instances.
+
+Functions and dialogs also retain commented gaps between the closing body brace
+and declaration semicolon as JSON-safe `declarationSuffix` text. It remains after
+the current body when names or body contents change, including with
+`preserveSourceStyle: false`; `includeComments: false` omits the gap's comments.
+
+Parsed empty function bodies remain empty under either source-style setting.
+Default success returns and placeholder bodies apply only where the model has
+no explicit empty-body metadata, such as newly constructed functions.
 
 **Example:**
 ```typescript
