@@ -25,7 +25,9 @@ function commentTokens(source) {
   assert.equal(result.hasErrors, false, source);
   const comments = [];
   const walk = node => {
-    if (node.type === 'comment') comments.push(node.text);
+    if (node.type === 'comment') {
+      comments.push(node.text);
+    }
     node.namedChildren.forEach(walk);
   };
   walk(result.rootNode);
@@ -212,9 +214,15 @@ for (const order of ['absent', 'empty', 'partial', 'parsed']) {
       const current = new SemanticCodeGenerator({ sectionHeaders: false, preserveSourceStyle });
       for (let cycle = 0; cycle < 3; cycle++) {
         model = hydrate(model);
-        if (order === 'absent') delete model.declarationOrder;
-        if (order === 'empty') model.declarationOrder = [];
-        if (order === 'partial') model.declarationOrder = [{ type: 'function', name: 'Info' }];
+        if (order === 'absent') {
+          delete model.declarationOrder;
+        }
+        if (order === 'empty') {
+          model.declarationOrder = [];
+        }
+        if (order === 'partial') {
+          model.declarationOrder = [{ type: 'function', name: 'Info' }];
+        }
         const output = current.generateSemanticModel(model);
         assert.deepEqual(commentTokens(output).sort(), expected);
         assert.deepEqual(functionNames(output), ['Branch', 'Check', 'Info', 'Unrelated']);
