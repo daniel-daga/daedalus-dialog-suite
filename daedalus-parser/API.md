@@ -134,7 +134,7 @@ class Dialog {
   propertyLiteralKeys?: string[];    // Keys whose string values are string literals
   sourceHeader?: SourceHeader;       // Commented header with editable token ranges
   sourceBody?: DialogSourceBody;   // Lossless executable constructor fallback
-  actions: DialogAction[];         // Extracted semantic actions
+  actions: DialogAction[];         // Editable view of the current information function
 }
 
 interface DialogSourceBody {
@@ -142,7 +142,7 @@ interface DialogSourceBody {
   propertyValues: { [key: string]: string | number | boolean }; // Baseline; function references use names
 }
 
-// Function reference: bare name string, or the live DialogFunction once linked
+// Function reference: preserved identifier expression, or the live DialogFunction once linked
 type DialogFunctionRef = string | DialogFunction;
 
 interface DialogProperties {
@@ -172,6 +172,23 @@ unquoted model text quoted during generation and JSON hydration, even when it
 matches a function name. A newly constructed `Dialog` marks `description` as a
 literal. Explicit `propertyExpressionKeys` take precedence; legacy JSON without
 literal metadata retains the previous value inference.
+
+`Dialog.actions` reads and edits the current information function's action array.
+It follows array replacement and function relinking, including after
+`deserializeSemanticModel`; shared information functions share the same action
+array. JSON retains the enumerable `actions` field, but a linked function's
+current body takes precedence over a stale serialized dialog snapshot.
+Standalone dialogs without a resolvable information function retain their own
+editable action arrays, including legacy JSON. A hand-built dialog can pass its
+function dictionary as the optional third constructor argument when its
+information property holds a string rather than a linked function object.
+
+Reference analysis accepts parenthesized identifiers in choice callbacks,
+information/condition properties and typed `Npc_KnowsInfo` arguments. It uses
+their identifier identity while generation retains the complete source
+expression. String literals, member access and calls do not become identifier
+references. Literal-property metadata continues to prevent function-name text
+from becoming a function reference.
 
 **Example:**
 ```typescript

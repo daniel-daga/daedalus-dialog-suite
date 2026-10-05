@@ -6,8 +6,9 @@
  */
 
 import type { SemanticModel, TreeSitterNode } from './semantic-model';
-import { getDialogProperty } from './semantic-model';
+import { getDialogFunctionName } from './semantic-model';
 import { namesEqual, resolveCaseInsensitive } from './name-utils';
+import { referenceIdentifier, referenceIdentifierFromText } from './reference-expression';
 import DaedalusParser from '../core/parser';
 
 export interface DialogReference {
@@ -47,7 +48,9 @@ function forEachChoice(
   const walk = (action: any, topLevelIndex: number): void => {
     if (!action) return;
     if (action.type === 'Choice') {
-      visit(action, topLevelIndex);
+      const targetFunction = typeof action.targetFunction === 'string'
+        ? referenceIdentifierFromText(action.targetFunction) : undefined;
+      if (targetFunction) visit({ ...action, targetFunction }, topLevelIndex);
       return;
     }
     if (action.type === 'ConditionalAction') {
@@ -79,13 +82,8 @@ function rawChoiceTargets(source: string): string[] {
       const callee = node.childForFieldName('function');
       const args = node.childForFieldName('arguments')?.namedChildren.filter(child => child.type !== 'comment') || [];
       if (callee?.type === 'identifier' && namesEqual(callee.text, 'Info_AddChoice') && args.length === 3) {
-        let target = args[2];
-        while (target.type === 'parenthesized_expression') {
-          const operands = target.namedChildren.filter(child => child.type !== 'comment');
-          if (operands.length !== 1) break;
-          target = operands[0];
-        }
-        if (target.type === 'identifier') targets.push(target.text);
+        const target = referenceIdentifier(args[2]);
+        if (target) targets.push(target);
       }
     }
     node.namedChildren.forEach(walk);
@@ -106,7 +104,8 @@ export function findDialogReferences(
   for (const [funcName, func] of Object.entries(model.functions || {})) {
     const conditions = func.conditions || [];
     conditions.forEach((cond: any, idx: number) => {
-      if (cond.type === 'NpcKnowsInfoCondition' && namesEqual(cond.dialogRef, dialogName)) {
+      if (cond.type === 'NpcKnowsInfoCondition' && typeof cond.dialogRef === 'string' &&
+          namesEqual(referenceIdentifierFromText(cond.dialogRef), dialogName)) {
         refs.push({ functionName: funcName, kind: 'NpcKnowsInfo', conditionIndex: idx });
       }
     });
@@ -128,14 +127,12 @@ export function findFunctionReferences(
 
   // Check dialog property references (property names are case-insensitive in Daedalus)
   for (const [dialogName, dialog] of Object.entries(model.dialogs || {})) {
-    const info = getDialogProperty(dialog.properties, 'information');
-    const infoName = typeof info === 'string' ? info : typeof info === 'object' ? info.name : undefined;
+    const infoName = getDialogFunctionName(dialog, 'information');
     if (namesEqual(infoName, functionName)) {
       refs.push({ sourceKind: 'dialog-info', dialogName });
     }
 
-    const cond = getDialogProperty(dialog.properties, 'condition');
-    const condName = typeof cond === 'string' ? cond : typeof cond === 'object' ? cond.name : undefined;
+    const condName = getDialogFunctionName(dialog, 'condition');
     if (namesEqual(condName, functionName)) {
       refs.push({ sourceKind: 'dialog-condition', dialogName });
     }

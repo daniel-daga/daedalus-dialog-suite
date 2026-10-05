@@ -6,6 +6,7 @@ import { indentGeneratedCode } from './code-formatting';
 import { generateActionCode } from './action-codegen';
 import { createNameRecord, resolveCaseInsensitive } from './name-utils';
 import { formatNumericValue } from './parsers/numeric-literals';
+import { referenceIdentifierFromText } from './reference-expression';
 
 // Semantic model classes and types for Daedalus dialog parsing
 
@@ -928,6 +929,31 @@ export function snapshotDialogProperties(properties: DialogProperties): DialogSo
   return values;
 }
 
+const dialogFunctionMaps = new WeakMap<Dialog, Record<string, DialogFunction>>();
+
+/** Reference identity is separate from the property's preserved source expression. */
+export function getDialogFunctionName(dialog: Dialog, property: string): string | undefined {
+  const key = Object.keys(dialog.properties || {}).find(name => name.toLowerCase() === property.toLowerCase());
+  if (key === undefined) return undefined;
+  const value = dialog.properties[key];
+  if (value && typeof value === 'object') return value.name;
+  if (typeof value !== 'string') return undefined;
+  if (dialog.propertyLiteralKeys?.includes(key) && !dialog.propertyExpressionKeys?.includes(key)) return undefined;
+  return referenceIdentifierFromText(value);
+}
+
+/** Read the current information/condition link, including wrapped identifier expressions. */
+export function resolveDialogFunction(
+  dialog: Dialog,
+  property: string,
+  functionsMap: Record<string, DialogFunction> | undefined = dialogFunctionMaps.get(dialog)
+): DialogFunction | undefined {
+  const value = getDialogProperty(dialog.properties, property);
+  if (value instanceof DialogFunction) return value;
+  const name = getDialogFunctionName(dialog, property);
+  return name === undefined ? undefined : resolveCaseInsensitive(functionsMap, name);
+}
+
 export class Dialog {
   public sourceHeader?: SourceHeader;
   /** Verbatim gap between the closing body brace and declaration semicolon. */
@@ -949,11 +975,12 @@ export class Dialog {
   public propertyTrailingComments?: { [key: string]: string };
   /** Standalone comments after the last property, before the closing `};`. */
   public trailingBodyComments?: string[];
-  public actions: DialogAction[];
+  /** Editable view of the current information function, or standalone legacy actions. */
+  public actions!: DialogAction[];
   /** 1-based line the declaration starts on — its `instance` keyword (#267). */
   public line?: number;
 
-  constructor(name: string, parent: string | null) {
+  constructor(name: string, parent: string | null, functionsMap?: Record<string, DialogFunction>) {
     this.name = name;
     this.parent = parent;
     this.leadingComments = [];
@@ -961,12 +988,25 @@ export class Dialog {
     this.propertyFormatting = createNameRecord();
     this.propertyExpressionKeys = [];
     this.propertyLiteralKeys = ['description'];
-    this.actions = [];
+    if (functionsMap) dialogFunctionMaps.set(this, functionsMap);
+    let standaloneActions: DialogAction[] = [];
+    // Keep the existing enumerable JSON shape without serializing the lookup
+    // map or storing a second, independently mutable linked-action snapshot.
+    Object.defineProperty(this, 'actions', {
+      enumerable: true,
+      configurable: true,
+      get: () => resolveDialogFunction(this, 'information')?.actions ?? standaloneActions,
+      set: (actions: DialogAction[]) => {
+        const information = resolveDialogFunction(this, 'information');
+        if (information) information.actions = actions;
+        else standaloneActions = actions;
+      }
+    });
   }
 
   static fromJSON(json: any, functionsMap: { [key: string]: DialogFunction }): Dialog {
     // --- property transformation: copy optional scalar fields ---
-    const dialog = new Dialog(json.name, json.parent);
+    const dialog = new Dialog(json.name, json.parent, functionsMap);
     if (typeof json.declarationSuffix === 'string') {
       dialog.declarationSuffix = json.declarationSuffix;
     }
@@ -1024,6 +1064,9 @@ export class Dialog {
     // --- function-reference linking: resolve property values to live DialogFunction instances ---
     const literalKeys = (dialog.propertyLiteralKeys || []).filter(key => !dialog.propertyExpressionKeys?.includes(key));
     dialog.properties = linkPropertiesToFunctions(json.name, json.properties ?? {}, functionsMap, literalKeys);
+    if (!resolveDialogFunction(dialog, 'information') && Array.isArray(json.actions)) {
+      dialog.actions = json.actions.map((action: any) => deserializeAction(action));
+    }
 
     return dialog;
   }

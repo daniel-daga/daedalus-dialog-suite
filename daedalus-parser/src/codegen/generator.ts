@@ -8,7 +8,8 @@ import {
   DialogAction,
   DialogCondition,
   CodeGeneratable,
-  getDialogProperty,
+  resolveDialogFunction,
+  getDialogFunctionName,
   snapshotDialogProperties
 } from '../semantic/semantic-model';
 import { collectReachableFunctions } from '../semantic/cross-references';
@@ -141,10 +142,6 @@ export class SemanticCodeGenerator {
       ordered += '\n'.repeat(blank) + (text.endsWith('\n') ? text : `${text}\n`);
       previousWasGlobal = isGlobal;
     };
-    const withLeading = (comments: string[] | undefined, text: string) => {
-      const leading = this.renderLeadingComments(comments);
-      return leading ? `${leading}\n${text}` : text;
-    };
 
     // N10 — declaration-order fidelity: when the model carries a declaration
     // order (i.e. it came from a parse), emit strictly in that order. Every
@@ -174,13 +171,13 @@ export class SemanticCodeGenerator {
         if (dialog && !emittedDialogs.has(dialog.name)) {
           // Emit leading comments verbatim; do NOT synthesize a section header
           // for a dialog that has its own order entry (invented content).
-          emitOrdered(withLeading(dialog.leadingComments, this.generateDialog(dialog)), false, declaration.blankLinesBefore);
+          emitOrdered(this.generateDialog(dialog), false, declaration.blankLinesBefore);
           emittedDialogs.add(dialog.name);
         }
       } else if (declaration.type === 'function') {
         const func = model.functions[declaration.name];
         if (func && !emittedFunctions.has(func.name.toLowerCase())) {
-          emitOrdered(withLeading(func.leadingComments, this.generateFunction(func)), false, declaration.blankLinesBefore);
+          emitOrdered(this.generateFunction(func), false, declaration.blankLinesBefore);
           emittedFunctions.add(func.name.toLowerCase());
         }
       }
@@ -193,10 +190,7 @@ export class SemanticCodeGenerator {
     for (const dialogName in model.dialogs) {
       const dialog = model.dialogs[dialogName];
       if (!emittedDialogs.has(dialog.name)) {
-        const leading = this.renderLeadingComments(dialog.leadingComments);
-        if (leading) {
-          sections.push(leading);
-        } else if (this.options.sectionHeaders && this.options.includeComments) {
+        if (!this.renderLeadingComments(dialog.leadingComments) && this.options.sectionHeaders && this.options.includeComments) {
           sections.push(this.generateSectionHeader(this.extractDisplayName(dialog.name)));
         }
         sections.push(this.generateDialog(dialog));
@@ -206,10 +200,6 @@ export class SemanticCodeGenerator {
         const associatedFuncs = this.getAssociatedFunctions(dialog, model);
         for (const func of associatedFuncs) {
           if (!emittedFunctions.has(func.name.toLowerCase())) {
-            const funcLeading = this.renderLeadingComments(func.leadingComments);
-            if (funcLeading) {
-              sections.push(funcLeading);
-            }
             sections.push(this.generateFunction(func));
             emittedFunctions.add(func.name.toLowerCase());
           }
@@ -219,10 +209,6 @@ export class SemanticCodeGenerator {
     for (const funcName in model.functions) {
       const func = model.functions[funcName];
       if (!emittedFunctions.has(func.name.toLowerCase())) {
-        const leading = this.renderLeadingComments(func.leadingComments);
-        if (leading) {
-          sections.push(leading);
-        }
         sections.push(this.generateFunction(func));
         emittedFunctions.add(func.name.toLowerCase());
       }
@@ -341,7 +327,7 @@ export class SemanticCodeGenerator {
     const parts: string[] = [];
 
     // Section header
-    if (this.options.sectionHeaders && this.options.includeComments) {
+    if (!this.renderLeadingComments(dialog.leadingComments) && this.options.sectionHeaders && this.options.includeComments) {
       const displayName = this.extractDisplayName(dialog.name);
       parts.push(this.generateSectionHeader(displayName));
     }
@@ -390,26 +376,26 @@ export class SemanticCodeGenerator {
     const funcs: DialogFunction[] = [];
     const seen = new Set<string>();
 
-    const condProp = getDialogProperty(dialog.properties, 'condition');
-    if (condProp instanceof DialogFunction) {
-      funcs.push(condProp);
-      seen.add(condProp.name);
+    const condFunc = resolveDialogFunction(dialog, 'condition', model.functions);
+    if (condFunc) {
+      funcs.push(condFunc);
+      seen.add(condFunc.name.toLowerCase());
     }
 
     let infoFunc: DialogFunction | undefined;
-    const infoProp = getDialogProperty(dialog.properties, 'information');
-    if (infoProp instanceof DialogFunction) {
+    const infoProp = resolveDialogFunction(dialog, 'information', model.functions);
+    if (infoProp) {
       infoFunc = infoProp;
       funcs.push(infoFunc);
-      seen.add(infoFunc.name);
+      seen.add(infoFunc.name.toLowerCase());
     }
 
     // Use the same reachability boundary as reference/deletion analysis.
     if (infoFunc) {
       for (const name of collectReachableFunctions(model, infoFunc.name)) {
-        if (!seen.has(name)) {
+        if (!seen.has(name.toLowerCase())) {
           funcs.push(resolveCaseInsensitive(model.functions, name)!);
-          seen.add(name);
+          seen.add(name.toLowerCase());
         }
       }
     }
@@ -422,6 +408,7 @@ export class SemanticCodeGenerator {
    */
   generateDialog(dialog: Dialog): string {
     const indent = this.indent();
+    const leading = this.renderLeadingComments(dialog.leadingComments);
     const instanceKeyword = this.resolveKeyword('instance', dialog.keyword);
     const spaceBeforeParen = this.options.preserveSourceStyle && dialog.spaceBeforeParen ? ' ' : '';
     const parent = dialog.parent || 'C_INFO';
@@ -435,10 +422,11 @@ export class SemanticCodeGenerator {
           Object.keys(current).some(key => !Object.prototype.hasOwnProperty.call(baseline, key) || current[key] !== baseline[key])) {
         throw new Error(`Dialog ${dialog.name} has a preserved executable instance body; edit its source before changing properties or function references`);
       }
-      return `${header}\n${dialog.sourceBody.text}${this.declarationTerminator(dialog.declarationSuffix)}\n`;
+      return `${leading ? leading + '\n' : ''}${header}\n${dialog.sourceBody.text}${this.declarationTerminator(dialog.declarationSuffix)}\n`;
     }
     const lines: string[] = [];
 
+    if (leading) lines.push(leading);
     lines.push(header);
     lines.push('{');
 
@@ -507,6 +495,10 @@ export class SemanticCodeGenerator {
   }
 
   private formatDialogPropertyValue(dialog: Dialog, key: string, value: string | number | boolean | DialogFunction): string {
+    if (typeof value === 'string' && ['information', 'condition'].includes(key.toLowerCase()) &&
+        getDialogFunctionName(dialog, key) !== undefined) {
+      return value;
+    }
     if (
       typeof value === 'string' &&
       Array.isArray(dialog.propertyExpressionKeys) &&
@@ -539,6 +531,8 @@ export class SemanticCodeGenerator {
     const spaceBeforeParen = this.options.preserveSourceStyle && func.spaceBeforeParen ? ' ' : '';
     const returnTypeLower = func.returnType.toLowerCase();
     const lines: string[] = [];
+    const leading = this.renderLeadingComments(func.leadingComments);
+    if (leading) lines.push(leading);
 
     const parameters = (func.parameters || [])
       .map(p => [p.keyword, p.type, p.name].filter(Boolean).join(' '))
