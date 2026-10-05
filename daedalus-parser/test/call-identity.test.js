@@ -133,3 +133,38 @@ test('legacy commented action metadata preserves the original callee with commen
   const model = deserializeSemanticModel(json);
   assert.deepEqual(callees(new SemanticCodeGenerator({ includeComments: false }).generateSemanticModel(model)), ['Log_AddEntry']);
 });
+
+for (const suffix of ['', ' /* retained */']) {
+  for (const includeComments of [true, false]) {
+    test(`pickpocket edits survive parse, hydration and generation (${suffix}, ${includeComments})`, () => {
+      const model = hydrate(parse(`func void F() { c_beklauen(10, 90)${suffix}; };`));
+      const action = model.functions.F.actions[0];
+      action.minChance = '30';
+      action.maxChance = '70';
+      const generator = new SemanticCodeGenerator({ includeComments });
+      let output = generator.generateSemanticModel(hydrate(model));
+      assert.deepEqual(callees(output), ['c_beklauen']);
+      const edited = parse(output).functions.F.actions[0];
+      assert.equal(edited.minChance, '30');
+      assert.equal(edited.maxChance, '70');
+      action.pickpocketMode = 'B_Beklauen';
+      output = generator.generateSemanticModel(hydrate(model));
+      assert.deepEqual(callees(output), ['B_Beklauen']);
+      assert.deepEqual(parse(output).functions.F.actions[0].pickpocketArgs, []);
+      if (includeComments && suffix) {
+        assert.ok(output.includes('/* retained */'));
+      }
+    });
+
+    test(`inventory mode edits survive parse, hydration and generation (${suffix}, ${includeComments})`, () => {
+      const model = hydrate(parse(`func void F() { npc_removeinvitems(self, Gold, 5)${suffix}; };`));
+      model.functions.F.actions[0].removeFunctionName = 'Npc_RemoveInvItem';
+      const output = new SemanticCodeGenerator({ includeComments }).generateSemanticModel(hydrate(model));
+      assert.deepEqual(callees(output), ['Npc_RemoveInvItem']);
+      assert.equal(parse(output).functions.F.actions[0].removeQuantity, undefined);
+      if (includeComments && suffix) {
+        assert.ok(output.includes('/* retained */'));
+      }
+    });
+  }
+}

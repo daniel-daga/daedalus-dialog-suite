@@ -194,12 +194,22 @@ export class PickpocketAction implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    // Emit the original source casing when known so a case-drifted call
-    // (e.g. `b_beklauen`) roundtrips; fall back to the canonical mode name.
-    const name = this.sourceFunctionName ?? this.pickpocketMode;
+    // Source casing belongs to the original mode. Explicit mode edits select
+    // a new callee and its argument shape; current chance fields own edits.
+    const sameMode = this.sourceFunctionName === undefined ||
+      this.sourceFunctionName.toLowerCase() === this.pickpocketMode.toLowerCase();
+    const name = sameMode ? this.sourceFunctionName ?? this.pickpocketMode : this.pickpocketMode;
 
-    if (this.pickpocketArgs !== undefined) {
-      return generateCallStatement(this, name, this.pickpocketArgs);
+    if (sameMode && this.pickpocketArgs !== undefined) {
+      // Retain unusual source arities and trailing arguments without letting
+      // the original first two arguments override editable chance fields.
+      const args = [...this.pickpocketArgs];
+      if (this.minChance !== undefined) args[0] = this.minChance || '0';
+      if (this.maxChance !== undefined) {
+        args[0] ??= '0';
+        args[1] = this.maxChance || args[0];
+      }
+      return generateCallStatement(this, name, args);
     }
 
     if (this.pickpocketMode === 'B_Beklauen') {

@@ -3,6 +3,7 @@ import type { BaseActionRendererProps } from './types';
 import type { TeachActionType } from '../../types/global';
 import { ActionFieldContainer, ActionDeleteButton, ActionTextField } from '../common';
 import { createRowTabHandlers } from './rowTabNavigation';
+import { splitDaedalusArguments } from './splitDaedalusArguments';
 
 const TeachActionRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -38,7 +39,7 @@ const TeachActionRenderer: React.FC<BaseActionRendererProps> = ({
         onChange={(value) =>
           handleUpdate({
             ...typedAction,
-            teachArgs: value.split(',').map((part) => part.trim()).filter(Boolean)
+            teachArgs: splitDaedalusArguments(value)
           })
         }
         onFlush={flushUpdate}
