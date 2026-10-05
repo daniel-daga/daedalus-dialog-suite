@@ -163,7 +163,7 @@ describe('Numeric-or-string action field fidelity (parser fix: quantity/damage/s
   });
 
   describe('RemoveInventoryItemsActionRenderer', () => {
-    test('renders without crashing when removeQuantity is absent (2-arg Npc_RemoveInvItem form)', () => {
+    test('hides quantity when removeQuantity is absent (2-arg Npc_RemoveInvItem form)', () => {
       const action = {
         type: 'RemoveInventoryItemsAction' as const,
         removeFunctionName: 'Npc_RemoveInvItem' as const,
@@ -171,7 +171,9 @@ describe('Numeric-or-string action field fidelity (parser fix: quantity/damage/s
         removeItem: 'ItMi_Gold'
       };
       render(<RemoveInventoryItemsActionRenderer {...baseProps} action={action} handleUpdate={jest.fn()} />);
-      expect(screen.getByLabelText('Quantity')).toHaveValue('');
+      expect(screen.queryByLabelText('Quantity')).not.toBeInTheDocument();
+      expect(screen.getByLabelText('NPC')).toHaveValue('self');
+      expect(screen.getByLabelText('Item')).toHaveValue('ItMi_Gold');
     });
   });
 });
