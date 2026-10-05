@@ -128,7 +128,7 @@ export class DeclarationVisitor {
         const isDialogInstance = parentType.toUpperCase() === 'C_INFO';
 
         if (isDialogInstance) {
-          const dialog = new Dialog(nameNode.text, parentNode ? parentNode.text : null);
+          const dialog = new Dialog(nameNode.text, parentNode ? parentNode.text : null, this.semanticModel.functions);
           const sourceHeader = captureDeclarationHeader(node);
           if (sourceHeader) dialog.sourceHeader = sourceHeader;
           const declarationSuffix = captureDeclarationSuffix(node);

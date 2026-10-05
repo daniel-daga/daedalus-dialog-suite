@@ -11,7 +11,6 @@ import {
   DialogAction,
   ConditionalAction,
   SourceLine,
-  getDialogProperty,
   snapshotDialogProperties
 } from '../semantic-model';
 import { ActionParsers } from '../parsers/action-parsers';
@@ -26,7 +25,8 @@ import {
 } from '../parsers/ast-constants';
 import { parseLiteralOrIdentifier } from '../parsers/literal-parsing';
 import { captureAssignmentSource } from '../action-source';
-import { createNameRecord, namesEqual } from '../name-utils';
+import { createNameRecord } from '../name-utils';
+import { referenceIdentifier } from '../reference-expression';
 
 /**
  * Stamp a parsed action or condition with the 1-based line of the node it came
@@ -46,9 +46,6 @@ export class LinkingVisitor {
   private currentInstance: Dialog | null;
   private currentFunction: DialogFunction | null;
   private conditionFunctions: Set<string>;
-  // Keyed by lowercase function name. A function can be shared by multiple
-  // dialogs, so cache all owners (including an empty array for a proven miss).
-  private functionToDialogs: Map<string, Dialog[]>;
   // Ranges (`startIndex:endIndex`) of comment nodes already consumed as an
   // AI_Output subtitle, so they are not also re-emitted as standalone comments.
   private consumedCommentRanges: Set<string>;
@@ -60,7 +57,6 @@ export class LinkingVisitor {
     this.currentInstance = null;
     this.currentFunction = null;
     this.conditionFunctions = new Set<string>();
-    this.functionToDialogs = new Map<string, Dialog[]>();
     this.consumedCommentRanges = new Set<string>();
   }
 
@@ -103,16 +99,14 @@ export class LinkingVisitor {
         if (!this.isDirectPropertyAssignment(stmt)) continue;
         const left = stmt.childForFieldName('left');
         const right = stmt.childForFieldName('right');
-        if (!left || !right || right.type !== 'identifier') continue;
+        if (!left || !right) continue;
+        const reference = referenceIdentifier(right);
+        if (reference === undefined) continue;
         const propertyKey = left.text.toLowerCase();
-        const originalName = this.functionNameMap.get(right.text.toLowerCase());
-        const functionName = originalName || right.text;
+        const originalName = this.functionNameMap.get(reference.toLowerCase());
+        const functionName = originalName || reference;
         if (propertyKey === 'condition') {
           this.conditionFunctions.add(functionName);
-        } else if (propertyKey === 'information' && dialog) {
-          // Pre-populate function→dialogs links so shared information
-          // functions resolve regardless of declaration order.
-          this.addDialogForFunction(functionName, dialog);
         }
       }
     }
@@ -446,10 +440,6 @@ export class LinkingVisitor {
 
         if (this.functions[functionName]) {
           value = this.functions[functionName];
-          if (propertyKey === 'information') {
-            this.addDialogForFunction(functionName, this.currentInstance);
-            this.syncDialogActionsForFunction(functionName, this.currentInstance);
-          }
         } else {
           value = rightNode.text;
         }
@@ -473,19 +463,6 @@ export class LinkingVisitor {
     }
   }
 
-
-  private syncDialogActionsForFunction(functionName: string, dialog: Dialog): void {
-    const infoFunction = this.functions[functionName];
-    if (!infoFunction?.actions?.length) {
-      return;
-    }
-
-    for (const action of infoFunction.actions) {
-      if (!dialog.actions.includes(action)) {
-        dialog.actions.push(action);
-      }
-    }
-  }
 
   private markPropertyExpression(propertyName: string): void {
     if (!this.currentInstance) return;
@@ -615,10 +592,6 @@ export class LinkingVisitor {
   private recordActionForCurrentFunction(action: DialogAction): void {
     if (!this.currentFunction) return;
     this.currentFunction.actions.push(action);
-
-    for (const dialog of this.findDialogsForFunction(this.currentFunction.name)) {
-      dialog.actions.push(action);
-    }
   }
 
   /**
@@ -755,36 +728,4 @@ export class LinkingVisitor {
     return null;
   }
 
-  private addDialogForFunction(functionName: string, dialog: Dialog): void {
-    const key = functionName.toLowerCase();
-    const dialogs = this.functionToDialogs.get(key) ?? [];
-    if (!dialogs.includes(dialog)) dialogs.push(dialog);
-    this.functionToDialogs.set(key, dialogs);
-  }
-
-  /** Find every dialog using a function, caching even unowned-function misses. */
-  private findDialogsForFunction(functionName: string): Dialog[] {
-    const key = functionName.toLowerCase();
-    const cached = this.functionToDialogs.get(key);
-    if (cached !== undefined) {
-      return cached;
-    }
-
-    const matches: Dialog[] = [];
-    for (const dialog of Object.values(this.dialogs)) {
-      const information = getDialogProperty(dialog.properties, 'information');
-      const informationName = typeof information === 'string'
-        ? information
-        : (information && typeof information === 'object' && 'name' in information
-          ? information.name
-          : null);
-
-      if (namesEqual(informationName, functionName)) {
-        matches.push(dialog);
-      }
-    }
-
-    this.functionToDialogs.set(key, matches);
-    return matches;
-  }
 }

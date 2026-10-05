@@ -1,5 +1,36 @@
 # Parser Roundtrip Fidelity
 
+## Reference, hydration and export ownership
+
+Reference identity is separate from preserved expression text. A shared AST
+helper resolves bare or parenthesized identifiers, including comment trivia,
+without treating strings, member access or calls as identifiers. Structured and
+raw choice analysis use the same rule; information/condition properties and
+typed `Npc_KnowsInfo` references use it too. Current model fields remain the
+source of reference analysis after edits. Generation retains parentheses,
+quotes and trivia rather than overwriting fields with normalized names.
+
+`Dialog.actions` is an enumerable editable view of its current information
+function's array. Shared dialogs share that body after parsing and official
+JSON hydration. Replacing the function's action array, editing through the
+dialog view or relinking the information property changes the same source of
+truth. The visitor records each action only once. Hydration ignores stale
+serialized dialog snapshots when a live information function exists;
+standalone legacy action arrays are still restored with their action classes.
+The function lookup map is held outside the serialized model.
+
+Each declaration emitter owns its leading comments. Direct declaration calls,
+single-dialog exports, ordered whole-model emission and fallback clustering
+all use those emitters; callers do not add the same comments again. Shared
+functions emit their declaration comments once, `includeComments: false`
+suppresses them, and LF/CRLF multiline comment token text remains unchanged.
+
+`test/review-reference-hydration-export.test.js` exercises real native parsing,
+official JSON hydration, current edits, shared functions, transitive choices and
+cycles, literal/reference controls, direct and whole-model exports, and three
+roundtrip cycles. The test-only commit reproduced 17 failures before the fixes;
+the five other new cases guarded existing behavior.
+
 Durable decisions from the 2026-07 fidelity remediation (review findings
 P1–P7, M1–M5, N1–N10). The governing principle:
 

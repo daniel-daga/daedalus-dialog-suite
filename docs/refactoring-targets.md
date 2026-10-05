@@ -256,15 +256,17 @@ The one wart the fix carries: MUI's `Stack` spacing selector outranks a child's
 ### 11. `linking-visitor.ts` is a god class
 **File:** `daedalus-parser/src/semantic/visitors/linking-visitor.ts`
 
-1,016 lines and 48 methods carrying five concerns — reference resolution,
-action extraction, condition extraction, call-site bookkeeping and comment
-attachment — with a literal duplicate (`isCallInsideComparisonBinary` and
-`hasComparisonBinaryAncestor` have byte-identical bodies) and a denormalized
-mirror: every action is pushed to `currentFunction.actions` *and* to
-`dialog.actions` (`:624-628`), which then has to be kept in step on removal
-(`:733`). Fix direction: one visitor per concern behind the two-pass
-orchestrator, and `Dialog.actions` derived from the information function rather
-than stored twice. Surfaced by the 2026-07 review (item 6.2).
+The visitor still carries action extraction, condition extraction, call-site
+bookkeeping and comment attachment behind the two-pass orchestrator. Smaller
+visitors per concern remain a possible simplification; the original 2026-07
+line/method counts and duplicate-method diagnosis no longer describe this file.
+
+The denormalized `Dialog.actions` mirror is removed. It is now an editable view
+of the current information function, including after JSON hydration, array
+replacement and relinking. The visitor writes only the function's action list;
+there is no owner cache or second list to synchronize. Reference-expression
+identity is shared across extraction, hydration and export rather than inferred
+independently from raw strings.
 
 ---
 
