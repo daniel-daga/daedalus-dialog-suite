@@ -104,9 +104,13 @@ export class RemoveInventoryItemsAction implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    const args = this.removeQuantity === undefined
-      ? [this.removeNpc, this.removeItem]
-      : [this.removeNpc, this.removeItem, this.removeQuantity];
+    if (this.removeFunctionName.toLowerCase() === 'npc_removeinvitem') {
+      return generateCallStatement(this, this.removeFunctionName, [this.removeNpc, this.removeItem]);
+    }
+    if (!this.removeQuantity?.trim()) {
+      throw new Error('Npc_RemoveInvItems requires a quantity.');
+    }
+    const args = [this.removeNpc, this.removeItem, this.removeQuantity];
     return generateCallStatement(this, this.removeFunctionName, args);
   }
 
