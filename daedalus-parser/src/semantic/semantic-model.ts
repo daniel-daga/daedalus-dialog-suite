@@ -1,3 +1,4 @@
+import { renderStringValue } from './source-value';
 export type { CallIdentity } from './call-identity';
 import { generateCallStatement } from './call-identity';
 import 'reflect-metadata';
@@ -362,7 +363,7 @@ export class LogEntry implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    const text = this.textIsExpression ? this.text : `"${this.text}"`;
+    const text = renderStringValue(this.text, this.textIsExpression);
     return `\n${generateCallStatement(this, 'B_LogEntry', [this.topic, text])}\n`;
   }
 
@@ -929,7 +930,8 @@ export function snapshotDialogProperties(properties: DialogProperties): DialogSo
   return values;
 }
 
-const dialogFunctionMaps = new WeakMap<Dialog, Record<string, DialogFunction>>();
+type DialogFunctionSource = Record<string, DialogFunction> | (() => Record<string, DialogFunction>);
+const dialogFunctionMaps = new WeakMap<Dialog, DialogFunctionSource>();
 
 /** Reference identity is separate from the property's preserved source expression. */
 export function getDialogFunctionName(dialog: Dialog, property: string): string | undefined {
@@ -946,12 +948,17 @@ export function getDialogFunctionName(dialog: Dialog, property: string): string 
 export function resolveDialogFunction(
   dialog: Dialog,
   property: string,
-  functionsMap: Record<string, DialogFunction> | undefined = dialogFunctionMaps.get(dialog)
+  functionsMap?: Record<string, DialogFunction>
 ): DialogFunction | undefined {
-  const value = getDialogProperty(dialog.properties, property);
-  if (value instanceof DialogFunction) return value;
+  const source = dialogFunctionMaps.get(dialog);
+  const currentMap = functionsMap ?? (typeof source === 'function' ? source() : source);
   const name = getDialogFunctionName(dialog, property);
-  return name === undefined ? undefined : resolveCaseInsensitive(functionsMap, name);
+  const resolved = name === undefined ? undefined : resolveCaseInsensitive(currentMap, name);
+  // Explicit export maps and model-owned lookups are authoritative, including
+  // deletions. Detached legacy dialogs may still own a direct function object.
+  if (resolved || functionsMap !== undefined || typeof source === 'function') return resolved;
+  const value = getDialogProperty(dialog.properties, property);
+  return value instanceof DialogFunction ? value : undefined;
 }
 
 export class Dialog {
@@ -980,7 +987,7 @@ export class Dialog {
   /** 1-based line the declaration starts on — its `instance` keyword (#267). */
   public line?: number;
 
-  constructor(name: string, parent: string | null, functionsMap?: Record<string, DialogFunction>) {
+  constructor(name: string, parent: string | null, functionsMap?: DialogFunctionSource) {
     this.name = name;
     this.parent = parent;
     this.leadingComments = [];
@@ -1004,9 +1011,11 @@ export class Dialog {
     });
   }
 
-  static fromJSON(json: any, functionsMap: { [key: string]: DialogFunction }): Dialog {
+  static fromJSON(
+    json: any, functionsMap: { [key: string]: DialogFunction }, functionsSource?: () => Record<string, DialogFunction>
+  ): Dialog {
     // --- property transformation: copy optional scalar fields ---
-    const dialog = new Dialog(json.name, json.parent, functionsMap);
+    const dialog = new Dialog(json.name, json.parent, functionsSource ?? functionsMap);
     if (typeof json.declarationSuffix === 'string') {
       dialog.declarationSuffix = json.declarationSuffix;
     }
@@ -1148,7 +1157,7 @@ export function deserializeSemanticModel(json: any): SemanticModel {
 
   // 2. Reconstruct dialogs and link to functions
   for (const dialogName in json.dialogs) {
-    model.dialogs[dialogName] = Dialog.fromJSON(json.dialogs[dialogName], model.functions);
+    model.dialogs[dialogName] = Dialog.fromJSON(json.dialogs[dialogName], model.functions, () => model.functions);
   }
 
   // 3. Reconstruct constants
@@ -1225,3 +1234,4 @@ export function deserializeSemanticModel(json: any): SemanticModel {
 
   return model;
 }
+

@@ -162,8 +162,8 @@ export class ActionParsers {
     const args = parseArgumentsDetailed(argsNode);
     if (args.length !== 3) return null;
 
-    const speaker = args[0].value;
-    const listener = args[1].value;
+    const speaker = args[0].raw;
+    const listener = args[1].raw;
     const dialogId = args[2].value; // This is typically a dialog ID
 
     // Look for a same-line comment after this AI_Output call to use as readable
@@ -312,7 +312,7 @@ export class ActionParsers {
    */
   static parsePlayAniCall(node: TreeSitterNode): PlayAniAction | null {
     return ActionParsers.parseActionWithArgs(node, 2, (args) =>
-      new PlayAniAction(args[0].value, args[1].value, !args[1].isString)
+      new PlayAniAction(args[0].raw, args[1].value, !args[1].isString)
     );
   }
 
@@ -345,7 +345,7 @@ export class ActionParsers {
     return ActionParsers.parseActionWithArgs(node, 2, (args) =>
       new StartOtherRoutineAction(
         functionName as 'B_StartOtherRoutine' | 'B_StartotherRoutine',
-        args[0].value,
+        args[0].raw,
         args[1].value,
         !args[1].isString
       )
@@ -395,7 +395,7 @@ export class ActionParsers {
    */
   static parseInsertNpcCall(node: TreeSitterNode): InsertNpcAction | null {
     return ActionParsers.parseActionWithArgs(node, 2, (args) =>
-      new InsertNpcAction(args[0].value, args[1].value, !args[1].isString)
+      new InsertNpcAction(args[0].raw, args[1].value, !args[1].isString)
     );
   }
 
@@ -455,3 +455,4 @@ export class ActionParsers {
     return null;
   }
 }
+

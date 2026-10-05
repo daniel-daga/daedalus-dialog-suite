@@ -174,7 +174,8 @@ literal. Explicit `propertyExpressionKeys` take precedence; legacy JSON without
 literal metadata retains the previous value inference.
 
 `Dialog.actions` reads and edits the current information function's action array.
-It follows array replacement and function relinking, including after
+It follows array replacement, function-object replacement, function-dictionary
+replacement and function relinking, including after
 `deserializeSemanticModel`; shared information functions share the same action
 array. JSON retains the enumerable `actions` field, but a linked function's
 current body takes precedence over a stale serialized dialog snapshot.
@@ -182,6 +183,20 @@ Standalone dialogs without a resolvable information function retain their own
 editable action arrays, including legacy JSON. A hand-built dialog can pass its
 function dictionary as the optional third constructor argument when its
 information property holds a string rather than a linked function object.
+Pass `() => model.functions` instead of a dictionary to make a hand-built
+dialog follow dictionary replacement. Parsed and officially hydrated dialogs
+already use this live lookup. Model-owned views and exports resolve references
+against the current dictionary; deleting a function does not resurrect its old
+linked object. Detached legacy dialogs can still own direct function objects.
+
+String fields with `…IsExpression` flags retain their existing API: absent or
+false means literal contents, true means source expression text. Shared rendering
+never guesses from the contents. Daedalus treats backslashes and newlines
+literally and has no quote escape syntax. Generating a structured string field,
+literal comparison or property containing an embedded double quote throws an
+error instead of emitting malformed code. Raw expression fields (including
+actors and targets) retain source quotes and remain the caller's responsibility
+when edited. Preserved raw code continues to be emitted verbatim.
 
 Reference analysis accepts parenthesized identifiers in choice callbacks,
 information/condition properties and typed `Npc_KnowsInfo` arguments. It uses
