@@ -1,3 +1,4 @@
+import { renderStringValue } from '../semantic/source-value';
 // String-based code generator for Daedalus semantic model
 // Generates clean, readable Daedalus source code from semantic model
 
@@ -491,7 +492,7 @@ export class SemanticCodeGenerator {
         (value.startsWith("'") && value.endsWith("'"))) {
       return value;
     }
-    return `"${value}"`;
+    return renderStringValue(value);
   }
 
   private formatDialogPropertyValue(dialog: Dialog, key: string, value: string | number | boolean | DialogFunction): string {
@@ -507,7 +508,8 @@ export class SemanticCodeGenerator {
       return value;
     }
     if (typeof value === 'string' && dialog.propertyLiteralKeys?.includes(key)) {
-      return value.startsWith('"') && value.endsWith('"') ? value : `"${value}"`;
+      const contents = value.startsWith('"') && value.endsWith('"') ? value.slice(1, -1) : value;
+      return renderStringValue(contents);
     }
     return this.formatValue(value);
   }
@@ -695,3 +697,4 @@ export class SemanticCodeGenerator {
     return rendered === null ? null : `${rendered}\n`;
   }
 }
+

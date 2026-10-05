@@ -1,3 +1,4 @@
+import { renderStringValue } from './source-value';
 import { generateCallExpression } from './call-identity';
 /**
  * Dialog condition classes and the DialogCondition union type.
@@ -11,7 +12,7 @@ import type { CodeGenOptions, CodeGeneratable, SourceLine } from './semanticMode
 import { formatNumericValue } from './parsers/numeric-literals';
 
 function formatComparisonValue(value: string | number | boolean, isStringLiteral = false): string {
-  if (isStringLiteral) return `"${value}"`;
+  if (isStringLiteral) return renderStringValue(String(value));
   return formatNumericValue(value);
 }
 
@@ -342,3 +343,4 @@ export type DialogCondition = (
   | VariableCondition
   | QuestStateCondition
 ) & SourceLine;
+

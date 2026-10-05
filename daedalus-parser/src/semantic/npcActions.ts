@@ -1,3 +1,4 @@
+import { renderStringValue } from './source-value';
 import { generateCallStatement } from './call-identity';
 /**
  * NPC action classes.
@@ -75,7 +76,7 @@ export class ExchangeRoutineAction implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    const routine = this.routineIsExpression ? this.routine : `"${this.routine}"`;
+    const routine = renderStringValue(this.routine, this.routineIsExpression);
     return generateCallStatement(this, 'Npc_ExchangeRoutine', [this.target, routine]);
   }
 
@@ -148,7 +149,7 @@ export class PlayAniAction implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    const animationName = this.animationNameIsExpression ? this.animationName : `"${this.animationName}"`;
+    const animationName = renderStringValue(this.animationName, this.animationNameIsExpression);
     return generateCallStatement(this, 'AI_PlayAni', [this.target, animationName]);
   }
 
@@ -256,7 +257,7 @@ export class StartOtherRoutineAction implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    const routineName = this.routineNameIsExpression ? this.routineName : `"${this.routineName}"`;
+    const routineName = renderStringValue(this.routineName, this.routineNameIsExpression);
     return generateCallStatement(this, this.routineFunctionName, [this.routineNpc, routineName]);
   }
 
@@ -308,7 +309,7 @@ export class InsertNpcAction implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    const spawnPoint = this.spawnPointIsExpression ? this.spawnPoint : `"${this.spawnPoint}"`;
+    const spawnPoint = renderStringValue(this.spawnPoint, this.spawnPointIsExpression);
     return generateCallStatement(this, 'Wld_InsertNpc', [this.npcInstance, spawnPoint]);
   }
 
@@ -335,7 +336,7 @@ export class HeroFollowsAction implements CodeGeneratable {
   }
 
   generateCode(_options: CodeGenOptions): string {
-    const guideRoutine = this.guideRoutineIsExpression ? this.guideRoutine : `"${this.guideRoutine}"`;
+    const guideRoutine = renderStringValue(this.guideRoutine, this.guideRoutineIsExpression);
     return [
       `AI_StopProcessInfos (self);`,
       `self.aivar[AIV_PARTYMEMBER] = TRUE;`,
@@ -351,3 +352,4 @@ export class HeroFollowsAction implements CodeGeneratable {
     return 'HeroFollowsAction';
   }
 }
+

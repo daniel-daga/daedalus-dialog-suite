@@ -17,7 +17,28 @@ dialog view or relinking the information property changes the same source of
 truth. The visitor records each action only once. Hydration ignores stale
 serialized dialog snapshots when a live information function exists;
 standalone legacy action arrays are still restored with their action classes.
-The function lookup map is held outside the serialized model.
+The function lookup source is held outside the serialized model. Parsed and
+officially hydrated dialogs keep a callback to the owning model's current
+function dictionary, so replacing function objects or the dictionary itself
+changes the action view. Exports always resolve information and condition
+references against their supplied model dictionary, even for object-valued
+properties. Deleting a function cannot resurrect a stale linked body. Detached
+legacy dialogs retain direct function-object compatibility.
+
+String generation uses `source-value.ts`: a tagged string-content value or a
+source expression renders through one helper. Legacy `…IsExpression` flags
+adapt into that representation without changing their JSON shape. Literal
+contents containing double quotes fail explicitly because Daedalus has no
+escape sequences; backslashes and multiline strings remain verbatim. Actor and
+target fields store raw argument text, never normalized display text. Future
+typed actions must choose the content or expression contract at extraction and
+use the shared renderer for literal-capable fields.
+
+`quote-export-contract.test.js` compares original source AST argument types and
+text with both export paths across three JSON cycles. This catches loss during
+extraction that semantic-model equality alone would miss. It also covers edited
+literal/expression fields, quote rejection, shared information functions,
+function-object and dictionary replacement, and deletion before/after hydration.
 
 Each declaration emitter owns its leading comments. Direct declaration calls,
 single-dialog exports, ordered whole-model emission and fallback clustering
