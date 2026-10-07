@@ -211,7 +211,7 @@ describe('VobMarkerLayer', () => {
     expect(layer.pick(clip(), x, y, SIZE, SIZE)).toBe(0);
   });
 
-  it('draws at a fixed pixel size, over whatever is in front of it', () => {
+  it('draws at a fixed pixel size, solid where seen and faint behind a wall', () => {
     const layer = new VobMarkerLayer(vobIndex([[0, 0, 0]], 'zCVobSound', undefined, undefined, ['']));
     const material = layer.markers.material as THREE.PointsMaterial;
 
@@ -219,11 +219,42 @@ describe('VobMarkerLayer', () => {
     // shrank with distance would be invisible from the viewpoint that shows the
     // world — which is also why the pick is done in pixels.
     expect(material.sizeAttenuation).toBe(false);
-    // A sound inside a building is exactly the one worth looking at.
-    expect(material.depthTest).toBe(false);
+    // Hidden by what is in front of it: a pip at full strength through every
+    // wall was jarring (Daniel, 2026-10-01).
+    expect(material.depthTest).toBe(true);
+
+    // …but not gone: a sound inside a building is still worth finding, so a
+    // second draw of the same buffer shows it faintly through the wall.
+    const faded = layer.markers.children[0] as THREE.Points;
+    const fadedMaterial = faded.material as THREE.PointsMaterial;
+    expect(faded.geometry).toBe(layer.markers.geometry);
+    expect(fadedMaterial.depthTest).toBe(false);
+    expect(fadedMaterial.opacity).toBeLessThan(material.opacity);
+    expect(fadedMaterial.sizeAttenuation).toBe(false);
+    // Drawn first, so the solid pass covers it wherever the marker is in view.
+    expect(faded.renderOrder).toBeLessThan(layer.markers.renderOrder);
+    expect(faded.frustumCulled).toBe(false);
+
     // The layer is never culled, so the loose bounding sphere over the whole
     // attribute is never tested (`SpawnOverlay` says the same).
     expect(layer.markers.frustumCulled).toBe(false);
+  });
+
+  it('picks past a marker the caller says is hidden, to the next one in view', () => {
+    // Only a marker drawn solid is clickable: a faint one behind a wall must not
+    // take the click from the wall, or from a visible marker a pixel further.
+    const layer = new VobMarkerLayer(vobIndex(
+      [[0, 0, 0], [0.05, 0, 0]], 'zCVobSound', undefined, undefined, ['', ''],
+    ));
+    const [x, y] = screenOf([0, 0, 0]);
+
+    expect(layer.pick(clip(), x, y, SIZE, SIZE)).toBe(0);
+    const asked: number[][] = [];
+    const inView = (at: readonly [number, number, number]) => { asked.push([...at]); return at[0] !== 0; };
+    expect(layer.pick(clip(), x, y, SIZE, SIZE, MARKER_PICK_RADIUS, inView)).toBe(1);
+    // Asked with the marker's own position, in the layer's coordinates.
+    expect(asked).toContainEqual([0, 0, 0]);
+    expect(layer.pick(clip(), x, y, SIZE, SIZE, MARKER_PICK_RADIUS, () => false)).toBe(NO_PICK);
   });
 
   it('draws the shared pip, and disposes its own buffers rather than that', () => {
@@ -237,12 +268,14 @@ describe('VobMarkerLayer', () => {
 
     const geometryDisposed = jest.spyOn(geometry, 'dispose');
     const materialDisposed = jest.spyOn(material, 'dispose');
+    const fadedDisposed = jest.spyOn((layer.markers.children[0] as THREE.Points).material as THREE.Material, 'dispose');
     const mapDisposed = jest.spyOn(material.map, 'dispose');
 
     layer.dispose();
 
     expect(geometryDisposed).toHaveBeenCalled();
     expect(materialDisposed).toHaveBeenCalled();
+    expect(fadedDisposed).toHaveBeenCalled();
     // Disposing it here would blank the spawn markers as well.
     expect(mapDisposed).not.toHaveBeenCalled();
   });

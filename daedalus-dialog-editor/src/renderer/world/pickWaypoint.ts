@@ -64,7 +64,8 @@ export function pickWaypoint(
  *
  * The waynet's caller is {@link pickWaypoint}; the other is `VobMarkerLayer`,
  * which hands over only the points it is currently *drawing*, so a class the
- * view controls have switched off is not clickable either.
+ * view controls have switched off is not clickable either — and which passes
+ * `accept`, so a marker hidden behind a wall is passed over for the next one.
  */
 export function pickPoint(
   positions: Float32Array,
@@ -74,6 +75,7 @@ export function pickPoint(
   width: number,
   height: number,
   radius: number,
+  accept?: (candidate: number) => boolean,
 ): number {
   let best = NO_POINT;
   let bestDistance = radius * radius;
@@ -96,6 +98,9 @@ export function pickPoint(
     // see. Strictly nearer, so an exact tie keeps the earlier index rather than
     // depending on iteration order to decide something arbitrary.
     if (distance >= bestDistance) continue;
+    // Last, so it is asked only of a point already nearer than the best — a
+    // handful per click, however expensive the question.
+    if (accept !== undefined && !accept(candidate)) continue;
     bestDistance = distance;
     best = candidate;
   }

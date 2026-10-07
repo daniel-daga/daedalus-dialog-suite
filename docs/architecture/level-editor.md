@@ -3155,9 +3155,20 @@ world units while the layer draws `sizeAttenuation: false` — the two reasons
 `pickWaypoint` already exists. Its loop is now exported as `pickPoint` and both
 layers project through it; 15,749 is five times the waynet's 2,959 and still one
 loop, once per click. A click therefore asks the waynet, then the markers, then
-the props, then the world mesh: the first two draw with `depthTest: false` and
-are plainly on top, so picking them later would mean clicking a dot you can see
-and selecting the wall behind it.
+the props, then the world mesh: the first two draw over the props, so picking
+them later would mean clicking a dot you can see and selecting the wall behind
+it.
+
+**A marker behind a wall is faint, and not clickable.** The layer first drew
+with `depthTest: false`, like the waynet, and fifteen thousand full-strength
+pips through every wall were jarring (Daniel, 2026-10-01). It now draws the same
+buffer twice: depth-tested at full strength, and underneath that through the
+walls at 25 %, so a sound inside a building can still be found. The pick follows
+the picture. `pickPoint` takes an `accept` test, and the click hands the markers
+a ray from the eye against the world mesh, stopping 10 cm short so a startpoint
+on the floor is not hidden by that floor. The props are not in that ray, so a
+marker behind a prop draws faint but can still be clicked. The waynet and spawn
+layers still draw on top.
 
 **The layer draws only what the class filter left on, and hands the pick exactly
 that.** A `Points` layer has no per-vertex "skip" — the instanced meshes push a
