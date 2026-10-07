@@ -27,8 +27,8 @@ import {
  *
  * Who stands here is also where a routine is edited from inside the world
  * (npc-editor.md §6, Daniel 2026-09-29): a spawn marker's click selects this
- * waypoint, so every NPC spawned here and every routine stopping here carries
- * an "Edit routines" button. A spawn's NPC has its routine drawn while this
+ * waypoint, so every NPC spawned here or with a routine stopping here carries
+ * one "Edit routines" button — one per NPC, not per row of either index. A spawn's NPC has its routine drawn while this
  * waypoint is selected (Daniel, 2026-09-30); when several share it, their rows
  * choose whose.
  *
@@ -74,13 +74,22 @@ const WaypointPanel: React.FC<{
   const editButton = (npc: string, routine?: string) => onEditRoutines && (
     <Button
       size="small"
-      sx={{ minWidth: 0, fontSize: 11 }}
+      sx={{ minWidth: 0, fontSize: 11, flexShrink: 0 }}
       aria-label={`Edit routines of ${npc}`}
       onClick={() => onEditRoutines(npc, routine)}
     >
       Routines
     </Button>
   );
+  // A row's button sits in the flow beside its text rather than in MUI's
+  // `secondaryAction`, which is absolutely positioned and, under `disablePadding`,
+  // reserves no room — the text ran under the button. Script names are one long
+  // token, so they break anywhere rather than push the button out.
+  const rowSx = { py: 0.25, gap: 1 } as const;
+  const primaryProps = { variant: 'body2', sx: { overflowWrap: 'anywhere' } } as const;
+  const secondaryProps = {
+    variant: 'caption', color: 'text.secondary', sx: { overflowWrap: 'anywhere' },
+  } as const;
   const baseName = (filePath: string): string => filePath.split(/[\\/]/).pop() || filePath;
 
   // The field shows what the waynet payload says, and goes back to it the moment
@@ -125,6 +134,44 @@ const WaypointPanel: React.FC<{
     return false;
   });
 
+  // One row and one "Routines" button per NPC (Daniel, 2026-10-07): a spawned
+  // NPC's own routine stopping here joins its spawn row, and an NPC only passing
+  // through gets one row for all its routines that stop here. A site no NPC owns
+  // stays a row of its own.
+  type SpawnRow = { instance: string; spawnedIn: string[]; stops: string[] };
+  const spawnRows = new Map<string, SpawnRow>();
+  for (const spawn of spawns) {
+    const npc = spawn.instance.toUpperCase();
+    const row = spawnRows.get(npc) ?? { instance: spawn.instance, spawnedIn: [], stops: [] };
+    const where = `${spawn.functionName} — ${baseName(spawn.filePath)}`;
+    if (!row.spawnedIn.includes(where)) row.spawnedIn.push(where);
+    spawnRows.set(npc, row);
+  }
+  type SiteRow = { npc: string | null; functionNames: string[]; files: string[] };
+  const siteRows: SiteRow[] = [];
+  const siteRowOf = new Map<string, SiteRow>();
+  for (const site of otherSites) {
+    const file = baseName(site.filePath);
+    if (!site.npc) {
+      siteRows.push({ npc: null, functionNames: [site.functionName], files: [file] });
+      continue;
+    }
+    const npc = site.npc.toUpperCase();
+    const spawned = spawnRows.get(npc);
+    if (spawned) {
+      if (!spawned.stops.includes(site.functionName)) spawned.stops.push(site.functionName);
+      continue;
+    }
+    let row = siteRowOf.get(npc);
+    if (!row) {
+      row = { npc: site.npc, functionNames: [], files: [] };
+      siteRowOf.set(npc, row);
+      siteRows.push(row);
+    }
+    if (!row.functionNames.includes(site.functionName)) row.functionNames.push(site.functionName);
+    if (!row.files.includes(file)) row.files.push(file);
+  }
+
   const join = (waypoint: number): void => {
     setJoinDraft('');
     onConnect(waypoint);
@@ -156,62 +203,54 @@ const WaypointPanel: React.FC<{
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, mb: 1 }}>
         Waypoint
       </Typography>
-      {spawns.length > 0 && (
+      {spawnRows.size > 0 && (
         <List dense disablePadding data-testid="world-waypoint-spawns">
-          {spawns.map((spawn, index) => {
+          {[...spawnRows].map(([npc, row]) => {
+            const stops = row.stops.length > 0 ? ` · stops here in ${row.stops.join(', ')}` : '';
             const text = (
               <ListItemText
-                primary={spawn.instance}
-                secondary={`spawned in ${spawn.functionName} — ${baseName(spawn.filePath)}`}
-                primaryTypographyProps={{ variant: 'body2' }}
-                secondaryTypographyProps={{ variant: 'caption', color: 'text.secondary' }}
+                primary={row.instance}
+                secondary={`spawned in ${row.spawnedIn.join('; ')}${stops}`}
+                primaryTypographyProps={primaryProps}
+                secondaryTypographyProps={secondaryProps}
               />
             );
-            const npc = spawn.instance.toUpperCase();
             const shown = shownRoutineNpc === npc;
             return (
-              <ListItem
-                key={`${spawn.filePath}:${spawn.functionName}:${spawn.instance}:${index}`}
-                disablePadding
-                sx={{ py: 0.25 }}
-                secondaryAction={editButton(spawn.instance)}
-              >
+              <ListItem key={npc} disablePadding sx={rowSx}>
                 {onShowRoutineNpc && routineNpcs.length > 1 && routineNpcs.includes(npc) ? (
                   <ListItemButton
                     dense
                     selected={shown}
                     aria-pressed={shown}
-                    aria-label={`Show the routine of ${spawn.instance}`}
+                    aria-label={`Show the routine of ${row.instance}`}
                     onClick={() => onShowRoutineNpc(npc)}
-                    sx={{ px: 0.5 }}
+                    sx={{ px: 0.5, minWidth: 0 }}
                   >
                     {text}
                   </ListItemButton>
                 ) : text}
+                {editButton(row.instance, row.stops[0])}
               </ListItem>
             );
           })}
         </List>
       )}
-      {otherSites.length === 0 && spawns.length === 0 ? (
+      {siteRows.length === 0 && spawns.length === 0 ? (
         <Typography variant="caption" color="text.secondary">
           No script in this project names it.
         </Typography>
       ) : (
         <List dense disablePadding data-testid="world-waypoint-sites">
-          {otherSites.map((routine, index) => (
-            <ListItem
-              key={`${routine.filePath}:${routine.functionName}:${index}`}
-              disablePadding
-              sx={{ py: 0.25 }}
-              secondaryAction={routine.npc ? editButton(routine.npc, routine.functionName) : undefined}
-            >
+          {siteRows.map((row, index) => (
+            <ListItem key={`${row.npc ?? ''}:${row.functionNames[0]}:${index}`} disablePadding sx={rowSx}>
               <ListItemText
-                primary={routine.functionName}
-                secondary={routine.npc ? `${routine.npc} — ${baseName(routine.filePath)}` : baseName(routine.filePath)}
-                primaryTypographyProps={{ variant: 'body2' }}
-                secondaryTypographyProps={{ variant: 'caption', color: 'text.secondary' }}
+                primary={row.functionNames.join(', ')}
+                secondary={row.npc ? `${row.npc} — ${row.files.join(', ')}` : row.files[0]}
+                primaryTypographyProps={primaryProps}
+                secondaryTypographyProps={secondaryProps}
               />
+              {row.npc && editButton(row.npc, row.functionNames[0])}
             </ListItem>
           ))}
         </List>
@@ -226,24 +265,16 @@ const WaypointPanel: React.FC<{
       ) : (
         <List dense disablePadding data-testid="world-waypoint-edges">
           {neighbours.map((neighbour) => (
-            <ListItem
-              key={neighbour.waypoint}
-              disablePadding
-              sx={{ py: 0.25 }}
-              secondaryAction={(
-                <Button
-                  size="small"
-                  onClick={() => onDisconnect(neighbour.waypoint)}
-                  data-testid={`world-waypoint-disconnect-${neighbour.waypoint}`}
-                >
-                  Disconnect
-                </Button>
-              )}
-            >
-              <ListItemText
-                primary={neighbour.name}
-                primaryTypographyProps={{ variant: 'body2' }}
-              />
+            <ListItem key={neighbour.waypoint} disablePadding sx={rowSx}>
+              <ListItemText primary={neighbour.name} primaryTypographyProps={primaryProps} />
+              <Button
+                size="small"
+                sx={{ flexShrink: 0 }}
+                onClick={() => onDisconnect(neighbour.waypoint)}
+                data-testid={`world-waypoint-disconnect-${neighbour.waypoint}`}
+              >
+                Disconnect
+              </Button>
             </ListItem>
           ))}
         </List>
