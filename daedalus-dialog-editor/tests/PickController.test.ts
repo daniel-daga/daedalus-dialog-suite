@@ -64,6 +64,9 @@ function harness({
   markerUnderCursor = NO_PICK,
   vobPositions = { 5: [500, 60, 700] as ZenPosition, 8: [800, 10, 900] as ZenPosition },
   spawnUnderCursor = null as number | null,
+  /** Where the marker under the cursor stands — root space, which the identity
+   *  root makes three space here. */
+  markerAt = [0, 5, 0] as [number, number, number],
 } = {}) {
   waypointPick.answer = waypointUnderCursor;
 
@@ -83,10 +86,17 @@ function harness({
   // The markers for the VOBs with no visual (§16.38): a `THREE.Points` layer
   // picked in pixels, like the waynet and for the same reason, so its own pick
   // is stood in for here — what this spec is about is where in the order it is
-  // asked.
+  // asked, and what the controller answers when the layer asks whether a
+  // marker is in view.
   let markerPicks = 0;
   const markers = {
-    pick: () => { markerPicks += 1; return markerUnderCursor; },
+    pick: (
+      _clip: unknown, _x: number, _y: number, _w: number, _h: number, _r: number | undefined,
+      inView: (at: readonly [number, number, number]) => boolean,
+    ) => {
+      markerPicks += 1;
+      return markerUnderCursor !== NO_PICK && inView(markerAt) ? markerUnderCursor : NO_PICK;
+    },
   } as unknown as VobMarkerLayer;
   const world = {
     root: new THREE.Group(),
@@ -180,9 +190,9 @@ describe('PickController — a click', () => {
   });
 
   it('takes a VOB marker next, ahead of the props and without a GPU pick', async () => {
-    // The markers for the VOBs with no visual (§16.38, #247) draw with
-    // `depthTest: false` and a fixed pixel size, exactly as the waynet does, so
-    // one that is plainly on top has to be what a click on it selects. And the
+    // The markers for the VOBs with no visual (§16.38, #247) draw at a fixed
+    // pixel size over the props, so one in view has to be what a click on it
+    // selects. And the
     // GPU id-pass has nothing to draw a marker into — it draws instances — so
     // asking it here would answer the wall behind the marker.
     const h = harness({ markerUnderCursor: 8, vobUnderCursor: 5 });
@@ -195,6 +205,23 @@ describe('PickController — a click', () => {
     // Where it stands, remembered as the fallback pivot — the same thing an
     // instanced VOB's pick does with it.
     expect(h.remembered).toHaveLength(1);
+  });
+
+  it('does not take a marker the world mesh hides, and falls through to the props', async () => {
+    // A marker behind a wall is drawn faint (Daniel, 2026-10-01), and a click
+    // there means the wall or what is in front of it, not the marker. The ground
+    // is at y = 0 and the camera above it, so a marker under the ground is hidden.
+    const hidden = harness({ markerUnderCursor: 8, vobUnderCursor: 5, markerAt: [0, -5, 0] });
+    click(hidden.canvas);
+    await settle();
+    expect(hidden.picked).toEqual([[5, null, false]]);
+
+    // One standing on the surface is in view — a startpoint on the floor must
+    // not lose to the floor it stands on.
+    const onGround = harness({ markerUnderCursor: 8, vobUnderCursor: 5, markerAt: [0, 0, 0] });
+    click(onGround.canvas);
+    await settle();
+    expect(onGround.picked).toEqual([[8, null, false]]);
   });
 
   it('selects the waypoint a clicked spawn marker stands on, ahead of every VOB', async () => {

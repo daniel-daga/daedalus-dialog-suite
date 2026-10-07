@@ -53,6 +53,9 @@ export const MARKER_SIZE = 9;
  *  dot is hard to hit exactly. `WAYPOINT_PICK_RADIUS`'s reasoning exactly. */
 export const MARKER_PICK_RADIUS = 9;
 
+/** How strongly a marker behind a wall still shows through it. */
+const FADED_OPACITY = 0.25;
+
 // The colours, by what the class *is*. Kept clear of the waynet's blue, orange
 // and green and of the spawn layer's pink, because a marker and a waypoint are
 // drawn in the same place whenever a startpoint stands on one.
@@ -154,6 +157,7 @@ export class VobMarkerLayer {
 
   private readonly geometry = new THREE.BufferGeometry();
   private readonly material: THREE.PointsMaterial;
+  private readonly fadedMaterial: THREE.PointsMaterial;
 
   constructor(index: VobIndex) {
     const positions = new Float32Array(index.positions);
@@ -220,21 +224,35 @@ export class VobMarkerLayer {
       // apart are the ordinary case: without this the nearer one's empty
       // corners blend the far one away.
       alphaTest: 0.1,
-      // A sound inside a building is exactly the one worth looking at, and the
-      // waynet and the spawn layer are drawn on the same terms.
-      depthTest: false,
+      // Hidden by whatever is in front of it. Drawn through every wall at full
+      // strength, fifteen thousand pips were jarring (Daniel, 2026-10-01) —
+      // unlike the waynet and the spawn layer, which still draw on top.
       transparent: true,
     });
 
     this.markers = new THREE.Points(this.geometry, this.material);
     // Above the waynet's 10 and the spawn layer's 11: a marker is a thing,
     // where a waypoint is a place, and the thing is what a click means to hit.
-    this.markers.renderOrder = 12;
+    this.markers.renderOrder = 13;
     this.markers.matrixAutoUpdate = false;
     this.markers.frustumCulled = false;
     // Nothing raycasts an overlay: the pick is `pickPoint` in pixels, and a
     // stray hit here would only ever be a bug in something else's cast.
     this.markers.raycast = () => undefined;
+
+    // The same buffer again, faint and through the walls: a sound inside a
+    // building is still worth finding. Drawn first, so the solid pass covers it
+    // wherever the marker is in view. A child, so it follows the layer's matrix
+    // and visibility without its owner adding a second object.
+    this.fadedMaterial = this.material.clone();
+    this.fadedMaterial.depthTest = false;
+    this.fadedMaterial.depthWrite = false;
+    this.fadedMaterial.opacity = FADED_OPACITY;
+    const faded = new THREE.Points(this.geometry, this.fadedMaterial);
+    faded.renderOrder = 12;
+    faded.frustumCulled = false;
+    faded.raycast = () => undefined;
+    this.markers.add(faded);
 
     this.setHidden(null);
   }
@@ -352,6 +370,10 @@ export class VobMarkerLayer {
    *
    * `toClip` is projection × view × the scene root's matrix, and `x`/`y` are
    * pixels from the top-left of the canvas.
+   *
+   * `inView` is asked of a candidate's position, in the layer's own ZenGin
+   * centimetres: a marker it says is hidden is drawn only faintly, and is
+   * passed over for the next nearest one.
    */
   pick(
     toClip: THREE.Matrix4,
@@ -360,10 +382,14 @@ export class VobMarkerLayer {
     width: number,
     height: number,
     radius: number = MARKER_PICK_RADIUS,
+    inView?: (at: readonly [number, number, number]) => boolean,
   ): number {
     const drawn = (this.geometry.getAttribute('position').array as Float32Array)
       .subarray(0, this.drawnVobs.length * 3);
-    const at = pickPoint(drawn, toClip, x, y, width, height, radius);
+    const accept = inView === undefined ? undefined : (candidate: number) => inView([
+      drawn[candidate * 3], drawn[candidate * 3 + 1], drawn[candidate * 3 + 2],
+    ]);
+    const at = pickPoint(drawn, toClip, x, y, width, height, radius, accept);
     return at === NO_POINT ? NO_PICK : this.drawnVobs[at];
   }
 
@@ -372,5 +398,6 @@ export class VobMarkerLayer {
     // Not its `map`: that is the app's one pip, shared with the spawn markers.
     // `Material.dispose` leaves a texture alone.
     this.material.dispose();
+    this.fadedMaterial.dispose();
   }
 }

@@ -16,7 +16,7 @@ import type { WorldScene } from './WorldScene';
 //
 //   - a click asks the waynet first, because the overlay draws with
 //     `depthTest: false` and is plainly on top; then the markers for the VOBs
-//     with no visual, which draw on the same terms (§16.38) and which the GPU
+//     with no visual (§16.38) that the world mesh leaves in view, which the GPU
 //     id-pass has nothing to draw into; then the props, by GPU ID-pick; then
 //     the world mesh, through its BVH.
 //   - a double-click asks the world mesh first and falls back to the props,
@@ -27,6 +27,10 @@ import type { WorldScene } from './WorldScene';
 // at all — the tail of a gizmo drag, a camera drag, a brush stroke, a fly —
 // and those arrive as `consume*` accessors, because the state belongs to
 // whoever owns the gesture.
+
+/** How far short of a marker the occlusion ray stops, in three units (metres):
+ *  a surface closer to the marker than this does not hide it. */
+const MARKER_SLACK = 0.1;
 
 export interface PickControllerOptions {
   renderer: THREE.WebGLRenderer;
@@ -76,6 +80,9 @@ export class PickController {
   private readonly toClip = new THREE.Matrix4();
   /** Scratch for a picked VOB's position on its way back out. */
   private readonly pivotPoint = new THREE.Vector3();
+  /** Scratch for the marker occlusion ray. */
+  private readonly eye = new THREE.Vector3();
+  private readonly toMarker = new THREE.Vector3();
 
   constructor(private readonly options: PickControllerOptions) {}
 
@@ -142,6 +149,31 @@ export class PickController {
     return raycaster.intersectObjects(world.worldMeshes, false)[0] ?? null;
   }
 
+  /**
+   * Whether the world mesh leaves a marker in view — root space in, the same
+   * question the marker's depth test answers on the GPU. Only the world mesh:
+   * a marker behind a prop is drawn faint but still taken, because the props'
+   * depth lives in the GPU pick, not in anything a ray can ask cheaply.
+   *
+   * `MARKER_SLACK` short of the marker, so a startpoint standing on the floor
+   * is not hidden by the floor it stands on. Called after `clip()`, which has
+   * just refreshed the root's matrix.
+   */
+  private readonly markerInView = (at: readonly [number, number, number]): boolean => {
+    const { camera, world, raycaster } = this.options;
+    this.eye.setFromMatrixPosition(camera.matrixWorld);
+    this.toMarker.set(at[0], at[1], at[2]).applyMatrix4(world.root.matrixWorld).sub(this.eye);
+    const distance = this.toMarker.length();
+    if (distance <= MARKER_SLACK) return true;
+
+    const far = raycaster.far;
+    raycaster.set(this.eye, this.toMarker.divideScalar(distance));
+    raycaster.far = distance - MARKER_SLACK;
+    const hidden = raycaster.intersectObjects(world.worldMeshes, false).length > 0;
+    raycaster.far = far;
+    return !hidden;
+  };
+
   private vobHit(x: number, y: number, width: number, height: number): Promise<number> {
     const { picker, renderer, camera } = this.options;
     return picker.pickAsync(renderer, camera, x, y, width, height);
@@ -191,14 +223,15 @@ export class PickController {
     // Then the markers for the VOBs that have no visual at all (§16.38): a
     // sound, a light, a zone, a trigger — 38 % of a retail world. Before the
     // props for two reasons, and the first is the waynet's: the layer draws
-    // with `depthTest: false` at a fixed pixel size, so a marker the user can
-    // see is a marker the user expects to hit. The second is that the GPU
-    // id-pass has nothing to answer with here — it draws instances, and a
-    // marker is a vertex in a `THREE.Points` — so asking it first would return
-    // whatever wall is behind the marker.
+    // over the props at a fixed pixel size, so a marker the user can see is a
+    // marker the user expects to hit. The second is that the GPU id-pass has
+    // nothing to answer with here — it draws instances, and a marker is a
+    // vertex in a `THREE.Points` — so asking it first would return whatever
+    // wall is behind the marker. Only a marker in view, though: one behind a
+    // wall is drawn faint, and a click there means the wall.
     const markers = o.world.markers;
     if (markers !== null) {
-      const marker = markers.pick(this.clip(), x, y, width, height);
+      const marker = markers.pick(this.clip(), x, y, width, height, undefined, this.markerInView);
       if (marker !== NO_PICK) {
         const at = o.world.positionOf(marker);
         if (at !== null) o.rememberPick(this.pivotPoint.set(...zenToThree(at)));
