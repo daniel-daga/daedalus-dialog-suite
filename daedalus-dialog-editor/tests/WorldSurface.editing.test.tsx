@@ -2670,6 +2670,39 @@ describe('a waypoint dragged in the viewport', () => {
     expect(screen.getByTestId('world-waypoint-sites')).not.toHaveTextContent('STARTUP_NEWWORLD');
   });
 
+  it('groups by NPC: a spawned NPC whose routine also stops here gets one row and one button', async () => {
+    // Daniel 2026-10-07: the spawn and its own routine's stop were two rows
+    // with two "Routines" buttons opening the same NPC. A stop of an NPC not
+    // spawned here still gets its own row — but one per NPC, not per routine.
+    useProjectStore.setState({
+      waypointSiteIndex: {
+        WP_MIDDLE: [
+          { filePath: 'C:/Story/Startup.d', functionName: 'STARTUP_NEWWORLD' },
+          { filePath: 'C:/Story/GRD_200_Xardas.d', functionName: 'Rtn_Start_200' },
+          { filePath: 'C:/Story/BAU_900_Farim.d', functionName: 'Rtn_Start_900' },
+          { filePath: 'C:/Story/BAU_900_Farim.d', functionName: 'Rtn_Tot_900' },
+        ],
+      },
+      spawnSiteIndex: [{
+        instance: 'GRD_200_XARDAS', spawnPoint: 'WP_MIDDLE',
+        filePath: 'C:/Story/Startup.d', functionName: 'STARTUP_NEWWORLD', line: 12,
+      }],
+      routineNpcIndex: { GRD_200_XARDAS: 'RTN_START_200', BAU_900_FARIM: 'RTN_START_900' },
+      routineStateIndex: { BAU_900_FARIM: { id: 900, states: { TOT: 'RTN_TOT_900' } } },
+    } as never);
+    await openWithWaynet();
+
+    fireEvent.click(screen.getByTestId('stub-pick-waypoint'));
+
+    await screen.findByTestId('world-waypoint-panel');
+    const spawns = screen.getByTestId('world-waypoint-spawns');
+    expect(spawns).toHaveTextContent('Rtn_Start_200');
+    expect(screen.getAllByRole('button', { name: 'Edit routines of GRD_200_XARDAS' })).toHaveLength(1);
+    expect(screen.getByTestId('world-waypoint-sites')).not.toHaveTextContent('Rtn_Start_200');
+    expect(screen.getAllByRole('button', { name: 'Edit routines of BAU_900_FARIM' })).toHaveLength(1);
+    expect(screen.getByTestId('world-waypoint-sites')).toHaveTextContent('Rtn_Tot_900');
+  });
+
   describe('drawn as markers in the viewport', () => {
     // §16.19 slice 4 — the first thing in Phase 1c a person sees. The markers
     // stand on the waypoints the spawns name, so the layer needs the waynet
