@@ -80,6 +80,46 @@ async function renameWithRetry(from: string, to: string): Promise<void> {
 }
 
 /**
+ * Put `tmp` in `filePath`'s place. A direct rename is the whole story on POSIX
+ * and for any Windows target nothing has mapped.
+ *
+ * A mapped target needs the second path: the asset VFS mounts the project root
+ * (`assetSources` always holds "."), and `Vfs::mount_host` memory-maps every
+ * file under it, scripts included — so while an NPC preview or a world is open,
+ * Windows refuses to replace any `.d` file in the project. It does let that file
+ * be renamed away and a new one take its name, which is what `SaveWorld` does
+ * for the same reason (zenkit-node `binding.cc`). A failure between the two
+ * renames puts the original back.
+ */
+async function replaceFile(tmp: string, filePath: string): Promise<void> {
+  try {
+    await renameWithRetry(tmp, filePath);
+    return;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== 'EPERM' && code !== 'EBUSY') throw error;
+    const aside = `${tmp}.old`;
+    try {
+      await fs.rename(filePath, aside);
+    } catch {
+      throw error;
+    }
+    try {
+      await fs.rename(tmp, filePath);
+    } catch (placeError) {
+      await fs.rename(aside, filePath);
+      throw placeError;
+    }
+    try {
+      await fs.unlink(aside);
+    } catch {
+      // Still mapped: the aside copy stays until the mapping is gone. It does
+      // not end in `.d`, so neither the watcher nor the indexer sees it.
+    }
+  }
+}
+
+/**
  * Write `buffer` to `filePath` atomically: stage it in a sibling temp file,
  * flush it to disk, then rename over the target. Any failure before the rename
  * leaves the original file untouched; the temp file is best-effort removed.
@@ -118,7 +158,7 @@ async function writeFileAtomic(
       // Watch bookkeeping must not prevent a successful file write.
     }
     renameStarted = true;
-    await renameWithRetry(tmp, filePath);
+    await replaceFile(tmp, filePath);
     try {
       if (writeToken !== undefined) selfWriteObserver?.finish(writeToken, true);
     } catch {
