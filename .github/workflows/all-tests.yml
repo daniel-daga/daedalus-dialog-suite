@@ -158,11 +158,16 @@ jobs:
   editor-ui-tests:
     name: UI Tests (browser harness, shard ${{ matrix.shardIndex }}/${{ matrix.shardTotal }})
     runs-on: ubuntu-latest
+    # A shard runs in 2-5 minutes. Without a cap, one hung `playwright install
+    # --with-deps` (apt) holds the run for GitHub's 6-hour default.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
+        # shardTotal is a one-element list: matrix keys multiply, so a list
+        # per shard would run every shard shardTotal times.
         shardIndex: ${{ github.event_name == 'pull_request' && fromJSON('[1, 2]') || fromJSON('[1, 2, 3, 4]') }}
-        shardTotal: ${{ github.event_name == 'pull_request' && fromJSON('[2, 2]') || fromJSON('[4, 4, 4, 4]') }}
+        shardTotal: ${{ github.event_name == 'pull_request' && fromJSON('[2]') || fromJSON('[4]') }}
     steps:
       - uses: actions/checkout@v4
 

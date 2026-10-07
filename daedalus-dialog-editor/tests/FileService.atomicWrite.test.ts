@@ -137,6 +137,24 @@ describe('FileService atomic write (E5)', () => {
     expect(await fs.readFile(target, 'utf8')).toBe('updated content');
   });
 
+  it('replaces a target Windows refuses to rename over by moving it aside first', async () => {
+    // A target memory-mapped by the asset VFS (`Vfs::mount_host` maps every
+    // file under the project root): Windows refuses to replace it, but lets it
+    // be renamed away and a new file take its name.
+    const realRename = fs.rename.bind(fs);
+    jest.spyOn(fs, 'rename').mockImplementation(async (from: any, to: any) => {
+      if (to === target && fsSync.existsSync(target)) {
+        throw Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' });
+      }
+      return (realRename as any)(from, to);
+    });
+
+    await service.writeFile(target, 'updated content');
+
+    expect(await fs.readFile(target, 'utf8')).toBe('updated content');
+    expect(await fs.readdir(tempDir)).toEqual(['DIA_Test.d']);
+  });
+
   it('throws and preserves the original when rename fails persistently', async () => {
     const original = await fs.readFile(target, 'utf8');
     const finish = jest.fn();
