@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Box, List, ListItemButton, ListItemText, TextField, Typography } from '@mui/material';
+import { Box, Button, List, ListItemButton, ListItemText, TextField, Typography } from '@mui/material';
+import FilterListIcon from '@mui/icons-material/FilterList';
 import { assetRole } from 'zen-world';
 import type { AssetCatalog, VfsEntry } from '../../../shared/worldTypes';
 import type { AssetThumbnails } from '../../world/assetThumbnails';
@@ -58,6 +59,7 @@ const WorldAssetCatalogView: React.FC<WorldAssetCatalogViewProps> = ({
   // The VOB / MOB facet (#288), as the directory walk has it — and kept across
   // the views, since it is a lens rather than a question about one list.
   const [role, setRole] = useState<AssetRoleFilter>('all');
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   // A category left behind takes its queued draws with it, as a directory does.
   useEffect(() => { thumbnails.cancelPending(); }, [thumbnails, selected, mode]);
@@ -77,21 +79,39 @@ const WorldAssetCatalogView: React.FC<WorldAssetCatalogViewProps> = ({
   })).filter(({ matched }) => (needle === '' && role === 'all') || matched > 0), [catalog.categories, needle, role]);
 
   const field = (
-    <Box sx={{ display: 'flex', gap: 0.5, px: 0.5, py: 0.25, borderBottom: 1, borderColor: 'divider' }}>
-      <TextField
-        size="small"
-        variant="outlined"
-        fullWidth
-        placeholder={mode === 'favorites' ? 'Filter favorites' : 'Filter categories and visuals'}
-        value={filter}
-        onChange={(event) => setFilter(event.target.value)}
-        inputProps={{
-          'data-testid': 'world-asset-catalog-filter',
-          'aria-label': mode === 'favorites' ? 'Filter favorites' : 'Filter categories and visuals',
-        }}
-        sx={{ flex: 1, '& .MuiInputBase-input': { fontSize: 12, py: 0.5 } }}
-      />
-      <RoleFacet value={role} onChange={setRole} testId="world-asset-catalog-role" />
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, px: 0.5, py: 0.25, borderBottom: 1, borderColor: 'divider' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0 }}>
+        <TextField
+          size="small"
+          variant="outlined"
+          placeholder={mode === 'favorites' ? 'Filter favorites' : 'Filter categories and visuals'}
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+          inputProps={{
+            'data-testid': 'world-asset-catalog-filter',
+            'aria-label': mode === 'favorites' ? 'Filter favorites' : 'Filter categories and visuals',
+          }}
+          sx={{ flex: 1, minWidth: 0, '& .MuiInputBase-input': { fontSize: 12, py: 0.5 } }}
+        />
+        <Button
+          size="small"
+          variant={role === 'all' ? 'outlined' : 'contained'}
+          startIcon={<FilterListIcon sx={{ fontSize: 16 }} />}
+          onClick={() => setFiltersOpen((open) => !open)}
+          aria-expanded={filtersOpen}
+          aria-controls={filtersOpen ? 'world-asset-catalog-filter-panel' : undefined}
+          data-testid="world-asset-catalog-filter-toggle"
+          sx={{ flexShrink: 0, minWidth: 0, px: 1, whiteSpace: 'nowrap' }}
+        >
+          Filters{role === 'all' ? '' : ' 1'}
+        </Button>
+      </Box>
+      {filtersOpen && (
+        <Box id="world-asset-catalog-filter-panel" data-testid="world-asset-catalog-filter-panel" sx={{ minWidth: 0, py: 0.5, '& .MuiFormControl-root': { width: '100%' } }}>
+          <Typography variant="caption" color="text.secondary">Visual role</Typography>
+          <RoleFacet value={role} onChange={setRole} testId="world-asset-catalog-role" />
+        </Box>
+      )}
     </Box>
   );
   const noMatches = (
@@ -117,7 +137,7 @@ const WorldAssetCatalogView: React.FC<WorldAssetCatalogViewProps> = ({
             different answers, and only the first one is worth advice. */}
         {catalog.favorites.length === 0 && (
           <Typography variant="caption" color="text.secondary" sx={{ p: 1, display: 'block' }} data-testid="world-asset-favorites-empty">
-            No favorites yet — star a tile in the directory grid.
+            No favorites yet — star an asset in Browse.
           </Typography>
         )}
         {catalog.favorites.length > 0 && entries.length === 0 && noMatches}
