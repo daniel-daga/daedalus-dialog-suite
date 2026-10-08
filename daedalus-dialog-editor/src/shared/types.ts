@@ -660,6 +660,10 @@ export interface Dialog {
   name: string;
   parent: string;
   properties: DialogProperties;
+  /** Properties written as string literals; their values are the contents, unquoted. */
+  propertyLiteralKeys?: string[];
+  /** Properties written as source expressions (a constant's name, arithmetic), emitted verbatim. */
+  propertyExpressionKeys?: string[];
   /** Standalone comments preceding a C_INFO property, keyed by property name. */
   propertyLeadingComments?: { [key: string]: string[] };
   /** Same-line trailing comment after a C_INFO property, keyed by property name. */

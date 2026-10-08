@@ -4,11 +4,13 @@
  * description's text equals the information function's first line, and an
  * empty description with no lines counts too, so a new dialog fills from its
  * first line. There is no stored flag: a hand-edited description that differs
- * is what breaks the link.
+ * is what breaks the link, and a description that names a constant never follows.
  */
-import type { SemanticModel } from '../types/global';
+import type { Dialog, SemanticModel } from '../types/global';
+import { sanitizeDaedalusString } from '../utils/pathAndIdentifierUtils';
 
 type ActionList = { actions?: unknown[] } | null | undefined;
+type DescribedDialog = Pick<Dialog, 'properties' | 'propertyLiteralKeys' | 'propertyExpressionKeys'>;
 
 /** Text of the function's first top-level dialog line, or '' when it has none. */
 export const firstLineText = (fn: ActionList): string => {
@@ -18,32 +20,36 @@ export const firstLineText = (fn: ActionList): string => {
   return first?.text ?? '';
 };
 
-/** The description as the player reads it — the parser keeps a string literal's quotes. */
-const descriptionText = (description: unknown): string => {
-  const text = typeof description === 'string' ? description : '';
-  return text.length >= 2 && text.startsWith('"') && text.endsWith('"') ? text.slice(1, -1) : text;
-};
-
-export const isDescriptionInSync = (description: unknown, lineText: string): boolean =>
-  descriptionText(description) === lineText;
-
-/** Written quoted: an unquoted single word would be emitted as an identifier. */
-export const descriptionFromLine = (lineText: string): string => `"${lineText}"`;
+/**
+ * The description names a constant (or is another expression) rather than
+ * holding text. The parser records the kind in the key lists; the value itself
+ * is the string's contents or the expression's source, never quoted.
+ */
+export const isDescriptionConstant = (dialog: DescribedDialog): boolean =>
+  dialog.propertyExpressionKeys?.includes('description') ?? false;
 
 /**
- * A description typed into the panel, as it is stored. Quoted unless it is
- * already, or it names a constant — one the file declares, or one spelled the
- * way Daedalus spells them (`DIALOG_ENDE`), since the usual ones live in a file
- * that is not open.
+ * As a description holds it: a Daedalus string cannot contain a double quote or
+ * a line break, so a first line that has them is followed without.
  */
-export const descriptionFromInput = (text: string, constants: object = {}): string => {
-  if (text.startsWith('"') && text.endsWith('"') && text.length >= 2) return text;
-  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(text)) {
-    const declared = Object.keys(constants).some((name) => name.toLowerCase() === text.toLowerCase());
-    if (declared || (text.includes('_') && text === text.toUpperCase())) return text;
-  }
-  return `"${text}"`;
-};
+const asDescriptionText = (text: string): string => sanitizeDaedalusString(text);
+
+export const isDescriptionInSync = (dialog: DescribedDialog, lineText: string): boolean =>
+  !isDescriptionConstant(dialog) && (dialog.properties?.description ?? '') === asDescriptionText(lineText);
+
+const withoutDescription = (keys?: string[]) => (keys ?? []).filter((key) => key !== 'description');
+
+/** The dialog with its description set as text, or — `constant` — as a constant's name. */
+export const withDescription = <T extends DescribedDialog>(dialog: T, value: string, constant: boolean): T => ({
+  ...dialog,
+  properties: { ...dialog.properties, description: constant ? value : asDescriptionText(value) },
+  propertyLiteralKeys: constant
+    ? withoutDescription(dialog.propertyLiteralKeys)
+    : [...withoutDescription(dialog.propertyLiteralKeys), 'description'],
+  propertyExpressionKeys: constant
+    ? [...withoutDescription(dialog.propertyExpressionKeys), 'description']
+    : withoutDescription(dialog.propertyExpressionKeys)
+});
 
 const functionNameOf = (ref: unknown): string | undefined =>
   typeof ref === 'string' ? ref : (ref as { name?: string } | null)?.name;
@@ -63,11 +69,11 @@ export const followFirstLine = (
   if (oldLine === newLine) return;
 
   const key = functionName.toLowerCase();
-  for (const dialog of Object.values(model.dialogs || {})) {
-    const properties = dialog?.properties;
-    if (!properties || functionNameOf(properties.information)?.toLowerCase() !== key) continue;
-    if (isDescriptionInSync(properties.description, oldLine)) {
-      properties.description = descriptionFromLine(newLine);
+  const dialogs = model.dialogs || {};
+  for (const [name, dialog] of Object.entries(dialogs)) {
+    if (!dialog?.properties || functionNameOf(dialog.properties.information)?.toLowerCase() !== key) continue;
+    if (isDescriptionInSync(dialog, oldLine)) {
+      dialogs[name] = withDescription(dialog, newLine, false);
     }
   }
 };

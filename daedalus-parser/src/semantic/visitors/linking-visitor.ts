@@ -443,6 +443,9 @@ export class LinkingVisitor {
         } else {
           value = rightNode.text;
         }
+      } else if (rightNode.type === 'string') {
+        // The contents; the quotes are syntax, and `propertyLiteralKeys` keeps the kind.
+        value = rightNode.text.slice(1, -1);
       } else {
         value = parseLiteralOrIdentifier(rightNode);
       }

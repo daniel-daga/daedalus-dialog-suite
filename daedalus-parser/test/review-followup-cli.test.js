@@ -48,7 +48,7 @@ test('formatter preserves Windows-1252 input using the legacy default', () => {
     assert.equal(result.status, 0, result.stderr);
     const code = iconv.decode(fs.readFileSync(output), 'windows-1252');
     assert.equal(parseSemanticModel(code).dialogs.D.properties.description,
-      '"Grüße über große Straßen für schöne Grüße"', code);
+      'Grüße über große Straßen für schöne Grüße', code);
     assert.ok(fs.readFileSync(output).includes(0xfc));
   });
 });
@@ -60,7 +60,7 @@ test('formatter permits explicit input and output encodings', () => {
     const result = format([input, '--encoding', 'windows-1250', '--output-encoding', 'utf8', '-o', output]);
     assert.equal(result.status, 0, result.stderr);
     const code = fs.readFileSync(output, 'utf8');
-    assert.equal(parseSemanticModel(code).dialogs.D.properties.description, '"Dobrý den, čřžš ąęłń"', code);
+    assert.equal(parseSemanticModel(code).dialogs.D.properties.description, 'Dobrý den, čřžš ąęłń', code);
   });
 });
 
@@ -70,7 +70,7 @@ test('formatter keeps UTF-8 literal text intact', () => {
     const result = format([input, '-o', output]);
     assert.equal(result.status, 0, result.stderr);
     assert.equal(parseSemanticModel(fs.readFileSync(output, 'utf8')).dialogs.D.properties.description,
-      '"Grüße über große Straßen für schöne Grüße"');
+      'Grüße über große Straßen für schöne Grüße');
   });
 });
 

@@ -508,8 +508,7 @@ export class SemanticCodeGenerator {
       return value;
     }
     if (typeof value === 'string' && dialog.propertyLiteralKeys?.includes(key)) {
-      const contents = value.startsWith('"') && value.endsWith('"') ? value.slice(1, -1) : value;
-      return renderStringValue(contents);
+      return renderStringValue(value);
     }
     return this.formatValue(value);
   }
