@@ -562,19 +562,17 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       if (!fileState) return;
 
       const model = fileState.semanticModel;
-      const dialog = model.dialogs[oldDialogName];
+      const dialogKey = Object.keys(model.dialogs).find((name) => name.toLowerCase() === oldDialogName.toLowerCase());
+      const dialog = dialogKey ? model.dialogs[dialogKey] : undefined;
       if (!dialog) return;
 
-      // Build new dialog with updated name
-      const updatedDialog = { ...dialog, name: newDialogName };
+      if (Object.keys(model.dialogs).some((name) => name !== dialogKey && name.toLowerCase() === newDialogName.toLowerCase())) {
+        throw new Error(`Cannot rename dialog: ${newDialogName} already exists`);
+      }
 
       // Resolve old info/condition function names
       const oldInfoName = resolveFunctionRef(dialog.properties?.information);
       const oldCondName = resolveFunctionRef(dialog.properties?.condition);
-
-      const updatedFunctions: { [key: string]: DialogFunction } = { ...model.functions };
-      const updatedDialogs = { ...model.dialogs };
-      delete updatedDialogs[oldDialogName];
 
       // Build a rename map: oldFuncName → newFuncName
       const renameMap = new Map<string, string>();
@@ -586,7 +584,7 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
 
         // Compute new names for functions that follow the old dialog name prefix
         for (const name of reachable) {
-          if (name.startsWith(oldDialogName)) {
+          if (name.slice(0, oldDialogName.length).toLowerCase() === oldDialogName.toLowerCase()) {
             const suffix = name.slice(oldDialogName.length);
             const newName = newDialogName + suffix;
             renameMap.set(name, newName);
@@ -594,61 +592,124 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
         }
       }
 
-      // Apply function renames and rewrite Choice.targetFunction references
-      // (including choices nested in conditional branches)
-      const mapTarget = (target: string) => renameMap.get(target);
-      for (const [oldName, func] of Object.entries(model.functions) as [string, DialogFunction][]) {
-        const { actions: updatedActions, changed } = mapChoiceTargetFunctions(
-          (func as any).actions || [],
-          mapTarget
-        );
+      const mapName = (name: string, names: Map<string, string>): string | undefined => {
+        for (const [before, after] of names) {
+          if (before.toLowerCase() === name.toLowerCase()) return after;
+        }
+        return undefined;
+      };
+      for (const newName of renameMap.values()) {
+        const collision = Object.keys(model.functions).find((name) =>
+          name.toLowerCase() === newName.toLowerCase() && !mapName(name, renameMap));
+        if (collision) throw new Error(`Cannot rename dialog: function ${newName} already exists`);
+      }
 
-        if (renameMap.has(oldName)) {
-          const newName = renameMap.get(oldName)!;
-          delete updatedFunctions[oldName];
-          updatedFunctions[newName] = { ...func, name: newName, actions: updatedActions };
-        } else if (changed) {
-          updatedFunctions[oldName] = { ...func, actions: updatedActions };
+      // Raw statements and projected predicates do not expose patchable source
+      // ranges here. Refuse the transaction before changing declarations when
+      // they mention a renamed identifier; typed reference slots below are
+      // rewritten directly.
+      const renamedIdentifiers = [oldDialogName, ...renameMap.keys()];
+      const identifierPattern = (name: string) => new RegExp(
+        `(^|[^\\p{L}\\p{N}_])${name.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}($|[^\\p{L}\\p{N}_])`, 'iu'
+      );
+      const containsRenamedIdentifier = (text: string) => renamedIdentifiers.some((name) => identifierPattern(name).test(text));
+      const opaqueActionText = (actions: any[]): string[] => {
+        const text: string[] = [];
+        for (const action of actions || []) {
+          if (action?.type === 'Action' && typeof action.action === 'string') text.push(action.action);
+          if (action?.type === 'ConditionalAction') {
+            if (typeof action.condition === 'string') text.push(action.condition);
+            text.push(...opaqueActionText(action.thenActions), ...opaqueActionText(action.elseActions));
+          }
+        }
+        return text;
+      };
+      for (const func of Object.values(model.functions) as DialogFunction[]) {
+        const opaque = [...opaqueActionText((func as any).actions || []),
+          ...((func as any).conditions || []).map((condition: any) => condition?.condition).filter((value: unknown) => typeof value === 'string')];
+        if (opaque.some(containsRenamedIdentifier)) {
+          throw new Error('Cannot rename dialog safely: preserved source refers to a renamed identifier');
+        }
+      }
+      for (const currentDialog of Object.values(model.dialogs) as Dialog[]) {
+        if (opaqueActionText((currentDialog as any).actions || []).some(containsRenamedIdentifier)) {
+          throw new Error('Cannot rename dialog safely: preserved source refers to a renamed identifier');
         }
       }
 
-      // Update the dialog's own property references to functions
-      const newInfoName = oldInfoName && renameMap.has(oldInfoName) ? renameMap.get(oldInfoName)! : oldInfoName;
-      const newCondName = oldCondName && renameMap.has(oldCondName) ? renameMap.get(oldCondName)! : oldCondName;
+      const mapTarget = (target: string) => mapName(target, renameMap);
+      const dialogRename = new Map([[oldDialogName, newDialogName]]);
+      const mapDialog = (name: string) => mapName(name, dialogRename);
 
-      const newProperties: Record<string, any> = { ...updatedDialog.properties };
-      if (newInfoName !== undefined) {
-        newProperties.information = newInfoName;
+      // Update every dialog property that points at a renamed function, while
+      // preserving the serialized form of plain-name and object references.
+      const mapFunctionRef = (value: string | DialogFunction): string | DialogFunction => {
+        const name = resolveFunctionRef(value);
+        const renamed = name && mapTarget(name);
+        if (!renamed) return value;
+        return typeof value === 'string' ? renamed : { ...value, name: renamed };
+      };
+      const updatedDialogs: Record<string, Dialog> = {};
+      for (const [name, value] of Object.entries(model.dialogs) as [string, Dialog][]) {
+        const isRenamedDialog = name === dialogKey;
+        const nextName = isRenamedDialog ? newDialogName : name;
+        const properties = value.properties ? {
+          ...value.properties,
+          ...(value.properties.information !== undefined ? { information: mapFunctionRef(value.properties.information) } : {}),
+          ...(value.properties.condition !== undefined ? { condition: mapFunctionRef(value.properties.condition) } : {}),
+        } : value.properties;
+        updatedDialogs[nextName] = { ...value, ...(isRenamedDialog ? { name: newDialogName } : {}), properties };
       }
-      if (newCondName !== undefined) {
-        newProperties.condition = newCondName;
-      }
-      updatedDialog.properties = newProperties;
 
-      updatedDialogs[newDialogName] = updatedDialog;
-
-      // Update NpcKnowsInfoCondition.dialogRef references in same file
-      for (const [funcName, func] of Object.entries(updatedFunctions) as [string, DialogFunction][]) {
-        let changed = false;
-        const updatedConditions = ((func as any).conditions || []).map((cond: any) => {
-          if (cond.type === 'NpcKnowsInfoCondition' && cond.dialogRef === oldDialogName) {
-            changed = true;
-            return { ...cond, dialogRef: newDialogName };
-          }
-          return cond;
+      const updatedFunctions: Record<string, DialogFunction> = {};
+      for (const [oldName, func] of Object.entries(model.functions) as [string, DialogFunction][]) {
+        const { actions: updatedActions } = mapChoiceTargetFunctions(
+          (func as any).actions || [], mapTarget, mapDialog
+        );
+        let conditionsChanged = false;
+        const updatedConditions = ((func as any).conditions || []).map((condition: any) => {
+          if (typeof condition?.dialogRef !== 'string') return condition;
+          const renamed = mapDialog(condition.dialogRef);
+          if (renamed === undefined || renamed === condition.dialogRef) return condition;
+          conditionsChanged = true;
+          return { ...condition, dialogRef: renamed };
         });
-        if (changed) {
-          updatedFunctions[funcName] = { ...func, conditions: updatedConditions };
+        const newName = mapName(oldName, renameMap) || oldName;
+        const changed = updatedActions !== ((func as any).actions || []) || conditionsChanged || newName !== oldName;
+        updatedFunctions[newName] = changed
+          ? { ...func, name: newName, actions: updatedActions, conditions: updatedConditions }
+          : func;
+      }
+
+      for (const value of Object.values(updatedDialogs)) {
+        const { actions, changed } = mapChoiceTargetFunctions(
+          (value as any).actions || [], mapTarget, mapDialog
+        );
+        if (changed) (value as any).actions = actions;
+      }
+
+      // Keep object-form property references linked to the same function
+      // records stored in the renamed function map.
+      for (const value of Object.values(updatedDialogs)) {
+        if (!value.properties) continue;
+        for (const propertyName of ['information', 'condition'] as const) {
+          const reference = value.properties[propertyName];
+          if (!reference || typeof reference === 'string') continue;
+          const linked = Object.values(updatedFunctions).find(
+            (func) => func.name.toLowerCase() === reference.name.toLowerCase()
+          );
+          if (linked) value.properties[propertyName] = linked;
         }
       }
 
       // Update declarationOrder: rename entries for moved dialog and functions
       const updatedOrder = (model.declarationOrder || []).map((entry) => {
-        if (entry.type === 'dialog' && entry.name === oldDialogName) {
+        if (entry.type === 'dialog' && entry.name.toLowerCase() === oldDialogName.toLowerCase()) {
           return { ...entry, name: newDialogName };
         }
-        if (entry.type === 'function' && renameMap.has(entry.name)) {
-          return { ...entry, name: renameMap.get(entry.name)! };
+        if (entry.type === 'function') {
+          const newName = mapName(entry.name, renameMap);
+          if (newName) return { ...entry, name: newName };
         }
         return entry;
       });

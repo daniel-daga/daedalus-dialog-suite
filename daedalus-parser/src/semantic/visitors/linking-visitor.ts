@@ -339,6 +339,9 @@ export class LinkingVisitor {
     const executable = statements.filter(statement => statement.type !== 'comment');
     if (executable.length === 1 && this.isCanonicalTrueReturn(executable[0])) {
       this.captureConditionBodyComments(statements, executable[0]);
+      // Preserve this intentional condition state explicitly; an empty projected
+      // body alone is not enough to infer a success return during generation.
+      this.currentFunction.hasExplicitTrueReturn = true;
       return;
     }
 

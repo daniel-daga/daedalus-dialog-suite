@@ -307,26 +307,43 @@ export function collectChoiceActions(actions: DialogAction[]): DialogAction[] {
  */
 export function mapChoiceTargetFunctions(
   actions: DialogAction[],
-  mapTarget: (target: string) => string | undefined
+  mapTarget: (target: string) => string | undefined,
+  mapDialog: (dialog: string) => string | undefined = () => undefined
 ): { actions: DialogAction[]; changed: boolean } {
   let changed = false;
 
   const nextActions = actions.map((action) => {
     if (action.type === 'Choice') {
       const target = (action as DialogAction & { targetFunction?: unknown }).targetFunction;
-      if (typeof target === 'string') {
-        const newTarget = mapTarget(target);
-        if (newTarget !== undefined && newTarget !== target) {
+      const dialog = (action as DialogAction & { dialogRef?: unknown }).dialogRef;
+      const newTarget = typeof target === 'string' ? mapTarget(target) : undefined;
+      const newDialog = typeof dialog === 'string' ? mapDialog(dialog) : undefined;
+      if ((newTarget !== undefined && newTarget !== target) || (newDialog !== undefined && newDialog !== dialog)) {
+        changed = true;
+        return {
+          ...action,
+          ...(newTarget !== undefined ? { targetFunction: newTarget } : {}),
+          ...(newDialog !== undefined ? { dialogRef: newDialog } : {}),
+        };
+      }
+      return action;
+    }
+
+    if (action.type === 'ClearChoicesAction') {
+      const dialog = (action as DialogAction & { dialog?: unknown }).dialog;
+      if (typeof dialog === 'string') {
+        const newDialog = mapDialog(dialog);
+        if (newDialog !== undefined && newDialog !== dialog) {
           changed = true;
-          return { ...action, targetFunction: newTarget };
+          return { ...action, dialog: newDialog };
         }
       }
       return action;
     }
 
     if (isConditionalAction(action)) {
-      const thenResult = mapChoiceTargetFunctions(action.thenActions, mapTarget);
-      const elseResult = mapChoiceTargetFunctions(action.elseActions, mapTarget);
+      const thenResult = mapChoiceTargetFunctions(action.thenActions, mapTarget, mapDialog);
+      const elseResult = mapChoiceTargetFunctions(action.elseActions, mapTarget, mapDialog);
       if (thenResult.changed || elseResult.changed) {
         changed = true;
         return {

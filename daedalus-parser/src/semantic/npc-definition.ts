@@ -195,6 +195,12 @@ export function applyNpcEdits(source: string, edits: NpcEdit[]): string {
   });
   const fields = npc.statements.filter((s): s is NpcFieldStatement => s.kind === 'field');
   const calls = npc.statements.filter((s): s is NpcCallStatement => s.kind === 'call');
+  const assertFieldUnambiguous = (field: string, index?: string) => {
+    if (fields.filter((s) => same(s.field, field) && same(s.index, index)).length > 1) {
+      const target = index === undefined ? field : `${field}[${index}]`;
+      throw new Error(`Ambiguous NPC field edit for ${target}: multiple source assignments; edit the statements directly`);
+    }
+  };
   const findField = (field: string, index?: string) =>
     fields.find((s) => same(s.field, field) && same(s.index, index));
   const callsNamed = (name: string) => calls.filter((s) => same(s.name, name));
@@ -207,6 +213,7 @@ export function applyNpcEdits(source: string, edits: NpcEdit[]): string {
   const splices: Splice[] = edits.map((edit, order) => {
     switch (edit.op) {
       case 'set': {
+        assertFieldUnambiguous(edit.field, edit.index);
         const existing = findField(edit.field, edit.index);
         if (existing) {
           return { start: existing.valueRange.startIndex, end: existing.valueRange.endIndex, text: edit.value, order };
@@ -215,6 +222,7 @@ export function applyNpcEdits(source: string, edits: NpcEdit[]): string {
         return insertAfter(source, npc, fields[fields.length - 1], `${target} = ${edit.value};`, order);
       }
       case 'remove':
+        assertFieldUnambiguous(edit.field, edit.index);
         return removal(source, findField(edit.field, edit.index), order);
       case 'setCall': {
         const existing = findCall(edit.name, edit.occurrence);

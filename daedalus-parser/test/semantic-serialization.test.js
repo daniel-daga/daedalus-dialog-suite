@@ -76,6 +76,30 @@ test('deserializeSemanticModel should reconstruct full object graph', () => {
   assert.strictEqual(linkedInfo, infoFunc, 'Dialog property should reference the same function instance in the model');
 });
 
+test('deserializeSemanticModel preserves action discriminators and does not consume its input', () => {
+  const { parseSemanticModel, SemanticCodeGenerator } = require('../dist/semantic/semantic-visitor-index');
+  const json = JSON.parse(JSON.stringify(parseSemanticModel(
+    [
+      'instance D(C_INFO) { condition = C; };',
+      'func void F() { AI_StopProcessInfos(self); };',
+      'func int C() { if (Npc_IsDead(other)) { return TRUE; }; };'
+    ].join('\n')
+  )));
+  const before = JSON.stringify(json);
+
+  const first = deserializeSemanticModel(json);
+  const second = deserializeSemanticModel(json);
+
+  assert.equal(json.functions.F.actions[0].type, 'StopProcessInfosAction');
+  assert.equal(json.functions.C.conditions[0].type, 'NpcIsDeadCondition');
+  assert.equal(JSON.stringify(json), before, 'hydration must leave the input unchanged');
+  assert.equal(
+    new SemanticCodeGenerator().generateSemanticModel(first),
+    new SemanticCodeGenerator().generateSemanticModel(second),
+    'repeated hydration of the same input must generate equivalent source'
+  );
+});
+
 test('deserializeSemanticModel should preserve dialog style metadata for generation', () => {
   const plainJson = {
     declarationOrder: [{ type: 'dialog', name: 'DIA_Test_Hello' }],
