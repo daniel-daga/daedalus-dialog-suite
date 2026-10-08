@@ -26,6 +26,7 @@ import type { RoutineSite } from '../../shared/types';
 import {
   createRoutine, loadRoutine, npcIdOf, routineFileOf, routineNameFor, saveRoutine,
 } from './routineSave';
+import { waypointFilterOptions } from './common/autocompletePolicies';
 
 /**
  * The routine editor (npc-editor.md §6): an NPC's routines at the top, the
@@ -514,7 +515,9 @@ export const RoutineEditorPanel: React.FC<RoutineEditorPanelProps> = (
               {waypoints ? (
                 <Autocomplete
                   size="small"
+                  openOnFocus
                   options={waypoints as string[]}
+                  filterOptions={waypointFilterOptions}
                   value={newWaypoint || null}
                   onChange={(_event, value) => setNewWaypoint(value ?? '')}
                   sx={{ flex: 1, minWidth: 160 }}
@@ -635,7 +638,9 @@ export const RoutineEditorPanel: React.FC<RoutineEditorPanelProps> = (
               {waypoints ? (
                 <Autocomplete
                   size="small"
+                  openOnFocus
                   options={waypoints as string[]}
+                  filterOptions={waypointFilterOptions}
                   value={entry.waypoint}
                   disableClearable
                   isOptionEqualToValue={(option, value) => option.toUpperCase() === value.toUpperCase()}

@@ -50,6 +50,7 @@ import { useScatterBrush } from './hooks/useScatterBrush';
 import { useInsertNpc } from './hooks/useInsertNpc';
 import { useRoutineMode } from './hooks/useRoutineMode';
 import RoutineEditorDialog from '../RoutineEditor';
+import { waypointFilterOptions } from '../common/autocompletePolicies';
 import { routineOwner, routinePreview } from '../../npc/npcRoutines';
 import { useAssetCatalog } from './hooks/useAssetCatalog';
 import { useWorldShortcuts } from './hooks/useWorldShortcuts';
@@ -2766,7 +2767,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
             freeSolo
             fullWidth
             size="small"
+            openOnFocus
             options={knownWaypointNames}
+            filterOptions={waypointFilterOptions}
             inputValue={addingWaypoint ?? ''}
             onInputChange={(_event, value) => setAddingWaypoint(value)}
             renderInput={(params) => (

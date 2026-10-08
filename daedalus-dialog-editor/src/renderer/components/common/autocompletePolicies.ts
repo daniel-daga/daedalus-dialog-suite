@@ -1,4 +1,13 @@
+import { createFilterOptions } from '@mui/material';
 import type { VariableAutocompleteProps } from './VariableAutocomplete';
+
+/**
+ * The filter every waypoint-list `Autocomplete` takes (#321). A world's
+ * waynet is ~2,900 names and MUI's listbox is not virtualized, so a field
+ * that opens on focus shows the first 200 matches rather than all of them —
+ * `VariableAutocomplete`'s own cap. Typing narrows it as before.
+ */
+export const waypointFilterOptions = createFilterOptions<string>({ limit: 200 });
 
 type AutocompletePolicy = Pick<
   VariableAutocompleteProps,

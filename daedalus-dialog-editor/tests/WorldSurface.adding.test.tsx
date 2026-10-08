@@ -85,6 +85,24 @@ async function openWorld() {
 }
 
 const hint = () => screen.getByTestId('world-terrain-hint');
+
+/** A retail-sized list: past the 2,000 a plain MUI listbox can open unjanked. */
+const MANY_WAYPOINTS = Array.from({ length: 3000 }, (_, i) => `WP_${String(i).padStart(4, '0')}`);
+
+/** A waynet of `names.length` free points — every column sized to match. */
+function waynetOf(names: readonly string[]) {
+  return {
+    ...waynetPayload(),
+    count: names.length,
+    names: [...names],
+    positions: new Float32Array(names.length * 3).buffer,
+    directions: new Float32Array(names.length * 3).buffer,
+    waterDepths: new Int32Array(names.length).buffer,
+    flags: new Uint32Array(names.length).buffer,
+    edgeCount: 0,
+    edges: new Uint32Array(0).buffer,
+  };
+}
 const firstOps = () => (api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]])[0];
 
 beforeEach(() => {
@@ -323,6 +341,28 @@ describe('Insert NPC… from the toolbar', () => {
     expect(screen.queryByTestId('world-armed-cancel')).toBeNull();
   });
 
+  it('opens its waypoint list on focus alone, capped short of the whole waynet (#321)', async () => {
+    // MUI already opens on a click; the gap is a tabbed-in field. The world's
+    // waynet is ~2,900 names, so what opens is a capped page of it — every
+    // name is still reachable by typing.
+    api.getWorldWaynet.mockResolvedValue(waynetOf(MANY_WAYPOINTS) as never);
+    await openWorld();
+    fireEvent.click(screen.getByTestId('world-add-npc'));
+    await screen.findByTestId('world-insert-npc-dialog');
+
+    // Cleared first: the field may open on a suggested fresh name, which
+    // lists nothing. Tabbing back into the empty field shows the names.
+    fireEvent.change(waypointField(), { target: { value: '' } });
+    act(() => waypointField().blur());
+    act(() => waypointField().focus());
+
+    const listbox = await screen.findByRole('listbox');
+    expect(within(listbox).getAllByRole('option')).toHaveLength(200);
+    fireEvent.change(waypointField(), { target: { value: 'WP_2999' } });
+    expect(within(screen.getByRole('listbox')).getAllByRole('option').map((o) => o.textContent))
+      .toEqual(['WP_2999']);
+  });
+
   it('is prefilled with the selected waypoint', async () => {
     await openWorld();
     fireEvent.click(screen.getByTestId('world-waynet-toggle'));
@@ -352,6 +392,25 @@ describe('Add waypoint… from the toolbar', () => {
     await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledWith([
       expect.objectContaining({ op: 'AddWaypoint', name: 'FP_BENCH', to: TERRAIN }),
     ]));
+  });
+
+  it('opens its name list on focus alone, capped short of every script waypoint (#321)', async () => {
+    useProjectStore.setState({
+      waypointSiteIndex: Object.fromEntries(MANY_WAYPOINTS.map((name) => [name, []])),
+    } as never);
+    await openWorld();
+    fireEvent.click(screen.getByTestId('world-add-waypoint-toolbar'));
+    await screen.findByTestId('world-waypoint-add-dialog');
+
+    // The field opens on a suggested fresh name, which lists nothing; a
+    // cleared field tabbed back into is the one that shows the names.
+    const name = screen.getByTestId('world-waypoint-add-name');
+    fireEvent.change(name, { target: { value: '' } });
+    act(() => name.blur());
+    act(() => name.focus());
+
+    const listbox = await screen.findByRole('listbox');
+    expect(within(listbox).getAllByRole('option')).toHaveLength(200);
   });
 });
 

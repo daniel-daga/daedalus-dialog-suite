@@ -5,7 +5,7 @@ import {
 } from '@mui/material';
 import type { SpawnSite } from '../../../shared/types';
 import VariableAutocomplete from '../common/VariableAutocomplete';
-import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
+import { AUTOCOMPLETE_POLICIES, waypointFilterOptions } from '../common/autocompletePolicies';
 import type { InsertNpcDraft } from './hooks/useInsertNpc';
 
 /** The file name a banner shows for a script path — the whole path is noise
@@ -100,8 +100,10 @@ const InsertNpcDialog: React.FC<InsertNpcDialogProps> = ({
         freeSolo
         fullWidth
         size="small"
+        openOnFocus
         disabled={draft?.existing ?? false}
         options={waypointNames as string[]}
+        filterOptions={waypointFilterOptions}
         inputValue={draft?.waypoint ?? ''}
         onInputChange={(_event, waypoint) => onChange({ waypoint })}
         renderInput={(params) => (
