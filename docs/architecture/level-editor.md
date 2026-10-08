@@ -4070,8 +4070,14 @@ halves are needed: the first sees where focus *is*, the second what is *open*.
   and only while the Snap control is showing it — in rotate mode that control
   edits the angle, so a leftover `snapGrid` would be an invisible value driving
   a visible key. The camera axes are queried for each nudge, so orbiting changes
-  the movement direction. W nudges forward when a VOB is selected; without a
-  selection it retains the translate-gizmo shortcut. The selection is read
+  the movement direction — W/Up away from the camera, S/Down towards it. W
+  nudges when a VOB is selected; without a selection it retains the
+  translate-gizmo shortcut. A tap is one step; held past 250 ms the key moves
+  continuously (300 cm/s, or four snap steps a second if that is faster; Shift
+  ×10) with the OS auto-repeat swallowed. The whole hold — several keys at once
+  included — is previewed through the gizmo like a drag and committed once on
+  the last key up, so it is one undo entry. Modified, the keys are other chords
+  (Ctrl+S, Ctrl+D). The selection is read
   *before* `preventDefault`, so an arrow with nothing selected is left to
   whatever would otherwise scroll. `[role="tree"]` is reserved for the scene
   tree's own navigation.

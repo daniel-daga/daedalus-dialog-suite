@@ -114,6 +114,31 @@ describe('GizmoController', () => {
     expect(rotate.gizmo.position()).toEqual([300, 0, 0]);
   });
 
+  it('previews a keyboard nudge from where it began, carrying children, and commits nothing itself', () => {
+    // The nudge's travel is a running total from the press, so each preview is
+    // measured from the recorded start — never from the last preview, which
+    // would compound it.
+    const { gizmo, world, translated } = harness({
+      membersOf: (vobs) => [...vobs.map((vob) => ({ vob, root: vob })), { vob: 2, root: 1 }],
+    });
+    gizmo.attach([1]);
+
+    expect(gizmo.beginNudge()).toBe(true);
+    gizmo.previewNudge([5, 0, 0]);
+    gizmo.previewNudge([10, 0, 2]);
+
+    expect(world.moved.slice(-2)).toEqual([[1, [110, 0, 2]], [2, [310, 0, 2]]]);
+    expect(gizmo.position()).toEqual([110, 0, 2]);
+    expect(translated).toEqual([]);
+  });
+
+  it('has no nudge to begin with nothing, or only a waypoint, under it', () => {
+    const { gizmo } = harness();
+    expect(gizmo.beginNudge()).toBe(false);
+    gizmo.attachWaypoint(7);
+    expect(gizmo.beginNudge()).toBe(false);
+  });
+
   it('moves the gizmo when the mode changes, not only its handles', () => {
     const { gizmo } = harness({ mode: 'translate' });
 

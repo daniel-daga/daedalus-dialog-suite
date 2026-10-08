@@ -31,6 +31,7 @@ import { findFreePointVob, primaryVob, useWorldStore, type RoutineRequest } from
 import { stateOptions, stateReach } from '../../routines/routineSchedule';
 import { useProjectStore } from '../../store/projectStore';
 import { vobModelOf } from '../../world/vobModel';
+import { snapDelta } from '../../world/snapping';
 import { LiveTileContext } from './WorldAssetGrid';
 import { DEFAULT_EXPOSURE } from '../../world/WorldScene';
 import WorldViewport, { type GizmoMode, type WorldViewportHandle } from './WorldViewport';
@@ -1191,18 +1192,39 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     void commitOps(translateSubtrees(vobModelOf(current).reader, selected, delta));
   }, [commitOps]);
 
-  /** Turn a camera-plane nudge into one world-space delta before using the
-   *  same subtree translation path as a gizmo drag. Axes are read at key time,
-   *  so orbiting the camera immediately changes what left and forward mean. */
-  const handleNudgeSelection = useCallback((direction: [number, number, number]) => {
+  /** The keyboard nudge in progress: its world-space travel so far and the
+   *  step it snaps to. Null between nudges. */
+  const nudgeRef = useRef<{ total: [number, number, number]; grid: number } | null>(null);
+
+  const handleNudgeBegin = useCallback((grid: number) => {
+    if (useWorldStore.getState().selection.length === 0) return false;
+    if (viewportRef.current?.beginNudge() !== true) return false;
+    nudgeRef.current = { total: [0, 0, 0], grid };
+    return true;
+  }, []);
+
+  /** Turn a camera-plane increment into world space and add it to the nudge.
+   *  Axes are read per increment, so orbiting mid-hold turns the motion. */
+  const handleNudgeBy = useCallback((direction: [number, number, number]) => {
+    const nudge = nudgeRef.current;
     const axes = viewportRef.current?.cameraNudgeAxes();
-    if (axes === null || axes === undefined) return;
+    if (nudge === null || axes === null || axes === undefined) return;
     const [right, up, forward] = direction;
-    handleTranslateSelection([
-      axes.right[0] * right + axes.forward[0] * forward,
-      up,
-      axes.right[2] * right + axes.forward[2] * forward,
-    ]);
+    nudge.total[0] += axes.right[0] * right + axes.forward[0] * forward;
+    nudge.total[1] += up;
+    nudge.total[2] += axes.right[2] * right + axes.forward[2] * forward;
+    viewportRef.current?.previewNudge(snapDelta(nudge.total, nudge.grid));
+  }, []);
+
+  /** The last key is up: the whole nudge is one commit on the same subtree
+   *  translation path as a gizmo drag, so one undo entry. */
+  const handleNudgeEnd = useCallback(() => {
+    const nudge = nudgeRef.current;
+    nudgeRef.current = null;
+    if (nudge === null) return;
+    const delta = snapDelta(nudge.total, nudge.grid);
+    if (delta.every((component) => component === 0)) return;
+    handleTranslateSelection(delta);
   }, [handleTranslateSelection]);
 
   /** What a drag of the selection previews moving: the same members
@@ -1899,7 +1921,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     onRequestDeleteWaypoint: (waypoint, name) => setDeletingWaypoint({ waypoint, name }),
     onDisarm: () => setArmed(null),
     onRequestSave: () => setConfirmingSave(true),
-    onNudge: handleNudgeSelection,
+    onNudgeBegin: handleNudgeBegin,
+    onNudgeBy: handleNudgeBy,
+    onNudgeEnd: handleNudgeEnd,
     onHistory: (direction) => void runHistory(direction),
   });
 

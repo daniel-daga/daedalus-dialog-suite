@@ -45,7 +45,9 @@ function bindWorld() {
     onRequestDeleteWaypoint: noop,
     onDisarm: noop,
     onRequestSave: noop,
-    onNudge: noop,
+    onNudgeBegin: () => true,
+    onNudgeBy: noop,
+    onNudgeEnd: noop,
     onHistory: noop,
   } as WorldShortcutsInput));
 }

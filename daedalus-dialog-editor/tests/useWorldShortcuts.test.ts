@@ -40,7 +40,9 @@ const verbs = {
   onRequestDeleteWaypoint: jest.fn(),
   onDisarm: jest.fn(),
   onRequestSave: jest.fn(),
-  onNudge: jest.fn(),
+  onNudgeBegin: jest.fn(() => true),
+  onNudgeBy: jest.fn(),
+  onNudgeEnd: jest.fn(),
   onHistory: jest.fn(),
 };
 
@@ -69,6 +71,11 @@ function press(key: string, init: KeyboardEventInit = {}, target?: Element): boo
   return event.defaultPrevented;
 }
 
+/** Dispatches a keyup — what ends a nudge. */
+function release(key: string): void {
+  act(() => { window.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true })); });
+}
+
 /** A focused text field, which is where every one of these chords stops being
  *  this surface's. */
 function field(): HTMLInputElement {
@@ -86,14 +93,15 @@ const CHORDS: Array<{
   init?: KeyboardEventInit;
   verb: keyof typeof verbs;
 }> = [
-  { name: 'W (translate gizmo)', key: 'w', verb: 'setGizmoMode' },
+  { name: 'W (nudge forward, with a selection)', key: 'w', verb: 'onNudgeBy' },
+  { name: 'S (nudge back)', key: 's', verb: 'onNudgeBy' },
   { name: 'E (rotate gizmo)', key: 'e', verb: 'setGizmoMode' },
   { name: 'Ctrl+C', key: 'c', init: { ctrlKey: true }, verb: 'onCopy' },
   { name: 'Ctrl+V', key: 'v', init: { ctrlKey: true }, verb: 'onPaste' },
   { name: 'Ctrl+D', key: 'd', init: { ctrlKey: true }, verb: 'onDuplicate' },
   { name: 'Delete', key: 'Delete', verb: 'onRequestDeleteVobs' },
   { name: 'Escape', key: 'Escape', verb: 'onDisarm' },
-  { name: 'ArrowRight', key: 'ArrowRight', verb: 'onNudge' },
+  { name: 'ArrowRight', key: 'ArrowRight', verb: 'onNudgeBy' },
   { name: 'Ctrl+S', key: 's', init: { ctrlKey: true }, verb: 'onRequestSave' },
   { name: 'Ctrl+Z', key: 'z', init: { ctrlKey: true }, verb: 'onHistory' },
   { name: 'Ctrl+Y', key: 'y', init: { ctrlKey: true }, verb: 'onHistory' },
@@ -203,7 +211,7 @@ describe('useWorldShortcuts — a key nobody here wants stays the browser’s', 
     useWorldStore.setState({ selection: [] } as never);
     bound();
     expect(press('ArrowRight')).toBe(false);
-    expect(verbs.onNudge).not.toHaveBeenCalled();
+    expect(verbs.onNudgeBy).not.toHaveBeenCalled();
   });
 
   test('an arrow key inside a tree is the tree’s own navigation', () => {
@@ -214,7 +222,7 @@ describe('useWorldShortcuts — a key nobody here wants stays the browser’s', 
     tree.append(row);
     document.body.append(tree);
     expect(press('ArrowRight', {}, row)).toBe(false);
-    expect(verbs.onNudge).not.toHaveBeenCalled();
+    expect(verbs.onNudgeBy).not.toHaveBeenCalled();
   });
 });
 
@@ -272,23 +280,25 @@ describe('useWorldShortcuts — Delete picks one of the two confirms', () => {
   });
 });
 
-describe('useWorldShortcuts — the step an arrow key takes', () => {
-  test('the 10 cm default with no snap step set', () => {
+describe('useWorldShortcuts — the step a nudge key takes', () => {
+  test('the 1 cm default with no snap step set', () => {
     bound({ snapGrid: 0 });
     press('ArrowRight');
-    expect(verbs.onNudge).toHaveBeenCalledWith([10, 0, 0]);
+    expect(verbs.onNudgeBegin).toHaveBeenCalledWith(0);
+    expect(verbs.onNudgeBy).toHaveBeenCalledWith([1, 0, 0]);
   });
 
-  test('the snap step when one is set', () => {
+  test('the snap step when one is set, which the nudge also snaps to', () => {
     bound({ snapGrid: 50 });
     press('ArrowRight');
-    expect(verbs.onNudge).toHaveBeenCalledWith([50, 0, 0]);
+    expect(verbs.onNudgeBegin).toHaveBeenCalledWith(50);
+    expect(verbs.onNudgeBy).toHaveBeenCalledWith([50, 0, 0]);
   });
 
   test('×10 while Shift is held', () => {
     bound({ snapGrid: 50 });
     press('ArrowRight', { shiftKey: true });
-    expect(verbs.onNudge).toHaveBeenCalledWith([500, 0, 0]);
+    expect(verbs.onNudgeBy).toHaveBeenCalledWith([500, 0, 0]);
   });
 
   test('in rotate mode the translate grid is invisible, so the default stands', () => {
@@ -296,25 +306,139 @@ describe('useWorldShortcuts — the step an arrow key takes', () => {
     // from translate mode would be 45° on screen and 5 m under the arrow.
     bound({ gizmoMode: 'rotate', snapGrid: 500 });
     press('ArrowRight');
-    expect(verbs.onNudge).toHaveBeenCalledWith([10, 0, 0]);
+    expect(verbs.onNudgeBegin).toHaveBeenCalledWith(0);
+    expect(verbs.onNudgeBy).toHaveBeenCalledWith([1, 0, 0]);
   });
 
-  test('ZenGin is Y-up, so the six keys move X, Z and Y in that order', () => {
+  test('W and Up move away from the camera, S and Down towards it', () => {
     bound({ snapGrid: 0 });
-    press('ArrowLeft');
-    press('ArrowRight');
-    press('ArrowUp');
-    press('ArrowDown');
-    press('PageUp');
-    press('PageDown');
-    expect(verbs.onNudge.mock.calls.map(([delta]) => delta)).toEqual([
-      [-10, 0, 0], [10, 0, 0], [0, 0, -10], [0, 0, 10], [0, 10, 0], [0, -10, 0],
+    for (const key of ['w', 'ArrowUp', 's', 'ArrowDown']) {
+      press(key);
+      release(key);
+    }
+    expect(verbs.onNudgeBy.mock.calls.map(([delta]) => delta)).toEqual([
+      [0, 0, 1], [0, 0, 1], [0, 0, -1], [0, 0, -1],
     ]);
+  });
+
+  test('A/D and the side arrows move along camera-right, PageUp/Down vertically', () => {
+    bound({ snapGrid: 0 });
+    for (const key of ['a', 'ArrowLeft', 'd', 'ArrowRight', 'PageUp', 'PageDown']) {
+      press(key);
+      release(key);
+    }
+    expect(verbs.onNudgeBy.mock.calls.map(([delta]) => delta)).toEqual([
+      [-1, 0, 0], [-1, 0, 0], [1, 0, 0], [1, 0, 0], [0, 1, 0], [0, -1, 0],
+    ]);
+  });
+
+  test('Ctrl+S is still the save, though S is a nudge key', () => {
+    bound();
+    expect(press('s', { ctrlKey: true })).toBe(true);
+    expect(verbs.onRequestSave).toHaveBeenCalled();
+    expect(verbs.onNudgeBy).not.toHaveBeenCalled();
+  });
+
+  test('nothing to move under the gizmo leaves the key alone', () => {
+    verbs.onNudgeBegin.mockReturnValueOnce(false);
+    bound();
+    expect(press('ArrowRight')).toBe(false);
+    expect(verbs.onNudgeBy).not.toHaveBeenCalled();
+  });
+});
+
+describe('useWorldShortcuts — holding a nudge key', () => {
+  /** A hand-driven frame loop, so a hold can be stepped through in time. */
+  let frames: Array<FrameRequestCallback> = [];
+  let now = 0;
+
+  beforeEach(() => {
+    frames = [];
+    now = 0;
+    jest.spyOn(performance, 'now').mockImplementation(() => now);
+    jest.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    jest.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  /** Advance the clock to `at` ms and run the frame that was waiting. */
+  function frameAt(at: number) {
+    now = at;
+    const pending = frames;
+    frames = [];
+    act(() => { for (const callback of pending) callback(at); });
+  }
+
+  test('a tap is one step, one gesture and one commit', () => {
+    bound();
+    press('d');
+    frameAt(100);
+    release('d');
+    expect(verbs.onNudgeBegin).toHaveBeenCalledTimes(1);
+    expect(verbs.onNudgeBy.mock.calls).toEqual([[[1, 0, 0]]]);
+    expect(verbs.onNudgeEnd).toHaveBeenCalledTimes(1);
+  });
+
+  test('held past the delay it moves continuously, and commits once on release', () => {
+    bound();
+    press('w');
+    frameAt(200);   // still inside the hold delay
+    frameAt(250);   // the delay ends here: nothing travelled yet
+    frameAt(350);   // 0.1 s at 300 cm/s
+    frameAt(450);
+    expect(verbs.onNudgeEnd).not.toHaveBeenCalled();
+    release('w');
+    const travelled = verbs.onNudgeBy.mock.calls.map(([delta]) => delta[2]);
+    expect(travelled[0]).toBe(1);
+    expect(travelled.slice(1)).toEqual([expect.closeTo(30, 6), expect.closeTo(30, 6)]);
+    expect(verbs.onNudgeBegin).toHaveBeenCalledTimes(1);
+    expect(verbs.onNudgeEnd).toHaveBeenCalledTimes(1);
+  });
+
+  test('the OS auto-repeat keydowns are swallowed, not extra steps', () => {
+    bound();
+    press('d');
+    expect(press('d', { repeat: true })).toBe(true);
+    expect(press('d', { repeat: true })).toBe(true);
+    expect(verbs.onNudgeBy).toHaveBeenCalledTimes(1);
+  });
+
+  test('two keys held are one gesture, ended by the last one up', () => {
+    bound();
+    press('w');
+    press('d');
+    release('w');
+    expect(verbs.onNudgeEnd).not.toHaveBeenCalled();
+    release('d');
+    expect(verbs.onNudgeBegin).toHaveBeenCalledTimes(1);
+    expect(verbs.onNudgeEnd).toHaveBeenCalledTimes(1);
+  });
+
+  test('losing window focus mid-hold ends the nudge — that keyup never arrives', () => {
+    bound();
+    press('w');
+    act(() => { window.dispatchEvent(new Event('blur')); });
+    expect(verbs.onNudgeEnd).toHaveBeenCalledTimes(1);
+  });
+
+  test('W keeps nudging while held, even if the selection empties mid-hold', () => {
+    bound();
+    press('w');
+    useWorldStore.setState({ selection: [] } as never);
+    press('w', { repeat: true });
+    expect(verbs.setGizmoMode).not.toHaveBeenCalled();
   });
 });
 
 describe('useWorldShortcuts — the gizmo letters', () => {
-  test('W is translate and E is rotate', () => {
+  test('W is translate and E is rotate, with nothing selected for W to nudge', () => {
+    useWorldStore.setState({ selection: [] } as never);
     bound();
     press('w');
     expect(verbs.setGizmoMode).toHaveBeenCalledWith('translate');

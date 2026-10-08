@@ -11,16 +11,25 @@ const NUDGE_DELTAS: Record<string, [number, number, number]> = {
   a: [-1, 0, 0],
   arrowright: [1, 0, 0],
   d: [1, 0, 0],
-  arrowup: [0, 0, -1],
-  w: [0, 0, -1],
-  arrowdown: [0, 0, 1],
-  s: [0, 0, 1],
+  arrowup: [0, 0, 1],
+  w: [0, 0, 1],
+  arrowdown: [0, 0, -1],
+  s: [0, 0, -1],
   pageup: [0, 1, 0],
   pagedown: [0, -1, 0],
 };
 
 /** The nudge a bare key takes when no snap step is set, in cm. */
 const NUDGE_FALLBACK_STEP = 1;
+
+/** How long a nudge key is held before it moves continuously, in ms — about
+ *  the OS's own auto-repeat delay, so a tap stays one step. */
+const NUDGE_HOLD_DELAY = 250;
+
+/** How fast a held nudge key moves, in cm/s before Shift's ×10 — and at
+ *  least this many snap steps a second, so a coarse grid does not crawl. */
+const NUDGE_HOLD_SPEED = 300;
+const NUDGE_HOLD_STEPS_PER_SECOND = 4;
 
 export interface WorldShortcutsInput {
   /** No world, nothing to act on — nothing is bound at all. */
@@ -57,7 +66,16 @@ export interface WorldShortcutsInput {
   onDisarm: () => void;
   /** Ctrl+S — opens the save confirm, never saves. */
   onRequestSave: () => void;
-  onNudge: (delta: [number, number, number]) => void;
+  /**
+   * A nudge is one gesture, like a gizmo drag: begun on the first key down,
+   * fed camera-relative `[right, up, forward]` increments in cm for as long as
+   * any nudge key is held, and committed once on the last key up — one undo
+   * entry. `onNudgeBegin` answers whether there is anything to move; `grid` is
+   * the step the preview and the commit snap to, 0 for free-form.
+   */
+  onNudgeBegin: (grid: number) => boolean;
+  onNudgeBy: (direction: [number, number, number]) => void;
+  onNudgeEnd: () => void;
   onHistory: (direction: 'undo' | 'redo') => void;
 }
 
@@ -83,7 +101,7 @@ export interface WorldShortcutsInput {
 export function useWorldShortcuts({
   hasWorld, hidden, dialogOpen, waynet, armed, gizmoMode, snapGrid, setGizmoMode,
   onCopy, onPaste, onDuplicate, onRequestDeleteVobs, onRequestDeleteWaypoint,
-  onDisarm, onRequestSave, onNudge, onHistory,
+  onDisarm, onRequestSave, onNudgeBegin, onNudgeBy, onNudgeEnd, onHistory,
 }: WorldShortcutsInput): void {
   useEffect(() => {
     if (!hasWorld) return undefined;
@@ -91,6 +109,41 @@ export function useWorldShortcuts({
     // well as the dialog edit `MainLayout` performs, and W would swallow a
     // keystroke on a view that has never heard of a gizmo.
     if (hidden) return undefined;
+
+    /** The nudge keys held down, each with when it went down and how fast it
+     *  moves once held. Empty is no nudge in progress. */
+    const held = new Map<string, { since: number; speed: number }>();
+    let frame: number | null = null;
+    let lastFrame = 0;
+
+    const tick = (now: number) => {
+      const dt = Math.max(0, now - lastFrame) / 1000;
+      lastFrame = now;
+      for (const [key, { since, speed }] of held) {
+        // Counted from the end of the hold delay, not the press, so the first
+        // continuous frame does not jump by the delay's worth of travel.
+        const moving = Math.min(dt, Math.max(0, (now - since - NUDGE_HOLD_DELAY) / 1000));
+        if (moving <= 0) continue;
+        const [r, u, f] = NUDGE_DELTAS[key];
+        onNudgeBy([r * speed * moving, u * speed * moving, f * speed * moving]);
+      }
+      frame = requestAnimationFrame(tick);
+    };
+
+    const endNudge = () => {
+      if (held.size === 0) return;
+      held.clear();
+      if (frame !== null) cancelAnimationFrame(frame);
+      frame = null;
+      onNudgeEnd();
+    };
+
+    const keyUp = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase();
+      if (!held.has(key)) return;
+      if (held.size > 1) held.delete(key);
+      else endNudge();
+    };
 
     const handler = (event: KeyboardEvent) => {
       // Lower-cased because holding Shift changes the letter itself: Ctrl+Shift+Z
@@ -102,7 +155,7 @@ export function useWorldShortcuts({
       // typing — the World surface has no text field of its own, but this is a
       // window listener and the app is full of them.
       if (!event.ctrlKey && !event.metaKey && !event.altKey && (key === 'w' || key === 'e')
-        && !(key === 'w' && useWorldStore.getState().selection.length > 0)) {
+        && !(key === 'w' && (useWorldStore.getState().selection.length > 0 || held.size > 0))) {
         if (isTypingOrInPopover(event.target) || dialogOpen) return;
         event.preventDefault();
         setGizmoMode(key === 'w' ? 'translate' : 'rotate');
@@ -182,13 +235,19 @@ export function useWorldShortcuts({
       // Camera-relative nudge — WASD and the arrows move in the view plane;
       // PageUp/Down stay on ZenGin's vertical axis. Shift multiplies the step
       // by ten. W is a nudge while a VOB is selected, otherwise it keeps its
-      // existing translate-gizmo shortcut above.
-      // One keypress is one undo entry, same as a single gizmo drag — but only
-      // the presses that reach the world: auto-repeat while a commit is out is
-      // dropped by `commitOps`' in-flight guard, because the op it would build
-      // reads a `from` the round trip has not written yet.
-      if (NUDGE_DELTAS[key]) {
-        if (event.ctrlKey || event.metaKey || event.altKey) return;
+      // translate-gizmo shortcut above. With a modifier these are other chords
+      // (Ctrl+S, Ctrl+D), so they fall through to those.
+      //
+      // A press moves one step at once; held past `NUDGE_HOLD_DELAY` it moves
+      // continuously until released. The whole gesture is previewed and only
+      // committed on the last key up, so a hold is one undo entry like a gizmo
+      // drag, and the OS's auto-repeat keydowns are swallowed — the frame loop
+      // owns the motion.
+      if (NUDGE_DELTAS[key] && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        if (held.has(key)) {
+          event.preventDefault();
+          return;
+        }
         if (isTypingOrInPopover(event.target) || dialogOpen) return;
         // Reserves the arrow keys for the scene tree's own navigation.
         const target = event.target as HTMLElement | null;
@@ -196,17 +255,26 @@ export function useWorldShortcuts({
         // Read *before* `preventDefault`, as the Escape branch does: with
         // nothing selected this key is nobody's, and swallowing it would
         // stop the asset list scrolling for a nudge that never happens.
-        if (useWorldStore.getState().selection.length === 0) return;
-        event.preventDefault();
+        if (held.size === 0 && useWorldStore.getState().selection.length === 0) return;
         // A nudge translates, so it takes the *translate* step — and only
         // while that is the step the Snap control is actually showing. In
         // rotate mode that control edits the angle instead, so a `snapGrid`
         // left over from translate mode would be an invisible value driving
         // a visible key: 45° on screen, 5 m under the arrow.
         const grid = gizmoMode === 'translate' ? snapGrid : 0;
-        const step = (grid > 0 ? grid : NUDGE_FALLBACK_STEP) * (event.shiftKey ? 10 : 1);
-        const [dx, dy, dz] = NUDGE_DELTAS[key];
-        onNudge([dx * step, dy * step, dz * step]);
+        if (held.size === 0 && !onNudgeBegin(grid)) return;
+        event.preventDefault();
+        const base = grid > 0 ? grid : NUDGE_FALLBACK_STEP;
+        const shift = event.shiftKey ? 10 : 1;
+        const speed = Math.max(NUDGE_HOLD_SPEED, base * NUDGE_HOLD_STEPS_PER_SECOND) * shift;
+        held.set(key, { since: performance.now(), speed });
+        const [r, u, f] = NUDGE_DELTAS[key];
+        const step = base * shift;
+        onNudgeBy([r * step, u * step, f * step]);
+        if (frame === null) {
+          lastFrame = performance.now();
+          frame = requestAnimationFrame(tick);
+        }
         return;
       }
 
@@ -236,10 +304,20 @@ export function useWorldShortcuts({
     };
 
     window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
+    window.addEventListener('keyup', keyUp);
+    // A key released while the window is unfocused never reports its keyup.
+    window.addEventListener('blur', endNudge);
+    return () => {
+      window.removeEventListener('keydown', handler);
+      window.removeEventListener('keyup', keyUp);
+      window.removeEventListener('blur', endNudge);
+      // A re-bind mid-hold (a dialog opening, the step changing) commits what
+      // was moved so far rather than leaving the preview stranded.
+      endNudge();
+    };
   }, [
     hasWorld, hidden, dialogOpen, waynet, armed, gizmoMode, snapGrid, setGizmoMode,
     onCopy, onPaste, onDuplicate, onRequestDeleteVobs, onRequestDeleteWaypoint,
-    onDisarm, onRequestSave, onNudge, onHistory,
+    onDisarm, onRequestSave, onNudgeBegin, onNudgeBy, onNudgeEnd, onHistory,
   ]);
 }

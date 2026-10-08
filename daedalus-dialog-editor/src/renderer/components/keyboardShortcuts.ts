@@ -74,7 +74,7 @@ export const KEYBOARD_SHORTCUTS: readonly KeyboardShortcut[] = [
   },
   {
     group: 'World editor', keys: 'WASD / arrows; PageUp / PageDown',
-    action: 'Nudge in the camera plane; PageUp/Down vertically; Shift ×10',
+    action: 'Nudge in the camera plane, hold to keep moving; PageUp/Down vertically; Shift ×10',
     probe: {
       listener: 'world',
       events: ['w', 'a', 's', 'd', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown']

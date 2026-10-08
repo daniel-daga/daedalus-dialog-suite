@@ -23,11 +23,13 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
   const ReactActual = jest.requireActual('react') as typeof React;
   return {
     __esModule: true,
-    default: ReactActual.forwardRef((_props: unknown, ref: React.Ref<{
-      raycastDown: () => null; frameVob: () => void; framePoint: () => void;
-    }>) => {
+    default: ReactActual.forwardRef((_props: unknown, ref: React.Ref<unknown>) => {
       ReactActual.useImperativeHandle(ref, () => ({
         raycastDown: () => null, frameVob: () => undefined, framePoint: () => undefined,
+        // A camera looking down ZenGin +Z: right is +X, forward is +Z.
+        cameraNudgeAxes: () => ({ right: [1, 0, 0], forward: [0, 0, 1] }),
+        beginNudge: () => true,
+        previewNudge: () => undefined,
       }));
       return <div data-testid="world-viewport-stub" />;
     }),
@@ -258,6 +260,12 @@ describe('the Escape key', () => {
 });
 
 describe('arrow-key nudge', () => {
+  /** A tap: down and up. The nudge commits on the key up. */
+  const tap = (key: string, init: Record<string, unknown> = {}) => {
+    fireEvent.keyDown(window, { key, ...init });
+    fireEvent.keyUp(window, { key, ...init });
+  };
+
   /** The one control, which means whichever step the gizmo mode is about —
    *  ported from `WorldSurface.editing.test.tsx`'s `chooseStep`. */
   const chooseStep = async (label: string) => {
@@ -269,38 +277,42 @@ describe('arrow-key nudge', () => {
     op: 'MoveVob', vob: 1, path: '1', from: [10, 20, 30], to,
   });
 
-  it('moves the selection +X by the default 10 cm step on ArrowRight', async () => {
+  it('moves the selection camera-right by the default 1 cm step on ArrowRight', async () => {
     await openWorld();
     await act(async () => { useWorldStore.getState().selectVob(1); });
 
-    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    tap('ArrowRight');
 
     await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
-    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp([20, 20, 30])]);
+    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp([11, 20, 30])]);
   });
 
   it.each([
-    ['ArrowLeft', [0, 20, 30]],
-    ['ArrowUp', [10, 20, 20]],
-    ['ArrowDown', [10, 20, 40]],
-    ['PageUp', [10, 30, 30]],
-    ['PageDown', [10, 10, 30]],
+    ['ArrowLeft', [9, 20, 30]],
+    ['a', [9, 20, 30]],
+    ['d', [11, 20, 30]],
+    ['ArrowUp', [10, 20, 31]],
+    ['w', [10, 20, 31]],
+    ['ArrowDown', [10, 20, 29]],
+    ['s', [10, 20, 29]],
+    ['PageUp', [10, 21, 30]],
+    ['PageDown', [10, 19, 30]],
   ] as Array<[string, [number, number, number]]>)('moves the selection on %s', async (key, to) => {
     await openWorld();
     await act(async () => { useWorldStore.getState().selectVob(1); });
 
-    fireEvent.keyDown(window, { key });
+    tap(key);
 
     await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
     expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp(to)]);
   });
 
-  it('nudges by the chosen snap step instead of the 10 cm default', async () => {
+  it('nudges by the chosen snap step instead of the 1 cm default', async () => {
     await openWorld();
     await chooseStep('1 m');
     await act(async () => { useWorldStore.getState().selectVob(1); });
 
-    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    tap('ArrowRight');
 
     await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
     expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp([110, 20, 30])]);
@@ -310,10 +322,10 @@ describe('arrow-key nudge', () => {
     await openWorld();
     await act(async () => { useWorldStore.getState().selectVob(1); });
 
-    fireEvent.keyDown(window, { key: 'ArrowRight', shiftKey: true });
+    tap('ArrowRight', { shiftKey: true });
 
     await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
-    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp([110, 20, 30])]);
+    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp([20, 20, 30])]);
   });
 
   it('does nothing with an empty selection', async () => {
@@ -354,12 +366,29 @@ describe('arrow-key nudge', () => {
     tree.remove();
   });
 
-  it('drops the repeats that arrive while a commit is still in flight', async () => {
-    // §2.7 of `docs/plans/level-editor-review-2026-09-04.md`. Auto-repeat fires
-    // keydown again long before the first `applyWorldOps` resolves, and every
-    // builder reads `from` out of a projection that is only written once the
-    // round trip is back — so three presses used to become three ops carrying
-    // the *same* `from`, which is one step of movement and three undo entries.
+  it('a held key is one commit however many auto-repeats arrive', async () => {
+    // The OS repeats keydown while a key is held. Each one used to be its own
+    // commit, dropped by the in-flight guard, so a held key stuttered; now the
+    // hold is one gesture, committed once on the key up.
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+
+    fireEvent.keyDown(window, { key: 'w' });
+    fireEvent.keyDown(window, { key: 'w', repeat: true });
+    fireEvent.keyDown(window, { key: 'w', repeat: true });
+    await act(async () => undefined);
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+    fireEvent.keyUp(window, { key: 'w' });
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp([10, 20, 31])]);
+  });
+
+  it('drops the taps that arrive while a commit is still in flight', async () => {
+    // §2.7 of `docs/plans/level-editor-review-2026-09-04.md`: every builder
+    // reads `from` out of a projection that is only written once the round
+    // trip is back, so a second commit sent before the first lands would
+    // carry the *same* `from`.
     await openWorld();
     await act(async () => { useWorldStore.getState().selectVob(1); });
     let release: () => void = () => undefined;
@@ -367,20 +396,20 @@ describe('arrow-key nudge', () => {
       () => new Promise<void>((resolve) => { release = () => resolve(); }) as never,
     );
 
-    fireEvent.keyDown(window, { key: 'ArrowRight' });
-    fireEvent.keyDown(window, { key: 'ArrowRight' });
-    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    tap('ArrowRight');
+    tap('ArrowRight');
+    tap('ArrowRight');
     await act(async () => undefined);
 
     expect(api.applyWorldOps).toHaveBeenCalledTimes(1);
-    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp([20, 20, 30])]);
+    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp([11, 20, 30])]);
     await act(async () => { release(); });
   });
 
   it('nudges from the position the dropped-through commit left behind', async () => {
-    // The other half of the guard: it has to be *released*, and the press that
+    // The other half of the guard: it has to be *released*, and the tap that
     // follows has to read the column the applied op wrote — not the one the
-    // world had when the first press was made.
+    // world had when the first tap was made.
     await openWorld();
     await act(async () => { useWorldStore.getState().selectVob(1); });
     let release: () => void = () => undefined;
@@ -388,14 +417,14 @@ describe('arrow-key nudge', () => {
       () => new Promise<void>((resolve) => { release = () => resolve(); }) as never,
     );
 
-    fireEvent.keyDown(window, { key: 'ArrowRight' });
-    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    tap('ArrowRight');
+    tap('ArrowRight');
     await act(async () => { release(); });
-    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    tap('ArrowRight');
 
     await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(2));
     expect(api.applyWorldOps.mock.calls[1][0]).toMatchObject([
-      { op: 'MoveVob', vob: 1, path: '1', from: [20, 20, 30], to: [30, 20, 30] },
+      { op: 'MoveVob', vob: 1, path: '1', from: [11, 20, 30], to: [12, 20, 30] },
     ]);
   });
 
@@ -449,10 +478,10 @@ describe('arrow-key nudge', () => {
     fireEvent.click(screen.getByTestId('world-gizmo-rotate'));
     await act(async () => { useWorldStore.getState().selectVob(1); });
 
-    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    tap('ArrowRight');
 
     await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
-    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp([20, 20, 30])]);
+    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp([11, 20, 30])]);
   });
 
   it('does nothing on the real scene tree either, once slice 7 gives it its own arrow keys', async () => {

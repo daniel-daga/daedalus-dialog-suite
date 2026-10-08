@@ -216,34 +216,71 @@ export class GizmoController {
     this.transform.getHelper().visible = false;
   }
 
+  /** Where everything was when the drag began. Read once: the preview writes
+   *  the instance matrices this would otherwise be read back out of, so a
+   *  per-frame read would compound the delta. For a waypoint, reading once is
+   *  not an optimisation but the only way to still know where it started — the
+   *  preview writes the overlay's own positions, which is the array this would
+   *  be read out of. */
+  private recordDragStart(): void {
+    this.waypointFrom = this.waypoint === null
+      ? null
+      : this.options.overlay()?.positionOf(this.waypoint) ?? null;
+    this.proxyFrom.copy(this.proxy.position);
+    this.proxyTurnFrom.copy(this.proxy.quaternion);
+    this.dragFrom.clear();
+    this.turnFrom.clear();
+    this.rootOf.clear();
+    const members = this.options.membersOf?.(this.vobs)
+      ?? this.vobs.map((vob) => ({ vob, root: vob }));
+    for (const { vob, root } of members) {
+      this.rootOf.set(vob, root);
+      const position = this.options.world.positionOf(vob);
+      if (position !== null) this.dragFrom.set(vob, position);
+      const rotation = this.options.world.rotationOf(vob);
+      if (rotation !== null) this.turnFrom.set(vob, rotation as ZenRotation);
+    }
+  }
+
+  /** Draw the selection moved by the proxy's travel since the drag began. */
+  private previewTranslation(): void {
+    for (const [vob, from] of this.dragFrom) {
+      this.options.world.moveVob(vob, [
+        from[0] + this.proxy.position.x - this.proxyFrom.x,
+        from[1] + this.proxy.position.y - this.proxyFrom.y,
+        from[2] + this.proxy.position.z - this.proxyFrom.z,
+      ]);
+    }
+  }
+
+  /**
+   * A keyboard nudge (WASD held down) is drawn like a translate drag: it
+   * records where the selection starts, then `previewNudge` moves the proxy
+   * and the preview by a delta from there. No commit of its own — the caller
+   * already holds the delta and commits it as a drag's would be. False with
+   * no VOBs under the gizmo, a waypoint included: `MoveWaypoint` is not what
+   * a nudge commits.
+   */
+  beginNudge(): boolean {
+    if (this.vobs.length === 0) return false;
+    this.recordDragStart();
+    return true;
+  }
+
+  previewNudge(delta: readonly [number, number, number]): void {
+    if (this.vobs.length === 0) return;
+    this.proxy.position.set(
+      this.proxyFrom.x + delta[0], this.proxyFrom.y + delta[1], this.proxyFrom.z + delta[2],
+    );
+    this.previewTranslation();
+  }
+
   private readonly onDraggingChanged = (event: { value: unknown }) => {
     const dragging = event.value as boolean;
     this.options.controls.enabled = !dragging;
 
     if (dragging) {
-      // Where everything was when the drag began. Read once: the preview writes
-      // the instance matrices this would otherwise be read back out of, so a
-      // per-frame read would compound the delta. For a waypoint, reading once
-      // is not an optimisation but the only way to still know where it started
-      // — the preview writes the overlay's own positions, which is the array
-      // this would be read out of.
-      this.waypointFrom = this.waypoint === null
-        ? null
-        : this.options.overlay()?.positionOf(this.waypoint) ?? null;
-      this.proxyFrom.copy(this.proxy.position);
-      this.proxyTurnFrom.copy(this.proxy.quaternion);
-      this.dragFrom.clear();
-      this.turnFrom.clear();
-      this.rootOf.clear();
-      const members = this.options.membersOf?.(this.vobs)
-        ?? this.vobs.map((vob) => ({ vob, root: vob }));
-      for (const { vob, root } of members) {
-        this.rootOf.set(vob, root);
-        const position = this.options.world.positionOf(vob);
-        if (position !== null) this.dragFrom.set(vob, position);
-        const rotation = this.options.world.rotationOf(vob);
-        if (rotation !== null) this.turnFrom.set(vob, rotation as ZenRotation);
-      }
+      this.recordDragStart();
       return;
     }
 
@@ -373,13 +410,7 @@ export class GizmoController {
       return;
     }
 
-    for (const [vob, from] of this.dragFrom) {
-      this.options.world.moveVob(vob, [
-        from[0] + this.proxy.position.x - this.proxyFrom.x,
-        from[1] + this.proxy.position.y - this.proxyFrom.y,
-        from[2] + this.proxy.position.z - this.proxyFrom.z,
-      ]);
-    }
+    this.previewTranslation();
   };
 
   // ── the `__worldViewport` harness (verify-world-edit.js) ──────────────────

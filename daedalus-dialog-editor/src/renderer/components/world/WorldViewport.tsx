@@ -393,6 +393,12 @@ export interface WorldViewportHandle {
   /** Horizontal camera-right and camera-forward unit vectors, in ZenGin space.
    *  Null while the viewport is between scenes. */
   cameraNudgeAxes: () => { right: ZenPosition; forward: ZenPosition } | null;
+  /** Start drawing a keyboard nudge of the selection; false when there is no
+   *  VOB under the gizmo to move. See `GizmoController.beginNudge`. */
+  beginNudge: () => boolean;
+  /** Draw the selection moved by `delta` (ZenGin cm) from where the nudge
+   *  began. A preview only: the commit is the caller's. */
+  previewNudge: (delta: [number, number, number]) => void;
   /**
    * A ray straight down from `origin` (ZenGin space) against the world mesh —
    * the terrain, a building, a cave wall. Returns the hit point and its
@@ -471,6 +477,8 @@ interface Gizmo {
   /** The other thing the gizmo can be on. Null detaches it. */
   attachWaypoint: (waypoint: number | null) => void;
   setMode: (mode: GizmoMode) => void;
+  beginNudge: () => boolean;
+  previewNudge: (delta: readonly [number, number, number]) => void;
 }
 
 // One shared empty map: a fresh default each render is a new dependency each
@@ -527,6 +535,8 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       }
       return { right, forward };
     },
+    beginNudge: () => gizmoRef.current?.beginNudge() ?? false,
+    previewNudge: (delta) => gizmoRef.current?.previewNudge(delta),
     raycastDown: (origin) => {
       const world = sceneRef.current;
       if (world === null) return null;
