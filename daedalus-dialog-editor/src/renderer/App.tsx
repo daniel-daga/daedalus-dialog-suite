@@ -18,7 +18,8 @@ import {
   Undo as UndoIcon,
   Redo as RedoIcon,
   Description as DescriptionIcon,
-  Close as CloseIcon
+  Close as CloseIcon,
+  HelpOutline as HelpOutlineIcon
 } from '@mui/icons-material';
 import { useEditorStore } from './store/editorStore';
 import { useHistoryStore } from './store/historyStore';
@@ -45,6 +46,7 @@ import { flushAllPendingEdits } from './utils/pendingEditFlushRegistry';
 import { useWindowCloseGuard } from './hooks/useWindowCloseGuard';
 import AssetSourcesDialog from './components/AssetSourcesDialog';
 import DeleteConfirmDialog from './components/common/DeleteConfirmDialog';
+import KeyboardShortcutsDialog from './components/KeyboardShortcutsDialog';
 import { useWorldStore } from './store/worldStore';
 
 // Wire up the cross-store model sync once at module load.
@@ -137,6 +139,7 @@ const AppContent: React.FC<AppProps> = ({ buildChanges = [] }) => {
   const [isProjectOpening, setIsProjectOpening] = useState(false);
   const [triggerUpdateCheck, setTriggerUpdateCheck] = useState(false);
   const [assetSourcesOpen, setAssetSourcesOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [discardPrompt, setDiscardPrompt] = useState<{ context: string; proceed: () => void } | null>(null);
   const [dismissedProjectWarnings, setDismissedProjectWarnings] = useState<Set<string>>(() => new Set());
   const { mode, setMode } = useThemeMode();
@@ -168,6 +171,18 @@ const AppContent: React.FC<AppProps> = ({ buildChanges = [] }) => {
 
   useEffect(() => {
     window.editorAPI.getAppVersion().then(setAppVersion);
+  }, []);
+
+  // F1 is bound nowhere else, so it needs none of the typing guards the other
+  // window shortcuts take.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'F1') return;
+      e.preventDefault();
+      setShortcutsOpen(true);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
   }, []);
 
   // Trigger update check ~5s after mount to avoid slowing perceived startup
@@ -460,6 +475,15 @@ const AppContent: React.FC<AppProps> = ({ buildChanges = [] }) => {
               </IconButton>
             </span>
           </Tooltip>
+          <Tooltip title="Keyboard shortcuts (F1)">
+            <IconButton
+              color="inherit"
+              aria-label="Keyboard shortcuts"
+              onClick={() => setShortcutsOpen(true)}
+            >
+              <HelpOutlineIcon />
+            </IconButton>
+          </Tooltip>
           {projectPath && (
             <Tooltip title="Close Project">
               <IconButton
@@ -474,6 +498,8 @@ const AppContent: React.FC<AppProps> = ({ buildChanges = [] }) => {
           )}
         </Toolbar>
       </AppBar>
+
+      <KeyboardShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
 
       <IngestedFilesDialog
         open={isIngestedFilesOpen}

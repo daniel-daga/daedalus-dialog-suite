@@ -327,10 +327,14 @@ world and one load is the whole first step.
 
 ### D2. No in-app help or onboarding (#275)
 
-Spacer's empty help window has our equivalent: nothing. Not a complaint we have
-received in those words, but an outside user's asset-browser report was
-investigated against the retail VFS (architecture §6); whether the UI needs
-onboarding remains a separate question.
+Spacer's empty help window had our equivalent: nothing. Answered 2026-10-08 by
+the smallest cut — a keyboard-shortcuts sheet behind a Help button in the app
+bar and F1 (`KeyboardShortcutsDialog`, over the one table in
+`components/keyboardShortcuts.ts`). The table carries the keystrokes each row
+stands for and `keyboardShortcuts.test.ts` replays them against the World
+dispatch in both directions; the dialog editor's rows are kept true by hand.
+A tour, first-run empty states or per-panel help were not built — nobody has
+reported needing them.
 
 ---
 
