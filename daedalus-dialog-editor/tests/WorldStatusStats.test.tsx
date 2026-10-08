@@ -43,7 +43,12 @@ describe('WorldStatusStats', () => {
   it('says nothing about unresolved assets on a world where everything resolved', () => {
     render(<WorldStatusStats summary={summary} visuals={payload([])} />);
 
-    expect(screen.getByTestId('world-status-stats')).toHaveTextContent('41,393 VOBs');
+    // The count is localized, so the separator is the host's: `41,393` here,
+    // `41 393` on a German-locale machine (#308). That space is a no-break
+    // space, which `toHaveTextContent` collapses to a plain one on the
+    // rendered side only, so the expectation is collapsed the same way.
+    expect(screen.getByTestId('world-status-stats'))
+      .toHaveTextContent(`${(41393).toLocaleString().replace(/\s/g, ' ')} VOBs`);
     expect(screen.queryByTestId('world-unresolved-open')).not.toBeInTheDocument();
   });
 
