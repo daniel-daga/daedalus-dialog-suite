@@ -30,8 +30,8 @@ for (const value of ['Trade', 'Hügo', '1', '']) {
       model = hydrate(model);
       const code = new SemanticCodeGenerator({ preserveSourceStyle: cycle !== 1 }).generateSemanticModel(model);
       model = parse(code);
-      assert.equal(model.dialogs.D.properties.description, `"${value}"`, code);
-      assert.equal(model.dialogs.D.properties.custom, `"${value}"`, code);
+      assert.equal(model.dialogs.D.properties.description, value, code);
+      assert.equal(model.dialogs.D.properties.custom, value, code);
     }
   });
 }
@@ -42,7 +42,7 @@ test('documented hand-built description is a string literal', () => {
   const func = new DialogFunction('Trade', 'void');
   const model = hydrate({ dialogs: { D: dialog }, functions: { Trade: func } });
   const code = new SemanticCodeGenerator().generateSemanticModel(model);
-  assert.equal(parse(code).dialogs.D.properties.description, '"Trade"', code);
+  assert.equal(parse(code).dialogs.D.properties.description, 'Trade', code);
 });
 
 test('explicit expression metadata takes precedence over description literal default', () => {

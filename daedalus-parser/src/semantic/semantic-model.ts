@@ -918,6 +918,28 @@ function linkPropertiesToFunctions(
   return linked;
 }
 
+/**
+ * A string-literal property holds its contents. JSON written before that holds
+ * the quoted token; since Daedalus strings cannot contain `"`, a quoted value
+ * that is not an expression is unambiguously such a token. Unwrap it, mark it
+ * literal (before function linking, so it can never become a reference), and
+ * unwrap a preserved body's baseline the same way so it still compares equal.
+ */
+function unquoteLegacyLiterals(dialog: Dialog, rawProperties: Record<string, any>): Record<string, any> {
+  const properties = { ...rawProperties };
+  for (const key of Object.keys(properties)) {
+    const value = properties[key];
+    if (typeof value !== 'string' || value.length < 2 || !value.startsWith('"') || !value.endsWith('"')) continue;
+    if (dialog.propertyExpressionKeys?.includes(key)) continue;
+    properties[key] = value.slice(1, -1);
+    dialog.propertyLiteralKeys ??= [];
+    if (!dialog.propertyLiteralKeys.includes(key)) dialog.propertyLiteralKeys.push(key);
+    const baseline = dialog.sourceBody?.propertyValues;
+    if (baseline && baseline[key] === value) baseline[key] = properties[key];
+  }
+  return properties;
+}
+
 /** Lossless fallback for constructors that cannot be represented as property rows. */
 export interface DialogSourceBody {
   text: string;
@@ -1075,8 +1097,9 @@ export class Dialog {
     }
 
     // --- function-reference linking: resolve property values to live DialogFunction instances ---
+    const properties = unquoteLegacyLiterals(dialog, json.properties ?? {});
     const literalKeys = (dialog.propertyLiteralKeys || []).filter(key => !dialog.propertyExpressionKeys?.includes(key));
-    dialog.properties = linkPropertiesToFunctions(json.name, json.properties ?? {}, functionsMap, literalKeys);
+    dialog.properties = linkPropertiesToFunctions(json.name, properties, functionsMap, literalKeys);
     if (!resolveDialogFunction(dialog, 'information') && Array.isArray(json.actions)) {
       dialog.actions = json.actions.map((action: any) => deserializeAction(action));
     }

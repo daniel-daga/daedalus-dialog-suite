@@ -167,11 +167,15 @@ unique property-only bodies remain structurally editable.
 `preserveSourceStyle`; changing a marked value emits the current expression. Keep `sourceBody`
 through JSON/IPC; `deserializeSemanticModel` restores it automatically.
 
-`propertyLiteralKeys` records string-valued source assignments and keeps edited
-unquoted model text quoted during generation and JSON hydration, even when it
-matches a function name. A newly constructed `Dialog` marks `description` as a
-literal. Explicit `propertyExpressionKeys` take precedence; legacy JSON without
-literal metadata retains the previous value inference.
+`propertyLiteralKeys` records string-valued source assignments. Such a
+property's value is the string's contents, without quotes (`description = "Hallo";`
+reads as `'Hallo'`); generation quotes it, and it stays a string through JSON
+hydration even when it matches a function name. A value containing `"` cannot
+be written and generation throws. A newly constructed `Dialog` marks
+`description` as a literal. Explicit `propertyExpressionKeys` take precedence.
+JSON from before contents were stored holds the quoted token: hydration unwraps
+it and marks the key literal; other legacy JSON without literal metadata retains
+the previous value inference.
 
 `Dialog.actions` reads and edits the current information function's action array.
 It follows array replacement, function-object replacement, function-dictionary
@@ -571,7 +575,7 @@ visitor.pass2_analyzeAndLink(tree.rootNode);
 
 // Modify
 const dialog = visitor.semanticModel.dialogs['DIA_Hero_Trade'];
-dialog.properties.description = '"Buy items"';
+dialog.properties.description = 'Buy items';
 dialog.properties.nr = 5;
 
 // Generate
