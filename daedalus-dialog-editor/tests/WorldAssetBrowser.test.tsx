@@ -306,6 +306,7 @@ describe('WorldAssetBrowser', () => {
       render(<WorldAssetBrowser listAssets={mixed()} onPreview={jest.fn()} sources={MOUNTS} />);
       await screen.findByTestId('world-asset-RETAIL.TEX');
 
+      await user.click(screen.getByTestId('world-asset-filter-toggle'));
       await user.selectOptions(screen.getByTestId('world-asset-source'), '2');
 
       // Everything the mod holds, including what it only shadows, and nothing
@@ -323,6 +324,7 @@ describe('WorldAssetBrowser', () => {
       // Merged, `SHARED.TEX` is not overridden — it *is* the mod's copy.
       expect(screen.getByTestId('world-asset-SHARED.TEX')).not.toHaveAttribute('data-overridden');
 
+      await user.click(screen.getByTestId('world-asset-filter-toggle'));
       await user.selectOptions(screen.getByTestId('world-asset-source'), '0');
       expect(screen.getByTestId('world-asset-SHARED.TEX')).toHaveAttribute('data-overridden', 'true');
       expect(screen.getByTestId('world-asset-RETAIL.TEX')).not.toHaveAttribute('data-overridden');
@@ -333,6 +335,7 @@ describe('WorldAssetBrowser', () => {
       render(<WorldAssetBrowser listAssets={mixed()} onPreview={jest.fn()} sources={MOUNTS} />);
       await screen.findByTestId('world-asset-RETAIL.TEX');
 
+      await user.click(screen.getByTestId('world-asset-filter-toggle'));
       await user.selectOptions(screen.getByTestId('world-asset-source'), '2');
       expect(screen.getByTestId('world-asset-count')).toHaveTextContent('3 of 5');
     });
@@ -342,6 +345,7 @@ describe('WorldAssetBrowser', () => {
         <WorldAssetBrowser listAssets={mixed()} onPreview={jest.fn()} sources={['C:/Gothic II/Data/Textures.vdf']} />,
       );
       await screen.findByTestId('world-asset-RETAIL.TEX');
+      await userEvent.setup().click(screen.getByTestId('world-asset-filter-toggle'));
       expect(screen.queryByTestId('world-asset-source')).not.toBeInTheDocument();
 
       rerender(<WorldAssetBrowser listAssets={mixed()} onPreview={jest.fn()} />);
@@ -367,6 +371,7 @@ describe('WorldAssetBrowser', () => {
       expect(within(tile).getByTestId('world-asset-tile-origin')).toHaveTextContent('Textures.vdf');
       expect(tile).not.toHaveAttribute('data-overridden');
 
+      await user.click(screen.getByTestId('world-asset-filter-toggle'));
       await user.selectOptions(screen.getByTestId('world-asset-source'), '0');
       expect(screen.getByTestId('world-asset-tile-SHARED.TEX')).toHaveAttribute('data-overridden', 'true');
     });
@@ -382,6 +387,7 @@ describe('WorldAssetBrowser', () => {
       render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} sources={MOUNTS} />);
       await screen.findByTestId('world-asset-RETAIL.TEX');
 
+      await user.click(screen.getByTestId('world-asset-filter-toggle'));
       await user.selectOptions(screen.getByTestId('world-asset-source'), '2');
       await user.click(screen.getByTestId('world-asset-Meshes'));
 
@@ -585,6 +591,7 @@ describe('WorldAssetBrowser', () => {
     it('narrows the files to MOBs or to VOBs, keeps the directories, and says it is narrowing', async () => {
       render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} />);
       await screen.findByTestId('world-asset-NW_CRATE.MRM');
+      fireEvent.click(screen.getByTestId('world-asset-filter-toggle'));
       const facet = screen.getByTestId('world-asset-role');
       expect(facet).toHaveValue('all');
 
@@ -601,6 +608,7 @@ describe('WorldAssetBrowser', () => {
       const user = userEvent.setup();
       render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} />);
       await screen.findByTestId('world-asset-NW_CRATE.MRM');
+      await user.click(screen.getByTestId('world-asset-filter-toggle'));
       fireEvent.change(screen.getByTestId('world-asset-role'), { target: { value: 'mob' } });
 
       await user.click(screen.getByTestId('world-asset-Sub'));
@@ -630,6 +638,7 @@ describe('WorldAssetBrowser', () => {
     it('offers every group with both spellings, and narrows to one, keeping the directories', async () => {
       render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} />);
       await screen.findByTestId('world-asset-NW_CRATE.MRM');
+      fireEvent.click(screen.getByTestId('world-asset-filter-toggle'));
       const facet = screen.getByTestId('world-asset-format');
       expect(facet).toHaveValue('all');
       expect(within(facet).getByRole('option', { name: 'Textures (TGA → TEX)' })).toBeInTheDocument();
@@ -651,6 +660,7 @@ describe('WorldAssetBrowser', () => {
       const { list: tree } = listing();
       render(<WorldAssetBrowser listAssets={tree} searchAssets={search} onPreview={jest.fn()} />);
       await screen.findByTestId('world-asset-Meshes');
+      await user.click(screen.getByTestId('world-asset-filter-toggle'));
       fireEvent.change(screen.getByTestId('world-asset-format'), { target: { value: 'model' } });
 
       await user.type(screen.getByTestId('world-asset-filter'), 'c');
@@ -1108,6 +1118,7 @@ describe('WorldAssetBrowser', () => {
       await user.click(screen.getByTestId('world-asset-category-Einrichtung'));
       expect(screen.getByTestId('world-asset-tile-NW_CITY_TABLE_01.3DS')).toBeInTheDocument();
 
+      await user.click(screen.getByTestId('world-asset-catalog-filter-toggle'));
       fireEvent.change(screen.getByTestId('world-asset-catalog-role'), { target: { value: 'mob' } });
 
       expect(screen.getByTestId('world-asset-tile-BENCH_1_OC.ASC')).toBeInTheDocument();

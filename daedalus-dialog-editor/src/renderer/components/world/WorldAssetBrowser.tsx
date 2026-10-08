@@ -1,10 +1,11 @@
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Box, Breadcrumbs, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
-  IconButton, Link, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
+  IconButton, Link, Tab, Tabs, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import FolderIcon from '@mui/icons-material/Folder';
+import FilterListIcon from '@mui/icons-material/FilterList';
 import GridViewIcon from '@mui/icons-material/GridView';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import LabelOutlinedIcon from '@mui/icons-material/LabelOutlined';
@@ -287,6 +288,7 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
   const [path, setPath] = useState('/');
   const [view, setView] = useState<'list' | 'grid'>('list');
   const [mode, setMode] = useState<'browse' | 'favorites' | 'categories'>('browse');
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const tileActions = useMemo<TileCatalogActions | undefined>(() => (
     catalog === undefined ? undefined : {
       isFavorite: (name) => isFavorite(catalog.catalog, name),
@@ -398,6 +400,7 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
   // The format facet (#289), a lens of the same kind: the kind of asset, so a
   // `.3DS` and the `.MRM` compiled from it land in one group.
   const [format, setFormat] = useState<AssetFormat | 'all'>('all');
+  const activeFilters = Number(role !== 'all') + Number(format !== 'all') + Number(only !== null);
   const filtered = useMemo(() => {
     // Everything the mount holds, including what a later one shadows — the
     // shadowed copy is the whole point of asking about one mount.
@@ -534,18 +537,16 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       {catalog !== undefined && thumbnails !== undefined && (
-        <ToggleButtonGroup
-          size="small"
-          exclusive
-          fullWidth
+        <Tabs
           value={mode}
-          onChange={(_event, next: 'browse' | 'favorites' | 'categories' | null) => { if (next !== null) setMode(next); }}
-          sx={{ '& .MuiToggleButton-root': { py: 0.25, fontSize: 11, textTransform: 'none' } }}
+          onChange={(_event, next: 'browse' | 'favorites' | 'categories') => setMode(next)}
+          variant="fullWidth"
+          sx={{ minHeight: 32, borderBottom: 1, borderColor: 'divider', '& .MuiTab-root': { minHeight: 32, fontSize: 12 } }}
         >
-          <ToggleButton value="browse" data-testid="world-asset-mode-browse">Browse</ToggleButton>
-          <ToggleButton value="favorites" data-testid="world-asset-mode-favorites">Favorites</ToggleButton>
-          <ToggleButton value="categories" data-testid="world-asset-mode-categories">Categories</ToggleButton>
-        </ToggleButtonGroup>
+          <Tab value="browse" label="Browse" data-testid="world-asset-mode-browse" />
+          <Tab value="favorites" label="Favorites" data-testid="world-asset-mode-favorites" />
+          <Tab value="categories" label="Categories" data-testid="world-asset-mode-categories" />
+        </Tabs>
       )}
       {catalog !== undefined && thumbnails !== undefined && tileActions !== undefined && mode !== 'browse' && (
         <WorldAssetCatalogView
@@ -618,7 +619,7 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
             })}
           </Breadcrumbs>
         </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0 }} data-testid="world-asset-search-row">
           <TextField
             size="small"
             variant="outlined"
@@ -631,42 +632,75 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
             }}
             sx={{ flex: 1, minWidth: 0, '& .MuiInputBase-input': { fontSize: 12, py: 0.5 } }}
           />
-          <RoleFacet value={role} onChange={setRole} testId="world-asset-role" />
-          <TextField
-            select
+          <Button
             size="small"
-            value={format}
-            onChange={(event) => setFormat(event.target.value as AssetFormat | 'all')}
-            SelectProps={{ native: true }}
-            inputProps={{ 'data-testid': 'world-asset-format', 'aria-label': 'File format' }}
-            sx={{ minWidth: 80, '& .MuiInputBase-input': { fontSize: 12, py: 0.5 } }}
+            variant={activeFilters > 0 ? 'contained' : 'outlined'}
+            startIcon={<FilterListIcon sx={{ fontSize: 16 }} />}
+            onClick={() => setFiltersOpen((open) => !open)}
+            aria-expanded={filtersOpen}
+            aria-controls={filtersOpen ? 'world-asset-filter-panel' : undefined}
+            data-testid="world-asset-filter-toggle"
+            sx={{ flexShrink: 0, minWidth: 0, px: 1, whiteSpace: 'nowrap' }}
           >
-            <option value="all">All formats</option>
-            {ASSET_FORMATS.map((group) => (
-              <option key={group.id} value={group.id}>{group.label}</option>
-            ))}
-          </TextField>
-          {/* One mount is no facet: there is nothing to narrow to and nothing
-              can be overridden. */}
-          {sources.length > 1 && (
-            <TextField
-              select
-              size="small"
-              value={only === null ? 'all' : String(only)}
-              onChange={(event) => {
-                const next = event.target.value;
-                setOnly(next === 'all' ? null : Number(next));
-              }}
-              SelectProps={{ native: true }}
-              inputProps={{ 'data-testid': 'world-asset-source', 'aria-label': 'Asset source' }}
-              sx={{ minWidth: 96, '& .MuiInputBase-input': { fontSize: 12, py: 0.5 } }}
-            >
-              <option value="all">All sources</option>
-              {sourceLabels.map((label, at) => (
-                <option key={sources[at]} value={String(at)} title={sources[at]}>{label}</option>
-              ))}
-            </TextField>
-          )}
+            Filters{activeFilters > 0 ? ` ${activeFilters}` : ''}
+          </Button>
+        </Box>
+        {filtersOpen && (
+          <Box
+            id="world-asset-filter-panel"
+            data-testid="world-asset-filter-panel"
+            sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(132px, 1fr))', gap: 0.75, py: 0.5 }}
+          >
+            <Box sx={{ minWidth: 0, '& .MuiFormControl-root': { width: '100%' } }}>
+              <Typography variant="caption" color="text.secondary">Visual role</Typography>
+              <RoleFacet value={role} onChange={setRole} testId="world-asset-role" />
+            </Box>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="caption" color="text.secondary">Format</Typography>
+              <TextField
+                select
+                size="small"
+                value={format}
+                onChange={(event) => setFormat(event.target.value as AssetFormat | 'all')}
+                SelectProps={{ native: true }}
+                inputProps={{ 'data-testid': 'world-asset-format', 'aria-label': 'File format' }}
+                fullWidth
+                sx={{ '& .MuiInputBase-input': { fontSize: 12, py: 0.5 } }}
+              >
+                <option value="all">All formats</option>
+                {ASSET_FORMATS.map((group) => (
+                  <option key={group.id} value={group.id}>{group.label}</option>
+                ))}
+              </TextField>
+            </Box>
+            {/* One mount is no facet: there is nothing to narrow to and nothing
+                can be overridden. */}
+            {sources.length > 1 && (
+              <Box sx={{ minWidth: 0, gridColumn: '1 / -1' }}>
+                <Typography variant="caption" color="text.secondary">Source</Typography>
+                <TextField
+                  select
+                  size="small"
+                  value={only === null ? 'all' : String(only)}
+                  onChange={(event) => {
+                    const next = event.target.value;
+                    setOnly(next === 'all' ? null : Number(next));
+                  }}
+                  SelectProps={{ native: true }}
+                  inputProps={{ 'data-testid': 'world-asset-source', 'aria-label': 'Asset source' }}
+                  fullWidth
+                  sx={{ '& .MuiInputBase-input': { fontSize: 12, py: 0.5 } }}
+                >
+                  <option value="all">All sources</option>
+                  {sourceLabels.map((label, at) => (
+                    <option key={sources[at]} value={String(at)} title={sources[at]}>{label}</option>
+                  ))}
+                </TextField>
+              </Box>
+            )}
+          </Box>
+        )}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0, flexWrap: 'wrap' }} data-testid="world-asset-status-row">
           {/* Only once the listing has actually arrived. `sorted` is `[]`
               while loading and on a refusal alike, so an unconditional
               count would assert "0 entries" for a directory nobody has
@@ -678,6 +712,7 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
               color="text.secondary"
               noWrap
               data-testid="world-asset-count"
+              sx={{ flexGrow: 1 }}
             >
               {/* Either filter narrows it, and the count has to say so: a
                   source facet that silently kept reporting the whole

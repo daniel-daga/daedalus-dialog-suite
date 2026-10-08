@@ -117,10 +117,62 @@ test.describe('The Assets panel says which source an asset came from', () => {
 
     // Narrowed to the mesh tree: everything it holds, including the copy the
     // texture tree shadows, and nothing the texture tree alone has.
+    await page.getByTestId('world-asset-filter-toggle').click();
     await page.getByTestId('world-asset-source').selectOption({ label: 'Meshes/_compiled' });
     await expect(page.getByTestId('world-asset-SHARED.MRM')).toHaveAttribute('data-overridden', 'true');
     await expect(page.getByTestId('world-asset-MESH_ONLY.MRM')).toBeVisible();
     await expect(page.getByTestId('world-asset-MESH_ONLY.MRM')).not.toHaveAttribute('data-overridden', 'true');
     await expect(page.getByTestId('world-asset-TEX_ONLY-C.TEX')).toHaveCount(0);
+  });
+
+  test('keeps search usable in the compact asset toolbar and expands its filters', async () => {
+    const { page } = fixture;
+
+    await page.getByRole('button', { name: /Open Project/i }).first().click();
+    await page.getByTestId('world-toggle').click();
+    await page.getByTestId('world-open').click();
+    await page.getByTestId('world-picker-browse').click();
+    await page.getByTestId('world-panel-assets').click();
+    await expect(page.getByTestId('world-asset-SHARED.MRM')).toBeVisible();
+
+    const search = page.getByTestId('world-asset-filter');
+    const toggle = page.getByTestId('world-asset-filter-toggle');
+    const searchBox = await search.boundingBox();
+    const toggleBox = await toggle.boundingBox();
+    expect(searchBox).not.toBeNull();
+    expect(toggleBox).not.toBeNull();
+    expect(searchBox!.width).toBeGreaterThan(160);
+    expect(toggleBox!.x).toBeGreaterThan(searchBox!.x + searchBox!.width);
+    await expect(page.getByTestId('world-asset-filter-panel')).toHaveCount(0);
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    const filters = page.getByTestId('world-asset-filter-panel');
+    await expect(filters).toBeVisible();
+    await expect(filters.getByTestId('world-asset-role')).toBeVisible();
+    await expect(filters.getByTestId('world-asset-format')).toBeVisible();
+    await expect(filters.getByTestId('world-asset-source')).toBeVisible();
+    const sourceBox = await filters.getByTestId('world-asset-source').boundingBox();
+    const formatBox = await filters.getByTestId('world-asset-format').boundingBox();
+    expect(sourceBox).not.toBeNull();
+    expect(formatBox).not.toBeNull();
+    expect(sourceBox!.width).toBeGreaterThan(formatBox!.width * 1.5);
+
+    await filters.getByTestId('world-asset-source').selectOption({ label: 'Meshes/_compiled' });
+    await expect(toggle).toContainText('1');
+    await toggle.click();
+    await expect(filters).toHaveCount(0);
+    await expect(page.getByTestId('world-asset-MESH_ONLY.MRM')).toBeVisible();
+    await expect(page.getByTestId('world-asset-TEX_ONLY-C.TEX')).toHaveCount(0);
+
+    await page.getByTestId('world-asset-mode-favorites').click();
+    const catalogSearch = page.getByTestId('world-asset-catalog-filter');
+    const catalogToggle = page.getByTestId('world-asset-catalog-filter-toggle');
+    const catalogSearchBox = await catalogSearch.boundingBox();
+    expect(catalogSearchBox).not.toBeNull();
+    expect(catalogSearchBox!.width).toBeGreaterThan(160);
+    await expect(page.getByTestId('world-asset-catalog-filter-panel')).toHaveCount(0);
+    await catalogToggle.click();
+    await expect(page.getByTestId('world-asset-catalog-role')).toBeVisible();
   });
 });
