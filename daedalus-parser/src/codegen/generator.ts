@@ -26,6 +26,7 @@ interface GlobalSymbol {
   name: string;
   type?: string;
   value?: string | number | boolean;
+  valueIsLiteral?: boolean;
   parent?: string;
   sourceText?: string;
   leadingComments?: string[];
@@ -290,7 +291,8 @@ export class SemanticCodeGenerator {
     if (symbol.sourceText) {
       parts.push(symbol.sourceText);
     } else if (type === 'constant') {
-      parts.push(`const ${symbol.type} ${symbol.name} = ${this.formatValue(symbol.value!)};`);
+      const value = symbol.valueIsLiteral ? renderStringValue(String(symbol.value)) : this.formatValue(symbol.value!);
+      parts.push(`const ${symbol.type} ${symbol.name} = ${value};`);
     } else if (type === 'variable') {
       parts.push(`var ${symbol.type} ${symbol.name};`);
     } else if (type === 'class') {

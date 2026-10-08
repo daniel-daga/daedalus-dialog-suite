@@ -33,7 +33,7 @@ describe('questAnalysis', () => {
             const questName = 'TOPIC_TEST';
             const misVarName = 'MIS_TEST';
 
-            const constants = [{ name: questName, value: '"Test Quest"', filePath: 'Topics.d' }];
+            const constants = [{ name: questName, value: 'Test Quest', filePath: 'Topics.d' }];
             const variables = [{ name: misVarName, type: 'int', filePath: 'Topics.d' }];
 
             const functions = [
@@ -62,7 +62,7 @@ describe('questAnalysis', () => {
             const questName = 'TOPIC_WIP';
             const misVarName = 'MIS_WIP';
 
-            const constants = [{ name: questName, value: '"WIP Quest"' }];
+            const constants = [{ name: questName, value: 'WIP Quest' }];
             const variables = [{ name: misVarName, type: 'int' }];
 
             const functions = [
@@ -85,7 +85,7 @@ describe('questAnalysis', () => {
             const questName = 'TOPIC_NOVAR';
             // No variable definition
 
-            const model = createMockModel([], [], [{ name: questName, value: '"No Var"' }], []);
+            const model = createMockModel([], [], [{ name: questName, value: 'No Var' }], []);
             const result = analyzeQuest(model, questName);
 
             expect(result.status).toBe('not_started');
@@ -95,7 +95,7 @@ describe('questAnalysis', () => {
 
         it('should match topic and MIS references case-insensitively', () => {
             const questName = 'TOPIC_RescueBennet';
-            const constants = [{ name: questName, value: '"Bennet sitzt im Knast"', filePath: 'LOG_Constants_Hoshi.d' }];
+            const constants = [{ name: questName, value: 'Bennet sitzt im Knast', filePath: 'LOG_Constants_Hoshi.d' }];
             const variables = [{ name: 'MIS_RescueBennet', type: 'int', filePath: 'Story_Globals.d' }];
             const functions = [
                 {
@@ -124,7 +124,7 @@ describe('questAnalysis', () => {
 
         it('should infer implemented status from MIS-only terminal assignment', () => {
             const questName = 'TOPIC_MIS_ONLY';
-            const constants = [{ name: questName, value: '"MIS Only Quest"', filePath: 'LOG_Constants.d' }];
+            const constants = [{ name: questName, value: 'MIS Only Quest', filePath: 'LOG_Constants.d' }];
             const variables = [{ name: 'MIS_MIS_ONLY', type: 'int', filePath: 'Story_Globals.d' }];
             const functions = [
                 {
@@ -146,7 +146,7 @@ describe('questAnalysis', () => {
 
         it('should infer implemented status from MIS-only success assignment', () => {
             const questName = 'TOPIC_MIS_SUCCESS';
-            const constants = [{ name: questName, value: '"MIS Success Quest"' }];
+            const constants = [{ name: questName, value: 'MIS Success Quest' }];
             const variables = [{ name: 'MIS_MIS_SUCCESS', type: 'int' }];
             const functions = [
                 {
@@ -168,7 +168,7 @@ describe('questAnalysis', () => {
 
         it('should infer implemented status from MIS-only failed assignment', () => {
             const questName = 'TOPIC_MIS_FAILED';
-            const constants = [{ name: questName, value: '"MIS Failed Quest"' }];
+            const constants = [{ name: questName, value: 'MIS Failed Quest' }];
             const variables = [{ name: 'MIS_MIS_FAILED', type: 'int' }];
             const functions = [
                 {
@@ -191,7 +191,7 @@ describe('questAnalysis', () => {
 
         it('should flag lifecycle conflicts when topic and MIS terminal states disagree', () => {
             const questName = 'TOPIC_CONFLICT';
-            const constants = [{ name: questName, value: '"Conflict Quest"' }];
+            const constants = [{ name: questName, value: 'Conflict Quest' }];
             const variables = [{ name: 'MIS_CONFLICT', type: 'int' }];
             const functions = [
                 {
@@ -217,21 +217,21 @@ describe('questAnalysis', () => {
         // case-insensitive matches, and no-signal quests.
         const buildBatchFixture = () => {
             const constants = [
-                { name: 'TOPIC_IMPL', value: '"Implemented"', filePath: 'A.d' },
-                { name: 'TOPIC_WIPQ', value: '"WIP"', filePath: 'A.d' },
-                { name: 'TOPIC_RUNNING', value: '"Running"', filePath: 'A.d' },
-                { name: 'TOPIC_EMPTY', value: '"Empty"', filePath: 'A.d' },
-                { name: 'TOPIC_MISONLY', value: '"MIS only"', filePath: 'A.d' },
-                { name: 'TOPIC_MIXED', value: '"Mixed"', filePath: 'A.d' },
-                { name: 'TOPIC_CONFLICT', value: '"Conflict"', filePath: 'A.d' },
-                { name: 'TOPIC_CaseMix', value: '"Case mix"', filePath: 'B.d' },
-                { name: 'TOPIC_CONDONLY', value: '"Cond only"', filePath: 'B.d' },
-                { name: 'TOPIC_ENTRYONLY', value: '"Entry only"', filePath: 'B.d' },
-                { name: 'TOPIC_ODDCOND', value: '"Odd cond"', filePath: 'B.d' },
-                { name: 'TOPIC_PLUS', value: '"Compound assign"', filePath: 'B.d' },
+                { name: 'TOPIC_IMPL', value: 'Implemented', filePath: 'A.d' },
+                { name: 'TOPIC_WIPQ', value: 'WIP', filePath: 'A.d' },
+                { name: 'TOPIC_RUNNING', value: 'Running', filePath: 'A.d' },
+                { name: 'TOPIC_EMPTY', value: 'Empty', filePath: 'A.d' },
+                { name: 'TOPIC_MISONLY', value: 'MIS only', filePath: 'A.d' },
+                { name: 'TOPIC_MIXED', value: 'Mixed', filePath: 'A.d' },
+                { name: 'TOPIC_CONFLICT', value: 'Conflict', filePath: 'A.d' },
+                { name: 'TOPIC_CaseMix', value: 'Case mix', filePath: 'B.d' },
+                { name: 'TOPIC_CONDONLY', value: 'Cond only', filePath: 'B.d' },
+                { name: 'TOPIC_ENTRYONLY', value: 'Entry only', filePath: 'B.d' },
+                { name: 'TOPIC_ODDCOND', value: 'Odd cond', filePath: 'B.d' },
+                { name: 'TOPIC_PLUS', value: 'Compound assign', filePath: 'B.d' },
                 // Case-insensitive duplicate: first Object.entries match must win.
-                { name: 'TOPIC_DupCase', value: '"Dup first"', filePath: 'C.d' },
-                { name: 'TOPIC_DUPCASE', value: '"Dup second"', filePath: 'D.d' }
+                { name: 'TOPIC_DupCase', value: 'Dup first', filePath: 'C.d' },
+                { name: 'TOPIC_DUPCASE', value: 'Dup second', filePath: 'D.d' }
             ];
             const variables = [
                 { name: 'MIS_IMPL', type: 'int', filePath: 'G.d' },

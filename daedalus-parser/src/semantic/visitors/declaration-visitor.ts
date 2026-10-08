@@ -364,11 +364,14 @@ export class DeclarationVisitor {
 
     if (keyword === 'const') {
       let value: string | number | boolean = 0;
+      const isLiteral = valueNode?.type === 'string';
       if (valueNode) {
-        value = parseLiteralOrIdentifier(valueNode);
+        // A string literal's contents; the quotes are syntax, `valueIsLiteral` the kind.
+        value = isLiteral ? valueNode.text.slice(1, -1) : parseLiteralOrIdentifier(valueNode);
       }
 
       const constant = new GlobalConstant(name, type, value);
+      if (isLiteral) constant.valueIsLiteral = true;
       constant.sourceText = node.text;
       constant.leadingComments = [...this.pendingLeadingComments];
       constant.position = {

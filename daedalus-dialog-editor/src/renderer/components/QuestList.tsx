@@ -124,7 +124,7 @@ const QuestRow = React.memo(({ index, style, data }: ListChildComponentProps<Ite
           </Tooltip>
         </ListItemIcon>
         <ListItemText
-          primary={String(quest.value).replace(/^"|"$/g, '')}
+          primary={String(quest.value)}
           secondary={quest.name}
           primaryTypographyProps={{ noWrap: true }}
           secondaryTypographyProps={{ noWrap: true, fontSize: '0.75rem' }}

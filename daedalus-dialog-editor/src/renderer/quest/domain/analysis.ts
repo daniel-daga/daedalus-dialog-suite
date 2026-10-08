@@ -180,7 +180,7 @@ export const analyzeQuest = (semanticModel: SemanticModel, questName: string): Q
         hasObsolete,
         lifecycleSource,
         hasLifecycleConflict,
-        description: topicConstant ? String(topicConstant.value).replace(/^"|"$/g, '') : '',
+        description: topicConstant ? String(topicConstant.value) : '',
         filePaths: {
             topic: topicConstant?.filePath || null,
             variable: misVariable?.filePath || null
@@ -340,7 +340,7 @@ export const analyzeQuests = (
             hasObsolete,
             lifecycleSource,
             hasLifecycleConflict,
-            description: topicConstant ? String(topicConstant.value).replace(/^"|"$/g, '') : '',
+            description: topicConstant ? String(topicConstant.value) : '',
             filePaths: {
                 topic: topicConstant?.filePath || null,
                 variable: misVariable?.filePath || null

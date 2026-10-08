@@ -28,8 +28,8 @@ const DIALOG_FILE = `//__MOCK_MODEL__${JSON.stringify({
 
 const CONSTANTS_FILE = `//__MOCK_MODEL__ ${JSON.stringify({
   constants: {
-    TOPIC_Sheep: { name: 'TOPIC_Sheep', type: 'string', value: '"Die verlorenen Schafe"', filePath: CONSTANTS_PATH },
-    TOPIC_Wolves: { name: 'TOPIC_Wolves', type: 'string', value: '"Wolves at the farm"', filePath: CONSTANTS_PATH }
+    TOPIC_Sheep: { name: 'TOPIC_Sheep', type: 'string', value: 'Die verlorenen Schafe', filePath: CONSTANTS_PATH },
+    TOPIC_Wolves: { name: 'TOPIC_Wolves', type: 'string', value: 'Wolves at the farm', filePath: CONSTANTS_PATH }
   }
 })}
 const string TOPIC_Sheep = "Die verlorenen Schafe";

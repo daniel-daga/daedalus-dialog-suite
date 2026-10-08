@@ -235,10 +235,19 @@ The editor writes the kind explicitly (`descriptionSync.ts` `withDescription`):
 the Properties panel has a Text/Constant switch, Text strips `"` and line breaks
 on input, and a constant description never follows the first line (#277).
 
-`GlobalConstant.value` still holds the token, and six renderer sites strip it by
-hand (`QuestList`, `QuestPicker`, `LogEntryRenderer`, `quest/domain/analysis.ts`,
-`npc/npcVisual.ts`, `npc/npcForm.ts`). It is the same defect with a wider
-surface — quest topics and NPC fields — and has not been changed.
+Global constants follow the same rule (#355): `const string TOPIC_A = "Die
+Banditen";` reads as `value: 'Die Banditen'` with `valueIsLiteral: true`, while
+`const string TOPIC_B = TOPIC_A;` keeps `'TOPIC_A'` and no flag. A parsed
+constant is still emitted from its `sourceText`; a constant built without one
+is quoted when `valueIsLiteral` is set, even as a single word. Hydration
+unwraps a legacy value that is one whole token (`/^"[^"]*"$/`, so `"a" + "b"`
+is left alone) and sets the flag; the dialog-property migration uses the same
+test. The editor's topic-title readers (`QuestList`, `QuestPicker`,
+`LogEntryRenderer`, `quest/domain/analysis.ts`) no longer strip quotes, and the
+Variable Manager and constant autocomplete show the text. The editor's constant
+writers (`addVariable`, `updateGlobalConstant`, `questLogFiles`) already took
+text and quoted by type. NPC field values (`npc-definition` statements) are a
+different model and still carry their source text.
 
 ## C_INFO constructor projection boundary (#340)
 

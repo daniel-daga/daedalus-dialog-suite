@@ -29,8 +29,6 @@ export interface QuestPickerProps {
 const TOPIC_PREFIX = /^topic_/i;
 const PLACEHOLDER_TOPIC = /^topic_?$/i;
 
-const unquote = (value: unknown) => (typeof value === 'string' ? value.replace(/^"(.*)"$/s, '$1') : '');
-
 const filter = createFilterOptions<QuestOption>({ stringify: (option) => `${option.title} ${option.topic}` });
 
 /**
@@ -59,7 +57,7 @@ const QuestPicker: React.FC<QuestPickerProps> = ({
   const options = useMemo<QuestOption[]>(
     () => Object.values(constants || {})
       .filter((c) => TOPIC_PREFIX.test(c.name))
-      .map((c) => ({ topic: c.name, title: unquote(c.value) || c.name }))
+      .map((c) => ({ topic: c.name, title: (typeof c.value === 'string' && c.value) || c.name }))
       .sort((a, b) => a.title.localeCompare(b.title)),
     [constants]
   );

@@ -159,7 +159,7 @@ const CLOSE_TOPICS_PATH = 'project/dialogs/B_CloseTopicsTest.d';
 // models the real parser would produce are injected; the source text below
 // each marker is what the declarations are written into.
 const CONSTANTS_FILE = `//__MOCK_MODEL__ ${JSON.stringify({
-  constants: { TOPIC_Old: { name: 'TOPIC_Old', type: 'string', value: '"Old Quest"', filePath: CONSTANTS_PATH } }
+  constants: { TOPIC_Old: { name: 'TOPIC_Old', type: 'string', value: 'Old Quest', filePath: CONSTANTS_PATH } }
 })}
 const string TOPIC_Old = "Old Quest";
 var int MIS_Old;
