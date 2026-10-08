@@ -4,9 +4,12 @@ This document captures the durable architecture decisions for quest editing in t
 
 ## Scope
 
-The quest surface is **read-only**: a quest list and a details panel
+The quest surface is a quest list and a details panel
 (`components/QuestEditor.tsx`, `QuestList.tsx`, `QuestDetails.tsx`), backed by
-pure analysis and graph inference in `quest/domain/`. Its "Create New Quest"
+pure analysis and graph inference in `quest/domain/`. The details panel is the
+quest's diary (#324): every entry and state change in story order, entries
+edited in place, a jump to each writing dialog, and a one-click upgrade for an
+implicit quest. Its writes go through `components/questDiarySave.ts`. Its "Create New Quest"
 button opens the same create flow as a quest card's "New quest"
 (`RegisterTopicDialog` in create mode, #322): only the title is asked for; the
 `TOPIC_`/`MIS_` names (from `utils/questLogFiles.questNameFromTitle`), chapters
@@ -44,9 +47,12 @@ Two layers remain, with a one-way import direction (UI → domain):
   asserts the command write path stays removed.
 
 2. Quest UI (`components/QuestEditor.tsx`, `QuestList.tsx`, `QuestDetails.tsx`)
-- Reads via `quest/domain` and the project store; performs no quest-model
-  mutation beyond `projectStore.registerTopicInLogFiles` (through the create
-  flow).
+- Reads via `quest/domain` and the project store. Writes through
+  `projectStore.registerTopicInLogFiles` (the create flow) and
+  `questDiarySave.ts` (#324), which, like a routine save, opens the writing
+  function's file model, replaces its actions and saves it with the ordinary
+  `saveFile`; the page re-reads it through the store sync. An entry edit is
+  refused when the line at its path is no longer the entry the page read.
 
 ### Physical Layout
 
@@ -83,6 +89,22 @@ Two layers remain, with a one-way import direction (UI → domain):
   number stays a raw check (it may be a counter). The quest is picked by
   diary title through the topic its `MIS_` name gives (`MIS_X` → `TOPIC_X`),
   so a quest whose two names differ shows "Not declared" on the card.
+
+- `questDiary.ts` — the quest page as the diary (#324). `buildQuestDiary`
+  lists one quest's `B_LogEntry` lines and state changes, through if/else
+  branches, with each line's path in its function. A state written twice by
+  one function (topic status and `MIS_`, or `Log_CreateTopic`) is one row, and
+  `MIS_` counts only for the named `LOG_…` constants, as in `questSteps.ts`.
+  Story order is a topological order of `buildQuestGraph`'s edges; where the
+  graph leaves functions unordered, a start sorts before entries and entries
+  before an ending, then by name, and a cycle is broken at its lowest-ranked
+  node. Lines keep their written order within a function. An implicit quest
+  (no `MIS_` declared) reads "State inferred from dialog X", X being the
+  dialog that starts it; its upgrade declares `var int MIS_X` beside the
+  `TOPIC_` constant and `withQuestStateAssignments` sets `MIS_X` to the same
+  state right after each topic-status line (or a lone mission
+  `Log_CreateTopic`) in a list that does not set it already. A quest with no
+  ending shows "No ending yet", not an error.
 
 The graph node/edge types in `types/questGraph.ts` are editor-owned and carry
 no rendering-library dependency. The domain imports only model types

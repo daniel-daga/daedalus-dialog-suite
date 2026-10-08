@@ -13,7 +13,8 @@ import {
   Tooltip,
   Button,
   TextField,
-  CircularProgress
+  CircularProgress,
+  Alert
 } from '@mui/material';
 import {
   OpenInNew as OpenInNewIcon,
@@ -27,8 +28,16 @@ import {
 } from '@mui/icons-material';
 import type { SemanticModel } from '../types/global';
 import { useNavigation } from '../hooks/useNavigation';
-import { analyzeQuest, getQuestReferences } from '../quest/domain';
+import { analyzeQuest, getQuestReferences, buildQuestDiary, implicitQuestSource, type QuestDiaryItem, type QuestDiaryState } from '../quest/domain';
 import { useProjectStore } from '../store/projectStore';
+import { saveDiaryEntryText, upgradeImplicitQuest } from './questDiarySave';
+
+const STATE_LABEL: Record<QuestDiaryState, string> = {
+  running: 'Quest started',
+  success: 'Quest completed',
+  failed: 'Quest failed',
+  obsolete: 'Quest cancelled'
+};
 
 interface QuestDetailsProps {
   semanticModel: SemanticModel;
@@ -37,17 +46,22 @@ interface QuestDetailsProps {
 
 const QuestDetails: React.FC<QuestDetailsProps> = ({ semanticModel, questName }) => {
   const { navigateToDialog, navigateToSymbol } = useNavigation();
-  const addVariable = useProjectStore((s) => s.addVariable);
   const updateGlobalConstant = useProjectStore((s) => s.updateGlobalConstant);
   const isLoading = useProjectStore((s) => s.isLoading);
 
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitle, setEditTitle] = useState('');
+  const [editingEntry, setEditingEntry] = useState<QuestDiaryItem | null>(null);
+  const [entryText, setEntryText] = useState('');
+  const [isWriting, setIsWriting] = useState(false);
+  const [writeError, setWriteError] = useState<string | null>(null);
 
   // Reset editing state when quest changes
   useEffect(() => {
       setIsEditingTitle(false);
       setEditTitle('');
+      setEditingEntry(null);
+      setWriteError(null);
   }, [questName]);
 
   const analysis = useMemo(() => {
@@ -58,18 +72,46 @@ const QuestDetails: React.FC<QuestDetailsProps> = ({ semanticModel, questName })
     return questName ? getQuestReferences(semanticModel, questName) : [];
   }, [semanticModel, questName]);
 
-  const handleCreateVariable = async () => {
-      if (!analysis || analysis.misVariableExists || !analysis.misVariableName) return;
+  const diary = useMemo(() => {
+    return questName ? buildQuestDiary(semanticModel, questName) : [];
+  }, [semanticModel, questName]);
 
-      // Use topic file path if available, or just throw error/ask user (not implemented here)
-      const filePath = analysis.filePaths.topic;
-      if (filePath) {
-           await addVariable(analysis.misVariableName, 'int', undefined, filePath, false);
-      } else {
-          // Should normally allow picking file, but for now we rely on topic file being present
-          console.error("Cannot determine file path for new variable");
+  const conditionReferences = useMemo(() => references.filter((ref) => ref.type === 'condition'), [references]);
+
+  const write = async (task: () => Promise<void>) => {
+      setIsWriting(true);
+      setWriteError(null);
+      try {
+          await task();
+          return true;
+      } catch (error) {
+          setWriteError(error instanceof Error ? error.message : String(error));
+          return false;
+      } finally {
+          setIsWriting(false);
       }
   };
+
+  const handleSaveEntry = async () => {
+      if (!editingEntry) return;
+      if (await write(() => saveDiaryEntryText(editingEntry, entryText))) setEditingEntry(null);
+  };
+
+  const handleUpgrade = () => {
+      const declarationFile = analysis?.filePaths.topic;
+      if (!questName || !declarationFile) return;
+      void write(() => upgradeImplicitQuest(questName, diary, declarationFile));
+  };
+
+  const goTo = (item: { dialogName?: string; functionName: string }) => {
+      if (item.dialogName) {
+          navigateToDialog(item.dialogName);
+      } else {
+          navigateToSymbol(item.functionName, { preferSource: true });
+      }
+  };
+
+  const hasEnding = diary.some((item) => item.kind === 'state' && item.state !== 'running');
 
   const handleSaveTitle = async () => {
       if (!analysis || !analysis.filePaths.topic || !questName) return;
@@ -175,83 +217,137 @@ const QuestDetails: React.FC<QuestDetailsProps> = ({ semanticModel, questName })
         )}
       </Stack>
 
-      {analysis?.logicMethod === 'unknown' && !analysis?.misVariableExists && (
-          <Paper sx={{ p: 2, mb: 3, bgcolor: 'rgba(255, 152, 0, 0.05)', border: '1px solid rgba(255, 152, 0, 0.2)' }}>
-              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 1 }}>
-                  <WarningIcon color="warning" />
-                  <Typography variant="subtitle1" color="warning.main">State Tracking Advice</Typography>
-              </Box>
-              <Typography variant="body2" sx={{ mb: 2 }}>
-                  This quest only uses the Diary (Log_SetTopicStatus) which is write-only. 
-                  Choose a method to track quest state in scripts:
-              </Typography>
-              <Box sx={{ display: 'flex', gap: 2 }}>
-                  <Box sx={{ flex: 1 }}>
-                      <Typography variant="subtitle2">Method A: Implicit</Typography>
-                      <Typography variant="caption">Use Npc_KnowsInfo or Npc_HasItems. Best for simple, linear quests.</Typography>
-                  </Box>
-                  <Box sx={{ flex: 1 }}>
-                      <Typography variant="subtitle2">Method B: Explicit</Typography>
-                      <Typography variant="caption">Use a script variable (e.g. {analysis?.misVariableName}). Necessary for complex world-state changes.</Typography>
-                      <Button 
-                        size="small" 
-                        startIcon={<AddIcon />} 
-                        onClick={handleCreateVariable}
-                        disabled={isLoading}
-                        sx={{ mt: 1 }}
-                      >
-                          Create Variable
-                      </Button>
-                  </Box>
-              </Box>
-          </Paper>
+      {writeError && (
+          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setWriteError(null)}>{writeError}</Alert>
+      )}
+
+      {analysis && !analysis.misVariableExists && diary.length > 0 && (
+          <Alert
+              severity="info"
+              sx={{ mb: 3 }}
+              action={
+                  <Tooltip title={analysis.filePaths.topic ? `Declare ${analysis.misVariableName} and set it where the diary sets the quest's state` : 'The quest has no TOPIC_ declaration to put it beside'}>
+                      <span>
+                          <Button
+                              size="small"
+                              startIcon={<AddIcon />}
+                              onClick={handleUpgrade}
+                              disabled={isWriting || isLoading || !analysis.filePaths.topic}
+                          >
+                              Add {analysis.misVariableName}
+                          </Button>
+                      </span>
+                  </Tooltip>
+              }
+          >
+              State inferred from dialog {implicitQuestSource(diary)}
+          </Alert>
       )}
 
       <Paper sx={{ p: 2, mb: 3 }}>
-         <Typography variant="h6" gutterBottom>Log Entries & Updates</Typography>
-         <List>
-            {references.map((ref, i) => (
-                <React.Fragment key={i}>
-                    <ListItem 
+         <Typography variant="h6" gutterBottom>Diary</Typography>
+         <List data-testid="quest-diary">
+            {diary.map((item, i) => {
+                const isEditing = editingEntry === item;
+                return (
+                <React.Fragment key={`${item.functionName}-${item.path.join('.')}-${i}`}>
+                    <ListItem
+                      data-testid="quest-diary-item"
                       alignItems="flex-start"
+                      // Room for both buttons, so a long entry never runs under them.
+                      sx={item.kind === 'entry' && !isEditing ? { pr: 12 } : undefined}
+                      secondaryAction={isEditing ? undefined : (
+                        <>
+                          {item.kind === 'entry' && item.editable && item.filePath && (
+                            <Tooltip title="Edit entry" arrow>
+                              <IconButton
+                                aria-label="edit entry"
+                                disabled={isWriting}
+                                onClick={() => {
+                                  setEntryText(item.text ?? '');
+                                  setEditingEntry(item);
+                                }}
+                              >
+                                <EditIcon />
+                              </IconButton>
+                            </Tooltip>
+                          )}
+                          <Tooltip title="Go to Dialog/Function" arrow>
+                            <IconButton edge="end" aria-label="go to reference" onClick={() => goTo(item)}>
+                              <OpenInNewIcon />
+                            </IconButton>
+                          </Tooltip>
+                        </>
+                      )}
+                    >
+                        {isEditing ? (
+                            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', width: '100%' }}>
+                                <TextField
+                                    label="Diary entry"
+                                    value={entryText}
+                                    onChange={(e) => setEntryText(e.target.value)}
+                                    fullWidth
+                                    multiline
+                                    autoFocus
+                                    size="small"
+                                />
+                                <IconButton aria-label="save entry" onClick={handleSaveEntry} color="primary" disabled={isWriting}>
+                                    {isWriting ? <CircularProgress size={24} /> : <SaveIcon />}
+                                </IconButton>
+                                <IconButton aria-label="cancel edit" onClick={() => setEditingEntry(null)} disabled={isWriting}><CancelIcon /></IconButton>
+                            </Box>
+                        ) : (
+                        <ListItemText
+                            primary={item.kind === 'entry' ? item.text : STATE_LABEL[item.state!]}
+                            primaryTypographyProps={item.kind === 'state' ? { fontWeight: 'bold' } : undefined}
+                            secondary={
+                                <>
+                                    <Typography component="span" variant="body2" color="text.primary">
+                                        {item.dialogName || item.functionName}
+                                    </Typography>
+                                    {item.npc && ` (${item.npc})`}
+                                </>
+                            }
+                        />
+                        )}
+                    </ListItem>
+                    <Divider component="li" />
+                </React.Fragment>
+                );
+            })}
+            {diary.length === 0 && (
+                <ListItem><ListItemText primary="Nothing writes to this quest's diary yet" /></ListItem>
+            )}
+            {diary.length > 0 && !hasEnding && (
+                <ListItem><ListItemText secondary="No ending yet" /></ListItem>
+            )}
+         </List>
+      </Paper>
+
+      {conditionReferences.length > 0 && (
+          <Paper sx={{ p: 2, mb: 3 }}>
+             <Typography variant="h6" gutterBottom>Checked by</Typography>
+             <List>
+                {conditionReferences.map((ref, i) => (
+                    <ListItem
+                      key={i}
                       secondaryAction={
                         <Tooltip title="Go to Dialog/Function" arrow>
-                          <IconButton 
-                            edge="end" 
-                            aria-label="go to reference"
-                            onClick={() => {
-                              if (ref.dialogName) {
-                                navigateToDialog(ref.dialogName);
-                              } else {
-                                navigateToSymbol(ref.functionName, { preferSource: true });
-                              }
-                            }}
-                          >
+                          <IconButton edge="end" aria-label="go to reference" onClick={() => goTo(ref)}>
                             <OpenInNewIcon />
                           </IconButton>
                         </Tooltip>
                       }
                     >
                         <ListItemText
-                            primary={ref.details}
-                            secondary={
-                                <>
-                                    <Typography component="span" variant="body2" color="text.primary">
-                                        {ref.dialogName || ref.functionName}
-                                    </Typography>
-                                    {ref.npcName && ` (${ref.npcName})`}
-                                </>
-                            }
+                            primary={ref.dialogName || ref.functionName}
+                            secondary={ref.npcName}
                         />
                     </ListItem>
-                    <Divider component="li" />
-                </React.Fragment>
-            ))}
-            {references.length === 0 && (
-                <ListItem><ListItemText primary="No references found" /></ListItem>
-            )}
-         </List>
-      </Paper>
+                ))}
+             </List>
+          </Paper>
+      )}
     </Box>
   );
 };

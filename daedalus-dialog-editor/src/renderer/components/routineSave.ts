@@ -22,7 +22,7 @@ export function routineFileOf(routine: string, npc: string): string | null {
 }
 
 /** The file's model, opened without changing which file the main view shows. */
-async function fileModel(filePath: string): Promise<SemanticModel> {
+export async function fileModel(filePath: string): Promise<SemanticModel> {
   const store = useEditorStore.getState();
   if (!store.getFileState(filePath)) {
     const previouslyActive = store.activeFile;

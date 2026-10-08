@@ -1,6 +1,6 @@
 # Quest authoring — a quest-level interface over topics, entries and `MIS_` state
 
-Agreed 2026-09-28. Phases 1 (#322) and 2 (#323) have landed; phases 3–4 are #324–#325.
+Agreed 2026-09-28. Phases 1 (#322), 2 (#323) and 3 (#324) have landed; phase 4 is #325.
 
 ## Problem
 
@@ -96,9 +96,27 @@ Decided while building:
 
 ### Phase 3 — quest page as the diary
 
-`QuestDetails` lists every diary entry and state change of a quest across all
-dialogs, in story order from the existing graph inference. Entry text can be
-edited in place, and each entry jumps to the dialog that writes it.
+**Landed:** `QuestDetails` lists every diary entry and state change of a quest
+across all dialogs, in story order from the existing graph inference, with
+entries edited in place and a jump to each writing dialog. An implicit quest
+reads "State inferred from dialog X" and offers "Add MIS_X". The rules (what
+counts as a state change, how ties in story order break, where the upgrade
+writes) are in `docs/architecture/quest-editor.md` (`questDiary.ts`). Decided
+while building:
+
+- **State changes are rows, not steps.** A function that writes the same
+  state through the topic status and `MIS_` shows it once; a branch that ends
+  the quest two ways shows both.
+- **`MIS_X` is declared beside the `TOPIC_` constant**, as the create flow
+  does, so the upgrade is refused (button disabled) for a quest with no
+  `TOPIC_` declaration.
+- **The upgrade declares first, then edits the dialogs**, so the saves never
+  write an undeclared name. A save that fails part-way leaves the variable
+  declared and the page no longer implicit; the remaining assignments are then
+  written by hand or with the quest step cards.
+- **The page's chips still say "Method B: Explicit" and "Logic:
+  Unknown/Diary Only"**, phase 1's old vocabulary; the advice panel with the
+  Method A/B text is gone.
 
 ### Phase 4 — named sub-stages
 
