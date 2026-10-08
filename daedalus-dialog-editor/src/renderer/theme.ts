@@ -51,25 +51,25 @@ const gothicTheme = createTheme({
   palette: {
     mode: 'dark',
     primary: {
-      main: '#c8a25a',
-      light: '#dfc087',
-      dark: '#8b6a2a',
-      contrastText: '#1b1310',
+      main: '#c04c63',
+      light: '#e47d91',
+      dark: '#842b42',
+      contrastText: '#fff6f7',
     },
     secondary: {
-      main: '#8f3f3f',
-      light: '#ba6969',
-      dark: '#662a2a',
+      main: '#aa91b6',
+      light: '#cbb9d3',
+      dark: '#70577d',
     },
     background: {
-      default: '#131010',
-      paper: '#1f1918',
+      default: '#0b080d',
+      paper: '#171118',
     },
     text: {
-      primary: '#f4e6cc',
-      secondary: '#c4b297',
+      primary: '#f2eaf0',
+      secondary: '#bbaebb',
     },
-    divider: 'rgba(200, 162, 90, 0.24)',
+    divider: 'rgba(192, 55, 79, 0.26)',
   },
   shape: sharedShape,
   typography: {
@@ -89,23 +89,25 @@ const gothicTheme = createTheme({
     MuiAppBar: {
       styleOverrides: {
         root: {
-          backgroundImage: 'linear-gradient(180deg, #3a2a20 0%, #201613 100%)',
-          borderBottom: '1px solid rgba(200, 162, 90, 0.45)',
+          backgroundImage: 'linear-gradient(180deg, #21121d 0%, #100b12 100%)',
+          borderBottom: '1px solid rgba(192, 55, 79, 0.52)',
+          boxShadow: '0 12px 32px rgba(0, 0, 0, 0.5)',
         },
       },
     },
     MuiPaper: {
       styleOverrides: {
         root: {
-          borderColor: 'rgba(200, 162, 90, 0.14)',
-          backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.02) 0%, rgba(0,0,0,0.18) 100%)',
+          borderColor: 'rgba(192, 55, 79, 0.22)',
+          backgroundImage: 'linear-gradient(145deg, rgba(115, 72, 111, 0.07) 0%, rgba(0, 0, 0, 0.24) 100%)',
+          boxShadow: '0 12px 30px rgba(0, 0, 0, 0.3)',
         },
       },
     },
     MuiChip: {
       styleOverrides: {
         root: {
-          border: '1px solid rgba(200, 162, 90, 0.35)',
+          border: '1px solid rgba(192, 55, 79, 0.4)',
         },
       },
     },
