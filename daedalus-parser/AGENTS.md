@@ -27,9 +27,11 @@ When `grammar.js` changes:
 
 Run these checks before completion:
 
-- `npm test`
+- the test files you wrote or touched (`npm run build:ts`, then `node --test test/<file>.test.js`)
 - `npm run lint`
 - `npm run typecheck`
+
+The full `npm test` and the roundtrip corpus run in CI.
 
 ## Documentation Hygiene
 

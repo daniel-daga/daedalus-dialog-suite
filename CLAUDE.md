@@ -128,13 +128,10 @@ interface SemanticModel {
 1. **TDD required**: write a failing test first, then implement the minimal fix. Tests must genuinely exercise the feature — do not write tests that pass trivially or exist only to satisfy coverage. A test that can pass without the feature being correctly implemented is not acceptable.
 2. Do not use temporary test files; add meaningful tests to `test/*.test.js`.
 3. Keep generation logic string-template and semantic-model driven.
-4. When `grammar.js` changes: run `npm run build` to regenerate the parser, then `npm test`.
-5. Before claiming completion, run:
-   ```
-   npm test
-   npm run lint
-   npm run typecheck
-   ```
+4. When `grammar.js` changes: run `npm run build` to regenerate the parser, then the affected tests.
+5. Before claiming completion, run the test files you wrote or touched
+   (`npm run build:ts`, then `node --test test/<file>.test.js`), plus `npm run lint`
+   and `npm run typecheck`. The full `npm test` and the roundtrip corpus run in CI.
 
 ### Parser Commands
 
@@ -250,7 +247,7 @@ Import direction is one-way: UI → domain.
    - For new or changed **UI workflows** (user-facing flows in the Electron app), write a failing **Playwright E2E test** (`tests/e2e/`) first, then implement.
    - For logic, store, or component-level changes without a new end-to-end flow, a Jest test is sufficient.
    - **Playwright tests must be verified**: after writing and running a Playwright E2E test, manually confirm it exercises the actual UI behavior — not just that it passes. A green Playwright test that doesn't interact with the real feature is not acceptable.
-2. Run focused tests during iteration; run full workspace checks before completion.
+2. Run focused tests: the Jest files and Playwright specs for what you changed. The full Jest and Playwright suites run in CI.
 3. **Performance**: `semanticModel` is large and recreated frequently — do not pass the full object to deeply memoized components; prefer stable sub-properties and granular comparisons with `React.memo`.
 
 ### Editor Commands
@@ -338,12 +335,11 @@ plain and concise, every reply, including the one that reports finished work.
 ## General Conventions
 
 - **TDD everywhere**: failing test → minimal implementation → green. Tests must genuinely exercise the feature — a test that passes without the feature being correctly implemented is not acceptable. For Playwright E2E tests, manually verify the test interacts with the real UI behavior, not just that it passes.
-- **A feature is not done until tests and linter pass**: after implementing any feature, run the full test suite and linter for the affected workspace. A clean codebase (`npm test` + `npm run lint`) is a prerequisite for declaring the feature complete — not an optional follow-up.
+- **Full test suites are CI's job, not the session's** (Daniel, 2026-10-08). Locally, run the tests you wrote or touched, plus lint and typecheck for the affected workspace. Do not run a workspace's full Jest or Playwright suite, the parser's full `npm test`, or the MDK corpus — push, and `all-tests.yml` runs them. A feature is done when those focused tests, lint and typecheck pass; a red CI run after the push is the signal to come back.
 - Keep changes focused and minimal; no unnecessary docs, scaffolding, or helper abstractions.
 - Do not add error handling for scenarios that cannot happen; trust framework guarantees.
 - Validate at system boundaries only (user input, external APIs).
 - Do not create new files unless strictly required; prefer editing existing ones.
-- After any change, verify with workspace-level commands (`npm test`, `npm run lint`, `npm run typecheck`) before claiming completion.
 - Active implementation plans belong in `docs/plans/`; completed plans are deleted after extracting durable outcomes.
 - Known god-component and concern-split refactoring targets are tracked in `docs/refactoring-targets.md`.
 

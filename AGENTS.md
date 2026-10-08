@@ -32,7 +32,8 @@ labels mean what, and which of them an unattended run may take.
    - run relevant tests and confirm green
 2. Prefer existing test infrastructure over ad-hoc scripts or temp files.
 3. Keep changes focused and minimal; do not add unnecessary docs or scaffolding.
-4. Verify with workspace-level commands before claiming completion.
+4. Before claiming completion, run the tests you touched plus lint and typecheck;
+   the full suites run in CI (`all-tests.yml`), not locally.
 
 ## Worktrees for Parallel Agents
 
