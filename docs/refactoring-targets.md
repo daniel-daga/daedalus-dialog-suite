@@ -369,3 +369,19 @@ full payload, asserted field by field. It catches the omission but does not
 prevent it — fix direction is for the handler to take the payload as one
 `MetadataResult`-shaped object and forward it, so there is one spelling of the
 shape rather than four.
+
+### 18. The viewport's same-world rebuild caches outlived their reason
+**Files:** `daedalus-dialog-editor/src/renderer/components/world/WorldViewport.tsx`
+(`texturesRef`, `bvhRef`, `framedRef`, `pivotMarkerRef`),
+`src/renderer/world/WorldScene.ts` (`TextureCache`), `src/renderer/world/BvhBuilder.ts`
+(the per-payload tree memory)
+
+Each exists so that a *rebuild of the same world* keeps its decoded textures,
+its BVH trees, its camera and its pivot dot. A structural op was that rebuild
+until 2026-10-08; it is now followed in place (`SceneHost.update`), and the
+scene effect runs once per mounted world — the surface unmounts the viewport
+on every open. What still re-runs it for the same world is React's dev
+double-invoke, nothing in production. Not wrong, only carrying four mechanisms
+and their tests for a case that no longer happens. Fix direction: confirm
+nothing else re-runs the effect, then fold them back into the effect's own
+lifetime.
