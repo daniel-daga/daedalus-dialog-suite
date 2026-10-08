@@ -4061,14 +4061,18 @@ halves are needed: the first sees where focus *is*, the second what is *open*.
 - **Escape clears the selection**, but not while a surface dialog is open —
   it is a second listener on the same keydown as MUI's own Escape-close, and
   would otherwise discard the selection the closing dialog was about.
-- **Arrow keys nudge along the world's axes** (ZenGin Y-up: Left/Right ∓/±X,
-  Up/Down ∓/±Z, PageUp/Down ±Y), ×10 with Shift, one keypress one undo entry.
-  The step is the *translate* snap grid and only while the Snap control is
-  showing it — in rotate mode that control edits the angle, so a leftover
-  `snapGrid` would be an invisible value driving a visible key. The selection
-  is read *before* `preventDefault`, so an arrow with nothing selected is left
-  to whatever would otherwise scroll. `[role="tree"]` is reserved for the
-  scene tree's own navigation.
+- **WASD and arrow keys nudge in the camera's horizontal plane** (left/right
+  follow camera-right; forward/back follow the camera view), while PageUp/Down
+  stay on ZenGin's vertical axis. Shift multiplies the step by ten, and the
+  default step is 1 cm. The step is the *translate* snap grid when one is set
+  and only while the Snap control is showing it — in rotate mode that control
+  edits the angle, so a leftover `snapGrid` would be an invisible value driving
+  a visible key. The camera axes are queried for each nudge, so orbiting changes
+  the movement direction. W nudges forward when a VOB is selected; without a
+  selection it retains the translate-gizmo shortcut. The selection is read
+  *before* `preventDefault`, so an arrow with nothing selected is left to
+  whatever would otherwise scroll. `[role="tree"]` is reserved for the scene
+  tree's own navigation.
 
 **The toolbar is four groups — file, add, edit, view — packed from the
 left, with the view group pinned to the right edge** (`marginLeft: auto`).

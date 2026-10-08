@@ -4,19 +4,23 @@ import { useWorldStore } from '../../../store/worldStore';
 import { isTypingOrInPopover } from '../../../world/keyboardTarget';
 import type { GizmoMode } from '../WorldViewport';
 
-/** Arrow-key nudge, in the world's own axes (ZenGin is Y-up): one unit of
- *  step per key, `[x, y, z]`. Keyed by the lower-cased `KeyboardEvent.key`. */
+/** Camera-relative nudge: `[right, up, forward]`, one unit of step per key.
+ *  Keyed by the lower-cased `KeyboardEvent.key`. */
 const NUDGE_DELTAS: Record<string, [number, number, number]> = {
   arrowleft: [-1, 0, 0],
+  a: [-1, 0, 0],
   arrowright: [1, 0, 0],
+  d: [1, 0, 0],
   arrowup: [0, 0, -1],
+  w: [0, 0, -1],
   arrowdown: [0, 0, 1],
+  s: [0, 0, 1],
   pageup: [0, 1, 0],
   pagedown: [0, -1, 0],
 };
 
-/** The nudge a bare arrow key takes when no snap step is set, in cm. */
-const NUDGE_FALLBACK_STEP = 10;
+/** The nudge a bare key takes when no snap step is set, in cm. */
+const NUDGE_FALLBACK_STEP = 1;
 
 export interface WorldShortcutsInput {
   /** No world, nothing to act on — nothing is bound at all. */
@@ -97,7 +101,8 @@ export function useWorldShortcuts({
       // undo shortcut they have to keep out of the way of anything that takes
       // typing — the World surface has no text field of its own, but this is a
       // window listener and the app is full of them.
-      if (!event.ctrlKey && !event.metaKey && !event.altKey && (key === 'w' || key === 'e')) {
+      if (!event.ctrlKey && !event.metaKey && !event.altKey && (key === 'w' || key === 'e')
+        && !(key === 'w' && useWorldStore.getState().selection.length > 0)) {
         if (isTypingOrInPopover(event.target) || dialogOpen) return;
         event.preventDefault();
         setGizmoMode(key === 'w' ? 'translate' : 'rotate');
@@ -174,13 +179,16 @@ export function useWorldShortcuts({
         return;
       }
 
-      // World-axis nudge — ZenGin is Y-up, so ArrowLeft/Right move X,
-      // ArrowUp/Down move Z and PageUp/Down move Y, ×10 while Shift is held.
+      // Camera-relative nudge — WASD and the arrows move in the view plane;
+      // PageUp/Down stay on ZenGin's vertical axis. Shift multiplies the step
+      // by ten. W is a nudge while a VOB is selected, otherwise it keeps its
+      // existing translate-gizmo shortcut above.
       // One keypress is one undo entry, same as a single gizmo drag — but only
       // the presses that reach the world: auto-repeat while a commit is out is
       // dropped by `commitOps`' in-flight guard, because the op it would build
       // reads a `from` the round trip has not written yet.
       if (NUDGE_DELTAS[key]) {
+        if (event.ctrlKey || event.metaKey || event.altKey) return;
         if (isTypingOrInPopover(event.target) || dialogOpen) return;
         // Reserves the arrow keys for the scene tree's own navigation.
         const target = event.target as HTMLElement | null;

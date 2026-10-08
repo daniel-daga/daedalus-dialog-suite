@@ -1191,6 +1191,20 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     void commitOps(translateSubtrees(vobModelOf(current).reader, selected, delta));
   }, [commitOps]);
 
+  /** Turn a camera-plane nudge into one world-space delta before using the
+   *  same subtree translation path as a gizmo drag. Axes are read at key time,
+   *  so orbiting the camera immediately changes what left and forward mean. */
+  const handleNudgeSelection = useCallback((direction: [number, number, number]) => {
+    const axes = viewportRef.current?.cameraNudgeAxes();
+    if (axes === null || axes === undefined) return;
+    const [right, up, forward] = direction;
+    handleTranslateSelection([
+      axes.right[0] * right + axes.forward[0] * forward,
+      up,
+      axes.right[2] * right + axes.forward[2] * forward,
+    ]);
+  }, [handleTranslateSelection]);
+
   /** What a drag of the selection previews moving: the same members
    *  `translateSubtrees` and `rotateSubtrees` build their ops over (#292). */
   const membersOfSelection = useCallback((vobs: readonly number[]) => {
@@ -1885,7 +1899,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     onRequestDeleteWaypoint: (waypoint, name) => setDeletingWaypoint({ waypoint, name }),
     onDisarm: () => setArmed(null),
     onRequestSave: () => setConfirmingSave(true),
-    onNudge: handleTranslateSelection,
+    onNudge: handleNudgeSelection,
     onHistory: (direction) => void runHistory(direction),
   });
 

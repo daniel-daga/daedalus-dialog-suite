@@ -390,6 +390,9 @@ export type { GizmoMode };
  * `ActionCard.tsx` already uses for the same reason.
  */
 export interface WorldViewportHandle {
+  /** Horizontal camera-right and camera-forward unit vectors, in ZenGin space.
+   *  Null while the viewport is between scenes. */
+  cameraNudgeAxes: () => { right: ZenPosition; forward: ZenPosition } | null;
   /**
    * A ray straight down from `origin` (ZenGin space) against the world mesh —
    * the terrain, a building, a cave wall. Returns the hit point and its
@@ -503,6 +506,27 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   const viewportRef = useRef<ViewportRenderer | null>(null);
 
   useImperativeHandle(ref, () => ({
+    cameraNudgeAxes: () => {
+      const viewport = viewportRef.current;
+      if (viewport === null) return null;
+      const { camera } = viewport;
+      camera.updateMatrixWorld(true);
+
+      const horizontalZen = (direction: THREE.Vector3): ZenPosition => {
+        const [x, , z] = threeToZen([direction.x, 0, direction.z]);
+        const length = Math.hypot(x, z);
+        return length > 1e-8 ? [x / length, 0, z / length] : [0, 0, 0];
+      };
+      const right = horizontalZen(new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0));
+      const forward = horizontalZen(camera.getWorldDirection(new THREE.Vector3()));
+      // Looking almost straight up or down has no useful horizontal forward
+      // vector; keep forward along the camera's projected right instead of
+      // turning W/S into a no-op at that singular view.
+      if (Math.hypot(...forward) < 1e-8) {
+        return { right, forward: [right[2], 0, -right[0]] };
+      }
+      return { right, forward };
+    },
     raycastDown: (origin) => {
       const world = sceneRef.current;
       if (world === null) return null;

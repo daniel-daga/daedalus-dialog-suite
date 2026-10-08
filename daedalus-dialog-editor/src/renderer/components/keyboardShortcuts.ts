@@ -73,10 +73,12 @@ export const KEYBOARD_SHORTCUTS: readonly KeyboardShortcut[] = [
     probe: { listener: 'world', events: [{ key: 'Escape' }] },
   },
   {
-    group: 'World editor', keys: 'Arrows, PageUp / PageDown', action: 'Nudge the selection; with Shift, ×10',
+    group: 'World editor', keys: 'WASD / arrows; PageUp / PageDown',
+    action: 'Nudge in the camera plane; PageUp/Down vertically; Shift ×10',
     probe: {
       listener: 'world',
-      events: ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown'].map((key) => ({ key })),
+      events: ['w', 'a', 's', 'd', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown']
+        .map((key) => ({ key })),
     },
   },
   { group: 'World editor', keys: '.', action: 'Frame the selection' },
