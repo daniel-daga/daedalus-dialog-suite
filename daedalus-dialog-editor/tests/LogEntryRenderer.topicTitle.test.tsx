@@ -37,7 +37,7 @@ describe('LogEntryRenderer topic title', () => {
   beforeEach(() => {
     useProjectStore.setState({
       mergedSemanticModel: modelWith({
-        TOPIC_CityTeacher: { name: 'TOPIC_CityTeacher', type: 'string', value: '"Lehrer in der Stadt"' }
+        TOPIC_CityTeacher: { name: 'TOPIC_CityTeacher', type: 'string', value: 'Lehrer in der Stadt' }
       }) as any
     });
   });
@@ -57,7 +57,7 @@ describe('LogEntryRenderer topic title', () => {
     act(() => {
       useProjectStore.setState({
         mergedSemanticModel: modelWith({
-          TOPIC_CityTeacher: { name: 'TOPIC_CityTeacher', type: 'string', value: '"Lehrer in Khorinis"' }
+          TOPIC_CityTeacher: { name: 'TOPIC_CityTeacher', type: 'string', value: 'Lehrer in Khorinis' }
         }) as any
       });
     });

@@ -38,7 +38,7 @@ const LogEntryRenderer: React.FC<BaseActionRendererProps> = ({
   // not the model, so an unrelated merge does not re-render the card.
   const topicTitle = useProjectStore((s) => {
     const value = typedAction.topic ? s.mergedSemanticModel?.constants?.[typedAction.topic]?.value : undefined;
-    return typeof value === 'string' ? value.replace(/^"(.*)"$/s, '$1') : undefined;
+    return typeof value === 'string' ? value : undefined;
   });
   const topicFieldProps = useMemo(
     () => (topicTitle ? { helperText: `In the diary under "${topicTitle}"` } : undefined),

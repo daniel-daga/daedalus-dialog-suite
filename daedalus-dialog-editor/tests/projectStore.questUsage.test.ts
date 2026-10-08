@@ -26,7 +26,7 @@ describe('ProjectStore - getQuestUsage', () => {
     const filePath = '/dialogs/mis-only.d';
     const model = createEmptyModel();
     model.constants = {
-      TOPIC_TEST: { name: 'TOPIC_TEST', type: 'string', value: '"Test Quest"' }
+      TOPIC_TEST: { name: 'TOPIC_TEST', type: 'string', value: 'Test Quest' }
     };
     model.variables = {
       MIS_TEST: { name: 'MIS_TEST', type: 'int' }
@@ -68,7 +68,7 @@ describe('ProjectStore - getQuestUsage', () => {
     const filePath = '/dialogs/topic-note.d';
     const model = createEmptyModel();
     model.constants = {
-      Topic_RescueBennet: { name: 'Topic_RescueBennet', type: 'string', value: '"Bennet sitzt im Knast"' }
+      Topic_RescueBennet: { name: 'Topic_RescueBennet', type: 'string', value: 'Bennet sitzt im Knast' }
     };
     model.variables = {
       MIS_RescueBennet: { name: 'MIS_RescueBennet', type: 'int' }
@@ -132,7 +132,7 @@ describe('ProjectStore - getQuestUsage', () => {
     const filePath = '/dialogs/linked-condition.d';
     const model = createEmptyModel();
     model.constants = {
-      TOPIC_LINKED: { name: 'TOPIC_LINKED', type: 'string', value: '"Linked Quest"' }
+      TOPIC_LINKED: { name: 'TOPIC_LINKED', type: 'string', value: 'Linked Quest' }
     };
     model.variables = {
       MIS_LINKED: { name: 'MIS_LINKED', type: 'int' }
@@ -186,7 +186,7 @@ describe('ProjectStore - getQuestUsage', () => {
     const filePath = '/dialogs/linked-condition-graph.d';
     const model = createEmptyModel();
     model.constants = {
-      TOPIC_LINKED_GRAPH: { name: 'TOPIC_LINKED_GRAPH', type: 'string', value: '"Linked Graph Quest"' }
+      TOPIC_LINKED_GRAPH: { name: 'TOPIC_LINKED_GRAPH', type: 'string', value: 'Linked Graph Quest' }
     };
     model.variables = {
       MIS_LINKED_GRAPH: { name: 'MIS_LINKED_GRAPH', type: 'int' }

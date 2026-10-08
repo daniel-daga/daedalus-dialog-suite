@@ -109,7 +109,7 @@ test.describe('Register quest in log files', () => {
       // Injected so the notes file is the suggested target (the harness's
       // regex parser reads no constants).
       notes: `//__MOCK_MODEL__ ${JSON.stringify({
-        constants: { TOPIC_Haendler: { name: 'TOPIC_Haendler', type: 'string', value: '"Händler"', filePath: 'project/dialogs/LOG_Constants_Notes.d' } }
+        constants: { TOPIC_Haendler: { name: 'TOPIC_Haendler', type: 'string', value: 'Händler', filePath: 'project/dialogs/LOG_Constants_Notes.d' } }
       })}\nconst string TOPIC_Haendler = "Händler";\n`,
       closeTopics: CLOSE_TOPICS_FILE
     });
@@ -171,7 +171,7 @@ test.describe('Register quest in log files', () => {
       // The harness's regex parser reads no constants; inject the model the
       // real parser would produce (string literals keep their quotes).
       constants: `//__MOCK_MODEL__ ${JSON.stringify({
-        constants: { TOPIC_Old: { name: 'TOPIC_Old', type: 'string', value: '"Old Quest"' } }
+        constants: { TOPIC_Old: { name: 'TOPIC_Old', type: 'string', value: 'Old Quest' } }
       })}\n`
     });
 

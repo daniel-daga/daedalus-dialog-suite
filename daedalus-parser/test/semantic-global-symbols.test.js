@@ -19,7 +19,8 @@ test('should parse global constants', () => {
   assert.ok(topicConst, 'Should find TOPIC_MyQuest constant');
   assert.equal(topicConst.name, 'TOPIC_MyQuest');
   assert.equal(topicConst.type, 'string');
-  assert.equal(topicConst.value, '"The Lost Sheep"');
+  assert.equal(topicConst.value, 'The Lost Sheep');
+  assert.equal(topicConst.valueIsLiteral, true);
 
   const goldConst = model.constants['MAX_GOLD'];
   assert.ok(goldConst, 'Should find MAX_GOLD constant');
@@ -220,4 +221,52 @@ test('should parse a negative id literal', () => {
   `);
 
   assert.equal(model.instances['MONSTER_TEMPLATE'].npcId, -1);
+});
+
+// A string constant holds its text; `valueIsLiteral` says it is a string, so
+// an initializer naming another constant is told apart without quotes (#355).
+const { deserializeSemanticModel, SemanticCodeGenerator, GlobalConstant } = require('../dist/semantic/semantic-visitor-index');
+const hydrateJSON = model => deserializeSemanticModel(JSON.parse(JSON.stringify(model)));
+
+test('a string constant holds its contents through parse and JSON; an initializer expression does not', () => {
+  const model = parseSemanticModel(`
+    const string TOPIC_A = "Die Banditen";
+    const string TOPIC_EMPTY = "";
+    const string TOPIC_B = TOPIC_A;
+  `);
+  for (const candidate of [model, hydrateJSON(model)]) {
+    assert.equal(candidate.constants.TOPIC_A.value, 'Die Banditen');
+    assert.equal(candidate.constants.TOPIC_A.valueIsLiteral, true);
+    assert.equal(candidate.constants.TOPIC_EMPTY.value, '');
+    assert.equal(candidate.constants.TOPIC_EMPTY.valueIsLiteral, true);
+    assert.equal(candidate.constants.TOPIC_B.value, 'TOPIC_A');
+    assert.ok(!candidate.constants.TOPIC_B.valueIsLiteral);
+  }
+});
+
+test('a constant built without source is written quoted when it is a literal, even as one word', () => {
+  const literal = new GlobalConstant('TOPIC_A', 'string', 'Banditen');
+  literal.valueIsLiteral = true;
+  const reference = new GlobalConstant('TOPIC_B', 'string', 'TOPIC_A');
+  const output = new SemanticCodeGenerator().generateSemanticModel(
+    { dialogs: {}, functions: {}, constants: { TOPIC_A: literal, TOPIC_B: reference } }
+  );
+  assert.match(output, /const string TOPIC_A = "Banditen";/);
+  assert.match(output, /const string TOPIC_B = TOPIC_A;/);
+});
+
+// JSON written before contents were stored carries the token and no flag.
+test('legacy JSON with a quoted constant hydrates to its contents; a quoted expression is left alone', () => {
+  const json = JSON.parse(JSON.stringify(parseSemanticModel(`
+    const string TOPIC_A = "Die Banditen";
+    const string JOINED = "a" + "b";
+  `)));
+  json.constants.TOPIC_A.value = '"Die Banditen"';
+  delete json.constants.TOPIC_A.valueIsLiteral;
+  delete json.constants.JOINED.valueIsLiteral;
+  const model = deserializeSemanticModel(json);
+  assert.equal(model.constants.TOPIC_A.value, 'Die Banditen');
+  assert.equal(model.constants.TOPIC_A.valueIsLiteral, true);
+  assert.equal(model.constants.JOINED.value, '"a" + "b"');
+  assert.ok(!model.constants.JOINED.valueIsLiteral);
 });

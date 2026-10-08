@@ -89,7 +89,7 @@ const SAMPLE_MODEL = {
     'TOPIC_MyQuest': {
       name: 'TOPIC_MyQuest',
       type: 'string',
-      value: '"The Lost Sheep"',
+      value: 'The Lost Sheep',
       filePath: 'sample.d'
     }
   },

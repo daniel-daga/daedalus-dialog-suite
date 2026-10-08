@@ -216,7 +216,7 @@ describe('useFileWatcher — change event', () => {
   test('injects filePath into constants and variables from the parsed model', async () => {
     const modelWithSymbols = {
       ...PARSED_MODEL,
-      constants: { TOPIC_Test: { name: 'TOPIC_Test', type: 'string', value: '"test"' } },
+      constants: { TOPIC_Test: { name: 'TOPIC_Test', type: 'string', value: 'test' } },
       variables: { MIS_Test: { name: 'MIS_Test', type: 'int' } },
     };
     mockParseDialogFile.mockResolvedValueOnce(modelWithSymbols as any);

@@ -50,7 +50,7 @@ describe('projectStore.registerTopicInLogFiles', () => {
       if (p === CONSTANTS_FILE) {
         return {
           dialogs: {}, functions: {},
-          constants: { TOPIC_Dalvins: { name: 'TOPIC_Dalvins', type: 'string', value: '"Dalvins Spitzhacken"' } },
+          constants: { TOPIC_Dalvins: { name: 'TOPIC_Dalvins', type: 'string', value: 'Dalvins Spitzhacken' } },
           variables: { MIS_Dalvins: { name: 'MIS_Dalvins', type: 'int' } },
           hasErrors: false, errors: []
         } as any;

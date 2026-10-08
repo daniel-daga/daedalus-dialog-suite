@@ -147,6 +147,8 @@ export class GlobalConstant {
   public name: string;
   public type: string;
   public value: string | number | boolean;
+  /** The initializer is a string literal, and `value` its contents, unquoted. */
+  public valueIsLiteral?: boolean;
   /** Verbatim declaration text, used for faithful re-emission (arrays etc.). */
   public sourceText?: string;
   public leadingComments?: string[];
@@ -922,6 +924,9 @@ function linkPropertiesToFunctions(
   return linked;
 }
 
+/** One whole string token, `"…"`; an expression such as `"a" + "b"` is not one. */
+const isStringToken = (value: unknown): value is string => typeof value === 'string' && /^"[^"]*"$/.test(value);
+
 /**
  * A string-literal property holds its contents. JSON written before that holds
  * the quoted token; since Daedalus strings cannot contain `"`, a quoted value
@@ -933,7 +938,7 @@ function unquoteLegacyLiterals(dialog: Dialog, rawProperties: Record<string, any
   const properties = { ...rawProperties };
   for (const key of Object.keys(properties)) {
     const value = properties[key];
-    if (typeof value !== 'string' || value.length < 2 || !value.startsWith('"') || !value.endsWith('"')) continue;
+    if (!isStringToken(value)) continue;
     if (dialog.propertyExpressionKeys?.includes(key)) continue;
     properties[key] = value.slice(1, -1);
     dialog.propertyLiteralKeys ??= [];
@@ -1199,7 +1204,13 @@ export function deserializeSemanticModel(json: any): SemanticModel {
   // 3. Reconstruct constants
   if (json.constants) {
     for (const key in json.constants) {
-      model.constants![key] = plainToInstance(GlobalConstant as ClassConstructor<any>, json.constants[key]);
+      const constant: GlobalConstant = plainToInstance(GlobalConstant as ClassConstructor<any>, json.constants[key]);
+      // JSON from before string constants held their contents carries the token.
+      if (constant.valueIsLiteral === undefined && isStringToken(constant.value)) {
+        constant.value = constant.value.slice(1, -1);
+        constant.valueIsLiteral = true;
+      }
+      model.constants![key] = constant;
     }
   }
 

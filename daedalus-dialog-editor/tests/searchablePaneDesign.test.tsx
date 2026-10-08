@@ -62,7 +62,7 @@ describe('Searchable pane design language', () => {
       TOPIC_TEST_QUEST: {
         name: 'TOPIC_TEST_QUEST',
         type: 'const string',
-        value: '"Test quest"',
+        value: 'Test quest',
       } as any,
     },
     variables: {},
