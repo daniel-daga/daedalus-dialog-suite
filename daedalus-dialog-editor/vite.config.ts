@@ -66,17 +66,13 @@ export default defineConfig({
   build: {
     outDir: path.join(__dirname, 'dist/renderer'),
     emptyOutDir: true,
-    // Raised from Vite's 500 kB default for exactly one chunk: three.js is
-    // 517 kB minified and does not get smaller — `WebGLRenderer` pulls in the
-    // whole shader library, and that is the thing the World surface exists to
-    // use. CI fails the build on any chunk-size warning, so the alternative to
-    // this number is silencing the check for every chunk.
-    //
-    // The guard keeps doing its job: it was written to stop the main chunk
-    // growing (398 kB) and to keep MUI carved out (468 kB), and both are still
-    // well under. Raise this again only for a dependency that is genuinely
-    // irreducible, and say which one.
-    chunkSizeWarningLimit: 550,
+    // This is a local Electron app: chunks load from disk, not a network, so
+    // their size is not a load-time cost worth failing CI over (Daniel,
+    // 2026-10-08, #356 — the main chunk had reached 552 kB against the old
+    // 550 kB limit, itself raised from Vite's 500 kB for three.js's 517 kB).
+    // CI still fails the build on any chunk-size warning, so the guard now
+    // only catches a runaway chunk, such as a dependency bundled by accident.
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
       input: {
         main: fileURLToPath(new URL('./src/renderer/index.html', import.meta.url)),

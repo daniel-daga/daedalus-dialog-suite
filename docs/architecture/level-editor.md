@@ -596,8 +596,10 @@ winding decision.
 
 One build consequence worth recording: three.js is **517 kB** minified and
 irreducible — `WebGLRenderer` pulls in the whole shader library — so the CI
-chunk-size guard's 500 kB limit is raised to 550 kB in `vite.config.ts`. It
-still guards what it was written for (main 398 kB, MUI 468 kB). The World
+chunk-size guard's 500 kB limit was raised to 550 kB in `vite.config.ts`. The
+main chunk outgrew that too (552 kB, #356), and since a local Electron app loads
+its chunks from disk the limit is now 1000 kB — a guard against a runaway chunk,
+not a size budget. The World
 surface, three and three-mesh-bvh are separate chunks fetched only when the
 World view is opened.
 
