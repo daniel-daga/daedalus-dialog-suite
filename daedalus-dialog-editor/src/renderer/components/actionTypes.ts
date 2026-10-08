@@ -149,6 +149,13 @@ export interface RemoveInventoryItemsAction {
   removeQuantity?: string;
 }
 
+/** `B_UseItem (npc, item);` — the NPC uses the item (#304). */
+export interface UseItemAction {
+  type: 'UseItemAction';
+  target: string;
+  item: string;
+}
+
 export interface InsertNpcAction {
   type: 'InsertNpcAction';
   npcInstance: string;
@@ -226,6 +233,7 @@ export type ActionType =
   | TeachAction
   | GiveTradeInventoryAction
   | RemoveInventoryItemsAction
+  | UseItemAction
   | InsertNpcAction
   | HeroFollowsAction
   | ConditionalAction
@@ -259,6 +267,7 @@ export type ActionTypeId =
   | 'teachAction'
   | 'giveTradeInventoryAction'
   | 'removeInventoryItemsAction'
+  | 'useItemAction'
   | 'insertNpcAction'
   | 'heroFollowsAction'
   | 'conditionalAction'
@@ -312,6 +321,7 @@ const TYPE_TO_ID: Record<string, ActionTypeId> = {
   'TeachAction': 'teachAction',
   'GiveTradeInventoryAction': 'giveTradeInventoryAction',
   'RemoveInventoryItemsAction': 'removeInventoryItemsAction',
+  'UseItemAction': 'useItemAction',
   'InsertNpcAction': 'insertNpcAction',
   'HeroFollowsAction': 'heroFollowsAction',
   'ConditionalAction': 'conditionalAction',

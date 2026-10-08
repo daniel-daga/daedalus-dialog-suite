@@ -70,6 +70,7 @@ Autocomplete-enabled action fields:
 - `SetRefuseTalkActionRenderer`: NPC `C_NPC` (symbol-table suggestions only); seconds is plain numeric input.
 - `SetVariableActionRenderer`: variable `int|string|float`.
 - `StopProcessInfosActionRenderer`: NPC `C_NPC` (symbol-table suggestions only).
+- `UseItemActionRenderer`: NPC `C_NPC`, item `C_ITEM`.
 
 Intentional exception:
 

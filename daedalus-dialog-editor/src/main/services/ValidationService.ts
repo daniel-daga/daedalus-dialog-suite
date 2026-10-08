@@ -31,6 +31,7 @@ const ACTION_DISPLAY_NAMES: Readonly<Partial<Record<string, string>>> = {
   TeachAction:              'Teach',
   GiveTradeInventoryAction: 'Give Trade Inventory',
   RemoveInventoryItemsAction: 'Remove Inventory Items',
+  UseItemAction:            'Use Item',
   InsertNpcAction:          'Insert NPC',
 };
 
@@ -73,6 +74,7 @@ const ACTION_REQUIRED_FIELD_VALIDATORS: Readonly<Partial<Record<string, ActionVa
   // Npc_RemoveInvItem is the 2-arg engine form and has no quantity argument;
   // only the 3-arg Npc_RemoveInvItems form requires removeQuantity.
   RemoveInventoryItemsAction: (a) => (!a.removeFunctionName || !a.removeNpc || !a.removeItem || (a.removeFunctionName === 'Npc_RemoveInvItems' && !a.removeQuantity)) ? 'is missing function, NPC, item, or quantity' : null,
+  UseItemAction:            (a) => (!a.target || !a.item)                         ? 'is missing target or item' : null,
   InsertNpcAction:          (a) => (!a.npcInstance || !a.spawnPoint)              ? 'is missing NPC instance or spawn point' : null,
 };
 

@@ -52,6 +52,7 @@ export type {
   TeachActionType,
   GiveTradeInventoryActionType,
   RemoveInventoryItemsActionType,
+  UseItemActionType,
   InsertNpcActionType,
   ConditionalAction,
   CustomAction,

@@ -368,7 +368,9 @@ test('deserializeSemanticModel preserves string-valued numeric arguments through
           // quantity kept as a literal number
           { type: 'CreateInventoryItems', target: 'self', item: 'ItMi_Gold', quantity: 0 },
           // 2-arg remove has no quantity field
-          { type: 'RemoveInventoryItemsAction', removeFunctionName: 'Npc_RemoveInvItem', removeNpc: 'self', removeItem: 'ItMi_Gold' }
+          { type: 'RemoveInventoryItemsAction', removeFunctionName: 'Npc_RemoveInvItem', removeNpc: 'self', removeItem: 'ItMi_Gold' },
+          // the editor's plain-JSON B_UseItem (#304)
+          { type: 'UseItemAction', target: 'other', item: 'ItMi_Joint' }
         ],
         conditions: [],
         calls: []
@@ -388,6 +390,7 @@ test('deserializeSemanticModel preserves string-valued numeric arguments through
   assert.ok(emitted.includes('CreateInvItems (self, ItMi_Gold, Gold_Amount);'), 'emits identifier quantity verbatim');
   assert.ok(emitted.includes('CreateInvItems (self, ItMi_Gold, 0);'), 'emits literal zero quantity');
   assert.ok(emitted.includes('Npc_RemoveInvItem (self, ItMi_Gold);'), 'emits 2-arg remove without quantity');
+  assert.ok(emitted.includes('B_UseItem (other, ItMi_Joint);'), 'emits B_UseItem from plain JSON');
 });
 
 test('deserializeSemanticModel reconstructs classes, prototypes and trailing comments', () => {

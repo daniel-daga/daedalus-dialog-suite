@@ -115,6 +115,22 @@ const cases = [
     }
   },
   {
+    name: 'B_UseItem parses structurally and round-trips (#304)',
+    body: 'B_UseItem (other, ItMi_Joint);',
+    assert: (action) => {
+      assert.equal(action.type, 'UseItemAction');
+      assert.equal(action.target, 'other');
+      assert.equal(action.item, 'ItMi_Joint');
+    }
+  },
+  {
+    name: 'B_UseItem with wrong arity (1 arg) falls back to a generic action',
+    body: 'B_UseItem (other);',
+    assert: (action) => {
+      assert.equal(action.type, 'Action');
+    }
+  },
+  {
     name: 'AI_Output with wrong arity (2 args) falls back to a generic action',
     body: 'AI_Output (self, other);',
     assert: (action) => {

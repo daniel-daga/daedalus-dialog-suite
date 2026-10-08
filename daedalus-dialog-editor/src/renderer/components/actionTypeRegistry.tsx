@@ -34,7 +34,8 @@ import {
   CheckCircle as CheckCircleIcon,
   Cancel as CancelIcon,
   DoNotDisturbOn as DoNotDisturbOnIcon,
-  StickyNote2 as StickyNote2Icon
+  StickyNote2 as StickyNote2Icon,
+  TouchApp as TouchAppIcon
 } from '@mui/icons-material';
 import type { ActionTypeId } from './actionTypes';
 
@@ -74,6 +75,7 @@ export const ACTION_TYPE_REGISTRY: Record<ActionTypeId, ActionTypeEntry> = {
   teachAction: { label: 'Teach', icon: SchoolIcon },
   giveTradeInventoryAction: { label: 'Give Trade Inventory', icon: Inventory2Icon },
   removeInventoryItemsAction: { label: 'Remove Inventory Items', icon: RemoveShoppingCartIcon },
+  useItemAction: { label: 'Use Item', icon: TouchAppIcon },
   insertNpcAction: { label: 'Insert NPC', icon: PersonAddIcon },
   heroFollowsAction: { label: 'Hero Follows NPC', icon: DirectionsWalkIcon },
   conditionalAction: { label: 'If / Else Block', icon: CallSplitIcon },

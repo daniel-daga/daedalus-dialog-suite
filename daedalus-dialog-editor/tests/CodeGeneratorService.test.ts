@@ -540,6 +540,35 @@ describe('HeroFollowsAction code generation', () => {
   });
 });
 
+describe('UseItemAction code generation (#304)', () => {
+  test('generates B_UseItem from the editor\'s plain-JSON action', () => {
+    const plainModel = {
+      declarationOrder: [{ type: 'function', name: 'DIA_NPC_Joint_Info' }],
+      dialogs: {},
+      functions: {
+        'DIA_NPC_Joint_Info': {
+          name: 'DIA_NPC_Joint_Info',
+          returnType: 'VOID',
+          calls: [],
+          conditions: [],
+          actions: [{ type: 'UseItemAction', target: 'other', item: 'ItMi_Joint' }]
+        }
+      },
+      hasErrors: false,
+      errors: []
+    };
+
+    const result = new CodeGeneratorService().generateCode(plainModel, {
+      indentChar: '\t' as const,
+      includeComments: false,
+      sectionHeaders: false,
+      uppercaseKeywords: false,
+    });
+
+    expect(result).toContain('B_UseItem (other, ItMi_Joint);');
+  });
+});
+
 describe('AI_Output listener (issue #115)', () => {
   let service: CodeGeneratorService;
 

@@ -222,6 +222,7 @@ The semantic model captures high-level dialog actions:
 - **SetAttitudeAction** - `B_SetAttitude(npc, attitude);`
 - **ExchangeRoutineAction** - `Npc_ExchangeRoutine(npc, routine);`
 - **ChapterTransitionAction** - `B_Kapitelwechsel(chapter, world);`
+- **UseItemAction** - `B_UseItem(npc, item);`
 - **Action** (generic) - Any other function call
 
 ## Code Generation

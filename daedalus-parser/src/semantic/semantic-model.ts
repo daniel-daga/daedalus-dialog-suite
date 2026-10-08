@@ -30,12 +30,14 @@ import {
   GiveInventoryItems,
   GiveTradeInventoryAction,
   RemoveInventoryItemsAction,
+  UseItemAction,
 } from './inventoryActions';
 export {
   CreateInventoryItems,
   GiveInventoryItems,
   GiveTradeInventoryAction,
   RemoveInventoryItemsAction,
+  UseItemAction,
 } from './inventoryActions';
 
 import {
@@ -606,6 +608,7 @@ export type DialogAction = (
   | TeachAction
   | GiveTradeInventoryAction
   | RemoveInventoryItemsAction
+  | UseItemAction
   | InsertNpcAction
   | HeroFollowsAction
   | SetRefuseTalkAction
@@ -648,6 +651,7 @@ const ACTION_DISCRIMINATOR: DiscriminatorConfig = {
     { value: TeachAction, name: 'TeachAction' },
     { value: GiveTradeInventoryAction, name: 'GiveTradeInventoryAction' },
     { value: RemoveInventoryItemsAction, name: 'RemoveInventoryItemsAction' },
+    { value: UseItemAction, name: 'UseItemAction' },
     { value: InsertNpcAction, name: 'InsertNpcAction' },
     { value: HeroFollowsAction, name: 'HeroFollowsAction' },
     { value: SetRefuseTalkAction, name: 'SetRefuseTalkAction' },

@@ -789,6 +789,34 @@ describe('ValidationService', () => {
       );
     });
 
+    // #304: B_UseItem without an item would emit `B_UseItem (self, );`.
+    test('should require an item for B_UseItem', async () => {
+      const modelWithMissingItem = {
+        dialogs: {},
+        functions: {
+          'DIA_Test_Info': {
+            name: 'DIA_Test_Info',
+            returnType: 'VOID',
+            actions: [{ type: 'UseItemAction', target: 'self', item: '' }],
+            conditions: [],
+            calls: []
+          }
+        },
+        hasErrors: false,
+        errors: []
+      };
+
+      const result = await validationService.validate(modelWithMissingItem, defaultSettings);
+
+      expect(result.isValid).toBe(false);
+      expect(result.errors).toContainEqual(
+        expect.objectContaining({
+          type: 'missing_required_property',
+          message: expect.stringContaining('Use Item')
+        })
+      );
+    });
+
     test('should pass when all actions are valid', async () => {
       const model = {
         dialogs: {},

@@ -404,6 +404,13 @@ export interface RemoveInventoryItemsActionType {
   removeQuantity?: string;
 }
 
+/** `B_UseItem (npc, item);` — the NPC uses the item (#304). */
+export interface UseItemActionType {
+  type: 'UseItemAction';
+  target: string;
+  item: string;
+}
+
 export interface InsertNpcActionType {
   type: 'InsertNpcAction';
   npcInstance: string;
@@ -480,6 +487,7 @@ export type DialogAction = (
   | TeachActionType
   | GiveTradeInventoryActionType
   | RemoveInventoryItemsActionType
+  | UseItemActionType
   | InsertNpcActionType
   | HeroFollowsActionType
   | ConditionalAction

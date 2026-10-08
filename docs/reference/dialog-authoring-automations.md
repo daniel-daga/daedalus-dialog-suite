@@ -71,7 +71,7 @@ regression tests live next to the cited modules in
   Inventory Items, Attack, Set Variable, Start Other Routine, Pickpocket
   (field count follows the mode: `C_Beklauen` adds Min/Max), Log Entry, Create
   Topic, Log Set Status, Chapter Transition, Exchange Routine, Play Animation,
-  Insert NPC, Refuse Talk, Set Attitude, and Teach. Only keyboard-focusable
+  Insert NPC, Refuse Talk, Set Attitude, Use Item, and Teach. Only keyboard-focusable
   inputs count as row fields — `tabIndex={-1}` icon buttons and plain labels do
   not shift the indices. Intentionally excluded: Choice (bespoke #118
   dive-into-sub-dialog Tab handling), Conditional (nested branches, not a flat

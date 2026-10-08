@@ -26,6 +26,7 @@ import type {
   TeachAction,
   GiveTradeInventoryAction,
   RemoveInventoryItemsAction,
+  UseItemAction,
   InsertNpcAction,
   HeroFollowsAction,
   ConditionalAction,
@@ -184,6 +185,12 @@ export const ACTION_TEMPLATES = {
     removeNpc,
     removeItem,
     removeQuantity
+  }),
+
+  useItemAction: (target: string = 'self', item: string = 'ItMi_Joint'): UseItemAction => ({
+    type: 'UseItemAction',
+    target,
+    item
   }),
 
   insertNpcAction: (npcInstance: string = 'NONE_100_XARDAS', spawnPoint: string = 'WP_START'): InsertNpcAction => ({

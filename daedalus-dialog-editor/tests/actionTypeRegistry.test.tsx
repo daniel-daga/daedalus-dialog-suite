@@ -37,6 +37,7 @@ const TYPE_FIELD_BY_ID: Record<Exclude<ActionTypeId, QuestStepMenuId>, string> =
   teachAction: 'TeachAction',
   giveTradeInventoryAction: 'GiveTradeInventoryAction',
   removeInventoryItemsAction: 'RemoveInventoryItemsAction',
+  useItemAction: 'UseItemAction',
   insertNpcAction: 'InsertNpcAction',
   heroFollowsAction: 'HeroFollowsAction',
   conditionalAction: 'ConditionalAction',

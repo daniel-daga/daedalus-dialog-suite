@@ -25,6 +25,7 @@ import {
   TeachAction,
   GiveTradeInventoryAction,
   RemoveInventoryItemsAction,
+  UseItemAction,
   InsertNpcAction
 } from '../semantic-model';
 import { parseArgumentsDetailed, parseNumericArg, ParsedArg } from './argument-parsing';
@@ -121,6 +122,8 @@ export class ActionParsers {
         return ActionParsers.parseRemoveInventoryItemsCall(node, functionName, 3);
       case 'npc_removeinvitem':
         return ActionParsers.parseRemoveInventoryItemsCall(node, functionName, 2);
+      case 'b_useitem':
+        return ActionParsers.parseUseItemCall(node);
       case 'wld_insertnpc':
         return ActionParsers.parseInsertNpcCall(node);
       default:
@@ -369,6 +372,15 @@ export class ActionParsers {
   static parseGiveTradeInventoryCall(node: TreeSitterNode): GiveTradeInventoryAction | null {
     return ActionParsers.parseActionWithArgs(node, 1, (args) =>
       new GiveTradeInventoryAction(args[0].raw)
+    );
+  }
+
+  /**
+   * Parse B_UseItem function call
+   */
+  static parseUseItemCall(node: TreeSitterNode): UseItemAction | null {
+    return ActionParsers.parseActionWithArgs(node, 2, (args) =>
+      new UseItemAction(args[0].raw, args[1].raw)
     );
   }
 

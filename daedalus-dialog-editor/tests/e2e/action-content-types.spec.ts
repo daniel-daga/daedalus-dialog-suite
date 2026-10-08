@@ -67,6 +67,7 @@ test.describe('Action type content insertion', () => {
     { menuLabel: 'Teach', signatureLabel: 'Teach Function' },
     { menuLabel: 'Give Trade Inventory', signatureLabel: 'Trade Target' },
     { menuLabel: 'Remove Inventory Items', signatureLabel: 'Item' },
+    { menuLabel: 'Use Item', signatureLabel: 'Item' },
     { menuLabel: 'Insert NPC', signatureLabel: 'NPC Instance' },
     { menuLabel: 'Hero Follows NPC', signatureLabel: 'Guide Routine' },
     { menuLabel: 'Refuse Talk', signatureLabel: 'Seconds' },
@@ -152,6 +153,19 @@ test.describe('Action content editing persists in session', () => {
     const dialogField = page.getByLabel('Dialog Instance');
     await expect(dialogField).toBeVisible();
     await expect(dialogField).toHaveValue('DIA_Arog_EntscheidungKillAlchemist');
+  });
+
+  // Issue #304: B_UseItem — an NPC uses an item (`B_UseItem (other, ItMi_Joint);`).
+  test('Use Item: Target defaults to self and the typed Item is preserved', async ({ page }) => {
+    await addActionFromMenu(page, 'Use Item');
+    const target = page.getByLabel('Target', { exact: true });
+    const item = page.getByLabel('Item', { exact: true });
+    await expect(target).toHaveValue('self');
+    await item.click();
+    await item.fill('ItMi_Joint');
+    await item.blur();
+    await page.waitForTimeout(400);
+    await expect(item).toHaveValue('ItMi_Joint');
   });
 
   // Issue #183 (item 1): a swap button flips Giver <-> Receiver in place.

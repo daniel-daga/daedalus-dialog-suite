@@ -31,6 +31,7 @@ import StartOtherRoutineActionRenderer from './StartOtherRoutineActionRenderer';
 import TeachActionRenderer from './TeachActionRenderer';
 import GiveTradeInventoryActionRenderer from './GiveTradeInventoryActionRenderer';
 import RemoveInventoryItemsActionRenderer from './RemoveInventoryItemsActionRenderer';
+import UseItemActionRenderer from './UseItemActionRenderer';
 import InsertNpcActionRenderer from './InsertNpcActionRenderer';
 import HeroFollowsActionRenderer from './HeroFollowsActionRenderer';
 import ConditionalActionRenderer from './ConditionalActionRenderer';
@@ -65,6 +66,7 @@ export const ACTION_RENDERERS: Record<ActionTypeId, React.FC<BaseActionRendererP
   teachAction: TeachActionRenderer,
   giveTradeInventoryAction: GiveTradeInventoryActionRenderer,
   removeInventoryItemsAction: RemoveInventoryItemsActionRenderer,
+  useItemAction: UseItemActionRenderer,
   insertNpcAction: InsertNpcActionRenderer,
   heroFollowsAction: HeroFollowsActionRenderer,
   conditionalAction: ConditionalActionRenderer,

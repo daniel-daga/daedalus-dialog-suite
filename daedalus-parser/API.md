@@ -342,6 +342,7 @@ typed fields without replay.
 - `ExchangeRoutineAction` - Npc_ExchangeRoutine calls
 - `ChapterTransitionAction` - B_Kapitelwechsel calls
 - `SetRefuseTalkAction` - Npc_SetRefuseTalk calls
+- `UseItemAction` - B_UseItem calls
 - `ClearChoicesAction` - Info_ClearChoices calls
 - `Action` - Generic action (any other function call)
 

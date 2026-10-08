@@ -82,6 +82,29 @@ export class GiveTradeInventoryAction implements CodeGeneratable {
   }
 }
 
+export class UseItemAction implements CodeGeneratable {
+  public readonly type = 'UseItemAction';
+  public target: string;
+  public item: string;
+
+  constructor(target: string, item: string) {
+    this.target = target;
+    this.item = item;
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    return generateCallStatement(this, 'B_UseItem', [this.target, this.item]);
+  }
+
+  toDisplayString(): string {
+    return `[UseItem: ${this.target} uses ${this.item}]`;
+  }
+
+  getTypeName(): string {
+    return 'UseItemAction';
+  }
+}
+
 export class RemoveInventoryItemsAction implements CodeGeneratable {
   public readonly type = 'RemoveInventoryItemsAction';
   public removeFunctionName: 'Npc_RemoveInvItems' | 'Npc_RemoveInvItem';
