@@ -1,12 +1,9 @@
 name: Build Windows
 
 on:
+  # The release notes are the checked-in RELEASE_NOTES.md, validated on every
+  # push by all-tests.yml — edit it before dispatching.
   workflow_dispatch:
-    inputs:
-      what_changed:
-        description: 'One line per change, formatted as #123: Short description'
-        required: true
-        type: string
 
 permissions:
   contents: write
@@ -21,7 +18,19 @@ jobs:
   # Full test matrix gate: editor typecheck/Jest/build guard, browser-harness
   # Playwright, parser tests/lint/typecheck, and the corpus job. Releasing from
   # a red default branch is structurally impossible — the build job needs this.
+  # Seconds, not the test matrix's eight minutes: a malformed RELEASE_NOTES.md
+  # stops the release before anything else starts.
+  release-notes:
+    name: Release notes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate RELEASE_NOTES.md
+        run: node tools/release-notes.js
+
   tests:
+    needs: release-notes
     uses: ./.github/workflows/all-tests.yml
 
   # Phase 2 (fix-08 §2): run the real-Electron E2E suite on the SHIPPED platform
@@ -32,6 +41,7 @@ jobs:
   # `tests` gate); publishing stays guarded on the `build` job below.
   e2e-electron-windows:
     name: E2E Tests (real Electron, Windows)
+    needs: release-notes
     # windows-2022, not windows-latest — same reason `all-tests.yml`'s
     # zenkit-node-tests job is pinned: the latest image ships Visual Studio 18,
     # which node-gyp 11.5.0 cannot identify, so daedalus-parser's install dies
@@ -164,24 +174,15 @@ jobs:
     - name: Build Parser
       run: pnpm --filter daedalus-parser run build
 
-    - name: Validate and prepare build notes
+    - name: Prepare build notes
       id: changes
       shell: pwsh
-      env:
-        WHAT_CHANGED_INPUT: ${{ inputs.what_changed }}
       run: |
-        $entries = @()
-        foreach ($line in ($env:WHAT_CHANGED_INPUT -split "`r?`n")) {
-          if ([string]::IsNullOrWhiteSpace($line)) { continue }
-          if ($line -notmatch '^\s*#([1-9]\d*)\s*:\s*(\S.*\S|\S)\s*$') {
-            throw "Invalid change note '$line'. Use one line per item: #123: Short description"
-          }
-          if ($Matches[2].Length -gt 120) { throw 'Change descriptions must be 120 characters or fewer.' }
-          $entries += [ordered]@{ issue = [int]$Matches[1]; description = $Matches[2] }
-        }
-        if ($entries.Count -eq 0) { throw 'Add at least one change note with an issue number.' }
-        $json = ConvertTo-Json -InputObject @($entries) -Compress
+        $json = node tools/release-notes.js
+        if ($LASTEXITCODE -ne 0) { exit 1 }
+        $markdown = ($json | ConvertFrom-Json | ForEach-Object { "- #$($_.issue): $($_.description)" }) -join "`n"
         "json=$json" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        "markdown<<RELEASE_NOTES_EOF`n$markdown`nRELEASE_NOTES_EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
     - name: Build Editor
       env:
@@ -417,7 +418,7 @@ jobs:
 
           **What's changed**
 
-          ${{ inputs.what_changed }}
+          ${{ steps.changes.outputs.markdown }}
 
           Download `daedalus-dialog-editor-windows-latest.exe` from this release.
         prerelease: true

@@ -32,6 +32,13 @@ jobs:
       - name: Doc and plan hygiene
         run: node tools/check-docs.js
 
+      # Build Windows reads RELEASE_NOTES.md; a malformed note fails here, on
+      # push, not eight minutes into a release.
+      - name: Release notes
+        run: |
+          node --test tools/release-notes.test.js
+          node tools/release-notes.js
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
