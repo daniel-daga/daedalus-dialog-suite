@@ -138,6 +138,28 @@ test('an explicit success return and a new hand-built integer function retain th
   assert.match(normalized.generateFunction(new DialogFunction('New', 'int')), /return TRUE;/);
 });
 
+test('deleting the last action from parsed functions does not restore generator defaults', () => {
+  const model = hydrate(parse('func int F() { Touch(); }; func void G() { Touch(); };'));
+  model.functions.F.actions = [];
+  model.functions.G.actions = [];
+
+  const output = new SemanticCodeGenerator().generateSemanticModel(model);
+
+  assert.doesNotMatch(output, /return TRUE|TODO: Implement function body/);
+  assert.match(output, /func int F\(\)\s*\{\s*\};/);
+  assert.match(output, /func void G\(\)\s*\{\s*\};/);
+});
+
+test('deleting a comment-only parsed body does not create a placeholder action', () => {
+  const model = hydrate(parse('func void F() { // remove me\n};'));
+  model.functions.F.actions = [];
+
+  const output = new SemanticCodeGenerator().generateSemanticModel(model);
+
+  assert.doesNotMatch(output, /TODO: Implement function body/);
+  assert.match(output, /func void F\(\)\s*\{\s*\};/);
+});
+
 for (const newline of ['\n', '\r\n']) {
   for (const declaration of [
     'func void F() { Touch(); }',

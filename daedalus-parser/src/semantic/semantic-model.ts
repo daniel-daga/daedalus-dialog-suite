@@ -725,18 +725,19 @@ function ensureActionType(json: any): void {
 
 // Helper to deserialize any action
 export function deserializeAction(json: any): DialogAction | any {
-  ensureActionType(json);
+  const input = structuredClone(json);
+  ensureActionType(input);
 
-  if (json.type) {
-    const subType = ACTION_DISCRIMINATOR.subTypes.find(s => s.name === json.type);
+  if (input.type) {
+    const subType = ACTION_DISCRIMINATOR.subTypes.find(s => s.name === input.type);
     if (subType) {
-      const instance = plainToInstance(subType.value as ClassConstructor<any>, json);
+      const instance = plainToInstance(subType.value as ClassConstructor<any>, input);
       if (instance instanceof ConditionalAction) {
-        instance.thenActions = Array.isArray(json.thenActions)
-          ? json.thenActions.map((action: any) => deserializeAction(action))
+        instance.thenActions = Array.isArray(input.thenActions)
+          ? input.thenActions.map((action: any) => deserializeAction(action))
           : [];
-        instance.elseActions = Array.isArray(json.elseActions)
-          ? json.elseActions.map((action: any) => deserializeAction(action))
+        instance.elseActions = Array.isArray(input.elseActions)
+          ? input.elseActions.map((action: any) => deserializeAction(action))
           : [];
       }
       return instance;
@@ -744,10 +745,10 @@ export function deserializeAction(json: any): DialogAction | any {
     // Unknown type: warn instead of silently returning raw JSON, which would let
     // type-unsafe data propagate undetected. Add the missing type to
     // ACTION_DISCRIMINATOR.subTypes to suppress this warning.
-    console.warn(`[deserializeAction] Unrecognised action type "${json.type}" — returning raw JSON. Add it to ACTION_DISCRIMINATOR.subTypes.`);
+    console.warn(`[deserializeAction] Unrecognised action type "${input.type}" — returning raw JSON. Add it to ACTION_DISCRIMINATOR.subTypes.`);
   }
 
-  return json;
+  return input;
 }
 
 // ===================================================================
@@ -786,16 +787,17 @@ function ensureConditionType(json: any): void {
 
 // Helper to deserialize any condition
 export function deserializeCondition(json: any): DialogCondition {
-  ensureConditionType(json);
+  const input = structuredClone(json);
+  ensureConditionType(input);
 
-  if (json.type) {
-    const subType = CONDITION_DISCRIMINATOR.subTypes.find(s => s.name === json.type);
+  if (input.type) {
+    const subType = CONDITION_DISCRIMINATOR.subTypes.find(s => s.name === input.type);
     if (subType) {
-      return plainToInstance(subType.value as ClassConstructor<any>, json);
+      return plainToInstance(subType.value as ClassConstructor<any>, input);
     }
     // Unknown type: warn instead of silently swallowing the data (mirrors
     // deserializeAction). Add the missing type to CONDITION_DISCRIMINATOR.subTypes.
-    console.warn(`[deserializeCondition] Unrecognised condition type "${json.type}" — falling back to empty Condition. Add it to CONDITION_DISCRIMINATOR.subTypes.`);
+    console.warn(`[deserializeCondition] Unrecognised condition type "${input.type}" — falling back to empty Condition. Add it to CONDITION_DISCRIMINATOR.subTypes.`);
   }
 
   // Fallback
@@ -841,6 +843,8 @@ export class DialogFunction {
   /** Body comments around a projected guard or unconditional TRUE return. */
   public conditionBodyLeadingComments?: string[];
   public conditionBodyTrailingComments?: string[];
+  /** True when a projected condition body contains an explicit unconditional success return. */
+  public hasExplicitTrueReturn?: boolean;
   public hasExplicitBodyContent?: boolean;
   public parameters?: FunctionParameter[];
   /** Source range of the whole declaration node, `FUNC` through `};`. */
@@ -1124,6 +1128,11 @@ export interface SemanticModel {
 
 // Helper to deserialize full semantic model
 export function deserializeSemanticModel(json: any): SemanticModel {
+  // class-transformer's discriminator handling removes the discriminator from
+  // source objects. Hydration is a boundary operation, so confine that behavior
+  // (and legacy type normalization below) to a private copy of the JSON payload.
+  json = structuredClone(json);
+
   const model: SemanticModel = {
     dialogs: createNameRecord(),
     functions: createNameRecord(),
@@ -1238,4 +1247,3 @@ export function deserializeSemanticModel(json: any): SemanticModel {
 
   return model;
 }
-

@@ -153,6 +153,16 @@ test('adding a missing indexed field writes the index', () => {
   assert.deepEqual(changedLines(ONAR, edited).added, ['\tprotection[PROT_EDGE] = 100;']);
 });
 
+test('field edits reject repeated source writes instead of changing only the first one', () => {
+  const source = 'instance N(C_NPC) { level = 1; LEVEL = 2; attribute[ATR_STRENGTH] = 3; attribute[atr_strength] = 4; };';
+
+  assert.throws(() => applyNpcEdits(source, [{ op: 'set', field: 'level', value: '9' }]), /ambiguous.*level/i);
+  assert.throws(() => applyNpcEdits(source, [{ op: 'remove', field: 'level' }]), /ambiguous.*level/i);
+  assert.throws(() => applyNpcEdits(source, [
+    { op: 'set', field: 'attribute', index: 'ATR_STRENGTH', value: '9' }
+  ]), /ambiguous.*attribute/i);
+});
+
 test('adding fields and calls stays inside an instance whose closing brace shares the anchor line', () => {
   for (const suffix of ['', '\n', ' // end\n']) {
     const source = `instance A(Npc_Default) { level = 1; };${suffix}`;

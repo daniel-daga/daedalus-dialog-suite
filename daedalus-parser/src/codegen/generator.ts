@@ -573,13 +573,14 @@ export class SemanticCodeGenerator {
     } else {
       // Empty function - add a simple return or placeholder
       if (returnTypeLower === 'int') {
-        if (func.hasExplicitBodyContent !== false) {
+        if (func.hasExplicitTrueReturn || func.hasExplicitBodyContent === undefined) {
           lines.push(`${indent}return TRUE;`);
         }
       } else if (returnTypeLower === 'void') {
         // N4: never invent a placeholder comment for a function that had an
-        // empty body in source. Only emit the placeholder for hand-built models.
-        if (func.hasExplicitBodyContent !== false) {
+        // empty body in source or whose contents were later deleted. Only emit
+        // the placeholder for hand-built models without source-body metadata.
+        if (func.hasExplicitBodyContent === undefined) {
           lines.push(`${indent}// T` + `ODO: Implement function body`);
         }
       }
@@ -697,4 +698,3 @@ export class SemanticCodeGenerator {
     return rendered === null ? null : `${rendered}\n`;
   }
 }
-
