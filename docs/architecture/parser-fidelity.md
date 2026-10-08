@@ -215,6 +215,31 @@ bitwise, array, member and unary expressions, literals alongside them, edits,
 official JSON hydration and three cycles with alternating style settings.
 All eight regressions failed before the fix and pass after it.
 
+## String-literal properties hold contents
+
+A C_INFO property assigned a string literal holds the string's contents, not
+its token: `description = "Hallo";` reads as `'Hallo'`. The kind lives only in
+`propertyLiteralKeys` / `propertyExpressionKeys`, and generation quotes literal
+keys. Before this, the value kept its quotes and every consumer stripped, added
+or guessed them; the editor's guess (`DIALOG_ENDE`-shaped → constant, quoted →
+keep, else quote) turned a deleted closing quote into `""Hallo`.
+
+Daedalus strings cannot contain `"`, so a quoted value that is not an
+expression is unambiguously a token. `Dialog.fromJSON` unwraps one from older
+JSON, marks the key literal before function linking (so a literal naming a
+function never becomes a reference), and unwraps a preserved body's baseline
+the same way. Generation throws on a literal containing `"`. The fixture and
+MDK corpus results are identical before and after.
+
+The editor writes the kind explicitly (`descriptionSync.ts` `withDescription`):
+the Properties panel has a Text/Constant switch, Text strips `"` and line breaks
+on input, and a constant description never follows the first line (#277).
+
+`GlobalConstant.value` still holds the token, and six renderer sites strip it by
+hand (`QuestList`, `QuestPicker`, `LogEntryRenderer`, `quest/domain/analysis.ts`,
+`npc/npcVisual.ts`, `npc/npcForm.ts`). It is the same defect with a wider
+surface — quest topics and NPC fields — and has not been changed.
+
 ## C_INFO constructor projection boundary (#340)
 
 A C_INFO body is a program, not necessarily a property initializer list. The

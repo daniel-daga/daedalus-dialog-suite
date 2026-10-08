@@ -19,8 +19,10 @@ const MODEL = {
         nr: 1,
         condition: 'DIA_Sync_Condition',
         information: 'DIA_Sync_Info',
-        description: '"Hallo du"',
+        description: 'Hallo du',
       },
+      propertyLiteralKeys: ['description'],
+      propertyExpressionKeys: [],
     },
   },
   functions: {
@@ -43,7 +45,8 @@ const MODEL = {
 const SEED_FILE = `//__MOCK_MODEL__${JSON.stringify(MODEL)}\n`;
 
 const firstLine = (page: Page) => page.getByLabel('Text', { exact: true }).first();
-const description = (page: Page) => page.getByLabel('Description');
+const description = (page: Page) => page.getByRole('textbox', { name: 'Description', exact: true });
+const readSaved = (page: Page) => page.evaluate(() => localStorage.getItem('mockapi_file_sync.d'));
 
 test.describe('In sync with the first line (#277)', () => {
   test.beforeEach(async ({ page }) => {
@@ -60,7 +63,7 @@ test.describe('In sync with the first line (#277)', () => {
     await page.getByRole('button', { name: /DIA_Sync/ }).first().click();
     await expect(page.getByRole('heading', { name: 'DIA_Sync', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Expand properties' }).click();
-    await expect(description(page)).toHaveValue('"Hallo du"');
+    await expect(description(page)).toHaveValue('Hallo du');
   });
 
   test('a description in step with the first line follows its edits', async ({ page }) => {
@@ -68,7 +71,7 @@ test.describe('In sync with the first line (#277)', () => {
 
     await firstLine(page).fill('Hallo Fremder');
 
-    await expect(description(page)).toHaveValue('"Hallo Fremder"');
+    await expect(description(page)).toHaveValue('Hallo Fremder');
     await expect(page.getByLabel('In sync with the first line')).toBeVisible();
   });
 
@@ -84,11 +87,32 @@ test.describe('In sync with the first line (#277)', () => {
     // Past the line editor's debounce, so a follow would have landed by now;
     // the re-sync below reading 'Hallo Fremder' proves the edit itself did.
     await page.waitForTimeout(1000);
-    await expect(description(page)).toHaveValue('"Wer bist du?"');
+    await expect(description(page)).toHaveValue('Wer bist du?');
 
     await resync.click();
 
-    await expect(description(page)).toHaveValue('"Hallo Fremder"');
+    await expect(description(page)).toHaveValue('Hallo Fremder');
     await expect(page.getByLabel('In sync with the first line')).toBeVisible();
+  });
+
+  // The quotes are the file's syntax, never the field's text: removing the
+  // last character must not leave or add one.
+  test('the field edits the text, and the file gets the quotes', async ({ page }) => {
+    await description(page).press('End');
+    await description(page).press('Backspace');
+    await description(page).blur();
+
+    await expect(description(page)).toHaveValue('Hallo d');
+    await page.keyboard.press('Control+s');
+    await expect.poll(() => readSaved(page)).toMatch(/description\s*=\s*"Hallo d";/);
+  });
+
+  test('a constant is chosen with the Constant switch and written bare', async ({ page }) => {
+    await page.getByRole('button', { name: 'Constant' }).click();
+    await page.getByRole('combobox', { name: 'Description constant' }).fill('DIALOG_ENDE');
+    await page.getByRole('combobox', { name: 'Description constant' }).blur();
+
+    await page.keyboard.press('Control+s');
+    await expect.poll(() => readSaved(page)).toMatch(/description\s*=\s*DIALOG_ENDE;/);
   });
 });

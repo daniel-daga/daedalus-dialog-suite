@@ -290,6 +290,8 @@ function parseSource(sourceCode: string): any {
 
     // Parse properties
     const properties: any = {};
+    // As the parser: a string literal's value is its contents, its kind a key list.
+    const propertyLiteralKeys: string[] = [];
     const propRegex = /(\w+)\s*=\s*([^;]+);/g;
     let propMatch;
 
@@ -300,6 +302,10 @@ function parseSource(sourceCode: string): any {
       // Convert TRUE/FALSE to boolean
       if (value === 'TRUE') value = true;
       else if (value === 'FALSE') value = false;
+      else if (/^"[^"]*"$/.test(value)) {
+        value = value.slice(1, -1);
+        propertyLiteralKeys.push(key);
+      }
 
       properties[key] = value;
     }
@@ -319,6 +325,7 @@ function parseSource(sourceCode: string): any {
         name: dialogName,
         parent: 'C_INFO',
         properties,
+        propertyLiteralKeys,
         line: lineAt(sourceCode, match.index),
       };
     }
@@ -411,6 +418,8 @@ function generateCode(model: any, settings: any): string {
         valueStr = value.name || JSON.stringify(value);
       } else if (typeof value === 'boolean') {
         valueStr = uppercase ? value.toString().toUpperCase() : value.toString();
+      } else if (dialog.propertyLiteralKeys?.includes(key) && !dialog.propertyExpressionKeys?.includes(key)) {
+        valueStr = `"${value}"`;
       }
 
       code += `${indent}${key}${indent}= ${valueStr};\n`;

@@ -10,7 +10,9 @@ import {
   Chip,
   Checkbox,
   FormControlLabel,
-  InputAdornment
+  InputAdornment,
+  ToggleButton,
+  ToggleButtonGroup
 } from '@mui/material';
 import {
   ExpandMore as ExpandMoreIcon,
@@ -22,7 +24,7 @@ import VariableAutocomplete from './common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from './common/autocompletePolicies';
 import type { Dialog, SemanticModel } from '../types/global';
 import { dialogFlagKey, readDialogFlag } from '../utils/dialogFlags';
-import { descriptionFromInput, descriptionFromLine, isDescriptionInSync } from './descriptionSync';
+import { isDescriptionConstant, isDescriptionInSync, withDescription } from './descriptionSync';
 
 interface DialogPropertiesSectionProps {
   dialog: Dialog;
@@ -42,18 +44,28 @@ const DialogPropertiesSection: React.FC<DialogPropertiesSectionProps> = ({
   onDialogPropertyChange,
   firstLineText = ''
 }) => {
-  const [localDescription, setLocalDescription] = useState(dialog.properties?.description || '');
+  const storedDescription = dialog.properties?.description || '';
+  const storedIsConstant = isDescriptionConstant(dialog);
+  const [localDescription, setLocalDescription] = useState(storedDescription);
+  const [descriptionEdited, setDescriptionEdited] = useState(false);
+  // The mode only says which editor shows; the kind is written with a value.
+  const [constantMode, setConstantMode] = useState(storedIsConstant);
 
   useEffect(() => {
-    setLocalDescription(dialog.properties?.description || '');
-  }, [dialog.properties?.description]);
+    setLocalDescription(storedDescription);
+    setDescriptionEdited(false);
+  }, [storedDescription]);
+
+  useEffect(() => {
+    setConstantMode(storedIsConstant);
+  }, [dialog.name, storedIsConstant]);
 
   const handleNpcChange = useCallback((value: string) => onDialogPropertyChange((existingDialog) => ({
     ...existingDialog,
     properties: { ...existingDialog.properties, npc: value }
   })), [onDialogPropertyChange]);
 
-  const descriptionInSync = isDescriptionInSync(dialog.properties?.description, firstLineText);
+  const descriptionInSync = isDescriptionInSync(dialog, firstLineText);
 
   return (
     <Paper sx={{ p: 2, mb: 2 }}>
@@ -123,50 +135,72 @@ const DialogPropertiesSection: React.FC<DialogPropertiesSectionProps> = ({
             }))}
             size="small"
           />
-          <TextField
-            fullWidth
-            label="Description"
-            value={localDescription}
-            onChange={(event) => setLocalDescription(event.target.value)}
-            onBlur={() => {
-              if (localDescription !== (dialog.properties?.description || '')) {
-                onDialogPropertyChange((existingDialog) => ({
-                  ...existingDialog,
-                  properties: {
-                    ...existingDialog.properties,
-                    description: descriptionFromInput(localDescription, semanticModel?.constants)
+          <Stack direction="row" spacing={1} alignItems="flex-start">
+            <ToggleButtonGroup
+              exclusive
+              size="small"
+              aria-label="Description kind"
+              value={constantMode ? 'constant' : 'text'}
+              onChange={(_event, mode: 'text' | 'constant' | null) => {
+                if (mode) setConstantMode(mode === 'constant');
+              }}
+            >
+              <ToggleButton value="text">Text</ToggleButton>
+              <ToggleButton value="constant">Constant</ToggleButton>
+            </ToggleButtonGroup>
+            {constantMode ? (
+              <VariableAutocomplete
+                fullWidth
+                label="Description constant"
+                value={storedIsConstant ? storedDescription : ''}
+                onChange={(value) => {
+                  // An empty constant would write `description = ;`.
+                  if (value) onDialogPropertyChange((existingDialog) => withDescription(existingDialog, value, true));
+                }}
+                {...AUTOCOMPLETE_POLICIES.dialogProperties.description}
+                semanticModel={semanticModel}
+              />
+            ) : (
+              <TextField
+                fullWidth
+                label="Description"
+                value={localDescription}
+                onChange={(event) => {
+                  setLocalDescription(event.target.value);
+                  setDescriptionEdited(true);
+                }}
+                onBlur={() => {
+                  if (descriptionEdited) {
+                    onDialogPropertyChange((existingDialog) => withDescription(existingDialog, localDescription, false));
                   }
-                }));
-              }
-            }}
-            multiline
-            rows={2}
-            size="small"
-            InputProps={{
-              endAdornment: (
-                <InputAdornment position="end">
-                  {descriptionInSync ? (
-                    <Tooltip title="Follows the first line of the dialog">
-                      <LinkIcon fontSize="small" color="action" aria-label="In sync with the first line" />
-                    </Tooltip>
-                  ) : (
-                    <Tooltip title="Differs from the first line of the dialog — click to sync it again">
-                      <IconButton
-                        size="small"
-                        aria-label="Sync with the first line"
-                        onClick={() => onDialogPropertyChange((existingDialog) => ({
-                          ...existingDialog,
-                          properties: { ...existingDialog.properties, description: descriptionFromLine(firstLineText) }
-                        }))}
-                      >
-                        <LinkOffIcon fontSize="small" color="warning" />
-                      </IconButton>
-                    </Tooltip>
-                  )}
-                </InputAdornment>
-              )
-            }}
-          />
+                }}
+                multiline
+                rows={2}
+                size="small"
+                InputProps={{
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      {descriptionInSync ? (
+                        <Tooltip title="Follows the first line of the dialog">
+                          <LinkIcon fontSize="small" color="action" aria-label="In sync with the first line" />
+                        </Tooltip>
+                      ) : (
+                        <Tooltip title="Differs from the first line of the dialog — click to sync it again">
+                          <IconButton
+                            size="small"
+                            aria-label="Sync with the first line"
+                            onClick={() => onDialogPropertyChange((existingDialog) => withDescription(existingDialog, firstLineText, false))}
+                          >
+                            <LinkOffIcon fontSize="small" color="warning" />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                    </InputAdornment>
+                  )
+                }}
+              />
+            )}
+          </Stack>
           <Stack direction="row" spacing={2}>
             <FormControlLabel
               control={(

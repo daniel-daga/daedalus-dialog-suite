@@ -146,63 +146,115 @@ describe('DialogPropertiesSection', () => {
     expect(updated.properties).not.toHaveProperty('permanent');
   });
 
-  // A typed description is a string: unquoted, a single word was emitted as a
-  // bare identifier (`description = Hallo;`). A constant keeps its bare form.
-  test.each([
-    ['Hallo', '"Hallo"'],
-    ['Hallo du', '"Hallo du"'],
-    ['"Schon zitiert"', '"Schon zitiert"'],
-    ['DIALOG_ENDE', 'DIALOG_ENDE'],
-    ['MY_TEXT', 'MY_TEXT']
-  ])('writes a typed description %s as %s', (typed, written) => {
-    const onDialogPropertyChange = jest.fn();
-    const dialog = {
-      name: 'DIA_Test',
-      parent: 'C_INFO',
-      properties: { npc: 'PC_HERO', nr: 1, description: '' }
-    };
+  // The description holds text; whether it is a string or a constant lives in
+  // the dialog's literal/expression key lists, never in quotes (#277 follow-up).
+  type Described = {
+    name: string;
+    parent: string;
+    properties: { npc: string; nr: number; description: string };
+    propertyLiteralKeys?: string[];
+    propertyExpressionKeys?: string[];
+  };
 
+  const renderSection = (dialog: Described, expanded = true, semanticModel: any = { dialogs: {}, functions: {} }) => {
+    const onDialogPropertyChange = jest.fn();
     render(
       <DialogPropertiesSection
         dialog={dialog}
-        semanticModel={{ dialogs: {}, functions: {} }}
-        propertiesExpanded
+        semanticModel={semanticModel}
+        propertiesExpanded={expanded}
         onToggleExpanded={jest.fn()}
         onDialogPropertyChange={onDialogPropertyChange}
       />
     );
+    const written = () => {
+      const calls = onDialogPropertyChange.mock.calls;
+      const updater = calls[calls.length - 1][0] as (existing: Described) => Described;
+      return updater(dialog);
+    };
+    return { onDialogPropertyChange, written };
+  };
 
+  const stringDialog = (description: string): Described => ({
+    name: 'DIA_Test',
+    parent: 'C_INFO',
+    properties: { npc: 'PC_HERO', nr: 1, description },
+    propertyLiteralKeys: ['description'],
+    propertyExpressionKeys: []
+  });
+
+  const constantDialog = (description: string): Described => ({
+    ...stringDialog(description),
+    propertyLiteralKeys: [],
+    propertyExpressionKeys: ['description']
+  });
+
+  test('shows a string description as its text, without quotes', () => {
+    renderSection(stringDialog('Hallo du'));
+    expect(screen.getByRole('textbox', { name: 'Description' })).toHaveValue('Hallo du');
+  });
+
+  test('deleting the last character writes the shorter text, with no stray quote', () => {
+    const { written } = renderSection(stringDialog('Hallo du'));
+    const field = screen.getByRole('textbox', { name: 'Description' });
+    fireEvent.change(field, { target: { value: 'Hallo d' } });
+    fireEvent.blur(field);
+    expect(written().properties.description).toBe('Hallo d');
+  });
+
+  // No more guessing: in Text mode a constant-shaped word is a string too.
+  test.each(['Hallo', 'Hallo du', 'DIALOG_ENDE', 'MY_TEXT'])('typed text %s is written as a string', (typed) => {
+    const { written } = renderSection(constantDialog('DIALOG_WEITER'));
+    fireEvent.click(screen.getByRole('button', { name: 'Text' }));
     const field = screen.getByRole('textbox', { name: 'Description' });
     fireEvent.change(field, { target: { value: typed } });
     fireEvent.blur(field);
-
-    const updater = onDialogPropertyChange.mock.calls[0][0] as (existingDialog: typeof dialog) => typeof dialog;
-    expect(updater(dialog).properties.description).toBe(written);
+    const result = written();
+    expect(result.properties.description).toBe(typed);
+    expect(result.propertyLiteralKeys).toContain('description');
+    expect(result.propertyExpressionKeys).not.toContain('description');
   });
 
-  test('a lowercase constant the file declares keeps its bare form', () => {
-    const onDialogPropertyChange = jest.fn();
-    const dialog = {
-      name: 'DIA_Test',
-      parent: 'C_INFO',
-      properties: { npc: 'PC_HERO', nr: 1, description: '' }
-    };
-
-    render(
-      <DialogPropertiesSection
-        dialog={dialog}
-        semanticModel={{ dialogs: {}, functions: {}, constants: { Dialog_Weiter: { name: 'Dialog_Weiter' } } } as any}
-        propertiesExpanded
-        onToggleExpanded={jest.fn()}
-        onDialogPropertyChange={onDialogPropertyChange}
-      />
-    );
-
+  test('a double quote typed into the text cannot reach the file', () => {
+    const { written } = renderSection(stringDialog(''));
     const field = screen.getByRole('textbox', { name: 'Description' });
-    fireEvent.change(field, { target: { value: 'dialog_weiter' } });
+    fireEvent.change(field, { target: { value: 'Er sagt "Hallo"' } });
     fireEvent.blur(field);
+    expect(written().properties.description).not.toContain('"');
+  });
 
-    const updater = onDialogPropertyChange.mock.calls[0][0] as (existingDialog: typeof dialog) => typeof dialog;
-    expect(updater(dialog).properties.description).toBe('dialog_weiter');
+  test('blurring an untouched field writes nothing', () => {
+    const { onDialogPropertyChange } = renderSection(stringDialog('Hallo du'));
+    fireEvent.blur(screen.getByRole('textbox', { name: 'Description' }));
+    expect(onDialogPropertyChange).not.toHaveBeenCalled();
+  });
+
+  test('a constant description opens in Constant mode and shows its name', () => {
+    renderSection(constantDialog('DIALOG_ENDE'));
+    expect(screen.getByRole('button', { name: 'Constant' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('combobox', { name: 'Description constant' })).toHaveValue('DIALOG_ENDE');
+  });
+
+  test('choosing a constant writes it as an expression', () => {
+    const { written } = renderSection(stringDialog('Hallo du'));
+    fireEvent.click(screen.getByRole('button', { name: 'Constant' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Description constant' }), { target: { value: 'DIALOG_WEITER' } });
+    const result = written();
+    expect(result.properties.description).toBe('DIALOG_WEITER');
+    expect(result.propertyExpressionKeys).toContain('description');
+    expect(result.propertyLiteralKeys).not.toContain('description');
+  });
+
+  test('switching modes alone writes nothing', () => {
+    const { onDialogPropertyChange } = renderSection(stringDialog('Hallo du'));
+    fireEvent.click(screen.getByRole('button', { name: 'Constant' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Text' }));
+    fireEvent.blur(screen.getByRole('textbox', { name: 'Description' }));
+    expect(onDialogPropertyChange).not.toHaveBeenCalled();
+  });
+
+  test('the collapsed chip shows the text without quotes', () => {
+    renderSection(stringDialog('Hallo du'), false);
+    expect(screen.getByText('Hallo du')).toBeInTheDocument();
   });
 });

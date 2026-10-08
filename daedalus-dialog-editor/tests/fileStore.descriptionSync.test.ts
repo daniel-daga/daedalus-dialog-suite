@@ -17,7 +17,7 @@ const infoFunction = (...actions: unknown[]) => ({
   name: 'DIA_Sync_Info', returnType: 'VOID', conditions: [], calls: [], actions
 });
 
-const seed = (description: string | undefined, actions: unknown[]) => {
+const seed = (description: string | undefined, actions: unknown[], kind: 'string' | 'constant' | 'none' = 'string') => {
   const fileState: FileState = {
     filePath: FILE,
     semanticModel: {
@@ -25,7 +25,11 @@ const seed = (description: string | undefined, actions: unknown[]) => {
         DIA_Sync: {
           name: 'DIA_Sync',
           parent: 'C_INFO',
-          properties: { npc: 'PC_Hero', information: 'dia_sync_info', ...(description === undefined ? {} : { description }) }
+          properties: { npc: 'PC_Hero', information: 'dia_sync_info', ...(description === undefined ? {} : { description }) },
+          ...(kind === 'none' ? {} : {
+            propertyLiteralKeys: kind === 'string' ? ['description'] : [],
+            propertyExpressionKeys: kind === 'constant' ? ['description'] : []
+          })
         }
       },
       functions: { DIA_Sync_Info: infoFunction(...actions) },
@@ -38,8 +42,8 @@ const seed = (description: string | undefined, actions: unknown[]) => {
   useEditorStore.setState({ openFiles: new Map([[FILE, fileState]]), activeFile: FILE });
 };
 
-const descriptionNow = () =>
-  useEditorStore.getState().getFileState(FILE)?.semanticModel.dialogs.DIA_Sync.properties.description;
+const dialogNow = () => useEditorStore.getState().getFileState(FILE)?.semanticModel.dialogs.DIA_Sync as any;
+const descriptionNow = () => dialogNow()?.properties.description;
 
 const replaceInfo = (...actions: unknown[]) =>
   useEditorStore.getState().updateFunction(FILE, 'DIA_Sync_Info', infoFunction(...actions) as any);
@@ -48,42 +52,62 @@ describe('description follows the first line (#277)', () => {
   beforeEach(() => useEditorStore.setState({ openFiles: new Map() }));
 
   test('an edit to the first line carries into a description that matched it', () => {
-    seed('"Hallo du"', [line('Hallo du'), line('Was willst du?', 'self')]);
+    seed('Hallo du', [line('Hallo du'), line('Was willst du?', 'self')]);
     replaceInfo(line('Hallo Fremder'), line('Was willst du?', 'self'));
-    expect(descriptionNow()).toBe('"Hallo Fremder"');
+    expect(descriptionNow()).toBe('Hallo Fremder');
   });
 
   test('the updater path carries it too', () => {
-    seed('"Hallo du"', [line('Hallo du')]);
+    seed('Hallo du', [line('Hallo du')]);
     useEditorStore.getState().updateFunctionWithUpdater(FILE, 'DIA_Sync_Info', (fn) => ({
       ...fn, actions: [line('Hallo Fremder')]
     }) as any);
-    expect(descriptionNow()).toBe('"Hallo Fremder"');
+    expect(descriptionNow()).toBe('Hallo Fremder');
   });
 
   test('a new dialog with no lines and no description fills from its first line', () => {
     seed('', []);
     replaceInfo(line('Hallo du'));
-    expect(descriptionNow()).toBe('"Hallo du"');
+    expect(descriptionNow()).toBe('Hallo du');
   });
 
   test('a description that already differed is left alone', () => {
-    seed('"Wer bist du?"', [line('Hallo du')]);
+    seed('Wer bist du?', [line('Hallo du')]);
     replaceInfo(line('Hallo Fremder'));
-    expect(descriptionNow()).toBe('"Wer bist du?"');
+    expect(descriptionNow()).toBe('Wer bist du?');
   });
 
   test('deleting the first line moves the description to the new first line', () => {
-    seed('"Hallo du"', [line('Hallo du'), line('Was willst du?', 'self')]);
+    seed('Hallo du', [line('Hallo du'), line('Was willst du?', 'self')]);
     replaceInfo(line('Was willst du?', 'self'));
-    expect(descriptionNow()).toBe('"Was willst du?"');
+    expect(descriptionNow()).toBe('Was willst du?');
   });
 
   test('a dialog whose information is another function is untouched', () => {
-    seed('"Hallo du"', [line('Hallo du')]);
+    seed('Hallo du', [line('Hallo du')]);
     useEditorStore.getState().updateFunction(FILE, 'DIA_Other_Info', {
       ...infoFunction(line('Anders')), name: 'DIA_Other_Info'
     } as any);
-    expect(descriptionNow()).toBe('"Hallo du"');
+    expect(descriptionNow()).toBe('Hallo du');
+  });
+
+  test('a constant description never follows the first line', () => {
+    seed('Hallo du', [line('Hallo du')], 'constant');
+    replaceInfo(line('Hallo Fremder'));
+    expect(descriptionNow()).toBe('Hallo du');
+  });
+
+  test('a followed description is marked a string even when the dialog had no kind yet', () => {
+    seed('', [], 'none');
+    replaceInfo(line('Hallo du'));
+    expect(dialogNow().propertyLiteralKeys).toContain('description');
+  });
+
+  test('a first line with a double quote follows without one, and stays in sync', () => {
+    seed('Hallo du', [line('Hallo du')]);
+    replaceInfo(line('Er sagt "Hallo"'));
+    expect(descriptionNow()).not.toContain('"');
+    replaceInfo(line('Und weiter'));
+    expect(descriptionNow()).toBe('Und weiter');
   });
 });
