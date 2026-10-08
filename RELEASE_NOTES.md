@@ -2,4 +2,43 @@
 
 ## One line per change, `- #123: Short description` (120 characters max). Replace these before dispatching Build Windows.
 
+- #285: New NPC editor: edit an existing NPC's attributes, talents, weapons and looks from the NPC list
+- #298: The NPC editor shows a live preview of body, head and armour beside the form
+- #311: Scrub Gothic animations in the NPC preview
+- #306: NPC preview: correct texture orientation, texture variants and head/neck join
+- #309: NPCs are drawn with their real meshes at their spawn points in the World view
+- #315: Routine mode in the World view: see and edit an NPC's daily routine on the waynet
+- #317: Edit an NPC's routine as a table in the NPC editor
+- #316: Create a routine for an NPC that has none, and add routine variants
+- #319: Routines, spawns and NPCs re-index when a script changes outside the editor
+- #322: Quest steps as dialog actions: pick a quest by its diary title; new quests are declared automatically
+- #278: Create log notes (LOG_NOTE) and see the diary title of a Log Entry's topic
+- #280: Log Entry and other autocompletes open their list on focus
+- #277: Default settings for new dialogs
+- #279: Dialog numbers (priority) start at 1
+- #281: The NPCs tab lists every NPC, not only those that already have a dialog
+- #283: The important/permanent checkboxes match what the file says
+- #264: Writes the scripts' subtitles into the OutputUnits database (OU.BIN / OU.CSL)
+- #265: Warns when the OutputUnits database looks like another language
+- #286: Saving no longer changes the blank lines between declarations
+- #340: Saving keeps if/else blocks and every statement in dialog functions
+- #328: Saving keeps conditions, comparisons and call arguments exactly as written
+- #344: Saving keeps comments, literals and quoted arguments in place
+- #300: Reloading a file changed outside the editor no longer overwrites your edits
+- #301: Deleting a file outside the editor no longer loses edits not yet applied
+- #299: Closing the window asks before discarding unsaved world edits
+- #334: Opening another world asks before discarding unsaved world edits
+- #302: Ctrl+S in the World view saves only the world
+- #288: Asset browser: filter by VOB vs MOB
+- #289: Asset browser: filter by file format
+- #294: Uncompiled mod assets (raw .3DS/.ASC/.TGA) show up in the asset browser
+- #297: Preview a raw .3DS without compiling it
+- #296: Compile a mod's assets with GMBT from the asset browser
+- #295: File many assets into a category at once
+- #290: Placing an asset picks the VOB class automatically
+- #291: Placed VOBs collide by default; bushes and grass do not
+- #292: Moving or rotating a parent VOB moves its children
+- #293: Reparent a whole selection at once in the scene tree
+- #270: A MOB's interaction scheme is shown, read off its visual
+- #266: A GMBT quick test that fails says why
 - #351: Saving a script on Windows no longer fails while an NPC preview or a world is open
