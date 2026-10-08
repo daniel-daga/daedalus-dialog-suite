@@ -2289,17 +2289,11 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
             asset source in the active project first.
           </Typography>
           <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 1.5 }}>
-            {/* The shortcuts have never been on screen anywhere (review §5.1):
-                every one of them is a window listener with no menu item, no
-                tooltip and no legend, so the walk, the fly, the camera slots
-                and the nudge were discoverable only by reading the source. */}
-            Once a world is open: <b>W</b>/<b>E</b> move and turn ·{' '}
-            <b>.</b> frame the selection · <b>Home</b> frame the world ·{' '}
-            <b>F3</b> walk · right-drag to fly, <b>WASD</b>/<b>Space</b>/<b>X</b> while held ·{' '}
-            <b>Ctrl</b>+<b>1</b>…<b>4</b> recall a camera, <b>Ctrl</b>+<b>Shift</b> to store ·{' '}
-            arrows and <b>PageUp</b>/<b>PageDown</b> nudge · <b>Ctrl</b>+<b>C</b>/<b>V</b> copy
-            and paste · <b>Ctrl</b>+<b>Z</b>/<b>Y</b> undo · <b>Ctrl</b>+<b>S</b> save ·{' '}
-            <b>Del</b> delete · <b>Esc</b> clear the selection.
+            {/* The shortcuts were once listed here by hand, and the list
+                drifted (it never learned Ctrl+D). The sheet is generated from
+                one table that `keyboardShortcuts.test.ts` checks against the
+                dispatch. */}
+            Press <b>F1</b> for every keyboard shortcut: walk, fly, camera slots, nudge and the rest.
           </Typography>
         </Box>
       )}
