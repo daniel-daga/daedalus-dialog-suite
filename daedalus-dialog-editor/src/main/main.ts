@@ -17,6 +17,7 @@ import {
   assertOpenWorldRequest,
   assertTextureRequest,
   assertVisualRequest,
+  assertVisualsRequest,
   assertNpcBodyRequest,
   assertAssetResolveRequest,
   assertThumbnailGetRequest,
@@ -1037,7 +1038,10 @@ export function setupIpcHandlers() {
   });
 
   ipcMain.handle('world:mesh', async () => worldService.getWorldMesh());
-  ipcMain.handle('world:visuals', async () => worldService.getInstancedVisuals());
+  ipcMain.handle('world:visuals', async (_event, request: unknown) => {
+    assertVisualsRequest(request);
+    return worldService.getInstancedVisuals(request?.have);
+  });
 
   // The NPC preview needs the project's VFS, not a loaded level. Mount the
   // active project's already-configured sources on demand, without opening the

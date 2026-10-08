@@ -184,8 +184,10 @@ export class WorldService {
     return this.requestOnOpenWorld<WorldMeshPayload>('worldMesh');
   }
 
-  getInstancedVisuals(): Promise<InstancedPayload> {
-    return this.requestOnOpenWorld<InstancedPayload>('visuals');
+  /** @param have visuals the renderer already draws: each comes back as
+   *  placements, with `groups: []`. Empty for a cold open. */
+  getInstancedVisuals(have: readonly string[] = []): Promise<InstancedPayload> {
+    return this.requestOnOpenWorld<InstancedPayload>('visuals', { have: [...have] });
   }
 
   /**

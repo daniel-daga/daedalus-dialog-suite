@@ -327,6 +327,16 @@ export function assertTextureRequest(
  * inside the mounted VFS namespace and never reaches the disk, so this shape
  * check is the whole boundary.
  */
+/** The instanced visuals: nothing for a cold open, or the visuals the renderer
+ *  already draws, whose geometry the answer then leaves out. */
+export function assertVisualsRequest(request: unknown): asserts request is { have: string[] } | undefined {
+  if (request === undefined) return;
+  if (!isPlainObject(request) || !Array.isArray(request.have)
+    || !request.have.every((name) => typeof name === 'string')) {
+    throw new Error('Invalid visuals request: expected { have: string[] }');
+  }
+}
+
 export function assertVisualRequest(request: unknown): asserts request is { name: string } {
   if (!isPlainObject(request)) {
     throw new Error('Invalid visual request: expected a plain object');

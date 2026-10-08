@@ -20,6 +20,7 @@ import {
   type NpcBodyRequest,
   type NpcBodyScene,
   type SceneBinding,
+  type VisualCache,
   type VisualScene,
   type ZenBounds,
 } from 'zen-world';
@@ -66,6 +67,12 @@ let openedStats: WorldSummary['stats'] | null = null;
  *  `sources` index into, and the only place the renderer can learn the names
  *  behind those indices (architecture level-editor.md §6). */
 let openedSources: string[] = [];
+/** Every visual the instanced build has merged, against the VFS it came out
+ *  of: a structural edit re-reads placements, never geometry. Keyed on the
+ *  handle rather than reset beside each assignment, so an open, a remount after
+ *  a GMBT compile and a project mount all start it afresh without remembering
+ *  to. */
+let visualCache: { vfs: zenkit.VfsHandle; cache: VisualCache } | null = null;
 
 // `zenkit-node` omits `lights` on a proto-mesh chunk; `zen-world` wants the
 // absence stated. This is the whole of the impedance mismatch between them.
@@ -191,8 +198,11 @@ function takeWorldMesh(): { result: WorldMeshPayload; transfer: ArrayBuffer[] } 
   };
 }
 
-function visuals(): { result: InstancedPayload; transfer: ArrayBuffer[] } {
-  const built = phase('visuals', () => buildInstancedVisuals(binding, vfs!, index!));
+function visuals(payload: { have: string[] }): { result: InstancedPayload; transfer: ArrayBuffer[] } {
+  if (visualCache?.vfs !== vfs) visualCache = { vfs: vfs!, cache: new Map() };
+  const { cache } = visualCache;
+  const have = new Set(payload.have);
+  const built = phase('visuals', () => buildInstancedVisuals(binding, vfs!, index!, { cache, have }));
   // Beside the meshes, not behind an op of its own: both are built from the one
   // index, and a placed or deleted decal has to arrive with the scene the
   // placement rebuilt rather than a round trip later (#249).
@@ -419,6 +429,7 @@ function close(): { result: null; transfer: ArrayBuffer[] } {
   handle = null;
   vfs = null;
   index = null;
+  visualCache = null;
   worldMesh = null;
   openedPath = null;
   openedSources = [];
@@ -458,7 +469,7 @@ function run(message: WorldWorkerRequest): { result: unknown; transfer: ArrayBuf
     case 'open': return open(message.payload as ResolvedOpenWorldRequest);
     case 'mountAssets': return mountAssets(message.payload as { assetSources: string[] });
     case 'worldMesh': return takeWorldMesh();
-    case 'visuals': return visuals();
+    case 'visuals': return visuals(message.payload as { have: string[] });
     case 'texture': return texture(message.payload as { name: string; maxSize: number });
     case 'assets': return assets(message.payload as { path: string });
     case 'assetSearch': return assetSearch(message.payload as { query: string });

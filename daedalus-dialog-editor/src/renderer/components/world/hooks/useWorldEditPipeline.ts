@@ -17,6 +17,9 @@ export interface WorldEditPipelineInput {
   waynet: WaynetPayload | null;
   setWaynet: (payload: WaynetPayload) => void;
   setVisuals: (payload: InstancedPayload) => void;
+  /** The visuals the scene draws now, by name — what a re-read after an edit
+   *  can leave the geometry out of, because the scene already holds it. */
+  drawnVisuals: () => string[];
   /**
    * The imperative channel to the viewport and the scene tree — they live
    * outside React's render path and cannot read the index the panels read, so
@@ -80,7 +83,7 @@ export interface WorldEditPipeline {
  * function rather than three lines inside the commit.
  */
 export function useWorldEditPipeline({
-  waynet, setWaynet, setVisuals, setAppliedOps, markEdited, forgetClassProps,
+  waynet, setWaynet, setVisuals, drawnVisuals, setAppliedOps, markEdited, forgetClassProps,
   refreshHistoryDepth, openGeneration,
 }: WorldEditPipelineInput): WorldEditPipeline {
   const [editRefusals, setEditRefusals] = useState(0);
@@ -90,14 +93,11 @@ export function useWorldEditPipeline({
    *
    * A structural op changes how many VOBs there are, and a flat index is a VOB's
    * position in a depth-first traversal — so the columnar projection cannot be
-   * patched and is re-read whole. The scene follows by rebuilding from fresh
-   * visuals: an instance cannot be appended to an `InstancedMesh` that is
-   * already allocated. Both are the cost of a structural edit, and only a
-   * structural edit pays them. What the rebuild no longer costs is the two
-   * things that made it read as a cold open: the camera stays put, because the
-   * pose is restored across a rebuild under an unchanged world key, and the
-   * textures are not re-decoded, because the viewport's `TextureCache` outlives
-   * the `WorldScene` that used them.
+   * patched and is re-read whole. The visuals are re-read with it, as
+   * placements: every visual the scene already draws comes back without its
+   * geometry, the worker re-extracts nothing, and the viewport writes the
+   * placements into the meshes it has (`SceneHost.update`). On NewWorld that
+   * re-read was 70 ms and 6.1 MB of geometry per op; it is 8 ms and none.
    *
    * **Undo and redo come through here too**, and that is the whole reason this
    * is a function rather than three lines inside `commitOps`. They do not go
@@ -184,7 +184,7 @@ export function useWorldEditPipeline({
       // an inverted `SetVobProp` carries `visual` on both sides just as the
       // forward one does — so testing either side answers.
       if (ops.some((op) => op.op === 'SetVobProp' && op.to.visual !== undefined)) {
-        setVisuals(await window.editorAPI.getWorldVisuals());
+        setVisuals(await window.editorAPI.getWorldVisuals(drawnVisuals()));
       }
       return;
     }
@@ -199,8 +199,8 @@ export function useWorldEditPipeline({
     if (ops.some(renumbersPaths)) useWorldStore.getState().selectVob(null);
 
     useWorldStore.getState().indexRefreshed(await window.editorAPI.refreshWorldIndex());
-    setVisuals(await window.editorAPI.getWorldVisuals());
-  }, [waynet, setWaynet, setVisuals, setAppliedOps, markEdited, refreshHistoryDepth]);
+    setVisuals(await window.editorAPI.getWorldVisuals(drawnVisuals()));
+  }, [waynet, setWaynet, setVisuals, drawnVisuals, setAppliedOps, markEdited, refreshHistoryDepth]);
 
   /** Shared by Ctrl+Z/Y and the World bar's undo/redo buttons: ask the main
    *  process what it did, and — through the same path a commit takes —

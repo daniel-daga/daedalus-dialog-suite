@@ -3,7 +3,7 @@ import {
   ROOT_MATRIX, ZEN_TO_THREE_SCALE, threeIndexOrder, type VobExtent,
 } from 'zen-world';
 import type {
-  DecalScene, DrawGroup, InstancedPayload, VobIndex, WorldMeshPayload, DecodedTexture,
+  DecalScene, DrawGroup, InstancedPayload, InstancedVisual, VobIndex, WorldMeshPayload, DecodedTexture,
 } from '../../shared/worldTypes';
 import { DecalLayer } from './DecalLayer';
 import { HIDDEN_ATTRIBUTE, SELECTED_ATTRIBUTE } from './instanceAttributes';
@@ -333,6 +333,30 @@ function vobShading(exposure: Exposure, light: LightPreviewUniforms) {
   };
 }
 
+/** The meshes one visual is drawn with — one per draw group, all carrying the
+ *  same instances — and how many instances they were allocated for. */
+interface VisualMeshes {
+  meshes: THREE.InstancedMesh[];
+  capacity: number;
+}
+
+/** How much room a visual that outgrows its meshes is given: enough that a run
+ *  of placements of one asset re-allocates a handful of times, not every time. */
+const GROWTH = 1.5;
+const MIN_SPARE = 4;
+
+/** Both per-instance flags back to zero — every slot is about to be rewritten,
+ *  and a flag left standing would mark whichever VOB lands in it. */
+function clearFlags(entry: VisualMeshes): void {
+  for (const mesh of entry.meshes) {
+    for (const name of [HIDDEN_ATTRIBUTE, SELECTED_ATTRIBUTE]) {
+      const attribute = mesh.geometry.getAttribute(name);
+      (attribute.array as Float32Array).fill(0);
+      attribute.needsUpdate = true;
+    }
+  }
+}
+
 interface TextureSlot {
   texture: THREE.Texture | null;
   materials: THREE.MeshBasicMaterial[];
@@ -341,11 +365,11 @@ interface TextureSlot {
 /**
  * Decoded textures that outlive the scene holding them, for one world.
  *
- * A structural op rebuilds the scene — an instance cannot be appended to an
- * allocated `InstancedMesh` (level-editor.md §7) — and a fresh `WorldScene`
- * starts with an empty texture map, so without this every placement re-decodes
- * all 490 of NewWorld's: the 549 ms that was deliberately moved off the cold
- * open, paid again on an edit, for pixels that did not change.
+ * A fresh `WorldScene` starts with an empty texture map. A structural op used
+ * to rebuild the scene, and without this every placement re-decoded all 490 of
+ * NewWorld's: the 549 ms that was deliberately moved off the cold open. The op
+ * is followed in place now (`updateInstancedVisuals`), so what this still
+ * carries is a re-run of the viewport's scene effect for the same world.
  *
  * **A cached scene does not own its textures; this does.** A `THREE.Texture`
  * holds GPU memory, and a rebuild that disposed one would hand the next scene a
@@ -446,6 +470,15 @@ export class WorldScene {
    *  exactly those. Rewriting every instance in the scene would be ~20k writes
    *  and 724 attribute uploads per click, for a selection that is usually one. */
   private selectedInstances: Array<{ mesh: THREE.InstancedMesh; instance: number }> = [];
+  /** What `setHiddenVobs` and `setSelectedVobs` were last told — redrawn over
+   *  the new slots after `updateInstancedVisuals`, and over a replaced marker or
+   *  decal layer. */
+  private hidden: Uint8Array | null = null;
+  private selected: readonly number[] = [];
+  private visuals = new Map<string, VisualMeshes>();
+  /** One per decal texture, kept across the decal layer being replaced so a
+   *  structural op does not leave a material per texture behind each time. */
+  private decalMaterials = new Map<string, THREE.MeshBasicMaterial>();
   private geometries: THREE.BufferGeometry[] = [];
   private materials: THREE.Material[] = [];
 
@@ -460,8 +493,8 @@ export class WorldScene {
   private readonly shadeWorld = worldShading(this.exposure, this.lightPreview);
   private readonly shadeVob = vobShading(this.exposure, this.lightPreview);
 
-  /** @param textureCache decoded pixels kept across the rebuild a structural op
-   *   forces, and the owner of their disposal. Null decodes from scratch and
+  /** @param textureCache decoded pixels kept across a rebuild of the same
+   *   world, and the owner of their disposal. Null decodes from scratch and
    *   disposes what it decoded. */
   constructor(private textureCache: TextureCache | null = null) {
     this.root.matrixAutoUpdate = false;
@@ -523,54 +556,169 @@ export class WorldScene {
   }
 
   setInstancedVisuals(payload: InstancedPayload): void {
+    for (const visual of payload.visuals) this.addVisual(visual);
+  }
+
+  /**
+   * Follow a structural op without rebuilding the scene (level-editor.md §7).
+   *
+   * `payload` is every visual's placements as the world now has them, and a
+   * visual the scene already draws comes with `groups: []` — its geometry is
+   * this scene's. So a placement, a delete or a renumbering is instance
+   * matrices and VOB ids rewritten in the meshes that exist. A visual that
+   * outgrows its meshes gets new ones over the same vertex buffers, with room
+   * to spare; one that arrives with geometry is new to the scene, or a GMBT
+   * compile has changed what its name resolves to, and is built from it.
+   *
+   * A visual with no VOB left is kept at no instances rather than thrown away:
+   * the caller's next request names it as drawn again only while it is in the
+   * payload, so geometry for it simply comes back if it is placed again.
+   */
+  updateInstancedVisuals(payload: InstancedPayload): void {
+    const placed = new Set<string>();
+    for (const visual of payload.visuals) {
+      placed.add(visual.name);
+      const entry = this.visuals.get(visual.name);
+      if (entry === undefined || visual.groups.length > 0) {
+        if (entry !== undefined) this.dropVisual(visual.name, entry);
+        this.addVisual(visual);
+        continue;
+      }
+      if (visual.count > entry.capacity) {
+        this.growVisual(entry, Math.max(Math.ceil(visual.count * GROWTH), visual.count + MIN_SPARE));
+      } else {
+        clearFlags(entry);
+      }
+      this.writeInstances(entry, visual);
+    }
+    for (const [name, entry] of this.visuals) {
+      if (placed.has(name)) continue;
+      clearFlags(entry);
+      this.writeInstances(entry, null);
+    }
+
+    // Every slot was rewritten and every flag cleared with it, so what was
+    // marked is marked again over the VOBs' new slots.
+    this.selectedInstances = [];
+    this.setHiddenVobs(this.hidden);
+    this.setSelectedVobs(this.selected);
+  }
+
+  /** One visual's meshes, sized for exactly the instances it arrived with —
+   *  which is what a cold open allocates, and why only an edit grows them. */
+  private addVisual(visual: InstancedVisual): void {
+    const meshes = visual.groups.map((group) => {
+      const geometry = this.geometry(group);
+      // Every VOB shown, until a class is switched off. The attribute is made
+      // here rather than on the first hide so that the pick pass — which
+      // shares this geometry's attributes — can share it.
+      geometry.setAttribute(
+        HIDDEN_ATTRIBUTE,
+        new THREE.InstancedBufferAttribute(new Float32Array(visual.count), 1),
+      );
+      // Nothing selected until something is. Allocated here for the same
+      // reason as the flag above — the shader declares the attribute, and a
+      // program compiled against one the geometry does not carry reads garbage
+      // rather than zero.
+      geometry.setAttribute(
+        SELECTED_ATTRIBUTE,
+        new THREE.InstancedBufferAttribute(new Float32Array(visual.count), 1),
+      );
+      const mesh = new THREE.InstancedMesh(geometry, this.material(group, true), visual.count);
+      mesh.matrixAutoUpdate = false;
+      mesh.layers.set(WORLD_LAYER);
+      this.root.add(mesh);
+      this.instancedMeshes.push(mesh);
+      return mesh;
+    });
+    const entry = { meshes, capacity: visual.count };
+    this.visuals.set(visual.name, entry);
+    this.writeInstances(entry, visual);
+  }
+
+  /** The visual's placements written into its meshes — null for none at all. */
+  private writeInstances(entry: VisualMeshes, visual: InstancedVisual | null): void {
+    const count = visual?.count ?? 0;
+    const matrices = new Float32Array(visual?.matrices ?? new ArrayBuffer(0));
+    const vobIds = new Uint32Array(visual?.vobIds ?? new ArrayBuffer(0));
     const matrix = new THREE.Matrix4();
 
-    for (const visual of payload.visuals) {
-      const matrices = new Float32Array(visual.matrices);
-      const vobIds = new Uint32Array(visual.vobIds);
-
-      for (const group of visual.groups) {
-        const mesh = new THREE.InstancedMesh(
-          this.geometry(group), this.material(group, true), visual.count,
+    for (const mesh of entry.meshes) {
+      mesh.count = count;
+      for (let i = 0; i < count; i++) {
+        const m = i * 12;
+        // Matrix4.set takes row-major arguments, which is the order the payload
+        // uses — rotation rows with the position as a fourth column.
+        matrix.set(
+          matrices[m], matrices[m + 1], matrices[m + 2], matrices[m + 3],
+          matrices[m + 4], matrices[m + 5], matrices[m + 6], matrices[m + 7],
+          matrices[m + 8], matrices[m + 9], matrices[m + 10], matrices[m + 11],
+          0, 0, 0, 1,
         );
-        for (let i = 0; i < visual.count; i++) {
-          const m = i * 12;
-          // Matrix4.set takes row-major arguments, which is the order the
-          // payload uses — rotation rows with the position as a fourth column.
-          matrix.set(
-            matrices[m], matrices[m + 1], matrices[m + 2], matrices[m + 3],
-            matrices[m + 4], matrices[m + 5], matrices[m + 6], matrices[m + 7],
-            matrices[m + 8], matrices[m + 9], matrices[m + 10], matrices[m + 11],
-            0, 0, 0, 1,
-          );
-          mesh.setMatrixAt(i, matrix);
-        }
-        mesh.instanceMatrix.needsUpdate = true;
-        mesh.matrixAutoUpdate = false;
-        mesh.layers.set(WORLD_LAYER);
-        mesh.computeBoundingSphere();
-        // Every VOB shown, until a class is switched off. The attribute is made
-        // here rather than on the first hide so that the pick pass — which
-        // clones this geometry once, when the scene is built — can share it.
-        mesh.geometry.setAttribute(
-          HIDDEN_ATTRIBUTE,
-          new THREE.InstancedBufferAttribute(new Float32Array(visual.count), 1),
-        );
-        // Nothing selected until something is. Allocated here for the same
-        // reason as the flag above — the shader declares the attribute, and a
-        // program compiled against one the geometry does not carry reads
-        // garbage rather than zero.
-        mesh.geometry.setAttribute(
-          SELECTED_ATTRIBUTE,
-          new THREE.InstancedBufferAttribute(new Float32Array(visual.count), 1),
-        );
-
-        this.instanceVobIds.set(mesh, vobIds);
-        this.meshBounds.set(mesh, visual.bounds);
-        this.root.add(mesh);
-        this.instancedMeshes.push(mesh);
+        mesh.setMatrixAt(i, matrix);
       }
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.computeBoundingSphere();
+      this.instanceVobIds.set(mesh, vobIds);
+      if (visual !== null) this.meshBounds.set(mesh, visual.bounds);
     }
+  }
+
+  /**
+   * New meshes for a visual that has more VOBs than room. An `InstancedMesh`
+   * cannot grow, but its vertices are attributes it only points at: the new
+   * geometry takes the same ones, so nothing is uploaded again but the two
+   * per-instance flags and the instance matrices.
+   */
+  private growVisual(entry: VisualMeshes, capacity: number): void {
+    entry.meshes = entry.meshes.map((old) => {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setIndex(old.geometry.getIndex());
+      for (const [name, attribute] of Object.entries(old.geometry.attributes)) {
+        if (name !== HIDDEN_ATTRIBUTE && name !== SELECTED_ATTRIBUTE) geometry.setAttribute(name, attribute);
+      }
+      geometry.setAttribute(HIDDEN_ATTRIBUTE, new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1));
+      geometry.setAttribute(SELECTED_ATTRIBUTE, new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1));
+
+      const mesh = new THREE.InstancedMesh(geometry, old.material, capacity);
+      mesh.matrixAutoUpdate = false;
+      mesh.layers.set(WORLD_LAYER);
+      this.instancedMeshes[this.instancedMeshes.indexOf(old)] = mesh;
+      this.geometries[this.geometries.indexOf(old.geometry)] = geometry;
+      this.root.remove(old);
+      this.root.add(mesh);
+
+      // three frees every attribute a disposed geometry still holds, and the
+      // vertices are the new mesh's now — so they come off the old one first,
+      // the way `VobPicker` gives back the attributes it borrowed.
+      old.geometry.setIndex(null);
+      for (const name of Object.keys(old.geometry.attributes)) {
+        if (name !== HIDDEN_ATTRIBUTE && name !== SELECTED_ATTRIBUTE) old.geometry.deleteAttribute(name);
+      }
+      old.geometry.dispose();
+      old.dispose();
+      return mesh;
+    });
+    entry.capacity = capacity;
+  }
+
+  /** A visual's meshes gone whole — its geometry is about to be replaced. */
+  private dropVisual(name: string, entry: VisualMeshes): void {
+    for (const mesh of entry.meshes) {
+      this.root.remove(mesh);
+      this.instancedMeshes.splice(this.instancedMeshes.indexOf(mesh), 1);
+      this.geometries.splice(this.geometries.indexOf(mesh.geometry), 1);
+      const material = mesh.material as THREE.MeshBasicMaterial;
+      this.materials.splice(this.materials.indexOf(material), 1);
+      for (const slot of this.textures.values()) {
+        const at = slot.materials.indexOf(material);
+        if (at !== -1) slot.materials.splice(at, 1);
+      }
+      mesh.geometry.dispose();
+      material.dispose();
+      mesh.dispose();
+    }
+    this.visuals.delete(name);
   }
 
   /**
@@ -583,12 +731,18 @@ export class WorldScene {
    * none of those callers learns the difference.
    *
    * Taken from the index rather than from a payload, because the index is where
-   * a position exists for a VOB the worker placed nothing for. Called once per
-   * scene build, beside `setInstancedVisuals`: a structural op rebuilds the
-   * scene, which is what gives a placed sound its marker.
+   * a position exists for a VOB the worker placed nothing for. Called beside
+   * `setInstancedVisuals` and again after each `updateInstancedVisuals`, which
+   * is what gives a placed sound its marker: the layer is replaced whole, the
+   * last hidden mask redrawn over it.
    */
   setVobMarkers(index: VobIndex): void {
+    if (this.markerLayer !== null) {
+      this.root.remove(this.markerLayer.markers);
+      this.markerLayer.dispose();
+    }
     this.markerLayer = new VobMarkerLayer(index);
+    this.markerLayer.setHidden(this.hidden);
     this.root.add(this.markerLayer.markers);
   }
 
@@ -655,12 +809,17 @@ export class WorldScene {
    * which is what makes a decal's `.TGA` load through the path that was already
    * loading the world's.
    *
-   * Called once per scene build beside `setInstancedVisuals`, for the same
-   * reason: an instance cannot be appended to an allocated `InstancedMesh`, so
-   * a placed decal arrives with a rebuilt scene.
+   * Called beside `setInstancedVisuals` and again after each
+   * `updateInstancedVisuals`, for the markers' reason: the layer is a handful of
+   * meshes, replaced whole, and each texture keeps its one material.
    */
   setDecals(scene: DecalScene): void {
+    if (this.decalLayer !== null) {
+      for (const mesh of this.decalLayer.meshes) this.root.remove(mesh);
+      this.decalLayer.dispose();
+    }
     this.decalLayer = new DecalLayer(scene, (texture) => this.decalMaterial(texture));
+    this.decalLayer.setHidden(this.hidden);
     for (const mesh of this.decalLayer.meshes) this.root.add(mesh);
   }
 
@@ -805,6 +964,7 @@ export class WorldScene {
    * marker is still simply not found, exactly as it is still not drawn.
    */
   setHiddenVobs(hidden: Uint8Array | null): void {
+    this.hidden = hidden;
     for (const mesh of this.instancedMeshes) {
       const vobIds = this.instanceVobIds.get(mesh);
       const attribute = mesh.geometry.getAttribute(HIDDEN_ATTRIBUTE);
@@ -839,6 +999,7 @@ export class WorldScene {
    * and every op read the instance matrix, and this is a float beside it.
    */
   setSelectedVobs(vobs: readonly number[]): void {
+    this.selected = vobs;
     const touched = new Set<THREE.InstancedMesh>();
 
     for (const { mesh, instance } of this.selectedInstances) {
@@ -1052,8 +1213,8 @@ export class WorldScene {
     // `instanceMatrix` and `instanceColor` are the mesh's, not the geometry's,
     // so the two lines above free neither: a retail world's ~724 instanced
     // meshes left them to the garbage collector, which frees the JS object and
-    // never the GPU buffer. A structural edit rebuilds this scene, so it was a
-    // megabyte per edit rather than per world open.
+    // never the GPU buffer. A structural edit used to rebuild this scene, so it
+    // was a megabyte per edit rather than per world open.
     for (const mesh of this.instancedMeshes) mesh.dispose();
     // Only what this scene owns. With a cache the textures outlive it by
     // design, and disposing them here would release GPU memory the very next
@@ -1076,6 +1237,8 @@ export class WorldScene {
     this.geometries = [];
     this.materials = [];
     this.selectedInstances = [];
+    this.visuals.clear();
+    this.decalMaterials.clear();
     this.textures.clear();
     this.worldMeshes.length = 0;
     this.instancedMeshes.length = 0;
@@ -1138,9 +1301,12 @@ export class WorldScene {
    * than about a texture.
    */
   private decalMaterial(texture: string): THREE.MeshBasicMaterial {
+    const kept = this.decalMaterials.get(texture);
+    if (kept !== undefined) return kept;
     const material = new THREE.MeshBasicMaterial();
     this.texture(texture, material);
     this.materials.push(material);
+    this.decalMaterials.set(texture, material);
     return material;
   }
 

@@ -318,3 +318,59 @@ describe('SceneHost — the scene one payload gets', () => {
     host.dispose();
   });
 });
+
+describe('SceneHost — a structural op, followed in place', () => {
+  beforeEach(() => {
+    worker.postMessage.mockClear();
+    pickerCalls.instanced = [];
+    pickerCalls.worldMeshes = [];
+    pickerCalls.warmed = 0;
+  });
+
+  const edited = (): InstancedPayload => ({
+    ...visualsPayload(),
+    visuals: [
+      // The barrel the scene already draws: placements only, and a second one.
+      visual({
+        count: 2,
+        matrices: new Float32Array([1, 0, 0, 10, 0, 1, 0, 20, 0, 0, 1, 30, 1, 0, 0, 5, 0, 1, 0, 5, 0, 0, 1, 5]).buffer,
+        vobIds: new Uint32Array([7, 8]).buffer,
+        groups: [],
+      }),
+      visual({ name: 'CRATE.3DS', vobIds: new Uint32Array([9]).buffer, groups: [group({ texture: 'CRATE.TGA' })] }),
+    ],
+  });
+
+  it('keeps the scene, its root and its trees, and points the picker at what is drawn now', async () => {
+    const { host, scene } = harness();
+    answerBuilds();
+    await host.ready;
+    const { world } = host;
+    const root = world.root;
+
+    host.update(edited(), vobIndex([[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [10, 20, 30], [5, 5, 5], [0, 0, 0]]));
+
+    expect(host.world).toBe(world);
+    expect(scene.children).toContain(root);
+    expect(world.positionOf(8)).toEqual([5, 5, 5]);
+    expect(worker.postMessage).not.toHaveBeenCalled();
+    expect(pickerCalls.instanced[pickerCalls.instanced.length - 1]).toEqual(world.instancedMeshes);
+    // The pick shader was compiled when the world opened; nothing new to warm.
+    expect(pickerCalls.warmed).toBe(1);
+    host.dispose();
+  });
+
+  it('decodes only the textures the edit brought, and remembers what it now draws', async () => {
+    const { host, asked } = harness();
+    answerBuilds();
+    await host.ready;
+    asked.length = 0;
+    const payload = edited();
+
+    await host.update(payload, vobIndex([[0, 0, 0]]));
+
+    expect(asked.map((ask) => ask.name)).toEqual(['CRATE.TGA']);
+    expect(host.visuals).toBe(payload);
+    host.dispose();
+  });
+});

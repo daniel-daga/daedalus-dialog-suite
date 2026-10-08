@@ -147,6 +147,23 @@ describe('WorldService', () => {
     service.close();
   });
 
+  test('the instanced visuals carry the names the renderer already draws', async () => {
+    // After an edit the renderer asks for placements, and geometry only for
+    // what it does not hold yet. A cold open asks for everything.
+    const { worker, service } = await openedService();
+
+    const cold = service.getInstancedVisuals();
+    expect(worker.sent.find((m) => m.op === 'visuals')?.payload).toEqual({ have: [] });
+    worker.reply('visuals', { visuals: [] });
+    await cold;
+
+    const edited = service.getInstancedVisuals(['NW_CRATE.3DS']);
+    expect([...worker.sent].reverse().find((m) => m.op === 'visuals')?.payload).toEqual({ have: ['NW_CRATE.3DS'] });
+    worker.replyLast('visuals', { visuals: [] });
+    await edited;
+    service.close();
+  });
+
   test('a visual is asked for by name and comes back as the worker built it', async () => {
     // The asset preview's mesh (level-editor.md §16.26 row 1): one `visual`
     // request per name, and null passes through — an unresolvable name is a

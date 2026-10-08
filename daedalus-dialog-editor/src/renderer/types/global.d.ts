@@ -213,7 +213,9 @@ export interface EditorAPI {
   /** Mount configured project assets for the NPC preview without opening a level. */
   ensureNpcPreviewAssets: () => Promise<void>;
   getWorldMesh: () => Promise<WorldMeshPayload>;
-  getWorldVisuals: () => Promise<InstancedPayload>;
+  /** Every instanced visual. `have` names the ones the scene already draws:
+   *  each comes back as placements only, with `groups: []`. */
+  getWorldVisuals: (have?: string[]) => Promise<InstancedPayload>;
   getWorldTexture: (name: string, maxSize: number) => Promise<DecodedTexture | null>;
   /** One level of the mounted VFS; null for a missing path and for a file. */
   listWorldAssets: (path: string) => Promise<VfsEntry[] | null>;

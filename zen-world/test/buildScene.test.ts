@@ -11,7 +11,7 @@
 
 import {
   buildDecalBillboards, buildInstancedVisuals, buildNpcBody, buildVisual, buildWorldMesh, variantTextureName,
-  visualBounds, type NpcBinding, type SceneBinding, type VobIndex,
+  visualBounds, type NpcBinding, type SceneBinding, type VisualCache, type VobIndex,
 } from '../src/scene';
 import type { MeshChunk } from '../src/render';
 
@@ -492,6 +492,68 @@ describe('zen-world/scene — buildInstancedVisuals', () => {
     const b = binding(() => []);
     const built = buildInstancedVisuals(b, VFS, vobIndex([{ visual: 'EMPTY.3DS' }]));
     expect(built.visuals).toEqual([]);
+  });
+});
+
+describe('zen-world/scene — buildInstancedVisuals after an edit', () => {
+  // A structural op re-reads the placements of every VOB. Re-extracting the 379
+  // visuals behind them was 50 of the 70 ms it took on NewWorld, warm, for
+  // geometry that had not changed — and shipping all 6.1 MB of it again to a
+  // renderer that already held it.
+
+  test('with a cache, a second build extracts nothing and places the same', () => {
+    const b = binding(() => [chunk('A.TGA')]);
+    const cache: VisualCache = new Map();
+    const index = vobIndex([{ visual: 'BARREL.3DS' }, { visual: 'SMOKE.PFX' }]);
+
+    const first = buildInstancedVisuals(b, VFS, index, { cache });
+    b.calls.length = 0;
+    const second = buildInstancedVisuals(b, VFS, index, { cache });
+
+    expect(b.calls).toEqual([]);
+    expect(second.visuals.map((v) => [v.name, v.count])).toEqual(first.visuals.map((v) => [v.name, v.count]));
+    expect(second.stats).toEqual(first.stats);
+  });
+
+  test('what a cached build hands out survives being transferred', () => {
+    // The worker transfers every geometry buffer it answers with. Handing out
+    // the cache's own would detach the cache, and the next build would ship
+    // empty geometry.
+    const b = binding(() => [chunk('A.TGA')]);
+    const cache: VisualCache = new Map();
+    const index = vobIndex([{ visual: 'BARREL.3DS' }]);
+
+    // zen-world has no `structuredClone` in its typings, so the transfer is
+    // stood in for by what it implies: the buffer handed out is not the
+    // cache's, so nothing done to it reaches the next build.
+    const first = buildInstancedVisuals(b, VFS, index, { cache });
+    new Float32Array(first.visuals[0].groups[0].positions).fill(-1);
+    const second = buildInstancedVisuals(b, VFS, index, { cache });
+
+    expect(second.visuals[0].groups[0].positions).not.toBe(first.visuals[0].groups[0].positions);
+    expect([...new Float32Array(second.visuals[0].groups[0].positions)]).toEqual([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+  });
+
+  test('a visual the caller already draws comes back as placements only', () => {
+    const b = binding(() => [chunk('A.TGA')]);
+    const index = vobIndex([
+      { visual: 'BARREL.3DS', pos: [10, 20, 30] }, { visual: 'CRATE.3DS' }, { visual: 'BARREL.3DS' },
+    ]);
+    const whole = buildInstancedVisuals(b, VFS, index);
+
+    const built = buildInstancedVisuals(b, VFS, index, { have: new Set(['BARREL.3DS']) });
+
+    const barrel = built.visuals.find((v) => v.name === 'BARREL.3DS')!;
+    const wholeBarrel = whole.visuals.find((v) => v.name === 'BARREL.3DS')!;
+    expect(barrel.groups).toEqual([]);
+    expect(barrel.count).toBe(2);
+    expect([...new Uint32Array(barrel.vobIds)]).toEqual([0, 2]);
+    expect([...new Float32Array(barrel.matrices)]).toEqual([...new Float32Array(wholeBarrel.matrices)]);
+    expect(barrel.bounds).toEqual(wholeBarrel.bounds);
+    // Only what was asked to be left out is: the crate is new to the caller.
+    expect(built.visuals.find((v) => v.name === 'CRATE.3DS')!.groups).toHaveLength(1);
+    // And the stats describe the world, not the payload.
+    expect(built.stats).toEqual(whole.stats);
   });
 });
 

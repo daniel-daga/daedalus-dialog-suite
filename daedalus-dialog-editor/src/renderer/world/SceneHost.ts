@@ -9,13 +9,12 @@ import { WorldScene, type TextureCache } from './WorldScene';
 // The scene one payload gets, lifted out of `WorldViewport`'s one big effect
 // (#220, review §4).
 //
-// A structural op — placing a VOB, deleting one — cannot be applied to the
-// columnar projection, so the whole scene is rebuilt from the world
-// (level-editor.md §7). This class is exactly what that rebuild replaces: the
-// `WorldScene`, the BVH trees over its world meshes, and the GPU picker that
-// answers a click. Everything more expensive than those — the decoded pixels,
-// the builder's memory of the trees, the renderer and its GL context — is
-// handed in and outlives it, which is the whole point of drawing the line here.
+// One per world: the `WorldScene`, the BVH trees over its world meshes, and the
+// GPU picker that answers a click. Everything more expensive than those — the
+// decoded pixels, the builder's memory of the trees, the renderer and its GL
+// context — is handed in and outlives it. A structural op — placing a VOB,
+// deleting one — is followed in place by `update` (level-editor.md §7): the
+// scene rewrites its instances, and the picker is pointed at what it draws now.
 //
 // So the rules it carries are all about that boundary:
 //
@@ -28,12 +27,12 @@ import { WorldScene, type TextureCache } from './WorldScene';
 //     it already has instead of spending the cold open's 145-590 ms again
 //     (review §3.3), and a teardown `settle()`s the builds it abandoned rather
 //     than terminating a worker it does not own.
-//   - only the textures the cache does not already hold are asked for: a
-//     rebuilt scene asks for nothing at all unless the edit brought a visual
-//     whose texture is new.
+//   - only the textures the scene does not already hold are asked for: an
+//     update asks for nothing at all unless the edit brought a visual whose
+//     texture is new.
 //   - the marker layer for the VOBs with no visual is built here too (§16.38),
-//     because it is exactly as rebuildable as the instances are: a placed sound
-//     gets its marker from the rebuild the placement already forces.
+//     and replaced by `update` with the instances: a placed sound gets its
+//     marker from the same update the placement already forces.
 //   - and the mirrored root comes back off the scene it was added to, because
 //     that scene is not this class's to throw away.
 
@@ -61,8 +60,8 @@ export interface SceneHostOptions {
    */
   vobIndex: VobIndex;
 
-  /** Decoded pixels, kept across the rebuild a structural op forces. Owned by
-   *  the viewport, which is also what disposes it. */
+  /** Decoded pixels, kept across a rebuild of the same world. Owned by the
+   *  viewport, which is also what disposes it. */
   textures: TextureCache;
   /** The world mesh's trees, likewise kept — and keyed on `mesh`. */
   bvh: BvhBuilder;
@@ -88,10 +87,18 @@ export class SceneHost {
    */
   readonly ready: Promise<void>;
 
+  /** The payload the scene draws now — the one it was built from, then each
+   *  one `update` followed. */
+  get visuals(): InstancedPayload {
+    return this.current;
+  }
+
+  private current: InstancedPayload;
   private disposed = false;
 
   constructor(private readonly options: SceneHostOptions) {
     const { scene, renderer, camera, mesh, visuals, textures, bvh } = options;
+    this.current = visuals;
 
     this.world = new WorldScene(textures);
     this.world.setWorldMesh(mesh);
@@ -122,14 +129,40 @@ export class SceneHost {
     this.picker.setWorldMeshes(this.world.worldMeshes, this.world.root.matrix);
     this.picker.warm(renderer, camera);
 
-    const texturesReady = this.world.loadPendingTextures(
-      (name) => options.loadTexture(name, TEXTURE_MAX_SIZE),
+    this.ready = Promise.all([bvhReady, this.loadTextures()]).then(() => undefined);
+  }
+
+  /**
+   * Follow a structural op: `visuals` is every visual's placements as the world
+   * now has them, with no geometry for the ones this scene already draws, and
+   * `vobIndex` the re-read index the markers are taken from.
+   *
+   * The trees are not touched — the world mesh did not change — and the picker
+   * is not warmed again: its programs were compiled when the world opened.
+   * Resolves once the textures a new visual brought are decoded.
+   */
+  update(visuals: InstancedPayload, vobIndex: VobIndex): Promise<void> {
+    this.current = visuals;
+    this.world.updateInstancedVisuals(visuals);
+    this.world.setDecals(visuals.decals);
+    this.world.setVobMarkers(vobIndex);
+    this.picker.setInstancedMeshes(
+      this.world.instancedMeshes,
+      (instanced, instance) => this.world.resolveInstance(instanced, instance),
+      this.world.root.matrix,
+    );
+    return this.loadTextures();
+  }
+
+  /** Decode what the scene names and the cache does not hold — everything on
+   *  a cold open, and only what an edit brought after it. */
+  private loadTextures(): Promise<void> {
+    return this.world.loadPendingTextures(
+      (name) => this.options.loadTexture(name, TEXTURE_MAX_SIZE),
       () => this.disposed,
     ).then((failed) => {
-      if (failed.length > 0 && !this.disposed) options.onTextureFailures(failed);
+      if (failed.length > 0 && !this.disposed) this.options.onTextureFailures(failed);
     });
-
-    this.ready = Promise.all([bvhReady, texturesReady]).then(() => undefined);
   }
 
   /** The scene is being torn down: a pick or a decode still in flight must not

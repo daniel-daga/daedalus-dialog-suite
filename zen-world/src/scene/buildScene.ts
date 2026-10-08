@@ -458,10 +458,45 @@ export function buildNpcBody(binding: NpcBinding, vfs: VfsHandle, request: NpcBo
   };
 }
 
+/**
+ * Visuals already merged, by name: null for a name that does not resolve, no
+ * groups for one that resolves to no geometry. Only valid for the VFS it was
+ * filled from — whoever holds one drops it when that is replaced.
+ */
+export type VisualCache = Map<string, { source: string; groups: DrawGroup[]; bounds: ZenBounds } | null>;
+
+export interface InstancedVisualsOptions {
+  /**
+   * Kept across builds, so the build after an edit re-reads placements and
+   * nothing else. What is handed out from it is a copy, because the caller
+   * transfers it.
+   */
+  cache?: VisualCache;
+  /**
+   * Visuals the caller already draws. Each still comes back with its count,
+   * placements and bounds, but with `groups: []` — its geometry is the
+   * caller's. The stats are the world's either way.
+   */
+  have?: ReadonlySet<string>;
+}
+
+/** A group whose buffers are its own, for a cache that must outlive a transfer. */
+function copyGroup(group: DrawGroup): DrawGroup {
+  return {
+    ...group,
+    positions: group.positions.slice(0),
+    normals: group.normals.slice(0),
+    uvs: group.uvs.slice(0),
+    indices: group.indices.slice(0),
+    lights: group.lights === null ? null : group.lights.slice(0),
+  };
+}
+
 export function buildInstancedVisuals(
   binding: SceneBinding,
   vfs: VfsHandle,
   index: VobIndex,
+  options: InstancedVisualsOptions = {},
 ): InstancedScene {
   const positions = new Float32Array(index.positions);
   const rotations = new Float32Array(index.rotations);
@@ -469,8 +504,10 @@ export function buildInstancedVisuals(
   const visualIndex = new Uint32Array(index.visualIndex);
   const visualTypeIndex = new Uint32Array(index.visualTypeIndex);
 
-  // Resolved once per unique name, not once per VOB.
-  const resolved = new Map<string, { source: string; chunks: MeshChunk[] } | null>();
+  // Resolved once per unique name, not once per VOB — and with a cache, once
+  // per world.
+  const cache: VisualCache = options.cache ?? new Map();
+  const resolved = new Map<string, { source: string; groups: DrawGroup[]; bounds: ZenBounds } | null>();
   const placements = new Map<string, { matrices: number[]; vobIds: number[] }>();
   const unresolvedByType: Record<string, number> = {};
   const unresolved = new Map<string, UnresolvedVisual>();
@@ -486,7 +523,12 @@ export function buildInstancedVisuals(
     }
 
     if (!resolved.has(name)) {
-      resolved.set(name, binding.extractVisual(vfs, name));
+      if (!cache.has(name)) {
+        const extracted = binding.extractVisual(vfs, name);
+        const groups = extracted === null ? [] : mergeChunks(extracted.chunks);
+        cache.set(name, extracted === null ? null : { source: extracted.source, groups, bounds: groupBounds(groups) });
+      }
+      resolved.set(name, cache.get(name)!);
     }
     const visual = resolved.get(name)!;
     if (visual === null) {
@@ -523,7 +565,7 @@ export function buildInstancedVisuals(
 
   for (const [name, placement] of placements) {
     const visual = resolved.get(name)!;
-    const groups = mergeChunks(visual.chunks);
+    const groups = visual.groups;
     // A name that resolves to no geometry places nothing: an InstancedMesh with
     // no groups is a draw call that draws nothing.
     if (groups.length === 0) continue;
@@ -534,8 +576,8 @@ export function buildInstancedVisuals(
       count: placement.vobIds.length,
       matrices: new Float32Array(placement.matrices).buffer,
       vobIds: new Uint32Array(placement.vobIds).buffer,
-      groups,
-      bounds: groupBounds(groups),
+      groups: options.have?.has(name) ? [] : options.cache ? groups.map(copyGroup) : groups,
+      bounds: visual.bounds,
     });
     vobsPlaced += placement.vobIds.length;
     instancedDrawGroups += groups.length;

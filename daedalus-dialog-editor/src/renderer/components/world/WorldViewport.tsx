@@ -130,6 +130,13 @@ declare global {
 
 export interface WorldViewportProps {
   mesh: WorldMeshPayload;
+  /**
+   * The world's instanced visuals. The first payload a viewport mounts with is
+   * whole; every later one is a structural op's, and leaves out the geometry
+   * the scene already draws (`groups: []`). So the viewport is mounted once per
+   * world and never again inside one — the surface unmounts it on an open, and
+   * mounts it once the new world's first payload is in.
+   */
   visuals: InstancedPayload;
   /**
    * The summary's own VOB columns, for the 38 % of a retail world the worker
@@ -137,10 +144,10 @@ export interface WorldViewportProps {
    * and spot (level-editor.md §16.38). They are drawn as markers, and the index
    * is where a position for them exists.
    *
-   * Read through a ref rather than made a dependency of the scene effect: a
-   * structural op refreshes the index one commit *before* the new `visuals`
-   * arrive, and taking both would rebuild the scene twice per placement. The
-   * effect re-runs on `visuals`, which is when the fresh index is read.
+   * Read through a ref rather than made a dependency of anything: a structural
+   * op refreshes the index one commit *before* the new `visuals` arrive, and
+   * the update that follows the op runs on `visuals`, which is when the fresh
+   * index is read.
    */
   vobIndex: VobIndex;
   /** ZenGin-space world bounds, for framing the camera. */
@@ -487,6 +494,8 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   const bboxKey = bbox.join(',');
 
   const sceneRef = useRef<WorldScene | null>(null);
+  // Its host, for the effect that follows a structural op into it.
+  const sceneHostRef = useRef<SceneHost | null>(null);
   // The renderer, its canvas, the outline pass, the camera and the controls —
   // everything a structural op must not throw away (`ViewportRenderer`). Built
   // on the scene effect's first run and disposed only when the viewport goes,
@@ -628,17 +637,16 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   // same-world rebuild has to put it back; the pivot it marks is the camera's
   // and never went anywhere.
   const pivotMarkerRef = useRef<{ key: string; point: [number, number, number] } | null>(null);
-  // Survives it for the same reason and keyed the same way: the pixels did not
-  // change when a VOB was placed, and re-decoding all 490 of them is the 549 ms
-  // the cold open pays. Owned here rather than by the scene, which is torn down
-  // and rebuilt underneath it — see `TextureCache`.
+  // Survives it for the same reason and keyed the same way: re-decoding all 490
+  // of them is the 549 ms the cold open pays. Owned here rather than by the
+  // scene, which a re-run of the scene effect tears down — see `TextureCache`.
   const texturesRef = useRef<TextureCache | null>(null);
 
-  // The world mesh's BVH, and the builder's own memory of it (review §3.3).
-  // Every structural op rebuilds the scene, so the geometry is new — but the
-  // world mesh is not, and a rebuilt tree is the cold open's 145-590 ms spent
-  // again. The builder is keyed on the `mesh` payload and outlives the effect
-  // for the same reason the texture cache does.
+  // The world mesh's BVH, and the builder's own memory of it (review §3.3). A
+  // re-run of the scene effect makes new geometry from the same `mesh` payload,
+  // and a rebuilt tree is the cold open's 145-590 ms spent again. The builder is
+  // keyed on the payload and outlives the effect for the same reason the
+  // texture cache does.
   const bvhRef = useRef<BvhBuilder | null>(null);
 
   // Both caches outlive every run of the scene effect, so they are released
@@ -657,9 +665,8 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     if (!host) return;
 
     // Built on the first run and kept: the renderer, its GL context, the canvas,
-    // the outline pass, the camera and the controls are precisely what a
-    // structural op must not throw away (`ViewportRenderer`, review §3.2). What
-    // this effect rebuilds is the scene under them.
+    // the outline pass, the camera and the controls (`ViewportRenderer`, review
+    // §3.2). What this effect builds is the scene under them, once per world.
     const viewport = viewportRef.current ?? (viewportRef.current = new ViewportRenderer(host));
     const { scene, renderer, camera, controls, raycaster, pointer } = viewport;
 
@@ -680,18 +687,17 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     // ── the scene this payload gets (level-editor.md §7) ───────────────────
     //
     // `world/SceneHost` owns it (#220): the `WorldScene`, the world mesh's BVH
-    // trees and the GPU picker — which is exactly the set of things a
-    // structural op rebuilds. The decoded pixels and the builder's memory of
-    // the trees are handed in rather than made here, because they are what has
-    // to survive that rebuild.
+    // trees and the GPU picker. A structural op is followed into it in place
+    // (`SceneHost.update`, the effect below this one). The decoded pixels and the
+    // builder's memory of the trees are handed in rather than made here, because
+    // they outlive it.
     const sceneHost = new SceneHost({
       scene,
       renderer,
       camera,
       mesh,
       visuals,
-      // Through the ref, for the reason the prop's own comment gives: the index
-      // arrives one commit ahead of the visuals a rebuild is keyed on.
+      // Through the ref, for the reason the prop's own comment gives.
       vobIndex: vobIndexRef.current,
       textures: texturesRef.current,
       bvh: bvhRef.current ?? (bvhRef.current = new BvhBuilder()),
@@ -701,6 +707,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     });
     const { world, picker } = sceneHost;
     sceneRef.current = world;
+    sceneHostRef.current = sceneHost;
 
     // Where the last click landed, in three space, or null before the first
     // one. The fallback pivot for a drag that begins over the sky.
@@ -748,18 +755,15 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     // scaled by the distance to *that* rather than to the middle of the island.
     const detachNav = attachBlenderNav(controls, host, pivotUnderCursor);
 
-    // A structural op — placing a VOB — cannot be applied to the columnar
-    // projection, so the scene is rebuilt from the world (level-editor.md §7)
-    // and this effect runs again. Re-framing here would throw away the view the
-    // placement was aimed from, which is the one view the user needs in order
-    // to see whether it landed — so only a world the camera has not been in is
-    // framed, and the rest of the time the camera is simply left where it is.
+    // Only a world the camera has not been in is framed. A re-run of this
+    // effect for the same world leaves the camera where it is: re-framing would
+    // throw away whatever view the user had.
     if (framedRef.current !== worldKey) {
       framedRef.current = worldKey;
       viewport.frameWorld(box.center, span);
     }
-    // The marker hangs on the scene's root, so it does not survive the rebuild
-    // by itself — it is put back, keyed on the world the same way.
+    // The marker hangs on the scene's root, so it does not survive a re-run by
+    // itself — it is put back, keyed on the world the same way.
     if (pivotMarkerRef.current?.key === worldKey) setPivotMarker(pivotMarkerRef.current.point);
     controls.update();
 
@@ -1090,7 +1094,6 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     const gl = renderer.getContext();
     const pickPointer = new THREE.Vector2();
     const target = new THREE.Vector3();
-    const allMeshes: THREE.Object3D[] = [...world.worldMeshes, ...world.instancedMeshes];
 
     const probe: ViewportProbe = {
       moveCamera: (pose) => {
@@ -1107,7 +1110,9 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       },
       raycastWholeScene: (x, y) => {
         raycaster.setFromCamera(pickPointer.set(x, y), camera);
-        return raycaster.intersectObjects(allMeshes, false).length > 0;
+        // Read per ray: a structural op re-allocates a visual that outgrew its
+        // meshes.
+        return raycaster.intersectObjects([...world.worldMeshes, ...world.instancedMeshes], false).length > 0;
       },
       pickVobs: async (x, y) => {
         const width = renderer.domElement.width;
@@ -1228,6 +1233,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       // anything else for that reason.
       nav.dispose();
       sceneRef.current = null;
+      sceneHostRef.current = null;
       gizmoRef.current = null;
       frameVobRef.current = null;
       framePointRef.current = null;
@@ -1250,21 +1256,31 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       // are deliberately not touched here — see `ViewportRenderer`, and the
       // effect below, which is where they go.
     };
-    // Re-run whenever a payload arrives — the callbacks are read through refs
-    // precisely so they are not dependencies. A structural op brings new
-    // `visuals`, which is a rebuild of the scene and of nothing above it: the
-    // renderer, its GL context, the canvas, the outline pass and the camera all
-    // belong to `ViewportRenderer` now (review §3.2).
+    // Re-run for a different world, and only then — the callbacks are read
+    // through refs precisely so they are not dependencies, and the `visuals` a
+    // structural op brings are followed in place by the effect below rather
+    // than rebuilt from here.
     //
     // Keyed on the bbox's *value*, never the array's identity: every structural
     // op re-reads the index and the summary comes back structured-cloned from
     // the main process, so `summary.bbox` is a fresh array of the same six
-    // numbers each time — and it arrives one commit before the new visuals do,
-    // which is what used to make the rebuild happen twice per op. `bbox` itself
-    // is therefore deliberately not a dependency: `bboxKey` is the same
-    // information by value, and the array identity is the thing being kept out.
+    // numbers each time. `bbox` itself is therefore deliberately not a
+    // dependency: `bboxKey` is the same information by value, and the array
+    // identity is the thing being kept out. `visuals` is read at build: the
+    // surface mounts this only once a world's first payload is in hand.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mesh, visuals, bboxKey]);
+  }, [mesh, bboxKey]);
+
+  // A structural op, followed rather than rebuilt (level-editor.md §7): the
+  // payload carries every visual's placements and no geometry the scene already
+  // holds, and `SceneHost.update` writes them into the meshes it has. Declared
+  // right after the scene effect, so the effects below that redraw the
+  // selection and the hidden classes run over the updated slots.
+  useEffect(() => {
+    const host = sceneHostRef.current;
+    if (host === null || host.visuals === visuals) return;
+    void host.update(visuals, vobIndexRef.current);
+  }, [visuals]);
 
   // The other half of the scene effect's lifetime. Declared after it so that
   // its cleanup runs after the scene's — React unmounts effects in the order
@@ -1285,12 +1301,10 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   }, [paused, mesh, visuals, bboxKey]);
 
   // The overlay lives and dies on its own, under the scene's converted root so
-  // it needs no conversion of its own. `mesh` and `visuals` are dependencies
-  // because a new world — and a structural op, which rebuilds the scene from
-  // `visuals` alone — means a new root to hang it under, not because the waynet
-  // changed. Without `visuals` the rebuild leaves the overlay on a root that
-  // has been disposed and the waynet silently vanishes until it is toggled off
-  // and on; the terrain marker below takes it for exactly the same reason.
+  // it needs no conversion of its own. `mesh` is a dependency because a new
+  // world means a new root to hang it under, not because the waynet changed.
+  // `visuals` is not: a structural op is followed in place and the root stays,
+  // and the overlays below are keyed the same way for the same reason.
   useEffect(() => {
     const world = sceneRef.current;
     if (world === null || waynet === null) return;
@@ -1304,27 +1318,24 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       overlay.dispose();
       overlayRef.current = null;
     };
-  }, [waynet, mesh, visuals]);
+  }, [waynet, mesh]);
 
   // The same dependencies as the effect above, because a rebuilt overlay is a
-  // fresh one and `WaynetOverlay` starts hidden: without `visuals` a structural
-  // op re-attaches the waynet and never shows it, which looks the same as not
-  // re-attaching it at all.
+  // fresh one and `WaynetOverlay` starts hidden.
   useEffect(() => {
     overlayRef.current?.setVisible(showWaynet);
-  }, [showWaynet, waynet, mesh, visuals]);
+  }, [showWaynet, waynet, mesh]);
 
   // The name layer. DOM over the canvas rather than anything in the scene, so
-  // it is not tied to `mesh`/`visuals` the way the overlays are — a structural
-  // op rebuilds the scene and leaves this alone. It follows `waynet` because
-  // the names are the payload's.
+  // it is not tied to `mesh` the way the overlays are. It follows `waynet`
+  // because the names are the payload's.
   useEffect(() => {
     const host = hostRef.current;
     if (host === null || waynet === null) return;
 
     // Who is standing there, read through the refs rather than closed over:
-    // this layer outlives the spawn overlay — a structural op rebuilds that one
-    // and leaves this alone — and the occupancy changes under both on every
+    // this layer outlives the spawn overlay — a change of spawns rebuilds that
+    // one and leaves this alone — and the occupancy changes under both on every
     // tick of the time slider. Nobody, with the spawn layer off: occupancy is
     // that layer's fact, and a name over a point it is not marking would be a
     // claim nothing on screen supports (§16.19 slice 14).
@@ -1352,8 +1363,8 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   }, [showWaypointNames, waynet]);
 
   // The spawn markers, built and torn down exactly like the waynet above and
-  // for the same reasons — including `visuals`, or a structural op leaves them
-  // on a root that has been disposed. `spawns` is a dependency because the
+  // for the same reasons — and not on `visuals`, which used to re-fetch every
+  // NPC body they draw on each placement. `spawns` is a dependency because the
   // markers are resolved once, at construction: the project index arrives after
   // the world on a cold start, and an overlay built against the empty index
   // would stay empty.
@@ -1391,15 +1402,14 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       if (overlay) { world.root.remove(overlay.root); overlay.dispose(); }
       spawnOverlayRef.current = null;
     };
-  }, [waynet, spawns, routines, npcBodyRequests, mesh, visuals]);
+  }, [waynet, spawns, routines, npcBodyRequests, mesh]);
 
   useEffect(() => {
     spawnOverlayRef.current?.setVisible(showSpawns);
-  }, [showSpawns, waynet, spawns, routines, mesh, visuals]);
+  }, [showSpawns, waynet, spawns, routines, mesh]);
 
   // Routine mode's draft (npc-editor.md §6), rebuilt per edit — a handful of
-  // stops — and with the scene for the waynet's reason: a structural op
-  // disposes the root it hangs under.
+  // stops — and per world for the waynet's reason.
   useEffect(() => {
     const world = sceneRef.current;
     if (world === null || waynet === null || routineDraft === null) return;
@@ -1411,21 +1421,19 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       world.root.remove(overlay.root);
       overlay.dispose();
     };
-  }, [waynet, routineDraft, mesh, visuals]);
+  }, [waynet, routineDraft, mesh]);
 
-  // The same rebuild dependencies as the two above, and for the third time the
-  // same reason: a fresh overlay draws the static spawns, so without them a
-  // structural op silently resets an open slider to no time at all.
+  // The same rebuild dependencies as the spawn overlay's: a fresh overlay draws
+  // the static spawns, so without them a rebuilt one silently resets an open
+  // slider to no time at all.
   useEffect(() => {
     spawnOverlayRef.current?.setTime(spawnTime, spawnState);
-  }, [spawnTime, spawnState, waynet, spawns, routines, mesh, visuals]);
+  }, [spawnTime, spawnState, waynet, spawns, routines, mesh]);
 
   // The marker for the picked point, built and torn down exactly like the
   // overlay above — under the scene's converted root, so it needs no conversion
-  // of its own. `mesh` and `visuals` are dependencies because a structural op
-  // rebuilds the scene and with it the root this hangs under, not because the
-  // point changed; without them the marker is left on a scene that has been
-  // disposed, which is precisely the placement it was drawn for. Built per
+  // of its own. `mesh` is a dependency because a new world is a new root to
+  // hang it under, not because the point changed. Built per
   // point rather than moved: a click is not a frame, and this way the point
   // that is gone takes its geometry with it.
   useEffect(() => {
@@ -1439,7 +1447,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       world.root.remove(marker.root);
       marker.dispose();
     };
-  }, [terrainPoint, mesh, visuals]);
+  }, [terrainPoint, mesh]);
 
   // The gizmo follows the selection. `mesh` is a dependency because a new
   // world's scene is a new gizmo, not because the selection changed.
@@ -1458,7 +1466,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
 
   useEffect(() => {
     gizmoRef.current?.setMode(gizmoMode);
-  }, [gizmoMode, mesh, visuals]);
+  }, [gizmoMode, mesh]);
 
   // The ring is drawn by the pointer handler and can only be *un*drawn from
   // here: switching the brush off is a prop change, and the cursor may never
@@ -1466,30 +1474,30 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   // longer active stays on the ground.
   useEffect(() => {
     if (scatterRadius === null) scatterBrushRef.current?.hide();
-  }, [scatterRadius, mesh, visuals]);
+  }, [scatterRadius, mesh]);
 
   // Brightness. One uniform write for the whole scene, picked up by the next
   // frame the render loop draws — no recompile, and nothing to invalidate, so a
   // slider drag costs one assignment per pointer move.
   //
-  // `mesh` and `visuals` are dependencies for the reason the waynet's
-  // visibility effect gives: a structural op rebuilds the scene, and a fresh
-  // `WorldScene` starts at `DEFAULT_EXPOSURE` — without them a world placed
-  // with the brightness turned up would snap back to unchanged.
+  // `mesh` is a dependency because a fresh `WorldScene` starts at
+  // `DEFAULT_EXPOSURE`. A structural op adds materials to the same scene, and
+  // every one of them points at its one exposure uniform.
   useEffect(() => {
     sceneRef.current?.setExposure(exposure);
-  }, [exposure, mesh, visuals]);
+  }, [exposure, mesh]);
 
   // Which VOBs are outlined. One uniform write — and unlike the brightness
-  // above it, not on `mesh`/`visuals`: the outline pass belongs to the viewport
-  // rather than to the scene, so a structural op leaves its uniform standing.
+  // above it, not on `mesh`: the outline pass belongs to the viewport rather
+  // than to the scene, so a new world leaves its uniform standing.
   useEffect(() => {
     viewportRef.current?.outline.setMode(outlineMode);
   }, [outlineMode]);
 
-  // Per-class visibility, on `mesh`/`visuals` for the same reason: a rebuilt
-  // scene draws every instance until it is told again which ones are switched
-  // off, and a placement would otherwise bring a hidden class back.
+  // Per-class visibility, on `mesh` because a new scene draws every instance
+  // until it is told otherwise, and on `visuals` because a structural op moves
+  // VOBs between slots. The scene redraws its last mask over the new slots by
+  // itself; this is the fresh mask, which is indexed by the new numbering.
   useEffect(() => {
     sceneRef.current?.setHiddenVobs(hiddenVobs);
   }, [hiddenVobs, mesh, visuals]);
@@ -1497,14 +1505,13 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   // The selection, drawn on the VOBs themselves (§16.24 1) — the gizmo is one
   // set of handles and says nothing about the other members of a multi-select,
   // or about a selected VOB whose gizmo is off screen. `mesh`/`visuals` for the
-  // reason every effect above them takes them: a rebuilt scene starts with
-  // nothing marked.
+  // reason the hidden classes take them.
   useEffect(() => {
     sceneRef.current?.setSelectedVobs(selection);
   }, [selection, mesh, visuals]);
 
   // The selected VOB's reach (architecture §7). On `mesh`/`visuals` for the reason the
-  // effects above take them, and on `appliedOps` as well: the radius is a field
+  // two effects above take them, and on `appliedOps` as well: the radius is a field
   // an op writes and the VOB is something a move takes elsewhere, so the sphere
   // has to be redrawn from the committed position rather than the one it was
   // first drawn at.
@@ -1550,8 +1557,8 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       // A property op moves nothing: the name and the flags are not drawn at
       // all, and a swapped visual is a different mesh in a different
       // `InstancedMesh` rather than a matrix to rewrite. The surface re-requests
-      // the instanced visuals for that one, which rebuilds the scene — there is
-      // no in-place edit of it that would be correct.
+      // the placements for that one, and `SceneHost.update` moves the VOB from
+      // one visual's meshes to the other's.
     }
     // The gizmo has to follow the VOBs it is attached to, or it is left
     // floating where they used to be — an undo of a multi-select drag moves

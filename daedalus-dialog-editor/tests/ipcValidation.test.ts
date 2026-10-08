@@ -18,6 +18,7 @@ import {
   assertOpenWorldRequest,
   assertTextureRequest,
   assertVisualRequest,
+  assertVisualsRequest,
   assertNpcBodyRequest,
   assertThumbnailGetRequest,
   assertThumbnailPutRequest,
@@ -304,6 +305,22 @@ describe('assertTextureRequest', () => {
     // makes that loop's exit condition meaningless.
     for (const bad of [0, -1, 1.5, NaN, Infinity, '256']) {
       expect(() => assertTextureRequest({ name: 'NW_WOOD.TGA', maxSize: bad })).toThrow(/maxSize/);
+    }
+  });
+});
+
+describe('assertVisualsRequest', () => {
+  it('accepts nothing — a cold open — or the names the renderer already draws', () => {
+    expect(() => assertVisualsRequest(undefined)).not.toThrow();
+    expect(() => assertVisualsRequest({ have: [] })).not.toThrow();
+    expect(() => assertVisualsRequest({ have: ['NW_CRATE.3DS', 'BARREL.3DS'] })).not.toThrow();
+  });
+
+  it('rejects a list that is not a list of names', () => {
+    // Each name only ever decides what is left *out* of the answer, so a wrong
+    // one costs a missing mesh — but the shape is still the whole boundary.
+    for (const bad of [{ have: 'NW_CRATE.3DS' }, { have: [42] }, { have: null }, 'x', []]) {
+      expect(() => assertVisualsRequest(bad)).toThrow(/visuals request/i);
     }
   });
 });

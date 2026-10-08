@@ -40,6 +40,9 @@ const surface = {
   markEdited: jest.fn(),
   forgetClassProps: jest.fn(),
   refreshHistoryDepth: jest.fn(),
+  // What the scene draws now, by name — the geometry an edit's re-read can
+  // leave out.
+  drawnVisuals: () => ['BARREL.3DS', 'CRATE.3DS'],
 };
 
 /** The generation `openWorldAt` bumps. Kept out here so a test can open a world
@@ -113,20 +116,23 @@ describe('useWorldEditPipeline — the one door an edit goes through', () => {
     expect(surface.setVisuals).not.toHaveBeenCalled();
   });
 
-  test('a structural batch re-reads the index whole and the visuals with it', async () => {
+  test('a structural batch re-reads the index whole, and the placements with it', async () => {
     // A flat index is a position in a depth-first traversal, so it cannot be
-    // patched; an instance cannot be appended to an allocated `InstancedMesh`.
+    // patched. The visuals are re-read too, but only the geometry the scene does
+    // not draw yet comes with them.
     const { result } = mount();
     await act(async () => { await result.current.commitOps([APPEND_ROOT]); });
     expect(api.refreshWorldIndex).toHaveBeenCalled();
+    expect(api.getWorldVisuals).toHaveBeenCalledWith(['BARREL.3DS', 'CRATE.3DS']);
     expect(surface.setVisuals).toHaveBeenCalled();
   });
 
-  test('a swapped visual re-reads the visuals without being structural', async () => {
+  test('a swapped visual re-reads the placements without being structural', async () => {
     // A different mesh lives in a different `InstancedMesh`, which may not exist
     // yet — but no VOB came or went and nothing renumbered.
     const { result } = mount();
     await act(async () => { await result.current.commitOps([SWAP_VISUAL]); });
+    expect(api.getWorldVisuals).toHaveBeenCalledWith(['BARREL.3DS', 'CRATE.3DS']);
     expect(surface.setVisuals).toHaveBeenCalled();
     expect(api.refreshWorldIndex).not.toHaveBeenCalled();
   });

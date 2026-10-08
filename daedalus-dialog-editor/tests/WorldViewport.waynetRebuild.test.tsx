@@ -1,23 +1,19 @@
 /**
- * The waynet overlay must survive the scene rebuild a structural op forces.
+ * The overlays across a structural op.
  *
- * The overlay hangs its group off the scene root, and the scene root is built
- * inside the viewport's big scene effect — which re-runs whenever `visuals`
- * changes, because a structural op (placing, deleting or reparenting a VOB)
- * cannot be applied to the columnar projection and is answered by rebuilding
- * from a fresh instanced payload. If the overlay's own effect does not take
- * `visuals` too, the rebuild hands out a new root while the overlay stays
- * attached to the disposed one: the waynet silently vanishes until it is
- * toggled off and on. The terrain marker's effect already takes `visuals` for
- * exactly this reason.
+ * The waynet, the spawn markers and routine mode's draft hang their groups off
+ * the scene root. A structural op (placing, deleting or reparenting a VOB) used
+ * to rebuild the scene from a fresh instanced payload, which handed out a new
+ * root — so each overlay's effect took `visuals` and was rebuilt with it, the
+ * spawn markers re-fetching every NPC body each time. The scene now follows the
+ * op in place (`SceneHost.update`) and the root survives, so each overlay is
+ * built once per world and stays where it is, shown.
  *
  * Only what the viewport genuinely cannot have under jsdom is faked here, via
  * the shared `worldViewportMocks.ts` — the WebGL renderer, the two example
  * controls (ESM, and neither has anything to say about the scene graph), the
- * BVH worker and the GPU picker. `WorldScene` and `WaynetOverlay` are the real
- * classes, so the assertion below is about the real scene graph: after a
- * `visuals`-only rebuild the overlay's group must be a child of the *current*
- * root, not of the disposed one.
+ * BVH worker and the GPU picker. `WorldScene` and the overlays are the real
+ * classes, so the assertions are about the real scene graph.
  *
  * @jest-environment jsdom
  */
@@ -142,6 +138,10 @@ const SPAWNS = [{
   filePath: 'C:/Story/Startup.d', functionName: 'STARTUP_NEWWORLD', line: 12,
 }];
 
+/** One object for every render, as the surface's is: the markers are rebuilt
+ *  when it changes, and a fresh literal per render would rebuild them each time. */
+const ROUTINES = { sites: [], routinesByNpc: {} };
+
 function props(visuals: InstancedPayload, payload: WaynetPayload, showWaynet: boolean) {
   return {
     mesh: MESH,
@@ -152,7 +152,7 @@ function props(visuals: InstancedPayload, payload: WaynetPayload, showWaynet: bo
     showWaynet,
     spawns: SPAWNS,
     showSpawns: true,
-    routines: { sites: [], routinesByNpc: {} },
+    routines: ROUTINES,
     spawnTime: null,
     showWaypointNames: false,
     loadTexture: async () => null,
@@ -171,7 +171,7 @@ function props(visuals: InstancedPayload, payload: WaynetPayload, showWaynet: bo
   };
 }
 
-describe('WorldViewport — the waynet overlay across a structural rebuild', () => {
+describe('WorldViewport — the overlays across a structural op', () => {
   beforeEach(() => {
     mockScenes.length = 0;
     mockOverlays.length = 0;
@@ -183,7 +183,7 @@ describe('WorldViewport — the waynet overlay across a structural rebuild', () 
     };
   });
 
-  it('re-attaches the overlay to the root a visuals-only rebuild hands out', () => {
+  it('keeps the scene, and the waynet on its root', () => {
     const payload = waynet();
     const { rerender, unmount } = render(
       <WorldViewport {...props(instancedPayload(), payload, true)} />,
@@ -199,15 +199,9 @@ describe('WorldViewport — the waynet overlay across a structural rebuild', () 
       rerender(<WorldViewport {...props(instancedPayload(), payload, true)} />);
     });
 
-    // The scene really was rebuilt, or there is nothing here to get wrong.
-    expect(mockScenes).toHaveLength(2);
-    expect(mockScenes[1].root).not.toBe(mockScenes[0].root);
-
-    // And the waynet is drawn under the root that is now on screen. Attached to
-    // the disposed one it is invisible until the overlay is toggled off and on.
-    const overlay = mockOverlays[mockOverlays.length - 1];
-    expect(overlay.root.parent).toBe(mockScenes[1].root);
-    expect(mockScenes[0].root.children).toHaveLength(0);
+    expect(mockScenes).toHaveLength(1);
+    expect(mockOverlays).toHaveLength(1);
+    expect(mockOverlays[0].root.parent).toBe(mockScenes[0].root);
 
     unmount();
   });
@@ -245,7 +239,7 @@ describe('WorldViewport — the waynet overlay across a structural rebuild', () 
     unmount();
   });
 
-  it('leaves a shown waynet on screen across that rebuild', () => {
+  it('leaves a shown waynet on screen across it', () => {
     const payload = waynet();
     const { rerender, unmount } = render(
       <WorldViewport {...props(instancedPayload(), payload, true)} />,
@@ -256,21 +250,16 @@ describe('WorldViewport — the waynet overlay across a structural rebuild', () 
       rerender(<WorldViewport {...props(instancedPayload(), payload, true)} />);
     });
 
-    // A rebuilt overlay is a fresh one and `WaynetOverlay` starts hidden, so
-    // the visibility effect has to follow the rebuild as well as the attachment
-    // — re-attached but never shown is the same vanished waynet.
-    expect(mockOverlays).toHaveLength(2);
-    const overlay = mockOverlays[mockOverlays.length - 1];
-    expect(overlay.root.visible).toBe(true);
+    expect(mockOverlays).toHaveLength(1);
+    expect(mockOverlays[0].root.visible).toBe(true);
 
     unmount();
   });
 
-  it('re-attaches the spawn markers to that root too, and leaves them shown', () => {
-    // §16.19 slice 4. The markers hang off the same root and their effect takes
-    // `visuals` for the same reason the waynet's does — attached to the disposed
-    // root, or rebuilt hidden, the layer silently vanishes and reads exactly
-    // like a project that spawns nobody in this world.
+  it('leaves the spawn markers built, attached and shown — no NPC body is fetched again', () => {
+    // §16.19 slice 4. Rebuilt per op, the layer re-asked the worker for every
+    // NPC body it draws and re-decoded their textures, for a placement that had
+    // nothing to do with any of them.
     const payload = waynet();
     const { rerender, unmount } = render(
       <WorldViewport {...props(instancedPayload(), payload, false)} />,
@@ -282,17 +271,15 @@ describe('WorldViewport — the waynet overlay across a structural rebuild', () 
       rerender(<WorldViewport {...props(instancedPayload(), payload, false)} />);
     });
 
-    expect(mockSpawnOverlays).toHaveLength(2);
-    const overlay = mockSpawnOverlays[mockSpawnOverlays.length - 1];
-    expect(overlay.root.parent).toBe(mockScenes[1].root);
-    expect(overlay.root.visible).toBe(true);
+    expect(mockSpawnOverlays).toHaveLength(1);
+    expect(mockSpawnOverlays[0].root.parent).toBe(mockScenes[0].root);
+    expect(mockSpawnOverlays[0].root.visible).toBe(true);
 
     unmount();
   });
 
   it('draws routine mode\'s draft under that root too, and takes it away when the mode closes', () => {
-    // npc-editor.md §6: the draft's stops and routes hang off the same root, so
-    // they follow the rebuild for the waynet's reason.
+    // npc-editor.md §6: the draft's stops and routes hang off the same root.
     const payload = waynet();
     const draft = {
       entries: [
@@ -310,8 +297,8 @@ describe('WorldViewport — the waynet overlay across a structural rebuild', () 
     act(() => {
       rerender(<WorldViewport {...props(instancedPayload(), payload, true)} routineDraft={draft} />);
     });
-    const rebuilt = mockRoutineOverlays[mockRoutineOverlays.length - 1];
-    expect(rebuilt.root.parent).toBe(mockScenes[1].root);
+    expect(mockRoutineOverlays).toHaveLength(1);
+    expect(mockRoutineOverlays[0].root.parent).toBe(mockScenes[0].root);
 
     act(() => {
       rerender(<WorldViewport {...props(instancedPayload(), payload, true)} routineDraft={null} />);

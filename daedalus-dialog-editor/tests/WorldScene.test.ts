@@ -1330,3 +1330,164 @@ describe("WorldScene and the decals", () => {
     scene.dispose();
   });
 });
+
+// A structural op, followed rather than rebuilt. The worker answers with every
+// visual's placements and leaves out the geometry the scene already holds
+// (`groups: []`), so the scene rewrites instance matrices where it can and
+// re-allocates one visual's meshes only when that visual outgrows them — over
+// the vertex buffers it already uploaded.
+describe('WorldScene after a structural op', () => {
+  const placements = (vobs: Array<[number, [number, number, number]]>, overrides: Partial<InstancedVisual> = {}) => visual({
+    count: vobs.length,
+    matrices: new Float32Array(vobs.flatMap(([, [x, y, z]]) => [1, 0, 0, x, 0, 1, 0, y, 0, 0, 1, z])).buffer,
+    vobIds: new Uint32Array(vobs.map(([vob]) => vob)).buffer,
+    groups: [],
+    ...overrides,
+  });
+  const payload = (...visuals: InstancedVisual[]) => ({ visuals, stats: {} as never });
+  const built = () => {
+    const scene = new WorldScene();
+    scene.setInstancedVisuals(payload(visual()));
+    return scene;
+  };
+
+  test('a third barrel is drawn, over the vertices the first two were drawn with', () => {
+    const scene = built();
+    const before = scene.instancedMeshes[0];
+    const position = before.geometry.getAttribute('position');
+
+    scene.updateInstancedVisuals(payload(placements([[7, [10, 20, 30]], [9, [40, 50, 60]], [10, [70, 80, 90]]])));
+
+    expect(scene.instancedMeshes).toHaveLength(1);
+    const after = scene.instancedMeshes[0];
+    expect(after.count).toBe(3);
+    expect(after.geometry.getAttribute('position')).toBe(position);
+    expect(scene.resolveInstance(after, 2)).toBe(10);
+    expect(scene.positionOf(10)).toEqual([70, 80, 90]);
+    expect(scene.root.children).toContain(after);
+    expect(scene.root.children).not.toContain(before);
+  });
+
+  test('outgrowing a mesh frees what it allocated and nothing it shares', () => {
+    const scene = built();
+    const before = scene.instancedMeshes[0];
+    const position = before.geometry.getAttribute('position');
+    const geometryDisposed = jest.spyOn(before.geometry, 'dispose');
+    const meshDisposed = jest.spyOn(before, 'dispose');
+
+    scene.updateInstancedVisuals(payload(placements([[7, [0, 0, 0]], [9, [0, 0, 0]], [10, [0, 0, 0]]])));
+
+    expect(meshDisposed).toHaveBeenCalled();
+    expect(geometryDisposed).toHaveBeenCalled();
+    // three frees every attribute a disposed geometry still holds — the shared
+    // vertices had to be taken off it first.
+    expect(before.geometry.getAttribute('position')).toBeUndefined();
+    expect(scene.instancedMeshes[0].geometry.getAttribute('position')).toBe(position);
+  });
+
+  test('it grows with room to spare, so the next placement is written in place', () => {
+    const scene = built();
+    scene.updateInstancedVisuals(payload(placements([[7, [0, 0, 0]], [9, [0, 0, 0]], [10, [0, 0, 0]]])));
+    const grown = scene.instancedMeshes[0];
+
+    scene.updateInstancedVisuals(payload(placements([[7, [0, 0, 0]], [9, [0, 0, 0]], [10, [0, 0, 0]], [11, [5, 5, 5]]])));
+
+    expect(scene.instancedMeshes[0]).toBe(grown);
+    expect(grown.count).toBe(4);
+    expect(scene.positionOf(11)).toEqual([5, 5, 5]);
+  });
+
+  test('a deleted barrel is dropped in place, and the rest are renumbered', () => {
+    const scene = built();
+    const mesh = scene.instancedMeshes[0];
+
+    // VOB 7 deleted: what was VOB 9 is VOB 8 now.
+    scene.updateInstancedVisuals(payload(placements([[8, [40, 50, 60]]])));
+
+    expect(scene.instancedMeshes[0]).toBe(mesh);
+    expect(mesh.count).toBe(1);
+    expect(scene.resolveInstance(mesh, 0)).toBe(8);
+    expect(scene.resolveInstance(mesh, 1)).toBeNull();
+    expect(scene.positionOf(8)).toEqual([40, 50, 60]);
+    expect(scene.positionOf(9)).toBeNull();
+  });
+
+  test('a visual with no VOB left draws nothing, and keeps its geometry', () => {
+    const scene = built();
+    const mesh = scene.instancedMeshes[0];
+
+    scene.updateInstancedVisuals(payload());
+
+    expect(mesh.count).toBe(0);
+    expect(scene.positionOf(7)).toBeNull();
+    expect(mesh.geometry.getAttribute('position')).toBeDefined();
+  });
+
+  test('a visual new to the scene arrives with its geometry and is drawn', () => {
+    const scene = built();
+
+    scene.updateInstancedVisuals(payload(
+      placements([[7, [10, 20, 30]], [9, [40, 50, 60]]]),
+      visual({ name: 'CRATE.3DS', count: 1, vobIds: new Uint32Array([10]).buffer, groups: [group({ texture: 'CRATE.TGA', lights: null })], matrices: new Float32Array([1, 0, 0, 1, 0, 1, 0, 2, 0, 0, 1, 3]).buffer }),
+    ));
+
+    expect(scene.instancedMeshes).toHaveLength(2);
+    expect(scene.positionOf(10)).toEqual([1, 2, 3]);
+    expect(scene.pendingTextureNames()).toContain('CRATE.TGA');
+  });
+
+  test('fresh geometry for a visual already drawn replaces it — a GMBT compile', () => {
+    const scene = built();
+    const before = scene.instancedMeshes[0];
+    const disposed = jest.spyOn(before.geometry, 'dispose');
+
+    scene.updateInstancedVisuals(payload(visual()));
+
+    expect(scene.instancedMeshes).toHaveLength(1);
+    expect(scene.instancedMeshes[0]).not.toBe(before);
+    expect(disposed).toHaveBeenCalled();
+  });
+
+  test('the selection and the hidden classes are drawn the same after it', () => {
+    const scene = built();
+    scene.setSelectedVobs([9]);
+    const hidden = new Uint8Array(11);
+    hidden[7] = 1;
+    scene.setHiddenVobs(hidden);
+
+    // A barrel placed ahead of VOB 7 in the payload's order, so every slot moves.
+    scene.updateInstancedVisuals(payload(placements([[10, [0, 0, 0]], [7, [10, 20, 30]], [9, [40, 50, 60]]])));
+
+    const mesh = scene.instancedMeshes[0];
+    expect([...mesh.geometry.getAttribute('instanceSelected').array].slice(0, 3)).toEqual([0, 0, 1]);
+    expect([...mesh.geometry.getAttribute('instanceHidden').array].slice(0, 3)).toEqual([0, 1, 0]);
+  });
+
+  test('markers and decals are replaced, not stacked, and a decal keeps its material', () => {
+    const scene = built();
+    const decals = () => ({
+      groups: [{
+        texture: 'BLOOD.TGA', count: 1,
+        positions: new Float32Array([600, 0, 0]).buffer,
+        sizes: new Float32Array([50, 50]).buffer,
+        vobIds: new Uint32Array([6]).buffer,
+        alphaWeights: new Float32Array([1]).buffer,
+      }],
+      stats: { decals: 1, textures: 1 },
+    });
+    scene.setVobMarkers(markerIndex());
+    scene.setDecals(decals());
+    const markers = scene.markers!.markers;
+    const quad = scene.root.children.find((c) => c !== scene.instancedMeshes[0] && (c as THREE.InstancedMesh).isInstancedMesh) as THREE.InstancedMesh;
+
+    scene.setVobMarkers(markerIndex());
+    scene.setDecals(decals());
+
+    expect(scene.root.children).not.toContain(markers);
+    expect(scene.root.children).toContain(scene.markers!.markers);
+    expect(scene.root.children).not.toContain(quad);
+    const quads = scene.root.children.filter((c) => c !== scene.instancedMeshes[0] && (c as THREE.InstancedMesh).isInstancedMesh);
+    expect(quads).toHaveLength(1);
+    expect((quads[0] as THREE.InstancedMesh).material).toBe(quad.material);
+  });
+});

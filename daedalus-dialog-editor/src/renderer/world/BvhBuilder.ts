@@ -11,8 +11,8 @@ import { createBvhWorker } from './bvhWorker';
 // doing it; half of that was pure load-time cost for meshes nothing raycasts.
 //
 // **One build per mesh payload, not per edit** (review §3.3, #220). Every
-// structural op rebuilds `WorldScene`, so the geometry is new every time — but
-// the world *mesh* is untouched by moving, adding or deleting a VOB, and
+// structural op used to rebuild `WorldScene`, so the geometry was new every time
+// — but the world *mesh* is untouched by moving, adding or deleting a VOB, and
 // rebuilding its tree cost the 145–590 ms of the cold open again, during which
 // `acceleratedRaycast` falls back to a linear sweep of 476k triangles for every
 // pivot press, terrain click and `raycastDown`. So the builder keeps the

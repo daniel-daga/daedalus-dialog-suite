@@ -197,6 +197,37 @@ describe('WorldViewport — what a structural op does not rebuild', () => {
     unmount();
   });
 
+  it('draws a placed VOB from placements alone, in the scene it already had', () => {
+    // After an edit the worker leaves out the geometry the scene already holds
+    // (`groups: []`). Rebuilt from that payload the barrel would vanish; the
+    // scene has to take the placements into the meshes it has.
+    const ref = React.createRef<WorldViewportHandle>();
+    const { rerender, unmount } = render(<WorldViewport ref={ref} {...props()} />);
+    const benchmark = window.__worldViewport!.benchmark;
+    const [barrel] = instancedPayload().visuals;
+
+    rerender(<WorldViewport ref={ref} {...props({
+      bbox: [...BBOX],
+      visuals: {
+        ...instancedPayload(),
+        visuals: [{
+          ...barrel,
+          count: 2,
+          matrices: new Float32Array([1, 0, 0, 10, 0, 1, 0, 20, 0, 0, 1, 30, 1, 0, 0, 50, 0, 1, 0, 60, 0, 0, 1, 70]).buffer,
+          vobIds: new Uint32Array([7, 8]).buffer,
+          groups: [],
+        }],
+      },
+    })} />);
+
+    expect(ref.current!.frameVob(7)).toBeNull();
+    expect(ref.current!.frameVob(8)).toBeNull();
+    // The scene effect never re-ran: it publishes the debug handle afresh each
+    // time it does.
+    expect(window.__worldViewport!.benchmark).toBe(benchmark);
+    unmount();
+  });
+
   it('frames a different world afresh', () => {
     // The one case that must still move the camera: keeping the pose would open
     // another island from wherever the last one was being looked at.

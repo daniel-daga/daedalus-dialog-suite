@@ -152,6 +152,11 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
 
   const [mesh, setMesh] = useState<WorldMeshPayload | null>(null);
   const [visuals, setVisuals] = useState<InstancedPayload | null>(null);
+  // Read by the edit pipeline after a round trip, so through a ref: the names
+  // the scene draws are the ones in the last payload it was handed.
+  const visualsRef = useRef(visuals);
+  visualsRef.current = visuals;
+  const drawnVisuals = useCallback(() => visualsRef.current?.visuals.map((visual) => visual.name) ?? [], []);
   const [terrainPoint, setTerrainPoint] = useState<[number, number, number] | null>(null);
   /**
    * The VOB being placed, while the dialog is open. Null when it is closed.
@@ -1163,6 +1168,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     waynet,
     setWaynet,
     setVisuals,
+    drawnVisuals,
     setAppliedOps,
     markEdited,
     forgetClassProps,
@@ -1368,7 +1374,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       bounds = { from: boundsOf, to: next === null ? null : next as ZenBounds };
     }
 
-    // The scene is rebuilt for a changed visual by `applied`, which this commit
+    // The scene follows a changed visual through `applied`, which this commit
     // goes through and undo and redo reach on their own — so there is nothing
     // to do here afterwards. It used to be a hand-written fetch on this line,
     // and that is exactly why undo left the old mesh on screen.

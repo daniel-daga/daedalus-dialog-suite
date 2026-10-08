@@ -2332,7 +2332,8 @@ and the async work a structural re-read starts — `loadPendingTextures`, the BV
 build, the two separate awaits in `applied` that produce *two* rebuilds per
 paste rather than one. A paste that rebuilds the scene twice in quick succession
 is the one shape the harness does not reproduce, because both its payload reads
-resolve in the same tick.
+resolve in the same tick. *(Since 2026-10-08 a structural op rebuilds the scene
+not at all — `SceneHost.update` follows it in place, so this shape is gone.)*
 
 **Root cause, from Daniel 2026-09-01: most VOBs were never locatable at all.**
 He noticed the locator does nothing on a `zCVobSpot` or an `oCItem` *ever*,

@@ -583,8 +583,8 @@ black buffer is "nothing" rather than VOB 0), a BVH for the world mesh only and
 built off the main thread (`BvhBuilder` — deliberately *not*
 `GenerateMeshBVHWorker`, which transfers the live geometry's buffers away and
 would leave the viewport drawing a detached mesh), **built once per `mesh`
-payload** rather than once per edit — every structural op rebuilds the scene,
-so the geometry is new, but the world mesh is untouched by moving, adding or
+payload** rather than once per edit — every structural op used to rebuild the
+scene, so the geometry was new, but the world mesh is untouched by moving, adding or
 deleting a VOB, and rebuilding its trees costs the cold open's 145-590 ms
 again, during which every pivot press and terrain click falls back to a linear
 sweep of 476k triangles; the builder therefore outlives the scene effect,
@@ -1677,11 +1677,12 @@ that restores the wrong set of fields — until somebody presses Ctrl+Z.
   `groupBounds` the scene uses, so a swapped visual's box is the box the scene
   would have given it by construction rather than by two implementations
   agreeing.
-- **The viewport does not follow a visual swap in place.** A move rewrites an
-  instance matrix; a swapped visual is a different mesh in a different
-  `InstancedMesh` that may not exist yet. The surface re-requests the instanced
-  visuals, which rebuilds the scene from the world as it now is — the cold-open
-  path, and only a change of visual pays it.
+- **The viewport follows a visual swap through the placements, not the op.** A
+  move rewrites an instance matrix; a swapped visual is a different mesh in a
+  different `InstancedMesh` that may not exist yet. The surface re-requests the
+  instanced visuals as a structural op does (below), and the VOB leaves one
+  visual's meshes for the other's — with geometry only if the scene did not
+  draw the new visual already.
 
 **One defect, and only the real app could show it.** The grid's fields are
 uncontrolled inputs keyed on the VOB, which is right for a selection change — a
@@ -1746,10 +1747,22 @@ The consequences worth keeping:
 - **The projection cannot follow it.** The columnar index cannot grow, so
   `applyOps` refuses a structural op *by name* rather than skipping it, and the
   index is re-read whole (`refreshIndex` — from the world the worker already
-  holds, since re-opening would re-load from disk and discard every edit). The
-  scene rebuilds too: an instance cannot be appended to an `InstancedMesh` that
-  is already allocated. Both costs are paid only by a structural edit, and the
-  rebuild resets the camera because it is the same path an open takes.
+  holds, since re-opening would re-load from disk and discard every edit).
+- **The scene follows it in place (2026-10-08).** It used to be rebuilt from a
+  whole new instanced payload, because an instance cannot be appended to an
+  allocated `InstancedMesh`. That cost, per placement on NewWorld, the worker
+  re-extracting all 379 visuals (70 ms warm) and shipping 6.1 MB of geometry
+  that had not changed, then every mesh, the picker, the markers and the spawn
+  overlay rebuilt — the last re-fetching every NPC body. Now the worker keeps
+  its merged visuals per VFS (`VisualCache`), the renderer names the visuals it
+  draws (`getWorldVisuals(have)`), and those come back as placements only
+  (`groups: []`): 8 ms and no geometry. `WorldScene.updateInstancedVisuals`
+  writes them into the meshes it has; a visual that outgrows its meshes gets
+  new ones over the same vertex attributes with half again as much room, so a
+  run of placements of one asset re-allocates a handful of times; one with no
+  VOB left is kept at no instances. The viewport mounts once per world, so a
+  payload after the first is never asked to build a scene by itself. The
+  renderer half was not measured here — no GPU timing in this session.
 - **`insertVob` derives the visual's class from the extension, which is exactly
   what `setVobProp` refuses to do.** Renaming an existing visual has a fact to
   preserve — `.3DS` is `zCProgMeshProto` 20,716 times and `zCMesh` 31 times —
@@ -2882,8 +2895,8 @@ Four behaviours anything touching this must preserve:
 - **The pick pass reads the same attribute object.** `VobPicker` clones the
   geometry and a clone *copies* attributes, so the flag is re-`setAttribute`d
   onto the proxy as the same object; without that a hidden VOB stays clickable.
-  `WorldViewport` re-applies it on `mesh`/`visuals` like exposure, because a
-  structural op rebuilds the scene and a fresh `WorldScene` draws everything.
+  `WorldViewport` re-applies it on `mesh`/`visuals`: a new world's scene draws
+  everything, and a structural op moves VOBs between instance slots.
 
 #### What a waypoint op owes, and how one addresses a waypoint (2026-08-28)
 
