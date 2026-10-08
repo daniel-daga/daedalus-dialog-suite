@@ -12,6 +12,7 @@
 - #316: Create a routine for an NPC that has none, and add routine variants
 - #319: Routines, spawns and NPCs re-index when a script changes outside the editor
 - #322: Quest steps as dialog actions: pick a quest by its diary title; new quests are declared automatically
+- #323: Quest conditions read "Quest X is running / completed / not running …", with the quest picked by its diary title
 - #278: Create log notes (LOG_NOTE) and see the diary title of a Log Entry's topic
 - #280: Log Entry and other autocompletes open their list on focus
 - #277: Default settings for new dialogs

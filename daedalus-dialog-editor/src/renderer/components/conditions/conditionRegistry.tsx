@@ -8,7 +8,8 @@ import NpcIsInStateFields from './NpcIsInStateFields';
 import NpcIsDeadFields from './NpcIsDeadFields';
 import NpcGetDistToWpFields from './NpcGetDistToWpFields';
 import NpcGetTalentSkillFields from './NpcGetTalentSkillFields';
-import QuestStateFields from './QuestStateFields';
+import QuestStateFields, { QUEST_STATE_LABEL } from './QuestStateFields';
+import { buildQuestCondition, recognizeQuestCondition } from '../../quest/domain/questConditions';
 import ExpressionConditionFields from './ExpressionConditionFields';
 
 // No `semanticModel` prop (memo-boundary invariant, render-performance.md):
@@ -124,16 +125,16 @@ export const CONDITION_REGISTRY: Record<string, RegistryEntry> = {
     }),
     Fields: NpcGetTalentSkillFields,
   },
+  // A view over VariableCondition (#323): getConditionType routes a
+  // recognised `MIS_` check here, and the card writes a VariableCondition back.
   QuestStateCondition: {
     icon: <AssignmentIcon fontSize="small" />,
-    label: () => 'Quest-Zustand',
-    menuLabel: 'Quest-Zustand',
+    label: (c) => `Quest ${QUEST_STATE_LABEL[recognizeQuestCondition(c)?.state ?? 'success']}`,
+    menuLabel: 'Quest State',
     createDefault: () => ({
-      type: 'QuestStateCondition',
-      questVariable: '',
-      state: 'LOG_SUCCESS',
-      getTypeName: () => 'QuestStateCondition'
-    }),
+      ...buildQuestCondition('', 'success'),
+      getTypeName: () => 'VariableCondition'
+    } as ConditionEditorCondition),
     Fields: QuestStateFields,
   },
   Condition: {
@@ -152,6 +153,9 @@ export const CONDITION_REGISTRY: Record<string, RegistryEntry> = {
 export const FALLBACK_ENTRY: RegistryEntry = CONDITION_REGISTRY.Condition;
 
 export function getConditionType(condition: ConditionEditorCondition): string {
+  if (recognizeQuestCondition(condition)) {
+    return 'QuestStateCondition';
+  }
   if (typeof condition.getTypeName === 'function') {
     return condition.getTypeName();
   }

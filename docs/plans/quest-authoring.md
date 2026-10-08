@@ -1,6 +1,6 @@
 # Quest authoring — a quest-level interface over topics, entries and `MIS_` state
 
-Agreed 2026-09-28. Phase 1 (#322) has landed; phases 2–4 are #323–#325.
+Agreed 2026-09-28. Phases 1 (#322) and 2 (#323) have landed; phases 3–4 are #324–#325.
 
 ## Problem
 
@@ -77,9 +77,22 @@ undeclared quest name on a card shows "Not declared" and a register button.
 
 ### Phase 2 — plain-language conditions
 
-Conditions read "Quest *X* is running / completed / failed / cancelled / not
-started / not running" instead of `MIS_X == LOG_…`. "Not running" also answers
-#320. Each one has a "show script" toggle as well.
+**Landed:** conditions read "Quest *X* is running / completed / failed /
+cancelled / not started / not running" instead of `MIS_X == LOG_…`, with the
+quest picked by diary title and a "show script" toggle. "Not running" answers
+#320. The Add-condition entry is "Quest State". The recogniser and what it
+accepts are in `docs/architecture/quest-editor.md` (`questConditions.ts`).
+Decided while building:
+
+- **The card writes a `VariableCondition`, not the parser's
+  `QuestStateCondition`.** The parser never produces the latter, and it can
+  only express `==`, so a check written as one came back from a reload as a
+  raw variable check. The editor no longer creates it.
+- **"Not started" is written `MIS_X == FALSE`** (an unset int is 0).
+- **A quest whose `MIS_` and `TOPIC_` names differ is not linked.** The
+  picker derives the topic from the variable name, so such a check shows the
+  derived name as "Not declared". Linking the two needs a `MIS_`/`TOPIC_`
+  pairing the editor does not keep yet; it is not guessed here.
 
 ### Phase 3 — quest page as the diary
 

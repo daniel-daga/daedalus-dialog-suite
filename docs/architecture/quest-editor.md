@@ -73,6 +73,16 @@ Two layers remain, with a one-way import direction (UI → domain):
   the card a synthetic `QuestStep` action that is never stored; the card's
   edits, deletes and moves become list-level patches through
   `ActionLevelPatchContext`, provided per edited function.
+- `questConditions.ts` — quest conditions (#323): reads a `MIS_` check as
+  "Quest X is running / completed / failed / cancelled / not started / not
+  running" and builds the check back. Also a view: the parser hands
+  `MIS_X == LOG_…` over as a `VariableCondition`, the card writes one, and
+  `conditionRegistry.getConditionType` routes a recognised one to the quest
+  card. Recognised: `== LOG_<state>`, `!= LOG_RUNNING`, and `== FALSE`, `== 0`
+  or `!MIS_X` for not started; written: `== FALSE` for not started. Any other
+  number stays a raw check (it may be a counter). The quest is picked by
+  diary title through the topic its `MIS_` name gives (`MIS_X` → `TOPIC_X`),
+  so a quest whose two names differ shows "Not declared" on the card.
 
 The graph node/edge types in `types/questGraph.ts` are editor-owned and carry
 no rendering-library dependency. The domain imports only model types
