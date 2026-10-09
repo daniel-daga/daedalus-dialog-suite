@@ -334,6 +334,38 @@ describe('PickController — a click', () => {
     expect(h.picked).toEqual([[5, null, true]]);
   });
 
+  it('goes straight to the ground while a placement is armed, past every VOB', async () => {
+    // Placing is click after click (#364), and a click that lands on a prop or
+    // a marker must place, not select: a stray selection under a placement is
+    // what the user is not there for. The waynet and spawn markers likewise.
+    const h = harness({
+      armed: true, waypointUnderCursor: 3, spawnUnderCursor: 4, markerUnderCursor: 8, vobUnderCursor: 5,
+    });
+
+    click(h.canvas);
+    await settle();
+
+    expect(h.waypoints).toEqual([]);
+    expect(h.markerPicks()).toBe(0);
+    expect(h.picks()).toBe(0);
+    expect(h.picked).toHaveLength(1);
+    const [vob, terrain] = h.picked[0];
+    expect(vob).toBeNull();
+    expect(terrain![1]).toBeCloseTo(0, 3);
+  });
+
+  it('reports nothing for an armed click over the sky, so the selection stands', async () => {
+    // Unarmed, a click on nothing clears the selection; armed, it is a missed
+    // placement and nothing else.
+    const h = harness({ armed: true, hasMesh: false, vobUnderCursor: 5 });
+
+    click(h.canvas);
+    await settle();
+
+    expect(h.picked).toEqual([]);
+    expect(h.picks()).toBe(0);
+  });
+
   it('picks nothing during a walk', async () => {
     // A walk's click lands at the frozen pointer-lock coordinates, so it would
     // select whatever sat under wherever the cursor was when the walk began.

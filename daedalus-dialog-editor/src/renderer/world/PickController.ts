@@ -66,7 +66,7 @@ export interface PickControllerOptions {
    *  nothing at all, the browser's own menu included. */
   contextMenu: () => ((vob: number, at: { left: number; top: number }) => void) | undefined;
   /** Defined while a placement is armed (#364): a right-click then puts it
-   *  down, and opens no menu. */
+   *  down, and opens no menu, and a click asks the ground alone. */
   cancelArmed?: () => (() => void) | undefined;
   /** Where a click landed, in three space: the fallback pivot for a later drag
    *  that begins over the sky. */
@@ -199,6 +199,17 @@ export class PickController {
     // (`cameraNav.navFor`), so no left-button gesture is spoken for — and it is
     // the modifier a level editor is reached for with.
     const additive = event.shiftKey || event.ctrlKey || event.metaKey;
+
+    // An armed placement wants the ground and nothing else: a click that lands
+    // on a prop, a marker or a waypoint places there rather than selecting it,
+    // and a miss places nothing and leaves the selection alone.
+    if (o.cancelArmed?.() !== undefined) {
+      const hit = this.meshHit(x, y, width, height);
+      if (hit === null) return;
+      o.rememberPick(hit.point);
+      o.onPick(null, threeToZen(hit.point.toArray() as ZenPosition), additive);
+      return;
+    }
 
     // The waynet first, and only while it is on screen. It draws with
     // `depthTest: false` — over everything, including whatever VOB is behind it

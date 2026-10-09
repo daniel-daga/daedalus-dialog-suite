@@ -4170,7 +4170,9 @@ ground point already chosen, or — with none chosen — the *next* ground
 click: the confirm reads "Place on next click", the surface holds an
 `armed` add, the status bar says what it is waiting for beside a Cancel, and
 Escape drops it. The next terrain pick spends an NPC or a waypoint, one click
-one add; a VOB hit is a selection, not a place. A **placement is not spent**
+one add. While anything is armed a click asks the world mesh alone: a VOB,
+marker or waypoint under the cursor is clicked through, never selected, and a
+click over the sky does nothing. A **placement is not spent**
 (#364): it places on every ground click until Escape, Cancel or a right-click
 in the world — one that is not the end of a fly — puts it down, and a
 "Random Y" box beside the hint turns each one by the scatter brush's
