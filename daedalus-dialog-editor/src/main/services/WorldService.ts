@@ -349,6 +349,22 @@ export class WorldService {
   }
 
   /**
+   * Write the world to a new file, and make that file the open world (#367).
+   *
+   * The open path moves only once the write has landed: a refused or failed
+   * save leaves the world where it was, so a later Ctrl+S still means the file
+   * on screen. The history stays — it addresses the tree the worker holds, and
+   * that has not changed — and so does the generation: nothing was reopened.
+   */
+  saveWorldAs(targetPath: string): Promise<void> {
+    return this.serialized(async () => {
+      const generation = this.generation;
+      await this.requestOnOpenWorld<null>('save', { targetPath });
+      if (this.generation === generation) this.worldPath = targetPath;
+    });
+  }
+
+  /**
    * Replay the last batch's inverses; null when there is nothing to undo.
    *
    * Answers with **the ops it applied**, not merely that it did. The renderer

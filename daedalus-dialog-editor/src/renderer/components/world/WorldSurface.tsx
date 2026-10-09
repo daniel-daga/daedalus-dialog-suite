@@ -1141,6 +1141,28 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     }
   }, [summary, waynet]);
 
+  // Save As (#367). The dialog is main's, and so is the target; what comes
+  // back is only the name the open world now has. A cancelled dialog is null
+  // and changes nothing. No stale-lighting warning first: that one is about
+  // replacing a file somebody already has, and the native dialog asks that
+  // question itself.
+  const saveWorldAs = useCallback(async () => {
+    setSavedTo(null);
+    setSaveError(null);
+    if (summary === null) return;
+
+    try {
+      const target = await window.editorAPI.saveWorldAs();
+      if (target === null) return;
+      useWorldStore.getState().worldPathChanged(target);
+      setSavedTo(target);
+      useWorldStore.getState().setHasUnsavedEdits(false);
+      if (waynet !== null) useWorldStore.getState().waynetSaved(waynet.names);
+    } catch (failure) {
+      setSaveError(failure instanceof Error ? failure.message : String(failure));
+    }
+  }, [summary, waynet]);
+
   // ── the GMBT quick test (level-editor.md §16.29) ──────────────────────────
   //
   // Main launches `gmbt test` over the open world and nothing here waits on it;
@@ -1963,6 +1985,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     onRequestDeleteWaypoint: (waypoint, name) => setDeletingWaypoint({ waypoint, name }),
     onDisarm: disarm,
     onRequestSave: () => setConfirmingSave(true),
+    onRequestSaveAs: () => void saveWorldAs(),
     onNudgeBegin: handleNudgeBegin,
     onNudgeBy: handleNudgeBy,
     onNudgeEnd: handleNudgeEnd,
@@ -2006,6 +2029,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         status={status}
         hasWorld={summary !== null}
         onSave={() => setConfirmingSave(true)}
+        onSaveAs={() => void saveWorldAs()}
         unsavedEdits={unsavedEdits}
         gmbtConfigured={gmbtConfigured}
         onQuickTest={() => void startQuickTest()}

@@ -205,6 +205,8 @@ interface WorldStore {
    *  new buffers, so every cached reader over the old summary is stale — which
    *  is why this replaces the summary rather than writing into it. */
   indexRefreshed: (summary: WorldSummary) => void;
+  /** The open world was saved under a new name and now is that file. */
+  worldPathChanged: (worldPath: string) => void;
   /** Report a refused edit, or clear the report with null — the banner it
    *  drives can be dismissed, and dismissing it is not an edit succeeding. */
   editFailed: (error: string | null) => void;
@@ -300,6 +302,12 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
   openSucceeded: (summary) => set({ ...EMPTY, status: 'ready', summary }),
   openFailed: (error) => set({ ...EMPTY, status: 'error', error }),
   setHasUnsavedEdits: (hasUnsavedEdits) => set({ hasUnsavedEdits }),
+  // Save As (#367): the same world, now living in another file. A new summary
+  // object, so `vobModelOf` rebuilds its cached tree once — the price of not
+  // writing into an object the store has already handed out.
+  worldPathChanged: (worldPath) => set((state) => (
+    state.summary === null ? {} : { summary: { ...state.summary, worldPath } }
+  )),
   // Both VOB picks drop the waypoint, and the waypoint pick drops them, for the
   // reason `selectedWaypoint` documents: one gizmo.
   selectVob: (vob) => set({ selection: vob === null ? [] : [vob], selectedWaypoint: null }),

@@ -964,6 +964,37 @@ describe('the op log', () => {
     service.close();
   });
 
+  test('save as writes to the new target and the open world becomes that file (#367)', async () => {
+    const { worker, service } = await openedService();
+    const before = service.openWorldPath();
+
+    const saved = service.saveWorldAs('C:/Gothic/Copy.zen');
+    await tick();
+    expect(worker.sent.filter((m) => m.op === 'save')).toEqual([
+      expect.objectContaining({ payload: { targetPath: 'C:/Gothic/Copy.zen' } }),
+    ]);
+    // Not yet: a write that has not landed has not made it the open file.
+    expect(service.openWorldPath()).toBe(before);
+
+    worker.replyLast('save', null);
+    await saved;
+    expect(service.openWorldPath()).toBe('C:/Gothic/Copy.zen');
+    service.close();
+  });
+
+  test('a refused save as leaves the open world where it was (#367)', async () => {
+    const { worker, service } = await openedService();
+    const before = service.openWorldPath();
+
+    const saved = service.saveWorldAs('C:/Gothic/Copy.zen');
+    await tick();
+    worker.fail('save', "refusing to save a world loaded from a 'binary' archive");
+
+    await expect(saved).rejects.toThrow(/binary/i);
+    expect(service.openWorldPath()).toBe(before);
+    service.close();
+  });
+
   test('saving before a world is open is refused, not queued', async () => {
     const { service } = makeService();
     await expect(service.saveWorld('C:/out.zen')).rejects.toThrow(/no world is open/i);

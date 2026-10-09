@@ -256,6 +256,56 @@ describe('a VOB dragged in the viewport', () => {
     expect(await screen.findByTestId('world-save-confirm')).toBeInTheDocument();
   });
 
+  it('saves as from the button, with no overwrite warning, and follows the new file (#367)', async () => {
+    await openWorld();
+    fireEvent.click(screen.getByTestId('stub-drag'));
+    await waitFor(() => expect(screen.getByTestId('world-save')).toHaveAccessibleName(/edited/i));
+
+    fireEvent.click(screen.getByTestId('world-save-as'));
+
+    await waitFor(() => expect(api.saveWorldAs).toHaveBeenCalledWith());
+    // The dialog is the native one's: nothing here asks before overwriting.
+    expect(screen.queryByTestId('world-save-confirm')).not.toBeInTheDocument();
+    expect(api.saveWorld).not.toHaveBeenCalled();
+    expect(await screen.findByTestId('world-saved')).toHaveTextContent('C:/Gothic/Copy.zen');
+    // Written, so no longer edited; and the surface now means the new file.
+    await waitFor(() => expect(screen.getByTestId('world-save')).toHaveAccessibleName('Save world'));
+    expect(useWorldStore.getState().summary?.worldPath).toBe('C:/Gothic/Copy.zen');
+  });
+
+  it('saves as on Ctrl+Shift+S (#367)', async () => {
+    await openWorld();
+
+    fireEvent.keyDown(window, { key: 'S', ctrlKey: true, shiftKey: true });
+
+    await waitFor(() => expect(api.saveWorldAs).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('world-save-confirm')).not.toBeInTheDocument();
+  });
+
+  it('a cancelled save as changes nothing (#367)', async () => {
+    await openWorld();
+    fireEvent.click(screen.getByTestId('stub-drag'));
+    await waitFor(() => expect(screen.getByTestId('world-save')).toHaveAccessibleName(/edited/i));
+    api.saveWorldAs.mockResolvedValueOnce(null);
+
+    fireEvent.click(screen.getByTestId('world-save-as'));
+
+    await waitFor(() => expect(api.saveWorldAs).toHaveBeenCalled());
+    expect(screen.queryByTestId('world-saved')).not.toBeInTheDocument();
+    expect(screen.getByTestId('world-save')).toHaveAccessibleName(/edited/i);
+    expect(useWorldStore.getState().summary?.worldPath).toBe('C:/Gothic/NewWorld.zen');
+  });
+
+  it('shows a refused save as without tearing the world down (#367)', async () => {
+    await openWorld();
+    api.saveWorldAs.mockRejectedValueOnce(new Error("refusing to save a world loaded from a 'binary' archive"));
+
+    fireEvent.click(screen.getByTestId('world-save-as'));
+
+    expect(await screen.findByTestId('world-save-error')).toHaveTextContent(/binary/i);
+    expect(screen.getByTestId('world-viewport-stub')).toBeInTheDocument();
+  });
+
   it('lets the saved banner be dismissed', async () => {
     // It stood until the *next* save started — across every later edit, still
     // claiming a world was saved while the Save button said it was edited.

@@ -40,6 +40,7 @@ const verbs = {
   onRequestDeleteWaypoint: jest.fn(),
   onDisarm: jest.fn(),
   onRequestSave: jest.fn(),
+  onRequestSaveAs: jest.fn(),
   onNudgeBegin: jest.fn(() => true),
   onNudgeBy: jest.fn(),
   onNudgeEnd: jest.fn(),
@@ -103,6 +104,7 @@ const CHORDS: Array<{
   { name: 'Escape', key: 'Escape', verb: 'onDisarm' },
   { name: 'ArrowRight', key: 'ArrowRight', verb: 'onNudgeBy' },
   { name: 'Ctrl+S', key: 's', init: { ctrlKey: true }, verb: 'onRequestSave' },
+  { name: 'Ctrl+Shift+S', key: 'S', init: { ctrlKey: true, shiftKey: true }, verb: 'onRequestSaveAs' },
   { name: 'Ctrl+Z', key: 'z', init: { ctrlKey: true }, verb: 'onHistory' },
   { name: 'Ctrl+Y', key: 'y', init: { ctrlKey: true }, verb: 'onHistory' },
 ];

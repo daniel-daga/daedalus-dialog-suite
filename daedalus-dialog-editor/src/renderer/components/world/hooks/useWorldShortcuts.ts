@@ -69,6 +69,8 @@ export interface WorldShortcutsInput {
   onDisarm: () => void;
   /** Ctrl+S — opens the save confirm, never saves. */
   onRequestSave: () => void;
+  /** Ctrl+Shift+S — Save As: the native dialog is the confirmation (#367). */
+  onRequestSaveAs: () => void;
   /**
    * A nudge is one gesture, like a gizmo drag: begun on the first key down,
    * fed camera-relative `[right, up, forward]` increments in cm for as long as
@@ -105,7 +107,7 @@ export function useWorldShortcuts({
   hasWorld, hidden, dialogOpen, waynet, armed, gizmoMode, snapGrid, setGizmoMode,
   onCopy, onPaste, onDuplicate, onRestOnGround, onIntoGround,
   onRequestDeleteVobs, onRequestDeleteWaypoint,
-  onDisarm, onRequestSave, onNudgeBegin, onNudgeBy, onNudgeEnd, onHistory,
+  onDisarm, onRequestSave, onRequestSaveAs, onNudgeBegin, onNudgeBy, onNudgeEnd, onHistory,
 }: WorldShortcutsInput): void {
   useEffect(() => {
     if (!hasWorld) return undefined;
@@ -302,6 +304,15 @@ export function useWorldShortcuts({
         return;
       }
 
+      // Ctrl+Shift+S. No warning dialog first: the native save dialog is the
+      // confirmation, and it asks before it replaces a file (#367).
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && event.shiftKey && key === 's') {
+        if (isTypingOrInPopover(event.target) || dialogOpen) return;
+        event.preventDefault();
+        onRequestSaveAs();
+        return;
+      }
+
       const undo = (event.ctrlKey || event.metaKey) && key === 'z' && !event.shiftKey;
       const redo = (event.ctrlKey || event.metaKey)
         && (key === 'y' || (key === 'z' && event.shiftKey));
@@ -333,6 +344,6 @@ export function useWorldShortcuts({
     hasWorld, hidden, dialogOpen, waynet, armed, gizmoMode, snapGrid, setGizmoMode,
     onCopy, onPaste, onDuplicate, onRestOnGround, onIntoGround,
     onRequestDeleteVobs, onRequestDeleteWaypoint,
-    onDisarm, onRequestSave, onNudgeBegin, onNudgeBy, onNudgeEnd, onHistory,
+    onDisarm, onRequestSave, onRequestSaveAs, onNudgeBegin, onNudgeBy, onNudgeEnd, onHistory,
   ]);
 }

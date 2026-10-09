@@ -196,7 +196,7 @@ describe('the World bar', () => {
     render(<WorldSurface />);
 
     for (const testId of [
-      'world-save', 'world-waynet-toggle', 'world-spawns-toggle', 'world-outlines-toggle',
+      'world-save', 'world-save-as', 'world-waynet-toggle', 'world-spawns-toggle', 'world-outlines-toggle',
       'world-light-preview-toggle',
       'world-gizmo-translate', 'world-gizmo-rotate',
       'world-drop-to-ground', 'world-align-to-normal', 'world-duplicate-vob',
@@ -250,7 +250,7 @@ describe('the World bar', () => {
       ['world-undo', 'Undo'], ['world-redo', 'Redo'],
       ['world-drop-to-ground', 'Drop to ground'], ['world-align-to-normal', 'Align to normal'],
       ['world-duplicate-vob', 'Duplicate VOB'], ['world-delete-vob', 'Delete VOB'],
-      ['world-save', 'Save world'], ['world-gmbt-test', 'Quick test'],
+      ['world-save', 'Save world'], ['world-save-as', 'Save world as'], ['world-gmbt-test', 'Quick test'],
       ['world-waynet-toggle', 'Waynet'], ['world-spawns-toggle', 'Spawns'],
       ['world-gizmo-translate', 'Move'], ['world-gizmo-rotate', 'Turn'],
     ] as const) {
