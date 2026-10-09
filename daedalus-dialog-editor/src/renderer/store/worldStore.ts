@@ -143,6 +143,15 @@ interface WorldStore {
    *  not `error`/`status: 'error'`, which replaces the whole surface: the world
    *  is still open, and in the refusal case still correct. */
   editError: string | null;
+  /** The textures the open world draws white, said once and standing until
+   *  another world opens (#371). Not `editError`: that is about the last edit,
+   *  and clearing this with it remounted its banner around every add and
+   *  delete — two viewport resizes, each one clearing the canvas. */
+  textureWarning: string | null;
+  /** The user closed `textureWarning`. Kept apart from it because every edit
+   *  retries the failed names and reports them again: a dismissal that only
+   *  nulled the warning would bring the banner back on the next add. */
+  textureWarningDismissed: boolean;
   /**
    * A jump the World surface has been asked for and has not made yet, or null.
    *
@@ -208,6 +217,11 @@ interface WorldStore {
   /** Report a refused edit, or clear the report with null — the banner it
    *  drives can be dismissed, and dismissing it is not an edit succeeding. */
   editFailed: (error: string | null) => void;
+  /** Report the textures that could not be decoded. The same report again
+   *  changes nothing, so a dismissed one stays dismissed; a different one is
+   *  news and shows. */
+  texturesFailed: (warning: string) => void;
+  dismissTextureWarning: () => void;
   reset: () => void;
 }
 
@@ -221,6 +235,8 @@ const EMPTY = {
   waynetNames: null as WorldWaynetView | null,
   portalFindings: null as PortalFindingsPayload | null,
   editError: null,
+  textureWarning: null as string | null,
+  textureWarningDismissed: false,
   focusRequest: null as WorldFocus | null,
   savedWaypoints: null as readonly string[] | null,
   routineRequest: null as RoutineRequest | null,
@@ -424,6 +440,10 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
   },
 
   editFailed: (editError) => set({ editError }),
+  texturesFailed: (textureWarning) => {
+    if (get().textureWarning !== textureWarning) set({ textureWarning, textureWarningDismissed: false });
+  },
+  dismissTextureWarning: () => set({ textureWarningDismissed: true }),
 
   reset: () => set({ ...EMPTY }),
 }));
