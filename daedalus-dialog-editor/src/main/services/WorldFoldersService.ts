@@ -59,6 +59,22 @@ export class WorldFoldersService {
   }
 
   /**
+   * Give another world a copy of this world's sidecar (Save As, #367). A world
+   * with no sidecar has nothing to copy, and an existing sidecar beside the
+   * target is replaced: the folders describe the VOB tree that was just written
+   * there. Re-parsed rather than copied byte for byte, for the reason `save`
+   * is: what lands in the file is always what `parseVobFolders` accepts.
+   */
+  async copy(fromWorldPath: string, toWorldPath: string): Promise<void> {
+    try {
+      await fs.access(this.sidecarPath(fromWorldPath));
+    } catch {
+      return;
+    }
+    await this.save(toWorldPath, await this.load(fromWorldPath));
+  }
+
+  /**
    * Atomic write: serialize to a sibling temp file, best-effort fsync, then
    * rename over the real file — `SettingsService.writeSettings`'s pattern,
    * for the same reason: a crash/ENOSPC mid-write leaves the previous sidecar

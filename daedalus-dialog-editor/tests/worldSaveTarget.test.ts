@@ -52,11 +52,19 @@ jest.mock('../src/main/services/SettingsService', () => ({
 jest.mock('../src/main/services/WorldService', () => ({
   WorldService: class {
     static saved: string[] = [];
+    static savedAs: string[] = [];
     static opened: string | null = null;
     saveWorld = async (target: string) => {
       (jest.requireMock('../src/main/services/WorldService') as {
         WorldService: { saved: string[] };
       }).WorldService.saved.push(target);
+    };
+    saveWorldAs = async (target: string) => {
+      const mock = (jest.requireMock('../src/main/services/WorldService') as {
+        WorldService: { savedAs: string[]; opened: string | null };
+      }).WorldService;
+      mock.savedAs.push(target);
+      mock.opened = target;
     };
     openWorldPath = () => {
       const opened = (jest.requireMock('../src/main/services/WorldService') as {
@@ -75,7 +83,7 @@ const electron = jest.requireMock('electron') as {
   __showSaveDialog: jest.Mock<() => Promise<{ canceled: boolean; filePath: string | undefined }>>;
 };
 const { WorldService } = jest.requireMock('../src/main/services/WorldService') as {
-  WorldService: { saved: string[]; opened: string | null };
+  WorldService: { saved: string[]; savedAs: string[]; opened: string | null };
 };
 
 /** A real directory with a real world file: the validator resolves symlinks
@@ -103,6 +111,7 @@ describe('world:save — overwrite the open world only', () => {
     electron.__showOpenDialog.mockReset();
     electron.__showSaveDialog.mockReset();
     WorldService.saved.length = 0;
+    WorldService.savedAs.length = 0;
     WorldService.opened = null;
     worlds = seedWorlds();
     setupIpcHandlers();
@@ -162,5 +171,64 @@ describe('world:save — overwrite the open world only', () => {
     await expect(invoke('world:saveVobFolders', {
       worldPath: worlds.opened, folders: { folders: [], byVob: {} },
     })).rejects.toThrow(/symbolic link/i);
+  });
+
+  it('save as asks the main-process dialog for the target and returns it (#367)', async () => {
+    await openThroughDialog();
+    const target = path.join(worlds.dir, 'COPY.ZEN');
+    electron.__showSaveDialog.mockResolvedValue({ canceled: false, filePath: target });
+
+    await expect(invoke('world:saveAs')).resolves.toBe(target);
+
+    expect(WorldService.savedAs).toEqual([target]);
+    expect(WorldService.saved).toEqual([]);
+  });
+
+  it('save as does not let a renderer payload name the target (#367)', async () => {
+    await openThroughDialog();
+    const chosen = path.join(worlds.dir, 'COPY.ZEN');
+    electron.__showSaveDialog.mockResolvedValue({ canceled: false, filePath: chosen });
+
+    await invoke('world:saveAs', { targetPath: worlds.sibling });
+
+    expect(WorldService.savedAs).toEqual([chosen]);
+  });
+
+  it('save as writes nothing when the dialog is cancelled (#367)', async () => {
+    await openThroughDialog();
+    electron.__showSaveDialog.mockResolvedValue({ canceled: true, filePath: undefined });
+
+    await expect(invoke('world:saveAs')).resolves.toBeNull();
+
+    expect(WorldService.savedAs).toEqual([]);
+  });
+
+  it('save as adds .zen when the name has no extension (#367)', async () => {
+    await openThroughDialog();
+    const bare = path.join(worlds.dir, 'COPY');
+    electron.__showSaveDialog.mockResolvedValue({ canceled: false, filePath: bare });
+
+    await expect(invoke('world:saveAs')).resolves.toBe(`${bare}.zen`);
+    expect(WorldService.savedAs).toEqual([`${bare}.zen`]);
+  });
+
+  it('save as carries the folders sidecar to the new name and grants it (#367)', async () => {
+    await openThroughDialog();
+    const sidecar = path.join(worlds.dir, 'NEWWORLD.folders.json');
+    fs.writeFileSync(sidecar, JSON.stringify({ folders: [{ id: 'f1', name: 'A', vobPaths: ['0'] }] }));
+    const target = path.join(worlds.dir, 'COPY.ZEN');
+    electron.__showSaveDialog.mockResolvedValue({ canceled: false, filePath: target });
+
+    await invoke('world:saveAs');
+
+    expect(JSON.parse(fs.readFileSync(path.join(worlds.dir, 'COPY.folders.json'), 'utf8')))
+      .toEqual({ folders: [{ id: 'f1', name: 'A', vobPaths: ['0'] }] });
+    // And the new world's sidecar is reachable the way the opened one's is.
+    await expect(invoke('world:getVobFolders', { worldPath: target })).resolves.toBeDefined();
+  });
+
+  it('save as refuses when no world is open (#367)', async () => {
+    await expect(invoke('world:saveAs')).rejects.toThrow(/no world is open/i);
+    expect(electron.__showSaveDialog).not.toHaveBeenCalled();
   });
 });

@@ -103,6 +103,7 @@ contextBridge.exposeInMainWorld('editorAPI', {
     ipcRenderer.invoke('world:texture', { name, maxSize }),
   applyWorldOps: (ops: unknown[]) => ipcRenderer.invoke('world:applyOps', { ops }),
   saveWorld: () => ipcRenderer.invoke('world:save'),
+  saveWorldAs: () => ipcRenderer.invoke('world:saveAs'),
   // The GMBT quick test (§16.29). No arguments: main names the world and the
   // GMBT project folder itself.
   startGmbtQuickTest: () => ipcRenderer.invoke('world:gmbtQuickTest'),

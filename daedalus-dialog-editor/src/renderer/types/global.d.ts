@@ -266,6 +266,10 @@ export interface EditorAPI {
   getWorldHistoryDepth: () => Promise<{ undo: number; redo: number }>;
   /** Atomically overwrite the world currently open in the main process. */
   saveWorld: () => Promise<void>;
+  /** Save the open world under a new name, picked in a dialog main shows, and
+   *  make that file the open world (#367). Resolves the new path, or null when
+   *  the dialog was cancelled. */
+  saveWorldAs: () => Promise<string | null>;
   /** Start a GMBT quick test over the open world (§16.29). It resolves once
    *  the process has been launched; nothing waits on the run. Rejects when no
    *  GMBT project folder is configured, when no world is open, or when `gmbt`

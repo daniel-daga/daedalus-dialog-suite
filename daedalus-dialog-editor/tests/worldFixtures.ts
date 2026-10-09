@@ -195,6 +195,7 @@ export function makeWorldEditorApi() {
     redoWorldEdit: jest.fn(async (): Promise<WorldOp[] | null> => null),
     getWorldHistoryDepth: jest.fn(async (): Promise<{ undo: number; redo: number }> => ({ undo: 0, redo: 0 })),
     saveWorld: jest.fn(async () => undefined),
+    saveWorldAs: jest.fn(async (): Promise<string | null> => 'C:/Gothic/Copy.zen'),
     startGmbtQuickTest: jest.fn(async () => undefined),
     onGmbtQuickTestFailed: jest.fn((_callback: (message: string) => void) => () => undefined),
     compileWorldAssets: jest.fn(async () => undefined),

@@ -1189,6 +1189,44 @@ export function setupIpcHandlers() {
     }
   });
 
+  // Save As (#367). Main shows the dialog and names the target, for the reason
+  // `world:save` takes no path: the renderer cannot choose where the write
+  // lands. The chosen file becomes the open world, so it is granted the way an
+  // opened one is — the file and its sidecar, not the folder.
+  ipcMain.handle('world:saveAs', async () => {
+    try {
+      const openPath = worldService.openWorldPath();
+      const result = await dialog.showSaveDialog({
+        title: 'Save world as',
+        defaultPath: openPath,
+        filters: [{ name: 'ZenGin world', extensions: ['zen'] }],
+      });
+      if (result.canceled || !result.filePath) return null;
+
+      const targetPath = path.extname(result.filePath) === ''
+        ? `${result.filePath}.zen` : result.filePath;
+      allowWorldFile(targetPath);
+      await pathValidator.validatePathResolved(targetPath, { write: true });
+      await worldService.saveWorldAs(targetPath);
+      // After the world is written, and best-effort: the world is saved and
+      // open under its new name either way, and a missing folder grouping is
+      // not worth reporting the save as failed.
+      try {
+        await worldFoldersService.copy(openPath, targetPath);
+      } catch (error) {
+        console.error('[IPC] world:saveAs - copying the VOB folders failed:', error);
+      }
+      return targetPath;
+    } catch (error) {
+      if (error instanceof PathValidationError) {
+        console.error('[IPC] world:saveAs - Path validation failed:', error.message);
+        throw new Error(error.message);
+      }
+      console.error('[IPC] world:saveAs error:', error);
+      throw new Error(error instanceof Error ? error.message : 'Failed to save the world');
+    }
+  });
+
   // The `<worldname>.folders.json` sidecar (VOB folders slice) — user-created,
   // editor-only VOB groupings, kept beside the world file rather than in it.
   // Stateless like `world:save`: the renderer already holds the open world's

@@ -3,6 +3,7 @@ import { Badge, Button, CircularProgress, IconButton, Tooltip } from '@mui/mater
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import SaveIcon from '@mui/icons-material/Save';
+import SaveAsIcon from '@mui/icons-material/SaveAs';
 import type { WorldStatus } from '../../../store/worldStore';
 
 /**
@@ -20,6 +21,8 @@ export interface WorldFileControlsProps {
   status: WorldStatus;
   hasWorld: boolean;
   onSave: () => void;
+  /** Save under a new name (#367). */
+  onSaveAs: () => void;
   /** Whether the world holds an edit the file on disk does not. The Save button
    *  says so with a dot and a colour: nothing else on screen did, and "have I
    *  saved this?" is not a question to leave unanswered over somebody's retail
@@ -33,7 +36,7 @@ export interface WorldFileControlsProps {
 }
 
 const WorldFileControls: React.FC<WorldFileControlsProps> = ({
-  onOpenWorld, status, hasWorld, onSave, unsavedEdits, gmbtConfigured, onQuickTest,
+  onOpenWorld, status, hasWorld, onSave, onSaveAs, unsavedEdits, gmbtConfigured, onQuickTest,
 }) => (
   <>
     <Button
@@ -64,6 +67,19 @@ const WorldFileControls: React.FC<WorldFileControlsProps> = ({
           <Badge variant="dot" color="warning" invisible={!unsavedEdits} overlap="circular">
             <SaveIcon fontSize="small" />
           </Badge>
+        </IconButton>
+      </span>
+    </Tooltip>
+    <Tooltip title="Save world as… (Ctrl+Shift+S)">
+      <span>
+        <IconButton
+          size="small"
+          disabled={!hasWorld}
+          onClick={onSaveAs}
+          data-testid="world-save-as"
+          aria-label="Save world as"
+        >
+          <SaveAsIcon fontSize="small" />
         </IconButton>
       </span>
     </Tooltip>

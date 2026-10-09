@@ -955,6 +955,9 @@ export const mockEditorAPI: EditorAPI = {
   async saveWorld(): Promise<never> {
     throw new Error('No world is open');
   },
+  async saveWorldAs(): Promise<never> {
+    throw new Error('No world is open');
+  },
   async compileWorldAssets(): Promise<never> {
     throw new Error('No world is open');
   },

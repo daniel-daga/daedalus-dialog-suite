@@ -37,6 +37,25 @@ describe('WorldFoldersService', () => {
     await expect(service.load(worldPath)).resolves.toEqual(folders);
   });
 
+  it('copies the sidecar to another world, leaving the original (#367)', async () => {
+    const folders = { folders: [{ id: 'f1', name: 'Quest NPCs', vobPaths: ['0', '0/1'] }] };
+    await service.save(worldPath, folders);
+    const copy = path.join(testDir, 'Copy.zen');
+
+    await service.copy(worldPath, copy);
+
+    await expect(service.load(copy)).resolves.toEqual(folders);
+    await expect(service.load(worldPath)).resolves.toEqual(folders);
+  });
+
+  it('copies nothing when the world has no sidecar (#367)', async () => {
+    const copy = path.join(testDir, 'Copy.zen');
+
+    await service.copy(worldPath, copy);
+
+    await expect(fs.access(service.sidecarPath(copy))).rejects.toThrow();
+  });
+
   it('derives the sidecar name from the world file, in the same directory', async () => {
     await service.save(worldPath, { folders: [] });
     await expect(fs.readFile(sidecarPath, 'utf8')).resolves.toBeDefined();
