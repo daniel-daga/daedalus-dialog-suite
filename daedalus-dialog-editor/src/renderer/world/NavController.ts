@@ -166,8 +166,8 @@ export class NavController {
 
   // ── fly navigation ────────────────────────────────────────────────────────
   //
-  // Hold the right button: the drag looks, WASD/Space/X moves, Shift hurries
-  // (`flyNav`). The right button is free — OrbitControls' RIGHT is `null` —
+  // Hold the right button: the drag looks, WASD/Space/X moves, Shift hurries,
+  // Ctrl creeps (`flyNav`). The right button is free — OrbitControls' RIGHT is `null` —
   // except for the click that opens the context menu, and a hold is told from
   // a click by whether it moved anything (`flew`).
 
@@ -211,8 +211,8 @@ export class NavController {
   private readonly onFlyKey = (event: KeyboardEvent) => {
     if (this.fly === null) return;
     const taken = event.type === 'keydown'
-      ? this.fly.press(event.code, event.shiftKey)
-      : (this.fly.release(event.code, event.shiftKey), flyMoveFor(event.code) !== null);
+      ? this.fly.press(event.code, event.shiftKey, event.ctrlKey)
+      : (this.fly.release(event.code, event.shiftKey, event.ctrlKey), flyMoveFor(event.code) !== null);
     if (!taken) return;
     event.preventDefault();
     event.stopPropagation();
