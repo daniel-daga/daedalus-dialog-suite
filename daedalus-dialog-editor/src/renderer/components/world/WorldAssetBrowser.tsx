@@ -170,6 +170,10 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
       role="listitem"
       data-testid={`world-asset-${entry.name}`}
       {...(overridden ? { 'data-overridden': 'true' } : {})}
+      // Where the entry is served from lives here, not in a column: the
+      // filename is what a row is for, and the label took up to 45% of it
+      // (#360). A tile keeps its badge.
+      {...(from !== undefined ? { title: overridden ? `${from.title} — overridden here` : from.title } : {})}
       {...(showing ? { 'aria-current': 'true' } : {})}
       {...(marked ? { 'aria-selected': 'true' } : {})}
       // A row was a `div` with an `onClick` and nothing else: not reachable by
@@ -221,18 +225,6 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
         </Typography>
       )}
       {data.uncompiled.has(entry.name) && !isDirectory && <UncompiledTag name={entry.name} />}
-      {from !== undefined && (
-        <Typography
-          variant="caption"
-          color="text.disabled"
-          noWrap
-          data-testid={`world-asset-origin-${entry.name}`}
-          title={overridden ? `${from.title} — overridden here` : from.title}
-          sx={{ fontSize: 10, maxWidth: '45%' }}
-        >
-          {from.label}
-        </Typography>
-      )}
       {actions !== undefined && (
         <Box
           className={`row-star${actions.isFavorite(entry.name) ? ' on' : ''}`}

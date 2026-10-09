@@ -111,8 +111,8 @@ test.describe('The Assets panel says which source an asset came from', () => {
     await expect(page.getByTestId('world-asset-SHARED.MRM')).toBeVisible();
 
     // Mounted second, so its copy is the one the merged namespace serves.
-    await expect(page.getByTestId('world-asset-origin-SHARED.MRM')).toHaveText('Textures/_compiled');
-    await expect(page.getByTestId('world-asset-origin-MESH_ONLY.MRM')).toHaveText('Meshes/_compiled');
+    await expect(page.getByTestId('world-asset-SHARED.MRM')).toHaveAttribute('title', /Textures\/_compiled/);
+    await expect(page.getByTestId('world-asset-MESH_ONLY.MRM')).toHaveAttribute('title', 'Meshes/_compiled');
     await expect(page.getByTestId('world-asset-SHARED.MRM')).not.toHaveAttribute('data-overridden', 'true');
 
     // Narrowed to the mesh tree: everything it holds, including the copy the
