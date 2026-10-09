@@ -288,17 +288,20 @@ describe('WorldAssetBrowser', () => {
       .getAllByRole('listitem')
       .map((row) => row.getAttribute('data-testid'));
 
-    it('names the mount each entry is served from', async () => {
+    it('names the mount each row is served from in its tooltip, not on the row (#360)', async () => {
       render(<WorldAssetBrowser listAssets={mixed()} onPreview={jest.fn()} sources={MOUNTS} />);
       await screen.findByTestId('world-asset-RETAIL.TEX');
 
-      expect(screen.getByTestId('world-asset-origin-RETAIL.TEX')).toHaveTextContent('Textures.vdf');
+      expect(screen.getByTestId('world-asset-RETAIL.TEX')).toHaveAttribute('title', 'Textures.vdf');
       // A loose tree's own name is `_compiled` in three different places, so
       // the directory above it is part of the name or the label says nothing.
-      expect(screen.getByTestId('world-asset-origin-LOOSE.MRM')).toHaveTextContent('Meshes/_compiled');
+      expect(screen.getByTestId('world-asset-LOOSE.MRM')).toHaveAttribute('title', 'Meshes/_compiled');
       // Held by two, and the one shown is the one the merged namespace serves:
-      // the last, not the first.
-      expect(screen.getByTestId('world-asset-origin-SHARED.TEX')).toHaveTextContent('Chronicles.vdf');
+      // the last, not the first — with the whole chain behind it.
+      expect(screen.getByTestId('world-asset-SHARED.TEX'))
+        .toHaveAttribute('title', 'Textures.vdf → Chronicles.vdf (the last wins)');
+      // The label itself is gone: the filename gets the width (#360).
+      expect(screen.queryByTestId('world-asset-origin-RETAIL.TEX')).not.toBeInTheDocument();
     });
 
     it('narrows the listing to one mount', async () => {
@@ -352,7 +355,7 @@ describe('WorldAssetBrowser', () => {
       await screen.findByTestId('world-asset-RETAIL.TEX');
       expect(screen.queryByTestId('world-asset-source')).not.toBeInTheDocument();
       // And without a mount list there is nothing to name a row with either.
-      expect(screen.queryByTestId('world-asset-origin-RETAIL.TEX')).not.toBeInTheDocument();
+      expect(screen.getByTestId('world-asset-RETAIL.TEX')).not.toHaveAttribute('title');
     });
 
     it('names the mount on a tile too, and shades an overridden one', async () => {
