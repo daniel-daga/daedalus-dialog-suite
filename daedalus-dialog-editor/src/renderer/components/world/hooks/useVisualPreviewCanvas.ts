@@ -9,12 +9,16 @@ const CANVAS_FALLBACK = 256;
 /**
  * One visual in an orbitable Three.js scene on `canvasRef`'s canvas — the
  * Assets panel's mesh preview, and the NPC editor's (npc-editor.md §4).
+ *
+ * `autoRotate` turns it slowly on its own, as Spacer's preview does (#375),
+ * until the first hand orbit takes it over.
  */
 export function useVisualPreviewCanvas(
   canvasRef: RefObject<HTMLCanvasElement | null>,
   visual: VisualScene | null,
   loadTexture: (name: string, maxSize: number) => Promise<DecodedTexture | null>,
   textureSize: number,
+  autoRotate = false,
 ): void {
   // The mesh scene lives exactly as long as the visual it shows. Textures are
   // fetched after the first frame — an untextured crate at once beats a blank
@@ -45,6 +49,8 @@ export function useVisualPreviewCanvas(
     // and its comment names the damping as half of what that work is — so the
     // flag is not the only line an answer the other way would touch.
     controls.enableDamping = true;
+    controls.autoRotate = autoRotate;
+    controls.addEventListener('start', () => { controls.autoRotate = false; });
     controls.target.copy(frameVisual(camera, visual.bounds));
     controls.update();
 
@@ -65,8 +71,8 @@ export function useVisualPreviewCanvas(
 
     const draw = () => {
       if (!current) return;
-      // `update` is true only while the orbit is moving or damping out, so an
-      // idle preview costs no draw.
+      // `update` is true only while the orbit is moving, damping out or
+      // spinning on its own, so a still preview costs no draw.
       if (controls.update() || dirty) {
         dirty = false;
         renderer.render(preview.scene, camera);
@@ -103,5 +109,5 @@ export function useVisualPreviewCanvas(
       current = false;
       teardown?.();
     };
-  }, [canvasRef, visual, loadTexture, textureSize]);
+  }, [canvasRef, visual, loadTexture, textureSize, autoRotate]);
 }

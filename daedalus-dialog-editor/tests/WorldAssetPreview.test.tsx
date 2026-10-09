@@ -273,6 +273,38 @@ describe('WorldAssetPreview', () => {
     expect(screen.getByTestId('world-asset-preview-mesh-stats')).toHaveTextContent('NW_CRATE.MRM');
   });
 
+  // #375: Spacer's preview turns on its own, and a tester reads a model's size
+  // off it — a tree's above all. The box in metres says it more directly.
+  it('gives the mesh\'s size in metres, width × height × depth', async () => {
+    const loadVisual = jest.fn(async () => ({
+      ...crate(), bounds: [-50, 0, -20, 50, 1250, 20] as VisualScene['bounds'],
+    }));
+    render(<WorldAssetPreview path="Meshes/_compiled/NW_TREE.MRM" loadTexture={noVisual} loadVisual={loadVisual} />);
+
+    await screen.findByTestId('world-asset-preview-mesh');
+    expect(screen.getByTestId('world-asset-preview-mesh-dimensions')).toHaveTextContent('1.00 × 12.50 × 0.40 m');
+  });
+
+  it('spins the mesh on its own until it is orbited by hand', async () => {
+    const controlsModule = jest.requireMock('three/examples/jsm/controls/OrbitControls.js') as
+      typeof import('three/examples/jsm/controls/OrbitControls.js');
+    const { OrbitControls } = controlsModule;
+    let controls: InstanceType<typeof OrbitControls> | null = null;
+    const spy = jest.spyOn(controlsModule, 'OrbitControls').mockImplementation(((...args: unknown[]) => {
+      controls = new (OrbitControls as unknown as new (...a: unknown[]) => InstanceType<typeof OrbitControls>)(...args);
+      return controls;
+    }) as never);
+    render(<WorldAssetPreview path="Meshes/_compiled/NW_CRATE.MRM" loadTexture={noVisual} loadVisual={async () => crate()} />);
+
+    await waitFor(() => expect(controls).not.toBeNull());
+    const spun = controls as unknown as InstanceType<typeof OrbitControls>;
+    expect(spun.autoRotate).toBe(true);
+
+    act(() => { spun.dispatchEvent({ type: 'start' }); });
+    expect(spun.autoRotate).toBe(false);
+    spy.mockRestore();
+  });
+
   it('says so when the binding cannot extract a visual', async () => {
     const loadVisual = jest.fn(async () => null);
     render(<WorldAssetPreview path="Meshes/_compiled/BROKEN.MRM" loadTexture={noVisual} loadVisual={loadVisual} />);

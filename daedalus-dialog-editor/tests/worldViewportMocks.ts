@@ -76,7 +76,9 @@ export function mockThree() {
 export function mockOrbitControls({ aims = false }: { aims?: boolean } = {}) {
   const three = jest.requireActual('three');
   return {
-    OrbitControls: class {
+    // An event dispatcher, as the real controls are: the asset preview stops
+    // its idle spin on their `start`.
+    OrbitControls: class extends three.EventDispatcher {
       target: InstanceType<typeof three.Vector3>;
       enabled = true;
       enableDamping = false;
@@ -84,6 +86,7 @@ export function mockOrbitControls({ aims = false }: { aims?: boolean } = {}) {
       mouseButtons: Record<string, unknown> = {};
 
       constructor(camera: { lookAt: (target: unknown) => void }) {
+        super();
         const target = new three.Vector3();
         if (aims) {
           const aim = <T,>(write: T): T => { camera.lookAt(target); return write; };

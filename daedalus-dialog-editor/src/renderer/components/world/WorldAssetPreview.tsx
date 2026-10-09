@@ -77,6 +77,12 @@ const PREVIEW_MAX_SIZE = 256;
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
 
+/** The box's width × height × depth in metres — ZenGin is centimetres, Y up.
+ *  Metres here, not the centimetres the property grid shows: this answers "how
+ *  big is it?" at a glance (#375), and is no coordinate an op would carry. */
+const dimensionsOf = ([minX, minY, minZ, maxX, maxY, maxZ]: VisualScene['bounds']) =>
+  [maxX - minX, maxY - minY, maxZ - minZ].map((cm) => (cm / 100).toFixed(2)).join(' × ') + ' m';
+
 const WorldAssetPreview: React.FC<WorldAssetPreviewProps> = ({
   path, loadTexture, loadVisual, selectionCount = 0, onUseAsVisual, onPlace, resolveAsset,
 }) => {
@@ -135,7 +141,7 @@ const WorldAssetPreview: React.FC<WorldAssetPreviewProps> = ({
     );
   }, [decoded]);
 
-  useVisualPreviewCanvas(meshCanvasRef, visual, loadTexture, PREVIEW_MAX_SIZE);
+  useVisualPreviewCanvas(meshCanvasRef, visual, loadTexture, PREVIEW_MAX_SIZE, true);
 
   return (
     <Box sx={{ p: 1.5, overflowY: 'auto', height: '100%' }}>
@@ -233,10 +239,13 @@ const WorldAssetPreview: React.FC<WorldAssetPreviewProps> = ({
               touchAction: 'none',
             }}
           />
+          <Typography variant="caption" sx={{ display: 'block', mt: 0.5 }} data-testid="world-asset-preview-mesh-dimensions">
+            {dimensionsOf(visual.bounds)}
+          </Typography>
           <Typography
             variant="caption"
             color="text.secondary"
-            sx={{ display: 'block', mt: 0.5 }}
+            sx={{ display: 'block' }}
             data-testid="world-asset-preview-mesh-stats"
           >
             {plural(visual.triangleCount, 'triangle')} · {plural(visual.groups.length, 'draw group')}
