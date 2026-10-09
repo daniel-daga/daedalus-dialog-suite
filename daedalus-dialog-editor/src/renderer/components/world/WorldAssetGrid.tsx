@@ -170,17 +170,41 @@ export interface AssetPlacement {
   onPlaceWithOptions: (name: string) => void;
 }
 
-/** The context menu the tile and the browser's list row share. The verb used
- *  to live only in the preview panel on the far side of the viewport, in the
+/** The place verb as the tile and the browser's list row share it: a context
+ *  menu, a double-click, and Space on a selected one (#366). The verb used to
+ *  live only in the preview panel on the far side of the viewport, in the
  *  panel that otherwise shows the selected VOB's properties — so it read as
  *  being about that VOB, and placing from a category read as impossible. */
-export function usePlaceMenu(name: string, placement?: AssetPlacement): {
+export function usePlaceGestures(name: string, placement?: AssetPlacement): {
   onContextMenu?: (event: React.MouseEvent) => void;
   menu: React.ReactNode;
+  /** Every click on the row or tile goes through this first. */
+  onClick: (event: React.MouseEvent) => void;
+  onDoubleClick?: () => void;
+  /** Enter opens; Space places what can be placed and opens anything else. */
+  onKeyDown: (event: React.KeyboardEvent, open: () => void) => void;
 } {
   const [at, setAt] = useState<{ top: number; left: number } | null>(null);
-  if (placement === undefined || !placement.canPlace(name)) return { menu: null };
+  // What the first click of a double-click was on. Opening a folder redraws
+  // the list under the pointer before the second click lands, and the
+  // double-click then meant the folder, not the file that took its place.
+  const pressed = useRef<string | null>(null);
+  const onClick = (event: React.MouseEvent) => { if (event.detail === 1) pressed.current = name; };
+  const placeable = placement !== undefined && placement.canPlace(name);
+  const onKeyDown = (event: React.KeyboardEvent, open: () => void) => {
+    // A key on the star or another control inside is that control's.
+    if (event.target !== event.currentTarget) return;
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    // Space scrolls the virtualized list the row is in otherwise.
+    event.preventDefault();
+    if (event.key === ' ' && placeable) placement.onPlace(name);
+    else open();
+  };
+  if (!placeable) return { menu: null, onClick, onKeyDown };
   return {
+    onClick,
+    onKeyDown,
+    onDoubleClick: () => { if (pressed.current === name) placement.onPlace(name); },
     onContextMenu: (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -342,7 +366,7 @@ export const AssetTile: React.FC<{
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const isFile = entry.type === 'file';
   const favorite = isFile && actions !== undefined && actions.isFavorite(entry.name);
-  const place = usePlaceMenu(isFile ? entry.name : '', placement);
+  const place = usePlaceGestures(isFile ? entry.name : '', placement);
 
   return (
     <Box
@@ -350,10 +374,14 @@ export const AssetTile: React.FC<{
       data-testid={`world-asset-tile-${entry.name}`}
       {...(origin?.overridden === true ? { 'data-overridden': 'true' } : {})}
       {...(marked ? { 'aria-selected': 'true' } : {})}
+      tabIndex={0}
+      onKeyDown={(event) => place.onKeyDown(event, () => onOpen(entry))}
       onClick={(event) => {
+        place.onClick(event);
         if (markClick(event) && isFile && onMark !== undefined) { onMark(entry, event.shiftKey); return; }
         onOpen(entry);
       }}
+      onDoubleClick={place.onDoubleClick}
       onContextMenu={place.onContextMenu}
       style={style}
       sx={{

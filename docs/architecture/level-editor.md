@@ -4175,7 +4175,9 @@ in the world — one that is not the end of a fly — puts it down, and a
 `rotationAboutUp`. The Assets panel's **Place in world** arms
 the previewed mesh directly, with no dialog — the gesture the picker used to
 need was preview, switch tabs, click the ground, open the dialog, "Use
-previewed", Place. Insert NPC's waypoint field offers the world's own names:
+previewed", Place. A row or tile arms it too (#366): a double-click on a mesh,
+or Space on the selected one, where Enter still only previews; a double-click
+whose first click opened a folder arms nothing. Insert NPC's waypoint field offers the world's own names:
 an existing name means "spawn there" with no waypoint op, a new one is
 authored first. Before this every one of the three was reachable only from
 the bar that appears *after* a ground click — and two of them only with the
