@@ -1037,6 +1037,36 @@ describe('WorldScene', () => {
     // own data, and this changes what is drawn from them, not them.
     expect(worldMesh.geometry.getAttribute('color').array).toEqual(baked);
   });
+  test('the selection tint is one shared uniform, off until asked for (#362)', () => {
+    // "Umriss statt gelb": the orange outline is the selection, and the body
+    // tint on top of it read as a VOB turned yellow. The tint stays for when
+    // there is no outline to carry the selection, so it is a uniform the
+    // viewport switches, not a constant baked into the program.
+    const scene = new WorldScene();
+    scene.setWorldMesh({ groups: [group()], bbox: [] });
+    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+
+    const world = scene.worldMeshes[0].material as THREE.MeshBasicMaterial;
+    const vob = scene.instancedMeshes[0].material as THREE.MeshBasicMaterial;
+    const worldShader = compile(world);
+    const vobShader = compile(vob);
+
+    expect(vobShader.fragmentShader).toContain('uniform float uSelectTint;');
+    expect(vobShader.fragmentShader).toMatch(/outgoingLight = mix\( outgoingLight, .*, vVobSelected \* uSelectTint \);/);
+    expect(worldShader.fragmentShader).not.toContain('uSelectTint');
+    expect(vobShader.uniforms.uSelectTint.value).toBe(0);
+
+    const version = vob.version;
+    scene.setSelectionTint(true);
+    expect(vobShader.uniforms.uSelectTint.value).toBeGreaterThan(0);
+    expect(vobShader.uniforms.uSelectTint.value).toBeLessThan(1);
+    // Written, not recompiled — a toolbar click is one assignment.
+    expect(vob.version).toBe(version);
+
+    scene.setSelectionTint(false);
+    expect(vobShader.uniforms.uSelectTint.value).toBe(0);
+  });
+
   test('a hidden VOB is dropped in the vertex shader, and keeps its transform', () => {
     // Spacer's per-class show/hide (§16.16). A VOB is an instance inside a mesh
     // shared with every other VOB of the same visual, so hiding one cannot be

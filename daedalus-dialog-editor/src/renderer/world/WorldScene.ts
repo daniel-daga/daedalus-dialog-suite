@@ -72,19 +72,27 @@ export const MASK_OUTPUT = 'vobMask';
  *
  * The line is the outline pass's, in `VobOutline`'s `SELECT_COLOR`, and it is
  * what carries the selection: a selected VOB is outlined in orange against
- * whatever it stands in front of. This is the other half, a body tint, for the
- * case a line cannot cover — a VOB filling the screen, whose outline is off it
- * — and it rides the *same* per-instance attribute rather than a second pass,
- * for the reason at {@link HIDDEN_ATTRIBUTE}.
+ * whatever it stands in front of. This is the other half, a body tint, and it
+ * rides the *same* per-instance attribute rather than a second pass, for the
+ * reason at {@link HIDDEN_ATTRIBUTE}.
+ *
+ * The tint is only on while the outlines are off (#362): on top of the line it
+ * read as a VOB turned yellow, and "the outline, not yellow" was the ask. Off,
+ * it is the whole of the selection. What that gives up is a VOB filling the
+ * screen, whose outline is off it — the case the tint was first added for.
  *
  * Orange, because the gizmo's own axes are pure red, green and blue and the
  * selection must not read as one of them.
  */
 const SELECT_COLOR = 'vec3( 1.0, 0.55, 0.12 )';
 
-/** How far the body of a selected VOB is pulled towards the colour. Enough to
- *  read at a glance, low enough to leave the texture recognisable. */
+/** How far the body of a selected VOB is pulled towards the colour while the
+ *  tint is on. Enough to read at a glance, low enough to leave the texture
+ *  recognisable. */
 const SELECT_TINT = 0.28;
+
+/** The shared tint uniform, in the shape `shader.uniforms` takes. */
+type SelectTint = { value: number };
 
 
 
@@ -117,7 +125,8 @@ export const WORLD_LAYER = 1;
  * and the exposure term, and the note there about `customProgramCacheKey` is
  * what keeps the VOB program and the world-mesh program apart.
  */
-function maskVobs(shader: THREE.WebGLProgramParametersWithUniforms): void {
+function maskVobs(shader: THREE.WebGLProgramParametersWithUniforms, tint: SelectTint): void {
+  shader.uniforms.uSelectTint = tint;
   shader.vertexShader = `attribute float ${SELECTED_ATTRIBUTE};
 varying float vVobKey;\nvarying float vVobSelected;\n${
     shader.vertexShader.replace(
@@ -136,10 +145,11 @@ varying float vVobKey;\nvarying float vVobSelected;\n${
   }`;
 
   shader.fragmentShader = `layout(location = 1) out highp vec4 ${MASK_OUTPUT};
+uniform float uSelectTint;
 varying float vVobKey;\nvarying float vVobSelected;\n${
     shader.fragmentShader.replace(
       '#include <opaque_fragment>',
-      `outgoingLight = mix( outgoingLight, ${SELECT_COLOR}, vVobSelected * ${SELECT_TINT.toFixed(2)} );
+      `outgoingLight = mix( outgoingLight, ${SELECT_COLOR}, vVobSelected * uSelectTint );
   #ifdef ${MASK_BLENDED_DEFINE}
     ${MASK_OUTPUT} = vec4( 0.0 );
   #else
@@ -324,9 +334,9 @@ function worldShading(exposure: Exposure, light: LightPreviewUniforms) {
   };
 }
 
-function vobShading(exposure: Exposure, light: LightPreviewUniforms) {
+function vobShading(exposure: Exposure, light: LightPreviewUniforms, tint: SelectTint) {
   return (shader: THREE.WebGLProgramParametersWithUniforms): void => {
-    maskVobs(shader);
+    maskVobs(shader, tint);
     hideInstances(shader);
     exposeBakedLight(shader, exposure);
     previewSelectedLight(shader, light);
@@ -490,8 +500,10 @@ export class WorldScene {
     color: { value: new THREE.Color(1, 1, 1) },
     range: { value: 0 },
   };
+  /** And the one selection tint, off until the viewport turns it on (#362). */
+  private readonly selectTint: SelectTint = { value: 0 };
   private readonly shadeWorld = worldShading(this.exposure, this.lightPreview);
-  private readonly shadeVob = vobShading(this.exposure, this.lightPreview);
+  private readonly shadeVob = vobShading(this.exposure, this.lightPreview, this.selectTint);
 
   /** @param textureCache decoded pixels kept across a rebuild of the same
    *   world, and the owner of their disposal. Null decodes from scratch and
@@ -510,6 +522,12 @@ export class WorldScene {
    */
   setExposure(value: number): void {
     this.exposure.value = value;
+  }
+
+  /** Tint a selected VOB's body, or leave the outline to mark it alone — see
+   *  `SELECT_TINT`. One assignment, no recompile, like `setExposure`. */
+  setSelectionTint(on: boolean): void {
+    this.selectTint.value = on ? SELECT_TINT : 0;
   }
 
   /**

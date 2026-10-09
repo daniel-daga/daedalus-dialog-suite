@@ -126,8 +126,8 @@ describe('the World bar', () => {
   it('cycles the VOB outlines through all, selected and off', async () => {
     // #229: Florian asked to see a scene without the white frames, and
     // separately proposed the line as a selection mark only. Both are modes
-    // rather than a swap, so the default reading is unchanged and the orange
-    // body tint still marks the selection in every one of them.
+    // rather than a swap, so the default reading is unchanged, and `off` is
+    // safe because the orange body tint takes over the selection (#362).
     await openWorld();
 
     const button = screen.getByTestId('world-outlines-toggle');
