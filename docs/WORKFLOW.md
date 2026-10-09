@@ -63,7 +63,7 @@ resolves to no heading.
 | `triage` | too big for one issue, or the cut is a person's call. Outside the pick path |
 | `needs-decision` | waiting on Daniel, not on work |
 | `area:*` | `level-editor`, `editor`, `parser`, `zenkit` |
-| `user-feedback` | reported from outside the repo; the body quotes the report verbatim |
+| `user-feedback` | reported from outside the repo; the body quotes the report verbatim, **never naming the reporter** (Daniel, 2026-10-09) |
 
 `deferred` and `triage` are read and emptied by a person, never by a run. They
 exist so deprioritised work stays visible as a decision rather than a silent
