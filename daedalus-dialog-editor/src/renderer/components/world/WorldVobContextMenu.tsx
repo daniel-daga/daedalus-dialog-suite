@@ -221,7 +221,7 @@ const WorldVobContextMenu: React.FC<WorldVobContextMenuProps> = ({
         sx={{ color: 'error.main' }}
       >
         <ListItemIcon sx={{ color: 'error.main' }}><DeleteIcon fontSize="small" /></ListItemIcon>
-        <ListItemText>{selectionCount > 1 ? `Delete ${selectionCount} VOBs…` : 'Delete VOB…'}</ListItemText>
+        <ListItemText>{selectionCount > 1 ? `Delete ${selectionCount} VOBs` : 'Delete VOB'}</ListItemText>
         <Shortcut keys="Del" />
       </MenuItem>
     </Menu>

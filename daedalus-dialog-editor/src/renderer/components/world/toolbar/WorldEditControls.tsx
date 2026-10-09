@@ -244,7 +244,7 @@ const WorldEditControls: React.FC<WorldEditControlsProps> = ({
         since #253: a delete renumbers, which `deleteVobs` answers with the
         order the batch is applied in rather than with a refusal. The tooltip carries the Delete-key shortcut
         (slice 1) beside the label, and the count when there is one. */}
-    <Tooltip title={selectionCount > 1 ? `Delete ${selectionCount} VOBs… (Del)` : 'Delete VOB… (Del)'}>
+    <Tooltip title={selectionCount > 1 ? `Delete ${selectionCount} VOBs (Del)` : 'Delete VOB (Del)'}>
       <span>
         <IconButton
           size="small"
