@@ -24,7 +24,8 @@ import userEvent from '@testing-library/user-event';
 import type { VfsEntry } from '../src/shared/worldTypes';
 import type { AssetThumbnails, ThumbnailState } from '../src/renderer/world/assetThumbnails';
 import WorldAssetBrowser, { type AssetCatalogProps } from '../src/renderer/components/world/WorldAssetBrowser';
-import { LiveTileContext } from '../src/renderer/components/world/WorldAssetGrid';
+import { LiveTileContext, type AssetPlacement } from '../src/renderer/components/world/WorldAssetGrid';
+import { isPlaceableVisual } from '../src/renderer/components/world/WorldAssetPreview';
 import type { LiveTilePreview } from '../src/renderer/world/LiveTilePreview';
 import { THUMBNAIL_SIZE } from '../src/renderer/world/ThumbnailRenderer';
 
@@ -65,6 +66,12 @@ const TREE: Record<string, VfsEntry[] | null> = {
     { name: 'NW_WOOD-C.TEX', type: 'file' },
   ],
 };
+
+/** A click carrying its place in a double-click, which `fireEvent` leaves at 0
+ *  and the browser counts: 1 for the first, 2 for the second. */
+async function clickWithDetail(element: HTMLElement, detail: number) {
+  await act(async () => { fireEvent.click(element, { detail }); });
+}
 
 function listing() {
   const calls: string[] = [];
@@ -1568,6 +1575,127 @@ describe('WorldAssetBrowser', () => {
 
       expect(await screen.findByTestId('world-asset-error')).toHaveTextContent('No world is open');
       expect(screen.queryByTestId('world-asset-filter-empty')).not.toBeInTheDocument();
+    });
+  });
+
+  // #366: "Place in World mit Leertaste nach Auswahl im Browser, und/oder
+  // bereits nach Doppelklick im Browser aktiviert." The verb lived behind a
+  // right-click or the preview panel's button; a Spacer hand double-clicks.
+  describe('placing straight from the browser (#366)', () => {
+    function placement(): jest.Mocked<AssetPlacement> {
+      return { canPlace: isPlaceableVisual, onPlace: jest.fn(), onPlaceWithOptions: jest.fn() };
+    }
+
+    it('arms a mesh on a double-click on its row', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const place = placement();
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} placement={place} />);
+
+      await user.dblClick(await screen.findByTestId('world-asset-MOD_ONLY.MRM'));
+
+      expect(place.onPlace).toHaveBeenCalledTimes(1);
+      expect(place.onPlace).toHaveBeenCalledWith('MOD_ONLY.MRM');
+    });
+
+    it('arms the selected mesh on Space, while Enter still only previews it', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const onPreview = jest.fn();
+      const place = placement();
+      render(<WorldAssetBrowser listAssets={list} onPreview={onPreview} placement={place} />);
+
+      await user.click(await screen.findByTestId('world-asset-MOD_ONLY.MRM'));
+      expect(place.onPlace).not.toHaveBeenCalled();
+
+      await user.keyboard('{Enter}');
+      expect(place.onPlace).not.toHaveBeenCalled();
+      expect(onPreview).toHaveBeenCalledTimes(2);
+
+      await user.keyboard(' ');
+      expect(place.onPlace).toHaveBeenCalledWith('MOD_ONLY.MRM');
+    });
+
+    it('previews a texture on Space and double-click, as there is nothing to place', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const onPreview = jest.fn();
+      const place = placement();
+      render(<WorldAssetBrowser listAssets={list} onPreview={onPreview} placement={place} />);
+      await user.click(await screen.findByTestId('world-asset-Textures'));
+
+      const texture = await screen.findByTestId('world-asset-NW_WOOD-C.TEX');
+      await user.dblClick(texture);
+      await user.keyboard(' ');
+
+      expect(place.onPlace).not.toHaveBeenCalled();
+      expect(onPreview).toHaveBeenLastCalledWith('Textures/NW_WOOD-C.TEX');
+    });
+
+    it('does not arm the file a folder double-click lands its second click on', async () => {
+      // The first click opens the folder, and the list redraws under the
+      // pointer before the second: that click previews whatever row is now
+      // there, as it always has, but the double-click was meant for the folder.
+      const { list } = listing();
+      const place = placement();
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} placement={place} />);
+      await clickWithDetail(await screen.findByTestId('world-asset-Meshes'), 1);
+      await clickWithDetail(await screen.findByTestId('world-asset-_compiled'), 1);
+
+      const crate = await screen.findByTestId('world-asset-NW_CRATE.MRM');
+      await clickWithDetail(crate, 2);
+      fireEvent.doubleClick(crate);
+
+      expect(place.onPlace).not.toHaveBeenCalled();
+    });
+
+    it('leaves Space on a row\'s star to the star', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const place = placement();
+      const onToggleFavorite = jest.fn();
+      render(
+        <WorldAssetBrowser
+          listAssets={list}
+          onPreview={jest.fn()}
+          placement={place}
+          catalog={{
+            catalog: { favorites: [], categories: [] },
+            removable: () => false,
+            onToggleFavorite,
+            onAddToCategory: jest.fn(),
+            onRemoveFromCategory: jest.fn(),
+            onSetCategoryCollision: jest.fn(),
+            onAddManyToCategory: jest.fn(),
+          }}
+        />,
+      );
+      const row = await screen.findByTestId('world-asset-MOD_ONLY.MRM');
+
+      within(row).getByTestId('world-asset-star').focus();
+      await user.keyboard(' ');
+
+      expect(onToggleFavorite).toHaveBeenCalledWith('MOD_ONLY.MRM');
+      expect(place.onPlace).not.toHaveBeenCalled();
+    });
+
+    it('arms a mesh tile on a double-click, and on Space once it is selected', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const { queue } = thumbnails();
+      const place = placement();
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} thumbnails={queue} placement={place} />);
+      await screen.findByTestId('world-asset-Meshes');
+      await user.click(screen.getByTestId('world-asset-view-grid'));
+
+      const tile = screen.getByTestId('world-asset-tile-MOD_ONLY.MRM');
+      await user.dblClick(tile);
+      expect(place.onPlace).toHaveBeenCalledTimes(1);
+
+      await user.click(tile);
+      await user.keyboard(' ');
+      expect(place.onPlace).toHaveBeenCalledTimes(2);
+      expect(place.onPlace).toHaveBeenLastCalledWith('MOD_ONLY.MRM');
     });
   });
 });

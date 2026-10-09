@@ -20,7 +20,7 @@ import {
 import type { AssetCatalog, VfsEntry, VfsSearch } from '../../../shared/worldTypes';
 import type { AssetThumbnails } from '../../world/assetThumbnails';
 import WorldAssetGrid, {
-  FavoriteStar, FileIntoMenu, RoleFacet, UncompiledTag, markClick, usePlaceMenu, type AssetRoleFilter, type AssetPlacement, type TileCatalogActions, type TileOrigin,
+  FavoriteStar, FileIntoMenu, RoleFacet, UncompiledTag, markClick, usePlaceGestures, type AssetRoleFilter, type AssetPlacement, type TileCatalogActions, type TileOrigin,
 } from './WorldAssetGrid';
 import WorldAssetCatalogView from './WorldAssetCatalogView';
 import { isPlaceableVisual } from './WorldAssetPreview';
@@ -159,7 +159,7 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
   const actions = isDirectory ? undefined : data.actions;
   // A row places what a tile places (§16.37 row 4): list is the view the panel
   // opens in, so leaving it out would put the verb behind a view switch.
-  const place = usePlaceMenu(isDirectory ? '' : entry.name, data.placement);
+  const place = usePlaceGestures(isDirectory ? '' : entry.name, data.placement);
   // The same path `onOpen` would hand up, so the two cannot drift apart.
   const showing = data.previewing !== null && data.previewing !== undefined
     && data.previewing === pathOf(entry, data.path);
@@ -173,22 +173,19 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
       {...(showing ? { 'aria-current': 'true' } : {})}
       {...(marked ? { 'aria-selected': 'true' } : {})}
       // A row was a `div` with an `onClick` and nothing else: not reachable by
-      // keyboard, let alone activatable. Space as well as Enter, and with
-      // `preventDefault` — Space scrolls a list otherwise, which here is the
-      // virtualized list the row is in (§5.4 item 17).
+      // keyboard, let alone activatable (§5.4 item 17). Enter opens it; Space
+      // places a mesh (#366) and opens anything else.
       tabIndex={0}
-      onKeyDown={(event) => {
-        if (event.key !== 'Enter' && event.key !== ' ') return;
-        event.preventDefault();
-        data.onOpen(entry);
-      }}
+      onKeyDown={(event) => place.onKeyDown(event, () => data.onOpen(entry))}
       onClick={(event) => {
+        place.onClick(event);
         if (markClick(event) && !isDirectory && data.onMark !== undefined) {
           data.onMark(entry, event.shiftKey);
           return;
         }
         data.onOpen(entry);
       }}
+      onDoubleClick={place.onDoubleClick}
       onContextMenu={place.onContextMenu}
       style={style}
       sx={{

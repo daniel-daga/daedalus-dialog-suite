@@ -296,6 +296,24 @@ describe('Place in world from an asset row', () => {
       op: 'AddVob', to: { visual: 'NW_CRATE.MRM', position: TERRAIN },
     });
   });
+
+  it('arms the placement on a double-click on the row (#366)', async () => {
+    await openWorld();
+    api.listWorldAssets.mockResolvedValue([{ name: 'NW_CRATE.MRM', type: 'file' }] as never);
+    fireEvent.click(screen.getByTestId('world-panel-assets'));
+
+    const row = await screen.findByTestId('world-asset-NW_CRATE.MRM');
+    fireEvent.click(row, { detail: 1 });
+    fireEvent.click(row, { detail: 2 });
+    fireEvent.doubleClick(row);
+    expect(hint()).toHaveTextContent('NW_CRATE.MRM');
+
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    expect(firstOps()[0]).toMatchObject({
+      op: 'AddVob', to: { visual: 'NW_CRATE.MRM', position: TERRAIN },
+    });
+  });
 });
 
 // #290: "je nach Asset von selbst checkt welche art vob/mob es sein soll" —
