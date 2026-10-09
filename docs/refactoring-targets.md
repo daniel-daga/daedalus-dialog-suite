@@ -246,7 +246,7 @@ which is the shove back again. It is the theme's own metric rather than a copy o
 it, so it cannot disagree with the buttons it stands in for — which turns the
 untestable claim into a structural one a jsdom test *can* make: the spacer is a
 `MuiButton-sizeSmall`, and it gives way to the real ones on a pick
-(`WorldSurface.editing.test.tsx`).
+(`WorldSurface.editing.placing.test.tsx`).
 
 The one wart the fix carries: MUI's `Stack` spacing selector outranks a child's
 `sx`, so the spacer overrides its own margin with `!important`.

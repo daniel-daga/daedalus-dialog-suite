@@ -7,7 +7,7 @@ module.exports = {
   testEnvironment: 'jsdom',
   roots: ['<rootDir>/tests', '<rootDir>/src'],
   testMatch: ['**/*.test.ts?(x)'], // Run both .test.ts and .test.tsx
-  testPathIgnorePatterns: ['/node_modules/', 'encoding.test.ts'], // Exclude encoding test (runs separately)
+  testPathIgnorePatterns: ['/node_modules/'],
   moduleNameMapper: {
     '\\.(css|less|scss|sass)$': 'identity-obj-proxy',
   },

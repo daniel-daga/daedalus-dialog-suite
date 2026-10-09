@@ -7,7 +7,7 @@ import type { AppendInsertNpcResult } from '../src/shared/types';
 /**
  * Shared pure-data builders for the World surface's test suites
  * (`docs/architecture/level-editor.md` §17). Moved out of
- * `WorldSurface.editing.test.tsx` so new test files (shortcuts, toolbar,
+ * the `WorldSurface.editing.*` suites so new test files (shortcuts, toolbar,
  * context menu, panels, ...) don't each reinvent a `VobIndex`.
  *
  * The `jest.mock('.../WorldViewport')` factory cannot move here — jest hoists

@@ -74,6 +74,20 @@ describe('FileService encoding roundtrip (E6)', () => {
     expect(service.getFileEncoding(file)).toBe('windows-1252');
   });
 
+  it('reads a windows-1250 file as such, and keeps it windows-1250 across an edit', async () => {
+    // Polish letters sit at byte values windows-1252 maps to other characters,
+    // so a file misdetected as 1252 reads back wrong and saves mangled.
+    const file = path.join(tempDir, 'win1250.d');
+    const content = '// Zażółć gęślą jaźń\nvar int x = 1;';
+    await fs.writeFile(file, iconv.encode(content, 'windows-1250'));
+
+    expect(await service.readFile(file)).toBe(content);
+
+    const edited = `${content}\n// ąęł`;
+    await service.writeFile(file, edited);
+    expect(iconv.decode(await fs.readFile(file), 'windows-1250')).toBe(edited);
+  });
+
   it('uses the windows-1252 default for a blind write after cache clear', async () => {
     const file = path.join(tempDir, 'blind.d');
     const content = 'Grüße';

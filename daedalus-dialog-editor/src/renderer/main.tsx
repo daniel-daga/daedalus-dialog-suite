@@ -11,7 +11,7 @@ import { ThemeModeContext } from './themeContext';
 // for the main process (the Playwright harness runs against the Vite dev
 // server). Gated on DEV so the production build drops the shim — Vite replaces
 // `import.meta.env.DEV` with a constant and Rollup removes the dead branch,
-// dynamic import and all (§3 P3; pinned by tests/bundleContents.test.ts).
+// dynamic import and all (§3 P3; pinned by the renderer build step in all-tests.yml).
 const buildChanges = parseBuildChanges(import.meta.env.VITE_WHAT_CHANGED);
 
 async function installBrowserMockApi(): Promise<void> {
