@@ -5,8 +5,9 @@ import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { placeBounds, PASTE_MIN_OFFSET, type WorldOp } from 'zen-world';
 import { useWorldStore } from '../src/renderer/store/worldStore';
 import { SUMMARY, vobIndex } from './worldFixtures';
-import { IDENTITY, mockFramePoint, mockFrameVob, vp } from './worldSurfaceViewportStub';
+import { IDENTITY, mockFramePoint, mockFrameVob, mockPointAhead, vp } from './worldSurfaceViewportStub';
 import { LIGHT_PROPS, api, coordinate, openWorld } from './worldSurfaceEditingHarness';
+import { PASTE_REACH } from '../src/renderer/components/world/WorldSurface';
 
 /**
  * The World surface's half of an edit — deleting, duplicating, copying and pasting. Fixtures, the
@@ -597,6 +598,23 @@ describe('copying and pasting a VOB', () => {
         cdDynamic: false,
       },
     }]);
+  });
+
+  it('pastes in front of the camera, where the viewport says it is looking', async () => {
+    // #373: beside the original along world +X read as random from the
+    // camera. The barrel's box is centred on its pivot with its floor there,
+    // so the pivot is what lands on the point.
+    const summary = await openWorld();
+    expectRefresh(summary);
+    mockPointAhead.mockReturnValueOnce([500, -40, 700]);
+
+    await copy();
+    paste();
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    expect(mockPointAhead).toHaveBeenCalledWith(PASTE_REACH);
+    const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
+    expect((ops[0] as { to: { position: number[] } }).to.position).toEqual([500, -40, 700]);
   });
 
   it('pastes a subtree under the copy of its own root', async () => {

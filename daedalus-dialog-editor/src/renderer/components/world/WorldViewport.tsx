@@ -3,7 +3,7 @@ import { Box } from '@mui/material';
 import * as THREE from 'three';
 import { acceleratedRaycast } from 'three-mesh-bvh';
 import {
-  threeToZen, zenToThree, zenBoxToThree,
+  threeToZen, zenToThree, zenBoxToThree, ZEN_TO_THREE_SCALE,
   isWaynetOp, type SubtreeMember, type VobExtent, type ZenPosition, type ZenRotation,
 } from 'zen-world';
 import type {
@@ -410,6 +410,15 @@ export interface WorldViewportHandle {
    */
   raycastDown: (origin: ZenPosition) => { point: ZenPosition; normal: ZenPosition } | null;
   /**
+   * The point in front of the camera, in ZenGin space — where a paste lands
+   * (#373). The first world-mesh hit along the screen-centre ray within
+   * `reach` (ZenGin cm); past it, the ground under the ray's point at `reach`,
+   * so a view of the horizon does not put the paste hundreds of metres off;
+   * over no ground at all, that point itself. Null while the scene effect is
+   * between a teardown and its rebuild, exactly as {@link frameVob} is.
+   */
+  pointAhead: (reach: number) => ZenPosition | null;
+  /**
    * Jump the camera to a VOB, leaving the orbit pivot on it — the scene tree's
    * double-click.
    *
@@ -516,6 +525,36 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   // which is what the effect below it does.
   const viewportRef = useRef<ViewportRenderer | null>(null);
 
+  // A local rather than inline in the handle, because `pointAhead` drops
+  // through it too. It reads only refs, so the handle's one closure over it
+  // is never stale.
+  const raycastDown: WorldViewportHandle['raycastDown'] = (origin) => {
+    const world = sceneRef.current;
+    if (world === null) return null;
+
+    const raycaster = new THREE.Raycaster();
+    raycaster.firstHitOnly = true;
+    raycaster.layers.enableAll();
+    raycaster.set(
+      new THREE.Vector3(...zenToThree(origin)),
+      new THREE.Vector3(...zenToThree([0, -1, 0])).normalize(),
+    );
+    const hit = raycaster.intersectObjects(world.worldMeshes, false)[0];
+    if (!hit || !hit.face) return null;
+
+    // `.face.normal` is in the mesh's local space; `transformDirection` puts
+    // it in three-space by the mesh's own matrixWorld, mirror included —
+    // the inverse-transpose it uses is exactly what a mirror needs and a
+    // plain matrix multiply would get backwards.
+    const worldNormal = hit.face.normal.clone()
+      .transformDirection(hit.object.matrixWorld).normalize();
+
+    return {
+      point: threeToZen(hit.point.toArray() as [number, number, number]),
+      normal: threeToZen(worldNormal.toArray() as [number, number, number]),
+    };
+  };
+
   useImperativeHandle(ref, () => ({
     cameraNudgeAxes: () => {
       const viewport = viewportRef.current;
@@ -540,31 +579,25 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     },
     beginNudge: () => gizmoRef.current?.beginNudge() ?? false,
     previewNudge: (delta) => gizmoRef.current?.previewNudge(delta),
-    raycastDown: (origin) => {
+    raycastDown,
+    pointAhead: (reach) => {
       const world = sceneRef.current;
-      if (world === null) return null;
+      const viewport = viewportRef.current;
+      if (world === null || viewport === null) return null;
 
+      viewport.camera.updateMatrixWorld(true);
       const raycaster = new THREE.Raycaster();
       raycaster.firstHitOnly = true;
       raycaster.layers.enableAll();
-      raycaster.set(
-        new THREE.Vector3(...zenToThree(origin)),
-        new THREE.Vector3(...zenToThree([0, -1, 0])).normalize(),
-      );
+      raycaster.setFromCamera(new THREE.Vector2(0, 0), viewport.camera);
+      raycaster.far = reach * ZEN_TO_THREE_SCALE;
       const hit = raycaster.intersectObjects(world.worldMeshes, false)[0];
-      if (!hit || !hit.face) return null;
+      if (hit) return threeToZen(hit.point.toArray() as [number, number, number]);
 
-      // `.face.normal` is in the mesh's local space; `transformDirection` puts
-      // it in three-space by the mesh's own matrixWorld, mirror included —
-      // the inverse-transpose it uses is exactly what a mirror needs and a
-      // plain matrix multiply would get backwards.
-      const worldNormal = hit.face.normal.clone()
-        .transformDirection(hit.object.matrixWorld).normalize();
-
-      return {
-        point: threeToZen(hit.point.toArray() as [number, number, number]),
-        normal: threeToZen(worldNormal.toArray() as [number, number, number]),
-      };
+      const end = threeToZen(
+        raycaster.ray.at(raycaster.far, new THREE.Vector3()).toArray() as [number, number, number],
+      );
+      return raycastDown(end)?.point ?? end;
     },
     // Written out rather than `?.() ?? 'no-scene'`: null is what *success*
     // answers, and `??` would turn every landed jump into a reported failure.

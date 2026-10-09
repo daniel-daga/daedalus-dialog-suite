@@ -11,6 +11,7 @@ import {
   type VobSubtree,
   type WorldOp,
   type ZenBounds,
+  type ZenPosition,
 } from 'zen-world';
 import { primaryVob, useWorldStore } from '../../../store/worldStore';
 import { vobModelOf } from '../../../world/vobModel';
@@ -22,6 +23,9 @@ export interface VobClipboardInput {
   readClassProps: (
     reader: VobReader, vobs: readonly number[],
   ) => Promise<(vob: number) => ReadProps | null>;
+  /** Where a paste lands: the point in front of the camera (#373), or null
+   *  with no scene to ask, when the copies land beside what was copied. */
+  pastePoint: () => ZenPosition | null;
 }
 
 export interface VobClipboard {
@@ -88,7 +92,8 @@ export function useVobClipboard(
 
   /**
    * Paste the clipboard into the selection's own list — beside it, not inside
-   * it — and into the roots when nothing is selected.
+   * it — and into the roots when nothing is selected. *Where* in the world is
+   * in front of the camera, asked now rather than at the copy (#373).
    *
    * The *root* of each copied subtree, that is: its descendants go under it,
    * wherever it landed.
@@ -112,7 +117,9 @@ export function useVobClipboard(
     const into = primaryVob(selected);
     const parent = into === null ? -1 : reader.columns.parent[into];
     const parentPath = parent < 0 ? null : vobIndexPath(reader, parent);
-    const ops = pasteVobs(reader, clipboard.current, parent < 0 ? null : parent);
+    const ops = pasteVobs(
+      reader, clipboard.current, parent < 0 ? null : parent, bound.pastePoint() ?? undefined,
+    );
 
     if (!await bound.commitOps(ops)) return;
 

@@ -15,7 +15,7 @@
 import { describe, test, expect, beforeEach, jest } from '@jest/globals';
 import { renderHook, act } from '@testing-library/react';
 import { createRef } from 'react';
-import { createVobReader, type VobIndex, type WorldOp } from 'zen-world';
+import { createVobReader, PASTE_MIN_OFFSET, type VobIndex, type WorldOp } from 'zen-world';
 import { useVobClipboard } from '../src/renderer/components/world/hooks/useVobClipboard';
 import { useWorldStore } from '../src/renderer/store/worldStore';
 import type { WorldSummary } from '../src/shared/worldTypes';
@@ -70,12 +70,15 @@ const NESTED = [-1, -1, 0];
 const boundsOf = jest.fn(() => null);
 const lookupClassProps = jest.fn(() => null);
 const readClassProps = jest.fn(async () => lookupClassProps);
+/** Where the viewport says the camera is looking — null, as between scenes,
+ *  unless a test says otherwise. */
+const pastePoint = jest.fn((): [number, number, number] | null => null);
 
 /** The inputs arrive through a ref, as they do from the surface. */
 function inputRef(commitOps: (ops: WorldOp[]) => Promise<boolean>) {
   const ref = createRef<Parameters<typeof useVobClipboard>[0]['current']>() as
-    { current: { commitOps: typeof commitOps; boundsOf: typeof boundsOf; readClassProps: typeof readClassProps } | null };
-  ref.current = { commitOps, boundsOf, readClassProps };
+    { current: { commitOps: typeof commitOps; boundsOf: typeof boundsOf; readClassProps: typeof readClassProps; pastePoint: typeof pastePoint } | null };
+  ref.current = { commitOps, boundsOf, readClassProps, pastePoint };
   return ref;
 }
 
@@ -94,6 +97,7 @@ function commitInto(after: number[]) {
 beforeEach(() => {
   jest.clearAllMocks();
   readClassProps.mockResolvedValue(lookupClassProps);
+  pastePoint.mockReturnValue(null);
   useWorldStore.setState({ summary: summaryOf(FLAT), selection: [] } as never);
 });
 
@@ -221,6 +225,34 @@ describe('useVobClipboard — pasting', () => {
     const [ops] = commitOps.mock.calls[0] as [Array<Record<string, unknown>>];
     // VOB 2's parent is root 0, whose path is '0'.
     expect(ops[0].parentPath).toBe('0');
+  });
+
+  // #373: beside the original along world +X read as random from the camera.
+  test('a paste lands on the point in front of the camera, asked at the paste', async () => {
+    useWorldStore.setState({ summary: summaryOf(FLAT), selection: [1] } as never);
+    const commitOps = commitInto([-1, -1, -1]);
+    const { result } = mount(commitOps);
+    await act(async () => { await result.current.copySelection(); });
+
+    // Asked when Ctrl+V is pressed, not at the copy: the camera has moved since.
+    expect(pastePoint).not.toHaveBeenCalled();
+    pastePoint.mockReturnValue([5000, 120, -700]);
+    await act(async () => { await result.current.pasteClipboard(); });
+
+    const [ops] = commitOps.mock.calls[0] as [Array<{ to: { position: number[] } }>];
+    // VOB 1 sits at [1000, 0, 0] and has no box, so its pivot goes on the point.
+    expect(ops[0].to.position).toEqual([5000, 120, -700]);
+  });
+
+  test('with no point to aim at, a paste still lands beside what was copied', async () => {
+    useWorldStore.setState({ summary: summaryOf(FLAT), selection: [1] } as never);
+    const commitOps = commitInto([-1, -1, -1]);
+    const { result } = mount(commitOps);
+    await act(async () => { await result.current.copySelection(); });
+    await act(async () => { await result.current.pasteClipboard(); });
+
+    const [ops] = commitOps.mock.calls[0] as [Array<{ to: { position: number[] } }>];
+    expect(ops[0].to.position).toEqual([1000 + PASTE_MIN_OFFSET, 0, 0]);
   });
 
   test('the clipboard is not consumed — pasting twice is two copies', async () => {

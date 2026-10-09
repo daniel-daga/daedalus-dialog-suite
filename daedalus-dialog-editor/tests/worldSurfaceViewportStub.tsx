@@ -24,6 +24,9 @@ export const mockRaycastDown = jest.fn() as jest.Mock<
   { point: [number, number, number]; normal: [number, number, number] } | null,
   [[number, number, number]]
 >;
+/** The point in front of the camera a paste lands on (#373). Answers nothing
+ *  unless a test says otherwise, which is a viewport between scenes. */
+export const mockPointAhead = jest.fn() as jest.Mock<[number, number, number] | null, [number]>;
 /** The viewport's other imperative command: the camera jump the scene tree's
  *  double-click asks for. */
 export const mockFrameVob = jest.fn() as jest.Mock<void, [number]>;
@@ -131,6 +134,7 @@ export function viewportStubModule() {
   }, ref: React.Ref<{
     raycastDown: typeof mockRaycastDown; frameVob: typeof mockFrameVob;
     framePoint: typeof mockFramePoint; framePolygon: typeof mockFramePolygon;
+    pointAhead: typeof mockPointAhead;
   }>) => {
     vp.appliedOps = props.appliedOps;
     vp.selection = props.selection;
@@ -156,7 +160,7 @@ export function viewportStubModule() {
     // raycast or a real camera.
     ReactActual.useImperativeHandle(ref, () => ({
       raycastDown: mockRaycastDown, frameVob: mockFrameVob, framePoint: mockFramePoint,
-      framePolygon: mockFramePolygon,
+      framePolygon: mockFramePolygon, pointAhead: mockPointAhead,
     }));
     return (
       <div data-testid="world-viewport-stub">
