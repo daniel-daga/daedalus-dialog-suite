@@ -39,6 +39,7 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
     default: ReactActual.forwardRef((props: {
       onPick: (vob: number | null, point: [number, number, number] | null, additive: boolean) => void;
       onSelectWaypoint: (waypoint: number | null) => void;
+      onCancelArmed?: () => void;
       showWaynet: boolean;
     }, ref: React.Ref<{
       raycastDown: () => null; frameVob: () => void; framePoint: () => void;
@@ -54,6 +55,9 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
           </button>
           <button type="button" data-testid="stub-pick-waypoint" onClick={() => props.onSelectWaypoint(1)}>
             pick waypoint
+          </button>
+          <button type="button" data-testid="stub-right-click" onClick={() => props.onCancelArmed?.()}>
+            right click
           </button>
         </div>
       );
@@ -146,10 +150,9 @@ describe('Place VOB… from the toolbar', () => {
     expect(firstOps()[0]).toMatchObject({
       op: 'AddVob', vob: 2, path: '2', to: { visual: 'NW_CRATE.3DS', position: TERRAIN },
     });
-    // Spent by the click, which also stands as an ordinary terrain pick: the
-    // bar now shows the point, and nothing is waiting.
-    expect(screen.queryByTestId('world-armed-cancel')).toBeNull();
-    expect(screen.getByTestId('world-terrain-point')).toBeInTheDocument();
+    // Not spent by the click (#364): the next one places another, until a
+    // right-click in the world or Escape puts it down.
+    expect(hint()).toHaveTextContent('NW_CRATE.3DS');
   });
 
   it('places at the ground point already chosen, the way the bar button does', async () => {
@@ -183,6 +186,66 @@ describe('Place VOB… from the toolbar', () => {
 
     fireEvent.click(screen.getByTestId('stub-pick-terrain'));
     expect(api.applyWorldOps).not.toHaveBeenCalled();
+  });
+});
+
+// #364: "solange mit aufeinanderfolgenden Klicks platzieren kann, bis man das
+// gewählte VOB mit Rechtsklick in die Welt oder ESC abwählt".
+describe('an armed placement, click after click', () => {
+  async function armCrate() {
+    await openWorld();
+    fireEvent.click(screen.getByTestId('world-add-vob'));
+    fireEvent.change(screen.getByTestId('world-place-visual'), { target: { value: 'NW_CRATE.3DS' } });
+    fireEvent.click(screen.getByTestId('world-place-confirm'));
+  }
+
+  it('places one VOB per ground click until it is put down', async () => {
+    await armCrate();
+
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(2));
+    const second = (api.applyWorldOps.mock.calls[1] as unknown as [WorldOp[]])[0][0];
+    expect(second).toMatchObject({ op: 'AddVob', to: { visual: 'NW_CRATE.3DS', position: TERRAIN } });
+    expect(hint()).toHaveTextContent('NW_CRATE.3DS');
+  });
+
+  it('is put down by a right-click in the world', async () => {
+    await armCrate();
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId('world-armed-cancel')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('stub-right-click'));
+    expect(screen.queryByTestId('world-armed-cancel')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    await act(async () => { await Promise.resolve(); });
+    expect(api.applyWorldOps).toHaveBeenCalledTimes(1);
+  });
+
+  it('turns each VOB to a random angle about Y when asked', async () => {
+    await armCrate();
+    fireEvent.click(screen.getByTestId('world-armed-random-yaw'));
+    const random = jest.spyOn(Math, 'random').mockReturnValue(0.25);
+    try {
+      fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+      await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    } finally {
+      random.mockRestore();
+    }
+    // A quarter turn: Y stays up, X and Z swap.
+    const rotation = (firstOps()[0] as unknown as { to: { rotation: number[] } }).to.rotation;
+    expect(rotation.map((value) => Math.round(value * 1e6) / 1e6 + 0))
+      .toEqual([0, 0, 1, 0, 1, 0, -1, 0, 0]);
+  });
+
+  it('writes no rotation by default', async () => {
+    await armCrate();
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    expect(firstOps()[0]).not.toHaveProperty('to.rotation');
   });
 });
 

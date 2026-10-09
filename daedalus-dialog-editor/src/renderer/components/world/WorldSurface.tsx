@@ -14,7 +14,7 @@ import {
   deleteVobs, dropSubtreesToGround,
   duplicateVobs, emptyVobFolders,
   matchVobs,
-  placeBounds, placementCollision, placementFocusName,
+  placeBounds, placementCollision, placementFocusName, rotationAboutUp,
   landedPaths, reparentVob, reparentVobs, rotateSubtrees, rotateSubtreeTo, subtreeMembers, setVobClassProp, setVobProp, setVobProps,
   topLevelVobs,
   translateSubtrees, vobAtIndexPath, vobExtentOf, vobIndexPath,
@@ -181,6 +181,11 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    * point has been chosen yet, and the Assets panel's "Place in world" arms
    * it directly. The next terrain pick spends it — one click, one add — and
    * Escape or the status bar's Cancel drops it. Null is the ordinary state.
+   *
+   * A `place` is the exception: it stays armed for click after click, since
+   * the same bush is placed a dozen times, and a right-click in the world puts
+   * it down as Escape does (#364). An NPC or a waypoint is named, and a name
+   * is spent by one add.
    */
   const [armed, setArmed] = useState<
     | { kind: 'place'; spec: PlaceSpec }
@@ -188,6 +193,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     | { kind: 'add-waypoint'; name: string }
     | null
   >(null);
+  /** Whether an armed placement turns each VOB to a random angle about Y — the
+   *  "Random Y" box beside the status bar's hint (#364). */
+  const [randomYaw, setRandomYaw] = useState(false);
   /** The VOB the delete warning is about, or null when it is closed. A flat
    *  index rather than a boolean: the dialog names what it is about to remove,
    *  and the selection can change under an open dialog. */
@@ -1553,7 +1561,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    * enforces that rather than this side promising it — and `applied` clears the
    * selection afterwards.
    */
-  const placeVobAt = useCallback(async (spec: PlaceSpec, point: [number, number, number]) => {
+  const placeVobAt = useCallback(async (
+    spec: PlaceSpec, point: [number, number, number], rotation: ZenRotation = IDENTITY,
+  ) => {
     const { summary: current } = useWorldStore.getState();
     if (current === null) return;
 
@@ -1570,6 +1580,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
 
     const placed: NewVob = {
       position: point,
+      ...(rotation === IDENTITY ? {} : { rotation }),
       ...(spec.vobClass === 'zCVob' ? {} : { class: spec.vobClass }),
       ...(item ? { instance: spec.instance.trim() } : {}),
       ...(spec.name.trim() === '' ? {} : { name: spec.name.trim() }),
@@ -1579,7 +1590,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       // the binding, which defaults every VOB to on.
       ...(visual === '' ? {} : placementCollision(visual, assetCatalogProps?.catalog)),
       ...(bounds === null ? {} : {
-        bbox: placeBounds(bounds as ZenBounds, IDENTITY, point),
+        bbox: placeBounds(bounds as ZenBounds, rotation, point),
       }),
     };
 
@@ -1857,14 +1868,18 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     else if (!additive) selectVob(null);
     setTerrainPoint(point);
     // An armed add is spent by the ground click it was waiting for — and only
-    // a ground click: a VOB hit is a selection, not a place.
+    // a ground click: a VOB hit is a selection, not a place. A placement is
+    // not spent at all (#364); it waits for the next click.
     if (point !== null && armed !== null) {
+      if (armed.kind === 'place') {
+        void placeVobAt(armed.spec, point, randomYaw ? rotationAboutUp(Math.random() * Math.PI * 2) : IDENTITY);
+        return;
+      }
       setArmed(null);
-      if (armed.kind === 'place') void placeVobAt(armed.spec, point);
-      else if (armed.kind === 'insert-npc') void insertNpcAt(armed.instance, armed.waypoint, false, point);
+      if (armed.kind === 'insert-npc') void insertNpcAt(armed.instance, armed.waypoint, false, point);
       else addWaypointAt(armed.name, point);
     }
-  }, [handleSelect, selectVob, armed, placeVobAt, insertNpcAt, addWaypointAt]);
+  }, [handleSelect, selectVob, armed, randomYaw, placeVobAt, insertNpcAt, addWaypointAt]);
 
   /**
    * Whether the name in the add-waypoint dialog is one the open world already
@@ -1905,6 +1920,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     || (routineMode.mode !== null && !routineMode.picking) || discardPrompt !== null
     || insertingNpc !== null || pickerOpen || quickTestBlocked || quickTestRefusal !== null;
 
+  const disarm = useCallback(() => setArmed(null), []);
+
   useWorldShortcuts({
     hasWorld: summary !== null,
     hidden,
@@ -1919,7 +1936,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     onDuplicate: () => void duplicateSelection(),
     onRequestDeleteVobs: setDeleting,
     onRequestDeleteWaypoint: (waypoint, name) => setDeletingWaypoint({ waypoint, name }),
-    onDisarm: () => setArmed(null),
+    onDisarm: disarm,
     onRequestSave: () => setConfirmingSave(true),
     onNudgeBegin: handleNudgeBegin,
     onNudgeBy: handleNudgeBy,
@@ -2507,6 +2524,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               onCameraSlot={reportCameraSlot}
               onPick={handlePick}
               onVobContextMenu={openVobContextMenu}
+              onCancelArmed={armed === null ? undefined : disarm}
               selection={selection}
               onTranslateSelection={handleTranslateSelection}
               membersOf={membersOfSelection}
@@ -2691,12 +2709,27 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                     would replace the point anyway. */}
                 <Typography variant="caption" color="text.secondary" data-testid="world-terrain-hint">
                   {armed.kind === 'place'
-                    ? `Click the ground to place ${placeLabel(armed.spec)}.`
+                    ? `Click the ground to place ${placeLabel(armed.spec)}; right-click or Esc to stop.`
                     : armed.kind === 'insert-npc'
                       ? `Click the ground to add waypoint ${armed.waypoint} and insert ${armed.instance} there.`
                       : `Click the ground to place waypoint ${armed.name}.`}
                 </Typography>
-                <Button size="small" onClick={() => setArmed(null)} data-testid="world-armed-cancel">
+                {armed.kind === 'place' && (
+                  <FormControlLabel
+                    sx={{ mr: 0 }}
+                    control={(
+                      <Checkbox
+                        size="small"
+                        checked={randomYaw}
+                        onChange={(event) => setRandomYaw(event.target.checked)}
+                        inputProps={{ 'aria-label': 'Random Y rotation' }}
+                        data-testid="world-armed-random-yaw"
+                      />
+                    )}
+                    label={<Typography variant="caption">Random Y</Typography>}
+                  />
+                )}
+                <Button size="small" onClick={disarm} data-testid="world-armed-cancel">
                   Cancel (Esc)
                 </Button>
               </>

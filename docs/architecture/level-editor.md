@@ -4145,8 +4145,12 @@ open. Each opens its dialog straight away; where the result goes is the
 ground point already chosen, or — with none chosen — the *next* ground
 click: the confirm reads "Place on next click", the surface holds an
 `armed` add, the status bar says what it is waiting for beside a Cancel, and
-Escape drops it. The next terrain pick spends it, one click one add; a VOB
-hit is a selection, not a place. The Assets panel's **Place in world** arms
+Escape drops it. The next terrain pick spends an NPC or a waypoint, one click
+one add; a VOB hit is a selection, not a place. A **placement is not spent**
+(#364): it places on every ground click until Escape, Cancel or a right-click
+in the world — one that is not the end of a fly — puts it down, and a
+"Random Y" box beside the hint turns each one by the scatter brush's
+`rotationAboutUp`. The Assets panel's **Place in world** arms
 the previewed mesh directly, with no dialog — the gesture the picker used to
 need was preview, switch tabs, click the ground, open the dialog, "Use
 previewed", Place. Insert NPC's waypoint field offers the world's own names:

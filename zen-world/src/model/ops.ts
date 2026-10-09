@@ -1882,8 +1882,9 @@ export function scatterVobs(
   });
 }
 
-/** A rotation about the world up axis (+Y — the engine is Y-up), row-major. */
-function rotationAboutUp(radians: number): ZenRotation {
+/** A rotation about the world up axis (+Y — the engine is Y-up), row-major.
+ *  The scatter brush's yaw, and a placement's random one (#364). */
+export function rotationAboutUp(radians: number): ZenRotation {
   const cos = Math.cos(radians);
   const sin = Math.sin(radians);
   return [cos, 0, sin, 0, 1, 0, -sin, 0, cos];
