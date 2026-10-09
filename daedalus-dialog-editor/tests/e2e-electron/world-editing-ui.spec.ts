@@ -115,6 +115,17 @@ test.describe('World surface UI workflows in a real window', () => {
     await expect(page.getByTestId('world-context-menu')).not.toBeVisible();
   });
 
+  test('offers both ground placement modes for a selected VOB', async () => {
+    const { page } = fixture;
+    await openWorld();
+    await page.getByTestId(ROOT_VOB_ROW).click();
+    await expect(page.getByTestId('world-rest-on-ground')).toBeEnabled();
+    await expect(page.getByTestId('world-into-ground')).toBeEnabled();
+    await page.getByTestId(ROOT_VOB_ROW).click({ button: 'right' });
+    await expect(page.getByTestId('world-context-rest')).toBeVisible();
+    await expect(page.getByTestId('world-context-into')).toBeVisible();
+  });
+
   test('Delete opens the confirm, and Cancel leaves the VOB standing', async () => {
     const { page } = fixture;
     await openWorld();

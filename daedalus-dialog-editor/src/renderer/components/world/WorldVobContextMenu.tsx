@@ -39,7 +39,8 @@ export interface WorldVobContextMenuProps {
   onCopy: () => void;
   onPaste: () => void;
   onDeleteRequest: () => void;
-  onDropToGround: () => void;
+  onRestOnGround: () => void;
+  onIntoGround: () => void;
   onAlignToNormal: () => void;
   onHideClass: () => void;
   /**
@@ -67,7 +68,7 @@ const Shortcut: React.FC<{ keys: string }> = ({ keys }) => (
 
 const WorldVobContextMenu: React.FC<WorldVobContextMenuProps> = ({
   open, position, onClose, selectionCount, canPaste,
-  onFrame, onDuplicate, onCopy, onPaste, onDeleteRequest, onDropToGround, onAlignToNormal, onHideClass,
+  onFrame, onDuplicate, onCopy, onPaste, onDeleteRequest, onRestOnGround, onIntoGround, onAlignToNormal, onHideClass,
   makeChildren, folders, onAddSelectionToFolder, onCreateFolderWithSelection,
 }) => {
   /** Every item takes its action and closes the menu — nothing here stays
@@ -192,9 +193,13 @@ const WorldVobContextMenu: React.FC<WorldVobContextMenuProps> = ({
         )}
       </Menu>
       <Divider />
-      <MenuItem onClick={run(onDropToGround)} disabled={selectionCount === 0} data-testid="world-context-drop">
+      <MenuItem onClick={run(onRestOnGround)} disabled={selectionCount === 0} data-testid="world-context-rest">
         <ListItemIcon><VerticalAlignBottomIcon fontSize="small" /></ListItemIcon>
-        <ListItemText>Drop to ground</ListItemText>
+        <ListItemText>Rest on ground</ListItemText><Shortcut keys="G" />
+      </MenuItem>
+      <MenuItem onClick={run(onIntoGround)} disabled={selectionCount === 0} data-testid="world-context-into">
+        <ListItemIcon><VerticalAlignBottomIcon fontSize="small" /></ListItemIcon>
+        <ListItemText>Into ground</ListItemText><Shortcut keys="Shift+G" />
       </MenuItem>
       <MenuItem onClick={run(onAlignToNormal)} disabled={selectionCount === 0} data-testid="world-context-align">
         <ListItemIcon><ExploreIcon fontSize="small" /></ListItemIcon>

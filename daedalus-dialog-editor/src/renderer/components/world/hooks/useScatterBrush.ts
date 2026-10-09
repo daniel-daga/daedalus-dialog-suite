@@ -4,6 +4,7 @@ import {
   strokeCandidates,
   topLevelVobs,
   type ReadProps,
+  type GroundPlacement,
   type ScatterPlacement,
   type VobReader,
   type WorldOp,
@@ -69,6 +70,8 @@ export interface ScatterBrush {
   /** Whether the tool is armed, and the toolbar's toggle. */
   scatterOn: boolean;
   toggleScatter: () => void;
+  scatterGroundPlacement: GroundPlacement;
+  setScatterGroundPlacement: (mode: GroundPlacement) => void;
   /** The field values, unfloored — what the toolbar's two number inputs show. */
   scatterRadius: number;
   setScatterRadius: (radius: number) => void;
@@ -108,6 +111,7 @@ export function useScatterBrush({
   viewport,
 }: ScatterBrushInput): ScatterBrush {
   const [scatterOn, setScatterOn] = useState(false);
+  const [scatterGroundPlacement, setScatterGroundPlacement] = useState<GroundPlacement>('rest');
   const [scatterRadius, setScatterRadius] = useState(SCATTER_DEFAULT_RADIUS);
   const [scatterSpacing, setScatterSpacing] = useState(SCATTER_DEFAULT_SPACING);
   /** A count rather than the array: the ring only asks whether the palette is
@@ -179,17 +183,18 @@ export function useScatterBrush({
     if (placements.length === 0) return;
 
     const classProps = await readClassProps(reader, palette);
-    const committed = await commitOps(scatterVobs(reader, placements, boundsOf, classProps));
+    const committed = await commitOps(scatterVobs(reader, placements, boundsOf, classProps, scatterGroundPlacement));
     // Said only for a stroke that landed: a refusal already has the banner, and
     // overwriting it with the cap would replace the reason with a footnote.
     if (committed && capped) {
       editFailed(`The stroke was capped at ${SCATTER_LIMIT} VOBs — one stroke is one undo entry. Paint it in several passes for more.`);
     }
-  }, [commitOps, boundsOf, readClassProps, viewport, scatterOn, brushRadius, scatterSpacing]);
+  }, [commitOps, boundsOf, readClassProps, viewport, scatterOn, brushRadius, scatterSpacing, scatterGroundPlacement]);
 
   const toggleScatter = useCallback(() => setScatterOn((on) => !on), []);
 
   return {
+    scatterGroundPlacement, setScatterGroundPlacement,
     scatterOn,
     toggleScatter,
     scatterRadius,

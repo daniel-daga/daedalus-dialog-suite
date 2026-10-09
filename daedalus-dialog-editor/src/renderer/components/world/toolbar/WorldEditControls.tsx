@@ -47,7 +47,8 @@ export interface WorldEditControlsProps {
   snapAngleDegrees: number;
   onSnapStepChange: (step: number) => void;
   selectionCount: number;
-  onDropToGround: () => void;
+  onRestOnGround: () => void;
+  onIntoGround: () => void;
   onAlignToNormal: () => void;
   onDuplicate: () => void;
   onDeleteRequest: () => void;
@@ -57,6 +58,8 @@ export interface WorldEditControlsProps {
   /** The scatter brush (level-editor.md §16.25) — pressed or not, and the two
    *  numbers that shape a stroke, both in ZenGin centimetres. */
   scatterOn: boolean;
+  scatterGroundPlacement: 'rest' | 'into';
+  onScatterGroundPlacementChange: (mode: 'rest' | 'into') => void;
   onScatterToggle: () => void;
   scatterRadius: number;
   scatterSpacing: number;
@@ -66,9 +69,10 @@ export interface WorldEditControlsProps {
 
 const WorldEditControls: React.FC<WorldEditControlsProps> = ({
   hasWorld, gizmoMode, onGizmoModeChange, snapGrid, snapAngleDegrees, onSnapStepChange,
-  selectionCount, onDropToGround, onAlignToNormal, onDuplicate, onDeleteRequest,
+  selectionCount, onRestOnGround, onIntoGround, onAlignToNormal, onDuplicate, onDeleteRequest,
   historyDepth, onUndo, onRedo,
-  scatterOn, onScatterToggle, scatterRadius, scatterSpacing,
+  scatterOn, onScatterToggle, scatterGroundPlacement, onScatterGroundPlacementChange,
+  scatterRadius, scatterSpacing,
   onScatterRadiusChange, onScatterSpacingChange,
 }) => (
   <>
@@ -140,16 +144,29 @@ const WorldEditControls: React.FC<WorldEditControlsProps> = ({
         the selection whatever its size. Secondary actions: icon-only, the
         label moved into the tooltip/aria-label rather than dropped. */}
     <Stack direction="row" spacing={0.5}>
-      <Tooltip title="Drop to ground">
+      <Tooltip title="Rest on ground (G)">
         <span>
           <IconButton
             size="small"
             disabled={!hasWorld || selectionCount === 0}
-            onClick={onDropToGround}
-            data-testid="world-drop-to-ground"
-            aria-label="Drop to ground"
+            onClick={onRestOnGround}
+            data-testid="world-rest-on-ground"
+            aria-label="Rest on ground"
           >
             <VerticalAlignBottomIcon fontSize="small" />
+          </IconButton>
+        </span>
+      </Tooltip>
+      <Tooltip title="Into ground (Shift+G)">
+        <span>
+          <IconButton
+            size="small"
+            disabled={!hasWorld || selectionCount === 0}
+            onClick={onIntoGround}
+            data-testid="world-into-ground"
+            aria-label="Into ground"
+          >
+            <VerticalAlignBottomIcon fontSize="small" sx={{ transform: 'translateY(3px)' }} />
           </IconButton>
         </span>
       </Tooltip>
@@ -189,7 +206,7 @@ const WorldEditControls: React.FC<WorldEditControlsProps> = ({
         It paints with the *selection*, which is why it is disabled without
         one and why the tooltip names the palette rather than the tool: the
         thing a first-time user has to be told is that selecting the trees
-        comes first. The two fields appear only while it is on — they are
+        comes first. The placement choice and two fields appear only while it is on — they are
         meaningless otherwise, and the bar is crowded. */}
     <Stack direction="row" spacing={0.5} alignItems="center">
       <Tooltip
@@ -214,6 +231,18 @@ const WorldEditControls: React.FC<WorldEditControlsProps> = ({
       </Tooltip>
       {scatterOn && (
         <>
+          <TextField
+            select
+            size="small"
+            value={scatterGroundPlacement}
+            onChange={(event) => onScatterGroundPlacementChange(event.target.value as 'rest' | 'into')}
+            SelectProps={{ inputProps: { 'aria-label': 'Scatter placement' } }}
+            sx={{ width: 132, '& .MuiSelect-select': { py: 0.5, fontSize: 12 } }}
+            data-testid="world-scatter-placement"
+          >
+            <MenuItem value="rest">Rest on ground</MenuItem>
+            <MenuItem value="into">Into ground</MenuItem>
+          </TextField>
           <Tooltip title="Brush radius (cm)">
             <TextField
               size="small"

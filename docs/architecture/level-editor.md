@@ -1616,6 +1616,13 @@ What made it more than "the same again with a different verb":
   preview drives the same members the ops are built from.
 - **W and E switch the gizmo**, as every 3D editor binds them — bare letters on
   a window listener, so they step aside for anything that takes typing.
+- **Ground placement has two explicit modes** (#372). Rest on ground (`G`)
+  puts the rotated visual's world-space bounding-box minimum Y at each VOB's
+  downward raycast hit; Into ground (`Shift+G`) puts the pivot at the hit for
+  foliage that should be rooted in the terrain. Both carry descendants by the
+  root's delta. Scatter uses Rest by default and exposes the same choice while
+  the brush is active. When a visual has no resolved bounds, Rest uses the
+  pivot rather than guessing a base.
 
 **The engine has not accepted a rotated VOB.** The acceptance record's row 10
 covered a moved VOB and an inserted item; a rotation, and the refitted box in

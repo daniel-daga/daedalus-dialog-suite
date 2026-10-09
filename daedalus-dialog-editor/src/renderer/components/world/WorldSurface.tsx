@@ -1280,13 +1280,14 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   }, [visuals]);
 
   /**
-   * Drop each selected VOB straight to its own ground point — a per-VOB batch,
+   * Drop each selected VOB to its own ground point — a per-VOB batch,
    * unlike a gizmo drag: there is no shared delta, because each VOB's ground
    * comes from its own downward raycast. A VOB with no hit (over the sky, off
    * the edge of the mesh) is left out rather than refusing the whole batch;
-   * the rest still land.
+   * the rest still land. Rest uses the visual's rotated base; into uses the
+   * VOB's pivot so trees can stay partly buried.
    */
-  const handleDropToGround = useCallback(() => {
+  const handleDropToGround = useCallback((mode: 'rest' | 'into') => {
     const { summary: current, selection: selected } = useWorldStore.getState();
     const viewport = viewportRef.current;
     if (current === null || viewport === null || selected.length === 0) return;
@@ -1301,8 +1302,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     }
     if (drops.length === 0) return;
     // A dropped VOB's children fall with it by the same drop (#292).
-    void commitOps(dropSubtreesToGround(reader, drops));
-  }, [commitOps]);
+    void commitOps(dropSubtreesToGround(reader, drops, mode, boundsOf));
+  }, [commitOps, boundsOf]);
 
   /**
    * Turn each selected VOB's local +Y onto its own hit normal — the same
@@ -1701,6 +1702,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
 
   const {
     scatterOn, toggleScatter, scatterRadius, setScatterRadius,
+    scatterGroundPlacement, setScatterGroundPlacement,
     scatterSpacing, setScatterSpacing, scatterBrushRadius, handleScatterStroke,
   } = useScatterBrush({
     commitOps, boundsOf, readClassProps, viewport: viewportRef,
@@ -1934,6 +1936,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     onCopy: () => void copySelection(),
     onPaste: () => void pasteClipboard(),
     onDuplicate: () => void duplicateSelection(),
+    onRestOnGround: () => handleDropToGround('rest'),
+    onIntoGround: () => handleDropToGround('into'),
     onRequestDeleteVobs: setDeleting,
     onRequestDeleteWaypoint: (waypoint, name) => setDeletingWaypoint({ waypoint, name }),
     onDisarm: disarm,
@@ -2025,7 +2029,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         snapAngleDegrees={snapAngleDegrees}
         onSnapStepChange={handleSnapStepChange}
         selectionCount={selection.length}
-        onDropToGround={handleDropToGround}
+        onRestOnGround={() => handleDropToGround('rest')}
+        onIntoGround={() => handleDropToGround('into')}
         onAlignToNormal={handleAlignToNormal}
         onDuplicate={() => void duplicateSelection()}
         onDeleteRequest={requestDeleteSelection}
@@ -2033,6 +2038,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         onUndo={() => void runHistory('undo')}
         onRedo={() => void runHistory('redo')}
         scatterOn={scatterOn}
+        scatterGroundPlacement={scatterGroundPlacement}
+        onScatterGroundPlacementChange={setScatterGroundPlacement}
         onScatterToggle={toggleScatter}
         scatterRadius={scatterRadius}
         scatterSpacing={scatterSpacing}
@@ -2208,7 +2215,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         onCopy={() => void copySelection()}
         onPaste={() => void pasteClipboard()}
         onDeleteRequest={requestDeleteSelection}
-        onDropToGround={handleDropToGround}
+        onRestOnGround={() => handleDropToGround('rest')}
+        onIntoGround={() => handleDropToGround('into')}
         onAlignToNormal={handleAlignToNormal}
         onHideClass={hideVobClass}
         makeChildren={makeChildren}

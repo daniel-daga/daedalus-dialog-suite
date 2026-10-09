@@ -7,7 +7,7 @@ import {
 } from 'zen-world';
 import { useWorldStore } from '../src/renderer/store/worldStore';
 import { MOVE, SUMMARY, vobIndex } from './worldFixtures';
-import { IDENTITY, TURN, mockFramePoint, vp } from './worldSurfaceViewportStub';
+import { IDENTITY, TURN, mockFramePoint, mockRaycastDown, vp } from './worldSurfaceViewportStub';
 import { api, coordinate, openWorld } from './worldSurfaceEditingHarness';
 
 /**
@@ -17,6 +17,25 @@ import { api, coordinate, openWorld } from './worldSurfaceEditingHarness';
 
 jest.mock('react-virtualized-auto-sizer', () => mockViewportStub.autoSizerStub);
 jest.mock('../src/renderer/components/world/WorldViewport', () => mockViewportStub.viewportStubModule());
+
+describe('ground placement modes', () => {
+  it('rests the model base or places the pivot at the hit, by button and shortcut', async () => {
+    await openWorld(undefined, undefined, undefined, [-1, -30, -10, 1, 2, 10]);
+    mockRaycastDown.mockReturnValue({ point: [10, 0, 30], normal: [0, 1, 0] });
+
+    fireEvent.click(screen.getByTestId('world-rest-on-ground'));
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([{ op: 'MoveVob', vob: 1, to: [10, 30, 30] }]);
+
+    fireEvent.keyDown(window, { key: 'G', shiftKey: true });
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(2));
+    expect(api.applyWorldOps.mock.calls[1][0]).toMatchObject([{ op: 'MoveVob', vob: 1, to: [10, 0, 30] }]);
+
+    fireEvent.keyDown(window, { key: 'g' });
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(3));
+    expect(api.applyWorldOps.mock.calls[2][0]).toMatchObject([{ op: 'MoveVob', vob: 1, to: [10, 30, 30] }]);
+  });
+});
 
 describe('a VOB dragged in the viewport', () => {
   it('becomes an op carrying where it came from, and reaches the main process', async () => {

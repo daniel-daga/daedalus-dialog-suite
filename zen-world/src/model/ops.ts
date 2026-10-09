@@ -1134,6 +1134,17 @@ export function placeBounds(
   return [min[0], min[1], min[2], max[0], max[1], max[2]];
 }
 
+/** Where the pivot must go to put the rotated visual's base on a ground hit. */
+export type GroundPlacement = 'rest' | 'into';
+
+export function groundedPosition(
+  ground: ZenPosition, rotation: ZenRotation, bounds: ZenBounds | null, mode: GroundPlacement,
+): ZenPosition {
+  if (mode === 'into' || bounds === null) return ground;
+  const base = placeBounds(bounds, rotation, [0, 0, 0])[1];
+  return [ground[0], ground[1] - base, ground[2]];
+}
+
 /**
  * A rotation of one VOB in place, with the bounding box refitted for both poses.
  *
@@ -1829,6 +1840,8 @@ export interface ScatterPlacement {
  * D5's subtree and D3's paste needed none of them either. What it adds over a
  * duplicate is that each copy lands where the brush hit rather than on top of
  * its original, turned by the stroke's yaw and stood up on the surface normal.
+ * Rest mode raises the pivot until the rotated visual's minimum Y meets that
+ * hit; into mode keeps the pivot at the hit. Missing bounds use the pivot.
  *
  * **The turn is rigid about the copy's own root.** A palette member may be a
  * subtree — a torch is a `zCVob` with a fire underneath it — and ZenGin VOB
@@ -1849,6 +1862,7 @@ export function scatterVobs(
   placements: readonly ScatterPlacement[],
   bounds: (vob: number) => ZenBounds | null = () => null,
   classProps: (vob: number) => ReadProps | null = () => null,
+  groundPlacement: GroundPlacement = 'rest',
 ): Array<AddVob | SetVobClassProp> {
   // Copies already appended to each list, keyed as `duplicateVobs` keys them —
   // a stroke is many copies of few sources, so this is the correction that
@@ -1868,8 +1882,10 @@ export function scatterVobs(
     const stand = standUpDelta(spun, normal);
     // The delta the whole subtree moves by — both turns, so a descendant gets
     // the same one the root does — about the source's origin, landing the root
-    // on the hit point.
-    const pose = { turn: multiplyRotation(stand, spin), origin, at: position };
+    // on the chosen ground placement point.
+    const turn = multiplyRotation(stand, spin);
+    const rotation = multiplyRotation(turn, from as ZenRotation);
+    const pose = { turn, origin, at: groundedPosition(position, rotation, bounds(source), groundPlacement) };
 
     const tree = posedSubtree(reader, source, pose, bounds, classProps);
     const parent = reader.columns.parent[source];

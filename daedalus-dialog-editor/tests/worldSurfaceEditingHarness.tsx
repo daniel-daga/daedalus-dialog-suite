@@ -77,6 +77,7 @@ export let lastRender: ReturnType<typeof render>;
 
 export async function openWorld(
   cls?: string | readonly string[], parents?: readonly number[], vobNames?: readonly string[],
+  visualBounds: readonly number[] = [-1, 0, -10, 1, 2, 10],
 ) {
   const summary = {
     ...SUMMARY, vobIndex: vobIndex([[0, 0, 0], [10, 20, 30]], cls, parents, vobNames),
@@ -95,7 +96,7 @@ export async function openWorld(
       matrices: new Float32Array(12).buffer,
       vobIds: new Uint32Array([1]).buffer,
       groups: [],
-      bounds: [-1, 0, -10, 1, 2, 10],
+      bounds: visualBounds,
     }],
     stats: { vobsPlaced: 1 },
   } as never);

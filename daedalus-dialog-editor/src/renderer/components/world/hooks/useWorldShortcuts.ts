@@ -58,6 +58,8 @@ export interface WorldShortcutsInput {
   onCopy: () => void;
   onPaste: () => void;
   onDuplicate: () => void;
+  onRestOnGround: () => void;
+  onIntoGround: () => void;
   /** Opens the delete confirm for these VOBs — never deletes. */
   onRequestDeleteVobs: (vobs: readonly number[]) => void;
   /** Opens the waypoint delete confirm. */
@@ -100,7 +102,8 @@ export interface WorldShortcutsInput {
  */
 export function useWorldShortcuts({
   hasWorld, hidden, dialogOpen, waynet, armed, gizmoMode, snapGrid, setGizmoMode,
-  onCopy, onPaste, onDuplicate, onRequestDeleteVobs, onRequestDeleteWaypoint,
+  onCopy, onPaste, onDuplicate, onRestOnGround, onIntoGround,
+  onRequestDeleteVobs, onRequestDeleteWaypoint,
   onDisarm, onRequestSave, onNudgeBegin, onNudgeBy, onNudgeEnd, onHistory,
 }: WorldShortcutsInput): void {
   useEffect(() => {
@@ -190,6 +193,16 @@ export function useWorldShortcuts({
         if (useWorldStore.getState().selection.length === 0) return;
         event.preventDefault();
         onDuplicate();
+        return;
+      }
+
+      // G puts the model's base on the surface; Shift+G retains the original
+      // pivot drop for foliage. Both act on the current selection as one edit.
+      if (key === 'g' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        if (isTypingOrInPopover(event.target) || dialogOpen) return;
+        if (useWorldStore.getState().selection.length === 0) return;
+        event.preventDefault();
+        if (event.shiftKey) onIntoGround(); else onRestOnGround();
         return;
       }
 
@@ -317,7 +330,8 @@ export function useWorldShortcuts({
     };
   }, [
     hasWorld, hidden, dialogOpen, waynet, armed, gizmoMode, snapGrid, setGizmoMode,
-    onCopy, onPaste, onDuplicate, onRequestDeleteVobs, onRequestDeleteWaypoint,
+    onCopy, onPaste, onDuplicate, onRestOnGround, onIntoGround,
+    onRequestDeleteVobs, onRequestDeleteWaypoint,
     onDisarm, onRequestSave, onNudgeBegin, onNudgeBy, onNudgeEnd, onHistory,
   ]);
 }

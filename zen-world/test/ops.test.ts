@@ -82,6 +82,7 @@ import {
   type VobReader,
   type WorldOp,
   type ZenBounds,
+  type ZenPosition,
   type ZenRotation,
 } from '../src/model';
 
@@ -3942,6 +3943,26 @@ describe('a scatter stroke', () => {
     ));
   });
 
+  it('rests the rotated visual on its hit, or buries its pivot when requested', () => {
+    const placement = [{ source: 0, position: [1000, 50, 2000] as ZenPosition, normal: UP, yaw: 0 }];
+    const bounds = (vob: number): ZenBounds | null => vob === 0 ? [-1, -30, -1, 1, 70, 1] : null;
+    const rest = scatterVobs(reader(), placement, bounds);
+    const into = scatterVobs(reader(), placement, bounds, () => null, 'into');
+    expect(addsOf(rest)[0].to!.position).toEqual([1000, 80, 2000]);
+    expect(addsOf(rest)[1].to!.position).toEqual([1000, 180, 2000]);
+    expect(addsOf(into)[0].to!.position).toEqual([1000, 50, 2000]);
+    expect(addsOf(into)[1].to!.position).toEqual([1000, 150, 2000]);
+  });
+
+  it('uses the final scatter rotation when resting a visual', () => {
+    const upright = createVobReader(vobIndex([{ pos: [0, 0, 0] }]));
+    const ops = scatterVobs(upright, [
+      { source: 0, position: [100, 0, 0], normal: [0, 0, 1], yaw: 0 },
+    ], () => [-1, -10, -30, 1, 10, 5]);
+    expect(addsOf(ops)[0].to!.position).toEqual([100, 5, 0]);
+    expect(addsOf(ops)[0].to!.bbox![1]).toBe(0);
+  });
+
   it('carries the class properties, as a duplicate does', () => {
     const lights = createVobReader(vobIndex([
       { name: 'TORCH', cls: 'zCVobLight', pos: [0, 0, 0] },
@@ -4102,6 +4123,24 @@ describe('transforms that carry a subtree (#292)', () => {
   });
 
   describe('dropSubtreesToGround', () => {
+    it('rests a rotated visual on the hit and carries the subtree rigidly', () => {
+      const tilted = createVobReader(vobIndex([
+        { pos: [100, 20, 0], rot: [1, 0, 0, 0, 0, -1, 0, 1, 0] },
+        { parent: 0, pos: [110, 20, 0] },
+      ]));
+      const ops = dropSubtreesToGround(tilted, [{ vob: 0, ground: [100, 0, 0] }],
+        'rest', () => [-1, -10, -30, 1, 10, 5]);
+      // After the quarter turn around X, local Z is world -Y: the base is 5 below the pivot.
+      expect(ops.map((op) => op.to)).toEqual([[100, 5, 0], [110, 5, 0]]);
+    });
+
+    it('keeps the pivot mode and falls back to it when a visual has no bounds', () => {
+      const ground: [number, number, number] = [100, -50, 0];
+      expect(dropSubtreesToGround(reader(), [{ vob: 0, ground }], 'into', () => [-1, -30, -1, 1, 20, 1])[0].to)
+        .toEqual(ground);
+      expect(dropSubtreesToGround(reader(), [{ vob: 0, ground }], 'rest', () => null)[0].to)
+        .toEqual(ground);
+    });
     it('drops the parent onto its ground point and carries its children by the same drop', () => {
       const ops = dropSubtreesToGround(reader(), [{ vob: 0, ground: [100, -50, 0] }]);
       expect(ops.map((op) => [op.vob, op.to])).toEqual([

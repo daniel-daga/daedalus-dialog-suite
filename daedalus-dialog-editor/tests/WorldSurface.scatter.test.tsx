@@ -2,7 +2,7 @@ import React from 'react';
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import type { WorldOp } from 'zen-world';
+import type { AddVob, WorldOp } from 'zen-world';
 import WorldSurface from '../src/renderer/components/world/WorldSurface';
 import { useWorldStore } from '../src/renderer/store/worldStore';
 import { BASE_PROPS, SUMMARY, makeWorldEditorApi, vobIndex, waynetPayload } from './worldFixtures';
@@ -100,7 +100,7 @@ function committedBatch(): WorldOp[] {
   return api.applyWorldOps.mock.calls[0][0] as WorldOp[];
 }
 
-async function openWorld(parents?: readonly number[], names?: readonly string[]) {
+async function openWorld(parents?: readonly number[], names?: readonly string[], withBounds = false) {
   const summary = {
     ...SUMMARY,
     vobIndex: vobIndex([[0, 0, 0], [10, 20, 30]], undefined, parents, names),
@@ -108,14 +108,15 @@ async function openWorld(parents?: readonly number[], names?: readonly string[])
   api.openWorldDialog.mockResolvedValueOnce('C:/Gothic/NewWorld.zen' as never);
   api.openWorld.mockResolvedValueOnce(summary as never);
   api.getWorldMesh.mockResolvedValueOnce({ groups: [], bbox: summary.bbox } as never);
-  api.getWorldVisuals.mockResolvedValueOnce({
-    visuals: [], stats: { vobsPlaced: 0 },
-  } as never);
+  const visuals = withBounds ? [{ name: 'TREE.3DS', source: 'TREE.MRM', count: 1,
+    matrices: new Float32Array(12).buffer, vobIds: new Uint32Array([1]).buffer,
+    groups: [], bounds: [-1, -30, -1, 1, 70, 1] }] : [];
+  api.getWorldVisuals.mockResolvedValueOnce({ visuals, stats: { vobsPlaced: visuals.length } } as never);
   // Every stroke is a structural batch, so every one of them is followed by the
   // renderer re-reading the index whole — persistent rather than one-shot,
   // since a test may paint twice.
   api.refreshWorldIndex.mockResolvedValue(summary as never);
-  api.getWorldVisuals.mockResolvedValue({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+  api.getWorldVisuals.mockResolvedValue({ visuals, stats: { vobsPlaced: visuals.length } } as never);
 
   render(<WorldSurface />);
   fireEvent.click(screen.getByTestId('world-open'));
@@ -230,6 +231,20 @@ describe('arming the brush', () => {
 });
 
 describe('a stroke', () => {
+  it('rests copies by default and can scatter them into the ground', async () => {
+    await openWorld(undefined, undefined, true);
+    await armBrush();
+    await paint();
+    const rest = committedBatch().find((op) => op.op === 'AddVob') as AddVob;
+    expect(rest?.to?.position[1]).toBe(30);
+
+    api.applyWorldOps.mockClear();
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Scatter placement' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Into ground' }));
+    await paint();
+    const into = committedBatch().find((op) => op.op === 'AddVob') as AddVob;
+    expect(into?.to?.position[1]).toBe(0);
+  });
   it('places copies of the palette, in one batch', async () => {
     await openWorld();
     await armBrush();

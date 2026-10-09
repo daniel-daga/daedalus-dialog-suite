@@ -19,8 +19,8 @@
 
 import { type VobReader } from './vobTree';
 import {
-  moveVob, multiplyRotation, rotateVob, standUpDelta, topLevelVobs,
-  type MoveVob, type RotateVob, type ZenBounds, type ZenPosition, type ZenRotation,
+  groundedPosition, moveVob, multiplyRotation, rotateVob, standUpDelta, topLevelVobs,
+  type GroundPlacement, type MoveVob, type RotateVob, type ZenBounds, type ZenPosition, type ZenRotation,
 } from './ops';
 
 /** A VOB a subtree transform moves, and the selected VOB whose origin it turns
@@ -152,6 +152,8 @@ export function rotateSubtreeTo(
 
 /**
  * `dropVobsToGround`, with each dropped VOB's subtree carried by the same drop.
+ * Rest mode places the rotated visual's minimum Y on the hit; into mode puts
+ * its pivot there. A visual with no bounds uses the pivot in either mode.
  *
  * A VOB whose ancestor is dropped too moves with that ancestor and ignores its
  * own ground point: each dropped separately, a tree would be pulled apart.
@@ -159,6 +161,8 @@ export function rotateSubtreeTo(
 export function dropSubtreesToGround(
   reader: VobReader,
   drops: readonly { vob: number; ground: ZenPosition }[],
+  mode: GroundPlacement = 'into',
+  boundsOf: (vob: number) => ZenBounds | null = () => null,
 ): MoveVob[] {
   const groundOf = new Map(drops.map(({ vob, ground }) => [vob, ground]));
   const deltas = new Map<number, ZenPosition>();
@@ -168,7 +172,10 @@ export function dropSubtreesToGround(
     if (!deltas.has(root)) {
       const origin = reader.position(root)!;
       const ground = groundOf.get(root)!;
-      deltas.set(root, [ground[0] - origin[0], ground[1] - origin[1], ground[2] - origin[2]]);
+      const rotation = reader.rotation(root);
+      if (rotation === null) throw new RangeError(`no vob ${root} in the index`);
+      const at = groundedPosition(ground, rotation as ZenRotation, boundsOf(root), mode);
+      deltas.set(root, [at[0] - origin[0], at[1] - origin[1], at[2] - origin[2]]);
     }
     const delta = deltas.get(root)!;
     return moveVob(reader, vob, [from[0] + delta[0], from[1] + delta[1], from[2] + delta[2]]);
