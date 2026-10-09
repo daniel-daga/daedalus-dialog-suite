@@ -24,9 +24,15 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
     __esModule: true,
     default: ReactActual.forwardRef((_props: unknown, ref: React.Ref<{
       raycastDown: () => null; frameVob: () => void; framePoint: () => void;
+      cameraNudgeAxes: () => { right: [number, number, number]; forward: [number, number, number] };
+      beginNudge: () => boolean; previewNudge: () => void;
     }>) => {
+      // A nudge (the edit these suites make) is drawn through the viewport's
+      // gizmo, so the stub answers it: a camera looking down +Z.
       ReactActual.useImperativeHandle(ref, () => ({
         raycastDown: () => null, frameVob: () => undefined, framePoint: () => undefined,
+        cameraNudgeAxes: () => ({ right: [1, 0, 0], forward: [0, 0, 1] }),
+        beginNudge: () => true, previewNudge: () => undefined,
       }));
       return <div data-testid="world-viewport-stub" />;
     }),
@@ -94,6 +100,7 @@ describe('the World bar GMBT quick test (§16.29)', () => {
     await act(async () => { useProjectStore.setState({ gmbtProjectDir: 'C:/mod/gmbt' }); });
     await act(async () => { useWorldStore.getState().selectVob(1); });
     fireEvent.keyDown(window, { key: 'ArrowRight' });
+    fireEvent.keyUp(window, { key: 'ArrowRight' });
     await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
 
     fireEvent.click(screen.getByTestId('world-gmbt-test'));
@@ -146,6 +153,7 @@ describe('the World bar GMBT quick test (§16.29)', () => {
     await act(async () => { useProjectStore.setState({ gmbtProjectDir: 'C:/mod/gmbt' }); });
     await act(async () => { useWorldStore.getState().selectVob(1); });
     fireEvent.keyDown(window, { key: 'ArrowRight' });
+    fireEvent.keyUp(window, { key: 'ArrowRight' });
     await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
 
     fireEvent.click(screen.getByTestId('world-save'));
@@ -174,11 +182,12 @@ describe('the World bar undo/redo buttons', () => {
     api.getWorldHistoryDepth.mockResolvedValueOnce({ undo: 1, redo: 0 } as never);
 
     fireEvent.keyDown(window, { key: 'ArrowRight' });
+    fireEvent.keyUp(window, { key: 'ArrowRight' });
 
     await waitFor(() => expect(screen.getByTestId('world-undo')).toBeEnabled());
     expect(screen.getByTestId('world-redo')).toBeDisabled();
     // The nudge itself still landed — this readout doesn't stand in its way.
-    expect(createVobReader(summary.vobIndex).position(1)).toEqual([20, 20, 30]);
+    expect(createVobReader(summary.vobIndex).position(1)).toEqual([11, 20, 30]);
   });
 
   it('drives undoWorldEdit and applies what it answers, same as Ctrl+Z', async () => {
@@ -188,6 +197,7 @@ describe('the World bar undo/redo buttons', () => {
     await act(async () => { useWorldStore.getState().selectVob(1); });
     api.getWorldHistoryDepth.mockResolvedValueOnce({ undo: 1, redo: 0 } as never);
     fireEvent.keyDown(window, { key: 'ArrowRight' });
+    fireEvent.keyUp(window, { key: 'ArrowRight' });
     await waitFor(() => expect(screen.getByTestId('world-undo')).toBeEnabled());
 
     api.undoWorldEdit.mockResolvedValueOnce([MOVE] as never);
@@ -205,6 +215,7 @@ describe('the World bar undo/redo buttons', () => {
     await act(async () => { useWorldStore.getState().selectVob(1); });
     api.getWorldHistoryDepth.mockResolvedValueOnce({ undo: 1, redo: 0 } as never);
     fireEvent.keyDown(window, { key: 'ArrowRight' });
+    fireEvent.keyUp(window, { key: 'ArrowRight' });
     await waitFor(() => expect(screen.getByTestId('world-undo')).toBeEnabled());
 
     api.undoWorldEdit.mockResolvedValueOnce([MOVE] as never);
