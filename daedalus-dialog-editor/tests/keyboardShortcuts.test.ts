@@ -41,6 +41,8 @@ function bindWorld() {
     onCopy: noop,
     onPaste: noop,
     onDuplicate: noop,
+    onRestOnGround: noop,
+    onIntoGround: noop,
     onRequestDeleteVobs: noop,
     onRequestDeleteWaypoint: noop,
     onDisarm: noop,
