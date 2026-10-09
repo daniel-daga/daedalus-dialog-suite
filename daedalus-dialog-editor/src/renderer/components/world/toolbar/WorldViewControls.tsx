@@ -254,9 +254,9 @@ const WorldViewControls: React.FC<WorldViewControlsProps> = ({
         setting — the icon and the accessible name carry the state, since a
         two-variant button cannot say which of three it is in.
 
-        `WorldScene`'s orange body tint marks the selection in every mode,
-        which is what makes `Off` safe: the selection is still visible with
-        no line on screen. */}
+        `Off` turns `WorldScene`'s orange body tint on, which is what makes
+        it safe: the selection is still visible with no line on screen. In
+        the other two the orange line alone marks it (#362). */}
     <Tooltip title={`Outlines: ${OUTLINE_MODE_LABEL[outlineMode]} — click for ${
       OUTLINE_MODE_LABEL[OUTLINE_MODE_ORDER[(OUTLINE_MODE_ORDER.indexOf(outlineMode) + 1) % OUTLINE_MODE_ORDER.length]]
     }`}

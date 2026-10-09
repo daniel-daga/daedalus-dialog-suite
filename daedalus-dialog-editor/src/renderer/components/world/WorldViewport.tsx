@@ -1567,6 +1567,13 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     viewportRef.current?.outline.setMode(outlineMode);
   }, [outlineMode]);
 
+  // The body tint carries a selection only while no line does (#362). On
+  // `mesh`, like the brightness, because it is the scene's uniform and a new
+  // scene starts untinted.
+  useEffect(() => {
+    sceneRef.current?.setSelectionTint(outlineMode === 'off');
+  }, [outlineMode, mesh]);
+
   // Per-class visibility, on `mesh` because a new scene draws every instance
   // until it is told otherwise, and on `visuals` because a structural op moves
   // VOBs between slots. The scene redraws its last mask over the new slots by

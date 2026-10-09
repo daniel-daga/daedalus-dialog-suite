@@ -18,7 +18,7 @@ import type { InstancedPayload, WorldMeshPayload } from '../src/shared/worldType
 import type { OutlineMode } from '../src/renderer/world/VobOutline';
 import * as mockWorldViewport from './worldViewportMocks';
 
-const mockModes: { applied: string[] } = { applied: [] };
+const mockModes: { applied: string[]; tints: boolean[] } = { applied: [], tints: [] };
 
 jest.mock('three-mesh-bvh', () => mockWorldViewport.mockThreeMeshBvh());
 jest.mock('three', () => mockWorldViewport.mockThree());
@@ -34,6 +34,19 @@ jest.mock('../src/renderer/world/VobOutline', () => {
       setMode(mode: string) {
         mockModes.applied.push(mode);
         super.setMode(mode);
+      }
+    },
+  };
+});
+
+jest.mock('../src/renderer/world/WorldScene', () => {
+  const actual = jest.requireActual('../src/renderer/world/WorldScene');
+  return {
+    ...actual,
+    WorldScene: class extends actual.WorldScene {
+      setSelectionTint(on: boolean) {
+        mockModes.tints.push(on);
+        super.setSelectionTint(on);
       }
     },
   };
@@ -90,6 +103,7 @@ function props(outlineMode: OutlineMode) {
 describe('WorldViewport — the outline mode', () => {
   beforeEach(() => {
     mockModes.applied = [];
+    mockModes.tints = [];
     (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
       observe() {}
       disconnect() {}
@@ -116,6 +130,26 @@ describe('WorldViewport — the outline mode', () => {
     const { unmount } = render(<WorldViewport {...props('off')} />);
 
     expect(mockModes.applied).toEqual(['off']);
+
+    unmount();
+  });
+
+  it('tints a selected VOB only while no outline carries the selection (#362)', () => {
+    const { rerender, unmount } = render(<WorldViewport {...props('all')} />);
+    expect(mockModes.tints.at(-1)).toBe(false);
+
+    rerender(<WorldViewport {...props('selected')} />);
+    expect(mockModes.tints.at(-1)).toBe(false);
+
+    rerender(<WorldViewport {...props('off')} />);
+    expect(mockModes.tints.at(-1)).toBe(true);
+
+    // A new world is a new scene, which starts untinted: the mode is applied
+    // to it again rather than left with the old scene.
+    const count = mockModes.tints.length;
+    rerender(<WorldViewport {...props('off')} mesh={{ ...MESH }} />);
+    expect(mockModes.tints.length).toBeGreaterThan(count);
+    expect(mockModes.tints.at(-1)).toBe(true);
 
     unmount();
   });

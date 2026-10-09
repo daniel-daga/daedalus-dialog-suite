@@ -3071,9 +3071,11 @@ one thing in its pick scene, the props.
 `SELECTED_ATTRIBUTE` sits beside `HIDDEN_ATTRIBUTE` and for the same reason: a
 VOB is one instance inside an `InstancedMesh` shared with every other VOB of its
 visual, so neither `mesh.visible` nor anything on the material can speak about
-one of them. The emphasis is a body tint mixed into `outgoingLight` in the VOB
-shader plus the attribute written into the outline *mask* — no draw call, no
-geometry, no uniform. The line itself is `VobOutline`'s: since 2026-09-01 the
+one of them. The emphasis is the attribute written into the outline *mask*,
+plus a body tint mixed into `outgoingLight` in the VOB shader — no draw call,
+no geometry, no per-VOB uniform. The tint is on only while the outlines are off
+(#362: on top of the line it read as the VOB turning yellow), switched by one
+shared `uSelectTint` uniform. The line itself is `VobOutline`'s: since 2026-09-01 the
 VOB outline is a screen-space pass, one full-screen quad over a two-attachment
 target, and the selection colour is one of the things the mask carries (plan
 §16.12). What §3 refused was an outline pass as a second `InstancedMesh` per
