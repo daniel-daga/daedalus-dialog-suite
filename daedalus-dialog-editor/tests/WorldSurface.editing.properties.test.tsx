@@ -303,23 +303,25 @@ describe('jumping to a VOB from the scene tree', () => {
 // each VOB's own ground point or own normal through a raycast the shell asks
 // the viewport for directly, then builds one batch through `dropVobsToGround`
 // or `alignVobsToNormal` — the same commit path as every other edit here.
-describe('drop to ground', () => {
+// "Into ground" stands the pivot on the hit; resting the model's base is
+// `WorldSurface.editing.transform`'s.
+describe('into ground', () => {
   it('is disabled with nothing selected, and reachable with something', async () => {
     await openWorld();
     act(() => useWorldStore.getState().selectVob(null));
-    expect(screen.getByTestId('world-drop-to-ground')).toBeDisabled();
+    expect(screen.getByTestId('world-into-ground')).toBeDisabled();
 
     // Awaited: every selection issues the per-VOB props read, and its answer
     // lands a microtask later — outside an `act` that has already returned.
     await act(async () => { useWorldStore.getState().selectVob(1); });
-    expect(screen.getByTestId('world-drop-to-ground')).toBeEnabled();
+    expect(screen.getByTestId('world-into-ground')).toBeEnabled();
   });
 
   it('casts down from the VOB\'s own position and commits a MoveVob to the hit point', async () => {
     const summary = await openWorld();
     mockRaycastDown.mockReturnValueOnce({ point: [10, 5, 30], normal: [0, 1, 0] });
 
-    fireEvent.click(screen.getByTestId('world-drop-to-ground'));
+    fireEvent.click(screen.getByTestId('world-into-ground'));
 
     expect(mockRaycastDown).toHaveBeenCalledWith([10, 20, 30]);
     await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledWith([
@@ -333,7 +335,7 @@ describe('drop to ground', () => {
     act(() => useWorldStore.getState().toggleVob(0));
     mockRaycastDown.mockImplementation((origin) => ({ point: [origin[0], 0, origin[2]], normal: [0, 1, 0] }));
 
-    fireEvent.click(screen.getByTestId('world-drop-to-ground'));
+    fireEvent.click(screen.getByTestId('world-into-ground'));
 
     await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
     expect(api.applyWorldOps).toHaveBeenCalledWith([
@@ -346,7 +348,7 @@ describe('drop to ground', () => {
     await openWorld();
     mockRaycastDown.mockReturnValueOnce(null);
 
-    fireEvent.click(screen.getByTestId('world-drop-to-ground'));
+    fireEvent.click(screen.getByTestId('world-into-ground'));
 
     expect(api.applyWorldOps).not.toHaveBeenCalled();
   });

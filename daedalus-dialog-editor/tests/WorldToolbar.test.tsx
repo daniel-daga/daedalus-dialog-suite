@@ -199,7 +199,7 @@ describe('the World bar', () => {
       'world-save', 'world-save-as', 'world-waynet-toggle', 'world-spawns-toggle', 'world-outlines-toggle',
       'world-light-preview-toggle',
       'world-gizmo-translate', 'world-gizmo-rotate',
-      'world-drop-to-ground', 'world-align-to-normal', 'world-duplicate-vob',
+      'world-rest-on-ground', 'world-into-ground', 'world-align-to-normal', 'world-duplicate-vob',
       'world-delete-vob', 'world-undo', 'world-redo',
     ]) {
       expect(screen.getByTestId(testId)).toBeInTheDocument();
@@ -248,7 +248,8 @@ describe('the World bar', () => {
 
     for (const [testId, name] of [
       ['world-undo', 'Undo'], ['world-redo', 'Redo'],
-      ['world-drop-to-ground', 'Drop to ground'], ['world-align-to-normal', 'Align to normal'],
+      ['world-rest-on-ground', 'Rest on ground'], ['world-into-ground', 'Into ground'],
+      ['world-align-to-normal', 'Align to normal'],
       ['world-duplicate-vob', 'Duplicate VOB'], ['world-delete-vob', 'Delete VOB'],
       ['world-save', 'Save world'], ['world-save-as', 'Save world as'], ['world-gmbt-test', 'Quick test'],
       ['world-waynet-toggle', 'Waynet'], ['world-spawns-toggle', 'Spawns'],

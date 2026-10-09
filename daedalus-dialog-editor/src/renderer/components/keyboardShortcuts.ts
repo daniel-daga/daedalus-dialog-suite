@@ -65,8 +65,12 @@ export const KEYBOARD_SHORTCUTS: readonly KeyboardShortcut[] = [
     probe: { listener: 'world', events: [{ key: 'd', ctrlKey: true }] },
   },
   {
-    group: 'World editor', keys: 'Del', action: 'Delete the selection (asks first)',
+    group: 'World editor', keys: 'Del', action: 'Delete the selection (asks first only when children would go too)',
     probe: { listener: 'world', events: [{ key: 'Delete' }] },
+  },
+  {
+    group: 'World editor', keys: 'G / Shift+G', action: 'Rest the selection on the ground / sink its pivot into it',
+    probe: { listener: 'world', events: [{ key: 'g' }, { key: 'G', shiftKey: true }] },
   },
   { group: 'World editor', keys: 'Space', action: 'Place the selected asset (Assets panel); a double-click does too' },
   {
