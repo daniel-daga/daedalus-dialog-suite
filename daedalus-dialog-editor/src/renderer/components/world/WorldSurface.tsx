@@ -1901,7 +1901,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    * it unundoable on that basis; §7 found the way round — the binding keeps
    * the subtree's pointer, so the inverse needs no description either. So this
    * undoes like everything else here, and the confirm below stays for a smaller
-   * reason than the one it was put there for.
+   * reason than the one it was put there for — so it opens only when that
+   * reason holds (see `requestDeleteVobs`).
    *
    * The whole selection, in one batch (#253). It was one VOB at a time because
    * a delete renumbers; `deleteVobs` answers that with the *order* rather than
@@ -1914,6 +1915,18 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     if (current === null || vobs.length === 0) return;
     await commitOps(deleteVobs(vobModelOf(current).reader, vobs));
   }, [commitOps]);
+
+  /** Every way to ask for a VOB delete — the Delete key, the World bar's
+   *  button, the context menu — comes through here. The confirm is only there
+   *  to say that children go too (see the dialog), so a selection with none
+   *  is removed straight away, Ctrl+Z being the way back (#374). */
+  const requestDeleteVobs = useCallback((vobs: readonly number[]) => {
+    const { summary: current } = useWorldStore.getState();
+    if (current === null) return;
+    const { tree } = vobModelOf(current);
+    if (vobs.some((vob) => tree.children(vob).length > 0)) setDeleting(vobs);
+    else void removeVobs(vobs);
+  }, [removeVobs]);
 
   /** Any of the surface's own modal surfaces is up — what
    *  `useWorldShortcuts` takes as `dialogOpen`, and why it takes it. */
@@ -1938,7 +1951,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     onDuplicate: () => void duplicateSelection(),
     onRestOnGround: () => handleDropToGround('rest'),
     onIntoGround: () => handleDropToGround('into'),
-    onRequestDeleteVobs: setDeleting,
+    onRequestDeleteVobs: requestDeleteVobs,
     onRequestDeleteWaypoint: (waypoint, name) => setDeletingWaypoint({ waypoint, name }),
     onDisarm: disarm,
     onRequestSave: () => setConfirmingSave(true),
@@ -1971,11 +1984,10 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     if (gizmoMode === 'rotate') setSnapAngleDegrees(step);
     else setSnapGrid(step);
   }, [gizmoMode]);
-  /** The Delete button — opens the same confirm the Delete key does, never
-   *  a direct removal. */
+  /** The Delete button — the same request the Delete key makes. */
   const requestDeleteSelection = useCallback(
-    () => setDeleting(selection),
-    [selection],
+    () => requestDeleteVobs(selection),
+    [requestDeleteVobs, selection],
   );
 
   return (
@@ -2264,7 +2276,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
           softened — a dialog asserting something false is worse than none. The
           dialog stays for what is left, which is the waypoint dialog's reason
           (§7): the part a user cannot see coming from the selection on
-          screen is that everything *below* it goes too. */}
+          screen is that everything *below* it goes too. So it opens only for
+          a selection that has something below it (#374). */}
       <Dialog open={deleting !== null} onClose={() => setDeleting(null)} maxWidth="xs" fullWidth>
         {/* Named when it is one and counted when it is several: five labels
             in a title is not a title, and "Delete VOB?" over a selection of

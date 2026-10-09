@@ -4080,8 +4080,10 @@ because MUI renders a `Select`'s options as `li` and a `Dialog`'s buttons as
 state check, which catches the case where focus is still on `window`. Both
 halves are needed: the first sees where focus *is*, the second what is *open*.
 
-- **Delete opens a confirm, never commits.** The two delete dialogs stay the
-  only place either delete is sent (§15's requirement in place of an inverse).
+- **Delete commits a leaf, and confirms a subtree.** Both deletes undo (§7),
+  so the VOB dialog opens only when a selected VOB has children — the loss a
+  user cannot see from the selection (#374). The waypoint dialog still opens
+  for every waypoint delete.
 - **Escape clears the selection**, but not while a surface dialog is open —
   it is a second listener on the same keydown as MUI's own Escape-close, and
   would otherwise discard the selection the closing dialog was about.

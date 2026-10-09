@@ -46,3 +46,4 @@
 - #266: A GMBT quick test that fails says why
 - #351: Saving a script on Windows no longer fails while an NPC preview or a world is open
 - #369: Clicking quickly through meshes in the asset browser no longer turns the app white
+- #374: Delete removes a VOB straight away; the confirm only appears when its children would go too

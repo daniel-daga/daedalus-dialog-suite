@@ -20,21 +20,23 @@ describe('deleting a VOB', () => {
   // The op §15 unblocked, and the half of it that is *not* the op. §15's
   // requirement in place of invertibility was that the user knows the history
   // goes before the delete lands; the delete has an inverse since 2026-09-14
-  // (§7), so the confirm stays for the subtree instead.
+  // (§7), so the confirm stays for the subtree instead — and only opens when
+  // there is one (#374).
 
-  /** Select one VOB and ask to delete it, without confirming. */
+  /** Select one VOB and ask to delete it — which deletes a leaf outright, and
+   *  opens the confirm for a VOB with children. */
   async function askToDelete(vob: number) {
     await act(async () => { useWorldStore.getState().selectVob(vob); });
     fireEvent.click(await screen.findByTestId('world-delete-vob'));
   }
 
-  it('is a DeleteVob for the selected VOB, once the warning is confirmed', async () => {
+  it('is a DeleteVob for the selected VOB, with no confirm when it has no children (#374)', async () => {
     const summary = await openWorld();
     api.refreshWorldIndex.mockResolvedValueOnce(summary as never);
     api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
 
     await askToDelete(1);
-    fireEvent.click(screen.getByTestId('world-delete-confirm'));
+    expect(screen.queryByTestId('world-delete-warning')).not.toBeInTheDocument();
 
     await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
     const [ops] = api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]];
@@ -49,9 +51,9 @@ describe('deleting a VOB', () => {
     // an inverse and the earlier edits survive it — and a dialog asserting that
     // would be worse than none. What is left is the part a user cannot see
     // coming from the selection on screen: everything *below* it goes too.
-    await openWorld();
+    await openWorld(undefined, [-1, 0]);
 
-    await askToDelete(1);
+    await askToDelete(0);
 
     const warning = screen.getByTestId('world-delete-warning');
     expect(warning).toHaveTextContent(/scene tree|below it/i);
@@ -62,9 +64,9 @@ describe('deleting a VOB', () => {
   });
 
   it('sends nothing when the warning is dismissed', async () => {
-    await openWorld();
+    await openWorld(undefined, [-1, 0]);
 
-    await askToDelete(1);
+    await askToDelete(0);
     fireEvent.click(screen.getByTestId('world-delete-cancel'));
 
     expect(api.applyWorldOps).not.toHaveBeenCalled();
@@ -104,7 +106,6 @@ describe('deleting a VOB', () => {
     await act(async () => { useWorldStore.getState().selectVob(0); });
     await act(async () => { useWorldStore.getState().toggleVob(1); });
     fireEvent.click(await screen.findByTestId('world-delete-vob'));
-    fireEvent.click(screen.getByTestId('world-delete-confirm'));
 
     await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
     expect(api.applyWorldOps).toHaveBeenCalledTimes(1);
@@ -116,7 +117,7 @@ describe('deleting a VOB', () => {
   });
 
   it('says how many it is about to delete, so the warning is not about one VOB', async () => {
-    await openWorld();
+    await openWorld(undefined, [-1, 0]);
 
     await act(async () => { useWorldStore.getState().selectVob(0); });
     await act(async () => { useWorldStore.getState().toggleVob(1); });
@@ -136,7 +137,6 @@ describe('deleting a VOB', () => {
     api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
 
     await askToDelete(1);
-    fireEvent.click(screen.getByTestId('world-delete-confirm'));
 
     await waitFor(() => expect(api.refreshWorldIndex).toHaveBeenCalled());
     await waitFor(() => expect(useWorldStore.getState().selection).toEqual([]));
@@ -148,7 +148,6 @@ describe('deleting a VOB', () => {
     api.applyWorldOps.mockRejectedValueOnce(new Error('no vob at indexPath'));
 
     await askToDelete(1);
-    fireEvent.click(screen.getByTestId('world-delete-confirm'));
 
     expect(await screen.findByTestId('world-edit-error')).toHaveTextContent(/no vob at indexPath/);
     // Not refreshed: nothing was deleted, so the index the panels read is still
