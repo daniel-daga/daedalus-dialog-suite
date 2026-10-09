@@ -24,3 +24,6 @@ mdk/
 .claude/*
 !.claude/skills/
 !.claude/skills/**
+!.claude/settings.json
+!.claude/hooks/
+!.claude/hooks/**
