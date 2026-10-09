@@ -1900,9 +1900,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     if (vob !== null) handleSelect(vob, additive);
     else if (!additive) selectVob(null);
     setTerrainPoint(point);
-    // An armed add is spent by the ground click it was waiting for — and only
-    // a ground click: a VOB hit is a selection, not a place. A placement is
-    // not spent at all (#364); it waits for the next click.
+    // An armed add is spent by the ground click it was waiting for — and while
+    // one is armed, `PickController` reports nothing but ground clicks. A
+    // placement is not spent at all (#364); it waits for the next click.
     if (point !== null && armed !== null) {
       if (armed.kind === 'place') {
         void placeVobAt(armed.spec, point, randomYaw ? rotationAboutUp(Math.random() * Math.PI * 2) : IDENTITY);
