@@ -11,7 +11,7 @@ import { SUMMARY, makeWorldEditorApi, vobIndex, waynetPayload } from './worldFix
  * The window keydown handler's shortcuts that open an existing confirm rather
  * than commit directly (level-editor.md §17): Delete,
  * Escape, and arrow-key nudge. The delete and Escape paths are gated by the
- * same confirm dialogs `WorldSurface.editing.test.tsx` already exercises —
+ * same confirm dialogs the `WorldSurface.editing.*` suites already exercise —
  * these tests check only that the shortcut *reaches* them.
  */
 
@@ -267,7 +267,7 @@ describe('arrow-key nudge', () => {
   };
 
   /** The one control, which means whichever step the gizmo mode is about —
-   *  ported from `WorldSurface.editing.test.tsx`'s `chooseStep`. */
+   *  ported from `WorldSurface.editing.transform.test.tsx`'s `chooseStep`. */
   const chooseStep = async (label: string) => {
     fireEvent.mouseDown(within(screen.getByTestId('world-snap')).getByRole('combobox'));
     fireEvent.click(await screen.findByRole('option', { name: label }));
