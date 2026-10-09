@@ -161,6 +161,38 @@ describe('WorldAssetPreview', () => {
     await waitFor(() => expect(load).toHaveBeenCalledWith('NW_WOOD.TGA', 256));
   });
 
+  // #369: `WebGLRenderer.dispose()` keeps the GL context alive until the
+  // canvas is collected, and Chromium kills the *oldest* context past about
+  // sixteen — the World viewport's. Clicking through the browser built one
+  // context per file, so a few seconds of it blanked the app until a restart.
+  it('releases each mesh preview\'s GL context when the browser moves on', async () => {
+    const THREE = jest.requireMock('three') as typeof import('three');
+    const created = jest.fn();
+    const released = jest.fn();
+    const { WebGLRenderer } = THREE;
+    jest.spyOn(THREE, 'WebGLRenderer').mockImplementation(((...args: unknown[]) => {
+      const renderer = new (WebGLRenderer as unknown as new (...a: unknown[]) => { forceContextLoss: () => void })(...args);
+      created();
+      jest.spyOn(renderer, 'forceContextLoss').mockImplementation(released);
+      return renderer;
+    }) as never);
+    const loadVisual = jest.fn(async (name: string) => ({ ...crate(), name, source: name }));
+    const { rerender, unmount } = render(
+      <WorldAssetPreview path="Meshes/A.MRM" loadTexture={noVisual} loadVisual={loadVisual} />,
+    );
+
+    await waitFor(() => expect(created).toHaveBeenCalledTimes(1));
+    for (const [shown, next] of ['B.MRM', 'C.MRM', 'D.MRM'].entries()) {
+      rerender(<WorldAssetPreview path={`Meshes/${next}`} loadTexture={noVisual} loadVisual={loadVisual} />);
+      await waitFor(() => expect(created).toHaveBeenCalledTimes(shown + 2));
+      // Every preview but the one on screen has handed its context back.
+      expect(released).toHaveBeenCalledTimes(shown + 1);
+    }
+
+    unmount();
+    expect(released).toHaveBeenCalledTimes(4);
+  });
+
   // #294: a mod's source file a GMBT build has not compiled yet resolves to
   // nothing, and "the binding resolves no geometry for it" read as a broken
   // asset rather than as a step not taken.

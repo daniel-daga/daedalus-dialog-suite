@@ -91,6 +91,11 @@ export function useVisualPreviewCanvas(
       controls.dispose();
       preview.dispose();
       renderer.dispose();
+      // `dispose` keeps the GL context until the canvas is collected, and each
+      // previewed file gets a fresh canvas: clicking through the browser piled
+      // up contexts past Chromium's ~16, which kills the oldest — the World
+      // viewport's — and blanked the app (#369).
+      renderer.forceContextLoss();
     };
     });
 

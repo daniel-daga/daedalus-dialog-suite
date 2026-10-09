@@ -118,6 +118,9 @@ export class ViewportRenderer {
     this.controls.dispose();
     this.outline.dispose();
     this.renderer.dispose();
+    // The header's point: `dispose` keeps the context, and a few world reopens
+    // ran past the cap (#369).
+    this.renderer.forceContextLoss();
     this.host.removeChild(this.renderer.domElement);
   }
 }

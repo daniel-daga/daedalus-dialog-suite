@@ -91,6 +91,8 @@ export class ThumbnailRenderer {
 
   dispose(): void {
     this.renderer?.dispose();
+    // `dispose` keeps the GL context until the canvas is collected (#369).
+    this.renderer?.forceContextLoss();
     this.renderer = null;
   }
 

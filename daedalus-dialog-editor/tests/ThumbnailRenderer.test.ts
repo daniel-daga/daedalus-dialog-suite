@@ -73,6 +73,19 @@ describe('ThumbnailRenderer', () => {
     render.mockRestore();
   });
 
+  it('releases its GL context when disposed, not when the canvas is collected (#369)', async () => {
+    const renderer = new ThumbnailRenderer();
+    const render = jest.spyOn(THREE.WebGLRenderer.prototype, 'render').mockImplementation(() => {});
+    const loseContext = jest.spyOn(THREE.WebGLRenderer.prototype, 'forceContextLoss');
+    await renderer.renderVisual(VISUAL, async () => null);
+
+    renderer.dispose();
+
+    expect(loseContext).toHaveBeenCalledTimes(1);
+    loseContext.mockRestore();
+    render.mockRestore();
+  });
+
   it("fetches the visual's textures and applies them before the one draw", async () => {
     const renderer = new ThumbnailRenderer();
     const applied: boolean[] = [];

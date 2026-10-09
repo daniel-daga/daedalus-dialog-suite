@@ -55,6 +55,7 @@ export function mockThree() {
       setClearColor() {}
       clear() {}
       dispose() {}
+      forceContextLoss() {}
       getContext() { return { COLOR: 0x1800, clearBufferfv: () => {}, finish: () => {}, readPixels: () => {} }; }
     },
   };

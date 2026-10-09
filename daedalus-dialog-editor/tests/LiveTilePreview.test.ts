@@ -201,6 +201,8 @@ describe('LiveTilePreview', () => {
   it('disposes the scene and the context', async () => {
     const { live } = preview();
     const disposeRenderer = jest.spyOn(THREE.WebGLRenderer.prototype, 'dispose');
+    // `dispose` keeps the GL context until the canvas is collected (#369).
+    const loseContext = jest.spyOn(THREE.WebGLRenderer.prototype, 'forceContextLoss');
     await live.show(VISUAL.name, host, 96);
     tick(0);
 
@@ -208,5 +210,6 @@ describe('LiveTilePreview', () => {
 
     expect(host.contains(live.canvas)).toBe(false);
     expect(disposeRenderer).toHaveBeenCalled();
+    expect(loseContext).toHaveBeenCalled();
   });
 });

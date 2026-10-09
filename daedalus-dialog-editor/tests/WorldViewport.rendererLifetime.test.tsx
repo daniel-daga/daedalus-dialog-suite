@@ -29,7 +29,7 @@ import type { InstancedPayload, WorldMeshPayload } from '../src/shared/worldType
 import * as mockWorldViewport from './worldViewportMocks';
 
 /** Every renderer the viewport has built, and whether it was disposed. */
-const mockRenderers: Array<{ canvas: HTMLCanvasElement; disposed: number }> = [];
+const mockRenderers: Array<{ canvas: HTMLCanvasElement; disposed: number; contextLost: number }> = [];
 
 jest.mock('three-mesh-bvh', () => mockWorldViewport.mockThreeMeshBvh());
 jest.mock('three', () => {
@@ -37,13 +37,14 @@ jest.mock('three', () => {
   return {
     ...base,
     WebGLRenderer: class extends base.WebGLRenderer {
-      private entry = { canvas: this.domElement, disposed: 0 };
+      private entry = { canvas: this.domElement, disposed: 0, contextLost: 0 };
       constructor(...args: unknown[]) {
         super(...(args as []));
         mockRenderers.push(this.entry);
       }
 
       dispose() { this.entry.disposed += 1; }
+      forceContextLoss() { this.entry.contextLost += 1; }
     },
   };
 });
@@ -174,9 +175,11 @@ describe('WorldViewport — what a structural op does not rebuild', () => {
     expect(canvas.isConnected).toBe(true);
 
     // And it does go when the viewport does — the context is released with the
-    // world, not kept for a surface nobody is looking at.
+    // world, not kept for a surface nobody is looking at. `dispose` alone keeps
+    // it until the canvas is collected, so a few reopens ran past the cap (#369).
     unmount();
     expect(mockRenderers[0].disposed).toBe(1);
+    expect(mockRenderers[0].contextLost).toBe(1);
     expect(canvas.isConnected).toBe(false);
   });
 
