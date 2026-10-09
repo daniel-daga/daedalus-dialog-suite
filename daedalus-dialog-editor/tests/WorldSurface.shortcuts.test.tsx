@@ -41,10 +41,17 @@ const api = makeWorldEditorApi();
 /** The last `render`, for the tests that re-render the surface hidden. */
 let lastRender: ReturnType<typeof render> | null = null;
 
-async function openWorld() {
+/** `withChild` gives VOB 1 a child, VOB 2 — a delete that takes more than the
+ *  selection, which is when the confirm still opens (#374). */
+async function openWorld(withChild = false) {
   // A fresh vobIndex per call: a committed op mutates it in place, and a
   // shared object would carry one test's move into the next.
-  const summary = { ...SUMMARY, vobIndex: vobIndex([[0, 0, 0], [10, 20, 30]]) };
+  const summary = {
+    ...SUMMARY,
+    vobIndex: withChild
+      ? vobIndex([[0, 0, 0], [10, 20, 30], [10, 20, 40]], 'zCVob', [-1, -1, 1])
+      : vobIndex([[0, 0, 0], [10, 20, 30]]),
+  };
   api.openWorldDialog.mockResolvedValueOnce('C:/Gothic/NewWorld.zen' as never);
   api.openWorld.mockResolvedValueOnce(summary as never);
   api.getWorldMesh.mockResolvedValueOnce({ groups: [], bbox: summary.bbox } as never);
@@ -70,21 +77,46 @@ afterEach(() => {
 });
 
 describe('the Delete key', () => {
-  it('opens the VOB delete confirm for a single selected VOB', async () => {
+  it('deletes a VOB with no children straight away — the delete undoes (#374)', async () => {
     await openWorld();
     await act(async () => { useWorldStore.getState().selectVob(1); });
 
     fireEvent.keyDown(window, { key: 'Delete' });
 
+    expect(screen.queryByTestId('world-delete-warning')).not.toBeInTheDocument();
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    const [ops] = api.applyWorldOps.mock.calls[0] as [Array<{ op: string; vob: number }>];
+    expect(ops).toMatchObject([{ op: 'DeleteVob', vob: 1 }]);
+  });
+
+  it('deletes a multi-VOB selection of leaves straight away too, as one batch', async () => {
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVobs([0, 1]); });
+
+    fireEvent.keyDown(window, { key: 'Delete' });
+
+    expect(screen.queryByTestId('world-delete-warning')).not.toBeInTheDocument();
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    const [ops] = api.applyWorldOps.mock.calls[0] as [Array<{ op: string; vob: number }>];
+    expect(ops).toMatchObject([{ op: 'DeleteVob', vob: 1 }, { op: 'DeleteVob', vob: 0 }]);
+  });
+
+  it('still opens the confirm for a VOB with children, since they go too', async () => {
+    await openWorld(true);
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+
+    fireEvent.keyDown(window, { key: 'Delete' });
+
     expect(screen.getByTestId('world-delete-warning')).toBeVisible();
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId('world-delete-confirm'));
     await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
     const [ops] = api.applyWorldOps.mock.calls[0] as [Array<{ op: string; vob: number }>];
     expect(ops).toMatchObject([{ op: 'DeleteVob', vob: 1 }]);
   });
 
-  it('opens the confirm for a multi-VOB selection too, naming the count (#253)', async () => {
-    await openWorld();
+  it('opens the confirm for a multi-VOB selection holding a subtree, naming the count (#253)', async () => {
+    await openWorld(true);
     await act(async () => { useWorldStore.getState().selectVobs([0, 1]); });
 
     fireEvent.keyDown(window, { key: 'Delete' });
@@ -192,7 +224,7 @@ describe('Ctrl+Z and Ctrl+Y', () => {
     // The dialog names a VOB by flat index. An undo of a structural op
     // renumbers, and the confirm would then remove whatever had moved into that
     // index.
-    await openWorld();
+    await openWorld(true);
     await act(async () => { useWorldStore.getState().selectVob(1); });
     fireEvent.keyDown(window, { key: 'Delete' });
     await screen.findByTestId('world-delete-warning');
@@ -235,7 +267,7 @@ describe('the Escape key', () => {
   });
 
   it('does not clear the selection while the delete confirm is open, so the dialog is not fighting the shortcut over it', async () => {
-    await openWorld();
+    await openWorld(true);
     await act(async () => { useWorldStore.getState().selectVob(1); });
     fireEvent.keyDown(window, { key: 'Delete' });
     expect(screen.getByTestId('world-delete-warning')).toBeVisible();
@@ -447,7 +479,7 @@ describe('arrow-key nudge', () => {
     // Focus can still be on `window` the instant a dialog opens, so the
     // popover check alone would let this through — the open-dialog state
     // guard is the other half.
-    await openWorld();
+    await openWorld(true);
     await act(async () => { useWorldStore.getState().selectVob(1); });
     fireEvent.keyDown(window, { key: 'Delete' });
     expect(screen.getByTestId('world-delete-warning')).toBeVisible();

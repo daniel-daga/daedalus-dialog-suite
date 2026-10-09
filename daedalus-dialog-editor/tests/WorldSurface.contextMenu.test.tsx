@@ -36,8 +36,8 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
 
 const api = makeWorldEditorApi();
 
-async function openWorld() {
-  const summary = { ...SUMMARY, vobIndex: vobIndex([[0, 0, 0], [10, 20, 30]]) };
+async function openWorld(parents?: number[]) {
+  const summary = { ...SUMMARY, vobIndex: vobIndex([[0, 0, 0], [10, 20, 30]], 'zCVob', parents) };
   api.openWorldDialog.mockResolvedValueOnce('C:/Gothic/NewWorld.zen' as never);
   api.openWorld.mockResolvedValueOnce(summary as never);
   api.getWorldMesh.mockResolvedValueOnce({ groups: [], bbox: summary.bbox } as never);
@@ -182,7 +182,19 @@ describe('the VOB context menu', () => {
     });
   });
 
-  it('opens the existing delete confirm from the Delete item, rather than deleting directly', async () => {
+  it('opens the existing delete confirm from the Delete item for a VOB with children', async () => {
+    await openWorld([-1, 0]);
+
+    await act(async () => {
+      fireEvent.contextMenu(screen.getByTestId('world-vob-row-0'), { clientX: 50, clientY: 60 });
+    });
+    fireEvent.click(await screen.findByTestId('world-context-delete'));
+
+    expect(screen.getByTestId('world-delete-warning')).toBeVisible();
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+  });
+
+  it('deletes a VOB with no children from the Delete item straight away (#374)', async () => {
     await openWorld();
 
     await act(async () => {
@@ -190,8 +202,9 @@ describe('the VOB context menu', () => {
     });
     fireEvent.click(await screen.findByTestId('world-context-delete'));
 
-    expect(screen.getByTestId('world-delete-warning')).toBeVisible();
-    expect(api.applyWorldOps).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('world-delete-warning')).not.toBeInTheDocument();
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([{ op: 'DeleteVob', vob: 1 }]);
   });
 
   it('actually hides the right-clicked VOB\'s class, not just offering to', async () => {

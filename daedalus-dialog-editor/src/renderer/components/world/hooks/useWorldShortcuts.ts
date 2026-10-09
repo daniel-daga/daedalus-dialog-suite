@@ -58,7 +58,8 @@ export interface WorldShortcutsInput {
   onCopy: () => void;
   onPaste: () => void;
   onDuplicate: () => void;
-  /** Opens the delete confirm for these VOBs — never deletes. */
+  /** Asks to delete these VOBs — the surface decides whether that needs its
+   *  confirm (#374). */
   onRequestDeleteVobs: (vobs: readonly number[]) => void;
   /** Opens the waypoint delete confirm. */
   onRequestDeleteWaypoint: (waypoint: number, name: string) => void;

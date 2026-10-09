@@ -240,9 +240,9 @@ const WorldEditControls: React.FC<WorldEditControlsProps> = ({
       )}
     </Stack>
     {/* The one destructive edit in the surface, and the only one behind a
-        confirm. The whole selection since #253: a delete renumbers, which
-        `deleteVobs` answers with the order the batch is applied in rather
-        than with a refusal. The tooltip carries the Delete-key shortcut
+        confirm — when the selection has children (#374). The whole selection
+        since #253: a delete renumbers, which `deleteVobs` answers with the
+        order the batch is applied in rather than with a refusal. The tooltip carries the Delete-key shortcut
         (slice 1) beside the label, and the count when there is one. */}
     <Tooltip title={selectionCount > 1 ? `Delete ${selectionCount} VOBs… (Del)` : 'Delete VOB… (Del)'}>
       <span>

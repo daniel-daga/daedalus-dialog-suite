@@ -71,8 +71,8 @@ const WorldVobContextMenu: React.FC<WorldVobContextMenuProps> = ({
   makeChildren, folders, onAddSelectionToFolder, onCreateFolderWithSelection,
 }) => {
   /** Every item takes its action and closes the menu — nothing here stays
-   *  open after a click, including Delete, which only opens the existing
-   *  confirm dialog. */
+   *  open after a click, including Delete, which makes the same request the
+   *  Delete key does. */
   const run = (action: () => void) => () => { onClose(); action(); };
 
   // "Add to Folder ▸" — MUI has no built-in nested menu, so this is a second
