@@ -1,7 +1,7 @@
 /**
  * Fly navigation — the first-person half of the viewport's camera (plan
  * §16.26 row 3). Right-mouse-hold looks, WASD moves, Space/X climbs and
- * descends, Shift is faster, and
+ * descends, Shift is faster, Ctrl slower (#363), and
  * the speed comes from how far the orbit pivot was when the hold began, so a
  * 1 km island and a barrel are both crossable at a sensible pace.
  *
@@ -14,7 +14,7 @@
 import * as THREE from 'three';
 import {
   Fly, flyMoveFor, flySpeedFor, pivotAhead,
-  FAST_MULTIPLIER, MIN_FLY_SPEED, MAX_FLY_SPEED, LOOK_RADIANS_PER_PIXEL,
+  FAST_MULTIPLIER, SLOW_MULTIPLIER, MIN_FLY_SPEED, MAX_FLY_SPEED, LOOK_RADIANS_PER_PIXEL,
 } from '../src/renderer/world/flyNav';
 
 const lookingDownMinusZ = () => {
@@ -128,6 +128,22 @@ describe('flyNav', () => {
     fly.release('ShiftLeft', false);
     fly.step(200);
     expect(camera.position.z).toBeCloseTo(-FAST_MULTIPLIER - 1, 9);
+  });
+
+  test('Ctrl divides the speed for as long as it is held', () => {
+    const camera = lookingDownMinusZ();
+    const fly = new Fly(camera, 10);
+
+    fly.press('ControlLeft', false, true);
+    fly.press('KeyW', false, true);
+    fly.step(0);
+    fly.step(100);
+    expect(SLOW_MULTIPLIER).toBeLessThan(1);
+    expect(camera.position.z).toBeCloseTo(-SLOW_MULTIPLIER, 9);
+
+    fly.release('ControlLeft', false, false);
+    fly.step(200);
+    expect(camera.position.z).toBeCloseTo(-SLOW_MULTIPLIER - 1, 9);
   });
 
   test('a frame after a long stall moves one bounded step, not the whole stall', () => {

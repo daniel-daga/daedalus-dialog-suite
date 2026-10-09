@@ -2,8 +2,8 @@ import * as THREE from 'three';
 
 // Fly navigation — the first-person half of the camera, beside the orbit in
 // `cameraNav` (plan §16.26 row 3). The idiom every 3D editor shares: hold the
-// right button to look, WASD to move, Space/X for up/down, Shift to hurry. No
-// mode to enter and none to leave, which is what lets it share the viewport
+// right button to look, WASD to move, Space/X for up/down, Shift to hurry, Ctrl
+// to creep (#363). No mode to enter and none to leave, which is what lets it share the viewport
 // with a right *click* that opens the context menu — the hold and the click
 // are told apart by whether anything moved (`moved`).
 //
@@ -28,6 +28,9 @@ export function flyMoveFor(code: string): FlyMove | null {
  *  per width. */
 export const LOOK_RADIANS_PER_PIXEL = 0.003;
 export const FAST_MULTIPLIER = 4;
+/** Ctrl's factor: the inverse of Shift's, for lining up on a barrel from a
+ *  pivot that set the pace for a whole hillside. */
+export const SLOW_MULTIPLIER = 1 / FAST_MULTIPLIER;
 /** Three units are metres (`ZEN_TO_THREE_SCALE`). Two metres a second is a
  *  walk indoors; two kilometres a second crosses the largest retail world in
  *  under a second, which is as fast as anyone can steer. */
@@ -70,6 +73,7 @@ export function turnCamera(camera: THREE.Camera, dx: number, dy: number): void {
 export class Fly {
   private readonly held = new Set<FlyMove>();
   private fast = false;
+  private slow = false;
   private last: number | null = null;
   /** Whether the hold turned or moved the camera at all — what tells a fly
    *  from a right click. */
@@ -77,7 +81,7 @@ export class Fly {
 
   constructor(
     private readonly camera: THREE.Camera,
-    /** Metres per second, before Shift. */
+    /** Metres per second, before Shift or Ctrl. */
     readonly speed: number,
   ) {}
 
@@ -89,17 +93,19 @@ export class Fly {
 
   /** A key went down. True if the fly took it, so the caller can keep it from
    *  whoever else binds that letter. `shiftKey` is read on every key event,
-   *  which is how Shift itself is seen going down and up. */
-  press(code: string, shiftKey: boolean): boolean {
+   *  which is how Shift itself is seen going down and up; `ctrlKey` likewise. */
+  press(code: string, shiftKey: boolean, ctrlKey = false): boolean {
     this.fast = shiftKey;
+    this.slow = ctrlKey;
     const move = flyMoveFor(code);
     if (move === null) return false;
     this.held.add(move);
     return true;
   }
 
-  release(code: string, shiftKey: boolean): void {
+  release(code: string, shiftKey: boolean, ctrlKey = false): void {
     this.fast = shiftKey;
+    this.slow = ctrlKey;
     const move = flyMoveFor(code);
     if (move !== null) this.held.delete(move);
   }
@@ -112,7 +118,7 @@ export class Fly {
     this.last = now;
     if (this.held.size === 0 || dt === 0) return;
 
-    const distance = this.speed * (this.fast ? FAST_MULTIPLIER : 1) * dt;
+    const distance = this.speed * (this.fast ? FAST_MULTIPLIER : 1) * (this.slow ? SLOW_MULTIPLIER : 1) * dt;
     stride.set(
       (this.held.has('right') ? 1 : 0) - (this.held.has('left') ? 1 : 0),
       0,

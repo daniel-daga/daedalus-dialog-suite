@@ -14,7 +14,8 @@ import ViewListIcon from '@mui/icons-material/ViewList';
 import { FixedSizeList as List, type ListChildComponentProps, areEqual } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
 import {
-  ASSET_FORMATS, assetFormat, assetRole, compileState, isFavorite, isSourceAsset, type AssetFormat,
+  ASSET_FORMATS, assetFormat, assetRole, compileState, isFavorite, isSourceAsset, searchStem, sourceNameOf,
+  type AssetFormat,
 } from 'zen-world';
 import type { AssetCatalog, VfsEntry, VfsSearch } from '../../../shared/worldTypes';
 import type { AssetThumbnails } from '../../world/assetThumbnails';
@@ -40,10 +41,12 @@ import { isPlaceableVisual } from './WorldAssetPreview';
 //     capped set of hits, each carrying the directory it was found in (#241).
 //   - **null means "nothing here to list".** `vfsList` answers null for a path
 //     that is not there and for a file alike, and neither is an error.
-//   - **the names are the compiled ones.** A VOB names its source asset
-//     (`.3DS`, `.ASC`, `.TGA`); the VFS holds what the asset compiler produced
-//     (`.MRM`, `.MDL`, `-C.TEX`). This shows the latter, because that is what
-//     is actually there.
+//   - **a listing's names are the compiled ones.** A VOB names its source
+//     asset (`.3DS`, `.ASC`, `.TGA`); the VFS holds what the asset compiler
+//     produced (`.MRM`, `.MDL`, `-C.TEX`). A directory shows the latter,
+//     because that is what is actually there. The search does not (#361): it
+//     answers the name a modder typed and a VOB carries, so a compiled mesh or
+//     texture hit is named by its source — see `sourceHits`.
 
 const ROW_HEIGHT = 26;
 
@@ -97,6 +100,28 @@ function origin(entry: VfsEntry, labels: readonly string[], only: number | null)
 function pathOf(entry: VfsEntry, showing: string): string {
   const where = entry.directory ?? showing;
   return where === '/' ? entry.name : `${where}/${entry.name}`;
+}
+
+/**
+ * A search's hits as the modder names them (#361): a compiled mesh, morph mesh
+ * or texture under its source name, which previews and places exactly as the
+ * compiled one does because the binding resolves it back. Two compiled forms of
+ * one source (`.MRM` and `.MSH`) are one hit, and a hit whose source name no
+ * longer holds the needle goes — the walk was for `searchStem(needle)`, and a
+ * row that does not show what was typed reads as a wrong answer.
+ */
+function sourceHits(matches: readonly VfsEntry[], needle: string): VfsEntry[] {
+  const lower = needle.toLowerCase();
+  const seen = new Set<string>();
+  const hits: VfsEntry[] = [];
+  for (const match of matches) {
+    const name = match.type === 'file' ? sourceNameOf(match.name) ?? match.name : match.name;
+    const key = `${match.type}:${name.toUpperCase()}`;
+    if (!name.toLowerCase().includes(lower) || seen.has(key)) continue;
+    seen.add(key);
+    hits.push(name === match.name ? match : { ...match, name });
+  }
+  return hits;
 }
 
 interface RowData {
@@ -357,9 +382,9 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
     // Debounced: every keystroke would otherwise walk the whole namespace,
     // and the walk the user meant is the one after the last letter.
     const timer = setTimeout(() => {
-      searchAssets(needle)
+      searchAssets(searchStem(needle))
         .then((found) => {
-          if (current) setSearch({ status: 'ready', matches: found.matches, truncated: found.truncated });
+          if (current) setSearch({ status: 'ready', matches: sourceHits(found.matches, needle), truncated: found.truncated });
         })
         // A refused search ("No world is open") is a failure and must not read
         // as "nothing anywhere matches" — the same distinction the listing makes.

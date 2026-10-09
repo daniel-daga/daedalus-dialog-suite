@@ -65,6 +65,9 @@ export interface PickControllerOptions {
   /** Undefined where the surface offers no menu — then a right-click does
    *  nothing at all, the browser's own menu included. */
   contextMenu: () => ((vob: number, at: { left: number; top: number }) => void) | undefined;
+  /** Defined while a placement is armed (#364): a right-click then puts it
+   *  down, and opens no menu. */
+  cancelArmed?: () => (() => void) | undefined;
   /** Where a click landed, in three space: the fallback pivot for a later drag
    *  that begins over the sky. */
   rememberPick: (at: THREE.Vector3) => void;
@@ -312,6 +315,8 @@ export class PickController {
     // The right button was a fly, not a click: the menu it would open at the
     // release stays shut, and so does the browser's.
     if (o.consumeFly()) { event.preventDefault(); return; }
+    const cancel = o.cancelArmed?.();
+    if (cancel !== undefined) { event.preventDefault(); cancel(); return; }
     const open = o.contextMenu();
     if (open === undefined) return;
     event.preventDefault();

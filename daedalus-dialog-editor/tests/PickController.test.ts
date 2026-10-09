@@ -60,6 +60,7 @@ function harness({
   gesture = false,
   fly = false,
   menu = true,
+  armed = false,
   hasMesh = true,
   markerUnderCursor = NO_PICK,
   vobPositions = { 5: [500, 60, 700] as ZenPosition, 8: [800, 10, 900] as ZenPosition },
@@ -116,6 +117,7 @@ function harness({
   const menus: Array<[number, { left: number; top: number }]> = [];
   const remembered: THREE.Vector3[] = [];
   const pivots: Array<[THREE.Vector3, ZenPosition]> = [];
+  let cancels = 0;
   let disposed = false;
 
   const controller = new PickController({
@@ -133,6 +135,7 @@ function harness({
     consumeGesture: () => gesture,
     consumeFly: () => fly,
     contextMenu: () => (menu ? (vob, at) => { menus.push([vob, at]); } : undefined),
+    cancelArmed: () => (armed ? () => { cancels += 1; } : undefined),
     onPick: (vob, terrain, additive) => { picked.push([vob, terrain, additive]); },
     onSelectWaypoint: (waypoint) => { waypoints.push(waypoint); },
     rememberPick: (at) => { remembered.push(at.clone()); },
@@ -144,6 +147,7 @@ function harness({
   return {
     controller, canvas, controls, picked, waypoints, menus, remembered, pivots,
     picks: () => picks,
+    cancels: () => cancels,
     markerPicks: () => markerPicks,
     dispose: () => { disposed = true; },
   };
@@ -446,6 +450,29 @@ describe('PickController — a right-click', () => {
     expect(h.menus).toEqual([]);
     expect(h.picks()).toBe(0);
     expect(event.defaultPrevented).toBe(true);
+  });
+
+  // #364: a placement stays armed for click after click, and a right-click in
+  // the world is how it is put down — so that click opens no menu as well.
+  it('cancels an armed placement instead of opening the menu', async () => {
+    const h = harness({ vobUnderCursor: 5, armed: true });
+
+    const event = rightClick(h.canvas);
+    await settle();
+
+    expect(h.cancels()).toBe(1);
+    expect(h.menus).toEqual([]);
+    expect(h.picks()).toBe(0);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('leaves an armed placement to the end of a fly, which is a look, not a cancel', async () => {
+    const h = harness({ armed: true, fly: true });
+
+    rightClick(h.canvas);
+    await settle();
+
+    expect(h.cancels()).toBe(0);
   });
 
   it('leaves the browser its own menu where the surface offers none', async () => {

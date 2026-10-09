@@ -1150,6 +1150,14 @@ browser.
   everything. The browser's filter box *is* this call: hits from elsewhere name
   their directory on the row, and opening one goes to its own path rather than
   to the path being browsed.
+  A hit is **named by its source** where that is one name — `.MRM`/`.MSH` as
+  `.3DS`, `.MMB` as `.MMS`, `-C.TEX` as `.TGA` (#361): a retail install mounts
+  only compiled files, while a VOB, Spacer and the catalogue all say `.3DS`, so
+  a search answering `.MRM` read as "the tree is not there". `vfsResolve` maps
+  the source name back, so it previews and places as the compiled one does. A
+  typed source extension is dropped before the walk (`searchStem`); models keep
+  their compiled name, since an `.MDL` comes from an `.ASC` or an `.MDS`. A
+  directory listing still shows what is actually there.
 
   **Retail root measurement (Steam Gothic II, 2026-09-27):** `describe-vfs-root.js`
   mounted six retail VDFs and the three loose `_compiled` trees. The merged
@@ -4137,8 +4145,12 @@ open. Each opens its dialog straight away; where the result goes is the
 ground point already chosen, or — with none chosen — the *next* ground
 click: the confirm reads "Place on next click", the surface holds an
 `armed` add, the status bar says what it is waiting for beside a Cancel, and
-Escape drops it. The next terrain pick spends it, one click one add; a VOB
-hit is a selection, not a place. The Assets panel's **Place in world** arms
+Escape drops it. The next terrain pick spends an NPC or a waypoint, one click
+one add; a VOB hit is a selection, not a place. A **placement is not spent**
+(#364): it places on every ground click until Escape, Cancel or a right-click
+in the world — one that is not the end of a fly — puts it down, and a
+"Random Y" box beside the hint turns each one by the scatter brush's
+`rotationAboutUp`. The Assets panel's **Place in world** arms
 the previewed mesh directly, with no dialog — the gesture the picker used to
 need was preview, switch tabs, click the ground, open the dialog, "Use
 previewed", Place. Insert NPC's waypoint field offers the world's own names:

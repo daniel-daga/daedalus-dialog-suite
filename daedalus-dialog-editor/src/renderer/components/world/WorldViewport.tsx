@@ -221,6 +221,9 @@ export interface WorldViewportProps {
    * on the canvas is the browser's own.
    */
   onVobContextMenu?: (vob: number, position: { left: number; top: number }) => void;
+  /** Defined while a placement is armed: a right-click that is not the end of
+   *  a fly puts it down instead of opening the menu (#364). */
+  onCancelArmed?: () => void;
   /** What the gizmo drives. Empty hides it; the gizmo sits on the last entry. */
   selection: readonly number[];
   /**
@@ -487,7 +490,7 @@ const NO_BODY_REQUESTS: ReadonlyMap<string, NpcBodyRequest> = new Map();
 
 const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(({
   mesh, visuals, vobIndex, bbox, waynet, showWaynet, spawns, npcBodyRequests = NO_BODY_REQUESTS, showSpawns, routines, spawnTime, spawnState,
-  showWaypointNames, loadTexture, onTextureFailures, onCameraSlot, onPick, onVobContextMenu,
+  showWaypointNames, loadTexture, onTextureFailures, onCameraSlot, onPick, onVobContextMenu, onCancelArmed,
   selection, onTranslateSelection, gizmoMode, onRotateSelection, membersOf, appliedOps,
   selectedWaypoint, terrainPoint, exposure, hiddenVobs, outlineMode, snapGrid, snapAngle,
   selectedExtent = null,
@@ -630,6 +633,8 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   onPickRef.current = onPick;
   const onVobContextMenuRef = useRef(onVobContextMenu);
   onVobContextMenuRef.current = onVobContextMenu;
+  const onCancelArmedRef = useRef(onCancelArmed);
+  onCancelArmedRef.current = onCancelArmed;
   const loadTextureRef = useRef(loadTexture);
   loadTextureRef.current = loadTexture;
   const textureFailuresRef = useRef(onTextureFailures);
@@ -937,6 +942,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       },
       consumeFly: () => nav.consumeFly(),
       contextMenu: () => onVobContextMenuRef.current,
+      cancelArmed: () => onCancelArmedRef.current,
       onPick: (vob, terrain, additive) => {
         // The outline is the answer to one click in the Problems panel, not a
         // layer the user turned on: the next thing they touch in the viewport

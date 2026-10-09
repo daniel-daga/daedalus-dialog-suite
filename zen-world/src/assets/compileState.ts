@@ -39,3 +39,34 @@ export function compileState(name: string, resolved: string | null): CompileStat
   const upper = fileName(resolved);
   return COMPILED_EXTENSIONS.some((extension) => upper.endsWith(extension)) ? 'compiled' : 'uncompiled';
 }
+
+/** What each compiled format is named after — only where that is one name. An
+ *  `.MDL` or `.MDM` is left out: it comes from an `.ASC` or an `.MDS`, and a
+ *  guess there would place a model under a name nothing resolves. */
+const SOURCE_OF: readonly (readonly [compiled: string, source: string])[] = [
+  ['-C.TEX', '.TGA'], ['.MRM', '.3DS'], ['.MSH', '.3DS'], ['.MMB', '.MMS'],
+];
+
+/**
+ * The source name a compiled file is placed and found by (#361), or null when
+ * it has no single one. A VOB, Spacer and the catalogue all name the `.3DS`; a
+ * retail install mounts only the `.MRM` made of it, and `vfsResolve` maps the
+ * source name straight back — so the source name previews, thumbnails and
+ * places exactly as the compiled one does, and is what the modder searched for.
+ */
+export function sourceNameOf(name: string): string | null {
+  const upper = name.toUpperCase();
+  const hit = SOURCE_OF.find(([compiled]) => upper.endsWith(compiled));
+  return hit === undefined ? null : name.slice(0, name.length - hit[0].length) + hit[1];
+}
+
+/** A search needle as the namespace can match it: a source extension dropped,
+ *  because no compiled name carries one — `bush_01.3ds` has to find
+ *  `BUSH_01.MRM` before {@link sourceNameOf} names it back. */
+export function searchStem(needle: string): string {
+  const upper = needle.toUpperCase();
+  const extension = SOURCE_EXTENSIONS.find((candidate) => upper.endsWith(candidate));
+  return extension === undefined || needle.length === extension.length
+    ? needle
+    : needle.slice(0, needle.length - extension.length);
+}

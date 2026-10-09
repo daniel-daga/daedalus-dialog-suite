@@ -16,6 +16,7 @@ import * as THREE from 'three';
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 
 import { NavController } from '../src/renderer/world/NavController';
+import { SLOW_MULTIPLIER } from '../src/renderer/world/flyNav';
 import { CameraSlots, type CameraSlotOutcome } from '../src/renderer/world/cameraSlots';
 
 const WIDTH = 800;
@@ -231,6 +232,22 @@ describe('NavController — the fly', () => {
     const h = stand();
     h.beginFly();
     expect(key('keydown', 'KeyW').defaultPrevented).toBe(true);
+  });
+
+  it('Ctrl+W creeps, and is the fly\'s rather than a shortcut\'s (#363)', () => {
+    const h = stand({ hasMesh: false });
+    h.beginFly();
+    expect(key('keydown', 'KeyW', { ctrlKey: true }).defaultPrevented).toBe(true);
+    h.nav.step(0);
+    h.nav.step(100);
+    const crept = h.camera.position.distanceTo(new THREE.Vector3(0, 50, 0));
+
+    key('keyup', 'ControlLeft');
+    h.nav.step(200);
+    const walked = h.camera.position.distanceTo(new THREE.Vector3(0, 50, 0)) - crept;
+    // Speed 50 (the reach at the press) for 0.1 s: 5 at full pace.
+    expect(walked).toBeCloseTo(5, 3);
+    expect(crept).toBeCloseTo(5 * SLOW_MULTIPLIER, 3);
   });
 
   it('W with no fly in hand is the surface\'s, untouched', () => {
