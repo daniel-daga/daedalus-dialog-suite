@@ -156,11 +156,54 @@ jobs:
             echo "$eval_lines"
             exit 1
           fi
-      - name: Run editor tests
-        run: pnpm --filter daedalus-dialog-editor test
 
+          # mockAPI.ts is the browser harness's fake main process. main.tsx
+          # imports it behind import.meta.env.DEV, so this production build must
+          # not carry it. The marker is a name only mockAPI.ts defines; checking
+          # the source too means a rename fails here instead of passing vacuously.
+          grep -q __mockEmitFileChange daedalus-dialog-editor/src/renderer/utils/mockAPI.ts
+          if grep -l __mockEmitFileChange daedalus-dialog-editor/dist/renderer/assets/*.js; then
+            echo "The production renderer bundle carries mockAPI.ts."
+            exit 1
+          fi
       - name: Lint editor
         run: pnpm --filter daedalus-dialog-editor run lint
+
+  editor-jest:
+    name: Editor Jest (shard ${{ matrix.shardIndex }}/${{ matrix.shardTotal }})
+    runs-on: ubuntu-latest
+    # The suite is CPU-bound — ~750 s of test time across a runner's three
+    # workers — so on one runner it was the longest job in this workflow.
+    # Two shards bring it under the browser-harness shards.
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shardIndex: [1, 2]
+        shardTotal: [2]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.23.0
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # See the note in editor-tests: zen-world/dist is an install-time artifact.
+      - name: Build zen-world
+        run: pnpm --filter zen-world run build
+
+      - name: Run editor tests (shard ${{ matrix.shardIndex }}/${{ matrix.shardTotal }})
+        run: pnpm --filter daedalus-dialog-editor test -- --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }}
 
   editor-ui-tests:
     name: UI Tests (browser harness, shard ${{ matrix.shardIndex }}/${{ matrix.shardTotal }})
