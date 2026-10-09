@@ -202,6 +202,34 @@ describe('an edit reaching the renderer', () => {
 
     expect(useWorldStore.getState().editError).toBeNull();
   });
+
+  it('keeps the texture warning across a structural edit (#371)', () => {
+    // The warning is about the world's assets, not about the last edit. Cleared
+    // with the edit error, its banner unmounted and remounted around every add
+    // and delete — two viewport resizes, each one clearing the canvas.
+    opened();
+    useWorldStore.getState().texturesFailed('2 textures could not be decoded');
+
+    useWorldStore.getState().indexRefreshed(summaryWith([[0, 0, 0]]));
+    expect(useWorldStore.getState().textureWarning).toBe('2 textures could not be decoded');
+
+    useWorldStore.getState().openSucceeded(summaryWith([[0, 0, 0]]));
+    expect(useWorldStore.getState().textureWarning).toBeNull();
+  });
+
+  it('keeps a dismissed texture warning dismissed when an edit reports it again', () => {
+    // Every structural edit retries the failed names and reports the same set;
+    // only a different set is news.
+    opened();
+    useWorldStore.getState().texturesFailed('2 textures could not be decoded');
+    useWorldStore.getState().dismissTextureWarning();
+
+    useWorldStore.getState().texturesFailed('2 textures could not be decoded');
+    expect(useWorldStore.getState().textureWarningDismissed).toBe(true);
+
+    useWorldStore.getState().texturesFailed('3 textures could not be decoded');
+    expect(useWorldStore.getState().textureWarningDismissed).toBe(false);
+  });
 });
 
 describe('the selection a batch edit is made from', () => {

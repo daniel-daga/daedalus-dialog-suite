@@ -201,6 +201,48 @@ test.describe('World surface UI workflows in a real window', () => {
     await expect(page.getByText('FP_CAMPFIRE_ÄÖÜ_01')).toHaveCount(1);
   });
 
+  test('adding and deleting a VOB leaves the texture warning and the canvas alone (#371)', async () => {
+    // The fake install holds no textures, so every name the fixture world's
+    // mesh uses fails to load and the warning stands from the open on. It used
+    // to be the edit error, cleared by every structural re-read and set again
+    // once the textures were retried: its banner unmounted and remounted, the
+    // viewport resized twice, and each resize cleared the canvas — the blank
+    // frames in the report. Both happen within a frame or two, so they are
+    // recorded as they happen rather than looked for afterwards.
+    const { page } = fixture;
+    await openWorld();
+    await expect(page.getByText(/could not be decoded/)).toBeVisible();
+
+    await page.evaluate(() => {
+      const log: string[] = [];
+      (window as unknown as { __flicker: string[] }).__flicker = log;
+      const canvas = document.querySelector('[data-testid="world-viewport"] canvas') as HTMLCanvasElement;
+      const size = `${canvas.width}x${canvas.height}`;
+      new ResizeObserver(() => {
+        if (`${canvas.width}x${canvas.height}` !== size) log.push(`canvas ${canvas.width}x${canvas.height}`);
+      }).observe(canvas);
+      new MutationObserver(() => {
+        if (!document.body.textContent?.includes('could not be decoded')) log.push('warning gone');
+        if (!canvas.isConnected) log.push('canvas replaced');
+      }).observe(document.body, { childList: true, subtree: true });
+    });
+
+    await page.getByTestId('world-vob-toggle-0').click();
+    await page.getByTestId('world-vob-row-3').click({ button: 'right' });
+    await page.getByTestId('world-context-duplicate').click();
+    await expect(page.getByText('ITEM_SWORD_01')).toHaveCount(2);
+
+    await page.getByTestId('world-vob-row-3').click();
+    await page.keyboard.press('Delete');
+    await expect(page.getByText('ITEM_SWORD_01')).toHaveCount(1);
+
+    // The re-read retries the failed names, and the viewport exposes no promise
+    // for an update's textures; give the retry time to answer before judging.
+    await page.waitForTimeout(500);
+    expect(await page.evaluate(() => (window as unknown as { __flicker: string[] }).__flicker)).toEqual([]);
+    await expect(page.getByText(/could not be decoded/)).toBeVisible();
+  });
+
   test('moving a parent moves its child and one undo restores both (#292)', async () => {
     const { page } = fixture;
     await openWorld();

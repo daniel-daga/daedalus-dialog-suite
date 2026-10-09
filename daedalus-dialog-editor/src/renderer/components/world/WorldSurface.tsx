@@ -144,6 +144,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const summary = useWorldStore((s) => s.summary);
   const error = useWorldStore((s) => s.error);
   const editError = useWorldStore((s) => s.editError);
+  const textureWarning = useWorldStore((s) => (s.textureWarningDismissed ? null : s.textureWarning));
   const selection = useWorldStore((s) => s.selection);
   const selectedWaypoint = useWorldStore((s) => s.selectedWaypoint);
   const waypointSiteIndex = useProjectStore((s) => s.waypointSiteIndex);
@@ -599,7 +600,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    * fail to parse — they are textures the mod has not compiled yet.
    */
   const reportTextureFailures = useCallback((names: string[]) => {
-    useWorldStore.getState().editFailed(
+    useWorldStore.getState().texturesFailed(
       `${names.length} texture${names.length === 1 ? '' : 's'} could not be decoded and draw white — `
       + `${names.slice(0, 3).join(', ')}${names.length > 3 ? '…' : ''}. `
       + 'A source .TGA in a mod folder resolves by name but is not a compiled ZenGin texture.',
@@ -2088,6 +2089,21 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
           data-testid="world-edit-error"
         >
           {editError}
+        </Alert>
+      )}
+
+      {/* Its own banner, not the edit error's (#371): an edit clears that one,
+          and every add or delete re-reports this, so sharing it unmounted and
+          remounted a banner above the viewport — resizing, and so clearing,
+          the canvas twice per edit. */}
+      {textureWarning !== null && (
+        <Alert
+          severity="warning"
+          square
+          onClose={() => useWorldStore.getState().dismissTextureWarning()}
+          data-testid="world-texture-warning"
+        >
+          {textureWarning}
         </Alert>
       )}
 
