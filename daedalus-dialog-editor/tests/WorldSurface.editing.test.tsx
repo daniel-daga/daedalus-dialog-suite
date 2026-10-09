@@ -957,6 +957,9 @@ describe('a turn of the gizmo', () => {
     fireEvent.keyDown(window, { key: 'e' });
     await waitFor(() => expect(mockGizmoMode).toBe('rotate'));
 
+    // W nudges a selected VOB forward; only without a selection is it the
+    // translate-gizmo shortcut.
+    act(() => useWorldStore.getState().selectVob(null));
     fireEvent.keyDown(window, { key: 'w' });
     await waitFor(() => expect(mockGizmoMode).toBe('translate'));
 
