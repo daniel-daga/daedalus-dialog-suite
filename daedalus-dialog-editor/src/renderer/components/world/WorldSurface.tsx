@@ -97,6 +97,11 @@ interface WorldSurfaceProps {
  */
 const DEFAULT_SPAWN_TIME = 8 * 60;
 
+/** How far in front of the camera a paste may land (#373), ZenGin cm: what
+ *  the camera looks at, if it is nearer than this, and otherwise the ground
+ *  this far ahead — 10 m, near enough to see what landed. */
+export const PASTE_REACH = 1000;
+
 /** What the place dialog collects. `parent` is a flat index or null for a
  *  root; where the VOB goes is the ground point, chosen before or after. */
 interface PlaceSpec {
@@ -1708,7 +1713,10 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     commitOps, boundsOf, readClassProps, viewport: viewportRef,
   });
 
-  clipboardInput.current = { commitOps, boundsOf, readClassProps };
+  clipboardInput.current = {
+    commitOps, boundsOf, readClassProps,
+    pastePoint: () => viewportRef.current?.pointAhead(PASTE_REACH) ?? null,
+  };
 
   const {
     moveWaypointTo,

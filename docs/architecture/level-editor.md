@@ -3119,14 +3119,20 @@ that went solid would stop the bush behind it being clickable through the gaps,
 which is the complaint inverted. It costs one more draw and one more readback,
 on misses only, and `warm` compiles both programs so neither lands in a click.
 
-**A paste lands beside what it copied, and selects it.** The offset is the
-copied group's own extent along X, floored at `PASTE_MIN_OFFSET`: a fixed nudge
-is beside it for a barrel and still inside it for a building. Horizontal only,
-because nothing on the renderer's side of the boundary can put a copy back on
-the ground; one delta for the whole batch, so a group copied as a group keeps
-its spacing; and applied to every node of every subtree, because ZenGin VOB
-positions are world-space — the tree is organisational, not a transform
-hierarchy. The copies are then selected **by path**, not by the `vob` the
+**A paste lands in front of the camera, and selects it** (#373). Beside the
+original along world +X, as it first did, read as random from the camera — off
+to one side, or behind the view. The viewport's `pointAhead` answers the point:
+the first world-mesh hit along the screen-centre ray within `PASTE_REACH`
+(10 m), and past it the ground under the ray's point at that reach, so a view
+of the horizon does not put the paste hundreds of metres off. The copied
+group's union box lands centred over that point with its **floor** on it, not
+its pivot, so a model whose pivot is mid-trunk does not stand half underground.
+With no scene to ask, the old placement stands: the group's own extent along
+X, floored at `PASTE_MIN_OFFSET`, height unchanged. Either way it is one delta
+for the whole batch, so a group copied as a group keeps its spacing, applied to
+every node of every subtree, because ZenGin VOB positions are world-space — the
+tree is organisational, not a transform hierarchy. Duplicate is untouched: its
+copy still lands in place, on the original. The copies are then selected **by path**, not by the `vob` the
 `AddVob` carries: that index is the enumeration as it was, and appending moves
 every index after the insertion point. `vobAtIndexPath` is the inverse of
 `vobIndexPath` this needed and the first caller of it.

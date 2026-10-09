@@ -1983,11 +1983,16 @@ function posedPoint(point: ZenPosition, { turn, origin, at }: ScatterPose): ZenP
  * each back beside its own original; each root's descendants go under its own
  * copy, wherever the paste put it. That is still a batch of pure adds, so it is still
  * one undo entry and `commitOps` still takes it: an append moves no index path.
+ *
+ * `at` is where the paste goes — the point in front of the camera (#373). The
+ * group's base, centred, lands on it; without it, the copies land beside what
+ * was copied.
  */
 export function pasteVobs(
   reader: VobReader, trees: readonly VobSubtree[], parent: number | null = null,
+  at?: ZenPosition,
 ): Array<AddVob | SetVobClassProp> {
-  const offset = pasteOffset(trees);
+  const offset = at === undefined ? pasteOffset(trees) : offsetOnto(trees, at);
   return trees.flatMap((tree, ahead) => {
     const moved = offsetSubtree(tree, offset);
     return subtreeOps(appendedAfter(addVob(reader, moved.spec, parent), ahead), moved);
@@ -1996,7 +2001,8 @@ export function pasteVobs(
 
 /**
  * The smallest offset a paste can use and still land the copies *beside* what
- * was copied (level-editor.md §16.24 4).
+ * was copied (level-editor.md §16.24 4) — the placement when there is no point
+ * in front of the camera to land on (#373).
  *
  * A fixed nudge is beside it for a barrel and still inside it for a building,
  * so the distance is the copied group's own extent along X — every box in every
@@ -2023,6 +2029,32 @@ function pasteOffset(trees: readonly VobSubtree[]): ZenPosition {
   trees.forEach(span);
 
   return [Math.max(max - min, PASTE_MIN_OFFSET), 0, 0];
+}
+
+/**
+ * The one delta that stands the pasted group on `at`: the union of every box
+ * in every subtree, centred over the point with its floor on it — the floor
+ * rather than the pivot, so a model whose pivot is mid-trunk is not half
+ * underground. With no box at all, the first root's pivot goes on the point.
+ */
+function offsetOnto(trees: readonly VobSubtree[], at: ZenPosition): ZenPosition {
+  const union = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+  const span = (node: VobSubtree): void => {
+    const { bbox } = node.spec;
+    if (bbox !== undefined) {
+      for (let axis = 0; axis < 3; axis++) {
+        union[axis] = Math.min(union[axis], bbox[axis]);
+        union[axis + 3] = Math.max(union[axis + 3], bbox[axis + 3]);
+      }
+    }
+    node.children.forEach(span);
+  };
+  trees.forEach(span);
+
+  const anchor = union[0] === Infinity
+    ? trees[0]?.spec.position ?? at
+    : [(union[0] + union[3]) / 2, union[1], (union[2] + union[5]) / 2];
+  return [at[0] - anchor[0], at[1] - anchor[1], at[2] - anchor[2]];
 }
 
 /** How far a paste moves a copy that has no box to measure — 1 m, which is

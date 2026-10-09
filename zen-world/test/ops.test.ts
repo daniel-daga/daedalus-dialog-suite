@@ -1761,6 +1761,48 @@ describe('a clipboard pasted into a list', () => {
     }
   });
 
+  describe('at a point the paste is given', () => {
+    // #373: beside the original along world +X reads as random from the
+    // camera — off to one side, or behind it. Given the point in front of the
+    // camera, the copy lands there instead.
+    it('stands the group\'s base on the point, centred over it', () => {
+      const live = reader();
+      // A box off-centre from the pivot, so centring on the pivot would show.
+      const tree = duplicateVobSubtree(live, 1, () => [-100, 50, -40, 300, 450, 60]);
+      const [op] = addsOf(pasteVobs(live, [tree], null, [5000, 200, -3000]));
+
+      // The box's own centre and floor, not the pivot: a tree whose pivot is
+      // mid-trunk would otherwise stand half underground.
+      const box = tree.spec.bbox!;
+      expect(box[1]).not.toBe(tree.spec.position[1]);
+      const [x0, y0, z0, x1, y1, z1] = op.to!.bbox!;
+      expect([(x0 + x1) / 2, y0, (z0 + z1) / 2]).toEqual([5000, 200, -3000]);
+      expect([x1 - x0, y1 - y0, z1 - z0]).toEqual([box[3] - box[0], box[4] - box[1], box[5] - box[2]]);
+      // And the VOB moves with its box.
+      const delta = [0, 1, 2].map((axis) => op.to!.position[axis] - tree.spec.position[axis]);
+      expect(delta).toEqual([0, 1, 2].map((axis) => op.to!.bbox![axis] - box[axis]));
+    });
+
+    it('moves the whole paste by one delta, descendants and spacing kept', () => {
+      const live = reader();
+      const trees = [duplicateVobSubtree(live, 0, () => [0, 0, 0, 100, 100, 100])];
+      const ops = addsOf(pasteVobs(live, trees, null, [1000, 0, 1000]));
+
+      expect(ops).toHaveLength(3);
+      const nodes = [trees[0].spec, ...trees[0].children.map((child) => child.spec)];
+      const deltas = ops.map((op, at) => op.to!.position.map((value, axis) => value - nodes[at].position[axis]));
+      expect(new Set(deltas.map((delta) => delta.join()))).toEqual(new Set([deltas[0].join()]));
+    });
+
+    it('puts the pivot on the point when nothing copied has a box', () => {
+      const live = reader();
+      const tree = duplicateVobSubtree(live, 3);
+      const [op] = addsOf(pasteVobs(live, [tree], null, [10, 20, 30]));
+
+      expect(op.to!.position).toEqual([10, 20, 30]);
+    });
+  });
+
   it('is nothing at all for an empty clipboard', () => {
     expect(pasteVobs(reader(), [], null)).toEqual([]);
   });
