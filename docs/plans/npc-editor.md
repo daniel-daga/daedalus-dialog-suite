@@ -223,7 +223,7 @@ definition, `Hum_Head_Pony`, and light militia armor (`ITAR_MIL_L` →
 `Armor_Mil_L.asc`) resolve and render in Electron. The initial image looked
 bald and had an almost black neck because the preview flipped every model
 texture vertically. Retail head, skin and armor maps all use the stored UV
-origin, unlike the world mesh maps. The NPC body variation had also been
+origin — as the world mesh maps turned out to as well (#368). The NPC body variation had also been
 applied to armor materials, and the face variation to the shared mouth
 material. Those variants are now selected independently. The body mesh's
 stored positions are not its rendered rest pose. Each soft-skin vertex is

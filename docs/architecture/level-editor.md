@@ -3960,9 +3960,16 @@ Max's counter-clockwise faces into ZenGin's clockwise ones, so the face order is
 kept; **V is flipped** (3DS bottom-left, Direct3D top-left); normals are
 averaged per vertex, reversed from the right-hand cross because of that
 winding. The winding was checked against how the editor draws retail meshes
-(mirrored X, back faces culled), but the convention as a whole was not checked
-against a compiled `.MRM` of the same source — no such pair is here
-(§16.41). The row keeps its "not compiled" tag and the preview says it is
+(mirrored X, back faces culled). Bounds and V direction match the compiled
+`.MRM` on every Archolos pair in the install (2026-10-09, §16.41 row 16).
+
+**Every texture is uploaded unflipped (#368).** Decoded rows run top first, and
+ZenGin's UVs put V = 0 at the top of the image — on the world mesh and on proto
+meshes alike: retail `NW_NATURE_BUSH_01`'s lowest vertices carry V ≈ 0 and its
+highest V ≈ −1. The world scene used to set `flipY`, which drew every alpha-cut
+bush card upside down while its geometry stood upright; on terrain and rock the
+flip did not show. The decal quad is the one surface whose UVs the editor
+makes, so it carries V = 0 on its upper edge. The row keeps its "not compiled" tag and the preview says it is
 showing the source. Models (`.ASC`) and raw textures (`.TGA`) are not read.
 
 **And a button runs the compile (#296).** Once a source on screen is not

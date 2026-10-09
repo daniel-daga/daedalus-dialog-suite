@@ -1351,9 +1351,9 @@ export function drawGroupGeometry(group: DrawGroup): THREE.BufferGeometry {
   return geometry;
 }
 
-/** Decoded RGBA8 as a GPU texture. World mesh UVs use the flipped origin;
- *  standalone preview meshes use the stored V coordinate directly. */
-export function dataTexture(decoded: DecodedTexture, flipY = true): THREE.DataTexture {
+/** Decoded RGBA8 as a GPU texture. Not flipped: decoded rows run top first and
+ *  ZenGin's UVs put V = 0 at the top, world mesh and proto meshes alike (#368). */
+export function dataTexture(decoded: DecodedTexture): THREE.DataTexture {
   const texture = new THREE.DataTexture(
     new Uint8Array(decoded.rgba), decoded.width, decoded.height,
   );
@@ -1366,7 +1366,7 @@ export function dataTexture(decoded: DecodedTexture, flipY = true): THREE.DataTe
   texture.minFilter = THREE.LinearMipmapLinearFilter;
   texture.generateMipmaps = true;
   texture.anisotropy = 4;
-  texture.flipY = flipY;
+  texture.flipY = false;
   texture.needsUpdate = true;
   return texture;
 }

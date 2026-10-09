@@ -74,6 +74,21 @@ describe('DecalLayer', () => {
     layer.dispose();
   });
 
+  it('samples the top of its texture at the top of the quad', () => {
+    // Textures are uploaded unflipped, V = 0 at the image's top row (#368), so
+    // the quad has to put V = 0 on its upper edge or every decal is upside down.
+    const { materialFor } = materials();
+    const layer = new DecalLayer(scene(BLOOD), materialFor);
+    const geometry = layer.meshes[0].geometry;
+    const position = geometry.getAttribute('position');
+    const uv = geometry.getAttribute('uv');
+
+    for (let at = 0; at < position.count; at++) {
+      expect(uv.getY(at)).toBe(position.getY(at) > 0 ? 0 : 1);
+    }
+    layer.dispose();
+  });
+
   it('places each quad where the VOB is, at the size the decal says', () => {
     // ZenGin centimetres, unconverted: the root node is the only thing in the
     // graph that converts. The size rides in the instance matrix's scale, which

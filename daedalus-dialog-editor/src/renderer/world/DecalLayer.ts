@@ -45,9 +45,13 @@ export const DECAL_ALPHA_ATTRIBUTE = 'aDecalAlpha';
 const DECAL_ALPHA_VARYING = 'vDecalAlpha';
 
 /** The unit quad every decal is a scaled, camera-facing copy of. One geometry
- *  for the whole layer: only the instance matrix differs. */
+ *  for the whole layer: only the instance matrix differs. Its V is turned to
+ *  ZenGin's top-left origin, which is how every texture is uploaded (#368). */
 function unitQuad(): THREE.PlaneGeometry {
-  return new THREE.PlaneGeometry(1, 1);
+  const quad = new THREE.PlaneGeometry(1, 1);
+  const uv = quad.getAttribute('uv');
+  for (let at = 0; at < uv.count; at++) uv.setY(at, 1 - uv.getY(at));
+  return quad;
 }
 
 /**

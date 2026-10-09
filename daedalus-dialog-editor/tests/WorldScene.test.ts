@@ -283,6 +283,23 @@ describe('WorldScene', () => {
     expect(scene.pendingTextureNames()).toEqual(['NW_STONE.TGA']);
   });
 
+  test('a decoded texture is uploaded unflipped, for ZenGin\'s top-left V origin (#368)', () => {
+    // Decoded rows run top first, and ZenGin's UVs put V = 0 at the top of the
+    // image: retail NW_NATURE_BUSH_01's lowest vertices carry V ~ 0 and its
+    // highest V ~ -1. A flipped upload drew every bush card upside down.
+    const scene = new WorldScene();
+    scene.setWorldMesh({ groups: [group()], bbox: [] });
+    scene.setInstancedVisuals({ visuals: [visual({ groups: [group({ texture: 'BARREL.TGA', lights: null })] })], stats: {} as never });
+    scene.applyTexture({ name: 'NW_WOOD.TGA', width: 2, height: 2, rgba: new Uint8Array(16).buffer });
+    scene.applyTexture({ name: 'BARREL.TGA', width: 2, height: 2, rgba: new Uint8Array(16).buffer });
+
+    const maps = scene.root.children
+      .map((c) => ((c as THREE.Mesh).material as THREE.MeshBasicMaterial).map)
+      .filter((map) => map !== null);
+    expect(maps).toHaveLength(2);
+    expect(maps.map((map) => map!.flipY)).toEqual([false, false]);
+  });
+
   test('dispose releases the geometries and textures it created', () => {
     // A world is reopened as often as a project is; leaking a 30 MB buffer set
     // per open is the kind of thing nothing reports until the app dies.

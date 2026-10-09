@@ -239,7 +239,7 @@ export class SpawnOverlay {
           if (decoded) {
             let texture = this.npcTextures.get(group.texture.toUpperCase());
             if (!texture) {
-              texture = dataTexture(decoded, false);
+              texture = dataTexture(decoded);
               this.npcTextures.set(group.texture.toUpperCase(), texture);
             }
             material.map = texture;
