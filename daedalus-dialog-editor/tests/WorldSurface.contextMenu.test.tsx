@@ -74,7 +74,7 @@ describe('the VOB context menu', () => {
 
     expect(await screen.findByTestId('world-context-menu')).toBeInTheDocument();
     for (const item of [
-      'frame', 'duplicate', 'copy', 'paste', 'delete', 'drop', 'align', 'hide-class',
+      'frame', 'duplicate', 'copy', 'paste', 'delete', 'rest', 'into', 'align', 'hide-class',
     ]) {
       expect(screen.getByTestId(`world-context-${item}`)).toBeInTheDocument();
     }
