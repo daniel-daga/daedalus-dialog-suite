@@ -1725,7 +1725,24 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
 
     const { reader } = vobModelOf(current);
     const classProps = await readClassProps(reader, selected);
-    await commitOps(duplicateVobs(reader, selected, boundsOf, classProps));
+    const ops = duplicateVobs(reader, selected, boundsOf, classProps);
+    if (!await commitOps(ops)) return;
+
+    // The copies, selected — by path and only after the re-read, as a paste
+    // does: an append moves every flat index after it. The roots are the adds
+    // into the lists the originals lived in; a descendant's parent is a new path.
+    const lists = new Set(topLevelVobs(reader, selected).map((vob) => {
+      const parent = reader.columns.parent[vob];
+      return parent < 0 ? null : vobIndexPath(reader, parent);
+    }));
+    const { summary: after } = useWorldStore.getState();
+    if (after === null) return;
+    const refreshed = vobModelOf(after).reader;
+    const copies = ops
+      .flatMap((op) => (op.op === 'AddVob' && lists.has(op.parentPath) ? [op.path] : []))
+      .map((path) => vobAtIndexPath(refreshed, path))
+      .filter((vob): vob is number => vob !== null);
+    if (copies.length > 0) useWorldStore.getState().selectVobs(copies);
   }, [commitOps, boundsOf, readClassProps]);
 
   const {

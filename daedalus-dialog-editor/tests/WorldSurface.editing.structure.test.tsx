@@ -200,6 +200,19 @@ describe('duplicating a VOB', () => {
     }]);
   });
 
+  it('selects the copy, not the original', async () => {
+    const summary = await openWorld();
+    api.refreshWorldIndex.mockResolvedValueOnce(
+      { ...summary, vobIndex: vobIndex([[0, 0, 0], [10, 20, 30], [10, 20, 30]]) } as never,
+    );
+    api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    fireEvent.click(await screen.findByTestId('world-duplicate-vob'));
+
+    await waitFor(() => expect(useWorldStore.getState().selection).toEqual([2]));
+  });
+
   it('ignores the second click of a double-click while the first is in flight', async () => {
     // §2.7 of `docs/plans/level-editor-review-2026-09-04.md`. Both clicks read
     // the same index, so the second built its `AddVob` against a world that
