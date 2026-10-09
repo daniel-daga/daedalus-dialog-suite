@@ -1379,7 +1379,7 @@ describe('WorldAssetBrowser', () => {
 
       await user.type(screen.getByTestId('world-asset-filter'), 'crate');
 
-      expect(await screen.findByTestId('world-asset-NW_CRATE.MRM')).toBeInTheDocument();
+      expect(await screen.findByTestId('world-asset-NW_CRATE.3DS')).toBeInTheDocument();
       expect(search).toHaveBeenCalledWith('crate');
     });
 
@@ -1392,7 +1392,7 @@ describe('WorldAssetBrowser', () => {
 
       await user.type(screen.getByTestId('world-asset-filter'), 'crate');
 
-      expect(await screen.findByTestId('world-asset-where-NW_CRATE.MRM'))
+      expect(await screen.findByTestId('world-asset-where-NW_CRATE.3DS'))
         .toHaveTextContent('Meshes/_compiled');
     });
 
@@ -1405,9 +1405,9 @@ describe('WorldAssetBrowser', () => {
       await screen.findByTestId('world-asset-Meshes');
 
       await user.type(screen.getByTestId('world-asset-filter'), 'crate');
-      await user.click(await screen.findByTestId('world-asset-NW_CRATE.MRM'));
+      await user.click(await screen.findByTestId('world-asset-NW_CRATE.3DS'));
 
-      expect(onPreview).toHaveBeenCalledWith('Meshes/_compiled/NW_CRATE.MRM');
+      expect(onPreview).toHaveBeenCalledWith('Meshes/_compiled/NW_CRATE.3DS');
     });
 
     it('descends into a directory hit at its own path', async () => {
@@ -1436,9 +1436,94 @@ describe('WorldAssetBrowser', () => {
       await screen.findByTestId('world-asset-Meshes');
 
       await user.type(screen.getByTestId('world-asset-filter'), 'crate');
-      await screen.findByTestId('world-asset-NW_CRATE.MRM');
+      await screen.findByTestId('world-asset-NW_CRATE.3DS');
 
       expect(queries).toEqual(['crate']);
+    });
+
+    // #361: a retail install mounts only the compiled `.MRM`, while a VOB,
+    // Spacer and the categories all say `.3DS` — so a search answering compiled
+    // names read as "the tree is not there". A hit is named, previewed and
+    // placed by its source name, which the binding resolves back.
+    it('names a compiled mesh and texture by the source they were made from', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const { search } = searching();
+      render(<WorldAssetBrowser listAssets={list} searchAssets={search} onPreview={jest.fn()} />);
+      await screen.findByTestId('world-asset-Meshes');
+
+      await user.type(screen.getByTestId('world-asset-filter'), 'nw_');
+
+      expect(await screen.findByTestId('world-asset-NW_CRATE.3DS')).toBeInTheDocument();
+      expect(screen.getByTestId('world-asset-NW_WOOD.TGA')).toBeInTheDocument();
+      expect(screen.queryByTestId('world-asset-NW_CRATE.MRM')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('world-asset-NW_WOOD-C.TEX')).not.toBeInTheDocument();
+    });
+
+    it('keeps a model its compiled name, which has no single source', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const { search } = searching();
+      render(<WorldAssetBrowser listAssets={list} searchAssets={search} onPreview={jest.fn()} />);
+      await screen.findByTestId('world-asset-Meshes');
+
+      await user.type(screen.getByTestId('world-asset-filter'), 'chest');
+
+      expect(await screen.findByTestId('world-asset-CHESTBIG.MDL')).toBeInTheDocument();
+    });
+
+    it('finds a mesh typed with its source extension', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const { search, queries } = searching();
+      render(<WorldAssetBrowser listAssets={list} searchAssets={search} onPreview={jest.fn()} />);
+      await screen.findByTestId('world-asset-Meshes');
+
+      await user.type(screen.getByTestId('world-asset-filter'), 'nw_crate.3ds');
+
+      expect(await screen.findByTestId('world-asset-NW_CRATE.3DS')).toBeInTheDocument();
+      // The namespace holds no `.3DS` to match, so the walk is for the stem.
+      expect(queries).toEqual(['nw_crate']);
+    });
+
+    it('drops a hit whose source name no longer holds the needle', async () => {
+      // `nw_crate.3ds` walks for `nw_crate`, which `NW_CRATE_B.MRM` also
+      // holds — and that is not what was typed.
+      const user = userEvent.setup();
+      const { list } = listing();
+      const search = jest.fn(async () => ({
+        matches: [
+          { name: 'NW_CRATE.MRM', type: 'file' as const, directory: 'Meshes/_compiled' },
+          { name: 'NW_CRATE_B.MRM', type: 'file' as const, directory: 'Meshes/_compiled' },
+        ],
+        truncated: false,
+      }));
+      render(<WorldAssetBrowser listAssets={list} searchAssets={search} onPreview={jest.fn()} />);
+      await screen.findByTestId('world-asset-Meshes');
+
+      await user.type(screen.getByTestId('world-asset-filter'), 'nw_crate.3ds');
+
+      expect(await screen.findByTestId('world-asset-NW_CRATE.3DS')).toBeInTheDocument();
+      expect(screen.queryByTestId('world-asset-NW_CRATE_B.3DS')).not.toBeInTheDocument();
+      expect(screen.getByTestId('world-asset-count')).toHaveTextContent('1 matches');
+    });
+
+    it('shows a mesh once when the namespace holds two compiled forms of it', async () => {
+      const user = userEvent.setup();
+      const { list } = listing();
+      const search = jest.fn(async () => ({
+        matches: [
+          { name: 'NW_CRATE.MRM', type: 'file' as const, directory: 'Meshes/_compiled' },
+          { name: 'NW_CRATE.MSH', type: 'file' as const, directory: 'Meshes/_compiled' },
+        ],
+        truncated: false,
+      }));
+      render(<WorldAssetBrowser listAssets={list} searchAssets={search} onPreview={jest.fn()} />);
+      await screen.findByTestId('world-asset-Meshes');
+
+      await user.type(screen.getByTestId('world-asset-filter'), 'crate');
+
+      expect(await screen.findAllByTestId('world-asset-NW_CRATE.3DS')).toHaveLength(1);
     });
 
     it('counts the matches, and says when the walk was cut short', async () => {

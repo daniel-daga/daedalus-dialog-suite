@@ -1150,6 +1150,14 @@ browser.
   everything. The browser's filter box *is* this call: hits from elsewhere name
   their directory on the row, and opening one goes to its own path rather than
   to the path being browsed.
+  A hit is **named by its source** where that is one name — `.MRM`/`.MSH` as
+  `.3DS`, `.MMB` as `.MMS`, `-C.TEX` as `.TGA` (#361): a retail install mounts
+  only compiled files, while a VOB, Spacer and the catalogue all say `.3DS`, so
+  a search answering `.MRM` read as "the tree is not there". `vfsResolve` maps
+  the source name back, so it previews and places as the compiled one does. A
+  typed source extension is dropped before the walk (`searchStem`); models keep
+  their compiled name, since an `.MDL` comes from an `.ASC` or an `.MDS`. A
+  directory listing still shows what is actually there.
 
   **Retail root measurement (Steam Gothic II, 2026-09-27):** `describe-vfs-root.js`
   mounted six retail VDFs and the three loose `_compiled` trees. The merged
