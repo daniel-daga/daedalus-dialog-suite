@@ -203,7 +203,7 @@ jobs:
         run: pnpm --filter zen-world run build
 
       - name: Run editor tests (shard ${{ matrix.shardIndex }}/${{ matrix.shardTotal }})
-        run: pnpm --filter daedalus-dialog-editor test -- --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }}
+        run: pnpm --filter daedalus-dialog-editor test --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }}
 
   editor-ui-tests:
     name: UI Tests (browser harness, shard ${{ matrix.shardIndex }}/${{ matrix.shardTotal }})
