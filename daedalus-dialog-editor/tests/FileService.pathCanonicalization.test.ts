@@ -1,5 +1,5 @@
 /**
- * FileService keys its encoding cache, stat cache and per-file locks on a
+ * FileService keys its encoding cache and per-file locks on a
  * canonical path key (2026-07 4.11), so the file watcher's spelling of a path
  * — different separators, and different casing on Windows — hits the same
  * entries the editor's own read/write path created.
@@ -24,7 +24,6 @@ describe('FileService path canonicalization', () => {
     tempDir = fsSync.mkdtempSync(path.join(os.tmpdir(), 'path-canon-'));
     service = new FileService();
     service.clearEncodingCache();
-    service.clearStatCache();
   });
 
   afterEach(() => {
@@ -65,7 +64,7 @@ describe('FileService path canonicalization', () => {
     expect(service.getFileEncoding(file)).toBeDefined();
   });
 
-  it('clears the caches when the watcher reports an unnormalized spelling', async () => {
+  it('clears the encoding cache when the watcher reports an unnormalized spelling', async () => {
     const file = path.join(tempDir, 'watched.d');
     await fs.writeFile(file, 'func void x() {};');
     await service.readFile(file);
@@ -74,16 +73,6 @@ describe('FileService path canonicalization', () => {
     const watcherSpelling = `${tempDir}${path.sep}.${path.sep}watched.d`;
     service.clearEncodingCache(watcherSpelling);
     expect(service.getFileEncoding(file)).toBeUndefined();
-
-    // The stat cache must go too, or an expectUnchanged write still trusts it.
-    await service.readFile(file);
-    await fs.writeFile(file, 'external edit');
-    const future = new Date(Date.now() + 60_000);
-    await fs.utimes(file, future, future);
-    service.clearStatCache(watcherSpelling);
-    await expect(
-      service.writeFile(file, 'mine', { expectUnchanged: true })
-    ).resolves.toEqual(expect.objectContaining({ success: true }));
   });
 
   it('serializes two spellings of the same path on one lock', async () => {

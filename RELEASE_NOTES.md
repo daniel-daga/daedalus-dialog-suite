@@ -2,6 +2,7 @@
 
 ## One line per change, `- #123: Short description` (120 characters max). Replace these before dispatching Build Windows.
 
+- #378: Saving no longer overwrites an outside edit to the file after you opened Review Changes
 - #367: Save As: write the world to a new .zen file
 - #366: Place an asset by double-clicking it in the asset browser, or selecting it and pressing Space
 - #364: Place in World stays armed until right-click or Esc, with an optional random Y; its clicks go through VOBs

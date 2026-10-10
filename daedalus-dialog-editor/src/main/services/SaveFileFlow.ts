@@ -26,6 +26,8 @@ export interface SaveFileFlowOptions {
   skipValidation?: boolean;
   forceOnErrors?: boolean;
   overwriteExternal?: boolean;
+  /** The disk version the saved model was read from (#378); refused if disk moved on. */
+  expectedVersion?: string;
   existingVoiceIds?: Record<string, Array<{ filePath: string; functionName: string }>>;
 }
 
@@ -36,7 +38,7 @@ export async function saveFileFlow(
   settings: any,
   options?: SaveFileFlowOptions
 ): Promise<any> {
-  const expectUnchanged = !options?.overwriteExternal;
+  const expectedVersion = options?.overwriteExternal ? undefined : options?.expectedVersion;
   // Force-on-errors overwrites drop content the parser could not read, so
   // FileService first snapshots the on-disk file to `<name>.d.bak`.
   const backupBeforeWrite = options?.forceOnErrors === true;
@@ -66,7 +68,7 @@ export async function saveFileFlow(
 
       // Use pre-generated code from validation if available
       if (validationResult.generatedCode) {
-        const writeResult = await deps.fileService.writeFile(filePath, validationResult.generatedCode, { expectUnchanged, backupBeforeWrite });
+        const writeResult = await deps.fileService.writeFile(filePath, validationResult.generatedCode, { expectedVersion, backupBeforeWrite });
         return {
           ...writeResult,
           validationResult
@@ -97,7 +99,7 @@ export async function saveFileFlow(
         };
     }
 
-    const writeResult = await deps.fileService.writeFile(filePath, code, { expectUnchanged, backupBeforeWrite });
+    const writeResult = await deps.fileService.writeFile(filePath, code, { expectedVersion, backupBeforeWrite });
     return writeResult;
   } catch (error) {
     if (error instanceof PathValidationError) {

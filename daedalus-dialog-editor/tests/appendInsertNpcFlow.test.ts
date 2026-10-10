@@ -70,7 +70,7 @@ function parseLikeTheWorker(source: string): any {
 
 type Calls = {
   validatePathResolved: jest.Mock;
-  readFile: jest.Mock;
+  readFileVersioned: jest.Mock;
   parseSource: jest.Mock;
   writeFile: jest.Mock;
 };
@@ -78,14 +78,14 @@ type Calls = {
 function makeDeps(source: string, overrides: Partial<Calls> = {}): { deps: AppendInsertNpcDeps; calls: Calls } {
   const calls: Calls = {
     validatePathResolved: jest.fn(async () => undefined),
-    readFile: jest.fn(async () => source),
+    readFileVersioned: jest.fn(async () => ({ content: source, version: 'v-read' })),
     parseSource: jest.fn(async (src: string) => parseLikeTheWorker(src)),
     writeFile: jest.fn(async () => ({ success: true, encoding: 'windows-1252' })),
     ...overrides,
   } as Calls;
   const deps = {
     pathValidator: { validatePathResolved: calls.validatePathResolved },
-    fileService: { readFile: calls.readFile, writeFile: calls.writeFile },
+    fileService: { readFileVersioned: calls.readFileVersioned, writeFile: calls.writeFile },
     parserService: { parseSource: calls.parseSource },
   } as unknown as AppendInsertNpcDeps;
   return { deps, calls };
@@ -113,7 +113,7 @@ describe('appendInsertNpcFlow', () => {
     expect(out).toBe(expected.join('\r\n'));
     expect(out).not.toMatch(/[^\r]\n/);
     expect(result).toEqual({ ok: true, line: 12 });
-    expect(calls.writeFile).toHaveBeenCalledWith(FILE, out, { expectUnchanged: true });
+    expect(calls.writeFile).toHaveBeenCalledWith(FILE, out, { expectedVersion: 'v-read' });
   });
 
   it('keeps LF and takes the indent the body already uses', async () => {
@@ -150,7 +150,7 @@ describe('appendInsertNpcFlow', () => {
     expect(calls.writeFile).not.toHaveBeenCalled();
   });
 
-  it('reports the mtime-guard conflict as a refusal, not a throw', async () => {
+  it('reports the version-guard conflict as a refusal, not a throw', async () => {
     const { deps } = makeDeps(STARTUP_CRLF, {
       writeFile: jest.fn(async () => {
         throw new FileServiceError(`EXTERNAL_MODIFICATION: ${FILE} was modified on disk since it was last read`, 'EXTERNAL_MODIFICATION', FILE);
@@ -172,7 +172,7 @@ describe('appendInsertNpcFlow', () => {
     await expect(appendInsertNpcFlow(deps, 'C:/evil.d', 'STARTUP_NewWorld', 'X', 'WP')).rejects.toThrow(
       'Path is not in an allowed directory'
     );
-    expect(calls.readFile).not.toHaveBeenCalled();
+    expect(calls.readFileVersioned).not.toHaveBeenCalled();
     expect(calls.writeFile).not.toHaveBeenCalled();
   });
 });

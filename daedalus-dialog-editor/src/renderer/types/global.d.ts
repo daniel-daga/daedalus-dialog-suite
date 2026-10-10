@@ -127,6 +127,9 @@ export interface SaveOptions {
   // When true, bypass the main-process external-modification precondition
   // (E4 phase 2) and overwrite the file even if it changed on disk.
   overwriteExternal?: boolean;
+  // The disk version the saved model was read from (#378); the save is
+  // refused as EXTERNAL_MODIFICATION when the file is no longer that version.
+  expectedVersion?: string;
   // Project-wide AI_Output voice ids (excluding the file being saved), keyed
   // by UPPERCASED id — same shape as ProjectIndex.voiceIds. Feeds the
   // duplicate-voice-id validation warnings.
@@ -152,7 +155,11 @@ export interface EditorAPI {
 
   // File I/O API
   readFile: (filePath: string) => Promise<string>;
-  writeFile: (filePath: string, content: string, options?: { overwriteExternal?: boolean }) => Promise<{ success: boolean }>;
+  // `readFile` plus the disk version of the bytes read (#378). A caller that
+  // writes the file back keeps the version with its snapshot and passes it as
+  // `expectedVersion`; no other read advances it.
+  readFileVersioned: (filePath: string) => Promise<{ content: string; version: string }>;
+  writeFile: (filePath: string, content: string, options?: { expectedVersion?: string }) => Promise<{ success: boolean; version?: string }>;
   openFileDialog: () => Promise<string | null>;
   saveFileDialog: () => Promise<string | null>;
 

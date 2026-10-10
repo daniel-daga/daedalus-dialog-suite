@@ -251,12 +251,10 @@ export function createWindow() {
   // Register window with file watcher so it can send events to renderer
   fileWatcherService.setWindow(mainWindow);
 
-  // Invalidate FileService caches when a file changes externally so the next
-  // read re-detects encoding and the next expectUnchanged write re-checks
-  // the disk mtime instead of trusting stale cached state.
+  // Invalidate FileService's encoding cache when a file changes externally so
+  // the next read re-detects the encoding.
   fileWatcherService.setOnExternalChange((filePath) => {
     fileService.clearEncodingCache(filePath);
-    fileService.clearStatCache(filePath);
   });
 
   // E1: intercept the window close so the renderer can guard unsaved work.
@@ -438,12 +436,30 @@ export function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('file:write', async (_event, filePath: string, content: string, options?: { overwriteExternal?: boolean }) => {
+  // `file:read` plus the disk version of the bytes read (#378). A caller that
+  // writes the file back passes `version` as the write's `expectedVersion`.
+  ipcMain.handle('file:readVersioned', async (_event, filePath: string) => {
+    try {
+      await pathValidator.validatePathResolved(filePath);
+
+      return await fileService.readFileVersioned(filePath);
+    } catch (error) {
+      if (error instanceof PathValidationError) {
+        console.error('[IPC] file:readVersioned - Path validation failed:', error.message);
+        throw new Error(error.message);
+      }
+      console.error('[IPC] file:readVersioned error:', error);
+      throw new Error(`Failed to read file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  });
+
+  ipcMain.handle('file:write', async (_event, filePath: string, content: string, options?: { expectedVersion?: string }) => {
     try {
       // Validate path before writing (symlink-resolved, write mode)
       await pathValidator.validatePathResolved(filePath, { write: true });
 
-      const writeResult = await fileService.writeFile(filePath, content, { expectUnchanged: !options?.overwriteExternal });
+      const expectedVersion = typeof options?.expectedVersion === 'string' ? options.expectedVersion : undefined;
+      const writeResult = await fileService.writeFile(filePath, content, { expectedVersion });
       return writeResult;
     } catch (error) {
       if (error instanceof PathValidationError) {

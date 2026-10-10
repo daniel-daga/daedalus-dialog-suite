@@ -918,6 +918,8 @@ export interface ValidationResult {
 export interface SaveResult {
   success: boolean;
   encoding?: string;
+  /** The disk version the save wrote (#378) — the snapshot's next `expectedVersion`. */
+  version?: string;
   validationResult?: ValidationResult;
 }
 

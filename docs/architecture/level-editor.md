@@ -3729,17 +3729,18 @@ with no generate step: path-validate → read through `FileService` (its encodin
 detection is what makes the write-back byte-faithful) → parse the bytes just
 read → refuse on `hasErrors` → find the function case-insensitively → splice one
 line before its closing `};`, in the file's own line ending and the indent of
-the body's first indented line → write with `expectUnchanged` → `notifySelfWrite`.
+the body's first indented line → write with the version that read returned → `notifySelfWrite`.
 `DialogFunction` gained a `range` for it, as constants, variables and instances
 already had.
 
-**The mtime guard does not cover what it looks like it covers.** The flow reads
-immediately before writing, so `expectUnchanged` only closes the race between
-*that* read and the write — never the dialog editor's stale picture. After the
-write the cache holds the flow's own mtime, so a `saveFile` from a model parsed
-before the spawn landed sails through the guard and drops the spawn. The
-protection has to be renderer-side, because main has no notion of which files the
-editor holds open: refuse when the file is open and dirty (naming it), and on
+**The flow's version guard covers only its own read.** The flow reads
+immediately before writing, so its `expectedVersion` closes the race between
+*that* read and the write. The dialog editor's open model carries its own
+`diskVersion` (#378), so a `saveFile` from a model parsed before the spawn landed
+is refused as an external modification rather than dropping the spawn — but that
+lands the user in the conflict dialog. The friendly protection is renderer-side,
+because main has no notion of which files the editor holds open: refuse when the
+file is open and dirty (naming it), and on
 success run the open slot through `fileStore.reloadFile` — the watcher's own
 external-change path, and the only reload there is, since `notifySelfWrite` has
 silenced the watcher for that write. `projectStore.addSpawnSite` and

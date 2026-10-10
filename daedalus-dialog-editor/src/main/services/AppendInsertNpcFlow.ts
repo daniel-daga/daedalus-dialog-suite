@@ -18,7 +18,7 @@ import type { AppendInsertNpcResult } from '../../shared/types';
  */
 export interface AppendInsertNpcDeps {
   pathValidator: Pick<PathValidationService, 'validatePathResolved'>;
-  fileService: Pick<FileService, 'readFile' | 'writeFile'>;
+  fileService: Pick<FileService, 'readFileVersioned' | 'writeFile'>;
   parserService: Pick<ParserService, 'parseSource'>;
 }
 
@@ -31,7 +31,7 @@ export async function appendInsertNpcFlow(
 ): Promise<AppendInsertNpcResult> {
   try {
     await deps.pathValidator.validatePathResolved(filePath, { write: true });
-    const source = await deps.fileService.readFile(filePath);
+    const { content: source, version } = await deps.fileService.readFileVersioned(filePath);
     const model = await deps.parserService.parseSource(source);
     if (model.hasErrors) {
       const errors: string[] = (model.errors ?? []).map((e: any) => e.message ?? 'Syntax error');
@@ -47,7 +47,7 @@ export async function appendInsertNpcFlow(
       source, range, `Wld_InsertNpc (${npcInstance}, "${spawnPoint}");`
     );
     try {
-      await deps.fileService.writeFile(filePath, text, { expectUnchanged: true });
+      await deps.fileService.writeFile(filePath, text, { expectedVersion: version });
     } catch (error) {
       if ((error as { code?: string }).code === 'EXTERNAL_MODIFICATION') {
         return { ok: false, reason: { kind: 'external-modification' } };

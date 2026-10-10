@@ -17,12 +17,13 @@ contextBridge.exposeInMainWorld('editorAPI', {
   // Code Generator API
   generateCode: (model: any, settings: any) => ipcRenderer.invoke('generator:generateCode', model, settings),
   generateDialogCode: (model: any, dialogName: string, settings: any) => ipcRenderer.invoke('generator:generateDialogCode', model, dialogName, settings),
-  saveFile: (filePath: string, model: any, settings: any, options?: { skipValidation?: boolean; forceOnErrors?: boolean; overwriteExternal?: boolean; existingVoiceIds?: Record<string, Array<{ filePath: string; functionName: string }>> }) =>
+  saveFile: (filePath: string, model: any, settings: any, options?: { skipValidation?: boolean; forceOnErrors?: boolean; overwriteExternal?: boolean; expectedVersion?: string; existingVoiceIds?: Record<string, Array<{ filePath: string; functionName: string }>> }) =>
     ipcRenderer.invoke('generator:saveFile', filePath, model, settings, options),
 
   // File I/O API
   readFile: (filePath: string) => ipcRenderer.invoke('file:read', filePath),
-  writeFile: (filePath: string, content: string, options?: { overwriteExternal?: boolean }) =>
+  readFileVersioned: (filePath: string) => ipcRenderer.invoke('file:readVersioned', filePath),
+  writeFile: (filePath: string, content: string, options?: { expectedVersion?: string }) =>
     ipcRenderer.invoke('file:write', filePath, content, options),
   openFileDialog: () => ipcRenderer.invoke('file:openDialog'),
   saveFileDialog: () => ipcRenderer.invoke('file:saveDialog'),

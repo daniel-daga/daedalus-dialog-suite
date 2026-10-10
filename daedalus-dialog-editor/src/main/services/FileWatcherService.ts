@@ -57,7 +57,7 @@ export class FileWatcherService {
   /**
    * Optional hook invoked for genuine external changes (after self-write
    * suppression). Used by the main process to invalidate FileService's
-   * encoding/stat caches for the changed path.
+   * encoding cache for the changed path.
    */
   private onExternalChange: ((filePath: string, type: FileChangeType) => void) | null = null;
 

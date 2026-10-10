@@ -459,7 +459,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     filePath: string,
     mutatorFn: (currentContent: string) => Promise<string> | string
   ): Promise<SemanticModel> => {
-    const content = await window.editorAPI.readFile(filePath);
+    const { content, version } = await window.editorAPI.readFileVersioned(filePath);
     const newContent = await mutatorFn(content);
     // Never write content the parser cannot read. A malformed mutation (e.g. a
     // constant with an empty value → `const int X = ;`) would otherwise corrupt
@@ -473,8 +473,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       );
     }
     // The main process arms file-watcher self-write suppression after the
-    // actual write succeeds.
-    await window.editorAPI.writeFile(filePath, newContent);
+    // actual write succeeds, and refuses it if the file moved on since the read.
+    await window.editorAPI.writeFile(filePath, newContent, { expectedVersion: version });
     invalidateCacheForFile(filePath);
     return get().getSemanticModel(filePath);
   };

@@ -183,6 +183,13 @@ export interface FileState {
   lastSaved: Date;
   originalCode?: string;
   /**
+   * The disk version `originalCode` was read at, or the version the last
+   * successful save wrote (#378). Sent as the save's `expectedVersion`, so the
+   * main process refuses a write over a file that moved on since. Only this
+   * snapshot's own reads and saves set it.
+   */
+  diskVersion?: string;
+  /**
    * Parse-state mirror of `semanticModel.hasErrors`: true when the file was
    * opened / re-parsed into a partial model. Set only where a fresh parse lands
    * (openFile, reloadFile) — never cleared by model mutations.
@@ -328,6 +335,22 @@ function buildExistingVoiceIds(
   return existingVoiceIds;
 }
 
+/** Per-file queue of saves, so each reads the `diskVersion` the last one wrote. */
+const saveQueues = new Map<string, Promise<unknown>>();
+
+function serializeSave<T>(filePath: string, save: () => Promise<T>): Promise<T> {
+  // An idle file starts its save synchronously, capturing the model as of the
+  // call (E7's mid-save guard depends on it).
+  const previous = saveQueues.get(filePath);
+  const run = previous ? previous.then(save, save) : save();
+  const tail = run.catch(() => undefined);
+  saveQueues.set(filePath, tail);
+  void tail.then(() => {
+    if (saveQueues.get(filePath) === tail) saveQueues.delete(filePath);
+  });
+  return run;
+}
+
 export const useFileStore = create<FileStore>()(immer((set, get) => ({
   project: null,
   openFiles: new Map(),
@@ -345,7 +368,7 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
 
   openFile: async (filePath: string, opts?: { model?: SemanticModel }) => {
     try {
-      const sourceCode = await window.editorAPI.readFile(filePath);
+      const { content: sourceCode, version } = await window.editorAPI.readFileVersioned(filePath);
       const processedModel = opts?.model
         ? ensureActionIds(opts.model)
         : await parseSourceWithIds(sourceCode);
@@ -356,6 +379,7 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
         isDirty: false,
         lastSaved: new Date(),
         originalCode: sourceCode,
+        diskVersion: version,
         hasErrors: processedModel.hasErrors || false,
         errors: processedModel.errors || [],
       };
@@ -787,7 +811,9 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
     return validationResult;
   },
 
-  saveFile: async (filePath: string, options?: { forceOnErrors?: boolean; overwriteExternal?: boolean }) => {
+  // Saves of one file run in turn: each sends the version the previous one
+  // wrote, so auto-save racing Ctrl+S is not refused as an external change.
+  saveFile: (filePath: string, options?: { forceOnErrors?: boolean; overwriteExternal?: boolean }) => serializeSave(filePath, async () => {
     const state = get();
     const fileState = state.openFiles.get(filePath);
     if (!fileState) {
@@ -818,6 +844,7 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
         {
           forceOnErrors: options?.forceOnErrors,
           overwriteExternal: options?.overwriteExternal,
+          expectedVersion: fileState.diskVersion,
           existingVoiceIds: buildExistingVoiceIds(filePath)
         }
       );
@@ -843,6 +870,7 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
           // A successful write reconciles disk with the editor — any external
           // conflict is now resolved in favour of the editor's content (E4).
           currentFileState.externalConflict = undefined;
+          currentFileState.diskVersion = result.version;
           // Only mark clean if the written model is still the current one;
           // an edit that landed mid-save is not on disk yet.
           if (stillCurrent) {
@@ -873,7 +901,7 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       console.error('Failed to save file:', error);
       throw error;
     }
-  },
+  }),
 
   generateCode: async (filePath: string) => {
     const state = get();
@@ -907,7 +935,7 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       ? `${reloadStartedFor.externalConflict.detectedAt}:${!!reloadStartedFor.externalConflict.fileMissing}`
       : null;
 
-    const sourceCode = await window.editorAPI.readFile(filePath);
+    const { content: sourceCode, version } = await window.editorAPI.readFileVersioned(filePath);
     const processedModel = await parseSourceWithIds(sourceCode);
 
     set((state) => {
@@ -940,6 +968,7 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       currentFileState.isDirty = false;
       currentFileState.lastSaved = new Date();
       currentFileState.originalCode = sourceCode;
+      currentFileState.diskVersion = version;
       currentFileState.hasErrors = processedModel.hasErrors || false;
       currentFileState.errors = processedModel.errors || [];
       currentFileState.lastValidationResult = undefined;

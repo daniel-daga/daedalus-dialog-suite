@@ -31,8 +31,7 @@ export class FileServiceError extends Error {
  * Upper bound on the per-path caches below. Far above the number of files a
  * session reads through this service (opened files, not the index pass), so
  * eviction is a memory bound, not a working-set event; an evicted encoding
- * falls back to the windows-1252 default on write, and an evicted mtime makes
- * the `expectUnchanged` guard a no-op for that one write (§3 P3).
+ * falls back to the windows-1252 default on write (§3 P3).
  */
 export const FILE_CACHE_CAP = 1024;
 
@@ -44,11 +43,35 @@ export const FILE_CACHE_CAP = 1024;
 const fileEncodingCache = new LruMap<string, string>(FILE_CACHE_CAP);
 
 /**
- * Mapping of canonical path keys to the `mtimeMs` observed at the last successful read
- * or write. Used by the `expectUnchanged` write precondition (E4 phase 2) to
- * detect an external modification landing before the file watcher fires.
+ * The disk version a read or write observed, as an opaque token. The caller
+ * that holds an editing snapshot keeps it and hands it back as a write's
+ * `expectedVersion` (E4 phase 2, #378): the service keeps no baseline of its
+ * own, so a preview read cannot bless an older snapshot's write.
  */
-const fileStatCache = new LruMap<string, number>(FILE_CACHE_CAP);
+function diskVersion(stat: { mtimeMs: number; size: number; ino: number }): string {
+  return `${stat.mtimeMs}:${stat.size}:${stat.ino}`;
+}
+
+/**
+ * Read `filePath` and the version of exactly those bytes. Both come from one
+ * open handle, so an atomic replacement mid-read leaves the token describing
+ * the replaced inode; an in-place write mid-read changes the handle's stat
+ * across the read, which is retried.
+ */
+async function readWithVersion(filePath: string): Promise<{ buffer: Buffer; version: string }> {
+  for (;;) {
+    const handle = await fs.open(filePath, 'r');
+    try {
+      const before = diskVersion(await handle.stat());
+      const buffer = await handle.readFile();
+      if (diskVersion(await handle.stat()) === before) {
+        return { buffer, version: before };
+      }
+    } finally {
+      await handle.close();
+    }
+  }
+}
 
 /**
  * Simple lock mechanism to prevent race conditions during file operations
@@ -131,7 +154,7 @@ async function writeFileAtomic(
   filePath: string,
   buffer: Buffer,
   selfWriteObserver?: SelfWriteLifecycleObserver
-): Promise<void> {
+): Promise<string> {
   const dir = path.dirname(filePath);
   const base = path.basename(filePath);
   const tmp = path.join(
@@ -164,6 +187,10 @@ async function writeFileAtomic(
     } catch {
       // The disk write succeeded; observer failures cannot turn it into a save error.
     }
+    // A rename keeps the inode, size and mtime, so the staged file's stat is
+    // the version now at `filePath` — and never an external replacement that
+    // landed after the rename.
+    return diskVersion(stagedStat);
   } catch (error) {
     if (renameStarted && writeToken !== undefined) {
       try {
@@ -235,10 +262,18 @@ export class FileService {
    * @throws {FileServiceError} If file cannot be read
    */
   async readFile(filePath: string): Promise<string> {
+    return (await this.readFileVersioned(filePath)).content;
+  }
+
+  /**
+   * `readFile`, plus the disk version of the bytes read. A caller that will
+   * write the file back keeps `version` with what it derived from `content`
+   * and passes it as the write's `expectedVersion`.
+   */
+  async readFileVersioned(filePath: string): Promise<{ content: string; version: string }> {
     return acquireLock(filePath, async () => {
       try {
-        // Read file as buffer first
-        const buffer = await fs.readFile(filePath);
+        const { buffer, version } = await readWithVersion(filePath);
 
         // Detect encoding and decode (shared with the metadata extraction path)
         const { content, encoding } = decodeBuffer(buffer);
@@ -246,15 +281,7 @@ export class FileService {
         // Store the detected encoding for later use when writing
         fileEncodingCache.set(canonicalPathKey(filePath), encoding);
 
-        // Remember the on-disk mtime so a later `expectUnchanged` write can
-        // detect an external modification (E4 phase 2).
-        try {
-          fileStatCache.set(canonicalPathKey(filePath), (await fs.stat(filePath)).mtimeMs);
-        } catch {
-          // Non-fatal: without a cached mtime the write guard simply no-ops.
-        }
-
-        return content;
+        return { content, version };
       } catch (error) {
         const err = error as NodeJS.ErrnoException;
 
@@ -288,36 +315,33 @@ export class FileService {
    * Write content to a file using the original encoding if available
    * @param filePath - Absolute path to the file
    * @param content - Content to write
-   * @returns Success status with encoding information
+   * @returns Success status with encoding information and the version written
    * @throws {FileServiceError} If file cannot be written
    */
   async writeFile(
     filePath: string,
     content: string,
-    opts?: { expectUnchanged?: boolean; backupBeforeWrite?: boolean }
-  ): Promise<{ success: boolean; encoding?: string }> {
+    opts?: { expectedVersion?: string; backupBeforeWrite?: boolean }
+  ): Promise<{ success: boolean; encoding?: string; version?: string }> {
     return acquireLock(filePath, async () => {
       // --- External-modification precondition (E4 phase 2) ------------------
-      // Refuse the write, without touching the file, if the caller expected
-      // the file to be unchanged but its on-disk mtime no longer matches the
-      // mtime we cached at read time (an edit landed before the watcher fired).
-      if (opts?.expectUnchanged) {
-        const cachedMtime = fileStatCache.get(canonicalPathKey(filePath));
-        if (cachedMtime !== undefined) {
-          let diskMtime: number | undefined;
-          try {
-            diskMtime = (await fs.stat(filePath)).mtimeMs;
-          } catch {
-            // File is gone — nothing to conflict with; the write recreates it.
-            diskMtime = undefined;
-          }
-          if (diskMtime !== undefined && diskMtime !== cachedMtime) {
-            throw new FileServiceError(
-              `EXTERNAL_MODIFICATION: ${filePath} was modified on disk since it was last read`,
-              'EXTERNAL_MODIFICATION',
-              filePath
-            );
-          }
+      // Refuse the write, without touching the file, if the caller's snapshot
+      // was read from a disk version that is no longer the one on disk (an
+      // edit landed before the watcher fired).
+      if (opts?.expectedVersion !== undefined) {
+        let current: string | undefined;
+        try {
+          current = diskVersion(await fs.stat(filePath));
+        } catch {
+          // File is gone — nothing to conflict with; the write recreates it.
+          current = undefined;
+        }
+        if (current !== undefined && current !== opts.expectedVersion) {
+          throw new FileServiceError(
+            `EXTERNAL_MODIFICATION: ${filePath} was modified on disk since it was last read`,
+            'EXTERNAL_MODIFICATION',
+            filePath
+          );
         }
       }
 
@@ -383,17 +407,8 @@ export class FileService {
 
       // --- Atomic write (E5) ------------------------------------------------
       try {
-        await writeFileAtomic(filePath, buffer, this.selfWriteObserver);
-
-        // Refresh the cached mtime so a subsequent expectUnchanged write does
-        // not misfire on our own write.
-        try {
-          fileStatCache.set(canonicalPathKey(filePath), (await fs.stat(filePath)).mtimeMs);
-        } catch {
-          // Non-fatal: the next read repopulates the cache.
-        }
-
-        return { success: true, encoding };
+        const version = await writeFileAtomic(filePath, buffer, this.selfWriteObserver);
+        return { success: true, encoding, version };
       } catch (error) {
         const err = error as NodeJS.ErrnoException;
 
@@ -444,20 +459,6 @@ export class FileService {
       fileEncodingCache.delete(canonicalPathKey(filePath));
     } else {
       fileEncodingCache.clear();
-    }
-  }
-
-  /**
-   * Clear the mtime stat cache for a specific file or all files. Called on
-   * external file-watcher changes so the next `expectUnchanged` write
-   * re-reads the disk state instead of trusting a stale mtime.
-   * @param filePath - Optional path to clear specific file, omit to clear all
-   */
-  clearStatCache(filePath?: string): void {
-    if (filePath) {
-      fileStatCache.delete(canonicalPathKey(filePath));
-    } else {
-      fileStatCache.clear();
     }
   }
 

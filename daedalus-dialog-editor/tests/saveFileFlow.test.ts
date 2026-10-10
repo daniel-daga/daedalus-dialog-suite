@@ -62,13 +62,13 @@ describe('saveFileFlow', () => {
   it('writes the code validation generated', async () => {
     const { deps, calls } = makeDeps();
 
-    const result = await saveFileFlow(deps, 'C:/proj/DIA_Test.d', MODEL, SETTINGS);
+    const result = await saveFileFlow(deps, 'C:/proj/DIA_Test.d', MODEL, SETTINGS, { expectedVersion: 'v1' });
 
     expect(calls.validatePathResolved).toHaveBeenCalledWith('C:/proj/DIA_Test.d', { write: true });
     expect(calls.writeFile).toHaveBeenCalledWith(
       'C:/proj/DIA_Test.d',
       'INSTANCE DIA_Test (C_INFO) {};',
-      { expectUnchanged: true, backupBeforeWrite: false }
+      { expectedVersion: 'v1', backupBeforeWrite: false }
     );
     expect(calls.generateCode).not.toHaveBeenCalled();
     expect(result).toMatchObject({ success: true, validationResult: { isValid: true } });
@@ -100,10 +100,11 @@ describe('saveFileFlow', () => {
     await saveFileFlow(deps, 'C:/proj/DIA_Test.d', MODEL, SETTINGS, {
       forceOnErrors: true,
       overwriteExternal: true,
+      expectedVersion: 'v1',
     });
 
     expect(calls.writeFile).toHaveBeenCalledWith('C:/proj/DIA_Test.d', 'forced', {
-      expectUnchanged: false,
+      expectedVersion: undefined,
       backupBeforeWrite: true,
     });
   });
@@ -134,10 +135,10 @@ describe('saveFileFlow', () => {
   it('writes the fallback code when it parses clean', async () => {
     const { deps, calls } = makeDeps();
 
-    const result = await saveFileFlow(deps, 'C:/proj/DIA_Test.d', MODEL, SETTINGS, { skipValidation: true });
+    const result = await saveFileFlow(deps, 'C:/proj/DIA_Test.d', MODEL, SETTINGS, { skipValidation: true, expectedVersion: 'v1' });
 
     expect(calls.writeFile).toHaveBeenCalledWith('C:/proj/DIA_Test.d', 'fallback code', {
-      expectUnchanged: true,
+      expectedVersion: 'v1',
       backupBeforeWrite: false,
     });
     expect(result).toEqual({ success: true, encoding: 'windows-1252' });

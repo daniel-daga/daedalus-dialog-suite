@@ -126,13 +126,20 @@ Policy: **suspend auto-save AND prompt** — suspension is the safety mechanism
   `saveFile(fp, { overwriteExternal: true })`; **Reload from disk** =
   `reloadFile(fp)` (fileMissing variant: Restore / Discard). Background-file
   conflicts surface as an App-bar chip.
-- Main-side backstop (closes the watcher-latency window): `FileService` keeps
-  an mtime stat cache; writes default to `expectUnchanged` and reject with
-  `EXTERNAL_MODIFICATION:` when disk mtime differs from the cached value,
-  unless the renderer passed `overwriteExternal`. The renderer maps that
-  rejection back to the same conflict state. Residual: coarse mtime
-  granularity (FAT/network shares) can miss a same-second write; the watcher
-  path catches it moments later.
+- Main-side backstop (closes the watcher-latency window, #378): every read
+  that seeds an editing snapshot returns a disk-version token (mtime, size,
+  inode) taken from the same open handle as the bytes, and `FileState`
+  keeps it as `diskVersion`. A save sends it as `expectedVersion`; `FileService`
+  rejects with `EXTERNAL_MODIFICATION:` when the file on disk is no longer that
+  version, unless the renderer passed `overwriteExternal`. A successful write
+  returns the version it put down (the staged file's stat — a rename keeps it),
+  which becomes the next `expectedVersion`. `FileService` keeps no baseline of
+  its own, so a preview read (Review Changes, the conflict diff) cannot bless an
+  older snapshot's write. Saves of one file are queued in the renderer so each
+  carries the version the previous one wrote. The renderer maps the rejection
+  back to the same conflict state. Residual: a same-size write within the
+  mtime granularity of a coarse filesystem (FAT/network shares) that keeps the
+  inode can be missed; the watcher path catches it moments later.
 
 ## Save-error classification
 

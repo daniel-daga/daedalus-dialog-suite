@@ -26,7 +26,7 @@ describe('FileService atomic write (E5)', () => {
     service.clearEncodingCache();
     target = path.join(tempDir, 'DIA_Test.d');
     await fs.writeFile(target, 'original content');
-    // Prime the encoding/stat caches via a real read.
+    // Prime the encoding cache via a real read.
     await service.readFile(target);
   });
 
@@ -45,7 +45,7 @@ describe('FileService atomic write (E5)', () => {
     expect(entries).toEqual(['DIA_Test.d']);
   });
 
-  it('publishes staged metadata before rename and completes the observer before the cache stat', async () => {
+  it('publishes staged metadata before rename and completes the observer', async () => {
     const lifecycle: Array<{ phase: string; token?: unknown; signature?: { mtimeMs: number; size: number }; succeeded?: boolean }> = [];
     service.setSelfWriteObserver({
       begin: (_filePath, signature) => {
@@ -67,7 +67,7 @@ describe('FileService atomic write (E5)', () => {
     });
   });
 
-  it('does not adopt an external replacement made before the post-write cache stat', async () => {
+  it('does not adopt an external replacement made right after the rename', async () => {
     let selfWriteSignature: { mtimeMs: number; size: number } | undefined;
     service.setSelfWriteObserver({
       begin: (_filePath, signature) => {
@@ -76,23 +76,23 @@ describe('FileService atomic write (E5)', () => {
       },
       finish: () => undefined,
     });
-    const realStat = fs.stat.bind(fs);
-    let statCalls = 0;
-    jest.spyOn(fs, 'stat').mockImplementation(async (...args: any[]) => {
-      statCalls += 1;
-      // This write has no expectUnchanged precondition; replace the target on
-      // the post-rename cache refresh.
-      if (statCalls === 1) {
-        await fs.writeFile(target, 'external replacement with another size');
-      }
-      return (realStat as any)(...args);
+    const realRename = fs.rename.bind(fs);
+    jest.spyOn(fs, 'rename').mockImplementation(async (...args: any[]) => {
+      await (realRename as any)(...args);
+      await fs.writeFile(target, 'external replacement with another size');
     });
 
-    await service.writeFile(target, 'editor content');
+    const { version } = await service.writeFile(target, 'editor content');
+    jest.restoreAllMocks();
 
-    const externalStat = await realStat(target);
+    const externalStat = await fs.stat(target);
     expect(selfWriteSignature).toBeDefined();
     expect(selfWriteSignature).not.toEqual({ mtimeMs: externalStat.mtimeMs, size: externalStat.size });
+    // The returned version is the bytes this write put down, so a guarded
+    // write from it refuses to clobber the replacement.
+    await expect(
+      service.writeFile(target, 'next save', { expectedVersion: version })
+    ).rejects.toThrow(/^EXTERNAL_MODIFICATION:/);
   });
 
   it('leaves the original file intact when the write fails mid-way', async () => {

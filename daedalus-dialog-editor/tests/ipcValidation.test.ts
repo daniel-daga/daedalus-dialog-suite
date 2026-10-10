@@ -164,6 +164,11 @@ describe('assertSaveFileOptions', () => {
     expect(() => assertSaveFileOptions({ evil: true })).toThrow(/option/i);
   });
 
+  it('accepts a string expectedVersion and rejects any other type', () => {
+    expect(() => assertSaveFileOptions({ expectedVersion: '1700000000000:42:7' })).not.toThrow();
+    expect(() => assertSaveFileOptions({ expectedVersion: 42 })).toThrow(/expectedVersion/);
+  });
+
   it('accepts known keys with undefined values (structured clone keeps them)', () => {
     // fileStore.saveFile sends { forceOnErrors: options?.forceOnErrors, ... },
     // so absent flags arrive as keys with undefined values over IPC. They must

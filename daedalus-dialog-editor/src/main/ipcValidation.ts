@@ -218,7 +218,7 @@ export function sanitizeRendererErrorPayload(
   return { message };
 }
 
-const SAVE_FILE_OPTION_KEYS = ['skipValidation', 'forceOnErrors', 'overwriteExternal', 'existingVoiceIds'] as const;
+const SAVE_FILE_OPTION_KEYS = ['skipValidation', 'forceOnErrors', 'overwriteExternal', 'existingVoiceIds', 'expectedVersion'] as const;
 
 /** Structural check for the ProjectIndex.voiceIds-shaped validation context. */
 function isVoiceIdIndex(value: unknown): boolean {
@@ -259,6 +259,12 @@ export function assertSaveFileOptions(options: unknown): void {
     if (key === 'existingVoiceIds') {
       if (!isVoiceIdIndex(options[key])) {
         throw new Error('Invalid options payload: option "existingVoiceIds" must map ids to {filePath, functionName} arrays');
+      }
+      continue;
+    }
+    if (key === 'expectedVersion') {
+      if (typeof options[key] !== 'string') {
+        throw new Error('Invalid options payload: option "expectedVersion" must be a string');
       }
       continue;
     }

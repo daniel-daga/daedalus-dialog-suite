@@ -482,6 +482,12 @@ export const mockEditorAPI: EditorAPI = {
     }
   },
 
+  async readFileVersioned(filePath: string): Promise<{ content: string; version: string }> {
+    // Through the object, so a test spying on `readFile` steers this too.
+    const content = await mockEditorAPI.readFile(filePath);
+    return { content, version: `mock:${content.length}` };
+  },
+
   async writeFile(filePath: string, content: string): Promise<{ success: boolean }> {
     try {
       MockFileSystem.writeFile(filePath, content);

@@ -213,16 +213,19 @@ describe('ProjectStore - mergedSemanticModel', () => {
       }
     });
 
-    const readFileSpy = jest.spyOn(window.editorAPI, 'readFile').mockResolvedValue(source);
+    const readFileSpy = jest.spyOn(window.editorAPI, 'readFileVersioned')
+      .mockResolvedValue({ content: source, version: 'v-topics' });
     const writeFileSpy = jest.spyOn(window.editorAPI, 'writeFile').mockResolvedValue({ success: true });
     const parseSpy = jest.spyOn(window.editorAPI, 'parseDialogFile').mockResolvedValue(createModel([]));
 
     try {
       await useProjectStore.getState().updateGlobalConstant('TOPIC_Test', 'New; still one statement', questFile);
 
+      // Guarded by the version of the bytes the mutation started from (#378).
       expect(writeFileSpy).toHaveBeenCalledWith(
         questFile,
-        'const string TOPIC_Test = "New; still one statement";\nvar int MIS_Test;\n'
+        'const string TOPIC_Test = "New; still one statement";\nvar int MIS_Test;\n',
+        { expectedVersion: 'v-topics' }
       );
     } finally {
       readFileSpy.mockRestore();
