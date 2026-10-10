@@ -16,9 +16,17 @@ const CHANGE_PARSE_CONCURRENCY = 8;
 
 const pendingChangedPaths = new Set<string>();
 let changeFlushTimer: ReturnType<typeof setTimeout> | null = null;
+// Flushes run one at a time: a batch still parsing X when X changes again
+// would otherwise finish after the newer batch and overwrite its model and
+// index with older ones (#382). A flush collects its paths when it starts, so
+// changes queued behind a slow batch coalesce into the next one.
+let flushChain: Promise<void> = Promise.resolve();
 
 function clearPendingChanges(): void {
   pendingChangedPaths.clear();
+  // A flush still running belongs to the ended subscription and drops its own
+  // result (#380); the next project's batches must not queue behind it.
+  flushChain = Promise.resolve();
   if (changeFlushTimer !== null) {
     clearTimeout(changeFlushTimer);
     changeFlushTimer = null;
@@ -30,7 +38,9 @@ function queueChangedFile(filePath: string): void {
   if (changeFlushTimer === null) {
     changeFlushTimer = setTimeout(() => {
       changeFlushTimer = null;
-      void flushChangedFiles();
+      flushChain = flushChain.then(flushChangedFiles).catch((err) => {
+        console.error('[FileWatcher] Change batch failed:', err);
+      });
     }, CHANGE_BATCH_WINDOW_MS);
   }
 }

@@ -247,6 +247,44 @@ describe('useFileWatcher — change batching', () => {
     unmount();
   });
 
+  // #382: a slow parse of X must not land after a later batch's parse of X.
+  test('an older batch for a file never overwrites a newer one', async () => {
+    const resolvers: Array<(model: any) => void> = [];
+    mockParseDialogFile.mockImplementation(() =>
+      new Promise((resolve) => { resolvers.push(resolve); }) as any);
+    const versioned = (version: string) => ({
+      ...EMPTY_MODEL,
+      dialogs: { [`DIA_${version}`]: { name: `DIA_${version}`, properties: { npc: 'TestNPC' } } },
+    });
+    const { unmount } = await setupHook();
+
+    emit({ type: 'change', filePath: FILE_A });
+    await act(async () => {
+      await waitFor(() => expect(resolvers).toHaveLength(1), { timeout: 2000 });
+    });
+
+    // The file changes again while the first parse is still running.
+    emit({ type: 'change', filePath: FILE_A });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    });
+
+    // Finish whichever parses exist newest-first, which is the order that
+    // used to let the older model win.
+    await act(async () => {
+      if (resolvers.length === 2) resolvers[1](versioned('NEW'));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      resolvers[0](versioned('OLD'));
+      await waitFor(() => expect(resolvers).toHaveLength(2), { timeout: 2000 });
+      resolvers[1](versioned('NEW'));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    const cached = useProjectStore.getState().parsedFiles.get(FILE_A);
+    expect(Object.keys(cached?.semanticModel.dialogs ?? {})).toEqual(['DIA_NEW']);
+    unmount();
+  });
+
   test('unmount discards buffered changes', async () => {
     const { unmount } = await setupHook();
 
