@@ -257,3 +257,121 @@ describe('useFileWatcher — change batching', () => {
     expect(mockParseDialogFile).not.toHaveBeenCalled();
   });
 });
+
+// #380: watcher work that was in flight when the project session changed
+// belongs to the old project and must not land in the new one.
+describe('useFileWatcher — project session change', () => {
+  const PROJ_B = 'C:/projectB';
+  const FILE_B1 = 'C:/projectB/DIA_Q.d';
+
+  function deferParses() {
+    const pending = new Map<string, (model: any) => void>();
+    mockParseDialogFile.mockImplementation((filePath: string) =>
+      new Promise((resolve) => { pending.set(filePath, resolve); }) as any);
+    return pending;
+  }
+
+  function switchToProjectB() {
+    act(() => {
+      useProjectStore.getState().closeProject();
+      useProjectStore.setState({
+        projectPath: PROJ_B,
+        projectName: 'ProjectB',
+        allDialogFiles: [FILE_B1],
+        dialogIndex: new Map(),
+      });
+    });
+  }
+
+  test('a change batch parsing when the project switches is discarded', async () => {
+    const indexFile = jest.spyOn(window.editorAPI, 'indexFile').mockResolvedValue({
+      routineSites: [], spawnSites: [], exchangeSites: [], instances: [],
+    });
+    const pending = deferParses();
+    const { unmount } = await setupHook();
+
+    emit({ type: 'change', filePath: FILE_A });
+    await act(async () => {
+      await waitFor(() => expect(pending.has(FILE_A)).toBe(true), { timeout: 2000 });
+    });
+
+    switchToProjectB();
+    await act(async () => {
+      pending.get(FILE_A)!(modelFor(FILE_A));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    const { parsedFiles, dialogIndex } = useProjectStore.getState();
+    expect(parsedFiles.has(FILE_A)).toBe(false);
+    expect(dialogIndex.size).toBe(0);
+    expect(indexFile).not.toHaveBeenCalled();
+    indexFile.mockRestore();
+    unmount();
+  });
+
+  test('an old batch resolving after the new project\'s batch does not overwrite it', async () => {
+    const pending = deferParses();
+    const { unmount } = await setupHook();
+
+    emit({ type: 'change', filePath: FILE_A });
+    await act(async () => {
+      await waitFor(() => expect(pending.has(FILE_A)).toBe(true), { timeout: 2000 });
+    });
+
+    switchToProjectB();
+    await waitFor(() => expect(capturedOnFileChanged).not.toBeNull());
+    emit({ type: 'change', filePath: FILE_B1 });
+    await act(async () => {
+      await waitFor(() => expect(pending.has(FILE_B1)).toBe(true), { timeout: 2000 });
+      pending.get(FILE_B1)!(modelFor(FILE_B1));
+      await waitFor(() => expect(useProjectStore.getState().parsedFiles.has(FILE_B1)).toBe(true));
+    });
+    const generationAfterB = useProjectStore.getState().parseGeneration;
+
+    await act(async () => {
+      pending.get(FILE_A)!(modelFor(FILE_A));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    const { parsedFiles, parseGeneration, dialogIndex } = useProjectStore.getState();
+    expect(parsedFiles.has(FILE_A)).toBe(false);
+    expect(parseGeneration).toBe(generationAfterB);
+    expect(Array.from(dialogIndex.values()).flat().map((d) => d.filePath)).not.toContain(FILE_A);
+    unmount();
+  });
+
+  test('an added file parsing when the project switches is discarded', async () => {
+    const FILE_NEW = 'C:/project/NPC_NEW.d';
+    const indexFile = jest.spyOn(window.editorAPI, 'indexFile').mockResolvedValue({
+      routineSites: [], spawnSites: [], exchangeSites: [], instances: [],
+    });
+    const writeFile = jest.spyOn(window.editorAPI, 'writeFile');
+    writeFile.mockClear();
+    const pending = deferParses();
+    const { unmount } = await setupHook();
+
+    emit({ type: 'add', filePath: FILE_NEW });
+    await act(async () => {
+      await waitFor(() => expect(pending.has(FILE_NEW)).toBe(true), { timeout: 2000 });
+    });
+
+    switchToProjectB();
+    await act(async () => {
+      pending.get(FILE_NEW)!({
+        ...modelFor(FILE_NEW),
+        dialogs: { DIA_NEW: { name: 'DIA_NEW', properties: { npc: 'NewNpc' } } },
+        npcs: { NewNpc: { name: 'NewNpc' } },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    const { parsedFiles, dialogIndex, allDialogFiles } = useProjectStore.getState();
+    expect(parsedFiles.has(FILE_NEW)).toBe(false);
+    expect(dialogIndex.size).toBe(0);
+    expect(allDialogFiles).toEqual([FILE_B1]);
+    expect(indexFile).not.toHaveBeenCalled();
+    expect(writeFile).not.toHaveBeenCalled();
+    indexFile.mockRestore();
+    unmount();
+  });
+});

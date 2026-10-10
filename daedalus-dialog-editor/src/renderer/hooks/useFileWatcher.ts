@@ -104,6 +104,16 @@ async function handleFileChange(event: FileChangeEvent): Promise<void> {
   }
 }
 
+/**
+ * Captures the active project session; the returned check is false once that
+ * session is closed or replaced, so async watcher work started for one
+ * project never lands in the next (#380).
+ */
+function captureProjectSession(): () => boolean {
+  const session = useProjectStore.getState().getProjectSession();
+  return () => useProjectStore.getState().getProjectSession() === session;
+}
+
 /** Inject the source file path into symbols for cross-file tracking. */
 function injectFilePathIntoSymbols(semanticModel: SemanticModel, filePath: string): void {
   if (semanticModel.constants) {
@@ -124,6 +134,7 @@ async function flushChangedFiles(): Promise<void> {
   const paths = Array.from(pendingChangedPaths);
   pendingChangedPaths.clear();
   if (paths.length === 0) return;
+  const isCurrent = captureProjectSession();
 
   // Bring debounced editor controls into the store before deciding whether a
   // disk change may reload the open file or must raise a conflict.
@@ -157,6 +168,7 @@ async function flushChangedFiles(): Promise<void> {
     } catch (err) {
       console.error('[FileWatcher] Failed to reload open file:', filePath, err);
     }
+    if (!isCurrent()) return;
   }
 
   // Re-parse background files with bounded concurrency and apply as one batch.
@@ -179,6 +191,7 @@ async function flushChangedFiles(): Promise<void> {
       .fill(null)
       .map(() => parseNext())
   );
+  if (!isCurrent()) return;
 
   if (updates.length > 0) {
     useProjectStore.getState().updateFileModels(updates);
@@ -198,16 +211,19 @@ export async function handleFileAdded(
   filePath: string,
   projectStore: ReturnType<typeof useProjectStore.getState>
 ): Promise<void> {
+  const isCurrent = captureProjectSession();
   // Register the file path in the project
   projectStore.addProjectFile(filePath);
 
   // Parse and cache it
   try {
     const semanticModel = await window.editorAPI.parseDialogFile(filePath);
+    if (!isCurrent()) return;
     injectFilePathIntoSymbols(semanticModel, filePath);
 
     projectStore.updateFileModel(filePath, semanticModel);
     await projectStore.reindexFiles([filePath]);
+    if (!isCurrent()) return;
 
     // If the file contains dialog metadata, add it to the dialog index
     if (semanticModel.dialogs) {
@@ -225,7 +241,7 @@ export async function handleFileAdded(
 
     // If the file introduces NPCs that have no dialogs yet, auto-create their
     // EXIT dialog file (issue #141)
-    await autoCreateExitDialogFiles(filePath, semanticModel);
+    await autoCreateExitDialogFiles(filePath, semanticModel, isCurrent);
   } catch (err) {
     console.error('[FileWatcher] Failed to parse new file:', filePath, err);
   }
@@ -239,7 +255,8 @@ export async function handleFileAdded(
  */
 async function autoCreateExitDialogFiles(
   addedFilePath: string,
-  model: SemanticModel
+  model: SemanticModel,
+  isCurrent: () => boolean
 ): Promise<void> {
   const projectStore = useProjectStore.getState();
   const plans = planExitDialogsForAddedFile({
@@ -253,6 +270,7 @@ async function autoCreateExitDialogFiles(
     // Never overwrite an EXIT dialog file that already exists on disk
     const existing = await window.editorAPI.readFile(plan.filePath).catch(() => null);
     if (typeof existing === 'string' && existing.length > 0) continue;
+    if (!isCurrent()) return;
 
     try {
       const result = await window.editorAPI.writeFile(plan.filePath, plan.content);
@@ -264,6 +282,7 @@ async function autoCreateExitDialogFiles(
       console.error('[FileWatcher] Failed to create EXIT dialog file:', plan.filePath, err);
       continue;
     }
+    if (!isCurrent()) return;
 
     await handleFileAdded(plan.filePath, useProjectStore.getState());
   }

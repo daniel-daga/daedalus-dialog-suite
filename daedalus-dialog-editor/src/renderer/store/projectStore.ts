@@ -170,6 +170,10 @@ interface ProjectActions {
   // Close project
   closeProject: () => void;
 
+  // Token that changes whenever the active project session is replaced. Async
+  // work outside the store captures it and drops its result once it moves.
+  getProjectSession: () => number;
+
   // Select an NPC
   selectNpc: (npcId: string) => void;
 
@@ -851,6 +855,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     }
   },
 
+  getProjectSession: () => projectSession,
+
   closeProject: () => {
     projectSession += 1;
     // Abort any running ingestion
@@ -1255,6 +1261,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
   reindexFiles: async (filePaths) => {
     const { projectPath, routineLayoutIndex: layouts } = get();
+    const sessionAtStart = projectSession;
     const files = new Map<string, FileIndex>();
     let next = 0;
     const readNext = async (): Promise<void> => {
@@ -1269,7 +1276,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     };
     await Promise.all(Array.from({ length: Math.min(REINDEX_CONCURRENCY, filePaths.length) }, readNext));
     // A read that lands after the project closed or changed belongs to no index.
-    if (files.size > 0 && get().projectPath === projectPath) set((state) => withFileIndexes(state, files));
+    if (files.size > 0 && projectSession === sessionAtStart && get().projectPath === projectPath) set((state) => withFileIndexes(state, files));
   },
 
   dropFileFromIndex: (filePath) => {
