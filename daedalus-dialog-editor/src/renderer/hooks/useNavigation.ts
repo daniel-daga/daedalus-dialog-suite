@@ -16,11 +16,22 @@ const findCaseInsensitiveKey = (values: string[], target: string): string | null
   return match || null;
 };
 
+// Navigation never reloads an open file: `openFile` re-reads disk and would
+// replace an unsaved model and mark it clean (#377).
+const openOrActivate = async (filePath: string) => {
+  const { openFiles, setActiveFile, openFile } = useEditorStore.getState();
+  if (openFiles.has(filePath)) {
+    setActiveFile(filePath);
+  } else {
+    await openFile(filePath);
+  }
+};
+
 export const useNavigation = () => {
   const navigateToDialog = useCallback(async (dialogName: string, functionName?: string) => {
     const { dialogIndex, selectNpc, getSemanticModel, loadAndMergeNpcModels, projectPath } =
       useProjectStore.getState();
-    const { openFile, activeFile } = useEditorStore.getState();
+    const { activeFile } = useEditorStore.getState();
     const { setSelectedNPC, setSelectedDialog, setSelectedFunctionName, setActiveView } =
       useUISelectionStore.getState();
     const isProjectMode = !!projectPath;
@@ -62,7 +73,7 @@ export const useNavigation = () => {
 
         // In project mode, we also need to open the specific file to enable editing
         if (foundFilePath && activeFile !== foundFilePath) {
-          await openFile(foundFilePath);
+          await openOrActivate(foundFilePath);
         }
 
         // Find the merged model or the specific model for the dialog
@@ -70,7 +81,7 @@ export const useNavigation = () => {
       } else if (foundFilePath) {
         // In single file mode, if it's a different file, we might want to open it
         if (activeFile !== foundFilePath) {
-          await openFile(foundFilePath);
+          await openOrActivate(foundFilePath);
         }
         semanticModel = useEditorStore.getState().openFiles.get(foundFilePath)?.semanticModel;
       }
@@ -102,7 +113,7 @@ export const useNavigation = () => {
   const navigateToSymbol = useCallback(async (symbolName: string, options?: NavigationOptions) => {
     const { dialogIndex, selectNpc, getSemanticModel, loadAndMergeNpcModels, projectPath, mergedSemanticModel } =
       useProjectStore.getState();
-    const { openFile, activeFile, openFiles } = useEditorStore.getState();
+    const { activeFile, openFiles } = useEditorStore.getState();
     const { setSelectedNPC, setSelectedFunctionName, setSelectedQuest, setActiveView } =
       useUISelectionStore.getState();
     const isProjectMode = !!projectPath;
@@ -179,7 +190,7 @@ export const useNavigation = () => {
       if (requestedKind === 'variable' || requestedKind === 'constant' || variable || constant) {
         const symbol = requestedKind === 'constant' ? constant : (requestedKind === 'variable' ? variable : (variable || constant));
         if (symbol?.filePath) {
-          await openFile(symbol.filePath);
+          await openOrActivate(symbol.filePath);
         }
         setActiveView('variable');
         return true;
@@ -187,7 +198,7 @@ export const useNavigation = () => {
 
       if (func) {
         if (func.filePath) {
-          await openFile(func.filePath);
+          await openOrActivate(func.filePath);
         }
         setActiveView('dialog');
         if (func.name) {
@@ -197,7 +208,7 @@ export const useNavigation = () => {
       }
 
       if (instance?.filePath) {
-        await openFile(instance.filePath);
+        await openOrActivate(instance.filePath);
         setActiveView('dialog');
         return true;
       }
