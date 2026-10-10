@@ -16,11 +16,21 @@ const CHANGE_PARSE_CONCURRENCY = 8;
 
 const pendingChangedPaths = new Set<string>();
 let changeFlushTimer: ReturnType<typeof setTimeout> | null = null;
-// Flushes run one at a time: a batch still parsing X when X changes again
-// would otherwise finish after the newer batch and overwrite its model and
-// index with older ones (#382). A flush collects its paths when it starts, so
-// changes queued behind a slow batch coalesce into the next one.
+// Watcher work runs one task at a time, in event order: a batch still parsing
+// X would otherwise finish after a newer batch, add or unlink of X and
+// overwrite its model and index with older ones (#382, #390). A flush collects
+// its paths when it starts, so changes queued behind a slow task coalesce into
+// the next one.
 let flushChain: Promise<void> = Promise.resolve();
+
+function enqueue(task: () => Promise<void> | void): void {
+  const isCurrent = captureProjectSession();
+  flushChain = flushChain
+    .then(() => (isCurrent() ? task() : undefined))
+    .catch((err) => {
+      console.error('[FileWatcher] Watcher task failed:', err);
+    });
+}
 
 function clearPendingChanges(): void {
   pendingChangedPaths.clear();
@@ -38,9 +48,7 @@ function queueChangedFile(filePath: string): void {
   if (changeFlushTimer === null) {
     changeFlushTimer = setTimeout(() => {
       changeFlushTimer = null;
-      flushChain = flushChain.then(flushChangedFiles).catch((err) => {
-        console.error('[FileWatcher] Change batch failed:', err);
-      });
+      enqueue(flushChangedFiles);
     }, CHANGE_BATCH_WINDOW_MS);
   }
 }
@@ -87,9 +95,8 @@ export function useFileWatcher(): void {
   }, [watchRoot]);
 }
 
-async function handleFileChange(event: FileChangeEvent): Promise<void> {
+function handleFileChange(event: FileChangeEvent): void {
   const { type, filePath } = event;
-  const projectStore = useProjectStore.getState();
 
   switch (type) {
     case 'change':
@@ -99,17 +106,19 @@ async function handleFileChange(event: FileChangeEvent): Promise<void> {
     case 'add':
       // A queued change is subsumed by the add's own parse.
       pendingChangedPaths.delete(filePath);
-      await handleFileAdded(filePath, projectStore);
+      enqueue(() => handleFileAdded(filePath, useProjectStore.getState()));
       break;
 
     case 'unlink':
       // A queued change must not resurrect the removed file.
       pendingChangedPaths.delete(filePath);
-      // Drain editor debounces before checking whether the open file has
-      // unsaved work. Read the store after flushing so the pending text cannot
-      // be lost when the file slot is closed.
-      flushAllPendingEdits();
-      handleFileRemoved(filePath, useProjectStore.getState(), useFileStore.getState());
+      enqueue(() => {
+        // Drain editor debounces before checking whether the open file has
+        // unsaved work. Read the store after flushing so the pending text
+        // cannot be lost when the file slot is closed.
+        flushAllPendingEdits();
+        handleFileRemoved(filePath, useProjectStore.getState(), useFileStore.getState());
+      });
       break;
   }
 }
