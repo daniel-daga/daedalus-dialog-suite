@@ -78,11 +78,11 @@ export const KEYBOARD_SHORTCUTS: readonly KeyboardShortcut[] = [
     probe: { listener: 'world', events: [{ key: 'Escape' }] },
   },
   {
-    group: 'World editor', keys: 'WASD / arrows; PageUp / PageDown',
-    action: 'Nudge in the camera plane, hold to keep moving; PageUp/Down vertically; Shift ×10',
+    group: 'World editor', keys: 'WASD / arrows; Space / X; PageUp / PageDown',
+    action: 'Nudge in the camera plane, hold to keep moving; Space/X and PageUp/Down vertically; Shift ×10',
     probe: {
       listener: 'world',
-      events: ['w', 'a', 's', 'd', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown']
+      events: ['w', 'a', 's', 'd', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' ', 'x', 'PageUp', 'PageDown']
         .map((key) => ({ key })),
     },
   },

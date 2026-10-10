@@ -334,6 +334,34 @@ describe('useWorldShortcuts — the step a nudge key takes', () => {
     ]);
   });
 
+  test('Space lifts and X lowers along the vertical, as the fly does', () => {
+    bound({ snapGrid: 0 });
+    for (const key of [' ', 'x', 'X']) {
+      press(key, { shiftKey: key === 'X' });
+      release(key);
+    }
+    expect(verbs.onNudgeBy.mock.calls.map(([delta]) => delta)).toEqual([
+      [0, 1, 0], [0, -1, 0], [0, -10, 0],
+    ]);
+  });
+
+  test('Space on a focused button, or one a panel already took, is not a nudge', () => {
+    bound({ snapGrid: 0 });
+    const button = document.createElement('button');
+    document.body.appendChild(button);
+    expect(press(' ', {}, button)).toBe(false);
+    button.remove();
+
+    // The Assets panel places on Space and claims the key on the row itself.
+    const row = document.createElement('div');
+    document.body.appendChild(row);
+    row.addEventListener('keydown', (event) => event.preventDefault());
+    press(' ', {}, row);
+    row.remove();
+    expect(verbs.onNudgeBegin).not.toHaveBeenCalled();
+    expect(verbs.onNudgeBy).not.toHaveBeenCalled();
+  });
+
   test('Ctrl+S is still the save, though S is a nudge key', () => {
     bound();
     expect(press('s', { ctrlKey: true })).toBe(true);

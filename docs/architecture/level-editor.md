@@ -4106,7 +4106,8 @@ halves are needed: the first sees where focus *is*, the second what is *open*.
   would otherwise discard the selection the closing dialog was about.
 - **WASD and arrow keys nudge in the camera's horizontal plane** (left/right
   follow camera-right; forward/back follow the camera view), while PageUp/Down
-  stay on ZenGin's vertical axis. Shift multiplies the step by ten, and the
+  and Space/X (the fly's up/down) stay on ZenGin's vertical axis. Space is left
+  to a focused button and to the Assets panel, which places on it. Shift multiplies the step by ten, and the
   default step is 1 cm. The step is the *translate* snap grid when one is set
   and only while the Snap control is showing it — in rotate mode that control
   edits the angle, so a leftover `snapGrid` would be an invisible value driving

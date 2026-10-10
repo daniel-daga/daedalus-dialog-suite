@@ -16,7 +16,9 @@ const NUDGE_DELTAS: Record<string, [number, number, number]> = {
   arrowdown: [0, 0, -1],
   s: [0, 0, -1],
   pageup: [0, 1, 0],
+  ' ': [0, 1, 0],
   pagedown: [0, -1, 0],
+  x: [0, -1, 0],
 };
 
 /** The nudge a bare key takes when no snap step is set, in cm. */
@@ -249,7 +251,8 @@ export function useWorldShortcuts({
       }
 
       // Camera-relative nudge — WASD and the arrows move in the view plane;
-      // PageUp/Down stay on ZenGin's vertical axis. Shift multiplies the step
+      // PageUp/Down, and Space/X as the fly binds them, stay on ZenGin's
+      // vertical axis. Shift multiplies the step
       // by ten. W is a nudge while a VOB is selected, otherwise it keeps its
       // translate-gizmo shortcut above. With a modifier these are other chords
       // (Ctrl+S, Ctrl+D), so they fall through to those.
@@ -268,6 +271,10 @@ export function useWorldShortcuts({
         // Reserves the arrow keys for the scene tree's own navigation.
         const target = event.target as HTMLElement | null;
         if (target instanceof Element && target.closest('[role="tree"]')) return;
+        // Space is a focused control's own click, and the Assets panel's
+        // place — which claims it on the row before it bubbles here.
+        if (key === ' ' && (event.defaultPrevented
+          || (target instanceof Element && target.closest('button, a[href], [role="button"], [role="checkbox"], [role="switch"], [role="tab"]')))) return;
         // Read *before* `preventDefault`, as the Escape branch does: with
         // nothing selected this key is nobody's, and swallowing it would
         // stop the asset list scrolling for a nudge that never happens.
