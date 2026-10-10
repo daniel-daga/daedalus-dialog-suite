@@ -123,7 +123,7 @@ describe('ConditionEditor Auto-sync Behavior', () => {
 
     // Verify parent was notified
     expect(mockOnUpdateFunction).toHaveBeenCalledTimes(1);
-    const calledWith = mockOnUpdateFunction.mock.calls[0][0];
+    const calledWith = mockOnUpdateFunction.mock.calls[0][0] as any;
     expect(calledWith.name).toBe('TestCondition');
     expect(calledWith.conditions).toHaveLength(1);
     expect(calledWith.conditions[0].variableName).toBe('VAR_2');
@@ -278,7 +278,7 @@ describe('ConditionEditor Auto-sync Behavior', () => {
 
 describe('ConditionEditor Raw Condition Display', () => {
   test('shows preserved raw condition statements when semantic conditions are empty', () => {
-    const conditionFunction = {
+    const conditionFunction: any = {
       name: 'DIA_Hubert_TinteAmt_Condition',
       conditions: [],
       actions: [

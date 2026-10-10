@@ -14,8 +14,6 @@ describe('EditorStore - updateDialog action', () => {
     useEditorStore.setState({
       openFiles: new Map(),
       activeFile: null,
-      selectedDialog: null,
-      selectedAction: null,
       project: null,
       codeSettings: {
         indentChar: '\t',
@@ -42,7 +40,7 @@ describe('EditorStore - updateDialog action', () => {
 
     // Setup initial file state
     useEditorStore.setState({
-      openFiles: new Map([[filePath, {
+      openFiles: new Map<string, any>([[filePath, {
         filePath,
         semanticModel,
         isDirty: false,
@@ -59,7 +57,7 @@ describe('EditorStore - updateDialog action', () => {
       }
     };
 
-    useEditorStore.getState().updateDialog(filePath, 'TestDialog', updatedDialog);
+    useEditorStore.getState().updateDialog(filePath, 'TestDialog', updatedDialog as any);
 
     // Verify dialog was updated
     const fileState = useEditorStore.getState().openFiles.get(filePath);
@@ -80,7 +78,7 @@ describe('EditorStore - updateDialog action', () => {
     };
 
     useEditorStore.setState({
-      openFiles: new Map([[filePath, {
+      openFiles: new Map<string, any>([[filePath, {
         filePath,
         semanticModel,
         isDirty: false,
@@ -89,7 +87,7 @@ describe('EditorStore - updateDialog action', () => {
     });
 
     const updatedDialog = { properties: { npc: 'UpdatedNPC1' } };
-    useEditorStore.getState().updateDialog(filePath, 'Dialog1', updatedDialog);
+    useEditorStore.getState().updateDialog(filePath, 'Dialog1', updatedDialog as any);
 
     const fileState = useEditorStore.getState().openFiles.get(filePath);
     expect(fileState?.semanticModel.dialogs.Dialog1).toEqual(updatedDialog);
@@ -101,7 +99,7 @@ describe('EditorStore - updateDialog action', () => {
 
     // Should not throw
     expect(() => {
-      useEditorStore.getState().updateDialog('nonexistent.d', 'Dialog', updatedDialog);
+      useEditorStore.getState().updateDialog('nonexistent.d', 'Dialog', updatedDialog as any);
     }).not.toThrow();
 
     // File should not be created
@@ -114,8 +112,6 @@ describe('EditorStore - updateFunction action', () => {
     useEditorStore.setState({
       openFiles: new Map(),
       activeFile: null,
-      selectedDialog: null,
-      selectedAction: null,
       project: null,
       codeSettings: {
         indentChar: '\t',
@@ -139,7 +135,7 @@ describe('EditorStore - updateFunction action', () => {
     };
 
     useEditorStore.setState({
-      openFiles: new Map([[filePath, {
+      openFiles: new Map<string, any>([[filePath, {
         filePath,
         semanticModel,
         isDirty: false,
@@ -152,7 +148,7 @@ describe('EditorStore - updateFunction action', () => {
       actions: [{ text: 'New action' }]
     };
 
-    useEditorStore.getState().updateFunction(filePath, 'TestFunc', updatedFunction);
+    useEditorStore.getState().updateFunction(filePath, 'TestFunc', updatedFunction as any);
 
     const fileState = useEditorStore.getState().openFiles.get(filePath);
     expect(fileState?.semanticModel.functions.TestFunc).toEqual(updatedFunction);
@@ -170,7 +166,7 @@ describe('EditorStore - updateFunction action', () => {
     };
 
     useEditorStore.setState({
-      openFiles: new Map([[filePath, {
+      openFiles: new Map<string, any>([[filePath, {
         filePath,
         semanticModel,
         isDirty: false,
@@ -179,7 +175,7 @@ describe('EditorStore - updateFunction action', () => {
     });
 
     const updatedFunction = { name: 'Func1', actions: [{ text: 'Updated' }] };
-    useEditorStore.getState().updateFunction(filePath, 'Func1', updatedFunction);
+    useEditorStore.getState().updateFunction(filePath, 'Func1', updatedFunction as any);
 
     const fileState = useEditorStore.getState().openFiles.get(filePath);
     expect(fileState?.semanticModel.functions.Func1).toEqual(updatedFunction);
@@ -190,7 +186,7 @@ describe('EditorStore - updateFunction action', () => {
     const updatedFunction = { name: 'Test', actions: [] };
 
     expect(() => {
-      useEditorStore.getState().updateFunction('nonexistent.d', 'Test', updatedFunction);
+      useEditorStore.getState().updateFunction('nonexistent.d', 'Test', updatedFunction as any);
     }).not.toThrow();
 
     expect(useEditorStore.getState().openFiles.has('nonexistent.d')).toBe(false);
@@ -202,8 +198,6 @@ describe('EditorStore - integration with existing actions', () => {
     useEditorStore.setState({
       openFiles: new Map(),
       activeFile: null,
-      selectedDialog: null,
-      selectedAction: null,
       project: null,
       codeSettings: {
         indentChar: '\t',
@@ -226,7 +220,7 @@ describe('EditorStore - integration with existing actions', () => {
     };
 
     useEditorStore.setState({
-      openFiles: new Map([[filePath, {
+      openFiles: new Map<string, any>([[filePath, {
         filePath,
         semanticModel,
         isDirty: false,
@@ -237,13 +231,13 @@ describe('EditorStore - integration with existing actions', () => {
     // Update dialog
     useEditorStore.getState().updateDialog(filePath, 'TestDialog', {
       properties: { npc: 'UpdatedNPC', information: 'TestInfo' }
-    });
+    } as any);
 
     // Update function
     useEditorStore.getState().updateFunction(filePath, 'TestInfo', {
       name: 'TestInfo',
-      actions: [{ text: 'New line' }]
-    });
+      actions: [{ text: 'New line' } as any]
+    } as any);
 
     // Both should be updated
     const fileState = useEditorStore.getState().openFiles.get(filePath);
@@ -260,7 +254,7 @@ describe('EditorStore - integration with existing actions', () => {
     };
 
     useEditorStore.setState({
-      openFiles: new Map([[filePath, {
+      openFiles: new Map<string, any>([[filePath, {
         filePath,
         semanticModel,
         isDirty: false,
@@ -271,14 +265,14 @@ describe('EditorStore - integration with existing actions', () => {
     // Use updateDialog
     useEditorStore.getState().updateDialog(filePath, 'D1', {
       properties: { npc: 'UpdatedNPC' }
-    });
+    } as any);
 
     // Then use updateModel (should still work)
     const newModel = {
       dialogs: { D1: { properties: { npc: 'UpdatedNPC' } }, D2: { properties: { npc: 'NPC2' } } },
       functions: { F1: { name: 'F1', actions: [] } }
     };
-    useEditorStore.getState().updateModel(filePath, newModel);
+    useEditorStore.getState().updateModel(filePath, newModel as any);
 
     const fileState = useEditorStore.getState().openFiles.get(filePath);
     expect(fileState?.semanticModel.dialogs.D2).toBeDefined();

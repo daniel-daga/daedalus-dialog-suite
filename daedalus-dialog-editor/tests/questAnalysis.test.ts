@@ -24,7 +24,7 @@ const createMockModel = (functions: any[], dialogs: any[], constants: any[] = []
         instances: {},
         classes: {},
         structs: {},
-    } as SemanticModel;
+    } as unknown as SemanticModel;
 };
 
 describe('questAnalysis', () => {
@@ -369,7 +369,7 @@ describe('questAnalysis', () => {
                 functions: countingProxy(model.functions, () => { functionPasses += 1; }),
                 dialogs: countingProxy(model.dialogs, () => { dialogPasses += 1; }),
                 constants: countingProxy(model.constants!, () => { constantPasses += 1; })
-            } as SemanticModel;
+            } as unknown as SemanticModel;
 
             // Every name case-misses the constants table so the old per-miss
             // Object.entries fallback would enumerate constants once per quest.

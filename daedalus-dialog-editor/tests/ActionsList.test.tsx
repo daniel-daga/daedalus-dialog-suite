@@ -102,7 +102,7 @@ describe('ActionsList draggable identity (U5 keys)', () => {
 
 describe('ActionsList Memoization', () => {
   const mockActionRefs = { current: [] };
-  const defaultProps = {
+  const defaultProps: any = {
     actions: [{ id: '1', type: 'dialogLine' }],
     actionRefs: mockActionRefs,
     npcName: 'TestNPC',

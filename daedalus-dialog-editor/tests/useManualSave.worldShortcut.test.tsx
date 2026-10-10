@@ -49,7 +49,7 @@ describe('manual save shortcut ownership', () => {
         onRequestSave,
         onNudge: jest.fn(),
         onHistory: jest.fn(),
-      } as WorldShortcutsInput);
+      } as unknown as WorldShortcutsInput);
     });
 
     const event = new KeyboardEvent('keydown', {

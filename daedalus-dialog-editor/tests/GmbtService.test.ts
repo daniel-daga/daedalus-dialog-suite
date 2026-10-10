@@ -24,7 +24,7 @@ const WINDOWS_ENV = {
 };
 
 function fakeChild() {
-  const child = {
+  const child: any = {
     on: jest.fn(() => child),
     unref: jest.fn(),
   };

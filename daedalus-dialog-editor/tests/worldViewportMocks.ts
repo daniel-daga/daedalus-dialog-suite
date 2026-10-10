@@ -1,5 +1,6 @@
-import type { VobIndex } from '../src/shared/worldTypes';
+import type { DecalScene, VobIndex } from '../src/shared/worldTypes';
 import { vobIndex } from './worldFixtures';
+import type { WorldViewportProps } from '../src/renderer/components/world/WorldViewport';
 
 /**
  * Shared jsdom stand-ins for what a real `WorldViewport` render needs and
@@ -189,3 +190,20 @@ export function noDecals(): DecalScene {
 export function noVobMarkers(): VobIndex {
   return vobIndex([[0, 0, 0]]);
 }
+
+/**
+ * The `WorldViewport` props a spec has no opinion about — no routines, no spawn
+ * filter, outlines off, no snapping, no scatter brush. Spread first, so a
+ * spec's own builder overrides whatever it is about.
+ */
+export const VIEWPORT_DEFAULTS = {
+  routines: { sites: [], routinesByNpc: {} },
+  spawnTime: null,
+  spawnState: null,
+  showWaypointNames: false,
+  outlineMode: 'off',
+  snapGrid: 0,
+  snapAngle: 0,
+  scatterRadius: null,
+  onScatterStroke: () => {},
+} satisfies Partial<WorldViewportProps>;

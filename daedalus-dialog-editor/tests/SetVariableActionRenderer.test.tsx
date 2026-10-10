@@ -27,6 +27,7 @@ jest.mock('../src/renderer/components/common/VariableAutocomplete', () => {
 
 describe('SetVariableActionRenderer', () => {
   const mockAction: SetVariableAction = {
+    type: 'SetVariableAction',
     variableName: 'MIS_Test',
     operator: '=',
     value: 'LOG_RUNNING'
@@ -34,6 +35,7 @@ describe('SetVariableActionRenderer', () => {
 
   const mockProps = {
     action: mockAction,
+    path: [0],
     index: 0,
     totalActions: 1,
     npcName: 'TestNPC',

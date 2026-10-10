@@ -70,7 +70,7 @@ describe('Searchable pane design language', () => {
     classes: {},
     instances: {},
     dialogs: {},
-  } as SemanticModel;
+  } as unknown as SemanticModel;
 
   test('QuestList root has searchable pane pattern marker', () => {
     const { container } = render(

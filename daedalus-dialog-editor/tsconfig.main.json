@@ -6,6 +6,7 @@
     "moduleResolution": "node16",
     "outDir": "dist",
     "skipLibCheck": true,
+    "types": ["node"],
     "resolveJsonModule": true,
     "isolatedModules": true,
     "strict": true,

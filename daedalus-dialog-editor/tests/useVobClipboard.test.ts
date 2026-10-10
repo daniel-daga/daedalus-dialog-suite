@@ -49,6 +49,7 @@ function vobIndexOf(parents: number[]): VobIndex {
     names: parents.map((_, at) => `VOB_${at}`), nameIndex: Uint32Array.from(parents.map((_, at) => at)).buffer,
     visuals: ['TREE.3DS'], visualIndex: new Uint32Array(count).buffer,
     visualTypes: ['MULTI_RESOLUTION_MESH'], visualTypeIndex: new Uint32Array(count).buffer,
+    decalVobs: new ArrayBuffer(0), decalDimensions: new ArrayBuffer(0), decalAlphaWeights: new ArrayBuffer(0),
   };
 }
 
@@ -59,6 +60,7 @@ function summaryOf(parents: number[]): WorldSummary {
     vobIndex: vobIndexOf(parents),
     stats: { vobCount: parents.length, materials: 1, worldDrawGroups: 1, worldTriangles: 1 },
     timings: {},
+    assetSources: [],
   };
 }
 
@@ -88,7 +90,7 @@ function mount(commitOps: (ops: WorldOp[]) => Promise<boolean>) {
 
 /** A commit that succeeds and installs the world the paste would have made. */
 function commitInto(after: number[]) {
-  return jest.fn(async () => {
+  return jest.fn(async (_ops: unknown[]) => {
     useWorldStore.setState({ summary: summaryOf(after) } as never);
     return true;
   });
@@ -115,7 +117,7 @@ describe('useVobClipboard — before it is bound', () => {
 
 describe('useVobClipboard — copying', () => {
   test('nothing selected fills nothing, so a paste after it does nothing', async () => {
-    const commitOps = jest.fn(async () => true);
+    const commitOps = jest.fn(async (_ops: unknown[]) => true);
     const { result } = mount(commitOps);
     await act(async () => { await result.current.copySelection(); });
     await act(async () => { await result.current.pasteClipboard(); });
@@ -124,7 +126,7 @@ describe('useVobClipboard — copying', () => {
 
   test('with no world open, a copy is a no-op', async () => {
     useWorldStore.setState({ summary: null, selection: [0] } as never);
-    const commitOps = jest.fn(async () => true);
+    const commitOps = jest.fn(async (_ops: unknown[]) => true);
     const { result } = mount(commitOps);
     await act(async () => { await result.current.copySelection(); });
     expect(readClassProps).not.toHaveBeenCalled();
@@ -179,7 +181,7 @@ describe('useVobClipboard — what the menu asks it', () => {
 
   test('a new world empties it, so a paste cannot cross worlds', async () => {
     useWorldStore.setState({ summary: summaryOf(FLAT), selection: [0] } as never);
-    const commitOps = jest.fn(async () => true);
+    const commitOps = jest.fn(async (_ops: unknown[]) => true);
     const { result } = mount(commitOps);
     await act(async () => { await result.current.copySelection(); });
 
@@ -193,7 +195,7 @@ describe('useVobClipboard — what the menu asks it', () => {
 
 describe('useVobClipboard — pasting', () => {
   test('an empty clipboard commits nothing', async () => {
-    const commitOps = jest.fn(async () => true);
+    const commitOps = jest.fn(async (_ops: unknown[]) => true);
     const { result } = mount(commitOps);
     await act(async () => { await result.current.pasteClipboard(); });
     expect(commitOps).not.toHaveBeenCalled();

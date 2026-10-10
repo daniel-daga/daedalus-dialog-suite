@@ -120,7 +120,7 @@ describe('cross-function ID generation avoids duplicates', () => {
     const newId = createDialogLineId({
       dialogName: 'DIA_Eder',
       speaker: 'other',
-      actions: allActions
+      actions: allActions as any
     });
 
     // Should be 03, not 00 (which would happen if only liveActions were considered)
@@ -136,7 +136,7 @@ describe('cross-function ID generation avoids duplicates', () => {
     const newId = createDialogLineId({
       dialogName: 'DIA_Eder',
       speaker: 'other',
-      actions: liveActions
+      actions: liveActions as any
     });
 
     // With only local actions, it would generate 03 which is fine for this function,

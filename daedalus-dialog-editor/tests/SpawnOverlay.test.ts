@@ -195,7 +195,7 @@ describe('SpawnOverlay', () => {
     // where the waypoint used to be, and the two overlays disagree on screen.
     const payload = waynet();
     const overlay = new SpawnOverlay(payload, [site('GRD_200_XARDAS', 'WP_MIDDLE')], NO_ROUTINES);
-    const positions = overlay.markers.geometry.getAttribute('position');
+    const positions = overlay.markers.geometry.getAttribute('position') as THREE.BufferAttribute;
     const version = positions.version;
 
     new Float32Array(payload.positions).set([1400, 50, 900], 1 * 3);

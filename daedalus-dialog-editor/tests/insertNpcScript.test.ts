@@ -23,6 +23,7 @@ const model = (functions: DialogFunction[], hasErrors = false): SemanticModel =>
   dialogs: {},
   functions: Object.fromEntries(functions.map((f) => [f.name, f])),
   hasErrors,
+  errors: [],
 });
 
 /** Retail's Startup.d shape: STARTUP_ and INIT_ for the same world in one file. */

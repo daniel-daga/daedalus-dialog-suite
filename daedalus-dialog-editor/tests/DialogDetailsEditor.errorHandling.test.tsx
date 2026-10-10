@@ -16,7 +16,7 @@ describe('DialogDetailsEditor Error Handling', () => {
   test('handleSave should set loading state during save operation', async () => {
     // Simulate the save operation flow
     let isSaving = false;
-    const saveFile = jest.fn(async () => {
+    const saveFile = jest.fn(async (_path: string) => {
       // Simulate async operation
       await new Promise(resolve => setTimeout(resolve, 100));
     });
@@ -48,7 +48,7 @@ describe('DialogDetailsEditor Error Handling', () => {
     let snackbarMessage = '';
     let snackbarSeverity: 'success' | 'error' | 'info' = 'info';
 
-    const saveFile = jest.fn(async () => {
+    const saveFile = jest.fn(async (_path: string) => {
       // Successful save
     });
 
@@ -73,7 +73,7 @@ describe('DialogDetailsEditor Error Handling', () => {
     let snackbarMessage = '';
     let snackbarSeverity: 'success' | 'error' | 'info' = 'info';
 
-    const saveFile = jest.fn(async () => {
+    const saveFile = jest.fn(async (_path: string) => {
       throw new Error('Permission denied');
     });
 
@@ -96,7 +96,7 @@ describe('DialogDetailsEditor Error Handling', () => {
 
   test('handleReset should set loading state during reset operation', async () => {
     let isResetting = false;
-    const openFile = jest.fn(async () => {
+    const openFile = jest.fn(async (_path: string) => {
       await new Promise(resolve => setTimeout(resolve, 100));
     });
 
@@ -120,7 +120,7 @@ describe('DialogDetailsEditor Error Handling', () => {
     let snackbarMessage = '';
     let snackbarSeverity: 'success' | 'error' | 'info' = 'info';
 
-    const openFile = jest.fn(async () => {
+    const openFile = jest.fn(async (_path: string) => {
       // Successful reset
     });
 
@@ -145,7 +145,7 @@ describe('DialogDetailsEditor Error Handling', () => {
     let snackbarMessage = '';
     let snackbarSeverity: 'success' | 'error' | 'info' = 'info';
 
-    const openFile = jest.fn(async () => {
+    const openFile = jest.fn(async (_path: string) => {
       throw new Error('File not found');
     });
 
@@ -203,7 +203,7 @@ describe('DialogDetailsEditor Error Handling', () => {
   test('error handler should handle non-Error objects', async () => {
     let snackbarMessage = '';
 
-    const saveFile = jest.fn(async () => {
+    const saveFile = jest.fn(async (_path: string) => {
       throw 'String error'; // Non-Error object
     });
 
@@ -222,7 +222,7 @@ describe('DialogDetailsEditor Error Handling', () => {
 
   test('loading states should reset even if error occurs', async () => {
     let isSaving = false;
-    const saveFile = jest.fn(async () => {
+    const saveFile = jest.fn(async (_path: string) => {
       throw new Error('Test error');
     });
 
@@ -247,11 +247,11 @@ describe('DialogDetailsEditor Error Handling', () => {
     let isSaving = false;
     let isResetting = false;
 
-    const saveFile = jest.fn(async () => {
+    const saveFile = jest.fn(async (_path: string) => {
       await new Promise(resolve => setTimeout(resolve, 50));
     });
 
-    const openFile = jest.fn(async () => {
+    const openFile = jest.fn(async (_path: string) => {
       await new Promise(resolve => setTimeout(resolve, 50));
     });
 

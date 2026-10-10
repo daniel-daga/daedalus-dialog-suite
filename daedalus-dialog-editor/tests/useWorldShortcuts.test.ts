@@ -41,8 +41,8 @@ const verbs = {
   onDisarm: jest.fn(),
   onRequestSave: jest.fn(),
   onRequestSaveAs: jest.fn(),
-  onNudgeBegin: jest.fn(() => true),
-  onNudgeBy: jest.fn(),
+  onNudgeBegin: jest.fn((_step: number) => true),
+  onNudgeBy: jest.fn((_delta: number[]) => undefined),
   onNudgeEnd: jest.fn(),
   onHistory: jest.fn(),
 };

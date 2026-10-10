@@ -61,7 +61,7 @@ describe('source-editing state machine is removed (F2)', () => {
 
   test('fileStore exposes no source-buffer actions or predicate', () => {
     expect('isSourceDirty' in fileStoreModule).toBe(false);
-    const store = useEditorStore.getState() as Record<string, unknown>;
+    const store = useEditorStore.getState() as unknown as Record<string, unknown>;
     expect(store.setWorkingCode).toBeUndefined();
     expect(store.adoptWorkingCode).toBeUndefined();
     expect(store.saveSource).toBeUndefined();
@@ -93,13 +93,13 @@ describe('model mutation', () => {
     useEditorStore.setState({
       openFiles: new Map([[filePath, makeFileState({
         filePath,
-        semanticModel: { dialogs: { D1: { properties: { npc: 'NPC1' } } }, functions: {}, hasErrors: false, errors: [] },
+        semanticModel: { dialogs: { D1: { name: 'D1', parent: 'C_INFO', properties: { npc: 'NPC1' } } }, functions: {}, hasErrors: false, errors: [] },
         originalCode: 'original source',
       })]]),
       activeFile: filePath,
     });
 
-    useEditorStore.getState().updateDialog(filePath, 'D1', { properties: { npc: 'NPC2' } });
+    useEditorStore.getState().updateDialog(filePath, 'D1', { properties: { npc: 'NPC2' } } as any);
 
     const fileState = useEditorStore.getState().getFileState(filePath);
     expect(fileState?.semanticModel.dialogs.D1).toEqual({ properties: { npc: 'NPC2' } });

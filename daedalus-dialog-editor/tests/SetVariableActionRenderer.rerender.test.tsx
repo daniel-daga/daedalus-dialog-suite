@@ -24,6 +24,7 @@ jest.mock('../src/renderer/components/common/VariableAutocomplete', () => {
 
 describe('SetVariableActionRenderer autocomplete memo stability', () => {
   const initialAction: SetVariableAction = {
+    type: 'SetVariableAction',
     variableName: 'MIS_Test',
     operator: '=',
     value: 'LOG_RUNNING'

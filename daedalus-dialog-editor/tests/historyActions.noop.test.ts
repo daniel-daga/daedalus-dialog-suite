@@ -19,6 +19,8 @@ import type { Dialog, SemanticModel } from '../src/renderer/types/global';
 const makeModel = (tag: string): SemanticModel => ({
   dialogs: {
     DIA_Test: {
+      name: 'DIA_Test',
+      parent: 'C_INFO',
       properties: { npc: tag, information: 'DIA_Test_Info' }
     }
   },

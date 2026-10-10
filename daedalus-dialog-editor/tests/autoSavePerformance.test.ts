@@ -13,8 +13,6 @@ describe('Auto-save Performance', () => {
     useEditorStore.setState({
       openFiles: new Map(),
       activeFile: null,
-      selectedDialog: null,
-      selectedAction: null,
       project: null,
       codeSettings: {
         indentChar: '\t',

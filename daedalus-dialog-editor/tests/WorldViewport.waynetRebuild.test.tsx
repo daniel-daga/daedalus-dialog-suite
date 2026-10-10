@@ -97,6 +97,7 @@ jest.mock('../src/renderer/world/RoutineOverlay', () => {
 
 // Below the mocks, which jest hoists above it anyway.
 import WorldViewport from '../src/renderer/components/world/WorldViewport';
+import { VIEWPORT_DEFAULTS } from './worldViewportMocks';
 
 const MESH: WorldMeshPayload = { groups: [], bbox: [0, 0, 0, 100, 100, 100] };
 const BBOX = [0, 0, 0, 100, 100, 100];
@@ -113,6 +114,7 @@ function instancedPayload(): InstancedPayload {
       instancedDrawGroups: 0,
       levelCompos: 0,
       unresolvedByType: {},
+      unresolved: [],
     },
   };
 }
@@ -144,6 +146,7 @@ const ROUTINES = { sites: [], routinesByNpc: {} };
 
 function props(visuals: InstancedPayload, payload: WaynetPayload, showWaynet: boolean) {
   return {
+    ...VIEWPORT_DEFAULTS,
     mesh: MESH,
     visuals,
     vobIndex: mockWorldViewport.noVobMarkers(),

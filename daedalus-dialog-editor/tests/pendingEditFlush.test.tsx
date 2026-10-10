@@ -32,7 +32,7 @@ const makeModel = (text: string): SemanticModel => ({
     DIA_Test_Info: {
       name: 'DIA_Test_Info',
       returnType: 'VOID',
-      actions: [{ type: 'DialogLine', text, speaker: 'Hero', id: 'line_1' }],
+      actions: [{ type: 'DialogLine', text, speaker: 'other', id: 'line_1' }],
       conditions: [],
       calls: [],
     },

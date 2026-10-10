@@ -112,6 +112,7 @@ const visualsPayload = (): InstancedPayload => ({
     instancedDrawGroups: 1,
     levelCompos: 0,
     unresolvedByType: {},
+    unresolved: [],
   },
 });
 
@@ -149,7 +150,7 @@ function harness({
   index = vobIndex([[0, 0, 0]]),
   builder = new BvhBuilder(),
   textures = textureCacheFor(null, 'the-world'),
-  load = async (name: string) => decoded(name),
+  load = async (name: string): Promise<DecodedTexture | null> => decoded(name),
 } = {}) {
   const asked: Array<{ name: string; maxSize: number }> = [];
   const failures: string[][] = [];

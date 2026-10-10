@@ -18,8 +18,6 @@ describe('Auto-save configuration', () => {
     useEditorStore.setState({
       openFiles: new Map(),
       activeFile: null,
-      selectedDialog: null,
-      selectedAction: null,
       project: null,
       codeSettings: {
         indentChar: '\t',
@@ -63,8 +61,6 @@ describe('useAutoSave hook', () => {
     useEditorStore.setState({
       openFiles: new Map(),
       activeFile: null,
-      selectedDialog: null,
-      selectedAction: null,
       project: null,
       codeSettings: {
         indentChar: '\t',
@@ -90,7 +86,7 @@ describe('useAutoSave hook', () => {
     };
 
     useEditorStore.setState({
-      openFiles: new Map([[filePath, {
+      openFiles: new Map<string, any>([[filePath, {
         filePath,
         semanticModel,
         isDirty: false,
@@ -114,7 +110,7 @@ describe('useAutoSave hook', () => {
     };
 
     useEditorStore.setState({
-      openFiles: new Map([[filePath, {
+      openFiles: new Map<string, any>([[filePath, {
         filePath,
         semanticModel,
         isDirty: false,
@@ -129,7 +125,7 @@ describe('useAutoSave hook', () => {
     act(() => {
       useEditorStore.getState().updateDialog(filePath, 'TestDialog', {
         properties: { npc: 'UpdatedNPC' },
-      });
+      } as any);
     });
 
     // Advance time past the auto-save interval
@@ -157,7 +153,7 @@ describe('useAutoSave hook', () => {
     };
 
     useEditorStore.setState({
-      openFiles: new Map([[filePath, {
+      openFiles: new Map<string, any>([[filePath, {
         filePath,
         semanticModel,
         isDirty: false,
@@ -172,7 +168,7 @@ describe('useAutoSave hook', () => {
     act(() => {
       useEditorStore.getState().updateDialog(filePath, 'TestDialog', {
         properties: { npc: 'Change1' },
-      });
+      } as any);
     });
 
     jest.advanceTimersByTime(500);
@@ -180,7 +176,7 @@ describe('useAutoSave hook', () => {
     act(() => {
       useEditorStore.getState().updateDialog(filePath, 'TestDialog', {
         properties: { npc: 'Change2' },
-      });
+      } as any);
     });
 
     jest.advanceTimersByTime(500);
@@ -188,7 +184,7 @@ describe('useAutoSave hook', () => {
     act(() => {
       useEditorStore.getState().updateDialog(filePath, 'TestDialog', {
         properties: { npc: 'Change3' },
-      });
+      } as any);
     });
 
     // Should not have saved yet
@@ -221,7 +217,7 @@ describe('useAutoSave hook', () => {
     };
 
     useEditorStore.setState({
-      openFiles: new Map([[filePath, {
+      openFiles: new Map<string, any>([[filePath, {
         filePath,
         semanticModel,
         isDirty: false,
@@ -237,7 +233,7 @@ describe('useAutoSave hook', () => {
     act(() => {
       useEditorStore.getState().updateDialog(filePath, 'TestDialog', {
         properties: { npc: 'UpdatedNPC' },
-      });
+      } as any);
     });
 
     await act(async () => {
@@ -255,7 +251,7 @@ describe('useAutoSave hook', () => {
     };
 
     useEditorStore.setState({
-      openFiles: new Map([[filePath, {
+      openFiles: new Map<string, any>([[filePath, {
         filePath,
         semanticModel,
         isDirty: false,
@@ -270,7 +266,7 @@ describe('useAutoSave hook', () => {
     act(() => {
       useEditorStore.getState().updateDialog(filePath, 'TestDialog', {
         properties: { npc: 'UpdatedNPC' },
-      });
+      } as any);
     });
 
     await act(async () => {
@@ -295,7 +291,7 @@ describe('useAutoSave hook', () => {
     };
 
     useEditorStore.setState({
-      openFiles: new Map([
+      openFiles: new Map<string, any>([
         [filePath1, {
           filePath: filePath1,
           semanticModel: semanticModel1,
@@ -331,7 +327,7 @@ describe('useAutoSave hook', () => {
     };
 
     useEditorStore.setState({
-      openFiles: new Map([[filePath, {
+      openFiles: new Map<string, any>([[filePath, {
         filePath,
         semanticModel,
         isDirty: true,
@@ -354,7 +350,7 @@ describe('useAutoSave hook', () => {
   test('does not auto-save a file that is in external conflict', async () => {
     const filePath = 'conflict.d';
     useEditorStore.setState({
-      openFiles: new Map([[filePath, {
+      openFiles: new Map<string, any>([[filePath, {
         filePath,
         semanticModel: {
           dialogs: { TestDialog: { properties: { npc: 'NPC1' } } },
@@ -379,7 +375,7 @@ describe('useAutoSave hook', () => {
   test('keeps a file dirty when it is edited while a save is in flight', async () => {
     const filePath = 'test.d';
     useEditorStore.setState({
-      openFiles: new Map([[filePath, {
+      openFiles: new Map<string, any>([[filePath, {
         filePath,
         semanticModel: {
           dialogs: { TestDialog: { properties: { npc: 'NPC1' } } },
@@ -408,7 +404,7 @@ describe('useAutoSave hook', () => {
     act(() => {
       useEditorStore.getState().updateDialog(filePath, 'TestDialog', {
         properties: { npc: 'EditedDuringSave' },
-      });
+      } as any);
     });
 
     // Complete the in-flight save
@@ -423,7 +419,7 @@ describe('useAutoSave hook', () => {
   test('marks a timed-out save with saveError and keeps the file dirty', async () => {
     const filePath = 'timeout.d';
     useEditorStore.setState({
-      openFiles: new Map([[filePath, {
+      openFiles: new Map<string, any>([[filePath, {
         filePath,
         semanticModel: {
           dialogs: { TestDialog: { properties: { npc: 'NPC1' } } },
@@ -452,7 +448,7 @@ describe('useAutoSave hook', () => {
   test('marks an encoding-loss save with saveError kind encoding and keeps the file dirty', async () => {
     const filePath = 'encoding.d';
     useEditorStore.setState({
-      openFiles: new Map([[filePath, {
+      openFiles: new Map<string, any>([[filePath, {
         filePath,
         semanticModel: {
           dialogs: { TestDialog: { properties: { npc: 'NPC1' } } },
@@ -481,7 +477,7 @@ describe('useAutoSave hook', () => {
   test('fileStore.saveFile records saveError and keeps the file dirty on a classifiable rejection', async () => {
     const filePath = 'manual.d';
     useEditorStore.setState({
-      openFiles: new Map([[filePath, {
+      openFiles: new Map<string, any>([[filePath, {
         filePath,
         semanticModel: {
           dialogs: { TestDialog: { properties: { npc: 'NPC1' } } },
@@ -512,7 +508,7 @@ describe('useAutoSave hook', () => {
   test('flushes pending debounced edits before serializing the model (N4)', async () => {
     const filePath = 'flush.d';
     useEditorStore.setState({
-      openFiles: new Map([[filePath, {
+      openFiles: new Map<string, any>([[filePath, {
         filePath,
         semanticModel: {
           dialogs: { TestDialog: { properties: { npc: 'PENDING' } } },
@@ -529,7 +525,7 @@ describe('useAutoSave hook', () => {
     const unregister = registerPendingEditFlusher(() => {
       useEditorStore.getState().updateDialog(filePath, 'TestDialog', {
         properties: { npc: 'FLUSHED' },
-      });
+      } as any);
     });
 
     try {

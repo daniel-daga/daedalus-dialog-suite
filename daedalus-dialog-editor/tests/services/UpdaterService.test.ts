@@ -79,7 +79,7 @@ jest.mock('https', () => ({
   get: jest.fn(),
 }));
 
-const mockSpawn = jest.fn(() => ({ unref: jest.fn() }));
+const mockSpawn = jest.fn((..._args: unknown[]) => ({ unref: jest.fn() }));
 jest.mock('child_process', () => ({
   spawn: (...args: unknown[]) => mockSpawn(...args),
 }));
@@ -124,7 +124,7 @@ function setupHttpsMock(responses: Array<{ body: string; status?: number }>) {
   (https.get as jest.Mock).mockImplementation((_url: string, _opts: any, callback: any) => {
     const response = responses[callIndex++] || responses[responses.length - 1];
     const status = response.status ?? 200;
-    const mockRes = {
+    const mockRes: any = {
       statusCode: status,
       headers: {},
       on: jest.fn((event: string, handler: any) => {

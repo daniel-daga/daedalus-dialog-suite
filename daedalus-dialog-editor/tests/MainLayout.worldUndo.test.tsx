@@ -38,7 +38,7 @@ describe('the layout undo shortcut', () => {
   it('drives the dialog history in the dialog view', () => {
     useUISelectionStore.setState({ activeView: 'dialog' } as never);
     const undo = jest.spyOn(useHistoryStore.getState(), 'undo');
-    render(<MainLayout />);
+    render(<MainLayout filePath={null} />);
 
     pressUndo();
 
@@ -49,7 +49,7 @@ describe('the layout undo shortcut', () => {
   it('leaves it alone in the World view, where the world owns its own history', () => {
     useUISelectionStore.setState({ activeView: 'world' } as never);
     const undo = jest.spyOn(useHistoryStore.getState(), 'undo');
-    render(<MainLayout />);
+    render(<MainLayout filePath={null} />);
 
     pressUndo();
 

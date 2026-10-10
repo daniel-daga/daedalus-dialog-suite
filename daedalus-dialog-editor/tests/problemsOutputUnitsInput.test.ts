@@ -38,7 +38,7 @@ const database = (units: Array<{ name: string; text: string }>): ProjectOutputUn
 
 const seed = (outputUnits: ProjectOutputUnits | null): void => {
   useProjectStore.setState({
-    parsedFiles: new Map([['DIA_Test.d', parsedFile('DIA_Test.d', 'DIA_TEST_15_00', 'Neuer Text.')]]),
+    parsedFiles: new Map<string, any>([['DIA_Test.d', parsedFile('DIA_Test.d', 'DIA_TEST_15_00', 'Neuer Text.')]]),
     npcList: [],
     npcPrototypes: [],
     allDialogFiles: ['DIA_Test.d'],

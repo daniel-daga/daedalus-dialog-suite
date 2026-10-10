@@ -80,7 +80,7 @@ describe('orphanedFunctionRule', () => {
     const view = buildProjectView({ files, knownNpcNames: [] });
 
     const problems = orphanedFunctionRule(view);
-    expect(problems.map((p) => p.functionName)).not.toContain('Info_Sub');
+    expect(problems.map((p) => p.locus.kind === 'script' && p.locus.functionName)).not.toContain('Info_Sub');
   });
 
   it('does not flag a function referenced only via another function calls array', () => {
@@ -100,7 +100,7 @@ describe('orphanedFunctionRule', () => {
     const view = buildProjectView({ files, knownNpcNames: [] });
 
     const problems = orphanedFunctionRule(view);
-    expect(problems.map((p) => p.functionName)).not.toContain('Helper_Fn');
+    expect(problems.map((p) => p.locus.kind === 'script' && p.locus.functionName)).not.toContain('Helper_Fn');
   });
 
   it('flags a function referenced by nobody with exactly one warning', () => {

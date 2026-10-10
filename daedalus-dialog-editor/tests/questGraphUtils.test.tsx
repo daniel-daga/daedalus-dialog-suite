@@ -17,7 +17,7 @@ const createMockModel = (functions: any[], dialogs: any[]): SemanticModel => {
         instances: {},
         classes: {},
         structs: {},
-    } as SemanticModel;
+    } as unknown as SemanticModel;
 };
 
 describe('questGraphUtils', () => {

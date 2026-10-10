@@ -72,6 +72,7 @@ function vobIndex(vobs: Spec[]): VobIndex {
     names, nameIndex: nameIndex.buffer,
     visuals, visualIndex: visualIndex.buffer,
     visualTypes: ['MULTI_RESOLUTION_MESH'], visualTypeIndex: new Uint32Array(vobs.length).buffer,
+    decalVobs: new ArrayBuffer(0), decalDimensions: new ArrayBuffer(0), decalAlphaWeights: new ArrayBuffer(0),
   };
 }
 
@@ -82,6 +83,7 @@ function summaryOf(index: VobIndex): WorldSummary {
     vobIndex: index,
     stats: { vobCount: index.count, materials: 0, worldDrawGroups: 0, worldTriangles: 0 },
     timings: {},
+    assetSources: [],
   };
 }
 

@@ -20,6 +20,8 @@ import type { DecodedTexture, DrawGroup, InstancedVisual } from '../src/shared/w
 import { DEFAULT_EXPOSURE, WORLD_LAYER, WorldScene, textureCacheFor } from '../src/renderer/world/WorldScene';
 import { vobIndex } from './worldFixtures';
 
+const NO_DECALS = { groups: [], stats: { decals: 0, textures: 0 } };
+
 function group(overrides: Partial<DrawGroup> = {}): DrawGroup {
   return {
     texture: 'NW_WOOD.TGA',
@@ -139,7 +141,7 @@ describe('WorldScene', () => {
 
     const scene = new WorldScene();
     scene.setWorldMesh({ groups: [group({ indices: stored })], bbox: [] });
-    scene.setInstancedVisuals({ visuals: [visual({ groups: [group({ indices: stored, lights: null })] })] });
+    scene.setInstancedVisuals({ visuals: [visual({ groups: [group({ indices: stored, lights: null })] })], decals: NO_DECALS, stats: {} as never });
 
     for (const mesh of [scene.root.children[0], scene.root.children[1]] as THREE.Mesh[]) {
       expect([...(mesh.geometry.getIndex()!.array)]).toEqual(reversed);
@@ -160,7 +162,7 @@ describe('WorldScene', () => {
   test('VOBs sharing a visual are one InstancedMesh, not one mesh each', () => {
     // Rule 1 of §3, at the point where it would actually be violated.
     const scene = new WorldScene();
-    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
 
     const meshes = scene.root.children.filter((c) => c instanceof THREE.InstancedMesh);
     expect(meshes).toHaveLength(1);
@@ -177,7 +179,7 @@ describe('WorldScene', () => {
         matrices: new Float32Array([1, 2, 3, 10, 4, 5, 6, 20, 7, 8, 9, 30]).buffer,
         vobIds: new Uint32Array([7]).buffer,
       })],
-      stats: {} as never,
+      decals: NO_DECALS, stats: {} as never,
     });
 
     const mesh = scene.root.children.find((c) => c instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
@@ -191,7 +193,7 @@ describe('WorldScene', () => {
     // A pick returns (InstancedMesh, instanceId) and nothing else identifies
     // the object — without this the scene tree cannot follow a click.
     const scene = new WorldScene();
-    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
 
     const mesh = scene.root.children.find((c) => c instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
     expect(scene.resolveInstance(mesh, 0)).toBe(7);
@@ -206,7 +208,7 @@ describe('WorldScene', () => {
     // black under a vertex-colour material.
     const scene = new WorldScene();
     scene.setWorldMesh({ groups: [group()], bbox: [] });
-    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
 
     const world = scene.root.children[0] as THREE.Mesh;
     expect(world.geometry.getAttribute('color')).toBeDefined();
@@ -264,7 +266,7 @@ describe('WorldScene', () => {
     // decodes speculatively.
     const scene = new WorldScene();
     scene.setWorldMesh({ groups: [group(), group(), group({ texture: 'NW_STONE.TGA' }), group({ texture: '' })], bbox: [] });
-    scene.setInstancedVisuals({ visuals: [visual({ groups: [group({ texture: 'BARREL.TGA', lights: null })] })], stats: {} as never });
+    scene.setInstancedVisuals({ visuals: [visual({ groups: [group({ texture: 'BARREL.TGA', lights: null })] })], decals: NO_DECALS, stats: {} as never });
 
     expect(new Set(scene.pendingTextureNames())).toEqual(
       new Set(['NW_WOOD.TGA', 'NW_STONE.TGA', 'BARREL.TGA']),
@@ -289,7 +291,7 @@ describe('WorldScene', () => {
     // highest V ~ -1. A flipped upload drew every bush card upside down.
     const scene = new WorldScene();
     scene.setWorldMesh({ groups: [group()], bbox: [] });
-    scene.setInstancedVisuals({ visuals: [visual({ groups: [group({ texture: 'BARREL.TGA', lights: null })] })], stats: {} as never });
+    scene.setInstancedVisuals({ visuals: [visual({ groups: [group({ texture: 'BARREL.TGA', lights: null })] })], decals: NO_DECALS, stats: {} as never });
     scene.applyTexture({ name: 'NW_WOOD.TGA', width: 2, height: 2, rgba: new Uint8Array(16).buffer });
     scene.applyTexture({ name: 'BARREL.TGA', width: 2, height: 2, rgba: new Uint8Array(16).buffer });
 
@@ -322,7 +324,7 @@ describe('WorldScene', () => {
     // buffer (§3.5). A structural edit rebuilds the scene, so this is per
     // edit, not per world open.
     const scene = new WorldScene();
-    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
     const mesh = scene.instancedMeshes[0];
     const disposed = jest.spyOn(mesh, 'dispose');
 
@@ -340,6 +342,7 @@ describe('WorldScene', () => {
         positions: new Float32Array([600, 0, 0]).buffer,
         sizes: new Float32Array([50, 50]).buffer,
         vobIds: new Uint32Array([6]).buffer,
+        alphaWeights: new Uint8Array([255]).buffer,
       }],
       stats: { decals: 1, textures: 1 },
     });
@@ -530,7 +533,7 @@ describe('WorldScene', () => {
     const scene = new WorldScene();
     scene.setInstancedVisuals({
       visuals: [visual({ groups: [group({ lights: null }), group({ texture: 'NW_STONE.TGA', lights: null })] })],
-      stats: {} as never,
+      decals: NO_DECALS, stats: {} as never,
     });
 
     const meshes = scene.root.children.filter((c) => c instanceof THREE.InstancedMesh) as THREE.InstancedMesh[];
@@ -560,7 +563,7 @@ describe('WorldScene', () => {
         matrices: new Float32Array([1, 2, 3, 10, 4, 5, 6, 20, 7, 8, 9, 30]).buffer,
         vobIds: new Uint32Array([7]).buffer,
       })],
-      stats: {} as never,
+      decals: NO_DECALS, stats: {} as never,
     });
 
     scene.moveVob(7, [-1, -2, -3]);
@@ -576,7 +579,7 @@ describe('WorldScene', () => {
     // binding takes them. Converting here would be a second conversion, and the
     // instance would land somewhere the property grid does not agree with.
     const scene = new WorldScene();
-    scene.setInstancedVisuals({ visuals: [visual({ count: 1, vobIds: new Uint32Array([4]).buffer })], stats: {} as never });
+    scene.setInstancedVisuals({ visuals: [visual({ count: 1, vobIds: new Uint32Array([4]).buffer })], decals: NO_DECALS, stats: {} as never });
 
     scene.moveVob(4, [1000, 0, 0]);
 
@@ -592,7 +595,7 @@ describe('WorldScene', () => {
     // sphere behind makes it vanish at certain camera angles — and only at
     // certain camera angles, which is the worst way to find out.
     const scene = new WorldScene();
-    scene.setInstancedVisuals({ visuals: [visual({ count: 1, vobIds: new Uint32Array([4]).buffer })], stats: {} as never });
+    scene.setInstancedVisuals({ visuals: [visual({ count: 1, vobIds: new Uint32Array([4]).buffer })], decals: NO_DECALS, stats: {} as never });
     const mesh = scene.root.children.find((c) => c instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
     const before = mesh.boundingSphere!.clone();
 
@@ -606,7 +609,7 @@ describe('WorldScene', () => {
     // effect or a level compo has no instance to move, and the property grid
     // can still select one.
     const scene = new WorldScene();
-    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
 
     expect(scene.moveVob(4242, [1, 2, 3])).toBe(false);
   });
@@ -621,7 +624,7 @@ describe('WorldScene', () => {
         matrices: new Float32Array([1, 2, 3, 10, 4, 5, 6, 20, 7, 8, 9, 30]).buffer,
         vobIds: new Uint32Array([7]).buffer,
       })],
-      stats: {} as never,
+      decals: NO_DECALS, stats: {} as never,
     });
 
     expect(scene.positionOf(7)).toEqual([10, 20, 30]);
@@ -645,7 +648,7 @@ describe('WorldScene', () => {
         matrices: new Float32Array([1, 0, 0, 10, 0, 1, 0, 20, 0, 0, 1, 30]).buffer,
         vobIds: new Uint32Array([7]).buffer,
       })],
-      stats: {} as never,
+      decals: NO_DECALS, stats: {} as never,
     });
 
     // A quarter turn about Y: asymmetric, so a transpose shows.
@@ -669,7 +672,7 @@ describe('WorldScene', () => {
         matrices: new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]).buffer,
         vobIds: new Uint32Array([4]).buffer,
       })],
-      stats: {} as never,
+      decals: NO_DECALS, stats: {} as never,
     });
     const mesh = scene.root.children.find((c) => c instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
     const before = mesh.boundingSphere!.center.clone();
@@ -681,7 +684,7 @@ describe('WorldScene', () => {
 
   test('rotating a VOB that is not drawn changes nothing and says so', () => {
     const scene = new WorldScene();
-    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
     expect(scene.rotateVob(4242, [1, 0, 0, 0, 1, 0, 0, 0, 1])).toBe(false);
   });
 
@@ -692,7 +695,7 @@ describe('WorldScene', () => {
     const scene = new WorldScene();
     scene.setInstancedVisuals({
       visuals: [visual({ bounds: [-1, -2, -3, 4, 5, 6] })],
-      stats: {} as never,
+      decals: NO_DECALS, stats: {} as never,
     });
 
     expect(scene.boundsOf(9)).toEqual([-1, -2, -3, 4, 5, 6]);
@@ -709,7 +712,7 @@ describe('WorldScene', () => {
         matrices: new Float32Array([0, 0, 1, 10, 0, 1, 0, 20, -1, 0, 0, 30]).buffer,
         vobIds: new Uint32Array([7]).buffer,
       })],
-      stats: {} as never,
+      decals: NO_DECALS, stats: {} as never,
     });
 
     expect(scene.rotationOf(7)).toEqual([0, 0, 1, 0, 1, 0, -1, 0, 0]);
@@ -722,7 +725,7 @@ describe('WorldScene', () => {
     // VOBs with no instance at all, and anchoring on one of those would detach
     // the gizmo from a selection that has perfectly drawable VOBs in it.
     const scene = new WorldScene();
-    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
 
     // Both drawn, and at different places: the order is the whole answer here,
     // and a scan from either end agrees whenever only one of them is drawn.
@@ -742,7 +745,7 @@ describe('WorldScene', () => {
     // stays the rotate one, because `rotateVobs` turns each VOB about its own
     // origin and a gizmo at the centroid would show a pivot the op does not use.
     const scene = new WorldScene();
-    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
 
     expect(scene.centroidOf([7, 9])).toEqual([25, 35, 45]);
     // Order cannot matter, which is the whole difference from `anchorOf`.
@@ -761,12 +764,12 @@ describe('WorldScene', () => {
     // VOB shader carries — not a second InstancedMesh per visual, which is 724
     // more draw calls (render-performance.md).
     const scene = new WorldScene();
-    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
     const mesh = scene.instancedMeshes[0];
 
     scene.setSelectedVobs([9]);
 
-    const selected = mesh.geometry.getAttribute('instanceSelected');
+    const selected = mesh.geometry.getAttribute('instanceSelected') as THREE.BufferAttribute;
     // vobIds are [7, 9]: the second instance, and only it.
     expect([...(selected.array as Float32Array)]).toEqual([0, 1]);
     expect(selected.version).toBe(1);
@@ -784,7 +787,7 @@ describe('WorldScene', () => {
         matrices: new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]).buffer,
         vobIds: new Uint32Array([11]).buffer,
       })],
-      stats: {} as never,
+      decals: NO_DECALS, stats: {} as never,
     });
     const [barrels, crate] = scene.instancedMeshes;
 
@@ -793,10 +796,10 @@ describe('WorldScene', () => {
 
     expect([...(barrels.geometry.getAttribute('instanceSelected').array as Float32Array)])
       .toEqual([0, 0]);
-    expect(barrels.geometry.getAttribute('instanceSelected').version).toBe(2);
+    expect((barrels.geometry.getAttribute('instanceSelected') as THREE.BufferAttribute).version).toBe(2);
     // The crate never held a selected instance, so nothing about it was
     // re-uploaded — a whole-scene rewrite per click is 724 attribute uploads.
-    expect(crate.geometry.getAttribute('instanceSelected').version).toBe(0);
+    expect((crate.geometry.getAttribute('instanceSelected') as THREE.BufferAttribute).version).toBe(0);
   });
 
   test('every mesh a visual was split into takes the same selected flag', () => {
@@ -806,7 +809,7 @@ describe('WorldScene', () => {
     const scene = new WorldScene();
     scene.setInstancedVisuals({
       visuals: [visual({ groups: [group({ lights: null }), group({ texture: 'NW_STONE.TGA', lights: null })] })],
-      stats: {} as never,
+      decals: NO_DECALS, stats: {} as never,
     });
 
     scene.setSelectedVobs([7]);
@@ -820,7 +823,7 @@ describe('WorldScene', () => {
 
   test('the VOB shader reads the selected flag, and the world mesh never declares one', () => {
     const scene = new WorldScene();
-    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
     scene.setWorldMesh({ groups: [group()], bbox: [] });
 
     const vob = compile(scene.instancedMeshes[0].material as THREE.MeshBasicMaterial);
@@ -872,7 +875,7 @@ describe('WorldScene', () => {
         ]).buffer,
         bounds: [0, 0, 0, 100, 100, 10],
       })],
-      stats: {} as never,
+      decals: NO_DECALS, stats: {} as never,
     });
 
     expect(drawnBoxes(scene)).toEqual([]);
@@ -900,7 +903,7 @@ describe('WorldScene', () => {
     const scene = new WorldScene();
     scene.setInstancedVisuals({
       visuals: [visual({ groups: [group({ lights: null }), group({ texture: 'NW_STONE.TGA', lights: null })] })],
-      stats: {} as never,
+      decals: NO_DECALS, stats: {} as never,
     });
     scene.setSelectionStyle('box');
 
@@ -911,7 +914,7 @@ describe('WorldScene', () => {
 
   test('the box follows a move, a turn and a structural op', () => {
     const scene = new WorldScene();
-    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
     scene.setSelectionStyle('box');
     scene.setSelectedVobs([9]);
 
@@ -930,7 +933,7 @@ describe('WorldScene', () => {
         vobIds: new Uint32Array([9]).buffer,
         groups: [],
       })],
-      stats: {} as never,
+      decals: NO_DECALS, stats: {} as never,
     });
     expect(drawnBoxes(scene)).toEqual([[5, 5, 5, 105, 105, 5]]);
   });
@@ -939,7 +942,7 @@ describe('WorldScene', () => {
     // Switchable: the box is Spacer's picture, the outline flag is what the
     // outline pass paints orange. Each style draws its own and clears the other.
     const scene = new WorldScene();
-    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
     const flags = () => [...(scene.instancedMeshes[0].geometry.getAttribute('instanceSelected').array as Float32Array)];
 
     // The outline is the default, so a scene nobody configures draws what it
@@ -969,7 +972,7 @@ describe('WorldScene', () => {
     // world-mesh fragment clears.
     const scene = new WorldScene();
     scene.setWorldMesh({ groups: [group()], bbox: [] });
-    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
 
     const world = (scene.root.children[0] as THREE.Mesh).material as THREE.MeshBasicMaterial;
     const vob = scene.instancedMeshes[0].material as THREE.MeshBasicMaterial;
@@ -1019,17 +1022,17 @@ describe('WorldScene', () => {
     const scene = new WorldScene();
     scene.setInstancedVisuals({
       visuals: [visual({ groups: [group({ alphaFunc: 2, lights: null })] })],
-      stats: {} as never,
+      decals: NO_DECALS, stats: {} as never,
     });
     const blended = scene.instancedMeshes[0].material as THREE.MeshBasicMaterial;
     expect(blended.transparent).toBe(true);
-    expect(blended.defines).toEqual({ VOB_MASK_BLENDED: '' });
+    expect((blended as THREE.Material & { defines?: unknown }).defines).toEqual({ VOB_MASK_BLENDED: '' });
     const shader = compile(blended);
     expect(shader.fragmentShader).toMatch(/#ifdef VOB_MASK_BLENDED\s+vobMask = vec4\( 0\.0 \);\s+#else/);
 
     const opaque = new WorldScene();
-    opaque.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
-    expect((opaque.instancedMeshes[0].material as THREE.MeshBasicMaterial).defines).toBeUndefined();
+    opaque.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
+    expect((opaque.instancedMeshes[0].material as THREE.Material & { defines?: unknown }).defines).toBeUndefined();
   });
 
   test('the world and its VOBs draw on their own layer, so the outline pass can draw them alone', () => {
@@ -1040,7 +1043,7 @@ describe('WorldScene', () => {
     // not world geometry would be drawn under the line.
     const scene = new WorldScene();
     scene.setWorldMesh({ groups: [group()], bbox: [] });
-    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
 
     const worldLayer = new THREE.Layers();
     worldLayer.set(WORLD_LAYER);
@@ -1057,7 +1060,7 @@ describe('WorldScene', () => {
   test('the selected light previews as an additive term, and only when one is selected', () => {
     const scene = new WorldScene();
     scene.setWorldMesh({ groups: [group()], bbox: [] });
-    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
     scene.setVobMarkers(vobIndex([[0, 0, 0], [400, 500, 600]], 'zCVobLight', undefined, undefined, ['', '']));
 
     const worldMesh = scene.root.children[0] as THREE.Mesh;
@@ -1123,7 +1126,7 @@ describe('WorldScene', () => {
     // is an exposure multiply on the finished fragment — a viewport setting.
     const scene = new WorldScene();
     scene.setWorldMesh({ groups: [group()], bbox: [] });
-    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
 
     const worldMesh = scene.root.children[0] as THREE.Mesh;
     const world = worldMesh.material as THREE.MeshBasicMaterial;
@@ -1168,7 +1171,7 @@ describe('WorldScene', () => {
     // viewport switches, not a constant baked into the program.
     const scene = new WorldScene();
     scene.setWorldMesh({ groups: [group()], bbox: [] });
-    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
 
     const world = scene.worldMeshes[0].material as THREE.MeshBasicMaterial;
     const vob = scene.instancedMeshes[0].material as THREE.MeshBasicMaterial;
@@ -1198,13 +1201,13 @@ describe('WorldScene', () => {
     // instance matrix is where the VOB's position and rotation are *read back*
     // from, so collapsing it would make a hidden VOB's gizmo report the origin.
     const scene = new WorldScene();
-    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
     const mesh = scene.instancedMeshes[0];
     const before = scene.positionOf(9);
 
     scene.setHiddenVobs(Uint8Array.from([0, 0, 0, 0, 0, 0, 0, 0, 0, 1]));
 
-    const hidden = mesh.geometry.getAttribute('instanceHidden');
+    const hidden = mesh.geometry.getAttribute('instanceHidden') as THREE.BufferAttribute;
     // vobIds are [7, 9]: the second instance, and only it.
     expect([...(hidden.array as Float32Array)]).toEqual([0, 1]);
     // `needsUpdate` is write-only in three; the version it bumps is what the
@@ -1229,7 +1232,7 @@ describe('WorldScene', () => {
     const scene = new WorldScene();
     scene.setInstancedVisuals({
       visuals: [visual({ groups: [group({ lights: null }), group({ texture: 'NW_STONE.TGA', lights: null })] })],
-      stats: {} as never,
+      decals: NO_DECALS, stats: {} as never,
     });
 
     scene.setHiddenVobs(Uint8Array.from([0, 0, 0, 0, 0, 0, 0, 1, 0, 0]));
@@ -1242,12 +1245,12 @@ describe('WorldScene', () => {
 
   test('showing everything again clears the flag, rather than leaving the last set', () => {
     const scene = new WorldScene();
-    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
 
     scene.setHiddenVobs(Uint8Array.from([0, 0, 0, 0, 0, 0, 0, 1, 0, 1]));
     scene.setHiddenVobs(null);
 
-    const hidden = scene.instancedMeshes[0].geometry.getAttribute('instanceHidden');
+    const hidden = scene.instancedMeshes[0].geometry.getAttribute('instanceHidden') as THREE.BufferAttribute;
     expect([...(hidden.array as Float32Array)]).toEqual([0, 0]);
     expect(hidden.version).toBe(2);
   });
@@ -1268,7 +1271,7 @@ describe('WorldScene', () => {
 
   test('a VOB with no visual reports where its marker is drawn', () => {
     const scene = new WorldScene();
-    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
     scene.setVobMarkers(markerIndex());
 
     // The sound VOB: no instance anywhere, and a position all the same.
@@ -1289,7 +1292,7 @@ describe('WorldScene', () => {
     // reads `positionOf` on the press and writes `moveVob` on every frame, and
     // neither of them knows a marker from an instance.
     const scene = new WorldScene();
-    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
     scene.setVobMarkers(markerIndex());
 
     expect(scene.moveVob(4, [1, 2, 3])).toBe(true);
@@ -1305,7 +1308,7 @@ describe('WorldScene', () => {
     // ones with no position at all, which since #249 is a visual the VFS simply
     // did not hold.
     const scene = new WorldScene();
-    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
     scene.setVobMarkers(markerIndex());
 
     expect(scene.anchorOf([7, 4])).toEqual([400, 0, 0]);
@@ -1326,7 +1329,7 @@ describe('WorldScene', () => {
     // nothing, because nothing was drawn — and the class was offered in the
     // list all the same.
     const scene = new WorldScene();
-    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
     scene.setVobMarkers(markerIndex());
     const hidden = new Uint8Array(10);
     hidden[4] = 1;
@@ -1441,6 +1444,7 @@ describe("WorldScene and the decals", () => {
       positions: new Float32Array([600, 0, 0]).buffer,
       sizes: new Float32Array([50, 50]).buffer,
       vobIds: new Uint32Array([6]).buffer,
+      alphaWeights: new Uint8Array([255]).buffer,
     }],
     stats: { decals: 1, textures: 1 },
   });
@@ -1515,7 +1519,7 @@ describe('WorldScene after a structural op', () => {
     groups: [],
     ...overrides,
   });
-  const payload = (...visuals: InstancedVisual[]) => ({ visuals, stats: {} as never });
+  const payload = (...visuals: InstancedVisual[]) => ({ visuals, decals: NO_DECALS, stats: {} as never });
   const built = () => {
     const scene = new WorldScene();
     scene.setInstancedVisuals(payload(visual()));

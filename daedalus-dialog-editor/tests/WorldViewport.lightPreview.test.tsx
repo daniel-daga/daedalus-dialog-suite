@@ -39,6 +39,7 @@ jest.mock('../src/renderer/world/WorldScene', () => {
 });
 
 import WorldViewport from '../src/renderer/components/world/WorldViewport';
+import { VIEWPORT_DEFAULTS } from './worldViewportMocks';
 
 const MESH: WorldMeshPayload = { groups: [], bbox: [0, 0, 0, 100, 100, 100] };
 
@@ -52,6 +53,7 @@ const PAYLOAD: InstancedPayload = {
     instancedDrawGroups: 0,
     levelCompos: 0,
     unresolvedByType: {},
+    unresolved: [],
   },
 };
 
@@ -63,6 +65,7 @@ function props(overrides: {
   appliedOps?: WorldOp[] | null;
 } = {}) {
   return {
+    ...VIEWPORT_DEFAULTS,
     mesh: MESH,
     visuals: PAYLOAD,
     vobIndex: mockWorldViewport.noVobMarkers(),

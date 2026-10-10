@@ -48,6 +48,7 @@ jest.mock('../src/renderer/world/VobPicker', () => ({
 
 import { ROOT_MATRIX } from 'zen-world';
 import WorldViewport from '../src/renderer/components/world/WorldViewport';
+import { VIEWPORT_DEFAULTS } from './worldViewportMocks';
 
 /** One draw group, so the world mesh payload builds a real `THREE.Mesh`. */
 const GROUP = {
@@ -103,12 +104,14 @@ function instancedPayload(): InstancedPayload {
       instancedDrawGroups: 1,
       levelCompos: 0,
       unresolvedByType: {},
+      unresolved: [],
     },
   };
 }
 
 function props(overrides: Record<string, unknown> = {}) {
   return {
+    ...VIEWPORT_DEFAULTS,
     mesh: MESH,
     visuals: instancedPayload(),
     vobIndex: mockWorldViewport.noVobMarkers(),

@@ -157,7 +157,7 @@ describe('VobMarkerLayer', () => {
       [[0, 0, 0], [-3, 0, 0]], 'zCVobSound', undefined, undefined, ['BARREL.3DS', ''],
     ));
 
-    const attribute = layer.markers.geometry.getAttribute('position');
+    const attribute = layer.markers.geometry.getAttribute('position') as THREE.BufferAttribute;
     const uploads = attribute.version;
 
     expect(layer.setPosition(1, [7, 8, 9])).toBe(true);
@@ -269,7 +269,7 @@ describe('VobMarkerLayer', () => {
     const geometryDisposed = jest.spyOn(geometry, 'dispose');
     const materialDisposed = jest.spyOn(material, 'dispose');
     const fadedDisposed = jest.spyOn((layer.markers.children[0] as THREE.Points).material as THREE.Material, 'dispose');
-    const mapDisposed = jest.spyOn(material.map, 'dispose');
+    const mapDisposed = jest.spyOn(material.map!, 'dispose');
 
     layer.dispose();
 

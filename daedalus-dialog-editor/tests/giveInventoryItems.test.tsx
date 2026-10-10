@@ -26,7 +26,6 @@ function renderRenderer(action: GiveInventoryItemsAction) {
       flushUpdate={jest.fn()}
       handleKeyDown={jest.fn()}
       mainFieldRef={{ current: null }}
-      semanticModel={undefined}
     />
   );
   return handleUpdate;

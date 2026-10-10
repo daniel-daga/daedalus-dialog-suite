@@ -1493,7 +1493,7 @@ INSTANCE ItMi_Gold (C_Item)
       );
 
       expect(
-        extractRoutinesByNpc([{ filePath: '/test/Farim.d', semanticModel: file.semanticModel! }])
+        extractRoutinesByNpc([{ semanticModel: file.semanticModel! }])
       ).toEqual({ SLD_99003_FARIM: 'RTN_START_99003' });
     });
   });

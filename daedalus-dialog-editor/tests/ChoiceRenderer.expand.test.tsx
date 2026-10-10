@@ -23,7 +23,7 @@ jest.mock('../src/renderer/components/InlineChoiceEditor', () => ({
 const filePath = '/test/file.d';
 
 const choiceAction = {
-  type: 'choice' as const,
+  type: 'Choice' as const,
   text: 'Go left',
   targetFunction: 'DIA_Test_GoLeft',
   dialogRef: 'DIA_Test',

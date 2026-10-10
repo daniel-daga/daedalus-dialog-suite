@@ -73,7 +73,7 @@ function harness({ hasMesh = true, ceiling = CEILING, deferLock = false } = {}) 
   let lockExits = 0;
   // A real grant is asynchronous — the browser answers the request a frame or
   // more later — and `deferLock` is how a test gets between the two.
-  canvas.requestPointerLock = () => { lockRequests += 1; if (!deferLock) locked = canvas; };
+  canvas.requestPointerLock = (() => { lockRequests += 1; if (!deferLock) locked = canvas; }) as never;
   document.exitPointerLock = () => { lockExits += 1; locked = null; };
   Object.defineProperty(document, 'pointerLockElement', { get: () => locked, configurable: true });
 

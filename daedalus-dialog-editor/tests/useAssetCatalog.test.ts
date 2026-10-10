@@ -52,14 +52,14 @@ const PROJECT = 'C:/mod/mymod.gothicproject.json';
 const SIDECAR = { favorites: ['NW_CRATE.MRM'], categories: [{ path: 'Mine/Crates', visuals: ['NW_CRATE.MRM'] }] };
 
 const api = {
-  getAssetCatalog: jest.fn(async () => SIDECAR),
-  saveAssetCatalog: jest.fn(async () => undefined),
-  listWorldAssets: jest.fn(async () => []),
-  searchWorldAssets: jest.fn(async () => []),
+  getAssetCatalog: jest.fn(async (_project: string) => SIDECAR),
+  saveAssetCatalog: jest.fn(async (_project: string, _catalog: unknown) => undefined),
+  listWorldAssets: jest.fn(async (_dir: string) => []),
+  searchWorldAssets: jest.fn(async (_query: string) => []),
   resolveWorldAssets: jest.fn(async (names: string[]) => names.map((): string | null => null)),
   compileWorldAssets: jest.fn(async () => undefined),
-  getWorldTexture: jest.fn(async () => null),
-  getWorldVisual: jest.fn(async () => null),
+  getWorldTexture: jest.fn(async (_name: string, _size?: number) => null),
+  getWorldVisual: jest.fn(async (_name: string) => null),
   getAssetThumbnail: jest.fn(async () => null),
   putAssetThumbnail: jest.fn(async () => undefined),
 };

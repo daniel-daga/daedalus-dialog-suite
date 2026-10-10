@@ -54,7 +54,7 @@ function waynetOf(names: string[], edges: number[] = [0, 1]): WaynetPayload {
 const NAMES = ['WP_START', 'WP_MIDDLE', 'FP_LOOSE'];
 
 function mount(overrides: Partial<Parameters<typeof useWaynetEditing>[0]> = {}) {
-  const commitOps = jest.fn(async () => true);
+  const commitOps = jest.fn(async (_ops: unknown[]) => true);
   const input = {
     waynet: waynetOf(NAMES),
     selectedWaypoint: 0 as number | null,

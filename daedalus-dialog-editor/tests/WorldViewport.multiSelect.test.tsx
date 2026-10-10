@@ -35,6 +35,7 @@ jest.mock('../src/renderer/world/BvhBuilder', () => mockWorldViewport.mockBvhBui
 jest.mock('../src/renderer/world/VobPicker', () => mockWorldViewport.mockVobPicker(7));
 
 import WorldViewport from '../src/renderer/components/world/WorldViewport';
+import { VIEWPORT_DEFAULTS } from './worldViewportMocks';
 
 const MESH: WorldMeshPayload = { groups: [], bbox: [0, 0, 0, 100, 100, 100] };
 
@@ -82,6 +83,7 @@ function instancedPayload(): InstancedPayload {
       instancedDrawGroups: 1,
       levelCompos: 0,
       unresolvedByType: {},
+      unresolved: [],
     },
   };
 }
@@ -90,6 +92,7 @@ type Pick = [number | null, [number, number, number] | null, boolean];
 
 function props(onPick: (...args: Pick) => void) {
   return {
+    ...VIEWPORT_DEFAULTS,
     mesh: MESH,
     visuals: instancedPayload(),
     vobIndex: mockWorldViewport.noVobMarkers(),

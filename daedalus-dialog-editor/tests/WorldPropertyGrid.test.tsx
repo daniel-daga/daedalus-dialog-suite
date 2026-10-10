@@ -80,6 +80,9 @@ function vobIndex(vobs: Spec[]): VobIndex {
     names, nameIndex: nameIndex.buffer,
     visuals, visualIndex: visualIndex.buffer,
     visualTypes, visualTypeIndex: visualTypeIndex.buffer,
+    decalVobs: new ArrayBuffer(0),
+    decalDimensions: new ArrayBuffer(0),
+    decalAlphaWeights: new ArrayBuffer(0),
   };
 }
 
@@ -90,6 +93,7 @@ function summaryOf(index: VobIndex): WorldSummary {
     vobIndex: index,
     stats: { vobCount: index.count, materials: 0, worldDrawGroups: 0, worldTriangles: 0 },
     timings: {},
+    assetSources: [],
   };
 }
 
@@ -240,6 +244,7 @@ const wiring = {
   onTranslate,
   onRotate,
   onRotateSelection,
+  onFocus: jest.fn(),
   /** Bumped by the shell in `commitOps`' catch when the main process refuses an
    *  edit — the tests that are about refusal hand it a bumped value themselves. */
   refusalGeneration: 0,

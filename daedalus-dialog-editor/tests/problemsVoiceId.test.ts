@@ -13,7 +13,7 @@ const line = (id: string, extra: Partial<DialogAction> = {}): DialogAction => ({
   text: 'hi',
   id,
   ...extra
-});
+}) as DialogAction;
 
 const conditional = (thenActions: DialogAction[]): DialogAction => ({
   type: 'ConditionalAction',

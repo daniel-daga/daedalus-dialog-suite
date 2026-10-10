@@ -19,7 +19,7 @@ class FakeWorker implements WorldWorker {
 
   postMessage(message: SentMessage) { this.sent.push(message); }
 
-  on(event: string, handler: (arg: unknown) => void) {
+  on(event: string, handler: (arg: any) => void) {
     const list = this.handlers.get(event) ?? [];
     list.push(handler);
     this.handlers.set(event, list);

@@ -17,12 +17,6 @@ jest.mock('../src/renderer/components/RegisterTopicDialog', () => ({
   default: (props: unknown) => mockRegisterDialogRender(props)
 }));
 
-const emptyModel = () => ({
-  dialogs: {}, functions: {}, constants: {}, variables: {},
-  instances: {}, items: {}, npcs: {}, animations: {},
-  hasErrors: false, errors: []
-});
-
 describe('CreateTopicRenderer register-dialog mounting', () => {
   beforeEach(() => {
     mockRegisterDialogRender.mockClear();
@@ -33,12 +27,13 @@ describe('CreateTopicRenderer register-dialog mounting', () => {
     render(
       <CreateTopicRenderer
         action={{ type: 'CreateTopic', topic: 'TOPIC_MeinQuest' } as any}
+        path={[0]}
+        npcName=""
         handleUpdate={jest.fn()}
         handleDelete={jest.fn()}
         flushUpdate={jest.fn()}
         handleKeyDown={jest.fn()}
         mainFieldRef={React.createRef()}
-        semanticModel={emptyModel() as any}
       />
     );
 

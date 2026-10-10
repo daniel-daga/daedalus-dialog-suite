@@ -7,8 +7,8 @@ const makeModel = (overrides: Partial<SemanticModel> = {}): SemanticModel => ({
       name: 'DIA_Start', parent: 'C_INFO',
       properties: {
         npc: 'NPC_Test', nr: 10,
-        condition: { name: 'DIA_Start_Condition' },
-        information: { name: 'DIA_Start_Info' },
+        condition: { name: 'DIA_Start_Condition' } as any,
+        information: { name: 'DIA_Start_Info' } as any,
         important: true, permanent: false
       }
     },
@@ -59,7 +59,7 @@ describe('createSimulatorModel', () => {
 
     expect(simulatorModel.functions.get('dia_start_info')).toBe(source.functions.DIA_Start_Info);
     expect(simulatorModel.functions.get(' DIA_START_INFO ')).toBeUndefined();
-    expect(simulatorModel.constants).toEqual(new Map([['log_custom', 7], ['greeting', 'hello']]));
+    expect(simulatorModel.constants).toEqual(new Map<string, unknown>([['log_custom', 7], ['greeting', 'hello']]));
     expect(simulatorModel.declaredMisVariables).toEqual(new Set(['mis_quest', 'mis_second']));
     expect(source.functions).toBe(sourceFunctions);
     expect(source.variables).toBe(sourceVariables);

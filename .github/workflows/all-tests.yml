@@ -135,6 +135,11 @@ jobs:
 
       - name: Typecheck editor renderer
         run: pnpm --filter daedalus-dialog-editor run typecheck:renderer
+
+      # ts-jest only transpiles (`isolatedModules`), so a type error in a test
+      # fails nowhere else.
+      - name: Typecheck editor tests
+        run: pnpm --filter daedalus-dialog-editor run typecheck:tests
       - name: Build editor renderer (warning guard)
         shell: bash
         run: |
