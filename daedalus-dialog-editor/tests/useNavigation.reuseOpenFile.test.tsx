@@ -61,7 +61,7 @@ describe('useNavigation reuses already-open files', () => {
 
     const fileState = useEditorStore.getState().getFileState('vars.d');
     expect(mockReadFile).not.toHaveBeenCalled();
-    expect(fileState?.semanticModel.variables.TEST.value).toBe(2);
+    expect((fileState?.semanticModel.variables as any).TEST.value).toBe(2);
     expect(fileState?.isDirty).toBe(true);
     expect(useUISelectionStore.getState().activeView).toBe('variable');
   });

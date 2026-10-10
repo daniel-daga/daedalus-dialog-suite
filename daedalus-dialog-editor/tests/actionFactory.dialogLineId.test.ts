@@ -20,7 +20,7 @@ describe('createDialogLineId', () => {
     const id = createDialogLineId({
       dialogName: 'DIA_TestDialog',
       speaker: 'self',
-      actions
+      actions: actions as any
     });
 
     expect(id).toBe('DIA_TestDialog_08_02');
@@ -45,7 +45,7 @@ describe('createDialogLineId', () => {
     const id = createDialogLineId({
       dialogName: 'DIA_RenamedDialog',
       speaker: 'self',
-      actions
+      actions: actions as any
     });
 
     expect(id).toBe('DIA_RenamedDialog_09_00');

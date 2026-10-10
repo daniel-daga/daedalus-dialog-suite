@@ -55,7 +55,7 @@ jest.mock('fs', () => {
 
 jest.mock('../src/main/services/SettingsService', () => ({
   SettingsService: class {
-    static getGothicInstallPath = jest.fn(async (): Promise<string | null> => null);
+    static getGothicInstallPath: jest.Mock = jest.fn(async (): Promise<string | null> => null);
     getGothicInstallPath = () => SettingsServiceMock.getGothicInstallPath();
     setGothicInstallPath = async () => undefined;
     getRecentProjects = async () => [];
@@ -64,7 +64,7 @@ jest.mock('../src/main/services/SettingsService', () => ({
 
 const electron = jest.requireMock('electron') as {
   __handlers: Map<string, Handler>;
-  __showOpenDialog: jest.Mock<() => Promise<{ canceled: boolean; filePaths: string[] }>>;
+  __showOpenDialog: jest.Mock<(...args: unknown[]) => Promise<{ canceled: boolean; filePaths: string[] }>>;
 };
 const { SettingsService: SettingsServiceMock } = jest.requireMock('../src/main/services/SettingsService') as {
   SettingsService: { getGothicInstallPath: jest.Mock<() => Promise<string | null>> };

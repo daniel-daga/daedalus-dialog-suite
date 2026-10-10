@@ -10,17 +10,17 @@ jest.mock('../src/renderer/store/searchStore', () => ({
     const state = {
       dialogFilter: '',
       setDialogFilter: jest.fn(),
-      filterDialogs: (dialogs) => dialogs,
+      filterDialogs: (dialogs: string[]) => dialogs,
     };
     return selector ? selector(state) : state;
   }),
 }));
 
 // Mock AutoSizer
-jest.mock('react-virtualized-auto-sizer', () => (props) => props.children({ height: 500, width: 300 }));
+jest.mock('react-virtualized-auto-sizer', () => (props: any) => props.children({ height: 500, width: 300 }));
 
 describe('DialogTree Performance', () => {
-  const mockSemanticModel = {
+  const mockSemanticModel: any = {
     dialogs: {
       'Dialog1': {
         name: 'Dialog1',
@@ -93,8 +93,8 @@ describe('DialogTree Performance', () => {
     semanticModel: mockSemanticModel,
     selectedDialog: null,
     selectedFunctionName: null,
-    expandedDialogs: new Set(),
-    expandedChoices: new Set(),
+    expandedDialogs: new Set<string>(),
+    expandedChoices: new Set<string>(),
     onSelectDialog: jest.fn(),
     onToggleDialogExpand: jest.fn(),
     onToggleChoiceExpand: jest.fn(),

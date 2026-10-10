@@ -62,7 +62,7 @@ function harness({
   mode = 'translate' as GizmoMode,
   snapGrid = 0,
   snapAngle = 0,
-  positions = { 1: [100, 0, 0] as [number, number, number], 2: [300, 0, 0] as [number, number, number] },
+  positions = { 1: [100, 0, 0], 2: [300, 0, 0] } as Record<number, [number, number, number]>,
   waypoints = { 7: [50, 60, 70] as [number, number, number] },
   membersOf = undefined as GizmoControllerOptions['membersOf'],
 } = {}) {
@@ -297,7 +297,7 @@ describe('GizmoController', () => {
     const { gizmo, world, controls } = harness();
     const seen: boolean[] = [];
     const move = world.scene.moveVob.bind(world.scene);
-    world.scene.moveVob = (vob, to) => { seen.push(controls.enabled); move(vob, to); };
+    world.scene.moveVob = (vob, to) => { seen.push(controls.enabled); return move(vob, to); };
 
     gizmo.attach([1]);
     gizmo.dragTo([150, 0, 0]);

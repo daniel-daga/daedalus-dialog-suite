@@ -34,6 +34,7 @@ jest.mock('../src/renderer/world/BvhBuilder', () => mockWorldViewport.mockBvhBui
 jest.mock('../src/renderer/world/VobPicker', () => mockWorldViewport.mockVobPicker(7));
 
 import WorldViewport from '../src/renderer/components/world/WorldViewport';
+import { VIEWPORT_DEFAULTS } from './worldViewportMocks';
 
 /** One draw group, so the instanced payload below builds a real
  *  `THREE.InstancedMesh` for `positionOf` to find VOB 7 in — the geometry
@@ -84,12 +85,13 @@ function instancedPayload(): InstancedPayload {
     }],
     // Nothing about a decal here; `DecalLayer.test.ts` is where one is drawn.
     decals: mockWorldViewport.noDecals(),
-    stats: { visualsSeen: 1, visualsResolved: 1, vobsPlaced: 1, instancedDrawGroups: 1, levelCompos: 0, unresolvedByType: {} },
+    stats: { visualsSeen: 1, visualsResolved: 1, vobsPlaced: 1, instancedDrawGroups: 1, levelCompos: 0, unresolvedByType: {}, unresolved: [] },
   };
 }
 
 function props() {
   return {
+    ...VIEWPORT_DEFAULTS,
     mesh: EMPTY_MESH,
     visuals: instancedPayload(),
     vobIndex: mockWorldViewport.noVobMarkers(),

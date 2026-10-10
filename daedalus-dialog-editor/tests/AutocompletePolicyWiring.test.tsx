@@ -102,6 +102,8 @@ describe('Autocomplete policy wiring', () => {
     render(
       <CreateTopicRenderer
         action={{ topic: 'TOPIC_TEST' } as any}
+        path={[0]}
+        npcName=""
         handleUpdate={jest.fn()}
         handleDelete={jest.fn()}
         flushUpdate={jest.fn()}
@@ -119,6 +121,8 @@ describe('Autocomplete policy wiring', () => {
     render(
       <PlayAniActionRenderer
         action={{ target: 'self' } as any}
+        path={[0]}
+        npcName=""
         handleUpdate={jest.fn()}
         handleDelete={jest.fn()}
         flushUpdate={jest.fn()}
@@ -130,6 +134,8 @@ describe('Autocomplete policy wiring', () => {
     render(
       <StopProcessInfosActionRenderer
         action={{ target: 'self' } as any}
+        path={[0]}
+        npcName=""
         handleUpdate={jest.fn()}
         handleDelete={jest.fn()}
         flushUpdate={jest.fn()}

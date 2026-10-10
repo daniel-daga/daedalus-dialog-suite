@@ -47,7 +47,7 @@ describe('hasErrors lifecycle', () => {
   test('a parse-errored file is not auto-saved even after a visual mutation clears the FileState mirror', async () => {
     const filePath = 'partial.d';
     useEditorStore.setState({
-      openFiles: new Map([[filePath, {
+      openFiles: new Map<string, any>([[filePath, {
         filePath,
         semanticModel: {
           dialogs: { D1: { properties: { npc: 'NPC1' } } },
@@ -68,7 +68,7 @@ describe('hasErrors lifecycle', () => {
     // A visual mutation marks the file dirty. Under the old rule this also
     // cleared fileState.hasErrors, opening the gate. The model stays partial.
     act(() => {
-      useEditorStore.getState().updateDialog(filePath, 'D1', { properties: { npc: 'NPC2' } });
+      useEditorStore.getState().updateDialog(filePath, 'D1', { properties: { npc: 'NPC2' } } as any);
     });
 
     await act(async () => {
@@ -83,7 +83,7 @@ describe('hasErrors lifecycle', () => {
   test('autoSaveError blocks auto-save and a subsequent mutation clears it', async () => {
     const filePath = 'blocked.d';
     useEditorStore.setState({
-      openFiles: new Map([[filePath, {
+      openFiles: new Map<string, any>([[filePath, {
         filePath,
         semanticModel: {
           dialogs: { D1: { properties: { npc: 'NPC1' } } },
@@ -108,7 +108,7 @@ describe('hasErrors lifecycle', () => {
 
     // A mutation clears autoSaveError → the file becomes an auto-save candidate.
     act(() => {
-      useEditorStore.getState().updateDialog(filePath, 'D1', { properties: { npc: 'NPC2' } });
+      useEditorStore.getState().updateDialog(filePath, 'D1', { properties: { npc: 'NPC2' } } as any);
     });
     expect(useEditorStore.getState().getFileState(filePath)?.autoSaveError).toBeUndefined();
 
@@ -121,7 +121,7 @@ describe('hasErrors lifecycle', () => {
   test('a validation-failed auto-save records autoSaveError but does not overwrite errors/hasErrors', async () => {
     const filePath = 'valfail.d';
     useEditorStore.setState({
-      openFiles: new Map([[filePath, {
+      openFiles: new Map<string, any>([[filePath, {
         filePath,
         semanticModel: {
           dialogs: { D1: { properties: { npc: 'NPC1' } } },

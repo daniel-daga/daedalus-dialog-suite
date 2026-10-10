@@ -12,6 +12,8 @@ const filePath = 'C:/tmp/dialog.d';
 const makeModel = (tag: string): SemanticModel => ({
   dialogs: {
     DIA_Test: {
+      name: 'DIA_Test',
+      parent: 'C_INFO',
       properties: { npc: tag, information: 'DIA_Test_Info' }
     }
   },
@@ -19,7 +21,7 @@ const makeModel = (tag: string): SemanticModel => ({
     DIA_Test_Info: {
       name: 'DIA_Test_Info',
       returnType: 'VOID',
-      actions: [{ type: 'DialogLine', text: tag, speaker: 'Hero', id: `id_${tag}` }],
+      actions: [{ type: 'DialogLine', text: tag, speaker: 'other', id: `id_${tag}` }],
       conditions: [],
       calls: []
     }
@@ -69,7 +71,7 @@ describe('historyActions – updateFunction', () => {
     historyActions.updateFunction(filePath, 'DIA_Test_Info', {
       name: 'DIA_Test_Info',
       returnType: 'VOID',
-      actions: [{ type: 'DialogLine', text: 'modified', speaker: 'Hero', id: 'id_modified' }],
+      actions: [{ type: 'DialogLine', text: 'modified', speaker: 'other', id: 'id_modified' }],
       conditions: [],
       calls: []
     });
@@ -84,7 +86,7 @@ describe('historyActions – updateFunction', () => {
     historyActions.updateFunction(filePath, 'DIA_Test_Info', {
       name: 'DIA_Test_Info',
       returnType: 'VOID',
-      actions: [{ type: 'DialogLine', text: 'modified', speaker: 'Hero', id: 'id_modified' }],
+      actions: [{ type: 'DialogLine', text: 'modified', speaker: 'other', id: 'id_modified' }],
       conditions: [],
       calls: []
     });
@@ -113,7 +115,7 @@ describe('historyActions – updateDialog', () => {
   it('pushes a snapshot and updates the dialog', () => {
     historyActions.updateDialog(filePath, 'DIA_Test', {
       properties: { npc: 'NewNPC', information: 'DIA_Test_Info' }
-    });
+    } as any);
 
     expect(getModel()?.dialogs.DIA_Test.properties.npc).toBe('NewNPC');
     expect(useHistoryStore.getState().canUndo(filePath)).toBe(true);
@@ -122,7 +124,7 @@ describe('historyActions – updateDialog', () => {
   it('allows undoing the updateDialog call', () => {
     historyActions.updateDialog(filePath, 'DIA_Test', {
       properties: { npc: 'NewNPC', information: 'DIA_Test_Info' }
-    });
+    } as any);
 
     useHistoryStore.getState().undo(filePath);
 
@@ -140,7 +142,7 @@ describe('historyActions – updateFunctionWithUpdater', () => {
   it('pushes a snapshot and applies the updater', () => {
     historyActions.updateFunctionWithUpdater(filePath, 'DIA_Test_Info', (fn) => ({
       ...fn,
-      actions: [{ type: 'DialogLine', text: 'from updater', speaker: 'Hero', id: 'x' }]
+      actions: [{ type: 'DialogLine', text: 'from updater', speaker: 'other', id: 'x' }]
     }));
 
     expect(getModel()?.functions.DIA_Test_Info.actions[0]).toMatchObject({ text: 'from updater' });
@@ -150,7 +152,7 @@ describe('historyActions – updateFunctionWithUpdater', () => {
   it('allows undoing the updater result', () => {
     historyActions.updateFunctionWithUpdater(filePath, 'DIA_Test_Info', (fn) => ({
       ...fn,
-      actions: [{ type: 'DialogLine', text: 'from updater', speaker: 'Hero', id: 'x' }]
+      actions: [{ type: 'DialogLine', text: 'from updater', speaker: 'other', id: 'x' }]
     }));
 
     useHistoryStore.getState().undo(filePath);
@@ -237,7 +239,7 @@ describe('historyActions – snapshot isolation', () => {
     historyActions.updateFunction(filePath, 'DIA_Test_Info', {
       name: 'DIA_Test_Info',
       returnType: 'VOID',
-      actions: [{ type: 'DialogLine', text: 'modified', speaker: 'Hero', id: 'x' }],
+      actions: [{ type: 'DialogLine', text: 'modified', speaker: 'other', id: 'x' }],
       conditions: [],
       calls: []
     });
@@ -278,7 +280,7 @@ describe('historyActions – removeDialog', () => {
   it('does not delete a function shared by another dialog', () => {
     // Set up model where DIA_Test2 also uses DIA_Test_Info
     useFileStore.setState({
-      openFiles: new Map([
+      openFiles: new Map<string, any>([
         [filePath, {
           filePath,
           semanticModel: {
@@ -316,7 +318,7 @@ describe('historyActions – removeDialog', () => {
   it('deletes choice target functions referenced only via choices nested in conditionals', () => {
     const emptyFunc = (name: string) => ({ name, returnType: 'VOID', actions: [], conditions: [], calls: [] });
     useFileStore.setState({
-      openFiles: new Map([
+      openFiles: new Map<string, any>([
         [filePath, {
           filePath,
           semanticModel: {
@@ -442,7 +444,7 @@ describe('historyActions – removeDialog', () => {
 describe('historyActions – renameDialog', () => {
   beforeEach(() => {
     useFileStore.setState({
-      openFiles: new Map([
+      openFiles: new Map<string, any>([
         [filePath, {
           filePath,
           semanticModel: {

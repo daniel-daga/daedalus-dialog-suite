@@ -1,4 +1,6 @@
 import { useProjectStore } from '../src/renderer/store/projectStore';
+import type { OpenedProjectConfig } from '../src/shared/projectConfigTypes';
+import type { ProjectIndex } from '../src/shared/types';
 
 const descriptor = {
   projectFilePath: '/proj/demo.gothicproject.json',
@@ -7,13 +9,13 @@ const descriptor = {
   config: { version: 1 as const, target: 'g2-notr' as const, scriptsRoot: 'scripts', worlds: [], assetSources: ['.', 'C:/Gothic'] },
   resolvedAssetSources: ['/proj', 'C:/Gothic/Data'],
   warnings: [{ code: 'asset-source-unavailable' as const, source: 'C:/Missing', resolvedPath: 'C:/Missing', message: 'missing' }]
-};
+} as unknown as OpenedProjectConfig;
 
 const index = {
   npcs: [], routines: [], dialogsByNpc: {}, allFiles: [], questFiles: [], npcPrototypes: [],
   voiceIds: {}, waypointSites: {}, spawnSites: [], routineSites: [], routinesByNpc: {},
   routineStatesByNpc: {}, routineLayouts: {}, metadataFailures: []
-};
+} as unknown as ProjectIndex;
 
 describe('ProjectStore - project asset sources', () => {
   let originalLoad: unknown;

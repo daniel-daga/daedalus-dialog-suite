@@ -51,7 +51,7 @@ describe('ActionCard flushUpdate dirty guard (Slice 1)', () => {
       ...overrides,
     };
 
-    const view = render(<ActionCard {...(props as never)} />);
+    const view = render(<ActionCard {...(props as any)} />);
     return { ...view, props, updateActionAtPath, focusActionAtPath, addDialogLineAfterPath };
   }
 

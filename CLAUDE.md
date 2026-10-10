@@ -258,6 +258,7 @@ Import direction is one-way: UI → domain.
 | `npm run build` | Compile main + renderer |
 | `npm run build:main` | Compile main process only |
 | `npm run typecheck:renderer` | TypeScript check renderer only |
+| `npm run typecheck:tests` | TypeScript check `tests/` (Jest suites and their helpers; ts-jest itself never type-checks) |
 | `npm test` | Jest unit/integration tests |
 | `npm run test:mocked` | Jest with mocks |
 | `npm run test:stable:windows` | Recommended local Windows baseline |
@@ -281,7 +282,7 @@ Import direction is one-way: UI → domain.
 
 | Workflow | Jobs |
 |---|---|
-| `all-tests.yml` | `zen-world-tests` (jest + typecheck + lint), `editor-tests` (typecheck main + renderer, renderer build warning-guard — which also fails a bundle carrying `mockAPI.ts` — lint), `editor-jest` (Jest, sharded 2×), `editor-ui-tests` (browser-harness Playwright, sharded 4×), `editor-ui-merge-reports`, `editor-e2e-electron` (real Electron, xvfb on ubuntu), `parser-tests` (tests + lint + typecheck), `roundtrip-corpus` (fixture corpus via `--root test/fixtures/corpus --strict`, uploads report artifacts) |
+| `all-tests.yml` | `zen-world-tests` (jest + typecheck + lint), `editor-tests` (typecheck main + renderer + `tests/`, renderer build warning-guard — which also fails a bundle carrying `mockAPI.ts` — lint), `editor-jest` (Jest, sharded 2×), `editor-ui-tests` (browser-harness Playwright, sharded 4×), `editor-ui-merge-reports`, `editor-e2e-electron` (real Electron, xvfb on ubuntu), `parser-tests` (tests + lint + typecheck), `roundtrip-corpus` (fixture corpus via `--root test/fixtures/corpus --strict`, uploads report artifacts) |
 | `build-windows.yml` | **`workflow_dispatch` only — a push to master publishes nothing.** Release notes are the checked-in `RELEASE_NOTES.md` (`- #123: Short description` per line, via `tools/release-notes.js`) — edit it before dispatching; a `release-notes` job validates it first and gates every other job, and `all-tests.yml`'s `zen-world-tests` checks it on every run. Windows Electron build + installer; `build` job needs both the full `all-tests.yml` matrix (via `workflow_call`, job `tests`) and `e2e-electron-windows`; guarded to `refs/heads/master`, so a non-master dispatch skips the build rather than releasing; publishes serialized via `concurrency` group; stale re-runs rejected by comparing `github.sha` to live master head. Two packaged-app smokes gate the artifact: the exe starts, and (via `DDE_SMOKE_OPEN_WORLD`) it opens a committed fixture world through `WorldService` — which is what proves the packaged native addon actually loads, since `npmRebuild: false` |
 | `zenkit-node.yml` | The native addon: builds ZenKit + the binding and runs its suite, windows-2022 only. **Not part of `all-tests.yml`, so it does not gate a release.** `workflow_dispatch` only |
 | `deploy-pages.yml` | GitHub Pages deployment; `workflow_dispatch` only |

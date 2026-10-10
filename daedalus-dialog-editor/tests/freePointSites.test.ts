@@ -31,7 +31,7 @@ test('a non-literal argument is a site with no name', () => {
 
 test('a commented-out call is not a site', () => {
   const source = '// AI_GotoFP(self, "FP_A");\n/* Wld_IsFPAvailable(self, "B"); */\nAI_GotoFP(self, "FP_C");\n';
-  expect(extractFreePointSites(source, 'a.d').map((s: { name: string }) => s.name)).toEqual(['FP_C']);
+  expect(extractFreePointSites(source, 'a.d').map((s: { name: string | null }) => s.name)).toEqual(['FP_C']);
 });
 
 test('classifies each literal exact, prefix, infix or unresolved', () => {

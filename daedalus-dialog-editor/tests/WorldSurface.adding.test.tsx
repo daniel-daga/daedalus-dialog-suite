@@ -67,6 +67,8 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
 
 const STARTUP_PATH = 'C:/Story/Startup.d';
 const STARTUP_MODEL: SemanticModel = {
+  hasErrors: false,
+  errors: [],
   dialogs: {},
   functions: { STARTUP_NewWorld: { name: 'STARTUP_NewWorld', actions: [] } as never },
 };

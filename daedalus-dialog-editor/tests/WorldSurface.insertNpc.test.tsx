@@ -67,11 +67,13 @@ const STARTUP_MODEL: SemanticModel = {
     INIT_NewWorld: { name: 'INIT_NewWorld', actions: [] } as never,
     STARTUP_NewWorld: { name: 'STARTUP_NewWorld', actions: [] } as never,
   },
+  hasErrors: false,
+  errors: [],
 };
 
 const api = {
   ...makeWorldEditorApi(),
-  readFile: jest.fn(async (): Promise<string> => ''),
+  readFile: jest.fn(async (_path: string): Promise<string> => ''),
   parseSource: jest.fn(async (): Promise<SemanticModel> => STARTUP_MODEL),
 };
 
@@ -234,7 +236,7 @@ describe('Insert NPC here…', () => {
     });
 
     it('when no file declares STARTUP_<world>', async () => {
-      seedProject({ dialogs: {}, functions: { INIT_NewWorld: { name: 'INIT_NewWorld', actions: [] } as never } });
+      seedProject({ dialogs: {}, functions: { INIT_NewWorld: { name: 'INIT_NewWorld', actions: [] } as never }, hasErrors: false, errors: [] });
       await openWorld();
       await openInsertDialog();
 

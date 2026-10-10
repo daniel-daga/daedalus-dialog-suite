@@ -21,9 +21,11 @@ const summary: WorldSummary = {
     positions: new Float32Array(0).buffer, rotations: new Float32Array(0).buffer, flags: new Uint32Array(0).buffer,
     classes: [], classIndex: new Uint32Array(0).buffer, names: [], nameIndex: new Uint32Array(0).buffer,
     visuals: [], visualIndex: new Uint32Array(0).buffer, visualTypes: [], visualTypeIndex: new Uint32Array(0).buffer,
+    decalVobs: new ArrayBuffer(0), decalDimensions: new ArrayBuffer(0), decalAlphaWeights: new ArrayBuffer(0),
   },
   stats: { vobCount: 0, materials: 0, worldDrawGroups: 0, worldTriangles: 0 },
   timings: {},
+  assetSources: [],
 };
 
 const waynet = (names: string[]): WaynetPayload => ({

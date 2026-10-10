@@ -842,7 +842,7 @@ describe('ThreeColumnLayout - Bug #4: Unbounded Cache Growth', () => {
       // Evict oldest if over limit
       if (cache.size > maxSize) {
         const oldestKey = cache.keys().next().value;
-        cache.delete(oldestKey);
+        cache.delete(oldestKey!);
       }
     };
 
@@ -873,8 +873,8 @@ describe('ThreeColumnLayout - Bug #4: Unbounded Cache Growth', () => {
 
       if (cache.size > maxSize) {
         const oldestKey = cache.keys().next().value;
-        evicted.push(oldestKey);
-        cache.delete(oldestKey);
+        evicted.push(oldestKey!);
+        cache.delete(oldestKey!);
       }
     };
 
@@ -918,7 +918,7 @@ describe('ThreeColumnLayout - Bug #4: Unbounded Cache Growth', () => {
 
       if (cache.size > maxSize) {
         const oldestKey = cache.keys().next().value;
-        cache.delete(oldestKey);
+        cache.delete(oldestKey!);
       }
     };
 
@@ -1007,7 +1007,7 @@ describe('ThreeColumnLayout - Bug #4: Unbounded Cache Growth', () => {
 
       if (cache.size > maxSize) {
         const oldestKey = cache.keys().next().value;
-        cache.delete(oldestKey);
+        cache.delete(oldestKey!);
       }
     };
 

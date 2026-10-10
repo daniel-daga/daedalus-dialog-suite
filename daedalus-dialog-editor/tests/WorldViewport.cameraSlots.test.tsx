@@ -33,6 +33,7 @@ jest.mock('../src/renderer/world/VobPicker', () => ({
 }));
 
 import WorldViewport from '../src/renderer/components/world/WorldViewport';
+import { VIEWPORT_DEFAULTS } from './worldViewportMocks';
 
 const VISUALS: InstancedPayload = {
   visuals: [],
@@ -40,13 +41,14 @@ const VISUALS: InstancedPayload = {
   decals: mockWorldViewport.noDecals(),
   stats: {
     visualsSeen: 0, visualsResolved: 0, vobsPlaced: 0,
-    instancedDrawGroups: 0, levelCompos: 0, unresolvedByType: {},
+    instancedDrawGroups: 0, levelCompos: 0, unresolvedByType: {}, unresolved: [],
   },
 };
 
 function props(bbox: number[]) {
   const mesh: WorldMeshPayload = { groups: [], bbox };
   return {
+    ...VIEWPORT_DEFAULTS,
     mesh,
     visuals: VISUALS,
     vobIndex: mockWorldViewport.noVobMarkers(),

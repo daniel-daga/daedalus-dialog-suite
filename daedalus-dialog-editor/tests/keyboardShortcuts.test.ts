@@ -51,7 +51,7 @@ function bindWorld() {
     onNudgeBy: noop,
     onNudgeEnd: noop,
     onHistory: noop,
-  } as WorldShortcutsInput));
+  } as unknown as WorldShortcutsInput));
 }
 
 /** Whether the World surface claimed the keystroke — `preventDefault` is the

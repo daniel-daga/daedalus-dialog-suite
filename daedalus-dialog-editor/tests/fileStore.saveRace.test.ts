@@ -35,7 +35,7 @@ describe('fileStore.saveFile mid-save race guard (E7)', () => {
   test('keeps the file dirty when the model is edited while the save is in flight', async () => {
     const filePath = 'race.d';
     useEditorStore.setState({
-      openFiles: new Map([[filePath, {
+      openFiles: new Map<string, any>([[filePath, {
         filePath,
         semanticModel: { dialogs: {}, functions: { F1: { name: 'F1', actions: [] } }, hasErrors: false, errors: [] },
         isDirty: true,
@@ -55,7 +55,7 @@ describe('fileStore.saveFile mid-save race guard (E7)', () => {
     useEditorStore.getState().updateFunction(filePath, 'F1', {
       name: 'F1',
       actions: [{ text: 'edited mid-save' } as any],
-    });
+    } as any);
 
     resolveSave({ success: true, validationResult: { isValid: true, errors: [], warnings: [] } });
     await savePromise;
@@ -66,7 +66,7 @@ describe('fileStore.saveFile mid-save race guard (E7)', () => {
   test('marks the file clean when nothing changes during the save', async () => {
     const filePath = 'clean.d';
     useEditorStore.setState({
-      openFiles: new Map([[filePath, {
+      openFiles: new Map<string, any>([[filePath, {
         filePath,
         semanticModel: { dialogs: {}, functions: { F1: { name: 'F1', actions: [] } }, hasErrors: false, errors: [] },
         isDirty: true,

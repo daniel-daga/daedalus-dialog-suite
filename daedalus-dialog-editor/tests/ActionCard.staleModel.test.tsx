@@ -115,6 +115,7 @@ describe('ActionCard stale-model / stable-handler honesty (C3)', () => {
     };
 
     const stableProps = {
+      patchActionsAtLevel: jest.fn(),
       dialogName: 'DIA_Test',
       currentFunction: currentFunction as never,
       npcName: 'TestNPC',

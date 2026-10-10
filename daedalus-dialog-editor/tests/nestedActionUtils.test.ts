@@ -47,13 +47,13 @@ describe('nestedActionUtils', () => {
     const actions = createModel();
 
     expect(getActionAtPath(actions, [1])?.type).toBe('ConditionalAction');
-    expect(getActionAtPath(actions, [1, 'then', 0])?.text).toBe('then');
-    expect(getActionAtPath(actions, [1, 'else', 0])?.text).toBe('else');
+    expect((getActionAtPath(actions, [1, 'then', 0]) as any)?.text).toBe('then');
+    expect((getActionAtPath(actions, [1, 'else', 0]) as any)?.text).toBe('else');
   });
 
   test('updates nested branch actions without mutating siblings', () => {
     const actions = createModel();
-    const updated = updateActionAtPath(actions, [1, 'then', 0], {
+    const updated: any[] = updateActionAtPath(actions, [1, 'then', 0], {
       ...actions[1].thenActions[0],
       text: 'updated then'
     });
@@ -88,7 +88,7 @@ describe('nestedActionUtils', () => {
 
   test('inserts new actions after nested branch paths', () => {
     const actions = createModel();
-    const inserted = insertActionAfterPath(actions, [1, 'then', 0], {
+    const inserted: any[] = insertActionAfterPath(actions, [1, 'then', 0], {
       type: 'DialogLine',
       speaker: 'self',
       text: 'after then',
@@ -101,7 +101,7 @@ describe('nestedActionUtils', () => {
 
   test('deletes nested actions by path', () => {
     const actions = createModel();
-    const deleted = deleteActionAtPath(actions, [1, 'else', 0]);
+    const deleted: any[] = deleteActionAtPath(actions, [1, 'else', 0]);
 
     expect(deleted[1].elseActions).toHaveLength(0);
     expect(deleted[1].thenActions).toHaveLength(1);
@@ -210,7 +210,7 @@ describe('quest steps as list items (#322)', () => {
     ];
     const reversed = (l: any[]) => [...l, line('added')];
     expect(patchActionsAtLevel(actions, [], reversed)).toHaveLength(3);
-    const nested = patchActionsAtLevel(actions, [1, 'else'], reversed);
+    const nested: any[] = patchActionsAtLevel(actions, [1, 'else'], reversed);
     expect(nested[1].elseActions.map((a: any) => a.text)).toEqual(['E', 'added']);
     expect(nested[1].thenActions).toBe(actions[1].thenActions);
   });

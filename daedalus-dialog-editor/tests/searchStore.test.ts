@@ -78,7 +78,7 @@ describe('searchStore', () => {
         functions[`DIA_Bulk_${i}_Info`] = {
           name: `DIA_Bulk_${i}_Info`,
           returnType: 'VOID',
-          actions: [{ speaker: 'self', text: 'Old Camp gossip', id: `${i}` }],
+          actions: [{ type: 'DialogLine', speaker: 'self', text: 'Old Camp gossip', id: `${i}` }],
           conditions: [],
           calls: []
         };
@@ -162,8 +162,8 @@ describe('searchStore', () => {
           name: 'DIA_Diego_Info_Info',
           returnType: 'VOID',
           actions: [
-            { speaker: 'self', text: 'Tell me about the camp', id: '1' },
-            { speaker: 'other', text: 'This is the Old Camp', id: '2' }
+            { type: 'DialogLine', speaker: 'self', text: 'Tell me about the camp', id: '1' },
+            { type: 'DialogLine', speaker: 'other', text: 'This is the Old Camp', id: '2' }
           ],
           conditions: [],
           calls: []
@@ -172,7 +172,7 @@ describe('searchStore', () => {
           name: 'DIA_Gorn_Trade_Info',
           returnType: 'VOID',
           actions: [
-            { speaker: 'other', text: 'Want to buy weapons?', id: '3' }
+            { type: 'DialogLine', speaker: 'other', text: 'Want to buy weapons?', id: '3' }
           ],
           conditions: [],
           calls: []

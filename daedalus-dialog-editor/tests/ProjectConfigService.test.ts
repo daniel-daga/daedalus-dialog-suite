@@ -13,7 +13,7 @@ import {
 } from '../src/main/services/ProjectConfigService';
 import type { GothicProjectFileV1 } from '../src/shared/projectConfigTypes';
 
-const validConfig = (assetSources: unknown = ['.']): unknown => ({
+const validConfig = (assetSources: unknown = ['.']): Record<string, unknown> => ({
   version: 1,
   target: 'g2-notr',
   scriptsRoot: '.',
@@ -324,7 +324,7 @@ describe('ProjectConfigService', () => {
       collision.code = 'EEXIST';
       const openSpy = jest.spyOn(fsPromises, 'open')
         .mockRejectedValueOnce(collision)
-        .mockImplementation((...args: unknown[]) => realOpen(...args));
+        .mockImplementation((...args: unknown[]) => realOpen(...(args as Parameters<typeof realOpen>)));
 
       await new ProjectConfigService().save(projectFilePath, parseProjectFile(validConfig()));
 
@@ -408,7 +408,7 @@ describe('ProjectConfigService', () => {
         if (String(args[0]) === projectFilePath && ++projectReads === 2) {
           await writeFile(projectFilePath, JSON.stringify({ ...validConfig(), target: 'g1' }));
         }
-        return realReadFile(...args);
+        return realReadFile(...(args as Parameters<typeof realReadFile>));
       });
 
       await expect(new ProjectConfigService().updateProjectPaths(projectFilePath, ['.', 'assets']))
@@ -438,7 +438,7 @@ describe('ProjectConfigService', () => {
         const exists: NodeJS.ErrnoException = new Error('EEXIST');
         exists.code = 'EEXIST';
         throw exists;
-      }).mockImplementation((...args: unknown[]) => realLink(...args));
+      }).mockImplementation((...args: unknown[]) => realLink(...(args as Parameters<typeof realLink>)));
 
       const result = await service.openOrMigrate(root, join(root, 'loser-install'));
 

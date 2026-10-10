@@ -330,13 +330,13 @@ describe('useVariableOptions shared pool (Phase 3)', () => {
     test.each(configs)('$name', ({ config }) => {
       const expected = legacyBuildOptions(rawSources, config);
       const pool = buildOptionPool(poolSources);
-      const actual = deriveOptionsFromPool(pool, config);
+      const actual = deriveOptionsFromPool(pool, config as any);
       expect(actual).toEqual(expected);
     });
 
     test('the shadowing case specifically: SHADOW resolves to the variable, not the excluded constant', () => {
       const pool = buildOptionPool(poolSources);
-      const actual = deriveOptionsFromPool(pool, { typeFilter: 'int' });
+      const actual = deriveOptionsFromPool(pool, { typeFilter: 'int' } as any);
       const shadow = actual.find((o) => o.name === 'SHADOW');
       expect(shadow).toBeDefined();
       expect(shadow?.source).toBe('variable');
@@ -348,7 +348,7 @@ describe('useVariableOptions shared pool (Phase 3)', () => {
       const semanticModel = {
         constants: { C_A: { name: 'C_A', type: 'int', value: 999, filePath: '/override.d' } }
       } as any;
-      const actual = deriveOptionsFromPool(pool, { semanticModel });
+      const actual = deriveOptionsFromPool(pool, { semanticModel } as any);
       const cA = actual.find((o) => o.name === 'C_A');
       expect(cA?.filePath).toBe('/override.d');
       expect(cA?.value).toBe(999);
@@ -358,7 +358,7 @@ describe('useVariableOptions shared pool (Phase 3)', () => {
       const localConstants = { C_A: { name: 'C_A', type: 'int', value: 42, filePath: '/local.d' } };
       const sources: OptionPoolSources = { ...poolSources, localConstants };
       const pool = buildOptionPool(sources);
-      const actual = deriveOptionsFromPool(pool, {});
+      const actual = deriveOptionsFromPool(pool, {} as any);
       const cA = actual.find((o) => o.name === 'C_A');
       expect(cA?.filePath).toBe('/local.d');
       expect(cA?.value).toBe(42);
@@ -386,7 +386,7 @@ describe('useVariableOptions shared pool (Phase 3)', () => {
       const expected = legacyBuildOptions(rawInstanceSources, config);
 
       const pool = buildOptionPool({ ...baseSources, ...rawInstanceSources });
-      const actual = deriveOptionsFromPool(pool, config);
+      const actual = deriveOptionsFromPool(pool, config as any);
       expect(actual).toEqual(expected);
       // Sanity: every distinct source contributed (nothing dropped by the split).
       const names = actual.map((o) => o.name);

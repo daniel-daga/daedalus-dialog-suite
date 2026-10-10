@@ -16,7 +16,7 @@ function makeFunction(actions: DialogAction[]): DialogFunction {
 
 function renderManagement(initialActions: DialogAction[]) {
   let currentFunc = makeFunction(initialActions);
-  const model: SemanticModel = { dialogs: {}, functions: {} };
+  const model: SemanticModel = { dialogs: {}, functions: {}, hasErrors: false, errors: [] };
   const focusAction = jest.fn();
 
   const setFunction = (updater: unknown) => {

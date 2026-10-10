@@ -9,14 +9,14 @@
 
 import { describe, test, expect, beforeEach } from '@jest/globals';
 import { useEditorStore } from '../src/renderer/store/editorStore';
-import type { SemanticModel } from 'daedalus-parser/semantic-model';
+import type { SemanticModel } from '../src/shared/types';
 
 const emptyModel = (): SemanticModel =>
   ({ dialogs: {}, functions: {}, hasErrors: false, errors: [] }) as unknown as SemanticModel;
 
 const openWithSaveError = (filePath: string) => {
   useEditorStore.setState({
-    openFiles: new Map([[filePath, {
+    openFiles: new Map<string, any>([[filePath, {
       filePath,
       semanticModel: emptyModel(),
       isDirty: false,

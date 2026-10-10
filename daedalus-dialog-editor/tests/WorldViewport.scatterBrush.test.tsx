@@ -30,6 +30,7 @@ jest.mock('../src/renderer/world/BvhBuilder', () => mockWorldViewport.mockBvhBui
 jest.mock('../src/renderer/world/VobPicker', () => mockWorldViewport.mockVobPicker(-1));
 
 import WorldViewport from '../src/renderer/components/world/WorldViewport';
+import { VIEWPORT_DEFAULTS } from './worldViewportMocks';
 
 /** A 100 x 100 m ground quad centred on the origin, wound so it faces the
  *  camera framed above it — the scene's root mirrors X (ZenGin is left-handed),
@@ -79,11 +80,13 @@ const NO_VISUALS: InstancedPayload = {
     instancedDrawGroups: 0,
     levelCompos: 0,
     unresolvedByType: {},
+    unresolved: [],
   },
 };
 
 function props(onScatterStroke: (samples: Array<[number, number, number]>) => void) {
   return {
+    ...VIEWPORT_DEFAULTS,
     mesh: MESH,
     visuals: NO_VISUALS,
     vobIndex: mockWorldViewport.noVobMarkers(),

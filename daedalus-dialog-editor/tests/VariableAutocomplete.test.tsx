@@ -15,7 +15,7 @@ const navigateToDialog = jest.fn();
 // useVariableOptions reads projectStore via per-field selectors, so the mock
 // must apply the selector (returning the whole state when called without one).
 const mockStore = (state: Record<string, unknown>) =>
-  (useProjectStore as jest.Mock).mockImplementation(
+  (useProjectStore as unknown as jest.Mock).mockImplementation(
     (selector?: (s: Record<string, unknown>) => unknown) => (selector ? selector(state) : state)
   );
 

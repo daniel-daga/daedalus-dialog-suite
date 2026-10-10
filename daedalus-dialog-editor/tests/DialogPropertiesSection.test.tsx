@@ -20,7 +20,7 @@ describe('DialogPropertiesSection', () => {
     render(
       <DialogPropertiesSection
         dialog={dialog}
-        semanticModel={{ dialogs: {}, functions: {} }}
+        semanticModel={{ dialogs: {}, functions: {}, hasErrors: false, errors: [] }}
         propertiesExpanded
         onToggleExpanded={jest.fn()}
         onDialogPropertyChange={jest.fn()}
@@ -48,7 +48,7 @@ describe('DialogPropertiesSection', () => {
     render(
       <DialogPropertiesSection
         dialog={dialog}
-        semanticModel={{ dialogs: {}, functions: {} }}
+        semanticModel={{ dialogs: {}, functions: {}, hasErrors: false, errors: [] }}
         propertiesExpanded
         onToggleExpanded={jest.fn()}
         onDialogPropertyChange={onDialogPropertyChange}
@@ -81,7 +81,7 @@ describe('DialogPropertiesSection', () => {
     render(
       <DialogPropertiesSection
         dialog={dialog}
-        semanticModel={{ dialogs: {}, functions: {} }}
+        semanticModel={{ dialogs: {}, functions: {}, hasErrors: false, errors: [] }}
         propertiesExpanded
         onToggleExpanded={jest.fn()}
         onDialogPropertyChange={onDialogPropertyChange}
@@ -109,7 +109,7 @@ describe('DialogPropertiesSection', () => {
     render(
       <DialogPropertiesSection
         dialog={dialog as any}
-        semanticModel={{ dialogs: {}, functions: {} }}
+        semanticModel={{ dialogs: {}, functions: {}, hasErrors: false, errors: [] }}
         propertiesExpanded
         onToggleExpanded={jest.fn()}
         onDialogPropertyChange={jest.fn()}
@@ -131,7 +131,7 @@ describe('DialogPropertiesSection', () => {
     render(
       <DialogPropertiesSection
         dialog={dialog as any}
-        semanticModel={{ dialogs: {}, functions: {} }}
+        semanticModel={{ dialogs: {}, functions: {}, hasErrors: false, errors: [] }}
         propertiesExpanded
         onToggleExpanded={jest.fn()}
         onDialogPropertyChange={onDialogPropertyChange}

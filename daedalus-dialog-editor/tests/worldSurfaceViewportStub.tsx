@@ -70,7 +70,7 @@ export const vp = {
   showSpawns: undefined as boolean | undefined,
   /** The routine index the viewport is handed, and the minute it draws — null is
    *  the time slider switched off, which is the static spawns. */
-  routines: undefined as { sites: readonly unknown[]; routinesByNpc: Record<string, string> } | undefined,
+  routines: undefined as { sites: readonly unknown[]; routinesByNpc: Record<string, string>; statesByNpc?: unknown } | undefined,
   spawnTime: undefined as number | null | undefined,
   spawnState: undefined as string | null | undefined,
   /** Whether the viewport is told to draw waypoint names over the world. */
@@ -122,8 +122,9 @@ export function viewportStubModule() {
     showWaynet: boolean;
     spawns: readonly unknown[];
     showSpawns: boolean;
-    routines: { sites: readonly unknown[]; routinesByNpc: Record<string, string> };
+    routines: { sites: readonly unknown[]; routinesByNpc: Record<string, string>; statesByNpc?: unknown };
     spawnTime: number | null;
+    spawnState: string | null;
     showWaypointNames: boolean;
     onSelectWaypoint: (waypoint: number | null) => void;
     onMoveWaypoint: (

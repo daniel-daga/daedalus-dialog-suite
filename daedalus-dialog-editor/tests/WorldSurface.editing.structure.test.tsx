@@ -8,6 +8,7 @@ import { SUMMARY, vobIndex } from './worldFixtures';
 import { IDENTITY, mockFramePoint, mockFrameVob, mockPointAhead, vp } from './worldSurfaceViewportStub';
 import { LIGHT_PROPS, api, coordinate, openWorld } from './worldSurfaceEditingHarness';
 import { PASTE_REACH } from '../src/renderer/components/world/WorldSurface';
+import type { WorldSummary } from '../src/shared/worldTypes';
 
 /**
  * The World surface's half of an edit — deleting, duplicating, copying and pasting. Fixtures, the

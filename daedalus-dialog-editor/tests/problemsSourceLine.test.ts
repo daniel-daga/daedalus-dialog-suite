@@ -61,7 +61,7 @@ describe('a script problem carries the line of what it is about', () => {
       calls: [],
       actions: [],
       conditions: [
-        { type: 'NpcKnowsInfoCondition', dialogRef: 'DIA_Nowhere', negated: false, line: 33 }
+        { type: 'NpcKnowsInfoCondition', dialogRef: 'DIA_Nowhere', negated: false, line: 33 } as any
       ]
     };
     const files: FileModel[] = [{ filePath: 'test.d', model }];
@@ -79,7 +79,7 @@ describe('a script problem carries the line of what it is about', () => {
       calls: [],
       conditions: [],
       actions: [
-        { type: 'DialogLine', speaker: 'self', listener: 'other', text: 'Hi', id: 'DIA_Test_Hello', line: 52 }
+        { type: 'DialogLine', speaker: 'self', text: 'Hi', id: 'DIA_Test_Hello', line: 52 }
       ]
     };
     const files: FileModel[] = [{ filePath: 'test.d', model }];

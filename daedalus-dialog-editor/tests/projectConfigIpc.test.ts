@@ -35,7 +35,7 @@ jest.mock('../src/main/services/serviceRegistry', () => ({
   }),
 }));
 
-const electron = jest.requireMock('electron') as { __handlers: Map<string, Handler>; __showOpenDialog: jest.Mock };
+const electron = jest.requireMock('electron') as { __handlers: Map<string, Handler>; __showOpenDialog: jest.Mock<(...args: any[]) => any> };
 const registry = jest.requireMock('../src/main/services/serviceRegistry') as any;
 
 async function invoke(channel: string, ...args: unknown[]) {

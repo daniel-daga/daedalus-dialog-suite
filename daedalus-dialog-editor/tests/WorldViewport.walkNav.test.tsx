@@ -32,6 +32,7 @@ jest.mock('../src/renderer/world/BvhBuilder', () => mockWorldViewport.mockBvhBui
 jest.mock('../src/renderer/world/VobPicker', () => mockWorldViewport.mockVobPicker(7));
 
 import WorldViewport from '../src/renderer/components/world/WorldViewport';
+import { VIEWPORT_DEFAULTS } from './worldViewportMocks';
 
 const MESH: WorldMeshPayload = { groups: [], bbox: [0, 0, 0, 10000, 10000, 10000] };
 const VISUALS: InstancedPayload = {
@@ -40,12 +41,13 @@ const VISUALS: InstancedPayload = {
   decals: mockWorldViewport.noDecals(),
   stats: {
     visualsSeen: 0, visualsResolved: 0, vobsPlaced: 0,
-    instancedDrawGroups: 0, levelCompos: 0, unresolvedByType: {},
+    instancedDrawGroups: 0, levelCompos: 0, unresolvedByType: {}, unresolved: [],
   },
 };
 
 function props(onPick: (vob: number | null) => void = () => {}) {
   return {
+    ...VIEWPORT_DEFAULTS,
     mesh: MESH,
     visuals: VISUALS,
     vobIndex: mockWorldViewport.noVobMarkers(),
@@ -54,7 +56,7 @@ function props(onPick: (vob: number | null) => void = () => {}) {
     showWaynet: false,
     spawns: [],
     showSpawns: false,
-    routines: {},
+    routines: { sites: [], routinesByNpc: {} },
     spawnTime: null,
     spawnState: null,
     showWaypointNames: false,

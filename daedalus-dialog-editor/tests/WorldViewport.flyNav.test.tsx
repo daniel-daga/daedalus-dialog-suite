@@ -34,6 +34,7 @@ jest.mock('../src/renderer/world/VobPicker', () => ({
 }));
 
 import WorldViewport from '../src/renderer/components/world/WorldViewport';
+import { VIEWPORT_DEFAULTS } from './worldViewportMocks';
 
 const MESH: WorldMeshPayload = { groups: [], bbox: [0, 0, 0, 10000, 10000, 10000] };
 const VISUALS: InstancedPayload = {
@@ -42,7 +43,7 @@ const VISUALS: InstancedPayload = {
   decals: mockWorldViewport.noDecals(),
   stats: {
     visualsSeen: 0, visualsResolved: 0, vobsPlaced: 0,
-    instancedDrawGroups: 0, levelCompos: 0, unresolvedByType: {},
+    instancedDrawGroups: 0, levelCompos: 0, unresolvedByType: {}, unresolved: [],
   },
 };
 
@@ -50,6 +51,7 @@ type ContextMenuHit = [number, { left: number; top: number }];
 
 function props(onVobContextMenu: (...args: ContextMenuHit) => void) {
   return {
+    ...VIEWPORT_DEFAULTS,
     mesh: MESH,
     visuals: VISUALS,
     vobIndex: mockWorldViewport.noVobMarkers(),

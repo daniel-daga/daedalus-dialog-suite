@@ -20,6 +20,7 @@ import DialogLineRenderer from '../src/renderer/components/actionRenderers/Dialo
 
 describe('DialogLineRenderer', () => {
   const baseProps = {
+    path: [0],
     action: {
       type: 'DialogLine',
       speaker: 'self',

@@ -318,6 +318,16 @@ trusting master for a release, not after.
   merge of `origin/master` into it — which is a different thing from the stale
   local ref above, and the only one worth acting on.
 
+## `npx tsc` in the cloud container is not the workspace's TypeScript
+
+- **Observed 2026-10-10: `npx tsc` run inside `daedalus-dialog-editor/`
+  resolved the image's global `/opt/node22/bin/tsc`, TypeScript 6.0.2**, not
+  the workspace's 5.9.3. 6.0 defaults `types` to `[]`, so the same tsconfig
+  reports errors the workspace compiler does not (the renderer's `NodeJS`
+  namespace, for one) and stays silent about others. Go through the package
+  scripts (`pnpm --filter daedalus-dialog-editor run typecheck:tests`) or
+  `node_modules/.bin/tsc`, which is what CI runs.
+
 ## Playwright in the Claude Code cloud container
 
 - **The pinned browser build is not the one the image ships.** The image ships

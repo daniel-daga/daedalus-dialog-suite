@@ -32,7 +32,7 @@ jest.mock('../src/renderer/components/actionRenderers', () => {
           <button
             data-testid="select-change"
             onClick={() => {
-              props.handleUpdate({ ...props.action, operator: '+=' });
+              props.handleUpdate({ ...props.action, operator: '+=' } as any);
               props.flushUpdate();
             }}
           >
@@ -71,7 +71,7 @@ describe('ActionCard.flushUpdate same-tick select commit (0.2)', () => {
       registerActionRef: jest.fn(),
       getVisibleActionPaths: () => [] as ActionPath[],
     };
-    return render(<ActionCard {...(props as never)} />);
+    return render(<ActionCard {...(props as any)} />);
   }
 
   test('flushUpdate commits the new select value, not the stale closure value', () => {

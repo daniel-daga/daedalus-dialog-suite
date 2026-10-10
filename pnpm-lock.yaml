@@ -113,6 +113,9 @@ importers:
       '@types/chardet':
         specifier: ^0.8.3
         version: 0.8.3
+      '@types/jest':
+        specifier: 30.0.0
+        version: 30.0.0
       '@types/node':
         specifier: ^24.0.0
         version: 24.10.10

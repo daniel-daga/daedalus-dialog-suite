@@ -1586,7 +1586,7 @@ describe('WorldAssetBrowser', () => {
   // right-click or the preview panel's button; a Spacer hand double-clicks.
   describe('placing straight from the browser (#366)', () => {
     function placement(): jest.Mocked<AssetPlacement> {
-      return { canPlace: isPlaceableVisual, onPlace: jest.fn(), onPlaceWithOptions: jest.fn() };
+      return { canPlace: jest.fn(isPlaceableVisual), onPlace: jest.fn(), onPlaceWithOptions: jest.fn() };
     }
 
     it('arms a mesh on a double-click on its row', async () => {

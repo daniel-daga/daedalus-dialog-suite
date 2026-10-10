@@ -42,7 +42,7 @@ describe('ActionCard debounced update path staleness', () => {
       registerActionRef: jest.fn(),
       getVisibleActionPaths: () => [] as ActionPath[],
     };
-    return { props, ...render(<ActionCard {...(props as never)} />) };
+    return { props, ...render(<ActionCard {...(props as any)} />) };
   }
 
   test('pending debounce writes to the CURRENT path after the card shifts', () => {
@@ -60,7 +60,7 @@ describe('ActionCard debounced update path staleness', () => {
 
     // An action gets inserted above before the debounce fires: same action
     // object, new path [3].
-    rerender(<ActionCard {...({ ...props, path: [3], index: 3 } as never)} />);
+    rerender(<ActionCard {...({ ...props, path: [3], index: 3 } as any)} />);
 
     act(() => {
       jest.advanceTimersByTime(300);

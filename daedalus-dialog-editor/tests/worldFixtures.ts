@@ -3,6 +3,7 @@ import type {
   AssetCatalog, PortalFinding, VfsSearch, VobFolders, WaynetPayload, WorldOp, WorldSummary,
 } from '../src/shared/worldTypes';
 import type { AppendInsertNpcResult } from '../src/shared/types';
+import type { EditorAPI } from '../src/renderer/types/global';
 
 /**
  * Shared pure-data builders for the World surface's test suites
@@ -147,7 +148,7 @@ export const BASE_PROPS = { presetName: 'FIRE_STAT', visualCamAlign: 1, bias: 2 
 
 /** The op a single-VOB drag becomes in the fixture above — VOB 1 at
  *  `[10, 20, 30]`, dragged by the stub's fixed delta. */
-export const MOVE: WorldOp = {
+export const MOVE: Extract<WorldOp, { op: 'MoveVob' }> = {
   op: 'MoveVob', vob: 1, path: '1', from: [10, 20, 30], to: [11, 22, 33],
 };
 
@@ -164,7 +165,7 @@ export const WAYPOINT_MOVE: WorldOp = {
  * bleed into another's.
  */
 export function makeWorldEditorApi() {
-  return {
+  const api = {
     openWorldDialog: jest.fn(),
     // The picker's scan: empty by default, so a suite that only wants a named
     // world goes through Browse… without stubbing a list (§16.31).
@@ -203,5 +204,10 @@ export function makeWorldEditorApi() {
     saveVobFolders: jest.fn(async () => undefined),
     closeWorld: jest.fn(),
     appendInsertNpc: jest.fn(async (): Promise<AppendInsertNpcResult> => ({ ok: true, line: 1 })),
+  };
+  // Each mock takes the real method's parameters, so a `toHaveBeenCalledWith`
+  // is checked against what the IPC actually accepts.
+  return api as unknown as {
+    [K in keyof typeof api]: jest.Mock<ReturnType<(typeof api)[K]>, Parameters<EditorAPI[K]>>;
   };
 }

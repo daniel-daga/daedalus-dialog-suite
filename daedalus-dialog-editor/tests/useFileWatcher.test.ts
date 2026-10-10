@@ -176,7 +176,7 @@ describe('useFileWatcher — change event', () => {
   test('skips reload when the open file is dirty', async () => {
     const openFileSpy = jest.spyOn(useFileStore.getState(), 'openFile');
     useFileStore.setState({
-      openFiles: new Map([[FILE_A, { filePath: FILE_A, semanticModel: PARSED_MODEL as any, isDirty: true, lastSaved: null }]]),
+      openFiles: new Map<string, any>([[FILE_A, { filePath: FILE_A, semanticModel: PARSED_MODEL as any, isDirty: true, lastSaved: null }]]),
     });
 
     const { unmount } = await setupHook();

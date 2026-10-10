@@ -9,11 +9,11 @@ jest.mock('../src/renderer/components/InlineChoiceEditor', () => ({
 }));
 
 describe('ChoiceRenderer Race Condition', () => {
-  let handleDelete: jest.Mock;
+  let handleDelete!: jest.Mock;
   let flushUpdate: jest.Mock;
-  let handleKeyDown: jest.Mock;
-  let onRenameFunction: jest.Mock;
-  let onNavigateToFunction: jest.Mock;
+  let handleKeyDown!: jest.Mock;
+  let onRenameFunction!: jest.Mock;
+  let onNavigateToFunction!: jest.Mock;
 
   const mockSemanticModel = {
     functions: {
@@ -23,7 +23,7 @@ describe('ChoiceRenderer Race Condition', () => {
     }
   };
 
-  const baseProps = {
+  const baseProps: any = {
     action: {
       type: 'choice',
       text: 'Test choice',
@@ -126,7 +126,7 @@ describe('ChoiceRenderer Race Condition', () => {
     // Focus and type rapidly
     await user.click(functionInput);
     await user.clear(functionInput);
-    await user.type(functionInput, 'npc_rapidTyping', { delay: 10 }); // Fast typing
+    await user.type(functionInput, 'npc_rapidTyping');
 
     // Blur immediately
     fireEvent.blur(functionInput);

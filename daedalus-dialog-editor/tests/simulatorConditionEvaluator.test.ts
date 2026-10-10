@@ -74,7 +74,7 @@ describe('simulator condition evaluator', () => {
   });
 
   it('supports numeric comparisons and propagates negation without converting unknown to false', () => {
-    const simulationState = state({ misVars: new Map([['mis_score', 4], ['mis_unknown', unknown('some helper')]]) });
+    const simulationState = state({ misVars: new Map<string, any>([['mis_score', 4], ['mis_unknown', unknown('some helper')]]) });
 
     expect(evaluateCondition({
       type: 'VariableCondition', variableName: 'MIS_SCORE', operator: '>=', value: 3, negated: false

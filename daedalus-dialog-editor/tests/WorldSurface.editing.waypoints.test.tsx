@@ -514,7 +514,7 @@ describe('a waypoint dragged in the viewport', () => {
       it('hands down the state index so the schedule can resolve a variant', async () => {
         await openWithStates();
 
-        expect(vp.routines.statesByNpc).toEqual(STATES);
+        expect(vp.routines?.statesByNpc).toEqual(STATES);
       });
 
       // The readout that stops "State: TOT" reading as "the world is in TOT".

@@ -22,7 +22,7 @@ jest.mock('@hello-pangea/dnd', () => ({
 }));
 
 const baseProps = {
-  action: { type: 'choice' as const, text: 'Yes', targetFunction: 'DIA_Test_Yes', dialogRef: 'DIA_Test' },
+  action: { type: 'Choice' as const, text: 'Yes', targetFunction: 'DIA_Test_Yes', dialogRef: 'DIA_Test' },
   path: [0] as any,
   index: 0,
   totalActions: 1,

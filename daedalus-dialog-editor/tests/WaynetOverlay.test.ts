@@ -158,7 +158,7 @@ describe('WaynetOverlay', () => {
     // The edges have to follow: an edge into a waypoint the preview has moved
     // is otherwise a line to where it used to be, for as long as the drag lasts.
     const overlay = new WaynetOverlay(waynet());
-    const points = overlay.waypoints.geometry.getAttribute('position');
+    const points = overlay.waypoints.geometry.getAttribute('position') as THREE.BufferAttribute;
     const version = points.version;
 
     overlay.setPosition(1, [2000, 300, 400]);
@@ -178,7 +178,7 @@ describe('WaynetOverlay', () => {
     // only the upload to ask for, which nothing else would.
     const payload = waynet();
     const overlay = new WaynetOverlay(payload);
-    const points = overlay.waypoints.geometry.getAttribute('position');
+    const points = overlay.waypoints.geometry.getAttribute('position') as THREE.BufferAttribute;
     const version = points.version;
 
     new Float32Array(payload.positions).set([7, 8, 9], 0);

@@ -23,6 +23,7 @@ jest.mock('../src/renderer/components/common/VariableAutocomplete', () => {
 });
 
 const baseProps = {
+  path: [0],
   index: 0,
   totalActions: 1,
   npcName: 'TestNPC',

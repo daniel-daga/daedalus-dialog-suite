@@ -13,7 +13,7 @@ describe('ActionCard Ref-based Cleanup Fix', () => {
     const simulateStaleClosureProblem = () => {
       let index = 0;
       let value = 'initial';
-      let cleanupFn: (() => void) | null = null;
+      let cleanupFn: (() => { index: number; value: string }) | null = null;
 
       // Simulate creating cleanup with dependencies [index, value]
       const createCleanup = (capturedIndex: number, capturedValue: string) => {
@@ -38,7 +38,7 @@ describe('ActionCard Ref-based Cleanup Fix', () => {
     const simulateRefBasedSolution = () => {
       const indexRef = { current: 0 };
       const valueRef = { current: 'initial' };
-      let cleanupFn: (() => void) | null = null;
+      let cleanupFn: (() => { index: number; value: string }) | null = null;
 
       // Simulate creating cleanup with empty deps []
       const createCleanup = () => {

@@ -63,6 +63,7 @@ jest.mock('../src/renderer/world/BvhBuilder', () => mockWorldViewport.mockBvhBui
 jest.mock('../src/renderer/world/VobPicker', () => mockWorldViewport.mockVobPicker(-1));
 
 import WorldViewport from '../src/renderer/components/world/WorldViewport';
+import { VIEWPORT_DEFAULTS } from './worldViewportMocks';
 
 /** One huge triangle at y = 0, enclosing the origin — (-5000,0,-5000),
  *  (5000,0,-5000), (0,0,5000) in ZenGin centimetres. Large enough that the
@@ -102,11 +103,12 @@ const MESH: WorldMeshPayload = {
 
 function emptyVisuals(): InstancedPayload {
   // Nothing about a decal here; `DecalLayer.test.ts` is where one is drawn.
-  return { visuals: [], decals: mockWorldViewport.noDecals(), stats: { visualsSeen: 0, visualsResolved: 0, vobsPlaced: 0, instancedDrawGroups: 0, levelCompos: 0, unresolvedByType: {} } };
+  return { visuals: [], decals: mockWorldViewport.noDecals(), stats: { visualsSeen: 0, visualsResolved: 0, vobsPlaced: 0, instancedDrawGroups: 0, levelCompos: 0, unresolvedByType: {}, unresolved: [] } };
 }
 
 function props() {
   return {
+    ...VIEWPORT_DEFAULTS,
     mesh: MESH,
     visuals: emptyVisuals(),
     vobIndex: mockWorldViewport.noVobMarkers(),

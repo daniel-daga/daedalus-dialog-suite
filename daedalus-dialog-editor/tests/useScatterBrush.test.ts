@@ -55,6 +55,7 @@ function vobIndexOf(parents: number[]): VobIndex {
     names: parents.map((_, at) => `VOB_${at}`), nameIndex: Uint32Array.from(parents.map((_, at) => at)).buffer,
     visuals: ['TREE.3DS'], visualIndex: new Uint32Array(count).buffer,
     visualTypes: ['MULTI_RESOLUTION_MESH'], visualTypeIndex: new Uint32Array(count).buffer,
+    decalVobs: new ArrayBuffer(0), decalDimensions: new ArrayBuffer(0), decalAlphaWeights: new ArrayBuffer(0),
   };
 }
 
@@ -65,6 +66,7 @@ function summaryOf(parents: number[]): WorldSummary {
     vobIndex: vobIndexOf(parents),
     stats: { vobCount: parents.length, materials: 1, worldDrawGroups: 1, worldTriangles: 1 },
     timings: {},
+    assetSources: [],
   };
 }
 
@@ -74,7 +76,7 @@ const NESTED = [-1, -1, 0];
 
 const boundsOf = jest.fn(() => null);
 const lookupClassProps = jest.fn(() => null);
-const readClassProps = jest.fn(async () => lookupClassProps);
+const readClassProps = jest.fn(async (_api: unknown, _vobs: number[]) => lookupClassProps);
 
 /** A ground plane at y=0 that every ray finds. */
 const hitsGround = jest.fn((origin: readonly number[]) => ({
@@ -149,7 +151,7 @@ describe('useScatterBrush — the ring the viewport draws', () => {
   });
 
   test('a radius typed down to zero still draws and paints at the floor', async () => {
-    const commitOps = jest.fn(async () => true);
+    const commitOps = jest.fn(async (_ops: unknown[]) => true);
     const { result } = mount(commitOps);
     armed(result);
     act(() => { result.current.setScatterRadius(0); });
@@ -166,7 +168,7 @@ describe('useScatterBrush — the ring the viewport draws', () => {
 
 describe('useScatterBrush — when a stroke does nothing', () => {
   test('a stroke that arrives with the tool off commits nothing', async () => {
-    const commitOps = jest.fn(async () => true);
+    const commitOps = jest.fn(async (_ops: unknown[]) => true);
     const { result } = mount(commitOps);
     await act(async () => { await result.current.handleScatterStroke(strokeOf(4)); });
     expect(commitOps).not.toHaveBeenCalled();
@@ -177,7 +179,7 @@ describe('useScatterBrush — when a stroke does nothing', () => {
     // created under: a stroke is delivered from outside React's render path and
     // can outlive the toggle that allowed it, and what it would commit is 200
     // VOBs the user did not ask for.
-    const commitOps = jest.fn(async () => true);
+    const commitOps = jest.fn(async (_ops: unknown[]) => true);
     const { result } = mount(commitOps);
     armed(result);
     act(() => { result.current.toggleScatter(); });
@@ -188,7 +190,7 @@ describe('useScatterBrush — when a stroke does nothing', () => {
 
   test('with no world open there is nothing to raycast against', async () => {
     useWorldStore.setState({ summary: null, selection: [0] } as never);
-    const commitOps = jest.fn(async () => true);
+    const commitOps = jest.fn(async (_ops: unknown[]) => true);
     const { result } = mount(commitOps);
     armed(result);
     await act(async () => { await result.current.handleScatterStroke(strokeOf(4)); });
@@ -197,7 +199,7 @@ describe('useScatterBrush — when a stroke does nothing', () => {
   });
 
   test('a viewport torn down under the stroke is not an error', async () => {
-    const commitOps = jest.fn(async () => true);
+    const commitOps = jest.fn(async (_ops: unknown[]) => true);
     const gone = { current: null } as { current: ScatterRaycaster | null };
     const { result } = mount(commitOps, hitsGround as never, gone);
     armed(result);
@@ -208,7 +210,7 @@ describe('useScatterBrush — when a stroke does nothing', () => {
   });
 
   test('an empty selection is a brush with nothing to place', async () => {
-    const commitOps = jest.fn(async () => true);
+    const commitOps = jest.fn(async (_ops: unknown[]) => true);
     const { result } = mount(commitOps);
     armed(result);
     act(() => { useWorldStore.setState({ selection: [] } as never); });
@@ -217,7 +219,7 @@ describe('useScatterBrush — when a stroke does nothing', () => {
   });
 
   test('an empty stroke places nothing', async () => {
-    const commitOps = jest.fn(async () => true);
+    const commitOps = jest.fn(async (_ops: unknown[]) => true);
     const { result } = mount(commitOps);
     armed(result);
     await act(async () => { await result.current.handleScatterStroke([]); });
@@ -227,7 +229,7 @@ describe('useScatterBrush — when a stroke does nothing', () => {
 
 describe('useScatterBrush — where the rays are cast', () => {
   test('each ray starts a brush radius above the candidate, not at it', async () => {
-    const commitOps = jest.fn(async () => true);
+    const commitOps = jest.fn(async (_ops: unknown[]) => true);
     const { result } = mount(commitOps);
     armed(result);
     await act(async () => { await result.current.handleScatterStroke(strokeOf(3)); });
@@ -242,7 +244,7 @@ describe('useScatterBrush — where the rays are cast', () => {
   });
 
   test('a candidate that hits nothing is dropped, not refused', async () => {
-    const commitOps = jest.fn(async () => true);
+    const commitOps = jest.fn(async (_ops: unknown[]) => true);
     // Every other ray misses — a stroke along a ridge legitimately throws half
     // its tries away.
     let ray = 0;
@@ -262,7 +264,7 @@ describe('useScatterBrush — where the rays are cast', () => {
   });
 
   test('a stroke where everything misses commits nothing', async () => {
-    const commitOps = jest.fn(async () => true);
+    const commitOps = jest.fn(async (_ops: unknown[]) => true);
     const { result } = mount(commitOps, jest.fn(() => null) as never);
     armed(result);
     await act(async () => { await result.current.handleScatterStroke(strokeOf(4)); });
@@ -276,7 +278,7 @@ describe('useScatterBrush — where the rays are cast', () => {
 describe('useScatterBrush — the palette', () => {
   test('a child whose parent is also selected is not painted twice', async () => {
     useWorldStore.setState({ summary: summaryOf(NESTED), selection: [0, 2] } as never);
-    const commitOps = jest.fn(async () => true);
+    const commitOps = jest.fn(async (_ops: unknown[]) => true);
     const { result } = mount(commitOps);
     armed(result);
     await act(async () => { await result.current.handleScatterStroke(strokeOf(4)); });
@@ -294,7 +296,7 @@ describe('useScatterBrush — the palette', () => {
   });
 
   test('the class props are read for the palette, once per stroke', async () => {
-    const commitOps = jest.fn(async () => true);
+    const commitOps = jest.fn(async (_ops: unknown[]) => true);
     const { result } = mount(commitOps);
     armed(result);
     await act(async () => { await result.current.handleScatterStroke(strokeOf(4)); });
@@ -308,7 +310,7 @@ describe('useScatterBrush — the cap', () => {
   const OVERSHOOT = strokeOf(Math.ceil(SCATTER_LIMIT / 8) + 4);
 
   test('a stroke over the cap is thinned to it, and says so', async () => {
-    const commitOps = jest.fn(async () => true);
+    const commitOps = jest.fn(async (_ops: unknown[]) => true);
     const { result } = mount(commitOps);
     armed(result);
     act(() => { result.current.setScatterSpacing(0); });
@@ -319,7 +321,7 @@ describe('useScatterBrush — the cap', () => {
   });
 
   test('a stroke inside the cap says nothing', async () => {
-    const commitOps = jest.fn(async () => true);
+    const commitOps = jest.fn(async (_ops: unknown[]) => true);
     const { result } = mount(commitOps);
     armed(result);
     await act(async () => { await result.current.handleScatterStroke(strokeOf(3)); });
