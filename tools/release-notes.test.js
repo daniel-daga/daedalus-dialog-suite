@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert');
-const { parseReleaseNotes } = require('./release-notes');
+const { parseReleaseNotes, newReleaseNotes } = require('./release-notes');
 
 test('reads each bullet as an issue and description, skipping headings and blanks', () => {
   const notes = parseReleaseNotes('# Release notes\n\n- #351: Saving works on Windows\r\n- #12 :  Faster load  \n');
@@ -22,4 +22,18 @@ test('refuses a description over 120 characters', () => {
 
 test('refuses a file with no notes', () => {
   assert.throws(() => parseReleaseNotes('# Release notes\n\n'), /at least one/);
+});
+
+test('a release takes only the notes added since the commit it was built from', () => {
+  const released = '# Notes\n\n- #2: Older change\n- #1: Oldest change\n';
+  const now = '# Notes\n\n- #3: New change\n- #2: Older change\n- #1: Oldest change\n';
+  assert.deepStrictEqual(newReleaseNotes(released, now), [{ issue: 3, description: 'New change' }]);
+});
+
+test('a reworded note counts as new, a removed one never does', () => {
+  const released = '- #2: Older change\n- #1: Oldest change\n';
+  assert.deepStrictEqual(newReleaseNotes(released, '- #2: Older change, reworded\n'), [
+    { issue: 2, description: 'Older change, reworded' },
+  ]);
+  assert.deepStrictEqual(newReleaseNotes(released, '- #2: Older change\n'), []);
 });
