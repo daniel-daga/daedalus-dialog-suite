@@ -223,7 +223,7 @@ describe('the World bar undo/redo buttons', () => {
     await waitFor(() => expect(screen.getByTestId('world-undo')).toBeEnabled());
     expect(screen.getByTestId('world-redo')).toBeDisabled();
     // The nudge itself still landed — this readout doesn't stand in its way.
-    expect(createVobReader(summary.vobIndex).position(1)).toEqual([11, 20, 30]);
+    expect(createVobReader(summary.vobIndex).position(1)).toEqual([20, 20, 30]);
   });
 
   it('drives undoWorldEdit and applies what it answers, same as Ctrl+Z', async () => {

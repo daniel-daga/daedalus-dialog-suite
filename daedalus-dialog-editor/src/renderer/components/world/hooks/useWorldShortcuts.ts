@@ -5,7 +5,8 @@ import { isTypingOrInPopover } from '../../../world/keyboardTarget';
 import type { GizmoMode } from '../WorldViewport';
 
 /** Camera-relative nudge: `[right, up, forward]`, one unit of step per key.
- *  Keyed by the lower-cased `KeyboardEvent.key`. */
+ *  Keyed by the lower-cased `KeyboardEvent.key`. In rotate mode the same keys
+ *  turn instead, and the triple is read as degrees — see `onTurnBy`. */
 const NUDGE_DELTAS: Record<string, [number, number, number]> = {
   arrowleft: [-1, 0, 0],
   a: [-1, 0, 0],
@@ -21,17 +22,39 @@ const NUDGE_DELTAS: Record<string, [number, number, number]> = {
   x: [0, -1, 0],
 };
 
-/** The nudge a bare key takes when no snap step is set, in cm. */
-const NUDGE_FALLBACK_STEP = 1;
+/** The nudge a bare key takes when no snap step is set, in cm — 10, so that
+ *  Ctrl's ×0.1 is still a whole centimetre (#386). */
+const NUDGE_FALLBACK_STEP = 10;
 
 /** How long a nudge key is held before it moves continuously, in ms — about
  *  the OS's own auto-repeat delay, so a tap stays one step. */
 const NUDGE_HOLD_DELAY = 250;
 
-/** How fast a held nudge key moves, in cm/s before Shift's ×10 — and at
- *  least this many snap steps a second, so a coarse grid does not crawl. */
-const NUDGE_HOLD_SPEED = 300;
+/** How fast a held nudge key moves, in cm/s before Shift's ×10 or Ctrl's
+ *  ×0.1 — and at least this many snap steps a second, so a coarse grid does
+ *  not crawl. */
+const NUDGE_HOLD_SPEED = 500;
 const NUDGE_HOLD_STEPS_PER_SECOND = 4;
+
+/** The keyboard turn's counterparts, in degrees and °/s (#387). */
+const TURN_FALLBACK_STEP = 1;
+const TURN_HOLD_SPEED = 45;
+
+/** Shift hurries and Ctrl slows, as they do the fly (#386). */
+const FAST = 10;
+const SLOW = 0.1;
+
+/** The nudge keys Ctrl may start a gesture on: those whose Ctrl chord is
+ *  nobody else's. Ctrl+S, Ctrl+D, Ctrl+A, Ctrl+W, Ctrl+X are left alone; Ctrl
+ *  still slows any of them when pressed mid-hold. */
+const CTRL_NUDGE_KEYS = new Set(['arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'pageup', 'pagedown']);
+
+/** 1 and 2 switch the gizmo, as the Spacer binds them (#387). By `code` as
+ *  well as `key`, so a layout whose digit row is shifted (AZERTY) still has
+ *  them; Ctrl+digit is a camera slot, not this. */
+const GIZMO_MODE_KEYS: Record<string, GizmoMode> = {
+  1: 'translate', Digit1: 'translate', 2: 'rotate', Digit2: 'rotate',
+};
 
 export interface WorldShortcutsInput {
   /** No world, nothing to act on — nothing is bound at all. */
@@ -56,6 +79,7 @@ export interface WorldShortcutsInput {
   /** Which step the Snap control is showing, and the step itself. */
   gizmoMode: GizmoMode;
   snapGrid: number;
+  snapAngleDegrees: number;
   setGizmoMode: (mode: GizmoMode) => void;
   onCopy: () => void;
   onPaste: () => void;
@@ -83,6 +107,15 @@ export interface WorldShortcutsInput {
   onNudgeBegin: (grid: number) => boolean;
   onNudgeBy: (direction: [number, number, number]) => void;
   onNudgeEnd: () => void;
+  /**
+   * The nudge keys in rotate mode: the same one-gesture shape, fed
+   * `[right, up, forward]` in degrees — A/D yaw about the vertical, W/S pitch
+   * about camera-right, Space/X roll about camera-forward. `step` is the
+   * angle step the turn snaps to, 0 for free-form.
+   */
+  onTurnBegin: (step: number) => boolean;
+  onTurnBy: (turn: [number, number, number]) => void;
+  onTurnEnd: () => void;
   onHistory: (direction: 'undo' | 'redo') => void;
 }
 
@@ -106,10 +139,11 @@ export interface WorldShortcutsInput {
  * key nobody here wants is left for whatever would otherwise scroll.
  */
 export function useWorldShortcuts({
-  hasWorld, hidden, dialogOpen, waynet, armed, gizmoMode, snapGrid, setGizmoMode,
+  hasWorld, hidden, dialogOpen, waynet, armed, gizmoMode, snapGrid, snapAngleDegrees, setGizmoMode,
   onCopy, onPaste, onDuplicate, onRestOnGround, onIntoGround,
   onRequestDeleteVobs, onRequestDeleteWaypoint,
-  onDisarm, onRequestSave, onRequestSaveAs, onNudgeBegin, onNudgeBy, onNudgeEnd, onHistory,
+  onDisarm, onRequestSave, onRequestSaveAs, onNudgeBegin, onNudgeBy, onNudgeEnd,
+  onTurnBegin, onTurnBy, onTurnEnd, onHistory,
 }: WorldShortcutsInput): void {
   useEffect(() => {
     if (!hasWorld) return undefined;
@@ -121,6 +155,17 @@ export function useWorldShortcuts({
     /** The nudge keys held down, each with when it went down and how fast it
      *  moves once held. Empty is no nudge in progress. */
     const held = new Map<string, { since: number; speed: number }>();
+    /** Shift and Ctrl as the last key event saw them — read every frame, so
+     *  pressing either mid-hold changes the speed from then on. */
+    let factor = 1;
+    const readModifiers = (event: KeyboardEvent) => {
+      factor = (event.shiftKey ? FAST : 1) * (event.ctrlKey || event.metaKey ? SLOW : 1);
+    };
+    /** Whether the gesture in progress turns — fixed at its first key, so it
+     *  ends through the verb it began with. A mode switch re-binds this
+     *  effect, which ends the gesture first. */
+    const turning = gizmoMode === 'rotate';
+    const by = turning ? onTurnBy : onNudgeBy;
     let frame: number | null = null;
     let lastFrame = 0;
 
@@ -130,10 +175,10 @@ export function useWorldShortcuts({
       for (const [key, { since, speed }] of held) {
         // Counted from the end of the hold delay, not the press, so the first
         // continuous frame does not jump by the delay's worth of travel.
-        const moving = Math.min(dt, Math.max(0, (now - since - NUDGE_HOLD_DELAY) / 1000));
+        const moving = factor * Math.min(dt, Math.max(0, (now - since - NUDGE_HOLD_DELAY) / 1000));
         if (moving <= 0) continue;
         const [r, u, f] = NUDGE_DELTAS[key];
-        onNudgeBy([r * speed * moving, u * speed * moving, f * speed * moving]);
+        by([r * speed * moving, u * speed * moving, f * speed * moving]);
       }
       frame = requestAnimationFrame(tick);
     };
@@ -143,10 +188,11 @@ export function useWorldShortcuts({
       held.clear();
       if (frame !== null) cancelAnimationFrame(frame);
       frame = null;
-      onNudgeEnd();
+      if (turning) onTurnEnd(); else onNudgeEnd();
     };
 
     const keyUp = (event: KeyboardEvent) => {
+      readModifiers(event);
       const key = event.key.toLowerCase();
       if (!held.has(key)) return;
       if (held.size > 1) held.delete(key);
@@ -157,20 +203,29 @@ export function useWorldShortcuts({
       // Lower-cased because holding Shift changes the letter itself: Ctrl+Shift+Z
       // arrives as `key: 'Z'`, and a comparison against 'z' never fires.
       const key = event.key.toLowerCase();
+      readModifiers(event);
 
-      // W and E, as every 3D editor binds them. Bare letters, so unlike the
-      // undo shortcut they have to keep out of the way of anything that takes
-      // typing — the World surface has no text field of its own, but this is a
-      // window listener and the app is full of them.
-      if (!event.ctrlKey && !event.metaKey && !event.altKey && (key === 'w' || key === 'e')
-        && !(key === 'w' && (useWorldStore.getState().selection.length > 0 || held.size > 0))) {
-        if (isTypingOrInPopover(event.target) || dialogOpen) return;
+      // A key already held is the gesture's, whatever modifier has joined it
+      // since: Ctrl pressed mid-hold on S slows the nudge, it is not a save.
+      if (held.has(key)) {
         event.preventDefault();
-        setGizmoMode(key === 'w' ? 'translate' : 'rotate');
         return;
       }
 
-      // Ctrl+C / Ctrl+V, guarded like W and E above and for the same reason:
+      // 1 and 2, the Spacer's keys (#387) — W and E were, until W became a
+      // nudge and only switched with nothing selected. Bare keys, so unlike
+      // the undo shortcut they have to keep out of the way of anything that
+      // takes typing — the World surface has no text field of its own, but
+      // this is a window listener and the app is full of them.
+      const mode = GIZMO_MODE_KEYS[event.key] ?? GIZMO_MODE_KEYS[event.code];
+      if (mode !== undefined && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        if (isTypingOrInPopover(event.target) || dialogOpen) return;
+        event.preventDefault();
+        setGizmoMode(mode);
+        return;
+      }
+
+      // Ctrl+C / Ctrl+V, guarded like 1 and 2 above and for the same reason:
       // this is a window listener, and in a text field a copy belongs to the
       // browser.
       if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey
@@ -252,21 +307,18 @@ export function useWorldShortcuts({
 
       // Camera-relative nudge — WASD and the arrows move in the view plane;
       // PageUp/Down, and Space/X as the fly binds them, stay on ZenGin's
-      // vertical axis. Shift multiplies the step
-      // by ten. W is a nudge while a VOB is selected, otherwise it keeps its
-      // translate-gizmo shortcut above. With a modifier these are other chords
-      // (Ctrl+S, Ctrl+D), so they fall through to those.
+      // vertical axis. Shift multiplies the step by ten and Ctrl by a tenth
+      // (#386). In rotate mode the same keys turn the selection instead
+      // (#387). Ctrl starts a gesture only on keys whose Ctrl chord is
+      // nobody's (`CTRL_NUDGE_KEYS`); Ctrl+S, Ctrl+D fall through to those.
       //
       // A press moves one step at once; held past `NUDGE_HOLD_DELAY` it moves
       // continuously until released. The whole gesture is previewed and only
       // committed on the last key up, so a hold is one undo entry like a gizmo
       // drag, and the OS's auto-repeat keydowns are swallowed — the frame loop
       // owns the motion.
-      if (NUDGE_DELTAS[key] && !event.ctrlKey && !event.metaKey && !event.altKey) {
-        if (held.has(key)) {
-          event.preventDefault();
-          return;
-        }
+      if (NUDGE_DELTAS[key] && !event.altKey
+        && (!(event.ctrlKey || event.metaKey) || CTRL_NUDGE_KEYS.has(key))) {
         if (isTypingOrInPopover(event.target) || dialogOpen) return;
         // Reserves the arrow keys for the scene tree's own navigation.
         const target = event.target as HTMLElement | null;
@@ -279,21 +331,19 @@ export function useWorldShortcuts({
         // nothing selected this key is nobody's, and swallowing it would
         // stop the asset list scrolling for a nudge that never happens.
         if (held.size === 0 && useWorldStore.getState().selection.length === 0) return;
-        // A nudge translates, so it takes the *translate* step — and only
-        // while that is the step the Snap control is actually showing. In
-        // rotate mode that control edits the angle instead, so a `snapGrid`
-        // left over from translate mode would be an invisible value driving
-        // a visible key: 45° on screen, 5 m under the arrow.
-        const grid = gizmoMode === 'translate' ? snapGrid : 0;
-        if (held.size === 0 && !onNudgeBegin(grid)) return;
+        // The step is the one the Snap control is showing: the grid in
+        // translate mode, the angle in rotate mode — never the other mode's,
+        // which would be an invisible value driving a visible key.
+        const grid = turning ? snapAngleDegrees : snapGrid;
+        if (held.size === 0 && !(turning ? onTurnBegin(grid) : onNudgeBegin(grid))) return;
         event.preventDefault();
-        const base = grid > 0 ? grid : NUDGE_FALLBACK_STEP;
-        const shift = event.shiftKey ? 10 : 1;
-        const speed = Math.max(NUDGE_HOLD_SPEED, base * NUDGE_HOLD_STEPS_PER_SECOND) * shift;
+        const base = grid > 0 ? grid : (turning ? TURN_FALLBACK_STEP : NUDGE_FALLBACK_STEP);
+        const speed = Math.max(turning ? TURN_HOLD_SPEED : NUDGE_HOLD_SPEED,
+          base * NUDGE_HOLD_STEPS_PER_SECOND);
         held.set(key, { since: performance.now(), speed });
         const [r, u, f] = NUDGE_DELTAS[key];
-        const step = base * shift;
-        onNudgeBy([r * step, u * step, f * step]);
+        const step = base * factor;
+        by([r * step, u * step, f * step]);
         if (frame === null) {
           lastFrame = performance.now();
           frame = requestAnimationFrame(tick);
@@ -348,9 +398,10 @@ export function useWorldShortcuts({
       endNudge();
     };
   }, [
-    hasWorld, hidden, dialogOpen, waynet, armed, gizmoMode, snapGrid, setGizmoMode,
+    hasWorld, hidden, dialogOpen, waynet, armed, gizmoMode, snapGrid, snapAngleDegrees, setGizmoMode,
     onCopy, onPaste, onDuplicate, onRestOnGround, onIntoGround,
     onRequestDeleteVobs, onRequestDeleteWaypoint,
-    onDisarm, onRequestSave, onRequestSaveAs, onNudgeBegin, onNudgeBy, onNudgeEnd, onHistory,
+    onDisarm, onRequestSave, onRequestSaveAs, onNudgeBegin, onNudgeBy, onNudgeEnd,
+    onTurnBegin, onTurnBy, onTurnEnd, onHistory,
   ]);
 }

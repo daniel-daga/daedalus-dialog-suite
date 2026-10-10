@@ -1906,6 +1906,22 @@ export function rotationAboutUp(radians: number): ZenRotation {
   return [cos, 0, sin, 0, 1, 0, -sin, 0, cos];
 }
 
+/** A rotation about any axis (ZenGin space, need not be unit), row-major —
+ *  Rodrigues' formula, with the same handedness as `rotationAboutUp`. The
+ *  keyboard turn's pitch and roll about the camera's axes (#387). */
+export function rotationAbout(axis: ZenPosition, radians: number): ZenRotation {
+  const length = Math.hypot(axis[0], axis[1], axis[2]);
+  const [x, y, z] = [axis[0] / length, axis[1] / length, axis[2] / length];
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const t = 1 - cos;
+  return [
+    t * x * x + cos, t * x * y - sin * z, t * x * z + sin * y,
+    t * x * y + sin * z, t * y * y + cos, t * y * z - sin * x,
+    t * x * z - sin * y, t * y * z + sin * x, t * z * z + cos,
+  ];
+}
+
 /** Where a scatter puts a subtree: turned by `turn` about `origin`, with the
  *  root landing on `at`. */
 interface ScatterPose {

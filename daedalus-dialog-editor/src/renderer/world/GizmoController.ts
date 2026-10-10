@@ -196,7 +196,7 @@ export class GizmoController {
   }
 
   /**
-   * The mode buttons and the W/E keys keep working while a waypoint is
+   * The mode buttons and the 1/2 keys keep working while a waypoint is
    * selected; they just have nothing to switch to. Ignored rather than
    * disabled, so the mode the VOBs were in survives a detour through the
    * waynet.
@@ -204,7 +204,7 @@ export class GizmoController {
   setMode(mode: GizmoMode): void {
     this.modeNow = mode;
     this.transform.setMode(this.waypoint === null ? mode : 'translate');
-    // The anchor is the mode's, so W and E move the gizmo as well as changing
+    // The anchor is the mode's, so 1 and 2 move the gizmo as well as changing
     // its handles — a rotate gizmo left standing at the centroid would turn
     // about a pivot no op uses.
     if (this.waypoint === null && this.vobs.length > 0) this.attach(this.vobs);
@@ -273,6 +273,14 @@ export class GizmoController {
       this.proxyFrom.x + delta[0], this.proxyFrom.y + delta[1], this.proxyFrom.z + delta[2],
     );
     this.previewTranslation();
+  }
+
+  /** A keyboard turn (#387), the rotate counterpart of `previewNudge`: begun
+   *  by `beginNudge`, drawn as the selection turned by `delta` (row-major,
+   *  ZenGin space) from where it began. */
+  previewTurn(delta: ZenRotation): void {
+    if (this.vobs.length === 0) return;
+    this.previewRotation(delta);
   }
 
   private readonly onDraggingChanged = (event: { value: unknown }) => {
@@ -395,23 +403,28 @@ export class GizmoController {
     if (this.transform.getMode() === 'rotate') {
       const delta = this.turnDelta();
       if (delta === null) return;
-      for (const [vob, from] of this.turnFrom) {
-        this.options.world.rotateVob(vob, multiplyRotation(delta, from));
-        // A descendant also swings round the selected VOB it belongs to, as
-        // `rotateSubtrees` swings it. One whose root is not drawn has no
-        // origin to swing round here, and waits for the commit.
-        const root = this.rootOf.get(vob) ?? vob;
-        const at = this.dragFrom.get(vob);
-        const origin = this.dragFrom.get(root);
-        if (root !== vob && at !== undefined && origin !== undefined) {
-          this.options.world.moveVob(vob, turnAbout(at, origin, delta));
-        }
-      }
+      this.previewRotation(delta);
       return;
     }
 
     this.previewTranslation();
   };
+
+  /** Draw the selection turned by `delta` since the drag began. */
+  private previewRotation(delta: ZenRotation): void {
+    for (const [vob, from] of this.turnFrom) {
+      this.options.world.rotateVob(vob, multiplyRotation(delta, from));
+      // A descendant also swings round the selected VOB it belongs to, as
+      // `rotateSubtrees` swings it. One whose root is not drawn has no
+      // origin to swing round here, and waits for the commit.
+      const root = this.rootOf.get(vob) ?? vob;
+      const at = this.dragFrom.get(vob);
+      const origin = this.dragFrom.get(root);
+      if (root !== vob && at !== undefined && origin !== undefined) {
+        this.options.world.moveVob(vob, turnAbout(at, origin, delta));
+      }
+    }
+  }
 
   // ── the `__worldViewport` harness (verify-world-edit.js) ──────────────────
   //

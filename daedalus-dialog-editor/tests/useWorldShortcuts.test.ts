@@ -44,6 +44,9 @@ const verbs = {
   onNudgeBegin: jest.fn((_step: number) => true),
   onNudgeBy: jest.fn((_delta: number[]) => undefined),
   onNudgeEnd: jest.fn(),
+  onTurnBegin: jest.fn((_step: number) => true),
+  onTurnBy: jest.fn((_turn: number[]) => undefined),
+  onTurnEnd: jest.fn(),
   onHistory: jest.fn(),
 };
 
@@ -57,6 +60,7 @@ function bound(overrides: Partial<WorldShortcutsInput> = {}) {
     armed: false,
     gizmoMode: 'translate',
     snapGrid: 0,
+    snapAngleDegrees: 0,
     ...verbs,
     ...overrides,
   } as WorldShortcutsInput));
@@ -96,7 +100,8 @@ const CHORDS: Array<{
 }> = [
   { name: 'W (nudge forward, with a selection)', key: 'w', verb: 'onNudgeBy' },
   { name: 'S (nudge back)', key: 's', verb: 'onNudgeBy' },
-  { name: 'E (rotate gizmo)', key: 'e', verb: 'setGizmoMode' },
+  { name: '1 (move gizmo)', key: '1', verb: 'setGizmoMode' },
+  { name: '2 (rotate gizmo)', key: '2', verb: 'setGizmoMode' },
   { name: 'Ctrl+C', key: 'c', init: { ctrlKey: true }, verb: 'onCopy' },
   { name: 'Ctrl+V', key: 'v', init: { ctrlKey: true }, verb: 'onPaste' },
   { name: 'Ctrl+D', key: 'd', init: { ctrlKey: true }, verb: 'onDuplicate' },
@@ -283,11 +288,11 @@ describe('useWorldShortcuts — Delete picks one of the two confirms', () => {
 });
 
 describe('useWorldShortcuts — the step a nudge key takes', () => {
-  test('the 1 cm default with no snap step set', () => {
+  test('the 10 cm default with no snap step set (#386)', () => {
     bound({ snapGrid: 0 });
     press('ArrowRight');
     expect(verbs.onNudgeBegin).toHaveBeenCalledWith(0);
-    expect(verbs.onNudgeBy).toHaveBeenCalledWith([1, 0, 0]);
+    expect(verbs.onNudgeBy).toHaveBeenCalledWith([10, 0, 0]);
   });
 
   test('the snap step when one is set, which the nudge also snaps to', () => {
@@ -297,19 +302,42 @@ describe('useWorldShortcuts — the step a nudge key takes', () => {
     expect(verbs.onNudgeBy).toHaveBeenCalledWith([50, 0, 0]);
   });
 
+  test('×0.1 with Ctrl on the arrows and PageUp/Down, as the fly slows (#386)', () => {
+    bound({ snapGrid: 0 });
+    expect(press('ArrowRight', { ctrlKey: true })).toBe(true);
+    release('ArrowRight');
+    press('PageUp', { ctrlKey: true });
+    expect(verbs.onNudgeBy.mock.calls.map(([delta]) => delta)).toEqual([[1, 0, 0], [0, 1, 0]]);
+  });
+
   test('×10 while Shift is held', () => {
     bound({ snapGrid: 50 });
     press('ArrowRight', { shiftKey: true });
     expect(verbs.onNudgeBy).toHaveBeenCalledWith([500, 0, 0]);
   });
 
-  test('in rotate mode the translate grid is invisible, so the default stands', () => {
-    // That control edits the angle in rotate mode, so a `snapGrid` left over
-    // from translate mode would be 45° on screen and 5 m under the arrow.
+  test('in rotate mode the keys turn instead, by 1° with no angle step set (#387)', () => {
+    // A `snapGrid` left over from translate mode is invisible here — that
+    // control edits the angle in rotate mode — so it must not reach the turn.
     bound({ gizmoMode: 'rotate', snapGrid: 500 });
     press('ArrowRight');
-    expect(verbs.onNudgeBegin).toHaveBeenCalledWith(0);
-    expect(verbs.onNudgeBy).toHaveBeenCalledWith([1, 0, 0]);
+    expect(verbs.onNudgeBegin).not.toHaveBeenCalled();
+    expect(verbs.onTurnBegin).toHaveBeenCalledWith(0);
+    expect(verbs.onTurnBy).toHaveBeenCalledWith([1, 0, 0]);
+  });
+
+  test('in rotate mode WASD, Space and X turn by the angle step, ×10 with Shift', () => {
+    bound({ gizmoMode: 'rotate', snapAngleDegrees: 15 });
+    for (const key of ['d', 'a', 'w', 's', ' ', 'x']) {
+      press(key);
+      release(key);
+    }
+    press('d', { shiftKey: true });
+    expect(verbs.onTurnBegin).toHaveBeenCalledWith(15);
+    expect(verbs.onTurnBy.mock.calls.map(([turn]) => turn)).toEqual([
+      [15, 0, 0], [-15, 0, 0], [0, 0, 15], [0, 0, -15], [0, 15, 0], [0, -15, 0], [150, 0, 0],
+    ]);
+    expect(verbs.onNudgeBy).not.toHaveBeenCalled();
   });
 
   test('W and Up move away from the camera, S and Down towards it', () => {
@@ -319,7 +347,7 @@ describe('useWorldShortcuts — the step a nudge key takes', () => {
       release(key);
     }
     expect(verbs.onNudgeBy.mock.calls.map(([delta]) => delta)).toEqual([
-      [0, 0, 1], [0, 0, 1], [0, 0, -1], [0, 0, -1],
+      [0, 0, 10], [0, 0, 10], [0, 0, -10], [0, 0, -10],
     ]);
   });
 
@@ -330,7 +358,7 @@ describe('useWorldShortcuts — the step a nudge key takes', () => {
       release(key);
     }
     expect(verbs.onNudgeBy.mock.calls.map(([delta]) => delta)).toEqual([
-      [-1, 0, 0], [-1, 0, 0], [1, 0, 0], [1, 0, 0], [0, 1, 0], [0, -1, 0],
+      [-10, 0, 0], [-10, 0, 0], [10, 0, 0], [10, 0, 0], [0, 10, 0], [0, -10, 0],
     ]);
   });
 
@@ -341,7 +369,7 @@ describe('useWorldShortcuts — the step a nudge key takes', () => {
       release(key);
     }
     expect(verbs.onNudgeBy.mock.calls.map(([delta]) => delta)).toEqual([
-      [0, 1, 0], [0, -1, 0], [0, -10, 0],
+      [0, 10, 0], [0, -10, 0], [0, -100, 0],
     ]);
   });
 
@@ -411,7 +439,7 @@ describe('useWorldShortcuts — holding a nudge key', () => {
     frameAt(100);
     release('d');
     expect(verbs.onNudgeBegin).toHaveBeenCalledTimes(1);
-    expect(verbs.onNudgeBy.mock.calls).toEqual([[[1, 0, 0]]]);
+    expect(verbs.onNudgeBy.mock.calls).toEqual([[[10, 0, 0]]]);
     expect(verbs.onNudgeEnd).toHaveBeenCalledTimes(1);
   });
 
@@ -420,15 +448,38 @@ describe('useWorldShortcuts — holding a nudge key', () => {
     press('w');
     frameAt(200);   // still inside the hold delay
     frameAt(250);   // the delay ends here: nothing travelled yet
-    frameAt(350);   // 0.1 s at 300 cm/s
+    frameAt(350);   // 0.1 s at 500 cm/s
     frameAt(450);
     expect(verbs.onNudgeEnd).not.toHaveBeenCalled();
     release('w');
     const travelled = verbs.onNudgeBy.mock.calls.map(([delta]) => delta[2]);
-    expect(travelled[0]).toBe(1);
-    expect(travelled.slice(1)).toEqual([expect.closeTo(30, 6), expect.closeTo(30, 6)]);
+    expect(travelled[0]).toBe(10);
+    expect(travelled.slice(1)).toEqual([expect.closeTo(50, 6), expect.closeTo(50, 6)]);
     expect(verbs.onNudgeBegin).toHaveBeenCalledTimes(1);
     expect(verbs.onNudgeEnd).toHaveBeenCalledTimes(1);
+  });
+
+  test('Shift or Ctrl pressed mid-hold changes the speed from then on (#386)', () => {
+    bound();
+    press('w');
+    frameAt(250);
+    frameAt(350);   // 50 cm at 500 cm/s
+    press('Shift', { shiftKey: true });
+    frameAt(450);   // ×10
+    release('Shift');
+    press('Control', { ctrlKey: true });
+    frameAt(550);   // ×0.1
+    const travelled = verbs.onNudgeBy.mock.calls.map(([delta]) => delta[2]);
+    expect(travelled.slice(1)).toEqual([
+      expect.closeTo(50, 6), expect.closeTo(500, 6), expect.closeTo(5, 6),
+    ]);
+  });
+
+  test('Ctrl pressed mid-hold on S does not turn the held key into a save', () => {
+    bound();
+    press('s');
+    expect(press('s', { ctrlKey: true, repeat: true })).toBe(true);
+    expect(verbs.onRequestSave).not.toHaveBeenCalled();
   });
 
   test('the OS auto-repeat keydowns are swallowed, not extra steps', () => {
@@ -457,30 +508,48 @@ describe('useWorldShortcuts — holding a nudge key', () => {
     expect(verbs.onNudgeEnd).toHaveBeenCalledTimes(1);
   });
 
-  test('W keeps nudging while held, even if the selection empties mid-hold', () => {
-    bound();
-    press('w');
-    useWorldStore.setState({ selection: [] } as never);
-    press('w', { repeat: true });
-    expect(verbs.setGizmoMode).not.toHaveBeenCalled();
+  test('a held turn key turns continuously, and commits once on release', () => {
+    bound({ gizmoMode: 'rotate' });
+    press('d');
+    frameAt(250);
+    frameAt(350);   // 0.1 s at 45°/s
+    release('d');
+    const turned = verbs.onTurnBy.mock.calls.map(([turn]) => turn[0]);
+    expect(turned).toEqual([1, expect.closeTo(4.5, 6)]);
+    expect(verbs.onTurnBegin).toHaveBeenCalledTimes(1);
+    expect(verbs.onTurnEnd).toHaveBeenCalledTimes(1);
+    expect(verbs.onNudgeEnd).not.toHaveBeenCalled();
   });
 });
 
-describe('useWorldShortcuts — the gizmo letters', () => {
-  test('W is translate and E is rotate, with nothing selected for W to nudge', () => {
-    useWorldStore.setState({ selection: [] } as never);
+describe('useWorldShortcuts — the gizmo mode keys', () => {
+  test('1 is move and 2 is rotate, as in the Spacer (#387)', () => {
     bound();
-    press('w');
-    expect(verbs.setGizmoMode).toHaveBeenCalledWith('translate');
-    press('e');
-    expect(verbs.setGizmoMode).toHaveBeenCalledWith('rotate');
+    press('1');
+    expect(verbs.setGizmoMode).toHaveBeenLastCalledWith('translate');
+    press('2');
+    expect(verbs.setGizmoMode).toHaveBeenLastCalledWith('rotate');
   });
 
   test('they need no selection — the mode is the tool, not the edit', () => {
     useWorldStore.setState({ selection: [] } as never);
     bound();
-    expect(press('w')).toBe(true);
-    expect(verbs.setGizmoMode).toHaveBeenCalledWith('translate');
+    expect(press('2')).toBe(true);
+    expect(verbs.setGizmoMode).toHaveBeenCalledWith('rotate');
+  });
+
+  test('W and E switch nothing: W only half worked once it became a nudge', () => {
+    useWorldStore.setState({ selection: [] } as never);
+    bound();
+    press('w');
+    press('e');
+    expect(verbs.setGizmoMode).not.toHaveBeenCalled();
+  });
+
+  test('Ctrl+1 is a camera slot, not a mode', () => {
+    bound();
+    expect(press('1', { ctrlKey: true })).toBe(false);
+    expect(verbs.setGizmoMode).not.toHaveBeenCalled();
   });
 });
 

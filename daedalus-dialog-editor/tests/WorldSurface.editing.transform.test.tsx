@@ -715,31 +715,30 @@ describe('a turn of the gizmo', () => {
     }]);
   });
 
-  it('switches the gizmo on W and E, and on the toggle', async () => {
+  it('switches the gizmo on 1 and 2, and on the toggle', async () => {
     await openWorld();
     expect(vp.gizmoMode).toBe('translate');
 
-    fireEvent.keyDown(window, { key: 'e' });
+    fireEvent.keyDown(window, { key: '2' });
     await waitFor(() => expect(vp.gizmoMode).toBe('rotate'));
 
-    // W nudges a selected VOB forward; only without a selection is it the
-    // translate-gizmo shortcut.
-    act(() => useWorldStore.getState().selectVob(null));
-    fireEvent.keyDown(window, { key: 'w' });
+    // With a VOB selected too: unlike W, a digit is never a nudge (#387).
+    act(() => useWorldStore.getState().selectVob(1));
+    fireEvent.keyDown(window, { key: '1' });
     await waitFor(() => expect(vp.gizmoMode).toBe('translate'));
 
     fireEvent.click(screen.getByTestId('world-gizmo-rotate'));
     await waitFor(() => expect(vp.gizmoMode).toBe('rotate'));
   });
 
-  it('leaves the gizmo alone when the letter was typed into a field', async () => {
-    // Bare letters, on a *window* listener: the app is full of text fields and
-    // an 'e' typed into one must not silently change what the gizmo does.
+  it('leaves the gizmo alone when the digit was typed into a field', async () => {
+    // Bare keys, on a *window* listener: the app is full of text fields and
+    // a '2' typed into one must not silently change what the gizmo does.
     await openWorld();
     const field = document.createElement('input');
     document.body.appendChild(field);
 
-    fireEvent.keyDown(field, { key: 'e' });
+    fireEvent.keyDown(field, { key: '2' });
 
     expect(vp.gizmoMode).toBe('translate');
     document.body.removeChild(field);

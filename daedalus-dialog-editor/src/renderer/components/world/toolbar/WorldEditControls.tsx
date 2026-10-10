@@ -92,14 +92,14 @@ const WorldEditControls: React.FC<WorldEditControlsProps> = ({
       onChange={(_event, next: GizmoMode | null) => next !== null && onGizmoModeChange(next)}
       sx={{ '& .MuiToggleButton-root': { py: 0.25, px: 1 } }}
     >
-      <Tooltip title="Move (W)">
+      <Tooltip title="Move (1)">
         <span>
           <ToggleButton value="translate" disabled={!hasWorld} data-testid="world-gizmo-translate" aria-label="Move">
             <OpenWithIcon fontSize="small" />
           </ToggleButton>
         </span>
       </Tooltip>
-      <Tooltip title="Turn (E)">
+      <Tooltip title="Turn (2) — WASD, Space and X then turn the selection">
         <span>
           <ToggleButton value="rotate" disabled={!hasWorld} data-testid="world-gizmo-rotate" aria-label="Turn">
             <ThreeSixtyIcon fontSize="small" />
