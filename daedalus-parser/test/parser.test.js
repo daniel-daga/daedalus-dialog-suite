@@ -578,3 +578,22 @@ describe('identifier characters (#383)', () => {
     assert.equal(assignments[1].childForFieldName('right').type, 'identifier', 'a^b is one identifier');
   });
 });
+
+describe('body-less instance declarations (#383)', () => {
+  const parser = new DaedalusParser();
+
+  test('extractDeclarations lists every name of a body-less instance declaration', () => {
+    const result = parser.parse('instance MEM_Game, MEM_World(oCGame);\ninstance Single(C_Npc);');
+    assert.equal(result.hasErrors, false);
+    const declarations = parser.extractDeclarations(result).map(({ type, name, parent }) => ({ type, name, parent }));
+    assert.deepEqual(declarations, [
+      { type: 'instance', name: 'MEM_Game', parent: 'oCGame' },
+      { type: 'instance', name: 'MEM_World', parent: 'oCGame' },
+      { type: 'instance', name: 'Single', parent: 'C_Npc' }
+    ]);
+  });
+
+  test('several names need the body-less form', () => {
+    assert.equal(parser.parse('instance A, B(C) { x = 1; };').hasErrors, true);
+  });
+});

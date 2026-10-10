@@ -66,6 +66,7 @@ export class DeclarationVisitor {
           // Only recurse into declarations we care about
           if (child.type === 'function_declaration' ||
               child.type === 'instance_declaration' ||
+              child.type === 'instance_forward_declaration' ||
               child.type === 'variable_declaration' ||
               child.type === 'class_declaration' ||
               child.type === 'prototype_declaration') {
@@ -181,29 +182,13 @@ export class DeclarationVisitor {
             instance.npcId = npcId;
           }
 
-          if (upperParent === 'C_ITEM') {
-            if (!this.semanticModel.items) {
-              this.semanticModel.items = createNameRecord();
-            }
-            this.semanticModel.items[instance.name] = instance;
-          }
-
-          if (upperParent === 'C_NPC') {
-            if (!this.semanticModel.npcs) {
-              this.semanticModel.npcs = createNameRecord();
-            }
-            this.semanticModel.npcs[instance.name] = instance;
-          }
-
-          if (upperParent === 'C_MDS') {
-            if (!this.semanticModel.animations) {
-              this.semanticModel.animations = createNameRecord();
-            }
-            this.semanticModel.animations[instance.name] = instance;
-          }
+          this.indexInstanceByParent(instance);
         }
       }
       return; // Optimization: Don't recurse into instance bodies during object creation
+    } else if (node.type === 'instance_forward_declaration') {
+      this.createForwardInstances(node);
+      return;
     } else if (node.type === 'variable_declaration') {
       this.createGlobalSymbol(node);
       return;
@@ -252,6 +237,71 @@ export class DeclarationVisitor {
 
     // For any other node types (e.g. if passed directly in tests), we don't expect nested declarations
     // so we don't need to recurse.
+  }
+
+  /**
+   * `instance a, b(C);` (#383): one GlobalInstance per name, never a dialog —
+   * there is no body to read. The first carries the statement's sourceText;
+   * the rest carry `declaredWith`, the first name, and are written by it.
+   */
+  private createForwardInstances(node: TreeSitterNode): void {
+    const parentNode = node.childForFieldName('parent');
+    if (!parentNode) return;
+    const names = node.namedChildren.filter(
+      child => child.type === 'identifier' && child.startIndex !== parentNode.startIndex
+    );
+    if (names.length === 0) return;
+
+    const position = {
+      startLine: node.startPosition.row + 1,
+      startColumn: node.startPosition.column + 1,
+      endLine: node.endPosition.row + 1,
+      endColumn: node.endPosition.column + 1
+    };
+    const range = { startIndex: node.startIndex, endIndex: node.endIndex };
+    if (!this.semanticModel.instances) {
+      this.semanticModel.instances = createNameRecord();
+    }
+
+    const head = names[0].text;
+    for (const nameNode of names) {
+      const instance = new GlobalInstance(nameNode.text, parentNode.text);
+      if (instance.name === head) {
+        instance.sourceText = node.text;
+        instance.leadingComments = [...this.pendingLeadingComments];
+        this.semanticModel.declarationOrder?.push({ type: 'instance', name: head });
+      } else {
+        instance.declaredWith = head;
+      }
+      instance.position = position;
+      instance.range = range;
+      this.semanticModel.instances[instance.name] = instance;
+      this.indexInstanceByParent(instance);
+    }
+  }
+
+  private indexInstanceByParent(instance: GlobalInstance): void {
+    const upperParent = instance.parent.toUpperCase();
+    if (upperParent === 'C_ITEM') {
+      if (!this.semanticModel.items) {
+        this.semanticModel.items = createNameRecord();
+      }
+      this.semanticModel.items[instance.name] = instance;
+    }
+
+    if (upperParent === 'C_NPC') {
+      if (!this.semanticModel.npcs) {
+        this.semanticModel.npcs = createNameRecord();
+      }
+      this.semanticModel.npcs[instance.name] = instance;
+    }
+
+    if (upperParent === 'C_MDS') {
+      if (!this.semanticModel.animations) {
+        this.semanticModel.animations = createNameRecord();
+      }
+      this.semanticModel.animations[instance.name] = instance;
+    }
   }
 
   private extractFunctionParameters(functionNode: TreeSitterNode): FunctionParameter[] {

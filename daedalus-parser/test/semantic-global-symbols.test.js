@@ -384,3 +384,42 @@ func void Use()
   assert.ok(model.constants['zCView__@zCView'], 'zCView__@zCView is a constant');
   assert.equal(new SemanticCodeGenerator().generateSemanticModel(model), source);
 });
+
+// #383: `instance X(C);` declares an instance with no body (Ikarus's MEM_Game,
+// LeGo's `Queue@`), and the reference grammars allow several names in one
+// such declaration. Each name is an instance; the statement is written once.
+test('a body-less instance declaration declares every name and round-trips as one statement (#383)', () => {
+  const { SemanticCodeGenerator } = require('../dist/codegen/generator');
+  const source = `class Queue
+{
+	var int x;
+};
+
+instance Queue@(Queue);
+INSTANCE currParserSymb (zCPar_Symbol);
+instance MEM_Game, MEM_World(oCGame);
+instance Ammo(C_Item);
+
+instance Full(Queue)
+{
+	x = 1;
+};
+`;
+
+  const model = parseSemanticModel(source);
+  assert.equal(model.hasErrors, false, 'Should parse without errors');
+  assert.deepEqual(
+    Object.keys(model.instances).map((name) => [name, model.instances[name].parent]),
+    [['Queue@', 'Queue'], ['currParserSymb', 'zCPar_Symbol'], ['MEM_Game', 'oCGame'], ['MEM_World', 'oCGame'], ['Ammo', 'C_Item'], ['Full', 'Queue']]
+  );
+  assert.equal(model.instances.MEM_World.declaredWith, 'MEM_Game');
+  assert.ok(model.items.Ammo, 'a body-less C_Item instance is still an item');
+
+  const generator = new SemanticCodeGenerator();
+  assert.equal(generator.generateSemanticModel(model), source);
+  delete model.declarationOrder;
+  assert.ok(
+    generator.generateSemanticModel(model).includes('instance MEM_Game, MEM_World(oCGame);\ninstance Ammo'),
+    'Without a declaration order the shared statement is still written once'
+  );
+});

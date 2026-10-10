@@ -217,6 +217,8 @@ export class GlobalInstance {
   public npcId?: number;
   /** Verbatim declaration text (including body), used for faithful re-emission. */
   public sourceText?: string;
+  /** Declared by another instance's body-less statement (`instance a, b(C);`, #383); see GlobalVariable. */
+  public declaredWith?: string;
   public leadingComments?: string[];
   public filePath?: string;
   public position?: {

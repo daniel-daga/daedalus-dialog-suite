@@ -168,6 +168,22 @@ class DaedalusParser {
           endPosition: child.endPosition,
           node: child
         });
+      } else if (child.type === 'instance_forward_declaration') {
+        // `instance a, b(C);` (#383): one entry per name.
+        const parent = child.childForFieldName('parent');
+        for (const nameNode of child.namedChildren) {
+          if (nameNode.type !== 'identifier' || nameNode.startIndex === parent.startIndex) {
+            continue;
+          }
+          declarations.push({
+            type: 'instance',
+            name: nameNode.text,
+            parent: parent.text,
+            startPosition: child.startPosition,
+            endPosition: child.endPosition,
+            node: child
+          });
+        }
       } else if (child.type === 'function_declaration') {
         declarations.push({
           type: 'function',

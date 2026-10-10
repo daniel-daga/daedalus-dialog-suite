@@ -692,6 +692,42 @@
     }
   },
   {
+    "type": "instance_forward_declaration",
+    "named": true,
+    "fields": {
+      "keyword": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "instance",
+            "named": false
+          }
+        ]
+      },
+      "name": {
+        "multiple": true,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "parent": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "member_access",
     "named": true,
     "fields": {
@@ -880,6 +916,10 @@
         },
         {
           "type": "instance_declaration",
+          "named": true
+        },
+        {
+          "type": "instance_forward_declaration",
           "named": true
         },
         {
@@ -1546,11 +1586,11 @@
   },
   {
     "type": "string",
-    "named": false
+    "named": true
   },
   {
     "type": "string",
-    "named": true
+    "named": false
   },
   {
     "type": "var",

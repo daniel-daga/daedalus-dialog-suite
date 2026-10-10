@@ -330,6 +330,13 @@ CLI help tests), grammar generation, lint and typecheck on fix commit
 - `@` and `^` continue an identifier but never start one (#383; Ikarus's
   `_@`/`_^`, LeGo's `Foo@`), the rule of the DaedalusLanguageServer and
   DaedalusCompiler grammars. So `a^b` is one name and `a ^ b` is xor.
+- An instance declared without a body — `instance MEM_Game(oCGame);`, or
+  several at once, `instance a, b(C);` (#383) — is its own node,
+  `instance_forward_declaration`, so nothing that reads an instance body
+  meets one without. Each name is a `GlobalInstance` (never a dialog, even
+  under `C_INFO`), indexed into items/npcs/animations by parent as usual;
+  extra names carry `declaredWith` like a comma-list variable. The NPC
+  editor's reader refuses one: there is no body to edit.
 
 Engine semantics were not checked for any of these — the guarantee is source
 fidelity (the regenerated guard has the same truth table), not that the

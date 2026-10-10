@@ -32,10 +32,14 @@ interface GlobalSymbol {
   leadingComments?: string[];
 }
 
-/** `b` of `var int a, b;` (#383) is written by `a`'s statement while `a` exists. */
+/** `b` of `var int a, b;` or `instance a, b(C);` (#383) is written by `a`'s statement while `a` exists. */
 function isDeclaredWithAnother(model: SemanticModel, symbol: { declaredWith?: string }): boolean {
   const head = symbol.declaredWith;
-  return head !== undefined && (model.constants?.[head] !== undefined || model.variables?.[head] !== undefined);
+  return head !== undefined && (
+    model.constants?.[head] !== undefined ||
+    model.variables?.[head] !== undefined ||
+    model.instances?.[head] !== undefined
+  );
 }
 
 export interface CodeGeneratorOptions {
@@ -121,6 +125,7 @@ export class SemanticCodeGenerator {
 
     const globalTrailing: string[] = [];
     for (const name in model.instances || {}) {
+      if (isDeclaredWithAnother(model, model.instances![name])) continue;
       globalTrailing.push(this.generateGlobalDeclaration('instance', model.instances![name]));
     }
     if (globalTrailing.length > 0) {
@@ -253,7 +258,7 @@ export class SemanticCodeGenerator {
     }
     const leftoverInstances: string[] = [];
     for (const name in model.instances || {}) {
-      if (!emittedGlobals.has(`instance:${name}`)) {
+      if (!emittedGlobals.has(`instance:${name}`) && !isDeclaredWithAnother(model, model.instances![name])) {
         leftoverInstances.push(this.generateGlobalDeclaration('instance', model.instances![name]));
       }
     }

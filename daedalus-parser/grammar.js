@@ -15,6 +15,7 @@ module.exports = grammar({
 
     _declaration: $ => choice(
       $.instance_declaration,
+      $.instance_forward_declaration,
       $.function_declaration,
       $.variable_declaration,
       $.class_declaration,
@@ -30,6 +31,20 @@ module.exports = grammar({
       ')',
       field('body', $.block),
       optional(';'),
+    ),
+
+    // Instance declared without a body: `instance MEM_Game(oCGame);`, and
+    // several at once, `instance a, b(C);` (#383, the reference grammars'
+    // instanceDecl). Its own node so nothing that reads an instance body
+    // meets one without.
+    instance_forward_declaration: $ => seq(
+      field('keyword', alias(/[iI][nN][sS][tT][aA][nN][cC][eE]/, 'instance')),
+      field('name', $.identifier),
+      repeat(seq(',', field('name', $.identifier))),
+      '(',
+      field('parent', $.identifier),
+      ')',
+      ';',
     ),
 
     // Function declaration: func void/int functionName()
