@@ -193,6 +193,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    * it down as Escape does (#364). An NPC or a waypoint is named, and a name
    * is spent by one add.
    */
+  /** The path of the VOB the armed placement put down last, if any (#388). */
+  const lastPlaced = useRef<string | null>(null);
   const [armed, setArmed] = useState<
     | { kind: 'place'; spec: PlaceSpec }
     | { kind: 'insert-npc'; instance: string; waypoint: string }
@@ -480,6 +482,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     // armed add: it was about a world that is being replaced.
     setPendingWaypointName(null);
     setArmed(null);
+    lastPlaced.current = null;
     // The waynet goes too, and it is the one reset that is not obvious: the
     // viewport mounts on `mesh && visuals && summary`, so a payload left
     // standing here draws the *previous* world's waypoints over the new one
@@ -1665,7 +1668,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       from: { focusName },
       to: { focusName },
     }];
-    await commitOps([add, ...named]);
+    if (await commitOps([add, ...named])) lastPlaced.current = add.path;
   }, [commitOps, assetCatalogProps]);
 
   /**
@@ -2010,7 +2013,21 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     || (routineMode.mode !== null && !routineMode.picking) || discardPrompt !== null
     || insertingNpc !== null || pickerOpen || quickTestBlocked || quickTestRefusal !== null;
 
-  const disarm = useCallback(() => setArmed(null), []);
+  /**
+   * Putting a placement down — right-click, Escape or the status bar — selects
+   * the last VOB it placed, so one placed alone can be positioned straight
+   * away (#388). By path, because `applied` cleared the selection and the
+   * index has been re-read since; a path an undo took away resolves to nothing.
+   */
+  const disarm = useCallback(() => {
+    setArmed(null);
+    const path = lastPlaced.current;
+    lastPlaced.current = null;
+    const { summary: current } = useWorldStore.getState();
+    if (path === null || current === null) return;
+    const vob = vobAtIndexPath(vobModelOf(current).reader, path);
+    if (vob !== null) useWorldStore.getState().selectVob(vob);
+  }, []);
 
   useWorldShortcuts({
     hasWorld: summary !== null,

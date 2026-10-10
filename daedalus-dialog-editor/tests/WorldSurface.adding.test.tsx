@@ -227,6 +227,33 @@ describe('an armed placement, click after click', () => {
     expect(api.applyWorldOps).toHaveBeenCalledTimes(1);
   });
 
+  // #388: the last one placed is selected when the placement is put down, so
+  // a single VOB can be positioned straight away.
+  it('selects the last VOB it placed when it is put down', async () => {
+    await armCrate();
+    // Each re-read after an add carries one more root VOB.
+    api.refreshWorldIndex
+      .mockResolvedValueOnce({ ...SUMMARY, vobIndex: vobIndex([[0, 0, 0], [10, 20, 30], TERRAIN]) } as never)
+      .mockResolvedValueOnce({ ...SUMMARY, vobIndex: vobIndex([[0, 0, 0], [10, 20, 30], TERRAIN, TERRAIN]) } as never);
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    await waitFor(() => expect(api.refreshWorldIndex).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    await waitFor(() => expect(api.refreshWorldIndex).toHaveBeenCalledTimes(2));
+    expect(useWorldStore.getState().selection).toEqual([]);
+
+    fireEvent.click(screen.getByTestId('stub-right-click'));
+    expect(useWorldStore.getState().selection).toEqual([3]);
+  });
+
+  it('leaves the selection alone when it is put down having placed nothing', async () => {
+    await armCrate();
+    act(() => { useWorldStore.getState().selectVob(1); });
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByTestId('world-armed-cancel')).toBeNull();
+    expect(useWorldStore.getState().selection).toEqual([1]);
+  });
+
   it('turns each VOB to a random angle about Y when asked', async () => {
     await armCrate();
     fireEvent.click(screen.getByTestId('world-armed-random-yaw'));

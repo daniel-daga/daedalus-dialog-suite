@@ -4184,7 +4184,8 @@ one add. While anything is armed a click asks the world mesh alone: a VOB,
 marker or waypoint under the cursor is clicked through, never selected, and a
 click over the sky does nothing. A **placement is not spent**
 (#364): it places on every ground click until Escape, Cancel or a right-click
-in the world — one that is not the end of a fly — puts it down, and a
+in the world — one that is not the end of a fly — puts it down, selecting
+the last VOB it placed so a lone one can be positioned at once (#388), and a
 "Random Y" box beside the hint turns each one by the scatter brush's
 `rotationAboutUp`. The Assets panel's **Place in world** arms
 the previewed mesh directly, with no dialog — the gesture the picker used to
