@@ -2,6 +2,7 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one; old lines may be pruned at any time.
 
+- #379: Closing, switching or reloading the project now asks before discarding unsaved world edits
 - #380: Outside file edits still being read when you switch projects no longer show up in the new project
 - #378: Saving no longer overwrites an outside edit to the file after you opened Review Changes
 - #367: Save As: write the world to a new .zen file
