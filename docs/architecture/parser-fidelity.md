@@ -578,3 +578,37 @@ comment removal, LF/CRLF block comments and three hydrated roundtrip cycles.
 All 513 parser tests, grammar regeneration, lint, typecheck and the strict
 synthetic fixture corpus pass locally with the real native Node binding.
 No licensed MDK corpus or Gothic engine run was performed.
+
+## Reference grammars (#383)
+
+Two open-source Daedalus grammars, both MIT-licensed ANTLR, reverse-engineered
+like ours rather than taken from the original compiler. Where they agree, treat
+that as strong evidence; where they disagree, the call is a decision.
+
+- **DaedalusLanguageServer** (kirides), `antlr_parser/Daedalus.g4`, checked at
+  `ecb1805`. Maintained. Covers zParserExtender's `META` block and `namespace`.
+- **DaedalusCompiler** (dzieje-khorinis), `src/Common/Grammars/Daedalus.g4`,
+  checked at `7fc9871` (2020). Its extended syntax adds `while`, `break`,
+  `continue` and `extern func`. Its `test/` holds two `.d` files and about
+  thirteen C# files with inline Daedalus snippets.
+
+Checked against ours on 2026-10-10:
+
+| Construct | DLS | DaedalusCompiler | Ours |
+|---|---|---|---|
+| `@`/`^` continuing an identifier | yes | yes | yes (#383) |
+| `var int a, b;`, `const int A = 1, B = 2;` | yes | yes | yes (#383) |
+| `instance a, b(C);` without a body | yes | yes | yes (#383) |
+| float `1e5`, `.5`, `5.` | yes | yes | **no** (#383) |
+| array parameter `var int a[3]` | yes | yes | **no** (#383) |
+| `&=`, `\|=` | yes | no | no (#389) |
+| `extern func` | no | yes | no (#389) |
+| `\"` escape in a string | no | yes | no, by design (#389) |
+| `^` as xor | no | no | yes (#389) |
+| `while`/`break`/`continue` | no | yes | no (#383 item 4) |
+| `namespace`, `META` | yes | no | no (#383 item 4) |
+
+Both accept keywords as names, `var func`/`var instance`, `a.b.c`, `else if`,
+`null` and `nofunc`, as ours does. Our class bodies allow assignments and our
+`if` takes any expression, where both are stricter; that looseness is
+deliberate for an editor.
