@@ -140,6 +140,7 @@ const AppContent: React.FC<AppProps> = ({ buildChanges = [] }) => {
   const [triggerUpdateCheck, setTriggerUpdateCheck] = useState(false);
   const [assetSourcesOpen, setAssetSourcesOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [projectSession, setProjectSession] = useState(0);
   const [discardPrompt, setDiscardPrompt] = useState<{ context: string; proceed: () => void } | null>(null);
   const [dismissedProjectWarnings, setDismissedProjectWarnings] = useState<Set<string>>(() => new Set());
   const { mode, setMode } = useThemeMode();
@@ -192,21 +193,37 @@ const AppContent: React.FC<AppProps> = ({ buildChanges = [] }) => {
   }, []);
 
   // Runs `proceed` at once when nothing is unsaved; otherwise parks it behind
-  // the in-app guard below, which runs it on "Discard and continue".
-  const withDiscardConfirmed = (context: string, proceed: () => void): void => {
+  // the in-app guard below, which runs it on "Discard and continue". A project
+  // transition ends the world session as well, so it counts the world's edits
+  // too (#379); reloading a single file leaves the world alone.
+  const withDiscardConfirmed = (
+    context: string,
+    proceed: () => void,
+    { includeWorld = false }: { includeWorld?: boolean } = {},
+  ): void => {
     // Drain any debounced condition/action edit (N4) so a pending keystroke
     // counts toward dirtiness, then evaluate against the live store — the flush
     // mutates the store synchronously, after this render's memo was computed.
     flushAllPendingEdits();
 
     const hasUnsavedChanges = Array.from(useEditorStore.getState().openFiles.values())
-      .some((fileState) => fileHasUnsavedChanges(fileState));
+      .some((fileState) => fileHasUnsavedChanges(fileState))
+      || (includeWorld && useWorldStore.getState().hasUnsavedEdits);
     if (!hasUnsavedChanges) {
       proceed();
       return;
     }
 
     setDiscardPrompt({ context, proceed });
+  };
+
+  // The world belongs to the project being left: close it in the main process
+  // and empty the store, and remount the editor so the World surface's local
+  // state (mesh, waynet, folders) goes with it rather than outliving it.
+  const endWorldSession = () => {
+    if (useWorldStore.getState().status !== 'idle') void window.editorAPI.closeWorld();
+    useWorldStore.getState().reset();
+    setProjectSession((session) => session + 1);
   };
 
   const handleOpenFile = async () => {
@@ -229,13 +246,14 @@ const AppContent: React.FC<AppProps> = ({ buildChanges = [] }) => {
 
       try {
         resetEditorSession();
+        endWorldSession();
         await openProject(nextProjectPath);
       } catch (error) {
         setAppError(`Failed to open project: ${error instanceof Error ? error.message : 'Unknown error'}`);
       } finally {
         setIsProjectOpening(false);
       }
-    });
+    }, { includeWorld: true });
   };
 
   const handleOpenProject = async () => {
@@ -252,8 +270,9 @@ const AppContent: React.FC<AppProps> = ({ buildChanges = [] }) => {
   const handleCloseProject = () => {
     withDiscardConfirmed('close the project', () => {
       resetEditorSession();
+      endWorldSession();
       closeProject();
-    });
+    }, { includeWorld: true });
   };
 
   const handleReload = () => {
@@ -548,7 +567,7 @@ const AppContent: React.FC<AppProps> = ({ buildChanges = [] }) => {
       <Box sx={{ flexGrow: 1, display: 'flex', overflow: 'hidden' }}>
         <ErrorBoundary>
           {activeFile || projectPath ? (
-            <MainLayout filePath={activeFile} />
+            <MainLayout key={projectSession} filePath={activeFile} />
           ) : (
           <Box sx={{
             flex: 1,
