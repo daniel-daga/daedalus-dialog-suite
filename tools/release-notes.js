@@ -3,9 +3,14 @@
 // "What changed" splash reads (VITE_WHAT_CHANGED). Every non-blank line that
 // is not a markdown heading must be `- #123: Short description`.
 // Usage: node tools/release-notes.js [path]  (path for tests only)
+//        node tools/release-notes.js --since <commit>
+// --since prints only the notes added since <commit> (the one the published
+// build came from), so the file is never reset: a release is its new lines.
+// It prints [] when there are none.
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 
 function parseReleaseNotes(text) {
   const notes = [];
@@ -24,14 +29,28 @@ function parseReleaseNotes(text) {
   return notes;
 }
 
+function newReleaseNotes(releasedText, currentText) {
+  const key = (n) => `${n.issue}:${n.description}`;
+  const released = new Set(parseReleaseNotes(releasedText).map(key));
+  return parseReleaseNotes(currentText).filter((n) => !released.has(key(n)));
+}
+
 if (require.main === module) {
-  const file = process.argv[2] || path.join(__dirname, '..', 'RELEASE_NOTES.md');
   try {
-    process.stdout.write(`${JSON.stringify(parseReleaseNotes(fs.readFileSync(file, 'utf8')))}\n`);
+    let notes;
+    if (process.argv[2] === '--since') {
+      const root = path.join(__dirname, '..');
+      const released = execFileSync('git', ['show', `${process.argv[3]}:RELEASE_NOTES.md`], { cwd: root, encoding: 'utf8' });
+      notes = newReleaseNotes(released, fs.readFileSync(path.join(root, 'RELEASE_NOTES.md'), 'utf8'));
+    } else {
+      const file = process.argv[2] || path.join(__dirname, '..', 'RELEASE_NOTES.md');
+      notes = parseReleaseNotes(fs.readFileSync(file, 'utf8'));
+    }
+    process.stdout.write(`${JSON.stringify(notes)}\n`);
   } catch (error) {
     console.error(error.message);
     process.exit(1);
   }
 }
 
-module.exports = { parseReleaseNotes };
+module.exports = { parseReleaseNotes, newReleaseNotes };

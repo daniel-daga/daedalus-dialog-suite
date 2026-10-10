@@ -1,6 +1,6 @@
 # What changed in the next Windows build
 
-## One line per change, `- #123: Short description` (120 characters max). Replace these before dispatching Build Windows.
+## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one; old lines may be pruned at any time.
 
 - #380: Outside file edits still being read when you switch projects no longer show up in the new project
 - #378: Saving no longer overwrites an outside edit to the file after you opened Review Changes

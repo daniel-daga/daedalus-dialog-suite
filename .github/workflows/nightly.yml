@@ -1,6 +1,8 @@
 name: Nightly
 
-# Runs the full all-tests.yml matrix on master once a night, but only when
+# Once a night on master. When RELEASE_NOTES.md has a line the published
+# Windows build lacks, it runs Build Windows, which carries the full
+# all-tests.yml matrix itself. Otherwise it runs all-tests.yml, but only when
 # master moved in the last 24 hours. Every other workflow is manual.
 on:
   schedule:
@@ -10,25 +12,47 @@ permissions:
   contents: read
 
 jobs:
-  changed:
-    name: master changed in the last 24h?
+  check:
+    name: What changed on master?
     runs-on: ubuntu-latest
     outputs:
       changed: ${{ steps.check.outputs.changed }}
+      release: ${{ steps.check.outputs.release }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           head=$(git log -1 --format=%ct)
           if [ $(( $(date +%s) - head )) -lt 86400 ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "No commit on master in the last 24h; skipping."
+            echo "No commit on master in the last 24h."
+          fi
+          gh release download windows-latest --repo "$GITHUB_REPOSITORY" --pattern update-meta.json --dir "$RUNNER_TEMP"
+          since=$(jq -r .commit "$RUNNER_TEMP/update-meta.json")
+          json=$(node tools/release-notes.js --since "$since")
+          if [ "$json" != "[]" ]; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "New release notes since $since: $json"
+          else
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "No new release note since $since; no Windows build."
           fi
 
   tests:
-    needs: changed
-    if: needs.changed.outputs.changed == 'true'
+    needs: check
+    if: needs.check.outputs.release != 'true' && needs.check.outputs.changed == 'true'
     uses: ./.github/workflows/all-tests.yml
+
+  windows:
+    needs: check
+    if: needs.check.outputs.release == 'true'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/build-windows.yml

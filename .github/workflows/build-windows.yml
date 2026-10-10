@@ -1,18 +1,15 @@
 name: Build Windows
 
 on:
-  # The release notes are the checked-in RELEASE_NOTES.md, validated on every
-  # push by all-tests.yml — edit it before dispatching.
+  # The release notes are the lines RELEASE_NOTES.md gained since the commit the
+  # published build came from (tools/release-notes.js --since). A master
+  # dispatch with no new line fails in seconds: add the line first.
   workflow_dispatch:
+  # nightly.yml calls this when master has a new release note.
+  workflow_call:
 
 permissions:
   contents: write
-
-# Serialize publishes to the mutable rolling release so two dispatches cannot
-# interleave asset uploads onto the same tag. Never cancel an in-flight publish.
-concurrency:
-  group: build-windows-release
-  cancel-in-progress: false
 
 jobs:
   # Full test matrix gate: editor typecheck/Jest/build guard, browser-harness
@@ -24,10 +21,32 @@ jobs:
     name: Release notes
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      json: ${{ steps.notes.outputs.json }}
+      build-number: ${{ steps.notes.outputs.build-number }}
     steps:
       - uses: actions/checkout@v4
-      - name: Validate RELEASE_NOTES.md
-        run: node tools/release-notes.js
+        with:
+          fetch-depth: 0
+      # The published update-meta.json names the commit that build came from
+      # and its build number. The next build number follows it rather than
+      # github.run_number, because nightly.yml's runs count separately and the
+      # updater compares build numbers.
+      - id: notes
+        name: Notes added since the published build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download windows-latest --repo "$GITHUB_REPOSITORY" --pattern update-meta.json --dir "$RUNNER_TEMP"
+          since=$(jq -r .commit "$RUNNER_TEMP/update-meta.json")
+          json=$(node tools/release-notes.js --since "$since")
+          echo "json=$json" >> "$GITHUB_OUTPUT"
+          echo "build-number=$(( $(jq -r .buildNumber "$RUNNER_TEMP/update-meta.json") + 1 ))" >> "$GITHUB_OUTPUT"
+          echo "Notes since $since: $json"
+          if [ "$json" = "[]" ] && [ "$GITHUB_REF" = refs/heads/master ]; then
+            echo "::error::RELEASE_NOTES.md has no new line since the published build ($since)."
+            exit 1
+          fi
 
   tests:
     needs: release-notes
@@ -106,10 +125,17 @@ jobs:
           retention-days: 7
 
   build:
-    needs: [tests, e2e-electron-windows]
+    needs: [release-notes, tests, e2e-electron-windows]
     # Only the default branch (master) may publish a release. Non-master
     # dispatches produce a skipped build, not a published release.
     if: github.ref == 'refs/heads/master'
+    # Serialize publishes to the mutable rolling release so two runs (a
+    # dispatch and the nightly) cannot interleave asset uploads onto the same
+    # tag. On the job, not the workflow, so it holds when nightly.yml calls
+    # this. Never cancel an in-flight publish.
+    concurrency:
+      group: build-windows-release
+      cancel-in-progress: false
     # windows-2022, not windows-latest — same reason as e2e-electron-windows
     # above: this job also force-builds the native addon from source, and
     # would hit the identical node-gyp/VS18 failure once that job passes.
@@ -127,7 +153,7 @@ jobs:
       run: |
         $pkg = Get-Content "daedalus-dialog-editor/package.json" -Raw | ConvertFrom-Json
         $base = $pkg.version
-        $buildNum = $env:GITHUB_RUN_NUMBER
+        $buildNum = "${{ needs.release-notes.outputs.build-number }}"
         $buildVersion = "${base}-build.${buildNum}"
         "BASE_VERSION=$base" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
         "BUILD_VERSION=$buildVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
@@ -177,9 +203,10 @@ jobs:
     - name: Prepare build notes
       id: changes
       shell: pwsh
+      env:
+        NOTES_JSON: ${{ needs.release-notes.outputs.json }}
       run: |
-        $json = node tools/release-notes.js
-        if ($LASTEXITCODE -ne 0) { exit 1 }
+        $json = $env:NOTES_JSON
         $markdown = ($json | ConvertFrom-Json | ForEach-Object { "- #$($_.issue): $($_.description)" }) -join "`n"
         "json=$json" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
         "markdown<<RELEASE_NOTES_EOF`n$markdown`nRELEASE_NOTES_EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
@@ -375,7 +402,7 @@ jobs:
         @{
           version = "${{ steps.version.outputs.BUILD_VERSION }}"
           baseVersion = "${{ steps.version.outputs.BASE_VERSION }}"
-          buildNumber = [int]${{ github.run_number }}
+          buildNumber = [int]${{ needs.release-notes.outputs.build-number }}
           commit = "${{ github.sha }}"
           sha256 = $sha256
           size = $size
@@ -413,7 +440,7 @@ jobs:
 
           **Version:** `${{ steps.version.outputs.BUILD_VERSION }}`
           **Base version:** `${{ steps.version.outputs.BASE_VERSION }}`
-          **Build number:** #${{ github.run_number }}
+          **Build number:** #${{ needs.release-notes.outputs.build-number }}
           **Commit:** `${{ github.sha }}`
 
           **What's changed**
