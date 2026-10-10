@@ -342,7 +342,7 @@ describe('WorldScene', () => {
         positions: new Float32Array([600, 0, 0]).buffer,
         sizes: new Float32Array([50, 50]).buffer,
         vobIds: new Uint32Array([6]).buffer,
-        alphaWeights: new Uint8Array([255]).buffer,
+        alphaWeights: new Float32Array([1]).buffer,
       }],
       stats: { decals: 1, textures: 1 },
     });
@@ -1444,7 +1444,7 @@ describe("WorldScene and the decals", () => {
       positions: new Float32Array([600, 0, 0]).buffer,
       sizes: new Float32Array([50, 50]).buffer,
       vobIds: new Uint32Array([6]).buffer,
-      alphaWeights: new Uint8Array([255]).buffer,
+      alphaWeights: new Float32Array([1]).buffer,
     }],
     stats: { decals: 1, textures: 1 },
   });

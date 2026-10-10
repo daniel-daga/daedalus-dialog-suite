@@ -48,6 +48,7 @@ const GREEN_FIXTURES = [
   'class-prototype.d',  // blank lines between top-level declarations (#286)
   'items-npcs-mds.d',   // blank lines between declarations and after comments (#286)
   'blank-lines.d',      // #286: 0/1/2+ blank lines before every declaration kind
+  'condition-idioms.d', // #384: raw multi-line statement continuation indent
 ];
 
 // Token-equal but not byte-identical through the editor path. Each entry names
@@ -58,10 +59,6 @@ const KNOWN_GAP_FIXTURES: Array<{ file: string; reason: string }> = [
   // comments), so it regenerates on its own line instead of inline. fix-01
   // (parser fidelity) owns attaching inline comments to arbitrary statements.
   { file: 'comments.d', reason: 'inline comment on non-AI_Output stmt becomes standalone' },
-  // A multi-line generic raw statement (hand-written if-block) keeps its source
-  // indentation on continuation lines, then generateFunction re-indents every
-  // line uniformly, double-indenting the block body.
-  { file: 'condition-idioms.d', reason: 'raw multi-line statement continuation lines double-indented' },
   // CreateTopic / LogEntry / InsertNpc action renderers emit surrounding blank
   // lines, inserting spurious blanks between packed statements.
   { file: 'quoting.d', reason: 'topic/log/insert action renderers emit surrounding blank lines' },

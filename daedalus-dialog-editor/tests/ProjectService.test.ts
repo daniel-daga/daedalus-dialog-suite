@@ -370,7 +370,7 @@ INSTANCE DIA_Arog_Greeting (C_INFO)
       // A file broken declaration by declaration yields one ERROR node each —
       // 50 of them here — and the Problems list is not virtualized.
       const lines = [];
-      for (let i = 0; i < 50; i++) lines.push(`FUNC VOID F${i}() { var int x@@; };`);
+      for (let i = 0; i < 50; i++) lines.push(`FUNC VOID F${i}() { var int x$$; };`);
       fs.writeFileSync(path.join(tempDir, 'Junk.d'), lines.join('\n'));
 
       const service = new ProjectService();
