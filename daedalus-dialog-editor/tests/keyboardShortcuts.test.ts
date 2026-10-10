@@ -59,6 +59,9 @@ function bindWorld() {
 function claimed(init: KeyboardEventInit): boolean {
   const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init });
   act(() => { window.dispatchEvent(event); });
+  // Released, so a nudge key held by one probe does not claim the next — a
+  // held key keeps its gesture whatever modifier joins it.
+  act(() => { window.dispatchEvent(new KeyboardEvent('keyup', { key: init.key })); });
   return event.defaultPrevented;
 }
 
@@ -95,6 +98,7 @@ describe('keyboard shortcuts sheet', () => {
     for (const letter of 'abcdefghijklmnopqrstuvwxyz') {
       candidates.push({ key: letter }, { key: letter, ctrlKey: true });
     }
+    for (const digit of '0123456789') candidates.push({ key: digit });
     for (const key of ['Delete', 'Escape', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown']) {
       candidates.push({ key });
     }

@@ -49,6 +49,8 @@ import {
   connectWaypoints,
   disconnectWaypoints,
   multiplyRotation,
+  rotationAbout,
+  rotationAboutUp,
   placeBounds,
   renumbersPaths,
   renumbersWaypoints,
@@ -577,6 +579,15 @@ describe('a multi-select turn', () => {
 
     expect(multiplyRotation(a, b)).toEqual([1, 3, 2, 4, 6, 5, 7, 9, 8]);
     expect(multiplyRotation(b, a)).toEqual([1, 2, 3, 7, 8, 9, 4, 5, 6]);
+  });
+
+  it('turns about an arbitrary axis, agreeing with the up-axis yaw (#387)', () => {
+    const close = (m: ZenRotation) => m.map((value) => expect.closeTo(value, 10));
+    expect(rotationAbout([0, 1, 0], 0.7)).toEqual(close(rotationAboutUp(0.7)));
+    // A quarter turn about +X takes up (column 1) to +Z — written out, not derived.
+    expect(rotationAbout([1, 0, 0], Math.PI / 2)).toEqual(close([1, 0, 0, 0, 0, -1, 0, 1, 0]));
+    // The axis need not be unit length.
+    expect(rotationAbout([0, 0, 2], Math.PI / 2)).toEqual(close([0, -1, 0, 1, 0, 0, 0, 0, 1]));
   });
 });
 

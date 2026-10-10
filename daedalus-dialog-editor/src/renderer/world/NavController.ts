@@ -96,7 +96,7 @@ export class NavController {
     window.addEventListener('pointermove', this.onFlyPointerMove);
     window.addEventListener('pointerup', this.onFlyPointerUp);
     window.addEventListener('pointercancel', this.onFlyPointerUp);
-    // Capture on the window, ahead of the surface's own W/E gizmo-mode keys:
+    // Capture on the window, ahead of the surface's own WASD nudge keys:
     // while the right button is down, W is "forward".
     window.addEventListener('keydown', this.onFlyKey, { capture: true });
     window.addEventListener('keyup', this.onFlyKey, { capture: true });

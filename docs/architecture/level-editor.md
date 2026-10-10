@@ -1614,8 +1614,10 @@ What made it more than "the same again with a different verb":
   `MoveVob` for it in the same batch (the move carries the box the turn
   refitted). A child selected with its parent moves once, and the gizmo's
   preview drives the same members the ops are built from.
-- **W and E switch the gizmo**, as every 3D editor binds them — bare letters on
-  a window listener, so they step aside for anything that takes typing.
+- **1 and 2 switch the gizmo**, as the Spacer binds them (#387) — bare keys
+  (by `key` or `code`, so AZERTY works) on a window listener, so they step
+  aside for anything that takes typing. W and E did until W became a nudge
+  and only switched with nothing selected. Ctrl+digit stays the camera slots.
 - **Ground placement has two explicit modes** (#372). Rest on ground (`G`)
   puts the rotated visual's world-space bounding-box minimum Y at each VOB's
   downward raycast hit; Into ground (`Shift+G`) puts the pivot at the hit for
@@ -3098,7 +3100,7 @@ and must not be tidied away: `rotateVobs` turns each VOB about *its own* origin,
 so a rotate gizmo at the centroid would draw a pivot the op does not use and the
 first multi-VOB rotate would look broken. Whoever lands rotate-about-a-pivot
 lands the centroid anchor for rotate with it, in the same change. `setMode`
-re-attaches for this reason — W and E move the handles, not only their shape.
+re-attaches for this reason — 1 and 2 move the handles, not only their shape.
 
 **The pick pass needs something to hide behind.** It drew the VOB proxies and
 nothing else, so no world geometry ever wrote depth into the 1x1 target and a
@@ -4107,19 +4109,28 @@ halves are needed: the first sees where focus *is*, the second what is *open*.
 - **WASD and arrow keys nudge in the camera's horizontal plane** (left/right
   follow camera-right; forward/back follow the camera view), while PageUp/Down
   and Space/X (the fly's up/down) stay on ZenGin's vertical axis. Space is left
-  to a focused button and to the Assets panel, which places on it. Shift multiplies the step by ten, and the
-  default step is 1 cm. The step is the *translate* snap grid when one is set
-  and only while the Snap control is showing it — in rotate mode that control
-  edits the angle, so a leftover `snapGrid` would be an invisible value driving
-  a visible key. The camera axes are queried for each nudge, so orbiting changes
-  the movement direction — W/Up away from the camera, S/Down towards it. W
-  nudges when a VOB is selected; without a selection it retains the
-  translate-gizmo shortcut. A tap is one step; held past 250 ms the key moves
-  continuously (300 cm/s, or four snap steps a second if that is faster; Shift
-  ×10) with the OS auto-repeat swallowed. The whole hold — several keys at once
-  included — is previewed through the gizmo like a drag and committed once on
-  the last key up, so it is one undo entry. Modified, the keys are other chords
-  (Ctrl+S, Ctrl+D). The selection is read
+  to a focused button and to the Assets panel, which places on it. Shift
+  multiplies the step by ten and Ctrl by a tenth, as they do the fly (#386),
+  and are read live, so either pressed mid-hold changes the speed. The default
+  step is 10 cm, so Ctrl's is still a whole centimetre. The step is the
+  *translate* snap grid when one is set and only while the Snap control is
+  showing it. The camera axes are queried for each nudge, so orbiting changes
+  the movement direction — W/Up away from the camera, S/Down towards it. A tap
+  is one step; held past 250 ms the key moves continuously (500 cm/s, or four
+  snap steps a second if that is faster) with the OS auto-repeat swallowed. The
+  whole hold — several keys at once included — is previewed through the gizmo
+  like a drag and committed once on the last key up, so it is one undo entry.
+  A held key stays the gesture's whatever modifier joins it (Ctrl mid-hold on S
+  slows, it does not save). Ctrl *starts* a nudge only on the arrows and
+  PageUp/Down, whose Ctrl chords are nobody's; Ctrl+S, Ctrl+D and the rest stay
+  their own chords.
+- **In rotate mode the same keys turn the selection** (#387): A/D yaw about the
+  vertical (D turns it right seen from above), W/S pitch about camera-right (W
+  tips the top away), Space/X roll about camera-forward. 1° a tap, 45°/s held,
+  the angle snap step when one is set (each axis snapped on its own), Shift and
+  Ctrl as above. The camera axes are taken once, at the gesture's first key.
+  It is the gizmo's rotate path — previewed through `GizmoController.previewTurn`,
+  committed once as `rotateSubtrees`, one undo entry. The selection is read
   *before* `preventDefault`, so an arrow with nothing selected is left to
   whatever would otherwise scroll. `[role="tree"]` is reserved for the scene
   tree's own navigation.

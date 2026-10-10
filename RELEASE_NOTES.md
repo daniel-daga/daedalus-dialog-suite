@@ -3,6 +3,8 @@
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one; old lines may be pruned at any time.
 
 - #388: Putting a VOB placement down (right-click, Esc) selects the last VOB it placed
+- #387: World editor: 1 and 2 switch move/turn (W and E no longer do); in turn mode WASD, Space and X turn the selection
+- #386: Moving VOBs with the keys is faster by default; Ctrl moves slower, like the camera
 - #390: A file deleted or re-added outside the editor while it was being re-read no longer comes back stale
 - #382: A file edited twice in quick succession outside the editor no longer reverts to the first edit
 - #381: A world still opening when you close or switch projects no longer leaves an error in the next World view

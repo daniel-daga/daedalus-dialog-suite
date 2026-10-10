@@ -53,8 +53,8 @@ export const KEYBOARD_SHORTCUTS: readonly KeyboardShortcut[] = [
   { group: 'Dialog editor', keys: 'Esc', action: 'Delete the action (asks first)' },
 
   {
-    group: 'World editor', keys: 'W / E', action: 'Move / turn gizmo',
-    probe: { listener: 'world', events: [{ key: 'w' }, { key: 'e' }] },
+    group: 'World editor', keys: '1 / 2', action: 'Move / turn gizmo',
+    probe: { listener: 'world', events: [{ key: '1' }, { key: '2' }] },
   },
   {
     group: 'World editor', keys: 'Ctrl+C / Ctrl+V', action: 'Copy / paste the selection',
@@ -79,12 +79,16 @@ export const KEYBOARD_SHORTCUTS: readonly KeyboardShortcut[] = [
   },
   {
     group: 'World editor', keys: 'WASD / arrows; Space / X; PageUp / PageDown',
-    action: 'Nudge in the camera plane, hold to keep moving; Space/X and PageUp/Down vertically; Shift ×10',
+    action: 'Nudge in the camera plane, hold to keep moving; Space/X and PageUp/Down vertically; Shift ×10, Ctrl ×0.1',
     probe: {
       listener: 'world',
       events: ['w', 'a', 's', 'd', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' ', 'x', 'PageUp', 'PageDown']
         .map((key) => ({ key })),
     },
+  },
+  {
+    group: 'World editor', keys: 'In turn mode: A / D, W / S, Space / X',
+    action: 'Turn the selection: yaw, pitch about camera-right, roll; Shift ×10, Ctrl ×0.1',
   },
   { group: 'World editor', keys: '.', action: 'Frame the selection' },
   { group: 'World editor', keys: 'Home', action: 'Frame the world' },

@@ -297,6 +297,6 @@ describe('the World bar', () => {
     expect(rotate).toHaveAttribute('aria-pressed', 'true');
 
     fireEvent.mouseOver(rotate);
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('Turn (E)');
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Turn (2)');
   });
 });

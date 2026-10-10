@@ -14,7 +14,7 @@ import {
   deleteVobs, dropSubtreesToGround,
   duplicateVobs, emptyVobFolders,
   matchVobs,
-  placeBounds, placementCollision, placementFocusName, rotationAboutUp,
+  multiplyRotation, placeBounds, placementCollision, placementFocusName, rotationAbout, rotationAboutUp,
   landedPaths, reparentVob, reparentVobs, rotateSubtrees, rotateSubtreeTo, subtreeMembers, setVobClassProp, setVobProp, setVobProps,
   topLevelVobs,
   translateSubtrees, vobAtIndexPath, vobExtentOf, vobIndexPath,
@@ -78,6 +78,22 @@ import ErrorBoundary from '../ErrorBoundary';
  *  else, and inventing an orientation from a surface normal is a feature with
  *  its own decisions (which axis is up for this visual?) rather than a default. */
 const IDENTITY: ZenRotation = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+
+/** A keyboard turn in progress (#387) — see `turnRef` in the surface. */
+interface KeyboardTurn {
+  total: [number, number, number];
+  step: number;
+  right: ZenPosition;
+  forward: ZenPosition;
+}
+
+/** The turn a keyboard gesture has made so far, snapped per axis; null for none. */
+function turnSoFar(turn: KeyboardTurn): ZenRotation | null {
+  const [yaw, roll, pitch] = snapDelta(turn.total, turn.step).map((degrees) => (degrees * Math.PI) / 180);
+  if (yaw === 0 && roll === 0 && pitch === 0) return null;
+  return multiplyRotation(rotationAbout(turn.forward, roll),
+    multiplyRotation(rotationAbout(turn.right, pitch), rotationAboutUp(yaw)));
+}
 
 interface WorldSurfaceProps {
   /**
@@ -1435,6 +1451,38 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     void commitOps(rotateSubtrees(vobModelOf(current).reader, selected, delta, boundsOf));
   }, [commitOps, boundsOf]);
 
+  /** The keyboard turn in progress (#387): degrees turned so far about the
+   *  hook's `[right, up, forward]` keys — read as yaw about the vertical, roll
+   *  about camera-forward and pitch about camera-right — the camera axes it
+   *  began under, and the angle step each snaps to. Null between turns. */
+  const turnRef = useRef<KeyboardTurn | null>(null);
+
+  const handleTurnBegin = useCallback((step: number) => {
+    if (useWorldStore.getState().selection.length === 0) return false;
+    const axes = viewportRef.current?.cameraNudgeAxes();
+    if (axes === null || axes === undefined) return false;
+    if (viewportRef.current?.beginNudge() !== true) return false;
+    turnRef.current = { total: [0, 0, 0], step, ...axes };
+    return true;
+  }, []);
+
+  const handleTurnBy = useCallback((degrees: [number, number, number]) => {
+    const turn = turnRef.current;
+    if (turn === null) return;
+    for (let axis = 0; axis < 3; axis++) turn.total[axis] += degrees[axis];
+    const delta = turnSoFar(turn);
+    if (delta !== null) viewportRef.current?.previewTurn(delta);
+  }, []);
+
+  /** The last key is up: one commit on the gizmo's own rotate path. */
+  const handleTurnEnd = useCallback(() => {
+    const turn = turnRef.current;
+    turnRef.current = null;
+    if (turn === null) return;
+    const delta = turnSoFar(turn);
+    if (delta !== null) handleRotateSelection(delta);
+  }, [handleRotateSelection]);
+
   /**
    * A typed rotation from the property grid — the primary VOB alone, and an
    * **absolute** pose rather than the delta a gizmo drag arrives as: with one
@@ -2037,6 +2085,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     armed: armed !== null,
     gizmoMode,
     snapGrid,
+    snapAngleDegrees,
     setGizmoMode,
     onCopy: () => void copySelection(),
     onPaste: () => void pasteClipboard(),
@@ -2051,6 +2100,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     onNudgeBegin: handleNudgeBegin,
     onNudgeBy: handleNudgeBy,
     onNudgeEnd: handleNudgeEnd,
+    onTurnBegin: handleTurnBegin,
+    onTurnBy: handleTurnBy,
+    onTurnEnd: handleTurnEnd,
     onHistory: (direction) => void runHistory(direction),
   });
 
