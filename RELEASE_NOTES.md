@@ -2,6 +2,8 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one; old lines may be pruned at any time.
 
+- #390: A file deleted or re-added outside the editor while it was being re-read no longer comes back stale
+- #382: A file edited twice in quick succession outside the editor no longer reverts to the first edit
 - #381: A world still opening when you close or switch projects no longer leaves an error in the next World view
 - #379: Closing, switching or reloading the project now asks before discarding unsaved world edits
 - #380: Outside file edits still being read when you switch projects no longer show up in the new project

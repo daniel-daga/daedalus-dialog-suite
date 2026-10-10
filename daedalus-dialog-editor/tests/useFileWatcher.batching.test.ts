@@ -8,7 +8,7 @@
  * parsedFiles clone, one parseGeneration bump, at most one re-merge.
  */
 
-import { describe, test, expect, beforeEach, jest } from '@jest/globals';
+import { describe, test, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useFileWatcher } from '../src/renderer/hooks/useFileWatcher';
 import { useProjectStore } from '../src/renderer/store/projectStore';
@@ -245,6 +245,113 @@ describe('useFileWatcher — change batching', () => {
     const cached = useProjectStore.getState().parsedFiles.get(FILE_A);
     expect(Object.keys(cached?.semanticModel.dialogs ?? {})).toHaveLength(0);
     unmount();
+  });
+
+  // #382: a slow parse of X must not land after a later batch's parse of X.
+  test('an older batch for a file never overwrites a newer one', async () => {
+    const resolvers: Array<(model: any) => void> = [];
+    mockParseDialogFile.mockImplementation(() =>
+      new Promise((resolve) => { resolvers.push(resolve); }) as any);
+    const versioned = (version: string) => ({
+      ...EMPTY_MODEL,
+      dialogs: { [`DIA_${version}`]: { name: `DIA_${version}`, properties: { npc: 'TestNPC' } } },
+    });
+    const { unmount } = await setupHook();
+
+    emit({ type: 'change', filePath: FILE_A });
+    await act(async () => {
+      await waitFor(() => expect(resolvers).toHaveLength(1), { timeout: 2000 });
+    });
+
+    // The file changes again while the first parse is still running.
+    emit({ type: 'change', filePath: FILE_A });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    });
+
+    // Finish whichever parses exist newest-first, which is the order that
+    // used to let the older model win.
+    await act(async () => {
+      if (resolvers.length === 2) resolvers[1](versioned('NEW'));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      resolvers[0](versioned('OLD'));
+      await waitFor(() => expect(resolvers).toHaveLength(2), { timeout: 2000 });
+      resolvers[1](versioned('NEW'));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    const cached = useProjectStore.getState().parsedFiles.get(FILE_A);
+    expect(Object.keys(cached?.semanticModel.dialogs ?? {})).toEqual(['DIA_NEW']);
+    unmount();
+  });
+
+  // #390: an unlink or add that lands while a batch for the same file is
+  // already parsing must not be undone when that batch applies.
+  describe('an event racing an in-flight batch', () => {
+    const versioned = (version: string) => ({
+      ...EMPTY_MODEL,
+      dialogs: { [`DIA_${version}`]: { name: `DIA_${version}`, properties: { npc: 'TestNPC' } } },
+    });
+    let resolvers: Array<(model: any) => void>;
+    let indexFile: ReturnType<typeof jest.spyOn>;
+
+    beforeEach(() => {
+      resolvers = [];
+      mockParseDialogFile.mockImplementation(() =>
+        new Promise((resolve) => { resolvers.push(resolve); }) as any);
+      indexFile = jest.spyOn(window.editorAPI, 'indexFile').mockImplementation(async (filePath: string) => ({
+        routineSites: [{ routine: 'RTN_X', startMinute: 0, endMinute: 60, waypoint: 'WP', filePath, line: 1 }],
+        spawnSites: [], exchangeSites: [], instances: [],
+      }));
+      useProjectStore.setState({ routineSiteIndex: [] });
+    });
+
+    afterEach(() => indexFile.mockRestore());
+
+    async function startBatchFor(filePath: string) {
+      emit({ type: 'change', filePath });
+      await act(async () => {
+        await waitFor(() => expect(resolvers).toHaveLength(1), { timeout: 2000 });
+      });
+    }
+
+    test('an unlink is not undone by the batch', async () => {
+      const { unmount } = await setupHook();
+      await startBatchFor(FILE_A);
+
+      emit({ type: 'unlink', filePath: FILE_A });
+      await act(async () => {
+        resolvers[0](versioned('OLD'));
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+
+      const cached = useProjectStore.getState().parsedFiles.get(FILE_A);
+      expect(Object.keys(cached?.semanticModel.dialogs ?? {})).toHaveLength(0);
+      expect(useProjectStore.getState().routineSiteIndex.filter((s) => s.filePath === FILE_A)).toHaveLength(0);
+      unmount();
+    });
+
+    test('an add is not undone by the batch', async () => {
+      const { unmount } = await setupHook();
+      await startBatchFor(FILE_A);
+
+      // Deleted and recreated while the batch parses: the add's parse is the
+      // newer one, whichever order the two parses finish in.
+      emit({ type: 'add', filePath: FILE_A });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        if (resolvers.length === 2) resolvers[1](versioned('NEW'));
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        resolvers[0](versioned('OLD'));
+        await waitFor(() => expect(resolvers).toHaveLength(2), { timeout: 2000 });
+        resolvers[1](versioned('NEW'));
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+
+      const cached = useProjectStore.getState().parsedFiles.get(FILE_A);
+      expect(Object.keys(cached?.semanticModel.dialogs ?? {})).toEqual(['DIA_NEW']);
+      unmount();
+    });
   });
 
   test('unmount discards buffered changes', async () => {
