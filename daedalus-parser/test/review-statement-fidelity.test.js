@@ -44,3 +44,40 @@ test('call sites include local initializers and the complete body of a raw condi
   assert.deepEqual(func.callSites.map(site => site.position.startLine), [3, 3, 4, 5]);
   assert.equal(func.callSites[0].args[0].raw, 'GetNpc()');
 });
+
+// #384: each of these regenerated differently from its source.
+const roundTrip = (source) => new SemanticCodeGenerator().generateSemanticModel(parseSemanticModel(source));
+
+test('an if condition written without enclosing parentheses is written back without them (#384)', () => {
+  for (const condition of ['x < 0', '(a) && (b)', '!(a) || (b)']) {
+    const source = `func void F()\n{\n\tif ${condition}\n\t{\n\t\tx = 0;\n\t};\n};\n`;
+    assert.equal(roundTrip(source), source);
+  }
+  const parenthesized = 'func void F()\n{\n\tif (x < 0)\n\t{\n\t\tx = 0;\n\t};\n};\n';
+  assert.equal(roundTrip(parenthesized), parenthesized);
+});
+
+test('a comment keeps its trailing whitespace (#384)', () => {
+  const source = 'func void F()\n{\n\t// note \n\tx = 1;\n\tif (x)\n\t{\n\t\t// inner  \n\t\tx = 2;\n\t};\n};\n';
+  assert.equal(roundTrip(source), source);
+});
+
+test('continuation lines of a multi-line statement keep their source indentation (#384)', () => {
+  const source = `func void F()
+{
+	code = G(a,
+	         b);
+	G(a,
+	  b);
+	if (x
+	    || y)
+	{
+		code = G(a,
+		         b);
+		G(a,
+		  b);
+	};
+};
+`;
+  assert.equal(roundTrip(source), source);
+});

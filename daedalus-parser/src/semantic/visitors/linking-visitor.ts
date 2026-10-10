@@ -36,8 +36,23 @@ import { referenceIdentifier } from '../reference-expression';
 const atLine = <T>(item: T, node: TreeSitterNode): T & SourceLine => {
   const located = item as T & SourceLine;
   located.line = node.startPosition.row + 1;
+  const sourceIndent = multiLineIndent(node);
+  if (sourceIndent) located.sourceIndent = sourceIndent;
   return located;
 };
+
+/** The whitespace a multi-line statement's first line starts with (#384); see SourceLine. */
+function multiLineIndent(node: TreeSitterNode): string | undefined {
+  if (!node.text.includes('\n')) return undefined;
+  let container = node.parent;
+  while (container && container.startIndex === node.startIndex) container = container.parent;
+  if (!container) return undefined;
+  const before = container.text.slice(0, node.startIndex - container.startIndex);
+  const lineStart = before.lastIndexOf('\n');
+  if (lineStart < 0) return undefined;
+  const indent = before.slice(lineStart + 1);
+  return indent && /^[ \t]+$/.test(indent) ? indent : undefined;
+}
 
 export class LinkingVisitor {
   private dialogs: SemanticModel['dialogs'];
@@ -669,9 +684,11 @@ export class LinkingVisitor {
     if (hasComment(conditionNode) || node.namedChildren.some(child => child.type === 'comment')) {
       return null;
     }
-    const conditionText = conditionNode.type === 'parenthesized_expression'
-      ? conditionNode.text.slice(1, -1).trim() : conditionNode.text.trim();
-    return new ConditionalAction(conditionText, thenActions, elseActions || []);
+    const parenthesized = conditionNode.type === 'parenthesized_expression';
+    const conditionText = parenthesized ? conditionNode.text.slice(1, -1).trim() : conditionNode.text.trim();
+    const action = new ConditionalAction(conditionText, thenActions, elseActions || []);
+    if (!parenthesized) action.bareCondition = true;
+    return action;
   }
 
   private parseActionsFromBlock(blockNode: TreeSitterNode): DialogAction[] | null {

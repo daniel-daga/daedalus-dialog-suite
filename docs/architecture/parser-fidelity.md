@@ -337,6 +337,16 @@ CLI help tests), grammar generation, lint and typecheck on fix commit
   under `C_INFO`), indexed into items/npcs/animations by parent as usual;
   extra names carry `declaredWith` like a comma-list variable. The NPC
   editor's reader refuses one: there is no body to edit.
+- Three layout facts survive a save (#384). An `if` condition written
+  without enclosing parentheses (`if x < 0`, `if (a) && (b)`) is
+  `bareCondition` and is written back without them. A comment keeps its
+  trailing whitespace. A multi-line statement's continuation lines keep
+  their indentation relative to the statement: the source line's leading
+  whitespace is `sourceIndent` on the action, and generation strips it before
+  re-indenting, so a tab-indented source round-trips byte for byte and a
+  space-indented one moves its continuation lines with the statement. The
+  corpus treats `sourceIndent` like `line`, and whitespace in a value or a
+  condition like whitespace in a raw action.
 
 Engine semantics were not checked for any of these — the guarantee is source
 fidelity (the regenerated guard has the same truth table), not that the

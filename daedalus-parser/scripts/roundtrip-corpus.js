@@ -139,8 +139,9 @@ function canonicalize(value) {
   const keys = Object.keys(value)
     // `line` is where an action was written, not what it is (#267). The
     // regenerated file formats to its own line numbers, so keeping it in the
-    // signature would report every reflow as action drift.
-    .filter((k) => !['node', 'sourceNode', 'rawNode', 'line'].includes(k))
+    // signature would report every reflow as action drift. `sourceIndent`
+    // (#384) is the same kind of fact: the indentation it was written at.
+    .filter((k) => !['node', 'sourceNode', 'rawNode', 'line', 'sourceIndent'].includes(k))
     .sort();
   for (const key of keys) {
     const v = value[key];
@@ -161,9 +162,16 @@ function normalizeForSemanticSignature(item) {
   if (copy.type === 'Action' && typeof copy.action === 'string') {
     copy.action = normalizeCodeLikeWhitespace(copy.action);
   }
-  if (copy.type === 'Condition' && typeof copy.condition === 'string') {
+  if ((copy.type === 'Condition' || copy.type === 'ConditionalAction') && typeof copy.condition === 'string') {
     copy.condition = normalizeCodeLikeWhitespace(copy.condition);
   }
+  // A multi-line value re-indents with its statement (#384): a space-indented
+  // source regenerates with tabs, and its continuation lines move with it.
+  if (copy.type === 'SetVariableAction' && typeof copy.value === 'string') {
+    copy.value = normalizeCodeLikeWhitespace(copy.value);
+  }
+  if (Array.isArray(copy.thenActions)) copy.thenActions = copy.thenActions.map(normalizeForSemanticSignature);
+  if (Array.isArray(copy.elseActions)) copy.elseActions = copy.elseActions.map(normalizeForSemanticSignature);
 
   return copy;
 }

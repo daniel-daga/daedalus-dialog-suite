@@ -71,4 +71,10 @@ export interface SourceHeader {
 export interface SourceLine {
   callIdentity?: CallIdentity;
   line?: number;
+  /**
+   * Whitespace before a multi-line statement on its first source line (#384).
+   * Its continuation lines carry it too, absolutely; generation strips it so
+   * they are re-indented relative to where the statement is written.
+   */
+  sourceIndent?: string;
 }

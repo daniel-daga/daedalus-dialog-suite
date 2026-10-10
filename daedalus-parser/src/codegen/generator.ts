@@ -14,7 +14,7 @@ import {
   snapshotDialogProperties
 } from '../semantic/semantic-model';
 import { collectReachableFunctions } from '../semantic/cross-references';
-import { indentGeneratedCode } from '../semantic/code-formatting';
+import { continuationIndent, indentGeneratedCode } from '../semantic/code-formatting';
 import { generateActionCode } from '../semantic/action-codegen';
 import { formatNumericValue } from '../semantic/parsers/numeric-literals';
 import { generateDeclarationHeader } from '../semantic/declaration-source';
@@ -581,7 +581,7 @@ export class SemanticCodeGenerator {
       func.actions.forEach(action => {
         const actionCode = this.generateAction(action);
         if (actionCode) {
-          lines.push(...indentGeneratedCode(actionCode, indent).split('\n'));
+          lines.push(...indentGeneratedCode(actionCode, indent, continuationIndent(action)).split('\n'));
         }
       });
     } else {

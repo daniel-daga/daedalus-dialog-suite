@@ -3,7 +3,7 @@ export type { CallIdentity } from './call-identity';
 import { generateCallStatement } from './call-identity';
 import 'reflect-metadata';
 import { Type, plainToInstance, ClassConstructor } from 'class-transformer';
-import { indentGeneratedCode } from './code-formatting';
+import { continuationIndent, indentGeneratedCode } from './code-formatting';
 import { generateActionCode } from './action-codegen';
 import { createNameRecord, resolveCaseInsensitive } from './name-utils';
 import { formatNumericValue } from './parsers/numeric-literals';
@@ -448,7 +448,8 @@ export class CommentAction implements CodeGeneratable {
   }
 
   generateCode(options: CodeGenOptions): string {
-    return options.includeComments === false ? '' : this.text.trimEnd();
+    // Trailing spaces are the source's (#384); only a line break is dropped.
+    return options.includeComments === false ? '' : this.text.replace(/[\r\n]+$/, '');
   }
 
   toDisplayString(): string {
@@ -465,6 +466,11 @@ export class ConditionalAction implements CodeGeneratable {
   public condition: string;
   public thenActions: DialogAction[];
   public elseActions: DialogAction[];
+  /**
+   * The source wrote the condition without enclosing parentheses — `if x < 0`
+   * or `if (a) && (b)` (#384) — so it is written back the same way.
+   */
+  public bareCondition?: boolean;
 
   constructor(condition: string, thenActions: DialogAction[] = [], elseActions: DialogAction[] = []) {
     this.condition = condition;
@@ -476,11 +482,11 @@ export class ConditionalAction implements CodeGeneratable {
     const indentUnit = options.indentUnit || '\t';
     const lines: string[] = [];
 
-    const condition = this.condition.trim();
+    const condition = indentGeneratedCode(this.condition.trim(), '', (this as SourceLine).sourceIndent);
     // Editor-authored headers can end in a line comment. Close on a new line;
     // a // inside a string merely adds harmless whitespace after the expression.
     const closingLine = condition.includes('//') ? '\n' : '';
-    lines.push(`if (${condition}${closingLine})`);
+    lines.push(this.bareCondition && !closingLine ? `if ${condition}` : `if (${condition}${closingLine})`);
     lines.push('{');
     lines.push(...this.renderBranch(this.thenActions, indentUnit, options));
 
@@ -513,7 +519,7 @@ export class ConditionalAction implements CodeGeneratable {
         ...options,
         indentUnit
       });
-      lines.push(...indentGeneratedCode(actionCode, indentUnit).split('\n'));
+      lines.push(...indentGeneratedCode(actionCode, indentUnit, continuationIndent(action as SourceLine & { type?: string })).split('\n'));
     }
 
     return lines;
