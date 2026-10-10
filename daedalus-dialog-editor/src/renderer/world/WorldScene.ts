@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {
-  ROOT_MATRIX, ZEN_TO_THREE_SCALE, threeIndexOrder, type VobExtent,
+  ROOT_MATRIX, ZEN_TO_THREE_SCALE, placeBounds, threeIndexOrder, type VobExtent, type ZenBounds,
 } from 'zen-world';
 import type {
   DecalScene, DrawGroup, InstancedPayload, InstancedVisual, VobIndex, WorldMeshPayload, DecodedTexture,
@@ -9,6 +9,7 @@ import { DecalLayer } from './DecalLayer';
 import { HIDDEN_ATTRIBUTE, SELECTED_ATTRIBUTE } from './instanceAttributes';
 import { VobExtentOverlay } from './VobExtentOverlay';
 import { PortalOutline } from './PortalOutline';
+import { SelectionBox } from './SelectionBox';
 import { VobMarkerLayer } from './VobMarkerLayer';
 
 // Re-exported where they used to be declared: every other reader imports them
@@ -85,6 +86,13 @@ export const MASK_OUTPUT = 'vobMask';
  * selection must not read as one of them.
  */
 const SELECT_COLOR = 'vec3( 1.0, 0.55, 0.12 )';
+
+/**
+ * How a selection is drawn: `outline` is the flag above, painted by the outline
+ * pass and the tint; `box` is `SelectionBox`, Spacer's picture. A choice, not a
+ * replacement — each style draws its own and clears the other.
+ */
+export type SelectionStyle = 'box' | 'outline';
 
 /** How far the body of a selected VOB is pulled towards the colour while the
  *  tint is on. Enough to read at a glance, low enough to leave the texture
@@ -468,6 +476,9 @@ export class WorldScene {
    */
   private readonly extentOverlay = new VobExtentOverlay();
   private readonly portalOutline = new PortalOutline();
+  /** The selected VOBs as world AABBs, while the style is `box`. */
+  private readonly selectionBox = new SelectionBox();
+  private selectionStyle: SelectionStyle = 'outline';
 
   private textures = new Map<string, TextureSlot>();
   private instanceVobIds = new WeakMap<THREE.InstancedMesh, Uint32Array>();
@@ -897,6 +908,7 @@ export class WorldScene {
     // preview leaves the quad where the decal used to be.
     if (this.decalLayer?.setPosition(vob, position) === true) moved = true;
 
+    if (this.selected.includes(vob)) this.drawSelectionBoxes();
     return moved;
   }
 
@@ -944,6 +956,7 @@ export class WorldScene {
       turned = true;
     }
 
+    if (this.selected.includes(vob)) this.drawSelectionBoxes();
     return turned;
   }
 
@@ -1018,6 +1031,8 @@ export class WorldScene {
    */
   setSelectedVobs(vobs: readonly number[]): void {
     this.selected = vobs;
+    this.drawSelectionBoxes();
+    if (this.selectionStyle !== 'outline') vobs = [];
     const touched = new Set<THREE.InstancedMesh>();
 
     for (const { mesh, instance } of this.selectedInstances) {
@@ -1049,6 +1064,50 @@ export class WorldScene {
       const attribute = mesh.geometry.getAttribute(SELECTED_ATTRIBUTE);
       if (attribute) attribute.needsUpdate = true;
     }
+  }
+
+  /** Box or outline from now on, the standing selection redrawn in it. */
+  setSelectionStyle(style: SelectionStyle): void {
+    this.selectionStyle = style;
+    this.setSelectedVobs(this.selected);
+  }
+
+  /** The boxes drawn now, ZenGin min/max — empty unless the style is `box`. */
+  get selectionBoxes(): readonly ZenBounds[] {
+    return this.selectionBox.boxes;
+  }
+
+  /**
+   * The boxes, from the poses as drawn now. One pass over the scene's instance
+   * ids — what `moveVob` already pays per drag frame — and a VOB split across
+   * several meshes is boxed once, since they share its pose. A VOB with no
+   * instance gets none: a marker has no visual to bound.
+   */
+  private drawSelectionBoxes(): void {
+    const boxes: ZenBounds[] = [];
+    if (this.selectionStyle === 'box' && this.selected.length > 0) {
+      const wanted = new Set(this.selected);
+      const matrix = new THREE.Matrix4();
+      for (const mesh of this.instancedMeshes) {
+        const vobIds = this.instanceVobIds.get(mesh);
+        const bounds = this.meshBounds.get(mesh);
+        if (!vobIds || !bounds) continue;
+        for (let i = 0; i < mesh.count; i++) {
+          if (!wanted.delete(vobIds[i])) continue;
+          mesh.getMatrixAt(i, matrix);
+          const e = matrix.elements;
+          boxes.push(placeBounds(
+            bounds as ZenBounds,
+            [e[0], e[4], e[8], e[1], e[5], e[9], e[2], e[6], e[10]],
+            [e[12], e[13], e[14]],
+          ));
+        }
+      }
+    }
+
+    this.selectionBox.show(boxes);
+    if (boxes.length > 0) this.root.add(this.selectionBox.lines);
+    else this.root.remove(this.selectionBox.lines);
   }
 
   /** A VOB's 3x3 as drawn, row-major — what a turn composes onto. Null for a
@@ -1251,6 +1310,7 @@ export class WorldScene {
     this.decalLayer = null;
     this.extentOverlay.dispose();
     this.portalOutline.dispose();
+    this.selectionBox.dispose();
 
     this.geometries = [];
     this.materials = [];

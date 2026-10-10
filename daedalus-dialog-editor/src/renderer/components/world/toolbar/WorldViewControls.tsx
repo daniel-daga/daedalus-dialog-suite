@@ -4,6 +4,7 @@ import {
 } from '@mui/material';
 import Brightness6Icon from '@mui/icons-material/Brightness6';
 import CenterFocusStrongIcon from '@mui/icons-material/CenterFocusStrong';
+import Crop32Icon from '@mui/icons-material/Crop32';
 import CropFreeIcon from '@mui/icons-material/CropFree';
 import GroupsIcon from '@mui/icons-material/Groups';
 import LabelIcon from '@mui/icons-material/Label';
@@ -15,6 +16,7 @@ import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import { MINUTES_PER_DAY, type StateOption } from '../../../routines/routineSchedule';
 import { MAX_EXPOSURE, MIN_EXPOSURE } from '../../../world/WorldScene';
 import type { OutlineMode } from '../../../world/VobOutline';
+import type { SelectionStyle } from '../../../world/WorldScene';
 
 /** Minutes since midnight as `HH:MM` — the routine index's own unit
  *  (level-editor.md §16.19). Moved with the one readout that uses it. */
@@ -57,6 +59,8 @@ export interface WorldViewControlsProps {
   onToggleWaypointNames: () => void;
   outlineMode: OutlineMode;
   onCycleOutlineMode: () => void;
+  selectionStyle: SelectionStyle;
+  onToggleSelectionStyle: () => void;
   exposure: number;
   onExposureChange: (value: number) => void;
   lightPreview: boolean;
@@ -83,7 +87,7 @@ const WorldViewControls: React.FC<WorldViewControlsProps> = ({
   hasWorld, showWaynet, onToggleWaynet, showSpawns, onToggleSpawns,
   spawnTime, onToggleTime, onSpawnTimeChange, spawnState, onSpawnStateChange,
   stateOptions, spawnStateReach, showWaypointNames, onToggleWaypointNames,
-  outlineMode, onCycleOutlineMode,
+  outlineMode, onCycleOutlineMode, selectionStyle, onToggleSelectionStyle,
   exposure, onExposureChange, lightPreview, onToggleLightPreview,
   hiddenClasses, onHiddenClassesChange, classOptions,
 }) => (
@@ -273,6 +277,28 @@ const WorldViewControls: React.FC<WorldViewControlsProps> = ({
           sx={toggleSx}
         >
           {OUTLINE_MODE_ICON[outlineMode]}
+        </ToggleButton>
+      </span>
+    </Tooltip>
+    {/* How a selected VOB is drawn: Spacer's bounding box, or the orange
+        outline above. Beside the outline button because the outline style
+        reads through it — in `Off` the body tint stands in for the line. */}
+    <Tooltip title={`Selection: ${selectionStyle === 'box' ? 'Box' : 'Outline'} — click for ${
+      selectionStyle === 'box' ? 'Outline' : 'Box'
+    }`}
+    >
+      <span>
+        <ToggleButton
+          size="small"
+          value="selection-style"
+          selected={selectionStyle === 'box'}
+          disabled={!hasWorld}
+          onChange={onToggleSelectionStyle}
+          data-testid="world-selection-style-toggle"
+          aria-label={`Selection: ${selectionStyle === 'box' ? 'Box' : 'Outline'}`}
+          sx={toggleSx}
+        >
+          {selectionStyle === 'box' ? <Crop32Icon fontSize="small" /> : <CenterFocusStrongIcon fontSize="small" />}
         </ToggleButton>
       </span>
     </Tooltip>

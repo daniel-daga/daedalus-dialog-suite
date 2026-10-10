@@ -3084,6 +3084,14 @@ draws that exist. `setSelectedVobs` clears by walking only what it last
 switched on, so a click uploads the attribute of the meshes that changed
 rather than all 724.
 
+**The selection style is switchable (2026-10-10).** Besides the outline flag,
+a selection can be drawn as Spacer draws it: a box around each selected VOB,
+`SelectionBox` — one `LineSegments` on layer 0, each box the world AABB of the
+visual placed by the VOB's pose (`placeBounds`, i.e. what a stored `bbox` is).
+`WorldScene.setSelectionStyle` picks one and clears the other; `box` is the
+toolbar default, and the body tint only ever stands in for the *outline*
+style. A VOB with no instance — a marker, a decal — gets no box.
+
 **The gizmo's anchor is the mode's, not the selection's.** Translate stands at
 the centroid; rotate stays on the last VOB picked. That asymmetry is not a wart
 and must not be tidied away: `rotateVobs` turns each VOB about *its own* origin,

@@ -143,6 +143,22 @@ describe('the World bar', () => {
     expect(button).toHaveAccessibleName('Outlines: All');
   });
 
+  it('switches the selection between a box and the outline, box first', async () => {
+    // Spacer draws a selected VOB as its bounding box; the orange outline is
+    // the other reading, kept as a choice rather than replaced.
+    await openWorld();
+
+    const button = screen.getByTestId('world-selection-style-toggle');
+    expect(button).toHaveAccessibleName('Selection: Box');
+    expect(screen.getByTestId('world-toolbar-view')).toContainElement(button);
+
+    fireEvent.click(button);
+    expect(button).toHaveAccessibleName('Selection: Outline');
+
+    fireEvent.click(button);
+    expect(button).toHaveAccessibleName('Selection: Box');
+  });
+
   it('keeps the outline control in the view group, beside the other view toggles', async () => {
     await openWorld();
 

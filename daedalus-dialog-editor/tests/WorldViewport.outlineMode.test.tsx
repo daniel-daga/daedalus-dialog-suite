@@ -70,7 +70,7 @@ const PAYLOAD: InstancedPayload = {
   },
 };
 
-function props(outlineMode: OutlineMode) {
+function props(outlineMode: OutlineMode, selectionStyle: 'box' | 'outline' = 'outline') {
   return {
     mesh: MESH,
     visuals: PAYLOAD,
@@ -97,6 +97,7 @@ function props(outlineMode: OutlineMode) {
     onMoveWaypoint: () => {},
     paused: false,
     outlineMode,
+    selectionStyle,
   };
 }
 
@@ -151,6 +152,18 @@ describe('WorldViewport — the outline mode', () => {
     expect(mockModes.tints.length).toBeGreaterThan(count);
     expect(mockModes.tints.at(-1)).toBe(true);
 
+    unmount();
+  });
+
+  it('never tints while the selection is a box, which marks it in every mode', () => {
+    const { rerender, unmount } = render(<WorldViewport {...props('off', 'box')} />);
+    expect(mockModes.tints.at(-1)).toBe(false);
+
+    rerender(<WorldViewport {...props('off', 'outline')} />);
+    expect(mockModes.tints.at(-1)).toBe(true);
+
+    rerender(<WorldViewport {...props('off', 'box')} />);
+    expect(mockModes.tints.at(-1)).toBe(false);
     unmount();
   });
 });

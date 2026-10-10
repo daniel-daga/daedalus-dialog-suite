@@ -33,7 +33,7 @@ import { useProjectStore } from '../../store/projectStore';
 import { vobModelOf } from '../../world/vobModel';
 import { snapDelta } from '../../world/snapping';
 import { LiveTileContext } from './WorldAssetGrid';
-import { DEFAULT_EXPOSURE } from '../../world/WorldScene';
+import { DEFAULT_EXPOSURE, type SelectionStyle } from '../../world/WorldScene';
 import WorldViewport, { type GizmoMode, type WorldViewportHandle } from './WorldViewport';
 import WorldSceneTree from './WorldSceneTree';
 import WorldFolderTree from './WorldFolderTree';
@@ -329,6 +329,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    *  nothing saved, and not persisted across a session either — the other view
    *  toggles on this bar are not. */
   const [outlineMode, setOutlineMode] = useState<OutlineMode>('all');
+  /** How a selected VOB is drawn — Spacer's box by default, or the outline. A
+   *  view setting like the outline mode, not persisted. */
+  const [selectionStyle, setSelectionStyle] = useState<SelectionStyle>('box');
   /** The name being typed into the add-waypoint dialog, or null when it is
    *  closed. A name is the whole of what a placed waypoint has to be told —
    *  the position is the terrain point and everything else the binding fixes —
@@ -2024,6 +2027,10 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   }, [spawnTime]);
   /** The Names toggle. */
   const toggleWaypointNames = useCallback(() => setShowWaypointNames((v) => !v), []);
+  const toggleSelectionStyle = useCallback(
+    () => setSelectionStyle((style) => (style === 'box' ? 'outline' : 'box')),
+    [],
+  );
   const cycleOutlineMode = useCallback(() => setOutlineMode((mode) => (
     OUTLINE_MODE_ORDER[(OUTLINE_MODE_ORDER.indexOf(mode) + 1) % OUTLINE_MODE_ORDER.length]
   )), []);
@@ -2078,6 +2085,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         onToggleWaypointNames={toggleWaypointNames}
         outlineMode={outlineMode}
         onCycleOutlineMode={cycleOutlineMode}
+        selectionStyle={selectionStyle}
+        onToggleSelectionStyle={toggleSelectionStyle}
         exposure={exposure}
         onExposureChange={setExposure}
         lightPreview={lightPreview}
@@ -2623,6 +2632,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               lightPreview={lightPreview}
               hiddenVobs={hiddenVobs}
               outlineMode={outlineMode}
+              selectionStyle={selectionStyle}
               selectedExtent={selectedExtent}
               snapGrid={snapGrid}
               snapAngle={(snapAngleDegrees * Math.PI) / 180}

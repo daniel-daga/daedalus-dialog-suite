@@ -835,6 +835,130 @@ describe('WorldScene', () => {
     expect(world.fragmentShader).not.toContain('vVobSelected');
   });
 
+  /** The boxes the selection overlay draws, read back out of its line
+   *  segments: 12 edges × 2 ends per box, reduced to each box's min and max. */
+  function drawnBoxes(scene: WorldScene): number[][] {
+    const lines = scene.root.children.find((child) => child instanceof THREE.LineSegments) as
+      THREE.LineSegments | undefined;
+    if (lines === undefined || !lines.visible) return [];
+    const points = lines.geometry.getAttribute('position').array as Float32Array;
+    const boxes: number[][] = [];
+    for (let start = 0; start < points.length; start += 24 * 3) {
+      const box = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+      for (let at = start; at < start + 24 * 3; at += 3) {
+        for (let axis = 0; axis < 3; axis++) {
+          box[axis] = Math.min(box[axis], points[at + axis]);
+          box[axis + 3] = Math.max(box[axis + 3], points[at + axis]);
+        }
+      }
+      boxes.push(box);
+    }
+    return boxes;
+  }
+
+  test('a selected VOB is drawn as a box: its visual placed by its pose, as a world AABB', () => {
+    // Spacer's picture: the box is the VOB's own extent — what a stored bbox
+    // is — so a turned VOB gets the box around its turned visual, not its
+    // visual's box moved.
+    const scene = new WorldScene();
+    scene.setSelectionStyle('box');
+    scene.setInstancedVisuals({
+      visuals: [visual({
+        count: 2,
+        // VOB 7 a quarter turn about Y (x -> -z), VOB 9 unturned.
+        matrices: new Float32Array([
+          0, 0, 1, 10, 0, 1, 0, 20, -1, 0, 0, 30,
+          1, 0, 0, 40, 0, 1, 0, 50, 0, 0, 1, 60,
+        ]).buffer,
+        bounds: [0, 0, 0, 100, 100, 10],
+      })],
+      stats: {} as never,
+    });
+
+    expect(drawnBoxes(scene)).toEqual([]);
+
+    scene.setSelectedVobs([7, 9]);
+
+    expect(drawnBoxes(scene)).toEqual([
+      [10, 20, -70, 20, 120, 30],
+      [40, 50, 60, 140, 150, 70],
+    ]);
+    const lines = scene.root.children.find((child) => child instanceof THREE.LineSegments)!;
+    // Drawn over the composite with the world's depth, like every overlay, and
+    // never what a click lands on.
+    expect(lines.layers.isEnabled(0)).toBe(true);
+    expect(lines.layers.isEnabled(WORLD_LAYER)).toBe(false);
+    const hits: THREE.Intersection[] = [];
+    lines.raycast(new THREE.Raycaster(), hits);
+    expect(hits).toEqual([]);
+
+    scene.setSelectedVobs([]);
+    expect(drawnBoxes(scene)).toEqual([]);
+  });
+
+  test('a VOB split across meshes gets one box, and a VOB with no instance gets none', () => {
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({
+      visuals: [visual({ groups: [group({ lights: null }), group({ texture: 'NW_STONE.TGA', lights: null })] })],
+      stats: {} as never,
+    });
+    scene.setSelectionStyle('box');
+
+    scene.setSelectedVobs([7, 4242]);
+
+    expect(drawnBoxes(scene)).toEqual([[10, 20, 30, 110, 120, 30]]);
+  });
+
+  test('the box follows a move, a turn and a structural op', () => {
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    scene.setSelectionStyle('box');
+    scene.setSelectedVobs([9]);
+
+    scene.moveVob(9, [0, 0, 0]);
+    expect(drawnBoxes(scene)).toEqual([[0, 0, 0, 100, 100, 0]]);
+
+    // A quarter turn about Z: x -> y, y -> -x.
+    scene.rotateVob(9, [0, -1, 0, 1, 0, 0, 0, 0, 1]);
+    expect(drawnBoxes(scene)).toEqual([[-100, 0, 0, 0, 100, 0]]);
+
+    // The op renumbered the slots and moved VOB 9; the box goes with it.
+    scene.updateInstancedVisuals({
+      visuals: [visual({
+        count: 1,
+        matrices: new Float32Array([1, 0, 0, 5, 0, 1, 0, 5, 0, 0, 1, 5]).buffer,
+        vobIds: new Uint32Array([9]).buffer,
+        groups: [],
+      })],
+      stats: {} as never,
+    });
+    expect(drawnBoxes(scene)).toEqual([[5, 5, 5, 105, 105, 5]]);
+  });
+
+  test('the selection style picks the box or the outline flag, never both', () => {
+    // Switchable: the box is Spacer's picture, the outline flag is what the
+    // outline pass paints orange. Each style draws its own and clears the other.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], stats: {} as never });
+    const flags = () => [...(scene.instancedMeshes[0].geometry.getAttribute('instanceSelected').array as Float32Array)];
+
+    // The outline is the default, so a scene nobody configures draws what it
+    // always drew.
+    scene.setSelectedVobs([9]);
+    expect(flags()).toEqual([0, 1]);
+    expect(drawnBoxes(scene)).toEqual([]);
+
+    // Switching re-applies the standing selection rather than waiting for the
+    // next click.
+    scene.setSelectionStyle('box');
+    expect(flags()).toEqual([0, 0]);
+    expect(drawnBoxes(scene)).toEqual([[40, 50, 60, 140, 150, 60]]);
+
+    scene.setSelectionStyle('outline');
+    expect(flags()).toEqual([0, 1]);
+    expect(drawnBoxes(scene)).toEqual([]);
+  });
+
   test('VOB materials write the outline mask and the world mesh writes an empty one', () => {
     // "A VOB is hard to tell from the world mesh" (2026-08-27), and the rim
     // term that answered it drew nothing a human could see (§16.12): a flat

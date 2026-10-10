@@ -136,6 +136,7 @@ function props(overrides: Record<string, unknown> = {}) {
     snapAngle: 0,
     onSelectWaypoint: () => {},
     onMoveWaypoint: () => {},
+    selectionStyle: 'outline' as const,
     ...overrides,
   };
 }
@@ -177,6 +178,31 @@ describe('WorldViewport — the selection is visible on the VOBs themselves', ()
     const { rerender, unmount } = render(<WorldViewport {...props({ selection: [7] })} />);
     rerender(<WorldViewport {...props({ selection: [7] })} />);
     expect(window.__worldViewport!.selectedInstances()).toEqual([1, 0]);
+    unmount();
+  });
+});
+
+describe('WorldViewport — the selection as a box', () => {
+  beforeEach(() => {
+    (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
+      observe() {}
+      disconnect() {}
+    };
+  });
+
+  it('boxes the selected VOBs in place of the outline flag, and follows the switch', () => {
+    // VOB 7 at [10, 20, 30] and VOB 9 at [40, 50, 60], visual bounds
+    // [0, 0, 0, 100, 100, 0].
+    const { rerender, unmount } = render(
+      <WorldViewport {...props({ selection: [7, 9], selectionStyle: 'box' })} />,
+    );
+    expect(window.__worldViewport!.selectionBoxes())
+      .toEqual([[10, 20, 30, 110, 120, 30], [40, 50, 60, 140, 150, 60]]);
+    expect(window.__worldViewport!.selectedInstances()).toEqual([0, 0]);
+
+    rerender(<WorldViewport {...props({ selection: [7, 9], selectionStyle: 'outline' })} />);
+    expect(window.__worldViewport!.selectionBoxes()).toEqual([]);
+    expect(window.__worldViewport!.selectedInstances()).toEqual([1, 1]);
     unmount();
   });
 });

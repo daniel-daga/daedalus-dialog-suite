@@ -19,7 +19,7 @@ import { RoutineOverlay } from '../../world/RoutineOverlay';
 import { TerrainMarker, PIVOT_COLOR, PIVOT_SIZE } from '../../world/TerrainMarker';
 import { ScatterBrush } from '../../world/ScatterBrush';
 import {
-  SELECTED_ATTRIBUTE, textureCacheFor, type TextureCache, type WorldScene,
+  SELECTED_ATTRIBUTE, textureCacheFor, type SelectionStyle, type TextureCache, type WorldScene,
 } from '../../world/WorldScene';
 import { type OutlineMode } from '../../world/VobOutline';
 import { BvhBuilder } from '../../world/BvhBuilder';
@@ -84,6 +84,9 @@ declare global {
        *  flattened (§16.24 1). There is no picture to look at without a GPU, and
        *  this is the buffer the shader reads. */
       selectedInstances: () => number[];
+      /** The boxes the scene draws around the selection while the style is
+       *  `box`, ZenGin min/max. */
+      selectionBoxes: () => number[][];
       /** Report a click that hit a waypoint in the waynet overlay. It stands in
        *  for `pickWaypoint`'s projection and nothing else. */
       pickWaypoint: (waypoint: number) => void;
@@ -311,6 +314,12 @@ export interface WorldViewportProps {
    */
   outlineMode: OutlineMode;
   /**
+   * How a selected VOB is drawn: a box around it (Spacer's picture), or the
+   * orange outline. Optional for the reason `lightPreview` is; `box` when left
+   * out, which is the surface's default too.
+   */
+  selectionStyle?: SelectionStyle;
+  /**
    * The grid step a drag is quantised to, in **ZenGin centimetres**, or 0 for a
    * free-form drag.
    *
@@ -502,6 +511,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   showWaypointNames, loadTexture, onTextureFailures, onCameraSlot, onPick, onVobContextMenu, onCancelArmed,
   selection, onTranslateSelection, gizmoMode, onRotateSelection, membersOf, appliedOps,
   selectedWaypoint, terrainPoint, exposure, hiddenVobs, outlineMode, snapGrid, snapAngle,
+  selectionStyle = 'box',
   selectedExtent = null,
   lightPreview = false,
   scatterRadius, onScatterStroke,
@@ -1285,6 +1295,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       selectedInstances: () => world.instancedMeshes.flatMap((instanced) => [
         ...(instanced.geometry.getAttribute(SELECTED_ATTRIBUTE).array as Float32Array),
       ]),
+      selectionBoxes: () => world.selectionBoxes.map((box) => [...box]),
       cameraTarget: () => threeToZen(controls.target.toArray() as [number, number, number]),
       cameraPosition: () => threeToZen(camera.position.toArray() as [number, number, number]),
       // Reports the marker that is actually *in the scene*, not merely the
@@ -1567,12 +1578,12 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     viewportRef.current?.outline.setMode(outlineMode);
   }, [outlineMode]);
 
-  // The body tint carries a selection only while no line does (#362). On
-  // `mesh`, like the brightness, because it is the scene's uniform and a new
-  // scene starts untinted.
+  // The body tint carries an outline-style selection only while no line does
+  // (#362); a box marks it in every mode. On `mesh`, like the brightness,
+  // because it is the scene's uniform and a new scene starts untinted.
   useEffect(() => {
-    sceneRef.current?.setSelectionTint(outlineMode === 'off');
-  }, [outlineMode, mesh]);
+    sceneRef.current?.setSelectionTint(selectionStyle === 'outline' && outlineMode === 'off');
+  }, [outlineMode, selectionStyle, mesh]);
 
   // Per-class visibility, on `mesh` because a new scene draws every instance
   // until it is told otherwise, and on `visuals` because a structural op moves
@@ -1587,8 +1598,9 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   // or about a selected VOB whose gizmo is off screen. `mesh`/`visuals` for the
   // reason the hidden classes take them.
   useEffect(() => {
+    sceneRef.current?.setSelectionStyle(selectionStyle);
     sceneRef.current?.setSelectedVobs(selection);
-  }, [selection, mesh, visuals]);
+  }, [selection, selectionStyle, mesh, visuals]);
 
   // The selected VOB's reach (architecture §7). On `mesh`/`visuals` for the reason the
   // two effects above take them, and on `appliedOps` as well: the radius is a field
