@@ -270,3 +270,53 @@ test('legacy JSON with a quoted constant hydrates to its contents; a quoted expr
   assert.equal(model.constants.JOINED.value, '"a" + "b"');
   assert.ok(!model.constants.JOINED.valueIsLiteral);
 });
+
+// #383: the original compiler accepts a comma list in one declaration — the
+// shared-type form `var int a, b;` (retail C_ITEM, Ikarus engine classes) and
+// the repeated form `var int a, var int b;` (LeGo). Every name is a symbol;
+// the statement is written back as one.
+test('a comma-separated global declaration declares every name and round-trips as one statement (#383)', () => {
+  const { SemanticCodeGenerator } = require('../dist/codegen/generator');
+  const source = `var int MIS_A, MIS_B;
+VAR INT hp,hp_max;
+var int l0, var string l1;
+`;
+
+  const model = parseSemanticModel(source);
+  assert.equal(model.hasErrors, false, 'Should parse without errors');
+
+  assert.deepEqual(
+    Object.keys(model.variables).map((name) => [name, model.variables[name].type]),
+    [['MIS_A', 'int'], ['MIS_B', 'int'], ['hp', 'INT'], ['hp_max', 'INT'], ['l0', 'int'], ['l1', 'string']]
+  );
+
+  const generator = new SemanticCodeGenerator();
+  assert.equal(generator.generateSemanticModel(model), source);
+
+  // Without a declaration order the statement is still written once, not once per name.
+  delete model.declarationOrder;
+  assert.equal(generator.generateSemanticModel(model).trim(), source.trim());
+});
+
+test('a comma-separated declaration parses in a class body and a function body (#383)', () => {
+  const source = `class C_Test
+{
+	VAR STRING  name,nameID;
+	var int minLow, maxHigh;         //zREAL
+};
+
+func void Test()
+{
+	var int a, b;
+	var int l0, var int l1, var int l2;
+	a = 1;
+};
+`;
+
+  const model = parseSemanticModel(source);
+  assert.equal(model.hasErrors, false, 'Should parse without errors');
+  assert.deepEqual(Object.keys(model.variables || {}), [], 'Locals and class members are not globals');
+
+  const { SemanticCodeGenerator } = require('../dist/codegen/generator');
+  assert.equal(new SemanticCodeGenerator().generateSemanticModel(model), source);
+});

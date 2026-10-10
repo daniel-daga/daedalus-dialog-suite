@@ -411,6 +411,20 @@ export class DeclarationVisitor {
       }
       this.semanticModel.variables[name] = variable;
       this.semanticModel.declarationOrder?.push({ type: 'variable', name });
+
+      // `var int a, b;` / `var int a, var string b;` (#383): every further
+      // name is a variable too, written by the first one's sourceText.
+      for (const declarator of node.namedChildren) {
+        if (declarator.type !== 'variable_declarator') continue;
+        const declaratorName = declarator.childForFieldName('name');
+        if (!declaratorName) continue;
+        const declaratorType = declarator.childForFieldName('type')?.text ?? type;
+        const declared = new GlobalVariable(declaratorName.text, declaratorType);
+        declared.declaredWith = name;
+        declared.position = variable.position;
+        declared.range = variable.range;
+        this.semanticModel.variables[declared.name] = declared;
+      }
     }
   }
 }

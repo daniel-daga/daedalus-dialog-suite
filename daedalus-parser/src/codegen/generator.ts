@@ -32,6 +32,12 @@ interface GlobalSymbol {
   leadingComments?: string[];
 }
 
+/** `b` of `var int a, b;` (#383) is written by `a`'s statement while `a` exists. */
+function isDeclaredWithAnother(model: SemanticModel, name: string): boolean {
+  const declaredWith = model.variables?.[name]?.declaredWith;
+  return declaredWith !== undefined && model.variables?.[declaredWith] !== undefined;
+}
+
 export interface CodeGeneratorOptions {
   indentSize?: number;
   indentChar?: '\t' | ' ';
@@ -87,6 +93,7 @@ export class SemanticCodeGenerator {
       globalLeading.push(this.generateGlobalDeclaration('constant', model.constants![name]));
     }
     for (const name in model.variables || {}) {
+      if (isDeclaredWithAnother(model, name)) continue;
       globalLeading.push(this.generateGlobalDeclaration('variable', model.variables![name]));
     }
     if (globalLeading.length > 0) {
@@ -236,7 +243,7 @@ export class SemanticCodeGenerator {
       }
     }
     for (const name in model.variables || {}) {
-      if (!emittedGlobals.has(`variable:${name}`)) {
+      if (!emittedGlobals.has(`variable:${name}`) && !isDeclaredWithAnother(model, name)) {
         leftoverLeading.push(this.generateGlobalDeclaration('variable', model.variables![name]));
       }
     }

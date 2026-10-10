@@ -176,6 +176,12 @@ export class GlobalVariable {
   public type: string;
   /** Verbatim declaration text, used for faithful re-emission. */
   public sourceText?: string;
+  /**
+   * Declared by another variable's statement (`var int a, b;`, #383): the
+   * name of the variable whose `sourceText` writes this one. Not emitted on
+   * its own while that variable exists.
+   */
+  public declaredWith?: string;
   public leadingComments?: string[];
   public filePath?: string;
   public position?: {

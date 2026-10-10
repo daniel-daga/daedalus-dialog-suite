@@ -57,11 +57,32 @@ module.exports = grammar({
         field('size', $._expression),
         ']'
       )),
-      optional(seq(
-        '=',
-        field('value', choice($._expression, $.array_initialization))
+      optional(choice(
+        seq(
+          '=',
+          field('value', choice($._expression, $.array_initialization))
+        ),
+        // `var int a, b;` and `var int a, var int b;` (#383): the original
+        // compiler accepts a comma list; each further name is a declarator.
+        repeat1(seq(',', field('declarator', $.variable_declarator))),
       )),
       ';',
+    ),
+
+    variable_declarator: $ => seq(
+      optional(seq(
+        field('keyword', choice(
+          alias(/[cC][oO][nN][sS][tT]/, 'const'),
+          alias(/[vV][aA][rR]/, 'var'),
+        )),
+        field('type', $._type),
+      )),
+      field('name', $.identifier),
+      optional(seq(
+        '[',
+        field('size', $._expression),
+        ']'
+      )),
     ),
 
     array_initialization: $ => seq(

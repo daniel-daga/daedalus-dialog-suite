@@ -321,6 +321,12 @@ CLI help tests), grammar generation, lint and typecheck on fix commit
   only, and a cached case-insensitive miss is refreshed after model mutation.
 - NPC edits insert inside the instance body even when the anchor and closing
   brace share a line; compound assignments (`+=`) are not field sets.
+- A comma list in one declaration — `var int a, b;` and `var int a, var
+  string b;` (#383) — parses anywhere a declaration does. At global scope
+  every name is a `GlobalVariable`; the ones after the first carry
+  `declaredWith` (the first name), whose `sourceText` writes the whole
+  statement, so a save emits it once, as written. A `const` list keeps its
+  text but records only the first name.
 
 Engine semantics were not checked for any of these — the guarantee is source
 fidelity (the regenerated guard has the same truth table), not that the
