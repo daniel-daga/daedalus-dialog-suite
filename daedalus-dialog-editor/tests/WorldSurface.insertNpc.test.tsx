@@ -73,7 +73,7 @@ const STARTUP_MODEL: SemanticModel = {
 
 const api = {
   ...makeWorldEditorApi(),
-  readFile: jest.fn(async (_path: string): Promise<string> => ''),
+  readFileVersioned: jest.fn(async (_path: string): Promise<{ content: string; version: string }> => ({ content: '', version: 'v0' })),
   parseSource: jest.fn(async (): Promise<SemanticModel> => STARTUP_MODEL),
 };
 
@@ -190,7 +190,7 @@ describe('Insert NPC here…', () => {
     await waitFor(() => expect(
       useProjectStore.getState().parsedFiles.get(STARTUP_PATH)?.semanticModel.functions.STARTUP_NewWorld.actions,
     ).toEqual([{ type: 'InsertNpcAction', npcInstance: 'PC_Thief', spawnPoint: 'FP_NEW_3' }]));
-    expect(api.readFile).not.toHaveBeenCalled();
+    expect(api.readFileVersioned).not.toHaveBeenCalled();
     expect(api.parseSource).not.toHaveBeenCalled();
     // The seed model itself is left alone.
     expect(STARTUP_MODEL.functions.STARTUP_NewWorld.actions).toEqual([]);
@@ -305,7 +305,7 @@ describe('Insert NPC here…', () => {
     seedProject();
     const source = 'func void STARTUP_NewWorld() { Wld_InsertNpc (PC_Thief, "FP_NEW_3"); };';
     const reparsed: SemanticModel = { ...STARTUP_MODEL, constants: {} };
-    api.readFile.mockResolvedValueOnce(source);
+    api.readFileVersioned.mockResolvedValueOnce({ content: source, version: 'v1' });
     api.parseSource.mockResolvedValueOnce(reparsed);
     useFileStore.setState({ openFiles: new Map([[STARTUP_PATH, openFileState(false)]]) } as never);
     await openWorld();
@@ -313,14 +313,14 @@ describe('Insert NPC here…', () => {
 
     await confirmInsert('PC_Thief');
 
-    await waitFor(() => expect(api.readFile).toHaveBeenCalledWith(STARTUP_PATH));
+    await waitFor(() => expect(api.readFileVersioned).toHaveBeenCalledWith(STARTUP_PATH));
     // The slot is reused, the way an external change reloads it: the model is
     // the reparse (ids assigned, so not the same object), the source is what
     // was read, and the file is clean.
     await waitFor(() => expect(useFileStore.getState().openFiles.get(STARTUP_PATH)).toMatchObject({
       originalCode: source, isDirty: false, semanticModel: { constants: {} },
     }));
-    expect(api.readFile.mock.invocationCallOrder[0]).toBeGreaterThan(api.appendInsertNpc.mock.invocationCallOrder[0]);
+    expect(api.readFileVersioned.mock.invocationCallOrder[0]).toBeGreaterThan(api.appendInsertNpc.mock.invocationCallOrder[0]);
   });
 
   describe('instance existence is a warning, never a refusal', () => {
@@ -407,6 +407,22 @@ describe('Insert NPC here…', () => {
       expect(warning()).toBeNull();
       expect(screen.getByTestId('world-insert-npc-confirm')).toHaveTextContent(/^Insert$/);
     });
+  });
+
+  // The toolbar is memoised and its callbacks are stable forwarders, so a
+  // selected waypoint — state the toolbar never receives as a prop — has to
+  // reach the click through the latest handler, not the one from the render
+  // the toolbar last took.
+  it('opens at the selected waypoint from the toolbar button', async () => {
+    seedProject();
+    await openWorld();
+    fireEvent.click(screen.getByTestId('stub-pick-waypoint'));
+    await screen.findByTestId('world-waypoint-panel');
+    fireEvent.click(screen.getByTestId('world-add-npc'));
+    await screen.findByTestId('world-insert-npc-dialog');
+
+    expect(waypointField().value).toBe('WP_MIDDLE');
+    expect(waypointField()).toBeDisabled();
   });
 
   it('spawns at the selected waypoint from its panel, with no waypoint op', async () => {

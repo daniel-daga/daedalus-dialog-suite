@@ -9,11 +9,11 @@ jest.mock('../src/renderer/components/InlineChoiceEditor', () => ({
 }));
 
 describe('ChoiceRenderer Race Condition', () => {
-  let handleDelete!: jest.Mock;
+  let handleDelete: jest.Mock;
   let flushUpdate: jest.Mock;
-  let handleKeyDown!: jest.Mock;
-  let onRenameFunction!: jest.Mock;
-  let onNavigateToFunction!: jest.Mock;
+  let handleKeyDown: jest.Mock;
+  let onRenameFunction: jest.Mock;
+  let onNavigateToFunction: jest.Mock;
 
   const mockSemanticModel = {
     functions: {
@@ -23,7 +23,8 @@ describe('ChoiceRenderer Race Condition', () => {
     }
   };
 
-  const baseProps: any = {
+  // A function, so each test's props carry the mocks its own beforeEach made.
+  const baseProps = (): any => ({
     action: {
       type: 'choice',
       text: 'Test choice',
@@ -35,7 +36,7 @@ describe('ChoiceRenderer Race Condition', () => {
     dialogContextName: 'npc',
     onNavigateToFunction,
     onRenameFunction
-  };
+  });
 
   beforeEach(() => {
     handleDelete = jest.fn();
@@ -61,7 +62,7 @@ describe('ChoiceRenderer Race Condition', () => {
 
     render(
       <ChoiceRenderer
-        {...baseProps}
+        {...baseProps()}
         handleUpdate={debouncedHandleUpdate}
         flushUpdate={flushUpdate}
       />
@@ -101,7 +102,7 @@ describe('ChoiceRenderer Race Condition', () => {
 
   it('should handle rapid typing and blur without data loss', async () => {
     const user = userEvent.setup();
-    let _currentActionState = { ...baseProps.action };
+    let _currentActionState = { ...baseProps().action };
 
     // Mock handleUpdate that updates local state
     const handleUpdateMock = jest.fn((updatedAction) => {
@@ -115,7 +116,7 @@ describe('ChoiceRenderer Race Condition', () => {
 
     render(
       <ChoiceRenderer
-        {...baseProps}
+        {...baseProps()}
         handleUpdate={handleUpdateMock}
         flushUpdate={flushUpdateMock}
       />
@@ -144,7 +145,7 @@ describe('ChoiceRenderer Race Condition', () => {
     const user = userEvent.setup();
 
     // Track the action state
-    let actionState = { ...baseProps.action };
+    let actionState = { ...baseProps().action };
 
     const handleUpdateMock = jest.fn((updatedAction) => {
       // Simulate parent eventually updating (but with delay)
@@ -155,7 +156,7 @@ describe('ChoiceRenderer Race Condition', () => {
 
     render(
       <ChoiceRenderer
-        {...baseProps}
+        {...baseProps()}
         action={actionState}
         handleUpdate={handleUpdateMock}
         flushUpdate={flushUpdate}

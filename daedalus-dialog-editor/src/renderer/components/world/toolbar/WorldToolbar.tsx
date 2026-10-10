@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo, useLayoutEffect, useRef } from 'react';
 import { Box, Paper, Stack } from '@mui/material';
 import WorldFileControls, { type WorldFileControlsProps } from './WorldFileControls';
 import WorldAddControls, { type WorldAddControlsProps } from './WorldAddControls';
@@ -32,6 +32,10 @@ import WorldViewControls, { type WorldViewControlsProps } from './WorldViewContr
  *
  * All state stays in `WorldSurface`; this and its four children are pure
  * props-down/callbacks-up.
+ *
+ * It is memoised, and `WorldSurface` hands it its callbacks through
+ * `useStableCallbacks`: rendered on every surface commit, it was two thirds
+ * of the surface's commit time (#359).
  */
 export type WorldToolbarProps =
   WorldFileControlsProps & WorldAddControlsProps & WorldEditControlsProps & WorldViewControlsProps;
@@ -72,4 +76,28 @@ const WorldToolbar: React.FC<WorldToolbarProps> = (props) => (
   </Paper>
 );
 
-export default WorldToolbar;
+export default memo(WorldToolbar);
+
+/**
+ * `props` with every function swapped for a forwarder that keeps its identity
+ * across renders and calls the latest function of that name — so a memoised
+ * child skips the commits that only re-created its callbacks, and a click
+ * still runs against the state of the last commit. The forwarders are for
+ * event handlers: one called during render would see the previous commit's.
+ */
+export function useStableCallbacks<T extends object>(props: T): T {
+  const latest = useRef(props);
+  useLayoutEffect(() => { latest.current = props; });
+  const forwarders = useRef(new Map<string, (...args: unknown[]) => unknown>());
+  const stable = { ...props } as Record<string, unknown>;
+  for (const [key, value] of Object.entries(props)) {
+    if (typeof value !== 'function') continue;
+    let forward = forwarders.current.get(key);
+    if (!forward) {
+      forward = (...args) => (latest.current as Record<string, (...a: unknown[]) => unknown>)[key](...args);
+      forwarders.current.set(key, forward);
+    }
+    stable[key] = forward;
+  }
+  return stable as T;
+}

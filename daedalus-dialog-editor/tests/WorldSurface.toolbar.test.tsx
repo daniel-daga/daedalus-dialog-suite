@@ -39,6 +39,24 @@ jest.mock('../src/renderer/components/world/WorldViewport', () => {
   };
 });
 
+// Counts the view group's renders, to see whether the toolbar re-renders on a
+// WorldSurface commit that changed none of its props.
+const viewControlRenders = { count: 0 };
+jest.mock('../src/renderer/components/world/toolbar/WorldViewControls', () => {
+  const ReactActual = jest.requireActual('react') as typeof React;
+  const actual = jest.requireActual('../src/renderer/components/world/toolbar/WorldViewControls') as {
+    default: React.ComponentType<Record<string, unknown>>;
+  };
+  return {
+    ...actual,
+    __esModule: true,
+    default: (props: Record<string, unknown>) => {
+      viewControlRenders.count += 1;
+      return ReactActual.createElement(actual.default, props);
+    },
+  };
+});
+
 const api = makeWorldEditorApi();
 
 async function openWorld() {
@@ -165,6 +183,24 @@ describe('the World bar GMBT quick test (§16.29)', () => {
     await waitFor(() => expect(api.startGmbtQuickTest).toHaveBeenCalledTimes(1));
   });
 
+});
+
+// The toolbar is ~1,100 lines of MUI and was re-rendered by every WorldSurface
+// commit, because it took ~20 fresh inline callbacks: two thirds of the
+// surface's commit time in jsdom (#359). A commit that changes none of its
+// props must not reach it.
+describe('the World bar re-render', () => {
+  it('skips a WorldSurface commit that changes none of its props', async () => {
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    const before = viewControlRenders.count;
+
+    // One VOB for another: the selection count the toolbar reads stays 1.
+    await act(async () => { useWorldStore.getState().selectVob(0); });
+
+    expect(useWorldStore.getState().selection).toEqual([0]);
+    expect(viewControlRenders.count).toBe(before);
+  });
 });
 
 describe('the World bar undo/redo buttons', () => {

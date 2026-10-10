@@ -57,7 +57,7 @@ import { useAssetCatalog } from './hooks/useAssetCatalog';
 import { useWorldShortcuts } from './hooks/useWorldShortcuts';
 import { spawnNpcBodyRequests } from '../../npc/spawnNpcVisuals';
 import { useWorldEditPipeline } from './hooks/useWorldEditPipeline';
-import WorldToolbar from './toolbar/WorldToolbar';
+import WorldToolbar, { useStableCallbacks } from './toolbar/WorldToolbar';
 import { OUTLINE_MODE_ORDER } from './toolbar/WorldViewControls';
 import WorldStatusStats from './toolbar/WorldStatusStats';
 import type { OutlineMode } from '../../world/VobOutline';
@@ -2046,77 +2046,81 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     [requestDeleteVobs, selection],
   );
 
+  /** Stable callbacks, so the memoised toolbar skips a commit that changed
+   *  none of its values (#359). */
+  const toolbarProps = useStableCallbacks({
+    onOpenWorld: () => void openPicker(),
+    status,
+    hasWorld: summary !== null,
+    onSave: () => setConfirmingSave(true),
+    onSaveAs: () => void saveWorldAs(),
+    unsavedEdits,
+    gmbtConfigured,
+    onQuickTest: () => void startQuickTest(),
+    onPlaceVob: () => openPlaceDialog(FRESH_PLACE),
+    onInsertNpc: () => {
+      ensureWaynetShown();
+      if (selectedWaypoint !== null && waynet !== null) {
+        openInsertNpcAtWaypoint(waynet.names[selectedWaypoint]);
+      } else openInsertNpcForNewWaypoint(suggestedWaypointName());
+    },
+    onAddWaypoint: () => {
+      ensureWaynetShown();
+      setAddingWaypoint(pendingWaypointName ?? suggestedWaypointName());
+      setPendingWaypointName(null);
+    },
+    showWaynet,
+    onToggleWaynet: () => void toggleWaynet(),
+    showSpawns,
+    onToggleSpawns: () => void toggleSpawns(),
+    spawnTime,
+    onToggleTime: toggleSpawnTime,
+    onSpawnTimeChange: setSpawnTime,
+    spawnState,
+    onSpawnStateChange: setSpawnState,
+    stateOptions: stateOptionList,
+    spawnStateReach,
+    showWaypointNames,
+    onToggleWaypointNames: toggleWaypointNames,
+    outlineMode,
+    onCycleOutlineMode: cycleOutlineMode,
+    selectionStyle,
+    onToggleSelectionStyle: toggleSelectionStyle,
+    exposure,
+    onExposureChange: setExposure,
+    lightPreview,
+    onToggleLightPreview: () => setLightPreview((on) => !on),
+    hiddenClasses,
+    onHiddenClassesChange: setHiddenClasses,
+    classOptions,
+    gizmoMode,
+    onGizmoModeChange: setGizmoMode,
+    snapGrid,
+    snapAngleDegrees,
+    onSnapStepChange: handleSnapStepChange,
+    selectionCount: selection.length,
+    onRestOnGround: () => handleDropToGround('rest'),
+    onIntoGround: () => handleDropToGround('into'),
+    onAlignToNormal: handleAlignToNormal,
+    onDuplicate: () => void duplicateSelection(),
+    onDeleteRequest: requestDeleteSelection,
+    historyDepth,
+    onUndo: () => void runHistory('undo'),
+    onRedo: () => void runHistory('redo'),
+    scatterOn,
+    scatterGroundPlacement,
+    onScatterGroundPlacementChange: setScatterGroundPlacement,
+    onScatterToggle: toggleScatter,
+    scatterRadius,
+    scatterSpacing,
+    onScatterRadiusChange: setScatterRadius,
+    onScatterSpacingChange: setScatterSpacing,
+  });
+
   return (
     <LiveTileContext.Provider value={liveTile}>
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <WorldToolbar
-        onOpenWorld={() => void openPicker()}
-        status={status}
-        hasWorld={summary !== null}
-        onSave={() => setConfirmingSave(true)}
-        onSaveAs={() => void saveWorldAs()}
-        unsavedEdits={unsavedEdits}
-        gmbtConfigured={gmbtConfigured}
-        onQuickTest={() => void startQuickTest()}
-        onPlaceVob={() => openPlaceDialog(FRESH_PLACE)}
-        onInsertNpc={() => {
-          ensureWaynetShown();
-          if (selectedWaypoint !== null && waynet !== null) {
-            openInsertNpcAtWaypoint(waynet.names[selectedWaypoint]);
-          } else openInsertNpcForNewWaypoint(suggestedWaypointName());
-        }}
-        onAddWaypoint={() => {
-          ensureWaynetShown();
-          setAddingWaypoint(pendingWaypointName ?? suggestedWaypointName());
-          setPendingWaypointName(null);
-        }}
-        showWaynet={showWaynet}
-        onToggleWaynet={() => void toggleWaynet()}
-        showSpawns={showSpawns}
-        onToggleSpawns={() => void toggleSpawns()}
-        spawnTime={spawnTime}
-        onToggleTime={toggleSpawnTime}
-        onSpawnTimeChange={setSpawnTime}
-        spawnState={spawnState}
-        onSpawnStateChange={setSpawnState}
-        stateOptions={stateOptionList}
-        spawnStateReach={spawnStateReach}
-        showWaypointNames={showWaypointNames}
-        onToggleWaypointNames={toggleWaypointNames}
-        outlineMode={outlineMode}
-        onCycleOutlineMode={cycleOutlineMode}
-        selectionStyle={selectionStyle}
-        onToggleSelectionStyle={toggleSelectionStyle}
-        exposure={exposure}
-        onExposureChange={setExposure}
-        lightPreview={lightPreview}
-        onToggleLightPreview={() => setLightPreview((on) => !on)}
-        hiddenClasses={hiddenClasses}
-        onHiddenClassesChange={setHiddenClasses}
-        classOptions={classOptions}
-        gizmoMode={gizmoMode}
-        onGizmoModeChange={setGizmoMode}
-        snapGrid={snapGrid}
-        snapAngleDegrees={snapAngleDegrees}
-        onSnapStepChange={handleSnapStepChange}
-        selectionCount={selection.length}
-        onRestOnGround={() => handleDropToGround('rest')}
-        onIntoGround={() => handleDropToGround('into')}
-        onAlignToNormal={handleAlignToNormal}
-        onDuplicate={() => void duplicateSelection()}
-        onDeleteRequest={requestDeleteSelection}
-        historyDepth={historyDepth}
-        onUndo={() => void runHistory('undo')}
-        onRedo={() => void runHistory('redo')}
-        scatterOn={scatterOn}
-        scatterGroundPlacement={scatterGroundPlacement}
-        onScatterGroundPlacementChange={setScatterGroundPlacement}
-        onScatterToggle={toggleScatter}
-        scatterRadius={scatterRadius}
-        scatterSpacing={scatterSpacing}
-        onScatterRadiusChange={setScatterRadius}
-        onScatterSpacingChange={setScatterSpacing}
-      />
+      <WorldToolbar {...toolbarProps} />
 
       {status === 'error' && (
         <Alert severity="error" square data-testid="world-error">{error}</Alert>
