@@ -430,6 +430,10 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    * rendered, and a re-render on open would be one nobody asked for.
    */
   const openGeneration = useRef(0);
+  // Unmounting ends the session the same way a new open does: `endWorldSession`
+  // remounts the surface with the next project, and anything the old one still
+  // has in flight must land nowhere (#381).
+  useEffect(() => () => { openGeneration.current += 1; }, []);
 
   /** Uppercased instance → the `visual` its declaration assigns, read off
    *  the instance's verbatim source (§16.26 row 2): the semantic model keeps
@@ -489,7 +493,12 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     // new world has nothing to be stale about yet. The generation goes with it:
     // an edit still in flight belongs to the world being left behind.
     useWorldStore.getState().setHasUnsavedEdits(false);
-    openGeneration.current += 1;
+    const generation = ++openGeneration.current;
+    // Every answer below is checked against it: one that lands after a newer
+    // open, or after the surface unmounted with the project (#381 — the close
+    // rejects the pending call with "The world was closed"), belongs to a
+    // session that is gone and must not reach the shared store.
+    const stale = () => openGeneration.current !== generation;
     // And neither are the previous world's *reports*: "Saved to …" standing
     // over a world that was never saved is a lie, and a save error about a file
     // nobody is looking at any more is noise.
@@ -508,6 +517,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
         gameVersion: 'g2',
         projectFilePath: useProjectStore.getState().projectFilePath ?? '',
       });
+      if (stale()) return false;
       openSucceeded(opened);
       // A fresh open starts an empty history in the main process — this is
       // the World bar's undo/redo buttons picking that up rather than
@@ -516,9 +526,14 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
 
       // Requested after the summary, so the scene tree and the load timings are
       // on screen while 31 MB of geometry crosses.
-      setMesh(await window.editorAPI.getWorldMesh());
-      setVisuals(await window.editorAPI.getWorldVisuals());
+      const mesh = await window.editorAPI.getWorldMesh();
+      if (stale()) return false;
+      setMesh(mesh);
+      const visuals = await window.editorAPI.getWorldVisuals();
+      if (stale()) return false;
+      setVisuals(visuals);
     } catch (failure) {
+      if (stale()) return false;
       openFailed(failure instanceof Error ? failure.message : String(failure));
       return true;
     }
@@ -541,8 +556,11 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     // `waynet` null, which the store and the waypoint rule already read as
     // "nothing is known".
     try {
-      setWaynet(await window.editorAPI.getWorldWaynet());
+      const read = await window.editorAPI.getWorldWaynet();
+      if (stale()) return false;
+      setWaynet(read);
     } catch (failure) {
+      if (stale()) return false;
       useWorldStore.getState().editFailed(
         failure instanceof Error ? failure.message : String(failure),
       );
@@ -554,8 +572,11 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     // the store — nothing on this surface draws them, since framing a polygon
     // is deliberately not built.
     try {
-      useWorldStore.getState().portalsLoaded(await window.editorAPI.getWorldPortalFindings());
+      const findings = await window.editorAPI.getWorldPortalFindings();
+      if (stale()) return false;
+      useWorldStore.getState().portalsLoaded(findings);
     } catch (failure) {
+      if (stale()) return false;
       useWorldStore.getState().editFailed(
         failure instanceof Error ? failure.message : String(failure),
       );
@@ -566,8 +587,11 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     // world that opened correctly and has an editor-only extra nobody could
     // read, not a reason to throw away 31 MB of geometry and re-pay the open.
     try {
-      setVobFolders(await window.editorAPI.getVobFolders(worldPath));
+      const folders = await window.editorAPI.getVobFolders(worldPath);
+      if (stale()) return false;
+      setVobFolders(folders);
     } catch (failure) {
+      if (stale()) return false;
       useWorldStore.getState().editFailed(
         failure instanceof Error ? failure.message : String(failure),
       );
