@@ -151,6 +151,8 @@ export class GlobalConstant {
   public valueIsLiteral?: boolean;
   /** Verbatim declaration text, used for faithful re-emission (arrays etc.). */
   public sourceText?: string;
+  /** Declared by another symbol's statement (`const int A = 1, B = 2;`, #383); see GlobalVariable. */
+  public declaredWith?: string;
   public leadingComments?: string[];
   public filePath?: string;
   public position?: {
@@ -177,9 +179,9 @@ export class GlobalVariable {
   /** Verbatim declaration text, used for faithful re-emission. */
   public sourceText?: string;
   /**
-   * Declared by another variable's statement (`var int a, b;`, #383): the
-   * name of the variable whose `sourceText` writes this one. Not emitted on
-   * its own while that variable exists.
+   * Declared by another symbol's statement (`var int a, b;`, #383): the
+   * name of the constant or variable whose `sourceText` writes this one. Not
+   * emitted on its own while that symbol exists.
    */
   public declaredWith?: string;
   public leadingComments?: string[];

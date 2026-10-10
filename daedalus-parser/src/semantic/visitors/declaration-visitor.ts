@@ -346,86 +346,85 @@ export class DeclarationVisitor {
   }
 
   /**
-   * Create GlobalConstant or GlobalVariable from variable declaration node
+   * Create GlobalConstant or GlobalVariable from variable declaration node.
+   *
+   * A comma list (`var int a, b;`, `const int A = 1, B = 2;`, #383) makes one
+   * symbol per name. The first carries the statement's sourceText; the rest
+   * carry `declaredWith`, the first name, and are written by it.
    */
   private createGlobalSymbol(node: TreeSitterNode): void {
     const keywordNode = node.childForFieldName('keyword');
     const typeNode = node.childForFieldName('type');
     const nameNode = node.childForFieldName('name');
-    const valueNode = node.childForFieldName('value');
 
     if (!keywordNode || !typeNode || !nameNode) {
       return;
     }
 
-    const keyword = keywordNode.text.toLowerCase();
-    const type = typeNode.text;
-    const name = nameNode.text;
+    const position = {
+      startLine: node.startPosition.row + 1,
+      startColumn: node.startPosition.column + 1,
+      endLine: node.endPosition.row + 1,
+      endColumn: node.endPosition.column + 1
+    };
+    const range = { startIndex: node.startIndex, endIndex: node.endIndex };
 
+    const head = this.addGlobalSymbol(node, keywordNode.text.toLowerCase(), typeNode.text, nameNode.text);
+    if (!head) return;
+    head.sourceText = node.text;
+    head.leadingComments = [...this.pendingLeadingComments];
+    head.position = position;
+    head.range = range;
+    this.semanticModel.declarationOrder?.push({
+      type: head instanceof GlobalConstant ? 'constant' : 'variable',
+      name: head.name
+    });
+
+    for (const declarator of node.namedChildren) {
+      if (declarator.type !== 'variable_declarator') continue;
+      const declaratorName = declarator.childForFieldName('name');
+      if (!declaratorName) continue;
+      const keyword = declarator.childForFieldName('keyword')?.text.toLowerCase() ?? keywordNode.text.toLowerCase();
+      const type = declarator.childForFieldName('type')?.text ?? typeNode.text;
+      const declared = this.addGlobalSymbol(declarator, keyword, type, declaratorName.text);
+      if (!declared) continue;
+      declared.declaredWith = head.name;
+      declared.position = position;
+      declared.range = range;
+    }
+  }
+
+  private addGlobalSymbol(
+    node: TreeSitterNode,
+    keyword: string,
+    type: string,
+    name: string
+  ): GlobalConstant | GlobalVariable | undefined {
     if (keyword === 'const') {
+      const valueNode = node.childForFieldName('value');
       let value: string | number | boolean = 0;
       const isLiteral = valueNode?.type === 'string';
       if (valueNode) {
         // A string literal's contents; the quotes are syntax, `valueIsLiteral` the kind.
         value = isLiteral ? valueNode.text.slice(1, -1) : parseLiteralOrIdentifier(valueNode);
       }
-
       const constant = new GlobalConstant(name, type, value);
       if (isLiteral) constant.valueIsLiteral = true;
-      constant.sourceText = node.text;
-      constant.leadingComments = [...this.pendingLeadingComments];
-      constant.position = {
-        startLine: node.startPosition.row + 1,
-        startColumn: node.startPosition.column + 1,
-        endLine: node.endPosition.row + 1,
-        endColumn: node.endPosition.column + 1
-      };
-      constant.range = {
-        startIndex: node.startIndex,
-        endIndex: node.endIndex
-      };
-
       if (!this.semanticModel.constants) {
         this.semanticModel.constants = createNameRecord();
       }
       this.semanticModel.constants[name] = constant;
-      this.semanticModel.declarationOrder?.push({ type: 'constant', name });
-
-    } else if (keyword === 'var') {
+      return constant;
+    }
+    if (keyword === 'var') {
       const variable = new GlobalVariable(name, type);
-      variable.sourceText = node.text;
-      variable.leadingComments = [...this.pendingLeadingComments];
-      variable.position = {
-        startLine: node.startPosition.row + 1,
-        startColumn: node.startPosition.column + 1,
-        endLine: node.endPosition.row + 1,
-        endColumn: node.endPosition.column + 1
-      };
-      variable.range = {
-        startIndex: node.startIndex,
-        endIndex: node.endIndex
-      };
-
       if (!this.semanticModel.variables) {
         this.semanticModel.variables = createNameRecord();
       }
       this.semanticModel.variables[name] = variable;
-      this.semanticModel.declarationOrder?.push({ type: 'variable', name });
-
-      // `var int a, b;` / `var int a, var string b;` (#383): every further
-      // name is a variable too, written by the first one's sourceText.
-      for (const declarator of node.namedChildren) {
-        if (declarator.type !== 'variable_declarator') continue;
-        const declaratorName = declarator.childForFieldName('name');
-        if (!declaratorName) continue;
-        const declaratorType = declarator.childForFieldName('type')?.text ?? type;
-        const declared = new GlobalVariable(declaratorName.text, declaratorType);
-        declared.declaredWith = name;
-        declared.position = variable.position;
-        declared.range = variable.range;
-        this.semanticModel.variables[declared.name] = declared;
-      }
+      return variable;
     }
+    return undefined;
   }
 }
 

@@ -320,3 +320,67 @@ func void Test()
   const { SemanticCodeGenerator } = require('../dist/codegen/generator');
   assert.equal(new SemanticCodeGenerator().generateSemanticModel(model), source);
 });
+
+// #383: both reference grammars (DaedalusLanguageServer, DaedalusCompiler)
+// allow every item of a const list its own value, and DaedalusCompiler a var
+// list's items an initializer.
+test('a comma-separated const list declares every constant with its own value (#383)', () => {
+  const { SemanticCodeGenerator } = require('../dist/codegen/generator');
+  const source = `const int A = 1, B = 2;
+const string S1 = "x", S2[2] = {"a", "b"};
+var int v = 1, w;
+`;
+
+  const model = parseSemanticModel(source);
+  assert.equal(model.hasErrors, false, 'Should parse without errors');
+
+  assert.deepEqual(
+    Object.keys(model.constants).map((name) => [name, model.constants[name].value]),
+    [['A', 1], ['B', 2], ['S1', 'x'], ['S2', '{"a", "b"}']]
+  );
+  assert.equal(model.constants.B.declaredWith, 'A');
+  assert.deepEqual(Object.keys(model.variables), ['v', 'w']);
+
+  const generator = new SemanticCodeGenerator();
+  assert.equal(generator.generateSemanticModel(model), source);
+  delete model.declarationOrder;
+  assert.equal(generator.generateSemanticModel(model).trim(), source.trim());
+});
+
+// #383: `@` and `^` continue an identifier but never start one (both
+// reference grammars) — Ikarus's `_@`, `_@s`, `_^`, LeGo's `Foo@`.
+test('identifiers may contain @ and ^ after their first character (#383)', () => {
+  const { SemanticCodeGenerator } = require('../dist/codegen/generator');
+  const source = `class Queue
+{
+	var int x;
+};
+
+instance Queue@(Queue)
+{
+	x = 1;
+};
+
+const int zCView__@zCView = 7322848;
+
+func int _@(var int i)
+{
+	return i;
+};
+
+func void Use()
+{
+	var int p;
+	p = _@(p) + _@s(p);
+	p = new(Queue@);
+	p = p ^ 1;
+};
+`;
+
+  const model = parseSemanticModel(source);
+  assert.equal(model.hasErrors, false, 'Should parse without errors');
+  assert.ok(model.functions['_@'], '_@ is a function');
+  assert.ok(model.instances['Queue@'], 'Queue@ is an instance');
+  assert.ok(model.constants['zCView__@zCView'], 'zCView__@zCView is a constant');
+  assert.equal(new SemanticCodeGenerator().generateSemanticModel(model), source);
+});

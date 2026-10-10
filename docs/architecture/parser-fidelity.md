@@ -321,12 +321,15 @@ CLI help tests), grammar generation, lint and typecheck on fix commit
   only, and a cached case-insensitive miss is refreshed after model mutation.
 - NPC edits insert inside the instance body even when the anchor and closing
   brace share a line; compound assignments (`+=`) are not field sets.
-- A comma list in one declaration — `var int a, b;` and `var int a, var
-  string b;` (#383) — parses anywhere a declaration does. At global scope
-  every name is a `GlobalVariable`; the ones after the first carry
-  `declaredWith` (the first name), whose `sourceText` writes the whole
-  statement, so a save emits it once, as written. A `const` list keeps its
-  text but records only the first name.
+- A comma list in one declaration — `var int a, b;`, `var int a, var
+  string b;`, `const int A = 1, B = 2;`, `var int a = 1, b;` (#383) — parses
+  anywhere a declaration does. At global scope every name is a
+  `GlobalConstant`/`GlobalVariable` with its own value; the ones after the
+  first carry `declaredWith` (the first name), whose `sourceText` writes the
+  whole statement, so a save emits it once, as written.
+- `@` and `^` continue an identifier but never start one (#383; Ikarus's
+  `_@`/`_^`, LeGo's `Foo@`), the rule of the DaedalusLanguageServer and
+  DaedalusCompiler grammars. So `a^b` is one name and `a ^ b` is xor.
 
 Engine semantics were not checked for any of these — the guarantee is source
 fidelity (the regenerated guard has the same truth table), not that the

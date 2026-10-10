@@ -57,15 +57,13 @@ module.exports = grammar({
         field('size', $._expression),
         ']'
       )),
-      optional(choice(
-        seq(
-          '=',
-          field('value', choice($._expression, $.array_initialization))
-        ),
-        // `var int a, b;` and `var int a, var int b;` (#383): the original
-        // compiler accepts a comma list; each further name is a declarator.
-        repeat1(seq(',', field('declarator', $.variable_declarator))),
+      optional(seq(
+        '=',
+        field('value', choice($._expression, $.array_initialization))
       )),
+      // `var int a, b;`, `var int a, var int b;`, `const int A = 1, B = 2;`
+      // (#383): a comma list in one statement; each further name is a declarator.
+      repeat(seq(',', field('declarator', $.variable_declarator))),
       ';',
     ),
 
@@ -82,6 +80,10 @@ module.exports = grammar({
         '[',
         field('size', $._expression),
         ']'
+      )),
+      optional(seq(
+        '=',
+        field('value', choice($._expression, $.array_initialization))
       )),
     ),
 
@@ -249,7 +251,10 @@ module.exports = grammar({
       ')',
     ),
 
-    identifier: $ => prec(-1, /[a-zA-Z_\u0080-\u00FF][a-zA-Z0-9_\u0080-\u00FF]*/), 
+    // `@` and `^` continue an identifier but never start one (#383): Ikarus's
+    // `_@`/`_^`, LeGo's `Foo@`. Same rule as the DaedalusLanguageServer and
+    // DaedalusCompiler grammars, so `a^b` is one name and `a ^ b` is xor.
+    identifier: $ => prec(-1, /[a-zA-Z_\u0080-\u00FF][a-zA-Z0-9_@^\u0080-\u00FF]*/),
 
     number: $ => /\d+(\.\d+)?/,
 

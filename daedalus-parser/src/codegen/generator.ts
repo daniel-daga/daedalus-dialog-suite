@@ -33,9 +33,9 @@ interface GlobalSymbol {
 }
 
 /** `b` of `var int a, b;` (#383) is written by `a`'s statement while `a` exists. */
-function isDeclaredWithAnother(model: SemanticModel, name: string): boolean {
-  const declaredWith = model.variables?.[name]?.declaredWith;
-  return declaredWith !== undefined && model.variables?.[declaredWith] !== undefined;
+function isDeclaredWithAnother(model: SemanticModel, symbol: { declaredWith?: string }): boolean {
+  const head = symbol.declaredWith;
+  return head !== undefined && (model.constants?.[head] !== undefined || model.variables?.[head] !== undefined);
 }
 
 export interface CodeGeneratorOptions {
@@ -90,10 +90,11 @@ export class SemanticCodeGenerator {
       globalLeading.push(this.generateGlobalDeclaration('prototype', model.prototypes![name]));
     }
     for (const name in model.constants || {}) {
+      if (isDeclaredWithAnother(model, model.constants![name])) continue;
       globalLeading.push(this.generateGlobalDeclaration('constant', model.constants![name]));
     }
     for (const name in model.variables || {}) {
-      if (isDeclaredWithAnother(model, name)) continue;
+      if (isDeclaredWithAnother(model, model.variables![name])) continue;
       globalLeading.push(this.generateGlobalDeclaration('variable', model.variables![name]));
     }
     if (globalLeading.length > 0) {
@@ -238,12 +239,12 @@ export class SemanticCodeGenerator {
       }
     }
     for (const name in model.constants || {}) {
-      if (!emittedGlobals.has(`constant:${name}`)) {
+      if (!emittedGlobals.has(`constant:${name}`) && !isDeclaredWithAnother(model, model.constants![name])) {
         leftoverLeading.push(this.generateGlobalDeclaration('constant', model.constants![name]));
       }
     }
     for (const name in model.variables || {}) {
-      if (!emittedGlobals.has(`variable:${name}`) && !isDeclaredWithAnother(model, name)) {
+      if (!emittedGlobals.has(`variable:${name}`) && !isDeclaredWithAnother(model, model.variables![name])) {
         leftoverLeading.push(this.generateGlobalDeclaration('variable', model.variables![name]));
       }
     }
