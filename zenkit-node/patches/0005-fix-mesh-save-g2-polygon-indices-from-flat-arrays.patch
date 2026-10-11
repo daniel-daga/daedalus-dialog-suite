@@ -1,0 +1,23 @@
+diff --git a/src/Mesh.cc b/src/Mesh.cc
+index 0462c4a..c7c803b 100644
+--- a/src/Mesh.cc
++++ b/src/Mesh.cc
+@@ -324,13 +324,15 @@ namespace zenkit {
+ 
+ 				c->write_ubyte(poly.index_count);
+ 				for (auto i = 0u; i < poly.index_count; ++i) {
++					// `poly.index_offset` addresses the flat per-polygon index arrays
++					// load() fills, not the triangulated PolygonList (which drops
++					// portals and other non-renderable polygons and unpacks fans).
+ 					if (version == GameVersion::GOTHIC_1) {
+ 						c->write_ushort(this->polygon_vertex_indices[poly.index_offset + i]);
+-						c->write_uint(this->polygon_feature_indices[poly.index_offset + i]);
+ 					} else {
+-						c->write_uint(this->polygons.vertex_indices[poly.index_offset + i]);
+-						c->write_uint(this->polygons.feature_indices[poly.index_offset + i]);
++						c->write_uint(this->polygon_vertex_indices[poly.index_offset + i]);
+ 					}
++					c->write_uint(this->polygon_feature_indices[poly.index_offset + i]);
+ 				}
+ 			}
+ 		});

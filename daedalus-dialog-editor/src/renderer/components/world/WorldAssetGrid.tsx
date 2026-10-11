@@ -1,0 +1,566 @@
+import React, { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Box, IconButton, Menu, MenuItem, TextField, Typography } from '@mui/material';
+import FolderIcon from '@mui/icons-material/Folder';
+import BrokenImageOutlinedIcon from '@mui/icons-material/BrokenImageOutlined';
+import StarIcon from '@mui/icons-material/Star';
+import StarBorderIcon from '@mui/icons-material/StarBorder';
+import LabelOutlinedIcon from '@mui/icons-material/LabelOutlined';
+import CloseIcon from '@mui/icons-material/Close';
+import { FixedSizeGrid as Grid, type GridChildComponentProps, areEqual } from 'react-window';
+import AutoSizer from 'react-virtualized-auto-sizer';
+import type { VfsEntry } from '../../../shared/worldTypes';
+import { THUMBNAIL_SIZE } from '../../world/ThumbnailRenderer';
+import type { LiveTilePreview } from '../../world/LiveTilePreview';
+import { thumbnailKindOf, type AssetThumbnails, type ThumbnailState } from '../../world/assetThumbnails';
+
+// The Assets panel's tile view (level-editor.md §16.26 row 1) — Spacer's
+// *VOB Bilder* and Spacer.NET's *preview models* as a grid over the same
+// listing the list view shows. Virtualised like the list: a tile asks the
+// queue for its picture when it mounts, so only what is on screen is drawn,
+// and a directory of 300 files costs 300 draws only if all 300 are scrolled
+// past. The same tile serves the favorites and category views ("Wanted on
+// top"), which is where its star and its file-into menu come from.
+
+/** Whether a click on a row or tile marks it for "file many" (#295) rather than
+ *  opening it: Ctrl or Cmd toggles one, Shift marks the run from the last one
+ *  marked — a file manager's gestures. */
+export const markClick = (event: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }) => (
+  event.ctrlKey || event.metaKey || event.shiftKey
+);
+
+export const TILE_WIDTH = THUMBNAIL_SIZE + 16;
+export const TILE_HEIGHT = THUMBNAIL_SIZE + 36;
+
+/** A tile's thumbnail state, subscribed to the queue so an arriving picture
+ *  redraws only that tile. */
+export function useThumbnail(thumbnails: AssetThumbnails, name: string): ThumbnailState | undefined {
+  return useSyncExternalStore(
+    (listener) => thumbnails.subscribe(listener),
+    () => thumbnails.get(name),
+  );
+}
+
+/** The one live render the tiles share, or null where there is none — a
+ *  surface with no world open, and every suite that does not stub it. A
+ *  context rather than a prop because the tile is four components down and
+ *  three of them have no other reason to know about it. */
+export const LiveTileContext = React.createContext<LiveTilePreview | null>(null);
+
+/** How far the pointer travels before a press counts as a turn and not as a
+ *  click — the tile is 96 px, so this is small. */
+const DRAG_SLOP = 4;
+
+export const Thumbnail: React.FC<{ thumbnails: AssetThumbnails; name: string; size?: number }> = ({
+  thumbnails, name, size = THUMBNAIL_SIZE,
+}) => {
+  const state = useThumbnail(thumbnails, name);
+  useEffect(() => { thumbnails.request(name); }, [thumbnails, name]);
+
+  // The still is a frame of a scene, so the tile under the pointer runs the
+  // scene instead (level-editor.md §16.26 row 1). A texture has no geometry
+  // to turn and stays the flat image it correctly is.
+  const live = React.useContext(LiveTileContext);
+  const turnable = live !== null && thumbnailKindOf(name) === 'mesh';
+  const frameRef = useRef<HTMLDivElement | null>(null);
+  const drag = useRef<{ x: number; y: number; turned: boolean } | null>(null);
+  useEffect(() => {
+    const host = frameRef.current;
+    // Unmounting under the pointer — a scroll in a virtualised grid does it
+    // every row — leaves no pointerleave behind it.
+    return () => { if (host !== null) live?.hide(host); };
+  }, [live, name]);
+
+  const turn = !turnable ? {} : {
+    onPointerEnter: () => { void live.show(name, frameRef.current!, size); },
+    onPointerLeave: () => { live.hide(frameRef.current!); },
+    onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return;
+      // Optional, as in `PanelSplitter`: the capture keeps the turn going
+      // when the pointer leaves the 96 px tile, and jsdom implements
+      // neither call.
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      drag.current = { x: event.clientX, y: event.clientY, turned: false };
+      live.beginDrag();
+    },
+    onPointerMove: (event: React.PointerEvent<HTMLDivElement>) => {
+      const from = drag.current;
+      if (from === null) return;
+      const dx = event.clientX - from.x;
+      const dy = event.clientY - from.y;
+      if (Math.abs(dx) > DRAG_SLOP || Math.abs(dy) > DRAG_SLOP) from.turned = true;
+      drag.current = { x: event.clientX, y: event.clientY, turned: from.turned };
+      live.drag(dx, dy);
+    },
+    onPointerUp: (event: React.PointerEvent<HTMLDivElement>) => {
+      if (drag.current === null) return;
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+      live.endDrag();
+      // The capture kept every move on this tile, so a release outside it is
+      // a pointer that has already left.
+      const box = event.currentTarget.getBoundingClientRect();
+      const inside = event.clientX >= box.left && event.clientX <= box.right
+        && event.clientY >= box.top && event.clientY <= box.bottom;
+      if (!inside) live.hide(event.currentTarget);
+    },
+    onClickCapture: (event: React.MouseEvent<HTMLDivElement>) => {
+      const turned = drag.current?.turned ?? false;
+      drag.current = null;
+      // A turn ends in a click the tile must not read as "open me".
+      if (turned) event.stopPropagation();
+    },
+  };
+
+  const frame = {
+    width: size, height: size, display: 'flex', alignItems: 'center', justifyContent: 'center',
+    bgcolor: 'action.hover', borderRadius: 0.5, overflow: 'hidden',
+    position: 'relative', ...(turnable ? { cursor: 'grab' } : {}),
+  };
+  const shared = {
+    ref: frameRef, sx: frame, ...turn,
+    ...(turnable ? { title: 'Drag to turn' } : {}),
+  };
+  if (state?.status === 'ready') {
+    return (
+      <Box {...shared}>
+        <img src={state.dataUrl} alt={name} width={size} height={size} style={{ display: 'block', imageRendering: 'auto' }} />
+      </Box>
+    );
+  }
+  if (state?.status === 'failed') {
+    return (
+      <Box
+        {...shared}
+        data-testid="world-asset-thumb-failed"
+        title="No thumbnail — the binding extracts nothing for this file"
+      >
+        <BrokenImageOutlinedIcon sx={{ color: 'text.disabled' }} />
+      </Box>
+    );
+  }
+  return (
+    <Box {...shared} data-testid="world-asset-thumb-pending">
+      <Typography variant="caption" color="text.disabled">{name.slice(name.lastIndexOf('.') + 1).toUpperCase()}</Typography>
+    </Box>
+  );
+};
+
+/** What a tile can do to the catalogue — undefined when no project sidecar
+ *  is loaded, in which case tiles carry no star and no menu. */
+export interface TileCatalogActions {
+  isFavorite: (name: string) => boolean;
+  onToggleFavorite: (name: string) => void;
+  /** Every category path the merged catalogue has, for the file-into menu. */
+  categoryPaths: readonly string[];
+  onAddToCategory: (path: string, name: string) => void;
+  /** Present only in a category view — a visual the project filed itself
+   *  can be dropped from it; a seed entry is not the project's to drop, and
+   *  `removable` says which is which. */
+  onUnfile?: (name: string) => void;
+  removable?: (name: string) => boolean;
+}
+
+/** What a right-click on an asset can do with it (§16.37 row 4). Undefined
+ *  where there is nothing to place into — every surface with no world open. */
+export interface AssetPlacement {
+  /** Whether a placement can be made of this name — `isPlaceableVisual`. */
+  canPlace: (name: string) => boolean;
+  /** Arm the placement; the next ground click puts it down. */
+  onPlace: (name: string) => void;
+  /** Open the Place VOB dialog prefilled with it, for a name or a parent. */
+  onPlaceWithOptions: (name: string) => void;
+}
+
+/** The place verb as the tile and the browser's list row share it: a context
+ *  menu, a double-click, and Space on a selected one (#366). The verb used to
+ *  live only in the preview panel on the far side of the viewport, in the
+ *  panel that otherwise shows the selected VOB's properties — so it read as
+ *  being about that VOB, and placing from a category read as impossible. */
+export function usePlaceGestures(name: string, placement?: AssetPlacement): {
+  onContextMenu?: (event: React.MouseEvent) => void;
+  menu: React.ReactNode;
+  /** Every click on the row or tile goes through this first. */
+  onClick: (event: React.MouseEvent) => void;
+  onDoubleClick?: () => void;
+  /** Enter opens; Space places what can be placed and opens anything else. */
+  onKeyDown: (event: React.KeyboardEvent, open: () => void) => void;
+} {
+  const [at, setAt] = useState<{ top: number; left: number } | null>(null);
+  // What the first click of a double-click was on. Opening a folder redraws
+  // the list under the pointer before the second click lands, and the
+  // double-click then meant the folder, not the file that took its place.
+  const pressed = useRef<string | null>(null);
+  const onClick = (event: React.MouseEvent) => { if (event.detail === 1) pressed.current = name; };
+  const placeable = placement !== undefined && placement.canPlace(name);
+  const onKeyDown = (event: React.KeyboardEvent, open: () => void) => {
+    // A key on the star or another control inside is that control's.
+    if (event.target !== event.currentTarget) return;
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    // Space scrolls the virtualized list the row is in otherwise.
+    event.preventDefault();
+    if (event.key === ' ' && placeable) placement.onPlace(name);
+    else open();
+  };
+  if (!placeable) return { menu: null, onClick, onKeyDown };
+  return {
+    onClick,
+    onKeyDown,
+    onDoubleClick: () => { if (pressed.current === name) placement.onPlace(name); },
+    onContextMenu: (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setAt({ top: event.clientY, left: event.clientX });
+    },
+    menu: at === null ? null : (
+      <Menu
+        open
+        anchorReference="anchorPosition"
+        anchorPosition={at}
+        onClose={() => setAt(null)}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <MenuItem
+          dense
+          data-testid="world-asset-place-menu"
+          onClick={() => { setAt(null); placement.onPlace(name); }}
+        >
+          Place in world
+        </MenuItem>
+        <MenuItem
+          dense
+          data-testid="world-asset-place-options-menu"
+          onClick={() => { setAt(null); placement.onPlaceWithOptions(name); }}
+        >
+          Place with options…
+        </MenuItem>
+      </Menu>
+    ),
+  };
+}
+
+/** The star, shared by the grid tile and the browser's list row (§16.37 row
+ *  2). One control, so the two views cannot drift on what a favorite looks
+ *  like or on which name it toggles. */
+export const FavoriteStar: React.FC<{ name: string; actions: TileCatalogActions }> = ({ name, actions }) => {
+  const favorite = actions.isFavorite(name);
+  return (
+    <IconButton
+      size="small"
+      aria-label={favorite ? 'Remove from favorites' : 'Add to favorites'}
+      aria-pressed={favorite}
+      data-testid="world-asset-star"
+      onClick={() => actions.onToggleFavorite(name)}
+      sx={{ p: 0.25 }}
+    >
+      {favorite
+        ? <StarIcon sx={{ fontSize: 16, color: 'warning.main' }} />
+        : <StarBorderIcon sx={{ fontSize: 16 }} />}
+    </IconButton>
+  );
+};
+
+/** The file-into menu: every known category, plus a field for a new one. One
+ *  tile's menu and the browser's "file many" menu (#295) are the same menu with
+ *  a different `onFile`. */
+export const FileIntoMenu: React.FC<{
+  anchor: HTMLElement | null; paths: readonly string[]; onFile: (path: string) => void; onClose: () => void;
+}> = ({ anchor, paths, onFile, onClose }) => {
+  const [fresh, setFresh] = useState('');
+  return (
+    <Menu open={anchor !== null} anchorEl={anchor} onClose={onClose}>
+      {paths.map((path) => (
+        <MenuItem
+          key={path}
+          dense
+          data-testid={`world-asset-file-into-${path}`}
+          onClick={() => { onFile(path); onClose(); }}
+        >
+          {path}
+        </MenuItem>
+      ))}
+      <Box sx={{ px: 1.5, py: 0.5 }} onKeyDown={(event) => event.stopPropagation()}>
+        <TextField
+          size="small"
+          variant="standard"
+          placeholder="New category…"
+          value={fresh}
+          onChange={(event) => setFresh(event.target.value)}
+          inputProps={{ 'data-testid': 'world-asset-file-new' }}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' || fresh.trim() === '') return;
+            onFile(fresh.trim());
+            onClose();
+          }}
+        />
+      </Box>
+    </Menu>
+  );
+};
+
+/** What the VOB / MOB facet narrows to (#288). */
+export type AssetRoleFilter = 'all' | 'vob' | 'mob';
+
+/** The VOB / MOB facet (#288) — `assetRole` in `zen-world` says which a visual
+ *  is: an animated model named for an interaction scheme is a MOB, any other
+ *  visual a VOB. Shared by the directory walk and the catalogue views. */
+export const RoleFacet: React.FC<{
+  value: AssetRoleFilter; onChange: (next: AssetRoleFilter) => void; testId: string;
+}> = ({ value, onChange, testId }) => (
+  <TextField
+    select
+    size="small"
+    value={value}
+    onChange={(event) => onChange(event.target.value as AssetRoleFilter)}
+    SelectProps={{ native: true }}
+    inputProps={{ 'data-testid': testId, 'aria-label': 'VOBs or MOBs' }}
+    title="A MOB is an animated model named for an interaction scheme (BENCH_, CHESTBIG_, DOOR_ …); any other visual is a VOB"
+    sx={{ minWidth: 72, '& .MuiInputBase-input': { fontSize: 12, py: 0.5 } }}
+  >
+    <option value="all">All</option>
+    <option value="vob">VOBs</option>
+    <option value="mob">MOBs</option>
+  </TextField>
+);
+
+/** What a "not compiled" tag says when hovered — the row and the tile share it
+ *  (#294), so the two cannot give different answers. */
+export const UNCOMPILED_TITLE = 'Not compiled yet. ZenGin reads the compiled file (.MRM, .MDL, -C.TEX) — this editor shows a raw .3DS anyway; a GMBT build writes it into _work/Data/*/_compiled — the Compile button above the list runs one. It can still be placed: the VOB names this source file.';
+
+/** The "not compiled" tag on a source file a GMBT build has not compiled (#294). */
+export const UncompiledTag: React.FC<{ name: string; sx?: object }> = ({ name, sx }) => (
+  <Typography
+    variant="caption"
+    noWrap
+    color="warning.main"
+    data-testid={`world-asset-uncompiled-${name}`}
+    title={UNCOMPILED_TITLE}
+    sx={{ fontSize: 10, ...sx }}
+  >
+    not compiled
+  </Typography>
+);
+
+/** Where a tile's asset is served from, and whether this listing is showing a
+ *  copy a later mount overrides (architecture level-editor.md §6). A badge
+ *  over the thumbnail rather than a caption under it: the grid's row height is
+ *  fixed, and a tile is 96 px wide. */
+export interface TileOrigin {
+  label: string;
+  overridden: boolean;
+  title: string;
+}
+
+export const AssetTile: React.FC<{
+  entry: VfsEntry;
+  thumbnails: AssetThumbnails;
+  onOpen: (entry: VfsEntry) => void;
+  actions?: TileCatalogActions;
+  origin?: TileOrigin;
+  /** A source file with no compiled half yet (#294). */
+  uncompiled?: boolean;
+  /** Marked for "file many" (#295), and the Ctrl/Shift-click that marks it. */
+  marked?: boolean;
+  onMark?: (entry: VfsEntry, range: boolean) => void;
+  placement?: AssetPlacement;
+  style?: React.CSSProperties;
+}> = ({ entry, thumbnails, onOpen, actions, origin, uncompiled = false, marked = false, onMark, placement, style }) => {
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const isFile = entry.type === 'file';
+  const favorite = isFile && actions !== undefined && actions.isFavorite(entry.name);
+  const place = usePlaceGestures(isFile ? entry.name : '', placement);
+
+  return (
+    <Box
+      role="listitem"
+      data-testid={`world-asset-tile-${entry.name}`}
+      {...(origin?.overridden === true ? { 'data-overridden': 'true' } : {})}
+      {...(marked ? { 'aria-selected': 'true' } : {})}
+      tabIndex={0}
+      onKeyDown={(event) => place.onKeyDown(event, () => onOpen(entry))}
+      onClick={(event) => {
+        place.onClick(event);
+        if (markClick(event) && isFile && onMark !== undefined) { onMark(entry, event.shiftKey); return; }
+        onOpen(entry);
+      }}
+      onDoubleClick={place.onDoubleClick}
+      onContextMenu={place.onContextMenu}
+      style={style}
+      sx={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5, p: 1, cursor: 'pointer',
+        position: 'relative', '&:hover': { bgcolor: 'action.hover' },
+        ...(marked ? { bgcolor: 'action.selected' } : {}),
+        // `:focus-within` as well as `:hover`: the star and the place verb are
+        // buttons, and a tile reached by keyboard used to hide the very controls
+        // the focus had just landed on (§5.4 item 17 of the 2026-09-04 review).
+        '&:hover .tile-actions, &:focus-within .tile-actions, & .tile-actions.on': { opacity: 1 },
+        // Shaded, not hidden: the copy in this mount is real, it is just not
+        // the one the engine reads.
+        ...(origin?.overridden === true ? { opacity: 0.45 } : {}),
+      }}
+    >
+      {isFile
+        ? <Thumbnail thumbnails={thumbnails} name={entry.name} />
+        : (
+          <Box sx={{ width: THUMBNAIL_SIZE, height: THUMBNAIL_SIZE, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <FolderIcon sx={{ color: 'text.secondary', fontSize: 48 }} />
+          </Box>
+        )}
+      <Typography variant="caption" noWrap sx={{ maxWidth: '100%' }} title={entry.name}>{entry.name}</Typography>
+      {uncompiled && (
+        <UncompiledTag
+          name={entry.name}
+          sx={{
+            position: 'absolute', top: THUMBNAIL_SIZE / 2, left: 8, right: 8, textAlign: 'center',
+            bgcolor: 'rgba(0,0,0,0.55)', borderRadius: 0.5, pointerEvents: 'auto',
+          }}
+        />
+      )}
+      {origin !== undefined && (
+        <Typography
+          variant="caption"
+          noWrap
+          data-testid="world-asset-tile-origin"
+          title={origin.overridden ? `${origin.title} — overridden here` : origin.title}
+          sx={{
+            position: 'absolute', bottom: THUMBNAIL_SIZE / 3, left: 8, right: 8,
+            fontSize: 9, lineHeight: 1.4, textAlign: 'center', color: 'common.white',
+            bgcolor: 'rgba(0,0,0,0.55)', borderRadius: 0.5, px: 0.25, pointerEvents: 'none',
+          }}
+        >
+          {origin.label}
+        </Typography>
+      )}
+      {isFile && actions !== undefined && (
+        <Box
+          className={`tile-actions${favorite ? ' on' : ''}`}
+          sx={{ position: 'absolute', top: 4, left: 4, right: 4, display: 'flex', justifyContent: 'space-between', opacity: 0 }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <FavoriteStar name={entry.name} actions={actions} />
+          <Box>
+            {actions.onUnfile !== undefined && (actions.removable?.(entry.name) ?? true) && (
+              <IconButton
+                size="small"
+                aria-label="Remove from this category"
+                data-testid="world-asset-unfile"
+                onClick={() => actions.onUnfile!(entry.name)}
+                sx={{ p: 0.25 }}
+              >
+                <CloseIcon sx={{ fontSize: 16 }} />
+              </IconButton>
+            )}
+            <IconButton
+              size="small"
+              aria-label="File into a category"
+              data-testid="world-asset-file"
+              onClick={(event) => setMenuAnchor(event.currentTarget)}
+              sx={{ p: 0.25 }}
+            >
+              <LabelOutlinedIcon sx={{ fontSize: 16 }} />
+            </IconButton>
+          </Box>
+          {menuAnchor !== null && (
+            <FileIntoMenu
+              anchor={menuAnchor}
+              paths={actions.categoryPaths}
+              onFile={(path) => actions.onAddToCategory(path, entry.name)}
+              onClose={() => setMenuAnchor(null)}
+            />
+          )}
+        </Box>
+      )}
+      {place.menu}
+    </Box>
+  );
+};
+
+interface CellData {
+  entries: VfsEntry[];
+  columns: number;
+  thumbnails: AssetThumbnails;
+  onOpen: (entry: VfsEntry) => void;
+  actions?: TileCatalogActions;
+  originOf?: (entry: VfsEntry) => TileOrigin | undefined;
+  uncompiled?: ReadonlySet<string>;
+  marked?: ReadonlySet<string>;
+  onMark?: (entry: VfsEntry, range: boolean) => void;
+  placement?: AssetPlacement;
+}
+
+const Cell = memo(({ columnIndex, rowIndex, style, data }: GridChildComponentProps<CellData>) => {
+  const entry = data.entries[rowIndex * data.columns + columnIndex];
+  if (entry === undefined) return null;
+  return (
+    <AssetTile
+      entry={entry}
+      thumbnails={data.thumbnails}
+      onOpen={data.onOpen}
+      actions={data.actions}
+      origin={data.originOf?.(entry)}
+      uncompiled={data.uncompiled?.has(entry.name) ?? false}
+      marked={data.marked?.has(entry.name) ?? false}
+      onMark={data.onMark}
+      placement={data.placement}
+      style={style}
+    />
+  );
+}, areEqual);
+Cell.displayName = 'WorldAssetTile';
+
+export interface WorldAssetGridProps {
+  entries: VfsEntry[];
+  thumbnails: AssetThumbnails;
+  onOpen: (entry: VfsEntry) => void;
+  actions?: TileCatalogActions;
+  /** Absent where provenance is unknown — the favorites and category views name
+   *  assets that were never listed out of a directory. */
+  originOf?: (entry: VfsEntry) => TileOrigin | undefined;
+  /** The source files in `entries` with no compiled half (#294), by name. */
+  uncompiled?: ReadonlySet<string>;
+  /** The files marked for "file many" (#295), by name, and what marks one.
+   *  Absent, a modified click opens the tile like any other. */
+  marked?: ReadonlySet<string>;
+  onMark?: (entry: VfsEntry, range: boolean) => void;
+  placement?: AssetPlacement;
+}
+
+const WorldAssetGrid: React.FC<WorldAssetGridProps> = ({
+  entries, thumbnails, onOpen, actions, originOf, uncompiled, marked, onMark, placement,
+}) => (
+  <AutoSizer>
+    {({ height, width }) => {
+      const columns = Math.max(1, Math.floor(width / TILE_WIDTH));
+      return (
+        <SizedGrid
+          height={height} width={width} columns={columns}
+          entries={entries} thumbnails={thumbnails} onOpen={onOpen} actions={actions} originOf={originOf}
+          uncompiled={uncompiled} marked={marked} onMark={onMark} placement={placement}
+        />
+      );
+    }}
+  </AutoSizer>
+);
+
+const SizedGrid: React.FC<WorldAssetGridProps & { height: number; width: number; columns: number }> = ({
+  height, width, columns, entries, thumbnails, onOpen, actions, originOf, uncompiled, marked, onMark, placement,
+}) => {
+  const itemData = useMemo<CellData>(
+    () => ({ entries, columns, thumbnails, onOpen, actions, originOf, uncompiled, marked, onMark, placement }),
+    [entries, columns, thumbnails, onOpen, actions, originOf, uncompiled, marked, onMark, placement],
+  );
+  return (
+    <Grid
+      height={height}
+      width={width}
+      columnCount={columns}
+      columnWidth={Math.floor(width / columns)}
+      rowCount={Math.ceil(entries.length / columns)}
+      rowHeight={TILE_HEIGHT}
+      itemData={itemData}
+      overscanRowCount={2}
+    >
+      {Cell}
+    </Grid>
+  );
+};
+
+export default WorldAssetGrid;

@@ -1,0 +1,425 @@
+const { test } = require('node:test');
+const assert = require('node:assert');
+const { parseSemanticModel } = require('../dist/semantic/semantic-visitor-index');
+
+test('should parse global constants', () => {
+  const source = `
+    const string TOPIC_MyQuest = "The Lost Sheep";
+    const int MAX_GOLD = 1000;
+  `;
+
+  const model = parseSemanticModel(source);
+
+  assert.equal(model.hasErrors, false, 'Should parse without errors');
+
+  // Check constants
+  assert.ok(model.constants, 'Model should have constants map');
+
+  const topicConst = model.constants['TOPIC_MyQuest'];
+  assert.ok(topicConst, 'Should find TOPIC_MyQuest constant');
+  assert.equal(topicConst.name, 'TOPIC_MyQuest');
+  assert.equal(topicConst.type, 'string');
+  assert.equal(topicConst.value, 'The Lost Sheep');
+  assert.equal(topicConst.valueIsLiteral, true);
+
+  const goldConst = model.constants['MAX_GOLD'];
+  assert.ok(goldConst, 'Should find MAX_GOLD constant');
+  assert.equal(goldConst.name, 'MAX_GOLD');
+  assert.equal(goldConst.type, 'int');
+  assert.equal(goldConst.value, 1000);
+});
+
+test('should parse global variables', () => {
+  const source = `
+    var int MIS_MyQuest;
+    var string CurrentLevel;
+  `;
+
+  const model = parseSemanticModel(source);
+
+  assert.equal(model.hasErrors, false, 'Should parse without errors');
+
+  // Check variables
+  assert.ok(model.variables, 'Model should have variables map');
+
+  const questVar = model.variables['MIS_MyQuest'];
+  assert.ok(questVar, 'Should find MIS_MyQuest variable');
+  assert.equal(questVar.name, 'MIS_MyQuest');
+  assert.equal(questVar.type, 'int');
+
+  const levelVar = model.variables['CurrentLevel'];
+  assert.ok(levelVar, 'Should find CurrentLevel variable');
+  assert.equal(levelVar.name, 'CurrentLevel');
+  assert.equal(levelVar.type, 'string');
+});
+
+test('should handle mixed global declarations', () => {
+  const source = `
+      const string TOPIC_Test = "Test Quest";
+      var int MIS_Test;
+
+      func void TestFunc() {
+        return;
+      };
+    `;
+
+  const model = parseSemanticModel(source);
+
+  assert.equal(model.hasErrors, false);
+  assert.ok(model.constants['TOPIC_Test']);
+  assert.ok(model.variables['MIS_Test']);
+  assert.ok(model.functions['TestFunc']);
+});
+
+test('should parse non-dialog instances into semantic model instances', () => {
+  const source = `
+    INSTANCE DIA_OldCamp_Test(C_INFO)
+    {
+      npc = SLD_200_DIEGO;
+    };
+
+    INSTANCE SLD_200_DIEGO(C_NPC)
+    {
+      name = "Diego";
+      guild = GIL_NONE;
+    };
+
+    INSTANCE ITMI_SWORD(C_ITEM)
+    {
+      name = "Rusty Sword";
+    };
+
+    INSTANCE HUMANS_MDS(C_MDS)
+    {
+    };
+  `;
+
+  const model = parseSemanticModel(source);
+
+  assert.equal(model.hasErrors, false, 'Should parse without errors');
+
+  // Dialog instances remain dialogs
+  assert.ok(model.dialogs['DIA_OldCamp_Test'], 'Should parse C_INFO as dialog');
+
+  // Non-C_INFO instances are available for autocomplete resolution
+  assert.ok(model.instances, 'Model should have instances map');
+  assert.ok(model.instances['SLD_200_DIEGO'], 'Should include NPC instance');
+  assert.equal(model.instances['SLD_200_DIEGO'].parent, 'C_NPC');
+  assert.equal(model.instances['SLD_200_DIEGO'].displayName, 'Diego');
+  assert.ok(model.instances['ITMI_SWORD'], 'Should include item instance');
+  assert.equal(model.instances['ITMI_SWORD'].parent, 'C_ITEM');
+
+
+  assert.ok(model.items, 'Model should have items map');
+  assert.ok(model.items['ITMI_SWORD'], 'Should include item instance in items map');
+  assert.equal(model.items['ITMI_SWORD'].parent, 'C_ITEM');
+  assert.equal(model.items['ITMI_SWORD'].displayName, 'Rusty Sword');
+  assert.equal(model.items['SLD_200_DIEGO'], undefined, 'Non-item instances should not be in items map');
+
+
+  assert.ok(model.npcs, 'Model should have npcs map');
+  assert.ok(model.npcs['SLD_200_DIEGO'], 'Should include npc instance in npcs map');
+  assert.equal(model.npcs['SLD_200_DIEGO'].parent, 'C_NPC');
+  assert.equal(model.npcs['ITMI_SWORD'], undefined, 'Non-npc instances should not be in npcs map');
+
+  assert.ok(model.animations, 'Model should have animations map');
+  assert.ok(model.animations['HUMANS_MDS'], 'Should include animation instance in animations map');
+  assert.equal(model.animations['HUMANS_MDS'].parent, 'C_MDS');
+  assert.equal(model.animations['SLD_200_DIEGO'], undefined, 'Non-animation instances should not be in animations map');
+});
+
+test('globals are recorded in declarationOrder with their source text', () => {
+  const source = `const int MAX_GOLD = 1000;
+var int MIS_Test;
+
+func void TestFunc()
+{
+	AI_StopProcessInfos(self);
+};
+
+instance ItFo_TestApple(C_Item)
+{
+	name = "Apple";
+	value = 5;
+};
+`;
+
+  const model = parseSemanticModel(source);
+  assert.equal(model.hasErrors, false, 'Should parse without errors');
+
+  assert.deepEqual(model.declarationOrder, [
+    { type: 'constant', name: 'MAX_GOLD', blankLinesBefore: 0 },
+    { type: 'variable', name: 'MIS_Test', blankLinesBefore: 0 },
+    { type: 'function', name: 'TestFunc', blankLinesBefore: 1 },
+    { type: 'instance', name: 'ItFo_TestApple', blankLinesBefore: 1 }
+  ], 'Order should include globals interleaved with functions, with the blank lines before each (#286)');
+
+  assert.equal(model.constants.MAX_GOLD.sourceText, 'const int MAX_GOLD = 1000;');
+  assert.equal(model.variables.MIS_Test.sourceText, 'var int MIS_Test;');
+  assert.ok(
+    model.instances.ItFo_TestApple.sourceText.includes('name = "Apple";'),
+    'Instance source text should include its body'
+  );
+});
+
+// The `id` field is what resolves `Npc_ExchangeRoutine(npc, "X")` to the
+// function the engine actually runs, `RTN_X_<id>` (level-editor.md §16.19
+// slice 10). Read exactly as `daily_routine` is, and a non-literal id is left
+// undefined rather than guessed: a consumer of this has no symbol table to
+// resolve a constant against.
+test('should parse the C_NPC id field, and only when it is an integer literal', () => {
+  const source = `
+    const int SOME_ID = 42;
+
+    INSTANCE SLD_200_DIEGO(C_NPC)
+    {
+      name = "Diego";
+      id = 200;
+      daily_routine = Rtn_Start_200;
+    };
+
+    INSTANCE VLK_500_TEST(C_NPC)
+    {
+      name = "Test";
+      id = SOME_ID;
+    };
+
+    INSTANCE BAU_900_NOID(C_NPC)
+    {
+      name = "No Id";
+    };
+  `;
+
+  const model = parseSemanticModel(source);
+
+  assert.equal(model.hasErrors, false, 'Should parse without errors');
+
+  assert.equal(model.instances['SLD_200_DIEGO'].npcId, 200, 'Literal id is read');
+  assert.equal(
+    model.instances['SLD_200_DIEGO'].dailyRoutine,
+    'Rtn_Start_200',
+    'daily_routine still reads beside it'
+  );
+  assert.equal(
+    model.instances['VLK_500_TEST'].npcId,
+    undefined,
+    'A constant id is unresolvable here and is left undefined, never guessed'
+  );
+  assert.equal(
+    model.instances['BAU_900_NOID'].npcId,
+    undefined,
+    'An instance with no id field has none'
+  );
+});
+
+test('should parse a negative id literal', () => {
+  const model = parseSemanticModel(`
+    INSTANCE MONSTER_TEMPLATE(C_NPC)
+    {
+      id = -1;
+    };
+  `);
+
+  assert.equal(model.instances['MONSTER_TEMPLATE'].npcId, -1);
+});
+
+// A string constant holds its text; `valueIsLiteral` says it is a string, so
+// an initializer naming another constant is told apart without quotes (#355).
+const { deserializeSemanticModel, SemanticCodeGenerator, GlobalConstant } = require('../dist/semantic/semantic-visitor-index');
+const hydrateJSON = model => deserializeSemanticModel(JSON.parse(JSON.stringify(model)));
+
+test('a string constant holds its contents through parse and JSON; an initializer expression does not', () => {
+  const model = parseSemanticModel(`
+    const string TOPIC_A = "Die Banditen";
+    const string TOPIC_EMPTY = "";
+    const string TOPIC_B = TOPIC_A;
+  `);
+  for (const candidate of [model, hydrateJSON(model)]) {
+    assert.equal(candidate.constants.TOPIC_A.value, 'Die Banditen');
+    assert.equal(candidate.constants.TOPIC_A.valueIsLiteral, true);
+    assert.equal(candidate.constants.TOPIC_EMPTY.value, '');
+    assert.equal(candidate.constants.TOPIC_EMPTY.valueIsLiteral, true);
+    assert.equal(candidate.constants.TOPIC_B.value, 'TOPIC_A');
+    assert.ok(!candidate.constants.TOPIC_B.valueIsLiteral);
+  }
+});
+
+test('a constant built without source is written quoted when it is a literal, even as one word', () => {
+  const literal = new GlobalConstant('TOPIC_A', 'string', 'Banditen');
+  literal.valueIsLiteral = true;
+  const reference = new GlobalConstant('TOPIC_B', 'string', 'TOPIC_A');
+  const output = new SemanticCodeGenerator().generateSemanticModel(
+    { dialogs: {}, functions: {}, constants: { TOPIC_A: literal, TOPIC_B: reference } }
+  );
+  assert.match(output, /const string TOPIC_A = "Banditen";/);
+  assert.match(output, /const string TOPIC_B = TOPIC_A;/);
+});
+
+// JSON written before contents were stored carries the token and no flag.
+test('legacy JSON with a quoted constant hydrates to its contents; a quoted expression is left alone', () => {
+  const json = JSON.parse(JSON.stringify(parseSemanticModel(`
+    const string TOPIC_A = "Die Banditen";
+    const string JOINED = "a" + "b";
+  `)));
+  json.constants.TOPIC_A.value = '"Die Banditen"';
+  delete json.constants.TOPIC_A.valueIsLiteral;
+  delete json.constants.JOINED.valueIsLiteral;
+  const model = deserializeSemanticModel(json);
+  assert.equal(model.constants.TOPIC_A.value, 'Die Banditen');
+  assert.equal(model.constants.TOPIC_A.valueIsLiteral, true);
+  assert.equal(model.constants.JOINED.value, '"a" + "b"');
+  assert.ok(!model.constants.JOINED.valueIsLiteral);
+});
+
+// #383: the original compiler accepts a comma list in one declaration — the
+// shared-type form `var int a, b;` (retail C_ITEM, Ikarus engine classes) and
+// the repeated form `var int a, var int b;` (LeGo). Every name is a symbol;
+// the statement is written back as one.
+test('a comma-separated global declaration declares every name and round-trips as one statement (#383)', () => {
+  const { SemanticCodeGenerator } = require('../dist/codegen/generator');
+  const source = `var int MIS_A, MIS_B;
+VAR INT hp,hp_max;
+var int l0, var string l1;
+`;
+
+  const model = parseSemanticModel(source);
+  assert.equal(model.hasErrors, false, 'Should parse without errors');
+
+  assert.deepEqual(
+    Object.keys(model.variables).map((name) => [name, model.variables[name].type]),
+    [['MIS_A', 'int'], ['MIS_B', 'int'], ['hp', 'INT'], ['hp_max', 'INT'], ['l0', 'int'], ['l1', 'string']]
+  );
+
+  const generator = new SemanticCodeGenerator();
+  assert.equal(generator.generateSemanticModel(model), source);
+
+  // Without a declaration order the statement is still written once, not once per name.
+  delete model.declarationOrder;
+  assert.equal(generator.generateSemanticModel(model).trim(), source.trim());
+});
+
+test('a comma-separated declaration parses in a class body and a function body (#383)', () => {
+  const source = `class C_Test
+{
+	VAR STRING  name,nameID;
+	var int minLow, maxHigh;         //zREAL
+};
+
+func void Test()
+{
+	var int a, b;
+	var int l0, var int l1, var int l2;
+	a = 1;
+};
+`;
+
+  const model = parseSemanticModel(source);
+  assert.equal(model.hasErrors, false, 'Should parse without errors');
+  assert.deepEqual(Object.keys(model.variables || {}), [], 'Locals and class members are not globals');
+
+  const { SemanticCodeGenerator } = require('../dist/codegen/generator');
+  assert.equal(new SemanticCodeGenerator().generateSemanticModel(model), source);
+});
+
+// #383: both reference grammars (DaedalusLanguageServer, DaedalusCompiler)
+// allow every item of a const list its own value, and DaedalusCompiler a var
+// list's items an initializer.
+test('a comma-separated const list declares every constant with its own value (#383)', () => {
+  const { SemanticCodeGenerator } = require('../dist/codegen/generator');
+  const source = `const int A = 1, B = 2;
+const string S1 = "x", S2[2] = {"a", "b"};
+var int v = 1, w;
+`;
+
+  const model = parseSemanticModel(source);
+  assert.equal(model.hasErrors, false, 'Should parse without errors');
+
+  assert.deepEqual(
+    Object.keys(model.constants).map((name) => [name, model.constants[name].value]),
+    [['A', 1], ['B', 2], ['S1', 'x'], ['S2', '{"a", "b"}']]
+  );
+  assert.equal(model.constants.B.declaredWith, 'A');
+  assert.deepEqual(Object.keys(model.variables), ['v', 'w']);
+
+  const generator = new SemanticCodeGenerator();
+  assert.equal(generator.generateSemanticModel(model), source);
+  delete model.declarationOrder;
+  assert.equal(generator.generateSemanticModel(model).trim(), source.trim());
+});
+
+// #383: `@` and `^` continue an identifier but never start one (both
+// reference grammars) — Ikarus's `_@`, `_@s`, `_^`, LeGo's `Foo@`.
+test('identifiers may contain @ and ^ after their first character (#383)', () => {
+  const { SemanticCodeGenerator } = require('../dist/codegen/generator');
+  const source = `class Queue
+{
+	var int x;
+};
+
+instance Queue@(Queue)
+{
+	x = 1;
+};
+
+const int zCView__@zCView = 7322848;
+
+func int _@(var int i)
+{
+	return i;
+};
+
+func void Use()
+{
+	var int p;
+	p = _@(p) + _@s(p);
+	p = new(Queue@);
+	p = p ^ 1;
+};
+`;
+
+  const model = parseSemanticModel(source);
+  assert.equal(model.hasErrors, false, 'Should parse without errors');
+  assert.ok(model.functions['_@'], '_@ is a function');
+  assert.ok(model.instances['Queue@'], 'Queue@ is an instance');
+  assert.ok(model.constants['zCView__@zCView'], 'zCView__@zCView is a constant');
+  assert.equal(new SemanticCodeGenerator().generateSemanticModel(model), source);
+});
+
+// #383: `instance X(C);` declares an instance with no body (Ikarus's MEM_Game,
+// LeGo's `Queue@`), and the reference grammars allow several names in one
+// such declaration. Each name is an instance; the statement is written once.
+test('a body-less instance declaration declares every name and round-trips as one statement (#383)', () => {
+  const { SemanticCodeGenerator } = require('../dist/codegen/generator');
+  const source = `class Queue
+{
+	var int x;
+};
+
+instance Queue@(Queue);
+INSTANCE currParserSymb (zCPar_Symbol);
+instance MEM_Game, MEM_World(oCGame);
+instance Ammo(C_Item);
+
+instance Full(Queue)
+{
+	x = 1;
+};
+`;
+
+  const model = parseSemanticModel(source);
+  assert.equal(model.hasErrors, false, 'Should parse without errors');
+  assert.deepEqual(
+    Object.keys(model.instances).map((name) => [name, model.instances[name].parent]),
+    [['Queue@', 'Queue'], ['currParserSymb', 'zCPar_Symbol'], ['MEM_Game', 'oCGame'], ['MEM_World', 'oCGame'], ['Ammo', 'C_Item'], ['Full', 'Queue']]
+  );
+  assert.equal(model.instances.MEM_World.declaredWith, 'MEM_Game');
+  assert.ok(model.items.Ammo, 'a body-less C_Item instance is still an item');
+
+  const generator = new SemanticCodeGenerator();
+  assert.equal(generator.generateSemanticModel(model), source);
+  delete model.declarationOrder;
+  assert.ok(
+    generator.generateSemanticModel(model).includes('instance MEM_Game, MEM_World(oCGame);\ninstance Ammo'),
+    'Without a declaration order the shared statement is still written once'
+  );
+});

@@ -1,0 +1,517 @@
+name: Build Windows
+
+on:
+  # The release notes are the lines RELEASE_NOTES.md gained since the commit the
+  # published build came from (tools/release-notes.js --since). A master
+  # dispatch with no new line fails in seconds: add the line first.
+  workflow_dispatch:
+  # nightly.yml calls this when master has a new release note.
+  workflow_call:
+
+permissions:
+  contents: write
+
+jobs:
+  # Full test matrix gate: editor typecheck/Jest/build guard, browser-harness
+  # Playwright, parser tests/lint/typecheck, and the corpus job. Releasing from
+  # a red default branch is structurally impossible — the build job needs this.
+  # Seconds, not the test matrix's eight minutes: a malformed RELEASE_NOTES.md
+  # stops the release before anything else starts.
+  release-notes:
+    name: Release notes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      json: ${{ steps.notes.outputs.json }}
+      build-number: ${{ steps.notes.outputs.build-number }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # The published update-meta.json names the commit that build came from
+      # and its build number. The next build number follows it rather than
+      # github.run_number, because nightly.yml's runs count separately and the
+      # updater compares build numbers.
+      - id: notes
+        name: Notes added since the published build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download windows-latest --repo "$GITHUB_REPOSITORY" --pattern update-meta.json --dir "$RUNNER_TEMP"
+          since=$(jq -r .commit "$RUNNER_TEMP/update-meta.json")
+          json=$(node tools/release-notes.js --since "$since")
+          echo "json=$json" >> "$GITHUB_OUTPUT"
+          echo "build-number=$(( $(jq -r .buildNumber "$RUNNER_TEMP/update-meta.json") + 1 ))" >> "$GITHUB_OUTPUT"
+          echo "Notes since $since: $json"
+          if [ "$json" = "[]" ] && [ "$GITHUB_REF" = refs/heads/master ]; then
+            echo "::error::RELEASE_NOTES.md has no new line since the published build ($since)."
+            exit 1
+          fi
+
+  tests:
+    needs: release-notes
+    uses: ./.github/workflows/all-tests.yml
+
+  # Phase 2 (fix-08 §2): run the real-Electron E2E suite on the SHIPPED platform
+  # (Windows) before packaging. This mirrors the ubuntu `editor-e2e-electron`
+  # job minus xvfb — Electron opens real windows on the windows runner without a
+  # display server, so no xvfb-run wrapper. It catches encoding/path/NSIS-adjacent
+  # regressions where they matter. Runs unconditionally on dispatch (like the
+  # `tests` gate); publishing stays guarded on the `build` job below.
+  e2e-electron-windows:
+    name: E2E Tests (real Electron, Windows)
+    needs: release-notes
+    # windows-2022, not windows-latest — same reason `all-tests.yml`'s
+    # zenkit-node-tests job is pinned: the latest image ships Visual Studio 18,
+    # which node-gyp 11.5.0 cannot identify, so daedalus-parser's install dies
+    # before any of our code runs. This job builds the same native code and
+    # was just never given the same pin.
+    runs-on: windows-2022
+    steps:
+      # submodules: the zenkit-node addon is built from vendor/ZenKit sources
+      # (same as the `build` job below) — without this, `vendor/ZenKit` checks
+      # out as an uninitialized gitlink, and applyPatches' `git apply`,
+      # invoked with cwd inside it, resolves against the outer repo instead
+      # and reports a source file missing partway through the patch series.
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.23.0
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      # ZENKIT_NODE_FORCE_BUILD: without it, zenkit-node/scripts/install.js
+      # skips the source build in CI, and world-render.spec.ts (the only spec
+      # here that opens a world) would just skip itself for want of the addon
+      # — the same "watched the renderer draw" gap board §16.1 names. This job
+      # runs the dev build, not the packaged app, so it proves the World
+      # surface renders; the packaged native addon's own load path is a
+      # different check (`DDE_SMOKE_OPEN_WORLD`, in the `build` job below).
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        env:
+          ZENKIT_NODE_FORCE_BUILD: '1'
+
+      # Builds dist/main + dist/renderer, which the harness launches with
+      # NODE_ENV=production. Electron comes from the pnpm install postinstall —
+      # no `playwright install` (Electron is the browser here).
+      - name: Build editor
+        env:
+          VITE_WHAT_CHANGED: '[{"issue":123,"description":"E2E release note fixture"}]'
+        run: pnpm --filter daedalus-dialog-editor run build
+
+      # No xvfb on Windows: the runner has a real desktop session, so Electron
+      # opens actual windows. Config pins workers:1, no sharding, retries from
+      # the config (CI ? 1 : 0) — keep the suite budget small (fix-08 §2).
+      - name: Run real-Electron E2E suite (Windows)
+        working-directory: daedalus-dialog-editor
+        run: pnpm exec playwright test -c playwright.electron.config.ts
+
+      - name: Upload Electron E2E report (Windows)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-electron-windows
+          path: daedalus-dialog-editor/playwright-report-electron
+          if-no-files-found: ignore
+          retention-days: 7
+
+  build:
+    needs: [release-notes, tests, e2e-electron-windows]
+    # Only the default branch (master) may publish a release. Non-master
+    # dispatches produce a skipped build, not a published release.
+    if: github.ref == 'refs/heads/master'
+    # Serialize publishes to the mutable rolling release so two runs (a
+    # dispatch and the nightly) cannot interleave asset uploads onto the same
+    # tag. On the job, not the workflow, so it holds when nightly.yml calls
+    # this. Never cancel an in-flight publish.
+    concurrency:
+      group: build-windows-release
+      cancel-in-progress: false
+    # windows-2022, not windows-latest — same reason as e2e-electron-windows
+    # above: this job also force-builds the native addon from source, and
+    # would hit the identical node-gyp/VS18 failure once that job passes.
+    runs-on: windows-2022
+
+    steps:
+    # submodules: the zenkit-node addon is built from vendor/ZenKit sources.
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Compute build version
+      id: version
+      shell: pwsh
+      run: |
+        $pkg = Get-Content "daedalus-dialog-editor/package.json" -Raw | ConvertFrom-Json
+        $base = $pkg.version
+        $buildNum = "${{ needs.release-notes.outputs.build-number }}"
+        $buildVersion = "${base}-build.${buildNum}"
+        "BASE_VERSION=$base" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        "BUILD_VERSION=$buildVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        Write-Host "Build version: $buildVersion"
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        version: 10.23.0
+
+    - name: Use Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'pnpm'
+
+    # ZENKIT_NODE_FORCE_BUILD: zenkit-node/scripts/install.js skips the source
+    # build whenever CI is set, so without this the installer would ship a World
+    # surface with no addon behind it. `npmRebuild: false` means electron-builder
+    # will not rebuild it either — this install is the only chance to produce
+    # build/Release/zenkit_node.node, and the asar check below enforces that.
+    - name: Install dependencies (builds the native addon)
+      run: pnpm install --frozen-lockfile
+      env:
+        ZENKIT_NODE_FORCE_BUILD: '1'
+
+    - name: Stamp build version into package.json
+      shell: pwsh
+      run: |
+        $buildVersion = "${{ steps.version.outputs.BUILD_VERSION }}"
+        $pkgPath = "daedalus-dialog-editor/package.json"
+        $pkg = Get-Content $pkgPath -Raw | ConvertFrom-Json
+        $pkg.version = $buildVersion
+        $pkg | ConvertTo-Json -Depth 10 | Set-Content $pkgPath -Encoding UTF8
+        Write-Host "Stamped version $buildVersion into package.json"
+
+    - name: Clean previous build outputs
+      shell: pwsh
+      run: |
+        if (Test-Path "daedalus-dialog-editor/dist") {
+          Remove-Item "daedalus-dialog-editor/dist" -Recurse -Force
+        }
+
+    - name: Build Parser
+      run: pnpm --filter daedalus-parser run build
+
+    - name: Prepare build notes
+      id: changes
+      shell: pwsh
+      env:
+        NOTES_JSON: ${{ needs.release-notes.outputs.json }}
+      run: |
+        $json = $env:NOTES_JSON
+        $markdown = ($json | ConvertFrom-Json | ForEach-Object { "- #$($_.issue): $($_.description)" }) -join "`n"
+        "json=$json" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+        "markdown<<RELEASE_NOTES_EOF`n$markdown`nRELEASE_NOTES_EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+    - name: Build Editor
+      env:
+        VITE_WHAT_CHANGED: ${{ steps.changes.outputs.json }}
+      run: pnpm --filter daedalus-dialog-editor run build
+
+    - name: Package Editor
+      env:
+        npm_execpath: pnpm.cmd
+      run: pnpm --filter daedalus-dialog-editor run package
+
+    - name: Verify packaged app dependencies
+      shell: pwsh
+      run: |
+        @'
+        const path = require('path');
+        const electronBuilderDir = path.dirname(
+          require.resolve('electron-builder/package.json', { paths: ['daedalus-dialog-editor'] })
+        );
+        const asar = require(require.resolve('@electron/asar', { paths: [electronBuilderDir] }));
+        const appAsarPath = 'daedalus-dialog-editor/dist/win-unpacked/resources/app.asar';
+        const files = asar.listPackage(appAsarPath);
+        const hasSafeBuffer = files.some((f) => f === '\\node_modules\\safe-buffer\\index.js');
+        const hasSaferBuffer = files.some((f) => f === '\\node_modules\\safer-buffer\\safer.js');
+        if (!hasSafeBuffer || !hasSaferBuffer) {
+          console.error('Missing packaged buffer modules:', { hasSafeBuffer, hasSaferBuffer });
+          process.exit(1);
+        }
+        console.log('Packaged buffer modules verified:', { hasSafeBuffer, hasSaferBuffer, files: files.length });
+
+        // The native addon behind the World surface. Two distinct failures are
+        // possible and both are silent until a user opens a world: the addon was
+        // never built (CI skips the source build without ZENKIT_NODE_FORCE_BUILD,
+        // and npmRebuild is false), or it was built but left INSIDE the asar,
+        // where node-gyp-build cannot dlopen it. Assert on both.
+        const addonEntries = files.filter((f) => f.endsWith('zenkit_node.node'));
+        if (addonEntries.length === 0) {
+          console.error('zenkit_node.node is not packaged: the addon was not built before packaging.');
+          process.exit(1);
+        }
+        const unpackedRoot = appAsarPath + '.unpacked';
+        const fs = require('fs');
+        const unpacked = addonEntries.filter((f) => fs.existsSync(path.join(unpackedRoot, f)));
+        if (unpacked.length === 0) {
+          console.error('zenkit_node.node is packed inside app.asar — asarUnpack did not match:', addonEntries);
+          process.exit(1);
+        }
+        console.log('Packaged native addon verified (unpacked):', unpacked);
+
+        // The other native pair, behind every parse: the daedalus grammar
+        // binding and the tree-sitter runtime, both loaded by parser.worker.ts.
+        // Same two silent failures as the addon above — never built, or built
+        // and left inside the asar — and the same assertion. The runtime ships
+        // as prebuilds, so the win32-x64 one is what this build needs.
+        const parserBinding = files.filter((f) => f.endsWith('tree_sitter_daedalus_binding.node'));
+        const runtimeBinding = files.filter(
+          (f) => f.includes('\\tree-sitter\\') && f.endsWith('win32-x64\\tree-sitter.node'),
+        );
+        for (const [label, entries] of [['grammar', parserBinding], ['runtime', runtimeBinding]]) {
+          if (entries.length === 0) {
+            console.error(`tree-sitter ${label} binding is not packaged.`);
+            process.exit(1);
+          }
+          const outside = entries.filter((f) => fs.existsSync(path.join(unpackedRoot, f)));
+          if (outside.length === 0) {
+            console.error(
+              `tree-sitter ${label} binding is packed inside app.asar — asarUnpack did not match:`,
+              entries,
+            );
+            process.exit(1);
+          }
+          console.log(`Packaged tree-sitter ${label} binding verified (unpacked):`, outside);
+        }
+        '@ | node -
+
+    - name: Smoke-test packaged app startup
+      shell: pwsh
+      run: |
+        $exe = "daedalus-dialog-editor/dist/win-unpacked/Dandelion.exe"
+        if (-not (Test-Path $exe)) {
+          throw "Packaged app executable not found: $exe"
+        }
+
+        $process = Start-Process -FilePath $exe -PassThru
+        Start-Sleep -Seconds 8
+
+        if ($process.HasExited) {
+          throw "Packaged app exited early with code $($process.ExitCode)"
+        }
+
+        Stop-Process -Id $process.Id -Force
+
+    # The startup smoke above proves the exe launches; this proves the packaged
+    # native addon actually loads and reads a real ZEN. DDE_SMOKE_OPEN_WORLD
+    # routes main.ts into runOpenWorldSmoke (no window): WorldService spawns the
+    # zenkit worker, which dlopens zenkit_node.node out of app.asar.unpacked and
+    # opens the committed fixture world. Exit code is the verdict; the result
+    # file carries the counts so a red run says why. Without this, npmRebuild:
+    # false rests on a reading of binding.gyp, not a runtime verdict.
+    - name: Smoke-test packaged app opens a world
+      shell: pwsh
+      run: |
+        $exe = "daedalus-dialog-editor/dist/win-unpacked/Dandelion.exe"
+        $fixture = (Resolve-Path "zenkit-node/test/fixtures/minimal.g2.zen").Path
+        $resultPath = Join-Path $env:RUNNER_TEMP "smoke-open-world.json"
+        Remove-Item $resultPath -Force -ErrorAction SilentlyContinue
+
+        $env:DDE_SMOKE_OPEN_WORLD = $fixture
+        $env:DDE_SMOKE_RESULT = $resultPath
+        $process = Start-Process -FilePath $exe -PassThru
+        $null = $process.Handle  # cache so ExitCode is readable after exit
+        if (-not $process.WaitForExit(120000)) {
+          Stop-Process -Id $process.Id -Force
+          throw "Open-world smoke timed out after 120 s"
+        }
+        if ($process.ExitCode -ne 0) {
+          $detail = if (Test-Path $resultPath) { Get-Content $resultPath -Raw } else { "(no result file written)" }
+          throw "Open-world smoke failed with exit code $($process.ExitCode): $detail"
+        }
+        if (-not (Test-Path $resultPath)) {
+          throw "Open-world smoke exited 0 but wrote no result file - the smoke mode did not run"
+        }
+        $result = Get-Content $resultPath -Raw | ConvertFrom-Json
+        if (-not $result.ok) {
+          throw "Open-world smoke result is not ok: $(Get-Content $resultPath -Raw)"
+        }
+        if ([int]$result.vobCount -lt 1) {
+          throw "Open-world smoke opened a world with no VOBs: $(Get-Content $resultPath -Raw)"
+        }
+        Write-Host "Open-world smoke passed: $(Get-Content $resultPath -Raw)"
+
+    # The world smoke above covers the ZenKit addon; this covers the tree-sitter
+    # pair, which is what every parse in the app rests on. DDE_SMOKE_PARSE routes
+    # main.ts into runParseSmoke (no window): ParserService spawns a parser
+    # worker, which loads both bindings out of app.asar.unpacked and runs the
+    # semantic passes over a committed corpus fixture. Exit code is the verdict;
+    # the result file carries the model counts so a red run says why.
+    - name: Smoke-test packaged app parses a script
+      shell: pwsh
+      run: |
+        $exe = "daedalus-dialog-editor/dist/win-unpacked/Dandelion.exe"
+        $fixture = (Resolve-Path "daedalus-parser/test/fixtures/corpus/declaration-order.d").Path
+        $resultPath = Join-Path $env:RUNNER_TEMP "smoke-parse.json"
+        Remove-Item $resultPath -Force -ErrorAction SilentlyContinue
+
+        $env:DDE_SMOKE_PARSE = $fixture
+        $env:DDE_SMOKE_RESULT = $resultPath
+        $process = Start-Process -FilePath $exe -PassThru
+        $null = $process.Handle  # cache so ExitCode is readable after exit
+        if (-not $process.WaitForExit(120000)) {
+          Stop-Process -Id $process.Id -Force
+          throw "Parse smoke timed out after 120 s"
+        }
+        if ($process.ExitCode -ne 0) {
+          $detail = if (Test-Path $resultPath) { Get-Content $resultPath -Raw } else { "(no result file written)" }
+          throw "Parse smoke failed with exit code $($process.ExitCode): $detail"
+        }
+        if (-not (Test-Path $resultPath)) {
+          throw "Parse smoke exited 0 but wrote no result file - the smoke mode did not run"
+        }
+        $result = Get-Content $resultPath -Raw | ConvertFrom-Json
+        if (-not $result.ok) {
+          throw "Parse smoke result is not ok: $(Get-Content $resultPath -Raw)"
+        }
+        # The fixture is one C_INFO instance and its two functions.
+        if ([int]$result.dialogCount -ne 1 -or [int]$result.functionCount -ne 2) {
+          throw "Parse smoke returned the wrong model shape: $(Get-Content $resultPath -Raw)"
+        }
+        Write-Host "Parse smoke passed: $(Get-Content $resultPath -Raw)"
+
+    - name: Normalize installer filename
+      shell: pwsh
+      run: |
+        $installer = Get-ChildItem -Path "daedalus-dialog-editor/dist" -Filter "*.exe" |
+          Sort-Object LastWriteTime -Descending |
+          Select-Object -First 1
+        if (-not $installer) {
+          throw "No .exe file found in daedalus-dialog-editor/dist"
+        }
+        Copy-Item $installer.FullName "daedalus-dialog-editor/dist/daedalus-dialog-editor-windows-latest.exe" -Force
+
+    - name: Generate update metadata
+      shell: pwsh
+      run: |
+        $installer = "daedalus-dialog-editor/dist/daedalus-dialog-editor-windows-latest.exe"
+        # Hash and size the exact normalized file that gets published, so the
+        # updater can verify it against these values before running it.
+        $sha256 = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+        $size = (Get-Item $installer).Length
+        @{
+          version = "${{ steps.version.outputs.BUILD_VERSION }}"
+          baseVersion = "${{ steps.version.outputs.BASE_VERSION }}"
+          buildNumber = [int]${{ needs.release-notes.outputs.build-number }}
+          commit = "${{ github.sha }}"
+          sha256 = $sha256
+          size = $size
+        } | ConvertTo-Json | Set-Content "daedalus-dialog-editor/dist/update-meta.json" -Encoding UTF8
+        Write-Host "Installer sha256: $sha256 ($size bytes)"
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: daedalus-dialog-editor-${{ steps.version.outputs.BUILD_VERSION }}
+        path: daedalus-dialog-editor/dist/daedalus-dialog-editor-windows-latest.exe
+        retention-days: 7
+
+    - name: Guard against stale re-runs
+      shell: pwsh
+      run: |
+        # Re-running an old workflow run must not republish old bits (or an
+        # old-schema update-meta.json). Publish only when this run's commit is
+        # still the current head of master.
+        $remote = git ls-remote origin refs/heads/master
+        if ($LASTEXITCODE -ne 0) { throw "Failed to query remote head of master" }
+        $remoteSha = ($remote -split "\s+")[0]
+        if ($remoteSha -ne "${{ github.sha }}") {
+          throw "Stale run: this run's commit ${{ github.sha }} is no longer the head of master ($remoteSha). Refusing to publish."
+        }
+        Write-Host "Stale-run guard passed: $remoteSha is the current head of master"
+
+    - name: Publish rolling release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: windows-latest
+        name: Latest Windows Build (${{ steps.version.outputs.BUILD_VERSION }})
+        body: |
+          Automated rolling Windows build from GitHub Actions.
+
+          **Version:** `${{ steps.version.outputs.BUILD_VERSION }}`
+          **Base version:** `${{ steps.version.outputs.BASE_VERSION }}`
+          **Build number:** #${{ needs.release-notes.outputs.build-number }}
+          **Commit:** `${{ github.sha }}`
+
+          **What's changed**
+
+          ${{ steps.changes.outputs.markdown }}
+
+          Download `daedalus-dialog-editor-windows-latest.exe` from this release.
+        prerelease: true
+        files: |
+          daedalus-dialog-editor/dist/daedalus-dialog-editor-windows-latest.exe
+          daedalus-dialog-editor/dist/update-meta.json
+        make_latest: false
+
+    - name: Verify published release integrity
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        # Re-download the published metadata + installer and confirm the
+        # advertised sha256 matches the bytes clients would actually fetch.
+        # Fail the job on any mismatch so a broken release cannot ship silently.
+        $verifyDir = "daedalus-dialog-editor/dist/verify"
+        Remove-Item $verifyDir -Recurse -Force -ErrorAction SilentlyContinue
+        New-Item -ItemType Directory -Path $verifyDir | Out-Null
+
+        gh release download windows-latest `
+          --repo "$env:GITHUB_REPOSITORY" `
+          --pattern "update-meta.json" `
+          --pattern "daedalus-dialog-editor-windows-latest.exe" `
+          --dir $verifyDir `
+          --clobber
+        if ($LASTEXITCODE -ne 0) { throw "Failed to download published release assets" }
+
+        $meta = Get-Content "$verifyDir/update-meta.json" -Raw | ConvertFrom-Json
+        $installer = "$verifyDir/daedalus-dialog-editor-windows-latest.exe"
+        $actualSha = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+        $actualSize = (Get-Item $installer).Length
+
+        if ($meta.sha256 -ne $actualSha) {
+          throw "Published sha256 mismatch: meta=$($meta.sha256) actual=$actualSha"
+        }
+        if ([int64]$meta.size -ne $actualSize) {
+          throw "Published size mismatch: meta=$($meta.size) actual=$actualSize"
+        }
+        Write-Host "Published release integrity verified: $actualSha ($actualSize bytes)"
+
+  # The published build's notes go on top of CHANGELOG.md on master, so they
+  # outlive their lines in RELEASE_NOTES.md. Runs only after a publish (build
+  # is master-only). Checks out master's head, which may be past github.sha.
+  changelog:
+    name: Changelog
+    needs: [release-notes, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+      - name: Add the build to CHANGELOG.md
+        env:
+          NOTES_JSON: ${{ needs.release-notes.outputs.json }}
+          BUILD_NUMBER: ${{ needs.release-notes.outputs.build-number }}
+        run: |
+          node tools/release-notes.js --changelog "$BUILD_NUMBER" "$(date -u +%F)" "$NOTES_JSON"
+          git diff --quiet && { echo "Build $BUILD_NUMBER is already in CHANGELOG.md."; exit 0; }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -qam "Changelog: build $BUILD_NUMBER"
+          for attempt in 1 2 3 4; do
+            git push origin HEAD:master && exit 0
+            sleep $((attempt * 5))
+            git pull --rebase origin master
+          done
+          exit 1

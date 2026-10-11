@@ -1,0 +1,410 @@
+name: All Tests
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  zen-world-tests:
+    name: zen-world (level-editor domain)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.23.0
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Doc and plan hygiene
+        run: node tools/check-docs.js
+
+      # Build Windows reads RELEASE_NOTES.md; a malformed note fails here, on
+      # push, not eight minutes into a release.
+      - name: Release notes
+        run: |
+          node --test tools/release-notes.test.js
+          node tools/release-notes.js
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test zen-world
+        run: pnpm --filter zen-world test
+
+      - name: Typecheck zen-world
+        run: pnpm --filter zen-world run typecheck
+
+      - name: Lint zen-world
+        run: pnpm --filter zen-world run lint
+
+  zenkit-node-tests:
+    name: zenkit-node (native addon)
+    # In the release gate on purpose: build-windows.yml calls this workflow, so
+    # the addon the packaged app dlopens is built and tested before a dispatch
+    # can publish. It is also the only job that catches a change in `zen-world`
+    # or the editor's `zenkit.worker.ts` breaking the binding contract — the old
+    # path-filtered zenkit-node.yml never ran for those.
+    #
+    # windows-2022, not windows-latest: the latest image ships Visual Studio 18,
+    # which node-gyp 11.5.0 cannot identify, so the daedalus-parser workspace's
+    # install dies before any of our code runs. Revisit when node-gyp knows VS 18.
+    #
+    # A green run here is a NO-REGRESSION claim against our own synthetic golden
+    # fixtures (claim C2) — NOT a fidelity claim about real Gothic worlds (C1).
+    # See zenkit-node/README.md.
+    runs-on: windows-2022
+    # The whole job is ~5 minutes, most of it the addon build. A cap because a
+    # test process that never exits is a real failure mode here — one wedged the
+    # suite for four pushes in a row on 2026-09-12 — and without this the job
+    # holds a Windows runner for the six-hour default before anyone is told.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.23.0
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      # pnpm install triggers the zenkit-node install hook, which runs the
+      # two-stage source build (CMake pre-step, then node-gyp) when no prebuild
+      # matches — which is always the case in CI. The hook skips that build when
+      # CI is set unless ZENKIT_NODE_FORCE_BUILD=1 (zenkit-node/scripts/install.js).
+      - name: Install dependencies (builds the addon)
+        run: pnpm install --frozen-lockfile
+        env:
+          ZENKIT_NODE_FORCE_BUILD: '1'
+
+      - name: Run zenkit-node tests
+        run: pnpm --filter zenkit-node test
+
+      # The harness itself, in its CI mode. Prints its own claim line, which
+      # says in as many words that this is C2 and not fidelity.
+      - name: zen-roundtrip (C2, fixtures)
+        run: pnpm --filter zenkit-node zen-roundtrip -- --fixtures --strict
+
+      - name: Lint zenkit-node
+        run: pnpm --filter zenkit-node run lint
+
+  editor-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.23.0
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # zen-world/dist is what `zen-world`'s package exports resolve to, and it
+      # is produced by that package's postinstall hook. Building it explicitly
+      # means an --ignore-scripts install (or a skipped build script) fails on
+      # this line instead of surfacing as an unresolvable import three steps later.
+      - name: Build zen-world
+        run: pnpm --filter zen-world run build
+
+      - name: Typecheck editor main process
+        run: pnpm --filter daedalus-dialog-editor run build:main
+
+      - name: Typecheck editor renderer
+        run: pnpm --filter daedalus-dialog-editor run typecheck:renderer
+
+      # ts-jest only transpiles (`isolatedModules`), so a type error in a test
+      # fails nowhere else.
+      - name: Typecheck editor tests
+        run: pnpm --filter daedalus-dialog-editor run typecheck:tests
+      - name: Build editor renderer (warning guard)
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --filter daedalus-dialog-editor run build:renderer 2>&1 | tee /tmp/editor-renderer-build.log
+
+          if grep -q "Some chunks are larger than" /tmp/editor-renderer-build.log; then
+            echo "Renderer build emitted chunk-size warning."
+            exit 1
+          fi
+
+          eval_lines=$(grep -i "eval" /tmp/editor-renderer-build.log || true)
+          if [ -n "$eval_lines" ]; then
+            echo "Renderer build emitted unexpected eval warnings:"
+            echo "$eval_lines"
+            exit 1
+          fi
+
+          # mockAPI.ts is the browser harness's fake main process. main.tsx
+          # imports it behind import.meta.env.DEV, so this production build must
+          # not carry it. The marker is a name only mockAPI.ts defines; checking
+          # the source too means a rename fails here instead of passing vacuously.
+          grep -q __mockEmitFileChange daedalus-dialog-editor/src/renderer/utils/mockAPI.ts
+          if grep -l __mockEmitFileChange daedalus-dialog-editor/dist/renderer/assets/*.js; then
+            echo "The production renderer bundle carries mockAPI.ts."
+            exit 1
+          fi
+      - name: Lint editor
+        run: pnpm --filter daedalus-dialog-editor run lint
+
+  editor-jest:
+    name: Editor Jest (shard ${{ matrix.shardIndex }}/${{ matrix.shardTotal }})
+    runs-on: ubuntu-latest
+    # The suite is CPU-bound — ~750 s of test time across a runner's three
+    # workers — so on one runner it was the longest job in this workflow.
+    # Two shards bring it under the browser-harness shards.
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shardIndex: [1, 2]
+        shardTotal: [2]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.23.0
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # See the note in editor-tests: zen-world/dist is an install-time artifact.
+      - name: Build zen-world
+        run: pnpm --filter zen-world run build
+
+      - name: Run editor tests (shard ${{ matrix.shardIndex }}/${{ matrix.shardTotal }})
+        run: pnpm --filter daedalus-dialog-editor test --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }}
+
+  editor-ui-tests:
+    name: UI Tests (browser harness, shard ${{ matrix.shardIndex }}/${{ matrix.shardTotal }})
+    runs-on: ubuntu-latest
+    # A shard runs in 2-5 minutes. Without a cap, one hung `playwright install
+    # --with-deps` (apt) holds the run for GitHub's 6-hour default.
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # shardTotal is a one-element list: matrix keys multiply, so a list
+        # per shard would run every shard shardTotal times.
+        shardIndex: ${{ github.event_name == 'pull_request' && fromJSON('[1, 2]') || fromJSON('[1, 2, 3, 4]') }}
+        shardTotal: ${{ github.event_name == 'pull_request' && fromJSON('[2]') || fromJSON('[4]') }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.23.0
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # See the note in editor-tests: zen-world/dist is an install-time artifact,
+      # and the harness build imports it.
+      - name: Build zen-world
+        run: pnpm --filter zen-world run build
+
+      - name: Install Playwright browsers
+        run: pnpm --filter daedalus-dialog-editor exec playwright install --with-deps chromium
+
+      - name: Run editor UI tests (browser harness, shard ${{ matrix.shardIndex }}/${{ matrix.shardTotal }})
+        working-directory: daedalus-dialog-editor
+        run: pnpm exec playwright test --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }} --reporter=blob
+
+      - name: Upload blob report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-blob-${{ matrix.shardIndex }}
+          path: daedalus-dialog-editor/blob-report
+          if-no-files-found: ignore
+          retention-days: 1
+
+  editor-ui-merge-reports:
+    name: UI Tests (browser harness, merge reports)
+    needs: editor-ui-tests
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.23.0
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download blob reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: playwright-blob-*
+          path: daedalus-dialog-editor/all-blob-reports
+          merge-multiple: true
+
+      - name: Merge Playwright reports
+        run: pnpm --filter daedalus-dialog-editor exec playwright merge-reports --reporter html ./all-blob-reports
+        working-directory: daedalus-dialog-editor
+
+      - name: Upload merged HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: daedalus-dialog-editor/playwright-report
+          if-no-files-found: ignore
+          retention-days: 7
+
+  editor-e2e-electron:
+    name: E2E Tests (real Electron)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.23.0
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Builds dist/main + dist/renderer, which the harness launches with
+      # NODE_ENV=production. Electron itself comes from the pnpm install
+      # postinstall — no `playwright install` (Electron is the browser here).
+      # The notes what-changed.spec.ts expects — the same fixture as
+      # build-windows.yml's e2e-electron-windows job.
+      - name: Build editor
+        env:
+          VITE_WHAT_CHANGED: '[{"issue":123,"description":"E2E release note fixture"}]'
+        run: pnpm --filter daedalus-dialog-editor run build
+
+      - name: Run real-Electron E2E suite
+        working-directory: daedalus-dialog-editor
+        run: xvfb-run --auto-servernum pnpm exec playwright test -c playwright.electron.config.ts
+
+      - name: Upload Electron E2E report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-electron
+          path: daedalus-dialog-editor/playwright-report-electron
+          if-no-files-found: ignore
+          retention-days: 7
+
+  parser-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.23.0
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run parser tests
+        run: pnpm --filter daedalus-parser test
+
+      - name: Lint parser
+        run: pnpm --filter daedalus-parser run lint
+
+      - name: Typecheck parser
+        run: pnpm --filter daedalus-parser run typecheck
+
+  roundtrip-corpus:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.23.0
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run roundtrip corpus
+        run: pnpm run test:roundtrip-corpus -- --root test/fixtures/corpus --strict
+
+      - name: Upload roundtrip reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: roundtrip-corpus-reports
+          path: |
+            reports/dialog-roundtrip-corpus-summary.json
+            reports/dialog-roundtrip-corpus-summary.md
+            reports/dialog-roundtrip-corpus-details.json
+            reports/dialog-roundtrip-corpus-byte-idempotence.json
+          if-no-files-found: warn
+          retention-days: 7
+
+
+
+
+

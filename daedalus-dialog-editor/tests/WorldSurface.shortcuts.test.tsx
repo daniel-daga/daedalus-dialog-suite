@@ -1,0 +1,558 @@
+import React from 'react';
+import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { render, screen, fireEvent, waitFor, act, within, createEvent } from '@testing-library/react';
+import '@testing-library/jest-dom';
+import WorldSurface from '../src/renderer/components/world/WorldSurface';
+import { useWorldStore } from '../src/renderer/store/worldStore';
+import { useProjectStore } from '../src/renderer/store/projectStore';
+import { rotationAboutUp } from 'zen-world';
+import { SUMMARY, makeWorldEditorApi, vobIndex, waynetPayload } from './worldFixtures';
+
+/**
+ * The window keydown handler's shortcuts that open an existing confirm rather
+ * than commit directly (level-editor.md §17): Delete,
+ * Escape, and arrow-key nudge. The delete and Escape paths are gated by the
+ * same confirm dialogs the `WorldSurface.editing.*` suites already exercise —
+ * these tests check only that the shortcut *reaches* them.
+ */
+
+jest.mock('react-virtualized-auto-sizer', () => (props: {
+  children: (size: { height: number; width: number }) => React.ReactNode;
+}) => props.children({ height: 600, width: 320 }));
+
+jest.mock('../src/renderer/components/world/WorldViewport', () => {
+  const ReactActual = jest.requireActual('react') as typeof React;
+  return {
+    __esModule: true,
+    default: ReactActual.forwardRef((_props: unknown, ref: React.Ref<unknown>) => {
+      ReactActual.useImperativeHandle(ref, () => ({
+        raycastDown: () => null, frameVob: () => undefined, framePoint: () => undefined,
+        // A camera looking down ZenGin +Z: right is +X, forward is +Z.
+        cameraNudgeAxes: () => ({ right: [1, 0, 0], forward: [0, 0, 1] }),
+        beginNudge: () => true,
+        previewNudge: () => undefined,
+        previewTurn: () => undefined,
+      }));
+      return <div data-testid="world-viewport-stub" />;
+    }),
+  };
+});
+
+const api = makeWorldEditorApi();
+
+/** The last `render`, for the tests that re-render the surface hidden. */
+let lastRender: ReturnType<typeof render> | null = null;
+
+/** `withChild` gives VOB 1 a child, VOB 2 — a delete that takes more than the
+ *  selection, which is when the confirm still opens (#374). */
+async function openWorld(withChild = false) {
+  // A fresh vobIndex per call: a committed op mutates it in place, and a
+  // shared object would carry one test's move into the next.
+  const summary = {
+    ...SUMMARY,
+    vobIndex: withChild
+      ? vobIndex([[0, 0, 0], [10, 20, 30], [10, 20, 40]], 'zCVob', [-1, -1, 1])
+      : vobIndex([[0, 0, 0], [10, 20, 30]]),
+  };
+  api.openWorldDialog.mockResolvedValueOnce('C:/Gothic/NewWorld.zen' as never);
+  api.openWorld.mockResolvedValueOnce(summary as never);
+  api.getWorldMesh.mockResolvedValueOnce({ groups: [], bbox: summary.bbox } as never);
+  api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+  lastRender = render(<WorldSurface />);
+  fireEvent.click(screen.getByTestId('world-open'));
+  // Open world lists the project's worlds (level-editor.md §16.31); these
+  // suites want a named file, which is what Browse… still is.
+  fireEvent.click(await screen.findByTestId('world-picker-browse'));
+  await screen.findByTestId('world-viewport-stub');
+  return summary;
+}
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  api.getWorldWaynet.mockResolvedValue(waynetPayload() as never);
+  (window as unknown as { editorAPI: typeof api }).editorAPI = api;
+});
+
+afterEach(() => {
+  useWorldStore.getState().reset();
+  useProjectStore.getState().closeProject();
+});
+
+describe('the Delete key', () => {
+  it('deletes a VOB with no children straight away — the delete undoes (#374)', async () => {
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+
+    fireEvent.keyDown(window, { key: 'Delete' });
+
+    expect(screen.queryByTestId('world-delete-warning')).not.toBeInTheDocument();
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    const [ops] = api.applyWorldOps.mock.calls[0] as [Array<{ op: string; vob: number }>];
+    expect(ops).toMatchObject([{ op: 'DeleteVob', vob: 1 }]);
+  });
+
+  it('deletes a multi-VOB selection of leaves straight away too, as one batch', async () => {
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVobs([0, 1]); });
+
+    fireEvent.keyDown(window, { key: 'Delete' });
+
+    expect(screen.queryByTestId('world-delete-warning')).not.toBeInTheDocument();
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    const [ops] = api.applyWorldOps.mock.calls[0] as [Array<{ op: string; vob: number }>];
+    expect(ops).toMatchObject([{ op: 'DeleteVob', vob: 1 }, { op: 'DeleteVob', vob: 0 }]);
+  });
+
+  it('still opens the confirm for a VOB with children, since they go too', async () => {
+    await openWorld(true);
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+
+    fireEvent.keyDown(window, { key: 'Delete' });
+
+    expect(screen.getByTestId('world-delete-warning')).toBeVisible();
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('world-delete-confirm'));
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    const [ops] = api.applyWorldOps.mock.calls[0] as [Array<{ op: string; vob: number }>];
+    expect(ops).toMatchObject([{ op: 'DeleteVob', vob: 1 }]);
+  });
+
+  it('opens the confirm for a multi-VOB selection holding a subtree, naming the count (#253)', async () => {
+    await openWorld(true);
+    await act(async () => { useWorldStore.getState().selectVobs([0, 1]); });
+
+    fireEvent.keyDown(window, { key: 'Delete' });
+
+    expect(screen.getByTestId('world-delete-warning')).toBeVisible();
+    expect(screen.getByTestId('world-delete-title')).toHaveTextContent(/2 VOBs/);
+  });
+
+  it('does nothing with nothing selected', async () => {
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(null); });
+
+    fireEvent.keyDown(window, { key: 'Delete' });
+
+    expect(screen.queryByTestId('world-delete-warning')).not.toBeInTheDocument();
+  });
+
+  it('opens the waypoint delete confirm for a selected waypoint', async () => {
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectWaypoint(1); });
+
+    fireEvent.keyDown(window, { key: 'Delete' });
+
+    expect(screen.getByTestId('world-waypoint-delete-warning')).toBeVisible();
+  });
+
+  it('does nothing while a text field has focus', async () => {
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    const field = document.createElement('input');
+    document.body.appendChild(field);
+    field.focus();
+
+    fireEvent.keyDown(field, { key: 'Delete' });
+
+    expect(screen.queryByTestId('world-delete-warning')).not.toBeInTheDocument();
+    field.remove();
+  });
+
+  it('does nothing when the surface is hidden', async () => {
+    const { rerender } = render(<WorldSurface />);
+    api.openWorldDialog.mockResolvedValueOnce('C:/Gothic/NewWorld.zen' as never);
+    api.openWorld.mockResolvedValueOnce(SUMMARY as never);
+    api.getWorldMesh.mockResolvedValueOnce({ groups: [], bbox: SUMMARY.bbox } as never);
+    api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+    fireEvent.click(screen.getByTestId('world-open'));
+    // Open world lists the project's worlds (level-editor.md §16.31); these
+    // suites want a named file, which is what Browse… still is.
+    fireEvent.click(await screen.findByTestId('world-picker-browse'));
+    await screen.findByTestId('world-viewport-stub');
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+
+    rerender(<WorldSurface hidden />);
+    fireEvent.keyDown(window, { key: 'Delete' });
+
+    expect(screen.queryByTestId('world-delete-warning')).not.toBeInTheDocument();
+  });
+});
+
+describe('Ctrl+Z and Ctrl+Y', () => {
+  // The one pair that reached past both guards. §17 of the architecture doc
+  // says every shortcut here shares `isTypingOrInPopover` *and* the
+  // `surfaceDialogOpen` check; undo and redo shared neither, so a Ctrl+Z in a
+  // property field undid a world edit instead of the typing, and a Ctrl+Z with
+  // the delete confirm open could renumber the very VOB that confirm was about
+  // — `deleting` is a flat index, and `applied` clears the selection but not
+  // the dialog.
+
+  it('undoes a world edit when nothing else owns the keystroke', async () => {
+    await openWorld();
+
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+
+    await waitFor(() => expect(api.undoWorldEdit).toHaveBeenCalled());
+  });
+
+  it('leaves the keystroke to a focused text field', async () => {
+    await openWorld();
+    const field = document.createElement('input');
+    document.body.appendChild(field);
+    field.focus();
+
+    const event = createEvent.keyDown(field, { key: 'z', ctrlKey: true });
+    fireEvent(field, event);
+
+    expect(api.undoWorldEdit).not.toHaveBeenCalled();
+    // And the browser's own text undo is left to happen.
+    expect(event.defaultPrevented).toBe(false);
+    field.remove();
+  });
+
+  it('leaves redo to a focused text field too', async () => {
+    await openWorld();
+    const field = document.createElement('input');
+    document.body.appendChild(field);
+    field.focus();
+
+    fireEvent.keyDown(field, { key: 'y', ctrlKey: true });
+
+    expect(api.redoWorldEdit).not.toHaveBeenCalled();
+    field.remove();
+  });
+
+  it('does nothing while the delete confirm is open', async () => {
+    // The dialog names a VOB by flat index. An undo of a structural op
+    // renumbers, and the confirm would then remove whatever had moved into that
+    // index.
+    await openWorld(true);
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    fireEvent.keyDown(window, { key: 'Delete' });
+    await screen.findByTestId('world-delete-warning');
+
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+
+    expect(api.undoWorldEdit).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when the surface is hidden', async () => {
+    await openWorld();
+    // The surface stays mounted behind the dialog view, so its window listeners
+    // are still bound — Ctrl+Z there belongs to the dialog editor's history.
+    const { rerender } = lastRender!;
+    rerender(<WorldSurface hidden />);
+
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+
+    expect(api.undoWorldEdit).not.toHaveBeenCalled();
+  });
+});
+
+describe('the Escape key', () => {
+  it('clears a VOB selection', async () => {
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(useWorldStore.getState().selection).toEqual([]);
+  });
+
+  it('clears a selected waypoint', async () => {
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectWaypoint(1); });
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(useWorldStore.getState().selectedWaypoint).toBeNull();
+  });
+
+  it('does not clear the selection while the delete confirm is open, so the dialog is not fighting the shortcut over it', async () => {
+    await openWorld(true);
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    fireEvent.keyDown(window, { key: 'Delete' });
+    expect(screen.getByTestId('world-delete-warning')).toBeVisible();
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(useWorldStore.getState().selection).toEqual([1]);
+  });
+
+  it('does nothing while a text field has focus', async () => {
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    const field = document.createElement('input');
+    document.body.appendChild(field);
+    field.focus();
+
+    fireEvent.keyDown(field, { key: 'Escape' });
+
+    expect(useWorldStore.getState().selection).toEqual([1]);
+    field.remove();
+  });
+});
+
+describe('arrow-key nudge', () => {
+  /** A tap: down and up. The nudge commits on the key up. */
+  const tap = (key: string, init: Record<string, unknown> = {}) => {
+    fireEvent.keyDown(window, { key, ...init });
+    fireEvent.keyUp(window, { key, ...init });
+  };
+
+  /** The one control, which means whichever step the gizmo mode is about —
+   *  ported from `WorldSurface.editing.transform.test.tsx`'s `chooseStep`. */
+  const chooseStep = async (label: string) => {
+    fireEvent.mouseDown(within(screen.getByTestId('world-snap')).getByRole('combobox'));
+    fireEvent.click(await screen.findByRole('option', { name: label }));
+  };
+
+  const nudgeOp = (to: [number, number, number]) => ({
+    op: 'MoveVob', vob: 1, path: '1', from: [10, 20, 30], to,
+  });
+
+  it('moves the selection camera-right by the default 10 cm step on ArrowRight', async () => {
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+
+    tap('ArrowRight');
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp([20, 20, 30])]);
+  });
+
+  it.each([
+    ['ArrowLeft', [0, 20, 30]],
+    ['a', [0, 20, 30]],
+    ['d', [20, 20, 30]],
+    ['ArrowUp', [10, 20, 40]],
+    ['w', [10, 20, 40]],
+    ['ArrowDown', [10, 20, 20]],
+    ['s', [10, 20, 20]],
+    ['PageUp', [10, 30, 30]],
+    ['PageDown', [10, 10, 30]],
+  ] as Array<[string, [number, number, number]]>)('moves the selection on %s', async (key, to) => {
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+
+    tap(key);
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp(to)]);
+  });
+
+  it('nudges by the chosen snap step instead of the 10 cm default', async () => {
+    await openWorld();
+    await chooseStep('1 m');
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+
+    tap('ArrowRight');
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp([110, 20, 30])]);
+  });
+
+  it('multiplies the step by 10 while Shift is held', async () => {
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+
+    tap('ArrowRight', { shiftKey: true });
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp([110, 20, 30])]);
+  });
+
+  it('divides the step by 10 while Ctrl is held (#386)', async () => {
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+
+    tap('ArrowRight', { ctrlKey: true });
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp([11, 20, 30])]);
+  });
+
+  it('does nothing with an empty selection', async () => {
+    await openWorld();
+
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+  });
+
+  it('does nothing while a text field has focus', async () => {
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    const field = document.createElement('input');
+    document.body.appendChild(field);
+    field.focus();
+
+    fireEvent.keyDown(field, { key: 'ArrowRight' });
+
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+    field.remove();
+  });
+
+  it('does nothing while focus is inside a tree, reserving arrows for its own navigation', async () => {
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    const tree = document.createElement('div');
+    tree.setAttribute('role', 'tree');
+    const row = document.createElement('div');
+    row.tabIndex = 0;
+    tree.appendChild(row);
+    document.body.appendChild(tree);
+    row.focus();
+
+    fireEvent.keyDown(row, { key: 'ArrowRight' });
+
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+    tree.remove();
+  });
+
+  it('a held key is one commit however many auto-repeats arrive', async () => {
+    // The OS repeats keydown while a key is held. Each one used to be its own
+    // commit, dropped by the in-flight guard, so a held key stuttered; now the
+    // hold is one gesture, committed once on the key up.
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+
+    fireEvent.keyDown(window, { key: 'w' });
+    fireEvent.keyDown(window, { key: 'w', repeat: true });
+    fireEvent.keyDown(window, { key: 'w', repeat: true });
+    await act(async () => undefined);
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+    fireEvent.keyUp(window, { key: 'w' });
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp([10, 20, 40])]);
+  });
+
+  it('drops the taps that arrive while a commit is still in flight', async () => {
+    // §2.7 of `docs/plans/level-editor-review-2026-09-04.md`: every builder
+    // reads `from` out of a projection that is only written once the round
+    // trip is back, so a second commit sent before the first lands would
+    // carry the *same* `from`.
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    let release: () => void = () => undefined;
+    api.applyWorldOps.mockImplementationOnce(
+      () => new Promise<void>((resolve) => { release = () => resolve(); }) as never,
+    );
+
+    tap('ArrowRight');
+    tap('ArrowRight');
+    tap('ArrowRight');
+    await act(async () => undefined);
+
+    expect(api.applyWorldOps).toHaveBeenCalledTimes(1);
+    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp([20, 20, 30])]);
+    await act(async () => { release(); });
+  });
+
+  it('nudges from the position the dropped-through commit left behind', async () => {
+    // The other half of the guard: it has to be *released*, and the tap that
+    // follows has to read the column the applied op wrote — not the one the
+    // world had when the first tap was made.
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    let release: () => void = () => undefined;
+    api.applyWorldOps.mockImplementationOnce(
+      () => new Promise<void>((resolve) => { release = () => resolve(); }) as never,
+    );
+
+    tap('ArrowRight');
+    tap('ArrowRight');
+    await act(async () => { release(); });
+    tap('ArrowRight');
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(2));
+    expect(api.applyWorldOps.mock.calls[1][0]).toMatchObject([
+      { op: 'MoveVob', vob: 1, path: '1', from: [20, 20, 30], to: [30, 20, 30] },
+    ]);
+  });
+
+  it('does nothing while a MUI Select popover has focus', async () => {
+    // The bug this pins: a Select's options are `li[role="option"]` inside
+    // a `[role="listbox"]` — not INPUT/TEXTAREA/SELECT, not inside the
+    // tree — so arrowing through the Snap step dropdown used to nudge the
+    // VOB and record an undo entry while the user was only picking a step.
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    fireEvent.mouseDown(within(screen.getByTestId('world-snap')).getByRole('combobox'));
+    const option = await screen.findByRole('option', { name: '1 m' });
+
+    fireEvent.keyDown(option, { key: 'ArrowDown' });
+
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+  });
+
+  it('does nothing while one of the surface\'s own dialogs is open', async () => {
+    // Focus can still be on `window` the instant a dialog opens, so the
+    // popover check alone would let this through — the open-dialog state
+    // guard is the other half.
+    await openWorld(true);
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    fireEvent.keyDown(window, { key: 'Delete' });
+    expect(screen.getByTestId('world-delete-warning')).toBeVisible();
+
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+  });
+
+  it('leaves the key alone when nothing is selected, rather than swallowing it', async () => {
+    // `preventDefault` used to run before the empty-selection check, so an
+    // arrow key was consumed in the whole World view even where it would
+    // have scrolled a list.
+    await openWorld();
+
+    const event = createEvent.keyDown(window, { key: 'ArrowDown' });
+    fireEvent(window, event);
+
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('turns the selection instead in rotate mode — D yaws it right by 1° (#387)', async () => {
+    // A `snapGrid` left over from translate mode is invisible in rotate mode
+    // (the Snap control edits the angle there), so it must not reach the turn.
+    await openWorld();
+    await chooseStep('5 m');
+    fireEvent.keyDown(window, { key: '2' });
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+
+    tap('d');
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    const [ops] = api.applyWorldOps.mock.calls[0] as [Array<{ op: string; vob: number; to: number[] }>];
+    expect(ops).toMatchObject([{ op: 'RotateVob', vob: 1 }]);
+    const turn = Math.PI / 180;
+    expect(ops[0].to).toEqual(rotationAboutUp(turn).map((value) => expect.closeTo(value, 6)));
+  });
+
+  it('pitches with W about camera-right, snapped to the angle step', async () => {
+    await openWorld();
+    fireEvent.click(screen.getByTestId('world-gizmo-rotate'));
+    await chooseStep('90°');
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+
+    tap('w');
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    const [ops] = api.applyWorldOps.mock.calls[0] as [Array<{ op: string; to: number[] }>];
+    // Camera looks down +Z with +X to its right: up (column 1) tips away to +Z.
+    expect(ops[0].to).toEqual([1, 0, 0, 0, 0, -1, 0, 1, 0].map((value) => expect.closeTo(value, 6)));
+  });
+
+  it('does nothing on the real scene tree either, once slice 7 gives it its own arrow keys', async () => {
+    // The synthetic tree above pins the generic guard; this is the same
+    // guard against the actual `role="tree"` WorldSceneTree renders once a
+    // world is open, which is not mocked in this suite.
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+
+    fireEvent.keyDown(screen.getByRole('tree'), { key: 'ArrowRight' });
+
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+  });
+});

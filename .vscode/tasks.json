@@ -1,0 +1,35 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "editor: build:main",
+      "type": "shell",
+      "command": "npm run build:main",
+      "options": { "cwd": "${workspaceFolder}/daedalus-dialog-editor" },
+      "problemMatcher": "$tsc",
+      "presentation": { "reveal": "silent" }
+    },
+    {
+      "label": "editor: lint",
+      "type": "shell",
+      "command": "npm run lint",
+      "options": { "cwd": "${workspaceFolder}/daedalus-dialog-editor" },
+      "problemMatcher": "$eslint-stylish",
+      "group": "none"
+    },
+    {
+      "label": "editor: test",
+      "type": "shell",
+      "command": "npm test",
+      "options": { "cwd": "${workspaceFolder}/daedalus-dialog-editor" },
+      "group": "test"
+    },
+    {
+      "label": "parser: test",
+      "type": "shell",
+      "command": "npm test",
+      "options": { "cwd": "${workspaceFolder}/daedalus-parser" },
+      "group": "test"
+    }
+  ]
+}

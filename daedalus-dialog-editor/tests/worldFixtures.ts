@@ -1,0 +1,213 @@
+import type { VobIndex } from 'zen-world';
+import type {
+  AssetCatalog, PortalFinding, VfsSearch, VobFolders, WaynetPayload, WorldOp, WorldSummary,
+} from '../src/shared/worldTypes';
+import type { AppendInsertNpcResult } from '../src/shared/types';
+import type { EditorAPI } from '../src/renderer/types/global';
+
+/**
+ * Shared pure-data builders for the World surface's test suites
+ * (`docs/architecture/level-editor.md` §17). Moved out of
+ * the `WorldSurface.editing.*` suites so new test files (shortcuts, toolbar,
+ * context menu, panels, ...) don't each reinvent a `VobIndex`.
+ *
+ * The `jest.mock('.../WorldViewport')` factory cannot move here — jest hoists
+ * `jest.mock` calls above imports, and a factory referencing an imported
+ * module-level mock breaks that hoist. Each test file that needs the viewport
+ * stub declares its own.
+ */
+
+/** Waypoint 1's position in `waynetPayload()`, and where the drag stub moves
+ *  it to — shared so a shortcuts-style test can compute the same op. */
+export const WAYPOINT_WAS: [number, number, number] = [1000, 0, 1000];
+export const WAYPOINT_TO: [number, number, number] = [1400, 50, 900];
+
+/**
+ * A three-waypoint waynet, in the shape `getWaynet` emits it.
+ *
+ * Fresh per test, because the overlay draws a *view* over `positions` and an
+ * applied move writes it in place — a shared fixture would carry one test's
+ * move into the next.
+ */
+export function waynetPayload(): WaynetPayload {
+  return {
+    count: 3,
+    names: ['WP_START', 'WP_MIDDLE', 'WP_END'],
+    positions: new Float32Array([0, 0, 0, ...WAYPOINT_WAS, 2000, 0, 2000]).buffer,
+    // The resting facing every retail point and every `AddWaypoint` carries —
+    // zeroes here would let a `deleteWaypoint` that dropped the column pass.
+    directions: new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]).buffer,
+    waterDepths: new Int32Array(3).buffer,
+    flags: new Uint32Array(3).buffer,
+    edgeCount: 2,
+    edges: new Uint32Array([0, 1, 1, 2]).buffer,
+    danglingEdges: 0,
+  };
+}
+
+export function vobIndex(
+  positions: Array<[number, number, number]>,
+  cls: string | readonly string[] = 'zCVob',
+  // One parent per VOB, all roots unless a test wants a hierarchy — which the
+  // paste does, because "into the selection's parent" is only distinguishable
+  // from "into the roots" when the selection has one.
+  parents: readonly number[] = positions.map(() => -1),
+  // One name per VOB. Every VOB is `BARREL` unless a test names them, which
+  // the free-point jump does: a free point is found by *its own name*.
+  vobNames: readonly string[] = positions.map(() => 'BARREL'),
+  // One visual per VOB. Every VOB is drawn as a barrel unless a test says
+  // otherwise, which the markers do (§16.38): the empty string is what "this
+  // VOB has no visual" looks like on disk, and it is 38 % of the retail corpus.
+  vobVisuals: readonly string[] = positions.map(() => 'BARREL.3DS'),
+): VobIndex {
+  const count = positions.length;
+  const columns = new Float32Array(count * 3);
+  positions.forEach((position, i) => columns.set(position, i * 3));
+  const seen = new Map<number, number>();
+  const childIndex = new Uint32Array(count);
+  parents.forEach((parent, i) => {
+    const slot = seen.get(parent) ?? 0;
+    childIndex[i] = slot;
+    seen.set(parent, slot + 1);
+  });
+  // Identity, not zeros: a zero matrix is not a rotation any world contains,
+  // and a rotation op composed onto one produces a box collapsed to a point.
+  const rotations = new Float32Array(count * 9);
+  for (let i = 0; i < count; i++) rotations.set([1, 0, 0, 0, 1, 0, 0, 0, 1], i * 9);
+
+  // One class name for the whole index, or one per VOB when a list is given.
+  // The list is not a convenience: a single class means the selection can never
+  // move between two *catalogued* classes, and that is exactly the move where
+  // the class fields drawn and the props fetched can disagree.
+  const perVob = typeof cls === 'string' ? positions.map(() => cls) : cls;
+  const classes = [...new Set(perVob)];
+  const classIndex = new Uint32Array(count);
+  perVob.forEach((name, i) => { classIndex[i] = classes.indexOf(name); });
+
+  return {
+    count,
+    parent: Int32Array.from(parents).buffer,
+    childIndex: childIndex.buffer,
+    positions: columns.buffer,
+    rotations: rotations.buffer,
+    flags: new Uint32Array(count).buffer,
+    classes, classIndex: classIndex.buffer,
+    names: [...new Set(vobNames)],
+    nameIndex: Uint32Array.from(vobNames.map((n) => [...new Set(vobNames)].indexOf(n))).buffer,
+    visuals: [...new Set(vobVisuals)],
+    visualIndex: Uint32Array.from(
+      vobVisuals.map((v) => [...new Set(vobVisuals)].indexOf(v)),
+    ).buffer,
+    ...visualTypeColumns(vobVisuals),
+  };
+}
+
+/**
+ * The visual-type column and the decal side table, derived from the visual
+ * names rather than passed in — the binding derives them from the same place,
+ * and a fixture that let the two disagree would let a test assert a decal whose
+ * name is a `.3DS`.
+ *
+ * Every decal gets the same 25x25 half extent ZenGin defaults to; a test that
+ * cares about the size builds its own payload (`DecalLayer.test.ts`).
+ */
+function visualTypeColumns(vobVisuals: readonly string[]) {
+  const typeOf = (visual: string) => {
+    if (visual === '') return 'UNKNOWN';
+    if (visual.toUpperCase().endsWith('.TGA')) return 'DECAL';
+    if (visual.toUpperCase().endsWith('.PFX')) return 'PARTICLE_EFFECT';
+    return 'MULTI_RESOLUTION_MESH';
+  };
+  const perVob = vobVisuals.map(typeOf);
+  const visualTypes = [...new Set(perVob)];
+  const decals = perVob.flatMap((type, vob) => (type === 'DECAL' ? [vob] : []));
+
+  return {
+    visualTypes,
+    visualTypeIndex: Uint32Array.from(perVob.map((type) => visualTypes.indexOf(type))).buffer,
+    decalVobs: Uint32Array.from(decals).buffer,
+    decalDimensions: Float32Array.from(decals.flatMap(() => [25, 25])).buffer,
+    // Opaque, which is what the archive's default is: a fixture that dimmed
+    // its decals would make every viewport assertion read through a filter.
+    decalAlphaWeights: Uint8Array.from(decals.map(() => 255)).buffer,
+  };
+}
+
+export const SUMMARY: WorldSummary = {
+  worldPath: 'C:/Gothic/NewWorld.zen',
+  bbox: [0, 0, 0, 1, 1, 1],
+  vobIndex: vobIndex([[0, 0, 0], [10, 20, 30]]),
+  stats: { vobCount: 2, materials: 1, worldDrawGroups: 1, worldTriangles: 1 },
+  timings: {},
+  assetSources: ['C:/Gothic/Data/Textures.vdf', 'C:/Gothic/_work/Data/Meshes/_compiled'],
+};
+
+/** The three `zCVob` fields every read carries, whatever the class — they are
+ *  base fields and no VOB is without them. */
+export const BASE_PROPS = { presetName: 'FIRE_STAT', visualCamAlign: 1, bias: 2 };
+
+/** The op a single-VOB drag becomes in the fixture above — VOB 1 at
+ *  `[10, 20, 30]`, dragged by the stub's fixed delta. */
+export const MOVE: Extract<WorldOp, { op: 'MoveVob' }> = {
+  op: 'MoveVob', vob: 1, path: '1', from: [10, 20, 30], to: [11, 22, 33],
+};
+
+/** The op a drag of waypoint 1 has to become. */
+export const WAYPOINT_MOVE: WorldOp = {
+  op: 'MoveWaypoint', waypoint: 1, name: 'WP_MIDDLE', from: WAYPOINT_WAS, to: WAYPOINT_TO,
+};
+
+/**
+ * A fresh `editorAPI` mock, one `jest.fn()` per IPC method. A factory rather
+ * than a shared object: each test file's `beforeEach` calls
+ * `jest.clearAllMocks()` against its own module-level mocks, and a shared
+ * object would let one file's implementation (`mockResolvedValueOnce`, ...)
+ * bleed into another's.
+ */
+export function makeWorldEditorApi() {
+  const api = {
+    openWorldDialog: jest.fn(),
+    // The picker's scan: empty by default, so a suite that only wants a named
+    // world goes through Browse… without stubbing a list (§16.31).
+    listWorlds: jest.fn(async () => []),
+    openWorld: jest.fn(),
+    getWorldMesh: jest.fn(),
+    getWorldVisuals: jest.fn(),
+    getWorldTexture: jest.fn(async () => null),
+    listWorldAssets: jest.fn(async () => null),
+    // The whole-namespace search behind the browser's filter box (#241).
+    // Nothing by default: a suite that wants hits stubs them.
+    searchWorldAssets: jest.fn(async (): Promise<VfsSearch> => ({ matches: [], truncated: false })),
+    // Nothing resolves unless a test says otherwise, so a listed source file
+    // reads as not compiled — the tests that care queue their own answer.
+    resolveWorldAssets: jest.fn(async (names: string[]): Promise<(string | null)[]> => names.map(() => null)),
+    getWorldVisual: jest.fn(async () => null),
+    getAssetThumbnail: jest.fn(async (): Promise<{ key: string; dataUrl: string | null }> => ({ key: 'k', dataUrl: null })),
+    putAssetThumbnail: jest.fn(async () => undefined),
+    getAssetCatalog: jest.fn(async (): Promise<AssetCatalog> => ({ favorites: [], categories: [] })),
+    saveAssetCatalog: jest.fn(async () => undefined),
+    getWorldWaynet: jest.fn(),
+    getWorldPortalFindings: jest.fn(async (): Promise<PortalFinding[]> => []),
+    getVisualBounds: jest.fn(async (): Promise<number[] | null> => null),
+    getVobProps: jest.fn(async (): Promise<Record<string, unknown>> => ({ class: 'zCVob', ...BASE_PROPS })),
+    refreshWorldIndex: jest.fn(),
+    applyWorldOps: jest.fn(async () => undefined),
+    undoWorldEdit: jest.fn(async (): Promise<WorldOp[] | null> => null),
+    redoWorldEdit: jest.fn(async (): Promise<WorldOp[] | null> => null),
+    getWorldHistoryDepth: jest.fn(async (): Promise<{ undo: number; redo: number }> => ({ undo: 0, redo: 0 })),
+    saveWorld: jest.fn(async () => undefined),
+    saveWorldAs: jest.fn(async (): Promise<string | null> => 'C:/Gothic/Copy.zen'),
+    startGmbtQuickTest: jest.fn(async () => undefined),
+    onGmbtQuickTestFailed: jest.fn((_callback: (message: string) => void) => () => undefined),
+    compileWorldAssets: jest.fn(async () => undefined),
+    getVobFolders: jest.fn(async (): Promise<VobFolders> => ({ folders: [] })),
+    saveVobFolders: jest.fn(async () => undefined),
+    closeWorld: jest.fn(),
+    appendInsertNpc: jest.fn(async (): Promise<AppendInsertNpcResult> => ({ ok: true, line: 1 })),
+  };
+  // Each mock takes the real method's parameters, so a `toHaveBeenCalledWith`
+  // is checked against what the IPC actually accepts.
+  return api as unknown as {
+    [K in keyof typeof api]: jest.Mock<ReturnType<(typeof api)[K]>, Parameters<EditorAPI[K]>>;
+  };
+}

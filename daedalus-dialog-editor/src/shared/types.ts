@@ -1,0 +1,947 @@
+/**
+ * Shared type definitions used by both main and renderer processes
+ */
+
+// ============================================================================
+// Project Types
+// ============================================================================
+
+export interface DialogMetadata {
+  dialogName: string;
+  npc: string;
+  filePath: string;
+}
+
+
+/**
+ * One syntax error the index pass found, flattened out of the semantic model's
+ * `SyntaxError` so it survives IPC as plain data. `line`/`column` are 1-based,
+ * as the parser reports them.
+ */
+export interface ParseErrorSite {
+  type: string;
+  message: string;
+  line: number;
+  column: number;
+  /** The offending source, truncated (see {@link PARSE_ERROR_TEXT_LIMIT}). */
+  text: string;
+}
+
+/**
+ * The syntax errors of one file, as the whole-project index pass saw them.
+ *
+ * Both caps exist because the Problems list is not virtualized and this data
+ * crosses IPC: tree-sitter collapses a mis-encoded file into a *single* ERROR
+ * node whose text is the whole file (so `text` is truncated), while a file
+ * broken declaration by declaration yields one node each (so `errors` is
+ * capped). `total` is what the parse actually found, which is what keeps the
+ * panel honest about the ones it is not showing.
+ */
+export interface FileParseErrors {
+  filePath: string;
+  errors: ParseErrorSite[];
+  total: number;
+}
+
+/** Most syntax errors carried per file; the rest are reported as a count. */
+export const PARSE_ERROR_LIMIT = 20;
+
+/** Longest offending-source snippet carried with a syntax error. */
+export const PARSE_ERROR_TEXT_LIMIT = 120;
+
+/** One statically resolvable spawn: names are UPPERCASED, line is 1-based. */
+export interface SpawnSite {
+  instance: string;
+  spawnPoint: string;
+  filePath: string;
+  functionName: string;
+  line: number;
+}
+
+/**
+ * One entry of a daily routine: a `TA`-family call's time window and the
+ * waypoint it puts the NPC at. `routine` is the function the call sits in —
+ * an NPC reaches it through `daily_routine`, which is `routinesByNpc`.
+ *
+ * Times are **minutes since midnight, 0..1439**, normalized at extraction:
+ * retail spells midnight both `00` and `24` and writes both ends of a day as
+ * `(06,00,24,00)` + `(24,00,06,00)`, so `24:00` is 0 here. A window whose end
+ * is at or before its start **wraps** past midnight, which is what makes both
+ * of those spellings come out right; `(00,00,00,00)` is therefore the whole
+ * day, which is the idiom retail uses for a routine with one entry.
+ *
+ * Names are UPPERCASED (Daedalus is case-insensitive), line is 1-based.
+ */
+export interface RoutineSite {
+  routine: string;
+  /** TA-family call name as written, uppercased (for example `TA_SIT`). */
+  stateName?: string;
+  startMinute: number;
+  endMinute: number;
+  waypoint: string;
+  filePath: string;
+  line: number;
+}
+
+/**
+ * Where a routine-carrying call keeps its time window and its waypoint, as
+ * 0-based argument positions. `startM`/`stopM` are absent for `TA`, which is
+ * hour-only.
+ */
+export interface RoutineArgIndex {
+  startH: number;
+  startM?: number;
+  stopH: number;
+  stopM?: number;
+  waypoint: number;
+  /** The spelling the project declares it with, when it does. */
+  name?: string;
+}
+
+/** One `Npc_ExchangeRoutine`/`B_StartOtherRoutine` call with a literal state. */
+export interface ExchangeSite {
+  /** The call's first argument as written, UPPERCASED — `SELF` is left as-is. */
+  target: string;
+  /** The state name, UPPERCASED: `"Tot"` reaches `RTN_TOT_<id>`. */
+  state: string;
+  filePath: string;
+  functionName: string;
+  line: number;
+}
+
+/**
+ * One file's share of the project index, read again when that file is saved
+ * by the routine editor or changed outside the editor (#319). The sites are
+ * read off a clean parse only, as the load reads them; `instances` is every
+ * instance the file declares, and the renderer decides which are NPCs.
+ */
+export interface FileIndex {
+  routineSites: RoutineSite[];
+  spawnSites: SpawnSite[];
+  exchangeSites: ExchangeSite[];
+  instances: Array<{ name: string; parent: string; npcId?: number; dailyRoutine?: string }>;
+}
+
+export interface ProjectIndex {
+  npcs: string[];
+  dialogsByNpc: Map<string, DialogMetadata[]>;
+  allFiles: string[];
+  questFiles: string[];
+  routines: string[];
+  /**
+   * Every function the project declares, UPPERCASED and sorted — Daedalus is
+   * case-insensitive, and this is compared against text a user typed.
+   *
+   * Whole-project by construction, which is the point: the World surface checks
+   * `oCTriggerScript.function` and a `VInteractiveObject`'s two script hooks
+   * against it (#269), and a trigger function almost always lives in a file
+   * nobody has opened, so the renderer's parsed models cannot answer. Built at
+   * project load/reindex time, same as voiceIds — so a function written since
+   * the last reindex is not in it, which is why the surface warns rather than
+   * refuses.
+   */
+  functions: string[];
+  /** Prototype names (normalized uppercase) whose parent chain reaches C_NPC */
+  npcPrototypes: string[];
+  /**
+   * How much of the project's NPC set the scanned folder could see (#281).
+   * `npcInstancesFound` counts NPC instance declarations (not dialog `npc`
+   * references); `missingPrototypes` are the types NPCs recognised only by
+   * their `daily_routine` derive from but the folder does not declare — so
+   * NPCs under them with no routine are not listed.
+   */
+  npcCoverage: { npcInstancesFound: number; missingPrototypes: string[] };
+  /**
+   * UPPERCASED NPC instance name to the file that declares it — what the NPC
+   * editor opens (docs/plans/npc-editor.md, Phase 2). Only NPCs with an
+   * instance: a name that appears only as a dialog's `npc` has no file here.
+   */
+  npcFiles: Record<string, string>;
+  /**
+   * AI_Output voice ids across the project, keyed by UPPERCASED id (Daedalus is
+   * case-insensitive); entries keep the original file/function locations.
+   * Built at project load/reindex time — not refreshed on every save, so it can
+   * be stale until the next reindex.
+   */
+  voiceIds: Record<string, Array<{ filePath: string; functionName: string; line?: number }>>;
+  /**
+   * Waypoint name literals passed to one of the engine externals that take a
+   * place name (`ENGINE_EXTERNAL_WAYPOINT_ARG_INDEX`, measured against the G2
+   * MDK's Externals.d) or to a project-declared function taking a
+   * `var string waypoint` parameter, keyed by UPPERCASED waypoint name;
+   * entries keep the original file/function locations. Built at project
+   * load/reindex time, same as voiceIds.
+   */
+  waypointSites: Record<string, Array<{ filePath: string; functionName: string; line: number }>>;
+  /**
+   * Static NPC/item spawns: every `Wld_InsertNpc`/`Wld_InsertItem` call whose
+   * instance and spawn point are both literals. Dynamic sites are excluded
+   * rather than guessed. Built at project load, and re-read per file when one
+   * changes (`FileIndex`).
+   */
+  spawnSites: SpawnSite[];
+  /**
+   * Every `TA`-family entry of every routine function, with its time window and
+   * waypoint. Deliberately keyed by the *routine function*, not by the NPC: a
+   * routine is shared (retail's generic guards all run one), and which NPC runs
+   * which is `routinesByNpc`. Built at project load, and re-read per file when
+   * one changes (`FileIndex`).
+   */
+  routineSites: RoutineSite[];
+  /**
+   * UPPERCASED NPC instance name to the UPPERCASED `daily_routine` function it
+   * declares. The other half of `routineSites` — `routines` is the same
+   * function names as a sorted set, which is what autocomplete wants and what a
+   * schedule cannot use.
+   */
+  routinesByNpc: Record<string, string>;
+  /**
+   * The routine variants quest state swaps in, keyed by UPPERCASED NPC
+   * instance: the NPC's `id` and its state name → routine function map, both
+   * UPPERCASED. Enumerated by the engine's own `RTN_<state>_<id>` rule over the
+   * routines already in `routineSites`, so a variant no script triggers is
+   * still listed — the World surface reads this as a *lens* ("draw the day as
+   * if this state were active"), never as a claim the game reaches it.
+   *
+   * An NPC appears only when he has at least one variant beside his declared
+   * `daily_routine`, which stays `routinesByNpc`'s answer.
+   */
+  routineStatesByNpc: Record<string, { id: number; states: Record<string, string> }>;
+  /**
+   * UPPERCASED NPC instance (one `npcFiles` has) to its literal `id` — what
+   * `routineStatesByNpc` splits on, kept so the renderer can derive it again
+   * when a file changes, since a variant may sit in another file than its NPC.
+   */
+  npcIds: Record<string, number>;
+  /**
+   * UPPERCASED routine-carrying function (`TA`, `TA_MIN` and every project
+   * wrapper that passes its parameters into one) to where its window and
+   * waypoint sit — the layout `routineSites` was read with. Routine authoring
+   * rewrites a call in that layout and offers the wrappers as its states.
+   */
+  routineLayouts: Record<string, RoutineArgIndex>;
+  /**
+   * Every `Npc_ExchangeRoutine`/`B_StartOtherRoutine` call with a literal state
+   * name — which states are actually *triggered*, as against those written.
+   * Nothing in the UI consumes it yet; it is the state index's ground truth.
+   */
+  exchangeSites: ExchangeSite[];
+  /** Files whose metadata extraction failed (read/parse error, timeout, crash). */
+  metadataFailures: Array<{ filePath: string; error: string }>;
+  /**
+   * Syntax errors per broken file — one entry per file that has any, none for a
+   * clean project. This pass is the only one that sees every file, which is why
+   * the Problems panel's `parse-error` rule reads its errors here rather than
+   * off `parsedFiles`: those hold only what has been opened, so a project with
+   * a broken file nobody opened used to look clean (#267). Built at project
+   * load/reindex time, same as voiceIds.
+   */
+  parseErrors: FileParseErrors[];
+}
+
+export interface RecentProject {
+  path: string;
+  name: string;
+  lastOpened: number;
+}
+
+// ============================================================================
+// Code Generation Settings
+// ============================================================================
+
+export interface CodeGenerationSettings {
+  indentChar: '\t' | ' ';
+  includeComments: boolean;
+  sectionHeaders: boolean;
+  uppercaseKeywords: boolean;
+}
+
+// ============================================================================
+// Semantic Model Types - Actions
+// ============================================================================
+
+export interface DialogLineAction {
+  type: 'DialogLine';
+  speaker: 'self' | 'other';
+  text: string;
+  id: string;
+  /** True when the source id argument was not a string literal. */
+  idIsExpression?: boolean;
+}
+
+export interface ChoiceAction {
+  type: 'Choice';
+  dialogRef: string;
+  text: string;
+  targetFunction: string;
+}
+
+export interface LogEntryAction {
+  type: 'LogEntry';
+  topic: string;
+  text: string;
+}
+
+export interface CreateTopicAction {
+  type: 'CreateTopic';
+  topic: string;
+  topicType: string;
+}
+
+export interface LogSetTopicStatusAction {
+  type: 'LogSetTopicStatus';
+  topic: string;
+  status: string;
+}
+
+export interface CreateInventoryItemsAction {
+  type: 'CreateInventoryItems';
+  target: string;
+  item: string;
+  quantity: number | string;
+}
+
+export interface GiveInventoryItemsAction {
+  type: 'GiveInventoryItems';
+  giver: string;
+  receiver: string;
+  item: string;
+  quantity: number | string;
+}
+
+export interface AttackActionType {
+  type: 'AttackAction';
+  attacker: string;
+  target: string;
+  attackReason: string;
+  damage: number | string;
+}
+
+export interface SetAttitudeActionType {
+  type: 'SetAttitudeAction';
+  target: string;
+  attitude: string;
+}
+
+export interface ChapterTransitionAction {
+  type: 'ChapterTransitionAction';
+  chapter: number | string;
+  world: string;
+}
+
+export interface ExchangeRoutineAction {
+  type: 'ExchangeRoutineAction';
+  target?: string;
+  npc?: string;
+  routine: string;
+}
+
+export interface SetVariableAction {
+  type: 'SetVariableAction';
+  variableName: string;
+  operator: string;
+  value: string | number | boolean;
+}
+
+export interface StopProcessInfosAction {
+  type: 'StopProcessInfosAction';
+  target: string;
+}
+
+export interface PlayAniAction {
+  type: 'PlayAniAction';
+  target: string;
+  animationName: string;
+}
+
+export interface SetRefuseTalkAction {
+  type: 'SetRefuseTalkAction';
+  target: string;
+  seconds: number | string;
+}
+
+export interface ClearChoicesAction {
+  type: 'ClearChoicesAction';
+  dialog: string;
+}
+
+export interface GivePlayerXPActionType {
+  type: 'GivePlayerXPAction';
+  xpAmount: string;
+}
+
+export interface PickpocketActionType {
+  type: 'PickpocketAction';
+  pickpocketMode: 'B_Beklauen' | 'C_Beklauen';
+  minChance?: string;
+  maxChance?: string;
+}
+
+export interface StartOtherRoutineActionType {
+  type: 'StartOtherRoutineAction';
+  routineFunctionName: 'B_StartOtherRoutine' | 'B_StartotherRoutine';
+  routineNpc: string;
+  routineName: string;
+}
+
+export interface TeachActionType {
+  type: 'TeachAction';
+  teachFunctionName: string;
+  teachArgs: string[];
+}
+
+export interface GiveTradeInventoryActionType {
+  type: 'GiveTradeInventoryAction';
+  tradeTarget: string;
+}
+
+export interface RemoveInventoryItemsActionType {
+  type: 'RemoveInventoryItemsAction';
+  removeFunctionName: 'Npc_RemoveInvItems' | 'Npc_RemoveInvItem';
+  removeNpc: string;
+  removeItem: string;
+  /** Absent for the 2-arg `Npc_RemoveInvItem` engine form. */
+  removeQuantity?: string;
+}
+
+/** `B_UseItem (npc, item);` — the NPC uses the item (#304). */
+export interface UseItemActionType {
+  type: 'UseItemAction';
+  target: string;
+  item: string;
+}
+
+export interface InsertNpcActionType {
+  type: 'InsertNpcAction';
+  npcInstance: string;
+  spawnPoint: string;
+}
+
+export interface HeroFollowsActionType {
+  type: 'HeroFollowsAction';
+  guideRoutine: string;
+}
+
+export interface Action {
+  type: 'Action';
+  action: string;
+}
+
+/**
+ * A standalone comment inside a function or condition body, preserved in
+ * source position (mirrors the parser's `CommentAction`). Read-only in the
+ * editor UI; regenerates verbatim with no trailing `;`.
+ */
+export interface CommentActionType {
+  type: 'CommentAction';
+  text: string;
+}
+
+export interface CustomAction {
+  type?: 'CustomAction'; // Fallback for legacy or untyped custom actions
+  action: string;
+}
+
+export interface ConditionalAction {
+  type: 'ConditionalAction';
+  condition: string;
+  thenActions: DialogAction[];
+  elseActions: DialogAction[];
+}
+
+/**
+ * The 1-based source line a construct was parsed from.
+ *
+ * Intersected into the action and condition unions rather than declared on each
+ * of their members: the parser stamps it in one place, and this is what lets a
+ * Problems finding name a line instead of only a declaration (#267). Optional
+ * — a model the editor built or edited has no source line to give.
+ */
+export interface SourceLine {
+  line?: number;
+}
+
+/**
+ * Union type for all possible dialog actions
+ */
+export type DialogAction = (
+  | DialogLineAction
+  | ChoiceAction
+  | LogEntryAction
+  | CreateTopicAction
+  | LogSetTopicStatusAction
+  | CreateInventoryItemsAction
+  | GiveInventoryItemsAction
+  | AttackActionType
+  | SetAttitudeActionType
+  | ChapterTransitionAction
+  | ExchangeRoutineAction
+  | SetVariableAction
+  | StopProcessInfosAction
+  | PlayAniAction
+  | SetRefuseTalkAction
+  | ClearChoicesAction
+  | GivePlayerXPActionType
+  | PickpocketActionType
+  | StartOtherRoutineActionType
+  | TeachActionType
+  | GiveTradeInventoryActionType
+  | RemoveInventoryItemsActionType
+  | UseItemActionType
+  | InsertNpcActionType
+  | HeroFollowsActionType
+  | ConditionalAction
+  | Action
+  | CommentActionType
+  | CustomAction
+) & SourceLine;
+
+// ============================================================================
+// Semantic Model Types - Conditions
+// ============================================================================
+
+export interface NpcKnowsInfoCondition {
+  type: 'NpcKnowsInfoCondition';
+  npc: string;
+  dialogRef: string;
+  /** `!Npc_KnowsInfo(...)` — the "has not heard this yet" chain gate. */
+  negated?: boolean;
+}
+
+export interface VariableCondition {
+  type: 'VariableCondition';
+  variableName: string;
+  negated: boolean;
+  operator?: string;
+  value?: string | number | boolean;
+}
+
+export interface NpcHasItemsCondition {
+  type: 'NpcHasItemsCondition';
+  npc: string;
+  item: string;
+  operator?: string;
+  value?: string | number | boolean;
+}
+
+export interface NpcIsInStateCondition {
+  type: 'NpcIsInStateCondition';
+  npc: string;
+  state: string;
+  negated: boolean;
+}
+
+export interface NpcIsDeadCondition {
+  type: 'NpcIsDeadCondition';
+  npc: string;
+  negated: boolean;
+}
+
+export interface NpcGetDistToWpCondition {
+  type: 'NpcGetDistToWpCondition';
+  npc: string;
+  waypoint: string;
+  operator?: string;
+  value?: string | number | boolean;
+}
+
+export interface NpcGetTalentSkillCondition {
+  type: 'NpcGetTalentSkillCondition';
+  npc: string;
+  talent: string;
+  operator?: string;
+  value?: string | number | boolean;
+}
+
+export interface Condition {
+  type: 'Condition';
+  condition: string;
+}
+
+export interface GenericCondition {
+  type?: 'GenericCondition';
+  condition: string;
+}
+
+export interface QuestStateCondition {
+  type: 'QuestStateCondition';
+  questVariable: string;
+  state: 'LOG_RUNNING' | 'LOG_SUCCESS' | 'LOG_FAILED' | 'LOG_OBSOLETE';
+}
+
+export type DialogCondition = (
+  | NpcKnowsInfoCondition
+  | VariableCondition
+  | NpcHasItemsCondition
+  | NpcIsInStateCondition
+  | NpcIsDeadCondition
+  | NpcGetDistToWpCondition
+  | NpcGetTalentSkillCondition
+  | Condition
+  | GenericCondition
+  | QuestStateCondition
+) & SourceLine;
+
+// ============================================================================
+// Semantic Model Types - Functions and Dialogs
+// ============================================================================
+
+export interface FunctionParameter {
+  keyword?: string;
+  type: string;
+  name: string;
+}
+
+export interface ParsedArg {
+  raw: string;
+  value: string;
+  isString: boolean;
+}
+
+export interface FunctionCallSite {
+  functionName: string;
+  args: ParsedArg[];
+  position: { startLine: number; startColumn: number; endLine: number; endColumn: number };
+}
+
+export interface DialogFunction {
+  name: string;
+  returnType: 'VOID' | 'INT' | 'STRING';
+  filePath?: string;
+  parameters?: FunctionParameter[];
+  actions: DialogAction[];
+  conditions: DialogCondition[];
+  conditionOperator?: 'AND' | 'OR';
+  calls: string[];
+  /** Every call_expression in this function's body, args and 1-based position. */
+  callSites?: FunctionCallSite[];
+  /** Source range of the whole declaration node, `FUNC` through `};`. */
+  range?: {
+    startIndex: number;
+    endIndex: number;
+  };
+  /** 1-based line the declaration starts on — its `func` keyword (#267). */
+  line?: number;
+}
+
+/**
+ * Result of `script:appendInsertNpc` (level-editor.md §16.19, slice 16 C):
+ * the 1-based line the `Wld_InsertNpc` landed on, or a typed refusal.
+ */
+export type AppendInsertNpcResult =
+  | { ok: true; line: number }
+  | {
+      ok: false;
+      reason:
+        | { kind: 'parse-errors'; errors: string[] }
+        | { kind: 'function-not-found'; functionName: string }
+        | { kind: 'external-modification' };
+    };
+
+/**
+ * A dialog property value referencing a C_INFO function: either the bare
+ * function name or the linked `DialogFunction` object (mirrors the parser's
+ * `DialogFunctionRef`).
+ */
+export type DialogFunctionRef = string | DialogFunction;
+
+export interface DialogProperties {
+  npc?: string;
+  nr?: number;
+  condition?: DialogFunctionRef;
+  information?: DialogFunctionRef;
+  description?: string;
+  important?: boolean;
+  permanent?: boolean;
+  trade?: boolean;
+}
+
+export interface Dialog {
+  name: string;
+  parent: string;
+  properties: DialogProperties;
+  /** Properties written as string literals; their values are the contents, unquoted. */
+  propertyLiteralKeys?: string[];
+  /** Properties written as source expressions (a constant's name, arithmetic), emitted verbatim. */
+  propertyExpressionKeys?: string[];
+  /** Standalone comments preceding a C_INFO property, keyed by property name. */
+  propertyLeadingComments?: { [key: string]: string[] };
+  /** Same-line trailing comment after a C_INFO property, keyed by property name. */
+  propertyTrailingComments?: { [key: string]: string };
+  /** Standalone comments after the last property, before the closing `};`. */
+  trailingBodyComments?: string[];
+  /** 1-based line the declaration starts on — its `instance` keyword (#267). */
+  line?: number;
+}
+
+export interface ParseError {
+  type: string;
+  message: string;
+  position?: { row: number; column: number };
+  text?: string;
+}
+
+export interface GlobalConstant {
+  name: string;
+  type: string;
+  value: string | number | boolean;
+  sourceText?: string;
+  leadingComments?: string[];
+  filePath?: string;
+  position?: {
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+  };
+  range?: {
+    startIndex: number;
+    endIndex: number;
+  };
+}
+
+export interface GlobalVariable {
+  name: string;
+  type: string;
+  sourceText?: string;
+  leadingComments?: string[];
+  filePath?: string;
+  position?: {
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+  };
+  range?: {
+    startIndex: number;
+    endIndex: number;
+  };
+}
+
+// ============================================================================
+// NPC instance bodies — mirrors daedalus-parser/npc-definition, which the
+// renderer does not import (docs/plans/npc-editor.md, Phase 2)
+// ============================================================================
+
+export interface NpcRange {
+  startIndex: number;
+  endIndex: number;
+}
+
+interface NpcStatementBase {
+  text: string;
+  range: NpcRange;
+}
+
+export interface NpcFieldStatement extends NpcStatementBase {
+  kind: 'field';
+  field: string;
+  index?: string;
+  value: string;
+  valueRange: NpcRange;
+}
+
+export interface NpcCallStatement extends NpcStatementBase {
+  kind: 'call';
+  name: string;
+  args: string[];
+  argsRange: NpcRange;
+}
+
+export interface NpcOtherStatement extends NpcStatementBase {
+  kind: 'other';
+}
+
+export type NpcStatement = NpcFieldStatement | NpcCallStatement | NpcOtherStatement;
+
+export interface NpcDefinition {
+  name: string;
+  parent: string;
+  statements: NpcStatement[];
+  closingBraceIndex: number;
+}
+
+export type NpcEdit =
+  | { op: 'set'; field: string; index?: string; value: string }
+  | { op: 'remove'; field: string; index?: string }
+  | { op: 'setCall'; name: string; args: string[]; occurrence?: number }
+  | { op: 'removeCall'; name: string; occurrence?: number }
+  | { op: 'addCall'; name: string; args: string[] };
+
+export interface GlobalInstance {
+  name: string;
+  parent: string;
+  displayName?: string;
+  dailyRoutine?: string;
+  /**
+   * The C_NPC `id` field when it is an integer literal — what resolves an
+   * `Npc_ExchangeRoutine(npc, "X")` to the `RTN_X_<id>` the engine runs.
+   * Undefined when absent or not a literal (a constant is not resolved here).
+   */
+  npcId?: number;
+  sourceText?: string;
+  leadingComments?: string[];
+  filePath?: string;
+  position?: {
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+  };
+  range?: {
+    startIndex: number;
+    endIndex: number;
+  };
+}
+
+export interface GlobalClass {
+  name: string;
+  sourceText?: string;
+  leadingComments?: string[];
+  filePath?: string;
+  position?: {
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+  };
+  range?: {
+    startIndex: number;
+    endIndex: number;
+  };
+}
+
+export interface GlobalPrototype {
+  name: string;
+  parent: string;
+  sourceText?: string;
+  leadingComments?: string[];
+  filePath?: string;
+  position?: {
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+  };
+  range?: {
+    startIndex: number;
+    endIndex: number;
+  };
+}
+
+export interface SemanticModel {
+  dialogs: Record<string, Dialog>;
+  functions: Record<string, DialogFunction>;
+  declarationOrder?: Array<{
+    type: 'dialog' | 'function' | 'constant' | 'variable' | 'instance' | 'class' | 'prototype';
+    name: string;
+    /** Blank lines before the declaration and its leading comments, as parsed (#286) */
+    blankLinesBefore?: number;
+  }>;
+  constants?: Record<string, GlobalConstant>;
+  variables?: Record<string, GlobalVariable>;
+  instances?: Record<string, GlobalInstance>;
+  classes?: Record<string, GlobalClass>;
+  prototypes?: Record<string, GlobalPrototype>;
+  /** File-trailing comments (after the last declaration, at EOF). */
+  trailingComments?: string[];
+  items?: Record<string, GlobalInstance>;
+  npcs?: Record<string, GlobalInstance>;
+  animations?: Record<string, GlobalInstance>;
+  hasErrors: boolean;
+  errors: ParseError[];
+}
+
+// ============================================================================
+// Function Tree Types (for dialog navigation)
+// ============================================================================
+
+export interface FunctionTreeChild {
+  text: string;
+  targetFunction: string;
+  subtree: FunctionTreeNode | null;
+  isShared: boolean;
+}
+
+export interface FunctionTreeNode {
+  name: string;
+  function: DialogFunction;
+  children: FunctionTreeChild[];
+}
+
+// ============================================================================
+// Validation Types
+// ============================================================================
+
+export type ValidationErrorType =
+  | 'syntax_error'
+  | 'duplicate_dialog'
+  | 'missing_function'
+  | 'missing_required_property'
+  | 'circular_dependency'
+  | 'invalid_string_content'
+  | 'duplicate_voice_id'
+  | 'malformed_voice_id';
+
+export interface ValidationError {
+  type: ValidationErrorType;
+  message: string;
+  dialogName?: string;
+  functionName?: string;
+  position?: { row: number; column: number };
+}
+
+export interface ValidationWarning {
+  type: string;
+  message: string;
+  dialogName?: string;
+  functionName?: string;
+}
+
+export interface ValidationOptions {
+  existingDialogs?: string[];
+  skipSyntaxValidation?: boolean;
+  /**
+   * Project-wide AI_Output voice ids (excluding the file being validated),
+   * keyed by UPPERCASED id — same shape as ProjectIndex.voiceIds.
+   */
+  existingVoiceIds?: Record<string, Array<{ filePath: string; functionName: string }>>;
+}
+
+export interface ValidationResult {
+  isValid: boolean;
+  errors: ValidationError[];
+  warnings: ValidationWarning[];
+  generatedCode?: string;
+}
+
+export interface SaveResult {
+  success: boolean;
+  encoding?: string;
+  /** The disk version the save wrote (#378) — the snapshot's next `expectedVersion`. */
+  version?: string;
+  validationResult?: ValidationResult;
+}
+
+/**
+ * One block of the project's OutputUnit database — a single spoken line as the
+ * database records it (#264). Subtitles come from this file at runtime, not
+ * from the scripts, which is why the Problems panel compares the two.
+ */
+export interface OutputUnit {
+  /** The `AI_Output` id the block is named for, e.g. `DIA_Alrik_Teach_15_00`. */
+  name: string;
+  /** The subtitle the game shows for it. */
+  text: string;
+  /** The WAV the block names. */
+  wav: string;
+}
+
+/** The database that was found and read, and where it was. */
+export interface ProjectOutputUnits {
+  /** The file actually read, so the panel can say which database it means. */
+  filePath: string;
+  /** The archive flavour: `ASCII` or `BINARY`. */
+  format: string;
+  units: OutputUnit[];
+}

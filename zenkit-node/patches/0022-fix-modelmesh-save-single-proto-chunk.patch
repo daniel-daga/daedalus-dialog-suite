@@ -1,0 +1,45 @@
+ModelMesh: write one PROTO chunk per attachment, as the reader reads them.
+
+`ModelMesh::save` packed every attachment into a single `PROTO` chunk, while
+`ModelMesh::load` takes exactly one attachment from each `PROTO` chunk it sees:
+
+    case ModelMeshChunkType::PROTO:
+        this->attachments[attachment_names[this->attachments.size()]].load_from_section(c);
+        break;
+
+So a model saved with N attachments read back with one, and the other N-1 were
+lost silently — no error, just a prop missing everything except its first part.
+
+The reader is the side that matches the format. Measured against a Gothic II
+install through the chunk the reader produces, retail models come back with
+several attachments each — 2 for `CHESTSMALL_NW_POOR_OPEN` (base and lid), 4
+for `CHESTSMALL_NW_POOR_LOCKED` (base, lid, lock and its zone mesh) and 4 for
+`RMAKER_1` (three rings and the maker) — which is only possible if retail
+writes one `PROTO` chunk per attachment. 63 of NewWorld's 63 MODEL visuals read
+this way; the histogram over them is 7 models with no attachments, 37 with one,
+10 with two and 9 with four.
+
+The `NODES` chunk already writes the names in `attachments` iteration order and
+the reader pairs the i-th chunk with the i-th name, so emitting one chunk per
+attachment in that same order is all that is needed.
+
+diff --git a/src/ModelMesh.cc b/src/ModelMesh.cc
+index 47122c7..e9a47fd 100644
+--- a/src/ModelMesh.cc
++++ b/src/ModelMesh.cc
+@@ -90,11 +90,11 @@ namespace zenkit {
+ 			}
+ 		});
+ 
+-		proto::write_chunk(w, ModelMeshChunkType::PROTO, [&](Write* wr) {
+-			for (auto& [_, v] : this->attachments) {
++		for (auto& [_, v] : this->attachments) {
++			proto::write_chunk(w, ModelMeshChunkType::PROTO, [&](Write* wr) {
+ 				v.save_to_section(wr, version);
+-			}
+-		});
++			});
++		}
+ 
+ 		proto::write_chunk(w, ModelMeshChunkType::SOFTSKINS, [&](Write* wr) {
+ 			wr->write_uint(this->checksum);

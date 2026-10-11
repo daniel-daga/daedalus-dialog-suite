@@ -1,0 +1,64 @@
+name: Test
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout dialog editor
+        uses: actions/checkout@v4
+        with:
+          path: dialog-editor
+
+      - name: Checkout daedalus-parser
+        uses: actions/checkout@v4
+        with:
+          repository: daniel-daga/daedalus-parser
+          path: daedalus-parser
+          ref: main
+          token: ${{ secrets.PARSER_REPO_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            dialog-editor/package-lock.json
+            daedalus-parser/package-lock.json
+
+      - name: Cache daedalus-parser node_modules
+        uses: actions/cache@v4
+        with:
+          path: daedalus-parser/node_modules
+          key: ${{ runner.os }}-parser-${{ hashFiles('daedalus-parser/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-parser-
+
+      - name: Cache dialog-editor node_modules
+        uses: actions/cache@v4
+        with:
+          path: dialog-editor/node_modules
+          key: ${{ runner.os }}-editor-${{ hashFiles('dialog-editor/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-editor-
+
+      - name: Build daedalus-parser
+        working-directory: daedalus-parser
+        run: npm ci && npm run build && npm run prebuildify
+
+      - name: Install dependencies
+        working-directory: dialog-editor
+        run: |
+          npm ci
+          npm install ../daedalus-parser
+
+      - name: Run tests
+        working-directory: dialog-editor
+        run: npm test

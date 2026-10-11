@@ -1,0 +1,12 @@
+diff --git a/src/vobs/Light.cc b/src/vobs/Light.cc
+index 5183385..f2d8201 100644
+--- a/src/vobs/Light.cc
++++ b/src/vobs/Light.cc
+@@ -101,6 +101,7 @@ namespace zenkit {
+ 			w.write_float("rangeAniFPS", this->range_animation_fps);
+ 			w.write_bool("rangeAniSmooth", this->range_animation_smooth);
+ 
++			os.str("");
+ 			os.clear();
+ 			for (auto& c : this->color_animation_list) {
+ 				os << "(" << static_cast<int>(c.r) << " " << static_cast<int>(c.g) << " " << static_cast<int>(c.b)

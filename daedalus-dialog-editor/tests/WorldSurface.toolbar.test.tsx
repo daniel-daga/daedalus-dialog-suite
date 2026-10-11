@@ -1,0 +1,268 @@
+import React from 'react';
+import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import '@testing-library/jest-dom';
+import { createVobReader } from 'zen-world';
+import WorldSurface from '../src/renderer/components/world/WorldSurface';
+import { useWorldStore } from '../src/renderer/store/worldStore';
+import { useProjectStore } from '../src/renderer/store/projectStore';
+import { MOVE, SUMMARY, makeWorldEditorApi, vobIndex, waynetPayload } from './worldFixtures';
+
+/**
+ * The World bar's undo/redo buttons (level-editor.md §17):
+ * disabled/enabled off `getWorldHistoryDepth`, and a click drives the
+ * same `undoWorldEdit`/`applied` path Ctrl+Z already does.
+ */
+
+jest.mock('react-virtualized-auto-sizer', () => (props: {
+  children: (size: { height: number; width: number }) => React.ReactNode;
+}) => props.children({ height: 600, width: 320 }));
+
+jest.mock('../src/renderer/components/world/WorldViewport', () => {
+  const ReactActual = jest.requireActual('react') as typeof React;
+  return {
+    __esModule: true,
+    default: ReactActual.forwardRef((_props: unknown, ref: React.Ref<{
+      raycastDown: () => null; frameVob: () => void; framePoint: () => void;
+      cameraNudgeAxes: () => { right: [number, number, number]; forward: [number, number, number] };
+      beginNudge: () => boolean; previewNudge: () => void;
+    }>) => {
+      // A nudge (the edit these suites make) is drawn through the viewport's
+      // gizmo, so the stub answers it: a camera looking down +Z.
+      ReactActual.useImperativeHandle(ref, () => ({
+        raycastDown: () => null, frameVob: () => undefined, framePoint: () => undefined,
+        cameraNudgeAxes: () => ({ right: [1, 0, 0], forward: [0, 0, 1] }),
+        beginNudge: () => true, previewNudge: () => undefined,
+      }));
+      return <div data-testid="world-viewport-stub" />;
+    }),
+  };
+});
+
+// Counts the view group's renders, to see whether the toolbar re-renders on a
+// WorldSurface commit that changed none of its props.
+const viewControlRenders = { count: 0 };
+jest.mock('../src/renderer/components/world/toolbar/WorldViewControls', () => {
+  const ReactActual = jest.requireActual('react') as typeof React;
+  const actual = jest.requireActual('../src/renderer/components/world/toolbar/WorldViewControls') as {
+    default: React.ComponentType<Record<string, unknown>>;
+  };
+  return {
+    ...actual,
+    __esModule: true,
+    default: (props: Record<string, unknown>) => {
+      viewControlRenders.count += 1;
+      return ReactActual.createElement(actual.default, props);
+    },
+  };
+});
+
+const api = makeWorldEditorApi();
+
+async function openWorld() {
+  const summary = { ...SUMMARY, vobIndex: vobIndex([[0, 0, 0], [10, 20, 30]]) };
+  api.openWorldDialog.mockResolvedValueOnce('C:/Gothic/NewWorld.zen' as never);
+  api.openWorld.mockResolvedValueOnce(summary as never);
+  api.getWorldMesh.mockResolvedValueOnce({ groups: [], bbox: summary.bbox } as never);
+  api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+  // Open world lists the project's worlds first (level-editor.md §16.31); the
+  // toolbar's own flow starts at picking one.
+  api.listWorlds.mockResolvedValueOnce([{
+    path: 'C:/Gothic/NewWorld.zen', name: 'NewWorld.zen', source: 'C:/Gothic', isDefault: false,
+  }] as never);
+  render(<WorldSurface />);
+  fireEvent.click(screen.getByTestId('world-open'));
+  fireEvent.click(await screen.findByTestId('world-picker-entry-NewWorld.zen'));
+  await screen.findByTestId('world-viewport-stub');
+  return summary;
+}
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  api.getWorldWaynet.mockResolvedValue(waynetPayload() as never);
+  api.getWorldHistoryDepth.mockResolvedValue({ undo: 0, redo: 0 } as never);
+  (window as unknown as { editorAPI: typeof api }).editorAPI = api;
+});
+
+afterEach(() => {
+  useWorldStore.getState().reset();
+  useProjectStore.getState().closeProject();
+});
+
+describe('the World bar GMBT quick test (§16.29)', () => {
+  it('is disabled with a tooltip naming the setting when no GMBT folder resolves', async () => {
+    await openWorld();
+
+    const button = screen.getByTestId('world-gmbt-test');
+    expect(button).toBeDisabled();
+    // The tooltip has to name what to set — a disabled button with no reason
+    // is the failure mode this replaces.
+    fireEvent.mouseOver(button.parentElement as HTMLElement);
+    expect(await screen.findByText(/GMBT project folder in Asset sources/)).toBeInTheDocument();
+    expect(api.startGmbtQuickTest).not.toHaveBeenCalled();
+  });
+
+  it('launches over a clean world once the project names a GMBT folder', async () => {
+    await openWorld();
+    await act(async () => { useProjectStore.setState({ gmbtProjectDir: 'C:/mod/gmbt' }); });
+
+    const button = screen.getByTestId('world-gmbt-test');
+    expect(button).toBeEnabled();
+    fireEvent.click(button);
+
+    await waitFor(() => expect(api.startGmbtQuickTest).toHaveBeenCalledTimes(1));
+  });
+
+  it('blocks on unsaved edits and offers the save flow instead', async () => {
+    await openWorld();
+    await act(async () => { useProjectStore.setState({ gmbtProjectDir: 'C:/mod/gmbt' }); });
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    fireEvent.keyUp(window, { key: 'ArrowRight' });
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByTestId('world-gmbt-test'));
+
+    await screen.findByTestId('world-gmbt-blocked-save');
+    expect(api.startGmbtQuickTest).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('world-gmbt-blocked-save'));
+    await screen.findByTestId('world-save-confirm');
+  });
+
+  // A launch main refused is a two-path explanation the user has to read, so
+  // it gets a dialog rather than the edit banner — the banner is for a world
+  // edit that failed, and no edit was attempted here.
+  it('puts a refused launch in a dialog, with both paths readable', async () => {
+    await openWorld();
+    await act(async () => { useProjectStore.setState({ gmbtProjectDir: 'C:/mod/gmbt' }); });
+    api.startGmbtQuickTest.mockRejectedValueOnce(new Error(
+      "This world is not inside the GMBT project folder, and a quick test plays that folder's own copy:"
+      + '\n\nOpen world:\nC:\\Gothic\\NewWorld.zen\n\nGMBT project folder:\nC:\\mod\\gmbt\n\n'
+      + 'gmbt would load a file of the same name from the project folder instead.',
+    ) as never);
+
+    fireEvent.click(screen.getByTestId('world-gmbt-test'));
+
+    const refusal = await screen.findByTestId('world-gmbt-refused');
+    expect(refusal).toHaveTextContent('C:\\Gothic\\NewWorld.zen');
+    expect(refusal).toHaveTextContent('C:\\mod\\gmbt');
+    expect(useWorldStore.getState().editError).toBeNull();
+  });
+
+  // #266: a run gmbt ended with an error — a failed script reparse — used to
+  // show nothing; the game simply did not appear. Main pushes it after the
+  // launch returned, and it lands in the same dialog, headed for what it is.
+  it('shows a quick test gmbt ended with an error, with the end of its log', async () => {
+    await openWorld();
+    const push = api.onGmbtQuickTestFailed.mock.calls[0][0] as (message: string) => void;
+    act(() => {
+      push('gmbt test exited with code 1. The end of its log (C:\\logs\\gmbt-quick-test.log):\n\nU:PAR: DIA_Harald.d(12): syntax error');
+    });
+
+    const failure = await screen.findByTestId('world-gmbt-refused');
+    expect(failure).toHaveTextContent('U:PAR: DIA_Harald.d(12): syntax error');
+    expect(failure).toHaveTextContent('C:\\logs\\gmbt-quick-test.log');
+    expect(screen.getByText('The quick test failed')).toBeInTheDocument();
+  });
+
+  it('launches again once the edits are saved over the opened world', async () => {
+    await openWorld();
+    await act(async () => { useProjectStore.setState({ gmbtProjectDir: 'C:/mod/gmbt' }); });
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    fireEvent.keyUp(window, { key: 'ArrowRight' });
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByTestId('world-save'));
+    fireEvent.click(await screen.findByTestId('world-save-confirm'));
+    await waitFor(() => expect(api.saveWorld).toHaveBeenCalledWith());
+
+    fireEvent.click(screen.getByTestId('world-gmbt-test'));
+
+    await waitFor(() => expect(api.startGmbtQuickTest).toHaveBeenCalledTimes(1));
+  });
+
+});
+
+// The toolbar is ~1,100 lines of MUI and was re-rendered by every WorldSurface
+// commit, because it took ~20 fresh inline callbacks: two thirds of the
+// surface's commit time in jsdom (#359). A commit that changes none of its
+// props must not reach it.
+describe('the World bar re-render', () => {
+  it('skips a WorldSurface commit that changes none of its props', async () => {
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    const before = viewControlRenders.count;
+
+    // One VOB for another: the selection count the toolbar reads stays 1.
+    await act(async () => { useWorldStore.getState().selectVob(0); });
+
+    expect(useWorldStore.getState().selection).toEqual([0]);
+    expect(viewControlRenders.count).toBe(before);
+  });
+});
+
+describe('the World bar undo/redo buttons', () => {
+  it('are disabled once the world opens with an empty history', async () => {
+    await openWorld();
+
+    await waitFor(() => expect(api.getWorldHistoryDepth).toHaveBeenCalled());
+    expect(screen.getByTestId('world-undo')).toBeDisabled();
+    expect(screen.getByTestId('world-redo')).toBeDisabled();
+  });
+
+  it('enables undo once a batch is committed', async () => {
+    const summary = await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    api.getWorldHistoryDepth.mockResolvedValueOnce({ undo: 1, redo: 0 } as never);
+
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    fireEvent.keyUp(window, { key: 'ArrowRight' });
+
+    await waitFor(() => expect(screen.getByTestId('world-undo')).toBeEnabled());
+    expect(screen.getByTestId('world-redo')).toBeDisabled();
+    // The nudge itself still landed — this readout doesn't stand in its way.
+    expect(createVobReader(summary.vobIndex).position(1)).toEqual([20, 20, 30]);
+  });
+
+  it('drives undoWorldEdit and applies what it answers, same as Ctrl+Z', async () => {
+    // A real commit first — a disabled button takes no click, so the test
+    // earns the enabled undo the same way a user would rather than faking it.
+    const summary = await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    api.getWorldHistoryDepth.mockResolvedValueOnce({ undo: 1, redo: 0 } as never);
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    fireEvent.keyUp(window, { key: 'ArrowRight' });
+    await waitFor(() => expect(screen.getByTestId('world-undo')).toBeEnabled());
+
+    api.undoWorldEdit.mockResolvedValueOnce([MOVE] as never);
+    api.getWorldHistoryDepth.mockResolvedValueOnce({ undo: 0, redo: 1 } as never);
+
+    fireEvent.click(screen.getByTestId('world-undo'));
+
+    await waitFor(() => expect(api.undoWorldEdit).toHaveBeenCalled());
+    await waitFor(() => expect(createVobReader(summary.vobIndex).position(1)).toEqual([11, 22, 33]));
+    await waitFor(() => expect(screen.getByTestId('world-redo')).toBeEnabled());
+  });
+
+  it('drives redoWorldEdit on a click', async () => {
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+    api.getWorldHistoryDepth.mockResolvedValueOnce({ undo: 1, redo: 0 } as never);
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    fireEvent.keyUp(window, { key: 'ArrowRight' });
+    await waitFor(() => expect(screen.getByTestId('world-undo')).toBeEnabled());
+
+    api.undoWorldEdit.mockResolvedValueOnce([MOVE] as never);
+    api.getWorldHistoryDepth.mockResolvedValueOnce({ undo: 0, redo: 1 } as never);
+    fireEvent.click(screen.getByTestId('world-undo'));
+    await waitFor(() => expect(screen.getByTestId('world-redo')).toBeEnabled());
+
+    api.redoWorldEdit.mockResolvedValueOnce([MOVE] as never);
+
+    fireEvent.click(screen.getByTestId('world-redo'));
+
+    await waitFor(() => expect(api.redoWorldEdit).toHaveBeenCalled());
+  });
+});

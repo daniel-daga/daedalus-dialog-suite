@@ -1,0 +1,626 @@
+import { Worker } from 'worker_threads';
+import * as path from 'path';
+import * as fs from 'fs';
+import { randomUUID } from 'crypto';
+import { invertOp } from 'zen-world';
+import { WorkerRequestError } from './WorkerRequestError';
+import type {
+  DecodedTexture,
+  VisualScene,
+  InstancedPayload,
+  NpcBodyRequest,
+  NpcBodyScene,
+  ResolvedOpenWorldRequest,
+  VfsEntry,
+  VfsSearch,
+  WaynetPayload,
+  PortalFindingsPayload,
+  WorldMeshPayload,
+  WorldOp,
+  WorldSummary,
+  WorldWorkerOp,
+  WorldWorkerRequest,
+  WorldWorkerResponse,
+} from '../../shared/worldTypes';
+
+// The owner of the one zenkit worker that holds the world in memory
+// (level-editor.md §7). MetadataWorkerPool is the precedent for the mechanics —
+// ids, timeouts, a dead worker — but not for the policy, because that pool is a
+// set of interchangeable stateless workers and this is one stateful one:
+//
+//   - it is never restarted behind the caller's back. The world it held is
+//     gone, along with any op applied to it, and silently re-loading would turn
+//     a crash into lost work with no report.
+//   - it is spawned only when a world opens or an NPC preview requests the
+//     project's assets, so dialog-only sessions still avoid loading the addon.
+//
+// One honest limit on the isolation §7 claims: a worker thread survives a JS
+// throw in the addon, but ZenKit can also abort the process outright
+// (`0xC0000409`, seen on the ASCII path), and an abort in a worker thread takes
+// the whole Electron main process with it. The worker boundary buys crash
+// *reporting* and a non-blocking UI, not immunity.
+
+const DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
+
+/** The slice of `worker_threads.Worker` this service uses — injected in tests. */
+export interface WorldWorker {
+  postMessage(message: WorldWorkerRequest, transferList?: readonly ArrayBuffer[]): void;
+  on(event: 'error', handler: (error: Error) => void): void;
+  on(event: 'exit', handler: (code: number) => void): void;
+  on(event: 'message', handler: (message: WorldWorkerResponse) => void): void;
+  terminate(): Promise<number> | void;
+}
+
+export interface WorldServiceOptions {
+  createWorker?: () => WorldWorker;
+  workerPath?: string;
+  requestTimeoutMs?: number;
+}
+
+interface Pending {
+  reject: (reason: Error) => void;
+  resolve: (value: never) => void;
+  timer: NodeJS.Timeout;
+  op: WorldWorkerOp;
+  worldPath: string | null;
+  phase: string;
+}
+
+export class WorldService {
+  private worker: WorldWorker | null = null;
+  private pending = new Map<string, Pending>();
+  private readonly requestTimeoutMs: number;
+  private readonly createWorker: () => WorldWorker;
+  private worldPath: string | null = null;
+  private assetSources: readonly string[] | null = null;
+  private openingWorld: Promise<WorldSummary> | null = null;
+  private failure: WorkerRequestError | null = null;
+  /** The worker's latest phase message identifies its synchronous call. */
+  private activeRequestId: string | null = null;
+  // The authoritative history (§7). A batch is one entry. Both stacks belong to
+  // the world that is open: an op addresses a VOB by its index path down *that*
+  // world's tree, and replayed against the next one it would resolve to
+  // whatever happens to sit at that path.
+  private undoStack: WorldOp[][] = [];
+  private redoStack: WorldOp[][] = [];
+  /**
+   * Which world the stacks belong to, bumped by every `openWorld`.
+   *
+   * An edit is recorded *after* the worker confirms it, and an open is not
+   * serialized behind edits (see `openWorld`), so a batch sent before an open
+   * is answered after it: correctly, against the world it was built for, and
+   * then recorded onto the stacks the open had already replaced. Comparing the
+   * generation across the await is what tells the two apart — the alternative,
+   * comparing the stack *array* it started with, would silently record into an
+   * array nothing reads.
+   */
+  private generation = 0;
+  /** Edits run one at a time — see `serialized`. */
+  private queue: Promise<unknown> = Promise.resolve();
+
+  constructor(options: WorldServiceOptions = {}) {
+    this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    this.createWorker = options.createWorker
+      ?? (() => new Worker(resolveWorkerPath(options.workerPath)));
+  }
+
+  /**
+   * Load a world into the worker, and start an empty history over it.
+   *
+   * The history and `worldPath` are dropped **before** the request rather than
+   * after it. An open is a multi-second `loadWorld`, Ctrl+Z is bound the whole
+   * time, and this is deliberately not `serialized` — it is not an edit and it
+   * must not wait behind one. So an undo pressed mid-open would otherwise find
+   * the previous world's non-null `worldPath` and push A's inverse batch into
+   * the worker's FIFO behind the open, writing A's index paths into B and then
+   * losing the evidence when the open cleared the stacks. Cleared first, the
+   * replay finds nothing to replay and every other request is refused by
+   * `requestOnOpenWorld` — the same "refused rather than queued" rule that
+   * covers the moment before the first world opens.
+   *
+   * That leaves a failed open with no world open, which is what it is: the
+   * failure can be anywhere in the worker's load, so the world it holds is not
+   * knowably the old one, and the renderer's `openFailed` resets the surface.
+   */
+  async openWorld(request: ResolvedOpenWorldRequest): Promise<WorldSummary> {
+    if (this.worker === null) this.startWorker();
+    this.worldPath = null;
+    this.assetSources = null;
+    this.generation += 1;
+    this.undoStack = [];
+    this.redoStack = [];
+    const opening = this.request<WorldSummary>('open', request);
+    this.openingWorld = opening;
+    try {
+      const summary = await opening;
+      this.worldPath = request.worldPath;
+      this.assetSources = request.assetSources;
+      return summary;
+    } finally {
+      if (this.openingWorld === opening) this.openingWorld = null;
+    }
+  }
+
+  /** Mount project assets for previews when no editable world is open. */
+  async ensureAssetVfs(assetSources: readonly string[]): Promise<void> {
+    if (this.openingWorld !== null) {
+      await this.openingWorld;
+      return;
+    }
+    if (this.worldPath !== null) return;
+    if (assetSources.length === 0) throw new Error('Configure at least one available asset source before previewing NPCs.');
+    if (this.assetSources !== null
+      && this.assetSources.length === assetSources.length
+      && this.assetSources.every((source, index) => source === assetSources[index])) return;
+
+    if (this.worker === null) this.startWorker();
+    const generation = this.generation;
+    await this.request<null>('mountAssets', { assetSources: [...assetSources] });
+    if (this.generation === generation && this.worldPath === null) this.assetSources = [...assetSources];
+  }
+
+  /**
+   * The mounts the open world's VFS was built from, in mount order — what a
+   * thumbnail is keyed by (`ThumbnailCacheService`). Refused with no world
+   * open, like every other read of it: the list belongs to the open, and a
+   * previous world's mounts would key a thumbnail to the wrong files.
+   */
+  /**
+   * The path the open world was loaded from — what a GMBT quick test names in
+   * `--world` (§16.29). Refused with no world open, like the mounts below: the
+   * renderer never gets to name the file a launch is built from.
+   */
+  openWorldPath(): string {
+    if (this.worldPath === null) throw new Error('No world is open');
+    return this.worldPath;
+  }
+
+  openAssetSources(): readonly string[] {
+    if (this.worldPath === null || this.assetSources === null) throw new Error('No world is open');
+    return this.assetSources;
+  }
+
+  getWorldMesh(): Promise<WorldMeshPayload> {
+    return this.requestOnOpenWorld<WorldMeshPayload>('worldMesh');
+  }
+
+  /** @param have visuals the renderer already draws: each comes back as
+   *  placements, with `groups: []`. Empty for a cold open. */
+  getInstancedVisuals(have: readonly string[] = []): Promise<InstancedPayload> {
+    return this.requestOnOpenWorld<InstancedPayload>('visuals', { have: [...have] });
+  }
+
+  /**
+   * Textures are decoded on demand: decoding all 490 of NewWorld's eagerly is
+   * 549 ms of the cold open and none of it is invalidated by an edit.
+   *
+   * `maxSize` picks a mipmap rather than resampling. Full-size for every
+   * texture in NewWorld is ~490 MB of RGBA, which is why the spike's measured
+   * scene used 256 — the caller decides, because it is a projection-layer call.
+   */
+  getTexture(name: string, maxSize = 256): Promise<DecodedTexture | null> {
+    return this.requestOnMountedVfs<DecodedTexture | null>('texture', { name, maxSize });
+  }
+
+  /**
+   * One level of the mounted VFS, for the asset browser. Null both for a path
+   * that is not there and for a file — neither is something to list.
+   *
+   * Never recursive: the mounted namespace of a Gothic install is tens of
+   * thousands of entries, and the browser shows one directory at a time.
+   */
+  listAssets(path = '/'): Promise<VfsEntry[] | null> {
+    return this.requestOnOpenWorld<VfsEntry[] | null>('assets', { path });
+  }
+
+  /**
+   * Every entry anywhere in the mounted namespace whose name contains `query`.
+   * The recursive walk `listAssets` refuses to do, bounded by a needle and a
+   * cap — the browser's search box, which is the only way to reach an asset
+   * whose directory the user does not already know (#241).
+   */
+  searchAssets(query: string): Promise<VfsSearch> {
+    return this.requestOnMountedVfs<VfsSearch>('assetSearch', { query });
+  }
+
+  /** Reopen the VFS over the same sources (#296): a GMBT compile has written
+   *  files under them, and a VFS maps what is there once, when it opens. The
+   *  world, its handle and its history are untouched. */
+  remountAssets(): Promise<null> {
+    return this.requestOnOpenWorld<null>('remountVfs', {});
+  }
+
+  /** What each name resolves to in the mounted namespace, or null — how the
+   *  asset browser tells a mod's uncompiled source from a compiled one (#294). */
+  resolveAssets(names: readonly string[]): Promise<(string | null)[]> {
+    return this.requestOnOpenWorld<(string | null)[]>('assetResolve', { names: [...names] });
+  }
+
+  /** The waynet as a drawable graph. Requested on demand: an overlay nobody
+   *  turned on should not be in the cold open. */
+  getWaynet(): Promise<WaynetPayload> {
+    return this.requestOnOpenWorld<WaynetPayload>('waynet');
+  }
+
+  /** The portal checks' findings, computed in the worker over the world mesh
+   *  (level-editor.md §16.20 slice 3). Requested once per open by the World
+   *  surface, since no op touches the mesh. */
+  getPortalFindings(): Promise<PortalFindingsPayload> {
+    return this.requestOnOpenWorld<PortalFindingsPayload>('portalFindings');
+  }
+
+  /**
+   * The bounds of a visual by name, for a VOB that is being given one.
+   *
+   * The only bounds in the system that has to be asked for: every other op
+   * refits its box from bounds that already crossed with the geometry, and a
+   * visual the world does not currently use has neither an instance nor a
+   * payload. Null for a name that does not resolve.
+   */
+  getVisualBounds(name: string): Promise<number[] | null> {
+    return this.requestOnOpenWorld<number[] | null>('visualBounds', { name });
+  }
+
+  /** One visual by name, merged as the scene would place it, for the Assets
+   *  panel's mesh preview. Null for a name the binding cannot extract. */
+  getVisual(name: string): Promise<VisualScene | null> {
+    return this.requestOnOpenWorld<VisualScene | null>('visual', { name });
+  }
+
+  /** An NPC's body and head as the engine assembles them, for the NPC editor's
+   *  preview (npc-editor.md §4). Null when the body does not resolve. */
+  getNpcBody(request: NpcBodyRequest): Promise<NpcBodyScene | null> {
+    return this.requestOnMountedVfs<NpcBodyScene | null>('npcBody', request);
+  }
+
+  /**
+   * The per-class fields of one VOB, by its native index path.
+   *
+   * Deliberately **not** inside `serialized`: that queue exists so two edits
+   * cannot both read the same top of the undo stack, and this reads no stack and
+   * unwinds nothing. Putting it there would make the property grid wait out an
+   * edit's 120 s timeout to show a field, for no invariant at all — the world it
+   * reads is the same one either way, and the renderer re-asks after every
+   * applied batch.
+   */
+  getVobProps(path: string): Promise<Record<string, unknown>> {
+    return this.requestOnOpenWorld<Record<string, unknown>>('vobProps', { path });
+  }
+
+  /**
+   * The VOB enumeration again, after a structural edit changed it.
+   *
+   * A flat index is a VOB's position in a depth-first traversal, so an added VOB
+   * changes how many there are and the renderer's columnar projection cannot be
+   * patched. This re-reads the index from the world the worker already holds —
+   * re-opening would re-load from disk and discard every edit.
+   */
+  refreshIndex(): Promise<WorldSummary> {
+    return this.requestOnOpenWorld<WorldSummary>('refreshIndex');
+  }
+
+  /**
+   * Apply an edit to the authoritative world, and record it (§7).
+   *
+   * A batch is one entry in the history: a multi-select drag is one undo, not
+   * one per VOB. Nothing is recorded until the worker has confirmed the batch,
+   * because the inverse of an edit that never happened moves a VOB that was
+   * never moved.
+   */
+  applyOps(ops: readonly WorldOp[]): Promise<void> {
+    return this.serialized(async () => {
+      const generation = this.generation;
+      await this.requestOnOpenWorld<null>('applyOps', { ops });
+
+      // The world this edited is no longer the one that is open, so there is
+      // nothing here to undo *into*: its index paths address the old tree.
+      // Recording it would light up the Undo button over a world the user just
+      // opened and replay the wrong edit backwards into it.
+      if (this.generation !== generation) return;
+
+      // **No batch is special any more.** A `DeleteVob` used to clear both
+      // stacks here: it had no inverse, and recording it would have left `undo`
+      // reaching for one — and the *earlier* batches addressed VOBs by indices
+      // and paths the delete had just moved, so replaying one would have edited
+      // whatever had since taken that address. §7 closed both halves with
+      // one change: `invertOp` answers a `RestoreVob` that puts the retained
+      // subtree back in the slot it came from, which is the enumeration every
+      // older entry was recorded against.
+      this.undoStack.push([...ops]);
+      this.redoStack.length = 0;
+    });
+  }
+
+  /**
+   * Write the world to `targetPath` (level-editor.md §5, §7).
+   *
+   * Serialised with the edits rather than run beside them: a save that
+   * overlapped a batch would write a world in the middle of one, and `commitOps`
+   * guarantees a batch is all-or-nothing only against callers that never read it
+   * half-applied.
+   *
+   * Main passes the path returned by `openWorldPath`; renderer IPC never names
+   * a target. The native writer performs the replacement atomically.
+   */
+  saveWorld(targetPath: string): Promise<void> {
+    return this.serialized(async () => {
+      await this.requestOnOpenWorld<null>('save', { targetPath });
+    });
+  }
+
+  /**
+   * Write the world to a new file, and make that file the open world (#367).
+   *
+   * The open path moves only once the write has landed: a refused or failed
+   * save leaves the world where it was, so a later Ctrl+S still means the file
+   * on screen. The history stays — it addresses the tree the worker holds, and
+   * that has not changed — and so does the generation: nothing was reopened.
+   */
+  saveWorldAs(targetPath: string): Promise<void> {
+    return this.serialized(async () => {
+      const generation = this.generation;
+      await this.requestOnOpenWorld<null>('save', { targetPath });
+      if (this.generation === generation) this.worldPath = targetPath;
+    });
+  }
+
+  /**
+   * Replay the last batch's inverses; null when there is nothing to undo.
+   *
+   * Answers with **the ops it applied**, not merely that it did. The renderer
+   * holds a projection of this world and has to move the same VOBs in it; a
+   * boolean would leave it either guessing or keeping a second history, and §7
+   * puts the authoritative one here.
+   */
+  undo(): Promise<WorldOp[] | null> {
+    return this.replay(this.undoStack, this.redoStack, true);
+  }
+
+  /** Replay the last undone batch as it was; null when there is nothing. */
+  redo(): Promise<WorldOp[] | null> {
+    return this.replay(this.redoStack, this.undoStack, false);
+  }
+
+  /**
+   * How many batches each stack holds — not exposed elsewhere, because the
+   * stacks themselves are private to this service (§7). It is how the World
+   * bar's undo/redo buttons know whether there is anything to do, over the
+   * IPC round trip `world:historyDepth` sends it through
+   * (level-editor.md §17).
+   */
+  historyDepth(): { undo: number; redo: number } {
+    return { undo: this.undoStack.length, redo: this.redoStack.length };
+  }
+
+  /**
+   * Undo and redo are the same move in opposite directions: take the top batch
+   * off one stack, send it through the ordinary `applyOps` path, and put it on
+   * the other. Undo sends the inverses **back to front** — two ops on the same
+   * VOB in one batch compose, and undoing them front to back leaves it where
+   * the first op put it.
+   */
+  private replay(
+    from: WorldOp[][], to: WorldOp[][], invert: boolean,
+  ): Promise<WorldOp[] | null> {
+    return this.serialized(() => this.replayOne(from, to, invert));
+  }
+
+  /**
+   * One edit at a time, in the order it was asked for.
+   *
+   * Found by holding Ctrl+Z in the real app: every edit is an IPC round trip
+   * and the stacks are moved only once the worker answers, so two overlapping
+   * replays both read the same top of the stack and both apply it — the VOB
+   * moves back twice and one entry never comes off. Serialising is the whole
+   * fix; the alternative, moving the stacks before the worker confirms, is the
+   * bug the test above pins.
+   */
+  private serialized<T>(run: () => Promise<T>): Promise<T> {
+    // `then(run, run)`: the next edit runs whether or not the one before it was
+    // refused. A refused edit changes nothing — the batch is atomic and nothing
+    // is recorded — so it is no reason to stop taking edits.
+    const next = this.queue.then(run, run);
+    this.queue = next;
+    return next;
+  }
+
+  private async replayOne(
+    from: WorldOp[][], to: WorldOp[][], invert: boolean,
+  ): Promise<WorldOp[] | null> {
+    const batch = from[from.length - 1];
+    if (batch === undefined) return null;
+
+    const ops = invert ? [...batch].reverse().map(invertOp) : batch;
+    await this.requestOnOpenWorld<null>('applyOps', { ops });
+
+    // Moved only once the worker has confirmed it, so a refused replay leaves
+    // the history where it was rather than one step out of step with the world.
+    from.pop();
+    to.push(batch);
+    return ops;
+  }
+
+  close(): void {
+    this.failure ??= new WorkerRequestError('The world was closed', 'world-closed');
+    this.rejectAll(this.failure);
+    this.worldPath = null;
+    this.assetSources = null;
+    this.openingWorld = null;
+    // The stacks belong to the world that was open — `openWorld` says why —
+    // and closing ends that world as surely as opening the next one does.
+    // Left standing they are not just stale but *readable*: `historyDepth`
+    // is a plain getter with no `requestOnOpenWorld` guard, so it would go
+    // on reporting a closed world's depths where every other read refuses.
+    this.undoStack = [];
+    this.redoStack = [];
+    void this.worker?.terminate();
+    this.worker = null;
+  }
+
+  private startWorker(): void {
+    this.failure = null;
+    this.activeRequestId = null;
+    const worker = this.createWorker();
+    // Every handler is scoped to the worker it was registered for. `close()`
+    // and `handleTimeout` terminate and null `this.worker`, and `exit` arrives
+    // asynchronously after that — so an exit belonging to a thread that has
+    // already been replaced would otherwise be taken as the death of its
+    // successor: it rejects the fresh open, nulls the new reference (leaving
+    // that thread running and unreachable) and reports a dead worker that is
+    // perfectly alive.
+    const mine = (): boolean => this.worker === worker;
+    worker.on('error', (error) => { if (mine()) this.handleWorkerDeath(error); });
+    worker.on('exit', (code) => {
+      // A clean exit is a dead worker too: nothing in the worker calls
+      // `process.exit`, but taking only non-zero codes as death would leave
+      // every pending request waiting out the full timeout if anything ever
+      // does.
+      if (mine()) this.handleWorkerDeath(new Error(`zenkit worker exited with code ${code}`));
+    });
+    worker.on('message', (message) => { if (mine()) this.handleMessage(message); });
+    this.worker = worker;
+  }
+
+  private requestOnOpenWorld<T>(op: WorldWorkerOp, payload?: unknown): Promise<T> {
+    // Refused rather than queued: a queued request would be answered by
+    // whatever world is opened next.
+    if (this.worldPath === null && this.failure === null) {
+      return Promise.reject(new Error('No world is open'));
+    }
+    return this.request<T>(op, payload);
+  }
+
+  private requestOnMountedVfs<T>(op: WorldWorkerOp, payload?: unknown): Promise<T> {
+    if (this.assetSources === null && this.failure === null) {
+      return Promise.reject(new Error('World assets are not mounted'));
+    }
+    return this.request<T>(op, payload);
+  }
+
+  private request<T>(op: WorldWorkerOp, payload?: unknown): Promise<T> {
+    if (this.failure !== null) return Promise.reject(this.failure);
+
+    return new Promise<T>((resolve, reject) => {
+      const id = randomUUID();
+      const timer = setTimeout(() => this.handleTimeout(op), this.requestTimeoutMs);
+
+      const requestedWorldPath = op === 'open'
+        && payload !== null
+        && typeof payload === 'object'
+        && 'worldPath' in payload
+        && typeof payload.worldPath === 'string'
+        ? payload.worldPath
+        : this.worldPath;
+      this.pending.set(id, {
+        resolve: resolve as (value: never) => void,
+        reject,
+        timer,
+        op,
+        worldPath: requestedWorldPath,
+        phase: op,
+      });
+      this.worker!.postMessage({ id, op, payload });
+    });
+  }
+
+  private handleMessage(message: WorldWorkerResponse): void {
+    const pending = this.pending.get(message.id);
+    if (!('ok' in message)) {
+      if (pending) {
+        pending.phase = message.phase;
+        this.activeRequestId = message.id;
+      }
+      return;
+    }
+    // A reply to a request that already timed out: the caller has been told it
+    // failed, so resurrecting it here would settle a promise twice.
+    if (!pending) return;
+
+    this.pending.delete(message.id);
+    if (this.activeRequestId === message.id) this.activeRequestId = null;
+    clearTimeout(pending.timer);
+    if (message.ok) pending.resolve(message.result as never);
+    else pending.reject(new Error(message.error));
+  }
+
+  /**
+   * A request that never answered gives up on the worker.
+   *
+   * The thread is not idle — it is still inside the call that went quiet, and
+   * the world it holds is in whatever state that call left it. Rejecting only
+   * the caller would leave that thread spinning while `openWorld`'s
+   * `worker === null` guard posts the retry straight back into it, so the
+   * surface never recovers and every retry feeds the same stuck worker. Same
+   * policy as a crash, for the same reason: the world is gone, and the user is
+   * told to reopen it rather than being handed a silent reload.
+   *
+   * **`terminate()` does not stop it, and nothing can.** It interrupts
+   * JavaScript, and a worker inside a synchronous N-API call (`loadWorld`,
+   * `saveWorld`, `commitOps`) runs to the end of that call whatever happens
+   * here; `exit` arrives only then. So what this really does is *abandon* the
+   * worker: the world it holds stays resident until the call returns, and a
+   * save that timed out mid-write can leave a `<target>.tmp` behind. The next
+   * `openWorld` starts a second worker beside it. That is the accepted cost of
+   * not hanging the surface on a call that will not come back — and it is why
+   * the handlers registered in `startWorker` are scoped to their own worker.
+   */
+  private handleTimeout(op: WorldWorkerOp): void {
+    if (this.failure !== null) return;
+    this.failure = new WorkerRequestError(
+      `${op} did not answer in ${this.requestTimeoutMs} ms — the world worker was stopped, reopen the world`,
+      'world-timeout',
+    );
+    // Set before terminating: `terminate()` fires a non-zero `exit`, and
+    // `handleWorkerDeath` would otherwise relabel this as a crash.
+    this.rejectAll(this.failure);
+    this.worldPath = null;
+    void this.worker?.terminate();
+    this.worker = null;
+  }
+
+  private handleWorkerDeath(error: Error): void {
+    if (this.failure !== null) return; // error + exit double-fire
+    const inFlight = this.activeRequestId === null
+      ? this.pending.values().next().value as Pending | undefined
+      : this.pending.get(this.activeRequestId);
+    const context = inFlight === undefined
+      ? ''
+      : ` during ${inFlight.op}${inFlight.worldPath === null
+        ? ''
+        : ` for ${JSON.stringify(inFlight.worldPath)}`} at ${inFlight.phase}`;
+    this.activeRequestId = null;
+    this.failure = new WorkerRequestError(
+      `The world worker died${context} (${error.message}) — reopen the world`, 'world-crashed',
+    );
+    this.rejectAll(this.failure);
+    this.worldPath = null;
+    // Dropped like the timeout path drops it: the banner tells the user to
+    // reopen the world, and `openWorld` starts a worker only when this is null.
+    // Holding on to the dead one made that instruction impossible to follow,
+    // since `startWorker` is also the only place `failure` is cleared.
+    this.worker = null;
+  }
+
+  private rejectAll(error: WorkerRequestError): void {
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(error);
+    }
+    this.pending.clear();
+  }
+}
+
+function resolveWorkerPath(override?: string): string {
+  if (override) return override;
+
+  // Relative to dist/main/services/WorldService.js at runtime; from the TS
+  // sources under a test runner __dirname points at src/, where no compiled
+  // worker exists — same fallback MetadataWorkerPool uses.
+  const built = path.join(__dirname, '../workers/zenkit.worker.js');
+  if (fs.existsSync(built)) return built;
+
+  const dist = path.join(__dirname, '../../../dist/main/workers/zenkit.worker.js');
+  if (fs.existsSync(dist)) return dist;
+
+  throw new Error(`zenkit worker entry was not found at ${built}. Build the app/workers before runtime.`);
+}

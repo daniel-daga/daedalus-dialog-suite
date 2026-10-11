@@ -1,0 +1,89 @@
+/**
+ * SearchBar component - provides search input with debouncing
+ */
+
+import React, { useRef, useEffect, useCallback, useMemo } from 'react';
+import { TextField, InputAdornment, IconButton, Tooltip } from '@mui/material';
+import { Search as SearchIcon, Clear as ClearIcon } from '@mui/icons-material';
+import { useSearchStore } from '../store/searchStore';
+import { debounce } from '../utils/debounce';
+import { searchablePaneTextFieldSx } from './common/searchablePaneStyles';
+
+interface SearchBarProps {
+  placeholder?: string;
+  onSearch?: (query: string) => void;
+  focusRef?: { current: (() => void) | null };
+  debounceMs?: number;
+}
+
+const SearchBar: React.FC<SearchBarProps> = ({
+  placeholder = 'Search dialogs...',
+  onSearch,
+  focusRef,
+  debounceMs = 300
+}) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const searchQuery = useSearchStore((s) => s.searchQuery);
+  const setSearchQuery = useSearchStore((s) => s.setSearchQuery);
+  const clearSearch = useSearchStore((s) => s.clearSearch);
+
+  const debouncedOnSearch = useMemo(
+    () => onSearch ? debounce(onSearch, debounceMs) : null,
+    [onSearch, debounceMs]
+  );
+
+  useEffect(() => {
+    if (focusRef) {
+      focusRef.current = () => {
+        inputRef.current?.focus();
+      };
+    }
+  }, [focusRef]);
+
+  const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setSearchQuery(value);
+    debouncedOnSearch?.(value);
+  }, [setSearchQuery, debouncedOnSearch]);
+
+  const handleClear = useCallback(() => {
+    clearSearch();
+    onSearch?.('');
+    inputRef.current?.focus();
+  }, [clearSearch, onSearch]);
+
+  return (
+    <TextField
+      inputRef={inputRef}
+      size='small'
+      fullWidth
+      placeholder={placeholder}
+      value={searchQuery}
+      onChange={handleChange}
+      InputProps={{
+        startAdornment: (
+          <InputAdornment position='start'>
+            <SearchIcon fontSize='small' color='action' data-testid='SearchIcon' />
+          </InputAdornment>
+        ),
+        endAdornment: searchQuery ? (
+          <InputAdornment position='end'>
+            <Tooltip title='Clear search'>
+              <IconButton
+                size='small'
+                onClick={handleClear}
+                aria-label='clear'
+                edge='end'
+              >
+                <ClearIcon fontSize='small' />
+              </IconButton>
+            </Tooltip>
+          </InputAdornment>
+        ) : null
+      }}
+      sx={searchablePaneTextFieldSx}
+    />
+  );
+};
+
+export default SearchBar;

@@ -1,0 +1,79 @@
+name: zenkit-node
+
+# Manual escape hatch only. The addon's real gate is the `zenkit-node-tests` job
+# in all-tests.yml, which runs the same recipe on every push and PR and is what
+# build-windows.yml gates a release on; the path filter this workflow used to
+# carry is exactly the hole that gate closes, so leaving the push/PR triggers on
+# would only pay for a second Windows build of the same thing. Kept dispatchable
+# for re-running the addon suite alone (e.g. after a vendor/ZenKit patch) without
+# the rest of the matrix.
+#
+# NOTE: a green run here is a NO-REGRESSION claim against our own synthetic
+# golden fixtures (claim C2) — it is NOT a fidelity claim about real Gothic
+# worlds (claim C1). See zenkit-node/README.md.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows only, deliberately (2026-08-25). The editor's users are on
+        # Windows, and so is the only engine that can act as the fidelity
+        # oracle — Gothic and Spacer are Windows binaries — so Windows is the
+        # platform that has to stay green.
+        #
+        # ubuntu-latest and macos-latest were BOTH GREEN when they were removed
+        # (run 32903532421), so nothing broken is being hidden here and adding
+        # them back is a one-line change against a known-good baseline. The
+        # arm64 `-msse2` fix in scripts/build-zenkit.js stays in the code: it is
+        # correct, it costs nothing, and it is what made macOS pass.
+        #
+        # windows-2022, not windows-latest: the latest image ships Visual
+        # Studio 18, which node-gyp 11.5.0 cannot identify ("unknown version
+        # undefined found at ...\Microsoft Visual Studio\18\Enterprise"), so it
+        # fails to configure before any of our code runs. zenkit-node's own
+        # CMake pre-step is unaffected — it finds the toolchain through vswhere
+        # — but the daedalus-parser workspace's install goes through node-gyp
+        # and dies first. Revisit when node-gyp knows VS 18.
+        os: [windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.23.0
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      # pnpm install triggers the zenkit-node install hook, which runs the
+      # two-stage source build (CMake pre-step + node-gyp) when no prebuild
+      # matches — which is always the case in CI.
+      - name: Install dependencies (builds the addon)
+        run: pnpm install --frozen-lockfile
+        env:
+          ZENKIT_NODE_FORCE_BUILD: '1'
+
+      - name: Run zenkit-node tests
+        run: pnpm --filter zenkit-node test
+
+      # The harness itself, in its CI mode. Prints its own claim line, which
+      # says in as many words that this is C2 and not fidelity.
+      - name: zen-roundtrip (C2, fixtures)
+        run: pnpm --filter zenkit-node zen-roundtrip -- --fixtures --strict
+
+      - name: Lint
+        run: pnpm --filter zenkit-node run lint

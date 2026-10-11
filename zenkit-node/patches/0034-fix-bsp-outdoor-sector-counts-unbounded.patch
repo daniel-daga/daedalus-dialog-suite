@@ -1,0 +1,111 @@
+BspTree: bound the OUTDOORS sector counts, which size a resize and a read loop.
+
+`BspTree::load`'s OUTDOORS (`0xC050`) branch reads three kinds of count off the
+file and validates none of them:
+
+	auto sector_count = c->read_uint();
+	for (...) {
+		sector.name = c->read_line(false);
+		auto node_count = c->read_uint();
+		auto polygon_count = c->read_uint();
+		sector.node_indices.resize(node_count);
+		sector.portal_polygon_indices.resize(polygon_count);
+
+`proto::read_chunked` hands the callback the *whole* reader, not one bounded to
+the chunk (`include/zenkit/Stream.hh`), so a corrupted count does not walk off
+the end of anything that fails -- it simply reads on into the next chunk's
+header, and past the end of the archive reads return nothing rather than
+throwing. Neither the loop nor the `resize` can fail loudly on its own.
+
+Found by fuzzing `test/fixtures/minimal.g2.zen` with `tools/fuzz-world.js`: seed
+124 of the 200-seed run recorded in `docs/plans/level-editor.md` 16.11
+delta-debugs down to **one byte**, file offset 1317, the low byte of
+`sector_count`. It turns a world with no outdoor sectors into one declaring 121,
+and the very first sector is already fatal: the name is the four zero bytes of
+`portal_count`, so `node_count` is read across the following `0xC0FF` chunk
+header as `0xFF000000` and `resize` commits 17 GB. Measured: one sector is
+enough, `sector_count` of 1 hangs identically.
+
+The fix bounds each count by the bytes actually left in the reader -- a sector
+costs at least a name terminator and its two counts (9 bytes) and an index costs
+4 -- which needs a `_bytes_remaining` helper, since `Read` exposes no size but
+every implementation can seek to the end and back. It cannot change what a valid
+world parses: a real world carries the data its counts declare, so the check is
+only ever reached by a file whose BSP is already unreadable.
+
+One more instance of the unvalidated-file-data class in 16.11, not the
+class-level fix: `_parse_bsp_nodes` still recurses once per file-supplied flag
+bit with no depth bound, the chunk-walking loops in `Mesh.cc` and the VOB readers
+are untouched, and making `ReadMemory::seek` clamp or throw is still deferred.
+
+Upstreamable as-is: a plain robustness bug, no API change, three guards.
+
+--- a/src/world/BspTree.cc
++++ b/src/world/BspTree.cc
+@@ -21,6 +21,18 @@
+ 		END = 0xC0FF
+ 	};
+ 
++	// The number of bytes left in the reader. `Read` has no size, but every
++	// implementation can seek to the end and back, and the chunk callbacks below
++	// are handed a reader that is not bounded to their own chunk -- so this is
++	// the only ceiling a file-supplied count can be checked against.
++	static std::size_t _bytes_remaining(Read* r) {
++		auto here = r->tell();
++		r->seek(0, Whence::END);
++		auto end = r->tell();
++		r->seek(static_cast<ssize_t>(here), Whence::BEG);
++		return end > here ? end - here : 0;
++	}
++
+ 	static void _parse_bsp_nodes(Read* in,
+ 	                             std::vector<BspNode>& nodes,
+ 	                             std::vector<std::uint64_t>& indices,
+@@ -124,7 +136,23 @@
+ 				break;
+ 			}
+ 			case BspChunkType::OUTDOORS: {
++				// Every count in this chunk comes off the file unchecked, and the reader
++				// is not bounded to the chunk: a count corrupted large simply reads on
++				// into whatever follows the chunk, and past the end of the archive reads
++				// return nothing rather than failing. So neither the loop nor the
++				// `resize` below can fail loudly on its own -- a single corrupted byte
++				// in `sector_count` makes the first sector read its node count out of the
++				// *next* chunk's header and `resize` to it, committing gigabytes before
++				// anything is read. Bound each count by the bytes actually left: a sector
++				// is at least a name terminator and its two counts (9 bytes) and an index
++				// is 4, so a count that cannot fit is corruption by construction. A valid
++				// world always carries the data its counts declare.
+ 				auto sector_count = c->read_uint();
++
++				if (sector_count > _bytes_remaining(c) / 9) {
++					throw ParserError {"BspTree", "outdoor sector count exceeds the bytes left in the archive"};
++				}
++
+ 				this->sectors.reserve(sector_count);
+ 
+ 				for (std::uint32_t i = 0; i < sector_count; ++i) {
+@@ -135,6 +163,11 @@
+ 					auto node_count = c->read_uint();
+ 					auto polygon_count = c->read_uint();
+ 
++					if (static_cast<std::uint64_t>(node_count) + polygon_count > _bytes_remaining(c) / 4) {
++						throw ParserError {"BspTree",
++						                   "outdoor sector index counts exceed the bytes left in the archive"};
++					}
++
+ 					sector.node_indices.resize(node_count);
+ 					sector.portal_polygon_indices.resize(polygon_count);
+ 
+@@ -148,6 +181,11 @@
+ 				}
+ 
+ 				auto portal_count = c->read_uint();
++
++				if (portal_count > _bytes_remaining(c) / 4) {
++					throw ParserError {"BspTree", "outdoor portal polygon count exceeds the bytes left in the archive"};
++				}
++
+ 				this->portal_polygon_indices.resize(portal_count);
+ 
+ 				for (std::uint32_t i = 0; i < portal_count; ++i) {

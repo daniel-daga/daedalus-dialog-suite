@@ -1,0 +1,56 @@
+# Documentation Index
+
+## Using Dandelion
+
+- [user-guide.md](user-guide.md) — install, open a mod, and edit dialogs,
+  quests, NPCs, routines and worlds.
+- [../CHANGELOG.md](../CHANGELOG.md) — what each build changed.
+
+## Contributing
+
+Start with [../CONTRIBUTING.md](../CONTRIBUTING.md) (setup, tests, how a change
+lands) and [../AGENTS.md](../AGENTS.md) (the developer map, also read by coding
+agents). The rest of this directory is the developer documentation below.
+
+## Structure
+
+- `WORKFLOW.md` - how an issue is written, and the state of the tree. Read it
+  first, with the open [GitHub issues](https://github.com/daniel-daga/daedalus-dialog-suite/issues),
+  which are where work is tracked. It holds only what nothing else holds.
+- `architecture/` - durable architecture and boundary decisions.
+- `reference/` - durable implementation references and behavior mappings.
+- `plans/` - active implementation plans that are still in progress.
+
+## Lifecycle Policy
+
+- `active`: keep only currently executed plans in `plans/`.
+- `reference`: keep long-lived technical references in `reference/` and architecture decisions in `architecture/`.
+- `superseded/completed`: extract durable conclusions into canonical docs, then delete the obsolete plan/investigation file.
+
+## Current Canonical Docs
+
+- [architecture/dialog-editor.md](architecture/dialog-editor.md)
+- [architecture/quest-editor.md](architecture/quest-editor.md)
+- [architecture/parser-fidelity.md](architecture/parser-fidelity.md)
+- [architecture/save-pipeline.md](architecture/save-pipeline.md)
+- [architecture/worker-reliability.md](architecture/worker-reliability.md)
+- [architecture/render-performance.md](architecture/render-performance.md)
+- [architecture/security-model.md](architecture/security-model.md)
+- [reference/autocomplete-fields.md](reference/autocomplete-fields.md)
+- [reference/dialog-authoring-automations.md](reference/dialog-authoring-automations.md)
+- [reference/parser-roundtrip-scope.md](reference/parser-roundtrip-scope.md)
+- [reference/environment-hazards.md](reference/environment-hazards.md)
+
+## Active Plans
+
+- [plans/production-readiness-review-findings.md](plans/production-readiness-review-findings.md) — production-readiness, performance and UI/UX review findings; quest Flow-view deprecation decision and remaining work.
+
+## Release
+
+- [release-checklist.md](release-checklist.md) — release/QA work (code signing, update verifier, desktop passes) parked until the first release
+
+## Workspace Entry Points
+
+- Parser usage: [../daedalus-parser/README.md](../daedalus-parser/README.md)
+- Parser API: [../daedalus-parser/API.md](../daedalus-parser/API.md)
+- Editor developer notes: [../daedalus-dialog-editor/AGENTS.md](../daedalus-dialog-editor/AGENTS.md)

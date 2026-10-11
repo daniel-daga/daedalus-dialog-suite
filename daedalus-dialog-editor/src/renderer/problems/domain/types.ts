@@ -1,0 +1,301 @@
+import type { FileParseErrors, SemanticModel, SpawnSite } from '../../../shared/types';
+import type { PortalFinding } from '../../../shared/worldTypes';
+import type { RoutineSite } from '../../../shared/types';
+
+/**
+ * Domain types for the project-wide Problems panel.
+ *
+ * This layer is pure: no React, MUI, Electron, or store imports. Rules are pure
+ * functions over an aggregated {@link ProjectView} built from the parsed
+ * per-file semantic models the renderer already caches.
+ */
+
+export type ProblemSeverity = 'error' | 'warning';
+
+export type ProblemRuleId =
+  | 'parse-error'
+  | 'npc-not-found'
+  | 'knowsinfo-dangling'
+  | 'choice-no-clearchoices'
+  | 'orphaned-function'
+  | 'voice-id-duplicate'
+  | 'voice-id-malformed'
+  // The scripts against the OutputUnit database the game reads (#264).
+  | 'output-unit-stale'
+  | 'output-unit-missing'
+  | 'waypoint-not-in-world'
+  | 'duplicate-spawn'
+  // The portal checks (level-editor.md §16.18 slice 1, §16.22 q1–q3), one id
+  // per `zen-world` finding kind. All world-locus, by polygon.
+  | 'routine-overlap'
+  | 'portal-material-malformed'
+  | 'portal-material-unknown-sector'
+  | 'portal-unpaired'
+  | 'portal-non-planar'
+  | 'portal-reversed';
+
+/**
+ * A problem in the scripts: a declaration in a file, which is what the panel
+ * navigates to by opening the file and selecting the symbol.
+ */
+export interface ScriptLocus {
+  kind: 'script';
+  /** File that owns the offending declaration. */
+  filePath: string;
+  /** NPC the offending dialog belongs to, when applicable. */
+  npc?: string;
+  /** Dialog the problem points at, used for navigation. */
+  dialogName?: string;
+  /** Function the problem points at, used for navigation. */
+  functionName?: string;
+  /**
+   * 1-based source line of the construct the finding is about — the action, the
+   * condition or the call where there is one, the declaration otherwise (#267).
+   * Nothing *jumps* to it, because there is no source view; the panel shows it,
+   * which is what tells two findings in one function apart.
+   *
+   * Still optional: a model the editor built or edited carries no source line,
+   * and the index a rule reads may predate the field.
+   */
+  line?: number;
+  /**
+   * The waypoint name a `waypoint-not-in-world` finding names, in the script's
+   * own casing. Carried so the Problems panel's "Add to world" action has a
+   * name to hand `AddWaypoint` without parsing one back out of `message`.
+   */
+  waypoint?: string;
+}
+
+/**
+ * A problem in the open world. It has no file, no dialog and no function —
+ * which is why `Problem` carries a union rather than a file path (§16.20).
+ * Every field is an address into the world that was open when the scan ran:
+ * names where the world has them, indices where it does not.
+ */
+export interface WorldLocus {
+  kind: 'world';
+  /** Name of the offending waynet point. */
+  waypoint?: string;
+  /** Index of the offending VOB in the world summary, as of the scan. */
+  vob?: number;
+  /** Index of the offending world-mesh polygon, as of the scan. */
+  polygon?: number;
+  /**
+   * That polygon's corners, in ZenGin space — what the World surface frames
+   * and outlines (#222).
+   *
+   * Carried beside the index rather than looked up from it, because there is
+   * nothing on the renderer side to look it up in: the scene holds merged draw
+   * groups with no polygon mapping. Absent when the finding names a material no
+   * portal face carries, which is the one portal row that stays unclickable.
+   */
+  polygonCorners?: readonly (readonly [number, number, number])[];
+}
+
+/** Where a problem is. */
+export type ProblemLocus = ScriptLocus | WorldLocus;
+
+export interface Problem {
+  /** Stable key for React lists and cross-scan dedupe. */
+  id: string;
+  rule: ProblemRuleId;
+  severity: ProblemSeverity;
+  /** Human-readable, self-contained description. */
+  message: string;
+  /** Where the problem is, and what navigating to it means. */
+  locus: ProblemLocus;
+  /** The OU rules only (#264): the line the database should hold, which the
+   *  panel's "Update OUs" writes. */
+  outputUnitLine?: { name: string; text: string };
+}
+
+/** One parsed file: its path and full semantic model. */
+export interface FileModel {
+  filePath: string;
+  model: SemanticModel;
+}
+
+/**
+ * Everything the lint rules need to know about one dialog, precomputed from its
+ * model object. Reference properties are resolved to plain function names.
+ */
+export interface DialogFacts {
+  name: string;
+  /** 1-based line of the `instance` declaration, when the model carries one. */
+  line?: number;
+  /** Raw `npc` property when it is a string (may be empty/whitespace). */
+  npc?: string;
+  /** Function name of the `information` property, when present. */
+  informationRef?: string;
+  /** Function name of the `condition` property, when present. */
+  conditionRef?: string;
+}
+
+/**
+ * Everything the lint rules need to know about one function, precomputed by a
+ * single walk over its (possibly nested) actions and conditions.
+ */
+export interface FunctionFacts {
+  name: string;
+  /** 1-based line of the `func` declaration, when the model carries one. */
+  line?: number;
+  /** True when the function contains at least one `Choice` action. */
+  hasChoice: boolean;
+  /** True when the function contains at least one `ClearChoicesAction`. */
+  hasClearChoices: boolean;
+  /** Raw `Choice.targetFunction` names in encounter order. */
+  choiceTargets: string[];
+  /** The function's `calls` list. */
+  calls: string[];
+  /** Non-empty `Npc_KnowsInfo` dialog refs with their condition index and line. */
+  knowsInfoRefs: Array<{ index: number; dialogRef: string; line?: number }>;
+  /** Literal, non-empty voice ids in encounter order, with the line each was written on. */
+  /** Literal, non-empty voice ids, each with the subtitle written beside it —
+   *  the text is what `output-unit-stale` compares against the OU database. */
+  voiceIds: Array<{ id: string; text: string; line?: number }>;
+}
+
+/**
+ * Per-file lint inputs derived from a semantic model. Pure function of the
+ * model object, so it can be cached against the model's identity — everything
+ * cross-file (name sets, reference graph, duplicates) is aggregated later.
+ */
+export interface FileFacts {
+  dialogs: DialogFacts[];
+  functions: FunctionFacts[];
+  /** Names of file-local C_NPC instances plus `npcs` entries. */
+  npcNames: string[];
+}
+
+/** One file's facts together with its path. */
+export interface FileFactsEntry {
+  filePath: string;
+  facts: FileFacts;
+}
+
+/** A dialog function's facts together with the file that declares it. */
+export interface FunctionEntry {
+  func: FunctionFacts;
+  filePath: string;
+}
+
+/**
+ * Aggregated, case-insensitive project view built from every parsed file.
+ * The `*Keys` sets hold lowercased names for existence checks; the original
+ * casing is preserved on the underlying facts for display.
+ */
+export interface ProjectView {
+  fileFacts: FileFactsEntry[];
+  /** Lowercased names of every dialog across the project. */
+  dialogNameKeys: ReadonlySet<string>;
+  /** Lowercased names of every known NPC (C_NPC instances + prototypes). */
+  npcNameKeys: ReadonlySet<string>;
+  /** Every dialog function across the project, keyed by lowercased name. */
+  functionsByKey: ReadonlyMap<string, FunctionEntry>;
+  /** Script sites naming a waypoint; empty when the project index has none. */
+  waypointSites: WaypointSites;
+  /** Static spawn sites from the project index; empty when it has none. */
+  spawnSites: readonly SpawnSite[];
+  /**
+   * UPPERCASED names of every NPC the project index holds at least one dialog
+   * for. Dialog is what separates a character from a monster template — both
+   * are `C_NPC` instances — and `duplicate-spawn` fires only for characters.
+   * Empty means nothing is known, never that nothing is legal.
+   */
+  dialogNpcKeys: ReadonlySet<string>;
+  /**
+   * The subtitle the OutputUnit database holds for each voice id, keyed by
+   * UPPERCASED id — or undefined when no database was found, which means
+   * nothing is known rather than that nothing is legal. A project may be open
+   * with no Gothic install behind it, and that must raise no findings.
+   */
+  outputUnits?: ReadonlyMap<string, string>;
+  /** The open world's waynet names, or undefined when no world is open. */
+  world?: WorldWaynetView;
+  /**
+   * The open world's portal findings, or undefined when no world is open.
+   * Computed once per open in the zenkit worker, where the mesh is, and
+   * carried in whole rather than recomputed per scan — the orientation check
+   * is a dot product per sector corner per portal, 150 ms on NewWorld, and a
+   * scan runs on every debounced keystroke.
+   */
+  portalFindings?: readonly PortalFinding[];
+  /**
+   * The syntax errors the project index pass found, one entry per broken file.
+   * Taken from the index for the reason the waypoint and spawn sites are: it
+   * is the pass that sees every file, and a broken file nobody opened is
+   * precisely the case `parse-error` exists for. Empty is a clean project or
+   * an index that has not loaded — the rule says nothing either way.
+   */
+  parseErrors: readonly FileParseErrors[];
+  /**
+   * Every `TA` entry the project index read, across every routine — what
+   * `routine-overlap` sweeps (#235). From the index's whole-project pass
+   * rather than the parsed files, for the reason the waypoint and spawn rules
+   * take theirs there: `parsedFiles` is capped by what has been opened.
+   */
+  routineSites: readonly RoutineSite[];
+}
+
+/**
+ * Waypoint-name literals found in scripts, keyed by UPPERCASED name — the
+ * project index's `waypointSites`, threaded in whole rather than rebuilt here:
+ * it rides `buildProjectIndex`'s worker-pool pass, so it sees every file in the
+ * project, while the per-file models this view is otherwise built from are
+ * capped and depend on what has been opened.
+ */
+export type WaypointSites = Record<string, Array<{ filePath: string; functionName: string; line?: number }>>;
+
+/**
+ * The waynet of the world that is currently open, as a set of names. This is
+ * reference data, not a file the rules walk — the same shape `knownNpcNames`
+ * has, and absent for the same reason it can be empty: no world open means
+ * nothing is known, never that nothing is legal.
+ */
+export interface WorldWaynetView {
+  /** Uppercased names of every waypoint in the waynet. */
+  pointNameKeys: ReadonlySet<string>;
+  /**
+   * Uppercased names of the world's free points — its **`zCVobSpot` VOBs**,
+   * which is where a world keeps them. Disjoint from `pointNameKeys`: retail
+   * NewWorld has 2,254 of these and not one waypoint named `FP_*`.
+   *
+   * Not the waynet's stored `free_point` flag, which this used to read. That
+   * flag marks a waypoint standing in no edge so `WayNet::save` keeps it — a
+   * storage fact, true of 1 waypoint in NewWorld (`TOT`) and of none that a
+   * script names. Reading it left this set unable to answer for any of the 874
+   * `FP_` sites in the retail scripts.
+   */
+  freePointNames: readonly string[];
+}
+
+/**
+ * Does the open world have a place by this name? **The one answer both
+ * surfaces take** — the Problems rule and the spawn-point jump button — so
+ * that a name cannot be missing in one and present in the other, which is
+ * exactly what they used to disagree about.
+ *
+ * Waypoints match exactly. Free points match by **substring**, because the
+ * engine's free-point search does: `Wld_IsFPAvailable(self, "ROAM")` reaches
+ * `FP_ROAM_CITY_01`, and since every free point starts `FP_` a script fragment
+ * is almost never a prefix of one. Prefix-matching therefore invented a finding
+ * for legal code, which is the failure the free-point branch exists to prevent.
+ * Measured against the retail scripts, the looser form changes nothing else:
+ * 867 of their 874 `FP_` sites name a free point in full, one names a prefix
+ * (`FP_ROAM_OW_SNAPPER_OW_ORC` for `…_ORC6/7/8`), and none needs the infix
+ * case — which reaches the rule only through a project's own helper declaring
+ * a `var string waypoint` parameter.
+ */
+export const worldHasPoint = (world: WorldWaynetView, name: string): boolean => {
+  const upper = name.toUpperCase();
+  // The empty name is in no world. Said here rather than left to the callers:
+  // every string contains `''`, so a substring match would answer *true* for
+  // any world holding one free point — and the next caller is a text field
+  // being typed into, where the empty name is the normal state.
+  if (!upper) return false;
+  return world.pointNameKeys.has(upper)
+    || world.freePointNames.some((freePoint) => freePoint.includes(upper));
+};
+
+/** A pure lint rule: inspects the project view and returns any problems. */
+export type LintRule = (view: ProjectView) => Problem[];

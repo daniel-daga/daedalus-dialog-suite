@@ -1,0 +1,60 @@
+WayNet: a free waypoint that does not resolve is a parse error, not a null deref.
+
+`WayNet::load` pushes the result of `read_object<WayPoint>` straight into
+`points` and dereferences it on the very next line:
+
+	this->points.push_back(r.read_object<WayPoint>(version));
+	this->points.back()->free_point = true;
+
+`ReadArchive::read_object` returns null in three cases -- an unknown class name,
+an object marked empty (`%`), and a reference whose index is not in the object
+cache -- so a single corrupted byte in a waypoint's object header is a null
+dereference inside the reader.
+
+Found by fuzzing `test/fixtures/minimal.g2.zen`: seeds 68 and 81 of the 200-seed
+run recorded in `docs/plans/level-editor.md` 16.11 each delta-debug down to
+**one byte**, offsets 2716 and 2723, both inside the first waypoint's
+`[waypoint0 zCWaypoint 0 7]` header -- one breaking the class name, the other
+the space before the object index, and each crashing the child with
+`0xC0000005`. The committed regression test seeds the same defect by structure,
+rewriting the class token in place with an equal-length name ZenKit does not
+know.
+
+**The edge loop below is deliberately left alone.** `wayl`/`wayr` may be null
+for the same three reasons, but nothing dereferences them there, and both
+`zenkit-node`'s `CollectWaypoints` and its `WayNetGraph` already filter nulls
+out on purpose -- a reference into a waynet ZenGin itself wrote can go
+unresolved, and refusing such a world would be a new refusal, not a fix. A free
+point is different: it is written inline, so a null one is always corruption.
+
+One more instance of the unvalidated-file-data class in 16.11, not the
+class-level fix: `_parse_bsp_nodes` still recurses once per file-supplied flag
+bit with no depth bound, the chunk-walking loops in `Mesh.cc` are untouched, and
+making `ReadMemory::seek` clamp or throw is still deferred.
+
+Upstreamable as-is: a plain null-check, no API change, one guard.
+
+diff --git a/src/world/WayNet.cc b/src/world/WayNet.cc
+index 1711aaa..546461f 100644
+--- a/src/world/WayNet.cc
++++ b/src/world/WayNet.cc
+@@ -29,7 +29,18 @@ namespace zenkit {
+ 		this->points.reserve(count_points);
+ 
+ 		for (auto i = 0; i < count_points; ++i) {
+-			this->points.push_back(r.read_object<WayPoint>(version));
++			auto point = r.read_object<WayPoint>(version);
++
++			// `read_object` returns null for an object whose class the file does not
++			// name correctly, for one marked empty and for an unresolved reference --
++			// and the next line dereferences it. The edge loop below tolerates a null
++			// endpoint (a reference into a waynet ZenGin itself wrote can go
++			// unresolved), but a free point is written inline and cannot.
++			if (point == nullptr) {
++				throw ParserError {"WayNet", "waypoint object failed to load"};
++			}
++
++			this->points.push_back(point);
+ 			this->points.back()->free_point = true;
+ 		}
+ 

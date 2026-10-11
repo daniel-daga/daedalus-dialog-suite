@@ -1,0 +1,74 @@
+// The asset layer: a ZenGin VFS and the visual/texture payloads read out of it
+// (level-editor.md §4). All read-only projections — no writer path is touched
+// and no fidelity claim is made.
+#pragma once
+
+#include <napi.h>
+
+#include <zenkit/Vfs.hh>
+
+#include <memory>
+#include <string>
+#include <vector>
+
+namespace zenkit_node {
+
+// Owns a mounted VFS for the lifetime of the JS handle.
+struct VfsHandle {
+  zenkit::Vfs vfs;
+  // The same sources again, one `Vfs` each, in mount order. ZenKit records no
+  // provenance on a merged node — an overridden file is simply gone from the
+  // tree — so the only way to say which source holds a name is to resolve it
+  // in each. The price is a second set of directory trees; the file bytes are
+  // memory-mapped either way and are not duplicated.
+  std::vector<std::unique_ptr<zenkit::Vfs>> sources;
+};
+
+// openVfs(paths) — mounts VDF/MOD archives and loose directories into one
+// namespace, later paths winning. Returns a handle.
+Napi::Value OpenVfs(Napi::CallbackInfo const& info);
+
+// vfsResolve(handle, name) — the compiled asset name a visual or texture name
+// maps to, or null when nothing matches. Exposed because the mapping is a
+// guess-free lookup the asset browser and the tests both need to see.
+Napi::Value VfsResolve(Napi::CallbackInfo const& info);
+
+// vfsList(handle, path) — the children of one directory in the mounted
+// namespace, as { name, type, sources }, or null when the path is absent or is
+// a file. `sources` are indices into the `openVfs` path list, ascending: every
+// mount that holds the entry. Under the default `overwrite: 'all'` the last of
+// them is the one the merged tree serves and the earlier ones are what it
+// shadows; a mode that keeps the existing file reverses that.
+// One level, never a recursive walk: a Gothic install is tens of thousands of
+// entries and an asset browser shows one directory at a time.
+Napi::Value VfsList(Napi::CallbackInfo const& info);
+
+// vfsFind(handle, query, options) — every entry anywhere in the mounted
+// namespace whose name contains `query`, case-insensitively, as
+// { name, directory, type, sources } with the same provenance a listing
+// carries. Directories first, breadth-first within each half, and capped:
+// `{ matches, truncated }` says whether the walk stopped early. This IS the
+// recursive walk vfsList refuses to do, which is why it is a separate call
+// with a needle and a cap rather than a mode of the listing.
+Napi::Value VfsFind(Napi::CallbackInfo const& info);
+
+// vfsRead(handle, name) — the bytes of the first file of that name anywhere in
+// the mounted namespace, as a Buffer, or null when absent. Name lookup is
+// case-insensitive, as the engine's own is. This is how a world leaves a
+// retail Worlds.vdf without an extraction into the install (scripts/extract-worlds.js).
+Napi::Value VfsRead(Napi::CallbackInfo const& info);
+
+// extractVisual(handle, name) — a VOB visual as render-ready buffers in the
+// same chunk shape extractWorldMesh emits. Null when the asset is absent or
+// its type carries no static geometry.
+Napi::Value ExtractVisual(Napi::CallbackInfo const& info);
+
+// decodeTexture(handle, name) — a ZTEX decoded to RGBA8. Null when absent.
+Napi::Value DecodeTexture(Napi::CallbackInfo const& info);
+
+// extractHierarchy(vfs, name) -> { source, nodes: [{ name, parent, transform }] }
+// | null. `name` is a model name (`HUMANS.MDS`); its .MDH, else the hierarchy
+// inside its .MDL. Transforms are accumulated to the root, row-major.
+Napi::Value ExtractHierarchyFromVfs(Napi::CallbackInfo const& info);
+
+}  // namespace zenkit_node

@@ -1,0 +1,103 @@
+/**
+ * Issue #114 regression: background ingestion updates projectStore.parsedFiles
+ * every 500 ms while a project loads. The RegisterTopicDialog form must not
+ * re-initialize (and clobber user input) when the suggestion sources update
+ * while the form is open.
+ */
+import React from 'react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
+import '@testing-library/jest-dom';
+import RegisterTopicDialog from '../src/renderer/components/RegisterTopicDialog';
+import { useProjectStore } from '../src/renderer/store/projectStore';
+
+const emptyModel = () => ({
+  dialogs: {}, functions: {}, constants: {}, variables: {},
+  instances: {}, items: {}, npcs: {}, animations: {},
+  hasErrors: false, errors: []
+});
+
+describe('RegisterTopicDialog', () => {
+  beforeEach(() => {
+    useProjectStore.setState({
+      projectPath: 'C:/project',
+      parsedFiles: new Map(),
+      mergedSemanticModel: emptyModel() as any,
+      isLoading: false
+    });
+  });
+
+  test('keeps user input when parsedFiles updates in the background', () => {
+    render(<RegisterTopicDialog open onClose={() => {}} topicName='TOPIC_MeinQuest' />);
+
+    const constantsField = screen.getByLabelText('Quest Definition File (TOPIC_)');
+    fireEvent.change(constantsField, { target: { value: 'C:/project/LOG_Constants.d' } });
+    const titleField = screen.getByLabelText('Quest Title');
+    fireEvent.change(titleField, { target: { value: 'Mein Quest' } });
+
+    // Simulate a background ingestion flush adding newly parsed files
+    act(() => {
+      useProjectStore.setState({
+        parsedFiles: new Map([
+          ['C:/project/B_CloseTopicsX.d', {
+            filePath: 'C:/project/B_CloseTopicsX.d',
+            semanticModel: {
+              ...emptyModel(),
+              functions: { B_CloseTopicsX: { name: 'B_CloseTopicsX', calls: ['B_CloseTopic'] } }
+            },
+            lastParsed: new Date()
+          } as any]
+        ])
+      });
+    });
+
+    expect(constantsField).toHaveValue('C:/project/LOG_Constants.d');
+    expect(titleField).toHaveValue('Mein Quest');
+  });
+
+  test('does not re-render on merged-model churn while closed (§3e gate)', () => {
+    // One RegisterTopicDialog is hosted (closed) per Create Topic action card, so
+    // a closed instance must not react to the merged model churning on edits.
+    let commits = 0;
+    render(
+      <React.Profiler id="rtd-closed" onRender={() => { commits += 1; }}>
+        <RegisterTopicDialog open={false} onClose={() => {}} topicName='TOPIC_X' />
+      </React.Profiler>
+    );
+    const afterMount = commits;
+
+    act(() => {
+      useProjectStore.setState({ mergedSemanticModel: emptyModel() as any });
+    });
+    expect(commits).toBe(afterMount);
+  });
+
+  test('a LOG_NOTE asks only for a title and a file, and registers a note (#278)', async () => {
+    const registerNoteInLogFiles = jest.fn(async () => {});
+    const registerTopicInLogFiles = jest.fn(async () => {});
+    useProjectStore.setState({ registerNoteInLogFiles, registerTopicInLogFiles } as any);
+    const onClose = jest.fn();
+
+    render(<RegisterTopicDialog open onClose={onClose} topicName='TOPIC_AlteMine' topicType='LOG_NOTE' />);
+
+    expect(screen.getByRole('heading', { name: 'Register Note in Log Files' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Chapter Start')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Close Topics File (B_CloseTopics)')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Note Title'), { target: { value: 'Die alte Mine' } });
+    fireEvent.change(screen.getByLabelText('Note Definition File (TOPIC_)'), {
+      target: { value: 'C:/project/LOG_Constants_Notes.d' }
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Register' }));
+    });
+
+    expect(registerNoteInLogFiles).toHaveBeenCalledWith({
+      topicName: 'TOPIC_AlteMine',
+      title: 'Die alte Mine',
+      constantsFilePath: 'C:/project/LOG_Constants_Notes.d'
+    });
+    expect(registerTopicInLogFiles).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
+  });
+});
+

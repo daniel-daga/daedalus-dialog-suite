@@ -1,0 +1,2127 @@
+/**
+ * The world property grid (level-editor.md §6).
+ *
+ * Read-only, like everything in Phase 1a. What it has to get right is what the
+ * numbers *mean*, because every one of them is a plausible-looking number in
+ * the wrong convention:
+ *
+ *   - positions are ZenGin space, in centimetres, unconverted. The single
+ *     conversion lives at the scene root (§7); a grid that showed metres would
+ *     show coordinates no op could carry and no `.zen` file contains.
+ *   - `flags` is a bit word, and the bits have names.
+ *   - an unresolved visual is a normal fact about a world, not an error — a
+ *     decal names a texture and a `.pfx` is a Daedalus instance.
+ *
+ * @jest-environment jsdom
+ */
+
+import React from 'react';
+import { fireEvent, render, screen } from '@testing-library/react';
+import {
+  eulerDeltaRotation, eulerToZenRotation,
+  type ClassProps, type VobProps, type ZenRotation,
+} from 'zen-world';
+import type { VobIndex, WorldSummary } from '../src/shared/worldTypes';
+import type { AssetThumbnails } from '../src/renderer/world/assetThumbnails';
+import WorldPropertyGrid from '../src/renderer/components/world/WorldPropertyGrid';
+
+interface Spec {
+  parent?: number;
+  childIndex?: number;
+  cls?: string;
+  name?: string;
+  visual?: string;
+  visualType?: string;
+  pos?: [number, number, number];
+  rot?: number[];
+  flags?: number;
+}
+
+function vobIndex(vobs: Spec[]): VobIndex {
+  const classes: string[] = [];
+  const names: string[] = [];
+  const visuals: string[] = [];
+  const visualTypes: string[] = [];
+  const intern = (dict: string[], value: string) => {
+    const at = dict.indexOf(value);
+    return at === -1 ? dict.push(value) - 1 : at;
+  };
+
+  const parent = new Int32Array(vobs.length);
+  const childIndex = new Uint32Array(vobs.length);
+  const positions = new Float32Array(vobs.length * 3);
+  const rotations = new Float32Array(vobs.length * 9);
+  const flags = new Uint32Array(vobs.length);
+  const classIndex = new Uint32Array(vobs.length);
+  const nameIndex = new Uint32Array(vobs.length);
+  const visualIndex = new Uint32Array(vobs.length);
+  const visualTypeIndex = new Uint32Array(vobs.length);
+
+  vobs.forEach((vob, i) => {
+    parent[i] = vob.parent ?? -1;
+    childIndex[i] = vob.childIndex ?? 0;
+    positions.set(vob.pos ?? [0, 0, 0], i * 3);
+    rotations.set(vob.rot ?? [1, 0, 0, 0, 1, 0, 0, 0, 1], i * 9);
+    flags[i] = vob.flags ?? 0;
+    classIndex[i] = intern(classes, vob.cls ?? 'zCVob');
+    nameIndex[i] = intern(names, vob.name ?? '');
+    visualIndex[i] = intern(visuals, vob.visual ?? '');
+    visualTypeIndex[i] = intern(visualTypes, vob.visualType ?? 'MULTI_RESOLUTION_MESH');
+  });
+
+  return {
+    count: vobs.length,
+    parent: parent.buffer,
+    childIndex: childIndex.buffer,
+    positions: positions.buffer,
+    rotations: rotations.buffer,
+    flags: flags.buffer,
+    classes, classIndex: classIndex.buffer,
+    names, nameIndex: nameIndex.buffer,
+    visuals, visualIndex: visualIndex.buffer,
+    visualTypes, visualTypeIndex: visualTypeIndex.buffer,
+    decalVobs: new ArrayBuffer(0),
+    decalDimensions: new ArrayBuffer(0),
+    decalAlphaWeights: new ArrayBuffer(0),
+  };
+}
+
+function summaryOf(index: VobIndex): WorldSummary {
+  return {
+    worldPath: 'NewWorld.zen',
+    bbox: [0, 0, 0, 1, 1, 1],
+    vobIndex: index,
+    stats: { vobCount: index.count, materials: 0, worldDrawGroups: 0, worldTriangles: 0 },
+    timings: {},
+    assetSources: [],
+  };
+}
+
+const WORLD = summaryOf(vobIndex([
+  { name: 'CASTLE', cls: 'zCVob' },
+  {
+    parent: 0, name: 'TORCH', cls: 'zCVobLight',
+    visual: 'TORCH.3DS', visualType: 'MULTI_RESOLUTION_MESH',
+    // Centimetres, ZenGin space. Deliberately not round: a grid that rounded
+    // to whole metres would show "0, 1, -1".
+    pos: [12.5, 4400, -73.25],
+    flags: 0b000011,
+  },
+  { parent: 0, cls: 'zCVobLevelCompo', visual: 'NW_PART_01.3DS', visualType: 'MESH' },
+  { name: 'SMOKE', cls: 'zCPFXController', visual: 'PFX_SMOKE', visualType: 'PARTICLE_EFFECT' },
+  { name: 'SWORD', cls: 'oCItem', visual: 'ITMW_1H_SWORD_01.3DS' },
+  // The two classes that carry the `bool` and `int` kinds. Neither has a visual
+  // — a zone is invisible in the viewport, which is why every field of it is
+  // only ever seen here.
+  { name: 'NW_MUSIC', cls: 'oCZoneMusic', visualType: 'UNKNOWN' },
+  { name: 'NW_FOG', cls: 'zCZoneZFog', visualType: 'UNKNOWN' },
+  // A mob the player uses by hand, and one an NPC routine uses. The difference
+  // is the whole of the focus-name warning below.
+  { name: 'CHEST', cls: 'oCMobContainer', visual: 'CHESTBIG.MDS' },
+  { name: 'BED', cls: 'oCMobBed', visual: 'BEDHIGH.MDS' },
+  // A trigger and the mover it is meant to fire — the pair the target fields
+  // exist to wire together (2026-09-12).
+  { name: 'TRIGGER_GATE', cls: 'zCTrigger', visualType: 'UNKNOWN' },
+  { name: 'GATE_MOVER', cls: 'zCMover', visual: 'GATE.3DS' },
+  // The VOB between the two, catalogued 2026-09-12 (#260).
+  { name: 'GATE_CONTROLLER', cls: 'zCMoverController', visualType: 'UNKNOWN' },
+  // The class the third array kind was added for (2026-09-12).
+  { name: 'QUAKE', cls: 'zCEarthquake', visualType: 'UNKNOWN' },
+  // The trigger whose value is a *script function* rather than a VOB name
+  // (#269) — the field the project's function index is checked against.
+  { name: 'TRIGGER_SCRIPT', cls: 'oCTriggerScript', visualType: 'UNKNOWN' },
+]));
+
+/**
+ * What the per-class read answers for VOB 1, in the shape `getVobProps` sends
+ * it: the **whole** props object, base fields and all, because it is the same
+ * reader `normalizeWorld` uses. The grid picks the catalogued keys out of it
+ * rather than being handed a pre-filtered record — a filter on the way in would
+ * be a fourth allowlist beside the three the catalogue exists to replace.
+ */
+/** Every read carries these three, whatever the class: they are `zCVob`'s own
+ *  and the props object is the whole of what the VOB holds. */
+const BASE_READ = { presetName: '', visualCamAlign: 0, bias: 0 };
+const LIGHT: ClassProps = {
+  class: 'zCVobLight', range: 2000, color: [255, 220, 180, 255],
+  lightType: 0, quality: 2, isStatic: true, ...BASE_READ,
+};
+const ITEM: ClassProps = { class: 'oCItem', instance: 'ITMW_1H_SWORD_01', ...BASE_READ };
+const MUSIC: ClassProps = {
+  class: 'oCZoneMusic',
+  enabled: true, priority: 2, ellipsoid: false, reverb: -30, volume: 0.5, loop: true,
+  ...BASE_READ,
+};
+/** A chest as `insertVob` authors one: no focus name, so the engine's crosshair
+ *  cannot find it and nobody can ever open it. */
+const CHEST: ClassProps = {
+  class: 'oCMobContainer',
+  focusName: '', hp: 20, damage: 0, movable: false, takable: false,
+  focusOverride: false, soundMaterial: 0, visualDestroyed: '', owner: '', ownerGuild: '',
+  destroyed: false, stateCount: 1, conditionFunction: '', target: '', item: '',
+  onStateChangeFunction: '', rewind: false, locked: false, key: '', pickString: '',
+  ...BASE_READ,
+};
+const BED: ClassProps = {
+  class: 'oCMobBed',
+  focusName: '', hp: 20, damage: 0, movable: false, takable: false,
+  focusOverride: false, soundMaterial: 0, visualDestroyed: '', owner: '', ownerGuild: '',
+  destroyed: false, stateCount: 1, conditionFunction: '', target: '', item: '',
+  onStateChangeFunction: '', rewind: false, ...BASE_READ,
+};
+/** A trigger wired to the mover above it. Only the two targets matter here;
+ *  the rest is what the archive holds on any `zCTrigger`. */
+const TRIGGER: ClassProps = {
+  class: 'zCTrigger',
+  target: 'GATE_MOVER', vobTarget: '',
+  startEnabled: true, sendUntrigger: false, reactToOnTrigger: true, reactToOnTouch: false,
+  reactToOnDamage: false, respondToObject: true, respondToPc: true, respondToNpc: false,
+  maxActivationCount: -1, retriggerDelaySec: 0, damageThreshold: 0, fireDelaySec: 0,
+  ...BASE_READ,
+};
+/** An earthquake, which is the only class carrying a `vec3` — a float triple
+ *  where a colour is four whole channels and a decal's size is two floats. */
+const QUAKE: ClassProps = {
+  class: 'zCEarthquake', radius: 2000, duration: 5, amplitude: [10, 4, 10], ...BASE_READ,
+};
+const FOG: ClassProps = {
+  class: 'zCZoneZFog',
+  rangeCenter: 12000, innerRangePercentage: 0.5,
+  fadeOutSky: true, overrideColor: false, color: [120, 130, 140, 255],
+  ...BASE_READ,
+};
+
+const field = (label: string) => screen.getByTestId(`world-prop-${label}`);
+/** The editable fields are inputs, so their value is not their text content. */
+const input = (label: string) => screen.getByTestId(`world-prop-${label}-input`) as HTMLInputElement;
+
+let edits: Array<VobProps> = [];
+const onEdit = (props: VobProps) => { edits.push(props); };
+let classEdits: Array<ClassProps> = [];
+const onEditClass = (props: ClassProps) => { classEdits.push(props); };
+/** The base fields that have no column — `presetName`, `visualCamAlign`,
+ *  `bias`. A separate spy because they leave by a separate handler: like a class
+ *  field they need the fetched props as their `from`, so they are the described
+ *  VOB's alone where a flag is the whole selection's. */
+let baseEdits: Array<VobProps> = [];
+const onEditBase = (props: VobProps) => { baseEdits.push(props); };
+/** A typed coordinate arrives as a *delta*, which is the gizmo's own shape. */
+let moves: Array<[number, number, number]> = [];
+const onTranslate = (delta: [number, number, number]) => { moves.push(delta); };
+/** A typed angle arrives as an *absolute* rotation for a single selection —
+ *  `rotateVob`'s shape. */
+let rotates: Array<ZenRotation> = [];
+const onRotate = (to: ZenRotation) => { rotates.push(to); };
+/** ...and as a *delta* for a multi-selection — `rotateVobs`' shape, the one a
+ *  gizmo drag arrives in. The two are separate spies because sending the wrong
+ *  one is the whole failure mode: an absolute matrix down the selection path
+ *  would stack N VOBs into one pose. */
+let turns: Array<ZenRotation> = [];
+const onRotateSelection = (delta: ZenRotation) => { turns.push(delta); };
+beforeEach(() => {
+  edits = []; classEdits = []; baseEdits = []; moves = []; rotates = []; turns = [];
+});
+
+/** The wiring every render needs. `classProps` is null by default because that
+ *  is what a VOB of an uncatalogued class gets — nothing is fetched for one —
+ *  and the tests that are about the class section hand it values themselves. */
+/** The one field `oCTriggerScript` adds to the `zCTrigger` fourteen. */
+const TRIGGER_SCRIPT: ClassProps = {
+  class: 'oCTriggerScript',
+  function: 'TriggerFunc_Gate',
+  target: '', vobTarget: '',
+  startEnabled: true, sendUntrigger: false, reactToOnTrigger: true, reactToOnTouch: false,
+  reactToOnDamage: false, respondToObject: true, respondToPc: true, respondToNpc: false,
+  maxActivationCount: -1, retriggerDelaySec: 0, damageThreshold: 0, fireDelaySec: 0,
+  ...BASE_READ,
+};
+
+const wiring = {
+  onEditProps: onEdit,
+  onEditClassProps: onEditClass,
+  onEditBaseProps: onEditBase,
+  classProps: null,
+  onTranslate,
+  onRotate,
+  onRotateSelection,
+  onFocus: jest.fn(),
+  /** Bumped by the shell in `commitOps`' catch when the main process refuses an
+   *  edit — the tests that are about refusal hand it a bumped value themselves. */
+  refusalGeneration: 0,
+  /** No script project loaded, which is what a world opened on its own has —
+   *  the tests that are about the item index hand it names themselves. */
+  itemInstances: new Set<string>(),
+  /** Same, for the function index the script-function fields read (#269). */
+  scriptFunctions: new Set<string>(),
+};
+
+/** Where the trigger-script VOB sits in `WORLD`. */
+const TRIGGER_SCRIPT_VOB = 13;
+
+describe('WorldPropertyGrid', () => {
+  it('says nothing is selected rather than showing an empty grid', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[]} {...wiring} />);
+    expect(screen.getByTestId('world-props-empty')).toBeInTheDocument();
+    expect(screen.queryByTestId('world-prop-class')).not.toBeInTheDocument();
+  });
+
+  it('shows the identity of the selected VOB', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
+
+    expect(field('index')).toHaveTextContent('1');
+    expect(field('class')).toHaveTextContent('zCVobLight');
+    // Name and visual are editable now, so what they show is an input's value.
+    expect(input('name').value).toBe('TORCH');
+    expect(input('visual').value).toBe('TORCH.3DS');
+    expect(field('visualType')).toHaveTextContent('MULTI_RESOLUTION_MESH');
+  });
+
+  it('shows the position in ZenGin centimetres, unconverted', () => {
+    // The single conversion is one mirrored root node in the viewport (§7).
+    // Nothing else in the codebase converts, and this grid is the place it
+    // would be most tempting to. The coordinates are typed entry now, so what
+    // they show is three inputs' values rather than the row's text.
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
+
+    expect(input('position-x').value).toBe('12.5');
+    expect(input('position-y').value).toBe('4400');
+    expect(input('position-z').value).toBe('-73.25');
+  });
+
+  it('names the flag bits instead of printing the word', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
+
+    // 0b11 is showVisual + vobStatic. Printing 3 tells nobody that a VOB is a
+    // visible static, which is the whole point of naming them.
+    expect(field('flags')).toHaveTextContent('showVisual');
+    expect(field('flags')).toHaveTextContent('vobStatic');
+    expect(field('flags')).toHaveTextContent('cdDynamic');
+    expect(screen.getByTestId('world-prop-flag-showVisual')).toBeChecked();
+    expect(screen.getByTestId('world-prop-flag-vobStatic')).toBeChecked();
+    expect(screen.getByTestId('world-prop-flag-cdDynamic')).not.toBeChecked();
+  });
+
+  it('places the VOB in the hierarchy', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
+    expect(field('parent')).toHaveTextContent('CASTLE');
+
+    render(<WorldPropertyGrid summary={WORLD} selection={[0]} {...wiring} />);
+    expect(screen.getAllByTestId('world-prop-parent')[1]).toHaveTextContent(/none|root/i);
+    expect(screen.getAllByTestId('world-prop-children')[1]).toHaveTextContent('2');
+  });
+
+  it('explains a level compo rather than showing it as a missing mesh', () => {
+    // Its visual names the source mesh a slice of the already-compiled world
+    // came from, and drawing it draws the world twice. It is skipped on
+    // purpose, and the grid is where someone asks why their VOB is invisible.
+    render(<WorldPropertyGrid summary={WORLD} selection={[2]} {...wiring} />);
+    expect(screen.getByTestId('world-prop-note')).toHaveTextContent(/compo|not drawn|world mesh/i);
+  });
+
+  it('explains an unresolved visual as a fact, not an error', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[3]} {...wiring} />);
+    expect(screen.getByTestId('world-prop-note')).toHaveTextContent(/Daedalus|not a mesh|not in the VFS/i);
+  });
+
+  it('describes the last VOB selected, and says how many are going with it', () => {
+    // The grid describes one VOB — a multi-select drag moves them all, and
+    // without a count the only evidence of that is the viewport. The one it
+    // describes is the last one added, which is also the one the gizmo sits on.
+    render(<WorldPropertyGrid summary={WORLD} selection={[0, 1]} {...wiring} />);
+
+    expect(field('index')).toHaveTextContent('1');
+    expect(screen.getByTestId('world-prop-selection')).toHaveTextContent('2');
+  });
+
+  it('says nothing about a selection of one', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
+    expect(screen.queryByTestId('world-prop-selection')).not.toBeInTheDocument();
+  });
+
+  it('shows no note for an ordinary drawn VOB', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
+    expect(screen.queryByTestId('world-prop-note')).not.toBeInTheDocument();
+  });
+});
+
+// Editing (level-editor.md §7, `SetVobProp`). Everything below is the half of
+// the op the viewport cannot show: a name, a visual and six flags, none of which
+// is visible on screen the way a moved VOB is.
+describe('WorldPropertyGrid, editing', () => {
+  const commitName = (value: string) => {
+    fireEvent.change(input('name'), { target: { value } });
+    fireEvent.blur(input('name'));
+  };
+
+  it('asks for the name it was given, and only the name', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
+
+    commitName('TORCH_02');
+
+    // Exactly one key: the op reads `from` for the keys `to` names, so a grid
+    // that sent every field would make an inverse that restores fields nobody
+    // edited.
+    expect(edits).toEqual([{ name: 'TORCH_02' }]);
+  });
+
+  it('does not ask for an edit that changes nothing', () => {
+    // Clicking into a field and out of it again is not an edit, and with fifty
+    // VOBs selected it would be fifty ops on the undo stack for a batch that
+    // undoes nothing — the rule the gizmo already has.
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
+
+    commitName('TORCH');
+    fireEvent.blur(input('visual'));
+
+    expect(edits).toEqual([]);
+  });
+
+  it('sends one flag, not the whole word', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
+
+    fireEvent.click(screen.getByTestId('world-prop-flag-cdDynamic'));
+
+    expect(edits).toEqual([{ cdDynamic: true }]);
+  });
+
+  it('clears a flag that was set', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
+
+    fireEvent.click(screen.getByTestId('world-prop-flag-showVisual'));
+
+    expect(edits).toEqual([{ showVisual: false }]);
+  });
+
+  it('sets a disagreeing flag on the whole selection rather than inverting the anchor', () => {
+    // §5.2 item 9 of `docs/plans/level-editor-review-2026-09-04.md`. The write
+    // always went to every selected VOB; the *value* came from the anchor
+    // alone, so clicking a flag that only the anchor had cleared it everywhere
+    // — the opposite of what a click on a half-on checkbox means.
+    render(<WorldPropertyGrid summary={WORLD} selection={[0, 1]} {...wiring} />);
+
+    fireEvent.click(screen.getByTestId('world-prop-flag-showVisual'));
+
+    expect(edits).toEqual([{ showVisual: true }]);
+  });
+
+  it('refuses to rename a visual the VOB does not have', () => {
+    // 15,749 of the 41,393 retail VOBs carry a visual object with an empty name
+    // and type UNKNOWN, and the binding refuses to name one: giving a VOB a
+    // visual replaces the object and has to decide its class. Offering the
+    // field and having the edit refused at the bottom of the stack is worse
+    // than not offering it.
+    const world = summaryOf(vobIndex([{ name: 'MARKER', visual: '', visualType: 'UNKNOWN' }]));
+    render(<WorldPropertyGrid summary={world} selection={[0]} {...wiring} />);
+
+    expect(input('visual')).toBeDisabled();
+    expect(input('name')).not.toBeDisabled();
+  });
+
+  it('reverts to the VOB\'s own value on Escape', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
+
+    fireEvent.change(input('name'), { target: { value: 'TYPED_BY_MISTAKE' } });
+    fireEvent.keyDown(input('name'), { key: 'Escape' });
+
+    expect(input('name').value).toBe('TORCH');
+    expect(edits).toEqual([]);
+  });
+
+  it('commits on Enter without waiting for a blur', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
+
+    fireEvent.change(input('name'), { target: { value: 'TORCH_03' } });
+    fireEvent.keyDown(input('name'), { key: 'Enter' });
+
+    expect(edits).toEqual([{ name: 'TORCH_03' }]);
+  });
+
+  it('follows the value when the world changes under it — an undo, not a click', () => {
+    // Found by driving the real app: an uncontrolled input keeps what it has
+    // unless something resets it, and a key on the *VOB* does not change when
+    // an undo changes that VOB's name. The panel then goes on showing a name
+    // the world no longer has — and writes it back on the next blur.
+    //
+    // The selection-change test below passed the whole time, because its
+    // fixture only ever moved the selection. Changing the value is what tells
+    // the two apart.
+    const world = summaryOf(vobIndex([{ name: 'BEFORE', visual: 'A.3DS' }]));
+    const { rerender } = render(
+      <WorldPropertyGrid summary={world} selection={[0]} {...wiring} />,
+    );
+    expect(input('name').value).toBe('BEFORE');
+
+    const undone = summaryOf(vobIndex([{ name: 'AFTER', visual: 'A.3DS' }]));
+    rerender(<WorldPropertyGrid summary={undone} selection={[0]} {...wiring} />);
+
+    expect(input('name').value).toBe('AFTER');
+  });
+
+  it('shows the next VOB\'s values when the selection moves, not the last one\'s', () => {
+    // An uncontrolled input keeps whatever was typed into it unless it is reset,
+    // so this is the defect that puts one VOB's name in another VOB's field —
+    // and then writes it there on the next blur.
+    const { rerender } = render(
+      <WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />,
+    );
+    fireEvent.change(input('name'), { target: { value: 'NEVER_COMMITTED' } });
+
+    rerender(<WorldPropertyGrid summary={WORLD} selection={[0]} {...wiring} />);
+
+    expect(input('name').value).toBe('CASTLE');
+  });
+
+  it('says an edit will take the whole selection with it', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[0, 1]} {...wiring} />);
+    expect(screen.getByTestId('world-prop-edit-scope')).toHaveTextContent(/2/);
+  });
+
+  it('does not claim a typed coordinate lands on every selected VOB', () => {
+    // §5.2 item 8 of `docs/plans/level-editor-review-2026-09-04.md`. The note
+    // covers position, rotation and flags, and it was only true of the flags: a
+    // typed coordinate or angle leaves as a *delta*, so the selection moves
+    // together and only this VOB arrives at the number typed.
+    render(<WorldPropertyGrid summary={WORLD} selection={[0, 1]} {...wiring} />);
+
+    const note = screen.getByTestId('world-prop-edit-scope');
+    expect(note).toHaveTextContent(/only this VOB/i);
+    expect(note).toHaveTextContent(/flag/i);
+  });
+
+  it('leaves a flag the selection disagrees on indeterminate', () => {
+    // §5.2 item 9. VOB 1 is a visible static and VOB 0 is neither, so an
+    // anchor-only checkbox says "on" for a selection that is half off.
+    render(<WorldPropertyGrid summary={WORLD} selection={[0, 1]} {...wiring} />);
+
+    const shown = screen.getByTestId('world-prop-flag-showVisual') as HTMLInputElement;
+    expect(shown.indeterminate).toBe(true);
+    // And a flag they agree on is not indeterminate — both are off here.
+    const dynamic = screen.getByTestId('world-prop-flag-cdDynamic') as HTMLInputElement;
+    expect(dynamic.indeterminate).toBe(false);
+    expect(dynamic).not.toBeChecked();
+  });
+});
+
+// The per-class fields (level-editor.md §14.1 item 1.4, `SetVobClassProp`).
+//
+// These are the first values in this panel that do **not** come out of the
+// columnar index: the index interns a class *name* and carries not one field of
+// the class, so they are fetched over IPC and arrive as a prop. That is what
+// every test below has to keep straight — the grid renders what it was handed,
+// and null means "not here yet", never "empty".
+describe('WorldPropertyGrid, class fields', () => {
+  it('draws the fields of the VOB\'s own class, and nothing from another', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} classProps={LIGHT} />);
+
+    expect(input('class-range').value).toBe('2000');
+    // Four channels, in the order the archive holds them.
+    expect(input('class-color').value).toBe('255, 220, 180, 255');
+    // `instance` is an oCItem's, and this is a light. A grid keyed on the props
+    // object rather than the catalogue would draw whatever the read answered.
+    expect(screen.queryByTestId('world-prop-class-instance')).not.toBeInTheDocument();
+    // And nothing the catalogue does not have, however much of it the read sent.
+    // `isStatic` is the pointed one: it is a real `zCVobLight` field the read
+    // answers, and it is held out because flipping it changes *which* members
+    // the archive contains, so its inverse would not restore the world.
+    expect(screen.queryByTestId('world-prop-class-isStatic')).not.toBeInTheDocument();
+    // The two enums *are* catalogued now (§16.21), and they are dropdowns.
+    expect(input('class-lightType').tagName).toBe('SELECT');
+  });
+
+  it('draws an item\'s instance', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[4]} {...wiring} classProps={ITEM} />);
+    expect(input('class-instance').value).toBe('ITMW_1H_SWORD_01');
+  });
+
+  it('draws no class section at all for a class the catalogue does not have', () => {
+    // 37 classes in a retail world, two of them here. The rest are not an error
+    // and not an empty section — there is nothing this panel can write on them.
+    render(<WorldPropertyGrid summary={WORLD} selection={[0]} {...wiring} classProps={{ class: 'zCVob', ...BASE_READ }} />);
+    expect(screen.queryByTestId('world-prop-class-section')).not.toBeInTheDocument();
+  });
+
+  it('waits rather than showing empty fields before the values arrive', () => {
+    // The fetch is one IPC round trip behind the selection. An empty field here
+    // reads as "this light has no range", and blurring it would write that.
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
+
+    expect(screen.getByTestId('world-prop-class-loading')).toBeInTheDocument();
+    expect(screen.queryByTestId('world-prop-class-range-input')).not.toBeInTheDocument();
+  });
+
+  it('asks for exactly the one key that changed', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} classProps={LIGHT} />);
+
+    fireEvent.change(input('class-range'), { target: { value: '3000' } });
+    fireEvent.blur(input('class-range'));
+
+    // Not `{ range, color }`: the op reads `from` for the keys `to` names, and a
+    // grid that sent both would build an inverse restoring a colour nobody
+    // touched.
+    expect(classEdits).toEqual([{ range: 3000 }]);
+  });
+
+  it('parses a colour back into four channels', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} classProps={LIGHT} />);
+
+    fireEvent.change(input('class-color'), { target: { value: '255, 0, 180, 255' } });
+    fireEvent.blur(input('class-color'));
+
+    expect(classEdits).toEqual([{ color: [255, 0, 180, 255] }]);
+  });
+
+  it('refuses a value the field cannot hold instead of sending it down', () => {
+    // The bounds are in the catalogue precisely so this side can reject before
+    // an op exists. A negative range and a three-channel colour are both refused
+    // in C++ too — at the bottom of a batch that may already have applied.
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} classProps={LIGHT} />);
+
+    fireEvent.change(input('class-range'), { target: { value: 'bright' } });
+    fireEvent.blur(input('class-range'));
+    fireEvent.change(input('class-range'), { target: { value: '-5' } });
+    fireEvent.blur(input('class-range'));
+    fireEvent.change(input('class-color'), { target: { value: '255, 0, 180' } });
+    fireEvent.blur(input('class-color'));
+    fireEvent.change(input('class-color'), { target: { value: '255, 0, 180, 900' } });
+    fireEvent.blur(input('class-color'));
+
+    expect(classEdits).toEqual([]);
+    // And the field shows the value the world has again, rather than the one it
+    // just refused to write — the same rule Escape follows.
+    expect(input('class-range').value).toBe('2000');
+    expect(input('class-color').value).toBe('255, 220, 180, 255');
+  });
+
+  it('says why a refused value was refused, rather than only snapping back', () => {
+    // The snap-back is the whole of what a refusal used to be: the field
+    // remounts showing the world's value and nothing on screen says a thing.
+    // Typing 2.5 into an int field looks identical to typing it into a field
+    // that took it and rounded — and a user who cannot tell those apart has no
+    // reason to believe the panel at all.
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} classProps={LIGHT} />);
+
+    fireEvent.change(input('class-range'), { target: { value: 'bright' } });
+    fireEvent.blur(input('class-range'));
+
+    expect(classEdits).toEqual([]);
+    expect(screen.getByText(/must be a number/i)).toBeInTheDocument();
+
+    // And it goes when the user comes back to the field: the message is about
+    // the value they just typed, not a state the field is stuck in.
+    fireEvent.focus(input('class-range'));
+    expect(screen.queryByText(/must be a number/i)).not.toBeInTheDocument();
+  });
+
+  it('names the whole-number rule when a fraction is refused', () => {
+    // An `int` field is an int32_t in the archive: 2.5 truncates on the cast in
+    // C++ and reports success, so it is refused here — which is only useful if
+    // the panel says which rule it broke. A chest's `hp` is one; the light's
+    // `range` above is a float, and 2.5 is a perfectly good value for it.
+    render(<WorldPropertyGrid summary={WORLD} selection={[7]} {...wiring} classProps={CHEST} />);
+
+    fireEvent.change(input('class-hp'), { target: { value: '2.5' } });
+    fireEvent.blur(input('class-hp'));
+
+    expect(classEdits).toEqual([]);
+    expect(screen.getByText(/whole number/i)).toBeInTheDocument();
+  });
+
+  it('says a coordinate has to be a number', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
+
+    fireEvent.change(input('position-x'), { target: { value: 'over there' } });
+    fireEvent.blur(input('position-x'));
+
+    expect(edits).toEqual([]);
+    expect(screen.getByText(/must be a number/i)).toBeInTheDocument();
+  });
+
+  it('stays quiet when a retyped value is simply the one already there', () => {
+    // Not a refusal to explain: nothing was rejected, there is just nothing to
+    // do. Saying "refused" here would train the user to ignore the message.
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
+
+    const field = input('position-x');
+    fireEvent.change(field, { target: { value: field.value } });
+    fireEvent.blur(field);
+
+    expect(edits).toEqual([]);
+    expect(screen.queryByText(/must be a number/i)).not.toBeInTheDocument();
+  });
+
+  it('refuses a colour with an emptied channel rather than reading it as zero', () => {
+    // `Number('')` is 0, which the float branch already refuses for its own
+    // field. A typo that dropped a channel would otherwise be an accepted edit
+    // that writes a green of 0 — and the refusal counter exists so that a value
+    // this panel will not write is visibly not written.
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} classProps={LIGHT} />);
+
+    fireEvent.change(input('class-color'), { target: { value: '255,,180,255' } });
+    fireEvent.blur(input('class-color'));
+
+    expect(classEdits).toEqual([]);
+    expect(input('class-color').value).toBe('255, 220, 180, 255');
+  });
+
+  // The item index (level-editor.md §14.1, the board's "SetVobClassProp writes
+  // oCItem.instance as free text" card). An `oCItem` spawns the Daedalus
+  // instance it names and ZenGin crashes on one no script declares, so this is
+  // the one class field whose legal values are a set the app already knows —
+  // when a script project is loaded. When one is not, it knows nothing, and
+  // refusing on an empty index would take the field away from anybody editing a
+  // world on its own.
+  const ITEMS = new Set(['ITMW_1H_SWORD_01', 'ITMW_2H_AXE_01']);
+
+  it('refuses an item instance no loaded script declares', () => {
+    render(
+      <WorldPropertyGrid summary={WORLD} selection={[4]} {...wiring} classProps={ITEM} itemInstances={ITEMS} />,
+    );
+
+    // One transposition away from a real name — the typo the engine crashes on,
+    // and the one no shape check can catch.
+    fireEvent.change(input('class-instance'), { target: { value: 'ITMW_1H_SWROD_01' } });
+    fireEvent.blur(input('class-instance'));
+
+    expect(classEdits).toEqual([]);
+    // And the field shows the instance the world has again, rather than the one
+    // it just refused to write.
+    expect(input('class-instance').value).toBe('ITMW_1H_SWORD_01');
+  });
+
+  it('takes a declared instance whatever its case, because Daedalus is case-insensitive', () => {
+    // The parser keys `items` by the name as it was *written*, so a lookup that
+    // compared verbatim would refuse `itmw_2h_axe_01` — which names the same
+    // symbol and is what a user typing from memory writes.
+    render(
+      <WorldPropertyGrid summary={WORLD} selection={[4]} {...wiring} classProps={ITEM} itemInstances={ITEMS} />,
+    );
+
+    fireEvent.change(input('class-instance'), { target: { value: 'itmw_2h_axe_01' } });
+    fireEvent.blur(input('class-instance'));
+
+    // Committed as typed: the case the user chose is the case the world gets,
+    // exactly as the free-text field always did.
+    expect(classEdits).toEqual([{ instance: 'itmw_2h_axe_01' }]);
+  });
+
+  it('still refuses an empty instance, which names nothing to spawn', () => {
+    // The exemption that lets a mob's `item` and a lock's `key` be cleared does
+    // not reach here: an `oCItem` is the instance it spawns, so an empty one is
+    // not "no item required" but an item VOB that cannot become anything.
+    render(
+      <WorldPropertyGrid summary={WORLD} selection={[4]} {...wiring} classProps={ITEM} itemInstances={ITEMS} />,
+    );
+
+    fireEvent.change(input('class-instance'), { target: { value: '' } });
+    fireEvent.blur(input('class-instance'));
+
+    expect(classEdits).toEqual([]);
+  });
+
+  it('writes any instance at all when no script project is loaded', () => {
+    // A world can legitimately be opened with no project behind it, and an empty
+    // index is "nothing is known", never "nothing is legal". The field is free
+    // text again, exactly as it was before the index existed.
+    render(
+      <WorldPropertyGrid summary={WORLD} selection={[4]} {...wiring} classProps={ITEM} itemInstances={new Set()} />,
+    );
+
+    fireEvent.change(input('class-instance'), { target: { value: 'ITMW_1H_SWROD_01' } });
+    fireEvent.blur(input('class-instance'));
+
+    expect(classEdits).toEqual([{ instance: 'ITMW_1H_SWROD_01' }]);
+  });
+
+  it('checks the instance and nothing else against the index', () => {
+    // The index is item instances. A light's range is a number and a sound name
+    // is a file in the VFS; neither is in it, and a check that ran on every
+    // string field would refuse both.
+    render(
+      <WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} classProps={LIGHT} itemInstances={ITEMS} />,
+    );
+
+    fireEvent.change(input('class-range'), { target: { value: '3000' } });
+    fireEvent.blur(input('class-range'));
+
+    expect(classEdits).toEqual([{ range: 3000 }]);
+  });
+
+  it('says what the instance field is checked against, rather than refusing silently', () => {
+    const checked = render(
+      <WorldPropertyGrid summary={WORLD} selection={[4]} {...wiring} classProps={ITEM} itemInstances={ITEMS} />,
+    );
+    expect(field('class-instance')).toHaveTextContent(/item instance/i);
+    checked.unmount();
+
+    // …and says nothing when there is no index to check against, because then
+    // there is no rule to explain.
+    render(
+      <WorldPropertyGrid summary={WORLD} selection={[4]} {...wiring} classProps={ITEM} itemInstances={new Set()} />,
+    );
+    expect(field('class-instance')).not.toHaveTextContent(/item instance/i);
+  });
+
+  // The other two item-instance strings (level-editor.md §16.3, 2026-09-12).
+  // `item` is what the player must be carrying to use a mob and a container's
+  // or door's `key` is what unlocks it, so both name a Daedalus item instance
+  // exactly as `oCItem.instance` does — and are checked against the same index,
+  // in the same layer, for the same reason.
+  it('checks a mob\'s item and a chest\'s key against the item index too', () => {
+    const chest = render(
+      <WorldPropertyGrid
+        summary={WORLD}
+        selection={[7]}
+        {...wiring}
+        classProps={CHEST}
+        itemInstances={ITEMS}
+      />,
+    );
+
+    fireEvent.change(input('class-item'), { target: { value: 'ITMW_1H_SWROD_01' } });
+    fireEvent.blur(input('class-item'));
+    fireEvent.change(input('class-key'), { target: { value: 'NOT_A_KEY' } });
+    fireEvent.blur(input('class-key'));
+    expect(classEdits).toEqual([]);
+
+    fireEvent.change(input('class-item'), { target: { value: 'ITMW_1H_SWORD_01' } });
+    fireEvent.blur(input('class-item'));
+    fireEvent.change(input('class-key'), { target: { value: 'itmw_2h_axe_01' } });
+    fireEvent.blur(input('class-key'));
+    expect(classEdits).toEqual([{ item: 'ITMW_1H_SWORD_01' }, { key: 'itmw_2h_axe_01' }]);
+    chest.unmount();
+  });
+
+  it('lets both be emptied, because no item required is the common case', () => {
+    // The difference from `oCItem.instance`, which always names something: a
+    // mob usable bare-handed carries an empty `item`, and an unlocked chest an
+    // empty `key`. An index check that refused the empty string would make
+    // clearing either field impossible.
+    render(
+      <WorldPropertyGrid
+        summary={WORLD}
+        selection={[7]}
+        {...wiring}
+        classProps={{ ...CHEST, item: 'ITMW_1H_SWORD_01', key: 'ITMW_2H_AXE_01' }}
+        itemInstances={ITEMS}
+      />,
+    );
+
+    fireEvent.change(input('class-item'), { target: { value: '' } });
+    fireEvent.blur(input('class-item'));
+    fireEvent.change(input('class-key'), { target: { value: '' } });
+    fireEvent.blur(input('class-key'));
+
+    expect(classEdits).toEqual([{ item: '' }, { key: '' }]);
+
+    // Blank is not empty, and is refused: `assertApplyOpsRequest` exempts the
+    // empty string alone, so committing spaces here would send an op the main
+    // process rejects.
+    fireEvent.change(input('class-item'), { target: { value: '   ' } });
+    fireEvent.blur(input('class-item'));
+    expect(classEdits).toEqual([{ item: '' }, { key: '' }]);
+  });
+
+  it('leaves a mover controller\'s key alone: same name, different field', () => {
+    // `zCMoverController.key` is a keyframe number, not an item instance. A
+    // check that keyed on the field name rather than on the class would refuse
+    // every number typed into it.
+    render(
+      <WorldPropertyGrid
+        summary={WORLD}
+        selection={[11]}
+        {...wiring}
+        classProps={{ class: 'zCMoverController', target: 'GATE_MOVER', message: 0, key: 0, ...BASE_READ }}
+        itemInstances={ITEMS}
+      />,
+    );
+
+    fireEvent.change(input('class-key'), { target: { value: '3' } });
+    fireEvent.blur(input('class-key'));
+
+    expect(classEdits).toEqual([{ key: 3 }]);
+  });
+
+  it('says the class section is about the primary VOB alone', () => {
+    // Every other edit in this panel takes the whole selection with it. This one
+    // cannot: each VOB would need its own fetched `from`, and a selection can
+    // hold mixed classes. The note is the difference being visible.
+    render(<WorldPropertyGrid summary={WORLD} selection={[0, 1]} {...wiring} classProps={LIGHT} />);
+
+    expect(screen.getByTestId('world-prop-class-scope')).toHaveTextContent(/only|alone|primary/i);
+  });
+
+  it('says nothing about scope when one VOB is selected', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} classProps={LIGHT} />);
+    expect(screen.queryByTestId('world-prop-class-scope')).not.toBeInTheDocument();
+  });
+
+  // The `bool` and `int` kinds (level-editor.md §14.1 item 1.4). A boolean is a
+  // checkbox and not a field reading "true", because "true"/"1"/"yes" is a
+  // parsing problem this panel would be inventing for itself; an integer is a
+  // typed field with an integer refusal, because there is nothing to click.
+  it('draws a boolean as a checkbox showing the value the world has', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[5]} {...wiring} classProps={MUSIC} />);
+
+    expect(input('class-enabled').checked).toBe(true);
+    expect(input('class-ellipsoid').checked).toBe(false);
+    expect(input('class-loop').checked).toBe(true);
+    // A checkbox is not a text field, so nothing here should have parsed the
+    // value into one.
+    expect(input('class-enabled').type).toBe('checkbox');
+  });
+
+  it('commits the flipped boolean, and only that key', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[5]} {...wiring} classProps={MUSIC} />);
+
+    fireEvent.click(input('class-ellipsoid'));
+    fireEvent.click(input('class-enabled'));
+
+    // The same rule every other field in this panel follows: the op reads `from`
+    // for exactly the keys `to` names, so a grid that posted the other five
+    // booleans would build an inverse restoring values nobody edited.
+    expect(classEdits).toEqual([{ ellipsoid: true }, { enabled: false }]);
+  });
+
+  it('takes a whole number for an int field and refuses a fraction', () => {
+    // `priority` is an `int32_t` in the archive. Sent as 2.5 it would truncate
+    // on the cast in C++ and report success, so the refusal is here — before an
+    // op exists — exactly as the float bounds are.
+    render(<WorldPropertyGrid summary={WORLD} selection={[5]} {...wiring} classProps={MUSIC} />);
+
+    fireEvent.change(input('class-priority'), { target: { value: '7' } });
+    fireEvent.blur(input('class-priority'));
+    expect(classEdits).toEqual([{ priority: 7 }]);
+
+    for (const bad of ['2.5', '-1', 'high', '']) {
+      fireEvent.change(input('class-priority'), { target: { value: bad } });
+      fireEvent.blur(input('class-priority'));
+    }
+    expect(classEdits).toEqual([{ priority: 7 }]);
+    // And the refused field is showing the world's own value again.
+    expect(input('class-priority').value).toBe('2');
+  });
+
+  it('offers an enum as a set to pick from, and commits the number picked', () => {
+    // §16.21: the field offers the values the header names, labelled with the
+    // enumerator's own name — a prose label would be a second claim the header
+    // cannot check. What leaves is the number, because that is what the archive
+    // member holds.
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} classProps={LIGHT} />);
+
+    const select = input('class-lightType');
+    expect(select.value).toBe('0');
+    expect(Array.from(select.querySelectorAll('option')).map((o) => o.textContent))
+      .toEqual(['POINT (0)', 'SPOT (1)', 'RESERVED0 (2)', 'RESERVED1 (3)']);
+
+    fireEvent.change(select, { target: { value: '1' } });
+
+    expect(classEdits).toEqual([{ lightType: 1 }]);
+  });
+
+  it('keeps a value the set does not name, shows it as itself, and writes nothing', () => {
+    // The objection the whole card was built around: retail carries enum values
+    // outside the documented sets, and a dropdown that snapped one to the
+    // nearest legal value would corrupt a world by the act of being looked at.
+    // So an unknown value is an option of its own, selected, and drawing it
+    // commits nothing.
+    render(<WorldPropertyGrid
+      summary={WORLD}
+      selection={[1]}
+      {...wiring}
+      classProps={{ ...LIGHT, quality: 120 }}
+    />);
+
+    const select = input('class-quality');
+    expect(select.value).toBe('120');
+    expect(Array.from(select.querySelectorAll('option')).map((o) => o.textContent))
+      .toEqual(['120 — unknown', 'HIGH (0)', 'MEDIUM (1)', 'LOW (2)']);
+    expect(classEdits).toEqual([]);
+
+    // And it is still a field: picking a real value off it works.
+    fireEvent.change(select, { target: { value: '1' } });
+    expect(classEdits).toEqual([{ quality: 1 }]);
+  });
+
+  it('draws every enum the catalogue names on a class, in catalogue order', () => {
+    // `soundMaterial` is `VMovableObject`'s, so it is drawn between
+    // `focusOverride` and `visualDestroyed` — the position the archive stores it
+    // in, which is what makes the grid read like the file.
+    render(<WorldPropertyGrid summary={WORLD} selection={[7]} {...wiring} classProps={CHEST} />);
+
+    const section = screen.getByTestId('world-prop-class-section');
+    const drawn = Array.from(section.querySelectorAll('[data-testid^="world-prop-class-"]'))
+      .map((node) => node.getAttribute('data-testid'))
+      .filter((id) => id !== null && !id.endsWith('-input'));
+    expect(drawn.indexOf('world-prop-class-soundMaterial'))
+      .toBe(drawn.indexOf('world-prop-class-focusOverride') + 1);
+    expect(input('class-soundMaterial').value).toBe('0');
+  });
+
+  it('draws no field the read did not answer, rather than a blank panel', () => {
+    // The stale-addon case the base fields already guard against, and §16.21
+    // made it reachable for class fields too: the catalogue names eight keys it
+    // did not name before, so a renderer running against an older native addon
+    // is handed a descriptor with no value. Everything else still draws.
+    const { quality: _quality, ...withoutQuality } = LIGHT;
+    render(<WorldPropertyGrid
+      summary={WORLD}
+      selection={[1]}
+      {...wiring}
+      classProps={withoutQuality}
+    />);
+
+    expect(screen.queryByTestId('world-prop-class-quality')).not.toBeInTheDocument();
+    expect(input('class-lightType').value).toBe('0');
+    expect(input('class-range').value).toBe('2000');
+  });
+
+  it('draws a fog zone\'s overrideColor immediately above the colour it governs', () => {
+    // ZenGin reads `zCZoneZFog.color` only while `overrideColor` is true. The
+    // colour shipped a release before its switch did, and a colour edit on a
+    // zone that does not override reads to a user as the editor having done
+    // nothing — so the adjacency is the whole of what makes the pair legible.
+    render(<WorldPropertyGrid summary={WORLD} selection={[6]} {...wiring} classProps={FOG} />);
+
+    const section = screen.getByTestId('world-prop-class-section');
+    const drawn = Array.from(section.querySelectorAll('[data-testid^="world-prop-class-"]'))
+      .map((node) => node.getAttribute('data-testid'))
+      // The control inside each row carries the same prefix plus `-input`; the
+      // rows are what this is about.
+      .filter((id) => id !== null && !id.endsWith('-input'));
+    expect(drawn).toEqual([
+      'world-prop-class-rangeCenter', 'world-prop-class-innerRangePercentage',
+      'world-prop-class-fadeOutSky', 'world-prop-class-overrideColor', 'world-prop-class-color',
+    ]);
+    expect(input('class-overrideColor').checked).toBe(false);
+  });
+
+  it('disables the fog colour while overrideColor is off, and frees it when on', () => {
+    // The adjacency above makes the pair legible; this makes the rule
+    // enforceable. A colour committed on a zone that does not override is a
+    // legal write the engine never reads — the same shape as `randomDelay`
+    // beside a non-RANDOM `mode` (§16.3) — so the field says so instead of
+    // taking a value that changes nothing. Decided 2026-09-02 (§14.1 1.4).
+    const { rerender } = render(
+      <WorldPropertyGrid summary={WORLD} selection={[6]} {...wiring} classProps={FOG} />,
+    );
+    expect(input('class-color').disabled).toBe(true);
+    expect(field('class-color')).toHaveTextContent(/overrideColor/);
+
+    rerender(
+      <WorldPropertyGrid
+        summary={WORLD} selection={[6]} {...wiring}
+        classProps={{ ...FOG, overrideColor: true }}
+      />,
+    );
+    expect(input('class-color').disabled).toBe(false);
+  });
+});
+
+// Typed transform entry (level-editor.md §14.1 item 1.5).
+//
+// The coordinates were read-only monospace text; Spacer takes them typed. What
+// this has to get right is that a typed coordinate is *the same edit the gizmo
+// makes* — it leaves as a delta, so it goes down `translateVobs` and reaches
+// undo, the history barrier and the atomic batch by the one path that already
+// exists, rather than by a second one that would have to be kept in step.
+//
+// Rotation is typed entry too now — its own describe below, because it leaves
+// as an *absolute* matrix through `zen-world/coords` rather than as a delta.
+describe('WorldPropertyGrid, the base fields with no column', () => {
+  // `presetName`, `visualCamAlign` and `bias` are on every `zCVob` and in none
+  // of the index's columns, so they arrive with the class read and are drawn for
+  // every class — including the 35 of 37 that have no class section at all.
+  const BASE: ClassProps = {
+    class: 'zCVob', presetName: 'FIRE_STAT', visualCamAlign: 1, bias: 2,
+  };
+
+  it('draws all three for a class the catalogue has no fields for', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[0]} {...wiring} classProps={BASE} />);
+
+    expect(input('base-presetName').value).toBe('FIRE_STAT');
+    expect(input('base-visualCamAlign').value).toBe('1');
+    expect(input('base-bias').value).toBe('2');
+    // The class section is a different question and this VOB still has none.
+    expect(screen.queryByTestId('world-prop-class-section')).not.toBeInTheDocument();
+    // And a base field this read did not answer is not drawn at all. The app's
+    // own `getVobProps` answers every one of them; a build against an older
+    // native addon would otherwise draw a field with no value and write
+    // whatever a blur made of it.
+    expect(screen.queryByTestId('world-prop-base-dynamicShadows-input'))
+      .not.toBeInTheDocument();
+  });
+
+  it('waits rather than showing empty fields before the read arrives', () => {
+    // An empty preset name here reads as "this VOB has none", and blurring it
+    // would write that.
+    render(<WorldPropertyGrid summary={WORLD} selection={[0]} {...wiring} />);
+
+    expect(screen.getByTestId('world-prop-base-loading')).toBeInTheDocument();
+    expect(screen.queryByTestId('world-prop-base-bias-input')).not.toBeInTheDocument();
+  });
+
+  it('asks for exactly the one key that changed', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[0]} {...wiring} classProps={BASE} />);
+
+    fireEvent.change(input('base-bias'), { target: { value: '7' } });
+    fireEvent.blur(input('base-bias'));
+
+    expect(baseEdits).toEqual([{ bias: 7 }]);
+    // Not down the flag path: that one takes the whole selection and reads its
+    // `from` out of the index, which has no column for this.
+    expect(edits).toEqual([]);
+  });
+
+  it('clears a preset name, which is a value and not an absence', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[0]} {...wiring} classProps={BASE} />);
+
+    fireEvent.change(input('base-presetName'), { target: { value: '' } });
+    fireEvent.blur(input('base-presetName'));
+
+    expect(baseEdits).toEqual([{ presetName: '' }]);
+  });
+
+  it('refuses a number the packed vob layout cannot hold', () => {
+    // Two bits and five bits: 32 is written as 0 by the packed writer and
+    // reported as written, which is why the refusal is here and not only in C++.
+    render(<WorldPropertyGrid summary={WORLD} selection={[0]} {...wiring} classProps={BASE} />);
+
+    for (const bad of ['32', '-1', '1.5', 'near']) {
+      fireEvent.change(input('base-bias'), { target: { value: bad } });
+      fireEvent.blur(input('base-bias'));
+    }
+    for (const bad of ['4', '-1', '0.5']) {
+      fireEvent.change(input('base-visualCamAlign'), { target: { value: bad } });
+      fireEvent.blur(input('base-visualCamAlign'));
+    }
+
+    expect(baseEdits).toEqual([]);
+    // 3 is one past the enum's three named values and is what 7 retail VOBs
+    // hold, so it is taken: the inverse of an edit on one of them writes it.
+    fireEvent.change(input('base-visualCamAlign'), { target: { value: '3' } });
+    fireEvent.blur(input('base-visualCamAlign'));
+    expect(baseEdits).toEqual([{ visualCamAlign: 3 }]);
+  });
+
+  it('draws dynamicShadows alongside them', () => {
+    render(<WorldPropertyGrid
+      summary={WORLD}
+      selection={[0]}
+      {...wiring}
+      classProps={{ ...BASE, dynamicShadows: 1 }}
+    />);
+
+    expect(input('base-dynamicShadows').value).toBe('1');
+    fireEvent.change(input('base-dynamicShadows'), { target: { value: '0' } });
+    fireEvent.blur(input('base-dynamicShadows'));
+    expect(baseEdits).toEqual([{ dynamicShadows: 0 }]);
+  });
+
+  it('says a base edit is the described VOB alone, not the selection', () => {
+    // The described VOB is the last of the selection — the one the gizmo
+    // anchors on — so the props handed in are that one's.
+    render(<WorldPropertyGrid summary={WORLD} selection={[1, 0]} {...wiring} classProps={BASE} />);
+    expect(screen.getByTestId('world-prop-base-scope')).toBeInTheDocument();
+  });
+});
+
+// The decal fields (level-editor.md §16.17, V2).
+//
+// A third group, drawn only for a VOB whose visual is a decal — 1,932 of the
+// 41,393 retail VOBs, all of them plain `zCVob`, so no class name predicts one.
+// `getVobProps` answers them nested and the op carries them flat, which is the
+// one thing this section has to get right in both directions.
+describe('WorldPropertyGrid, the decal fields', () => {
+  const DECAL = {
+    dimension: [40, 40], offset: [0, 0], twoSided: true, alphaFunc: 2,
+    textureAnimFps: 0, alphaWeight: 200, ignoreDaylight: false,
+  };
+  const WITH_DECAL = {
+    class: 'zCVob', presetName: '', visualCamAlign: 0, bias: 0, dynamicShadows: 0,
+    decal: DECAL,
+  } as unknown as ClassProps;
+
+  it('draws nothing for a VOB whose visual is not a decal', () => {
+    render(<WorldPropertyGrid
+      summary={WORLD}
+      selection={[0]}
+      {...wiring}
+      classProps={{ ...WITH_DECAL, decal: null } as unknown as ClassProps}
+    />);
+
+    expect(screen.queryByTestId('world-prop-decal-section')).not.toBeInTheDocument();
+    // The base fields above it are unaffected — every VOB has those.
+    expect(input('base-bias').value).toBe('0');
+  });
+
+  it('draws all seven, reading them out of the nested record', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[0]} {...wiring} classProps={WITH_DECAL} />);
+
+    expect(screen.getByTestId('world-prop-decal-section')).toBeInTheDocument();
+    expect(input('decal-decalDimension').value).toBe('40, 40');
+    expect(input('decal-decalAlphaWeight').value).toBe('200');
+    expect(input('decal-decalAlphaFunc').value).toBe('2');
+    expect(screen.getByTestId('world-prop-decal-decalTwoSided-input')).toBeChecked();
+    expect(screen.getByTestId('world-prop-decal-decalIgnoreDaylight-input')).not.toBeChecked();
+  });
+
+  it('commits the flat, prefixed key the op carries', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[0]} {...wiring} classProps={WITH_DECAL} />);
+
+    fireEvent.change(input('decal-decalDimension'), { target: { value: '55, 65' } });
+    fireEvent.blur(input('decal-decalDimension'));
+    fireEvent.click(screen.getByTestId('world-prop-decal-decalTwoSided-input'));
+
+    expect(baseEdits).toEqual([{ decalDimension: [55, 65] }, { decalTwoSided: false }]);
+    expect(edits).toEqual([]);
+  });
+
+  it('refuses a value the archive cannot hold', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[0]} {...wiring} classProps={WITH_DECAL} />);
+
+    for (const bad of ['40', '40, 40, 40', '40, ', '-1, 40', 'a, b']) {
+      fireEvent.change(input('decal-decalDimension'), { target: { value: bad } });
+      fireEvent.blur(input('decal-decalDimension'));
+    }
+    for (const bad of ['256', '-1', '0.5']) {
+      fireEvent.change(input('decal-decalAlphaWeight'), { target: { value: bad } });
+      fireEvent.blur(input('decal-decalAlphaWeight'));
+    }
+
+    expect(baseEdits).toEqual([]);
+    // An offset may be negative — it is a direction, not a size.
+    fireEvent.change(input('decal-decalOffset'), { target: { value: '-3, 7' } });
+    fireEvent.blur(input('decal-decalOffset'));
+    expect(baseEdits).toEqual([{ decalOffset: [-3, 7] }]);
+  });
+});
+
+describe('WorldPropertyGrid, the third array kind', () => {
+  // An earthquake's amplitude is a float triple (level-editor.md §16.3, decided
+  // 2026-09-12). The grid draws every array kind as one comma-separated text
+  // field, so what is new here is only the arity — and the arity is the whole
+  // risk, since a two-number amplitude would reach C++ and leave the third
+  // component to whatever the struct held.
+  it('draws and commits an amplitude as three comma-separated numbers', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[12]} {...wiring} classProps={QUAKE} />);
+
+    expect(input('class-amplitude').value).toBe('10, 4, 10');
+    expect(input('class-radius').value).toBe('2000');
+
+    fireEvent.change(input('class-amplitude'), { target: { value: '-20, 40, 0' } });
+    fireEvent.blur(input('class-amplitude'));
+
+    expect(classEdits).toEqual([{ amplitude: [-20, 40, 0] }]);
+  });
+
+  it('refuses an amplitude of any other arity, and a negative radius', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[12]} {...wiring} classProps={QUAKE} />);
+
+    for (const bad of ['10, 4', '10, 4, 10, 2', '10, , 10', 'a, b, c', '10']) {
+      fireEvent.change(input('class-amplitude'), { target: { value: bad } });
+      fireEvent.blur(input('class-amplitude'));
+    }
+    fireEvent.change(input('class-radius'), { target: { value: '-1' } });
+    fireEvent.blur(input('class-radius'));
+
+    expect(classEdits).toEqual([]);
+    // Negative components are legal: an amplitude is a displacement per axis,
+    // not a distance, so the sign is a direction.
+    fireEvent.change(input('class-amplitude'), { target: { value: '-5, -5, -5' } });
+    fireEvent.blur(input('class-amplitude'));
+    expect(classEdits).toEqual([{ amplitude: [-5, -5, -5] }]);
+  });
+});
+
+describe('WorldPropertyGrid, typed position', () => {
+  const commitCoordinate = (axis: string, value: string) => {
+    fireEvent.change(input(`position-${axis}`), { target: { value } });
+    fireEvent.blur(input(`position-${axis}`));
+  };
+
+  it('sends the difference on one axis, and nothing on the other two', () => {
+    // A delta and not a destination, because that is what a drag of a
+    // multi-select produces: the VOBs keep the spacing they had, and each op
+    // still carries its own VOB's origin.
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
+
+    commitCoordinate('x', '112.5');
+
+    expect(moves).toEqual([[100, 0, 0]]);
+  });
+
+  it('moves a coordinate that is negative in the file', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
+
+    commitCoordinate('z', '-70.25');
+
+    expect(moves).toEqual([[0, 0, 3]]);
+  });
+
+  it('commits on Enter without waiting for a blur', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
+
+    fireEvent.change(input('position-y'), { target: { value: '4500' } });
+    fireEvent.keyDown(input('position-y'), { key: 'Enter' });
+
+    expect(moves).toEqual([[0, 100, 0]]);
+  });
+
+  it('reverts to the VOB\'s own coordinate on Escape', () => {
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
+
+    fireEvent.change(input('position-x'), { target: { value: '999' } });
+    fireEvent.keyDown(input('position-x'), { key: 'Escape' });
+
+    expect(input('position-x').value).toBe('12.5');
+    expect(moves).toEqual([]);
+  });
+
+  it('refuses a coordinate that is not a number, before an op exists', () => {
+    // Refused here rather than committed and rejected: an op that reached the
+    // batch would be refused by the binding halfway through one that may
+    // already have applied. The field shows the world's own value again, which
+    // is the same rule Escape follows.
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
+
+    commitCoordinate('x', 'over there');
+    commitCoordinate('y', '');
+    // Float32 is what the archive holds and what the binding takes; a magnitude
+    // it cannot hold would arrive as an Infinity.
+    commitCoordinate('z', '1e39');
+
+    expect(moves).toEqual([]);
+    expect(input('position-x').value).toBe('12.5');
+    expect(input('position-y').value).toBe('4400');
+    expect(input('position-z').value).toBe('-73.25');
+  });
+
+  it('sends nothing when the number typed is the number already there', () => {
+    // "12.50" is different text and the same coordinate. Sent, it would be a
+    // zero-delta op on the undo stack for every VOB in the selection — the rule
+    // the name field and the gizmo both already have.
+    render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />);
+
+    commitCoordinate('x', '12.50');
+
+    expect(moves).toEqual([]);
+  });
+
+  it('shows the next VOB\'s coordinates when the selection moves', () => {
+    // The same uncontrolled-input trap the name field has: a half-typed
+    // coordinate must not follow the selection and be written on the next blur.
+    const { rerender } = render(
+      <WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />,
+    );
+    fireEvent.change(input('position-x'), { target: { value: '999' } });
+
+    rerender(<WorldPropertyGrid summary={WORLD} selection={[0]} {...wiring} />);
+
+    expect(input('position-x').value).toBe('0');
+  });
+
+  it('shows the world\'s own value again after the main process refuses an edit', () => {
+    // The live bug (refactoring-targets.md §7): a refused edit was corrected by
+    // the field remounting through a key that carries the value — but a
+    // main-process refusal changes nothing in the world, so the key never
+    // changed, and the uncontrolled input went on showing the number the user
+    // typed as though it had been taken. The shell now bumps a refusal
+    // generation in `commitOps`' catch, and the grid folds it into every
+    // editable field's key: the remount is a rule rather than a value change.
+    const { rerender } = render(
+      <WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />,
+    );
+
+    fireEvent.change(input('position-x'), { target: { value: '999' } });
+    fireEvent.blur(input('position-x'));
+    expect(moves).toEqual([[986.5, 0, 0]]);
+
+    // The main process refused the op: nothing in the world changed — the
+    // summary is the same object — and the only thing the shell has to say
+    // about it is the bumped generation.
+    rerender(
+      <WorldPropertyGrid
+        summary={WORLD}
+        selection={[1]}
+        {...wiring}
+        refusalGeneration={1}
+      />,
+    );
+
+    expect(input('position-x').value).toBe('12.5');
+  });
+
+  it('puts a refused name back too, not only a coordinate', () => {
+    // The name and the visual read from the same columnar index the position
+    // does, so they had the same bug for the same reason: no unmount, no key
+    // change, a typed name kept on screen after the world refused it.
+    const { rerender } = render(
+      <WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} />,
+    );
+
+    fireEvent.change(input('name'), { target: { value: 'REFUSED_NAME' } });
+    fireEvent.blur(input('name'));
+    expect(edits).toEqual([{ name: 'REFUSED_NAME' }]);
+
+    rerender(
+      <WorldPropertyGrid
+        summary={WORLD}
+        selection={[1]}
+        {...wiring}
+        refusalGeneration={1}
+      />,
+    );
+
+    expect(input('name').value).toBe('TORCH');
+  });
+
+});
+
+// Typed rotation entry (level-editor.md §14.1 item 1.5, the rotation half).
+//
+// A `zCVob` stores a row-major 3x3; a level designer types three angles. The
+// conversion is `zen-world/coords`' — the engine's own `zMAT4::GetEulerAngles`,
+// intrinsic X-Y-Z with the vertical in the middle, degrees, canonical ranges
+// pitch/roll (-180, 180], yaw [-90, 90] — and the grid's whole job is to use
+// it without inventing a second convention beside it.
+//
+// The trap this suite pins hardest: **the read normalizes.** 30.2 % of retail
+// VOBs are non-orthonormal, so `eulerToZenRotation(zenRotationToEuler(M))`
+// differs from `M` for a third of the world — a commit of an angle the user
+// did not change would re-orthonormalize the matrix and rewrite bytes nobody
+// asked for. The refusal of a value equal to the displayed one is therefore
+// applied per angle, exactly as the position fields refuse an unchanged
+// coordinate.
+describe('WorldPropertyGrid, typed rotation', () => {
+  // A quarter turn about the vertical, stored exactly: the engine's yaw 90 is
+  // `Ry(-90)`, [0,0,-1, 0,1,0, 1,0,0] in row-major, every entry exact in
+  // float32, so the decomposition answers 90/0/0 without float noise. It is
+  // also exactly on the engine's pole (`m[0][2] = -1`), which is where 464
+  // retail VOBs sit.
+  const YAW_90 = [0, 0, -1, 0, 1, 0, 1, 0, 0];
+  // The retail case: a matrix that is a rotation times a small uniform drift —
+  // non-orthonormal, as 12,514 of 41,393 retail VOBs are. Reading it shows the
+  // nearest rotation's angles; committing one of them unchanged would silently
+  // replace the matrix with the orthonormalized one. `Ry(-30)` times 1.02.
+  const cy = Math.cos(Math.PI / 6);
+  const SKEWED = [cy * 1.02, 0, -0.5 * 1.02, 0, 1.02, 0, 0.5 * 1.02, 0, cy * 1.02];
+  // On the pole with a roll authored: yaw 90, pitch 0, roll 20 through the
+  // engine's `SetByEulerAngles`. At the pole only pitch - roll is observable,
+  // so this reads back as yaw 90, pitch -20, roll 0.
+  const c20 = Math.cos(Math.PI / 9);
+  const s20 = Math.sin(Math.PI / 9);
+  const POLED = [0, 0, -1, -s20, c20, 0, c20, s20, 0];
+  const ROTATIONS = summaryOf(vobIndex([
+    { name: 'PLAIN' }, // identity
+    { name: 'TURNED', rot: YAW_90 },
+    { name: 'SKEWED', rot: SKEWED },
+    // A reflection: det -1, which no triple of angles describes. Retail has
+    // none, but an uncaught throw in a render path is a blank grid.
+    { name: 'MIRRORED', rot: [-1, 0, 0, 0, 1, 0, 0, 0, 1] },
+    // A collapsed matrix: no three independent axes.
+    { name: 'FLAT', rot: [0, 0, 0, 0, 0, 0, 0, 0, 0] },
+    { name: 'POLED', rot: POLED },
+  ]));
+
+  const commitAngle = (axis: string, value: string) => {
+    fireEvent.change(input(`rotation-${axis}`), { target: { value } });
+    fireEvent.blur(input(`rotation-${axis}`));
+  };
+
+  it('shows the stored rotation as yaw, pitch and roll in degrees', () => {
+    render(<WorldPropertyGrid summary={ROTATIONS} selection={[1]} {...wiring} />);
+
+    expect(input('rotation-yaw').value).toBe('90');
+    expect(input('rotation-pitch').value).toBe('0');
+    expect(input('rotation-roll').value).toBe('0');
+  });
+
+  it('shows a pole pose the way the engine does: yaw +-90, roll folded into pitch, roll 0', () => {
+    // The gimbal-lock row is the vertical now (level-editor.md §16.4,
+    // 2026-09-02): at yaw +-90 `GetEulerAngles` puts the whole remaining turn in
+    // x and returns z = 0, and the fields show exactly that rather than the
+    // roll that was authored. The matrix is unchanged; only the triple is.
+    render(<WorldPropertyGrid summary={ROTATIONS} selection={[5]} {...wiring} />);
+
+    expect(input('rotation-yaw').value).toBe('90');
+    expect(input('rotation-pitch').value).toBe('-20');
+    expect(input('rotation-roll').value).toBe('0');
+    expect(screen.queryByTestId('world-prop-rotation-unavailable')).not.toBeInTheDocument();
+  });
+
+  it('commits an absolute rotation with the one angle that changed', () => {
+    // Absolute, not a delta: the board's shape for a single selection is
+    // `rotateVob(..., eulerToZenRotation(typed), bounds)`. Compared exactly,
+    // because the expectation is computed by the very function the grid uses.
+    render(<WorldPropertyGrid summary={ROTATIONS} selection={[0]} {...wiring} />);
+
+    commitAngle('yaw', '90');
+
+    expect(rotates).toEqual([eulerToZenRotation([90, 0, 0])]);
+  });
+
+  it('keeps the other two angles as they were', () => {
+    render(<WorldPropertyGrid summary={ROTATIONS} selection={[1]} {...wiring} />);
+
+    commitAngle('pitch', '10');
+
+    expect(rotates).toHaveLength(1);
+    const expected = eulerToZenRotation([90, 10, 0]);
+    rotates[0].forEach((entry, at) => expect(entry).toBeCloseTo(expected[at], 10));
+  });
+
+  it('refuses an angle equal to the one displayed, per angle', () => {
+    // THE trap: this VOB's matrix is non-orthonormal, so committing the very
+    // angle on screen would re-orthonormalize it and change bytes nobody asked
+    // to change. The refusal is per angle — "30.0" is different text and the
+    // same angle.
+    render(<WorldPropertyGrid summary={ROTATIONS} selection={[2]} {...wiring} />);
+    expect(input('rotation-yaw').value).toBe('30');
+
+    commitAngle('yaw', '30');
+    commitAngle('yaw', '30.0');
+    commitAngle('pitch', '0');
+    commitAngle('roll', '0');
+
+    expect(rotates).toEqual([]);
+  });
+
+  it('refuses an angle that is not a number, and shows the world\'s own again', () => {
+    render(<WorldPropertyGrid summary={ROTATIONS} selection={[1]} {...wiring} />);
+
+    commitAngle('yaw', 'north');
+    commitAngle('pitch', '');
+
+    expect(rotates).toEqual([]);
+    expect(input('rotation-yaw').value).toBe('90');
+    expect(input('rotation-pitch').value).toBe('0');
+  });
+
+  it('does not keep a typed angle the main process refused', () => {
+    // The same rule the position fields got: a refusal changes nothing in the
+    // world, so only the bumped generation remounts the field.
+    const { rerender } = render(
+      <WorldPropertyGrid summary={ROTATIONS} selection={[0]} {...wiring} />,
+    );
+
+    commitAngle('yaw', '45');
+    expect(rotates).toHaveLength(1);
+
+    rerender(
+      <WorldPropertyGrid
+        summary={ROTATIONS}
+        selection={[0]}
+        {...wiring}
+        refusalGeneration={1}
+      />,
+    );
+
+    expect(input('rotation-yaw').value).toBe('0');
+  });
+
+  it('offers angle entry for a multi-selection, showing the anchor VOB\'s own angles', () => {
+    // Decided 2026-08-28 (level-editor.md §16.4): a typed angle turns each
+    // selected VOB by that much from where it is, so the fields are offered for
+    // N VOBs and describe the anchor — the last VOB of the selection, the one
+    // every other row of this grid already describes.
+    render(<WorldPropertyGrid summary={ROTATIONS} selection={[0, 1]} {...wiring} />);
+
+    expect(input('rotation-yaw').value).toBe('90');
+    expect(input('rotation-pitch').value).toBe('0');
+    expect(input('rotation-roll').value).toBe('0');
+  });
+
+  it('commits a delta for a multi-selection, not an absolute pose', () => {
+    // The whole decision, in one assertion: relative, like the position fields,
+    // so the selection keeps the relative orientation it had. An absolute
+    // matrix down this path would snap all N VOBs to one pose with nothing but
+    // undo to get back. Expected as a quarter-turn matrix written out, not as
+    // the implementation's own product.
+    render(<WorldPropertyGrid summary={ROTATIONS} selection={[0, 1]} {...wiring} />);
+
+    commitAngle('yaw', '180');
+
+    expect(rotates).toEqual([]);
+    expect(turns).toHaveLength(1);
+    // The anchor is at yaw 90; typing 180 is a further quarter turn about the
+    // vertical in the engine's sense, which is Ry(-90) = [0,0,-1, 0,1,0, 1,0,0]
+    // in ZenGin row-major.
+    [0, 0, -1, 0, 1, 0, 1, 0, 0].forEach((entry, at) => {
+      expect(turns[0][at]).toBeCloseTo(entry, 10);
+    });
+  });
+
+  it('builds the delta from the angles on screen, not from the anchor\'s stored matrix', () => {
+    // The trap the read normalizes into: the anchor here is non-orthonormal by
+    // 2 %, and a delta built as `R(to) * M^-1` would carry that 2 % into every
+    // other VOB of the selection. Built from the displayed angles the delta is
+    // exactly a rotation, and the anchor's own drift stays on the anchor —
+    // where `rotateVob` composes it back in unchanged.
+    render(<WorldPropertyGrid summary={ROTATIONS} selection={[1, 2]} {...wiring} />);
+    expect(input('rotation-yaw').value).toBe('30');
+
+    commitAngle('yaw', '40');
+
+    // Close rather than exact, and that is itself the point twice over: the
+    // anchor's decomposed yaw is 30.000000x rather than the 30 on screen — the
+    // grid builds the delta from the full-precision angles, not from what the
+    // display rounded them to — and the drift the stored matrix carries is
+    // nowhere in the result.
+    expect(turns).toHaveLength(1);
+    eulerDeltaRotation([30, 0, 0], [40, 0, 0]).forEach((entry, at) => {
+      expect(turns[0][at]).toBeCloseTo(entry, 6);
+    });
+    // Orthonormal: no scale rode along. The middle entry of a pure Ry is 1, not
+    // the anchor's 1.02.
+    expect(turns[0][4]).toBeCloseTo(1, 12);
+  });
+
+  it('still refuses an angle equal to the one displayed for a multi-selection', () => {
+    // The per-angle equality refusal is not weakened by the delta: a zero turn
+    // for every VOB in the selection is N no-op ops on the undo stack.
+    render(<WorldPropertyGrid summary={ROTATIONS} selection={[0, 1]} {...wiring} />);
+
+    commitAngle('yaw', '90');
+    commitAngle('yaw', '90.0');
+    commitAngle('pitch', 'north');
+
+    expect(turns).toEqual([]);
+    expect(rotates).toEqual([]);
+  });
+
+  it('commits an absolute pose for a selection of one, on the single-selection path', () => {
+    // The asymmetry is deliberate and is the one the position fields already
+    // have: an absolute angle is what the grid can read off one VOB.
+    render(<WorldPropertyGrid summary={ROTATIONS} selection={[1]} {...wiring} />);
+
+    commitAngle('yaw', '180');
+
+    expect(turns).toEqual([]);
+    expect(rotates).toHaveLength(1);
+  });
+
+  it('says a multi-selection anchored on a reflection has no angles', () => {
+    // The unavailable row is about the anchor's matrix, not about how many VOBs
+    // are selected — there is still no triple of angles to start a delta from.
+    render(<WorldPropertyGrid summary={ROTATIONS} selection={[0, 3]} {...wiring} />);
+
+    expect(screen.getByTestId('world-prop-rotation-unavailable')).toBeInTheDocument();
+    expect(screen.queryByTestId('world-prop-rotation-yaw-input')).not.toBeInTheDocument();
+    expect(field('rotation')).toHaveTextContent('-1, 0, 0');
+  });
+
+  it('says a reflection has no angles rather than crashing the grid', () => {
+    // `zenRotationToEuler` throws on a matrix with det < 0 — correctly, since
+    // no angles describe it — and an uncaught throw here is a blank panel for
+    // the whole VOB, not just the row.
+    render(<WorldPropertyGrid summary={ROTATIONS} selection={[3]} {...wiring} />);
+
+    expect(screen.getByTestId('world-prop-rotation-unavailable')).toBeInTheDocument();
+    expect(screen.queryByTestId('world-prop-rotation-yaw-input')).not.toBeInTheDocument();
+    // The rest of the grid is intact.
+    expect(input('name').value).toBe('MIRRORED');
+  });
+
+  it('says a collapsed matrix has no angles either', () => {
+    render(<WorldPropertyGrid summary={ROTATIONS} selection={[4]} {...wiring} />);
+
+    expect(screen.getByTestId('world-prop-rotation-unavailable')).toBeInTheDocument();
+    expect(screen.queryByTestId('world-prop-rotation-yaw-input')).not.toBeInTheDocument();
+  });
+
+  /**
+   * A script function name nobody declares (#269).
+   *
+   * Like the dangling target above and unlike an unknown item instance: a typo
+   * here is a trigger or a mob that silently does nothing, not a crash, and the
+   * index it is checked against is built at project load and goes stale the
+   * moment a function is written. So it warns and never refuses — a refusal
+   * would block a name the user has just declared.
+   */
+  describe('a script function no loaded script declares', () => {
+    const withFunctions = { ...wiring, scriptFunctions: new Set(['TRIGGERFUNC_GATE', 'COND_DOOR']) };
+
+    it('warns on a trigger`s function, and leaves the field editable', () => {
+      render(
+        <WorldPropertyGrid
+          summary={WORLD}
+          selection={[TRIGGER_SCRIPT_VOB]}
+          {...withFunctions}
+          classProps={{ ...TRIGGER_SCRIPT, function: 'TriggerFunc_Gat' }}
+        />,
+      );
+
+      expect(screen.getByTestId('world-prop-class-function-warning')).toBeInTheDocument();
+      expect(input('class-function').value).toBe('TriggerFunc_Gat');
+    });
+
+    it('says nothing when a script declares it, whatever the casing', () => {
+      // Daedalus is case-insensitive, and the index is uppercased for it.
+      for (const name of ['TriggerFunc_Gate', 'TRIGGERFUNC_GATE', 'triggerfunc_gate']) {
+        const { unmount } = render(
+          <WorldPropertyGrid
+            summary={WORLD}
+            selection={[TRIGGER_SCRIPT_VOB]}
+            {...withFunctions}
+            classProps={{ ...TRIGGER_SCRIPT, function: name }}
+          />,
+        );
+        expect(screen.queryByTestId('world-prop-class-function-warning')).not.toBeInTheDocument();
+        unmount();
+      }
+    });
+
+    it('says nothing at all with no project loaded', () => {
+      // An empty index means nothing is known, never that nothing is legal —
+      // the rule every script-backed check here follows. A world may be edited
+      // with no scripts open at all.
+      render(
+        <WorldPropertyGrid
+          summary={WORLD}
+          selection={[TRIGGER_SCRIPT_VOB]}
+          {...wiring}
+          classProps={{ ...TRIGGER_SCRIPT, function: 'Anything_At_All' }}
+        />,
+      );
+
+      expect(screen.queryByTestId('world-prop-class-function-warning')).not.toBeInTheDocument();
+    });
+
+    it('says nothing about an empty function, which is a trigger that calls none', () => {
+      render(
+        <WorldPropertyGrid
+          summary={WORLD}
+          selection={[TRIGGER_SCRIPT_VOB]}
+          {...withFunctions}
+          classProps={{ ...TRIGGER_SCRIPT, function: '' }}
+        />,
+      );
+
+      expect(screen.queryByTestId('world-prop-class-function-warning')).not.toBeInTheDocument();
+    });
+
+    it('warns on a mob`s condition and state-change hooks too', () => {
+      // 8, the bed: the same two fields every `VInteractiveObject` carries, and
+      // the check is by key against the catalogue rather than by class.
+      render(
+        <WorldPropertyGrid
+          summary={WORLD}
+          selection={[8]}
+          {...withFunctions}
+          classProps={{ ...BED, conditionFunction: 'Cond_Dor', onStateChangeFunction: 'Cond_Door' }}
+        />,
+      );
+
+      expect(screen.getByTestId('world-prop-class-conditionFunction-warning')).toBeInTheDocument();
+      expect(screen.queryByTestId('world-prop-class-onStateChangeFunction-warning')).not.toBeInTheDocument();
+    });
+
+    it('leaves a field that names no function alone', () => {
+      // `focusName` is a display string and `target` is a VOB name; neither is
+      // a symbol, and a check that matched on every string would warn on both.
+      render(
+        <WorldPropertyGrid
+          summary={WORLD}
+          selection={[8]}
+          {...withFunctions}
+          classProps={{ ...BED, focusName: 'MOBNAME_BED', target: 'GATE_MOVER' }}
+        />,
+      );
+
+      expect(screen.queryByTestId('world-prop-class-focusName-warning')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('world-prop-class-target-warning')).not.toBeInTheDocument();
+    });
+  });
+
+  // What a trigger fires at, and whether anything answers to that name
+  // (2026-09-12). A dangling target is **not** refused the way an unknown item
+  // instance is: an item instance no script declares crashes ZenGin, while a
+  // target no VOB answers to is a trigger that does nothing — and a modder may
+  // legitimately wire a trigger to a VOB before placing it.
+  describe('a trigger target that names no VOB in this world', () => {
+    it('warns on the target field, and does not refuse the value', () => {
+      render(
+        <WorldPropertyGrid
+          summary={WORLD}
+          selection={[9]}
+          {...wiring}
+          classProps={{ ...TRIGGER, target: 'GATE_MOVR' }}
+        />,
+      );
+
+      expect(screen.getByTestId('world-prop-class-target-warning')).toBeInTheDocument();
+      // Still an ordinary editable field: nothing here is disabled or refused.
+      expect(input('class-target').value).toBe('GATE_MOVR');
+    });
+
+    it('says nothing when a VOB carries the name, whatever its casing', () => {
+      // ZenGin resolves a target by name without regard to case, and retail
+      // writes both — so a match that was case-sensitive would warn about
+      // working worlds.
+      for (const target of ['GATE_MOVER', 'gate_mover']) {
+        const { unmount } = render(
+          <WorldPropertyGrid summary={WORLD} selection={[9]} {...wiring} classProps={{ ...TRIGGER, target }} />,
+        );
+        expect(screen.queryByTestId('world-prop-class-target-warning')).not.toBeInTheDocument();
+        unmount();
+      }
+    });
+
+    it('says nothing about an empty target, which is a trigger that fires at nothing', () => {
+      render(
+        <WorldPropertyGrid summary={WORLD} selection={[9]} {...wiring} classProps={{ ...TRIGGER, target: '' }} />,
+      );
+
+      expect(screen.queryByTestId('world-prop-class-target-warning')).not.toBeInTheDocument();
+    });
+
+    // The movable-object family's own target, catalogued 2026-09-12: a mob
+    // fires it when it is *used*, and it is the same kind of `vobName`, so the
+    // grid's check is the same one — by key, not by class.
+    it('warns on a mob`s target too, which is what the mob fires when used', () => {
+      // 8, the bed — not 9: the grid takes the class from the world's own
+      // index, so a mob's props rendered against the trigger at 9 would draw
+      // the trigger's catalogue and prove nothing about the mob's.
+      render(
+        <WorldPropertyGrid
+          summary={WORLD}
+          selection={[8]}
+          {...wiring}
+          classProps={{ ...BED, target: 'GATE_MOVR' }}
+        />,
+      );
+
+      expect(screen.getByTestId('world-prop-class-target-warning')).toBeInTheDocument();
+      expect(input('class-target').value).toBe('GATE_MOVR');
+    });
+
+    it('says nothing about a mob wired to a VOB that is there', () => {
+      render(
+        <WorldPropertyGrid
+          summary={WORLD}
+          selection={[8]}
+          {...wiring}
+          classProps={{ ...BED, target: 'GATE_MOVER' }}
+        />,
+      );
+
+      // The field itself, so a catalogue that dropped the key could not pass
+      // this by drawing nothing at all.
+      expect(input('class-target').value).toBe('GATE_MOVER');
+      expect(screen.queryByTestId('world-prop-class-target-warning')).not.toBeInTheDocument();
+    });
+
+    // Knowing the name is the other half of wiring one (#258). The warning above
+    // catches a wrong name; this offers the right one without a round trip
+    // through the scene tree.
+    describe('the names a target field suggests', () => {
+      const options = () => Array.from(
+        screen.getByTestId('world-prop-class-target-suggestions').querySelectorAll('option'),
+      ).map((option) => option.getAttribute('value'));
+
+      it('offers the world`s own names that match what has been typed', () => {
+        render(<WorldPropertyGrid summary={WORLD} selection={[9]} {...wiring} classProps={TRIGGER} />);
+
+        fireEvent.change(input('class-target'), { target: { value: 'GATE' } });
+
+        // Every VOB whose name holds GATE and nothing else in the world, in the
+        // sorted order the dictionary is kept in rather than archive order.
+        expect(options()).toEqual(['GATE_CONTROLLER', 'GATE_MOVER', 'TRIGGER_GATE']);
+      });
+
+      it('matches without regard to case, as the engine`s own lookup does', () => {
+        render(<WorldPropertyGrid summary={WORLD} selection={[9]} {...wiring} classProps={TRIGGER} />);
+
+        fireEvent.change(input('class-target'), { target: { value: 'gate_mo' } });
+
+        expect(options()).toEqual(['GATE_MOVER']);
+      });
+
+      it('matches anywhere in the name, not only at the front', () => {
+        // Retail names carry a prefix far more often than not — NW_, OC_, a
+        // chapter number — so a prefix match would suggest nothing for the part
+        // of the name anybody actually remembers.
+        render(<WorldPropertyGrid summary={WORLD} selection={[9]} {...wiring} classProps={TRIGGER} />);
+
+        fireEvent.change(input('class-target'), { target: { value: 'MOVER' } });
+
+        expect(options()).toEqual(['GATE_MOVER']);
+      });
+
+      it('offers nothing at all until something is typed', () => {
+        // A world's whole name dictionary is thousands of entries, and an
+        // arbitrary first fifty of them is a worse answer than none: browsing
+        // is what the scene tree is for.
+        render(
+          <WorldPropertyGrid summary={WORLD} selection={[9]} {...wiring} classProps={{ ...TRIGGER, target: '' }} />,
+        );
+
+        expect(screen.queryByTestId('world-prop-class-target-suggestions')).not.toBeInTheDocument();
+      });
+
+      it('commits nothing while typing — the op is still the blur', () => {
+        // The reason architecture §7 ruled `VariableAutocomplete` out for this
+        // grid: it calls `onChange` per keystroke, and this grid turns every
+        // change into an undoable op.
+        // Opened on a trigger wired to nothing, so the typed value really is a
+        // change and a commit on keystroke would be visible.
+        render(
+          <WorldPropertyGrid summary={WORLD} selection={[9]} {...wiring} classProps={{ ...TRIGGER, target: '' }} />,
+        );
+
+        fireEvent.change(input('class-target'), { target: { value: 'GATE_MOVE' } });
+        fireEvent.change(input('class-target'), { target: { value: 'GATE_MOVER' } });
+        expect(classEdits).toEqual([]);
+
+        fireEvent.blur(input('class-target'));
+        expect(classEdits).toEqual([{ target: 'GATE_MOVER' }]);
+      });
+
+      it('caps the list, so a retail world cannot put thousands of options in the DOM', () => {
+        const many = summaryOf(vobIndex([
+          { name: 'TRIGGER_GATE', cls: 'zCTrigger' },
+          ...Array.from({ length: 300 }, (unused, i) => ({ name: `GATE_MOVER_${i}`, cls: 'zCMover' })),
+        ]));
+        render(<WorldPropertyGrid summary={many} selection={[0]} {...wiring} classProps={TRIGGER} />);
+
+        fireEvent.change(input('class-target'), { target: { value: 'GATE_MOVER' } });
+
+        expect(options()).toHaveLength(50);
+      });
+
+      it('suggests nothing on a string field that is not a target', () => {
+        render(<WorldPropertyGrid summary={WORLD} selection={[8]} {...wiring} classProps={BED} />);
+
+        fireEvent.change(input('class-focusName'), { target: { value: 'GATE' } });
+
+        expect(screen.queryByTestId('world-prop-class-focusName-suggestions')).not.toBeInTheDocument();
+      });
+
+      it('suggests on a mob`s target too, which is the same kind of name', () => {
+        render(<WorldPropertyGrid summary={WORLD} selection={[8]} {...wiring} classProps={BED} />);
+
+        fireEvent.change(input('class-target'), { target: { value: 'GATE' } });
+
+        expect(options()).toEqual(['GATE_CONTROLLER', 'GATE_MOVER', 'TRIGGER_GATE']);
+      });
+    });
+
+    // A mover controller's `target` names the mover it drives, so it is the same
+    // cross-reference and gets the same two affordances by key rather than by
+    // class — which is what the key-based check was for.
+    it('warns and suggests on a mover controller`s target, which names a mover', () => {
+      render(
+        <WorldPropertyGrid
+          summary={WORLD}
+          selection={[11]}
+          {...wiring}
+          classProps={{ class: 'zCMoverController', target: 'GATE_MOVR', message: 0, key: 0, ...BASE_READ }}
+        />,
+      );
+
+      expect(screen.getByTestId('world-prop-class-target-warning')).toBeInTheDocument();
+
+      fireEvent.change(input('class-target'), { target: { value: 'MOVER' } });
+      expect(
+        Array.from(
+          screen.getByTestId('world-prop-class-target-suggestions').querySelectorAll('option'),
+        ).map((option) => option.getAttribute('value')),
+      ).toEqual(['GATE_MOVER']);
+    });
+
+    it('warns about the second target too, which is the other half of the pair', () => {
+      render(
+        <WorldPropertyGrid
+          summary={WORLD}
+          selection={[9]}
+          {...wiring}
+          classProps={{ ...TRIGGER, vobTarget: 'NOBODY' }}
+        />,
+      );
+
+      expect(screen.getByTestId('world-prop-class-vobTarget-warning')).toBeInTheDocument();
+    });
+  });
+
+  // #290, Florian's worry: rocks and bushes placed as oCMobInter by accident.
+  // A static mesh has no animations for a scheme to play, so on a MOB class it
+  // is a rock the crosshair finds and nothing happens.
+  describe('a static mesh on a MOB class', () => {
+    const MISPLACED = summaryOf(vobIndex([
+      { name: 'ROCK', cls: 'oCMobInter', visual: 'NW_NATURE_STONE_01.3DS' },
+      { name: 'SEAT', cls: 'oCMobInter', visual: 'BENCH_1_OC.ASC' },
+      { name: 'STONE', cls: 'zCVob', visual: 'NW_NATURE_STONE_01.3DS' },
+      // A model whose scheme the list does not know may be a mod's own: no
+      // warning, because the list is not the measure of what a mod can add.
+      { name: 'ODD', cls: 'oCMobInter', visual: 'KM_ODDSCHEME_01.ASC' },
+    ]));
+
+    it('says a plain zCVob would do, and that it has to be placed again as one', () => {
+      render(<WorldPropertyGrid summary={MISPLACED} selection={[0]} {...wiring} />);
+      const warning = screen.getByTestId('world-prop-mob-static-warning');
+      expect(warning).toHaveTextContent(/static mesh/);
+      expect(warning).toHaveTextContent(/zCVob/);
+    });
+
+    it('says nothing for a model, for a zCVob, or for a model with a scheme it does not know', () => {
+      for (const vob of [1, 2, 3]) {
+        const { unmount } = render(<WorldPropertyGrid summary={MISPLACED} selection={[vob]} {...wiring} />);
+        expect([vob, screen.queryByTestId('world-prop-mob-static-warning')]).toEqual([vob, null]);
+        unmount();
+      }
+    });
+
+    // #270: what Spacer calls `scemeName` is stored nowhere — ZenGin reads it
+    // off the visual's name — so the grid shows it, read-only, where a user
+    // looks for it.
+    it('shows a model mob\'s scheme, read off its visual — a known one and a mod\'s own alike', () => {
+      const { unmount } = render(<WorldPropertyGrid summary={MISPLACED} selection={[1]} {...wiring} />);
+      expect(screen.getByTestId('world-prop-scheme')).toHaveTextContent('BENCH');
+      expect(screen.getByTestId('world-prop-scheme')).toHaveTextContent(/visual/);
+      unmount();
+      render(<WorldPropertyGrid summary={MISPLACED} selection={[3]} {...wiring} />);
+      expect(screen.getByTestId('world-prop-scheme')).toHaveTextContent('KM');
+    });
+
+    it('shows no scheme where there is nothing to play it: a static mesh, or a zCVob', () => {
+      for (const vob of [0, 2]) {
+        const { unmount } = render(<WorldPropertyGrid summary={MISPLACED} selection={[vob]} {...wiring} />);
+        expect([vob, screen.queryByTestId('world-prop-scheme')]).toEqual([vob, null]);
+        unmount();
+      }
+    });
+  });
+
+  // A mob the crosshair cannot find (level-editor.md §16.15). The engine finds
+  // one through `focusName`, and `insertVob` cannot default it — retail sets it
+  // per class, and two of the family carry nothing on purpose — so the editor's
+  // job is to say so rather than to guess.
+  describe('the focus name a mob needs to be usable at all', () => {
+    it('warns when a class retail always names has none', () => {
+      render(<WorldPropertyGrid summary={WORLD} selection={[7]} {...wiring} classProps={CHEST} />);
+
+      const warning = screen.getByTestId('world-prop-class-focusName-warning');
+      expect(warning).toBeInTheDocument();
+      // And it says what to type, not only that something is wrong.
+      expect(warning.textContent).toContain('MOBNAME_CHEST');
+    });
+
+    it('says nothing once the field has a name', () => {
+      render(
+        <WorldPropertyGrid
+          summary={WORLD}
+          selection={[7]}
+          {...wiring}
+          classProps={{ ...CHEST, focusName: 'MOBNAME_CHEST' }}
+        />,
+      );
+
+      expect(screen.queryByTestId('world-prop-class-focusName-warning')).not.toBeInTheDocument();
+    });
+
+    it('treats whitespace as empty, because the engine does', () => {
+      render(
+        <WorldPropertyGrid summary={WORLD} selection={[7]} {...wiring} classProps={{ ...CHEST, focusName: '  ' }} />,
+      );
+
+      expect(screen.getByTestId('world-prop-class-focusName-warning')).toBeInTheDocument();
+    });
+
+    it('says nothing about a bed, which retail leaves empty on purpose', () => {
+      // 7 beds and 121 fires carry no focus name in retail: they are used by NPC
+      // routines, not by the player's hand. A warning here would be noise on
+      // every one an author places, which is how a warning stops being read.
+      render(<WorldPropertyGrid summary={WORLD} selection={[8]} {...wiring} classProps={BED} />);
+
+      expect(screen.getByTestId('world-prop-class-focusName')).toBeInTheDocument();
+      expect(screen.queryByTestId('world-prop-class-focusName-warning')).not.toBeInTheDocument();
+    });
+
+    it('draws no warning anywhere on a class that has no focus name', () => {
+      render(<WorldPropertyGrid summary={WORLD} selection={[1]} {...wiring} classProps={LIGHT} />);
+
+      expect(screen.queryByTestId('world-prop-class-focusName-warning')).not.toBeInTheDocument();
+    });
+  });
+
+  // Chest contents (level-editor.md §16.26 row 2): the archive's `contains`
+  // string edited as a list, items picked by picture, and the item index
+  // enforced the way `oCItem.instance`'s is — an empty index refuses nothing.
+  describe('a chest’s contents', () => {
+    const FULL: ClassProps = { ...CHEST, contents: 'ItMi_Gold:25,ItFo_Fish' };
+    const ITEM_INDEX = new Set(['ITMI_GOLD', 'ITFO_FISH', 'ITFO_APPLE']);
+    const VISUALS = new Map([['ITFO_APPLE', 'ItFo_Apple.3DS']]);
+    const queue = () => ({
+      get: () => undefined, request: jest.fn(), redraw: jest.fn(), cancelPending: jest.fn(),
+      subscribe: () => () => {},
+    }) as unknown as AssetThumbnails;
+
+    it('draws one row per entry with its count, and removes one as a whole new string', () => {
+      render(<WorldPropertyGrid summary={WORLD} selection={[7]} {...wiring} classProps={FULL} />);
+
+      expect(screen.getByTestId('world-prop-contents-row-ItMi_Gold')).toBeInTheDocument();
+      expect((screen.getByTestId('world-prop-contents-count-ItMi_Gold') as HTMLInputElement).value).toBe('25');
+      expect((screen.getByTestId('world-prop-contents-count-ItFo_Fish') as HTMLInputElement).value).toBe('1');
+
+      fireEvent.click(screen.getByTestId('world-prop-contents-remove-ItMi_Gold'));
+      expect(classEdits).toEqual([{ contents: 'ItFo_Fish' }]);
+    });
+
+    it('commits a changed count in the canonical spelling, and refuses a count under one', () => {
+      render(<WorldPropertyGrid summary={WORLD} selection={[7]} {...wiring} classProps={FULL} />);
+      const count = screen.getByTestId('world-prop-contents-count-ItFo_Fish') as HTMLInputElement;
+
+      fireEvent.change(count, { target: { value: '0' } });
+      fireEvent.blur(count);
+      expect(classEdits).toEqual([]);
+
+      fireEvent.change(count, { target: { value: '3' } });
+      fireEvent.blur(count);
+      expect(classEdits).toEqual([{ contents: 'ItMi_Gold:25,ItFo_Fish:3' }]);
+    });
+
+    it('adds an item from the index by picture, and a repeat pick counts it up', () => {
+      const thumbnails = queue();
+      render(
+        <WorldPropertyGrid
+          summary={WORLD} selection={[7]} {...wiring} classProps={FULL}
+          itemInstances={ITEM_INDEX} itemVisuals={VISUALS} thumbnails={thumbnails}
+        />,
+      );
+
+      fireEvent.click(screen.getByTestId('world-prop-contents-add'));
+      fireEvent.change(screen.getByTestId('world-prop-contents-filter'), { target: { value: 'apple' } });
+      expect(screen.queryByTestId('world-prop-contents-item-ITMI_GOLD')).not.toBeInTheDocument();
+      // The picture is the item's declared visual, through the Assets panel's queue.
+      expect(thumbnails.request).toHaveBeenCalledWith('ItFo_Apple.3DS');
+      fireEvent.click(screen.getByTestId('world-prop-contents-item-ITFO_APPLE'));
+      expect(classEdits).toEqual([{ contents: 'ItMi_Gold:25,ItFo_Fish,ITFO_APPLE' }]);
+
+      fireEvent.click(screen.getByTestId('world-prop-contents-add'));
+      fireEvent.click(screen.getByTestId('world-prop-contents-item-ITFO_FISH'));
+      expect(classEdits[1]).toEqual({ contents: 'ItMi_Gold:25,ItFo_Fish:2' });
+    });
+
+    it('takes a typed name when no index is loaded — shape-checked, never refused for being unknown', () => {
+      render(<WorldPropertyGrid summary={WORLD} selection={[7]} {...wiring} classProps={FULL} />);
+
+      fireEvent.click(screen.getByTestId('world-prop-contents-add'));
+      const typed = screen.getByTestId('world-prop-contents-typed');
+      fireEvent.change(typed, { target: { value: 'not a symbol' } });
+      fireEvent.keyDown(typed, { key: 'Enter' });
+      expect(classEdits).toEqual([]);
+
+      fireEvent.change(typed, { target: { value: 'ItMi_Nugget' } });
+      fireEvent.keyDown(typed, { key: 'Enter' });
+      expect(classEdits).toEqual([{ contents: 'ItMi_Gold:25,ItFo_Fish,ItMi_Nugget' }]);
+    });
+
+    it('shows a string the grammar cannot read as it is, and can clear it, never rewrite it', () => {
+      render(<WorldPropertyGrid summary={WORLD} selection={[7]} {...wiring} classProps={{ ...CHEST, contents: 'ItMi_Gold:x' }} />);
+      expect(screen.getByTestId('world-prop-contents-unreadable')).toHaveTextContent('ItMi_Gold:x');
+      fireEvent.click(screen.getByTestId('world-prop-contents-clear'));
+      expect(classEdits).toEqual([{ contents: '' }]);
+    });
+  });
+
+});

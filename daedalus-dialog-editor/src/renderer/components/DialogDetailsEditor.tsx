@@ -1,0 +1,389 @@
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Box,
+  Typography,
+  Stack,
+  Button,
+  IconButton,
+  Tooltip,
+  Snackbar,
+  Alert,
+} from '@mui/material';
+import {
+  Code as CodeIcon,
+  Difference as DifferenceIcon,
+  Undo as UndoIcon,
+  Redo as RedoIcon,
+  Delete as DeleteIcon,
+  DriveFileRenameOutline as RenameIcon,
+  Place as PlaceIcon,
+} from '@mui/icons-material';
+import { useEditorStore } from '../store/editorStore';
+import { useHistoryStore } from '../store/historyStore';
+import { useProjectStore } from '../store/projectStore';
+import { useWorldStore } from '../store/worldStore';
+import { useUISelectionStore } from '../store/uiSelectionStore';
+import * as historyActions from '../store/historyActions';
+import { DialogDetailsEditorProps } from './dialogTypes';
+import { resolveNpcSpawnSite, expectedWorldNameFor, worldToOpenFor, npcJumpPlan } from './npcWorldJump';
+import ValidationErrorDialog from './ValidationErrorDialog';
+import { flushAllPendingEdits } from '../utils/pendingEditFlushRegistry';
+import DialogPropertiesSection from './DialogPropertiesSection';
+import { firstLineText } from './descriptionSync';
+import ConditionSection from './ConditionSection';
+import DialogActionsSection from './DialogActionsSection';
+import { useFocusNavigation } from './hooks/useFocusNavigation';
+import { useActionManagement } from './hooks/useActionManagement';
+import { useDialogEditorUIState } from './hooks/useDialogEditorUIState';
+import { useDialogEditorCommands } from './hooks/useDialogEditorCommands';
+import { flattenVisibleActionPaths } from './nestedActionUtils';
+
+// Monaco lives behind this dialog and is the heaviest thing the renderer can
+// load; keep it out of the entry chunk and off the first paint (§3 P3).
+const DialogSourceViewDialog = lazy(() => import('./DialogSourceViewDialog'));
+// Same idiom for the other two modals a session may never open: the diff view
+// and the simulator (which pulls in the whole simulator domain). Each is
+// mounted only while open, so its chunk is fetched on the first press.
+const ReviewChangesDialog = lazy(() => import('./ReviewChangesDialog'));
+const SimulatorDialog = lazy(() => import('./Simulator/SimulatorDialog'));
+
+const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
+  dialogName,
+  filePath,
+  functionName,
+  onNavigateToFunction,
+  semanticModel: passedSemanticModel,
+  onDeleteDialog,
+  onRenameDialog,
+}) => {
+  const fileState = useEditorStore((s) => (filePath ? s.openFiles.get(filePath) ?? null : null));
+  const saveFile = useEditorStore((s) => s.saveFile);
+  const semanticModel = fileState?.semanticModel || passedSemanticModel;
+
+  const dialog = semanticModel?.dialogs?.[dialogName];
+  const informationFunctionName = typeof dialog?.properties?.information === 'string'
+    ? dialog.properties.information
+    : dialog?.properties?.information?.name;
+  const currentFunctionName = functionName || informationFunctionName || null;
+  const currentFunction = currentFunctionName
+    ? semanticModel?.functions?.[currentFunctionName] || null
+    : null;
+  const informationFirstLine = firstLineText(
+    informationFunctionName ? semanticModel?.functions?.[informationFunctionName] : null
+  );
+
+  // NPC/Dialog → World (§16.23 W4's other half). `InsertNpcActionRenderer`
+  // already jumps from a script's own spawn-point literal; this resolves the
+  // dialog's NPC to the same point through the project index, so the jump
+  // works from a dialog that names no spawn point of its own.
+  const npcName = (typeof dialog?.properties?.npc === 'string' ? dialog.properties.npc : null) || null;
+  const spawnSiteIndex = useProjectStore((s) => s.spawnSiteIndex);
+  const npcSpawnSite = useMemo(
+    () => (npcName ? resolveNpcSpawnSite(spawnSiteIndex, npcName) : null),
+    [spawnSiteIndex, npcName]
+  );
+  const npcSpawnPoint = npcSpawnSite?.spawnPoint ?? null;
+  // The engine spawns every NPC from a function named after the world file
+  // (environment-hazards.md), so the site's own function names the .ZEN the
+  // NPC lives in — and the project's own asset sources say where that file is
+  // (§16.31), which is what turns the name into an open (#226).
+  const expectedWorldName = npcSpawnSite ? expectedWorldNameFor(npcSpawnSite.functionName) : null;
+  const world = useWorldStore((s) => (s.status === 'ready' ? (s.waynetNames ?? null) : null));
+  const openWorldPath = useWorldStore((s) => s.summary?.worldPath ?? null);
+  const jumpPlan = useMemo(
+    () => npcJumpPlan(
+      npcName, npcSpawnPoint, world, worldToOpenFor(expectedWorldName, openWorldPath),
+    ),
+    [npcName, npcSpawnPoint, world, expectedWorldName, openWorldPath]
+  );
+  const handleWorldJump = useCallback(() => {
+    if (!npcSpawnPoint || jumpPlan.kind === 'disabled') return;
+    // The world to open rides the focus request rather than being opened here:
+    // opening one is the World surface's, which is also where the jump lands.
+    useWorldStore.getState().requestFocus(jumpPlan.kind === 'open'
+      ? { kind: 'waypoint', name: npcSpawnPoint, inWorld: jumpPlan.world }
+      : { kind: 'waypoint', name: npcSpawnPoint });
+    useUISelectionStore.getState().setActiveView('world');
+  }, [npcSpawnPoint, jumpPlan]);
+
+  const canUndo = useHistoryStore((state) => filePath ? state.canUndo(filePath) : false);
+  const canRedo = useHistoryStore((state) => filePath ? state.canRedo(filePath) : false);
+  const undo = useHistoryStore((s) => s.undo);
+  const redo = useHistoryStore((s) => s.redo);
+
+  const uiState = useDialogEditorUIState();
+  const { registerActionRef, focusAction, trimRefs } = useFocusNavigation();
+  const [reviewChangesOpen, setReviewChangesOpen] = useState(false);
+  const [simulatorOpen, setSimulatorOpen] = useState(false);
+
+  // The editor pane now stays mounted across dialog switches (it no longer
+  // unmounts/remounts, which used to reset this UI state for free). Reset
+  // the per-dialog fields explicitly whenever the dialog being edited
+  // changes. Transient in-flight flags (isSaving, isResetting) are left
+  // alone — they track an operation on the current dialog, not per-dialog
+  // display state.
+  useEffect(() => {
+    uiState.setPropertiesExpanded(false);
+    uiState.setSourceViewOpen(false);
+    setReviewChangesOpen(false);
+    setSimulatorOpen(false);
+    uiState.setSnackbar({ open: false, message: '', severity: 'info' });
+    uiState.setValidationDialog({ open: false, validationResult: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dialogName]);
+
+  const {
+    setFunction,
+    handleRenameFunction,
+    handleDialogPropertyChange,
+    handleConditionFunctionUpdate,
+    handleSave,
+    handleSaveAnyway,
+    handleCancelValidation
+  } = useDialogEditorCommands({
+    dialogName,
+    filePath,
+    currentFunctionName,
+    saveFile,
+    setIsSaving: uiState.setIsSaving,
+    setIsResetting: uiState.setIsResetting,
+    setSnackbar: uiState.setSnackbar,
+    setValidationDialog: uiState.setValidationDialog
+  });
+
+  const {
+    updateAction,
+    deleteAction,
+    deleteActionAndFocusPrev,
+    addDialogLineAfter,
+    addActionAfter,
+    addActionToEnd,
+    addActionToBranchEnd,
+    moveAction,
+    patchActionsAtLevel
+  } = useActionManagement({
+    setFunction,
+    focusAction,
+    semanticModel,
+    onUpdateSemanticModel: (functionNameToUpdate, updatedFunction) => {
+      if (filePath) {
+        historyActions.updateFunction(filePath, functionNameToUpdate, updatedFunction);
+      }
+    },
+    contextName: dialogName,
+    currentFunctionName
+  });
+
+  const visibleActionPaths = useMemo(
+    () => flattenVisibleActionPaths(currentFunction?.actions || []),
+    [currentFunction?.actions]
+  );
+
+  useEffect(() => {
+    trimRefs(visibleActionPaths);
+  }, [visibleActionPaths, trimRefs]);
+
+  return (
+    <Box>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography variant="h5">{dialogName}</Typography>
+        </Box>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Tooltip title="Undo (Ctrl+Z)">
+            <span>
+              <IconButton
+                size="small"
+                disabled={!canUndo}
+                onClick={() => filePath && undo(filePath)}
+                aria-label="Undo"
+              >
+                <UndoIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+          <Tooltip title="Redo (Ctrl+Y)">
+            <span>
+              <IconButton
+                size="small"
+                disabled={!canRedo}
+                onClick={() => filePath && redo(filePath)}
+                aria-label="Redo"
+              >
+                <RedoIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+          {onRenameDialog && (
+            <Tooltip title="Rename Dialog">
+              <IconButton size="small" onClick={() => onRenameDialog(dialogName)} aria-label="Rename dialog">
+                <RenameIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+          {onDeleteDialog && (
+            <Tooltip title="Delete Dialog">
+              <IconButton size="small" onClick={() => onDeleteDialog(dialogName)} aria-label="Delete dialog" sx={{ color: 'error.main' }}>
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+          <Tooltip title="Review the changes that a save would write to disk">
+            <span>
+              <Button
+                variant="outlined"
+                disabled={!filePath || !fileState}
+                onClick={() => {
+                  // Drain any debounced edit so the diff reflects the latest
+                  // keystroke (same flush the save path performs).
+                  flushAllPendingEdits();
+                  setReviewChangesOpen(true);
+                }}
+                startIcon={<DifferenceIcon />}
+                data-testid="review-changes-button"
+              >
+                Review Changes
+              </Button>
+            </span>
+          </Tooltip>
+          <Button
+            variant="outlined"
+            disabled={!informationFunctionName || !semanticModel}
+            onClick={() => setSimulatorOpen(true)}
+            data-testid="simulator-launch"
+          >
+            Play dialog
+          </Button>
+          <Button
+            variant="outlined"
+            onClick={() => uiState.setSourceViewOpen(true)}
+            startIcon={<CodeIcon />}
+          >
+            View Source
+          </Button>
+          <Tooltip title={
+            jumpPlan.kind === 'disabled' ? jumpPlan.reason
+              : jumpPlan.kind === 'open' ? `Open ${jumpPlan.world}.ZEN and show ${npcName} in it`
+                : `Show ${npcName} in the world`
+          }>
+            <span>
+              <Button
+                variant="outlined"
+                disabled={jumpPlan.kind === 'disabled'}
+                onClick={handleWorldJump}
+                startIcon={<PlaceIcon />}
+                data-testid="npc-world-jump"
+              >
+                Show in World
+              </Button>
+            </span>
+          </Tooltip>
+        </Stack>
+      </Box>
+
+      {dialog && (
+        <>
+          <DialogPropertiesSection
+            dialog={dialog}
+            semanticModel={semanticModel}
+            propertiesExpanded={uiState.propertiesExpanded}
+            onToggleExpanded={() => uiState.setPropertiesExpanded(!uiState.propertiesExpanded)}
+            onDialogPropertyChange={handleDialogPropertyChange}
+            firstLineText={informationFirstLine}
+          />
+          <ConditionSection
+            dialogName={dialogName}
+            dialog={dialog}
+            semanticModel={semanticModel}
+            filePath={filePath}
+            onUpdateFunction={handleConditionFunctionUpdate}
+          />
+        </>
+      )}
+
+      {currentFunction && (
+        <DialogActionsSection
+          dialogName={dialogName}
+          currentFunction={currentFunction}
+          npcName={dialog?.properties?.npc || 'NPC'}
+          updateActionAtPath={updateAction}
+          deleteActionAtPath={deleteAction}
+          deleteActionAndFocusPrevAtPath={deleteActionAndFocusPrev}
+          addDialogLineAfterPath={addDialogLineAfter}
+          addActionAfterPath={addActionAfter}
+          addActionToBranchEnd={addActionToBranchEnd}
+          moveAction={moveAction}
+          patchActionsAtLevel={patchActionsAtLevel}
+          focusActionAtPath={focusAction}
+          registerActionRef={registerActionRef}
+          getVisibleActionPaths={() => visibleActionPaths}
+          onNavigateToFunction={onNavigateToFunction}
+          onRenameFunction={handleRenameFunction}
+          onAddActionToEnd={addActionToEnd}
+          filePath={filePath}
+        />
+      )}
+
+      <ValidationErrorDialog
+        open={uiState.validationDialog.open}
+        validationResult={uiState.validationDialog.validationResult}
+        mode={uiState.validationDialog.mode}
+        onClose={handleCancelValidation}
+        onSaveAnyway={handleSaveAnyway}
+        onCancel={handleCancelValidation}
+      />
+
+      {fileState && filePath && reviewChangesOpen && (
+        <Suspense fallback={null}>
+          <ReviewChangesDialog
+            open
+            filePath={filePath}
+            semanticModel={fileState.semanticModel}
+            onSave={() => handleSave()}
+            onClose={() => setReviewChangesOpen(false)}
+          />
+        </Suspense>
+      )}
+
+      {semanticModel && uiState.sourceViewOpen && (
+        <Suspense fallback={null}>
+          <DialogSourceViewDialog
+            open
+            onClose={() => uiState.setSourceViewOpen(false)}
+            dialogName={dialogName}
+            semanticModel={semanticModel}
+          />
+        </Suspense>
+      )}
+
+      {semanticModel && dialog && simulatorOpen && (
+        <Suspense fallback={null}>
+          <SimulatorDialog
+            open
+            semanticModel={semanticModel}
+            dialogName={dialogName}
+            npcName={dialog.properties.npc || 'NPC'}
+            onClose={() => setSimulatorOpen(false)}
+          />
+        </Suspense>
+      )}
+
+      <Snackbar
+        open={uiState.snackbar.open}
+        autoHideDuration={4000}
+        onClose={() => uiState.setSnackbar({ ...uiState.snackbar, open: false })}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert
+          onClose={() => uiState.setSnackbar({ ...uiState.snackbar, open: false })}
+          severity={uiState.snackbar.severity}
+          sx={{ width: '100%' }}
+        >
+          {uiState.snackbar.message}
+        </Alert>
+      </Snackbar>
+    </Box>
+  );
+};
+
+export default DialogDetailsEditor;

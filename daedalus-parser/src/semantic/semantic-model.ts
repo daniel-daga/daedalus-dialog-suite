@@ -1,0 +1,1299 @@
+import { renderStringValue } from './source-value';
+export type { CallIdentity } from './call-identity';
+import { generateCallStatement } from './call-identity';
+import 'reflect-metadata';
+import { Type, plainToInstance, ClassConstructor } from 'class-transformer';
+import { continuationIndent, indentGeneratedCode } from './code-formatting';
+import { generateActionCode } from './action-codegen';
+import { createNameRecord, resolveCaseInsensitive } from './name-utils';
+import { formatNumericValue } from './parsers/numeric-literals';
+import { referenceIdentifierFromText } from './reference-expression';
+
+// Semantic model classes and types for Daedalus dialog parsing
+
+// ===================================================================
+// SHARED INTERFACES (re-exported for backward compatibility)
+// ===================================================================
+
+export type { CodeGenOptions, CodeGeneratable, SourceLine, SourceAssignment, SourceHeader } from './semanticModelInterfaces';
+import type { CodeGenOptions, CodeGeneratable, SourceLine, SourceAssignment, SourceHeader } from './semanticModelInterfaces';
+
+// ===================================================================
+// DOMAIN ACTION CLASSES (imported + re-exported for backward compatibility)
+// ===================================================================
+
+import { DialogLine, Choice, ClearChoicesAction } from './dialogActions';
+export { DialogLine, Choice, ClearChoicesAction } from './dialogActions';
+
+import {
+  CreateInventoryItems,
+  GiveInventoryItems,
+  GiveTradeInventoryAction,
+  RemoveInventoryItemsAction,
+  UseItemAction,
+} from './inventoryActions';
+export {
+  CreateInventoryItems,
+  GiveInventoryItems,
+  GiveTradeInventoryAction,
+  RemoveInventoryItemsAction,
+  UseItemAction,
+} from './inventoryActions';
+
+import {
+  AttackAction,
+  ExchangeRoutineAction,
+  HeroFollowsAction,
+  InsertNpcAction,
+  PickpocketAction,
+  PlayAniAction,
+  SetAttitudeAction,
+  SetRefuseTalkAction,
+  StartOtherRoutineAction,
+  StopProcessInfosAction,
+  TeachAction,
+} from './npcActions';
+export {
+  AttackAction,
+  ExchangeRoutineAction,
+  HeroFollowsAction,
+  InsertNpcAction,
+  PickpocketAction,
+  PlayAniAction,
+  SetAttitudeAction,
+  SetRefuseTalkAction,
+  StartOtherRoutineAction,
+  StopProcessInfosAction,
+  TeachAction,
+} from './npcActions';
+
+// ===================================================================
+// DOMAIN CONDITION CLASSES (imported + re-exported for backward compatibility)
+// ===================================================================
+
+import {
+  Condition,
+  NpcGetDistToWpCondition,
+  NpcGetTalentSkillCondition,
+  NpcHasItemsCondition,
+  NpcIsDeadCondition,
+  NpcIsInStateCondition,
+  NpcKnowsInfoCondition,
+  QuestStateCondition,
+  VariableCondition,
+} from './conditionTypes';
+export {
+  Condition,
+  NpcGetDistToWpCondition,
+  NpcGetTalentSkillCondition,
+  NpcHasItemsCondition,
+  NpcIsDeadCondition,
+  NpcIsInStateCondition,
+  NpcKnowsInfoCondition,
+  QuestStateCondition,
+  VariableCondition,
+} from './conditionTypes';
+export type { DialogCondition } from './conditionTypes';
+import type { DialogCondition } from './conditionTypes';
+import type { ParsedArg } from './parsers/argument-parsing';
+
+// ===================================================================
+// TYPE DEFINITIONS FOR TREE-SITTER NODES
+// ===================================================================
+
+export interface TreeSitterNode {
+  type: string;
+  text: string;
+  children: TreeSitterNode[];
+  namedChildren: TreeSitterNode[];
+  childCount: number;
+  parent: TreeSitterNode | null;
+  startIndex: number;
+  endIndex: number;
+  startPosition: { row: number; column: number };
+  endPosition: { row: number; column: number };
+  nextSibling: TreeSitterNode | null;
+  hasError: boolean;
+  isMissing: boolean;
+  childForFieldName(fieldName: string): TreeSitterNode | null;
+  child(index: number): TreeSitterNode;
+  walk(): TreeCursor;
+}
+
+export interface TreeCursor {
+  nodeType: string;
+  nodeText: string;
+  nodeIsMissing: boolean;
+  nodeIsNamed: boolean;
+  startPosition: { row: number; column: number };
+  endPosition: { row: number; column: number };
+  startIndex: number;
+  endIndex: number;
+  currentNode: TreeSitterNode;
+
+  reset(node: TreeSitterNode): void;
+  delete(): void;
+  gotoParent(): boolean;
+  gotoFirstChild(): boolean;
+  gotoFirstChildForIndex(index: number): boolean;
+  gotoNextSibling(): boolean;
+}
+
+// ===================================================================
+// SEMANTIC MODEL CLASSES
+// ===================================================================
+
+export class GlobalConstant {
+  public name: string;
+  public type: string;
+  public value: string | number | boolean;
+  /** The initializer is a string literal, and `value` its contents, unquoted. */
+  public valueIsLiteral?: boolean;
+  /** Verbatim declaration text, used for faithful re-emission (arrays etc.). */
+  public sourceText?: string;
+  /** Declared by another symbol's statement (`const int A = 1, B = 2;`, #383); see GlobalVariable. */
+  public declaredWith?: string;
+  public leadingComments?: string[];
+  public filePath?: string;
+  public position?: {
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+  };
+  public range?: {
+    startIndex: number;
+    endIndex: number;
+  };
+
+  constructor(name: string, type: string, value: string | number | boolean) {
+    this.name = name;
+    this.type = type;
+    this.value = value;
+  }
+}
+
+export class GlobalVariable {
+  public name: string;
+  public type: string;
+  /** Verbatim declaration text, used for faithful re-emission. */
+  public sourceText?: string;
+  /**
+   * Declared by another symbol's statement (`var int a, b;`, #383): the
+   * name of the constant or variable whose `sourceText` writes this one. Not
+   * emitted on its own while that symbol exists.
+   */
+  public declaredWith?: string;
+  public leadingComments?: string[];
+  public filePath?: string;
+  public position?: {
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+  };
+  public range?: {
+    startIndex: number;
+    endIndex: number;
+  };
+
+  constructor(name: string, type: string) {
+    this.name = name;
+    this.type = type;
+  }
+}
+
+export class GlobalInstance {
+  public name: string;
+  public parent: string;
+  public displayName?: string;
+  public dailyRoutine?: string;
+  /**
+   * The C_NPC `id` field, when it is an integer literal. It is what resolves an
+   * `Npc_ExchangeRoutine(npc, "X")` to the function the engine runs, `RTN_X_<id>`
+   * — so a consumer grouping a routine's variants needs it and nothing else
+   * identifies them. Undefined when the field is absent or not a literal.
+   */
+  public npcId?: number;
+  /** Verbatim declaration text (including body), used for faithful re-emission. */
+  public sourceText?: string;
+  /** Declared by another instance's body-less statement (`instance a, b(C);`, #383); see GlobalVariable. */
+  public declaredWith?: string;
+  public leadingComments?: string[];
+  public filePath?: string;
+  public position?: {
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+  };
+  public range?: {
+    startIndex: number;
+    endIndex: number;
+  };
+
+  constructor(name: string, parent: string) {
+    this.name = name;
+    this.parent = parent;
+  }
+}
+
+/**
+ * A `class C_Foo { ... };` declaration, captured verbatim for faithful
+ * re-emission (modeled on GlobalInstance).
+ */
+export class GlobalClass {
+  public name: string;
+  /** Verbatim declaration text (including body), used for faithful re-emission. */
+  public sourceText?: string;
+  public leadingComments?: string[];
+  public filePath?: string;
+  public position?: {
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+  };
+  public range?: {
+    startIndex: number;
+    endIndex: number;
+  };
+
+  constructor(name: string) {
+    this.name = name;
+  }
+}
+
+/**
+ * A `prototype Mst_Foo(C_Foo) { ... };` declaration, captured verbatim for
+ * faithful re-emission (modeled on GlobalInstance).
+ */
+export class GlobalPrototype {
+  public name: string;
+  public parent: string;
+  /** Verbatim declaration text (including body), used for faithful re-emission. */
+  public sourceText?: string;
+  public leadingComments?: string[];
+  public filePath?: string;
+  public position?: {
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+  };
+  public range?: {
+    startIndex: number;
+    endIndex: number;
+  };
+
+  constructor(name: string, parent: string) {
+    this.name = name;
+    this.parent = parent;
+  }
+}
+
+/**
+ * A dialog property value referencing a C_INFO function: either the bare
+ * function name, or the live `DialogFunction` instance once linking has
+ * resolved it (pass 2 / `Dialog.fromJSON`).
+ */
+export type DialogFunctionRef = string | DialogFunction;
+
+export interface DialogProperties {
+  information?: DialogFunctionRef;
+  condition?: DialogFunctionRef;
+  [key: string]: string | number | boolean | DialogFunction | undefined;
+}
+
+/**
+ * Case-insensitive dialog property lookup. Daedalus identifiers — including
+ * C_INFO property names like `condition`/`information` — are case-insensitive,
+ * but `DialogProperties` preserves the source spelling as the key.
+ */
+export function getDialogProperty(
+  properties: DialogProperties | undefined,
+  name: string
+): string | number | boolean | DialogFunction | undefined {
+  if (!properties) return undefined;
+  const target = name.toLowerCase();
+  for (const key in properties) {
+    if (key.toLowerCase() === target) {
+      return properties[key];
+    }
+  }
+  return undefined;
+}
+
+export interface PropertyFormatting {
+  [key: string]: {
+    beforeEquals: string;
+    afterEquals: string;
+  };
+}
+
+// ===================================================================
+// DIALOG ACTION CLASSES (remaining — not split to domain files)
+// ===================================================================
+
+export class CreateTopic implements CodeGeneratable {
+  public readonly type = 'CreateTopic';
+  public topic: string;
+  public topicType: string | null;
+
+  constructor(topic: string, topicType: string | null = null) {
+    this.topic = topic;
+    this.topicType = topicType;
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    const code = this.topicType
+      ? generateCallStatement(this, 'Log_CreateTopic', [this.topic, this.topicType])
+      : generateCallStatement(this, 'Log_CreateTopic', [this.topic]);
+    return `\n${code}\n`;
+  }
+
+  toDisplayString(): string {
+    return `[CreateTopic: ${this.topic}${this.topicType ? `, ${this.topicType}` : ''}]`;
+  }
+
+  getTypeName(): string {
+    return 'CreateTopic';
+  }
+}
+
+export class LogEntry implements CodeGeneratable {
+  public readonly type = 'LogEntry';
+  public topic: string;
+  public text: string;
+  /** True when the source text argument was not a string literal. */
+  public textIsExpression?: boolean;
+
+  constructor(topic: string, text: string, textIsExpression?: boolean) {
+    this.topic = topic;
+    this.text = text;
+    if (textIsExpression !== undefined) {
+      this.textIsExpression = textIsExpression;
+    }
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    const text = renderStringValue(this.text, this.textIsExpression);
+    return `\n${generateCallStatement(this, 'B_LogEntry', [this.topic, text])}\n`;
+  }
+
+  toDisplayString(): string {
+    return `[LogEntry: ${this.topic} -> "${this.text}"]`;
+  }
+
+  getTypeName(): string {
+    return 'LogEntry';
+  }
+}
+
+export class LogSetTopicStatus implements CodeGeneratable {
+  public readonly type = 'LogSetTopicStatus';
+  public topic: string;
+  public status: string;
+
+  constructor(topic: string, status: string) {
+    this.topic = topic;
+    this.status = status;
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    return generateCallStatement(this, 'Log_SetTopicStatus', [this.topic, this.status]);
+  }
+
+  toDisplayString(): string {
+    return `[LogSetTopicStatus: ${this.topic} -> ${this.status}]`;
+  }
+
+  getTypeName(): string {
+    return 'LogSetTopicStatus';
+  }
+}
+
+export class Action implements CodeGeneratable {
+  public readonly type = 'Action';
+  public action: string;
+
+  constructor(action: string) {
+    this.action = action;
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    const trimmed = this.action.trimEnd();
+    return trimmed.endsWith(';') ? trimmed : `${trimmed};`;
+  }
+
+  toDisplayString(): string {
+    return `[Action: ${this.action}]`;
+  }
+
+  getTypeName(): string {
+    return 'Action';
+  }
+}
+
+/**
+ * A standalone comment inside a function or condition body, preserved in
+ * source position so it regenerates verbatim (no trailing `;`).
+ */
+export class CommentAction implements CodeGeneratable {
+  public readonly type = 'CommentAction';
+  public text: string;
+
+  constructor(text: string) {
+    this.text = text;
+  }
+
+  generateCode(options: CodeGenOptions): string {
+    // Trailing spaces are the source's (#384); only a line break is dropped.
+    return options.includeComments === false ? '' : this.text.replace(/[\r\n]+$/, '');
+  }
+
+  toDisplayString(): string {
+    return `[Comment: ${this.text}]`;
+  }
+
+  getTypeName(): string {
+    return 'CommentAction';
+  }
+}
+
+export class ConditionalAction implements CodeGeneratable {
+  public readonly type = 'ConditionalAction';
+  public condition: string;
+  public thenActions: DialogAction[];
+  public elseActions: DialogAction[];
+  /**
+   * The source wrote the condition without enclosing parentheses — `if x < 0`
+   * or `if (a) && (b)` (#384) — so it is written back the same way.
+   */
+  public bareCondition?: boolean;
+
+  constructor(condition: string, thenActions: DialogAction[] = [], elseActions: DialogAction[] = []) {
+    this.condition = condition;
+    this.thenActions = thenActions;
+    this.elseActions = elseActions;
+  }
+
+  generateCode(options: CodeGenOptions): string {
+    const indentUnit = options.indentUnit || '\t';
+    const lines: string[] = [];
+
+    const condition = indentGeneratedCode(this.condition.trim(), '', (this as SourceLine).sourceIndent);
+    // Editor-authored headers can end in a line comment. Close on a new line;
+    // a // inside a string merely adds harmless whitespace after the expression.
+    const closingLine = condition.includes('//') ? '\n' : '';
+    lines.push(this.bareCondition && !closingLine ? `if ${condition}` : `if (${condition}${closingLine})`);
+    lines.push('{');
+    lines.push(...this.renderBranch(this.thenActions, indentUnit, options));
+
+    if (this.elseActions.length > 0) {
+      lines.push('}');
+      lines.push('else');
+      lines.push('{');
+      lines.push(...this.renderBranch(this.elseActions, indentUnit, options));
+      lines.push('};');
+    } else {
+      lines.push('};');
+    }
+
+    return lines.join('\n');
+  }
+
+  toDisplayString(): string {
+    return `[ConditionalAction: if (${this.condition})]`;
+  }
+
+  getTypeName(): string {
+    return 'ConditionalAction';
+  }
+
+  private renderBranch(actions: DialogAction[], indentUnit: string, options: CodeGenOptions): string[] {
+    const lines: string[] = [];
+
+    for (const action of actions) {
+      const actionCode = generateActionCode(action as CodeGeneratable, {
+        ...options,
+        indentUnit
+      });
+      lines.push(...indentGeneratedCode(actionCode, indentUnit, continuationIndent(action as SourceLine & { type?: string })).split('\n'));
+    }
+
+    return lines;
+  }
+}
+
+export class ChapterTransitionAction implements CodeGeneratable {
+  public readonly type = 'ChapterTransitionAction';
+  public chapter: number | string;
+  public world: string;
+
+  constructor(chapter: number | string, world: string) {
+    this.chapter = chapter;
+    this.world = world;
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    return generateCallStatement(this, 'B_Kapitelwechsel', [formatNumericValue(this.chapter), this.world]);
+  }
+
+  toDisplayString(): string {
+    return `[ChapterTransition: Chapter ${this.chapter} in ${this.world}]`;
+  }
+
+  getTypeName(): string {
+    return 'ChapterTransitionAction';
+  }
+}
+
+export class SetVariableAction implements CodeGeneratable {
+  public readonly type = 'SetVariableAction';
+  public sourceText?: string;
+  public sourceAssignment?: SourceAssignment;
+  public variableName: string;
+  public operator: string;
+  public value: string | number | boolean;
+
+  constructor(variableName: string, operator: string, value: string | number | boolean) {
+    this.variableName = variableName;
+    this.operator = operator;
+    this.value = value;
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    return `${this.variableName} ${this.operator} ${formatNumericValue(this.value)};`;
+  }
+
+  toDisplayString(): string {
+    return `[SetVariable: ${this.variableName} ${this.operator} ${this.value}]`;
+  }
+
+  getTypeName(): string {
+    return 'SetVariableAction';
+  }
+}
+
+export class GivePlayerXPAction implements CodeGeneratable {
+  public readonly type = 'GivePlayerXPAction';
+  public xpAmount: string;
+
+  constructor(xpAmount: string) {
+    this.xpAmount = xpAmount;
+  }
+
+  generateCode(_options: CodeGenOptions): string {
+    return generateCallStatement(this, 'B_GivePlayerXP', [this.xpAmount]);
+  }
+
+  toDisplayString(): string {
+    return `[GivePlayerXP: ${this.xpAmount}]`;
+  }
+
+  getTypeName(): string {
+    return 'GivePlayerXPAction';
+  }
+}
+
+// ===================================================================
+// ACTION UNION TYPE + DISCRIMINATOR + DESERIALIZER
+// ===================================================================
+
+export type DialogAction = (
+  | DialogLine
+  | CreateTopic
+  | LogEntry
+  | LogSetTopicStatus
+  | Action
+  | CommentAction
+  | ConditionalAction
+  | Choice
+  | ClearChoicesAction
+  | CreateInventoryItems
+  | GiveInventoryItems
+  | AttackAction
+  | SetAttitudeAction
+  | ExchangeRoutineAction
+  | ChapterTransitionAction
+  | SetVariableAction
+  | StopProcessInfosAction
+  | PlayAniAction
+  | GivePlayerXPAction
+  | PickpocketAction
+  | StartOtherRoutineAction
+  | TeachAction
+  | GiveTradeInventoryAction
+  | RemoveInventoryItemsAction
+  | UseItemAction
+  | InsertNpcAction
+  | HeroFollowsAction
+  | SetRefuseTalkAction
+) & SourceLine;
+
+/**
+ * Discriminator table shape used by class-transformer's polymorphic @Type() decorator.
+ * Both ACTION_DISCRIMINATOR and CONDITION_DISCRIMINATOR follow this same structure;
+ * the shared type makes the pattern explicit and lets TypeScript catch typos.
+ */
+interface DiscriminatorConfig {
+  property: 'type';
+  subTypes: Array<{ value: ClassConstructor<object>; name: string }>;
+}
+
+const ACTION_DISCRIMINATOR: DiscriminatorConfig = {
+  property: 'type',
+  subTypes: [
+    { value: DialogLine, name: 'DialogLine' },
+    { value: CreateTopic, name: 'CreateTopic' },
+    { value: LogEntry, name: 'LogEntry' },
+    { value: LogSetTopicStatus, name: 'LogSetTopicStatus' },
+    { value: Action, name: 'Action' },
+    { value: CommentAction, name: 'CommentAction' },
+    { value: ConditionalAction, name: 'ConditionalAction' },
+    { value: Choice, name: 'Choice' },
+    { value: ClearChoicesAction, name: 'ClearChoicesAction' },
+    { value: CreateInventoryItems, name: 'CreateInventoryItems' },
+    { value: GiveInventoryItems, name: 'GiveInventoryItems' },
+    { value: AttackAction, name: 'AttackAction' },
+    { value: SetAttitudeAction, name: 'SetAttitudeAction' },
+    { value: ExchangeRoutineAction, name: 'ExchangeRoutineAction' },
+    { value: ChapterTransitionAction, name: 'ChapterTransitionAction' },
+    { value: SetVariableAction, name: 'SetVariableAction' },
+    { value: StopProcessInfosAction, name: 'StopProcessInfosAction' },
+    { value: PlayAniAction, name: 'PlayAniAction' },
+    { value: GivePlayerXPAction, name: 'GivePlayerXPAction' },
+    { value: PickpocketAction, name: 'PickpocketAction' },
+    { value: StartOtherRoutineAction, name: 'StartOtherRoutineAction' },
+    { value: TeachAction, name: 'TeachAction' },
+    { value: GiveTradeInventoryAction, name: 'GiveTradeInventoryAction' },
+    { value: RemoveInventoryItemsAction, name: 'RemoveInventoryItemsAction' },
+    { value: UseItemAction, name: 'UseItemAction' },
+    { value: InsertNpcAction, name: 'InsertNpcAction' },
+    { value: HeroFollowsAction, name: 'HeroFollowsAction' },
+    { value: SetRefuseTalkAction, name: 'SetRefuseTalkAction' },
+  ],
+};
+
+// Helper to ensure action has a type (legacy support for serialised JSON without 'type' fields).
+//
+// IMPORTANT: The if-else order below is fragile — several action classes share overlapping
+// property names. More-specific checks (unique discriminating properties) must appear
+// before less-specific ones to avoid misclassification:
+//   - 'CreateTopic'  (topic + topicType) before 'LogEntry' (topic + text): both have 'topic'
+//   - 'CreateInventoryItems' (target + item + quantity, no giver) before 'GiveInventoryItems'
+//   - 'PlayAniAction' (target + animationName) and 'SetRefuseTalkAction' (target + seconds)
+//     before 'StopProcessInfosAction' (only target)
+//   - 'StartOtherRoutineAction' (routineFunctionName + routineNpc + routineName) before
+//     'ExchangeRoutineAction' (routine)
+//
+// When adding a new action type, insert its check in the correct position relative to
+// any existing checks that share property names.
+function ensureActionType(json: any): void {
+  if (!json.type) {
+    if ('speaker' in json && 'text' in json && 'id' in json) json.type = 'DialogLine';
+    else if ('topic' in json && 'topicType' in json) json.type = 'CreateTopic';
+    else if ('topic' in json && 'text' in json) json.type = 'LogEntry';
+    else if ('topic' in json && 'status' in json) json.type = 'LogSetTopicStatus';
+    else if ('condition' in json && 'thenActions' in json && 'elseActions' in json) json.type = 'ConditionalAction';
+    else if ('dialogRef' in json && 'targetFunction' in json) json.type = 'Choice';
+    else if ('dialog' in json) json.type = 'ClearChoicesAction';
+    else if ('target' in json && 'item' in json && 'quantity' in json && !('giver' in json)) json.type = 'CreateInventoryItems';
+    else if ('giver' in json && 'receiver' in json) json.type = 'GiveInventoryItems';
+    else if ('attacker' in json && 'attackReason' in json) json.type = 'AttackAction';
+    else if ('attitude' in json) json.type = 'SetAttitudeAction';
+    else if ('routine' in json) json.type = 'ExchangeRoutineAction';
+    else if ('chapter' in json && 'world' in json) json.type = 'ChapterTransitionAction';
+    else if ('variableName' in json && 'operator' in json && 'value' in json) json.type = 'SetVariableAction';
+    else if ('target' in json && 'animationName' in json) json.type = 'PlayAniAction';
+    else if ('target' in json && 'seconds' in json) json.type = 'SetRefuseTalkAction';
+    else if ('target' in json && Object.keys(json).length === 1) json.type = 'StopProcessInfosAction';
+    else if ('xpAmount' in json) json.type = 'GivePlayerXPAction';
+    else if ('pickpocketMode' in json) json.type = 'PickpocketAction';
+    else if ('routineFunctionName' in json && 'routineNpc' in json && 'routineName' in json) json.type = 'StartOtherRoutineAction';
+    else if ('teachFunctionName' in json && 'teachArgs' in json) json.type = 'TeachAction';
+    else if ('tradeTarget' in json) json.type = 'GiveTradeInventoryAction';
+    else if ('removeFunctionName' in json && 'removeNpc' in json && 'removeItem' in json) json.type = 'RemoveInventoryItemsAction';
+    else if ('npcInstance' in json && 'spawnPoint' in json) json.type = 'InsertNpcAction';
+    else if ('guideRoutine' in json) json.type = 'HeroFollowsAction';
+    else if ('text' in json && Object.keys(json).filter((k) => k !== 'type').length === 1) json.type = 'CommentAction';
+    else if ('action' in json) json.type = 'Action';
+  }
+
+  // Normalise the DialogLine listener on the plain JSON *before* class-transformer
+  // constructs it. The editor serialises hero lines as { speaker: 'other', text, id }
+  // with no listener, and class-transformer runs the DialogLine constructor with no
+  // arguments (so its speaker-derived default is computed from an undefined speaker,
+  // yielding 'other') and never overwrites listener when the source omits it. Filling
+  // it in here — keyed off the real speaker — makes hero lines emit `other, self`,
+  // not `other, other`, which Gothic would skip (issue #115). An explicit listener
+  // (e.g. `self, hero`) is left untouched.
+  if (json.type === 'DialogLine' && json.listener == null && json.speaker != null) {
+    json.listener = json.speaker === 'other' ? 'self' : 'other';
+  }
+
+  if (Array.isArray(json.thenActions)) {
+    json.thenActions.forEach((action: any) => ensureActionType(action));
+  }
+  if (Array.isArray(json.elseActions)) {
+    json.elseActions.forEach((action: any) => ensureActionType(action));
+  }
+}
+
+// Helper to deserialize any action
+export function deserializeAction(json: any): DialogAction | any {
+  const input = structuredClone(json);
+  ensureActionType(input);
+
+  if (input.type) {
+    const subType = ACTION_DISCRIMINATOR.subTypes.find(s => s.name === input.type);
+    if (subType) {
+      const instance = plainToInstance(subType.value as ClassConstructor<any>, input);
+      if (instance instanceof ConditionalAction) {
+        instance.thenActions = Array.isArray(input.thenActions)
+          ? input.thenActions.map((action: any) => deserializeAction(action))
+          : [];
+        instance.elseActions = Array.isArray(input.elseActions)
+          ? input.elseActions.map((action: any) => deserializeAction(action))
+          : [];
+      }
+      return instance;
+    }
+    // Unknown type: warn instead of silently returning raw JSON, which would let
+    // type-unsafe data propagate undetected. Add the missing type to
+    // ACTION_DISCRIMINATOR.subTypes to suppress this warning.
+    console.warn(`[deserializeAction] Unrecognised action type "${input.type}" — returning raw JSON. Add it to ACTION_DISCRIMINATOR.subTypes.`);
+  }
+
+  return input;
+}
+
+// ===================================================================
+// CONDITION DISCRIMINATOR + DESERIALIZER
+// ===================================================================
+
+const CONDITION_DISCRIMINATOR: DiscriminatorConfig = {
+  property: 'type',
+  subTypes: [
+    { value: NpcKnowsInfoCondition, name: 'NpcKnowsInfoCondition' },
+    { value: NpcHasItemsCondition, name: 'NpcHasItemsCondition' },
+    { value: NpcIsInStateCondition, name: 'NpcIsInStateCondition' },
+    { value: NpcIsDeadCondition, name: 'NpcIsDeadCondition' },
+    { value: NpcGetDistToWpCondition, name: 'NpcGetDistToWpCondition' },
+    { value: NpcGetTalentSkillCondition, name: 'NpcGetTalentSkillCondition' },
+    { value: Condition, name: 'Condition' },
+    { value: VariableCondition, name: 'VariableCondition' },
+    { value: QuestStateCondition, name: 'QuestStateCondition' },
+  ],
+};
+
+// Helper to ensure condition has a type (legacy support)
+function ensureConditionType(json: any): void {
+  if (!json.type) {
+    if ('npc' in json && 'dialogRef' in json) json.type = 'NpcKnowsInfoCondition';
+    else if ('npc' in json && 'item' in json) json.type = 'NpcHasItemsCondition';
+    else if ('npc' in json && 'state' in json) json.type = 'NpcIsInStateCondition';
+    else if ('npc' in json && !('dialogRef' in json) && !('item' in json) && !('state' in json) && !('waypoint' in json) && !('talent' in json)) json.type = 'NpcIsDeadCondition';
+    else if ('npc' in json && 'waypoint' in json) json.type = 'NpcGetDistToWpCondition';
+    else if ('npc' in json && 'talent' in json) json.type = 'NpcGetTalentSkillCondition';
+    else if ('questVariable' in json) json.type = 'QuestStateCondition';
+    else if ('variableName' in json) json.type = 'VariableCondition';
+    else if ('condition' in json) json.type = 'Condition';
+  }
+}
+
+// Helper to deserialize any condition
+export function deserializeCondition(json: any): DialogCondition {
+  const input = structuredClone(json);
+  ensureConditionType(input);
+
+  if (input.type) {
+    const subType = CONDITION_DISCRIMINATOR.subTypes.find(s => s.name === input.type);
+    if (subType) {
+      return plainToInstance(subType.value as ClassConstructor<any>, input);
+    }
+    // Unknown type: warn instead of silently swallowing the data (mirrors
+    // deserializeAction). Add the missing type to CONDITION_DISCRIMINATOR.subTypes.
+    console.warn(`[deserializeCondition] Unrecognised condition type "${input.type}" — falling back to empty Condition. Add it to CONDITION_DISCRIMINATOR.subTypes.`);
+  }
+
+  // Fallback
+  return new Condition('');
+}
+
+// ===================================================================
+// DIALOG FUNCTION CLASS
+// ===================================================================
+
+export interface FunctionParameter {
+  /** Parameter keyword as written in source (`var`/`const`), if present. */
+  keyword?: string;
+  type: string;
+  name: string;
+}
+
+/**
+ * A single call expression found in a function body, captured generically
+ * (every call, not only the ones a specific action parser recognizes) with
+ * enough position information to jump back to the source.
+ */
+export interface FunctionCallSite {
+  functionName: string;
+  args: ParsedArg[];
+  position: {
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+  };
+}
+
+export class DialogFunction {
+  public sourceHeader?: SourceHeader;
+  /** Verbatim gap between the closing body brace and declaration semicolon. */
+  public declarationSuffix?: string;
+  public name: string;
+  public returnType: string;
+  public keyword?: string;
+  public spaceBeforeParen?: boolean;
+  public leadingComments?: string[];
+  /** Body comments around a projected guard or unconditional TRUE return. */
+  public conditionBodyLeadingComments?: string[];
+  public conditionBodyTrailingComments?: string[];
+  /** True when a projected condition body contains an explicit unconditional success return. */
+  public hasExplicitTrueReturn?: boolean;
+  public hasExplicitBodyContent?: boolean;
+  public parameters?: FunctionParameter[];
+  /** Source range of the whole declaration node, `FUNC` through `};`. */
+  public range?: {
+    startIndex: number;
+    endIndex: number;
+  };
+  /** 1-based line the declaration starts on — its `func` keyword (#267). */
+  public line?: number;
+  public calls: string[];
+  public callSites: FunctionCallSite[];
+
+  @Type(() => Object, {
+    discriminator: ACTION_DISCRIMINATOR,
+  })
+  public actions: DialogAction[];
+
+  @Type(() => Object, {
+    discriminator: CONDITION_DISCRIMINATOR,
+  })
+  public conditions: DialogCondition[];
+
+  public conditionOperator: 'AND' | 'OR';
+
+  constructor(name: string, returnType: string) {
+    this.name = name;
+    this.returnType = returnType;
+    this.leadingComments = [];
+    this.calls = [];
+    this.callSites = [];
+    this.actions = [];
+    this.conditions = [];
+    this.conditionOperator = 'AND';
+  }
+}
+
+
+// ===================================================================
+// DIALOG CLASS
+// ===================================================================
+
+/**
+ * Resolves raw property values to live `DialogFunction` instances where the
+ * value is a function reference (either a DialogFunction-shaped object or a
+ * bare name string).  Plain non-function values are passed through unchanged.
+ *
+ * Extracted from `Dialog.fromJSON` to separate the function-reference linking
+ * concern from property transformation and scalar validation.
+ */
+function linkPropertiesToFunctions(
+  dialogName: string,
+  rawProperties: Record<string, any>,
+  functionsMap: { [key: string]: DialogFunction },
+  literalKeys: string[] = [],
+): DialogProperties {
+  const linked: DialogProperties = createNameRecord();
+  for (const key in rawProperties) {
+    const value = rawProperties[key];
+    if (typeof value === 'object' && value !== null && 'name' in value && 'returnType' in value) {
+      // Property holds a serialised DialogFunction shape — resolve to the live instance.
+      const linkedFunc = resolveCaseInsensitive(functionsMap, value.name);
+      if (!linkedFunc) {
+        console.warn(`Function '${value.name}' referenced in dialog '${dialogName}' but not found in model`);
+        linked[key] = value.name;
+      } else {
+        linked[key] = linkedFunc;
+      }
+    } else if (typeof value === 'string' && !literalKeys.includes(key) && resolveCaseInsensitive(functionsMap, value)) {
+      // Property was already normalised to just the function name string.
+      linked[key] = resolveCaseInsensitive(functionsMap, value)!;
+    } else {
+      linked[key] = value;
+    }
+  }
+  return linked;
+}
+
+/** One whole string token, `"…"`; an expression such as `"a" + "b"` is not one. */
+const isStringToken = (value: unknown): value is string => typeof value === 'string' && /^"[^"]*"$/.test(value);
+
+/**
+ * A string-literal property holds its contents. JSON written before that holds
+ * the quoted token; since Daedalus strings cannot contain `"`, a quoted value
+ * that is not an expression is unambiguously such a token. Unwrap it, mark it
+ * literal (before function linking, so it can never become a reference), and
+ * unwrap a preserved body's baseline the same way so it still compares equal.
+ */
+function unquoteLegacyLiterals(dialog: Dialog, rawProperties: Record<string, any>): Record<string, any> {
+  const properties = { ...rawProperties };
+  for (const key of Object.keys(properties)) {
+    const value = properties[key];
+    if (!isStringToken(value)) continue;
+    if (dialog.propertyExpressionKeys?.includes(key)) continue;
+    properties[key] = value.slice(1, -1);
+    dialog.propertyLiteralKeys ??= [];
+    if (!dialog.propertyLiteralKeys.includes(key)) dialog.propertyLiteralKeys.push(key);
+    const baseline = dialog.sourceBody?.propertyValues;
+    if (baseline && baseline[key] === value) baseline[key] = properties[key];
+  }
+  return properties;
+}
+
+/** Lossless fallback for constructors that cannot be represented as property rows. */
+export interface DialogSourceBody {
+  text: string;
+  propertyValues: { [key: string]: string | number | boolean };
+}
+
+/** Function bodies can change independently; constructor references compare by name. */
+export function snapshotDialogProperties(properties: DialogProperties): DialogSourceBody['propertyValues'] {
+  const values = createNameRecord<string | number | boolean>();
+  for (const [key, value] of Object.entries(properties)) {
+    if (value === undefined) continue;
+    values[key] = value instanceof DialogFunction ? value.name : value;
+  }
+  return values;
+}
+
+type DialogFunctionSource = Record<string, DialogFunction> | (() => Record<string, DialogFunction>);
+const dialogFunctionMaps = new WeakMap<Dialog, DialogFunctionSource>();
+
+/** Reference identity is separate from the property's preserved source expression. */
+export function getDialogFunctionName(dialog: Dialog, property: string): string | undefined {
+  const key = Object.keys(dialog.properties || {}).find(name => name.toLowerCase() === property.toLowerCase());
+  if (key === undefined) return undefined;
+  const value = dialog.properties[key];
+  if (value && typeof value === 'object') return value.name;
+  if (typeof value !== 'string') return undefined;
+  if (dialog.propertyLiteralKeys?.includes(key) && !dialog.propertyExpressionKeys?.includes(key)) return undefined;
+  return referenceIdentifierFromText(value);
+}
+
+/** Read the current information/condition link, including wrapped identifier expressions. */
+export function resolveDialogFunction(
+  dialog: Dialog,
+  property: string,
+  functionsMap?: Record<string, DialogFunction>
+): DialogFunction | undefined {
+  const source = dialogFunctionMaps.get(dialog);
+  const currentMap = functionsMap ?? (typeof source === 'function' ? source() : source);
+  const name = getDialogFunctionName(dialog, property);
+  const resolved = name === undefined ? undefined : resolveCaseInsensitive(currentMap, name);
+  // Explicit export maps and model-owned lookups are authoritative, including
+  // deletions. Detached legacy dialogs may still own a direct function object.
+  if (resolved || functionsMap !== undefined || typeof source === 'function') return resolved;
+  const value = getDialogProperty(dialog.properties, property);
+  return value instanceof DialogFunction ? value : undefined;
+}
+
+export class Dialog {
+  public sourceHeader?: SourceHeader;
+  /** Verbatim gap between the closing body brace and declaration semicolon. */
+  public declarationSuffix?: string;
+  public name: string;
+  public parent: string | null;
+  public keyword?: string;
+  public spaceBeforeParen?: boolean;
+  public leadingComments?: string[];
+  public properties: DialogProperties;
+  public propertyFormatting?: PropertyFormatting;
+  public propertyExpressionKeys?: string[];
+  /** Source string literals keep their identity after edits, independently of spelling. */
+  public propertyLiteralKeys?: string[];
+  public sourceBody?: DialogSourceBody;
+  /** Standalone comments preceding a C_INFO property, keyed by property name. */
+  public propertyLeadingComments?: { [key: string]: string[] };
+  /** Same-line trailing comment after a C_INFO property, keyed by property name. */
+  public propertyTrailingComments?: { [key: string]: string };
+  /** Standalone comments after the last property, before the closing `};`. */
+  public trailingBodyComments?: string[];
+  /** Editable view of the current information function, or standalone legacy actions. */
+  public actions!: DialogAction[];
+  /** 1-based line the declaration starts on — its `instance` keyword (#267). */
+  public line?: number;
+
+  constructor(name: string, parent: string | null, functionsMap?: DialogFunctionSource) {
+    this.name = name;
+    this.parent = parent;
+    this.leadingComments = [];
+    this.properties = createNameRecord();
+    this.propertyFormatting = createNameRecord();
+    this.propertyExpressionKeys = [];
+    this.propertyLiteralKeys = ['description'];
+    if (functionsMap) dialogFunctionMaps.set(this, functionsMap);
+    let standaloneActions: DialogAction[] = [];
+    // Keep the existing enumerable JSON shape without serializing the lookup
+    // map or storing a second, independently mutable linked-action snapshot.
+    Object.defineProperty(this, 'actions', {
+      enumerable: true,
+      configurable: true,
+      get: () => resolveDialogFunction(this, 'information')?.actions ?? standaloneActions,
+      set: (actions: DialogAction[]) => {
+        const information = resolveDialogFunction(this, 'information');
+        if (information) information.actions = actions;
+        else standaloneActions = actions;
+      }
+    });
+  }
+
+  static fromJSON(
+    json: any, functionsMap: { [key: string]: DialogFunction }, functionsSource?: () => Record<string, DialogFunction>
+  ): Dialog {
+    // --- property transformation: copy optional scalar fields ---
+    const dialog = new Dialog(json.name, json.parent, functionsSource ?? functionsMap);
+    if (typeof json.declarationSuffix === 'string') {
+      dialog.declarationSuffix = json.declarationSuffix;
+    }
+    if (json.sourceHeader !== undefined) {
+      if (typeof json.sourceHeader?.text !== 'string' || !Array.isArray(json.sourceHeader.fields) ||
+          !Array.isArray(json.sourceHeader.comments)) {
+        throw new Error(`Dialog ${json.name} has invalid declaration header source metadata`);
+      }
+      dialog.sourceHeader = json.sourceHeader;
+    }
+    if (typeof json.keyword === 'string') {
+      dialog.keyword = json.keyword;
+    }
+    if (typeof json.spaceBeforeParen === 'boolean') {
+      dialog.spaceBeforeParen = json.spaceBeforeParen;
+    }
+    if (Array.isArray(json.leadingComments)) {
+      dialog.leadingComments = json.leadingComments;
+    }
+    if (json.propertyFormatting && typeof json.propertyFormatting === 'object') {
+      dialog.propertyFormatting = json.propertyFormatting;
+    }
+    if (Array.isArray(json.propertyExpressionKeys)) {
+      dialog.propertyExpressionKeys = json.propertyExpressionKeys;
+    }
+    if (Array.isArray(json.propertyLiteralKeys)) {
+      dialog.propertyLiteralKeys = json.propertyLiteralKeys;
+    } else {
+      // Older JSON has no literal identity metadata; keep its legacy fallback.
+      delete dialog.propertyLiteralKeys;
+    }
+    if (json.sourceBody !== undefined) {
+      if (typeof json.sourceBody?.text !== 'string' || !json.sourceBody.propertyValues ||
+          typeof json.sourceBody.propertyValues !== 'object' || Array.isArray(json.sourceBody.propertyValues)) {
+        throw new Error(`Dialog ${json.name} has invalid preserved instance body metadata`);
+      }
+      dialog.sourceBody = {
+        text: json.sourceBody.text,
+        propertyValues: Object.assign(createNameRecord<string | number | boolean>(), json.sourceBody.propertyValues)
+      };
+    }
+    if (json.propertyLeadingComments && typeof json.propertyLeadingComments === 'object') {
+      dialog.propertyLeadingComments = json.propertyLeadingComments;
+    }
+    if (json.propertyTrailingComments && typeof json.propertyTrailingComments === 'object') {
+      dialog.propertyTrailingComments = json.propertyTrailingComments;
+    }
+    if (Array.isArray(json.trailingBodyComments)) {
+      dialog.trailingBodyComments = json.trailingBodyComments;
+    }
+    if (typeof json.line === 'number') {
+      dialog.line = json.line;
+    }
+
+    // --- function-reference linking: resolve property values to live DialogFunction instances ---
+    const properties = unquoteLegacyLiterals(dialog, json.properties ?? {});
+    const literalKeys = (dialog.propertyLiteralKeys || []).filter(key => !dialog.propertyExpressionKeys?.includes(key));
+    dialog.properties = linkPropertiesToFunctions(json.name, properties, functionsMap, literalKeys);
+    if (!resolveDialogFunction(dialog, 'information') && Array.isArray(json.actions)) {
+      dialog.actions = json.actions.map((action: any) => deserializeAction(action));
+    }
+
+    return dialog;
+  }
+}
+
+// ===================================================================
+// SEMANTIC MODEL INTERFACE
+// ===================================================================
+
+export interface SyntaxError {
+  type: 'syntax_error' | 'missing_token';
+  message: string;
+  position: {
+    row: number;
+    column: number;
+  };
+  text: string;
+}
+
+export interface SemanticModel {
+  dialogs: { [key: string]: Dialog };
+  functions: { [key: string]: DialogFunction };
+  declarationOrder?: Array<{
+    type: 'dialog' | 'function' | 'constant' | 'variable' | 'instance' | 'class' | 'prototype';
+    name: string;
+    /** Blank lines before the declaration and its leading comments, as parsed (#286) */
+    blankLinesBefore?: number;
+  }>;
+  constants?: { [key: string]: GlobalConstant };
+  variables?: { [key: string]: GlobalVariable };
+  instances?: { [key: string]: GlobalInstance };
+  classes?: { [key: string]: GlobalClass };
+  prototypes?: { [key: string]: GlobalPrototype };
+  items?: { [key: string]: GlobalInstance };
+  npcs?: { [key: string]: GlobalInstance };
+  animations?: { [key: string]: GlobalInstance };
+  /** File-trailing comments (after the last declaration, at EOF). */
+  trailingComments?: string[];
+  errors?: SyntaxError[];
+  hasErrors?: boolean;
+}
+
+// Helper to deserialize full semantic model
+export function deserializeSemanticModel(json: any): SemanticModel {
+  // class-transformer's discriminator handling removes the discriminator from
+  // source objects. Hydration is a boundary operation, so confine that behavior
+  // (and legacy type normalization below) to a private copy of the JSON payload.
+  json = structuredClone(json);
+
+  const model: SemanticModel = {
+    dialogs: createNameRecord(),
+    functions: createNameRecord(),
+    declarationOrder: json.declarationOrder || [],
+    constants: createNameRecord(),
+    variables: createNameRecord(),
+    instances: createNameRecord(),
+    classes: createNameRecord(),
+    prototypes: createNameRecord(),
+    items: createNameRecord(),
+    npcs: createNameRecord(),
+    animations: createNameRecord(),
+    trailingComments: json.trailingComments,
+    errors: json.errors,
+    hasErrors: json.hasErrors
+  };
+
+  // 1. Reconstruct functions first
+  for (const funcName in json.functions) {
+    const funcJson = json.functions[funcName];
+
+    // Ensure types are present in actions and conditions for class-transformer
+    if (funcJson.actions) {
+        funcJson.actions.forEach((a: any) => ensureActionType(a));
+    }
+    if (funcJson.conditions) {
+        funcJson.conditions.forEach((c: any) => ensureConditionType(c));
+    }
+
+    model.functions[funcName] = plainToInstance(DialogFunction as ClassConstructor<any>, funcJson);
+    model.functions[funcName].actions = (model.functions[funcName].actions || []).map((action: any) => deserializeAction(action));
+    model.functions[funcName].calls = funcJson.calls || [];
+    model.functions[funcName].callSites = funcJson.callSites || [];
+  }
+
+  // 2. Reconstruct dialogs and link to functions
+  for (const dialogName in json.dialogs) {
+    model.dialogs[dialogName] = Dialog.fromJSON(json.dialogs[dialogName], model.functions, () => model.functions);
+  }
+
+  // 3. Reconstruct constants
+  if (json.constants) {
+    for (const key in json.constants) {
+      const constant: GlobalConstant = plainToInstance(GlobalConstant as ClassConstructor<any>, json.constants[key]);
+      // JSON from before string constants held their contents carries the token.
+      if (constant.valueIsLiteral === undefined && isStringToken(constant.value)) {
+        constant.value = constant.value.slice(1, -1);
+        constant.valueIsLiteral = true;
+      }
+      model.constants![key] = constant;
+    }
+  }
+
+  // 4. Reconstruct variables
+  if (json.variables) {
+    for (const key in json.variables) {
+      model.variables![key] = plainToInstance(GlobalVariable as ClassConstructor<any>, json.variables[key]);
+    }
+  }
+
+  // 5. Reconstruct instances
+  if (json.instances) {
+    for (const key in json.instances) {
+      model.instances![key] = plainToInstance(GlobalInstance as ClassConstructor<any>, json.instances[key]);
+    }
+  }
+
+  // 6. Reconstruct items
+  if (json.items) {
+    for (const key in json.items) {
+      model.items![key] = plainToInstance(GlobalInstance as ClassConstructor<any>, json.items[key]);
+    }
+  }
+
+  // 7. Reconstruct npcs
+  if (json.npcs) {
+    for (const key in json.npcs) {
+      model.npcs![key] = plainToInstance(GlobalInstance as ClassConstructor<any>, json.npcs[key]);
+    }
+  }
+
+  // 8. Reconstruct animations
+  if (json.animations) {
+    for (const key in json.animations) {
+      model.animations![key] = plainToInstance(GlobalInstance as ClassConstructor<any>, json.animations[key]);
+    }
+  }
+
+  // 9. Reconstruct classes and prototypes
+  if (json.classes) {
+    for (const key in json.classes) {
+      model.classes![key] = plainToInstance(GlobalClass as ClassConstructor<any>, json.classes[key]);
+    }
+  }
+  if (json.prototypes) {
+    for (const key in json.prototypes) {
+      model.prototypes![key] = plainToInstance(GlobalPrototype as ClassConstructor<any>, json.prototypes[key]);
+    }
+  }
+
+  // Backward compatibility: derive categorized maps from instances when missing
+  for (const key in model.instances) {
+    const instance = model.instances[key];
+    const parentType = instance.parent.toUpperCase();
+
+    if (!json.items && parentType === 'C_ITEM') {
+      model.items![key] = instance;
+    }
+
+    if (!json.npcs && parentType === 'C_NPC') {
+      model.npcs![key] = instance;
+    }
+
+    if (!json.animations && parentType === 'C_MDS') {
+      model.animations![key] = instance;
+    }
+  }
+
+  return model;
+}

@@ -1,0 +1,78 @@
+VTrigger: save() drops every bit of `flags`/`filterFlags` that load() does
+not unpack into a bool.
+
+Patch 0028 fixed a real writer/reader asymmetry — `save()` echoed the raw
+`flags`/`filter_flags` bytes captured at load time instead of the bools the
+header documents — by rebuilding both bytes from those bools. But `load()`
+unpacks only bit 0 (`start_enabled`) and bit 2 (`send_untrigger`) of `flags`,
+so bits 1 and 3-7 have no member to be rebuilt from and are written as zero.
+`filter_flags` has the same hole in bits 6 and 7.
+
+ZenGin sets those bits. Re-saving the four retail Gothic II BinSafe worlds
+after 0028 turns 4x `identical` into 4x `semantic-drift`, and every one of the
+121 differing events is this one field on a zCTrigger subclass (NewWorld 108,
+OldWorld 13; the four bytes sampled in OldWorld are all 0b00010010, i.e. bits
+1 and 4, and both are lost).
+
+The fix is 0016's: keep the bits nothing maps to on the object and merge them
+back in when writing, so a loaded-and-saved trigger reproduces the original
+bytes bit-for-bit while a caller that sets a bool still gets its write. The
+two new members are zero-initialized, so a freshly constructed VTrigger is
+unaffected — unlike the deprecated `flags`/`filter_flags` members, which have
+no initializer at all and could not be used for this.
+
+Upstreamable with work: it adds two public fields (`reserved_flags`,
+`reserved_filter_flags`), the same shape and the same justification as 0016's
+`packed_reserved_bit`.
+
+--- a/include/zenkit/vobs/Trigger.hh
++++ b/include/zenkit/vobs/Trigger.hh
+@@ -145,6 +145,17 @@
+ 		/// \see https://zk.gothickit.dev/engine/objects/zCTrigger/#respondToNPC
+ 		bool respond_to_npc;
+ 
++		/// \brief The bits of the deprecated `flags` byte which have no dedicated member (bits 1 and 3-7).
++		///
++		/// <p>#load only unpacks bit 0 into #start_enabled and bit 2 into #send_untrigger, and #save rebuilds the
++		/// byte from those two members. The remaining bits have no meaning here but are set in retail worlds, so
++		/// they are kept and written back to reproduce the original byte.</p>
++		std::uint8_t reserved_flags {0};
++
++		/// \brief The bits of the deprecated `filter_flags` byte which have no dedicated member (bits 6 and 7).
++		/// \see #reserved_flags
++		std::uint8_t reserved_filter_flags {0};
++
+ 		/// \brief Whether this trigger should process events coming from VObjects with this name.
+ 		/// \see https://zk.gothickit.dev/engine/objects/zCTrigger/#respondToVobName
+ 		std::string vob_target;
+--- a/src/vobs/Trigger.cc
++++ b/src/vobs/Trigger.cc
+@@ -28,6 +28,11 @@
+ 		this->respond_to_pc = (this->filter_flags & 16) >> 4;     // respondToPC
+ 		this->respond_to_npc = (this->filter_flags & 32) >> 5;    // respondToNPC
+ 
++		// Bits no member above maps to. ZenGin sets them in retail worlds, so keep them
++		// for save() rather than losing them to the rebuild there.
++		this->reserved_flags = this->flags & 0b11111010;
++		this->reserved_filter_flags = this->filter_flags & 0b11000000;
++
+ 		this->s_count_can_be_activated = this->max_activation_count;
+ 
+ 		if (r.is_save_game()) {
+@@ -52,11 +57,13 @@
+ 		// whatever the archive happened to hold at load time (0 for a freshly
+ 		// constructed object). Reconstruct the packed bytes from the bools here, the
+ 		// exact inverse of the unpacking in load(), instead of echoing the stale
+-		// members.
+-		std::uint8_t flags = 0;
++		// members. The bits neither byte unpacks are carried on `reserved_flags` /
++		// `reserved_filter_flags` and merged back in, so a loaded-and-saved trigger
++		// still reproduces the original bytes exactly.
++		std::uint8_t flags = this->reserved_flags;
+ 		flags |= this->start_enabled << 0;
+ 		flags |= this->send_untrigger << 2;
+-		std::uint8_t filter_flags = 0;
++		std::uint8_t filter_flags = this->reserved_filter_flags;
+ 		filter_flags |= this->react_to_on_trigger << 0;
+ 		filter_flags |= this->react_to_on_touch << 1;
+ 		filter_flags |= this->react_to_on_damage << 2;

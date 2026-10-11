@@ -1,0 +1,719 @@
+#include "assets.hh"
+
+#include <zenkit/Mesh.hh>
+#include <zenkit/Model.hh>
+#include <zenkit/ModelAnimation.hh>
+#include <zenkit/ModelHierarchy.hh>
+#include <zenkit/ModelMesh.hh>
+#include <zenkit/ModelScript.hh>
+#include <zenkit/MorphMesh.hh>
+#include <zenkit/MultiResolutionMesh.hh>
+#include <zenkit/Stream.hh>
+#include <zenkit/Texture.hh>
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <exception>
+#include <filesystem>
+#include <optional>
+#include <string>
+#include <vector>
+
+#include "mesh_extract.hh"
+#include "napi_helpers.hh"
+
+namespace zenkit_node {
+
+namespace {
+
+using namespace zenkit;
+
+std::string Upper(std::string value) {
+  std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+    return static_cast<char>(std::toupper(c));
+  });
+  return value;
+}
+
+bool EndsWith(std::string const& value, std::string_view suffix) {
+  return value.size() >= suffix.size() &&
+      value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+std::string StripExtension(std::string const& name) {
+  auto const dot = name.rfind('.');
+  return dot == std::string::npos ? name : name.substr(0, dot);
+}
+
+// ZenGin VOBs name their *source* assets (.3DS, .ASC, .MDS, .MMS) while the VFS
+// holds what the asset compiler produced. The mapping is fixed and documented,
+// so it is spelled out rather than probed: guessing an asset is how the wrong
+// mesh ends up on screen with nothing reporting a problem.
+std::vector<std::string> VisualCandidates(std::string const& name) {
+  auto const upper = Upper(name);
+  auto const stem = StripExtension(upper);
+
+  if (EndsWith(upper, ".3DS")) return {stem + ".MRM", stem + ".MSH"};
+  if (EndsWith(upper, ".ASC") || EndsWith(upper, ".MDS")) return {stem + ".MDL", stem + ".MDM"};
+  if (EndsWith(upper, ".MMS")) return {stem + ".MMB"};
+  return {upper};
+}
+
+// A compiled ZTEX is the source name with the "-C" suffix ZenGin's texture
+// compiler appends: NW_HARBOUR_01.TGA -> NW_HARBOUR_01-C.TEX.
+std::vector<std::string> TextureCandidates(std::string const& name) {
+  auto const upper = Upper(name);
+  if (EndsWith(upper, ".TEX")) return {upper};
+  return {StripExtension(upper) + "-C.TEX", upper};
+}
+
+VfsNode const* FindFirst(Vfs const& vfs,
+                         std::vector<std::string> const& candidates,
+                         std::string* resolved) {
+  for (auto const& candidate : candidates) {
+    auto const* node = vfs.find(candidate);
+    if (node != nullptr && node->type() == VfsNodeType::FILE) {
+      if (resolved != nullptr) *resolved = candidate;
+      return node;
+    }
+  }
+  return nullptr;
+}
+
+Mat4 AnimationTransform(AnimationSample const& sample) {
+  auto const& q = sample.rotation;
+  auto const xx = q.x * q.x, yy = q.y * q.y, zz = q.z * q.z;
+  auto const xy = q.x * q.y, xz = q.x * q.z, yz = q.y * q.z;
+  auto const wx = q.w * q.x, wy = q.w * q.y, wz = q.w * q.z;
+  Mat4 out {};
+  out.columns[0] = Vec4 {1 - 2 * (yy + zz), 2 * (xy + wz), 2 * (xz - wy), 0};
+  out.columns[1] = Vec4 {2 * (xy - wz), 1 - 2 * (xx + zz), 2 * (yz + wx), 0};
+  out.columns[2] = Vec4 {2 * (xz + wy), 2 * (yz - wx), 1 - 2 * (xx + yy), 0};
+  out.columns[3] = Vec4 {sample.position.x, sample.position.y, sample.position.z, 1};
+  return out;
+}
+
+bool ApplyAnimation(Vfs const& vfs, std::string const& model_name,
+                    std::string const& clip_name, float phase,
+                    ModelHierarchy& hierarchy) {
+  auto const stem = StripExtension(Upper(model_name));
+  auto const* script_node = FindFirst(vfs, {stem + ".MSB", stem + ".MDS"}, nullptr);
+  if (script_node == nullptr) return false;
+  ModelScript script {};
+  auto script_reader = script_node->open_read();
+  script.load(script_reader.get());
+
+  auto wanted = Upper(clip_name);
+  MdsAnimation const* source = nullptr;
+  for (std::size_t depth = 0; depth <= script.aliases.size(); ++depth) {
+    auto const animation = std::find_if(script.animations.begin(), script.animations.end(), [&](auto const& item) {
+      return Upper(item.name) == wanted;
+    });
+    if (animation != script.animations.end()) { source = &*animation; break; }
+    auto const alias = std::find_if(script.aliases.begin(), script.aliases.end(), [&](auto const& item) {
+      return Upper(item.name) == wanted;
+    });
+    if (alias == script.aliases.end() || Upper(alias->alias) == wanted) break;
+    wanted = Upper(alias->alias);
+  }
+  if (source == nullptr || source->model.empty()) return false;
+  auto const* animation_node = FindFirst(vfs, {source->model}, nullptr);
+  if (animation_node == nullptr) return false;
+  ModelAnimation animation {};
+  auto animation_reader = animation_node->open_read();
+  animation.load(animation_reader.get());
+  if (animation.frame_count == 0 || animation.node_count == 0 || animation.samples.empty()) return false;
+
+  auto const frame = static_cast<std::uint32_t>(std::round(
+      std::clamp(phase, 0.0f, 1.0f) * static_cast<float>(animation.frame_count - 1)));
+  for (std::uint32_t node = 0; node < animation.node_count; ++node) {
+    if (node >= animation.node_indices.size()) break;
+    auto const hierarchy_node = animation.node_indices[node];
+    if (hierarchy_node >= hierarchy.nodes.size()) continue;
+    auto const sample_index = static_cast<std::size_t>(frame) * animation.node_count + node;
+    if (sample_index >= animation.samples.size()) continue;
+    hierarchy.nodes[hierarchy_node].transform = AnimationTransform(animation.samples[sample_index]);
+  }
+  return true;
+}
+
+// How many matches `vfsFind` walks to before it stops. A retail install mounts
+// tens of thousands of entries and a three-letter needle matches thousands of
+// them; a search box that answers all of them has answered nothing.
+constexpr std::size_t DEFAULT_FIND_LIMIT = 500;
+
+// The VFS half of `binding.cc`'s `kWorldHandleTag`, and a different UUID for
+// the same reason: `IsExternal()` is true of every handle this addon hands out,
+// so without a tag a world handle passed here has its pointer cast to
+// `VfsHandle*` and dereferenced (review 2026-09-04 §2.12).
+constexpr napi_type_tag kVfsHandleTag = {0x4c81f2a760d34b19ULL, 0x8e27b5306ca9df41ULL};
+
+VfsHandle* UnwrapVfs(Napi::Env env, Napi::Value value) {
+  if (!value.IsExternal() || !value.As<Napi::External<VfsHandle>>().CheckTypeTag(
+          &kVfsHandleTag)) {
+    throw Napi::TypeError::New(env, "expected a VFS handle returned by openVfs()");
+  }
+  auto* handle = value.As<Napi::External<VfsHandle>>().Data();
+  if (handle == nullptr) throw Napi::Error::New(env, "invalid VFS handle");
+  return handle;
+}
+
+// A name, a path or a query addressing the mounted namespace. ZenKit holds
+// every VFS name as raw windows-1252 bytes — a VDF and a Gothic asset folder
+// are both written in it — so the caller's string has to be encoded the same
+// way to compare equal to one, exactly as a waypoint name does (binding.cc,
+// RequiredCp1252Arg). Read as UTF-8 it was two bytes where the archive has one,
+// so a name this addon had just *listed* addressed nothing.
+//
+// A string windows-1252 cannot hold comes back empty rather than throwing: it
+// names nothing here, and "nothing here" is what every one of these functions
+// already answers for a name that is simply absent.
+std::optional<std::string> NameArg(Napi::Env env, Napi::Value value, char const* what) {
+  if (!value.IsString()) {
+    throw Napi::TypeError::New(env, std::string {what} + " must be a string");
+  }
+  return zenkit_node::TryUtf16ToWindows1252(value.As<Napi::String>().Utf16Value());
+}
+
+std::filesystem::path PathArg(Napi::Env env, Napi::Value value) {
+  if (!value.IsString()) throw Napi::TypeError::New(env, "each VFS path must be a string");
+  std::u16string const utf16 = value.As<Napi::String>().Utf16Value();
+  return std::filesystem::path {std::wstring {utf16.begin(), utf16.end()}};
+}
+
+}  // namespace
+
+Napi::Value OpenVfs(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  if (!info[0].IsArray()) {
+    throw Napi::TypeError::New(env, "openVfs(paths) expects an array of paths");
+  }
+  auto paths = info[0].As<Napi::Array>();
+
+  auto overwrite = VfsOverwriteBehavior::ALL;
+  if (info[1].IsObject()) {
+    auto value = info[1].As<Napi::Object>().Get("overwrite");
+    // `decodeTexture`'s rule, for its reason: this decides which mounted source
+    // wins a name collision, so a value silently ignored is a namespace the
+    // caller did not ask for — and an unknown *string* was already refused,
+    // which is the same mistake spelled differently.
+    if (!value.IsUndefined() && !value.IsNull()) {
+      if (!value.IsString()) {
+        throw Napi::TypeError::New(env, "overwrite must be 'all', 'none', 'newer' or 'older'");
+      }
+      auto const mode = value.As<Napi::String>().Utf8Value();
+      if (mode == "all") overwrite = VfsOverwriteBehavior::ALL;
+      else if (mode == "none") overwrite = VfsOverwriteBehavior::NONE;
+      else if (mode == "newer") overwrite = VfsOverwriteBehavior::NEWER;
+      else if (mode == "older") overwrite = VfsOverwriteBehavior::OLDER;
+      else throw Napi::TypeError::New(env, "overwrite must be 'all', 'none', 'newer' or 'older'");
+    }
+  }
+
+  auto handle = std::make_unique<VfsHandle>();
+  for (std::uint32_t i = 0; i < paths.Length(); ++i) {
+    auto path = PathArg(env, paths.Get(i));
+    std::error_code ec {};
+    bool const is_directory = std::filesystem::is_directory(path, ec);
+    if (ec) throw Napi::Error::New(env, "cannot stat VFS path: " + path.string());
+
+    // The same mount twice: once into the merged namespace every read goes
+    // through, once into a namespace of its own so a listing can say where an
+    // entry came from. A VDF mount is index-only and a host mount's second
+    // pass re-walks a directory the OS has just cached, so this is the cost
+    // the source facet is worth paying.
+    auto& own = handle->sources.emplace_back(std::make_unique<Vfs>());
+    try {
+      // Later paths win, so a mod directory listed after the retail VDFs
+      // overrides them — the load order ZenGin itself uses.
+      if (is_directory) {
+        handle->vfs.mount_host(path, "/", overwrite);
+        own->mount_host(path, "/", overwrite);
+      } else {
+        handle->vfs.mount_disk(path, overwrite);
+        own->mount_disk(path, overwrite);
+      }
+    } catch (std::exception const& e) {
+      throw Napi::Error::New(env, "failed to mount '" + path.string() + "': " + e.what());
+    }
+  }
+
+  auto external = Napi::External<VfsHandle>::New(
+      env, handle.release(), [](Napi::Env, VfsHandle* data) { delete data; });
+  external.TypeTag(&kVfsHandleTag);
+  return external;
+}
+
+Napi::Value VfsResolve(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapVfs(env, info[0]);
+  auto const name = NameArg(env, info[1], "name");
+  if (!name) return env.Null();
+
+  std::string resolved;
+  auto candidates = VisualCandidates(*name);
+  auto const& textures = TextureCandidates(*name);
+  candidates.insert(candidates.end(), textures.begin(), textures.end());
+
+  if (FindFirst(handle->vfs, candidates, &resolved) == nullptr) return env.Null();
+  return Str(env, resolved);
+}
+
+Napi::Value VfsList(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapVfs(env, info[0]);
+  std::optional<std::string> path {"/"};
+  if (!info[1].IsUndefined()) path = NameArg(env, info[1], "path");
+  if (!path) return env.Null();
+
+  // `resolve` answers for "/" as well as for any node below it, so the root
+  // needs no special case — a sabotage that removed one proved it was never
+  // reached.
+  VfsNode const* node = handle->vfs.resolve(*path);
+
+  // A file is not a listing failure the caller should have to tell apart from
+  // a missing path — both mean "there is nothing here to list".
+  if (node == nullptr || node->type() != VfsNodeType::DIRECTORY) return env.Null();
+
+  auto const& children = node->children();
+  auto entries = Napi::Array::New(env, children.size());
+
+  // The same directory in each source, resolved once for the whole listing
+  // rather than once per entry: a directory of a few hundred files against
+  // seven mounts is otherwise a few thousand path walks to answer one
+  // listing. Null where a source has no such directory at all.
+  std::vector<VfsNode const*> per_source;
+  per_source.reserve(handle->sources.size());
+  for (auto const& source : handle->sources) {
+    auto const* at_source = source->resolve(*path);
+    per_source.push_back(at_source != nullptr && at_source->type() == VfsNodeType::DIRECTORY
+                             ? at_source
+                             : nullptr);
+  }
+
+  // The container is a std::set ordered by the node comparator, so the order
+  // here is stable across runs without sorting anything.
+  std::vector<std::uint32_t> holders;
+  holders.reserve(per_source.size());
+  std::uint32_t at = 0;
+  for (auto const& child : children) {
+    auto entry = Napi::Object::New(env);
+    entry.Set("name", Str(env, child.name()));
+    entry.Set("type", Napi::String::New(
+                          env, child.type() == VfsNodeType::DIRECTORY ? "directory" : "file"));
+
+    // Ascending, so the last index is the source the merged tree serves and
+    // the earlier ones are what it shadows. Collected first and handed to an
+    // array of exactly that length: almost every entry is held by one source,
+    // and growing a JS array one `Set` at a time is the expensive way to say
+    // so over a directory of several thousand.
+    holders.clear();
+    for (std::uint32_t i = 0; i < per_source.size(); ++i) {
+      if (per_source[i] == nullptr || per_source[i]->child(child.name()) == nullptr) continue;
+      holders.push_back(i);
+    }
+    auto sources = Napi::Array::New(env, holders.size());
+    for (std::uint32_t at_holder = 0; at_holder < holders.size(); ++at_holder) {
+      sources.Set(at_holder, Napi::Number::New(env, holders[at_holder]));
+    }
+    entry.Set("sources", sources);
+
+    entries.Set(at++, entry);
+  }
+  return entries;
+}
+
+Napi::Value VfsFind(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapVfs(env, info[0]);
+
+  auto const query = NameArg(env, info[1], "query");
+  // An empty query is still the caller's mistake and still refused below; a
+  // query windows-1252 cannot hold is a search that matches nothing, which is
+  // an ordinary empty result and not an error.
+  auto const raw = query.value_or(std::string {});
+  auto const first = raw.find_first_not_of(" \t\r\n");
+  auto const last = raw.find_last_not_of(" \t\r\n");
+  if (first == std::string::npos) {
+    if (!query) {
+      auto empty = Napi::Object::New(env);
+      empty.Set("matches", Napi::Array::New(env, 0));
+      empty.Set("truncated", Napi::Boolean::New(env, false));
+      return empty;
+    }
+    // An empty needle matches every one of the tens of thousands of entries a
+    // retail install mounts. The caller wanting all of them wants `vfsList`.
+    throw Napi::TypeError::New(env, "vfsFind(handle, query) needs a non-empty query");
+  }
+  auto const needle = Upper(raw.substr(first, last - first + 1));
+
+  std::size_t limit = DEFAULT_FIND_LIMIT;
+  if (info[2].IsObject()) {
+    auto value = info[2].As<Napi::Object>().Get("limit");
+    if (value.IsNumber()) {
+      auto const asked = value.As<Napi::Number>().Int64Value();
+      if (asked <= 0) throw Napi::TypeError::New(env, "limit must be a positive integer");
+      limit = static_cast<std::size_t>(asked);
+    }
+  }
+
+  // One directory of the merged tree, with the same directory in each source
+  // beside it — resolved once per directory rather than once per match, for
+  // the reason VfsList gives. Null where a source has no such directory.
+  struct Frame {
+    VfsNode const* node;
+    std::vector<VfsNode const*> per_source;
+    std::string path;
+  };
+
+  Frame root {handle->vfs.resolve("/"), {}, "/"};
+  if (root.node == nullptr || root.node->type() != VfsNodeType::DIRECTORY) {
+    auto empty = Napi::Object::New(env);
+    empty.Set("matches", Napi::Array::New(env, 0));
+    empty.Set("truncated", Napi::Boolean::New(env, false));
+    return empty;
+  }
+  root.per_source.reserve(handle->sources.size());
+  for (auto const& source : handle->sources) {
+    auto const* at_source = source->resolve("/");
+    root.per_source.push_back(
+        at_source != nullptr && at_source->type() == VfsNodeType::DIRECTORY ? at_source : nullptr);
+  }
+
+  struct Match {
+    std::string name;
+    std::string directory;
+    bool is_directory;
+    std::vector<std::uint32_t> sources;
+  };
+  std::vector<Match> matches;
+  bool truncated = false;
+
+  // Breadth-first, so what is near the root is found first: a search box is
+  // asked for a name, and the shallower answer is the likelier one.
+  std::vector<Frame> queue;
+  queue.push_back(std::move(root));
+  for (std::size_t at = 0; at < queue.size() && !truncated; ++at) {
+    // Taken by value: the loop below pushes onto `queue`, and a reallocation
+    // would leave a reference into the freed buffer to walk the rest of the
+    // directory through. The copy is a handful of pointers and one path.
+    Frame const frame = queue[at];
+    for (auto const& child : frame.node->children()) {
+      bool const is_directory = child.type() == VfsNodeType::DIRECTORY;
+      auto const child_path =
+          frame.path == "/" ? child.name() : frame.path + "/" + child.name();
+
+      if (Upper(child.name()).find(needle) != std::string::npos) {
+        if (matches.size() == limit) {
+          truncated = true;
+          break;
+        }
+        std::vector<std::uint32_t> holders;
+        for (std::uint32_t i = 0; i < frame.per_source.size(); ++i) {
+          if (frame.per_source[i] == nullptr) continue;
+          if (frame.per_source[i]->child(child.name()) == nullptr) continue;
+          holders.push_back(i);
+        }
+        matches.push_back(Match {child.name(), frame.path, is_directory, std::move(holders)});
+      }
+
+      if (!is_directory) continue;
+      Frame next {&child, {}, child_path};
+      next.per_source.reserve(frame.per_source.size());
+      for (auto const* at_source : frame.per_source) {
+        auto const* below = at_source == nullptr ? nullptr : at_source->child(child.name());
+        next.per_source.push_back(
+            below != nullptr && below->type() == VfsNodeType::DIRECTORY ? below : nullptr);
+      }
+      queue.push_back(std::move(next));
+    }
+  }
+
+  // Directories first, the order a listing is sorted into: descending is the
+  // useful action on a directory hit and one buried among the files is a hunt.
+  // Stable, so the breadth-first order survives inside each half.
+  std::stable_partition(matches.begin(), matches.end(),
+                        [](Match const& match) { return match.is_directory; });
+
+  auto found = Napi::Array::New(env, matches.size());
+  for (std::uint32_t at = 0; at < matches.size(); ++at) {
+    auto const& match = matches[at];
+    auto entry = Napi::Object::New(env);
+    entry.Set("name", Str(env, match.name));
+    entry.Set("directory", Str(env, match.directory));
+    entry.Set("type", Napi::String::New(env, match.is_directory ? "directory" : "file"));
+    auto sources = Napi::Array::New(env, match.sources.size());
+    for (std::uint32_t held = 0; held < match.sources.size(); ++held) {
+      sources.Set(held, Napi::Number::New(env, match.sources[held]));
+    }
+    entry.Set("sources", sources);
+    found.Set(at, entry);
+  }
+
+  auto result = Napi::Object::New(env);
+  result.Set("matches", found);
+  result.Set("truncated", Napi::Boolean::New(env, truncated));
+  return result;
+}
+
+Napi::Value VfsRead(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapVfs(env, info[0]);
+  auto const name = NameArg(env, info[1], "name");
+  if (!name) return env.Null();
+
+  // Vfs::find is a by-name lookup over the whole tree, and ZenKit stores names
+  // as the archive spells them (upper case in every retail VDF) — the same
+  // normalisation VisualCandidates and TextureCandidates apply.
+  auto const* node = handle->vfs.find(Upper(*name));
+  if (node == nullptr || node->type() != VfsNodeType::FILE) return env.Null();
+
+  try {
+    auto reader = node->open_read();
+    reader->seek(0, Whence::END);
+    auto const size = reader->tell();
+    reader->seek(0, Whence::BEG);
+
+    auto buffer = Napi::Buffer<std::uint8_t>::New(env, size);
+    if (size > 0 && reader->read(buffer.Data(), size) != size) {
+      throw Napi::Error::New(env,
+                             "short read from VFS entry: " + zenkit_node::Windows1252ToUtf8(*name));
+    }
+    return buffer;
+  } catch (Napi::Error const&) {
+    throw;
+  } catch (std::exception const& e) {
+    throw Napi::Error::New(env, std::string {"cannot read VFS entry "}
+                                    + zenkit_node::Windows1252ToUtf8(*name) + ": " + e.what());
+  }
+}
+
+Napi::Value ExtractVisual(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapVfs(env, info[0]);
+  auto const name = NameArg(env, info[1], "name");
+  if (!name) return env.Null();
+  std::optional<std::string> skeleton_name;
+  if (!info[2].IsUndefined() && !info[2].IsNull()) {
+    skeleton_name = NameArg(env, info[2], "skeleton");
+    if (!skeleton_name) return env.Null();
+  }
+  float fatness = 0.0f;
+  if (!info[3].IsUndefined() && !info[3].IsNull()) {
+    if (!info[3].IsNumber() || !std::isfinite(info[3].As<Napi::Number>().FloatValue())) {
+      throw Napi::TypeError::New(env, "fatness must be a finite number");
+    }
+    fatness = info[3].As<Napi::Number>().FloatValue();
+  }
+  std::optional<std::string> animation_name;
+  if (!info[4].IsUndefined() && !info[4].IsNull()) {
+    animation_name = NameArg(env, info[4], "animation");
+    if (!animation_name) return env.Null();
+  }
+  float animation_phase = 0.0f;
+  if (!info[5].IsUndefined() && !info[5].IsNull()) {
+    if (!info[5].IsNumber() || !std::isfinite(info[5].As<Napi::Number>().FloatValue()))
+      throw Napi::TypeError::New(env, "animation phase must be a finite number");
+    animation_phase = info[5].As<Napi::Number>().FloatValue();
+  }
+
+  std::string resolved;
+  auto const* node = FindFirst(handle->vfs, VisualCandidates(*name), &resolved);
+  if (node == nullptr) return env.Null();
+
+  try {
+    auto reader = node->open_read();
+    Napi::Object payload;
+
+    if (EndsWith(resolved, ".MRM")) {
+      MultiResolutionMesh mesh {};
+      mesh.load(reader.get());
+      payload = ExtractProtoMesh(env, mesh);
+    } else if (EndsWith(resolved, ".MSH")) {
+      Mesh mesh {};
+      // Compiled .MSH visuals are the same zCMesh class as the world mesh.
+      mesh.load(reader.get(), false);
+      payload = ExtractMesh(env, mesh, true);
+    } else if (EndsWith(resolved, ".MMB")) {
+      MorphMesh mesh {};
+      mesh.load(reader.get());
+      payload = ExtractProtoMesh(env, mesh.mesh);
+    } else if (EndsWith(resolved, ".MDM") || EndsWith(resolved, ".MDL")) {
+      // The default extraction keeps stored positions; NPC previews can ask
+      // for a skinned rest pose. A model's geometry is in two places, and a
+      // static prop's is entirely in the second: `meshes` holds soft-skin
+      // bodies, `attachments` holds rigid sub-meshes hung on hierarchy nodes.
+      ModelMesh model {};
+      ModelHierarchy hierarchy {};
+
+      if (EndsWith(resolved, ".MDL")) {
+        Model full {};
+        full.load(reader.get());
+        model = std::move(full.mesh);
+        hierarchy = std::move(full.hierarchy);
+      } else {
+        model.load(reader.get());
+        // A .MDM carries attachments but no node transforms at all; they live
+        // in the .MDH beside it, which is how ZenGin pairs the two. Every one
+        // of NewWorld's 12 .MDM visuals has one. Without it the attachments
+        // cannot be placed, so they are not emitted rather than emitted wrong.
+        std::string hierarchy_name;
+        auto const* mdh = FindFirst(handle->vfs,
+                                    {resolved.substr(0, resolved.size() - 4) + ".MDH"},
+                                    &hierarchy_name);
+        if (mdh != nullptr) {
+          auto hierarchy_reader = mdh->open_read();
+          hierarchy.load(hierarchy_reader.get());
+        }
+      }
+
+      if (skeleton_name && hierarchy.nodes.empty()) {
+        auto const stem = StripExtension(Upper(*skeleton_name));
+        std::string skeleton_resolved;
+        auto const* skeleton = FindFirst(handle->vfs, {stem + ".MDH", stem + ".MDL"}, &skeleton_resolved);
+        if (skeleton == nullptr) return env.Null();
+        auto skeleton_reader = skeleton->open_read();
+        if (EndsWith(skeleton_resolved, ".MDL")) {
+          Model full {};
+          full.load(skeleton_reader.get());
+          hierarchy = std::move(full.hierarchy);
+        } else {
+          hierarchy.load(skeleton_reader.get());
+        }
+      }
+
+      if (animation_name && skeleton_name)
+        ApplyAnimation(handle->vfs, *skeleton_name, *animation_name, animation_phase, hierarchy);
+
+      if (model.meshes.empty() && model.attachments.empty()) return env.Null();
+      payload = ExtractModelMesh(env, model, hierarchy, skeleton_name.has_value(), fatness);
+    } else {
+      return env.Null();
+    }
+
+    payload.Set("source", Str(env, resolved));
+    return payload;
+  } catch (Napi::Error&) {
+    throw;
+  } catch (std::exception& e) {
+    throw Napi::Error::New(env,
+                           "failed to extract visual '" + resolved + "': " + std::string {e.what()});
+  }
+}
+
+Napi::Value ExtractHierarchyFromVfs(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapVfs(env, info[0]);
+  auto const name = NameArg(env, info[1], "name");
+  if (!name) return env.Null();
+  std::optional<std::string> animation_name;
+  if (!info[2].IsUndefined() && !info[2].IsNull()) {
+    animation_name = NameArg(env, info[2], "animation");
+    if (!animation_name) return env.Null();
+  }
+  float animation_phase = 0.0f;
+  if (!info[3].IsUndefined() && !info[3].IsNull()) {
+    if (!info[3].IsNumber() || !std::isfinite(info[3].As<Napi::Number>().FloatValue()))
+      throw Napi::TypeError::New(env, "animation phase must be a finite number");
+    animation_phase = info[3].As<Napi::Number>().FloatValue();
+  }
+
+  // A standalone .MDH first: human bodies are .MDM files with no .MDH of their
+  // own, all hung on HUMANS.MDH, which is named after the .MDS, not the mesh.
+  auto const stem = StripExtension(Upper(*name));
+  std::string resolved;
+  auto const* node = FindFirst(handle->vfs, {stem + ".MDH", stem + ".MDL"}, &resolved);
+  if (node == nullptr) return env.Null();
+
+  try {
+    auto reader = node->open_read();
+    ModelHierarchy hierarchy {};
+    if (EndsWith(resolved, ".MDL")) {
+      Model full {};
+      full.load(reader.get());
+      hierarchy = std::move(full.hierarchy);
+    } else {
+      hierarchy.load(reader.get());
+    }
+    if (animation_name)
+      ApplyAnimation(handle->vfs, *name, *animation_name, animation_phase, hierarchy);
+    auto payload = zenkit_node::ExtractHierarchy(env, hierarchy);
+    payload.Set("source", Str(env, resolved));
+    return payload;
+  } catch (Napi::Error&) {
+    throw;
+  } catch (std::exception& e) {
+    throw Napi::Error::New(env,
+                           "failed to extract hierarchy '" + resolved + "': " + std::string {e.what()});
+  }
+}
+
+Napi::Value DecodeTexture(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapVfs(env, info[0]);
+  auto const name = NameArg(env, info[1], "name");
+
+  std::uint32_t level = 0;
+  // Absent, `undefined` and `null` all mean "no level" — the idiom the optional
+  // bbox in `setVobRotation` already uses. Anything else is a caller who meant
+  // something: a `'1'` used to be *ignored* and mipmap 0 came back reporting
+  // success for a level nobody asked for (review 2026-09-04 §2.15).
+  if (!info[2].IsUndefined() && !info[2].IsNull()) {
+    if (!info[2].IsNumber()) {
+      throw Napi::TypeError::New(env, "mipmap level must be a number");
+    }
+    // Range-check before the cast, not after: NaN and 1e20 both narrow to 0,
+    // so the check below would pass and mipmap 0 come back reporting success
+    // for a level the caller never asked for. Same reason OptionalInt32 and
+    // OptionalWholeInt refuse a non-integral or out-of-range double.
+    auto const requested = info[2].As<Napi::Number>().DoubleValue();
+    if (requested < 0) throw Napi::TypeError::New(env, "mipmap level must not be negative");
+    if (!std::isfinite(requested) || requested != std::floor(requested) ||
+        requested > 4294967295.0) {
+      throw Napi::TypeError::New(env, "mipmap level must be a whole number");
+    }
+    level = static_cast<std::uint32_t>(requested);
+  }
+
+  // After the level check, not before it: a level that is not a number is the
+  // caller's bug and says so, where a name windows-1252 cannot hold is only a
+  // lookup that finds nothing.
+  if (!name) return env.Null();
+
+  std::string resolved;
+  auto const* node = FindFirst(handle->vfs, TextureCandidates(*name), &resolved);
+  if (node == nullptr) return env.Null();
+
+  try {
+    auto reader = node->open_read();
+    Texture texture {};
+    texture.load(reader.get());
+
+    if (level >= texture.mipmaps()) {
+      throw Napi::Error::New(env, "mipmap level " + std::to_string(level) + " does not exist in '" +
+                                      resolved + "' (" + std::to_string(texture.mipmaps()) +
+                                      " levels)");
+    }
+
+    // ZTEX ships DXT1/3/5 and palettised formats; as_rgba8 is ZenKit's decoder
+    // for all of them, so the renderer never sees a compressed format it would
+    // have to special-case.
+    auto rgba = texture.as_rgba8(level);
+
+    auto payload = Napi::Object::New(env);
+    payload.Set("source", Str(env, resolved));
+    payload.Set("width", Napi::Number::New(env, texture.mipmap_width(level)));
+    payload.Set("height", Napi::Number::New(env, texture.mipmap_height(level)));
+    payload.Set("mipmaps", Napi::Number::New(env, texture.mipmaps()));
+    payload.Set("rgba", Buffer(env, rgba));
+    return payload;
+  } catch (Napi::Error&) {
+    throw;
+  } catch (std::exception& e) {
+    throw Napi::Error::New(env,
+                           "failed to decode texture '" + resolved + "': " + std::string {e.what()});
+  }
+}
+
+}  // namespace zenkit_node

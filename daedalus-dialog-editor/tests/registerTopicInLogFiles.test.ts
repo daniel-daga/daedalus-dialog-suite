@@ -1,0 +1,188 @@
+/**
+ * Issue #114: projectStore.registerTopicInLogFiles writes the TOPIC_/MIS_
+ * declarations into the LOG constants file and the B_CloseTopic call into the
+ * B_CloseTopics function, then folds the re-parsed models into the merged
+ * semantic model.
+ */
+import { useProjectStore } from '../src/renderer/store/projectStore';
+
+const CONSTANTS_FILE = 'C:/project/Story/Log_Constants_Test.d';
+const CLOSE_TOPICS_FILE = 'C:/project/Story/B_CloseTopicsTest.d';
+
+const CONSTANTS_CONTENT = 'const string TOPIC_Old = "Old Quest";\nvar int MIS_Old;\n';
+const CLOSE_TOPICS_CONTENT = `FUNC VOID B_CloseTopicsTest()
+{
+\tB_CloseTopic (TOPIC_Old, MIS_Old, 0, 2);
+};
+`;
+
+const mockReadFile = jest.spyOn(window.editorAPI, 'readFile');
+const mockWriteFile = jest.spyOn(window.editorAPI, 'writeFile');
+const mockParseDialogFile = jest.spyOn(window.editorAPI, 'parseDialogFile');
+
+describe('projectStore.registerTopicInLogFiles', () => {
+  let files: Record<string, string>;
+
+  beforeEach(() => {
+    useProjectStore.setState({
+      projectPath: 'C:/project',
+      parsedFiles: new Map(),
+      mergedSemanticModel: {
+        dialogs: {}, functions: {}, constants: {}, variables: {},
+        instances: {}, items: {}, npcs: {}, animations: {},
+        hasErrors: false, errors: []
+      } as any
+    });
+
+    files = {
+      [CONSTANTS_FILE]: CONSTANTS_CONTENT,
+      [CLOSE_TOPICS_FILE]: CLOSE_TOPICS_CONTENT
+    };
+    mockReadFile.mockClear().mockImplementation(async (p: string) => {
+      if (files[p] === undefined) throw new Error(`File not found: ${p}`);
+      return files[p];
+    });
+    mockWriteFile.mockClear().mockImplementation(async (p: string, content: string) => {
+      files[p] = content;
+      return { success: true } as any;
+    });
+    mockParseDialogFile.mockClear().mockImplementation(async (p: string) => {
+      if (p === CONSTANTS_FILE) {
+        return {
+          dialogs: {}, functions: {},
+          constants: { TOPIC_Dalvins: { name: 'TOPIC_Dalvins', type: 'string', value: 'Dalvins Spitzhacken' } },
+          variables: { MIS_Dalvins: { name: 'MIS_Dalvins', type: 'int' } },
+          hasErrors: false, errors: []
+        } as any;
+      }
+      return { dialogs: {}, functions: {}, constants: {}, variables: {}, hasErrors: false, errors: [] } as any;
+    });
+  });
+
+  // #322: B_CloseTopic is a mod convention, not vanilla; a project without a
+  // B_CloseTopics function still gets its quest declared.
+  test('without a close-topics file, writes the declarations only', async () => {
+    await useProjectStore.getState().registerTopicInLogFiles({
+      topicName: 'TOPIC_Dalvins',
+      title: 'Dalvins Spitzhacken',
+      chapterStart: 0,
+      chapterEnd: 2,
+      constantsFilePath: CONSTANTS_FILE,
+      closeTopicsFilePath: ''
+    });
+
+    expect(mockWriteFile.mock.calls.map(([p]) => p)).toEqual([CONSTANTS_FILE]);
+    expect(files[CONSTANTS_FILE]).toContain('var int MIS_Dalvins;');
+    expect(files[CLOSE_TOPICS_FILE]).toBe(CLOSE_TOPICS_CONTENT);
+    expect(useProjectStore.getState().mergedSemanticModel.constants?.TOPIC_Dalvins).toBeDefined();
+  });
+
+  test('appends declarations and inserts the close call, then merges the models', async () => {
+    await useProjectStore.getState().registerTopicInLogFiles({
+      topicName: 'TOPIC_Dalvins',
+      title: 'Dalvins Spitzhacken',
+      chapterStart: 0,
+      chapterEnd: 2,
+      constantsFilePath: CONSTANTS_FILE,
+      closeTopicsFilePath: CLOSE_TOPICS_FILE
+    });
+
+    const constantsWrite = mockWriteFile.mock.calls.find(([p]) => p === CONSTANTS_FILE);
+    expect(constantsWrite).toBeDefined();
+    expect(constantsWrite![1]).toContain('const string TOPIC_Dalvins = "Dalvins Spitzhacken";');
+    expect(constantsWrite![1]).toContain('var int MIS_Dalvins;');
+    expect(constantsWrite![1]).toContain('TOPIC_Old'); // existing content preserved
+
+    const closeWrite = mockWriteFile.mock.calls.find(([p]) => p === CLOSE_TOPICS_FILE);
+    expect(closeWrite).toBeDefined();
+    const closeContent = closeWrite![1] as string;
+    expect(closeContent).toContain('B_CloseTopic (TOPIC_Dalvins, MIS_Dalvins, 0, 2);');
+    // Inserted inside the function: before its closing brace
+    expect(closeContent.indexOf('TOPIC_Dalvins')).toBeLessThan(closeContent.lastIndexOf('};'));
+
+    // The merged model picks up the new declarations
+    const merged = useProjectStore.getState().mergedSemanticModel;
+    expect(merged.constants?.TOPIC_Dalvins).toBeDefined();
+    expect(merged.variables?.MIS_Dalvins).toBeDefined();
+  });
+
+  test('rejects when the topic is already declared in the constants file', async () => {
+    await expect(
+      useProjectStore.getState().registerTopicInLogFiles({
+        topicName: 'TOPIC_Old',
+        title: 'Old Quest',
+        chapterStart: 0,
+        chapterEnd: 2,
+        constantsFilePath: CONSTANTS_FILE,
+        closeTopicsFilePath: CLOSE_TOPICS_FILE
+      })
+    ).rejects.toThrow(/already/i);
+
+    expect(mockWriteFile).not.toHaveBeenCalled();
+  });
+
+  test('leaves the constants file untouched when the close-topics target is invalid', async () => {
+    // A failure inserting the close call must not leave the quest
+    // half-registered (declarations written, no B_CloseTopic call) — the
+    // duplicate guard would then block every retry.
+    files['C:/project/Story/NotCloseTopics.d'] = 'FUNC VOID Unrelated() { return; };\n';
+
+    await expect(
+      useProjectStore.getState().registerTopicInLogFiles({
+        topicName: 'TOPIC_Dalvins',
+        title: 'Dalvins Spitzhacken',
+        chapterStart: 0,
+        chapterEnd: 2,
+        constantsFilePath: CONSTANTS_FILE,
+        closeTopicsFilePath: 'C:/project/Story/NotCloseTopics.d'
+      })
+    ).rejects.toThrow(/B_CloseTopics/);
+
+    expect(mockWriteFile).not.toHaveBeenCalled();
+  });
+
+  test('a commented-out declaration or a mere usage does not block registration', async () => {
+    files[CONSTANTS_FILE] =
+      '// const string TOPIC_Dalvins = "Alte Version";\n' +
+      'const string TOPIC_Old = "Old Quest";\nvar int MIS_Old;\n' +
+      'Log_SetTopicStatus (TOPIC_Dalvins, LOG_RUNNING);\n';
+
+    await useProjectStore.getState().registerTopicInLogFiles({
+      topicName: 'TOPIC_Dalvins',
+      title: 'Dalvins Spitzhacken',
+      chapterStart: 0,
+      chapterEnd: 2,
+      constantsFilePath: CONSTANTS_FILE,
+      closeTopicsFilePath: CLOSE_TOPICS_FILE
+    });
+
+    const constantsWrite = mockWriteFile.mock.calls.find(([p]) => p === CONSTANTS_FILE);
+    expect(constantsWrite![1]).toContain('const string TOPIC_Dalvins = "Dalvins Spitzhacken";');
+  });
+
+  test('a note writes only its TOPIC_ constant — no MIS_, no close call (#278)', async () => {
+    await useProjectStore.getState().registerNoteInLogFiles({
+      topicName: 'TOPIC_AlteMine',
+      title: 'Die alte Mine',
+      constantsFilePath: CONSTANTS_FILE
+    });
+
+    expect(mockWriteFile).toHaveBeenCalledTimes(1);
+    const [path, content] = mockWriteFile.mock.calls[0];
+    expect(path).toBe(CONSTANTS_FILE);
+    expect(content).toContain('const string TOPIC_AlteMine = "Die alte Mine";');
+    expect(content).not.toContain('MIS_AlteMine');
+    expect(content).toContain('TOPIC_Old'); // existing content preserved
+  });
+
+  test('a note already declared is rejected without a write', async () => {
+    await expect(
+      useProjectStore.getState().registerNoteInLogFiles({
+        topicName: 'TOPIC_Old',
+        title: 'Old',
+        constantsFilePath: CONSTANTS_FILE
+      })
+    ).rejects.toThrow(/already/i);
+    expect(mockWriteFile).not.toHaveBeenCalled();
+  });
+});

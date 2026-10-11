@@ -1,0 +1,192 @@
+Mesh: bound the chunk element counts, which size a resize before anything is read.
+
+Every chunk in `Mesh::load` opens with a `uint32` element count taken straight
+off the file and validated nowhere:
+
+	this->materials.resize(c->read_uint());
+	this->vertices.resize(c->read_uint());
+	this->features.resize(c->read_uint());
+	auto poly_count = c->read_uint();
+	this->geometry.resize(poly_count);
+
+Same shape as the OUTDOORS counts patch 0034 bounds, and the same reason none of
+them can fail on its own: `proto::read_chunked` hands the callback the *whole*
+reader (`include/zenkit/Stream.hh`), and a read past the end of the archive
+returns nothing rather than throwing. So the loop that follows a corrupted count
+neither throws nor stops early -- it runs to the count's own value over reads
+that return zero bytes, and the `resize` before it has already committed the
+memory the file asked for.
+
+Measured on the unpatched reader against `zenkit-node`'s 1.4 KB fixture world,
+with a single count rewritten in place to 0x0FFFFFFF (268 million):
+
+	VERTICES   3.2 GB committed, "LOADED" after 1.6 s
+	FEATURES   8.6 GB committed, "LOADED" after 5.1 s
+	POLYGONS   "LOADED" after 13.9 s
+
+Not a crash and not a hang -- a world that reports success having taken every
+byte of memory the machine could give it, which in the editor is a
+`worker_threads` worker inside the user's session. An *absurd* count is the
+harmless case, exactly as in 0034: 0xFFFFFFFF vertices are 51 GB, `resize`
+throws `bad_alloc` and the load fails loudly.
+
+The fix bounds each count by the bytes actually left in the reader, using the
+same `_bytes_remaining` helper as `world/BspTree.cc` for the same reason -- a
+vertex is 12 bytes on the wire, a feature 24, a polygon 24 before any index
+follows (25 on G1, so 24 refuses nothing valid), a shared lightmap and its
+texture 40 each, a non-shared lightmap 76, and an archived material at least a
+byte. It cannot change what a valid world parses: a real world carries the data
+its counts declare.
+
+The remaining unvalidated-file-data sites in `docs/plans/level-editor.md` 16.11
+are the VOB readers, and the `ReadMemory::seek` decision that would close the
+class in one place instead of one call site at a time.
+
+Upstreamable as-is: a plain robustness bug, no API change, seven guards.
+
+--- a/src/Mesh.cc
++++ b/src/Mesh.cc
+@@ -12,6 +12,19 @@
+ 	[[maybe_unused]] static constexpr auto MESH_VERSION_G1 = 9;
+ 	static constexpr auto MESH_VERSION_G2 = 265;
+ 
++	// The number of bytes left in the reader. `Read` has no size, but every
++	// implementation can seek to the end and back, and `proto::read_chunked` hands
++	// the callback below a reader that is not bounded to its own chunk -- so this
++	// is the only ceiling the element counts in this file can be checked against.
++	// Same helper, and the same reason for it, as the one in `world/BspTree.cc`.
++	static std::size_t _bytes_remaining(Read* r) {
++		auto here = r->tell();
++		r->seek(0, Whence::END);
++		auto end = r->tell();
++		r->seek(static_cast<ssize_t>(here), Whence::BEG);
++		return end > here ? end - here : 0;
++	}
++
+ 	enum class MeshChunkType : std::uint16_t {
+ 		MARKER = 0xB000,
+ 		BBOX = 0xB010,
+@@ -56,7 +69,20 @@
+ 			    case MeshChunkType::MATERIAL: {
+ 				    auto matreader = ReadArchive::from(c);
+ 
+-				    this->materials.resize(c->read_uint());
++				    // Every chunk here opens with an element count that sizes a container
++				    // before a single element is read, and none of them was checked. Reads
++				    // past the end of the archive return nothing rather than failing, so a
++				    // corrupted count neither throws nor stops -- it simply commits the
++				    // memory its own value asks for. Bound each by the bytes actually left:
++				    // an archived object costs at least a byte, so a material count larger
++				    // than the rest of the file is corruption by construction.
++				    auto material_count = c->read_uint();
++
++				    if (material_count > _bytes_remaining(c)) {
++					    throw ParserError {"Mesh", "material count exceeds the bytes left in the archive"};
++				    }
++
++				    this->materials.resize(material_count);
+ 				    for (auto& material : this->materials) {
+ 					    material.load(*matreader);
+ 				    }
+@@ -68,16 +94,34 @@
+ 
+ 				    break;
+ 			    }
+-			    case MeshChunkType::VERTICES:
+-				    this->vertices.resize(c->read_uint());
++			    case MeshChunkType::VERTICES: {
++				    // A vertex is a `vec3`, 12 bytes on the wire. Measured on the unpatched
++				    // reader: a count of 0x0FFFFFFF commits 3.2 GB and still reports the
++				    // world as loaded, because every one of those reads returns nothing.
++				    auto vertex_count = c->read_uint();
++
++				    if (vertex_count > _bytes_remaining(c) / 12) {
++					    throw ParserError {"Mesh", "vertex count exceeds the bytes left in the archive"};
++				    }
++
++				    this->vertices.resize(vertex_count);
+ 
+ 				    for (auto& vertex : this->vertices) {
+ 					    vertex = c->read_vec3();
+ 				    }
+ 
+ 				    break;
+-			    case MeshChunkType::FEATURES:
+-				    this->features.resize(c->read_uint());
++			    }
++			    case MeshChunkType::FEATURES: {
++				    // A feature is a `vec2`, a `uint` and a `vec3`: 24 bytes on the wire and
++				    // 32 in memory. Same measurement, 8.6 GB.
++				    auto feature_count = c->read_uint();
++
++				    if (feature_count > _bytes_remaining(c) / 24) {
++					    throw ParserError {"Mesh", "feature count exceeds the bytes left in the archive"};
++				    }
++
++				    this->features.resize(feature_count);
+ 
+ 				    for (auto& feature : this->features) {
+ 					    feature.texture = c->read_vec2();
+@@ -86,8 +130,17 @@
+ 				    }
+ 
+ 				    break;
++			    }
+ 			    case MeshChunkType::POLYGONS: {
++				    // A polygon is a material and a lightmap index, a plane, its flags, a
++				    // sector index and a vertex count before any index follows: 24 bytes on
++				    // G2 and 25 on G1, so 24 is the bound that refuses nothing valid.
+ 				    auto poly_count = c->read_uint();
++
++				    if (poly_count > _bytes_remaining(c) / 24) {
++					    throw ParserError {"Mesh", "polygon count exceeds the bytes left in the archive"};
++				    }
++
+ 				    this->geometry.resize(poly_count);
+ 
+ 				    // At least 3 indices per polygon (triangulated).
+@@ -144,8 +197,18 @@
+ 				    break;
+ 			    }
+ 			    case MeshChunkType::LIGHTMAPS_SHARED: {
++				    // A texture is at least its signature, its version and eight header
++				    // fields, 40 bytes, and a shared lightmap is three `vec3`s and a texture
++				    // index, 40 as well. The texture loop stops on its own at the first bad
++				    // signature, but only after `resize` has committed a `shared_ptr` per
++				    // declared texture; the lightmap loop below is bounded by nothing.
+ 				    auto texture_count = c->read_uint();
+ 
++				    if (texture_count > _bytes_remaining(c) / 40) {
++					    throw ParserError {"Mesh",
++					                       "shared lightmap texture count exceeds the bytes left in the archive"};
++				    }
++
+ 				    auto& lightmap_textures = this->shared_lightmap_textures;
+ 				    lightmap_textures.resize(texture_count);
+ 
+@@ -155,6 +218,11 @@
+ 				    }
+ 
+ 				    auto lightmap_count = c->read_uint();
++
++				    if (lightmap_count > _bytes_remaining(c) / 40) {
++					    throw ParserError {"Mesh", "shared lightmap count exceeds the bytes left in the archive"};
++				    }
++
+ 				    for (std::uint32_t i = 0; i < lightmap_count; ++i) {
+ 					    auto origin = c->read_vec3();
+ 					    auto normal_a = c->read_vec3();
+@@ -176,8 +244,13 @@
+ 				    break;
+ 			    }
+ 			    case MeshChunkType::LIGHTMAPS: {
++				    // Three `vec3`s and a texture of its own: 76 bytes at the very least.
+ 				    auto lightmap_count = c->read_uint();
+ 
++				    if (lightmap_count > _bytes_remaining(c) / 76) {
++					    throw ParserError {"Mesh", "lightmap count exceeds the bytes left in the archive"};
++				    }
++
+ 				    for (std::uint32_t i = 0; i < lightmap_count; ++i) {
+ 					    auto origin = c->read_vec3();
+ 					    auto normal_a = c->read_vec3();

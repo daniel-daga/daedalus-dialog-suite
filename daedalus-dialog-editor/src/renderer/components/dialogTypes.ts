@@ -1,0 +1,100 @@
+/**
+ * Shared type definitions for dialog editing components
+ */
+
+import type { DraggableProvidedDragHandleProps } from '@hello-pangea/dnd';
+import type {
+  Dialog,
+  DialogAction,
+  DialogCondition,
+  DialogFunction,
+  SemanticModel,
+  FunctionTreeNode
+} from '../types/global';
+import type { ActionTypeId } from './actionTypes';
+import type { ActionBranchKey, ActionPath } from './nestedActionUtils';
+
+export type FunctionUpdater = DialogFunction | ((prev: DialogFunction) => DialogFunction);
+export type DialogUpdater = (dialog: Dialog) => Dialog;
+export type ConditionEditorCondition = DialogCondition & {
+  getTypeName?: () => string;
+};
+
+export interface ActionCardProps {
+  action: DialogAction;
+  path: ActionPath;
+  index: number;
+  totalActions: number;
+  npcName: string;
+  updateActionAtPath: (path: ActionPath, action: DialogAction) => void;
+  deleteActionAtPath: (path: ActionPath) => void;
+  focusActionAtPath: (path: ActionPath, scrollIntoView?: boolean) => void;
+  addDialogLineAfterPath: (path: ActionPath, toggleSpeaker?: boolean) => void;
+  deleteActionAndFocusPrevAtPath: (path: ActionPath) => void;
+  addActionAfterPath: (path: ActionPath, actionType: ActionTypeId) => void;
+  addActionToBranchEnd?: (path: ActionPath, branch: ActionBranchKey, actionType: ActionTypeId) => void;
+  /** May return the index the moved card now starts at (a quest step moves as a block). */
+  moveAction?: (pathPrefix: ActionPath, sourceIndex: number, destinationIndex: number) => void | number;
+  registerActionRef: (path: ActionPath, element: HTMLInputElement | null) => void;
+  getVisibleActionPaths: () => ActionPath[];
+  onNavigateToFunction?: (functionName: string) => void;
+  onRenameFunction?: (oldName: string, newName: string) => void;
+  dialogContextName?: string; // The dialog/function name for validation prefix
+  // Shift+Tab on the first card of a list has nowhere to go within the list; when
+  // provided, it escapes backward to the container instead of doing nothing.
+  // Choice sub-dialogs supply this to return focus to the Choice Text field
+  // (issue #118, the reverse of the Tab-dive-in).
+  onEscapeBackward?: () => void;
+  dragHandleProps?: DraggableProvidedDragHandleProps | null;
+  filePath?: string | null;
+  // Namespace for nested list droppableIds (fix-05 §2.5). Propagated to
+  // ConditionalAction branch lists so a conditional inside a choice sub-dialog
+  // does not collide with an outer conditional at the same path.
+  droppableNamespace?: string;
+}
+
+export interface DialogDetailsEditorProps {
+  dialogName: string;
+  filePath: string | null;
+  functionName?: string; // Optional: if editing a choice function instead of the info function
+  onNavigateToFunction?: (functionName: string) => void;
+  semanticModel?: SemanticModel; // Optional: if provided, use this instead of reading from store
+  onDeleteDialog?: (dialogName: string) => void;
+  onRenameDialog?: (dialogName: string) => void;
+}
+
+export interface NPCListProps {
+  npcs: string[];
+  npcMap: Map<string, string[]>;
+  selectedNPC: string | null;
+  onSelectNPC: (npc: string) => void;
+  /** Why the list may be incomplete — the opened folder misses NPC files (#281). */
+  coverageNote?: string | null;
+  /** Rows for which this returns true get an "Edit NPC" button (npc-editor Phase 2). */
+  canEditNPC?: (npc: string) => boolean;
+  onEditNPC?: (npc: string) => void;
+  /** Shown as a "New NPC" button when given (#285). */
+  onCreateNPC?: () => void;
+  /** Folders (project-relative) the list can be narrowed to; a picker is shown when given. */
+  npcFolders?: string[];
+  /** The chosen folder, '' for all. */
+  npcFolder?: string;
+  onNpcFolderChange?: (folder: string) => void;
+}
+
+export interface DialogTreeProps {
+  selectedNPC: string | null;
+  dialogsForNPC: string[];
+  semanticModel: SemanticModel;
+  selectedDialog: string | null;
+  selectedFunctionName: string | null;
+  expandedDialogs: Set<string>;
+  expandedChoices: Set<string>;
+  onSelectDialog: (dialogName: string, functionName: string | null) => void;
+  onToggleDialogExpand: (dialogName: string) => void;
+  onToggleChoiceExpand: (choiceKey: string) => void;
+  buildFunctionTree: (funcName: string, ancestorPath?: string[]) => FunctionTreeNode | null;
+  onAddDialog?: (dialogName: string) => Promise<void> | void;
+  onCreateTeacherDialog?: (config: import('../utils/teacherDialogTemplate').TeacherDialogConfig) => Promise<void> | void;
+  onCreateTraderDialog?: (config: import('../utils/traderDialogTemplate').TraderDialogConfig) => Promise<void> | void;
+}

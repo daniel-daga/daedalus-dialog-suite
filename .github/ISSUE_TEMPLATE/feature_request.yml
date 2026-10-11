@@ -1,0 +1,16 @@
+name: Feature request
+description: Suggest something Dandelion should do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you are trying to do
+      description: The modding task, and what gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help
+      description: How you imagine it working. Mention the Spacer or other tool behaviour you are used to, if any.

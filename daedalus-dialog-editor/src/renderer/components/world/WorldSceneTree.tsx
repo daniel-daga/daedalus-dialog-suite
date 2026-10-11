@@ -1,0 +1,761 @@
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Box, IconButton, MenuItem, Select, TextField, Tooltip, Typography } from '@mui/material';
+import AdjustIcon from '@mui/icons-material/Adjust';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import MyLocationIcon from '@mui/icons-material/MyLocation';
+import { FixedSizeList as List, type ListChildComponentProps, areEqual } from 'react-window';
+import AutoSizer from 'react-virtualized-auto-sizer';
+import {
+  flattenMatching, flattenVisible, isEmptyQuery, matchVobs, renumbersPaths,
+  type VobQuery, type VobReader, type VobRow, type WorldOp, type ZenPosition,
+} from 'zen-world';
+import type { WorldSummary } from '../../../shared/worldTypes';
+import { vobModelOf } from '../../world/vobModel';
+
+// The scene tree over a world's VOB hierarchy (level-editor.md §6).
+//
+// Everything structural comes from `zen-world/model` — the hierarchy is two
+// columns of the `VobIndex` and reconstructing it is domain logic, not a
+// rendering concern. What is left here is the two things that make a tree over
+// 23,288 VOBs usable at all:
+//
+//   - it is virtualized, and collapsed by default. Expanding everything on open
+//     would lay out 23,288 rows before anyone had asked for one.
+//   - a selection arriving from the viewport expands the ancestors it is
+//     hidden behind. A pick returns a VOB index and nothing else, and the row
+//     for it is usually inside collapsed parents.
+//
+// Rows are read, never built: `createVobReader` makes its column views once, so
+// scrolling does not allocate a typed array per row per column.
+
+const ROW_HEIGHT = 28;
+/** How long the name field waits before the tree is re-filtered. A keystroke
+ *  costs a sweep over 41,393 VOBs and a re-flatten of what survived, and doing
+ *  that per character is slower than having no filter at all. */
+const FILTER_DEBOUNCE_MS = 200;
+/** How often the "within reach of the camera" filter re-reads the camera's
+ *  position while it is on. A poll, not a subscription — the viewport has no
+ *  push channel for this, and the filter only has to feel live, not track
+ *  every frame the way the viewport's own waypoint labels do. */
+const NEAR_CAMERA_POLL_MS = 300;
+/** The reach the filter starts at, in metres — generous enough to be useful
+ *  the moment it is switched on, without starting equal to "everything". */
+const DEFAULT_NEAR_CAMERA_RADIUS_M = 50;
+const INDENT = 14;
+/** How much of a row belongs to the gap above or below it. A quarter: enough to
+ *  hit deliberately, small enough that the row itself is still the easy target,
+ *  since becoming a child is the commoner move. */
+const EDGE_HEIGHT = 7;
+
+/** Which side of a row a between-rows drop is pointing at. */
+export type DropEdge = 'before' | 'after';
+
+interface RowData {
+  rows: VobRow[];
+  reader: VobReader;
+  expanded: ReadonlySet<number>;
+  selected: ReadonlySet<number>;
+  onSelect: (vob: number, additive: boolean) => void;
+  onToggle: (vob: number) => void;
+  /** Absent on a tree with no viewport beside it, and then no row carries a
+   *  locator and a double-click does nothing. */
+  onFocus?: (vob: number) => void;
+  /** Right-click on this row — the position is the context menu's anchor,
+   *  in viewport coordinates (`Menu`'s `anchorReference="anchorPosition"`
+   *  reads them directly). Absent when the surface offers no menu, and then
+   *  a right-click here is the browser's own. */
+  onContextMenu?: (vob: number, position: { left: number; top: number }) => void;
+  /** Absent on a read-only tree, and then no row is draggable at all — a row
+   *  that looks draggable and drops nowhere is worse than one that does not. */
+  onDragVob?: (vob: number) => void;
+  /** A drag that ended anywhere — including outside the tree, where no drop is
+   *  ever delivered. Without it an abandoned drag stays in flight and the next
+   *  pass over a row's edge draws an insertion line for it. */
+  onDragEnd: () => void;
+  onDropOn?: (vob: number) => void;
+  /** Whether the drag in flight may land on this row. Drives `preventDefault`
+   *  on dragover, which is what decides whether the browser offers a drop
+   *  cursor at all — so an impossible target says so before the mouse is let
+   *  go, and the drop event never fires for it. */
+  canDropOn: (vob: number) => boolean;
+  /** The between-rows half of the same three: whether the gap is a legal
+   *  landing, what to do when it is dropped on, and which gap the drag is over
+   *  so exactly one line is drawn. */
+  canDropBetween: (vob: number, edge: DropEdge) => boolean;
+  onDropBetween?: (vob: number, edge: DropEdge) => void;
+  hovering: { vob: number; edge: DropEdge } | null;
+  onHoverEdge: (at: { vob: number; edge: DropEdge } | null) => void;
+}
+
+/**
+ * The strip along a row's edge that means "between the rows", and the insertion
+ * line it draws when a drag is over it.
+ *
+ * A strip of its own rather than a zone measured off the pointer's Y within the
+ * row: the row is the drop target for "become this VOB's child", and splitting
+ * one element's height between two meanings makes both of them a guess about
+ * where the mouse was. Two elements, two handlers, and the boundary is where the
+ * user can see it.
+ */
+const DropStrip: React.FC<{
+  vob: number;
+  edge: DropEdge;
+  data: RowData;
+}> = ({ vob, edge, data }) => {
+  const { canDropBetween, onDropBetween, hovering, onHoverEdge } = data;
+  const active = hovering !== null && hovering.vob === vob && hovering.edge === edge;
+
+  return (
+    <Box
+      data-testid={`world-vob-drop-${edge}-${vob}`}
+      data-active={active ? 'true' : undefined}
+      onDragOver={(event) => {
+        if (!canDropBetween(vob, edge)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        // Only on a change. `dragover` fires continuously while the pointer is
+        // held still, and setting the same value on every one of them would
+        // re-render a virtualized tree several times a second for no change.
+        if (!active) onHoverEdge({ vob, edge });
+      }}
+      onDragLeave={() => { if (active) onHoverEdge(null); }}
+      onDrop={onDropBetween === undefined ? undefined : (event) => {
+        event.preventDefault();
+        // Or the row underneath takes the same drop as "become my child".
+        event.stopPropagation();
+        onDropBetween(vob, edge);
+      }}
+      sx={{
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        [edge === 'before' ? 'top' : 'bottom']: 0,
+        height: `${EDGE_HEIGHT}px`,
+        zIndex: 2,
+        [edge === 'before' ? 'borderTop' : 'borderBottom']: 2,
+        borderColor: active ? 'primary.main' : 'transparent',
+      }}
+    />
+  );
+};
+
+const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
+  const { rows, reader, expanded, selected, onSelect, onToggle, onFocus, onContextMenu } = data;
+  const { onDragVob, onDropOn, canDropOn } = data;
+  const { vob, depth, hasChildren } = rows[index];
+  // Every gap is "before the row under the line", which is what makes a gap mean
+  // exactly one thing at a change of depth. The last row is the exception it has
+  // to be: there is no row below it, so it carries the only "after" there is.
+  const isLast = index === rows.length - 1;
+
+  // Most VOBs are unnamed — retail NewWorld's 23,288 carry 2,654 distinct
+  // names — so the visual is the label when the name is empty. Falling straight
+  // back to the class made the tree a column of the word "zCVob"; the class is
+  // shown dimmed on every row regardless, so it is never the only thing worth
+  // saying.
+  const className = reader.className(vob);
+  const label = reader.name(vob) || reader.visual(vob);
+  const isSelected = selected.has(vob);
+
+  return (
+    <Box
+      role="treeitem"
+      aria-selected={isSelected}
+      aria-expanded={hasChildren ? expanded.has(vob) : undefined}
+      // The list is virtualized, so no row is a DOM descendant of its parent
+      // and the depth is a left padding — which is nothing an assistive
+      // technology can read (§5.4 item 21 of the 2026-09-04 review).
+      aria-level={depth + 1}
+      id={`world-vob-row-${vob}`}
+      data-testid={`world-vob-row-${vob}`}
+      onClick={(event) => onSelect(vob, event.shiftKey || event.ctrlKey || event.metaKey)}
+      onDoubleClick={onFocus === undefined ? undefined : () => onFocus(vob)}
+      onContextMenu={onContextMenu === undefined ? undefined : (event) => {
+        event.preventDefault();
+        onContextMenu(vob, { left: event.clientX, top: event.clientY });
+      }}
+      draggable={onDragVob !== undefined}
+      onDragStart={onDragVob === undefined ? undefined : () => onDragVob(vob)}
+      onDragEnd={onDragVob === undefined ? undefined : data.onDragEnd}
+      onDragOver={(event) => { if (canDropOn(vob)) event.preventDefault(); }}
+      onDrop={onDropOn === undefined ? undefined : (event) => { event.preventDefault(); onDropOn(vob); }}
+      style={style}
+      sx={{
+        display: 'flex', alignItems: 'center', gap: 0.5, cursor: 'pointer',
+        pl: `${4 + depth * INDENT}px`, pr: 1, whiteSpace: 'nowrap',
+        bgcolor: isSelected ? 'action.selected' : undefined,
+        '&:hover': { bgcolor: isSelected ? 'action.selected' : 'action.hover' },
+        // Hidden rather than faded out: an invisible target that still takes
+        // clicks is a row that sometimes jumps instead of selecting.
+        '&:hover .world-vob-locate': { visibility: 'visible' },
+      }}
+    >
+      {onDropOn !== undefined && <DropStrip vob={vob} edge="before" data={data} />}
+      {onDropOn !== undefined && isLast && <DropStrip vob={vob} edge="after" data={data} />}
+      <Box
+        component="span"
+        data-testid={hasChildren ? `world-vob-toggle-${vob}` : undefined}
+        onClick={(event) => { event.stopPropagation(); if (hasChildren) onToggle(vob); }}
+        sx={{ display: 'flex', width: 18, flexShrink: 0, color: 'text.secondary' }}
+      >
+        {hasChildren && (expanded.has(vob)
+          ? <ExpandMoreIcon fontSize="small" />
+          : <ChevronRightIcon fontSize="small" />)}
+      </Box>
+      {/* `title` on both, because both truncate in a 300 px panel and the row
+          is otherwise the only place either is written — the asset tiles beside
+          this have said their full name on hover all along. */}
+      {label
+        ? <Typography variant="caption" noWrap title={label}>{label}</Typography>
+        : null}
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        noWrap
+        title={className ?? undefined}
+        sx={{ opacity: 0.75 }}
+      >
+        {className}
+      </Typography>
+      {/* The discoverable half of the jump — a double-click is not something
+          anyone finds by looking. It stops the click rather than letting it
+          reach the row: the row's handler is what adds and removes in a
+          Shift-click batch, and a locator that also toggled membership would
+          take a VOB out of the selection it was asked to fly to. */}
+      {onFocus !== undefined && (
+        <Box
+          component="span"
+          className="world-vob-locate"
+          title="Frame this VOB (.)"
+          data-testid={`world-vob-locate-${vob}`}
+          onClick={(event) => { event.stopPropagation(); onFocus(vob); }}
+          sx={{
+            display: 'flex', ml: 'auto', flexShrink: 0, pl: 0.5,
+            visibility: 'hidden', color: 'text.secondary',
+          }}
+        >
+          <MyLocationIcon sx={{ fontSize: 14 }} />
+        </Box>
+      )}
+    </Box>
+  );
+}, areEqual);
+Row.displayName = 'WorldSceneTreeRow';
+
+export interface WorldSceneTreeProps {
+  summary: WorldSummary;
+  /** Indices into the `VobIndex` — names are not unique and rows move. The last
+   *  is the one the viewport and the property grid follow. */
+  selection: readonly number[];
+  /** `additive` is a Shift/Ctrl/Cmd click: add this VOB to the selection rather
+   *  than replacing it, which is how a multi-select batch is built. */
+  onSelect: (vob: number, additive: boolean) => void;
+  /**
+   * Jump the viewport's camera to this VOB and leave the orbit pivot on it — a
+   * double-click on a row, or its locator.
+   *
+   * The other direction of the loop the effects above make: a pick in the
+   * viewport scrolls the row into view, and this is how a row reaches the
+   * viewport. Absent when there is no viewport beside the tree, and then no row
+   * carries a locator.
+   */
+  onFocus?: (vob: number) => void;
+  /**
+   * Move `vob` into `toParent` at `slot` — `null` for a root. Absent on a
+   * read-only tree, and then nothing in it is draggable.
+   *
+   * Two gestures reach it. A drop **onto** a row means "become this VOB's last
+   * child": the one reading a drop with no position in it can honestly have.
+   * A drop on the thin strip at a row's edge means **between** the rows, and
+   * every gap is read as "immediately before the row under the line" — which is
+   * what gives a gap one meaning where the depth changes, since the row below is
+   * the only one whose own list the line is actually inside. The last visible
+   * row carries the only "after" there is, because nothing is under it.
+   *
+   * `slot` is an index into the destination list **as it will be once the VOB
+   * has been removed from where it was**, which is the convention `reparentVob`
+   * takes and the only one that can express "move it two places later in its own
+   * list".
+   */
+  onReparent?: (vob: number, toParent: number | null, slot: number) => void;
+  /**
+   * Move the whole selection into `toParent` (#293) — what a drag reaches when
+   * the row it starts on is one of several selected. `before` is the child of
+   * `toParent` the run lands in front of, and null for the end of its list; a
+   * VOB, not a slot, because a slot in a list the selection is also leaving
+   * would have to account for every one of them. Absent, a drag moves its own
+   * row whatever else is selected.
+   */
+  onReparentSelection?: (toParent: number | null, before: number | null) => void;
+  /** Right-click on a row — threaded to `RowData.onContextMenu`. Absent
+   *  when the surface offers no menu. */
+  onContextMenu?: (vob: number, position: { left: number; top: number }) => void;
+  /**
+   * The ops last applied to the world — the tree's only news that anything
+   * changed.
+   *
+   * `applyOps` writes a name or a visual straight into the summary's columns
+   * and deliberately leaves `summary`'s identity alone (`worldStore.applyEdit`
+   * says why), so a property edit changes nothing React compares: the label is
+   * read inside a memoised row, and the filter is memoised on the index. A new
+   * array here is what re-reads both.
+   *
+   * It is also what says the expansion set has to go: `expanded` holds flat
+   * indices, and after a renumbering op every one of them names a different
+   * VOB. Only a *committed* renumber counts, which is why the summary's
+   * identity is checked beside it — a refused one leaves the index exactly as
+   * it was, and collapsing the tree over an edit that did not happen is the
+   * same lie in the other direction.
+   */
+  appliedOps?: readonly WorldOp[] | null;
+  /**
+   * The camera's own position, on demand — what the "within reach of the
+   * camera" filter measures VOBs against. A query, not a subscription: this
+   * tree polls it itself while that filter is on, the same shape `onFocus`
+   * reaches the viewport with. Absent when there is no viewport beside the
+   * tree, and then the filter offers no control it could not serve.
+   */
+  getCameraPosition?: () => ZenPosition | null;
+}
+
+const WorldSceneTree: React.FC<WorldSceneTreeProps> = ({
+  summary, selection, onSelect, onFocus, onReparent, onReparentSelection, onContextMenu, appliedOps = null,
+  getCameraPosition,
+}) => {
+  const { tree, reader } = useMemo(() => vobModelOf(summary), [summary]);
+  const selected = useMemo(() => new Set(selection), [selection]);
+  // Only the primary is followed. Expanding and scrolling to every VOB of a
+  // large selection would fight the user for the scroll position on every
+  // additive click.
+  const selectedVob = selection.length === 0 ? null : selection[selection.length - 1];
+  const [expanded, setExpanded] = useState<ReadonlySet<number>>(() => new Set<number>());
+  const listRef = useRef<List>(null);
+
+  // The filter (§16.16). Both columns it reads are already in the summary and
+  // interned, so neither half needs a per-VOB round trip — this is renderer
+  // work over data that crossed the boundary once.
+  const [text, setText] = useState('');
+  const [classes, setClasses] = useState<readonly string[]>([]);
+  const [debouncedText, setDebouncedText] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedText(text), FILTER_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [text]);
+
+  // "Within reach of the camera" (level-editor.md §17) — a sphere, not the
+  // text/class filter's dictionaries. The centre is the viewport's own
+  // camera, which this tree has no way to derive on its own, so it is read
+  // from `getCameraPosition` on a poll rather than computed. An absent
+  // centre (no viewport, or a scene mid-rebuild) leaves `near` off rather
+  // than filtering on a stale or a zero position — the same "nothing known,
+  // not nothing legal" rule the hidden-classes filter already follows.
+  const [nearCameraEnabled, setNearCameraEnabled] = useState(false);
+  const [nearCameraRadiusM, setNearCameraRadiusM] = useState(DEFAULT_NEAR_CAMERA_RADIUS_M);
+  const [nearCameraCenter, setNearCameraCenter] = useState<ZenPosition | null>(null);
+  useEffect(() => {
+    if (!nearCameraEnabled || getCameraPosition === undefined) return undefined;
+    const poll = () => setNearCameraCenter(getCameraPosition());
+    poll();
+    const timer = setInterval(poll, NEAR_CAMERA_POLL_MS);
+    return () => clearInterval(timer);
+  }, [nearCameraEnabled, getCameraPosition]);
+
+  const query = useMemo<VobQuery>(() => ({
+    text: debouncedText,
+    classes,
+    near: nearCameraEnabled && nearCameraCenter !== null
+      ? { center: nearCameraCenter, radiusCm: Math.max(1, nearCameraRadiusM || 1) * 100 }
+      : undefined,
+  }), [debouncedText, classes, nearCameraEnabled, nearCameraCenter, nearCameraRadiusM]);
+  /** Null when nothing is being asked for — the unfiltered tree is not a filter
+   *  that happens to keep everything, and must not pay for one. */
+  const matches = useMemo(
+    () => (isEmptyQuery(query) ? null : matchVobs(summary.vobIndex, query)),
+    // `appliedOps` is a dependency for the reason it is a prop at all: a rename
+    // is written into the very columns this reads, without changing one
+    // identity React can see, and a filter that never re-ran would keep a row
+    // it no longer matches and hide one it now does.
+    [summary.vobIndex, query, appliedOps],
+  );
+  const matchCount = useMemo(
+    () => (matches === null ? null : matches.reduce((sum, hit) => sum + hit, 0)),
+    [matches],
+  );
+
+  const rows = useMemo(
+    () => (matches === null ? flattenVisible(tree, expanded) : flattenMatching(tree, matches)),
+    [tree, expanded, matches],
+  );
+  /** A filtered tree draws every match's path, so its rows are expanded whatever
+   *  the expansion state says — and the chevrons have to agree with what is on
+   *  screen. The state itself is left alone, so clearing the filter gives back
+   *  the tree the user had rather than an unfolded one. */
+  const rowExpanded = useMemo(() => (
+    matches === null
+      ? expanded
+      : new Set(rows.filter((row) => row.hasChildren).map((row) => row.vob))
+  ), [matches, expanded, rows]);
+  const classOptions = useMemo(
+    () => [...summary.vobIndex.classes].sort((a, b) => a.localeCompare(b)),
+    [summary.vobIndex],
+  );
+
+  /** The summary the last renumber check was made against — a structural op is
+   *  the only thing that replaces it (`indexRefreshed`), so a change here is
+   *  what tells a committed op apart from a refused one. */
+  const indexedAs = useRef(summary);
+  useEffect(() => {
+    if (indexedAs.current === summary) return;
+    indexedAs.current = summary;
+    if (appliedOps === null || !appliedOps.some(renumbersPaths)) return;
+    // Dropped rather than remapped, exactly as the World surface drops the
+    // selection: the VOB the user opened is recoverable from its path, but the
+    // others in the set are not, and a tree that opened rows nobody touched is
+    // worse than one that is shut.
+    setExpanded((current) => (current.size === 0 ? current : new Set<number>()));
+  }, [summary, appliedOps]);
+
+  // A VOB picked in the viewport is usually inside collapsed parents.
+  useEffect(() => {
+    if (selectedVob === null) return;
+    const ancestors = tree.ancestors(selectedVob);
+    if (ancestors.length === 0) return;
+    setExpanded((current) => {
+      if (ancestors.every((vob) => current.has(vob))) return current;
+      const next = new Set(current);
+      for (const vob of ancestors) next.add(vob);
+      return next;
+    });
+  }, [selectedVob, tree]);
+
+  // Scrolled to after the expansion above, so the row exists by the time this
+  // runs — `rows` is a dependency precisely because it changes when it does.
+  useEffect(() => {
+    if (selectedVob === null) return;
+    const at = rows.findIndex((row) => row.vob === selectedVob);
+    if (at >= 0) listRef.current?.scrollToItem(at, 'smart');
+  }, [rows, selectedVob]);
+
+  const onToggle = useCallback((vob: number) => {
+    // Nothing to fold while a filter is up: the rows are the answer to the
+    // query, not a place in the hierarchy the user chose to be.
+    if (matches !== null) return;
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (!next.delete(vob)) next.add(vob);
+      return next;
+    });
+  }, [matches]);
+
+  const [dragging, setDragging] = useState<number | null>(null);
+  /** The one gap the insertion line is drawn in, while a drag is over it. */
+  const [hovering, setHovering] = useState<{ vob: number; edge: DropEdge } | null>(null);
+
+  // A drag that starts on one of several selected rows carries all of them
+  // (#293); one that starts anywhere else is its own row, as it always was.
+  const group = dragging !== null && onReparentSelection !== undefined
+    && selection.length > 1 && selected.has(dragging);
+  const moving = useMemo(
+    () => (dragging === null ? new Set<number>() : (group ? selected : new Set([dragging]))),
+    [dragging, group, selected],
+  );
+  // A VOB dropped into its own subtree is unreachable from the roots: not
+  // enumerated, not counted, not written. The op refuses it and so does the
+  // binding — this is the layer that must not offer it in the first place.
+  const insideMoving = useCallback((vob: number) => (
+    moving.has(vob) || tree.ancestors(vob).some((up) => moving.has(up))
+  ), [moving, tree]);
+  const canDropOn = useCallback((target: number) => (
+    dragging !== null && !insideMoving(target)
+  ), [dragging, insideMoving]);
+
+  const onDropOn = useCallback((target: number) => {
+    const vob = dragging;
+    setDragging(null);
+    setHovering(null);
+    // Checked again rather than trusted: `canDropOn` gates the browser's drop
+    // cursor, and a drop can still be delivered by anything that dispatches the
+    // event itself.
+    if (vob === null || !canDropOn(target)) return;
+    if (group) { onReparentSelection?.(target, null); return; }
+    if (onReparent === undefined) return;
+    onReparent(vob, target, tree.children(target).length);
+  }, [dragging, onReparent, onReparentSelection, group, tree, canDropOn]);
+
+  const onDragEnd = useCallback(() => {
+    setDragging(null);
+    setHovering(null);
+  }, []);
+
+  /** The list a VOB sits in, and the list a drop beside it would go into. */
+  const listOf = useCallback((vob: number) => {
+    const parent = tree.parent(vob);
+    return {
+      parent: parent < 0 ? null : parent,
+      siblings: parent < 0 ? tree.roots : tree.children(parent),
+    };
+  }, [tree]);
+
+  /**
+   * Where a drop on `vob`'s `edge` would put the VOB being dragged, or null when
+   * it would not put it anywhere.
+   *
+   * The slot is an index into the destination list **after the removal**, which
+   * is what `reparentVob` takes: the removal vacates a slot before the insert
+   * happens, so a destination later in the VOB's own list has already shifted
+   * down one by the time it is used. Off by one here is a VOB that lands on the
+   * wrong side of its neighbour — a move, not a failure, so nothing reports it.
+   */
+  const landingAt = useCallback((target: number, edge: DropEdge) => {
+    if (dragging === null) return null;
+
+    const { parent, siblings } = listOf(target);
+    if (group) {
+      // A selection lands as one run in front of the first sibling at the line
+      // that is staying where it is — a moving one is not there to land before
+      // once the run has left. No slot: `reparentVobs` resolves one per op.
+      if (parent !== null && insideMoving(parent)) return null;
+      const start = siblings.indexOf(target) + (edge === 'after' ? 1 : 0);
+      const before = siblings.slice(start).find((sibling) => !moving.has(sibling)) ?? null;
+      return { parent, slot: -1, before };
+    }
+    // The destination's *parent* is what must not be inside the dragged
+    // subtree — a root has none, and is always reachable.
+    if (parent !== null
+      && (parent === dragging || tree.ancestors(parent).includes(dragging))) return null;
+
+    let slot = siblings.indexOf(target) + (edge === 'after' ? 1 : 0);
+    const from = listOf(dragging);
+    if (from.parent === parent) {
+      const was = from.siblings.indexOf(dragging);
+      if (was < slot) slot -= 1;
+      // The VOB is already there. A no-op is still an op — a batch, an entry in
+      // the history and a full re-read of the index — so it is refused as a
+      // landing rather than sent. This is also what refuses a row's own edges
+      // without a guard of their own: both of them compute the slot the VOB is
+      // in already.
+      if (was === slot) return null;
+    }
+    return { parent, slot, before: null };
+  }, [dragging, listOf, tree, group, insideMoving, moving]);
+
+  const canDropBetween = useCallback(
+    (target: number, edge: DropEdge) => landingAt(target, edge) !== null,
+    [landingAt],
+  );
+
+  const onDropBetween = useCallback((target: number, edge: DropEdge) => {
+    const vob = dragging;
+    const landing = landingAt(target, edge);
+    setDragging(null);
+    setHovering(null);
+    // Checked through `landingAt` again for the same reason `onDropOn` re-checks:
+    // dragover gates the browser's drop cursor, not anything that dispatches the
+    // event itself.
+    if (vob === null || landing === null) return;
+    if (group) { onReparentSelection?.(landing.parent, landing.before); return; }
+    if (onReparent === undefined) return;
+    onReparent(vob, landing.parent, landing.slot);
+  }, [dragging, landingAt, onReparent, onReparentSelection, group]);
+
+  const itemData = useMemo<RowData>(
+    () => ({
+      rows,
+      reader,
+      expanded: rowExpanded,
+      selected,
+      onSelect,
+      onToggle,
+      onFocus,
+      onContextMenu,
+      canDropOn,
+      canDropBetween,
+      hovering,
+      onHoverEdge: setHovering,
+      onDragEnd,
+      onDragVob: onReparent === undefined ? undefined : setDragging,
+      onDropOn: onReparent === undefined ? undefined : onDropOn,
+      onDropBetween: onReparent === undefined ? undefined : onDropBetween,
+    }),
+    // `appliedOps` again, and here for the label: `Row` is memoised and reads
+    // the name through `reader`, so without it a renamed VOB keeps its old
+    // label until an unrelated change breaks this object's identity.
+    [rows, reader, rowExpanded, selected, onSelect, onToggle, onFocus, onContextMenu, canDropOn,
+      onReparent, onDropOn, canDropBetween, onDropBetween, hovering, onDragEnd, appliedOps],
+  );
+
+  /**
+   * Keyboard navigation (level-editor.md §17) — one
+   * `onKeyDown` on the tree container, never on a row: `react-window`
+   * unmounts offscreen rows, so a roving `tabIndex` would lose the DOM node
+   * it was on the moment it scrolled out of view. `aria-activedescendant`
+   * on the container is the pattern built for exactly that — the active
+   * row is tracked by id, not by focus.
+   *
+   * Home/End are deliberately unbound: the viewport already owns Home
+   * (camera framing), and a second meaning on the tree would be a
+   * conflict, not a convenience.
+   */
+  const onTreeKeyDown = useCallback((event: React.KeyboardEvent) => {
+    if (rows.length === 0) return;
+    const at = selectedVob === null ? -1 : rows.findIndex((row) => row.vob === selectedVob);
+
+    switch (event.key) {
+      case 'ArrowDown': {
+        event.preventDefault();
+        if (at >= rows.length - 1) return; // already on the last row
+        onSelect(rows[at === -1 ? 0 : at + 1].vob, false);
+        return;
+      }
+      case 'ArrowUp': {
+        event.preventDefault();
+        if (at === 0) return; // already on the first row
+        onSelect(rows[at === -1 ? 0 : at - 1].vob, false);
+        return;
+      }
+      case 'ArrowRight': {
+        if (at === -1) return;
+        const row = rows[at];
+        if (!row.hasChildren) return;
+        event.preventDefault();
+        // Closed: opens it, and the selection stays where it is — the same
+        // two-step every ARIA treeview uses, so opening and entering are
+        // never the same keypress.
+        if (!rowExpanded.has(row.vob)) { onToggle(row.vob); return; }
+        // Open already: moves onto the first child, immediately the next
+        // row once expansion has put it there.
+        const child = rows[at + 1];
+        if (child !== undefined && tree.parent(child.vob) === row.vob) onSelect(child.vob, false);
+        return;
+      }
+      case 'ArrowLeft': {
+        if (at === -1) return;
+        const row = rows[at];
+        event.preventDefault();
+        if (row.hasChildren && rowExpanded.has(row.vob)) { onToggle(row.vob); return; }
+        const parent = tree.parent(row.vob);
+        if (parent >= 0) onSelect(parent, false);
+        return;
+      }
+      case 'Enter': {
+        if (at === -1 || onFocus === undefined) return;
+        event.preventDefault();
+        onFocus(rows[at].vob);
+        return;
+      }
+      default:
+    }
+  }, [rows, selectedVob, onSelect, rowExpanded, onToggle, tree, onFocus]);
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      <Box sx={{
+        px: 1, py: 0.5, borderBottom: 1, borderColor: 'divider',
+        display: 'flex', flexDirection: 'column', gap: 0.5,
+      }}>
+        <Box sx={{ display: 'flex', gap: 0.5 }}>
+          <TextField
+            size="small"
+            variant="outlined"
+            placeholder="Filter by name"
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            inputProps={{ 'data-testid': 'world-tree-filter', 'aria-label': 'Filter by name' }}
+            sx={{ flex: 1, minWidth: 0, '& .MuiInputBase-input': { fontSize: 12, py: 0.5 } }}
+          />
+          <Select
+            multiple
+            displayEmpty
+            size="small"
+            value={classes as string[]}
+            onChange={(event) => setClasses(
+              typeof event.target.value === 'string' ? [event.target.value] : event.target.value,
+            )}
+            renderValue={(picked) => (picked.length === 0 ? 'Any class' : picked.join(', '))}
+            aria-label="Filter by class"
+            sx={{ width: 110, flexShrink: 0, fontSize: 12, '& .MuiSelect-select': { py: 0.5 } }}
+          >
+            {classOptions.map((cls) => (
+              <MenuItem key={cls} value={cls} sx={{ fontSize: 12 }}>{cls}</MenuItem>
+            ))}
+          </Select>
+        </Box>
+        {getCameraPosition !== undefined && (
+          <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+            <Tooltip title="Show only VOBs within reach of the camera">
+              <span>
+                <IconButton
+                  size="small"
+                  color={nearCameraEnabled ? 'primary' : 'default'}
+                  onClick={() => setNearCameraEnabled((enabled) => !enabled)}
+                  data-testid="world-tree-near-toggle"
+                  aria-label="Filter to VOBs near the camera"
+                  aria-pressed={nearCameraEnabled}
+                >
+                  <AdjustIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+            <TextField
+              size="small"
+              type="number"
+              disabled={!nearCameraEnabled}
+              value={nearCameraRadiusM}
+              onChange={(event) => setNearCameraRadiusM(Number(event.target.value))}
+              inputProps={{
+                'data-testid': 'world-tree-near-radius', 'aria-label': 'Reach, in metres', min: 1,
+              }}
+              sx={{ width: 76, '& .MuiInputBase-input': { fontSize: 12, py: 0.5 } }}
+            />
+            <Typography variant="caption" color="text.secondary" noWrap>m reach</Typography>
+          </Box>
+        )}
+        <Typography variant="caption" color="text.secondary" data-testid="world-tree-count">
+          {matchCount === null
+            ? `${summary.stats.vobCount.toLocaleString()} VOBs`
+            : `${matchCount.toLocaleString()} of ${summary.stats.vobCount.toLocaleString()} VOBs`}
+        </Typography>
+      </Box>
+      <Box
+        sx={{ flex: 1, minHeight: 0 }}
+        role="tree"
+        aria-label="World scene tree"
+        tabIndex={0}
+        aria-activedescendant={selectedVob === null ? undefined : `world-vob-row-${selectedVob}`}
+        onKeyDown={onTreeKeyDown}
+      >
+        {rows.length === 0 ? (
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            data-testid="world-tree-empty"
+            sx={{ display: 'block', p: 1 }}
+          >
+            {matches === null
+              ? 'This world holds no VOBs.'
+              : 'No VOB matches this filter.'}
+          </Typography>
+        ) : (
+        <AutoSizer>
+          {({ height, width }) => (
+            <List
+              ref={listRef}
+              height={height}
+              width={width}
+              itemCount={rows.length}
+              itemSize={ROW_HEIGHT}
+              itemData={itemData}
+              overscanCount={8}
+            >
+              {Row}
+            </List>
+          )}
+        </AutoSizer>
+        )}
+      </Box>
+    </Box>
+  );
+};
+
+export default WorldSceneTree;

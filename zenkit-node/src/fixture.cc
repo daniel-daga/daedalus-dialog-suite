@@ -1,0 +1,1304 @@
+#include "fixture.hh"
+
+#include <zenkit/Material.hh>
+#include <zenkit/Mesh.hh>
+#include <zenkit/Model.hh>
+#include <zenkit/ModelHierarchy.hh>
+#include <zenkit/ModelMesh.hh>
+#include <zenkit/MultiResolutionMesh.hh>
+#include <zenkit/SoftSkinMesh.hh>
+#include <zenkit/Stream.hh>
+#include <zenkit/Texture.hh>
+#include <zenkit/World.hh>
+#include <zenkit/vobs/Camera.hh>
+#include <zenkit/vobs/Light.hh>
+#include <zenkit/vobs/Misc.hh>
+#include <zenkit/vobs/MovableObject.hh>
+#include <zenkit/vobs/Sound.hh>
+#include <zenkit/vobs/Trigger.hh>
+#include <zenkit/vobs/VirtualObject.hh>
+#include <zenkit/vobs/Zone.hh>
+#include <zenkit/world/BspTree.hh>
+#include <zenkit/world/WayNet.hh>
+
+#include <cstdint>
+#include <fstream>
+#include <memory>
+#include <string>
+#include <vector>
+
+namespace zenkit_node {
+
+namespace {
+
+using namespace zenkit;
+
+void BuildMesh(Mesh& mesh) {
+  // Deterministic creation date; the archive header's own date/user stamp is
+  // written by ZenKit's archive writer and is expected to vary. The pad word
+  // is non-zero on purpose: retail world meshes carry garbage there and it
+  // must survive a round-trip.
+  mesh.date = Date {2024, 1, 1, 0, 0, 0, 0x4A01};
+  mesh.name = "MINIMAL_FIXTURE";
+  mesh.bbox = AxisAlignedBoundingBox {Vec3 {0.0f, -1.0f, 0.0f}, Vec3 {100.0f, 1.0f, 100.0f}};
+  mesh.obb = OrientedBoundingBox {};
+  mesh.obb.center = Vec3 {50.0f, 0.0f, 50.0f};
+  mesh.obb.axes[0] = Vec3 {1.0f, 0.0f, 0.0f};
+  mesh.obb.axes[1] = Vec3 {0.0f, 1.0f, 0.0f};
+  mesh.obb.axes[2] = Vec3 {0.0f, 0.0f, 1.0f};
+  mesh.obb.half_width = Vec3 {50.0f, 1.0f, 50.0f};
+
+  // Two named materials; polygons reference them by index.
+  for (auto const* name : {"FIXTURE_STONE", "FIXTURE_GRASS"}) {
+    Material mat {};
+    mat.name = name;
+    mat.group = MaterialGroup::UNDEFINED;
+    mat.color = Color {128, 128, 128, 255};
+    mat.texture = std::string {name} + ".TGA";
+    mesh.materials.push_back(std::move(mat));
+  }
+
+  // A flat 100x100 quad made of two triangles.
+  mesh.vertices = {
+      Vec3 {0.0f, 0.0f, 0.0f},
+      Vec3 {100.0f, 0.0f, 0.0f},
+      Vec3 {100.0f, 0.0f, 100.0f},
+      Vec3 {0.0f, 0.0f, 100.0f},
+  };
+
+  for (auto i = 0u; i < mesh.vertices.size(); ++i) {
+    VertexFeature feat {};
+    feat.texture = Vec2 {static_cast<float>(i % 2), static_cast<float>(i / 2)};
+    feat.light = 0xFFFFFFFF;
+    feat.normal = Vec3 {0.0f, 1.0f, 0.0f};
+    mesh.features.push_back(feat);
+  }
+
+  // Polygon SoA data (per Mesh.cc save/load): per-poly material, lightmap,
+  // plane, flags, then triangle indices in the flat index arrays.
+  auto add_triangle = [&mesh](uint32_t material, uint32_t a, uint32_t b, uint32_t c) {
+    Polygon poly {};
+    poly.material = material;
+    poly.lightmap = -1;
+    poly.flags = PolygonFlagSet {};
+    poly.flags.sector_index = -1;
+    poly.plane_normal = Vec3 {0.0f, 1.0f, 0.0f};
+    poly.plane_distance = 0.0f;
+    poly.index_count = 3;
+    poly.index_offset = mesh.polygon_vertex_indices.size();
+    mesh.geometry.push_back(poly);
+
+    for (uint32_t idx : {a, b, c}) {
+      mesh.polygon_vertex_indices.push_back(idx);
+      mesh.polygon_feature_indices.push_back(idx);
+      // Also fill the derived triangulated PolygonList, mirroring what
+      // Mesh::load + triangulate() would produce (all-triangle mesh: the two
+      // are identical).
+      mesh.polygons.vertex_indices.push_back(idx);
+      mesh.polygons.feature_indices.push_back(idx);
+    }
+    mesh.polygons.material_indices.push_back(material);
+    mesh.polygons.lightmap_indices.push_back(-1);
+    mesh.polygons.flags.push_back(poly.flags);
+  };
+
+  add_triangle(0, 0, 1, 2);
+  add_triangle(1, 0, 2, 3);
+
+  // Three 1x1 light-map textures shared by four light-maps in the order
+  // A, B, A, C: the LIGHTMAPS_SHARED chunk must list the textures in
+  // first-reference order, i.e. the light-maps reference indices 0, 1, 0, 2.
+  std::shared_ptr<Texture> lightmap_textures[3];
+  for (auto i = 0u; i < 3; ++i) {
+    std::vector<std::uint8_t> pixel {static_cast<std::uint8_t>(0x10 * (i + 1)), 0x20, 0x30, 0xFF};
+    lightmap_textures[i] = std::make_shared<Texture>(
+        TextureBuilder {1, 1}.add_mipmap(pixel, TextureFormat::R8G8B8A8).build(TextureFormat::R8G8B8A8));
+  }
+  for (auto i : {0, 1, 0, 2}) {
+    LightMap lightmap {};
+    lightmap.image = lightmap_textures[i];
+    lightmap.normals[0] = Vec3 {1.0f, 0.0f, 0.0f};
+    lightmap.normals[1] = Vec3 {0.0f, 0.0f, 1.0f};
+    lightmap.origin = Vec3 {static_cast<float>(i), 0.0f, 0.0f};
+    mesh.lightmaps.push_back(lightmap);
+  }
+}
+
+// A mesh built to exercise the three things ExtractWorldMesh does that the
+// minimal fixture cannot reach: fan-triangulating an n-gon, keying vertices on
+// the (vertex, feature) pair rather than the vertex alone, and skipping a
+// material no polygon references.
+void BuildMeshExtractionMesh(Mesh& mesh) {
+  mesh.date = Date {2024, 1, 1, 0, 0, 0, 0x4A01};
+  mesh.name = "MESH_EXTRACTION_FIXTURE";
+  // Deliberately wrong, like the proto-mesh fixture's: the extractor computes
+  // its own box from the vertices it emits, because retail zCMesh world meshes
+  // store an all-zero one.
+  mesh.bbox = AxisAlignedBoundingBox {Vec3 {-999.0f, -999.0f, -999.0f},
+                                      Vec3 {999.0f, 999.0f, 999.0f}};
+  mesh.obb = OrientedBoundingBox {};
+  mesh.obb.center = Vec3 {10.0f, 0.0f, 5.0f};
+  mesh.obb.axes[0] = Vec3 {1.0f, 0.0f, 0.0f};
+  mesh.obb.axes[1] = Vec3 {0.0f, 1.0f, 0.0f};
+  mesh.obb.axes[2] = Vec3 {0.0f, 0.0f, 1.0f};
+  mesh.obb.half_width = Vec3 {10.0f, 1.0f, 5.0f};
+
+  // EX_UNUSED is referenced by no polygon: extraction must emit no chunk for it.
+  for (auto const* name : {"EX_STONE", "EX_GRASS", "EX_UNUSED"}) {
+    Material mat {};
+    mat.name = name;
+    mat.group = MaterialGroup::UNDEFINED;
+    mat.color = Color {128, 128, 128, 255};
+    mat.texture = std::string {name} + ".TGA";
+    mesh.materials.push_back(std::move(mat));
+  }
+
+  // Every field that changes how a material renders, each with a value nothing
+  // else in the fixture carries: two chunks sharing a texture may only merge if
+  // all of them agree, so a field the extractor forgets has to be visible.
+  // EX_GRASS keeps the defaults, as the other half of that comparison.
+  auto& stone = mesh.materials[0];
+  stone.alpha_func = AlphaFunction::BLEND;
+  stone.texture_anim_map_mode = AnimationMapping::LINEAR;
+  stone.texture_anim_fps = 5.0f;
+  stone.texture_anim_map_dir = Vec2 {0.25f, -0.5f};
+  stone.environment_mapping = true;
+  stone.environment_mapping_strength = 0.75f;
+  stone.wave_mode = WaveMode::WIND;
+  stone.wave_speed = WaveSpeed::FAST;
+  stone.wave_max_amplitude = 12.5f;
+  stone.wave_grid_size = 40.0f;
+  stone.ignore_sun = true;
+  stone.disable_lightmap = true;
+
+  mesh.vertices = {
+      Vec3 {0.0f, 0.0f, 0.0f},   Vec3 {10.0f, 0.0f, 0.0f},  Vec3 {10.0f, 0.0f, 10.0f},
+      Vec3 {0.0f, 0.0f, 10.0f},  Vec3 {20.0f, 0.0f, 0.0f},  Vec3 {20.0f, 0.0f, 10.0f},
+  };
+
+  // Seven features for six vertices: feature 6 is a second set of per-corner
+  // data for vertex 1, so a chunk that keys on the vertex alone would collapse
+  // two genuinely different render vertices into one.
+  for (auto i = 0u; i < 6; ++i) {
+    VertexFeature feat {};
+    feat.texture = Vec2 {static_cast<float>(i), static_cast<float>(i * 2)};
+    feat.light = 0x01020300u + i;
+    feat.normal = Vec3 {0.0f, 1.0f, 0.0f};
+    mesh.features.push_back(feat);
+  }
+  VertexFeature alt {};
+  alt.texture = Vec2 {9.0f, 9.0f};
+  alt.light = 0x0A0B0C0Du;
+  alt.normal = Vec3 {1.0f, 0.0f, 0.0f};
+  mesh.features.push_back(alt);
+
+  auto add_polygon = [&mesh](std::uint32_t material,
+                             std::uint8_t portal,
+                             bool sector,
+                             std::int16_t sector_index,
+                             std::vector<std::uint32_t> const& vertex_indices,
+                             std::vector<std::uint32_t> const& feature_indices) {
+    Polygon poly {};
+    poly.material = material;
+    poly.lightmap = -1;
+    poly.flags = PolygonFlagSet {};
+    poly.flags.is_portal = portal;
+    poly.flags.is_sector = sector ? 1 : 0;
+    poly.flags.sector_index = sector_index;
+    poly.plane_normal = Vec3 {0.0f, 1.0f, 0.0f};
+    poly.plane_distance = 0.0f;
+    poly.index_count = vertex_indices.size();
+    poly.index_offset = mesh.polygon_vertex_indices.size();
+    mesh.geometry.push_back(poly);
+
+    for (std::size_t i = 0; i < vertex_indices.size(); ++i) {
+      mesh.polygon_vertex_indices.push_back(vertex_indices[i]);
+      mesh.polygon_feature_indices.push_back(feature_indices[i]);
+    }
+  };
+
+  // A quad — fans into two triangles sharing corners 0 and 2. Carries no
+  // portal metadata at all, so a readout that emitted a row per polygon
+  // rather than per portal would be visible.
+  add_polygon(0, 0, false, -1, {0, 1, 2, 3}, {0, 1, 2, 3});
+  // The portal polygon: same material, and vertex 1 again but with feature 6.
+  // Its `sector_index` is deliberately not the sector polygon's — the two
+  // columns are read from different fields and a swap has to be visible.
+  add_polygon(0, 1, false, 1, {1, 2, 4}, {6, 2, 4});
+  // The sector polygon.
+  add_polygon(1, 0, true, 0, {4, 5, 2}, {4, 5, 2});
+
+  // Mesh::triangulate fills the derived PolygonList on load and Mesh::save
+  // never writes it, so the fixture leaves it empty.
+}
+
+// One more polygon on the mesh-extraction mesh, its last corner naming a vertex
+// and a feature that do not exist. This is the only out-of-bounds a `.zen` can
+// carry into ExtractMesh: `Mesh::load` pushes exactly `index_count` corners per
+// polygon, so `index_offset + i` is always inside the index arrays, but the
+// vertex and feature indices inside them come straight off the stream.
+void CorruptMeshIndices(Mesh& mesh) {
+  Polygon poly {};
+  poly.material = 0;
+  poly.lightmap = -1;
+  poly.flags = PolygonFlagSet {};
+  poly.plane_normal = Vec3 {0.0f, 1.0f, 0.0f};
+  poly.plane_distance = 0.0f;
+  poly.index_count = 3;
+  poly.index_offset = mesh.polygon_vertex_indices.size();
+  mesh.geometry.push_back(poly);
+
+  for (std::uint32_t index : {0u, 1u, 999u}) {
+    mesh.polygon_vertex_indices.push_back(index);
+    mesh.polygon_feature_indices.push_back(index);
+  }
+}
+
+// A proto mesh built to exercise what ExtractProtoMesh claims: one chunk per
+// sub-mesh, wedges as ready-made render vertices, triangle indices in stored
+// order, a sub-mesh with no triangles skipped entirely, and a bounding box
+// computed from the wedges actually emitted rather than copied off the mesh.
+void BuildAssetProtoMesh(MultiResolutionMesh& mesh) {
+  // Deliberately wrong: the extractor computes its own box from the wedges it
+  // emits, so copying this one would be visible immediately.
+  mesh.bbox = AxisAlignedBoundingBox {Vec3 {-999.0f, -999.0f, -999.0f},
+                                      Vec3 {999.0f, 999.0f, 999.0f}};
+  mesh.obbox = OrientedBoundingBox {};
+  mesh.obbox.axes[0] = Vec3 {1.0f, 0.0f, 0.0f};
+  mesh.obbox.axes[1] = Vec3 {0.0f, 1.0f, 0.0f};
+  mesh.obbox.axes[2] = Vec3 {0.0f, 0.0f, 1.0f};
+  mesh.alpha_test = 1;
+
+  mesh.positions = {
+      Vec3 {0.0f, 0.0f, 0.0f},   Vec3 {10.0f, 0.0f, 0.0f},   Vec3 {10.0f, 0.0f, 10.0f},
+      Vec3 {0.0f, 0.0f, 10.0f},  Vec3 {5.0f, 20.0f, 5.0f},
+      // Reachable only through the triangle-less sub-mesh, so it must not
+      // reach the emitted bounding box.
+      Vec3 {-100.0f, -100.0f, -100.0f},
+  };
+
+  auto add_sub_mesh = [&mesh](char const* name,
+                              Color color,
+                              std::vector<MeshWedge> wedges,
+                              std::vector<MeshTriangle> triangles) {
+    SubMesh sub {};
+    sub.mat.name = name;
+    sub.mat.texture = std::string {name} + ".TGA";
+    sub.mat.group = MaterialGroup::UNDEFINED;
+    sub.mat.color = color;
+    sub.wedges = std::move(wedges);
+    sub.triangles = std::move(triangles);
+    mesh.materials.push_back(sub.mat);
+    mesh.sub_meshes.push_back(std::move(sub));
+  };
+
+  add_sub_mesh("EX_WOOD",
+               Color {10, 20, 30, 255},
+               {
+                   MeshWedge {Vec3 {0.0f, 1.0f, 0.0f}, Vec2 {0.0f, 0.0f}, 0},
+                   MeshWedge {Vec3 {0.0f, 1.0f, 0.0f}, Vec2 {1.0f, 0.0f}, 1},
+                   MeshWedge {Vec3 {0.0f, 1.0f, 0.0f}, Vec2 {1.0f, 1.0f}, 2},
+                   MeshWedge {Vec3 {0.0f, 1.0f, 0.0f}, Vec2 {0.0f, 1.0f}, 3},
+               },
+               {MeshTriangle {{0, 1, 2}}, MeshTriangle {{0, 2, 3}}});
+
+  // The same render state a world-mesh chunk carries, with different values, so
+  // a sub-mesh chunk that reads the wrong material field cannot pass by
+  // borrowing the world fixture's answer. EX_IRON keeps the defaults.
+  auto& wood = mesh.sub_meshes[0].mat;
+  wood.alpha_func = AlphaFunction::ADD;
+  wood.texture_anim_map_mode = AnimationMapping::LINEAR;
+  wood.texture_anim_fps = 12.0f;
+  wood.texture_anim_map_dir = Vec2 {-1.0f, 0.5f};
+  wood.environment_mapping = true;
+  wood.environment_mapping_strength = 0.25f;
+  wood.wave_mode = WaveMode::GROUND;
+  wood.wave_speed = WaveSpeed::SLOW;
+  wood.wave_max_amplitude = 7.5f;
+  wood.wave_grid_size = 20.0f;
+  wood.ignore_sun = true;
+  wood.disable_lightmap = true;
+  mesh.materials[0] = wood;
+
+  // Wedges but no triangles: contributes no chunk and no bounding box.
+  add_sub_mesh("EX_EMPTY",
+               Color {1, 2, 3, 4},
+               {MeshWedge {Vec3 {0.0f, -1.0f, 0.0f}, Vec2 {0.5f, 0.5f}, 5}},
+               {});
+
+  // Triangle corners in descending order, so "stored order, unreversed" is a
+  // claim the test can actually distinguish from a sorted or flipped emission.
+  add_sub_mesh("EX_IRON",
+               Color {200, 100, 50, 255},
+               {
+                   MeshWedge {Vec3 {1.0f, 0.0f, 0.0f}, Vec2 {0.25f, 0.75f}, 1},
+                   MeshWedge {Vec3 {1.0f, 0.0f, 0.0f}, Vec2 {0.5f, 0.5f}, 2},
+                   MeshWedge {Vec3 {1.0f, 0.0f, 0.0f}, Vec2 {0.75f, 0.25f}, 4},
+               },
+               {MeshTriangle {{2, 1, 0}}});
+}
+
+// Mat4 stores columns, so a translation lives in the fourth one.
+Mat4 Translation(float x, float y, float z) {
+  auto m = Mat4::identity();
+  m.columns[3] = Vec4 {x, y, z, 1.0f};
+  return m;
+}
+
+// Two mipmap levels so decodeTexture's `level` argument has something to
+// select between, and distinguishable pixels at each level.
+Texture BuildAssetTexture() {
+  std::vector<std::uint8_t> const level0 {
+      0xFF, 0x00, 0x00, 0xFF,  // red
+      0x00, 0xFF, 0x00, 0xFF,  // green
+      0x00, 0x00, 0xFF, 0xFF,  // blue
+      0xFF, 0xFF, 0x00, 0x80,  // yellow, half alpha
+  };
+  std::vector<std::uint8_t> const level1 {0x40, 0x50, 0x60, 0x70};
+
+  return TextureBuilder {2, 2}
+      .add_mipmap(level0, TextureFormat::R8G8B8A8)
+      .add_mipmap(level1, TextureFormat::R8G8B8A8)
+      .build(TextureFormat::R8G8B8A8);
+}
+
+void BuildBspTree(BspTree& bsp, AxisAlignedBoundingBox const& bbox, std::uint32_t polygon_count) {
+  bsp.mode = BspTreeType::OUTDOOR;
+  bsp.polygon_indices.resize(polygon_count);
+  for (std::uint32_t i = 0; i < polygon_count; ++i) bsp.polygon_indices[i] = i;
+
+  // A single leaf node covering all polygons. BspTree::load treats a
+  // one-node tree as a leaf, so leaf_node_indices must be exactly {0}.
+  BspNode node {};
+  node.bbox = bbox;
+  node.polygon_index = 0;
+  node.polygon_count = static_cast<std::int32_t>(polygon_count);
+  bsp.nodes.push_back(node);
+  bsp.leaf_node_indices = {0};
+
+  // BspTree::load resizes light_points to the leaf count, so exactly one
+  // light point must be present for the file to round-trip consistently.
+  bsp.light_points = {Vec3 {50.0f, 0.0f, 50.0f}};
+}
+
+std::shared_ptr<VirtualObject> BuildVobTree() {
+  auto root = std::make_shared<VirtualObject>();
+  root->type = VirtualObjectType::zCVob;
+  root->vob_name = "FIXTURE_ROOT";
+  root->position = Vec3 {0.0f, 0.0f, 0.0f};
+  root->bbox = AxisAlignedBoundingBox {Vec3 {-10.0f, -10.0f, -10.0f}, Vec3 {10.0f, 10.0f, 10.0f}};
+
+  auto spot = std::make_shared<VSpot>();
+  spot->type = VirtualObjectType::zCVobSpot;
+  // windows-1252 bytes for "FP_CAMPFIRE_ÄÖÜ_01" (0xC4 0xD6 0xDC), spelled as
+  // explicit escapes so the C++ source stays encoding-agnostic.
+  spot->vob_name = "FP_CAMPFIRE_\xC4\xD6\xDC_01";
+  spot->position = Vec3 {10.0f, 0.0f, 20.0f};
+  spot->rotation = Mat3 {0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, -1.0f, 0.0f, 0.0f};
+  spot->bbox = AxisAlignedBoundingBox {Vec3 {9.0f, -1.0f, 19.0f}, Vec3 {11.0f, 1.0f, 21.0f}};
+  // Bit 15 of the packed G2 flag word carries engine memory garbage in retail
+  // worlds; set it here so the round-trip of that bit is covered.
+  spot->packed_reserved_bit = true;
+
+  // A dynamic light hung on the campfire, carrying a `colorAniList` in BOTH
+  // ZenGin forms: a bare greyscale scalar for a colour whose channels are equal
+  // (`255 `, `64 `) and a parenthesized triple for one whose channels differ.
+  // Retail worlds spell it exactly that way — measured over the three G2 worlds,
+  // 26 of the 5,240 animation colours are written short and not one of the 5,214
+  // triples has r == g == b — so a writer that emits only triples cannot
+  // reproduce those files. It is a child of the spot so no existing VOB's index
+  // path or sibling slot moves.
+  auto light = std::make_shared<VLight>();
+  light->type = VirtualObjectType::zCVobLight;
+  light->vob_name = "FIXTURE_CAMPFIRE_LIGHT";
+  light->position = Vec3 {10.0f, 5.0f, 20.0f};
+  light->bbox = AxisAlignedBoundingBox {Vec3 {5.0f, 0.0f, 15.0f}, Vec3 {15.0f, 10.0f, 25.0f}};
+  // The animation fields are only written for a dynamic light.
+  light->is_static = false;
+  light->preset = "";
+  light->light_type = LightType::POINT;
+  light->range = 500.0f;
+  light->color = Color {255, 200, 120, 255};
+  light->cone_angle = 0.0f;
+  light->quality = LightQuality::MEDIUM;
+  light->lensflare_fx = "";
+  light->on = true;
+  light->range_animation_scale = {1.0f, 0.5f};
+  light->range_animation_fps = 4.0f;
+  light->range_animation_smooth = true;
+  light->color_animation_list = {
+      Color {255, 255, 255, 255},  // greyscale shorthand: `255 `
+      Color {10, 20, 30, 255},     // triple: `(10 20 30) `
+      Color {64, 64, 64, 255},     // greyscale shorthand: `64 `
+  };
+  light->color_animation_fps = 10.0f;
+  light->color_animation_smooth = true;
+  light->can_move = false;
+  spot->children = {light};
+
+  auto item = std::make_shared<VItem>();
+  item->type = VirtualObjectType::oCItem;
+  item->vob_name = "ITEM_SWORD_01";
+  item->instance = "ITMW_1H_SWORD_01";
+  item->position = Vec3 {30.0f, 5.0f, 40.0f};
+  item->rotation = Mat3 {-1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, -1.0f};
+  item->bbox = AxisAlignedBoundingBox {Vec3 {29.0f, 4.0f, 39.0f}, Vec3 {31.0f, 6.0f, 41.0f}};
+
+  auto container = std::make_shared<VContainer>();
+  container->type = VirtualObjectType::oCMobContainer;
+  container->vob_name = "CHEST_01";
+  container->position = Vec3 {60.0f, 0.0f, 80.0f};
+  container->bbox = AxisAlignedBoundingBox {Vec3 {55.0f, 0.0f, 75.0f}, Vec3 {65.0f, 10.0f, 85.0f}};
+  // oCMOB / oCMobInter / oCMobContainer fields are not default-initialized in
+  // ZenKit; zero them explicitly so the fixture is deterministic.
+  container->name = "CHEST";
+  container->hp = 10;
+  container->damage = 0;
+  // True witnesses for ZenGin's signed ASCII oCMOB booleans. The chest also
+  // supplies an ordinary true boolean through show_visual for comparison.
+  container->movable = true;
+  container->takable = false;
+  container->focus_override = true;
+  container->show_visual = true;
+  container->material = SoundMaterialType::WOOD;
+  container->destroyed = false;
+  container->state_count = 1;
+  container->rewind = false;
+  container->locked = true;
+  container->key = "ITKE_CHEST_01";
+  container->pick_string = "LRRL";
+  container->contents = "ITMI_GOLD:25";
+
+  // A decal visual on the chest, for one reason: `decalAlphaWeight` is the only
+  // field in a non-savegame world that goes through `WriteArchive::write_byte`,
+  // and ZenKit's ASCII writer used to emit it with a `byte:` type token its own
+  // reader — and ZenGin — spell `int:` (defect A5, patch 0026). Without a byte
+  // field anywhere in the fixture that mismatch was invisible to CI while it
+  // made every one of the 24 retail ASCII worlds fail to re-load. Hung on an
+  // existing VOB rather than added as one, so no index path or sibling slot
+  // moves.
+  auto decal = std::make_shared<VisualDecal>();
+  decal->name = "FIXTURE_DECAL.TGA";
+  decal->type = VisualType::DECAL;
+  decal->dimension = Vec2 {40.0f, 40.0f};
+  decal->offset = Vec2 {0.0f, 0.0f};
+  decal->two_sided = true;
+  decal->alpha_func = AlphaFunction::BLEND;
+  decal->texture_anim_fps = 0.0f;
+  decal->alpha_weight = 200;
+  decal->ignore_daylight = false;
+  container->visual = decal;
+
+  root->children = {spot, item, container};
+  return root;
+}
+
+// A root tree carrying one `oCNpc`, authored only into the kNpc variant so the
+// golden fixture's VOBs stay exactly as they were. Its point is the five
+// element counts `VNpc::load` reads off the file — overlays, talents, news,
+// items and inventory slots — none of which exists anywhere in the golden
+// world, so nothing could seed them. Every list is given one entry, because a
+// count of zero is written and read without the loop after it ever running.
+std::shared_ptr<VirtualObject> BuildNpcVobTree() {
+  auto root = std::make_shared<VirtualObject>();
+  root->type = VirtualObjectType::zCVob;
+  root->vob_name = "FIXTURE_NPC_ROOT";
+  root->position = Vec3 {0.0f, 0.0f, 0.0f};
+  root->bbox = AxisAlignedBoundingBox {Vec3 {-10.0f, -10.0f, -10.0f}, Vec3 {10.0f, 10.0f, 10.0f}};
+
+  auto npc = std::make_shared<VNpc>();
+  npc->type = VirtualObjectType::oCNpc;
+  npc->vob_name = "FIXTURE_NPC";
+  npc->position = Vec3 {100.0f, 0.0f, 100.0f};
+  npc->bbox = AxisAlignedBoundingBox {Vec3 {99.0f, 0.0f, 99.0f}, Vec3 {101.0f, 2.0f, 101.0f}};
+
+  // None of VNpc's scalars is default-initialized in ZenKit; zero them all so
+  // the authored world is deterministic.
+  npc->npc_instance = "PC_HERO";
+  npc->model_scale = Vec3 {1.0f, 1.0f, 1.0f};
+  npc->model_fatness = 0.0f;
+  npc->overlays = {"HUMANS_RELAXED.MDS"};
+  npc->flags = 0;
+  npc->guild = 0;
+  npc->guild_true = 0;
+  npc->level = 1;
+  npc->xp = 0;
+  npc->xp_next_level = 0;
+  npc->lp = 0;
+
+  auto talent = std::make_shared<VNpc::Talent>();
+  talent->talent = 1;
+  talent->value = 2;
+  talent->skill = 3;
+  npc->talents = {talent};
+
+  npc->fight_tactic = 0;
+  npc->fight_mode = 0;
+  npc->wounded = false;
+  npc->mad = false;
+  npc->mad_time = 0;
+  npc->player = false;
+  for (auto i = 0u; i < VNpc::attribute_count; ++i) npc->attributes[i] = 0;
+  for (auto i = 0u; i < VNpc::hcs_count; ++i) npc->hit_chance[i] = 0;
+  for (auto i = 0u; i < VNpc::missions_count; ++i) npc->missions[i] = 0;
+  npc->start_ai_state = "";
+  for (auto i = 0u; i < VNpc::aivar_count; ++i) npc->aivar[i] = 0;
+  npc->script_waypoint = "WP_FIXTURE_01";
+  npc->attitude = 0;
+  npc->attitude_temp = 0;
+  npc->name_nr = 0;
+  npc->move_lock = false;
+  for (auto i = 0u; i < VNpc::packed_count; ++i) npc->packed[i] = "";
+
+  auto news = std::make_unique<VNpc::News>();
+  news->told = false;
+  news->spread_time = 0.0f;
+  news->spread_type = VNpc::NewsSpread::DONT_SPREAD;
+  news->news_id = VNpc::NewsId::THEFT;
+  news->gossip = false;
+  news->guild_victim = false;
+  news->witness_name = "WITNESS";
+  news->offender_name = "OFFENDER";
+  news->victim_name = "VICTIM";
+  npc->news.push_back(std::move(news));
+
+  auto carried = std::make_shared<VItem>();
+  carried->type = VirtualObjectType::oCItem;
+  carried->vob_name = "ITEM_NPC_SWORD";
+  carried->instance = "ITMW_1H_SWORD_01";
+  carried->position = Vec3 {100.0f, 0.0f, 100.0f};
+  carried->bbox = AxisAlignedBoundingBox {Vec3 {99.0f, 0.0f, 99.0f}, Vec3 {101.0f, 2.0f, 101.0f}};
+  // `s_flags` decides whether a `shortKey<n>` int follows the item on the wire;
+  // leave it clear so the item entry is the only thing the loop reads.
+  carried->s_flags = 0;
+  npc->items = {carried};
+
+  auto slot = std::make_unique<VNpc::Slot>();
+  // An unused slot writes only `used` and `name`; a used one writes a nested
+  // item object too, which is not what these counts are about.
+  slot->used = false;
+  slot->name = "ZS_RIGHTHAND";
+  slot->in_inventory = false;
+  npc->slots.push_back(std::move(slot));
+
+  npc->current_state_valid = false;
+  npc->current_state_name = "";
+  npc->current_state_index = 0;
+  npc->current_state_is_routine = false;
+  npc->next_state_valid = false;
+  npc->next_state_name = "";
+  npc->next_state_index = 0;
+  npc->next_state_is_routine = false;
+  npc->last_ai_state = 0;
+  npc->has_routine = false;
+  npc->routine_changed = false;
+  npc->routine_overlay = false;
+  npc->routine_overlay_count = 0;
+  npc->walkmode_routine = 0;
+  npc->weaponmode_routine = false;
+  npc->start_new_routine = false;
+  npc->ai_state_driven = 0;
+  npc->ai_state_pos = Vec3 {0.0f, 0.0f, 0.0f};
+  npc->current_routine = "";
+  npc->respawn = false;
+  npc->respawn_time = 0;
+  for (auto i = 0u; i < VNpc::protection_count; ++i) npc->protection[i] = 0;
+
+  root->children = {npc};
+  return root;
+}
+
+// A root tree carrying one `zCCSCamera`, authored only into the kCamera
+// variant so the golden fixture's VOBs stay exactly as they were. Its point is
+// the two element counts `VCutsceneCamera::load` reads off the file — `numPos`
+// and `numTargets` — neither of which exists anywhere in the golden world, so
+// nothing could seed them. Each list is given one keyframe, because a count of
+// zero is written and read without the loop after it ever running.
+std::shared_ptr<VirtualObject> BuildCameraVobTree() {
+  auto root = std::make_shared<VirtualObject>();
+  root->type = VirtualObjectType::zCVob;
+  root->vob_name = "FIXTURE_CAMERA_ROOT";
+  root->position = Vec3 {0.0f, 0.0f, 0.0f};
+  root->bbox = AxisAlignedBoundingBox {Vec3 {-10.0f, -10.0f, -10.0f}, Vec3 {10.0f, 10.0f, 10.0f}};
+
+  auto keyframe = [](float time) {
+    auto frame = std::make_shared<VCameraTrajectoryFrame>();
+    frame->type = VirtualObjectType::zCCamTrj_KeyFrame;
+    frame->vob_name = "";
+    frame->position = Vec3 {0.0f, 0.0f, 0.0f};
+    frame->bbox = AxisAlignedBoundingBox {Vec3 {0.0f, 0.0f, 0.0f}, Vec3 {0.0f, 0.0f, 0.0f}};
+    frame->time = time;
+    frame->roll_angle = 0.0f;
+    frame->fov_scale = 1.0f;
+    frame->motion_type = CameraMotion::SMOOTH;
+    frame->motion_type_fov = CameraMotion::SMOOTH;
+    frame->motion_type_roll = CameraMotion::SMOOTH;
+    frame->motion_type_time_scale = CameraMotion::SMOOTH;
+    frame->tension = 0.0f;
+    frame->cam_bias = 0.0f;
+    frame->continuity = 0.0f;
+    frame->time_scale = 1.0f;
+    frame->time_fixed = false;
+    frame->original_pose = Mat4::identity();
+    return frame;
+  };
+
+  auto camera = std::make_shared<VCutsceneCamera>();
+  camera->type = VirtualObjectType::zCCSCamera;
+  camera->vob_name = "FIXTURE_CAMERA";
+  camera->position = Vec3 {200.0f, 0.0f, 200.0f};
+  camera->bbox = AxisAlignedBoundingBox {Vec3 {199.0f, 0.0f, 199.0f}, Vec3 {201.0f, 2.0f, 201.0f}};
+  camera->trajectory_for = CameraCoordinateReference::WORLD;
+  camera->target_trajectory_for = CameraCoordinateReference::WORLD;
+  camera->loop_mode = CameraLoop::NONE;
+  camera->lerp_mode = CameraLerpType::PATH;
+  camera->ignore_for_vob_rotation = false;
+  camera->ignore_for_vob_rotation_target = false;
+  camera->adapt = false;
+  camera->ease_first = false;
+  camera->ease_last = false;
+  camera->total_duration = 1.0f;
+  camera->auto_focus_vob = "";
+  camera->auto_player_movable = false;
+  camera->auto_untrigger_last = false;
+  camera->auto_untrigger_last_delay = 0.0f;
+  camera->position_count = 1;
+  camera->target_count = 1;
+  camera->trajectory_frames = {keyframe(0.0f)};
+  camera->target_frames = {keyframe(1.0f)};
+
+  root->children = {camera};
+  return root;
+}
+
+// A second root tree, authored only into the mesh-extraction variant so the
+// golden fixture's VOBs stay exactly as they were. BuildVobTree's VOBs carry no
+// visual and no flags at all, which is fine for a round-trip fixture and
+// useless for an index: nothing there would notice a dictionary that never
+// interns, a visual type read off the wrong field, or a flag word stuck at zero.
+std::shared_ptr<VirtualObject> BuildVisualVobTree() {
+  // Concrete visual classes, not the `Visual` base: the writer derives the
+  // object's class name from its type, and a base-class visual produces a world
+  // that cannot be re-loaded at all — a 0xC0000409 fail-fast with no
+  // diagnostic, the same shape of failure as patch 0020's.
+  auto proto_visual = [](char const* name) {
+    auto v = std::make_shared<VisualMultiResolutionMesh>();
+    v->name = name;
+    v->type = VisualType::MULTI_RESOLUTION_MESH;
+    return v;
+  };
+  auto mesh_visual = [](char const* name) {
+    auto v = std::make_shared<VisualMesh>();
+    v->name = name;
+    v->type = VisualType::MESH;
+    return v;
+  };
+
+  auto root = std::make_shared<VirtualObject>();
+  root->type = VirtualObjectType::zCVob;
+  root->vob_name = "VOB_INDEX_ROOT";
+  root->position = Vec3 {100.0f, 0.0f, 100.0f};
+  root->bbox = AxisAlignedBoundingBox {Vec3 {95.0f, -5.0f, 95.0f}, Vec3 {105.0f, 5.0f, 105.0f}};
+  root->visual = proto_visual("EX_CRATE.3DS");
+  root->show_visual = true;
+  root->vob_static = true;
+
+  // The same visual as the root: two VOBs, one dictionary entry.
+  auto a = std::make_shared<VSpot>();
+  a->type = VirtualObjectType::zCVobSpot;
+  a->vob_name = "VOB_INDEX_A";
+  a->position = Vec3 {110.0f, 1.0f, 120.0f};
+  a->rotation = Mat3 {0.0f, 1.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
+  a->bbox = AxisAlignedBoundingBox {Vec3 {109.0f, 0.0f, 119.0f}, Vec3 {111.0f, 2.0f, 121.0f}};
+  a->visual = proto_visual("EX_CRATE.3DS");
+  a->show_visual = false;
+  a->ambient = true;
+
+  // A different visual, a different visual type, and a different flag set.
+  auto b = std::make_shared<VItem>();
+  b->type = VirtualObjectType::oCItem;
+  b->vob_name = "VOB_INDEX_B";
+  b->instance = "ITMW_1H_SWORD_02";
+  b->position = Vec3 {130.0f, 2.0f, 140.0f};
+  b->bbox = AxisAlignedBoundingBox {Vec3 {129.0f, 1.0f, 139.0f}, Vec3 {131.0f, 3.0f, 141.0f}};
+  b->visual = mesh_visual("EX_HOUSE.3DS");
+  b->show_visual = true;
+  b->cd_dynamic = true;
+  b->physics_enabled = true;
+
+  // No visual object at all — normalizeWorld reports null there and the index
+  // reports the empty string, which is a difference worth having a VOB for.
+  auto c = std::make_shared<VirtualObject>();
+  c->type = VirtualObjectType::zCVob;
+  c->vob_name = "VOB_INDEX_NOVISUAL";
+  c->position = Vec3 {150.0f, 3.0f, 160.0f};
+  c->bbox = AxisAlignedBoundingBox {Vec3 {149.0f, 2.0f, 159.0f}, Vec3 {151.0f, 4.0f, 161.0f}};
+  c->visual = nullptr;
+
+  // The sound family and the zones — the classes `setVobClassProp` learned in
+  // Phase 1b-2 increment 2. They are authored here, into the mesh-extraction
+  // variant only, for exactly the reason this second tree exists at all: the
+  // checked-in golden fixture's VOBs must not move, and a per-class write needs
+  // a VOB of the class to write on. Every field is set explicitly, including
+  // the ones this op does not write — a case that reset a neighbouring field
+  // would otherwise have nothing to be caught by.
+  auto sound = std::make_shared<VSound>();
+  sound->type = VirtualObjectType::zCVobSound;
+  sound->vob_name = "VOB_INDEX_SOUND";
+  sound->position = Vec3 {170.0f, 4.0f, 180.0f};
+  sound->bbox = AxisAlignedBoundingBox {Vec3 {169.0f, 3.0f, 179.0f}, Vec3 {171.0f, 5.0f, 181.0f}};
+  sound->volume = 50.0f;
+  sound->mode = SoundMode::LOOP;
+  sound->random_delay = 5.0f;
+  sound->random_delay_var = 2.0f;
+  sound->initially_playing = true;
+  sound->ambient3d = false;
+  sound->obstruction = true;
+  sound->cone_angle = 0.0f;
+  sound->volume_type = SoundTriggerVolumeType::SPHERICAL;
+  sound->radius = 1500.0f;
+  sound->sound_name = "OW_CRICKET";
+
+  // `zCVobSoundDaytime` derives from `zCVobSound`, so it is here to prove the
+  // derived case still writes the *base* fields and not only its own three.
+  auto daytime = std::make_shared<VSoundDaytime>();
+  daytime->type = VirtualObjectType::zCVobSoundDaytime;
+  daytime->vob_name = "VOB_INDEX_SOUND_DAYTIME";
+  daytime->position = Vec3 {190.0f, 4.0f, 200.0f};
+  daytime->bbox =
+      AxisAlignedBoundingBox {Vec3 {189.0f, 3.0f, 199.0f}, Vec3 {191.0f, 5.0f, 201.0f}};
+  daytime->volume = 80.0f;
+  daytime->mode = SoundMode::RANDOM;
+  daytime->random_delay = 30.0f;
+  daytime->random_delay_var = 10.0f;
+  daytime->initially_playing = false;
+  daytime->ambient3d = true;
+  daytime->obstruction = false;
+  daytime->cone_angle = 90.0f;
+  daytime->volume_type = SoundTriggerVolumeType::ELLIPSOIDAL;
+  daytime->radius = 2500.0f;
+  daytime->sound_name = "OW_BIRD_DAY";
+  daytime->start_time = 6.0f;
+  daytime->end_time = 20.0f;
+  daytime->sound_name2 = "OW_OWL_NIGHT";
+
+  // VZoneFarPlane's two floats have no default initializer in ZenKit at all,
+  // so a fixture that left them alone would round-trip whatever was on the
+  // stack.
+  auto far_plane = std::make_shared<VZoneFarPlane>();
+  far_plane->type = VirtualObjectType::zCZoneVobFarPlane;
+  far_plane->vob_name = "VOB_INDEX_FARPLANE";
+  far_plane->position = Vec3 {210.0f, 4.0f, 220.0f};
+  far_plane->bbox =
+      AxisAlignedBoundingBox {Vec3 {209.0f, 3.0f, 219.0f}, Vec3 {211.0f, 5.0f, 221.0f}};
+  far_plane->vob_far_plane_z = 8000.0f;
+  far_plane->inner_range_percentage = 0.75f;
+
+  auto fog = std::make_shared<VZoneFog>();
+  fog->type = VirtualObjectType::zCZoneZFog;
+  fog->vob_name = "VOB_INDEX_FOG";
+  fog->position = Vec3 {230.0f, 4.0f, 240.0f};
+  fog->bbox = AxisAlignedBoundingBox {Vec3 {229.0f, 3.0f, 239.0f}, Vec3 {231.0f, 5.0f, 241.0f}};
+  fog->range_center = 12000.0f;
+  fog->inner_range_percentage = 0.5f;
+  fog->color = Color {120, 130, 140, 255};
+  fog->fade_out_sky = true;
+  fog->override_color = false;
+
+  auto music = std::make_shared<VZoneMusic>();
+  music->type = VirtualObjectType::oCZoneMusic;
+  music->vob_name = "VOB_INDEX_MUSIC";
+  music->position = Vec3 {250.0f, 4.0f, 260.0f};
+  music->bbox = AxisAlignedBoundingBox {Vec3 {249.0f, 3.0f, 259.0f}, Vec3 {251.0f, 5.0f, 261.0f}};
+  music->enabled = true;
+  music->priority = 2;
+  music->ellipsoid = false;
+  music->reverb = -30.0f;
+  music->volume = 0.5f;
+  music->loop = true;
+
+  auto animate = std::make_shared<VAnimate>();
+  animate->type = VirtualObjectType::zCVobAnimate;
+  animate->vob_name = "VOB_INDEX_ANIMATE";
+  animate->position = Vec3 {270.0f, 4.0f, 280.0f};
+  animate->bbox =
+      AxisAlignedBoundingBox {Vec3 {269.0f, 3.0f, 279.0f}, Vec3 {271.0f, 5.0f, 281.0f}};
+  animate->start_on = true;
+
+  auto pfx = std::make_shared<VParticleEffectController>();
+  pfx->type = VirtualObjectType::zCPFXController;
+  pfx->vob_name = "VOB_INDEX_PFX";
+  pfx->position = Vec3 {290.0f, 4.0f, 300.0f};
+  pfx->bbox = AxisAlignedBoundingBox {Vec3 {289.0f, 3.0f, 299.0f}, Vec3 {291.0f, 5.0f, 301.0f}};
+  pfx->pfx_name = "PFX_TORCHFIRE";
+  pfx->kill_when_done = true;
+  pfx->initially_running = true;
+
+  auto world_start = std::make_shared<VTriggerWorldStart>();
+  world_start->type = VirtualObjectType::zCTriggerWorldStart;
+  world_start->vob_name = "VOB_INDEX_TRIGGERWORLDSTART";
+  world_start->position = Vec3 {310.0f, 4.0f, 320.0f};
+  world_start->bbox =
+      AxisAlignedBoundingBox {Vec3 {309.0f, 3.0f, 319.0f}, Vec3 {311.0f, 5.0f, 321.0f}};
+  world_start->target = "TARGET_VOB";
+  world_start->fire_once = true;
+
+  auto trigger_script = std::make_shared<VTriggerScript>();
+  trigger_script->type = VirtualObjectType::oCTriggerScript;
+  trigger_script->vob_name = "VOB_INDEX_TRIGGERSCRIPT";
+  trigger_script->position = Vec3 {330.0f, 4.0f, 340.0f};
+  trigger_script->bbox =
+      AxisAlignedBoundingBox {Vec3 {329.0f, 3.0f, 339.0f}, Vec3 {331.0f, 5.0f, 341.0f}};
+  trigger_script->target = "TARGET_VOB";
+  trigger_script->function = "SCRIPTFUNC_ON_TRIGGER";
+
+  auto trigger = std::make_shared<VTrigger>();
+  trigger->type = VirtualObjectType::zCTrigger;
+  trigger->vob_name = "VOB_INDEX_TRIGGER";
+  trigger->position = Vec3 {350.0f, 4.0f, 360.0f};
+  trigger->bbox =
+      AxisAlignedBoundingBox {Vec3 {349.0f, 3.0f, 359.0f}, Vec3 {351.0f, 5.0f, 361.0f}};
+  trigger->target = "TARGET_VOB";
+  trigger->start_enabled = true;
+  trigger->send_untrigger = false;
+  trigger->react_to_on_trigger = true;
+  trigger->react_to_on_touch = false;
+  trigger->react_to_on_damage = true;
+  trigger->respond_to_object = false;
+  trigger->respond_to_pc = true;
+  trigger->respond_to_npc = false;
+  trigger->vob_target = "VOB_TARGET_NAME";
+  trigger->max_activation_count = 3;
+  trigger->retrigger_delay_sec = 1.5f;
+  trigger->damage_threshold = 10.0f;
+  trigger->fire_delay_sec = 2.5f;
+
+  auto change_level = std::make_shared<VTriggerChangeLevel>();
+  change_level->type = VirtualObjectType::oCTriggerChangeLevel;
+  change_level->vob_name = "VOB_INDEX_TRIGGERCHANGELEVEL";
+  change_level->position = Vec3 {370.0f, 4.0f, 380.0f};
+  change_level->bbox =
+      AxisAlignedBoundingBox {Vec3 {369.0f, 3.0f, 379.0f}, Vec3 {371.0f, 5.0f, 381.0f}};
+  change_level->target = "TARGET_VOB";
+  change_level->start_enabled = true;
+  change_level->send_untrigger = false;
+  change_level->react_to_on_trigger = true;
+  change_level->react_to_on_touch = false;
+  change_level->react_to_on_damage = true;
+  change_level->respond_to_object = false;
+  change_level->respond_to_pc = true;
+  change_level->respond_to_npc = false;
+  change_level->vob_target = "VOB_TARGET_NAME";
+  change_level->max_activation_count = 3;
+  change_level->retrigger_delay_sec = 1.5f;
+  change_level->damage_threshold = 10.0f;
+  change_level->fire_delay_sec = 2.5f;
+  change_level->level_name = "NEWWORLD.ZEN";
+  change_level->start_vob = "START_VOB_ÄÖÜ";
+
+  auto mover = std::make_shared<VMover>();
+  mover->type = VirtualObjectType::zCMover;
+  mover->vob_name = "VOB_INDEX_MOVER";
+  mover->position = Vec3 {390.0f, 4.0f, 400.0f};
+  mover->bbox = AxisAlignedBoundingBox {Vec3 {389.0f, 3.0f, 399.0f}, Vec3 {391.0f, 5.0f, 401.0f}};
+  mover->target = "TARGET_VOB";
+  mover->start_enabled = true;
+  mover->send_untrigger = false;
+  mover->react_to_on_trigger = true;
+  mover->react_to_on_touch = false;
+  mover->react_to_on_damage = true;
+  mover->respond_to_object = false;
+  mover->respond_to_pc = true;
+  mover->respond_to_npc = false;
+  mover->vob_target = "VOB_TARGET_NAME";
+  mover->max_activation_count = 3;
+  mover->retrigger_delay_sec = 1.5f;
+  mover->damage_threshold = 10.0f;
+  mover->fire_delay_sec = 2.5f;
+  mover->touch_blocker_damage = 5.0f;
+  mover->stay_open_time_sec = 3.0f;
+  mover->locked = true;
+  mover->auto_link = false;
+  mover->auto_rotate = true;
+  // `speed` is left at its default: `VMover::save` only writes it (with
+  // `keyframes` empty here, as it is on any mover that animates from its
+  // visual) when `keyframes` is non-empty, so a non-zero fixture value
+  // would silently not round-trip and this fixture would be lying about it.
+  mover->sfx_open_start = "SFX_OPEN_START_ÄÖÜ";
+  mover->sfx_open_end = "SFX_OPEN_END";
+  mover->sfx_transitioning = "SFX_TRANSITIONING";
+  mover->sfx_close_start = "SFX_CLOSE_START";
+  mover->sfx_close_end = "SFX_CLOSE_END";
+  mover->sfx_lock = "SFX_LOCK";
+  mover->sfx_unlock = "SFX_UNLOCK";
+  mover->sfx_use_locked = "SFX_USE_LOCKED";
+
+  auto mob = std::make_shared<VMovableObject>();
+  mob->type = VirtualObjectType::oCMOB;
+  mob->vob_name = "VOB_INDEX_MOB";
+  mob->position = Vec3 {410.0f, 4.0f, 420.0f};
+  mob->bbox = AxisAlignedBoundingBox {Vec3 {409.0f, 3.0f, 419.0f}, Vec3 {411.0f, 5.0f, 421.0f}};
+  mob->name = "FOCUS_CRATE";
+  mob->hp = 25;
+  mob->damage = 3;
+  mob->movable = true;
+  mob->takable = false;
+  mob->focus_override = false;
+  mob->visual_destroyed = "CRATE_DESTROYED.MMS";
+  mob->owner = "PC_HERO";
+  mob->owner_guild = "GIL_BAU";
+  mob->destroyed = false;
+
+  auto mob_inter = std::make_shared<VInteractiveObject>();
+  mob_inter->type = VirtualObjectType::oCMobInter;
+  mob_inter->vob_name = "VOB_INDEX_MOB_INTER";
+  mob_inter->position = Vec3 {430.0f, 4.0f, 440.0f};
+  mob_inter->bbox = AxisAlignedBoundingBox {Vec3 {429.0f, 3.0f, 439.0f}, Vec3 {431.0f, 5.0f, 441.0f}};
+  mob_inter->name = "FOCUS_LEVER";
+  mob_inter->hp = 10;
+  mob_inter->damage = 0;
+  mob_inter->movable = false;
+  mob_inter->takable = false;
+  mob_inter->focus_override = false;
+  mob_inter->visual_destroyed = "LEVER_DESTROYED.MMS";
+  mob_inter->owner = "PC_HERO";
+  mob_inter->owner_guild = "GIL_BAU";
+  mob_inter->destroyed = false;
+  mob_inter->state_count = 2;
+  mob_inter->condition_function = "LEVER_CONDITION";
+  mob_inter->on_state_change_function = "LEVER_ON_STATE_CHANGE";
+  mob_inter->rewind = true;
+
+  auto mob_fire = std::make_shared<VFire>();
+  mob_fire->type = VirtualObjectType::oCMobFire;
+  mob_fire->vob_name = "VOB_INDEX_MOB_FIRE";
+  mob_fire->position = Vec3 {432.0f, 4.0f, 442.0f};
+  mob_fire->bbox = AxisAlignedBoundingBox {Vec3 {431.0f, 3.0f, 441.0f}, Vec3 {433.0f, 5.0f, 443.0f}};
+  mob_fire->name = "FOCUS_CAMPFIRE";
+  mob_fire->hp = 0;
+  mob_fire->damage = 0;
+  mob_fire->movable = false;
+  mob_fire->takable = false;
+  mob_fire->focus_override = false;
+  mob_fire->visual_destroyed = "";
+  mob_fire->owner = "";
+  mob_fire->owner_guild = "";
+  mob_fire->destroyed = false;
+  mob_fire->state_count = 1;
+  mob_fire->condition_function = "";
+  mob_fire->on_state_change_function = "";
+  mob_fire->rewind = false;
+  mob_fire->slot = "BIP01 FIRE";
+  mob_fire->vob_tree = "FIRETREE_MEDIUM.ZEN";
+
+  auto mob_container = std::make_shared<VContainer>();
+  mob_container->type = VirtualObjectType::oCMobContainer;
+  mob_container->vob_name = "VOB_INDEX_MOB_CONTAINER";
+  mob_container->position = Vec3 {434.0f, 4.0f, 444.0f};
+  mob_container->bbox =
+      AxisAlignedBoundingBox {Vec3 {433.0f, 3.0f, 443.0f}, Vec3 {435.0f, 5.0f, 445.0f}};
+  mob_container->name = "FOCUS_CHEST";
+  mob_container->hp = 20;
+  mob_container->damage = 0;
+  mob_container->movable = false;
+  mob_container->takable = false;
+  mob_container->focus_override = false;
+  mob_container->visual_destroyed = "CHEST_DESTROYED.MMS";
+  mob_container->owner = "PC_HERO";
+  mob_container->owner_guild = "GIL_BAU";
+  mob_container->destroyed = false;
+  mob_container->state_count = 1;
+  mob_container->condition_function = "";
+  mob_container->on_state_change_function = "";
+  mob_container->rewind = false;
+  mob_container->locked = true;
+  mob_container->key = "ItKeyChest";
+  mob_container->pick_string = "LRRLLRL";
+  mob_container->contents = "ItMi_Gold:75, ItFo_Fish:2";
+
+  auto mob_door = std::make_shared<VDoor>();
+  mob_door->type = VirtualObjectType::oCMobDoor;
+  mob_door->vob_name = "VOB_INDEX_MOB_DOOR";
+  mob_door->position = Vec3 {436.0f, 4.0f, 446.0f};
+  mob_door->bbox = AxisAlignedBoundingBox {Vec3 {435.0f, 3.0f, 445.0f}, Vec3 {437.0f, 5.0f, 447.0f}};
+  mob_door->name = "FOCUS_DOOR";
+  mob_door->hp = 30;
+  mob_door->damage = 0;
+  mob_door->movable = false;
+  mob_door->takable = false;
+  mob_door->focus_override = false;
+  mob_door->visual_destroyed = "DOOR_DESTROYED.MMS";
+  mob_door->owner = "PC_HERO";
+  mob_door->owner_guild = "GIL_BAU";
+  mob_door->destroyed = false;
+  mob_door->state_count = 1;
+  mob_door->condition_function = "";
+  mob_door->on_state_change_function = "";
+  mob_door->rewind = false;
+  mob_door->locked = true;
+  mob_door->key = "ItKeyDoor";
+  mob_door->pick_string = "RLRL";
+
+  // The one class whose only field is its target, and the one trigger class
+  // `insertVob` cannot construct — so a fixture VOB is the only way its write
+  // path is reachable at all (2026-09-12).
+  auto untouch = std::make_shared<VTriggerUntouch>();
+  untouch->type = VirtualObjectType::zCTriggerUntouch;
+  untouch->vob_name = "VOB_INDEX_TRIGGER_UNTOUCH";
+  untouch->position = Vec3 {446.0f, 4.0f, 456.0f};
+  untouch->bbox = AxisAlignedBoundingBox {Vec3 {445.0f, 3.0f, 455.0f}, Vec3 {447.0f, 5.0f, 457.0f}};
+  untouch->target = "VOB_INDEX_MOVER";
+
+  // The VOB between a trigger and a mover: it says which keyframe the mover
+  // named by `target` goes to. `insertVob` cannot construct one either, so this
+  // is the only place its write path is reachable (#260).
+  auto mover_controller = std::make_shared<VMoverController>();
+  mover_controller->type = VirtualObjectType::zCMoverController;
+  mover_controller->vob_name = "VOB_INDEX_MOVER_CONTROLLER";
+  mover_controller->position = Vec3 {456.0f, 4.0f, 466.0f};
+  mover_controller->bbox =
+      AxisAlignedBoundingBox {Vec3 {455.0f, 3.0f, 465.0f}, Vec3 {457.0f, 5.0f, 467.0f}};
+  mover_controller->target = "VOB_INDEX_MOVER";
+  mover_controller->message = MoverMessageType::FIXED_DIRECT;
+  mover_controller->key = 0;
+
+  // One string, and the class is complete.
+  auto lens_flare = std::make_shared<VLensFlare>();
+  lens_flare->type = VirtualObjectType::zCVobLensFlare;
+  lens_flare->vob_name = "VOB_INDEX_LENS_FLARE";
+  lens_flare->position = Vec3 {466.0f, 4.0f, 476.0f};
+  lens_flare->bbox =
+      AxisAlignedBoundingBox {Vec3 {465.0f, 3.0f, 475.0f}, Vec3 {467.0f, 5.0f, 477.0f}};
+  lens_flare->fx = "FIXTURE_LENSFLARE_SUN";
+
+  // A shaking camera, and the only class carrying a float triple — which is
+  // what the catalogue's third array kind was added for (2026-09-12).
+  // `insertVob` cannot construct one, so this fixture VOB is again the only
+  // place its write path is reachable.
+  auto earthquake = std::make_shared<VEarthquake>();
+  earthquake->type = VirtualObjectType::zCEarthquake;
+  earthquake->vob_name = "VOB_INDEX_EARTHQUAKE";
+  earthquake->position = Vec3 {476.0f, 4.0f, 486.0f};
+  earthquake->bbox =
+      AxisAlignedBoundingBox {Vec3 {475.0f, 3.0f, 485.0f}, Vec3 {477.0f, 5.0f, 487.0f}};
+  earthquake->radius = 1500.0f;
+  earthquake->duration = 4.0f;
+  earthquake->amplitude = Vec3 {10.0f, 4.0f, 10.0f};
+
+  root->children = {a, b, c, sound, daytime, far_plane, fog, music, animate, pfx, world_start,
+                     trigger_script, trigger, change_level, mover, mob, mob_inter, mob_fire,
+                     mob_container, mob_door, untouch, mover_controller, lens_flare, earthquake};
+  return root;
+}
+
+std::shared_ptr<WayNet> BuildWayNet(FixtureVariant variant) {
+  auto make_point = [](std::string name, Vec3 position, bool free_point) {
+    auto wp = std::make_shared<WayPoint>();
+    wp->name = std::move(name);
+    wp->water_depth = 0;
+    wp->under_water = false;
+    wp->position = position;
+    wp->direction = Vec3 {0.0f, 0.0f, 1.0f};
+    wp->free_point = free_point;
+    return wp;
+  };
+
+  auto waynet = std::make_shared<WayNet>();
+  // One free point (serialized in the waypoint list) plus three waypoints that
+  // only exist as edge endpoints — matching how ZenKit re-loads a waynet.
+  auto free = make_point("FP_FIXTURE_FREE", Vec3 {50.0f, 0.0f, 50.0f}, true);
+  auto a = make_point("WP_FIXTURE_A", Vec3 {10.0f, 0.0f, 10.0f}, false);
+  auto b = make_point("WP_FIXTURE_B", Vec3 {90.0f, 0.0f, 10.0f}, false);
+  auto c = make_point("WP_FIXTURE_C", Vec3 {50.0f, 0.0f, 90.0f}, false);
+
+  waynet->points = {free, a, b, c};
+  waynet->edges = {{a, b}, {b, c}, {c, a}};
+
+  // An underwater waypoint, authored only into the mesh-extraction variant so
+  // the checked-in golden dump is untouched. Without one, nothing distinguishes
+  // the underWater flag bit from the freePoint bit: a sabotage that packed both
+  // into bit 0 passed every test.
+  if (variant == FixtureVariant::kMeshExtraction) {
+    auto deep = make_point("WP_FIXTURE_DEEP", Vec3 {50.0f, -200.0f, 10.0f}, false);
+    deep->under_water = true;
+    deep->water_depth = 250;
+    waynet->points.push_back(deep);
+    waynet->edges.push_back({c, deep});
+  }
+  return waynet;
+}
+
+}  // namespace
+
+void AuthorFixtureWorld(std::filesystem::path const& path,
+                        zenkit::ArchiveFormat format,
+                        zenkit::GameVersion version,
+                        FixtureVariant variant,
+                        bool packed_vobs) {
+  auto world = std::make_shared<World>();
+
+  if (variant == FixtureVariant::kMeshExtraction || variant == FixtureVariant::kCorruptMesh) {
+    BuildMeshExtractionMesh(world->world_mesh);
+    if (variant == FixtureVariant::kCorruptMesh) CorruptMeshIndices(world->world_mesh);
+  } else {
+    BuildMesh(world->world_mesh);
+  }
+  BuildBspTree(world->world_bsp_tree,
+               world->world_mesh.bbox,
+               static_cast<std::uint32_t>(world->world_mesh.geometry.size()));
+  // Portal metadata, authored only into the mesh-extraction variant so the
+  // checked-in golden dump is untouched: two sectors for the two
+  // `sector_index` values the mesh carries, and the BSP's portal polygon list
+  // naming polygon 1. Without them nothing distinguishes a `getPortals`
+  // payload that reads the fields from one that reads zeroes.
+  if (variant == FixtureVariant::kMeshExtraction) {
+    auto& bsp = world->world_bsp_tree;
+    BspSector outside {};
+    outside.name = "EX_OUTSIDE";
+    outside.node_indices = {0};
+    outside.portal_polygon_indices = {1};
+    BspSector cave {};
+    cave.name = "EX_CAVE";
+    cave.node_indices = {0};
+    cave.portal_polygon_indices = {1};
+    bsp.sectors = {outside, cave};
+    bsp.portal_polygon_indices = {1};
+  }
+  world->world_vobs.push_back(BuildVobTree());
+  if (variant == FixtureVariant::kMeshExtraction) {
+    world->world_vobs.push_back(BuildVisualVobTree());
+  }
+  if (variant == FixtureVariant::kNpc) {
+    world->world_vobs.push_back(BuildNpcVobTree());
+  }
+  if (variant == FixtureVariant::kCamera) {
+    world->world_vobs.push_back(BuildCameraVobTree());
+  }
+  world->way_net = BuildWayNet(variant);
+
+  auto w = Write::to(path);
+  auto archive = WriteArchive::to(w.get(), format);
+  // `pack` is a file-static in ZenKit, so it is process-global: set it around
+  // the save and put it back, or every later save in this process inherits it.
+  zenkit::VirtualObject::enable_packed_save(packed_vobs);
+  // Same top-level flow as loading expects: a single "[% oCWorld:zCWorld ...]"
+  // wrapper object (write_object derives class name and version identifier
+  // from the World object itself), then a final write_header() to patch the
+  // object count and emit the binsafe hash table.
+  archive->write_object("%", std::static_pointer_cast<Object>(world), version);
+  archive->write_header();
+  zenkit::VirtualObject::enable_packed_save(true);
+}
+
+void AuthorFixtureAssets(std::filesystem::path const& dir) {
+  std::filesystem::create_directories(dir);
+
+  MultiResolutionMesh proto {};
+  BuildAssetProtoMesh(proto);
+
+  Mesh compiled {};
+  BuildMeshExtractionMesh(compiled);
+
+  auto const texture = BuildAssetTexture();
+
+  // EX_CRATE.3DS -> EX_CRATE.MRM, the primary proto-mesh mapping.
+  // EX_DUAL.3DS  -> EX_DUAL.MRM, with an .MSH also present so the candidate
+  //                 *order* is observable and not just the lookup.
+  // EX_PLATE.3DS -> EX_PLATE.MSH, the fallback, and the only compiled-zCMesh
+  //                 visual — deliberately the same mesh the world-mesh test
+  //                 uses, since the .MSH branch is meant to be that same
+  //                 projection.
+  for (auto const* stem : {"EX_CRATE", "EX_DUAL"}) {
+    auto w = Write::to(dir / (std::string {stem} + ".MRM"));
+    proto.save(w.get(), GameVersion::GOTHIC_2);
+  }
+  for (auto const* stem : {"EX_DUAL", "EX_PLATE"}) {
+    auto w = Write::to(dir / (std::string {stem} + ".MSH"));
+    compiled.save(w.get(), GameVersion::GOTHIC_2);
+  }
+  {
+    auto w = Write::to(dir / "EX_CRATE-C.TEX");
+    texture.save(w.get());
+  }
+
+  // EX_PROP.ASC -> EX_PROP.MDL: a model whose geometry is entirely in its
+  // *attachments*, which is what a static prop is. Two nodes deep, so a chunk
+  // that ignored its parent's transform is visible; a third node carries no
+  // attachment, so emission has to follow the attachments rather than the
+  // hierarchy; and the attachment map is unordered, so the emission order has
+  // to come from the hierarchy to be deterministic at all.
+  {
+    Model model {};
+    model.hierarchy.nodes = {
+        ModelHierarchyNode {-1, "BSPROOT", Translation(1.0f, 2.0f, 3.0f)},
+        ModelHierarchyNode {0, "LID", Translation(0.0f, 10.0f, 0.0f)},
+        ModelHierarchyNode {0, "SPARE", Translation(0.0f, 0.0f, 7.0f)},
+    };
+    model.mesh.attachments.emplace("LID", proto);
+    model.mesh.attachments.emplace("BSPROOT", proto);
+
+    auto w = Write::to(dir / "EX_PROP.MDL");
+    model.save(w.get(), GameVersion::GOTHIC_2);
+  }
+
+  // EX_RIG.ASC -> EX_RIG.MDM, whose hierarchy is in the .MDH beside it. A .MDM
+  // on its own has attachments but no node transforms at all.
+  {
+    ModelMesh mesh {};
+    mesh.attachments.emplace("BASE", proto);
+    auto w = Write::to(dir / "EX_RIG.MDM");
+    mesh.save(w.get(), GameVersion::GOTHIC_2);
+
+    ModelHierarchy hierarchy {};
+    // HEAD is a child with no attachment: a hierarchy read on its own
+    // (extractHierarchy) has to accumulate it down from BASE.
+    hierarchy.nodes = {
+        ModelHierarchyNode {-1, "BASE", Translation(5.0f, 0.0f, 0.0f)},
+        ModelHierarchyNode {0, "HEAD", Translation(0.0f, 20.0f, 0.0f)},
+    };
+    hierarchy.root_translation = Vec3 {10.0f, 30.0f, 50.0f};
+    hierarchy.source_date = Date {2024, 1, 1, 0, 0, 0, 0};
+    hierarchy.source_path = "EX_RIG.ASC";
+    auto wh = Write::to(dir / "EX_RIG.MDH");
+    hierarchy.save(wh.get());
+  }
+
+  // A weighted torso mesh for the fatness projection test. Its four visible
+  // vertices are all weighted to the spine so lean/neutral/fuller results are
+  // directly comparable, while the fifth visible wedge remains unmodified by
+  // the non-torso node in the hierarchy.
+  {
+    Model model {};
+    model.hierarchy.nodes = {
+        ModelHierarchyNode {-1, "BIP01 SPINE", Translation(0.0f, 0.0f, 0.0f)},
+        ModelHierarchyNode {0, "BIP01 ARM", Translation(0.0f, 0.0f, 0.0f)},
+    };
+    SoftSkinMesh torso {};
+    torso.mesh = proto;
+    torso.nodes = {0, 1};
+    torso.weights.resize(torso.mesh.positions.size());
+    for (std::size_t i = 0; i < torso.mesh.positions.size(); ++i) {
+      auto node = static_cast<std::uint8_t>(i == 4 ? 1 : 0);
+      torso.weights[i].push_back(SoftSkinWeightEntry {1.0f, torso.mesh.positions[i], node});
+    }
+    model.mesh.meshes.push_back(std::move(torso));
+    auto w = Write::to(dir / "EX_SKIN.MDL");
+    model.save(w.get(), GameVersion::GOTHIC_2);
+  }
+
+  // Name resolution never opens the file it resolves to, so these hold no real
+  // asset: they exist for vfsResolve and must never be handed to extractVisual
+  // or decodeTexture. They do carry one byte, because `Vfs::mount_host` skips
+  // any host file of size zero.
+  //   EX_HERO.ASC/.MDS -> EX_HERO.MDL, with an .MDM present to make the order
+  //                       observable; EX_GOBBO.ASC -> the .MDM fallback.
+  //   EX_BLOB.MMS      -> EX_BLOB.MMB.
+  //   EX_LIT.TEX       -> itself: an already-compiled name is passed through.
+  for (auto const* name :
+       {"EX_HERO.MDL", "EX_HERO.MDM", "EX_GOBBO.MDM", "EX_BLOB.MMB", "EX_LIT.TEX"}) {
+    std::ofstream stream {dir / name, std::ios::binary | std::ios::trunc};
+    stream.put('\0');
+  }
+}
+
+}  // namespace zenkit_node

@@ -1,0 +1,213 @@
+import { test, expect } from '@playwright/test';
+import * as fs from 'fs';
+import * as path from 'path';
+
+/**
+ * E2E tests for dialog editing
+ * Tests adding dialog lines and editing actions
+ */
+
+// Sample dialog file content
+const SAMPLE_DIALOG_CONTENT = fs.readFileSync(
+  path.join(__dirname, '../fixtures/sample-dialog.d'),
+  'utf-8'
+);
+
+test.describe('Dialog Line Editing', () => {
+  test.beforeEach(async ({ page }) => {
+    // Navigate to the app
+    await page.goto('/');
+
+    // Seed the mock file system with test data
+    await page.evaluate((content) => {
+      localStorage.setItem('mockapi_file_test-dialog.d', content);
+    }, SAMPLE_DIALOG_CONTENT);
+
+    // Mock prompt and open file
+    page.on('dialog', async dialog => {
+      await dialog.accept('test-dialog.d');
+    });
+
+    // Open file
+    await page.getByRole('button', { name: /Open Single File/i }).click();
+    await expect(page.getByRole('heading', { name: 'NPCs' })).toBeVisible({ timeout: 10000 });
+
+    // Navigate to dialog
+    await page.getByText('SLD_99005_Arog').click();
+    await page.getByRole('button', { name: /DIA_Arog_EntscheidungKillAlchemist/ }).click();
+
+    // Wait for editor to load
+    await expect(page.getByRole('heading', { name: 'DIA_Arog_EntscheidungKillAlchemist', exact: true })).toBeVisible();
+  });
+
+  test('should display existing dialog actions', async ({ page }) => {
+    // The sample dialog has 3 AI_Output lines
+    await expect(page.getByText(/DIA_Arog_EntscheidungKillAlchemist_15_6/i)).toBeVisible();
+    await expect(page.getByText(/DIA_Arog_EntscheidungKillAlchemist_5_6/i)).toBeVisible();
+    await expect(page.getByText(/action_1762379701358_vj2uugnzi/i)).toBeVisible();
+
+    // Count action items (look for text inputs or action containers)
+    const actionCount = await page.locator('[data-testid*="action"], .MuiBox-root:has(textarea)').count();
+    console.log(`Found ${actionCount} actions`);
+  });
+
+  test('BUG: typing in dialog line should NOT make actions disappear', async ({ page }) => {
+    // Wait for actions to be visible
+    await expect(page.getByText(/DIA_Arog_EntscheidungKillAlchemist_15_6/i)).toBeVisible();
+
+    // Count Dialog Line text fields (getByLabel('Text') is specific to these,
+    // unlike page.locator('textarea') which also matches unrelated inputs)
+    const dialogLineFields = page.getByLabel('Text');
+    const initialCount = await dialogLineFields.count();
+    console.log(`Initial dialog-line field count: ${initialCount}`);
+
+    // Find the first dialog line text field
+    const firstTextarea = dialogLineFields.first();
+    await expect(firstTextarea).toBeVisible();
+
+    // Take screenshot before typing
+    await page.screenshot({ path: 'test-results/before-typing.png', fullPage: true });
+
+    // Type in the textarea
+    await firstTextarea.click();
+    console.log('Clicked textarea');
+
+    await page.waitForTimeout(500);
+
+    await firstTextarea.fill('Testing if actions disappear');
+    console.log('Typed in textarea');
+
+    // Wait a bit for any state updates
+    await page.waitForTimeout(500);
+
+    // Take screenshot after typing
+    await page.screenshot({ path: 'test-results/after-typing.png', fullPage: true });
+
+    // BUG CHECK: Actions should NOT disappear — field count must stay the same
+    const afterCount = await dialogLineFields.count();
+    console.log(`Dialog-line field count after typing: ${afterCount}`);
+    expect(afterCount).toBe(initialCount);
+
+    // The OTHER action IDs (not the one we edited) should still be visible
+    await expect(page.getByText(/DIA_Arog_EntscheidungKillAlchemist_5_6/i)).toBeVisible();
+  });
+
+  test('should add a new dialog line when clicking Add Line button', async ({ page }) => {
+    // Use getByLabel('Text') to count only Dialog Line text fields, not all
+    // textareas on the page (condition editor, properties, custom actions, etc.)
+    const dialogLineFields = page.getByLabel('Text');
+    const initialCount = await dialogLineFields.count();
+    console.log(`Initial dialog-line field count: ${initialCount}`);
+
+    // Open "Add action" menu and choose "Dialog Line"
+    await page.getByRole('button', { name: 'Add action' }).click();
+    await page.getByRole('menuitem', { name: 'Dialog Line' }).click();
+
+    // Wait for new action to appear
+    await expect(dialogLineFields).toHaveCount(initialCount + 1);
+
+    // Take screenshot
+    await page.screenshot({ path: 'test-results/after-add-line.png', fullPage: true });
+  });
+
+  test('should type in newly added dialog line', async ({ page }) => {
+    const dialogLineFields = page.getByLabel('Text');
+    const initialCount = await dialogLineFields.count();
+
+    // Open "Add action" menu and choose "Dialog Line"
+    await page.getByRole('button', { name: 'Add action' }).click();
+    await page.getByRole('menuitem', { name: 'Dialog Line' }).click();
+    await expect(dialogLineFields).toHaveCount(initialCount + 1);
+
+    // Find the last dialog-line text field (newly added)
+    const lastField = dialogLineFields.last();
+    await expect(lastField).toBeVisible();
+
+    // Type in the new field
+    await lastField.click();
+    await lastField.fill('This is a new dialog line');
+
+    // Wait for state updates
+    await page.waitForTimeout(500);
+
+    // Count should be stable
+    await expect(dialogLineFields).toHaveCount(initialCount + 1);
+
+    // Verify the typed text is preserved
+    await expect(lastField).toHaveValue('This is a new dialog line');
+
+    // Take screenshot
+    await page.screenshot({ path: 'test-results/after-typing-new-line.png', fullPage: true });
+  });
+
+  test('should preserve text when typing character by character', async ({ page }) => {
+    const dialogLineFields = page.getByLabel('Text');
+    const initialCount = await dialogLineFields.count();
+
+    // Add new line via "Add action" menu
+    await page.getByRole('button', { name: 'Add action' }).click();
+    await page.getByRole('menuitem', { name: 'Dialog Line' }).click();
+    await expect(dialogLineFields).toHaveCount(initialCount + 1);
+
+    const lastField = dialogLineFields.last();
+    await lastField.click();
+
+    // Type character by character with delays
+    const textToType = 'Hello World';
+    for (const char of textToType) {
+      await lastField.type(char);
+      await page.waitForTimeout(100); // Wait between characters
+
+      // Dialog line field count should not change while typing
+      const count = await dialogLineFields.count();
+      console.log(`After typing '${char}': ${count} dialog-line fields`);
+    }
+
+    // Final check
+    await expect(lastField).toHaveValue(textToType);
+
+    // Verify all original actions are still visible
+    await expect(page.getByText(/DIA_Arog_EntscheidungKillAlchemist_15_6/i)).toBeVisible();
+  });
+
+  test('should preserve edited text and keep other actions visible', async ({ page }) => {
+    // Use getByLabel('Text') — specific to Dialog Line text fields.
+    // The fixture has 3 AI_Output lines so there are 3 such fields.
+    const textareas = page.getByLabel('Text');
+    await expect(textareas).toHaveCount(3);
+
+    // Edit the first textarea
+    const firstTextarea = textareas.first();
+    await firstTextarea.click();
+    await firstTextarea.fill('Modified text');
+
+    // Wait for debounce
+    await page.waitForTimeout(500);
+
+    // The edited value must be preserved (state round-trip works)
+    await expect(firstTextarea).toHaveValue('Modified text');
+
+    // Other action cards must still be rendered (no regression)
+    await expect(textareas).toHaveCount(3);
+  });
+
+  test('should maintain action count across multiple edits', async ({ page }) => {
+    // Use getByLabel('Text') — the semantic locator for dialog line fields — and
+    // wait for all 3 to be present before taking the baseline.  The ActionsList
+    // component does a progressive-rendering reset on contextId change, so a raw
+    // textarea.first().toBeVisible() can fire before all rows finish rendering.
+    const textFields = page.getByLabel('Text');
+    await expect(textFields).toHaveCount(3); // DIA_Arog_EntscheidungKillAlchemist has 3 AI_Output lines
+
+    // Edit each field and assert the count stays stable after every edit
+    for (let i = 0; i < 3; i++) {
+      await textFields.nth(i).click();
+      await textFields.nth(i).fill(`Edit ${i + 1}`);
+      await page.waitForTimeout(300);
+      await expect(textFields).toHaveCount(3);
+      console.log(`After edit ${i + 1}: count still 3`);
+    }
+
+    await page.screenshot({ path: 'test-results/after-multiple-edits.png', fullPage: true });
+  });
+});

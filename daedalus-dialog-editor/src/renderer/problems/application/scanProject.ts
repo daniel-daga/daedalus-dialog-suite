@@ -1,0 +1,84 @@
+import type { FileParseErrors, OutputUnit, RoutineSite, SemanticModel, SpawnSite } from '../../../shared/types';
+import type { PortalFinding } from '../../../shared/worldTypes';
+import type {
+  FileFacts,
+  FileModel,
+  Problem,
+  WaypointSites,
+  WorldWaynetView
+} from '../domain/types';
+import { buildProjectView } from '../domain/projectView';
+import { runRules } from '../domain/runRules';
+import { outputUnitAgreement } from '../domain/rules/outputUnitDrift';
+
+/**
+ * Application-layer adapter for the Problems panel. Store-agnostic: it takes the
+ * already-parsed per-file models plus the project's known NPC names, builds the
+ * aggregated view, and runs every lint rule. Kept separate from the store so it
+ * can be unit-tested without React or Zustand.
+ */
+export interface ProjectScanInput {
+  files: FileModel[];
+  knownNpcNames: string[];
+  /**
+   * Optional per-model facts cache carried across scans by the caller: files
+   * whose model object is unchanged since the last scan skip re-extraction
+   * (see {@link buildProjectView}).
+   */
+  factsCache?: WeakMap<SemanticModel, FileFacts>;
+  /** The project index's waypoint sites, for the `waypoint-not-in-world` rule. */
+  waypointSites?: WaypointSites;
+  /** The project index's static spawn sites, for the `duplicate-spawn` rule. */
+  spawnSites?: readonly SpawnSite[];
+  /** Names of NPCs the project index holds dialog for; the same rule reads them. */
+  npcsWithDialogs?: readonly string[];
+  /**
+   * The waynet of the world currently open. Absent when there is none, and the
+   * rule that reads it then returns nothing rather than calling every site
+   * dangling.
+   */
+  world?: WorldWaynetView;
+  /** The open world's portal findings, computed in the zenkit worker. Absent
+   *  when no world is open, and the portal rule then returns nothing. */
+  portalFindings?: readonly PortalFinding[];
+  /** Every `TA` entry the project index read — what `routine-overlap` sweeps.
+   *  Absent is an index that has not loaded, and the rule then says nothing. */
+  routineSites?: readonly RoutineSite[];
+  /** The index pass's per-file syntax errors — what `parse-error` reports. It
+   *  is the only pass that sees a file nobody opened. */
+  parseErrors?: readonly FileParseErrors[];
+  /** The project's OU database, which `output-unit-stale` compares the scripts
+   *  against. Absent when the install has none, and the rule then says nothing
+   *  rather than calling every line missing. */
+  outputUnits?: readonly OutputUnit[];
+}
+
+export interface ProjectScanResult {
+  problems: Problem[];
+  /** How many parsed files the scan actually saw. */
+  scannedFileCount: number;
+  /** Lines the scripts and the OU database share, and how many disagree —
+   *  null without a database (#265). */
+  outputUnitAgreement: { compared: number; stale: number } | null;
+}
+
+export function scanProject(input: ProjectScanInput): ProjectScanResult {
+  const view = buildProjectView({
+    files: input.files,
+    knownNpcNames: input.knownNpcNames,
+    factsCache: input.factsCache,
+    waypointSites: input.waypointSites,
+    spawnSites: input.spawnSites,
+    routineSites: input.routineSites,
+    npcsWithDialogs: input.npcsWithDialogs,
+    world: input.world,
+    portalFindings: input.portalFindings,
+    parseErrors: input.parseErrors,
+    outputUnits: input.outputUnits
+  });
+  return {
+    problems: runRules(view),
+    scannedFileCount: input.files.length,
+    outputUnitAgreement: outputUnitAgreement(view)
+  };
+}

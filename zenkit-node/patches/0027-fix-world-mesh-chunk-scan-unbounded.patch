@@ -1,0 +1,70 @@
+World: stop the MeshAndBsp chunk scan from spinning forever on a malformed mesh.
+
+`World::load` walks the mesh chunk table to find where the BSP tree begins:
+
+	do {
+		chunk_type = raw->read_ushort();
+		raw->seek(raw->read_uint(), Whence::CUR);
+	} while (chunk_type != 0xB060);
+
+Its only exit is finding the mesh END chunk, and neither the length it reads
+nor the seek it performs is bounded by what is left in the archive. That would
+be recoverable if an out-of-range seek failed, but `ReadMemory::seek`
+(`src/Stream.cc`) refuses to move past the end of the buffer and returns
+*silently*:
+
+	auto new_position = seek_internal(_m_position, _m_length, off, whence);
+	if (new_position > _m_length) return;
+	_m_position = new_position;
+
+So a chunk length corrupted large is not a seek to nowhere, it is a no-op: the
+cursor stays put, the scan reads whatever follows as the next chunk header, and
+walks garbage forwards six bytes at a time. Once the cursor reaches the end of
+the archive, reads return zero bytes without advancing it and the seek moves
+nothing — `chunk_type` is 0 on every iteration, never 0xB060, and the loop runs
+forever at 100% CPU with nothing thrown, nothing logged and no crash.
+
+Measured against our synthetic BinSafe fixture (`test/fixtures/minimal.g2.zen`,
+4211 bytes): flipping one byte of the 0xB030 VERTICES chunk length — file
+offset 945, the third byte of the little-endian length word — turns 52 into
+196660 and hangs `World::load` indefinitely. It was originally found on a real
+world with ~500 corrupted bytes, where it ran to 202 s of CPU before being
+killed.
+
+The fix is an end-of-file check and nothing else. It cannot change what a valid
+world parses: every well-formed world carries its 0xB060 chunk before the end
+of the archive, so the check is only ever reached by a file whose mesh section
+is already unreadable. It also makes the loop provably terminating — a read
+below the end always advances the cursor by at least one byte, and the only
+fixed point (cursor at the end) now throws.
+
+`ParserError` derives from `zenkit::Error`, so this reports as a normal parse
+failure through the same path a truncated archive already takes.
+
+Upstreamable as-is: a plain robustness bug, no API change, one guard.
+
+diff --git a/src/World.cc b/src/World.cc
+index 90c30e6..745f0e9 100644
+--- a/src/World.cc
++++ b/src/World.cc
+@@ -96,6 +96,20 @@ namespace zenkit {
+ 				auto mesh_offset = raw->tell();
+ 
+ 				do {
++					// The only exit from this scan is finding the mesh END chunk, and the
++					// seek that walks to the next one cannot fail loudly: `ReadMemory::seek`
++					// refuses to move past the end of the buffer and returns silently, so a
++					// chunk length corrupted large leaves the cursor where it was. The scan
++					// then walks garbage until it reaches the end of the archive and spins
++					// there forever — no allocation, no error, 100% CPU. A valid world
++					// always carries its 0xB060 chunk before the end of the archive, so this
++					// check never fires for one.
++					if (raw->eof()) {
++						throw ParserError {"World",
++						                   "MeshAndBsp: reached the end of the archive without a mesh "
++						                   "end chunk (0xB060); the mesh section is malformed"};
++					}
++
+ 					chunk_type = raw->read_ushort();
+ 					raw->seek(raw->read_uint(), Whence::CUR);
+ 				} while (chunk_type != 0xB060);

@@ -1,0 +1,418 @@
+import { test, expect } from '@playwright/test';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { launchApp, seedProjectDir, type AppFixture } from './harness';
+
+/**
+ * Real-Electron E2E for the World surface's interaction layer
+ * (level-editor.md §17) — the honest home for "a new UI workflow gets a
+ * Playwright spec"
+ * (AGENTS.md), modeled on `world-render.spec.ts`: a real window, a real
+ * fixture world, and a fake install (this spec never reads a texture).
+ *
+ * The browser mock harness (`tests/e2e/`) cannot cover any of this by
+ * design — it opens no world at all — so the context menu, the Delete
+ * confirm and the panel splitter are untested UI workflows until this spec.
+ *
+ * Runs wherever the native addon is present for the dev build; see
+ * `world-render.spec.ts`'s own doc comment for which CI job builds it.
+ */
+
+const FIXTURE_WORLD = path.resolve(
+  __dirname, '..', '..', '..', 'zenkit-node', 'test', 'fixtures', 'minimal.g2.zen',
+);
+
+/** `FIXTURE_ROOT`, `minimal.g2.zen`'s one root VOB (flat index 0) — a real
+ *  row to right-click and select, not a fabricated one. */
+const ROOT_VOB_ROW = 'world-vob-row-0';
+
+function makeFakeInstall(): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dde-e2e-install-'));
+  fs.mkdirSync(path.join(dir, '_work', 'Data', 'Meshes', '_compiled'), { recursive: true });
+  return dir;
+}
+
+function writeProjectFile(projectDir: string, installDir: string): void {
+  fs.writeFileSync(
+    path.join(projectDir, `${path.basename(projectDir)}.gothicproject.json`),
+    JSON.stringify({
+      version: 1,
+      target: 'g2-notr',
+      scriptsRoot: '.',
+      worlds: [],
+      assetSources: ['.', installDir],
+    }, null, 2),
+    'utf8',
+  );
+}
+
+let addonAvailable = true;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  require('zenkit-node');
+} catch {
+  addonAvailable = false;
+}
+
+test.describe('World surface UI workflows in a real window', () => {
+  test.skip(!addonAvailable, 'requires the built zenkit-node native addon');
+
+  let fixture: AppFixture;
+  let projectDir: string;
+  let installDir: string;
+  let worldPath: string;
+
+  test.beforeEach(async () => {
+    projectDir = seedProjectDir([]);
+    installDir = makeFakeInstall();
+    worldPath = path.join(projectDir, 'minimal.g2.zen');
+    fs.copyFileSync(FIXTURE_WORLD, worldPath);
+    writeProjectFile(projectDir, installDir);
+    fixture = await launchApp();
+
+    await fixture.app.evaluate(({ dialog }, paths) => {
+      (dialog as { showOpenDialog: (options: { title: string }) => unknown }).showOpenDialog = async (
+        options: { title: string },
+      ) => {
+        switch (options.title) {
+          case 'Select Gothic Mod Project Folder': return { canceled: false, filePaths: [paths.project] };
+          case 'Open a ZenGin world': return { canceled: false, filePaths: [paths.world] };
+          default: throw new Error(`unexpected dialog: ${options.title}`);
+        }
+      };
+    }, { project: projectDir, install: installDir, world: worldPath });
+  });
+
+  test.afterEach(async () => {
+    await fixture?.cleanup();
+    fs.rmSync(installDir, { recursive: true, force: true });
+  });
+
+  /** The same sequence `world-render.spec.ts` drives: project, install,
+   *  world, and a wait for the viewport's imperative handle so a test
+   *  never races the scene's own async build. */
+  async function openWorld(): Promise<void> {
+    const { page } = fixture;
+    await page.getByRole('button', { name: /Open Project/i }).first().click();
+    await page.getByTestId('world-toggle').click();
+    await page.getByTestId('world-open').click();
+    // The picker lists worlds under the asset sources (level-editor.md
+    // §16.31); the fixture world is elsewhere, so this is Browse….
+    await page.getByTestId('world-picker-browse').click();
+    await page.getByTestId('world-viewport').waitFor();
+    await page.waitForFunction(() => window.__worldViewport !== undefined);
+  }
+
+  test('right-clicking a VOB opens its context menu, and Escape closes it', async () => {
+    const { page } = fixture;
+    await openWorld();
+
+    await page.getByTestId(ROOT_VOB_ROW).click({ button: 'right' });
+    await expect(page.getByTestId('world-context-menu')).toBeVisible();
+
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('world-context-menu')).not.toBeVisible();
+  });
+
+  test('offers both ground placement modes for a selected VOB', async () => {
+    const { page } = fixture;
+    await openWorld();
+    await page.getByTestId(ROOT_VOB_ROW).click();
+    await expect(page.getByTestId('world-rest-on-ground')).toBeEnabled();
+    await expect(page.getByTestId('world-into-ground')).toBeEnabled();
+    await page.getByTestId(ROOT_VOB_ROW).click({ button: 'right' });
+    await expect(page.getByTestId('world-context-rest')).toBeVisible();
+    await expect(page.getByTestId('world-context-into')).toBeVisible();
+  });
+
+  test('Delete opens the confirm, and Cancel leaves the VOB standing', async () => {
+    const { page } = fixture;
+    await openWorld();
+
+    await page.getByTestId(ROOT_VOB_ROW).click();
+    await page.keyboard.press('Delete');
+    await expect(page.getByTestId('world-delete-warning')).toBeVisible();
+
+    await page.getByTestId('world-delete-cancel').click();
+    await expect(page.getByTestId('world-delete-warning')).not.toBeVisible();
+    // The confirm gates the op — cancelling it must not have sent one.
+    await expect(page.getByTestId(ROOT_VOB_ROW)).toBeVisible();
+  });
+
+  test('Delete takes the whole selection in one batch, and leaves without a confirm (#253, #374)', async () => {
+    // A delete renumbers, which is why it was one VOB at a time; #253 answered
+    // that with the order the batch is applied in. The fixture's two leaf
+    // children of the root are the case that used to be refused outright —
+    // and, having nothing below them, are deleted with no confirm at all.
+    const { page } = fixture;
+    await openWorld();
+
+    // Both are children of the fixture's one root, which the tree starts
+    // collapsed on.
+    await page.getByTestId('world-vob-toggle-0').click();
+    await page.getByTestId('world-vob-row-3').click();
+    await page.getByTestId('world-vob-row-4').click({ modifiers: ['Control'] });
+
+    await page.keyboard.press('Delete');
+
+    // Both gone, and the root that held them still standing — a delete takes
+    // its own subtree and nothing else.
+    await expect(page.getByText('ITEM_SWORD_01')).toHaveCount(0);
+    await expect(page.getByText('CHEST_01')).toHaveCount(0);
+    await expect(page.getByTestId(ROOT_VOB_ROW)).toBeVisible();
+    await expect(page.getByTestId('world-delete-warning')).toHaveCount(0);
+  });
+
+  test('a deleted VOB comes back on Ctrl+Z, subtree and all', async () => {
+    // The workflow §15 said would never exist and #271 asked for. It is only
+    // observable here: every other suite mocks past the binding, and the
+    // binding is where the retained subtree lives — so a restore that put back
+    // a hollow VOB, or the wrong one, or nothing, is green everywhere else.
+    //
+    // The fixture's root carries the whole tree, so undoing its delete is also
+    // the subtree case: `FP_CAMPFIRE_ÄÖÜ_01` and the light under it are two
+    // levels down and come back with it or not at all.
+    const { page } = fixture;
+    await openWorld();
+
+    await page.getByTestId('world-vob-toggle-0').click();
+    await expect(page.getByText('ITEM_SWORD_01')).toHaveCount(1);
+
+    await page.getByTestId(ROOT_VOB_ROW).click();
+    await page.keyboard.press('Delete');
+    // The confirm now promises the undo rather than warning that the history
+    // goes — the claim the rest of this test has to make good on.
+    await expect(page.getByTestId('world-delete-warning')).toContainText(/ctrl\+z/i);
+    await page.getByTestId('world-delete-confirm').click();
+
+    await expect(page.getByTestId(ROOT_VOB_ROW)).toHaveCount(0);
+    await expect(page.getByText('ITEM_SWORD_01')).toHaveCount(0);
+
+    await page.keyboard.press('Control+z');
+
+    // Back, and the subtree with it. The tree re-reads its index after a
+    // structural op, so the root is collapsed again and has to be reopened —
+    // which is itself the check that the row is real rather than stale.
+    await expect(page.getByTestId(ROOT_VOB_ROW)).toBeVisible();
+    await page.getByTestId('world-vob-toggle-0').click();
+    await expect(page.getByText('ITEM_SWORD_01')).toHaveCount(1);
+    await expect(page.getByText('CHEST_01')).toHaveCount(1);
+    await expect(page.getByText('FP_CAMPFIRE_ÄÖÜ_01')).toHaveCount(1);
+  });
+
+  test('adding and deleting a VOB leaves the texture warning and the canvas alone (#371)', async () => {
+    // The fake install holds no textures, so every name the fixture world's
+    // mesh uses fails to load and the warning stands from the open on. It used
+    // to be the edit error, cleared by every structural re-read and set again
+    // once the textures were retried: its banner unmounted and remounted, the
+    // viewport resized twice, and each resize cleared the canvas — the blank
+    // frames in the report. Both happen within a frame or two, so they are
+    // recorded as they happen rather than looked for afterwards.
+    const { page } = fixture;
+    await openWorld();
+    await expect(page.getByText(/could not be decoded/)).toBeVisible();
+
+    await page.evaluate(() => {
+      const log: string[] = [];
+      (window as unknown as { __flicker: string[] }).__flicker = log;
+      const canvas = document.querySelector('[data-testid="world-viewport"] canvas') as HTMLCanvasElement;
+      const size = `${canvas.width}x${canvas.height}`;
+      new ResizeObserver(() => {
+        if (`${canvas.width}x${canvas.height}` !== size) log.push(`canvas ${canvas.width}x${canvas.height}`);
+      }).observe(canvas);
+      new MutationObserver(() => {
+        if (!document.body.textContent?.includes('could not be decoded')) log.push('warning gone');
+        if (!canvas.isConnected) log.push('canvas replaced');
+      }).observe(document.body, { childList: true, subtree: true });
+    });
+
+    await page.getByTestId('world-vob-toggle-0').click();
+    await page.getByTestId('world-vob-row-3').click({ button: 'right' });
+    await page.getByTestId('world-context-duplicate').click();
+    await expect(page.getByText('ITEM_SWORD_01')).toHaveCount(2);
+
+    await page.getByTestId('world-vob-row-3').click();
+    await page.keyboard.press('Delete');
+    await expect(page.getByText('ITEM_SWORD_01')).toHaveCount(1);
+
+    // The re-read retries the failed names, and the viewport exposes no promise
+    // for an update's textures; give the retry time to answer before judging.
+    await page.waitForTimeout(500);
+    expect(await page.evaluate(() => (window as unknown as { __flicker: string[] }).__flicker)).toEqual([]);
+    await expect(page.getByText(/could not be decoded/)).toBeVisible();
+  });
+
+  test('moving a parent moves its child and one undo restores both (#292)', async () => {
+    const { page } = fixture;
+    await openWorld();
+
+    // The first two fixture children are real rows below the root. Read their
+    // world-space coordinates from the same property grid a user sees.
+    await page.getByTestId('world-vob-toggle-0').click();
+    const readPosition = async (row: string): Promise<number[]> => {
+      await page.getByTestId(row).click();
+      return Promise.all(['x', 'y', 'z'].map(async (axis) => Number(
+        await page.getByTestId(`world-prop-position-${axis}-input`).inputValue(),
+      )));
+    };
+    const childBefore = await readPosition('world-vob-row-3');
+    const parentBefore = await readPosition(ROOT_VOB_ROW);
+
+    // Drive the real TransformControls/gizmo commit seam, then let the native
+    // worker apply the batch. The drag preview itself is covered by
+    // GizmoController.test.ts; this test crosses the Electron IPC and writer.
+    const delta = [17, 23, 31];
+    await page.evaluate((position) => {
+      window.__worldViewport?.dragGizmo(position as [number, number, number]);
+    }, parentBefore.map((coordinate, axis) => coordinate + delta[axis]));
+
+    await expect.poll(async () => await readPosition(ROOT_VOB_ROW)).toEqual(
+      parentBefore.map((coordinate, axis) => coordinate + delta[axis]),
+    );
+    await expect.poll(async () => await readPosition('world-vob-row-3')).toEqual(
+      childBefore.map((coordinate, axis) => coordinate + delta[axis]),
+    );
+
+    await page.keyboard.press('Control+z');
+    await expect.poll(async () => await readPosition(ROOT_VOB_ROW)).toEqual(parentBefore);
+    await expect.poll(async () => await readPosition('world-vob-row-3')).toEqual(childBefore);
+  });
+
+  test('multi-select can reparent from the tree menu and the saved tree reopens that way (#293)', async () => {
+    const { page } = fixture;
+    await openWorld();
+
+    await page.getByTestId('world-vob-toggle-0').click();
+    const sword = page.getByRole('treeitem').filter({ hasText: 'ITEM_SWORD_01' });
+    const chest = page.getByRole('treeitem').filter({ hasText: 'CHEST_01' });
+    await expect(sword).toHaveAttribute('aria-level', '2');
+    await expect(chest).toHaveAttribute('aria-level', '2');
+
+    await sword.click();
+    await chest.click({ modifiers: ['Control'] });
+    await sword.click({ button: 'right' });
+    const makeChild = page.getByTestId('world-context-make-children');
+    await expect(makeChild).toHaveText('Make the other VOB a child of this one');
+    await makeChild.click();
+
+    // Check that the selected target now owns the other selected VOB.
+    const reopenedSword = page.getByRole('treeitem').filter({ hasText: 'ITEM_SWORD_01' });
+    const reparentedChest = page.getByRole('treeitem').filter({ hasText: 'CHEST_01' });
+    await expect(reopenedSword).toHaveAttribute('aria-level', '2');
+    if (await reparentedChest.count() === 0) {
+      const swordId = await reopenedSword.getAttribute('id');
+      if (swordId === null) throw new Error('sword tree row has no id');
+      await page.getByTestId(`world-vob-toggle-${swordId.replace('world-vob-row-', '')}`).click();
+    }
+    await expect(reparentedChest).toHaveAttribute('aria-level', '3');
+
+    await page.getByTestId('world-save').click();
+    const confirmation = page.getByRole('dialog', { name: 'Save this world?' });
+    await confirmation.getByRole('button', { name: 'Overwrite opened file' }).click();
+    await expect(page.getByText(`Saved to ${worldPath}`)).toBeVisible();
+
+    // Reopening the just-written file makes this a persistence check, rather
+    // than a claim based only on the in-memory tree.
+    await page.getByTestId('world-open').click();
+    await page.getByTestId('world-picker-browse').click();
+    await page.getByTestId('world-viewport').waitFor();
+    await page.waitForFunction(() => window.__worldViewport !== undefined);
+    await page.getByTestId('world-vob-toggle-0').click();
+    const savedSword = page.getByRole('treeitem').filter({ hasText: 'ITEM_SWORD_01' });
+    const savedChest = page.getByRole('treeitem').filter({ hasText: 'CHEST_01' });
+    await expect(savedSword).toHaveAttribute('aria-level', '2');
+    if (await savedChest.count() === 0) {
+      const swordId = await savedSword.getAttribute('id');
+      if (swordId === null) throw new Error('saved sword tree row has no id');
+      await page.getByTestId(`world-vob-toggle-${swordId.replace('world-vob-row-', '')}`).click();
+    }
+    await expect(savedChest).toHaveAttribute('aria-level', '3');
+  });
+
+  test('a malformed world names what was wrong with it', async () => {
+    // #272, from the Spacer report: *"Custom-asset maps simply won't load unless
+    // everything's in place, often with no useful diagnostic — you're reading
+    // zSpy to find out why."*
+    //
+    // The reason has to survive four hops to be worth anything — ZenKit's throw,
+    // the worker's `postMessage`, `world:open`'s wrapper, the renderer's
+    // `openFailed` — and every one of them is a place a message becomes
+    // "something went wrong". Only a real window with a real reader can say that
+    // it does: the browser harness mocks `openWorld`, so it can only prove the
+    // alert renders whatever it was handed.
+    //
+    // Truncation rather than random corruption, so the message is stable: the
+    // BinSafe header's hash table count outruns the file, which is patch
+    // `0043`'s own check talking.
+    const { page } = fixture;
+    const broken = path.join(projectDir, 'truncated.g2.zen');
+    fs.writeFileSync(broken, fs.readFileSync(FIXTURE_WORLD).subarray(0, 2048));
+    // Only the world dialog is re-pointed; the project folder still has to come
+    // back as a folder or the project never loads.
+    await fixture.app.evaluate(({ dialog }, paths) => {
+      (dialog as { showOpenDialog: (o: { title: string }) => unknown }).showOpenDialog = async (
+        options: { title: string },
+      ) => ({
+        canceled: false,
+        filePaths: [options.title === 'Open a ZenGin world' ? paths.broken : paths.project],
+      });
+    }, { project: projectDir, broken });
+
+    await page.getByRole('button', { name: /Open Project/i }).first().click();
+    await page.getByTestId('world-toggle').click();
+    await page.getByTestId('world-open').click();
+    await page.getByTestId('world-picker-browse').click();
+
+    const alert = page.getByTestId('world-error');
+    await expect(alert).toBeVisible();
+    // The cause itself, not merely that something failed.
+    await expect(alert).toContainText('hash table entry count exceeds the bytes left in the file');
+    // And no half-open surface behind it.
+    await expect(page.getByTestId('world-viewport')).toHaveCount(0);
+  });
+
+  test('dragging the left splitter changes the scene panel width', async () => {
+    const { page } = fixture;
+    await openWorld();
+
+    const panel = page.getByTestId('world-panel-left');
+    const before = await panel.evaluate((el) => el.getBoundingClientRect().width);
+
+    const handle = page.getByTestId('world-splitter-left');
+    const box = await handle.boundingBox();
+    if (box === null) throw new Error('world-splitter-left has no layout box');
+    const y = box.y + box.height / 2;
+    await page.mouse.move(box.x + box.width / 2, y);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 80, y);
+    await page.mouse.up();
+
+    const after = await panel.evaluate((el) => el.getBoundingClientRect().width);
+    expect(after - before).toBeCloseTo(80, 0);
+  });
+
+  test('Save overwrites the opened world without opening a Save As dialog', async () => {
+    const { app, page } = fixture;
+    await openWorld();
+
+    await app.evaluate(({ dialog }) => {
+      (dialog as { showSaveDialog: unknown }).showSaveDialog = async () => {
+        throw new Error('Save must not open a Save As dialog');
+      };
+    });
+
+    await page.getByTestId('world-save').click();
+    const confirmation = page.getByRole('dialog', { name: 'Save this world?' });
+    await expect(confirmation).toContainText(worldPath);
+    await confirmation.getByRole('button', { name: 'Overwrite opened file' }).click();
+
+    const outcome = await Promise.race([
+      page.getByText(`Saved to ${worldPath}`).waitFor().then(() => ({ saved: true })),
+      page.getByTestId('world-save-error').waitFor().then(async () => ({
+        error: await page.getByTestId('world-save-error').textContent(),
+      })),
+    ]);
+    expect(outcome).toEqual({ saved: true });
+  });
+});

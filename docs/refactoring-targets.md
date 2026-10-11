@@ -1,0 +1,387 @@
+# Refactoring Targets
+
+Audit of god components, muddled concerns, and maintainability red flags.
+
+---
+
+## Deferred Architectural Splits
+
+### 1. `editorStore.ts` — split into focused stores — done
+**File:** `daedalus-dialog-editor/src/renderer/store/editorStore.ts`
+
+Landed: `fileStore` (open/close/save, dirty tracking) and `historyStore`
+(undo/redo state + snapshot helpers) are the stores; `editorStore.ts` is a
+16-line barrel that keeps `useEditorStore` as an alias of `useFileStore` for
+the consumers that only manage files.
+
+---
+
+### 2. `ThreeColumnLayout.tsx` — split layout into sub-components
+**File:** `daedalus-dialog-editor/src/renderer/components/ThreeColumnLayout.tsx`
+
+- Sub-components for NPC column, dialog-tree column, and editor column
+
+---
+
+### 3. InlineChoiceEditor sub-list did not re-render on target-function structural changes — done
+**Files:** `daedalus-dialog-editor/src/renderer/components/ActionCard.tsx` (memo comparator),
+`daedalus-dialog-editor/src/renderer/components/InlineChoiceEditor.tsx`
+
+Surfaced during fix-05 §2.5. `ActionCard`'s `React.memo` comparator intentionally
+ignores `semanticModel` (a deliberate perf guard — the model is large and changes on
+every edit). For a `Choice` action, that meant when the choice's *target function*
+changed structurally (e.g. its actions were reordered) but the `ChoiceAction` itself was
+unchanged, the `ActionCard` — and therefore the nested `InlineChoiceEditor` — did not
+re-render, so the sub-list showed a stale order.
+
+**Landed with fix-07 §2.8, which fixed the whole class rather than this case.** The
+comparator became honest about ignoring model data, and the rule that pays for it is
+that model data must not cross the boundary at all: `InlineChoiceEditor` self-resolves
+the edited file's model from the store (`fileStore.openFiles`, falling back to the
+merged model's `dialogs`/`functions`), and `ChoiceRenderer` reads its one function
+through `useResolvedFunction`. A memo-blocked card therefore cannot show a stale
+sub-list — the sub-editor's own subscription re-renders it.
+
+The deferred assertion this entry was waiting on is now in the fix-05 spec:
+`tests/e2e/keyboard-dnd-reorder.spec.ts`, *"a reorder inside the choice sub-list is
+visible in it"* — a real keyboard drag inside the sub-list, asserting the visible order
+flips and stays inside the sub-list. It was confirmed to catch the original bug by
+freezing `InlineChoiceEditor`'s model at mount (the pre-fix-07 prop path) and watching
+it fail, which is the only way to tell this test from one that passes on its own.
+
+---
+
+### 4. Native parser isolation — survive a hard tree-sitter crash (SIGSEGV) — done
+**Files:** `daedalus-dialog-editor/src/main/services/ForkedWorker.ts`,
+`daedalus-dialog-editor/src/main/services/ParserService.ts`,
+`daedalus-dialog-editor/src/main/services/MetadataWorkerPool.ts`,
+`daedalus-dialog-editor/src/main/workers/parser.worker.ts`,
+`daedalus-dialog-editor/src/main/workers/metadata.worker.ts`
+
+Landed 2026-09-14 (#268). Both pools fork a child process per worker instead of
+spawning a `worker_threads` thread, so a SIGSEGV inside tree-sitter kills only that
+child and arrives as the `exit` event the restart-with-replacement machinery already
+handles. `ForkedWorker` is the whole boundary — a `Worker`-shaped wrapper around
+`child_process.fork` — so the timeouts, restart caps, idle dispatch and failure
+classification are untouched. `child_process` rather than `utilityProcess`, because
+`utilityProcess` exists only inside a ready Electron app and the pool-lifecycle tests
+are the safety net. The decisions and what is still unwitnessed (a fork out of a
+packaged `app.asar`) are in
+[`architecture/worker-reliability.md`](./architecture/worker-reliability.md),
+"Process isolation".
+
+---
+
+### 5. The world payload types lived on both sides of the boundary — done
+**Files:** `daedalus-dialog-editor/src/shared/worldTypes.ts`,
+`zen-world/src/scene/waynet.ts`
+
+`VobIndex` was defined in `zen-world` and re-exported by the editor;
+`WaynetPayload` was defined in the editor instead, even though both are shapes
+the binding emits and the domain reasons about. The split was historical, not
+designed.
+
+Noticed while adding `MoveWaypoint` (2026-08-27) and deliberately not fixed
+there: the op needed no cross-package type at all once its factory took the
+payload's own columns — `(positions, names, waypoint, to)` — so moving
+`WaynetPayload` would have been adjacent refactoring the change did not need.
+It was predicted to start costing something at the waypoint gizmo slice and it
+did not (landed 2026-08-28), for the same reason: the store holds
+`selectedWaypoint: number | null` and names nothing, and the two `zen-world`
+functions the slice uses take `Float32Array` and `string[]`.
+
+**Landed 2026-09-12, still with no slice that pays for it** — a wart closed
+because it was cheap, not because it had started costing. `WaynetPayload` and
+the two `WAYNET_FLAG_*` constants are `zen-world/src/scene/waynet.ts`, beside
+`VobIndex`, and `worldTypes.ts` re-exports all three exactly as it already did
+for the VOB index — so every consumer still imports from `worldTypes` and not
+one of them changed. The constants need a *value* re-export rather than an
+`export type`: the waynet overlay and the Problems scan read them at runtime.
+
+### 6. `ParserService.dispose()` leaves the service permanently dead, and now silently
+**File:** `daedalus-dialog-editor/src/main/services/ParserService.ts`
+
+`dispose()` terminates the pool and empties `workers`/`idleWorkers` with no path
+to respawn. Making the pool lazy (2026-08-28) did not change that, but it did
+change the failure mode: `started` stays `true` after a `dispose()`, so a later
+`parseSource` now takes the `if (!this.started)` branch as already-started,
+queues a request against an empty pool, and never settles — where before it
+queued against an empty pool just as surely, but without a flag implying
+otherwise.
+
+Deliberately not fixed there. `dispose()` is documented as a test/teardown
+helper and no production code calls it, so a `started = false` reset would have
+been error handling for a case that cannot happen — which the repo's rules
+forbid. It becomes a real defect the moment `dispose()` gets a production
+caller, and the fix at that point is one line.
+
+### 7. The property grid's uncontrolled fields are put right by an *incidental* render
+**Files:** `daedalus-dialog-editor/src/renderer/components/world/WorldPropertyGrid.tsx`,
+`WorldSurface.tsx`
+
+`EditableField` is uncontrolled, and everything that shows a value in the grid
+is corrected by **remounting** through a key that carries the value —
+`` `class-${vob}-${field.key}-${text}-${refusals}` ``,
+`` `position-${vob}-${axis}-${text}-${refusals}` ``, and the name and visual
+fields the same way. `refusals` counts only the *local* refusals the field
+decides itself (unparseable text, a number equal to the one already there).
+
+The hole is the refusal that comes back from the **main process**: nothing in
+the world changed, so `text` is what it always was, the key does not change, and
+the input goes on showing the number the user typed as though it had been taken.
+
+- **The class fields had this and were saved by a coincidence.** The re-read
+  effect sets `classProps` to `null` before it fetches, which unmounts the
+  section — but that `null` and the read that fills it back in are set a render
+  apart in the same tick, so whether the `null` is ever *committed* depends on
+  React happening to flush between them. Adding an unrelated MUI `Select` to the
+  World bar (the snap step, 2026-08-28) changed that flush and the revert
+  silently stopped happening; the refusal path now sets `classProps` to `null`
+  itself, before the read is issued, so the revert is a rule rather than a
+  coincidence. That path is `useWorldEditPipeline`'s `putTheViewBack` since the
+  2026-09-12 split (#263), reaching the surface's own state through the
+  `forgetClassProps` callback it is handed; the state itself stays on
+  `WorldSurface`, because the re-read effect is declared above the pipeline. **Measured**, not reasoned: with the probe in
+  place the failing order is `effect run → fetch resolved → one render`, against
+  `effect run → render(null) → fetch resolved → render(props)` before.
+- **The base fields had it too, and are fixed the first way (2026-08-28).** The
+  measured bug: type `999` into position X, have `applyWorldOps` reject, and
+  the field kept `999` while the world holds `10` — same for the name and the
+  visual, which read out of the columnar index, never `null`, so no unmount
+  saved them. The fix is the refusal generation: the pipeline bumps
+  `editRefusals` in `putTheViewBack` (beside the `forgetClassProps` above)
+  and the grid folds `refusalGeneration` into every editable field's key —
+  position, name, visual, the class fields and the rotation angles — so a
+  main-process refusal remounts them showing the world's own values, no value
+  change required.
+
+What remains of this entry: the fields are still uncontrolled and still
+corrected by remount-by-key, with Escape a manual `target.value =`. Making them
+controlled stays the honest long-term shape; the generation makes the current
+one a rule rather than a coincidence.
+
+---
+
+### 8. The World surface loses its geometry when you navigate away from it — fixed
+**Files:** `daedalus-dialog-editor/src/renderer/components/MainLayout.tsx`,
+`components/world/WorldSurface.tsx`, `components/world/WorldViewport.tsx`
+
+**Landed 2026-08-28.** `MainLayout` rendered `<WorldSurface>` under a
+*conditional*, unlike the dialog view; `mesh`, `visuals` and `waynet` are local
+`useState` filled only inside `openWorld` and there is no mount-time refetch, so
+leaving the World view and coming back left `mesh === null`, the viewport guard
+rendering nothing, and the world looking closed while `worldStore.status` still
+said open.
+
+Fixed the way the maintainer decided: keep it mounted, with a display toggle — the
+mechanism `MainLayout` already teaches for the dialog view — and mount it from
+the **first visit** rather than the first render, so the lazy chunk that keeps
+three.js out of a dialog-only session is still lazy.
+
+Two things the display toggle does nothing about on its own, and both are the
+change rather than a follow-up:
+
+- **Hidden means the frame loop does not run.** `WorldViewport` takes `paused`
+  and starts/stops the loop through a `start`/`stop` pair the scene effect
+  publishes, so a hidden canvas schedules no frame at all. `paused` is
+  deliberately not a dependency of the scene effect: rebuilding 31 MB of buffers
+  on every tab switch is precisely the cost the mount was kept to avoid. The
+  benchmark and `renderFrom` go through the same pair, since both stop the loop
+  for the length of a fixed camera path.
+- **A mounted surface's shortcuts are still window listeners.** `WorldSurface`
+  binds Ctrl+Z/Y, Ctrl+C/V and W/E on `window`, and `WorldViewport` binds `.`
+  and Home; bound while hidden, a Ctrl+Z in the dialog view would undo a world
+  edit *as well as* the dialog edit `MainLayout` performs. Both handlers are
+  off while hidden.
+
+What remains is the shape, not a defect: the surface still holds the world's
+buffers in local `useState` with no mount-time refetch, so it is the mount that
+keeps them and nothing would restore them if it were ever unmounted again.
+
+---
+
+### 9. The viewport wants an imperative handle — fixed
+**Files:** `daedalus-dialog-editor/src/renderer/components/world/WorldViewport.tsx`,
+`components/world/WorldSurface.tsx`
+
+**Landed 2026-08-28.** The scene-tree jump reached the framing closure through a
+`frameRequest` prop — a fresh `{ vob }` object per double-click, watched by an
+effect that hopped through `frameVobRef` — while the closure itself lives inside
+the big scene effect.
+
+**The third command arrived, and it did not arrive as W4.** This entry said to
+wait for the caller that justifies the promotion and named W4, the script → world
+jump, which is still unbuilt. What actually happened is that snapping's
+`raycastDown` (2026-08-28) needed a query rather than a prop and *created* the
+handle — so the wart stopped being "no handle" and became "one command on the
+handle, one on a prop", which is the shape this entry existed to prevent. The
+frame is now `WorldViewportHandle.frameVob`, the prop, its state and its effect
+are gone, and the surface calls it beside the raycast it already calls.
+
+**The hazard it named is the reason `frameVob` reads through the ref.** The
+handle is alive whenever the component is, but `frameVobRef` is set by the scene
+effect and cleared by its teardown, and that effect re-runs on
+`[mesh, visuals, bbox]`. `frameVob` is `frameVobRef.current?.(vob)`, so a command
+during a rebuild is a no-op — pinned by `WorldViewport.frameHandle.test.tsx`,
+which asks for one from a parent layout effect, i.e. before the child's scene
+effect has ever run.
+
+---
+
+### 10. The terrain bar reserves a hard-coded 31 px — fixed
+**File:** `daedalus-dialog-editor/src/renderer/components/world/WorldSurface.tsx`
+
+**Landed 2026-08-28.** The row reserved 31 px for the button its picked state
+adds — MUI's small-button metrics, copied into a constant so the bar does not
+shove when a point is picked. The number was right and unverifiable: a theme
+that sets a button height moves it, and jsdom has no layout, so no test could
+have caught the drift.
+
+The reservation is now a real small `Button`, hidden (`visibility: hidden`,
+zero-width, `aria-hidden`, `tabIndex={-1}`) and rendered only in the branch that
+has no buttons of its own. Only its *horizontal* metrics are taken away: the
+vertical padding is the height being reserved, and it carries a `&nbsp;` so it
+has a line box to be as tall as — an empty button would have reserved nothing,
+which is the shove back again. It is the theme's own metric rather than a copy of
+it, so it cannot disagree with the buttons it stands in for — which turns the
+untestable claim into a structural one a jsdom test *can* make: the spacer is a
+`MuiButton-sizeSmall`, and it gives way to the real ones on a pick
+(`WorldSurface.editing.placing.test.tsx`).
+
+The one wart the fix carries: MUI's `Stack` spacing selector outranks a child's
+`sx`, so the spacer overrides its own margin with `!important`.
+
+---
+
+### 11. `linking-visitor.ts` is a god class
+**File:** `daedalus-parser/src/semantic/visitors/linking-visitor.ts`
+
+The visitor still carries action extraction, condition extraction, call-site
+bookkeeping and comment attachment behind the two-pass orchestrator. Smaller
+visitors per concern remain a possible simplification; the original 2026-07
+line/method counts and duplicate-method diagnosis no longer describe this file.
+
+The denormalized `Dialog.actions` mirror is removed. It is now an editable view
+of the current information function, including after JSON hydration, array
+replacement and relinking. The visitor writes only the function's action list;
+there is no owner cache or second list to synchronize. Reference-expression
+identity is shared across extraction, hydration and export rather than inferred
+independently from raw strings.
+
+---
+
+### 12. `setupIpcHandlers` is 600 lines of inline handler bodies
+**File:** `daedalus-dialog-editor/src/main/main.ts` (`setupIpcHandlers`, `:205-809`)
+
+`generator:saveFile` was lifted into `SaveFileFlow.ts` (the MCP plan's Phase 0)
+and `script:appendInsertNpc` into `AppendInsertNpcFlow.ts`; the other 45
+handlers still carry their orchestration inline — request shape checks, dialog
+prompting, allow-listing the chosen directory, error wrapping — so the one
+function that registers the IPC surface is also where most main-process flows
+live. Fix direction: the two extracted flows are the template; a handler whose
+body is more than a delegation moves out beside them, and `setupIpcHandlers`
+becomes a registration table.
+
+---
+
+### 13. `deserializeSemanticModel` normalizes every action twice
+**File:** `daedalus-parser/src/semantic/semantic-model.ts` (`:1017-1026`)
+
+The function loop runs `ensureActionType` over `funcJson.actions`, then maps
+the same array through `deserializeAction`, whose first line is
+`ensureActionType(json)` again (`:716`). Harmless — the second pass finds the
+discriminator already set — but the loop-level call is dead work on every model
+crossing the IPC boundary, and a reader has to prove to themselves that the two
+calls agree. Fix direction: drop the loop-level `ensureActionType`; the
+per-action one inside `deserializeAction` is the one recursion into
+`thenActions`/`elseActions` already depends on.
+
+---
+
+### 14. The quest UI sits flat at `components/` root
+**Files:** `daedalus-dialog-editor/src/renderer/components/QuestEditor.tsx`,
+`QuestList.tsx`, `QuestDetails.tsx`
+
+The other surfaces with several files own a folder — `Problems/`,
+`Simulator/`, `world/` — while the three quest files sit among some fifty
+siblings at the root. `docs/architecture/quest-editor.md` (§Scope, §Internal
+Boundaries) was aligned to the flat layout rather than the layout to a folder,
+and `tests/questDomainBoundary.test.ts` guards only the domain side (domain
+must not import UI); nothing names the UI files as one unit. Fix direction:
+`components/QuestEditor/` holding the four, the doc's two file lists and the
+boundary test's UI-tree path updated in the same change.
+
+---
+
+### 15. Cross-store wiring is split between `initStoreSync` and a module-level subscribe
+**Files:** `daedalus-dialog-editor/src/renderer/store/storeSync.ts` (`initStoreSync`, `:36`),
+`store/historyStore.ts` (`:263`)
+
+`initStoreSync` is the documented home for store-to-store subscriptions —
+editor → project model push, world → problems rescan — and returns the
+unsubscribe that tests rely on. `historyStore.ts` wires itself to `fileStore`
+by a `useFileStore.subscribe` at module scope instead, so it runs on import,
+cannot be torn down, and is not visible from the one place that claims to hold
+the wiring. Fix direction: move the history cleanup subscription into
+`initStoreSync` beside the other two; `useAutoSave.ts:167` is a hook-scoped
+subscription with its own lifecycle and stays where it is.
+
+---
+
+### 16. `SetVobClassProp`'s switch copies each base class's fields per case
+**Files:** `zenkit-node/src/binding.cc` (`ApplyClassProps`' switch)
+
+Every class reads and assigns its inherited fields in full, so the `VTrigger`
+base is spelled out five times — `zCTrigger`, `zCTriggerList`, `zCMover`,
+`oCTriggerChangeLevel`, `oCTriggerScript` — at twenty-six near-identical lines
+each, and `VMovableObject`/`VInteractiveObject` four more times across the
+`oCMob*` family. The read side does not: `normalize.cc` has
+`PutTriggerProps`/`PutMovableObjectProps`/`PutInteractiveObjectProps` and each
+case calls them.
+
+Nothing has drifted — the round-trip table in `test/mutations.test.js` holds
+every catalogued key of every class, so a case that forgot one fails — and the
+cost is paid per *class*, not per field, so it does not grow with the catalogue.
+But a class added to the trigger family is a twenty-six-line paste, which is
+where drift would start. Fix direction: the writer's mirror of the readers —
+`ApplyTriggerProps(env, props, VTrigger&)` and the two movable-object ones,
+each keeping the member-by-member assignment that the "leaves every other field
+alone" test exists to protect. `RequireClassKeys` takes the key list by value,
+so its lists want the same treatment in the same change or they become the new
+place two spellings can disagree.
+
+---
+
+### 17. `MetadataWorkerPool` rebuilds the worker's reply field by field
+**Files:** `daedalus-dialog-editor/src/main/services/MetadataWorkerPool.ts`
+(`spawnWorker`'s message handler and `handleMessage`)
+
+A field added to `ParsedFileMetadata` and posted by `metadata.worker.ts` is
+**silently dropped in production** unless it is also named in two inline message
+types and in the object `handleMessage` resolves with. Jest never sees it: the
+pool takes the inline path under test (`isLikelyTestRuntime`), and that path
+spreads the extractor's result whole. `parseErrors` was lost exactly this way
+between two commits on 2026-09-13.
+
+`tests/services/MetadataWorkerPool.test.ts`, *"carries every metadata field back
+from the worker, not only the first few"*, is the guard: a stub worker posting a
+full payload, asserted field by field. It catches the omission but does not
+prevent it — fix direction is for the handler to take the payload as one
+`MetadataResult`-shaped object and forward it, so there is one spelling of the
+shape rather than four.
+
+### 18. The viewport's same-world rebuild caches outlived their reason
+**Files:** `daedalus-dialog-editor/src/renderer/components/world/WorldViewport.tsx`
+(`texturesRef`, `bvhRef`, `framedRef`, `pivotMarkerRef`),
+`src/renderer/world/WorldScene.ts` (`TextureCache`), `src/renderer/world/BvhBuilder.ts`
+(the per-payload tree memory)
+
+Each exists so that a *rebuild of the same world* keeps its decoded textures,
+its BVH trees, its camera and its pivot dot. A structural op was that rebuild
+until 2026-10-08; it is now followed in place (`SceneHost.update`), and the
+scene effect runs once per mounted world — the surface unmounts the viewport
+on every open. What still re-runs it for the same world is React's dev
+double-invoke, nothing in production. Not wrong, only carrying four mechanisms
+and their tests for a case that no longer happens. Fix direction: confirm
+nothing else re-runs the effect, then fold them back into the effect's own
+lifetime.

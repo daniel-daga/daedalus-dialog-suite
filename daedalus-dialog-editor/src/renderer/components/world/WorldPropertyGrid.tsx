@@ -1,0 +1,1411 @@
+import React, { useCallback, useMemo, useState } from 'react';
+import {
+  Box, Checkbox, Chip, FormControlLabel, IconButton, Stack, TextField, Tooltip, Typography,
+} from '@mui/material';
+import MyLocationIcon from '@mui/icons-material/MyLocation';
+import {
+  ARRAY_ARITY, BASE_FIELDS, DECAL_FIELDS, classPropKeys, decalSubKey, enumValuesOf,
+  eulerDeltaRotation, isArrayKind,
+  carriesVisual, eulerToZenRotation, fieldOf, focusNameExpectation, isModelVisual, schemeOf,
+  zenRotationToEuler,
+  type ClassPropValue, type ClassProps, type EnumValueDescriptor, type FieldDescriptor,
+  type VobProps, type ZenEulerDegrees, type ZenPosition, type ZenRotation,
+} from 'zen-world';
+import type { WorldSummary } from '../../../shared/worldTypes';
+import { vobModelOf } from '../../world/vobModel';
+import type { AssetThumbnails } from '../../world/assetThumbnails';
+import ContainerContentsField from './ContainerContentsField';
+
+// The property grid for the selected VOB (level-editor.md §6, §7). It reads the
+// `VobIndex` the worker sent, and — since `SetVobProp` — it also writes: the
+// name, the visual, the six flags, the catalogued class fields, the three
+// coordinates of the position, and (for a single selection) the three angles of
+// the rotation, through `zen-world/coords`' one matrix↔Euler conversion.
+//
+// Two conventions it must not quietly improve on:
+//
+//   - **positions stay in ZenGin space, in centimetres.** The whole conversion
+//     is one mirrored root node in the viewport (§7), and it is one-way. These
+//     are the coordinates a `.zen` holds and an op would carry; showing metres
+//     would show a number found nowhere else in the system.
+//   - **`flags` is a bit word with named bits.** Printing 3 tells nobody that a
+//     VOB is a visible static.
+//
+// It also answers the question a viewport cannot: why an object that is plainly
+// in the world does not appear in it. A `zCVobLevelCompo` and an unresolved
+// decal are both correct, measured behaviour, and the grid is where someone
+// looks when they suspect a bug instead.
+//
+// **What editing here has to get right that the gizmo did not.** Every field it
+// writes is invisible in the viewport: a VOB moved by the wrong op is on screen,
+// a VOB renamed by the wrong op is not. So it sends **only the field that
+// changed** — the op reads `from` for exactly the keys `to` names, and a grid
+// that posted every field would build an inverse that restores values nobody
+// edited. And an edit that changes nothing is not sent at all, which is the rule
+// the gizmo already has: clicking into a field and out again would otherwise be
+// an undo entry, and with a selection it would be one per VOB.
+
+const FLAG_ORDER = [
+  'showVisual', 'vobStatic', 'ambient', 'cdStatic', 'cdDynamic', 'physicsEnabled',
+] as const;
+
+/** Enough precision for a centimetre coordinate without printing float noise. */
+const coordinate = (value: number) => Number(value.toFixed(2)).toString();
+
+const Field: React.FC<{ label: string; name: string; children: React.ReactNode }> = (
+  { label, name, children },
+) => (
+  <Box sx={{ display: 'flex', gap: 1, py: 0.25, alignItems: 'baseline' }}>
+    <Typography variant="caption" color="text.secondary" sx={{ minWidth: 84, flexShrink: 0 }}>
+      {label}
+    </Typography>
+    {/* The value column grows: three coordinate inputs side by side in a 300 px
+        panel overflow it otherwise, and the inputs are already `fullWidth`. */}
+    <Box data-testid={`world-prop-${name}`} sx={{ flexGrow: 1, minWidth: 0, wordBreak: 'break-word' }}>
+      {children}
+    </Box>
+  </Box>
+);
+
+/**
+ * A text field that edits one property.
+ *
+ * Uncontrolled, and **keyed on the VOB *and* the value** by its caller. An
+ * uncontrolled input keeps whatever it has across a re-render, and there are two
+ * ways that goes wrong, not one:
+ *
+ *   - the selection moves, and a half-typed name follows it to the next VOB and
+ *     is written there on the next blur;
+ *   - the *value* changes under it — an undo, a redo, a batch edit from another
+ *     VOB in the selection — and the panel goes on showing a name the world no
+ *     longer has, then writes it back on the next blur.
+ *
+ * A key on the VOB alone only fixes the first, which is why the second was found
+ * by driving the real app rather than by a test. Typing does not change `value`,
+ * so nothing remounts mid-edit. Escape puts the VOB's own value back, which is
+ * the only way out of a field once something has been typed into it.
+ */
+const EditableField: React.FC<{
+  name: string;
+  /** What this box holds, when the row's own label does not say — the three
+   *  coordinates and the three angles were bare boxes in a row, and which one
+   *  was yaw was something the user had to already know. */
+  label?: string;
+  value: string;
+  disabled?: boolean;
+  helper?: string;
+  /** Why the last value typed here was rejected, or null. Shown in place of the
+   *  helper, because the snap-back on its own is indistinguishable from a field
+   *  that took the value and reformatted it. Cleared by focusing the field: the
+   *  message is about the value that was typed, not a state to be stuck in. */
+  refusal?: string | null;
+  onRefusalSeen?: () => void;
+  onCommit: (value: string) => void;
+  /** What to offer for the text typed so far, or absent for a field with
+   *  nothing to offer — which is every field but a target (#258). It returns a
+   *  list rather than taking one because the list is a *filter* of the world's
+   *  whole name dictionary: see `suggestVobNames`. */
+  suggest?: (typed: string) => readonly string[];
+}> = ({ name, label, value, disabled, helper, refusal, onRefusalSeen, onCommit, suggest }) => {
+  // Typed text, kept for the suggestion filter and for nothing else — the
+  // field stays uncontrolled and the commit is still the blur or the Enter.
+  // A controlled value here would be the `VariableAutocomplete` mistake
+  // (architecture §7): this grid turns each commit into an undoable op, so a
+  // commit per keystroke is an undo stack per word.
+  const [typed, setTyped] = React.useState(value);
+  const options = suggest?.(typed) ?? [];
+  const listId = `world-prop-${name}-suggestions`;
+
+  return (
+    <>
+      <TextField
+        variant="standard"
+        size="small"
+        fullWidth
+        label={label}
+        defaultValue={value}
+        disabled={disabled}
+        error={refusal != null}
+        helperText={refusal ?? helper}
+        inputProps={{
+          'data-testid': `world-prop-${name}-input`,
+          spellCheck: false,
+          list: options.length > 0 ? listId : undefined,
+        }}
+        onFocus={() => { if (refusal != null) onRefusalSeen?.(); }}
+        onChange={suggest === undefined ? undefined : (event) => setTyped(event.target.value)}
+        onBlur={(event) => { if (event.target.value !== value) onCommit(event.target.value); }}
+        onKeyDown={(event) => {
+          const target = event.target as HTMLInputElement;
+          if (event.key === 'Enter') {
+            if (target.value !== value) onCommit(target.value);
+            target.blur();
+          } else if (event.key === 'Escape') {
+            target.value = value;
+            setTyped(value);
+            target.blur();
+          }
+        }}
+      />
+      {options.length > 0 && (
+        <datalist id={listId} data-testid={listId}>
+          {options.map((option) => <option key={option} value={option} />)}
+        </datalist>
+      )}
+    </>
+  );
+};
+
+/**
+ * The state a field keeps about its own refusals: a counter that remounts it
+ * (discarding the typed text) and the reason to show while it stands.
+ *
+ * One hook rather than three copies of `useState(0)`, because the counter alone
+ * was the bug: it put the world's value back on screen and said nothing, so a
+ * refused 2.5 looked exactly like a 2.5 that had been accepted and rounded.
+ * A refusal with no reason is left as a bare remount — an unchanged value is
+ * not an error, and calling it one teaches the user to ignore the message.
+ */
+function useRefusal(): {
+  generation: number; reason: string | null;
+  refuse: (reason?: string) => void; clear: () => void;
+} {
+  const [refused, setRefused] = useState<{ generation: number; reason: string | null }>(
+    { generation: 0, reason: null },
+  );
+  return {
+    generation: refused.generation,
+    reason: refused.reason,
+    refuse: (reason?: string) => setRefused((at) => ({
+      generation: at.generation + 1, reason: reason ?? null,
+    })),
+    clear: () => setRefused((at) => (at.reason === null ? at : { ...at, reason: null })),
+  };
+}
+
+/** Why `parse` would not take this text, in the words of the rule it broke. */
+function refusalFor(field: FieldDescriptor, text: string): string {
+  const bounds = [
+    field.min === undefined ? null : `at least ${field.min}`,
+    field.max === undefined ? null : `at most ${field.max}`,
+  ].filter((part) => part !== null).join(' and ');
+
+  if (field.kind === 'int' || field.kind === 'float') {
+    const value = text.trim() === '' ? NaN : Number(text);
+    if (!Number.isFinite(value)) return 'Must be a number.';
+    if (field.kind === 'int' && !Number.isInteger(value)) return 'Must be a whole number.';
+    return bounds === '' ? 'Not a value this field can hold.' : `Must be ${bounds}.`;
+  }
+  if (field.kind === 'color') {
+    return `Four whole channels, comma separated${bounds === '' ? '' : `, each ${bounds}`}.`;
+  }
+  if (field.kind === 'vec2' || field.kind === 'vec3') {
+    return `${field.kind === 'vec2' ? 'Two' : 'Three'} numbers, comma separated${bounds === '' ? '' : `, each ${bounds}`}.`;
+  }
+  return 'Not a value this field can hold.';
+}
+
+/**
+ * A class field's value as text, and text back to a value of its kind.
+ *
+ * Text for every kind but `bool`, a colour included, because the alternative is
+ * an input widget per kind where the catalogue has one table — and because the
+ * four channels of a `zCVobLight.color` are one value the op carries whole, not
+ * four fields whose inverse would restore three of them. A boolean is the one
+ * exception and it goes the other way, to a checkbox: a text field would have to
+ * decide what "true", "1" and "yes" mean, which is a parsing problem this panel
+ * would be inventing for itself when the six base flags above already have a
+ * control that has none.
+ *
+ * `parse` answers null for anything the field cannot hold, and null is the whole
+ * of the refusal: nothing is sent, and the catalogue's own bounds are what it
+ * checks against, so the number the grid rejects is the number C++ would have
+ * rejected — at the bottom of a batch that may already have applied.
+ */
+const formatted = (value: ClassPropValue): string => {
+  // The same rounding the coordinates get, and for the same reason: a float32
+  // range that came out of the archive prints as 299.99998474121094 otherwise,
+  // and a user who edits the colour beside it has not asked to see that.
+  if (typeof value === 'string') return value;
+  // A `bool` never reaches here — it is drawn as a checkbox — but the value type
+  // is the catalogue's whole union, and `String(true)` is what the type demands
+  // rather than a case anything hits.
+  if (typeof value === 'boolean') return String(value);
+  if (typeof value === 'number') return coordinate(value);
+  return value.map(coordinate).join(', ');
+};
+
+const parse = (field: FieldDescriptor, text: string): ClassPropValue | null => {
+  if (field.kind === 'string') return text;
+
+  const within = (value: number) => Number.isFinite(value)
+    && (field.min === undefined || value >= field.min)
+    && (field.max === undefined || value <= field.max);
+
+  if (field.kind === 'float' || field.kind === 'int') {
+    // `Number('')` is 0, and an emptied field is not a request to set zero.
+    const value = text.trim() === '' ? NaN : Number(text);
+    if (!within(value)) return null;
+    // An `int` field is an `int32_t` in the archive: a fraction accepted here
+    // truncates on the cast in C++ and reports success, so 2.5 is refused rather
+    // than rounded — the user asked for a number this field cannot hold.
+    return field.kind === 'int' && !Number.isInteger(value) ? null : value;
+  }
+
+  // The three array kinds: a colour is four whole channels, a decal's size or
+  // offset two float32s, an earthquake's amplitude three. Arity and wholeness
+  // differ, nothing else does — and the arity is read off the catalogue's own
+  // table rather than written here, so a fourth kind is one entry and not a
+  // fourth ternary.
+  //
+  // The guard is for the type rather than for a case that happens: an `enum`
+  // is drawn as a select and a `bool` as a checkbox, so neither reaches text
+  // parsing — but the compiler has to be told which kinds index the table, and
+  // the alternative is a cast that would stop telling anyone when a fourth kind
+  // arrives.
+  if (!isArrayKind(field.kind)) return null;
+  const arity = ARRAY_ARITY[field.kind];
+  const parts = text.split(',');
+  if (parts.length !== arity) return null;
+  // The same rule the float branch above states, and for the same reason:
+  // `Number('')` is 0, so "255,,180,255" would parse as a green of 0 and commit
+  // it. A typo that dropped a channel is not a request to darken the light.
+  if (parts.some((part) => part.trim() === '')) return null;
+  const values = parts.map((part) => Number(part.trim()));
+  // Integers for a colour, because a channel is a byte in the archive and 127.5
+  // is written as something else entirely; a decal dimension is a float.
+  const whole = field.kind === 'color';
+  return values.every((value) => (whole ? Number.isInteger(value) : Number.isFinite(value))
+    && within(value))
+    ? values
+    : null;
+};
+
+/**
+ * One catalogued class field.
+ *
+ * It reuses `EditableField` rather than growing a second text input, so the
+ * blur/Enter/Escape rules and the value-in-the-key remount are the ones already
+ * proven above — with the VOB in the key as well, since the selection can move
+ * to another VOB of the same class while a value is half typed.
+ *
+ * The refusal counter is the part `EditableField` cannot do on its own: a
+ * refused value is not a commit, so nothing changes and nothing re-renders, and
+ * an uncontrolled input goes on showing a range the light does not have. Bumping
+ * it remounts through the same key, which is Escape's behaviour reached by a
+ * different route.
+ */
+const ClassField: React.FC<{
+  vob: number;
+  /** `class` for a catalogued class field, `base` for one of the three `zCVob`
+   *  fields that have no column. It is only the test id and the remount key: the
+   *  two groups reach the world by different ops but are typed identically, and
+   *  a second copy of the blur/Escape/refusal rules is exactly what this
+   *  component exists not to have. */
+  group?: 'class' | 'base' | 'decal';
+  field: FieldDescriptor;
+  value: ClassPropValue;
+  /**
+   * The values this field is allowed to take, uppercased — or undefined when
+   * nothing constrains it, which is every field but one.
+   *
+   * Uppercased because Daedalus symbol names are case-insensitive and the parser
+   * keys its index by the name as it was *written*: a verbatim lookup would
+   * refuse `itmw_2h_axe_01`, which names the same symbol. The comparison is
+   * case-folded; the value committed is the one the user typed.
+   */
+  knownValues?: ReadonlySet<string>;
+  /** Whether an empty value is exempt from `knownValues` — true for the fields
+   *  where "no item" is a legal answer, false for the one where it is not. */
+  emptyMeansNone?: boolean;
+  /** The values an `enum` field's class names for it, out of the catalogue's
+   *  fourth table — undefined for every other kind. It is passed in rather than
+   *  looked up here so this component goes on knowing nothing about which class
+   *  it is drawing: `base` and `decal` fields reach it by the same route and
+   *  belong to no class at all. */
+  values?: readonly EnumValueDescriptor[];
+  helper?: string;
+  /** A field the engine would not read as the VOB stands — see `disabledFor`
+   *  below. Text kinds only: no catalogued bool or enum is governed by another. */
+  disabled?: boolean;
+  /** Passed straight through to the text field for a `target` (#258); every
+   *  other field has nothing to offer and leaves it absent. It stops here
+   *  rather than being looked up, for the same reason `values` does: this
+   *  component knows nothing about which class it is drawing. */
+  suggest?: (typed: string) => readonly string[];
+  onCommit: (value: ClassPropValue) => void;
+}> = ({
+  vob, group = 'class', field, value, knownValues, emptyMeansNone = false, values, helper,
+  disabled, suggest, onCommit,
+}) => {
+  const { generation: refusals, reason: refusal, refuse, clear } = useRefusal();
+
+  // A boolean is a checkbox, controlled, exactly like the six base flags above:
+  // there is no text to type, so there is nothing to refuse, nothing to remount
+  // and no blur to wait for. `value === true` rather than a cast, because the
+  // props object is what a world answered and this is the boundary it crosses.
+  if (field.kind === 'bool') {
+    return (
+      <Checkbox
+        size="small"
+        sx={{ p: 0, ml: 0.25 }}
+        checked={value === true}
+        inputProps={{ 'data-testid': `world-prop-${group}-${field.key}-input` } as React.InputHTMLAttributes<HTMLInputElement>}
+        onChange={(event) => onCommit(event.target.checked)}
+      />
+    );
+  }
+
+  // An enumerator is a set to pick from, so it is the one kind that is neither
+  // text nor a checkbox (level-editor.md §16.21). It **offers** without
+  // coercing: a value the set does not name is an option of its own, selected,
+  // labelled unknown and written by nothing — retail carries such values, and a
+  // control that snapped one to the nearest legal value would corrupt a world by
+  // the act of being looked at. Controlled rather than remounted on a refusal,
+  // because there is nothing here to refuse: every option is a value the field
+  // can hold.
+  if (field.kind === 'enum' && values !== undefined) {
+    const known = values.some((option) => option.value === value);
+    return (
+      <TextField
+        select
+        size="small"
+        variant="standard"
+        SelectProps={{ native: true }}
+        value={String(value)}
+        helperText={helper}
+        inputProps={{ 'data-testid': `world-prop-${group}-${field.key}-input` } as React.InputHTMLAttributes<HTMLInputElement>}
+        onChange={(event) => onCommit(Number(event.target.value))}
+        sx={{ minWidth: 160 }}
+      >
+        {!known && <option value={String(value)}>{`${formatted(value)} — unknown`}</option>}
+        {values.map((option) => (
+          <option key={option.value} value={String(option.value)}>
+            {`${option.label} (${option.value})`}
+          </option>
+        ))}
+      </TextField>
+    );
+  }
+
+  const text = formatted(value);
+
+  return (
+    <EditableField
+      key={`${group}-${vob}-${field.key}-${text}-${refusals}`}
+      name={`${group}-${field.key}`}
+      value={text}
+      disabled={disabled}
+      helper={helper}
+      refusal={refusal}
+      suggest={suggest}
+      onRefusalSeen={clear}
+      onCommit={(typed) => {
+        const parsed = parse(field, typed);
+        // A value outside the allowed set is refused by the same route a value
+        // the field cannot hold is: nothing is sent, and the field remounts
+        // showing what the world has. They differ only in what they say.
+        if (parsed === null) refuse(refusalFor(field, typed));
+        // An empty value names no instance, and on two of the three fields that
+        // is the common case rather than an omission — a mob usable bare-handed
+        // carries no `item`, an unlocked chest no `key` — so refusing it would
+        // leave a user unable to clear either. It is *not* exempt on
+        // `oCItem.instance`, where there is no such thing as an item that spawns
+        // nothing, which is why the exemption is passed in by the caller that
+        // knows the class rather than decided from the value.
+        //
+        // Exactly empty, not blank: `assertApplyOpsRequest` exempts the same
+        // one string, and a field that took "  " here would commit something
+        // the main process then refuses — and, if it got through, two spaces
+        // into the archive where an item name belongs.
+        else if (knownValues !== undefined && !(emptyMeansNone && parsed === '')
+          && !knownValues.has(String(parsed).toUpperCase())) {
+          refuse('No script in this project declares that instance.');
+        } else onCommit(parsed);
+      }}
+    />
+  );
+};
+
+/**
+ * The one class field whose *emptiness* is a defect the editor can see.
+ *
+ * The engine's crosshair finds a mob through `focusName`, so a mob without one
+ * is placeable, visible and impossible to use — which is what an authored
+ * chest turned out to be in Gate 2b's second pass (level-editor.md §16.15).
+ * `insertVob` cannot default it: retail sets it per class, `oCMobInter` has no
+ * majority to take, and fires and beds carry nothing on purpose because NPC
+ * routines use them rather than the player's hand. So this is where it is said,
+ * against the measured table in `zen-world`, and it names a value that class
+ * actually uses rather than only reporting that something is wrong.
+ *
+ * Not a `Problem`: `Problem.locus` admits a world VOB since §16.20 slice 1, but
+ * this warning is about the field under the cursor and is read where it is
+ * edited — nothing has asked for it in the panel.
+ */
+const FocusNameWarning: React.FC<{ className: string; value: ClassPropValue }> = ({
+  className, value,
+}) => {
+  const expectation = focusNameExpectation(className);
+  // Whitespace is empty: the engine matches the string, and " " finds nothing.
+  if (!expectation || (typeof value === 'string' && value.trim() !== '')) return null;
+
+  return (
+    <Typography
+      variant="caption"
+      color="warning.main"
+      data-testid="world-prop-class-focusName-warning"
+      sx={{ display: 'block', mt: 0.25 }}
+    >
+      {`Empty — the crosshair cannot find this ${className}, so nobody can use it.`}
+      {` Retail names ${Math.round(expectation.share * 100)} % of them, e.g. ${expectation.example}.`}
+    </Typography>
+  );
+};
+
+/**
+ * The class fields whose value is the `vobName` of another VOB in this world —
+ * what a trigger fires at (level-editor.md §14.1 1.4, 2026-09-12).
+ *
+ * ZenGin resolves them by name, so a name nothing answers to is a trigger that
+ * does nothing. That is **not** the `oCItem.instance` case and is deliberately
+ * not treated like one: an instance no script declares crashes the engine, so
+ * the grid refuses it, while a dangling target is inert — and a modder may
+ * legitimately wire a trigger to a VOB they have not placed yet. So this is a
+ * warning beside the field, on the value the world holds, which also says so
+ * about the dangling targets a world arrived with.
+ */
+const VOB_TARGET_KEYS: ReadonlySet<string> = new Set(['target', 'vobTarget', 'failureTarget']);
+
+/**
+ * The class fields whose value is a **script function** (#269).
+ *
+ * `oCTriggerScript.function` is what the trigger calls when it fires; a
+ * `VInteractiveObject`'s `conditionFunction` gates whether the player may use
+ * it and `onStateChangeFunction` runs when it moves. A typo in any of them is
+ * the report's own complaint — "a silently dead trigger or empty chest in
+ * game", with no warning anywhere.
+ *
+ * A **warning**, not the refusal `oCItem.instance` gets, and the difference is
+ * the consequence: an instance no script declares crashes ZenGin, while a
+ * function nothing declares is inert. The index is also weaker than the item
+ * one in the way that matters here — `ProjectIndex.functions` is built at
+ * project load and not refreshed on save, so a function the user wrote a minute
+ * ago is not in it, and a refusal would block the name that is about to be
+ * right. Same shape as the dangling-target warning beside it.
+ */
+const SCRIPT_FUNCTION_KEYS: ReadonlySet<string> = new Set([
+  'function', 'conditionFunction', 'onStateChangeFunction',
+]);
+
+const UnknownFunctionWarning: React.FC<{
+  field: string; value: ClassPropValue; functions: ReadonlySet<string>;
+}> = ({ field, value, functions }) => {
+  // An empty index is a project that is not loaded, or one whose scripts this
+  // app has not indexed: nothing is known, never that nothing is legal.
+  if (functions.size === 0) return null;
+  // Whitespace is empty, as it is for a target: no function is the ordinary
+  // state of all three fields.
+  if (typeof value !== 'string' || value.trim() === '') return null;
+  if (functions.has(value.trim().toUpperCase())) return null;
+
+  return (
+    <Typography
+      variant="caption"
+      color="warning.main"
+      data-testid={`world-prop-class-${field}-warning`}
+      sx={{ display: 'block', mt: 0.25 }}
+    >
+      No script in this project declares that function, so this does nothing.
+    </Typography>
+  );
+};
+
+/**
+ * How many names a target field offers at once (#258).
+ *
+ * The warning above says a typed name is wrong; this is the half that offers a
+ * right one, so that wiring a trigger does not mean knowing the name already or
+ * hunting it in the scene tree first. The dictionary it draws from is the same
+ * `vobIndex.names` the warning reads — interned, so it is the distinct names
+ * rather than one entry per VOB — and how large that is on a retail world is
+ * still unmeasured. Capping sidesteps the question: fifty options is a list a
+ * person reads, and the browser renders, whether the world holds two hundred
+ * distinct names or five thousand.
+ */
+const VOB_NAME_SUGGESTIONS = 50;
+
+/**
+ * The names worth offering for the text typed so far.
+ *
+ * Substring rather than prefix, because retail names almost all carry one — a
+ * `NW_`, an `OC_`, a chapter number — and the part anybody remembers is in the
+ * middle. Case-insensitive, as the engine's own lookup is and as the warning
+ * beside it already is. Nothing at all for an empty field: a world's dictionary
+ * runs to thousands, and an arbitrary first fifty of them is a worse answer than
+ * none — browsing is what the scene tree is for.
+ */
+function suggestVobNames(names: readonly string[], typed: string): readonly string[] {
+  const needle = typed.trim().toUpperCase();
+  if (needle === '') return [];
+
+  const found: string[] = [];
+  for (const name of names) {
+    if (name.toUpperCase().includes(needle)) found.push(name);
+    if (found.length === VOB_NAME_SUGGESTIONS) break;
+  }
+  return found;
+}
+
+const DanglingTargetWarning: React.FC<{
+  field: string; value: ClassPropValue; names: ReadonlySet<string>;
+}> = ({ field, value, names }) => {
+  // Whitespace is empty, as it is for a focus name: the engine matches the
+  // string, and " " finds nothing — which is what an empty target means anyway.
+  if (typeof value !== 'string' || value.trim() === '') return null;
+  if (names.has(value.trim().toUpperCase())) return null;
+
+  return (
+    <Typography
+      variant="caption"
+      color="warning.main"
+      data-testid={`world-prop-class-${field}-warning`}
+      sx={{ display: 'block', mt: 0.25 }}
+    >
+      No VOB in this world carries that name, so this fires at nothing.
+    </Typography>
+  );
+};
+
+/** The axes, in the order the index stores them. */
+const AXES = ['x', 'y', 'z'] as const;
+
+/**
+ * A coordinate, from text, or null for anything that is not one.
+ *
+ * Null is the whole of the refusal, exactly as it is for a class field: nothing
+ * is sent, so a number the binding would reject never reaches the bottom of a
+ * batch that has already applied its other ops. The float32 check is not
+ * decoration — the archive holds a float32 and the binding takes one, so a
+ * magnitude beyond it would arrive as an Infinity.
+ */
+const parseCoordinate = (text: string): number | null => {
+  // `Number('')` is 0, and an emptied field is not a request to set zero.
+  if (text.trim() === '') return null;
+  const value = Number(text);
+  return Number.isFinite(value) && Number.isFinite(Math.fround(value)) ? value : null;
+};
+
+/**
+ * One typed coordinate (level-editor.md §14.1 item 1.5).
+ *
+ * It reuses `EditableField` for the same reason `ClassField` does: the
+ * blur/Enter/Escape rules and the value-in-the-key remount are already proven,
+ * and a second text input would be a second set of them to keep in step. The
+ * refusal counter is likewise the part `EditableField` cannot do alone — a
+ * refused value is not a commit, so nothing re-renders and an uncontrolled input
+ * would go on showing a coordinate the world does not have.
+ *
+ * A number equal to the one already there is refused by the same route rather
+ * than sent: "12.50" is different text and the same coordinate, and committing
+ * it would be a zero-delta op per selected VOB on the undo stack — the rule the
+ * name field and the gizmo both already have.
+ */
+const CoordinateField: React.FC<{
+  vob: number;
+  axis: string;
+  value: number;
+  onCommit: (value: number) => void;
+}> = ({ vob, axis, value, onCommit }) => {
+  const { generation: refusals, reason: refusal, refuse, clear } = useRefusal();
+  const text = coordinate(value);
+
+  return (
+    <EditableField
+      key={`position-${vob}-${axis}-${text}-${refusals}`}
+      name={`position-${axis}`}
+      label={axis.toUpperCase()}
+      value={text}
+      refusal={refusal}
+      onRefusalSeen={clear}
+      onCommit={(typed) => {
+        const parsed = parseCoordinate(typed);
+        // A number this field cannot hold is a refusal with something to say;
+        // retyping the value already there is not a refusal at all, just
+        // nothing to do, and it remounts without a word.
+        if (parsed === null) refuse('Must be a number.');
+        else if (parsed === value) refuse();
+        else onCommit(parsed);
+      }}
+    />
+  );
+};
+
+/** The angle names, in the order `ZenEulerDegrees` holds them. */
+const ANGLE_AXES = ['yaw', 'pitch', 'roll'] as const;
+
+/**
+ * One typed angle (level-editor.md §14.1 item 1.5, the rotation half).
+ *
+ * Shaped on `CoordinateField` — same `EditableField`, same local refusal
+ * counter, same `parseCoordinate` (an angle is degrees, but "not a number" and
+ * "a magnitude float32 cannot hold" are the same refusals).
+ *
+ * **The equality refusal is the load-bearing part, and it is per angle.** The
+ * read *normalizes*: 30.2 % of retail VOBs store a matrix that is
+ * non-orthonormal by more than 1e-6, so `eulerToZenRotation(zenRotationToEuler(M))`
+ * differs from `M` for a third of the world. Committing an angle the user did
+ * not change would therefore re-orthonormalize the matrix and rewrite bytes
+ * nobody asked to change. The comparison is against the *displayed* number as
+ * well as the exact one, because the display rounds ("30" on screen can be
+ * 30.000000000000004 decomposed, and retyping what is on screen is not an
+ * edit).
+ *
+ * A committed angle can legitimately come back different: the decomposition is
+ * canonical — pitch/roll in (-180, 180], yaw in [-90, 90] — so a committed 190
+ * remounts as -170. That is the same angle, not a defect to fight here. Nor is
+ * the pole: at yaw +-90 the engine's own `GetEulerAngles` folds the roll into
+ * the pitch and shows roll 0, and so does this grid.
+ */
+const AngleField: React.FC<{
+  vob: number;
+  axis: string;
+  value: number;
+  onCommit: (value: number) => void;
+}> = ({ vob, axis, value, onCommit }) => {
+  const { generation: refusals, reason: refusal, refuse, clear } = useRefusal();
+  const text = coordinate(value);
+
+  return (
+    <EditableField
+      key={`rotation-${vob}-${axis}-${text}-${refusals}`}
+      name={`rotation-${axis}`}
+      label={axis}
+      value={text}
+      refusal={refusal}
+      onRefusalSeen={clear}
+      onCommit={(typed) => {
+        const parsed = parseCoordinate(typed);
+        if (parsed === null) refuse('Must be a number.');
+        else if (parsed === value || parsed === Number(text)) refuse();
+        else onCommit(parsed);
+      }}
+    />
+  );
+};
+
+export interface WorldPropertyGridProps {
+  summary: WorldSummary;
+  /** The whole selection. The grid describes the last VOB in it — the one the
+   *  gizmo anchors on — and says how many others an edit would take with it. */
+  selection: readonly number[];
+  /**
+   * How many edits the main process has refused — bumped by the shell in
+   * `commitOps`' catch, and folded into every editable field's key.
+   *
+   * The local refusal counters above cover only the refusals a field decides
+   * itself. A refusal that comes back from the main process changes *nothing*:
+   * the world holds the value it always held, so the value in the key is
+   * unchanged, no field remounts, and an uncontrolled input goes on showing the
+   * number the user typed as though it had been taken
+   * (refactoring-targets.md §7). This counter is the remount that refusal was
+   * missing — the same rule the class section got when `setClassProps(null)`
+   * moved into that same catch, applied to the fields the columnar index backs
+   * and therefore never nulls.
+   */
+  refusalGeneration: number;
+  /**
+   * One property change, as the single key that changed.
+   *
+   * Only the changed key, because the op reads `from` for exactly the keys `to`
+   * names: a grid that posted the whole object would build an inverse that
+   * restores fields nobody edited, and nothing would show it until an undo.
+   */
+  onEditProps: (props: VobProps) => void;
+  /**
+   * Jump the camera to the VOB this grid describes (level-editor.md §16.24 6).
+   *
+   * Picking in the viewport left no way back to the selection: the scene tree's
+   * locator is per row, and a VOB selected by clicking the world may not even
+   * be scrolled into view there. It is the same command the `.` key already
+   * sends, given a button in the one panel that is always looking at the
+   * selected VOB.
+   */
+  onFocus: (vob: number) => void;
+  /**
+   * The described VOB's per-class fields, as `getVobProps` answered them — the
+   * whole props object, base fields and all — or null while that read is in
+   * flight.
+   *
+   * None of this is in the columnar index: it interns a class *name* and carries
+   * not one field of the class, so it arrives over IPC and one round trip behind
+   * the selection. Null therefore means "not here yet", never "empty", and the
+   * grid says so rather than drawing fields that would write a blank on blur.
+   *
+   * **It must be the described VOB's.** The fields drawn come from the catalogue
+   * by that VOB's class, and nothing in a props object says which VOB it was
+   * read for — so props belonging to another one pass as a loaded read and the
+   * grid indexes keys they do not have. Keeping the two in step is the caller's:
+   * it tags the read with its VOB and answers null on a mismatch, because its
+   * own effect learns of a selection change a render too late.
+   */
+  classProps: ClassProps | null;
+  /**
+   * One class field change, as the single key that changed — and on the
+   * described VOB alone.
+   *
+   * Alone because each VOB in a batch would need its own fetched `from` and a
+   * selection can hold mixed classes, which is a lazy read per VOB and a guard
+   * that does not exist yet (level-editor.md §14.1 item 1.4, D7).
+   */
+  onEditClassProps: (props: ClassProps) => void;
+  /**
+   * One base-field change — `presetName`, `visualCamAlign`, `bias`,
+   * `dynamicShadows` or one of the seven decal fields — as the single key that
+   * changed, and on the described VOB alone.
+   *
+   * Separate from `onEditProps` although both build a `SetVobProp`: none of them
+   * has a column in the index, so their `from` side is the fetched props
+   * rather than something the op builder can read back per VOB. That is the
+   * class fields' constraint reached by a different route, and it has the class
+   * fields' consequence — the described VOB only, where a flag takes the whole
+   * selection.
+   */
+  onEditBaseProps: (props: VobProps) => void;
+  /**
+   * Every item instance the loaded script project declares, **uppercased** —
+   * the parser's `items` map, which is `C_ITEM` instances and nothing else.
+   *
+   * It is here for one field: an `oCItem` spawns the Daedalus instance it names,
+   * and ZenGin crashes on a name no script declares (level-editor.md §14.1). A
+   * typo is invisible in the viewport, invisible in the file, and survives every
+   * check the save pipeline has, so this is the only layer that can catch it —
+   * `assertApplyOpsRequest` cannot, because the main process holds no item
+   * index at all (see `ipcValidation.ts`, `DAEDALUS_INSTANCE`).
+   *
+   * **Empty means "nothing is known", never "nothing is legal".** A world can be
+   * opened with no script project behind it, and the index is also empty until
+   * ingestion has merged the item files, so an empty set refuses nothing and the
+   * field is the free text it always was. That is the whole reason this refusal
+   * lives here rather than in the main process: a hard refusal cannot know
+   * whether an index it does not have would have allowed the name.
+   */
+  itemInstances: ReadonlySet<string>;
+  /**
+   * The functions the loaded script project declares, UPPERCASED — the project
+   * index's own set, which is whole-project rather than capped by what has been
+   * opened, because a trigger's function almost always lives in a file nobody
+   * opens. Empty is no project, and warns about nothing (#269).
+   */
+  scriptFunctions: ReadonlySet<string>;
+  /** Uppercased item instance → the visual its script declares — what the
+   *  chest-contents picker draws (§16.26 row 2). Absent with no project. */
+  itemVisuals?: ReadonlyMap<string, string>;
+  /** The Assets panel's thumbnail queue, for the same picker; null before a
+   *  world is open. */
+  thumbnails?: AssetThumbnails | null;
+  /**
+   * A typed coordinate, as the **delta** it moves the described VOB by — the
+   * gizmo's own shape, and the gizmo's own handler.
+   *
+   * A delta rather than the destination because a typed coordinate is the same
+   * edit a drag is, and a drag of a multi-selection moves every VOB by one
+   * delta: an absolute applied to all of them would stack the selection on one
+   * point, and each op would lose the `from` that makes the batch invertible.
+   * Sending it this way also means there is no second op-building path to keep
+   * in step with `translateVobs` — the difference between typing and dragging
+   * ends here.
+   */
+  onTranslate: (delta: ZenPosition) => void;
+  /**
+   * A typed angle for a **selection of one**, as the **absolute** rotation that
+   * VOB should have — `rotateVob`'s shape, unlike the delta a gizmo drag or a
+   * typed coordinate leaves as.
+   *
+   * Absolute because with one VOB the typed angles *are* the destination: the
+   * field shows the decomposed pose and the user replaced one angle of it, and
+   * an absolute angle is what the grid can read off a single VOB. The asymmetry
+   * with `onRotateSelection` below is the same one position already has between
+   * what it displays and what it sends, and is not a wart.
+   */
+  onRotate: (to: ZenRotation) => void;
+  /**
+   * A typed angle for a selection of **N**, as the **delta** every selected VOB
+   * turns by — `rotateVobs`' shape, and the gizmo's own handler.
+   *
+   * Relative rather than absolute (level-editor.md §16.4, decided 2026-08-28)
+   * for the reason the position fields are: a multi-selection moves together and
+   * keeps its spacing, and a rotation that snapped N VOBs to one pose would be
+   * the odd one out — it destroys their relative orientation with no way back
+   * but undo. Sending it this way also means there is no second op-building path
+   * beside `rotateVobs`, so typing and dragging cannot drift apart about what
+   * "turn 45 degrees" means.
+   */
+  onRotateSelection: (delta: ZenRotation) => void;
+}
+
+const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
+  {
+    summary, selection, refusalGeneration,
+    onEditProps, onFocus, classProps, onEditClassProps, onEditBaseProps, itemInstances,
+    scriptFunctions, itemVisuals, thumbnails,
+    onTranslate, onRotate, onRotateSelection,
+  },
+) => {
+  const { tree, reader } = useMemo(() => vobModelOf(summary), [summary]);
+  // Every name in the world, uppercased — the index's own interned dictionary,
+  // so this is a walk over the distinct names rather than over 41,393 VOBs.
+  // Nothing is plumbed in for it: the grid already has the summary, which is
+  // exactly the difference between this check and the item index's.
+  const vobNames = useMemo(
+    () => new Set(summary.vobIndex.names.filter((name) => name !== '').map((n) => n.toUpperCase())),
+    [summary],
+  );
+  // The same dictionary, as the user sees it: original casing, sorted, so a
+  // target field's suggestions read in one order and the cap takes a stable
+  // fifty rather than whichever fifty the archive happened to write first.
+  const sortedVobNames = useMemo(
+    () => summary.vobIndex.names.filter((name) => name !== '')
+      .sort((a, b) => a.toUpperCase().localeCompare(b.toUpperCase())),
+    [summary],
+  );
+  const suggestTarget = useCallback(
+    (typed: string) => suggestVobNames(sortedVobNames, typed),
+    [sortedVobNames],
+  );
+  const selectedVob = selection.length === 0 ? null : selection[selection.length - 1];
+
+  if (selectedVob === null || reader.className(selectedVob) === null) {
+    return (
+      <Box sx={{ p: 1.5 }}>
+        <Typography variant="caption" color="text.secondary" data-testid="world-props-empty">
+          Select a VOB in the viewport or the scene tree.
+        </Typography>
+      </Box>
+    );
+  }
+
+  const className = reader.className(selectedVob)!;
+  const name = reader.name(selectedVob);
+  const visual = reader.visual(selectedVob);
+  const visualType = reader.visualType(selectedVob);
+  const position = reader.position(selectedVob)!;
+  const rotation = reader.rotation(selectedVob)!;
+  /** Each flag across the whole selection: true or false where they agree, null
+   *  where they do not. One VOB always agrees with itself, so this is the
+   *  anchor's own answer for a selection of one — which is what it replaced. */
+  const flagAgreement: Record<typeof FLAG_ORDER[number], boolean | null> = Object.fromEntries(
+    FLAG_ORDER.map((flag) => {
+      const held = selection.map((vob) => reader.flags(vob)[flag]);
+      return [flag, held.every((on) => on === held[0]) ? held[0] : null];
+    }),
+  ) as Record<typeof FLAG_ORDER[number], boolean | null>;
+  const parent = tree.parent(selectedVob);
+  const children = tree.children(selectedVob).length;
+  // The catalogue's own order and its own descriptors. It answers [] for a class
+  // it does not have — 35 of the 37 in a retail world — and that empty list is
+  // the whole test for whether there is a section to draw at all.
+  const classFields = classPropKeys(className).flatMap((key) => fieldOf(className, key) ?? []);
+
+  // The decal a VOB's visual may be, out of the same read. `getVobProps` answers
+  // `decal: null` for every VOB whose visual is not one, which is 39,461 of a
+  // retail world's 41,393 — so a record here is the whole test for whether the
+  // decal section exists, exactly as `classFields` being empty is for that one.
+  const decalRecord = classProps === null ? null : classProps.decal;
+  const decal = decalRecord !== null && typeof decalRecord === 'object'
+    && !Array.isArray(decalRecord)
+    ? decalRecord as unknown as Record<string, ClassPropValue>
+    : null;
+
+  // The catalogued fields whose legal values are a set this app already holds:
+  // the three that name a Daedalus item instance. Undefined for every other
+  // field, so nothing else is constrained — a sound name is a file in the VFS
+  // and a light's range is a number, and neither is in an item index.
+  //
+  // **Keyed by class and key together, never by key alone.** A container's and
+  // a door's `key` is the item instance that unlocks it; a `zCMoverController`'s
+  // `key` is the keyframe number it drives a mover to, and a check that matched
+  // on the name would refuse every number typed into that one.
+  const itemInstanceKeys: readonly string[] = className === 'oCItem'
+    ? ['instance']
+    : (className === 'oCMobContainer' || className === 'oCMobDoor'
+      ? ['item', 'key']
+      : (fieldOf(className, 'item') === null ? [] : ['item']));
+  const knownValuesFor = (key: string): ReadonlySet<string> | undefined => (
+    itemInstanceKeys.includes(key) && itemInstances.size > 0 ? itemInstances : undefined
+  );
+
+  // The one cross-field rule the grid has (decided 2026-09-02, level-editor.md
+  // §14.1 1.4). ZenGin reads `zCZoneZFog.color` only while `overrideColor` is
+  // true, so a colour committed on a zone that does not override is a legal
+  // write the engine never reads — `randomDelay` beside a non-RANDOM `mode` has
+  // the same shape (§16.3), and stays enabled only because a mode change and a
+  // delay are two commits on the same VOB. Here the switch is drawn one row up,
+  // so the field can say why it is off rather than take a number that changes
+  // nothing. Not generalised into the catalogue: this is one field.
+  const disabledFor = (key: string): string | undefined => (
+    className === 'zCZoneZFog' && key === 'color' && classProps?.overrideColor !== true
+      ? 'Read by the engine only while overrideColor is on.'
+      : undefined
+  );
+
+  // The described VOB's rotation as angles — the anchor's, whatever the size of
+  // the selection, and null when no angles describe it. `zenRotationToEuler`
+  // **throws** on a reflection or a collapsed matrix (correctly: no triple of
+  // angles is either), and this is a render path, where an uncaught throw is a
+  // blank panel for the whole VOB rather than one unavailable row. Retail has
+  // zero of both, but a world this editor writes is not retail.
+  const euler = ((): ZenEulerDegrees | null => {
+    try {
+      return zenRotationToEuler(rotation);
+    } catch {
+      return null;
+    }
+  })();
+
+  // Why a VOB that exists is not on screen. All three are measured, correct
+  // behaviour rather than gaps (§3, "The unresolved visuals").
+  let note: string | null = null;
+  if (className === 'zCVobLevelCompo') {
+    note = 'A level compo is not drawn: its visual names the source mesh a slice of the '
+      + 'already-compiled world came from, so drawing it would draw the world twice. '
+      + 'The part .zen beside the world is its editable source.';
+  } else if (visualType === 'PARTICLE_EFFECT') {
+    note = 'A particle effect is a Daedalus instance, not a file in the VFS, so it has no '
+      + 'mesh to draw.';
+  } else if (visualType === 'DECAL') {
+    note = 'A decal is not a mesh: its visual names a texture, and the quad is built by the '
+      + 'renderer rather than loaded.';
+  }
+
+  return (
+    <Box sx={{ p: 1.5, overflowY: 'auto', height: '100%' }}>
+      {/* A drag moves the whole selection and the grid only ever describes one
+          VOB of it, so without this the count is visible nowhere but the
+          viewport — where a VOB out of view is not visible at all. */}
+      {selection.length > 1 && (
+        <Chip
+          size="small"
+          label={`${selection.length} VOBs selected`}
+          data-testid="world-prop-selection"
+          sx={{ mb: 1 }}
+        />
+      )}
+      <Field label="Index" name="index">
+        <Stack direction="row" spacing={0.5} alignItems="center">
+          <Typography variant="caption">{selectedVob}</Typography>
+          <Tooltip title="Frame this VOB (.)">
+            <IconButton
+              size="small"
+              data-testid="world-prop-locate"
+              aria-label="Frame this VOB"
+              onClick={() => onFocus(selectedVob)}
+              sx={{ p: 0.25 }}
+            >
+              <MyLocationIcon sx={{ fontSize: 14 }} />
+            </IconButton>
+          </Tooltip>
+        </Stack>
+      </Field>
+      <Field label="Class" name="class">
+        <Typography variant="caption">{className}</Typography>
+      </Field>
+      {selection.length > 1 && (
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          data-testid="world-prop-edit-scope"
+          sx={{ display: 'block', mb: 0.5 }}
+        >
+          {`A flag is set on all ${selection.length} selected VOBs. A typed coordinate or angle moves them together — only this VOB lands on the value typed.`}
+        </Typography>
+      )}
+      <Field label="Name" name="name">
+        <EditableField
+          key={`name-${selectedVob}-${name}-${refusalGeneration}`}
+          name="name"
+          value={name ?? ''}
+          onCommit={(value) => onEditProps({ name: value })}
+        />
+      </Field>
+      <Field label="Visual" name="visual">
+        {/* A VOB whose visual type is UNKNOWN has no visual object to rename,
+            and the binding refuses to name one — giving a VOB a visual replaces
+            that object and has to decide its class, which the file name cannot
+            settle (`.3DS` is zCProgMeshProto 20,716 times and zCMesh 31 times
+            across the retail corpus). Offering the field and having the edit
+            refused at the bottom of the stack is worse than not offering it. */}
+        <EditableField
+          key={`visual-${selectedVob}-${visual}-${refusalGeneration}`}
+          name="visual"
+          value={visual ?? ''}
+          disabled={!visual || visualType === 'UNKNOWN'}
+          helper={!visual || visualType === 'UNKNOWN'
+            ? 'This VOB has no visual to rename.'
+            : undefined}
+          onCommit={(value) => onEditProps({ visual: value })}
+        />
+        {/* A MOB class on a static mesh (#290): what Florian did to rocks and
+            bushes by accident. Only a model has animations for a scheme to
+            play, so this is certain for a mesh and said about nothing else —
+            a model whose scheme the editor does not know may be a mod's own. */}
+        {className !== 'zCVob' && carriesVisual(className) && visual && !isModelVisual(visual) && (
+          <Typography
+            variant="caption"
+            color="warning.main"
+            data-testid="world-prop-mob-static-warning"
+            sx={{ display: 'block', mt: 0.25 }}
+          >
+            {`A static mesh has no animations for a ${className} to play, so the crosshair finds it and nothing happens. A plain zCVob does the same job; a class cannot be changed in place, so delete it and place it again.`}
+          </Typography>
+        )}
+      </Field>
+      <Field label="Type" name="visualType">
+        <Typography variant="caption">{visualType}</Typography>
+      </Field>
+      {/* #270: Spacer's `scemeName` is stored nowhere — not in the .zen, not in
+          ZenKit — ZenGin reads it off the visual's name and plays that
+          scheme's animations. So it is shown where one looks for it, and
+          changing it means changing the visual. Only on a model: a static
+          mesh has nothing to play (the warning above). */}
+      {className !== 'zCVob' && carriesVisual(className) && visual && isModelVisual(visual) && (
+        <Field label="Scheme" name="scheme">
+          <Typography variant="caption">{schemeOf(visual)}</Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            Read off the visual&apos;s name, up to its first underscore — rename the visual to change it.
+          </Typography>
+        </Field>
+      )}
+      <Field label="Position (cm)" name="position">
+        {/* ZenGin space, centimetres — see the note at the top of this file.
+            Typed, and it leaves as a delta: the destination is this axis
+            changed and the other two left alone. */}
+        <Stack direction="row" spacing={0.5}>
+          {AXES.map((axis, at) => (
+            <CoordinateField
+              // The generation is in the *component's* key rather than a prop:
+              // remounting the whole field resets its local refusal count along
+              // with the input, which is exactly what a fresh look at the
+              // world's own value means.
+              key={`${axis}-${refusalGeneration}`}
+              vob={selectedVob}
+              axis={axis}
+              value={position[at]}
+              onCommit={(value) => {
+                const delta: ZenPosition = [0, 0, 0];
+                delta[at] = value - position[at];
+                onTranslate(delta);
+              }}
+            />
+          ))}
+        </Stack>
+      </Field>
+      <Field label="Rotation (°)" name="rotation">
+        {/* Typed angles through `zen-world/coords`' one matrix↔Euler conversion
+            (the engine's `zMAT4::GetEulerAngles` — intrinsic X-Y-Z with the
+            vertical in the middle, degrees), for a selection of any size: the fields
+            describe the anchor VOB, and what a commit *means* is what changes
+            with the count — absolute for one VOB, a delta every selected VOB
+            turns by for N (§16.4). The read-only matrix is what is left when no
+            angles describe the anchor at all. */}
+        {euler === null
+          ? (
+            <Typography variant="caption" sx={{ fontFamily: 'monospace', whiteSpace: 'pre-line' }}>
+              {[0, 3, 6].map((at) => rotation.slice(at, at + 3).map(coordinate).join(', ')).join('\n')}
+            </Typography>
+          )
+          : (
+            <Stack direction="row" spacing={0.5}>
+              {ANGLE_AXES.map((axis, at) => (
+                <AngleField
+                  // The generation is in the component's key for the same
+                  // reason it is on `CoordinateField`: a main-process refusal
+                  // changes nothing in the world, so only this remounts the
+                  // field showing the angle the world still has.
+                  key={`${axis}-${refusalGeneration}`}
+                  vob={selectedVob}
+                  axis={axis}
+                  value={euler[at]}
+                  onCommit={(value) => {
+                    // The typed angle replaces one entry of the decomposed
+                    // pose; the other two stay at full precision, not at what
+                    // the display rounded them to.
+                    const typed = [...euler] as ZenEulerDegrees;
+                    typed[at] = value;
+                    // One VOB gets the pose; N get the turn between the pose on
+                    // screen and the one typed. The delta is built from the two
+                    // angle triples and not from the stored matrix, so the
+                    // anchor's own drift — 30.2 % of retail VOBs are
+                    // non-orthonormal — stays on the anchor instead of being
+                    // applied to everything else in the selection.
+                    if (selection.length === 1) {
+                      onRotate(eulerToZenRotation(typed) as ZenRotation);
+                    } else {
+                      onRotateSelection(eulerDeltaRotation(euler, typed) as ZenRotation);
+                    }
+                  }}
+                />
+              ))}
+            </Stack>
+          )}
+        {euler === null && (
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            data-testid="world-prop-rotation-unavailable"
+            sx={{ display: 'block' }}
+          >
+            No angles describe this matrix — it is a reflection or has collapsed
+            axes, which a rotation cannot be. The gizmo can still turn this VOB.
+          </Typography>
+        )}
+      </Field>
+      <Field label="Flags" name="flags">
+        {/* Named, not a bit word: printing 3 tells nobody that a VOB is a
+            visible static. Every flag is shown rather than only the set ones,
+            because an unset flag is now something to click.
+
+            A flag is the one thing here written to the whole selection, so it
+            is also the one thing that can *disagree* across it. The box then
+            shows indeterminate rather than the anchor's answer, and a click
+            resolves the disagreement upwards — the write already went to every
+            selected VOB, and taking the value off the anchor alone meant a
+            click on a flag only the anchor had cleared it everywhere (§5.2
+            item 9 of the 2026-09-04 review). */}
+        <Stack direction="column" sx={{ my: -0.75 }}>
+          {FLAG_ORDER.map((flag) => (
+            <FormControlLabel
+              key={flag}
+              control={(
+                <Checkbox
+                  size="small"
+                  checked={flagAgreement[flag] === true}
+                  indeterminate={flagAgreement[flag] === null}
+                  // MUI's `indeterminate` draws the dash and sets a data
+                  // attribute; the DOM property is what a screen reader reads,
+                  // and only a ref can set it. Re-run on every render, which is
+                  // what keeps it in step with the selection.
+                  inputRef={(node: HTMLInputElement | null) => {
+                    if (node !== null) node.indeterminate = flagAgreement[flag] === null;
+                  }}
+                  inputProps={{ 'data-testid': `world-prop-flag-${flag}` } as React.InputHTMLAttributes<HTMLInputElement>}
+                  onChange={() => onEditProps({ [flag]: flagAgreement[flag] !== true })}
+                />
+              )}
+              label={<Typography variant="caption">{flag}</Typography>}
+              sx={{ ml: -1, my: -0.5 }}
+            />
+          ))}
+        </Stack>
+      </Field>
+      {/* The base fields that are not in the columnar index — the Spacer preset a
+          VOB was made from, how its visual faces the camera, the depth bias and
+          whether it casts a shadow. They are drawn for every class, unlike the
+          section below,
+          because every VOB has them; they sit here because they arrive with the
+          same read, one round trip behind the selection. */}
+      <Box
+        data-testid="world-prop-base-section"
+        sx={{ mt: 1, pt: 1, borderTop: 1, borderColor: 'divider' }}
+      >
+        {selection.length > 1 && (
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            data-testid="world-prop-base-scope"
+            sx={{ display: 'block', mb: 0.5 }}
+          >
+            {`These fields are edited on this VOB only, not on the other ${selection.length - 1} selected.`}
+          </Typography>
+        )}
+        {classProps === null
+          ? (
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              data-testid="world-prop-base-loading"
+            >
+              Reading this VOB&apos;s base fields…
+            </Typography>
+          )
+          : BASE_FIELDS
+            // A field the read did not answer is not drawn. In the app that
+            // cannot happen — `getVobProps` sets every one of them — but a build
+            // running against an older native addon would otherwise draw a field
+            // with no value and write whatever a blur made of it.
+            .filter((baseField) => classProps[baseField.key] !== undefined)
+            .map((baseField) => (
+              <Field
+                key={`${baseField.key}-${refusalGeneration}`}
+                label={baseField.key}
+                name={`base-${baseField.key}`}
+              >
+                <ClassField
+                  vob={selectedVob}
+                  group="base"
+                  field={baseField}
+                  value={classProps[baseField.key]}
+                  onCommit={(value) => onEditBaseProps({ [baseField.key]: value })}
+                />
+              </Field>
+            ))}
+      </Box>
+      {/* The decal fields (§16.17 V2) — drawn only for a VOB whose visual is a
+          decal, which is 1,932 of a retail world's VOBs and is not predicted by
+          the class: every one of them is a plain `zCVob`. `getVobProps` answers
+          them nested and the op carries them flat, so this is the one place the
+          two shapes meet, through `decalSubKey`. They commit down the base
+          handler because they are the same `SetVobProp`. */}
+      {decal !== null && (
+        <Box
+          data-testid="world-prop-decal-section"
+          sx={{ mt: 1, pt: 1, borderTop: 1, borderColor: 'divider' }}
+        >
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+            decal visual
+          </Typography>
+          {DECAL_FIELDS.map((decalField) => (
+            <Field
+              key={`${decalField.key}-${refusalGeneration}`}
+              label={decalSubKey(decalField.key)}
+              name={`decal-${decalField.key}`}
+            >
+              <ClassField
+                vob={selectedVob}
+                group="decal"
+                field={decalField}
+                value={decal[decalSubKey(decalField.key)]}
+                onCommit={(value) => onEditBaseProps({ [decalField.key]: value })}
+              />
+            </Field>
+          ))}
+        </Box>
+      )}
+      {/* The fields that make a VOB the thing it *is* — an item's Daedalus
+          instance, a light's range and colour. They sit after the base ones
+          rather than among them because they are read over IPC and the base ones
+          are read out of the index: everything above is on screen the moment the
+          selection moves, and this can still be arriving. */}
+      {classFields.length > 0 && (
+        <Box
+          data-testid="world-prop-class-section"
+          sx={{ mt: 1, pt: 1, borderTop: 1, borderColor: 'divider' }}
+        >
+          {selection.length > 1 && (
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              data-testid="world-prop-class-scope"
+              sx={{ display: 'block', mb: 0.5 }}
+            >
+              {`${className} fields are edited on this VOB only, not on the other ${selection.length - 1} selected.`}
+            </Typography>
+          )}
+          {classProps === null
+            ? (
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                data-testid="world-prop-class-loading"
+              >
+                {`Reading this ${className}'s fields…`}
+              </Typography>
+            )
+            : classFields
+              // A field the read did not answer is not drawn, exactly as a base
+              // field is not — and for the same reason, which §16.21 made
+              // reachable: the catalogue names eight keys it did not name
+              // before, so a build running against an older native addon gets a
+              // descriptor with no value. Drawn, that is a colour field with
+              // nothing to format and a blank panel for the whole VOB.
+              .filter((classField) => classProps[classField.key] !== undefined)
+              .map((classField) => (
+              <Field
+                // The class section is also unmounted whole by `classProps`
+                // going null in `commitOps`' catch; the generation is folded in
+                // anyway so a refused class edit follows the same rule as every
+                // other field rather than depending on that null alone.
+                key={`${classField.key}-${refusalGeneration}`}
+                label={classField.key}
+                name={`class-${classField.key}`}
+              >
+                {className === 'oCMobContainer' && classField.key === 'contents'
+                  ? (
+                    <ContainerContentsField
+                      value={String(classProps[classField.key])}
+                      itemInstances={itemInstances}
+                      itemVisuals={itemVisuals}
+                      thumbnails={thumbnails}
+                      onCommit={(contents) => onEditClassProps({ contents })}
+                    />
+                  )
+                  : (
+                <ClassField
+                  vob={selectedVob}
+                  field={classField}
+                  value={classProps[classField.key]}
+                  values={enumValuesOf(className, classField.key) ?? undefined}
+                  knownValues={knownValuesFor(classField.key)}
+                  // `item` and a lock's `key` are legally empty; an `oCItem`
+                  // that spawns nothing is not a thing, so `instance` is not.
+                  emptyMeansNone={classField.key !== 'instance'}
+                  // Stated up front rather than only on a refusal: a field that
+                  // silently declines what was typed is the complaint the
+                  // refusal idiom's remount already comes close to, and the rule
+                  // is worth knowing before it bites.
+                  helper={disabledFor(classField.key)
+                    ?? (knownValuesFor(classField.key) === undefined
+                      ? undefined
+                      : 'Must be an item instance declared by the loaded scripts.')}
+                  disabled={disabledFor(classField.key) !== undefined}
+                  suggest={VOB_TARGET_KEYS.has(classField.key) ? suggestTarget : undefined}
+                  onCommit={(value) => onEditClassProps({ [classField.key]: value })}
+                />
+                  )}
+                {classField.key === 'focusName' && (
+                  <FocusNameWarning className={className} value={classProps[classField.key]} />
+                )}
+                {VOB_TARGET_KEYS.has(classField.key) && (
+                  <DanglingTargetWarning
+                    field={classField.key}
+                    value={classProps[classField.key]}
+                    names={vobNames}
+                  />
+                )}
+                {SCRIPT_FUNCTION_KEYS.has(classField.key) && (
+                  <UnknownFunctionWarning
+                    field={classField.key}
+                    value={classProps[classField.key]}
+                    functions={scriptFunctions}
+                  />
+                )}
+              </Field>
+            ))}
+        </Box>
+      )}
+      <Field label="Parent" name="parent">
+        <Typography variant="caption" color={parent < 0 ? 'text.secondary' : 'text.primary'}>
+          {parent < 0
+            ? 'none (root)'
+            : `${reader.name(parent) || '(unnamed)'} — ${reader.className(parent)}`}
+        </Typography>
+      </Field>
+      <Field label="Children" name="children">
+        <Typography variant="caption">{children}</Typography>
+      </Field>
+
+      {note && (
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          data-testid="world-prop-note"
+          sx={{ display: 'block', mt: 1.5, pt: 1.5, borderTop: 1, borderColor: 'divider' }}
+        >
+          {note}
+        </Typography>
+      )}
+    </Box>
+  );
+};
+
+export default WorldPropertyGrid;

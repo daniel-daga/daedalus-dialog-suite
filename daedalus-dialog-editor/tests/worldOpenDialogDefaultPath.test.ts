@@ -1,0 +1,106 @@
+/**
+ * Both world pickers should start where the user already is. `world:openDialog`
+ * opens on the Gothic install's worlds; `world:selectGothicInstall` re-opens on
+ * the install it is about to replace.
+ *
+ * @jest-environment node
+ */
+
+import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import * as fs from 'fs';
+import * as os from 'os';
+import { setupIpcHandlers } from '../src/main/main';
+
+type Handler = (event: unknown, ...args: unknown[]) => unknown;
+type OpenDialogOptions = { defaultPath?: string; properties?: string[] };
+
+// Every factory below is self-contained: `jest.mock` is hoisted above the
+// imports, so a reference to a `const` in this file would be in its TDZ when
+// the mocked module is first required. The doubles are read back through
+// `jest.requireMock` instead.
+jest.mock('electron', () => ({
+  __handlers: new Map<string, Handler>(),
+  __showOpenDialog: jest.fn(async () => ({ canceled: true, filePaths: [] as string[] })),
+  app: {
+    getPath: () => os.tmpdir(),
+    getVersion: () => '0.0.0-test',
+    setPath: () => undefined,
+    // Never resolves: keeps the real startup path (createWindow, IPC
+    // registration) from running on import. The test calls setupIpcHandlers.
+    whenReady: () => new Promise(() => undefined),
+    on: () => undefined,
+    quit: () => undefined,
+  },
+  BrowserWindow: class {},
+  ipcMain: {
+    handle(channel: string, handler: Handler) {
+      (jest.requireMock('electron') as { __handlers: Map<string, Handler> }).__handlers.set(channel, handler);
+    },
+    on: () => undefined,
+  },
+  get dialog() {
+    return { showOpenDialog: (jest.requireMock('electron') as { __showOpenDialog: unknown }).__showOpenDialog };
+  },
+  shell: {},
+}));
+
+jest.mock('fs', () => {
+  const actual = jest.requireActual<typeof import('fs')>('fs');
+  return { ...actual, existsSync: jest.fn(() => false) };
+});
+
+// ParserService is deliberately NOT mocked: main.ts still constructs it at
+// module load, but the pool no longer spawns until something asks for a parse
+// (mainLazyParserPool.test.ts pins that), so nothing here outlives the test.
+
+jest.mock('../src/main/services/SettingsService', () => ({
+  SettingsService: class {
+    static getGothicInstallPath: jest.Mock = jest.fn(async (): Promise<string | null> => null);
+    getGothicInstallPath = () => SettingsServiceMock.getGothicInstallPath();
+    setGothicInstallPath = async () => undefined;
+    getRecentProjects = async () => [];
+  },
+}));
+
+const electron = jest.requireMock('electron') as {
+  __handlers: Map<string, Handler>;
+  __showOpenDialog: jest.Mock<(...args: unknown[]) => Promise<{ canceled: boolean; filePaths: string[] }>>;
+};
+const { SettingsService: SettingsServiceMock } = jest.requireMock('../src/main/services/SettingsService') as {
+  SettingsService: { getGothicInstallPath: jest.Mock<() => Promise<string | null>> };
+};
+const existsSync = fs.existsSync as unknown as jest.Mock<(p: fs.PathLike) => boolean>;
+
+
+describe('world:openDialog defaultPath', () => {
+  beforeEach(() => {
+    electron.__handlers.clear();
+    electron.__showOpenDialog.mockClear();
+    SettingsServiceMock.getGothicInstallPath.mockReset();
+    SettingsServiceMock.getGothicInstallPath.mockResolvedValue(null);
+    existsSync.mockReset();
+    existsSync.mockReturnValue(false);
+    setupIpcHandlers();
+  });
+
+  async function invokeAndGetOptions(): Promise<OpenDialogOptions> {
+    const handler = electron.__handlers.get('world:openDialog');
+    expect(handler).toBeDefined();
+    await handler!({});
+    expect(electron.__showOpenDialog).toHaveBeenCalledTimes(1);
+    return electron.__showOpenDialog.mock.calls[0][0] as unknown as OpenDialogOptions;
+  }
+
+  it('does not register the obsolete global Gothic install handlers', () => {
+    expect(electron.__handlers.has('world:selectGothicInstall')).toBe(false);
+    expect(electron.__handlers.has('world:getGothicInstall')).toBe(false);
+  });
+
+  it('passes no defaultPath when no configured loose world entry exists', async () => {
+    const options = await invokeAndGetOptions();
+
+    expect(options.defaultPath).toBeUndefined();
+    // The rest of the picker is unchanged.
+    expect(options).toMatchObject({ properties: ['openFile'] });
+  });
+});

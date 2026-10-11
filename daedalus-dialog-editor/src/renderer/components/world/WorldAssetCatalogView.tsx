@@ -1,0 +1,258 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { Box, Button, List, ListItemButton, ListItemText, TextField, Typography } from '@mui/material';
+import FilterListIcon from '@mui/icons-material/FilterList';
+import { assetRole } from 'zen-world';
+import type { AssetCatalog, VfsEntry } from '../../../shared/worldTypes';
+import type { AssetThumbnails } from '../../world/assetThumbnails';
+import WorldAssetGrid, {
+  RoleFacet, type AssetPlacement, type AssetRoleFilter, type TileCatalogActions,
+} from './WorldAssetGrid';
+
+// Favorites and categories on the asset browser (level-editor.md §16.26,
+// "Wanted on top") — two views over the merged catalogue (vobbilder's seed
+// plus the project's `<project>.assets.json`), drawn with the same tiles as
+// the directory grid. A category's tiles ask for a visual by the name the
+// catalogue stores — a seed entry's `.3DS` source name, a filed entry's
+// compiled name — and the binding resolves either.
+//
+// Both views carry a text filter (§16.37 row 3). Unlike the browser's, which
+// is the current directory only because a listing costs a VFS call, the whole
+// catalogue is already in memory — so at the category list the filter matches
+// a **visual** as well as a path, and names the category holding it. That is
+// the case the first outside user hit: `NW_NATURE_GRASSGROUP_01.3DS` is filed
+// under *Pflanzen*, and nothing about the word "Pflanzen" says so.
+
+export interface WorldAssetCatalogViewProps {
+  mode: 'favorites' | 'categories';
+  catalog: AssetCatalog;
+  thumbnails: AssetThumbnails;
+  actions: TileCatalogActions;
+  /** Whether `name` under `path` is the project's own entry, and so removable. */
+  removable: (path: string, name: string) => boolean;
+  onRemoveFromCategory: (path: string, name: string) => void;
+  /** A category's collision override (#291); undefined clears it. */
+  onSetCategoryCollision: (path: string, collision: boolean | undefined) => void;
+  onPreview: (name: string) => void;
+  /** Placing from a tile (§16.37 row 4) — absent with no world open. */
+  placement?: AssetPlacement;
+}
+
+const asEntries = (names: readonly string[]): VfsEntry[] => names.map((name) => ({ name, type: 'file' }));
+
+const matching = (names: readonly string[], needle: string, role: AssetRoleFilter = 'all'): readonly string[] => (
+  names.filter((name) => (needle === '' || name.toLowerCase().includes(needle))
+    && (role === 'all' || assetRole(name) === role))
+);
+
+const WorldAssetCatalogView: React.FC<WorldAssetCatalogViewProps> = ({
+  mode, catalog, thumbnails, actions, removable, onRemoveFromCategory, onSetCategoryCollision, onPreview, placement,
+}) => {
+  const [selected, setSelected] = useState<string | null>(null);
+  const category = catalog.categories.find((entry) => entry.path === selected) ?? null;
+  // Reset on the view change, not on stepping into a category: the filter is
+  // how you found the category, so it has to survive the step that follows it.
+  // Favorites and categories are different corpora, and a filter carried
+  // between them would silently empty the one you just opened.
+  const [filter, setFilter] = useState('');
+  useEffect(() => { setFilter(''); }, [mode]);
+  const needle = filter.trim().toLowerCase();
+  // The VOB / MOB facet (#288), as the directory walk has it — and kept across
+  // the views, since it is a lens rather than a question about one list.
+  const [role, setRole] = useState<AssetRoleFilter>('all');
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
+  // A category left behind takes its queued draws with it, as a directory does.
+  useEffect(() => { thumbnails.cancelPending(); }, [thumbnails, selected, mode]);
+
+  const entries = useMemo(
+    () => asEntries(matching(mode === 'favorites' ? catalog.favorites : category?.visuals ?? [], needle, role)),
+    [mode, catalog.favorites, category, needle, role],
+  );
+  // A category survives the filter when its own path matches or it holds a
+  // visual that does; the count then says how much of it did, because "32
+  // visuals" over a list showing one is the number nobody can trust.
+  const categories = useMemo(() => catalog.categories.map((entry) => ({
+    entry,
+    matched: entry.path.toLowerCase().includes(needle)
+      ? matching(entry.visuals, '', role).length
+      : matching(entry.visuals, needle, role).length,
+  })).filter(({ matched }) => (needle === '' && role === 'all') || matched > 0), [catalog.categories, needle, role]);
+
+  const field = (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, px: 0.5, py: 0.25, borderBottom: 1, borderColor: 'divider' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0 }}>
+        <TextField
+          size="small"
+          variant="outlined"
+          placeholder={mode === 'favorites' ? 'Filter favorites' : 'Filter categories and visuals'}
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+          inputProps={{
+            'data-testid': 'world-asset-catalog-filter',
+            'aria-label': mode === 'favorites' ? 'Filter favorites' : 'Filter categories and visuals',
+          }}
+          sx={{ flex: 1, minWidth: 0, '& .MuiInputBase-input': { fontSize: 12, py: 0.5 } }}
+        />
+        <Button
+          size="small"
+          variant={role === 'all' ? 'outlined' : 'contained'}
+          startIcon={<FilterListIcon sx={{ fontSize: 16 }} />}
+          onClick={() => setFiltersOpen((open) => !open)}
+          aria-expanded={filtersOpen}
+          aria-controls={filtersOpen ? 'world-asset-catalog-filter-panel' : undefined}
+          data-testid="world-asset-catalog-filter-toggle"
+          sx={{ flexShrink: 0, minWidth: 0, px: 1, whiteSpace: 'nowrap' }}
+        >
+          Filters{role === 'all' ? '' : ' 1'}
+        </Button>
+      </Box>
+      {filtersOpen && (
+        <Box id="world-asset-catalog-filter-panel" data-testid="world-asset-catalog-filter-panel" sx={{ minWidth: 0, py: 0.5, '& .MuiFormControl-root': { width: '100%' } }}>
+          <Typography variant="caption" color="text.secondary">Visual role</Typography>
+          <RoleFacet value={role} onChange={setRole} testId="world-asset-catalog-role" />
+        </Box>
+      )}
+    </Box>
+  );
+  const noMatches = (
+    <Typography variant="caption" color="text.secondary" sx={{ p: 1, display: 'block' }} data-testid="world-asset-catalog-filter-empty">
+      No matches for this filter.
+    </Typography>
+  );
+  const onOpen = (entry: VfsEntry) => onPreview(entry.name);
+  const tileActions = useMemo<TileCatalogActions>(() => (
+    mode === 'categories' && category !== null
+      ? {
+        ...actions,
+        onUnfile: undefined,
+      }
+      : actions
+  ), [mode, category, actions]);
+
+  if (mode === 'favorites') {
+    return (
+      <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+        {field}
+        {/* Having no favorites at all and having filtered them all away are
+            different answers, and only the first one is worth advice. */}
+        {catalog.favorites.length === 0 && (
+          <Typography variant="caption" color="text.secondary" sx={{ p: 1, display: 'block' }} data-testid="world-asset-favorites-empty">
+            No favorites yet — star an asset in Browse.
+          </Typography>
+        )}
+        {catalog.favorites.length > 0 && entries.length === 0 && noMatches}
+        {entries.length > 0 && (
+          <Box sx={{ flex: 1, minHeight: 0 }} role="list" aria-label="Favorite assets">
+            <WorldAssetGrid entries={entries} thumbnails={thumbnails} onOpen={onOpen} actions={actions} placement={placement} />
+          </Box>
+        )}
+      </Box>
+    );
+  }
+
+  if (category === null) {
+    return (
+      <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+        {field}
+        {categories.length === 0 && noMatches}
+        <List dense disablePadding sx={{ overflowY: 'auto', flex: 1, minHeight: 0 }} aria-label="Asset categories">
+          {categories.map(({ entry, matched }) => (
+            <ListItemButton
+              key={entry.path}
+              dense
+              data-testid={`world-asset-category-${entry.path}`}
+              onClick={() => setSelected(entry.path)}
+              sx={{ py: 0.25 }}
+            >
+              <ListItemText
+                primary={entry.path}
+                secondary={matched === entry.visuals.length
+                  ? `${entry.visuals.length.toLocaleString()} visuals`
+                  : `${matched.toLocaleString()} of ${entry.visuals.length.toLocaleString()} visuals`}
+                primaryTypographyProps={{ variant: 'caption', noWrap: true }}
+                secondaryTypographyProps={{ variant: 'caption' }}
+              />
+            </ListItemButton>
+          ))}
+        </List>
+      </Box>
+    );
+  }
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1, py: 0.25, borderBottom: 1, borderColor: 'divider' }}>
+        <Typography
+          variant="caption"
+          component="button"
+          onClick={() => setSelected(null)}
+          data-testid="world-asset-category-back"
+          sx={{ background: 'none', border: 0, p: 0, cursor: 'pointer', color: 'text.secondary', font: 'inherit' }}
+        >
+          ‹ Categories
+        </Typography>
+        <Typography variant="caption" noWrap sx={{ flex: 1 }}>{category.path}</Typography>
+        {/* What a visual placed from this category collides with (#291).
+            Auto is the name rule — bushes and grass off, the rest on — and a
+            project sets On or Off for what the names get wrong. */}
+        <TextField
+          select
+          size="small"
+          value={category.collision === undefined ? 'auto' : (category.collision ? 'on' : 'off')}
+          onChange={(event) => {
+            const next = event.target.value;
+            onSetCategoryCollision(category.path, next === 'auto' ? undefined : next === 'on');
+          }}
+          SelectProps={{ native: true }}
+          inputProps={{
+            'data-testid': 'world-asset-category-collision',
+            'aria-label': 'Collision when placed from this category',
+          }}
+          title="Collision when placed from this category"
+          sx={{ minWidth: 112, '& .MuiInputBase-input': { fontSize: 11, py: 0.25 } }}
+        >
+          <option value="auto">Collision: auto</option>
+          <option value="on">Collision: on</option>
+          <option value="off">Collision: off</option>
+        </TextField>
+      </Box>
+      {field}
+      {entries.length === 0 && noMatches}
+      <Box sx={{ flex: 1, minHeight: 0 }} role="list" aria-label={`Assets in ${category.path}`}>
+        <CategoryGrid
+          entries={entries}
+          thumbnails={thumbnails}
+          onOpen={onOpen}
+          actions={tileActions}
+          path={category.path}
+          removable={removable}
+          onRemoveFromCategory={onRemoveFromCategory}
+          placement={placement}
+        />
+      </Box>
+    </Box>
+  );
+};
+
+/** The grid of one category: a tile the project filed gets an unfile
+ *  action; a seed entry does not. Per tile, so the actions object is built
+ *  once per (category, name) rather than once for the grid. */
+const CategoryGrid: React.FC<{
+  entries: VfsEntry[]; thumbnails: AssetThumbnails; onOpen: (entry: VfsEntry) => void;
+  actions: TileCatalogActions; path: string;
+  removable: (path: string, name: string) => boolean;
+  onRemoveFromCategory: (path: string, name: string) => void;
+  placement?: AssetPlacement;
+}> = ({ entries, thumbnails, onOpen, actions, path, removable, onRemoveFromCategory, placement }) => {
+  const withUnfile = useMemo<TileCatalogActions>(() => ({
+    ...actions,
+    onUnfile: (name) => { if (removable(path, name)) onRemoveFromCategory(path, name); },
+  }), [actions, path, removable, onRemoveFromCategory]);
+  // The grid takes one actions object for every tile; whether a given tile
+  // shows the unfile button is decided by the tile from `removable`, which is
+  // why the action itself re-checks it.
+  const perTile = useMemo(() => ({ ...withUnfile, removable: (name: string) => removable(path, name) }), [withUnfile, removable, path]);
+  return <WorldAssetGrid entries={entries} thumbnails={thumbnails} onOpen={onOpen} actions={perTile} placement={placement} />;
+};
+
+export default WorldAssetCatalogView;

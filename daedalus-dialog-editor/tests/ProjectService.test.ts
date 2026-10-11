@@ -1,0 +1,1731 @@
+/**
+ * Test suite for ProjectService - Gothic mod project scanning and indexing
+ *
+ * Tests the ability to:
+ * - Scan directories recursively for .d files
+ * - Extract NPCs from dialog INSTANCE declarations
+ * - Build lightweight project index without full parsing
+ * @jest-environment node
+ */
+
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+import * as iconv from 'iconv-lite';
+
+describe('ProjectService', () => {
+  let tempDir: string;
+  let ProjectService: any;
+
+  beforeEach(async () => {
+    // Create temporary test directory
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gothic-test-'));
+
+    // Dynamically import to avoid issues with main process code in renderer tests
+    const module = await import('../src/main/services/ProjectService');
+    ProjectService = module.default;
+  });
+
+  afterEach(() => {
+    // Cleanup temp directory
+    if (fs.existsSync(tempDir)) {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  describe('scanDirectory', () => {
+    it('should find all .d files recursively', async () => {
+      // Create test directory structure
+      const dialogDir = path.join(tempDir, 'Dialoge');
+      const npcDir = path.join(tempDir, 'NPC');
+      fs.mkdirSync(dialogDir, { recursive: true });
+      fs.mkdirSync(npcDir, { recursive: true });
+
+      // Create test files
+      fs.writeFileSync(path.join(dialogDir, 'DIA_Farim.d'), '// Dialog file');
+      fs.writeFileSync(path.join(dialogDir, 'DIA_Arog.d'), '// Dialog file');
+      fs.writeFileSync(path.join(npcDir, 'SLD_Farim.d'), '// NPC file');
+      fs.writeFileSync(path.join(tempDir, 'root.d'), '// Root file');
+
+      // Create non-.d file (should be ignored)
+      fs.writeFileSync(path.join(dialogDir, 'readme.txt'), 'Should be ignored');
+
+      const service = new ProjectService();
+      const files = await service.scanDirectory(tempDir);
+
+      expect(files).toHaveLength(4);
+      expect(files).toContain(path.join(dialogDir, 'DIA_Farim.d'));
+      expect(files).toContain(path.join(dialogDir, 'DIA_Arog.d'));
+      expect(files).toContain(path.join(npcDir, 'SLD_Farim.d'));
+      expect(files).toContain(path.join(tempDir, 'root.d'));
+      expect(files).not.toContain(path.join(dialogDir, 'readme.txt'));
+    });
+
+    it('should handle empty directories', async () => {
+      const service = new ProjectService();
+      const files = await service.scanDirectory(tempDir);
+
+      expect(files).toHaveLength(0);
+    });
+
+    it('should handle nested directory structures', async () => {
+      // Create deeply nested structure
+      const deepPath = path.join(tempDir, 'a', 'b', 'c', 'd');
+      fs.mkdirSync(deepPath, { recursive: true });
+      fs.writeFileSync(path.join(deepPath, 'deep.d'), '// Deep file');
+
+      const service = new ProjectService();
+      const files = await service.scanDirectory(tempDir);
+
+      expect(files).toHaveLength(1);
+      expect(files[0]).toContain('deep.d');
+    });
+
+    it('should find .d files regardless of extension casing', async () => {
+      const dialogDir = path.join(tempDir, 'Dialoge');
+      fs.mkdirSync(dialogDir, { recursive: true });
+
+      fs.writeFileSync(path.join(dialogDir, 'DIA_Lower.d'), '// lower');
+      fs.writeFileSync(path.join(dialogDir, 'DIA_Upper.D'), '// upper');
+
+      const service = new ProjectService();
+      const files = await service.scanDirectory(tempDir);
+
+      expect(files).toHaveLength(2);
+      expect(files).toContain(path.join(dialogDir, 'DIA_Lower.d'));
+      expect(files).toContain(path.join(dialogDir, 'DIA_Upper.D'));
+    });
+
+    it('follows a junctioned tree', async () => {
+      // A mod's script tree is often a junction into the game install; a
+      // junction reports isSymbolicLink(), not isDirectory().
+      const target = fs.mkdtempSync(path.join(os.tmpdir(), 'gothic-junction-target-'));
+      try {
+        fs.mkdirSync(path.join(target, 'Dialoge'));
+        fs.writeFileSync(path.join(target, 'Dialoge', 'DIA_Linked.d'), '// linked');
+        fs.writeFileSync(path.join(target, 'top.d'), '// linked top');
+        fs.symlinkSync(target, path.join(tempDir, 'Scripts'), 'junction');
+
+        const service = new ProjectService();
+        const files = await service.scanDirectory(tempDir);
+
+        expect(files).toHaveLength(2);
+        expect(files).toContain(path.join(tempDir, 'Scripts', 'top.d'));
+        expect(files).toContain(path.join(tempDir, 'Scripts', 'Dialoge', 'DIA_Linked.d'));
+      } finally {
+        fs.rmSync(target, { recursive: true, force: true });
+      }
+    });
+
+    it('does not loop on a junction back into an ancestor', async () => {
+      fs.mkdirSync(path.join(tempDir, 'Story'));
+      fs.writeFileSync(path.join(tempDir, 'Story', 'story.d'), '// story');
+      fs.symlinkSync(tempDir, path.join(tempDir, 'Story', 'Loop'), 'junction');
+
+      const service = new ProjectService();
+      const files = await service.scanDirectory(tempDir);
+
+      expect(files).toEqual([path.join(tempDir, 'Story', 'story.d')]);
+    });
+
+    it('logs and skips a subdirectory that cannot be read', async () => {
+      const fine = path.join(tempDir, 'Fine');
+      const broken = path.join(tempDir, 'Broken');
+      fs.mkdirSync(fine);
+      fs.mkdirSync(broken);
+      fs.writeFileSync(path.join(fine, 'ok.d'), '// ok');
+      const realReaddir = fs.promises.readdir;
+      const readdirSpy = jest.spyOn(fs.promises, 'readdir').mockImplementation(((dir: string, opts: any) => {
+        if (dir === broken) return Promise.reject(new Error('EACCES: permission denied'));
+        return realReaddir.call(fs.promises, dir, opts);
+      }) as any);
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const service = new ProjectService();
+        const files = await service.scanDirectory(tempDir);
+
+        expect(files).toEqual([path.join(fine, 'ok.d')]);
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(warn.mock.calls[0].join(' ')).toContain(broken);
+        expect(warn.mock.calls[0].join(' ')).toContain('EACCES');
+      } finally {
+        readdirSpy.mockRestore();
+        warn.mockRestore();
+      }
+    });
+
+    it('rejects when the root itself cannot be read', async () => {
+      const service = new ProjectService();
+      await expect(service.scanDirectory(path.join(tempDir, 'missing'))).rejects.toThrow(/ENOENT/);
+    });
+  });
+
+  describe('extractDialogMetadata', () => {
+    it('should extract dialog name and NPC from INSTANCE declaration', async () => {
+      const content = `
+INSTANCE DIA_Farim_Hallo (C_INFO)
+{
+    npc         = SLD_99003_Farim;
+    nr          = 1;
+    condition   = DIA_Farim_Hallo_Condition;
+    information = DIA_Farim_Hallo_Info;
+    permanent   = TRUE;
+    description = "Hallo!";
+};
+      `;
+
+      const service = new ProjectService();
+      const metadata = service.extractDialogMetadata(content, '/test/DIA_Farim.d');
+
+      expect(metadata).toHaveLength(1);
+      expect(metadata[0].dialogName).toBe('DIA_Farim_Hallo');
+      expect(metadata[0].npc).toBe('SLD_99003_Farim');
+      expect(metadata[0].filePath).toBe('/test/DIA_Farim.d');
+    });
+
+    it('should extract multiple dialogs from same file', async () => {
+      const content = `
+INSTANCE DIA_Farim_Hallo (C_INFO)
+{
+    npc = SLD_99003_Farim;
+};
+
+INSTANCE DIA_Farim_Goodbye (C_INFO)
+{
+    npc = SLD_99003_Farim;
+};
+      `;
+
+      const service = new ProjectService();
+      const metadata = service.extractDialogMetadata(content, '/test/DIA_Farim.d');
+
+      expect(metadata).toHaveLength(2);
+      expect(metadata[0].dialogName).toBe('DIA_Farim_Hallo');
+      expect(metadata[1].dialogName).toBe('DIA_Farim_Goodbye');
+    });
+
+    it('should handle different NPC formats (with/without semicolon)', async () => {
+      const content = `
+INSTANCE DIA_Test1 (C_INFO) { npc = NPC_1; };
+INSTANCE DIA_Test2 (C_INFO) { npc = NPC_2 };
+      `;
+
+      const service = new ProjectService();
+      const metadata = service.extractDialogMetadata(content, '/test/file.d');
+
+      expect(metadata).toHaveLength(2);
+      expect(metadata[0].npc).toBe('NPC_1');
+      expect(metadata[1].npc).toBe('NPC_2');
+    });
+
+    it('should skip INSTANCE declarations without npc field', async () => {
+      const content = `
+INSTANCE SomeItem (C_ITEM)
+{
+    name = "Test Item";
+};
+
+INSTANCE DIA_Valid (C_INFO)
+{
+    npc = SLD_12345_TestNPC;
+};
+      `;
+
+      const service = new ProjectService();
+      const metadata = service.extractDialogMetadata(content, '/test/file.d');
+
+      expect(metadata).toHaveLength(1);
+      expect(metadata[0].dialogName).toBe('DIA_Valid');
+    });
+
+    it('should return empty array for files without INSTANCE declarations', async () => {
+      const content = `
+FUNC void SomeFunction()
+{
+    // Just a function
+};
+      `;
+
+      const service = new ProjectService();
+      const metadata = service.extractDialogMetadata(content, '/test/file.d');
+
+      expect(metadata).toHaveLength(0);
+    });
+
+    it('should extract NPC correctly when nested braces exist', async () => {
+      const content = `
+FUNC INT DIA_Nested_Condition()
+{
+    if (TRUE)
+    {
+        return TRUE;
+    };
+    return FALSE;
+};
+
+INSTANCE DIA_Nested (C_INFO)
+{
+    npc = SLD_Nested_NPC;
+    condition = DIA_Nested_Condition;
+    description = "Nested test";
+};
+      `;
+
+      const service = new ProjectService();
+      const metadata = service.extractDialogMetadata(content, '/test/nested.d');
+
+      expect(metadata).toHaveLength(1);
+      expect(metadata[0].dialogName).toBe('DIA_Nested');
+      expect(metadata[0].npc).toBe('SLD_Nested_NPC');
+    });
+  });
+
+  describe('buildProjectIndex', () => {
+    it('should build complete project index from directory', async () => {
+      // Create test project structure
+      const dialogDir = path.join(tempDir, 'Dialoge');
+      fs.mkdirSync(dialogDir, { recursive: true });
+
+      // Create DIA_Farim.d with 2 dialogs
+      fs.writeFileSync(path.join(dialogDir, 'DIA_Farim.d'), `
+INSTANCE DIA_Farim_Hallo (C_INFO)
+{
+    npc = SLD_99003_Farim;
+};
+
+INSTANCE DIA_Farim_Trade (C_INFO)
+{
+    npc = SLD_99003_Farim;
+};
+      `);
+
+      // Create DIA_Arog.d with 1 dialog
+      fs.writeFileSync(path.join(dialogDir, 'DIA_Arog.d'), `
+INSTANCE DIA_Arog_Greeting (C_INFO)
+{
+    npc = SLD_99005_Arog;
+};
+      `);
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      // Verify NPCs
+      expect(index.npcs).toHaveLength(2);
+      expect(index.npcs).toContain('SLD_99003_Farim');
+      expect(index.npcs).toContain('SLD_99005_Arog');
+
+      // Verify dialogs by NPC
+      expect(index.dialogsByNpc.get('SLD_99003_Farim')).toHaveLength(2);
+      expect(index.dialogsByNpc.get('SLD_99005_Arog')).toHaveLength(1);
+
+      const farimDialogs = index.dialogsByNpc.get('SLD_99003_Farim')!;
+      expect(farimDialogs[0].dialogName).toBe('DIA_Farim_Hallo');
+      expect(farimDialogs[1].dialogName).toBe('DIA_Farim_Trade');
+
+      // Verify all files are tracked
+      expect(index.allFiles).toHaveLength(2);
+    });
+
+    it('should handle project with no dialog files', async () => {
+      fs.writeFileSync(path.join(tempDir, 'random.d'), 'FUNC void test() {};');
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.npcs).toHaveLength(0);
+      expect(index.dialogsByNpc.size).toBe(0);
+      expect(index.allFiles).toHaveLength(1); // File still tracked
+    });
+
+    it('records the syntax errors of a file, with their lines', async () => {
+      // The index pass parses every file in the project, so it is the only
+      // place that sees a broken file nobody has opened (#267). It already
+      // called `checkForSyntaxErrors` and then dropped the model; this keeps
+      // what that pass found.
+      fs.writeFileSync(path.join(tempDir, 'Good.d'), 'INSTANCE DIA_A (C_INFO) { npc = Alpha; };');
+      fs.writeFileSync(path.join(tempDir, 'Broken.d'), [
+        'INSTANCE DIA_B (C_INFO)',
+        '{',
+        '    npc = Beta;',
+        '};',
+        '',
+        'FUNC VOID DIA_B_Info() @@@ {',
+        '};'
+      ].join('\n'));
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.parseErrors.map((file: any) => path.basename(file.filePath))).toEqual(['Broken.d']);
+      const broken = index.parseErrors[0];
+      expect(broken.total).toBeGreaterThan(0);
+      expect(broken.errors.length).toBe(broken.total);
+      // The junk sits on line 6; every carried error names a 1-based line.
+      expect(broken.errors.every((error: any) => error.line >= 1)).toBe(true);
+      expect(broken.errors.some((error: any) => error.line === 6)).toBe(true);
+    });
+
+    it('caps the errors it carries per file but keeps the true count', async () => {
+      // A file broken declaration by declaration yields one ERROR node each —
+      // 50 of them here — and the Problems list is not virtualized.
+      const lines = [];
+      for (let i = 0; i < 50; i++) lines.push(`FUNC VOID F${i}() { var int x$$; };`);
+      fs.writeFileSync(path.join(tempDir, 'Junk.d'), lines.join('\n'));
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.parseErrors).toHaveLength(1);
+      const junk = index.parseErrors[0];
+      expect(junk.errors).toHaveLength(20);
+      expect(junk.total).toBe(50);
+    });
+
+    it('truncates the offending source it quotes', async () => {
+      // Tree-sitter collapses a mis-encoded file into a single ERROR node whose
+      // text is the whole file, so the cap that matters there is on the text.
+      fs.writeFileSync(path.join(tempDir, 'Binary.d'), String.fromCharCode(0x7f).repeat(4096));
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.parseErrors).toHaveLength(1);
+      for (const error of index.parseErrors[0].errors) {
+        expect(error.text.length).toBeLessThanOrEqual(120);
+      }
+    });
+
+    it('reports no parse errors for a clean project', async () => {
+      fs.writeFileSync(path.join(tempDir, 'Good.d'), 'INSTANCE DIA_A (C_INFO) { npc = Alpha; };');
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.parseErrors).toEqual([]);
+    });
+
+    it('indexes every function name in the project, uppercased and sorted', async () => {
+      // The index pass is the only one that sees every file, which is what the
+      // World surface needs to tell a typo in `oCTriggerScript.function` from a
+      // function declared somewhere nobody has opened (#269). Daedalus is
+      // case-insensitive, so the index is uppercased, as `routinesByNpc` and
+      // `voiceIds` already are.
+      const dir = path.join(tempDir, 'Story');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'Triggers.d'), [
+        'FUNC VOID TriggerFunc_Gate() {};',
+        'FUNC INT Cond_Door() { return TRUE; };'
+      ].join('\n'));
+      fs.writeFileSync(path.join(dir, 'DIA_Farim.d'), [
+        'INSTANCE DIA_Farim_Hallo (C_INFO) { npc = SLD_Farim; information = DIA_Farim_Hallo_Info; };',
+        'FUNC VOID DIA_Farim_Hallo_Info() {};'
+      ].join('\n'));
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.functions).toEqual([
+        'COND_DOOR', 'DIA_FARIM_HALLO_INFO', 'TRIGGERFUNC_GATE'
+      ]);
+    });
+
+    it('indexes where each routine call keeps its window and waypoint, uppercased', async () => {
+      // Routine authoring (npc-editor.md §6) rewrites a `TA_*` call's times and
+      // waypoint in place, and offers the project's own wrappers as the state
+      // picker, so it needs the layout the routine index already derives —
+      // not just the minutes it derives from it.
+      fs.writeFileSync(path.join(tempDir, 'TA.d'), [
+        'FUNC VOID TA_Sit_Chair(var int a, var int b, var int c, var int d, var string place)',
+        '{',
+        '\tTA_MIN (self, a, b, c, d, ZS_Sit_Chair, place);',
+        '};',
+        'FUNC VOID Not_A_Wrapper(var int a) { Print(a); };'
+      ].join('\n'));
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      // `name` is the spelling the project declares it with, which is what a
+      // new call is written with; the externals are not declared here.
+      expect(index.routineLayouts.TA_SIT_CHAIR).toEqual({
+        startH: 0, startM: 1, stopH: 2, stopM: 3, waypoint: 4, name: 'TA_Sit_Chair'
+      });
+      expect(index.routineLayouts.TA_MIN).toEqual({
+        startH: 1, startM: 2, stopH: 3, stopM: 4, waypoint: 6
+      });
+      expect(index.routineLayouts.NOT_A_WRAPPER).toBeUndefined();
+    });
+
+    it('keeps the functions a broken file declares before its syntax error', async () => {
+      // The metadata pass builds as much model as it can out of a file that
+      // does not parse and withholds only the whole model; the functions it did
+      // reach are real, and dropping them would make the World surface call a
+      // correct name a typo.
+      fs.writeFileSync(path.join(tempDir, 'Half.d'), [
+        'FUNC VOID Reachable_Func() {};',
+        'FUNC VOID Broken_Func() @@@ {};'
+      ].join('\n'));
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.functions).toContain('REACHABLE_FUNC');
+    });
+
+    it('should sort NPCs alphabetically', async () => {
+      const dialogDir = path.join(tempDir, 'Dialoge');
+      fs.mkdirSync(dialogDir, { recursive: true });
+
+      fs.writeFileSync(path.join(dialogDir, 'DIA_Zebra.d'), 'INSTANCE DIA_Z (C_INFO) { npc = Zebra; };');
+      fs.writeFileSync(path.join(dialogDir, 'DIA_Alpha.d'), 'INSTANCE DIA_A (C_INFO) { npc = Alpha; };');
+      fs.writeFileSync(path.join(dialogDir, 'DIA_Beta.d'), 'INSTANCE DIA_B (C_INFO) { npc = Beta; };');
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.npcs).toEqual(['Alpha', 'Beta', 'Zebra']);
+    });
+
+    it('includes npc instances that have no dialogs yet', async () => {
+      const dialogDir = path.join(tempDir, 'Dialoge');
+      const npcDir = path.join(tempDir, 'NPC');
+      fs.mkdirSync(dialogDir, { recursive: true });
+      fs.mkdirSync(npcDir, { recursive: true });
+
+      fs.writeFileSync(path.join(dialogDir, 'DIA_Guard.d'), `
+INSTANCE DIA_Guard_Hello (C_INFO)
+{
+    npc = SLD_200_Guard;
+};
+      `);
+
+      fs.writeFileSync(path.join(npcDir, 'SLD_201_Blacksmith.d'), `
+INSTANCE SLD_201_Blacksmith (C_NPC)
+{
+    name = "Blacksmith";
+};
+      `);
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.npcs).toEqual(['SLD_200_Guard', 'SLD_201_Blacksmith']);
+      expect(index.dialogsByNpc.get('SLD_200_Guard')).toHaveLength(1);
+      expect(index.dialogsByNpc.get('SLD_201_Blacksmith')).toEqual([]);
+    });
+
+    it('includes npc instances whose parent prototype derives from C_NPC', async () => {
+      const storyDir = path.join(tempDir, 'Story');
+      const npcDir = path.join(storyDir, 'NPC');
+      fs.mkdirSync(npcDir, { recursive: true });
+
+      fs.writeFileSync(path.join(storyDir, 'Prototypes.d'), `
+PROTOTYPE Npc_Default(C_NPC)
+{
+    name = "";
+};
+      `);
+
+      fs.writeFileSync(path.join(npcDir, 'VLK_99064_Schurfer.d'), `
+INSTANCE VLK_99064_Schurfer (Npc_Default)
+{
+    name = "Schurfer";
+};
+      `);
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.npcs).toContain('VLK_99064_Schurfer');
+      expect(index.dialogsByNpc.get('VLK_99064_Schurfer')).toEqual([]);
+      expect(index.allFiles).toContain(path.join(npcDir, 'VLK_99064_Schurfer.d'));
+    });
+
+    // #281: a folder opened below the one holding Npc_Default leaves every NPC
+    // under it with a chain that never reaches C_NPC. `daily_routine` is a
+    // C_NPC field and nothing else's, so an instance setting it is an NPC
+    // whatever its prototype resolves to — and the index says what is missing.
+    it('lists an instance with a daily routine as an NPC when its prototype is not in the folder (#281)', async () => {
+      const npcDir = path.join(tempDir, 'NPC');
+      fs.mkdirSync(npcDir, { recursive: true });
+
+      fs.writeFileSync(path.join(npcDir, 'BAU_900_Onar.d'), `
+INSTANCE BAU_900_Onar (Npc_Default)
+{
+    name = "Onar";
+    daily_routine = Rtn_Start_900;
+};
+      `);
+      fs.writeFileSync(path.join(npcDir, 'Weapons.d'), `
+INSTANCE ItMw_Club (Weapon_Default)
+{
+    name = "Club";
+};
+      `);
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.npcs).toEqual(['BAU_900_Onar']);
+      expect(index.npcCoverage).toEqual({ npcInstancesFound: 1, missingPrototypes: ['Npc_Default'] });
+    });
+
+    it('reports a folder with dialogs but no NPC instance files (#281)', async () => {
+      const dialogDir = path.join(tempDir, 'Dialoge');
+      fs.mkdirSync(dialogDir, { recursive: true });
+      fs.writeFileSync(path.join(dialogDir, 'DIA_Onar.d'), 'INSTANCE DIA_Onar_Hello (C_INFO) { npc = BAU_900_Onar; };');
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.npcs).toEqual(['BAU_900_Onar']);
+      expect(index.npcCoverage).toEqual({ npcInstancesFound: 0, missingPrototypes: [] });
+    });
+
+    it('maps each NPC instance to the file that declares it, keyed uppercased (npc-editor Phase 2)', async () => {
+      fs.writeFileSync(path.join(tempDir, 'Prototypes.d'), `
+PROTOTYPE Npc_Default(C_NPC)
+{
+    name = "";
+};
+      `);
+      fs.writeFileSync(path.join(tempDir, 'BAU_900_Onar.d'), `
+INSTANCE BAU_900_Onar (Npc_Default)
+{
+    name = "Onar";
+};
+      `);
+      fs.writeFileSync(path.join(tempDir, 'DIA_Other.d'), `
+INSTANCE DIA_Other_Hello (C_INFO)
+{
+    npc = VLK_1_NoInstance;
+};
+INSTANCE ItMi_Gold (C_Item)
+{
+    name = "Gold";
+};
+      `);
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.npcFiles).toEqual({ BAU_900_ONAR: path.join(tempDir, 'BAU_900_Onar.d') });
+    });
+
+    // The renderer re-derives an NPC's routine variants after a file changes
+    // (#319), and the variant can sit in another file than the NPC — so it
+    // needs every NPC's id, not just those of the file that changed.
+    it('exposes each NPC\'s literal id as npcIds, and no other instance\'s', async () => {
+      fs.writeFileSync(path.join(tempDir, 'Npc_Default.d'), `
+PROTOTYPE Npc_Default (C_NPC)
+{
+    name = "";
+};
+      `);
+      fs.writeFileSync(path.join(tempDir, 'NPCs.d'), `
+INSTANCE BAU_900_Onar (Npc_Default)
+{
+    id = 900;
+};
+INSTANCE BAU_901_Bauer (Npc_Default)
+{
+    id = SOME_CONST;
+};
+INSTANCE ItMi_Gold (C_Item)
+{
+    id = 5;
+};
+      `);
+
+      const index = await new ProjectService().buildProjectIndex(tempDir);
+
+      expect(index.npcIds).toEqual({ BAU_900_ONAR: 900 });
+    });
+
+    it('exposes prototypes deriving from C_NPC as npcPrototypes (issue #141)', async () => {
+      const storyDir = path.join(tempDir, 'Story');
+      fs.mkdirSync(storyDir, { recursive: true });
+
+      fs.writeFileSync(path.join(storyDir, 'Prototypes.d'), `
+PROTOTYPE Npc_Default(C_NPC)
+{
+    name = "";
+};
+
+PROTOTYPE Mst_Default(Npc_Default)
+{
+    name = "";
+};
+
+PROTOTYPE Item_Default(C_ITEM)
+{
+    value = 0;
+};
+      `);
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.npcPrototypes).toContain('NPC_DEFAULT');
+      expect(index.npcPrototypes).toContain('MST_DEFAULT');
+      expect(index.npcPrototypes).not.toContain('ITEM_DEFAULT');
+    });
+
+    it('should detect quest files containing TOPIC_ constants or MIS_ variables', async () => {
+      const storyDir = path.join(tempDir, 'Story');
+      fs.mkdirSync(storyDir, { recursive: true });
+
+      // File with TOPIC_ constant
+      fs.writeFileSync(path.join(storyDir, 'Log_Constants.d'), `
+        const string TOPIC_MyQuest = "The Lost Sheep";
+        const string TOPIC_Another = "Another Quest";
+      `);
+
+      // File with MIS_ variable
+      fs.writeFileSync(path.join(storyDir, 'Story_Globals.d'), `
+        var int MIS_MyQuest;
+        var int MIS_OtherQuest;
+      `);
+
+      // File with both
+      fs.writeFileSync(path.join(storyDir, 'Mixed.d'), `
+        const string TOPIC_Mixed = "Mixed Quest";
+        var int MIS_Mixed;
+      `);
+
+      // File with neither
+      fs.writeFileSync(path.join(storyDir, 'Other.d'), `
+        const int NOT_A_QUEST = 1;
+        var int not_a_quest_var;
+      `);
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.questFiles).toHaveLength(3);
+      expect(index.questFiles).toContain(path.join(storyDir, 'Log_Constants.d'));
+      expect(index.questFiles).toContain(path.join(storyDir, 'Story_Globals.d'));
+      expect(index.questFiles).toContain(path.join(storyDir, 'Mixed.d'));
+      expect(index.questFiles).not.toContain(path.join(storyDir, 'Other.d'));
+    });
+
+    it('should ignore TOPIC_/MIS_ markers inside comments when detecting quest files', async () => {
+      const storyDir = path.join(tempDir, 'Story');
+      fs.mkdirSync(storyDir, { recursive: true });
+
+      fs.writeFileSync(path.join(storyDir, 'CommentOnlyMarkers.d'), `
+        // const string TOPIC_FakeQuest = "Not real";
+        // var int MIS_FakeQuest;
+        FUNC VOID SomeUtility() { };
+      `);
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.questFiles).not.toContain(path.join(storyDir, 'CommentOnlyMarkers.d'));
+    });
+
+    it('decodes windows-1252 dialog files so umlaut NPCs are indexed intact', async () => {
+      const dialogDir = path.join(tempDir, 'Dialoge');
+      fs.mkdirSync(dialogDir, { recursive: true });
+
+      // Exercises the real inline metadata pipeline (readFile buffer →
+      // encodingUtils.decodeBuffer → parse). A hard-coded utf-8 read would turn
+      // the 0xE4 ('ä') byte into U+FFFD and mangle the NPC identifier.
+      const file = path.join(dialogDir, 'DIA_Baerbel.d');
+      fs.writeFileSync(
+        file,
+        iconv.encode('INSTANCE DIA_Baerbel (C_INFO) { npc = Bärbel_1252; };', 'windows-1252')
+      );
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.npcs).toContain('Bärbel_1252');
+      expect(index.dialogsByNpc.get('Bärbel_1252')).toHaveLength(1);
+    });
+
+    it('surfaces per-file metadata failures without aborting the index', async () => {
+      const dialogDir = path.join(tempDir, 'Dialoge');
+      fs.mkdirSync(dialogDir, { recursive: true });
+
+      const goodFile = path.join(dialogDir, 'DIA_Good.d');
+      const poisonFile = path.join(dialogDir, 'DIA_Poison.d');
+      fs.writeFileSync(goodFile, 'INSTANCE DIA_Good (C_INFO) { npc = SLD_Good; };');
+      fs.writeFileSync(poisonFile, 'INSTANCE DIA_Poison (C_INFO) { npc = SLD_Poison; };');
+
+      // Force the metadata read for one file to fail (running as root bypasses
+      // chmod 000, so a spy is the deterministic way to simulate a read error).
+      const realReadFile = fs.promises.readFile;
+      const spy = jest
+        .spyOn(fs.promises, 'readFile')
+        .mockImplementation(((p: any, ...args: any[]) => {
+          if (p === poisonFile) {
+            return Promise.reject(new Error('simulated read failure'));
+          }
+          return (realReadFile as any)(p, ...args);
+        }) as any);
+
+      try {
+        const service = new ProjectService();
+        const index = await service.buildProjectIndex(tempDir);
+
+        // The failing file is reported, not silently dropped.
+        expect(index.metadataFailures).toHaveLength(1);
+        expect(index.metadataFailures[0].filePath).toBe(poisonFile);
+        expect(index.metadataFailures[0].error).toContain('simulated read failure');
+
+        // The healthy file is still indexed normally.
+        expect(index.npcs).toContain('SLD_Good');
+        expect(index.dialogsByNpc.get('SLD_Good')).toHaveLength(1);
+        expect(index.npcs).not.toContain('SLD_Poison');
+
+        // The failing file remains tracked (scan and metadata are separate),
+        // so it stays openable — just absent from NPC groupings.
+        expect(index.allFiles).toContain(poisonFile);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('should ignore commented INSTANCE declarations when indexing dialogs', async () => {
+      const dialogDir = path.join(tempDir, 'Dialoge');
+      fs.mkdirSync(dialogDir, { recursive: true });
+
+      fs.writeFileSync(path.join(dialogDir, 'DIA_CommentedOut.d'), `
+        // INSTANCE DIA_Fake_Commented (C_INFO) { npc = SLD_FAKE; };
+        INSTANCE DIA_Real (C_INFO)
+        {
+          npc = SLD_REAL;
+        };
+      `);
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      const fakeDialogs = index.dialogsByNpc.get('SLD_FAKE') || [];
+      const realDialogs = index.dialogsByNpc.get('SLD_REAL') || [];
+
+      expect(fakeDialogs).toHaveLength(0);
+      expect(realDialogs).toHaveLength(1);
+      expect(realDialogs[0].dialogName).toBe('DIA_Real');
+    });
+
+    it('aggregates AI_Output voice ids under one uppercased key with all locations', async () => {
+      const dialogDir = path.join(tempDir, 'Dialoge');
+      fs.mkdirSync(dialogDir, { recursive: true });
+
+      const fileA = path.join(dialogDir, 'DIA_Alrik.d');
+      const fileB = path.join(dialogDir, 'DIA_Bengar.d');
+      fs.writeFileSync(fileA, `
+FUNC VOID DIA_Alrik_Hallo_Info()
+{
+	AI_Output (self, other, "DIA_Alrik_Hallo_15_00"); //Hallo!
+};
+      `);
+      // Same voice id with different casing in another file
+      fs.writeFileSync(fileB, `
+FUNC VOID DIA_Bengar_Hallo_Info()
+{
+	AI_Output (self, other, "dia_alrik_hallo_15_00"); //Hallo!
+	AI_Output (other, self, "DIA_Bengar_Hallo_15_01"); //Selber hallo.
+};
+      `);
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      const shared = index.voiceIds['DIA_ALRIK_HALLO_15_00'];
+      expect(shared).toHaveLength(2);
+      expect(shared).toContainEqual({ filePath: fileA, functionName: 'DIA_Alrik_Hallo_Info', line: 4 });
+      expect(shared).toContainEqual({ filePath: fileB, functionName: 'DIA_Bengar_Hallo_Info', line: 4 });
+
+      expect(index.voiceIds['DIA_BENGAR_HALLO_15_01']).toEqual([
+        { filePath: fileB, functionName: 'DIA_Bengar_Hallo_Info', line: 5 }
+      ]);
+    });
+
+    it('aggregates waypoint sites from engine externals and project-declared waypoint parameters', async () => {
+      const dialogDir = path.join(tempDir, 'Story');
+      fs.mkdirSync(dialogDir, { recursive: true });
+
+      const fileA = path.join(dialogDir, 'TA_Baker.d');
+      const fileB = path.join(dialogDir, 'TA_Guard.d');
+      fs.writeFileSync(fileA, `
+FUNC VOID TA_Baker_Day()
+{
+	AI_GotoWP(self, "FP_BAKER_OVEN");
+};
+      `);
+      fs.writeFileSync(fileB, `
+FUNC VOID B_UseWaypoint(var string waypoint)
+{
+	AI_GotoWP(self, waypoint);
+};
+
+FUNC VOID TA_Guard_Day()
+{
+	B_UseWaypoint("WP_GUARD_POST");
+};
+      `);
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.waypointSites['FP_BAKER_OVEN']).toEqual([
+        { filePath: fileA, functionName: 'TA_Baker_Day', line: 4 }
+      ]);
+      expect(index.waypointSites['WP_GUARD_POST']).toEqual([
+        { filePath: fileB, functionName: 'TA_Guard_Day', line: 9 }
+      ]);
+    });
+
+    it('collects static spawn sites with the instance, the spawn point and the line', async () => {
+      const storyDir = path.join(tempDir, 'Story');
+      fs.mkdirSync(storyDir, { recursive: true });
+
+      const startup = path.join(storyDir, 'Startup.d');
+      fs.writeFileSync(startup, `FUNC VOID Startup_NewWorld()
+{
+	Wld_InsertNpc (Grd_200_Gardist, "WP_SPAWN_NPC");
+	Wld_InsertNpc (Grd_201_Gardist, spawnPoint);
+};`);
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      expect(index.spawnSites).toEqual([
+        {
+          instance: 'GRD_200_GARDIST',
+          spawnPoint: 'WP_SPAWN_NPC',
+          filePath: startup,
+          functionName: 'Startup_NewWorld',
+          line: 3
+        }
+      ]);
+    });
+  });
+
+  describe('waypoint site extraction (semanticMetadataUtils)', () => {
+    it('resolves engine-external and project-declared waypoint arguments across files', async () => {
+      const { extractFileMetadataFromSource, extractWaypointSites } = await import(
+        '../src/main/utils/semanticMetadataUtils'
+      );
+
+      const fileA = extractFileMetadataFromSource(
+        `
+FUNC VOID TA_Baker_Day()
+{
+	AI_GotoWP(self, "FP_BAKER_OVEN");
+};
+        `,
+        '/test/TA_Baker.d'
+      );
+      const fileB = extractFileMetadataFromSource(
+        `
+FUNC VOID B_UseWaypoint(var string waypoint)
+{
+	AI_GotoWP(self, waypoint);
+};
+
+FUNC VOID TA_Guard_Day()
+{
+	B_UseWaypoint("WP_GUARD_POST");
+};
+        `,
+        '/test/TA_Guard.d'
+      );
+
+      const sites = extractWaypointSites([
+        { filePath: '/test/TA_Baker.d', semanticModel: fileA.semanticModel! },
+        { filePath: '/test/TA_Guard.d', semanticModel: fileB.semanticModel! }
+      ]);
+
+      expect(sites['FP_BAKER_OVEN']).toEqual([
+        { filePath: '/test/TA_Baker.d', functionName: 'TA_Baker_Day', line: 4 }
+      ]);
+      expect(sites['WP_GUARD_POST']).toEqual([
+        { filePath: '/test/TA_Guard.d', functionName: 'TA_Guard_Day', line: 9 }
+      ]);
+    });
+
+    // The dominant corpus shape (level-editor.md §16.8): a daily routine calls a
+    // TA_* wrapper whose own signature declares `var string waypoint` as the
+    // *last* of five parameters, and the declaration lives in another file than
+    // the Rtn_* function calling it. 6,223 sites against AI_GotoWP's 6, so a
+    // derivation that only handles a one-parameter helper ships 0.1% of W1.
+    it('resolves a TA_* routine waypoint at the fifth parameter, declared in another file', async () => {
+      const { extractFileMetadataFromSource, extractWaypointSites } = await import(
+        '../src/main/utils/semanticMetadataUtils'
+      );
+
+      const taFile = extractFileMetadataFromSource(
+        `
+FUNC VOID TA_Stand_Guarding (VAR INT start_h, VAR INT start_m, VAR INT stop_h, VAR INT stop_m, VAR STRING waypoint)
+{
+	TA_Min (self, start_h, start_m, stop_h, stop_m, ZS_STAND_GUARDING, waypoint);
+};
+        `,
+        '/test/TA_Wrappers.d'
+      );
+      const rtnFile = extractFileMetadataFromSource(
+        `
+FUNC VOID Rtn_Start_1234()
+{
+	TA_Stand_Guarding (8,0,22,0,"NW_CITY_HABOUR_02");
+	TA_Stand_Guarding (22,0,8,0,"NW_CITY_HABOUR_03");
+};
+        `,
+        '/test/Rtn_Guard.d'
+      );
+
+      const sites = extractWaypointSites([
+        { filePath: '/test/TA_Wrappers.d', semanticModel: taFile.semanticModel! },
+        { filePath: '/test/Rtn_Guard.d', semanticModel: rtnFile.semanticModel! }
+      ]);
+
+      // Two calls in one function, and the lines tell them apart — which is
+      // the whole point of carrying one (#267).
+      expect(sites['NW_CITY_HABOUR_02']).toEqual([
+        { filePath: '/test/Rtn_Guard.d', functionName: 'Rtn_Start_1234', line: 4 }
+      ]);
+      expect(sites['NW_CITY_HABOUR_03']).toEqual([
+        { filePath: '/test/Rtn_Guard.d', functionName: 'Rtn_Start_1234', line: 5 }
+      ]);
+    });
+
+    // Daedalus is case-insensitive, so a declaration spelling the parameter
+    // `WayPoint` names the same thing as one spelling it `waypoint`.
+    it('derives the parameter regardless of how the declaration cases its name', async () => {
+      const { extractFileMetadataFromSource, extractWaypointSites } = await import(
+        '../src/main/utils/semanticMetadataUtils'
+      );
+
+      const file = extractFileMetadataFromSource(
+        `
+FUNC VOID TA_Smalltalk (VAR INT start_h, VAR STRING WayPoint)
+{
+	AI_GotoWP(self, WayPoint);
+};
+
+FUNC VOID Rtn_Start_99()
+{
+	TA_Smalltalk (8,"NW_TAVERN_BAR");
+};
+        `,
+        '/test/TA_Cased.d'
+      );
+
+      const sites = extractWaypointSites([
+        { filePath: '/test/TA_Cased.d', semanticModel: file.semanticModel! }
+      ]);
+
+      expect(sites['NW_TAVERN_BAR']).toEqual([
+        { filePath: '/test/TA_Cased.d', functionName: 'Rtn_Start_99', line: 9 }
+      ]);
+    });
+
+    // W5 (level-editor.md §16.8): the rest of the engine externals that take a
+    // waypoint name, measured against the G2 MDK's own Externals.d rather than
+    // guessed. Each is at a different argument index, which is the whole reason
+    // the seed table maps a name to a position instead of assuming the last arg.
+    it('resolves waypoint arguments of every seeded engine external', async () => {
+      const { extractFileMetadataFromSource, extractWaypointSites } = await import(
+        '../src/main/utils/semanticMetadataUtils'
+      );
+
+      const file = extractFileMetadataFromSource(
+        `
+FUNC VOID Startup_NewWorld()
+{
+	AI_Teleport (self, "WP_TELEPORT");
+	AI_StartState (self, ZS_Stand, 0, "WP_STARTSTATE");
+	TA (self, 8, 22, ZS_Stand, "WP_TA");
+	TA_Min (self, 8, 0, 22, 0, ZS_Stand, "WP_TA_MIN");
+	Wld_InsertNpc (Grd_200_Gardist, "WP_SPAWN_NPC");
+	Wld_InsertItem (ItMi_Gold, "WP_SPAWN_ITEM");
+};
+        `,
+        '/test/Startup.d'
+      );
+
+      const sites = extractWaypointSites([
+        { filePath: '/test/Startup.d', semanticModel: file.semanticModel! }
+      ]);
+
+      // One call per line, in the order written, so the expected line is also
+      // a check that each name came off its own call and not a neighbour's.
+      for (const [name, line] of [
+        ['WP_TELEPORT', 4], ['WP_STARTSTATE', 5], ['WP_TA', 6],
+        ['WP_TA_MIN', 7], ['WP_SPAWN_NPC', 8], ['WP_SPAWN_ITEM', 9]
+      ] as Array<[string, number]>) {
+        expect(sites[name]).toEqual([
+          { filePath: '/test/Startup.d', functionName: 'Startup_NewWorld', line }
+        ]);
+      }
+    });
+
+    // The same externals must not turn any other string argument into a
+    // waypoint: AI_StartState's first string is at index 3, so a call whose
+    // other arguments are literals stays a single site.
+    it('takes only the argument index the seed table names', async () => {
+      const { extractFileMetadataFromSource, extractWaypointSites } = await import(
+        '../src/main/utils/semanticMetadataUtils'
+      );
+
+      const file = extractFileMetadataFromSource(
+        `
+FUNC VOID Rtn_Mixed()
+{
+	AI_PlayAni (self, "T_SEARCH");
+	AI_Output (self, other, "DIA_Test_15_00");
+	AI_Teleport (self, "WP_ONLY");
+};
+        `,
+        '/test/Mixed.d'
+      );
+
+      const sites = extractWaypointSites([
+        { filePath: '/test/Mixed.d', semanticModel: file.semanticModel! }
+      ]);
+
+      expect(Object.keys(sites)).toEqual(['WP_ONLY']);
+    });
+  });
+
+  describe('spawn site extraction (semanticMetadataUtils)', () => {
+    // Slice 1 of the Daedalus overlay (level-editor.md §16.19): the waypoint
+    // index keeps argument 1 and drops argument 0, which is exactly the half a
+    // spawn needs. A spawn site keeps both, plus the line, so a later slice can
+    // navigate to the call.
+    it('records the spawned instance, the spawn point and the call location', async () => {
+      const { extractFileMetadataFromSource, extractSpawnSites } = await import(
+        '../src/main/utils/semanticMetadataUtils'
+      );
+
+      const file = extractFileMetadataFromSource(
+        `FUNC VOID Startup_NewWorld()
+{
+	Wld_InsertNpc (Grd_200_Gardist, "WP_SPAWN_NPC");
+	Wld_InsertItem (ItMi_Gold, "wp_spawn_item");
+};`,
+        '/test/Startup.d'
+      );
+
+      const sites = extractSpawnSites([
+        { filePath: '/test/Startup.d', semanticModel: file.semanticModel! }
+      ]);
+
+      expect(sites).toEqual([
+        {
+          instance: 'GRD_200_GARDIST',
+          spawnPoint: 'WP_SPAWN_NPC',
+          filePath: '/test/Startup.d',
+          functionName: 'Startup_NewWorld',
+          line: 3
+        },
+        {
+          instance: 'ITMI_GOLD',
+          spawnPoint: 'WP_SPAWN_ITEM',
+          filePath: '/test/Startup.d',
+          functionName: 'Startup_NewWorld',
+          line: 4
+        }
+      ]);
+    });
+
+    // §16.19: `callSites` used to carry only a body's top-level calls, so the
+    // chapter-entry files — one `if` after another — yielded zero spawn sites
+    // and the index lost 1,178 of retail's 4,087 spawn calls.
+    it('records a spawn written inside a chapter block, not only a top-level one', async () => {
+      const { extractFileMetadataFromSource, extractSpawnSites } = await import(
+        '../src/main/utils/semanticMetadataUtils'
+      );
+
+      const file = extractFileMetadataFromSource(
+        `FUNC VOID B_Enter_NewWorld()
+{
+	Wld_InsertNpc (Grd_200_Gardist, "WP_ALWAYS");
+	if (Kapitel == 1)
+	{
+		Wld_InsertNpc (Grd_201_Gardist, "WP_CHAPTER_ONE");
+	}
+	else
+	{
+		Wld_InsertItem (ItMi_Gold, "WP_OTHERWISE");
+	};
+};`,
+        '/test/B_Enter_NewWorld.d'
+      );
+
+      const sites = extractSpawnSites([
+        { filePath: '/test/B_Enter_NewWorld.d', semanticModel: file.semanticModel! }
+      ]);
+
+      expect(sites.map((site) => [site.instance, site.spawnPoint, site.line])).toEqual([
+        ['GRD_200_GARDIST', 'WP_ALWAYS', 3],
+        ['GRD_201_GARDIST', 'WP_CHAPTER_ONE', 6],
+        ['ITMI_GOLD', 'WP_OTHERWISE', 10]
+      ]);
+    });
+
+    // §8 and the design brief §5.1 make this a hard rule: a site whose instance
+    // or spawn point is not statically resolvable is excluded, never guessed.
+    it('excludes sites whose instance or spawn point is not a literal', async () => {
+      const { extractFileMetadataFromSource, extractSpawnSites } = await import(
+        '../src/main/utils/semanticMetadataUtils'
+      );
+
+      const file = extractFileMetadataFromSource(
+        `FUNC VOID Startup_Dynamic()
+{
+	Wld_InsertNpc (Grd_200_Gardist, spawnPoint);
+	Wld_InsertNpc (Hlp_Random(3), "WP_DYNAMIC");
+	Wld_InsertItem (ItMi_Gold, ConcatStrings("WP_", suffix));
+	Wld_InsertNpc (Grd_201_Gardist, "WP_STATIC");
+};`,
+        '/test/Dynamic.d'
+      );
+
+      const sites = extractSpawnSites([
+        { filePath: '/test/Dynamic.d', semanticModel: file.semanticModel! }
+      ]);
+
+      expect(sites.map((site) => site.instance)).toEqual(['GRD_201_GARDIST']);
+      expect(sites[0].spawnPoint).toBe('WP_STATIC');
+    });
+
+    // The two spawn externals are the only ones that carry an instance: every
+    // other waypoint external takes `self`, so widening the seed table would
+    // index a mover as a spawn.
+    it('takes only the two spawn externals, not every waypoint external', async () => {
+      const { extractFileMetadataFromSource, extractSpawnSites } = await import(
+        '../src/main/utils/semanticMetadataUtils'
+      );
+
+      const file = extractFileMetadataFromSource(
+        `FUNC VOID Rtn_Mixed()
+{
+	AI_Teleport (self, "WP_ONLY");
+	TA_Min (self, 8, 0, 22, 0, ZS_Stand, "WP_TA_MIN");
+};`,
+        '/test/Mixed.d'
+      );
+
+      expect(
+        extractSpawnSites([{ filePath: '/test/Mixed.d', semanticModel: file.semanticModel! }])
+      ).toEqual([]);
+    });
+  });
+
+  describe('routine extraction (semanticMetadataUtils)', () => {
+    // The time slider is the one Phase 1c deliverable left with no data behind
+    // it (level-editor.md §16.19): `ProjectIndex.routines` is the set of
+    // `daily_routine` *names*, and a schedule needs the windows.
+    const load = () => import('../src/main/utils/semanticMetadataUtils');
+
+    it('records a TA_MIN window and its waypoint off the engine external', async () => {
+      const { extractFileMetadataFromSource, extractRoutineSites } = await load();
+
+      const file = extractFileMetadataFromSource(
+        `FUNC VOID Rtn_Start_99003()
+{
+	TA_MIN (self, 8, 0, 22, 30, ZS_Stand_WP, "WP_FARIM_01");
+};`,
+        '/test/Rtn.d'
+      );
+
+      expect(
+        extractRoutineSites([{ filePath: '/test/Rtn.d', semanticModel: file.semanticModel! }])
+      ).toEqual([
+        {
+          routine: 'RTN_START_99003',
+          stateName: 'TA_MIN',
+          startMinute: 8 * 60,
+          endMinute: 22 * 60 + 30,
+          waypoint: 'WP_FARIM_01',
+          filePath: '/test/Rtn.d',
+          line: 3
+        }
+      ]);
+    });
+
+    // A routine save, and a script changed outside the editor, re-index the one
+    // file (#319). The wrapper that file calls is declared elsewhere, so its
+    // layout comes in from the whole-project index rather than being derived
+    // from the file.
+    it('reads one file\'s share of the index, with layouts the project index derived', async () => {
+      const { indexFile, extractFileMetadataFromSource } = await load();
+
+      const source = `INSTANCE BAU_900_Onar (Npc_Default)
+{
+	id = 900;
+	daily_routine = Rtn_Start_900;
+};
+
+FUNC VOID Rtn_Start_900()
+{
+	TA_Sit_Throne (07,00,21,30,"NW_THRONE");
+};
+
+FUNC VOID B_Kapitel3()
+{
+	Wld_InsertNpc (BAU_900_Onar, "NW_FARM");
+	B_StartOtherRoutine (BAU_900_Onar, "Tot");
+};`;
+      const model = extractFileMetadataFromSource(source, '/test/Onar.d').semanticModel!;
+      const layouts = { TA_SIT_THRONE: { startH: 0, startM: 1, stopH: 2, stopM: 3, waypoint: 4 } };
+
+      expect(indexFile('/test/Onar.d', model, layouts)).toEqual({
+        routineSites: [{
+          routine: 'RTN_START_900',
+          stateName: 'TA_SIT_THRONE',
+          startMinute: 7 * 60,
+          endMinute: 21 * 60 + 30,
+          waypoint: 'NW_THRONE',
+          filePath: '/test/Onar.d',
+          line: 9
+        }],
+        spawnSites: [{
+          instance: 'BAU_900_ONAR', spawnPoint: 'NW_FARM', filePath: '/test/Onar.d', functionName: 'B_Kapitel3', line: 14
+        }],
+        exchangeSites: [{
+          target: 'BAU_900_ONAR', state: 'TOT', filePath: '/test/Onar.d', functionName: 'B_KAPITEL3', line: 15
+        }],
+        instances: [{ name: 'BAU_900_Onar', parent: 'Npc_Default', npcId: 900, dailyRoutine: 'Rtn_Start_900' }],
+      });
+      expect(indexFile('/test/Onar.d', model, {}).routineSites).toEqual([]);
+    });
+
+    // The load reads sites off clean parses only; a file broken mid-edit must
+    // not keep entries the load would not have, but its NPCs stay declared.
+    it('reads no sites off a file that does not parse, but keeps its instances', async () => {
+      const { indexFile } = await load();
+
+      const call = (functionName: string, raws: string[]) => ({
+        functionName,
+        args: raws.map((raw) => ({ raw, isString: raw.startsWith('"'), value: raw.replace(/"/g, '') })),
+        position: { startLine: 3 },
+      });
+      const model = {
+        hasErrors: true,
+        errors: [{ type: 'syntax_error', message: 'x' }],
+        dialogs: {},
+        instances: { BAU_900_Onar: { name: 'BAU_900_Onar', parent: 'Npc_Default', npcId: 900 } },
+        functions: {
+          Rtn_Start_900: {
+            name: 'Rtn_Start_900',
+            callSites: [
+              call('TA_MIN', ['self', '7', '0', '21', '0', 'ZS', '"WP"']),
+              call('Wld_InsertNpc', ['BAU_900_Onar', '"WP"']),
+            ],
+          },
+        },
+      } as any;
+      const layouts = { TA_MIN: { startH: 1, startM: 2, stopH: 3, stopM: 4, waypoint: 6 } };
+
+      expect(indexFile('/test/Onar.d', model, layouts)).toEqual({
+        routineSites: [], spawnSites: [], exchangeSites: [],
+        instances: [{ name: 'BAU_900_Onar', parent: 'Npc_Default', npcId: 900 }],
+      });
+    });
+
+    // `TA` is the hour-only external: its waypoint sits at argument 4, not 6,
+    // and it has no minute arguments at all.
+    it('records a TA window, which carries hours and no minutes', async () => {
+      const { extractFileMetadataFromSource, extractRoutineSites } = await load();
+
+      const file = extractFileMetadataFromSource(
+        `FUNC VOID Rtn_Start_100()
+{
+	TA (self, 8, 22, ZS_Stand_WP, "WP_HOURS_ONLY");
+};`,
+        '/test/Ta.d'
+      );
+
+      const sites = extractRoutineSites([
+        { filePath: '/test/Ta.d', semanticModel: file.semanticModel! }
+      ]);
+      expect(sites).toHaveLength(1);
+      expect(sites[0].startMinute).toBe(8 * 60);
+      expect(sites[0].endMinute).toBe(22 * 60);
+      expect(sites[0].stateName).toBe('TA');
+      expect(sites[0].waypoint).toBe('WP_HOURS_ONLY');
+    });
+
+    // Retail never calls TA_MIN from a routine — it calls a `TA_*` wrapper, and
+    // every one of them has its own argument order. The index reads that order
+    // off the wrapper's own body (which of its parameters reach TA_MIN's time
+    // slots), so nothing here depends on a parameter being *named* `start_h`:
+    // this wrapper's are deliberately misnamed and reordered.
+    it('resolves a project TA_ wrapper by following its parameters into TA_MIN', async () => {
+      const { extractFileMetadataFromSource, extractRoutineSites } = await load();
+
+      const file = extractFileMetadataFromSource(
+        `FUNC VOID TA_Sit_Chair(var int a, var int b, var int c, var int d, var string place)
+{
+	TA_MIN (self, a, b, c, d, ZS_Sit_Chair, place);
+};
+
+FUNC VOID Rtn_Start_99003()
+{
+	TA_Sit_Chair (6, 15, 22, 45, "WP_FARIM_01_SIT");
+};`,
+        '/test/Wrapper.d'
+      );
+
+      const sites = extractRoutineSites([
+        { filePath: '/test/Wrapper.d', semanticModel: file.semanticModel! }
+      ]);
+
+      expect(sites).toEqual([
+        {
+          routine: 'RTN_START_99003',
+          stateName: 'TA_SIT_CHAIR',
+          startMinute: 6 * 60 + 15,
+          endMinute: 22 * 60 + 45,
+          waypoint: 'WP_FARIM_01_SIT',
+          filePath: '/test/Wrapper.d',
+          line: 8
+        }
+      ]);
+    });
+
+    // Retail writes both ends of a day as `(06,00,24,00)` + `(24,00,06,00)`
+    // (SLD_99003_Farim is the reference file in daedalus-parser). Hour 24 is
+    // midnight, so it normalizes to 0 and the first of the pair becomes a
+    // window that wraps — which is what makes the two cover the day exactly
+    // once between them.
+    it('normalizes hour 24 to midnight, leaving the wrapping window to the consumer', async () => {
+      const { extractFileMetadataFromSource, extractRoutineSites } = await load();
+
+      const file = extractFileMetadataFromSource(
+        `FUNC VOID Rtn_Start_99003()
+{
+	TA_MIN (self, 6, 0, 24, 0, ZS_Sit_Chair, "WP_DAY");
+	TA_MIN (self, 24, 0, 6, 0, ZS_Sit_Chair, "WP_NIGHT");
+};`,
+        '/test/Wrap.d'
+      );
+
+      const sites = extractRoutineSites([
+        { filePath: '/test/Wrap.d', semanticModel: file.semanticModel! }
+      ]);
+
+      expect(sites.map((site) => [site.startMinute, site.endMinute])).toEqual([
+        [6 * 60, 0],
+        [0, 6 * 60]
+      ]);
+    });
+
+    // The same nested-call-sites fact §16.19 met on the spawn index: a routine
+    // written per guild is one `if` after another, so a body's top-level calls
+    // are not the routine.
+    it('records a routine entry written inside a guild block', async () => {
+      const { extractFileMetadataFromSource, extractRoutineSites } = await load();
+
+      const file = extractFileMetadataFromSource(
+        `FUNC VOID Rtn_Start_500()
+{
+	if (Kapitel == 1)
+	{
+		TA_MIN (self, 8, 0, 22, 0, ZS_Stand_WP, "WP_CHAPTER_ONE");
+	}
+	else
+	{
+		TA_MIN (self, 8, 0, 22, 0, ZS_Stand_WP, "WP_OTHERWISE");
+	};
+};`,
+        '/test/Guild.d'
+      );
+
+      expect(
+        extractRoutineSites([
+          { filePath: '/test/Guild.d', semanticModel: file.semanticModel! }
+        ]).map((site) => [site.waypoint, site.line])
+      ).toEqual([
+        ['WP_CHAPTER_ONE', 5],
+        ['WP_OTHERWISE', 9]
+      ]);
+    });
+
+    // Same hard rule the spawn index follows (§8, design brief §5.1): a window
+    // that is not statically resolvable is excluded, never guessed. A constant
+    // hour is exactly as unresolvable here as a computed waypoint.
+    it('excludes an entry whose time or waypoint is not a literal', async () => {
+      const { extractFileMetadataFromSource, extractRoutineSites } = await load();
+
+      const file = extractFileMetadataFromSource(
+        `FUNC VOID Rtn_Start_Dynamic()
+{
+	TA_MIN (self, RTN_MORNING_H, 0, 22, 0, ZS_Stand_WP, "WP_CONST_HOUR");
+	TA_MIN (self, 8, 0, 22, 0, ZS_Stand_WP, waypoint);
+	TA_MIN (self, 8, 0, 22, 0, ZS_Stand_WP, "WP_KEPT");
+};`,
+        '/test/Dynamic.d'
+      );
+
+      expect(
+        extractRoutineSites([
+          { filePath: '/test/Dynamic.d', semanticModel: file.semanticModel! }
+        ]).map((site) => site.waypoint)
+      ).toEqual(['WP_KEPT']);
+    });
+
+    // The other half of the schedule: `routines` is a sorted name set (what
+    // autocomplete wants), and nothing carries which NPC runs which.
+    it('maps an NPC instance to the routine it declares', async () => {
+      const { extractFileMetadataFromSource, extractRoutinesByNpc } = await load();
+
+      const file = extractFileMetadataFromSource(
+        `INSTANCE SLD_99003_Farim (Npc_Default)
+{
+	name = "Farim";
+	daily_routine = Rtn_Start_99003;
+};
+
+INSTANCE ItMi_Gold (C_Item)
+{
+	name = "Gold";
+};`,
+        '/test/Farim.d'
+      );
+
+      expect(
+        extractRoutinesByNpc([{ semanticModel: file.semanticModel! }])
+      ).toEqual({ SLD_99003_FARIM: 'RTN_START_99003' });
+    });
+  });
+
+  // §16.19 slice 11. The declared routine is only the day the game opens with;
+  // quest state swaps it, and the engine's own rule is that
+  // `Npc_ExchangeRoutine(npc, "X")` runs `RTN_X_<id>`. So variants are
+  // enumerated by that name rule over the routine functions already indexed —
+  // not by the exchange sites, which would miss a variant reached through a
+  // variable.
+  describe('routine state extraction (semanticMetadataUtils)', () => {
+    const load = () => import('../src/main/utils/semanticMetadataUtils');
+
+    /** The shared rule, fed the way ProjectService feeds it. */
+    const statesOf = async (fileModels: Array<{ filePath: string; semanticModel: any }>) => {
+      const { extractNpcIds, extractRoutinesByNpc, extractRoutineSites } = await load();
+      const { routineStatesOf } = await import('../src/shared/routineStates');
+      return routineStatesOf(
+        extractNpcIds(fileModels), extractRoutinesByNpc(fileModels), extractRoutineSites(fileModels)
+      );
+    };
+
+    const models = async (files: Array<[string, string]>) => {
+      const { extractFileMetadataFromSource } = await load();
+      return files.map(([filePath, source]) => ({
+        filePath,
+        semanticModel: extractFileMetadataFromSource(source, filePath).semanticModel!
+      }));
+    };
+
+    it('groups RTN_<state>_<id> variants under the NPC whose id they carry', async () => {
+      const fileModels = await models([
+        ['/test/Diego.d', `INSTANCE SLD_200_Diego (Npc_Default)
+{
+	id = 200;
+	daily_routine = Rtn_Start_200;
+};
+
+FUNC VOID Rtn_Start_200()
+{
+	TA_MIN (self, 8, 0, 22, 0, ZS_Stand_WP, "WP_OC_MAIN");
+};
+
+FUNC VOID Rtn_Tot_200()
+{
+	TA_MIN (self, 0, 0, 0, 0, ZS_Stand_WP, "WP_DEAD");
+};
+
+FUNC VOID Rtn_Kapitel3_200()
+{
+	TA_MIN (self, 8, 0, 22, 0, ZS_Stand_WP, "WP_NC_TEMPLE");
+};`]
+      ]);
+
+      expect(await statesOf(fileModels)).toEqual({
+        SLD_200_DIEGO: {
+          id: 200,
+          states: { TOT: 'RTN_TOT_200', KAPITEL3: 'RTN_KAPITEL3_200' }
+        }
+      });
+    });
+
+    // The split is on the *known* id, so a state name carrying an underscore or
+    // a digit survives. Guessing where the state name ended would cut
+    // `ADDON_TOT` at the underscore.
+    it('splits on the id, so an underscored state name survives whole', async () => {
+      const states = await statesOf(await models([
+        ['/test/Addon.d', `INSTANCE BAU_4300_Cavalorn (Npc_Default)
+{
+	id = 4300;
+	daily_routine = Rtn_Start_4300;
+};
+
+FUNC VOID Rtn_Addon_Tot_4300()
+{
+	TA_MIN (self, 0, 0, 0, 0, ZS_Stand_WP, "WP_X");
+};`]
+      ]));
+
+      expect(states.BAU_4300_CAVALORN.states).toEqual({ ADDON_TOT: 'RTN_ADDON_TOT_4300' });
+    });
+
+    // The declared routine is `routinesByNpc`'s answer and is not re-derived
+    // from the name — it is excluded here so the picker's "Declared" default
+    // and its state options never name the same thing twice.
+    it('excludes the declared routine from the variants', async () => {
+      const states = await statesOf(await models([
+        ['/test/D.d', `INSTANCE VLK_500_Test (Npc_Default)
+{
+	id = 500;
+	daily_routine = Rtn_Start_500;
+};
+
+FUNC VOID Rtn_Start_500()
+{
+	TA_MIN (self, 8, 0, 22, 0, ZS_Stand_WP, "WP_A");
+};`]
+      ]));
+
+      expect(states.VLK_500_TEST).toBeUndefined();
+    });
+
+    // An id is what makes the grouping the engine's rule rather than a guess;
+    // without one there is nothing to split a name on, so the NPC simply has no
+    // states. Excluded, never guessed — slice 5's rule.
+    it('yields no states for an NPC whose id is not a literal', async () => {
+      const states = await statesOf(await models([
+        ['/test/NoId.d', `INSTANCE MOB_1_Nameless (Npc_Default)
+{
+	id = SOME_CONST;
+	daily_routine = Rtn_Start_1;
+};
+
+FUNC VOID Rtn_Tot_1()
+{
+	TA_MIN (self, 0, 0, 0, 0, ZS_Stand_WP, "WP_X");
+};`]
+      ]));
+
+      expect(states.MOB_1_NAMELESS).toBeUndefined();
+    });
+
+    // A routine function with no TA entries the index could read is not a
+    // state worth offering: choosing it would empty the world with no
+    // explanation. Only functions present in routineSites qualify.
+    it('ignores a variant whose routine has no indexed entries', async () => {
+      const states = await statesOf(await models([
+        ['/test/Empty.d', `INSTANCE VLK_600_Test (Npc_Default)
+{
+	id = 600;
+	daily_routine = Rtn_Start_600;
+};
+
+FUNC VOID Rtn_Tot_600()
+{
+	AI_Wait (self, 1);
+};`]
+      ]));
+
+      expect(states.VLK_600_TEST).toBeUndefined();
+    });
+
+    it('records exchange sites, resolving the target and skipping a computed state', async () => {
+      const { extractExchangeSites } = await load();
+
+      expect(extractExchangeSites(await models([
+        ['/test/Ex.d', `FUNC VOID B_GiveDeathRoutine()
+{
+	Npc_ExchangeRoutine (self, "Tot");
+	B_StartOtherRoutine (SLD_200_Diego, "Kapitel3");
+	Npc_ExchangeRoutine (self, someVar);
+};`]
+      ]))).toEqual([
+        {
+          target: 'SELF',
+          state: 'TOT',
+          filePath: '/test/Ex.d',
+          functionName: 'B_GIVEDEATHROUTINE',
+          line: 3
+        },
+        {
+          target: 'SLD_200_DIEGO',
+          state: 'KAPITEL3',
+          filePath: '/test/Ex.d',
+          functionName: 'B_GIVEDEATHROUTINE',
+          line: 4
+        }
+      ]);
+    });
+  });
+
+  describe('voice id extraction (semanticMetadataUtils)', () => {
+    it('collects literal DialogLine ids across functions, including nested ones, and skips expression ids', async () => {
+      const { extractFileMetadataFromSource } = await import('../src/main/utils/semanticMetadataUtils');
+
+      const content = `
+FUNC VOID DIA_Test_Hallo_Info()
+{
+	AI_Output (self, other, "DIA_Test_Hallo_15_00"); //Hallo!
+	if (MIS_Test == LOG_RUNNING)
+	{
+		AI_Output (self, other, "DIA_Test_Hallo_15_01"); //Nested line
+	};
+};
+
+FUNC VOID DIA_Test_Bye_Info()
+{
+	AI_Output (other, self, "DIA_Test_Bye_15_00"); //Bye
+	AI_Output (self, other, ConcatStrings(prefix, "_15_02")); //Expression id
+};
+      `;
+
+      const metadata = extractFileMetadataFromSource(content, '/test/DIA_Test.d');
+
+      // The nested id's line is the `AI_Output` inside the `if`, not the `if`.
+      expect(metadata.voiceIds).toContainEqual({ id: 'DIA_Test_Hallo_15_00', functionName: 'DIA_Test_Hallo_Info', line: 4 });
+      expect(metadata.voiceIds).toContainEqual({ id: 'DIA_Test_Hallo_15_01', functionName: 'DIA_Test_Hallo_Info', line: 7 });
+      expect(metadata.voiceIds).toContainEqual({ id: 'DIA_Test_Bye_15_00', functionName: 'DIA_Test_Bye_Info', line: 13 });
+      // The expression-valued id is skipped
+      expect(metadata.voiceIds).toHaveLength(3);
+    });
+  });
+
+  describe('getDialogsForNpc', () => {
+    it('should return all dialogs for a specific NPC', async () => {
+      const dialogDir = path.join(tempDir, 'Dialoge');
+      fs.mkdirSync(dialogDir, { recursive: true });
+
+      fs.writeFileSync(path.join(dialogDir, 'DIA_Farim.d'), `
+INSTANCE DIA_Farim_1 (C_INFO) { npc = SLD_99003_Farim; };
+INSTANCE DIA_Farim_2 (C_INFO) { npc = SLD_99003_Farim; };
+      `);
+
+      fs.writeFileSync(path.join(dialogDir, 'DIA_Arog.d'), `
+INSTANCE DIA_Arog_1 (C_INFO) { npc = SLD_99005_Arog; };
+      `);
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+      const farimDialogs = service.getDialogsForNpc(index, 'SLD_99003_Farim');
+
+      expect(farimDialogs).toHaveLength(2);
+      expect(farimDialogs[0].dialogName).toBe('DIA_Farim_1');
+      expect(farimDialogs[1].dialogName).toBe('DIA_Farim_2');
+    });
+
+    it('should return empty array for unknown NPC', async () => {
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+      const dialogs = service.getDialogsForNpc(index, 'UnknownNPC');
+
+      expect(dialogs).toHaveLength(0);
+    });
+  });
+});

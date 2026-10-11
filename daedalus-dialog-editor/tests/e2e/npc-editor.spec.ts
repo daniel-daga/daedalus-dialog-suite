@@ -1,0 +1,378 @@
+import { test, expect, type Page } from '@playwright/test';
+
+/**
+ * Browser mock-harness spec for the NPC editor (docs/plans/npc-editor.md,
+ * Phase 2; NOT end-to-end). UI state only, per tests/e2e/README.md: the mock
+ * stands in for the parser's NPC reader/writer, so what this proves is the
+ * flow — open from the NPC list, the form shows the NPC, an edit survives a
+ * save and a reopen, Cancel discards. Byte-level save fidelity is the
+ * parser's own suite (daedalus-parser/test/npc-definition.test.js).
+ */
+
+const NPC_FILE = `INSTANCE BAU_900_Onar (C_NPC)
+{
+	name = "Onar";
+	guild = GIL_BAU;
+	level = 20;
+	B_SetNpcVisual (self, MALE, "Hum_Head_Fatbald", Face_N_Weak_Orry, BodyTex_N, ITAR_Vlk_H);
+	Mdl_ApplyOverlayMds (self, "HUMANS_S1.MDS");
+	EquipItem (self, ItMw_1h_Bau_Mace);
+	daily_routine = Rtn_Start_900;
+};
+`;
+
+const CHOICES_FILE = `//__MOCK_MODEL__${JSON.stringify({
+  constants: {
+    GIL_BAU: { name: 'GIL_BAU', type: 'int', value: 1 },
+    GIL_SLD: { name: 'GIL_SLD', type: 'int', value: 2 },
+  },
+  items: Object.fromEntries([
+    ['ITAR_Sld_M', 'ITEM_KAT_ARMOR'],
+    ['ItRw_Sld_Bow', 'ITEM_KAT_FF'],
+    ['ItRw_Crossbow_L_01', 'ITEM_KAT_FF'],
+  ].map(([name, mainflag]) => [name, {
+    name, parent: 'C_Item', sourceText: `INSTANCE ${name} (C_Item)\n{\n\tmainflag = ${mainflag};\n};`,
+  }])),
+})}\n`;
+
+async function openProject(page: Page, extraFiles: Record<string, string> = {}) {
+  await page.goto('/');
+  await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
+  await page.evaluate(({ content, files }) => {
+    localStorage.setItem('mockapi_file_project/NPC/BAU_900_Onar.d', content);
+    for (const [path, source] of Object.entries(files)) {
+      localStorage.setItem(`mockapi_file_project/${path}`, source);
+    }
+  }, { content: NPC_FILE, files: extraFiles });
+  page.on('dialog', async (dialog) => {
+    if (dialog.message().includes('project folder path')) {
+      await dialog.accept('project');
+    } else {
+      await dialog.dismiss();
+    }
+  });
+  await page.getByRole('button', { name: /Open Project/i }).first().click();
+  await expect(page.getByText('BAU_900_Onar')).toBeVisible({ timeout: 15000 });
+  await expect(page.getByTestId('project-opening-overlay')).toBeHidden({ timeout: 15000 });
+}
+
+async function openEditor(page: Page) {
+  await page.getByRole('button', { name: 'Edit NPC BAU_900_Onar' }).click();
+  const editor = page.getByRole('dialog', { name: /BAU_900_Onar/ });
+  await expect(editor).toBeVisible();
+  return editor;
+}
+
+async function selectChoice(page: Page, editor: ReturnType<Page['getByRole']>, label: string, choice: string) {
+  await editor.getByRole('combobox', { name: label }).click();
+  await page.getByRole('option', { name: choice, exact: true }).click();
+}
+
+test.describe('NPC editor', () => {
+  test.beforeEach(async ({ page }) => {
+    await openProject(page, { 'Choices.d': CHOICES_FILE });
+  });
+
+  test('shows the NPC as its script declares it', async ({ page }) => {
+    const editor = await openEditor(page);
+
+    await expect(editor.getByLabel('Name', { exact: true })).toHaveValue('Onar');
+    await expect(editor.getByLabel('Guild')).toHaveValue('GIL_BAU');
+    await expect(editor.getByLabel('Level')).toHaveValue('20');
+    await expect(editor.getByLabel('Daily routine')).toHaveValue('Rtn_Start_900');
+    await expect(editor.getByLabel('Head mesh')).toHaveValue('Hum_Head_Fatbald');
+    await expect(editor.getByLabel('Armor')).toHaveValue('ITAR_Vlk_H');
+    await expect(editor.getByLabel('Melee weapon')).toHaveValue('ItMw_1h_Bau_Mace');
+    await expect(editor.getByLabel('Ranged weapon')).toHaveValue('');
+    // Absent from the script, so empty — not a default the editor invented.
+    await expect(editor.getByLabel('Strength')).toHaveValue('');
+  });
+
+  test('shows the declared walk overlay as an editable visual field', async ({ page }) => {
+    const editor = await openEditor(page);
+    await expect(editor.getByLabel('Walk overlay')).toHaveValue('HUMANS_S1.MDS');
+  });
+
+  test('combo box searches choices without changing the value and shows all choices when reopened', async ({ page }) => {
+    const editor = await openEditor(page);
+    const guild = editor.getByRole('combobox', { name: 'Guild' });
+
+    await guild.click();
+    await expect(page.getByRole('option', { name: 'GIL_BAU' })).toBeVisible();
+    await expect(page.getByRole('option', { name: 'GIL_SLD' })).toBeVisible();
+    await guild.fill('SLD');
+    await expect(page.getByRole('option', { name: 'GIL_SLD' })).toBeVisible();
+    await expect(page.getByRole('option', { name: 'GIL_BAU' })).toHaveCount(0);
+    await guild.press('Escape');
+    await editor.getByLabel('Level').click();
+    await expect(guild).toHaveValue('GIL_BAU');
+
+    await guild.click();
+    await page.getByRole('option', { name: 'GIL_SLD' }).click();
+    await expect(guild).toHaveValue('GIL_SLD');
+    await guild.click();
+    await expect(page.getByRole('option', { name: 'GIL_BAU' })).toBeVisible();
+    await expect(page.getByRole('option', { name: 'GIL_SLD' })).toBeVisible();
+  });
+
+  test('an edit survives save and reopen', async ({ page }) => {
+    let editor = await openEditor(page);
+    await selectChoice(page, editor, 'Guild', 'GIL_SLD');
+    await editor.getByLabel('Level').fill('25');
+    await editor.getByLabel('Strength').fill('80');
+    await selectChoice(page, editor, 'Armor', 'ITAR_Sld_M');
+    await editor.getByRole('button', { name: 'Save' }).click();
+    await expect(editor).toBeHidden();
+
+    editor = await openEditor(page);
+    await expect(editor.getByLabel('Guild')).toHaveValue('GIL_SLD');
+    await expect(editor.getByLabel('Level')).toHaveValue('25');
+    await expect(editor.getByLabel('Strength')).toHaveValue('80');
+    await expect(editor.getByLabel('Armor')).toHaveValue('ITAR_Sld_M');
+    await expect(editor.getByLabel('Name', { exact: true })).toHaveValue('Onar');
+  });
+
+  test('a second weapon is added beside the first, and each keeps its own call', async ({ page }) => {
+    let editor = await openEditor(page);
+    await selectChoice(page, editor, 'Ranged weapon', 'ItRw_Sld_Bow');
+    await editor.getByRole('button', { name: 'Save' }).click();
+    await expect(editor).toBeHidden();
+
+    editor = await openEditor(page);
+    await expect(editor.getByLabel('Melee weapon')).toHaveValue('ItMw_1h_Bau_Mace');
+    await expect(editor.getByLabel('Ranged weapon')).toHaveValue('ItRw_Sld_Bow');
+
+    // Editing the ranged weapon must not touch the melee one's call.
+    await selectChoice(page, editor, 'Ranged weapon', 'ItRw_Crossbow_L_01');
+    await editor.getByRole('button', { name: 'Save' }).click();
+    await expect(editor).toBeHidden();
+
+    editor = await openEditor(page);
+    await expect(editor.getByLabel('Melee weapon')).toHaveValue('ItMw_1h_Bau_Mace');
+    await expect(editor.getByLabel('Ranged weapon')).toHaveValue('ItRw_Crossbow_L_01');
+  });
+
+  test('Cancel discards the edit', async ({ page }) => {
+    let editor = await openEditor(page);
+    await editor.getByLabel('Name', { exact: true }).fill('Someone else');
+    await editor.getByRole('button', { name: 'Cancel' }).click();
+    await expect(editor).toBeHidden();
+
+    editor = await openEditor(page);
+    await expect(editor.getByLabel('Name', { exact: true })).toHaveValue('Onar');
+  });
+
+  // #285, Create NPC: a new NPC is a copy of one the project already has, so
+  // it only uses what the mod defines (#141 removed an Add NPC that did not).
+  test('a new NPC copied from another is written, listed and opened for editing', async ({ page }) => {
+    await page.getByRole('button', { name: 'New NPC' }).click();
+    const create = page.getByRole('dialog', { name: 'New NPC' });
+    await expect(create).toBeVisible();
+
+    await expect(create.getByLabel('Copy of')).toHaveValue('BAU_900_Onar');
+    await create.getByLabel('Instance').fill('BAU_901_Harald');
+    await create.getByLabel('Name', { exact: true }).fill('Harald');
+    // Offered from the template and the project, and editable.
+    await expect(create.getByLabel('Guild')).toHaveValue('GIL_BAU');
+    await expect(create.getByLabel('Id')).toHaveValue('901');
+    await expect(create.getByLabel('File')).toHaveValue('project/NPC/BAU_901_Harald.d');
+    await create.getByRole('button', { name: 'Create' }).click();
+    await expect(create).toBeHidden();
+
+    const editor = page.getByRole('dialog', { name: /BAU_901_Harald/ });
+    await expect(editor).toBeVisible();
+    await expect(editor.getByLabel('Name', { exact: true })).toHaveValue('Harald');
+    await expect(editor.getByLabel('Melee weapon')).toHaveValue('ItMw_1h_Bau_Mace');
+    await expect(editor.getByLabel('Daily routine')).toHaveValue('');
+    await editor.getByRole('button', { name: 'Cancel' }).click();
+
+    await expect(page.getByText('BAU_901_Harald')).toBeVisible();
+    const written = await page.evaluate(() => localStorage.getItem('mockapi_file_project/NPC/BAU_901_Harald.d'));
+    expect(written).toContain('INSTANCE BAU_901_Harald (C_NPC)');
+    expect(written).toContain('name = "Harald";');
+    expect(written).toContain('id = 901;');
+    expect(written).not.toContain('daily_routine');
+    // Like an NPC file dropped into the folder (#141), it gets its EXIT dialog.
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('mockapi_file_project/NPC/DIA_BAU_901_Harald.d')))
+      .toContain('\tnpc\t\t\t= BAU_901_Harald;');
+    // The template is untouched.
+    const template = await page.evaluate(() => localStorage.getItem('mockapi_file_project/NPC/BAU_900_Onar.d'));
+    expect(template).toContain('name = "Onar";');
+  });
+
+  // #280: Log Entry's Topic field was reported as missing autocomplete when it
+  // was in fact just undiscoverable -- MUI already opens an Autocomplete's
+  // list on a mouse click, but not when the field is *tabbed* into (this app's
+  // action cards are built around Tab navigation between fields, see
+  // createRowTabHandlers). "Copy of" gets the same combo-box fix as every
+  // other autocomplete field: its options show the moment it receives focus,
+  // by keyboard or otherwise.
+  test('the Copy of field opens its options on focus alone, not just on click', async ({ page }) => {
+    await page.getByRole('button', { name: 'New NPC' }).click();
+    const create = page.getByRole('dialog', { name: 'New NPC' });
+
+    await create.getByLabel('Copy of').focus();
+
+    await expect(page.getByRole('option', { name: 'BAU_900_Onar' })).toBeVisible();
+  });
+
+  test('a new NPC refuses an instance the project already has', async ({ page }) => {
+    await page.getByRole('button', { name: 'New NPC' }).click();
+    const create = page.getByRole('dialog', { name: 'New NPC' });
+    await create.getByLabel('Instance').fill('bau_900_onar');
+    await create.getByLabel('Name', { exact: true }).fill('Onar again');
+    await create.getByRole('button', { name: 'Create' }).click();
+    await expect(create.getByText(/already exists/)).toBeVisible();
+    await expect(create).toBeVisible();
+  });
+});
+
+
+// #285: a routine entry's "World" jump goes to its waypoint in the World
+// surface, and says why not when it cannot. It leaves the NPC editor, so it
+// waits for an unsaved form to be saved or cancelled. The browser harness has no
+// world, so the jump itself is tests/NpcRoutinesSection.test.tsx's.
+const ROUTINE_FILE = `FUNC VOID Rtn_Start_900 ()
+{
+\tTA_Stand_ArmsCrossed (08,00,20,00,"NW_BIGFARM_HOUSE_ONAR");
+\tTA_Sleep (20,00,08,00,"NW_BIGFARM_HOUSE_ONAR_BED");
+};
+`;
+
+test.describe('NPC editor: routine jumps', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
+    await page.evaluate(({ npc, routine }) => {
+      localStorage.setItem('mockapi_file_project/NPC/BAU_900_Onar.d', npc);
+      localStorage.setItem('mockapi_file_project/Rtn/Rtn_Onar.d', routine);
+    }, { npc: NPC_FILE, routine: ROUTINE_FILE });
+    page.on('dialog', async (dialog) => {
+      if (dialog.message().includes('project folder path')) await dialog.accept('project');
+      else await dialog.dismiss();
+    });
+    await page.getByRole('button', { name: /Open Project/i }).first().click();
+    await expect(page.getByText('BAU_900_Onar')).toBeVisible({ timeout: 15000 });
+  });
+
+  test('lists the routine and says why a waypoint cannot be shown while no world is open', async ({ page }) => {
+    const editor = await openEditor(page);
+    const daily = editor.getByRole('list', { name: 'Daily: RTN_START_900' });
+    await expect(daily).toContainText('08:00–20:00');
+    await expect(daily).toContainText('TA_STAND_ARMSCROSSED');
+    await expect(daily).toContainText('NW_BIGFARM_HOUSE_ONAR_BED');
+    const show = editor.getByRole('button', { name: 'Show NW_BIGFARM_HOUSE_ONAR in the world' });
+    await expect(show).toBeDisabled();
+    await expect(editor.getByTitle('No world is open').first()).toBeVisible();
+  });
+
+  test('opens the routine source at the indexed TA line', async ({ page }) => {
+    const editor = await openEditor(page);
+    await editor.getByRole('button', { name: 'Show source for RTN_START_900 at line 3' }).click();
+
+    const source = page.getByRole('dialog', { name: 'Routine source: RTN_START_900' });
+    await expect(source).toBeVisible();
+    await expect(source.getByTestId('npc-routine-source-target')).toHaveAttribute('data-line', '3');
+    await expect(source.getByTestId('npc-routine-source-target')).toContainText('TA_Stand_ArmsCrossed');
+  });
+
+  test('waits for unsaved changes before leaving the editor', async ({ page }) => {
+    const editor = await openEditor(page);
+    await editor.getByLabel('Level').fill('30');
+    await expect(editor.getByTitle('Save or cancel your changes first').first()).toBeVisible();
+  });
+});
+
+// Item names are mod-defined; categories come from each item's mainflag.
+const ITEM_CATEGORIES_FILE = `//__MOCK_MODEL__${JSON.stringify({
+  items: {
+    ChainArmor: { name: 'ChainArmor', parent: 'C_Item', sourceText: 'INSTANCE ChainArmor (C_Item)\n{\n\tmainflag = ITEM_KAT_ARMOR;\n};' },
+    OddSword: { name: 'OddSword', parent: 'C_Item', sourceText: 'INSTANCE OddSword (C_Item)\n{\n\tmainflag = ITEM_KAT_NF;\n};' },
+    OddBow: { name: 'OddBow', parent: 'C_Item', sourceText: 'INSTANCE OddBow (C_Item)\n{\n\tmainflag = ITEM_KAT_FF;\n};' },
+    ITAR_WrongCategory: { name: 'ITAR_WrongCategory', parent: 'C_Item', sourceText: 'INSTANCE ITAR_WrongCategory (C_Item)\n{\n\tmainflag = ITEM_KAT_NF;\n};' },
+  },
+})}\n`;
+
+test.describe('NPC editor: item categories', () => {
+  test('suggests armor and weapons from item flags, regardless of item names', async ({ page }) => {
+    await openProject(page, { 'Items/Custom.d': ITEM_CATEGORIES_FILE });
+    await expect(page.getByTestId('project-opening-overlay')).toBeHidden({ timeout: 15000 });
+    const editor = await openEditor(page);
+
+    await editor.getByLabel('Armor').fill('');
+    await editor.getByLabel('Armor').press('ArrowDown');
+    await expect(page.getByRole('option', { name: 'ChainArmor' })).toBeVisible();
+    await expect(page.getByRole('option', { name: 'OddSword' })).toHaveCount(0);
+
+    await editor.getByLabel('Melee weapon').fill('');
+    await editor.getByLabel('Melee weapon').press('ArrowDown');
+    await expect(page.getByRole('option', { name: 'OddSword' })).toBeVisible();
+    await expect(page.getByRole('option', { name: 'ITAR_WrongCategory' })).toBeVisible();
+
+    await editor.getByLabel('Ranged weapon').fill('');
+    await editor.getByLabel('Ranged weapon').press('ArrowDown');
+    await expect(page.getByRole('option', { name: 'OddBow' })).toBeVisible();
+  });
+});
+
+
+// #298: the preview beside the form. The harness mounts no native assets, so
+// this proves the visual read from the script and project follows unsaved
+// edits, and that an unresolved mock mesh gets a clear preview message. The
+// worker request itself is tests/NpcVisualPreview.test.tsx's.
+// The harness's regex parser reads neither constants nor items, so both files
+// carry their model through the mock-model seam.
+const constant = (name: string, value: number) => ({ name, type: 'int', value });
+const CONSTANTS_FILE = `//__MOCK_MODEL__${JSON.stringify({
+  constants: Object.fromEntries([
+    constant('MALE', 0), constant('FEMALE', 1), constant('NO_ARMOR', -1),
+    constant('BodyTex_N', 1), constant('Face_N_Weak_Orry', 42),
+  ].map((c) => [c.name, c])),
+})}\n`;
+const ARMOR_FILE = `//__MOCK_MODEL__${JSON.stringify({
+  items: {
+    ITAR_Vlk_H: {
+      name: 'ITAR_Vlk_H', parent: 'C_Item',
+      sourceText: 'INSTANCE ITAR_Vlk_H (C_Item)\n{\n\tvisual = "ItAr_Vlk_H.3ds";\n\tvisual_change = "Armor_Vlk_H.asc";\n};',
+    },
+  },
+})}\n`;
+
+test.describe('NPC editor: preview', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByText('Welcome to Dandelion')).toBeVisible();
+    await page.evaluate(({ npc, constants, armor }) => {
+      localStorage.setItem('mockapi_file_project/NPC/BAU_900_Onar.d', npc);
+      localStorage.setItem('mockapi_file_project/Constants.d', constants);
+      localStorage.setItem('mockapi_file_project/Items/IT_Armor.d', armor);
+    }, { npc: NPC_FILE, constants: CONSTANTS_FILE, armor: ARMOR_FILE });
+    page.on('dialog', async (dialog) => {
+      if (dialog.message().includes('project folder path')) await dialog.accept('project');
+      else await dialog.dismiss();
+    });
+    await page.getByRole('button', { name: /Open Project/i }).first().click();
+    await expect(page.getByText('BAU_900_Onar')).toBeVisible({ timeout: 15000 });
+  });
+
+  test('shows what it would draw and follows the form without requiring a world open', async ({ page }) => {
+    const editor = await openEditor(page);
+    const preview = editor.getByTestId('npc-preview');
+
+    // The armour's visual_change replaces the naked body, as in the engine.
+    await expect(preview.getByTestId('npc-preview-summary')).toHaveText('Armor_Vlk_H.asc · head Hum_Head_Fatbald');
+    await expect(preview.getByTestId('npc-preview-failed')).toBeVisible();
+
+    // Unsaved edits are previewed: no armour is the naked male body.
+    await selectChoice(page, editor, 'Armor', 'NO_ARMOR');
+    await expect(preview.getByTestId('npc-preview-summary')).toHaveText('hum_body_Naked0 · head Hum_Head_Fatbald');
+  });
+
+  test('hides idle animation controls', async ({ page }) => {
+    const editor = await openEditor(page);
+    const preview = editor.getByTestId('npc-preview');
+
+    await expect(preview.getByRole('slider', { name: 'Idle animation frame' })).toHaveCount(0);
+    await expect(preview.getByTestId('npc-animation-controls')).toHaveCount(0);
+  });
+});

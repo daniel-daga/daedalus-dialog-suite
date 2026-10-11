@@ -1,0 +1,77 @@
+VirtualObject: destroy the child tree iteratively, so its depth is not the call stack.
+
+The other half of patch `0038`. `children` is a `std::vector<std::shared_ptr<VirtualObject>>`
+and the destructor was `= default`, so the compiler tears a tree down by
+recursing once per level -- and the depth of a tree is the file's own nesting,
+which nothing bounds. With `0038` applied and nothing else, a world with a
+60,000-level chain of VObs (9 MB, spliced into `zenkit-node`'s 1.4 KB fixture)
+**loads and prints LOADED, and the process then dies with 0xC00000FD** on the
+way out. A stack overflow is not catchable, so this is the same class of failure
+`0038` removes from the read, one step later, and it is worse in the editor for
+the same reason: worlds are unloaded on a `worker_threads` worker, whose default
+stack is 4 MB against node's 8 MB main thread.
+
+The destructor walks an explicit stack instead: it moves a child's own children
+out and lets the child die childless, so no `shared_ptr` release ever nests. A
+child whose `use_count()` is not 1 is left whole -- something else owns it, and
+its children are not ours to move.
+
+The declaration moves out of the header because the body needs a definition of
+the class it is destroying.
+
+Upstreamable as-is: no API change beyond the destructor no longer being
+implicit, no behaviour change on any valid world.
+
+--- a/include/zenkit/vobs/VirtualObject.hh
++++ b/include/zenkit/vobs/VirtualObject.hh
+@@ -322,8 +322,11 @@
+ 		/// \brief Move-constructor.
+ 		VirtualObject(VirtualObject&&) = default;
+ 
+-		/// \brief Default virtual destructor.
+-		~VirtualObject() override = default;
++		/// \brief Virtual destructor. Tears the child tree down iteratively.
++		///
++		/// The depth of a VOb tree comes off the file, so destroying it must not
++		/// recurse -- see the definition in `VirtualObject.cc`.
++		ZKAPI ~VirtualObject() override;
+ 
+ 		/// \brief The type of this VObject.
+ 		///
+--- a/src/vobs/VirtualObject.cc
++++ b/src/vobs/VirtualObject.cc
+@@ -74,6 +74,34 @@
+ 		obj.load(in, version);
+ 	}
+ 
++	// `children` is a vector of `shared_ptr<VirtualObject>`, so the compiler's
++	// destructor takes the tree apart by recursing once per level -- and the depth
++	// of a tree comes straight off the file, exactly like the depth
++	// `parse_vob_tree` reads it with. Measured on a 60,000-level chain spliced into
++	// `zenkit-node`'s fixture: the world loads, and the process then dies with
++	// 0xC00000FD, a stack overflow, which no `catch` can turn into an error.
++	//
++	// The walk below uses an explicit stack instead. A child is only opened up when
++	// this tree holds its last reference; one that is shared with another owner is
++	// left whole, because its children are not ours to move.
++	VirtualObject::~VirtualObject() {
++		std::vector<std::shared_ptr<VirtualObject>> pending = std::move(this->children);
++		this->children.clear();
++
++		while (!pending.empty()) {
++			auto child = std::move(pending.back());
++			pending.pop_back();
++
++			if (child.use_count() != 1) continue;
++
++			for (auto& grandchild : child->children) {
++				pending.push_back(std::move(grandchild));
++			}
++
++			child->children.clear();
++		}
++	}
++
+ 	void VirtualObject::load(ReadArchive& r, GameVersion version) {
+ 		Object::load(r, version);
+ 

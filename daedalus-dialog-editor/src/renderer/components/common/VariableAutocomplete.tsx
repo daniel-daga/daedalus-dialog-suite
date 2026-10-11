@@ -1,0 +1,314 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { Autocomplete, TextField, Box, Typography, Chip, createFilterOptions, TextFieldProps, InputAdornment, IconButton, Tooltip } from '@mui/material';
+import { OpenInNew as OpenInNewIcon, Add as AddIcon } from '@mui/icons-material';
+import { SemanticModel } from '../../types/global';
+import { useNavigation } from '../../hooks/useNavigation';
+import VariableCreationDialog from './VariableCreationDialog';
+import { useVariableOptions, VariableOption } from '../hooks/useVariableOptions';
+
+export interface VariableAutocompleteProps {
+  /** Current value */
+  value: string;
+  /** Callback when value changes */
+  onChange: (value: string) => void;
+  /** Label for the input */
+  label?: string;
+  /** Placeholder for the input */
+  placeholder?: string;
+  /** Filter by variable/constant type (e.g. 'int', 'string') */
+  typeFilter?: string | string[];
+  /** Filter by name prefix (e.g. 'TOPIC_') */
+  namePrefix?: string | string[];
+  /** Whether to include instances (e.g. NPCs, items) */
+  showInstances?: boolean;
+  /** Whether to include dialogs from the project index */
+  showDialogs?: boolean;
+  /** Whether to include functions (e.g. routines) */
+  showFunctions?: boolean;
+  /** Whether to include daily routines from NPC instances */
+  showRoutines?: boolean;
+  /** Whether to allow values that are not in the list */
+  allowFreeInput?: boolean;
+  /** Whether to allow creating a new variable if not found (default: true) */
+  allowCreation?: boolean;
+  /** Custom styles */
+  sx?: any;
+  /** Whether to take full width */
+  fullWidth?: boolean;
+  /** Whether this is the main field (receives ref) */
+  isMainField?: boolean;
+  /** Ref for the main input field */
+  mainFieldRef?: React.RefObject<HTMLInputElement>;
+  /** Additional props to pass to the TextField */
+  textFieldProps?: Partial<TextFieldProps>;
+  /** Optional callback to flush updates (e.g. onBlur) */
+  onFlush?: () => void;
+  /** Optional keyboard event handler */
+  onKeyDown?: (e: React.KeyboardEvent) => void;
+  /** Optional semantic model to merge with global project model */
+  semanticModel?: SemanticModel;
+  /** Whether to show the navigation button (default: true) */
+  showNavigation?: boolean;
+}
+
+type OptionType = VariableOption;
+
+const MAX_RESULTS = 200;
+const LARGE_LIST_THRESHOLD = 2000;
+const MIN_CHARS_FOR_LARGE_LIST = 2;
+const PRIMITIVE_TYPES = ['int', 'string', 'float'];
+
+const filter = createFilterOptions<OptionType>({
+  stringify: (option) => `${option.name} ${option.type} ${option.value !== undefined ? option.value : ''}`,
+  limit: MAX_RESULTS
+});
+
+const VariableAutocomplete = React.memo<VariableAutocompleteProps>(({
+  value,
+  onChange,
+  label,
+  placeholder,
+  typeFilter,
+  namePrefix,
+  showInstances = false,
+  showDialogs = false,
+  showFunctions = false,
+  showRoutines = false,
+  allowFreeInput = true,
+  allowCreation = true,
+  sx,
+  fullWidth = false,
+  isMainField = false,
+  mainFieldRef,
+  textFieldProps,
+  onFlush,
+  onKeyDown,
+  semanticModel,
+  showNavigation = true
+}) => {
+  const { navigateToSymbol, navigateToDialog } = useNavigation();
+  const [creationDialogOpen, setCreationDialogOpen] = useState(false);
+  const [pendingCreationName, setPendingCreationName] = useState('');
+  const [inputValue, setInputValue] = useState(value);
+
+  useEffect(() => {
+    setInputValue(value);
+  }, [value]);
+
+  const options = useVariableOptions({
+    semanticModel,
+    typeFilter,
+    namePrefix,
+    showInstances,
+    showDialogs,
+    showFunctions,
+    showRoutines
+  });
+
+  // Check if current value exists in options (to enable navigation)
+  const canNavigate = useMemo(() => {
+    if (!value) return false;
+    const lowerValue = value.toLowerCase();
+    return options.some(o => o.name.toLowerCase() === lowerValue);
+  }, [value, options]);
+
+  const handleNavigate = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (value) {
+      const lowerValue = value.toLowerCase();
+      const option = options.find(o => o.name.toLowerCase() === lowerValue);
+      if (option?.source === 'dialog') {
+        navigateToDialog(option.name);
+      } else if (option) {
+        const symbolKind = option.source === 'new' ? undefined : option.source;
+        navigateToSymbol(option.name, symbolKind ? { kind: symbolKind } : undefined);
+      }
+    }
+  };
+
+  // Propose what the field's own symbols look like: a TOPIC_ field is a
+  // `const string` in the file that already holds the topics, not `var int`
+  // in whatever file sorts first.
+  const creationDefaults = useMemo(() => {
+    const singleType = typeof typeFilter === 'string' ? typeFilter.toLowerCase() : undefined;
+    const type = singleType && PRIMITIVE_TYPES.includes(singleType) ? singleType : 'int';
+    const constant = type === 'string' ||
+      (pendingCreationName.toUpperCase() === pendingCreationName && pendingCreationName.includes('_'));
+    let targetFile: string | undefined;
+    if (namePrefix) {
+      const counts = new Map<string, number>();
+      for (const o of options) {
+        if ((o.source === 'constant' || o.source === 'variable') && o.filePath) {
+          counts.set(o.filePath, (counts.get(o.filePath) ?? 0) + 1);
+        }
+      }
+      let best = 0;
+      counts.forEach((n, file) => { if (n > best) { best = n; targetFile = file; } });
+    }
+    return { type, constant, targetFile };
+  }, [typeFilter, namePrefix, options, pendingCreationName]);
+
+  const handleCreateNew = (name: string) => {
+    setPendingCreationName(name);
+    setCreationDialogOpen(true);
+  };
+
+  return (
+    <>
+      <Autocomplete
+        value={value}
+        onChange={(_event, newValue) => {
+          if (typeof newValue === 'string') {
+            onChange(newValue);
+          } else if (newValue && newValue.isCreationSuggestion) {
+            handleCreateNew(newValue.name.replace('Add "', '').replace('"', ''));
+          } else if (newValue && newValue.name) {
+            onChange(newValue.insertValue || newValue.name);
+          } else {
+            onChange('');
+          }
+        }}
+        inputValue={inputValue}
+        onInputChange={(_event, newInputValue) => {
+          setInputValue(newInputValue);
+          onChange(newInputValue);
+        }}
+        options={options}
+        openOnFocus
+        getOptionLabel={(option) => {
+          // Value selected with enter, right from the input
+          if (typeof option === 'string') {
+            return option;
+          }
+          // Regular option
+          return option.name;
+        }}
+        filterOptions={(options, params) => {
+          const { inputValue } = params;
+          const isLargeList = options.length > LARGE_LIST_THRESHOLD;
+          const isTooShort = inputValue.length < MIN_CHARS_FOR_LARGE_LIST;
+          if (isLargeList && isTooShort) {
+            const minimal: OptionType[] = [];
+            if (allowCreation && inputValue !== '') {
+              minimal.push({
+                name: `Add "${inputValue}"`,
+                type: 'new',
+                source: 'new',
+                isCreationSuggestion: true
+              });
+            }
+            return minimal;
+          }
+
+          const filtered = filter(options, params);
+          
+          // Suggest creation if enabled and not found
+          if (allowCreation && inputValue !== '') {
+            const isExisting = options.some((option) => inputValue.toLowerCase() === option.name.toLowerCase());
+            if (!isExisting) {
+              filtered.push({
+                name: `Add "${inputValue}"`,
+                type: 'new',
+                source: 'new',
+                isCreationSuggestion: true
+              });
+            }
+          }
+          
+          return filtered;
+        }}
+        freeSolo={allowFreeInput}
+        selectOnFocus
+        handleHomeEndKeys
+        noOptionsText={
+          options.length > LARGE_LIST_THRESHOLD && inputValue.length < MIN_CHARS_FOR_LARGE_LIST
+            ? `Type at least ${MIN_CHARS_FOR_LARGE_LIST} characters to search`
+            : 'No options'
+        }
+        renderOption={(props, option) => {
+            // Extract key to avoid passing it to li
+            const { key, ...otherProps } = props as any;
+            return (
+              <li key={key} {...otherProps}>
+                <Box sx={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Typography variant="body2" sx={{ fontWeight: 'medium', display: 'flex', alignItems: 'center' }}>
+                      {option.isCreationSuggestion && <AddIcon sx={{ mr: 1, fontSize: 16 }} />}
+                      {option.name}
+                    </Typography>
+                    <Chip
+                      label={option.type}
+                      size="small"
+                      variant="outlined"
+                      color={option.source === 'constant' ? 'primary' : option.source === 'instance' ? 'secondary' : option.source === 'new' ? 'success' : 'default'}
+                      sx={{ height: 20, fontSize: '0.65rem' }}
+                    />
+                  </Box>
+                  {option.source === 'constant' && option.value !== undefined && (
+                     <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                        Value: {String(option.value)}
+                     </Typography>
+                  )}
+                  {option.aliasOf && (
+                     <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                        Instance: {option.aliasOf}
+                     </Typography>
+                  )}
+                </Box>
+              </li>
+            );
+        }}
+        fullWidth={fullWidth}
+        renderInput={(params) => (
+          <TextField
+            {...params}
+            {...textFieldProps}
+            label={label}
+            placeholder={placeholder}
+            size="small"
+            inputRef={isMainField ? mainFieldRef : undefined}
+            onBlur={onFlush}
+            onKeyDown={onKeyDown}
+            sx={sx}
+            InputProps={{
+              ...params.InputProps,
+              endAdornment: (
+                <React.Fragment>
+                  {showNavigation && canNavigate && (
+                    <InputAdornment position="end" sx={{ mr: 1 }}>
+                      <Tooltip title="Follow reference" arrow>
+                        <IconButton
+                          size="small"
+                          onClick={handleNavigate}
+                          edge="end"
+                          tabIndex={-1} // Mouse affordance only; keep it out of the field tab order (#183)
+                          onMouseDown={(e) => e.preventDefault()} // Prevent blur when clicking icon
+                        >
+                          <OpenInNewIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </InputAdornment>
+                  )}
+                  {params.InputProps.endAdornment}
+                </React.Fragment>
+              )
+            }}
+          />
+        )}
+        sx={sx}
+        disableClearable={!allowFreeInput}
+      />
+
+      <VariableCreationDialog
+        open={creationDialogOpen}
+        onClose={() => setCreationDialogOpen(false)}
+        initialName={pendingCreationName}
+        initialType={creationDefaults.type}
+        isConstant={creationDefaults.constant}
+        initialTargetFile={creationDefaults.targetFile}
+      />
+    </>
+  );
+});
+
+export default VariableAutocomplete;

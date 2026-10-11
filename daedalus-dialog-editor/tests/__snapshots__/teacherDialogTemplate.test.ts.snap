@@ -1,0 +1,724 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`generated output byte-identity (snapshot pin) pins the full generated source for 1H 1`] = `
+"// ************************************************************
+//			  	Teach 1H
+// ************************************************************
+
+var int Alrik_Merke_1H;
+
+INSTANCE DIA_Alrik_Teach (C_INFO)
+{
+	npc			= VLK_438_Alrik;
+	nr			= 1;
+	condition	= DIA_Alrik_Teach_Condition;
+	information	= DIA_Alrik_Teach_Info;
+	permanent	= TRUE;
+	description	= "Trainier mich!";
+};
+
+FUNC INT DIA_Alrik_Teach_Condition()
+{
+	return TRUE;
+};
+
+FUNC VOID DIA_Alrik_Teach_Info()
+{
+	AI_Output (other, self, "DIA_Alrik_Teach_15_00"); //Trainier mich!
+
+	Alrik_Merke_1H = other.HitChance[NPC_TALENT_1H];
+
+	Info_ClearChoices	(DIA_Alrik_Teach);
+	Info_AddChoice		(DIA_Alrik_Teach, DIALOG_BACK, DIA_Alrik_Teach_Back);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_Learn1h1, B_GetLearnCostTalent(other, NPC_TALENT_1H, 1)), DIA_Alrik_Teach_1H_1);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_Learn1h5, B_GetLearnCostTalent(other, NPC_TALENT_1H, 5)), DIA_Alrik_Teach_1H_5);
+};
+
+FUNC VOID DIA_Alrik_Teach_Back()
+{
+	if (other.HitChance[NPC_TALENT_1H] >= 30)
+	{
+		AI_Output (self, other, "DIA_Alrik_Teach_Back_09_00"); //Du bist kein Anfaenger mehr!
+	}
+	else if (other.HitChance[NPC_TALENT_1H] > Alrik_Merke_1H)
+	{
+		AI_Output (self, other, "DIA_Alrik_Teach_Back_09_01"); //Du bist schon besser geworden. Bald wird aus dir ein ordentlicher Kaempfer!
+	};
+
+	Info_ClearChoices (DIA_Alrik_Teach);
+};
+
+FUNC VOID DIA_Alrik_Teach_1H_1()
+{
+	B_TeachFightTalentPercent (self, other, NPC_TALENT_1H, 1, 30);
+
+	Info_ClearChoices	(DIA_Alrik_Teach);
+	Info_AddChoice		(DIA_Alrik_Teach, DIALOG_BACK, DIA_Alrik_Teach_Back);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_Learn1h1, B_GetLearnCostTalent(other, NPC_TALENT_1H, 1)), DIA_Alrik_Teach_1H_1);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_Learn1h5, B_GetLearnCostTalent(other, NPC_TALENT_1H, 5)), DIA_Alrik_Teach_1H_5);
+};
+
+FUNC VOID DIA_Alrik_Teach_1H_5()
+{
+	B_TeachFightTalentPercent (self, other, NPC_TALENT_1H, 5, 30);
+
+	Info_ClearChoices	(DIA_Alrik_Teach);
+	Info_AddChoice		(DIA_Alrik_Teach, DIALOG_BACK, DIA_Alrik_Teach_Back);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_Learn1h1, B_GetLearnCostTalent(other, NPC_TALENT_1H, 1)), DIA_Alrik_Teach_1H_1);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_Learn1h5, B_GetLearnCostTalent(other, NPC_TALENT_1H, 5)), DIA_Alrik_Teach_1H_5);
+};
+"
+`;
+
+exports[`generated output byte-identity (snapshot pin) pins the full generated source for 2H 1`] = `
+"// ************************************************************
+//			  	Teach 2H
+// ************************************************************
+
+var int Alrik_Merke_2H;
+
+INSTANCE DIA_Alrik_Teach (C_INFO)
+{
+	npc			= VLK_438_Alrik;
+	nr			= 1;
+	condition	= DIA_Alrik_Teach_Condition;
+	information	= DIA_Alrik_Teach_Info;
+	permanent	= TRUE;
+	description	= "Trainier mich!";
+};
+
+FUNC INT DIA_Alrik_Teach_Condition()
+{
+	return TRUE;
+};
+
+FUNC VOID DIA_Alrik_Teach_Info()
+{
+	AI_Output (other, self, "DIA_Alrik_Teach_15_00"); //Trainier mich!
+
+	Alrik_Merke_2H = other.HitChance[NPC_TALENT_2H];
+
+	Info_ClearChoices	(DIA_Alrik_Teach);
+	Info_AddChoice		(DIA_Alrik_Teach, DIALOG_BACK, DIA_Alrik_Teach_Back);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_Learn2h1, B_GetLearnCostTalent(other, NPC_TALENT_2H, 1)), DIA_Alrik_Teach_2H_1);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_Learn2h5, B_GetLearnCostTalent(other, NPC_TALENT_2H, 5)), DIA_Alrik_Teach_2H_5);
+};
+
+FUNC VOID DIA_Alrik_Teach_Back()
+{
+	if (other.HitChance[NPC_TALENT_2H] >= 30)
+	{
+		AI_Output (self, other, "DIA_Alrik_Teach_Back_09_00"); //Du bist kein Anfaenger mehr!
+	}
+	else if (other.HitChance[NPC_TALENT_2H] > Alrik_Merke_2H)
+	{
+		AI_Output (self, other, "DIA_Alrik_Teach_Back_09_01"); //Du bist schon besser geworden. Bald wird aus dir ein ordentlicher Kaempfer!
+	};
+
+	Info_ClearChoices (DIA_Alrik_Teach);
+};
+
+FUNC VOID DIA_Alrik_Teach_2H_1()
+{
+	B_TeachFightTalentPercent (self, other, NPC_TALENT_2H, 1, 30);
+
+	Info_ClearChoices	(DIA_Alrik_Teach);
+	Info_AddChoice		(DIA_Alrik_Teach, DIALOG_BACK, DIA_Alrik_Teach_Back);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_Learn2h1, B_GetLearnCostTalent(other, NPC_TALENT_2H, 1)), DIA_Alrik_Teach_2H_1);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_Learn2h5, B_GetLearnCostTalent(other, NPC_TALENT_2H, 5)), DIA_Alrik_Teach_2H_5);
+};
+
+FUNC VOID DIA_Alrik_Teach_2H_5()
+{
+	B_TeachFightTalentPercent (self, other, NPC_TALENT_2H, 5, 30);
+
+	Info_ClearChoices	(DIA_Alrik_Teach);
+	Info_AddChoice		(DIA_Alrik_Teach, DIALOG_BACK, DIA_Alrik_Teach_Back);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_Learn2h1, B_GetLearnCostTalent(other, NPC_TALENT_2H, 1)), DIA_Alrik_Teach_2H_1);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_Learn2h5, B_GetLearnCostTalent(other, NPC_TALENT_2H, 5)), DIA_Alrik_Teach_2H_5);
+};
+"
+`;
+
+exports[`generated output byte-identity (snapshot pin) pins the full generated source for ALCHEMY 1`] = `
+"// ************************************************************
+//			  	Teach ALCHEMY
+// ************************************************************
+
+INSTANCE DIA_Alrik_Teach (C_INFO)
+{
+	npc			= VLK_438_Alrik;
+	nr			= 1;
+	condition	= DIA_Alrik_Teach_Condition;
+	information	= DIA_Alrik_Teach_Info;
+	permanent	= TRUE;
+	description	= "Trainier mich!";
+};
+
+FUNC INT DIA_Alrik_Teach_Condition()
+{
+	return TRUE;
+};
+
+FUNC VOID DIA_Alrik_Teach_Info()
+{
+	AI_Output (other, self, "DIA_Alrik_Teach_15_00"); //Trainier mich!
+
+	Info_ClearChoices	(DIA_Alrik_Teach);
+	Info_AddChoice		(DIA_Alrik_Teach, DIALOG_BACK, DIA_Alrik_Teach_Back);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(NAME_HealthPotion1, B_GetLearnCostTalent(other, NPC_TALENT_ALCHEMY, POTION_Health_01)), DIA_Alrik_Teach_Health_1);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(NAME_HealthPotion2, B_GetLearnCostTalent(other, NPC_TALENT_ALCHEMY, POTION_Health_02)), DIA_Alrik_Teach_Health_2);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(NAME_HealthPotion3, B_GetLearnCostTalent(other, NPC_TALENT_ALCHEMY, POTION_Health_03)), DIA_Alrik_Teach_Health_3);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(NAME_ManaPotion1, B_GetLearnCostTalent(other, NPC_TALENT_ALCHEMY, POTION_Mana_01)), DIA_Alrik_Teach_Mana_1);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(NAME_ManaPotion2, B_GetLearnCostTalent(other, NPC_TALENT_ALCHEMY, POTION_Mana_02)), DIA_Alrik_Teach_Mana_2);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(NAME_ManaPotion3, B_GetLearnCostTalent(other, NPC_TALENT_ALCHEMY, POTION_Mana_03)), DIA_Alrik_Teach_Mana_3);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(NAME_Speed_Potion, B_GetLearnCostTalent(other, NPC_TALENT_ALCHEMY, POTION_Speed)), DIA_Alrik_Teach_Speed);
+};
+
+FUNC VOID DIA_Alrik_Teach_Back()
+{
+	Info_ClearChoices (DIA_Alrik_Teach);
+};
+
+FUNC VOID DIA_Alrik_Teach_Health_1()
+{
+	B_TeachPlayerTalentAlchemy (self, other, POTION_Health_01);
+
+	Info_ClearChoices (DIA_Alrik_Teach);
+};
+
+FUNC VOID DIA_Alrik_Teach_Health_2()
+{
+	B_TeachPlayerTalentAlchemy (self, other, POTION_Health_02);
+
+	Info_ClearChoices (DIA_Alrik_Teach);
+};
+
+FUNC VOID DIA_Alrik_Teach_Health_3()
+{
+	B_TeachPlayerTalentAlchemy (self, other, POTION_Health_03);
+
+	Info_ClearChoices (DIA_Alrik_Teach);
+};
+
+FUNC VOID DIA_Alrik_Teach_Mana_1()
+{
+	B_TeachPlayerTalentAlchemy (self, other, POTION_Mana_01);
+
+	Info_ClearChoices (DIA_Alrik_Teach);
+};
+
+FUNC VOID DIA_Alrik_Teach_Mana_2()
+{
+	B_TeachPlayerTalentAlchemy (self, other, POTION_Mana_02);
+
+	Info_ClearChoices (DIA_Alrik_Teach);
+};
+
+FUNC VOID DIA_Alrik_Teach_Mana_3()
+{
+	B_TeachPlayerTalentAlchemy (self, other, POTION_Mana_03);
+
+	Info_ClearChoices (DIA_Alrik_Teach);
+};
+
+FUNC VOID DIA_Alrik_Teach_Speed()
+{
+	B_TeachPlayerTalentAlchemy (self, other, POTION_Speed);
+
+	Info_ClearChoices (DIA_Alrik_Teach);
+};
+"
+`;
+
+exports[`generated output byte-identity (snapshot pin) pins the full generated source for BOW 1`] = `
+"// ************************************************************
+//			  	Teach BOW
+// ************************************************************
+
+var int Alrik_Merke_BOW;
+
+INSTANCE DIA_Alrik_Teach (C_INFO)
+{
+	npc			= VLK_438_Alrik;
+	nr			= 1;
+	condition	= DIA_Alrik_Teach_Condition;
+	information	= DIA_Alrik_Teach_Info;
+	permanent	= TRUE;
+	description	= "Trainier mich!";
+};
+
+FUNC INT DIA_Alrik_Teach_Condition()
+{
+	return TRUE;
+};
+
+FUNC VOID DIA_Alrik_Teach_Info()
+{
+	AI_Output (other, self, "DIA_Alrik_Teach_15_00"); //Trainier mich!
+
+	Alrik_Merke_BOW = other.HitChance[NPC_TALENT_BOW];
+
+	Info_ClearChoices	(DIA_Alrik_Teach);
+	Info_AddChoice		(DIA_Alrik_Teach, DIALOG_BACK, DIA_Alrik_Teach_Back);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_LearnBow1, B_GetLearnCostTalent(other, NPC_TALENT_BOW, 1)), DIA_Alrik_Teach_BOW_1);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_LearnBow5, B_GetLearnCostTalent(other, NPC_TALENT_BOW, 5)), DIA_Alrik_Teach_BOW_5);
+};
+
+FUNC VOID DIA_Alrik_Teach_Back()
+{
+	if (other.HitChance[NPC_TALENT_BOW] >= 30)
+	{
+		AI_Output (self, other, "DIA_Alrik_Teach_Back_09_00"); //Du bist kein Anfaenger mehr!
+	}
+	else if (other.HitChance[NPC_TALENT_BOW] > Alrik_Merke_BOW)
+	{
+		AI_Output (self, other, "DIA_Alrik_Teach_Back_09_01"); //Du bist schon besser geworden. Bald wird aus dir ein ordentlicher Kaempfer!
+	};
+
+	Info_ClearChoices (DIA_Alrik_Teach);
+};
+
+FUNC VOID DIA_Alrik_Teach_BOW_1()
+{
+	B_TeachFightTalentPercent (self, other, NPC_TALENT_BOW, 1, 30);
+
+	Info_ClearChoices	(DIA_Alrik_Teach);
+	Info_AddChoice		(DIA_Alrik_Teach, DIALOG_BACK, DIA_Alrik_Teach_Back);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_LearnBow1, B_GetLearnCostTalent(other, NPC_TALENT_BOW, 1)), DIA_Alrik_Teach_BOW_1);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_LearnBow5, B_GetLearnCostTalent(other, NPC_TALENT_BOW, 5)), DIA_Alrik_Teach_BOW_5);
+};
+
+FUNC VOID DIA_Alrik_Teach_BOW_5()
+{
+	B_TeachFightTalentPercent (self, other, NPC_TALENT_BOW, 5, 30);
+
+	Info_ClearChoices	(DIA_Alrik_Teach);
+	Info_AddChoice		(DIA_Alrik_Teach, DIALOG_BACK, DIA_Alrik_Teach_Back);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_LearnBow1, B_GetLearnCostTalent(other, NPC_TALENT_BOW, 1)), DIA_Alrik_Teach_BOW_1);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_LearnBow5, B_GetLearnCostTalent(other, NPC_TALENT_BOW, 5)), DIA_Alrik_Teach_BOW_5);
+};
+"
+`;
+
+exports[`generated output byte-identity (snapshot pin) pins the full generated source for CROSSBOW 1`] = `
+"// ************************************************************
+//			  	Teach CROSSBOW
+// ************************************************************
+
+var int Alrik_Merke_CROSSBOW;
+
+INSTANCE DIA_Alrik_Teach (C_INFO)
+{
+	npc			= VLK_438_Alrik;
+	nr			= 1;
+	condition	= DIA_Alrik_Teach_Condition;
+	information	= DIA_Alrik_Teach_Info;
+	permanent	= TRUE;
+	description	= "Trainier mich!";
+};
+
+FUNC INT DIA_Alrik_Teach_Condition()
+{
+	return TRUE;
+};
+
+FUNC VOID DIA_Alrik_Teach_Info()
+{
+	AI_Output (other, self, "DIA_Alrik_Teach_15_00"); //Trainier mich!
+
+	Alrik_Merke_CROSSBOW = other.HitChance[NPC_TALENT_CROSSBOW];
+
+	Info_ClearChoices	(DIA_Alrik_Teach);
+	Info_AddChoice		(DIA_Alrik_Teach, DIALOG_BACK, DIA_Alrik_Teach_Back);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_LearnCrossbow1, B_GetLearnCostTalent(other, NPC_TALENT_CROSSBOW, 1)), DIA_Alrik_Teach_CROSSBOW_1);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_LearnCrossbow5, B_GetLearnCostTalent(other, NPC_TALENT_CROSSBOW, 5)), DIA_Alrik_Teach_CROSSBOW_5);
+};
+
+FUNC VOID DIA_Alrik_Teach_Back()
+{
+	if (other.HitChance[NPC_TALENT_CROSSBOW] >= 30)
+	{
+		AI_Output (self, other, "DIA_Alrik_Teach_Back_09_00"); //Du bist kein Anfaenger mehr!
+	}
+	else if (other.HitChance[NPC_TALENT_CROSSBOW] > Alrik_Merke_CROSSBOW)
+	{
+		AI_Output (self, other, "DIA_Alrik_Teach_Back_09_01"); //Du bist schon besser geworden. Bald wird aus dir ein ordentlicher Kaempfer!
+	};
+
+	Info_ClearChoices (DIA_Alrik_Teach);
+};
+
+FUNC VOID DIA_Alrik_Teach_CROSSBOW_1()
+{
+	B_TeachFightTalentPercent (self, other, NPC_TALENT_CROSSBOW, 1, 30);
+
+	Info_ClearChoices	(DIA_Alrik_Teach);
+	Info_AddChoice		(DIA_Alrik_Teach, DIALOG_BACK, DIA_Alrik_Teach_Back);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_LearnCrossbow1, B_GetLearnCostTalent(other, NPC_TALENT_CROSSBOW, 1)), DIA_Alrik_Teach_CROSSBOW_1);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_LearnCrossbow5, B_GetLearnCostTalent(other, NPC_TALENT_CROSSBOW, 5)), DIA_Alrik_Teach_CROSSBOW_5);
+};
+
+FUNC VOID DIA_Alrik_Teach_CROSSBOW_5()
+{
+	B_TeachFightTalentPercent (self, other, NPC_TALENT_CROSSBOW, 5, 30);
+
+	Info_ClearChoices	(DIA_Alrik_Teach);
+	Info_AddChoice		(DIA_Alrik_Teach, DIALOG_BACK, DIA_Alrik_Teach_Back);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_LearnCrossbow1, B_GetLearnCostTalent(other, NPC_TALENT_CROSSBOW, 1)), DIA_Alrik_Teach_CROSSBOW_1);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_LearnCrossbow5, B_GetLearnCostTalent(other, NPC_TALENT_CROSSBOW, 5)), DIA_Alrik_Teach_CROSSBOW_5);
+};
+"
+`;
+
+exports[`generated output byte-identity (snapshot pin) pins the full generated source for DEX 1`] = `
+"// ************************************************************
+//			  	Teach DEX
+// ************************************************************
+
+var int Alrik_Merke_DEX;
+
+INSTANCE DIA_Alrik_Teach (C_INFO)
+{
+	npc			= VLK_438_Alrik;
+	nr			= 1;
+	condition	= DIA_Alrik_Teach_Condition;
+	information	= DIA_Alrik_Teach_Info;
+	permanent	= TRUE;
+	description	= "Trainier mich!";
+};
+
+FUNC INT DIA_Alrik_Teach_Condition()
+{
+	return TRUE;
+};
+
+FUNC VOID DIA_Alrik_Teach_Info()
+{
+	AI_Output (other, self, "DIA_Alrik_Teach_15_00"); //Trainier mich!
+
+	Alrik_Merke_DEX = other.attribute[ATR_DEXTERITY];
+
+	Info_ClearChoices	(DIA_Alrik_Teach);
+	Info_AddChoice		(DIA_Alrik_Teach, DIALOG_BACK, DIA_Alrik_Teach_Back);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_LearnDEX1, B_GetLearnCostAttribute(other, ATR_DEXTERITY)), DIA_Alrik_Teach_DEX_1);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_LearnDEX5, B_GetLearnCostAttribute(other, ATR_DEXTERITY) * 5), DIA_Alrik_Teach_DEX_5);
+};
+
+FUNC VOID DIA_Alrik_Teach_Back()
+{
+	if (other.attribute[ATR_DEXTERITY] >= 30)
+	{
+		AI_Output (self, other, "DIA_Alrik_Teach_Back_09_00"); //Mehr kann ich dir nicht beibringen.
+	}
+	else if (other.attribute[ATR_DEXTERITY] > Alrik_Merke_DEX)
+	{
+		AI_Output (self, other, "DIA_Alrik_Teach_Back_09_01"); //Du machst Fortschritte. Weiter so!
+	};
+
+	Info_ClearChoices (DIA_Alrik_Teach);
+};
+
+FUNC VOID DIA_Alrik_Teach_DEX_1()
+{
+	B_TeachAttributePoints (self, other, ATR_DEXTERITY, 1, 30);
+
+	Info_ClearChoices	(DIA_Alrik_Teach);
+	Info_AddChoice		(DIA_Alrik_Teach, DIALOG_BACK, DIA_Alrik_Teach_Back);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_LearnDEX1, B_GetLearnCostAttribute(other, ATR_DEXTERITY)), DIA_Alrik_Teach_DEX_1);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_LearnDEX5, B_GetLearnCostAttribute(other, ATR_DEXTERITY) * 5), DIA_Alrik_Teach_DEX_5);
+};
+
+FUNC VOID DIA_Alrik_Teach_DEX_5()
+{
+	B_TeachAttributePoints (self, other, ATR_DEXTERITY, 5, 30);
+
+	Info_ClearChoices	(DIA_Alrik_Teach);
+	Info_AddChoice		(DIA_Alrik_Teach, DIALOG_BACK, DIA_Alrik_Teach_Back);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_LearnDEX1, B_GetLearnCostAttribute(other, ATR_DEXTERITY)), DIA_Alrik_Teach_DEX_1);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_LearnDEX5, B_GetLearnCostAttribute(other, ATR_DEXTERITY) * 5), DIA_Alrik_Teach_DEX_5);
+};
+"
+`;
+
+exports[`generated output byte-identity (snapshot pin) pins the full generated source for HUNTING 1`] = `
+"// ************************************************************
+//			  	Teach HUNTING
+// ************************************************************
+
+INSTANCE DIA_Alrik_Teach (C_INFO)
+{
+	npc			= VLK_438_Alrik;
+	nr			= 1;
+	condition	= DIA_Alrik_Teach_Condition;
+	information	= DIA_Alrik_Teach_Info;
+	permanent	= TRUE;
+	description	= "Trainier mich!";
+};
+
+FUNC INT DIA_Alrik_Teach_Condition()
+{
+	return TRUE;
+};
+
+FUNC VOID DIA_Alrik_Teach_Info()
+{
+	AI_Output (other, self, "DIA_Alrik_Teach_15_00"); //Trainier mich!
+
+	Info_ClearChoices	(DIA_Alrik_Teach);
+	Info_AddChoice		(DIA_Alrik_Teach, DIALOG_BACK, DIA_Alrik_Teach_Back);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(NAME_LEARN_FUR, B_GetLearnCostTalent(other, NPC_TALENT_TAKEANIMALTROPHY, TROPHY_Fur)), DIA_Alrik_Teach_Fur);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(NAME_LEARN_TEETH, B_GetLearnCostTalent(other, NPC_TALENT_TAKEANIMALTROPHY, TROPHY_Teeth)), DIA_Alrik_Teach_Teeth);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(NAME_LEARN_CLAWS, B_GetLearnCostTalent(other, NPC_TALENT_TAKEANIMALTROPHY, TROPHY_Claws)), DIA_Alrik_Teach_Claws);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(NAME_LEARN_HEARTS, B_GetLearnCostTalent(other, NPC_TALENT_TAKEANIMALTROPHY, TROPHY_Heart)), DIA_Alrik_Teach_Heart);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(NAME_LEARN_MANDIBLES, B_GetLearnCostTalent(other, NPC_TALENT_TAKEANIMALTROPHY, TROPHY_Mandibles)), DIA_Alrik_Teach_Mandibles);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(NAME_LEARN_SHADOWBEAST_HORN, B_GetLearnCostTalent(other, NPC_TALENT_TAKEANIMALTROPHY, TROPHY_ShadowHorn)), DIA_Alrik_Teach_ShadowHorn);
+};
+
+FUNC VOID DIA_Alrik_Teach_Back()
+{
+	Info_ClearChoices (DIA_Alrik_Teach);
+};
+
+FUNC VOID DIA_Alrik_Teach_Fur()
+{
+	B_TeachPlayerTalentTakeAnimalTrophy (self, other, TROPHY_Fur);
+
+	Info_ClearChoices (DIA_Alrik_Teach);
+};
+
+FUNC VOID DIA_Alrik_Teach_Teeth()
+{
+	B_TeachPlayerTalentTakeAnimalTrophy (self, other, TROPHY_Teeth);
+
+	Info_ClearChoices (DIA_Alrik_Teach);
+};
+
+FUNC VOID DIA_Alrik_Teach_Claws()
+{
+	B_TeachPlayerTalentTakeAnimalTrophy (self, other, TROPHY_Claws);
+
+	Info_ClearChoices (DIA_Alrik_Teach);
+};
+
+FUNC VOID DIA_Alrik_Teach_Heart()
+{
+	B_TeachPlayerTalentTakeAnimalTrophy (self, other, TROPHY_Heart);
+
+	Info_ClearChoices (DIA_Alrik_Teach);
+};
+
+FUNC VOID DIA_Alrik_Teach_Mandibles()
+{
+	B_TeachPlayerTalentTakeAnimalTrophy (self, other, TROPHY_Mandibles);
+
+	Info_ClearChoices (DIA_Alrik_Teach);
+};
+
+FUNC VOID DIA_Alrik_Teach_ShadowHorn()
+{
+	B_TeachPlayerTalentTakeAnimalTrophy (self, other, TROPHY_ShadowHorn);
+
+	Info_ClearChoices (DIA_Alrik_Teach);
+};
+"
+`;
+
+exports[`generated output byte-identity (snapshot pin) pins the full generated source for MANA 1`] = `
+"// ************************************************************
+//			  	Teach MANA
+// ************************************************************
+
+var int Alrik_Merke_MANA;
+
+INSTANCE DIA_Alrik_Teach (C_INFO)
+{
+	npc			= VLK_438_Alrik;
+	nr			= 1;
+	condition	= DIA_Alrik_Teach_Condition;
+	information	= DIA_Alrik_Teach_Info;
+	permanent	= TRUE;
+	description	= "Trainier mich!";
+};
+
+FUNC INT DIA_Alrik_Teach_Condition()
+{
+	return TRUE;
+};
+
+FUNC VOID DIA_Alrik_Teach_Info()
+{
+	AI_Output (other, self, "DIA_Alrik_Teach_15_00"); //Trainier mich!
+
+	Alrik_Merke_MANA = other.attribute[ATR_MANA_MAX];
+
+	Info_ClearChoices	(DIA_Alrik_Teach);
+	Info_AddChoice		(DIA_Alrik_Teach, DIALOG_BACK, DIA_Alrik_Teach_Back);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_LearnMANA1, B_GetLearnCostAttribute(other, ATR_MANA_MAX)), DIA_Alrik_Teach_MANA_1);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_LearnMANA5, B_GetLearnCostAttribute(other, ATR_MANA_MAX) * 5), DIA_Alrik_Teach_MANA_5);
+};
+
+FUNC VOID DIA_Alrik_Teach_Back()
+{
+	if (other.attribute[ATR_MANA_MAX] >= 30)
+	{
+		AI_Output (self, other, "DIA_Alrik_Teach_Back_09_00"); //Mehr kann ich dir nicht beibringen.
+	}
+	else if (other.attribute[ATR_MANA_MAX] > Alrik_Merke_MANA)
+	{
+		AI_Output (self, other, "DIA_Alrik_Teach_Back_09_01"); //Du machst Fortschritte. Weiter so!
+	};
+
+	Info_ClearChoices (DIA_Alrik_Teach);
+};
+
+FUNC VOID DIA_Alrik_Teach_MANA_1()
+{
+	B_TeachAttributePoints (self, other, ATR_MANA_MAX, 1, 30);
+
+	Info_ClearChoices	(DIA_Alrik_Teach);
+	Info_AddChoice		(DIA_Alrik_Teach, DIALOG_BACK, DIA_Alrik_Teach_Back);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_LearnMANA1, B_GetLearnCostAttribute(other, ATR_MANA_MAX)), DIA_Alrik_Teach_MANA_1);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_LearnMANA5, B_GetLearnCostAttribute(other, ATR_MANA_MAX) * 5), DIA_Alrik_Teach_MANA_5);
+};
+
+FUNC VOID DIA_Alrik_Teach_MANA_5()
+{
+	B_TeachAttributePoints (self, other, ATR_MANA_MAX, 5, 30);
+
+	Info_ClearChoices	(DIA_Alrik_Teach);
+	Info_AddChoice		(DIA_Alrik_Teach, DIALOG_BACK, DIA_Alrik_Teach_Back);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_LearnMANA1, B_GetLearnCostAttribute(other, ATR_MANA_MAX)), DIA_Alrik_Teach_MANA_1);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_LearnMANA5, B_GetLearnCostAttribute(other, ATR_MANA_MAX) * 5), DIA_Alrik_Teach_MANA_5);
+};
+"
+`;
+
+exports[`generated output byte-identity (snapshot pin) pins the full generated source for STR 1`] = `
+"// ************************************************************
+//			  	Teach STR
+// ************************************************************
+
+var int Alrik_Merke_STR;
+
+INSTANCE DIA_Alrik_Teach (C_INFO)
+{
+	npc			= VLK_438_Alrik;
+	nr			= 1;
+	condition	= DIA_Alrik_Teach_Condition;
+	information	= DIA_Alrik_Teach_Info;
+	permanent	= TRUE;
+	description	= "Trainier mich!";
+};
+
+FUNC INT DIA_Alrik_Teach_Condition()
+{
+	return TRUE;
+};
+
+FUNC VOID DIA_Alrik_Teach_Info()
+{
+	AI_Output (other, self, "DIA_Alrik_Teach_15_00"); //Trainier mich!
+
+	Alrik_Merke_STR = other.attribute[ATR_STRENGTH];
+
+	Info_ClearChoices	(DIA_Alrik_Teach);
+	Info_AddChoice		(DIA_Alrik_Teach, DIALOG_BACK, DIA_Alrik_Teach_Back);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_LearnSTR1, B_GetLearnCostAttribute(other, ATR_STRENGTH)), DIA_Alrik_Teach_STR_1);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_LearnSTR5, B_GetLearnCostAttribute(other, ATR_STRENGTH) * 5), DIA_Alrik_Teach_STR_5);
+};
+
+FUNC VOID DIA_Alrik_Teach_Back()
+{
+	if (other.attribute[ATR_STRENGTH] >= 30)
+	{
+		AI_Output (self, other, "DIA_Alrik_Teach_Back_09_00"); //Mehr kann ich dir nicht beibringen.
+	}
+	else if (other.attribute[ATR_STRENGTH] > Alrik_Merke_STR)
+	{
+		AI_Output (self, other, "DIA_Alrik_Teach_Back_09_01"); //Du machst Fortschritte. Weiter so!
+	};
+
+	Info_ClearChoices (DIA_Alrik_Teach);
+};
+
+FUNC VOID DIA_Alrik_Teach_STR_1()
+{
+	B_TeachAttributePoints (self, other, ATR_STRENGTH, 1, 30);
+
+	Info_ClearChoices	(DIA_Alrik_Teach);
+	Info_AddChoice		(DIA_Alrik_Teach, DIALOG_BACK, DIA_Alrik_Teach_Back);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_LearnSTR1, B_GetLearnCostAttribute(other, ATR_STRENGTH)), DIA_Alrik_Teach_STR_1);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_LearnSTR5, B_GetLearnCostAttribute(other, ATR_STRENGTH) * 5), DIA_Alrik_Teach_STR_5);
+};
+
+FUNC VOID DIA_Alrik_Teach_STR_5()
+{
+	B_TeachAttributePoints (self, other, ATR_STRENGTH, 5, 30);
+
+	Info_ClearChoices	(DIA_Alrik_Teach);
+	Info_AddChoice		(DIA_Alrik_Teach, DIALOG_BACK, DIA_Alrik_Teach_Back);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_LearnSTR1, B_GetLearnCostAttribute(other, ATR_STRENGTH)), DIA_Alrik_Teach_STR_1);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(PRINT_LearnSTR5, B_GetLearnCostAttribute(other, ATR_STRENGTH) * 5), DIA_Alrik_Teach_STR_5);
+};
+"
+`;
+
+exports[`generated output byte-identity (snapshot pin) pins the full generated source for THIEF 1`] = `
+"// ************************************************************
+//			  	Teach THIEF
+// ************************************************************
+
+INSTANCE DIA_Alrik_Teach (C_INFO)
+{
+	npc			= VLK_438_Alrik;
+	nr			= 1;
+	condition	= DIA_Alrik_Teach_Condition;
+	information	= DIA_Alrik_Teach_Info;
+	permanent	= TRUE;
+	description	= "Trainier mich!";
+};
+
+FUNC INT DIA_Alrik_Teach_Condition()
+{
+	return TRUE;
+};
+
+FUNC VOID DIA_Alrik_Teach_Info()
+{
+	AI_Output (other, self, "DIA_Alrik_Teach_15_00"); //Trainier mich!
+
+	Info_ClearChoices	(DIA_Alrik_Teach);
+	Info_AddChoice		(DIA_Alrik_Teach, DIALOG_BACK, DIA_Alrik_Teach_Back);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(NAME_LEARN_SNEAK, B_GetLearnCostTalent(other, NPC_TALENT_SNEAK, 1)), DIA_Alrik_Teach_Sneak);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(NAME_LEARN_LOCKS, B_GetLearnCostTalent(other, NPC_TALENT_PICKLOCK, 1)), DIA_Alrik_Teach_Picklock);
+	Info_AddChoice		(DIA_Alrik_Teach, B_BuildLearnString(NAME_TALENT_PICKPOCKET, B_GetLearnCostTalent(other, NPC_TALENT_PICKPOCKET, 1)), DIA_Alrik_Teach_Pickpocket);
+};
+
+FUNC VOID DIA_Alrik_Teach_Back()
+{
+	Info_ClearChoices (DIA_Alrik_Teach);
+};
+
+FUNC VOID DIA_Alrik_Teach_Sneak()
+{
+	B_TeachThiefTalent (self, other, NPC_TALENT_SNEAK);
+
+	Info_ClearChoices (DIA_Alrik_Teach);
+};
+
+FUNC VOID DIA_Alrik_Teach_Picklock()
+{
+	B_TeachThiefTalent (self, other, NPC_TALENT_PICKLOCK);
+
+	Info_ClearChoices (DIA_Alrik_Teach);
+};
+
+FUNC VOID DIA_Alrik_Teach_Pickpocket()
+{
+	B_TeachThiefTalent (self, other, NPC_TALENT_PICKPOCKET);
+
+	Info_ClearChoices (DIA_Alrik_Teach);
+};
+"
+`;

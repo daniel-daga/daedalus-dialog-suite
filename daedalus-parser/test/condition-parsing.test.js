@@ -1,0 +1,880 @@
+const test = require('node:test');
+const assert = require('node:assert');
+const Parser = require('tree-sitter');
+const Daedalus = require('../bindings/node');
+const {
+  SemanticModelBuilderVisitor,
+  SemanticCodeGenerator,
+  NpcKnowsInfoCondition,
+  NpcHasItemsCondition,
+  NpcIsInStateCondition,
+  NpcIsDeadCondition,
+  NpcGetDistToWpCondition,
+  NpcGetTalentSkillCondition,
+  Condition,
+  VariableCondition,
+  QuestStateCondition
+} = require('../dist/semantic/semantic-visitor-index');
+
+// Test data: Dialog with Npc_KnowsInfo condition
+const dialogWithNpcKnowsInfo = `
+instance DIA_Farim_FirstEXIT(C_INFO)
+{
+	npc			= SLD_99003_Farim;
+	nr			= 999;
+	condition	= DIA_Farim_FirstEXIT_Condition;
+	information	= DIA_Farim_FirstEXIT_Info;
+	permanent	= FALSE;
+	description = "Leave";
+};
+
+func int DIA_Farim_FirstEXIT_Condition()
+{
+	if (Npc_KnowsInfo(other, DIA_Farim_Hallo))
+	{
+		return TRUE;
+	};
+};
+
+func void DIA_Farim_FirstEXIT_Info()
+{
+	AI_StopProcessInfos(self);
+};
+`;
+
+// Test data: Dialog with simple condition
+const dialogWithSimpleCondition = `
+instance DIA_Test_Simple(C_INFO)
+{
+	npc			= TestNpc;
+	nr			= 1;
+	condition	= DIA_Test_Simple_Condition;
+	information	= DIA_Test_Simple_Info;
+	permanent	= true;
+	description = "Test";
+};
+
+func int DIA_Test_Simple_Condition()
+{
+	return true;
+};
+
+func void DIA_Test_Simple_Info()
+{
+	AI_Output(self, other, "TEST_01");
+};
+`;
+
+// Helper: Parse and build semantic model
+function parseAndBuildModel(source) {
+  const parser = new Parser();
+  parser.setLanguage(Daedalus);
+  const tree = parser.parse(source);
+
+  const visitor = new SemanticModelBuilderVisitor();
+  visitor.pass1_createObjects(tree.rootNode);
+  visitor.pass2_analyzeAndLink(tree.rootNode);
+
+  return visitor.semanticModel;
+}
+
+test('Should parse Npc_KnowsInfo condition', () => {
+  const model = parseAndBuildModel(dialogWithNpcKnowsInfo);
+
+  // Check dialog exists
+  assert.ok(model.dialogs['DIA_Farim_FirstEXIT'], 'Dialog should exist');
+
+  const dialog = model.dialogs['DIA_Farim_FirstEXIT'];
+
+  // Check condition function exists
+  assert.ok(dialog.properties.condition, 'Dialog should have condition function');
+  const conditionFunc = dialog.properties.condition;
+  assert.ok(conditionFunc.conditions, 'Condition function should have conditions array');
+  assert.strictEqual(conditionFunc.conditions.length, 1, 'Condition function should have 1 condition');
+
+  // Check condition type
+  const condition = conditionFunc.conditions[0];
+  assert.ok(condition instanceof NpcKnowsInfoCondition, 'Condition should be NpcKnowsInfoCondition');
+  assert.strictEqual(condition.npc, 'other', 'NPC should be "other"');
+  assert.strictEqual(condition.dialogRef, 'DIA_Farim_Hallo', 'Dialog reference should be correct');
+});
+
+test('Should generate Npc_KnowsInfo condition code', () => {
+  const condition = new NpcKnowsInfoCondition('other', 'DIA_Farim_Hallo');
+  const code = condition.generateCode({});
+
+  assert.strictEqual(code, 'Npc_KnowsInfo(other, DIA_Farim_Hallo)', 'Generated code should match');
+});
+
+test('Should round-trip dialog with Npc_KnowsInfo condition', () => {
+  const model = parseAndBuildModel(dialogWithNpcKnowsInfo);
+  const generator = new SemanticCodeGenerator();
+  const generatedCode = generator.generateSemanticModel(model);
+
+  // Verify generated code contains the condition
+  assert.ok(generatedCode.includes('Npc_KnowsInfo(other, DIA_Farim_Hallo)'),
+    'Generated code should contain Npc_KnowsInfo call');
+  assert.ok(generatedCode.includes('DIA_Farim_FirstEXIT_Condition'),
+    'Generated code should contain condition function');
+  assert.ok(generatedCode.includes('return TRUE'),
+    'Generated code should return TRUE');
+
+  // Parse generated code and verify it matches
+  const model2 = parseAndBuildModel(generatedCode);
+  const dialog2 = model2.dialogs['DIA_Farim_FirstEXIT'];
+
+  assert.ok(dialog2, 'Re-parsed dialog should exist');
+  const conditionFunc2 = dialog2.properties.condition;
+  assert.strictEqual(conditionFunc2.conditions.length, 1, 'Re-parsed condition function should have 1 condition');
+  assert.ok(conditionFunc2.conditions[0] instanceof NpcKnowsInfoCondition,
+    'Re-parsed condition should be NpcKnowsInfoCondition');
+});
+
+test('Should handle dialog without conditions', () => {
+  const model = parseAndBuildModel(dialogWithSimpleCondition);
+  const dialog = model.dialogs['DIA_Test_Simple'];
+
+  // The condition function just returns true without any semantic conditions
+  assert.ok(dialog, 'Dialog should exist');
+  const conditionFunc = dialog.properties.condition;
+  assert.strictEqual(conditionFunc.conditions.length, 0,
+    'Condition function with simple return should have no semantic conditions');
+});
+
+test('Should display condition correctly', () => {
+  const condition = new NpcKnowsInfoCondition('other', 'DIA_Farim_Hallo');
+  const display = condition.toDisplayString();
+
+  assert.strictEqual(display, '[NpcKnowsInfo: other knows DIA_Farim_Hallo]',
+    'Display string should be formatted correctly');
+});
+
+test('Generic Condition should work for custom expressions', () => {
+  const condition = new Condition('hero.attribute[ATR_HITPOINTS] > 50');
+
+  assert.strictEqual(condition.condition, 'hero.attribute[ATR_HITPOINTS] > 50',
+    'Condition should store expression');
+  assert.strictEqual(condition.generateCode({}), 'hero.attribute[ATR_HITPOINTS] > 50',
+    'Should generate correct code');
+  assert.strictEqual(condition.getTypeName(), 'Condition',
+    'Type name should be Condition');
+});
+
+test('Should link condition function to dialog via properties', () => {
+  const model = parseAndBuildModel(dialogWithNpcKnowsInfo);
+  const dialog = model.dialogs['DIA_Farim_FirstEXIT'];
+  const conditionFunc = model.functions['DIA_Farim_FirstEXIT_Condition'];
+
+  // Check that condition property references the function
+  assert.ok(dialog.properties.condition, 'Dialog should have condition property');
+  assert.strictEqual(dialog.properties.condition.name, 'DIA_Farim_FirstEXIT_Condition',
+    'Condition property should reference correct function');
+
+  // Check the function exists
+  assert.ok(conditionFunc, 'Condition function should exist in model');
+  assert.strictEqual(conditionFunc.returnType, 'int', 'Condition function should return int');
+});
+
+test('Should generate condition function with if statement', () => {
+  const model = parseAndBuildModel(dialogWithNpcKnowsInfo);
+  const generator = new SemanticCodeGenerator();
+  const generatedCode = generator.generateSemanticModel(model);
+
+  // Check structure of generated condition function
+  assert.ok(generatedCode.includes('func int DIA_Farim_FirstEXIT_Condition()'),
+    'Should generate function declaration');
+  assert.ok(generatedCode.includes('if (Npc_KnowsInfo(other, DIA_Farim_Hallo))'),
+    'Should generate if statement with condition');
+  assert.ok(generatedCode.includes('return TRUE'),
+    'Should return TRUE in if block');
+});
+
+test('Nested condition guards retain their explicit control flow', () => {
+  const dialogWithMultipleConditions = `
+instance DIA_Test_Multi(C_INFO)
+{
+	npc			= TestNpc;
+	nr			= 1;
+	condition	= DIA_Test_Multi_Condition;
+	information	= DIA_Test_Multi_Info;
+	permanent	= true;
+	description = "Test";
+};
+
+func int DIA_Test_Multi_Condition()
+{
+	if (Npc_KnowsInfo(other, DIA_First))
+	{
+		if (Npc_KnowsInfo(other, DIA_Second))
+		{
+			return TRUE;
+		};
+	};
+};
+
+func void DIA_Test_Multi_Info()
+{
+	AI_Output(self, other, "TEST_01");
+};
+`;
+
+  const model = parseAndBuildModel(dialogWithMultipleConditions);
+  const dialog = model.dialogs['DIA_Test_Multi'];
+  const conditionFunc = dialog.properties.condition;
+
+  assert.strictEqual(conditionFunc.conditions.length, 0, 'A flat list cannot retain a branch boundary');
+  assert.strictEqual(conditionFunc.actions.length, 1);
+  const code = conditionFunc.actions[0].generateCode({});
+  assert.strictEqual((code.match(/\bif\s*\(/g) || []).length, 2);
+  assert.ok(code.indexOf('DIA_First') < code.indexOf('DIA_Second'));
+  assert.deepEqual(conditionFunc.calls, ['Npc_KnowsInfo', 'Npc_KnowsInfo']);
+});
+
+test('Should parse variable conditions with negation', () => {
+  const dialogWithVariables = `
+instance DIA_Test_Variables(C_INFO)
+{
+	npc			= TestNpc;
+	nr			= 1;
+	condition	= DIA_Test_Variables_Condition;
+	information	= DIA_Test_Variables_Info;
+	permanent	= true;
+	description = "Test";
+};
+
+func int DIA_Test_Variables_Condition()
+{
+	if (Npc_KnowsInfo(other, DIA_AlchemistWald_Amnesie)
+	&& Npc_KnowsInfo(other, DIA_Arog_Buddler)
+	&& !EntscheidungBuddlerMapTaken
+	&& EntscheidungVergessenTaken)
+	{
+		return TRUE;
+	};
+};
+
+func void DIA_Test_Variables_Info()
+{
+	AI_Output(self, other, "TEST_01");
+};
+`;
+
+  const model = parseAndBuildModel(dialogWithVariables);
+  const dialog = model.dialogs['DIA_Test_Variables'];
+  const conditionFunc = dialog.properties.condition;
+
+  assert.strictEqual(conditionFunc.conditions.length, 4, 'Should parse 4 conditions');
+
+  // First two should be NpcKnowsInfo
+  assert.ok(conditionFunc.conditions[0] instanceof NpcKnowsInfoCondition, 'First should be NpcKnowsInfo');
+  assert.ok(conditionFunc.conditions[1] instanceof NpcKnowsInfoCondition, 'Second should be NpcKnowsInfo');
+
+  // Third should be negated variable
+  assert.ok(conditionFunc.conditions[2] instanceof VariableCondition, 'Third should be VariableCondition');
+  assert.strictEqual(conditionFunc.conditions[2].variableName, 'EntscheidungBuddlerMapTaken', 'Variable name should match');
+  assert.strictEqual(conditionFunc.conditions[2].negated, true, 'Should be negated');
+
+  // Fourth should be plain variable
+  assert.ok(conditionFunc.conditions[3] instanceof VariableCondition, 'Fourth should be VariableCondition');
+  assert.strictEqual(conditionFunc.conditions[3].variableName, 'EntscheidungVergessenTaken', 'Variable name should match');
+  assert.strictEqual(conditionFunc.conditions[3].negated, false, 'Should not be negated');
+});
+
+test('Should generate code for variable conditions', () => {
+  const plainVar = new VariableCondition('myVariable', false);
+  const negatedVar = new VariableCondition('myVariable', true);
+
+  assert.strictEqual(plainVar.generateCode({}), 'myVariable', 'Plain variable should generate correctly');
+  assert.strictEqual(negatedVar.generateCode({}), '!myVariable', 'Negated variable should generate correctly');
+});
+
+test('Should display variable conditions correctly', () => {
+  const plainVar = new VariableCondition('EntscheidungVergessenTaken', false);
+  const negatedVar = new VariableCondition('EntscheidungBuddlerMapTaken', true);
+
+  assert.strictEqual(plainVar.toDisplayString(), '[Variable: EntscheidungVergessenTaken]',
+    'Plain variable display should be correct');
+  assert.strictEqual(negatedVar.toDisplayString(), '[Not: EntscheidungBuddlerMapTaken]',
+    'Negated variable display should be correct');
+});
+
+test('Should round-trip dialog with variable conditions', () => {
+  const dialogWithVariables = `
+instance DIA_Test_Roundtrip(C_INFO)
+{
+	npc			= TestNpc;
+	nr			= 1;
+	condition	= DIA_Test_Roundtrip_Condition;
+	information	= DIA_Test_Roundtrip_Info;
+	permanent	= true;
+	description = "Test";
+};
+
+func int DIA_Test_Roundtrip_Condition()
+{
+	if (Npc_KnowsInfo(other, DIA_Test)
+	&& !someFlag
+	&& anotherFlag)
+	{
+		return TRUE;
+	};
+};
+
+func void DIA_Test_Roundtrip_Info()
+{
+	AI_Output(self, other, "TEST_01");
+};
+`;
+
+  const model = parseAndBuildModel(dialogWithVariables);
+  const generator = new SemanticCodeGenerator();
+  const generatedCode = generator.generateSemanticModel(model);
+
+  // Verify generated code contains the conditions
+  assert.ok(generatedCode.includes('Npc_KnowsInfo(other, DIA_Test)'),
+    'Generated code should contain Npc_KnowsInfo');
+  assert.ok(generatedCode.includes('!someFlag'),
+    'Generated code should contain negated variable');
+  assert.ok(generatedCode.includes('anotherFlag'),
+    'Generated code should contain plain variable');
+
+  // Parse generated code and verify it matches
+  const model2 = parseAndBuildModel(generatedCode);
+  const dialog2 = model2.dialogs['DIA_Test_Roundtrip'];
+  const conditionFunc2 = dialog2.properties.condition;
+
+  assert.ok(dialog2, 'Re-parsed dialog should exist');
+  assert.strictEqual(conditionFunc2.conditions.length, 3, 'Re-parsed condition function should have 3 conditions');
+  assert.ok(conditionFunc2.conditions[0] instanceof NpcKnowsInfoCondition, 'First should be NpcKnowsInfo');
+  assert.ok(conditionFunc2.conditions[1] instanceof VariableCondition, 'Second should be VariableCondition');
+  assert.strictEqual(conditionFunc2.conditions[1].negated, true, 'Second should be negated');
+  assert.ok(conditionFunc2.conditions[2] instanceof VariableCondition, 'Third should be VariableCondition');
+  assert.strictEqual(conditionFunc2.conditions[2].negated, false, 'Third should not be negated');
+});
+
+test('Should not duplicate call conditions inside comparison expressions', () => {
+  const source = `
+instance DIA_Test_HasItems(C_INFO)
+{
+	npc			= TestNpc;
+	nr			= 1;
+	condition	= DIA_Test_HasItems_Condition;
+	information	= DIA_Test_HasItems_Info;
+	description = "Test";
+};
+
+func int DIA_Test_HasItems_Condition()
+{
+	if (Npc_HasItems(other, ItPl_Mana_Herb_Alchemist) == 4
+	&& Npc_HasItems(other, ItPl_Temp_Herb_Alchemist) == 2)
+	{
+		return TRUE;
+	};
+};
+
+func void DIA_Test_HasItems_Info()
+{
+	AI_Output(self, other, "TEST_01");
+};
+`;
+
+  const model = parseAndBuildModel(source);
+  const conditionFunc = model.dialogs['DIA_Test_HasItems'].properties.condition;
+
+  // Expect only the two comparison conditions, not extra standalone call conditions.
+  assert.strictEqual(conditionFunc.conditions.length, 2, 'Should parse exactly 2 comparison conditions');
+
+  const generator = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false });
+  const generated = generator.generateSemanticModel(model);
+
+  assert.ok(generated.includes('Npc_HasItems(other, ItPl_Mana_Herb_Alchemist) == 4'));
+  assert.ok(generated.includes('&& Npc_HasItems(other, ItPl_Temp_Herb_Alchemist) == 2'));
+  assert.ok(!generated.includes('&& Npc_HasItems(other, ItPl_Mana_Herb_Alchemist)\n'),
+    'Should not inject bare Npc_HasItems call without comparison');
+});
+
+test('Should not parse nested call arguments as standalone conditions', () => {
+  const source = `
+instance DIA_Test_NestedCall(C_INFO)
+{
+	npc			= TestNpc;
+	nr			= 1;
+	condition	= DIA_Test_NestedCall_Condition;
+	information	= DIA_Test_NestedCall_Info;
+	description = "Test";
+};
+
+func int DIA_Test_NestedCall_Condition()
+{
+	if (Hlp_StrCmp(Npc_GetNearestWP(self), "WP_TEST")
+	&& Flag_Test)
+	{
+		return TRUE;
+	};
+};
+
+func void DIA_Test_NestedCall_Info()
+{
+	AI_Output(self, other, "TEST_01");
+};
+`;
+
+  const model = parseAndBuildModel(source);
+  const conditionFunc = model.dialogs['DIA_Test_NestedCall'].properties.condition;
+  const codes = conditionFunc.conditions.map(c => c.generateCode({}));
+
+  assert.ok(codes.some(c => c.includes('Hlp_StrCmp')), 'Should keep top-level Hlp_StrCmp condition');
+  assert.ok(codes.some(c => c === 'Flag_Test'), 'Should keep boolean flag');
+  assert.ok(!codes.some(c => c.includes('Npc_GetNearestWP(self)') && !c.includes('Hlp_StrCmp')),
+    'Should not add nested Npc_GetNearestWP call as standalone condition');
+});
+
+test('Should not parse arithmetic leaf identifiers as standalone conditions', () => {
+  const source = `
+instance DIA_Test_Arithmetic(C_INFO)
+{
+	npc			= TestNpc;
+	nr			= 1;
+	condition	= DIA_Test_Arithmetic_Condition;
+	information	= DIA_Test_Arithmetic_Info;
+	description = "Test";
+};
+
+func int DIA_Test_Arithmetic_Condition()
+{
+	if (other.attribute[ATR_DEXTERITY] >= (25 - Theftdiff))
+	{
+		return TRUE;
+	};
+};
+
+func void DIA_Test_Arithmetic_Info()
+{
+	AI_Output(self, other, "TEST_01");
+};
+`;
+
+  const model = parseAndBuildModel(source);
+  const conditionFunc = model.dialogs['DIA_Test_Arithmetic'].properties.condition;
+  const codes = conditionFunc.conditions.map(c => c.generateCode({}));
+
+  assert.equal(conditionFunc.conditions.length, 1, 'Should keep only comparison condition');
+  assert.ok(codes[0].includes('other.attribute[ATR_DEXTERITY] >= (25 - Theftdiff)'));
+  assert.ok(!codes.includes('Theftdiff'), 'Should not add Theftdiff as standalone variable condition');
+});
+
+test('Should not duplicate nested comparison conditions', () => {
+  const source = `
+instance DIA_Test_NestedComparison(C_INFO)
+{
+	npc			= TestNpc;
+	nr			= 1;
+	condition	= DIA_Test_NestedComparison_Condition;
+	information	= DIA_Test_NestedComparison_Info;
+	description = "Test";
+};
+
+func int DIA_Test_NestedComparison_Condition()
+{
+	if ((Npc_GetDistToWP(self,"WP_TEST") < 500) == FALSE
+	&& Npc_GetDistToWP(self,"WP_ALT") < 500)
+	{
+		return TRUE;
+	};
+};
+
+func void DIA_Test_NestedComparison_Info()
+{
+	AI_Output(self, other, "TEST_01");
+};
+`;
+
+  const model = parseAndBuildModel(source);
+  const conditionFunc = model.dialogs['DIA_Test_NestedComparison'].properties.condition;
+  const generated = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false }).generateSemanticModel(model);
+  const reparsed = parseAndBuildModel(generated);
+  const reparsedCond = reparsed.dialogs['DIA_Test_NestedComparison'].properties.condition;
+
+  assert.strictEqual(reparsedCond.conditions.length, conditionFunc.conditions.length, 'Roundtrip should keep condition count stable');
+});
+
+test('A trailing backslash in a binary string condition is literal, not an escape', () => {
+  const source = `
+instance DIA_Test_StringCondition(C_INFO)
+{
+\tnpc\t\t\t= TestNpc;
+\tnr\t\t\t= 1;
+\tcondition\t= DIA_Test_StringCondition_Condition;
+\tinformation\t= DIA_Test_StringCondition_Info;
+\tdescription = "Test";
+};
+
+func int DIA_Test_StringCondition_Condition()
+{
+\tif (SomeVar == "C:\\")
+\t{
+\t\treturn TRUE;
+\t};
+};
+
+func void DIA_Test_StringCondition_Info()
+{
+\tAI_Output(self, other, "TEST_01");
+};
+`;
+
+  const model = parseAndBuildModel(source);
+  const conditionFunc = model.dialogs['DIA_Test_StringCondition'].properties.condition;
+
+  assert.strictEqual(conditionFunc.conditions.length, 1, 'Should parse one condition');
+  assert.ok(conditionFunc.conditions[0] instanceof VariableCondition, 'Condition should be VariableCondition');
+  assert.strictEqual(conditionFunc.conditions[0].variableName, 'SomeVar', 'Variable should match');
+  assert.strictEqual(conditionFunc.conditions[0].operator, '==', 'Operator should match');
+  assert.strictEqual(conditionFunc.conditions[0].value, 'C:\\', 'The backslash is part of the value and the quote after it closes the string');
+});
+
+test('Should parse supported function-call conditions into typed conditions', () => {
+  const source = `
+instance DIA_Test_TypedCalls(C_INFO)
+{
+	npc			= TestNpc;
+	nr			= 1;
+	condition	= DIA_Test_TypedCalls_Condition;
+	information	= DIA_Test_TypedCalls_Info;
+	description = "Test";
+};
+
+func int DIA_Test_TypedCalls_Condition()
+{
+	if (Npc_HasItems(other, ItMi_Gold) >= 50
+	&& Npc_IsInState(self, ZS_Talk)
+	&& !Npc_IsDead(Esteban)
+	&& Npc_GetDistToWP(self, "OW_CITY") < 1500
+	&& Npc_GetTalentSkill(other, NPC_TALENT_PICKPOCKET) >= 1)
+	{
+		return TRUE;
+	};
+};
+
+func void DIA_Test_TypedCalls_Info() {};
+`;
+
+  const model = parseAndBuildModel(source);
+  const { conditions } = model.dialogs['DIA_Test_TypedCalls'].properties.condition;
+
+  assert.ok(conditions.length >= 5, 'Should parse typed call conditions');
+  assert.ok(conditions.some(c => c instanceof NpcHasItemsCondition), 'Should include NpcHasItemsCondition');
+  assert.ok(conditions.some(c => c instanceof NpcIsInStateCondition), 'Should include NpcIsInStateCondition');
+  assert.ok(conditions.some(c => c instanceof NpcIsDeadCondition), 'Should include NpcIsDeadCondition');
+  assert.ok(conditions.some(c => c instanceof NpcGetDistToWpCondition), 'Should include NpcGetDistToWpCondition');
+  assert.ok(conditions.some(c => c instanceof NpcGetTalentSkillCondition), 'Should include NpcGetTalentSkillCondition');
+
+  const deadCond = conditions.find(c => c instanceof NpcIsDeadCondition);
+  assert.ok(deadCond, 'Should parse Npc_IsDead condition');
+  assert.strictEqual(deadCond.negated, true, 'Unary negation should be preserved');
+});
+
+test('Should normalize bool comparisons for Npc_IsDead and Npc_IsInState', () => {
+  const source = `
+instance DIA_Test_BoolComparisons(C_INFO)
+{
+	npc			= TestNpc;
+	condition	= DIA_Test_BoolComparisons_Condition;
+	information	= DIA_Test_BoolComparisons_Info;
+	description = "Test";
+};
+
+func int DIA_Test_BoolComparisons_Condition()
+{
+	if (Npc_IsDead(UndeadDragon) == FALSE
+	&& Npc_IsInState(self, ZS_Talk) != TRUE)
+	{
+		return TRUE;
+	};
+};
+
+func void DIA_Test_BoolComparisons_Info() {};
+`;
+
+  const model = parseAndBuildModel(source);
+  const { conditions } = model.dialogs['DIA_Test_BoolComparisons'].properties.condition;
+
+  assert.strictEqual(conditions.length, 2);
+  assert.ok(conditions[0] instanceof NpcIsDeadCondition);
+  assert.ok(conditions[1] instanceof NpcIsInStateCondition);
+  assert.strictEqual(conditions[0].negated, true, '== FALSE should normalize to negated');
+  assert.strictEqual(conditions[1].negated, true, '!= TRUE should normalize to negated');
+});
+
+test('Should not force raw mode for simple top-level return TRUE condition functions', () => {
+  const source = `
+instance DIA_Test_ReturnTrue(C_INFO)
+{
+	npc			= TestNpc;
+	condition	= DIA_Test_ReturnTrue_Condition;
+	information	= DIA_Test_ReturnTrue_Info;
+	description = "Test";
+};
+
+func int DIA_Test_ReturnTrue_Condition()
+{
+	return TRUE;
+};
+
+func void DIA_Test_ReturnTrue_Info() {};
+`;
+
+  const model = parseAndBuildModel(source);
+  const fn = model.dialogs['DIA_Test_ReturnTrue'].properties.condition;
+
+  assert.strictEqual(fn.conditions.length, 0, 'Simple always-true condition has no structured predicates');
+  assert.strictEqual(fn.actions.length, 0, 'Simple always-true condition should not enter raw mode');
+});
+
+// ============================================================
+// QuestStateCondition tests
+// ============================================================
+
+test('QuestStateCondition generates correct code expression', () => {
+  const condition = new QuestStateCondition('MIS_Addon_Greg_ClearCanyon', 'LOG_RUNNING');
+  const code = condition.generateCode({});
+  assert.strictEqual(code, 'MIS_Addon_Greg_ClearCanyon == LOG_RUNNING');
+});
+
+test('QuestStateCondition generates code with LOG_SUCCESS', () => {
+  const condition = new QuestStateCondition('MIS_TestQuest', 'LOG_SUCCESS');
+  const code = condition.generateCode({});
+  assert.strictEqual(code, 'MIS_TestQuest == LOG_SUCCESS');
+});
+
+// Issue #174: a TOPIC_ constant is a string and cannot be compared to a log
+// state; the quest state check must use the corresponding MIS_ int variable.
+test('QuestStateCondition normalizes TOPIC_ prefix to MIS_', () => {
+  const condition = new QuestStateCondition('TOPIC_GefaehrlicheJagt', 'LOG_RUNNING');
+  const code = condition.generateCode({});
+  assert.strictEqual(code, 'MIS_GefaehrlicheJagt == LOG_RUNNING');
+});
+
+test('QuestStateCondition normalizes Topic_ prefix case-insensitively', () => {
+  const condition = new QuestStateCondition('Topic_TestQuest', 'LOG_SUCCESS');
+  const code = condition.generateCode({});
+  assert.strictEqual(code, 'MIS_TestQuest == LOG_SUCCESS');
+});
+
+test('Should parse OR conditions and set conditionOperator to OR', () => {
+  const source = `
+instance DIA_Test_OR(C_INFO)
+{
+	npc			= TestNpc;
+	nr			= 1;
+	condition	= DIA_Test_OR_Condition;
+	information	= DIA_Test_OR_Info;
+	description = "Test OR";
+};
+
+func int DIA_Test_OR_Condition()
+{
+	if (Npc_KnowsInfo(other, DIA_First)
+	|| Npc_KnowsInfo(other, DIA_Second))
+	{
+		return TRUE;
+	};
+};
+
+func void DIA_Test_OR_Info()
+{
+	AI_Output(self, other, "TEST_01");
+};
+`;
+
+  const model = parseAndBuildModel(source);
+  const conditionFunc = model.dialogs['DIA_Test_OR'].properties.condition;
+
+  assert.strictEqual(conditionFunc.conditions.length, 2, 'Should parse 2 conditions from OR expression');
+  assert.ok(conditionFunc.conditions[0] instanceof NpcKnowsInfoCondition, 'First should be NpcKnowsInfo');
+  assert.ok(conditionFunc.conditions[1] instanceof NpcKnowsInfoCondition, 'Second should be NpcKnowsInfo');
+  assert.strictEqual(conditionFunc.conditionOperator, 'OR', 'conditionOperator should be OR');
+});
+
+test('Should default conditionOperator to AND for AND conditions', () => {
+  const source = `
+instance DIA_Test_AND(C_INFO)
+{
+	npc			= TestNpc;
+	nr			= 1;
+	condition	= DIA_Test_AND_Condition;
+	information	= DIA_Test_AND_Info;
+	description = "Test AND";
+};
+
+func int DIA_Test_AND_Condition()
+{
+	if (Npc_KnowsInfo(other, DIA_First)
+	&& Npc_KnowsInfo(other, DIA_Second))
+	{
+		return TRUE;
+	};
+};
+
+func void DIA_Test_AND_Info()
+{
+	AI_Output(self, other, "TEST_01");
+};
+`;
+
+  const model = parseAndBuildModel(source);
+  const conditionFunc = model.dialogs['DIA_Test_AND'].properties.condition;
+
+  assert.strictEqual(conditionFunc.conditions.length, 2, 'Should parse 2 conditions from AND expression');
+  // conditionOperator should be 'AND' or undefined (defaults to AND)
+  assert.ok(
+    conditionFunc.conditionOperator === 'AND' || conditionFunc.conditionOperator === undefined,
+    'conditionOperator should be AND or undefined for AND conditions'
+  );
+});
+
+test('Should round-trip OR conditions with || in generated code', () => {
+  const source = `
+instance DIA_Test_OR_Roundtrip(C_INFO)
+{
+	npc			= TestNpc;
+	nr			= 1;
+	condition	= DIA_Test_OR_Roundtrip_Condition;
+	information	= DIA_Test_OR_Roundtrip_Info;
+	description = "Test OR Roundtrip";
+};
+
+func int DIA_Test_OR_Roundtrip_Condition()
+{
+	if (Npc_KnowsInfo(other, DIA_First)
+	|| Npc_KnowsInfo(other, DIA_Second))
+	{
+		return TRUE;
+	};
+};
+
+func void DIA_Test_OR_Roundtrip_Info()
+{
+	AI_Output(self, other, "TEST_01");
+};
+`;
+
+  const model = parseAndBuildModel(source);
+  const generator = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false });
+  const generatedCode = generator.generateSemanticModel(model);
+
+  assert.ok(generatedCode.includes('|| Npc_KnowsInfo(other, DIA_Second)'),
+    'Generated code should use || for OR conditions');
+  assert.ok(!generatedCode.includes('&& Npc_KnowsInfo(other, DIA_Second)'),
+    'Generated code should not use && for OR conditions');
+
+  // Parse again and verify
+  const model2 = parseAndBuildModel(generatedCode);
+  const conditionFunc2 = model2.dialogs['DIA_Test_OR_Roundtrip'].properties.condition;
+  assert.strictEqual(conditionFunc2.conditions.length, 2, 'Re-parsed should have 2 conditions');
+  assert.strictEqual(conditionFunc2.conditionOperator, 'OR', 'Re-parsed should have OR operator');
+});
+
+test('Should fall back to raw mode for mixed AND/OR at top level', () => {
+  const source = `
+instance DIA_Test_Mixed(C_INFO)
+{
+	npc			= TestNpc;
+	nr			= 1;
+	condition	= DIA_Test_Mixed_Condition;
+	information	= DIA_Test_Mixed_Info;
+	description = "Test Mixed";
+};
+
+func int DIA_Test_Mixed_Condition()
+{
+	if (FlagA && FlagB || FlagC)
+	{
+		return TRUE;
+	};
+};
+
+func void DIA_Test_Mixed_Info()
+{
+	AI_Output(self, other, "TEST_01");
+};
+`;
+
+  const model = parseAndBuildModel(source);
+  const conditionFunc = model.dialogs['DIA_Test_Mixed'].properties.condition;
+
+  // Mixed operators should fall back to raw mode (actions, not structured conditions)
+  // OR produce a single generic Condition
+  const totalStructured = conditionFunc.conditions.length;
+  const totalRaw = conditionFunc.actions.length;
+  assert.ok(
+    totalStructured <= 1 || totalRaw > 0,
+    'Mixed AND/OR should either fall back to raw mode or produce at most 1 generic condition'
+  );
+});
+
+test('Should parse !Npc_KnowsInfo as a negated condition and round-trip it', () => {
+  const source = `
+instance DIA_Test_NegatedKnowsInfo(C_INFO)
+{
+	npc			= TestNpc;
+	nr			= 1;
+	condition	= DIA_Test_NegatedKnowsInfo_Condition;
+	information	= DIA_Test_NegatedKnowsInfo_Info;
+	description = "Test";
+};
+
+func int DIA_Test_NegatedKnowsInfo_Condition()
+{
+	if (!Npc_KnowsInfo(other, DIA_Test_Prereq))
+	{
+		return TRUE;
+	};
+};
+
+func void DIA_Test_NegatedKnowsInfo_Info() {};
+`;
+
+  const model = parseAndBuildModel(source);
+  const conditionFunc = model.dialogs['DIA_Test_NegatedKnowsInfo'].properties.condition;
+
+  assert.strictEqual(conditionFunc.conditions.length, 1, 'Should parse exactly one condition');
+  const condition = conditionFunc.conditions[0];
+  assert.ok(condition instanceof NpcKnowsInfoCondition, 'Condition should be NpcKnowsInfoCondition');
+  assert.strictEqual(condition.npc, 'other');
+  assert.strictEqual(condition.dialogRef, 'DIA_Test_Prereq');
+  assert.strictEqual(condition.negated, true, 'Unary negation should be preserved');
+
+  const generated = new SemanticCodeGenerator().generateSemanticModel(model);
+  assert.ok(generated.includes('!Npc_KnowsInfo(other, DIA_Test_Prereq)'),
+    'Generated code should keep the negation');
+
+  const reparsed = parseAndBuildModel(generated)
+    .dialogs['DIA_Test_NegatedKnowsInfo'].properties.condition.conditions[0];
+  assert.strictEqual(reparsed.negated, true, 'Negation should survive a round-trip');
+});
+
+test('Should display a negated Npc_KnowsInfo condition', () => {
+  const condition = new NpcKnowsInfoCondition('other', 'DIA_Farim_Hallo', true);
+
+  assert.strictEqual(condition.generateCode({}), '!Npc_KnowsInfo(other, DIA_Farim_Hallo)');
+  assert.strictEqual(condition.toDisplayString(), '[Not NpcKnowsInfo: other knows DIA_Farim_Hallo]');
+});
+
+test('unsupported negated condition call keeps the negation on round-trip', () => {
+  const source = [
+    'instance DIA_Custom(C_INFO) { condition = DIA_Custom_Cond; };',
+    'func int DIA_Custom_Cond() {',
+    '  if (!CustomCheck(other)) { return TRUE; };',
+    '};'
+  ].join(String.fromCharCode(10));
+
+  const model = parseAndBuildModel(source);
+  const func = model.functions.DIA_Custom_Cond;
+  assert.equal(func.conditions.length, 1);
+  assert.equal(func.conditions[0].constructor.name, 'Condition');
+  assert.equal(func.conditions[0].condition, '!CustomCheck(other)');
+  const generated = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false }).generateSemanticModel(model);
+  assert.ok(generated.includes('!CustomCheck(other)'));
+  assert.ok(!generated.includes('if (CustomCheck(other))'));
+});

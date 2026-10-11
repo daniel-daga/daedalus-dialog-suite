@@ -1,0 +1,34 @@
+WriteArchiveAscii::write_mat3x3 emits a `rawFloat:` entry that neither
+ReadArchiveAscii nor ZenGin can read.
+
+`ReadArchiveAscii::read_mat3x3` reads an entry typed `raw` and parses it as 36
+hex-encoded bytes; ZenGin writes `raw` too - all 1277 `trafoOSToWSRot` entries
+across a retail Gothic II install's ASCII worlds are `raw:`. The writer emits
+`rawFloat:` with the nine floats in decimal, which `read_entry("raw")` rejects
+outright: ZenKit cannot read back its own output. The same class of
+writer/reader disagreement as 0024 and 0026.
+
+`write_mat3x3` has exactly one caller in the library - `VirtualObject::save`'s
+unpacked branch - which is why no retail byte and no fixture changed until the
+unpacked path became reachable (see 0046). The element order is unchanged: the
+writer transposes and writes row-major, and `read_mat3x3` fills row-major and
+transposes back.
+
+Upstreamable as-is: a self-evident writer/reader disagreement, no API change.
+
+--- a/src/archive/ArchiveAscii.cc
++++ b/src/archive/ArchiveAscii.cc
+@@ -365,8 +365,12 @@
+ 	}
+ 
+ 	void WriteArchiveAscii::write_mat3x3(std::string_view name, Mat3 const& v) {
++		// A `raw:` hex entry, not `rawFloat:`: ReadArchiveAscii::read_mat3x3 reads
++		// `raw` and ZenGin writes `raw`, so a `rawFloat` entry is one neither can
++		// read back. The transpose and the element order are read_mat3x3's own,
++		// which transposes again after filling row-major.
+ 		auto vT = v.transpose();
+-		this->write_raw_float(name, vT.pointer(), 9);
++		this->write_raw(name, reinterpret_cast<std::byte const*>(vT.pointer()), 9 * sizeof(float));
+ 	}
+ 
+ 	void WriteArchiveAscii::write_raw(std::string_view name, std::vector<std::byte> const& v) {

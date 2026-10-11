@@ -1,0 +1,11 @@
+#!/bin/sh
+# Strips AI attribution from a commit message (AGENTS.md, "Commits and
+# Attribution"): co-author trailers naming a model or tool, agent session
+# links, and "generated with" lines. Enable once per clone:
+#   git config core.hooksPath .githooks
+msg="$1"
+tmp="$msg.tmp"
+grep -viE '^(co-authored-by:.*(claude|anthropic|copilot|codex|openai|chatgpt|gemini|cursor|jules|devin|aider|\[bot\])|[a-z-]*-session: *https?://|.*generated (with|by) .*(claude|copilot|codex|chatgpt|gemini|cursor|ai\b)|.*claude\.ai/code)' "$msg" > "$tmp"
+# Drop the trailing blank lines the removal leaves behind.
+awk '{ lines[NR] = $0 } END { n = NR; while (n > 0 && lines[n] ~ /^[[:space:]]*$/) n--; for (i = 1; i <= n; i++) print lines[i] }' "$tmp" > "$msg"
+rm -f "$tmp"

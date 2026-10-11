@@ -1,0 +1,696 @@
+# Daedalus Parser API Reference
+
+Complete API reference for the Daedalus Parser library, featuring semantic model extraction and code generation.
+
+## Table of Contents
+
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Semantic Model API](#semantic-model-api)
+- [NPC Instance API](#npc-instance-api)
+- [Code Generation API](#code-generation-api)
+- [Type Definitions](#type-definitions)
+- [Examples](#examples)
+
+## Installation
+
+```bash
+npm install daedalus-parser
+```
+
+Or for development:
+
+```bash
+git clone <repository>
+cd daedalus-parser
+npm install
+npm run build
+```
+
+## Quick Start
+
+### Parse and Generate Code
+
+```typescript
+import DaedalusParser = require('daedalus-parser');
+import { SemanticModelBuilderVisitor } from 'daedalus-parser/semantic-visitor';
+import { SemanticCodeGenerator } from 'daedalus-parser/semantic-code-generator';
+
+const parser = DaedalusParser.create();
+const parseResult = parser.parse(sourceCode);
+
+// Build semantic model
+const visitor = new SemanticModelBuilderVisitor();
+visitor.pass1_createObjects(parseResult.rootNode);
+visitor.pass2_analyzeAndLink(parseResult.rootNode);
+
+// Access structured data
+console.log('Dialogs:', visitor.semanticModel.dialogs);
+console.log('Functions:', visitor.semanticModel.functions);
+
+// Generate code
+const generator = new SemanticCodeGenerator();
+const newCode = generator.generateSemanticModel(visitor.semanticModel);
+```
+
+## Semantic Model API
+
+### SemanticModelBuilderVisitor
+
+Builds a structured semantic model from Tree-sitter AST using a two-pass visitor pattern.
+
+#### Constructor
+
+```typescript
+const visitor = new SemanticModelBuilderVisitor();
+```
+
+#### Methods
+
+##### `pass1_createObjects(node: TreeSitterNode): void`
+
+First pass: Creates skeleton objects for all dialogs and functions.
+
+- **Parameters:**
+  - `node` - Root node of the Tree-sitter AST
+- **Side Effects:** Populates `visitor.semanticModel.dialogs` and `visitor.semanticModel.functions`
+
+**Example:**
+```typescript
+visitor.pass1_createObjects(tree.rootNode);
+```
+
+##### `pass2_analyzeAndLink(node: TreeSitterNode): void`
+
+Second pass: Links properties and analyzes function bodies to extract actions.
+
+- **Parameters:**
+  - `node` - Root node of the Tree-sitter AST
+- **Side Effects:**
+  - Links dialog properties to function objects
+  - Extracts semantic actions from function bodies
+  - Populates action arrays
+
+**Example:**
+```typescript
+visitor.pass2_analyzeAndLink(tree.rootNode);
+```
+
+#### Properties
+
+##### `semanticModel: SemanticModel`
+
+The constructed semantic model containing dialogs and functions.
+
+```typescript
+interface SemanticModel {
+  dialogs: { [name: string]: Dialog };
+  functions: { [name: string]: DialogFunction };
+}
+```
+
+**Access Example:**
+```typescript
+// After running both passes
+const helloDialog = visitor.semanticModel.dialogs['DIA_Hero_Hello'];
+const conditionFunc = visitor.semanticModel.functions['DIA_Hero_Hello_Condition'];
+
+console.log('Dialog NPC:', helloDialog.properties.npc);
+console.log('Dialog actions:', helloDialog.actions.length);
+```
+
+### Dialog Class
+
+Represents a dialog instance (C_INFO).
+
+#### Properties
+
+```typescript
+class Dialog {
+  name: string;                    // Dialog instance name
+  parent: string | null;           // Parent class (usually C_INFO)
+  properties: DialogProperties;    // Dialog properties
+  propertyExpressionKeys?: string[]; // Keys whose string values are expressions
+  propertyLiteralKeys?: string[];    // Keys whose string values are string literals
+  sourceHeader?: SourceHeader;       // Commented header with editable token ranges
+  sourceBody?: DialogSourceBody;   // Lossless executable constructor fallback
+  actions: DialogAction[];         // Editable view of the current information function
+}
+
+interface DialogSourceBody {
+  text: string; // Complete original block, including braces
+  propertyValues: { [key: string]: string | number | boolean }; // Baseline; function references use names
+}
+
+// Function reference: preserved identifier expression, or the live DialogFunction once linked
+type DialogFunctionRef = string | DialogFunction;
+
+interface DialogProperties {
+  npc?: string;                    // NPC identifier
+  nr?: number;                     // Dialog priority number
+  condition?: DialogFunctionRef;   // Condition function (name or linked object)
+  information?: DialogFunctionRef; // Information function (name or linked object)
+  permanent?: boolean;             // Permanent flag
+  important?: boolean;             // Important flag
+  description?: string;            // Dialog text shown to player
+  // ... other custom properties
+}
+```
+
+Executable C_INFO constructors use `sourceBody` and regenerate verbatim, even
+when style/comment options are disabled. Their property metadata comes only
+from direct simple assignments and does not evaluate the constructor. Changing
+properties or renaming linked function references throws: edit the constructor
+source and reparse first. Linked function body edits remain supported. Ordinary
+unique property-only bodies remain structurally editable.
+`propertyExpressionKeys` retains expression identity regardless of
+`preserveSourceStyle`; changing a marked value emits the current expression. Keep `sourceBody`
+through JSON/IPC; `deserializeSemanticModel` restores it automatically.
+
+`propertyLiteralKeys` records string-valued source assignments. Such a
+property's value is the string's contents, without quotes (`description = "Hallo";`
+reads as `'Hallo'`); generation quotes it, and it stays a string through JSON
+hydration even when it matches a function name. A value containing `"` cannot
+be written and generation throws. A newly constructed `Dialog` marks
+`description` as a literal. Explicit `propertyExpressionKeys` take precedence.
+JSON from before contents were stored holds the quoted token: hydration unwraps
+it and marks the key literal; other legacy JSON without literal metadata retains
+the previous value inference.
+
+`Dialog.actions` reads and edits the current information function's action array.
+It follows array replacement, function-object replacement, function-dictionary
+replacement and function relinking, including after
+`deserializeSemanticModel`; shared information functions share the same action
+array. JSON retains the enumerable `actions` field, but a linked function's
+current body takes precedence over a stale serialized dialog snapshot.
+Standalone dialogs without a resolvable information function retain their own
+editable action arrays, including legacy JSON. A hand-built dialog can pass its
+function dictionary as the optional third constructor argument when its
+information property holds a string rather than a linked function object.
+Pass `() => model.functions` instead of a dictionary to make a hand-built
+dialog follow dictionary replacement. Parsed and officially hydrated dialogs
+already use this live lookup. Model-owned views and exports resolve references
+against the current dictionary; deleting a function does not resurrect its old
+linked object. Detached legacy dialogs can still own direct function objects.
+
+String fields with `…IsExpression` flags retain their existing API: absent or
+false means literal contents, true means source expression text. Shared rendering
+never guesses from the contents. Daedalus treats backslashes and newlines
+literally and has no quote escape syntax. Generating a structured string field,
+literal comparison or property containing an embedded double quote throws an
+error instead of emitting malformed code. Raw expression fields (including
+actors and targets) retain source quotes and remain the caller's responsibility
+when edited. Preserved raw code continues to be emitted verbatim.
+
+Reference analysis accepts parenthesized identifiers in choice callbacks,
+information/condition properties and typed `Npc_KnowsInfo` arguments. It uses
+their identifier identity while generation retains the complete source
+expression. String literals, member access and calls do not become identifier
+references. Literal-property metadata continues to prevent function-name text
+from becoming a function reference.
+
+**Example:**
+```typescript
+const dialog = new Dialog('DIA_Merchant_Trade', 'C_INFO');
+dialog.properties.npc = 'TownMerchant';
+dialog.properties.nr = 10;
+dialog.properties.permanent = true;
+dialog.properties.description = 'Trade';
+```
+
+### DialogFunction Class
+
+Represents a function declaration.
+
+#### Properties
+
+```typescript
+class DialogFunction {
+  name: string;              // Function name
+  returnType: string;        // Return type (int, void, etc.)
+  parameters?: FunctionParameter[]; // Declared parameters ({ keyword?, type, name }), if any
+  sourceHeader?: SourceHeader; // Commented header with editable token ranges
+  declarationSuffix?: string; // Commented gap between the closing body brace and semicolon
+  calls: string[];           // List of function calls made
+  actions: DialogAction[];   // Semantic actions extracted
+}
+```
+
+Both functions and dialogs retain comments inside their declaration header in
+optional JSON-safe `sourceHeader` metadata. It contains `version: 1`, original
+`text`, editable `fields` (`key`, `start`, `end`, `initialValue`) and comment
+tokens. Current names, types, keywords and parameters replace the corresponding
+tokens. If parameter count or keyword presence changes, comments move ahead of
+the current canonical header. `includeComments: false` omits this metadata's
+comments; `preserveSourceStyle: false` still retains them. Keep the metadata
+through JSON/IPC and use `deserializeSemanticModel` to restore model instances.
+
+Functions and dialogs also retain commented gaps between the closing body brace
+and declaration semicolon as JSON-safe `declarationSuffix` text. It remains after
+the current body when names or body contents change, including with
+`preserveSourceStyle: false`; `includeComments: false` omits the gap's comments.
+
+Parsed empty function bodies remain empty under either source-style setting.
+Default success returns and placeholder bodies apply only where the model has
+no explicit empty-body metadata, such as newly constructed functions.
+
+**Example:**
+```typescript
+const func = new DialogFunction('DIA_Hero_Greeting_Info', 'void');
+console.log('Return type:', func.returnType);
+console.log('Actions:', func.actions);
+```
+
+Parsed typed calls expose optional `callIdentity: { version: 1; sourceName: string;
+generatedName: string }` metadata on `DialogAction` and `DialogCondition`.
+Preserve it when serializing editor models. Shared call rendering uses the
+original callee with current arguments, even with `includeComments: false`
+or `preserveSourceStyle: false`. Existing editable function-name fields remain
+authoritative when changed from their parse baseline. Hand-built models and
+legacy JSON without identity metadata use their default function names.
+
+### Action Classes
+
+Semantic actions extracted from function bodies:
+
+#### DialogLine
+
+AI_Output call.
+
+```typescript
+class DialogLine {
+  speaker: string;    // Speaker identifier (self, other, etc.)
+  text: string;       // Dialog text (from comment or ID)
+  id: string;         // Dialog ID
+}
+```
+
+#### Choice
+
+Info_AddChoice call.
+
+```typescript
+class Choice {
+  dialogRef: string;      // Dialog instance reference
+  text: string;           // Choice text
+  targetFunction: string; // Target function name
+}
+```
+
+#### CreateTopic
+
+Log_CreateTopic call.
+
+```typescript
+class CreateTopic {
+  topic: string;           // Topic identifier
+  topicType: string | null; // Topic type (LOG_MISSION, LOG_NOTE, etc.)
+}
+```
+
+#### LogEntry
+
+`B_LogEntry` or `Log_AddEntry` call. Parsed actions retain the original callee;
+new `LogEntry` instances default to `B_LogEntry`.
+
+```typescript
+class LogEntry {
+  topic: string;  // Topic identifier
+  text: string;   // Entry text
+}
+```
+
+#### SetVariableAction
+
+Typed assignment with editable `variableName`, `operator` and
+`value: string | number | boolean`. Parsed commented assignments additionally
+carry `sourceText` and JSON-safe `sourceAssignment` (version 1, original
+target/operator/value ranges and generated baselines). Keep those fields through
+IPC; `deserializeSemanticModel` retains them automatically.
+
+Use `SemanticCodeGenerator.generateAction` or whole-function/model generation
+to reconcile edits with original comments. Unchanged assignments replay their
+original spelling; changed components replace their own ranges while token-gap
+comments remain. Changing an expression replaces comments inside that expression;
+new comments in a field are effective. Invalid edited assignments throw rather
+than replaying stale source. `includeComments: false` emits current canonical
+typed fields without replay.
+
+#### Other Action Types
+
+- `LogSetTopicStatus` - Log_SetTopicStatus calls
+- `CreateInventoryItems` - CreateInvItems calls
+- `GiveInventoryItems` - B_GiveInvItems calls
+- `AttackAction` - B_Attack calls
+- `SetAttitudeAction` - B_SetAttitude calls
+- `ExchangeRoutineAction` - Npc_ExchangeRoutine calls
+- `ChapterTransitionAction` - B_Kapitelwechsel calls
+- `SetRefuseTalkAction` - Npc_SetRefuseTalk calls
+- `UseItemAction` - B_UseItem calls
+- `ClearChoicesAction` - Info_ClearChoices calls
+- `Action` - Generic action (any other function call)
+
+## NPC Instance API
+
+Reads and edits the body of an NPC instance through its verbatim `sourceText`
+(the text `GlobalInstance` carries and the generator re-emits), so an edit is a
+new `sourceText` that saves through the normal generator.
+
+```javascript
+const { extractNpcDefinition, applyNpcEdits } = require('daedalus-parser/npc-definition');
+
+const npc = extractNpcDefinition(instance.sourceText);
+// npc.statements: in source order, comments excluded —
+//   { kind: 'field', field: 'attribute', index: 'ATR_STRENGTH', value: '50', ... }
+//   { kind: 'call',  name: 'B_SetNpcVisual', args: ['self', 'MALE', ...], ... }
+//   { kind: 'other', text: 'if (Kapitel >= 2) { ... };', ... }
+
+instance.sourceText = applyNpcEdits(instance.sourceText, [
+  { op: 'set', field: 'guild', value: 'GIL_SLD' },
+  { op: 'set', field: 'protection', index: 'PROT_EDGE', value: '100' },
+  { op: 'remove', field: 'flags' },
+  { op: 'setCall', name: 'Mdl_SetModelFatness', args: ['self', '1'] },
+  { op: 'removeCall', name: 'EquipItem', occurrence: 1 },
+]);
+// A new call gets fresh insertion coordinates after removals have completed.
+instance.sourceText = applyNpcEdits(instance.sourceText, [
+  { op: 'addCall', name: 'EquipItem', args: ['self', 'ItRw_Sld_Bow'] },
+]);
+```
+
+- Statements are classified by shape, not by a list of known names; values and
+  arguments are the expressions as written.
+- Edits patch only the statement they touch; comments, alignment and every
+  other statement stay byte-identical. Names and indices match
+  case-insensitively.
+- A `set`/`setCall` for an absent statement inserts a line after the last
+  field (or last statement), indented like it; removing an absent one is a no-op.
+- All edits in one call resolve against the original source. Duplicate field/index
+  or call-name/occurrence targets and overlapping source patches throw before
+  any change, with the zero-based edit indices. This includes inserting inside
+  a removed anchor line. Apply sequential or conflicting changes in separate
+  calls against the returned source. Independent insertions at the same point
+  retain batch order; repeated `addCall` operations remain valid.
+- `setCall`/`removeCall` take an optional 0-based `occurrence` (default 0) to
+  address one of several calls of a name, such as retail's one `EquipItem` per
+  weapon; `addCall` always inserts, after the last call of that name.
+- `extractNpcDefinition` throws on a syntax error or on source that is not a
+  single instance declaration. It does not check that the parent resolves to
+  `C_NPC` — that needs the project's prototype chains.
+
+## Code Generation API
+
+### SemanticCodeGenerator
+
+Generates Daedalus source code from semantic models using string templates.
+
+#### Constructor
+
+```typescript
+const generator = new SemanticCodeGenerator(options?: CodeGeneratorOptions);
+```
+
+**Options:**
+```typescript
+interface CodeGeneratorOptions {
+  indentSize?: number;        // Default: 1
+  indentChar?: '\t' | ' ';   // Default: '\t'
+  includeComments?: boolean;  // Default: true
+  sectionHeaders?: boolean;   // Default: true
+  uppercaseKeywords?: boolean; // Default: false
+  preserveSourceStyle?: boolean; // Default: true; formatting only, never expression identity
+  allowPartialModel?: boolean; // Default: false
+}
+```
+
+**Example:**
+```typescript
+const generator = new SemanticCodeGenerator({
+  indentChar: ' ',
+  indentSize: 4,
+  includeComments: true,
+  sectionHeaders: true,
+  uppercaseKeywords: false
+});
+```
+
+#### Methods
+
+##### `generateSemanticModel(model: SemanticModel): string`
+
+Generate complete Daedalus source file from semantic model. Shared condition,
+information and choice-target functions are emitted once per export by their
+case-insensitive declaration name, with or without `declarationOrder`.
+
+- **Parameters:**
+  - `model` - Semantic model with dialogs and functions
+- **Returns:** Generated Daedalus source code (string)
+- **Throws:** `Error` when `model.hasErrors` is truthy, unless the generator was
+  constructed with `allowPartialModel: true`. This prevents silently emitting
+  placeholder-filled output from a model built off an unparseable source file.
+  The guard applies only to this whole-model entry point; `generateFunction` and
+  `generateDialog` are unaffected and remain usable for hand-built partial models.
+
+**Example:**
+```typescript
+const code = generator.generateSemanticModel(visitor.semanticModel);
+console.log(code);
+
+// To generate from a model with parse errors anyway (best-effort):
+const lenient = new SemanticCodeGenerator({ allowPartialModel: true });
+const partial = lenient.generateSemanticModel(erroredModel);
+```
+
+##### `generateDialog(dialog: Dialog): string`
+
+Generate a single dialog instance declaration.
+
+- **Parameters:**
+  - `dialog` - Dialog object
+- **Returns:** Dialog instance code (string)
+
+**Example:**
+```typescript
+const dialog = new Dialog('DIA_Test', 'C_INFO');
+dialog.properties.npc = 'TEST_NPC';
+const code = generator.generateDialog(dialog);
+```
+
+##### `generateFunction(func: DialogFunction, preservedBody?: string): string`
+
+Generate a single function declaration.
+
+- **Parameters:**
+  - `func` - DialogFunction object
+  - `preservedBody` - Optional preserved function body as string
+- **Returns:** Function declaration code (string)
+
+**Example:**
+```typescript
+const func = new DialogFunction('TestFunc', 'int');
+const code = generator.generateFunction(func);
+// Or with preserved body:
+const code2 = generator.generateFunction(func, 'return TRUE;');
+```
+
+##### `generateAction(action: DialogAction): string`
+
+Generate code for a single semantic action.
+
+- **Parameters:**
+  - `action` - Any DialogAction type
+- **Returns:** Action code (string)
+
+**Example:**
+```typescript
+const action = new DialogLine('self', 'Hello!', 'GREETING_01');
+const code = generator.generateAction(action);
+// Output: AI_Output(self, other, "GREETING_01"); //Hello!
+```
+
+## Type Definitions
+
+### TreeSitterNode
+
+Interface for Tree-sitter AST nodes (provided by tree-sitter library).
+
+```typescript
+interface TreeSitterNode {
+  type: string;
+  text: string;
+  children: TreeSitterNode[];
+  namedChildren: TreeSitterNode[];
+  childForFieldName(fieldName: string): TreeSitterNode | null;
+  // ... other tree-sitter properties
+}
+```
+
+### SemanticModel
+
+Top-level semantic model structure.
+
+```typescript
+interface SemanticModel {
+  dialogs: { [name: string]: Dialog };
+  functions: { [name: string]: DialogFunction };
+}
+```
+
+### DialogAction
+
+Union type of all action types.
+
+```typescript
+type DialogAction =
+  | DialogLine
+  | Choice
+  | CreateTopic
+  | LogEntry
+  | LogSetTopicStatus
+  | CreateInventoryItems
+  | GiveInventoryItems
+  | AttackAction
+  | SetAttitudeAction
+  | ExchangeRoutineAction
+  | ChapterTransitionAction
+  | Action;
+```
+
+## Examples
+
+### Example 1: Parse and Modify
+
+```typescript
+import DaedalusParser = require('daedalus-parser');
+import { SemanticModelBuilderVisitor } from 'daedalus-parser/semantic-visitor';
+import { SemanticCodeGenerator } from 'daedalus-parser/semantic-code-generator';
+
+const parser = DaedalusParser.create();
+
+// Parse
+const tree = parser.parse(sourceCode);
+const visitor = new SemanticModelBuilderVisitor();
+visitor.pass1_createObjects(tree.rootNode);
+visitor.pass2_analyzeAndLink(tree.rootNode);
+
+// Modify
+const dialog = visitor.semanticModel.dialogs['DIA_Hero_Trade'];
+dialog.properties.description = 'Buy items';
+dialog.properties.nr = 5;
+
+// Generate
+const generator = new SemanticCodeGenerator();
+const newCode = generator.generateSemanticModel(visitor.semanticModel);
+```
+
+### Example 2: Create from Scratch
+
+```typescript
+import {
+  SemanticModel,
+  Dialog,
+  DialogFunction,
+  DialogLine
+} from 'daedalus-parser/semantic-model';
+import { SemanticCodeGenerator } from 'daedalus-parser/semantic-code-generator';
+
+// Create model
+const model: SemanticModel = { dialogs: {}, functions: {} };
+
+// Create dialog
+const dialog = new Dialog('DIA_Guard_Stop', 'C_INFO');
+dialog.properties.npc = 'CityGuard';
+dialog.properties.nr = 1;
+dialog.properties.important = true;
+
+// Create functions
+const conditionFunc = new DialogFunction('DIA_Guard_Stop_Condition', 'int');
+const infoFunc = new DialogFunction('DIA_Guard_Stop_Info', 'void');
+
+// Add action
+infoFunc.actions.push(
+  new DialogLine('self', 'Halt! Where do you think you\'re going?', 'GUARD_STOP_01')
+);
+
+// Link
+dialog.properties.condition = conditionFunc;
+dialog.properties.information = infoFunc;
+
+model.dialogs[dialog.name] = dialog;
+model.functions[conditionFunc.name] = conditionFunc;
+model.functions[infoFunc.name] = infoFunc;
+
+// Generate
+const generator = new SemanticCodeGenerator();
+const code = generator.generateSemanticModel(model);
+console.log(code);
+```
+
+### Example 3: Round-Trip
+
+```typescript
+// Parse original
+const tree1 = parser.parse(originalCode);
+const visitor1 = new SemanticModelBuilderVisitor();
+visitor1.pass1_createObjects(tree1.rootNode);
+visitor1.pass2_analyzeAndLink(tree1.rootNode);
+
+// Generate code
+const generator = new SemanticCodeGenerator();
+const generatedCode = generator.generateSemanticModel(visitor1.semanticModel);
+
+// Parse generated to verify
+const tree2 = parser.parse(generatedCode);
+const visitor2 = new SemanticModelBuilderVisitor();
+visitor2.pass1_createObjects(tree2.rootNode);
+visitor2.pass2_analyzeAndLink(tree2.rootNode);
+
+// Verify semantics preserved
+console.log('Dialog count matches:',
+  Object.keys(visitor1.semanticModel.dialogs).length ===
+  Object.keys(visitor2.semanticModel.dialogs).length
+);
+```
+
+## CLI Tools
+
+The package also includes CLI tools:
+
+### Semantic Analyzer
+```bash
+npm run semantic -- examples/DIA_Szmyk.d
+```
+
+### Code Generator
+```bash
+npm run format -- examples/DIA_Szmyk.d --verbose
+npm run format -- examples/DIA_Szmyk.d -o output.d
+npm run format -- input.d --encoding windows-1250 --output-encoding utf8 -o output.d
+```
+
+Input defaults to valid UTF-8, otherwise Windows-1252. Output files default to
+the input encoding; stdout prints Unicode text. Invalid input/generated syntax
+or unrepresentable output text fails before replacing the destination. These
+checks run without `--verbose` as well.
+
+### Formatter
+```bash
+npm run format -- examples/DIA_Szmyk.d
+```
+
+### Parser
+```bash
+npm run parse -- examples/DIA_Szmyk.d
+```
+
+For machine-readable output, `node bin/daedalus-parse.js file.d --json` writes a
+single JSON document to stdout, without the human-readable parsing banner.
+
+## Further Documentation
+
+- **[README.md](README.md)** - Quick-start usage and workflow documentation
+- **[../docs/README.md](../docs/README.md)** - Repository documentation index
+
+## License
+
+MIT License - see LICENSE file for details.

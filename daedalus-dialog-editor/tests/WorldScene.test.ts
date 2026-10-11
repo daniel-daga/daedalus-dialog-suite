@@ -1,0 +1,1668 @@
+/**
+ * Scene-graph assertions for the Phase 1a viewport (level-editor.md §17 —
+ * "viewport correctness via scene-graph assertions where DOM assertions can't
+ * reach"). `WorldScene` deliberately builds the Three.js graph without a
+ * WebGLRenderer, so everything the spike had to verify by looking at a picture
+ * is checkable here instead:
+ *
+ *   - the whole scene hangs under ONE mirrored node, and index order goes
+ *     through the same boundary, so units and winding are settled in one place
+ *     and no material reaches for DoubleSide
+ *   - VOBs sharing a visual are one InstancedMesh, not one Mesh each
+ *   - an instance can be traced back to the VOB it came from
+ *
+ * @jest-environment jsdom
+ */
+
+import * as THREE from 'three';
+import { ROOT_MATRIX, ZEN_TO_THREE_SCALE } from 'zen-world';
+import type { DecodedTexture, DrawGroup, InstancedVisual } from '../src/shared/worldTypes';
+import { DEFAULT_EXPOSURE, WORLD_LAYER, WorldScene, textureCacheFor } from '../src/renderer/world/WorldScene';
+import { vobIndex } from './worldFixtures';
+
+const NO_DECALS = { groups: [], stats: { decals: 0, textures: 0 } };
+
+function group(overrides: Partial<DrawGroup> = {}): DrawGroup {
+  return {
+    texture: 'NW_WOOD.TGA',
+    color: [255, 255, 255, 255],
+    alphaFunc: 0,
+    texAniMapMode: 0,
+    texAniFps: 0,
+    texAniMapDir: [0, 0],
+    envMapping: false,
+    envMappingStrength: 0,
+    waveMode: 0,
+    waveSpeed: 0,
+    waveMaxAmplitude: 0,
+    waveGridSize: 0,
+    ignoreSun: false,
+    disableLightmap: false,
+    materials: 1,
+    vertexCount: 3,
+    triangleCount: 1,
+    positions: new Float32Array([0, 0, 0, 100, 0, 0, 0, 100, 0]).buffer,
+    normals: new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]).buffer,
+    uvs: new Float32Array([0, 0, 1, 0, 0, 1]).buffer,
+    indices: new Uint32Array([0, 1, 2]).buffer,
+    lights: new Uint32Array([0xff804020, 0xff804020, 0xff804020]).buffer,
+    ...overrides,
+  };
+}
+
+function visual(overrides: Partial<InstancedVisual> = {}): InstancedVisual {
+  return {
+    name: 'BARREL.3DS',
+    source: 'BARREL.MRM',
+    count: 2,
+    matrices: new Float32Array([
+      1, 0, 0, 10, 0, 1, 0, 20, 0, 0, 1, 30,
+      1, 0, 0, 40, 0, 1, 0, 50, 0, 0, 1, 60,
+    ]).buffer,
+    vobIds: new Uint32Array([7, 9]).buffer,
+    groups: [group({ lights: null })],
+    // The visual's own bounds, which a rotation needs to refit the VOB's bbox.
+    // group()'s triangle spans (0,0,0)-(100,100,0).
+    bounds: [0, 0, 0, 100, 100, 0],
+    ...overrides,
+  };
+}
+
+/**
+ * Ten VOBs, of which VOB 4 is a sound with **no visual name at all** and VOB 5
+ * a decal — a name that resolves to no geometry. `visual()` above places VOBs 7
+ * and 9, so the three cases the scene has to tell apart are all here: instanced,
+ * markered, and neither.
+ */
+function markerIndex() {
+  const positions = Array.from(
+    { length: 10 }, (_, vob) => [vob * 100, 0, 0] as [number, number, number],
+  );
+  const classes = positions.map(() => 'zCVob');
+  classes[4] = 'zCVobSound';
+  const visuals = positions.map(() => 'BARREL.3DS');
+  visuals[4] = '';
+  // A mesh the VFS does not hold: a drawable *kind* of visual that resolved to
+  // nothing, which is the one case left with neither an instance nor a marker.
+  visuals[5] = 'MISSING.3DS';
+  // A decal and a particle effect, which resolve to no geometry either and are
+  // marked for it (#249).
+  visuals[6] = 'BLOOD.TGA';
+  visuals[8] = 'FIRE.PFX';
+  return vobIndex(positions, classes, undefined, undefined, visuals);
+}
+
+/** Run a material's `onBeforeCompile` over the stock basic shader and hand back
+ *  what it made of it — the only way to see an injected term without a GPU. */
+function compile(material: THREE.MeshBasicMaterial) {
+  const shader = {
+    vertexShader: THREE.ShaderLib.basic.vertexShader,
+    fragmentShader: THREE.ShaderLib.basic.fragmentShader,
+    uniforms: {} as Record<string, { value: unknown }>,
+  };
+  material.onBeforeCompile(
+    shader as unknown as THREE.WebGLProgramParametersWithUniforms,
+    null as unknown as THREE.WebGLRenderer,
+  );
+  return shader;
+}
+
+describe('WorldScene', () => {
+  test('the whole scene hangs under one mirrored root', () => {
+    // The single ZenGin -> Three.js conversion. If anything else in the graph
+    // scaled or flipped an axis, this transform would stop being the only
+    // answer to "where is this in the world".
+    const scene = new WorldScene();
+    expect(scene.root.matrix.elements).toEqual([...ROOT_MATRIX]);
+    expect(scene.root.matrixAutoUpdate).toBe(false);
+    expect(scene.root.matrix.determinant()).toBeLessThan(0);
+  });
+
+  test('materials are single-sided, because the index order settles winding', () => {
+    // side: DoubleSide would hide a wrong winding decision instead of proving
+    // the right one — explicitly ruled out in §7. So would BackSide, which is
+    // the same reversal written as a lie about the material, and which leaves
+    // Raycaster culling by the opposite convention from the one drawn.
+    const scene = new WorldScene();
+    scene.setWorldMesh({ groups: [group()], bbox: [0, 0, 0, 1, 1, 1] });
+    const mesh = scene.root.children[0] as THREE.Mesh;
+    expect((mesh.material as THREE.Material).side).toBe(THREE.FrontSide);
+  });
+
+  test('every triangle reaches the GPU reversed, world mesh and VOBs alike', () => {
+    // The one thing the mirror does not do (zen-world/coords): Three.js cancels
+    // a negative determinant's effect on the front/back test, so stored order
+    // renders the world inside-out. `threeIndexOrder` is where that is fixed,
+    // and this is the assertion that it is actually *called* — the geometry
+    // builder is shared, so a VOB proves the same path as the world mesh only
+    // if both are checked.
+    const stored = new Uint32Array([0, 1, 2, 3, 4, 5]).buffer;
+    const reversed = [0, 2, 1, 3, 5, 4];
+
+    const scene = new WorldScene();
+    scene.setWorldMesh({ groups: [group({ indices: stored })], bbox: [] });
+    scene.setInstancedVisuals({ visuals: [visual({ groups: [group({ indices: stored, lights: null })] })], decals: NO_DECALS, stats: {} as never });
+
+    for (const mesh of [scene.root.children[0], scene.root.children[1]] as THREE.Mesh[]) {
+      expect([...(mesh.geometry.getIndex()!.array)]).toEqual(reversed);
+    }
+  });
+
+  test('one draw group becomes one mesh, with the buffers it was given', () => {
+    const scene = new WorldScene();
+    scene.setWorldMesh({ groups: [group(), group({ texture: 'NW_STONE.TGA' })], bbox: [] });
+
+    expect(scene.root.children).toHaveLength(2);
+    const mesh = scene.root.children[0] as THREE.Mesh;
+    expect(mesh.geometry.getAttribute('position').count).toBe(3);
+    expect(mesh.geometry.getIndex()!.count).toBe(3);
+    expect(mesh.matrixAutoUpdate).toBe(false);
+  });
+
+  test('VOBs sharing a visual are one InstancedMesh, not one mesh each', () => {
+    // Rule 1 of §3, at the point where it would actually be violated.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
+
+    const meshes = scene.root.children.filter((c) => c instanceof THREE.InstancedMesh);
+    expect(meshes).toHaveLength(1);
+    expect((meshes[0] as THREE.InstancedMesh).count).toBe(2);
+  });
+
+  test('an instance matrix is read as row-major, the order the payload uses', () => {
+    // Against an identity rotation a transpose is invisible, so this one is
+    // asymmetric on purpose.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({
+      visuals: [visual({
+        count: 1,
+        matrices: new Float32Array([1, 2, 3, 10, 4, 5, 6, 20, 7, 8, 9, 30]).buffer,
+        vobIds: new Uint32Array([7]).buffer,
+      })],
+      decals: NO_DECALS, stats: {} as never,
+    });
+
+    const mesh = scene.root.children.find((c) => c instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
+    const matrix = new THREE.Matrix4();
+    mesh.getMatrixAt(0, matrix);
+    // Matrix4.elements is column-major; the payload is row-major 3x4.
+    expect([...matrix.elements]).toEqual([1, 4, 7, 0, 2, 5, 8, 0, 3, 6, 9, 0, 10, 20, 30, 1]);
+  });
+
+  test('a picked instance resolves to the VOB behind it', () => {
+    // A pick returns (InstancedMesh, instanceId) and nothing else identifies
+    // the object — without this the scene tree cannot follow a click.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
+
+    const mesh = scene.root.children.find((c) => c instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
+    expect(scene.resolveInstance(mesh, 0)).toBe(7);
+    expect(scene.resolveInstance(mesh, 1)).toBe(9);
+    expect(scene.resolveInstance(mesh, 2)).toBeNull();
+  });
+
+  test('the world mesh carries baked vertex light; a VOB visual does not', () => {
+    // `lights` is the raw zCOLOR word and the binding refuses to decode it
+    // because the channel order is a rendering question. A proto mesh has no
+    // such word at all, and a zero-filled stand-in would render every prop
+    // black under a vertex-colour material.
+    const scene = new WorldScene();
+    scene.setWorldMesh({ groups: [group()], bbox: [] });
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
+
+    const world = scene.root.children[0] as THREE.Mesh;
+    expect(world.geometry.getAttribute('color')).toBeDefined();
+    expect((world.material as THREE.MeshBasicMaterial).vertexColors).toBe(true);
+
+    const prop = scene.root.children.find((c) => c instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
+    expect(prop.geometry.getAttribute('color')).toBeUndefined();
+    expect((prop.material as THREE.MeshBasicMaterial).vertexColors).toBe(false);
+  });
+
+  test('zCOLOR is decoded as 0xAARRGGBB, not as the byte order it is stored in', () => {
+    const scene = new WorldScene();
+    scene.setWorldMesh({ groups: [group({ lights: new Uint32Array([0xff4080c0]).buffer, vertexCount: 1 })], bbox: [] });
+
+    const color = (scene.root.children[0] as THREE.Mesh).geometry.getAttribute('color');
+    // R=0x40 G=0x80 B=0xc0, converted sRGB -> linear for the colour buffer.
+    const srgbToLinear = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+    expect(color.getX(0)).toBeCloseTo(srgbToLinear(0x40 / 255), 5);
+    expect(color.getY(0)).toBeCloseTo(srgbToLinear(0x80 / 255), 5);
+    expect(color.getZ(0)).toBeCloseTo(srgbToLinear(0xc0 / 255), 5);
+  });
+
+  test('an untextured group takes its colour from the material, not from white', () => {
+    // 266 of NewWorld's 1400 materials carry no texture and are told apart only
+    // by colour — drawing them white flattens them into one surface.
+    const scene = new WorldScene();
+    scene.setWorldMesh({ groups: [group({ texture: '', color: [255, 0, 0, 255] })], bbox: [] });
+
+    const material = (scene.root.children[0] as THREE.Mesh).material as THREE.MeshBasicMaterial;
+    expect(material.map).toBeNull();
+    expect(material.color.r).toBeCloseTo(1, 5);
+    expect(material.color.g).toBeCloseTo(0, 5);
+  });
+
+  test('the blend mode a material declares is the blend mode it gets', () => {
+    // AlphaFunction: 1 NONE (cut-out), 2 BLEND, 3 ADD. Getting this wrong is
+    // the additive-blend flame inside an opaque wall the merge key exists for.
+    const scene = new WorldScene();
+    scene.setWorldMesh({
+      groups: [group({ alphaFunc: 1 }), group({ alphaFunc: 2 }), group({ alphaFunc: 3 })],
+      bbox: [],
+    });
+    const materials = scene.root.children.map((c) => (c as THREE.Mesh).material as THREE.MeshBasicMaterial);
+
+    expect(materials[0].alphaTest).toBeGreaterThan(0);
+    expect(materials[1].transparent).toBe(true);
+    expect(materials[1].blending).toBe(THREE.NormalBlending);
+    expect(materials[2].transparent).toBe(true);
+    expect(materials[2].blending).toBe(THREE.AdditiveBlending);
+  });
+
+  test('the scene reports which textures it still needs, once each', () => {
+    // Textures are decoded on demand — 549 ms of the cold open otherwise, none
+    // of it invalidated by an edit. The scene names what it wants; nothing
+    // decodes speculatively.
+    const scene = new WorldScene();
+    scene.setWorldMesh({ groups: [group(), group(), group({ texture: 'NW_STONE.TGA' }), group({ texture: '' })], bbox: [] });
+    scene.setInstancedVisuals({ visuals: [visual({ groups: [group({ texture: 'BARREL.TGA', lights: null })] })], decals: NO_DECALS, stats: {} as never });
+
+    expect(new Set(scene.pendingTextureNames())).toEqual(
+      new Set(['NW_WOOD.TGA', 'NW_STONE.TGA', 'BARREL.TGA']),
+    );
+  });
+
+  test('a decoded texture reaches every material that named it', () => {
+    const scene = new WorldScene();
+    scene.setWorldMesh({ groups: [group(), group(), group({ texture: 'NW_STONE.TGA' })], bbox: [] });
+    scene.applyTexture({ name: 'NW_WOOD.TGA', width: 2, height: 2, rgba: new Uint8Array(16).buffer });
+
+    const materials = scene.root.children.map((c) => (c as THREE.Mesh).material as THREE.MeshBasicMaterial);
+    expect(materials[0].map).not.toBeNull();
+    expect(materials[1].map).toBe(materials[0].map);   // one texture, two materials
+    expect(materials[2].map).toBeNull();               // a different name, untouched
+    expect(scene.pendingTextureNames()).toEqual(['NW_STONE.TGA']);
+  });
+
+  test('a decoded texture is uploaded unflipped, for ZenGin\'s top-left V origin (#368)', () => {
+    // Decoded rows run top first, and ZenGin's UVs put V = 0 at the top of the
+    // image: retail NW_NATURE_BUSH_01's lowest vertices carry V ~ 0 and its
+    // highest V ~ -1. A flipped upload drew every bush card upside down.
+    const scene = new WorldScene();
+    scene.setWorldMesh({ groups: [group()], bbox: [] });
+    scene.setInstancedVisuals({ visuals: [visual({ groups: [group({ texture: 'BARREL.TGA', lights: null })] })], decals: NO_DECALS, stats: {} as never });
+    scene.applyTexture({ name: 'NW_WOOD.TGA', width: 2, height: 2, rgba: new Uint8Array(16).buffer });
+    scene.applyTexture({ name: 'BARREL.TGA', width: 2, height: 2, rgba: new Uint8Array(16).buffer });
+
+    const maps = scene.root.children
+      .map((c) => ((c as THREE.Mesh).material as THREE.MeshBasicMaterial).map)
+      .filter((map) => map !== null);
+    expect(maps).toHaveLength(2);
+    expect(maps.map((map) => map!.flipY)).toEqual([false, false]);
+  });
+
+  test('dispose releases the geometries and textures it created', () => {
+    // A world is reopened as often as a project is; leaking a 30 MB buffer set
+    // per open is the kind of thing nothing reports until the app dies.
+    const scene = new WorldScene();
+    scene.setWorldMesh({ groups: [group()], bbox: [] });
+    const geometry = (scene.root.children[0] as THREE.Mesh).geometry;
+    const disposed = jest.spyOn(geometry, 'dispose');
+
+    scene.dispose();
+
+    expect(disposed).toHaveBeenCalled();
+    expect(scene.root.children).toHaveLength(0);
+  });
+
+  test('dispose releases the instance buffers too, not only the geometries', () => {
+    // `InstancedMesh.instanceMatrix` and `instanceColor` are GPU buffers the
+    // geometry does not hold, so disposing the geometry frees neither: a
+    // retail world's ~724 instanced meshes left about a megabyte per rebuild
+    // to the garbage collector, which frees the JS object and never the
+    // buffer (§3.5). A structural edit rebuilds the scene, so this is per
+    // edit, not per world open.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
+    const mesh = scene.instancedMeshes[0];
+    const disposed = jest.spyOn(mesh, 'dispose');
+
+    scene.dispose();
+
+    expect(disposed).toHaveBeenCalled();
+  });
+
+  test('a decal quad is an instanced mesh, and its buffers go the same way', () => {
+    const scene = new WorldScene();
+    scene.setDecals({
+      groups: [{
+        texture: 'BLOOD.TGA',
+        count: 1,
+        positions: new Float32Array([600, 0, 0]).buffer,
+        sizes: new Float32Array([50, 50]).buffer,
+        vobIds: new Uint32Array([6]).buffer,
+        alphaWeights: new Float32Array([1]).buffer,
+      }],
+      stats: { decals: 1, textures: 1 },
+    });
+    const quad = scene.root.children.find(
+      (child) => (child as THREE.InstancedMesh).isInstancedMesh,
+    ) as THREE.InstancedMesh;
+    const disposed = jest.spyOn(quad, 'dispose');
+
+    scene.dispose();
+
+    expect(disposed).toHaveBeenCalled();
+  });
+
+  // ── decoded textures across a rebuild (level-editor.md §7) ────────────────
+  //
+  // A structural op rebuilds the scene, because an instance cannot be appended
+  // to an allocated InstancedMesh. Without a cache that rebuild starts from an
+  // empty texture map and re-decodes all 490 of NewWorld's — the 549 ms that
+  // was deliberately moved off the critical path of the *cold* open, paid again
+  // on every placement. Nothing about the pixels changed.
+
+  const decoded = (name: string): DecodedTexture => (
+    { name, width: 2, height: 2, rgba: new Uint8Array(16).buffer }
+  );
+
+  test('a rebuilt scene asks only for textures the cache does not already hold', async () => {
+    const cache = textureCacheFor(null, 'a-world');
+    const load = jest.fn(async (name: string) => decoded(name));
+
+    const first = new WorldScene(cache);
+    first.setWorldMesh({ groups: [group(), group({ texture: 'NW_STONE.TGA' })], bbox: [] });
+    await first.loadPendingTextures(load, () => false);
+    expect(load.mock.calls.map(([name]) => name).sort()).toEqual(['NW_STONE.TGA', 'NW_WOOD.TGA']);
+    first.dispose();
+
+    // The rebuild a placement forces: the same world, one visual more.
+    const second = new WorldScene(cache);
+    second.setWorldMesh({
+      groups: [group(), group({ texture: 'NW_STONE.TGA' }), group({ texture: 'NW_GRASS.TGA' })],
+      bbox: [],
+    });
+    load.mockClear();
+    await second.loadPendingTextures(load, () => false);
+
+    // Only the one it has never seen.
+    expect(load.mock.calls.map(([name]) => name)).toEqual(['NW_GRASS.TGA']);
+    // And the two it did not ask for are on the rebuilt materials all the same,
+    // or the saving would be a scene drawn untextured.
+    const materials = second.root.children.map((c) => (c as THREE.Mesh).material as THREE.MeshBasicMaterial);
+    expect(materials[0].map).not.toBeNull();
+    expect(materials[1].map).not.toBeNull();
+    expect(materials[0].map).not.toBe(materials[1].map);
+    expect(second.pendingTextureNames()).toEqual([]);
+  });
+
+  test('a different world decodes its own textures', async () => {
+    // Scoped like the camera pose beside it: keyed on the world, so opening a
+    // different one is not served another world's pixels under the same names.
+    const cache = textureCacheFor(null, 'a-world');
+    const load = jest.fn(async (name: string) => decoded(name));
+    const first = new WorldScene(cache);
+    first.setWorldMesh({ groups: [group()], bbox: [] });
+    await first.loadPendingTextures(load, () => false);
+    const stale = jest.spyOn(
+      ((first.root.children[0] as THREE.Mesh).material as THREE.MeshBasicMaterial).map!,
+      'dispose',
+    );
+    first.dispose();
+
+    const other = textureCacheFor(cache, 'another-world');
+    expect(other).not.toBe(cache);
+    // The previous world's GPU memory goes with it — nothing else holds the
+    // cache, so this is the only place it can be released.
+    expect(stale).toHaveBeenCalled();
+
+    const second = new WorldScene(other);
+    second.setWorldMesh({ groups: [group()], bbox: [] });
+    load.mockClear();
+    await second.loadPendingTextures(load, () => false);
+
+    expect(load.mock.calls.map(([name]) => name)).toEqual(['NW_WOOD.TGA']);
+  });
+
+  test('the same world keeps the cache it had', () => {
+    const cache = textureCacheFor(null, 'a-world');
+    expect(textureCacheFor(cache, 'a-world')).toBe(cache);
+  });
+
+  test('the cache owns disposal, not the scene it was handed to', () => {
+    // The trap: a THREE.Texture holds GPU memory, and the scene teardown used
+    // to free it. If it still did, the cache would hand the rebuild textures
+    // that had already been released.
+    const cache = textureCacheFor(null, 'a-world');
+    const scene = new WorldScene(cache);
+    scene.setWorldMesh({ groups: [group()], bbox: [] });
+    scene.applyTexture(decoded('NW_WOOD.TGA'));
+    const texture = (scene.root.children[0] as THREE.Mesh).material as THREE.MeshBasicMaterial;
+    const dispose = jest.spyOn(texture.map!, 'dispose');
+
+    scene.dispose();
+    expect(dispose).not.toHaveBeenCalled();
+
+    cache.dispose();
+    expect(dispose).toHaveBeenCalled();
+  });
+
+  test('a scene with no cache still disposes the textures it decoded', () => {
+    // The uncached path is what `dispose releases the geometries and textures`
+    // above has always covered; naming it here so the cached branch cannot be
+    // read as having moved ownership for everyone.
+    const scene = new WorldScene();
+    scene.setWorldMesh({ groups: [group()], bbox: [] });
+    scene.applyTexture(decoded('NW_WOOD.TGA'));
+    const texture = ((scene.root.children[0] as THREE.Mesh).material as THREE.MeshBasicMaterial).map!;
+    const dispose = jest.spyOn(texture, 'dispose');
+
+    scene.dispose();
+
+    expect(dispose).toHaveBeenCalled();
+  });
+
+  test('one texture that cannot be decoded does not cost the rest their pixels', async () => {
+    // beppo, 2026-09-03: six of `SURFACE_BEPPO`'s texture names resolve to a
+    // *source* .TGA sitting loose in the mod folder, which ZenKit refuses with
+    // "invalid signature". The rejection came out of this loop and every name
+    // after it in the list stayed white — including a tree whose own textures
+    // decode perfectly.
+    const scene = new WorldScene(null);
+    scene.setWorldMesh({
+      groups: [
+        group({ texture: 'NW_STONE.TGA' }),
+        group({ texture: 'KM_SOURCE_TGA.TGA' }),
+        group({ texture: 'NW_GRASS.TGA' }),
+      ],
+      bbox: [],
+    });
+
+    const load = jest.fn(async (name: string) => {
+      if (name === 'KM_SOURCE_TGA.TGA') throw new Error('invalid signature');
+      return decoded(name);
+    });
+
+    await expect(scene.loadPendingTextures(load, () => false)).resolves.toEqual(['KM_SOURCE_TGA.TGA']);
+    expect(load).toHaveBeenCalledTimes(3);
+    expect(scene.pendingTextureNames()).toEqual(['KM_SOURCE_TGA.TGA']);
+  });
+
+  test('a name the VFS does not hold is reported too — it is white either way', async () => {
+    const scene = new WorldScene(null);
+    scene.setWorldMesh({
+      groups: [group({ texture: 'NW_STONE.TGA' }), group({ texture: 'GONE.TGA.TGA' })],
+      bbox: [],
+    });
+
+    const load = jest.fn(async (name: string) => (name === 'GONE.TGA.TGA' ? null : decoded(name)));
+
+    await expect(scene.loadPendingTextures(load, () => false)).resolves.toEqual(['GONE.TGA.TGA']);
+  });
+
+  test('a cancelled load stops asking', async () => {
+    // The world can be closed while the pump is between awaits, and a decode
+    // applied to a torn-down scene is a texture nothing will ever dispose.
+    const cache = textureCacheFor(null, 'a-world');
+    const scene = new WorldScene(cache);
+    scene.setWorldMesh({
+      groups: [group(), group({ texture: 'NW_STONE.TGA' }), group({ texture: 'NW_GRASS.TGA' })],
+      bbox: [],
+    });
+
+    let cancelled = false;
+    const load = jest.fn(async (name: string) => { cancelled = true; return decoded(name); });
+    await scene.loadPendingTextures(load, () => cancelled);
+
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+
+  // ── an edit reaching the scene (level-editor.md §7, Phase 1b) ─────────────
+  //
+  // An op moves a VOB in the world the main process holds. The viewport has to
+  // follow without rebuilding 31 MB of buffers, and two things about how it is
+  // drawn make that less obvious than it sounds: a VOB is an *instance* inside
+  // a shared InstancedMesh, and a visual with several draw groups puts the same
+  // VOB in several of them.
+
+  test('moving a VOB writes the new position into every mesh its visual was split into', () => {
+    // A visual with two draw groups is two InstancedMeshes over the same
+    // instances. Updating the first one leaves the VOB drawn in both places.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({
+      visuals: [visual({ groups: [group({ lights: null }), group({ texture: 'NW_STONE.TGA', lights: null })] })],
+      decals: NO_DECALS, stats: {} as never,
+    });
+
+    const meshes = scene.root.children.filter((c) => c instanceof THREE.InstancedMesh) as THREE.InstancedMesh[];
+    expect(meshes).toHaveLength(2);
+    // `needsUpdate` is a setter with no getter; `version` is what it bumps, and
+    // it is what decides whether the buffer is re-uploaded to the GPU at all.
+    const versions = meshes.map((mesh) => mesh.instanceMatrix.version);
+
+    expect(scene.moveVob(9, [70, 80, 90])).toBe(true);
+
+    const matrix = new THREE.Matrix4();
+    meshes.forEach((mesh, at) => {
+      // vob 9 is the second instance in the fixture
+      mesh.getMatrixAt(1, matrix);
+      expect([matrix.elements[12], matrix.elements[13], matrix.elements[14]]).toEqual([70, 80, 90]);
+      expect(mesh.instanceMatrix.version).toBeGreaterThan(versions[at]);
+    });
+  });
+
+  test('a move changes the position and nothing else about the instance', () => {
+    // The op carries a position; the rotation is the VOB's own and is not the
+    // op's to touch.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({
+      visuals: [visual({
+        count: 1,
+        matrices: new Float32Array([1, 2, 3, 10, 4, 5, 6, 20, 7, 8, 9, 30]).buffer,
+        vobIds: new Uint32Array([7]).buffer,
+      })],
+      decals: NO_DECALS, stats: {} as never,
+    });
+
+    scene.moveVob(7, [-1, -2, -3]);
+
+    const mesh = scene.root.children.find((c) => c instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
+    const matrix = new THREE.Matrix4();
+    mesh.getMatrixAt(0, matrix);
+    expect([...matrix.elements]).toEqual([1, 4, 7, 0, 2, 5, 8, 0, 3, 6, 9, 0, -1, -2, -3, 1]);
+  });
+
+  test('the position is ZenGin space, unconverted — the root is still the only conversion', () => {
+    // An op's coordinates are centimetres in ZenGin handedness, exactly as the
+    // binding takes them. Converting here would be a second conversion, and the
+    // instance would land somewhere the property grid does not agree with.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual({ count: 1, vobIds: new Uint32Array([4]).buffer })], decals: NO_DECALS, stats: {} as never });
+
+    scene.moveVob(4, [1000, 0, 0]);
+
+    const mesh = scene.root.children.find((c) => c instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
+    const matrix = new THREE.Matrix4();
+    mesh.getMatrixAt(0, matrix);
+    expect(matrix.elements[12]).toBe(1000);
+  });
+
+  test('a moved VOB takes its bounding sphere with it, or the frustum culls it away', () => {
+    // InstancedMesh culls by a bounding sphere computed from the instances it
+    // had when it was built. Dragging a VOB out of that sphere and leaving the
+    // sphere behind makes it vanish at certain camera angles — and only at
+    // certain camera angles, which is the worst way to find out.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual({ count: 1, vobIds: new Uint32Array([4]).buffer })], decals: NO_DECALS, stats: {} as never });
+    const mesh = scene.root.children.find((c) => c instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
+    const before = mesh.boundingSphere!.clone();
+
+    scene.moveVob(4, [100000, 0, 0]);
+
+    expect(mesh.boundingSphere!.center.distanceTo(before.center)).toBeGreaterThan(1000);
+  });
+
+  test('moving a VOB that is not drawn changes nothing and says so', () => {
+    // 23,288 VOBs are enumerated and 12,463 are placed: a decal, a particle
+    // effect or a level compo has no instance to move, and the property grid
+    // can still select one.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
+
+    expect(scene.moveVob(4242, [1, 2, 3])).toBe(false);
+  });
+
+  test('where a VOB is drawn can be read back, so a gizmo can be put on it', () => {
+    // The viewport has no access to the VOB index — it is handed payloads, not
+    // the world — so the scene is what it asks where the selected VOB is.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({
+      visuals: [visual({
+        count: 1,
+        matrices: new Float32Array([1, 2, 3, 10, 4, 5, 6, 20, 7, 8, 9, 30]).buffer,
+        vobIds: new Uint32Array([7]).buffer,
+      })],
+      decals: NO_DECALS, stats: {} as never,
+    });
+
+    expect(scene.positionOf(7)).toEqual([10, 20, 30]);
+    scene.moveVob(7, [40, 50, 60]);
+    expect(scene.positionOf(7)).toEqual([40, 50, 60]);
+    // A VOB with no instance has no position to report, and null is not [0,0,0]
+    // — the middle of the world is a real place for a VOB to be.
+    expect(scene.positionOf(4242)).toBeNull();
+  });
+
+  // ── rotation (level-editor.md §7) ───────────────────────────────────────
+  //
+  // A rotation writes the instance's 3x3 and must not touch its position: the
+  // two live in the same Matrix4, and a careless `set` writes both.
+
+  test('rotating a VOB writes the matrix row-major and leaves the position alone', () => {
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({
+      visuals: [visual({
+        count: 1,
+        matrices: new Float32Array([1, 0, 0, 10, 0, 1, 0, 20, 0, 0, 1, 30]).buffer,
+        vobIds: new Uint32Array([7]).buffer,
+      })],
+      decals: NO_DECALS, stats: {} as never,
+    });
+
+    // A quarter turn about Y: asymmetric, so a transpose shows.
+    expect(scene.rotateVob(7, [0, 0, 1, 0, 1, 0, -1, 0, 0])).toBe(true);
+
+    const mesh = scene.root.children.find((c) => c instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
+    const matrix = new THREE.Matrix4();
+    mesh.getMatrixAt(0, matrix);
+    // Column-major storage of the row-major matrix above, with the position
+    // untouched in the fourth column.
+    expect([...matrix.elements]).toEqual([0, 0, -1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 10, 20, 30, 1]);
+  });
+
+  test('a rotated VOB takes its bounding sphere with it', () => {
+    // Same reason as a move: InstancedMesh culls by the sphere it was built
+    // with, and a long visual turned end-on sweeps well outside it.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({
+      visuals: [visual({
+        count: 1,
+        matrices: new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]).buffer,
+        vobIds: new Uint32Array([4]).buffer,
+      })],
+      decals: NO_DECALS, stats: {} as never,
+    });
+    const mesh = scene.root.children.find((c) => c instanceof THREE.InstancedMesh) as THREE.InstancedMesh;
+    const before = mesh.boundingSphere!.center.clone();
+
+    scene.rotateVob(4, [0, 0, 1, 0, 1, 0, -1, 0, 0]);
+
+    expect(mesh.boundingSphere!.center.distanceTo(before)).toBeGreaterThan(1);
+  });
+
+  test('rotating a VOB that is not drawn changes nothing and says so', () => {
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
+    expect(scene.rotateVob(4242, [1, 0, 0, 0, 1, 0, 0, 0, 1])).toBe(false);
+  });
+
+  test('a VOB reports the visual bounds a rotation refits its bbox from', () => {
+    // The bbox a retail world stores is the tight world AABB of the visual
+    // placed by the VOB's transform, so an op that turns a VOB needs the
+    // visual's own bounds — and the scene is where the renderer can reach them.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({
+      visuals: [visual({ bounds: [-1, -2, -3, 4, 5, 6] })],
+      decals: NO_DECALS, stats: {} as never,
+    });
+
+    expect(scene.boundsOf(9)).toEqual([-1, -2, -3, 4, 5, 6]);
+    // Not [0,0,0,0,0,0]: a VOB with no instance has no visual bounds, and an
+    // empty box would refit a real bbox down to a point.
+    expect(scene.boundsOf(4242)).toBeNull();
+  });
+
+  test('a VOB reports the matrix a turn composes onto', () => {
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({
+      visuals: [visual({
+        count: 1,
+        matrices: new Float32Array([0, 0, 1, 10, 0, 1, 0, 20, -1, 0, 0, 30]).buffer,
+        vobIds: new Uint32Array([7]).buffer,
+      })],
+      decals: NO_DECALS, stats: {} as never,
+    });
+
+    expect(scene.rotationOf(7)).toEqual([0, 0, 1, 0, 1, 0, -1, 0, 0]);
+    expect(scene.rotationOf(4242)).toBeNull();
+  });
+
+  test('a selection anchors the gizmo on the last VOB in it that is actually drawn', () => {
+    // One gizmo drives a whole selection, and it has to sit somewhere. The last
+    // one selected is the one the user just clicked — but a selection may hold
+    // VOBs with no instance at all, and anchoring on one of those would detach
+    // the gizmo from a selection that has perfectly drawable VOBs in it.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
+
+    // Both drawn, and at different places: the order is the whole answer here,
+    // and a scan from either end agrees whenever only one of them is drawn.
+    expect(scene.anchorOf([7, 9])).toEqual([40, 50, 60]);
+    expect(scene.anchorOf([9, 7])).toEqual([10, 20, 30]);
+    // A VOB with no instance is stepped over rather than detaching the gizmo.
+    expect(scene.anchorOf([9, 4242])).toEqual([40, 50, 60]);
+    // Nothing drawn, nothing to attach to — and an empty selection is not an
+    // error, it is what "deselect" leaves behind.
+    expect(scene.anchorOf([4242])).toBeNull();
+    expect(scene.anchorOf([])).toBeNull();
+  });
+
+  test('a selection also reports its centre, which is what a translate gizmo stands on', () => {
+    // §16.24 2: the gizmo sat on the last VOB picked, so a multi-selection put
+    // the handles on its edge. The centre is the translate answer; `anchorOf`
+    // stays the rotate one, because `rotateVobs` turns each VOB about its own
+    // origin and a gizmo at the centroid would show a pivot the op does not use.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
+
+    expect(scene.centroidOf([7, 9])).toEqual([25, 35, 45]);
+    // Order cannot matter, which is the whole difference from `anchorOf`.
+    expect(scene.centroidOf([9, 7])).toEqual([25, 35, 45]);
+    // A VOB with no instance has no position to average in — counting it as an
+    // origin would drag the centre towards [0, 0, 0].
+    expect(scene.centroidOf([9, 4242])).toEqual([40, 50, 60]);
+    expect(scene.centroidOf([4242])).toBeNull();
+    expect(scene.centroidOf([])).toBeNull();
+  });
+
+  test('the selected VOBs carry a per-instance flag, and only they do', () => {
+    // §16.24 1: the silhouette darkening is deliberately never a selection
+    // state, so a VOB whose gizmo is off screen read as unselected. The cheap
+    // emphasis is the one hiding already uses — a per-instance attribute the
+    // VOB shader carries — not a second InstancedMesh per visual, which is 724
+    // more draw calls (render-performance.md).
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
+    const mesh = scene.instancedMeshes[0];
+
+    scene.setSelectedVobs([9]);
+
+    const selected = mesh.geometry.getAttribute('instanceSelected') as THREE.BufferAttribute;
+    // vobIds are [7, 9]: the second instance, and only it.
+    expect([...(selected.array as Float32Array)]).toEqual([0, 1]);
+    expect(selected.version).toBe(1);
+    // Nothing about the pose moves — the flag is beside the matrix, exactly as
+    // `instanceHidden` is, so the gizmo and every op still read the same place.
+    expect(scene.positionOf(9)).toEqual([40, 50, 60]);
+  });
+
+  test('deselecting clears the flag it set, and touches no other mesh', () => {
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({
+      visuals: [visual(), visual({
+        name: 'CRATE.3DS',
+        count: 1,
+        matrices: new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]).buffer,
+        vobIds: new Uint32Array([11]).buffer,
+      })],
+      decals: NO_DECALS, stats: {} as never,
+    });
+    const [barrels, crate] = scene.instancedMeshes;
+
+    scene.setSelectedVobs([9]);
+    scene.setSelectedVobs([]);
+
+    expect([...(barrels.geometry.getAttribute('instanceSelected').array as Float32Array)])
+      .toEqual([0, 0]);
+    expect((barrels.geometry.getAttribute('instanceSelected') as THREE.BufferAttribute).version).toBe(2);
+    // The crate never held a selected instance, so nothing about it was
+    // re-uploaded — a whole-scene rewrite per click is 724 attribute uploads.
+    expect((crate.geometry.getAttribute('instanceSelected') as THREE.BufferAttribute).version).toBe(0);
+  });
+
+  test('every mesh a visual was split into takes the same selected flag', () => {
+    // The hazard `moveVob` and `setHiddenVobs` already carry: one VOB is an
+    // instance in every mesh its visual was split into, and marking it in one
+    // of them outlines half a prop.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({
+      visuals: [visual({ groups: [group({ lights: null }), group({ texture: 'NW_STONE.TGA', lights: null })] })],
+      decals: NO_DECALS, stats: {} as never,
+    });
+
+    scene.setSelectedVobs([7]);
+
+    expect(scene.instancedMeshes).toHaveLength(2);
+    for (const mesh of scene.instancedMeshes) {
+      expect([...(mesh.geometry.getAttribute('instanceSelected').array as Float32Array)])
+        .toEqual([1, 0]);
+    }
+  });
+
+  test('the VOB shader reads the selected flag, and the world mesh never declares one', () => {
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
+    scene.setWorldMesh({ groups: [group()], bbox: [] });
+
+    const vob = compile(scene.instancedMeshes[0].material as THREE.MeshBasicMaterial);
+    expect(vob.vertexShader).toContain('attribute float instanceSelected;');
+    // Carried to the fragment stage: the emphasis is a colour, not a vertex
+    // move — a selected VOB must stay exactly where the op would put it.
+    expect(vob.vertexShader).toContain('vVobSelected = instanceSelected;');
+    expect(vob.fragmentShader).toContain('vVobSelected');
+
+    const world = compile(scene.worldMeshes[0].material as THREE.MeshBasicMaterial);
+    expect(world.vertexShader).not.toContain('instanceSelected');
+    expect(world.fragmentShader).not.toContain('vVobSelected');
+  });
+
+  /** The boxes the selection overlay draws, read back out of its line
+   *  segments: 12 edges × 2 ends per box, reduced to each box's min and max. */
+  function drawnBoxes(scene: WorldScene): number[][] {
+    const lines = scene.root.children.find((child) => child instanceof THREE.LineSegments) as
+      THREE.LineSegments | undefined;
+    if (lines === undefined || !lines.visible) return [];
+    const points = lines.geometry.getAttribute('position').array as Float32Array;
+    const boxes: number[][] = [];
+    for (let start = 0; start < points.length; start += 24 * 3) {
+      const box = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+      for (let at = start; at < start + 24 * 3; at += 3) {
+        for (let axis = 0; axis < 3; axis++) {
+          box[axis] = Math.min(box[axis], points[at + axis]);
+          box[axis + 3] = Math.max(box[axis + 3], points[at + axis]);
+        }
+      }
+      boxes.push(box);
+    }
+    return boxes;
+  }
+
+  test('a selected VOB is drawn as a box: its visual placed by its pose, as a world AABB', () => {
+    // Spacer's picture: the box is the VOB's own extent — what a stored bbox
+    // is — so a turned VOB gets the box around its turned visual, not its
+    // visual's box moved.
+    const scene = new WorldScene();
+    scene.setSelectionStyle('box');
+    scene.setInstancedVisuals({
+      visuals: [visual({
+        count: 2,
+        // VOB 7 a quarter turn about Y (x -> -z), VOB 9 unturned.
+        matrices: new Float32Array([
+          0, 0, 1, 10, 0, 1, 0, 20, -1, 0, 0, 30,
+          1, 0, 0, 40, 0, 1, 0, 50, 0, 0, 1, 60,
+        ]).buffer,
+        bounds: [0, 0, 0, 100, 100, 10],
+      })],
+      decals: NO_DECALS, stats: {} as never,
+    });
+
+    expect(drawnBoxes(scene)).toEqual([]);
+
+    scene.setSelectedVobs([7, 9]);
+
+    expect(drawnBoxes(scene)).toEqual([
+      [10, 20, -70, 20, 120, 30],
+      [40, 50, 60, 140, 150, 70],
+    ]);
+    const lines = scene.root.children.find((child) => child instanceof THREE.LineSegments)!;
+    // Drawn over the composite with the world's depth, like every overlay, and
+    // never what a click lands on.
+    expect(lines.layers.isEnabled(0)).toBe(true);
+    expect(lines.layers.isEnabled(WORLD_LAYER)).toBe(false);
+    const hits: THREE.Intersection[] = [];
+    lines.raycast(new THREE.Raycaster(), hits);
+    expect(hits).toEqual([]);
+
+    scene.setSelectedVobs([]);
+    expect(drawnBoxes(scene)).toEqual([]);
+  });
+
+  test('a VOB split across meshes gets one box, and a VOB with no instance gets none', () => {
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({
+      visuals: [visual({ groups: [group({ lights: null }), group({ texture: 'NW_STONE.TGA', lights: null })] })],
+      decals: NO_DECALS, stats: {} as never,
+    });
+    scene.setSelectionStyle('box');
+
+    scene.setSelectedVobs([7, 4242]);
+
+    expect(drawnBoxes(scene)).toEqual([[10, 20, 30, 110, 120, 30]]);
+  });
+
+  test('the box follows a move, a turn and a structural op', () => {
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
+    scene.setSelectionStyle('box');
+    scene.setSelectedVobs([9]);
+
+    scene.moveVob(9, [0, 0, 0]);
+    expect(drawnBoxes(scene)).toEqual([[0, 0, 0, 100, 100, 0]]);
+
+    // A quarter turn about Z: x -> y, y -> -x.
+    scene.rotateVob(9, [0, -1, 0, 1, 0, 0, 0, 0, 1]);
+    expect(drawnBoxes(scene)).toEqual([[-100, 0, 0, 0, 100, 0]]);
+
+    // The op renumbered the slots and moved VOB 9; the box goes with it.
+    scene.updateInstancedVisuals({
+      visuals: [visual({
+        count: 1,
+        matrices: new Float32Array([1, 0, 0, 5, 0, 1, 0, 5, 0, 0, 1, 5]).buffer,
+        vobIds: new Uint32Array([9]).buffer,
+        groups: [],
+      })],
+      decals: NO_DECALS, stats: {} as never,
+    });
+    expect(drawnBoxes(scene)).toEqual([[5, 5, 5, 105, 105, 5]]);
+  });
+
+  test('the selection style picks the box or the outline flag, never both', () => {
+    // Switchable: the box is Spacer's picture, the outline flag is what the
+    // outline pass paints orange. Each style draws its own and clears the other.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
+    const flags = () => [...(scene.instancedMeshes[0].geometry.getAttribute('instanceSelected').array as Float32Array)];
+
+    // The outline is the default, so a scene nobody configures draws what it
+    // always drew.
+    scene.setSelectedVobs([9]);
+    expect(flags()).toEqual([0, 1]);
+    expect(drawnBoxes(scene)).toEqual([]);
+
+    // Switching re-applies the standing selection rather than waiting for the
+    // next click.
+    scene.setSelectionStyle('box');
+    expect(flags()).toEqual([0, 0]);
+    expect(drawnBoxes(scene)).toEqual([[40, 50, 60, 140, 150, 60]]);
+
+    scene.setSelectionStyle('outline');
+    expect(flags()).toEqual([0, 1]);
+    expect(drawnBoxes(scene)).toEqual([]);
+  });
+
+  test('VOB materials write the outline mask and the world mesh writes an empty one', () => {
+    // "A VOB is hard to tell from the world mesh" (2026-08-27), and the rim
+    // term that answered it drew nothing a human could see (§16.12): a flat
+    // face has no facing gradient and a billboard's silhouette is its texture's
+    // cutout. So the outline is no longer shaded — it is a screen-space line
+    // drawn by `VobOutline` wherever a *mask* changes, and this is the mask's
+    // producer: a second colour attachment every VOB fragment writes and every
+    // world-mesh fragment clears.
+    const scene = new WorldScene();
+    scene.setWorldMesh({ groups: [group()], bbox: [] });
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
+
+    const world = (scene.root.children[0] as THREE.Mesh).material as THREE.MeshBasicMaterial;
+    const vob = scene.instancedMeshes[0].material as THREE.MeshBasicMaterial;
+
+    // The two programs must not share a cache key, or one compiled shader is
+    // handed to both and whichever material compiled first decides.
+    expect(vob.customProgramCacheKey()).not.toBe(world.customProgramCacheKey());
+
+    // Nothing extra is drawn: one world mesh, one InstancedMesh, no second
+    // mesh per visual. The mask rides the draw that exists.
+    expect(scene.root.children).toHaveLength(2);
+
+    const vobShader = compile(vob);
+    // The mask has three channels: "a VOB is here", a key that tells two
+    // touching VOBs apart (hashed from the instance's own origin, so it costs
+    // no attribute), and the selection flag — so the line between a selected
+    // VOB and its neighbour is drawn in the selection colour.
+    expect(vobShader.fragmentShader).toContain('layout(location = 1) out highp vec4 vobMask;');
+    expect(vobShader.vertexShader).toContain('instanceMatrix[ 3 ].xyz');
+    expect(vobShader.vertexShader).toMatch(/vVobKey = /);
+    expect(vobShader.fragmentShader).toMatch(/vobMask = vec4\( 1\.0, vVobKey, vVobSelected, 1\.0 \);/);
+    expect(vobShader.fragmentShader).toContain('#include <opaque_fragment>');
+    // And no rim: the facing term is gone with the mechanism it belonged to.
+    expect(vobShader.fragmentShader).not.toContain('vobFacing');
+    expect(vobShader.vertexShader).not.toContain('vVobNormal');
+
+    // The world mesh declares the same output and writes nothing into it — an
+    // attachment a program never writes is undefined, not zero, and a wall
+    // that left garbage in the mask would grow an outline.
+    const worldShader = compile(world);
+    // The mask is fragment-only on the world mesh — no key varying, no vertex
+    // work. This used to assert the vertex shader was the stock one byte for
+    // byte; the light preview (#256) injects a world position into both
+    // material kinds, so the claim is now the mask's own.
+    expect(worldShader.vertexShader).not.toContain('vVobKey');
+    expect(worldShader.vertexShader).toContain('vPreviewWorldPos');
+    expect(worldShader.fragmentShader).toContain('layout(location = 1) out highp vec4 vobMask;');
+    expect(worldShader.fragmentShader).toMatch(/vobMask = vec4\( 0\.0 \);/);
+    expect(worldShader.fragmentShader).not.toContain('vVobKey');
+  });
+
+  test('a blended VOB leaves the mask alone, so a flame quad gets no rectangle', () => {
+    // A blended surface blends *every* attachment with its own alpha, so the
+    // mask it writes has to be all zero — then the blend leaves what was there.
+    // The choice is a define, not a second hook: defines are part of the
+    // program cache key, so the two variants stay two programs.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({
+      visuals: [visual({ groups: [group({ alphaFunc: 2, lights: null })] })],
+      decals: NO_DECALS, stats: {} as never,
+    });
+    const blended = scene.instancedMeshes[0].material as THREE.MeshBasicMaterial;
+    expect(blended.transparent).toBe(true);
+    expect((blended as THREE.Material & { defines?: unknown }).defines).toEqual({ VOB_MASK_BLENDED: '' });
+    const shader = compile(blended);
+    expect(shader.fragmentShader).toMatch(/#ifdef VOB_MASK_BLENDED\s+vobMask = vec4\( 0\.0 \);\s+#else/);
+
+    const opaque = new WorldScene();
+    opaque.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
+    expect((opaque.instancedMeshes[0].material as THREE.Material & { defines?: unknown }).defines).toBeUndefined();
+  });
+
+  test('the world and its VOBs draw on their own layer, so the outline pass can draw them alone', () => {
+    // `VobOutline` renders the world into the masked target with the camera on
+    // this layer, composites, and only then draws everything else — gizmo,
+    // waynet, markers — on top with the world's depth restored. An object left
+    // on layer 0 in this scene would be drawn twice; one on this layer that is
+    // not world geometry would be drawn under the line.
+    const scene = new WorldScene();
+    scene.setWorldMesh({ groups: [group()], bbox: [] });
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
+
+    const worldLayer = new THREE.Layers();
+    worldLayer.set(WORLD_LAYER);
+    expect(WORLD_LAYER).not.toBe(0);
+    for (const mesh of [...scene.worldMeshes, ...scene.instancedMeshes]) {
+      expect(mesh.layers.mask).toBe(worldLayer.mask);
+    }
+  });
+
+  // The selected light, previewed as a lamp (#256). The viewport is unlit on
+  // purpose and this does not change that: the term is added to the finished
+  // picture after the exposure multiply, so the room keeps the light ZenGin
+  // baked into it and gains a preview of what this one light reaches.
+  test('the selected light previews as an additive term, and only when one is selected', () => {
+    const scene = new WorldScene();
+    scene.setWorldMesh({ groups: [group()], bbox: [] });
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
+    scene.setVobMarkers(vobIndex([[0, 0, 0], [400, 500, 600]], 'zCVobLight', undefined, undefined, ['', '']));
+
+    const worldMesh = scene.root.children[0] as THREE.Mesh;
+    const worldShader = compile(worldMesh.material as THREE.MeshBasicMaterial);
+    const vobShader = compile(scene.instancedMeshes[0].material as THREE.MeshBasicMaterial);
+
+    // Off is a range of zero, not a second uniform: one number the shader
+    // branches on, and the same one the preview writes.
+    expect(worldShader.uniforms.uPreviewLightRange.value).toBe(0);
+    // One uniform object for the whole scene, as `uExposure` is.
+    expect(worldShader.uniforms.uPreviewLightRange).toBe(vobShader.uniforms.uPreviewLightRange);
+    expect(worldShader.uniforms.uPreviewLightPosition).toBe(vobShader.uniforms.uPreviewLightPosition);
+
+    // Added after the exposure multiply: it is not baked light, so a
+    // brightness of 0.5 must not halve it too.
+    for (const shader of [worldShader, vobShader]) {
+      expect(shader.fragmentShader).toContain('uPreviewLightRange');
+      expect(shader.fragmentShader.indexOf('outgoingLight *= uExposure;'))
+        .toBeLessThan(shader.fragmentShader.indexOf('uPreviewLightColor *'));
+      // The distance is measured in world space, so the fragment has to carry
+      // its own — `MeshBasicMaterial` has no such varying of its own.
+      expect(shader.vertexShader).toContain('vPreviewWorldPos');
+      expect(shader.fragmentShader).toContain('varying vec3 vPreviewWorldPos;');
+    }
+    // One injection serves both material kinds and the define decides which
+    // branch survives, exactly as three's own `worldpos_vertex` does.
+    expect(vobShader.vertexShader).toContain('#ifdef USE_INSTANCING');
+    expect(vobShader.vertexShader).toContain('instanceMatrix * previewWorldPos');
+
+    scene.setLightPreview({ vob: 1, extent: { shape: 'sphere', radius: 500, kind: 'light', color: [255, 0, 0] } });
+
+    // The uniforms are in Three.js space — metres, X mirrored — because the
+    // fragment's own position is. The wireframe beside it is under the root and
+    // is not.
+    const position = worldShader.uniforms.uPreviewLightPosition.value as THREE.Vector3;
+    expect(position.toArray()).toEqual([-400 * ZEN_TO_THREE_SCALE, 500 * ZEN_TO_THREE_SCALE, 600 * ZEN_TO_THREE_SCALE]);
+    expect(worldShader.uniforms.uPreviewLightRange.value).toBeCloseTo(500 * ZEN_TO_THREE_SCALE);
+    const color = worldShader.uniforms.uPreviewLightColor.value as THREE.Color;
+    expect(color.r).toBeCloseTo(1);
+    expect(color.g).toBe(0);
+    expect(color.b).toBe(0);
+
+    // A sound has a radius too, and it is not a light: only a light lights.
+    scene.setLightPreview({ vob: 1, extent: { shape: 'sphere', radius: 500, kind: 'sound' } });
+    expect(worldShader.uniforms.uPreviewLightRange.value).toBe(0);
+
+    scene.setLightPreview({ vob: 1, extent: { shape: 'sphere', radius: 500, kind: 'light' } });
+    expect(worldShader.uniforms.uPreviewLightRange.value).toBeCloseTo(500 * ZEN_TO_THREE_SCALE);
+    scene.setLightPreview(null);
+    expect(worldShader.uniforms.uPreviewLightRange.value).toBe(0);
+
+    // A VOB the scene cannot place gets no lamp, for the reason it gets no
+    // sphere: one at the origin is a light that is somewhere else.
+    scene.setLightPreview({ vob: 99, extent: { shape: 'sphere', radius: 500, kind: 'light' } });
+    expect(worldShader.uniforms.uPreviewLightRange.value).toBe(0);
+
+    scene.dispose();
+  });
+
+  test('brightness is one shared uniform that lifts the picture and nothing else', () => {
+    // "Interiors are too dark" (2026-08-27). ZenGin's light is baked into the
+    // vertex colours and MeshBasicMaterial has nothing to relight, so the fix
+    // is an exposure multiply on the finished fragment — a viewport setting.
+    const scene = new WorldScene();
+    scene.setWorldMesh({ groups: [group()], bbox: [] });
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
+
+    const worldMesh = scene.root.children[0] as THREE.Mesh;
+    const world = worldMesh.material as THREE.MeshBasicMaterial;
+    const vob = scene.instancedMeshes[0].material as THREE.MeshBasicMaterial;
+
+    const worldShader = compile(world);
+    const vobShader = compile(vob);
+
+    // An interior's walls are world mesh, so a control the world mesh did not
+    // take would leave everything that is actually dark exactly as dark.
+    expect(worldShader.fragmentShader).toContain('outgoingLight *= uExposure;');
+    expect(vobShader.fragmentShader).toContain('outgoingLight *= uExposure;');
+    expect(worldShader.fragmentShader).toContain('uniform float uExposure;');
+    // After the selection tint, not instead of it: the two multiply.
+    expect(vobShader.fragmentShader.indexOf('outgoingLight = mix('))
+      .toBeLessThan(vobShader.fragmentShader.indexOf('outgoingLight *= uExposure;'));
+
+    // ONE uniform object for the whole scene, so a slider drag is one
+    // assignment rather than a walk over every material in the world.
+    expect(worldShader.uniforms.uExposure).toBe(vobShader.uniforms.uExposure);
+    expect(worldShader.uniforms.uExposure.value).toBe(DEFAULT_EXPOSURE);
+
+    // And it is written, not recompiled: `Material.version` is what a
+    // `needsUpdate` would bump, and a recompile per pointer move is the cost
+    // this uniform exists to avoid.
+    const versions = [world.version, vob.version];
+    const baked = (worldMesh.geometry.getAttribute('color').array as Float32Array).slice();
+
+    scene.setExposure(2.5);
+
+    expect(worldShader.uniforms.uExposure.value).toBe(2.5);
+    expect(vobShader.uniforms.uExposure.value).toBe(2.5);
+    expect([world.version, vob.version]).toEqual(versions);
+    // Nothing about the world moved: the baked vertex colours are the world's
+    // own data, and this changes what is drawn from them, not them.
+    expect(worldMesh.geometry.getAttribute('color').array).toEqual(baked);
+  });
+  test('the selection tint is one shared uniform, off until asked for (#362)', () => {
+    // "Umriss statt gelb": the orange outline is the selection, and the body
+    // tint on top of it read as a VOB turned yellow. The tint stays for when
+    // there is no outline to carry the selection, so it is a uniform the
+    // viewport switches, not a constant baked into the program.
+    const scene = new WorldScene();
+    scene.setWorldMesh({ groups: [group()], bbox: [] });
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
+
+    const world = scene.worldMeshes[0].material as THREE.MeshBasicMaterial;
+    const vob = scene.instancedMeshes[0].material as THREE.MeshBasicMaterial;
+    const worldShader = compile(world);
+    const vobShader = compile(vob);
+
+    expect(vobShader.fragmentShader).toContain('uniform float uSelectTint;');
+    expect(vobShader.fragmentShader).toMatch(/outgoingLight = mix\( outgoingLight, .*, vVobSelected \* uSelectTint \);/);
+    expect(worldShader.fragmentShader).not.toContain('uSelectTint');
+    expect(vobShader.uniforms.uSelectTint.value).toBe(0);
+
+    const version = vob.version;
+    scene.setSelectionTint(true);
+    expect(vobShader.uniforms.uSelectTint.value).toBeGreaterThan(0);
+    expect(vobShader.uniforms.uSelectTint.value).toBeLessThan(1);
+    // Written, not recompiled — a toolbar click is one assignment.
+    expect(vob.version).toBe(version);
+
+    scene.setSelectionTint(false);
+    expect(vobShader.uniforms.uSelectTint.value).toBe(0);
+  });
+
+  test('a hidden VOB is dropped in the vertex shader, and keeps its transform', () => {
+    // Spacer's per-class show/hide (§16.16). A VOB is an instance inside a mesh
+    // shared with every other VOB of the same visual, so hiding one cannot be
+    // `mesh.visible` — and it must not be a zero-scale matrix either: the
+    // instance matrix is where the VOB's position and rotation are *read back*
+    // from, so collapsing it would make a hidden VOB's gizmo report the origin.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
+    const mesh = scene.instancedMeshes[0];
+    const before = scene.positionOf(9);
+
+    scene.setHiddenVobs(Uint8Array.from([0, 0, 0, 0, 0, 0, 0, 0, 0, 1]));
+
+    const hidden = mesh.geometry.getAttribute('instanceHidden') as THREE.BufferAttribute;
+    // vobIds are [7, 9]: the second instance, and only it.
+    expect([...(hidden.array as Float32Array)]).toEqual([0, 1]);
+    // `needsUpdate` is write-only in three; the version it bumps is what the
+    // renderer actually re-uploads on, and a flag written without it is inert.
+    expect(hidden.version).toBe(1);
+    expect(scene.positionOf(9)).toEqual(before);
+    expect(scene.rotationOf(9)).toEqual([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+
+    // And the shader actually reads it — the flag is inert without the branch.
+    const vobShader = compile(mesh.material as THREE.MeshBasicMaterial);
+    expect(vobShader.vertexShader).toContain('attribute float instanceHidden;');
+    expect(vobShader.vertexShader).toMatch(/instanceHidden > 0\.5/);
+    // The world mesh has no instances to hide, and must not declare one.
+    scene.setWorldMesh({ groups: [group()], bbox: [] });
+    const world = compile(scene.worldMeshes[0].material as THREE.MeshBasicMaterial);
+    expect(world.vertexShader).not.toContain('instanceHidden');
+  });
+
+  test('every mesh a visual was split into takes the same hidden flag', () => {
+    // A visual with two draw groups puts one VOB in two meshes — the hazard
+    // `moveVob` already carries. Hiding it in one of them draws half a prop.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({
+      visuals: [visual({ groups: [group({ lights: null }), group({ texture: 'NW_STONE.TGA', lights: null })] })],
+      decals: NO_DECALS, stats: {} as never,
+    });
+
+    scene.setHiddenVobs(Uint8Array.from([0, 0, 0, 0, 0, 0, 0, 1, 0, 0]));
+
+    expect(scene.instancedMeshes).toHaveLength(2);
+    for (const mesh of scene.instancedMeshes) {
+      expect([...(mesh.geometry.getAttribute('instanceHidden').array as Float32Array)]).toEqual([1, 0]);
+    }
+  });
+
+  test('showing everything again clears the flag, rather than leaving the last set', () => {
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
+
+    scene.setHiddenVobs(Uint8Array.from([0, 0, 0, 0, 0, 0, 0, 1, 0, 1]));
+    scene.setHiddenVobs(null);
+
+    const hidden = scene.instancedMeshes[0].geometry.getAttribute('instanceHidden') as THREE.BufferAttribute;
+    expect([...(hidden.array as Float32Array)]).toEqual([0, 0]);
+    expect(hidden.version).toBe(2);
+  });
+
+  // ── the VOBs with no visual at all (level-editor.md §16.38, #247) ────────
+  //
+  // `buildInstancedVisuals` skips a VOB whose visual name is empty — 38 % of
+  // the retail corpus, every sound, light, zone, trigger, mover, startpoint and
+  // spot — so none of them had an instance, and everything the scene answers
+  // about a VOB it answers by scanning the instances. A marker layer draws
+  // them, and the scene is what the gizmo, the class filter and the drag all
+  // reach that layer through: those three read `positionOf`, `setHiddenVobs`
+  // and `moveVob` and must not learn what a marker is.
+  //
+  // What stays null is a VOB whose visual is a drawable *kind* that the VFS did
+  // not hold — a `.3DS` nothing resolved. A decal and a `.PFX` are marked, on
+  // the same terms: nothing else draws them either (§16.40, #249).
+
+  test('a VOB with no visual reports where its marker is drawn', () => {
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
+    scene.setVobMarkers(markerIndex());
+
+    // The sound VOB: no instance anywhere, and a position all the same.
+    expect(scene.positionOf(4)).toEqual([400, 0, 0]);
+    // An instanced VOB still answers from its instance — the marker layer has
+    // no entry for it, and a second answer in the same place would be a bug.
+    expect(scene.positionOf(7)).toEqual([10, 20, 30]);
+    // A decal is marked as well: its quad is the picture, and this is the only
+    // handle a pick or a gizmo has on it.
+    expect(scene.positionOf(6)).toEqual([600, 0, 0]);
+    // A mesh the VFS did not hold: no instance, and nothing says it should have
+    // a marker either. Null is still the honest answer.
+    expect(scene.positionOf(5)).toBeNull();
+  });
+
+  test('moving a VOB with no visual moves its marker, and says it is drawn', () => {
+    // The whole of the live drag preview for these VOBs: `GizmoController`
+    // reads `positionOf` on the press and writes `moveVob` on every frame, and
+    // neither of them knows a marker from an instance.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
+    scene.setVobMarkers(markerIndex());
+
+    expect(scene.moveVob(4, [1, 2, 3])).toBe(true);
+    expect(scene.positionOf(4)).toEqual([1, 2, 3]);
+    // Still nothing to move for a mesh that resolved to nothing, and still said
+    // out loud.
+    expect(scene.moveVob(5, [1, 2, 3])).toBe(false);
+  });
+
+  test('a marker anchors the gizmo and counts towards the selection centre', () => {
+    // The rule `anchorOf` and `centroidOf` document is "the ones that are
+    // actually drawn", and a marker is drawn: the VOBs they step over are the
+    // ones with no position at all, which since #249 is a visual the VFS simply
+    // did not hold.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
+    scene.setVobMarkers(markerIndex());
+
+    expect(scene.anchorOf([7, 4])).toEqual([400, 0, 0]);
+    expect(scene.anchorOf([4, 5])).toEqual([400, 0, 0]);
+    expect(scene.centroidOf([7, 4])).toEqual([205, 10, 15]);
+    // And the VOB with neither instance nor marker still detaches it.
+    expect(scene.anchorOf([5])).toBeNull();
+    expect(scene.centroidOf([5])).toBeNull();
+    // A rotation is a different matter: nothing draws a sound's orientation, so
+    // there is no basis to read back and no preview to draw. The op is still
+    // built from the index, which is where the rotation actually lives.
+    expect(scene.rotationOf(4)).toBeNull();
+    expect(scene.rotateVob(4, [1, 0, 0, 0, 1, 0, 0, 0, 1])).toBe(false);
+  });
+
+  test('the per-class filter reaches the markers, so hiding a sound hides it', () => {
+    // §16.38 consequence 4: hiding `zCVobSound` from the view controls hid
+    // nothing, because nothing was drawn — and the class was offered in the
+    // list all the same.
+    const scene = new WorldScene();
+    scene.setInstancedVisuals({ visuals: [visual()], decals: NO_DECALS, stats: {} as never });
+    scene.setVobMarkers(markerIndex());
+    const hidden = new Uint8Array(10);
+    hidden[4] = 1;
+
+    scene.setHiddenVobs(hidden);
+
+    // The sound, the decal and the particle effect are marked; one of the three
+    // is now switched off.
+    expect(scene.markers!.drawn).toBe(2);
+    // Hidden is not gone: the scene tree still lists it and the gizmo still
+    // goes on it, exactly as for a hidden instance.
+    expect(scene.positionOf(4)).toEqual([400, 0, 0]);
+
+    scene.setHiddenVobs(null);
+    expect(scene.markers!.drawn).toBe(3);
+  });
+
+  test('the marker layer hangs under the mirrored root, and goes with the scene', () => {
+    // Under the root because its positions are ZenGin centimetres, unconverted
+    // — the same reason the waynet and the spawn markers hang there.
+    const scene = new WorldScene();
+    scene.setVobMarkers(markerIndex());
+    const layer = scene.markers!;
+    const disposed = jest.spyOn(layer.markers.geometry, 'dispose');
+
+    expect(scene.root.children).toContain(layer.markers);
+
+    scene.dispose();
+
+    expect(disposed).toHaveBeenCalled();
+  });
+});
+
+// How far the selected VOB reaches (level-editor.md §16.39, #248). The marker
+// layer says where a sound stands; the radius is what the modder is tuning, and
+// the scene's job is to put a sphere of that radius exactly where the VOB is —
+// including for a VOB the scene draws only as a marker, which is every sound
+// and every light in a retail world.
+describe('the selected VOB\'s extent', () => {
+  it('puts nothing in the scene until something is selected', () => {
+    // The root's children are what the world is made of; an invisible node
+    // parked in it is one more thing every reader of the graph has to skip.
+    const scene = new WorldScene();
+
+    expect(scene.root.children.find((child) => child.type === 'LineSegments')).toBeUndefined();
+    scene.dispose();
+  });
+
+  it("puts the sphere on a marker-only VOB, which is every sound there is", () => {
+    // An empty visual name is what "no visual" is on disk, and it is the whole
+    // of the sound family: a sphere that could only follow an instance would
+    // draw for none of them.
+    const scene = new WorldScene();
+    scene.setVobMarkers(vobIndex([[0, 0, 0], [400, 500, 600]], 'zCVobSound', undefined, undefined, ['', '']));
+
+    scene.showExtent(1, { shape: 'sphere', radius: 3000, kind: 'sound' });
+
+    const wireframe = scene.root.children.find((child) => child.type === 'LineSegments');
+    expect(wireframe?.visible).toBe(true);
+    expect(wireframe?.position.toArray()).toEqual([400, 500, 600]);
+    expect(wireframe?.scale.toArray()).toEqual([3000, 3000, 3000]);
+    scene.dispose();
+  });
+
+  it('draws nothing for a VOB it cannot place, rather than a sphere at the origin', () => {
+    // A sphere at [0,0,0] for a VOB that is somewhere else is worse than none.
+    const scene = new WorldScene();
+    scene.setVobMarkers(vobIndex([[400, 500, 600]], 'zCVobSound', undefined, undefined, ['']));
+
+    scene.showExtent(99, { shape: 'sphere', radius: 3000, kind: 'sound' });
+
+    expect(scene.root.children.find((child) => child.type === 'LineSegments')).toBeUndefined();
+    scene.dispose();
+  });
+
+  it("draws a zone's box even for a VOB it cannot place, because the box says where", () => {
+    // The asymmetry the two shapes have (#248): a radius is a length around the
+    // VOB and needs its position, a bounding box is already world space. A zone
+    // the marker layer has no row for would otherwise lose its volume too.
+    const scene = new WorldScene();
+
+    scene.showExtent(99, { shape: 'box', kind: 'zone', bbox: [-100, 0, -50, 100, 400, 50] });
+
+    const wireframe = scene.root.children.find((child) => child.type === 'LineSegments');
+    expect(wireframe?.visible).toBe(true);
+    expect(wireframe?.position.toArray()).toEqual([0, 200, 0]);
+    expect(wireframe?.scale.toArray()).toEqual([100, 200, 50]);
+    scene.dispose();
+  });
+
+  it('takes the sphere away again', () => {
+    const scene = new WorldScene();
+    scene.setVobMarkers(vobIndex([[0, 0, 0]], 'zCVobLight', undefined, undefined, ['']));
+    scene.showExtent(0, { shape: 'sphere', radius: 800, kind: 'light' });
+
+    scene.hideExtent();
+
+    expect(scene.root.children.find((child) => child.type === 'LineSegments')).toBeUndefined();
+    scene.dispose();
+  });
+});
+
+// The decals, drawn as themselves (level-editor.md §16.40, #249). The layer's
+// own spec is `DecalLayer.test.ts`; what the scene owes it is that everything
+// asking about a VOB — the drag, the class filter, the texture load — reaches a
+// decal without learning what a quad is.
+describe("WorldScene and the decals", () => {
+  const decalScene = () => ({
+    groups: [{
+      texture: 'BLOOD.TGA',
+      count: 1,
+      positions: new Float32Array([600, 0, 0]).buffer,
+      sizes: new Float32Array([50, 50]).buffer,
+      vobIds: new Uint32Array([6]).buffer,
+      alphaWeights: new Float32Array([1]).buffer,
+    }],
+    stats: { decals: 1, textures: 1 },
+  });
+
+  test('hangs the quads under the mirrored root, in ZenGin centimetres', () => {
+    const scene = new WorldScene();
+    scene.setDecals(decalScene());
+
+    const quads = scene.root.children.filter((child) => (child as THREE.InstancedMesh).isInstancedMesh);
+    expect(quads).toHaveLength(1);
+    scene.dispose();
+  });
+
+  test("asks for the decal's texture through the slot every other one uses", () => {
+    // A decal's `.TGA` is loaded by the path that was already loading the
+    // world's textures; nothing in the decal layer decodes anything.
+    const scene = new WorldScene();
+    scene.setDecals(decalScene());
+
+    expect(scene.pendingTextureNames()).toContain('BLOOD.TGA');
+    scene.dispose();
+  });
+
+  test('a drag carries the quad and the marker together', () => {
+    // A decal is the one VOB that is both drawn and marked: the quad is the
+    // picture and the pip is the handle, so a preview that moved one and not
+    // the other would leave the decal visibly behind its own gizmo.
+    const scene = new WorldScene();
+    scene.setVobMarkers(markerIndex());
+    scene.setDecals(decalScene());
+
+    expect(scene.moveVob(6, [1, 2, 3])).toBe(true);
+    // The marker is what `positionOf` answers from, and it moved.
+    expect(scene.positionOf(6)).toEqual([1, 2, 3]);
+    // And so did the quad.
+    const matrix = new THREE.Matrix4();
+    const quad = scene.root.children.find(
+      (child) => (child as THREE.InstancedMesh).isInstancedMesh,
+    ) as THREE.InstancedMesh;
+    quad.getMatrixAt(0, matrix);
+    expect([matrix.elements[12], matrix.elements[13], matrix.elements[14]]).toEqual([1, 2, 3]);
+    scene.dispose();
+  });
+
+  test('the per-class filter reaches the quads as well as the markers', () => {
+    const scene = new WorldScene();
+    scene.setVobMarkers(markerIndex());
+    scene.setDecals(decalScene());
+    const hidden = new Uint8Array(10);
+    hidden[6] = 1;
+
+    scene.setHiddenVobs(hidden);
+
+    const quad = scene.root.children.find(
+      (child) => (child as THREE.InstancedMesh).isInstancedMesh,
+    ) as THREE.InstancedMesh;
+    expect(Array.from(quad.geometry.getAttribute('instanceHidden').array)).toEqual([1]);
+    scene.dispose();
+  });
+});
+
+// A structural op, followed rather than rebuilt. The worker answers with every
+// visual's placements and leaves out the geometry the scene already holds
+// (`groups: []`), so the scene rewrites instance matrices where it can and
+// re-allocates one visual's meshes only when that visual outgrows them — over
+// the vertex buffers it already uploaded.
+describe('WorldScene after a structural op', () => {
+  const placements = (vobs: Array<[number, [number, number, number]]>, overrides: Partial<InstancedVisual> = {}) => visual({
+    count: vobs.length,
+    matrices: new Float32Array(vobs.flatMap(([, [x, y, z]]) => [1, 0, 0, x, 0, 1, 0, y, 0, 0, 1, z])).buffer,
+    vobIds: new Uint32Array(vobs.map(([vob]) => vob)).buffer,
+    groups: [],
+    ...overrides,
+  });
+  const payload = (...visuals: InstancedVisual[]) => ({ visuals, decals: NO_DECALS, stats: {} as never });
+  const built = () => {
+    const scene = new WorldScene();
+    scene.setInstancedVisuals(payload(visual()));
+    return scene;
+  };
+
+  test('a third barrel is drawn, over the vertices the first two were drawn with', () => {
+    const scene = built();
+    const before = scene.instancedMeshes[0];
+    const position = before.geometry.getAttribute('position');
+
+    scene.updateInstancedVisuals(payload(placements([[7, [10, 20, 30]], [9, [40, 50, 60]], [10, [70, 80, 90]]])));
+
+    expect(scene.instancedMeshes).toHaveLength(1);
+    const after = scene.instancedMeshes[0];
+    expect(after.count).toBe(3);
+    expect(after.geometry.getAttribute('position')).toBe(position);
+    expect(scene.resolveInstance(after, 2)).toBe(10);
+    expect(scene.positionOf(10)).toEqual([70, 80, 90]);
+    expect(scene.root.children).toContain(after);
+    expect(scene.root.children).not.toContain(before);
+  });
+
+  test('outgrowing a mesh frees what it allocated and nothing it shares', () => {
+    const scene = built();
+    const before = scene.instancedMeshes[0];
+    const position = before.geometry.getAttribute('position');
+    const geometryDisposed = jest.spyOn(before.geometry, 'dispose');
+    const meshDisposed = jest.spyOn(before, 'dispose');
+
+    scene.updateInstancedVisuals(payload(placements([[7, [0, 0, 0]], [9, [0, 0, 0]], [10, [0, 0, 0]]])));
+
+    expect(meshDisposed).toHaveBeenCalled();
+    expect(geometryDisposed).toHaveBeenCalled();
+    // three frees every attribute a disposed geometry still holds — the shared
+    // vertices had to be taken off it first.
+    expect(before.geometry.getAttribute('position')).toBeUndefined();
+    expect(scene.instancedMeshes[0].geometry.getAttribute('position')).toBe(position);
+  });
+
+  test('it grows with room to spare, so the next placement is written in place', () => {
+    const scene = built();
+    scene.updateInstancedVisuals(payload(placements([[7, [0, 0, 0]], [9, [0, 0, 0]], [10, [0, 0, 0]]])));
+    const grown = scene.instancedMeshes[0];
+
+    scene.updateInstancedVisuals(payload(placements([[7, [0, 0, 0]], [9, [0, 0, 0]], [10, [0, 0, 0]], [11, [5, 5, 5]]])));
+
+    expect(scene.instancedMeshes[0]).toBe(grown);
+    expect(grown.count).toBe(4);
+    expect(scene.positionOf(11)).toEqual([5, 5, 5]);
+  });
+
+  test('a deleted barrel is dropped in place, and the rest are renumbered', () => {
+    const scene = built();
+    const mesh = scene.instancedMeshes[0];
+
+    // VOB 7 deleted: what was VOB 9 is VOB 8 now.
+    scene.updateInstancedVisuals(payload(placements([[8, [40, 50, 60]]])));
+
+    expect(scene.instancedMeshes[0]).toBe(mesh);
+    expect(mesh.count).toBe(1);
+    expect(scene.resolveInstance(mesh, 0)).toBe(8);
+    expect(scene.resolveInstance(mesh, 1)).toBeNull();
+    expect(scene.positionOf(8)).toEqual([40, 50, 60]);
+    expect(scene.positionOf(9)).toBeNull();
+  });
+
+  test('a visual with no VOB left draws nothing, and keeps its geometry', () => {
+    const scene = built();
+    const mesh = scene.instancedMeshes[0];
+
+    scene.updateInstancedVisuals(payload());
+
+    expect(mesh.count).toBe(0);
+    expect(scene.positionOf(7)).toBeNull();
+    expect(mesh.geometry.getAttribute('position')).toBeDefined();
+  });
+
+  test('a visual new to the scene arrives with its geometry and is drawn', () => {
+    const scene = built();
+
+    scene.updateInstancedVisuals(payload(
+      placements([[7, [10, 20, 30]], [9, [40, 50, 60]]]),
+      visual({ name: 'CRATE.3DS', count: 1, vobIds: new Uint32Array([10]).buffer, groups: [group({ texture: 'CRATE.TGA', lights: null })], matrices: new Float32Array([1, 0, 0, 1, 0, 1, 0, 2, 0, 0, 1, 3]).buffer }),
+    ));
+
+    expect(scene.instancedMeshes).toHaveLength(2);
+    expect(scene.positionOf(10)).toEqual([1, 2, 3]);
+    expect(scene.pendingTextureNames()).toContain('CRATE.TGA');
+  });
+
+  test('fresh geometry for a visual already drawn replaces it — a GMBT compile', () => {
+    const scene = built();
+    const before = scene.instancedMeshes[0];
+    const disposed = jest.spyOn(before.geometry, 'dispose');
+
+    scene.updateInstancedVisuals(payload(visual()));
+
+    expect(scene.instancedMeshes).toHaveLength(1);
+    expect(scene.instancedMeshes[0]).not.toBe(before);
+    expect(disposed).toHaveBeenCalled();
+  });
+
+  test('the selection and the hidden classes are drawn the same after it', () => {
+    const scene = built();
+    scene.setSelectedVobs([9]);
+    const hidden = new Uint8Array(11);
+    hidden[7] = 1;
+    scene.setHiddenVobs(hidden);
+
+    // A barrel placed ahead of VOB 7 in the payload's order, so every slot moves.
+    scene.updateInstancedVisuals(payload(placements([[10, [0, 0, 0]], [7, [10, 20, 30]], [9, [40, 50, 60]]])));
+
+    const mesh = scene.instancedMeshes[0];
+    expect([...mesh.geometry.getAttribute('instanceSelected').array].slice(0, 3)).toEqual([0, 0, 1]);
+    expect([...mesh.geometry.getAttribute('instanceHidden').array].slice(0, 3)).toEqual([0, 1, 0]);
+  });
+
+  test('markers and decals are replaced, not stacked, and a decal keeps its material', () => {
+    const scene = built();
+    const decals = () => ({
+      groups: [{
+        texture: 'BLOOD.TGA', count: 1,
+        positions: new Float32Array([600, 0, 0]).buffer,
+        sizes: new Float32Array([50, 50]).buffer,
+        vobIds: new Uint32Array([6]).buffer,
+        alphaWeights: new Float32Array([1]).buffer,
+      }],
+      stats: { decals: 1, textures: 1 },
+    });
+    scene.setVobMarkers(markerIndex());
+    scene.setDecals(decals());
+    const markers = scene.markers!.markers;
+    const quad = scene.root.children.find((c) => c !== scene.instancedMeshes[0] && (c as THREE.InstancedMesh).isInstancedMesh) as THREE.InstancedMesh;
+
+    scene.setVobMarkers(markerIndex());
+    scene.setDecals(decals());
+
+    expect(scene.root.children).not.toContain(markers);
+    expect(scene.root.children).toContain(scene.markers!.markers);
+    expect(scene.root.children).not.toContain(quad);
+    const quads = scene.root.children.filter((c) => c !== scene.instancedMeshes[0] && (c as THREE.InstancedMesh).isInstancedMesh);
+    expect(quads).toHaveLength(1);
+    expect((quads[0] as THREE.InstancedMesh).material).toBe(quad.material);
+  });
+});

@@ -1,0 +1,797 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+
+const zenkit = require('..');
+
+// The asset fixtures (src/fixture.cc AuthorFixtureAssets) are authored into a
+// temp directory rather than checked in, for the same reason the
+// mesh-extraction world is: they back no fidelity claim, so they are free to
+// change alongside the extractor they exercise. No game assets are involved,
+// so this runs in CI.
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'zenkit-assets-'));
+const ASSETS = path.join(root, 'assets');
+zenkit._authorFixtureAssets(ASSETS);
+fs.writeFileSync(path.join(ASSETS, 'EX_SKIN.MDS'), `Model("EX_SKIN") {
+  meshAndTree("EX_SKIN.ASC" DONT_USE_MESH)
+  aniEnum {
+    ani("S_IDLE" 0 "" 0 0 M. "EX_IDLE.MAN" F 0 1)
+  }
+}`);
+fs.copyFileSync(
+  path.join(__dirname, '../vendor/ZenKit/tests/samples/G1/HUMANS-S_FISTRUN.MAN'),
+  path.join(ASSETS, 'EX_IDLE.MAN'),
+);
+
+// A second mount source, to observe what mount order does. Loose files are
+// enough: resolution never opens the file it resolves to.
+const OVERLAY = path.join(root, 'overlay');
+fs.mkdirSync(OVERLAY);
+fs.writeFileSync(path.join(OVERLAY, 'EX_LIT.TEX'), 'overlay');
+fs.writeFileSync(path.join(OVERLAY, 'EX_MOD_ONLY.MRM'), 'overlay');
+// A name the tree below also has, at the same path, and a directory the two
+// share: an overridden entry is invisible in the merged tree, so provenance
+// has nothing to report unless the sources overlap. Cased differently on
+// purpose — a VDF spells every name upper case and a loose folder spells it
+// however it sits on disk, so a per-source lookup that compared names
+// literally would report an override as two unrelated files.
+fs.writeFileSync(path.join(OVERLAY, 'readme.txt'), 'overlay');
+fs.mkdirSync(path.join(OVERLAY, 'Meshes', '_compiled'), { recursive: true });
+fs.writeFileSync(path.join(OVERLAY, 'Meshes', '_compiled', 'EX_MOD.MRM'), 'overlay');
+
+test.after(() => {
+  try {
+    fs.rmSync(root, { recursive: true, force: true });
+  } catch {
+    // A live VFS keeps every mounted file memory-mapped and Windows refuses to
+    // delete one until the handle is collected, which is not deterministic
+    // here. Leaving a temp directory behind is not worth failing a run over.
+  }
+});
+
+const vfs = (...paths) => zenkit.openVfs(paths.length === 0 ? [ASSETS] : paths);
+const f32 = (buf) => Array.from(new Float32Array(buf));
+const u32 = (buf) => Array.from(new Uint32Array(buf));
+
+// --- openVfs -------------------------------------------------------------
+
+test('openVfs mounts a host directory into one namespace', () => {
+  const handle = vfs();
+  assert.strictEqual(zenkit.vfsResolve(handle, 'EX_CRATE.3DS'), 'EX_CRATE.MRM');
+  assert.strictEqual(zenkit.vfsResolve(handle, 'EX_MOD_ONLY.3DS'), null);
+});
+
+test('openVfs mounts several sources, later ones winning', () => {
+  // The load order ZenGin itself uses: a mod directory listed after the retail
+  // VDFs overrides them. Both sources are visible; the overlay's own file is
+  // reachable and the retail-side name still resolves.
+  const handle = vfs(ASSETS, OVERLAY);
+  assert.strictEqual(zenkit.vfsResolve(handle, 'EX_MOD_ONLY.3DS'), 'EX_MOD_ONLY.MRM');
+  assert.strictEqual(zenkit.vfsResolve(handle, 'EX_CRATE.3DS'), 'EX_CRATE.MRM');
+});
+
+test('openVfs rejects a path that does not exist', () => {
+  assert.throws(() => zenkit.openVfs([path.join(root, 'no-such-directory')]), /cannot stat VFS path/);
+});
+
+test('openVfs rejects a bad overwrite mode and a non-array argument', () => {
+  assert.throws(() => zenkit.openVfs(ASSETS), /expects an array of paths/);
+  assert.throws(() => zenkit.openVfs([ASSETS], { overwrite: 'sometimes' }), /must be 'all'/);
+});
+
+test('the asset functions reject anything that is not a VFS handle', () => {
+  for (const fn of ['vfsResolve', 'extractVisual', 'decodeTexture']) {
+    assert.throws(() => zenkit[fn]({}, 'EX_CRATE.3DS'), /expected a VFS handle/, fn);
+  }
+  assert.throws(() => zenkit.vfsResolve(vfs(), 42), /name must be a string/);
+});
+
+test('a world handle is not a VFS handle, and the binding says so rather than reading it', () => {
+  // Both are `Napi::External`, and `IsExternal()` cannot tell them apart: the
+  // pointer inside one used to be cast to whichever struct the callee wanted
+  // and dereferenced (review 2026-09-04 §2.12). That is memory-unsafe, not
+  // merely wrong — the two structs share no layout.
+  const world = zenkit.loadWorld(
+    path.join(__dirname, 'fixtures', 'minimal.g2.zen'), 'g2',
+  );
+
+  assert.throws(() => zenkit.vfsList(world, '/'), /expected a VFS handle/);
+  assert.throws(() => zenkit.vfsResolve(world, 'EX_CRATE.3DS'), /expected a VFS handle/);
+  assert.throws(() => zenkit.decodeTexture(world, 'EX_CRATE.TGA'), /expected a VFS handle/);
+});
+
+test('a VFS handle is not a world handle either', () => {
+  const handle = vfs();
+
+  assert.throws(() => zenkit.vobIndex(handle), /expected a world handle/);
+  assert.throws(() => zenkit.getVobProps(handle, '0'), /expected a world handle/);
+  assert.throws(() => zenkit.extractWorldMesh(handle), /expected a world handle/);
+});
+
+// --- name mapping --------------------------------------------------------
+
+test('vfsResolve maps a VOB source asset name to the compiled one', () => {
+  const handle = vfs();
+
+  // Spelled out rather than probed, and each mapping verified against the
+  // retail install before it was written down.
+  assert.deepStrictEqual(
+    [
+      ['EX_CRATE.3DS', zenkit.vfsResolve(handle, 'EX_CRATE.3DS')],
+      ['EX_PLATE.3DS', zenkit.vfsResolve(handle, 'EX_PLATE.3DS')],
+      ['EX_HERO.ASC', zenkit.vfsResolve(handle, 'EX_HERO.ASC')],
+      ['EX_HERO.MDS', zenkit.vfsResolve(handle, 'EX_HERO.MDS')],
+      ['EX_GOBBO.ASC', zenkit.vfsResolve(handle, 'EX_GOBBO.ASC')],
+      ['EX_BLOB.MMS', zenkit.vfsResolve(handle, 'EX_BLOB.MMS')],
+      ['EX_CRATE.TGA', zenkit.vfsResolve(handle, 'EX_CRATE.TGA')],
+      ['EX_LIT.TEX', zenkit.vfsResolve(handle, 'EX_LIT.TEX')],
+    ],
+    [
+      ['EX_CRATE.3DS', 'EX_CRATE.MRM'],
+      ['EX_PLATE.3DS', 'EX_PLATE.MSH'], // .MRM absent, so the .MSH fallback
+      ['EX_HERO.ASC', 'EX_HERO.MDL'],
+      ['EX_HERO.MDS', 'EX_HERO.MDL'],
+      ['EX_GOBBO.ASC', 'EX_GOBBO.MDM'], // .MDL absent, so the .MDM fallback
+      ['EX_BLOB.MMS', 'EX_BLOB.MMB'],
+      ['EX_CRATE.TGA', 'EX_CRATE-C.TEX'],
+      ['EX_LIT.TEX', 'EX_LIT.TEX'], // an already-compiled name passes through
+    ],
+  );
+});
+
+test('vfsResolve prefers the first candidate when several exist', () => {
+  // EX_DUAL has both an .MRM and an .MSH; EX_HERO both an .MDL and an .MDM.
+  // Without a fixture carrying both, a wrong preference order is invisible.
+  const handle = vfs();
+  assert.strictEqual(zenkit.vfsResolve(handle, 'EX_DUAL.3DS'), 'EX_DUAL.MRM');
+  assert.strictEqual(zenkit.vfsResolve(handle, 'EX_HERO.ASC'), 'EX_HERO.MDL');
+});
+
+test('vfsResolve upper-cases the name it looks up', () => {
+  const handle = vfs();
+  assert.strictEqual(zenkit.vfsResolve(handle, 'ex_crate.3ds'), 'EX_CRATE.MRM');
+  assert.strictEqual(zenkit.vfsResolve(handle, 'Ex_Crate.Tga'), 'EX_CRATE-C.TEX');
+});
+
+test('vfsResolve returns null for a name nothing maps to', () => {
+  const handle = vfs();
+  assert.strictEqual(zenkit.vfsResolve(handle, 'EX_MISSING.3DS'), null);
+  assert.strictEqual(zenkit.vfsResolve(handle, 'EX_MISSING.TGA'), null);
+});
+
+// --- vfsList -------------------------------------------------------------
+
+// A nested tree, because the fixture assets are mounted flat and a listing that
+// only ever saw one level would not show whether directories work at all.
+const TREE = path.join(root, 'tree');
+fs.mkdirSync(path.join(TREE, 'Meshes', '_compiled'), { recursive: true });
+fs.writeFileSync(path.join(TREE, 'Meshes', '_compiled', 'EX_TREE.MRM'), 'x');
+fs.writeFileSync(path.join(TREE, 'Meshes', 'NOTES.TXT'), 'x');
+fs.writeFileSync(path.join(TREE, 'README.TXT'), 'x');
+
+test('vfsList lists the root of the mounted namespace', () => {
+  const handle = zenkit.openVfs([TREE]);
+  const entries = zenkit.vfsList(handle, '/');
+
+  assert.deepStrictEqual(
+    entries.slice().sort((a, b) => a.name.localeCompare(b.name)),
+    [
+      { name: 'Meshes', type: 'directory', sources: [0] },
+      { name: 'README.TXT', type: 'file', sources: [0] },
+    ],
+  );
+});
+
+test('vfsList defaults to the root when no path is given', () => {
+  const handle = zenkit.openVfs([TREE]);
+  assert.deepStrictEqual(zenkit.vfsList(handle), zenkit.vfsList(handle, '/'));
+});
+
+test('vfsList descends one level at a time, never recursively', () => {
+  // A Gothic install is tens of thousands of entries; a recursive walk would
+  // hand the browser the whole tree to show one directory.
+  const handle = zenkit.openVfs([TREE]);
+
+  const meshes = zenkit.vfsList(handle, 'Meshes');
+  const names = meshes.map((entry) => entry.name).sort();
+  assert.deepStrictEqual(names, ['NOTES.TXT', '_compiled']);
+  // The nested file is reachable only by descending into it.
+  assert.ok(!names.includes('EX_TREE.MRM'));
+
+  const compiled = zenkit.vfsList(handle, 'Meshes/_compiled');
+  assert.deepStrictEqual(compiled, [{ name: 'EX_TREE.MRM', type: 'file', sources: [0] }]);
+});
+
+test('vfsList returns null for a file and for a path that is not there', () => {
+  // Both mean "there is nothing here to list", and a browser has no use for
+  // telling them apart — it never offers to descend into a file.
+  const handle = zenkit.openVfs([TREE]);
+  assert.strictEqual(zenkit.vfsList(handle, 'README.TXT'), null);
+  assert.strictEqual(zenkit.vfsList(handle, 'NoSuchDirectory'), null);
+});
+
+// A name whose bytes are not ASCII. Every other string the binding emits goes
+// through `Str`, which decodes windows-1252 — the encoding a VDF and a Gothic
+// asset folder are both written in. `vfsList` handed its entry names straight
+// to `Napi::String::New(std::string)`, which reads them as UTF-8, so a retail
+// archive's accented name reached the asset browser as replacement characters
+// and no longer matched the name in the archive.
+//
+// The bytes go in a VDF's catalog and not into a filename, because a filename
+// cannot carry them on both platforms: on POSIX it is bytes and node writes a
+// JS string as UTF-8, which is the encoding this test exists to show is wrong,
+// while on Windows it is UTF-16 and has no byte spelling at all. A VDF is also
+// where a real accented name comes from.
+//
+// The archive is written by hand: ZenKit has a VDF writer, the binding does not
+// expose it, and one fixture is not a reason to. An uncompressed Gothic II
+// volume is a 296-byte header, one 80-byte catalog entry per node, then the
+// file data. An entry is a 64-byte name padded with spaces (the reader trims
+// trailing whitespace), then offset, size, type and attributes. `type` carries
+// 0x80000000 for a directory and 0x40000000 for the last entry of a listing,
+// and `offset` is the catalog index of the first child for a directory and a
+// byte offset into the archive for a file.
+const VDF_HEADER_SIZE = 296;
+const VDF_ENTRY_SIZE = 80;
+const VDF_DIRECTORY = 0x80000000;
+const VDF_LAST = 0x40000000;
+
+const vdfEntry = (name, offset, size, type) => {
+  const entry = Buffer.alloc(VDF_ENTRY_SIZE);
+  entry.fill(0x20, 0, 64);
+  // latin1 is windows-1252 over the code points this fixture uses — the two
+  // differ only in 0x80-0x9F, which no name here reaches.
+  entry.write(name, 0, 'latin1');
+  entry.writeUInt32LE(offset, 64);
+  entry.writeUInt32LE(size, 68);
+  // `>>> 0` because JS bitwise operators answer in signed 32 bits, and the
+  // directory bit is 0x80000000 — an OR of the two flags is negative without it.
+  entry.writeUInt32LE(type >>> 0, 72);
+  return entry; // attributes stay 0
+};
+
+const ACCENTED = path.join(root, 'accented.vdf');
+{
+  const content = Buffer.from('x');
+  const dataOffset = VDF_HEADER_SIZE + 2 * VDF_ENTRY_SIZE;
+  const catalog = Buffer.concat([
+    vdfEntry('B\xc4UME', 1, 0, VDF_DIRECTORY | VDF_LAST),
+    vdfEntry('GR\xdcN_\xd6L.TEX', dataOffset, content.length, VDF_LAST),
+  ]);
+
+  const header = Buffer.alloc(VDF_HEADER_SIZE, 0x1a); // the comment's own padding
+  header.write('zenkit-node test fixture', 0, 'latin1');
+  header.write('PSVDSC_V2.00\n\r\n\r', 256, 'latin1'); // the Gothic II signature
+  header.writeUInt32LE(2, 272); // entries
+  header.writeUInt32LE(1, 276); // of which files
+  header.writeUInt32LE(0, 280); // timestamp, in DOS form
+  header.writeUInt32LE(dataOffset + content.length, 284); // archive size
+  header.writeUInt32LE(VDF_HEADER_SIZE, 288); // where the catalog starts
+  header.writeUInt32LE(0x50, 292); // volume flags: file data stored uncompressed
+
+  fs.writeFileSync(ACCENTED, Buffer.concat([header, catalog, content]));
+}
+
+test('vfsList decodes entry names as windows-1252, like every other name', () => {
+  const handle = zenkit.openVfs([ACCENTED]);
+
+  assert.deepStrictEqual(
+    zenkit.vfsList(handle, '/'),
+    [{ name: 'B\u00c4UME', type: 'directory', sources: [0] }],
+  );
+
+  // And the same for a name below the root, which is a different walk — and
+  // one the caller can only reach by spelling the decoded name back.
+  assert.deepStrictEqual(
+    zenkit.vfsList(handle, 'B\u00c4UME'),
+    [{ name: 'GR\u00dcN_\u00d6L.TEX', type: 'file', sources: [0] }],
+  );
+});
+
+// --- vfsFind -------------------------------------------------------------
+
+test('vfsFind finds a file in a directory the caller is not standing in', () => {
+  // The whole point: `vfsList` answers one level, so a name you know but whose
+  // directory you do not is unreachable without a walk of the namespace.
+  const handle = zenkit.openVfs([TREE]);
+
+  const found = zenkit.vfsFind(handle, 'EX_TREE');
+
+  assert.strictEqual(found.truncated, false);
+  assert.deepStrictEqual(found.matches, [
+    { name: 'EX_TREE.MRM', directory: 'Meshes/_compiled', type: 'file', sources: [0] },
+  ]);
+});
+
+test('vfsFind matches case-insensitively, as every other name lookup does', () => {
+  // A VDF spells every name upper case and a loose folder spells it however it
+  // sits on disk, so a literal comparison would answer differently per mount.
+  const handle = zenkit.openVfs([TREE]);
+
+  assert.deepStrictEqual(
+    zenkit.vfsFind(handle, 'ex_tree').matches,
+    zenkit.vfsFind(handle, 'EX_TREE').matches,
+  );
+});
+
+test('vfsFind matches a directory too, and puts directories first', () => {
+  // Descending is the useful action on a directory hit, and one buried among
+  // the files is a hunt — the same order `vfsList`'s caller sorts into.
+  const handle = zenkit.openVfs([TREE]);
+
+  const names = zenkit.vfsFind(handle, 'e').matches.map((match) => `${match.type}:${match.name}`);
+
+  assert.ok(names.includes('directory:Meshes'));
+  assert.ok(names.includes('file:NOTES.TXT'));
+  assert.ok(names.indexOf('directory:Meshes') < names.indexOf('file:NOTES.TXT'));
+});
+
+test('vfsFind reports every mount holding a match, as a listing does', () => {
+  // Same provenance as `vfsList`: ascending, the last one winning. README.TXT
+  // is in both sources, cased differently, and is one entry in the merged tree.
+  const handle = zenkit.openVfs([TREE, OVERLAY]);
+
+  const readme = zenkit.vfsFind(handle, 'readme').matches;
+
+  assert.strictEqual(readme.length, 1);
+  assert.deepStrictEqual(readme[0].sources, [0, 1]);
+  assert.strictEqual(readme[0].directory, '/');
+});
+
+test('vfsFind stops at the limit and says the walk was cut short', () => {
+  // Tens of thousands of entries match a short needle on a retail install; the
+  // caller asked for a search box, not the whole namespace.
+  const handle = zenkit.openVfs([TREE]);
+
+  const capped = zenkit.vfsFind(handle, 'e', { limit: 1 });
+
+  assert.strictEqual(capped.matches.length, 1);
+  assert.strictEqual(capped.truncated, true);
+});
+
+test('vfsFind refuses an empty query rather than walking everything', () => {
+  const handle = zenkit.openVfs([TREE]);
+  assert.throws(() => zenkit.vfsFind(handle, '   '), /query/);
+});
+
+test('vfsList shows a later mount source alongside the earlier ones', () => {
+  // Mount order is ZenGin's load order, and the browser has to show the union
+  // rather than only the last source mounted.
+  const handle = zenkit.openVfs([TREE, OVERLAY]);
+  const names = zenkit.vfsList(handle, '/').map((entry) => entry.name);
+
+  assert.ok(names.includes('Meshes'));
+  assert.ok(names.includes('EX_MOD_ONLY.MRM'));
+});
+
+test('vfsList says which mounted sources hold each entry', () => {
+  // ZenKit records no provenance on a merged node — an overridden retail file
+  // is simply gone from the tree — so the sources are indices into the
+  // `openVfs` path list, ascending, and the last one is the one the merged
+  // tree actually serves.
+  const handle = zenkit.openVfs([TREE, OVERLAY]);
+  // Keyed upper case: with `overwrite: 'all'` the merged node carries the
+  // *winner's* spelling, so the entry below is listed as the overlay spells it.
+  const at = (where) => new Map(
+    zenkit.vfsList(handle, where).map((entry) => [entry.name.toUpperCase(), entry.sources]),
+  );
+
+  const listed = at('/');
+  assert.deepStrictEqual(listed.get('README.TXT'), [0, 1], 'in both, cased differently, the overlay winning');
+  assert.deepStrictEqual(listed.get('EX_MOD_ONLY.MRM'), [1], 'the overlay alone');
+  assert.deepStrictEqual(listed.get('MESHES'), [0, 1], 'a directory both sources contribute to');
+
+  // Below the root, because a per-source lookup that only ever resolved "/"
+  // would agree with the root listing and prove nothing.
+  const compiled = at('Meshes/_compiled');
+  assert.deepStrictEqual(compiled.get('EX_TREE.MRM'), [0]);
+  assert.deepStrictEqual(compiled.get('EX_MOD.MRM'), [1]);
+});
+
+test('vfsList over a single source says every entry came from it', () => {
+  const handle = zenkit.openVfs([TREE]);
+  for (const entry of zenkit.vfsList(handle, '/')) {
+    assert.deepStrictEqual(entry.sources, [0], entry.name);
+  }
+});
+
+test('vfsList rejects a handle that is not a VFS', () => {
+  assert.throws(() => zenkit.vfsList({}, '/'), /expected a VFS handle/);
+});
+
+// --- extractVisual: proto meshes ----------------------------------------
+
+const crate = () => zenkit.extractVisual(vfs(), 'EX_CRATE.3DS');
+
+test('extractVisual emits one chunk per sub-mesh and names its source', () => {
+  const payload = crate();
+
+  // EX_EMPTY has wedges but no triangles: it contributes no geometry, so it
+  // gets no chunk.
+  assert.strictEqual(payload.source, 'EX_CRATE.MRM');
+  assert.deepStrictEqual(
+    payload.chunks.map((c) => [c.name, c.texture, c.vertexCount, c.triangleCount]),
+    [
+      ['EX_WOOD', 'EX_WOOD.TGA', 4, 2],
+      ['EX_IRON', 'EX_IRON.TGA', 3, 1],
+    ],
+  );
+  assert.strictEqual(payload.vertexCount, 7);
+  assert.strictEqual(payload.triangleCount, 3);
+});
+
+test('extractVisual reports the sub-mesh index, not the chunk index', () => {
+  // The same field name as an extractWorldMesh chunk, so it has to mean the
+  // same thing: an index into the mesh's own material list. EX_IRON is
+  // sub-mesh 2 even though the skipped EX_EMPTY makes it chunk 1.
+  assert.deepStrictEqual(crate().chunks.map((c) => c.materialIndex), [0, 2]);
+});
+
+test('extractVisual resolves each wedge to its position', () => {
+  const [wood, iron] = crate().chunks;
+
+  // A wedge is a ready-made render vertex — a position index plus its own
+  // normal and UV — so unlike zCMesh there is nothing to de-duplicate.
+  assert.deepStrictEqual(f32(wood.positions), [
+    0, 0, 0, //
+    10, 0, 0, //
+    10, 0, 10, //
+    0, 0, 10,
+  ]);
+  assert.deepStrictEqual(f32(wood.uvs), [0, 0, 1, 0, 1, 1, 0, 1]);
+  assert.deepStrictEqual(f32(wood.normals), [0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0]);
+
+  // iron's wedges point at positions 1, 2 and 4 — not 0, 1, 2.
+  assert.deepStrictEqual(f32(iron.positions), [10, 0, 0, 10, 0, 10, 5, 20, 5]);
+  assert.deepStrictEqual(f32(iron.normals), [1, 0, 0, 1, 0, 0, 1, 0, 0]);
+});
+
+test('extractVisual emits triangle indices in stored order', () => {
+  const [wood, iron] = crate().chunks;
+
+  // Unreversed, with no winding claim attached: winding is settled by
+  // measurement against the stored wedge normals, not asserted by the binding.
+  // The iron triangle is stored descending, so a sorted or flipped emission
+  // would not survive this.
+  assert.deepStrictEqual(u32(wood.indices), [0, 1, 2, 0, 2, 3]);
+  assert.deepStrictEqual(u32(iron.indices), [2, 1, 0]);
+});
+
+test('extractVisual emits the same material render state as a world-mesh chunk', () => {
+  const [wood, iron] = crate().chunks;
+
+  // A VOB visual chunk is merged into the scene under the same rules as a
+  // world-mesh chunk, so it has to expose the same render state — otherwise
+  // the merge key means one thing for the world and another for its props.
+  // EX_WOOD carries a non-default value for each field; EX_IRON carries none.
+  const render = (c) => [
+    c.alphaFunc, c.texAniMapMode, c.texAniFps, c.texAniMapDir,
+    c.envMapping, c.envMappingStrength,
+    c.waveMode, c.waveSpeed, c.waveMaxAmplitude, c.waveGridSize,
+    c.ignoreSun, c.disableLightmap,
+  ];
+
+  assert.deepStrictEqual(render(wood), [
+    3, 1, 12, [-1, 0.5], true, 0.25, 2, 1, 7.5, 20, true, true,
+  ]);
+  assert.deepStrictEqual(render(iron), [
+    1, 0, 0, [0, 0], false, 0, 0, 0, 0, 0, false, false,
+  ]);
+});
+
+test('extractVisual carries no lights or flags for a proto mesh', () => {
+  // A VOB visual has no baked ZenGin light word and no per-polygon flags;
+  // emitting empty buffers would claim data that does not exist.
+  for (const chunk of crate().chunks) {
+    assert.strictEqual(chunk.lights, undefined);
+    assert.strictEqual(chunk.flags, undefined);
+  }
+});
+
+test("extractVisual computes the bbox from the wedges it emits", () => {
+  // The fixture's own bbox is a deliberately wrong +/-999 box, and the skipped
+  // EX_EMPTY sub-mesh is the only thing referencing (-100, -100, -100).
+  assert.deepStrictEqual(crate().bbox, [0, 0, 0, 10, 20, 10]);
+});
+
+test('extractVisual buffer lengths agree with the declared counts', () => {
+  for (const chunk of crate().chunks) {
+    assert.strictEqual(chunk.positions.byteLength, chunk.vertexCount * 3 * 4);
+    assert.strictEqual(chunk.normals.byteLength, chunk.vertexCount * 3 * 4);
+    assert.strictEqual(chunk.uvs.byteLength, chunk.vertexCount * 2 * 4);
+    assert.strictEqual(chunk.indices.byteLength, chunk.triangleCount * 3 * 4);
+    // Transferable to the renderer as-is (level-editor.md §7).
+    assert.ok(chunk.positions instanceof ArrayBuffer);
+  }
+});
+
+// --- extractVisual: models ----------------------------------------------
+
+// Static props — chests, stoves, bookshelves — keep their geometry in a model's
+// *attachments*: rigid sub-meshes hung on hierarchy nodes. 53 of NewWorld's 63
+// MODEL visuals are like that, and extraction used to return null for every one
+// of them because it only looked at the soft-skin mesh list.
+const prop = () => zenkit.extractVisual(vfs(), 'EX_PROP.ASC');
+
+test('extractVisual reads a model attachment, which is where static props live', () => {
+  const payload = prop();
+
+  assert.strictEqual(payload.source, 'EX_PROP.MDL');
+  assert.deepStrictEqual(
+    payload.chunks.map((c) => [c.node, c.name, c.triangleCount]),
+    [
+      // Hierarchy order, not the order of the unordered_map they are stored in:
+      // BSPROOT is node 0 and LID is node 1.
+      ['BSPROOT', 'EX_WOOD', 2],
+      ['BSPROOT', 'EX_IRON', 1],
+      ['LID', 'EX_WOOD', 2],
+      ['LID', 'EX_IRON', 1],
+    ],
+  );
+});
+
+test('extractVisual accumulates each attachment transform down the hierarchy', () => {
+  const [root, , lid] = prop().chunks;
+
+  // Row-major, like every other matrix the binding emits, so the translation is
+  // at [3], [7], [11]. BSPROOT sits at (1, 2, 3); LID is its child at a further
+  // (0, 10, 0), so LID lands at (1, 12, 3) — a child that ignored its parent
+  // would report (0, 10, 0) and a wrong multiplication order (10, 2, 3)-ish.
+  assert.strictEqual(root.transform.length, 16);
+  assert.deepStrictEqual(
+    [root.transform[3], root.transform[7], root.transform[11]], [1, 2, 3],
+  );
+  assert.deepStrictEqual(
+    [lid.transform[3], lid.transform[7], lid.transform[11]], [1, 12, 3],
+  );
+
+  // Positions themselves stay exactly as stored — the transform is emitted, not
+  // baked, for the same reason the coordinate convention is not applied here.
+  assert.deepStrictEqual(f32(lid.positions).slice(0, 3), [0, 0, 0]);
+});
+
+test('extractVisual takes a .MDM\'s hierarchy from its sibling .MDH', () => {
+  // A .MDM carries attachments but no hierarchy at all: the node transforms live
+  // in the .MDH beside it, which is how ZenGin pairs them. All 12 .MDM visuals
+  // in NewWorld have one.
+  const payload = zenkit.extractVisual(vfs(), 'EX_RIG.ASC');
+
+  assert.strictEqual(payload.source, 'EX_RIG.MDM');
+  assert.deepStrictEqual(payload.chunks.map((c) => c.node), ['BASE', 'BASE']);
+  assert.deepStrictEqual(
+    [payload.chunks[0].transform[3], payload.chunks[0].transform[7],
+      payload.chunks[0].transform[11]],
+    [15, 30, 50],
+  );
+});
+
+test('extractVisual applies model fatness to torso-weighted vertices only', () => {
+  const lean = zenkit.extractVisual(vfs(), 'EX_SKIN.ASC', 'EX_SKIN.MDS', -1);
+  const defaultBody = zenkit.extractVisual(vfs(), 'EX_SKIN.ASC', 'EX_SKIN.MDS', 0);
+  const heavier = zenkit.extractVisual(vfs(), 'EX_SKIN.ASC', 'EX_SKIN.MDS', 2);
+  const x = (payload) => f32(payload.chunks[0].positions)[6];
+  const z = (payload) => f32(payload.chunks[0].positions)[8];
+
+  assert.ok(x(lean) < x(defaultBody));
+  assert.ok(z(lean) < z(defaultBody));
+  assert.ok(x(heavier) > x(defaultBody));
+  assert.ok(z(heavier) > z(defaultBody));
+  const vertices = heavier.chunks.flatMap((chunk) => f32(chunk.positions));
+  assert.ok(vertices.some((value, index) => value === 5 && vertices[index + 1] === 20 && vertices[index + 2] === 5));
+});
+
+test('extractVisual samples the selected idle animation frame through the model script', () => {
+  const first = zenkit.extractVisual(vfs(), 'EX_SKIN.ASC', 'EX_SKIN.MDS', 0, 'S_IDLE', 0);
+  const last = zenkit.extractVisual(vfs(), 'EX_SKIN.ASC', 'EX_SKIN.MDS', 0, 'S_IDLE', 1);
+  assert.notDeepStrictEqual(f32(first.chunks[0].positions), f32(last.chunks[0].positions));
+});
+
+// --- extractHierarchy -----------------------------------------------------
+// A body .MDM has no .MDH beside it — every human body hangs on HUMANS.MDH — so
+// placing a head at BIP01 HEAD needs the hierarchy on its own (npc-editor.md §4).
+
+test('extractHierarchy returns every node with its transform accumulated to the root', () => {
+  const payload = zenkit.extractHierarchy(vfs(), 'EX_RIG.MDS');
+
+  assert.strictEqual(payload.source, 'EX_RIG.MDH');
+  assert.deepStrictEqual(payload.nodes.map((n) => [n.name, n.parent]), [['BASE', -1], ['HEAD', 0]]);
+  // HEAD sits a further (0, 20, 0) below BASE at (5, 0, 0), and the hierarchy's
+  // root translation is (10, 30, 50): a node read without its parent or the
+  // model root would report neither offset.
+  const head = payload.nodes[1].transform;
+  assert.strictEqual(head.length, 16);
+  assert.deepStrictEqual([head[3], head[7], head[11]], [15, 50, 50]);
+});
+
+test('extractHierarchy reads the hierarchy inside a .MDL when there is no .MDH', () => {
+  const payload = zenkit.extractHierarchy(vfs(), 'EX_PROP.ASC');
+
+  assert.strictEqual(payload.source, 'EX_PROP.MDL');
+  assert.deepStrictEqual(
+    payload.nodes.map((n) => [n.name, n.transform[3], n.transform[7], n.transform[11]]),
+    [['BSPROOT', 1, 2, 3], ['LID', 1, 12, 3], ['SPARE', 1, 2, 10]],
+  );
+});
+
+test('extractHierarchy returns null for a model nothing maps to', () => {
+  assert.strictEqual(zenkit.extractHierarchy(vfs(), 'EX_MISSING.MDS'), null);
+});
+
+test('extractVisual returns null for a name nothing maps to', () => {
+  assert.strictEqual(zenkit.extractVisual(vfs(), 'EX_MISSING.3DS'), null);
+  // A texture is not a visual: the visual candidates never reach a .TEX.
+  assert.strictEqual(zenkit.extractVisual(vfs(), 'EX_LIT.TEX'), null);
+});
+
+// --- extractVisual: compiled zCMesh visuals ------------------------------
+
+test('extractVisual reads a compiled .MSH as the same projection as the world mesh', () => {
+  // EX_PLATE.MSH is byte-for-byte the mesh the extractWorldMesh test uses, so
+  // the .MSH branch has to reproduce that test's chunks exactly — including
+  // the per-vertex light word and per-triangle flags only a zCMesh carries.
+  const payload = zenkit.extractVisual(vfs(), 'EX_PLATE.3DS');
+
+  assert.strictEqual(payload.source, 'EX_PLATE.MSH');
+  assert.deepStrictEqual(
+    payload.chunks.map((c) => [c.materialIndex, c.name, c.vertexCount, c.triangleCount]),
+    [
+      [0, 'EX_STONE', 6, 3],
+      [1, 'EX_GRASS', 3, 1],
+    ],
+  );
+
+  const [stone] = payload.chunks;
+  assert.deepStrictEqual(u32(stone.indices), [0, 1, 2, 0, 2, 3, 4, 2, 5]);
+  assert.deepStrictEqual(u32(stone.flags), [0, 0, 1]);
+  assert.deepStrictEqual(u32(stone.lights), [
+    0x01020300, 0x01020301, 0x01020302, 0x01020303, 0x0a0b0c0d, 0x01020304,
+  ]);
+});
+
+// --- decodeTexture -------------------------------------------------------
+
+test('decodeTexture returns RGBA8, so the renderer never sees a compressed format', () => {
+  const texture = zenkit.decodeTexture(vfs(), 'EX_CRATE.TGA');
+
+  assert.strictEqual(texture.source, 'EX_CRATE-C.TEX');
+  assert.deepStrictEqual(
+    [texture.width, texture.height, texture.mipmaps],
+    [2, 2, 2],
+  );
+  assert.strictEqual(texture.rgba.byteLength, 2 * 2 * 4);
+  assert.deepStrictEqual(Array.from(new Uint8Array(texture.rgba)), [
+    0xff, 0x00, 0x00, 0xff, //
+    0x00, 0xff, 0x00, 0xff, //
+    0x00, 0x00, 0xff, 0xff, //
+    0xff, 0xff, 0x00, 0x80,
+  ]);
+  assert.ok(texture.rgba instanceof ArrayBuffer);
+});
+
+test('decodeTexture selects the requested mipmap level', () => {
+  const level1 = zenkit.decodeTexture(vfs(), 'EX_CRATE.TGA', 1);
+
+  assert.deepStrictEqual([level1.width, level1.height], [1, 1]);
+  assert.deepStrictEqual(Array.from(new Uint8Array(level1.rgba)), [0x40, 0x50, 0x60, 0x70]);
+});
+
+test('decodeTexture refuses a mipmap level the texture does not have', () => {
+  assert.throws(
+    () => zenkit.decodeTexture(vfs(), 'EX_CRATE.TGA', 2),
+    /mipmap level 2 does not exist .*\(2 levels\)/,
+  );
+  assert.throws(() => zenkit.decodeTexture(vfs(), 'EX_CRATE.TGA', -1), /must not be negative/);
+});
+
+test('decodeTexture returns null for a name nothing maps to', () => {
+  assert.strictEqual(zenkit.decodeTexture(vfs(), 'EX_MISSING.TGA'), null);
+});
+
+// binding review 2026-08-29, finding 6: only `requested < 0` was tested before
+// the cast to uint32_t, so NaN and 1e20 both narrowed to 0 and returned mipmap
+// 0 reporting success — the level the caller asked for was never decoded and
+// nothing said so. The neighbouring OptionalInt32/OptionalWholeInt refuse
+// non-integral and out-of-range doubles for exactly this reason.
+test('decodeTexture refuses a mipmap level that is not a whole number in range', () => {
+  for (const level of [NaN, Infinity, 1e20, 0.5]) {
+    assert.throws(
+      () => zenkit.decodeTexture(vfs(), 'EX_CRATE.TGA', level),
+      /mipmap level must be a whole number/,
+      `level ${level} was accepted`,
+    );
+  }
+});
+
+test('decodeTexture refuses a level that is not a number at all', () => {
+  // The other half of the same finding (review 2026-09-04 §2.15): a level that
+  // is not a number was *ignored*, and mipmap 0 came back reporting success for
+  // a level the caller never asked for. Absent is still the default — that is
+  // what "no level" means — but `'1'` is a caller who meant something.
+  for (const level of ['1', true, [1], {}]) {
+    assert.throws(
+      () => zenkit.decodeTexture(vfs(), 'EX_CRATE.TGA', level),
+      /mipmap level must be a number/,
+      `level ${JSON.stringify(level)} was accepted`,
+    );
+  }
+  // Absent, undefined and null are all "no level given" — the idiom the
+  // rotation's optional bbox already uses.
+  assert.strictEqual(zenkit.decodeTexture(vfs(), 'EX_CRATE.TGA', undefined).width, 2);
+  assert.strictEqual(zenkit.decodeTexture(vfs(), 'EX_CRATE.TGA', null).width, 2);
+});
+
+test('openVfs refuses an overwrite mode that is not a string', () => {
+  // `overwrite` decides which mounted source wins a name collision, so a value
+  // silently ignored is a namespace the caller did not ask for — and `openVfs`
+  // already refuses an unknown *string*, which is the same mistake spelled
+  // differently.
+  for (const overwrite of [1, true, ['all'], {}]) {
+    assert.throws(
+      () => zenkit.openVfs([root], { overwrite }),
+      /overwrite must be/,
+      `overwrite ${JSON.stringify(overwrite)} was accepted`,
+    );
+  }
+  // Absent, undefined and null keep the default.
+  assert.ok(zenkit.openVfs([root], { overwrite: undefined }));
+  assert.ok(zenkit.openVfs([root], { overwrite: null }));
+  assert.ok(zenkit.openVfs([root], {}));
+});
+
+// --- vfsRead ---------------------------------------------------------------
+
+// A world lives inside the retail Worlds.vdf, and the measurement scripts take
+// a .zen path — so the corpus used to be an extraction into the install's
+// _work tree. vfsRead is what lets scripts/extract-worlds.js pull the bytes
+// out of the archive instead, leaving the install stock.
+const crypto = require('node:crypto');
+const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
+
+const NESTED = Buffer.from(Array.from({ length: 4096 }, (_, i) => (i * 7) & 0xff));
+const WORLDS = path.join(root, 'worlds');
+fs.mkdirSync(path.join(WORLDS, 'Worlds', 'Nested'), { recursive: true });
+fs.writeFileSync(path.join(WORLDS, 'Worlds', 'Nested', 'EX_WORLD.ZEN'), NESTED);
+
+test('vfsRead returns a file\'s bytes found by name anywhere in the tree', () => {
+  const handle = zenkit.openVfs([WORLDS]);
+  const bytes = zenkit.vfsRead(handle, 'EX_WORLD.ZEN');
+  assert.ok(Buffer.isBuffer(bytes));
+  assert.strictEqual(bytes.length, NESTED.length);
+  assert.strictEqual(sha256(bytes), sha256(NESTED));
+});
+
+test('vfsRead is case-insensitive on the name, as the engine is', () => {
+  const handle = zenkit.openVfs([WORLDS]);
+  assert.strictEqual(sha256(zenkit.vfsRead(handle, 'ex_world.zen')), sha256(NESTED));
+});
+
+test('vfsRead returns null for a name that is not there, or names a directory', () => {
+  const handle = zenkit.openVfs([WORLDS]);
+  assert.strictEqual(zenkit.vfsRead(handle, 'NO_SUCH.ZEN'), null);
+  assert.strictEqual(zenkit.vfsRead(handle, 'Nested'), null);
+});
+
+test('vfsRead rejects a non-string name', () => {
+  const handle = zenkit.openVfs([WORLDS]);
+  assert.throws(() => zenkit.vfsRead(handle, 7), /name must be a string/);
+});
+
+// The retail check: the addon NewWorld read straight out of Worlds.vdf +
+// Worlds_Addon.vdf is the exact file the engine harness has always hashed
+// (environment-hazards.md, the pristine backup). Skipped where no install is.
+const G2_ROOT = process.env.ZENKIT_G2_ROOT
+  || 'C:/Program Files (x86)/Steam/steamapps/common/Gothic II';
+const RETAIL_VDFS = ['Worlds.vdf', 'Worlds_Addon.vdf'].map((n) => path.join(G2_ROOT, 'Data', n));
+const NEWWORLD_SHA256 = 'b4dac8674be44820d63e5bdaf63525b8e7ca1a0ad50d62a2e3e1fe905cb8d4b5';
+
+test('vfsRead reads the addon NewWorld out of the retail archives, byte for byte',
+  { skip: RETAIL_VDFS.every(fs.existsSync) ? false : 'no Gothic II install' }, () => {
+    const handle = zenkit.openVfs(RETAIL_VDFS);
+    const bytes = zenkit.vfsRead(handle, 'NEWWORLD.ZEN');
+    assert.strictEqual(bytes.length, 75387729);
+    assert.strictEqual(sha256(bytes), NEWWORLD_SHA256);
+  });

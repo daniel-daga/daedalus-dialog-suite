@@ -1,0 +1,60 @@
+Mesh: bound a shared lightmap's texture index before it indexes the texture list.
+
+`Mesh::load`'s LIGHTMAPS_SHARED (`0xB026`) branch reads a texture list sized by
+one file-supplied count and then, per lightmap, a second file-supplied index
+into it:
+
+	std::uint32_t texture_index = c->read_uint();
+
+	this->lightmaps.emplace_back(
+	    LightMap {lightmap_textures[texture_index], {normal_a, normal_b}, origin});
+
+`lightmap_textures` is a `std::vector<std::shared_ptr<Texture>>` and
+`operator[]` is unchecked, so an out-of-range index does not merely read past
+the allocation -- it copy-constructs a `shared_ptr` from whatever is there,
+which increments a refcount through a wild control-block pointer and then
+decrements it again when the world is freed.
+
+Found by fuzzing `test/fixtures/minimal.g2.zen`: seed 39 of the run recorded in
+`docs/plans/level-editor.md` 16.11 delta-debugs down to **one byte** -- file
+offset 899, byte 2 of the third lightmap's texture index, turning a valid 0 into
+3,932,160 against a list of three textures. The committed regression test seeds
+the same defect by structure, rewriting the last four bytes of the 0xB026 chunk
+(which are, by the chunk's layout, the last lightmap's texture index).
+
+The fix is the same narrow shape as `0027`, `0029` and `0030`: compare the index
+the file supplies against what it is actually allowed to address and throw a
+named `ParserError`. This is one more instance of the unvalidated-count class in
+16.11, not the class-level fix -- `_parse_bsp_nodes` still recurses once per
+file-supplied flag bit with no depth bound, the chunk-walking loops elsewhere in
+this same file are untouched, and the general fix (making `ReadMemory::seek`
+clamp or throw) is still deferred.
+
+Upstreamable as-is: a plain bounds-check bug, no API change, one guard.
+
+diff --git a/src/Mesh.cc b/src/Mesh.cc
+--- a/src/Mesh.cc
++++ b/src/Mesh.cc
+@@ -2,6 +2,7 @@
+ // SPDX-License-Identifier: MIT
+ #include "zenkit/Mesh.hh"
+ #include "zenkit/Archive.hh"
++#include "zenkit/Error.hh"
+ #include "zenkit/Stream.hh"
+ 
+ #include <algorithm>
+@@ -160,6 +161,14 @@
+ 					    auto normal_b = c->read_vec3();
+ 					    std::uint32_t texture_index = c->read_uint();
+ 
++					    // `texture_index` is read off the file and indexes a vector sized by a
++					    // count read off the file earlier in the same chunk. Nothing ties the
++					    // two together, so an out-of-range index here copy-constructs a
++					    // `shared_ptr` out of whatever is past the allocation.
++					    if (texture_index >= lightmap_textures.size()) {
++						    throw ParserError {"Mesh", "shared lightmap texture index out of range"};
++					    }
++
+ 					    this->lightmaps.emplace_back(
+ 					        LightMap {lightmap_textures[texture_index], {normal_a, normal_b}, origin});
+ 				    }

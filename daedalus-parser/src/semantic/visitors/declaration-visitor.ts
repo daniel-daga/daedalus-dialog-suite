@@ -1,0 +1,480 @@
+import {
+  TreeSitterNode,
+  TreeCursor,
+  Dialog,
+  DialogFunction,
+  FunctionParameter,
+  SemanticModel,
+  GlobalConstant,
+  GlobalVariable,
+  GlobalInstance,
+  GlobalClass,
+  GlobalPrototype
+} from '../semantic-model';
+import { parseLiteralOrIdentifier } from '../parsers/literal-parsing';
+import { createNameRecord } from '../name-utils';
+import { captureDeclarationHeader, captureDeclarationSuffix, parameterKeyword } from '../declaration-source';
+
+export class DeclarationVisitor {
+  private semanticModel: SemanticModel;
+  private functionNameMap: Map<string, string>;
+  private pendingLeadingComments: string[];
+
+  constructor(semanticModel: SemanticModel, functionNameMap: Map<string, string>) {
+    this.semanticModel = semanticModel;
+    this.functionNameMap = functionNameMap;
+    this.pendingLeadingComments = [];
+  }
+
+  /**
+   * First pass: Create all skeleton objects to ensure they exist before linking
+   */
+  visit(node: TreeSitterNode): void {
+    const cursor = node.walk();
+    this.createObjectsRecursively(cursor);
+  }
+
+  private createObjectsRecursively(cursor: TreeCursor): void {
+    const node = cursor.currentNode;
+
+    // Optimization: Handle root node specifically to skip non-declaration children
+    if (node.type === 'program' || node.type === 'source_file') {
+      // #286: the blank lines before each declaration (and its leading
+      // comments) are recorded on its declarationOrder entry, so a save emits
+      // the spacing the source had instead of a normalized one. Blank lines
+      // inside the comment block, or between it and the declaration, are kept
+      // as empty entries in leadingComments, which render as blank lines.
+      let previousEndRow = -1;
+      let groupStartRow: number | null = null;
+      let lastCommentEndRow = -1;
+      const padSinceLastComment = (row: number) => {
+        if (this.pendingLeadingComments.length === 0) return;
+        for (let gap = row - lastCommentEndRow - 1; gap > 0; gap--) {
+          this.pendingLeadingComments.push('');
+        }
+      };
+      if (cursor.gotoFirstChild()) {
+        do {
+          const child = cursor.currentNode;
+          if (child.type === 'comment') {
+            padSinceLastComment(child.startPosition.row);
+            this.pendingLeadingComments.push(child.text);
+            groupStartRow ??= child.startPosition.row;
+            lastCommentEndRow = child.endPosition.row;
+            continue;
+          }
+          // Only recurse into declarations we care about
+          if (child.type === 'function_declaration' ||
+              child.type === 'instance_declaration' ||
+              child.type === 'instance_forward_declaration' ||
+              child.type === 'variable_declaration' ||
+              child.type === 'class_declaration' ||
+              child.type === 'prototype_declaration') {
+            padSinceLastComment(child.startPosition.row);
+            const order = this.semanticModel.declarationOrder;
+            const firstEntry = order ? order.length : 0;
+            this.createObjectsRecursively(cursor);
+            if (order && order.length > firstEntry) {
+              const startRow = groupStartRow ?? child.startPosition.row;
+              order[firstEntry].blankLinesBefore = Math.max(0, startRow - previousEndRow - 1);
+            }
+          }
+          this.pendingLeadingComments = [];
+          groupStartRow = null;
+          previousEndRow = child.endPosition.row;
+        } while (cursor.gotoNextSibling());
+        cursor.gotoParent();
+      }
+      // Comments after the last declaration (EOF) are file-trailing comments.
+      if (this.pendingLeadingComments.length > 0) {
+        this.semanticModel.trailingComments = [...this.pendingLeadingComments];
+        this.pendingLeadingComments = [];
+      }
+      return;
+    }
+
+    if (node.type === 'function_declaration') {
+      const nameNode = node.childForFieldName('name');
+      const typeNode = node.childForFieldName('return_type');
+      const keywordNode = node.childForFieldName('keyword');
+      if (nameNode && typeNode) {
+        const func = new DialogFunction(nameNode.text, typeNode.text);
+        const sourceHeader = captureDeclarationHeader(node);
+        if (sourceHeader) func.sourceHeader = sourceHeader;
+        const declarationSuffix = captureDeclarationSuffix(node);
+        if (declarationSuffix !== undefined) func.declarationSuffix = declarationSuffix;
+        const firstLine = node.text.split('\n')[0] || '';
+        if (keywordNode) {
+          func.keyword = keywordNode.text;
+        }
+        func.spaceBeforeParen = new RegExp(`${nameNode.text}\\s+\\(`).test(firstLine);
+        const parameters = this.extractFunctionParameters(node);
+        if (parameters.length > 0) {
+          func.parameters = parameters;
+        }
+        func.leadingComments = [...this.pendingLeadingComments];
+        func.range = { startIndex: node.startIndex, endIndex: node.endIndex };
+        func.line = node.startPosition.row + 1;
+        this.semanticModel.functions[func.name] = func;
+        this.semanticModel.declarationOrder?.push({ type: 'function', name: func.name });
+        this.functionNameMap.set(func.name.toLowerCase(), func.name);
+      }
+      return; // Optimization: Don't recurse into function bodies during object creation
+    } else if (node.type === 'instance_declaration') {
+      const nameNode = node.childForFieldName('name');
+      const parentNode = node.childForFieldName('parent');
+      const keywordNode = node.childForFieldName('keyword');
+      if (nameNode) {
+        const parentType = parentNode ? parentNode.text : '';
+        const isDialogInstance = parentType.toUpperCase() === 'C_INFO';
+
+        if (isDialogInstance) {
+          const dialog = new Dialog(nameNode.text, parentNode ? parentNode.text : null, () => this.semanticModel.functions);
+          const sourceHeader = captureDeclarationHeader(node);
+          if (sourceHeader) dialog.sourceHeader = sourceHeader;
+          const declarationSuffix = captureDeclarationSuffix(node);
+          if (declarationSuffix !== undefined) dialog.declarationSuffix = declarationSuffix;
+          const firstLine = node.text.split('\n')[0] || '';
+          if (keywordNode) {
+            dialog.keyword = keywordNode.text;
+          }
+          dialog.spaceBeforeParen = new RegExp(`${nameNode.text}\\s+\\(`).test(firstLine);
+          dialog.leadingComments = [...this.pendingLeadingComments];
+          dialog.line = node.startPosition.row + 1;
+          this.semanticModel.dialogs[dialog.name] = dialog;
+          this.semanticModel.declarationOrder?.push({ type: 'dialog', name: dialog.name });
+        } else {
+          const instance = new GlobalInstance(nameNode.text, parentType);
+          instance.sourceText = node.text;
+          instance.leadingComments = [...this.pendingLeadingComments];
+          instance.position = {
+            startLine: node.startPosition.row + 1,
+            startColumn: node.startPosition.column + 1,
+            endLine: node.endPosition.row + 1,
+            endColumn: node.endPosition.column + 1
+          };
+          instance.range = {
+            startIndex: node.startIndex,
+            endIndex: node.endIndex
+          };
+
+          if (!this.semanticModel.instances) {
+            this.semanticModel.instances = createNameRecord();
+          }
+          this.semanticModel.instances[instance.name] = instance;
+          this.semanticModel.declarationOrder?.push({ type: 'instance', name: instance.name });
+
+          const upperParent = parentType.toUpperCase();
+          if (upperParent === 'C_ITEM' || upperParent === 'C_NPC') {
+            const displayName = this.extractInstanceDisplayName(node);
+            if (displayName !== undefined) {
+              instance.displayName = displayName;
+            }
+          }
+
+          const dailyRoutine = this.extractDailyRoutine(node);
+          if (dailyRoutine !== undefined) {
+            instance.dailyRoutine = dailyRoutine;
+          }
+
+          const npcId = this.extractNpcId(node);
+          if (npcId !== undefined) {
+            instance.npcId = npcId;
+          }
+
+          this.indexInstanceByParent(instance);
+        }
+      }
+      return; // Optimization: Don't recurse into instance bodies during object creation
+    } else if (node.type === 'instance_forward_declaration') {
+      this.createForwardInstances(node);
+      return;
+    } else if (node.type === 'variable_declaration') {
+      this.createGlobalSymbol(node);
+      return;
+    } else if (node.type === 'class_declaration') {
+      const nameNode = node.childForFieldName('name');
+      if (nameNode) {
+        const globalClass = new GlobalClass(nameNode.text);
+        globalClass.sourceText = node.text;
+        globalClass.leadingComments = [...this.pendingLeadingComments];
+        globalClass.position = {
+          startLine: node.startPosition.row + 1,
+          startColumn: node.startPosition.column + 1,
+          endLine: node.endPosition.row + 1,
+          endColumn: node.endPosition.column + 1
+        };
+        globalClass.range = { startIndex: node.startIndex, endIndex: node.endIndex };
+        if (!this.semanticModel.classes) {
+          this.semanticModel.classes = createNameRecord();
+        }
+        this.semanticModel.classes[globalClass.name] = globalClass;
+        this.semanticModel.declarationOrder?.push({ type: 'class', name: globalClass.name });
+      }
+      return;
+    } else if (node.type === 'prototype_declaration') {
+      const nameNode = node.childForFieldName('name');
+      const parentNode = node.childForFieldName('parent');
+      if (nameNode) {
+        const prototype = new GlobalPrototype(nameNode.text, parentNode ? parentNode.text : '');
+        prototype.sourceText = node.text;
+        prototype.leadingComments = [...this.pendingLeadingComments];
+        prototype.position = {
+          startLine: node.startPosition.row + 1,
+          startColumn: node.startPosition.column + 1,
+          endLine: node.endPosition.row + 1,
+          endColumn: node.endPosition.column + 1
+        };
+        prototype.range = { startIndex: node.startIndex, endIndex: node.endIndex };
+        if (!this.semanticModel.prototypes) {
+          this.semanticModel.prototypes = createNameRecord();
+        }
+        this.semanticModel.prototypes[prototype.name] = prototype;
+        this.semanticModel.declarationOrder?.push({ type: 'prototype', name: prototype.name });
+      }
+      return;
+    }
+
+    // For any other node types (e.g. if passed directly in tests), we don't expect nested declarations
+    // so we don't need to recurse.
+  }
+
+  /**
+   * `instance a, b(C);` (#383): one GlobalInstance per name, never a dialog —
+   * there is no body to read. The first carries the statement's sourceText;
+   * the rest carry `declaredWith`, the first name, and are written by it.
+   */
+  private createForwardInstances(node: TreeSitterNode): void {
+    const parentNode = node.childForFieldName('parent');
+    if (!parentNode) return;
+    const names = node.namedChildren.filter(
+      child => child.type === 'identifier' && child.startIndex !== parentNode.startIndex
+    );
+    if (names.length === 0) return;
+
+    const position = {
+      startLine: node.startPosition.row + 1,
+      startColumn: node.startPosition.column + 1,
+      endLine: node.endPosition.row + 1,
+      endColumn: node.endPosition.column + 1
+    };
+    const range = { startIndex: node.startIndex, endIndex: node.endIndex };
+    if (!this.semanticModel.instances) {
+      this.semanticModel.instances = createNameRecord();
+    }
+
+    const head = names[0].text;
+    for (const nameNode of names) {
+      const instance = new GlobalInstance(nameNode.text, parentNode.text);
+      if (instance.name === head) {
+        instance.sourceText = node.text;
+        instance.leadingComments = [...this.pendingLeadingComments];
+        this.semanticModel.declarationOrder?.push({ type: 'instance', name: head });
+      } else {
+        instance.declaredWith = head;
+      }
+      instance.position = position;
+      instance.range = range;
+      this.semanticModel.instances[instance.name] = instance;
+      this.indexInstanceByParent(instance);
+    }
+  }
+
+  private indexInstanceByParent(instance: GlobalInstance): void {
+    const upperParent = instance.parent.toUpperCase();
+    if (upperParent === 'C_ITEM') {
+      if (!this.semanticModel.items) {
+        this.semanticModel.items = createNameRecord();
+      }
+      this.semanticModel.items[instance.name] = instance;
+    }
+
+    if (upperParent === 'C_NPC') {
+      if (!this.semanticModel.npcs) {
+        this.semanticModel.npcs = createNameRecord();
+      }
+      this.semanticModel.npcs[instance.name] = instance;
+    }
+
+    if (upperParent === 'C_MDS') {
+      if (!this.semanticModel.animations) {
+        this.semanticModel.animations = createNameRecord();
+      }
+      this.semanticModel.animations[instance.name] = instance;
+    }
+  }
+
+  private extractFunctionParameters(functionNode: TreeSitterNode): FunctionParameter[] {
+    const parametersNode = functionNode.childForFieldName('parameters');
+    if (!parametersNode) {
+      return [];
+    }
+
+    const parameters: FunctionParameter[] = [];
+    for (const child of parametersNode.namedChildren) {
+      if (child.type !== 'parameter') {
+        continue;
+      }
+      const typeNode = child.childForFieldName('type');
+      const nameNode = child.childForFieldName('name');
+      if (!typeNode || !nameNode) {
+        continue;
+      }
+      const parameter: FunctionParameter = { type: typeNode.text, name: nameNode.text };
+      const keyword = parameterKeyword(child)?.text;
+      if (keyword) {
+        parameter.keyword = keyword;
+      }
+      parameters.push(parameter);
+    }
+    return parameters;
+  }
+
+  private extractInstanceDisplayName(instanceNode: TreeSitterNode): string | undefined {
+    const bodyNode = instanceNode.childForFieldName('body');
+    if (!bodyNode) {
+      return undefined;
+    }
+
+    for (const child of bodyNode.namedChildren) {
+      if (child.type !== 'assignment_statement') {
+        continue;
+      }
+      const leftNode = child.childForFieldName('left');
+      const rightNode = child.childForFieldName('right');
+      if (!leftNode || !rightNode) {
+        continue;
+      }
+      if (leftNode.text.toLowerCase() !== 'name' || rightNode.type !== 'string') {
+        continue;
+      }
+      const value = parseLiteralOrIdentifier(rightNode, { normalizeStringLiterals: true });
+      return typeof value === 'string' && value.trim() !== '' ? value : undefined;
+    }
+
+    return undefined;
+  }
+
+  /**
+   * The `id` field of an instance body, when it is an integer literal.
+   *
+   * Read exactly as `extractDailyRoutine` reads its field, and it stops at the
+   * same place: a constant or an expression is left undefined rather than
+   * guessed, because the consumers of this hold no symbol table to resolve one
+   * against. A leading `-` is part of the literal — retail writes `id = -1`.
+   */
+  private extractNpcId(instanceNode: TreeSitterNode): number | undefined {
+    const bodyNode = instanceNode.childForFieldName('body');
+    if (!bodyNode) return undefined;
+
+    for (const child of bodyNode.namedChildren) {
+      if (child.type !== 'assignment_statement') continue;
+      const leftNode = child.childForFieldName('left');
+      const rightNode = child.childForFieldName('right');
+      if (!leftNode || !rightNode) continue;
+      if (leftNode.text.toLowerCase() !== 'id') continue;
+      const raw = rightNode.text.trim();
+      return /^-?\d+$/.test(raw) ? Number.parseInt(raw, 10) : undefined;
+    }
+    return undefined;
+  }
+
+  private extractDailyRoutine(instanceNode: TreeSitterNode): string | undefined {
+    const bodyNode = instanceNode.childForFieldName('body');
+    if (!bodyNode) return undefined;
+
+    for (const child of bodyNode.namedChildren) {
+      if (child.type !== 'assignment_statement') continue;
+      const leftNode = child.childForFieldName('left');
+      const rightNode = child.childForFieldName('right');
+      if (!leftNode || !rightNode) continue;
+      if (leftNode.text.toLowerCase() !== 'daily_routine') continue;
+      const value = rightNode.text.trim();
+      return value || undefined;
+    }
+    return undefined;
+  }
+
+  /**
+   * Create GlobalConstant or GlobalVariable from variable declaration node.
+   *
+   * A comma list (`var int a, b;`, `const int A = 1, B = 2;`, #383) makes one
+   * symbol per name. The first carries the statement's sourceText; the rest
+   * carry `declaredWith`, the first name, and are written by it.
+   */
+  private createGlobalSymbol(node: TreeSitterNode): void {
+    const keywordNode = node.childForFieldName('keyword');
+    const typeNode = node.childForFieldName('type');
+    const nameNode = node.childForFieldName('name');
+
+    if (!keywordNode || !typeNode || !nameNode) {
+      return;
+    }
+
+    const position = {
+      startLine: node.startPosition.row + 1,
+      startColumn: node.startPosition.column + 1,
+      endLine: node.endPosition.row + 1,
+      endColumn: node.endPosition.column + 1
+    };
+    const range = { startIndex: node.startIndex, endIndex: node.endIndex };
+
+    const head = this.addGlobalSymbol(node, keywordNode.text.toLowerCase(), typeNode.text, nameNode.text);
+    if (!head) return;
+    head.sourceText = node.text;
+    head.leadingComments = [...this.pendingLeadingComments];
+    head.position = position;
+    head.range = range;
+    this.semanticModel.declarationOrder?.push({
+      type: head instanceof GlobalConstant ? 'constant' : 'variable',
+      name: head.name
+    });
+
+    for (const declarator of node.namedChildren) {
+      if (declarator.type !== 'variable_declarator') continue;
+      const declaratorName = declarator.childForFieldName('name');
+      if (!declaratorName) continue;
+      const keyword = declarator.childForFieldName('keyword')?.text.toLowerCase() ?? keywordNode.text.toLowerCase();
+      const type = declarator.childForFieldName('type')?.text ?? typeNode.text;
+      const declared = this.addGlobalSymbol(declarator, keyword, type, declaratorName.text);
+      if (!declared) continue;
+      declared.declaredWith = head.name;
+      declared.position = position;
+      declared.range = range;
+    }
+  }
+
+  private addGlobalSymbol(
+    node: TreeSitterNode,
+    keyword: string,
+    type: string,
+    name: string
+  ): GlobalConstant | GlobalVariable | undefined {
+    if (keyword === 'const') {
+      const valueNode = node.childForFieldName('value');
+      let value: string | number | boolean = 0;
+      const isLiteral = valueNode?.type === 'string';
+      if (valueNode) {
+        // A string literal's contents; the quotes are syntax, `valueIsLiteral` the kind.
+        value = isLiteral ? valueNode.text.slice(1, -1) : parseLiteralOrIdentifier(valueNode);
+      }
+      const constant = new GlobalConstant(name, type, value);
+      if (isLiteral) constant.valueIsLiteral = true;
+      if (!this.semanticModel.constants) {
+        this.semanticModel.constants = createNameRecord();
+      }
+      this.semanticModel.constants[name] = constant;
+      return constant;
+    }
+    if (keyword === 'var') {
+      const variable = new GlobalVariable(name, type);
+      if (!this.semanticModel.variables) {
+        this.semanticModel.variables = createNameRecord();
+      }
+      this.semanticModel.variables[name] = variable;
+      return variable;
+    }
+    return undefined;
+  }
+}
+

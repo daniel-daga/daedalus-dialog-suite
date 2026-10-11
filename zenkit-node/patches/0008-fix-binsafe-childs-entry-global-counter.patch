@@ -1,0 +1,54 @@
+diff --git a/include/zenkit/world/VobTree.hh b/include/zenkit/world/VobTree.hh
+index 27fae65..b051cde 100644
+--- a/include/zenkit/world/VobTree.hh
++++ b/include/zenkit/world/VobTree.hh
+@@ -14,4 +14,14 @@ namespace zenkit {
+ 	/// \return The tree parsed.
+ 	ZKAPI std::shared_ptr<VirtualObject> parse_vob_tree(ReadArchive& in, GameVersion version);
+ 	ZKAPI void save_vob_tree(WriteArchive& w, GameVersion version, std::shared_ptr<VirtualObject> const& obj);
++
++	/// \brief Saves a VOB tree, continuing an existing `childs<N>` entry counter.
++	///
++	/// The original ZenGin writes every child-count entry with a globally unique running
++	/// index (`childs0`, `childs1`, ...), one per emitted entry in write order, starting
++	/// with the VobTree-level count. The engine's BinSafe archiver is name-addressed, so
++	/// reusing a name across sub-trees produces a stream the original engine cannot read.
++	/// \param n In/out running counter; incremented once per child-count entry written.
++	ZKAPI void
++	save_vob_tree(WriteArchive& w, GameVersion version, std::shared_ptr<VirtualObject> const& obj, uint32_t& n);
+ } // namespace zenkit
+diff --git a/src/World.cc b/src/World.cc
+index 90c30e6..202e12b 100644
+--- a/src/World.cc
++++ b/src/World.cc
+@@ -195,9 +195,15 @@ namespace zenkit {
+ 		}
+ 
+ 		w.write_object_begin("VobTree", "", 0);
+-		w.write_int("childs0", this->world_vobs.size());
++
++		// The original ZenGin numbers every child-count entry with one global running
++		// counter in write order: the VobTree-level count is `childs0`, then each VOB's
++		// own count follows depth-first as `childs1`, `childs2`, ... A per-sub-tree reset
++		// reuses names and breaks the engine's name-addressed BinSafe reader.
++		uint32_t childs_index = 0;
++		w.write_int("childs" + std::to_string(childs_index++), this->world_vobs.size());
+ 		for (auto& root : this->world_vobs) {
+-			save_vob_tree(w, version, root);
++			save_vob_tree(w, version, root, childs_index);
+ 		}
+ 		w.write_object_end();
+ 
+diff --git a/src/world/VobTree.cc b/src/world/VobTree.cc
+index 37134c9..d1cb7ce 100644
+--- a/src/world/VobTree.cc
++++ b/src/world/VobTree.cc
+@@ -42,7 +42,7 @@ namespace zenkit {
+ 		return object;
+ 	}
+ 
+-	static void
++	void
+ 	save_vob_tree(WriteArchive& w, GameVersion version, std::shared_ptr<VirtualObject> const& obj, uint32_t& n) {
+ 		w.write_object(obj, version);
+ 		w.write_int("childs" + std::to_string(n++), obj->children.size());

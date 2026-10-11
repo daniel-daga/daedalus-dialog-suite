@@ -1,0 +1,694 @@
+# Environment hazards
+
+Things about **this machine and this toolchain** that have cost real time, and
+that no test will tell you about. They are stable — they were true last month
+and they will be true next month — so they live here instead of being retyped in
+every handover.
+
+Anything that is a fact about the *code* belongs in the plan or an architecture
+doc, not here. This file is only for the ground the code stands on.
+
+## Windows and PowerShell
+
+- **PowerShell 5.1 mangles UTF-8 on a read-modify-write.** `Get-Content -Raw`
+  decodes as ANSI and writes mojibake back. Use `node` or
+  `[IO.File]::ReadAllText` / `WriteAllText` for scripted source edits.
+- **A here-string is not a safe way to pass a commit message.** A `@'…'@` body
+  containing quotes has been observed terminating early, so the rest of the
+  message reached `git` as pathspecs. Write the message to a file and use
+  `git commit -F`.
+- **Exit codes through a Bash-tool pipeline are unreliable here.** Use
+  PowerShell and `$LASTEXITCODE` whenever a native crash is a possible result.
+- **Editor source files are CRLF.** Normalize before matching multi-line
+  anchors.
+
+## `os.tmpdir()` on GitHub's Windows runner is an 8.3 short path
+
+`C:\Users\RUNNER~1\AppData\Local\Temp` — `RUNNER~1` is the 8.3 alias of
+`runneradmin`, and `fs.realpath` expands it. Neither this machine
+(`C:\Users\<user>\…`, short enough to need no alias) nor a Linux runner shows it,
+so **anything that compares a `tmpdir()`-derived path against a resolved one
+passes everywhere except the one runner that ships the release**.
+
+That is not hypothetical: it silently refused every first
+`<world>.folders.json` write in `world-folders.spec.ts` for a day
+(`PathValidationService` canonicalized a whitelisted file with `realpath`, which
+fails for a file that does not exist yet, and fell back to the unexpanded
+spelling). Compare resolved-to-resolved, or lstat-free normalize both sides.
+
+The general shape — a short name, a junction, a symlinked temp dir — is what to
+test against, and a junction reproduces it on any platform. `--- Electron main
+process output ---` in a failing `e2e-electron` job's log is the main process's
+own `console.error`, which is where a refusal like this actually says so.
+
+**Nothing on a push runs that job.** The only real-Electron E2E on Windows is
+`build-windows.yml`'s `e2e-electron-windows`, and that workflow is
+`workflow_dispatch` only, so a Windows-only regression sits on a green `master`
+until somebody dispatches a build. This one did, for a day. Dispatch it before
+trusting master for a release, not after.
+
+## Building the native addon
+
+- **A plain `pnpm install` fails on a checkout with no built addon and no
+  submodule**, which is every fresh clone and every cloud agent container.
+  `zenkit-node`'s install hook finds no prebuild and falls through to the source
+  build, which dies in `build-zenkit.js` with nothing in `vendor/ZenKit` — and
+  it takes the *whole* install down, so no workspace gets its `node_modules`.
+  `CI=1 pnpm install` is the way past it: `install.js` skips the source build
+  unless `ZENKIT_NODE_FORCE_BUILD=1`, which is exactly the arrangement the CI
+  jobs use. Everything but the addon then works, the editor's Jest suite
+  included — it fakes the zenkit worker, as the entry below says. Seen
+  2026-09-11 in a cloud container. `zen-world` still has to be built by hand
+  afterwards (`pnpm --filter zen-world build`); `daedalus-parser` builds itself
+  in its own postinstall.
+- **Actually building the addon in a cloud container needs miniz put there by
+  hand.** With the submodule initialised, `build-zenkit.js` still dies in CMake:
+  ZenKit's `vendor/CMakeLists.txt` fetches doctest, libsquish and miniz as
+  release *zips* off `github.com`, and the container's egress answers **403** to
+  an archive download while allowing `git clone`. doctest and libsquish are also
+  nested submodules, so `git submodule update --init --recursive` already
+  satisfies them; miniz is not, and `ZK_ENABLE_ZIPPED_VDF` is ABI-affecting and
+  must stay on. `px_add_dependency` prefers a directory that is already there,
+  so the whole fix is to clone it into the slot it looks in first:
+
+  ```
+  git clone --depth 1 --branch 3.1.1 https://github.com/richgel999/miniz.git \
+    zenkit-node/vendor/ZenKit/vendor/miniz
+  ```
+
+  Then `node scripts/build-zenkit.js` and `node-gyp rebuild` both succeed —
+  about four minutes for the ZenKit static library. `install.js` resolves
+  node-gyp through `require.resolve`, so run it that way rather than assuming a
+  `node_modules/node-gyp` path; pnpm puts it under `.pnpm/`. Verified
+  2026-09-12: full `zenkit-node` suite green (456 pass, 1 skipped) in a cloud
+  container. Everything under `vendor/` is untracked or a submodule, so none of
+  this is a repo change.
+- **`pnpm --filter zen-world build` is owed again after every edit to
+  `zen-world`, and forgetting it fails somewhere else.** The editor compiles
+  and tests against `zen-world/dist`, not its sources, so a changed type or a
+  widened return reaches the editor only through that build. What it looks
+  like when you forget: `typecheck:renderer` reporting a property that "does
+  not exist" on a type you are looking at, or a Jest expectation failing
+  against the *old* shape while the same assertion passes in `zen-world`'s own
+  suite. Seen twice in one session, 2026-09-12.
+- **`CI=1` also skips Electron's own binary download, and one editor suite
+  needs it.** `appendInsertNpcFlow.test.ts` imports `FileService`, which
+  imports `electron`, and the stub throws *"Electron failed to install
+  correctly"* — one failing suite in an otherwise green 299. Fix it in place
+  with `node install.js` inside
+  `node_modules/.pnpm/electron@<version>/node_modules/electron`. It failed on
+  the first run and succeeded on an immediate retry with no other change, so
+  retry once before believing the container cannot reach the download.
+  Verified 2026-09-12. **It did not happen at all on 2026-09-13** — a plain
+  `CI=1 pnpm install` in a fresh cloud container left `electron/dist` in place
+  and all 312 editor suites passed, `appendInsertNpcFlow` included. So expect
+  the failure, but check before applying the fix: the entry above is a trap that
+  *can* fire, not one that always does. **2026-09-14 added a third shape:** the
+  suite failed on `appendInsertNpcFlow` with the same *"Electron failed to
+  install correctly"* under a full parallel `npm test`, then passed — the whole
+  312 suites green — on an immediate re-run with nothing changed and `install.js`
+  never run. So run the suite twice before reaching for the fix.
+- **In a cloud agent container the addon *can* be built, and the one
+  thing in the way is a single download.** The egress proxy refuses GitHub
+  repositories outside the session's scope, so ZenKit's CMake dies on
+  `FetchContent` of miniz (`Each download failed!`, HTTP 403) — while `git
+  clone` of the same repository goes through, because the git proxy is a
+  different path. `px_add_dependency` prefers a checkout already sitting at
+  `vendor/ZenKit/vendor/<name>/` over its URL, which is why `doctest` and
+  `libsquish` never hit this: they are nested submodules. So:
+
+  ```
+  git submodule update --init --recursive zenkit-node/vendor/ZenKit
+  git clone --depth 1 --branch 3.1.1 https://github.com/richgel999/miniz.git \
+      zenkit-node/vendor/ZenKit/vendor/miniz
+  cd zenkit-node && node scripts/build-zenkit.js && npx node-gyp rebuild
+  ```
+
+  The miniz checkout is untracked inside a submodule that is never committed,
+  and `build-zenkit.js`'s reset (`git checkout -- .`) leaves untracked
+  directories alone, so it survives a rebuild. About four minutes. Verified
+  2026-09-11: 438 of `zenkit-node`'s 439 tests pass, one skipped.
+- **The browser-harness Playwright suite finds no browser in a cloud
+  container.** The pre-installed Chromium under `/opt/pw-browsers` is a
+  different build than this repo's Playwright pins, so every spec fails with
+  *"Executable doesn't exist at /opt/pw-browsers/chromium-1208/…"* — 178 of
+  them, and the message never says the two are simply different builds. Do
+  **not** run `playwright install`; point the existing one at it instead, with
+  a config that is never committed:
+
+  ```ts
+  // playwright.local.config.ts — delete it when you are done
+  import base from './playwright.config';
+  export default { ...base, projects: (base.projects ?? []).map((p) => ({
+    ...p, use: { ...p.use, launchOptions: { executablePath: '/opt/pw-browsers/chromium' } },
+  })) };
+  ```
+
+  `pnpm exec playwright test -c playwright.local.config.ts`. Verified
+  2026-09-11: 177 passed.
+- **The real-Electron World specs need software GL in a container.** With no
+  GPU, Chromium blocklists WebGL2 outright (`ContextResult::kFatalFailure:
+  WebGL2 blocklisted`) and every spec that opens a world times out waiting for
+  a viewport that never mounts — seven of them, and the failure names none of
+  this. `DDE_E2E_SOFTWARE_GL=1` adds `--use-gl=angle --use-angle=swiftshader`
+  in `tests/e2e-electron/harness.ts`. Opt-in rather than always on, because
+  forcing swiftshader on a machine that *has* a GPU would hide the very thing
+  `world-render.spec.ts` exists to watch. The whole run, with the addon built
+  as above:
+
+  ```
+  cd daedalus-dialog-editor && npm run build
+  DDE_E2E_SOFTWARE_GL=1 xvfb-run --auto-servernum \
+      pnpm exec playwright test -c playwright.electron.config.ts
+  ```
+
+  `pnpm exec`, not `npx`: `npx` picks the root Playwright and the specs resolve
+  another copy, which fails as *"Playwright Test did not expect test.describe()
+  to be called here"* and finds no tests at all. Verified 2026-09-11: 32 passed,
+  1 skipped; again 2026-09-14, 33 passed and 1 skipped, with the addon built by
+  the recipe above.
+  `what-changed.spec.ts` fails unless the build had `VITE_WHAT_CHANGED` set, as
+  CI sets it (`all-tests.yml`); a plain `npm run build` leaves the splash
+  empty. Seen 2026-10-03: 46 passed, that one failed, 1 skipped.
+- **Run `node scripts/build-zenkit.js` before `node-gyp`** — it resets the
+  submodule, applies `patches/*.patch` and writes `zenkit-abi.json`.
+- **That reset destroys any edit in `vendor/ZenKit` that is not a patch file.**
+  The way to change ZenKit is therefore: edit the vendored source, `diff` it
+  against a copy you took first, save that as `patches/00NN-*.patch`, and only
+  then run the build — editing and building straight away loses the edit
+  silently, because the reset happens before the compile and reports nothing.
+- **`git diff` inside `vendor/ZenKit` is not that diff.** The submodule's index
+  is the pinned commit, so it hands you *every* applied patch's hunks in the
+  file you touched — `0038` came out carrying `0008`'s change to the same file.
+  Copy the file before editing and `diff -u` against that copy (it is CRLF on
+  this machine, so write the new one CRLF too or the diff is the whole file).
+- **Use `node-gyp rebuild`, never `build`.** A stale `build/` fails with
+  `LNK1103`.
+- `node-gyp rebuild` **deletes `build/`**, which is why the CMake output lives in
+  `vendor-build/` deliberately. Do not tidy it back.
+- **A patch touching any `save` path needs the retail corpus re-run, by hand.**
+  `node scripts/zen-roundtrip.js --root worlds` (after `extract-worlds.js`) —
+  the corpus needs a retail install, so `zenkit-node.yml` has none and CI cannot
+  catch this. It has already happened once: `0028` made `VTrigger::save` rebuild
+  the deprecated `flags` byte from the two bools `load` unpacks, dropping the
+  bits nothing maps to, and the headline `4× identical [BIN_SAFE]` silently
+  became `4× semantic-drift` for a day. The fix shape is `0016`'s and `0044`'s —
+  keep the unmapped bits on a zero-initialized `reserved_*` member and merge
+  them back when writing (never on the deprecated member itself: it has no
+  initializer, so a fresh object would merge indeterminate bits).
+- **Never `dynamic_cast` ZenKit types** — node-gyp compiles `/GR-` on Windows.
+- **Nested ZenKit submodules must be initialised recursively, and the failure is
+  a download rather than an error.** `vendor/ZenKit/vendor/{doctest,libsquish}`
+  are submodules of the submodule, and ZenKit's `vendor/CMakeLists.txt` uses a
+  local checkout only `if (EXISTS <name>/CMakeLists.txt)` — an empty directory
+  falls through to `FetchContent` and a GitHub zip. On a machine that cannot
+  reach `github.com/*/archive` the configure dies mid-download with
+  `Configuring incomplete`, and `build-zenkit.js` then reports the *missing*
+  `zenkit-abi.json` instead, which points at the wrong step. `git submodule
+  update --init --recursive` is the fix. `miniz` is not a submodule at all and
+  is always fetched when `ZK_ENABLE_ZIPPED_VDF` is on; a clone of
+  `richgel999/miniz` at tag `3.1.1` into `vendor/ZenKit/vendor/miniz` satisfies
+  the same `EXISTS` check where the zip cannot be reached.
+- **An MSVC compile can hang.** One `cl.exe` sat 15 minutes at 31 s CPU with no
+  output. Kill the `cl.exe` / `Tracker.exe` / driver chain and re-run.
+- **Smart App Control blocks a freshly linked `.node` or `.exe` for ~5 minutes**
+  (`ERR_DLOPEN_FAILED`). It clears on its own; re-linking from a different shell
+  has also worked around it. **Never turn SAC off** — it is a one-way door
+  needing a Windows reinstall.
+- **`zen-world` must be built before the editor typechecks**, and rebuilt after
+  any `coords` change: the editor consumes the build, not the source.
+- **`daedalus-parser` must be *built* before the editor's Jest suite**, for the
+  same reason and with two symptoms that look like ordinary failures. Its
+  subpath exports (`./semantic-model`, `./semantic-code-generator`) resolve into
+  `dist/`, so an uncompiled workspace fails suites with `Cannot find module`;
+  and its tree-sitter `.node` is not built by `pnpm install` either, so the
+  suites that reach the real parser abort the whole worker with `No native build
+  was found for platform=…`. Jest counts both among the failed tests, so a
+  fresh checkout reports dozens of failures that are one missing build each.
+  `pnpm --filter daedalus-parser build`, then `npm run build:ts` and
+  `npx node-gyp rebuild` in that workspace.
+- **The renderer bundle is what `verify-world-edit.js` drives.** `build:main`
+  alone leaves it stale, and the symptom is an edit refused by a validator that
+  the renderer is a version behind. Run the full `build`.
+- **A stale editor addon never fails a test.** The editor's Jest suites fake
+  the zenkit worker, so every suite stays green against a `.node` missing
+  whatever the ops have gained since it was built; the only place a stale
+  addon shows is the running app — a property absent from the grid, an edit
+  refused. Rebuild before trusting anything observed in the app.
+- **A worktree has an empty `vendor/ZenKit`, so a C++ change there needs the
+  submodule first.** `wt:new` copies the built `.node` files and nothing else:
+  `git submodule update --init --recursive` in the worktree is what
+  `build-zenkit.js` needs before it can reset and patch anything (it clones
+  from GitHub — `--reference <main>\.git\modules\zenkit-node\vendor\ZenKit`
+  makes that local), and `vendor-build/` is then a full ZenKit CMake build,
+  several minutes. Never copy the main checkout's `vendor/ZenKit` across
+  instead: its `.git` file points at a gitdir whose `core.worktree` is the
+  main checkout, so the `git checkout -- .` at the top of the build would
+  reset the *main* tree's submodule from inside the worktree. Seen 2026-09-02.
+- **`daedalus-parser`'s own native binding goes stale the same way, silently.**
+  `npm test`'s `npm run build` step is `tree-sitter generate` — it regenerates
+  `src/parser.c` but never recompiles `bindings/node`'s `.node` file, so a
+  grammar change compiles into source nobody links. Found 2026-08-28: the
+  compiled binding was 6 months older than `grammar.js` and four tests failed
+  against a grammar that had already grown a `variable_declaration` node the
+  binary had never heard of. `npx node-gyp rebuild` (run from `daedalus-parser/`)
+  fixed all four with no source change. Check `grammar.js` against
+  `build/Release/tree_sitter_daedalus_binding.node`'s mtime whenever a parser
+  test fails in a way the diff doesn't explain.
+
+## Jest on Node 24
+
+- **An unhandled promise rejection kills a whole run with no test output.** If
+  Jest prints nothing, look for an unawaited promise first.
+- **A `mockResolvedValueOnce` that its own test never consumes leaks into the
+  next test.** The symptom is the *following* test failing.
+- **react-window renders no rows under jsdom without the AutoSizer mock.** Any
+  suite that renders the scene tree needs it.
+- **`FileService.lruCaches.test.ts` times out under a full parallel run, and
+  passes alone.** Both its cases read `FILE_CACHE_CAP` (1024) real files in a
+  loop against Jest's 5 s default, which is comfortable on an idle machine and
+  not comfortable beside 249 other suites. Seen 2026-09-02; nothing about the
+  cache is wrong, and re-running the file on its own is the check.
+- **`fireEvent` wraps every call in `act()`.** That is why a component test can
+  never find a bug that only appears when two events land in one JS task —
+  React 18 batches state updates, and a real driver dispatching a whole gesture
+  in one `page.evaluate` reads state the handler has not flushed yet.
+- **`fireEvent.pointerDown`/`pointerMove`/`pointerUp` leave `clientX`/`clientY`
+  undefined under this jsdom.** A handler that computes a delta from them
+  silently gets `NaN` — no throw, no warning, just a value that never renders
+  as the number it should. `WorldViewport.multiSelect.test.tsx` found this
+  first for pointerdown/pointerup; `WorldSurface.panels.test.tsx`
+  (level-editor.md §17) hit it again for a drag. The fix
+  both use: dispatch a plain `new MouseEvent('pointerdown', {clientX, ...})`
+  directly via `element.dispatchEvent(...)`, wrapped in `act()` — React routes
+  on `event.type`, not the constructor, and `MouseEvent`'s `clientX` is a real
+  field where `PointerEvent`'s init-dict fallback here is not.
+- **jsdom has no Pointer Lock API, and its `MouseEvent` has no `movementX`/
+  `movementY` at all** — not on the prototype, and the init dict's are
+  dropped, so a handler reads `undefined`. `WorldViewport.walkNav.test.tsx`
+  stubs the lot: `requestPointerLock` is a `jest.fn` on the mock renderer's
+  canvas (`worldViewportMocks.ts`), `document.pointerLockElement` and
+  `exitPointerLock` are `defineProperty`'d, and the deltas are put on a
+  hand-built `mousemove` with `Object.defineProperties`. A pointer-lock
+  regression the stubs cannot express — the lock refused, the deltas'
+  sign, Escape — needs a pass in the real app.
+
+## The local `master` in a cloud container is not master
+
+- **Observed 2026-09-14: the container's local `master` ref had an unrelated
+  history to `origin/master`** — 122 commits on one side, 83 on the other, and
+  `git merge` refusing with *"refusing to merge unrelated histories"*. Its tip
+  was a `Merge pull request #233` commit, so it is a lineage from before master
+  became the linear history it is now. `origin/master` is the authoritative one;
+  the local ref was never checked out or updated by anything in the session.
+- **This is a destructive trap, not an inconvenience.** The obvious next move
+  after that refusal — force-pushing the local branch, or `git push --force`
+  from a checked-out `master` — would overwrite the real master with a lineage
+  missing every commit since the migration off pull requests.
+- **Land work by pushing the ref, and check the ancestry first.** The remote
+  fast-forward needs no local `master` at all:
+
+  ```
+  git fetch origin master
+  git merge-base --is-ancestor origin/master HEAD   # must succeed
+  git push origin <your-branch>:master              # no --force, ever
+  ```
+
+  If `--is-ancestor` fails, master really has moved and the branch wants a
+  merge of `origin/master` into it — which is a different thing from the stale
+  local ref above, and the only one worth acting on.
+
+## `npx tsc` in the cloud container is not the workspace's TypeScript
+
+- **Observed 2026-10-10: `npx tsc` run inside `daedalus-dialog-editor/`
+  resolved the image's global `/opt/node22/bin/tsc`, TypeScript 6.0.2**, not
+  the workspace's 5.9.3. 6.0 defaults `types` to `[]`, so the same tsconfig
+  reports errors the workspace compiler does not (the renderer's `NodeJS`
+  namespace, for one) and stays silent about others. Go through the package
+  scripts (`pnpm --filter daedalus-dialog-editor run typecheck:tests`) or
+  `node_modules/.bin/tsc`, which is what CI runs.
+
+## Playwright in a cloud agent container
+
+- **The pinned browser build is not the one the image ships.** The image ships
+  Playwright's build **1194** under `/opt/pw-browsers`; the pinned `playwright`
+  (1.58.1) wants **1208**, so out of the box every spec fails at launch with
+  `Executable doesn't exist at …/chromium_headless_shell-1208/…`. Every spec
+  failing at once, including ones the change never touched, is the tell — check
+  that before reading it as a regression.
+- **It does run, with the executable named directly.** A config that spreads
+  the base one and sets `use.launchOptions.executablePath` to
+  `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`, passed with
+  `-c`, launches the shipped Chromium and the harness behaves normally —
+  `keyboard-dnd-reorder.spec.ts`, six specs, green in 13 s on 2026-09-12.
+  Keep that config out of the commit; it is a fact about one container, not
+  about the repo.
+  **`PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` still does not work** — that is what
+  the 2026-08-30 note tried and why this section used to say the suite was
+  unavailable here. The env var leaves the headless-shell channel resolving on
+  its own, and the channel is what the run asks for; `launchOptions` replaces
+  the launch outright, which is the difference.
+- **`npx playwright test` fails the whole run in the editor workspace; the
+  workspace's own binary does not.** `npx` resolves the hoisted root
+  `playwright` package, which loads a different `@playwright/test` than the
+  specs import, and every spec dies at its `test.describe` with *"Playwright
+  Test did not expect test.describe() to be called here"* and then *"No tests
+  found"*. It reads like a broken spec file and is not — the message's own
+  third cause ("two different versions of @playwright/test") is the real one.
+  Run `./node_modules/.bin/playwright test …` from `daedalus-dialog-editor`
+  instead. Seen 2026-09-13; 179 harness specs then ran, 178 green with one
+  failure (`file-opening.spec.ts` › *should have window.editorAPI available*),
+  which was a race in the spec — it read `window.editorAPI` straight after
+  `goto` — and has waited for it since 2026-09-26.
+- The container's own instructions say not to run `playwright install`. Nothing
+  above needs it.
+- **A cold clone needs `zen-world` built before the harness resolves at all.**
+  `pnpm install --ignore-scripts` skips its `postinstall` `tsc`, so vite fails
+  every renderer import with `Failed to resolve entry for package "zen-world"`
+  and the page never mounts — a spec then dies on its first locator with no
+  mention of the real cause. `pnpm --filter zen-world build` first.
+  The same clone runs 14 of the editor's Jest suites red with
+  `No native build was found for platform=linux … abi=127`: that is tree-sitter,
+  and `npx node-gyp rebuild` in `daedalus-parser` (about a minute, after
+  `pnpm --filter daedalus-parser build:ts`) closes it. Neither is a regression,
+  and both look like one.
+
+## Playwright in a worktree
+
+- **The browser harness reuses whatever is already on port 5173 — including
+  another checkout's vite.** `playwright.config.ts` has
+  `reuseExistingServer: true` outside CI and a fixed `baseURL`, so when the
+  main checkout (or a neighbouring worktree) has `vite` running, a worktree's
+  `npx playwright test` silently drives *that* renderer: specs asserting
+  code that exists only in the worktree fail as "not implemented", specs
+  asserting code the other tree also has pass, and nothing says which tree
+  served the page. Seen 2026-09-03 — two new specs failed for an hour against
+  a main-checkout vite before `Get-NetTCPConnection -LocalPort 5173` named
+  it. Check the listener before reading a Playwright failure in a worktree,
+  and run on a port of your own: a config that spreads the base one with
+  `webServer.command: 'npx vite --port 5199 --strictPort'`,
+  `reuseExistingServer: false` and the matching `baseURL`, passed via
+  `--config`. Never kill the 5173 listener — it is somebody's.
+
+## The intermittent `3221226505`, and what it is not
+
+`npm run test:matrix:windows` exists to reproduce an intermittent
+`3221226505` exit of the editor's Jest run. As of 2026-08-28 it is **still
+unexplained**, and three plausible-looking explanations have been ruled out.
+
+- **It is not the worker-handle warning.** That warning was a referenced
+  two-second timer in `FileWatcherService.notifySelfWrite`, and it is fixed.
+  25 full editor runs while closing it all exited 0, so the two never
+  reproduced together and share no cause: `0xC0000409` is a native
+  `__fastfail`, while a jest-worker force-kill is `SIGTERM`/`SIGKILL`.
+- **The native code in the run is tree-sitter, not `zenkit-node`.** The old
+  wording here said the addon was "the only native code in the run" and made it
+  the first suspect. That is wrong, and it was the whole basis of the suspicion:
+  **nothing in the Jest run ever loads `zenkit-node`.** No suite imports it,
+  `WorldService.test.ts` injects a fake worker, and the only `require('zenkit-node')`
+  under `tests/` is in `tests/e2e-electron/world-render.spec.ts`, which Playwright
+  runs, not Jest. What *does* `dlopen` is the real parser — `jest.config.js`
+  refuses to fall back to mocks on purpose — and it brings two `.node` files:
+  `daedalus-parser/build/Release/tree_sitter_daedalus_binding.node` and
+  `tree-sitter@0.21.1`'s `prebuilds/win32-x64/tree-sitter.node`. Suspect those.
+- **It is not a V8 heap OOM.** Measured on this machine: a deliberate
+  `--max-old-space-size=8` OOM exits **134**, not `3221226505`. So worker memory
+  pressure — the obvious reading of "intermittent, only under parallel workers" —
+  produces a different exit code and is not this.
+- **`--detectOpenHandles` cannot help.** It implies `--runInBand`, so there are
+  no workers and the warning class of bug cannot occur under it at all. It is a
+  dead end by construction, not merely unlucky.
+- **It does not reproduce on demand, and that is now the blocker.** 2026-08-28:
+  three more full default runs and one instrumented run all exited 0 (185 suites,
+  1626 tests, ~55 s each), and a targeted GC stress of the parser binding — 3,300
+  parses, a fresh `DaedalusParser` per round, `--expose-gc` between rounds — also
+  exited 0. With the 25 earlier runs that is 29 clean runs and no capture. Until
+  someone catches one, there is nothing to bisect: the next useful thing is not
+  another blind matrix run but a *captured* crash — a Windows crash dump (`procdump`
+  or `HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps` on
+  `node.exe`) so the faulting module is read off a stack instead of guessed at.
+
+## Running a sabotage harness here
+
+A sabotage run breaks the code on purpose and checks the suite notices. On this
+machine the harness itself is the thing most likely to be broken, and it fails
+*silently* — as a clean run in which every sabotage survives.
+
+**The rule that catches all of these: a sabotage run in which everything
+survives is a broken harness, not a sound implementation.** Four distinct causes
+have now been found, two per session, and in every case the first instinct
+("the tests must be weak") was wrong.
+
+- **Never report "0 failed" without separately checking that a summary was
+  printed at all.** These are different outcomes and they read identically if
+  you only regex for the failure count. Ask "did the runner print a summary?"
+  first, and "how many failed?" second — a run that printed nothing is a harness
+  fault, and a run that printed nothing *because the addon aborted* is a
+  finding.
+- **`spawn`/`execFileSync` on a `.cmd` without `shell: true` is ENOENT.**
+  `pnpm.cmd`, `jest.CMD` and every other npm shim. The throw lands in the catch
+  that was meant for "the tests failed", the captured output is empty, and every
+  sabotage reads as survived. Prefer `spawnSync(process.execPath, [<the tool's
+  own .js entry>, …])` over the shim — `node_modules/jest/bin/jest.js`,
+  resolvable with `require.resolve('jest/bin/jest')`.
+- **Match the runner's summary loosely, and know which one you are running.**
+  Jest prints `Tests: N failed`; `node:test` prints `ℹ fail N` with an
+  information glyph, **not** `# fail N` — an anchored `/^# fail (\d+)$/m`
+  matches nothing and reads every run as a crash. (This is the same class as the
+  older bug where PowerShell 5.1 read a UTF-8 scratch script as ANSI and jest
+  wrapped its glyphs in ANSI colour codes: never grep for glyphs, and parse in
+  node rather than in PowerShell.)
+- **Count a suite that fails to *compile* as caught, and say so.** A TypeScript
+  error reports `Tests: 0 total` — no assertion failed, so a failure-count regex
+  reads it as survived. It is a real catch, by the type checker rather than by a
+  test, and labelling it separately keeps a sabotage the tests would have missed
+  from being credited to them.
+- **A C++ sabotage costs a full `node-gyp rebuild` per round** (never `build`).
+  Budget for it: four sabotages of `binding.cc` is four rebuilds, several
+  minutes each. Restore the file and rebuild once more at the end, and check
+  that final build succeeded — a harness that leaves a sabotaged `.node` behind
+  poisons every run after it.
+
+**Some survivors are honest, and belong in the test as a stated limit.** A
+sabotage can survive because the fixture cannot express the thing being
+sabotaged — e.g. removing `getWaynet`'s null-slot filter survives because the
+minimal fixture has no null slots. Write the limit into the test rather than
+weakening or deleting the test, and say what actually prevents the drift if
+anything does.
+
+## Gothic II, as the engine oracle
+
+- Installed at `C:\Program Files (x86)\Steam\steamapps\common\Gothic II`,
+  **and it is stock** — as of 2026-08-29 nothing on the repo's side needs a
+  file in the install renamed, extracted or written:
+  - **The world corpus comes out of the archives, not out of `_work`.**
+    `node scripts/extract-worlds.js` (zenkit-node) mounts `Data\Worlds.vdf`
+    then `Worlds_Addon.vdf` read-only through the binding's own VFS and writes
+    every `.ZEN` flat into the gitignored `zenkit-node/worlds/` — 8 worlds,
+    `NEWWORLD.ZEN` at the recorded `b4dac867…`. That directory is what every
+    `--world` script (`check-portal-pairing.js`, `check-portal-planarity.js`,
+    `check-visual-winding.js`, `check-vob-bbox.js`), `tools/mutate.js` and
+    `zen-roundtrip --root` take. Re-running the script is the whole re-extract.
+  - **Candidates go through GMBT.** `tools/engine-batch.ps1` stages one at a
+    time into the GMBT project as `NEWWORLD.ZEN`, and `gmbt test
+    --world=NEWWORLD.ZEN` merges the project's asset dirs into `_work\Data`
+    and plays the loose file there (the `.mod` named in `.gmbt.yml` is what
+    `gmbt build` would write; nothing builds it). The retail `Worlds*.vdf`
+    are never shadowed and never renamed. The old layout — six VDFs parked as
+    `.disabled` so a world copied into `_work` would win, a pristine backup
+    restored in a `finally` — is retired with it, and so is the way a Steam
+    "verify integrity" used to void a verdict. The MDK *script* tree GMBT
+    needs is `tools/gmbt/mdk/` (gitignored, rebuilt as described below).
+  - **A candidate is only a game under the name `NEWWORLD.ZEN`.** The engine
+    spawns every NPC from a script function named after the world *file* —
+    `STARTUP_NEWWORLD`, `STARTUP_DRAGONISLAND`, `INIT_…` likewise — so a world
+    played as `07A-FRAME-TORCH.ZEN` loads, renders and has **no NPC in it**,
+    and a routine row "passes" on an empty world. The 2026-08-29 23:33 batch
+    was run that way; its four `ok` rows are void. `engine-batch.ps1` now
+    stages under that one name and hashes what GMBT merged
+    (`_work\Data\Worlds\NEWWORLD.ZEN`) against the candidate — the *staged
+    check* line in `results.log`.
+  `zenkit-node/tools/startup-probe.ps1` is still the unattended "does the
+  engine itself start" check, before blaming a candidate.
+- **The four driver scripts' default `--world` does not exist here.**
+  `verify-world-edit.js`, `verify-world-render.js`, `measure-viewport.js` and
+  `build-gate2-candidate.js` all default to
+  `_work\Data\Worlds\NewWorld\NewWorld.zen` — a stock extracted install's
+  layout. GMBT stages worlds *flat* into `_work\Data\Worlds`, so on this
+  machine the file is `_work\Data\Worlds\NEWWORLD.ZEN` and every one of them
+  exits with `No world at …` unless `--world` names it. The default is left
+  alone deliberately: it is right for the layout it describes, and the flat
+  one here is GMBT's doing, not the install's.
+- **The oracle is not stock**, and every verdict has to say so: Gothic II 2.6
+  (fix) + SystemPack + GD3D11 (kirides fork, `51efd73`, as `System\ddraw.dll`).
+  Stock never rendered on this machine — black screen with working audio in
+  every configuration tried. GD3D11 replaces only the D3D7 rendering path, so
+  the fidelity claim is untouched; but it changes lighting by design, so
+  screenshot comparisons are candidate-vs-control only, never against the retail
+  look.
+- **Run fullscreen.** Windowed crashes with an access violation here.
+- **Not every Access Violation dialog is a verdict, and two of them are noise.**
+  Both were seen in the Gate 2b batch (2026-08-28) and both are the engine's,
+  not a candidate's — read the stack before you classify a run:
+  - **At shutdown.** `CGameManager::Done()` → `exit()` → `_c_exit()` →
+    `zCRayTurboAdmin::~zCRayTurboAdmin` → `zCMeshOctreeNode::~zCMeshOctreeNode`
+    (`zBsp.cpp:7099`). It appears *after* you close the game, on a session that
+    played fine, and it is not reliable: two of five candidates carrying the
+    same re-saved mesh raised it and three did not. A world that reached this
+    stack **loaded and played**.
+  - **On dialog start, in the pristine retail world.** `oCNpc::EV_PlaySound` →
+    `zCAICamera::StartDialogCam` → `zCCSCamera::Unarchive` → `zMAT4::operator=`
+    (`zAlgebra.cpp:552`). Seen on `00-control-original.zen`, so no edit of ours
+    is in that path. It kills the control, which is what the batch's A/B rests
+    on — if it recurs, re-run `00` alone rather than voiding the batch.
+  `engine-batch.ps1` used to log any such dialog as `FAIL (dialog captured)`;
+  it now dumps the window and still asks for a verdict, because the script
+  cannot tell these apart and the person at the keyboard can.
+- **Never pass a world on Spacer's command line** — `0xC000041D`, on the retail
+  original too.
+- **Never OpenGothic.** It is built on ZenKit and shares the code under test.
+- Gothic 1 is not installed, so G1 coverage is *unavailable*, not clean.
+- The pristine addon NewWorld is 75,387,729 B, sha256 `b4dac867…`.
+  `scripts/extract-worlds.js` reports whether the one it wrote matches, and
+  `test/assets.test.js` asserts it against the archives on any machine that has
+  them. There is no backup any more because nothing writes into the install.
+
+## GMBT empties `_work`, and how `_work` is rebuilt
+
+**`gmbt` rebuilds `_work/Data` from its asset dirs and backs up only what it
+does not manage.** On 2026-08-29 a `gmbt compile --full` whose one asset dir
+held nothing but `Worlds/` moved `_work/Data` aside, copied only `Music`,
+`Presets` and `Video` into `_work/DataOriginal`, emptied `Scripts`, `Worlds`,
+`Anims`, `Meshes`, `Sound` and `Textures`, and then crashed before restoring —
+so the retail extraction was gone and every measurement card lost its corpus.
+**The asset dirs must supply a complete tree**, which is why the beppo project
+carries a whole `mdk/`; that is load-bearing, not tidiness.
+
+**GMBT 0.22's `Unknown error: KeyNotFoundException` in
+`DetectIfWorldIsNotExists` means "world not found", and the usual cause is
+case.** It upper-cases `--world`, lists the asset dirs' `Worlds/` with their
+on-disk names, and compares the two case-*sensitively*; on a miss it tries to
+print `Config.Error.FileDidNotFound`, a key absent from its own translation
+table, and that lookup is the exception you see instead. So a candidate must
+be `07A-FRAME-TORCH.ZEN` on disk, not `07a-frame-torch.zen` — `engine-batch.ps1`
+stages upper-case for this reason. (The same exception in `UpdateDialogs()` is
+the different, known one that `--noupdatesubtitles` sidesteps.)
+
+The game itself was never at risk: it runs from `Data/*.vdf`, and `_work` is
+only the modding tree. **Since 2026-08-29 nothing of ours is kept there**: the
+world corpus is `scripts/extract-worlds.js`'s output in the repo, and GMBT owns
+`_work/Data` outright — it copies the candidate in as `NEWWORLD.ZEN` on every
+`gmbt test`, and that copy is the one the engine plays. What has to exist is `tools/gmbt/mdk/` — the complete
+script tree GMBT merges in — and rebuilding *that* needs no installer and no
+UAC; every source is already on the machine:
+
+1. **Compiled scripts** — `Data/ModVDF/GothicGame.mod` is a VDF and carries
+   `_WORK\DATA\SCRIPTS\_COMPILED\*.DAT`, `GOTHIC.DAT` included; `openVfs` +
+   `vfsRead` read them out, as `extract-worlds.js` does for worlds.
+2. **Script sources** — `Downloads/g2mdk-2.6_small.exe` is NSIS; **7-Zip
+   extracts it without running it**, so no elevation is needed. But 7-Zip
+   **flattens NSIS's directory structure**: `Scripts/System` comes out as one
+   flat directory while its `.src` files expect `_intern\`, `menu\`, `music\`,
+   `pfx\`, `sfx\` and `visualfx\`. The `.src` files are the map — each line is
+   `dir\file.d` — and reconstructing from them places all 27 exactly.
+
+**Base volumes first, `*_Addon.vdf` last**, wherever archives are mounted —
+this is NotR, and `Worlds.vdf` alone yields a *pre-addon* NewWorld with a
+different hash. The addon volume reproduces the recorded `b4dac867...` byte for
+byte, which `extract-worlds.js` prints and `test/assets.test.js` asserts.
+
+**The repo's gitignored `mdk/` is not retail-equivalent.** It carries
+`Story/NPC/BAU_902_Gunnar_2.d`, which redefines `Rtn_Start_902` and so cannot
+compile under `Gothic.src`'s `STORY\NPC\*.d` glob, and it is missing at least
+whatever defines `DIA_Addon_Cavalorn_MeetingIsRunning_OneTime`. Do not assume it
+compiles — `tools/gmbt/mdk` is a separate copy for exactly that reason, and the
+harness runs `--noreparse` against shipped retail `.DAT`s rather than building
+them.
+
+## ZenKit and the world format
+
+- **`Vfs::mount_host` memory-maps every file eagerly** and skips zero-size files.
+  Windows then refuses to delete a mounted file until the handle is collected.
+  Mount archives, not loose trees — 15 ms against 2,170 ms, measured.
+- **The ZEN header carries a date stamp**, so two saves of the same world differ
+  in bytes at identical size. A re-save that no longer matches a recorded hash is
+  not evidence of a defect.
+
+## Parallel agents in one working tree
+
+- **`wt:new`'s "pnpm install failed" was not flaky — root-caused and fixed
+  2026-09-02.** Node 24 refuses to spawn a `.cmd` shim without a shell
+  (`EINVAL`), so the helper's install step failed on every Windows run while
+  a manual `pnpm install` in the tree succeeded; it now spawns under a shell.
+  `wt:rm` after a merge can still fail `EPERM` on `zenkit-node/` while a
+  `node --test` or Jest process holds the addon, leaving a half-removed
+  directory that `git worktree prune` forgets and a later `rm -rf` finishes.
+  Neither leaves anything wrong in git.
+- **A full editor Jest run at the default worker count hangs when other
+  worktrees are also running Jest.** Seen twice 2026-09-02: 26 idle node
+  workers and no output for 50 minutes; a 25-minute run that a
+  `--maxWorkers=4` rerun finished in 9. Cap the workers in a worktree
+  (`pnpm --filter daedalus-dialog-editor exec jest --maxWorkers=4` — note
+  `pnpm … test -- --maxWorkers=4` hands the flag to Jest as a test-name
+  pattern and runs nothing) or use `test:stable:windows`. Under that
+  starvation `Cannot find module './Score' from @mui/icons-material` is a
+  pnpm-store stat failure, not a code defect: rerun the suite alone.
+- **Seven full editor baselines in parallel take an hour each.**
+  `test:stable:windows` runs 230 suites in isolated processes; one at a time
+  it is ~40 minutes, and agents that each start their own contend for the
+  same cores. Run focused suites per branch and one baseline on the merge.
+
+**Superseded as the default on 2026-09-01: take a worktree instead**
+(`npm run wt:new -- <name>`, AGENTS.md "Worktrees for Parallel Agents"). The
+reason this section existed — a worktree costs a ZenKit rebuild and a fresh
+pnpm install — is gone: `tools/worktree.js` copies the built addons across, so
+the install is ~45 s and compiles nothing.
+
+What follows is what it cost to share one checkout, kept because a shared tree
+still happens (a human working alongside an agent, a quick fix in main) and
+because the last three bullets apply to worktrees too. Cards were split by
+*file domain* and run concurrently; the lessons below were met on 2026-08-28
+with three agents in flight.
+
+- **Never `git stash` to prove a test red.** `git stash push` takes the whole
+  working tree, not your files: proving one suite red stashed and restored
+  another agent's mid-edit `WorldSurface.tsx` along the way. It popped cleanly,
+  but a concurrent write inside that window is simply lost. To see a test fail
+  without the implementation, edit the source back by hand, or hardcode the
+  value the wiring supplies, and undo it — a change you can name and reverse
+  yourself.
+- **A full-suite "green" is only as good as its last run.** One intermediate run
+  showed 7 failures in `WorldSurface.editing` and `WorldScene` that a rerun did
+  not reproduce; they were a neighbouring agent's half-written tree, not a flake
+  and not that agent's change. Rerun once before believing a failure that points
+  at a file you did not touch, and run the suite again after the other agents
+  report.
+- **A failure in a file you did not touch still has to be bisected, not
+  attributed.** Two agents blamed each other for the same failing test, each
+  reran it as this section says to, and **both were wrong** — it was a real
+  defect in one of their own changes, reproducing in isolation under `-t`. The
+  rerun rule tells you a failure is stable; it does not tell you whose it is.
+  Bisect by copying the working file aside, `git show HEAD:<path> > <path>`,
+  running the one test, and restoring the copy — four such probes named the file
+  in minutes. "The neighbour's tree is dirty" is a *plausible* explanation, which
+  is exactly why it needs evidence.
+- **Do not run `npx pnpm` in this checkout.** It fetches its own pnpm, decides
+  `node_modules` was installed by something else, and aborts trying to remove it
+  — `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`. With agents working in
+  parallel, the abort is the good outcome. Use `pnpm --filter <pkg> <script>` if
+  pnpm is on PATH, and otherwise call the tools directly from the workspace
+  directory: `node node_modules/jest/bin/jest.js`,
+  `node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit`,
+  `node node_modules/eslint/bin/eslint.js .`.
+- **Never rebuild the native addon while another agent is packaging.** A
+  `node-gyp rebuild` at 20:15 landed inside an `electron-builder` run that
+  wrote its asar at 20:18, and the result was a **corrupt package that looks
+  intact**: 32,918 entries listed, total size consistent with the declared
+  offsets, and yet `@electron/asar` extracted garbage for every file. The
+  packaged app then exited 1 in ~220 ms with no window, no stdout, no stderr
+  and no Windows event-log entry, which reads exactly like a main-process bug
+  and is not one. Two hours of a session can go into that symptom, so check the
+  artifact before the code: extract `package.json` out of the asar and parse it.
+  If it is not valid JSON, repackage with nothing else running rather than
+  debugging the app. (Packaging reads `node_modules` for minutes; any write into
+  a workspace it is copying is inside its window.)

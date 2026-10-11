@@ -1,0 +1,55 @@
+ArchiveAscii: write both hex digits of a raw byte, not one plus stale memory.
+
+`WriteArchiveAscii::write_raw` hex-encodes each byte with `std::to_chars` and
+then decides how many digits it wrote by testing `buf[1] == '\0'`. `to_chars`
+does not null-terminate — it reports the digit count through the returned
+pointer and touches nothing past it — so `buf[1]` only holds `'\0'` until the
+first byte that needs two digits. After that it holds *that* byte's low nibble,
+and every subsequent byte below `0x10` is written as `<digit><stale nibble>`
+instead of `0<digit>`.
+
+The first sub-0x10 byte of a file therefore survives and every one after it is
+corrupt, in every `raw:` entry the ASCII writer produces. Measured on the
+LEVEL-VOB of a retail `OldCamp.zen` re-save (docs/engine-acceptance-2026-08-25.md
+§10.2, defect A1): `trafoOSToWSPos=vec3:0 0 0` comes back as twelve `05` bytes
+— 6.25e-36 per axis — and the identity rotation as `0505803f 0f0f0f0f...`.
+The filler is always the previous byte's low nibble.
+
+It is also why ZenKit could not re-load its own ASCII output: the corruption
+lands in the packed `zCVob` flag word (`bit1` 0x0002 -> 0x0828 on our fixture's
+root VOB, turning on `has_visual_object`), after which `VirtualObject::load`
+demands an object frame where the archive holds a plain entry and the read
+fails with `type mismatch: expected enum, got: string`.
+
+The fix reads the digit count from `to_chars`'s result and writes the two
+characters directly, so the buffer never has to carry a terminator at all.
+
+--- a/src/archive/ArchiveAscii.cc
++++ b/src/archive/ArchiveAscii.cc
+@@ -373,16 +373,21 @@
+ 		this->_m_write->write_string(name);
+ 		this->_m_write->write_string("=raw:");
+ 
+-		std::array<char, 3> buf {};
+-		buf[2] = '\0';
++		// `std::to_chars` does not null-terminate: the digit count is only in
++		// the returned pointer. Testing `buf[1] == '\0'` instead left every
++		// byte below 0x10 carrying the previous byte's low nibble as its
++		// second digit, so every raw entry after the first sub-0x10 byte of
++		// the file was corrupt.
++		std::array<char, 2> buf {};
+ 		for (auto i = 0u; i < length; ++i) {
+-			std::to_chars(buf.data(), buf.data() + buf.size(), static_cast<unsigned char>(v[i]), 16);
++			auto const res = std::to_chars(buf.data(), buf.data() + buf.size(), static_cast<unsigned char>(v[i]), 16);
+ 
+-			if (buf[1] == '\0') {
++			if (res.ptr == buf.data() + 1) {
+ 				this->_m_write->write_char('0');
+ 				this->_m_write->write_char(buf[0]);
+ 			} else {
+-				this->_m_write->write_string(buf.data());
++				this->_m_write->write_char(buf[0]);
++				this->_m_write->write_char(buf[1]);
+ 			}
+ 		}
+ 

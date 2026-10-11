@@ -1,0 +1,3260 @@
+import React, {
+  useCallback, useEffect, useMemo, useRef, useState,
+} from 'react';
+import {
+  Alert, Autocomplete, Box, Button, Checkbox, Dialog, DialogActions, DialogContent,
+  DialogContentText, DialogTitle, FormControlLabel, IconButton, Paper, Snackbar, Stack, Tab, Tabs,
+  TextField, Tooltip, Typography,
+} from '@mui/material';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import {
+  AUTHORABLE_VOB_CLASSES,
+  addVob, carriesVisual, classPropKeys, alignSubtreesToNormal, mobClassOf,
+  deleteVobs, dropSubtreesToGround,
+  duplicateVobs, emptyVobFolders,
+  matchVobs,
+  multiplyRotation, placeBounds, placementCollision, placementFocusName, rotationAbout, rotationAboutUp,
+  landedPaths, reparentVob, reparentVobs, rotateSubtrees, rotateSubtreeTo, subtreeMembers, setVobClassProp, setVobProp, setVobProps,
+  topLevelVobs,
+  translateSubtrees, vobAtIndexPath, vobExtentOf, vobIndexPath,
+  type AuthorableVobClass, type ClassProps, type NewVob, type ReadProps,
+  type VobExtent, type VobProps, type VobReader,
+  type ZenBounds,
+  type ZenPosition, type ZenRotation,
+} from 'zen-world';
+import type {
+  DiscoveredWorld, InstancedPayload, NpcBodyRequest, WaynetPayload,
+  WorldMeshPayload, WorldOp,
+} from '../../../shared/worldTypes';
+import { findFreePointVob, primaryVob, useWorldStore, type RoutineRequest } from '../../store/worldStore';
+import { stateOptions, stateReach } from '../../routines/routineSchedule';
+import { useProjectStore } from '../../store/projectStore';
+import { vobModelOf } from '../../world/vobModel';
+import { snapDelta } from '../../world/snapping';
+import { LiveTileContext } from './WorldAssetGrid';
+import { DEFAULT_EXPOSURE, type SelectionStyle } from '../../world/WorldScene';
+import WorldViewport, { type GizmoMode, type WorldViewportHandle } from './WorldViewport';
+import WorldSceneTree from './WorldSceneTree';
+import WorldFolderTree from './WorldFolderTree';
+import WorldPropertyGrid from './WorldPropertyGrid';
+import WorldAssetBrowser from './WorldAssetBrowser';
+import WorldAssetPreview, { NAME_OF, isPlaceableVisual } from './WorldAssetPreview';
+import WaypointPanel from './WaypointPanel';
+import WorldVobContextMenu from './WorldVobContextMenu';
+import PanelSplitter from './PanelSplitter';
+import { usePanelLayout, COLLAPSED_PANEL_WIDTH } from './hooks/usePanelLayout';
+import { useWaynetEditing } from './hooks/useWaynetEditing';
+import { useVobFolders } from './hooks/useVobFolders';
+import { useVobClipboard, type VobClipboardInput } from './hooks/useVobClipboard';
+import { useScatterBrush } from './hooks/useScatterBrush';
+import { useInsertNpc } from './hooks/useInsertNpc';
+import { useRoutineMode } from './hooks/useRoutineMode';
+import RoutineEditorDialog from '../RoutineEditor';
+import { waypointFilterOptions } from '../common/autocompletePolicies';
+import { routineOwner, routinePreview } from '../../npc/npcRoutines';
+import { useAssetCatalog } from './hooks/useAssetCatalog';
+import { useWorldShortcuts } from './hooks/useWorldShortcuts';
+import { spawnNpcBodyRequests } from '../../npc/spawnNpcVisuals';
+import { useWorldEditPipeline } from './hooks/useWorldEditPipeline';
+import WorldToolbar, { useStableCallbacks } from './toolbar/WorldToolbar';
+import { OUTLINE_MODE_ORDER } from './toolbar/WorldViewControls';
+import WorldStatusStats from './toolbar/WorldStatusStats';
+import type { OutlineMode } from '../../world/VobOutline';
+import type { CameraSlotOutcome } from '../../world/cameraSlots';
+import WorldPickerDialog from './WorldPickerDialog';
+import InsertNpcDialog from './InsertNpcDialog';
+import ErrorBoundary from '../ErrorBoundary';
+
+// The World surface (level-editor.md §6): a new top-level view of the existing
+// app, lazily loaded, so `zenkit-node` is pulled in only when a world is
+// actually opened and dialog-only sessions never touch the native addon.
+//
+// This shell owns the IPC calls and hands the viewport finished payloads; the
+// viewport owns the Three.js lifetime. Nothing here keeps a geometry buffer in
+// React state.
+
+/** A new VOB is placed unrotated: the terrain click gives a point and nothing
+ *  else, and inventing an orientation from a surface normal is a feature with
+ *  its own decisions (which axis is up for this visual?) rather than a default. */
+const IDENTITY: ZenRotation = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+
+/** A keyboard turn in progress (#387) — see `turnRef` in the surface. */
+interface KeyboardTurn {
+  total: [number, number, number];
+  step: number;
+  right: ZenPosition;
+  forward: ZenPosition;
+}
+
+/** The turn a keyboard gesture has made so far, snapped per axis; null for none. */
+function turnSoFar(turn: KeyboardTurn): ZenRotation | null {
+  const [yaw, roll, pitch] = snapDelta(turn.total, turn.step).map((degrees) => (degrees * Math.PI) / 180);
+  if (yaw === 0 && roll === 0 && pitch === 0) return null;
+  return multiplyRotation(rotationAbout(turn.forward, roll),
+    multiplyRotation(rotationAbout(turn.right, pitch), rotationAboutUp(yaw)));
+}
+
+interface WorldSurfaceProps {
+  /**
+   * Another view is on screen and this one is only kept mounted so its geometry
+   * survives the trip (`docs/refactoring-targets.md` §8). Everything React is
+   * unaffected — what it buys is the viewport's frame loop stopping, which the
+   * display toggle that hides us does nothing about on its own.
+   */
+  hidden?: boolean;
+}
+
+/**
+ * Where the slider starts when it is switched on. Mid-morning rather than
+ * midnight: the routines put most NPCs somewhere in the working day, so 08:00
+ * shows a populated world, and a slider opening on an empty one would read as a
+ * broken layer rather than as the hour it is.
+ */
+const DEFAULT_SPAWN_TIME = 8 * 60;
+
+/** How far in front of the camera a paste may land (#373), ZenGin cm: what
+ *  the camera looks at, if it is nearer than this, and otherwise the ground
+ *  this far ahead — 10 m, near enough to see what landed. */
+export const PASTE_REACH = 1000;
+
+/** What the place dialog collects. `parent` is a flat index or null for a
+ *  root; where the VOB goes is the ground point, chosen before or after. */
+interface PlaceSpec {
+  vobClass: AuthorableVobClass; name: string; visual: string; instance: string;
+  parent: number | null;
+}
+const FRESH_PLACE: PlaceSpec = { vobClass: 'zCVob', name: '', visual: '', instance: '', parent: null };
+/**
+ * `spec` carrying `visual` (#290). Unless someone chose the class by hand, it
+ * becomes the class the visual's interaction scheme names — a chest an
+ * `oCMobContainer`, a bench an `oCMobInter` — or a plain `zCVob` for a static
+ * mesh or any model with no scheme. The one rule for the asset browser's
+ * one-click placement and for the Place VOB dialog's visual field.
+ */
+function withVisual(spec: PlaceSpec, visual: string, classChosen: boolean): PlaceSpec {
+  return classChosen ? { ...spec, visual } : { ...spec, visual, vobClass: mobClassOf(visual)?.class ?? 'zCVob' };
+}
+const placeSpecFor = (visual: string): PlaceSpec => withVisual(FRESH_PLACE, visual, false);
+/** How the status bar names an armed placement: the visual or the instance
+ *  when there is one, the class otherwise — and a MOB's class beside its
+ *  visual, so a chest that will be placed as a chest says so (#290). */
+function placeLabel(spec: PlaceSpec): string {
+  if (spec.vobClass === 'zCVob' && spec.visual.trim() !== '') return spec.visual.trim();
+  if (carriesVisual(spec.vobClass) && spec.visual.trim() !== '') return `${spec.visual.trim()} as ${spec.vobClass}`;
+  if (spec.vobClass === 'oCItem' && spec.instance.trim() !== '') return spec.instance.trim();
+  return spec.vobClass;
+}
+
+const baseName = (filePath: string): string => filePath.split(/[\\/]/).pop() || filePath;
+
+/** The project's world file called `worldName` (no extension), from the same
+ *  scan the picker lists (§16.31), or null when its sources hold none. */
+async function discoveredWorldNamed(worldName: string): Promise<DiscoveredWorld | null> {
+  const wanted = `${worldName.toUpperCase()}.ZEN`;
+  return (await window.editorAPI.listWorlds()).find((world) => world.name.toUpperCase() === wanted) ?? null;
+}
+
+const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
+  const status = useWorldStore((s) => s.status);
+  const summary = useWorldStore((s) => s.summary);
+  const error = useWorldStore((s) => s.error);
+  const editError = useWorldStore((s) => s.editError);
+  const textureWarning = useWorldStore((s) => (s.textureWarningDismissed ? null : s.textureWarning));
+  const selection = useWorldStore((s) => s.selection);
+  const selectedWaypoint = useWorldStore((s) => s.selectedWaypoint);
+  const waypointSiteIndex = useProjectStore((s) => s.waypointSiteIndex);
+  const spawnSiteIndex = useProjectStore((s) => s.spawnSiteIndex);
+  const parsedFiles = useProjectStore((s) => s.parsedFiles);
+  const routineSiteIndex = useProjectStore((s) => s.routineSiteIndex);
+  const routineNpcIndex = useProjectStore((s) => s.routineNpcIndex);
+  const routineStateIndex = useProjectStore((s) => s.routineStateIndex);
+  const {
+    beginOpen, openSucceeded, openFailed, selectVob, toggleVob, selectWaypoint,
+  } = useWorldStore.getState();
+
+  const [mesh, setMesh] = useState<WorldMeshPayload | null>(null);
+  const [visuals, setVisuals] = useState<InstancedPayload | null>(null);
+  // Read by the edit pipeline after a round trip, so through a ref: the names
+  // the scene draws are the ones in the last payload it was handed.
+  const visualsRef = useRef(visuals);
+  visualsRef.current = visuals;
+  const drawnVisuals = useCallback(() => visualsRef.current?.visuals.map((visual) => visual.name) ?? [], []);
+  const [terrainPoint, setTerrainPoint] = useState<[number, number, number] | null>(null);
+  /**
+   * The VOB being placed, while the dialog is open. Null when it is closed.
+   *
+   * `parent` is a flat index or null for a root. It is offered as a choice
+   * rather than taken from the selection outright, because the two clicks that
+   * set up a parented placement — the ground, then the row — do not say which
+   * the user meant, and appending a root is the case that renumbers nothing.
+   */
+  const [placing, setPlacing] = useState<PlaceSpec | null>(null);
+  /** Whether the dialog's class was picked by hand — until it is, the class
+   *  follows the visual, as a one-click placement's does. */
+  const [classChosen, setClassChosen] = useState(false);
+  const openPlaceDialog = useCallback((spec: PlaceSpec) => {
+    setClassChosen(false);
+    setPlacing(spec);
+  }, []);
+  /**
+   * An add action waiting for its ground click (level-editor.md §17, "Adding
+   * things"): the toolbar's three dialogs confirm into this when no ground
+   * point has been chosen yet, and the Assets panel's "Place in world" arms
+   * it directly. The next terrain pick spends it — one click, one add — and
+   * Escape or the status bar's Cancel drops it. Null is the ordinary state.
+   *
+   * A `place` is the exception: it stays armed for click after click, since
+   * the same bush is placed a dozen times, and a right-click in the world puts
+   * it down as Escape does (#364). An NPC or a waypoint is named, and a name
+   * is spent by one add.
+   */
+  /** The path of the VOB the armed placement put down last, if any (#388). */
+  const lastPlaced = useRef<string | null>(null);
+  const [armed, setArmed] = useState<
+    | { kind: 'place'; spec: PlaceSpec }
+    | { kind: 'insert-npc'; instance: string; waypoint: string }
+    | { kind: 'add-waypoint'; name: string }
+    | null
+  >(null);
+  /** Whether an armed placement turns each VOB to a random angle about Y — the
+   *  "Random Y" box beside the status bar's hint (#364). */
+  const [randomYaw, setRandomYaw] = useState(false);
+  /** The VOB the delete warning is about, or null when it is closed. A flat
+   *  index rather than a boolean: the dialog names what it is about to remove,
+   *  and the selection can change under an open dialog. */
+  /** The VOBs the confirm dialog is about — the whole selection since #253,
+   *  not the primary of it. */
+  const [deleting, setDeleting] = useState<readonly number[] | null>(null);
+  // The left panel is the scene *or* the mounted assets, and the right panel
+  // follows it: a VOB's properties belong beside the tree, an asset's preview
+  // beside the browser.
+  const [panel, setPanel] = useState<'scene' | 'assets' | 'folders'>('scene');
+  const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
+  const {
+    panelWidths,
+    leftPanelCollapsed,
+    rightPanelCollapsed,
+    setLeftPanelWidth,
+    setRightPanelWidth,
+    setLeftPanelCollapsed,
+    setRightPanelCollapsed,
+    persistPanelWidths,
+  } = usePanelLayout();
+  // Fetched the first time it is switched on and kept afterwards. It is a
+  // separate IPC call on purpose: an overlay nobody asked for should not be in
+  // the cold open.
+  const [waynet, setWaynet] = useState<WaynetPayload | null>(null);
+  /** A waypoint to fly to as soon as the world opened for it is on screen
+   *  (#226) — see `openWorldNamed`. */
+  const [pendingJump, setPendingJump] = useState<string | null>(null);
+  const [showWaynet, setShowWaynet] = useState(false);
+  const {
+    listAssets, searchAssets, resolveAssets, resolveAsset, compileAssets: compileAssetCatalog,
+    loadTexture, loadVisual, thumbnails, liveTile,
+    catalogProps: assetCatalogProps,
+  } = useAssetCatalog();
+
+  // A GMBT compile (#296), then the world's visuals read again: a VOB placed
+  // from a source that was not compiled drew as nothing, and the worker now
+  // resolves it. The browser and the preview re-read on their own, off the
+  // fresh reads `useAssetCatalog` hands out.
+  const compileAssets = useCallback(async () => {
+    await compileAssetCatalog();
+    setVisuals(await window.editorAPI.getWorldVisuals());
+  }, [compileAssetCatalog]);
+
+  // The place verb on an asset row or tile (§16.37 row 4). The same arming the
+  // preview panel's button does, offered where the pointer already is — and
+  // the Place VOB dialog, prefilled, for a placement that wants a name or a
+  // parent too.
+  const assetPlacement = useMemo(() => ({
+    canPlace: isPlaceableVisual,
+    onPlace: (name: string) => setArmed({ kind: 'place', spec: placeSpecFor(name) }),
+    onPlaceWithOptions: (name: string) => openPlaceDialog(placeSpecFor(name)),
+  }), [openPlaceDialog]);
+
+  /** The clipboard is cleared when a world opens, and `openWorldAt` is well
+   *  above `commitOps` and the two readers a copy needs — so the hook is called
+   *  here and handed its inputs further down, through this ref. */
+  const clipboardInput = useRef<VobClipboardInput | null>(null);
+  const {
+    copySelection, pasteClipboard, hasClipboard, clearClipboard,
+  } = useVobClipboard(clipboardInput);
+
+  const {
+    vobFolders,
+    setVobFolders,
+    addSelectionToFolder,
+    createEmptyFolder,
+    createFolderWithSelection,
+    renameFolder: renameFolderHandler,
+    deleteFolder: deleteFolderHandler,
+    removeVobFromFolder: removeVobFromFolderHandler,
+  } = useVobFolders();
+  /** How many batches the main process can undo/redo — the World bar's
+   *  buttons' only way to know, since the stacks are private to
+   *  `WorldService` (§7). Refreshed after every applied batch and after a
+   *  fresh open, never bumped locally: what this side thinks it sent is not
+   *  what decides, same as everywhere else an edit's outcome is read back. */
+  const [historyDepth, setHistoryDepth] = useState({ undo: 0, redo: 0 });
+  const refreshHistoryDepth = useCallback(async () => {
+    setHistoryDepth(await window.editorAPI.getWorldHistoryDepth());
+  }, []);
+  /** The spawn markers (§16.19 slice 4), beside `showWaynet` because they are
+   *  the same kind of thing: a layer over the world, off until asked for. Two
+   *  toggles rather than one — the waynet is the world's graph and the markers
+   *  are the script's opinion of it, and reading one against the other is
+   *  exactly the comparison a story author is making. */
+  const [showSpawns, setShowSpawns] = useState(false);
+  const [spawnBodyRequests, setSpawnBodyRequests] = useState<Map<string, NpcBodyRequest>>(() => new Map());
+  useEffect(() => {
+    let current = true;
+    if (!showSpawns || waynet === null) {
+      setSpawnBodyRequests(new Map());
+      return () => { current = false; };
+    }
+    const waypoints = new Set(waynet.names.map((name) => name.toUpperCase()));
+    const inWorld = spawnSiteIndex.filter((site) => waypoints.has(site.spawnPoint.toUpperCase()));
+    const models = [...parsedFiles.values()].map((file) => file.semanticModel);
+    void spawnNpcBodyRequests(inWorld, models, (sourceText) => window.editorAPI.extractNpc(sourceText))
+      .then((requests) => { if (current) setSpawnBodyRequests(requests); })
+      .catch((error: unknown) => {
+        if (current) setSpawnBodyRequests(new Map());
+        console.warn('Could not resolve NPC visuals for the World viewport:', error);
+      });
+    return () => { current = false; };
+  }, [showSpawns, waynet, spawnSiteIndex, parsedFiles]);
+  /** The minute of the day the spawn layer is showing, or null for the static
+   *  spawns (§16.19 slice 5). Null is the slider off rather than midnight: where
+   *  an NPC stands at 00:00 is a thing the routines answer, and "no time chosen"
+   *  is not, so the two cannot share a value. */
+  const [spawnTime, setSpawnTime] = useState<number | null>(null);
+  /**
+   * The quest state the day is drawn through, or null for each NPC's declared
+   * routine (§16.19 slice 13). It is a *lens* — "draw the day as if this state
+   * were active" — never a claim the game reaches it, which is why an NPC with
+   * no variant for it keeps his declared day rather than dropping out.
+   */
+  const [spawnState, setSpawnState] = useState<string | null>(null);
+  /** Waypoint names drawn over the viewport (§16.19 slice 8), and on a marked
+   *  point the NPCs standing on it instead (slice 14). Its own toggle rather
+   *  than a property of the waynet's, because the dots and the names answer
+   *  different questions — where the net runs, and who is at this one — and one
+   *  of them is wanted far more often than the other. */
+  const [showWaypointNames, setShowWaypointNames] = useState(false);
+  /** Which VOBs carry the outline (#229). A view setting, not an edit: no op,
+   *  nothing saved, and not persisted across a session either — the other view
+   *  toggles on this bar are not. */
+  const [outlineMode, setOutlineMode] = useState<OutlineMode>('all');
+  /** How a selected VOB is drawn — Spacer's box by default, or the outline. A
+   *  view setting like the outline mode, not persisted. */
+  const [selectionStyle, setSelectionStyle] = useState<SelectionStyle>('box');
+  /** The name being typed into the add-waypoint dialog, or null when it is
+   *  closed. A name is the whole of what a placed waypoint has to be told —
+   *  the position is the terrain point and everything else the binding fixes —
+   *  so the dialog's state is that one string. */
+  const [addingWaypoint, setAddingWaypoint] = useState<string | null>(null);
+  /**
+   * A name the Problems panel's "Add to world" action armed, or null. Not the
+   * dialog's own draft — `addingWaypoint` — but what the *next* terrain click
+   * should offer instead of `suggestedWaypointName()`: the request carries no
+   * position, only a name, so there is nothing to place until the user picks
+   * one. Consumed the moment `world-add-waypoint` is clicked, whether or not
+   * the dialog it opens is then confirmed — the same way a fresh suggested
+   * name is spent by that click today.
+   */
+  const [pendingWaypointName, setPendingWaypointName] = useState<string | null>(null);
+  /** The waypoint the delete warning is about, as an index+name pair, or null
+   *  when it is closed. The name is kept beside the index for the dialog to
+   *  show and for the op to be guarded by: it is read when the dialog opens,
+   *  which is the enumeration the user is looking at. */
+  const [deletingWaypoint, setDeletingWaypoint] =
+    useState<{ waypoint: number; name: string } | null>(null);
+  /**
+   * How bright the viewport draws — component state, beside `showWaynet` and
+   * the gizmo mode, because it is the same kind of thing they are: a setting
+   * about the picture, not about the world. It reaches nothing but the
+   * viewport, so it produces no op and cannot make the world dirty, and it is
+   * not persisted for the same reason nothing else on this bar is.
+   */
+  const [exposure, setExposure] = useState(DEFAULT_EXPOSURE);
+  /**
+   * Whether the selected `zCVobLight` is drawn as a lamp on the picture (#256).
+   *
+   * The same kind of setting as `exposure` and off for a reason of its own: the
+   * room already holds this light's baked contribution, so the preview shows
+   * what one light reaches rather than what the engine will draw. It reads the
+   * range and colour the sphere already reads, and writes nothing.
+   */
+  const [lightPreview, setLightPreview] = useState(false);
+  /**
+   * VOB classes switched off in the viewport — Spacer's per-class show/hide.
+   *
+   * The same kind of setting as `exposure`: it decides what is drawn, never
+   * what the world holds. A hidden VOB is still in the index, still in the
+   * scene tree and still selectable there; it is only not drawn and, because
+   * the pick pass reads the same flag, not clickable.
+   */
+  const [hiddenClasses, setHiddenClasses] = useState<readonly string[]>([]);
+
+  /**
+   * The item instances the loaded script project declares — the first thing the
+   * World surface reads out of the *dialog* side of the app.
+   *
+   * It is here for one field: `oCItem.instance` names a Daedalus instance and
+   * ZenGin crashes on a name no script declares (level-editor.md §14.1). The
+   * main process cannot make that check — it holds no item index (see
+   * `ipcValidation.ts`) — and it must not be a hard refusal anywhere, because a
+   * world can legitimately be edited with no project open. So it is a renderer
+   * refusal over whatever index happens to be there, and an absent one refuses
+   * nothing.
+   *
+   * `mergedSemanticModel` is merged per category with a stable identity
+   * (`projectStore.ts`'s `mergeCache`), so this memo recomputes when the item
+   * files are ingested and not on every unrelated project edit. Uppercased once,
+   * here, because Daedalus symbols are case-insensitive and the parser keys the
+   * map by the name as it was written.
+   */
+  const items = useProjectStore((s) => s.mergedSemanticModel.items);
+  const itemInstances = useMemo(
+    () => new Set(Object.keys(items ?? {}).map((name) => name.toUpperCase())),
+    [items],
+  );
+  /**
+   * The functions the loaded script project declares — what the grid checks a
+   * trigger's `function` and a mob's two script hooks against (#269).
+   *
+   * Off the **project index**, not the merged model the item names come from:
+   * the merged model covers the global files plus the selected NPC's, and a
+   * trigger function is neither. The index rides `buildProjectIndex`'s
+   * worker-pool pass over every file, is already UPPERCASED and sorted, and is
+   * replaced only on load or reindex — so this memo runs about once a project.
+   */
+  const functionList = useProjectStore((s) => s.functionList);
+  const scriptFunctions = useMemo(() => new Set(functionList), [functionList]);
+  /**
+   * Which world the surface is showing, bumped by every open.
+   *
+   * An edit is sent, awaited, and only then applied to the projection — so an
+   * open that starts while a commit is out lands its summary first, and the
+   * commit comes back to a store holding a different world. `applied` would
+   * write A's ops into B's columns, mark B edited (blocking its quick test over
+   * bytes that are in fact clean), and hand the viewport A's ops to draw.
+   * `WorldService.generation` is the same guard on the authoritative side; this
+   * is the projection's own, because the two states are separate.
+   *
+   * A ref rather than state: it is read across an await inside callbacks, never
+   * rendered, and a re-render on open would be one nobody asked for.
+   */
+  const openGeneration = useRef(0);
+  // Unmounting ends the session the same way a new open does: `endWorldSession`
+  // remounts the surface with the next project, and anything the old one still
+  // has in flight must land nowhere (#381).
+  useEffect(() => () => { openGeneration.current += 1; }, []);
+
+  /** Uppercased instance → the `visual` its declaration assigns, read off
+   *  the instance's verbatim source (§16.26 row 2): the semantic model keeps
+   *  no per-field record of a `C_ITEM`, and the one line the picker needs is
+   *  a regex away. An item that assigns none, or through a constant, has no
+   *  picture and is offered by name. */
+  const itemVisuals = useMemo(() => {
+    const visuals = new Map<string, string>();
+    for (const [name, item] of Object.entries(items ?? {})) {
+      const match = /\bvisual\s*=\s*"([^"]+)"/i.exec(item.sourceText ?? '');
+      if (match !== null) visuals.set(name.toUpperCase(), match[1]);
+    }
+    return visuals;
+  }, [items]);
+
+  /**
+   * Asked before anything replaces a world that has unsaved edits (#334).
+   * One guard in front of every open — the picker, Browse…, the dialog
+   * editor's jump and the routine flow — rather than a confirm per caller,
+   * which is how the routine flow came to be the only one that asked.
+   */
+  const [discardPrompt, setDiscardPrompt] =
+    useState<{ target: string; answer: (discard: boolean) => void } | null>(null);
+  const confirmDiscard = useCallback((worldPath: string): Promise<boolean> => {
+    const { status, hasUnsavedEdits } = useWorldStore.getState();
+    if (status !== 'ready' || !hasUnsavedEdits) return Promise.resolve(true);
+    return new Promise((resolve) => setDiscardPrompt({ target: baseName(worldPath), answer: resolve }));
+  }, []);
+  const answerDiscard = useCallback((discard: boolean) => {
+    discardPrompt?.answer(discard);
+    setDiscardPrompt(null);
+  }, [discardPrompt]);
+
+  /** False when the user kept the open world instead; a caller then has
+   *  nothing to do in a world it did not open. */
+  const openWorldAt = useCallback(async (worldPath: string): Promise<boolean> => {
+    if (!await confirmDiscard(worldPath)) return false;
+    beginOpen();
+    setMesh(null);
+    setVisuals(null);
+    setTerrainPoint(null);
+    // An armed name is a request about *this* open, and a new one answers no
+    // question the previous open's Problems scan asked. The same for an
+    // armed add: it was about a world that is being replaced.
+    setPendingWaypointName(null);
+    setArmed(null);
+    lastPlaced.current = null;
+    // The waynet goes too, and it is the one reset that is not obvious: the
+    // viewport mounts on `mesh && visuals && summary`, so a payload left
+    // standing here draws the *previous* world's waypoints over the new one
+    // until the read at the end of this open lands — and a drag committed in
+    // that window builds its op from the old names, which the binding's name
+    // guard refuses with a message about a waynet that changed. A failed open
+    // would leave it standing for good.
+    setWaynet(null);
+    setVobFolders(emptyVobFolders());
+    // The previous world's edits are not this one's, and a quick test over the
+    // new world has nothing to be stale about yet. The generation goes with it:
+    // an edit still in flight belongs to the world being left behind.
+    useWorldStore.getState().setHasUnsavedEdits(false);
+    const generation = ++openGeneration.current;
+    // Every answer below is checked against it: one that lands after a newer
+    // open, or after the surface unmounted with the project (#381 — the close
+    // rejects the pending call with "The world was closed"), belongs to a
+    // session that is gone and must not reach the shared store.
+    const stale = () => openGeneration.current !== generation;
+    // And neither are the previous world's *reports*: "Saved to …" standing
+    // over a world that was never saved is a lie, and a save error about a file
+    // nobody is looking at any more is noise.
+    setSavedTo(null);
+    setSaveError(null);
+    clearClipboard();
+    // An asset previewed out of the previous world's mounts, which the new
+    // world's may not even have.
+    setSelectedAsset(null);
+
+    try {
+      // Main resolves the active project's ordered sources and owns the VFS
+      // mount list; the renderer sends only the project configuration identity.
+      const opened = await window.editorAPI.openWorld({
+        worldPath,
+        gameVersion: 'g2',
+        projectFilePath: useProjectStore.getState().projectFilePath ?? '',
+      });
+      if (stale()) return false;
+      openSucceeded(opened);
+      // A fresh open starts an empty history in the main process — this is
+      // the World bar's undo/redo buttons picking that up rather than
+      // showing whatever the previous world left them at.
+      void refreshHistoryDepth();
+
+      // Requested after the summary, so the scene tree and the load timings are
+      // on screen while 31 MB of geometry crosses.
+      const mesh = await window.editorAPI.getWorldMesh();
+      if (stale()) return false;
+      setMesh(mesh);
+      const visuals = await window.editorAPI.getWorldVisuals();
+      if (stale()) return false;
+      setVisuals(visuals);
+    } catch (failure) {
+      if (stale()) return false;
+      openFailed(failure instanceof Error ? failure.message : String(failure));
+      return true;
+    }
+
+    // **Outside the try above, and that is the whole point.** The waynet is read
+    // here rather than when the overlay is first shown, because it is not only
+    // the overlay's any more: the Problems scan reads its names to answer
+    // whether a script names a place this world has (level-editor.md §16.8).
+    // Left lazy, the rule would say nothing at all until somebody happened to
+    // switch the overlay on — silently, since a world with no findings looks
+    // exactly like one with nothing to find.
+    //
+    // But by the time it runs the world is *open*: `openSucceeded` has
+    // published a `ready` summary and 31 MB of mesh and visuals are on screen.
+    // Routed to `openFailed` — which resets the whole surface — a transient
+    // worker or IPC error would throw all of that away over a payload only two
+    // things read, and re-paying the open is the only way back, while the main
+    // process still holds the world. So it is reported the way a refused edit
+    // is: a warning over a world that is still open and still correct, leaving
+    // `waynet` null, which the store and the waypoint rule already read as
+    // "nothing is known".
+    try {
+      const read = await window.editorAPI.getWorldWaynet();
+      if (stale()) return false;
+      setWaynet(read);
+    } catch (failure) {
+      if (stale()) return false;
+      useWorldStore.getState().editFailed(
+        failure instanceof Error ? failure.message : String(failure),
+      );
+    }
+
+    // The portal findings, for the same Problems scan and outside the try for
+    // the same reason (level-editor.md §16.20 slice 3). Once per open: no op
+    // touches the world mesh they are computed over. Published straight to
+    // the store — nothing on this surface draws them, since framing a polygon
+    // is deliberately not built.
+    try {
+      const findings = await window.editorAPI.getWorldPortalFindings();
+      if (stale()) return false;
+      useWorldStore.getState().portalsLoaded(findings);
+    } catch (failure) {
+      if (stale()) return false;
+      useWorldStore.getState().editFailed(
+        failure instanceof Error ? failure.message : String(failure),
+      );
+    }
+
+    // The `<worldname>.folders.json` sidecar (VOB folders slice) — outside
+    // the try above for the same reason the waynet is: a failure here is a
+    // world that opened correctly and has an editor-only extra nobody could
+    // read, not a reason to throw away 31 MB of geometry and re-pay the open.
+    try {
+      const folders = await window.editorAPI.getVobFolders(worldPath);
+      if (stale()) return false;
+      setVobFolders(folders);
+    } catch (failure) {
+      if (stale()) return false;
+      useWorldStore.getState().editFailed(
+        failure instanceof Error ? failure.message : String(failure),
+      );
+    }
+    return true;
+  }, [confirmDiscard, beginOpen, openSucceeded, openFailed, refreshHistoryDepth, setVobFolders, clearClipboard]);
+
+  /**
+   * The world picker (level-editor.md §16.31): the worlds the project's own
+   * asset sources hold, listed instead of a native file dialog pointed at one
+   * install. The scan runs on open, not on mount — a project's sources change
+   * under the dialog, and a list nobody is looking at is a directory walk
+   * nobody asked for.
+   */
+  const openPicker = useCallback(async () => {
+    setPickerOpen(true);
+    setPickerError(null);
+    setPickerLoading(true);
+    try {
+      setDiscoveredWorlds(await window.editorAPI.listWorlds());
+    } catch (failure) {
+      setDiscoveredWorlds([]);
+      setPickerError(failure instanceof Error ? failure.message : String(failure));
+    } finally {
+      setPickerLoading(false);
+    }
+  }, []);
+
+  /**
+   * Textures the VFS could not decode (level-editor.md §16.31). Said out loud,
+   * because the alternative is white geometry the user has to reverse-engineer:
+   * a mod folder holds *source* `.TGA` files, which resolve by name and then
+   * fail to parse — they are textures the mod has not compiled yet.
+   */
+  const reportTextureFailures = useCallback((names: string[]) => {
+    useWorldStore.getState().texturesFailed(
+      `${names.length} texture${names.length === 1 ? '' : 's'} could not be decoded and draw white — `
+      + `${names.slice(0, 3).join(', ')}${names.length > 3 ? '…' : ''}. `
+      + 'A source .TGA in a mod folder resolves by name but is not a compiled ZenGin texture.',
+    );
+  }, []);
+
+  /**
+   * What the last camera-slot keystroke did (09-04 review §5.1 item 6). The
+   * slots were the one navigation that said nothing, and a recall is exactly
+   * the case where silence is ambiguous: an empty slot moves nothing, and so
+   * does a recall onto the pose you are already at. The message is the only
+   * difference between "that shortcut does nothing" and "that slot is empty".
+   *
+   * Transient, unlike the three Alerts above the viewport: those are about a
+   * world and stand until dismissed, this is about a keystroke. The nonce
+   * makes a repeated outcome a fresh notice — pressing Ctrl+2 twice on an
+   * empty slot has to say so twice, and the message alone is unchanged.
+   */
+  const [cameraSlotNotice, setCameraSlotNotice] =
+    useState<{ text: string; nonce: number } | null>(null);
+  const reportCameraSlot = useCallback((outcome: CameraSlotOutcome, slot: number) => {
+    // The slot is zero-based; the key the user pressed is one higher.
+    const named = `Camera slot ${slot + 1}`;
+    setCameraSlotNotice((previous) => ({
+      text: outcome === 'stored' ? `${named} stored`
+        : outcome === 'recalled' ? `${named} recalled`
+          : `${named} is empty`,
+      nonce: (previous?.nonce ?? 0) + 1,
+    }));
+  }, []);
+
+  /**
+   * Routine mode waiting on the picker (npc-editor.md §6): asked for with no
+   * world open and none the NPC's spawn names. Started once the picked world
+   * has opened; a picker closed without one drops it.
+   */
+  const routineAwaitingPick = useRef<RoutineRequest | null>(null);
+  const [routineAfterOpen, setRoutineAfterOpen] = useState<RoutineRequest | null>(null);
+  const openPickedWorld = useCallback(async (worldPath: string) => {
+    setPickerOpen(false);
+    const opened = await openWorldAt(worldPath);
+    const waiting = routineAwaitingPick.current;
+    routineAwaitingPick.current = null;
+    if (opened && waiting !== null && useWorldStore.getState().status === 'ready') setRoutineAfterOpen(waiting);
+  }, [openWorldAt]);
+  const closePicker = useCallback(() => {
+    routineAwaitingPick.current = null;
+    setPickerOpen(false);
+  }, []);
+
+  const pickWorld = useCallback((worldPath: string) => {
+    void openPickedWorld(worldPath);
+  }, [openPickedWorld]);
+
+  /** Everything the list cannot reach — a world outside the sources. */
+  const browseForWorld = useCallback(async () => {
+    let worldPath: string | null = null;
+    try {
+      worldPath = await window.editorAPI.openWorldDialog();
+    } catch (failure) {
+      setPickerError(failure instanceof Error ? failure.message : String(failure));
+      return;
+    }
+    if (!worldPath) return;
+    void openPickedWorld(worldPath);
+  }, [openPickedWorld]);
+
+  // The payload is the overlay's, and its *names* are also the Problems
+  // scan's world input. Published from one effect rather than beside each of
+  // the three `setWaynet` calls, so a fourth cannot forget: the store keeps its
+  // object identity when a re-read changed no name, which is what confines the
+  // re-scan to the ops that can change the set (§16.8).
+  useEffect(() => {
+    useWorldStore.getState().waynetLoaded(waynet);
+  }, [waynet]);
+
+  /**
+   * The waynet read both overlay toggles make when the open's own read left
+   * nothing behind — reported rather than swallowed.
+   *
+   * The open path was rewritten to report this instead of throwing the world
+   * away (2026-08-29 review, finding 1); these two made the same read and said
+   * nothing at all, so a failure left the toggle on, the overlay empty and no
+   * word about why. The banner over an open world is the same one that path
+   * uses.
+   */
+  const readWaynetInto = useCallback(
+    async (into: (payload: WaynetPayload | null) => void): Promise<void> => {
+      try {
+        into(await window.editorAPI.getWorldWaynet());
+      } catch (failure) {
+        useWorldStore.getState().editFailed(
+          failure instanceof Error ? failure.message : String(failure),
+        );
+      }
+    },
+    [],
+  );
+
+  const toggleWaynet = useCallback(async () => {
+    const next = !showWaynet;
+    setShowWaynet(next);
+    // The overlay is hidden rather than destroyed, so nothing else would notice
+    // a waypoint still being selected — and the gizmo would go on standing, and
+    // dragging, where there is no longer a dot to see.
+    if (!next) selectWaypoint(null);
+    if (next && waynet === null) await readWaynetInto(setWaynet);
+  }, [showWaynet, waynet, selectWaypoint, readWaynetInto]);
+
+  // The markers stand on waypoints, so the layer needs the payload the waynet
+  // overlay needs. The open reads it already; this covers the case where that
+  // read failed over a world that stayed open, which leaves it null.
+  // The two halves of the routine index arrive as separate store fields — one
+  // is keyed by routine and the other by NPC — and `routineSchedule` wants them
+  // together. Memoized because it is a viewport prop, and a fresh object every
+  // render would rebuild the overlay on every render.
+  const routines = useMemo(
+    () => ({
+      sites: routineSiteIndex,
+      routinesByNpc: routineNpcIndex,
+      statesByNpc: routineStateIndex,
+    }),
+    [routineSiteIndex, routineNpcIndex, routineStateIndex],
+  );
+
+  // Every state name any NPC has a variant for, shared names first. Ordered
+  // by the module, because the index's own order is whichever file the worker
+  // pool finished first.
+  const stateOptionList = useMemo(() => stateOptions(routines), [routines]);
+
+  // How far the chosen state actually reaches. Without this the label is a lie
+  // by omission: a state moves the NPCs that have a variant for it and leaves
+  // every other one on his declared day, so "State: TOT" over a world where one
+  // NPC moved would read as "the world is in TOT". Same job as the grey
+  // unplaced markers — the weaker fact must not read as the stronger.
+  const spawnStateReach = useMemo(
+    () => stateReach(routines, spawnState),
+    [routines, spawnState],
+  );
+
+  const toggleSpawns = useCallback(async () => {
+    const next = !showSpawns;
+    setShowSpawns(next);
+    // The time control belongs to this layer and is only shown with it, so a
+    // time left set behind a hidden layer would come back on with the layer and
+    // surprise whoever turned it on expecting the spawns.
+    if (!next) {
+      setSpawnTime(null);
+      setSpawnState(null);
+    }
+    if (next && waynet === null) await readWaynetInto(setWaynet);
+  }, [showSpawns, waynet, readWaynetInto]);
+
+
+  // A plain click replaces the selection; Shift, Ctrl or Cmd adds to it. One
+  // rule for
+  // both panels — the tree is the only way to reach a VOB the viewport cannot
+  // draw (a decal, a sound VOB), and the viewport the only way to reach one the
+  // tree has not been scrolled to.
+  const handleSelect = useCallback((vob: number, additive: boolean) => {
+    if (additive) toggleVob(vob); else selectVob(vob);
+    // The preview and the property grid share the right-hand panel, and the
+    // preview used to win it outright — so picking a VOB while the Assets tab
+    // was open went on showing the mesh being browsed, with nothing on screen
+    // saying the pick had landed (§5.2 item 10 of the 2026-09-04 review).
+    // Cleared on the pick rather than made to lose the panel: a pick is the
+    // user turning away from the asset, and the browser still has its own
+    // highlight to bring it back.
+    setSelectedAsset(null);
+  }, [selectVob, toggleVob]);
+
+  /**
+   * The right-click menu (level-editor.md §17, the
+   * app's first context menu) — the vob it is about, and its anchor
+   * position in viewport coordinates. Null while closed.
+   */
+  const [contextMenu, setContextMenu] = useState<{
+    vob: number; position: { left: number; top: number };
+  } | null>(null);
+
+  /** Opens the menu for `vob` — replacing the selection with it first when
+   *  it was outside the selection, the way every right-click does: the menu
+   *  always acts on the row it was opened from. A right-click on a VOB
+   *  already inside a multi-selection leaves it standing, so the menu's
+   *  Duplicate/Copy/Drop/Align act on the whole selection. */
+  const openVobContextMenu = useCallback((vob: number, position: { left: number; top: number }) => {
+    if (!selection.includes(vob)) handleSelect(vob, false);
+    setContextMenu({ vob, position });
+  }, [selection, handleSelect]);
+
+  /** The menu's "Hide this class" — the right-clicked VOB's own class,
+   *  added to the same list the toolbar's Hide control drives. */
+  const hideVobClass = useCallback(() => {
+    if (contextMenu === null || summary === null) return;
+    const cls = vobModelOf(summary).reader.className(contextMenu.vob);
+    if (cls === null) return;
+    setHiddenClasses((current) => (current.includes(cls) ? current : [...current, cls]));
+  }, [contextMenu, summary]);
+
+  /**
+   * The imperative handle onto the viewport (level-editor.md §16.5,
+   * `refactoring-targets.md` §9) — what the surface needs of the scene that is
+   * a command or a query rather than a prop: a per-VOB downward raycast for
+   * drop-to-ground and align-to-normal, and the camera jump below.
+   */
+  const viewportRef = useRef<WorldViewportHandle>(null);
+
+  /**
+   * A double-click on a scene-tree row, or its locator: select the VOB and jump
+   * the camera to it, leaving the orbit pivot on it.
+   *
+   * It carries the VOB rather than relying on the selection, which reaches the
+   * viewport a render later — and it is a call rather than a prop because it is
+   * a command and not a state: the same VOB is jumped to twice precisely after
+   * the camera has been flown away from it.
+   */
+  const focusVob = useCallback((vob: number) => {
+    handleSelect(vob, false);
+    const viewport = viewportRef.current;
+    // Reported rather than optional-chained away (§16.24 5). Every link of this
+    // path used to swallow a null, so a locator that had stopped working was
+    // indistinguishable from one that had jumped to a VOB already on screen —
+    // which is exactly how it went unnoticed for a session. A VOB with no
+    // instance is a legitimate `not-drawn`, and it is still worth saying: the
+    // button was pressed and nothing moved.
+    if (viewport === null) { console.warn(`Could not jump to VOB ${vob}: no-scene`); return; }
+
+    const failure = viewport.frameVob(vob);
+    if (failure === null) return;
+
+    // `not-drawn` used to be most of the VOB index (§16.24): a VOB gets an
+    // instance only if its visual resolves, so zCVobSpot, oCItem, the triggers,
+    // the zones and the sound VOBs had none and were permanently unlocatable.
+    // The markers closed most of that (§16.38) — a VOB with no visual at all is
+    // drawn now, and the viewport frames it like any other. What is left is the
+    // VOB whose visual is a *name* resolving to no geometry, a decal or a
+    // `.PFX`, and the index carries a position for those too: the camera jumps
+    // to the point instead, the same jump a waypoint gets.
+    const at = failure === 'not-drawn' && summary !== null
+      ? vobModelOf(summary).reader.position(vob)
+      : null;
+    const outcome = at === null ? failure : viewport.framePoint(at);
+    if (outcome !== null) console.warn(`Could not jump to VOB ${vob}: ${outcome}`);
+  }, [handleSelect, summary]);
+
+  /**
+   * The camera's own position, on demand — what the scene tree's "within
+   * reach of the camera" filter measures VOBs against. Unlike `focusVob`, a
+   * pure read: the tree polls this itself while that filter is on, and a
+   * scene mid-rebuild answers null the same way `frameVob` reports no scene.
+   */
+  const getCameraPosition = useCallback(
+    () => viewportRef.current?.cameraPosition() ?? null,
+    [],
+  );
+
+  /**
+   * The jump itself — the camera onto the point a name reaches. Lifted out of
+   * the focus effect below because it has a second caller now: a jump into a
+   * world that had to be opened for it first (#226).
+   */
+  const jumpToPoint = useCallback((name: string) => {
+    // The name comes out of a script, where Daedalus is case-insensitive, and
+    // the waynet is the world's own spelling.
+    const wanted = name.toUpperCase();
+    const waypoint = waynet === null
+      ? -1
+      : waynet.names.findIndex((each) => each.toUpperCase() === wanted);
+
+    if (waynet !== null && waypoint >= 0) {
+      // The overlay is switched on rather than assumed: with it off the gizmo
+      // would stand where there is no dot to see, which is the same objection
+      // `toggleWaynet` answers in the other direction.
+      setShowWaynet(true);
+      selectWaypoint(waypoint);
+      const positions = new Float32Array(waynet.positions);
+      viewportRef.current?.framePoint([
+        positions[waypoint * 3], positions[waypoint * 3 + 1], positions[waypoint * 3 + 2],
+      ]);
+      return;
+    }
+
+    // Not a waypoint, so it may still be a free point — those are `zCVobSpot`
+    // VOBs, and the button that offers this jump enables itself for them
+    // (`worldHasPoint`). Without this the jump would land nowhere at all, which
+    // is a worse answer than the disabled one that button used to give.
+    const spot = findFreePointVob(summary, wanted);
+    if (spot !== null) focusVob(spot);
+  }, [waynet, summary, focusVob, selectWaypoint]);
+
+  /**
+   * The world an NPC lives in, opened from outside the surface (#226). The
+   * dialog editor's jump names the `.ZEN` the spawn site's own `STARTUP_`
+   * function points to; the path comes from the same scan the picker lists
+   * (§16.31), which is why naming a world resolves to a file with no
+   * world-directory setting of its own — the project's asset sources already
+   * say where worlds are.
+   */
+  const openWorldNamed = useCallback(async (worldName: string, thenFocus: string) => {
+    let found: DiscoveredWorld | null;
+    try {
+      found = await discoveredWorldNamed(worldName);
+    } catch (failure) {
+      useWorldStore.getState().editFailed(
+        failure instanceof Error ? failure.message : String(failure),
+      );
+      return;
+    }
+    const wanted = `${worldName.toUpperCase()}.ZEN`;
+    if (found === null) {
+      useWorldStore.getState().editFailed(
+        `${wanted} is not among the project's asset sources — open it with Browse…, `
+        + 'or add the folder that holds it to the project.',
+      );
+      return;
+    }
+    // Kept the open world instead, or a refused open has replaced the surface
+    // with its own error; a jump into either would be one nothing asked for.
+    if (!await openWorldAt(found.path) || useWorldStore.getState().status !== 'ready') return;
+    // Left to the effect below rather than jumped here, and both halves of
+    // that are the point. Not here: React commits this open's mesh and visuals
+    // on a task of its own, so at this line the viewport that owns the camera
+    // is not mounted and there is nothing to fly. And not back through
+    // `requestFocus` either: a store update renders at sync priority and may
+    // skip the `setWaynet` this very open just made, which is how the first
+    // cut jumped into a world whose waynet it could not yet see. A `useState`
+    // lands in the same batch as the open's own — one render, one commit, and
+    // the effect runs with the world on screen and its waynet in hand.
+    setPendingJump(thenFocus);
+  }, [openWorldAt]);
+
+  useEffect(() => {
+    if (pendingJump === null) return;
+    setPendingJump(null);
+    jumpToPoint(pendingJump);
+  }, [pendingJump, jumpToPoint]);
+
+  /**
+   * A jump asked for from outside the surface — the Problems panel's click on a
+   * world finding (§16.20 slice 2). The panel cannot call the viewport: it is
+   * another view, and while it is on screen this one may not even be mounted.
+   * So it leaves a request in the store and this consumes it.
+   *
+   * Taken exactly once, whether or not it lands: a request left standing would
+   * fire again on the next waynet re-read, long after the click that made it.
+   */
+  const focusRequest = useWorldStore((s) => s.focusRequest);
+  useEffect(() => {
+    if (focusRequest === null) return;
+    useWorldStore.getState().focusHandled();
+
+    if (focusRequest.kind === 'vob') { focusVob(focusRequest.vob); return; }
+
+    // A portal finding (#222). It carries its own geometry because the scene
+    // has none to look up, and the viewport draws it as well as flies to it —
+    // a portal is an invisible face, so framing alone shows a wall.
+    if (focusRequest.kind === 'polygon') {
+      const viewport = viewportRef.current;
+      // Reported rather than optional-chained away, for §16.24 5's reason: a
+      // locator that has stopped working must not look like one that jumped to
+      // something already on screen.
+      const outcome = viewport === null
+        ? 'no-scene'
+        : viewport.framePolygon(focusRequest.corners);
+      if (outcome !== null) console.warn(`Could not jump to polygon ${focusRequest.polygon}: ${outcome}`);
+      return;
+    }
+
+    // A world the request names and this surface is not showing (#226): the
+    // dialog editor knows which `.ZEN` an NPC lives in but cannot open one, so
+    // the open happens here and the jump is re-issued on the other side of it.
+    if (focusRequest.kind === 'waypoint' && focusRequest.inWorld !== undefined) {
+      void openWorldNamed(focusRequest.inWorld, focusRequest.name);
+      return;
+    }
+
+    if (focusRequest.kind === 'add-waypoint') {
+      // Not a jump: a script naming a place is not a position, so there is
+      // nothing to frame. The overlay goes on for the same reason the
+      // waypoint jump above needs it — it is the only thing that will draw
+      // the result — and the name is kept for the terrain click to pick up.
+      setShowWaynet(true);
+      setPendingWaypointName(focusRequest.name);
+      return;
+    }
+
+    jumpToPoint(focusRequest.name);
+  }, [focusRequest, focusVob, jumpToPoint, openWorldNamed]);
+
+  // ── editing (level-editor.md §7, Phase 1b) ────────────────────────────────
+  //
+  // The shell owns the IPC, so this is where a drag becomes an op. The
+  // authoritative world and the authoritative op log are both in the main
+  // process; what happens here is that the *projection* is brought into line
+  // with them once they have accepted the edit — never before, or a refused op
+  // leaves the two disagreeing.
+  //
+  // `appliedOps` is how the viewport hears about it. It is imperative and lives
+  // outside React's render path, so it cannot read the index the panels read;
+  // handing it the ops that were applied is smaller than either a callback ref
+  // or a second copy of the world.
+  const [appliedOps, setAppliedOps] = useState<WorldOp[] | null>(null);
+
+  /**
+   * The primary VOB's per-class fields — an item's Daedalus instance, a light's
+   * range and colour (level-editor.md §14.1 item 1.4).
+   *
+   * **React state here rather than in the store or in a cache beside the
+   * summary.** `applyEdit` writes into the existing `ArrayBuffer`s and
+   * deliberately does not change the identity of `summary`, so the `WeakMap`
+   * pattern `vobModelOf` uses would key on an object that never changes and go
+   * on serving pre-edit values for the life of the world. And there is no column
+   * for any of this: the index interns a class *name* and carries not one field
+   * of the class, which is why it is a fetch at all.
+   *
+   * Re-issued on `appliedOps` as well as on the selection, and that covers more
+   * than it looks like: a commit, an undo, a redo and a *refusal* all set it —
+   * the last of which is the one that matters, because a refused edit otherwise
+   * leaves the grid showing the number the user typed as though the world had
+   * taken it. The generation guard is not optional either: the read is not
+   * serialized against edits in the main process, so two fetches genuinely
+   * overlap and the slower one must not win.
+   *
+   * **It is tagged with the VOB it was read for, and the tag is load-bearing.**
+   * The grid picks its fields out of the catalogue by the *selected* VOB's
+   * class, so the fields and this object have to come from the same VOB — and an
+   * effect cannot establish that, because it runs a render too late: the render
+   * the selection change causes reaches the grid with the new VOB and the props
+   * of the old one. Two catalogued classes then disagree about which keys exist,
+   * the grid reads a key the props do not have, and the whole editor is replaced
+   * by the error boundary's fallback. A mismatched tag reads as "not here yet",
+   * which is what it is.
+   */
+  const [classProps, setClassProps] = useState<{ vob: number; props: ClassProps } | null>(null);
+  const primary = primaryVob(selection);
+
+  /** Every class in the world, for the show/hide list — the interned class
+   *  dictionary the summary already carries, and 37 entries on a retail world. */
+  const classOptions = useMemo(
+    () => (summary === null ? [] : [...summary.vobIndex.classes].sort((a, b) => a.localeCompare(b))),
+    [summary],
+  );
+  /**
+   * Which VOBs the viewport must not draw, one byte each — the scene tree's own
+   * predicate, asked the complementary question.
+   *
+   * Null while nothing is switched off: the ordinary case must not pay for a
+   * sweep over 41,393 VOBs, and the scene must not walk every instance writing
+   * zeroes it already holds.
+   */
+  const hiddenVobs = useMemo(
+    () => (summary === null || hiddenClasses.length === 0
+      ? null
+      : matchVobs(summary.vobIndex, { classes: hiddenClasses })),
+    [summary, hiddenClasses],
+  );
+
+  useEffect(() => {
+    setClassProps(null);
+    if (summary === null || primary === null) return undefined;
+
+    const { reader } = vobModelOf(summary);
+    const className = reader.className(primary);
+    // Asked for every class, not only the two of a retail world's 37 the
+    // catalogue has fields for: the base fields (§16.17) are on every VOB
+    // and in none of the index's columns, so this read is the only thing the
+    // grid can draw or invert them from. It costs one round trip per selection
+    // change, and the per-VOB read is the cheap half of the dump.
+    if (className === null) return undefined;
+    const path = vobIndexPath(reader, primary);
+    if (path === null) return undefined;
+
+    let current = true;
+    void window.editorAPI.getVobProps(path)
+      // The whole props object, base fields and all: it is the reader
+      // `normalizeWorld` uses, and the grid picks the catalogued keys out of it.
+      .then((props) => {
+        if (current) setClassProps({ vob: primary, props: props as ClassProps });
+      })
+      // A world that has been closed under the fetch, or a path that no longer
+      // resolves. The grid says it is waiting, which is what it is doing.
+      .catch(() => { if (current) setClassProps(null); });
+    return () => { current = false; };
+  }, [summary, primary, appliedOps]);
+
+  /**
+   * The volume the selected VOB *is* (architecture §7) — a sound's `radius`, a
+   * light's `range`, a zone's or a trigger's bounding box.
+   *
+   * All of it off the props `classProps` already holds, so it costs no round
+   * trip of its own: the read the property grid makes on every selection change
+   * is the same read. That is the whole of the per-selection fetch the maintainer chose
+   * over a bbox column in the index, which every world load would have paid
+   * 41,393 × 6 floats for. `vobExtentOf` decides which shape a class is, and
+   * answers null for the classes that are no volume anybody places.
+   */
+  const selectedExtent = useMemo<{ vob: number; extent: VobExtent } | null>(() => {
+    if (summary === null || primary === null) return null;
+    if (classProps === null || classProps.vob !== primary) return null;
+    const className = vobModelOf(summary).reader.className(primary);
+    if (className === null) return null;
+    const extent = vobExtentOf(className, classProps.props);
+    return extent === null ? null : { vob: primary, extent };
+  }, [summary, primary, classProps]);
+
+  // ── saving (level-editor.md §5) ───────────────────────────────────────────
+  //
+  // Saving overwrites the open world. The two warnings below are shown before
+  // the write because they are about whether to save at all; the confirmation
+  // also names the exact file that will be replaced.
+  const [confirmingSave, setConfirmingSave] = useState(false);
+  // The world picker's own state (§16.31) — the scan is per opening, so the
+  // list never outlives the asset sources it was read from.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerLoading, setPickerLoading] = useState(false);
+  const [pickerError, setPickerError] = useState<string | null>(null);
+  const [discoveredWorlds, setDiscoveredWorlds] = useState<DiscoveredWorld[]>([]);
+  const [savedTo, setSavedTo] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  /** Whether an edit has landed that the world file on disk does not have. */
+  const unsavedEdits = useWorldStore((state) => state.hasUnsavedEdits);
+
+  const saveWorld = useCallback(async () => {
+    setConfirmingSave(false);
+    setSavedTo(null);
+    setSaveError(null);
+    if (summary === null) return;
+
+    try {
+      await window.editorAPI.saveWorld();
+      setSavedTo(summary.worldPath);
+      useWorldStore.getState().setHasUnsavedEdits(false);
+      // What routine mode may now offer as a stop: the waynet just written.
+      if (waynet !== null) useWorldStore.getState().waynetSaved(waynet.names);
+    } catch (failure) {
+      // The binding's own refusal — "only the binsafe writer path is verified" —
+      // is the message worth showing, so it is not replaced with a generic one.
+      setSaveError(failure instanceof Error ? failure.message : String(failure));
+    }
+  }, [summary, waynet]);
+
+  // Save As (#367). The dialog is main's, and so is the target; what comes
+  // back is only the name the open world now has. A cancelled dialog is null
+  // and changes nothing. No stale-lighting warning first: that one is about
+  // replacing a file somebody already has, and the native dialog asks that
+  // question itself.
+  const saveWorldAs = useCallback(async () => {
+    setSavedTo(null);
+    setSaveError(null);
+    if (summary === null) return;
+
+    try {
+      const target = await window.editorAPI.saveWorldAs();
+      if (target === null) return;
+      useWorldStore.getState().worldPathChanged(target);
+      setSavedTo(target);
+      useWorldStore.getState().setHasUnsavedEdits(false);
+      if (waynet !== null) useWorldStore.getState().waynetSaved(waynet.names);
+    } catch (failure) {
+      setSaveError(failure instanceof Error ? failure.message : String(failure));
+    }
+  }, [summary, waynet]);
+
+  // ── the GMBT quick test (level-editor.md §16.29) ──────────────────────────
+  //
+  // Main launches `gmbt test` over the open world and nothing here waits on it;
+  // a run gmbt ends with an error is pushed back afterwards (#266). A dirty
+  // world is refused rather than auto-saved — launching the engine at bytes
+  // the screen does not show is the one outcome worth a click to avoid.
+  const gmbtConfigured = useProjectStore((s) => s.gmbtProjectDir !== null);
+  const [quickTestBlocked, setQuickTestBlocked] = useState(false);
+  const [quickTestRefusal, setQuickTestRefusal] = useState<{ heading: string; message: string } | null>(null);
+  useEffect(() => window.editorAPI.onGmbtQuickTestFailed((message) => {
+    setQuickTestRefusal({ heading: 'The quick test failed', message });
+  }), []);
+
+  const startQuickTest = useCallback(async () => {
+    if (unsavedEdits) {
+      setQuickTestBlocked(true);
+      return;
+    }
+    try {
+      await window.editorAPI.startGmbtQuickTest();
+    } catch (failure) {
+      // A dialog, not the edit banner: nothing was edited, and every way main
+      // refuses a launch — GMBT missing, the open world outside the project
+      // folder — is an explanation with a path in it that has to be read.
+      setQuickTestRefusal({
+        heading: 'The quick test did not start',
+        message: failure instanceof Error ? failure.message : String(failure),
+      });
+    }
+  }, [unsavedEdits]);
+
+  /** An edit landed, so the bytes on disk are no longer what is on screen. */
+  const markEdited = useCallback(() => useWorldStore.getState().setHasUnsavedEdits(true), []);
+  /** The class fields let go, so a refusal remounts them — `putTheViewBack`'s
+   *  half of the rule `editRefusals` is the other half of. */
+  const forgetClassProps = useCallback(() => setClassProps(null), []);
+
+  const { commitOps, runHistory, editRefusals } = useWorldEditPipeline({
+    waynet,
+    setWaynet,
+    setVisuals,
+    drawnVisuals,
+    setAppliedOps,
+    markEdited,
+    forgetClassProps,
+    refreshHistoryDepth,
+    openGeneration,
+  });
+
+  // One gizmo drives the whole selection, so a drag arrives as a delta rather
+  // than a destination and becomes one op per VOB in one batch — which is one
+  // undo entry, and atomic in `commitOps`. Read out of the store rather than
+  // closed over: the drag is delivered from outside React's render path.
+  const handleTranslateSelection = useCallback((delta: [number, number, number]) => {
+    const { summary: current, selection: selected } = useWorldStore.getState();
+    if (current === null || selected.length === 0) return;
+    // Each op's `from` comes out of the index before anything is applied to it,
+    // which is what lets the batch be inverted without a snapshot beside the
+    // history — and what keeps a selection's spacing across an undo.
+    // Each selected VOB's children come along (#292): a ZenGin position is
+    // world-space, so a parent moved alone leaves them standing.
+    void commitOps(translateSubtrees(vobModelOf(current).reader, selected, delta));
+  }, [commitOps]);
+
+  /** The keyboard nudge in progress: its world-space travel so far and the
+   *  step it snaps to. Null between nudges. */
+  const nudgeRef = useRef<{ total: [number, number, number]; grid: number } | null>(null);
+
+  const handleNudgeBegin = useCallback((grid: number) => {
+    if (useWorldStore.getState().selection.length === 0) return false;
+    if (viewportRef.current?.beginNudge() !== true) return false;
+    nudgeRef.current = { total: [0, 0, 0], grid };
+    return true;
+  }, []);
+
+  /** Turn a camera-plane increment into world space and add it to the nudge.
+   *  Axes are read per increment, so orbiting mid-hold turns the motion. */
+  const handleNudgeBy = useCallback((direction: [number, number, number]) => {
+    const nudge = nudgeRef.current;
+    const axes = viewportRef.current?.cameraNudgeAxes();
+    if (nudge === null || axes === null || axes === undefined) return;
+    const [right, up, forward] = direction;
+    nudge.total[0] += axes.right[0] * right + axes.forward[0] * forward;
+    nudge.total[1] += up;
+    nudge.total[2] += axes.right[2] * right + axes.forward[2] * forward;
+    viewportRef.current?.previewNudge(snapDelta(nudge.total, nudge.grid));
+  }, []);
+
+  /** The last key is up: the whole nudge is one commit on the same subtree
+   *  translation path as a gizmo drag, so one undo entry. */
+  const handleNudgeEnd = useCallback(() => {
+    const nudge = nudgeRef.current;
+    nudgeRef.current = null;
+    if (nudge === null) return;
+    const delta = snapDelta(nudge.total, nudge.grid);
+    if (delta.every((component) => component === 0)) return;
+    handleTranslateSelection(delta);
+  }, [handleTranslateSelection]);
+
+  /** What a drag of the selection previews moving: the same members
+   *  `translateSubtrees` and `rotateSubtrees` build their ops over (#292). */
+  const membersOfSelection = useCallback((vobs: readonly number[]) => {
+    const { summary: current } = useWorldStore.getState();
+    return current === null ? [] : subtreeMembers(vobModelOf(current).reader, vobs);
+  }, []);
+
+  // What the gizmo does. There is no scale: `zCVob` has no scale field, and
+  // measured across all 41,393 VOB transforms in the three retail worlds
+  // nothing is scaled — a scale gizmo would author a representation ZenGin's
+  // own tools never wrote (level-editor.md §7).
+  const [gizmoMode, setGizmoMode] = useState<GizmoMode>('translate');
+
+  /**
+   * How far a drag is quantised, in ZenGin centimetres and in degrees — one
+   * value per gizmo mode, so switching mode and back does not forget the step.
+   *
+   * Component state beside the gizmo mode and the brightness, because it is the
+   * same kind of thing: it changes how an edit is *made*, produces no op of its
+   * own and is not part of the world. Free-form by default, so the gizmo behaves
+   * as it always has until somebody asks for a step — and so that
+   * `verify-world-edit.js`, which drags to exact coordinates, still lands on
+   * them.
+   */
+  const [snapGrid, setSnapGrid] = useState(0);
+  const [snapAngleDegrees, setSnapAngleDegrees] = useState(0);
+
+  /**
+   * The visual's own bounds for a VOB, from the payload the worker already
+   * sent — what a rotation refits the VOB's bbox from.
+   *
+   * Built from `visuals` rather than asked for over IPC: the bounds are six
+   * numbers per visual and they came across with the geometry. A VOB with no
+   * instance (a decal, a `.pfx`) has none, and null is the right answer — the
+   * op then leaves the stale box alone rather than refitting it to nothing.
+   */
+  const boundsOf = useMemo(() => {
+    const byVob = new Map<number, ZenBounds>();
+    for (const visual of visuals?.visuals ?? []) {
+      for (const vob of new Uint32Array(visual.vobIds)) byVob.set(vob, visual.bounds);
+    }
+    return (vob: number) => byVob.get(vob) ?? null;
+  }, [visuals]);
+
+  /**
+   * Drop each selected VOB to its own ground point — a per-VOB batch,
+   * unlike a gizmo drag: there is no shared delta, because each VOB's ground
+   * comes from its own downward raycast. A VOB with no hit (over the sky, off
+   * the edge of the mesh) is left out rather than refusing the whole batch;
+   * the rest still land. Rest uses the visual's rotated base; into uses the
+   * VOB's pivot so trees can stay partly buried.
+   */
+  const handleDropToGround = useCallback((mode: 'rest' | 'into') => {
+    const { summary: current, selection: selected } = useWorldStore.getState();
+    const viewport = viewportRef.current;
+    if (current === null || viewport === null || selected.length === 0) return;
+
+    const reader = vobModelOf(current).reader;
+    const drops: { vob: number; ground: ZenPosition }[] = [];
+    for (const vob of selected) {
+      const from = reader.position(vob);
+      if (from === null) continue;
+      const hit = viewport.raycastDown(from);
+      if (hit !== null) drops.push({ vob, ground: hit.point });
+    }
+    if (drops.length === 0) return;
+    // A dropped VOB's children fall with it by the same drop (#292).
+    void commitOps(dropSubtreesToGround(reader, drops, mode, boundsOf));
+  }, [commitOps, boundsOf]);
+
+  /**
+   * Turn each selected VOB's local +Y onto its own hit normal — the same
+   * per-VOB batch as a drop, and for the same reason: each VOB's normal comes
+   * from its own raycast, not from one shared delta.
+   */
+  const handleAlignToNormal = useCallback(() => {
+    const { summary: current, selection: selected } = useWorldStore.getState();
+    const viewport = viewportRef.current;
+    if (current === null || viewport === null || selected.length === 0) return;
+
+    const reader = vobModelOf(current).reader;
+    const hits: { vob: number; normal: ZenPosition }[] = [];
+    for (const vob of selected) {
+      const from = reader.position(vob);
+      if (from === null) continue;
+      const hit = viewport.raycastDown(from);
+      if (hit !== null) hits.push({ vob, normal: hit.normal });
+    }
+    if (hits.length === 0) return;
+    // Its children swing round it by the same turn (#292).
+    void commitOps(alignSubtreesToNormal(reader, hits, boundsOf));
+  }, [commitOps, boundsOf]);
+
+  /**
+   * The VOB a placement could be parented to: the selected one, or null when
+   * nothing is selected and a root is the only thing on offer.
+   *
+   * The primary, for the same reason the property grid follows it — one VOB is
+   * the one the panels describe, and a placement under several parents is not a
+   * thing.
+   */
+  const parentCandidate = primaryVob(selection);
+
+  /** How a VOB is named in a dialog: the same fallback the scene tree draws its
+   *  rows with, because most VOBs are unnamed — the visual is the label, and the
+   *  class is what is left. */
+  const labelOf = useCallback((vob: number | null) => {
+    if (summary === null || vob === null) return '';
+    const { reader } = vobModelOf(summary);
+    return reader.name(vob) || reader.visual(vob) || reader.className(vob);
+  }, [summary]);
+
+  const parentLabel = labelOf(parentCandidate);
+
+  /**
+   * Whether the placement dialog is holding an item it must not send.
+   *
+   * The same refusal `WorldPropertyGrid` makes for the same field and for the
+   * same reason — ZenGin crashes on an instance no script declares, and nothing
+   * below the renderer holds an index to check it against. **An empty index
+   * means "nothing is known", never "nothing is legal"**, so a world edited with
+   * no project open places items exactly as it did before; an empty name is
+   * refused whatever the index says, because an item without one spawns nothing.
+   */
+  /** Where the place dialog says the VOB goes: the chosen point, or the
+   *  click the confirm will wait for. */
+  const placeWhere = terrainPoint === null
+    ? 'where you next click the ground'
+    : `at ${terrainPoint.map((v) => Math.round(v)).join(', ')}`;
+  const placeRefused = placing !== null && placing.vobClass === 'oCItem'
+    && (placing.instance.trim() === ''
+      || (itemInstances.size > 0 && !itemInstances.has(placing.instance.trim().toUpperCase())));
+
+  const handleRotateSelection = useCallback((delta: ZenRotation) => {
+    const { summary: current, selection: selected } = useWorldStore.getState();
+    if (current === null || selected.length === 0) return;
+    // Each VOB turns about its own origin, and the delta composes on the left
+    // so a selection of differently-oriented VOBs all turn the same way. Its
+    // children swing round that origin with it (#292).
+    void commitOps(rotateSubtrees(vobModelOf(current).reader, selected, delta, boundsOf));
+  }, [commitOps, boundsOf]);
+
+  /** The keyboard turn in progress (#387): degrees turned so far about the
+   *  hook's `[right, up, forward]` keys — read as yaw about the vertical, roll
+   *  about camera-forward and pitch about camera-right — the camera axes it
+   *  began under, and the angle step each snaps to. Null between turns. */
+  const turnRef = useRef<KeyboardTurn | null>(null);
+
+  const handleTurnBegin = useCallback((step: number) => {
+    if (useWorldStore.getState().selection.length === 0) return false;
+    const axes = viewportRef.current?.cameraNudgeAxes();
+    if (axes === null || axes === undefined) return false;
+    if (viewportRef.current?.beginNudge() !== true) return false;
+    turnRef.current = { total: [0, 0, 0], step, ...axes };
+    return true;
+  }, []);
+
+  const handleTurnBy = useCallback((degrees: [number, number, number]) => {
+    const turn = turnRef.current;
+    if (turn === null) return;
+    for (let axis = 0; axis < 3; axis++) turn.total[axis] += degrees[axis];
+    const delta = turnSoFar(turn);
+    if (delta !== null) viewportRef.current?.previewTurn(delta);
+  }, []);
+
+  /** The last key is up: one commit on the gizmo's own rotate path. */
+  const handleTurnEnd = useCallback(() => {
+    const turn = turnRef.current;
+    turnRef.current = null;
+    if (turn === null) return;
+    const delta = turnSoFar(turn);
+    if (delta !== null) handleRotateSelection(delta);
+  }, [handleRotateSelection]);
+
+  /**
+   * A typed rotation from the property grid — the primary VOB alone, and an
+   * **absolute** pose rather than the delta a gizmo drag arrives as: with one
+   * VOB selected the typed angles are the destination. A multi-selection types
+   * into the same fields but leaves as a delta (§16.4) and goes down
+   * `handleRotateSelection` above, which is the gizmo's own path.
+   */
+  const handleRotateVob = useCallback((to: ZenRotation) => {
+    const { summary: current, selection: selected } = useWorldStore.getState();
+    if (current === null || selected.length !== 1) return;
+    const vob = selected[0];
+    void commitOps(rotateSubtreeTo(vobModelOf(current).reader, vob, to, boundsOf));
+  }, [commitOps, boundsOf]);
+
+  /**
+   * A property change from the grid, applied to the whole selection.
+   *
+   * The whole selection because that is what every other edit here does — one
+   * gizmo drags all of them — and `setVobProps` gives each VOB its own `from`,
+   * so one undo puts a selection that never agreed on a value back to the values
+   * they each had.
+   *
+   * A change of visual is the only one that needs anything asked for: the box
+   * the engine culls by is refitted from the *new* visual's bounds, and a visual
+   * the world does not currently use has no instance and no payload to read them
+   * from. Every other property leaves the box alone, and passes no bounds at
+   * all — which is what the binding requires.
+   */
+  const handleEditProps = useCallback(async (props: VobProps) => {
+    const { summary: current, selection: selected } = useWorldStore.getState();
+    if (current === null || selected.length === 0) return;
+
+    let bounds = null;
+    if (props.visual !== undefined) {
+      // Null for a name that resolves to nothing — a misspelling, a decal's
+      // texture, a `.pfx`. The op then leaves the stale box alone rather than
+      // refitting it to nothing, exactly as a rotation does.
+      const next = await window.editorAPI.getVisualBounds(props.visual)
+        .catch(() => null);
+      bounds = { from: boundsOf, to: next === null ? null : next as ZenBounds };
+    }
+
+    // The scene follows a changed visual through `applied`, which this commit
+    // goes through and undo and redo reach on their own — so there is nothing
+    // to do here afterwards. It used to be a hand-written fetch on this line,
+    // and that is exactly why undo left the old mesh on screen.
+    await commitOps(setVobProps(vobModelOf(current).reader, selected, props, bounds));
+  }, [commitOps, boundsOf]);
+
+  /** The Assets panel's "Use as visual" (§16.26 row 1): the previewed mesh's
+   *  bare name, written to the whole selection through the same path as the
+   *  grid's visual field — one batch, one undo entry, the box refitted. */
+  const useAssetAsVisual = useCallback((name: string) => {
+    void handleEditProps({ visual: name });
+  }, [handleEditProps]);
+
+  /**
+   * A class field change from the grid — the primary VOB alone.
+   *
+   * Alone, where every other edit in this surface takes the whole selection:
+   * each VOB in a batch would need its own fetched `from`, a selection can hold
+   * mixed classes, and there is no guard for that equivalent to the "not in the
+   * index" refusal every other op gets for free (§14.1 item 1.4, D7).
+   *
+   * The fetched props are the whole `from` side. They are passed rather than
+   * read back at apply time for the reason no op reads `from` from the world:
+   * by then the world holds `to`, and the inverse would restore it.
+   */
+  const handleEditClassProps = useCallback(async (props: ClassProps) => {
+    const { summary: current, selection: selected } = useWorldStore.getState();
+    const vob = primaryVob(selected);
+    // The tag again: the fetched props are the whole `from` side, so props read
+    // for another VOB would build an op — and an inverse — out of values that
+    // VOB never had.
+    if (current === null || vob === null || classProps?.vob !== vob) return;
+    await commitOps([setVobClassProp(vobModelOf(current).reader, vob, classProps.props, props)]);
+  }, [commitOps, classProps]);
+
+  /**
+   * A base-field change from the grid — `presetName`, `visualCamAlign`, `bias`,
+   * `dynamicShadows` or one of the seven decal fields, and the described VOB
+   * alone.
+   *
+   * A `SetVobProp` like the name and the flags above, but built here rather than
+   * in `handleEditProps` because these three have no column: the op cannot read
+   * their `from` back out of the index, so it takes the fetched props, and that
+   * is a read per VOB the batch path does not have. Hence one VOB, exactly as a
+   * class field is — the same constraint reached from the other side.
+   */
+  const handleEditBaseProps = useCallback(async (props: VobProps) => {
+    const { summary: current, selection: selected } = useWorldStore.getState();
+    const vob = primaryVob(selected);
+    // The tag, for `handleEditClassProps`' reason: props read for another VOB
+    // would build an op — and an inverse — out of values this VOB never had.
+    if (current === null || vob === null || classProps?.vob !== vob) return;
+    await commitOps([
+      setVobProp(vobModelOf(current).reader, vob, props, null, classProps.props),
+    ]);
+  }, [commitOps, classProps]);
+
+  /**
+   * Move a VOB into another parent — the scene tree's drag and drop.
+   *
+   * One op, alone in its batch, and `commitOps` enforces that rather than
+   * trusting this: a reparent renumbers every path after it, and the other ops
+   * in a batch carry paths resolved before the batch ran. The refresh it needs
+   * afterwards is the ordinary structural one, which `applied` already does for
+   * a placement — the index is re-read whole because the columnar projection
+   * cannot reorder.
+   */
+  const reparent = useCallback(async (vob: number, toParent: number | null, slot: number) => {
+    const { summary: current } = useWorldStore.getState();
+    if (current === null) return;
+    await commitOps([reparentVob(vobModelOf(current).reader, vob, toParent, slot)]);
+  }, [commitOps]);
+
+  /**
+   * Move the whole selection under `toParent` in one batch (#293) — the scene
+   * tree's multi-row drag and the context menu's "Make … children of this one".
+   * `reparentVobs` resolves each op against the world the ones before it leave;
+   * the batch is one undo entry.
+   *
+   * Afterwards the moved VOBs — or, with `selectParent`, the parent they went
+   * under — are selected again **by path** after the re-read, the way a paste
+   * selects its copies: a renumbering batch leaves every flat index naming
+   * something else.
+   */
+  const reparentVobsUnder = useCallback(async (
+    vobs: readonly number[], toParent: number | null, before: number | null, selectParent: boolean,
+  ) => {
+    const { summary: current } = useWorldStore.getState();
+    if (current === null || vobs.length === 0) return;
+    const ops = reparentVobs(vobModelOf(current).reader, vobs, toParent, before);
+    if (ops.length === 0 || !await commitOps(ops)) return;
+
+    const { summary: after } = useWorldStore.getState();
+    if (after === null) return;
+    const refreshed = vobModelOf(after).reader;
+    const landed = landedPaths(ops);
+    const paths = selectParent && toParent !== null
+      ? [landed[0].slice(0, landed[0].lastIndexOf('/'))]
+      : landed;
+    const found = paths.map((path) => vobAtIndexPath(refreshed, path)).filter((vob): vob is number => vob !== null);
+    if (found.length > 0) useWorldStore.getState().selectVobs(found);
+  }, [commitOps]);
+
+  const reparentSelection = useCallback((toParent: number | null, before: number | null) => {
+    void reparentVobsUnder(useWorldStore.getState().selection, toParent, before, false);
+  }, [reparentVobsUnder]);
+
+  /** "Make the other N VOBs children of this one" — offered only when it can
+   *  land: over a VOB inside a multi-selection that no other selected VOB is an
+   *  ancestor of, which would be a VOB put inside itself. */
+  const makeChildren = useMemo(() => {
+    if (contextMenu === null || summary === null || selection.length < 2
+      || !selection.includes(contextMenu.vob)) return undefined;
+    const target = contextMenu.vob;
+    const others = selection.filter((vob) => vob !== target);
+    const { parent } = vobModelOf(summary).reader.columns;
+    for (let up = parent[target]; up >= 0; up = parent[up]) if (others.includes(up)) return undefined;
+    return {
+      count: others.length,
+      onMake: () => { void reparentVobsUnder(others, target, null, true); },
+    };
+  }, [contextMenu, summary, selection, reparentVobsUnder]);
+
+  /**
+   * Place a new VOB at the last point picked on the terrain.
+   *
+   * The terrain point rather than the camera or the origin, because it is the
+   * one position in the surface that a user has actually chosen — a click on the
+   * world mesh already reports it in ZenGin centimetres, which is what an op
+   * carries.
+   *
+   * The box is fitted here, from the visual's own bounds placed at that point,
+   * for the same reason a rotation fits one: the engine culls by it, and the
+   * binding's default is a 10 cm cube that would cull a house. A visual that
+   * does not resolve gets no box and keeps that default, which is the honest
+   * answer — there is nothing to fit.
+   *
+   * `spec.parent` is a flat index or null for a root. Under a parent the op
+   * renumbers, so it goes alone in its batch — `commitOps` in `zen-world`
+   * enforces that rather than this side promising it — and `applied` clears the
+   * selection afterwards.
+   */
+  const placeVobAt = useCallback(async (
+    spec: PlaceSpec, point: [number, number, number], rotation: ZenRotation = IDENTITY,
+  ) => {
+    const { summary: current } = useWorldStore.getState();
+    if (current === null) return;
+
+    // Only a `zCVob` and the MOB family carry a visual from here. An item has
+    // none in the file — the engine derives one from its script instance — and
+    // a light or a sound *is* what it does rather than something drawn, so for
+    // those there is nothing to resolve a box from either, and they keep the
+    // binding's default exactly as a VOB with an unresolvable visual does.
+    const item = spec.vobClass === 'oCItem';
+    // A MOB's visual is what ZenGin reads its scheme off (#290).
+    const visual = carriesVisual(spec.vobClass) ? spec.visual.trim() : '';
+    const bounds = visual === '' ? null : await window.editorAPI.getVisualBounds(visual)
+      .catch(() => null);
+
+    const placed: NewVob = {
+      position: point,
+      ...(rotation === IDENTITY ? {} : { rotation }),
+      ...(spec.vobClass === 'zCVob' ? {} : { class: spec.vobClass }),
+      ...(item ? { instance: spec.instance.trim() } : {}),
+      ...(spec.name.trim() === '' ? {} : { name: spec.name.trim() }),
+      ...(visual === '' ? {} : { visual }),
+      // Collision on, except for soft vegetation, unless the project's
+      // category says otherwise (#291) — named on the op rather than left to
+      // the binding, which defaults every VOB to on.
+      ...(visual === '' ? {} : placementCollision(visual, assetCatalogProps?.catalog)),
+      ...(bounds === null ? {} : {
+        bbox: placeBounds(bounds as ZenBounds, rotation, point),
+      }),
+    };
+
+    const add = addVob(vobModelOf(current).reader, placed, spec.parent);
+    // Retail's name for a chest or a door, in the same batch — the engine's
+    // crosshair finds a MOB through it, and an empty one is a chest nobody can
+    // open. Read off the class, so a container chosen in the dialog gets it as
+    // an armed one does. `from` is `to`, as a copy's is: the add's own inverse
+    // removes the VOB, so there is no earlier value to write back.
+    const focusName = placementFocusName(spec.vobClass);
+    const named: WorldOp[] = focusName === undefined ? [] : [{
+      op: 'SetVobClassProp',
+      vob: add.vob,
+      path: add.path,
+      className: spec.vobClass,
+      from: { focusName },
+      to: { focusName },
+    }];
+    if (await commitOps([add, ...named])) lastPlaced.current = add.path;
+  }, [commitOps, assetCatalogProps]);
+
+  /**
+   * The class fields of every VOB a copy of `vobs` would bring, keyed by flat
+   * index — what a duplicate and a copy hand to `zen-world` (§14.1 1.2).
+   *
+   * **The one thing about a copy that cannot be read synchronously.** Every
+   * other field of a `NewVob` is a column of the index the renderer already
+   * holds; a `zCVobLight`'s range and colour are in no column at all, so they
+   * come back over the same `getVobProps` the property grid reads one VOB with
+   * — one round trip per VOB, issued together.
+   *
+   * Asked only for the VOBs whose class has catalogued fields, which is the
+   * difference between two reads and forty: most of a retail selection is
+   * `zCVob`s and `oCMobInter`-shaped classes the catalogue is silent about, and
+   * a read for one of those would answer base fields a copy does not carry.
+   *
+   * A read that fails is left out rather than failing the copy — the world was
+   * closed under it, or the path no longer resolves — for the reason a
+   * non-authorable class is dropped rather than named: a copy missing one field
+   * beats no copy.
+   */
+  const readClassProps = useCallback(async (
+    reader: VobReader, vobs: readonly number[],
+  ): Promise<(vob: number) => ReadProps | null> => {
+    const wanted: number[] = [];
+    const walk = (vob: number): void => {
+      // The whole subtree, because a duplicate copies one (D5) and each
+      // descendant keeps its own fields.
+      const className = reader.className(vob);
+      if (className !== null && classPropKeys(className).length > 0) wanted.push(vob);
+      for (let child = 0; child < reader.count; child++) {
+        if (reader.columns.parent[child] === vob) walk(child);
+      }
+    };
+    topLevelVobs(reader, vobs).forEach(walk);
+
+    const read = new Map<number, ReadProps>();
+    await Promise.all(wanted.map(async (vob) => {
+      const path = vobIndexPath(reader, vob);
+      if (path === null) return;
+      const props = await window.editorAPI.getVobProps(path).catch(() => null);
+      if (props !== null) read.set(vob, props as ReadProps);
+    }));
+
+    return (vob: number) => read.get(vob) ?? null;
+  }, []);
+
+  /**
+   * Duplicate the selection in place — **one batch, therefore one undo**
+   * (level-editor.md §16.14, D1 and D4).
+   *
+   * **In place, and appended beside the original**, which is Spacer's own
+   * behaviour: the copy takes the same position, so an offset would be a
+   * preference nobody asked for and a copy nobody could find is worse than one
+   * sitting exactly where its original is. Each copy goes into its own
+   * original's parent, so a duplicated child stays a child — **and brings its
+   * own children with it** (D5), which is why a selection holding a VOB and its
+   * parent copies that VOB once rather than twice.
+   *
+   * It is ordinary `AddVob`s and nothing more — no new op, no validator branch
+   * — because that op already carries a whole description of a VOB and already
+   * inverts to a delete. Several of them may share a batch because an append
+   * moves no index path, which is the exception `commitOps` makes and the whole
+   * of what D4 needed; `duplicateVobs` makes the one correction that costs, the
+   * slot two copies of the same parent would otherwise share.
+   *
+   * **The class comes across** since D2 (level-editor.md §16.14), for the
+   * classes `insertVob` can construct: a duplicated `zCVobLight` is a light.
+   * What a copy still does not carry is `physicsEnabled`, which `NewVob` has no
+   * room for; the class *properties*, which are follow-up `SetVobClassProp`s;
+   * and the class itself for an `oCItem` — the instance it spawns is behind
+   * `getVobProps`, and the spec is read synchronously off the index. A class
+   * outside that set is dropped rather than named, because naming it would have
+   * the IPC validator refuse the op and a lossy copy beats no copy.
+   *
+   * Each box is fitted from that VOB's own visual bounds, exactly as a rotation
+   * refits one and for the same reason: the index has no bbox column to copy,
+   * and the binding's default is a 10 cm cube.
+   */
+  const duplicateSelection = useCallback(async () => {
+    const { summary: current, selection: selected } = useWorldStore.getState();
+    if (current === null || selected.length === 0) return;
+
+    const { reader } = vobModelOf(current);
+    const classProps = await readClassProps(reader, selected);
+    const ops = duplicateVobs(reader, selected, boundsOf, classProps);
+    if (!await commitOps(ops)) return;
+
+    // The copies, selected — by path and only after the re-read, as a paste
+    // does: an append moves every flat index after it. The roots are the adds
+    // into the lists the originals lived in; a descendant's parent is a new path.
+    const lists = new Set(topLevelVobs(reader, selected).map((vob) => {
+      const parent = reader.columns.parent[vob];
+      return parent < 0 ? null : vobIndexPath(reader, parent);
+    }));
+    const { summary: after } = useWorldStore.getState();
+    if (after === null) return;
+    const refreshed = vobModelOf(after).reader;
+    const copies = ops
+      .flatMap((op) => (op.op === 'AddVob' && lists.has(op.parentPath) ? [op.path] : []))
+      .map((path) => vobAtIndexPath(refreshed, path))
+      .filter((vob): vob is number => vob !== null);
+    if (copies.length > 0) useWorldStore.getState().selectVobs(copies);
+  }, [commitOps, boundsOf, readClassProps]);
+
+  const {
+    scatterOn, toggleScatter, scatterRadius, setScatterRadius,
+    scatterGroundPlacement, setScatterGroundPlacement,
+    scatterSpacing, setScatterSpacing, scatterBrushRadius, handleScatterStroke,
+  } = useScatterBrush({
+    commitOps, boundsOf, readClassProps, viewport: viewportRef,
+  });
+
+  clipboardInput.current = {
+    commitOps, boundsOf, readClassProps,
+    pastePoint: () => viewportRef.current?.pointAhead(PASTE_REACH) ?? null,
+  };
+
+  const {
+    moveWaypointTo,
+    renameWaypointTo,
+    addWaypointAt,
+    joinWaypointTo,
+    unjoinWaypointFrom,
+    removeWaypoint,
+    waypointEdges,
+    waypointSpawns,
+    resolveWaypointToJoin,
+    suggestedWaypointName,
+    knownWaypointNames,
+  } = useWaynetEditing({
+    waynet, selectedWaypoint, spawnSiteIndex, waypointSiteIndex, commitOps,
+  });
+
+  const {
+    draft: insertingNpc,
+    openAtWaypoint: openInsertNpcAtWaypoint,
+    openForNewWaypoint: openInsertNpcForNewWaypoint,
+    editDraft: editInsertNpcDraft,
+    closeDraft: closeInsertNpcDraft,
+    insertNpcAt,
+    startupFunctionName,
+    targetExists: insertTargetExists,
+    unknownInstance: unknownInsertInstance,
+    duplicateSpawn: duplicateInsertSpawn,
+  } = useInsertNpc({ waynet, commitOps });
+
+  /**
+   * The overlay, switched on for an action whose result is a waypoint: only
+   * the overlay draws one, so a waypoint authored with it off would land
+   * invisible and unpickable. Add waypoint and Insert NPC used to hide until
+   * somebody turned it on by hand — a precondition nothing on screen stated.
+   */
+  const ensureWaynetShown = useCallback(() => {
+    if (!showWaynet) setShowWaynet(true);
+    if (waynet === null) void readWaynetInto(setWaynet);
+  }, [showWaynet, waynet, readWaynetInto]);
+
+  /** Routine mode reads the waynet but draws it only for a pick, then puts
+   *  it back: the whole waynet reads as every routine's stops. */
+  const loadWaynet = useCallback(() => {
+    if (waynet === null) void readWaynetInto(setWaynet);
+  }, [waynet, readWaynetInto]);
+  const showWaynetForPick = useCallback(() => {
+    const wasShown = showWaynet;
+    ensureWaynetShown();
+    return () => { if (!wasShown) setShowWaynet(false); };
+  }, [showWaynet, ensureWaynetShown]);
+  const routineMode = useRoutineMode({ waynet, loadWaynet, showWaynetForPick });
+
+  /**
+   * Routine mode asked for from the NPC editor (npc-editor.md §6), which is
+   * never a dead end for want of a world (maintainer, 2026-09-29): the world the
+   * NPC's STARTUP_ spawn names is opened — after asking, when the open one has
+   * unsaved edits — and failing that the picker is offered. The editor opens
+   * over whichever world that lands on, with the spawns shown (maintainer,
+   * 2026-09-30) and the camera on the routine's first stop — framed only: a
+   * jump would select the waypoint and switch the whole waynet on. A spawn
+   * layer switched on here is switched off again when routine mode ends.
+   */
+  const { open: openRoutineMode } = routineMode;
+  const spawnsOnForRoutine = useRef(false);
+  const startRoutine = useCallback((request: RoutineRequest) => {
+    openRoutineMode(request.npc, request.routine);
+    if (!showSpawns) {
+      spawnsOnForRoutine.current = true;
+      void toggleSpawns();
+    }
+    const routine = request.routine ?? routineNpcIndex[request.npc.toUpperCase()];
+    const first = routine === undefined ? undefined : routinePreview(routineSiteIndex, routine)[0];
+    const wanted = first?.waypoint.toUpperCase();
+    const at = wanted === undefined || waynet === null
+      ? -1
+      : waynet.names.findIndex((name) => name.toUpperCase() === wanted);
+    if (waynet !== null && at >= 0) {
+      const positions = new Float32Array(waynet.positions);
+      viewportRef.current?.framePoint([positions[at * 3], positions[at * 3 + 1], positions[at * 3 + 2]]);
+    }
+  }, [openRoutineMode, showSpawns, toggleSpawns, routineNpcIndex, routineSiteIndex, waynet]);
+
+  useEffect(() => {
+    if (routineMode.mode !== null || !spawnsOnForRoutine.current) return;
+    spawnsOnForRoutine.current = false;
+    if (showSpawns) void toggleSpawns();
+  }, [routineMode.mode, showSpawns, toggleSpawns]);
+  /** In routine mode the spawn layer is the routine's NPC alone: everyone's
+   *  spawn reads as clutter around the stops (maintainer, 2026-09-30). */
+  const routineNpc = routineMode.mode?.npc.toUpperCase() ?? null;
+  const shownSpawns = useMemo(() => (routineNpc === null
+    ? spawnSiteIndex
+    : spawnSiteIndex.filter((site) => site.instance.toUpperCase() === routineNpc)),
+  [spawnSiteIndex, routineNpc]);
+
+  const openRoutineWorld = useCallback(async (request: RoutineRequest) => {
+    let found: DiscoveredWorld | null = null;
+    if (request.inWorld !== undefined) {
+      try {
+        found = await discoveredWorldNamed(request.inWorld);
+      } catch {
+        // The picker below lists the worlds too, and says why it cannot.
+      }
+    }
+    if (found === null) {
+      routineAwaitingPick.current = request;
+      void openPicker();
+      return;
+    }
+    if (await openWorldAt(found.path) && useWorldStore.getState().status === 'ready') setRoutineAfterOpen(request);
+  }, [openPicker, openWorldAt]);
+
+  const routineRequest = useWorldStore((s) => s.routineRequest);
+  useEffect(() => {
+    if (routineRequest === null) return;
+    useWorldStore.getState().routineRequestHandled();
+    if (routineRequest.inWorld === undefined && useWorldStore.getState().status === 'ready') {
+      startRoutine(routineRequest);
+    } else void openRoutineWorld(routineRequest);
+  }, [routineRequest, startRoutine, openRoutineWorld]);
+
+  useEffect(() => {
+    if (routineAfterOpen === null) return;
+    setRoutineAfterOpen(null);
+    startRoutine(routineAfterOpen);
+  }, [routineAfterOpen, startRoutine]);
+
+  /**
+   * Outside routine mode a routine is drawn only while its NPC's spawn
+   * waypoint is selected (maintainer, 2026-09-30): the daily routine of the first
+   * NPC spawned there that has one, or of the one chosen in the waypoint
+   * panel when several share the spawn.
+   */
+  const spawnRoutineNpcs = useMemo(() => [...new Set(waypointSpawns.map((site) => site.instance.toUpperCase()))]
+    .filter((npc) => routineNpcIndex[npc] !== undefined), [waypointSpawns, routineNpcIndex]);
+  const [chosenSpawnNpc, setChosenSpawnNpc] = useState<string | null>(null);
+  useEffect(() => { setChosenSpawnNpc(null); }, [selectedWaypoint]);
+  const shownSpawnNpc = chosenSpawnNpc !== null && spawnRoutineNpcs.includes(chosenSpawnNpc)
+    ? chosenSpawnNpc
+    : spawnRoutineNpcs[0] ?? null;
+  const spawnRoutineDraft = useMemo(() => (shownSpawnNpc === null
+    ? null
+    : { entries: routinePreview(routineSiteIndex, routineNpcIndex[shownSpawnNpc]), selected: null }),
+  [shownSpawnNpc, routineSiteIndex, routineNpcIndex]);
+  /** A waypoint click: routine mode's pending pick takes it first. */
+  const { takeWaypointPick } = routineMode;
+  const handleSelectWaypoint = useCallback((waypoint: number | null) => {
+    if (waypoint !== null && takeWaypointPick(waypoint)) return;
+    selectWaypoint(waypoint);
+  }, [takeWaypointPick, selectWaypoint]);
+
+  const handlePick = useCallback((
+    vob: number | null, point: [number, number, number] | null, additive: boolean,
+  ) => {
+    // An additive click that misses must not empty a selection someone is
+    // building.
+    if (vob !== null) handleSelect(vob, additive);
+    else if (!additive) selectVob(null);
+    setTerrainPoint(point);
+    // An armed add is spent by the ground click it was waiting for — and while
+    // one is armed, `PickController` reports nothing but ground clicks. A
+    // placement is not spent at all (#364); it waits for the next click.
+    if (point !== null && armed !== null) {
+      if (armed.kind === 'place') {
+        void placeVobAt(armed.spec, point, randomYaw ? rotationAboutUp(Math.random() * Math.PI * 2) : IDENTITY);
+        return;
+      }
+      setArmed(null);
+      if (armed.kind === 'insert-npc') void insertNpcAt(armed.instance, armed.waypoint, false, point);
+      else addWaypointAt(armed.name, point);
+    }
+  }, [handleSelect, selectVob, armed, randomYaw, placeVobAt, insertNpcAt, addWaypointAt]);
+
+  /**
+   * Whether the name in the add-waypoint dialog is one the open world already
+   * carries — the refusal the binding makes, made on this side too. Derived
+   * once so the disabled Add button and the field's own explanation read the
+   * same boolean and cannot drift apart.
+   */
+  const duplicateWaypointName = addingWaypoint !== null
+    && (waynet?.names.includes(addingWaypoint.trim()) ?? false);
+
+  /**
+   * Remove a VOB and its whole subtree.
+   *
+   * The op carries an address and nothing else, because what it would need to
+   * carry to be invertible is what no op can describe: an `oCMobInter`'s
+   * per-class properties, its children, its AI, its event manager. §15 shipped
+   * it unundoable on that basis; §7 found the way round — the binding keeps
+   * the subtree's pointer, so the inverse needs no description either. So this
+   * undoes like everything else here, and the confirm below stays for a smaller
+   * reason than the one it was put there for — so it opens only when that
+   * reason holds (see `requestDeleteVobs`).
+   *
+   * The whole selection, in one batch (#253). It was one VOB at a time because
+   * a delete renumbers; `deleteVobs` answers that with the *order* rather than
+   * with a refusal — back to front, so each removal leaves the paths still to
+   * be used exactly where they were resolved. One batch is one round trip and
+   * one undo entry, whose inverse is the restores in ascending order.
+   */
+  const removeVobs = useCallback(async (vobs: readonly number[]) => {
+    const { summary: current } = useWorldStore.getState();
+    if (current === null || vobs.length === 0) return;
+    await commitOps(deleteVobs(vobModelOf(current).reader, vobs));
+  }, [commitOps]);
+
+  /** Every way to ask for a VOB delete — the Delete key, the World bar's
+   *  button, the context menu — comes through here. The confirm is only there
+   *  to say that children go too (see the dialog), so a selection with none
+   *  is removed straight away, Ctrl+Z being the way back (#374). */
+  const requestDeleteVobs = useCallback((vobs: readonly number[]) => {
+    const { summary: current } = useWorldStore.getState();
+    if (current === null) return;
+    const { tree } = vobModelOf(current);
+    if (vobs.some((vob) => tree.children(vob).length > 0)) setDeleting(vobs);
+    else void removeVobs(vobs);
+  }, [removeVobs]);
+
+  /** Any of the surface's own modal surfaces is up — what
+   *  `useWorldShortcuts` takes as `dialogOpen`, and why it takes it. */
+  const surfaceDialogOpen = deleting !== null || deletingWaypoint !== null
+    || placing !== null || confirmingSave || addingWaypoint !== null || contextMenu !== null
+    || (routineMode.mode !== null && !routineMode.picking) || discardPrompt !== null
+    || insertingNpc !== null || pickerOpen || quickTestBlocked || quickTestRefusal !== null;
+
+  /**
+   * Putting a placement down — right-click, Escape or the status bar — selects
+   * the last VOB it placed, so one placed alone can be positioned straight
+   * away (#388). By path, because `applied` cleared the selection and the
+   * index has been re-read since; a path an undo took away resolves to nothing.
+   */
+  const disarm = useCallback(() => {
+    setArmed(null);
+    const path = lastPlaced.current;
+    lastPlaced.current = null;
+    const { summary: current } = useWorldStore.getState();
+    if (path === null || current === null) return;
+    const vob = vobAtIndexPath(vobModelOf(current).reader, path);
+    if (vob !== null) useWorldStore.getState().selectVob(vob);
+  }, []);
+
+  useWorldShortcuts({
+    hasWorld: summary !== null,
+    hidden,
+    dialogOpen: surfaceDialogOpen,
+    waynet,
+    armed: armed !== null,
+    gizmoMode,
+    snapGrid,
+    snapAngleDegrees,
+    setGizmoMode,
+    onCopy: () => void copySelection(),
+    onPaste: () => void pasteClipboard(),
+    onDuplicate: () => void duplicateSelection(),
+    onRestOnGround: () => handleDropToGround('rest'),
+    onIntoGround: () => handleDropToGround('into'),
+    onRequestDeleteVobs: requestDeleteVobs,
+    onRequestDeleteWaypoint: (waypoint, name) => setDeletingWaypoint({ waypoint, name }),
+    onDisarm: disarm,
+    onRequestSave: () => setConfirmingSave(true),
+    onRequestSaveAs: () => void saveWorldAs(),
+    onNudgeBegin: handleNudgeBegin,
+    onNudgeBy: handleNudgeBy,
+    onNudgeEnd: handleNudgeEnd,
+    onTurnBegin: handleTurnBegin,
+    onTurnBy: handleTurnBy,
+    onTurnEnd: handleTurnEnd,
+    onHistory: (direction) => void runHistory(direction),
+  });
+
+  // The World bar's own combined-state rules (WorldToolbar §5): each collapses
+  // a pair of related setters, or an event's shape, into the one callback the
+  // bar is handed — the bar's children only ever call up, never read a second
+  // piece of state to decide what to write.
+  /** The Time toggle: switching the slider off clears the state lens with
+   *  it, since a state without a minute answers nothing the static layer
+   *  does not. */
+  const toggleSpawnTime = useCallback(() => {
+    const next = spawnTime === null ? DEFAULT_SPAWN_TIME : null;
+    setSpawnTime(next);
+    if (next === null) setSpawnState(null);
+  }, [spawnTime]);
+  /** The Names toggle. */
+  const toggleWaypointNames = useCallback(() => setShowWaypointNames((v) => !v), []);
+  const toggleSelectionStyle = useCallback(
+    () => setSelectionStyle((style) => (style === 'box' ? 'outline' : 'box')),
+    [],
+  );
+  const cycleOutlineMode = useCallback(() => setOutlineMode((mode) => (
+    OUTLINE_MODE_ORDER[(OUTLINE_MODE_ORDER.indexOf(mode) + 1) % OUTLINE_MODE_ORDER.length]
+  )), []);
+  /** The Snap step: which of the two step values it writes follows the
+   *  gizmo mode, the way reading it already does. */
+  const handleSnapStepChange = useCallback((step: number) => {
+    if (gizmoMode === 'rotate') setSnapAngleDegrees(step);
+    else setSnapGrid(step);
+  }, [gizmoMode]);
+  /** The Delete button — the same request the Delete key makes. */
+  const requestDeleteSelection = useCallback(
+    () => requestDeleteVobs(selection),
+    [requestDeleteVobs, selection],
+  );
+
+  /** Stable callbacks, so the memoised toolbar skips a commit that changed
+   *  none of its values (#359). */
+  const toolbarProps = useStableCallbacks({
+    onOpenWorld: () => void openPicker(),
+    status,
+    hasWorld: summary !== null,
+    onSave: () => setConfirmingSave(true),
+    onSaveAs: () => void saveWorldAs(),
+    unsavedEdits,
+    gmbtConfigured,
+    onQuickTest: () => void startQuickTest(),
+    onPlaceVob: () => openPlaceDialog(FRESH_PLACE),
+    onInsertNpc: () => {
+      ensureWaynetShown();
+      if (selectedWaypoint !== null && waynet !== null) {
+        openInsertNpcAtWaypoint(waynet.names[selectedWaypoint]);
+      } else openInsertNpcForNewWaypoint(suggestedWaypointName());
+    },
+    onAddWaypoint: () => {
+      ensureWaynetShown();
+      setAddingWaypoint(pendingWaypointName ?? suggestedWaypointName());
+      setPendingWaypointName(null);
+    },
+    showWaynet,
+    onToggleWaynet: () => void toggleWaynet(),
+    showSpawns,
+    onToggleSpawns: () => void toggleSpawns(),
+    spawnTime,
+    onToggleTime: toggleSpawnTime,
+    onSpawnTimeChange: setSpawnTime,
+    spawnState,
+    onSpawnStateChange: setSpawnState,
+    stateOptions: stateOptionList,
+    spawnStateReach,
+    showWaypointNames,
+    onToggleWaypointNames: toggleWaypointNames,
+    outlineMode,
+    onCycleOutlineMode: cycleOutlineMode,
+    selectionStyle,
+    onToggleSelectionStyle: toggleSelectionStyle,
+    exposure,
+    onExposureChange: setExposure,
+    lightPreview,
+    onToggleLightPreview: () => setLightPreview((on) => !on),
+    hiddenClasses,
+    onHiddenClassesChange: setHiddenClasses,
+    classOptions,
+    gizmoMode,
+    onGizmoModeChange: setGizmoMode,
+    snapGrid,
+    snapAngleDegrees,
+    onSnapStepChange: handleSnapStepChange,
+    selectionCount: selection.length,
+    onRestOnGround: () => handleDropToGround('rest'),
+    onIntoGround: () => handleDropToGround('into'),
+    onAlignToNormal: handleAlignToNormal,
+    onDuplicate: () => void duplicateSelection(),
+    onDeleteRequest: requestDeleteSelection,
+    historyDepth,
+    onUndo: () => void runHistory('undo'),
+    onRedo: () => void runHistory('redo'),
+    scatterOn,
+    scatterGroundPlacement,
+    onScatterGroundPlacementChange: setScatterGroundPlacement,
+    onScatterToggle: toggleScatter,
+    scatterRadius,
+    scatterSpacing,
+    onScatterRadiusChange: setScatterRadius,
+    onScatterSpacingChange: setScatterSpacing,
+  });
+
+  return (
+    <LiveTileContext.Provider value={liveTile}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <WorldToolbar {...toolbarProps} />
+
+      {status === 'error' && (
+        <Alert severity="error" square data-testid="world-error">{error}</Alert>
+      )}
+
+      {/* A refused edit — or one the view could not follow, or a waynet read
+          that failed over an open world. Deliberately not `status: 'error'`:
+          that replaces the whole surface, and the world is still open.
+
+          All three close. Each used to stand until something else replaced it —
+          the saved banner until the *next* save began, so it went on claiming a
+          world was saved across every edit after it, beside a Save button that
+          by then said "edited". A banner the user cannot dismiss is one they
+          learn to read past. */}
+      {editError !== null && (
+        <Alert
+          severity="warning"
+          square
+          onClose={() => useWorldStore.getState().editFailed(null)}
+          data-testid="world-edit-error"
+        >
+          {editError}
+        </Alert>
+      )}
+
+      {/* Its own banner, not the edit error's (#371): an edit clears that one,
+          and every add or delete re-reports this, so sharing it unmounted and
+          remounted a banner above the viewport — resizing, and so clearing,
+          the canvas twice per edit. */}
+      {textureWarning !== null && (
+        <Alert
+          severity="warning"
+          square
+          onClose={() => useWorldStore.getState().dismissTextureWarning()}
+          data-testid="world-texture-warning"
+        >
+          {textureWarning}
+        </Alert>
+      )}
+
+      {saveError !== null && (
+        <Alert
+          severity="warning"
+          square
+          onClose={() => setSaveError(null)}
+          data-testid="world-save-error"
+        >
+          {saveError}
+        </Alert>
+      )}
+      {savedTo !== null && (
+        <Alert
+          severity="success"
+          square
+          onClose={() => setSavedTo(null)}
+          data-testid="world-saved"
+        >
+          Saved to {savedTo}
+        </Alert>
+      )}
+
+      {/* The camera slots' one word (09-04 review §5.1 item 6). A Snackbar
+          rather than a fourth Alert in the stack above: the three up there are
+          about the world and push the viewport down, and a notice that a
+          keystroke worked must not reflow the view it is about. `key` is the
+          nonce, so a repeated outcome restarts the timer instead of sitting
+          out the first one's. */}
+      {cameraSlotNotice !== null && (
+        <Snackbar
+          key={cameraSlotNotice.nonce}
+          open
+          autoHideDuration={3000}
+          onClose={() => setCameraSlotNotice(null)}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+          transitionDuration={0}
+          message={cameraSlotNotice.text}
+          data-testid="world-camera-slot"
+        />
+      )}
+
+      {/* The warnings belong before the write, not after it: they are about
+          whether to save at all. Both are the brief's (§7) and both are facts
+          about ZenGin rather than about this editor. */}
+      {/* Unmounted rather than kept closed: MUI's Modal restores the rest of
+          the app from `aria-hidden` when it unmounts, and a picker fading out
+          over a world that has just opened leaves the toolbar unreachable. */}
+      {pickerOpen && (
+        <WorldPickerDialog
+          open
+          worlds={discoveredWorlds}
+          loading={pickerLoading}
+          error={pickerError}
+          onPick={pickWorld}
+          onBrowse={() => void browseForWorld()}
+          onClose={closePicker}
+        />
+      )}
+      <Dialog open={confirmingSave} onClose={() => setConfirmingSave(false)}>
+        <DialogTitle>Save this world?</DialogTitle>
+        <DialogContent>
+          <DialogContentText component="div" variant="body2">
+            <p>
+              <strong>The lighting will be stale.</strong> ZenGin bakes vertex lighting and
+              lightmaps when a world is compiled. Moving or turning a VOB does not re-bake
+              anything, so its lighting stays as it was where the VOB used to be. Only Spacer&apos;s
+              <code> compile light </code>
+              can fix that, and re-running it rebuilds the world from its part files.
+            </p>
+            <p>
+              <strong>Existing savegames will not match.</strong> A savegame stores its own copy of
+              the VOB tree, so a game saved before this edit keeps the old world — and loading one
+              against an edited world is where ZenGin is least forgiving.
+            </p>
+            <p>
+              This will overwrite the currently opened file:
+              <br />
+              <code>{summary?.worldPath}</code>
+            </p>
+            <p>
+              BinSafe and ASCII worlds can be written. BINARY worlds remain unsupported.
+            </p>
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmingSave(false)} data-testid="world-save-cancel">Cancel</Button>
+          <Button onClick={saveWorld} variant="contained" data-testid="world-save-confirm">
+            Overwrite opened file
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* A dirty world blocks the quick test rather than silently overwriting
+          its file. The user can enter the same explicit save confirmation. */}
+      <Dialog open={quickTestBlocked} onClose={() => setQuickTestBlocked(false)}>
+        <DialogTitle>Save this world first</DialogTitle>
+        <DialogContent>
+          <DialogContentText variant="body2">
+            A quick test plays the world file on disk, and this world has edits that are not in
+            it yet. Save over the file it was opened from, then start the test again.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setQuickTestBlocked(false)} data-testid="world-gmbt-blocked-cancel">
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            data-testid="world-gmbt-blocked-save"
+            onClick={() => { setQuickTestBlocked(false); setConfirmingSave(true); }}
+          >
+            Save world…
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* `gmbt test` is a basename plus a working directory, so it always plays
+          the GMBT project's own copy. Main refuses a world from anywhere else
+          and names both paths; they are the whole point of the dialog, so they
+          keep their own lines. */}
+      <Dialog open={quickTestRefusal !== null} onClose={() => setQuickTestRefusal(null)}>
+        <DialogTitle>{quickTestRefusal?.heading}</DialogTitle>
+        <DialogContent>
+          <DialogContentText variant="body2" sx={{ whiteSpace: 'pre-line' }} data-testid="world-gmbt-refused">
+            {quickTestRefusal?.message}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button variant="contained" onClick={() => setQuickTestRefusal(null)} data-testid="world-gmbt-refused-close">
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <WorldVobContextMenu
+        open={contextMenu !== null}
+        position={contextMenu?.position ?? null}
+        onClose={() => setContextMenu(null)}
+        selectionCount={selection.length}
+        canPaste={hasClipboard()}
+        onFrame={() => { if (contextMenu !== null) focusVob(contextMenu.vob); }}
+        onDuplicate={() => void duplicateSelection()}
+        onCopy={() => void copySelection()}
+        onPaste={() => void pasteClipboard()}
+        onDeleteRequest={requestDeleteSelection}
+        onRestOnGround={() => handleDropToGround('rest')}
+        onIntoGround={() => handleDropToGround('into')}
+        onAlignToNormal={handleAlignToNormal}
+        onHideClass={hideVobClass}
+        makeChildren={makeChildren}
+        folders={vobFolders.folders}
+        onAddSelectionToFolder={addSelectionToFolder}
+        onCreateFolderWithSelection={createFolderWithSelection}
+      />
+
+      {routineMode.mode !== null && (
+        <RoutineEditorDialog
+          key={`${routineMode.mode.npc}:${routineMode.mode.routine ?? ''}`}
+          npc={routineMode.mode.npc}
+          initialRoutine={routineMode.mode.routine}
+          waypoints={routineMode.waypoints ?? []}
+          onPickWaypoint={routineMode.onPickWaypoint}
+          onDraftChange={routineMode.onDraftChange}
+          onClose={routineMode.close}
+          hidden={routineMode.picking}
+        />
+      )}
+
+      <Dialog
+        open={discardPrompt !== null}
+        onClose={() => answerDiscard(false)}
+        aria-labelledby="world-discard-title"
+      >
+        <DialogTitle id="world-discard-title">Discard unsaved world edits?</DialogTitle>
+        <DialogContent>
+          <DialogContentText variant="body2">
+            {`${summary ? baseName(summary.worldPath) : 'The open world'} has unsaved edits, `}
+            {`and opening ${discardPrompt?.target} discards them.`}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => answerDiscard(false)}>Cancel</Button>
+          <Button color="error" onClick={() => answerDiscard(true)}>
+            {`Discard and open ${discardPrompt?.target}`}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* §15 put this here in place of an inverse, to say that the delete took
+          the undo stack with it. The delete has an inverse now (§7) and the
+          earlier edits survive it, so that sentence is gone rather than
+          softened — a dialog asserting something false is worse than none. The
+          dialog stays for what is left, which is the waypoint dialog's reason
+          (§7): the part a user cannot see coming from the selection on
+          screen is that everything *below* it goes too. So it opens only for
+          a selection that has something below it (#374). */}
+      <Dialog open={deleting !== null} onClose={() => setDeleting(null)} maxWidth="xs" fullWidth>
+        {/* Named when it is one and counted when it is several: five labels
+            in a title is not a title, and "Delete VOB?" over a selection of
+            five is the surprise the dialog exists to prevent (#253). */}
+        <DialogTitle data-testid="world-delete-title">
+          {deleting !== null && deleting.length > 1
+            ? `Delete ${deleting.length} VOBs?`
+            : `Delete ${labelOf(deleting?.[0] ?? null)}?`}
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText component="div" variant="body2" data-testid="world-delete-warning">
+            <p>
+              {deleting !== null && deleting.length > 1
+                ? 'Each VOB and everything below it in the scene tree is removed.'
+                : 'The VOB and everything below it in the scene tree is removed.'}
+              {' '}<strong>Ctrl+Z puts it back</strong>, subtree and all.
+            </p>
+            <p>
+              The world in the editor changes; the file on disk does not until it is saved.
+            </p>
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleting(null)} data-testid="world-delete-cancel">Cancel</Button>
+          <Button
+            color="error"
+            variant="contained"
+            data-testid="world-delete-confirm"
+            onClick={() => {
+              const vobs = deleting;
+              setDeleting(null);
+              if (vobs !== null) void removeVobs(vobs);
+            }}
+          >
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* The waynet's own delete warning (§16.7, W4). Separate from the VOB one
+          rather than folded into it: they warn about different losses — this
+          one takes the waypoint's *edges* with it, which is the part a user
+          cannot see coming from the point on screen, and there is no subtree to
+          speak of. **It no longer warns about the history**, because the delete
+          is undoable (§7) and the VOB one is not; what is left is a plain
+          destructive-action confirm, which §15 says is the dialog's other half
+          and is why it stays at all. */}
+      <Dialog
+        open={deletingWaypoint !== null}
+        onClose={() => setDeletingWaypoint(null)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Delete {deletingWaypoint?.name ?? 'waypoint'}?</DialogTitle>
+        <DialogContent>
+          <DialogContentText
+            component="div"
+            variant="body2"
+            data-testid="world-waypoint-delete-warning"
+          >
+            <p>
+              <strong>Every edge into this waypoint is removed with it.</strong> Ctrl+Z puts
+              the waypoint back where it was, with its edges — the earlier edits are kept.
+            </p>
+            <p>
+              A routine or a script that names the waypoint is not changed and is not warned
+              about. The world in the editor changes; the file on disk does not until it is saved.
+            </p>
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setDeletingWaypoint(null)}
+            data-testid="world-waypoint-delete-cancel"
+          >
+            Cancel
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
+            data-testid="world-waypoint-delete-confirm"
+            onClick={() => {
+              const target = deletingWaypoint;
+              setDeletingWaypoint(null);
+              if (target !== null) removeWaypoint(target.waypoint);
+            }}
+          >
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {status === 'idle' && (
+        <Box sx={{ p: 3 }}>
+          <Typography variant="body2" color="text.secondary">
+            Open a ZenGin <code>.zen</code> world to view and edit it: move,
+            turn, place, duplicate and delete VOBs, edit the waynet, and start a
+            GMBT test run over what you have. Configure at least one available
+            asset source in the active project first.
+          </Typography>
+          <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 1.5 }}>
+            {/* The shortcuts were once listed here by hand, and the list
+                drifted (it never learned Ctrl+D). The sheet is generated from
+                one table that `keyboardShortcuts.test.ts` checks against the
+                dispatch. */}
+            Press <b>F1</b> for every keyboard shortcut: walk, fly, camera slots, nudge and the rest.
+          </Typography>
+        </Box>
+      )}
+
+      {/* Scene tree | viewport | properties. The two panels appear only once a
+          world is open: without a `VobIndex` there is no hierarchy to show, and
+          an empty tree beside an empty viewport says nothing. */}
+      <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
+        {summary && leftPanelCollapsed && (
+          <Box sx={{
+            width: COLLAPSED_PANEL_WIDTH, flexShrink: 0, borderRight: 1, borderColor: 'divider',
+            minHeight: 0, display: 'flex', justifyContent: 'center', pt: 0.5,
+          }}>
+            <Tooltip title="Show scene panel">
+              <IconButton
+                size="small"
+                onClick={() => setLeftPanelCollapsed(false)}
+                data-testid="world-panel-expand-left"
+                aria-label="Show scene panel"
+              >
+                <ChevronRightIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Box>
+        )}
+        {/* Hidden, never unmounted — the same rule the Scene/Assets tab
+            switch below already follows, and for the same reason: the tree
+            owns its expansion set, its filter text and its scroll offset,
+            and a collapse that threw all three away would make the button
+            cost far more than the space it buys. */}
+        {summary && (
+          <>
+            <Box data-testid="world-panel-left" sx={{
+              width: panelWidths.left, flexShrink: 0, minHeight: 0,
+              display: leftPanelCollapsed ? 'none' : 'flex', flexDirection: 'column',
+            }}>
+              <Stack direction="row" alignItems="center">
+                <Tabs
+                  value={panel}
+                  onChange={(_event, next: 'scene' | 'assets' | 'folders') => setPanel(next)}
+                  variant="fullWidth"
+                  sx={{ flex: 1, minHeight: 32, '& .MuiTab-root': { minHeight: 32, fontSize: 12 } }}
+                >
+                  <Tab value="scene" label="Scene" data-testid="world-panel-scene" />
+                  <Tab value="assets" label="Assets" data-testid="world-panel-assets" />
+                  <Tab value="folders" label="Folders" data-testid="world-panel-folders" />
+                </Tabs>
+                <Tooltip title="Hide scene panel">
+                  <IconButton
+                    size="small"
+                    onClick={() => setLeftPanelCollapsed(true)}
+                    data-testid="world-panel-collapse-left"
+                    aria-label="Hide scene panel"
+                  >
+                    <ChevronLeftIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </Stack>
+              <Box sx={{ flex: 1, minHeight: 0, display: panel === 'scene' ? 'block' : 'none' }}>
+                <WorldSceneTree
+                  summary={summary}
+                  selection={selection}
+                  appliedOps={appliedOps}
+                  onSelect={handleSelect}
+                  onFocus={focusVob}
+                  onReparent={reparent}
+                  onReparentSelection={reparentSelection}
+                  onContextMenu={openVobContextMenu}
+                  getCameraPosition={getCameraPosition}
+                />
+              </Box>
+              {/* Mounted only once the user asks for it: the first listing is an
+                  IPC round trip into the worker that holds the VFS. */}
+              {panel === 'assets' && (
+                <Box sx={{ flex: 1, minHeight: 0 }}>
+                  <WorldAssetBrowser
+                    listAssets={listAssets}
+                    searchAssets={searchAssets}
+                    resolveAssets={resolveAssets}
+                    compileAssets={compileAssets}
+                    onPreview={setSelectedAsset}
+                    thumbnails={thumbnails ?? undefined}
+                    catalog={assetCatalogProps}
+                    sources={summary?.assetSources}
+                    placement={assetPlacement}
+                    previewing={selectedAsset}
+                  />
+                </Box>
+              )}
+              {/* Lazily mounted, like Assets above — the folder list is small
+                  and rebuilding it on a tab switch is cheap, so nothing here
+                  is kept alive the way the scene tree's expansion set is. */}
+              {panel === 'folders' && (
+                <Box sx={{ flex: 1, minHeight: 0 }}>
+                  <WorldFolderTree
+                    folders={vobFolders}
+                    summary={summary}
+                    selection={selection}
+                    onSelect={handleSelect}
+                    onFocus={focusVob}
+                    onCreateFolder={createEmptyFolder}
+                    onRenameFolder={renameFolderHandler}
+                    onDeleteFolder={deleteFolderHandler}
+                    onRemoveFromFolder={removeVobFromFolderHandler}
+                  />
+                </Box>
+              )}
+            </Box>
+            {!leftPanelCollapsed && (
+              <PanelSplitter
+                data-testid="world-splitter-left"
+                width={panelWidths.left}
+                grow="right"
+                onResize={setLeftPanelWidth}
+                onResizeEnd={persistPanelWidths}
+              />
+            )}
+          </>
+        )}
+
+        <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative' }}>
+          {/* The viewport's own boundary. `new THREE.WebGLRenderer(...)` throws
+              "Error creating WebGL context" on a machine with no usable GL —
+              a broken driver, a remote desktop, a VM — and the nearest boundary
+              was the app's root one, so opening a world replaced the *whole*
+              window, dialog editor and all, with a crash page. The scene tree,
+              the property grid and everything else here work without a picture,
+              so the failure belongs to this box. */}
+          <ErrorBoundary
+            fallback={(
+              <Box sx={{ p: 3 }} data-testid="world-viewport-failed">
+                <Alert severity="error" square>
+                  The 3D view could not start — this machine has no usable WebGL
+                  context. The scene tree and properties still work; a graphics
+                  driver update, or running without remote desktop, is what gets
+                  the picture back.
+                </Alert>
+              </Box>
+            )}
+          >
+            {mesh && visuals && summary && (
+            <WorldViewport
+              ref={viewportRef}
+              mesh={mesh}
+              visuals={visuals}
+              vobIndex={summary.vobIndex}
+              bbox={summary.bbox}
+              waynet={waynet}
+              showWaynet={showWaynet}
+              spawns={shownSpawns}
+              npcBodyRequests={spawnBodyRequests}
+              showSpawns={showSpawns}
+              routines={routines}
+              spawnTime={spawnTime}
+              spawnState={spawnState}
+              showWaypointNames={showWaypointNames}
+              loadTexture={loadTexture}
+              onTextureFailures={reportTextureFailures}
+              onCameraSlot={reportCameraSlot}
+              onPick={handlePick}
+              onVobContextMenu={openVobContextMenu}
+              onCancelArmed={armed === null ? undefined : disarm}
+              selection={selection}
+              onTranslateSelection={handleTranslateSelection}
+              membersOf={membersOfSelection}
+              gizmoMode={gizmoMode}
+              onRotateSelection={handleRotateSelection}
+              appliedOps={appliedOps}
+              selectedWaypoint={selectedWaypoint}
+              terrainPoint={terrainPoint}
+              exposure={exposure}
+              lightPreview={lightPreview}
+              hiddenVobs={hiddenVobs}
+              outlineMode={outlineMode}
+              selectionStyle={selectionStyle}
+              selectedExtent={selectedExtent}
+              snapGrid={snapGrid}
+              snapAngle={(snapAngleDegrees * Math.PI) / 180}
+              scatterRadius={scatterBrushRadius}
+              onScatterStroke={handleScatterStroke}
+              onSelectWaypoint={handleSelectWaypoint}
+              routineDraft={routineMode.mode !== null ? routineMode.draft : spawnRoutineDraft}
+              onMoveWaypoint={moveWaypointTo}
+              paused={hidden}
+            />
+            )}
+          </ErrorBoundary>
+        </Box>
+
+        {summary && rightPanelCollapsed && (
+          <Box sx={{
+            width: COLLAPSED_PANEL_WIDTH, flexShrink: 0, borderLeft: 1, borderColor: 'divider',
+            minHeight: 0, display: 'flex', justifyContent: 'center', pt: 0.5,
+          }}>
+            <Tooltip title="Show properties panel">
+              <IconButton
+                size="small"
+                onClick={() => setRightPanelCollapsed(false)}
+                data-testid="world-panel-expand-right"
+                aria-label="Show properties panel"
+              >
+                <ChevronLeftIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Box>
+        )}
+        {summary && !rightPanelCollapsed && (
+          <PanelSplitter
+            data-testid="world-splitter-right"
+            width={panelWidths.right}
+            grow="left"
+            onResize={setRightPanelWidth}
+            onResizeEnd={persistPanelWidths}
+          />
+        )}
+        {/* Hidden rather than unmounted, as the left panel is — the
+            property grid's fields are uncontrolled and corrected by
+            remount-by-key (`refactoring-targets.md` §7), so an unmount
+            here would discard a half-typed coordinate on a collapse. */}
+        {summary && (
+          <Box data-testid="world-panel-right" sx={{
+            width: panelWidths.right, flexShrink: 0, minHeight: 0,
+            display: rightPanelCollapsed ? 'none' : 'flex', flexDirection: 'column',
+          }}>
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <Tooltip title="Hide properties panel">
+                <IconButton
+                  size="small"
+                  onClick={() => setRightPanelCollapsed(true)}
+                  data-testid="world-panel-collapse-right"
+                  aria-label="Hide properties panel"
+                >
+                  <ChevronRightIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </Box>
+            <Box sx={{ flex: 1, minHeight: 0 }}>
+              {panel === 'assets' && selectedAsset !== null
+                ? (
+                  <WorldAssetPreview
+                    path={selectedAsset}
+                    loadTexture={loadTexture}
+                    loadVisual={loadVisual}
+                    resolveAsset={resolveAsset}
+                    selectionCount={selection.length}
+                    onUseAsVisual={useAssetAsVisual}
+                    onPlace={(name) => setArmed({ kind: 'place', spec: placeSpecFor(name) })}
+                  />
+                )
+                : selectedWaypoint !== null && waynet
+                  ? (
+                    <WaypointPanel
+                      name={waynet.names[selectedWaypoint]}
+                      routines={(waypointSiteIndex[waynet.names[selectedWaypoint].toUpperCase()] || [])
+                        .map((site) => ({ ...site, npc: routineOwner(routines, site.functionName) }))}
+                      spawns={waypointSpawns}
+                      onRename={(to) => renameWaypointTo(selectedWaypoint, to)}
+                      neighbours={waypointEdges}
+                      resolveWaypoint={resolveWaypointToJoin}
+                      onConnect={joinWaypointTo}
+                      onDisconnect={unjoinWaypointFrom}
+                      onDelete={() => setDeletingWaypoint({
+                        waypoint: selectedWaypoint, name: waynet.names[selectedWaypoint],
+                      })}
+                      onInsertNpc={() => openInsertNpcAtWaypoint(waynet.names[selectedWaypoint])}
+                      onEditRoutines={openRoutineMode}
+                      routineNpcs={spawnRoutineNpcs}
+                      shownRoutineNpc={shownSpawnNpc}
+                      onShowRoutineNpc={setChosenSpawnNpc}
+                    />
+                  )
+                  : (
+                    <WorldPropertyGrid
+                      summary={summary}
+                      selection={selection}
+                      refusalGeneration={editRefusals}
+                      onEditProps={handleEditProps}
+                      onFocus={focusVob}
+                      onTranslate={handleTranslateSelection}
+                      onRotate={handleRotateVob}
+                      onRotateSelection={handleRotateSelection}
+                      classProps={classProps?.vob === primary ? classProps.props : null}
+                      onEditClassProps={handleEditClassProps}
+                      onEditBaseProps={handleEditBaseProps}
+                      itemInstances={itemInstances}
+                      scriptFunctions={scriptFunctions}
+                      itemVisuals={itemVisuals}
+                      thumbnails={thumbnails}
+                    />
+                  )}
+            </Box>
+          </Box>
+        )}
+      </Box>
+
+      {summary && (
+        <Paper
+          square
+          elevation={1}
+          sx={{ p: 1, borderTop: 1, borderColor: 'divider', display: 'flex', alignItems: 'center' }}
+          data-testid="world-status-bar"
+        >
+          {/* The status bar: the ground on the left, the counts on the right.
+
+              Terrain is not a VOB, so it has no row and no properties — a hit
+              reports the point rather than inventing a selection. ZenGin space,
+              centimetres: the coordinates an op would carry, and the position a
+              placed VOB gets.
+
+              It stays up while something is selected, which is what makes a
+              parented placement expressible: only a viewport pick replaces the
+              point, so clicking a row in the scene tree afterwards names a
+              parent without losing the ground the user chose.
+
+              Mounted whether or not there is a point, because mounting it on the
+              first hit shortened the viewport by its own height at the instant of
+              the click — the picture moves out from under the cursor that picked
+              it. That is also why the row reserves the height of the button it
+              only sometimes carries: a bar that changes height is the same
+              shove. */}
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+            {routineMode.picking ? (
+              // Routine edit mode (maintainer, 2026-09-29): the editor is put away
+              // for this one click, and the bar says what it is for and how
+              // to get back without it.
+              <Box data-testid="world-routine-pick-bar" sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                <Typography variant="caption" sx={{ fontWeight: 600 }}>Routine edit</Typography>
+                <Typography
+                  variant="caption"
+                  color={routineMode.pickError ? 'error' : 'text.secondary'}
+                  data-testid="world-terrain-hint"
+                >
+                  {routineMode.pickError ?? (routineMode.pickTarget && routineMode.mode
+                    ? `Click a waypoint for activity ${routineMode.pickTarget.index + 1} (${routineMode.pickTarget.state}) of ${routineMode.mode.npc}.`
+                    : 'Click a waypoint for the activity.')}
+                </Typography>
+                <Button size="small" onClick={routineMode.cancelPick} data-testid="world-routine-pick-cancel">
+                  Abort
+                </Button>
+              </Box>
+            ) : armed !== null ? (
+              <>
+                {/* An armed add speaks over the point: it is the more recent
+                    intent, and the click it asks for is the same click that
+                    would replace the point anyway. */}
+                <Typography variant="caption" color="text.secondary" data-testid="world-terrain-hint">
+                  {armed.kind === 'place'
+                    ? `Click the ground to place ${placeLabel(armed.spec)}; right-click or Esc to stop.`
+                    : armed.kind === 'insert-npc'
+                      ? `Click the ground to add waypoint ${armed.waypoint} and insert ${armed.instance} there.`
+                      : `Click the ground to place waypoint ${armed.name}.`}
+                </Typography>
+                {armed.kind === 'place' && (
+                  <FormControlLabel
+                    sx={{ mr: 0 }}
+                    control={(
+                      <Checkbox
+                        size="small"
+                        checked={randomYaw}
+                        onChange={(event) => setRandomYaw(event.target.checked)}
+                        inputProps={{ 'aria-label': 'Random Y rotation' }}
+                        data-testid="world-armed-random-yaw"
+                      />
+                    )}
+                    label={<Typography variant="caption">Random Y</Typography>}
+                  />
+                )}
+                <Button size="small" onClick={disarm} data-testid="world-armed-cancel">
+                  Cancel (Esc)
+                </Button>
+              </>
+            ) : terrainPoint === null ? (
+              <>
+                <Typography variant="caption" color="text.secondary" data-testid="world-terrain-hint">
+                  {pendingWaypointName !== null
+                    ? `Click the ground to place waypoint "${pendingWaypointName}".`
+                    : 'Click the ground to choose where a VOB goes.'}
+                </Typography>
+                {/* The reservation itself, and it is a button rather than a
+                    number: a hard-coded height read off MUI's small-button
+                    metrics drifts the moment a theme sets one, and jsdom has no
+                    layout, so nothing could catch the drift. A real small
+                    button, hidden, zero-width and out of the tab and
+                    accessibility trees, is the theme's own metric and cannot
+                    disagree with the buttons it stands in for.
+
+                    Only the horizontal metrics are taken off it: the vertical
+                    padding is the height, and it carries a space so it has a
+                    line box to be as tall as. */}
+                <Button
+                  size="small"
+                  aria-hidden
+                  tabIndex={-1}
+                  /* Stack's spacing wins on specificity, so the margin the
+                     spacer would otherwise add is overridden here. */
+                  sx={{
+                    visibility: 'hidden',
+                    width: 0,
+                    minWidth: 0,
+                    px: 0,
+                    overflow: 'hidden',
+                    margin: '0 !important',
+                  }}
+                  data-testid="world-terrain-bar-spacer"
+                >
+                  &nbsp;
+                </Button>
+              </>
+            ) : (
+              <>
+                <Typography variant="caption" color="text.secondary" data-testid="world-terrain-point">
+                  Terrain @ {terrainPoint.map((v) => Math.round(v)).join(', ')}
+                </Typography>
+                <Button
+                  size="small"
+                  onClick={() => openPlaceDialog(FRESH_PLACE)}
+                  data-testid="world-place-vob"
+                >
+                  Place VOB here…
+                </Button>
+                {/* Both switch the overlay on rather than waiting for it: the
+                    overlay is the only thing that draws a waypoint, so a
+                    waypoint added without it would be invisible and unpickable
+                    the moment it landed. Gated on the payload alone — with no
+                    names to append to there is nothing to author. */}
+                {waynet !== null && (
+                  <Button
+                    size="small"
+                    onClick={() => {
+                      ensureWaynetShown();
+                      // An armed name wins over a fresh suggestion, and is
+                      // spent the moment it does — the same way a suggested
+                      // one is spent by this click today.
+                      setAddingWaypoint(pendingWaypointName ?? suggestedWaypointName());
+                      setPendingWaypointName(null);
+                    }}
+                    data-testid="world-add-waypoint"
+                  >
+                    Add waypoint here…
+                  </Button>
+                )}
+                {waynet !== null && (
+                  <Button
+                    size="small"
+                    onClick={() => {
+                      ensureWaynetShown();
+                      openInsertNpcForNewWaypoint(suggestedWaypointName());
+                    }}
+                    data-testid="world-insert-npc"
+                  >
+                    Insert NPC here…
+                  </Button>
+                )}
+              </>
+            )}
+          </Stack>
+          <WorldStatusStats summary={summary} visuals={visuals} />
+        </Paper>
+      )}
+
+      <Dialog
+        open={addingWaypoint !== null}
+        onClose={() => setAddingWaypoint(null)}
+        maxWidth="xs"
+        fullWidth
+        data-testid="world-waypoint-add-dialog"
+      >
+        <DialogTitle>Add a waypoint</DialogTitle>
+        <DialogContent>
+          <DialogContentText variant="caption" sx={{ display: 'block', mb: 1.5 }}>
+            {/* Both facts a user cannot see and would be caught out by: it is
+                appended, so nothing else moves, and it is a free point in no
+                edge — which is what makes the engine keep it, and what makes it
+                not part of the walkable net yet. */}
+            It is appended as a free point
+            {terrainPoint === null
+              ? ' where you next click the ground'
+              : ` at ${terrainPoint.map((v) => Math.round(v)).join(', ')}`}, in no edge and
+            renumbering nothing.
+          </DialogContentText>
+          <Autocomplete
+            freeSolo
+            fullWidth
+            size="small"
+            openOnFocus
+            options={knownWaypointNames}
+            filterOptions={waypointFilterOptions}
+            inputValue={addingWaypoint ?? ''}
+            onInputChange={(_event, value) => setAddingWaypoint(value)}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                autoFocus
+                label="Name"
+                /* The list offers every waypoint a *script* names, and most of
+                   those the world already has — so this is the ordinary way to
+                   reach the disabled Add, not a corner. It reads the same
+                   boolean the button does, so the two cannot disagree. */
+                error={duplicateWaypointName}
+                helperText={duplicateWaypointName
+                  ? 'Already in this world — pick a name it has not got.'
+                  : ' '}
+                inputProps={{ ...params.inputProps, 'data-testid': 'world-waypoint-add-name' }}
+              />
+            )}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAddingWaypoint(null)}>Cancel</Button>
+          <Button
+            variant="contained"
+            /* The two refusals the binding makes, made here as well — not
+               instead. This side is holding the very list the user is reading,
+               so a name they can see is taken is worth refusing before a round
+               trip rather than after one. */
+            disabled={addingWaypoint === null || addingWaypoint.trim() === ''
+              || duplicateWaypointName}
+            onClick={() => {
+              const name = addingWaypoint;
+              setAddingWaypoint(null);
+              if (name === null) return;
+              if (terrainPoint !== null) addWaypointAt(name.trim(), terrainPoint);
+              else setArmed({ kind: 'add-waypoint', name: name.trim() });
+            }}
+            data-testid="world-waypoint-add-confirm"
+          >
+            {terrainPoint === null ? 'Add on next click' : 'Add'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <InsertNpcDialog
+        draft={insertingNpc}
+        waypointNames={waynet?.names ?? []}
+        startupFunctionName={startupFunctionName}
+        targetExists={insertTargetExists}
+        unknownInstance={unknownInsertInstance}
+        duplicateSpawn={duplicateInsertSpawn}
+        terrainPoint={terrainPoint}
+        onChange={editInsertNpcDraft}
+        onCancel={closeInsertNpcDraft}
+        onConfirm={(instance, waypoint, target) => {
+          closeInsertNpcDraft();
+          if (target.existing) void insertNpcAt(instance, waypoint, true, null);
+          else if (target.point !== null) void insertNpcAt(instance, waypoint, false, target.point);
+          // Nowhere to put the waypoint yet, so the spawn waits for the click
+          // that chooses one — the status bar names the armed action.
+          else setArmed({ kind: 'insert-npc', instance, waypoint });
+        }}
+      />
+
+      <Dialog open={placing !== null} onClose={() => setPlacing(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Place a VOB</DialogTitle>
+        <DialogContent>
+          <DialogContentText variant="caption" sx={{ display: 'block', mb: 1.5 }}>
+            {/* Which list it is appended to is the one thing about this dialog
+                that changes the world's shape, so it is said before the fields
+                rather than left to be discovered from the scene tree. */}
+            {placing?.parent === null
+              ? `It is appended as a root VOB ${placeWhere}.`
+              : `It becomes the last child of ${parentLabel}, ${placeWhere} — which renumbers `
+                + 'every VOB after that subtree.'}
+          </DialogContentText>
+          {/* Offered only when there is a VOB to be a parent. A checkbox rather
+              than a picker: the selection is already the app's way of naming one
+              VOB, and a second one inside the dialog would be a tree the dialog
+              has no room for. */}
+          {parentCandidate !== null && (
+            <FormControlLabel
+              sx={{ display: 'block', mb: 1 }}
+              control={(
+                <Checkbox
+                  size="small"
+                  checked={placing?.parent !== null}
+                  onChange={(event) => setPlacing((was) => (was === null ? was : {
+                    ...was, parent: event.target.checked ? parentCandidate : null,
+                  }))}
+                  inputProps={{ 'data-testid': 'world-place-parent' } as React.InputHTMLAttributes<HTMLInputElement>}
+                />
+              )}
+              label={<Typography variant="caption">Place under {parentLabel}</Typography>}
+            />
+          )}
+          {/* The class is chosen here or never: it is the object's C++ type, so
+              nothing can turn a placed `zCVob` into an item afterwards
+              (level-editor.md §16.15, I1). A native select, because the set is
+              closed and short — the binding refuses any class it has no
+              field-complete construction for. */}
+          <TextField
+            select
+            fullWidth
+            size="small"
+            variant="standard"
+            label="Class"
+            value={placing?.vobClass ?? 'zCVob'}
+            onChange={(event) => {
+              setClassChosen(true);
+              setPlacing((was) => (was === null ? was : {
+                ...was, vobClass: event.target.value as AuthorableVobClass,
+              }));
+            }}
+            SelectProps={{ native: true, inputProps: { 'data-testid': 'world-place-class' } }}
+            sx={{ mb: 1 }}
+          >
+            {AUTHORABLE_VOB_CLASSES.map((className) => (
+              <option key={className} value={className}>{className}</option>
+            ))}
+          </TextField>
+          <TextField
+            autoFocus
+            fullWidth
+            size="small"
+            variant="standard"
+            label="Name (optional)"
+            value={placing?.name ?? ''}
+            onChange={(event) => setPlacing((was) => (was === null ? was : { ...was, name: event.target.value }))}
+            inputProps={{ 'data-testid': 'world-place-name' }}
+          />
+          {/* An item carries an instance *instead of* a visual, not beside one:
+              the engine derives an item's visual from the script instance, and
+              the binding leaves the field empty for exactly that reason. A light
+              and a sound carry neither — what makes each the thing it is comes
+              from the binding's construction and then from the property grid. */}
+          {placing?.vobClass === 'oCItem' && (
+            <TextField
+              fullWidth
+              size="small"
+              variant="standard"
+              label="Instance"
+              placeholder="ITFO_APPLE"
+              error={placeRefused}
+              helperText={placeRefused
+                ? 'The loaded project declares no such item instance — ZenGin crashes on one it cannot resolve.'
+                : 'The script instance the engine spawns. It supplies the visual, so there is none to give here.'}
+              value={placing?.instance ?? ''}
+              onChange={(event) => setPlacing((was) => (was === null ? was : { ...was, instance: event.target.value }))}
+              inputProps={{ 'data-testid': 'world-place-instance' }}
+              sx={{ mt: 2 }}
+            />
+          )}
+          {placing !== null && carriesVisual(placing.vobClass) && (
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mt: 2 }}>
+              <TextField
+                fullWidth
+                size="small"
+                variant="standard"
+                label="Visual"
+                placeholder="NW_CRATE.3DS"
+                helperText="Until a class is picked, the class follows the visual. A .TGA decal is refused — it carries settings this does not take."
+                value={placing?.visual ?? ''}
+                onChange={(event) => setPlacing((was) => (was === null ? was : withVisual(was, event.target.value, classChosen)))}
+                inputProps={{ 'data-testid': 'world-place-visual' }}
+              />
+              {/* The Assets panel as a picker (§16.26 row 1): the mesh it last
+                  previewed, by its bare name. The previewed path outlives the
+                  tab, so the gesture is preview, switch to the scene, click
+                  the ground, place. */}
+              <Tooltip
+                title={selectedAsset === null || !isPlaceableVisual(selectedAsset)
+                  ? 'Preview a mesh in the Assets panel first'
+                  : `Use ${NAME_OF(selectedAsset)}`}
+              >
+                <span>
+                  <Button
+                    size="small"
+                    disabled={selectedAsset === null || !isPlaceableVisual(selectedAsset)}
+                    onClick={() => setPlacing((was) => (was === null || selectedAsset === null
+                      ? was
+                      : withVisual(was, NAME_OF(selectedAsset), classChosen)))}
+                    data-testid="world-place-use-previewed"
+                    sx={{ mt: 1.5, whiteSpace: 'nowrap' }}
+                  >
+                    Use previewed
+                  </Button>
+                </span>
+              </Tooltip>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPlacing(null)} data-testid="world-place-cancel">Cancel</Button>
+          <Button
+            variant="contained"
+            data-testid="world-place-confirm"
+            disabled={placeRefused}
+            onClick={() => {
+              const spec = placing;
+              setPlacing(null);
+              if (spec === null) return;
+              if (terrainPoint !== null) void placeVobAt(spec, terrainPoint);
+              else setArmed({ kind: 'place', spec });
+            }}
+          >
+            {terrainPoint === null ? 'Place on next click' : 'Place'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
+    </LiveTileContext.Provider>
+  );
+};
+
+export default WorldSurface;

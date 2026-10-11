@@ -1,0 +1,55 @@
+VOB: preserve wide unpacked visualAniMode values when they are unchanged.
+
+`visualAniMode` is stored as a 32-bit ASCII enum, but ZenKit's public
+AnimationType has an 8-bit underlying representation. A retail-shaped raw
+value such as 145297640 was narrowed while loading, then re-emitted as 232.
+
+Retain the raw value together with the semantic AnimationType observed at
+load time. An unchanged semantic value reuses its exact raw field; a later
+semantic edit instead writes the edited enum value. Packed and newly authored
+VOBs retain their existing behavior.
+
+diff --git a/include/zenkit/vobs/VirtualObject.hh b/include/zenkit/vobs/VirtualObject.hh
+--- a/include/zenkit/vobs/VirtualObject.hh
++++ b/include/zenkit/vobs/VirtualObject.hh
+@@ -413,6 +413,12 @@ namespace zenkit {
+ 		/// \see https://zk.gothickit.dev/engine/objects/zCVob/#visualanimode
+ 		AnimationType anim_mode = AnimationType::NONE;
+ 
++		// The unpacked ASCII field is a 32-bit enum, although the public semantic
++		// type can represent only the known 8-bit animation values. Keep an
++		// unchanged value verbatim for fidelity, but do not let it mask an edit.
++		std::optional<std::uint32_t> unpacked_anim_mode_raw;
++		AnimationType unpacked_anim_mode_loaded = AnimationType::NONE;
++
+ 		/// \brief The depth-bias for this VObject.
+ 		///
+ 		/// <p>This value is passed directly to Direct3D when rendering the associated visual of this VObject. Sadly,
+diff --git a/src/vobs/VirtualObject.cc b/src/vobs/VirtualObject.cc
+--- a/src/vobs/VirtualObject.cc
++++ b/src/vobs/VirtualObject.cc
+@@ -185,7 +185,10 @@ namespace zenkit {
+ 				this->vob_static = r.read_bool();                               // staticVob
+ 				this->dynamic_shadows = static_cast<ShadowType>(r.read_enum()); // dynShadow
+ 			} else {
+-				this->anim_mode = static_cast<AnimationType>(r.read_enum());    // visualAniMode
++				auto const raw_anim_mode = r.read_enum();
++				this->anim_mode = static_cast<AnimationType>(raw_anim_mode);    // visualAniMode
++				this->unpacked_anim_mode_raw = raw_anim_mode;
++				this->unpacked_anim_mode_loaded = this->anim_mode;
+ 				this->anim_strength = r.read_float();                           // visualAniModeStrength
+ 				this->far_clip_scale = r.read_float();                          // vobFarClipZScale
+ 				this->cd_static = r.read_bool();                                // cdStatic
+@@ -315,7 +318,11 @@ namespace zenkit {
+ 				w.write_bool("staticVob", this->vob_static);
+ 				w.write_enum("dynShadow", static_cast<int>(this->dynamic_shadows));
+ 			} else {
+-				w.write_enum("visualAniMode", static_cast<int>(this->anim_mode));
++				auto const anim_mode_value =
++				    this->unpacked_anim_mode_raw && this->anim_mode == this->unpacked_anim_mode_loaded
++				        ? *this->unpacked_anim_mode_raw
++				        : static_cast<std::uint32_t>(this->anim_mode);
++				w.write_enum("visualAniMode", anim_mode_value);
+ 				w.write_float("visualAniModeStrength", this->anim_strength);
+ 				w.write_float("vobFarClipZScale", this->far_clip_scale);
+ 				w.write_bool("cdStatic", this->cd_static);

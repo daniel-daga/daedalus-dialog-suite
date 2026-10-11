@@ -1,0 +1,654 @@
+/**
+ * Test suite for CodeGeneratorService - Bug #1 fix verification
+ *
+ * This test verifies the fix for Bug #1: Missing null check in function reference reconstruction
+ * When dialog properties reference non-existent functions, they should not be silently set to undefined.
+ */
+
+import { CodeGeneratorService } from '../src/main/services/CodeGeneratorService';
+
+describe('CodeGeneratorService - Function Reference Reconstruction', () => {
+  let service: CodeGeneratorService;
+
+  beforeEach(() => {
+    service = new CodeGeneratorService();
+  });
+
+  describe('Bug #1: Missing validation for function references', () => {
+    test('should log error when function referenced by name does not exist', () => {
+      // Arrange: Spy on console.warn to detect validation errors
+      const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+
+      const plainModel = {
+        functions: {
+          'ExistingFunc': {
+            name: 'ExistingFunc',
+            returnType: 'void',
+            calls: [],
+            actions: []
+          }
+        },
+        dialogs: {
+          'TestDialog': {
+            name: 'TestDialog',
+            parent: null,
+            properties: {
+              // This references a function that doesn't exist in the model (object format)
+              'description': {
+                name: 'NonExistentFunc',
+                returnType: 'string'
+              }
+            }
+          }
+        }
+      };
+
+      // Act: Generate code (which calls reconstructModel internally)
+      const settings = {
+        indentChar: '\t' as const,
+        includeComments: true,
+        sectionHeaders: true,
+        uppercaseKeywords: true
+      };
+
+      service.generateCode(plainModel, settings);
+
+      // Assert: An error should be logged for the missing function
+      // BEFORE FIX: This will fail because no error is logged (silent data corruption)
+      // AFTER FIX: This will pass because validation logs the error
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Function 'NonExistentFunc' referenced")
+      );
+
+      consoleWarnSpy.mockRestore();
+    });
+
+    test('should log error when function referenced by object does not exist', () => {
+      // Arrange: Spy on console.warn
+      const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+
+      const plainModel = {
+        functions: {
+          'ExistingFunc': {
+            name: 'ExistingFunc',
+            returnType: 'void',
+            calls: [],
+            actions: []
+          }
+        },
+        dialogs: {
+          'TestDialog': {
+            name: 'TestDialog',
+            parent: null,
+            properties: {
+              // This is an object reference to a function that doesn't exist
+              'description': {
+                name: 'NonExistentFunc',
+                returnType: 'string'
+              }
+            }
+          }
+        }
+      };
+
+      // Act: Generate code
+      const settings = {
+        indentChar: '\t' as const,
+        includeComments: true,
+        sectionHeaders: true,
+        uppercaseKeywords: true
+      };
+
+      service.generateCode(plainModel, settings);
+
+      // Assert: An error should be logged for the missing function
+      // BEFORE FIX: This will fail because no error is logged (silent data corruption)
+      // AFTER FIX: This will pass because validation logs the error
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Function 'NonExistentFunc' referenced")
+      );
+
+      consoleWarnSpy.mockRestore();
+    });
+
+    test('should correctly link dialog property to existing function', () => {
+      // Arrange: Create a model with valid function reference
+      const plainModel = {
+        functions: {
+          'MyDialogFunc': {
+            name: 'MyDialogFunc',
+            returnType: 'int',
+            calls: [],
+            actions: []
+          }
+        },
+        dialogs: {
+          'TestDialog': {
+            name: 'TestDialog',
+            parent: null,
+            properties: {
+              // This references an existing function
+              'description': 'MyDialogFunc'
+            }
+          }
+        }
+      };
+
+      // Act: Generate code
+      const settings = {
+        indentChar: '\t' as const,
+        includeComments: true,
+        sectionHeaders: true,
+        uppercaseKeywords: true
+      };
+
+      const result = service.generateCode(plainModel, settings);
+
+      // Assert: Should work correctly for valid references
+      expect(result).toBeTruthy();
+      expect(result).toContain('TestDialog');
+      expect(result).toContain('MyDialogFunc');
+    });
+
+    test('should correctly link dialog property to existing function (object reference)', () => {
+      // Arrange: Create a model with valid function reference as object
+      const plainModel = {
+        functions: {
+          'MyDialogFunc': {
+            name: 'MyDialogFunc',
+            returnType: 'int',
+            calls: [],
+            actions: []
+          }
+        },
+        dialogs: {
+          'TestDialog': {
+            name: 'TestDialog',
+            parent: null,
+            properties: {
+              // This references an existing function by object
+              'description': {
+                name: 'MyDialogFunc',
+                returnType: 'int'
+              }
+            }
+          }
+        }
+      };
+
+      // Act: Generate code
+      const settings = {
+        indentChar: '\t' as const,
+        includeComments: true,
+        sectionHeaders: true,
+        uppercaseKeywords: true
+      };
+
+      const result = service.generateCode(plainModel, settings);
+
+      // Assert: Should work correctly for valid references
+      expect(result).toBeTruthy();
+      expect(result).toContain('TestDialog');
+      expect(result).toContain('MyDialogFunc');
+    });
+
+    test('should handle mixed valid and invalid function references', () => {
+      // Arrange: Spy on console.warn
+      const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+
+      const plainModel = {
+        functions: {
+          'ValidFunc': {
+            name: 'ValidFunc',
+            returnType: 'void',
+            calls: [],
+            actions: []
+          }
+        },
+        dialogs: {
+          'Dialog1': {
+            name: 'Dialog1',
+            parent: null,
+            properties: {
+              'validProp': 'ValidFunc',
+              'invalidProp': {
+                name: 'InvalidFunc',
+                returnType: 'int'
+              },
+              'normalProp': 'just a string'
+            }
+          }
+        }
+      };
+
+      // Act: Generate code
+      const settings = {
+        indentChar: '\t' as const,
+        includeComments: true,
+        sectionHeaders: true,
+        uppercaseKeywords: true
+      };
+
+      const result = service.generateCode(plainModel, settings);
+
+      // Assert: Valid references should work, invalid should log error
+      expect(result).toBeTruthy();
+      expect(result).toContain('Dialog1');
+      expect(result).toContain('ValidFunc');
+
+      // BEFORE FIX: No error logged for invalid reference
+      // AFTER FIX: Error logged for 'InvalidFunc'
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Function 'InvalidFunc' referenced")
+      );
+
+      consoleWarnSpy.mockRestore();
+    });
+  });
+
+  describe('Data integrity verification', () => {
+    test('should not set dialog properties to undefined for missing functions', () => {
+      // This test directly exposes the bug by checking the reconstructed model
+      const plainModel = {
+        functions: {},
+        dialogs: {
+          'TestDialog': {
+            name: 'TestDialog',
+            parent: null,
+            properties: {
+              'missingFunc': {
+                name: 'NonExistent',
+                returnType: 'int'
+              }
+            }
+          }
+        }
+      };
+
+      // We need to test the private method indirectly through generateCode
+      const settings = {
+        indentChar: '\t' as const,
+        includeComments: true,
+        sectionHeaders: true,
+        uppercaseKeywords: true
+      };
+
+      // The bug causes silent failure - generateCode might succeed but data is corrupted
+      // After the fix, this should either preserve the reference or log an error
+      const result = service.generateCode(plainModel, settings);
+
+      expect(result).toBeTruthy();
+      // The function should not cause a crash and should handle the missing reference gracefully
+    });
+  });
+
+  describe('Condition Reconstruction', () => {
+    test('should reconstruct NpcKnowsInfoCondition objects from plain data', () => {
+      const service = new CodeGeneratorService();
+      const plainModel = {
+        dialogs: {},
+        functions: {
+          TestCondition: {
+            name: 'TestCondition',
+            returnType: 'INT',
+            calls: [],
+            actions: [],
+            conditions: [
+              {
+                npc: 'self',
+                dialogRef: 'DIA_Test'
+              }
+            ]
+          }
+        }
+      };
+
+      const settings = {
+        indentChar: '\t' as const,
+        includeComments: true,
+        sectionHeaders: true,
+        uppercaseKeywords: true
+      };
+
+      // Should not throw - conditions must be reconstructed as class instances
+      const result = service.generateCode(plainModel, settings);
+
+      expect(result).toBeTruthy();
+      expect(result).toContain('Npc_KnowsInfo(self, DIA_Test)');
+    });
+
+    test('should reconstruct VariableCondition objects from plain data', () => {
+      const service = new CodeGeneratorService();
+      const plainModel = {
+        dialogs: {},
+        functions: {
+          TestCondition: {
+            name: 'TestCondition',
+            returnType: 'INT',
+            calls: [],
+            actions: [],
+            conditions: [
+              {
+                variableName: 'QuestActive',
+                negated: false
+              },
+              {
+                variableName: 'QuestCompleted',
+                negated: true
+              }
+            ]
+          }
+        }
+      };
+
+      const settings = {
+        indentChar: '\t' as const,
+        includeComments: true,
+        sectionHeaders: true,
+        uppercaseKeywords: true
+      };
+
+      const result = service.generateCode(plainModel, settings);
+
+      expect(result).toBeTruthy();
+      expect(result).toContain('QuestActive');
+      expect(result).toContain('!QuestCompleted');
+    });
+
+    test('should reconstruct generic Condition objects from plain data', () => {
+      const service = new CodeGeneratorService();
+      const plainModel = {
+        dialogs: {},
+        functions: {
+          TestCondition: {
+            name: 'TestCondition',
+            returnType: 'INT',
+            calls: [],
+            actions: [],
+            conditions: [
+              {
+                condition: 'hero.attribute[ATR_LEVEL] >= 10'
+              }
+            ]
+          }
+        }
+      };
+
+      const settings = {
+        indentChar: '\t' as const,
+        includeComments: true,
+        sectionHeaders: true,
+        uppercaseKeywords: true
+      };
+
+      const result = service.generateCode(plainModel, settings);
+
+      expect(result).toBeTruthy();
+      expect(result).toContain('hero.attribute[ATR_LEVEL] >= 10');
+    });
+
+    test('should handle mixed condition types', () => {
+      const service = new CodeGeneratorService();
+      const plainModel = {
+        dialogs: {},
+        functions: {
+          TestCondition: {
+            name: 'TestCondition',
+            returnType: 'INT',
+            calls: [],
+            actions: [],
+            conditions: [
+              { npc: 'self', dialogRef: 'DIA_Test' },
+              { variableName: 'QuestActive', negated: false },
+              { condition: 'hero.guild == GIL_NONE' }
+            ]
+          }
+        }
+      };
+
+      const settings = {
+        indentChar: '\t' as const,
+        includeComments: true,
+        sectionHeaders: true,
+        uppercaseKeywords: true
+      };
+
+      const result = service.generateCode(plainModel, settings);
+
+      expect(result).toBeTruthy();
+      expect(result).toContain('Npc_KnowsInfo(self, DIA_Test)');
+      expect(result).toContain('QuestActive');
+      expect(result).toContain('hero.guild == GIL_NONE');
+    });
+
+    test('should use || when conditionOperator is OR', () => {
+      const service = new CodeGeneratorService();
+      const plainModel = {
+        dialogs: {},
+        functions: {
+          DIA_Test_Condition: {
+            name: 'DIA_Test_Condition',
+            returnType: 'INT',
+            calls: [],
+            actions: [],
+            conditionOperator: 'OR',
+            conditions: [
+              { type: 'NpcKnowsInfoCondition', npc: 'other', dialogRef: 'DIA_First' },
+              { type: 'NpcKnowsInfoCondition', npc: 'other', dialogRef: 'DIA_Second' }
+            ]
+          }
+        }
+      };
+
+      const settings = {
+        indentChar: '\t' as const,
+        includeComments: false,
+        sectionHeaders: false,
+        uppercaseKeywords: false
+      };
+
+      const result = service.generateCode(plainModel, settings);
+
+      expect(result).toContain('||');
+      expect(result).not.toContain('&&');
+    });
+  });
+
+  describe('Style preservation', () => {
+    test('should preserve original section comment text and instance declaration style', () => {
+      const plainModel = {
+        declarationOrder: [{ type: 'dialog', name: 'DIA_Hubert_WerBistDu' }],
+        dialogs: {
+          DIA_Hubert_WerBistDu: {
+            name: 'DIA_Hubert_WerBistDu',
+            parent: 'C_INFO',
+            keyword: 'Instance',
+            spaceBeforeParen: true,
+            leadingComments: [
+              '// ************************************************************',
+              '// \t\t\t\t\tWer bist du?',
+              '// ************************************************************'
+            ],
+            properties: {
+              npc: 'DJG_99013_Hubert',
+              nr: 1,
+              description: 'Wer bist du?'
+            }
+          }
+        },
+        functions: {}
+      };
+
+      const settings = {
+        indentChar: '\t' as const,
+        includeComments: true,
+        sectionHeaders: true,
+        uppercaseKeywords: true
+      };
+
+      const result = service.generateCode(plainModel, settings);
+
+      expect(result).toContain('// \t\t\t\t\tWer bist du?');
+      expect(result).toContain('Instance DIA_Hubert_WerBistDu (C_INFO)');
+    });
+  });
+});
+
+describe('HeroFollowsAction code generation', () => {
+  let service: CodeGeneratorService;
+
+  beforeEach(() => {
+    service = new CodeGeneratorService();
+  });
+
+  test('should generate three-line Hero Follows NPC code from semantic model', () => {
+    const settings = {
+      indentChar: '\t' as const,
+      includeComments: false,
+      sectionHeaders: false,
+      uppercaseKeywords: false,
+    };
+
+    const plainModel = {
+      declarationOrder: [
+        { type: 'function', name: 'DIA_NPC_Guide_Info' }
+      ],
+      dialogs: {},
+      functions: {
+        'DIA_NPC_Guide_Info': {
+          name: 'DIA_NPC_Guide_Info',
+          returnType: 'VOID',
+          calls: [],
+          conditions: [],
+          actions: [
+            {
+              type: 'HeroFollowsAction',
+              guideRoutine: 'RTN_NPC_GUIDEMITTE'
+            }
+          ]
+        }
+      },
+      hasErrors: false,
+      errors: []
+    };
+
+    const result = service.generateCode(plainModel, settings);
+
+    expect(result).toContain('AI_StopProcessInfos (self);');
+    expect(result).toContain('self.aivar[AIV_PARTYMEMBER] = TRUE;');
+    expect(result).toContain('Npc_ExchangeRoutine (self, "RTN_NPC_GUIDEMITTE");');
+  });
+});
+
+describe('UseItemAction code generation (#304)', () => {
+  test('generates B_UseItem from the editor\'s plain-JSON action', () => {
+    const plainModel = {
+      declarationOrder: [{ type: 'function', name: 'DIA_NPC_Joint_Info' }],
+      dialogs: {},
+      functions: {
+        'DIA_NPC_Joint_Info': {
+          name: 'DIA_NPC_Joint_Info',
+          returnType: 'VOID',
+          calls: [],
+          conditions: [],
+          actions: [{ type: 'UseItemAction', target: 'other', item: 'ItMi_Joint' }]
+        }
+      },
+      hasErrors: false,
+      errors: []
+    };
+
+    const result = new CodeGeneratorService().generateCode(plainModel, {
+      indentChar: '\t' as const,
+      includeComments: false,
+      sectionHeaders: false,
+      uppercaseKeywords: false,
+    });
+
+    expect(result).toContain('B_UseItem (other, ItMi_Joint);');
+  });
+});
+
+describe('AI_Output listener (issue #115)', () => {
+  let service: CodeGeneratorService;
+
+  beforeEach(() => {
+    service = new CodeGeneratorService();
+  });
+
+  const settings = {
+    indentChar: '\t' as const,
+    includeComments: false,
+    sectionHeaders: false,
+    uppercaseKeywords: false,
+  };
+
+  // The editor serializes a hero dialog line as { type, speaker: 'other', text, id }
+  // with no listener field. The generated AI_Output must read (other, self) —
+  // (other, other) makes Gothic skip the line.
+  test('generates other, self for a hero line that carries no listener field', () => {
+    const plainModel = {
+      dialogs: {},
+      functions: {
+        DIA_Test_Info: {
+          name: 'DIA_Test_Info',
+          returnType: 'VOID',
+          calls: [],
+          conditions: [],
+          actions: [
+            { type: 'DialogLine', speaker: 'other', text: 'Hallo!', id: 'DIA_Test_Hero_01' }
+          ]
+        }
+      }
+    };
+
+    const result = service.generateCode(plainModel, settings);
+
+    expect(result).toContain('AI_Output (other, self, "DIA_Test_Hero_01");');
+    expect(result).not.toContain('AI_Output (other, other');
+  });
+
+  test('generates self, other for an NPC line that carries no listener field', () => {
+    const plainModel = {
+      dialogs: {},
+      functions: {
+        DIA_Test_Info: {
+          name: 'DIA_Test_Info',
+          returnType: 'VOID',
+          calls: [],
+          conditions: [],
+          actions: [
+            { type: 'DialogLine', speaker: 'self', text: 'Servus!', id: 'DIA_Test_Npc_01' }
+          ]
+        }
+      }
+    };
+
+    const result = service.generateCode(plainModel, settings);
+
+    expect(result).toContain('AI_Output (self, other, "DIA_Test_Npc_01");');
+  });
+});
+
+/**
+ * Test Summary:
+ *
+ * These tests verify that CodeGeneratorService correctly handles function references in dialogs:
+ *
+ * 1. When a dialog property references a non-existent function by name
+ * 2. When a dialog property references a non-existent function by object
+ * 3. When a dialog property references an existing function (should work)
+ * 4. Mixed scenarios with both valid and invalid references
+ * 5. Data integrity - properties should not be silently set to undefined
+ *
+ * Expected behavior BEFORE fix:
+ * - Tests will fail because undefined is assigned to dialog.properties[key]
+ * - No error or warning is generated
+ * - Data is silently corrupted
+ *
+ * Expected behavior AFTER fix:
+ * - Original reference should be preserved when function doesn't exist
+ * - Error should be logged to console for debugging
+ * - Valid references should still work correctly
+ * - No silent data corruption
+ */

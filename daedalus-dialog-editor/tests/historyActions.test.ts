@@ -1,0 +1,657 @@
+import { useFileStore } from '../src/renderer/store/fileStore';
+import { useHistoryStore } from '../src/renderer/store/historyStore';
+import * as historyActions from '../src/renderer/store/historyActions';
+import type { SemanticModel } from '../src/renderer/types/global';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const filePath = 'C:/tmp/dialog.d';
+
+const makeModel = (tag: string): SemanticModel => ({
+  dialogs: {
+    DIA_Test: {
+      name: 'DIA_Test',
+      parent: 'C_INFO',
+      properties: { npc: tag, information: 'DIA_Test_Info' }
+    }
+  },
+  functions: {
+    DIA_Test_Info: {
+      name: 'DIA_Test_Info',
+      returnType: 'VOID',
+      actions: [{ type: 'DialogLine', text: tag, speaker: 'other', id: `id_${tag}` }],
+      conditions: [],
+      calls: []
+    }
+  },
+  constants: {},
+  variables: {},
+  instances: {},
+  hasErrors: false,
+  errors: []
+});
+
+const resetStores = () => {
+  useFileStore.setState({
+    openFiles: new Map([
+      [filePath, {
+        filePath,
+        semanticModel: makeModel('initial'),
+        isDirty: false,
+        lastSaved: new Date(),
+        originalCode: '',
+        hasErrors: false,
+        errors: [],
+        validationResult: null,
+      }]
+    ]),
+    activeFile: filePath,
+  });
+
+  useHistoryStore.setState({
+    editHistory: new Map(),
+  });
+};
+
+const getModel = () =>
+  useFileStore.getState().getFileState(filePath)?.semanticModel;
+
+// ---------------------------------------------------------------------------
+// updateFunction
+// ---------------------------------------------------------------------------
+
+describe('historyActions – updateFunction', () => {
+  beforeEach(resetStores);
+
+  it('pushes a snapshot before applying the update', () => {
+    expect(useHistoryStore.getState().canUndo(filePath)).toBe(false);
+
+    historyActions.updateFunction(filePath, 'DIA_Test_Info', {
+      name: 'DIA_Test_Info',
+      returnType: 'VOID',
+      actions: [{ type: 'DialogLine', text: 'modified', speaker: 'other', id: 'id_modified' }],
+      conditions: [],
+      calls: []
+    });
+
+    // Snapshot should have been pushed
+    expect(useHistoryStore.getState().canUndo(filePath)).toBe(true);
+    // The function should be updated
+    expect(getModel()?.functions.DIA_Test_Info.actions[0]).toMatchObject({ text: 'modified' });
+  });
+
+  it('allows undoing the updateFunction call', () => {
+    historyActions.updateFunction(filePath, 'DIA_Test_Info', {
+      name: 'DIA_Test_Info',
+      returnType: 'VOID',
+      actions: [{ type: 'DialogLine', text: 'modified', speaker: 'other', id: 'id_modified' }],
+      conditions: [],
+      calls: []
+    });
+
+    useHistoryStore.getState().undo(filePath);
+
+    expect(getModel()?.functions.DIA_Test_Info.actions[0]).toMatchObject({ text: 'initial' });
+  });
+
+  it('does not throw for a non-existent file', () => {
+    expect(() => {
+      historyActions.updateFunction('nonexistent.d', 'Func', {
+        name: 'Func', returnType: 'VOID', actions: [], conditions: [], calls: []
+      });
+    }).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// updateDialog
+// ---------------------------------------------------------------------------
+
+describe('historyActions – updateDialog', () => {
+  beforeEach(resetStores);
+
+  it('pushes a snapshot and updates the dialog', () => {
+    historyActions.updateDialog(filePath, 'DIA_Test', {
+      properties: { npc: 'NewNPC', information: 'DIA_Test_Info' }
+    } as any);
+
+    expect(getModel()?.dialogs.DIA_Test.properties.npc).toBe('NewNPC');
+    expect(useHistoryStore.getState().canUndo(filePath)).toBe(true);
+  });
+
+  it('allows undoing the updateDialog call', () => {
+    historyActions.updateDialog(filePath, 'DIA_Test', {
+      properties: { npc: 'NewNPC', information: 'DIA_Test_Info' }
+    } as any);
+
+    useHistoryStore.getState().undo(filePath);
+
+    expect(getModel()?.dialogs.DIA_Test.properties.npc).toBe('initial');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// updateFunctionWithUpdater
+// ---------------------------------------------------------------------------
+
+describe('historyActions – updateFunctionWithUpdater', () => {
+  beforeEach(resetStores);
+
+  it('pushes a snapshot and applies the updater', () => {
+    historyActions.updateFunctionWithUpdater(filePath, 'DIA_Test_Info', (fn) => ({
+      ...fn,
+      actions: [{ type: 'DialogLine', text: 'from updater', speaker: 'other', id: 'x' }]
+    }));
+
+    expect(getModel()?.functions.DIA_Test_Info.actions[0]).toMatchObject({ text: 'from updater' });
+    expect(useHistoryStore.getState().canUndo(filePath)).toBe(true);
+  });
+
+  it('allows undoing the updater result', () => {
+    historyActions.updateFunctionWithUpdater(filePath, 'DIA_Test_Info', (fn) => ({
+      ...fn,
+      actions: [{ type: 'DialogLine', text: 'from updater', speaker: 'other', id: 'x' }]
+    }));
+
+    useHistoryStore.getState().undo(filePath);
+
+    expect(getModel()?.functions.DIA_Test_Info.actions[0]).toMatchObject({ text: 'initial' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// updateDialogWithNormalizedProperties
+// ---------------------------------------------------------------------------
+
+describe('historyActions – updateDialogWithNormalizedProperties', () => {
+  beforeEach(resetStores);
+
+  it('pushes a snapshot and applies the updater', () => {
+    historyActions.updateDialogWithNormalizedProperties(filePath, 'DIA_Test', (dialog) => ({
+      ...dialog,
+      properties: { ...dialog.properties, npc: 'NormalizedNPC' }
+    }));
+
+    expect(getModel()?.dialogs.DIA_Test.properties.npc).toBe('NormalizedNPC');
+    expect(useHistoryStore.getState().canUndo(filePath)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// renameFunction
+// ---------------------------------------------------------------------------
+
+describe('historyActions – renameFunction', () => {
+  beforeEach(resetStores);
+
+  it('pushes a snapshot and renames the function', () => {
+    historyActions.renameFunction(filePath, 'DIA_Test_Info', 'DIA_Test_Info_Renamed');
+
+    expect(getModel()?.functions['DIA_Test_Info_Renamed']).toBeDefined();
+    expect(getModel()?.functions['DIA_Test_Info']).toBeUndefined();
+    expect(useHistoryStore.getState().canUndo(filePath)).toBe(true);
+  });
+
+  it('allows undoing the rename', () => {
+    historyActions.renameFunction(filePath, 'DIA_Test_Info', 'DIA_Test_Info_Renamed');
+    useHistoryStore.getState().undo(filePath);
+
+    expect(getModel()?.functions['DIA_Test_Info']).toBeDefined();
+    expect(getModel()?.functions['DIA_Test_Info_Renamed']).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// updateModel
+// ---------------------------------------------------------------------------
+
+describe('historyActions – updateModel', () => {
+  beforeEach(resetStores);
+
+  it('pushes a snapshot and replaces the entire model', () => {
+    const newModel = makeModel('replaced');
+
+    historyActions.updateModel(filePath, newModel);
+
+    expect(getModel()?.dialogs.DIA_Test.properties.npc).toBe('replaced');
+    expect(useHistoryStore.getState().canUndo(filePath)).toBe(true);
+  });
+
+  it('allows undoing the full model replacement', () => {
+    historyActions.updateModel(filePath, makeModel('replaced'));
+    useHistoryStore.getState().undo(filePath);
+
+    expect(getModel()?.dialogs.DIA_Test.properties.npc).toBe('initial');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Snapshot isolation: mutations receive a deep clone, not a reference
+// ---------------------------------------------------------------------------
+
+describe('historyActions – snapshot isolation', () => {
+  beforeEach(resetStores);
+
+  it('snapshot model is independent of subsequent mutations', () => {
+    // Push snapshot, then mutate
+    historyActions.updateFunction(filePath, 'DIA_Test_Info', {
+      name: 'DIA_Test_Info',
+      returnType: 'VOID',
+      actions: [{ type: 'DialogLine', text: 'modified', speaker: 'other', id: 'x' }],
+      conditions: [],
+      calls: []
+    });
+
+    // The snapshot captured the 'initial' state; undo should restore it
+    useHistoryStore.getState().undo(filePath);
+    expect(getModel()?.functions.DIA_Test_Info.actions[0]).toMatchObject({ text: 'initial' });
+
+    // Redo should bring back 'modified'
+    useHistoryStore.getState().redo(filePath);
+    expect(getModel()?.functions.DIA_Test_Info.actions[0]).toMatchObject({ text: 'modified' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// removeDialog
+// ---------------------------------------------------------------------------
+
+describe('historyActions – removeDialog', () => {
+  beforeEach(resetStores);
+
+  it('pushes a snapshot and removes the dialog and its function', () => {
+    historyActions.removeDialog(filePath, 'DIA_Test');
+
+    expect(getModel()?.dialogs['DIA_Test']).toBeUndefined();
+    expect(getModel()?.functions['DIA_Test_Info']).toBeUndefined();
+    expect(useHistoryStore.getState().canUndo(filePath)).toBe(true);
+  });
+
+  it('allows undoing the removal', () => {
+    historyActions.removeDialog(filePath, 'DIA_Test');
+    useHistoryStore.getState().undo(filePath);
+
+    expect(getModel()?.dialogs['DIA_Test']).toBeDefined();
+    expect(getModel()?.functions['DIA_Test_Info']).toBeDefined();
+  });
+
+  it('does not delete a function shared by another dialog', () => {
+    // Set up model where DIA_Test2 also uses DIA_Test_Info
+    useFileStore.setState({
+      openFiles: new Map<string, any>([
+        [filePath, {
+          filePath,
+          semanticModel: {
+            dialogs: {
+              DIA_Test: { properties: { npc: 'NPC', information: 'DIA_Test_Info' } },
+              DIA_Test2: { properties: { npc: 'NPC', information: 'DIA_Test_Info' } },
+            },
+            functions: {
+              DIA_Test_Info: { name: 'DIA_Test_Info', returnType: 'VOID', actions: [], conditions: [], calls: [] },
+            },
+            constants: {},
+            variables: {},
+            instances: {},
+            hasErrors: false,
+            errors: [],
+          },
+          isDirty: false,
+          lastSaved: new Date(),
+          originalCode: '',
+          hasErrors: false,
+          errors: [],
+        }]
+      ]),
+      activeFile: filePath,
+    });
+
+    historyActions.removeDialog(filePath, 'DIA_Test');
+
+    // DIA_Test_Info is still referenced by DIA_Test2, so it should NOT be deleted
+    expect(getModel()?.functions['DIA_Test_Info']).toBeDefined();
+    expect(getModel()?.dialogs['DIA_Test']).toBeUndefined();
+    expect(getModel()?.dialogs['DIA_Test2']).toBeDefined();
+  });
+
+  it('deletes choice target functions referenced only via choices nested in conditionals', () => {
+    const emptyFunc = (name: string) => ({ name, returnType: 'VOID', actions: [], conditions: [], calls: [] });
+    useFileStore.setState({
+      openFiles: new Map<string, any>([
+        [filePath, {
+          filePath,
+          semanticModel: {
+            dialogs: {
+              DIA_Test: { properties: { npc: 'NPC', information: 'DIA_Test_Info' } },
+              DIA_Other: { properties: { npc: 'NPC', information: 'DIA_Other_Info' } },
+            },
+            functions: {
+              DIA_Test_Info: {
+                ...emptyFunc('DIA_Test_Info'),
+                actions: [{
+                  type: 'ConditionalAction',
+                  condition: 'MIS_Quest == LOG_RUNNING',
+                  thenActions: [
+                    { type: 'Choice', text: 'nested', targetFunction: 'DIA_Test_NestedChoice' }
+                  ],
+                  elseActions: [
+                    { type: 'Choice', text: 'shared', targetFunction: 'DIA_Shared_Target' }
+                  ],
+                }],
+              },
+              DIA_Test_NestedChoice: emptyFunc('DIA_Test_NestedChoice'),
+              DIA_Shared_Target: emptyFunc('DIA_Shared_Target'),
+              DIA_Other_Info: {
+                ...emptyFunc('DIA_Other_Info'),
+                actions: [{
+                  type: 'ConditionalAction',
+                  condition: 'TRUE',
+                  thenActions: [
+                    { type: 'Choice', text: 'also shared', targetFunction: 'DIA_Shared_Target' }
+                  ],
+                  elseActions: [],
+                }],
+              },
+            },
+            constants: {},
+            variables: {},
+            instances: {},
+            hasErrors: false,
+            errors: [],
+          },
+          isDirty: false,
+          lastSaved: new Date(),
+          originalCode: '',
+          hasErrors: false,
+          errors: [],
+        }]
+      ]),
+      activeFile: filePath,
+    });
+
+    historyActions.removeDialog(filePath, 'DIA_Test');
+
+    // Nested choice target only used by the deleted dialog must be removed
+    expect(getModel()?.functions['DIA_Test_NestedChoice']).toBeUndefined();
+    // Nested choice target still referenced (also via a nested choice) by another dialog must stay
+    expect(getModel()?.functions['DIA_Shared_Target']).toBeDefined();
+    expect(getModel()?.functions['DIA_Other_Info']).toBeDefined();
+  });
+
+  it('keeps a dialog-owned function referenced by a surviving raw ordinary call', () => {
+    const emptyFunc = (name: string, actions: any[] = []) => ({ name, returnType: 'VOID', actions, conditions: [], calls: [] });
+    useFileStore.setState((state) => {
+      const fileState = state.openFiles.get(filePath)!;
+      fileState.semanticModel = {
+        ...fileState.semanticModel,
+        dialogs: {
+          DIA_Test: { properties: { npc: 'NPC', information: 'DIA_Test_Info' } },
+          DIA_Other: { properties: { npc: 'NPC', information: 'DIA_Other_Info' } },
+        },
+        functions: {
+          DIA_Test_Info: emptyFunc('DIA_Test_Info', [{ type: 'Choice', targetFunction: 'Shared' }]),
+          Shared: emptyFunc('Shared'),
+          DIA_Other_Info: emptyFunc('DIA_Other_Info', [{ type: 'Choice', targetFunction: 'DIA_Other_Use' }]),
+          DIA_Other_Use: emptyFunc('DIA_Other_Use', [{
+            type: 'Action', action: 'if (Flag /* keep */) { Shared(); };'
+          }]),
+        },
+      } as any;
+    });
+
+    historyActions.removeDialog(filePath, 'DIA_Test');
+
+    expect(getModel()?.functions.Shared).toBeDefined();
+    expect(getModel()?.dialogs['DIA_Test']).toBeUndefined();
+  });
+
+  it('preserves class/prototype declarationOrder entries and maps untouched by a dialog deletion', () => {
+    // Parser fix P1: declarationOrder entries can now be 'class'/'prototype'.
+    // removeDialog filters declarationOrder by name, so unrelated entry types
+    // (and the classes/prototypes maps themselves) must survive unchanged.
+    useFileStore.setState((state) => {
+      const fileState = state.openFiles.get(filePath)!;
+      fileState.semanticModel = {
+        ...fileState.semanticModel,
+        classes: { C_Foo: { name: 'C_Foo', sourceText: 'class C_Foo {};' } },
+        prototypes: { Mst_Default: { name: 'Mst_Default', parent: 'C_Foo', sourceText: 'prototype Mst_Default(C_Foo) {};' } },
+        declarationOrder: [
+          { type: 'class', name: 'C_Foo' },
+          { type: 'prototype', name: 'Mst_Default' },
+          { type: 'dialog', name: 'DIA_Test' },
+          { type: 'function', name: 'DIA_Test_Info' },
+        ],
+      } as any;
+    });
+
+    historyActions.removeDialog(filePath, 'DIA_Test');
+
+    const model = getModel();
+    expect(model?.classes?.['C_Foo']).toBeDefined();
+    expect(model?.prototypes?.['Mst_Default']).toBeDefined();
+    expect(model?.declarationOrder).toEqual([
+      { type: 'class', name: 'C_Foo' },
+      { type: 'prototype', name: 'Mst_Default' },
+    ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// renameDialog
+// ---------------------------------------------------------------------------
+
+describe('historyActions – renameDialog', () => {
+  beforeEach(() => {
+    useFileStore.setState({
+      openFiles: new Map<string, any>([
+        [filePath, {
+          filePath,
+          semanticModel: {
+            dialogs: {
+              DIA_Npc_Hello: {
+                name: 'DIA_Npc_Hello',
+                parent: 'C_INFO',
+                properties: {
+                  npc: 'NPC_Npc',
+                  information: 'DIA_Npc_Hello_Info',
+                  condition: 'DIA_Npc_Hello_Condition',
+                },
+              },
+            },
+            functions: {
+              DIA_Npc_Hello_Info: {
+                name: 'DIA_Npc_Hello_Info',
+                returnType: 'VOID',
+                actions: [],
+                conditions: [],
+                calls: [],
+              },
+              DIA_Npc_Hello_Condition: {
+                name: 'DIA_Npc_Hello_Condition',
+                returnType: 'int',
+                actions: [],
+                conditions: [],
+                calls: [],
+              },
+            },
+            constants: {},
+            variables: {},
+            instances: {},
+            hasErrors: false,
+            errors: [],
+          },
+          isDirty: false,
+          lastSaved: new Date(),
+          originalCode: '',
+          hasErrors: false,
+          errors: [],
+        }]
+      ]),
+      activeFile: filePath,
+    });
+
+    useHistoryStore.setState({
+      editHistory: new Map(),
+    });
+  });
+
+  it('pushes a snapshot and renames the dialog and cascade functions', () => {
+    historyActions.renameDialog(filePath, 'DIA_Npc_Hello', 'DIA_Npc_Greeting', true);
+
+    expect(getModel()?.dialogs['DIA_Npc_Hello']).toBeUndefined();
+    expect(getModel()?.dialogs['DIA_Npc_Greeting']).toBeDefined();
+    expect(getModel()?.functions['DIA_Npc_Hello_Info']).toBeUndefined();
+    expect(getModel()?.functions['DIA_Npc_Greeting_Info']).toBeDefined();
+    expect(getModel()?.functions['DIA_Npc_Hello_Condition']).toBeUndefined();
+    expect(getModel()?.functions['DIA_Npc_Greeting_Condition']).toBeDefined();
+    expect(useHistoryStore.getState().canUndo(filePath)).toBe(true);
+  });
+
+  it('updates the dialog property references to renamed functions', () => {
+    historyActions.renameDialog(filePath, 'DIA_Npc_Hello', 'DIA_Npc_Greeting', true);
+
+    const renamedDialog = getModel()?.dialogs['DIA_Npc_Greeting'];
+    expect(renamedDialog?.properties?.information).toBe('DIA_Npc_Greeting_Info');
+    expect(renamedDialog?.properties?.condition).toBe('DIA_Npc_Greeting_Condition');
+  });
+
+  it('allows undoing the rename', () => {
+    historyActions.renameDialog(filePath, 'DIA_Npc_Hello', 'DIA_Npc_Greeting', true);
+    useHistoryStore.getState().undo(filePath);
+
+    expect(getModel()?.dialogs['DIA_Npc_Hello']).toBeDefined();
+    expect(getModel()?.dialogs['DIA_Npc_Greeting']).toBeUndefined();
+    expect(getModel()?.functions['DIA_Npc_Hello_Info']).toBeDefined();
+    expect(getModel()?.functions['DIA_Npc_Greeting_Info']).toBeUndefined();
+  });
+
+  it('renames choice targets nested inside conditional branches', () => {
+    const model = getModel()!;
+    useFileStore.setState((state) => {
+      const fileState = state.openFiles.get(filePath)!;
+      fileState.semanticModel = {
+        ...model,
+        functions: {
+          ...model.functions,
+          DIA_Npc_Hello_Info: {
+            ...model.functions['DIA_Npc_Hello_Info'],
+            actions: [{
+              type: 'ConditionalAction',
+              condition: 'MIS_Quest == LOG_RUNNING',
+              thenActions: [
+                { type: 'Choice', text: 'nested', targetFunction: 'DIA_Npc_Hello_Option1' }
+              ],
+              elseActions: [],
+            }],
+          },
+          DIA_Npc_Hello_Option1: {
+            name: 'DIA_Npc_Hello_Option1',
+            returnType: 'VOID',
+            actions: [],
+            conditions: [],
+            calls: [],
+          },
+        },
+      } as any;
+    });
+
+    historyActions.renameDialog(filePath, 'DIA_Npc_Hello', 'DIA_Npc_Greeting', true);
+
+    // The nested choice target function must be renamed...
+    expect(getModel()?.functions['DIA_Npc_Hello_Option1']).toBeUndefined();
+    expect(getModel()?.functions['DIA_Npc_Greeting_Option1']).toBeDefined();
+    // ...and the nested Choice reference updated to the new name
+    const infoActions = getModel()?.functions['DIA_Npc_Greeting_Info']?.actions as any[];
+    expect(infoActions[0].thenActions[0].targetFunction).toBe('DIA_Npc_Greeting_Option1');
+  });
+
+  it('rewrites every structured dialog and function reference when renaming a shared dialog', () => {
+    useFileStore.setState((state) => {
+      const fileState = state.openFiles.get(filePath)!;
+      const sharedInfo = {
+        name: 'DIA_Test_Info', returnType: 'VOID', conditions: [], calls: [],
+        actions: [
+          { type: 'Choice', dialogRef: 'DIA_Test', targetFunction: 'DIA_Test_Choice' },
+          { type: 'ClearChoicesAction', dialog: 'DIA_Test' },
+        ],
+      };
+      fileState.semanticModel = {
+        ...fileState.semanticModel,
+        dialogs: {
+          DIA_Test: { properties: { information: 'DIA_Test_Info', condition: 'DIA_Test_Condition' } },
+          DIA_Other: { properties: { information: sharedInfo } },
+        },
+        functions: {
+          DIA_Test_Info: sharedInfo,
+          DIA_Test_Choice: { name: 'DIA_Test_Choice', returnType: 'VOID', actions: [], conditions: [], calls: [] },
+          DIA_Test_Condition: {
+            name: 'DIA_Test_Condition', returnType: 'INT', actions: [], calls: [],
+            conditions: [{ type: 'NpcKnowsInfoCondition', dialogRef: 'DIA_Test' }],
+          },
+        },
+      } as any;
+    });
+
+    historyActions.renameDialog(filePath, 'DIA_Test', 'DIA_Renamed', true);
+
+    const model = getModel()!;
+    expect(model.dialogs.DIA_Renamed).toBeDefined();
+    expect(model.dialogs.DIA_Other.properties?.information).toBe(model.functions.DIA_Renamed_Info);
+    expect(model.functions.DIA_Renamed_Info.actions).toMatchObject([
+      { type: 'Choice', dialogRef: 'DIA_Renamed', targetFunction: 'DIA_Renamed_Choice' },
+      { type: 'ClearChoicesAction', dialog: 'DIA_Renamed' },
+    ]);
+    expect(model.functions.DIA_Renamed_Condition.conditions).toMatchObject([
+      { type: 'NpcKnowsInfoCondition', dialogRef: 'DIA_Renamed' },
+    ]);
+  });
+
+  it('refuses a rename that would leave a reference in preserved raw source', () => {
+    useFileStore.setState((state) => {
+      const fileState = state.openFiles.get(filePath)!;
+      fileState.semanticModel = {
+        ...fileState.semanticModel,
+        functions: {
+          ...fileState.semanticModel.functions,
+          DIA_Other_Info: {
+            name: 'DIA_Other_Info', returnType: 'VOID', conditions: [], calls: [],
+            actions: [{ type: 'Action', action: 'if (Npc_KnowsInfo(other, DIA_Npc_Hello)) { Touch(); };' }],
+          },
+        },
+      } as any;
+    });
+
+    expect(() => historyActions.renameDialog(filePath, 'DIA_Npc_Hello', 'DIA_Npc_Greeting', true))
+      .toThrow(/preserved source refers/i);
+    expect(getModel()?.dialogs['DIA_Npc_Hello']).toBeDefined();
+    expect(getModel()?.dialogs['DIA_Npc_Greeting']).toBeUndefined();
+    expect(getModel()?.functions['DIA_Npc_Hello_Info']).toBeDefined();
+  });
+
+  it('leaves class/prototype declarationOrder entries unrenamed', () => {
+    // renameDialog only rewrites 'dialog'/'function' declarationOrder entries;
+    // 'class'/'prototype' entries (parser fix P1) must pass through untouched.
+    useFileStore.setState((state) => {
+      const fileState = state.openFiles.get(filePath)!;
+      fileState.semanticModel = {
+        ...fileState.semanticModel,
+        declarationOrder: [
+          { type: 'class', name: 'C_Foo' },
+          { type: 'prototype', name: 'Mst_Default' },
+          { type: 'dialog', name: 'DIA_Npc_Hello' },
+          { type: 'function', name: 'DIA_Npc_Hello_Info' },
+        ],
+      } as any;
+    });
+
+    historyActions.renameDialog(filePath, 'DIA_Npc_Hello', 'DIA_Npc_Greeting', true);
+
+    expect(getModel()?.declarationOrder).toEqual([
+      { type: 'class', name: 'C_Foo' },
+      { type: 'prototype', name: 'Mst_Default' },
+      { type: 'dialog', name: 'DIA_Npc_Greeting' },
+      { type: 'function', name: 'DIA_Npc_Greeting_Info' },
+    ]);
+  });
+});

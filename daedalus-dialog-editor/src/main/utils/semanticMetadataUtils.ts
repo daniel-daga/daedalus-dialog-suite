@@ -1,0 +1,604 @@
+import type {
+  DialogMetadata, FileIndex, FileParseErrors, RoutineArgIndex, RoutineSite, SemanticModel, SpawnSite
+} from '../../shared/types';
+import { PARSE_ERROR_LIMIT, PARSE_ERROR_TEXT_LIMIT } from '../../shared/types';
+import { SemanticModelBuilderVisitor } from 'daedalus-parser/semantic-visitor';
+
+import DaedalusParser from 'daedalus-parser';
+const daedalusWrapper = new DaedalusParser();
+
+export interface ParsedFileMetadata {
+  dialogs: DialogMetadata[];
+  /** `hasDailyRoutine`: the body sets `daily_routine`, which only a C_NPC has (#281). */
+  instances: Array<{ name: string; parent: string; hasDailyRoutine?: boolean }>;
+  prototypes: Array<{ name: string; parent: string }>;
+  isQuestFile: boolean;
+  routines: string[];
+  /**
+   * Literal AI_Output voice ids (expression-valued ids are skipped), each with
+   * the 1-based line it was written on, so a voice-id finding names it (#267).
+   */
+  voiceIds: Array<{ id: string; functionName: string; line?: number }>;
+  /**
+   * The full semantic model the metadata pass already built — present only
+   * when the parse was clean and both visitor passes completed, so it can be
+   * handed to the renderer instead of a second parse (P0 double-parse fix).
+   * Error files stay on the parse path, which returns an errors-only model.
+   */
+  semanticModel?: SemanticModel;
+  /**
+   * Every function the file declares, in the casing it was written. The World
+   * surface checks a `oCTriggerScript.function` against the aggregate (#269),
+   * and it comes from here rather than from the site indexes because those read
+   * only clean-parse models — a file that fails to parse still declares real
+   * functions before the point it fails at.
+   */
+  functions: string[];
+  /**
+   * The file's syntax errors, present only when it has any. The model above is
+   * withheld for exactly these files, so without this the errors this pass
+   * already found would be computed and thrown away (#267).
+   */
+  parseErrors?: FileParseErrors;
+}
+
+/**
+ * The parse's syntax errors as plain, bounded, IPC-safe data. See
+ * {@link FileParseErrors} for why both caps are here.
+ */
+const collectParseErrors = (
+  semanticModel: SemanticModel,
+  filePath: string
+): FileParseErrors | undefined => {
+  const errors = semanticModel.errors || [];
+  if (errors.length === 0) return undefined;
+
+  return {
+    filePath,
+    total: errors.length,
+    errors: errors.slice(0, PARSE_ERROR_LIMIT).map((error) => ({
+      type: error.type,
+      message: error.message,
+      line: error.position?.row ?? 0,
+      column: error.position?.column ?? 0,
+      text: (error.text || '').slice(0, PARSE_ERROR_TEXT_LIMIT)
+    }))
+  };
+};
+
+const hasQuestTopicConstants = (semanticModel: SemanticModel): boolean => {
+  const constantNames = Object.keys(semanticModel.constants || {});
+  return constantNames.some((name) => name.toUpperCase().startsWith('TOPIC_'));
+};
+
+const hasQuestStateVariables = (semanticModel: SemanticModel): boolean => {
+  const variableNames = Object.keys(semanticModel.variables || {});
+  return variableNames.some((name) => name.toUpperCase().startsWith('MIS_'));
+};
+
+const extractDialogs = (semanticModel: SemanticModel, filePath: string): DialogMetadata[] => {
+  const dialogs: DialogMetadata[] = [];
+
+  Object.entries(semanticModel.dialogs || {}).forEach(([dialogName, dialog]) => {
+    const npc = dialog?.properties?.npc;
+    if (!npc || typeof npc !== 'string') {
+      return;
+    }
+
+    dialogs.push({
+      dialogName: dialog.name || dialogName,
+      npc,
+      filePath
+    });
+  });
+
+  return dialogs;
+};
+
+const extractInstanceAndPrototypeDeclarations = (
+  parseResult: any,
+  semanticModel: SemanticModel
+): { instances: ParsedFileMetadata['instances']; prototypes: Array<{ name: string; parent: string }> } => {
+  const declarations = typeof daedalusWrapper.extractDeclarations === 'function'
+    ? daedalusWrapper.extractDeclarations(parseResult)
+    : [];
+
+  const instances: ParsedFileMetadata['instances'] = [];
+  const prototypes: Array<{ name: string; parent: string }> = [];
+  for (const declaration of declarations) {
+    if (!declaration?.name || !declaration.parent) continue;
+    if (declaration.type === 'instance') {
+      const hasDailyRoutine = Boolean(semanticModel.instances?.[declaration.name]?.dailyRoutine);
+      instances.push({ name: declaration.name, parent: declaration.parent, ...(hasDailyRoutine ? { hasDailyRoutine } : {}) });
+    } else if (declaration.type === 'prototype') {
+      prototypes.push({ name: declaration.name, parent: declaration.parent });
+    }
+  }
+  return { instances, prototypes };
+};
+
+const extractDailyRoutines = (semanticModel: SemanticModel): string[] => {
+  const routines: string[] = [];
+  const seen = new Set<string>();
+  for (const instance of Object.values(semanticModel.instances || {})) {
+    if (instance.dailyRoutine && !seen.has(instance.dailyRoutine)) {
+      routines.push(instance.dailyRoutine);
+      seen.add(instance.dailyRoutine);
+    }
+  }
+  return routines;
+};
+
+const collectDialogLineVoiceIds = (
+  actions: any[],
+  functionName: string,
+  collected: Array<{ id: string; functionName: string; line?: number }>
+): void => {
+  for (const action of actions || []) {
+    if (!action) {
+      continue;
+    }
+    if (action.type === 'DialogLine') {
+      if (typeof action.id === 'string' && action.id && !action.idIsExpression) {
+        collected.push({ id: action.id, functionName, line: action.line });
+      }
+      continue;
+    }
+    if (Array.isArray(action.thenActions) || Array.isArray(action.elseActions)) {
+      collectDialogLineVoiceIds(action.thenActions || [], functionName, collected);
+      collectDialogLineVoiceIds(action.elseActions || [], functionName, collected);
+    }
+  }
+};
+
+const extractVoiceIds = (semanticModel: SemanticModel): Array<{ id: string; functionName: string; line?: number }> => {
+  const voiceIds: Array<{ id: string; functionName: string; line?: number }> = [];
+  for (const [functionName, func] of Object.entries(semanticModel.functions || {})) {
+    collectDialogLineVoiceIds(func.actions || [], functionName, voiceIds);
+  }
+  return voiceIds;
+};
+
+// Engine externals that take a waypoint name literal, and the 0-based argument
+// index it sits at. Closed, and measured rather than guessed (W5,
+// level-editor.md §16.8): every external declared in the G2 MDK's own
+// Content/AI/AI_Intern/Externals.d whose string parameter names a place. The
+// engine's set is closed, so this one is too — a project's *own* helpers are
+// derived from their declarations below, never listed here.
+const ENGINE_EXTERNAL_WAYPOINT_ARG_INDEX: Record<string, number> = {
+  ai_gotowp: 1,
+  npc_getdisttowp: 1,
+  ai_teleport: 1,
+  ai_startstate: 3,
+  ta: 4,
+  ta_min: 6,
+  // spawnPoint: a waypoint *or* a free point, and both spellings are literal
+  // here. Retail measures 3,018 of 3,722 Wld_InsertNpc literals as waypoint
+  // names; the FP_ remainder simply never matches a selected waypoint.
+  wld_insertnpc: 1,
+  wld_insertitem: 1
+};
+
+/**
+ * Maps a called function's lowercased name to the argument index that holds
+ * its waypoint literal — the engine externals above, plus every
+ * project-declared function whose own signature has a parameter literally
+ * named `waypoint` typed `string` (the derivation rule from §16.8: don't
+ * hardcode the project's helper functions, read their own declaration).
+ */
+export function buildWaypointParamIndex(fileModels: Array<{ semanticModel: SemanticModel }>): Record<string, number> {
+  const index: Record<string, number> = { ...ENGINE_EXTERNAL_WAYPOINT_ARG_INDEX };
+  for (const { semanticModel } of fileModels) {
+    for (const func of Object.values(semanticModel.functions || {})) {
+      const paramIndex = (func.parameters || []).findIndex(
+        // Both halves case-insensitively: Daedalus is, and the corpus spells
+        // the same parameter `waypoint`, `WayPoint` and `WAYPOINT`.
+        (param) => param.name?.toLowerCase() === 'waypoint' && param.type?.toLowerCase() === 'string'
+      );
+      if (paramIndex !== -1) {
+        index[func.name.toLowerCase()] = paramIndex;
+      }
+    }
+  }
+  return index;
+}
+
+/**
+ * Waypoint name literals passed to a call site resolved through
+ * buildWaypointParamIndex, keyed by UPPERCASED waypoint name (Daedalus is
+ * case-insensitive) with the calling routine's own file/function location and
+ * the call's 1-based line, which is what a `waypoint-not-in-world` finding
+ * names (#267).
+ * Needs every file's semantic model at once — a project helper's waypoint
+ * parameter can be declared in one file and called from another.
+ */
+export function extractWaypointSites(
+  fileModels: Array<{ filePath: string; semanticModel: SemanticModel }>
+): Record<string, Array<{ filePath: string; functionName: string; line: number }>> {
+  const paramIndex = buildWaypointParamIndex(fileModels);
+  const sites: Record<string, Array<{ filePath: string; functionName: string; line: number }>> = {};
+
+  for (const { filePath, semanticModel } of fileModels) {
+    for (const [functionName, func] of Object.entries(semanticModel.functions || {})) {
+      for (const call of func.callSites || []) {
+        const argIndex = paramIndex[call.functionName.toLowerCase()];
+        if (argIndex === undefined) continue;
+
+        const arg = call.args?.[argIndex];
+        if (!arg || !arg.isString || !arg.value) continue;
+
+        const key = arg.value.toUpperCase();
+        if (!sites[key]) {
+          sites[key] = [];
+        }
+        sites[key].push({ filePath, functionName, line: call.position.startLine });
+      }
+    }
+  }
+
+  return sites;
+}
+
+// The two engine externals that spawn an instance at a place. They are the
+// only waypoint externals carrying an instance at argument 0 — every other one
+// in ENGINE_EXTERNAL_WAYPOINT_ARG_INDEX acts on `self` — so a spawn is read
+// from this pair alone, never from the waypoint table.
+const SPAWN_EXTERNAL_NAMES = new Set(['wld_insertnpc', 'wld_insertitem']);
+
+/** A bare Daedalus identifier: anything else at argument 0 is an expression. */
+const BARE_IDENTIFIER = /^[A-Za-z_]\w*$/;
+
+/**
+ * Static spawn sites: every `Wld_InsertNpc`/`Wld_InsertItem` call whose
+ * instance *and* spawn point are both statically resolvable, with the call's
+ * own file, function and 1-based line. Names are UPPERCASED because Daedalus
+ * is case-insensitive.
+ *
+ * A site that is not statically resolvable — an expression instance
+ * (`Hlp_Random`, an array index, a variable holding a loop's pick) or a
+ * non-literal spawn point — is **excluded, never guessed** (level-editor.md §8,
+ * design brief §5.1). This is deliberately a second index rather than a
+ * widening of `extractWaypointSites`: a spawn and a routine answer different
+ * questions about the same waypoint.
+ */
+export function extractSpawnSites(
+  fileModels: Array<{ filePath: string; semanticModel: SemanticModel }>
+): SpawnSite[] {
+  const sites: SpawnSite[] = [];
+
+  for (const { filePath, semanticModel } of fileModels) {
+    for (const [functionName, func] of Object.entries(semanticModel.functions || {})) {
+      for (const call of func.callSites || []) {
+        if (!SPAWN_EXTERNAL_NAMES.has(call.functionName.toLowerCase())) continue;
+
+        const instanceArg = call.args?.[0];
+        const spawnPointArg = call.args?.[1];
+        if (!instanceArg || instanceArg.isString || !BARE_IDENTIFIER.test(instanceArg.raw)) continue;
+        if (!spawnPointArg || !spawnPointArg.isString || !spawnPointArg.value) continue;
+
+        sites.push({
+          instance: instanceArg.raw.toUpperCase(),
+          spawnPoint: spawnPointArg.value.toUpperCase(),
+          filePath,
+          functionName,
+          line: call.position.startLine
+        });
+      }
+    }
+  }
+
+  return sites;
+}
+
+
+/**
+ * The two engine externals that actually install a routine entry, from their
+ * own `Externals.d` signatures:
+ *
+ *   TA     (var C_Npc self, var int start_h,                var int stop_h,                var int state, var string waypoint)
+ *   TA_MIN (var C_Npc self, var int start_h, var int start_m, var int stop_h, var int stop_m, var int state, var string waypoint)
+ *
+ * The waypoint indices agree with `ENGINE_EXTERNAL_WAYPOINT_ARG_INDEX` above,
+ * which is the measured table — these are the same two rows with their time
+ * slots added.
+ */
+const ROUTINE_EXTERNAL_ARG_INDEX: Record<string, RoutineArgIndex> = {
+  ta: { startH: 1, stopH: 2, waypoint: 4 },
+  ta_min: { startH: 1, startM: 2, stopH: 3, stopM: 4, waypoint: 6 }
+};
+
+const INTEGER_LITERAL = /^\d+$/;
+
+const MINUTES_PER_DAY = 1440;
+
+/**
+ * Which argument of every routine-carrying function holds which part of a
+ * window, seeded with the two externals and grown by **following the call**:
+ * a `TA_*` wrapper passes its own parameters straight into `TA_MIN`, so the
+ * wrapper's layout is read off which of its parameters land in slots already
+ * known.
+ *
+ * This is `buildWaypointParamIndex`'s derivation rule — don't hardcode the
+ * project's helper functions, read their own declaration — taken one step
+ * further than
+ * `buildWaypointParamIndex` needs to. That one can key on a parameter *named*
+ * `waypoint`; a window has four parts and no such convention is measured, so
+ * matching on names like `start_h` would be an assumption that fails silently
+ * and totally on a mod that spells them differently. Following the call
+ * assumes nothing but that the wrapper passes its parameters through, which is
+ * the only thing a wrapper can do with them.
+ *
+ * The sweep repeats while it is still learning, so a wrapper around a wrapper
+ * resolves too; retail has one level.
+ */
+export function buildRoutineParamIndex(
+  fileModels: Array<{ semanticModel: SemanticModel }>
+): Record<string, RoutineArgIndex> {
+  const index: Record<string, RoutineArgIndex> = { ...ROUTINE_EXTERNAL_ARG_INDEX };
+
+  let learned = true;
+  while (learned) {
+    learned = false;
+
+    for (const { semanticModel } of fileModels) {
+      for (const func of Object.values(semanticModel.functions || {})) {
+        const key = func.name.toLowerCase();
+        if (index[key]) continue;
+
+        const parameterAt = new Map<string, number>();
+        (func.parameters || []).forEach((param, position) => {
+          if (param.name) parameterAt.set(param.name.toLowerCase(), position);
+        });
+        if (parameterAt.size === 0) continue;
+
+        for (const call of func.callSites || []) {
+          const carrier = index[call.functionName.toLowerCase()];
+          if (!carrier) continue;
+
+          // Which of this function's own parameters the carrier's slot is
+          // handed. A literal or an expression there is not a pass-through:
+          // the wrapper fixes that part of the window rather than taking it.
+          const passedThrough = (slot: number | undefined): number | undefined => {
+            if (slot === undefined) return undefined;
+            const arg = call.args?.[slot];
+            if (!arg || arg.isString || !BARE_IDENTIFIER.test(arg.raw)) return undefined;
+            return parameterAt.get(arg.raw.toLowerCase());
+          };
+
+          const startH = passedThrough(carrier.startH);
+          const stopH = passedThrough(carrier.stopH);
+          const waypoint = passedThrough(carrier.waypoint);
+          if (startH === undefined || stopH === undefined || waypoint === undefined) continue;
+
+          index[key] = {
+            startH,
+            startM: passedThrough(carrier.startM),
+            stopH,
+            stopM: passedThrough(carrier.stopM),
+            waypoint
+          };
+          learned = true;
+          break;
+        }
+      }
+    }
+  }
+
+  return index;
+}
+
+/**
+ * Every routine entry in the project: the time window, the waypoint it puts the
+ * NPC at, and the routine function it sits in (level-editor.md §16.19, the
+ * slice the time slider waits on).
+ *
+ * Times come back as minutes since midnight — see `RoutineSite` for why hour 24
+ * is 0 and what a window whose end is at or before its start means. An entry
+ * whose hour, minute or waypoint is not a literal is **excluded, never
+ * guessed**, the same hard rule the spawn index follows (§8, design brief
+ * §5.1); a constant hour is as unresolvable here as a computed waypoint,
+ * because the main process holds no semantic model of the project to resolve
+ * one against.
+ */
+export function extractRoutineSites(
+  fileModels: Array<{ filePath: string; semanticModel: SemanticModel }>,
+  argIndex: Record<string, RoutineArgIndex> = buildRoutineParamIndex(fileModels)
+): RoutineSite[] {
+  const sites: RoutineSite[] = [];
+
+  const literalInt = (raw: string | undefined, isString: boolean | undefined): number | undefined => {
+    if (raw === undefined || isString || !INTEGER_LITERAL.test(raw)) return undefined;
+    return Number.parseInt(raw, 10);
+  };
+
+  for (const { filePath, semanticModel } of fileModels) {
+    for (const [functionName, func] of Object.entries(semanticModel.functions || {})) {
+      for (const call of func.callSites || []) {
+        const slots = argIndex[call.functionName.toLowerCase()];
+        if (!slots) continue;
+
+        const minuteOfDay = (hourSlot: number, minuteSlot: number | undefined) => {
+          const hourArg = call.args?.[hourSlot];
+          const hour = literalInt(hourArg?.raw, hourArg?.isString);
+          if (hour === undefined) return undefined;
+          if (minuteSlot === undefined) return (hour * 60) % MINUTES_PER_DAY;
+          const minuteArg = call.args?.[minuteSlot];
+          const minute = literalInt(minuteArg?.raw, minuteArg?.isString);
+          if (minute === undefined) return undefined;
+          return (hour * 60 + minute) % MINUTES_PER_DAY;
+        };
+
+        const startMinute = minuteOfDay(slots.startH, slots.startM);
+        const endMinute = minuteOfDay(slots.stopH, slots.stopM);
+        if (startMinute === undefined || endMinute === undefined) continue;
+
+        const waypointArg = call.args?.[slots.waypoint];
+        if (!waypointArg || !waypointArg.isString || !waypointArg.value) continue;
+
+        sites.push({
+          routine: functionName.toUpperCase(),
+          stateName: call.functionName.toUpperCase(),
+          startMinute,
+          endMinute,
+          waypoint: waypointArg.value.toUpperCase(),
+          filePath,
+          line: call.position.startLine
+        });
+      }
+    }
+  }
+
+  return sites;
+}
+
+/**
+ * One file's share of the project index (#319), its routine sites read with
+ * layouts the whole-project index already derived (`ProjectIndex.routineLayouts`,
+ * UPPERCASED keys), since the wrappers a file calls are declared elsewhere.
+ * A file that does not parse clean yields no sites, as at load.
+ */
+export function indexFile(
+  filePath: string,
+  semanticModel: SemanticModel,
+  layouts: Record<string, RoutineArgIndex>
+): FileIndex {
+  const argIndex = Object.fromEntries(
+    Object.entries(layouts).map(([callee, layout]) => [callee.toLowerCase(), layout])
+  );
+  const fileModels = semanticModel.hasErrors ? [] : [{ filePath, semanticModel }];
+  return {
+    routineSites: extractRoutineSites(fileModels, argIndex),
+    spawnSites: extractSpawnSites(fileModels),
+    exchangeSites: extractExchangeSites(fileModels),
+    instances: Object.values(semanticModel.instances || {}).map(({ name, parent, npcId, dailyRoutine }) => ({
+      name,
+      parent,
+      ...(npcId === undefined ? {} : { npcId }),
+      ...(dailyRoutine ? { dailyRoutine } : {}),
+    })),
+  };
+}
+
+/**
+ * UPPERCASED NPC instance to the UPPERCASED `daily_routine` it declares — the
+ * half of a schedule `extractRoutineSites` cannot carry, because a routine
+ * function is shared and knows nothing about who runs it.
+ *
+ * Declaring the field is the filter: an item instance has no `daily_routine`,
+ * so no prototype-chain walk is needed to keep items out.
+ *
+ * It reads the same whole-project model list `extractRoutineSites` does rather
+ * than riding the per-file worker pass `routines` uses, deliberately: both
+ * halves of a schedule then come from one set of files, so an NPC never
+ * resolves to a routine whose entries the index could not read.
+ */
+export function extractRoutinesByNpc(
+  fileModels: Array<{ semanticModel: SemanticModel }>
+): Record<string, string> {
+  const byNpc: Record<string, string> = {};
+
+  for (const { semanticModel } of fileModels) {
+    for (const instance of Object.values(semanticModel.instances || {})) {
+      if (!instance.name || !instance.dailyRoutine) continue;
+      byNpc[instance.name.toUpperCase()] = instance.dailyRoutine.toUpperCase();
+    }
+  }
+
+  return byNpc;
+}
+
+/**
+ * UPPERCASED instance to its literal `id` — what the engine's `RTN_<state>_<id>`
+ * rule splits on (`routineStatesOf`). An `id` that is not a literal is absent:
+ * excluded, never guessed.
+ */
+export function extractNpcIds(
+  fileModels: Array<{ semanticModel: SemanticModel }>
+): Record<string, number> {
+  const ids: Record<string, number> = {};
+  for (const { semanticModel } of fileModels) {
+    for (const instance of Object.values(semanticModel.instances || {})) {
+      if (instance.name && instance.npcId !== undefined) ids[instance.name.toUpperCase()] = instance.npcId;
+    }
+  }
+  return ids;
+}
+
+const EXCHANGE_EXTERNAL_NAMES = new Set(['npc_exchangeroutine', 'b_startotherroutine']);
+
+/**
+ * Every `Npc_ExchangeRoutine` / `B_StartOtherRoutine` call whose state name is
+ * a string literal — which states the scripts actually *trigger*, as against
+ * the states `routineStatesOf` finds written.
+ *
+ * **Deliberately not consumed by the picker.** It is the ground truth the
+ * slice 11 measurement compares variants against, and later the "what triggers
+ * this state" navigation. A `self` target is recorded as written rather than
+ * resolved through the enclosing dialog: that derivation is real but has no
+ * reader yet, and an API grown for a call site that does not exist is the
+ * thing §16.19 slice 9 decision 4 declined to build.
+ */
+export function extractExchangeSites(
+  fileModels: Array<{ filePath: string; semanticModel: SemanticModel }>
+): Array<{ target: string; state: string; filePath: string; functionName: string; line: number }> {
+  const sites: Array<{
+    target: string; state: string; filePath: string; functionName: string; line: number;
+  }> = [];
+
+  for (const { filePath, semanticModel } of fileModels) {
+    for (const [functionName, func] of Object.entries(semanticModel.functions || {})) {
+      for (const call of func.callSites || []) {
+        if (!EXCHANGE_EXTERNAL_NAMES.has(call.functionName.toLowerCase())) continue;
+
+        const targetArg = call.args?.[0];
+        if (!targetArg || targetArg.isString || !BARE_IDENTIFIER.test(targetArg.raw)) continue;
+
+        const stateArg = call.args?.[1];
+        if (!stateArg || !stateArg.isString || !stateArg.value) continue;
+
+        sites.push({
+          target: targetArg.raw.toUpperCase(),
+          state: stateArg.value.toUpperCase(),
+          filePath,
+          functionName: functionName.toUpperCase(),
+          line: call.position.startLine
+        });
+      }
+    }
+  }
+
+  return sites;
+}
+
+export function extractFileMetadataFromSource(sourceCode: string, filePath: string): ParsedFileMetadata {
+  const parseResult = daedalusWrapper.parse(sourceCode);
+  const tree = parseResult.tree;
+  const visitor = new SemanticModelBuilderVisitor();
+
+  visitor.checkForSyntaxErrors(tree.rootNode as any, sourceCode);
+
+  // Try to build as much semantic state as possible, even if syntax errors exist.
+  let modelComplete = false;
+  try {
+    visitor.pass1_createObjects(tree.rootNode as any);
+    visitor.pass2_analyzeAndLink(tree.rootNode as any);
+    modelComplete = true;
+  } catch {
+    // Keep partial semantic model for metadata extraction.
+  }
+
+  const semanticModel = visitor.semanticModel as SemanticModel;
+  const { instances, prototypes } = extractInstanceAndPrototypeDeclarations(parseResult, semanticModel);
+
+  return {
+    dialogs: extractDialogs(semanticModel, filePath),
+    instances,
+    prototypes,
+    isQuestFile: hasQuestTopicConstants(semanticModel) || hasQuestStateVariables(semanticModel),
+    routines: extractDailyRoutines(semanticModel),
+    functions: Object.keys(semanticModel.functions || {}),
+    voiceIds: extractVoiceIds(semanticModel),
+    semanticModel: modelComplete && !semanticModel.hasErrors ? semanticModel : undefined,
+    parseErrors: collectParseErrors(semanticModel, filePath)
+  };
+}

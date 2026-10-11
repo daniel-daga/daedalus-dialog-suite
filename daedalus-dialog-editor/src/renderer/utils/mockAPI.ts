@@ -1,0 +1,1005 @@
+/**
+ * Mock API for browser-based development and testing
+ *
+ * This module provides a browser-compatible implementation of the EditorAPI
+ * that normally runs in Electron's main process. It uses localStorage for
+ * file persistence and includes sample dialog data for testing.
+ */
+
+import type { EditorAPI, ValidationResult, SaveResult, FileChangeEvent, AppendInsertNpcResult, OpenedProjectConfig, NpcDefinition, NpcStatement, NpcEdit, ProjectOutputUnits } from '../types/global';
+import type { ExchangeSite, FileIndex, RoutineSite } from '../../shared/types';
+import { routineStatesOf } from '../../shared/routineStates';
+
+// Captured file-change callback (see onFileChanged). Lets E2E tests inject
+// external change/unlink events through the `__mockEmitFileChange` window hook.
+let mockFileChangeListener: ((event: FileChangeEvent) => void) | null = null;
+
+// Captured close-requested callback (see onCloseRequested). There is no real
+// window in the mock harness, so E2E tests inject the request via the
+// `__mockEmitCloseRequested` window hook and assert against the recorded
+// ack/approve/cancel calls on `window.__closeGuardCalls`.
+let mockCloseRequestedListener: (() => void) | null = null;
+
+type CloseGuardCall = 'ackCloseRequest' | 'approveClose' | 'cancelClose';
+
+const recordCloseGuardCall = (name: CloseGuardCall) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  const w = window as any;
+  w.__closeGuardCalls = w.__closeGuardCalls || {
+    ackCloseRequest: 0,
+    approveClose: 0,
+    cancelClose: 0,
+  };
+  w.__closeGuardCalls[name] += 1;
+};
+
+// Sample semantic model for testing
+const SAMPLE_MODEL = {
+  dialogs: {
+    'DIA_Example_Hello': {
+      name: 'DIA_Example_Hello',
+      parent: 'C_INFO',
+      properties: {
+        npc: 'PC_Hero',
+        nr: 1,
+        condition: 'DIA_Example_Hello_Condition',
+        information: 'DIA_Example_Hello_Info',
+        important: false,
+      },
+    },
+  },
+  functions: {
+    'DIA_Example_Hello_Condition': {
+      name: 'DIA_Example_Hello_Condition',
+      returnType: 'INT',
+      actions: [],
+      calls: [],
+      conditions: [
+          { variableName: 'MIS_MyQuest', negated: false }
+      ]
+    },
+    'DIA_Example_Hello_Info': {
+      name: 'DIA_Example_Hello_Info',
+      returnType: 'VOID',
+      calls: [],
+      actions: [
+        {
+          speaker: 'self',
+          text: 'DIA_Example_Hello_15_00',
+          id: 'action_1234567890_hello',
+          type: 'DialogLine',
+        },
+        {
+          speaker: 'other',
+          text: 'DIA_Example_Hello_15_01',
+          id: 'action_1234567891_reply',
+          type: 'DialogLine',
+        },
+        {
+           type: 'CreateTopic',
+           topic: 'TOPIC_MyQuest',
+           topicType: 'LOG_MISSION'
+        }
+      ],
+    },
+  },
+  constants: {
+    'TOPIC_MyQuest': {
+      name: 'TOPIC_MyQuest',
+      type: 'string',
+      value: 'The Lost Sheep',
+      filePath: 'sample.d'
+    }
+  },
+  variables: {
+    'MIS_MyQuest': {
+      name: 'MIS_MyQuest',
+      type: 'int',
+      filePath: 'sample.d'
+    }
+  },
+  hasErrors: false,
+  errors: [],
+};
+
+// Sample source code
+const SAMPLE_SOURCE = `// Sample Dialog File
+INSTANCE DIA_Example_Hello(C_INFO)
+{
+\tnpc = PC_Hero;
+\tnr = 1;
+\tcondition = DIA_Example_Hello_Condition;
+\tinformation = DIA_Example_Hello_Info;
+\timportant = FALSE;
+};
+
+FUNC INT DIA_Example_Hello_Condition()
+{
+};
+
+FUNC VOID DIA_Example_Hello_Info()
+{
+\tAI_Output(self, other, "DIA_Example_Hello_15_00"); //Hello there!
+\tAI_Output(other, self, "DIA_Example_Hello_15_01"); //Hi! How are you?
+};
+`;
+
+// In-memory file system using localStorage
+class MockFileSystem {
+  private static STORAGE_PREFIX = 'mockapi_file_';
+
+  static readFile(filePath: string): string {
+    const key = this.STORAGE_PREFIX + filePath;
+    const content = localStorage.getItem(key);
+
+    if (content === null) {
+      // Return sample file for default path
+      if (filePath === 'sample.d' || filePath === '/sample.d') {
+        return SAMPLE_SOURCE;
+      }
+      throw new Error(`File not found: ${filePath}`);
+    }
+
+    return content;
+  }
+
+  static writeFile(filePath: string, content: string): void {
+    const key = this.STORAGE_PREFIX + filePath;
+    localStorage.setItem(key, content);
+  }
+
+  static fileExists(filePath: string): boolean {
+    const key = this.STORAGE_PREFIX + filePath;
+    return localStorage.getItem(key) !== null;
+  }
+
+  static listFiles(): string[] {
+    const files: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith(this.STORAGE_PREFIX)) {
+        files.push(key.substring(this.STORAGE_PREFIX.length));
+      }
+    }
+    return files;
+  }
+
+  static clear(): void {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith(this.STORAGE_PREFIX)) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(key => localStorage.removeItem(key));
+  }
+}
+
+const MOCK_WRAPPER_LAYOUT = { startH: 0, startM: 1, stopH: 2, stopM: 3, waypoint: 4 };
+
+// Routines, as simply as the rest of this mock reads a file: every
+// `TA_*(h,m,h,m,"WP")` inside a `Rtn_*` function (#285, and the re-index a
+// routine save asks for).
+function mockRoutineSites(filePath: string, content: string): RoutineSite[] {
+  const sites: RoutineSite[] = [];
+  for (const fn of content.matchAll(/func\s+void\s+(Rtn_\w+)\s*\(\s*\)\s*\{([\s\S]*?)\n\};/gi)) {
+    const bodyStart = fn.index! + fn[0].indexOf('{');
+    for (const ta of fn[2].matchAll(/(TA_\w+)\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*"(\w+)"\s*\)/gi)) {
+      const offset = bodyStart + 1 + ta.index!;
+      sites.push({
+        routine: fn[1].toUpperCase(),
+        stateName: ta[1].toUpperCase(),
+        startMinute: (Number(ta[2]) * 60 + Number(ta[3])) % 1440,
+        endMinute: (Number(ta[4]) * 60 + Number(ta[5])) % 1440,
+        waypoint: ta[6],
+        filePath,
+        line: content.slice(0, offset).split('\n').length,
+      });
+    }
+  }
+  return sites;
+}
+
+function mockExchangeSites(filePath: string, content: string): ExchangeSite[] {
+  return [...content.matchAll(/B_StartOtherRoutine\s*\(\s*(\w+)\s*,\s*"(\w+)"\s*\)/gi)].map((call) => {
+    const enclosing = [...content.slice(0, call.index).matchAll(/func\s+\w+\s+(\w+)/gi)].pop();
+    return {
+      target: call[1].toUpperCase(), state: call[2].toUpperCase(),
+      functionName: (enclosing?.[1] ?? '').toUpperCase(), filePath,
+      line: content.slice(0, call.index).split('\n').length,
+    };
+  });
+}
+
+/** UPPERCASED instance → its `daily_routine`, as written. */
+function mockDailyRoutines(content: string): Map<string, string> {
+  return new Map([...content.matchAll(/INSTANCE\s+(\w+)\s*\([^)]*\)\s*\{[^}]*?daily_routine\s*=\s*(\w+)\s*;/gi)]
+    .map((inst) => [inst[1].toUpperCase(), inst[2]]));
+}
+
+// Simple parser that returns the sample model
+// In a real implementation, this could use tree-sitter WASM
+// Test seam: a seeded file may carry a hand-authored SemanticModel as JSON on a
+// line beginning `//__MOCK_MODEL__`. The mock regex parser cannot synthesise quest
+// data (conditions, MIS transitions, choice-based transitions, condition
+// expressions), so E2E specs that need a real quest graph inject the model directly
+// through this marker. Everything after the marker on that line is JSON.
+const MOCK_MODEL_MARKER = '//__MOCK_MODEL__';
+
+function extractInjectedModel(sourceCode: string): any | null {
+  const markerIndex = sourceCode.indexOf(MOCK_MODEL_MARKER);
+  if (markerIndex === -1) return null;
+  const afterMarker = sourceCode.slice(markerIndex + MOCK_MODEL_MARKER.length);
+  const newlineIndex = afterMarker.indexOf('\n');
+  const jsonText = (newlineIndex === -1 ? afterMarker : afterMarker.slice(0, newlineIndex)).trim();
+  try {
+    const model = JSON.parse(jsonText);
+    return { hasErrors: false, errors: [], dialogs: {}, functions: {}, ...model };
+  } catch (error) {
+    return {
+      dialogs: {},
+      functions: {},
+      hasErrors: true,
+      errors: [{ type: 'MockModelParseError', message: String(error) }]
+    };
+  }
+}
+
+/**
+ * 1-based line of a source offset. The real parser stamps every declaration and
+ * action with one (#267) and the Problems panel shows it, so the harness's
+ * stand-in parser has to as well or the panel reads differently here than in
+ * the app.
+ */
+function lineAt(sourceCode: string, offset: number): number {
+  let line = 1;
+  for (let i = 0; i < offset && i < sourceCode.length; i++) {
+    if (sourceCode[i] === '\n') line++;
+  }
+  return line;
+}
+
+function parseSource(sourceCode: string): any {
+  const injected = extractInjectedModel(sourceCode);
+  if (injected) {
+    return injected;
+  }
+
+  // For testing, return a model based on whether the source is the sample
+  if (sourceCode.includes('DIA_Example_Hello')) {
+    return { ...SAMPLE_MODEL };
+  }
+
+  // Try to extract basic dialog information using regex
+  // This is a very simplified parser for testing purposes
+  const dialogs: any = {};
+  const functions: any = {};
+  const npcs: any = {};
+
+  // Match INSTANCE declarations
+  const instanceRegex = /INSTANCE\s+(\w+)\s*\([^)]+\)\s*\{([^}]+)\}/gi;
+  let match;
+
+  while ((match = instanceRegex.exec(sourceCode)) !== null) {
+    const dialogName = match[1];
+    const parent = sourceCode.slice(match.index).match(/INSTANCE\s+\w+\s*\(([^)]+)\)/i)?.[1]?.trim() || 'C_INFO';
+    const body = match[2];
+
+    // Parse properties
+    const properties: any = {};
+    // As the parser: a string literal's value is its contents, its kind a key list.
+    const propertyLiteralKeys: string[] = [];
+    const propRegex = /(\w+)\s*=\s*([^;]+);/g;
+    let propMatch;
+
+    while ((propMatch = propRegex.exec(body)) !== null) {
+      const key = propMatch[1].trim();
+      let value: string | boolean = propMatch[2].trim();
+
+      // Convert TRUE/FALSE to boolean
+      if (value === 'TRUE') value = true;
+      else if (value === 'FALSE') value = false;
+      else if (/^"[^"]*"$/.test(value)) {
+        value = value.slice(1, -1);
+        propertyLiteralKeys.push(key);
+      }
+
+      properties[key] = value;
+    }
+
+    if (parent === 'C_NPC') {
+      const end = match.index + match[0].length;
+      const sourceText = sourceCode.slice(match.index, sourceCode[end] === ';' ? end + 1 : end);
+      const npcId = /\bid\s*=\s*(-?\d+)\s*;/i.exec(body)?.[1];
+      npcs[dialogName] = {
+        name: dialogName,
+        parent: 'C_NPC',
+        sourceText,
+        ...(npcId === undefined ? {} : { npcId: Number(npcId) }),
+      };
+    } else {
+      dialogs[dialogName] = {
+        name: dialogName,
+        parent: 'C_INFO',
+        properties,
+        propertyLiteralKeys,
+        line: lineAt(sourceCode, match.index),
+      };
+    }
+  }
+
+  // Match FUNC declarations
+  const funcRegex = /FUNC\s+(INT|VOID|STRING)\s+(\w+)\s*\(\)\s*\{([^}]+)\}/gi;
+
+  while ((match = funcRegex.exec(sourceCode)) !== null) {
+    const returnType = match[1];
+    const funcName = match[2];
+    const body = match[3];
+
+    // Parse AI_Output calls
+    const bodyStart = match.index + match[0].lastIndexOf(body);
+    const actions: any[] = [];
+    const aiOutputRegex = /AI_Output\s*\([^,]+,\s*[^,]+,\s*"([^"]+)"\s*\)/g;
+    let actionMatch;
+
+    // A routine's TA_ calls, verbatim, as the real model keeps every body
+    // statement it has no richer type for — what routine authoring edits.
+    if (/^Rtn_/i.test(funcName)) {
+      for (const ta of body.matchAll(/(TA_\w+\s*\([^;]*\))\s*;/gi)) {
+        actions.push({ type: 'Action', action: ta[1], line: lineAt(sourceCode, bodyStart + ta.index!) });
+      }
+    }
+
+    while ((actionMatch = aiOutputRegex.exec(body)) !== null) {
+      const textId = actionMatch[1];
+      actions.push({
+        speaker: 'self',
+        text: textId,
+        id: textId,
+        type: 'DialogLine',
+        line: lineAt(sourceCode, bodyStart + actionMatch.index),
+      });
+    }
+
+    functions[funcName] = {
+      name: funcName,
+      returnType,
+      actions,
+      calls: [],
+      line: lineAt(sourceCode, match.index),
+    };
+  }
+
+  return {
+    dialogs,
+    functions,
+    npcs,
+    // The real parser keeps an NPC in both maps; the NPC editor edits
+    // `instances`, which is what the generator emits.
+    instances: { ...npcs },
+    hasErrors: false,
+    errors: [],
+  };
+}
+
+// Simple code generator
+function generateCode(model: any, settings: any): string {
+  const indent = settings.indentChar || '\t';
+  const uppercase = settings.uppercaseKeywords !== false;
+  let code = '';
+
+  // Add comments if enabled
+  if (settings.includeComments !== false) {
+    code += '// Generated by Dandelion\n';
+    code += '// Browser Mock Mode\n\n';
+  }
+
+  // Generate dialogs
+  for (const dialogName in model.dialogs) {
+    const dialog = model.dialogs[dialogName];
+
+    if (settings.sectionHeaders !== false) {
+      code += '// ' + '='.repeat(60) + '\n';
+      code += `// ${dialogName}\n`;
+      code += '// ' + '='.repeat(60) + '\n\n';
+    }
+
+    const INSTANCE = uppercase ? 'INSTANCE' : 'instance';
+    code += `${INSTANCE} ${dialogName}(${dialog.parent})\n{\n`;
+
+    for (const key in dialog.properties) {
+      const value = dialog.properties[key];
+      let valueStr = value;
+
+      if (typeof value === 'object' && value !== null) {
+        valueStr = value.name || JSON.stringify(value);
+      } else if (typeof value === 'boolean') {
+        valueStr = uppercase ? value.toString().toUpperCase() : value.toString();
+      } else if (dialog.propertyLiteralKeys?.includes(key) && !dialog.propertyExpressionKeys?.includes(key)) {
+        valueStr = `"${value}"`;
+      }
+
+      code += `${indent}${key}${indent}= ${valueStr};\n`;
+    }
+
+    code += '};\n\n';
+  }
+
+  // Non-dialog instances are re-emitted verbatim, as the real generator does
+  for (const name in model.instances || {}) {
+    const text = model.instances[name].sourceText;
+    if (text) code += `${text}\n\n`;
+  }
+
+  // Generate functions
+  for (const funcName in model.functions) {
+    const func = model.functions[funcName];
+    const FUNC = uppercase ? 'FUNC' : 'func';
+    const returnType = uppercase ? func.returnType : func.returnType.toLowerCase();
+
+    code += `${FUNC} ${returnType} ${funcName}()\n{\n`;
+
+    if (func.actions && func.actions.length > 0) {
+      for (const action of func.actions) {
+        if (action.speaker && action.text && action.id) {
+          // DialogLine: listener is the opposite of speaker
+          const listener = action.speaker === 'other' ? 'self' : 'other';
+          code += `${indent}AI_Output(${action.speaker}, ${listener}, "${action.id}");\n`;
+        } else if (action.type === 'Action' && typeof action.action === 'string') {
+          code += `${indent}${action.action};\n`;
+        }
+      }
+    }
+
+    code += '};\n\n';
+  }
+
+  return code;
+}
+
+// Mock EditorAPI implementation
+export const mockEditorAPI: EditorAPI = {
+  async openFileDialog(): Promise<string | null> {
+    // In browser mode, prompt for file path
+    const path = prompt('Enter file path (or press OK for sample.d):', 'sample.d');
+    return path || null;
+  },
+
+  async saveFileDialog(): Promise<string | null> {
+    const path = prompt('Enter file path to save:', 'dialog.d');
+    return path || null;
+  },
+
+  async readFile(filePath: string): Promise<string> {
+    try {
+      return MockFileSystem.readFile(filePath);
+    } catch (error) {
+      console.error('Mock readFile error:', error);
+      throw error;
+    }
+  },
+
+  async readFileVersioned(filePath: string): Promise<{ content: string; version: string }> {
+    // Through the object, so a test spying on `readFile` steers this too.
+    const content = await mockEditorAPI.readFile(filePath);
+    return { content, version: `mock:${content.length}` };
+  },
+
+  async writeFile(filePath: string, content: string): Promise<{ success: boolean }> {
+    try {
+      MockFileSystem.writeFile(filePath, content);
+      console.log(`[Mock API] File written: ${filePath}`);
+      return { success: true };
+    } catch (error) {
+      console.error('Mock writeFile error:', error);
+      return { success: false };
+    }
+  },
+
+  async parseSource(sourceCode: string): Promise<any> {
+    try {
+      const model = parseSource(sourceCode);
+      console.log('[Mock API] Parsed source code:', model);
+      return model;
+    } catch (error) {
+      console.error('Mock parseSource error:', error);
+      return {
+        dialogs: {},
+        functions: {},
+        hasErrors: true,
+        errors: [
+          {
+            type: 'ParseError',
+            message: 'Mock parser error: ' + (error instanceof Error ? error.message : String(error)),
+          },
+        ],
+      };
+    }
+  },
+
+  // A line-based stand-in for daedalus-parser/npc-definition: enough for the
+  // harness to drive the NPC editor's flow, never a fidelity claim (see
+  // tests/e2e/README.md).
+  async extractNpc(sourceText: string): Promise<NpcDefinition> {
+    const header = /INSTANCE\s+(\w+)\s*\(\s*(\w+)\s*\)/i.exec(sourceText);
+    if (!header) throw new Error('NPC source must be a single instance declaration');
+    const range = { startIndex: 0, endIndex: 0 };
+    const body = sourceText.slice(sourceText.indexOf('{') + 1, sourceText.lastIndexOf('}'));
+    const statements: NpcStatement[] = [];
+    for (const raw of body.split('\n')) {
+      const text = raw.trim();
+      if (text === '' || text.startsWith('//')) continue;
+      const field = /^(\w+)(?:\[(\w+)\])?\s*=\s*(.+?)\s*;/.exec(text);
+      const call = /^(\w+)\s*\((.*)\)\s*;/.exec(text);
+      if (field) {
+        statements.push({ kind: 'field', field: field[1], index: field[2], value: field[3], text, range, valueRange: range });
+      } else if (call) {
+        const args = call[2].trim() === '' ? [] : call[2].split(',').map((a) => a.trim());
+        statements.push({ kind: 'call', name: call[1], args, text, range, argsRange: range });
+      } else {
+        statements.push({ kind: 'other', text, range });
+      }
+    }
+    return { name: header[1], parent: header[2], statements, closingBraceIndex: sourceText.lastIndexOf('}') };
+  },
+
+  async applyNpcEdits(sourceText: string, edits: NpcEdit[]): Promise<string> {
+    const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const insert = (text: string, line: string) => {
+      const close = text.lastIndexOf('}');
+      return `${text.slice(0, close)}\t${line}\n${text.slice(close)}`;
+    };
+    let out = sourceText;
+    for (const edit of edits) {
+      if (edit.op === 'set' || edit.op === 'remove') {
+        const target = edit.index ? `${escape(edit.field)}\\s*\\[\\s*${escape(edit.index)}\\s*\\]` : escape(edit.field);
+        const pattern = new RegExp(`^([ \\t]*${target}\\s*=\\s*)[^;]*;.*$`, 'im');
+        if (edit.op === 'remove') {
+          out = out.replace(new RegExp(`${pattern.source}\\n?`, 'im'), '');
+        } else if (pattern.test(out)) {
+          out = out.replace(pattern, (_line, head) => `${head}${edit.value};`);
+        } else {
+          out = insert(out, `${edit.index ? `${edit.field}[${edit.index}]` : edit.field} = ${edit.value};`);
+        }
+      } else {
+        // Every line calling edit.name, so an occurrence can pick one.
+        const pattern = new RegExp(`^([ \\t]*${escape(edit.name)}\\s*)\\([^)]*\\)\\s*;.*$`, 'gim');
+        const lines = [...out.matchAll(pattern)];
+        const target = edit.op === 'addCall' ? undefined : lines[edit.occurrence ?? 0];
+        const newLine = edit.op === 'removeCall' ? '' : `${edit.name} (${edit.args.join(', ')});`;
+        if (target) {
+          const start = target.index!;
+          const end = start + target[0].length;
+          out = edit.op === 'removeCall'
+            ? out.slice(0, start) + out.slice(out[end] === '\n' ? end + 1 : end)
+            : `${out.slice(0, start)}${target[1]}(${edit.args.join(', ')});${out.slice(end)}`;
+        } else if (edit.op !== 'removeCall') {
+          const last = lines[lines.length - 1];
+          if (last) {
+            const end = last.index! + last[0].length;
+            const indent = /^[ \t]*/.exec(last[0])![0];
+            out = `${out.slice(0, end)}\n${indent}${newLine}${out.slice(end)}`;
+          } else {
+            out = insert(out, newLine);
+          }
+        }
+      }
+    }
+    return out;
+  },
+
+  async generateDialogCode(model: any, _dialogName: string, settings: any): Promise<string> {
+    return this.generateCode(model, settings);
+  },
+
+  async generateCode(model: any, settings: any): Promise<string> {
+    try {
+      const code = generateCode(model, settings);
+      console.log('[Mock API] Generated code');
+      return code;
+    } catch (error) {
+      console.error('Mock generateCode error:', error);
+      throw error;
+    }
+  },
+
+  async validateModel(model: any, settings: any, _options?: any): Promise<ValidationResult> {
+    // Mock validation - always passes in browser mode
+    console.log('[Mock API] Validating model');
+    const generatedCode = generateCode(model, settings);
+    return {
+      isValid: true,
+      errors: [],
+      warnings: [],
+      generatedCode
+    };
+  },
+
+  async saveFile(filePath: string, model: any, settings: any, _options?: { skipValidation?: boolean; forceOnErrors?: boolean }): Promise<SaveResult> {
+    try {
+      const code = generateCode(model, settings);
+      MockFileSystem.writeFile(filePath, code);
+      console.log(`[Mock API] File saved: ${filePath}`);
+      return {
+        success: true,
+        validationResult: {
+          isValid: true,
+          errors: [],
+          warnings: [],
+          generatedCode: code
+        }
+      };
+    } catch (error) {
+      console.error('Mock saveFile error:', error);
+      return { success: false };
+    }
+  },
+
+  async openProjectFolderDialog(): Promise<string | null> {
+    const path = prompt('Enter project folder path:', '/project');
+    return path || null;
+  },
+
+  // The browser harness has no Gothic install, so it has no OU database — the
+  // same answer a real machine without one gives, and the drift rule reads it
+  // as "nothing is known" rather than reporting every line as missing.
+  // Test seam: a spec seeds `mockapi_output_units` with a database, and the
+  // update applies lines to it. The real rewrite is the zenkit-node and
+  // main-process suites'; this stands in for the file (#264).
+  async readOutputUnits(): Promise<ProjectOutputUnits | null> {
+    const seeded = localStorage.getItem('mockapi_output_units');
+    return seeded ? JSON.parse(seeded) as ProjectOutputUnits : null;
+  },
+
+  async updateOutputUnits(lines: Array<{ name: string; text: string }>): Promise<{ written: string[]; outputUnits: ProjectOutputUnits | null }> {
+    const database = await this.readOutputUnits();
+    if (!database) throw new Error('There is no OU database (OU.BIN or OU.CSL) under the install');
+    for (const { name, text } of lines) {
+      const key = name.toUpperCase();
+      const unit = database.units.find((u: { name: string }) => u.name.toUpperCase() === key);
+      if (unit) unit.text = text;
+      else database.units.push({ name: key, text, wav: `${key}.WAV` });
+    }
+    localStorage.setItem('mockapi_output_units', JSON.stringify(database));
+    return { written: [database.filePath], outputUnits: database };
+  },
+
+  async loadProjectConfig(projectRoot: string): Promise<OpenedProjectConfig> {
+    return {
+      projectFilePath: `${projectRoot}/mock.gothicproject.json`, projectRoot, scriptsRoot: projectRoot,
+      config: { version: 1, target: 'g2-notr', scriptsRoot: '.', worlds: [], assetSources: ['.'] },
+      resolvedAssetSources: [projectRoot], resolvedAssetRoots: [projectRoot],
+      gmbtAssetSources: [], gmbtProjectDir: null, gothicInstallPath: null, warnings: [],
+    };
+  },
+
+  async selectAssetSourceFolder(): Promise<string | null> {
+    return prompt('Enter asset source folder path:') || null;
+  },
+
+  async saveProjectAssetSources(
+    projectFilePath: string, assetSources: string[], gmbtProjectDir?: string | null,
+  ): Promise<OpenedProjectConfig> {
+    const projectRoot = projectFilePath.replace(/[\\/][^\\/]+$/, '');
+    return { projectFilePath, projectRoot, scriptsRoot: projectRoot,
+      config: { version: 1, target: 'g2-notr', scriptsRoot: '.', worlds: [], assetSources,
+        ...(gmbtProjectDir ? { gmbtProjectDir } : {}) },
+      resolvedAssetSources: assetSources.map((source) => source === '.' ? projectRoot : source),
+      resolvedAssetRoots: assetSources.map((source) => source === '.' ? projectRoot : source),
+      gmbtAssetSources: [], gmbtProjectDir: gmbtProjectDir ?? null, gothicInstallPath: null, warnings: [] };
+  },
+
+  async buildProjectIndex(_folderPath: string): Promise<any> {
+    // Scan all files in the mock file system to build an index
+    const files = MockFileSystem.listFiles();
+    const npcs = new Set<string>();
+    const npcFiles: Record<string, string> = {};
+    const dialogsByNpc: Record<string, any[]> = {};
+    // Files carrying quest topic constants are prioritized by ingestion and merged
+    // into the base model by loadQuestData so the QuestList can see the topics.
+    const questFiles: string[] = [];
+    // Routines, as simply as the rest of this mock reads a file: every
+    // `TA_*(h,m,h,m,"WP")` inside a `Rtn_*` function, and every instance's
+    // `daily_routine` — what the NPC editor's routines section shows (#285).
+    const routineSites: RoutineSite[] = [];
+    const routinesByNpc: Record<string, string> = {};
+    const wrapperNames = new Map<string, string>();
+    const exchangeSites: ExchangeSite[] = [];
+    const npcIds = new Map<string, number>();
+
+    for (const filePath of files) {
+      const content = MockFileSystem.readFile(filePath);
+      const model = parseSource(content);
+
+      routineSites.push(...mockRoutineSites(filePath, content));
+      for (const wrapper of content.matchAll(/func\s+void\s+(TA_\w+)\s*\(\s*var\s+int/gi)) {
+        wrapperNames.set(wrapper[1].toUpperCase(), wrapper[1]);
+      }
+      exchangeSites.push(...mockExchangeSites(filePath, content));
+      for (const inst of content.matchAll(/INSTANCE\s+(\w+)\s*\([^)]*\)\s*\{[^}]*?\bid\s*=\s*(\d+)\s*;/gi)) {
+        npcIds.set(inst[1].toUpperCase(), Number(inst[2]));
+      }
+      for (const [npc, routine] of mockDailyRoutines(content)) {
+        routinesByNpc[npc] = routine.toUpperCase();
+      }
+
+      const hasQuestTopic = Object.keys(model.constants || {})
+        .some((name) => /^topic_/i.test(name));
+      if (hasQuestTopic) {
+        questFiles.push(filePath);
+      }
+
+      for (const npcName in model.npcs || {}) {
+        npcs.add(npcName);
+        npcFiles[npcName.toUpperCase()] = filePath;
+        if (!dialogsByNpc[npcName]) {
+          dialogsByNpc[npcName] = [];
+        }
+      }
+      
+      for (const dialogName in model.dialogs) {
+        const dialog = model.dialogs[dialogName];
+        const npcName = dialog.properties?.npc || 'Unknown';
+        
+        npcs.add(npcName);
+        
+        if (!dialogsByNpc[npcName]) {
+          dialogsByNpc[npcName] = [];
+        }
+        
+        dialogsByNpc[npcName].push({
+          dialogName,
+          npc: npcName,
+          filePath
+        });
+      }
+    }
+
+    const ids = Object.fromEntries([...npcIds].filter(([npc]) => npc in npcFiles));
+
+    return {
+      npcs: Array.from(npcs).sort(),
+      dialogsByNpc, // Return as object, projectStore handles conversion
+      allFiles: files,
+      questFiles,
+      npcPrototypes: [],
+      npcFiles,
+      routineSites,
+      routinesByNpc,
+      exchangeSites,
+      npcIds: ids,
+      routineStatesByNpc: routineStatesOf(ids, routinesByNpc, routineSites),
+      // Every TA_ wrapper declared or called, in retail's layout.
+      routineLayouts: Object.fromEntries([
+        ...routineSites.map((site) => [site.stateName ?? '', MOCK_WRAPPER_LAYOUT] as const),
+        ...[...wrapperNames].map(([key, name]) => [key, { ...MOCK_WRAPPER_LAYOUT, name }] as const),
+      ].filter(([key]) => key !== '')),
+    };
+  },
+
+  async indexFile(filePath: string): Promise<FileIndex> {
+    const content = MockFileSystem.readFile(filePath);
+    const dailyRoutines = mockDailyRoutines(content);
+    return {
+      routineSites: mockRoutineSites(filePath, content),
+      spawnSites: [],
+      exchangeSites: mockExchangeSites(filePath, content),
+      instances: Object.values(parseSource(content).npcs || {}).map((npc: any) => {
+        const dailyRoutine = dailyRoutines.get(npc.name.toUpperCase());
+        return {
+          name: npc.name,
+          parent: npc.parent,
+          ...(npc.npcId === undefined ? {} : { npcId: npc.npcId }),
+          ...(dailyRoutine ? { dailyRoutine } : {}),
+        };
+      }),
+    };
+  },
+
+  async parseDialogFile(filePath: string): Promise<any> {
+    // Test seam: the mock parser is synchronous, so a whole project ingests
+    // within a single microtask burst — faster than the store's 500 ms flush
+    // window. That makes the real app's "ingestion in progress" phase
+    // unobservable in the harness. A spec may set `mockapi_parse_delay_ms` in
+    // localStorage to add a per-file latency (modelling real parse cost) so
+    // ingestion spans multiple flush windows and the progress UI is exercisable.
+    // Defaults to 0 → no effect on any spec that does not opt in.
+    const delayMs = Number(localStorage.getItem('mockapi_parse_delay_ms')) || 0;
+    if (delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+    try {
+      const content = MockFileSystem.readFile(filePath);
+      return parseSource(content);
+    } catch (error) {
+      console.error('Mock parseDialogFile error:', error);
+      return {
+        dialogs: {},
+        functions: {},
+        hasErrors: true,
+        errors: []
+      };
+    }
+  },
+
+  async addAllowedPath(folderPath: string): Promise<void> {
+    console.log('[Mock API] Adding allowed path:', folderPath);
+  },
+
+  async getRecentProjects(): Promise<any[]> {
+    const recent = localStorage.getItem('recent_projects');
+    return recent ? JSON.parse(recent) : [];
+  },
+
+  // File Watcher API (no-op in mock/browser mode). The change callback is
+  // captured so E2E tests can inject external file-change events via the
+  // `__mockEmitFileChange` window hook (there is no real watcher in the mock).
+  async startFileWatcher(): Promise<void> {},
+  async stopFileWatcher(): Promise<void> {},
+  onFileChanged(callback): () => void {
+    mockFileChangeListener = callback;
+    if (typeof window !== 'undefined') {
+      (window as any).__mockEmitFileChange = (event: any) => mockFileChangeListener?.(event);
+    }
+    return () => { mockFileChangeListener = null; };
+  },
+
+  async getAppVersion(): Promise<string> {
+    return '0.0.0-mock';
+  },
+
+  // Crash logging (fix-08 §5). No-ops in the browser harness so window.onerror
+  // forwarding is inert and the mock stays unaffected.
+  async logRendererError(_payload: { message: string; stack?: string }): Promise<void> {},
+  async getLogPath(): Promise<string> {
+    return '';
+  },
+  async showLogFile(): Promise<void> {},
+
+  // Window close guard (E1). The request callback is captured so E2E tests can
+  // inject a close request via the `__mockEmitCloseRequested` window hook; the
+  // ack/approve/cancel signals are recorded for assertion (no real window here).
+  onCloseRequested(callback: () => void): () => void {
+    mockCloseRequestedListener = callback;
+    if (typeof window !== 'undefined') {
+      (window as any).__mockEmitCloseRequested = () => mockCloseRequestedListener?.();
+    }
+    return () => { mockCloseRequestedListener = null; };
+  },
+  ackCloseRequest(): void {
+    recordCloseGuardCall('ackCloseRequest');
+  },
+  approveClose(): void {
+    recordCloseGuardCall('approveClose');
+  },
+  cancelClose(): void {
+    recordCloseGuardCall('cancelClose');
+  },
+
+  // Updater API (no-op in mock/browser mode)
+  async checkForUpdate() {
+    return { updateAvailable: false, currentVersion: '0.0.0-mock' };
+  },
+  async downloadUpdate(_url: string): Promise<string> {
+    return '';
+  },
+  async installUpdate(_installerPath: string): Promise<void> {},
+
+  async dismissUpdateVersion(_version: string): Promise<void> {},
+  async openExternal(_url: string): Promise<void> {},
+  onDownloadProgress(_callback: (percent: number) => void): () => void {
+    return () => {};
+  },
+
+  // World API. There is no browser-mode stand-in for a ZenGin world: it needs
+  // the native binding, a Gothic install and tens of megabytes of geometry.
+  // These report "no world" rather than fabricating one — a mock world would
+  // be a scene nobody could tell apart from a broken real one.
+  async openWorldDialog(): Promise<string | null> { return null; },
+  async listWorlds(): Promise<[]> { return []; },
+  async selectGothicInstall(): Promise<null> { return null; },
+  async clearGothicInstall(): Promise<null> { return null; },
+  async openWorld(): Promise<never> {
+    throw new Error('The world editor needs the desktop app — it is not available in browser mode.');
+  },
+  async getWorldMesh(): Promise<never> {
+    throw new Error('No world is open');
+  },
+  async ensureNpcPreviewAssets(): Promise<void> {},
+  async getWorldVisuals(): Promise<never> {
+    throw new Error('No world is open');
+  },
+  async getWorldTexture(): Promise<null> { return null; },
+  // Null is what the real call returns for a path with nothing to list, so an
+  // asset browser in browser mode shows its empty state rather than an error.
+  async listWorldAssets(): Promise<null> { return null; },
+  async searchWorldAssets(): Promise<{ matches: []; truncated: false }> {
+    return { matches: [], truncated: false };
+  },
+  // Nothing is mounted in browser mode, so nothing resolves.
+  async resolveWorldAssets(names: string[]): Promise<null[]> { return names.map(() => null); },
+  async getWorldWaynet(): Promise<never> {
+    throw new Error('No world is open');
+  },
+  async getWorldPortalFindings(): Promise<never> {
+    throw new Error('No world is open');
+  },
+  // Null is what the real call returns for a visual that does not resolve, and
+  // the op treats that as "leave the stale box alone" rather than as an error.
+  async getVisualBounds(): Promise<null> { return null; },
+  // Null is what the real call returns for a visual the binding cannot extract.
+  async getWorldVisual(): Promise<null> { return null; },
+  async getNpcBody(): Promise<null> { return null; },
+  async getAssetThumbnail(): Promise<never> {
+    throw new Error('No world is open');
+  },
+  async putAssetThumbnail(): Promise<void> {},
+  async getAssetCatalog(): Promise<{ favorites: string[]; categories: never[] }> {
+    return { favorites: [], categories: [] };
+  },
+  async saveAssetCatalog(): Promise<void> {},
+  // No world means no VOB to have class properties, so this refuses like its
+  // siblings rather than answering with an empty object a grid would render as
+  // a VOB whose every field is blank.
+  async getVobProps(): Promise<never> {
+    throw new Error('No world is open');
+  },
+  async refreshWorldIndex(): Promise<never> {
+    throw new Error('No world is open');
+  },
+  async applyWorldOps(): Promise<never> {
+    throw new Error('No world is open');
+  },
+  async undoWorldEdit(): Promise<null> { return null; },
+  async redoWorldEdit(): Promise<null> { return null; },
+  async getWorldHistoryDepth(): Promise<{ undo: number; redo: number }> { return { undo: 0, redo: 0 }; },
+  // Cancelled rather than "no world is open": in browser mode there is no
+  // dialog to open, and a cancelled save is a state the surface already handles.
+  async saveWorld(): Promise<never> {
+    throw new Error('No world is open');
+  },
+  async saveWorldAs(): Promise<never> {
+    throw new Error('No world is open');
+  },
+  async compileWorldAssets(): Promise<never> {
+    throw new Error('No world is open');
+  },
+  async startGmbtQuickTest(): Promise<never> {
+    throw new Error('No world is open');
+  },
+  onGmbtQuickTestFailed(_callback: (message: string) => void): () => void {
+    return () => undefined;
+  },
+  async getVobFolders(): Promise<never> {
+    throw new Error('No world is open');
+  },
+  async saveVobFolders(): Promise<never> {
+    throw new Error('No world is open');
+  },
+  async closeWorld(): Promise<void> {},
+  // The browser harness has no world and no Startup.d on disk; a typed
+  // refusal keeps the surface's error path reachable without a file.
+  async appendInsertNpc(_filePath: string, functionName: string): Promise<AppendInsertNpcResult> {
+    return { ok: false, reason: { kind: 'function-not-found', functionName } };
+  },
+};
+
+// Helper for tests to reset mock file system
+export const resetMockFileSystem = () => {
+  MockFileSystem.clear();
+  console.log('[Mock API] File system cleared');
+};
+
+// Helper for tests to seed files
+export const seedMockFile = (filePath: string, content: string) => {
+  MockFileSystem.writeFile(filePath, content);
+  console.log(`[Mock API] Seeded file: ${filePath}`);
+};
+
+// Helper to list all mock files
+export const listMockFiles = () => {
+  return MockFileSystem.listFiles();
+};

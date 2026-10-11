@@ -1,0 +1,501 @@
+import { useCallback } from 'react';
+import { generateUniqueChoiceFunctionName, createEmptyFunction } from '../dialogUtils';
+import { createAction, createActionAfterIndex, createDialogLineId, generateActionId } from '../actionFactory';
+import { QUEST_STEP_MENU_KINDS } from '../actionTypes';
+import type { ActionTypeId, QuestStepMenuId } from '../actionTypes';
+import { buildQuestStepActions } from '../../quest/domain/questSteps';
+import type { DialogAction, DialogFunction, DialogLineAction, SemanticModel } from '../../types/global';
+import type { FunctionUpdater } from '../dialogTypes';
+import type { ActionBranchKey, ActionPath } from '../nestedActionUtils';
+import {
+  actionPathToKey,
+  appendActionToBranch,
+  collectAllDialogLineActionsFromModel,
+  collectDialogLineActions,
+  deleteActionAtPath as deleteNestedActionAtPath,
+  flattenActionPaths,
+  flattenVisibleActionPaths,
+  getActionAtPath,
+  insertActionAfterPath,
+  moveActionWithinLevel,
+  patchActionsAtLevel as patchNestedActionsAtLevel,
+  updateActionAtPath as updateNestedActionAtPath
+} from '../nestedActionUtils';
+
+/**
+ * Given a flat path list derived from `newActions` (after an insertion
+ * immediately following `insertedAfterPath`), return the path of the newly
+ * inserted item.  Returns null when `insertedAfterPath` is not found or the
+ * inserted item is beyond the end of the list.
+ */
+function findInsertedPath(newActions: DialogAction[], insertedAfterPath: ActionPath): ActionPath | null {
+  const paths = flattenActionPaths(newActions);
+  const afterIndex = paths.findIndex(
+    (p) => actionPathToKey(p) === actionPathToKey(insertedAfterPath)
+  );
+  const insertedIndex = afterIndex + 1;
+  return insertedIndex > 0 && insertedIndex < paths.length ? paths[insertedIndex] : null;
+}
+
+/**
+ * Configuration for action management
+ */
+export interface ActionManagementConfig {
+  setFunction: (funcOrUpdater: FunctionUpdater) => void;
+  /** Function to focus a specific action by index */
+  focusAction: (path: ActionPath, scrollIntoView?: boolean) => void;
+  /** Semantic model for generating unique function names */
+  semanticModel?: SemanticModel;
+  /** Callback to update the semantic model with a new function */
+  onUpdateSemanticModel?: (functionName: string, func: DialogFunction) => void;
+  /** Context name for dialog/function (used for generating unique names) */
+  contextName: string;
+  /** Name of the function currently being edited (used to avoid stale data from semanticModel) */
+  currentFunctionName?: string | null;
+}
+
+/**
+ * Custom hook for managing dialog actions (add, update, delete operations)
+ */
+export function useActionManagement(config: ActionManagementConfig) {
+  const {
+    setFunction,
+    focusAction,
+    semanticModel,
+    onUpdateSemanticModel,
+    contextName,
+    currentFunctionName
+  } = config;
+
+  /**
+   * Applies a pure transform to the function's actions list.
+   * Handles the null guard and `{ ...prev, actions }` spread that every
+   * setFunction callback otherwise has to repeat.
+   */
+  const patchActions = useCallback(
+    (transform: (actions: DialogAction[]) => DialogAction[]) => {
+      setFunction((prev) => {
+        if (!prev) return prev;
+        return { ...prev, actions: transform(prev.actions || []) };
+      });
+    },
+    [setFunction]
+  );
+
+  /**
+   * Collect all dialog line actions across all functions belonging to the same dialog.
+   * Uses live actions for the current function (may have unsaved edits) and
+   * semantic model data for all sibling functions.
+   */
+  const getAllDialogLineActions = useCallback((liveActions: DialogAction[]): DialogAction[] => {
+    if (!semanticModel) {
+      return collectDialogLineActions(liveActions);
+    }
+    const fromOtherFunctions = collectAllDialogLineActionsFromModel(
+      semanticModel, contextName, currentFunctionName
+    );
+    return [...fromOtherFunctions, ...collectDialogLineActions(liveActions)];
+  }, [semanticModel, contextName, currentFunctionName]);
+
+  const buildDialogLineAction = useCallback((actions: DialogAction[], speaker: 'self' | 'other', text: string = ''): DialogLineAction => ({
+    type: 'DialogLine',
+    speaker,
+    text,
+    id: createDialogLineId({
+      dialogName: contextName,
+      speaker,
+      actions: getAllDialogLineActions(actions)
+    })
+  }), [contextName, getAllDialogLineActions]);
+
+  const updateAction = useCallback((path: ActionPath, updatedAction: DialogAction) => {
+    // Issue #181: when a Choice's text changes, mirror it into the first line of
+    // its sub-dialog. Captured here and applied after setFunction because the
+    // target is a different function than the one being edited.
+    let choiceTextSync: { targetFunction: string; previousText: string; newText: string } | null = null;
+
+    setFunction((prev) => {
+      if (!prev) return prev;
+      const actions = prev.actions || [];
+      const previousAction = getActionAtPath(actions, path);
+      let nextAction = updatedAction;
+
+      if (updatedAction.type === 'DialogLine') {
+        const currentId = (updatedAction as DialogLineAction).id;
+        const speakerChanged = previousAction?.type === 'DialogLine' && previousAction.speaker !== updatedAction.speaker;
+        const needsGeneratedId = !currentId || currentId === 'NEW_LINE_ID';
+
+        if (speakerChanged || needsGeneratedId) {
+          const actionsWithoutCurrent = getAllDialogLineActions(deleteNestedActionAtPath(actions, path));
+          const generatedId = createDialogLineId({
+            dialogName: contextName,
+            speaker: updatedAction.speaker,
+            actions: actionsWithoutCurrent
+          });
+          let id = generatedId;
+
+          // Preserve sequence number when only the speaker changes.
+          //
+          // DialogLine IDs follow the format: `<prefix>_<speakerIndex>_<sequenceNumber>`
+          //   Group 1 — full prefix up to the last two numeric segments
+          //   Group 2 — speaker index  (e.g. 0 = self, 1 = other)
+          //   Group 3 — per-speaker sequence number
+          //
+          // When the speaker flips we generate a new ID for the new speaker, but
+          // we try to reuse the OLD sequence number so existing references don't
+          // break unnecessarily.
+          if (speakerChanged && currentId) {
+            const generatedMatch = generatedId.match(/^(.*)_(\d+)_([0-9]+)$/);
+            const currentMatch = currentId.match(/^(?:.+)_(\d+)_([0-9]+)$/);
+
+            if (generatedMatch && currentMatch) {
+              // candidateWithSameIndex: new prefix + new speaker index + old sequence number
+              const candidateWithSameIndex = `${generatedMatch[1]}_${generatedMatch[2]}_${currentMatch[2]}`;
+              const hasConflict = actionsWithoutCurrent.some((action) =>
+                action?.type === 'DialogLine' && action.id === candidateWithSameIndex
+              );
+              if (!hasConflict) {
+                id = candidateWithSameIndex;
+              }
+            }
+          }
+
+          nextAction = {
+            ...updatedAction,
+            id
+          };
+        }
+      }
+
+      let updatedActions = updateNestedActionAtPath(actions, path, nextAction);
+
+      // Sync following LogSetTopicStatus and LogEntry topics when CreateTopic topic changes
+      if (
+        updatedAction.type === 'CreateTopic' &&
+        previousAction?.type === 'CreateTopic' &&
+        updatedAction.topic !== previousAction.topic
+      ) {
+        const lastIndex = path[path.length - 1];
+        if (typeof lastIndex === 'number') {
+          const parentPath = path.slice(0, -1);
+          for (let offset = 1; offset <= 2; offset++) {
+            const siblingPath: ActionPath = [...parentPath, lastIndex + offset];
+            const sibling = getActionAtPath(updatedActions, siblingPath);
+            if (
+              sibling &&
+              (sibling.type === 'LogSetTopicStatus' || sibling.type === 'LogEntry') &&
+              'topic' in sibling &&
+              sibling.topic === previousAction.topic
+            ) {
+              updatedActions = updateNestedActionAtPath(updatedActions, siblingPath, {
+                ...sibling,
+                topic: updatedAction.topic
+              });
+            }
+          }
+        }
+      }
+
+      // #278: a LOG_NOTE has no Running/Success/Failed, so switching the topic
+      // type drops the status row that follows it, and switching back restores it.
+      if (
+        updatedAction.type === 'CreateTopic' &&
+        previousAction?.type === 'CreateTopic' &&
+        updatedAction.topicType !== previousAction.topicType
+      ) {
+        const lastIndex = path[path.length - 1];
+        if (typeof lastIndex === 'number') {
+          const parentPath = path.slice(0, -1);
+          const nextPath: ActionPath = [...parentPath, lastIndex + 1];
+          const next = getActionAtPath(updatedActions, nextPath);
+          const hasStatusRow = next?.type === 'LogSetTopicStatus' && next.topic === updatedAction.topic;
+          if (updatedAction.topicType === 'LOG_NOTE' && hasStatusRow) {
+            updatedActions = deleteNestedActionAtPath(updatedActions, nextPath);
+          } else if (updatedAction.topicType === 'LOG_MISSION' && !hasStatusRow) {
+            updatedActions = insertActionAfterPath(updatedActions, path, {
+              ...createAction('logSetTopicStatus', { dialogName: contextName, currentAction: undefined }),
+              topic: updatedAction.topic,
+              status: 'LOG_RUNNING',
+            } as DialogAction);
+          }
+        }
+      }
+
+      if (
+        updatedAction.type === 'Choice' &&
+        previousAction?.type === 'Choice' &&
+        updatedAction.text !== previousAction.text &&
+        updatedAction.targetFunction
+      ) {
+        choiceTextSync = {
+          targetFunction: updatedAction.targetFunction,
+          previousText: previousAction.text,
+          newText: updatedAction.text,
+        };
+      }
+
+      return { ...prev, actions: updatedActions };
+    });
+
+    if (choiceTextSync && semanticModel && onUpdateSemanticModel) {
+      const { targetFunction, previousText, newText } = choiceTextSync;
+      const targetFn = semanticModel.functions?.[targetFunction];
+      const firstLine = targetFn?.actions?.[0];
+      // Only mirror while the seeded line still matches the old choice text — if
+      // the user edited it themselves, leave their line alone.
+      if (targetFn && firstLine?.type === 'DialogLine' && firstLine.text === previousText) {
+        onUpdateSemanticModel(targetFunction, {
+          ...targetFn,
+          actions: targetFn.actions!.map((a, i) => (i === 0 ? { ...a, text: newText } : a)),
+        });
+      }
+    }
+  }, [setFunction, contextName, getAllDialogLineActions, semanticModel, onUpdateSemanticModel]);
+
+  /**
+   * Delete an action at a specific index
+   */
+  const deleteAction = useCallback((path: ActionPath) => {
+    patchActions((actions) => deleteNestedActionAtPath(actions, path));
+  }, [patchActions]);
+
+  /**
+   * Delete an action and focus the previous one
+   */
+  const deleteActionAndFocusPrev = useCallback((path: ActionPath) => {
+    let focusTarget: ActionPath | null = null;
+    setFunction((prev) => {
+      if (!prev) return prev;
+      const visiblePaths = flattenVisibleActionPaths(prev.actions || []);
+      const currentIndex = visiblePaths.findIndex((candidate) => actionPathToKey(candidate) === actionPathToKey(path));
+      focusTarget = currentIndex > 0 ? visiblePaths[currentIndex - 1] : null;
+      const newActions = deleteNestedActionAtPath(prev.actions || [], path);
+      return { ...prev, actions: newActions };
+    });
+
+    if (focusTarget) {
+      focusAction(focusTarget);
+    }
+  }, [setFunction, focusAction]);
+
+  /**
+   * Add a dialog line after a specific index
+   * By default toggles the speaker (self/other), unless toggleSpeaker is false
+   */
+  const addDialogLineAfter = useCallback((path: ActionPath, toggleSpeaker: boolean = true) => {
+    let nextPath: ActionPath | null = null;
+    setFunction((prev) => {
+      if (!prev) return prev;
+      const actions = prev.actions || [];
+
+      const currentAction = getActionAtPath(actions, path);
+      const newSpeaker = toggleSpeaker
+        ? (currentAction?.type === 'DialogLine' ? (currentAction.speaker === 'self' ? 'other' : 'self') : 'other')
+        : (currentAction?.type === 'DialogLine' ? currentAction.speaker : 'other');
+      const newAction = buildDialogLineAction(actions, newSpeaker);
+
+      const newActions = insertActionAfterPath(actions, path, newAction);
+      nextPath = findInsertedPath(newActions, path);
+      return { ...prev, actions: newActions };
+    });
+
+    if (nextPath) {
+      // Call focusAction immediately — it always stores a pending request so the
+      // new element at nextPath gets focus as soon as it registers its ref in
+      // useLayoutEffect (before the first paint).
+      focusAction(nextPath, true);
+    }
+  }, [setFunction, focusAction, buildDialogLineAction]);
+
+  /**
+   * Insert an action after `path`, or append it to the root list when `path`
+   * is null. The one seeding path for both flows: choice target-function
+   * creation and a quest step's lines happen here and nowhere else.
+   */
+  const insertAction = useCallback((path: ActionPath | null, actionType: ActionTypeId) => {
+    let nextPath: ActionPath | null = null;
+
+    const insertAt = (actions: DialogAction[], action: DialogAction): { actions: DialogAction[]; insertedPath: ActionPath | null } => {
+      if (path === null) {
+        return { actions: [...actions, action], insertedPath: [actions.length] };
+      }
+      const newActions = insertActionAfterPath(actions, path, action);
+      return { actions: newActions, insertedPath: findInsertedPath(newActions, path) };
+    };
+
+    if (actionType in QUEST_STEP_MENU_KINDS) {
+      // #322: a quest step is several vanilla lines; they show as one card.
+      const lines = buildQuestStepActions({
+        kind: QUEST_STEP_MENU_KINDS[actionType as QuestStepMenuId],
+        topic: 'TOPIC_',
+        text: ''
+      }).map((line) => ({ ...line, id: generateActionId() }) as DialogAction);
+      setFunction((prev) => {
+        if (!prev) return prev;
+        const actions = prev.actions || [];
+        // The lines are siblings of `path`; their paths are computed here, not
+        // found by walking the list, which would step into an If block's branch.
+        const anchor: ActionPath = path ?? [actions.length - 1];
+        const parent = anchor.slice(0, -1);
+        const first = (anchor[anchor.length - 1] as number) + 1;
+        let next = actions;
+        lines.forEach((line, i) => {
+          next = path === null && i === 0 && actions.length === 0
+            ? [line]
+            : insertActionAfterPath(next, [...parent, first + i - 1], line);
+        });
+        nextPath = [...parent, first];
+        return { ...prev, actions: next };
+      });
+    } else if (actionType === 'choice' && semanticModel) {
+      // Choice creation: generate a fresh target function before inserting the action
+      const newFunctionName = generateUniqueChoiceFunctionName(contextName, semanticModel);
+      const newFunction = createEmptyFunction(newFunctionName);
+
+      setFunction((prev) => {
+        if (!prev) return prev;
+        const actions = prev.actions || [];
+        // Issue #181: seed the choice's sub-dialog with a Hero line so the dropdown
+        // is never empty. Its text mirrors the (initially empty) Choice Text and is
+        // kept in sync by updateAction until the user edits the line themselves.
+        // The line id is generated against every line in the dialog so it stays unique.
+        newFunction.actions = [createAction('dialogLine', {
+          dialogName: contextName,
+          actions: getAllDialogLineActions(actions)
+        })];
+        const newAction = {
+          ...createAction('choice', { dialogName: contextName }),
+          targetFunction: newFunctionName
+        };
+        const inserted = insertAt(actions, newAction);
+        nextPath = inserted.insertedPath;
+        return { ...prev, actions: inserted.actions };
+      });
+      onUpdateSemanticModel?.(newFunctionName, newFunction);
+    } else {
+      // All other action types: use the factory
+      setFunction((prev) => {
+        if (!prev) return prev;
+        const actions = prev.actions || [];
+        const anchor = path ?? [actions.length - 1];
+        const parentIndex = anchor[anchor.length - 1] as number;
+        const siblingActions = anchor.length === 1
+          ? actions
+          : (() => {
+              const branch = anchor[anchor.length - 2];
+              const parentPath = anchor.slice(0, -2);
+              const parent = getActionAtPath(actions, parentPath);
+              if (branch !== 'then' && branch !== 'else') {
+                return actions;
+              }
+              return parent?.type === 'ConditionalAction'
+                ? parent[branch === 'then' ? 'thenActions' : 'elseActions']
+                : actions;
+            })();
+
+        let newAction = createActionAfterIndex(
+          actionType,
+          parentIndex,
+          siblingActions,
+          contextName,
+          semanticModel
+        );
+        if (newAction.type === 'DialogLine') {
+          newAction = {
+            ...newAction,
+            id: createDialogLineId({
+              dialogName: contextName,
+              speaker: newAction.speaker,
+              actions: getAllDialogLineActions(actions)
+            })
+          };
+        }
+
+        const inserted = insertAt(actions, newAction);
+        nextPath = inserted.insertedPath;
+        return { ...prev, actions: inserted.actions };
+      });
+    }
+
+    if (nextPath) {
+      // Defer past MUI menu's async focus-restoration (runs in useEffect after
+      // paint) so the new element wins the focus race after menu close.
+      const pathToFocus = nextPath;
+      setTimeout(() => focusAction(pathToFocus, true), 0);
+    }
+  }, [setFunction, focusAction, semanticModel, onUpdateSemanticModel, contextName, getAllDialogLineActions]);
+
+  /**
+   * Add an action after a specific index
+   * Handles choice creation with automatic target function generation
+   */
+  const addActionAfter = useCallback((path: ActionPath, actionType: ActionTypeId) => {
+    insertAction(path, actionType);
+  }, [insertAction]);
+
+  /** Append an action to the end of the function: insert-after-last. */
+  const addActionToEnd = useCallback((actionType: ActionTypeId) => {
+    insertAction(null, actionType);
+  }, [insertAction]);
+
+  const addActionToBranchEnd = useCallback((path: ActionPath, branch: ActionBranchKey, actionType: ActionTypeId) => {
+    let nextPath: ActionPath | null = null;
+    setFunction((prev) => {
+      if (!prev) return prev;
+      const actions = prev.actions || [];
+      const target = getActionAtPath(actions, path);
+      const branchActions = target?.type === 'ConditionalAction'
+        ? target[branch === 'then' ? 'thenActions' : 'elseActions']
+        : [];
+      const currentAction = branchActions[branchActions.length - 1];
+      let newAction = createAction(actionType, {
+        dialogName: contextName,
+        currentAction,
+        actions: branchActions
+      });
+      if (newAction.type === 'DialogLine') {
+        newAction = {
+          ...newAction,
+          id: createDialogLineId({
+            dialogName: contextName,
+            speaker: newAction.speaker,
+            actions: getAllDialogLineActions(actions)
+          })
+        };
+      }
+
+      nextPath = [...path, branch, branchActions.length];
+      return {
+        ...prev,
+        actions: appendActionToBranch(actions, path, branch, newAction)
+      };
+    });
+
+    if (nextPath) {
+      focusAction(nextPath, true);
+    }
+  }, [setFunction, contextName, focusAction, getAllDialogLineActions]);
+
+  const moveAction = useCallback((pathPrefix: ActionPath, sourceIndex: number, destinationIndex: number) => {
+    patchActions((actions) => moveActionWithinLevel(actions, pathPrefix, sourceIndex, destinationIndex));
+  }, [patchActions]);
+
+  const patchActionsAtLevel = useCallback(
+    (pathPrefix: ActionPath, transform: (actions: DialogAction[]) => DialogAction[]) => {
+      patchActions((actions) => patchNestedActionsAtLevel(actions, pathPrefix, transform));
+    },
+    [patchActions]
+  );
+
+  return {
+    updateAction,
+    patchActionsAtLevel,
+    deleteAction,
+    deleteActionAndFocusPrev,
+    addDialogLineAfter,
+    addActionAfter,
+    addActionToEnd,
+    addActionToBranchEnd,
+    moveAction
+  };
+}

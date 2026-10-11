@@ -1,0 +1,910 @@
+// The per-class field catalogue — the one table the op builder, the IPC
+// validator and the property grid all read.
+//
+// What it is defending against is not a wrong value but three allowlists
+// drifting: the binding's key table, the validator's, and the builder's. Two of
+// those are TypeScript and share this one; the third is C++ and is tied to it by
+// a round-trip test rather than by a constant. So the assertions here are about
+// the *shape* of the table — a key that appears twice, a lookup that answers for
+// a class nobody catalogued — because those are the failures that reach the
+// other two readers unchanged.
+
+import {
+  AUTHORABLE_VOB_CLASSES, CLASS_FIELDS, DECAL_FIELDS, baseFieldOf, classPropKeys,
+  CLASS_ENUM_FIELDS, EnumValueDescriptor, decalFieldOf, decalSubKey, enumValuesOf, fieldOf,
+  isAuthorableVobClass, vobExtentOf,
+} from '../src/model';
+
+describe('the per-class field catalogue', () => {
+  it('names each key once per class', () => {
+    // Two descriptors for one key make `fieldOf` answer with whichever came
+    // first and the grid draw the field twice — and the second one would carry
+    // the bounds the validator refuses by.
+    for (const [className, fields] of Object.entries(CLASS_FIELDS)) {
+      const keys = fields.map((field) => field.key);
+      expect(new Set(keys).size).toBe(keys.length);
+      expect(classPropKeys(className)).toEqual(keys);
+    }
+  });
+
+  it('catalogues the classes the increments so far write, and only those', () => {
+    // The table is additive per class, so what is *not* in it is the statement:
+    // a class with no entry has no class section in the grid and no legal key at
+    // any layer below it. The `…Default` zone variants are the pointed absence —
+    // a `zCZoneZFogDefault` is a world's fallback fog, not a placed zone.
+    expect(Object.keys(CLASS_FIELDS).sort()).toEqual([
+      'oCItem', 'oCMOB', 'oCMobBed', 'oCMobContainer', 'oCMobDoor', 'oCMobFire', 'oCMobInter',
+      'oCMobLadder', 'oCMobSwitch', 'oCMobWheel', 'oCTouchDamage', 'oCTriggerChangeLevel',
+      'oCTriggerScript', 'oCZoneMusic', 'zCCodeMaster', 'zCEarthquake', 'zCMessageFilter', 'zCMover',
+      'zCMoverController', 'zCPFXController', 'zCTrigger', 'zCTriggerList', 'zCTriggerUntouch',
+      'zCTriggerWorldStart', 'zCVobAnimate', 'zCVobLensFlare', 'zCVobLight', 'zCVobSound',
+      'zCVobSoundDaytime', 'zCZoneVobFarPlane', 'zCZoneZFog',
+    ]);
+    expect(classPropKeys('oCItem')).toEqual(['instance']);
+    expect(classPropKeys('zCVobLight')).toEqual(['lightType', 'range', 'color', 'quality']);
+    expect(classPropKeys('zCVobSound')).toEqual([
+      'soundName', 'volume', 'mode', 'radius', 'coneAngle', 'volumeType',
+      'initiallyPlaying', 'ambient3d', 'obstruction',
+    ]);
+    expect(classPropKeys('zCZoneVobFarPlane'))
+      .toEqual(['vobFarPlaneZ', 'innerRangePercentage']);
+    expect(classPropKeys('zCZoneZFog'))
+      .toEqual(['rangeCenter', 'innerRangePercentage', 'fadeOutSky', 'overrideColor', 'color']);
+    expect(classPropKeys('oCZoneMusic'))
+      .toEqual(['enabled', 'priority', 'ellipsoid', 'reverb', 'volume', 'loop']);
+    for (const absent of ['zCZoneZFogDefault', 'zCZoneVobFarPlaneDefault', 'oCZoneMusicDefault']) {
+      expect(classPropKeys(absent)).toEqual([]);
+    }
+  });
+
+  it('gives the daytime sound the base sound fields as well as its own three', () => {
+    // `zCVobSoundDaytime` derives from `zCVobSound`, and the binding's case is a
+    // fallthrough onto the same `VSound` members for exactly that reason. A
+    // catalogue that listed only the three extra fields would draw a daytime
+    // sound with no volume and no radius, and refuse an op that set one.
+    expect(classPropKeys('zCVobSoundDaytime')).toEqual([
+      ...classPropKeys('zCVobSound'), 'startTime', 'endTime', 'soundName2',
+    ]);
+    for (const key of classPropKeys('zCVobSound')) {
+      expect(fieldOf('zCVobSoundDaytime', key)).toEqual(fieldOf('zCVobSound', key));
+    }
+  });
+
+  it('records the bounds a value is refused by, per kind', () => {
+    // The bounds live here rather than in the validator because the grid needs
+    // the same numbers to reject before it commits, and two hand-written copies
+    // of "0 to 255" is one copy too many.
+    expect(fieldOf('oCItem', 'instance')).toEqual({ key: 'instance', kind: 'string' });
+    expect(fieldOf('zCVobLight', 'range')).toEqual({ key: 'range', kind: 'float', min: 0 });
+    expect(fieldOf('zCVobLight', 'color'))
+      .toEqual({ key: 'color', kind: 'color', min: 0, max: 255 });
+    // No maximum on the sound volume, deliberately: ZenKit documents it as
+    // "percent (0-100)", but retail NewWorld holds 130 on two sounds and 150 on
+    // four — measured 2026-08-27 over all three retail worlds — so a max of 100
+    // refuses values the game itself ships.
+    expect(fieldOf('zCVobSound', 'volume'))
+      .toEqual({ key: 'volume', kind: 'float', min: 0 });
+    expect(fieldOf('zCVobSoundDaytime', 'startTime'))
+      .toEqual({ key: 'startTime', kind: 'float', min: 0, max: 24 });
+    // `reverb` has no bound at all: it is negative decibels in ZenGin (retail
+    // holds -10 to -3.219 and nothing positive), so a `min: 0` would refuse
+    // every music zone in the game.
+    expect(fieldOf('oCZoneMusic', 'reverb')).toEqual({ key: 'reverb', kind: 'float' });
+    // 0..1, not 0..100: measured over the three retail worlds every stored
+    // value is in [0.1, 1.0] and the world-default zones hold exactly 1.0 —
+    // 100% stored as 1.0. ZenKit's own docs say "Unknown", so the measurement
+    // is the whole evidence.
+    expect(fieldOf('zCZoneZFog', 'innerRangePercentage'))
+      .toEqual({ key: 'innerRangePercentage', kind: 'float', min: 0, max: 1 });
+    expect(fieldOf('zCZoneVobFarPlane', 'innerRangePercentage'))
+      .toEqual({ key: 'innerRangePercentage', kind: 'float', min: 0, max: 1 });
+    // A boolean carries no bounds at all — there is nothing between false and
+    // true to refuse — and the descriptor says so by omitting both.
+    expect(fieldOf('zCVobSound', 'obstruction'))
+      .toEqual({ key: 'obstruction', kind: 'bool' });
+    expect(fieldOf('zCZoneZFog', 'overrideColor'))
+      .toEqual({ key: 'overrideColor', kind: 'bool' });
+    // The only `int` so far, and it is bounded below rather than not at all.
+    // The floor was ZenKit's documentation ("`0` is the lowest possible
+    // priority") and is now also measured: across the three retail worlds the
+    // observed priorities are 0 (the three `oCZoneMusicDefault`s) through 30
+    // (AddonWorld), with no negative anywhere.
+    expect(fieldOf('oCZoneMusic', 'priority'))
+      .toEqual({ key: 'priority', kind: 'int', min: 0 });
+    // An `enum` carries no bounds either, and for the opposite reason to a
+    // `bool`: there is plenty outside the set, and every bit of it is a value
+    // some world holds. The set is offered by the grid, not enforced here.
+    expect(fieldOf('zCVobLight', 'lightType')).toEqual({ key: 'lightType', kind: 'enum' });
+    expect(fieldOf('oCMobDoor', 'soundMaterial'))
+      .toEqual({ key: 'soundMaterial', kind: 'enum' });
+    expect(classPropKeys('zCVobAnimate')).toEqual(['startOn']);
+    expect(fieldOf('zCVobAnimate', 'startOn')).toEqual({ key: 'startOn', kind: 'bool' });
+    expect(classPropKeys('zCPFXController'))
+      .toEqual(['pfxName', 'killWhenDone', 'initiallyRunning']);
+    expect(fieldOf('zCPFXController', 'pfxName')).toEqual({ key: 'pfxName', kind: 'string' });
+    expect(fieldOf('zCPFXController', 'killWhenDone'))
+      .toEqual({ key: 'killWhenDone', kind: 'bool' });
+    expect(fieldOf('zCPFXController', 'initiallyRunning'))
+      .toEqual({ key: 'initiallyRunning', kind: 'bool' });
+    // The pair of targets is ahead of the one field each of these two classes
+    // has of its own — see "leaves the rest of VTrigger out" below.
+    expect(classPropKeys('zCTriggerWorldStart')).toEqual(['target', 'fireOnce']);
+    expect(fieldOf('zCTriggerWorldStart', 'fireOnce')).toEqual({ key: 'fireOnce', kind: 'bool' });
+    expect(classPropKeys('oCTriggerScript')).toEqual([
+      'target', 'vobTarget',
+      'startEnabled', 'sendUntrigger', 'reactToOnTrigger', 'reactToOnTouch', 'reactToOnDamage',
+      'respondToObject', 'respondToPc', 'respondToNpc', 'maxActivationCount',
+      'retriggerDelaySec', 'damageThreshold', 'fireDelaySec',
+      'function',
+    ]);
+    expect(fieldOf('oCTriggerScript', 'function')).toEqual({ key: 'function', kind: 'string' });
+    expect(classPropKeys('zCTrigger')).toEqual([
+      'target', 'vobTarget',
+      'startEnabled', 'sendUntrigger', 'reactToOnTrigger', 'reactToOnTouch', 'reactToOnDamage',
+      'respondToObject', 'respondToPc', 'respondToNpc', 'maxActivationCount',
+      'retriggerDelaySec', 'damageThreshold', 'fireDelaySec',
+    ]);
+    // Left unbounded: ZenKit documents `-1` as "process an infinite number of
+    // events", so a floor at 0 would refuse the one negative value the field
+    // is documented to mean something by.
+    expect(fieldOf('zCTrigger', 'maxActivationCount'))
+      .toEqual({ key: 'maxActivationCount', kind: 'int' });
+    expect(fieldOf('zCTrigger', 'fireDelaySec'))
+      .toEqual({ key: 'fireDelaySec', kind: 'float', min: 0 });
+    expect(fieldOf('zCTrigger', 'startEnabled')).toEqual({ key: 'startEnabled', kind: 'bool' });
+    // `oCTriggerChangeLevel` inherits the base twelve and adds its own two —
+    // plain config, not cross-references the way `target`/`vobTarget` are, so
+    // they join rather than stay held out with the family's target strings.
+    expect(classPropKeys('oCTriggerChangeLevel')).toEqual([
+      ...classPropKeys('zCTrigger'), 'levelName', 'startVob',
+    ]);
+    for (const key of classPropKeys('zCTrigger')) {
+      expect(fieldOf('oCTriggerChangeLevel', key)).toEqual(fieldOf('zCTrigger', key));
+    }
+    expect(fieldOf('oCTriggerChangeLevel', 'levelName'))
+      .toEqual({ key: 'levelName', kind: 'string' });
+    expect(fieldOf('oCTriggerChangeLevel', 'startVob'))
+      .toEqual({ key: 'startVob', kind: 'string' });
+    // `zCMover` inherits the base twelve and adds fourteen of its own
+    // seventeen, in the order `VMover` declares them — `behavior` first.
+    expect(classPropKeys('zCMover')).toEqual([
+      ...classPropKeys('zCTrigger'),
+      'behavior', 'touchBlockerDamage', 'stayOpenTimeSec', 'locked',
+      'autoLink', 'autoRotate', 'sfxOpenStart', 'sfxOpenEnd', 'sfxTransitioning',
+      'sfxCloseStart', 'sfxCloseEnd', 'sfxLock', 'sfxUnlock', 'sfxUseLocked',
+    ]);
+    for (const key of classPropKeys('zCTrigger')) {
+      expect(fieldOf('zCMover', key)).toEqual(fieldOf('zCTrigger', key));
+    }
+    expect(fieldOf('zCMover', 'touchBlockerDamage'))
+      .toEqual({ key: 'touchBlockerDamage', kind: 'float', min: 0 });
+    expect(fieldOf('zCMover', 'stayOpenTimeSec'))
+      .toEqual({ key: 'stayOpenTimeSec', kind: 'float', min: 0 });
+    expect(fieldOf('zCMover', 'locked')).toEqual({ key: 'locked', kind: 'bool' });
+    // `speed` is held out: ZenKit only writes it (and the two lerp/speed
+    // enums) when `keyframes` is non-empty, and this catalogue cannot author
+    // `keyframes` — so it is a legal write the engine silently drops on the
+    // many movers that animate from their visual instead.
+    expect(fieldOf('zCMover', 'speed')).toBeNull();
+    expect(fieldOf('zCMover', 'sfxLock')).toEqual({ key: 'sfxLock', kind: 'string' });
+    // `oCMOB` — the base every `oCMob*` class inherits: all ten fields
+    // `VMovableObject` declares, `soundMaterial` in its own stored position.
+    expect(classPropKeys('oCMOB')).toEqual([
+      'focusName', 'hp', 'damage', 'movable', 'takable', 'focusOverride',
+      'soundMaterial', 'visualDestroyed', 'owner', 'ownerGuild', 'destroyed',
+    ]);
+    expect(fieldOf('oCMOB', 'hp')).toEqual({ key: 'hp', kind: 'int' });
+    expect(fieldOf('oCMOB', 'movable')).toEqual({ key: 'movable', kind: 'bool' });
+    expect(fieldOf('oCMOB', 'owner')).toEqual({ key: 'owner', kind: 'string' });
+    expect(fieldOf('oCMOB', 'soundMaterial'))
+      .toEqual({ key: 'soundMaterial', kind: 'enum' });
+    // `oCMobInter` — the base nine plus its own six, in the order
+    // `VInteractiveObject` declares them: `target` since 2026-09-12 and `item`
+    // since the item-instance decision was taken. `oCMobBed`/`Ladder`/`Switch`/
+    // `Wheel` add nothing beyond `oCMobInter`, so they share the same key set.
+    const OC_MOB_INTER_KEYS = [
+      'focusName', 'hp', 'damage', 'movable', 'takable', 'focusOverride',
+      'soundMaterial', 'visualDestroyed', 'owner', 'ownerGuild', 'destroyed',
+      'stateCount', 'target', 'item', 'conditionFunction', 'onStateChangeFunction', 'rewind',
+    ];
+    for (const className of ['oCMobInter', 'oCMobBed', 'oCMobLadder', 'oCMobSwitch', 'oCMobWheel']) {
+      expect(classPropKeys(className)).toEqual(OC_MOB_INTER_KEYS);
+    }
+    expect(fieldOf('oCMobInter', 'stateCount')).toEqual({ key: 'stateCount', kind: 'int' });
+    expect(fieldOf('oCMobInter', 'rewind')).toEqual({ key: 'rewind', kind: 'bool' });
+    expect(fieldOf('oCMobInter', 'target')).toEqual({ key: 'target', kind: 'string' });
+    expect(fieldOf('oCMobInter', 'item')).toEqual({ key: 'item', kind: 'string' });
+    // `oCMobFire` — the base nine plus its own two plain strings (a rigged
+    // model's bone, and the fire-effect template file). Neither names a script
+    // symbol, so nothing on it is held out.
+    expect(classPropKeys('oCMobFire')).toEqual([...OC_MOB_INTER_KEYS, 'slot', 'vobTree']);
+    expect(fieldOf('oCMobFire', 'slot')).toEqual({ key: 'slot', kind: 'string' });
+    expect(fieldOf('oCMobFire', 'vobTree')).toEqual({ key: 'vobTree', kind: 'string' });
+    // `oCMobContainer` — the base nine plus `locked`, `pickString` and, since
+    // §16.26 row 2, `contents`: the archive's own `contains` string, a string
+    // at this layer exactly as `oCItem.instance` is, with its grammar checked
+    // by the IPC validator and its instances by the renderer. `key` — the item
+    // instance that unlocks it — is in since the same decision that brought
+    // `item` in, and sits where `VContainer` declares it, between `locked` and
+    // `pickString`.
+    expect(classPropKeys('oCMobContainer'))
+      .toEqual([...OC_MOB_INTER_KEYS, 'locked', 'key', 'pickString', 'contents']);
+    expect(fieldOf('oCMobContainer', 'locked')).toEqual({ key: 'locked', kind: 'bool' });
+    expect(fieldOf('oCMobContainer', 'pickString')).toEqual({ key: 'pickString', kind: 'string' });
+    expect(fieldOf('oCMobContainer', 'contents')).toEqual({ key: 'contents', kind: 'string' });
+    expect(fieldOf('oCMobContainer', 'key')).toEqual({ key: 'key', kind: 'string' });
+    // `oCMobDoor` — the base nine plus `locked`, `key` and `pickString`, in
+    // `VDoor`'s own order.
+    expect(classPropKeys('oCMobDoor'))
+      .toEqual([...OC_MOB_INTER_KEYS, 'locked', 'key', 'pickString']);
+    expect(fieldOf('oCMobDoor', 'locked')).toEqual({ key: 'locked', kind: 'bool' });
+    expect(fieldOf('oCMobDoor', 'pickString')).toEqual({ key: 'pickString', kind: 'string' });
+    expect(fieldOf('oCMobDoor', 'key')).toEqual({ key: 'key', kind: 'string' });
+  });
+
+  it('puts a fog zone\'s overrideColor next to the colour it governs', () => {
+    // The pairing is the whole point of the ordering: ZenGin reads
+    // `zCZoneZFog.color` only while `overrideColor` is true, so a colour drawn
+    // anywhere but directly under its switch is a write that reads to a user as
+    // "the editor did nothing". Catalogue order is draw order.
+    const keys = classPropKeys('zCZoneZFog');
+    expect(keys.indexOf('color')).toBe(keys.indexOf('overrideColor') + 1);
+  });
+
+  it('gives the sound family its booleans and keeps the daytime three last', () => {
+    // The booleans are base-`VSound` members, so the daytime sound inherits them
+    // through the same spread its floats come through — and its own three stay
+    // at the end, where the grid draws them after everything shared.
+    expect(classPropKeys('zCVobSoundDaytime').slice(-3))
+      .toEqual(['startTime', 'endTime', 'soundName2']);
+    for (const key of ['initiallyPlaying', 'ambient3d', 'obstruction']) {
+      expect(fieldOf('zCVobSoundDaytime', key)).toEqual({ key, kind: 'bool' });
+    }
+  });
+
+
+  it('separates the classes it can place from the ones it can edit', () => {
+    // Two different questions (level-editor.md §16.15): a class is editable when
+    // this file lists its fields, and authorable only when the binding has a
+    // field-complete construction for it. `zCVob` is authorable with no fields
+    // at all, and every catalogued mover, trigger and zone is editable with no
+    // construction — so neither list is a subset of the other.
+    expect(isAuthorableVobClass('zCVob')).toBe(true);
+    expect(classPropKeys('zCVob')).toEqual([]);
+    expect(isAuthorableVobClass('zCTriggerWorldStart')).toBe(false);
+    expect(classPropKeys('zCTriggerWorldStart').length).toBeGreaterThan(0);
+    // And the other direction still has examples, but only the ones with no
+    // fields at all: `zCVob` above and the two markers. The three I3 left
+    // authorable-with-nothing-catalogued — a trigger list, a code master and a
+    // message filter — are catalogued since the enums landed, so what used to
+    // be "the catalogue holds neither an enum nor a list" is now only the list.
+    for (const className of ['zCTriggerList', 'zCCodeMaster', 'zCMessageFilter']) {
+      expect(isAuthorableVobClass(className)).toBe(true);
+      expect(classPropKeys(className).length).toBeGreaterThan(0);
+    }
+    for (const className of ['zCVobSpot', 'zCVobStartpoint']) {
+      expect(isAuthorableVobClass(className)).toBe(true);
+      expect(classPropKeys(className)).toEqual([]);
+    }
+  });
+
+  it('gives the trigger list the twelve it inherits and the one enum it adds', () => {
+    // `VTriggerList` derives from `VTrigger`, so its case inherits the twelve
+    // exactly as `zCMover`'s and `oCTriggerChangeLevel`'s do — and `mode` is
+    // the one field of its own that is not the `targets` list.
+    expect(classPropKeys('zCTriggerList')).toEqual([...classPropKeys('zCTrigger'), 'mode']);
+    for (const key of classPropKeys('zCTrigger')) {
+      expect(fieldOf('zCTriggerList', key)).toEqual(fieldOf('zCTrigger', key));
+    }
+    // The `targets` **list** stays out — it is the unbounded payload the op set
+    // has no shape for. The single `target` string is in, inherited with the
+    // rest of `VTrigger`.
+    expect(fieldOf('zCTriggerList', 'targets')).toBeNull();
+    expect(fieldOf('zCTriggerList', 'target')).toEqual({ key: 'target', kind: 'string' });
+  });
+
+  it('catalogues the code master`s two targets and its three booleans, and not its slaves', () => {
+    // Both of its strings name a VOB in the same world, so both are in; the
+    // failure target sits beside the target it is the other half of. `slaves`
+    // is the list, and lists are still out.
+    expect(classPropKeys('zCCodeMaster'))
+      .toEqual(['target', 'failureTarget', 'ordered', 'firstFalseIsFailure', 'untriggeredCancels']);
+    expect(fieldOf('zCCodeMaster', 'slaves')).toBeNull();
+  });
+
+  it('catalogues the message filter`s target ahead of the two enums that relay to it', () => {
+    expect(classPropKeys('zCMessageFilter')).toEqual(['target', 'onTrigger', 'onUntrigger']);
+  });
+
+  it('catalogues a damage volume whole — eleven scalars and the collision enum', () => {
+    // `oCTouchDamage` derives straight from `zCVob` and shares nothing with the
+    // movable-object family it is placed beside. Nothing on it is a list, a
+    // cross-reference string or save-game-only, so the class is complete.
+    expect(classPropKeys('oCTouchDamage')).toEqual([
+      'damage', 'barrier', 'blunt', 'edge', 'fire', 'fly', 'magic', 'point', 'fall',
+      'repeatDelaySec', 'volumeScale', 'collision',
+    ]);
+    // The three floors, measured over retail's 51 volumes: damage is 1000 on 49
+    // and 50 on 2, the tick is 2s/0.5s/0 and the scale is 1 on every one. None
+    // has a maximum — a modded volume may deal more than retail does — and none
+    // may be negative: a negative scale is not a smaller box.
+    expect(fieldOf('oCTouchDamage', 'damage')).toEqual({ key: 'damage', kind: 'float', min: 0 });
+    expect(fieldOf('oCTouchDamage', 'repeatDelaySec'))
+      .toEqual({ key: 'repeatDelaySec', kind: 'float', min: 0 });
+    expect(fieldOf('oCTouchDamage', 'volumeScale'))
+      .toEqual({ key: 'volumeScale', kind: 'float', min: 0 });
+    expect(fieldOf('oCTouchDamage', 'blunt')).toEqual({ key: 'blunt', kind: 'bool' });
+  });
+
+  // What a trigger fires at, editable (2026-09-12). Until now nothing in the
+  // editor could wire a trigger to a mover: every `target` was held out of the
+  // catalogue as a cross-reference, on the rule `oCItem.instance` has since
+  // replaced — a shape check where the world is not known, an existence check
+  // where it is.
+  it('gives every VTrigger class the pair of targets, ahead of its own fields', () => {
+    for (const className of ['zCTrigger', 'zCTriggerList', 'zCMover', 'oCTriggerChangeLevel',
+      'oCTriggerScript']) {
+      expect(classPropKeys(className).slice(0, 2)).toEqual(['target', 'vobTarget']);
+      expect(fieldOf(className, 'target')).toEqual({ key: 'target', kind: 'string' });
+      expect(fieldOf(className, 'vobTarget')).toEqual({ key: 'vobTarget', kind: 'string' });
+    }
+  });
+
+  it('catalogues zCTriggerUntouch, whose only field is the target', () => {
+    // The class had no entry at all while `target` was held out — it declares
+    // nothing else — so this is the first thing the editor can say about one.
+    expect(classPropKeys('zCTriggerUntouch')).toEqual(['target']);
+  });
+
+  // ZenKit's hierarchy, not a guess from the family name: `VTriggerUntouch` and
+  // `VTriggerWorldStart` derive from `VirtualObject`, so a `vobTarget` on
+  // either would be a key the object does not have.
+  it('gives no vobTarget to the two classes that are not VTriggers', () => {
+    for (const className of ['zCTriggerUntouch', 'zCTriggerWorldStart']) {
+      expect(fieldOf(className, 'target')).toEqual({ key: 'target', kind: 'string' });
+      expect(fieldOf(className, 'vobTarget')).toBeNull();
+    }
+  });
+
+  // `oCTriggerScript` is a `VTrigger` and carried three of its fourteen fields:
+  // the pair of targets the change above gave the whole family, and its own
+  // `function`. The other twelve were never added when §16.3 catalogued the
+  // class, which left it the one `VTrigger` a designer could set no delay and
+  // no react-to flag on.
+  it('gives oCTriggerScript the whole VTrigger base, not just its targets', () => {
+    expect(classPropKeys('oCTriggerScript'))
+      .toEqual([...classPropKeys('zCTrigger'), 'function']);
+    expect(fieldOf('oCTriggerScript', 'fireDelaySec'))
+      .toEqual({ key: 'fireDelaySec', kind: 'float', min: 0 });
+    expect(fieldOf('oCTriggerScript', 'respondToNpc'))
+      .toEqual({ key: 'respondToNpc', kind: 'bool' });
+  });
+
+  // The movable-object family's own `target` is the same kind of string as the
+  // trigger family's — a `vobName` in this world — and it is what a mob fires
+  // when it is *used*. It arrives with `VInteractiveObject`, so every `oCMob*`
+  // class but the plain `oCMOB` carries it.
+  it('gives the interactive-object family its own target and its own item', () => {
+    for (const className of ['oCMobInter', 'oCMobBed', 'oCMobLadder', 'oCMobSwitch',
+      'oCMobWheel', 'oCMobFire', 'oCMobDoor', 'oCMobContainer']) {
+      expect(fieldOf(className, 'target')).toEqual({ key: 'target', kind: 'string' });
+      // The two are the same `string` kind here and are checked against
+      // different indexes above: `target` is a `vobName` in this world,
+      // `item` a Daedalus item instance in the project. The catalogue cannot
+      // express that difference and deliberately does not try — `zen-world`
+      // holds neither index.
+      expect(fieldOf(className, 'item')).toEqual({ key: 'item', kind: 'string' });
+    }
+    // A plain movable object is a `VMovableObject` and declares neither — both
+    // fields arrive one level down.
+    expect(fieldOf('oCMOB', 'target')).toBeNull();
+    expect(fieldOf('oCMOB', 'item')).toBeNull();
+  });
+
+  // A name that means two different things on two classes, which is why the
+  // renderer's item-index check cannot key on the field name alone: a mover
+  // controller's `key` is a keyframe number.
+  it('keeps a lock\'s key and a mover controller\'s key apart', () => {
+    expect(fieldOf('oCMobDoor', 'key')).toEqual({ key: 'key', kind: 'string' });
+    expect(fieldOf('zCMoverController', 'key')).toEqual({ key: 'key', kind: 'int' });
+  });
+
+  // What tells a mover which keyframe to go to (#260). A trigger fires a mover;
+  // this is the VOB between them, and it was readable and uneditable — a
+  // selected one drew an empty property section.
+  it('catalogues the mover controller whole: what it controls, what it says, and which key', () => {
+    expect(classPropKeys('zCMoverController')).toEqual(['target', 'message', 'key']);
+    // The same cross-reference the trigger family got, so the grid's warning and
+    // its name suggestions cover it by key rather than by class.
+    expect(fieldOf('zCMoverController', 'target')).toEqual({ key: 'target', kind: 'string' });
+    expect(fieldOf('zCMoverController', 'message')).toEqual({ key: 'message', kind: 'enum' });
+    expect(fieldOf('zCMoverController', 'key')).toEqual({ key: 'key', kind: 'int' });
+    // Nothing on `VMoverController` is a list or save-game-only, so the class is
+    // complete — there is no fourth field being held out.
+    expect(fieldOf('zCMoverController', 'keyframes')).toBeNull();
+  });
+
+  it('offers the four messages a mover controller can send', () => {
+    expect(enumValuesOf('zCMoverController', 'message')).toEqual([
+      { value: 0, label: 'FIXED_DIRECT' },
+      { value: 1, label: 'FIXED_ORDER' },
+      { value: 2, label: 'NEXT' },
+      { value: 3, label: 'PREVIOUS' },
+    ]);
+  });
+
+  it('catalogues a lens flare, whose whole class is the effect it names', () => {
+    expect(classPropKeys('zCVobLensFlare')).toEqual(['fx']);
+    expect(fieldOf('zCVobLensFlare', 'fx')).toEqual({ key: 'fx', kind: 'string' });
+  });
+
+  // `amplitude` is a float triple, which the catalogue's two array kinds —
+  // `color` (four integers) and `vec2` (two floats) — could not express. The
+  // third kind was taken as a decision (maintainer, 2026-09-12) rather than leaving
+  // the class half-catalogued, and `vec3` is what the class is now whole by.
+  it('catalogues the earthquake, the third array kind included', () => {
+    expect(classPropKeys('zCEarthquake')).toEqual(['radius', 'duration', 'amplitude']);
+    expect(fieldOf('zCEarthquake', 'radius')).toEqual({ key: 'radius', kind: 'float', min: 0 });
+    expect(fieldOf('zCEarthquake', 'duration')).toEqual({ key: 'duration', kind: 'float', min: 0 });
+    // Unfloored, and it is not an oversight: the amplitude is a displacement per
+    // axis, so a negative component shakes the camera the other way rather than
+    // describing a distance that cannot be one.
+    expect(fieldOf('zCEarthquake', 'amplitude')).toEqual({ key: 'amplitude', kind: 'vec3' });
+    // Editable, not placeable: `insertVob` has no construction for it, which is
+    // the authorable set's own question and not this one.
+    expect(AUTHORABLE_VOB_CLASSES).not.toContain('zCEarthquake');
+  });
+
+  // Editing a VOB a world already holds is not placing one. Neither class is
+  // constructible and this does not make it so — `insertVob`'s set is its own
+  // question.
+  it('catalogues neither class into the authorable set', () => {
+    expect(AUTHORABLE_VOB_CLASSES).not.toContain('zCMoverController');
+    expect(AUTHORABLE_VOB_CLASSES).not.toContain('zCVobLensFlare');
+  });
+
+  it('places the whole trigger family, under the names the archive uses', () => {
+    // I3 (level-editor.md §16.15). The two `oC*` names are the trap: the board
+    // card and everyday speech say `zCTriggerScript` and `zCTriggerChangeLevel`,
+    // and a world — and therefore `CLASS_FIELDS`, the dump and the binding —
+    // spells both with the `oC` prefix. A list that carried the spoken name
+    // would offer the dialog a class the binding refuses.
+    expect(AUTHORABLE_VOB_CLASSES).toEqual([
+      'zCVob', 'oCItem', 'zCVobLight', 'zCVobSound', 'zCVobSoundDaytime',
+      'zCTrigger', 'zCTriggerList', 'oCTriggerScript', 'oCTriggerChangeLevel',
+      'zCMover', 'zCCodeMaster', 'zCMessageFilter',
+      'oCMobInter', 'oCMobBed', 'oCMobLadder', 'oCMobSwitch', 'oCMobWheel',
+      'oCMobDoor', 'oCMobContainer', 'oCTouchDamage',
+      'oCZoneMusic', 'zCZoneZFog', 'zCZoneVobFarPlane',
+      'zCVobStartpoint', 'zCVobSpot', 'zCVobAnimate', 'zCPFXController',
+    ]);
+    expect(isAuthorableVobClass('zCTriggerScript')).toBe(false);
+    expect(isAuthorableVobClass('zCTriggerChangeLevel')).toBe(false);
+  });
+
+  it('places the movable-object family, and not the two of it that are only editable', () => {
+    // I4 (level-editor.md §16.15). `oCTouchDamage` travels with them because it
+    // is the other volume a designer places by hand, and it carries the same
+    // name trap the trigger family had: ZenKit's own documentation says
+    // `zCTouchDamage` and a world says `oC`.
+    for (const className of [
+      'oCMobInter', 'oCMobBed', 'oCMobLadder', 'oCMobSwitch', 'oCMobWheel',
+      'oCMobDoor', 'oCMobContainer', 'oCTouchDamage',
+    ]) {
+      expect(isAuthorableVobClass(className)).toBe(true);
+    }
+    expect(isAuthorableVobClass('zCTouchDamage')).toBe(false);
+    // The two the family's catalogue holds that I4 did *not* make authorable,
+    // and they are editable-only on purpose rather than by oversight: neither
+    // is in the card's list, and an `oCMobFire` in particular is only ever a
+    // rigged model with a fire template on a bone, which nothing here can name.
+    expect(isAuthorableVobClass('oCMOB')).toBe(false);
+    expect(isAuthorableVobClass('oCMobFire')).toBe(false);
+    expect(classPropKeys('oCMobFire').length).toBeGreaterThan(0);
+    // The bed was the third authorable-with-nothing-catalogued class and is not
+    // one any more: its fields are exactly `oCMobInter`'s, and it now carries
+    // them here and a `case oCMobBed:` in the binding's `setVobClassProp`
+    // switch. `oCTouchDamage` was the last of that state in this family and is
+    // catalogued too — twelve fields, the collision enum among them.
+    expect(classPropKeys('oCTouchDamage')).toHaveLength(12);
+  });
+
+  it('places the zones, the markers and the two effect classes (I5)', () => {
+    // I5 (level-editor.md §16.15), the increment that closes §14.1 1.3. Five of
+    // the seven were catalogued-but-unplaceable, which is the state the
+    // separation test used `zCVobAnimate` to stand for until this landed — so
+    // the row it closes is exactly the one that made "editable" and
+    // "authorable" different words.
+    for (const className of [
+      'oCZoneMusic', 'zCZoneZFog', 'zCZoneVobFarPlane', 'zCVobAnimate', 'zCPFXController',
+    ]) {
+      expect(isAuthorableVobClass(className)).toBe(true);
+      expect(classPropKeys(className).length).toBeGreaterThan(0);
+    }
+    // The other two are markers: `VSpot` and `VStartPoint` declare not one
+    // field beyond `zCVob`, so they join `zCVob` itself in being authorable
+    // with nothing to edit — and for the opposite reason to a code master's,
+    // which has fields the catalogue refuses rather than no fields at all.
+    for (const className of ['zCVobSpot', 'zCVobStartpoint']) {
+      expect(isAuthorableVobClass(className)).toBe(true);
+      expect(classPropKeys(className)).toEqual([]);
+    }
+    // The `…Default` zone variants stay refused. They are a world's fallback
+    // settings rather than placed zones, the catalogue holds none of them, and
+    // a second one placed by hand is not a thing a world has.
+    for (const className of [
+      'oCZoneMusicDefault', 'zCZoneZFogDefault', 'zCZoneVobFarPlaneDefault',
+    ]) {
+      expect(isAuthorableVobClass(className)).toBe(false);
+    }
+  });
+
+  it('refuses a class name that is a property of every object', () => {
+    expect(isAuthorableVobClass('toString')).toBe(false);
+    expect(isAuthorableVobClass('')).toBe(false);
+    expect(isAuthorableVobClass(7)).toBe(false);
+  });
+
+  it('answers null for a key of another class, and for a class it does not have', () => {
+    expect(fieldOf('oCItem', 'range')).toBeNull();
+    expect(fieldOf('zCVobLight', 'instance')).toBeNull();
+    expect(fieldOf('zCMover', 'keyframes')).toBeNull();
+    expect(classPropKeys('zCVob')).toEqual([]);
+  });
+
+  it('answers null for a class name that is a property of every object', () => {
+    // The class name arrives from a world, so the lookup is a boundary: a plain
+    // object literal answers `CLASS_FIELDS['toString']` with a *function*, and a
+    // `?? []` behind that lookup would hand the grid a method to iterate.
+    expect(fieldOf('toString', 'instance')).toBeNull();
+    expect(fieldOf('constructor', 'key')).toBeNull();
+    expect(classPropKeys('toString')).toEqual([]);
+    expect(classPropKeys('__proto__')).toEqual([]);
+  });
+});
+
+describe('the base fields no class owns', () => {
+  it('bounds the two numbers by the packed layout, not by the archive type', () => {
+    // `visualCamAlign` is two bits and `bias` is five in the packed `zCVob`
+    // layout, and a wider value is written truncated and reported as written.
+    // The alignment's max is 3 rather than the enum's 2 because retail carries
+    // 3 — an inverse has to be able to write back what was there.
+    expect(baseFieldOf('visualCamAlign')).toEqual({ key: 'visualCamAlign', kind: 'int', min: 0, max: 3 });
+    expect(baseFieldOf('bias')).toEqual({ key: 'bias', kind: 'int', min: 0, max: 31 });
+    expect(baseFieldOf('presetName')).toEqual({ key: 'presetName', kind: 'string' });
+  });
+
+  it('bounds dynamicShadows by the same two bits, not by ShadowType', () => {
+    // `dynamicShadows` is `(bit0 & 0b11000000) >> 6` in the packed layout, so
+    // the bound is 0-3 and not `ShadowType`'s two named values — the same rule
+    // `visualCamAlign` above is bounded by, and for the same reason: an inverse
+    // has to be able to write back whatever a world was holding.
+    expect(baseFieldOf('dynamicShadows')).toEqual({ key: 'dynamicShadows', kind: 'int', min: 0, max: 3 });
+  });
+
+  it('leaves sleepMode out — it is a save-game field a world never carries', () => {
+    // `VirtualObject::save` writes `sleepMode` only under `is_save_game()`, so a
+    // value set on a world archive is dropped on write and read back as 0.
+    // Measured 2026-08-28: 0 on all 41,393 retail VOBs.
+    expect(baseFieldOf('sleepMode')).toBeNull();
+  });
+
+  it('is not a class entry, so an unknown class stays unknown', () => {
+    // `SetVobClassProp` refuses a class the catalogue does not know by asking
+    // whether it has any keys at all. Folding the base fields into `CLASS_FIELDS`
+    // would answer "yes" for every string.
+    expect(classPropKeys('zCVob')).toEqual([]);
+    expect(fieldOf('zCVob', 'bias')).toBeNull();
+    expect(baseFieldOf('name')).toBeNull();
+    expect(baseFieldOf('toString')).toBeNull();
+  });
+});
+
+describe('the decal fields, which live on the visual and not on the vob', () => {
+  it('catalogues all seven, prefixed so the op stays a flat walk over keys', () => {
+    // A decal is the one visual that carries data of its own, and `getVobProps`
+    // answers it as a nested `decal` record. The catalogue keeps the flat shape
+    // every other field has — the prefix is what makes the two views one key
+    // set, and `decalSubKey` is the only place that mapping is written down.
+    expect(DECAL_FIELDS.map((field) => field.key)).toEqual([
+      'decalDimension', 'decalOffset', 'decalTwoSided', 'decalAlphaFunc',
+      'decalTextureAnimFps', 'decalAlphaWeight', 'decalIgnoreDaylight',
+    ]);
+    for (const field of DECAL_FIELDS) {
+      expect(decalFieldOf(field.key)).toEqual(field);
+    }
+    expect(decalFieldOf('dimension')).toBeNull();
+    expect(decalFieldOf('presetName')).toBeNull();
+    expect(decalFieldOf('toString')).toBeNull();
+  });
+
+  it('maps each key onto the name the props record answers it under', () => {
+    expect(DECAL_FIELDS.map((field) => decalSubKey(field.key))).toEqual([
+      'dimension', 'offset', 'twoSided', 'alphaFunc',
+      'textureAnimFps', 'alphaWeight', 'ignoreDaylight',
+    ]);
+  });
+
+  it('bounds each field by what the archive holds, measured over retail', () => {
+    // Swept 2026-08-28 over NewWorld/OldWorld/AddonWorld: 1,932 of the 41,393
+    // VOBs carry a decal, all of them plain `zCVob`. Dimensions run 10-550 and
+    // an offset is always [0,0] — a size cannot be negative, an offset can, so
+    // only the first is floored. `alphaFunc` is an `AlphaFunction`, whose seven
+    // values retail stays inside (1, 2, 3 and one 6); `alphaWeight` is the byte
+    // `write_byte` puts in the archive, so 0-255 and whole.
+    expect(decalFieldOf('decalDimension')).toEqual({ key: 'decalDimension', kind: 'vec2', min: 0 });
+    expect(decalFieldOf('decalOffset')).toEqual({ key: 'decalOffset', kind: 'vec2' });
+    expect(decalFieldOf('decalTwoSided')).toEqual({ key: 'decalTwoSided', kind: 'bool' });
+    expect(decalFieldOf('decalAlphaFunc')).toEqual({ key: 'decalAlphaFunc', kind: 'int', min: 0, max: 6 });
+    expect(decalFieldOf('decalTextureAnimFps')).toEqual({ key: 'decalTextureAnimFps', kind: 'float', min: 0 });
+    expect(decalFieldOf('decalAlphaWeight')).toEqual({ key: 'decalAlphaWeight', kind: 'int', min: 0, max: 255 });
+    expect(decalFieldOf('decalIgnoreDaylight')).toEqual({ key: 'decalIgnoreDaylight', kind: 'bool' });
+  });
+
+  it('is not a base field and not a class field', () => {
+    // Three separate lookups over three separate tables, because a decal field
+    // is legal only on a VOB whose visual is one — the check `baseFieldOf`
+    // cannot make and `classPropKeys` must go on answering empty for `zCVob`.
+    expect(baseFieldOf('decalDimension')).toBeNull();
+    expect(fieldOf('zCVob', 'decalDimension')).toBeNull();
+    expect(classPropKeys('zCVob')).toEqual([]);
+  });
+});
+
+describe('the enum sets (level-editor.md §16.21)', () => {
+  it('names an enum on every class that has one, and no field twice', () => {
+    // The set is per class and per key, so the two failures that reach a reader
+    // are a class the grid never draws, whose set nothing can read, and a key
+    // whose set and whose descriptor disagree about which of the two it is.
+    expect(Object.keys(CLASS_ENUM_FIELDS).sort()).toEqual([
+      'oCMOB', 'oCMobBed', 'oCMobContainer', 'oCMobDoor', 'oCMobFire', 'oCMobInter',
+      'oCMobLadder', 'oCMobSwitch', 'oCMobWheel', 'oCTouchDamage', 'zCMessageFilter',
+      'zCMover', 'zCMoverController', 'zCTriggerList', 'zCVobLight', 'zCVobSound',
+      'zCVobSoundDaytime',
+    ]);
+    for (const [className, fields] of Object.entries(CLASS_ENUM_FIELDS)) {
+      expect(Object.keys(CLASS_FIELDS)).toContain(className);
+      for (const key of Object.keys(fields)) {
+        expect(classPropKeys(className)).toContain(key);
+        expect(fieldOf(className, key)?.kind).toBe('enum');
+      }
+    }
+  });
+
+  it('gives every `enum` field a set, and every set a field', () => {
+    // The two tables are read by different layers — the grid asks the fourth
+    // for its options and the IPC validator asks the third for the kind — so a
+    // key in one and not the other is a dropdown with nothing to offer, or a
+    // number field on an archive member that is an enumeration.
+    for (const className of Object.keys(CLASS_FIELDS)) {
+      for (const key of classPropKeys(className)) {
+        const isEnum = fieldOf(className, key)?.kind === 'enum';
+        expect([key, isEnum]).toEqual([key, enumValuesOf(className, key) !== null]);
+      }
+    }
+  });
+
+  it('bounds no enum field, because a value outside the set is kept', () => {
+    // The whole of §16.21: offering is not coercing. A value retail holds and
+    // the set does not is shown as itself and written back unchanged on an
+    // undo, so a `min`/`max` here would be the coercion the card refuses —
+    // reached by the validator instead of by the dropdown.
+    for (const className of Object.keys(CLASS_FIELDS)) {
+      for (const key of classPropKeys(className)) {
+        const field = fieldOf(className, key)!;
+        if (field.kind !== 'enum') continue;
+        expect([key, field.min, field.max]).toEqual([key, undefined, undefined]);
+      }
+    }
+  });
+
+  it('reads each set out of ZenKit`s header, whole and in stored order', () => {
+    // The values are the enumerators of the C++ enum the archive member has,
+    // in declaration order, labelled with the enumerator`s own name — a set
+    // read rather than invented, which is the property the card exists for.
+    expect(enumValuesOf('zCVobLight', 'lightType')).toEqual([
+      { value: 0, label: 'POINT' }, { value: 1, label: 'SPOT' },
+      { value: 2, label: 'RESERVED0' }, { value: 3, label: 'RESERVED1' },
+    ]);
+    expect(enumValuesOf('zCVobLight', 'quality')).toEqual([
+      { value: 0, label: 'HIGH' }, { value: 1, label: 'MEDIUM' }, { value: 2, label: 'LOW' },
+    ]);
+    expect(enumValuesOf('zCVobSound', 'mode')).toEqual([
+      { value: 0, label: 'LOOP' }, { value: 1, label: 'ONCE' }, { value: 2, label: 'RANDOM' },
+    ]);
+    expect(enumValuesOf('zCVobSound', 'volumeType')).toEqual([
+      { value: 0, label: 'SPHERICAL' }, { value: 1, label: 'ELLIPSOIDAL' },
+    ]);
+    expect(enumValuesOf('zCMover', 'behavior')).toEqual([
+      { value: 0, label: 'TOGGLE' }, { value: 1, label: 'TRIGGER_CONTROL' },
+      { value: 2, label: 'OPEN_TIME' }, { value: 3, label: 'LOOP' },
+      { value: 4, label: 'SINGLE_KEYS' },
+    ]);
+    expect(enumValuesOf('zCTriggerList', 'mode')).toEqual([
+      { value: 0, label: 'ALL' }, { value: 1, label: 'NEXT' }, { value: 2, label: 'RANDOM' },
+    ]);
+    expect(enumValuesOf('oCTouchDamage', 'collision')).toEqual([
+      { value: 0, label: 'NONE' }, { value: 1, label: 'BOX' }, { value: 2, label: 'POINT' },
+    ]);
+    for (const key of ['onTrigger', 'onUntrigger']) {
+      expect(enumValuesOf('zCMessageFilter', key)).toEqual([
+        { value: 0, label: 'NONE' }, { value: 1, label: 'TRIGGER' },
+        { value: 2, label: 'UNTRIGGER' }, { value: 3, label: 'ENABLE' },
+        { value: 4, label: 'DISABLE' }, { value: 5, label: 'TOGGLE' },
+      ]);
+    }
+    expect(enumValuesOf('oCMobDoor', 'soundMaterial')).toEqual([
+      { value: 0, label: 'WOOD' }, { value: 1, label: 'STONE' }, { value: 2, label: 'METAL' },
+      { value: 3, label: 'LEATHER' }, { value: 4, label: 'CLAY' }, { value: 5, label: 'GLASS' },
+    ]);
+  });
+
+  it('gives the daytime sound the base sound`s two enums, as the fields do', () => {
+    expect(enumValuesOf('zCVobSoundDaytime', 'mode')).toEqual(enumValuesOf('zCVobSound', 'mode'));
+    expect(enumValuesOf('zCVobSoundDaytime', 'volumeType'))
+      .toEqual(enumValuesOf('zCVobSound', 'volumeType'));
+  });
+
+  it('gives every movable-object class the same one enum', () => {
+    // `soundMaterial` is `VMovableObject`s, so every `oCMob*` inherits it — the
+    // same shape `OC_MOB_FIELDS` has, and an editor that offered it on the door
+    // and not the chest would be describing the hierarchy wrongly.
+    for (const className of ['oCMOB', 'oCMobInter', 'oCMobBed', 'oCMobLadder',
+      'oCMobSwitch', 'oCMobWheel', 'oCMobFire', 'oCMobContainer', 'oCMobDoor']) {
+      expect(enumValuesOf(className, 'soundMaterial')).toEqual(enumValuesOf('oCMOB', 'soundMaterial'));
+    }
+  });
+
+  it('holds out the two mover enums a save would drop', () => {
+    // `VMover::save` writes `posLerpType` and `speedType` only when the mover
+    // has keyframes, which this catalogue cannot author — so on a mover that
+    // animates from its visual, a write of either is dropped on save and reads
+    // to a user as the editor having done nothing. The same reason `speed` is
+    // not a field, and `lerpMode` is also the field the retail sweep found
+    // outside its own set (120 three times, 132198264 once).
+    expect(enumValuesOf('zCMover', 'lerpMode')).toBeNull();
+    expect(enumValuesOf('zCMover', 'speedMode')).toBeNull();
+  });
+
+  it('answers null for a key that is not an enum, and for a prototype member', () => {
+    expect(enumValuesOf('zCVobLight', 'range')).toBeNull();
+    expect(enumValuesOf('oCItem', 'instance')).toBeNull();
+    expect(enumValuesOf('zCVob', 'mode')).toBeNull();
+    expect(enumValuesOf('toString', 'mode')).toBeNull();
+    expect(enumValuesOf('zCVobSound', 'toString')).toBeNull();
+  });
+
+  it('gives each set unique values and unique labels', () => {
+    // A repeated value makes two options write the same number; a repeated
+    // label makes them indistinguishable in the list.
+    const table: Readonly<Record<string, Readonly<Record<string, readonly EnumValueDescriptor[]>>>>
+      = CLASS_ENUM_FIELDS;
+    for (const fields of Object.values(table)) {
+      for (const values of Object.values(fields)) {
+        expect(new Set(values.map((v) => v.value)).size).toBe(values.length);
+        expect(new Set(values.map((v) => v.label)).size).toBe(values.length);
+        expect(values.every((v) => Number.isInteger(v.value) && v.value >= 0)).toBe(true);
+      }
+    }
+  });
+});
+
+// The sphere a sound or a light reaches (#248). The reach IS the object for
+// these two, and the marker that landed with #247 says only where the origin
+// is — so this is the one field lookup the viewport needs to draw it.
+describe('the extent a VOB is', () => {
+  /** Six numbers as `getVobProps` answers them — min xyz then max xyz. */
+  const BOX = [-100, 0, -50, 100, 200, 50] as const;
+
+  it("reads a sound's radius, and the daytime sound's inherited one", () => {
+    expect(vobExtentOf('zCVobSound', { radius: 3000 }))
+      .toEqual({ shape: 'sphere', radius: 3000, kind: 'sound' });
+    expect(vobExtentOf('zCVobSoundDaytime', { radius: 1500 }))
+      .toEqual({ shape: 'sphere', radius: 1500, kind: 'sound' });
+  });
+
+  it("reads a light's range, which is the same shape under a different key", () => {
+    expect(vobExtentOf('zCVobLight', { range: 800 }))
+      .toEqual({ shape: 'sphere', radius: 800, kind: 'light' });
+    // The sound's key on a light is not the light's reach.
+    expect(vobExtentOf('zCVobLight', { radius: 800 })).toBeNull();
+  });
+
+  it("carries a light's own colour, which is the other half of what a light is (#248)", () => {
+    // RGBA 0-255 as the binding reads it; the alpha is dropped, because a
+    // light's alpha is not its tint.
+    expect(vobExtentOf('zCVobLight', { range: 800, color: [255, 160, 60, 255] }))
+      .toEqual({ shape: 'sphere', radius: 800, kind: 'light', color: [255, 160, 60] });
+  });
+
+  it('carries no colour for a sound, whose radius is not a colour of anything', () => {
+    expect(vobExtentOf('zCVobSound', { radius: 3000, color: [255, 0, 0, 255] }))
+      .toEqual({ shape: 'sphere', radius: 3000, kind: 'sound' });
+  });
+
+  it('carries no colour where there is no usable one to carry', () => {
+    // Each of these leaves the sphere at the palette colour rather than
+    // drawing an invisible or a nonsense wireframe.
+    const cases: Array<unknown> = [
+      undefined,               // a world written before the field, or a read that missed it
+      [255, 160],              // not four channels
+      [0, 0, 0, 255],          // black: an unlit wireframe is the invisibility #248 is about
+      ['255', '160', '60', 0], // not numbers
+      [300, -1, 60, 255],      // outside the catalogue's own 0-255 bounds
+    ];
+    for (const color of cases) {
+      expect(vobExtentOf('zCVobLight', { range: 800, color } as never))
+        .toEqual({ shape: 'sphere', radius: 800, kind: 'light' });
+    }
+  });
+
+  it('never answers a sphere for a class whose extent is a box', () => {
+    // A zone or a trigger is its bbox, and a sphere for one would be a lie
+    // about where it stops.
+    for (const className of ['oCZoneMusic', 'zCZoneZFog', 'zCTrigger']) {
+      expect(vobExtentOf(className, { radius: 500, range: 500 })?.shape).not.toBe('sphere');
+    }
+    // And a class that is no volume at all gets nothing, box or sphere.
+    for (const className of ['oCItem', 'zCVob']) {
+      expect(vobExtentOf(className, { radius: 500, range: 500, bbox: BOX })).toBeNull();
+    }
+  });
+
+  it('draws nothing for a radius of zero or less, or one that is not a number', () => {
+    // A sphere of radius zero is the point the marker already draws.
+    expect(vobExtentOf('zCVobSound', { radius: 0 })).toBeNull();
+    expect(vobExtentOf('zCVobSound', { radius: -5 })).toBeNull();
+    expect(vobExtentOf('zCVobSound', {})).toBeNull();
+    expect(vobExtentOf('zCVobSound', { radius: 'loud' })).toBeNull();
+  });
+
+  // The box half (#248). A zone's or a trigger's volume *is* its bounding box,
+  // and the columnar index has no column for one — so it arrives on the
+  // `getVobProps` read the property grid already makes, which is the
+  // per-selection fetch the maintainer chose over paying 41,393 × 6 floats at every
+  // world load.
+  it("reads a zone's box off the props, because nothing else carries one", () => {
+    for (const className of ['zCZoneZFog', 'zCZoneVobFarPlane']) {
+      expect(vobExtentOf(className, { bbox: BOX })).toEqual({
+        shape: 'box', kind: 'zone', bbox: BOX,
+      });
+    }
+  });
+
+  it('reads a trigger box for the whole family, movers and touch damage with it', () => {
+    for (const className of [
+      'zCTrigger', 'zCTriggerList', 'oCTriggerScript', 'oCTriggerChangeLevel',
+      'zCMover', 'zCTriggerWorldStart', 'zCTriggerUntouch', 'oCTouchDamage',
+    ]) {
+      expect(vobExtentOf(className, { bbox: BOX })).toEqual({
+        shape: 'box', kind: 'trigger', bbox: BOX,
+      });
+    }
+  });
+
+  it("follows oCZoneMusic's own ellipsoid flag, because one box means two shapes", () => {
+    // The catalogued bool the user can flip: the same six numbers are a box or
+    // the ellipsoid inscribed in it, and the engine reads the flag.
+    expect(vobExtentOf('oCZoneMusic', { bbox: BOX, ellipsoid: true })).toEqual({
+      shape: 'ellipsoid', kind: 'zone', bbox: BOX,
+    });
+    expect(vobExtentOf('oCZoneMusic', { bbox: BOX, ellipsoid: false })).toEqual({
+      shape: 'box', kind: 'zone', bbox: BOX,
+    });
+    // Absent is a box: `false` is the archive's own default for the flag.
+    expect(vobExtentOf('oCZoneMusic', { bbox: BOX })?.shape).toBe('box');
+  });
+
+  it('draws nothing for a box that is missing, malformed or flat', () => {
+    // A zero-volume box is the marker's point again, and a box arriving as
+    // anything but six finite numbers is a read that went wrong rather than a
+    // volume of zero.
+    expect(vobExtentOf('zCTrigger', {})).toBeNull();
+    expect(vobExtentOf('zCTrigger', { bbox: [0, 0, 0] })).toBeNull();
+    expect(vobExtentOf('zCTrigger', { bbox: 'wide' })).toBeNull();
+    expect(vobExtentOf('zCTrigger', { bbox: [0, 0, 0, Infinity, 1, 1] })).toBeNull();
+    expect(vobExtentOf('zCTrigger', { bbox: [5, 5, 5, 5, 5, 5] })).toBeNull();
+    // Inverted on one axis is degenerate the same way.
+    expect(vobExtentOf('zCTrigger', { bbox: [0, 0, 0, 10, -1, 10] })).toBeNull();
+  });
+});

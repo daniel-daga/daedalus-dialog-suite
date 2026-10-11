@@ -1,0 +1,623 @@
+import React from 'react';
+import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
+import '@testing-library/jest-dom';
+import type { WorldOp } from 'zen-world';
+import { useWorldStore } from '../src/renderer/store/worldStore';
+import { useProjectStore } from '../src/renderer/store/projectStore';
+import type { SemanticModel } from '../src/shared/types';
+import { SUMMARY, makeWorldEditorApi, vobIndex, waynetPayload } from './worldFixtures';
+import * as mockWorldViewport from './worldViewportMocks';
+import WorldSurface from '../src/renderer/components/world/WorldSurface';
+
+/**
+ * The toolbar's Add group and the armed click it leads to (level-editor.md
+ * §17, "Adding things"): Place VOB…, Insert NPC… and Add waypoint… open
+ * their dialog first and take the ground click *afterwards* when none has
+ * been chosen yet, and the Assets panel places a previewed mesh with no
+ * dialog at all. Before this, every one of them was reachable only by
+ * clicking the ground first — and two of them only with the Waynet overlay
+ * switched on by hand.
+ *
+ * Playwright cannot reach any of this: the browser harness has no world.
+ */
+
+jest.mock('three', () => mockWorldViewport.mockThree());
+jest.mock('three/examples/jsm/controls/OrbitControls.js', () => mockWorldViewport.mockOrbitControls());
+
+jest.mock('react-virtualized-auto-sizer', () => (props: {
+  children: (size: { height: number; width: number }) => React.ReactNode;
+}) => props.children({ height: 600, width: 320 }));
+
+const TERRAIN: [number, number, number] = [1500.5, -220, 3300.25];
+let mockShowWaynet: boolean | undefined;
+
+jest.mock('../src/renderer/components/world/WorldViewport', () => {
+  const ReactActual = jest.requireActual('react') as typeof React;
+  return {
+    __esModule: true,
+    default: ReactActual.forwardRef((props: {
+      onPick: (vob: number | null, point: [number, number, number] | null, additive: boolean) => void;
+      onSelectWaypoint: (waypoint: number | null) => void;
+      onCancelArmed?: () => void;
+      showWaynet: boolean;
+    }, ref: React.Ref<{
+      raycastDown: () => null; frameVob: () => void; framePoint: () => void;
+    }>) => {
+      mockShowWaynet = props.showWaynet;
+      ReactActual.useImperativeHandle(ref, () => ({
+        raycastDown: () => null, frameVob: () => undefined, framePoint: () => undefined,
+      }));
+      return (
+        <div data-testid="world-viewport-stub">
+          <button type="button" data-testid="stub-pick-terrain" onClick={() => props.onPick(null, TERRAIN, false)}>
+            pick terrain
+          </button>
+          <button type="button" data-testid="stub-pick-waypoint" onClick={() => props.onSelectWaypoint(1)}>
+            pick waypoint
+          </button>
+          <button type="button" data-testid="stub-right-click" onClick={() => props.onCancelArmed?.()}>
+            right click
+          </button>
+        </div>
+      );
+    }),
+  };
+});
+
+const STARTUP_PATH = 'C:/Story/Startup.d';
+const STARTUP_MODEL: SemanticModel = {
+  hasErrors: false,
+  errors: [],
+  dialogs: {},
+  functions: { STARTUP_NewWorld: { name: 'STARTUP_NewWorld', actions: [] } as never },
+};
+
+const api = makeWorldEditorApi();
+
+async function openWorld() {
+  const summary = { ...SUMMARY, vobIndex: vobIndex([[0, 0, 0], [10, 20, 30]]) };
+  api.openWorldDialog.mockResolvedValueOnce('C:/Gothic/NewWorld.zen' as never);
+  api.openWorld.mockResolvedValueOnce(summary as never);
+  api.getWorldMesh.mockResolvedValueOnce({ groups: [], bbox: summary.bbox } as never);
+  api.getWorldVisuals.mockResolvedValueOnce({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+  api.refreshWorldIndex.mockResolvedValue(summary as never);
+  render(<WorldSurface />);
+  fireEvent.click(screen.getByTestId('world-open'));
+  fireEvent.click(await screen.findByTestId('world-picker-browse'));
+  await screen.findByTestId('world-viewport-stub');
+  await waitFor(() => expect(api.getWorldWaynet).toHaveBeenCalled());
+  return summary;
+}
+
+const hint = () => screen.getByTestId('world-terrain-hint');
+
+/** A retail-sized list: past the 2,000 a plain MUI listbox can open unjanked. */
+const MANY_WAYPOINTS = Array.from({ length: 3000 }, (_, i) => `WP_${String(i).padStart(4, '0')}`);
+
+/** A waynet of `names.length` free points — every column sized to match. */
+function waynetOf(names: readonly string[]) {
+  return {
+    ...waynetPayload(),
+    count: names.length,
+    names: [...names],
+    positions: new Float32Array(names.length * 3).buffer,
+    directions: new Float32Array(names.length * 3).buffer,
+    waterDepths: new Int32Array(names.length).buffer,
+    flags: new Uint32Array(names.length).buffer,
+    edgeCount: 0,
+    edges: new Uint32Array(0).buffer,
+  };
+}
+const firstOps = () => (api.applyWorldOps.mock.calls[0] as unknown as [WorldOp[]])[0];
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockShowWaynet = undefined;
+  api.getWorldWaynet.mockResolvedValue(waynetPayload() as never);
+  api.getWorldHistoryDepth.mockResolvedValue({ undo: 0, redo: 0 } as never);
+  api.getVobProps.mockResolvedValue({ class: 'zCVob', presetName: '', visualCamAlign: 0, bias: 0 } as never);
+  api.getVobFolders.mockResolvedValue({ folders: [] } as never);
+  api.appendInsertNpc.mockResolvedValue({ ok: true, line: 7 } as never);
+  // A structural op re-reads the index and the visuals; the re-read wants
+  // an answer every time, not only on the open.
+  api.getWorldVisuals.mockResolvedValue({ visuals: [], stats: { vobsPlaced: 0 } } as never);
+  useProjectStore.setState({
+    parsedFiles: new Map([[STARTUP_PATH, { filePath: STARTUP_PATH, semanticModel: STARTUP_MODEL, lastParsed: new Date() }]]),
+  } as never);
+  (window as unknown as { editorAPI: typeof api }).editorAPI = api;
+});
+
+afterEach(() => {
+  useWorldStore.getState().reset();
+  useProjectStore.getState().closeProject();
+});
+
+describe('Place VOB… from the toolbar', () => {
+  it('opens the dialog with no ground point, and places on the next ground click', async () => {
+    await openWorld();
+    fireEvent.click(screen.getByTestId('world-add-vob'));
+
+    // The dialog says where the VOB goes — and here that is not a point yet.
+    expect(screen.getByRole('dialog')).toHaveTextContent(/next click the ground/i);
+    fireEvent.change(screen.getByTestId('world-place-visual'), { target: { value: 'NW_CRATE.3DS' } });
+    fireEvent.click(screen.getByTestId('world-place-confirm'));
+
+    // Nothing is sent yet: the status bar is armed and says with what.
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+    expect(hint()).toHaveTextContent('NW_CRATE.3DS');
+
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    expect(firstOps()[0]).toMatchObject({
+      op: 'AddVob', vob: 2, path: '2', to: { visual: 'NW_CRATE.3DS', position: TERRAIN },
+    });
+    // Not spent by the click (#364): the next one places another, until a
+    // right-click in the world or Escape puts it down.
+    expect(hint()).toHaveTextContent('NW_CRATE.3DS');
+  });
+
+  it('places at the ground point already chosen, the way the bar button does', async () => {
+    await openWorld();
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    fireEvent.click(screen.getByTestId('world-add-vob'));
+
+    expect(screen.getByRole('dialog')).toHaveTextContent(/1501, -220, 3300/);
+    fireEvent.change(screen.getByTestId('world-place-visual'), { target: { value: 'NW_CRATE.3DS' } });
+    fireEvent.click(screen.getByTestId('world-place-confirm'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    expect(firstOps()[0]).toMatchObject({ op: 'AddVob', to: { position: TERRAIN } });
+  });
+
+  it('is cancelled by Escape, and by the status bar', async () => {
+    await openWorld();
+    fireEvent.click(screen.getByTestId('world-add-vob'));
+    fireEvent.change(screen.getByTestId('world-place-visual'), { target: { value: 'NW_CRATE.3DS' } });
+    fireEvent.click(screen.getByTestId('world-place-confirm'));
+    expect(hint()).toHaveTextContent('NW_CRATE.3DS');
+
+    fireEvent.click(screen.getByTestId('world-armed-cancel'));
+    expect(hint()).not.toHaveTextContent('NW_CRATE.3DS');
+
+    fireEvent.click(screen.getByTestId('world-add-vob'));
+    fireEvent.click(screen.getByTestId('world-place-confirm'));
+    expect(screen.getByTestId('world-armed-cancel')).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByTestId('world-armed-cancel')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+  });
+});
+
+// #364: "solange mit aufeinanderfolgenden Klicks platzieren kann, bis man das
+// gewählte VOB mit Rechtsklick in die Welt oder ESC abwählt".
+describe('an armed placement, click after click', () => {
+  async function armCrate() {
+    await openWorld();
+    fireEvent.click(screen.getByTestId('world-add-vob'));
+    fireEvent.change(screen.getByTestId('world-place-visual'), { target: { value: 'NW_CRATE.3DS' } });
+    fireEvent.click(screen.getByTestId('world-place-confirm'));
+  }
+
+  it('places one VOB per ground click until it is put down', async () => {
+    await armCrate();
+
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(2));
+    const second = (api.applyWorldOps.mock.calls[1] as unknown as [WorldOp[]])[0][0];
+    expect(second).toMatchObject({ op: 'AddVob', to: { visual: 'NW_CRATE.3DS', position: TERRAIN } });
+    expect(hint()).toHaveTextContent('NW_CRATE.3DS');
+  });
+
+  it('is put down by a right-click in the world', async () => {
+    await armCrate();
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId('world-armed-cancel')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('stub-right-click'));
+    expect(screen.queryByTestId('world-armed-cancel')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    await act(async () => { await Promise.resolve(); });
+    expect(api.applyWorldOps).toHaveBeenCalledTimes(1);
+  });
+
+  // #388: the last one placed is selected when the placement is put down, so
+  // a single VOB can be positioned straight away.
+  it('selects the last VOB it placed when it is put down', async () => {
+    await armCrate();
+    // Each re-read after an add carries one more root VOB.
+    api.refreshWorldIndex
+      .mockResolvedValueOnce({ ...SUMMARY, vobIndex: vobIndex([[0, 0, 0], [10, 20, 30], TERRAIN]) } as never)
+      .mockResolvedValueOnce({ ...SUMMARY, vobIndex: vobIndex([[0, 0, 0], [10, 20, 30], TERRAIN, TERRAIN]) } as never);
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    await waitFor(() => expect(api.refreshWorldIndex).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    await waitFor(() => expect(api.refreshWorldIndex).toHaveBeenCalledTimes(2));
+    expect(useWorldStore.getState().selection).toEqual([]);
+
+    fireEvent.click(screen.getByTestId('stub-right-click'));
+    expect(useWorldStore.getState().selection).toEqual([3]);
+  });
+
+  it('leaves the selection alone when it is put down having placed nothing', async () => {
+    await armCrate();
+    act(() => { useWorldStore.getState().selectVob(1); });
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByTestId('world-armed-cancel')).toBeNull();
+    expect(useWorldStore.getState().selection).toEqual([1]);
+  });
+
+  it('turns each VOB to a random angle about Y when asked', async () => {
+    await armCrate();
+    fireEvent.click(screen.getByTestId('world-armed-random-yaw'));
+    const random = jest.spyOn(Math, 'random').mockReturnValue(0.25);
+    try {
+      fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+      await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    } finally {
+      random.mockRestore();
+    }
+    // A quarter turn: Y stays up, X and Z swap.
+    const rotation = (firstOps()[0] as unknown as { to: { rotation: number[] } }).to.rotation;
+    expect(rotation.map((value) => Math.round(value * 1e6) / 1e6 + 0))
+      .toEqual([0, 0, 1, 0, 1, 0, -1, 0, 0]);
+  });
+
+  it('writes no rotation by default', async () => {
+    await armCrate();
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    expect(firstOps()[0]).not.toHaveProperty('to.rotation');
+  });
+});
+
+describe('Place in world from the Assets panel', () => {
+  async function previewCrate() {
+    api.listWorldAssets.mockResolvedValue([{ name: 'NW_CRATE.MRM', type: 'file' }] as never);
+    fireEvent.click(screen.getByTestId('world-panel-assets'));
+    fireEvent.click(await screen.findByTestId('world-asset-NW_CRATE.MRM'));
+    await screen.findByTestId('world-asset-preview-name');
+  }
+
+  it('arms the previewed mesh and places it on the next ground click, with no dialog', async () => {
+    // The gesture the picker used to need: preview, switch tabs, click the
+    // ground, open the dialog, "Use previewed", Place. Now: preview, Place
+    // in world, click the ground.
+    await openWorld();
+    await previewCrate();
+
+    fireEvent.click(screen.getByTestId('world-asset-place'));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(hint()).toHaveTextContent('NW_CRATE.MRM');
+
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    expect(firstOps()[0]).toMatchObject({
+      op: 'AddVob', to: { visual: 'NW_CRATE.MRM', position: TERRAIN },
+    });
+  });
+});
+
+describe('Place in world from an asset row', () => {
+  it('arms the placement from the row context menu, without the preview panel', async () => {
+    // The verb used to be reachable only through the preview panel on the far
+    // side of the viewport (level-editor.md §16.37 row 4; #244).
+    await openWorld();
+    api.listWorldAssets.mockResolvedValue([{ name: 'NW_CRATE.MRM', type: 'file' }] as never);
+    fireEvent.click(screen.getByTestId('world-panel-assets'));
+
+    fireEvent.contextMenu(await screen.findByTestId('world-asset-NW_CRATE.MRM'));
+    fireEvent.click(await screen.findByTestId('world-asset-place-menu'));
+
+    expect(screen.queryByTestId('world-asset-preview-name')).toBeNull();
+    expect(hint()).toHaveTextContent('NW_CRATE.MRM');
+
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    expect(firstOps()[0]).toMatchObject({
+      op: 'AddVob', to: { visual: 'NW_CRATE.MRM', position: TERRAIN },
+    });
+  });
+
+  it('arms the placement on a double-click on the row (#366)', async () => {
+    await openWorld();
+    api.listWorldAssets.mockResolvedValue([{ name: 'NW_CRATE.MRM', type: 'file' }] as never);
+    fireEvent.click(screen.getByTestId('world-panel-assets'));
+
+    const row = await screen.findByTestId('world-asset-NW_CRATE.MRM');
+    fireEvent.click(row, { detail: 1 });
+    fireEvent.click(row, { detail: 2 });
+    fireEvent.doubleClick(row);
+    expect(hint()).toHaveTextContent('NW_CRATE.MRM');
+
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    expect(firstOps()[0]).toMatchObject({
+      op: 'AddVob', to: { visual: 'NW_CRATE.MRM', position: TERRAIN },
+    });
+  });
+});
+
+// #290: "je nach Asset von selbst checkt welche art vob/mob es sein soll" —
+// placing from the asset browser arms the class the visual's scheme names.
+describe('the class a placement from an asset gets', () => {
+  async function placeFromRow(name: string) {
+    await openWorld();
+    api.listWorldAssets.mockResolvedValue([{ name, type: 'file' }] as never);
+    fireEvent.click(screen.getByTestId('world-panel-assets'));
+    fireEvent.contextMenu(await screen.findByTestId(`world-asset-${name}`));
+    fireEvent.click(await screen.findByTestId('world-asset-place-menu'));
+  }
+
+  it('is oCMobContainer for a chest, with retail\'s focus name, in one batch', async () => {
+    await placeFromRow('CHESTBIG_OCCHESTLARGE.MDS');
+    // The status bar says what it will be, so it is no surprise.
+    expect(hint()).toHaveTextContent('CHESTBIG_OCCHESTLARGE.MDS');
+    expect(hint()).toHaveTextContent('oCMobContainer');
+
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    const [add, name] = firstOps();
+    expect(add).toMatchObject({
+      op: 'AddVob', to: { class: 'oCMobContainer', visual: 'CHESTBIG_OCCHESTLARGE.MDS', position: TERRAIN },
+    });
+    expect(name).toMatchObject({
+      op: 'SetVobClassProp', path: (add as { path: string }).path, className: 'oCMobContainer',
+      to: { focusName: 'MOBNAME_CHEST' },
+    });
+  });
+
+  it('is oCMobInter for a bench, with no focus name to guess', async () => {
+    await placeFromRow('BENCH_1_OC.ASC');
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    expect(firstOps()).toHaveLength(1);
+    expect(firstOps()[0]).toMatchObject({ op: 'AddVob', to: { class: 'oCMobInter', visual: 'BENCH_1_OC.ASC' } });
+  });
+
+  it('stays a plain zCVob for a rock, whatever it is called', async () => {
+    await placeFromRow('BENCH_ROCK.3DS');
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    const [add] = firstOps();
+    expect(add).toMatchObject({ op: 'AddVob', to: { visual: 'BENCH_ROCK.3DS' } });
+    expect((add as { to: { class?: string } }).to.class).toBeUndefined();
+  });
+
+  it('can still be anything the Place VOB dialog says — a MOB class there takes a visual too', async () => {
+    await openWorld();
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    fireEvent.click(await screen.findByTestId('world-place-vob'));
+    fireEvent.change(screen.getByTestId('world-place-class'), { target: { value: 'oCMobInter' } });
+    fireEvent.change(screen.getByTestId('world-place-visual'), { target: { value: 'NW_CITY_TABLE_01.3DS' } });
+    fireEvent.click(screen.getByTestId('world-place-confirm'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    expect(firstOps()[0]).toMatchObject({ op: 'AddVob', to: { class: 'oCMobInter', visual: 'NW_CITY_TABLE_01.3DS' } });
+  });
+});
+
+// One placement, two ways in: the asset browser arms it in a click, the Place
+// VOB dialog takes a name and a parent too — and both choose the class by the
+// same rule.
+describe('the Place VOB dialog chooses the class the way the asset browser does', () => {
+  const classField = () => screen.getByTestId('world-place-class') as HTMLSelectElement;
+  const typeVisual = (value: string) =>
+    fireEvent.change(screen.getByTestId('world-place-visual'), { target: { value } });
+
+  it('proposes the class the visual names, and follows the visual while nobody chose one', async () => {
+    await openWorld();
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    fireEvent.click(await screen.findByTestId('world-place-vob'));
+
+    typeVisual('CHESTBIG_OCCHESTLARGE.MDS');
+    expect(classField().value).toBe('oCMobContainer');
+    typeVisual('NW_ROCK_01.3DS');
+    expect(classField().value).toBe('zCVob');
+    typeVisual('CHESTBIG_OCCHESTLARGE.MDS');
+    fireEvent.click(screen.getByTestId('world-place-confirm'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    const [add, name] = firstOps();
+    expect(add).toMatchObject({ op: 'AddVob', to: { class: 'oCMobContainer', visual: 'CHESTBIG_OCCHESTLARGE.MDS' } });
+    expect(name).toMatchObject({ op: 'SetVobClassProp', to: { focusName: 'MOBNAME_CHEST' } });
+  });
+
+  it('keeps a class chosen by hand, whatever visual follows', async () => {
+    await openWorld();
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    fireEvent.click(await screen.findByTestId('world-place-vob'));
+
+    fireEvent.change(classField(), { target: { value: 'oCMobInter' } });
+    typeVisual('CHESTBIG_OCCHESTLARGE.MDS');
+    expect(classField().value).toBe('oCMobInter');
+    fireEvent.click(screen.getByTestId('world-place-confirm'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    expect(firstOps()).toHaveLength(1);
+    expect(firstOps()[0]).toMatchObject({ op: 'AddVob', to: { class: 'oCMobInter' } });
+  });
+
+  it('gives a container chosen by hand retail\'s focus name, as an armed one gets', async () => {
+    await openWorld();
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    fireEvent.click(await screen.findByTestId('world-place-vob'));
+
+    fireEvent.change(classField(), { target: { value: 'oCMobContainer' } });
+    typeVisual('MOD_BOX.MDS');
+    fireEvent.click(screen.getByTestId('world-place-confirm'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    expect(firstOps()[1]).toMatchObject({
+      op: 'SetVobClassProp', className: 'oCMobContainer', to: { focusName: 'MOBNAME_CHEST' },
+    });
+  });
+
+  it('opens from an asset row prefilled, so a name goes with the placement', async () => {
+    await openWorld();
+    api.listWorldAssets.mockResolvedValue([{ name: 'CHESTBIG_OCCHESTLARGE.MDS', type: 'file' }] as never);
+    fireEvent.click(screen.getByTestId('world-panel-assets'));
+    fireEvent.contextMenu(await screen.findByTestId('world-asset-CHESTBIG_OCCHESTLARGE.MDS'));
+    fireEvent.click(await screen.findByTestId('world-asset-place-options-menu'));
+
+    expect(screen.getByTestId('world-place-visual')).toHaveValue('CHESTBIG_OCCHESTLARGE.MDS');
+    expect(classField().value).toBe('oCMobContainer');
+    fireEvent.change(screen.getByTestId('world-place-name'), { target: { value: 'CHEST_SMITH' } });
+    fireEvent.click(screen.getByTestId('world-place-confirm'));
+    expect(hint()).toHaveTextContent('as oCMobContainer');
+
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    const [add, name] = firstOps();
+    expect(add).toMatchObject({
+      op: 'AddVob', to: { class: 'oCMobContainer', name: 'CHEST_SMITH', position: TERRAIN },
+    });
+    expect(name).toMatchObject({ op: 'SetVobClassProp', to: { focusName: 'MOBNAME_CHEST' } });
+  });
+});
+
+describe('Insert NPC… from the toolbar', () => {
+  const instanceField = () =>
+    within(screen.getByTestId('world-insert-npc-instance')).getByRole('combobox');
+  const waypointField = () => screen.getByTestId('world-insert-npc-waypoint') as HTMLInputElement;
+
+  it('turns the waynet overlay on, and takes the ground click after the dialog', async () => {
+    await openWorld();
+    expect(mockShowWaynet).toBe(false);
+
+    fireEvent.click(screen.getByTestId('world-add-npc'));
+    await screen.findByTestId('world-insert-npc-dialog');
+    // The result is a waypoint, and only the overlay draws one.
+    expect(mockShowWaynet).toBe(true);
+    expect(waypointField().value).toBe('FP_NEW_3');
+    fireEvent.change(instanceField(), { target: { value: 'PC_Thief' } });
+    fireEvent.click(screen.getByTestId('world-insert-npc-confirm'));
+
+    expect(api.appendInsertNpc).not.toHaveBeenCalled();
+    expect(hint()).toHaveTextContent('FP_NEW_3');
+    expect(hint()).toHaveTextContent('PC_Thief');
+
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    await waitFor(() => expect(api.appendInsertNpc).toHaveBeenCalledWith(
+      STARTUP_PATH, 'STARTUP_NewWorld', 'PC_Thief', 'FP_NEW_3',
+    ));
+    expect(api.applyWorldOps).toHaveBeenCalledWith([{
+      op: 'AddWaypoint', waypoint: 3, name: 'FP_NEW_3', from: null, to: TERRAIN,
+    }]);
+  });
+
+  it('spawns at a waypoint the world already has when its name is typed, with no click and no op', async () => {
+    await openWorld();
+    fireEvent.click(screen.getByTestId('world-add-npc'));
+    await screen.findByTestId('world-insert-npc-dialog');
+
+    fireEvent.change(waypointField(), { target: { value: 'WP_MIDDLE' } });
+    expect(screen.getByRole('dialog')).toHaveTextContent(/already in this world/i);
+    fireEvent.change(instanceField(), { target: { value: 'PC_Thief' } });
+    fireEvent.click(screen.getByTestId('world-insert-npc-confirm'));
+
+    await waitFor(() => expect(api.appendInsertNpc).toHaveBeenCalledWith(
+      STARTUP_PATH, 'STARTUP_NewWorld', 'PC_Thief', 'WP_MIDDLE',
+    ));
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('world-armed-cancel')).toBeNull();
+  });
+
+  it('opens its waypoint list on focus alone, capped short of the whole waynet (#321)', async () => {
+    // MUI already opens on a click; the gap is a tabbed-in field. The world's
+    // waynet is ~2,900 names, so what opens is a capped page of it — every
+    // name is still reachable by typing.
+    api.getWorldWaynet.mockResolvedValue(waynetOf(MANY_WAYPOINTS) as never);
+    await openWorld();
+    fireEvent.click(screen.getByTestId('world-add-npc'));
+    await screen.findByTestId('world-insert-npc-dialog');
+
+    // Cleared first: the field may open on a suggested fresh name, which
+    // lists nothing. Tabbing back into the empty field shows the names.
+    fireEvent.change(waypointField(), { target: { value: '' } });
+    act(() => waypointField().blur());
+    act(() => waypointField().focus());
+
+    const listbox = await screen.findByRole('listbox');
+    expect(within(listbox).getAllByRole('option')).toHaveLength(200);
+    fireEvent.change(waypointField(), { target: { value: 'WP_2999' } });
+    expect(within(screen.getByRole('listbox')).getAllByRole('option').map((o) => o.textContent))
+      .toEqual(['WP_2999']);
+  });
+
+  it('is prefilled with the selected waypoint', async () => {
+    await openWorld();
+    fireEvent.click(screen.getByTestId('world-waynet-toggle'));
+    fireEvent.click(screen.getByTestId('stub-pick-waypoint'));
+    fireEvent.click(screen.getByTestId('world-add-npc'));
+    await screen.findByTestId('world-insert-npc-dialog');
+
+    expect(waypointField().value).toBe('WP_MIDDLE');
+    expect(waypointField()).toBeDisabled();
+  });
+});
+
+describe('Add waypoint… from the toolbar', () => {
+  it('turns the overlay on, takes the name first and the ground click second', async () => {
+    await openWorld();
+    fireEvent.click(screen.getByTestId('world-add-waypoint-toolbar'));
+    await screen.findByTestId('world-waypoint-add-dialog');
+    expect(mockShowWaynet).toBe(true);
+    expect(screen.getByRole('dialog')).toHaveTextContent(/next click the ground/i);
+
+    fireEvent.change(screen.getByTestId('world-waypoint-add-name'), { target: { value: 'FP_BENCH' } });
+    fireEvent.click(screen.getByTestId('world-waypoint-add-confirm'));
+    expect(api.applyWorldOps).not.toHaveBeenCalled();
+    expect(hint()).toHaveTextContent('FP_BENCH');
+
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledWith([
+      expect.objectContaining({ op: 'AddWaypoint', name: 'FP_BENCH', to: TERRAIN }),
+    ]));
+  });
+
+  it('opens its name list on focus alone, capped short of every script waypoint (#321)', async () => {
+    useProjectStore.setState({
+      waypointSiteIndex: Object.fromEntries(MANY_WAYPOINTS.map((name) => [name, []])),
+    } as never);
+    await openWorld();
+    fireEvent.click(screen.getByTestId('world-add-waypoint-toolbar'));
+    await screen.findByTestId('world-waypoint-add-dialog');
+
+    // The field opens on a suggested fresh name, which lists nothing; a
+    // cleared field tabbed back into is the one that shows the names.
+    const name = screen.getByTestId('world-waypoint-add-name');
+    fireEvent.change(name, { target: { value: '' } });
+    act(() => name.blur());
+    act(() => name.focus());
+
+    const listbox = await screen.findByRole('listbox');
+    expect(within(listbox).getAllByRole('option')).toHaveLength(200);
+  });
+});
+
+describe('the status bar after a ground click', () => {
+  it('offers Add waypoint and Insert NPC with the overlay off, and switches it on when used', async () => {
+    // The two used to appear only with Waynet already on — a precondition
+    // nothing on screen stated. Using either now turns the overlay on itself,
+    // since the result is a waypoint and only the overlay draws one.
+    await openWorld();
+    fireEvent.click(screen.getByTestId('stub-pick-terrain'));
+    act(() => useWorldStore.getState().selectVob(null));
+
+    expect(await screen.findByTestId('world-add-waypoint')).toBeInTheDocument();
+    expect(screen.getByTestId('world-insert-npc')).toBeInTheDocument();
+    expect(mockShowWaynet).toBe(false);
+
+    fireEvent.click(screen.getByTestId('world-add-waypoint'));
+    await screen.findByTestId('world-waypoint-add-dialog');
+    expect(mockShowWaynet).toBe(true);
+  });
+});

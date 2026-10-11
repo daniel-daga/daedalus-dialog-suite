@@ -1,0 +1,1464 @@
+import * as THREE from 'three';
+import {
+  ROOT_MATRIX, ZEN_TO_THREE_SCALE, placeBounds, threeIndexOrder, type VobExtent, type ZenBounds,
+} from 'zen-world';
+import type {
+  DecalScene, DrawGroup, InstancedPayload, InstancedVisual, VobIndex, WorldMeshPayload, DecodedTexture,
+} from '../../shared/worldTypes';
+import { DecalLayer } from './DecalLayer';
+import { HIDDEN_ATTRIBUTE, SELECTED_ATTRIBUTE } from './instanceAttributes';
+import { VobExtentOverlay } from './VobExtentOverlay';
+import { PortalOutline } from './PortalOutline';
+import { SelectionBox } from './SelectionBox';
+import { VobMarkerLayer } from './VobMarkerLayer';
+
+// Re-exported where they used to be declared: every other reader imports them
+// from here, and moving the declaration is not a reason to move them all.
+export { HIDDEN_ATTRIBUTE, SELECTED_ATTRIBUTE } from './instanceAttributes';
+
+// The Three.js projection of a world (level-editor.md §7: "the renderer is a
+// projection, never the model"). Deliberately free of React and of
+// WebGLRenderer: it builds a scene graph out of the payloads the worker sent,
+// which is what makes the decisions in it testable without a GPU.
+//
+// The whole graph hangs under ONE node carrying `coords`' ROOT_MATRIX:
+// centimetres to metres, and the mirror that flips handedness. Because of it
+// every position below stays exactly as the binding emitted it, unconverted.
+// Triangle winding is the one thing that node cannot settle — Three.js cancels
+// a negative determinant's effect on the front/back test — so index order goes
+// through `coords`' `threeIndexOrder` on the way in, and every material stays
+// FrontSide.
+
+/** sRGB -> linear, for the baked zCOLOR word. 256 entries beats a pow per vertex. */
+const SRGB_TO_LINEAR = new Float32Array(256);
+for (let i = 0; i < 256; i++) {
+  const c = i / 255;
+  SRGB_TO_LINEAR[i] = c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+}
+
+/** AlphaFunction: 1 NONE (cut-out), 2 BLEND, 3 ADD; anything else is opaque. */
+export const ALPHA_TEST = 0.5;
+
+/**
+ * A VOB is hard to tell from the world mesh (2026-08-27), and the answer asked
+ * for is an outline on VOB visuals: a thin bright line along the edge.
+ *
+ * The line itself is not drawn here. It is drawn by `VobOutline`, one
+ * full-screen draw over the finished world, wherever a *mask* changes between
+ * a pixel and its neighbour. What this shader does is write that mask — a
+ * second colour attachment beside the picture, filled by the same draw calls
+ * that paint the VOB, so it costs no draw call, no geometry and no CPU work.
+ *
+ * It replaced a per-fragment rim term, which darkened a surface as it turned
+ * away from the eye. That never became a line a human could see
+ * (level-editor.md §16.12): a flat face has no facing gradient at all, so a
+ * box's edge is a step the term cannot find, and the most-placed visuals in
+ * NewWorld are camera-facing billboards whose silhouette is the texture's
+ * cutout, not the polygon. A screen-space line has neither problem — it reads
+ * the picture, and a discarded cut-out fragment writes no mask.
+ *
+ * The three channels of the mask, and why each exists:
+ *   r  "a VOB is here", against the world mesh and the sky, which write zero
+ *   g  a key that tells two *touching* VOBs apart, so a bush in front of a
+ *      tree still has its own line. Hashed from the instance's origin in the
+ *      vertex shader: it costs no attribute, and two neighbours collide once
+ *      in 256
+ *   b  the selection flag, so the line around a selected VOB — and the line
+ *      between it and whatever it touches — is drawn in the selection colour
+ */
+export const MASK_OUTPUT = 'vobMask';
+
+/**
+ * The selection emphasis (level-editor.md §16.24 1).
+ *
+ * The line is the outline pass's, in `VobOutline`'s `SELECT_COLOR`, and it is
+ * what carries the selection: a selected VOB is outlined in orange against
+ * whatever it stands in front of. This is the other half, a body tint, and it
+ * rides the *same* per-instance attribute rather than a second pass, for the
+ * reason at {@link HIDDEN_ATTRIBUTE}.
+ *
+ * The tint is only on while the outlines are off (#362): on top of the line it
+ * read as a VOB turned yellow, and "the outline, not yellow" was the ask. Off,
+ * it is the whole of the selection. What that gives up is a VOB filling the
+ * screen, whose outline is off it — the case the tint was first added for.
+ *
+ * Orange, because the gizmo's own axes are pure red, green and blue and the
+ * selection must not read as one of them.
+ */
+const SELECT_COLOR = 'vec3( 1.0, 0.55, 0.12 )';
+
+/**
+ * How a selection is drawn: `outline` is the flag above, painted by the outline
+ * pass and the tint; `box` is `SelectionBox`, Spacer's picture. A choice, not a
+ * replacement — each style draws its own and clears the other.
+ */
+export type SelectionStyle = 'box' | 'outline';
+
+/** How far the body of a selected VOB is pulled towards the colour while the
+ *  tint is on. Enough to read at a glance, low enough to leave the texture
+ *  recognisable. */
+const SELECT_TINT = 0.28;
+
+/** The shared tint uniform, in the shape `shader.uniforms` takes. */
+type SelectTint = { value: number };
+
+
+
+/**
+ * The define a blended VOB material carries.
+ *
+ * A blended surface blends *every* attachment with its own alpha, so a flame
+ * quad that wrote the mask would blend a rectangle into it and be outlined as
+ * one. It writes all zeros instead, and the blend leaves what was there. A
+ * define rather than a second hook, because a define is part of the program
+ * cache key and the two variants stay two programs.
+ */
+export const MASK_BLENDED_DEFINE = 'VOB_MASK_BLENDED';
+
+/**
+ * The layer the world's own geometry draws on — the world mesh and every VOB.
+ *
+ * `VobOutline` draws a frame in two halves: the world alone into the masked
+ * target, then everything else — gizmo, waynet, markers, all of it on layer
+ * 0 — on top of the composite, with the world's depth restored. The camera
+ * picks the half; this is how the geometry says which one it belongs to. A
+ * raycaster that wants the world has to enable it too.
+ */
+export const WORLD_LAYER = 1;
+
+/**
+ * The mask half of the `onBeforeCompile` every VOB material shares.
+ *
+ * It is not installed directly: `vobShading` wraps it together with the hide
+ * and the exposure term, and the note there about `customProgramCacheKey` is
+ * what keeps the VOB program and the world-mesh program apart.
+ */
+function maskVobs(shader: THREE.WebGLProgramParametersWithUniforms, tint: SelectTint): void {
+  shader.uniforms.uSelectTint = tint;
+  shader.vertexShader = `attribute float ${SELECTED_ATTRIBUTE};
+varying float vVobKey;\nvarying float vVobSelected;\n${
+    shader.vertexShader.replace(
+      '#include <project_vertex>',
+      `#include <project_vertex>
+  // The instance's origin, which no two VOBs share, folded to one byte.
+  vec3 vobOrigin = vec3( 0.0 );
+  #ifdef USE_INSTANCING
+    vobOrigin = instanceMatrix[ 3 ].xyz;
+  #endif
+  vVobKey = fract( sin( dot( vobOrigin, vec3( 12.9898, 78.233, 37.719 ) ) ) * 43758.5453 );
+  // Carried to the fragment stage rather than acted on here: the emphasis is a
+  // colour, and a selected VOB has to stay exactly where every op reads it.
+  vVobSelected = ${SELECTED_ATTRIBUTE};`,
+    )
+  }`;
+
+  shader.fragmentShader = `layout(location = 1) out highp vec4 ${MASK_OUTPUT};
+uniform float uSelectTint;
+varying float vVobKey;\nvarying float vVobSelected;\n${
+    shader.fragmentShader.replace(
+      '#include <opaque_fragment>',
+      `outgoingLight = mix( outgoingLight, ${SELECT_COLOR}, vVobSelected * uSelectTint );
+  #ifdef ${MASK_BLENDED_DEFINE}
+    ${MASK_OUTPUT} = vec4( 0.0 );
+  #else
+    ${MASK_OUTPUT} = vec4( 1.0, vVobKey, vVobSelected, 1.0 );
+  #endif
+  #include <opaque_fragment>`,
+    )
+  }`;
+}
+
+/**
+ * The world mesh's side of the mask: declared, and written empty.
+ *
+ * An attachment a program never writes is *undefined*, not zero — a wall that
+ * left whatever was in the register would grow an outline. Blended world
+ * surfaces (water) blend a zero in, which leaves the VOB behind them outlined:
+ * what is behind water is on screen, and reads as what it is.
+ */
+function maskWorld(shader: THREE.WebGLProgramParametersWithUniforms): void {
+  shader.fragmentShader = `layout(location = 1) out highp vec4 ${MASK_OUTPUT};\n${
+    shader.fragmentShader.replace(
+      '#include <opaque_fragment>',
+      `${MASK_OUTPUT} = vec4( 0.0 );
+  #include <opaque_fragment>`,
+    )
+  }`;
+}
+
+/**
+ * Viewport exposure: a multiplier on the outgoing light of every surface in the
+ * world, world mesh and VOBs alike.
+ *
+ * Interiors are dark because ZenGin baked them dark — the lighting is in the
+ * vertex colours and there is no light in this scene to turn up. Adding one
+ * would be wrong twice over: `MeshBasicMaterial` has nothing to relight, and a
+ * light the engine does not have would draw a world the game never shows. So
+ * this is not lighting. It is the last multiply before the fragment is written,
+ * a brightness knob on the *picture* — it changes no vertex colour, produces no
+ * op, and dirties nothing.
+ *
+ * It rides a **uniform**, not a recompiled shader: dragging a slider would
+ * otherwise recompile every program in the scene on every pointer move. And it
+ * is one uniform object shared by every material, so a change is one assignment
+ * for the whole world rather than a walk over ~1,500 of them.
+ *
+ * 1 is unchanged. Below it dims, above it lifts — 4 is two stops, which is as
+ * far as a linear multiply on already-baked colours is worth pushing before
+ * everything lit is a white sheet.
+ */
+export const DEFAULT_EXPOSURE = 1;
+export const MIN_EXPOSURE = 0.5;
+export const MAX_EXPOSURE = 4;
+
+/** The shared uniform, in the shape `shader.uniforms` takes. */
+type Exposure = { value: number };
+
+/**
+ * The selected light, previewed as an actual lamp (#256).
+ *
+ * The viewport is unlit on purpose — see `DEFAULT_EXPOSURE` — and this does not
+ * change that. The room already carries the light ZenGin baked into its vertex
+ * colours, so the term below is **added to the finished picture**, after the
+ * exposure multiply: it draws what one light reaches, it does not relight the
+ * room. That is also why it is the selection only and off by default. Two
+ * things it is deliberately not: there is no N·L term, because
+ * `MeshBasicMaterial` has no normal in its fragment shader, and no second light
+ * is ever on, because a scene of 1,000 lights is past three.js's forward
+ * budget and what a modder tuning one light wants is that one.
+ *
+ * A range of zero is the off state, which is one uniform the shader branches on
+ * rather than a second one saying whether the first counts.
+ */
+interface LightPreviewUniforms {
+  /** Three.js space — metres, X mirrored — because the fragment's own position
+   *  is. `setLightPreview` is where the root's transform is applied. */
+  position: { value: THREE.Vector3 };
+  color: { value: THREE.Color };
+  /** Metres. Zero is "nothing selected", and draws nothing. */
+  range: { value: number };
+}
+
+/** `ROOT_MATRIX` as a matrix, for the one position that has to cross out of the
+ *  root's space: a uniform is not a child of anything. */
+const ROOT_TRANSFORM = new THREE.Matrix4().fromArray([...ROOT_MATRIX]);
+
+function previewSelectedLight(
+  shader: THREE.WebGLProgramParametersWithUniforms, light: LightPreviewUniforms,
+): void {
+  shader.uniforms.uPreviewLightPosition = light.position;
+  shader.uniforms.uPreviewLightColor = light.color;
+  shader.uniforms.uPreviewLightRange = light.range;
+  // The fragment needs its own world position and `MeshBasicMaterial` carries
+  // no such varying: three's own `worldpos_vertex` is compiled out unless an
+  // envmap, a shadow or transmission asked for it. `transformed` is
+  // `begin_vertex`'s, so this sits after it either way.
+  shader.vertexShader = `varying vec3 vPreviewWorldPos;\n${
+    shader.vertexShader.replace(
+      '#include <project_vertex>',
+      `#include <project_vertex>
+  vec4 previewWorldPos = vec4( transformed, 1.0 );
+  #ifdef USE_INSTANCING
+    previewWorldPos = instanceMatrix * previewWorldPos;
+  #endif
+  vPreviewWorldPos = ( modelMatrix * previewWorldPos ).xyz;`,
+    )
+  }`;
+  // Distance only, squared, and additive. Distance only because there is no
+  // normal to take a cosine against; squared because a linear ramp reads as a
+  // disc with an edge rather than as a lamp.
+  shader.fragmentShader = `uniform vec3 uPreviewLightPosition;
+uniform vec3 uPreviewLightColor;
+uniform float uPreviewLightRange;
+varying vec3 vPreviewWorldPos;
+${
+  shader.fragmentShader.replace(
+    '#include <opaque_fragment>',
+    `if ( uPreviewLightRange > 0.0 ) {
+    float previewReach = 1.0 - distance( vPreviewWorldPos, uPreviewLightPosition ) / uPreviewLightRange;
+    previewReach = clamp( previewReach, 0.0, 1.0 );
+    outgoingLight += uPreviewLightColor * previewReach * previewReach;
+  }
+  #include <opaque_fragment>`,
+  )
+}`;
+}
+
+function exposeBakedLight(
+  shader: THREE.WebGLProgramParametersWithUniforms, exposure: Exposure,
+): void {
+  shader.uniforms.uExposure = exposure;
+  shader.fragmentShader = `uniform float uExposure;\n${
+    shader.fragmentShader.replace(
+      '#include <opaque_fragment>',
+      // After the texture, the baked colour and the selection tint, and before the
+      // fragment is written: the term is on the finished picture, which is what
+      // makes it a viewport setting rather than a change to the world.
+      `outgoingLight *= uExposure;
+  #include <opaque_fragment>`,
+    )
+  }`;
+}
+
+
+
+/**
+ * The hide half of the VOB vertex shader: a hidden instance is pushed outside
+ * the clip volume, so it costs no fragment and nothing downstream has to know
+ * about it.
+ *
+ * Only VOB materials compile it — the world mesh has no instances to hide, and
+ * an attribute it never carries has no business being declared in its shader.
+ */
+function hideInstances(shader: THREE.WebGLProgramParametersWithUniforms): void {
+  shader.vertexShader = `attribute float ${HIDDEN_ATTRIBUTE};
+${
+    shader.vertexShader.replace(
+      '#include <project_vertex>',
+      `#include <project_vertex>
+  // Outside the clip volume in every direction, at w = 1: clipped whole,
+  // whatever the camera is doing.
+  if ( ${HIDDEN_ATTRIBUTE} > 0.5 ) gl_Position = vec4( 2.0, 2.0, 2.0, 1.0 );`,
+    )
+  }`;
+}
+
+/**
+ * The two `onBeforeCompile` hooks, one per material kind.
+ *
+ * They must stay **textually different**, not merely different objects:
+ * `customProgramCacheKey` defaults to `onBeforeCompile.toString()`, so two
+ * closures with the same body would collide and whichever kind compiled first
+ * would decide the program for both — the world mesh would grow the VOB
+ * outline, or the VOBs would lose it. Each `WorldScene` makes one of each and
+ * hands the same function to every material of that kind, so the sharing is the
+ * reason rather than the coincidence.
+ */
+function worldShading(exposure: Exposure, light: LightPreviewUniforms) {
+  return (shader: THREE.WebGLProgramParametersWithUniforms): void => {
+    maskWorld(shader);
+    exposeBakedLight(shader, exposure);
+    previewSelectedLight(shader, light);
+  };
+}
+
+function vobShading(exposure: Exposure, light: LightPreviewUniforms, tint: SelectTint) {
+  return (shader: THREE.WebGLProgramParametersWithUniforms): void => {
+    maskVobs(shader, tint);
+    hideInstances(shader);
+    exposeBakedLight(shader, exposure);
+    previewSelectedLight(shader, light);
+  };
+}
+
+/** The meshes one visual is drawn with — one per draw group, all carrying the
+ *  same instances — and how many instances they were allocated for. */
+interface VisualMeshes {
+  meshes: THREE.InstancedMesh[];
+  capacity: number;
+}
+
+/** How much room a visual that outgrows its meshes is given: enough that a run
+ *  of placements of one asset re-allocates a handful of times, not every time. */
+const GROWTH = 1.5;
+const MIN_SPARE = 4;
+
+/** Both per-instance flags back to zero — every slot is about to be rewritten,
+ *  and a flag left standing would mark whichever VOB lands in it. */
+function clearFlags(entry: VisualMeshes): void {
+  for (const mesh of entry.meshes) {
+    for (const name of [HIDDEN_ATTRIBUTE, SELECTED_ATTRIBUTE]) {
+      const attribute = mesh.geometry.getAttribute(name);
+      (attribute.array as Float32Array).fill(0);
+      attribute.needsUpdate = true;
+    }
+  }
+}
+
+interface TextureSlot {
+  texture: THREE.Texture | null;
+  materials: THREE.MeshBasicMaterial[];
+}
+
+/**
+ * Decoded textures that outlive the scene holding them, for one world.
+ *
+ * A fresh `WorldScene` starts with an empty texture map. A structural op used
+ * to rebuild the scene, and without this every placement re-decoded all 490 of
+ * NewWorld's: the 549 ms that was deliberately moved off the cold open. The op
+ * is followed in place now (`updateInstancedVisuals`), so what this still
+ * carries is a re-run of the viewport's scene effect for the same world.
+ *
+ * **A cached scene does not own its textures; this does.** A `THREE.Texture`
+ * holds GPU memory, and a rebuild that disposed one would hand the next scene a
+ * released texture. `WorldScene.dispose` therefore leaves them alone whenever a
+ * cache was handed in, and the cache is disposed by whoever holds it — the
+ * viewport, when the world is closed or replaced.
+ */
+export class TextureCache {
+  private textures = new Map<string, THREE.Texture>();
+
+  /** The world these pixels belong to. `textureCacheFor` is what compares it. */
+  constructor(readonly key: string) {}
+
+  get(name: string): THREE.Texture | undefined {
+    return this.textures.get(name);
+  }
+
+  set(name: string, texture: THREE.Texture): void {
+    this.textures.set(name, texture);
+  }
+
+  dispose(): void {
+    for (const texture of this.textures.values()) texture.dispose();
+    this.textures.clear();
+  }
+}
+
+/**
+ * The cache to use for `key`: `current` when it is the same world, otherwise a
+ * fresh one — and the old one is released, since nothing else holds it.
+ *
+ * Scoped exactly like the camera pose the viewport restores beside it, and for
+ * the same reason: what survives a rebuild must not survive an *open*, or a
+ * different world is drawn with another world's pixels under the same names.
+ */
+export function textureCacheFor(current: TextureCache | null, key: string): TextureCache {
+  if (current !== null && current.key === key) return current;
+  current?.dispose();
+  return new TextureCache(key);
+}
+
+export class WorldScene {
+  /** The one converted node. Everything else is a descendant of it. */
+  readonly root = new THREE.Group();
+
+  /** Meshes worth raycasting: the world mesh, which a BVH answers in 0.2 ms.
+   *  Instanced VOBs are GPU ID-picked instead — a CPU raycast across them
+   *  costs 14.2 ms on its own and blows the one-frame budget (§3). */
+  readonly worldMeshes: THREE.Mesh[] = [];
+  readonly instancedMeshes: THREE.InstancedMesh[] = [];
+
+  /**
+   * The VOBs with no visual at all, drawn as markers (§16.38) — null until
+   * `setVobMarkers` is called, which is a world without an index rather than a
+   * world without markers.
+   *
+   * Readable because the click path picks it: the GPU id-pass draws instances
+   * and has nothing to draw a marker into, so a marker is picked in pixels like
+   * a waypoint (`PickController`). Read-only, because everything the scene does
+   * with it — the position fallback, the drag, the per-class hide — is a method
+   * on the scene rather than a caller reaching in.
+   */
+  get markers(): VobMarkerLayer | null {
+    return this.markerLayer;
+  }
+
+  private markerLayer: VobMarkerLayer | null = null;
+
+  /**
+   * The decals, drawn as the quads they are (§16.40, #249) — null until
+   * `setDecals`, which is a world without decals as readily as a world before
+   * the build.
+   *
+   * A sibling of the marker layer rather than part of it: a decal is *drawn*,
+   * with a texture and a size, and the marker at its centre is only the handle.
+   */
+  private decalLayer: DecalLayer | null = null;
+
+  /**
+   * How far the selected VOB reaches, when the reach is a radius (architecture §7,
+   * #248). One wireframe for the whole scene, because only the selection is
+   * ever drawn: 1,237 sound radii at once is a screen of overlapping spheres.
+   *
+   * Under the mirrored root with everything else, so `showExtent` takes the
+   * same coordinates `positionOf` answers in.
+   */
+  private readonly extentOverlay = new VobExtentOverlay();
+  private readonly portalOutline = new PortalOutline();
+  /** The selected VOBs as world AABBs, while the style is `box`. */
+  private readonly selectionBox = new SelectionBox();
+  private selectionStyle: SelectionStyle = 'outline';
+
+  private textures = new Map<string, TextureSlot>();
+  private instanceVobIds = new WeakMap<THREE.InstancedMesh, Uint32Array>();
+  /** The visual's own bounds, per mesh — what a rotation refits a bbox from.
+   *  Against the mesh rather than against each VOB, because the scan for a VOB's
+   *  instance already exists and a second per-VOB structure would be a second
+   *  thing to keep correct across every op that adds or removes one. */
+  private meshBounds = new WeakMap<THREE.InstancedMesh, readonly number[]>();
+  /** The instances `setSelectedVobs` last switched on, so the next call clears
+   *  exactly those. Rewriting every instance in the scene would be ~20k writes
+   *  and 724 attribute uploads per click, for a selection that is usually one. */
+  private selectedInstances: Array<{ mesh: THREE.InstancedMesh; instance: number }> = [];
+  /** What `setHiddenVobs` and `setSelectedVobs` were last told — redrawn over
+   *  the new slots after `updateInstancedVisuals`, and over a replaced marker or
+   *  decal layer. */
+  private hidden: Uint8Array | null = null;
+  private selected: readonly number[] = [];
+  private visuals = new Map<string, VisualMeshes>();
+  /** One per decal texture, kept across the decal layer being replaced so a
+   *  structural op does not leave a material per texture behind each time. */
+  private decalMaterials = new Map<string, THREE.MeshBasicMaterial>();
+  private geometries: THREE.BufferGeometry[] = [];
+  private materials: THREE.Material[] = [];
+
+  /** The one exposure uniform every material in this scene points at. */
+  private readonly exposure: Exposure = { value: DEFAULT_EXPOSURE };
+  /** And the one light preview, shared the same way (#256). */
+  private readonly lightPreview: LightPreviewUniforms = {
+    position: { value: new THREE.Vector3() },
+    color: { value: new THREE.Color(1, 1, 1) },
+    range: { value: 0 },
+  };
+  /** And the one selection tint, off until the viewport turns it on (#362). */
+  private readonly selectTint: SelectTint = { value: 0 };
+  private readonly shadeWorld = worldShading(this.exposure, this.lightPreview);
+  private readonly shadeVob = vobShading(this.exposure, this.lightPreview, this.selectTint);
+
+  /** @param textureCache decoded pixels kept across a rebuild of the same
+   *   world, and the owner of their disposal. Null decodes from scratch and
+   *   disposes what it decoded. */
+  constructor(private textureCache: TextureCache | null = null) {
+    this.root.matrixAutoUpdate = false;
+    this.root.matrix.fromArray([...ROOT_MATRIX]);
+    this.root.matrixWorldNeedsUpdate = true;
+  }
+
+  /**
+   * Lift or dim what is on screen — see `DEFAULT_EXPOSURE`.
+   *
+   * One assignment for the whole scene, and no recompile: the value is read by
+   * the next frame the render loop draws. Nothing about the world changes.
+   */
+  setExposure(value: number): void {
+    this.exposure.value = value;
+  }
+
+  /** Tint a selected VOB's body, or leave the outline to mark it alone — see
+   *  `SELECT_TINT`. One assignment, no recompile, like `setExposure`. */
+  setSelectionTint(on: boolean): void {
+    this.selectTint.value = on ? SELECT_TINT : 0;
+  }
+
+  /**
+   * Light the picture with the selected light, or with nothing (#256).
+   *
+   * Takes the same `{ vob, extent }` the sphere does, because it is the same
+   * two numbers — a `zCVobLight`'s `range` and `color`, off the `getVobProps`
+   * read the property grid already makes — and nothing else is fetched for it.
+   * Everything that is not a placeable light previews as nothing: a sound's
+   * radius, a zone's box, and a light at a VOB this scene cannot place, which
+   * would otherwise put the lamp at the origin.
+   *
+   * A light whose colour the reader dropped — black, or malformed (#248) —
+   * previews white. What the preview is for is the reach.
+   */
+  setLightPreview(selected: { vob: number; extent: VobExtent } | null): void {
+    const extent = selected?.extent;
+    if (extent === undefined || extent.shape !== 'sphere' || extent.kind !== 'light') {
+      this.lightPreview.range.value = 0;
+      return;
+    }
+    const position = this.positionOf((selected as { vob: number }).vob);
+    if (position === null) { this.lightPreview.range.value = 0; return; }
+    this.lightPreview.position.value
+      .set(position[0], position[1], position[2])
+      .applyMatrix4(ROOT_TRANSFORM);
+    const [red, green, blue] = extent.color ?? [255, 255, 255];
+    // Through the same table the baked vertex colours go through: a colour
+    // added to a linear picture has to be linear, or it reads far too bright.
+    this.lightPreview.color.value.setRGB(
+      SRGB_TO_LINEAR[Math.round(red)], SRGB_TO_LINEAR[Math.round(green)], SRGB_TO_LINEAR[Math.round(blue)],
+    );
+    this.lightPreview.range.value = extent.radius * ZEN_TO_THREE_SCALE;
+  }
+
+  setWorldMesh(payload: WorldMeshPayload): void {
+    for (const group of payload.groups) {
+      const mesh = new THREE.Mesh(this.geometry(group), this.material(group));
+      mesh.matrixAutoUpdate = false;
+      mesh.layers.set(WORLD_LAYER);
+      this.root.add(mesh);
+      this.worldMeshes.push(mesh);
+    }
+  }
+
+  setInstancedVisuals(payload: InstancedPayload): void {
+    for (const visual of payload.visuals) this.addVisual(visual);
+  }
+
+  /**
+   * Follow a structural op without rebuilding the scene (level-editor.md §7).
+   *
+   * `payload` is every visual's placements as the world now has them, and a
+   * visual the scene already draws comes with `groups: []` — its geometry is
+   * this scene's. So a placement, a delete or a renumbering is instance
+   * matrices and VOB ids rewritten in the meshes that exist. A visual that
+   * outgrows its meshes gets new ones over the same vertex buffers, with room
+   * to spare; one that arrives with geometry is new to the scene, or a GMBT
+   * compile has changed what its name resolves to, and is built from it.
+   *
+   * A visual with no VOB left is kept at no instances rather than thrown away:
+   * the caller's next request names it as drawn again only while it is in the
+   * payload, so geometry for it simply comes back if it is placed again.
+   */
+  updateInstancedVisuals(payload: InstancedPayload): void {
+    const placed = new Set<string>();
+    for (const visual of payload.visuals) {
+      placed.add(visual.name);
+      const entry = this.visuals.get(visual.name);
+      if (entry === undefined || visual.groups.length > 0) {
+        if (entry !== undefined) this.dropVisual(visual.name, entry);
+        this.addVisual(visual);
+        continue;
+      }
+      if (visual.count > entry.capacity) {
+        this.growVisual(entry, Math.max(Math.ceil(visual.count * GROWTH), visual.count + MIN_SPARE));
+      } else {
+        clearFlags(entry);
+      }
+      this.writeInstances(entry, visual);
+    }
+    for (const [name, entry] of this.visuals) {
+      if (placed.has(name)) continue;
+      clearFlags(entry);
+      this.writeInstances(entry, null);
+    }
+
+    // Every slot was rewritten and every flag cleared with it, so what was
+    // marked is marked again over the VOBs' new slots.
+    this.selectedInstances = [];
+    this.setHiddenVobs(this.hidden);
+    this.setSelectedVobs(this.selected);
+  }
+
+  /** One visual's meshes, sized for exactly the instances it arrived with —
+   *  which is what a cold open allocates, and why only an edit grows them. */
+  private addVisual(visual: InstancedVisual): void {
+    const meshes = visual.groups.map((group) => {
+      const geometry = this.geometry(group);
+      // Every VOB shown, until a class is switched off. The attribute is made
+      // here rather than on the first hide so that the pick pass — which
+      // shares this geometry's attributes — can share it.
+      geometry.setAttribute(
+        HIDDEN_ATTRIBUTE,
+        new THREE.InstancedBufferAttribute(new Float32Array(visual.count), 1),
+      );
+      // Nothing selected until something is. Allocated here for the same
+      // reason as the flag above — the shader declares the attribute, and a
+      // program compiled against one the geometry does not carry reads garbage
+      // rather than zero.
+      geometry.setAttribute(
+        SELECTED_ATTRIBUTE,
+        new THREE.InstancedBufferAttribute(new Float32Array(visual.count), 1),
+      );
+      const mesh = new THREE.InstancedMesh(geometry, this.material(group, true), visual.count);
+      mesh.matrixAutoUpdate = false;
+      mesh.layers.set(WORLD_LAYER);
+      this.root.add(mesh);
+      this.instancedMeshes.push(mesh);
+      return mesh;
+    });
+    const entry = { meshes, capacity: visual.count };
+    this.visuals.set(visual.name, entry);
+    this.writeInstances(entry, visual);
+  }
+
+  /** The visual's placements written into its meshes — null for none at all. */
+  private writeInstances(entry: VisualMeshes, visual: InstancedVisual | null): void {
+    const count = visual?.count ?? 0;
+    const matrices = new Float32Array(visual?.matrices ?? new ArrayBuffer(0));
+    const vobIds = new Uint32Array(visual?.vobIds ?? new ArrayBuffer(0));
+    const matrix = new THREE.Matrix4();
+
+    for (const mesh of entry.meshes) {
+      mesh.count = count;
+      for (let i = 0; i < count; i++) {
+        const m = i * 12;
+        // Matrix4.set takes row-major arguments, which is the order the payload
+        // uses — rotation rows with the position as a fourth column.
+        matrix.set(
+          matrices[m], matrices[m + 1], matrices[m + 2], matrices[m + 3],
+          matrices[m + 4], matrices[m + 5], matrices[m + 6], matrices[m + 7],
+          matrices[m + 8], matrices[m + 9], matrices[m + 10], matrices[m + 11],
+          0, 0, 0, 1,
+        );
+        mesh.setMatrixAt(i, matrix);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.computeBoundingSphere();
+      this.instanceVobIds.set(mesh, vobIds);
+      if (visual !== null) this.meshBounds.set(mesh, visual.bounds);
+    }
+  }
+
+  /**
+   * New meshes for a visual that has more VOBs than room. An `InstancedMesh`
+   * cannot grow, but its vertices are attributes it only points at: the new
+   * geometry takes the same ones, so nothing is uploaded again but the two
+   * per-instance flags and the instance matrices.
+   */
+  private growVisual(entry: VisualMeshes, capacity: number): void {
+    entry.meshes = entry.meshes.map((old) => {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setIndex(old.geometry.getIndex());
+      for (const [name, attribute] of Object.entries(old.geometry.attributes)) {
+        if (name !== HIDDEN_ATTRIBUTE && name !== SELECTED_ATTRIBUTE) geometry.setAttribute(name, attribute);
+      }
+      geometry.setAttribute(HIDDEN_ATTRIBUTE, new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1));
+      geometry.setAttribute(SELECTED_ATTRIBUTE, new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1));
+
+      const mesh = new THREE.InstancedMesh(geometry, old.material, capacity);
+      mesh.matrixAutoUpdate = false;
+      mesh.layers.set(WORLD_LAYER);
+      this.instancedMeshes[this.instancedMeshes.indexOf(old)] = mesh;
+      this.geometries[this.geometries.indexOf(old.geometry)] = geometry;
+      this.root.remove(old);
+      this.root.add(mesh);
+
+      // three frees every attribute a disposed geometry still holds, and the
+      // vertices are the new mesh's now — so they come off the old one first,
+      // the way `VobPicker` gives back the attributes it borrowed.
+      old.geometry.setIndex(null);
+      for (const name of Object.keys(old.geometry.attributes)) {
+        if (name !== HIDDEN_ATTRIBUTE && name !== SELECTED_ATTRIBUTE) old.geometry.deleteAttribute(name);
+      }
+      old.geometry.dispose();
+      old.dispose();
+      return mesh;
+    });
+    entry.capacity = capacity;
+  }
+
+  /** A visual's meshes gone whole — its geometry is about to be replaced. */
+  private dropVisual(name: string, entry: VisualMeshes): void {
+    for (const mesh of entry.meshes) {
+      this.root.remove(mesh);
+      this.instancedMeshes.splice(this.instancedMeshes.indexOf(mesh), 1);
+      this.geometries.splice(this.geometries.indexOf(mesh.geometry), 1);
+      const material = mesh.material as THREE.MeshBasicMaterial;
+      this.materials.splice(this.materials.indexOf(material), 1);
+      for (const slot of this.textures.values()) {
+        const at = slot.materials.indexOf(material);
+        if (at !== -1) slot.materials.splice(at, 1);
+      }
+      mesh.geometry.dispose();
+      material.dispose();
+      mesh.dispose();
+    }
+    this.visuals.delete(name);
+  }
+
+  /**
+   * Draw the VOBs that have no visual (level-editor.md §7, #247).
+   *
+   * `VobMarkerLayer` decides which those are and what colour each is; what the
+   * scene adds is that everything asking it about a VOB — the gizmo through
+   * `positionOf`, a drag through `moveVob`, the view controls through
+   * `setHiddenVobs` — answers for a marker as readily as for an instance, and
+   * none of those callers learns the difference.
+   *
+   * Taken from the index rather than from a payload, because the index is where
+   * a position exists for a VOB the worker placed nothing for. Called beside
+   * `setInstancedVisuals` and again after each `updateInstancedVisuals`, which
+   * is what gives a placed sound its marker: the layer is replaced whole, the
+   * last hidden mask redrawn over it.
+   */
+  setVobMarkers(index: VobIndex): void {
+    if (this.markerLayer !== null) {
+      this.root.remove(this.markerLayer.markers);
+      this.markerLayer.dispose();
+    }
+    this.markerLayer = new VobMarkerLayer(index);
+    this.markerLayer.setHidden(this.hidden);
+    this.root.add(this.markerLayer.markers);
+  }
+
+  /**
+   * Draw the volume of one VOB, or nothing (architecture §7). The caller decides which
+   * VOB and reads the radius or the box off its props — `vobExtentOf` is where
+   * one shape is told from the other, and this only draws.
+   *
+   * **A sphere needs the VOB's position and a box does not**: a radius is a
+   * length around the VOB, a bounding box is already world space. So a VOB the
+   * scene cannot place gets no sphere — one at the origin for a VOB that is
+   * somewhere else is worse than none — while its box is drawn regardless,
+   * which is what a zone with no marker needs.
+   */
+  showExtent(vob: number, extent: VobExtent): void {
+    const position = extent.shape === 'sphere' ? this.positionOf(vob) : [0, 0, 0] as const;
+    if (position === null) { this.hideExtent(); return; }
+    this.extentOverlay.show(position, extent);
+    // Attached only while it is drawing something. The root's children are
+    // what the world is made of, and a permanent invisible node in it is one
+    // more thing every reader of the graph has to know to skip.
+    if (this.extentOverlay.wireframe.parent === null) this.root.add(this.extentOverlay.wireframe);
+  }
+
+  /** Nothing selected, or a selection with no volume to draw. */
+  hideExtent(): void {
+    this.extentOverlay.hide();
+    this.root.remove(this.extentOverlay.wireframe);
+  }
+
+  /**
+   * Draw the portal polygon a Problems finding named, and answer what to frame
+   * the camera on (#222). Null for a polygon with too few corners to be one,
+   * which draws nothing and frames nothing.
+   *
+   * The corners arrive with the finding — the scene holds merged draw groups
+   * and cannot map a polygon index to geometry, which is why this takes the
+   * geometry rather than the index the finding also carries.
+   */
+  showPortal(corners: readonly (readonly [number, number, number])[]): {
+    at: [number, number, number]; bounds: number[];
+  } | null {
+    const framed = this.portalOutline.show(corners);
+    if (framed === null) { this.hidePortal(); return null; }
+    // Attached only while it is drawing something, exactly as the extent
+    // wireframe is: a permanent invisible node in the root is one more thing
+    // every reader of the graph has to know to skip.
+    if (this.portalOutline.outline.parent === null) this.root.add(this.portalOutline.outline);
+    return framed;
+  }
+
+  /** No portal framed — nothing has been jumped to, or the user has moved on. */
+  hidePortal(): void {
+    this.portalOutline.hide();
+    this.root.remove(this.portalOutline.outline);
+  }
+
+  /**
+   * Draw the decals (§16.40, #249).
+   *
+   * `buildDecalBillboards` has already grouped them by texture and doubled the
+   * half extent, so what is left here is one `InstancedMesh` per group and a
+   * texture slot per name — the same slot machinery every other material takes,
+   * which is what makes a decal's `.TGA` load through the path that was already
+   * loading the world's.
+   *
+   * Called beside `setInstancedVisuals` and again after each
+   * `updateInstancedVisuals`, for the markers' reason: the layer is a handful of
+   * meshes, replaced whole, and each texture keeps its one material.
+   */
+  setDecals(scene: DecalScene): void {
+    if (this.decalLayer !== null) {
+      for (const mesh of this.decalLayer.meshes) this.root.remove(mesh);
+      this.decalLayer.dispose();
+    }
+    this.decalLayer = new DecalLayer(scene, (texture) => this.decalMaterial(texture));
+    this.decalLayer.setHidden(this.hidden);
+    for (const mesh of this.decalLayer.meshes) this.root.add(mesh);
+  }
+
+  /** The VOB an instance came from — a pick returns nothing else that identifies it. */
+  /**
+   * Move a VOB in the scene, in **ZenGin space** — an edit arriving from the op
+   * path (level-editor.md §7), or the live preview of one being dragged.
+   *
+   * Two things make this less obvious than setting a matrix. A VOB is an
+   * instance inside a mesh shared with every other VOB of the same visual, and
+   * a visual with several draw groups puts that instance in several meshes — so
+   * every one of them has to be written, or the VOB is drawn in two places at
+   * once. And `InstancedMesh` culls by a bounding sphere computed from the
+   * instances it was built with: dragging a VOB out of that sphere without
+   * recomputing it makes the whole mesh vanish at some camera angles and not
+   * others.
+   *
+   * The scan is deliberate rather than an index. It costs one pass over the
+   * ~20k instance ids in the scene, it happens on a drag frame and not on a
+   * render frame, and a permanent VOB -> instance map is a second structure to
+   * keep correct across every future op that adds or removes one.
+   *
+   * @returns whether the VOB is drawn at all — as an instance, or as a marker
+   *   (§16.38). 23,288 VOBs are enumerated on NewWorld and 12,463 placed, and
+   *   what is left over after the markers is the VOB whose visual is a name
+   *   that resolves to no geometry: a decal or a particle effect is selectable
+   *   and has nothing in the scene to move.
+   */
+  moveVob(vob: number, position: readonly [number, number, number]): boolean {
+    const matrix = new THREE.Matrix4();
+    let moved = false;
+
+    for (const mesh of this.instancedMeshes) {
+      const vobIds = this.instanceVobIds.get(mesh);
+      if (!vobIds) continue;
+
+      let here = false;
+      for (let i = vobIds.indexOf(vob); i !== -1; i = vobIds.indexOf(vob, i + 1)) {
+        mesh.getMatrixAt(i, matrix);
+        matrix.setPosition(position[0], position[1], position[2]);
+        mesh.setMatrixAt(i, matrix);
+        here = true;
+      }
+      if (!here) continue;
+
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.computeBoundingSphere();
+      moved = true;
+    }
+
+    // And the marker, for a VOB that has one instead. Not `else`: a VOB is
+    // either instanced or markered and never both, and writing whichever exists
+    // is one statement rather than a branch that has to stay true.
+    if (this.markerLayer?.setPosition(vob, position) === true) moved = true;
+    // A decal is the one VOB that is both: its quad is the picture and its
+    // marker is the handle, so a drag has to carry the two together or the
+    // preview leaves the quad where the decal used to be.
+    if (this.decalLayer?.setPosition(vob, position) === true) moved = true;
+
+    if (this.selected.includes(vob)) this.drawSelectionBoxes();
+    return moved;
+  }
+
+  /**
+   * Turn a VOB in the scene: its 3x3, **row-major**, in ZenGin space.
+   *
+   * The same two hazards as `moveVob` — every mesh the visual was split into,
+   * and the bounding sphere the mesh culls by — plus one of its own: the
+   * rotation and the position share a `Matrix4`, so this writes the nine
+   * elements of the basis and leaves the fourth column exactly as it was. A
+   * rotation is not a move, and a VOB that quietly jumped to the origin when it
+   * was turned would look like a gizmo bug.
+   *
+   * Unlike `moveVob` this has no marker half, and deliberately: a marker is a
+   * dot with no orientation to draw, so there is nothing a turn would change
+   * about the picture. The op is still built from the index, which is where a
+   * markerless VOB's rotation actually lives.
+   *
+   * @returns whether the VOB has an instance to turn.
+   */
+  rotateVob(vob: number, rotation: readonly number[]): boolean {
+    const matrix = new THREE.Matrix4();
+    let turned = false;
+
+    for (const mesh of this.instancedMeshes) {
+      const vobIds = this.instanceVobIds.get(mesh);
+      if (!vobIds) continue;
+
+      let here = false;
+      for (let i = vobIds.indexOf(vob); i !== -1; i = vobIds.indexOf(vob, i + 1)) {
+        mesh.getMatrixAt(i, matrix);
+        // `elements` is column-major: element[row][col] is elements[col*4+row].
+        for (let row = 0; row < 3; row++) {
+          for (let col = 0; col < 3; col++) {
+            matrix.elements[col * 4 + row] = rotation[row * 3 + col];
+          }
+        }
+        mesh.setMatrixAt(i, matrix);
+        here = true;
+      }
+      if (!here) continue;
+
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.computeBoundingSphere();
+      turned = true;
+    }
+
+    if (this.selected.includes(vob)) this.drawSelectionBoxes();
+    return turned;
+  }
+
+  /**
+   * The visual's own bounds for a VOB, in the visual's own space — or null when
+   * it is not drawn.
+   *
+   * A rotation refits the VOB's bbox from exactly this: measured across the
+   * retail corpus, a stored box is the tight world AABB of the visual placed by
+   * the VOB's transform. Null rather than a zero box, because a zero box would
+   * refit a real bbox down to a point.
+   */
+  boundsOf(vob: number): readonly number[] | null {
+    for (const mesh of this.instancedMeshes) {
+      const vobIds = this.instanceVobIds.get(mesh);
+      if (!vobIds || vobIds.indexOf(vob) === -1) continue;
+      return this.meshBounds.get(mesh) ?? null;
+    }
+    return null;
+  }
+
+  /**
+   * Which VOBs are not drawn: one byte per VOB, 1 for hidden — the shape
+   * `matchVobs` returns, which is what makes the scene tree's filter and
+   * Spacer's per-class show/hide one predicate rather than two. Null shows
+   * everything.
+   *
+   * Writes a float per instance and nothing else: no geometry is rebuilt, no
+   * material recompiled, and the instance matrices — where the poses live — are
+   * not touched.
+   *
+   * The marker layer takes the same mask, which is what makes the filter mean
+   * anything for a sound or a trigger (§16.38 consequence 4): hiding
+   * `zCVobSound` used to hide nothing, because nothing was drawn, and the class
+   * was offered in the list all the same. A VOB with neither an instance nor a
+   * marker is still simply not found, exactly as it is still not drawn.
+   */
+  setHiddenVobs(hidden: Uint8Array | null): void {
+    this.hidden = hidden;
+    for (const mesh of this.instancedMeshes) {
+      const vobIds = this.instanceVobIds.get(mesh);
+      const attribute = mesh.geometry.getAttribute(HIDDEN_ATTRIBUTE);
+      if (!vobIds || !attribute) continue;
+
+      const flags = attribute.array as Float32Array;
+      for (let i = 0; i < flags.length; i++) {
+        const vob = vobIds[i];
+        flags[i] = hidden !== null && vob < hidden.length && hidden[vob] !== 0 ? 1 : 0;
+      }
+      attribute.needsUpdate = true;
+    }
+
+    this.markerLayer?.setHidden(hidden);
+    this.decalLayer?.setHidden(hidden);
+  }
+
+  /**
+   * Which VOBs are drawn as selected (level-editor.md §16.24 1).
+   *
+   * A list rather than the byte-per-VOB mask `setHiddenVobs` takes, because
+   * that is the shape a selection has: hiding is a predicate over the whole
+   * world, a selection is a handful of indices.
+   *
+   * Only the meshes that changed are re-uploaded. The scan for the new
+   * selection is one pass over the scene's instance ids — the same pass
+   * `positionOf` already makes — but the *clear* is not: it walks only what was
+   * switched on last time, so a click that selects one VOB uploads one mesh's
+   * attribute rather than all 724 of them.
+   *
+   * Nothing about a pose is touched, exactly as with the hidden flag: the gizmo
+   * and every op read the instance matrix, and this is a float beside it.
+   */
+  setSelectedVobs(vobs: readonly number[]): void {
+    this.selected = vobs;
+    this.drawSelectionBoxes();
+    if (this.selectionStyle !== 'outline') vobs = [];
+    const touched = new Set<THREE.InstancedMesh>();
+
+    for (const { mesh, instance } of this.selectedInstances) {
+      const attribute = mesh.geometry.getAttribute(SELECTED_ATTRIBUTE);
+      if (!attribute) continue;
+      (attribute.array as Float32Array)[instance] = 0;
+      touched.add(mesh);
+    }
+    this.selectedInstances = [];
+
+    const wanted = new Set(vobs);
+    if (wanted.size > 0) {
+      for (const mesh of this.instancedMeshes) {
+        const vobIds = this.instanceVobIds.get(mesh);
+        const attribute = mesh.geometry.getAttribute(SELECTED_ATTRIBUTE);
+        if (!vobIds || !attribute) continue;
+
+        const flags = attribute.array as Float32Array;
+        for (let i = 0; i < vobIds.length; i++) {
+          if (!wanted.has(vobIds[i])) continue;
+          flags[i] = 1;
+          this.selectedInstances.push({ mesh, instance: i });
+          touched.add(mesh);
+        }
+      }
+    }
+
+    for (const mesh of touched) {
+      const attribute = mesh.geometry.getAttribute(SELECTED_ATTRIBUTE);
+      if (attribute) attribute.needsUpdate = true;
+    }
+  }
+
+  /** Box or outline from now on, the standing selection redrawn in it. */
+  setSelectionStyle(style: SelectionStyle): void {
+    this.selectionStyle = style;
+    this.setSelectedVobs(this.selected);
+  }
+
+  /** The boxes drawn now, ZenGin min/max — empty unless the style is `box`. */
+  get selectionBoxes(): readonly ZenBounds[] {
+    return this.selectionBox.boxes;
+  }
+
+  /**
+   * The boxes, from the poses as drawn now. One pass over the scene's instance
+   * ids — what `moveVob` already pays per drag frame — and a VOB split across
+   * several meshes is boxed once, since they share its pose. A VOB with no
+   * instance gets none: a marker has no visual to bound.
+   */
+  private drawSelectionBoxes(): void {
+    const boxes: ZenBounds[] = [];
+    if (this.selectionStyle === 'box' && this.selected.length > 0) {
+      const wanted = new Set(this.selected);
+      const matrix = new THREE.Matrix4();
+      for (const mesh of this.instancedMeshes) {
+        const vobIds = this.instanceVobIds.get(mesh);
+        const bounds = this.meshBounds.get(mesh);
+        if (!vobIds || !bounds) continue;
+        for (let i = 0; i < mesh.count; i++) {
+          if (!wanted.delete(vobIds[i])) continue;
+          mesh.getMatrixAt(i, matrix);
+          const e = matrix.elements;
+          boxes.push(placeBounds(
+            bounds as ZenBounds,
+            [e[0], e[4], e[8], e[1], e[5], e[9], e[2], e[6], e[10]],
+            [e[12], e[13], e[14]],
+          ));
+        }
+      }
+    }
+
+    this.selectionBox.show(boxes);
+    if (boxes.length > 0) this.root.add(this.selectionBox.lines);
+    else this.root.remove(this.selectionBox.lines);
+  }
+
+  /** A VOB's 3x3 as drawn, row-major — what a turn composes onto. Null for a
+   *  VOB drawn as a marker, which has no orientation on screen; `rotateVob`
+   *  says why that is not a gap. */
+  rotationOf(vob: number): number[] | null {
+    const matrix = new THREE.Matrix4();
+
+    for (const mesh of this.instancedMeshes) {
+      const vobIds = this.instanceVobIds.get(mesh);
+      const at = vobIds ? vobIds.indexOf(vob) : -1;
+      if (at === -1) continue;
+
+      mesh.getMatrixAt(at, matrix);
+      const out: number[] = [];
+      for (let row = 0; row < 3; row++) {
+        for (let col = 0; col < 3; col++) out.push(matrix.elements[col * 4 + row]);
+      }
+      return out;
+    }
+
+    return null;
+  }
+
+  /**
+   * Where a VOB is drawn, in ZenGin space — or null if it is not drawn at all.
+   *
+   * The viewport is handed payloads, never the world, so the scene is what it
+   * asks where the selected VOB is when it puts a gizmo on it.
+   *
+   * The instances first and the markers second, because a VOB is in exactly one
+   * of the two and the instance scan is the hot one — a drag frame reads this
+   * per selected VOB. What is left answering null is the VOB whose visual is a
+   * *name* that resolves to no geometry: a decal, a `.PFX`. That used to be
+   * every markerless VOB as well, and the gizmo detached for all of them
+   * (§16.38 consequence 3).
+   */
+  positionOf(vob: number): [number, number, number] | null {
+    const matrix = new THREE.Matrix4();
+
+    for (const mesh of this.instancedMeshes) {
+      const vobIds = this.instanceVobIds.get(mesh);
+      const at = vobIds ? vobIds.indexOf(vob) : -1;
+      if (at === -1) continue;
+
+      mesh.getMatrixAt(at, matrix);
+      return [matrix.elements[12], matrix.elements[13], matrix.elements[14]];
+    }
+
+    return this.markerLayer?.positionOf(vob) ?? null;
+  }
+
+  /**
+   * Where to put one gizmo for a whole selection: the position of the **last**
+   * VOB in it that is actually drawn, or null if none of them is.
+   *
+   * The last is the one just clicked, which is the one the user expects the
+   * handles to appear on. It is the last one with a *position* because a
+   * selection may hold VOBs the scene draws nothing for at all, and anchoring
+   * on one of those would take the gizmo away from a selection full of VOBs it
+   * could have stood on.
+   *
+   * That used to mean "the last one with an instance", and a sound VOB was the
+   * example: it has a marker now, and so does a decal and a particle effect
+   * (§16.38, §16.40). The set this steps over is down to a visual the VFS did
+   * not hold — a missing asset rather than a kind of object.
+   */
+  anchorOf(vobs: readonly number[]): [number, number, number] | null {
+    for (let at = vobs.length - 1; at >= 0; at--) {
+      const position = this.positionOf(vobs[at]);
+      if (position !== null) return position;
+    }
+    return null;
+  }
+
+  /**
+   * The middle of a selection: the mean of the positions of the VOBs in it that
+   * are actually drawn, or null if none of them is (level-editor.md §16.24 2).
+   *
+   * Where a *translate* gizmo stands. `anchorOf` stays what a rotate gizmo
+   * stands on, and the two are different on purpose: `rotateVobs` turns each
+   * VOB about its own origin, so handles at the centroid would show a pivot the
+   * op does not use and the first multi-VOB rotate would look broken.
+   *
+   * A VOB the scene draws nothing for is stepped over rather than counted, for
+   * the reason `anchorOf` steps over it — it has no position at all, and taking
+   * one as the origin would drag the centre of the selection towards
+   * [0, 0, 0]. A marker counts: it is a position, and it is drawn.
+   */
+  centroidOf(vobs: readonly number[]): [number, number, number] | null {
+    const sum: [number, number, number] = [0, 0, 0];
+    let drawn = 0;
+
+    for (const vob of vobs) {
+      const position = this.positionOf(vob);
+      if (position === null) continue;
+      sum[0] += position[0];
+      sum[1] += position[1];
+      sum[2] += position[2];
+      drawn += 1;
+    }
+
+    return drawn === 0 ? null : [sum[0] / drawn, sum[1] / drawn, sum[2] / drawn];
+  }
+
+  resolveInstance(mesh: THREE.InstancedMesh, instanceId: number): number | null {
+    const vobIds = this.instanceVobIds.get(mesh);
+    if (!vobIds || instanceId < 0 || instanceId >= vobIds.length) return null;
+    return vobIds[instanceId];
+  }
+
+  /**
+   * Decode every texture the scene still needs, one at a time — a world with
+   * 490 of them must not open 490 concurrent IPC calls — and apply each to
+   * every material that named it.
+   *
+   * `cancelled` is checked on both sides of the await: the world can be closed
+   * while this is in flight, and pixels applied to a torn-down scene are a
+   * texture nothing will ever dispose.
+   *
+   * Returns the names that could not be decoded, so the caller can say how
+   * many rather than leaving white geometry to be discovered on screen.
+   */
+  async loadPendingTextures(
+    load: (name: string) => Promise<DecodedTexture | null>,
+    cancelled: () => boolean,
+  ): Promise<string[]> {
+    const failed: string[] = [];
+    for (const name of this.pendingTextureNames()) {
+      if (cancelled()) return failed;
+      let decoded: DecodedTexture | null = null;
+      try {
+        decoded = await load(name);
+      } catch {
+        // One name the VFS cannot decode is one white material, not a white
+        // world: a mod folder holds *source* `.TGA` files, which resolve by
+        // name and then fail to parse as ZenGin textures. Letting that
+        // rejection out of the loop left every later name unloaded.
+        failed.push(name);
+      }
+      if (cancelled()) return failed;
+      // A name with no pixels draws white whether the VFS refused it or simply
+      // does not hold it, so both are reported the same way.
+      if (decoded) this.applyTexture(decoded);
+      else if (!failed.includes(name)) failed.push(name);
+    }
+    return failed;
+  }
+
+  /** Texture names the scene has materials for but no pixels yet. */
+  pendingTextureNames(): string[] {
+    const pending: string[] = [];
+    for (const [name, slot] of this.textures) {
+      if (slot.texture === null) pending.push(name);
+    }
+    return pending;
+  }
+
+  applyTexture(decoded: DecodedTexture): void {
+    const name = decoded.name.toUpperCase();
+    const slot = this.textures.get(name);
+    if (!slot || slot.texture !== null) return;
+
+    const texture = dataTexture(decoded);
+
+    slot.texture = texture;
+    this.textureCache?.set(name, texture);
+    for (const material of slot.materials) {
+      material.map = texture;
+      // An untextured material carried its colour; a textured one must not
+      // multiply the texture by it.
+      material.color.setRGB(1, 1, 1);
+      material.needsUpdate = true;
+    }
+  }
+
+  dispose(): void {
+    for (const geometry of this.geometries) geometry.dispose();
+    for (const material of this.materials) material.dispose();
+    // `instanceMatrix` and `instanceColor` are the mesh's, not the geometry's,
+    // so the two lines above free neither: a retail world's ~724 instanced
+    // meshes left them to the garbage collector, which frees the JS object and
+    // never the GPU buffer. A structural edit used to rebuild this scene, so it
+    // was a megabyte per edit rather than per world open.
+    for (const mesh of this.instancedMeshes) mesh.dispose();
+    // Only what this scene owns. With a cache the textures outlive it by
+    // design, and disposing them here would release GPU memory the very next
+    // scene is about to draw with — see `TextureCache`.
+    if (this.textureCache === null) {
+      for (const slot of this.textures.values()) slot.texture?.dispose();
+    }
+
+    // Its own buffers, and not the pip it draws them with: that is the app's
+    // one sprite, shared with the spawn markers.
+    this.markerLayer?.dispose();
+    this.markerLayer = null;
+    // Its geometries only: the materials are in `this.materials` with every
+    // other one the scene made, and hold texture slots it owns.
+    this.decalLayer?.dispose();
+    this.decalLayer = null;
+    this.extentOverlay.dispose();
+    this.portalOutline.dispose();
+    this.selectionBox.dispose();
+
+    this.geometries = [];
+    this.materials = [];
+    this.selectedInstances = [];
+    this.visuals.clear();
+    this.decalMaterials.clear();
+    this.textures.clear();
+    this.worldMeshes.length = 0;
+    this.instancedMeshes.length = 0;
+    this.root.clear();
+  }
+
+  // Whether a group is lit is not a caller's choice: `mergeChunks` emits
+  // `lights: null` exactly for the proto-mesh chunks that have no baked ZenGin
+  // light word, so the buffer's presence already says it.
+  private geometry(group: DrawGroup): THREE.BufferGeometry {
+    const geometry = drawGroupGeometry(group);
+    this.geometries.push(geometry);
+    return geometry;
+  }
+
+  /** @param vob whether this draws a VOB rather than the world mesh — the one
+   *   difference is the outline mask, see `maskVobs`. Both kinds carry
+   *   the exposure term: an interior's walls are world mesh, so a brightness
+   *   control the world mesh did not take would light nothing that is dark. */
+  private material(group: DrawGroup, vob = false): THREE.MeshBasicMaterial {
+    // MeshBasicMaterial, not a lit one: ZenGin's lighting is baked into the
+    // vertex colours and there is nothing dynamic in an editor viewport to
+    // relight it with. Which is also why brightness is `setExposure` and not a
+    // light — see `DEFAULT_EXPOSURE`.
+    const material = new THREE.MeshBasicMaterial({
+      vertexColors: group.lights !== null,
+      side: THREE.FrontSide,
+    });
+    material.onBeforeCompile = vob ? this.shadeVob : this.shadeWorld;
+
+    if (group.texture === '') {
+      material.color.setRGB(
+        SRGB_TO_LINEAR[group.color[0]], SRGB_TO_LINEAR[group.color[1]], SRGB_TO_LINEAR[group.color[2]],
+      );
+    } else {
+      this.texture(group.texture, material);
+    }
+
+    if (group.alphaFunc === 1) material.alphaTest = ALPHA_TEST;
+    if (group.alphaFunc === 2 || group.alphaFunc === 3) {
+      material.transparent = true;
+      material.depthWrite = false;
+      if (group.alphaFunc === 3) material.blending = THREE.AdditiveBlending;
+      // A blended VOB must not blend a rectangle into the outline mask.
+      // Every material takes defines at runtime; only the typings stop short.
+      if (vob) (material as THREE.Material & { defines?: Record<string, string> }).defines = { [MASK_BLENDED_DEFINE]: '' };
+    }
+
+    this.materials.push(material);
+    return material;
+  }
+
+  /**
+   * A decal's material: one per texture, made here rather than in `DecalLayer`
+   * so a decal's `.TGA` goes through the same slot every other texture does and
+   * `loadPendingTextures` fills it without knowing what a decal is.
+   *
+   * The layer owns everything about how it is *drawn* — the billboard, the
+   * cut-out, the depth write — because those are facts about a decal rather
+   * than about a texture.
+   */
+  private decalMaterial(texture: string): THREE.MeshBasicMaterial {
+    const kept = this.decalMaterials.get(texture);
+    if (kept !== undefined) return kept;
+    const material = new THREE.MeshBasicMaterial();
+    this.texture(texture, material);
+    this.materials.push(material);
+    this.decalMaterials.set(texture, material);
+    return material;
+  }
+
+  /** Point one material at a named texture, decoding it later if nobody has.
+   *  The one place a texture slot is created, so a caller never has to know
+   *  whether this world has already decoded the name. */
+  private texture(name: string, material: THREE.MeshBasicMaterial): void {
+    const key = name.toUpperCase();
+    let slot = this.textures.get(key);
+    if (slot === undefined) {
+      // Already decoded for this world, if a previous scene decoded it: the
+      // slot starts filled, `pendingTextureNames` never names it, and the
+      // material is textured before the first frame is drawn.
+      slot = { texture: this.textureCache?.get(key) ?? null, materials: [] };
+      this.textures.set(key, slot);
+    }
+    slot.materials.push(material);
+    material.map = slot.texture;
+  }
+}
+
+/**
+ * A draw group's buffers as Three.js geometry — shared with the asset preview
+ * (`VisualPreviewScene`), so a visual is built the same way wherever it is
+ * drawn. Whether a group is lit is not a caller's choice: `mergeChunks` emits
+ * `lights: null` exactly for the proto-mesh chunks that have no baked ZenGin
+ * light word, so the buffer's presence already says it.
+ */
+export function drawGroupGeometry(group: DrawGroup): THREE.BufferGeometry {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(group.positions), 3));
+  geometry.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(group.normals), 3));
+  geometry.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(group.uvs), 2));
+  if (group.lights !== null) {
+    geometry.setAttribute('color', new THREE.BufferAttribute(vertexColors(new Uint32Array(group.lights)), 3));
+  }
+  // The one conversion the root node cannot carry: Three.js cancels the
+  // mirror's effect on the front/back test, so the winding is reversed here
+  // instead — in `coords`, with the rest of the ZenGin -> Three.js boundary.
+  geometry.setIndex(new THREE.BufferAttribute(threeIndexOrder(new Uint32Array(group.indices)), 1));
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+/** Decoded RGBA8 as a GPU texture. Not flipped: decoded rows run top first and
+ *  ZenGin's UVs put V = 0 at the top, world mesh and proto meshes alike (#368). */
+export function dataTexture(decoded: DecodedTexture): THREE.DataTexture {
+  const texture = new THREE.DataTexture(
+    new Uint8Array(decoded.rgba), decoded.width, decoded.height,
+  );
+  texture.format = THREE.RGBAFormat;
+  texture.type = THREE.UnsignedByteType;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.generateMipmaps = true;
+  texture.anisotropy = 4;
+  texture.flipY = false;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+/** The baked ZenGin light word, decoded here rather than in the binding: the
+ *  channel order is a rendering question. zCOLOR is a DWORD 0xAARRGGBB, and
+ *  the colour buffer Three.js wants is linear. */
+function vertexColors(words: Uint32Array): Float32Array {
+  const out = new Float32Array(words.length * 3);
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i];
+    out[i * 3] = SRGB_TO_LINEAR[(word >>> 16) & 0xff];
+    out[i * 3 + 1] = SRGB_TO_LINEAR[(word >>> 8) & 0xff];
+    out[i * 3 + 2] = SRGB_TO_LINEAR[word & 0xff];
+  }
+  return out;
+}

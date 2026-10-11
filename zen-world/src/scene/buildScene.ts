@@ -1,0 +1,600 @@
+// A loaded world to a renderable scene description (level-editor.md §3, §7).
+//
+// This runs in the zenkit worker, not in the renderer: the merge collapses 1400
+// chunks into ~352 groups, so doing it here means the buffers cross IPC once
+// each instead of four times as many. The binding is injected rather than
+// required, which is what lets the decisions below be tested without the native
+// addon — and the decisions are the point of the module. Every one of them was
+// measured on retail data and every one of them fails silently:
+//
+//   - a zCVobLevelCompo names the source mesh a slice of the *already-compiled*
+//     world came from. Drawing it draws the world twice.
+//   - one Mesh per VOB is ~12k draw calls against a <1500 budget. VOBs sharing
+//     a visual become instances of one.
+//   - an unresolved visual is a normal fact about a world (a decal names a
+//     texture, a .pfx is a Daedalus instance), so it is counted, not thrown.
+//
+// Nothing here converts coordinates or reverses an index buffer: positions and
+// instance matrices stay in ZenGin space and winding stays stored, because that
+// is `coords`' single decision to make.
+
+import { mergeChunks, type DrawGroup, type MeshChunk } from '../render';
+import type { ZenBounds } from '../model';
+
+/** The `vobIndex` payload, columnar with the repeated strings interned. */
+export interface VobIndex {
+  count: number;
+  parent: ArrayBuffer;
+  childIndex: ArrayBuffer;
+  positions: ArrayBuffer;
+  rotations: ArrayBuffer;
+  flags: ArrayBuffer;
+  classes: string[];
+  classIndex: ArrayBuffer;
+  names: string[];
+  nameIndex: ArrayBuffer;
+  visuals: string[];
+  visualIndex: ArrayBuffer;
+  visualTypes: string[];
+  visualTypeIndex: ArrayBuffer;
+  /** Uint32 x1 — the VOBs whose visual is a `zCDecal`, in index order. Sparse:
+   *  95 % of a world is not a decal, and their size is on the visual rather
+   *  than in any column. */
+  decalVobs: ArrayBuffer;
+  /** Float32 x2 per row of `decalVobs` — `decalDimension`, a **half** extent. */
+  decalDimensions: ArrayBuffer;
+  /** Uint8 x1 per row of `decalVobs` — `decalAlphaWeight`, as the archive holds
+   *  it: 0-255, not a fraction. */
+  decalAlphaWeights: ArrayBuffer;
+}
+
+// Opaque native handles. Deliberately not branded: `zen-world` never looks
+// inside one, and a brand here would refuse the binding's own branded handles
+// for no gain — the whole point of injecting the binding is that this module
+// does not know what a handle is.
+export type WorldHandle = object;
+export type VfsHandle = object;
+
+/** The slice of `zenkit-node` a scene build needs. */
+export interface SceneBinding {
+  extractWorldMesh(handle: WorldHandle): {
+    bbox: number[];
+    vertexCount: number;
+    triangleCount: number;
+    chunks: MeshChunk[];
+  };
+  extractVisual(vfs: VfsHandle, name: string, skeleton?: string, fatness?: number, animation?: string, phase?: number): { source: string; chunks: MeshChunk[] } | null;
+}
+
+export interface WorldMeshScene {
+  groups: DrawGroup[];
+  /** ZenGin space, computed by the binding from the vertices it emitted. */
+  bbox: number[];
+  stats: { materials: number; drawGroups: number; triangles: number };
+}
+
+export function buildWorldMesh(binding: SceneBinding, handle: WorldHandle): WorldMeshScene {
+  const mesh = binding.extractWorldMesh(handle);
+  const groups = mergeChunks(mesh.chunks);
+  return {
+    groups,
+    bbox: mesh.bbox,
+    stats: {
+      materials: mesh.chunks.length,
+      drawGroups: groups.length,
+      triangles: mesh.triangleCount,
+    },
+  };
+}
+
+/** One visual the VFS could not answer for: its name, the type it was used as,
+ *  and how many VOBs wanted it. */
+export interface UnresolvedVisual {
+  name: string;
+  type: string;
+  count: number;
+}
+
+export interface InstancedVisual {
+  name: string;
+  source: string;
+  /** Instances of this visual. */
+  count: number;
+  /** Row-major 3x4 per instance, ZenGin space: the rotation rows with the
+   *  position as the fourth column. Converted once, at the scene root. */
+  matrices: ArrayBuffer;
+  /** The VOB index behind each instance — a pick returns
+   *  (InstancedMesh, instanceId) and nothing else identifies the object. */
+  vobIds: ArrayBuffer;
+  groups: DrawGroup[];
+  /**
+   * The visual's own bounds in the visual's own space,
+   * `[minX, minY, minZ, maxX, maxY, maxZ]`.
+   *
+   * Six numbers, computed here because the merged buffers are already in hand
+   * and because a rotation needs them: a VOB's stored bbox is the tight world
+   * AABB of its visual placed by its transform (measured — `zenkit-node`'s
+   * `check-vob-bbox.js`), so refitting it on a rotation needs exactly this and
+   * nothing else. Sending it beats re-deriving it from the geometry in the
+   * renderer, which would have to walk 2.7 M vertices to answer it.
+   */
+  bounds: ZenBounds;
+}
+
+export interface InstancedScene {
+  visuals: InstancedVisual[];
+  stats: {
+    visualsSeen: number;
+    visualsResolved: number;
+    vobsPlaced: number;
+    instancedDrawGroups: number;
+    levelCompos: number;
+    /**
+     * Counted per **VOB**, not per visual name — 1,405 decal VOBs on retail
+     * NewWorld, not 23 decal visuals. The per-name figure is
+     * `visualsSeen - visualsResolved` (49 there: 23 DECAL + 26 PARTICLE_EFFECT,
+     * which is the table in level-editor.md §3).
+     */
+    unresolvedByType: Record<string, number>;
+    /**
+     * The unresolved visuals themselves: one entry per distinct name, the type
+     * it was used as, and how many VOBs wanted it — ordered by that count,
+     * descending, then by name.
+     *
+     * The counts above say a world is missing *something*; a custom-asset map
+     * that will not draw needs the names, and they are the whole diagnosis
+     * (#273). Distinct names, not VOBs: a fence wanted 400 times is one thing
+     * to go and find.
+     */
+    unresolved: UnresolvedVisual[];
+  };
+}
+
+/** One decal texture and every VOB drawing it. */
+export interface DecalGroup {
+  /** The texture as the VOB names it — a `.TGA`, which the asset compiler
+   *  turned into a `-C.TEX`; `decodeTexture` already maps between them. */
+  texture: string;
+  count: number;
+  /** Float32 x3 per decal — ZenGin space, unconverted like everything here. */
+  positions: ArrayBuffer;
+  /** Float32 x2 per decal — the size the quad is **drawn** at, which is twice
+   *  `decalDimension`. */
+  sizes: ArrayBuffer;
+  /** Uint32 x1 per decal — which VOB each quad is, for the pick and the gizmo. */
+  vobIds: ArrayBuffer;
+  /** Float32 x1 per decal — `decalAlphaWeight` as the **0-1 multiplier** a
+   *  shader wants, the archive's byte over 255. */
+  alphaWeights: ArrayBuffer;
+}
+
+export interface DecalScene {
+  groups: DecalGroup[];
+  stats: { decals: number; textures: number };
+}
+
+/**
+ * The decals, as the quads they are (level-editor.md §16.40, #249).
+ *
+ * `extractVisual` cannot turn a `.TGA` into geometry, so every one of the 1,932
+ * decals across the three retail worlds lands in `unresolvedByType` and
+ * `buildInstancedVisuals` places none of them. They are not missing geometry:
+ * a `zCDecal` **is** a flat texture of a stated size, and the size is per-VOB —
+ * one `zCDecal` object per VOB, not per name — which is why the index carries a
+ * side table for it and nothing else does.
+ *
+ * **`decalDimension` is a half extent.** OpenGothic, which reimplements the
+ * ZenGin renderer, builds the sprite at `2 * decal->dimension` and spans it
+ * -0.5..0.5 of that, so the drawn quad is twice the stored value across. The
+ * doubling is done here, once, so nothing downstream has to remember it.
+ *
+ * **`decalAlphaWeight` is a plain multiply on the texture's alpha.** OpenGothic
+ * does `tex.a *= alphaWeight` with `alphaWeight = alpha_weight / 255`, so it is
+ * per-VOB data against a material that is per texture — which is exactly what a
+ * per-instance attribute is for, and why it rides the group rather than
+ * splitting one. The divide is done here for the same reason the doubling is.
+ *
+ * Grouped by texture, because one quad per decal would be 1,932 draw calls
+ * against a budget under 1,500 — the same reason VOBs sharing a visual are
+ * instanced. Nothing here decides how a quad is *oriented*: in the engine a
+ * decal faces the camera, which is a renderer's business and not a payload's.
+ */
+export function buildDecalBillboards(index: VobIndex): DecalScene {
+  const decalVobs = new Uint32Array(index.decalVobs);
+  const dimensions = new Float32Array(index.decalDimensions);
+  const alphaWeights = new Uint8Array(index.decalAlphaWeights);
+  const positions = new Float32Array(index.positions);
+  const visualIndex = new Uint32Array(index.visualIndex);
+
+  const byTexture = new Map<string, {
+    positions: number[]; sizes: number[]; vobIds: number[]; alphaWeights: number[];
+  }>();
+  let decals = 0;
+
+  for (let row = 0; row < decalVobs.length; row++) {
+    const width = dimensions[row * 2] * 2;
+    const height = dimensions[row * 2 + 1] * 2;
+    // A quad with no area draws nothing; the VOB is still reachable as a marker.
+    if (!(width > 0) || !(height > 0)) continue;
+
+    const vob = decalVobs[row];
+    const texture = index.visuals[visualIndex[vob]];
+    if (texture === '') continue;
+
+    let group = byTexture.get(texture);
+    if (group === undefined) {
+      group = { positions: [], sizes: [], vobIds: [], alphaWeights: [] };
+      byTexture.set(texture, group);
+    }
+    const p = vob * 3;
+    group.positions.push(positions[p], positions[p + 1], positions[p + 2]);
+    group.sizes.push(width, height);
+    group.vobIds.push(vob);
+    group.alphaWeights.push(alphaWeights[row] / 255);
+    decals++;
+  }
+
+  const groups: DecalGroup[] = [];
+  for (const [texture, group] of byTexture) {
+    groups.push({
+      texture,
+      count: group.vobIds.length,
+      positions: new Float32Array(group.positions).buffer,
+      sizes: new Float32Array(group.sizes).buffer,
+      vobIds: new Uint32Array(group.vobIds).buffer,
+      alphaWeights: new Float32Array(group.alphaWeights).buffer,
+    });
+  }
+
+  return { groups, stats: { decals, textures: groups.length } };
+}
+
+/**
+ * The bounds of a visual's merged draw groups, in the visual's own space.
+ *
+ * Over the merged buffers rather than the raw chunks, because that is where an
+ * attachment's node transform has already been applied — bounds taken before
+ * the merge would place a chest's lid at the chest's origin, which is the defect
+ * `mergeChunks` exists to have fixed.
+ */
+function groupBounds(groups: readonly DrawGroup[]): ZenBounds {
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+
+  for (const group of groups) {
+    const positions = new Float32Array(group.positions);
+    for (let at = 0; at < positions.length; at += 3) {
+      for (let axis = 0; axis < 3; axis++) {
+        const value = positions[at + axis];
+        if (value < min[axis]) min[axis] = value;
+        if (value > max[axis]) max[axis] = value;
+      }
+    }
+  }
+
+  // A group with no vertices leaves the sweep at its sentinels, and Infinity in
+  // a bbox is a box the engine cannot cull by.
+  if (!Number.isFinite(min[0])) return [0, 0, 0, 0, 0, 0];
+  return [min[0], min[1], min[2], max[0], max[1], max[2]];
+}
+
+/**
+ * The bounds of one visual by name — for a visual a VOB is being **given**.
+ *
+ * Every other op refits a box from bounds the renderer already has: they cross
+ * with the geometry, six numbers beside buffers that were going anyway. A visual
+ * the world does not currently use has no instance and no payload, so this is
+ * the one bounds that has to be asked for.
+ *
+ * It goes through `mergeChunks` and `groupBounds` rather than summing the raw
+ * chunks, because that is the path `buildInstancedVisuals` takes — so a swapped
+ * visual's box is the box the scene would have given it, by construction rather
+ * than by two implementations agreeing. Taking the bounds before the merge would
+ * also place an attachment at its model's origin, which is the defect
+ * `mergeChunks` exists to have fixed.
+ *
+ * Null for a name that does not resolve (a decal's texture, a `.pfx`) and for
+ * one that resolves to no geometry — the op then leaves the stale box alone,
+ * which is the same answer a rotation gives for the same reason.
+ */
+export function visualBounds(
+  binding: SceneBinding, vfs: VfsHandle, name: string,
+): ZenBounds | null {
+  return buildVisual(binding, vfs, name)?.bounds ?? null;
+}
+
+/**
+ * One visual on its own, unplaced — what the asset preview draws
+ * (level-editor.md §16.26 row 1).
+ */
+export interface VisualScene {
+  /** The name asked for, as the caller spelled it. */
+  name: string;
+  /** The VFS entry the name resolved to — `NW_CRATE.3DS` → `NW_CRATE.MRM`. */
+  source: string;
+  groups: DrawGroup[];
+  /** The visual's own space, `[minX, minY, minZ, maxX, maxY, maxZ]`. */
+  bounds: ZenBounds;
+  triangleCount: number;
+}
+
+/**
+ * The draw groups of one visual by name, merged exactly as `buildInstancedVisuals`
+ * merges them — so a preview shows the geometry the world would place, with an
+ * attachment's node transform applied, by construction rather than by two
+ * implementations agreeing. Null for a name that does not resolve and for one
+ * that resolves to no geometry, which are both normal facts about a VFS.
+ */
+export function buildVisual(
+  binding: SceneBinding, vfs: VfsHandle, name: string,
+): VisualScene | null {
+  const visual = binding.extractVisual(vfs, name);
+  if (visual === null) return null;
+  const groups = mergeChunks(visual.chunks);
+  if (groups.length === 0) return null;
+  let triangleCount = 0;
+  for (const group of groups) triangleCount += group.triangleCount;
+  return { name, source: visual.source, groups, bounds: groupBounds(groups), triangleCount };
+}
+
+/** What `buildNpcBody` needs of the binding: a visual whose model skin can be
+ *  posed with a skeleton, and hierarchy nodes with accumulated transforms. */
+export interface NpcBinding extends Pick<SceneBinding, 'extractVisual'> {
+  extractHierarchy(vfs: VfsHandle, name: string, animation?: string, phase?: number): { nodes: Array<{ name: string; transform: number[] }> } | null;
+}
+
+/** The engine's half of `Mdl_SetVisual` + `Mdl_SetVisualBody` + `Mdl_SetModelScale`. */
+export interface NpcBodyRequest {
+  /** The default skeleton — `HUMANS.MDS` for a human. Armor can own its rig. */
+  model: string;
+  /** The body mesh as scripts name it (`hum_body_Naked0`), or an armour's
+   *  `visual_change` (`Armor_Vlk_H.asc`). */
+  body: string;
+  bodyTexture: number;
+  skinColor: number;
+  head: string;
+  headTexture: number;
+  teethTexture: number;
+  /** Procedural torso breadth, in Daedalus script units. */
+  fatness?: number;
+  /** Normalized sample position in the S_IDLE clip, when set. */
+  animationPhase?: number;
+  /** Width, height, depth. */
+  scale: readonly [number, number, number];
+}
+
+export interface NpcBodyScene extends VisualScene {
+  /** What could not be drawn and why — the body is drawn without it. */
+  missing: string[];
+}
+
+const HEAD_NODE = 'BIP01 HEAD';
+
+/**
+ * A texture as a body or head variant: ZenGin replaces the `_V0` (variation)
+ * and `_C0` (colour) channels of the mesh's base texture name.
+ */
+export function variantTextureName(name: string, variation: number, color: number): string {
+  return name.replace(/_V\d+/i, `_V${variation}`).replace(/_C\d+/i, `_C${color}`);
+}
+
+function multiply(a: readonly number[], b: readonly number[]): number[] {
+  const out = new Array<number>(16).fill(0);
+  for (let row = 0; row < 4; row++) {
+    for (let col = 0; col < 4; col++) {
+      for (let k = 0; k < 4; k++) out[row * 4 + col] += a[row * 4 + k] * b[k * 4 + col];
+    }
+  }
+  return out;
+}
+
+/**
+ * An NPC as the engine assembles it (npc-editor.md §4): the body model, the head
+ * morph mesh hung on `BIP01 HEAD` of the body's hierarchy, both in the texture
+ * variants `Mdl_SetVisualBody` picks and scaled by `Mdl_SetModelScale`.
+ *
+ * Null when the body does not resolve. A head that cannot be placed is left
+ * off and named in `missing`, because a body alone still shows the armour and
+ * build — a guessed head position would show something the engine never does.
+ */
+export function buildNpcBody(binding: NpcBinding, vfs: VfsHandle, request: NpcBodyRequest): NpcBodyScene | null {
+  const [sx, sy, sz] = request.scale;
+  const scale = [sx, 0, 0, 0, 0, sy, 0, 0, 0, 0, sz, 0, 0, 0, 0, 1];
+  const withExtension = (name: string, extension: string) => (/\.[^.\\/]+$/.test(name) ? name : name + extension);
+
+  const animation = request.animationPhase === undefined ? undefined : 'S_IDLE';
+  const body = binding.extractVisual(
+    vfs, withExtension(request.body, '.ASC'), request.model, request.fatness ?? 0, animation, request.animationPhase,
+  );
+  if (body === null || body.chunks.length === 0) return null;
+  const chunks: MeshChunk[] = body.chunks.map((chunk) => ({
+    ...chunk,
+    // An armor visual_change contains both the naked skin mesh and armor
+    // geometry. Mdl_SetVisualBody's body texture/color select only that skin;
+    // the armor materials already name their own variation, and changing it
+    // can point at a texture that does not exist (for example GRDL2_ARMOR_V1).
+    texture: /HUM_BODY_(?:NAKED|BABE)_/i.test(chunk.texture)
+      ? variantTextureName(chunk.texture, request.bodyTexture, request.skinColor)
+      : chunk.texture,
+    transform: chunk.transform ? multiply(scale, chunk.transform) : scale,
+  }));
+
+  const missing: string[] = [];
+  const bodyHierarchy = binding.extractHierarchy(vfs, request.body, animation, request.animationPhase);
+  const headHierarchy = bodyHierarchy ?? binding.extractHierarchy(vfs, request.model, animation, request.animationPhase);
+  const node = headHierarchy?.nodes
+    .find((candidate) => candidate.name.toUpperCase() === HEAD_NODE);
+  if (node === undefined) {
+    missing.push(`${bodyHierarchy ? request.body : request.model} has no ${HEAD_NODE} node to hang the head on`);
+  } else {
+    const head = binding.extractVisual(vfs, withExtension(request.head, '.MMS'));
+    if (head === null) {
+      missing.push(`Head mesh ${request.head} did not resolve`);
+    } else {
+      const placed = multiply(scale, node.transform);
+      for (const chunk of head.chunks) {
+        // Head skin, mouth and teeth are separate materials. Only the facial
+        // skin uses the face variation; the mouth texture stays at its shared
+        // V0 and teeth use their own setting.
+        const texture = /TEETH/i.test(chunk.texture)
+          ? variantTextureName(chunk.texture, request.teethTexture, request.skinColor)
+          : /HUM_HEAD_/i.test(chunk.texture)
+            ? variantTextureName(chunk.texture, request.headTexture, request.skinColor)
+            : chunk.texture;
+        chunks.push({
+          ...chunk,
+          texture,
+          transform: placed,
+        });
+      }
+    }
+  }
+
+  const groups = mergeChunks(chunks);
+  let triangleCount = 0;
+  for (const group of groups) triangleCount += group.triangleCount;
+  return {
+    name: request.body, source: body.source, groups, bounds: groupBounds(groups), triangleCount, missing,
+  };
+}
+
+/**
+ * Visuals already merged, by name: null for a name that does not resolve, no
+ * groups for one that resolves to no geometry. Only valid for the VFS it was
+ * filled from — whoever holds one drops it when that is replaced.
+ */
+export type VisualCache = Map<string, { source: string; groups: DrawGroup[]; bounds: ZenBounds } | null>;
+
+export interface InstancedVisualsOptions {
+  /**
+   * Kept across builds, so the build after an edit re-reads placements and
+   * nothing else. What is handed out from it is a copy, because the caller
+   * transfers it.
+   */
+  cache?: VisualCache;
+  /**
+   * Visuals the caller already draws. Each still comes back with its count,
+   * placements and bounds, but with `groups: []` — its geometry is the
+   * caller's. The stats are the world's either way.
+   */
+  have?: ReadonlySet<string>;
+}
+
+/** A group whose buffers are its own, for a cache that must outlive a transfer. */
+function copyGroup(group: DrawGroup): DrawGroup {
+  return {
+    ...group,
+    positions: group.positions.slice(0),
+    normals: group.normals.slice(0),
+    uvs: group.uvs.slice(0),
+    indices: group.indices.slice(0),
+    lights: group.lights === null ? null : group.lights.slice(0),
+  };
+}
+
+export function buildInstancedVisuals(
+  binding: SceneBinding,
+  vfs: VfsHandle,
+  index: VobIndex,
+  options: InstancedVisualsOptions = {},
+): InstancedScene {
+  const positions = new Float32Array(index.positions);
+  const rotations = new Float32Array(index.rotations);
+  const classIndex = new Uint32Array(index.classIndex);
+  const visualIndex = new Uint32Array(index.visualIndex);
+  const visualTypeIndex = new Uint32Array(index.visualTypeIndex);
+
+  // Resolved once per unique name, not once per VOB — and with a cache, once
+  // per world.
+  const cache: VisualCache = options.cache ?? new Map();
+  const resolved = new Map<string, { source: string; groups: DrawGroup[]; bounds: ZenBounds } | null>();
+  const placements = new Map<string, { matrices: number[]; vobIds: number[] }>();
+  const unresolvedByType: Record<string, number> = {};
+  const unresolved = new Map<string, UnresolvedVisual>();
+  const levelCompos = new Set<string>();
+
+  for (let vob = 0; vob < index.count; vob++) {
+    const name = index.visuals[visualIndex[vob]];
+    if (name === '') continue;
+
+    if (index.classes[classIndex[vob]] === 'zCVobLevelCompo') {
+      levelCompos.add(name);
+      continue;
+    }
+
+    if (!resolved.has(name)) {
+      if (!cache.has(name)) {
+        const extracted = binding.extractVisual(vfs, name);
+        const groups = extracted === null ? [] : mergeChunks(extracted.chunks);
+        cache.set(name, extracted === null ? null : { source: extracted.source, groups, bounds: groupBounds(groups) });
+      }
+      resolved.set(name, cache.get(name)!);
+    }
+    const visual = resolved.get(name)!;
+    if (visual === null) {
+      const type = index.visualTypes[visualTypeIndex[vob]];
+      unresolvedByType[type] = (unresolvedByType[type] ?? 0) + 1;
+      // Keyed by name: the type is the first VOB's, because a name used under
+      // two visual types is not a thing any world in the corpus does and a
+      // second entry for one would read as a second missing asset.
+      const seen = unresolved.get(name);
+      if (seen === undefined) unresolved.set(name, { name, type, count: 1 });
+      else seen.count += 1;
+      continue;
+    }
+
+    let placement = placements.get(name);
+    if (placement === undefined) {
+      placement = { matrices: [], vobIds: [] };
+      placements.set(name, placement);
+    }
+
+    const r = vob * 9;
+    const p = vob * 3;
+    placement.matrices.push(
+      rotations[r], rotations[r + 1], rotations[r + 2], positions[p],
+      rotations[r + 3], rotations[r + 4], rotations[r + 5], positions[p + 1],
+      rotations[r + 6], rotations[r + 7], rotations[r + 8], positions[p + 2],
+    );
+    placement.vobIds.push(vob);
+  }
+
+  const visuals: InstancedVisual[] = [];
+  let vobsPlaced = 0;
+  let instancedDrawGroups = 0;
+
+  for (const [name, placement] of placements) {
+    const visual = resolved.get(name)!;
+    const groups = visual.groups;
+    // A name that resolves to no geometry places nothing: an InstancedMesh with
+    // no groups is a draw call that draws nothing.
+    if (groups.length === 0) continue;
+
+    visuals.push({
+      name,
+      source: visual.source,
+      count: placement.vobIds.length,
+      matrices: new Float32Array(placement.matrices).buffer,
+      vobIds: new Uint32Array(placement.vobIds).buffer,
+      groups: options.have?.has(name) ? [] : options.cache ? groups.map(copyGroup) : groups,
+      bounds: visual.bounds,
+    });
+    vobsPlaced += placement.vobIds.length;
+    instancedDrawGroups += groups.length;
+  }
+
+  return {
+    visuals,
+    stats: {
+      visualsSeen: resolved.size,
+      visualsResolved: visuals.length,
+      vobsPlaced,
+      instancedDrawGroups,
+      levelCompos: levelCompos.size,
+      unresolvedByType,
+      unresolved: [...unresolved.values()].sort(
+        (a, b) => b.count - a.count || a.name.localeCompare(b.name),
+      ),
+    },
+  };
+}

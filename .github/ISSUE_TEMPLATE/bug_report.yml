@@ -1,0 +1,30 @@
+name: Bug report
+description: Something in Dandelion or the parser does not work as it should.
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The app version (shown in the update dialog), or the commit if you built it yourself.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: What you did
+      description: Steps to reproduce, as exactly as you can.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: sample
+    attributes:
+      label: Minimal sample
+      description: For a parse or save problem, the smallest `.d` snippet that shows it. Do not attach game files you may not share.
+      render: c

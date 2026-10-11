@@ -1,0 +1,68 @@
+BspTree: bound a leaf node's polygon range before it indexes the polygon list.
+
+`BspTree::load` collects each leaf's polygons straight out of the index list:
+
+	for (auto idx : this->leaf_node_indices) {
+		auto& node = this->nodes[idx];
+
+		for (uint32_t i = 0; i < node.polygon_count; ++i) {
+			this->leaf_polygons.push_back(this->polygon_indices[node.polygon_index + i]);
+		}
+	}
+
+`polygon_index` and `polygon_count` are two `uint32`s read off the node in the
+TREE chunk (`0xC040`), while `polygon_indices` is sized and filled by a
+*different* chunk (POLYGONS, `0xC010`). Nothing in the format ties the two
+together, and nothing here checks them against each other, so a node whose
+range runs past the end of the list is an unchecked `std::vector::operator[]`
+read past the allocation — and the list is empty entirely if the POLYGONS
+chunk never parsed, which a single corrupted chunk id is enough to arrange.
+
+Found by fuzzing `test/fixtures/minimal.g2.zen`: 40 seeds of 20 random byte
+writes confined to the archive's entry stream produced four `0xC0000005`s and
+one hang, and seed 2 delta-debugged down to **one byte** — file offset 1230,
+the high byte of the `0xC010` chunk's id. Flipping it hides the polygon list
+from the chunk dispatcher while the tree still names two polygons in it. The
+committed regression test seeds the same defect from the other end and by
+structure, writing an out-of-range `polygonIndex` into the one leaf node, so it
+does not depend on the fixture's chunk order.
+
+The fix is the same narrow shape as `0027` and `0029`: check the count the file
+supplies against what it is actually allowed to address, and throw a named
+`ParserError` instead of trusting it. `polygon_count` is widened to 64 bits for
+the comparison so the sum cannot wrap. This is one more instance of the
+unvalidated-count class in `docs/plans/level-editor.md` §16.11, not the
+class-level fix — `_parse_bsp_nodes` still recurses once per file-supplied flag
+bit with no depth bound, `BspTree::load`'s OUTDOORS branch resizes from
+unchecked counts, and the general fix (making `ReadMemory::seek` clamp or
+throw) is still deferred.
+
+Upstreamable as-is: a plain bounds-check bug, no API change, one guard.
+
+diff --git a/src/world/BspTree.cc b/src/world/BspTree.cc
+--- a/src/world/BspTree.cc
++++ b/src/world/BspTree.cc
+@@ -1,6 +1,7 @@
+ // Copyright © 2021-2024 GothicKit Contributors.
+ // SPDX-License-Identifier: MIT
+ #include "zenkit/world/BspTree.hh"
++#include "zenkit/Error.hh"
+ #include "zenkit/Stream.hh"
+ 
+ #include "../Internal.hh"
+@@ -99,6 +100,15 @@
+ 				for (auto idx : this->leaf_node_indices) {
+ 					auto& node = this->nodes[idx];
+ 
++					// `polygon_index` and `polygon_count` are read from the node, while
++					// `polygon_indices` is sized by a different chunk (POLYGONS) -- nothing in
++					// the format ties the two together, so an out-of-range node here is an
++					// unchecked `operator[]` read past the end of the vector.
++					if (node.polygon_index + static_cast<std::uint64_t>(node.polygon_count) >
++					    this->polygon_indices.size()) {
++						throw ParserError {"BspTree", "leaf node polygon index range exceeds the polygon list"};
++					}
++
+ 					for (uint32_t i = 0; i < node.polygon_count; ++i) {
+ 						this->leaf_polygons.push_back(this->polygon_indices[node.polygon_index + i]);
+ 					}

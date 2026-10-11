@@ -1,0 +1,946 @@
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Box, Breadcrumbs, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
+  IconButton, Link, Tab, Tabs, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
+} from '@mui/material';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import FolderIcon from '@mui/icons-material/Folder';
+import FilterListIcon from '@mui/icons-material/FilterList';
+import GridViewIcon from '@mui/icons-material/GridView';
+import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
+import LabelOutlinedIcon from '@mui/icons-material/LabelOutlined';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import ViewListIcon from '@mui/icons-material/ViewList';
+import { FixedSizeList as List, type ListChildComponentProps, areEqual } from 'react-window';
+import AutoSizer from 'react-virtualized-auto-sizer';
+import {
+  ASSET_FORMATS, assetFormat, assetRole, compileState, isFavorite, isSourceAsset, searchStem, sourceNameOf,
+  type AssetFormat,
+} from 'zen-world';
+import type { AssetCatalog, VfsEntry, VfsSearch } from '../../../shared/worldTypes';
+import type { AssetThumbnails } from '../../world/assetThumbnails';
+import WorldAssetGrid, {
+  FavoriteStar, FileIntoMenu, RoleFacet, UncompiledTag, markClick, usePlaceGestures, type AssetRoleFilter, type AssetPlacement, type TileCatalogActions, type TileOrigin,
+} from './WorldAssetGrid';
+import WorldAssetCatalogView from './WorldAssetCatalogView';
+import { isPlaceableVisual } from './WorldAssetPreview';
+
+// The asset browser over the mounted VFS (level-editor.md §6).
+//
+// What it browses is not a filesystem. `openVfs` mounts the retail VDFs and any
+// mod sources into ONE namespace, later sources winning — the load order ZenGin
+// itself uses — so a path here is a position in that namespace and nothing here
+// ever touches disk.
+//
+// Three rules, all of them from the measured behaviour of `vfsList`:
+//
+//   - **one level at a time.** A Gothic install is tens of thousands of
+//     entries; a recursive walk would hand this component the whole tree to
+//     show one directory. The search box is the deliberate exception and is
+//     not a listing: `vfsFind` walks the namespace for a needle and answers a
+//     capped set of hits, each carrying the directory it was found in (#241).
+//   - **null means "nothing here to list".** `vfsList` answers null for a path
+//     that is not there and for a file alike, and neither is an error.
+//   - **a listing's names are the compiled ones.** A VOB names its source
+//     asset (`.3DS`, `.ASC`, `.TGA`); the VFS holds what the asset compiler
+//     produced (`.MRM`, `.MDL`, `-C.TEX`). A directory shows the latter,
+//     because that is what is actually there. The search does not (#361): it
+//     answers the name a modder typed and a VOB carries, so a compiled mesh or
+//     texture hit is named by its source — see `sourceHits`.
+
+const ROW_HEIGHT = 26;
+
+/** How long the search box waits before walking the namespace. Every keystroke
+ *  would otherwise start a walk, and only the last one was ever wanted. */
+const SEARCH_DEBOUNCE_MS = 150;
+
+/** One array, so a browser with no mount list does not re-derive its labels on
+ *  every render against a fresh `[]`. */
+const NO_SOURCES: readonly string[] = [];
+
+/**
+ * How a mount is named in the facet and on a row. The tail of the path, except
+ * for a loose tree, whose own name is `_compiled` under Meshes, Textures and
+ * Anims alike — there the directory above it is what tells the three apart.
+ */
+function assetSourceLabel(source: string): string {
+  const parts = source.replace(/\\/g, '/').split('/').filter((part) => part !== '');
+  const name = parts[parts.length - 1] ?? source;
+  if (name !== '_compiled' || parts.length < 2) return name;
+  return `${parts[parts.length - 2]}/${name}`;
+}
+
+/**
+ * What a row says about where its entry came from: the mount serving it, and —
+ * once the listing is narrowed to one mount — whether a later one overrides it.
+ * Null when nothing is known, which is a listing from before the facet existed
+ * and every surface with no mount list.
+ */
+function origin(entry: VfsEntry, labels: readonly string[], only: number | null): TileOrigin | undefined {
+  const held = entry.sources;
+  if (held === undefined || held.length === 0 || labels.length === 0) return undefined;
+  const winner = held[held.length - 1];
+  const label = labels[winner] ?? String(winner);
+  const title = held.length === 1
+    ? label
+    : `${held.map((at) => labels[at] ?? String(at)).join(' → ')} (the last wins)`;
+  // Only a listing narrowed to one mount can show an overridden entry at all:
+  // merged, the copy on screen *is* the winner.
+  return { label, overridden: only !== null && only !== winner, title };
+}
+
+/**
+ * Where an entry lives in the mounted namespace — what a click on it opens, and
+ * what a preview of it is keyed by.
+ *
+ * A search hit carries its own directory, and that is the whole reason it was
+ * worth finding; a listing's entry carries none and is in the directory being
+ * shown.
+ */
+function pathOf(entry: VfsEntry, showing: string): string {
+  const where = entry.directory ?? showing;
+  return where === '/' ? entry.name : `${where}/${entry.name}`;
+}
+
+/**
+ * A search's hits as the modder names them (#361): a compiled mesh, morph mesh
+ * or texture under its source name, which previews and places exactly as the
+ * compiled one does because the binding resolves it back. Two compiled forms of
+ * one source (`.MRM` and `.MSH`) are one hit, and a hit whose source name no
+ * longer holds the needle goes — the walk was for `searchStem(needle)`, and a
+ * row that does not show what was typed reads as a wrong answer.
+ */
+function sourceHits(matches: readonly VfsEntry[], needle: string): VfsEntry[] {
+  const lower = needle.toLowerCase();
+  const seen = new Set<string>();
+  const hits: VfsEntry[] = [];
+  for (const match of matches) {
+    const name = match.type === 'file' ? sourceNameOf(match.name) ?? match.name : match.name;
+    const key = `${match.type}:${name.toUpperCase()}`;
+    if (!name.toLowerCase().includes(lower) || seen.has(key)) continue;
+    seen.add(key);
+    hits.push(name === match.name ? match : { ...match, name });
+  }
+  return hits;
+}
+
+interface RowData {
+  entries: VfsEntry[];
+  onOpen: (entry: VfsEntry) => void;
+  /** Where the browser is standing. A row whose own directory differs is a
+   *  search hit from elsewhere and says where it lives. */
+  path: string;
+  sourceLabels: readonly string[];
+  only: number | null;
+  /** The same actions the tiles get, or undefined with no project sidecar
+   *  loaded — then a row carries no star, as a tile carries none. */
+  actions?: TileCatalogActions;
+  placement?: AssetPlacement;
+  /** The full path the panel beside this is showing, or null. Nothing on a row
+   *  used to say which of them that was (§5.4 item 17 of the 2026-09-04
+   *  review), so a preview and the list could disagree with no sign of it. */
+  previewing?: string | null;
+  /** The source files on screen with no compiled half (#294), by name. */
+  uncompiled: ReadonlySet<string>;
+  /** Marked for "file many" (#295), by name, and the modified click that
+   *  marks one — absent with no catalogue to file into. */
+  marked: ReadonlySet<string>;
+  onMark?: (entry: VfsEntry, range: boolean) => void;
+}
+
+const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
+  const entry = data.entries[index];
+  const isDirectory = entry.type === 'directory';
+  const from = origin(entry, data.sourceLabels, data.only);
+  const overridden = from?.overridden === true;
+  // The star on the row (§16.37 row 2). It used to live on a grid tile only,
+  // and this is the view the panel opens in — so the Favorites tab was
+  // reachable, always empty, and unfillable from anything on screen.
+  const actions = isDirectory ? undefined : data.actions;
+  // A row places what a tile places (§16.37 row 4): list is the view the panel
+  // opens in, so leaving it out would put the verb behind a view switch.
+  const place = usePlaceGestures(isDirectory ? '' : entry.name, data.placement);
+  // The same path `onOpen` would hand up, so the two cannot drift apart.
+  const showing = data.previewing !== null && data.previewing !== undefined
+    && data.previewing === pathOf(entry, data.path);
+  const marked = data.marked.has(entry.name);
+
+  return (
+    <Box
+      role="listitem"
+      data-testid={`world-asset-${entry.name}`}
+      {...(overridden ? { 'data-overridden': 'true' } : {})}
+      // Where the entry is served from lives here, not in a column: the
+      // filename is what a row is for, and the label took up to 45% of it
+      // (#360). A tile keeps its badge.
+      {...(from !== undefined ? { title: overridden ? `${from.title} — overridden here` : from.title } : {})}
+      {...(showing ? { 'aria-current': 'true' } : {})}
+      {...(marked ? { 'aria-selected': 'true' } : {})}
+      // A row was a `div` with an `onClick` and nothing else: not reachable by
+      // keyboard, let alone activatable (§5.4 item 17). Enter opens it; Space
+      // places a mesh (#366) and opens anything else.
+      tabIndex={0}
+      onKeyDown={(event) => place.onKeyDown(event, () => data.onOpen(entry))}
+      onClick={(event) => {
+        place.onClick(event);
+        if (markClick(event) && !isDirectory && data.onMark !== undefined) {
+          data.onMark(entry, event.shiftKey);
+          return;
+        }
+        data.onOpen(entry);
+      }}
+      onDoubleClick={place.onDoubleClick}
+      onContextMenu={place.onContextMenu}
+      style={style}
+      sx={{
+        display: 'flex', alignItems: 'center', gap: 0.75, px: 1, cursor: 'pointer',
+        whiteSpace: 'nowrap', '&:hover': { bgcolor: 'action.hover' },
+        ...(showing || marked ? { bgcolor: 'action.selected' } : {}),
+        // Dim rather than hidden: a control nobody can see is the bug this
+        // row is fixing. A starred row keeps its star at full strength.
+        '& .row-star': { opacity: 0.25 },
+        '&:hover .row-star, &:focus-within .row-star, & .row-star.on': { opacity: 1 },
+        // Shaded, not hidden: the copy in this mount is real, it is just not
+        // the one the engine reads.
+        ...(overridden ? { opacity: 0.45 } : {}),
+      }}
+    >
+      {isDirectory
+        ? <FolderIcon fontSize="small" sx={{ color: 'text.secondary', fontSize: 16 }} />
+        : <InsertDriveFileOutlinedIcon sx={{ color: 'text.disabled', fontSize: 16 }} />}
+      <Typography variant="caption" noWrap sx={{ flex: 1, minWidth: 0 }}>{entry.name}</Typography>
+      {/* A hit from somewhere else: without this the search answers a bare
+          name and the one thing the user was missing — where it is — is still
+          missing. */}
+      {entry.directory !== undefined && entry.directory !== data.path && (
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          noWrap
+          data-testid={`world-asset-where-${entry.name}`}
+          title={entry.directory}
+          sx={{ fontSize: 10, maxWidth: '45%' }}
+        >
+          {entry.directory}
+        </Typography>
+      )}
+      {data.uncompiled.has(entry.name) && !isDirectory && <UncompiledTag name={entry.name} />}
+      {actions !== undefined && (
+        <Box
+          className={`row-star${actions.isFavorite(entry.name) ? ' on' : ''}`}
+          sx={{ display: 'flex' }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <FavoriteStar name={entry.name} actions={actions} />
+        </Box>
+      )}
+      {place.menu}
+    </Box>
+  );
+}, areEqual);
+Row.displayName = 'WorldAssetRow';
+
+export interface WorldAssetBrowserProps {
+  listAssets: (path: string) => Promise<VfsEntry[] | null>;
+  /** The whole-namespace search behind the filter box (#241). Absent — the
+   *  browser harness, which has no mounted VFS — the box narrows the current
+   *  directory, which is all it ever did. */
+  searchAssets?: (query: string) => Promise<VfsSearch>;
+  /** A file was chosen — the full path inside the mounted namespace. */
+  onPreview: (path: string) => void;
+  /** The thumbnail queue (level-editor.md §16.26 row 1). Absent, there is no
+   *  grid view to offer — the browser harness has no world to draw from. */
+  thumbnails?: AssetThumbnails;
+  /** Favorites and categories (§16.26, "Wanted on top"). Absent — no project
+   *  sidecar loaded — the browser is the directory walk alone. */
+  catalog?: AssetCatalogProps;
+  /** The mounts the open world's VFS was built from, in mount order — what an
+   *  entry's `sources` index into (architecture §6). Absent, the browser is the merged
+   *  listing it has always been, with nothing to name a row with. */
+  sources?: readonly string[];
+  /** Placing a mesh straight off its row or tile (§16.37 row 4). Absent — no
+   *  world open — nothing here offers the verb. */
+  placement?: AssetPlacement;
+  /** The full path the preview panel is showing, so the row for it can say so.
+   *  Owned by the surface rather than tracked here: the surface clears it on a
+   *  viewport pick, and a copy kept in the browser would go stale. */
+  previewing?: string | null;
+  /**
+   * What each name resolves to in the mounted namespace (`vfsResolve`), in one
+   * call per listing — how a mod's source file a GMBT build has not compiled
+   * yet is told from one it has (#294). Absent, nothing is tagged.
+   */
+  resolveAssets?: (names: string[]) => Promise<(string | null)[]>;
+  /**
+   * Run `gmbt compile --full` for the project and remount (#296) — offered once
+   * a source on screen is not compiled. Absent, the tag names the GMBT build
+   * and that is all.
+   */
+  compileAssets?: () => Promise<void>;
+}
+
+export interface AssetCatalogProps {
+  /** The merged view: the shipped seed plus the project's own sidecar. */
+  catalog: AssetCatalog;
+  /** Whether `name` under `path` is the project's own entry, and so removable. */
+  removable: (path: string, name: string) => boolean;
+  onToggleFavorite: (name: string) => void;
+  onAddToCategory: (path: string, name: string) => void;
+  onRemoveFromCategory: (path: string, name: string) => void;
+  /** File many visuals at once (#295) — one sidecar write for a directory's or a
+   *  search's worth, rather than one per tile. */
+  onAddManyToCategory: (path: string, names: string[]) => void;
+  /** A category's collision override (#291): true on, false off, undefined
+   *  back to the name rule in `placementCollision`. */
+  onSetCategoryCollision: (path: string, collision: boolean | undefined) => void;
+}
+
+const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
+  listAssets, searchAssets, onPreview, thumbnails, catalog, sources = NO_SOURCES, placement,
+  previewing = null, resolveAssets, compileAssets,
+}) => {
+  const [path, setPath] = useState('/');
+  const [view, setView] = useState<'list' | 'grid'>('list');
+  const [mode, setMode] = useState<'browse' | 'favorites' | 'categories'>('browse');
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const tileActions = useMemo<TileCatalogActions | undefined>(() => (
+    catalog === undefined ? undefined : {
+      isFavorite: (name) => isFavorite(catalog.catalog, name),
+      onToggleFavorite: catalog.onToggleFavorite,
+      categoryPaths: catalog.catalog.categories.map((category) => category.path),
+      onAddToCategory: catalog.onAddToCategory,
+    }
+  ), [catalog]);
+  // Three states, not two. "Nothing here" and "not listed yet" look identical
+  // and are not the same thing: collapsing them makes every directory flash as
+  // empty on the way in, and makes an empty state that can never be trusted.
+  const [state, setState] = useState<
+    { status: 'loading' } | { status: 'ready'; entries: VfsEntry[] } | { status: 'error'; message: string }
+  >({ status: 'loading' });
+
+  useEffect(() => {
+    let current = true;
+    setState({ status: 'loading' });
+    listAssets(path)
+      // Null is "nothing here to list" — `vfsList` answers it for a missing
+      // path and for a file alike, and neither is an error.
+      .then((listed) => { if (current) setState({ status: 'ready', entries: listed ?? [] }); })
+      // A refused listing ("No world is open") is a failure and must not read
+      // as an empty directory.
+      .catch((failure: unknown) => {
+        if (!current) return;
+        setState({
+          status: 'error',
+          message: failure instanceof Error ? failure.message : String(failure),
+        });
+      });
+    return () => { current = false; };
+  }, [listAssets, path]);
+
+  // Directories first: descending is the common action, and a directory buried
+  // among a few hundred files is a hunt.
+  const sorted = useMemo(() => {
+    if (state.status !== 'ready') return [];
+    return [...state.entries].sort((a, b) => {
+      if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
+      return 0;
+    });
+  }, [state]);
+
+  // The filter. With `searchAssets` it is a search of the whole mounted
+  // namespace (#241) — the directory-only filter is what made an asset that
+  // is mounted read as missing, because the one thing you know about it is
+  // its name and the one thing you do not is where it lives. Without
+  // `searchAssets` it stays the narrowing of the current directory it was.
+  // Reset on navigation either way, so a needle typed two directories ago
+  // does not silently hide everything in this one.
+  const [filter, setFilter] = useState('');
+  useEffect(() => { setFilter(''); }, [path]);
+  const [search, setSearch] = useState<
+    | { status: 'idle' }
+    | { status: 'searching' }
+    | { status: 'ready'; matches: VfsEntry[]; truncated: boolean }
+    | { status: 'error'; message: string }
+  >({ status: 'idle' });
+  const needle = filter.trim();
+  const searching = searchAssets !== undefined && needle !== '';
+  useEffect(() => {
+    if (searchAssets === undefined || needle === '') { setSearch({ status: 'idle' }); return undefined; }
+    let current = true;
+    setSearch({ status: 'searching' });
+    // Debounced: every keystroke would otherwise walk the whole namespace,
+    // and the walk the user meant is the one after the last letter.
+    const timer = setTimeout(() => {
+      searchAssets(searchStem(needle))
+        .then((found) => {
+          if (current) setSearch({ status: 'ready', matches: sourceHits(found.matches, needle), truncated: found.truncated });
+        })
+        // A refused search ("No world is open") is a failure and must not read
+        // as "nothing anywhere matches" — the same distinction the listing makes.
+        .catch((failure: unknown) => {
+          if (!current) return;
+          setSearch({
+            status: 'error',
+            message: failure instanceof Error ? failure.message : String(failure),
+          });
+        });
+    }, SEARCH_DEBOUNCE_MS);
+    return () => { current = false; clearTimeout(timer); };
+  }, [searchAssets, needle]);
+  // The source facet (architecture §6). Unlike the text filter it survives a
+  // navigation: it is a lens on the whole install, not a question about the
+  // directory in front of you.
+  const [only, setOnly] = useState<number | null>(null);
+  const sourceLabels = useMemo(() => sources.map(assetSourceLabel), [sources]);
+  // A mount list that shrank under a chosen index — a new world with fewer
+  // sources — would otherwise filter against a mount that is no longer there.
+  useEffect(() => { setOnly((at) => (at !== null && at >= sources.length ? null : at)); }, [sources.length]);
+  // A directory left behind takes its queued draws with it: the tiles that
+  // asked are gone, and the next directory's tiles should not wait behind
+  // them.
+  useEffect(() => { thumbnails?.cancelPending(); }, [thumbnails, path]);
+  // What the listing, the count and the empty states are about: the search's
+  // hits while one is running, this directory's entries otherwise.
+  const base = useMemo<VfsEntry[]>(() => {
+    if (searching) return search.status === 'ready' ? search.matches : [];
+    const lower = needle.toLowerCase();
+    return lower === '' ? sorted : sorted.filter((entry) => entry.name.toLowerCase().includes(lower));
+  }, [searching, search, sorted, needle]);
+  // The VOB / MOB facet (#288). Like the source facet it survives a navigation:
+  // it is a lens on the whole install. Directories stay, so the lens can be
+  // carried into one; a file that is neither — a texture, a script — is not
+  // what either answer asked for.
+  const [role, setRole] = useState<AssetRoleFilter>('all');
+  // The format facet (#289), a lens of the same kind: the kind of asset, so a
+  // `.3DS` and the `.MRM` compiled from it land in one group.
+  const [format, setFormat] = useState<AssetFormat | 'all'>('all');
+  const activeFilters = Number(role !== 'all') + Number(format !== 'all') + Number(only !== null);
+  const filtered = useMemo(() => {
+    // Everything the mount holds, including what a later one shadows — the
+    // shadowed copy is the whole point of asking about one mount.
+    const fromSource = only === null ? base : base.filter((entry) => entry.sources?.includes(only) ?? false);
+    return fromSource.filter((entry) => entry.type === 'directory' || (
+      (role === 'all' || assetRole(entry.name) === role)
+      && (format === 'all' || assetFormat(entry.name) === format)
+    ));
+  }, [base, only, role, format]);
+  // One status for the surface below, because a search and a listing are the
+  // two things it can be showing and each has its own loading and its own
+  // refusal.
+  const ready = searching ? search.status === 'ready' : state.status === 'ready';
+  const failure = searching
+    ? (search.status === 'error' ? search.message : null)
+    : (state.status === 'error' ? state.message : null);
+
+  // The source files on screen that no compiled file answers for (#294). Asked
+  // once per listing or search, for the source files only — a retail listing
+  // holds none and asks nothing. A failed ask tags nothing: this is advice
+  // about a file, and no advice is better than a wrong one.
+  const [uncompiled, setUncompiled] = useState<ReadonlySet<string>>(() => new Set());
+  // Keyed on the names rather than on `base`, so a re-render with the same
+  // listing does not ask again.
+  const sourceKey = useMemo(() => [...new Set(
+    base.filter((entry) => entry.type === 'file' && isSourceAsset(entry.name)).map((entry) => entry.name),
+  )].join('\n'), [base]);
+  const sourceNames = useMemo(() => (sourceKey === '' ? [] : sourceKey.split('\n')), [sourceKey]);
+  useEffect(() => {
+    setUncompiled(new Set());
+    if (resolveAssets === undefined || sourceNames.length === 0) return undefined;
+    let current = true;
+    resolveAssets(sourceNames)
+      .then((resolved) => {
+        if (!current) return;
+        setUncompiled(new Set(sourceNames.filter((name, at) => (
+          compileState(name, resolved[at] ?? null) === 'uncompiled'
+        ))));
+      })
+      .catch(() => undefined);
+    return () => { current = false; };
+  }, [resolveAssets, sourceNames]);
+
+  // Files marked for "file many" (#295), by name, in the order they are shown.
+  // A navigation, a new needle or another source is a different list, and a
+  // mark carried into it would file something the user can no longer see.
+  const [marked, setMarked] = useState<ReadonlySet<string>>(() => new Set());
+  const [anchor, setAnchor] = useState<string | null>(null);
+  useEffect(() => { setMarked(new Set()); setAnchor(null); }, [path, needle, only]);
+  // What "file many" files: the marked meshes, or every mesh shown when none
+  // is marked. Meshes only — a category is a list of visuals to place, and a
+  // texture or a script filed into one would be a tile that places nothing.
+  const fileable = useMemo(
+    () => filtered.filter((entry) => entry.type === 'file' && isPlaceableVisual(entry.name)),
+    [filtered],
+  );
+  const toFile = useMemo(() => {
+    const names = fileable.map((entry) => entry.name);
+    return marked.size === 0 ? [...new Set(names)] : [...new Set(names.filter((name) => marked.has(name)))];
+  }, [fileable, marked]);
+  const onMark = useCallback((entry: VfsEntry, range: boolean) => {
+    const order = filtered.filter((shown) => shown.type === 'file').map((shown) => shown.name);
+    setMarked((current) => {
+      const next = new Set(current);
+      if (range && anchor !== null && order.includes(anchor)) {
+        const [from, to] = [order.indexOf(anchor), order.indexOf(entry.name)].sort((a, b) => a - b);
+        for (const name of order.slice(from, to + 1)) next.add(name);
+        return next;
+      }
+      if (!next.delete(entry.name)) next.add(entry.name);
+      return next;
+    });
+    if (!range) setAnchor(entry.name);
+  }, [filtered, anchor]);
+  const [fileMenu, setFileMenu] = useState<HTMLElement | null>(null);
+  // The compile dialog (#296): closed, open, running, or open with GMBT's
+  // failure in it. A failure keeps the dialog up — it is the only place the
+  // reason is shown, and GMBT's last lines are the reason.
+  const [compile, setCompile] = useState<{ running: boolean; error: string | null } | null>(null);
+  const runCompile = useCallback(async () => {
+    if (compileAssets === undefined) return;
+    setCompile({ running: true, error: null });
+    try {
+      await compileAssets();
+      setCompile(null);
+    } catch (failure) {
+      setCompile({ running: false, error: failure instanceof Error ? failure.message : String(failure) });
+    }
+  }, [compileAssets]);
+
+  const onOpen = useCallback((entry: VfsEntry) => {
+    const child = pathOf(entry, path);
+    if (entry.type === 'directory') setPath(child);
+    else onPreview(child);
+  }, [path, onPreview]);
+
+  const goUp = useCallback(() => {
+    setPath((current) => {
+      const at = current.lastIndexOf('/');
+      return at <= 0 ? '/' : current.slice(0, at);
+    });
+  }, []);
+
+  /** The path as breadcrumb segments — the root first, always, then one
+   *  per path component with the path it navigates to. Keyed and
+   *  identified by that cumulative path rather than the bare name: two
+   *  directories sharing a name at different depths are a real position
+   *  in the VFS namespace and must not collide. */
+  const crumbs = useMemo(() => {
+    const parts = path === '/' ? [] : path.split('/').filter((part) => part !== '');
+    const segments: Array<{ name: string; path: string }> = [{ name: '/', path: '/' }];
+    let at = '';
+    for (const part of parts) {
+      at = at === '' ? part : `${at}/${part}`;
+      segments.push({ name: part, path: at });
+    }
+    return segments;
+  }, [path]);
+
+  const itemData = useMemo<RowData>(
+    () => ({
+      entries: filtered, onOpen, path, sourceLabels, only,
+      actions: tileActions, placement, previewing, uncompiled,
+      marked, onMark: catalog === undefined ? undefined : onMark,
+    }),
+    [filtered, onOpen, path, sourceLabels, only, tileActions, placement, previewing, uncompiled,
+      marked, onMark, catalog],
+  );
+  const originOf = useCallback(
+    (entry: VfsEntry) => origin(entry, sourceLabels, only),
+    [sourceLabels, only],
+  );
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      {catalog !== undefined && thumbnails !== undefined && (
+        <Tabs
+          value={mode}
+          onChange={(_event, next: 'browse' | 'favorites' | 'categories') => setMode(next)}
+          variant="fullWidth"
+          sx={{ minHeight: 32, borderBottom: 1, borderColor: 'divider', '& .MuiTab-root': { minHeight: 32, fontSize: 12 } }}
+        >
+          <Tab value="browse" label="Browse" data-testid="world-asset-mode-browse" />
+          <Tab value="favorites" label="Favorites" data-testid="world-asset-mode-favorites" />
+          <Tab value="categories" label="Categories" data-testid="world-asset-mode-categories" />
+        </Tabs>
+      )}
+      {catalog !== undefined && thumbnails !== undefined && tileActions !== undefined && mode !== 'browse' && (
+        <WorldAssetCatalogView
+          mode={mode}
+          catalog={catalog.catalog}
+          thumbnails={thumbnails}
+          actions={tileActions}
+          removable={catalog.removable}
+          onRemoveFromCategory={catalog.onRemoveFromCategory}
+          onSetCategoryCollision={catalog.onSetCategoryCollision}
+          onPreview={onPreview}
+          placement={placement}
+        />
+      )}
+      {mode === 'browse' && (<>
+      <Box sx={{
+        display: 'flex', flexDirection: 'column', gap: 0.5, px: 0.5, py: 0.25,
+        borderBottom: 1, borderColor: 'divider',
+      }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          <Tooltip title="Up one directory">
+            {/* A span, because a disabled button reports no pointer events and
+                MUI's tooltip needs one to attach to. */}
+            <span>
+              <IconButton
+                size="small"
+                onClick={goUp}
+                disabled={path === '/'}
+                data-testid="world-asset-up"
+                aria-label="Up one directory"
+              >
+                <ArrowUpwardIcon sx={{ fontSize: 16 }} />
+              </IconButton>
+            </span>
+          </Tooltip>
+          {/* One namespace, not a filesystem — but still a position in it,
+              and a breadcrumb per segment is what makes an arbitrary depth
+              jumpable in one click rather than one "Up" at a time. */}
+          <Breadcrumbs
+            aria-label="Position in the mounted namespace"
+            sx={{ '& .MuiBreadcrumbs-ol': { flexWrap: 'nowrap' }, minWidth: 0 }}
+          >
+            {crumbs.map((crumb, index) => {
+              const testId = `world-asset-crumb-${crumb.path === '/' ? 'root' : crumb.path.replace(/\//g, '-')}`;
+              return index === crumbs.length - 1
+                ? (
+                  <Typography
+                    key={crumb.path}
+                    variant="caption"
+                    color="text.primary"
+                    noWrap
+                    data-testid={testId}
+                  >
+                    {crumb.name}
+                  </Typography>
+                )
+                : (
+                  <Link
+                    key={crumb.path}
+                    component="button"
+                    variant="caption"
+                    underline="hover"
+                    color="text.secondary"
+                    onClick={() => setPath(crumb.path)}
+                    data-testid={testId}
+                  >
+                    {crumb.name}
+                  </Link>
+                );
+            })}
+          </Breadcrumbs>
+        </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0 }} data-testid="world-asset-search-row">
+          <TextField
+            size="small"
+            variant="outlined"
+            placeholder={searchAssets === undefined ? 'Filter this directory' : 'Search all assets'}
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+            inputProps={{
+              'data-testid': 'world-asset-filter',
+              'aria-label': searchAssets === undefined ? 'Filter this directory' : 'Search all assets',
+            }}
+            sx={{ flex: 1, minWidth: 0, '& .MuiInputBase-input': { fontSize: 12, py: 0.5 } }}
+          />
+          <Button
+            size="small"
+            variant={activeFilters > 0 ? 'contained' : 'outlined'}
+            startIcon={<FilterListIcon sx={{ fontSize: 16 }} />}
+            onClick={() => setFiltersOpen((open) => !open)}
+            aria-expanded={filtersOpen}
+            aria-controls={filtersOpen ? 'world-asset-filter-panel' : undefined}
+            data-testid="world-asset-filter-toggle"
+            sx={{ flexShrink: 0, minWidth: 0, px: 1, whiteSpace: 'nowrap' }}
+          >
+            Filters{activeFilters > 0 ? ` ${activeFilters}` : ''}
+          </Button>
+        </Box>
+        {filtersOpen && (
+          <Box
+            id="world-asset-filter-panel"
+            data-testid="world-asset-filter-panel"
+            sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(132px, 1fr))', gap: 0.75, py: 0.5 }}
+          >
+            <Box sx={{ minWidth: 0, '& .MuiFormControl-root': { width: '100%' } }}>
+              <Typography variant="caption" color="text.secondary">Visual role</Typography>
+              <RoleFacet value={role} onChange={setRole} testId="world-asset-role" />
+            </Box>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="caption" color="text.secondary">Format</Typography>
+              <TextField
+                select
+                size="small"
+                value={format}
+                onChange={(event) => setFormat(event.target.value as AssetFormat | 'all')}
+                SelectProps={{ native: true }}
+                inputProps={{ 'data-testid': 'world-asset-format', 'aria-label': 'File format' }}
+                fullWidth
+                sx={{ '& .MuiInputBase-input': { fontSize: 12, py: 0.5 } }}
+              >
+                <option value="all">All formats</option>
+                {ASSET_FORMATS.map((group) => (
+                  <option key={group.id} value={group.id}>{group.label}</option>
+                ))}
+              </TextField>
+            </Box>
+            {/* One mount is no facet: there is nothing to narrow to and nothing
+                can be overridden. */}
+            {sources.length > 1 && (
+              <Box sx={{ minWidth: 0, gridColumn: '1 / -1' }}>
+                <Typography variant="caption" color="text.secondary">Source</Typography>
+                <TextField
+                  select
+                  size="small"
+                  value={only === null ? 'all' : String(only)}
+                  onChange={(event) => {
+                    const next = event.target.value;
+                    setOnly(next === 'all' ? null : Number(next));
+                  }}
+                  SelectProps={{ native: true }}
+                  inputProps={{ 'data-testid': 'world-asset-source', 'aria-label': 'Asset source' }}
+                  fullWidth
+                  sx={{ '& .MuiInputBase-input': { fontSize: 12, py: 0.5 } }}
+                >
+                  <option value="all">All sources</option>
+                  {sourceLabels.map((label, at) => (
+                    <option key={sources[at]} value={String(at)} title={sources[at]}>{label}</option>
+                  ))}
+                </TextField>
+              </Box>
+            )}
+          </Box>
+        )}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0, flexWrap: 'wrap' }} data-testid="world-asset-status-row">
+          {/* Only once the listing has actually arrived. `sorted` is `[]`
+              while loading and on a refusal alike, so an unconditional
+              count would assert "0 entries" for a directory nobody has
+              heard back about yet — the very flash the three-state
+              `state` above exists to prevent. */}
+          {ready && (
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              noWrap
+              data-testid="world-asset-count"
+              sx={{ flexGrow: 1 }}
+            >
+              {/* Either filter narrows it, and the count has to say so: a
+                  source facet that silently kept reporting the whole
+                  directory would be the one number nobody could trust.
+                  A capped search says "first N" for the same reason — the
+                  number is not how many there are. */}
+              {searching
+                ? `${search.status === 'ready' && search.truncated ? 'first ' : ''}${filtered.length.toLocaleString()} matches`
+                : (filtered.length === sorted.length
+                  ? `${sorted.length.toLocaleString()} entries`
+                  : `${filtered.length.toLocaleString()} of ${sorted.length.toLocaleString()}`)}
+            </Typography>
+          )}
+          {compileAssets !== undefined && uncompiled.size > 0 && (
+            <Tooltip title="Compile the project's assets with GMBT, so the ones marked not compiled can be previewed">
+              <Button
+                size="small"
+                variant="outlined"
+                color="warning"
+                data-testid="world-asset-compile"
+                onClick={() => setCompile({ running: false, error: null })}
+                sx={{ py: 0, minWidth: 0, fontSize: 11, textTransform: 'none' }}
+              >
+                Compile
+              </Button>
+            </Tooltip>
+          )}
+          {catalog !== undefined && ready && (
+            <>
+              <Tooltip title={marked.size === 0
+                ? `File all ${toFile.length} meshes shown into a category (Ctrl- or Shift-click to mark some)`
+                : `File the ${toFile.length} marked meshes into a category`}
+              >
+                <span>
+                  <IconButton
+                    size="small"
+                    data-testid="world-asset-file-many"
+                    aria-label="File into a category"
+                    disabled={toFile.length === 0}
+                    onClick={(event) => setFileMenu(event.currentTarget)}
+                    sx={{ gap: 0.25 }}
+                  >
+                    <LabelOutlinedIcon sx={{ fontSize: 16 }} />
+                    <Typography variant="caption">{toFile.length.toLocaleString()}</Typography>
+                  </IconButton>
+                </span>
+              </Tooltip>
+              <FileIntoMenu
+                anchor={fileMenu}
+                paths={catalog.catalog.categories.map((category) => category.path)}
+                onFile={(target) => {
+                  catalog.onAddManyToCategory(target, toFile);
+                  setMarked(new Set());
+                  setAnchor(null);
+                }}
+                onClose={() => setFileMenu(null)}
+              />
+            </>
+          )}
+          {thumbnails !== undefined && (
+            <>
+              <ToggleButtonGroup
+                size="small"
+                exclusive
+                value={view}
+                onChange={(_event, next: 'list' | 'grid' | null) => { if (next !== null) setView(next); }}
+                sx={{ '& .MuiToggleButton-root': { p: 0.25 } }}
+              >
+                <ToggleButton value="list" data-testid="world-asset-view-list" aria-label="List view">
+                  <ViewListIcon sx={{ fontSize: 16 }} />
+                </ToggleButton>
+                <ToggleButton value="grid" data-testid="world-asset-view-grid" aria-label="Thumbnail grid">
+                  <GridViewIcon sx={{ fontSize: 16 }} />
+                </ToggleButton>
+              </ToggleButtonGroup>
+              {view === 'grid' && (
+                <Tooltip title="Redraw the thumbnails in this directory">
+                  <IconButton
+                    size="small"
+                    data-testid="world-asset-redraw"
+                    aria-label="Redraw thumbnails"
+                    onClick={() => { for (const entry of filtered) if (entry.type === 'file') thumbnails.redraw(entry.name); }}
+                  >
+                    <RefreshIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </Tooltip>
+              )}
+            </>
+          )}
+        </Box>
+      </Box>
+
+      <Dialog
+        open={compile !== null}
+        onClose={() => { if (compile?.running !== true) setCompile(null); }}
+        data-testid="world-asset-compile-dialog"
+      >
+        <DialogTitle>Compile assets with GMBT</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" gutterBottom>
+            Runs <code>gmbt compile --full</code> in the project's GMBT folder. GMBT merges the project's
+            asset folders into the Gothic install's <code>_work/Data</code> — rebuilding what it manages
+            there — and then starts Gothic without a window to compile every mesh, model and texture.
+            It takes a few minutes.
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            The open world stays open. Afterwards the asset list, the previews and the viewport read
+            the compiled files.
+          </Typography>
+          {compile?.running === true && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1.5 }} data-testid="world-asset-compile-running">
+              <CircularProgress size={16} />
+              <Typography variant="body2">Compiling…</Typography>
+            </Box>
+          )}
+          {compile?.error != null && (
+            <Typography
+              variant="body2"
+              color="error"
+              component="pre"
+              data-testid="world-asset-compile-error"
+              sx={{ mt: 1.5, whiteSpace: 'pre-wrap', fontSize: 12, maxHeight: 240, overflow: 'auto' }}
+            >
+              {compile.error}
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCompile(null)} disabled={compile?.running === true}>Close</Button>
+          <Button
+            variant="contained"
+            data-testid="world-asset-compile-confirm"
+            disabled={compile?.running === true}
+            onClick={() => { void runCompile(); }}
+          >
+            {compile?.error != null ? 'Try again' : 'Compile'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {failure !== null && (
+        <Typography
+          variant="caption"
+          color="error"
+          data-testid="world-asset-error"
+          sx={{ p: 1 }}
+        >
+          {failure}
+        </Typography>
+      )}
+
+      {ready && !searching && sorted.length === 0 && (
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          data-testid="world-asset-empty"
+          sx={{ p: 1 }}
+        >
+          Nothing here.
+        </Typography>
+      )}
+
+      {/* Distinct from the directory being empty: there was something to
+          narrow and the needle matched none of it. Under a search the corpus
+          is the whole install, so the sentence has to say which one it is —
+          "nothing in this directory" would be the wrong answer twice. */}
+      {ready && filtered.length === 0 && (searching || sorted.length > 0) && (
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          data-testid="world-asset-filter-empty"
+          sx={{ p: 1 }}
+        >
+          {searching ? 'Nothing in the mounted assets matches.' : 'No matches for this filter.'}
+        </Typography>
+      )}
+
+      {ready && filtered.length > 0 && view === 'grid' && thumbnails !== undefined && (
+        <Box sx={{ flex: 1, minHeight: 0 }} role="list" aria-label="Mounted assets">
+          <WorldAssetGrid
+            entries={filtered}
+            thumbnails={thumbnails}
+            onOpen={onOpen}
+            actions={tileActions}
+            originOf={originOf}
+            uncompiled={uncompiled}
+            marked={marked}
+            onMark={catalog === undefined ? undefined : onMark}
+            placement={placement}
+          />
+        </Box>
+      )}
+
+      {ready && filtered.length > 0 && (view === 'list' || thumbnails === undefined) && (
+        <Box sx={{ flex: 1, minHeight: 0 }} role="list" aria-label="Mounted assets">
+          <AutoSizer>
+            {({ height, width }) => (
+              <List
+                height={height}
+                width={width}
+                itemCount={filtered.length}
+                itemSize={ROW_HEIGHT}
+                itemData={itemData}
+                overscanCount={8}
+              >
+                {Row}
+              </List>
+            )}
+          </AutoSizer>
+        </Box>
+      )}
+      </>)}
+    </Box>
+  );
+};
+
+export default WorldAssetBrowser;

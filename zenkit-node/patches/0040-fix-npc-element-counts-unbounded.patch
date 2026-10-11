@@ -1,0 +1,134 @@
+VNpc: bound the talent, item and inventory-slot counts, which size a resize before anything is read.
+
+`VNpc::load` takes three of its five element counts straight off the file and
+hands each one to `resize` before a single object is read:
+
+	auto talent_count = static_cast<std::size_t>(r.read_int()); // numTalents
+	this->talents.resize(talent_count);
+	...
+	auto item_count = static_cast<size_t>(r.read_int());        // itemCount
+	this->items.resize(item_count);
+	...
+	auto inv_slot_count = static_cast<uint32_t>(r.read_int());  // numInvSlots
+	this->slots.resize(inv_slot_count);
+
+Same shape as the mesh element counts patch 0036 bounds and the waynet counts
+0037 bounds, and the talent loop has the same reason it cannot fail on its own:
+`ReadArchive::read_object` past the end of the entry stream logs "Expected
+object, got entry" and returns **null** rather than throwing, and nothing
+dereferences a talent -- so it runs to the file's own count over reads that give
+nothing back.
+
+Measured on the unpatched reader against `zenkit-node`'s `npc` fixture world
+with the count rewritten in place to 0x0FFFFFFF:
+
+	numTalents   268 million null talents, 4.3 GB, and the world reports LOADED after 6.8 s
+	itemCount    2.1 GB, then the null-item guard fires, 0.8 s
+	numInvSlots  2.1 GB, then a type mismatch on the slot's `used` flag, 0.7 s
+
+The first is the dangerous case -- an *absurd* count is the harmless one,
+because `resize` throws `bad_alloc` and the loop is never entered. The other two
+are bounded by the same argument patch 0037 used for the waypoint count: they
+already fail loudly, but only after gigabytes are committed.
+
+**Two of the five counts are deliberately not bounded.** `numOverlays` and the
+news `NumOfEntries` drive `push_back` loops over plain fields, and the first
+read past the end of the entry stream is a type mismatch that throws in 66 ms --
+loud, like `parse_vob_tree`'s `childs<N>`, so a guard there would be hardening a
+reader that already fails correctly.
+
+All three are bounded by the bytes actually left in the reader, with the same
+`_bytes_remaining` helper as `Mesh.cc`, `BspTree.cc` and `WayNet.cc`. The
+per-object floor is four bytes, under the smallest header any of the three
+archive formats can write, because a bound must never refuse a world the engine
+loads; a slot is two entries at the least, so two bytes.
+
+Found by construction, not by luck, and not by the existing sweep either:
+`zenkit-node/tools/fuzz-world.js --counts` can only reach the INTEGER entries
+its fixture happens to carry, and `minimal.g2.zen` has no `oCNpc` at all. The
+`npc` fixture variant was added for exactly this reason.
+
+--- a/src/vobs/Misc.cc
++++ b/src/vobs/Misc.cc
+@@ -2,12 +2,32 @@
+ // SPDX-License-Identifier: MIT
+ #include "zenkit/vobs/Misc.hh"
+ #include "zenkit/Archive.hh"
++#include "zenkit/Error.hh"
++#include "zenkit/Stream.hh"
+ 
+ #include "../Internal.hh"
+ 
+ #include <algorithm>
+ 
+ namespace zenkit {
++	// The number of bytes left in the reader, as in `Mesh.cc`, `BspTree.cc` and
++	// `WayNet.cc`: `Read` exposes no size, but every implementation can seek to
++	// the end and back. It is a ceiling, not the exact room left -- in a BinSafe
++	// archive the hash table still follows the entry stream -- which is all a
++	// sanity bound needs.
++	static std::size_t _bytes_remaining(Read* r) {
++		auto here = r->tell();
++		r->seek(0, Whence::END);
++		auto end = r->tell();
++		r->seek(static_cast<ssize_t>(here), Whence::BEG);
++		return end > here ? end - here : 0;
++	}
++
++	// The smallest an archived object can be in any of the three formats, as in
++	// `WayNet.cc`: a type byte and a two-byte length in BinSafe, a `[% % 0 0]`
++	// line in ASCII. Four is under all of them, which is what a bound wants -- it
++	// must never refuse a world the engine loads.
++	static constexpr std::size_t OBJECT_MIN_BYTES = 4;
+ 	void VAnimate::parse(VAnimate& obj, ReadArchive& r, GameVersion version) {
+ 		obj.load(r, version);
+ 	}
+@@ -290,6 +310,22 @@
+ 		this->lp = r.read_int();            // lp
+ 
+ 		auto talent_count = static_cast<std::size_t>(r.read_int()); // numTalents
++
++		// This count and the two below come straight off the file and used to size
++		// a `resize` before a single object was read. The loop after it cannot stop
++		// on its own either: `read_object` past the end of the entry stream logs and
++		// returns null rather than throwing, and nothing dereferences a talent.
++		// Measured against `zenkit-node`'s `npc` fixture with `numTalents` rewritten
++		// to 0x0FFFFFFF: 268 million null talents, 4.3 GB, and the world still
++		// reports LOADED after 6.8 s. An *absurd* count is the harmless case --
++		// `resize` throws `bad_alloc` -- so the dangerous value is the merely large
++		// one. `numOverlays` and the news `NumOfEntries` are deliberately not
++		// bounded: they push plain fields, and the first read past the end is a type
++		// mismatch that throws in 66 ms.
++		if (talent_count > _bytes_remaining(r.get_stream()) / OBJECT_MIN_BYTES) {
++			throw ParserError {"VNpc", "talent count exceeds the bytes left in the archive"};
++		}
++
+ 		this->talents.resize(talent_count);
+ 
+ 		for (auto i = 0u; i < talent_count; ++i) {
+@@ -371,6 +407,11 @@
+ 		}
+ 
+ 		auto item_count = static_cast<size_t>(r.read_int()); // itemCount
++
++		if (item_count > _bytes_remaining(r.get_stream()) / OBJECT_MIN_BYTES) {
++			throw ParserError {"VNpc", "item count exceeds the bytes left in the archive"};
++		}
++
+ 		this->items.resize(item_count);
+ 
+ 		for (auto i = 0u; i < item_count; ++i) {
+@@ -382,6 +423,13 @@
+ 		}
+ 
+ 		auto inv_slot_count = static_cast<uint32_t>(r.read_int()); // numInvSlots
++
++		// A slot is two entries at the least -- a bool and a string -- so it cannot
++		// be cheaper than two bytes.
++		if (inv_slot_count > _bytes_remaining(r.get_stream()) / 2) {
++			throw ParserError {"VNpc", "inventory slot count exceeds the bytes left in the archive"};
++		}
++
+ 		this->slots.resize(inv_slot_count);
+ 		for (auto i = 0u; i < inv_slot_count; ++i) {
+ 			this->slots[i] = std::make_unique<Slot>();

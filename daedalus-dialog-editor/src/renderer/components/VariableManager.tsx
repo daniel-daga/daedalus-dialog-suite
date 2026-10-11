@@ -1,0 +1,317 @@
+import React, { useState, useMemo, useEffect } from 'react';
+import {
+  Box,
+  Typography,
+  Paper,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TextField,
+  InputAdornment,
+  Chip,
+  Tooltip,
+  Button,
+  IconButton,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  TablePagination,
+  Snackbar,
+  Alert,
+} from '@mui/material';
+import { Search as SearchIcon, Add as AddIcon, Delete as DeleteIcon } from '@mui/icons-material';
+import { useProjectStore } from '../store/projectStore';
+import type { GlobalConstant, GlobalVariable } from '../types/global';
+import VariableCreationDialog from './common/VariableCreationDialog';
+import DeleteConfirmDialog from './common/DeleteConfirmDialog';
+import {
+  SEARCHABLE_PANE_PATTERN,
+  searchablePaneFilterStripSx,
+  searchablePaneHeaderSx,
+  searchablePaneShellSx,
+  searchablePaneTextFieldSx
+} from './common/searchablePaneStyles';
+
+type VariableEntry = {
+  variable: GlobalConstant | GlobalVariable;
+  isConstant: boolean;
+  lowerName: string;
+  lowerType: string;
+  lowerFilePath: string;
+  baseFileName: string;
+};
+
+const VariableManager: React.FC = () => {
+  const constantDecls = useProjectStore((s) => s.mergedSemanticModel.constants);
+  const variableDecls = useProjectStore((s) => s.mergedSemanticModel.variables);
+  const deleteVariable = useProjectStore((s) => s.deleteVariable);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<'all' | 'constants' | 'variables'>('all');
+  const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(100);
+  const [openAdd, setOpenAdd] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<GlobalConstant | GlobalVariable | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const variables = useMemo(() => {
+    const vars: VariableEntry[] = [];
+    if (constantDecls) {
+      vars.push(
+        ...Object.values(constantDecls).map((c) => ({
+          variable: c,
+          isConstant: true,
+          lowerName: c.name.toLowerCase(),
+          lowerType: c.type.toLowerCase(),
+          lowerFilePath: (c.filePath || '').toLowerCase(),
+          baseFileName: c.filePath ? c.filePath.split(/[\\/]/).pop() || 'Unknown' : 'Unknown',
+        }))
+      );
+    }
+    if (variableDecls) {
+      vars.push(
+        ...Object.values(variableDecls).map((v) => ({
+          variable: v,
+          isConstant: false,
+          lowerName: v.name.toLowerCase(),
+          lowerType: v.type.toLowerCase(),
+          lowerFilePath: (v.filePath || '').toLowerCase(),
+          baseFileName: v.filePath ? v.filePath.split(/[\\/]/).pop() || 'Unknown' : 'Unknown',
+        }))
+      );
+    }
+    return vars.sort((a, b) => a.variable.name.localeCompare(b.variable.name));
+  }, [constantDecls, variableDecls]);
+
+  const availableTypes = useMemo(() => {
+    const types = new Set<string>();
+    variables.forEach(v => {
+      types.add(v.lowerType);
+    });
+    return Array.from(types).sort();
+  }, [variables]);
+
+  const filteredVariables = useMemo(() => {
+    let result = variables;
+
+    if (categoryFilter === 'constants') {
+      result = result.filter(v => v.isConstant);
+    } else if (categoryFilter === 'variables') {
+      result = result.filter(v => !v.isConstant);
+    }
+
+    if (typeFilter !== 'all') {
+      result = result.filter(v => v.lowerType === typeFilter);
+    }
+
+    if (searchQuery) {
+      const lowerQuery = searchQuery.toLowerCase();
+      result = result.filter(v =>
+        v.lowerName.includes(lowerQuery) ||
+        v.lowerType.includes(lowerQuery) ||
+        v.lowerFilePath.includes(lowerQuery)
+      );
+    }
+
+    return result;
+  }, [variables, searchQuery, categoryFilter, typeFilter]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [searchQuery, categoryFilter, typeFilter]);
+
+  const paginatedVariables = useMemo(() => {
+    const start = page * rowsPerPage;
+    return filteredVariables.slice(start, start + rowsPerPage);
+  }, [filteredVariables, page, rowsPerPage]);
+
+  const handleDelete = async () => {
+    const v = pendingDelete;
+    setPendingDelete(null);
+    if (!v?.filePath || !v.range) {
+      return;
+    }
+
+    try {
+      await deleteVariable(v.filePath, v.range);
+    } catch (e) {
+      console.error(e);
+      setDeleteError('Failed to delete variable: ' + (e instanceof Error ? e.message : String(e)));
+    }
+  };
+
+  return (
+    <Box data-ui-pattern={SEARCHABLE_PANE_PATTERN} sx={{ display: 'flex', flexDirection: 'column', height: '100%', p: 2, gap: 2 }}>
+      <Paper sx={(theme) => ({ ...searchablePaneShellSx(theme), flexShrink: 0 })} elevation={1}>
+        <Box sx={searchablePaneHeaderSx}>
+          <Typography variant='h5'>Variable Manager</Typography>
+        </Box>
+
+        <Box sx={(theme) => ({ ...searchablePaneFilterStripSx(theme), display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' })}>
+          <FormControl size='small' sx={{ minWidth: 120 }}>
+            <InputLabel>Category</InputLabel>
+            <Select
+              value={categoryFilter}
+              label='Category'
+              onChange={(e) => setCategoryFilter(e.target.value as any)}
+            >
+              <MenuItem value='all'>All</MenuItem>
+              <MenuItem value='constants'>Constants</MenuItem>
+              <MenuItem value='variables'>Variables</MenuItem>
+            </Select>
+          </FormControl>
+
+          <FormControl size='small' sx={{ minWidth: 120 }}>
+            <InputLabel>Type</InputLabel>
+            <Select
+              value={typeFilter}
+              label='Type'
+              onChange={(e) => setTypeFilter(e.target.value)}
+            >
+              <MenuItem value='all'>All Types</MenuItem>
+              {availableTypes.map((t) => (
+                <MenuItem key={t} value={t}>{t}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <TextField
+            size='small'
+            placeholder='Search variables...'
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position='start'>
+                  <SearchIcon />
+                </InputAdornment>
+              ),
+            }}
+            inputProps={{
+              'aria-label': 'Search variables'
+            }}
+            sx={(theme) => ({ ...searchablePaneTextFieldSx(theme), width: 220 })}
+          />
+
+          <Box sx={{ flexGrow: 1 }} />
+
+          <Button
+            variant='contained'
+            startIcon={<AddIcon />}
+            onClick={() => setOpenAdd(true)}
+          >
+            Add Variable
+          </Button>
+        </Box>
+      </Paper>
+
+      <TableContainer component={Paper} sx={(theme) => ({ ...searchablePaneShellSx(theme), flexGrow: 1, minHeight: 0 })}>
+        <Table stickyHeader size='small'>
+          <TableHead>
+            <TableRow>
+              <TableCell>Name</TableCell>
+              <TableCell>Type</TableCell>
+              <TableCell>Value</TableCell>
+              <TableCell>File</TableCell>
+              <TableCell align='right'>Actions</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {paginatedVariables.map((entry) => {
+              const v = entry.variable;
+              return (
+                <TableRow key={`${v.name}-${v.filePath}-${entry.isConstant ? 'const' : 'var'}`} hover>
+                  <TableCell sx={{ fontFamily: 'monospace' }}>
+                    {v.name}
+                    {entry.isConstant && (
+                      <Chip label='const' size='small' sx={{ ml: 1, height: 16, fontSize: '0.6rem' }} />
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Chip
+                      label={v.type}
+                      size='small'
+                      color={entry.isConstant ? 'primary' : 'default'}
+                      variant='outlined'
+                    />
+                  </TableCell>
+                  <TableCell>
+                    {entry.isConstant ? String((v as GlobalConstant).value) : '-'}
+                  </TableCell>
+                  <TableCell>
+                    <Tooltip title={v.filePath || ''}>
+                      <Typography variant='caption' noWrap sx={{ maxWidth: 200, display: 'block' }}>
+                        {entry.baseFileName}
+                      </Typography>
+                    </Tooltip>
+                  </TableCell>
+                  <TableCell align='right'>
+                    <Tooltip title='Delete variable'>
+                      <span>
+                        <IconButton
+                          size='small'
+                          onClick={() => setPendingDelete(v)}
+                          disabled={!v.filePath || !v.range}
+                          color='error'
+                          aria-label='Delete variable'
+                        >
+                          <DeleteIcon fontSize='small' />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+            {filteredVariables.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={5} align='center'>
+                  <Typography variant='body2' color='text.secondary' sx={{ py: 3 }}>
+                    No variables found
+                  </Typography>
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </TableContainer>
+
+      <TablePagination
+        component='div'
+        count={filteredVariables.length}
+        page={page}
+        onPageChange={(_, nextPage) => setPage(nextPage)}
+        rowsPerPage={rowsPerPage}
+        onRowsPerPageChange={(event) => {
+          setRowsPerPage(parseInt(event.target.value, 10));
+          setPage(0);
+        }}
+        rowsPerPageOptions={[50, 100, 250]}
+      />
+
+      <VariableCreationDialog
+        open={openAdd}
+        onClose={() => setOpenAdd(false)}
+      />
+
+      <DeleteConfirmDialog
+        open={pendingDelete !== null}
+        title='Delete variable'
+        message={`Delete ${pendingDelete?.name ?? ''} from ${pendingDelete?.filePath ?? ''}? The file is written immediately and this cannot be undone.`}
+        onConfirm={() => void handleDelete()}
+        onCancel={() => setPendingDelete(null)}
+      />
+
+      <Snackbar open={deleteError !== null} autoHideDuration={6000} onClose={() => setDeleteError(null)}>
+        <Alert severity='error' onClose={() => setDeleteError(null)}>{deleteError}</Alert>
+      </Snackbar>
+    </Box>
+  );
+};
+
+export default VariableManager;
+

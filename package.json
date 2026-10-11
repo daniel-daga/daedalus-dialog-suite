@@ -1,0 +1,22 @@
+{
+  "name": "daedalus-dialog-suite",
+  "private": true,
+  "workspaces": [
+    "daedalus-dialog-editor",
+    "daedalus-parser"
+  ],
+  "pnpm": {
+    "overrides": {
+      "@types/react": "^18.3.0"
+    }
+  },
+  "scripts": {
+    "docs:check": "node tools/check-docs.js",
+    "wt:new": "node tools/worktree.js new",
+    "wt:list": "node tools/worktree.js list",
+    "wt:rm": "node tools/worktree.js remove",
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "test:roundtrip-corpus": "npm run test:roundtrip-corpus --workspace daedalus-parser --"
+  }
+}

@@ -1,0 +1,63 @@
+Mesh: read and write the Gothic II alpha-test byte after the material list.
+
+Gothic II meshes (version 265) carry one extra byte in chunk 0xB020 right after
+the last material object: every retail world mesh has 0x01, compiled .MSH files
+have 0x00 or 0x01 (COLDUMMY/CYLINDERFX vs. ICELANCE), so it is a real per-mesh
+flag rather than padding. Mesh::load never consumed it (leaving "1 byte
+remaining in section b020") and Mesh::save never wrote it, so a re-saved world's
+material list was one byte short. It is now kept on Mesh::alpha_test; the load
+uses the chunk end to stay compatible with meshes that lack the byte.
+
+diff --git a/include/zenkit/Mesh.hh b/include/zenkit/Mesh.hh
+index 41c7b99..7148881 100644
+--- a/include/zenkit/Mesh.hh
++++ b/include/zenkit/Mesh.hh
+@@ -110,6 +110,12 @@ namespace zenkit {
+ 		/// \brief A list of materials used by this mesh.
+ 		std::vector<Material> materials {};
+ 
++		/// \brief Whether alpha testing is enabled for this mesh.
++		///
++		/// Gothic II meshes store this as a single byte right after the material list; every retail
++		/// world mesh has it set, compiled `.MSH` files carry either value.
++		bool alpha_test {true};
++
+ 		/// \brief A list of vertices of this mesh.
+ 		std::vector<Vec3> vertices {};
+ 
+diff --git a/src/Mesh.cc b/src/Mesh.cc
+index c7c803b..627fc98 100644
+--- a/src/Mesh.cc
++++ b/src/Mesh.cc
+@@ -41,7 +41,7 @@ namespace zenkit {
+ 		proto::read_chunked<MeshChunkType>(
+ 		    r,
+ 		    "Mesh",
+-		    [this, &version, force_wide_indices](Read* c, MeshChunkType type) {
++		    [this, &version, force_wide_indices](Read* c, MeshChunkType type, std::size_t& end) {
+ 			    switch (type) {
+ 			    case MeshChunkType::MARKER:
+ 				    version = c->read_ushort();
+@@ -60,6 +60,11 @@ namespace zenkit {
+ 					    material.load(*matreader);
+ 				    }
+ 
++				    // Gothic II appends the alpha-test flag after the material list.
++				    if (version == MESH_VERSION_G2 && c->tell() < end) {
++					    this->alpha_test = c->read_ubyte() != 0;
++				    }
++
+ 				    break;
+ 			    }
+ 			    case MeshChunkType::VERTICES:
+@@ -248,6 +253,10 @@ namespace zenkit {
+ 			}
+ 
+ 			war->write_header();
++
++			if (version == GameVersion::GOTHIC_2) {
++				c->write_ubyte(this->alpha_test ? 1 : 0);
++			}
+ 		});
+ 
+ 		proto::write_chunk(w, MeshChunkType::LIGHTMAPS_SHARED, [this](Write* c) {

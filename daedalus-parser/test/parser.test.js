@@ -1,0 +1,599 @@
+const { test, describe } = require('node:test');
+const { strict: assert } = require('node:assert');
+const DaedalusParser = require('../src/core/parser');
+const fs = require('fs');
+
+describe('Daedalus Parser', () => {
+  let parser;
+
+  test('setup', () => {
+    parser = new DaedalusParser();
+    assert.ok(parser, 'Parser should be created');
+  });
+
+  test('should parse simple instance declaration', () => {
+    const source = `instance Test (Base)
+{
+  name = "test";
+};`;
+
+    const result = parser.parse(source);
+    assert.equal(result.hasErrors, false, 'Should parse without errors');
+    assert.ok(result.parseTime < 10, 'Should parse quickly');
+    assert.equal(result.rootNode.type, 'program');
+  });
+
+  test('should parse simple function declaration', () => {
+    const source = `func void TestFunction()
+{
+  return;
+};`;
+
+    const result = parser.parse(source);
+    assert.equal(result.hasErrors, false, 'Should parse without errors');
+    assert.equal(result.rootNode.type, 'program');
+  });
+
+  test('should parse function with return type', () => {
+    const source = `func int GetValue()
+{
+  return 42;
+};`;
+
+    const result = parser.parse(source);
+    assert.equal(result.hasErrors, false, 'Should parse without errors');
+    assert.ok(result.rootNode.text, 'Should have source text in AST');
+
+    const declarations = parser.extractDeclarations(result);
+    assert.equal(declarations.length, 1);
+    assert.equal(declarations[0].type, 'function');
+    assert.equal(declarations[0].name, 'GetValue');
+    assert.equal(declarations[0].returnType, 'int');
+  });
+
+  test('should extract declarations from parsed tree', () => {
+    const source = `instance Hero (Npc_Default)
+{
+  name = "Hero";
+  guild = GIL_NONE;
+};
+
+func void InitHero()
+{
+  name = "Test";
+};`;
+
+    const result = parser.parse(source);
+    const declarations = parser.extractDeclarations(result);
+
+    assert.equal(declarations.length, 2);
+    assert.equal(declarations[0].type, 'instance');
+    assert.equal(declarations[0].name, 'Hero');
+    assert.equal(declarations[0].parent, 'Npc_Default');
+    assert.equal(declarations[1].type, 'function');
+    assert.equal(declarations[1].name, 'InitHero');
+  });
+
+  test('should validate syntax correctly', () => {
+    const validSource = 'instance Test (Base) { name = "test"; };';
+    const invalidSource = 'instance Test Base) { name = "test"; };'; // missing opening paren
+
+    const validResult = parser.validate(validSource);
+    const invalidResult = parser.validate(invalidSource);
+
+    assert.equal(validResult.isValid, true, 'Valid source should pass validation');
+    assert.equal(invalidResult.isValid, false, 'Invalid source should fail validation');
+    assert.ok(invalidResult.errors.length > 0, 'Should report errors for invalid syntax');
+  });
+
+  test('validate() reports 1-based error positions matching the message', () => {
+    // Error sits on line 3 (1-based): stray token after valid declarations.
+    const source = `instance Good (Base)
+{
+}; !!!`;
+
+    const result = parser.validate(source);
+
+    assert.equal(result.isValid, false, 'Source should fail validation');
+    assert.ok(result.errors.length > 0, 'Should report errors');
+
+    for (const error of result.errors) {
+      const match = error.message.match(/line (\d+), column (\d+)/);
+      assert.ok(match, `Message should state a position: ${error.message}`);
+      assert.equal(error.position.row, Number(match[1]),
+        'position.row must be 1-based, matching the message');
+      assert.equal(error.position.column, Number(match[2]),
+        'position.column must be 1-based, matching the message');
+    }
+
+    const [first] = result.errors;
+    assert.equal(first.position.row, 3, 'Error is on line 3 (1-based)');
+  });
+
+  test('should parse example files', () => {
+    const exampleFiles = [
+      'examples/DEV_2130_Szmyk.d',
+      'examples/DIA_DEV_2130_Szmyk.d'
+      // Note: DIA_Farmim.d has some advanced constructs not yet supported
+    ];
+
+    for (const filePath of exampleFiles) {
+      if (fs.existsSync(filePath)) {
+        const result = parser.parseFile(filePath);
+        assert.equal(result.hasErrors, false, `${filePath} should parse without errors`);
+        assert.ok(result.parseTime < 100, `${filePath} should parse quickly`);
+        assert.ok(result.throughput > 1000, `${filePath} should have good throughput`);
+
+        const declarations = parser.extractDeclarations({ ...result, sourceCode: fs.readFileSync(filePath, 'utf8') });
+        assert.ok(declarations.length > 0, `${filePath} should contain declarations`);
+      }
+    }
+  });
+
+  test('should handle comments correctly', () => {
+    const source = `// This is a comment
+instance Test (Base) // inline comment
+{
+  /* multi-line
+     comment */
+  name = "test";
+};`;
+
+    const result = parser.parse(source);
+    assert.equal(result.hasErrors, false, 'Should parse comments without errors');
+  });
+
+
+  test('should forward parse options when parsing files', () => {
+    const tmpFile = './test/tmp-forward-options.d';
+    const source = 'instance Test (Base) { name = "test"; };';
+
+    fs.writeFileSync(tmpFile, source, 'utf8');
+
+    let receivedOptions = null;
+    const originalParse = parser.parse.bind(parser);
+    parser.parse = (inputSource, options) => {
+      receivedOptions = options;
+      return originalParse(inputSource, options);
+    };
+
+    try {
+      parser.parseFile(tmpFile, { bufferSize: 8192 });
+      assert.equal(receivedOptions.bufferSize, 8192, 'parseFile should forward options to parse()');
+    } finally {
+      parser.parse = originalParse;
+      fs.unlinkSync(tmpFile);
+    }
+  });
+
+  test('should report performance metrics', () => {
+    const source = 'instance Test (Base) { name = "test"; };';
+    const result = parser.parse(source);
+
+    assert.ok(typeof result.parseTime === 'number', 'Should report parse time');
+    assert.ok(typeof result.throughput === 'number', 'Should report throughput');
+    assert.ok(result.sourceLength === source.length, 'Should report source length');
+  });
+
+  test('should parse const variable declarations', () => {
+    const source = `const int MAX_VALUE = 100;
+const string PLAYER_NAME = "Hero";`;
+
+    const result = parser.parse(source);
+    assert.equal(result.hasErrors, false, 'Should parse const declarations without errors');
+
+    const declarations = parser.extractDeclarations(result);
+    assert.equal(declarations.length, 2, 'Should find 2 const declarations');
+    assert.equal(declarations[0].type, 'variable');
+    assert.equal(declarations[0].name, 'MAX_VALUE');
+    assert.equal(declarations[0].varType, 'int');
+    assert.equal(declarations[0].isConst, true);
+  });
+
+  test('should parse var variable declarations', () => {
+    const source = `var int currentHealth;
+var string currentWeapon = "sword";`;
+
+    const result = parser.parse(source);
+    assert.equal(result.hasErrors, false, 'Should parse var declarations without errors');
+
+    const declarations = parser.extractDeclarations(result);
+    assert.equal(declarations.length, 2, 'Should find 2 var declarations');
+    assert.equal(declarations[0].type, 'variable');
+    assert.equal(declarations[0].name, 'currentHealth');
+    assert.equal(declarations[0].varType, 'int');
+    assert.equal(declarations[0].isConst, false);
+  });
+
+  test('should handle mixed case variable keywords', () => {
+    const source = `CONST INT MAX_LEVEL = 50;
+VAR STRING player_class = "warrior";
+Const Float damage_multiplier = 1.5;`;
+
+    const result = parser.parse(source);
+    assert.equal(result.hasErrors, false, 'Should parse mixed case variable keywords');
+  });
+
+  test('should parse class declarations', () => {
+    const source = `class C_NPC
+{
+    var int id;
+    var string name;
+};`;
+
+    const result = parser.parse(source);
+    assert.equal(result.hasErrors, false, 'Should parse class declarations without errors');
+
+    const declarations = parser.extractDeclarations(result);
+    assert.equal(declarations.length, 1, 'Should find 1 class declaration');
+    assert.equal(declarations[0].type, 'class');
+    assert.equal(declarations[0].name, 'C_NPC');
+  });
+
+  test('should parse prototype declarations', () => {
+    const source = `prototype NPC_Default(C_NPC)
+{
+    id = 0;
+    name = "";
+    var int level;
+};`;
+
+    const result = parser.parse(source);
+    assert.equal(result.hasErrors, false, 'Should parse prototype declarations without errors');
+
+    const declarations = parser.extractDeclarations(result);
+    assert.equal(declarations.length, 1, 'Should find 1 prototype declaration');
+    assert.equal(declarations[0].type, 'prototype');
+    assert.equal(declarations[0].name, 'NPC_Default');
+    assert.equal(declarations[0].parent, 'C_NPC');
+  });
+
+  test('should handle mixed case class/prototype keywords', () => {
+    const source = `CLASS BasicItem
+{
+    var string description;
+};
+
+PROTOTYPE DefaultWeapon(BasicItem)
+{
+    description = "A basic weapon";
+};
+
+Prototype SpecialWeapon(BasicItem)
+{
+    description = "A special weapon";
+};`;
+
+    const result = parser.parse(source);
+    assert.equal(result.hasErrors, false, 'Should parse mixed case class/prototype keywords');
+  });
+
+  test('should parse unary expressions', () => {
+    const source = `func int TestUnary()
+{
+    var int value = 10;
+    var int result = -value;
+    var int positive = +result;
+    return result;
+};`;
+
+    const result = parser.parse(source);
+    assert.equal(result.hasErrors, false, 'Should parse unary expressions without errors');
+  });
+
+  test('should parse logical unary expressions', () => {
+    const source = `func int TestLogical()
+{
+    var int flag = 1;
+    if (!flag)
+    {
+        return 0;
+    };
+    return 1;
+};`;
+
+    const result = parser.parse(source);
+    assert.equal(result.hasErrors, false, 'Should parse logical unary expressions without errors');
+  });
+
+  test('should parse bitwise unary expressions', () => {
+    const source = `func int TestBitwise()
+{
+    var int value = 42;
+    var int inverted = ~value;
+    return inverted;
+};`;
+
+    const result = parser.parse(source);
+    assert.equal(result.hasErrors, false, 'Should parse bitwise unary expressions without errors');
+  });
+
+  test('should parse array access expressions', () => {
+    const source = `func int TestArrayAccess()
+{
+    var int array[10];
+    var int firstElement = array[0];
+    var int lastElement = array[9];
+    return firstElement;
+};`;
+
+    const result = parser.parse(source);
+    assert.equal(result.hasErrors, false, 'Should parse array access expressions without errors');
+  });
+
+  test('should parse member access expressions', () => {
+    const source = `func void TestMemberAccess()
+{
+    npc.name = "TestNPC";
+    var string npcName = other.name;
+    self.level = 10;
+};`;
+
+    const result = parser.parse(source);
+    assert.equal(result.hasErrors, false, 'Should parse member access expressions without errors');
+  });
+
+  test('should parse binary expressions', () => {
+    const source = `func int TestBinary()
+{
+    var int a = 5;
+    var int b = 10;
+    var int sum = a + b;
+    var int diff = a - b;
+    var int product = a * b;
+    var int quotient = b / a;
+    return sum;
+};`;
+
+    const result = parser.parse(source);
+    assert.equal(result.hasErrors, false, 'Should parse arithmetic binary expressions without errors');
+  });
+
+  test('should parse logical binary expressions', () => {
+    const source = `func int TestLogicalBinary()
+{
+    var int a = 5;
+    var int b = 10;
+    if (a > 0 && b < 20)
+    {
+        return 1;
+    };
+    if (a == 5 || b == 15)
+    {
+        return 2;
+    };
+    return 0;
+};`;
+
+    const result = parser.parse(source);
+    assert.equal(result.hasErrors, false, 'Should parse logical binary expressions without errors');
+  });
+
+  test('should parse binary expressions with function calls', () => {
+    const source = `func int TestBinaryWithCalls()
+{
+    if (IsActive() && HasPermission())
+    {
+        return 1;
+    };
+    return 0;
+};`;
+
+    const result = parser.parse(source);
+    assert.equal(result.hasErrors, false, 'Should parse binary expressions with function calls without errors');
+  });
+
+  test('should extract all function calls from binary expressions', () => {
+    const source = `func int DIA_Test_Condition()
+{
+    if (Npc_KnowsInfo(hero, Info_Old) && Npc_HasItems(hero, ItMi_Gold) >= 50)
+    {
+        return TRUE;
+    };
+    return FALSE;
+};`;
+
+    const result = parser.parse(source);
+    assert.equal(result.hasErrors, false, 'Should parse without errors');
+
+    // Now let's check if we can extract the function calls from the tree
+    const functionCalls = [];
+
+    function traverse(node) {
+      if (node.type === 'call_expression') {
+        const funcNode = node.childForFieldName('function');
+        if (funcNode) {
+          functionCalls.push(funcNode.text);
+        }
+      }
+      for (const child of node.children) {
+        traverse(child);
+      }
+    }
+
+    traverse(result.rootNode);
+
+    assert.equal(functionCalls.length, 2, 'Should find 2 function calls in binary expression');
+    assert.ok(functionCalls.includes('Npc_KnowsInfo'), 'Should find Npc_KnowsInfo call');
+    assert.ok(functionCalls.includes('Npc_HasItems'), 'Should find Npc_HasItems call');
+  });
+
+  test('should extract function calls from complex nested binary expressions', () => {
+    const source = `func int DIA_Complex_Condition()
+{
+    if ((CheckFlag() || VerifyStatus()) && (GetLevel() > 5 && HasItem()))
+    {
+        return TRUE;
+    };
+    return FALSE;
+};`;
+
+    const result = parser.parse(source);
+    assert.equal(result.hasErrors, false, 'Should parse complex nested binary expressions without errors');
+
+    // Extract all function calls
+    const functionCalls = [];
+
+    function traverse(node) {
+      if (node.type === 'call_expression') {
+        const funcNode = node.childForFieldName('function');
+        if (funcNode) {
+          functionCalls.push(funcNode.text);
+        }
+      }
+      for (const child of node.children) {
+        traverse(child);
+      }
+    }
+
+    traverse(result.rootNode);
+
+    assert.equal(functionCalls.length, 4, 'Should find all 4 function calls in nested binary expressions');
+    assert.ok(functionCalls.includes('CheckFlag'), 'Should find CheckFlag call');
+    assert.ok(functionCalls.includes('VerifyStatus'), 'Should find VerifyStatus call');
+    assert.ok(functionCalls.includes('GetLevel'), 'Should find GetLevel call');
+    assert.ok(functionCalls.includes('HasItem'), 'Should find HasItem call');
+  });
+
+  test('should parse comparison binary expressions', () => {
+    const source = `func int TestComparisons()
+{
+    var int value = 10;
+    if (value < 20) { return 1; };
+    if (value <= 10) { return 2; };
+    if (value > 5) { return 3; };
+    if (value >= 10) { return 4; };
+    if (value == 10) { return 5; };
+    if (value != 0) { return 6; };
+    return 0;
+};`;
+
+    const result = parser.parse(source);
+    assert.equal(result.hasErrors, false, 'Should parse comparison binary expressions without errors');
+  });
+
+  test('strings have no escape sequences: a backslash is literal and the next quote ends the string', () => {
+    // Retail scripts carry backslashes literally (paths, "\n"-looking text). The
+    // settled semantics (docs/reference/parser-roundtrip-scope.md) are that a
+    // backslash never escapes anything, so `"Ja\"` is a complete string and the
+    // `"b"` after it is the next one — not the tail of one long string.
+    const source = `func void TestStrings()
+{
+    B_Log("C:\\", "mid\\dle", "Ja\\", "b");
+};`;
+
+    const result = parser.parse(source);
+    assert.equal(result.hasErrors, false, 'Backslashes inside strings must not produce syntax errors');
+
+    const strings = result.rootNode.descendantsOfType('string').map((node) => node.text);
+    assert.deepEqual(strings, ['"C:\\"', '"mid\\dle"', '"Ja\\"', '"b"']);
+  });
+
+  test('should parse local variable declarations as variable_declaration nodes', () => {
+    const source = `func void TestLocals()
+{
+    var int x;
+    x = 5;
+};`;
+
+    const result = parser.parse(source);
+    assert.equal(result.hasErrors, false, 'Should parse without errors');
+
+    const declarations = [];
+
+    function traverse(node) {
+      if (node.type === 'variable_declaration') {
+        declarations.push(node);
+      }
+      for (const child of node.children) {
+        traverse(child);
+      }
+    }
+
+    traverse(result.rootNode);
+
+    assert.equal(declarations.length, 1, 'Local var declaration should parse as variable_declaration');
+    assert.equal(declarations[0].childForFieldName('name').text, 'x');
+  });
+});
+
+describe('native runtime across module registries', () => {
+  // Jest hands every test file its own module registry while Node caches the
+  // native addon per process, so `tree-sitter`'s JS wrapper gets evaluated more
+  // than once against one set of native prototypes. That wrapper is not
+  // idempotent: the second evaluation reads `Tree.prototype.rootNode` through
+  // the accessor the first installed (with `this === Tree.prototype`, which
+  // fails its `this instanceof Tree` guard), captures `undefined`, and
+  // reinstalls the accessor over it — after which every parse in the process
+  // has an undefined `rootNode`. Re-evaluating the JS module graph while
+  // leaving the `.node` addon cached reproduces exactly that situation.
+  const reevaluateJsModuleGraph = () => {
+    const jsEntryPoints = [
+      require.resolve('tree-sitter'),
+      require.resolve('../bindings/node'),
+      require.resolve('../src/core/parser')
+    ];
+    for (const entryPoint of jsEntryPoints) {
+      delete require.cache[entryPoint];
+    }
+    return require('../src/core/parser');
+  };
+
+  test('parse results still expose rootNode after the module graph is re-evaluated', () => {
+    const source = 'instance Test (Base) { name = "test"; };';
+    const parserFromFirstEvaluation = new DaedalusParser();
+    assert.ok(
+      parserFromFirstEvaluation.parse(source).rootNode,
+      'baseline parse should expose a rootNode'
+    );
+
+    const ReloadedDaedalusParser = reevaluateJsModuleGraph();
+    const reloadedResult = new ReloadedDaedalusParser().parse(source);
+
+    assert.ok(reloadedResult.rootNode, 'rootNode should survive a second module evaluation');
+    assert.equal(reloadedResult.hasErrors, false, 'reloaded parser should parse cleanly');
+    assert.equal(reloadedResult.rootNode.type, 'program');
+
+    // The damage is process-global, so parsers created before the re-evaluation
+    // are the clearest signal that the native prototypes were left intact.
+    assert.ok(
+      parserFromFirstEvaluation.parse(source).rootNode,
+      'a parser created before the re-evaluation should keep working'
+    );
+  });
+});
+
+describe('identifier characters (#383)', () => {
+  const parser = new DaedalusParser();
+
+  test('@ and ^ do not start an identifier, and a spaced ^ is still xor', () => {
+    assert.equal(parser.parse('func void f() { var int a; a = @a; };').hasErrors, true);
+    assert.equal(parser.parse('func void f() { var int a; a = ^a; };').hasErrors, true);
+
+    const tree = parser.parse('func void f() { var int a; a = a ^ 1; a = a^b; };');
+    assert.equal(tree.hasErrors, false);
+    const text = tree.rootNode.toString();
+    assert.match(text, /binary_expression/, 'a ^ 1 is a binary expression');
+    const assignments = tree.rootNode.descendantsOfType('assignment_statement');
+    assert.equal(assignments[1].childForFieldName('right').type, 'identifier', 'a^b is one identifier');
+  });
+});
+
+describe('body-less instance declarations (#383)', () => {
+  const parser = new DaedalusParser();
+
+  test('extractDeclarations lists every name of a body-less instance declaration', () => {
+    const result = parser.parse('instance MEM_Game, MEM_World(oCGame);\ninstance Single(C_Npc);');
+    assert.equal(result.hasErrors, false);
+    const declarations = parser.extractDeclarations(result).map(({ type, name, parent }) => ({ type, name, parent }));
+    assert.deepEqual(declarations, [
+      { type: 'instance', name: 'MEM_Game', parent: 'oCGame' },
+      { type: 'instance', name: 'MEM_World', parent: 'oCGame' },
+      { type: 'instance', name: 'Single', parent: 'C_Npc' }
+    ]);
+  });
+
+  test('several names need the body-less form', () => {
+    assert.equal(parser.parse('instance A, B(C) { x = 1; };').hasErrors, true);
+  });
+});

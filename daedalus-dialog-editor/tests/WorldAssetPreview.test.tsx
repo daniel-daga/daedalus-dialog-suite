@@ -1,0 +1,412 @@
+/**
+ * The asset preview (level-editor.md §6, §16.26 row 1).
+ *
+ * A texture is drawn to a 2D canvas, because `decodeTexture` already returns
+ * RGBA8 through ZenKit's own ZTEX decoder. A mesh is drawn by a small Three.js
+ * scene of its own — `extractVisual`'s draw groups, the same ones the world
+ * places — and jsdom has no WebGL, so the renderer is the stand-in every
+ * viewport spec uses and the assertions are about what was asked for and what
+ * was built.
+ *
+ * @jest-environment jsdom
+ */
+
+import React from 'react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { DecodedTexture, VisualScene } from '../src/shared/worldTypes';
+import * as mockWorldViewport from './worldViewportMocks';
+import WorldAssetPreview from '../src/renderer/components/world/WorldAssetPreview';
+
+jest.mock('three', () => mockWorldViewport.mockThree());
+jest.mock('three/examples/jsm/controls/OrbitControls.js', () => mockWorldViewport.mockOrbitControls());
+
+function crate(): VisualScene {
+  return {
+    name: 'NW_CRATE.MRM',
+    source: 'NW_CRATE.MRM',
+    bounds: [0, 0, 0, 100, 100, 100],
+    triangleCount: 1,
+    groups: [{
+      texture: 'NW_WOOD.TGA',
+      color: [255, 255, 255, 255],
+      alphaFunc: 0, texAniMapMode: 0, texAniFps: 0, texAniMapDir: [0, 0],
+      envMapping: false, envMappingStrength: 0,
+      waveMode: 0, waveSpeed: 0, waveMaxAmplitude: 0, waveGridSize: 0,
+      ignoreSun: false, disableLightmap: false,
+      materials: 1, vertexCount: 3, triangleCount: 1,
+      positions: new Float32Array([0, 0, 0, 100, 0, 0, 0, 100, 0]).buffer,
+      normals: new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]).buffer,
+      uvs: new Float32Array([0, 0, 1, 0, 0, 1]).buffer,
+      indices: new Uint32Array([0, 1, 2]).buffer,
+      lights: null,
+    }],
+  };
+}
+
+const noVisual = async () => null;
+
+function texture(name: string): DecodedTexture {
+  return {
+    name,
+    width: 2,
+    height: 2,
+    rgba: new Uint8Array([
+      255, 0, 0, 255, 0, 255, 0, 255,
+      0, 0, 255, 255, 255, 255, 255, 255,
+    ]).buffer,
+  };
+}
+
+describe('WorldAssetPreview', () => {
+  it('shows the asset it was given, by its compiled name', () => {
+    // The VFS holds what the asset compiler produced, not what a VOB names.
+    const load = jest.fn(async () => null);
+    render(<WorldAssetPreview path="Meshes/_compiled/NW_CRATE.MRM" loadTexture={load} loadVisual={noVisual} />);
+
+    expect(screen.getByTestId('world-asset-preview-name')).toHaveTextContent('NW_CRATE.MRM');
+    expect(screen.getByTestId('world-asset-preview-path')).toHaveTextContent('Meshes/_compiled');
+  });
+
+  it('decodes and draws a texture, asking for it by name rather than by path', async () => {
+    // `decodeTexture` resolves through the VFS by name — the namespace is flat
+    // for lookup, and handing it a path would resolve nothing.
+    const load = jest.fn(async () => texture('NW_WOOD-C.TEX'));
+    render(<WorldAssetPreview path="Textures/_compiled/NW_WOOD-C.TEX" loadTexture={load} loadVisual={noVisual} />);
+
+    await waitFor(() => expect(load).toHaveBeenCalledWith('NW_WOOD-C.TEX', 256));
+    const canvas = await screen.findByTestId('world-asset-preview-image');
+    expect(canvas).toHaveAttribute('width', '2');
+    expect(canvas).toHaveAttribute('height', '2');
+    expect(screen.getByTestId('world-asset-preview-size')).toHaveTextContent('2 × 2');
+  });
+
+  it('does not try to decode a mesh as a texture, nor a texture as a mesh', async () => {
+    const load = jest.fn(async () => null);
+    const loadVisual = jest.fn(async () => null);
+    render(<WorldAssetPreview path="Meshes/_compiled/NW_CRATE.MRM" loadTexture={load} loadVisual={loadVisual} />);
+    await screen.findByTestId('world-asset-preview-failed');
+    expect(load).not.toHaveBeenCalled();
+
+    render(<WorldAssetPreview path="Textures/_compiled/NW_WOOD-C.TEX" loadTexture={load} loadVisual={loadVisual} />);
+    await waitFor(() => expect(load).toHaveBeenCalled());
+    expect(loadVisual).toHaveBeenCalledTimes(1);
+  });
+
+  it('says it is working while the extraction is out', async () => {
+    // §5.4 item 17 of `docs/plans/level-editor-review-2026-09-04.md`. A large
+    // `.MDL` is re-extracted on every click (§16.26), so the wait is real — and
+    // the panel showed a name, a path and nothing else for the whole of it,
+    // which is indistinguishable from a mesh that resolved to nothing.
+    let resolve: (scene: VisualScene) => void = () => undefined;
+    const loadVisual = jest.fn(() => new Promise<VisualScene>((keep) => { resolve = keep; }));
+    render(
+      <WorldAssetPreview
+        path="Meshes/_compiled/NW_CRATE.MRM"
+        loadTexture={async () => null}
+        loadVisual={loadVisual}
+      />,
+    );
+
+    expect(await screen.findByTestId('world-asset-preview-loading')).toBeInTheDocument();
+
+    await act(async () => { resolve(crate()); });
+    expect(screen.queryByTestId('world-asset-preview-loading')).not.toBeInTheDocument();
+  });
+
+  it('stops saying it once the extraction comes back with nothing', async () => {
+    const loadVisual = jest.fn(async () => null);
+    render(
+      <WorldAssetPreview
+        path="Meshes/_compiled/NW_CRATE.MRM"
+        loadTexture={async () => null}
+        loadVisual={loadVisual}
+      />,
+    );
+
+    await screen.findByTestId('world-asset-preview-failed');
+    expect(screen.queryByTestId('world-asset-preview-loading')).not.toBeInTheDocument();
+  });
+
+  it('says so for a file that is neither', async () => {
+    const load = jest.fn(async () => null);
+    const loadVisual = jest.fn(async () => null);
+    render(<WorldAssetPreview path="Anims/_compiled/HUMANS.MDH" loadTexture={load} loadVisual={loadVisual} />);
+
+    await screen.findByTestId('world-asset-preview-unsupported');
+    expect(load).not.toHaveBeenCalled();
+    expect(loadVisual).not.toHaveBeenCalled();
+  });
+
+  it.each(['NW_CRATE.MRM', 'CHEST.MDL', 'STOVE.MDM', 'BARREL.3DS', 'HEAD.MMB', 'FIRE.MMS', 'LEVEL.MSH'])(
+    'asks for the visual %s by name and draws it on its own canvas', async (name) => {
+      // Every extension `extractVisual` resolves — compiled and source alike;
+      // the browser lists compiled names, a VOB names source ones.
+      const loadVisual = jest.fn(async () => ({ ...crate(), name, source: name }));
+      const load = jest.fn(async () => null);
+      render(<WorldAssetPreview path={`Meshes/_compiled/${name}`} loadTexture={load} loadVisual={loadVisual} />);
+
+      await waitFor(() => expect(loadVisual).toHaveBeenCalledWith(name));
+      const canvas = await screen.findByTestId('world-asset-preview-mesh');
+      expect(canvas.tagName).toBe('CANVAS');
+      expect(screen.getByTestId('world-asset-preview-mesh-stats')).toHaveTextContent('1 triangle');
+      expect(screen.getByTestId('world-asset-preview-mesh-stats')).toHaveTextContent('1 draw group');
+    },
+  );
+
+  it('textures the mesh the way the world would, asking for each map by name', async () => {
+    const loadVisual = jest.fn(async () => crate());
+    const load = jest.fn(async () => texture('NW_WOOD.TGA'));
+    render(<WorldAssetPreview path="Meshes/_compiled/NW_CRATE.MRM" loadTexture={load} loadVisual={loadVisual} />);
+
+    await waitFor(() => expect(load).toHaveBeenCalledWith('NW_WOOD.TGA', 256));
+  });
+
+  // #369: `WebGLRenderer.dispose()` keeps the GL context alive until the
+  // canvas is collected, and Chromium kills the *oldest* context past about
+  // sixteen — the World viewport's. Clicking through the browser built one
+  // context per file, so a few seconds of it blanked the app until a restart.
+  it('releases each mesh preview\'s GL context when the browser moves on', async () => {
+    const THREE = jest.requireMock('three') as typeof import('three');
+    const created = jest.fn();
+    const released = jest.fn();
+    const { WebGLRenderer } = THREE;
+    jest.spyOn(THREE, 'WebGLRenderer').mockImplementation(((...args: unknown[]) => {
+      const renderer = new (WebGLRenderer as unknown as new (...a: unknown[]) => { forceContextLoss: () => void })(...args);
+      created();
+      jest.spyOn(renderer, 'forceContextLoss').mockImplementation(released);
+      return renderer;
+    }) as never);
+    const loadVisual = jest.fn(async (name: string) => ({ ...crate(), name, source: name }));
+    const { rerender, unmount } = render(
+      <WorldAssetPreview path="Meshes/A.MRM" loadTexture={noVisual} loadVisual={loadVisual} />,
+    );
+
+    await waitFor(() => expect(created).toHaveBeenCalledTimes(1));
+    for (const [shown, next] of ['B.MRM', 'C.MRM', 'D.MRM'].entries()) {
+      rerender(<WorldAssetPreview path={`Meshes/${next}`} loadTexture={noVisual} loadVisual={loadVisual} />);
+      await waitFor(() => expect(created).toHaveBeenCalledTimes(shown + 2));
+      // Every preview but the one on screen has handed its context back.
+      expect(released).toHaveBeenCalledTimes(shown + 1);
+    }
+
+    unmount();
+    expect(released).toHaveBeenCalledTimes(4);
+  });
+
+  // #294: a mod's source file a GMBT build has not compiled yet resolves to
+  // nothing, and "the binding resolves no geometry for it" read as a broken
+  // asset rather than as a step not taken.
+  describe('a source that has not been compiled', () => {
+    it('says it is not compiled yet, and what compiles it, instead of that it failed', async () => {
+      const resolveAsset = jest.fn(async (name: string) => name);
+      render(
+        <WorldAssetPreview
+          path="mod/Meshes/Archolos_stuff/KM_VOB_BIG_BUSH_01.3DS"
+          loadTexture={async () => null}
+          loadVisual={async () => null}
+          resolveAsset={resolveAsset}
+        />,
+      );
+
+      const note = await screen.findByTestId('world-asset-preview-uncompiled');
+      expect(note).toHaveTextContent(/not been compiled/);
+      expect(note).toHaveTextContent(/GMBT build/);
+      expect(resolveAsset).toHaveBeenCalledWith('KM_VOB_BIG_BUSH_01.3DS');
+      expect(screen.queryByTestId('world-asset-preview-failed')).not.toBeInTheDocument();
+    });
+
+    it('decodes a .TGA as a texture, and says the same when it has no compiled half', async () => {
+      const loadTexture = jest.fn(async () => null);
+      render(
+        <WorldAssetPreview
+          path="mod/Textures/NEW_WALL.TGA"
+          loadTexture={loadTexture}
+          loadVisual={async () => null}
+          resolveAsset={async () => null}
+        />,
+      );
+
+      await screen.findByTestId('world-asset-preview-uncompiled');
+      expect(loadTexture).toHaveBeenCalledWith('NEW_WALL.TGA', 256);
+      expect(screen.queryByTestId('world-asset-preview-unsupported')).not.toBeInTheDocument();
+    });
+
+    it('still reports a failure for a source whose compiled half is there', async () => {
+      render(
+        <WorldAssetPreview
+          path="Meshes/NW_CRATE.3DS"
+          loadTexture={async () => null}
+          loadVisual={async () => null}
+          resolveAsset={async () => 'NW_CRATE.MRM'}
+        />,
+      );
+
+      await screen.findByTestId('world-asset-preview-failed');
+      expect(screen.queryByTestId('world-asset-preview-uncompiled')).not.toBeInTheDocument();
+    });
+  });
+
+  // #297: a raw `.3DS` is read by the editor itself now, and the preview says
+  // it is looking at the source rather than at what the game will load.
+  it('says when the mesh was read from the uncompiled .3DS itself', async () => {
+    const loadVisual = jest.fn(async () => ({ ...crate(), name: 'KM_BUSH.3DS', source: 'KM_BUSH.3DS' }));
+    render(<WorldAssetPreview path="mod/Meshes/KM_BUSH.3DS" loadTexture={noVisual} loadVisual={loadVisual} />);
+
+    await screen.findByTestId('world-asset-preview-mesh');
+    expect(screen.getByTestId('world-asset-preview-raw')).toHaveTextContent(/uncompiled \.3DS/);
+    expect(screen.getByTestId('world-asset-preview-raw')).toHaveTextContent(/GMBT build/);
+  });
+
+  it('says nothing of the kind for a compiled mesh', async () => {
+    const loadVisual = jest.fn(async () => ({ ...crate(), name: 'NW_CRATE.3DS', source: 'NW_CRATE.MRM' }));
+    render(<WorldAssetPreview path="Meshes/NW_CRATE.3DS" loadTexture={noVisual} loadVisual={loadVisual} />);
+
+    await screen.findByTestId('world-asset-preview-mesh');
+    expect(screen.queryByTestId('world-asset-preview-raw')).not.toBeInTheDocument();
+  });
+
+  it('shows the source a name resolved to when it differs', async () => {
+    const loadVisual = jest.fn(async () => ({ ...crate(), name: 'NW_CRATE.3DS', source: 'NW_CRATE.MRM' }));
+    render(<WorldAssetPreview path="Meshes/NW_CRATE.3DS" loadTexture={noVisual} loadVisual={loadVisual} />);
+
+    await screen.findByTestId('world-asset-preview-mesh');
+    expect(screen.getByTestId('world-asset-preview-mesh-stats')).toHaveTextContent('NW_CRATE.MRM');
+  });
+
+  // #375: Spacer's preview turns on its own, and a tester reads a model's size
+  // off it — a tree's above all. The box in metres says it more directly.
+  it('gives the mesh\'s size in metres, width × height × depth', async () => {
+    const loadVisual = jest.fn(async () => ({
+      ...crate(), bounds: [-50, 0, -20, 50, 1250, 20] as VisualScene['bounds'],
+    }));
+    render(<WorldAssetPreview path="Meshes/_compiled/NW_TREE.MRM" loadTexture={noVisual} loadVisual={loadVisual} />);
+
+    await screen.findByTestId('world-asset-preview-mesh');
+    expect(screen.getByTestId('world-asset-preview-mesh-dimensions')).toHaveTextContent('1.00 × 12.50 × 0.40 m');
+  });
+
+  it('spins the mesh on its own until it is orbited by hand', async () => {
+    const controlsModule = jest.requireMock('three/examples/jsm/controls/OrbitControls.js') as
+      typeof import('three/examples/jsm/controls/OrbitControls.js');
+    const { OrbitControls } = controlsModule;
+    let controls: InstanceType<typeof OrbitControls> | null = null;
+    const spy = jest.spyOn(controlsModule, 'OrbitControls').mockImplementation(((...args: unknown[]) => {
+      controls = new (OrbitControls as unknown as new (...a: unknown[]) => InstanceType<typeof OrbitControls>)(...args);
+      return controls;
+    }) as never);
+    render(<WorldAssetPreview path="Meshes/_compiled/NW_CRATE.MRM" loadTexture={noVisual} loadVisual={async () => crate()} />);
+
+    await waitFor(() => expect(controls).not.toBeNull());
+    const spun = controls as unknown as InstanceType<typeof OrbitControls>;
+    expect(spun.autoRotate).toBe(true);
+
+    act(() => { spun.dispatchEvent({ type: 'start' }); });
+    expect(spun.autoRotate).toBe(false);
+    spy.mockRestore();
+  });
+
+  it('says so when the binding cannot extract a visual', async () => {
+    const loadVisual = jest.fn(async () => null);
+    render(<WorldAssetPreview path="Meshes/_compiled/BROKEN.MRM" loadTexture={noVisual} loadVisual={loadVisual} />);
+
+    const failed = await screen.findByTestId('world-asset-preview-failed');
+    expect(failed).toHaveTextContent(/could not be extracted/i);
+    expect(screen.queryByTestId('world-asset-preview-mesh')).not.toBeInTheDocument();
+  });
+
+  it('says so when extracting throws, rather than leaving a blank panel', async () => {
+    const loadVisual = jest.fn(async () => { throw new Error('failed to extract visual'); });
+    render(<WorldAssetPreview path="Meshes/_compiled/BROKEN.MRM" loadTexture={noVisual} loadVisual={loadVisual} />);
+
+    await screen.findByTestId('world-asset-preview-failed');
+  });
+
+  it('ignores a visual that arrives after the selection moved on', async () => {
+    let resolveFirst: (v: VisualScene | null) => void = () => {};
+    const loadVisual = jest.fn((name: string) => name === 'SLOW.MRM'
+      ? new Promise<VisualScene | null>((resolve) => { resolveFirst = resolve; })
+      : Promise.resolve(null));
+    const { rerender } = render(
+      <WorldAssetPreview path="Meshes/SLOW.MRM" loadTexture={noVisual} loadVisual={loadVisual} />,
+    );
+    rerender(<WorldAssetPreview path="Meshes/GONE.MRM" loadTexture={noVisual} loadVisual={loadVisual} />);
+    await screen.findByTestId('world-asset-preview-failed');
+
+    resolveFirst({ ...crate(), name: 'SLOW.MRM' });
+    await waitFor(() => expect(loadVisual).toHaveBeenCalledTimes(2));
+    expect(screen.queryByTestId('world-asset-preview-mesh')).not.toBeInTheDocument();
+  });
+
+  it('says so when a texture will not decode, instead of showing a blank frame', async () => {
+    const load = jest.fn(async () => null);
+    render(<WorldAssetPreview path="Textures/BROKEN-C.TEX" loadTexture={load} loadVisual={noVisual} />);
+
+    await screen.findByTestId('world-asset-preview-failed');
+    expect(screen.queryByTestId('world-asset-preview-image')).not.toBeInTheDocument();
+  });
+
+  describe('as a picker (§16.26 row 1)', () => {
+    it("offers a previewed mesh as the selection's visual, by its bare file name", async () => {
+      // The name the world stores is the file name alone — retail says
+      // `NW_CRATE.3DS`, never a directory — so the button hands back the last
+      // path segment and nothing of where the browser found it.
+      const onUseAsVisual = jest.fn();
+      render(
+        <WorldAssetPreview
+          path="Meshes/_compiled/NW_CRATE.MRM"
+          loadTexture={noVisual}
+          loadVisual={async () => crate()}
+          selectionCount={2}
+          onUseAsVisual={onUseAsVisual}
+        />,
+      );
+
+      const button = await screen.findByTestId('world-asset-use-visual');
+      expect(button).toBeEnabled();
+      fireEvent.click(button);
+      expect(onUseAsVisual).toHaveBeenCalledWith('NW_CRATE.MRM');
+    });
+
+    it('is disabled, and says why, when no VOB is selected', async () => {
+      render(
+        <WorldAssetPreview
+          path="Meshes/_compiled/NW_CRATE.MRM"
+          loadTexture={noVisual}
+          loadVisual={async () => crate()}
+          selectionCount={0}
+          onUseAsVisual={jest.fn()}
+        />,
+      );
+
+      const button = await screen.findByTestId('world-asset-use-visual');
+      expect(button).toBeDisabled();
+      expect(screen.getByTestId('world-asset-use-visual-reason')).toHaveAttribute('aria-label', expect.stringMatching(/select/i));
+    });
+
+    it('offers nothing for a texture or an unsupported file — neither is a visual a VOB can carry', async () => {
+      const { rerender } = render(
+        <WorldAssetPreview
+          path="Textures/_compiled/NW_WOOD-C.TEX"
+          loadTexture={async () => texture('NW_WOOD-C.TEX')}
+          loadVisual={noVisual}
+          selectionCount={1}
+          onUseAsVisual={jest.fn()}
+        />,
+      );
+      await screen.findByTestId('world-asset-preview-image');
+      expect(screen.queryByTestId('world-asset-use-visual')).not.toBeInTheDocument();
+
+      rerender(
+        <WorldAssetPreview
+          path="Anims/_compiled/HUMANS.MDH"
+          loadTexture={noVisual}
+          loadVisual={noVisual}
+          selectionCount={1}
+          onUseAsVisual={jest.fn()}
+        />,
+      );
+      await screen.findByTestId('world-asset-preview-unsupported');
+      expect(screen.queryByTestId('world-asset-use-visual')).not.toBeInTheDocument();
+    });
+  });
+});

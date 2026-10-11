@@ -1,0 +1,74 @@
+﻿Mesh: preserve the shared light-map texture list's original order.
+
+The LIGHTMAPS_SHARED (0xB026) writer derives the texture list from the light-maps
+themselves, so it can only ever emit them in first-reference order. ZenGin's order
+is not derivable that way: in the retail Gothic II NewWorld the first light-map
+references texture 125, the second texture 1 and the third texture 125 again, so
+the on-disk list is the order the light-map compiler created the textures in. The
+list read by load() is therefore kept on Mesh::shared_lightmap_textures and reused
+by save() when it still covers every light-map, which makes the chunk byte-identical
+on a round trip; a mesh built from scratch (or whose light-maps were re-assigned)
+still falls back to first-reference order.
+
+diff --git a/include/zenkit/Mesh.hh b/include/zenkit/Mesh.hh
+index 7148881..99b86bd 100644
+--- a/include/zenkit/Mesh.hh
++++ b/include/zenkit/Mesh.hh
+@@ -125,6 +125,14 @@ namespace zenkit {
+ 		/// \brief All shared light-maps associated with this mesh
+ 		std::vector<LightMap> lightmaps {};
+ 
++		/// \brief The shared light-map textures in their on-disk order.
++		///
++		/// ZenGin stores the light-map textures as a list which each light-map indexes into. That order is the one
++		/// the light-map compiler created the textures in and cannot be derived from the light-maps, so it is kept
++		/// here to allow #save to reproduce it. Empty for a mesh which was not loaded from a file; #save then falls
++		/// back to the order in which the light-maps first reference their textures.
++		std::vector<std::shared_ptr<Texture>> shared_lightmap_textures {};
++
+ 		std::vector<Polygon> geometry {};
+ 		std::vector<uint32_t> polygon_vertex_indices;
+ 		std::vector<uint32_t> polygon_feature_indices;
+diff --git a/src/Mesh.cc b/src/Mesh.cc
+index 4766b51..0fa74c4 100644
+--- a/src/Mesh.cc
++++ b/src/Mesh.cc
+@@ -145,7 +145,7 @@ namespace zenkit {
+ 			    case MeshChunkType::LIGHTMAPS_SHARED: {
+ 				    auto texture_count = c->read_uint();
+ 
+-				    std::vector<std::shared_ptr<Texture>> lightmap_textures {};
++				    auto& lightmap_textures = this->shared_lightmap_textures;
+ 				    lightmap_textures.resize(texture_count);
+ 
+ 				    for (std::uint32_t i = 0; i < texture_count; ++i) {
+@@ -260,13 +260,27 @@ namespace zenkit {
+ 		});
+ 
+ 		proto::write_chunk(w, MeshChunkType::LIGHTMAPS_SHARED, [this](Write* c) {
+-			// Shared textures are written in the order they are first referenced by a
+-			// light-map, which is the order load() found them in.
++			// Reuse the list read by load() so that the original order is reproduced; fall
++			// back to the order the light-maps first reference their textures in.
+ 			std::vector<Texture*> shared_textures {};
+ 			std::unordered_map<Texture*, uint32_t> shared_texture_indices {};
+ 			std::vector<uint32_t> lightmap_texture_indices {};
+ 			lightmap_texture_indices.reserve(this->lightmaps.size());
+ 
++			for (auto const& texture : this->shared_lightmap_textures) {
++				if (shared_texture_indices.try_emplace(texture.get(), shared_textures.size()).second) {
++					shared_textures.push_back(texture.get());
++				}
++			}
++
++			for (auto& lightmap : this->lightmaps) {
++				if (shared_texture_indices.find(lightmap.image.get()) == shared_texture_indices.end()) {
++					shared_textures.clear();
++					shared_texture_indices.clear();
++					break;
++				}
++			}
++
+ 			for (auto& lightmap : this->lightmaps) {
+ 				auto [it, inserted] = shared_texture_indices.try_emplace(lightmap.image.get(), shared_textures.size());
+ 				if (inserted) {

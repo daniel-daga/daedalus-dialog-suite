@@ -1,0 +1,25 @@
+node_modules
+dist
+.DS_Store
+coverage
+.env
+.idea
+*.log
+mdk/
+
+# Root-level transient debug artifacts
+/browser_log.txt
+/error_screenshot.png
+/node-editor-playwright-verify.png
+/verification.png
+/verification_quest_layout.png
+/todos.txt
+
+# Generated corpus/roundtrip output
+/reports/
+/.worktrees/
+/__pycache__/
+*.pyc
+
+# Harness-local config (skills live in .agents/skills)
+.claude/

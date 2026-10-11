@@ -1,0 +1,250 @@
+import React, { useMemo } from 'react';
+import {
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  ListItem,
+  ListItemText,
+  Typography,
+  Chip,
+  Box,
+  IconButton,
+  LinearProgress,
+  Tooltip
+} from '@mui/material';
+import { Close as CloseIcon, CheckCircle as CheckCircleIcon, Error as ErrorIcon } from '@mui/icons-material';
+import AutoSizer from 'react-virtualized-auto-sizer';
+import { FixedSizeList as VirtualizedList, ListChildComponentProps, areEqual } from 'react-window';
+import { shallow } from 'zustand/shallow';
+import { useProjectStore } from '../store/projectStore';
+
+interface IngestedFilesDialogProps {
+  open: boolean;
+  onClose: () => void;
+}
+
+interface FileEntry {
+  filePath: string;
+  isParsed: boolean;
+  hasErrors: boolean;
+  errors: Array<{ message: string }>;
+  errorCount: number;
+  lastParsed?: Date;
+  metadataError?: string;
+}
+
+// Stable closed-state snapshot so a closed dialog does not re-render on the
+// per-flush `parsedFiles` churn it would otherwise subscribe to (item E).
+const CLOSED_SNAPSHOT = {
+  parsedFiles: new Map(),
+  allDialogFiles: [] as string[],
+  isIngesting: false,
+  metadataFailures: [] as Array<{ filePath: string; error: string }>
+};
+
+const ROW_HEIGHT = 64;
+
+const FileRow = React.memo(({ index, style, data }: ListChildComponentProps<FileEntry[]>) => {
+  const file = data[index];
+
+  if (!file) return null;
+
+  return (
+    <ListItem style={style} component="div" role="listitem" divider>
+      <ListItemText
+        primary={
+          <Box display="flex" alignItems="center" gap={1}>
+            <Typography variant="body1" component="span" noWrap sx={{ minWidth: 0 }}>
+              {file.filePath}
+            </Typography>
+            {file.isParsed ? (
+              file.hasErrors ? (
+                 <Tooltip title={
+                   <Box sx={{ p: 0.5 }}>
+                     {file.errors.slice(0, 10).map((e: { message: string }, i: number) => (
+                       <Typography key={i} variant="caption" display="block" sx={{ whiteSpace: 'pre-wrap', mb: 0.5 }}>
+                         {e.message}
+                       </Typography>
+                     ))}
+                     {file.errors.length > 10 && (
+                       <Typography variant="caption" display="block" fontStyle="italic">
+                         ...and {file.errors.length - 10} more
+                       </Typography>
+                     )}
+                   </Box>
+                 }>
+                   <Chip
+                     icon={<ErrorIcon />}
+                     label={`${file.errorCount} Errors`}
+                     color="error"
+                     size="small"
+                   />
+                 </Tooltip>
+              ) : (
+                <Chip
+                  icon={<CheckCircleIcon />}
+                  label="Parsed"
+                  color="success"
+                  size="small"
+                  variant="outlined"
+                />
+              )
+            ) : (
+              <Chip
+                label="Pending"
+                size="small"
+                variant="outlined"
+                sx={{ opacity: 0.6 }}
+              />
+            )}
+            {file.metadataError && (
+              <Tooltip title={
+                <Typography variant="caption" sx={{ whiteSpace: 'pre-wrap' }}>
+                  {file.metadataError}
+                </Typography>
+              }>
+                <Chip
+                  icon={<ErrorIcon />}
+                  label="Metadata failed"
+                  color="warning"
+                  size="small"
+                  variant="outlined"
+                />
+              </Tooltip>
+            )}
+          </Box>
+        }
+        secondary={file.isParsed && file.lastParsed ? `Last parsed: ${file.lastParsed.toLocaleTimeString()}` : 'Not loaded yet'}
+        secondaryTypographyProps={{ noWrap: true }}
+      />
+    </ListItem>
+  );
+}, areEqual);
+
+export const IngestedFilesDialog: React.FC<IngestedFilesDialogProps> = ({ open, onClose }) => {
+  const { parsedFiles, allDialogFiles, isIngesting, metadataFailures } = useProjectStore((state) => (
+    open
+      ? {
+          parsedFiles: state.parsedFiles,
+          allDialogFiles: state.allDialogFiles,
+          isIngesting: state.isIngesting,
+          metadataFailures: state.metadataFailures
+        }
+      : CLOSED_SNAPSHOT
+  ), shallow);
+
+  const metadataFailuresByPath = useMemo(() => new Map(
+    (metadataFailures || []).map((failure) => [failure.filePath, failure.error])
+  ), [metadataFailures]);
+
+  // Hoisted out of render: each 500 ms ingestion flush pays one build + sort,
+  // and re-renders without a parsedFiles change pay none.
+  const { fileList, parsedCount } = useMemo(() => {
+    // Merge all known files with their parsed status
+    const fileList: FileEntry[] = (allDialogFiles || []).map(filePath => {
+      // Safely handle both Map and plain object
+      const parsed = (parsedFiles && typeof (parsedFiles as any).get === 'function')
+        ? (parsedFiles as any).get(filePath)
+        : (parsedFiles as any)?.[filePath];
+
+      return {
+        filePath,
+        isParsed: !!parsed,
+        hasErrors: parsed?.semanticModel?.hasErrors || false,
+        errors: parsed?.semanticModel?.errors || [],
+        errorCount: parsed?.semanticModel?.errors?.length || 0,
+        lastParsed: parsed?.lastParsed,
+        metadataError: metadataFailuresByPath.get(filePath)
+      };
+    });
+
+    // Sort: Errors first, then Parsed, then Pending, then Alphabetical
+    fileList.sort((a, b) => {
+      const getPriority = (f: any) => {
+        if (!f) return 3;
+        if (f.hasErrors) return 0; // Highest priority
+        if (f.isParsed) return 1;  // Second priority
+        return 2;                  // Lowest priority (Pending)
+      };
+
+      const priorityA = getPriority(a);
+      const priorityB = getPriority(b);
+
+      if (priorityA !== priorityB) {
+        return priorityA - priorityB;
+      }
+
+      return (a?.filePath || '').localeCompare(b?.filePath || '');
+    });
+
+    return { fileList, parsedCount: fileList.filter(f => f.isParsed).length };
+  }, [parsedFiles, allDialogFiles, metadataFailuresByPath]);
+
+  if (!open || !allDialogFiles || !parsedFiles) {
+    return null;
+  }
+
+  const progress = allDialogFiles.length > 0 ? (parsedCount / allDialogFiles.length) * 100 : 0;
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+      <DialogTitle>
+        <Box display="flex" flexDirection="column" gap={1}>
+          <Box display="flex" alignItems="center" justifyContent="space-between">
+            <Box display="flex" alignItems="center" gap={1}>
+              Project Files ({fileList.length})
+              {metadataFailuresByPath.size > 0 && (
+                <Chip
+                  icon={<ErrorIcon />}
+                  label={`${metadataFailuresByPath.size} metadata failed`}
+                  color="warning"
+                  size="small"
+                />
+              )}
+            </Box>
+            <IconButton onClick={onClose} size="small">
+              <CloseIcon />
+            </IconButton>
+          </Box>
+          {isIngesting && (
+            <Box sx={{ width: '100%' }}>
+              <LinearProgress variant="determinate" value={progress} />
+              <Typography variant="caption" color="text.secondary">
+                Ingesting... {parsedCount} / {allDialogFiles.length}
+              </Typography>
+            </Box>
+          )}
+        </Box>
+      </DialogTitle>
+      <DialogContent dividers>
+        {fileList.length === 0 ? (
+          <Typography color="text.secondary" align="center" sx={{ py: 4 }}>
+            No files found in project.
+          </Typography>
+        ) : (
+          <Box sx={{ height: '60vh' }} role="list">
+            <AutoSizer>
+              {({ height, width }) => (
+                <VirtualizedList
+                  height={height}
+                  width={width}
+                  itemCount={fileList.length}
+                  itemSize={ROW_HEIGHT}
+                  itemData={fileList}
+                  itemKey={(index, data) => data[index].filePath}
+                >
+                  {FileRow}
+                </VirtualizedList>
+              )}
+            </AutoSizer>
+          </Box>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Close</Button>
+      </DialogActions>
+    </Dialog>
+  );
+};

@@ -1,0 +1,324 @@
+/// <reference types="vite/client" />
+
+/**
+ * Global type definitions for the renderer process
+ *
+ * Re-exports shared types and defines renderer-specific types like EditorAPI
+ */
+
+export type {
+  DiscoveredWorld,
+  OpenWorldRequest,
+  WorldSummary,
+  WorldMeshPayload,
+  InstancedPayload,
+  DecodedTexture,
+  VfsEntry,
+  VfsSearch,
+  WaynetPayload,
+  PortalFindingsPayload,
+  WorldOp,
+  VobFolders,
+  AssetCatalog,
+} from '../../shared/worldTypes';
+
+// Re-export all shared types
+export type {
+  UpdateMetadata,
+  UpdateCheckResult,
+  UpdaterSettings,
+} from '../../shared/updater-types';
+
+export type {
+  DialogMetadata,
+  ProjectIndex,
+  CodeGenerationSettings,
+  DialogLineAction,
+  ChoiceAction,
+  LogEntryAction,
+  CreateTopicAction,
+  LogSetTopicStatusAction,
+  CreateInventoryItemsAction,
+  GiveInventoryItemsAction,
+  AttackActionType,
+  SetAttitudeActionType,
+  ChapterTransitionAction,
+  ExchangeRoutineAction,
+  SetRefuseTalkAction,
+  ClearChoicesAction,
+  GivePlayerXPActionType,
+  PickpocketActionType,
+  StartOtherRoutineActionType,
+  TeachActionType,
+  GiveTradeInventoryActionType,
+  RemoveInventoryItemsActionType,
+  UseItemActionType,
+  InsertNpcActionType,
+  ConditionalAction,
+  CustomAction,
+  CommentActionType,
+  DialogAction,
+  NpcKnowsInfoCondition,
+  VariableCondition,
+  NpcHasItemsCondition,
+  NpcIsInStateCondition,
+  NpcIsDeadCondition,
+  NpcGetDistToWpCondition,
+  NpcGetTalentSkillCondition,
+  GenericCondition,
+  DialogCondition,
+  DialogFunction,
+  DialogProperties,
+  Dialog,
+  ParseError,
+  GlobalConstant,
+  GlobalVariable,
+  GlobalInstance,
+  GlobalClass,
+  GlobalPrototype,
+  SemanticModel,
+  FunctionTreeChild,
+  FunctionTreeNode,
+  ValidationErrorType,
+  ValidationError,
+  ValidationWarning,
+  ValidationOptions,
+  ValidationResult,
+  SaveResult,
+  RecentProject,
+  AppendInsertNpcResult,
+  ProjectOutputUnits,
+  NpcDefinition,
+  NpcStatement,
+  NpcFieldStatement,
+  NpcCallStatement,
+  NpcOtherStatement,
+  NpcEdit
+} from '../../shared/types';
+
+// Import types needed for EditorAPI definition
+import type {
+  SemanticModel,
+  CodeGenerationSettings,
+  ProjectIndex,
+  ValidationResult,
+  ValidationOptions,
+  SaveResult,
+  RecentProject,
+  AppendInsertNpcResult,
+  NpcDefinition,
+  NpcEdit,
+  RoutineArgIndex,
+  FileIndex
+} from '../../shared/types';
+
+import type { NpcBodyRequest, NpcBodyScene } from '../../shared/worldTypes';
+import type { UpdateCheckResult } from '../../shared/updater-types';
+import type { OpenedProjectConfig } from '../../shared/projectConfigTypes';
+export type { GothicProjectFileV1, GothicTarget, OpenedProjectConfig, ProjectConfigWarning } from '../../shared/projectConfigTypes';
+
+// ============================================================================
+// Editor API (renderer-specific)
+// ============================================================================
+
+export interface SaveOptions {
+  skipValidation?: boolean;
+  forceOnErrors?: boolean;
+  // When true, bypass the main-process external-modification precondition
+  // (E4 phase 2) and overwrite the file even if it changed on disk.
+  overwriteExternal?: boolean;
+  // The disk version the saved model was read from (#378); the save is
+  // refused as EXTERNAL_MODIFICATION when the file is no longer that version.
+  expectedVersion?: string;
+  // Project-wide AI_Output voice ids (excluding the file being saved), keyed
+  // by UPPERCASED id — same shape as ProjectIndex.voiceIds. Feeds the
+  // duplicate-voice-id validation warnings.
+  existingVoiceIds?: Record<string, Array<{ filePath: string; functionName: string }>>;
+}
+
+export interface EditorAPI {
+  // Parser API - runs in main process (has access to native modules)
+  parseSource: (sourceCode: string) => Promise<SemanticModel>;
+
+  // NPC editor - an instance's body as statements, and edits patched into its
+  // source; both run in the parser pool (docs/plans/npc-editor.md, Phase 2)
+  extractNpc: (sourceText: string) => Promise<NpcDefinition>;
+  applyNpcEdits: (sourceText: string, edits: NpcEdit[]) => Promise<string>;
+
+  // Validation API - validates model before saving
+  validateModel: (model: SemanticModel, settings: CodeGenerationSettings, options?: ValidationOptions) => Promise<ValidationResult>;
+
+  // Code Generator API - runs in main process
+  generateCode: (model: SemanticModel, settings: CodeGenerationSettings) => Promise<string>;
+  generateDialogCode: (model: SemanticModel, dialogName: string, settings: CodeGenerationSettings) => Promise<string>;
+  saveFile: (filePath: string, model: SemanticModel, settings: CodeGenerationSettings, options?: SaveOptions) => Promise<SaveResult>;
+
+  // File I/O API
+  readFile: (filePath: string) => Promise<string>;
+  // `readFile` plus the disk version of the bytes read (#378). A caller that
+  // writes the file back keeps the version with its snapshot and passes it as
+  // `expectedVersion`; no other read advances it.
+  readFileVersioned: (filePath: string) => Promise<{ content: string; version: string }>;
+  writeFile: (filePath: string, content: string, options?: { expectedVersion?: string }) => Promise<{ success: boolean; version?: string }>;
+  openFileDialog: () => Promise<string | null>;
+  saveFileDialog: () => Promise<string | null>;
+
+  // Project API
+  openProjectFolderDialog: () => Promise<string | null>;
+  buildProjectIndex: (folderPath: string) => Promise<ProjectIndex>;
+  parseDialogFile: (filePath: string) => Promise<SemanticModel>;
+  indexFile: (filePath: string, layouts: Record<string, RoutineArgIndex>) => Promise<FileIndex>;
+  addAllowedPath: (folderPath: string) => Promise<void>;
+  loadProjectConfig: (projectRoot: string) => Promise<OpenedProjectConfig>;
+  /** The project's OutputUnit database, or null when the install has none (#264). */
+  readOutputUnits: () => Promise<ProjectOutputUnits | null>;
+  /** Write the scripts' lines into every OU file under the install, each backed
+   *  up to `.bak` first; resolves with the files written and the database as it
+   *  now reads (#264). */
+  updateOutputUnits: (lines: Array<{ name: string; text: string }>) => Promise<{ written: string[]; outputUnits: ProjectOutputUnits | null }>;
+  selectAssetSourceFolder: (defaultPath?: string) => Promise<string | null>;
+  /** Writes the Asset sources dialog's two paths. `gmbtProjectDir` is null to
+   *  clear it and omitted to leave it as it is. */
+  saveProjectAssetSources: (
+    projectFilePath: string, assetSources: string[], gmbtProjectDir?: string | null,
+  ) => Promise<OpenedProjectConfig>;
+
+  // Settings API
+  getRecentProjects: () => Promise<RecentProject[]>;
+
+  // File Watcher API
+  startFileWatcher: (projectPath: string) => Promise<void>;
+  stopFileWatcher: () => Promise<void>;
+  onFileChanged: (callback: (event: FileChangeEvent) => void) => () => void;
+
+  // App info
+  getAppVersion: () => Promise<string>;
+
+  // Crash logging (fix-08 §5). The renderer forwards window.onerror /
+  // unhandledrejection here; main validates and appends to the local log file.
+  logRendererError: (payload: { message: string; stack?: string }) => Promise<void>;
+  getLogPath: () => Promise<string>;
+  showLogFile: () => Promise<void>;
+
+  // Window close guard (E1). Main intercepts the window `close`, sends
+  // `app:closeRequested`, and waits for the renderer to acknowledge and decide.
+  onCloseRequested: (callback: () => void) => () => void;
+  ackCloseRequest: () => void;
+  approveClose: () => void;
+  cancelClose: () => void;
+
+  // World API (level-editor.md §7). The world stays in the main process; what
+  // crosses is the lightweight VOB index plus geometry and texture buffers.
+  openWorldDialog: () => Promise<string | null>;
+  /** The worlds under the project's asset sources (level-editor.md §16.31). */
+  listWorlds: () => Promise<DiscoveredWorld[]>;
+  /** The machine's Gothic installation (level-editor.md §9). Both return the
+   *  re-resolved active project, or null when no project is open. */
+  selectGothicInstall: () => Promise<OpenedProjectConfig | null>;
+  clearGothicInstall: () => Promise<OpenedProjectConfig | null>;
+  openWorld: (request: OpenWorldRequest) => Promise<WorldSummary>;
+  /** Mount configured project assets for the NPC preview without opening a level. */
+  ensureNpcPreviewAssets: () => Promise<void>;
+  getWorldMesh: () => Promise<WorldMeshPayload>;
+  /** Every instanced visual. `have` names the ones the scene already draws:
+   *  each comes back as placements only, with `groups: []`. */
+  getWorldVisuals: (have?: string[]) => Promise<InstancedPayload>;
+  getWorldTexture: (name: string, maxSize: number) => Promise<DecodedTexture | null>;
+  /** One level of the mounted VFS; null for a missing path and for a file. */
+  listWorldAssets: (path: string) => Promise<VfsEntry[] | null>;
+  searchWorldAssets: (query: string) => Promise<VfsSearch>;
+  /** What each name resolves to in the mounted namespace, or null (#294). */
+  resolveWorldAssets: (names: string[]) => Promise<(string | null)[]>;
+  getWorldWaynet: () => Promise<WaynetPayload>;
+  /** The portal checks' findings over the open world's mesh, computed in the
+   *  worker (level-editor.md §16.20 slice 3). Findings only, never geometry. */
+  getWorldPortalFindings: () => Promise<PortalFindingsPayload>;
+  /** The bounds of a visual a VOB is being *given*, for the box a swap refits —
+   *  the one bounds not already in the renderer, because a visual the world does
+   *  not use has no instance. Null for a name that does not resolve. */
+  getVisualBounds: (name: string) => Promise<number[] | null>;
+  /** One visual by name for the Assets panel's mesh preview — its merged draw
+   *  groups and bounds. Null for a name the binding cannot extract. */
+  getWorldVisual: (name: string) => Promise<VisualScene | null>;
+  getNpcBody: (request: NpcBodyRequest) => Promise<NpcBodyScene | null>;
+  /** The machine-local thumbnail cache (level-editor.md §16.26 row 1): a read
+   *  answers the key the name was looked up under and the PNG data URL drawn
+   *  for it, or null when nothing has been — in which case the renderer draws
+   *  one and puts it back under that key. */
+  getAssetThumbnail: (name: string) => Promise<{ key: string; dataUrl: string | null }>;
+  putAssetThumbnail: (key: string, dataUrl: string) => Promise<void>;
+  /** The `<project>.assets.json` sidecar — favorites and user categories on
+   *  the asset browser, beside the project file (§16.26). The shipped seed is
+   *  not in it; the renderer merges the two. */
+  getAssetCatalog: (projectFilePath: string) => Promise<AssetCatalog>;
+  saveAssetCatalog: (projectFilePath: string, catalog: AssetCatalog) => Promise<void>;
+  /** The per-class fields of one VOB, by its native index path — the `from` side
+   *  of a class-property edit and what the grid shows. Asked for every time: the
+   *  columnar index interns a class name and carries no per-class data. */
+  getVobProps: (path: string) => Promise<Record<string, unknown>>;
+  /** The VOB enumeration again, after a structural edit changed it. A flat index
+   *  is a position in a depth-first traversal, so an added VOB changes how many
+   *  there are and the columnar projection cannot be patched. */
+  refreshWorldIndex: () => Promise<WorldSummary>;
+  /** Apply an edit. One call is one undo entry, so a multi-select drag is one
+   *  batch and not one call per VOB. */
+  applyWorldOps: (ops: WorldOp[]) => Promise<void>;
+  /** The ops that were applied, so the renderer's projection can follow them —
+   *  null when there was nothing left to undo/redo. */
+  undoWorldEdit: () => Promise<WorldOp[] | null>;
+  redoWorldEdit: () => Promise<WorldOp[] | null>;
+  /** How many batches each stack holds — the World bar's undo/redo buttons'
+   *  only way to know whether either has anything in it; the stacks
+   *  themselves are private to the main-process service (§7). */
+  getWorldHistoryDepth: () => Promise<{ undo: number; redo: number }>;
+  /** Atomically overwrite the world currently open in the main process. */
+  saveWorld: () => Promise<void>;
+  /** Save the open world under a new name, picked in a dialog main shows, and
+   *  make that file the open world (#367). Resolves the new path, or null when
+   *  the dialog was cancelled. */
+  saveWorldAs: () => Promise<string | null>;
+  /** Start a GMBT quick test over the open world (§16.29). It resolves once
+   *  the process has been launched; nothing waits on the run. Rejects when no
+   *  GMBT project folder is configured, when no world is open, or when `gmbt`
+   *  is not installed. */
+  startGmbtQuickTest: () => Promise<void>;
+  /** A quick test that failed after the launch resolved — a spawn that never
+   *  happened, or a non-zero exit with the end of gmbt's log (#266). */
+  onGmbtQuickTestFailed: (callback: (message: string) => void) => () => void;
+  /** `gmbt compile --full` in the project's GMBT folder, then the VFS remounted
+   *  (#296). Rejects with GMBT's exit code and its last output. */
+  compileWorldAssets: () => Promise<void>;
+  /** The `<worldname>.folders.json` sidecar — user-created, editor-only VOB
+   *  groupings kept beside the world file, never in it. */
+  getVobFolders: (worldPath: string) => Promise<VobFolders>;
+  saveVobFolders: (worldPath: string, folders: VobFolders) => Promise<void>;
+  closeWorld: () => Promise<void>;
+
+  /** Append `Wld_InsertNpc (npcInstance, "spawnPoint");` as the last statement
+   *  of `functionName` in the script at `filePath`, by text splice on disk
+   *  (level-editor.md §16.19, slice 16 C). Refuses, typed, on parse errors,
+   *  a missing function, or a file changed since it was last read. */
+  appendInsertNpc: (filePath: string, functionName: string, npcInstance: string, spawnPoint: string) => Promise<AppendInsertNpcResult>;
+
+  // Updater API
+  checkForUpdate: () => Promise<UpdateCheckResult>;
+  downloadUpdate: (url: string) => Promise<string>;
+  installUpdate: (installerPath: string) => Promise<void>;
+  dismissUpdateVersion: (version: string) => Promise<void>;
+  /** Open an https URL in the system browser (release notes). Main refuses any other scheme. */
+  openExternal: (url: string) => Promise<void>;
+  onDownloadProgress: (callback: (percent: number) => void) => () => void;
+}
+
+export interface FileChangeEvent {
+  type: 'change' | 'add' | 'unlink';
+  filePath: string;
+}
+
+declare global {
+  interface Window {
+    editorAPI: EditorAPI;
+  }
+}
+
+export {};

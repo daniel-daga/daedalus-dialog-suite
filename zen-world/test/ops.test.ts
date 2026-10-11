@@ -1,0 +1,4223 @@
+// The op model — the first thing in this project that writes (level-editor.md
+// §7, Phase 1b).
+//
+// Everything in Phase 1a is a read-only projection. An op is not, and three
+// things about it are load-bearing and silent when wrong:
+//
+//   - **a VOB has two addresses.** The renderer knows a flat index into the
+//     columnar `vobIndex`; `setVobPosition` addresses the native world by an
+//     index *path* down the children lists, "0/2". They are different numbers
+//     and nothing in either shape says so.
+//   - **the path is the `childIndex` chain, not the vob-index chain.** Retail
+//     worlds are enumerated depth-first, so on the world you tested the two
+//     usually agree — the same trap the scene tree's sibling order already
+//     walked into.
+//   - **an op carries where it came from as well as where it goes.** That is
+//     what makes its inverse pure: undo replays an op, it never reads state
+//     back out of the native world or keeps a snapshot beside it.
+
+import {
+  addVob,
+  alignSubtreesToNormal,
+  alignVobsToNormal,
+  applyOps,
+  applyWaypointNames,
+  applyWaypointPositions,
+  reparentVob,
+  reparentVobs,
+  landedPaths,
+  commitOps,
+  createVobReader,
+  deleteVob,
+  deleteVobs,
+  deleteWaypoint,
+  dropSubtreesToGround,
+  dropVobsToGround,
+  duplicateVobSpec,
+  duplicateVobSubtree,
+  duplicateVobs,
+  pasteVobs,
+  PASTE_MIN_OFFSET,
+  invertOp,
+  isDeleteOp,
+  isStructuralOp,
+  isWaynetOp,
+  moveVob,
+  moveWaypoint,
+  renameWaypoint,
+  addWaypoint,
+  connectWaypoints,
+  disconnectWaypoints,
+  multiplyRotation,
+  rotationAbout,
+  rotationAboutUp,
+  placeBounds,
+  renumbersPaths,
+  renumbersWaypoints,
+  rotateSubtrees,
+  rotateSubtreeTo,
+  rotateVob,
+  rotateVobs,
+  scatterVobs,
+  setVobClassProp,
+  setVobProp,
+  setVobProps,
+  subtreeMembers,
+  translateSubtrees,
+  translateVobs,
+  vobIndexPath,
+  vobAtIndexPath,
+  type ClassProps,
+  type AddVob,
+  type ReadProps,
+  type SetVobClassProp,
+  type MoveWaypoint,
+  type RenameWaypoint,
+  type AddWaypoint,
+  type SetWaypointEdge,
+  type NewVob,
+  type OpBinding,
+  type RotateVob,
+  type VobFlags,
+  type VobIndex,
+  type VobProps,
+  type VobReader,
+  type WorldOp,
+  type ZenBounds,
+  type ZenPosition,
+  type ZenRotation,
+} from '../src/model';
+
+interface Spec {
+  parent?: number;
+  childIndex?: number;
+  pos?: [number, number, number];
+  /** Row-major 3x3. Identity when omitted — the same default the columnar
+   *  builder writes, and the pose every op before the duplicate spec reads for
+   *  nothing. */
+  rot?: number[];
+  name?: string;
+  visual?: string;
+  /** The VOB's class. Defaulted rather than required, because every op before
+   *  the class-property one is about the base `zCVob` and reads the class for
+   *  nothing — the fixture said so by hardcoding a one-entry dictionary. */
+  cls?: string;
+  flags?: Partial<VobFlags>;
+}
+
+/** The bit layout `vobIndex` packs its flags column in. */
+const FLAG_BITS: Array<[keyof VobFlags, number]> = [
+  ['showVisual', 0b000001], ['vobStatic', 0b000010], ['ambient', 0b000100],
+  ['cdStatic', 0b001000], ['cdDynamic', 0b010000], ['physicsEnabled', 0b100000],
+];
+
+/** Interned exactly as the binding interns: one dictionary, indices into it. */
+function intern(values: Array<string | undefined>): { dictionary: string[]; index: ArrayBuffer } {
+  const dictionary: string[] = [];
+  const index = new Uint32Array(values.length);
+  values.forEach((value, at) => {
+    const key = value ?? '';
+    let found = dictionary.indexOf(key);
+    if (found === -1) found = dictionary.push(key) - 1;
+    index[at] = found;
+  });
+  if (dictionary.length === 0) dictionary.push('');
+  return { dictionary, index: index.buffer };
+}
+
+/** A VOB table in the columnar shape `vobIndex` emits. */
+function vobIndex(vobs: Spec[]): VobIndex {
+  const parent = new Int32Array(vobs.length);
+  const childIndex = new Uint32Array(vobs.length);
+  const positions = new Float32Array(vobs.length * 3);
+  const rotations = new Float32Array(vobs.length * 9);
+  const flags = new Uint32Array(vobs.length);
+
+  vobs.forEach((vob, i) => {
+    parent[i] = vob.parent ?? -1;
+    childIndex[i] = vob.childIndex ?? 0;
+    positions.set(vob.pos ?? [i, i * 2, i * 3], i * 3);
+    rotations.set(vob.rot ?? [1, 0, 0, 0, 1, 0, 0, 0, 1], i * 9);
+    for (const [flag, bit] of FLAG_BITS) if (vob.flags?.[flag]) flags[i] |= bit;
+  });
+
+  const names = intern(vobs.map((vob) => vob.name));
+  const visuals = intern(vobs.map((vob) => vob.visual));
+  const classes = intern(vobs.map((vob) => vob.cls ?? 'zCVob'));
+
+  return {
+    count: vobs.length,
+    parent: parent.buffer,
+    childIndex: childIndex.buffer,
+    positions: positions.buffer,
+    rotations: rotations.buffer,
+    flags: flags.buffer,
+    classes: classes.dictionary, classIndex: classes.index,
+    names: names.dictionary, nameIndex: names.index,
+    visuals: visuals.dictionary, visualIndex: visuals.index,
+    visualTypes: ['MULTI_RESOLUTION_MESH'], visualTypeIndex: new Uint32Array(vobs.length).buffer,
+    // No decals: an op never touches one, so the side table is empty here.
+    decalVobs: new Uint32Array(0).buffer, decalDimensions: new Float32Array(0).buffer,
+    decalAlphaWeights: new Uint8Array(0).buffer,
+  };
+}
+
+/** The adds of a batch. A duplicate's batch is not adds alone since a copy
+ *  carries its class fields (§14.1 1.2), and only an add has a `parentPath`. */
+function addsOf(ops: ReadonlyArray<AddVob | SetVobClassProp>): AddVob[] {
+  return ops.filter((op): op is AddVob => op.op === 'AddVob');
+}
+
+describe('the native address of a VOB', () => {
+  it('is the chain of childIndex values from the root down', () => {
+    //  vob 0 ── vob 1 (slot 3) ── vob 2 (slot 1)
+    const reader = createVobReader(vobIndex([
+      { childIndex: 2 },
+      { parent: 0, childIndex: 3 },
+      { parent: 1, childIndex: 1 },
+    ]));
+
+    expect(vobIndexPath(reader, 0)).toBe('2');
+    expect(vobIndexPath(reader, 1)).toBe('2/3');
+    expect(vobIndexPath(reader, 2)).toBe('2/3/1');
+  });
+
+  it('is not the chain of vob indices — they only look alike on a world enumerated in order', () => {
+    // Slots and vob indices disagree here, which is what a world with a
+    // deleted sibling or a non-depth-first enumeration looks like. Retail
+    // worlds mostly hide this: `setVobPosition` would move the wrong VOB, or
+    // refuse a slot that does not exist, on the first world that does not.
+    const reader = createVobReader(vobIndex([
+      { childIndex: 0 },
+      { parent: 0, childIndex: 7 },
+    ]));
+
+    expect(vobIndexPath(reader, 1)).toBe('0/7');
+    expect(vobIndexPath(reader, 1)).not.toBe('0/1');
+  });
+
+  it('is nothing for a VOB that is not in the index', () => {
+    const reader = createVobReader(vobIndex([{}]));
+    expect(vobIndexPath(reader, 1)).toBeNull();
+    expect(vobIndexPath(reader, -1)).toBeNull();
+  });
+});
+
+describe('a move op', () => {
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0, pos: [100, 200, 300] },
+    { parent: 0, childIndex: 4, pos: [10, 20, 30] },
+  ]));
+
+  it('carries both addresses and both positions', () => {
+    const op = moveVob(reader(), 1, [11, 22, 33]);
+
+    expect(op).toEqual({
+      op: 'MoveVob',
+      vob: 1,
+      path: '0/4',
+      // ZenGin space, centimetres — the coordinates the binding takes. The
+      // conversion lives at the render boundary and an op never crosses it.
+      from: [10, 20, 30],
+      to: [11, 22, 33],
+    });
+  });
+
+  it('inverts by swapping them, with no state to consult', () => {
+    const op = moveVob(reader(), 1, [11, 22, 33]);
+    const undo = invertOp(op);
+
+    // Narrowed for the reason the `vob` line below gives, now true of the sides
+    // too: `invertOp` is total over `WorldOp` since the delete gained an inverse
+    // (§7), and a `RestoreVob` carries no sides at all.
+    expect(undo.op === 'MoveVob' && undo.from).toEqual([11, 22, 33]);
+    expect(undo.op === 'MoveVob' && undo.to).toEqual([10, 20, 30]);
+    // Same VOB, same native address: an inverse is an op like any other and
+    // goes through the same path.
+    // Narrowed for the same reason the line below is: `vob` stopped being a
+    // field every op has when the first waynet op arrived.
+    expect(undo.op === 'MoveVob' && undo.vob).toBe(op.vob);
+    // Narrowed because `invertOp` answers a `WorldOp`, and a reparent addresses
+    // a VOB by two slots rather than by one path.
+    expect(undo.op === 'MoveVob' && undo.path).toBe(op.path);
+    expect(invertOp(undo)).toEqual(op);
+  });
+
+  it('is refused for a VOB that is not in the index', () => {
+    expect(() => moveVob(reader(), 9, [1, 2, 3])).toThrow(/9/);
+  });
+});
+
+describe('a multi-select drag', () => {
+  // One gizmo moves a whole selection, so what the drag produces is a *delta*,
+  // not a destination: the VOBs keep their spacing, and each op still carries
+  // the position of its own VOB. A batch is atomic and is one undo entry, so
+  // this is one list, never one call per VOB.
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0, pos: [100, 200, 300] },
+    { parent: 0, childIndex: 4, pos: [10, 20, 30] },
+    { parent: 0, childIndex: 5, pos: [-1, -2, -3] },
+  ]));
+
+  it('moves every selected VOB by the same delta, from wherever it is', () => {
+    const ops = translateVobs(reader(), [0, 2], [5, 0, -10]);
+
+    expect(ops).toEqual([
+      { op: 'MoveVob', vob: 0, path: '0', from: [100, 200, 300], to: [105, 200, 290] },
+      { op: 'MoveVob', vob: 2, path: '0/5', from: [-1, -2, -3], to: [4, -2, -13] },
+    ]);
+  });
+
+  it('inverts as a batch — the whole selection goes back where it came from', () => {
+    // Undo replays inverses back to front (`commitOps`), and each op knows its
+    // own origin, so a selection that was never uniform to begin with is
+    // restored exactly rather than collapsed onto one point.
+    const index = vobIndex([
+      { childIndex: 0, pos: [100, 200, 300] },
+      { parent: 0, childIndex: 4, pos: [10, 20, 30] },
+      { parent: 0, childIndex: 5, pos: [-1, -2, -3] },
+    ]);
+    const live = createVobReader(index);
+    const ops = translateVobs(live, [0, 1, 2], [7, 7, 7]);
+
+    applyOps(live, ops);
+    applyOps(live, [...ops].reverse().map(invertOp));
+
+    expect(live.position(0)).toEqual([100, 200, 300]);
+    expect(live.position(1)).toEqual([10, 20, 30]);
+    expect(live.position(2)).toEqual([-1, -2, -3]);
+  });
+
+  it('is nothing at all when nothing is selected', () => {
+    expect(translateVobs(reader(), [], [1, 2, 3])).toEqual([]);
+  });
+
+  it('is refused whole when one of the selected VOBs is not in the index', () => {
+    // Not "skip the bad one": a batch that quietly moves four of five VOBs is
+    // the half-applied state `commitOps` exists to prevent, arrived at before
+    // the binding was ever asked.
+    expect(() => translateVobs(reader(), [0, 9], [1, 2, 3])).toThrow(/9/);
+  });
+});
+
+describe('a drop to ground', () => {
+  // Unlike `translateVobs`, there is no shared delta: each VOB found its own
+  // ground point independently (its own downward raycast), so the batch takes
+  // a destination per VOB rather than one delta for the whole selection.
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0, pos: [100, 200, 300] },
+    { parent: 0, childIndex: 4, pos: [10, 20, 30] },
+    { parent: 0, childIndex: 5, pos: [-1, -2, -3] },
+  ]));
+
+  it('moves each VOB straight to its own ground point', () => {
+    const ops = dropVobsToGround(reader(), [
+      { vob: 0, ground: [100, 5, 300] },
+      { vob: 2, ground: [-1, -50, -3] },
+    ]);
+
+    expect(ops).toEqual([
+      { op: 'MoveVob', vob: 0, path: '0', from: [100, 200, 300], to: [100, 5, 300] },
+      { op: 'MoveVob', vob: 2, path: '0/5', from: [-1, -2, -3], to: [-1, -50, -3] },
+    ]);
+  });
+
+  it('inverts as a batch — the whole selection goes back where it came from', () => {
+    const index = vobIndex([
+      { childIndex: 0, pos: [100, 200, 300] },
+      { parent: 0, childIndex: 4, pos: [10, 20, 30] },
+    ]);
+    const live = createVobReader(index);
+    const ops = dropVobsToGround(live, [
+      { vob: 0, ground: [100, 5, 300] },
+      { vob: 1, ground: [10, -8, 30] },
+    ]);
+
+    applyOps(live, ops);
+    applyOps(live, [...ops].reverse().map(invertOp));
+
+    expect(live.position(0)).toEqual([100, 200, 300]);
+    expect(live.position(1)).toEqual([10, 20, 30]);
+  });
+
+  it('is nothing at all when nothing is selected', () => {
+    expect(dropVobsToGround(reader(), [])).toEqual([]);
+  });
+
+  it('is refused whole when one of the selected VOBs is not in the index', () => {
+    expect(() => dropVobsToGround(reader(), [
+      { vob: 0, ground: [1, 2, 3] },
+      { vob: 9, ground: [4, 5, 6] },
+    ])).toThrow(/9/);
+  });
+});
+
+describe('a rotate op', () => {
+  // The second mutation the binding has. Two things separate it from a move:
+  //
+  //   - the matrix is row-major, which is the order `vobIndex` emits and
+  //     `setVobRotation` takes. A transpose is invisible on identity and on
+  //     every symmetric matrix, so the fixtures below are deliberately neither.
+  //   - it has to re-fit the bounding box, and the box is **recomputed from the
+  //     visual**, never re-fitted from the box that is already there. Measured
+  //     across the three retail worlds, a VOB's stored box is the tight world
+  //     AABB of its own visual placed by its own transform (20,472 of 20,502),
+  //     so it is a pure function of (visual, rotation, position) — which is what
+  //     lets the op carry both boxes and stay invertible. Re-fitting the stored
+  //     box would grow it on every rotation and never shrink back.
+
+  /** A quarter turn about Y, row-major. Asymmetric, so a transpose shows. */
+  const QUARTER_Y: ZenRotation = [0, 0, 1, 0, 1, 0, -1, 0, 0];
+  const IDENTITY: ZenRotation = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  /** A visual one unit wide in x, ten in z — so a quarter turn is visible. */
+  const BOUNDS: ZenBounds = [-1, 0, -10, 1, 2, 10];
+
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0, pos: [100, 200, 300] },
+    { parent: 0, childIndex: 4, pos: [10, 20, 30] },
+  ]));
+
+  it('carries both matrices and both boxes', () => {
+    const op = rotateVob(reader(), 1, QUARTER_Y, BOUNDS);
+
+    expect(op.op).toBe('RotateVob');
+    expect(op.vob).toBe(1);
+    expect(op.path).toBe('0/4');
+    expect(op.from).toEqual(IDENTITY);
+    expect(op.to).toEqual(QUARTER_Y);
+    // Unrotated: the visual's own box, moved to the VOB.
+    expect(op.fromBbox).toEqual([9, 20, 20, 11, 22, 40]);
+    // A quarter turn about Y swaps the x and z extents — which is exactly what
+    // an axis-aligned box cannot do by being translated.
+    expect(op.toBbox).toEqual([0, 20, 29, 20, 22, 31]);
+  });
+
+  it('fits the box to all eight corners, and reads the matrix row-major', () => {
+    // Both of these were sabotages the tests above could not see, and for the
+    // same reason: a quarter turn about an axis is a special case. It maps the
+    // box's min corner to the min corner, so two corners give the right answer;
+    // and with bounds symmetric about the axis it is its own transpose, so a
+    // column-major read gives the right answer too. A **45 degree** turn with
+    // **asymmetric** bounds is neither.
+    const c = Math.SQRT1_2;
+    const HALF_QUARTER_Y: ZenRotation = [c, 0, c, 0, 1, 0, -c, 0, c];
+    const lopsided: ZenBounds = [-1, 0, 0, 3, 2, 10];
+
+    const box = placeBounds(lopsided, HALF_QUARTER_Y, [0, 0, 0]);
+
+    // x spans corner-to-corner across the diagonal, not min-to-min: the two
+    // extremes are (-1, ·, 0) and (3, ·, 10).
+    expect(box[0]).toBeCloseTo(-c, 5);
+    expect(box[3]).toBeCloseTo(3 * c + 10 * c, 5);
+    // z is what the transposed matrix gets wrong — its extremes swap sign.
+    expect(box[2]).toBeCloseTo(-3 * c, 5);
+    expect(box[5]).toBeCloseTo(10 * c + c, 5);
+    expect([box[1], box[4]]).toEqual([0, 2]);
+  });
+
+  it('carries no box at all for a VOB whose visual does not resolve', () => {
+    // A decal, a .pfx, an unresolved model. A guessed box bounds nothing; the
+    // stale one at least bounded the visual in some pose, so it is left alone.
+    const op = rotateVob(reader(), 1, QUARTER_Y, null);
+
+    expect(op.fromBbox).toBeNull();
+    expect(op.toBbox).toBeNull();
+  });
+
+  it('inverts by swapping both pairs, with no state to consult', () => {
+    const op = rotateVob(reader(), 1, QUARTER_Y, BOUNDS);
+    const undo = invertOp(op) as RotateVob;
+
+    expect(undo.from).toEqual(op.to);
+    expect(undo.to).toEqual(op.from);
+    // The box is half the op. Swapping only the matrix would undo the rotation
+    // and leave the VOB culled by a box fitted to a pose it is no longer in.
+    expect(undo.fromBbox).toEqual(op.toBbox);
+    expect(undo.toBbox).toEqual(op.fromBbox);
+    expect(invertOp(undo)).toEqual(op);
+  });
+
+  it('is refused for a VOB that is not in the index', () => {
+    expect(() => rotateVob(reader(), 9, QUARTER_Y, BOUNDS)).toThrow(/9/);
+  });
+
+  it('reaches the binding as setVobRotation, with the box it carries', () => {
+    const calls: unknown[][] = [];
+    const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+      insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+      setVobPosition: (path, to) => calls.push(['position', path, to]),
+      setVobRotation: (path, to, bbox) => calls.push(['rotation', path, to, bbox]),
+      setVobProp: (path, props) => calls.push(['props', path, props]),
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: () => { throw new Error('no structural ops in this batch'); },
+      deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      restoreVob: () => { throw new Error('not a restore'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+    };
+
+    commitOps(binding, [rotateVob(reader(), 1, QUARTER_Y, BOUNDS)]);
+
+    expect(calls).toEqual([['rotation', '0/4', QUARTER_Y, [0, 20, 29, 20, 22, 31]]]);
+  });
+
+  it('is unwound by its own inverse when a later op in the batch is refused', () => {
+    // A mixed batch is still all-or-nothing, and a rotation is unwound by
+    // rotating back — not by a move.
+    const calls: string[] = [];
+    const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+      insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+      setVobPosition: (path) => { if (path === '9/9') throw new Error('no vob'); calls.push(`move ${path}`); },
+      setVobRotation: (path) => calls.push(`rotate ${path}`),
+      setVobProp: (path) => calls.push(`props ${path}`),
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: () => { throw new Error('no structural ops in this batch'); },
+      deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      restoreVob: () => { throw new Error('not a restore'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+    };
+    const rotate = rotateVob(reader(), 1, QUARTER_Y, BOUNDS);
+
+    expect(() => commitOps(binding, [
+      rotate,
+      { op: 'MoveVob', vob: 0, path: '9/9', from: [0, 0, 0], to: [1, 1, 1] },
+    ])).toThrow('no vob');
+
+    expect(calls).toEqual(['rotate 0/4', 'rotate 0/4']);
+  });
+
+  it('writes the matrix into the index the panels read', () => {
+    const index = vobIndex([{ pos: [1, 2, 3] }, { parent: 0, childIndex: 0, pos: [10, 20, 30] }]);
+    const live = createVobReader(index);
+
+    applyOps(live, [rotateVob(live, 1, QUARTER_Y, BOUNDS)]);
+
+    expect(live.rotation(1)).toEqual(QUARTER_Y);
+    expect(live.rotation(0)).toEqual(IDENTITY);
+    // A rotation is not a move: the position column must not be touched.
+    expect(live.position(1)).toEqual([10, 20, 30]);
+  });
+});
+
+describe('a multi-select turn', () => {
+  const QUARTER_Y: ZenRotation = [0, 0, 1, 0, 1, 0, -1, 0, 0];
+  const QUARTER_X: ZenRotation = [1, 0, 0, 0, 0, -1, 0, 1, 0];
+  const BOUNDS: ZenBounds = [-1, 0, -10, 1, 2, 10];
+
+  it('composes the delta onto each VOB\'s own matrix, on the left', () => {
+    // A selection of differently-oriented VOBs must all turn the same way on
+    // screen. Applying the delta on the right turns each about *its own* axes,
+    // which sends them in different directions and looks like a bug in the
+    // gizmo rather than in the multiplication order.
+    //
+    // The delta and the VOB's own matrix are deliberately about **different
+    // axes**: two turns about the same axis commute, so a fixture that used one
+    // matrix twice would agree with either order — which is exactly how this
+    // test passed a sabotage of the multiplication order the first time.
+    const index = vobIndex([{ pos: [0, 0, 0] }, { parent: 0, childIndex: 1, pos: [5, 5, 5] }]);
+    const rotations = new Float32Array(index.rotations);
+    rotations.set(QUARTER_X, 9);       // vob 1 starts a quarter turn about X
+    const reader = createVobReader(index);
+
+    const ops = rotateVobs(reader, [0, 1], QUARTER_Y, () => BOUNDS);
+
+    expect(ops[0].to).toEqual(QUARTER_Y);
+    expect(ops[1].to).toEqual([0, 1, 0, 0, 0, -1, -1, 0, 0]);        // QUARTER_Y * QUARTER_X
+    expect(ops[1].to).not.toEqual([0, 0, 1, 1, 0, 0, 0, 1, 0]);      // QUARTER_X * QUARTER_Y
+  });
+
+  it('turns each VOB about its own origin, leaving every position alone', () => {
+    const index = vobIndex([{ pos: [0, 0, 0] }, { parent: 0, childIndex: 1, pos: [5, 5, 5] }]);
+    const live = createVobReader(index);
+
+    applyOps(live, rotateVobs(live, [0, 1], QUARTER_Y, () => BOUNDS));
+
+    expect(live.position(0)).toEqual([0, 0, 0]);
+    expect(live.position(1)).toEqual([5, 5, 5]);
+  });
+
+  it('asks for each VOB\'s own bounds, and takes null for an answer', () => {
+    const asked: number[] = [];
+    const reader = createVobReader(vobIndex([{ pos: [0, 0, 0] }, { parent: 0, pos: [1, 1, 1] }]));
+
+    const ops = rotateVobs(reader, [0, 1], QUARTER_Y, (vob) => {
+      asked.push(vob);
+      return vob === 0 ? BOUNDS : null;
+    });
+
+    expect(asked).toEqual([0, 1]);
+    expect(ops[0].toBbox).not.toBeNull();
+    expect(ops[1].toBbox).toBeNull();
+  });
+
+  it('is nothing at all when nothing is selected', () => {
+    const reader = createVobReader(vobIndex([{}]));
+    expect(rotateVobs(reader, [], QUARTER_Y, () => null)).toEqual([]);
+  });
+
+  it('is refused whole when one of the selected VOBs is not in the index', () => {
+    const reader = createVobReader(vobIndex([{}]));
+    expect(() => rotateVobs(reader, [0, 9], QUARTER_Y, () => null)).toThrow(/9/);
+  });
+
+  it('multiplies row-major matrices in the order it claims', () => {
+    // Written out rather than derived: an implementation that transposed both
+    // operands would agree with a test that built its expectation the same way.
+    const a: ZenRotation = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+    const b: ZenRotation = [1, 0, 0, 0, 0, 1, 0, 1, 0];   // swaps rows 2 and 3
+
+    expect(multiplyRotation(a, b)).toEqual([1, 3, 2, 4, 6, 5, 7, 9, 8]);
+    expect(multiplyRotation(b, a)).toEqual([1, 2, 3, 7, 8, 9, 4, 5, 6]);
+  });
+
+  it('turns about an arbitrary axis, agreeing with the up-axis yaw (#387)', () => {
+    const close = (m: ZenRotation) => m.map((value) => expect.closeTo(value, 10));
+    expect(rotationAbout([0, 1, 0], 0.7)).toEqual(close(rotationAboutUp(0.7)));
+    // A quarter turn about +X takes up (column 1) to +Z — written out, not derived.
+    expect(rotationAbout([1, 0, 0], Math.PI / 2)).toEqual(close([1, 0, 0, 0, 0, -1, 0, 1, 0]));
+    // The axis need not be unit length.
+    expect(rotationAbout([0, 0, 2], Math.PI / 2)).toEqual(close([0, -1, 0, 1, 0, 0, 0, 0, 1]));
+  });
+});
+
+describe('an align to normal', () => {
+  // Aligns each VOB's local +Y axis to its own hit normal (level-editor.md
+  // §16.5) — the engine is Y-up, so +Y is the standard "up" default, and there
+  // is deliberately no per-visual-class exception to it. Like a drop to
+  // ground, there is no shared delta: each VOB found its own normal.
+  const IDENTITY: ZenRotation = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  const BOUNDS: ZenBounds = [-1, 0, -10, 1, 2, 10];
+
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0, pos: [100, 200, 300] },
+    { parent: 0, childIndex: 4, pos: [10, 20, 30] },
+  ]));
+
+  it('leaves an already-upright VOB alone when the normal is straight up', () => {
+    const ops = alignVobsToNormal(reader(), [{ vob: 0, normal: [0, 1, 0] }], () => BOUNDS);
+
+    expect(ops[0].to).toEqual(IDENTITY);
+  });
+
+  it('rotates local +Y onto the given normal', () => {
+    // Written out via Rodrigues' formula rather than derived from the
+    // implementation: an implementation that aligned the wrong axis, or
+    // aligned it backwards, would still pass a test built the same way it was.
+    const ops = alignVobsToNormal(reader(), [{ vob: 1, normal: [1, 0, 0] }], () => BOUNDS);
+
+    expect(ops[0].to).toEqual([0, 1, 0, -1, 0, 0, 0, 0, 1]);
+    // The rotated local Y axis (the matrix's middle column) is the normal.
+    const [, y1, , , y4, , , y7] = ops[0].to;
+    expect([y1, y4, y7]).toEqual([1, 0, 0]);
+  });
+
+  it('refits the bounding box for both poses, same as a rotate op', () => {
+    const ops = alignVobsToNormal(reader(), [{ vob: 1, normal: [1, 0, 0] }], () => BOUNDS);
+
+    expect(ops[0].fromBbox).not.toBeNull();
+    expect(ops[0].toBbox).not.toBeNull();
+    expect(ops[0].toBbox).not.toEqual(ops[0].fromBbox);
+  });
+
+  it('asks for each VOB\'s own bounds, and takes null for an answer', () => {
+    const asked: number[] = [];
+    const ops = alignVobsToNormal(reader(), [
+      { vob: 0, normal: [1, 0, 0] },
+      { vob: 1, normal: [0, 1, 0] },
+    ], (vob) => {
+      asked.push(vob);
+      return vob === 0 ? BOUNDS : null;
+    });
+
+    expect(asked).toEqual([0, 1]);
+    expect(ops[0].toBbox).not.toBeNull();
+    expect(ops[1].toBbox).toBeNull();
+  });
+
+  /** How far a matrix is from being a rotation: max |RᵀR − I| over the nine
+   *  entries. A shear or a scale shows up here and nowhere else — the engine
+   *  will happily store one and draw the VOB skewed. */
+  function orthonormalityError(r: readonly number[]): number {
+    let worst = 0;
+    for (let i = 0; i < 3; i++) {
+      for (let j = 0; j < 3; j++) {
+        const dot = r[i] * r[j] + r[3 + i] * r[3 + j] + r[6 + i] * r[6 + j];
+        worst = Math.max(worst, Math.abs(dot - (i === j ? 1 : 0)));
+      }
+    }
+    return worst;
+  }
+
+  it('turns an upright VOB right over for a normal pointing straight down', () => {
+    // A ceiling, an overhang, the underside of a bridge. The half turn is the
+    // one case Rodrigues' formula cannot take the axis from the cross product,
+    // because the cross product of a vector and its opposite is zero — and the
+    // branch that picks a perpendicular axis instead used its *length* as
+    // sin θ, which for a half turn is 0. The result was a shear that the
+    // request validator (finite entries only) would have written to the world.
+    const ops = alignVobsToNormal(reader(), [{ vob: 0, normal: [0, -1, 0] }], () => BOUNDS);
+
+    expect(orthonormalityError(ops[0].to)).toBeLessThan(1e-9);
+    const [, y1, , , y4, , , y7] = ops[0].to;
+    expect([y1, y4, y7].map((v) => Math.round(v))).toEqual([0, -1, 0]);
+  });
+
+  it('stays a rotation when the VOB\'s own matrix has drifted off unit length', () => {
+    // 30.2% of retail VOBs are not orthonormal (zenkit-node README), so the
+    // middle column this reads as "up" is routinely a little longer or shorter
+    // than 1. Taken as a cosine, that alone skews the turn.
+    const drifted: ZenRotation = [1.02, 0, 0, 0, 1.02, 0, 0, 0, 1.02];
+    const withDrift = () => createVobReader(vobIndex([
+      { childIndex: 0, pos: [100, 200, 300], rot: drifted },
+    ]));
+
+    const ops = alignVobsToNormal(withDrift(), [{ vob: 0, normal: [1, 0, 0] }], () => BOUNDS);
+
+    // The delta itself is a rotation, so the drift is carried, never amplified:
+    // the result is exactly the drifted matrix turned, and no more skewed. The
+    // tolerance is float32's, not the arithmetic's — the index stores rotations
+    // as float32, so 1.02 comes back as 1.0199999809 and dividing it out leaves
+    // a few times 1e-8 behind.
+    const delta = ops[0].to.map((v) => v / 1.02);
+    expect(orthonormalityError(delta)).toBeLessThan(1e-6);
+    const [, y1, , , y4, , , y7] = ops[0].to;
+    const up = [y1, y4, y7];
+    const length = Math.hypot(up[0], up[1], up[2]);
+    expect([up[0] / length, up[1] / length, up[2] / length].map((v) => Math.round(v)))
+      .toEqual([1, 0, 0]);
+  });
+
+  it('is nothing at all when nothing is selected', () => {
+    expect(alignVobsToNormal(reader(), [], () => null)).toEqual([]);
+  });
+
+  it('is refused whole when one of the selected VOBs is not in the index', () => {
+    expect(() => alignVobsToNormal(reader(), [
+      { vob: 0, normal: [0, 1, 0] },
+      { vob: 9, normal: [0, 1, 0] },
+    ], () => null)).toThrow(/9/);
+  });
+});
+
+describe('a property op', () => {
+  // The third op, and the first whose fields are all invisible in the viewport.
+  // A move that goes wrong is on screen; a flag that goes wrong is not, which is
+  // why `from` has to carry exactly the keys `to` does — an inverse that
+  // restored a key the op never set, or dropped one it did, looks identical
+  // until someone undoes.
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0, name: 'ROOT' },
+    {
+      parent: 0, childIndex: 4, pos: [10, 20, 30],
+      name: 'BARREL_01', visual: 'BARREL.3DS',
+      flags: { showVisual: true, cdStatic: true },
+    },
+  ]));
+
+  it('carries both addresses, and a `from` with exactly the keys `to` has', () => {
+    const op = setVobProp(reader(), 1, { name: 'BARREL_02', cdStatic: false });
+
+    expect(op).toEqual({
+      op: 'SetVobProp',
+      vob: 1,
+      path: '0/4',
+      from: { name: 'BARREL_01', cdStatic: true },
+      to: { name: 'BARREL_02', cdStatic: false },
+      fromBbox: null,
+      toBbox: null,
+    });
+    // Not "every property the VOB has": an inverse that also restored
+    // showVisual would undo edits this op never made.
+    expect(Object.keys(op.from)).toEqual(Object.keys(op.to));
+  });
+
+  it('reads `from` out of the index, so the inverse needs no snapshot', () => {
+    const op = setVobProp(reader(), 1, { showVisual: false, visual: 'CRATE.3DS' });
+
+    expect(op.from).toEqual({ showVisual: true, visual: 'BARREL.3DS' });
+    expect(invertOp(op)).toEqual({ ...op, from: op.to, to: op.from });
+  });
+
+  it('is refused when it would set nothing', () => {
+    // Fifty VOBs selected and a dialog dismissed unchanged is fifty ops on the
+    // undo stack for a batch that undoes nothing — the same rule the gizmo has.
+    expect(() => setVobProp(reader(), 1, {})).toThrow(/at least one/);
+  });
+
+  it('is refused for a VOB that is not in the index', () => {
+    expect(() => setVobProp(reader(), 9, { name: 'X' })).toThrow(/9/);
+  });
+
+  describe('and the base fields that have no column', () => {
+    // `presetName`, `visualCamAlign` and `bias` are on every `zCVob` and in
+    // none of the index's columns — it carries the name, the visual and the six
+    // flags. So the `from` side comes in from the caller's own `getVobProps`
+    // read, exactly as a class field's does, and the op is refused outright
+    // without it: a defaulted origin is an inverse that writes a value the VOB
+    // never had into a field nobody can see.
+    const current = { presetName: 'FIRE_STAT', visualCamAlign: 1, bias: 2 };
+
+    it('reads `from` out of the props it was handed, and inverts on them', () => {
+      const op = setVobProp(reader(), 1, { bias: 7 }, null, current);
+
+      expect(op.from).toEqual({ bias: 2 });
+      expect(op.to).toEqual({ bias: 7 });
+      expect(invertOp(op)).toEqual({ ...op, from: op.to, to: op.from });
+    });
+
+    it('carries them beside the fields the index does have', () => {
+      const op = setVobProp(
+        reader(), 1, { name: 'BARREL_02', presetName: '', visualCamAlign: 3 }, null, current,
+      );
+
+      expect(op.from).toEqual({ name: 'BARREL_01', presetName: 'FIRE_STAT', visualCamAlign: 1 });
+      expect(op.to).toEqual({ name: 'BARREL_02', presetName: '', visualCamAlign: 3 });
+    });
+
+    it('is refused when the current value is missing or of the wrong kind', () => {
+      expect(() => setVobProp(reader(), 1, { bias: 7 })).toThrow(/no current value for bias/);
+      expect(() => setVobProp(reader(), 1, { bias: 7 }, null, { presetName: 'X' }))
+        .toThrow(/no current value for bias/);
+      expect(() => setVobProp(reader(), 1, { presetName: 'X' }, null, { presetName: 2 }))
+        .toThrow(/presetName/);
+    });
+
+    it('is refused for a whole selection, which has no per-VOB `from`', () => {
+      expect(() => setVobProps(reader(), [1], { bias: 7 })).toThrow(/no current value/);
+    });
+
+    it('projects nothing onto the columns, and still touches the VOB', () => {
+      // There is no column to write — the panel re-reads the fields through
+      // `getVobProps` — but the VOB has to come back as touched or nothing
+      // re-renders.
+      const live = reader();
+      const op = setVobProp(live, 1, { bias: 7 }, null, current);
+
+      expect(applyOps(live, [op])).toEqual([1]);
+      expect(live.name(1)).toBe('BARREL_01');
+    });
+
+    it('reads dynamicShadows out of the same props', () => {
+      const op = setVobProp(reader(), 1, { dynamicShadows: 1 }, null,
+        { ...current, dynamicShadows: 0 });
+
+      expect(op.from).toEqual({ dynamicShadows: 0 });
+      expect(op.to).toEqual({ dynamicShadows: 1 });
+    });
+  });
+
+  describe('and the decal fields, which the props answer nested', () => {
+    // A decal is the one visual carrying data of its own, and `getVobProps`
+    // answers it as `decal: { … }` — so the flat key the op uses has to be
+    // resolved through `decalSubKey` on the way in. A VOB with no decal answers
+    // `decal: null`, and that is the whole of the refusal: the op cannot be
+    // built, rather than being built and refused three layers down.
+    const current = { presetName: 'FIRE_STAT', visualCamAlign: 1, bias: 2 };
+    const decal = {
+      dimension: [40, 40], offset: [0, 0], twoSided: true, alphaFunc: 2,
+      textureAnimFps: 0, alphaWeight: 200, ignoreDaylight: false,
+    };
+
+    it('reads `from` out of the nested record and inverts on it', () => {
+      const op = setVobProp(
+        reader(), 1, { decalAlphaWeight: 128, decalDimension: [50, 60] }, null,
+        { ...current, decal },
+      );
+
+      expect(op.from).toEqual({ decalAlphaWeight: 200, decalDimension: [40, 40] });
+      expect(op.to).toEqual({ decalAlphaWeight: 128, decalDimension: [50, 60] });
+      expect(invertOp(op)).toEqual({ ...op, from: op.to, to: op.from });
+    });
+
+    it('carries a decal field beside a base one and a flag', () => {
+      const op = setVobProp(
+        reader(), 1, { bias: 7, decalTwoSided: false, ambient: true }, null,
+        { ...current, decal },
+      );
+
+      expect(op.from).toEqual({ bias: 2, decalTwoSided: true, ambient: false });
+      expect(op.to).toEqual({ bias: 7, decalTwoSided: false, ambient: true });
+    });
+
+    it('is refused for a VOB whose visual is not a decal', () => {
+      expect(() => setVobProp(reader(), 1, { decalTwoSided: false }, null,
+        { ...current, decal: null }))
+        .toThrow(/no current value for decalTwoSided/);
+      expect(() => setVobProp(reader(), 1, { decalTwoSided: false }, null, current))
+        .toThrow(/no current value for decalTwoSided/);
+    });
+
+    it('is refused when the current value is of the wrong kind', () => {
+      expect(() => setVobProp(reader(), 1, { decalDimension: [1, 2] }, null,
+        { ...current, decal: { ...decal, dimension: 40 } }))
+        .toThrow(/decalDimension/);
+      expect(() => setVobProp(reader(), 1, { decalTwoSided: false }, null,
+        { ...current, decal: { ...decal, twoSided: 1 } }))
+        .toThrow(/decalTwoSided/);
+    });
+  });
+
+  describe('and the box, which only a visual swap can change', () => {
+    const OLD: ZenBounds = [-1, -1, -1, 1, 1, 1];
+    const NEW: ZenBounds = [-10, 0, -2, 10, 4, 2];
+
+    it('places each visual\'s own bounds by the VOB\'s own transform', () => {
+      const live = reader();
+      const op = setVobProp(live, 1, { visual: 'CRATE.3DS' }, { from: OLD, to: NEW });
+
+      expect(op.fromBbox).toEqual(placeBounds(OLD, [1, 0, 0, 0, 1, 0, 0, 0, 1], [10, 20, 30]));
+      expect(op.toBbox).toEqual(placeBounds(NEW, [1, 0, 0, 0, 1, 0, 0, 0, 1], [10, 20, 30]));
+      // Two different visuals cannot share a box, which is the whole reason the
+      // caller passes both rather than one.
+      expect(op.fromBbox).not.toEqual(op.toBbox);
+    });
+
+    it('leaves both boxes null when a visual does not resolve', () => {
+      const op = setVobProp(reader(), 1, { visual: 'MISSING.3DS' }, { from: OLD, to: null });
+
+      expect(op.toBbox).toBeNull();
+      // The stale box at least bounded the visual in some pose; a box fitted to
+      // the visual that is being replaced bounds the wrong thing entirely.
+      expect(op.fromBbox).toBeNull();
+    });
+
+    it('refuses bounds for a change that is not a visual swap', () => {
+      expect(() => setVobProp(reader(), 1, { name: 'X' }, { from: OLD, to: NEW }))
+        .toThrow(/visual/);
+    });
+
+    it('swaps both boxes in the inverse, not just the props', () => {
+      // Exactly the half-inverse a rotation would have had: the visual goes
+      // back and the VOB stays culled by a box fitted to the other one.
+      const op = setVobProp(reader(), 1, { visual: 'CRATE.3DS' }, { from: OLD, to: NEW });
+      const back = invertOp(op);
+
+      expect(back.op === 'SetVobProp' && back.fromBbox).toEqual(op.toBbox);
+      expect(back.op === 'SetVobProp' && back.toBbox).toEqual(op.fromBbox);
+    });
+  });
+});
+
+describe('a multi-select property edit', () => {
+  const reader = () => createVobReader(vobIndex([
+    { name: 'A', visual: 'A.3DS', flags: { showVisual: true } },
+    { parent: 0, childIndex: 1, name: 'B', visual: 'B.3DS', flags: { showVisual: false } },
+  ]));
+
+  it('gives every VOB its own `from`, so one undo restores what each one had', () => {
+    // The same lesson the drag learned as a delta-not-destination: a batch that
+    // shared one `from` would put a selection that was never uniform back as if
+    // it had been, and reads correct on a selection of one.
+    const ops = setVobProps(reader(), [0, 1], { showVisual: true });
+
+    expect(ops.map((op) => op.from)).toEqual([{ showVisual: true }, { showVisual: false }]);
+    expect(ops.map((op) => op.to)).toEqual([{ showVisual: true }, { showVisual: true }]);
+  });
+
+  it('asks each VOB for its own current bounds and shares the new visual\'s', () => {
+    const asked: number[] = [];
+    const NEW: ZenBounds = [-2, -2, -2, 2, 2, 2];
+
+    const ops = setVobProps(reader(), [0, 1], { visual: 'C.3DS' }, {
+      from: (vob) => { asked.push(vob); return vob === 0 ? [-1, -1, -1, 1, 1, 1] : null; },
+      to: NEW,
+    });
+
+    expect(asked).toEqual([0, 1]);
+    expect(ops[0].fromBbox).not.toBeNull();
+    expect(ops[1].fromBbox).toBeNull();
+  });
+
+  it('is nothing at all when nothing is selected', () => {
+    expect(setVobProps(reader(), [], { showVisual: true })).toEqual([]);
+  });
+
+  it('is refused whole when one of the selected VOBs is not in the index', () => {
+    expect(() => setVobProps(reader(), [0, 9], { showVisual: true })).toThrow(/9/);
+  });
+});
+
+describe('a class-property op', () => {
+  // The first op whose fields are not on `zCVob` at all, and the first whose
+  // `from` cannot be read out of the index: the columnar payload interns the
+  // class *name* and carries nothing else per class, so an `oCItem`'s instance
+  // and a `zCVobLight`'s range are simply not in it. That one fact is why this
+  // is a separate op with a caller-supplied `from` rather than eight more
+  // optional keys on `SetVobProp`.
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0, name: 'ROOT' },
+    { parent: 0, childIndex: 4, cls: 'oCItem', name: 'ITEM_01', visual: 'ITMW.3DS' },
+    { parent: 0, childIndex: 5, cls: 'zCVobLight', name: 'LIGHT_01' },
+  ]));
+
+  it('carries the class, both addresses, and a `from` with exactly the keys `to` has', () => {
+    const op = setVobClassProp(reader(), 1, { instance: 'ITMW_1H_SWORD_01' }, { instance: 'ITMI_GOLD' });
+
+    expect(op).toEqual({
+      op: 'SetVobClassProp',
+      vob: 1,
+      path: '0/4',
+      className: 'oCItem',
+      from: { instance: 'ITMW_1H_SWORD_01' },
+      to: { instance: 'ITMI_GOLD' },
+    });
+    expect(Object.keys(op.from)).toEqual(Object.keys(op.to));
+  });
+
+  it('takes `from` from the caller and never asks the index for it', () => {
+    // The index cannot answer, so an implementation that reached for it would
+    // write `undefined` into `from` and read identically on the `to` side — the
+    // reader counts the calls instead, the way `createVobReader`'s own test
+    // counts column views. `MoveWaypoint` is the precedent for a caller-supplied
+    // origin: what is forbidden is reading `from` back out of the *native world*
+    // at apply time, not being handed it when the op is made.
+    const live = createVobReader(vobIndex([
+      { childIndex: 0, cls: 'zCVobLight', name: 'LIGHT_01' },
+    ]));
+    let reads = 0;
+    const counted: VobReader = {
+      ...live,
+      name: (vob) => { reads += 1; return live.name(vob); },
+      visual: (vob) => { reads += 1; return live.visual(vob); },
+      flags: (vob) => { reads += 1; return live.flags(vob); },
+    };
+
+    const op = setVobClassProp(counted, 0, { range: 1500, color: [255, 200, 100, 255] }, { range: 3000 });
+
+    expect(op.from).toEqual({ range: 1500 });
+    expect(op.to).toEqual({ range: 3000 });
+    expect(reads).toBe(0);
+  });
+
+  it('orders the keys by the catalogue, whatever order the grid emitted them in', () => {
+    const op = setVobClassProp(
+      reader(), 2,
+      { range: 1500, color: [255, 255, 255, 255] },
+      { color: [10, 20, 30, 255], range: 3000 },
+    );
+
+    expect(Object.keys(op.to)).toEqual(['range', 'color']);
+    expect(Object.keys(op.from)).toEqual(['range', 'color']);
+  });
+
+  it('carries an enum both ways, out-of-set value and all', () => {
+    // §16.21's whole point at this layer: nothing here knows the set. A retail
+    // `soundMaterial` this catalogue does not offer is still a legal `from`, so
+    // the undo of an edit made beside it restores the value the world had rather
+    // than the nearest one a dropdown could show.
+    const live = createVobReader(vobIndex([
+      { childIndex: 0, cls: 'oCMobDoor', name: 'DOOR_01' },
+    ]));
+
+    const op = setVobClassProp(live, 0, { soundMaterial: 97 }, { soundMaterial: 2 });
+
+    expect(op.from).toEqual({ soundMaterial: 97 });
+    expect(op.to).toEqual({ soundMaterial: 2 });
+    expect(invertOp(op)).toEqual({ ...op, from: op.to, to: op.from });
+  });
+
+  it('refuses a key the VOB\'s class does not have', () => {
+    // Refused *here*, in the builder, rather than by the binding halfway down a
+    // batch: nothing between `setVobProp`'s first line and its last checks a
+    // class, which is exactly what a per-class op cannot afford.
+    expect(() => setVobClassProp(reader(), 1, { range: 1500 }, { range: 3000 }))
+      .toThrow(/oCItem/);
+  });
+
+  it('refuses a key no class has, and a VOB of a class the catalogue does not know', () => {
+    expect(() => setVobClassProp(reader(), 1, { hitpoints: 40 }, { hitpoints: 50 }))
+      .toThrow(/hitpoints/);
+    // ROOT is a plain `zCVob`: it has no class section at all, so every key is
+    // a key its class does not have.
+    expect(() => setVobClassProp(reader(), 0, { instance: 'A' }, { instance: 'B' }))
+      .toThrow(/zCVob/);
+  });
+
+  it('refuses a `to` key that `current` has no value for', () => {
+    // A one-sided op is an inverse that writes `undefined` into the world. The
+    // same-keys-on-both-sides invariant is checked again at the IPC boundary,
+    // and this is where it is first knowable.
+    expect(() => setVobClassProp(reader(), 2, { color: [255, 255, 255, 255] }, { range: 3000 }))
+      .toThrow(/range/);
+  });
+
+  it('is refused when it would set nothing, and for a VOB that is not in the index', () => {
+    expect(() => setVobClassProp(reader(), 1, { instance: 'A' }, {})).toThrow(/at least one/);
+    expect(() => setVobClassProp(reader(), 9, { instance: 'A' }, { instance: 'B' })).toThrow(/9/);
+  });
+
+  it('inverts by swapping the two sides, carrying the class through unchanged', () => {
+    // The class is directionally symmetric — undoing an edit to an `oCItem`
+    // still addresses an `oCItem` — so it needs no swap of its own, and the
+    // round trip is what says the branch did not invent one.
+    const op = setVobClassProp(reader(), 2, { range: 1500 }, { range: 3000 });
+    const back = invertOp(op);
+
+    expect(back).toEqual({ ...op, from: op.to, to: op.from });
+    expect(back.op === 'SetVobClassProp' && back.className).toBe('zCVobLight');
+    expect(invertOp(back)).toEqual(op);
+  });
+
+  it('reaches the binding as setVobClassProp, in whichever direction it is written', () => {
+    const calls: Array<[string, ClassProps]> = [];
+    const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+      insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+      setVobPosition: () => { throw new Error('not a move'); },
+      setVobRotation: () => { throw new Error('not a turn'); },
+      setVobProp: () => { throw new Error('not a base property change'); },
+      setVobClassProp: (path, props) => { calls.push([path, props]); },
+      insertVob: () => { throw new Error('no structural ops in this batch'); },
+      deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      restoreVob: () => { throw new Error('not a restore'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+    };
+    const op = setVobClassProp(reader(), 1, { instance: 'ITMW_1H_SWORD_01' }, { instance: 'ITMI_GOLD' });
+
+    commitOps(binding, [op]);
+    commitOps(binding, [invertOp(op)]);
+
+    expect(calls).toEqual([
+      ['0/4', { instance: 'ITMI_GOLD' }],
+      ['0/4', { instance: 'ITMW_1H_SWORD_01' }],
+    ]);
+  });
+
+  it('is unwound in the `from` direction when a later op in the batch is refused', () => {
+    // The half `invertOp` does not give: `commitOps` replays the applied ops
+    // backwards through `writeOp`'s *other* direction, so a branch that only
+    // ever read `op.to` would leave the edited field standing after a refusal.
+    const calls: Array<[string, ClassProps]> = [];
+    const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+      insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+      setVobPosition: (path) => { if (path === '9/9') throw new Error('no vob'); },
+      setVobRotation: () => { throw new Error('not a turn'); },
+      setVobProp: () => { throw new Error('not a base property change'); },
+      setVobClassProp: (path, props) => { calls.push([path, props]); },
+      insertVob: () => { throw new Error('no structural ops in this batch'); },
+      deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      restoreVob: () => { throw new Error('not a restore'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+    };
+
+    expect(() => commitOps(binding, [
+      setVobClassProp(reader(), 2, { range: 1500 }, { range: 3000 }),
+      { op: 'MoveVob', vob: 0, path: '9/9', from: [0, 0, 0], to: [1, 1, 1] },
+    ])).toThrow('no vob');
+
+    expect(calls).toEqual([['0/5', { range: 3000 }], ['0/5', { range: 1500 }]]);
+  });
+
+  it('is none of the four things a batch partitions on', () => {
+    // It writes one VOB in place, so it shares a batch with a move exactly as a
+    // base property edit does — and it has an inverse, so the history keeps it.
+    const op = setVobClassProp(reader(), 1, { instance: 'A' }, { instance: 'B' });
+
+    expect(isStructuralOp(op)).toBe(false);
+    expect(isWaynetOp(op)).toBe(false);
+    expect(renumbersPaths(op)).toBe(false);
+    expect(isDeleteOp(op)).toBe(false);
+  });
+
+  it('touches the VOB in the projection and writes nothing into it', () => {
+    // There is no column to write: the index has the class name and not one
+    // field of the class. `touched` is still owed, because it is what re-attaches
+    // the gizmo and re-renders the panels — and a refusal here would arrive
+    // *after* `commitOps` had already changed the authoritative world.
+    const live = reader();
+    const before = Array.from(live.columns.flags);
+
+    const touched = applyOps(live, [setVobClassProp(live, 1, { instance: 'A' }, { instance: 'B' })]);
+
+    expect(touched).toEqual([1]);
+    expect(Array.from(live.columns.flags)).toEqual(before);
+    expect(live.name(1)).toBe('ITEM_01');
+    expect(live.visual(1)).toBe('ITMW.3DS');
+    expect(live.className(1)).toBe('oCItem');
+  });
+});
+
+describe('an add op', () => {
+  // The first op that changes the *shape* of the world rather than a VOB in it,
+  // and the enumeration is what constrains it: a VOB's flat index is its
+  // position in a depth-first traversal, so a VOB added anywhere but the very
+  // end renumbers every VOB after it — and every op already in the history
+  // carries one of those numbers. Appending a root is the one position that
+  // shifts nothing.
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0, name: 'ROOT_A' },
+    { parent: 0, childIndex: 0, name: 'CHILD' },
+    { childIndex: 1, name: 'ROOT_B' },
+  ]));
+
+  const SPEC: NewVob = { name: 'PLACED', visual: 'CRATE.3DS', position: [10, 20, 30] };
+
+  it('takes the index one past the end and the slot after the last root', () => {
+    const op = addVob(reader(), SPEC);
+
+    // Three VOBs, two of them roots: the new one is enumerated last, so it gets
+    // index 3 — and it is the third root, so its path is '2'.
+    expect(op).toEqual({
+      op: 'AddVob', vob: 3, path: '2', parentPath: null, from: null, to: SPEC,
+    });
+  });
+
+  it('carries a null `from`, because the VOB is not there yet', () => {
+    // Which is what makes the inverse a delete rather than a special case:
+    // `invertOp` swaps the two sides like it does for every other op.
+    const op = addVob(reader(), SPEC);
+    const back = invertOp(op);
+
+    expect(back).toEqual({
+      op: 'AddVob', vob: 3, path: '2', parentPath: null, from: SPEC, to: null,
+    });
+    expect(invertOp(back)).toEqual(op);
+  });
+
+  it('lands after a parent’s last child, and is enumerated after its subtree', () => {
+    // ROOT_A holds one child, so the new VOB is its second — path '0/1'. It is
+    // enumerated depth-first, so it comes after ROOT_A's whole subtree and
+    // before ROOT_B: index 2, which is the index ROOT_B had.
+    const op = addVob(reader(), SPEC, 0);
+
+    expect(op).toEqual({
+      op: 'AddVob', vob: 2, path: '0/1', parentPath: '0', from: null, to: SPEC,
+    });
+  });
+
+  it('is refused for a parent that is not in the index', () => {
+    expect(() => addVob(reader(), SPEC, 9)).toThrow(/9/);
+  });
+
+  it('is enumerated after a *whole* subtree, not merely after the parent', () => {
+    // The branch the fixture above never reaches: with only children, the walk
+    // past the subtree never has to climb more than one link, and an index that
+    // stopped at the first non-child would be indistinguishable. A grandchild is
+    // the shape that tells them apart.
+    //
+    //  vob 0 ── vob 1 ── vob 2 (grandchild)
+    //  vob 3 (root 1)
+    const deep = createVobReader(vobIndex([
+      { childIndex: 0 },
+      { parent: 0, childIndex: 0 },
+      { parent: 1, childIndex: 0 },
+      { childIndex: 1 },
+    ]));
+
+    // Appended under vob 0 it is enumerated after vob 2, not after vob 1.
+    expect(addVob(deep, SPEC, 0).vob).toBe(3);
+    // And under vob 1 it comes after its only child.
+    expect(addVob(deep, SPEC, 1)).toMatchObject({ vob: 3, path: '0/0/1', parentPath: '0/0' });
+    // A leaf's new child is enumerated immediately after it.
+    expect(addVob(deep, SPEC, 2)).toMatchObject({ vob: 3, path: '0/0/0/0' });
+    // And the last root's, at the very end.
+    expect(addVob(deep, SPEC, 3)).toMatchObject({ vob: 4, path: '1/0' });
+  });
+
+  it('renumbers when it has a parent, and not when it does not', () => {
+    // The distinction the batch guard is built on, and the reason the predicate
+    // is narrower than `isStructuralOp`: both of these change how many VOBs
+    // there are, and only one of them changes what the others are *called*.
+    expect(renumbersPaths(addVob(reader(), SPEC, 0))).toBe(true);
+    expect(renumbersPaths(addVob(reader(), SPEC))).toBe(false);
+    expect(isStructuralOp(addVob(reader(), SPEC, 0))).toBe(true);
+  });
+
+  it('has to be alone in its batch when it has a parent, and need not be otherwise', () => {
+    const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+      insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+      setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: (_spec, parentPath) => (parentPath === null ? '2' : `${parentPath}/1`),
+      deleteVob: () => {},
+      restoreVob: () => { throw new Error('not a restore'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+    };
+    const move: WorldOp = { op: 'MoveVob', vob: 0, path: '0', from: [0, 0, 0], to: [1, 1, 1] };
+
+    expect(() => commitOps(binding, [addVob(reader(), SPEC, 0), move]))
+      .toThrow(/only op in its batch/);
+    // The other half of the same sentence: an appended root renumbers nothing,
+    // so the batches an add already appears in are untouched.
+    expect(() => commitOps(binding, [addVob(reader(), SPEC), move])).not.toThrow();
+  });
+
+  it('reaches the binding with the parent it was made for', () => {
+    const calls: string[] = [];
+    const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+      insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+      setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: (spec, parentPath) => {
+        calls.push(`insert ${spec.name} under ${String(parentPath)}`);
+        return '0/1';
+      },
+      deleteVob: (path) => { calls.push(`delete ${path}`); },
+      restoreVob: () => { throw new Error('not a restore'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+    };
+    const op = addVob(reader(), SPEC, 0);
+
+    commitOps(binding, [op]);
+    commitOps(binding, [invertOp(op)]);
+
+    expect(calls).toEqual(['insert PLACED under 0', 'delete 0/1']);
+  });
+
+  it('carries the class and the instance an item is, untouched', () => {
+    // The class is the object's C++ type and the binding is the only layer that
+    // can author one (level-editor.md §16.15, I1), so this package's whole part
+    // in it is to carry the two fields through unread — an `AddVob` describes a
+    // VOB completely, and a spec that lost its class would insert a `zCVob`
+    // wearing an item's name.
+    let seen: NewVob | null = null;
+    const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+      insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+      setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: (spec) => { seen = spec; return '2'; },
+      deleteVob: () => {},
+      restoreVob: () => { throw new Error('not a restore'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+    };
+    const item: NewVob = {
+      class: 'oCItem', instance: 'ITFO_APPLE', name: 'APPLE_01', position: [1, 2, 3],
+    };
+
+    commitOps(binding, [addVob(reader(), item)]);
+
+    expect(seen).toEqual(item);
+  });
+
+  it('reaches the binding as an insert one way and a delete the other', () => {
+    const calls: string[] = [];
+    const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+      insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+      setVobPosition: () => { throw new Error('not a move'); },
+      setVobRotation: () => { throw new Error('not a turn'); },
+      setVobProp: () => { throw new Error('not a property change'); },
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: (spec) => { calls.push(`insert ${spec.name}`); return '2'; },
+      deleteVob: (path) => { calls.push(`delete ${path}`); },
+      restoreVob: () => { throw new Error('not a restore'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+    };
+    const op = addVob(reader(), SPEC);
+
+    commitOps(binding, [op]);
+    commitOps(binding, [invertOp(op)]);
+
+    expect(calls).toEqual(['insert PLACED', 'delete 2']);
+  });
+
+  it('refuses an insert that did not land where the op says it would', () => {
+    // The guard the enumeration needs. If the world has gained or lost a root
+    // since the op was made, the VOB lands at a different path — and the op's
+    // own inverse would then delete somebody else.
+    const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+      insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+      setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: () => '7',
+      deleteVob: () => {},
+      restoreVob: () => { throw new Error('not a restore'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+    };
+
+    expect(() => commitOps(binding, [addVob(reader(), SPEC)])).toThrow(/7|2/);
+  });
+
+  it('is unwound by a delete when a later op in the batch is refused', () => {
+    const calls: string[] = [];
+    const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+      insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+      setVobPosition: (path) => { if (path === '9/9') throw new Error('no vob'); },
+      setVobRotation: () => {}, setVobProp: () => {},
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: () => { calls.push('insert'); return '2'; },
+      deleteVob: (path) => { calls.push(`delete ${path}`); },
+      restoreVob: () => { throw new Error('not a restore'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+    };
+
+    expect(() => commitOps(binding, [
+      addVob(reader(), SPEC),
+      { op: 'MoveVob', vob: 0, path: '9/9', from: [0, 0, 0], to: [1, 1, 1] },
+    ])).toThrow('no vob');
+
+    expect(calls).toEqual(['insert', 'delete 2']);
+  });
+
+  it('cannot be applied to the projection, and says so', () => {
+    // Every other op writes into columns that already exist. This one changes
+    // how many there are — the typed arrays cannot grow, and every index after
+    // it would shift if it could. The caller re-reads the index instead, and
+    // being told that is much better than a projection that quietly disagrees
+    // with the world.
+    const live = reader();
+    expect(() => applyOps(live, [addVob(live, SPEC)])).toThrow(/structural|re-read/i);
+    expect(isStructuralOp(addVob(live, SPEC))).toBe(true);
+    expect(isStructuralOp(moveVob(live, 0, [1, 2, 3]))).toBe(false);
+  });
+});
+
+describe('the spec a duplicate is built from', () => {
+  // The whole of D1 (level-editor.md §16.14): a duplicate needs no new op,
+  // because `addVob` already takes a description of a VOB — so the work is
+  // reading one back out of the index, and what makes it worth a function of
+  // its own is that the reading is where a field gets silently dropped.
+  const reader = () => createVobReader(vobIndex([
+    {
+      childIndex: 0,
+      name: 'BARREL_01',
+      visual: 'BARREL.3DS',
+      pos: [10, 20, 30],
+      rot: [0, 0, 1, 0, 1, 0, -1, 0, 0],
+      flags: { showVisual: true, cdDynamic: true, physicsEnabled: true },
+    },
+    { childIndex: 1 },
+  ]));
+
+  it('carries every field of the row a `NewVob` has a place for', () => {
+    expect(duplicateVobSpec(reader(), 0)).toEqual({
+      name: 'BARREL_01',
+      visual: 'BARREL.3DS',
+      position: [10, 20, 30],
+      rotation: [0, 0, 1, 0, 1, 0, -1, 0, 0],
+      // The five authorable flags, each of them stated: a spec that omitted the
+      // false ones would author the binding's defaults instead of the row's
+      // values, and a duplicate of a VOB with `showVisual` off would come back
+      // visible.
+      showVisual: true,
+      vobStatic: false,
+      ambient: false,
+      cdStatic: false,
+      cdDynamic: true,
+    });
+  });
+
+  it('carries the class of a VOB the binding can construct', () => {
+    // D2's class half (level-editor.md §16.14): a duplicate of a light is a
+    // light, not a `zCVob` wearing its name. The class is in the index — it is
+    // a column — so this is the reading and nothing more; `insertVob` learned
+    // the construction in I1/I2.
+    const live = createVobReader(vobIndex([
+      { cls: 'zCVobLight', name: 'TORCH' },
+      { cls: 'zCVobSoundDaytime', name: 'BIRDS' },
+    ]));
+
+    expect(duplicateVobSpec(live, 0).class).toBe('zCVobLight');
+    expect(duplicateVobSpec(live, 1).class).toBe('zCVobSoundDaytime');
+  });
+
+  it('omits the class of a plain `zCVob`, which is the default anyway', () => {
+    expect(duplicateVobSpec(reader(), 0)).not.toHaveProperty('class');
+  });
+
+  it('drops a class the binding cannot construct, rather than refusing the copy', () => {
+    // An `oCMobFire` still duplicates as a `zCVob` with the fire's name, pose
+    // and visual — lossy, exactly as it was before the class was carried at
+    // all. Emitting the class would be refused by the IPC validator, which
+    // turns a lossy duplicate into no duplicate.
+    //
+    // This was `oCMobDoor` until I4 made the door authorable, which is what
+    // this assertion is for: the set shrinks with every increment, and a copy
+    // of a door now *is* a door.
+    const live = createVobReader(vobIndex([{ cls: 'oCMobFire', name: 'CAMPFIRE' }]));
+
+    expect(duplicateVobSpec(live, 0)).not.toHaveProperty('class');
+  });
+
+  it('drops `oCItem`, whose `instance` is not in the index', () => {
+    // The one authorable class this cannot carry: an `AddVob` of an `oCItem`
+    // needs the instance it spawns, that is a class property behind
+    // `getVobProps`, and a spec naming the class without it is refused.
+    const live = createVobReader(vobIndex([{ cls: 'oCItem', name: 'ITMW_1H_SWORD_01' }]));
+
+    const spec = duplicateVobSpec(live, 0);
+    expect(spec).not.toHaveProperty('class');
+    expect(spec).not.toHaveProperty('instance');
+  });
+
+  it('drops `physicsEnabled`, because `NewVob` has no place for it', () => {
+    // D2's field, and the one the row carries that this cannot pass on:
+    // `insertVob` does not take it. Asserted rather than left implicit, so the
+    // increment that adds the follow-up op has a test that changes.
+    expect(duplicateVobSpec(reader(), 0)).not.toHaveProperty('physicsEnabled');
+  });
+
+  it('omits a name and a visual the row does not have', () => {
+    // An unnamed VOB interns to the empty string, and an empty `name` is not
+    // the same as no name — the binding writes what it is given.
+    expect(duplicateVobSpec(reader(), 1)).toEqual({
+      position: [1, 2, 3],
+      rotation: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+      showVisual: false,
+      vobStatic: false,
+      ambient: false,
+      cdStatic: false,
+      cdDynamic: false,
+    });
+  });
+
+  it('takes the bounding box it is handed, fitted where the VOB stands', () => {
+    // The one field of a duplicate that is *not* in the row: the index carries
+    // no bbox column at all. The caller holds the visual's own bounds — the
+    // same ones a rotation refits from — and the box is fitted through the
+    // row's rotation, so a turned VOB duplicates with the box it had.
+    const spec = duplicateVobSpec(reader(), 0, [-1, 0, -10, 1, 2, 10]);
+
+    expect(spec.bbox).toEqual(placeBounds(
+      [-1, 0, -10, 1, 2, 10], [0, 0, 1, 0, 1, 0, -1, 0, 0], [10, 20, 30],
+    ));
+  });
+
+  it('carries no box when there are no bounds, rather than a guessed one', () => {
+    expect(duplicateVobSpec(reader(), 0)).not.toHaveProperty('bbox');
+  });
+
+  it('is refused for a VOB that is not in the index', () => {
+    expect(() => duplicateVobSpec(reader(), 9)).toThrow(/9/);
+  });
+});
+
+describe('a selection duplicated as one batch', () => {
+  // D4 (level-editor.md §16.14). One batch is one undo entry, which is the whole
+  // point: five copies the user has to undo five times is not what "duplicate
+  // the selection" means. It adds no op either — it is D1's spec, N times, with
+  // the one correction a batch needs.
+  //
+  //  vob 0 (root 0) ── vob 1 ── vob 2
+  //  vob 3 (root 1)
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0, name: 'ROOT_A', visual: 'A.3DS' },
+    { parent: 0, childIndex: 0, name: 'CHILD_A', visual: 'B.3DS' },
+    { parent: 0, childIndex: 1, name: 'CHILD_B', visual: 'C.3DS' },
+    { childIndex: 1, name: 'ROOT_B', visual: 'D.3DS' },
+  ]));
+
+  it('is one AddVob per VOB, each beside the VOB it was copied from', () => {
+    const ops = duplicateVobs(reader(), [1, 3]);
+
+    expect(addsOf(ops).map((op) => [op.op, op.path, op.parentPath])).toEqual([
+      ['AddVob', '0/2', '0'],
+      ['AddVob', '2', null],
+    ]);
+    expect(ops[0].to).toMatchObject({ name: 'CHILD_A', visual: 'B.3DS' });
+    expect(ops[1].to).toMatchObject({ name: 'ROOT_B', visual: 'D.3DS' });
+  });
+
+  it('gives two copies of the same parent consecutive slots', () => {
+    // The one correction a batch needs, and the reason this is not `map`:
+    // `addVob` resolves the slot against the world as it was, so both copies
+    // would claim `0/2` — and `writeOp` would refuse the second, because the
+    // list it was appended to has changed since.
+    expect(duplicateVobs(reader(), [1, 2]).map((op) => op.path)).toEqual(['0/2', '0/3']);
+    // Roots are the same list and get the same treatment. ROOT_A brings its two
+    // children with it since D5, so the slot ROOT_B's copy takes is advanced by
+    // the *copies appended to that list*, which is one, and not by the ops the
+    // subtree emitted.
+    expect(duplicateVobs(reader(), [0, 3]).map((op) => op.path))
+      .toEqual(['2', '2/0', '2/1', '3']);
+  });
+
+  it('takes the bounds each VOB is handed, so a copy keeps the box it had', () => {
+    const bounds = (vob: number): ZenBounds | null => (vob === 3 ? [-1, 0, -10, 1, 2, 10] : null);
+    const ops = duplicateVobs(reader(), [1, 3], bounds);
+
+    expect(ops[0].to).not.toHaveProperty('bbox');
+    expect(ops[1].to!.bbox).toEqual(placeBounds(
+      [-1, 0, -10, 1, 2, 10], [1, 0, 0, 0, 1, 0, 0, 0, 1], [3, 6, 9],
+    ));
+  });
+
+  it('refuses the whole batch when one VOB is not in the index', () => {
+    // The same refusal `setVobProps` makes, for the same reason: a quietly
+    // dropped op is the half-applied state `commitOps` exists to prevent.
+    expect(() => duplicateVobs(reader(), [1, 9])).toThrow(/9/);
+  });
+
+  it('commits as one batch, and unwinds as one', () => {
+    // The batch guard used to refuse this outright — a parented add renumbers.
+    // What it renumbers is flat indices, and an op is addressed by a *path*: an
+    // append never changes an existing one, which is what makes a batch of them
+    // safe and a delete in one still not.
+    const landed: string[] = [];
+    const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+      insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+      setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: (_spec, parentPath) => {
+        const path = parentPath === null ? `${2 + landed.length}` : `${parentPath}/${2 + landed.length}`;
+        landed.push(path);
+        return path;
+      },
+      deleteVob: (path) => { landed.splice(landed.indexOf(path), 1); },
+      restoreVob: () => { throw new Error('not a restore'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+    };
+
+    commitOps(binding, duplicateVobs(reader(), [1, 2]));
+    expect(landed).toEqual(['0/2', '0/3']);
+
+    // And back to front on the way out: the inverse of the batch is what undo
+    // replays, and it removes the appended slots in the order that leaves the
+    // remaining ones where their ops say they are.
+    commitOps(binding, [...duplicateVobs(reader(), [1, 2])].reverse().map(invertOp));
+    expect(landed).toEqual([]);
+  });
+
+  it('does not let a delete into the batch it opened', () => {
+    // The relaxation is a batch of adds, not a batch of structural ops. A delete
+    // takes every VOB after it down by one wherever it sits — paths included.
+    const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+      insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+      setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: () => '0/2', deleteVob: () => {},
+      restoreVob: () => { throw new Error('not a restore'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+    };
+    const live = reader();
+
+    expect(() => commitOps(binding, [...duplicateVobs(live, [1]), deleteVob(live, 2)]))
+      .toThrow(/only op in its batch/);
+  });
+});
+
+describe('a clipboard pasted into a list', () => {
+  // D3 (level-editor.md §16.14). Copy and paste are duplicate taken apart: the
+  // specs are read at the copy, and where they land is chosen at the paste. So
+  // this takes specs rather than VOBs — the clipboard's contents survive the
+  // selection that filled it, and survive the VOBs being deleted.
+  //
+  //  vob 0 (root 0) -- vob 1 -- vob 2
+  //  vob 3 (root 1)
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0, name: 'ROOT_A', visual: 'A.3DS' },
+    { parent: 0, childIndex: 0, name: 'CHILD_A', visual: 'B.3DS' },
+    { parent: 0, childIndex: 1, name: 'CHILD_B', visual: 'C.3DS' },
+    { childIndex: 1, name: 'ROOT_B', visual: 'D.3DS' },
+  ]));
+  const specs = (live = reader()) => [duplicateVobSubtree(live, 1), duplicateVobSubtree(live, 3)];
+
+  it('is one AddVob per spec, all appended to the list it is given', () => {
+    // Every copy goes into the *one* list the paste chose, which is the whole
+    // difference from a duplicate: that puts each copy back beside its own
+    // original.
+    const ops = pasteVobs(reader(), specs(), 0);
+
+    expect(addsOf(ops).map((op) => [op.op, op.path, op.parentPath])).toEqual([
+      ['AddVob', '0/2', '0'],
+      ['AddVob', '0/3', '0'],
+    ]);
+    expect(ops[0].to).toMatchObject({ name: 'CHILD_A', visual: 'B.3DS' });
+    expect(ops[1].to).toMatchObject({ name: 'ROOT_B', visual: 'D.3DS' });
+  });
+
+  it('appends to the roots when the paste has no parent', () => {
+    // Consecutive there too: `addVob` resolves every slot against the world as
+    // it was, so without the advance both copies would claim slot 2 and
+    // `writeOp` would refuse the second.
+    expect(pasteVobs(reader(), specs(), null).map((op) => op.path)).toEqual(['2', '3']);
+  });
+
+  it('pastes what was copied, not what the world holds now', () => {
+    // The clipboard is a value. The VOB it was read from may be gone by the
+    // time it is pasted, and the paste is still exact — bar the offset below,
+    // which is the only thing a paste changes about what it was handed.
+    const copied = specs();
+    const ops = pasteVobs(reader(), [copied[0]], null);
+
+    expect(ops[0].to).toEqual({
+      ...copied[0].spec,
+      position: [
+        copied[0].spec.position[0] + PASTE_MIN_OFFSET,
+        copied[0].spec.position[1],
+        copied[0].spec.position[2],
+      ],
+    });
+  });
+
+  it('lands the copy beside the original rather than inside it', () => {
+    // §16.24 4: `duplicateVobSpec` copies the position verbatim, so a pasted
+    // VOB was exactly where its source was — invisible, and findable only in
+    // the scene tree.
+    const live = reader();
+    const copied = duplicateVobSubtree(live, 1);
+    const [op] = pasteVobs(live, [copied], null) as AddVob[];
+
+    expect(op.to!.position).toEqual([
+      copied.spec.position[0] + PASTE_MIN_OFFSET,
+      copied.spec.position[1],
+      copied.spec.position[2],
+    ]);
+    // Horizontal, and only horizontal: an offset with height in it would drop
+    // a copy through the floor or hang it in the air, and there is no ground
+    // query on this side of the boundary to put it back.
+    expect(op.to!.position[1]).toBe(copied.spec.position[1]);
+  });
+
+  it('clears the original by its own size, so a copied house is not inside itself', () => {
+    // A fixed nudge is "beside it" for a barrel and still "inside it" for a
+    // building. The offset is the copied group's own extent along X, which is
+    // the smallest one that clears whatever was copied.
+    const live = reader();
+    const wide = duplicateVobSubtree(live, 1, () => [-500, 0, -20, 500, 300, 20]);
+    const [op] = pasteVobs(live, [wide], null) as AddVob[];
+
+    expect(op.to!.position[0] - wide.spec.position[0]).toBe(1000);
+    // The box moves with the VOB it describes, or the copy is drawn in one
+    // place and culled and picked in another.
+    expect(op.to!.bbox![0] - wide.spec.bbox![0]).toBe(1000);
+    expect(op.to!.bbox![3] - wide.spec.bbox![3]).toBe(1000);
+    expect(op.to!.bbox![1]).toBe(wide.spec.bbox![1]);
+  });
+
+  it('moves a whole paste rigidly, so the copies keep the spacing they had', () => {
+    // One delta for the batch, not one per copy: a paste that offset each root
+    // by its own size would scatter a group that was copied as a group.
+    const live = reader();
+    const trees = specs(live);
+    const ops = addsOf(pasteVobs(live, trees, null));
+
+    const deltas = ops.slice(0, 2).map(
+      (op, at) => op.to!.position[0] - trees[at].spec.position[0],
+    );
+    expect(deltas[0]).toBe(deltas[1]);
+  });
+
+  it('carries the offset down the subtree, so a copy is not torn apart', () => {
+    // ZenGin VOB positions are world-space — the tree is organisational, not a
+    // transform hierarchy — so a root moved without its descendants leaves them
+    // standing on top of the original.
+    const live = reader();
+    const tree = duplicateVobSubtree(live, 0);
+    const ops = addsOf(pasteVobs(live, [tree], null));
+
+    expect(ops).toHaveLength(3);
+    for (const [at, op] of ops.entries()) {
+      const source = at === 0 ? tree.spec : tree.children[at - 1].spec;
+      expect(op.to!.position[0] - source.position[0]).toBe(PASTE_MIN_OFFSET);
+    }
+  });
+
+  describe('at a point the paste is given', () => {
+    // #373: beside the original along world +X reads as random from the
+    // camera — off to one side, or behind it. Given the point in front of the
+    // camera, the copy lands there instead.
+    it('stands the group\'s base on the point, centred over it', () => {
+      const live = reader();
+      // A box off-centre from the pivot, so centring on the pivot would show.
+      const tree = duplicateVobSubtree(live, 1, () => [-100, 50, -40, 300, 450, 60]);
+      const [op] = addsOf(pasteVobs(live, [tree], null, [5000, 200, -3000]));
+
+      // The box's own centre and floor, not the pivot: a tree whose pivot is
+      // mid-trunk would otherwise stand half underground.
+      const box = tree.spec.bbox!;
+      expect(box[1]).not.toBe(tree.spec.position[1]);
+      const [x0, y0, z0, x1, y1, z1] = op.to!.bbox!;
+      expect([(x0 + x1) / 2, y0, (z0 + z1) / 2]).toEqual([5000, 200, -3000]);
+      expect([x1 - x0, y1 - y0, z1 - z0]).toEqual([box[3] - box[0], box[4] - box[1], box[5] - box[2]]);
+      // And the VOB moves with its box.
+      const delta = [0, 1, 2].map((axis) => op.to!.position[axis] - tree.spec.position[axis]);
+      expect(delta).toEqual([0, 1, 2].map((axis) => op.to!.bbox![axis] - box[axis]));
+    });
+
+    it('moves the whole paste by one delta, descendants and spacing kept', () => {
+      const live = reader();
+      const trees = [duplicateVobSubtree(live, 0, () => [0, 0, 0, 100, 100, 100])];
+      const ops = addsOf(pasteVobs(live, trees, null, [1000, 0, 1000]));
+
+      expect(ops).toHaveLength(3);
+      const nodes = [trees[0].spec, ...trees[0].children.map((child) => child.spec)];
+      const deltas = ops.map((op, at) => op.to!.position.map((value, axis) => value - nodes[at].position[axis]));
+      expect(new Set(deltas.map((delta) => delta.join()))).toEqual(new Set([deltas[0].join()]));
+    });
+
+    it('puts the pivot on the point when nothing copied has a box', () => {
+      const live = reader();
+      const tree = duplicateVobSubtree(live, 3);
+      const [op] = addsOf(pasteVobs(live, [tree], null, [10, 20, 30]));
+
+      expect(op.to!.position).toEqual([10, 20, 30]);
+    });
+  });
+
+  it('is nothing at all for an empty clipboard', () => {
+    expect(pasteVobs(reader(), [], null)).toEqual([]);
+  });
+
+  it('refuses a parent that is not in the index', () => {
+    expect(() => pasteVobs(reader(), specs(), 9)).toThrow(/9/);
+  });
+});
+
+describe('a duplicate that carries the subtree', () => {
+  // D5 (level-editor.md §16.14). The decision this card was held for is void:
+  // a batch of pure appends already unwinds as one undo entry (D4), which is
+  // the only property the serialized tree format was ever wanted for. So a
+  // subtree is N ordinary `AddVob`s — no tree in an op payload, no validator
+  // branch, no binding change.
+  //
+  // What it does need is paths computed *forward*. `addVob` resolves a parent
+  // against the world as it was, and a copied child's parent does not exist
+  // there: it is the copy the op before it makes.
+  //
+  //  vob 0 (root 0) ─┬─ vob 1
+  //                  └─ vob 2 ── vob 3
+  //  vob 4 (root 1)
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0, name: 'ROOT_A', visual: 'A.3DS' },
+    { parent: 0, childIndex: 0, name: 'CHILD_A', visual: 'B.3DS' },
+    { parent: 0, childIndex: 1, name: 'CHILD_B', visual: 'C.3DS' },
+    { parent: 2, childIndex: 0, name: 'GRANDCHILD', visual: 'D.3DS' },
+    { childIndex: 1, name: 'ROOT_B', visual: 'E.3DS' },
+  ]));
+  /** The paths the fixture's own VOBs occupy, in enumeration order. */
+  const WORLD = ['0', '0/0', '0/1', '0/1/0', '1'];
+
+  it('reads a VOB and its descendants as a tree of specs', () => {
+    const tree = duplicateVobSubtree(reader(), 0);
+
+    expect(tree.spec).toMatchObject({ name: 'ROOT_A', visual: 'A.3DS' });
+    // Slot order, because that is the order the copies are appended in and a
+    // subtree that came back with its children swapped is not a copy.
+    expect(tree.children.map((child) => child.spec.name)).toEqual(['CHILD_A', 'CHILD_B']);
+    expect(tree.children[0].children).toEqual([]);
+    expect(tree.children[1].children.map((child) => child.spec.name)).toEqual(['GRANDCHILD']);
+  });
+
+  it('appends the descendants at the paths the copies take, depth first', () => {
+    // Predicted before any insert runs — measured against the binding when the
+    // card was sized (§16.14, D5), and this is the prediction it measured.
+    const ops = duplicateVobs(reader(), [0]);
+
+    expect(addsOf(ops).map((op) => [op.op, op.path, op.parentPath, op.vob])).toEqual([
+      ['AddVob', '2', null, 5],
+      ['AddVob', '2/0', '2', 6],
+      ['AddVob', '2/1', '2', 7],
+      ['AddVob', '2/1/0', '2/1', 8],
+    ]);
+    expect(ops.map((op) => op.to!.name))
+      .toEqual(['ROOT_A', 'CHILD_A', 'CHILD_B', 'GRANDCHILD']);
+  });
+
+  it('fits each descendant its own box', () => {
+    // The bounds callback is asked per VOB in the subtree, not once for the
+    // root: a copied child keeps the box its own visual has.
+    const bounds = (vob: number): ZenBounds | null => (vob === 3 ? [-1, 0, -10, 1, 2, 10] : null);
+    const ops = duplicateVobs(reader(), [0], bounds);
+
+    expect(ops[3].to!.bbox).toEqual(placeBounds(
+      [-1, 0, -10, 1, 2, 10], [1, 0, 0, 0, 1, 0, 0, 0, 1], [3, 6, 9],
+    ));
+    expect(ops[0].to).not.toHaveProperty('bbox');
+  });
+
+  it('copies a VOB already inside another copy once, not twice', () => {
+    // The selection is pruned to its top-level VOBs, and that is not tidiness:
+    // a parent and its own child both selected would otherwise give the child
+    // one copy inside the parent's copy *and* another beside itself.
+    expect(duplicateVobs(reader(), [0, 2, 3]).map((op) => op.path))
+      .toEqual(['2', '2/0', '2/1', '2/1/0']);
+    // A VOB whose ancestor is not selected is top-level however deep it sits.
+    expect(duplicateVobs(reader(), [3]).map((op) => op.path)).toEqual(['0/1/1']);
+  });
+
+  it('pastes a subtree into the list the paste chose', () => {
+    // The clipboard holds trees since D5, and a paste puts the whole of one
+    // under the list it is given — the root beside the selection, the
+    // descendants under the root's copy.
+    const ops = pasteVobs(reader(), [duplicateVobSubtree(reader(), 0)], 4);
+
+    expect(addsOf(ops).map((op) => [op.path, op.parentPath])).toEqual([
+      ['1/0', '1'],
+      ['1/0/0', '1/0'],
+      ['1/0/1', '1/0'],
+      ['1/0/1/0', '1/0/1'],
+    ]);
+  });
+
+  it('commits as one batch and unwinds it back to front', () => {
+    // Against a binding that appends the way the real one does — the child's
+    // add works because `commitOps` applies ops in order, so by the time it
+    // runs its parent is in the world.
+    const world = new Set(WORLD);
+    const slots = (parentPath: string | null) => [...world].filter((path) => (
+      (path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : null) === parentPath
+    )).length;
+    const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+      insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+      setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: (_spec, parentPath) => {
+        const path = parentPath === null
+          ? String(slots(null)) : `${parentPath}/${slots(parentPath)}`;
+        world.add(path);
+        return path;
+      },
+      deleteVob: (path) => { world.delete(path); },
+      restoreVob: () => { throw new Error('not a restore'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+    };
+
+    commitOps(binding, duplicateVobs(reader(), [0]));
+    expect([...world]).toEqual([...WORLD, '2', '2/0', '2/1', '2/1/0']);
+
+    // Back to front, which is the one order that leaves the paths of the ops
+    // still to be unwound standing.
+    commitOps(binding, [...duplicateVobs(reader(), [0])].reverse().map(invertOp));
+    expect([...world]).toEqual(WORLD);
+  });
+});
+
+describe('a duplicate that carries the class properties', () => {
+  // D2's other half (level-editor.md §14.1 1.2). The *class* came across on
+  // 2026-08-28 and the fields that class names did not, so a duplicated
+  // `zCVobLight` was a light with the binding's range and the binding's colour —
+  // a copy that looks right in the scene tree and wrong in the world.
+  //
+  // They cannot be read out of the index: it interns the class *name* and
+  // carries no field of the class, which is the fact `SetVobClassProp` exists
+  // for. So they are handed in, exactly as that op's `from` is, and each copy
+  // takes one follow-up `SetVobClassProp` in the same batch — no new op, no
+  // validator branch, and one undo entry, because a batch of appends plus the
+  // props of what it appended moves no index path.
+  //
+  //  vob 0 (root 0) ── vob 1
+  //  vob 2 (root 1)
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0, cls: 'zCVobLight', name: 'TORCH' },
+    { parent: 0, childIndex: 0, cls: 'zCVobSound', name: 'CRACKLE' },
+    { childIndex: 1, name: 'BARREL' },
+  ]));
+  /** What `getVobProps` answers per VOB — the whole record, base fields and
+   *  all, which is the shape the reader sends and not a pre-filtered one. */
+  const READ: Record<number, ReadProps> = {
+    0: {
+      class: 'zCVobLight', presetName: 'FIRE', bias: 2,
+      range: 2000, color: [255, 220, 180, 255], lightType: 0, quality: 2,
+    },
+    1: {
+      class: 'zCVobSound', presetName: 'FIRE',
+      soundName: 'FIRE_M', volume: 80, radius: 1500,
+      mode: 1, coneAngle: 0, volumeType: 0,
+      initiallyPlaying: true, ambient3d: false, obstruction: true,
+    },
+  };
+  const props = (vob: number): ReadProps | null => READ[vob] ?? null;
+
+  /** Everything but the two calls a copy makes, so a test that provokes one of
+   *  the others is told which. */
+  const refusing = {
+    addWaypoint: () => { throw new Error('not a waypoint add'); },
+    removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+    insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+    addWaypointEdge: () => { throw new Error('not an edge add'); },
+    removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+    setVobPosition: () => { throw new Error('not a move'); },
+    setVobRotation: () => { throw new Error('not a rotation'); },
+    setVobProp: () => { throw new Error('not a property change'); },
+    reparentVob: () => { throw new Error('not a reparent'); },
+    setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+    setWaypointName: () => { throw new Error('not a waypoint rename'); },
+  };
+
+  it('follows the copy of a `zCVobLight` with its range and its colour', () => {
+    const ops = duplicateVobs(reader(), [0], () => null, props);
+
+    // The add first and the fields after it: the op has to address a VOB that is
+    // in the world, and `commitOps` applies a batch in order.
+    expect(ops.map((op) => op.op))
+      .toEqual(['AddVob', 'SetVobClassProp', 'AddVob', 'SetVobClassProp']);
+    expect(ops[1]).toEqual({
+      op: 'SetVobClassProp',
+      // The copy's two addresses, taken from the add that makes it rather than
+      // resolved against the reader: the VOB this names is not in the index at
+      // all, it is the one the op before it appends.
+      vob: 3,
+      path: '2',
+      className: 'zCVobLight',
+      // Catalogue order, as `setVobClassProp` orders them, and every catalogued
+      // field the read answered. `from` is the same side, because the value the
+      // copy had before is the binding's default and nothing here knows it —
+      // and both replays that read `from` remove the copy immediately after.
+      from: {
+        lightType: 0, range: 2000, color: [255, 220, 180, 255], quality: 2,
+      },
+      to: {
+        lightType: 0, range: 2000, color: [255, 220, 180, 255], quality: 2,
+      },
+    });
+    expect(Object.keys((ops[1] as SetVobClassProp).to))
+      .toEqual(['lightType', 'range', 'color', 'quality']);
+  });
+
+  it('carries the fields of each VOB in the subtree, under the copy of each', () => {
+    // The callback is asked per VOB, exactly as the bounds one is: a copied
+    // child keeps its own sound rather than its parent's light.
+    const ops = duplicateVobs(reader(), [0], () => null, props);
+
+    expect(ops[2]).toMatchObject({ op: 'AddVob', path: '2/0', to: { name: 'CRACKLE' } });
+    expect(ops[3]).toMatchObject({
+      op: 'SetVobClassProp', vob: 4, path: '2/0', className: 'zCVobSound',
+    });
+    expect((ops[3] as SetVobClassProp).to).toEqual({
+      soundName: 'FIRE_M', volume: 80, mode: 1, radius: 1500, coneAngle: 0,
+      volumeType: 0, initiallyPlaying: true, ambient3d: false, obstruction: true,
+    });
+  });
+
+  it('numbers the adds by the adds alone', () => {
+    // The flat index a subtree's ops run on counts *VOBs appended*, and a
+    // class-property op appends none. Counting ops instead would number the
+    // second copy one too high.
+    const ops = duplicateVobs(reader(), [0], () => null, props);
+
+    expect(ops.filter((op) => op.op === 'AddVob').map((op) => op.vob)).toEqual([3, 4]);
+  });
+
+  it('adds nothing for a VOB whose class it dropped, or whose props it was not given', () => {
+    // A copy that names no class is a `zCVob`, and every catalogued key would be
+    // refused on one — here by the class it is read from, and by the binding if
+    // it got that far. The plain barrel is that case from the other side: it has
+    // a class and the class has no fields.
+    expect(duplicateVobs(reader(), [2], () => null, props).map((op) => op.op))
+      .toEqual(['AddVob']);
+    // And with no callback at all nothing changes for anybody: this is what a
+    // caller that has not been taught to fetch props still gets.
+    expect(duplicateVobs(reader(), [0]).map((op) => op.op)).toEqual(['AddVob', 'AddVob']);
+  });
+
+  it('drops a field the read did not answer and a value the op could not carry', () => {
+    // Lossy beats refused, which is the rule the dropped *class* already
+    // follows: a value outside its catalogue bounds is refused at the IPC
+    // boundary, and one refusal would cost the whole copy rather than the one
+    // field. A nested record is the decal read, which no class field is.
+    const ops = duplicateVobs(reader(), [0], () => null, () => ({
+      range: -1, // below the descriptor's minimum
+      color: [255, 220, 180, 255],
+      quality: 1.5, // an enumerator is a whole number
+      lightType: { nested: 1 },
+    }));
+
+    expect((ops[1] as SetVobClassProp).to).toEqual({ color: [255, 220, 180, 255] });
+  });
+
+  it('drops the whole op rather than carrying one that sets nothing', () => {
+    // `SetVobClassProp` refuses to set nothing, and a read answering none of the
+    // catalogued keys is exactly that.
+    expect(duplicateVobs(reader(), [0], () => null, () => ({ presetName: 'FIRE' }))
+      .map((op) => op.op)).toEqual(['AddVob', 'AddVob']);
+  });
+
+  it('holds them on the clipboard and pastes them with the copy', () => {
+    // The clipboard is values read at the copy, so the props are read there too:
+    // a paste of a VOB deleted since still carries the fields it had.
+    const tree = duplicateVobSubtree(reader(), 0, () => null, props);
+    expect(tree.classProps).toEqual({
+      lightType: 0, range: 2000, color: [255, 220, 180, 255], quality: 2,
+    });
+
+    expect(pasteVobs(reader(), [tree], null).map((op) => [op.op, op.path])).toEqual([
+      ['AddVob', '2'], ['SetVobClassProp', '2'],
+      ['AddVob', '2/0'], ['SetVobClassProp', '2/0'],
+    ]);
+  });
+
+  it('commits as one batch and unwinds it back to front', () => {
+    // The whole point of the follow-up being *in* the batch. `commitOps` takes
+    // the adds and the props of what they added together — an append moves no
+    // index path and a class-property op is addressed by one — and the inverse
+    // batch is the same shape, so undo goes through the same relaxation.
+    const world = new Set(['0', '0/0', '1']);
+    const written: string[] = [];
+    const binding: OpBinding = {
+      ...refusing,
+      insertVob: (_spec, parentPath) => {
+        const slots = [...world].filter((path) => (
+          (path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : null) === parentPath
+        )).length;
+        const path = parentPath === null ? String(slots) : `${parentPath}/${slots}`;
+        world.add(path);
+        return path;
+      },
+      deleteVob: (path) => { world.delete(path); },
+      restoreVob: () => { throw new Error('not a restore'); },
+      setVobClassProp: (path, values) => { written.push(`${path} ${JSON.stringify(values)}`); },
+    };
+
+    const ops = duplicateVobs(reader(), [0], () => null, props);
+    commitOps(binding, ops);
+
+    expect([...world]).toEqual(['0', '0/0', '1', '2', '2/0']);
+    expect(written).toEqual([
+      '2 {"lightType":0,"range":2000,"color":[255,220,180,255],"quality":2}',
+      '2/0 {"soundName":"FIRE_M","volume":80,"mode":1,"radius":1500,"coneAngle":0,'
+      + '"volumeType":0,"initiallyPlaying":true,"ambient3d":false,"obstruction":true}',
+    ]);
+
+    // Back to front, which is the one order that leaves the paths of the ops
+    // still to be unwound standing — and the props op is unwound onto a VOB the
+    // add's inverse then deletes.
+    commitOps(binding, [...ops].reverse().map(invertOp));
+    expect([...world]).toEqual(['0', '0/0', '1']);
+  });
+});
+
+describe('a delete op', () => {
+  // The op §15 unblocked. The objection was never renumbering, it was
+  // invertibility — an `oCMobInter` carries per-class properties, children, an
+  // AI and an event manager that no op describes. §15 shipped it as a
+  // **barrier** on the reasoning that the original Spacer has no undo at all, so
+  // an unundoable delete is already parity.
+  //
+  // **2026-09-14 it has an inverse** (§7, #271), and the way past the
+  // objection was to stop trying to describe the subtree: the binding keeps its
+  // pointer, `RestoreVob` puts that same object back at the slot it came from,
+  // and the op itself still carries an address and nothing else. So there is no
+  // barrier left in the op set, and what this op owes its batch is the
+  // renumbering rule every structural op owes.
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0, name: 'ROOT_A' },
+    { parent: 0, childIndex: 0, name: 'CHILD' },
+    { childIndex: 1, name: 'ROOT_B' },
+  ]));
+
+  const SPEC: NewVob = { name: 'PLACED', visual: 'CRATE.3DS', position: [10, 20, 30] };
+
+  it('carries the flat index and the native path, and nothing else', () => {
+    // Deliberately *not* an `AddVob` with a null `to`. That shape means "the op
+    // describes this VOB completely", which is exactly what is not true of a
+    // retail one — and it is what lets `invertOp` refuse this and not that.
+    expect(deleteVob(reader(), 1)).toEqual({ op: 'DeleteVob', vob: 1, path: '0/0' });
+  });
+
+  it('is refused for a VOB that is not in the index', () => {
+    expect(() => deleteVob(reader(), 9)).toThrow(/9/);
+  });
+
+  it('renumbers whatever it removes — a root included', () => {
+    // The one place it is not the mirror of an add. An appended root is
+    // enumerated last and shifts nothing, which is why `renumbersPaths` is false
+    // for one; a *removed* root takes every VOB after it down by one, and there
+    // is no position in the tree where that is not true.
+    expect(renumbersPaths(deleteVob(reader(), 2))).toBe(true);
+    expect(renumbersPaths(deleteVob(reader(), 0))).toBe(true);
+    expect(isStructuralOp(deleteVob(reader(), 1))).toBe(true);
+  });
+
+  it('inverts to a restore of the same path, carrying no description of the VOB', () => {
+    // The shape the whole decision turns on. An inverse built from the columns
+    // would insert a bare `zCVob` with the name and visual of an `oCMobInter` —
+    // the undo would look like it worked and would have thrown the VOB's class,
+    // its children and its AI away. So the inverse describes *nothing*: it names
+    // a path, and what comes back is the subtree the binding retained.
+    const op = deleteVob(reader(), 1);
+
+    expect(invertOp(op)).toEqual({ op: 'RestoreVob', vob: 1, path: '0/0' });
+    // And back, so redo is the delete again and the stacks can be walked as
+    // often as the user likes.
+    expect(invertOp(invertOp(op))).toEqual(op);
+  });
+
+  it('is a removal for the viewport, where an add and a move are not', () => {
+    // `isDeleteOp` is what is left of `isBarrierOp`, and it answers the question
+    // that predicate was standing in for: this is the op the viewport never drew
+    // ahead of the round trip, so `putTheViewBack` must not invert it.
+    expect(isDeleteOp(deleteVob(reader(), 1))).toBe(true);
+    expect(isDeleteOp(addVob(reader(), SPEC))).toBe(false);
+    expect(isDeleteOp(moveVob(reader(), 0, [1, 2, 3]))).toBe(false);
+  });
+
+  it('renumbers as a restore too, and is structural', () => {
+    // There is no slot a restore could take that shifts nothing — it is an
+    // insert at an index on purpose, which is the half that makes the undo
+    // *correct* rather than merely present.
+    const restore = invertOp(deleteVob(reader(), 1));
+
+    expect(renumbersPaths(restore)).toBe(true);
+    expect(isStructuralOp(restore)).toBe(true);
+    expect(isWaynetOp(restore)).toBe(false);
+    expect(isDeleteOp(restore)).toBe(false);
+  });
+
+  it('reaches the binding as a delete of the path it carries, retaining it', () => {
+    const calls: string[] = [];
+    const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+      insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+      setVobPosition: () => { throw new Error('not a move'); },
+      setVobRotation: () => { throw new Error('not a turn'); },
+      setVobProp: () => { throw new Error('not a property change'); },
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: () => { throw new Error('not an insert'); },
+      deleteVob: (path, retain) => { calls.push(`delete ${path} retain=${retain}`); },
+      restoreVob: (path) => { calls.push(`restore ${path}`); return path; },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+    };
+
+    commitOps(binding, [deleteVob(reader(), 1)]);
+
+    // `retain=true`, always: this is the delete whose inverse is a restore, and
+    // the retained subtree is what that restore puts back.
+    expect(calls).toEqual(['delete 0/0 retain=true']);
+  });
+
+  it('reaches the binding as a restore when it is undone, and deletes again on redo', () => {
+    const calls: string[] = [];
+    const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+      insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+      setVobPosition: () => { throw new Error('not a move'); },
+      setVobRotation: () => { throw new Error('not a turn'); },
+      setVobProp: () => { throw new Error('not a property change'); },
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: () => { throw new Error('not an insert'); },
+      deleteVob: (path, retain) => { calls.push(`delete ${path} retain=${retain}`); },
+      restoreVob: (path) => { calls.push(`restore ${path}`); return path; },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+    };
+    const op = deleteVob(reader(), 1);
+
+    commitOps(binding, [op]);
+    commitOps(binding, [invertOp(op)]);
+    commitOps(binding, [invertOp(invertOp(op))]);
+
+    expect(calls).toEqual([
+      'delete 0/0 retain=true', 'restore 0/0', 'delete 0/0 retain=true',
+    ]);
+  });
+
+  it('refuses a restore that lands somewhere else, and puts it back', () => {
+    // The guard the enumeration needs, in `insertWaypoint`'s idiom: a restore
+    // lands where it is told, so a mismatch means the tree was not the one the
+    // delete was made against — and the delete this inverts back to would then
+    // remove somebody else.
+    const calls: string[] = [];
+    const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+      insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+      setVobPosition: () => { throw new Error('not a move'); },
+      setVobRotation: () => { throw new Error('not a turn'); },
+      setVobProp: () => { throw new Error('not a property change'); },
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: () => { throw new Error('not an insert'); },
+      deleteVob: (path, retain) => { calls.push(`delete ${path} retain=${retain}`); },
+      restoreVob: () => { calls.push('restore'); return '1/7'; },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+    };
+
+    expect(() => commitOps(binding, [invertOp(deleteVob(reader(), 1))]))
+      .toThrow(/landed at 1\/7, not 0\/0/);
+    // Put back before reporting, so a refused op changes nothing.
+    expect(calls).toEqual(['restore', 'delete 1/7 retain=true']);
+  });
+
+  it('has to be alone in its batch', () => {
+    // Because it renumbers: every other op in the batch carries a path resolved
+    // before the batch ran, and a delete moves the VOB each of them names.
+    const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+      insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+      setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: () => '2',
+      deleteVob: () => {},
+      restoreVob: () => { throw new Error('not a restore'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+    };
+    const move: WorldOp = { op: 'MoveVob', vob: 0, path: '0', from: [0, 0, 0], to: [1, 1, 1] };
+
+    expect(() => commitOps(binding, [deleteVob(reader(), 1), move]))
+      .toThrow(/only op in its batch/);
+  });
+
+  it('cannot be applied to the projection, and says so', () => {
+    const live = reader();
+    expect(() => applyOps(live, [deleteVob(live, 1)])).toThrow(/structural|re-read/i);
+  });
+});
+
+describe('deleting a whole selection (#253)', () => {
+  //  vob 0 (root 0) ── vob 1 (slot 0) ── vob 2 (slot 0)
+  //                 └─ vob 3 (slot 1)
+  //  vob 4 (root 1)
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0, name: 'ROOT_A' },
+    { parent: 0, childIndex: 0, name: 'BRANCH' },
+    { parent: 1, childIndex: 0, name: 'LEAF' },
+    { parent: 0, childIndex: 1, name: 'SIBLING' },
+    { childIndex: 1, name: 'ROOT_B' },
+  ]));
+
+  const deleteBinding = (log: string[]): OpBinding => ({
+    addWaypoint: () => { throw new Error('not a waypoint add'); },
+    removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+    insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+    addWaypointEdge: () => { throw new Error('not an edge add'); },
+    removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+    setVobPosition: () => { throw new Error('not a move'); },
+    setVobRotation: () => { throw new Error('not a turn'); },
+    setVobProp: () => { throw new Error('not a property change'); },
+    setVobClassProp: () => { throw new Error('not a class property change'); },
+    insertVob: () => { throw new Error('not an insert'); },
+    deleteVob: (path) => { log.push(path); },
+    restoreVob: () => { throw new Error('not a restore'); },
+    reparentVob: () => { throw new Error('not a reparent'); },
+    setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+    setWaypointName: () => { throw new Error('not a waypoint rename'); },
+  });
+
+  it('orders the batch back to front, so no delete moves the next one', () => {
+    // The whole of why a batch of deletes is safe where a batch of anything
+    // else is not: removing a subtree shifts only the slots *after* it, so a
+    // batch applied in reverse document order leaves every path still to be
+    // used exactly where it was resolved.
+    const ops = deleteVobs(reader(), [3, 1, 4]);
+
+    expect(ops.map((op) => op.path)).toEqual(['1', '0/1', '0/0']);
+  });
+
+  it('drops a VOB whose ancestor is going too — the subtree carries it', () => {
+    // `deleteVob` takes the subtree with it, so a selected child of a selected
+    // parent is already gone by the time its own op would run; sent anyway it
+    // addresses a slot that no longer exists.
+    expect(deleteVobs(reader(), [0, 1, 2]).map((op) => op.path)).toEqual(['0']);
+  });
+
+  it('reaches the binding once per VOB, in that order', () => {
+    const log: string[] = [];
+
+    commitOps(deleteBinding(log), deleteVobs(reader(), [1, 4]));
+
+    expect(log).toEqual(['1', '0/0']);
+  });
+
+  it('is still one batch, and now one undo rather than one clearing', () => {
+    // One entry in the history instead of N of them (#253) — which used to mean
+    // one clearing of both stacks and now means what it means everywhere else,
+    // because each of these has an inverse (§7).
+    const ops = deleteVobs(reader(), [3, 4]);
+
+    expect(ops).toHaveLength(2);
+    expect(ops.every(isDeleteOp)).toBe(true);
+    // And the batch inverts the way `WorldService.replayOne` inverts one:
+    // reversed, so the restores refill the slots in ascending order.
+    expect([...ops].reverse().map(invertOp)).toEqual([
+      { op: 'RestoreVob', vob: 3, path: '0/1' },
+      { op: 'RestoreVob', vob: 4, path: '1' },
+    ]);
+  });
+
+  it('undoes as a batch of restores in ascending order', () => {
+    // The mirror of the shape that makes the delete batch safe, and it has to be
+    // allowed or a multi-VOB delete would be uninvertible as a *batch* while
+    // each of its ops has an inverse. Refilling the slots in ascending order
+    // puts each subtree back at the address the delete recorded.
+    const log: string[] = [];
+    const binding = deleteBinding(log);
+    binding.restoreVob = (path) => { log.push(`restore ${path}`); return path; };
+    const ops = deleteVobs(reader(), [1, 3, 4]);
+
+    commitOps(binding, ops);
+    commitOps(binding, [...ops].reverse().map(invertOp));
+
+    expect(log).toEqual([
+      '1', '0/1', '0/0',
+      'restore 0/0', 'restore 0/1', 'restore 1',
+    ]);
+  });
+
+  it('refuses a batch of restores that is not in ascending order', () => {
+    // The exception is the shape, not the op — exactly as it is for the deletes.
+    const log: string[] = [];
+    const ops = deleteVobs(reader(), [1, 4]).map(invertOp);
+
+    expect(() => commitOps(deleteBinding(log), ops)).toThrow(/only op in its batch/);
+  });
+
+  it('refuses a delete batch that is not in reverse order', () => {
+    // The exception is the *shape*, not the op: a hand-built batch in
+    // document order would have its second path moved by its first.
+    const live = reader();
+    const ops = [deleteVob(live, 0), deleteVob(live, 4)];
+
+    expect(() => commitOps(deleteBinding([]), ops)).toThrow(/only op in its batch/);
+  });
+
+  it('still refuses a delete beside any other op', () => {
+    const live = reader();
+    const move: WorldOp = { op: 'MoveVob', vob: 4, path: '1', from: [0, 0, 0], to: [1, 1, 1] };
+
+    expect(() => commitOps(deleteBinding([]), [...deleteVobs(live, [3]), move]))
+      .toThrow(/only op in its batch/);
+  });
+
+  it('unwinds the deletes it already made when one of them fails', () => {
+    // This used to be the one batch `commitOps` could not make all-or-nothing —
+    // the unwind replays `'from'`, which a delete refused, so a batch that
+    // stopped half way had removed everything before the failure with nothing to
+    // put any of it back with, and it said so instead of pretending. The
+    // retained subtrees closed it (§7): `'from'` on a delete is a restore,
+    // and the unwind walks the applied ops back to front, which is the order the
+    // retain stack hands them back in.
+    const log: string[] = [];
+    const binding = deleteBinding(log);
+    binding.deleteVob = (path) => {
+      log.push(path);
+      if (log.filter((entry) => !entry.startsWith('restore')).length === 2) {
+        throw new Error('no such path');
+      }
+    };
+    binding.restoreVob = (path) => { log.push(`restore ${path}`); return path; };
+
+    expect(() => commitOps(binding, deleteVobs(reader(), [1, 3, 4])))
+      .toThrow(/no such path/);
+    // The first delete went through and was put back; the second failed, so it
+    // has nothing to undo.
+    expect(log).toEqual(['1', '0/1', 'restore 1']);
+  });
+
+  it('refuses the first one the ordinary way, having changed nothing', () => {
+    const log: string[] = [];
+    const binding = deleteBinding(log);
+    binding.deleteVob = () => { throw new Error('no such path'); };
+
+    expect(() => commitOps(binding, deleteVobs(reader(), [0, 4])))
+      .toThrow(/no such path/);
+  });
+});
+
+describe('a reparent op', () => {
+  //  vob 0 (root 0) ── vob 1 (slot 0)
+  //                 └─ vob 2 (slot 1)
+  //  vob 3 (root 1)
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0 },
+    { parent: 0, childIndex: 0 },
+    { parent: 0, childIndex: 1 },
+    { childIndex: 1 },
+  ]));
+
+  it('carries where the VOB was and where it goes, both as slots', () => {
+    // A path alone cannot describe the move: putting a VOB back at the *end* of
+    // the list it came from is a different world from the one it left, so the
+    // slot is part of both sides.
+    const op = reparentVob(reader(), 2, 1, 0);
+
+    expect(op).toEqual({
+      op: 'ReparentVob',
+      vob: 2,
+      from: { path: '0/1', parentPath: '0', slot: 1 },
+      to: { path: '0/0/0', parentPath: '0/0', slot: 0 },
+    });
+  });
+
+  it('predicts the path the removal itself renumbers', () => {
+    // Moving a VOB into a *later sibling* of itself: once it is gone the
+    // destination has shifted down a slot, and the op has to say where the VOB
+    // will actually be or its own inverse addresses somebody else. The binding
+    // makes the same adjustment; `commitOps` checks the two agree.
+    const op = reparentVob(reader(), 1, 2, 0);
+
+    expect(op.from).toEqual({ path: '0/0', parentPath: '0', slot: 0 });
+    expect(op.to).toEqual({ path: '0/0/0', parentPath: '0/1', slot: 0 });
+  });
+
+  it('takes a null parent to mean a root', () => {
+    const op = reparentVob(reader(), 1, null, 2);
+    expect(op.to).toEqual({ path: '2', parentPath: null, slot: 2 });
+  });
+
+  it('inverts by swapping the sides when the move renumbered neither of them', () => {
+    // The common case, and the one that made a plain swap look like the whole
+    // rule: the old parent is a root and the VOB went into a list two levels
+    // down, so the insertion moved nothing the inverse has to name. When it
+    // does, the swap is not enough — see `parentAfterInsert` and the round
+    // trips below.
+    const op = reparentVob(reader(), 2, 1, 0);
+    const back = invertOp(op);
+
+    expect(back).toEqual({ op: 'ReparentVob', vob: 2, from: op.to, to: op.from });
+    expect(invertOp(back)).toEqual(op);
+  });
+
+  it('names the old parent where the move left it, not where it was', () => {
+    // Pulling a child out to the front of the roots: its parent was root 0 and
+    // is root 1 the moment the child lands there. An inverse still saying `0`
+    // asks for the VOB to be reparented into itself.
+    const op = reparentVob(reader(), 2, null, 0);
+
+    expect(op.from.parentPath).toBe('0');
+    const undo = invertOp(op);
+    expect(undo.op === 'ReparentVob' && undo.to)
+      .toEqual({ path: '0/1', parentPath: '1', slot: 1 });
+  });
+
+  it('reaches the binding from the path the VOB is at, each way round', () => {
+    // The half a swap of `from` and `to` does not give for free: undo moves the
+    // VOB from where the op *put* it, not from where it started.
+    const calls: string[] = [];
+    const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+      insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+      setVobPosition: () => { throw new Error('not a move'); },
+      setVobRotation: () => { throw new Error('not a turn'); },
+      setVobProp: () => { throw new Error('not a property change'); },
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: () => { throw new Error('not an insert'); },
+      deleteVob: () => { throw new Error('not a delete'); },
+      restoreVob: () => { throw new Error('not a restore'); },
+      reparentVob: (from, parent, slot) => {
+        calls.push(`${from} -> ${parent}[${slot}]`);
+        return parent === null ? String(slot) : `${parent}/${slot}`;
+      },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+    };
+    const op = reparentVob(reader(), 2, 1, 0);
+
+    commitOps(binding, [op]);
+    commitOps(binding, [invertOp(op)]);
+
+    expect(calls).toEqual(['0/1 -> 0/0[0]', '0/0/0 -> 0[1]']);
+  });
+
+  /**
+   * A binding that actually holds a tree, so a round trip is a round trip.
+   *
+   * The fake above answers whatever path it is asked for, which is what let an
+   * inverse addressing the wrong parent look correct: nothing in it can move,
+   * so nothing in it can move to the wrong place. This one models the binding's
+   * contract structurally rather than by index arithmetic — `parentPath` names
+   * a node in the tree **as it stands before the removal**, and the node is
+   * resolved to a reference *first*, so the removal shift falls out of the
+   * model instead of being a second copy of the formula under test.
+   */
+  interface Node { name: string; children: Node[] }
+
+  function makeTreeBinding(roots: Node[]) {
+    const listAt = (parentPath: string | null): Node[] => {
+      if (parentPath === null) return roots;
+      let node: Node | undefined;
+      let list = roots;
+      for (const segment of parentPath.split('/').map(Number)) {
+        node = list[segment];
+        if (node === undefined) throw new RangeError(`no vob at ${parentPath}`);
+        list = node.children;
+      }
+      return list;
+    };
+    const pathOf = (target: Node[], list = roots, prefix: string | null = null): string | null => {
+      if (list === target) return prefix;
+      for (let i = 0; i < list.length; i++) {
+        const under = prefix === null ? String(i) : `${prefix}/${i}`;
+        const found = pathOf(target, list[i].children, under);
+        if (found !== null || list[i].children === target) return list[i].children === target ? under : found;
+      }
+      return null;
+    };
+    const contains = (node: Node, maybe: Node[]): boolean =>
+      node.children === maybe || node.children.some((child) => contains(child, maybe));
+
+    const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+      insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+      setVobPosition: () => { throw new Error('not a move'); },
+      setVobRotation: () => { throw new Error('not a turn'); },
+      setVobProp: () => { throw new Error('not a property change'); },
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: () => { throw new Error('not an insert'); },
+      deleteVob: () => { throw new Error('not a delete'); },
+      restoreVob: () => { throw new Error('not a restore'); },
+      reparentVob: (from, parentPath, slot) => {
+        const segments = from.split('/').map(Number);
+        const sourceList = listAt(segments.length === 1 ? null : segments.slice(0, -1).join('/'));
+        const source = sourceList[segments[segments.length - 1]];
+        if (source === undefined) throw new RangeError(`no vob at ${from}`);
+
+        // Resolved before the removal, which is the contract, and the reason
+        // this is a reference rather than a path.
+        const destination = listAt(parentPath);
+        if (destination === source.children || contains(source, destination)) {
+          throw new RangeError('cannot reparent a vob into itself');
+        }
+
+        sourceList.splice(sourceList.indexOf(source), 1);
+        destination.splice(slot, 0, source);
+        const landedIn = pathOf(destination);
+        return landedIn === null ? String(destination.indexOf(source))
+          : `${landedIn}/${destination.indexOf(source)}`;
+      },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+    };
+    return binding;
+  }
+
+  /** The tree the reader above describes, as the binding's model holds it. */
+  const tree = (): Node[] => ([
+    { name: 'v0', children: [{ name: 'v1', children: [] }, { name: 'v2', children: [] }] },
+    { name: 'v3', children: [] },
+  ]);
+
+  const shape = (roots: Node[]): string => roots
+    .map((node) => (node.children.length === 0 ? node.name : `${node.name}(${shape(node.children)})`))
+    .join(' ');
+
+  it.each([
+    ['a child out to the front of the roots', 2, null, 0],
+    ['the first child out to the front of the roots', 1, null, 0],
+    ['a child in under its own later sibling', 1, 2, 0],
+    ['a root in under another root', 3, 0, 0],
+    ['a child to the end of the roots', 1, null, 2],
+  ])('undoes %s and leaves the world exactly as it was', (_what, vob, toParent, slot) => {
+    // The forward op predicts where the VOB lands, accounting for its own
+    // removal (`landingPath`). Nothing made the same account for the *insertion*
+    // on the way back: `invertOp` handed the binding `from.parentPath` as it
+    // read before the move, so a move that landed the VOB ahead of its own old
+    // parent in a list they share addressed the wrong parent — reparenting the
+    // VOB into itself in the worst case, and landing somewhere else in the rest.
+    // Every one of those is refused by the landing check rather than applied,
+    // and `WorldService.replayOne` leaves a refused batch on the stack: the
+    // entry never comes off, and everything under it is unreachable for good.
+    const roots = tree();
+    const binding = makeTreeBinding(roots);
+    const before = shape(roots);
+
+    const op = reparentVob(reader(), vob, toParent, slot);
+    commitOps(binding, [op]);
+    expect(shape(roots)).not.toEqual(before);
+
+    commitOps(binding, [invertOp(op)]);
+    expect(shape(roots)).toEqual(before);
+  });
+
+  // #293: a whole selection moved in one gesture — twenty bushes put under one
+  // of them. Each op renumbers, so each is resolved against the world the ones
+  // before it leave; the round trips below run through the tree binding, where
+  // an op addressed by a stale path would land somewhere else and be refused.
+  describe('a batch of them (#293)', () => {
+    //  a b c d e — five roots, vobs 0..4
+    const flat = () => createVobReader(vobIndex([0, 1, 2, 3, 4].map((childIndex) => ({ childIndex }))));
+    const flatTree = (): Node[] => ['a', 'b', 'c', 'd', 'e'].map((name) => ({ name, children: [] }));
+    /** WorldService's undo: each op inverted, last op first. */
+    const undo = (ops: readonly WorldOp[]) => [...ops].reverse().map(invertOp);
+
+    it('puts the selection under one VOB as its last children, in document order, and undoes', () => {
+      const roots = tree();
+      const binding = makeTreeBinding(roots);
+      const ops = reparentVobs(reader(), [3, 2], 1);
+
+      commitOps(binding, ops);
+      expect(shape(roots)).toBe('v0(v1(v2 v3))');
+      commitOps(binding, undo(ops));
+      expect(shape(roots)).toBe('v0(v1 v2) v3');
+    });
+
+    it('follows the destination as the moves ahead of it renumber it', () => {
+      // `c` is root 2, then 1, then 0 as the VOBs before it leave the roots —
+      // a batch resolved against the original world would address `a`, `b`
+      // and then nothing.
+      const roots = flatTree();
+      const binding = makeTreeBinding(roots);
+      const ops = reparentVobs(flat(), [0, 1, 3, 4], 2);
+
+      expect(ops.map((op) => op.to.parentPath)).toEqual(['2', '1', '0', '0']);
+      commitOps(binding, ops);
+      expect(shape(roots)).toBe('c(a b d e)');
+      commitOps(binding, undo(ops));
+      expect(shape(roots)).toBe('a b c d e');
+    });
+
+    it('lands the selection as one run before a sibling, when given one', () => {
+      const roots = flatTree();
+      const binding = makeTreeBinding(roots);
+      const ops = reparentVobs(flat(), [4, 0], null, 2);
+
+      commitOps(binding, ops);
+      expect(shape(roots)).toBe('b a e c d');
+      commitOps(binding, undo(ops));
+      expect(shape(roots)).toBe('a b c d e');
+    });
+
+    it('moves a selected child with its selected parent rather than out of it', () => {
+      const roots = tree();
+      const binding = makeTreeBinding(roots);
+      const ops = reparentVobs(reader(), [0, 1], 3);
+
+      expect(ops).toHaveLength(1);
+      commitOps(binding, ops);
+      expect(shape(roots)).toBe('v3(v0(v1 v2))');
+    });
+
+    it('makes no op for a VOB already where it would land', () => {
+      // v1 and v2 are v0's children already, in that order, at the end.
+      expect(reparentVobs(reader(), [1, 2], 0)).toEqual([]);
+    });
+
+    it('carries each VOB’s flat index in the world its op is applied to', () => {
+      // `e` is vob 4 in the original world, and the fourth op in: by then `a`,
+      // `b` and `d` sit under `c` and it is enumerated right after them.
+      const ops = reparentVobs(flat(), [0, 1, 3, 4], 2);
+      expect(ops.map((op) => op.vob)).toEqual([0, 0, 3, 4]);
+    });
+
+    it('says where each moved VOB stands once the whole batch has landed', () => {
+      // Not each op's own `to.path`: `a` landed at 1/0 and was 0/0 by the end,
+      // once `b` and `d` had left the roots ahead of `c`.
+      const roots = flatTree();
+      const binding = makeTreeBinding(roots);
+      const ops = reparentVobs(flat(), [0, 1, 3, 4], 2);
+      commitOps(binding, ops);
+
+      expect(landedPaths(ops)).toEqual(['0/0', '0/1', '0/2', '0/3']);
+      const named = (path: string) => path.split('/').map(Number)
+        .reduce<Node | undefined>((node, slot, at) => (at === 0 ? roots[slot] : node?.children[slot]), undefined)?.name;
+      expect(landedPaths(ops).map(named)).toEqual(['a', 'b', 'd', 'e']);
+      expect(landedPaths(reparentVobs(flat(), [4, 0], null, 2))).toEqual(['1', '2']);
+      expect(landedPaths([])).toEqual([]);
+    });
+
+    it('refuses a destination inside the selection, and a sibling that is not the destination’s', () => {
+      expect(() => reparentVobs(reader(), [0], 1)).toThrow(/itself|descendant/i);
+      expect(() => reparentVobs(reader(), [3, 0], 0)).toThrow(/itself|descendant/i);
+      expect(() => reparentVobs(flat(), [0], null, 0)).toThrow(/before/i);
+      expect(() => reparentVobs(reader(), [3], 0, 3)).toThrow(/before/i);
+    });
+
+    it('is a batch commitOps takes whole, and still unwinds whole when one op is refused', () => {
+      const roots = flatTree();
+      const binding = makeTreeBinding(roots);
+      const ops = reparentVobs(flat(), [0, 1, 3], 2);
+      // The last op's source path no longer names anything: the binding
+      // refuses it, and the two that landed are put back.
+      const broken = [...ops.slice(0, -1), { ...ops[2], from: { ...ops[2].from, path: '9' } }];
+
+      expect(() => commitOps(binding, broken)).toThrow();
+      expect(shape(roots)).toBe('a b c d e');
+    });
+
+    it('unwinds a move that renumbered its own old parent back into that parent', () => {
+      // v1 leaves v0 for the front of the roots, so v0 is root 1 by the time
+      // the second op is refused. The unwind has to say so — a raw swap of the
+      // op's sides names root 0, which is v1 itself.
+      const roots = tree();
+      const binding = makeTreeBinding(roots);
+      const ops = reparentVobs(reader(), [1, 2], null, 0);
+      const broken = [ops[0], { ...ops[1], from: { ...ops[1].from, path: '9' } }];
+
+      expect(() => commitOps(binding, broken)).toThrow(/9/);
+      expect(shape(roots)).toBe('v0(v1 v2) v3');
+    });
+  });
+
+  it('refuses a move that did not land where the op says it would', () => {
+    const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+      insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+      setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: () => '0', deleteVob: () => {},
+      restoreVob: () => { throw new Error('not a restore'); },
+      reparentVob: () => '9/9',
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+    };
+
+    expect(() => commitOps(binding, [reparentVob(reader(), 2, 1, 0)])).toThrow(/9\/9|0\/0\/0/);
+  });
+
+  it('refuses to put a VOB inside itself or its own subtree', () => {
+    // The one move that destroys VOBs rather than misplacing them: a subtree
+    // under its own descendant is unreachable from the roots, so it is not
+    // enumerated, not counted and not written. The binding refuses it too; this
+    // is here so the UI never offers it.
+    expect(() => reparentVob(reader(), 0, 1, 0)).toThrow(/itself|descendant/i);
+    expect(() => reparentVob(reader(), 0, 0, 0)).toThrow(/itself|descendant/i);
+  });
+
+  it('refuses a VOB or a parent that is not in the index', () => {
+    expect(() => reparentVob(reader(), 9, 0, 0)).toThrow(/9/);
+    expect(() => reparentVob(reader(), 1, 9, 0)).toThrow(/9/);
+  });
+
+  it('cannot be applied to the projection: it renumbers everything after it', () => {
+    const live = reader();
+    expect(() => applyOps(live, [reparentVob(live, 2, 1, 0)])).toThrow(/structural|re-read/i);
+    expect(isStructuralOp(reparentVob(live, 2, 1, 0))).toBe(true);
+  });
+
+  it('has to be the only op in its batch, and an add does not', () => {
+    // The distinction the batch guard rests on. Every op in a batch carries a
+    // path resolved *before* the batch ran, so an op that renumbers invalidates
+    // the ones after it — but appending a *root* renumbers nothing, because it
+    // is enumerated last. Refusing every add would break the multi-op batches
+    // one legitimately appears in; an add with a parent is refused with the
+    // reparent, and that case is in the add's own describe.
+    const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+      insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+      setVobPosition: () => {}, setVobRotation: () => {}, setVobProp: () => {},
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: () => '2', deleteVob: () => {}, reparentVob: () => '0/0/0',
+      restoreVob: () => { throw new Error('not a restore'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+    };
+    const live = reader();
+
+    expect(() => commitOps(binding, [
+      reparentVob(live, 2, 1, 0),
+      moveVob(live, 3, [1, 2, 3]),
+    ])).toThrow(/alone|only op|batch/i);
+
+    expect(() => commitOps(binding, [
+      addVob(live, { name: 'PLACED', position: [1, 2, 3] }),
+      moveVob(live, 3, [1, 2, 3]),
+    ])).not.toThrow();
+  });
+});
+
+describe('applying ops to the index', () => {
+  // The renderer's projection has to move with the world, or the scene tree,
+  // the property grid and the viewport go on showing where a VOB used to be
+  // until something reloads 31 MB of payloads.
+  it('writes the new position into the positions column', () => {
+    const index = vobIndex([{ pos: [1, 2, 3] }, { parent: 0, childIndex: 0, pos: [10, 20, 30] }]);
+    const reader = createVobReader(index);
+
+    const touched = applyOps(reader, [moveVob(reader, 1, [40, 50, 60])]);
+
+    expect(touched).toEqual([1]);
+    expect(reader.position(1)).toEqual([40, 50, 60]);
+    // And nothing else moved.
+    expect(reader.position(0)).toEqual([1, 2, 3]);
+  });
+
+  it('leaves the index exactly as it was when an op and its inverse are both applied', () => {
+    const reader = createVobReader(vobIndex([{ pos: [1, 2, 3] }]));
+    const op = moveVob(reader, 0, [7, 8, 9]);
+
+    applyOps(reader, [op]);
+    applyOps(reader, [invertOp(op)]);
+
+    expect(reader.position(0)).toEqual([1, 2, 3]);
+  });
+
+  it('writes a property op into the interned columns the panels read', () => {
+    // The name and the visual are dictionary indices, not values — so applying
+    // one of these is not a write to a column but an intern plus a write, and a
+    // projection that skipped it leaves the property grid naming the old visual
+    // while the world holds the new one.
+    const reader = createVobReader(vobIndex([
+      { name: 'OLD', visual: 'OLD.3DS', flags: { showVisual: true, cdDynamic: true } },
+    ]));
+
+    const touched = applyOps(reader, [
+      setVobProp(reader, 0, { name: 'NEW', visual: 'NEW.3DS', showVisual: false }),
+    ]);
+
+    expect(touched).toEqual([0]);
+    expect(reader.name(0)).toBe('NEW');
+    expect(reader.visual(0)).toBe('NEW.3DS');
+    expect(reader.flags(0).showVisual).toBe(false);
+    // A flag the op never named is not this op's to clear.
+    expect(reader.flags(0).cdDynamic).toBe(true);
+  });
+
+  it('interns a name that is already in the dictionary instead of appending it', () => {
+    // Every rename appending would grow the dictionary without bound behind a
+    // user holding a checkbox, and two VOBs sharing a name would stop sharing
+    // an entry — which is what the interning is for.
+    const index = vobIndex([{ name: 'A' }, { name: 'B' }]);
+    const reader = createVobReader(index);
+    const before = index.names.length;
+
+    applyOps(reader, [setVobProp(reader, 0, { name: 'B' })]);
+
+    expect(reader.name(0)).toBe('B');
+    expect(index.names.length).toBe(before);
+  });
+
+  it('restores every property exactly when a property op and its inverse are applied', () => {
+    const reader = createVobReader(vobIndex([
+      { name: 'OLD', visual: 'OLD.3DS', flags: { showVisual: true, vobStatic: true } },
+    ]));
+    const op = setVobProp(reader, 0, { name: 'NEW', visual: 'NEW.3DS', showVisual: false });
+
+    applyOps(reader, [op]);
+    applyOps(reader, [invertOp(op)]);
+
+    expect(reader.name(0)).toBe('OLD');
+    expect(reader.visual(0)).toBe('OLD.3DS');
+    expect(reader.flags(0)).toEqual({
+      showVisual: true, vobStatic: true, ambient: false,
+      cdStatic: false, cdDynamic: false, physicsEnabled: false,
+    });
+  });
+
+  it('applies a batch in order, so a multi-select drag is one op list', () => {
+    const reader = createVobReader(vobIndex([{ pos: [0, 0, 0] }, { parent: 0, pos: [0, 0, 0] }]));
+    const ops: WorldOp[] = [
+      moveVob(reader, 0, [1, 1, 1]),
+      moveVob(reader, 1, [2, 2, 2]),
+      { ...moveVob(reader, 0, [1, 1, 1]), from: [1, 1, 1], to: [3, 3, 3] },
+    ];
+
+    expect(applyOps(reader, ops)).toEqual([0, 1, 0]);
+    expect(reader.position(0)).toEqual([3, 3, 3]);
+    expect(reader.position(1)).toEqual([2, 2, 2]);
+  });
+
+  // The batch reaches here after `commitOps` has already changed the world, so
+  // a VOB the projection does not have is not a hypothetical: the store still
+  // holds the pre-delete summary in the window between the world op resolving
+  // and the index re-read resolving. Both waynet siblings refuse by name; a
+  // typed-array write out of range is a silent no-op, so without this the op
+  // reports success with the projection never updated.
+  it('refuses an op naming a vob the index does not have', () => {
+    const reader = createVobReader(vobIndex([{ pos: [1, 2, 3], name: 'A' }]));
+    const gone = { ...moveVob(reader, 0, [7, 8, 9]), vob: 4, path: '4' };
+
+    expect(() => applyOps(reader, [gone])).toThrow(/no vob 4/);
+    expect(reader.position(0)).toEqual([1, 2, 3]);
+
+    const negative = { ...setVobProp(reader, 0, { name: 'NEW' }), vob: -1, path: '0' };
+
+    expect(() => applyOps(reader, [negative])).toThrow(/no vob -1/);
+    expect(reader.name(0)).toBe('A');
+  });
+});
+
+describe('committing ops to the world', () => {
+  /** The one binding call an op needs, recorded. */
+  function fakeBinding(refuse?: string) {
+    const calls: Array<[string, [number, number, number]]> = [];
+    const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+      insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+      setVobPosition: (path, to) => {
+        if (path === refuse) throw new Error(`no vob at ${path}`);
+        calls.push([path, to]);
+      },
+      setVobRotation: () => { throw new Error('these batches are moves only'); },
+      setVobProp: () => { throw new Error('these batches are moves only'); },
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: () => { throw new Error('no structural ops in this batch'); },
+      deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      restoreVob: () => { throw new Error('not a restore'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+    };
+    return { binding, calls };
+  }
+
+  const at = (path: string, to: [number, number, number]): WorldOp =>
+    ({ op: 'MoveVob', vob: 0, path, from: [0, 0, 0], to });
+
+  it('addresses each VOB by its index path, in order', () => {
+    const { binding, calls } = fakeBinding();
+
+    commitOps(binding, [at('0/1', [1, 1, 1]), at('0/2', [2, 2, 2])]);
+
+    expect(calls).toEqual([['0/1', [1, 1, 1]], ['0/2', [2, 2, 2]]]);
+  });
+
+  it('puts back what it already moved when one op in the batch is refused', () => {
+    // A drag of five VOBs that moves three of them and reports a failure has
+    // left the world in a state no undo entry describes — the batch was never
+    // recorded, so nothing will ever put those three back.
+    const { binding, calls } = fakeBinding('0/2');
+
+    expect(() => commitOps(binding, [
+      at('0/1', [1, 1, 1]),
+      at('0/2', [2, 2, 2]),
+      at('0/3', [3, 3, 3]),
+    ])).toThrow('no vob at 0/2');
+
+    expect(calls).toEqual([
+      ['0/1', [1, 1, 1]],
+      // back where it came from, and the ops after the failure never ran
+      ['0/1', [0, 0, 0]],
+    ]);
+  });
+
+  it('hands a property op its props, and the box only when the visual moved', () => {
+    // The binding refuses a bbox that no visual swap justifies, so a writer that
+    // always attached one would refuse every flag edit — and one that never
+    // attached one would leave a swapped visual culled by the old visual's box.
+    const calls: Array<[string, VobProps & { bbox?: ZenBounds }]> = [];
+    const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+      insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+      setVobPosition: () => { throw new Error('not a move'); },
+      setVobRotation: () => { throw new Error('not a turn'); },
+      setVobProp: (path, props) => { calls.push([path, props]); },
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: () => { throw new Error('no structural ops in this batch'); },
+      deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      restoreVob: () => { throw new Error('not a restore'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+    };
+    const box: ZenBounds = [0, 0, 0, 1, 1, 1];
+
+    commitOps(binding, [
+      { op: 'SetVobProp', vob: 0, path: '0/1', from: { showVisual: false }, to: { showVisual: true }, fromBbox: null, toBbox: null },
+      { op: 'SetVobProp', vob: 1, path: '0/2', from: { visual: 'A.3DS' }, to: { visual: 'B.3DS' }, fromBbox: null, toBbox: box },
+    ]);
+
+    expect(calls).toEqual([
+      ['0/1', { showVisual: true }],
+      ['0/2', { visual: 'B.3DS', bbox: box }],
+    ]);
+  });
+
+  it('unwinds a refused property batch back to the props each VOB had', () => {
+    const calls: Array<[string, VobProps & { bbox?: ZenBounds }]> = [];
+    const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+      insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+      setVobPosition: () => { throw new Error('not a move'); },
+      setVobRotation: () => { throw new Error('not a turn'); },
+      setVobProp: (path, props) => {
+        if (path === '0/2') throw new Error(`no vob at ${path}`);
+        calls.push([path, props]);
+      },
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: () => { throw new Error('no structural ops in this batch'); },
+      deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      restoreVob: () => { throw new Error('not a restore'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+    };
+
+    expect(() => commitOps(binding, [
+      { op: 'SetVobProp', vob: 0, path: '0/1', from: { name: 'A' }, to: { name: 'B' }, fromBbox: null, toBbox: null },
+      { op: 'SetVobProp', vob: 1, path: '0/2', from: { name: 'C' }, to: { name: 'D' }, fromBbox: null, toBbox: null },
+    ])).toThrow('no vob at 0/2');
+
+    expect(calls).toEqual([['0/1', { name: 'B' }], ['0/1', { name: 'A' }]]);
+  });
+
+  it('rolls back in reverse order, so two ops on one VOB unwind correctly', () => {
+    const { binding, calls } = fakeBinding('9/9');
+    const first: WorldOp = { op: 'MoveVob', vob: 0, path: '0/1', from: [0, 0, 0], to: [1, 1, 1] };
+    const second: WorldOp = { op: 'MoveVob', vob: 0, path: '0/1', from: [1, 1, 1], to: [2, 2, 2] };
+
+    expect(() => commitOps(binding, [first, second, at('9/9', [9, 9, 9])])).toThrow();
+
+    expect(calls.map(([, to]) => to)).toEqual([
+      [1, 1, 1], [2, 2, 2],       // applied
+      [1, 1, 1], [0, 0, 0],       // unwound back to front
+    ]);
+  });
+});
+
+describe('moving a waypoint', () => {
+  // The first op that is not about a VOB at all, and the first whose address is
+  // a bare index. A waynet is a flat list plus an edge set, so there is no path
+  // to resolve — and no path is exactly what makes every VOB-shaped dispatch
+  // below it dangerous: a wrong index always resolves to *some* waypoint.
+  const NAMES = ['FP_FIXTURE_FREE', 'WP_FIXTURE_A', 'WP_FIXTURE_B'];
+  const positions = () => Float32Array.from([0, 0, 0, 10, 20, 30, 40, 50, 60]);
+
+  function waynetBinding(refuse?: string) {
+    const calls: unknown[][] = [];
+    const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+      insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+      setVobPosition: (path, to) => calls.push(['position', path, to]),
+      setVobRotation: () => { throw new Error('not a rotation'); },
+      setVobProp: () => { throw new Error('not a prop'); },
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: () => { throw new Error('no structural ops in this batch'); },
+      deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      restoreVob: () => { throw new Error('not a restore'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: (waypoint, name, to) => {
+        if (name === refuse) throw new Error(`no waypoint ${name}`);
+        calls.push(['waypoint', waypoint, name, to]);
+      },
+      setWaypointName: (waypoint, name, to) => {
+        if (name === refuse) throw new Error(`no waypoint ${name}`);
+        calls.push(['rename', waypoint, name, to]);
+      },
+    };
+    return { binding, calls };
+  }
+
+  it('carries the waypoint\'s own origin and its name, read out of the payload', () => {
+    // `from` comes out of the positions column rather than from the caller, for
+    // the same reason every other op reads it: undo replays an op and never
+    // consults a snapshot beside the history.
+    const op = moveWaypoint(positions(), NAMES, 1, [11, 21, 31]);
+
+    expect(op).toEqual({
+      op: 'MoveWaypoint', waypoint: 1, name: 'WP_FIXTURE_A',
+      from: [10, 20, 30], to: [11, 21, 31],
+    });
+  });
+
+  it('is refused for a waypoint that is not in the payload', () => {
+    expect(() => moveWaypoint(positions(), NAMES, 3, [0, 0, 0])).toThrow(/3/);
+    expect(() => moveWaypoint(positions(), NAMES, -1, [0, 0, 0])).toThrow(/-1/);
+  });
+
+  it('inverts by swapping the two sides, and is its own round trip', () => {
+    const op = moveWaypoint(positions(), NAMES, 2, [41, 51, 61]);
+    const undo = invertOp(op) as MoveWaypoint;
+
+    expect(undo.from).toEqual(op.to);
+    expect(undo.to).toEqual(op.from);
+    expect(undo.name).toBe('WP_FIXTURE_B');
+    expect(invertOp(undo)).toEqual(op);
+  });
+
+  it('reaches the binding as setWaypointPosition, carrying the name as a guard', () => {
+    // The name is the only defence an index-addressed op has. A stale VOB path
+    // usually resolves to nothing; a stale waypoint index always resolves to a
+    // waypoint, and moves the wrong one in silence.
+    const { binding, calls } = waynetBinding();
+
+    commitOps(binding, [moveWaypoint(positions(), NAMES, 1, [11, 21, 31])]);
+
+    expect(calls).toEqual([['waypoint', 1, 'WP_FIXTURE_A', [11, 21, 31]]]);
+  });
+
+  it('is unwound by its own inverse when a later op in the batch is refused', () => {
+    const { binding, calls } = waynetBinding('WP_FIXTURE_B');
+
+    expect(() => commitOps(binding, [
+      moveWaypoint(positions(), NAMES, 1, [11, 21, 31]),
+      moveWaypoint(positions(), NAMES, 2, [41, 51, 61]),
+    ])).toThrow('no waypoint WP_FIXTURE_B');
+
+    expect(calls).toEqual([
+      ['waypoint', 1, 'WP_FIXTURE_A', [11, 21, 31]],
+      ['waypoint', 1, 'WP_FIXTURE_A', [10, 20, 30]],   // unwound
+    ]);
+  });
+
+  it('is neither structural nor renumbering', () => {
+    // Both answers are what let a waypoint move share a batch with a VOB move,
+    // and `isStructuralOp` being false is what routes it into `applyOps` — which
+    // is why the next test matters as much as this one.
+    const op = moveWaypoint(positions(), NAMES, 1, [11, 21, 31]);
+
+    expect(isStructuralOp(op)).toBe(false);
+    expect(renumbersPaths(op)).toBe(false);
+  });
+
+  it('is refused by applyOps by name, and reports nothing as touched', () => {
+    // The VOB columns have nowhere to put it. Before this refusal existed the
+    // op fell through to the position write, where `op.vob` is `undefined`: a
+    // `Float32Array` drops a write at a NaN index, so nothing moved and the
+    // caller was still told a VOB had.
+    const index = vobIndex([{ pos: [1, 2, 3] }]);
+    const live = createVobReader(index);
+    const op = moveWaypoint(positions(), NAMES, 1, [11, 21, 31]);
+
+    // Matched on the reason, not on the op's name: the exhaustiveness tail also
+    // refuses this op and also names it, so `/MoveWaypoint/` alone cannot tell
+    // "the columns have no row for it" from "nobody wrote a branch".
+    expect(() => applyOps(live, [op])).toThrow(/waynet op/);
+    expect(live.position(0)).toEqual([1, 2, 3]);
+  });
+
+  it('writes the overlay column the points and the edge lines share', () => {
+    // One `Float32Array` backs both, so writing it in place is what keeps a
+    // moved waypoint and the edges into it from disagreeing.
+    const column = positions();
+
+    const touched = applyWaypointPositions(column, [
+      moveWaypoint(column, NAMES, 1, [11, 21, 31]),
+      moveWaypoint(column, NAMES, 2, [41, 51, 61]),
+    ]);
+
+    expect(Array.from(column)).toEqual([0, 0, 0, 11, 21, 31, 41, 51, 61]);
+    expect(touched).toEqual([1, 2]);
+  });
+
+  it('refuses to write past the end of that column', () => {
+    const column = positions();
+    const op: MoveWaypoint = {
+      op: 'MoveWaypoint', waypoint: 3, name: 'WP_GONE', from: [0, 0, 0], to: [1, 1, 1],
+    };
+
+    expect(() => applyWaypointPositions(column, [op])).toThrow(/3/);
+  });
+
+  it('leaves an unknown op kind refused rather than moving a VOB', () => {
+    // The tail of every dispatch used to be `MoveVob`, so an op kind nobody
+    // wrote a branch for was silently treated as a move. `WorldOp` is a
+    // compile-time claim about data that arrives over IPC.
+    const { binding } = waynetBinding();
+    const bogus = { op: 'ScaleVob', vob: 0, path: '0/1', from: [0, 0, 0], to: [1, 1, 1] };
+
+    expect(() => commitOps(binding, [bogus as unknown as WorldOp])).toThrow(/ScaleVob/);
+  });
+});
+
+describe('renaming a waypoint', () => {
+  // W1 (§16.7). It renumbers nothing, so it stands on the shipped index+name
+  // pair rather than needing an addressing scheme of its own — and its guard
+  // *is* its origin, which is what makes the inverse the plain swap.
+  const NAMES = ['FP_FIXTURE_FREE', 'WP_FIXTURE_A', 'WP_FIXTURE_B'];
+
+  function renameBinding(refuse?: string) {
+    const calls: unknown[][] = [];
+    const binding: OpBinding = {
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+      insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+      setVobPosition: () => { throw new Error('not a move'); },
+      setVobRotation: () => { throw new Error('not a rotation'); },
+      setVobProp: () => { throw new Error('not a prop'); },
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: () => { throw new Error('no structural ops in this batch'); },
+      deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      restoreVob: () => { throw new Error('not a restore'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: (waypoint, name, to) => {
+        if (name === refuse) throw new Error(`no waypoint ${name}`);
+        calls.push(['rename', waypoint, name, to]);
+      },
+    };
+    return { binding, calls };
+  }
+
+  it('carries the name the index had, read out of the payload', () => {
+    const op = renameWaypoint(NAMES, 1, 'WP_RENAMED');
+
+    expect(op).toEqual({
+      op: 'RenameWaypoint', waypoint: 1, from: 'WP_FIXTURE_A', to: 'WP_RENAMED',
+    });
+  });
+
+  it('is refused for a waypoint that is not in the payload', () => {
+    expect(() => renameWaypoint(NAMES, 3, 'WP_X')).toThrow(/3/);
+    expect(() => renameWaypoint(NAMES, -1, 'WP_X')).toThrow(/-1/);
+  });
+
+  it('inverts by swapping the two sides, and is its own round trip', () => {
+    const op = renameWaypoint(NAMES, 2, 'WP_RENAMED');
+    const undo = invertOp(op) as RenameWaypoint;
+
+    expect(undo.from).toBe('WP_RENAMED');
+    expect(undo.to).toBe('WP_FIXTURE_B');
+    expect(invertOp(undo)).toEqual(op);
+  });
+
+  it('reaches the binding as setWaypointName, guarded by the name it replaces', () => {
+    const { binding, calls } = renameBinding();
+
+    commitOps(binding, [renameWaypoint(NAMES, 1, 'WP_RENAMED')]);
+
+    expect(calls).toEqual([['rename', 1, 'WP_FIXTURE_A', 'WP_RENAMED']]);
+  });
+
+  it('is unwound guarded by the name it just wrote, not the one it replaced', () => {
+    // The half a plain `from`/`to` swap does not give for free. By the time the
+    // batch unwinds, the waypoint is called `to` — a guard still naming `from`
+    // would be refused by the binding, and the unwind would be the thing that
+    // failed.
+    const { binding, calls } = renameBinding('WP_FIXTURE_B');
+
+    expect(() => commitOps(binding, [
+      renameWaypoint(NAMES, 1, 'WP_RENAMED'),
+      renameWaypoint(NAMES, 2, 'WP_ALSO_RENAMED'),
+    ])).toThrow('no waypoint WP_FIXTURE_B');
+
+    expect(calls).toEqual([
+      ['rename', 1, 'WP_FIXTURE_A', 'WP_RENAMED'],
+      ['rename', 1, 'WP_RENAMED', 'WP_FIXTURE_A'],   // unwound
+    ]);
+  });
+
+  it('is neither structural nor renumbering, and is a waynet op', () => {
+    const op = renameWaypoint(NAMES, 1, 'WP_RENAMED');
+
+    expect(isStructuralOp(op)).toBe(false);
+    expect(renumbersPaths(op)).toBe(false);
+    expect(isWaynetOp(op)).toBe(true);
+  });
+
+  it('is refused by applyOps by name, and reports nothing as touched', () => {
+    // The VOB columns have no row for a waypoint. Refused rather than skipped:
+    // a skip would leave the panel showing a name the world no longer has.
+    const index = vobIndex([{ pos: [1, 2, 3] }]);
+    const live = createVobReader(index);
+
+    expect(() => applyOps(live, [renameWaypoint(NAMES, 1, 'WP_RENAMED')]))
+      .toThrow(/waynet op/);
+    expect(live.position(0)).toEqual([1, 2, 3]);
+  });
+
+  it('writes the name list the panel reads, and answers which moved', () => {
+    const names = [...NAMES];
+
+    const touched = applyWaypointNames(names, [
+      renameWaypoint(NAMES, 1, 'WP_RENAMED'),
+      renameWaypoint(NAMES, 2, 'WP_ALSO_RENAMED'),
+    ]);
+
+    expect(names).toEqual(['FP_FIXTURE_FREE', 'WP_RENAMED', 'WP_ALSO_RENAMED']);
+    expect(touched).toEqual([1, 2]);
+  });
+
+  it('refuses to write past the end of that list', () => {
+    const op: RenameWaypoint = {
+      op: 'RenameWaypoint', waypoint: 3, from: 'WP_GONE', to: 'WP_X',
+    };
+
+    expect(() => applyWaypointNames([...NAMES], [op])).toThrow(/3/);
+  });
+});
+
+describe('adding a waypoint', () => {
+  // W2 (§16.7). It appends, so every existing index still names the waypoint it
+  // named before and the op needs no addressing scheme of its own — and its
+  // inverse is the removal of the tail it just made, which renumbers nothing
+  // either.
+  const NAMES = ['FP_FIXTURE_FREE', 'WP_FIXTURE_A', 'WP_FIXTURE_B'];
+
+  function addBinding(landsAt?: number) {
+    const calls: unknown[][] = [];
+    const binding: OpBinding = {
+      setVobPosition: () => { throw new Error('not a move'); },
+      setVobRotation: () => { throw new Error('not a rotation'); },
+      setVobProp: () => { throw new Error('not a prop'); },
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: () => { throw new Error('no structural ops in this batch'); },
+      deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      restoreVob: () => { throw new Error('not a restore'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+      addWaypoint: (name, to) => {
+        calls.push(['add', name, to]);
+        return landsAt ?? NAMES.length;
+      },
+      removeWaypoint: (waypoint, name, barrier) => {
+        calls.push(['remove', waypoint, name, barrier]);
+      },
+      insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+    };
+    return { binding, calls };
+  }
+
+  it('takes the index one past the end, and carries its name at the top level', () => {
+    const op = addWaypoint(NAMES, 'FP_ADDED', [1, 2, 3]);
+
+    expect(op).toEqual({
+      op: 'AddWaypoint', waypoint: 3, name: 'FP_ADDED', from: null, to: [1, 2, 3],
+    });
+  });
+
+  it('is refused for an empty name and one the payload already has', () => {
+    expect(() => addWaypoint(NAMES, '', [1, 2, 3])).toThrow(/empty/);
+    expect(() => addWaypoint(NAMES, 'WP_FIXTURE_A', [1, 2, 3])).toThrow(/already/);
+  });
+
+  it('inverts into the removal of the waypoint it made, keeping the name', () => {
+    const op = addWaypoint(NAMES, 'FP_ADDED', [1, 2, 3]);
+    const undo = invertOp(op) as AddWaypoint;
+
+    expect(undo.from).toEqual([1, 2, 3]);
+    expect(undo.to).toBeNull();
+    expect(undo.name).toBe('FP_ADDED');
+    expect(invertOp(undo)).toEqual(op);
+  });
+
+  it('reaches the binding as addWaypoint, and as removeWaypoint when undone', () => {
+    const { binding, calls } = addBinding();
+
+    const op = addWaypoint(NAMES, 'FP_ADDED', [1, 2, 3]);
+    commitOps(binding, [op]);
+    commitOps(binding, [invertOp(op)]);
+
+    expect(calls).toEqual([
+      ['add', 'FP_ADDED', [1, 2, 3]],
+      ['remove', 3, 'FP_ADDED', false],
+    ]);
+  });
+
+  it('puts back a waypoint that landed at an index the op does not name', () => {
+    // The waynet grew under the op — so the waypoint is at an index this op
+    // cannot address, and its own inverse would remove whatever is at the tail.
+    // Refused, and undone before the refusal, exactly as an insert is.
+    const { binding, calls } = addBinding(7);
+
+    expect(() => commitOps(binding, [addWaypoint(NAMES, 'FP_ADDED', [1, 2, 3])]))
+      .toThrow(/landed at 7/);
+    expect(calls).toEqual([
+      ['add', 'FP_ADDED', [1, 2, 3]],
+      ['remove', 7, 'FP_ADDED', false],
+    ]);
+  });
+
+  it('is neither structural nor renumbering, and is a waynet op', () => {
+    // Structural is about the *VOB* enumeration, which a waypoint has no part
+    // in — so the columnar projection is not re-read for this, and the overlay's
+    // own payload is what has to be.
+    const op = addWaypoint(NAMES, 'FP_ADDED', [1, 2, 3]);
+
+    expect(isStructuralOp(op)).toBe(false);
+    expect(renumbersPaths(op)).toBe(false);
+    expect(isDeleteOp(op)).toBe(false);
+    expect(isWaynetOp(op)).toBe(true);
+  });
+
+  it('is refused by applyOps by name, and reports nothing as touched', () => {
+    const index = vobIndex([{ pos: [1, 2, 3] }]);
+    const live = createVobReader(index);
+
+    expect(() => applyOps(live, [addWaypoint(NAMES, 'FP_ADDED', [1, 2, 3])]))
+      .toThrow(/waynet op/);
+    expect(live.position(0)).toEqual([1, 2, 3]);
+  });
+});
+
+describe('joining and unjoining two waypoints', () => {
+  // W3 (§16.7). An edge is a pair of waypoints and nothing else, so one op
+  // shape carries both directions: `from` and `to` say whether the edge is
+  // there, and the inverse is the plain swap. Neither direction touches the
+  // point list, so both stand on the index+name pair every waynet op already
+  // uses and neither needs an addressing scheme of its own.
+  const NAMES = ['FP_FIXTURE_FREE', 'WP_FIXTURE_A', 'WP_FIXTURE_B'];
+
+  function edgeBinding() {
+    const calls: unknown[][] = [];
+    const binding: OpBinding = {
+      setVobPosition: () => { throw new Error('not a move'); },
+      setVobRotation: () => { throw new Error('not a rotation'); },
+      setVobProp: () => { throw new Error('not a prop'); },
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: () => { throw new Error('no structural ops in this batch'); },
+      deleteVob: () => { throw new Error('no structural ops in this batch'); },
+      restoreVob: () => { throw new Error('not a restore'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: () => { throw new Error('not a waypoint removal'); },
+      insertWaypoint: () => { throw new Error('not a waypoint restore'); },
+      addWaypointEdge: (a, aName, b, bName) => { calls.push(['join', a, aName, b, bName]); },
+      removeWaypointEdge: (a, aName, b, bName) => { calls.push(['unjoin', a, aName, b, bName]); },
+    };
+    return { binding, calls };
+  }
+
+  it('carries both endpoints as the index+name pair, and the edge as its sides', () => {
+    expect(connectWaypoints(NAMES, 0, 2)).toEqual({
+      op: 'SetWaypointEdge',
+      a: 0, aName: 'FP_FIXTURE_FREE', b: 2, bName: 'WP_FIXTURE_B',
+      from: false, to: true,
+    });
+    expect(disconnectWaypoints(NAMES, 1, 2)).toEqual({
+      op: 'SetWaypointEdge',
+      a: 1, aName: 'WP_FIXTURE_A', b: 2, bName: 'WP_FIXTURE_B',
+      from: true, to: false,
+    });
+  });
+
+  it('is refused for an index the payload does not have, and for a self-loop', () => {
+    expect(() => connectWaypoints(NAMES, 0, 3)).toThrow(/no waypoint 3/);
+    expect(() => connectWaypoints(NAMES, -1, 0)).toThrow(/no waypoint -1/);
+    expect(() => disconnectWaypoints(NAMES, 3, 0)).toThrow(/no waypoint 3/);
+    expect(() => connectWaypoints(NAMES, 1, 1)).toThrow(/itself/);
+  });
+
+  it('inverts into the other direction, endpoints untouched', () => {
+    // The endpoints are not sides: an edge op is about *one* pair whichever way
+    // it is going, so only the two booleans swap.
+    const op = connectWaypoints(NAMES, 0, 2);
+    const undo = invertOp(op) as SetWaypointEdge;
+
+    expect(undo).toEqual({ ...op, from: true, to: false });
+    expect(invertOp(undo)).toEqual(op);
+  });
+
+  it('reaches the binding as the add, and as the removal when undone', () => {
+    const { binding, calls } = edgeBinding();
+
+    const op = connectWaypoints(NAMES, 0, 2);
+    commitOps(binding, [op]);
+    commitOps(binding, [invertOp(op)]);
+
+    expect(calls).toEqual([
+      ['join', 0, 'FP_FIXTURE_FREE', 2, 'WP_FIXTURE_B'],
+      ['unjoin', 0, 'FP_FIXTURE_FREE', 2, 'WP_FIXTURE_B'],
+    ]);
+  });
+
+  it('unwinds a refused batch through the side it came from', () => {
+    // The half a `direction`-blind branch would get wrong: `commitOps` unwinds
+    // by replaying the applied ops through `'from'`, so a join whose batch is
+    // refused later has to be *unjoined* — not joined a second time.
+    const { binding, calls } = edgeBinding();
+    const refused: WorldOp = { op: 'MoveVob', vob: 0, path: '9', from: [0, 0, 0], to: [1, 1, 1] };
+
+    expect(() => commitOps(binding, [connectWaypoints(NAMES, 0, 2), refused])).toThrow();
+
+    expect(calls).toEqual([
+      ['join', 0, 'FP_FIXTURE_FREE', 2, 'WP_FIXTURE_B'],
+      ['unjoin', 0, 'FP_FIXTURE_FREE', 2, 'WP_FIXTURE_B'],
+    ]);
+  });
+
+  it('is neither structural nor renumbering nor a barrier, and is a waynet op', () => {
+    // An edge changes no enumeration at all — not the VOB columns and not the
+    // point list — so the only thing that has to be re-read for it is the
+    // overlay's own edge buffer.
+    const op = connectWaypoints(NAMES, 0, 2);
+
+    expect(isStructuralOp(op)).toBe(false);
+    expect(renumbersPaths(op)).toBe(false);
+    expect(isDeleteOp(op)).toBe(false);
+    expect(isWaynetOp(op)).toBe(true);
+  });
+
+  it('is refused by applyOps by name, and reports nothing as touched', () => {
+    const index = vobIndex([{ pos: [1, 2, 3] }]);
+    const live = createVobReader(index);
+
+    expect(() => applyOps(live, [connectWaypoints(NAMES, 0, 2)])).toThrow(/waynet op/);
+    expect(live.position(0)).toEqual([1, 2, 3]);
+  });
+});
+
+describe('deleting a waypoint', () => {
+  // W4 (§16.7) — the one waynet op that renumbers, and **the delete that got an
+  // inverse** (§7). §15 shipped it as a barrier for `DeleteVob`'s reason;
+  // 2026-09-12 withdrew that for this half, because the two things an inverse
+  // needs are both cheap here: a waypoint is five scalars and a set of edges, so
+  // the record is the waypoint rather than an approximation of it, and the
+  // insert at an index is this op's other direction rather than an op of its
+  // own. What survives the barrier is the batch rule — it still moves every
+  // index after it, so the other ops in a batch would be misaddressed.
+  //
+  //  0 FP_FIXTURE_FREE   1 WP_FIXTURE_A   2 WP_FIXTURE_B
+  //  edges: 0-1, 1-2
+  const NAMES = ['FP_FIXTURE_FREE', 'WP_FIXTURE_A', 'WP_FIXTURE_B'];
+  const COLUMNS = {
+    names: NAMES,
+    positions: new Float32Array([0, 0, 0, 10, 20, 30, 40, 50, 60]),
+    directions: new Float32Array([0, 0, 1, 1, 0, 0, 0, 0, 1]),
+    waterDepths: new Int32Array([0, 7, 0]),
+    // bit 0 freePoint, bit 1 underWater — WP_FIXTURE_A is an under-water point
+    // that is not free, which is the one row where every flag differs.
+    flags: new Uint32Array([1, 2, 1]),
+    edges: new Uint32Array([0, 1, 1, 2]),
+  };
+
+  const RECORD = {
+    position: [10, 20, 30],
+    direction: [1, 0, 0],
+    waterDepth: 7,
+    underWater: true,
+    freePoint: false,
+    edges: [{ waypoint: 0, name: 'FP_FIXTURE_FREE' }, { waypoint: 2, name: 'WP_FIXTURE_B' }],
+  };
+
+  function deleteBinding(landsAt?: number) {
+    const calls: unknown[][] = [];
+    const binding: OpBinding = {
+      setVobPosition: () => { throw new Error('not a move'); },
+      setVobRotation: () => { throw new Error('not a rotation'); },
+      setVobProp: () => { throw new Error('not a prop'); },
+      setVobClassProp: () => { throw new Error('not a class property change'); },
+      insertVob: () => { throw new Error('no structural ops in this batch'); },
+      deleteVob: () => { throw new Error('not a vob delete'); },
+      restoreVob: () => { throw new Error('not a restore'); },
+      reparentVob: () => { throw new Error('not a reparent'); },
+      setWaypointPosition: () => { throw new Error('not a waypoint move'); },
+      setWaypointName: () => { throw new Error('not a waypoint rename'); },
+      addWaypoint: () => { throw new Error('not a waypoint add'); },
+      removeWaypoint: (waypoint, name, barrier) => {
+        calls.push(['remove', waypoint, name, barrier]);
+      },
+      insertWaypoint: (waypoint, name, record) => {
+        calls.push(['insert', waypoint, name, record]);
+        return landsAt ?? waypoint;
+      },
+      addWaypointEdge: () => { throw new Error('not an edge add'); },
+      removeWaypointEdge: () => { throw new Error('not an edge removal'); },
+    };
+    return { binding, calls };
+  }
+
+  it('carries the whole waypoint on the side that exists', () => {
+    // The five scalars *and* the edge memberships, which is what the barrier
+    // version could not carry and what a restore without would silently lose —
+    // a point put back in no edge is dropped by `WayNet::save` at the next save.
+    expect(deleteWaypoint(COLUMNS, 1)).toEqual({
+      op: 'DeleteWaypoint', waypoint: 1, name: 'WP_FIXTURE_A', from: RECORD, to: null,
+    });
+  });
+
+  it('takes the edges from the buffer the overlay is drawing, in either orientation', () => {
+    // The pairs are stored (a, b) with no promise about which end is which, so a
+    // waypoint named by the *second* half of a pair is in that edge just as
+    // much: WP_FIXTURE_B is the right-hand end of 1-2 and has to find it.
+    expect(deleteWaypoint(COLUMNS, 2).from?.edges)
+      .toEqual([{ waypoint: 1, name: 'WP_FIXTURE_A' }]);
+    // A free point in no edge carries an empty list rather than no list.
+    expect(deleteWaypoint(COLUMNS, 0).from?.edges)
+      .toEqual([{ waypoint: 1, name: 'WP_FIXTURE_A' }]);
+  });
+
+  it('is refused for an index the payload does not have', () => {
+    expect(() => deleteWaypoint(COLUMNS, 3)).toThrow(/no waypoint 3/);
+    expect(() => deleteWaypoint(COLUMNS, -1)).toThrow(/no waypoint -1/);
+  });
+
+  it('inverts to the restore, and back again', () => {
+    // The plain swap `AddWaypoint` gets, and for its reason: a null side means
+    // "not in the waynet". The index and the name are not sides — the restore
+    // lands at the index the delete emptied.
+    const op = deleteWaypoint(COLUMNS, 1);
+    const restore = invertOp(op);
+
+    expect(restore).toEqual({
+      op: 'DeleteWaypoint', waypoint: 1, name: 'WP_FIXTURE_A', from: null, to: RECORD,
+    });
+    expect(invertOp(restore)).toEqual(op);
+    expect(isDeleteOp(op)).toBe(true);
+  });
+
+  it('is a waynet op that renumbers waypoints and nothing else', () => {
+    // It renumbers *waypoints*, which is what keeps it alone in its batch; the
+    // VOB enumeration and the index paths are untouched, so the columnar
+    // projection and the VOB selection are not this op's business.
+    const op = deleteWaypoint(COLUMNS, 1);
+
+    expect(isWaynetOp(op)).toBe(true);
+    expect(isStructuralOp(op)).toBe(false);
+    expect(renumbersPaths(op)).toBe(false);
+    expect(renumbersWaypoints(op)).toBe(true);
+    expect(renumbersWaypoints(addWaypoint(NAMES, 'FP_NEW', [0, 0, 0]))).toBe(false);
+  });
+
+  it('reaches the binding as the barrier direction of removeWaypoint', () => {
+    // The flag that lets it take an index in the middle and the edges naming it
+    // — which is what the restore below has to put back.
+    const { binding, calls } = deleteBinding();
+
+    commitOps(binding, [deleteWaypoint(COLUMNS, 1)]);
+
+    expect(calls).toEqual([['remove', 1, 'WP_FIXTURE_A', true]]);
+  });
+
+  it('restores through insertWaypoint, at the index it was taken from', () => {
+    const { binding, calls } = deleteBinding();
+
+    commitOps(binding, [invertOp(deleteWaypoint(COLUMNS, 1))]);
+
+    expect(calls).toEqual([['insert', 1, 'WP_FIXTURE_A', RECORD]]);
+  });
+
+  it('undoes the restore when it lands anywhere but the index it claims', () => {
+    // The guard an appended waypoint and an inserted VOB get. A point list that
+    // has moved under the op would put the waypoint at an index this op does not
+    // name — and the delete it inverts back to would then remove somebody else.
+    const { binding, calls } = deleteBinding(2);
+
+    expect(() => commitOps(binding, [invertOp(deleteWaypoint(COLUMNS, 1))]))
+      .toThrow(/landed at 2, not 1/);
+    expect(calls).toEqual([
+      ['insert', 1, 'WP_FIXTURE_A', RECORD],
+      ['remove', 2, 'WP_FIXTURE_A', true],
+    ]);
+  });
+
+  it('has to be alone in its batch', () => {
+    // Every other waypoint op in the batch carries an index read before it ran,
+    // and this is the one op that moves them. Having an inverse changes nothing
+    // about that: it makes the op replayable, not its neighbours' addresses
+    // right.
+    const { binding, calls } = deleteBinding();
+    const move = moveWaypoint(new Float32Array(9), NAMES, 2, [1, 2, 3]);
+
+    expect(() => commitOps(binding, [deleteWaypoint(COLUMNS, 1), move]))
+      .toThrow(/only op in its batch/);
+    expect(calls).toEqual([]);
+  });
+
+  it('is refused by applyOps by name, and reports nothing as touched', () => {
+    const index = vobIndex([{ pos: [1, 2, 3] }]);
+    const live = createVobReader(index);
+
+    expect(() => applyOps(live, [deleteWaypoint(COLUMNS, 1)])).toThrow(/waynet op/);
+    expect(live.position(0)).toEqual([1, 2, 3]);
+  });
+});
+
+describe('the VOB at an index path', () => {
+  // The inverse of `vobIndexPath`, and the only way back from an op to the VOB
+  // it made: an `AddVob` carries a path, and its flat index is not knowable
+  // until the world has been re-enumerated (§16.24 4 — the paste selects what
+  // it pasted).
+  //
+  //  vob 0 (root 0) -- vob 1 -- vob 2
+  //  vob 3 (root 1)
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0 },
+    { parent: 0, childIndex: 0 },
+    { parent: 0, childIndex: 1 },
+    { childIndex: 1 },
+  ]));
+
+  it('walks the slot chain back to the VOB', () => {
+    const live = reader();
+    expect(vobAtIndexPath(live, '0')).toBe(0);
+    expect(vobAtIndexPath(live, '0/0')).toBe(1);
+    expect(vobAtIndexPath(live, '0/1')).toBe(2);
+    expect(vobAtIndexPath(live, '1')).toBe(3);
+  });
+
+  it('round-trips every VOB through its own path', () => {
+    const live = reader();
+    for (let vob = 0; vob < live.count; vob++) {
+      expect(vobAtIndexPath(live, vobIndexPath(live, vob)!)).toBe(vob);
+    }
+  });
+
+  it('answers null for a path this world does not have', () => {
+    const live = reader();
+    // A slot nobody filled, a descent through a VOB with no children, and the
+    // empty string — which is not the root, it is an absent path.
+    expect(vobAtIndexPath(live, '2')).toBeNull();
+    expect(vobAtIndexPath(live, '0/9')).toBeNull();
+    expect(vobAtIndexPath(live, '1/0')).toBeNull();
+    expect(vobAtIndexPath(live, '')).toBeNull();
+    expect(vobAtIndexPath(live, 'x')).toBeNull();
+  });
+});
+
+describe('a scatter stroke', () => {
+  // The scatter brush's op half (level-editor.md §16.25). A stroke is N copies
+  // of palette VOBs at ground points the viewport raycast, in **one batch** and
+  // therefore one undo entry — which is the same shape a duplicate already has,
+  // and the reason no op, no validator branch and no binding change is needed.
+  //
+  // What a scatter does that a duplicate does not is *pose* each copy: a
+  // duplicate lands exactly where its original stands, and a scattered copy
+  // lands where the brush hit, turned by a random yaw and tilted onto the
+  // surface normal. That posing is the whole of what these assert.
+  //
+  //  vob 0 (root 0) ── vob 1        a two-VOB palette member, e.g. a torch
+  //  vob 2 (root 1)                 a one-VOB member
+  const reader = () => createVobReader(vobIndex([
+    { childIndex: 0, name: 'TREE', visual: 'TREE.3DS', pos: [0, 0, 0] },
+    { parent: 0, childIndex: 0, name: 'LEAVES', visual: 'LEAF.3DS', pos: [0, 100, 0] },
+    { childIndex: 1, name: 'ROCK', visual: 'ROCK.3DS', pos: [500, 0, 0] },
+  ]));
+
+  const UP: [number, number, number] = [0, 1, 0];
+
+  it('places one copy of the named source at the ground point', () => {
+    const ops = scatterVobs(reader(), [
+      { source: 2, position: [1000, 50, 2000], normal: UP, yaw: 0 },
+    ]);
+
+    expect(ops).toHaveLength(1);
+    expect(ops[0]).toMatchObject({
+      op: 'AddVob', path: '2', parentPath: null, from: null,
+    });
+    expect(addsOf(ops)[0].to).toMatchObject({
+      name: 'ROCK', visual: 'ROCK.3DS', position: [1000, 50, 2000],
+    });
+  });
+
+  it('turns the copy by its yaw about the world up axis', () => {
+    const ops = scatterVobs(reader(), [
+      { source: 2, position: [0, 0, 0], normal: UP, yaw: Math.PI / 2 },
+    ]);
+
+    // Row-major Ry(90°): +X goes to -Z, which is a quarter turn and not a
+    // mirror — the sign is the half of this worth asserting.
+    const turned = addsOf(ops)[0].to!.rotation!;
+    expect(turned[0]).toBeCloseTo(0);
+    expect(turned[2]).toBeCloseTo(1);
+    expect(turned[6]).toBeCloseTo(-1);
+    expect(turned[8]).toBeCloseTo(0);
+    expect(turned[4]).toBeCloseTo(1);
+  });
+
+  it('stands the copy up on the surface normal', () => {
+    // A 45° slope. The copy's local +Y — the rotation's middle column — has to
+    // come out along it, which is what `alignVobsToNormal` does for a selection
+    // and what makes scattered foliage follow a hillside.
+    const slope: [number, number, number] = [Math.SQRT1_2, Math.SQRT1_2, 0];
+    const ops = scatterVobs(reader(), [
+      { source: 2, position: [0, 0, 0], normal: slope, yaw: 0 },
+    ]);
+
+    const rotation = addsOf(ops)[0].to!.rotation!;
+    const localUp = [rotation[1], rotation[4], rotation[7]];
+    expect(localUp[0]).toBeCloseTo(slope[0]);
+    expect(localUp[1]).toBeCloseTo(slope[1]);
+    expect(localUp[2]).toBeCloseTo(slope[2]);
+  });
+
+  it('stands a copy up under a ceiling', () => {
+    // The scatter brush's own half-turn case, and the second of the two places
+    // the stand-up is computed — a fix in one that missed the other would put
+    // sheared foliage on every overhang.
+    const ops = scatterVobs(reader(), [
+      { source: 2, position: [0, 0, 0], normal: [0, -1, 0], yaw: 0 },
+    ]);
+
+    const rotation = addsOf(ops)[0].to!.rotation!;
+    for (let i = 0; i < 3; i++) {
+      for (let j = 0; j < 3; j++) {
+        const dot = rotation[i] * rotation[j] + rotation[3 + i] * rotation[3 + j]
+          + rotation[6 + i] * rotation[6 + j];
+        expect(dot).toBeCloseTo(i === j ? 1 : 0, 9);
+      }
+    }
+    expect([rotation[1], rotation[4], rotation[7]].map((v) => Math.round(v))).toEqual([0, -1, 0]);
+  });
+
+  it('normalises a normal that is not unit length', () => {
+    // The viewport hands over `face.normal` through a matrix, so it is unit
+    // length in practice — but a scatter that silently skewed every copy on a
+    // mirrored mesh is the kind of thing nobody sees until a whole forest is
+    // wrong.
+    const ops = scatterVobs(reader(), [
+      { source: 2, position: [0, 0, 0], normal: [0, 17, 0], yaw: 0 },
+    ]);
+
+    expect(addsOf(ops)[0].to!.rotation).toEqual([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+  });
+
+  it('carries a palette member whole subtree, moved rigidly with it', () => {
+    // ZenGin VOB positions are world-space, so a root moved on its own leaves
+    // its children standing over the original — the trap `offsetSubtree`
+    // already names for a paste.
+    const ops = scatterVobs(reader(), [
+      { source: 0, position: [1000, 0, 0], normal: UP, yaw: 0 },
+    ]);
+
+    expect(addsOf(ops).map((op) => [op.path, op.parentPath, op.to!.name])).toEqual([
+      ['2', null, 'TREE'],
+      ['2/0', '2', 'LEAVES'],
+    ]);
+    // The leaves were 100 above the trunk and still are.
+    expect(addsOf(ops)[1].to!.position).toEqual([1000, 100, 0]);
+  });
+
+  it('turns a subtree about its own root, not about the world origin', () => {
+    // The fixture child is offset along +Y, so a yaw leaves it where it is; the
+    // one that would catch a rotation applied about the origin is a child
+    // offset horizontally.
+    const offset = createVobReader(vobIndex([
+      { childIndex: 0, name: 'POST', pos: [0, 0, 0] },
+      { parent: 0, childIndex: 0, name: 'SIGN', pos: [100, 0, 0] },
+    ]));
+    const ops = scatterVobs(offset, [
+      { source: 0, position: [7000, 0, 7000], normal: UP, yaw: Math.PI / 2 },
+    ]);
+
+    // +X about world up by 90° is -Z, measured from the root's new position.
+    const sign = addsOf(ops)[1].to!.position;
+    expect(sign[0]).toBeCloseTo(7000);
+    expect(sign[1]).toBeCloseTo(0);
+    expect(sign[2]).toBeCloseTo(6900);
+  });
+
+  it('appends several copies of one source without colliding on a slot', () => {
+    // The correction `duplicateVobs` needs, for the same reason: `addVob`
+    // resolves the slot against the world as it was, so a batch of copies into
+    // one list would all claim it and `writeOp` would refuse every one but the
+    // first.
+    const ops = scatterVobs(reader(), [
+      { source: 2, position: [0, 0, 0], normal: UP, yaw: 0 },
+      { source: 2, position: [100, 0, 0], normal: UP, yaw: 0 },
+      { source: 2, position: [200, 0, 0], normal: UP, yaw: 0 },
+    ]);
+
+    expect(addsOf(ops).map((op) => op.path)).toEqual(['2', '3', '4']);
+  });
+
+  it('appends a copy beside its own source, under that source parent', () => {
+    // A palette member picked out of a VOB tree group keeps the grouping, which
+    // is the behaviour a duplicate already has.
+    const ops = scatterVobs(reader(), [
+      { source: 1, position: [0, 0, 0], normal: UP, yaw: 0 },
+    ]);
+
+    expect(ops[0]).toMatchObject({ path: '0/1', parentPath: '0' });
+  });
+
+  it('fits each copy a box in the pose it landed in', () => {
+    const bounds = (vob: number): ZenBounds | null => (
+      vob === 2 ? [-10, 0, -10, 10, 200, 10] : null
+    );
+    const ops = scatterVobs(reader(), [
+      { source: 2, position: [1000, 50, 2000], normal: UP, yaw: 0 },
+    ], bounds);
+
+    expect(addsOf(ops)[0].to!.bbox).toEqual(placeBounds(
+      [-10, 0, -10, 10, 200, 10], [1, 0, 0, 0, 1, 0, 0, 0, 1], [1000, 50, 2000],
+    ));
+  });
+
+  it('rests the rotated visual on its hit, or buries its pivot when requested', () => {
+    const placement = [{ source: 0, position: [1000, 50, 2000] as ZenPosition, normal: UP, yaw: 0 }];
+    const bounds = (vob: number): ZenBounds | null => vob === 0 ? [-1, -30, -1, 1, 70, 1] : null;
+    const rest = scatterVobs(reader(), placement, bounds);
+    const into = scatterVobs(reader(), placement, bounds, () => null, 'into');
+    expect(addsOf(rest)[0].to!.position).toEqual([1000, 80, 2000]);
+    expect(addsOf(rest)[1].to!.position).toEqual([1000, 180, 2000]);
+    expect(addsOf(into)[0].to!.position).toEqual([1000, 50, 2000]);
+    expect(addsOf(into)[1].to!.position).toEqual([1000, 150, 2000]);
+  });
+
+  it('uses the final scatter rotation when resting a visual', () => {
+    const upright = createVobReader(vobIndex([{ pos: [0, 0, 0] }]));
+    const ops = scatterVobs(upright, [
+      { source: 0, position: [100, 0, 0], normal: [0, 0, 1], yaw: 0 },
+    ], () => [-1, -10, -30, 1, 10, 5]);
+    expect(addsOf(ops)[0].to!.position).toEqual([100, 5, 0]);
+    expect(addsOf(ops)[0].to!.bbox![1]).toBe(0);
+  });
+
+  it('carries the class properties, as a duplicate does', () => {
+    const lights = createVobReader(vobIndex([
+      { name: 'TORCH', cls: 'zCVobLight', pos: [0, 0, 0] },
+    ]));
+    const props = (): ReadProps => ({ range: 900, color: [255, 200, 100, 255] });
+    const ops = scatterVobs(lights, [
+      { source: 0, position: [10, 20, 30], normal: UP, yaw: 0 },
+    ], () => null, props);
+
+    expect(ops.map((op) => op.op)).toEqual(['AddVob', 'SetVobClassProp']);
+    expect(ops[1]).toMatchObject({
+      op: 'SetVobClassProp', path: '1', className: 'zCVobLight',
+      to: { range: 900, color: [255, 200, 100, 255] },
+    });
+  });
+
+  it('is a batch of pure appends, so it commits as one undo entry', () => {
+    const ops = scatterVobs(reader(), [
+      { source: 2, position: [0, 0, 0], normal: UP, yaw: 0 },
+      { source: 0, position: [100, 0, 0], normal: UP, yaw: 1 },
+    ]);
+
+    expect(ops.every((op) => op.op === 'AddVob' || op.op === 'SetVobClassProp')).toBe(true);
+    expect(ops.some((op) => isDeleteOp(op as WorldOp))).toBe(false);
+  });
+
+  it('refuses the whole stroke when a source is not in the index', () => {
+    expect(() => scatterVobs(reader(), [
+      { source: 0, position: [0, 0, 0], normal: UP, yaw: 0 },
+      { source: 99, position: [0, 0, 0], normal: UP, yaw: 0 },
+    ])).toThrow(/99/);
+  });
+
+  it('emits nothing for a stroke that placed nothing', () => {
+    expect(scatterVobs(reader(), [])).toEqual([]);
+  });
+});
+
+// #292: ZenGin VOB positions are world-space, so a parent moved alone leaves its
+// children standing where they were. Every transform of a selection carries the
+// selection's subtrees with it, rigidly.
+describe('transforms that carry a subtree (#292)', () => {
+  // Two trees and a bystander: A (0) holds a child (1) holding a grandchild
+  // (2); B (3) holds one child (4).
+  const reader = () => createVobReader(vobIndex([
+    { pos: [100, 0, 0] },
+    { parent: 0, pos: [110, 0, 0] },
+    { parent: 1, pos: [110, 0, 10] },
+    { childIndex: 1, pos: [0, 0, 0] },
+    { parent: 3, pos: [5, 0, 0] },
+  ]));
+  /** A quarter turn about the world up axis, row-major: +X goes to -Z. */
+  const QUARTER: ZenRotation = [0, 0, 1, 0, 1, 0, -1, 0, 0];
+  const IDENTITY: ZenRotation = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  const near = (actual: readonly number[] | null | undefined, expected: readonly number[]) => {
+    expect(actual).not.toBeNull();
+    expected.forEach((value, at) => expect(actual![at]).toBeCloseTo(value, 4));
+  };
+
+  describe('subtreeMembers', () => {
+    it('is each selected VOB and every descendant, tagged with the root it turns about', () => {
+      expect(subtreeMembers(reader(), [0])).toEqual([
+        { vob: 0, root: 0 }, { vob: 1, root: 0 }, { vob: 2, root: 0 },
+      ]);
+    });
+
+    it('takes a VOB once when it is selected alongside its own ancestor', () => {
+      expect(subtreeMembers(reader(), [2, 0])).toEqual([
+        { vob: 0, root: 0 }, { vob: 1, root: 0 }, { vob: 2, root: 0 },
+      ]);
+    });
+
+    it('roots a subtree at a selected child, and leaves unselected trees alone', () => {
+      expect(subtreeMembers(reader(), [1, 3])).toEqual([
+        { vob: 1, root: 1 }, { vob: 2, root: 1 }, { vob: 3, root: 3 }, { vob: 4, root: 3 },
+      ]);
+    });
+  });
+
+  describe('translateSubtrees', () => {
+    it('moves the parent and every descendant by the same delta, one batch', () => {
+      const ops = translateSubtrees(reader(), [0], [1, 2, 3]);
+      expect(ops.map((op) => [op.vob, op.path, op.from, op.to])).toEqual([
+        [0, '0', [100, 0, 0], [101, 2, 3]],
+        [1, '0/0', [110, 0, 0], [111, 2, 3]],
+        [2, '0/0/0', [110, 0, 10], [111, 2, 13]],
+      ]);
+    });
+
+    it('moves a child that is also selected only once', () => {
+      expect(translateSubtrees(reader(), [0, 2], [1, 0, 0]).map((op) => op.vob)).toEqual([0, 1, 2]);
+    });
+
+    it('is exactly translateVobs for a selection with no children', () => {
+      const lone = createVobReader(vobIndex([{ pos: [1, 2, 3] }, { childIndex: 1, pos: [4, 5, 6] }]));
+      expect(translateSubtrees(lone, [0, 1], [1, 1, 1])).toEqual(translateVobs(lone, [0, 1], [1, 1, 1]));
+    });
+  });
+
+  describe('rotateSubtrees', () => {
+    it('turns the parent in place and swings each descendant round the parent’s origin', () => {
+      const ops = rotateSubtrees(reader(), [0], QUARTER, () => null);
+      // The root turns about its own origin, as `rotateVobs` turns it.
+      expect(ops[0]).toMatchObject({ op: 'RotateVob', vob: 0, to: QUARTER });
+      // A descendant turns by the same delta and is carried round the root:
+      // 10 cm along +X from the root lands 10 cm along -Z.
+      const child = ops.filter((op) => op.vob === 1);
+      expect(child.map((op) => op.op)).toEqual(['RotateVob', 'MoveVob']);
+      near(child[0].to as ZenRotation, QUARTER);
+      near(child[1].to as number[], [100, 0, -10]);
+      const grandchild = ops.filter((op) => op.vob === 2);
+      near(grandchild[1].to as number[], [110, 0, -10]);
+      expect(ops.some((op) => op.vob === 3 || op.vob === 4)).toBe(false);
+    });
+
+    it('refits a descendant’s box for its new pose where it will stand', () => {
+      const box: ZenBounds = [-1, 0, -2, 1, 1, 2];
+      const [, turn, move] = rotateSubtrees(reader(), [1], QUARTER, () => box);
+      // The turn fits the box at the old position and the move carries it —
+      // `setVobPosition` translates the box by the delta — so together they
+      // land on the box fitted at the new one.
+      expect(turn).toMatchObject({ op: 'RotateVob', vob: 2, fromBbox: placeBounds(box, IDENTITY, [110, 0, 10]) });
+      const at = move.to as [number, number, number];
+      const landed = (turn as RotateVob).toBbox!.map((value, axis) => value + at[axis % 3] - [110, 0, 10][axis % 3]);
+      near(landed, placeBounds(box, QUARTER, at));
+    });
+
+    it('is put back exactly by undo, which replays the batch inverted back to front', () => {
+      const live = reader();
+      const before = { positions: [...live.columns.positions], rotations: [...live.columns.rotations] };
+      const ops = rotateSubtrees(live, [0], QUARTER, () => null);
+      applyOps(live, ops);
+      near([...live.columns.positions].slice(3, 6), [100, 0, -10]);
+      // `WorldService`'s undo: the inverse of each op, last op first.
+      applyOps(live, [...ops].reverse().map(invertOp));
+      near([...live.columns.positions], before.positions);
+      near([...live.columns.rotations], before.rotations);
+    });
+
+    it('is exactly rotateVobs for a selection with no children', () => {
+      const lone = createVobReader(vobIndex([{ pos: [1, 2, 3] }]));
+      expect(rotateSubtrees(lone, [0], QUARTER, () => null)).toEqual(rotateVobs(lone, [0], QUARTER, () => null));
+    });
+  });
+
+  describe('rotateSubtreeTo', () => {
+    it('gives the VOB exactly the pose typed, and turns its children by the change', () => {
+      const tilted = createVobReader(vobIndex([
+        { pos: [0, 0, 0], rot: QUARTER },
+        { parent: 0, pos: [0, 0, -10], rot: QUARTER },
+      ]));
+      // From a quarter turn back to identity is a quarter turn the other way.
+      const ops = rotateSubtreeTo(tilted, 0, IDENTITY, () => null);
+      expect(ops[0]).toMatchObject({ op: 'RotateVob', vob: 0, to: IDENTITY });
+      near(ops[1].to as ZenRotation, IDENTITY);
+      near(ops[2].to as number[], [10, 0, 0]);
+    });
+  });
+
+  describe('dropSubtreesToGround', () => {
+    it('rests a rotated visual on the hit and carries the subtree rigidly', () => {
+      const tilted = createVobReader(vobIndex([
+        { pos: [100, 20, 0], rot: [1, 0, 0, 0, 0, -1, 0, 1, 0] },
+        { parent: 0, pos: [110, 20, 0] },
+      ]));
+      const ops = dropSubtreesToGround(tilted, [{ vob: 0, ground: [100, 0, 0] }],
+        'rest', () => [-1, -10, -30, 1, 10, 5]);
+      // After the quarter turn around X, local Z is world -Y: the base is 5 below the pivot.
+      expect(ops.map((op) => op.to)).toEqual([[100, 5, 0], [110, 5, 0]]);
+    });
+
+    it('keeps the pivot mode and falls back to it when a visual has no bounds', () => {
+      const ground: [number, number, number] = [100, -50, 0];
+      expect(dropSubtreesToGround(reader(), [{ vob: 0, ground }], 'into', () => [-1, -30, -1, 1, 20, 1])[0].to)
+        .toEqual(ground);
+      expect(dropSubtreesToGround(reader(), [{ vob: 0, ground }], 'rest', () => null)[0].to)
+        .toEqual(ground);
+    });
+    it('drops the parent onto its ground point and carries its children by the same drop', () => {
+      const ops = dropSubtreesToGround(reader(), [{ vob: 0, ground: [100, -50, 0] }]);
+      expect(ops.map((op) => [op.vob, op.to])).toEqual([
+        [0, [100, -50, 0]], [1, [110, -50, 0]], [2, [110, -50, 10]],
+      ]);
+    });
+
+    it('moves a descendant with its ancestor’s drop, not a ground point of its own', () => {
+      // Dropping each to its own ground would pull the tree apart.
+      const ops = dropSubtreesToGround(reader(), [
+        { vob: 0, ground: [100, -50, 0] }, { vob: 1, ground: [110, -7, 0] },
+      ]);
+      expect(ops.find((op) => op.vob === 1)?.to).toEqual([110, -50, 0]);
+      expect(ops.filter((op) => op.vob === 1)).toHaveLength(1);
+    });
+  });
+
+  describe('alignSubtreesToNormal', () => {
+    it('stands the parent up as alignVobsToNormal does, and swings its children with it', () => {
+      const normal: [number, number, number] = [1, 0, 0];
+      const ops = alignSubtreesToNormal(reader(), [{ vob: 0, normal }], () => null);
+      expect(ops[0]).toEqual(alignVobsToNormal(reader(), [{ vob: 0, normal }], () => null)[0]);
+      // Up is carried onto +X, so the child 10 cm along +X goes 10 cm down.
+      near(ops.find((op) => op.op === 'MoveVob' && op.vob === 1)?.to as number[], [100, -10, 0]);
+    });
+  });
+});

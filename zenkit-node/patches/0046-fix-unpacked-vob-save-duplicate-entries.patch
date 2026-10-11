@@ -1,0 +1,90 @@
+VirtualObject::save writes presetName/vobName/visual twice on the unpacked
+path, and omits the visual and ai objects the unpacked reader always expects.
+
+`save`'s unpacked branch (`pack == false`) writes `presetName`, `vobName` and
+`visual` itself, in the order `load`'s unpacked branch reads them. The common
+tail below then writes all three a second time. ASCII and BinSafe entries are
+read positionally, so the extras are a stream desync, not a harmless repeat -
+and the two `visual` writes are not even the same value: the unpacked branch
+wrote `visual_name`, which is empty on any VOB that was built rather than
+loaded, where the packed tail writes `visual->name`. Both write `visual->name`
+now.
+
+The tail has the mirror-image hole for objects. `load` derives
+`has_visual_object` and `has_ai_object` from `bit1`'s presence bits in the
+packed form, but hardcodes both to `true` in the unpacked one - so an unpacked
+VOB with no visual and no AI still has two objects read out of the stream,
+while `save` wrote neither. Both are now written as the empty object (`% 0 0`),
+which `ReadArchive::read_object` already returns null for.
+
+Neither half is reachable upstream today: `VirtualObject.cc`'s file-static
+`pack` is initialised to `true` and only `enable_packed_save` writes it, which
+nothing calls. That is also why this could sit undetected - it is the unpacked
+writer, not the ASCII one, so it is a defect of every archive format at once.
+Requires 0045: `trafoOSToWSRot` is written on this same branch.
+
+Upstreamable as-is: no API change, and it makes an existing public writer path
+round-trip through the library's own reader.
+
+--- a/src/vobs/VirtualObject.cc
++++ b/src/vobs/VirtualObject.cc
+@@ -300,7 +300,11 @@
+ 			w.write_mat3x3("trafoOSToWSRot", this->rotation);
+ 			w.write_vec3("trafoOSToWSPos", this->position);
+ 			w.write_string("vobName", this->vob_name);
+-			w.write_string("visual", this->visual_name);
++			// `visual->name`, the same source the packed form's tail writes: on a
++			// loaded VOB the two agree because `load` copies one into the other,
++			// but on an authored one `visual_name` is empty and the name only
++			// exists on the visual.
++			w.write_string("visual", this->visual != nullptr ? this->visual->name : std::string {});
+ 			w.write_bool("showVisual", this->show_visual);
+ 			w.write_enum("visualCamAlign", static_cast<int>(this->sprite_camera_facing_mode));
+ 
+@@ -322,24 +326,38 @@
+ 			}
+ 		}
+ 
+-		if (!this->preset_name.empty()) {
+-			w.write_string("presetName", this->preset_name);
+-		}
++		// Only the packed form defers these three strings to here, where their
++		// presence bits in `bit1` say whether they follow. The unpacked branch above
++		// has already written all three unconditionally, in the order `load` reads
++		// them back, and an ASCII stream is read positionally — so writing them a
++		// second time is a desync, not a harmless repeat.
++		if (pack) {
++			if (!this->preset_name.empty()) {
++				w.write_string("presetName", this->preset_name);
++			}
+ 
+-		if (!this->vob_name.empty()) {
+-			w.write_string("vobName", this->vob_name);
+-		}
++			if (!this->vob_name.empty()) {
++				w.write_string("vobName", this->vob_name);
++			}
+ 
+-		if (this->visual && !this->visual->name.empty()) {
+-			w.write_string("visual", this->visual->name);
++			if (this->visual && !this->visual->name.empty()) {
++				w.write_string("visual", this->visual->name);
++			}
+ 		}
+ 
++		// The unpacked form has no presence bits either, so `load` always reads a
++		// visual and an ai object there. An absent one is the empty object, not a
++		// missing entry.
+ 		if (this->visual && this->visual->type != VisualType::UNKNOWN) {
+ 			w.write_object("visual", this->visual, version);
++		} else if (!pack) {
++			w.write_object("visual", static_cast<Object const*>(nullptr), version);
+ 		}
+ 
+ 		if (this->ai) {
+ 			w.write_object("ai", this->ai, version);
++		} else if (!pack) {
++			w.write_object("ai", static_cast<Object const*>(nullptr), version);
+ 		}
+ 
+ 		if (this->event_manager) {
