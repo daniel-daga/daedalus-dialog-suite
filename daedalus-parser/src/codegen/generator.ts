@@ -534,7 +534,7 @@ export class SemanticCodeGenerator {
   private isIdentifier(str: string): boolean {
     // Legacy/hand-built properties may lack expression metadata. This fallback
     // must accept the same identifier alphabet as grammar.js.
-    return /^[A-Za-z_\u0080-\u00FF][A-Za-z0-9_\u0080-\u00FF]*$/.test(str);
+    return /^[A-Za-z_\u0080-\u00FF][A-Za-z0-9_@^\u0080-\u00FF]*$/.test(str);
   }
 
   /**

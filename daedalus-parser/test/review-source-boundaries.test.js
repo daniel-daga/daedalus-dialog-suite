@@ -102,6 +102,15 @@ test('legacy unmarked Latin-1 identifiers keep their meaning', () => {
   assert.equal(parse(output).dialogs.D.properties.npc, 'Hügo', output);
 });
 
+for (const symbol of ['Queue@', '_@', 'A^B']) {
+  test(`legacy unmarked identifiers with @ and ^ stay symbols: ${symbol}`, () => {
+    const model = hydrate(parse(`instance D(C_INFO) { npc = ${symbol}; };`));
+    delete model.dialogs.D.propertyExpressionKeys;
+    const output = new SemanticCodeGenerator({ preserveSourceStyle: false }).generateSemanticModel(model);
+    assert.match(output, new RegExp(`npc\\s*=\\s*${symbol.replace('^', '\\^')};`), output);
+  });
+}
+
 for (const literal of ['0.0000001', '1.0', '0001', '9007199254740993', '1000000000000000000000']) {
   test(`numeric source spelling remains valid and exact: ${literal}`, () => {
     let model = parse(`instance D(C_INFO) { nr = ${literal}; condition = Check; };
