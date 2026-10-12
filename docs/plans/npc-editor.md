@@ -439,6 +439,25 @@ adds:
    in the NPC editor's routines section. That section now follows the index,
    so a saved routine shows there without reopening.
 7. **Later: the state-needs check** (#318) (see the last decision above).
+   **Measured 2026-10-12** with `zenkit-node/scripts/check-routine-mobs.js`
+   over the MDK scripts and the four retail worlds. The table comes out of
+   the scripts: 22 `TA_*` whose state calls `AI_UseMob(self, "<SCHEME>", 1)`
+   (`TA_Sleep` → `ZS_GotoBed` → `BEDHIGH`, `TA_Sit_Bench` → `BENCH`, …), and
+   a mob's scheme is its visual name up to the first `_`. Of 1,537 retail
+   entries, 1,451 have their mob within 5 m and the nearest is never
+   missing from the world. The tail is short and bimodal: six entries between
+   5 and 12.5 m, then **80 beyond 20 m**, all `TA_Sleep` or `TA_Sit_Bench`.
+   Those 80 are mostly deliberate: 37 park an NPC at `TOT`, and the rest
+   include dead NPCs posed with a state that has no mob nearby
+   (`NOV_653_ToterNovize`, `DJG_738_ToterDrachenjaeger`): 43 entries on
+   23 distinct waypoints. Without its mob a state stands at the waypoint
+   (`ZS_Sit_Bench_Loop` guards `AI_UseMob` with `Wld_IsMobAvailable`), so
+   a miss is cosmetic. What the measurement says: a check at 20 m would
+   flag no near-miss and about 23 retail waypoints, nearly all on purpose. It
+   does not kill the check, but it can be a hint at most, never a warning, and
+   it has to skip `TOT`. Building it is the maintainer's call. 324 waypoint
+   names exist in more than one world; those are read generously (the
+   nearest mob in any of them). 29 entries name a waypoint in no world.
 
 ### Chapters (maintainer, 2026-09-28: "differences in chapters are important")
 
