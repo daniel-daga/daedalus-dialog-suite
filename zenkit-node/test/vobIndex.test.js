@@ -229,3 +229,26 @@ test('vobIndex carries each decal VOB alpha weight, beside its size', () => {
   // dropped the field would still be drawing something visibly different.
   assert.ok(weights.includes(200), `expected the fixture's 200 in ${weights}`);
 });
+
+// `decalAlphaFunc` is the other decal field the viewport draws, and it is
+// material state rather than instance data: it picks the blend, so the decals
+// are grouped by (texture, func) and the func has to be in the index to group
+// by (level-editor.md §16.40, #262). A byte per row, the `AlphaFunction` value.
+test('vobIndex carries each decal VOB alpha function, beside its weight', () => {
+  const world = handle();
+  const ix = zenkit.vobIndex(world);
+  const at = paths(ix);
+
+  const decalVobs = u32(ix.decalVobs);
+  assert.ok(ix.decalAlphaFuncs instanceof ArrayBuffer);
+  const funcs = new Uint8Array(ix.decalAlphaFuncs);
+  assert.strictEqual(funcs.length, decalVobs.length);
+  assert.ok(decalVobs.length > 0, 'the fixture authors a decal');
+
+  for (const [row, vob] of decalVobs.entries()) {
+    const props = zenkit.getVobProps(world, at[vob]);
+    assert.strictEqual(funcs[row], props.decal.alphaFunc, `alpha func of vob ${vob}`);
+  }
+  // The fixture's decal is BLEND, not the zero a missing column would read as.
+  assert.ok(funcs.includes(2), `expected the fixture's BLEND (2) in ${funcs}`);
+});

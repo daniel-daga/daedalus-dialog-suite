@@ -249,8 +249,8 @@ against again (§7).
   marker itself *landed 2026-09-10 (§7)* — every VOB with no visual name is
   drawn, pickable, hideable by class and gizmo-attachable. What is left is the
   **extent** of a sound, a light or a zone (architecture §7) and the VOBs whose visual
-  is a name that resolves to no geometry (§16.40, decals and particle
-  effects).
+  is a name that resolves to no geometry (architecture §7, decals and
+  particle effects).
 
 Already landed and therefore absent above: focus-on-selection and frame-world
 (`.` and `Home`, the 2026-08-27 navigation entry), and batch property edit
@@ -3267,70 +3267,38 @@ If the re-run shows the same spread with no cliff, the honest outcome is no gap
 rule at all and this closes as answered rather than as built. Corpus is
 `mdk/Content` — the maintainer's machine, not CI, so this is not agent-ready either.
 
-### 16.40 Six of a decal's seven fields are still invisible (2026-09-10; #249, #262)
+### 16.40 A decal edit is not redrawn, and `visualCamAlign` is unread (2026-10-12; #391)
 
-The decals are drawn and `git log` carries it — a camera-facing quad of the
-size the decal states, one instanced mesh per texture, and a marker at each
-centre for the pick and the gizmo. A particle effect gets the marker and nothing
-more, which is all a Daedalus script can be given. The durable outcome is
-architecture §7, including the two facts it rests on: `decalDimension` is a half
-extent, and a decal is oriented by the camera rather than by its VOB.
+The decals are drawn — a camera-facing quad per decal at its own size, alpha
+weight and blend, grouped by (texture, alphaFunc) — and architecture §7 carries
+the outcome, including why the other four of a decal's seven fields are not
+drawn and never will be from OpenGothic's reading alone.
 
-**The held decision was taken 2026-09-12: per-instance attributes.** The maintainer
-chose it over a material per decal, which is the 1,405 draw calls the grouping
-exists to avoid. Reading OpenGothic for each of the four then narrowed it to
-one, and the narrowing is the durable part of this section — nobody should
-re-derive it.
+**An edit to a drawn field does not reach the quad (#391).** The property grid
+writes `decalDimension`, `decalAlphaWeight` and `decalAlphaFunc` through
+`SetVobProp`, and the world file gets them, but the viewport keeps drawing the
+old value until a structural op or a reopen. Two halves, both on the
+non-structural path:
 
-- **`decalAlphaWeight` landed.** OpenGothic's decal material is
-  `alphaWeight = float(decal.alpha_weight)/255` and its fragment shader is
-  `tex.a *= alphaWeight` (`common/graphics/material.cpp`,
-  `shader/materials/main.frag`). A plain multiply on the texture's alpha is
-  exactly an instance attribute, so it rides the group: the index emits a
-  `decalAlphaWeights` byte column beside `decalDimensions`,
-  `buildDecalBillboards` divides by 255 once, and `DecalLayer` multiplies
-  `diffuseColor.a` *before* `<alphatest_fragment>` so a decal turned all the
-  way down is discarded rather than drawn black.
-- **`decalOffset` is not a per-instance attribute, because nothing knows what
-  it means.** OpenGothic never reads it — not in `implDecalMesh`, not in
-  `Material`, nowhere in the tree. There is no reference reading to copy, and
-  this section's two established facts were both taken from OpenGothic rather
-  than guessed. Drawing it would be an invention.
-- **`decalAlphaFunc` is material state, not instance data.** It selects a
-  blend path — BLEND to Transparent, ADD and SUBTRACT to AdditiveLight,
-  MULTIPLY and MULTIPLY_ALT to two Multiply modes, DEFAULT and NONE to
-  AlphaTest. Drawing it means grouping by (texture, alphaFunc) rather than by
-  texture, which is a bounded multiplier on the group count and **not** a
-  material per decal. **Counted 2026-10-12** (`zenkit-node/scripts/
-  check-decal-alpha-funcs.js`, over the three retail worlds): four funcs —
-  BLEND x906, ADD x866, NONE x159, MULTIPLY_ALT x1 — and no DEFAULT,
-  SUBTRACT or MULTIPLY. Grouping by (texture, func) takes the drawn groups
-  from 26 to 34 (NewWorld 23 to 29), because only eight textures carry more
-  than one func: the spider webs, four blood splats, `CRDIVEINS` and
-  `CRDISLIME`. Eight extra draws against a budget under 1,500 is nothing, so
-  the measurement did not kill the change; drawing it is what is left of
-  **#262** — a `decalAlphaFuncs` column beside `decalAlphaWeights`, the
-  grouping key in `buildDecalBillboards`, and a blend per group in
-  `DecalLayer`.
-- **`decalTextureAnimFps` needs multi-frame textures.** OpenGothic's
-  `loadFrames(decal.name, decal.texture_anim_fps)` walks a numbered texture
-  series. The viewport loads one texture per name and has no frame clock, so
-  this is a texture-pipeline feature rather than a decal one.
+- `zenkit.worker.ts` re-reads its `vobIndex` only for a structural op and
+  otherwise patches it with `applyOps`, whose `SetVobProp` branch writes the
+  base columns and never the decal side table (`decalDimensions`,
+  `decalAlphaWeights`, `decalAlphaFuncs`). The decal *row* is found through
+  `decalVobs`, so a patch is a search of that column, not a re-read.
+- `useWorldEditPipeline` re-fetches the visuals payload — which is what carries
+  the `DecalScene` — only for a `SetVobProp` that sets `visual`. A decal key
+  wants the same re-fetch; `SceneHost.update` already replaces the decal layer
+  whole, and the materials survive it.
 
-Two more are settled by the shape rather than open: a billboard is never seen
-from behind, so `decalTwoSided` has no side to hide, and `decalIgnoreDaylight`
-is about a lighting model the viewport does not have.
+Undo and redo take the same path, so the fix covers them for free; the test is
+the pipeline's, with the worker faked as every pipeline suite fakes it.
 
-**None of the seven has an engine witness** (§16.2, and §16.41 row 1) — the
-alpha weight included, so what landed is OpenGothic's reading of the field and
-not a played one.
-
-`visualCamAlign` is the other loose end. The engine picks between a full
+**`visualCamAlign` is the other loose end.** The engine picks between a full
 billboard and a yaw-locked one from that base field; the viewport draws every
-decal as a full billboard, which is right for the common case and wrong for a
-decal authored yaw-locked. Counted on the same walk (2026-10-12): 639 of the
-1,932 carry YAW (1) and the other 1,293 NONE (0), and every YAW one is an ADD
-decal. What either value does to a decal in the engine is unwitnessed.
+decal as a full billboard. Counted 2026-10-12 over the three retail worlds:
+639 of the 1,932 decals carry YAW (1), every one of them an ADD decal, and the
+other 1,293 NONE (0). What either value does to a decal in the engine is
+unwitnessed (§16.41 row 1), so neither is drawn differently yet.
 
 ### 16.41 The standing engine-witness list (2026-09-12; #261)
 
@@ -3353,7 +3321,7 @@ confirm the staged file's hash, and keep a control run in the same session
 
 | # | What has never been seen in the engine | Landed | Where it came from |
 |---|---|---|---|
-| 1 | The seven decal fields on `SetVobProp` — `decalDimension` and the six that change nothing on screen | 2026-08-28 | Gate 2b remainder; §16.40 |
+| 1 | The seven decal fields on `SetVobProp` — the three the viewport draws (`decalDimension`, `decalAlphaWeight`, `decalAlphaFunc`) and the four it does not | 2026-08-28 | Gate 2b remainder; architecture §7 |
 | 2 | **Any enum write at all.** `lightType`, `quality`, a sound's `mode` and `volumeType`, `soundMaterial`, a filter's two actions, a trigger list's `mode`, a mover's `behavior`, a mover controller's `message` | 2026-08-30 | Gate 2b remainder; architecture §7, *"Class properties"* |
 | 3 | 22 of the 27 authorable classes — five have been placed and seen | 2026-08-29 | Gate 2b remainder; §16.15 |
 | 4 | A written chest `contents` — the archive's `contains` string, spawning the items it names | 2026-09-03 | #223; §16.26 row 2 |

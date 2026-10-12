@@ -34,7 +34,7 @@ function vobIndexOf(count: number): VobIndex {
     names: [''], nameIndex: new Uint32Array(count).buffer,
     visuals: [''], visualIndex: new Uint32Array(count).buffer,
     visualTypes: ['MULTI_RESOLUTION_MESH'], visualTypeIndex: new Uint32Array(count).buffer,
-    decalVobs: new ArrayBuffer(0), decalDimensions: new ArrayBuffer(0), decalAlphaWeights: new ArrayBuffer(0),
+    decalVobs: new ArrayBuffer(0), decalDimensions: new ArrayBuffer(0), decalAlphaWeights: new ArrayBuffer(0), decalAlphaFuncs: new ArrayBuffer(0),
   };
 }
 

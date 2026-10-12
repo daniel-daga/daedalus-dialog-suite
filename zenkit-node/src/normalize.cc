@@ -1126,6 +1126,10 @@ struct VobColumns {
   // alphaWeight` with `alphaWeight = alpha_weight / 255`. A byte, because that
   // is what the archive holds — the divide belongs where the multiply is.
   std::vector<std::uint8_t> decal_alpha_weights;
+  // `AlphaFunction`, which is material state rather than instance data: it
+  // picks the blend, so a renderer groups by (texture, func) and needs it here
+  // to group by (#262).
+  std::vector<std::uint8_t> decal_alpha_funcs;
 
   std::vector<std::string> classes;
   std::vector<std::string> names;
@@ -1213,6 +1217,7 @@ void CollectVobColumns(std::vector<std::shared_ptr<VirtualObject>> const& vobs,
       out.decal_dimensions.insert(out.decal_dimensions.end(),
                                   {decal->dimension.x, decal->dimension.y});
       out.decal_alpha_weights.push_back(decal->alpha_weight);
+      out.decal_alpha_funcs.push_back(static_cast<std::uint8_t>(decal->alpha_func));
     }
 
     stack.push_back({&vob->children, 0, self});  // invalidates `top`
@@ -1393,6 +1398,7 @@ Napi::Object VobIndex(Napi::Env env, WorldHandle const& handle) {
   out.Set("decalVobs", Buffer(env, columns.decal_vobs));
   out.Set("decalDimensions", Buffer(env, columns.decal_dimensions));
   out.Set("decalAlphaWeights", Buffer(env, columns.decal_alpha_weights));
+  out.Set("decalAlphaFuncs", Buffer(env, columns.decal_alpha_funcs));
   return out;
 }
 

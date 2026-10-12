@@ -35,6 +35,39 @@ import { HIDDEN_ATTRIBUTE } from './instanceAttributes';
  *  without this is a rectangle of black where the texture is empty. */
 const DECAL_ALPHA_TEST = 0.02;
 
+/** The cut-out threshold for a decal that is alpha-tested rather than blended —
+ *  `WorldScene`'s `ALPHA_TEST`, which the world mesh uses for the same func.
+ *  Not imported: `WorldScene` imports this file. */
+const DECAL_CUTOUT = 0.5;
+
+/**
+ * How one `decalAlphaFunc` is drawn (#262). The mapping is OpenGothic's: DEFAULT
+ * and NONE to an alpha-tested cut-out, BLEND to transparency, ADD and SUBTRACT
+ * to additive light, MULTIPLY to source x destination and MULTIPLY_ALT to twice
+ * that. It is material state, which is why `buildDecalBillboards` groups by
+ * (texture, func) and a material is asked for per pair.
+ */
+function blendFor(material: THREE.MeshBasicMaterial, alphaFunc: number): void {
+  if (alphaFunc === 0 || alphaFunc === 1) {
+    // Not transparent, so three.js draws it unblended — what a cut-out is.
+    material.transparent = false;
+    material.alphaTest = DECAL_CUTOUT;
+    return;
+  }
+  material.transparent = true;
+  material.alphaTest = DECAL_ALPHA_TEST;
+  if (alphaFunc === 3 || alphaFunc === 4) {
+    material.blending = THREE.AdditiveBlending;
+  } else if (alphaFunc === 5 || alphaFunc === 6) {
+    material.blending = THREE.CustomBlending;
+    material.blendEquation = THREE.AddEquation;
+    material.blendSrc = THREE.DstColorFactor;
+    material.blendDst = alphaFunc === 5 ? THREE.ZeroFactor : THREE.SrcColorFactor;
+  } else {
+    material.blending = THREE.NormalBlending;
+  }
+}
+
 /** Each decal's own `decalAlphaWeight`, already divided to 0-1 by
  *  `buildDecalBillboards`. Per instance, because the field is per VOB and the
  *  material is per texture — a material per decal would be the 1,405 draw calls
@@ -100,7 +133,7 @@ ${
 }
 
 export class DecalLayer {
-  /** One per texture. Added under the scene's converted root by `WorldScene`,
+  /** One per (texture, func) group. Added under the scene's converted root by `WorldScene`,
    *  which owns them. */
   readonly meshes: THREE.InstancedMesh[] = [];
 
@@ -112,11 +145,16 @@ export class DecalLayer {
   private readonly hidden: THREE.InstancedBufferAttribute[] = [];
 
   /**
-   * @param materialFor  the material for one decal texture. `WorldScene` owns
-   *   the texture slots, so the layer asks rather than decoding anything: a
-   *   decal's `.TGA` is loaded by the same path every other texture takes.
+   * @param materialFor  the material for one decal texture under one alpha
+   *   func — a pair, because the func is the blend and one texture can carry
+   *   two. `WorldScene` owns the texture slots, so the layer asks rather than
+   *   decoding anything: a decal's `.TGA` is loaded by the same path every
+   *   other texture takes.
    */
-  constructor(scene: DecalScene, materialFor: (texture: string) => THREE.MeshBasicMaterial) {
+  constructor(
+    scene: DecalScene,
+    materialFor: (texture: string, alphaFunc: number) => THREE.MeshBasicMaterial,
+  ) {
     const matrix = new THREE.Matrix4();
 
     for (const group of scene.groups) {
@@ -124,13 +162,12 @@ export class DecalLayer {
       const sizes = new Float32Array(group.sizes);
       const vobIds = new Uint32Array(group.vobIds);
 
-      const material = materialFor(group.texture);
-      // A decal is a cut-out and is drawn over the surface it sits on, so it
-      // must not write depth — one decal would otherwise hide another behind it
-      // across its whole quad, transparent corners included.
-      material.transparent = true;
+      const material = materialFor(group.texture, group.alphaFunc);
+      // A decal is drawn over the surface it sits on, so it must not write
+      // depth — one decal would otherwise hide another behind it across its
+      // whole quad, transparent corners included. Whatever its func.
+      blendFor(material, group.alphaFunc);
       material.depthWrite = false;
-      material.alphaTest = DECAL_ALPHA_TEST;
       // `decalTwoSided` is a per-VOB field and this is one material per
       // texture, but a billboard is never seen from behind, so the side it is
       // drawn on cannot come up.

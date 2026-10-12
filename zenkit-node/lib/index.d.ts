@@ -72,6 +72,9 @@ export interface VobIndex {
   /** Uint8 x1 per row of `decalVobs` — `decalAlphaWeight` as the archive holds
    *  it, 0-255. A renderer multiplies the texture's alpha by `weight / 255`. */
   decalAlphaWeights: ArrayBuffer;
+  /** Uint8 x1 per row of `decalVobs` — `decalAlphaFunc`, the `AlphaFunction`
+   *  value 0-6. Material state, so a renderer groups by it. */
+  decalAlphaFuncs: ArrayBuffer;
 }
 
 export interface WaynetGraph {

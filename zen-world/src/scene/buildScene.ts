@@ -46,6 +46,9 @@ export interface VobIndex {
   /** Uint8 x1 per row of `decalVobs` — `decalAlphaWeight`, as the archive holds
    *  it: 0-255, not a fraction. */
   decalAlphaWeights: ArrayBuffer;
+  /** Uint8 x1 per row of `decalVobs` — `decalAlphaFunc`, the `AlphaFunction`
+   *  value 0-6. */
+  decalAlphaFuncs: ArrayBuffer;
 }
 
 // Opaque native handles. Deliberately not branded: `zen-world` never looks
@@ -150,11 +153,13 @@ export interface InstancedScene {
   };
 }
 
-/** One decal texture and every VOB drawing it. */
+/** One decal texture under one alpha function, and every VOB drawing it. */
 export interface DecalGroup {
   /** The texture as the VOB names it — a `.TGA`, which the asset compiler
    *  turned into a `-C.TEX`; `decodeTexture` already maps between them. */
   texture: string;
+  /** `decalAlphaFunc`, the `AlphaFunction` value: how the group is blended. */
+  alphaFunc: number;
   count: number;
   /** Float32 x3 per decal — ZenGin space, unconverted like everything here. */
   positions: ArrayBuffer;
@@ -194,7 +199,13 @@ export interface DecalScene {
  * per-instance attribute is for, and why it rides the group rather than
  * splitting one. The divide is done here for the same reason the doubling is.
  *
- * Grouped by texture, because one quad per decal would be 1,932 draw calls
+ * **`decalAlphaFunc` is the blend, so it does split one** (#262). It picks a
+ * blend path rather than scaling a value, which makes it material state, and
+ * the group key is (texture, func). That is a bounded multiplier and not a
+ * material per decal: retail uses four funcs, and only eight textures carry
+ * more than one, so the 26 groups of the three worlds become 34.
+ *
+ * Grouped at all because one quad per decal would be 1,932 draw calls
  * against a budget under 1,500 — the same reason VOBs sharing a visual are
  * instanced. Nothing here decides how a quad is *oriented*: in the engine a
  * decal faces the camera, which is a renderer's business and not a payload's.
@@ -203,12 +214,15 @@ export function buildDecalBillboards(index: VobIndex): DecalScene {
   const decalVobs = new Uint32Array(index.decalVobs);
   const dimensions = new Float32Array(index.decalDimensions);
   const alphaWeights = new Uint8Array(index.decalAlphaWeights);
+  const alphaFuncs = new Uint8Array(index.decalAlphaFuncs);
   const positions = new Float32Array(index.positions);
   const visualIndex = new Uint32Array(index.visualIndex);
 
-  const byTexture = new Map<string, {
+  const byKey = new Map<string, {
+    texture: string; alphaFunc: number;
     positions: number[]; sizes: number[]; vobIds: number[]; alphaWeights: number[];
   }>();
+  const textures = new Set<string>();
   let decals = 0;
 
   for (let row = 0; row < decalVobs.length; row++) {
@@ -221,10 +235,13 @@ export function buildDecalBillboards(index: VobIndex): DecalScene {
     const texture = index.visuals[visualIndex[vob]];
     if (texture === '') continue;
 
-    let group = byTexture.get(texture);
+    const alphaFunc = alphaFuncs[row];
+    const key = `${alphaFunc}|${texture}`;
+    let group = byKey.get(key);
     if (group === undefined) {
-      group = { positions: [], sizes: [], vobIds: [], alphaWeights: [] };
-      byTexture.set(texture, group);
+      group = { texture, alphaFunc, positions: [], sizes: [], vobIds: [], alphaWeights: [] };
+      byKey.set(key, group);
+      textures.add(texture);
     }
     const p = vob * 3;
     group.positions.push(positions[p], positions[p + 1], positions[p + 2]);
@@ -235,9 +252,10 @@ export function buildDecalBillboards(index: VobIndex): DecalScene {
   }
 
   const groups: DecalGroup[] = [];
-  for (const [texture, group] of byTexture) {
+  for (const group of byKey.values()) {
     groups.push({
-      texture,
+      texture: group.texture,
+      alphaFunc: group.alphaFunc,
       count: group.vobIds.length,
       positions: new Float32Array(group.positions).buffer,
       sizes: new Float32Array(group.sizes).buffer,
@@ -246,7 +264,7 @@ export function buildDecalBillboards(index: VobIndex): DecalScene {
     });
   }
 
-  return { groups, stats: { decals, textures: groups.length } };
+  return { groups, stats: { decals, textures: textures.size } };
 }
 
 /**

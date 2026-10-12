@@ -2,6 +2,7 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #262: Decals are drawn with their own blend — additive glows, cut-outs and multiplies, not all as transparency
 - #388: Putting a VOB placement down (right-click, Esc) selects the last VOB it placed
 - #387: World editor: 1 and 2 switch move/turn (W and E no longer do); in turn mode WASD, Space and X turn the selection
 - #386: Moving VOBs with the keys is faster by default; Ctrl moves slower, like the camera

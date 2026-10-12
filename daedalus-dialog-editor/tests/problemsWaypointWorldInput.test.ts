@@ -65,7 +65,7 @@ const summaryOf = (vobs: Array<[string, string]>): WorldSummary => {
       visualIndex: new Uint32Array(vobs.length).buffer,
       visualTypes: [],
       visualTypeIndex: new Uint32Array(vobs.length).buffer,
-      decalVobs: new ArrayBuffer(0), decalDimensions: new ArrayBuffer(0), decalAlphaWeights: new ArrayBuffer(0),
+      decalVobs: new ArrayBuffer(0), decalDimensions: new ArrayBuffer(0), decalAlphaWeights: new ArrayBuffer(0), decalAlphaFuncs: new ArrayBuffer(0),
     },
     stats: { vobCount: vobs.length, materials: 0, worldDrawGroups: 0, worldTriangles: 0 },
     timings: {},

@@ -159,6 +159,7 @@ function vobIndex(vobs: Spec[]): VobIndex {
     // No decals: an op never touches one, so the side table is empty here.
     decalVobs: new Uint32Array(0).buffer, decalDimensions: new Float32Array(0).buffer,
     decalAlphaWeights: new Uint8Array(0).buffer,
+    decalAlphaFuncs: new Uint8Array(0).buffer,
   };
 }
 

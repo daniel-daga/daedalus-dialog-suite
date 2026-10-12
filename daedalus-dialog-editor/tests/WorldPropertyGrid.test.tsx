@@ -83,6 +83,7 @@ function vobIndex(vobs: Spec[]): VobIndex {
     decalVobs: new ArrayBuffer(0),
     decalDimensions: new ArrayBuffer(0),
     decalAlphaWeights: new ArrayBuffer(0),
+    decalAlphaFuncs: new ArrayBuffer(0),
   };
 }
 

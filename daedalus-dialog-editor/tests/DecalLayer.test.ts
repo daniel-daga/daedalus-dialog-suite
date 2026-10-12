@@ -25,9 +25,11 @@ function group(
   decals: Array<{
     vob: number; pos: [number, number, number]; size: [number, number]; alpha?: number;
   }>,
+  alphaFunc = 2,
 ) {
   return {
     texture,
+    alphaFunc,
     count: decals.length,
     positions: new Float32Array(decals.flatMap((decal) => decal.pos)).buffer,
     sizes: new Float32Array(decals.flatMap((decal) => decal.size)).buffer,
@@ -50,12 +52,12 @@ const WEB = group('NW_WEB.TGA', [
 const BLOOD = group('NW_BLOOD.TGA', [{ vob: 3, pos: [-5, 0, 5], size: [20, 20] }]);
 
 const materials = () => {
-  const made: Array<{ texture: string; material: THREE.MeshBasicMaterial }> = [];
+  const made: Array<{ texture: string; alphaFunc: number; material: THREE.MeshBasicMaterial }> = [];
   return {
     made,
-    materialFor: (texture: string) => {
+    materialFor: (texture: string, alphaFunc: number) => {
       const material = new THREE.MeshBasicMaterial();
-      made.push({ texture, material });
+      made.push({ texture, alphaFunc, material });
       return material;
     },
   };
@@ -164,6 +166,82 @@ describe('DecalLayer', () => {
     expect(material.transparent).toBe(true);
     expect(material.depthWrite).toBe(false);
     expect(material.alphaTest).toBeGreaterThan(0);
+    layer.dispose();
+  });
+
+  // `decalAlphaFunc` picks the blend (#262), and the mapping is OpenGothic's:
+  // DEFAULT and NONE to an alpha-tested cut-out, BLEND to transparency, ADD and
+  // SUBTRACT to additive light, MULTIPLY and MULTIPLY_ALT to two multiplies.
+  // Retail uses BLEND, ADD, NONE and one MULTIPLY_ALT; the rest are pinned
+  // because an edit can write them.
+  it.each([
+    ['DEFAULT', 0], ['NONE', 1],
+  ])('draws %s as an opaque cut-out', (_name, func) => {
+    const { made, materialFor } = materials();
+    const layer = new DecalLayer(scene(group('W.TGA', [{ vob: 1, pos: [0, 0, 0], size: [1, 1] }], func)), materialFor);
+    const { material } = made[0];
+
+    expect(made[0].alphaFunc).toBe(func);
+    // Not transparent, so three.js draws it unblended; the test is the world's
+    // own cut-out threshold rather than the near-zero one a blended edge wants.
+    expect(material.transparent).toBe(false);
+    expect(material.alphaTest).toBe(0.5);
+    expect(material.depthWrite).toBe(false);
+    layer.dispose();
+  });
+
+  it('draws BLEND as alpha-blended transparency', () => {
+    const { made, materialFor } = materials();
+    const layer = new DecalLayer(scene(group('W.TGA', [{ vob: 1, pos: [0, 0, 0], size: [1, 1] }], 2)), materialFor);
+    const { material } = made[0];
+
+    expect(material.transparent).toBe(true);
+    expect(material.blending).toBe(THREE.NormalBlending);
+    layer.dispose();
+  });
+
+  it.each([
+    ['ADD', 3], ['SUBTRACT', 4],
+  ])('draws %s as additive light', (_name, func) => {
+    const { made, materialFor } = materials();
+    const layer = new DecalLayer(scene(group('W.TGA', [{ vob: 1, pos: [0, 0, 0], size: [1, 1] }], func)), materialFor);
+    const { material } = made[0];
+
+    expect(material.transparent).toBe(true);
+    expect(material.blending).toBe(THREE.AdditiveBlending);
+    layer.dispose();
+  });
+
+  it.each([
+    ['MULTIPLY', 5, THREE.ZeroFactor], ['MULTIPLY_ALT', 6, THREE.SrcColorFactor],
+  ])('draws %s as a multiply of what is behind it', (_name, func, dst) => {
+    // The plain multiply is source x destination; the alternate one adds it to
+    // itself, which doubles it — grey leaves the surface alone instead of
+    // darkening it.
+    const { made, materialFor } = materials();
+    const layer = new DecalLayer(scene(group('W.TGA', [{ vob: 1, pos: [0, 0, 0], size: [1, 1] }], func)), materialFor);
+    const { material } = made[0];
+
+    expect(material.transparent).toBe(true);
+    expect(material.blending).toBe(THREE.CustomBlending);
+    expect(material.blendSrc).toBe(THREE.DstColorFactor);
+    expect(material.blendDst).toBe(dst);
+    layer.dispose();
+  });
+
+  it('asks for a material per texture and func, so one texture can blend two ways', () => {
+    // Eight retail textures carry two funcs — the spider web is BLEND on most
+    // VOBs and ADD on some — and a material shared between them would be drawn
+    // with whichever blend was set last.
+    const { made, materialFor } = materials();
+    const layer = new DecalLayer(scene(
+      group('WEB.TGA', [{ vob: 1, pos: [0, 0, 0], size: [1, 1] }], 2),
+      group('WEB.TGA', [{ vob: 2, pos: [0, 0, 0], size: [1, 1] }], 3),
+    ), materialFor);
+
+    expect(made.map((entry) => [entry.texture, entry.alphaFunc])).toEqual([['WEB.TGA', 2], ['WEB.TGA', 3]]);
+    expect(made[0].material.blending).toBe(THREE.NormalBlending);
+    expect(made[1].material.blending).toBe(THREE.AdditiveBlending);
     layer.dispose();
   });
 

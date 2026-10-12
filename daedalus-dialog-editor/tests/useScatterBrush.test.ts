@@ -55,7 +55,7 @@ function vobIndexOf(parents: number[]): VobIndex {
     names: parents.map((_, at) => `VOB_${at}`), nameIndex: Uint32Array.from(parents.map((_, at) => at)).buffer,
     visuals: ['TREE.3DS'], visualIndex: new Uint32Array(count).buffer,
     visualTypes: ['MULTI_RESOLUTION_MESH'], visualTypeIndex: new Uint32Array(count).buffer,
-    decalVobs: new ArrayBuffer(0), decalDimensions: new ArrayBuffer(0), decalAlphaWeights: new ArrayBuffer(0),
+    decalVobs: new ArrayBuffer(0), decalDimensions: new ArrayBuffer(0), decalAlphaWeights: new ArrayBuffer(0), decalAlphaFuncs: new ArrayBuffer(0),
   };
 }
 

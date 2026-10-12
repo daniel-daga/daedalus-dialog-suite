@@ -3391,19 +3391,28 @@ reimplements the ZenGin renderer rather than guessing at it:
 one object per VOB rather than per name, so `decalDimension` is in no column and
 no dictionary, and drawing 1,932 decals at their real size through `getVobProps`
 would have been 1,932 round trips. `vobIndex` answers `decalVobs`,
-`decalDimensions` and `decalAlphaWeights` — sparse, since 95 % of a world is not
-a decal, which is 23 KB on a retail world against the 331 KB a dense column
-would cost. The weight is a **byte** across the boundary, as the archive holds
-it; the divide by 255 happens once, in `buildDecalBillboards`, beside the
-doubling and for the same reason.
+`decalDimensions`, `decalAlphaWeights` and `decalAlphaFuncs` — sparse, since
+95 % of a world is not a decal, which is 23 KB on a retail world against the
+331 KB a dense column would cost. The weight is a **byte** across the boundary,
+as the archive holds it; the divide by 255 happens once, in
+`buildDecalBillboards`, beside the doubling and for the same reason.
 
-The quads are grouped by texture, one `InstancedMesh` each, for the reason VOBs
-sharing a visual are instanced at all: 23 textures carry 1,405 decal VOBs on
-NewWorld, and a quad each would be 1,405 draw calls against a budget under
-1,500. The material is made by `WorldScene` and goes through the same texture
-slot every other one does, so a decal's `.TGA` loads by the path that was
-already loading the world's. Cut-out and depth-write-off, because a decal is
-mostly transparent and sits on the surface it decorates.
+The quads are grouped by **(texture, alphaFunc)**, one `InstancedMesh` each, for
+the reason VOBs sharing a visual are instanced at all: 23 textures carry 1,405
+decal VOBs on NewWorld, and a quad each would be 1,405 draw calls against a
+budget under 1,500. The func is in the key because it is the blend, which makes
+it material state rather than instance data (#262). That costs little, and it
+was counted before it was built (`zenkit-node/scripts/check-decal-alpha-funcs.js`):
+retail decals use four funcs — BLEND 906, ADD 866, NONE 159, MULTIPLY_ALT 1 —
+and only eight textures carry more than one, so the three worlds draw 34 groups
+where they drew 26 (NewWorld 29 for 23). The blend per func is OpenGothic's:
+DEFAULT and NONE an alpha-tested cut-out at the world's 0.5, BLEND transparency,
+ADD and SUBTRACT additive, MULTIPLY source × destination and MULTIPLY_ALT twice
+that. The material is made by `WorldScene`, one per (texture, func), and goes
+through the same texture slot every other one does, so a decal's `.TGA` loads
+by the path that was already loading the world's and decodes once however many
+funcs draw it. Depth-write-off whatever the func, because a decal sits on the
+surface it decorates.
 
 **The quad is the picture and never the handle.** It does not enter the GPU id
 pass: that pass draws instances through its own material, and a billboard there
@@ -3415,16 +3424,15 @@ and the marker together rather than one or the other.
 A particle effect gets the marker and nothing more: a `.PFX` is a Daedalus
 script, not geometry, so there is nothing to draw it as.
 
-**Five of a decal's seven fields are still invisible, and four of those five for
-a settled reason** (the whole narrowing is `docs/plans/level-editor.md` §16.40).
-`decalDimension` and `decalAlphaWeight` are drawn. `decalTwoSided` cannot come
+**Four of a decal's seven fields are invisible, all four for a settled reason.**
+`decalDimension`, `decalAlphaWeight` and `decalAlphaFunc` are drawn. `decalTwoSided` cannot come
 up, since a billboard is never seen from behind, and `decalIgnoreDaylight` is
 about a lighting model the viewport does not have. **`decalOffset` is read by
 nothing in OpenGothic**, so there is no reference reading to copy and drawing it
-would be an invention. `decalAlphaFunc` is material state rather than instance
-data — it selects a blend path — so it wants grouping by (texture, alphaFunc),
-whose cost nobody has measured. `decalTextureAnimFps` wants a numbered texture
-series and a frame clock, which is a texture-pipeline feature.
+would be an invention. `decalTextureAnimFps` wants a numbered texture series
+and a frame clock, which is a texture-pipeline feature. None of the seven has
+an engine witness (`docs/plans/level-editor.md` §16.41 row 1), so what is drawn
+is OpenGothic's reading of each field, not a played one.
 
 ---
 

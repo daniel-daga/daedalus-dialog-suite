@@ -497,8 +497,8 @@ export class WorldScene {
   private hidden: Uint8Array | null = null;
   private selected: readonly number[] = [];
   private visuals = new Map<string, VisualMeshes>();
-  /** One per decal texture, kept across the decal layer being replaced so a
-   *  structural op does not leave a material per texture behind each time. */
+  /** One per decal texture and alpha func, kept across the decal layer being
+   *  replaced so a structural op does not leave a material behind each time. */
   private decalMaterials = new Map<string, THREE.MeshBasicMaterial>();
   private geometries: THREE.BufferGeometry[] = [];
   private materials: THREE.Material[] = [];
@@ -847,7 +847,7 @@ export class WorldScene {
       for (const mesh of this.decalLayer.meshes) this.root.remove(mesh);
       this.decalLayer.dispose();
     }
-    this.decalLayer = new DecalLayer(scene, (texture) => this.decalMaterial(texture));
+    this.decalLayer = new DecalLayer(scene, (texture, alphaFunc) => this.decalMaterial(texture, alphaFunc));
     this.decalLayer.setHidden(this.hidden);
     for (const mesh of this.decalLayer.meshes) this.root.add(mesh);
   }
@@ -1370,21 +1370,24 @@ export class WorldScene {
   }
 
   /**
-   * A decal's material: one per texture, made here rather than in `DecalLayer`
-   * so a decal's `.TGA` goes through the same slot every other texture does and
-   * `loadPendingTextures` fills it without knowing what a decal is.
+   * A decal's material: one per texture and alpha func — the func is the
+   * blend, and eight retail textures carry two (#262). Made here rather than in
+   * `DecalLayer` so a decal's `.TGA` goes through the same slot every other
+   * texture does and `loadPendingTextures` fills it without knowing what a
+   * decal is.
    *
    * The layer owns everything about how it is *drawn* — the billboard, the
-   * cut-out, the depth write — because those are facts about a decal rather
+   * blend, the depth write — because those are facts about a decal rather
    * than about a texture.
    */
-  private decalMaterial(texture: string): THREE.MeshBasicMaterial {
-    const kept = this.decalMaterials.get(texture);
+  private decalMaterial(texture: string, alphaFunc: number): THREE.MeshBasicMaterial {
+    const key = `${alphaFunc}|${texture}`;
+    const kept = this.decalMaterials.get(key);
     if (kept !== undefined) return kept;
     const material = new THREE.MeshBasicMaterial();
     this.texture(texture, material);
     this.materials.push(material);
-    this.decalMaterials.set(texture, material);
+    this.decalMaterials.set(key, material);
     return material;
   }
 

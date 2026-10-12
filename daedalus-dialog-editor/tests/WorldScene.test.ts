@@ -337,7 +337,7 @@ describe('WorldScene', () => {
     const scene = new WorldScene();
     scene.setDecals({
       groups: [{
-        texture: 'BLOOD.TGA',
+        texture: 'BLOOD.TGA', alphaFunc: 2,
         count: 1,
         positions: new Float32Array([600, 0, 0]).buffer,
         sizes: new Float32Array([50, 50]).buffer,
@@ -1440,6 +1440,7 @@ describe("WorldScene and the decals", () => {
   const decalScene = () => ({
     groups: [{
       texture: 'BLOOD.TGA',
+      alphaFunc: 2,
       count: 1,
       positions: new Float32Array([600, 0, 0]).buffer,
       sizes: new Float32Array([50, 50]).buffer,
@@ -1465,6 +1466,26 @@ describe("WorldScene and the decals", () => {
     scene.setDecals(decalScene());
 
     expect(scene.pendingTextureNames()).toContain('BLOOD.TGA');
+    scene.dispose();
+  });
+
+  test('one texture under two funcs is two materials over one texture slot (#262)', () => {
+    // The func is the blend, so it is part of what a decal material *is*; the
+    // texture is still decoded once, whichever blend draws it.
+    const scene = new WorldScene();
+    const quad = (vob: number, alphaFunc: number) => ({
+      ...decalScene().groups[0], alphaFunc, vobIds: new Uint32Array([vob]).buffer,
+    });
+    scene.setDecals({ groups: [quad(6, 2), quad(7, 3)], stats: { decals: 2, textures: 1 } });
+
+    const meshes = scene.root.children.filter(
+      (child) => (child as THREE.InstancedMesh).isInstancedMesh,
+    ) as THREE.InstancedMesh[];
+    const [blend, add] = meshes.map((mesh) => mesh.material as THREE.MeshBasicMaterial);
+    expect(blend).not.toBe(add);
+    expect(blend.blending).toBe(THREE.NormalBlending);
+    expect(add.blending).toBe(THREE.AdditiveBlending);
+    expect(scene.pendingTextureNames().filter((name) => name === 'BLOOD.TGA')).toHaveLength(1);
     scene.dispose();
   });
 
@@ -1642,7 +1663,7 @@ describe('WorldScene after a structural op', () => {
     const scene = built();
     const decals = () => ({
       groups: [{
-        texture: 'BLOOD.TGA', count: 1,
+        texture: 'BLOOD.TGA', alphaFunc: 2, count: 1,
         positions: new Float32Array([600, 0, 0]).buffer,
         sizes: new Float32Array([50, 50]).buffer,
         vobIds: new Uint32Array([6]).buffer,

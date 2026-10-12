@@ -38,6 +38,8 @@ function vobIndex(vobs: Array<{
   decal?: [number, number];
   /** The visual's own `decalAlphaWeight`, 0-255. Defaults to opaque. */
   decalAlpha?: number;
+  /** `AlphaFunction`; BLEND (2) when unset, the commonest in retail. */
+  decalFunc?: number;
 }>): VobIndex {
   const classes: string[] = [];
   const visuals: string[] = [];
@@ -77,6 +79,9 @@ function vobIndex(vobs: Array<{
     decalDimensions: new Float32Array(vobs.flatMap((vob) => vob.decal ?? [])).buffer,
     decalAlphaWeights: new Uint8Array(
       vobs.flatMap((vob) => (vob.decal === undefined ? [] : [vob.decalAlpha ?? 255])),
+    ).buffer,
+    decalAlphaFuncs: new Uint8Array(
+      vobs.flatMap((vob) => (vob.decal === undefined ? [] : [vob.decalFunc ?? 2])),
     ).buffer,
   };
 }
@@ -626,6 +631,26 @@ describe('the decals', () => {
     expect(web.count).toBe(2);
     expect(Array.from(new Uint32Array(web.vobIds))).toEqual([0, 2]);
     expect(built.stats).toEqual({ decals: 3, textures: 2 });
+  });
+
+  it('splits a texture by alpha function, since the func is the blend (#262)', () => {
+    // `decalAlphaFunc` picks how a quad is blended, which is material state, so
+    // one texture under two funcs is two draws. Retail has eight such textures
+    // across the three worlds — 26 groups become 34 — and the spider web here
+    // is one of them: BLEND on most VOBs, ADD on some.
+    const built = buildDecalBillboards(vobIndex([
+      { visual: 'OWDISPIDERWEB.TGA', visualType: 'DECAL', decal: [1, 1], decalFunc: 2 },
+      { visual: 'OWDISPIDERWEB.TGA', visualType: 'DECAL', decal: [1, 1], decalFunc: 3 },
+      { visual: 'OWDISPIDERWEB.TGA', visualType: 'DECAL', decal: [1, 1], decalFunc: 2 },
+    ]));
+
+    const byFunc = new Map(built.groups.map((group) => [group.alphaFunc, group]));
+    expect([...byFunc.keys()].sort()).toEqual([2, 3]);
+    expect(Array.from(new Uint32Array(byFunc.get(2)!.vobIds))).toEqual([0, 2]);
+    expect(Array.from(new Uint32Array(byFunc.get(3)!.vobIds))).toEqual([1]);
+    for (const group of built.groups) expect(group.texture).toBe('OWDISPIDERWEB.TGA');
+    // Still one texture: the stat counts what is decoded, not what is drawn.
+    expect(built.stats).toEqual({ decals: 3, textures: 1 });
   });
 
   it('leaves every VOB that is not a decal alone', () => {

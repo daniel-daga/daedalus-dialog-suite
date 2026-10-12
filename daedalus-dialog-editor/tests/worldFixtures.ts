@@ -130,6 +130,7 @@ function visualTypeColumns(vobVisuals: readonly string[]) {
     // Opaque, which is what the archive's default is: a fixture that dimmed
     // its decals would make every viewport assertion read through a filter.
     decalAlphaWeights: Uint8Array.from(decals.map(() => 255)).buffer,
+    decalAlphaFuncs: Uint8Array.from(decals.map(() => 2)).buffer,
   };
 }
 
