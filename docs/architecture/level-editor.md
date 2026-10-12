@@ -3895,9 +3895,28 @@ array per entry rather than the lookup — pre-sizing that array took 45 ms back
 to 32 — because the directory is resolved once per source and each child then
 asked for by name, never a path walk per entry.
 
-**The retail numbers are not these.** No CI machine and no fixture has a Gothic
-install; `zenkit-node/scripts/bench-vfs-sources.js` is what produces them, run
-against an install on this commit and on the one before it.
+**On a retail install the cost is smaller in absolute terms and right at the
+bar in ratio** (#239; 2026-10-12, Windows, warm cache). The mount list is what
+the editor builds for this machine's Steam Gothic II, plus one mod: the six
+VDFs, the three `_work/Data/*/_compiled` trees GMBT left there, and
+`Data/ModVDF/BEPPO.mod` — ten sources. The baseline is this binding with the
+second `mount_*` call removed and rebuilt, which is all the facet changed in
+`openVfs`; `zenkit-node/scripts/bench-vfs-sources.js --install <dir> --mod
+<file>` under `node --expose-gc`, four runs after and three before:
+
+| | one mount each | mounted twice |
+|---|---|---|
+| `openVfs`, ten sources | 64–78 ms | 120–158 ms |
+| resident after it | +2.1–2.3 MB | +4.5–4.8 MB |
+| `vfsList /`, 145 entries | — | 0.3 ms |
+
+About **1.9× the time and 2.1× the memory** — which is +60 ms and +2.5 MB on
+a world open that takes seconds. Nearly all the time is the three loose trees
+(20–38 ms each when mounted alone); a VDF costs 1–17 ms. The memory ratio
+crossing 2× is what doubling an index costs, and building the per-source
+mounts lazily on the browser's first provenance request would win back 2.5 MB,
+so it is not done. The resident figure counts the trees, not the mapped
+archive bytes, which nothing touches during a mount.
 
 Opening a legacy folder atomically creates its v1 project file. Malformed or
 ambiguous files block opening; missing or unreadable sources are skipped and

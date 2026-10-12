@@ -3267,29 +3267,6 @@ If the re-run shows the same spread with no cliff, the honest outcome is no gap
 rule at all and this closes as answered rather than as built. Corpus is
 `mdk/Content` — the maintainer's machine, not CI, so this is not agent-ready either.
 
-### 16.36 The per-source mount cost on a retail install is unmeasured (2026-09-10; #239)
-
-The source facet landed (architecture §6, §9): `openVfs` mounts every source
-twice, and `vfsList` says which mounts hold each entry. Its cost is measured
-only on a synthetic pair of loose `_compiled` trees on linux — roughly 2× the
-mount time and 1.55× the memory, written up in architecture §9. That is the
-`mount_host` case, and it is the one that was already expensive.
-
-**What is not known is the retail one.** Six VDFs plus a mod, on Windows, where
-`mount_disk` is index-only and the price is the directory trees rather than a
-directory walk. The acceptance the spike set — "no more than twice the time and
-memory it takes today" — is answered for the synthetic case and open for the
-real one.
-
-`zenkit-node/scripts/bench-vfs-sources.js --install <dir>` produces it. There is
-deliberately no switch to turn provenance off, so the baseline is the commit
-before it landed: run the bench there, run it again on master, keep both. If the
-retail cost turns out to be worse than 2×, the fix already has a shape — build
-the per-source mounts lazily, on the browser's first provenance request, so the
-world open pays nothing for a panel nobody opened.
-
-The maintainer's machine, not CI: no runner has a Gothic install.
-
 ### 16.40 Six of a decal's seven fields are still invisible (2026-09-10; #249, #262)
 
 The decals are drawn and `git log` carries it — a camera-facing quad of the

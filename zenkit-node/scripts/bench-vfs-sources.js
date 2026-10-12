@@ -19,11 +19,13 @@
 // (`zen-world`'s `gothicAssetSources`, the measured ZenGin load order); bare
 // paths are mounted in the order given.
 //
-// **The baseline is the previous commit.** There is no switch to turn
-// provenance off — an option that exists only to be benchmarked is scaffolding —
-// so "today" means: check out the commit before per-source mounts landed,
-// rebuild the addon, run this, and keep the numbers. Then run it again on this
-// commit. The `openVfs` row is what the acceptance compares.
+// **The baseline is a local build.** There is no switch to turn provenance off —
+// an option that exists only to be benchmarked is scaffolding — and the commit
+// before per-source mounts landed is not in this repository's history. So
+// "today" means: delete the two `own->mount_*` calls in `openVfs`
+// (`src/assets.cc`), `node-gyp rebuild`, run this, keep the numbers, then
+// restore the source and the addon. The `openVfs` row is what the acceptance
+// compares; the 2026-10-12 retail run is architecture level-editor.md §9.
 
 const path = require('node:path');
 const v8 = require('node:v8');
@@ -78,7 +80,9 @@ function main() {
   if (install !== null) {
     // Required lazily: this is the one place the binding's scripts reach into a
     // sibling workspace, and a bare-path run must not depend on it building.
-    const { gothicAssetSources } = require('zen-world');
+    // By path, as `describe-vfs-root.js` does: `zen-world` is not a dependency
+    // of this package, so the bare specifier never resolved.
+    const { gothicAssetSources } = require(path.resolve(__dirname, '../../zen-world'));
     const fs = require('node:fs');
     sources = gothicAssetSources(install.replace(/\\/g, '/'), (candidate) => fs.existsSync(candidate), mods)
       .map((candidate) => path.normalize(candidate));

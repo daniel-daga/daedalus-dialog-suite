@@ -310,7 +310,7 @@ every retail world counts thousands, and a bar that shouted on those would stop
 being read.
 
 Adjacent and already tracked: #245's retail-root measurement (architecture §6)
-and #239 (per-source mount cost unmeasured).
+and #239 (per-source mount cost, measured 2026-10-12 — architecture §9).
 
 ---
 
