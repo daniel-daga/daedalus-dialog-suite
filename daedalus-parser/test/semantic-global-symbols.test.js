@@ -422,3 +422,31 @@ instance Full(Queue)
     'Without a declaration order the shared statement is still written once'
   );
 });
+
+// #383: both reference grammars accept exponent and bare-point floats and an
+// array parameter. A float keeps its spelling; a parameter keeps its size.
+test('float literal forms and array parameters round-trip (#383)', () => {
+  const { SemanticCodeGenerator } = require('../dist/codegen/generator');
+  const source = `const float BIG = 1e5;
+const float HALF = .5;
+const float FIVE = 5.;
+const float SMALL = 1.5E-3;
+
+func void Sum(var int a[3], var float f)
+{
+	f = 2.5e+2 * .5;
+};
+`;
+
+  const model = parseSemanticModel(source);
+  assert.equal(model.hasErrors, false, 'Should parse without errors');
+  assert.deepEqual(
+    ['BIG', 'HALF', 'FIVE', 'SMALL'].map((name) => model.constants[name].value),
+    ['1e5', '.5', '5.', '1.5E-3']
+  );
+  assert.deepEqual(model.functions.Sum.parameters, [
+    { keyword: 'var', type: 'int', name: 'a', size: '3' },
+    { keyword: 'var', type: 'float', name: 'f' }
+  ]);
+  assert.equal(new SemanticCodeGenerator().generateSemanticModel(model), source);
+});

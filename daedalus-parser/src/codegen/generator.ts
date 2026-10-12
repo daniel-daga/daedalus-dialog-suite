@@ -551,7 +551,7 @@ export class SemanticCodeGenerator {
     if (leading) lines.push(leading);
 
     const parameters = (func.parameters || [])
-      .map(p => [p.keyword, p.type, p.name].filter(Boolean).join(' '))
+      .map(p => [p.keyword, p.type, p.size ? `${p.name}[${p.size}]` : p.name].filter(Boolean).join(' '))
       .join(', ');
     lines.push(generateDeclarationHeader(
       `${funcKeyword} ${returnType} ${func.name}${spaceBeforeParen}(${parameters})`,

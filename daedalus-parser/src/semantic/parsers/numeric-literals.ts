@@ -2,12 +2,12 @@
 export function parseNumericLiteral(text: string): number | string {
   const value = Number(text);
   // JavaScript can round large integers, remove decimal zeroes or leading
-  // zeroes, and emit exponent notation that the Daedalus grammar cannot read.
+  // zeroes, and respell `1e5`, `.5` or `5.` (#383).
   // Canonical finite numbers stay numbers for existing editor consumers.
   return Number.isFinite(value) && String(value) === text ? value : text;
 }
 
-/** Emit edited numeric values without JavaScript's unsupported exponent notation. */
+/** Emit edited numeric values in plain decimal, never JavaScript's exponent notation. */
 export function formatNumericValue(value: number | string | boolean): string {
   if (typeof value !== 'number') return String(value);
   if (!Number.isFinite(value)) throw new Error('Cannot generate a non-finite Daedalus number.');

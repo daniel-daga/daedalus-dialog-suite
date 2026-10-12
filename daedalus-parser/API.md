@@ -228,7 +228,7 @@ Represents a function declaration.
 class DialogFunction {
   name: string;              // Function name
   returnType: string;        // Return type (int, void, etc.)
-  parameters?: FunctionParameter[]; // Declared parameters ({ keyword?, type, name }), if any
+  parameters?: FunctionParameter[]; // Declared parameters ({ keyword?, type, name, size? }), if any
   sourceHeader?: SourceHeader; // Commented header with editable token ranges
   declarationSuffix?: string; // Commented gap between the closing body brace and semicolon
   calls: string[];           // List of function calls made

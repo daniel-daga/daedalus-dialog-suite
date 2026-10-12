@@ -325,6 +325,10 @@ export class DeclarationVisitor {
       if (keyword) {
         parameter.keyword = keyword;
       }
+      const sizeNode = child.childForFieldName('size');
+      if (sizeNode) {
+        parameter.size = sizeNode.text;
+      }
       parameters.push(parameter);
     }
     return parameters;

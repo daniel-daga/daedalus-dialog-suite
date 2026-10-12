@@ -831,6 +831,8 @@ export interface FunctionParameter {
   keyword?: string;
   type: string;
   name: string;
+  /** Array size as written (`var int a[3]`), if the parameter is an array. */
+  size?: string;
 }
 
 /**

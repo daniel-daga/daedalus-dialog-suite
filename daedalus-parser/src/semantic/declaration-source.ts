@@ -44,6 +44,7 @@ function headerLayout(node: TreeSitterNode): SourceHeader {
     add(`parameter:${index}:keyword`, parameterKeyword(parameter));
     add(`parameter:${index}:type`, parameter.childForFieldName('type'));
     add(`parameter:${index}:name`, parameter.childForFieldName('name'));
+    add(`parameter:${index}:size`, parameter.childForFieldName('size'));
   });
   const comments: string[] = [];
   const collect = (current: TreeSitterNode) => {

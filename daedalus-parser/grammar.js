@@ -150,6 +150,8 @@ module.exports = grammar({
       optional(choice(/[vV][aA][rR]/, /[cC][oO][nN][sS][tT]/)),
       field('type', $._type),
       field('name', $.identifier),
+      // `var int a[3]` (#383): both reference grammars take an array parameter.
+      optional(seq('[', field('size', $._expression), ']')),
     ),
 
     _type: $ => choice(
@@ -270,7 +272,8 @@ module.exports = grammar({
     // DaedalusCompiler grammars, so `a^b` is one name. Neither has xor, nor do we (#389).
     identifier: $ => prec(-1, /[a-zA-Z_\u0080-\u00FF][a-zA-Z0-9_@^\u0080-\u00FF]*/),
 
-    number: $ => /\d+(\.\d+)?/,
+    // `1e5`, `.5` and `5.` too (#383), as both reference grammars read floats.
+    number: $ => /(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?/,
 
     // Daedalus has no string escape sequences (docs/reference/parser-roundtrip-scope.md):
     // a backslash is an ordinary character and the string ends at the next `"`.

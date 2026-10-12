@@ -600,14 +600,14 @@ Checked against ours on 2026-10-10:
 | `@`/`^` continuing an identifier | yes | yes | yes (#383) |
 | `var int a, b;`, `const int A = 1, B = 2;` | yes | yes | yes (#383) |
 | `instance a, b(C);` without a body | yes | yes | yes (#383) |
-| float `1e5`, `.5`, `5.` | yes | yes | **no** (#383) |
-| array parameter `var int a[3]` | yes | yes | **no** (#383) |
+| float `1e5`, `.5`, `5.` | yes | yes | yes (#383) |
+| array parameter `var int a[3]` | yes | yes | yes (#383) |
 | `&=`, `\|=` | yes | no | no, by decision (#389) |
 | `extern func` | no | yes | no, by decision (#389) |
 | `\"` escape in a string | no | yes | no, by design (#389) |
 | `^` as xor | no | no | no, removed (#389) |
-| `while`/`break`/`continue` | no | yes | no (#383 item 4) |
-| `namespace`, `META` | yes | no | no (#383 item 4) |
+| `while`/`break`/`continue` | no | yes | no (#392) |
+| `namespace`, `META` | yes | no | no (#392) |
 
 The four #389 rows were settled by one rule: accept only what there is
 evidence the game's compiler accepts, since a construct the editor accepts and
