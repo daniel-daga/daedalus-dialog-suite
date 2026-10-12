@@ -81,3 +81,30 @@ test('continuation lines of a multi-line statement keep their source indentation
 `;
   assert.equal(roundTrip(source), source);
 });
+
+test('#395: a raw if statement written without a trailing semicolon gains none', () => {
+  const statement = 'if ( Npc_IsDrawingSpell(slf) == spell ) { return; }';
+  const model = parseSemanticModel(`func void F() { ${statement} AI_ReadySpell(slf, spell, 5); };`);
+  assert.equal(model.hasErrors, false);
+  const generated = new SemanticCodeGenerator().generateFunction(model.functions.F);
+  assert.equal(parseSemanticModel(generated).hasErrors, false, generated);
+  assert.match(generated, /\{ return; \}\s*\n/, generated);
+});
+
+// #395: a structured if keeps the spelling the MDK wrote it in.
+for (const statement of [
+  'IF (Wasili_XP == FALSE) { B_GivePlayerXP(5); };',
+  'if (Kapitel == 1) { B_GivePlayerXP(5); }',
+  'if (Kapitel == 1) { B_GivePlayerXP(5); } else { };',
+  'if (Kapitel == 1) { B_GivePlayerXP(5); } else { B_GivePlayerXP(1); }'
+]) {
+  test(`#395: an unedited structured if regenerates in its source spelling: ${statement}`, () => {
+    const model = parseSemanticModel(`func void F() { ${statement} AI_StopProcessInfos(self); };`);
+    assert.equal(model.hasErrors, false);
+    assert.equal(model.functions.F.actions[0].type, 'ConditionalAction');
+    const generated = new SemanticCodeGenerator().generateFunction(model.functions.F);
+    assert.equal(parseSemanticModel(generated).hasErrors, false, generated);
+    const collapse = text => text.replace(/\s+/g, '');
+    assert.ok(collapse(generated).includes(`${collapse(statement)}AI_StopProcessInfos`), generated);
+  });
+}

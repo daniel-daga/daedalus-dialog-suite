@@ -3,6 +3,7 @@ const assert = require('node:assert');
 const { createParser } = require('./helpers');
 const { SemanticModelBuilderVisitor, parseSemanticModel } = require('../dist/semantic/semantic-visitor-index');
 const { SemanticCodeGenerator } = require('../dist/codegen/generator');
+const { deserializeSemanticModel } = require('../dist/semantic/semantic-model');
 
 const parser = createParser();
 
@@ -251,4 +252,23 @@ func int DIA_Items_Cond() { if (npc_hasitems(other, ItMi_Gold) >= 100) { return 
   assert.strictEqual(conditions[0].type, 'NpcHasItemsCondition', 'lowercase call should still map to NpcHasItemsCondition');
   assert.strictEqual(conditions[0].operator, '>=');
   assert.strictEqual(conditions[0].value, 100);
+});
+
+// #395: a reference keeps its own spelling, not the declaration's, until it is relinked.
+test('a dialog function reference keeps its source casing until relinked', () => {
+  const source = `
+    instance DIA_Wasili_PERM (C_INFO) { information = DIA_Wasili_PERM_Info; };
+    func void DIA_Wasili_perm_Info () { AI_StopProcessInfos (self); };
+    func void DIA_Wasili_Other_Info () { AI_StopProcessInfos (self); };
+  `;
+  const generator = new SemanticCodeGenerator({ includeComments: true, sectionHeaders: false, preserveSourceStyle: true });
+  const model = parseSemanticModel(source);
+  assert.equal(model.hasErrors, false);
+  assert.match(generator.generateDialog(model.dialogs.DIA_Wasili_PERM), /information\s*=\s*DIA_Wasili_PERM_Info;/);
+
+  const roundTripped = deserializeSemanticModel(JSON.parse(JSON.stringify(model)));
+  assert.match(generator.generateDialog(roundTripped.dialogs.DIA_Wasili_PERM), /information\s*=\s*DIA_Wasili_PERM_Info;/);
+
+  model.dialogs.DIA_Wasili_PERM.properties.information = model.functions.DIA_Wasili_Other_Info;
+  assert.match(generator.generateDialog(model.dialogs.DIA_Wasili_PERM), /information\s*=\s*DIA_Wasili_Other_Info;/);
 });

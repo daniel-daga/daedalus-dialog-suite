@@ -2,6 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { Script } = require('node:vm');
 const { parseSemanticModel, SemanticCodeGenerator } = require('../dist/semantic/semantic-visitor-index');
+const { deserializeSemanticModel } = require('../dist/semantic/semantic-model');
 
 // Review regressions from 2026-09-29, retained as focused fidelity checks.
 const generator = new SemanticCodeGenerator({ includeComments: false, sectionHeaders: false });
@@ -81,3 +82,50 @@ for (const call of [
     assert.ok(body.includes(call), body);
   });
 }
+
+// #395: an unedited projected guard keeps its source spelling. The MDK writes
+// guards the structured model cannot spell back (no parentheses, `(A) && (B)`,
+// `== FALSE`, `IF`, `return 1`), and regenerating them was Tier 1 token drift.
+const styledGenerator = new SemanticCodeGenerator({ includeComments: true, sectionHeaders: false, preserveSourceStyle: true });
+const collapse = text => text.replace(/\s+/g, ' ').trim();
+
+function regenerate(source, name = 'Cond') {
+  const model = parseSemanticModel(source);
+  assert.equal(model.hasErrors, false);
+  return { model, generated: styledGenerator.generateFunction(model.functions[name]) };
+}
+
+for (const statement of [
+  'if Npc_IsInState (self, ZS_Talk) { return TRUE; };',
+  'if (Npc_IsInState(self, ZS_Talk)) && (B_GetPlayerCrime(self) != CRIME_NONE) { return TRUE; };',
+  'if (Npc_IsDead(UndeadDragon) == FALSE) && (ORkSturmDI == FALSE) { return TRUE; };',
+  'if !(Npc_IsDead (Alvares)) && !(Npc_IsDead (Engardo)) { return TRUE; };',
+  'IF (Npc_KnowsInfo(other, DIA_First)) { return TRUE; };',
+  'return 1;'
+]) {
+  test(`#395: an unedited guard regenerates in its source spelling: ${statement}`, () => {
+    const { generated } = regenerate(`instance D(C_INFO) { condition = Cond; }; func int Cond() { ${statement} };`);
+    assert.ok(collapse(generated).includes(statement), generated);
+  });
+}
+
+test('#395: an edited guard is generated from the conditions, not the stale source', () => {
+  const guard = 'if (Npc_KnowsInfo(other, DIA_First)) && (Npc_KnowsInfo(other, DIA_Second)) { return TRUE; };';
+  const { model } = regenerate(`instance D(C_INFO) { condition = Cond; }; func int Cond() { ${guard} };`);
+  const cond = model.functions.Cond;
+  cond.conditions.pop();
+  const generated = styledGenerator.generateFunction(cond);
+  assert.ok(generated.includes('DIA_First'), generated);
+  assert.ok(!generated.includes('DIA_Second'), generated);
+
+  cond.conditionOperator = 'OR';
+  cond.conditions.push(cond.conditions[0]);
+  assert.ok(collapse(styledGenerator.generateFunction(cond)).includes('|| Npc_KnowsInfo'));
+});
+
+test('#395: the source spelling survives the editor\'s JSON round trip', () => {
+  const source = 'instance D(C_INFO) { condition = Cond; }; func int Cond() { if Npc_IsInState (self, ZS_Talk) { return TRUE; }; };';
+  const model = deserializeSemanticModel(JSON.parse(JSON.stringify(parseSemanticModel(source))));
+  const generated = styledGenerator.generateFunction(model.functions.Cond);
+  assert.ok(collapse(generated).includes('if Npc_IsInState (self, ZS_Talk) {'), generated);
+});

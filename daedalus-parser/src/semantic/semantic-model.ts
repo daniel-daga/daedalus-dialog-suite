@@ -423,7 +423,8 @@ export class Action implements CodeGeneratable {
 
   generateCode(_options: CodeGenOptions): string {
     const trimmed = this.action.trimEnd();
-    return trimmed.endsWith(';') ? trimmed : `${trimmed};`;
+    // A block statement needs no terminator; the MDK writes `if (…) { … }` bare.
+    return trimmed.endsWith(';') || trimmed.endsWith('}') ? trimmed : `${trimmed};`;
   }
 
   toDisplayString(): string {
@@ -471,6 +472,12 @@ export class ConditionalAction implements CodeGeneratable {
    * or `if (a) && (b)` (#384) — so it is written back the same way.
    */
   public bareCondition?: boolean;
+  /** The source spelling of a keyword that is not lowercase `if` — the MDK writes `IF` (#395). */
+  public keyword?: string;
+  /** The source wrote `else { }`; it is kept while the else branch stays empty (#395). */
+  public emptyElse?: boolean;
+  /** The source closed the statement without its optional `;` (#395). */
+  public unterminated?: boolean;
 
   constructor(condition: string, thenActions: DialogAction[] = [], elseActions: DialogAction[] = []) {
     this.condition = condition;
@@ -486,18 +493,20 @@ export class ConditionalAction implements CodeGeneratable {
     // Editor-authored headers can end in a line comment. Close on a new line;
     // a // inside a string merely adds harmless whitespace after the expression.
     const closingLine = condition.includes('//') ? '\n' : '';
-    lines.push(this.bareCondition && !closingLine ? `if ${condition}` : `if (${condition}${closingLine})`);
+    const keyword = this.keyword ?? 'if';
+    const close = this.unterminated ? '}' : '};';
+    lines.push(this.bareCondition && !closingLine ? `${keyword} ${condition}` : `${keyword} (${condition}${closingLine})`);
     lines.push('{');
     lines.push(...this.renderBranch(this.thenActions, indentUnit, options));
 
-    if (this.elseActions.length > 0) {
+    if (this.elseActions.length > 0 || this.emptyElse) {
       lines.push('}');
       lines.push('else');
       lines.push('{');
       lines.push(...this.renderBranch(this.elseActions, indentUnit, options));
-      lines.push('};');
+      lines.push(close);
     } else {
-      lines.push('};');
+      lines.push(close);
     }
 
     return lines.join('\n');
@@ -863,6 +872,8 @@ export class DialogFunction {
   /** Body comments around a projected guard or unconditional TRUE return. */
   public conditionBodyLeadingComments?: string[];
   public conditionBodyTrailingComments?: string[];
+  /** The projected guard's source statement, emitted while `snapshotConditions` still matches. */
+  public conditionSource?: ConditionSource;
   /** True when a projected condition body contains an explicit unconditional success return. */
   public hasExplicitTrueReturn?: boolean;
   public hasExplicitBodyContent?: boolean;
@@ -973,6 +984,24 @@ export interface DialogSourceBody {
   propertyValues: { [key: string]: string | number | boolean };
 }
 
+/** Lossless spelling of a projected condition body; `conditions` is its `snapshotConditions` baseline. */
+export interface ConditionSource {
+  text: string;
+  conditions: string;
+}
+
+/** Order-insensitive in keys, so a hydrated condition compares equal to the parsed one. */
+export function snapshotConditions(func: Pick<DialogFunction, 'conditions' | 'conditionOperator' | 'actions'>): string {
+  const canonical = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(canonical);
+    if (!value || typeof value !== 'object') return value;
+    return Object.keys(value).sort()
+      .filter(key => (value as Record<string, unknown>)[key] !== undefined)
+      .map(key => [key, canonical((value as Record<string, unknown>)[key])]);
+  };
+  return JSON.stringify([func.conditionOperator ?? 'AND', func.actions.length, canonical(func.conditions)]);
+}
+
 /** Function bodies can change independently; constructor references compare by name. */
 export function snapshotDialogProperties(properties: DialogProperties): DialogSourceBody['propertyValues'] {
   const values = createNameRecord<string | number | boolean>();
@@ -1033,6 +1062,8 @@ export class Dialog {
   public propertyLeadingComments?: { [key: string]: string[] };
   /** Same-line trailing comment after a C_INFO property, keyed by property name. */
   public propertyTrailingComments?: { [key: string]: string };
+  /** A function reference spelled in a casing other than its declaration's, kept while it still names that function (#395). */
+  public propertyReferenceSpelling?: { [key: string]: string };
   /** Standalone comments after the last property, before the closing `};`. */
   public trailingBodyComments?: string[];
   /** Editable view of the current information function, or standalone legacy actions. */
@@ -1115,6 +1146,9 @@ export class Dialog {
     }
     if (json.propertyTrailingComments && typeof json.propertyTrailingComments === 'object') {
       dialog.propertyTrailingComments = json.propertyTrailingComments;
+    }
+    if (json.propertyReferenceSpelling && typeof json.propertyReferenceSpelling === 'object') {
+      dialog.propertyReferenceSpelling = json.propertyReferenceSpelling;
     }
     if (Array.isArray(json.trailingBodyComments)) {
       dialog.trailingBodyComments = json.trailingBodyComments;

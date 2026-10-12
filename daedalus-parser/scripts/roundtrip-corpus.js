@@ -209,29 +209,19 @@ function diffMultiset(beforeItems, afterItems) {
   return { beforeOnly, afterOnly };
 }
 
+// The formatter's policy (docs/architecture/parser-fidelity.md): valid UTF-8,
+// otherwise Windows-1252. Statistical detection read German MDK scripts as
+// ISO-8859-7 or x-mac-cyrillic (#395).
 function parseFileWithFallback(filePath, parser) {
-  try {
-    return parser.parseFile(filePath, { detectEncoding: true });
-  } catch (error) {
-    const buffer = fs.readFileSync(filePath);
-    const fallbackEncodings = ['utf8', 'windows-1252', 'latin1'];
-
-    for (const encoding of fallbackEncodings) {
-      try {
-        const decoded = iconv.decode(buffer, encoding);
-        const parsed = parser.parse(decoded);
-        parsed.filePath = filePath;
-        parsed.encoding = encoding;
-        parsed.encodingConfidence = 0;
-        parsed.fallbackEncoding = true;
-        return parsed;
-      } catch (_decodeError) {
-        // Try next encoding.
-      }
-    }
-
-    throw error;
-  }
+  const buffer = fs.readFileSync(filePath);
+  const utf8 = iconv.decode(buffer, 'utf8');
+  const hasBom = buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf;
+  const isUtf8 = Buffer.from(utf8, 'utf8').equals(hasBom ? buffer.subarray(3) : buffer);
+  const parsed = parser.parse(isUtf8 ? utf8 : iconv.decode(buffer, 'windows-1252'));
+  parsed.filePath = filePath;
+  parsed.encoding = isUtf8 ? 'utf8' : 'windows-1252';
+  parsed.fallbackEncoding = !isUtf8;
+  return parsed;
 }
 
 const BOM = /^﻿/;

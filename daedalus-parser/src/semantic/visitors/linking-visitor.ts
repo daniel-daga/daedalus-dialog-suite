@@ -11,7 +11,8 @@ import {
   DialogAction,
   ConditionalAction,
   SourceLine,
-  snapshotDialogProperties
+  snapshotDialogProperties,
+  snapshotConditions
 } from '../semantic-model';
 import { ActionParsers } from '../parsers/action-parsers';
 import { ConditionParsers } from '../parsers/condition-parsers';
@@ -357,6 +358,7 @@ export class LinkingVisitor {
       // Preserve this intentional condition state explicitly; an empty projected
       // body alone is not enough to infer a success return during generation.
       this.currentFunction.hasExplicitTrueReturn = true;
+      this.captureConditionSource(executable[0]);
       return;
     }
 
@@ -379,6 +381,7 @@ export class LinkingVisitor {
               ? clause.childForFieldName('function')?.text : undefined;
             this.processCondition(clause, functionName);
           }
+          this.captureConditionSource(guard);
           return;
         }
       }
@@ -389,6 +392,11 @@ export class LinkingVisitor {
         ? new CommentAction(statement.text) : new Action(statement.text.trim());
       this.recordActionForCurrentFunction(atLine(action, statement));
     }
+  }
+
+  private captureConditionSource(statement: TreeSitterNode): void {
+    if (!this.currentFunction) return;
+    this.currentFunction.conditionSource = { text: statement.text, conditions: snapshotConditions(this.currentFunction) };
   }
 
   private captureConditionBodyComments(statements: TreeSitterNode[], statement: TreeSitterNode): void {
@@ -458,6 +466,9 @@ export class LinkingVisitor {
 
         if (this.functions[functionName]) {
           value = this.functions[functionName];
+          if (rightNode.text !== functionName) {
+            (this.currentInstance.propertyReferenceSpelling ??= {})[propertyName] = rightNode.text;
+          }
         } else {
           value = rightNode.text;
         }
@@ -688,6 +699,10 @@ export class LinkingVisitor {
     const conditionText = parenthesized ? conditionNode.text.slice(1, -1).trim() : conditionNode.text.trim();
     const action = new ConditionalAction(conditionText, thenActions, elseActions || []);
     if (!parenthesized) action.bareCondition = true;
+    const keyword = node.child(0)?.text;
+    if (keyword && keyword !== 'if') action.keyword = keyword;
+    if (alternativeNode && elseActions?.length === 0) action.emptyElse = true;
+    if (node.child(node.childCount - 1)?.type !== ';') action.unterminated = true;
     return action;
   }
 

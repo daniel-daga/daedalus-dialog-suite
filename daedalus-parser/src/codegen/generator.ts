@@ -11,13 +11,15 @@ import {
   CodeGeneratable,
   resolveDialogFunction,
   getDialogFunctionName,
-  snapshotDialogProperties
+  snapshotDialogProperties,
+  snapshotConditions
 } from '../semantic/semantic-model';
 import { collectReachableFunctions } from '../semantic/cross-references';
 import { continuationIndent, indentGeneratedCode } from '../semantic/code-formatting';
 import { generateActionCode } from '../semantic/action-codegen';
 import { formatNumericValue } from '../semantic/parsers/numeric-literals';
 import { generateDeclarationHeader } from '../semantic/declaration-source';
+import { namesEqual } from '../semantic/name-utils';
 import { resolveCaseInsensitive } from '../semantic/name-utils';
 
 // Structural shape shared by GlobalConstant / GlobalVariable / GlobalInstance
@@ -511,6 +513,10 @@ export class SemanticCodeGenerator {
   }
 
   private formatDialogPropertyValue(dialog: Dialog, key: string, value: string | number | boolean | DialogFunction): string {
+    const spelling = dialog.propertyReferenceSpelling?.[key];
+    if (value instanceof DialogFunction && spelling && namesEqual(spelling, value.name)) {
+      return spelling;
+    }
     if (typeof value === 'string' && ['information', 'condition'].includes(key.toLowerCase()) &&
         getDialogFunctionName(dialog, key) !== undefined) {
       return value;
@@ -573,6 +579,9 @@ export class SemanticCodeGenerator {
       bodyLines.forEach(line => {
         lines.push(`${indent}${line}`);
       });
+    } else if (this.options.preserveSourceStyle && func.conditionSource &&
+               func.conditionSource.conditions === snapshotConditions(func)) {
+      lines.push(`${indent}${func.conditionSource.text}`);
     } else if (func.conditions.length > 0) {
       // Generate condition function body
       this.generateConditionBody(func.conditions, lines, indent, func.conditionOperator);

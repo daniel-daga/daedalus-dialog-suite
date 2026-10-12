@@ -185,6 +185,15 @@ Conditional action headers use AST parentheses, never character counting;
 commented headers fall back to raw source. Editor-authored action headers also
 place their closing delimiter on a new line when `//` is present.
 
+A projected guard or unconditional return keeps its source statement in
+`conditionSource` (#395): the MDK writes guards the flat model cannot spell back
+— no parentheses, `(A) && (B)`, `== FALSE`, `IF`, `return 1`. It is emitted
+verbatim while `snapshotConditions` (operator, action count and the conditions,
+key-order-insensitive) still equals its parse-time baseline; any condition edit
+regenerates from the rows. A conditional action likewise keeps a non-lowercase
+`keyword`, an `emptyElse` and an `unterminated` (no `;`) flag, and a raw
+block statement gains no `;`.
+
 Single-dialog export uses the shared choice-reachability walk. It includes
 choice targets in both structured conditional branches and their transitive
 sub-dialogs, handles case drift, and emits each target once even with cycles.
@@ -427,7 +436,9 @@ lookups tolerate case drift: `namesEqual` / `resolveCaseInsensitive`
 (`src/semantic/name-utils.ts`, WeakMap-cached lowercase index) back
 cross-references, choice-target clustering, and `findDialogForFunction`
 (which also caches misses). Never normalize stored names — tolerance lives
-in the lookups.
+in the lookups. A C_INFO function reference spelled unlike its declaration
+keeps that spelling in `propertyReferenceSpelling` until it is relinked to a
+function of another name (#395).
 
 ## Fidelity measurement (corpus)
 
@@ -457,7 +468,11 @@ The committed fixture corpus (`test/fixtures/corpus/`, 12 files, one per
 construct family) runs fully strict via `test/roundtrip-corpus-smoke.test.js`
 — all fixtures are in the green set and the test fails if any regresses.
 The real MDK corpus is licensed/gitignored; run it locally with
-`npm run test:roundtrip-corpus -- --root <mdk path>`. Re-enabling the
+`npm run test:roundtrip-corpus -- --root <mdk path>`. It is strict-green as of
+#395 (1,725 files, exit 0); its one source syntax error is
+`AI/AI_Intern/Externals.d`, a listing of bodiless engine prototypes that no
+`.src` compiles. The script decodes by the formatter's policy below (valid
+UTF-8, else Windows-1252), so "fallback-decoded" counts the Windows-1252 files. Re-enabling the
 standalone CI corpus job is slice 8's call.
 
 ## 2026-10-03 review validation

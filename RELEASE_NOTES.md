@@ -37,3 +37,4 @@
 - #321: Waypoint pickers open their list on focus, like the other autocompletes
 - #318: Problems hints when a routine state has no bed, bench or other mob near its waypoint
 - #391: Editing a decal's size, alpha weight or blend redraws it at once
+- #395: Saving keeps a dialog condition's own spelling instead of rewriting it
