@@ -256,6 +256,20 @@ trusting master for a release, not after.
   `build/Release/tree_sitter_daedalus_binding.node`'s mtime whenever a parser
   test fails in a way the diff doesn't explain.
 
+## Empty packages in the pnpm virtual store
+
+Seen 2026-10-12 on this machine: 73 scoped packages under
+`node_modules/.pnpm/*/node_modules/@*/` — `@eslint/js`, `@types/node`,
+`@emotion/*` among them — were empty directories, all modified the same
+morning. `zenkit-node`'s lint died on `Cannot find module '@eslint/js'` and a
+`pnpm install --frozen-lockfile` did not repair them: it trusts its own
+metadata, so it relinked nothing and then failed in `daedalus-parser`'s
+postinstall on `Cannot find type definition file for 'node'`. **`pnpm install
+--force --frozen-lockfile` fixed it** in under a minute, and left both built
+`.node` addons byte-identical — their install hooks found them and built
+nothing. Cause unknown. To check for it:
+`find node_modules/.pnpm -mindepth 4 -maxdepth 4 -type d -empty`.
+
 ## Jest on Node 24
 
 - **An unhandled promise rejection kills a whole run with no test output.** If

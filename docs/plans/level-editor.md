@@ -3301,9 +3301,17 @@ re-derive it.
   MULTIPLY and MULTIPLY_ALT to two Multiply modes, DEFAULT and NONE to
   AlphaTest. Drawing it means grouping by (texture, alphaFunc) rather than by
   texture, which is a bounded multiplier on the group count and **not** a
-  material per decal. Nobody has counted how many funcs retail decals actually
-  use, so the multiplier is unmeasured; that measurement is the next step, not
-  more shader work, and it is **#262**.
+  material per decal. **Counted 2026-10-12** (`zenkit-node/scripts/
+  check-decal-alpha-funcs.js`, over the three retail worlds): four funcs —
+  BLEND x906, ADD x866, NONE x159, MULTIPLY_ALT x1 — and no DEFAULT,
+  SUBTRACT or MULTIPLY. Grouping by (texture, func) takes the drawn groups
+  from 26 to 34 (NewWorld 23 to 29), because only eight textures carry more
+  than one func: the spider webs, four blood splats, `CRDIVEINS` and
+  `CRDISLIME`. Eight extra draws against a budget under 1,500 is nothing, so
+  the measurement did not kill the change; drawing it is what is left of
+  **#262** — a `decalAlphaFuncs` column beside `decalAlphaWeights`, the
+  grouping key in `buildDecalBillboards`, and a blend per group in
+  `DecalLayer`.
 - **`decalTextureAnimFps` needs multi-frame textures.** OpenGothic's
   `loadFrames(decal.name, decal.texture_anim_fps)` walks a numbered texture
   series. The viewport loads one texture per name and has no frame clock, so
@@ -3320,7 +3328,9 @@ not a played one.
 `visualCamAlign` is the other loose end. The engine picks between a full
 billboard and a yaw-locked one from that base field; the viewport draws every
 decal as a full billboard, which is right for the common case and wrong for a
-decal authored yaw-locked. Nobody has counted how many of the 1,932 are.
+decal authored yaw-locked. Counted on the same walk (2026-10-12): 639 of the
+1,932 carry YAW (1) and the other 1,293 NONE (0), and every YAW one is an ADD
+decal. What either value does to a decal in the engine is unwitnessed.
 
 ### 16.41 The standing engine-witness list (2026-09-12; #261)
 
