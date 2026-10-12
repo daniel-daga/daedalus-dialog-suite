@@ -1383,8 +1383,22 @@ synchronous ZenKit phase, `zenkit.worker` reports the request id and phase to
 `WorldService`. The service retains that phase beside the request and world
 path; if the worker exits, the error now says which operation was running, which
 world it was operating on, and the last reported phase. `WorldService.test.ts`
-pins a crash during `open` at `vobIndex`. The retail `--file` fuzz run remains
-machine-local and is still outstanding.
+pins a crash during `open` at `vobIndex`.
+
+**The retail `--file` run, 2026-10-12: clean** (#272). Against the four retail
+worlds extracted by `scripts/extract-worlds.js` (OLDWORLD, DRAGONISLAND,
+ADDONWORLD, NEWWORLD): **0 of 800** entry-stream seeds (200 per world) failed to
+throw cleanly. A full `--counts` sweep is 99k loads (5k–52k INTEGER entries per
+world), so it was run once per distinct field instead — the entry's object
+element and name with digits normalised (`%:oCMobFire:…:zCVob|hitpoints`,
+`wayl#:zCWaypoint|waterDepth`): **0 of 258** fields (59/55/68/76) crashed, hung
+or loaded slowly. A clean NEWWORLD load is 160–220 ms with all 23,288 VOBs and
+461k polygons, so the instrument is reading the real thing. Two corrections to
+the first caveat above: the retail worlds are **BinSafe, not BINARY**, so no
+BINARY container exists to measure; and twenty random bytes over a 75 MB file
+land mostly in mesh payload, so the seeds say little about the mesh and BSP
+*chunk counts* — those stay covered only by the `mesh-extraction` and
+`corrupt-mesh` fixtures.
 
 ### 16.12 Two viewport constants only the maintainer's hands can settle
 

@@ -286,17 +286,11 @@ carries no reason. Neither survives a look:
   malformed world names what was wrong with it"*), because the browser harness
   mocks `openWorld` and can only prove the alert renders what it was handed.
 
-What is genuinely left is narrower than the row, and is one measurement rather
-than a feature: **a retail world, in the BINARY container, fuzzed with
-`--file`.** That is where §16.11 says the remaining unvalidated counts live, and
-it needs an install, so it is the maintainer's machine's — #261's kind of row, not CI's.
-
-The one message still without a reason is the crash path itself: *"the world
-worker died (zenkit worker exited with code N) — reopen the world"* names
-neither the file nor the phase it died in. The main process knows the in-flight
-request and the worker could report its phase before dying, so it is
-implementable — but it is diagnosis for a failure mode 347 seeded attempts could
-not produce, so it is a judgement call rather than obvious work.
+**Both remainders are closed.** The crash path's own message now names the
+operation, the world and the phase it died in (2026-09-27), and the retail
+`--file` fuzz ran clean on 2026-10-12 — 0 of 800 seeds and 0 of 258 distinct
+INTEGER fields across the four retail worlds, which are BinSafe rather than
+BINARY. Numbers and caveats in plan §16.11.
 
 ### C3. A world that loads but is missing assets has no report (~~#273~~)
 
