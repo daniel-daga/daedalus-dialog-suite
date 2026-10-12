@@ -34,9 +34,6 @@ importers:
       '@tanstack/react-query':
         specifier: ^5.28.4
         version: 5.90.20(react@18.3.1)
-      chardet:
-        specifier: ^2.1.1
-        version: 2.1.1
       chokidar:
         specifier: ^4.0.3
         version: 4.0.3
@@ -2049,9 +2046,6 @@ packages:
   char-regex@1.0.2:
     resolution: {integrity: sha512-kWWXztvZ5SBQV+eRgKFeh8q5sLuZY2+8WUIzlxWVTg+oGwY14qylx1KbKzHd8P6ZYkAg0xyIDU9JMHhyJMZ1jw==}
     engines: {node: '>=10'}
-
-  chardet@2.1.1:
-    resolution: {integrity: sha512-PsezH1rqdV9VvyNhxxOW32/d75r01NY7TQCmOqomRo15ZSOKbpTFVsfjghxo6JloQUCGnH4k1LGu0R4yCLlWQQ==}
 
   chokidar@4.0.3:
     resolution: {integrity: sha512-Qgzu8kfBvo+cA4962jnP1KkS6Dop5NS6g7R5LFYJr4b8Ub94PPQXUksCw9PvXoeXPRRddRNC5C1JQUR2SMGtnA==}
@@ -6541,8 +6535,6 @@ snapshots:
       supports-color: 7.2.0
 
   char-regex@1.0.2: {}
-
-  chardet@2.1.1: {}
 
   chokidar@4.0.3:
     dependencies:

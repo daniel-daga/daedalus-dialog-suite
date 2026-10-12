@@ -82,7 +82,6 @@
     "@mui/icons-material": "^5.18.0",
     "@mui/material": "^5.15.14",
     "@tanstack/react-query": "^5.28.4",
-    "chardet": "^2.1.1",
     "chokidar": "^4.0.3",
     "daedalus-parser": "workspace:*",
     "iconv-lite": "^0.7.0",

@@ -477,7 +477,7 @@ The real MDK corpus is licensed/gitignored; run it locally with
 #395 (1,725 files, exit 0); its one source syntax error is
 `AI/AI_Intern/Externals.d`, a listing of bodiless engine prototypes that no
 `.src` compiles. "Fallback-decoded" counts the files `parseFile` read as
-Windows-1252. Re-enabling the
+anything but UTF-8 — pure ASCII included, since that reads as Windows-1252. Re-enabling the
 standalone CI corpus job is slice 8's call.
 
 ## 2026-10-03 review validation
@@ -579,12 +579,19 @@ native grammar, CLI entry points and official model hydration.
 | Parser JSON stdout cannot be parsed as JSON | Human-readable banners were emitted before the JSON document | Suppress those banners in JSON mode |
 
 Statistical encoding detection misclassified a German Windows-1252 regression
-as an unsupported encoding with high confidence, and read the German MDK as
-ISO-8859-7 or x-mac-cyrillic (#395). `DaedalusParser.detectSourceEncoding` is
-therefore the one policy — valid UTF-8, else Windows-1252 — used by
-`parseFile`, the formatter and the corpus script; nothing guesses other legacy
-encodings. Windows-1250 and other encodings must be named (`encoding`,
-`--encoding`).
+as an unsupported encoding with high confidence; on the MDK, jschardet read
+German files as ISO-8859-7 or x-mac-cyrillic and chardet as ISO-8859-2, and
+neither recognises Windows-1251 in script-sized text (#395). So one detector of
+byte rules, `daedalus-parser/source-encoding` (`detectSourceEncoding`, also a
+static on `DaedalusParser`), serves `parseFile`, the formatter, the corpus
+script and the editor's `FileService` and metadata reads: pure ASCII →
+Windows-1252, valid UTF-8 → UTF-8, Central European bytes → Windows-1250
+(a byte Windows-1252 leaves unassigned, or two distinct ambiguous ones),
+anything else → Windows-1252. It reads all 1,725 MDK files as Windows-1252 but
+two, which hold literal UTF-8 replacement characters from an earlier bad save.
+Other encodings, Windows-1251 among them, must be named (`encoding`,
+`--encoding`). The module is pure JS, so the editor's main process imports it
+without loading the native addon.
 
 Header comment metadata belongs to the declaration, separately from its editable
 signature. Changes in parameter count or keyword presence move the original

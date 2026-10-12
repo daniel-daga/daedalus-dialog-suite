@@ -95,10 +95,11 @@ backup. Normal saves never write a backup.
 Before writing, `encodeWithRoundtripCheck` (in
 `src/main/utils/encodingUtils.ts`) encodes and decodes back:
 
-- Lossy + encoding was ASCII-detected or uncached → silently upgrade to
-  `windows-1252` (byte-identical for pure ASCII; the encoding Gothic tooling
-  expects), re-verify, update the cache.
-- Still lossy → **refuse the write**: `ENCODING_LOSS:` error naming up to 5
+- The encoding is the one detected on read, or `windows-1252` for a file
+  never read. Pure ASCII is detected as `windows-1252` (byte-identical, and the
+  encoding Gothic tooling expects), so an edit that adds umlauts never turns a
+  file into UTF-8 (#395).
+- Lossy → **refuse the write**: `ENCODING_LOSS:` error naming up to 5
   offending characters with positions. `?`-substitution never reaches disk.
 
 The per-file encoding cache is invalidated on external changes:

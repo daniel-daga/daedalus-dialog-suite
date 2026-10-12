@@ -86,8 +86,8 @@ second death records the file as a failure (poison-file guard).
 ## Encoding in metadata extraction
 
 Encoding detection/decoding lives in the pure helper
-`src/main/utils/encodingUtils.ts` (`detectEncoding`, `decodeBuffer`: chardet +
-windows-1250 Central-European heuristic + iconv). `FileService.readFile`
+`src/main/utils/encodingUtils.ts` (`detectEncoding`, `decodeBuffer`: the
+parser's `daedalus-parser/source-encoding` + iconv). `FileService.readFile`
 delegates to it, and `metadata.worker.ts` / the inline metadata path decode
 through it as well — workers must not import `FileService` (it pulls in
 Electron's `dialog`, unavailable in a worker). The metadata path

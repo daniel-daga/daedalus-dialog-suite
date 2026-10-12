@@ -60,7 +60,7 @@ What the suite already provides, mapped to what the brief needs:
 | Brief requirement | Existing asset in this repo |
 |---|---|
 | Daedalus script intelligence (§5) | `daedalus-parser`: tree-sitter grammar, two-pass semantic model, code generator — Node-native, in-process |
-| Windows-1252 everywhere (§5 note) | Battle-tested `iconv-lite`/`chardet` handling in `FileService` and the parser |
+| Windows-1252 everywhere (§5 note) | Battle-tested `iconv-lite` handling and one shared detector (`daedalus-parser/source-encoding`) in `FileService` and the parser |
 | Undo/redo (§1 motivation) | `historyStore.ts` / `historyActions.ts` pattern in the editor |
 | Crash-isolated heavy parsing | `MetadataWorkerPool` / worker-thread pattern (`src/main/workers/`) |
 | Validation surfaced as clickable problems | `ValidationService` + problems panel (`docs/architecture/problems-panel.md`) |

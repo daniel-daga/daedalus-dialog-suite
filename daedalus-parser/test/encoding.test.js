@@ -52,11 +52,10 @@ func void DIA_Petr_Hello_Info()
       fs.writeFileSync(windows1250File, buffer);
     });
 
-    test('reads a non-UTF-8 file as Windows-1252 unless told otherwise', () => {
+    test('detects Windows-1250 by its Central European bytes', () => {
       const result = parser.parseFile(windows1250File);
 
-      // Windows-1250 is not guessed; it needs `encoding` (next tests).
-      assert.equal(result.encoding, 'windows-1252');
+      assert.equal(result.encoding, 'windows-1250');
     });
 
     test('should correctly parse Windows-1250 file', () => {
@@ -68,16 +67,10 @@ func void DIA_Petr_Hello_Info()
     });
 
     test('should preserve Czech characters when reading Windows-1250', () => {
-      // Note: Auto-detection may detect windows-1252 instead of windows-1250
-      // For accurate character preservation, use explicit encoding (see next test)
       const result = parser.parseFile(windows1250File);
 
-      // Check that the text is readable (may have some character substitutions if detected as windows-1252)
-      const sourceText = result.rootNode.text;
-      assert.ok(sourceText.includes('Dobr'), 'Should contain start of Czech text');
-      assert.ok(sourceText.includes('den, jak se m'), 'Should contain middle of Czech text');
-      assert.ok(sourceText.includes('ž'), 'Should contain ž');
-      assert.ok(sourceText.includes('š'), 'Should contain š');
+      assert.ok(result.rootNode.text.includes('Dobrý den, jak se máš?'));
+      assert.ok(result.rootNode.text.includes('č, ř, ž, š'));
     });
 
     test('should allow specifying encoding explicitly', () => {
@@ -208,6 +201,38 @@ func void DIA_Saturas_Hallo_weißtdu ()
       assert.equal(result.encoding, 'windows-1252');
       assert.equal(result.hasErrors, false);
       assert.ok(result.rootNode.text.includes('DIA_Saturas_Hallo_weißtdu'));
+    });
+  });
+
+  // One detector for the parser and the editor (#395): its rules, byte by byte.
+  describe('detectSourceEncoding', () => {
+    const { detectSourceEncoding } = require('../src/core/source-encoding');
+
+    test('pure ASCII is Windows-1252, so a later save writes Gothic\'s encoding', () => {
+      assert.equal(detectSourceEncoding(Buffer.from('instance A (C_INFO) { nr = 1; };')), 'windows-1252');
+    });
+
+    test('valid UTF-8 with non-ASCII text is UTF-8', () => {
+      assert.equal(detectSourceEncoding(Buffer.from('// Grüße\nvar int a;', 'utf8')), 'utf8');
+    });
+
+    test('German Windows-1252 is Windows-1252', () => {
+      assert.equal(detectSourceEncoding(iconv.encode('// Grüße Köln Straße\nvar int test = 1;', 'windows-1252')), 'windows-1252');
+    });
+
+    test('a lone accented byte does not flip a Western file to Windows-1250', () => {
+      // 'è' is 0xE8, 'č' in windows-1250; one such byte is French, not Czech.
+      assert.equal(detectSourceEncoding(iconv.encode('// Après la mort de Noël\nvar int a;', 'windows-1252')), 'windows-1252');
+    });
+
+    test('two distinct Central European bytes read as Windows-1250', () => {
+      assert.equal(detectSourceEncoding(iconv.encode('// Čapek Dvořák Škoda Žižka Řež\nvar int a;', 'windows-1250')), 'windows-1250');
+    });
+
+    test('a byte Windows-1252 leaves unassigned is decisive for Windows-1250', () => {
+      const buffer = iconv.encode('// Ťava\nvar int a;', 'windows-1250');
+      assert.ok(buffer.includes(0x8d));
+      assert.equal(detectSourceEncoding(buffer), 'windows-1250');
     });
   });
 

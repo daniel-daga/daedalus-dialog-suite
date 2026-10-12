@@ -15,6 +15,8 @@ const Daedalus = require('../../bindings/node');
 // The native binding object is the one thing that is genuinely process-global
 // here, so anchor the wrapper on it: `tree-sitter` is required exactly once per
 // process regardless of how many module registries evaluate this file.
+const { detectSourceEncoding } = require('./source-encoding');
+
 const TREE_SITTER_RUNTIME = Symbol.for('daedalus-parser.tree-sitter-runtime');
 const Parser = Daedalus[TREE_SITTER_RUNTIME]
   || (Daedalus[TREE_SITTER_RUNTIME] = require('tree-sitter'));
@@ -303,14 +305,12 @@ class DaedalusParser {
    * @returns {DaedalusParser} Parser instance
    */
   /**
-   * Valid UTF-8, otherwise Gothic's Windows-1252. Statistical detection read
-   * German scripts as ISO-8859-7 or x-mac-cyrillic (#395); scripts are too
-   * short for it. Other legacy encodings must be named explicitly.
+   * See `source-encoding.js`; also exported as `daedalus-parser/source-encoding`.
    * @param {Buffer} buffer
-   * @returns {'utf8' | 'windows-1252'}
+   * @returns {'utf8' | 'windows-1250' | 'windows-1252'}
    */
   static detectSourceEncoding(buffer) {
-    return Buffer.from(buffer.toString('utf8'), 'utf8').equals(buffer) ? 'utf8' : 'windows-1252';
+    return detectSourceEncoding(buffer);
   }
 
   static create() {

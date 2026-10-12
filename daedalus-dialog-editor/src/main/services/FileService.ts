@@ -349,36 +349,22 @@ export class FileService {
       // Use the cached encoding if available. For files the editor never read
       // (e.g. freshly created scripts) default to windows-1252, the encoding
       // Gothic 2 tooling expects — not utf8.
+      // A pure-ASCII file was already detected as windows-1252, so an edit that
+      // adds umlauts is written in Gothic's encoding, never UTF-8 (#395).
       const cacheKey = canonicalPathKey(filePath);
-      const hadCache = fileEncodingCache.has(cacheKey);
-      let encoding = fileEncodingCache.get(cacheKey) || 'windows-1252';
-      let { buffer, lossyChars } = encodeWithRoundtripCheck(content, encoding);
+      const encoding = fileEncodingCache.get(cacheKey) || 'windows-1252';
+      const { buffer, lossyChars } = encodeWithRoundtripCheck(content, encoding);
 
       if (lossyChars.length > 0) {
-        // Silently upgrade ASCII-detected / uncached files to windows-1252
-        // (byte-identical for pure ASCII, and the Gothic tooling default) and
-        // re-verify. Never upgrade an explicitly detected multi-byte encoding.
-        const upgradable =
-          !hadCache || encoding === 'ASCII' || encoding === 'ISO-8859-1';
-        if (upgradable && encoding !== 'windows-1252') {
-          encoding = 'windows-1252';
-          ({ buffer, lossyChars } = encodeWithRoundtripCheck(content, encoding));
-          if (lossyChars.length === 0) {
-            fileEncodingCache.set(cacheKey, encoding);
-          }
-        }
-
-        if (lossyChars.length > 0) {
-          const named = lossyChars
-            .slice(0, 5)
-            .map((l) => `'${l.char}' (position ${l.position})`)
-            .join(', ');
-          throw new FileServiceError(
-            `ENCODING_LOSS: ${lossyChars.length} character(s) cannot be written in ${encoding}: ${named}`,
-            'ENCODING_LOSS',
-            filePath
-          );
-        }
+        const named = lossyChars
+          .slice(0, 5)
+          .map((l) => `'${l.char}' (position ${l.position})`)
+          .join(', ');
+        throw new FileServiceError(
+          `ENCODING_LOSS: ${lossyChars.length} character(s) cannot be written in ${encoding}: ${named}`,
+          'ENCODING_LOSS',
+          filePath
+        );
       }
 
       // --- Backup before destructive write ----------------------------------

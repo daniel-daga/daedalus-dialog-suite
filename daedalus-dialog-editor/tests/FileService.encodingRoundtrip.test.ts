@@ -2,8 +2,8 @@
  * Encoding roundtrip tests for FileService (fix-02 E6).
  *
  * Writing must never silently substitute unmappable characters with '?'.
- * Content that roundtrips lossily in the cached/derived encoding is either
- * upgraded to windows-1252 (ASCII-detected / uncached) or refused outright.
+ * Content that roundtrips lossily in the detected encoding is refused; a
+ * pure-ASCII or unread file is windows-1252 to begin with (#395).
  *
  * @jest-environment node
  */
@@ -59,9 +59,9 @@ describe('FileService encoding roundtrip (E6)', () => {
     expect(after.equals(before)).toBe(true);
   });
 
-  it('silently upgrades an ASCII-detected file to windows-1252 for umlaut content', async () => {
+  it('writes a pure-ASCII file as windows-1252 once an edit adds umlauts', async () => {
     const file = path.join(tempDir, 'ascii.d');
-    await fs.writeFile(file, 'var int x = 1;'); // pure ASCII → detected ASCII
+    await fs.writeFile(file, 'var int x = 1;'); // pure ASCII → windows-1252
     await service.readFile(file);
 
     const content = 'var string s = "Grüße";'; // Grüße

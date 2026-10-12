@@ -17,9 +17,8 @@ import { launchApp, seedProjectDir, stubOpenDialog, type AppFixture } from './ha
  * comment being preserved is asserted on line 2.
  *
  * The fixture `dialog-1252.d` holds real cp1252 bytes (0xF6 ö, 0xFC ü, 0xDF ß,
- * 0xC4 Ä, 0xD6 Ö, 0xDC Ü). FileService detects it (chardet) as an 8-bit Latin
- * encoding and caches it; for these code points cp1252 and ISO-8859-1 are
- * byte-identical, so the round-trip is lossless either way. The distinguishing
+ * 0xC4 Ä, 0xD6 Ö, 0xDC Ü). FileService detects it as windows-1252 (the
+ * parser's `source-encoding`) and caches it for the write. The distinguishing
  * check below is the absence of 0xC3 (the UTF-8 lead byte these umlauts would
  * carry if the file were mistakenly written as UTF-8).
  */
