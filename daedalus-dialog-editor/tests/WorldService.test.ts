@@ -134,17 +134,29 @@ describe('WorldService', () => {
     service.close();
   });
 
-  test('remounting the assets reopens the VFS in the worker and keeps the world open (#296)', async () => {
-    // After a GMBT compile the files under the mounts have changed, and a VFS
-    // maps them once, at open. The world, its handle and its history stay.
+  test('releasing the assets closes the VFS in the worker and keeps the world open (#394)', async () => {
+    // GMBT overwrites files under the mounts, and a live VFS holds every one
+    // of them mapped. The world, its handle and its history stay; the worker
+    // remounts on the next asset read, which also picks up what GMBT wrote.
     const { worker, service } = await openedService();
 
-    const remounted = service.remountAssets();
-    expect(worker.sent.find((m) => m.op === 'remountVfs')?.payload).toEqual({});
-    worker.reply('remountVfs', null);
-    await expect(remounted).resolves.toBeNull();
+    const released = service.releaseAssets();
+    expect(worker.sent.find((m) => m.op === 'releaseVfs')?.payload).toEqual({});
+    worker.reply('releaseVfs', null);
+    await expect(released).resolves.toBeUndefined();
     expect(worker.sent.filter((m) => m.op === 'open')).toHaveLength(1);
+    const texture = service.getTexture('NW_WOOD.TGA');
+    worker.reply('texture', null);
+    await expect(texture).resolves.toBeNull();
     service.close();
+  });
+
+  test('releasing the assets with nothing mounted asks the worker nothing', async () => {
+    // A compile may run with no world open and no NPC preview mounted.
+    const { worker, service } = makeService();
+
+    await expect(service.releaseAssets()).resolves.toBeUndefined();
+    expect(worker.sent).toHaveLength(0);
   });
 
   test('the instanced visuals carry the names the renderer already draws', async () => {

@@ -139,7 +139,7 @@ export interface VfsSearch {
 }
 
 export type WorldWorkerOp =
-  | 'open' | 'mountAssets' | 'worldMesh' | 'visuals' | 'texture' | 'assets' | 'assetSearch' | 'assetResolve' | 'remountVfs' | 'waynet' | 'portalFindings'
+  | 'open' | 'mountAssets' | 'worldMesh' | 'visuals' | 'texture' | 'assets' | 'assetSearch' | 'assetResolve' | 'releaseVfs' | 'waynet' | 'portalFindings'
   | 'visualBounds' | 'visual' | 'npcBody' | 'vobProps' | 'refreshIndex' | 'applyOps' | 'save' | 'close';
 
 /**

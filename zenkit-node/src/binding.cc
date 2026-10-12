@@ -3909,6 +3909,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("getPortals", Napi::Function::New(env, GetPortals));
   exports.Set("extractWorldMesh", Napi::Function::New(env, ExtractWorldMesh));
   exports.Set("openVfs", Napi::Function::New(env, zenkit_node::OpenVfs));
+  exports.Set("closeVfs", Napi::Function::New(env, zenkit_node::CloseVfs));
   exports.Set("vfsResolve", Napi::Function::New(env, zenkit_node::VfsResolve));
   exports.Set("vfsList", Napi::Function::New(env, zenkit_node::VfsList));
   exports.Set("vfsFind", Napi::Function::New(env, zenkit_node::VfsFind));

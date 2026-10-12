@@ -1014,6 +1014,9 @@ export function setupIpcHandlers() {
     if (gmbtProjectDir === null) {
       throw new Error('Set "gmbtProjectDir" in the project file to a GMBT project folder to run a quick test');
     }
+    // `gmbt test` first merges into `_Work`, over files the open world's VFS
+    // holds mapped (#394).
+    await worldService.releaseAssets();
     startGmbtQuickTest(gmbtProjectDir, worldService.openWorldPath(), {
       logPath: path.join(app.getPath('userData'), 'gmbt-quick-test.log'),
       // Nothing awaits the run, so a spawn that never happened or a run gmbt
@@ -1027,10 +1030,12 @@ export function setupIpcHandlers() {
   });
 
   // Compile the project's uncompiled sources (#296): `gmbt compile --full` in
-  // the project's GMBT folder, awaited, then the VFS remounted so the compiled
-  // files are what the browser, the previews and the viewport read. No payload,
-  // for the quick test's reason — the folder is state this process owns — and
-  // one at a time: two GMBT runs over one `_work` would fight over it.
+  // the project's GMBT folder, awaited, with the VFS released first so GMBT can
+  // overwrite what it holds mapped (#394) — the next asset read remounts it,
+  // so the compiled files are what the browser, the previews and the viewport
+  // read. No payload, for the quick test's reason — the folder is state this
+  // process owns — and one at a time: two GMBT runs over one `_work` would
+  // fight over it.
   let compiling = false;
   ipcMain.handle('world:compileAssets', async () => {
     const registered = activeProjectFileKey === null
@@ -1043,6 +1048,7 @@ export function setupIpcHandlers() {
     if (compiling) throw new Error('A GMBT compile is already running');
     compiling = true;
     try {
+      await worldService.releaseAssets();
       await runGmbtCompile(gmbtProjectDir);
     } catch (error) {
       logService.log('error', 'main', `GMBT compile failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -1050,7 +1056,6 @@ export function setupIpcHandlers() {
     } finally {
       compiling = false;
     }
-    await worldService.remountAssets();
   });
 
   ipcMain.handle('world:mesh', async () => worldService.getWorldMesh());

@@ -149,14 +149,27 @@ constexpr std::size_t DEFAULT_FIND_LIMIT = 500;
 // `VfsHandle*` and dereferenced (review 2026-09-04 §2.12).
 constexpr napi_type_tag kVfsHandleTag = {0x4c81f2a760d34b19ULL, 0x8e27b5306ca9df41ULL};
 
-VfsHandle* UnwrapVfs(Napi::Env env, Napi::Value value) {
-  if (!value.IsExternal() || !value.As<Napi::External<VfsHandle>>().CheckTypeTag(
+// What the `External` actually holds: a slot `closeVfs` can empty. The
+// External itself lives until the GC finalizes it, and with it every mapped
+// file, which is too late for a caller about to overwrite one (#394).
+struct VfsSlot {
+  std::unique_ptr<VfsHandle> handle;
+};
+
+VfsSlot* UnwrapVfsSlot(Napi::Env env, Napi::Value value) {
+  if (!value.IsExternal() || !value.As<Napi::External<VfsSlot>>().CheckTypeTag(
           &kVfsHandleTag)) {
     throw Napi::TypeError::New(env, "expected a VFS handle returned by openVfs()");
   }
-  auto* handle = value.As<Napi::External<VfsHandle>>().Data();
-  if (handle == nullptr) throw Napi::Error::New(env, "invalid VFS handle");
-  return handle;
+  auto* slot = value.As<Napi::External<VfsSlot>>().Data();
+  if (slot == nullptr) throw Napi::Error::New(env, "invalid VFS handle");
+  return slot;
+}
+
+VfsHandle* UnwrapVfs(Napi::Env env, Napi::Value value) {
+  auto* slot = UnwrapVfsSlot(env, value);
+  if (!slot->handle) throw Napi::Error::New(env, "the VFS handle is closed");
+  return slot->handle.get();
 }
 
 // A name, a path or a query addressing the mounted namespace. ZenKit holds
@@ -239,10 +252,15 @@ Napi::Value OpenVfs(Napi::CallbackInfo const& info) {
     }
   }
 
-  auto external = Napi::External<VfsHandle>::New(
-      env, handle.release(), [](Napi::Env, VfsHandle* data) { delete data; });
+  auto external = Napi::External<VfsSlot>::New(
+      env, new VfsSlot {std::move(handle)}, [](Napi::Env, VfsSlot* data) { delete data; });
   external.TypeTag(&kVfsHandleTag);
   return external;
+}
+
+Napi::Value CloseVfs(Napi::CallbackInfo const& info) {
+  UnwrapVfsSlot(info.Env(), info[0])->handle.reset();
+  return info.Env().Undefined();
 }
 
 Napi::Value VfsResolve(Napi::CallbackInfo const& info) {

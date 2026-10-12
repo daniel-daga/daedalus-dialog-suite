@@ -223,11 +223,14 @@ export class WorldService {
     return this.requestOnMountedVfs<VfsSearch>('assetSearch', { query });
   }
 
-  /** Reopen the VFS over the same sources (#296): a GMBT compile has written
-   *  files under them, and a VFS maps what is there once, when it opens. The
-   *  world, its handle and its history are untouched. */
-  remountAssets(): Promise<null> {
-    return this.requestOnOpenWorld<null>('remountVfs', {});
+  /** Close the VFS before GMBT writes under its sources (#394): a live VFS
+   *  keeps every mounted file mapped, and Windows refuses to overwrite one.
+   *  The worker remounts on the next asset read, which is also what makes the
+   *  files a compile wrote visible (#296). The world, its handle and its
+   *  history are untouched. Nothing mounted is nothing to release. */
+  async releaseAssets(): Promise<void> {
+    if (this.assetSources === null) return;
+    await this.request<null>('releaseVfs', {});
   }
 
   /** What each name resolves to in the mounted namespace, or null — how the

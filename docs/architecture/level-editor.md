@@ -4034,10 +4034,14 @@ leaves meshes for the game to convert on the fly. The dialog says first what
 GMBT does to the install (it rebuilds what it manages in `_work/Data` from the
 project's asset folders — environment-hazards.md, "GMBT empties `_work`").
 Unlike the quick test it is **awaited**: `world:compileAssets` fails with GMBT's
-exit code and the tail of its output, which the dialog shows, and on success
-the worker **remounts its VFS** over the same sources (`remountVfs`) — a mount
-maps the files that are there when it opens, and the world, its handle and its
-history stay as they are. `useAssetCatalog` then hands every VFS read out
+exit code and the tail of its output, which the dialog shows. Before it — and
+before a quick test — the worker **closes its VFS** (`releaseVfs`, the binding's
+`closeVfs`): a live VFS holds every mounted file mapped, and Windows refuses
+GMBT the `_Work` files it overwrites (#394). The next asset read remounts over
+the same sources, lazily because `gmbt test` never says when its merge is done;
+a mount maps the files that are there when it opens, so the remount is also what
+shows a compile's output, and the world, its handle and its history stay as they
+are. A read during the run itself remounts early and can take the lock back. `useAssetCatalog` then hands every VFS read out
 afresh and rebuilds the thumbnail queue, so the listing, the tags, the preview
 and a failed thumbnail all ask again, and the surface re-reads the world's
 visuals so a VOB placed from the uncompiled source draws. One run at a time,

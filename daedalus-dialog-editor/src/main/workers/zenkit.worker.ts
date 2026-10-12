@@ -124,6 +124,7 @@ function open(request: ResolvedOpenWorldRequest): { result: WorldSummary; transf
   // vobIndex, not normalizeWorld: the dump costs 877 ms on NewWorld's 23,288
   // VOBs and the render path wants none of what it adds.
   index = phase('vobIndex', () => zenkit.vobIndex(handle!));
+  releaseVfs();
   vfs = phase('openVfs', () => zenkit.openVfs(request.assetSources, { overwrite: 'all' }));
   const mesh = phase('extractWorldMesh', () => buildWorldMesh(binding, handle!));
 
@@ -199,10 +200,11 @@ function takeWorldMesh(): { result: WorldMeshPayload; transfer: ArrayBuffer[] } 
 }
 
 function visuals(payload: { have: string[] }): { result: InstancedPayload; transfer: ArrayBuffer[] } {
-  if (visualCache?.vfs !== vfs) visualCache = { vfs: vfs!, cache: new Map() };
+  const mounted = mountedVfs();
+  if (visualCache?.vfs !== mounted) visualCache = { vfs: mounted, cache: new Map() };
   const { cache } = visualCache;
   const have = new Set(payload.have);
-  const built = phase('visuals', () => buildInstancedVisuals(binding, vfs!, index!, { cache, have }));
+  const built = phase('visuals', () => buildInstancedVisuals(binding, mounted, index!, { cache, have }));
   // Beside the meshes, not behind an op of its own: both are built from the one
   // index, and a placed or deleted decal has to arrive with the scene the
   // placement rebuilt rather than a round trip later (#249).
@@ -228,7 +230,7 @@ function texture(payload: { name: string; maxSize: number }): {
   // does not hold.
   let decoded: ReturnType<typeof zenkit.decodeTexture>;
   try {
-    decoded = zenkit.decodeTexture(vfs!, payload.name, 0);
+    decoded = zenkit.decodeTexture(mountedVfs(), payload.name, 0);
   } catch {
     return { result: null, transfer: [] };
   }
@@ -239,7 +241,7 @@ function texture(payload: { name: string; maxSize: number }): {
   // projection-layer choice, so it comes in with the request.
   let level = 0;
   while (Math.max(decoded.width, decoded.height) > payload.maxSize && level + 1 < decoded.mipmaps) {
-    const smaller = zenkit.decodeTexture(vfs!, payload.name, ++level);
+    const smaller = zenkit.decodeTexture(mountedVfs(), payload.name, ++level);
     if (smaller === null) break;
     decoded = smaller;
   }
@@ -253,7 +255,7 @@ function texture(payload: { name: string; maxSize: number }): {
 /** One level of the mounted VFS, for the asset browser. Never recursive: a
  *  Gothic install is tens of thousands of entries. */
 function assets(payload: { path: string }): { result: VfsEntry[] | null; transfer: ArrayBuffer[] } {
-  return { result: zenkit.vfsList(vfs!, payload.path), transfer: [] };
+  return { result: zenkit.vfsList(mountedVfs(), payload.path), transfer: [] };
 }
 
 /** The one recursive walk of the namespace there is (#241). `vfsList` answers
@@ -263,16 +265,27 @@ function assets(payload: { path: string }): { result: VfsEntry[] | null; transfe
 function assetSearch(payload: { query: string }): { result: VfsSearch; transfer: ArrayBuffer[] } {
   // The cap is the binding's own default: nothing here has a reason to want a
   // different one, and an option that exists only to be passed is scaffolding.
-  return { result: zenkit.vfsFind(vfs!, payload.query), transfer: [] };
+  return { result: zenkit.vfsFind(mountedVfs(), payload.query), transfer: [] };
 }
 
-/** The VFS opened again over the same sources (#296). A mount maps the files
- *  that are there when it opens, so the ones a GMBT compile has just written
- *  are invisible until this. Nothing else here holds on to the old one: every
- *  visual and texture is extracted per request. */
-function remountVfs(): { result: null; transfer: ArrayBuffer[] } {
-  vfs = phase('openVfs', () => zenkit.openVfs(openedSources, { overwrite: 'all' }));
+/** Unmap every mounted file now (#394). Dropping the reference frees nothing
+ *  until the GC finalizes the handle, and until then Windows refuses GMBT the
+ *  files it overwrites under `_Work`. */
+function releaseVfs(): { result: null; transfer: ArrayBuffer[] } {
+  if (vfs !== null) zenkit.closeVfs(vfs);
+  vfs = null;
   return { result: null, transfer: [] };
+}
+
+/** The VFS, reopened over the same sources if `releaseVfs` closed it. Lazily,
+ *  because `gmbt test` keeps running while the game does and nothing says when
+ *  it is done writing; and reopened rather than kept, because a mount maps the
+ *  files that are there when it opens, so what a compile wrote is invisible
+ *  until then (#296). Nothing else here holds on to the old one: every visual
+ *  and texture is extracted per request. */
+function mountedVfs(): zenkit.VfsHandle {
+  vfs ??= phase('openVfs', () => zenkit.openVfs(openedSources, { overwrite: 'all' }));
+  return vfs;
 }
 
 /** What each name resolves to in the mounted namespace — the compiled file
@@ -280,7 +293,7 @@ function remountVfs(): { result: null; transfer: ArrayBuffer[] } {
  *  each lookup is a hash probe, and the answer is how the browser tells a
  *  source that has not been compiled from one that has. */
 function assetResolve(payload: { names: string[] }): { result: (string | null)[]; transfer: ArrayBuffer[] } {
-  return { result: payload.names.map((name) => zenkit.vfsResolve(vfs!, name)), transfer: [] };
+  return { result: payload.names.map((name) => zenkit.vfsResolve(mountedVfs(), name)), transfer: [] };
 }
 
 /** The waynet as a drawable graph. Small next to the geometry — NewWorld's is
@@ -313,7 +326,7 @@ function portalFindings(): { result: PortalFindingsPayload; transfer: ArrayBuffe
 function boundsOfVisual(
   payload: VisualBoundsRequest,
 ): { result: ZenBounds | null; transfer: ArrayBuffer[] } {
-  return { result: visualBounds(binding, vfs!, payload.name), transfer: [] };
+  return { result: visualBounds(binding, mountedVfs(), payload.name), transfer: [] };
 }
 
 /**
@@ -322,13 +335,13 @@ function boundsOfVisual(
  * for nobody else, so they are transferred rather than copied.
  */
 function visualOf(payload: VisualRequest): { result: VisualScene | null; transfer: ArrayBuffer[] } {
-  const built = buildVisual(binding, vfs!, payload.name);
+  const built = buildVisual(binding, mountedVfs(), payload.name);
   return { result: built, transfer: built === null ? [] : groupTransferables(built.groups) };
 }
 
 /** An NPC's body and head for the NPC editor's preview (npc-editor.md §4). */
 function npcBodyOf(payload: NpcBodyRequest): { result: NpcBodyScene | null; transfer: ArrayBuffer[] } {
-  const built = buildNpcBody(npcBinding, vfs!, payload);
+  const built = buildNpcBody(npcBinding, mountedVfs(), payload);
   return { result: built, transfer: built === null ? [] : groupTransferables(built.groups) };
 }
 
@@ -425,9 +438,10 @@ function save(payload: SaveWorldRequest): { result: null; transfer: ArrayBuffer[
 function close(): { result: null; transfer: ArrayBuffer[] } {
   // A live VFS keeps every mounted file memory-mapped and Windows refuses to
   // delete a mapped file until the handle is collected (zenkit-node README), so
-  // the references are dropped rather than merely gone out of scope.
+  // the VFS is closed and the references are dropped rather than merely gone
+  // out of scope.
   handle = null;
-  vfs = null;
+  releaseVfs();
   index = null;
   visualCache = null;
   worldMesh = null;
@@ -459,6 +473,7 @@ if (parentPort) {
 /** Mount the active project's configured assets without loading a level. The
  *  NPC preview needs the VFS for meshes and textures, but not a world handle. */
 function mountAssets(payload: { assetSources: string[] }): { result: null; transfer: ArrayBuffer[] } {
+  releaseVfs();
   vfs = phase('openVfs', () => zenkit.openVfs(payload.assetSources, { overwrite: 'all' }));
   openedSources = [...payload.assetSources];
   return { result: null, transfer: [] };
@@ -474,7 +489,7 @@ function run(message: WorldWorkerRequest): { result: unknown; transfer: ArrayBuf
     case 'assets': return assets(message.payload as { path: string });
     case 'assetSearch': return assetSearch(message.payload as { query: string });
     case 'assetResolve': return assetResolve(message.payload as { names: string[] });
-    case 'remountVfs': return remountVfs();
+    case 'releaseVfs': return releaseVfs();
     case 'waynet': return waynet();
     case 'portalFindings': return portalFindings();
     case 'visualBounds': return boundsOfVisual(message.payload as VisualBoundsRequest);

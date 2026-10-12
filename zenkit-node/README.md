@@ -358,7 +358,9 @@ trusting the number: a unanimous result from one reader is as likely to be a
 sign error in the script as a fact about ZenGin.
 
 A live VFS keeps every mounted file memory-mapped, so **Windows refuses to
-delete a mounted file until the handle is garbage-collected.**
+delete or overwrite a mounted file until the handle is garbage-collected** —
+or until `closeVfs(handle)` unmaps them at once, after which the handle is
+refused (#394).
 
 ### `setVobRotation(handle, indexPath, rotation[9], bbox?)`
 

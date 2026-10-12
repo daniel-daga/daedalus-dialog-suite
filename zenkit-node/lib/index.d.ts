@@ -218,6 +218,10 @@ export function worldProperties(handle: WorldHandle): WorldProperties;
 export function getWaynet(handle: WorldHandle): WaynetGraph;
 export function getPortals(handle: WorldHandle): PortalPolygons;
 export function openVfs(paths: string[], options?: { overwrite?: 'all' | 'newer' | 'older' | 'none' }): VfsHandle;
+/** Unmaps every mounted file now rather than when the GC finalizes the handle,
+ *  so they can be overwritten (#394). The handle is refused afterwards;
+ *  closing it twice is harmless. */
+export function closeVfs(vfs: VfsHandle): void;
 export function vfsResolve(vfs: VfsHandle, name: string): string | null;
 /** The children of one directory, or null when the path is absent or is a file. */
 export function vfsList(vfs: VfsHandle, path?: string): VfsEntry[] | null;

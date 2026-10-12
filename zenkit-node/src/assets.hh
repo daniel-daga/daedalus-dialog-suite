@@ -28,6 +28,11 @@ struct VfsHandle {
 // namespace, later paths winning. Returns a handle.
 Napi::Value OpenVfs(Napi::CallbackInfo const& info);
 
+// closeVfs(handle) — unmaps every mounted file now rather than when the GC
+// finalizes the handle, so they can be overwritten (#394). The handle is
+// refused afterwards; closing it twice is harmless.
+Napi::Value CloseVfs(Napi::CallbackInfo const& info);
+
 // vfsResolve(handle, name) — the compiled asset name a visual or texture name
 // maps to, or null when nothing matches. Exposed because the mapping is a
 // guess-free lookup the asset browser and the tests both need to see.

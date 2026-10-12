@@ -112,6 +112,36 @@ test('a VFS handle is not a world handle either', () => {
   assert.throws(() => zenkit.extractWorldMesh(handle), /expected a world handle/);
 });
 
+// --- closeVfs ------------------------------------------------------------
+
+test('closeVfs releases the mounted files at once, not when the GC gets to it', () => {
+  // GMBT overwrites the compiled files under `_Work` while the editor has them
+  // mounted (#394), and Windows refuses to overwrite a mapped file. Dropping
+  // the handle frees the mapping only when its finalizer runs.
+  const dir = fs.mkdtempSync(path.join(root, 'close-'));
+  const file = path.join(dir, 'EX_HELD.MAN');
+  fs.writeFileSync(file, 'before');
+  const handle = zenkit.openVfs([dir]);
+  if (process.platform === 'win32') {
+    assert.throws(() => fs.writeFileSync(file, 'after'), 'a mounted file is held while the VFS is open');
+  }
+
+  zenkit.closeVfs(handle);
+
+  fs.writeFileSync(file, 'after');
+  assert.strictEqual(fs.readFileSync(file, 'utf8'), 'after');
+});
+
+test('a closed VFS handle is refused, and closing it again is harmless', () => {
+  const handle = vfs();
+  zenkit.closeVfs(handle);
+
+  assert.throws(() => zenkit.vfsResolve(handle, 'EX_CRATE.3DS'), /VFS handle is closed/);
+  assert.throws(() => zenkit.vfsList(handle, '/'), /VFS handle is closed/);
+  assert.doesNotThrow(() => zenkit.closeVfs(handle));
+  assert.throws(() => zenkit.closeVfs({}), /expected a VFS handle/);
+});
+
 // --- name mapping --------------------------------------------------------
 
 test('vfsResolve maps a VOB source asset name to the compiled one', () => {
