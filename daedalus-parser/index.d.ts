@@ -76,6 +76,8 @@ declare class DaedalusParser {
   extractDeclarations(parseResult: ParseResult): Declaration[];
 
   static parseSource(sourceCode: string, options?: ParseOptions): ParseResult;
+  /** Valid UTF-8, otherwise Windows-1252 — what `parseFile` decodes with unless told otherwise. */
+  static detectSourceEncoding(buffer: Buffer): 'utf8' | 'windows-1252';
   static create(): DaedalusParser;
 }
 

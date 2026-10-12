@@ -89,9 +89,7 @@ const parser = DaedalusParser.create();
 const out = {};
 for (const f of fs.readdirSync(corpusDir).filter((n) => n.toLowerCase().endsWith('.d'))) {
   const p = path.join(corpusDir, f);
-  let res;
-  try { res = parser.parseFile(p, { detectEncoding: true }); }
-  catch (e) { res = parser.parseFile(p, { encoding: 'windows-1252' }); } // 1252 fixture: jschardet misdetects; editor FileService defaults to windows-1252
+  const res = parser.parseFile(p);
   const v = new SemanticModelBuilderVisitor();
   v.pass1_createObjects(res.rootNode);
   v.pass2_analyzeAndLink(res.rootNode);

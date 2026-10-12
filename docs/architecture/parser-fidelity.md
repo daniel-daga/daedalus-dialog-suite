@@ -471,8 +471,8 @@ The real MDK corpus is licensed/gitignored; run it locally with
 `npm run test:roundtrip-corpus -- --root <mdk path>`. It is strict-green as of
 #395 (1,725 files, exit 0); its one source syntax error is
 `AI/AI_Intern/Externals.d`, a listing of bodiless engine prototypes that no
-`.src` compiles. The script decodes by the formatter's policy below (valid
-UTF-8, else Windows-1252), so "fallback-decoded" counts the Windows-1252 files. Re-enabling the
+`.src` compiles. "Fallback-decoded" counts the files `parseFile` read as
+Windows-1252. Re-enabling the
 standalone CI corpus job is slice 8's call.
 
 ## 2026-10-03 review validation
@@ -574,9 +574,12 @@ native grammar, CLI entry points and official model hydration.
 | Parser JSON stdout cannot be parsed as JSON | Human-readable banners were emitted before the JSON document | Suppress those banners in JSON mode |
 
 Statistical encoding detection misclassified a German Windows-1252 regression
-as an unsupported encoding with high confidence. The formatter therefore uses
-the explicit UTF-8/Windows-1252 policy above rather than guessing other legacy
-encodings. Windows-1250 and other encodings require `--encoding`.
+as an unsupported encoding with high confidence, and read the German MDK as
+ISO-8859-7 or x-mac-cyrillic (#395). `DaedalusParser.detectSourceEncoding` is
+therefore the one policy — valid UTF-8, else Windows-1252 — used by
+`parseFile`, the formatter and the corpus script; nothing guesses other legacy
+encodings. Windows-1250 and other encodings must be named (`encoding`,
+`--encoding`).
 
 Header comment metadata belongs to the declaration, separately from its editable
 signature. Changes in parameter count or keyword presence move the original

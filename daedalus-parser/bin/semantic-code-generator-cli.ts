@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import * as iconv from 'iconv-lite';
 import { SemanticModelBuilderVisitor } from '../src/semantic/semantic-visitor-index';
 import { SemanticCodeGenerator, CodeGeneratorOptions } from '../src/codegen/generator';
+import DaedalusParser from '../src/core/parser';
 import { createDaedalusParser, validateDaedalusFile } from '../src/utils/parser-utils';
 
 interface CLIOptions extends CodeGeneratorOptions {
@@ -104,12 +105,8 @@ function processFile(filename: string, options: CLIOptions) {
   // Validate file
   validateDaedalusFile(filename);
 
-  // Short scripts do not provide enough language text for reliable statistical
-  // detection. Prefer valid UTF-8; otherwise use Gothic's Windows-1252 default.
-  // Other legacy encodings can be selected explicitly.
   const buffer = fs.readFileSync(filename);
-  const utf8 = buffer.toString('utf8');
-  const inputEncoding = options.encoding ?? (Buffer.from(utf8, 'utf8').equals(buffer) ? 'utf8' : 'windows-1252');
+  const inputEncoding = options.encoding ?? DaedalusParser.detectSourceEncoding(buffer);
   const sourceCode = iconv.decode(buffer, inputEncoding);
   const parser = createDaedalusParser();
   const tree = parser.parse(sourceCode);

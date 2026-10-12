@@ -52,19 +52,11 @@ func void DIA_Petr_Hello_Info()
       fs.writeFileSync(windows1250File, buffer);
     });
 
-    test('should detect Windows-1250 encoding', () => {
+    test('reads a non-UTF-8 file as Windows-1252 unless told otherwise', () => {
       const result = parser.parseFile(windows1250File);
 
-      // Windows-1250 and Windows-1252 are very similar, detection may vary
-      const lowerEncoding = result.encoding.toLowerCase();
-      assert.ok(
-        lowerEncoding.includes('windows-125') || lowerEncoding.includes('cp125'),
-        `Encoding should be Windows-125x variant, got: ${result.encoding}`
-      );
-      assert.ok(result.encodingConfidence > 0, 'Confidence should be greater than 0');
-
-      // The encoding should be detected as Windows-1250 or similar
-      console.log(`Detected encoding: ${result.encoding} (${result.encodingConfidence}% confidence)`);
+      // Windows-1250 is not guessed; it needs `encoding` (next tests).
+      assert.equal(result.encoding, 'windows-1252');
     });
 
     test('should correctly parse Windows-1250 file', () => {
@@ -193,6 +185,29 @@ instance DIA_Guard_Hello (C_Info)
 
       assert.equal(result.hasErrors, false, 'Should parse without errors');
       assert.ok(result.tree, 'Tree should be defined');
+    });
+  });
+
+  describe('Windows-1252 Encoding', () => {
+    // #395: statistical detection read this German script as x-mac-cyrillic or
+    // ISO-8859-7, which turned the ß in the identifier into a syntax error.
+    test('decodes a non-UTF-8 script as Windows-1252', () => {
+      const file = path.join(testDir, 'dialog_windows1252.d');
+      const content = `// Änderung der Übersetzung folgt später
+const string NSC_Greeting = "Schöne Grüße, Söldner";
+
+func void DIA_Saturas_Hallo_weißtdu ()
+{
+	AI_StopProcessInfos (self);
+};
+`;
+      fs.writeFileSync(file, iconv.encode(content, 'windows-1252'));
+
+      const result = parser.parseFile(file);
+
+      assert.equal(result.encoding, 'windows-1252');
+      assert.equal(result.hasErrors, false);
+      assert.ok(result.rootNode.text.includes('DIA_Saturas_Hallo_weißtdu'));
     });
   });
 

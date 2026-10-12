@@ -67,14 +67,13 @@ class DaedalusParser {
    * @param {string} filePath - Path to Daedalus file
    * @param {Object} options - Parsing options
    * @param {string} options.encoding - Specific encoding to use
-   *   (e.g., 'windows-1250', 'utf8'). If not specified, auto-detection is used.
+   *   (e.g., 'windows-1250', 'utf8'). If not specified, `detectSourceEncoding` decides.
    * @param {boolean} options.detectEncoding - Whether to detect encoding (default: true)
    * @returns {Object} Parse result
    */
   parseFile(filePath, options = {}) {
     const fs = require('fs');
     const iconv = require('iconv-lite');
-    const jschardet = require('jschardet');
     const {
       encoding: explicitEncoding,
       detectEncoding = true,
@@ -86,19 +85,14 @@ class DaedalusParser {
 
     let sourceCode;
     let detectedEncoding = null;
-    let confidence = 100;
+    const confidence = 100;
 
     if (explicitEncoding) {
       // Use specified encoding
       sourceCode = iconv.decode(buffer, explicitEncoding);
       detectedEncoding = explicitEncoding;
     } else if (detectEncoding) {
-      // Auto-detect encoding using jschardet
-      const detection = jschardet.detect(buffer);
-      detectedEncoding = detection.encoding || 'utf-8'; // Default to UTF-8 if detection fails
-      confidence = detection.confidence ? detection.confidence * 100 : 100;
-
-      // Decode with detected encoding using iconv-lite
+      detectedEncoding = DaedalusParser.detectSourceEncoding(buffer);
       sourceCode = iconv.decode(buffer, detectedEncoding);
     } else {
       // Use UTF-8 fallback when detection is explicitly disabled.
@@ -308,6 +302,17 @@ class DaedalusParser {
    * Create a parser instance with error handling
    * @returns {DaedalusParser} Parser instance
    */
+  /**
+   * Valid UTF-8, otherwise Gothic's Windows-1252. Statistical detection read
+   * German scripts as ISO-8859-7 or x-mac-cyrillic (#395); scripts are too
+   * short for it. Other legacy encodings must be named explicitly.
+   * @param {Buffer} buffer
+   * @returns {'utf8' | 'windows-1252'}
+   */
+  static detectSourceEncoding(buffer) {
+    return Buffer.from(buffer.toString('utf8'), 'utf8').equals(buffer) ? 'utf8' : 'windows-1252';
+  }
+
   static create() {
     try {
       return new DaedalusParser();

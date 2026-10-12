@@ -3,7 +3,6 @@
 
 const fs = require('fs');
 const path = require('path');
-const iconv = require('iconv-lite');
 const DaedalusParser = require('../src/core/parser');
 const { SemanticModelBuilderVisitor } = require('../dist/semantic/semantic-visitor-index');
 const { SemanticCodeGenerator } = require('../dist/codegen/generator');
@@ -209,18 +208,9 @@ function diffMultiset(beforeItems, afterItems) {
   return { beforeOnly, afterOnly };
 }
 
-// The formatter's policy (docs/architecture/parser-fidelity.md): valid UTF-8,
-// otherwise Windows-1252. Statistical detection read German MDK scripts as
-// ISO-8859-7 or x-mac-cyrillic (#395).
 function parseFileWithFallback(filePath, parser) {
-  const buffer = fs.readFileSync(filePath);
-  const utf8 = iconv.decode(buffer, 'utf8');
-  const hasBom = buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf;
-  const isUtf8 = Buffer.from(utf8, 'utf8').equals(hasBom ? buffer.subarray(3) : buffer);
-  const parsed = parser.parse(isUtf8 ? utf8 : iconv.decode(buffer, 'windows-1252'));
-  parsed.filePath = filePath;
-  parsed.encoding = isUtf8 ? 'utf8' : 'windows-1252';
-  parsed.fallbackEncoding = !isUtf8;
+  const parsed = parser.parseFile(filePath);
+  parsed.fallbackEncoding = parsed.encoding !== 'utf8';
   return parsed;
 }
 
