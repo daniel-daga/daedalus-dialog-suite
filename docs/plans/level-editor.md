@@ -3281,7 +3281,7 @@ If the re-run shows the same spread with no cliff, the honest outcome is no gap
 rule at all and this closes as answered rather than as built. Corpus is
 `mdk/Content` — the maintainer's machine, not CI, so this is not agent-ready either.
 
-### 16.40 A decal edit is not redrawn, and `visualCamAlign` is unread (2026-10-12; #391)
+### 16.40 A decal edit was not redrawn (fixed), and `visualCamAlign` is unread (2026-10-12; #391)
 
 The decals are drawn — a camera-facing quad per decal at its own size, alpha
 weight and blend, grouped by (texture, alphaFunc) — and architecture §7 carries
@@ -3306,6 +3306,11 @@ non-structural path:
 
 Undo and redo take the same path, so the fix covers them for free; the test is
 the pipeline's, with the worker faked as every pipeline suite fakes it.
+
+**Fixed 2026-10-12.** `VobReader.columns` carries the decal side table and
+`applyOps` writes the three drawn fields into the row `decalVobs` names; the
+pipeline re-reads the visuals for a `SetVobProp` carrying any of them, as it
+does for `visual`. The four undrawn decal fields still re-read nothing.
 
 **`visualCamAlign` is the other loose end.** The engine picks between a full
 billboard and a yaw-locked one from that base field; the viewport draws every

@@ -2958,6 +2958,19 @@ export function applyOps(reader: VobReader, ops: readonly WorldOp[]): number[] {
         if (op.to[flag]) flags[op.vob] |= bit;
         else flags[op.vob] &= ~bit;
       }
+      // The three decal fields the layer draws have a side table, one row per
+      // decal rather than per VOB, so the row is a search of `decalVobs`. The
+      // other four decal fields are drawn by nothing and have no column.
+      const { decalVobs, decalDimensions, decalAlphaWeights, decalAlphaFuncs } = reader.columns;
+      const { decalDimension, decalAlphaWeight, decalAlphaFunc } = op.to;
+      if (decalDimension !== undefined || decalAlphaWeight !== undefined || decalAlphaFunc !== undefined) {
+        const row = decalVobs.indexOf(op.vob);
+        if (row >= 0) {
+          if (decalDimension !== undefined) decalDimensions.set(decalDimension.slice(0, 2), row * 2);
+          if (decalAlphaWeight !== undefined) decalAlphaWeights[row] = decalAlphaWeight;
+          if (decalAlphaFunc !== undefined) decalAlphaFuncs[row] = decalAlphaFunc;
+        }
+      }
       // The three base fields have no column and nothing is written for them —
       // `SetVobClassProp`'s case below, reached by the same op. The VOB is still
       // touched, which is what re-renders the panel that shows them, and the

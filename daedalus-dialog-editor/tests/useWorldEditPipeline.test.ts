@@ -136,6 +136,28 @@ describe('useWorldEditPipeline — the one door an edit goes through', () => {
     expect(surface.setVisuals).toHaveBeenCalled();
     expect(api.refreshWorldIndex).not.toHaveBeenCalled();
   });
+
+  test.each([
+    ['decalDimension', [40, 40], [50, 60]],
+    ['decalAlphaWeight', 200, 128],
+    ['decalAlphaFunc', 2, 3],
+  ])('a %s edit re-reads the visuals, which carry the decal layer (#391)', async (key, from, to) => {
+    const { result } = mount();
+    const op = { op: 'SetVobProp', vob: 1, path: '1', from: { [key]: from }, to: { [key]: to } } as unknown as WorldOp;
+    await act(async () => { await result.current.commitOps([op]); });
+    expect(api.getWorldVisuals).toHaveBeenCalledWith(['BARREL.3DS', 'CRATE.3DS']);
+    expect(surface.setVisuals).toHaveBeenCalled();
+    expect(api.refreshWorldIndex).not.toHaveBeenCalled();
+  });
+
+  test('a decal field nothing draws re-reads nothing', async () => {
+    const { result } = mount();
+    const op = {
+      op: 'SetVobProp', vob: 1, path: '1', from: { decalTwoSided: false }, to: { decalTwoSided: true },
+    } as unknown as WorldOp;
+    await act(async () => { await result.current.commitOps([op]); });
+    expect(api.getWorldVisuals).not.toHaveBeenCalled();
+  });
 });
 
 describe('useWorldEditPipeline — what a renumbering op costs the selection', () => {

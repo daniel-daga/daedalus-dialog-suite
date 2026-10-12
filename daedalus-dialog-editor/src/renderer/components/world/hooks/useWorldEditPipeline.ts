@@ -183,7 +183,14 @@ export function useWorldEditPipeline({
       // through the commit: they apply what the main process says it did, and
       // an inverted `SetVobProp` carries `visual` on both sides just as the
       // forward one does — so testing either side answers.
-      if (ops.some((op) => op.op === 'SetVobProp' && op.to.visual !== undefined)) {
+      //
+      // The three decal fields the layer draws take the same re-read (#391):
+      // the payload carries the `DecalScene`, built from the worker's index,
+      // which `applyOps` has just patched, and `SceneHost.update` replaces the
+      // decal layer whole.
+      if (ops.some((op) => op.op === 'SetVobProp' && (op.to.visual !== undefined
+        || op.to.decalDimension !== undefined || op.to.decalAlphaWeight !== undefined
+        || op.to.decalAlphaFunc !== undefined))) {
         setVisuals(await window.editorAPI.getWorldVisuals(drawnVisuals()));
       }
       return;

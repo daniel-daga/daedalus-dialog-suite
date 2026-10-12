@@ -261,6 +261,11 @@ export interface VobReader {
     nameIndex: Uint32Array;
     visualIndex: Uint32Array;
     visualTypeIndex: Uint32Array;
+    /** The decal side table — one row per VOB in `decalVobs`, not per VOB. */
+    decalVobs: Uint32Array;
+    decalDimensions: Float32Array;
+    decalAlphaWeights: Uint8Array;
+    decalAlphaFuncs: Uint8Array;
   };
   /**
    * The interned dictionaries `nameIndex` and `visualIndex` point into.
@@ -304,6 +309,10 @@ export function createVobReader(index: VobIndex): VobReader {
     nameIndex: new Uint32Array(index.nameIndex),
     visualIndex: new Uint32Array(index.visualIndex),
     visualTypeIndex: new Uint32Array(index.visualTypeIndex),
+    decalVobs: new Uint32Array(index.decalVobs),
+    decalDimensions: new Float32Array(index.decalDimensions),
+    decalAlphaWeights: new Uint8Array(index.decalAlphaWeights),
+    decalAlphaFuncs: new Uint8Array(index.decalAlphaFuncs),
   };
   const inside = (vob: number) => vob >= 0 && vob < index.count;
 

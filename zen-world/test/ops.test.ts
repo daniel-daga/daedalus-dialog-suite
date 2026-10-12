@@ -2937,6 +2937,40 @@ describe('applying ops to the index', () => {
     expect(reader.flags(0).cdDynamic).toBe(true);
   });
 
+  it('writes the three drawn decal fields into the decal side table (#391)', () => {
+    // The decal layer is built from these columns, in the worker and from its
+    // cached index: a projection that left them alone drew the old quad until
+    // a structural op or a reopen re-read the index.
+    const index = {
+      ...vobIndex([{}, { parent: 0, childIndex: 0 }, { parent: 0, childIndex: 1 }]),
+      decalVobs: Uint32Array.from([0, 2]).buffer,
+      decalDimensions: Float32Array.from([10, 10, 40, 40]).buffer,
+      decalAlphaWeights: Uint8Array.from([255, 200]).buffer,
+      decalAlphaFuncs: Uint8Array.from([1, 2]).buffer,
+    };
+    const reader = createVobReader(index);
+    const current = {
+      presetName: '', visualCamAlign: 0, bias: 0,
+      decal: {
+        dimension: [40, 40], offset: [0, 0], twoSided: false, alphaFunc: 2,
+        textureAnimFps: 0, alphaWeight: 200, ignoreDaylight: false,
+      },
+    };
+    const op = setVobProp(reader, 2, { decalDimension: [50, 60], decalAlphaWeight: 128, decalAlphaFunc: 3 }, null, current);
+
+    applyOps(reader, [op]);
+
+    // Row 1, because the row is found through `decalVobs`, not the VOB index.
+    expect([...new Float32Array(index.decalDimensions)]).toEqual([10, 10, 50, 60]);
+    expect([...new Uint8Array(index.decalAlphaWeights)]).toEqual([255, 128]);
+    expect([...new Uint8Array(index.decalAlphaFuncs)]).toEqual([1, 3]);
+
+    applyOps(reader, [invertOp(op)]);
+    expect([...new Float32Array(index.decalDimensions)]).toEqual([10, 10, 40, 40]);
+    expect([...new Uint8Array(index.decalAlphaWeights)]).toEqual([255, 200]);
+    expect([...new Uint8Array(index.decalAlphaFuncs)]).toEqual([1, 2]);
+  });
+
   it('interns a name that is already in the dictionary instead of appending it', () => {
     // Every rename appending would grow the dictionary without bound behind a
     // user holding a checkbox, and two VOBs sharing a name would stop sharing
