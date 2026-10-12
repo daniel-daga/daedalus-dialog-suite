@@ -20,8 +20,11 @@ export default defineConfig({
   // Test execution settings
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  // No retries, so a flake fails the run instead of passing on a second try;
+  // two workers on CI's 4-core runner. Three CI runs at 2 workers had no
+  // failure and took 1.3-1.9 min a shard against 1.9-2.4 at one (#359).
+  retries: 0,
+  workers: process.env.CI ? 2 : undefined,
 
   // Reporter to use
   reporter: 'html',
@@ -30,8 +33,8 @@ export default defineConfig({
     // Base URL for the dev server
     baseURL: 'http://localhost:5173',
 
-    // Collect trace on first retry
-    trace: 'on-first-retry',
+    // Keep the trace of a failed test (there is no retry to record one on)
+    trace: 'retain-on-failure',
 
     // Screenshot on failure
     screenshot: 'only-on-failure',

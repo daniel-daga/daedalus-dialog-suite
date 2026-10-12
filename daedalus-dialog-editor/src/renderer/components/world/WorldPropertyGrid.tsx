@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { memo, useCallback, useMemo, useState } from 'react';
 import {
   Box, Checkbox, Chip, FormControlLabel, IconButton, Stack, TextField, Tooltip, Typography,
 } from '@mui/material';
@@ -11,7 +11,7 @@ import {
   type ClassPropValue, type ClassProps, type EnumValueDescriptor, type FieldDescriptor,
   type VobProps, type ZenEulerDegrees, type ZenPosition, type ZenRotation,
 } from 'zen-world';
-import type { WorldSummary } from '../../../shared/worldTypes';
+import type { WorldOp, WorldSummary } from '../../../shared/worldTypes';
 import { vobModelOf } from '../../world/vobModel';
 import type { AssetThumbnails } from '../../world/assetThumbnails';
 import ContainerContentsField from './ContainerContentsField';
@@ -715,6 +715,12 @@ export interface WorldPropertyGridProps {
    */
   refusalGeneration: number;
   /**
+   * The last ops written into the index, read only for its identity. An op is
+   * written into `summary`'s buffers in place, so nothing else this grid takes
+   * changes when a VOB moves; this is what makes the memoised grid redraw.
+   */
+  appliedOps: readonly WorldOp[] | null;
+  /**
    * One property change, as the single key that changed.
    *
    * Only the changed key, because the op reads `from` for exactly the keys `to`
@@ -1408,4 +1414,6 @@ const WorldPropertyGrid: React.FC<WorldPropertyGridProps> = (
   );
 };
 
-export default WorldPropertyGrid;
+// Memoised, its callbacks passed through `useStableCallbacks`: on a selection it
+// was most of a WorldSurface commit (#359).
+export default memo(WorldPropertyGrid);

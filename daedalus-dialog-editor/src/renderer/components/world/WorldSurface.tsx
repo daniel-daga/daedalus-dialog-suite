@@ -2141,6 +2141,15 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
 
   /** Stable callbacks, so the memoised toolbar skips a commit that changed
    *  none of its values (#359). */
+  const gridCallbacks = useStableCallbacks({
+    onEditProps: handleEditProps,
+    onFocus: focusVob,
+    onTranslate: handleTranslateSelection,
+    onRotate: handleRotateVob,
+    onRotateSelection: handleRotateSelection,
+    onEditClassProps: handleEditClassProps,
+    onEditBaseProps: handleEditBaseProps,
+  });
   const toolbarProps = useStableCallbacks({
     onOpenWorld: () => void openPicker(),
     status,
@@ -2831,14 +2840,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
                       summary={summary}
                       selection={selection}
                       refusalGeneration={editRefusals}
-                      onEditProps={handleEditProps}
-                      onFocus={focusVob}
-                      onTranslate={handleTranslateSelection}
-                      onRotate={handleRotateVob}
-                      onRotateSelection={handleRotateSelection}
+                      appliedOps={appliedOps}
+                      {...gridCallbacks}
                       classProps={classProps?.vob === primary ? classProps.props : null}
-                      onEditClassProps={handleEditClassProps}
-                      onEditBaseProps={handleEditBaseProps}
                       itemInstances={itemInstances}
                       scriptFunctions={scriptFunctions}
                       itemVisuals={itemVisuals}

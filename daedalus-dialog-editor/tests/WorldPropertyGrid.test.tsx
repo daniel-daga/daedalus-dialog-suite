@@ -249,6 +249,7 @@ const wiring = {
   /** Bumped by the shell in `commitOps`' catch when the main process refuses an
    *  edit — the tests that are about refusal hand it a bumped value themselves. */
   refusalGeneration: 0,
+  appliedOps: null,
   /** No script project loaded, which is what a world opened on its own has —
    *  the tests that are about the item index hand it names themselves. */
   itemInstances: new Set<string>(),

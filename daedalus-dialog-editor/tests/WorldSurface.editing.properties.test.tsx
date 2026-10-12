@@ -21,6 +21,14 @@ import { ITEM_PROPS, LIGHT_PROPS, ZONE_PROPS, api, openWorld } from './worldSurf
 jest.mock('react-virtualized-auto-sizer', () => mockViewportStub.autoSizerStub);
 jest.mock('../src/renderer/components/world/WorldViewport', () => mockViewportStub.viewportStubModule());
 
+// Counts the grid's renders through the focus button's icon, which it draws
+// whenever a VOB is selected.
+const gridRenders = { count: 0 };
+jest.mock('@mui/icons-material/MyLocation', () => ({
+  __esModule: true,
+  default: () => { gridRenders.count += 1; return null; },
+}));
+
 describe('a class property edited in the grid', () => {
   /** VOB 1 as a light, with its class fields already on screen. */
   async function openLight() {
@@ -260,6 +268,20 @@ describe('a class property edited in the grid', () => {
     fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
 
     await waitFor(() => expect(rangeInput().value).toBe('2000'));
+  });
+});
+
+describe('the grid on a surface commit', () => {
+  it('skips one that changes none of its props', async () => {
+    // #359: on a selection the grid was most of a WorldSurface commit.
+    await openWorld();
+    const before = gridRenders.count;
+    expect(before).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByTestId('world-waynet-toggle'));
+
+    expect(screen.getByTestId('world-waynet-toggle')).toHaveAttribute('aria-pressed', 'true');
+    expect(gridRenders.count).toBe(before);
   });
 });
 
