@@ -12,7 +12,8 @@ import {
   ConditionalAction,
   SourceLine,
   snapshotDialogProperties,
-  snapshotConditions
+  snapshotCondition,
+  ConditionSpelling
 } from '../semantic-model';
 import { ActionParsers } from '../parsers/action-parsers';
 import { ConditionParsers } from '../parsers/condition-parsers';
@@ -358,7 +359,7 @@ export class LinkingVisitor {
       // Preserve this intentional condition state explicitly; an empty projected
       // body alone is not enough to infer a success return during generation.
       this.currentFunction.hasExplicitTrueReturn = true;
-      this.captureConditionSource(executable[0]);
+      this.currentFunction.conditionSource = { text: executable[0].text, operator: 'AND', clauses: [] };
       return;
     }
 
@@ -375,13 +376,23 @@ export class LinkingVisitor {
         const operators = this.collectLogicalOperators(condition);
         if (operators.size <= 1) {
           this.captureConditionBodyComments(statements, guard);
-          this.currentFunction.conditionOperator = operators.has('||') ? 'OR' : 'AND';
-          for (const clause of this.collectConditionClauses(condition)) {
+          const operator = operators.has('||') ? 'OR' : 'AND';
+          this.currentFunction.conditionOperator = operator;
+          const clauses = this.collectConditionClauses(condition);
+          let projected = 0;
+          for (const clause of clauses) {
             const functionName = clause.type === 'call_expression'
               ? clause.childForFieldName('function')?.text : undefined;
-            this.processCondition(clause, functionName);
+            if (this.processCondition(clause, functionName)) projected++;
           }
-          this.captureConditionSource(guard);
+          // Spans align with conditions only if every clause became one.
+          if (projected === clauses.length) {
+            this.currentFunction.conditionSource = {
+              text: guard.text,
+              operator,
+              clauses: clauses.map(clause => ({ start: clause.startIndex - guard.startIndex, end: clause.endIndex - guard.startIndex }))
+            };
+          }
           return;
         }
       }
@@ -392,11 +403,6 @@ export class LinkingVisitor {
         ? new CommentAction(statement.text) : new Action(statement.text.trim());
       this.recordActionForCurrentFunction(atLine(action, statement));
     }
-  }
-
-  private captureConditionSource(statement: TreeSitterNode): void {
-    if (!this.currentFunction) return;
-    this.currentFunction.conditionSource = { text: statement.text, conditions: snapshotConditions(this.currentFunction) };
   }
 
   private captureConditionBodyComments(statements: TreeSitterNode[], statement: TreeSitterNode): void {
@@ -629,13 +635,16 @@ export class LinkingVisitor {
   /**
    * Process condition expressions (call expressions, identifiers, unary expressions)
    */
-  private processCondition(node: TreeSitterNode, functionName?: string): void {
-    if (!this.currentFunction) return;
+  private processCondition(node: TreeSitterNode, functionName?: string): boolean {
+    if (!this.currentFunction) return false;
 
     const condition = ConditionParsers.parseSemanticCondition(node, functionName);
-    if (condition) {
-      this.currentFunction.conditions.push(atLine(condition, node));
-    }
+    if (!condition) return false;
+    const located: typeof condition & ConditionSpelling = atLine(condition, node);
+    located.sourceText = node.text;
+    located.sourceBaseline = snapshotCondition(located);
+    this.currentFunction.conditions.push(located);
+    return true;
   }
 
   private isCurrentConditionFunction(): boolean {

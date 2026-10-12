@@ -12,7 +12,7 @@ import {
   resolveDialogFunction,
   getDialogFunctionName,
   snapshotDialogProperties,
-  snapshotConditions
+  unchangedConditionText
 } from '../semantic/semantic-model';
 import { collectReachableFunctions } from '../semantic/cross-references';
 import { continuationIndent, indentGeneratedCode } from '../semantic/code-formatting';
@@ -579,9 +579,8 @@ export class SemanticCodeGenerator {
       bodyLines.forEach(line => {
         lines.push(`${indent}${line}`);
       });
-    } else if (this.options.preserveSourceStyle && func.conditionSource &&
-               func.conditionSource.conditions === snapshotConditions(func)) {
-      lines.push(`${indent}${func.conditionSource.text}`);
+    } else if (this.fitsConditionSource(func)) {
+      lines.push(`${indent}${this.spliceConditionSource(func)}`);
     } else if (func.conditions.length > 0) {
       // Generate condition function body
       this.generateConditionBody(func.conditions, lines, indent, func.conditionOperator);
@@ -650,7 +649,27 @@ export class SemanticCodeGenerator {
   /**
    * Generate code for a dialog condition using polymorphism
    */
+  /** The guard as written still has a slot for every condition, joined the same way. */
+  private fitsConditionSource(func: DialogFunction): boolean {
+    const source = func.conditionSource;
+    return !!source && !!this.options.preserveSourceStyle && func.actions.length === 0 &&
+      func.conditions.length === source.clauses.length &&
+      (source.clauses.length < 2 || (func.conditionOperator ?? 'AND') === source.operator);
+  }
+
+  /** The written guard with each edited clause rewritten in its own slot. */
+  private spliceConditionSource(func: DialogFunction): string {
+    const { text, clauses } = func.conditionSource!;
+    let result = text;
+    for (let i = clauses.length - 1; i >= 0; i--) {
+      result = result.slice(0, clauses[i].start) + this.generateCondition(func.conditions[i]) + result.slice(clauses[i].end);
+    }
+    return result;
+  }
+
   private generateCondition(condition: DialogCondition): string {
+    const written = this.options.preserveSourceStyle ? unchangedConditionText(condition) : undefined;
+    if (written !== undefined) return written;
     const code = (condition as CodeGeneratable).generateCode({
       includeComments: this.options.includeComments
     });

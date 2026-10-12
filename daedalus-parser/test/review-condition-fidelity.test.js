@@ -123,6 +123,35 @@ test('#395: an edited guard is generated from the conditions, not the stale sour
   assert.ok(collapse(styledGenerator.generateFunction(cond)).includes('|| Npc_KnowsInfo'));
 });
 
+// Editing one clause rewrites that clause only; the others, and the guard's
+// layout while the clause count and operator stand, keep their spelling.
+const threeClauses = 'if (Npc_IsDead(UndeadDragon) == FALSE)\n\t&& (Npc_KnowsInfo(other, DIA_First))\n\t&& !(Npc_IsDead (Alvares)) { return TRUE; };';
+const parseThree = () => regenerate(`instance D(C_INFO) { condition = Cond; }; func int Cond() { ${threeClauses} };`).model.functions.Cond;
+
+test('#395: editing one clause leaves the rest of the guard as written', () => {
+  const cond = parseThree();
+  cond.conditions[1].dialogRef = 'DIA_Second';
+  const generated = styledGenerator.generateFunction(cond);
+  assert.ok(generated.includes(threeClauses.replace('DIA_First', 'DIA_Second')), generated);
+});
+
+test('#395: removing a clause keeps the survivors\' spelling', () => {
+  const cond = parseThree();
+  cond.conditions.splice(1, 1);
+  const generated = styledGenerator.generateFunction(cond);
+  assert.ok(generated.includes('Npc_IsDead(UndeadDragon) == FALSE'), generated);
+  assert.ok(generated.includes('!(Npc_IsDead (Alvares))'), generated);
+  assert.ok(!generated.includes('DIA_First'), generated);
+  assert.equal(parseSemanticModel(generated).hasErrors, false, generated);
+});
+
+test('#395: a clause hydrated the way the condition editor does it, or moved, keeps its spelling', () => {
+  const cond = parseThree();
+  cond.conditions = cond.conditions.map(c => ({ ...c, line: c.line + 5, getTypeName: () => c.type }));
+  const generated = styledGenerator.generateFunction(cond);
+  assert.ok(generated.includes(threeClauses), generated);
+});
+
 test('#395: the source spelling survives the editor\'s JSON round trip', () => {
   const source = 'instance D(C_INFO) { condition = Cond; }; func int Cond() { if Npc_IsInState (self, ZS_Talk) { return TRUE; }; };';
   const model = deserializeSemanticModel(JSON.parse(JSON.stringify(parseSemanticModel(source))));

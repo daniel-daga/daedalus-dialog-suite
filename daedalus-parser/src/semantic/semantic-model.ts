@@ -984,22 +984,50 @@ export interface DialogSourceBody {
   propertyValues: { [key: string]: string | number | boolean };
 }
 
-/** Lossless spelling of a projected condition body; `conditions` is its `snapshotConditions` baseline. */
+/**
+ * A projected guard or unconditional return as written (#395). `clauses[i]` is
+ * where `conditions[i]` sits in `text`; while the count and the operator still
+ * match, the guard is this text with only the edited clauses rewritten.
+ */
 export interface ConditionSource {
   text: string;
-  conditions: string;
+  operator: 'AND' | 'OR';
+  clauses: Array<{ start: number; end: number }>;
 }
 
-/** Order-insensitive in keys, so a hydrated condition compares equal to the parsed one. */
-export function snapshotConditions(func: Pick<DialogFunction, 'conditions' | 'conditionOperator' | 'actions'>): string {
-  const canonical = (value: unknown): unknown => {
-    if (Array.isArray(value)) return value.map(canonical);
+/** A parsed condition's own text, and `snapshotCondition` of it as parsed (#395). */
+export interface ConditionSpelling {
+  sourceText?: string;
+  sourceBaseline?: string;
+}
+
+// Where it was written is not what it is: a condition keeps its spelling when moved.
+const SPELLING_KEYS = new Set(['sourceText', 'sourceBaseline', 'line', 'sourceIndent']);
+
+/**
+ * A condition's fields, key-order-insensitive and without its spelling, its
+ * position or the methods the condition editor attaches, so a hydrated or
+ * moved copy compares equal.
+ */
+export function snapshotCondition(condition: object): string {
+  const canonical = (value: unknown, top = false): unknown => {
+    if (Array.isArray(value)) return value.map(item => canonical(item));
     if (!value || typeof value !== 'object') return value;
     return Object.keys(value).sort()
-      .filter(key => (value as Record<string, unknown>)[key] !== undefined)
+      .filter(key => !(top && SPELLING_KEYS.has(key)))
+      .filter(key => {
+        const field = (value as Record<string, unknown>)[key];
+        return field !== undefined && typeof field !== 'function';
+      })
       .map(key => [key, canonical((value as Record<string, unknown>)[key])]);
   };
-  return JSON.stringify([func.conditionOperator ?? 'AND', func.actions.length, canonical(func.conditions)]);
+  return JSON.stringify(canonical(condition, true));
+}
+
+/** The condition's source text while it is unedited, else undefined. */
+export function unchangedConditionText(condition: object): string | undefined {
+  const { sourceText, sourceBaseline } = condition as ConditionSpelling;
+  return sourceText !== undefined && sourceBaseline === snapshotCondition(condition) ? sourceText : undefined;
 }
 
 /** Function bodies can change independently; constructor references compare by name. */

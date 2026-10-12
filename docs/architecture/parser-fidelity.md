@@ -187,10 +187,15 @@ place their closing delimiter on a new line when `//` is present.
 
 A projected guard or unconditional return keeps its source statement in
 `conditionSource` (#395): the MDK writes guards the flat model cannot spell back
-— no parentheses, `(A) && (B)`, `== FALSE`, `IF`, `return 1`. It is emitted
-verbatim while `snapshotConditions` (operator, action count and the conditions,
-key-order-insensitive) still equals its parse-time baseline; any condition edit
-regenerates from the rows. A conditional action likewise keeps a non-lowercase
+— no parentheses, `(A) && (B)`, `== FALSE`, `IF`, `return 1`. It is stored
+with each clause's offsets. Each condition carries its own `sourceText` and a
+`sourceBaseline` — `snapshotCondition` of its fields, ignoring key order,
+position and the methods the condition editor attaches — and is written as its
+source while that still matches. While the clause count and operator stand,
+the guard is its source text with only the edited clauses rewritten in place;
+otherwise the guard is regenerated around the unedited clauses' own text.
+Force-regenerating all 2,927 MDK guards (5,588 clauses) without any spelling
+parses and re-reads to the same conditions (2026-10-12). A conditional action likewise keeps a non-lowercase
 `keyword`, an `emptyElse` and an `unterminated` (no `;`) flag, and a raw
 block statement gains no `;`.
 
