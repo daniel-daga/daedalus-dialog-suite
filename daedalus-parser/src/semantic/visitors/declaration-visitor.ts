@@ -115,6 +115,13 @@ export class DeclarationVisitor {
         func.leadingComments = [...this.pendingLeadingComments];
         func.range = { startIndex: node.startIndex, endIndex: node.endIndex };
         func.line = node.startPosition.row + 1;
+        if (this.functionNameMap.has(func.name.toLowerCase())) {
+          // Daedalus names are case-insensitive and the engine rejects a second
+          // declaration. Keep the first and flag the second, so a save refuses
+          // instead of dropping it.
+          this.recordDuplicateFunction(func.name, node);
+          return;
+        }
         this.semanticModel.functions[func.name] = func;
         this.semanticModel.declarationOrder?.push({ type: 'function', name: func.name });
         this.functionNameMap.set(func.name.toLowerCase(), func.name);
@@ -302,6 +309,22 @@ export class DeclarationVisitor {
       }
       this.semanticModel.animations[instance.name] = instance;
     }
+  }
+
+  private recordDuplicateFunction(name: string, node: TreeSitterNode): void {
+    if (!this.semanticModel.errors) {
+      this.semanticModel.errors = [];
+    }
+    this.semanticModel.hasErrors = true;
+    this.semanticModel.errors.push({
+      type: 'duplicate_declaration',
+      message: `Duplicate declaration of function ${name} at line ${node.startPosition.row + 1}, column ${node.startPosition.column + 1}`,
+      position: {
+        row: node.startPosition.row + 1,
+        column: node.startPosition.column + 1
+      },
+      text: name
+    });
   }
 
   private extractFunctionParameters(functionNode: TreeSitterNode): FunctionParameter[] {

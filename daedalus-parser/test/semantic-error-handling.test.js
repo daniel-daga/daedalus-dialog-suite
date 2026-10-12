@@ -250,3 +250,54 @@ test('generateFunction is unaffected by the hasErrors guard', () => {
   const output = generator.generateFunction(func);
   assert.ok(output.includes('DIA_Test_Info'), 'generateFunction should still emit the function');
 });
+
+// ===================================================================
+// DUPLICATE FUNCTION DECLARATIONS (#396)
+// ===================================================================
+
+test('a function declared twice is flagged, not silently overwritten', () => {
+  const model = parseSemanticModel(`
+    func void Hlp_GetInstanceID(var C_NPC npc) {};
+    func void Hlp_GetInstanceID(var C_ITEM item) {};
+  `);
+
+  assert.ok(model.hasErrors, 'a duplicate declaration should set hasErrors');
+  const duplicate = model.errors.find(e => e.type === 'duplicate_declaration');
+  assert.ok(duplicate, 'a duplicate_declaration error should be recorded');
+  assert.match(duplicate.message, /Hlp_GetInstanceID/);
+  assert.equal(duplicate.position.row, 3, 'the error should point at the second declaration');
+});
+
+test('a duplicate declaration keeps the first declaration in the model', () => {
+  const model = parseSemanticModel(`
+    func void Hlp_GetInstanceID(var C_NPC npc) {};
+    func void Hlp_GetInstanceID(var C_ITEM item) {};
+  `);
+
+  const kept = model.functions.Hlp_GetInstanceID;
+  assert.equal(kept.parameters.length, 1);
+  assert.equal(kept.parameters[0].type, 'C_NPC');
+  assert.equal(model.declarationOrder.filter(d => d.name === 'Hlp_GetInstanceID').length, 1,
+    'the duplicate should not be listed in declaration order');
+});
+
+test('a function whose name differs only in case is a duplicate', () => {
+  const model = parseSemanticModel(`
+    func void MyFunc() {};
+    func void myfunc() {};
+  `);
+
+  assert.ok(model.errors.some(e => e.type === 'duplicate_declaration'),
+    'Daedalus names are case-insensitive, so this is a duplicate');
+});
+
+test('the code generator refuses to emit a model with a duplicate declaration', () => {
+  const model = parseSemanticModel(`
+    func void Hlp_GetInstanceID(var C_NPC npc) {};
+    func void Hlp_GetInstanceID(var C_ITEM item) {};
+  `);
+
+  const generator = new SemanticCodeGenerator();
+  assert.throws(() => generator.generateSemanticModel(model), /Refusing to generate/,
+    'saving must not drop the second declaration silently');
+});

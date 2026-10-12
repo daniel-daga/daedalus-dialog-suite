@@ -1202,7 +1202,7 @@ export class Dialog {
 // ===================================================================
 
 export interface SyntaxError {
-  type: 'syntax_error' | 'missing_token';
+  type: 'syntax_error' | 'missing_token' | 'duplicate_declaration';
   message: string;
   position: {
     row: number;
