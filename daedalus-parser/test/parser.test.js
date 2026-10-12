@@ -566,16 +566,15 @@ describe('native runtime across module registries', () => {
 describe('identifier characters (#383)', () => {
   const parser = new DaedalusParser();
 
-  test('@ and ^ do not start an identifier, and a spaced ^ is still xor', () => {
+  test('@ and ^ do not start an identifier, and ^ is no operator (#389)', () => {
     assert.equal(parser.parse('func void f() { var int a; a = @a; };').hasErrors, true);
     assert.equal(parser.parse('func void f() { var int a; a = ^a; };').hasErrors, true);
+    assert.equal(parser.parse('func void f() { var int a; a = a ^ 1; };').hasErrors, true, 'no reference grammar has xor');
 
-    const tree = parser.parse('func void f() { var int a; a = a ^ 1; a = a^b; };');
+    const tree = parser.parse('func void f() { var int a; a = a^b; };');
     assert.equal(tree.hasErrors, false);
-    const text = tree.rootNode.toString();
-    assert.match(text, /binary_expression/, 'a ^ 1 is a binary expression');
     const assignments = tree.rootNode.descendantsOfType('assignment_statement');
-    assert.equal(assignments[1].childForFieldName('right').type, 'identifier', 'a^b is one identifier');
+    assert.equal(assignments[0].childForFieldName('right').type, 'identifier', 'a^b is one identifier');
   });
 });
 

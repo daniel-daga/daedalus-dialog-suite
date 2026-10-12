@@ -5,7 +5,7 @@ export function hasComment(node: TreeSitterNode): boolean {
 }
 
 export const COMPARISON_OPERATORS = new Set(['==', '!=', '<', '>', '<=', '>=']);
-const BINARY_OPERATORS = new Set(['||', '&&', '|', '^', '&', '==', '!=', '<', '<=', '>', '>=', '<<', '>>', '+', '-', '*', '/', '%']);
+const BINARY_OPERATORS = new Set(['||', '&&', '|', '&', '==', '!=', '<', '<=', '>', '>=', '<<', '>>', '+', '-', '*', '/', '%']);
 const ASSIGNMENT_OPERATORS = new Set(['=', '+=', '-=', '*=', '/=']);
 export const CONDITION_MODE_BLOCKING_STATEMENTS = new Set(['if_statement', 'return_statement']);
 

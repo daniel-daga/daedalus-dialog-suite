@@ -221,7 +221,6 @@ module.exports = grammar({
       prec.left(1, seq($._expression, '||', $._expression)),
       prec.left(2, seq($._expression, '&&', $._expression)),
       prec.left(3, seq($._expression, '|', $._expression)),
-      prec.left(4, seq($._expression, '^', $._expression)),
       prec.left(5, seq($._expression, '&', $._expression)),
       prec.left(6, seq($._expression, choice('==', '!='), $._expression)),
       prec.left(7, seq($._expression, choice('<', '<=', '>', '>='), $._expression)),
@@ -268,7 +267,7 @@ module.exports = grammar({
 
     // `@` and `^` continue an identifier but never start one (#383): Ikarus's
     // `_@`/`_^`, LeGo's `Foo@`. Same rule as the DaedalusLanguageServer and
-    // DaedalusCompiler grammars, so `a^b` is one name and `a ^ b` is xor.
+    // DaedalusCompiler grammars, so `a^b` is one name. Neither has xor, nor do we (#389).
     identifier: $ => prec(-1, /[a-zA-Z_\u0080-\u00FF][a-zA-Z0-9_@^\u0080-\u00FF]*/),
 
     number: $ => /\d+(\.\d+)?/,

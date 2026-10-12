@@ -329,7 +329,8 @@ CLI help tests), grammar generation, lint and typecheck on fix commit
   whole statement, so a save emits it once, as written.
 - `@` and `^` continue an identifier but never start one (#383; Ikarus's
   `_@`/`_^`, LeGo's `Foo@`), the rule of the DaedalusLanguageServer and
-  DaedalusCompiler grammars. So `a^b` is one name and `a ^ b` is xor.
+  DaedalusCompiler grammars. So `a^b` is one name, and `a ^ b` is a syntax
+  error: there is no xor operator (#389).
 - An instance declared without a body — `instance MEM_Game(oCGame);`, or
   several at once, `instance a, b(C);` (#383) — is its own node,
   `instance_forward_declaration`, so nothing that reads an instance body
@@ -601,12 +602,18 @@ Checked against ours on 2026-10-10:
 | `instance a, b(C);` without a body | yes | yes | yes (#383) |
 | float `1e5`, `.5`, `5.` | yes | yes | **no** (#383) |
 | array parameter `var int a[3]` | yes | yes | **no** (#383) |
-| `&=`, `\|=` | yes | no | no (#389) |
-| `extern func` | no | yes | no (#389) |
+| `&=`, `\|=` | yes | no | no, by decision (#389) |
+| `extern func` | no | yes | no, by decision (#389) |
 | `\"` escape in a string | no | yes | no, by design (#389) |
-| `^` as xor | no | no | yes (#389) |
+| `^` as xor | no | no | no, removed (#389) |
 | `while`/`break`/`continue` | no | yes | no (#383 item 4) |
 | `namespace`, `META` | yes | no | no (#383 item 4) |
+
+The four #389 rows were settled by one rule: accept only what there is
+evidence the game's compiler accepts, since a construct the editor accepts and
+the game rejects surfaces only in Gothic. None occurs in LeGo, Ikarus or the
+corpus. Escapes stay out for a second reason: a string ending in a backslash,
+such as a path, would swallow its closing quote.
 
 Both accept keywords as names, `var func`/`var instance`, `a.b.c`, `else if`,
 `null` and `nofunc`, as ours does. Our class bodies allow assignments and our

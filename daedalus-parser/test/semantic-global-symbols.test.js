@@ -373,7 +373,6 @@ func void Use()
 	var int p;
 	p = _@(p) + _@s(p);
 	p = new(Queue@);
-	p = p ^ 1;
 };
 `;
 
