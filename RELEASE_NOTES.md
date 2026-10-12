@@ -34,3 +34,4 @@
 - #275: Help button (or F1) shows every keyboard shortcut
 - #355: String constants are edited as plain text, without their quotes
 - #321: Waypoint pickers open their list on focus, like the other autocompletes
+- #318: Problems hints when a routine state has no bed, bench or other mob near its waypoint

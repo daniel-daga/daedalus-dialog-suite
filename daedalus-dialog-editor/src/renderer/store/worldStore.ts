@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { applyOps, createVobReader, isStructuralOp, isWaynetOp } from 'zen-world';
 import type { PortalFindingsPayload, WaynetPayload, WorldOp, WorldSummary } from '../../shared/worldTypes';
 import type { WorldLocus, WorldWaynetView } from '../problems/domain/types';
+import { mobSchemeOf, type RoutinePlacesView } from '../problems/domain/rules/routineMobMissing';
 
 /**
  * World-surface state (level-editor.md §7).
@@ -130,6 +131,9 @@ interface WorldStore {
    * dangling.
    */
   waynetNames: WorldWaynetView | null;
+  /** Each waypoint's position by UPPERCASED name, as of the last waynet read,
+   *  or null while none has been — what `routine-mob-missing` measures from. */
+  waypointPositions: ReadonlyMap<string, readonly [number, number, number]> | null;
   /**
    * The portal checks' findings over the open world's mesh, or null while
    * none has been read (level-editor.md §16.20 slice 3). Computed in the
@@ -235,6 +239,7 @@ const EMPTY = {
   selection: [] as readonly number[],
   selectedWaypoint: null as number | null,
   waynetNames: null as WorldWaynetView | null,
+  waypointPositions: null as ReadonlyMap<string, readonly [number, number, number]> | null,
   portalFindings: null as PortalFindingsPayload | null,
   editError: null,
   textureWarning: null as string | null,
@@ -278,6 +283,31 @@ const freePointsOf = (summary: WorldSummary | null): string[] => {
     if (name) names.add(name.toUpperCase());
   }
   return [...names];
+};
+
+/**
+ * Every mob in the summary with its scheme and position — `routine-mob-missing`'s
+ * other input. Read per scan rather than stored, because a move is written
+ * into these columns in place: a bench dragged closer counts at the next scan.
+ * A mob is an `oCMob*` class with a visual; the plain `oCMOB` is not one.
+ */
+export const mobsOf = (summary: WorldSummary): RoutinePlacesView['mobs'] => {
+  const { vobIndex } = summary;
+  const mobClass = vobIndex.classes.map((cls) => /^oCMob./i.test(cls));
+  const classIndex = new Uint32Array(vobIndex.classIndex);
+  const visualIndex = new Uint32Array(vobIndex.visualIndex);
+  const positions = new Float32Array(vobIndex.positions);
+  const mobs: { scheme: string; position: readonly [number, number, number] }[] = [];
+  for (let vob = 0; vob < vobIndex.count; vob += 1) {
+    if (!mobClass[classIndex[vob]]) continue;
+    const visual = vobIndex.visuals[visualIndex[vob]];
+    if (!visual) continue;
+    mobs.push({
+      scheme: mobSchemeOf(visual),
+      position: [positions[vob * 3], positions[vob * 3 + 1], positions[vob * 3 + 2]],
+    });
+  }
+  return mobs;
 };
 
 /**
@@ -361,9 +391,18 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
     // no waynet chunk with an empty point list rather than throwing, and null
     // is what both readers already take for "nothing is known".
     if (payload === null || payload.names.length === 0) {
-      if (get().waynetNames !== null) set({ waynetNames: null });
+      if (get().waynetNames !== null) set({ waynetNames: null, waypointPositions: null });
       return;
     }
+
+    // Kept on every read, a move included, and never a reason to re-scan by
+    // itself: the hint it feeds is cosmetic, and the next scan picks it up.
+    const xyz = new Float32Array(payload.positions);
+    set({
+      waypointPositions: new Map(payload.names.map((name, i) => (
+        [name.toUpperCase(), [xyz[i * 3], xyz[i * 3 + 1], xyz[i * 3 + 2]]]
+      ))),
+    });
 
     const pointNameKeys = new Set(payload.names.map((name) => name.toUpperCase()));
     // The free points are the summary's, not this payload's: they are VOBs.

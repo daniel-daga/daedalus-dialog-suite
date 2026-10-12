@@ -1,6 +1,7 @@
 import type { FileParseErrors, SemanticModel, SpawnSite } from '../../../shared/types';
 import type { PortalFinding } from '../../../shared/worldTypes';
 import type { RoutineSite } from '../../../shared/types';
+import type { RoutinePlacesView } from './rules/routineMobMissing';
 
 /**
  * Domain types for the project-wide Problems panel.
@@ -10,7 +11,7 @@ import type { RoutineSite } from '../../../shared/types';
  * per-file semantic models the renderer already caches.
  */
 
-export type ProblemSeverity = 'error' | 'warning';
+export type ProblemSeverity = 'error' | 'warning' | 'hint';
 
 export type ProblemRuleId =
   | 'parse-error'
@@ -28,6 +29,8 @@ export type ProblemRuleId =
   // The portal checks (level-editor.md §16.18 slice 1, §16.22 q1–q3), one id
   // per `zen-world` finding kind. All world-locus, by polygon.
   | 'routine-overlap'
+  // A routine state with no mob of its scheme near its waypoint (#318).
+  | 'routine-mob-missing'
   | 'portal-material-malformed'
   | 'portal-material-unknown-sector'
   | 'portal-unpaired'
@@ -235,6 +238,9 @@ export interface ProjectView {
    * take theirs there: `parsedFiles` is capped by what has been opened.
    */
   routineSites: readonly RoutineSite[];
+  /** The open world's waypoint positions and mobs — what `routine-mob-missing`
+   *  judges each entry against. Absent when no world is open. */
+  routinePlaces?: RoutinePlacesView;
 }
 
 /**

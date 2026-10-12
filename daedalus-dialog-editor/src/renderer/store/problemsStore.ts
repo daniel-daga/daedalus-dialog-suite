@@ -13,7 +13,7 @@ import type { DialogMetadata, SemanticModel } from '../../shared/types';
 import type { FileFacts, FileModel, Problem } from '../problems/domain/types';
 import { scanProject } from '../problems/application/scanProject';
 import { useProjectStore } from './projectStore';
-import { useWorldStore } from './worldStore';
+import { mobsOf, useWorldStore } from './worldStore';
 
 /**
  * Trailing delay for parsed-model-driven scans, so watcher batches and
@@ -112,6 +112,10 @@ export const useProblemsStore = create<ProblemsStore>((set, get) => {
       // rule that needs it returns nothing (level-editor.md §16.8).
       const world = useWorldStore.getState().waynetNames ?? undefined;
       const portalFindings = useWorldStore.getState().portalFindings ?? undefined;
+      const { summary, waypointPositions } = useWorldStore.getState();
+      const routinePlaces = summary !== null && waypointPositions !== null
+        ? { waypoints: waypointPositions, mobs: mobsOf(summary) }
+        : undefined;
 
       // Null database stays undefined here: the rule distinguishes "no database
       // was found" from "the database is empty", and only the second is a
@@ -129,6 +133,7 @@ export const useProblemsStore = create<ProblemsStore>((set, get) => {
         parseErrors: project.parseErrorIndex,
         world,
         portalFindings,
+        routinePlaces,
         outputUnits
       });
 

@@ -40,6 +40,20 @@ describe('ProblemsPanel empty states', () => {
     expect(screen.getByTestId('problems-summary')).toHaveTextContent('0 errors, 0 warnings');
   });
 
+  it('counts hints apart from warnings', () => {
+    act(() => {
+      useProjectStore.setState({ projectPath: 'C:/mod' });
+      useProblemsStore.setState({
+        problems: [{
+          id: 'routine-mob-missing:c.d:12', rule: 'routine-mob-missing', severity: 'hint', message: 'm',
+          locus: { kind: 'script', filePath: 'c.d' }
+        }]
+      });
+    });
+    render(<ProblemsPanel />);
+    expect(screen.getByTestId('problems-summary')).toHaveTextContent('0 errors, 0 warnings, 1 hint');
+  });
+
   it('renders the store\'s isScanning while a rescan runs', () => {
     act(() => {
       useProjectStore.setState({ projectPath: 'C:/mod' });

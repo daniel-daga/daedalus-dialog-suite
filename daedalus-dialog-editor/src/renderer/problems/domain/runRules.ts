@@ -9,6 +9,7 @@ import { outputUnitDriftRule } from './rules/outputUnitDrift';
 import { waypointNotInWorldRule } from './rules/waypointNotInWorld';
 import { duplicateSpawnRule } from './rules/duplicateSpawn';
 import { routineOverlapRule } from './rules/routineOverlap';
+import { routineMobMissingRule } from './rules/routineMobMissing';
 import { portalsRule } from './rules/portals';
 
 /** Every lint rule the Problems panel runs, in declaration order. */
@@ -23,10 +24,11 @@ export const ALL_RULES: readonly LintRule[] = [
   waypointNotInWorldRule,
   duplicateSpawnRule,
   routineOverlapRule,
+  routineMobMissingRule,
   portalsRule
 ];
 
-const SEVERITY_ORDER: Record<Problem['severity'], number> = { error: 0, warning: 1 };
+const SEVERITY_ORDER: Record<Problem['severity'], number> = { error: 0, warning: 1, hint: 2 };
 
 /**
  * Maps each function used as a dialog's `information` or `condition` back to that

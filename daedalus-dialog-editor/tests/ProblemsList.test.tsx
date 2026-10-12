@@ -35,6 +35,20 @@ describe('ProblemsList', () => {
     expect(screen.getByTestId('problem-row-1')).toHaveTextContent('b.d · Helper');
   });
 
+  it('labels a hint as a hint, not as a warning', () => {
+    render(<ProblemsList problems={[{
+      id: 'routine-mob-missing:c.d:12',
+      rule: 'routine-mob-missing',
+      severity: 'hint',
+      message: 'TA_SLEEP at "NW_FARM_FIELD" has no BEDHIGH within 20 m in the open world, so the NPC will stand there instead.',
+      locus: { kind: 'script', filePath: 'Story/NPC/c.d', functionName: 'Rtn_Start_902', line: 12 }
+    }]} onSelect={() => {}} />);
+
+    expect(screen.getByTestId('problem-row-0')).toHaveTextContent('Hint');
+    expect(screen.getByTestId('problem-row-0')).not.toHaveTextContent('Warning');
+    expect(screen.getByTestId('problem-row-0')).toHaveTextContent('No mob nearby');
+  });
+
   it('invokes onSelect with the clicked problem', () => {
     const onSelect = jest.fn();
     render(<ProblemsList problems={problems} onSelect={onSelect} />);

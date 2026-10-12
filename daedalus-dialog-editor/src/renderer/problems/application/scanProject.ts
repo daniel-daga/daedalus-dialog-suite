@@ -7,6 +7,7 @@ import type {
   WaypointSites,
   WorldWaynetView
 } from '../domain/types';
+import type { RoutinePlacesView } from '../domain/rules/routineMobMissing';
 import { buildProjectView } from '../domain/projectView';
 import { runRules } from '../domain/runRules';
 import { outputUnitAgreement } from '../domain/rules/outputUnitDrift';
@@ -44,6 +45,9 @@ export interface ProjectScanInput {
   /** Every `TA` entry the project index read — what `routine-overlap` sweeps.
    *  Absent is an index that has not loaded, and the rule then says nothing. */
   routineSites?: readonly RoutineSite[];
+  /** The open world's waypoint positions and mobs, for `routine-mob-missing`.
+   *  Absent when no world is open, and the rule then says nothing. */
+  routinePlaces?: RoutinePlacesView;
   /** The index pass's per-file syntax errors — what `parse-error` reports. It
    *  is the only pass that sees a file nobody opened. */
   parseErrors?: readonly FileParseErrors[];
@@ -70,6 +74,7 @@ export function scanProject(input: ProjectScanInput): ProjectScanResult {
     waypointSites: input.waypointSites,
     spawnSites: input.spawnSites,
     routineSites: input.routineSites,
+    routinePlaces: input.routinePlaces,
     npcsWithDialogs: input.npcsWithDialogs,
     world: input.world,
     portalFindings: input.portalFindings,

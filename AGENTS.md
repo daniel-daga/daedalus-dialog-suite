@@ -202,7 +202,7 @@ Visual desktop editor (Electron + React) for editing, validating, and generating
 | `src/renderer/components/actionRenderers/` | Per-action-type render components |
 | `src/renderer/components/common/` | Shared UI primitives (`VariableAutocomplete`, `autocompletePolicies.ts`, etc.) |
 | `src/renderer/quest/domain/` | Pure quest logic (analysis, graph inference, condition codec) |
-| `src/renderer/problems/domain/` | Pure Problems rules (ten of them) — no React/MUI/Electron imports |
+| `src/renderer/problems/domain/` | Pure Problems rules (twelve of them) — no React/MUI/Electron imports |
 | `src/renderer/simulator/` | Dialog simulator domain and session state |
 | `src/renderer/types/questGraph.ts` | Quest graph type definitions |
 | `src/main/services/` | Main-process services (File, Parser, Project, Updater, etc.) |
@@ -334,7 +334,7 @@ But know what that layer **cannot** check: the main process holds no semantic mo
 
 **Active plan:** [`docs/plans/vob-folders.md`](docs/plans/vob-folders.md) — user-created VOB folders in the World scene tree: a virtual, editor-only grouping (never a VOB, never touching the `.zen` file) persisted as a `<worldname>.folders.json` sidecar beside the world file. Landed 2026-08-31 — create/rename/delete a folder, add/remove VOBs via the context menu, a new Folders tab; no nesting, no undo/redo, no drag-and-drop-in by design. Awaiting real-world use before extraction into `docs/architecture/level-editor.md`.
 
-**Active plan:** [`docs/plans/npc-editor.md`](docs/plans/npc-editor.md) — an NPC editor: a structured `C_NPC` model in the parser with patch-in-place saves, a form editor, a bind-pose visual preview, then real NPC meshes in the World surface. Phase 1 (#284) is the parser's `daedalus-parser/npc-definition` reader/writer; Phase 2 (#285) is `NpcEditorDialog`, opened from the NPC list, over `npc:extract`/`npc:applyEdits` in the parser pool. Phase 5 (built 2026-09-28, #318 left) is routine authoring: the routine editor (`components/RoutineEditor.tsx`, in the NPC editor and as the World surface's routine mode) over `src/renderer/routines/routineEntries.ts`, which edits a routine function's actions in the file model using `ProjectIndex.routineLayouts`.
+**Active plan:** [`docs/plans/npc-editor.md`](docs/plans/npc-editor.md) — an NPC editor: a structured `C_NPC` model in the parser with patch-in-place saves, a form editor, a bind-pose visual preview, then real NPC meshes in the World surface. Phase 1 (#284) is the parser's `daedalus-parser/npc-definition` reader/writer; Phase 2 (#285) is `NpcEditorDialog`, opened from the NPC list, over `npc:extract`/`npc:applyEdits` in the parser pool. Phase 5 (built 2026-09-28; its state-needs hint #318 on 2026-10-12) is routine authoring: the routine editor (`components/RoutineEditor.tsx`, in the NPC editor and as the World surface's routine mode) over `src/renderer/routines/routineEntries.ts`, which edits a routine function's actions in the file model using `ProjectIndex.routineLayouts`.
 
 When a plan is complete, extract durable decisions into canonical docs and delete the plan file.
 

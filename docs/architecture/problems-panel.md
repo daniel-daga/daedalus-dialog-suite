@@ -55,6 +55,7 @@ All read only structured, typed data:
 | `voice-id-duplicate` / `voice-id-malformed` | warning | a voice id used cross-file, or not matching `…_<n>_<n>` |
 | `waypoint-not-in-world` | warning | a script site names a waypoint the open world's waynet has no point for; silent when no world is open, and free points are matched by prefix because the engine matches them that way |
 | `duplicate-spawn` | warning | one NPC is statically inserted at two different spawn points, so both sites running puts two copies in the world |
+| `routine-mob-missing` | hint | a routine entry whose state sits down at a mob (`TA_Sleep` → `BEDHIGH`, `TA_Sit_Bench` → `BENCH`, 22 states) has no mob of that scheme within 20 m of its waypoint in the open world; skips `TOT`; silent when no world is open |
 
 Four decisions worth keeping:
 
@@ -83,6 +84,14 @@ Four decisions worth keeping:
   `C_NPC` instances too; dialog can, and it takes the same corpus to **4**
   findings. Same NPC at the *same* point twice is not this rule (598 retail site
   pairs do it deliberately, a pack on one waypoint).
+- **`routine-mob-missing` is the one hint.** Without its mob a state stands
+  at the waypoint, so a miss is cosmetic, and retail does it on purpose: of
+  1,537 such entries, 1,451 have the mob within 5 m and 80 are beyond 20 m,
+  37 of them parked at `TOT` and most of the rest dead NPCs posed with a sleep
+  or bench state (#318, measured by `zenkit-node/scripts/check-routine-mobs.js`).
+  The state → scheme table is that script's output, not derived per project.
+  Mobs are read from the live VOB columns on every scan, so a moved bench
+  counts at the next scan; waypoint positions are from the last waynet read.
 - **Defensive optional arrays.** A project-wide scan consumes many models,
   including partial/error models and the browser-harness mock, which may omit
   arrays the native parser always sets. Rules treat `conditions`/`calls`/

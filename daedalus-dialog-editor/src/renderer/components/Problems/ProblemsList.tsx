@@ -19,12 +19,15 @@ const RULE_LABEL: Record<ProblemRuleId, string> = {
   'portal-material-malformed': 'Malformed portal name',
   'portal-material-unknown-sector': 'Portal names unknown sector',
   'routine-overlap': 'Routine overlap',
+  'routine-mob-missing': 'No mob nearby',
   'portal-unpaired': 'Portal unpaired',
   'portal-non-planar': 'Portal not flat',
   'portal-reversed': 'Portal reversed'
 };
 
-const baseName = (filePath: string): string => filePath.split(/[\\/]/).pop() || filePath;
+const SEVERITY_LABEL: Record<Problem['severity'], string> = { error: 'Error', warning: 'Warning', hint: 'Hint' };
+
+const baseName =(filePath: string): string => filePath.split(/[\\/]/).pop() || filePath;
 
 const secondaryText = ({ locus }: Problem): string => {
   if (locus.kind === 'world') {
@@ -106,8 +109,8 @@ const ProblemsList: React.FC<ProblemsListProps> = ({
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <Chip
                   size="small"
-                  label={problem.severity === 'error' ? 'Error' : 'Warning'}
-                  color={problem.severity === 'error' ? 'error' : 'warning'}
+                  label={SEVERITY_LABEL[problem.severity]}
+                  color={problem.severity === 'hint' ? 'info' : problem.severity}
                   variant="outlined"
                 />
                 <Chip size="small" label={RULE_LABEL[problem.rule]} variant="outlined" />

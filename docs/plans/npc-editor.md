@@ -1,7 +1,7 @@
 # NPC Editor
 
 **Status:** Phases 1–4 built (#284, #285, #298, #309). NPC bodies now render at world spawn and routine placements.
-Phase 5 (authoring routines) is built — the model, the draft operations, the routine editor, the World surface's routine mode and creating routines (#312, #314–#317); the state-needs check (#318) is left.
+Phase 5 (authoring routines) is built — the model, the draft operations, the routine editor, the World surface's routine mode and creating routines (#312, #314–#317), and the state-needs check (#318) is a Problems hint since 2026-10-12.
 
 An editor for `C_NPC` instances inside the dialog editor, covering what the
 community's standalone *NPC Generator* covers (main info, attributes, protection,
@@ -273,7 +273,7 @@ the "NPC-Rendering im Viewport" item of
 ## 6. Phase 5 — authoring routines
 
 **Workshop with the maintainer, 2026-09-28.** Slices 1, 3, 4, 5 and 6 are built,
-slice 2 turned out not to be needed; #318 is left.
+slice 2 turned out not to be needed; #318 landed 2026-10-12.
 
 Everything a routine editor reads already exists: `routineSites`,
 `routinesByNpc` and `routineStatesByNpc` in the project index, the World
@@ -438,7 +438,7 @@ adds:
    in a modal, `RoutineEditorDialog`, opened by "Edit" beside each routine
    in the NPC editor's routines section. That section now follows the index,
    so a saved routine shows there without reopening.
-7. **Later: the state-needs check** (#318) (see the last decision above).
+7. **The state-needs check** (#318). **Built 2026-10-12** as the `routine-mob-missing` Problems hint (`docs/architecture/problems-panel.md`).
    **Measured 2026-10-12** with `zenkit-node/scripts/check-routine-mobs.js`
    over the MDK scripts and the four retail worlds. The table comes out of
    the scripts: 22 `TA_*` whose state calls `AI_UseMob(self, "<SCHEME>", 1)`
@@ -455,7 +455,7 @@ adds:
    a miss is cosmetic. What the measurement says: a check at 20 m would
    flag no near-miss and about 23 retail waypoints, nearly all on purpose. It
    does not kill the check, but it can be a hint at most, never a warning, and
-   it has to skip `TOT`. Building it is the maintainer's call. 324 waypoint
+   it has to skip `TOT`. Maintainer, 2026-10-12: build it as a hint. 324 waypoint
    names exist in more than one world; those are read generously (the
    nearest mob in any of them). 29 entries name a waypoint in no world.
 
@@ -526,4 +526,4 @@ top of it; 3 is mostly asset plumbing that already exists; 4 is small once 3
 works. Phase 3 can start in parallel with 2 once Phase 1's `NpcDefinition`
 shape is fixed.
 
-Phase 5's remaining work: the state-needs check (7).
+Phase 5 has no remaining work.

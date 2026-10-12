@@ -51,14 +51,16 @@ const ProblemsPanel: React.FC = () => {
     requestScan();
   }, [requestScan, parseGeneration, isIngesting]);
 
-  const { errorCount, warningCount } = useMemo(() => {
+  const { errorCount, warningCount, hintCount } = useMemo(() => {
     let errors = 0;
     let warnings = 0;
+    let hints = 0;
     for (const problem of problems) {
       if (problem.severity === 'error') errors += 1;
+      else if (problem.severity === 'hint') hints += 1;
       else warnings += 1;
     }
-    return { errorCount: errors, warningCount: warnings };
+    return { errorCount: errors, warningCount: warnings, hintCount: hints };
   }, [problems]);
 
   const handleSelect = async (problem: Problem): Promise<void> => {
@@ -181,7 +183,8 @@ const ProblemsPanel: React.FC = () => {
             ? 'Problems are found by scanning a project — open a project to see them here.'
             : isScanning || !hasScanned
               ? 'Scanning…'
-              : `${errorCount} error${errorCount === 1 ? '' : 's'}, ${warningCount} warning${warningCount === 1 ? '' : 's'}`}
+              : `${errorCount} error${errorCount === 1 ? '' : 's'}, ${warningCount} warning${warningCount === 1 ? '' : 's'}`
+                + (hintCount > 0 ? `, ${hintCount} hint${hintCount === 1 ? '' : 's'}` : '')}
           {ingestionIncomplete ? ` · ${scannedFileCount}/${totalFileCount} files scanned` : ''}
         </Typography>
       </Box>

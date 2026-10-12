@@ -10,6 +10,7 @@ import type {
   WorldWaynetView
 } from './types';
 import { extractFileFacts } from './fileFacts';
+import type { RoutinePlacesView } from './rules/routineMobMissing';
 
 const key = (name: string): string => name.trim().toLowerCase();
 
@@ -37,13 +38,14 @@ export function buildProjectView(input: {
   world?: WorldWaynetView;
   portalFindings?: readonly PortalFinding[];
   routineSites?: readonly RoutineSite[];
+  routinePlaces?: RoutinePlacesView;
   parseErrors?: readonly FileParseErrors[];
   /** Every block of the project's OU database, or absent when none was read. */
   outputUnits?: readonly { name: string; text: string; wav: string }[];
 }): ProjectView {
   const {
     files, knownNpcNames, factsCache, waypointSites, spawnSites, npcsWithDialogs, world, portalFindings,
-    routineSites, parseErrors, outputUnits,
+    routineSites, routinePlaces, parseErrors, outputUnits,
   } = input;
 
   const fileFacts: FileFactsEntry[] = files.map(({ filePath, model }) => {
@@ -85,6 +87,7 @@ export function buildProjectView(input: {
     world,
     portalFindings,
     routineSites: routineSites ?? [],
+    routinePlaces,
     parseErrors: parseErrors ?? []
   };
 }
