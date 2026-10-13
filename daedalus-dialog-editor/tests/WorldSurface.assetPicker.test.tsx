@@ -71,9 +71,9 @@ async function openWorld() {
 
 /** Walk the Assets tab to a crate and preview it. */
 async function previewCrate() {
-  api.listWorldAssets.mockResolvedValue([{ name: 'NW_CRATE.MRM', type: 'file' }] as never);
+  api.listWorldAssets.mockResolvedValue([{ name: 'NW_CRATE.3DS', type: 'file' }] as never);
   fireEvent.click(screen.getByTestId('world-panel-assets'));
-  fireEvent.click(await screen.findByTestId('world-asset-NW_CRATE.MRM'));
+  fireEvent.click(await screen.findByTestId('world-asset-NW_CRATE.3DS'));
   await screen.findByTestId('world-asset-preview-name');
 }
 
@@ -131,11 +131,11 @@ describe('the Assets panel as a picker', () => {
       vob,
       path: String(vob),
       from: { visual: 'BARREL.3DS' },
-      to: { visual: 'NW_CRATE.MRM' },
+      to: { visual: 'NW_CRATE.3DS' },
       fromBbox: null,
       toBbox: null,
     })));
-    expect(api.getVisualBounds).toHaveBeenCalledWith('NW_CRATE.MRM');
+    expect(api.getVisualBounds).toHaveBeenCalledWith('NW_CRATE.3DS');
   });
 
   it('offers nothing to write when no VOB is selected', async () => {
@@ -161,7 +161,7 @@ describe('the Assets panel as a picker', () => {
     expect(usePreviewed).toBeEnabled();
     fireEvent.click(usePreviewed);
 
-    expect(screen.getByTestId('world-place-visual')).toHaveValue('NW_CRATE.MRM');
+    expect(screen.getByTestId('world-place-visual')).toHaveValue('NW_CRATE.3DS');
   });
 
   it('has nothing to prefill from when nothing is previewed', async () => {

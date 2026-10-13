@@ -60,7 +60,7 @@ beforeEach(() => {
   api.getWorldHistoryDepth.mockResolvedValue({ undo: 0, redo: 0 } as never);
   api.getVobFolders.mockResolvedValue({ folders: [] } as never);
   api.getAssetCatalog.mockResolvedValue({ favorites: [], categories: [{ path: 'Mine/Crates', visuals: ['NW_CRATE.MRM'] }] } as never);
-  api.listWorldAssets.mockResolvedValue([{ name: 'NW_CRATE.MRM', type: 'file' }] as never);
+  api.listWorldAssets.mockResolvedValue([{ name: 'NW_CRATE.3DS', type: 'file' }] as never);
   (window as unknown as { editorAPI: typeof api }).editorAPI = api;
   useProjectStore.setState({ projectFilePath: PROJECT } as never);
 });
@@ -87,15 +87,15 @@ describe('the asset catalog on the surface', () => {
     await openWorld();
     fireEvent.click(screen.getByTestId('world-panel-assets'));
     fireEvent.click(await screen.findByTestId('world-asset-view-grid'));
-    const tile = await screen.findByTestId('world-asset-tile-NW_CRATE.MRM');
+    const tile = await screen.findByTestId('world-asset-tile-NW_CRATE.3DS');
 
     await act(async () => { fireEvent.click(within(tile).getByTestId('world-asset-star')); });
 
     await waitFor(() => expect(api.saveAssetCatalog).toHaveBeenCalledWith(PROJECT, {
-      favorites: ['NW_CRATE.MRM'],
+      favorites: ['NW_CRATE.3DS'],
       categories: [{ path: 'Mine/Crates', visuals: ['NW_CRATE.MRM'] }],
     }));
-    expect(within(screen.getByTestId('world-asset-tile-NW_CRATE.MRM')).getByTestId('world-asset-star')).toHaveAttribute('aria-pressed', 'true');
+    expect(within(screen.getByTestId('world-asset-tile-NW_CRATE.3DS')).getByTestId('world-asset-star')).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('writes a category’s collision override to the sidecar, a seed category included (#291)', async () => {
@@ -136,12 +136,12 @@ describe('the asset catalog on the surface', () => {
 
   it('files every mesh in a listing into a category with one sidecar write (#295)', async () => {
     api.listWorldAssets.mockResolvedValue([
-      { name: 'KM_BUSH_01.MRM', type: 'file' }, { name: 'KM_BUSH_02.MRM', type: 'file' },
-      { name: 'NW_CRATE.MRM', type: 'file' },
+      { name: 'KM_BUSH_01.3DS', type: 'file' }, { name: 'KM_BUSH_02.3DS', type: 'file' },
+      { name: 'NW_CRATE.3DS', type: 'file' },
     ] as never);
     await openWorld();
     fireEvent.click(screen.getByTestId('world-panel-assets'));
-    await screen.findByTestId('world-asset-KM_BUSH_01.MRM');
+    await screen.findByTestId('world-asset-KM_BUSH_01.3DS');
 
     fireEvent.click(screen.getByTestId('world-asset-file-many'));
     fireEvent.change(await screen.findByTestId('world-asset-file-new'), { target: { value: 'Archolos/Büsche' } });
@@ -156,7 +156,7 @@ describe('the asset catalog on the surface', () => {
       favorites: [],
       categories: [
         { path: 'Mine/Crates', visuals: ['NW_CRATE.MRM'] },
-        { path: 'Archolos/Büsche', visuals: ['KM_BUSH_01.MRM', 'KM_BUSH_02.MRM', 'NW_CRATE.MRM'] },
+        { path: 'Archolos/Büsche', visuals: ['KM_BUSH_01.3DS', 'KM_BUSH_02.3DS', 'NW_CRATE.3DS'] },
       ],
     });
   });
@@ -185,7 +185,7 @@ describe('the asset catalog on the surface', () => {
     useProjectStore.setState({ projectFilePath: null } as never);
     await openWorld();
     fireEvent.click(screen.getByTestId('world-panel-assets'));
-    await screen.findByTestId('world-asset-NW_CRATE.MRM');
+    await screen.findByTestId('world-asset-NW_CRATE.3DS');
     expect(api.getAssetCatalog).not.toHaveBeenCalled();
     expect(screen.queryByTestId('world-asset-mode-favorites')).not.toBeInTheDocument();
   });

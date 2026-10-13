@@ -99,7 +99,6 @@ test.describe('The Assets panel says which source an asset came from', () => {
 
   test('names the mount serving each entry, and shades what a later mount overrides', async () => {
     const { page } = fixture;
-
     await page.getByRole('button', { name: /Open Project/i }).first().click();
     await page.getByTestId('world-toggle').click();
     await page.getByTestId('world-open').click();
@@ -108,6 +107,11 @@ test.describe('The Assets panel says which source an asset came from', () => {
     await page.getByTestId('world-picker-browse').click();
 
     await page.getByTestId('world-panel-assets').click();
+
+    // #399: the install holds only compiled files, so the listing is widened
+    // before the mount questions are asked.
+    await page.getByTestId('world-asset-filter-toggle').click();
+    await page.getByTestId('world-asset-files').selectOption('all');
     await expect(page.getByTestId('world-asset-SHARED.MRM')).toBeVisible();
 
     // Mounted second, so its copy is the one the merged namespace serves.
@@ -117,7 +121,6 @@ test.describe('The Assets panel says which source an asset came from', () => {
 
     // Narrowed to the mesh tree: everything it holds, including the copy the
     // texture tree shadows, and nothing the texture tree alone has.
-    await page.getByTestId('world-asset-filter-toggle').click();
     await page.getByTestId('world-asset-source').selectOption({ label: 'Meshes/_compiled' });
     await expect(page.getByTestId('world-asset-SHARED.MRM')).toHaveAttribute('data-overridden', 'true');
     await expect(page.getByTestId('world-asset-MESH_ONLY.MRM')).toBeVisible();
@@ -133,6 +136,11 @@ test.describe('The Assets panel says which source an asset came from', () => {
     await page.getByTestId('world-open').click();
     await page.getByTestId('world-picker-browse').click();
     await page.getByTestId('world-panel-assets').click();
+
+    // #399: the install holds only compiled files, so the listing is widened
+    // through the panel, whose layout this test goes on to measure.
+    await page.getByTestId('world-asset-filter-toggle').click();
+    await page.getByTestId('world-asset-files').selectOption('all');
     await expect(page.getByTestId('world-asset-SHARED.MRM')).toBeVisible();
 
     const search = page.getByTestId('world-asset-filter');
@@ -143,9 +151,8 @@ test.describe('The Assets panel says which source an asset came from', () => {
     expect(toggleBox).not.toBeNull();
     expect(searchBox!.width).toBeGreaterThan(160);
     expect(toggleBox!.x).toBeGreaterThan(searchBox!.x + searchBox!.width);
-    await expect(page.getByTestId('world-asset-filter-panel')).toHaveCount(0);
+    await expect(page.getByTestId('world-asset-filter-panel')).toBeVisible();
 
-    await toggle.click();
     await expect(toggle).toHaveAttribute('aria-expanded', 'true');
     const filters = page.getByTestId('world-asset-filter-panel');
     await expect(filters).toBeVisible();
@@ -159,7 +166,8 @@ test.describe('The Assets panel says which source an asset came from', () => {
     expect(sourceBox!.width).toBeGreaterThan(formatBox!.width * 1.5);
 
     await filters.getByTestId('world-asset-source').selectOption({ label: 'Meshes/_compiled' });
-    await expect(toggle).toContainText('1');
+    // The files lens is widened too (#399), so the toggle counts both.
+    await expect(toggle).toContainText('2');
     await toggle.click();
     await expect(filters).toHaveCount(0);
     await expect(page.getByTestId('world-asset-MESH_ONLY.MRM')).toBeVisible();

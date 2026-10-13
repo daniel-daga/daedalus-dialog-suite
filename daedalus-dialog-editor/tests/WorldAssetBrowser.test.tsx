@@ -52,6 +52,7 @@ const TREE: Record<string, VfsEntry[] | null> = {
   // unsorted browser and prove nothing.
   '/': [
     { name: 'MOD_ONLY.MRM', type: 'file' },
+    { name: 'MOD_ONLY.3DS', type: 'file' },
     { name: 'Meshes', type: 'directory' },
     { name: 'Textures', type: 'directory' },
   ],
@@ -60,6 +61,7 @@ const TREE: Record<string, VfsEntry[] | null> = {
   ],
   'Meshes/_compiled': [
     { name: 'NW_CRATE.MRM', type: 'file' },
+    { name: 'NW_CRATE.3DS', type: 'file' },
     { name: 'CHESTBIG.MDL', type: 'file' },
   ],
   'Textures': [
@@ -126,7 +128,10 @@ describe('WorldAssetBrowser', () => {
     render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} />);
 
     await screen.findByTestId('world-asset-Meshes');
-    expect(screen.getByTestId('world-asset-MOD_ONLY.MRM')).toBeInTheDocument();
+    // #399: the browser lists source files by default; a compiled `.MRM` is
+    // one filter setting away, and a retail install holds only those.
+    expect(screen.getByTestId('world-asset-MOD_ONLY.3DS')).toBeInTheDocument();
+    expect(screen.queryByTestId('world-asset-MOD_ONLY.MRM')).not.toBeInTheDocument();
     expect(calls).toEqual(['/']);
   });
 
@@ -138,12 +143,12 @@ describe('WorldAssetBrowser', () => {
     const onPreview = jest.fn();
     render(<WorldAssetBrowser listAssets={list} onPreview={onPreview} />);
 
-    const row = await screen.findByTestId('world-asset-MOD_ONLY.MRM');
+    const row = await screen.findByTestId('world-asset-MOD_ONLY.3DS');
     expect(row).toHaveAttribute('tabindex', '0');
 
     row.focus();
     fireEvent.keyDown(row, { key: 'Enter' });
-    expect(onPreview).toHaveBeenCalledWith('MOD_ONLY.MRM');
+    expect(onPreview).toHaveBeenCalledWith('MOD_ONLY.3DS');
   });
 
   it('marks the row whose asset is being previewed', async () => {
@@ -154,11 +159,11 @@ describe('WorldAssetBrowser', () => {
       <WorldAssetBrowser
         listAssets={list}
         onPreview={jest.fn()}
-        previewing="MOD_ONLY.MRM"
+        previewing="MOD_ONLY.3DS"
       />,
     );
 
-    const row = await screen.findByTestId('world-asset-MOD_ONLY.MRM');
+    const row = await screen.findByTestId('world-asset-MOD_ONLY.3DS');
     expect(row).toHaveAttribute('aria-current', 'true');
     expect(screen.getByTestId('world-asset-Meshes')).not.toHaveAttribute('aria-current');
   });
@@ -173,7 +178,7 @@ describe('WorldAssetBrowser', () => {
     await screen.findByTestId('world-asset-_compiled');
 
     await user.click(screen.getByTestId('world-asset-_compiled'));
-    await screen.findByTestId('world-asset-NW_CRATE.MRM');
+    await screen.findByTestId('world-asset-NW_CRATE.3DS');
 
     expect(calls).toEqual(['/', 'Meshes', 'Meshes/_compiled']);
   });
@@ -208,9 +213,9 @@ describe('WorldAssetBrowser', () => {
 
     await user.click(await screen.findByTestId('world-asset-Meshes'));
     await user.click(await screen.findByTestId('world-asset-_compiled'));
-    await user.click(screen.getByTestId('world-asset-NW_CRATE.MRM'));
+    await user.click(screen.getByTestId('world-asset-NW_CRATE.3DS'));
 
-    expect(onPreview).toHaveBeenCalledWith('Meshes/_compiled/NW_CRATE.MRM');
+    expect(onPreview).toHaveBeenCalledWith('Meshes/_compiled/NW_CRATE.3DS');
     // Descending is what a directory click does; it is not a preview.
     expect(onPreview).toHaveBeenCalledTimes(1);
   });
@@ -260,7 +265,7 @@ describe('WorldAssetBrowser', () => {
     const rowList = screen.getByRole('list', { name: 'Mounted assets' });
     const names = within(rowList).getAllByRole('listitem').map((row) => row.getAttribute('data-testid'));
     expect(names).toEqual([
-      'world-asset-Meshes', 'world-asset-Textures', 'world-asset-MOD_ONLY.MRM',
+      'world-asset-Meshes', 'world-asset-Textures', 'world-asset-MOD_ONLY.3DS',
     ]);
   });
 
@@ -283,6 +288,7 @@ describe('WorldAssetBrowser', () => {
         { name: 'SHARED.TEX', type: 'file', sources: [0, 2] },
         { name: 'MOD.MRM', type: 'file', sources: [2] },
         { name: 'LOOSE.MRM', type: 'file', sources: [1] },
+        { name: 'MOD.3DS', type: 'file', sources: [2] },
         { name: 'Meshes', type: 'directory', sources: [1, 2] },
       ],
     };
@@ -295,9 +301,17 @@ describe('WorldAssetBrowser', () => {
       .getAllByRole('listitem')
       .map((row) => row.getAttribute('data-testid'));
 
+    // #399: the mount questions are not about which files are listed, so the
+    // listing is widened to everything the fixture holds first.
+    const widened = async () => {
+      fireEvent.click(screen.getByTestId('world-asset-filter-toggle'));
+      fireEvent.change(screen.getByTestId('world-asset-files'), { target: { value: 'all' } });
+    };
+
     it('names the mount each row is served from in its tooltip, not on the row (#360)', async () => {
       render(<WorldAssetBrowser listAssets={mixed()} onPreview={jest.fn()} sources={MOUNTS} />);
-      await screen.findByTestId('world-asset-RETAIL.TEX');
+      await screen.findByTestId('world-asset-MOD.3DS');
+      await widened();
 
       expect(screen.getByTestId('world-asset-RETAIL.TEX')).toHaveAttribute('title', 'Textures.vdf');
       // A loose tree's own name is `_compiled` in three different places, so
@@ -314,27 +328,27 @@ describe('WorldAssetBrowser', () => {
     it('narrows the listing to one mount', async () => {
       const user = userEvent.setup();
       render(<WorldAssetBrowser listAssets={mixed()} onPreview={jest.fn()} sources={MOUNTS} />);
-      await screen.findByTestId('world-asset-RETAIL.TEX');
+      await screen.findByTestId('world-asset-MOD.3DS');
+      await widened();
 
-      await user.click(screen.getByTestId('world-asset-filter-toggle'));
       await user.selectOptions(screen.getByTestId('world-asset-source'), '2');
 
       // Everything the mod holds, including what it only shadows, and nothing
       // it does not.
       expect(rowNames()).toEqual([
-        'world-asset-Meshes', 'world-asset-SHARED.TEX', 'world-asset-MOD.MRM',
+        'world-asset-Meshes', 'world-asset-SHARED.TEX', 'world-asset-MOD.MRM', 'world-asset-MOD.3DS',
       ]);
     });
 
     it('shades an entry a later mount overrides, and only there', async () => {
       const user = userEvent.setup();
       render(<WorldAssetBrowser listAssets={mixed()} onPreview={jest.fn()} sources={MOUNTS} />);
-      await screen.findByTestId('world-asset-RETAIL.TEX');
+      await screen.findByTestId('world-asset-MOD.3DS');
+      await widened();
 
       // Merged, `SHARED.TEX` is not overridden — it *is* the mod's copy.
       expect(screen.getByTestId('world-asset-SHARED.TEX')).not.toHaveAttribute('data-overridden');
 
-      await user.click(screen.getByTestId('world-asset-filter-toggle'));
       await user.selectOptions(screen.getByTestId('world-asset-source'), '0');
       expect(screen.getByTestId('world-asset-SHARED.TEX')).toHaveAttribute('data-overridden', 'true');
       expect(screen.getByTestId('world-asset-RETAIL.TEX')).not.toHaveAttribute('data-overridden');
@@ -343,26 +357,26 @@ describe('WorldAssetBrowser', () => {
     it('counts what the source filter left, like the text filter does', async () => {
       const user = userEvent.setup();
       render(<WorldAssetBrowser listAssets={mixed()} onPreview={jest.fn()} sources={MOUNTS} />);
-      await screen.findByTestId('world-asset-RETAIL.TEX');
+      await screen.findByTestId('world-asset-MOD.3DS');
+      await widened();
 
-      await user.click(screen.getByTestId('world-asset-filter-toggle'));
       await user.selectOptions(screen.getByTestId('world-asset-source'), '2');
-      expect(screen.getByTestId('world-asset-count')).toHaveTextContent('3 of 5');
+      expect(screen.getByTestId('world-asset-count')).toHaveTextContent('4 of 6');
     });
 
     it('offers no facet when there is only one mount, or none', async () => {
       const { rerender } = render(
         <WorldAssetBrowser listAssets={mixed()} onPreview={jest.fn()} sources={['C:/Gothic II/Data/Textures.vdf']} />,
       );
-      await screen.findByTestId('world-asset-RETAIL.TEX');
+      await screen.findByTestId('world-asset-MOD.3DS');
       await userEvent.setup().click(screen.getByTestId('world-asset-filter-toggle'));
       expect(screen.queryByTestId('world-asset-source')).not.toBeInTheDocument();
 
       rerender(<WorldAssetBrowser listAssets={mixed()} onPreview={jest.fn()} />);
-      await screen.findByTestId('world-asset-RETAIL.TEX');
+      await screen.findByTestId('world-asset-MOD.3DS');
       expect(screen.queryByTestId('world-asset-source')).not.toBeInTheDocument();
       // And without a mount list there is nothing to name a row with either.
-      expect(screen.getByTestId('world-asset-RETAIL.TEX')).not.toHaveAttribute('title');
+      expect(screen.getByTestId('world-asset-MOD.3DS')).not.toHaveAttribute('title');
     });
 
     it('names the mount on a tile too, and shades an overridden one', async () => {
@@ -374,14 +388,14 @@ describe('WorldAssetBrowser', () => {
       render(
         <WorldAssetBrowser listAssets={mixed()} onPreview={jest.fn()} thumbnails={queue} sources={MOUNTS} />,
       );
-      await screen.findByTestId('world-asset-RETAIL.TEX');
+      await screen.findByTestId('world-asset-MOD.3DS');
+      await widened();
       await user.click(screen.getByTestId('world-asset-view-grid'));
 
       const tile = screen.getByTestId('world-asset-tile-RETAIL.TEX');
       expect(within(tile).getByTestId('world-asset-tile-origin')).toHaveTextContent('Textures.vdf');
       expect(tile).not.toHaveAttribute('data-overridden');
 
-      await user.click(screen.getByTestId('world-asset-filter-toggle'));
       await user.selectOptions(screen.getByTestId('world-asset-source'), '0');
       expect(screen.getByTestId('world-asset-tile-SHARED.TEX')).toHaveAttribute('data-overridden', 'true');
     });
@@ -395,9 +409,9 @@ describe('WorldAssetBrowser', () => {
         { name: 'DEEP_MOD.MRM', type: 'file' as const, sources: [2] },
       ]));
       render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} sources={MOUNTS} />);
-      await screen.findByTestId('world-asset-RETAIL.TEX');
+      await screen.findByTestId('world-asset-MOD.3DS');
+      await widened();
 
-      await user.click(screen.getByTestId('world-asset-filter-toggle'));
       await user.selectOptions(screen.getByTestId('world-asset-source'), '2');
       await user.click(screen.getByTestId('world-asset-Meshes'));
 
@@ -428,11 +442,13 @@ describe('WorldAssetBrowser', () => {
       const { list } = listing();
       render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} />);
       await screen.findByTestId('world-asset-Meshes');
-      expect(screen.getByTestId('world-asset-count')).toHaveTextContent('3 entries');
+      // #399: the `.MRM` is filtered by default, so the count says how many
+      // of the directory's entries the source lens leaves.
+      expect(screen.getByTestId('world-asset-count')).toHaveTextContent('3 of 4');
 
       await user.type(screen.getByTestId('world-asset-filter'), 'mesh');
 
-      expect(screen.getByTestId('world-asset-count')).toHaveTextContent('1 of 3');
+      expect(screen.getByTestId('world-asset-count')).toHaveTextContent('1 of 4');
     });
 
     it('says so when nothing in this directory matches, rather than showing an empty list', async () => {
@@ -573,8 +589,14 @@ describe('WorldAssetBrowser', () => {
       const { list: plain } = listing();
       const quiet = jest.fn(async (names: string[]) => names.map(() => null));
       const { unmount } = render(<WorldAssetBrowser listAssets={plain} onPreview={jest.fn()} resolveAssets={quiet} />);
+      // The Textures directory holds only the compiled `-C.TEX` (#399), so
+      // its listing has no source file to ask about — the ask that happened
+      // was the root's, for its own source files.
       await screen.findByTestId('world-asset-Meshes');
-      expect(quiet).not.toHaveBeenCalled();
+      expect(quiet).toHaveBeenCalledWith(['MOD_ONLY.3DS']);
+      fireEvent.click(screen.getByTestId('world-asset-Textures'));
+      await screen.findByTestId('world-asset-filter-empty');
+      expect(quiet).toHaveBeenCalledTimes(1);
       unmount();
 
       render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} />);
@@ -600,8 +622,10 @@ describe('WorldAssetBrowser', () => {
 
     it('narrows the files to MOBs or to VOBs, keeps the directories, and says it is narrowing', async () => {
       render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} />);
-      await screen.findByTestId('world-asset-NW_CRATE.MRM');
+      await screen.findByTestId('world-asset-BENCH_1_OC.ASC');
       fireEvent.click(screen.getByTestId('world-asset-filter-toggle'));
+      // #399: the role questions are about classes, not about which files.
+      fireEvent.change(screen.getByTestId('world-asset-files'), { target: { value: 'all' } });
       const facet = screen.getByTestId('world-asset-role');
       expect(facet).toHaveValue('all');
 
@@ -617,8 +641,9 @@ describe('WorldAssetBrowser', () => {
     it('holds across a navigation, as the source facet does', async () => {
       const user = userEvent.setup();
       render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} />);
-      await screen.findByTestId('world-asset-NW_CRATE.MRM');
+      await screen.findByTestId('world-asset-BENCH_1_OC.ASC');
       await user.click(screen.getByTestId('world-asset-filter-toggle'));
+      fireEvent.change(screen.getByTestId('world-asset-files'), { target: { value: 'all' } });
       fireEvent.change(screen.getByTestId('world-asset-role'), { target: { value: 'mob' } });
 
       await user.click(screen.getByTestId('world-asset-Sub'));
@@ -647,8 +672,10 @@ describe('WorldAssetBrowser', () => {
 
     it('offers every group with both spellings, and narrows to one, keeping the directories', async () => {
       render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} />);
-      await screen.findByTestId('world-asset-NW_CRATE.MRM');
+      await screen.findByTestId('world-asset-NW_CRATE.3DS');
       fireEvent.click(screen.getByTestId('world-asset-filter-toggle'));
+      // #399: a group holds both spellings, compiled ones included.
+      fireEvent.change(screen.getByTestId('world-asset-files'), { target: { value: 'all' } });
       const facet = screen.getByTestId('world-asset-format');
       expect(facet).toHaveValue('all');
       expect(within(facet).getByRole('option', { name: 'Textures (TGA → TEX)' })).toBeInTheDocument();
@@ -671,6 +698,7 @@ describe('WorldAssetBrowser', () => {
       render(<WorldAssetBrowser listAssets={tree} searchAssets={search} onPreview={jest.fn()} />);
       await screen.findByTestId('world-asset-Meshes');
       await user.click(screen.getByTestId('world-asset-filter-toggle'));
+      fireEvent.change(screen.getByTestId('world-asset-files'), { target: { value: 'all' } });
       fireEvent.change(screen.getByTestId('world-asset-format'), { target: { value: 'model' } });
 
       await user.type(screen.getByTestId('world-asset-filter'), 'c');
@@ -683,6 +711,72 @@ describe('WorldAssetBrowser', () => {
       await user.click(await screen.findByTestId('world-asset-Meshes'));
       await screen.findByTestId('world-asset-_compiled');
       expect(screen.getByTestId('world-asset-format')).toHaveValue('model');
+    });
+  });
+
+  // #399: the browser holds the source files by default — what a modder
+  // works in, what a VOB names — and everything else waits behind a facet:
+  // scripts, sounds, fonts, `.MAN`, and the compiled forms too, because a
+  // `.MDL` places nothing and normal work is in sources.
+  describe('the files facet', () => {
+    const FILES: VfsEntry[] = [
+      { name: 'Sub', type: 'directory' },
+      { name: 'NW_CRATE.3DS', type: 'file' },
+      { name: 'NW_WALL.TGA', type: 'file' },
+      { name: 'NW_CRATE.MRM', type: 'file' },
+      { name: 'NW_WOOD-C.TEX', type: 'file' },
+      { name: 'CHEST.MDL', type: 'file' },
+      { name: 'STEFAN.MAN', type: 'file' },
+      { name: 'README.TXT', type: 'file' },
+    ];
+    const list = jest.fn(async () => FILES);
+    const shown = () => FILES.map((entry) => entry.name)
+      .filter((name) => screen.queryByTestId(`world-asset-${name}`) !== null);
+
+    it('lists only the source assets, keeping the directories', async () => {
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} />);
+      await screen.findByTestId('world-asset-NW_CRATE.3DS');
+
+      expect(shown()).toEqual(['Sub', 'NW_CRATE.3DS', 'NW_WALL.TGA']);
+      expect(screen.getByTestId('world-asset-count')).toHaveTextContent('3 of 8');
+    });
+
+    it('adds the compiled files on request, and still leaves the rest out', async () => {
+      const user = userEvent.setup();
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} />);
+      await screen.findByTestId('world-asset-NW_CRATE.3DS');
+      await user.click(screen.getByTestId('world-asset-filter-toggle'));
+      await user.selectOptions(screen.getByTestId('world-asset-files'), 'compiled');
+
+      expect(shown()).toEqual(['Sub', 'NW_CRATE.3DS', 'NW_WALL.TGA', 'NW_CRATE.MRM', 'NW_WOOD-C.TEX', 'CHEST.MDL']);
+      expect(screen.queryByTestId('world-asset-STEFAN.MAN')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('world-asset-README.TXT')).not.toBeInTheDocument();
+    });
+
+    it('drops the lens entirely on all files', async () => {
+      const user = userEvent.setup();
+      render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} />);
+      await screen.findByTestId('world-asset-NW_CRATE.3DS');
+      await user.click(screen.getByTestId('world-asset-filter-toggle'));
+      await user.selectOptions(screen.getByTestId('world-asset-files'), 'all');
+
+      expect(shown()).toEqual(FILES.map((entry) => entry.name));
+    });
+
+    it('holds across a navigation, like the other lenses', async () => {
+      const user = userEvent.setup();
+      const deep = jest.fn(async (path: string) => (path === 'Sub' ? [
+        { name: 'DEEP.MRM', type: 'file' as const },
+        { name: 'DEEP.3DS', type: 'file' as const },
+      ] : FILES));
+      render(<WorldAssetBrowser listAssets={deep} onPreview={jest.fn()} />);
+      await screen.findByTestId('world-asset-NW_CRATE.3DS');
+      await user.click(screen.getByTestId('world-asset-filter-toggle'));
+      await user.selectOptions(screen.getByTestId('world-asset-files'), 'compiled');
+
+      await user.click(screen.getByTestId('world-asset-Sub'));
+      expect(await screen.findByTestId('world-asset-DEEP.MRM')).toBeInTheDocument();
+      expect(screen.getByTestId('world-asset-files')).toHaveValue('compiled');
     });
   });
 
@@ -705,11 +799,11 @@ describe('WorldAssetBrowser', () => {
       await user.click(screen.getByTestId('world-asset-view-grid'));
 
       const tiles = screen.getAllByTestId(/^world-asset-tile-/).map((tile) => tile.getAttribute('data-testid'));
-      expect(tiles).toEqual(['world-asset-tile-Meshes', 'world-asset-tile-Textures', 'world-asset-tile-MOD_ONLY.MRM']);
+      expect(tiles).toEqual(['world-asset-tile-Meshes', 'world-asset-tile-Textures', 'world-asset-tile-MOD_ONLY.3DS']);
       expect(screen.queryByTestId('world-asset-Meshes')).not.toBeInTheDocument();
 
-      await user.click(screen.getByTestId('world-asset-tile-MOD_ONLY.MRM'));
-      expect(onPreview).toHaveBeenCalledWith('MOD_ONLY.MRM');
+      await user.click(screen.getByTestId('world-asset-tile-MOD_ONLY.3DS'));
+      expect(onPreview).toHaveBeenCalledWith('MOD_ONLY.3DS');
 
       await user.click(screen.getByTestId('world-asset-tile-Meshes'));
       await screen.findByTestId('world-asset-tile-_compiled');
@@ -723,26 +817,26 @@ describe('WorldAssetBrowser', () => {
       await screen.findByTestId('world-asset-Meshes');
       await user.click(screen.getByTestId('world-asset-view-grid'));
 
-      expect(queue.request).toHaveBeenCalledWith('MOD_ONLY.MRM');
+      expect(queue.request).toHaveBeenCalledWith('MOD_ONLY.3DS');
       // A directory has no thumbnail and must not be asked for one.
       expect(queue.request).not.toHaveBeenCalledWith('Meshes');
-      expect(within(screen.getByTestId('world-asset-tile-MOD_ONLY.MRM')).getByTestId('world-asset-thumb-pending')).toBeInTheDocument();
+      expect(within(screen.getByTestId('world-asset-tile-MOD_ONLY.3DS')).getByTestId('world-asset-thumb-pending')).toBeInTheDocument();
 
-      act(() => deliver('MOD_ONLY.MRM', { status: 'ready', dataUrl: 'data:image/png;base64,AAAA' }));
+      act(() => deliver('MOD_ONLY.3DS', { status: 'ready', dataUrl: 'data:image/png;base64,AAAA' }));
 
-      const image = within(screen.getByTestId('world-asset-tile-MOD_ONLY.MRM')).getByRole('img');
+      const image = within(screen.getByTestId('world-asset-tile-MOD_ONLY.3DS')).getByRole('img');
       expect(image).toHaveAttribute('src', 'data:image/png;base64,AAAA');
     });
 
     it('marks a tile the binding could not draw, rather than leaving it pending forever', async () => {
       const user = userEvent.setup();
       const { list } = listing();
-      const { queue } = thumbnails({ 'MOD_ONLY.MRM': { status: 'failed' } });
+      const { queue } = thumbnails({ 'MOD_ONLY.3DS': { status: 'failed' } });
       render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} thumbnails={queue} />);
       await screen.findByTestId('world-asset-Meshes');
       await user.click(screen.getByTestId('world-asset-view-grid'));
 
-      expect(within(screen.getByTestId('world-asset-tile-MOD_ONLY.MRM')).getByTestId('world-asset-thumb-failed')).toBeInTheDocument();
+      expect(within(screen.getByTestId('world-asset-tile-MOD_ONLY.3DS')).getByTestId('world-asset-thumb-failed')).toBeInTheDocument();
     });
 
     it('drops the queued draws when the listing moves on, and can redraw the ones on screen', async () => {
@@ -758,10 +852,10 @@ describe('WorldAssetBrowser', () => {
       expect(queue.cancelPending).toHaveBeenCalled();
 
       await user.click(screen.getByTestId('world-asset-tile-_compiled'));
-      await screen.findByTestId('world-asset-tile-NW_CRATE.MRM');
+      await screen.findByTestId('world-asset-tile-NW_CRATE.3DS');
       await user.click(screen.getByTestId('world-asset-redraw'));
-      expect(queue.redraw).toHaveBeenCalledWith('NW_CRATE.MRM');
-      expect(queue.redraw).toHaveBeenCalledWith('CHESTBIG.MDL');
+      expect(queue.redraw).toHaveBeenCalledWith('NW_CRATE.3DS');
+      expect(queue.redraw).not.toHaveBeenCalledWith('CHESTBIG.MDL');
     });
 
     // The hovered tile comes alive (level-editor.md §16.26 row 1): the still
@@ -779,10 +873,10 @@ describe('WorldAssetBrowser', () => {
       await screen.findByTestId('world-asset-Meshes');
       await user.click(screen.getByTestId('world-asset-view-grid'));
 
-      const tile = screen.getByTestId('world-asset-tile-MOD_ONLY.MRM');
+      const tile = screen.getByTestId('world-asset-tile-MOD_ONLY.3DS');
       const thumb = within(tile).getByTestId('world-asset-thumb-pending');
       await user.hover(thumb);
-      expect(live.show).toHaveBeenCalledWith('MOD_ONLY.MRM', thumb, THUMBNAIL_SIZE);
+      expect(live.show).toHaveBeenCalledWith('MOD_ONLY.3DS', thumb, THUMBNAIL_SIZE);
 
       await user.unhover(thumb);
       expect(live.hide).toHaveBeenCalledWith(thumb);
@@ -799,6 +893,8 @@ describe('WorldAssetBrowser', () => {
         </LiveTileContext.Provider>,
       );
       await screen.findByTestId('world-asset-Meshes');
+      await user.click(screen.getByTestId('world-asset-filter-toggle'));
+      fireEvent.change(screen.getByTestId('world-asset-files'), { target: { value: 'all' } });
       await user.click(screen.getByTestId('world-asset-view-grid'));
 
       await user.hover(screen.getByTestId('world-asset-tile-Textures'));
@@ -823,7 +919,7 @@ describe('WorldAssetBrowser', () => {
       await screen.findByTestId('world-asset-Meshes');
       await user.click(screen.getByTestId('world-asset-view-grid'));
 
-      const tile = screen.getByTestId('world-asset-tile-MOD_ONLY.MRM');
+      const tile = screen.getByTestId('world-asset-tile-MOD_ONLY.3DS');
       const thumb = within(tile).getByTestId('world-asset-thumb-pending');
       await user.hover(thumb);
       // A `MouseEvent` under the pointer type, as the viewport suites do it:
@@ -843,7 +939,7 @@ describe('WorldAssetBrowser', () => {
 
       // A plain click still opens the file.
       await user.click(tile);
-      expect(onPreview).toHaveBeenCalledWith('MOD_ONLY.MRM');
+      expect(onPreview).toHaveBeenCalledWith('MOD_ONLY.3DS');
     });
 
     it('goes back to the list', async () => {
@@ -915,11 +1011,10 @@ describe('WorldAssetBrowser', () => {
       await screen.findByTestId('world-asset-Meshes');
       await user.click(screen.getByTestId('world-asset-view-grid'));
 
-      // `MOD_ONLY.MRM` is the compiled name of the favourite `MOD_ONLY.3DS`.
-      const star = within(screen.getByTestId('world-asset-tile-MOD_ONLY.MRM')).getByTestId('world-asset-star');
+      const star = within(screen.getByTestId('world-asset-tile-MOD_ONLY.3DS')).getByTestId('world-asset-star');
       expect(star).toHaveAttribute('aria-pressed', 'true');
       await user.click(star);
-      expect(props.onToggleFavorite).toHaveBeenCalledWith('MOD_ONLY.MRM');
+      expect(props.onToggleFavorite).toHaveBeenCalledWith('MOD_ONLY.3DS');
     });
 
     it('lists the categories, shows the chosen one as tiles, and can drop a visual the project filed', async () => {
@@ -990,12 +1085,19 @@ describe('WorldAssetBrowser', () => {
       ];
       const list = jest.fn(async () => MESHES);
       const button = () => screen.getByTestId('world-asset-file-many');
+      // #399: compiled meshes are filtered by default; the filing questions
+      // are about the meshes shown, so the listing is widened first.
+      const widen = async (user: ReturnType<typeof userEvent.setup>) => {
+        await user.click(screen.getByTestId('world-asset-filter-toggle'));
+        fireEvent.change(screen.getByTestId('world-asset-files'), { target: { value: 'all' } });
+      };
 
       it('files every mesh shown when nothing is marked, textures and directories left out', async () => {
         const user = userEvent.setup();
         const props = catalogProps({ onAddManyToCategory: jest.fn() });
         render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} catalog={props} />);
-        await screen.findByTestId('world-asset-KM_BUSH_01.MRM');
+        await screen.findByTestId('world-asset-Sub');
+        await widen(user);
 
         expect(button()).toHaveTextContent('3');
         await user.click(button());
@@ -1011,7 +1113,8 @@ describe('WorldAssetBrowser', () => {
         const onPreview = jest.fn();
         const props = catalogProps({ onAddManyToCategory: jest.fn() });
         render(<WorldAssetBrowser listAssets={list} onPreview={onPreview} catalog={props} />);
-        await screen.findByTestId('world-asset-KM_BUSH_01.MRM');
+        await screen.findByTestId('world-asset-Sub');
+        await widen(user);
 
         await user.keyboard('{Control>}');
         await user.click(screen.getByTestId('world-asset-KM_BUSH_01.MRM'));
@@ -1042,7 +1145,8 @@ describe('WorldAssetBrowser', () => {
         const user = userEvent.setup();
         const props = catalogProps({ onAddManyToCategory: jest.fn() });
         render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} catalog={props} />);
-        await screen.findByTestId('world-asset-KM_BUSH_01.MRM');
+        await screen.findByTestId('world-asset-Sub');
+        await widen(user);
 
         await user.click(button());
         await user.type(await screen.findByTestId('world-asset-file-new'), 'Archolos/Büsche{Enter}');
@@ -1055,7 +1159,8 @@ describe('WorldAssetBrowser', () => {
         const user = userEvent.setup();
         const onPreview = jest.fn();
         render(<WorldAssetBrowser listAssets={list} onPreview={onPreview} />);
-        await screen.findByTestId('world-asset-KM_BUSH_01.MRM');
+        await screen.findByTestId('world-asset-Sub');
+        await widen(user);
 
         expect(screen.queryByTestId('world-asset-file-many')).not.toBeInTheDocument();
         await user.click(screen.getByTestId('world-asset-KM_BUSH_01.MRM'));
@@ -1066,7 +1171,8 @@ describe('WorldAssetBrowser', () => {
         const user = userEvent.setup();
         const props = catalogProps({ onAddManyToCategory: jest.fn() });
         render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} thumbnails={queue()} catalog={props} />);
-        await screen.findByTestId('world-asset-KM_BUSH_01.MRM');
+        await screen.findByTestId('world-asset-Sub');
+        await widen(user);
         await user.click(screen.getByTestId('world-asset-view-grid'));
 
         await user.keyboard('{Control>}');
@@ -1087,14 +1193,13 @@ describe('WorldAssetBrowser', () => {
       const props = catalogProps({ catalog: { favorites: ['MOD_ONLY.3DS'], categories: [] } });
       const onPreview = jest.fn();
       render(<WorldAssetBrowser listAssets={list} onPreview={onPreview} thumbnails={queue()} catalog={props} />);
-      await screen.findByTestId('world-asset-MOD_ONLY.MRM');
+      const starRow = await screen.findByTestId('world-asset-MOD_ONLY.3DS');
 
-      // `MOD_ONLY.3DS` is the source name of the compiled `MOD_ONLY.MRM`.
-      const star = within(screen.getByTestId('world-asset-MOD_ONLY.MRM')).getByTestId('world-asset-star');
+      const star = within(starRow).getByTestId('world-asset-star');
       expect(star).toHaveAttribute('aria-pressed', 'true');
       await user.click(star);
 
-      expect(props.onToggleFavorite).toHaveBeenCalledWith('MOD_ONLY.MRM');
+      expect(props.onToggleFavorite).toHaveBeenCalledWith('MOD_ONLY.3DS');
       // The row opens a file on click, and the star sits inside the row.
       expect(onPreview).not.toHaveBeenCalled();
     });
@@ -1109,8 +1214,8 @@ describe('WorldAssetBrowser', () => {
       unmount();
 
       render(<WorldAssetBrowser listAssets={listing().list} onPreview={jest.fn()} thumbnails={queue()} />);
-      await screen.findByTestId('world-asset-MOD_ONLY.MRM');
-      expect(within(screen.getByTestId('world-asset-MOD_ONLY.MRM')).queryByTestId('world-asset-star')).not.toBeInTheDocument();
+      await screen.findByTestId('world-asset-MOD_ONLY.3DS');
+      expect(within(screen.getByTestId('world-asset-MOD_ONLY.3DS')).queryByTestId('world-asset-star')).not.toBeInTheDocument();
     });
 
     it('narrows a category to its MOBs with the same facet (#288)', async () => {
@@ -1237,13 +1342,13 @@ describe('WorldAssetBrowser', () => {
       await screen.findByTestId('world-asset-Meshes');
       await user.click(screen.getByTestId('world-asset-view-grid'));
 
-      await user.click(within(screen.getByTestId('world-asset-tile-MOD_ONLY.MRM')).getByTestId('world-asset-file'));
+      await user.click(within(screen.getByTestId('world-asset-tile-MOD_ONLY.3DS')).getByTestId('world-asset-file'));
       await user.click(await screen.findByTestId('world-asset-file-into-Items/Schwerter'));
-      expect(props.onAddToCategory).toHaveBeenCalledWith('Items/Schwerter', 'MOD_ONLY.MRM');
+      expect(props.onAddToCategory).toHaveBeenCalledWith('Items/Schwerter', 'MOD_ONLY.3DS');
 
-      await user.click(within(screen.getByTestId('world-asset-tile-MOD_ONLY.MRM')).getByTestId('world-asset-file'));
+      await user.click(within(screen.getByTestId('world-asset-tile-MOD_ONLY.3DS')).getByTestId('world-asset-file'));
       await user.type(await screen.findByTestId('world-asset-file-new'), 'Mine/Barrels{Enter}');
-      expect(props.onAddToCategory).toHaveBeenCalledWith('Mine/Barrels', 'MOD_ONLY.MRM');
+      expect(props.onAddToCategory).toHaveBeenCalledWith('Mine/Barrels', 'MOD_ONLY.3DS');
     });
   });
 
@@ -1299,12 +1404,12 @@ describe('WorldAssetBrowser', () => {
           listAssets={listing().list} onPreview={jest.fn()} thumbnails={queue()} placement={place}
         />,
       );
-      await screen.findByTestId('world-asset-MOD_ONLY.MRM');
+      await screen.findByTestId('world-asset-MOD_ONLY.3DS');
 
-      fireEvent.contextMenu(screen.getByTestId('world-asset-MOD_ONLY.MRM'));
+      fireEvent.contextMenu(screen.getByTestId('world-asset-MOD_ONLY.3DS'));
       await user.click(await screen.findByTestId('world-asset-place-menu'));
 
-      expect(place.onPlace).toHaveBeenCalledWith('MOD_ONLY.MRM');
+      expect(place.onPlace).toHaveBeenCalledWith('MOD_ONLY.3DS');
     });
 
     it('offers nothing for a directory, or for a name no mesh can be made of', async () => {
@@ -1321,15 +1426,19 @@ describe('WorldAssetBrowser', () => {
       expect(screen.queryByTestId('world-asset-place-menu')).not.toBeInTheDocument();
 
       await user.click(screen.getByTestId('world-asset-Textures'));
+      // The directory's only file is compiled (#399), so the listing is
+      // widened before its row can be asked the question.
+      await user.click(screen.getByTestId('world-asset-filter-toggle'));
+      fireEvent.change(screen.getByTestId('world-asset-files'), { target: { value: 'all' } });
       fireEvent.contextMenu(await screen.findByTestId('world-asset-NW_WOOD-C.TEX'));
       expect(screen.queryByTestId('world-asset-place-menu')).not.toBeInTheDocument();
     });
 
     it('offers nothing at all where there is no world to place into', async () => {
       render(<WorldAssetBrowser listAssets={listing().list} onPreview={jest.fn()} thumbnails={queue()} />);
-      await screen.findByTestId('world-asset-MOD_ONLY.MRM');
+      await screen.findByTestId('world-asset-MOD_ONLY.3DS');
 
-      fireEvent.contextMenu(screen.getByTestId('world-asset-MOD_ONLY.MRM'));
+      fireEvent.contextMenu(screen.getByTestId('world-asset-MOD_ONLY.3DS'));
       expect(screen.queryByTestId('world-asset-place-menu')).not.toBeInTheDocument();
     });
   });
@@ -1364,7 +1473,7 @@ describe('WorldAssetBrowser', () => {
       render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} />);
       await user.click(await screen.findByTestId('world-asset-Meshes'));
       await user.click(await screen.findByTestId('world-asset-_compiled'));
-      await screen.findByTestId('world-asset-NW_CRATE.MRM');
+      await screen.findByTestId('world-asset-NW_CRATE.3DS');
 
       await user.click(screen.getByTestId('world-asset-crumb-root'));
 
@@ -1385,7 +1494,7 @@ describe('WorldAssetBrowser', () => {
       render(<WorldAssetBrowser listAssets={list} searchAssets={search} onPreview={jest.fn()} />);
       await screen.findByTestId('world-asset-Meshes');
       // Nothing at the root is called NW_CRATE.MRM; it is two levels down.
-      expect(screen.queryByTestId('world-asset-NW_CRATE.MRM')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('world-asset-NW_CRATE.3DS')).not.toBeInTheDocument();
 
       await user.type(screen.getByTestId('world-asset-filter'), 'crate');
 
@@ -1430,7 +1539,7 @@ describe('WorldAssetBrowser', () => {
       await user.type(screen.getByTestId('world-asset-filter'), 'compiled');
       await user.click(await screen.findByTestId('world-asset-_compiled'));
 
-      expect(await screen.findByTestId('world-asset-NW_CRATE.MRM')).toBeInTheDocument();
+      expect(await screen.findByTestId('world-asset-NW_CRATE.3DS')).toBeInTheDocument();
       expect(calls).toContain('Meshes/_compiled');
       // The needle is spent: the directory it led to is what is wanted now.
       expect(screen.getByTestId('world-asset-filter')).toHaveValue('');
@@ -1466,6 +1575,7 @@ describe('WorldAssetBrowser', () => {
 
       expect(await screen.findByTestId('world-asset-NW_CRATE.3DS')).toBeInTheDocument();
       expect(screen.getByTestId('world-asset-NW_WOOD.TGA')).toBeInTheDocument();
+      // The compiled names are not on screen: the source ones are the hits.
       expect(screen.queryByTestId('world-asset-NW_CRATE.MRM')).not.toBeInTheDocument();
       expect(screen.queryByTestId('world-asset-NW_WOOD-C.TEX')).not.toBeInTheDocument();
     });
@@ -1476,6 +1586,11 @@ describe('WorldAssetBrowser', () => {
       const { search } = searching();
       render(<WorldAssetBrowser listAssets={list} searchAssets={search} onPreview={jest.fn()} />);
       await screen.findByTestId('world-asset-Meshes');
+
+      // #399: a compiled model is not in the default listing, so the search
+      // is asked with the listing widened to the compiled files.
+      await user.click(screen.getByTestId('world-asset-filter-toggle'));
+      fireEvent.change(screen.getByTestId('world-asset-files'), { target: { value: 'compiled' } });
 
       await user.type(screen.getByTestId('world-asset-filter'), 'chest');
 
@@ -1595,10 +1710,10 @@ describe('WorldAssetBrowser', () => {
       const place = placement();
       render(<WorldAssetBrowser listAssets={list} onPreview={jest.fn()} placement={place} />);
 
-      await user.dblClick(await screen.findByTestId('world-asset-MOD_ONLY.MRM'));
+      await user.dblClick(await screen.findByTestId('world-asset-MOD_ONLY.3DS'));
 
       expect(place.onPlace).toHaveBeenCalledTimes(1);
-      expect(place.onPlace).toHaveBeenCalledWith('MOD_ONLY.MRM');
+      expect(place.onPlace).toHaveBeenCalledWith('MOD_ONLY.3DS');
     });
 
     it('arms the selected mesh on Space, while Enter still only previews it', async () => {
@@ -1608,7 +1723,7 @@ describe('WorldAssetBrowser', () => {
       const place = placement();
       render(<WorldAssetBrowser listAssets={list} onPreview={onPreview} placement={place} />);
 
-      await user.click(await screen.findByTestId('world-asset-MOD_ONLY.MRM'));
+      await user.click(await screen.findByTestId('world-asset-MOD_ONLY.3DS'));
       expect(place.onPlace).not.toHaveBeenCalled();
 
       await user.keyboard('{Enter}');
@@ -1616,7 +1731,7 @@ describe('WorldAssetBrowser', () => {
       expect(onPreview).toHaveBeenCalledTimes(2);
 
       await user.keyboard(' ');
-      expect(place.onPlace).toHaveBeenCalledWith('MOD_ONLY.MRM');
+      expect(place.onPlace).toHaveBeenCalledWith('MOD_ONLY.3DS');
     });
 
     it('previews a texture on Space and double-click, as there is nothing to place', async () => {
@@ -1626,6 +1741,10 @@ describe('WorldAssetBrowser', () => {
       const place = placement();
       render(<WorldAssetBrowser listAssets={list} onPreview={onPreview} placement={place} />);
       await user.click(await screen.findByTestId('world-asset-Textures'));
+
+      // #399: the texture is compiled, so the listing is widened to it.
+      await user.click(screen.getByTestId('world-asset-filter-toggle'));
+      fireEvent.change(screen.getByTestId('world-asset-files'), { target: { value: 'compiled' } });
 
       const texture = await screen.findByTestId('world-asset-NW_WOOD-C.TEX');
       await user.dblClick(texture);
@@ -1645,7 +1764,7 @@ describe('WorldAssetBrowser', () => {
       await clickWithDetail(await screen.findByTestId('world-asset-Meshes'), 1);
       await clickWithDetail(await screen.findByTestId('world-asset-_compiled'), 1);
 
-      const crate = await screen.findByTestId('world-asset-NW_CRATE.MRM');
+      const crate = await screen.findByTestId('world-asset-NW_CRATE.3DS');
       await clickWithDetail(crate, 2);
       fireEvent.doubleClick(crate);
 
@@ -1673,12 +1792,12 @@ describe('WorldAssetBrowser', () => {
           }}
         />,
       );
-      const row = await screen.findByTestId('world-asset-MOD_ONLY.MRM');
+      const row = await screen.findByTestId('world-asset-MOD_ONLY.3DS');
 
       within(row).getByTestId('world-asset-star').focus();
       await user.keyboard(' ');
 
-      expect(onToggleFavorite).toHaveBeenCalledWith('MOD_ONLY.MRM');
+      expect(onToggleFavorite).toHaveBeenCalledWith('MOD_ONLY.3DS');
       expect(place.onPlace).not.toHaveBeenCalled();
     });
 
@@ -1691,14 +1810,14 @@ describe('WorldAssetBrowser', () => {
       await screen.findByTestId('world-asset-Meshes');
       await user.click(screen.getByTestId('world-asset-view-grid'));
 
-      const tile = screen.getByTestId('world-asset-tile-MOD_ONLY.MRM');
+      const tile = screen.getByTestId('world-asset-tile-MOD_ONLY.3DS');
       await user.dblClick(tile);
       expect(place.onPlace).toHaveBeenCalledTimes(1);
 
       await user.click(tile);
       await user.keyboard(' ');
       expect(place.onPlace).toHaveBeenCalledTimes(2);
-      expect(place.onPlace).toHaveBeenLastCalledWith('MOD_ONLY.MRM');
+      expect(place.onPlace).toHaveBeenLastCalledWith('MOD_ONLY.3DS');
     });
   });
 });
