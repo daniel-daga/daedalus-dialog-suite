@@ -280,9 +280,9 @@ describe('an armed placement, click after click', () => {
 
 describe('Place in world from the Assets panel', () => {
   async function previewCrate() {
-    api.listWorldAssets.mockResolvedValue([{ name: 'NW_CRATE.MRM', type: 'file' }] as never);
+    api.listWorldAssets.mockResolvedValue([{ name: 'NW_CRATE.3DS', type: 'file' }] as never);
     fireEvent.click(screen.getByTestId('world-panel-assets'));
-    fireEvent.click(await screen.findByTestId('world-asset-NW_CRATE.MRM'));
+    fireEvent.click(await screen.findByTestId('world-asset-NW_CRATE.3DS'));
     await screen.findByTestId('world-asset-preview-name');
   }
 
@@ -295,12 +295,12 @@ describe('Place in world from the Assets panel', () => {
 
     fireEvent.click(screen.getByTestId('world-asset-place'));
     expect(screen.queryByRole('dialog')).toBeNull();
-    expect(hint()).toHaveTextContent('NW_CRATE.MRM');
+    expect(hint()).toHaveTextContent('NW_CRATE.3DS');
 
     fireEvent.click(screen.getByTestId('stub-pick-terrain'));
     await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
     expect(firstOps()[0]).toMatchObject({
-      op: 'AddVob', to: { visual: 'NW_CRATE.MRM', position: TERRAIN },
+      op: 'AddVob', to: { visual: 'NW_CRATE.3DS', position: TERRAIN },
     });
   });
 });
@@ -310,37 +310,37 @@ describe('Place in world from an asset row', () => {
     // The verb used to be reachable only through the preview panel on the far
     // side of the viewport (level-editor.md §16.37 row 4; #244).
     await openWorld();
-    api.listWorldAssets.mockResolvedValue([{ name: 'NW_CRATE.MRM', type: 'file' }] as never);
+    api.listWorldAssets.mockResolvedValue([{ name: 'NW_CRATE.3DS', type: 'file' }] as never);
     fireEvent.click(screen.getByTestId('world-panel-assets'));
 
-    fireEvent.contextMenu(await screen.findByTestId('world-asset-NW_CRATE.MRM'));
+    fireEvent.contextMenu(await screen.findByTestId('world-asset-NW_CRATE.3DS'));
     fireEvent.click(await screen.findByTestId('world-asset-place-menu'));
 
     expect(screen.queryByTestId('world-asset-preview-name')).toBeNull();
-    expect(hint()).toHaveTextContent('NW_CRATE.MRM');
+    expect(hint()).toHaveTextContent('NW_CRATE.3DS');
 
     fireEvent.click(screen.getByTestId('stub-pick-terrain'));
     await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
     expect(firstOps()[0]).toMatchObject({
-      op: 'AddVob', to: { visual: 'NW_CRATE.MRM', position: TERRAIN },
+      op: 'AddVob', to: { visual: 'NW_CRATE.3DS', position: TERRAIN },
     });
   });
 
   it('arms the placement on a double-click on the row (#366)', async () => {
     await openWorld();
-    api.listWorldAssets.mockResolvedValue([{ name: 'NW_CRATE.MRM', type: 'file' }] as never);
+    api.listWorldAssets.mockResolvedValue([{ name: 'NW_CRATE.3DS', type: 'file' }] as never);
     fireEvent.click(screen.getByTestId('world-panel-assets'));
 
-    const row = await screen.findByTestId('world-asset-NW_CRATE.MRM');
+    const row = await screen.findByTestId('world-asset-NW_CRATE.3DS');
     fireEvent.click(row, { detail: 1 });
     fireEvent.click(row, { detail: 2 });
     fireEvent.doubleClick(row);
-    expect(hint()).toHaveTextContent('NW_CRATE.MRM');
+    expect(hint()).toHaveTextContent('NW_CRATE.3DS');
 
     fireEvent.click(screen.getByTestId('stub-pick-terrain'));
     await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
     expect(firstOps()[0]).toMatchObject({
-      op: 'AddVob', to: { visual: 'NW_CRATE.MRM', position: TERRAIN },
+      op: 'AddVob', to: { visual: 'NW_CRATE.3DS', position: TERRAIN },
     });
   });
 });

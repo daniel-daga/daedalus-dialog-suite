@@ -2682,6 +2682,18 @@ rock or a bush a `zCVob`.
   does a listing, and holds across a navigation. The Favorites and Categories
   views do not carry it: a category is a list of visuals, which the VOB / MOB
   facet already splits.
+- **The files facet (#399) is the listing's default lens**: the browser holds
+  the source assets only — `.3DS`, `.ASC`, `.MDS`, `.MMS`, `.TGA`
+  (`isSourceAssetFile` in `zen-world/src/assets/browsableAssets.ts`) — because
+  that is what a modder works in and what a VOB's `visual` names, and a
+  mounted install carries thousands of entries the surface has no verb for:
+  scripts, sounds, fonts, `.MAN`, and `.MDL`s that place nothing (no compiled
+  model has a single source name). The facet widens in two steps — `compiled`
+  adds what the asset compiler made of the sources (`.MRM`, `.MSH`, `.MDL`,
+  `.MDM`, `.MDH`, `.MSB`, `.MMB`, `.TEX`; `isCompiledAsset`), which is all a
+  retail install mounts, so its default listing is empty and accepted — and
+  `all` drops the lens. Like the facets beside it it holds across a navigation;
+  directories always stay.
 - **A placement from the asset browser (#290)** arms the class, and the status
   bar says it (`CHESTBIG_OCCHESTLARGE.MDS as oCMobContainer`). A container or a
   door also gets retail's `focusName` — the measured example in

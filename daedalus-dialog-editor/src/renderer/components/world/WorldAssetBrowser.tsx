@@ -14,7 +14,8 @@ import ViewListIcon from '@mui/icons-material/ViewList';
 import { FixedSizeList as List, type ListChildComponentProps, areEqual } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
 import {
-  ASSET_FORMATS, assetFormat, assetRole, compileState, isFavorite, isSourceAsset, searchStem, sourceNameOf,
+  ASSET_FORMATS, assetFormat, assetRole, compileState, isCompiledAsset, isFavorite,
+  isSourceAsset, isSourceAssetFile, searchStem, sourceNameOf,
   type AssetFormat,
 } from 'zen-world';
 import type { AssetCatalog, VfsEntry, VfsSearch } from '../../../shared/worldTypes';
@@ -414,16 +415,26 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
   // The format facet (#289), a lens of the same kind: the kind of asset, so a
   // `.3DS` and the `.MRM` compiled from it land in one group.
   const [format, setFormat] = useState<AssetFormat | 'all'>('all');
-  const activeFilters = Number(role !== 'all') + Number(format !== 'all') + Number(only !== null);
+  // #399: the browser holds the source files by default — what a modder
+  // works in and what a VOB names. Everything else waits behind this facet:
+  // a mounted install carries scripts, sounds and fonts by the thousand,
+  // and a `.MDL` places nothing anyway. `compiled` adds what the asset
+  // compiler made of the sources — the only thing a retail install mounts,
+  // where the default listing is empty — and `all` drops the lens. A lens
+  // like the facets beside it, so it holds across a navigation.
+  const [assets, setAssets] = useState<'source' | 'compiled' | 'all'>('source');
+  const activeFilters = Number(role !== 'all') + Number(format !== 'all') + Number(only !== null)
+    + Number(assets !== 'source');
   const filtered = useMemo(() => {
     // Everything the mount holds, including what a later one shadows — the
     // shadowed copy is the whole point of asking about one mount.
     const fromSource = only === null ? base : base.filter((entry) => entry.sources?.includes(only) ?? false);
     return fromSource.filter((entry) => entry.type === 'directory' || (
-      (role === 'all' || assetRole(entry.name) === role)
+      (assets === 'all' || isSourceAssetFile(entry.name) || (assets === 'compiled' && isCompiledAsset(entry.name)))
+      && (role === 'all' || assetRole(entry.name) === role)
       && (format === 'all' || assetFormat(entry.name) === format)
     ));
-  }, [base, only, role, format]);
+  }, [base, only, role, format, assets]);
   // One status for the surface below, because a search and a listing are the
   // two things it can be showing and each has its own loading and its own
   // refusal.
@@ -665,6 +676,23 @@ const WorldAssetBrowser: React.FC<WorldAssetBrowserProps> = ({
             data-testid="world-asset-filter-panel"
             sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(132px, 1fr))', gap: 0.75, py: 0.5 }}
           >
+            <Box sx={{ minWidth: 0, gridColumn: '1 / -1' }}>
+              <Typography variant="caption" color="text.secondary">Files</Typography>
+              <TextField
+                select
+                size="small"
+                value={assets}
+                onChange={(event) => setAssets(event.target.value as 'source' | 'compiled' | 'all')}
+                SelectProps={{ native: true }}
+                inputProps={{ 'data-testid': 'world-asset-files', 'aria-label': 'Which files to list' }}
+                fullWidth
+                sx={{ '& .MuiInputBase-input': { fontSize: 12, py: 0.5 } }}
+              >
+                <option value="source">Source assets (3DS, ASC, MDS, MMS, TGA)</option>
+                <option value="compiled">Compiled too (MRM, MDL, TEX…)</option>
+                <option value="all">All files</option>
+              </TextField>
+            </Box>
             <Box sx={{ minWidth: 0, '& .MuiFormControl-root': { width: '100%' } }}>
               <Typography variant="caption" color="text.secondary">Visual role</Typography>
               <RoleFacet value={role} onChange={setRole} testId="world-asset-role" />
