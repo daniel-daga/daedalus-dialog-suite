@@ -4,6 +4,15 @@ What each published Windows build changed, newest first. Build Windows adds a
 build here when it publishes it; write new notes in `RELEASE_NOTES.md`, not here.
 Builds before 31 had no release notes.
 
+## Build 35 — 2026-10-13
+
+- #394: The GMBT quick test and asset compile no longer fail on files locked by an open world
+- #262: Decals are drawn with their own blend — additive glows, cut-outs and multiplies, not all as transparency
+- #318: Problems hints when a routine state has no bed, bench or other mob near its waypoint
+- #391: Editing a decal's size, alpha weight or blend redraws it at once
+- #395: Saving keeps a dialog condition as it was written; editing one condition rewrites only that one
+- #395: Scripts open with the right characters: German files are no longer misread as Central European, and „“€ show correctly
+
 ## Build 34 — 2026-10-11
 
 - #388: Putting a VOB placement down (right-click, Esc) selects the last VOB it placed
