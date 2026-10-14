@@ -431,28 +431,44 @@ jobs:
         Write-Host "Stale-run guard passed: $remoteSha is the current head of master"
 
     - name: Publish rolling release
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: windows-latest
-        name: Latest Windows Build (${{ steps.version.outputs.BUILD_VERSION }})
-        body: |
-          Automated rolling Windows build from GitHub Actions.
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        # action-gh-release aborts when its pre-upload metadata PATCH on an
+        # existing release is denied for github.token (softprops/action-gh-release#836),
+        # so the rolling release is published with the gh CLI instead.
+        $body = @'
+        Automated rolling Windows build from GitHub Actions.
 
-          **Version:** `${{ steps.version.outputs.BUILD_VERSION }}`
-          **Base version:** `${{ steps.version.outputs.BASE_VERSION }}`
-          **Build number:** #${{ needs.release-notes.outputs.build-number }}
-          **Commit:** `${{ github.sha }}`
+        **Version:** `${{ steps.version.outputs.BUILD_VERSION }}`
+        **Base version:** `${{ steps.version.outputs.BASE_VERSION }}`
+        **Build number:** #${{ needs.release-notes.outputs.build-number }}
+        **Commit:** `${{ github.sha }}`
 
-          **What's changed**
+        **What's changed**
 
-          ${{ steps.changes.outputs.markdown }}
+        ${{ steps.changes.outputs.markdown }}
 
-          Download `daedalus-dialog-editor-windows-latest.exe` from this release.
-        prerelease: true
-        files: |
-          daedalus-dialog-editor/dist/daedalus-dialog-editor-windows-latest.exe
-          daedalus-dialog-editor/dist/update-meta.json
-        make_latest: false
+        Download `daedalus-dialog-editor-windows-latest.exe` from this release.
+        '@
+        $existing = gh release view windows-latest --repo "$env:GITHUB_REPOSITORY" --json id 2>$null
+        if ($LASTEXITCODE -eq 0) {
+          gh release edit windows-latest --repo "$env:GITHUB_REPOSITORY" `
+            --title "Latest Windows Build (${{ steps.version.outputs.BUILD_VERSION }})" `
+            --notes "$body" --prerelease --latest=false
+          if ($LASTEXITCODE -ne 0) { throw "Failed to update the rolling release" }
+        } else {
+          gh release create windows-latest --repo "$env:GITHUB_REPOSITORY" `
+            --title "Latest Windows Build (${{ steps.version.outputs.BUILD_VERSION }})" `
+            --notes "$body" --prerelease --latest=false `
+            --target "${{ github.sha }}"
+          if ($LASTEXITCODE -ne 0) { throw "Failed to create the rolling release" }
+        }
+        gh release upload windows-latest --repo "$env:GITHUB_REPOSITORY" --clobber `
+          "daedalus-dialog-editor/dist/daedalus-dialog-editor-windows-latest.exe" `
+          "daedalus-dialog-editor/dist/update-meta.json"
+        if ($LASTEXITCODE -ne 0) { throw "Failed to upload release assets" }
 
     - name: Verify published release integrity
       shell: pwsh
