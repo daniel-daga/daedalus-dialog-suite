@@ -50,46 +50,65 @@ function waynet(overrides: Partial<WaynetPayload> = {}): WaynetPayload {
 }
 
 describe('WaynetOverlay', () => {
-  it('projects stored facing through the mirrored root, including viewport aspect', () => {
+  it('picks the solid arrow head outside the origin marker, with mirrored coordinates and occlusion', () => {
+    const payload = waynet({ count: 1, positions: new Float32Array(3).buffer,
+      directions: new Float32Array([1, 0, 0]).buffer,
+      flags: new Uint32Array(1).buffer, edges: new Uint32Array().buffer, edgeCount: 0 });
+    const overlay = new WaynetOverlay(payload);
+    const camera = new THREE.OrthographicCamera(-2, 2, 2, -2, 0.1, 20);
+    camera.position.set(0, 0, 5);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld();
+    const clip = new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+      .multiply(new THREE.Matrix4().fromArray(ROOT_MATRIX));
+    // 90 cm along +X is 90 pixels left of the origin, far outside its reticle.
+    expect(overlay.pick(clip, 110, 200, 400, 400, () => true)).toBe(0);
+    overlay.setOcclusion('occluded');
+    expect(overlay.pick(clip, 110, 200, 400, 400, () => false)).toBe(-1);
+    overlay.setOcclusion('faint');
+    expect(overlay.pick(clip, 110, 200, 400, 400, () => false)).toBe(-1);
+    overlay.setOcclusion('full');
+    expect(overlay.pick(clip, 110, 200, 400, 400, () => false)).toBe(0);
+    overlay.setView([0, 0, 200], 100);
+    expect(overlay.arrows.count).toBe(0);
+    expect(overlay.pick(clip, 110, 200, 400, 400, () => true)).toBe(-1);
+    overlay.setView([0, 0, 0], 0);
+    new Float32Array(payload.directions).set([-1, 0, 0]);
+    overlay.refresh();
+    expect(overlay.pick(clip, 290, 200, 400, 400, () => true)).toBe(0);
+    expect(overlay.pick(clip, 110, 200, 400, 400, () => true)).toBe(-1);
+    overlay.dispose();
+  });
+  it('builds solid arrows in world space, follows all three direction axes and refreshes poses', () => {
     const payload = waynet({
-      directions: new Float32Array([1, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0]).buffer,
+      directions: new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]).buffer,
     });
     const overlay = new WaynetOverlay(payload);
-    const camera = new THREE.OrthographicCamera(-4, 4, 2, -2, 0.1, 1000);
-    camera.position.set(0, 100, 0);
-    camera.up.set(0, 0, -1);
-    camera.lookAt(0, 0, 0);
-    camera.updateMatrixWorld();
+    expect(overlay.arrows).toBeInstanceOf(THREE.InstancedMesh);
+    expect(overlay.arrows.count).toBe(3); // zero direction has only an origin marker
+    overlay.arrows.geometry.computeBoundingBox();
+    const bounds = overlay.arrows.geometry.boundingBox!;
+    expect(bounds.max.y).toBeCloseTo(100);
+    expect(bounds.max.x - bounds.min.x).toBeGreaterThan(30);
+    expect(bounds.max.z - bounds.min.z).toBeGreaterThan(30);
+    const matrix = new THREE.Matrix4();
+    const tip = (slot: number) => {
+      overlay.arrows.getMatrixAt(slot, matrix);
+      return new THREE.Vector3(0, 100, 0).applyMatrix4(matrix);
+    };
+    expect(tip(0).distanceTo(new THREE.Vector3(5100, 0, 5000))).toBeLessThan(0.0001);
+    expect(tip(1).toArray()).toEqual([1000, 100, 1000]);
+    expect(tip(2).distanceTo(new THREE.Vector3(9000, 0, 1100))).toBeLessThan(0.0001);
     const root = new THREE.Matrix4().fromArray(ROOT_MATRIX);
-    const clip = new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).multiply(root);
-    overlay.updateFacing(clip, 800, 400);
-    const heading = overlay.waypoints.geometry.getAttribute('markerHeading');
-    expect(heading.getX(0)).toBeCloseTo(-1);
-    expect(heading.getY(0)).toBeCloseTo(0);
-    expect(heading.getX(1)).toBeCloseTo(0);
-    expect(heading.getY(1)).toBeCloseTo(-1);
-    expect(heading.getX(2)).toBeCloseTo(-Math.SQRT1_2);
-    expect(heading.getY(2)).toBeCloseTo(-Math.SQRT1_2);
-    expect(overlay.waypoints.geometry.getAttribute('markerShape').getX(3)).toBe(0);
-    expect((overlay.waypoints.material as THREE.PointsMaterial).size).toBe(24);
-
-    // The native direction column changes in place; refresh must invalidate
-    // a cached projection even with a stationary camera.
+    expect(tip(0).applyMatrix4(root).distanceTo(new THREE.Vector3(-51, 0, 50))).toBeLessThan(0.0001);
     new Float32Array(payload.directions).set([-1, 0, 0], 0);
     overlay.refresh();
-    overlay.updateFacing(clip, 800, 400);
-    expect(heading.getX(0)).toBeCloseTo(1);
+    expect(tip(0).x).toBeCloseTo(4900);
     overlay.setPosition(0, [200, 0, 200]);
-    overlay.updateFacing(clip, 800, 400);
-    expect(heading.getX(0)).toBeCloseTo(1);
-    // Turning the camera changes the projected arrow without editing the data.
-    camera.up.set(1, 0, 0);
-    camera.lookAt(0, 0, 0);
-    camera.updateMatrixWorld();
-    clip.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).multiply(root);
-    overlay.updateFacing(clip, 800, 400);
-    expect(heading.getX(0)).toBeCloseTo(0);
-    expect(heading.getY(0)).toBeCloseTo(1);
+    expect(tip(0).distanceTo(new THREE.Vector3(100, 0, 200))).toBeLessThan(0.0001);
+    overlay.setView([200, 0, 200], 100);
+    expect(overlay.arrows.count).toBe(1);
+    expect(tip(0).distanceTo(new THREE.Vector3(100, 0, 200))).toBeLessThan(0.0001);
     overlay.dispose();
   });
   it('never picks a range-hidden or occluded waypoint, and full visibility can pick through walls', () => {
@@ -115,7 +134,7 @@ describe('WaynetOverlay', () => {
   it('switches wall occlusion independently of the camera radius', () => {
     const overlay = new WaynetOverlay(waynet());
     overlay.setOcclusion('occluded');
-    for (const object of [overlay.waypoints, overlay.edges]) {
+    for (const object of [overlay.waypoints, overlay.edges, overlay.arrows]) {
       expect((object.material as THREE.Material).depthTest).toBe(true);
     }
     overlay.setOcclusion('faint');
@@ -187,7 +206,7 @@ describe('WaynetOverlay', () => {
   it('draws through the world, because it is an overlay', () => {
     // A waynet inside a building is exactly the one you need to see.
     const overlay = new WaynetOverlay(waynet());
-    for (const object of [overlay.waypoints, overlay.edges]) {
+    for (const object of [overlay.waypoints, overlay.edges, overlay.arrows]) {
       expect((object.material as THREE.Material).depthTest).toBe(false);
       expect(object.renderOrder).toBeGreaterThan(0);
     }

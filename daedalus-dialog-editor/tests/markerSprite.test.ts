@@ -33,7 +33,7 @@ function sample(texture: THREE.DataTexture, radius: number): { value: number; al
 }
 
 describe('marker sprites', () => {
-  it('gives lights a sun, particles a diamond and waypoints an arrow in a shared atlas', () => {
+  it('gives lights a sun, particles a diamond and waypoint origins a reticle in a shared atlas', () => {
     const atlas = markerAtlasTexture();
     expect(markerAtlasTexture()).toBe(atlas);
     const { data, width, height } = atlas.image;
@@ -47,8 +47,8 @@ describe('marker sprites', () => {
     expect(alpha(2, 0.5, 0.5)).toBe(0);   // diamond has no round corners
     expect(alpha(1, 0.7, 0)).toBe(255);   // sun ray
     expect(alpha(1, 0.6, 0.35)).toBe(0);  // between rays
-    expect(alpha(3, 0.35, 0.25)).toBeGreaterThan(200); // arrow head
-    expect(alpha(3, 0.35, -0.5)).toBe(0); // narrower tail
+    expect(alpha(3, 0, 0)).toBe(255);    // reticle centre
+    expect(alpha(3, 0, 0.38)).toBe(0);   // reticle gap
     for (let tile = 0; tile < 4; tile++) expect(alpha(tile, 0.95, 0.95)).toBe(0);
   });
   it('inks the dot white and rims it black, on a transparent field', () => {

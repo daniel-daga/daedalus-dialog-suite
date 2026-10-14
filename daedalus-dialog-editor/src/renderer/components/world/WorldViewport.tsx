@@ -1138,10 +1138,6 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       const overlay = overlayRef.current;
       overlay?.setView(cameraZen, markerView.markerDistance * 100);
       overlay?.setOcclusion(markerView.markerOcclusion);
-      if (overlay?.root.visible) {
-        overlay.updateFacing(labelClip.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
-          .multiply(world.root.matrixWorld), host.clientWidth || 1, host.clientHeight || 1);
-      }
       return markerView;
     };
     const draw = () => {

@@ -106,11 +106,6 @@ const sun: Shape = (r, x, y) => {
   return silhouette(Math.min(r - 0.42, axial, diagonal));
 };
 const diamond: Shape = (_r, x, y) => silhouette((Math.abs(x) + Math.abs(y) - 0.86) / Math.SQRT2);
-const arrow: Shape = (_r, x, y) => silhouette(Math.min(
-  Math.max(Math.abs(x) - 0.17, -0.86 - y, y - 0.25),
-  Math.max(0.12 - y, (Math.abs(x) + y - 0.86) / Math.SQRT2),
-));
-
 // One texture per shape for the whole app. Every marker layer disposes its own
 // material — which does *not* dispose the map — so these outlive any one layer
 // on purpose: rebuilt per marker they would be a fresh GPU upload on every
@@ -129,31 +124,24 @@ export function markerReticleTexture(): THREE.DataTexture {
   return (reticleTexture ??= build([reticle]));
 }
 
-/** Round, sun, diamond, upward arrow — shared across marker layers. */
+/** Round, sun, diamond, reticle — shared across marker layers. */
 export function markerAtlasTexture(): THREE.DataTexture {
-  return (atlasTexture ??= build([dot, sun, diamond, arrow]));
+  return (atlasTexture ??= build([dot, sun, diamond, reticle]));
 }
 
-/** Select an atlas tile per point, optionally rotating it to a screen heading. */
-export function styleMarkerMaterial(material: THREE.PointsMaterial, directional = false): void {
+/** Select an atlas tile per point. */
+export function styleMarkerMaterial(material: THREE.PointsMaterial): void {
   material.map = markerAtlasTexture();
   material.onBeforeCompile = (shader) => {
     shader.vertexShader = `attribute float markerShape;
-${directional ? 'attribute vec2 markerHeading;' : ''}
 varying float vMarkerShape;
-varying vec2 vMarkerHeading;
 ${shader.vertexShader}`.replace('#include <begin_vertex>', `#include <begin_vertex>
-vMarkerShape = markerShape;
-vMarkerHeading = ${directional ? 'markerHeading' : 'vec2(0.0, 1.0)'};`);
+vMarkerShape = markerShape;`);
     shader.fragmentShader = `varying float vMarkerShape;
-varying vec2 vMarkerHeading;
 ${shader.fragmentShader}`.replace('#include <map_particle_fragment>', `
-vec2 pointUv = vec2(gl_PointCoord.x, 1.0 - gl_PointCoord.y) - 0.5;
-vec2 right = vec2(vMarkerHeading.y, -vMarkerHeading.x);
-vec2 spriteUv = vec2(dot(pointUv, right), dot(pointUv, vMarkerHeading)) + 0.5;
-if (any(lessThan(spriteUv, vec2(0.0))) || any(greaterThan(spriteUv, vec2(1.0)))) discard;
+vec2 spriteUv = vec2(gl_PointCoord.x, 1.0 - gl_PointCoord.y);
 spriteUv.x = (spriteUv.x + vMarkerShape) / 4.0;
 diffuseColor *= texture2D(map, spriteUv);`);
   };
-  material.customProgramCacheKey = () => directional ? 'marker-facing-v1' : 'marker-shape-v1';
+  material.customProgramCacheKey = () => 'marker-shape-v2';
 }

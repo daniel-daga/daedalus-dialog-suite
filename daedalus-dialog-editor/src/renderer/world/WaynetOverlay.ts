@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { MarkerOcclusion } from './VobMarkerLayer';
-import { pickPoint } from './pickWaypoint';
+import { pickPoint, WAYPOINT_PICK_RADIUS } from './pickWaypoint';
 import { styleMarkerMaterial } from './markerSprite';
 import {
   WAYNET_FLAG_FREE_POINT,
@@ -32,13 +32,39 @@ const FREE = new THREE.Color(0xffb74d);
 const UNDERWATER = new THREE.Color(0x81c784);
 
 const RENDER_ORDER = 10;
-const WAYPOINT_SIZE = 24;
+const WAYPOINT_SIZE = 10;
+const UP = new THREE.Vector3(0, 1, 0);
+
+/** One metre of solid shaft and cone, along local +Y in ZenGin centimetres. */
+function arrowGeometry(): THREE.BufferGeometry {
+  const shaft = new THREE.CylinderGeometry(4, 4, 70, 6).translate(0, 35, 0).toNonIndexed();
+  const head = new THREE.ConeGeometry(18, 30, 8).translate(0, 85, 0).toNonIndexed();
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute([
+    ...shaft.getAttribute('position').array, ...head.getAttribute('position').array,
+  ], 3));
+  shaft.dispose();
+  head.dispose();
+  return geometry;
+}
 
 export class WaynetOverlay {
   /** Add this under the scene's converted root, not under the scene. */
   readonly root = new THREE.Group();
   readonly waypoints: THREE.Points;
   readonly edges: THREE.LineSegments;
+  readonly arrows: THREE.InstancedMesh;
+  private readonly fadedArrows: THREE.InstancedMesh;
+  private readonly arrowPickMesh: THREE.InstancedMesh;
+  private arrowPoints: number[] = [];
+  private arrowsDirty = true;
+  private readonly arrowPose = new THREE.Object3D();
+  private readonly heading = new THREE.Vector3();
+  private readonly arrowColor = new THREE.Color();
+  private readonly arrowRaycaster = new THREE.Raycaster();
+  private readonly pickInverse = new THREE.Matrix4();
+  private readonly pickNear = new THREE.Vector3();
+  private readonly pickFar = new THREE.Vector3();
 
   private geometry = new THREE.BufferGeometry();
   private edgeGeometry = new THREE.BufferGeometry();
@@ -57,12 +83,6 @@ export class WaynetOverlay {
    */
   readonly positions: Float32Array;
   private readonly directions: Float32Array;
-  private facingDirty = true;
-  private readonly facingClip = new THREE.Matrix4();
-  private facingWidth = 0;
-  private facingHeight = 0;
-  private readonly projected = new THREE.Vector4();
-  private readonly forward = new THREE.Vector4();
   private camera = new THREE.Vector3();
   private radius = 0;
   private readonly allEdges: Uint32Array;
@@ -98,16 +118,12 @@ export class WaynetOverlay {
 
     this.geometry.setAttribute('position', position);
     this.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    this.geometry.setAttribute('markerShape', new THREE.BufferAttribute(new Float32Array(payload.count), 1));
-    const headings = new Float32Array(payload.count * 2);
-    for (let point = 0; point < payload.count; point++) headings[point * 2 + 1] = 1;
-    this.geometry.setAttribute('markerHeading', new THREE.BufferAttribute(headings, 2));
+    this.geometry.setAttribute('markerShape', new THREE.BufferAttribute(new Float32Array(payload.count).fill(3), 1));
     this.geometry.setIndex(this.pointIndices);
     this.geometry.computeBoundingSphere();
 
     const pointMaterial = new THREE.PointsMaterial({
-      // A readable head and tail at every distance; the camera-radius filter
-      // limits clutter without shrinking the arrow into another dot.
+      // A small origin reticle remains readable when the solid arrow is distant.
       size: WAYPOINT_SIZE,
       // Pixels, not world units: a waypoint has no size, and one that shrinks
       // with distance is invisible from the only viewpoint that shows the net.
@@ -117,7 +133,7 @@ export class WaynetOverlay {
       transparent: true,
       alphaTest: 0.1,
     });
-    styleMarkerMaterial(pointMaterial, true);
+    styleMarkerMaterial(pointMaterial);
     this.waypoints = new THREE.Points(this.geometry, pointMaterial);
     this.waypoints.renderOrder = RENDER_ORDER;
     this.waypoints.matrixAutoUpdate = false;
@@ -141,14 +157,30 @@ export class WaynetOverlay {
     this.edges.frustumCulled = false;
 
     this.materials.push(pointMaterial, lineMaterial);
-    this.root.add(this.edges, this.waypoints);
+    const arrowMaterial = new THREE.MeshBasicMaterial({ transparent: true, depthTest: false });
+    this.arrows = new THREE.InstancedMesh(arrowGeometry(), arrowMaterial, payload.count);
+    this.arrows.frustumCulled = false;
+    this.arrows.renderOrder = RENDER_ORDER;
+    const fadedArrowMaterial = arrowMaterial.clone();
+    fadedArrowMaterial.depthTest = false;
+    fadedArrowMaterial.depthWrite = false;
+    fadedArrowMaterial.opacity = 0.25;
+    this.fadedArrows = new THREE.InstancedMesh(this.arrows.geometry, fadedArrowMaterial, payload.count);
+    this.fadedArrows.frustumCulled = false;
+    this.fadedArrows.renderOrder = RENDER_ORDER - 1;
+    this.fadedArrows.visible = false;
+    // A root-space pick proxy shares the rendered matrices, avoiding a second
+    // coordinate conversion or temporarily modifying the scene's matrices.
+    this.arrowPickMesh = new THREE.InstancedMesh(this.arrows.geometry, arrowMaterial, 0);
+    this.materials.push(arrowMaterial, fadedArrowMaterial);
+    this.root.add(this.edges, this.fadedArrows, this.arrows, this.waypoints);
     this.root.matrixAutoUpdate = false;
     // Hidden until asked for: it costs a buffer and two draw calls.
     this.root.visible = false;
     // The faint pass shares the filtered buffers with the solid pass.
     for (const object of [this.waypoints, this.edges]) {
       const material = (object.material as THREE.Material).clone();
-      if (object === this.waypoints) styleMarkerMaterial(material as THREE.PointsMaterial, true);
+      if (object === this.waypoints) styleMarkerMaterial(material as THREE.PointsMaterial);
       material.depthTest = false;
       material.depthWrite = false;
       material.opacity *= 0.25;
@@ -167,10 +199,11 @@ export class WaynetOverlay {
 
   setOcclusion(mode: MarkerOcclusion): void {
     this.occlusion = mode;
-    for (const object of [this.waypoints, this.edges]) {
+    for (const object of [this.waypoints, this.edges, this.arrows]) {
       (object.material as THREE.Material).depthTest = mode !== 'full';
     }
     for (const object of this.faded) object.visible = mode === 'faint';
+    this.fadedArrows.visible = mode === 'faint';
   }
 
   setView(camera: readonly [number, number, number], radius: number): void {
@@ -181,44 +214,32 @@ export class WaynetOverlay {
     this.filterRange();
   }
 
-  /** Project the stored direction through the SAME mirrored root as positions.
-   *  Pixel aspect matters: an NDC heading alone stretches on a wide viewport. */
-  updateFacing(toClip: THREE.Matrix4, width: number, height: number): void {
-    if (!this.facingDirty && this.facingClip.equals(toClip)
-      && this.facingWidth === width && this.facingHeight === height) return;
-    this.facingClip.copy(toClip);
-    this.facingWidth = width;
-    this.facingHeight = height;
-    this.facingDirty = false;
-    const headings = this.geometry.getAttribute('markerHeading');
-    const shapes = this.geometry.getAttribute('markerShape');
-    for (let point = 0; point < this.visible.length; point++) {
+  private rebuildArrows(): void {
+    this.arrowPoints = [];
+    const colors = this.geometry.getAttribute('color');
+    for (const point of this.visiblePoints) {
       const at = point * 3;
-      const x = this.directions[at];
-      const y = this.directions[at + 1];
-      const z = this.directions[at + 2];
-      const length = Math.hypot(x, y, z);
-      let dx = 0;
-      let dy = 0;
-      if (length > 0) {
-        this.projected.set(this.positions[at], this.positions[at + 1], this.positions[at + 2], 1).applyMatrix4(toClip);
-        this.forward.set(this.positions[at] + x / length * 100,
-          this.positions[at + 1] + y / length * 100,
-          this.positions[at + 2] + z / length * 100, 1).applyMatrix4(toClip);
-        if (this.projected.w > 0 && this.forward.w > 0) {
-          dx = (this.forward.x / this.forward.w - this.projected.x / this.projected.w) * width;
-          dy = (this.forward.y / this.forward.w - this.projected.y / this.projected.w) * height;
-        }
-      }
-      const screenLength = Math.hypot(dx, dy);
-      // A zero direction, or one seen end-on, has no screen heading. Show a
-      // round marker instead of inventing a facing or looking like a particle.
-      shapes.setX(point, screenLength > 0.0001 ? 3 : 0);
-      headings.setXY(point, screenLength > 0.0001 ? dx / screenLength : 0,
-        screenLength > 0.0001 ? dy / screenLength : 1);
+      this.heading.fromArray(this.directions, at);
+      if (this.heading.lengthSq() === 0) continue;
+      this.arrowPose.position.fromArray(this.positions, at);
+      this.arrowPose.quaternion.setFromUnitVectors(UP, this.heading.normalize());
+      this.arrowPose.updateMatrix();
+      const slot = this.arrowPoints.length;
+      this.arrows.setMatrixAt(slot, this.arrowPose.matrix);
+      this.arrows.setColorAt(slot, this.arrowColor.fromBufferAttribute(colors, point));
+      this.arrowPoints.push(point);
     }
-    headings.needsUpdate = true;
-    shapes.needsUpdate = true;
+    this.arrows.count = this.arrowPoints.length;
+    this.arrows.instanceMatrix.needsUpdate = true;
+    if (this.arrows.instanceColor) this.arrows.instanceColor.needsUpdate = true;
+    for (const mesh of [this.fadedArrows, this.arrowPickMesh]) {
+      mesh.count = this.arrows.count;
+      mesh.instanceMatrix = this.arrows.instanceMatrix;
+      mesh.instanceColor = this.arrows.instanceColor;
+      mesh.boundingSphere = null;
+    }
+    this.arrows.boundingSphere = null;
+    this.arrowsDirty = false;
   }
 
   isPointVisible(point: number): boolean {
@@ -227,7 +248,22 @@ export class WaynetOverlay {
 
   pick(toClip: THREE.Matrix4, x: number, y: number, width: number, height: number,
     inView: (at: readonly [number, number, number]) => boolean): number {
-    return pickPoint(this.positions, toClip, x, y, width, height, WAYPOINT_SIZE / 2,
+    if (this.arrows.count > 0) {
+      this.pickInverse.copy(toClip).invert();
+      const ndcX = x / width * 2 - 1;
+      const ndcY = 1 - y / height * 2;
+      this.pickNear.set(ndcX, ndcY, -1).applyMatrix4(this.pickInverse);
+      this.pickFar.set(ndcX, ndcY, 1).applyMatrix4(this.pickInverse);
+      this.pickFar.sub(this.pickNear);
+      this.arrowRaycaster.far = this.pickFar.length();
+      this.arrowRaycaster.set(this.pickNear, this.pickFar.normalize());
+      for (const hit of this.arrowRaycaster.intersectObject(this.arrowPickMesh, false)) {
+        if (hit.instanceId === undefined) continue;
+        if (this.occlusion !== 'full' && !inView([hit.point.x, hit.point.y, hit.point.z])) continue;
+        return this.arrowPoints[hit.instanceId];
+      }
+    }
+    return pickPoint(this.positions, toClip, x, y, width, height, WAYPOINT_PICK_RADIUS,
       (point) => this.isPointVisible(point)
         && (this.occlusion === 'full' || inView(this.positionOf(point))));
   }
@@ -239,7 +275,9 @@ export class WaynetOverlay {
       const distanceSquared = (this.positions[at] - this.camera.x) ** 2
         + (this.positions[at + 1] - this.camera.y) ** 2
         + (this.positions[at + 2] - this.camera.z) ** 2;
-      this.visible[point] = this.radius === 0 || distanceSquared <= this.radius ** 2 ? 1 : 0;
+      const visible = this.radius === 0 || distanceSquared <= this.radius ** 2 ? 1 : 0;
+      if (this.visible[point] !== visible) this.arrowsDirty = true;
+      this.visible[point] = visible;
       if (this.visible[point] === 1) {
         this.pointIndices.setX(this.visiblePoints.length, point);
         this.visiblePoints.push(point);
@@ -255,6 +293,7 @@ export class WaynetOverlay {
     this.edgeIndices.needsUpdate = true;
     this.geometry.setDrawRange(0, this.visiblePoints.length);
     this.edgeGeometry.setDrawRange(0, edges);
+    if (this.arrowsDirty) this.rebuildArrows();
   }
 
   setVisible(visible: boolean): void {
@@ -294,7 +333,7 @@ export class WaynetOverlay {
    */
   refresh(): void {
     this.geometry.getAttribute('position').needsUpdate = true;
-    this.facingDirty = true;
+    this.arrowsDirty = true;
     this.filterRange();
   }
 
@@ -312,6 +351,10 @@ export class WaynetOverlay {
   dispose(): void {
     this.geometry.dispose();
     this.edgeGeometry.dispose();
+    this.arrows.geometry.dispose();
+    this.arrows.dispose();
+    this.fadedArrows.dispose();
+    this.arrowPickMesh.dispose();
     for (const material of this.materials) material.dispose();
     this.materials = [];
     this.root.clear();

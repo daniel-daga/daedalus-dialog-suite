@@ -1,24 +1,13 @@
-// Picking a waypoint out of the waynet overlay (level-editor.md §7).
+// Picking pixel-sized waypoint origin markers (level-editor.md §7).
+// Solid 3D arrows are raycast separately by WaynetOverlay.
 //
-// The two picks the viewport already had are both wrong for a waypoint. GPU
-// ID-picking draws instances, and a waypoint is a vertex in one `THREE.Points`
-// with nothing to draw an id into. `THREE.Points.raycast` would work, but its
-// threshold is in **world units** while the overlay draws with
-// `sizeAttenuation: false` — every waypoint has a fixed pixel size whatever its
-// distance, so a world-unit threshold is either unclickable at range or
-// swallows half the net up close.
+// GPU ID-picking draws VOB instances, not these Points vertices. A Points
+// raycast uses world units, while these markers have a fixed pixel size, so
+// their proximity pick belongs in screen space after projection.
 //
-// So the pick happens where the sizes are actually equal: in pixels, after the
-// projection. That is a loop over every waypoint, which sounds worse than it is
-// — NewWorld has 2,959 of them and this runs once per click, not once per
-// frame.
-//
-// **Two layers pick this way now**, which is why the loop is exported on its own
-// as `pickPoint`: the markers for the VOBs with no visual (§16.38,
-// `VobMarkerLayer`) are a `THREE.Points` layer with the same two properties, so
-// they have the same two problems and take the same answer. The retail marker
-// count is 15,749, five times the waynet's — still one loop, still once per
-// click.
+// Pixel marker layers share pickPoint: waypoint origins, spawn markers and
+// VOBs with no visual all need the same projection and optional visibility
+// predicate. The loop is a per-click cost rather than a per-frame one.
 
 import * as THREE from 'three';
 
@@ -29,8 +18,8 @@ export const NO_POINT = -1;
 /** {@link NO_POINT}, for the waynet's own caller. */
 export const NO_WAYPOINT = NO_POINT;
 
-/** The legacy point helper's pixel radius. `WaynetOverlay` uses 12 px for its
- *  larger facing arrows; layers with smaller point markers keep this default. */
+/** Pixel radius for point markers, including the waypoint's origin reticle.
+ *  Solid waypoint arrows are picked against their geometry separately. */
 export const WAYPOINT_PICK_RADIUS = 8;
 
 const point = new THREE.Vector4();

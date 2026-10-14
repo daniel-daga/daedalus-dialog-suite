@@ -2144,15 +2144,13 @@ the other. Not fastidiousness — the mode keys, the property grid and the **Del
 VOB** button all follow `selection`, so a VOB selection standing behind a picked
 waypoint is a delete aimed at something the user cannot see.
 
-**The pick is a projection, not a raycast.** `THREE.Points.raycast` is the
-obvious answer and the wrong one: its threshold is in *world units*, while the
-overlay draws with `sizeAttenuation: false`, so every waypoint arrow is 24 px
-whatever its distance. A world-unit threshold tuned to work up close cannot be
-clicked at range, and one tuned for range swallows half the net up close. So
-`WaynetOverlay.pick` projects every waypoint and measures its 12 px radius in pixels,
-where the sizes actually are equal. Looping over all 2,959 sounds worse than it
-is: it runs once per click, not once per frame — unlike the props, which is
-exactly why those are GPU ID-picked.
+**Arrows and origin markers have different picks.** `WaynetOverlay.pick`
+raycasts the solid arrows in ZenGin root space. Its pick proxy shares the drawn
+instance matrices and filtered instance count, so the shaft and cone are
+clickable even far outside the origin marker. The inverse clip matrix supplies
+the near-to-far ray without changing the scene's world matrices. If no arrow
+is hit, the 10 px origin reticles use an 8 px projection pick: their fixed
+pixel size makes a world-unit raycast threshold unsuitable.
 
 **The waynet is picked before the VOBs**, and only while it is switched on. It
 obeys the marker occlusion and distance settings (#409), so picking it second
@@ -3237,23 +3235,26 @@ involved. Spawns retain their separate visibility behavior.
 
 **Shapes and waypoint facing (#408).** Lights draw sun-shaped markers;
 particle visuals and `zCPFXController` draw diamonds, and other VOBs keep round
-markers. VOB markers are 14 px; waypoints use a larger 24 px arrow. One shared
-white-and-black sprite atlas supplies all four shapes, retaining the existing
+markers. VOB markers are 14 px; waypoint origins use 10 px reticles. One shared
+white-and-black sprite atlas supplies these four shapes, retaining the existing
 colours and dark rims. A per-point tile attribute is compacted with positions
 and colours, so filtering cannot swap a light's shape onto a particle. Both
 the solid and faint materials use the same sprite shader.
 
-Waypoint arrows show the stored `directions` vector, not a waynet edge. The
-renderer projects each position and a normalized one-metre step along its
-direction through projection × view × the scene root, including the X mirror
-and viewport aspect. It rotates the screen-sized sprite to that heading. A
-zero direction or an end-on projection uses a round marker instead of inventing
-a facing. Camera changes reproject headings; moves, refreshes and replaced
-payloads invalidate the cached projection. `refresh` reads the same direction
-buffer the backend supplied, so a changed direction cannot remain cached.
-The browser regression reads real GPU pixels, checks mirrored facing and
-reopening with changed directions, and clicks the rendered arrow; native
-world loading remains the real-Electron suite's responsibility.
+Waypoint arrows are solid 3D geometry: a 70 cm shaft and 30 cm cone, one metre
+from origin to tip. A shared instanced mesh rotates local +Y onto the stored
+`directions` vector in all three axes, not onto a waynet edge. The scene root
+performs the usual X mirror and centimetre conversion exactly once. Their
+world size is fixed, so distance scales them and an end-on view shows the cone
+instead of a billboard. A zero direction has only the origin reticle.
+The solid and faint arrow meshes share geometry, instance matrices and colours;
+range changes compact the same waypoint IDs used for picking. Poses rebuild
+when positions or directions refresh, or range membership changes; camera
+movement alone does not rotate arrows or rewrite unchanged poses.
+The browser regression reads real framebuffer pixels to verify perspective
+scaling, end-on foreshortening, mirrored facing, changed directions after
+reopening and clicking the 3D head away from its origin. Native world loading
+remains the real-Electron suite's responsibility.
 
 VOB markers compact only the enabled, class-visible, in-range positions.
 Waypoints keep their shared position buffer and filter point and edge indices;

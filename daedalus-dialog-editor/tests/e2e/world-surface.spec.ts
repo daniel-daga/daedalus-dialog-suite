@@ -38,7 +38,7 @@ async function openWorldView(page: Page) {
 }
 
 test.describe('World surface', () => {
-  test('renders larger facing arrows with the stored direction and the scene mirror', async ({ page }) => {
+  test('renders solid 3D waypoint arrows with perspective, facing and arrow-head picking', async ({ page }) => {
     await openWorldView(page);
     await expect(page.getByTestId('world-open')).toBeVisible();
     const shaderErrors: string[] = [];
@@ -78,27 +78,55 @@ test.describe('World surface', () => {
     };
     await open();
     await page.getByRole('button', { name: 'Waynet', exact: true }).click();
-    const arrow = async () => page.evaluate(async () => {
+    const arrow = async (from = [0, 1200, 600]) => page.evaluate(async (from) => {
       const probe = (window as unknown as { __worldViewport?: {
         renderFrom: (from: number[], at: number[]) => Promise<{ width: number; height: number; rgba: string }>;
       } }).__worldViewport;
-      if (!probe) return { count: 0, offset: 0, lights: 0, particles: 0 };
-      const frame = await probe.renderFrom([0, 1200, 600], [0, 0, 0]);
+      if (!probe) return { count: 0, offset: 0, lights: 0, particles: 0, span: 0, headCount: 0, hitX: 0, hitY: 0 };
+      const frame = await probe.renderFrom(from, [0, 0, 0]);
       const pixels = Uint8Array.from(atob(frame.rgba), (character) => character.charCodeAt(0));
       let count = 0;
       let xSum = 0;
       let lights = 0;
       let particles = 0;
+      let minX = frame.width;
+      let maxX = 0;
+      let headCount = 0;
+      let headX = 0;
+      let headY = 0;
       for (let pixel = 0; pixel < frame.width * frame.height; pixel++) {
         const [r, g, b] = pixels.subarray(pixel * 4, pixel * 4 + 3);
-        if (r < 130 && g > 140 && b > 180) { count++; xSum += pixel % frame.width + 0.5; }
+        if (r < 130 && g > 140 && b > 180) {
+          const x = pixel % frame.width + 0.5;
+          count++;
+          xSum += x;
+          minX = Math.min(minX, x);
+          maxX = Math.max(maxX, x);
+          if (x < frame.width / 2 - 12) {
+            headCount++;
+            headX += x;
+            headY += frame.height - (Math.floor(pixel / frame.width) + 0.5);
+          }
+        }
         if (r > 200 && g > 180 && b < 160) lights++;
         if (r > 200 && b > 210 && g < 180) particles++;
       }
-      return { count, offset: count ? xSum / count - frame.width / 2 : 0, lights, particles };
-    });
+      return { count, offset: count ? xSum / count - frame.width / 2 : 0, lights, particles,
+        span: count ? maxX - minX : 0, headCount,
+        hitX: headCount ? headX / headCount : 0, hitY: headCount ? headY / headCount : 0 };
+    }, from);
     await expect.poll(async () => (await arrow()).count).toBeGreaterThan(50);
     const left = await arrow();
+    const far = await arrow([0, 2400, 1200]);
+    expect(far.count).toBeLessThan(left.count * 0.7);
+    // The light and particle lie on this view axis; hide their overlay
+    // markers so they cannot cover the waypoint's end-on silhouette.
+    await page.getByRole('button', { name: 'VOB markers' }).click();
+    const endOn = await arrow([1200, 0, 0]);
+    expect(endOn.count).toBeGreaterThan(20); // the solid cone remains visible end-on
+    expect(endOn.span).toBeLessThan(left.span * 0.6);
+    await page.getByRole('button', { name: 'VOB markers' }).click();
+    await arrow();
     // ZenGin +X mirrors to screen-left in this camera; the filled head is
     // heavier than the tail, so its coloured-pixel centroid must be left.
     expect(left.offset).toBeLessThan(-1);
@@ -113,9 +141,8 @@ test.describe('World surface', () => {
       expect(frame.offset).toBeLessThan(-1);
     }
     const canvas = page.getByTestId('world-viewport').locator('canvas');
-    const bounds = await canvas.boundingBox();
-    if (!bounds) throw new Error('Viewport canvas has no bounds');
-    await canvas.click({ position: { x: bounds.width / 2, y: bounds.height / 2 } });
+    expect(left.headCount).toBeGreaterThan(0);
+    await canvas.click({ position: { x: left.hitX, y: left.hitY } });
     await expect(page.getByRole('textbox', { name: 'Waypoint name' })).toHaveValue('WP_FACE');
     await canvas.click({ position: { x: 10, y: 10 } });
     await expect(page.getByTestId('world-waypoint-panel')).toHaveCount(0);
