@@ -38,6 +38,60 @@ async function openWorldView(page: Page) {
 }
 
 test.describe('World surface', () => {
+  test('keyboard movement permits fine taps and smooth holds with one undo (#403)', async ({ page }) => {
+    await openWorldView(page);
+    await page.evaluate(async (fixturePath) => {
+      const { SUMMARY, vobIndex, BASE_PROPS } = await import(/* @vite-ignore */ fixturePath);
+      const api = (window as unknown as { editorAPI: Record<string, unknown> }).editorAPI;
+      const history: Array<Array<{ op: string; vob: number; path: string; from: number[]; to: number[] }>> = [];
+      api.listWorlds = async () => [{ path: SUMMARY.worldPath, name: 'NewWorld.zen', source: 'C:/Gothic', isDefault: false }];
+      api.openWorld = async () => ({ ...SUMMARY, assetSources: [], vobIndex: vobIndex([[0, 0, 0]], 'zCVob', undefined, ['BARREL'], ['']) });
+      api.getWorldMesh = async () => ({ groups: [], bbox: SUMMARY.bbox });
+      api.getWorldVisuals = async () => ({ visuals: [], decals: { groups: [], count: 0 }, stats: {
+        visualsSeen: 0, visualsResolved: 0, vobsPlaced: 0, instancedDrawGroups: 0,
+        levelCompos: 0, unresolvedByType: {}, unresolved: [],
+      } });
+      api.getVobProps = async () => ({ class: 'zCVob', ...BASE_PROPS });
+      api.getWorldPortalFindings = async () => [];
+      api.getVobFolders = async () => ({ folders: [] });
+      api.applyWorldOps = async (ops: typeof history[number]) => { history.push(ops); };
+      api.getWorldHistoryDepth = async () => ({ undo: history.length, redo: 0 });
+      api.undoWorldEdit = async () => history.pop()?.map((op) => ({ ...op, from: op.to, to: op.from })) ?? null;
+    }, `/@fs${resolve(__dirname, '../worldFixtures.ts')}`);
+    await page.getByTestId('world-open').click();
+    await page.getByTestId('world-picker-entry-NewWorld.zen').click();
+    await page.getByRole('treeitem').filter({ hasText: 'BARREL' }).click();
+    const y = page.getByTestId('world-prop-position-y-input');
+    await expect(y).toHaveValue('0');
+    // Leave tree focus so its navigation does not own the keys.
+    await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+    await page.clock.install();
+    await page.keyboard.press('Control+PageUp');
+    await expect(y).toHaveValue('0.1');
+    await page.keyboard.down('PageUp');
+    await page.clock.runFor(100);
+    await page.keyboard.up('PageUp');
+    await expect.poll(async () => Number(await y.inputValue())).toBeGreaterThan(4);
+    expect(Number(await y.inputValue())).toBeLessThan(8);
+    const x = page.getByTestId('world-prop-position-x-input');
+    const z = page.getByTestId('world-prop-position-z-input');
+    await page.keyboard.down('w');
+    await page.keyboard.down('Control');
+    await page.clock.runFor(100);
+    await page.keyboard.up('w');
+    await page.keyboard.up('Control');
+    await expect.poll(async () => Math.hypot(Number(await x.inputValue()), Number(await z.inputValue())))
+      .toBeGreaterThan(1);
+    expect(Math.hypot(Number(await x.inputValue()), Number(await z.inputValue()))).toBeLessThan(2);
+    await page.keyboard.press('Control+z');
+    await expect(x).toHaveValue('0');
+    await expect(z).toHaveValue('0');
+    await page.keyboard.press('Control+z');
+    await expect(y).toHaveValue('0.1');
+    await page.keyboard.press('Control+z');
+    await expect(y).toHaveValue('0');
+  });
+
   test('renders solid 3D waypoint arrows with perspective, facing and arrow-head picking', async ({ page }) => {
     await openWorldView(page);
     await expect(page.getByTestId('world-open')).toBeVisible();

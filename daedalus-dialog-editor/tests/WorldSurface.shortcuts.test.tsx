@@ -311,26 +311,26 @@ describe('arrow-key nudge', () => {
     op: 'MoveVob', vob: 1, path: '1', from: [10, 20, 30], to,
   });
 
-  it('moves the selection camera-right by the default 10 cm step on ArrowRight', async () => {
+  it('moves the selection camera-right by the default 1 cm step on ArrowRight', async () => {
     await openWorld();
     await act(async () => { useWorldStore.getState().selectVob(1); });
 
     tap('ArrowRight');
 
     await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
-    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp([20, 20, 30])]);
+    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp([11, 20, 30])]);
   });
 
   it.each([
-    ['ArrowLeft', [0, 20, 30]],
-    ['a', [0, 20, 30]],
-    ['d', [20, 20, 30]],
-    ['ArrowUp', [10, 20, 40]],
-    ['w', [10, 20, 40]],
-    ['ArrowDown', [10, 20, 20]],
-    ['s', [10, 20, 20]],
-    ['PageUp', [10, 30, 30]],
-    ['PageDown', [10, 10, 30]],
+    ['ArrowLeft', [9, 20, 30]],
+    ['a', [9, 20, 30]],
+    ['d', [11, 20, 30]],
+    ['ArrowUp', [10, 20, 31]],
+    ['w', [10, 20, 31]],
+    ['ArrowDown', [10, 20, 29]],
+    ['s', [10, 20, 29]],
+    ['PageUp', [10, 21, 30]],
+    ['PageDown', [10, 19, 30]],
   ] as Array<[string, [number, number, number]]>)('moves the selection on %s', async (key, to) => {
     await openWorld();
     await act(async () => { useWorldStore.getState().selectVob(1); });
@@ -341,7 +341,7 @@ describe('arrow-key nudge', () => {
     expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp(to)]);
   });
 
-  it('nudges by the chosen snap step instead of the 10 cm default', async () => {
+  it('nudges by the chosen snap step instead of the 1 cm default', async () => {
     await openWorld();
     await chooseStep('1 m');
     await act(async () => { useWorldStore.getState().selectVob(1); });
@@ -359,7 +359,7 @@ describe('arrow-key nudge', () => {
     tap('ArrowRight', { shiftKey: true });
 
     await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
-    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp([110, 20, 30])]);
+    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp([20, 20, 30])]);
   });
 
   it('divides the step by 10 while Ctrl is held (#386)', async () => {
@@ -369,7 +369,7 @@ describe('arrow-key nudge', () => {
     tap('ArrowRight', { ctrlKey: true });
 
     await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
-    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp([11, 20, 30])]);
+    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp([10.1, 20, 30])]);
   });
 
   it('does nothing with an empty selection', async () => {
@@ -425,7 +425,7 @@ describe('arrow-key nudge', () => {
     fireEvent.keyUp(window, { key: 'w' });
 
     await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
-    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp([10, 20, 40])]);
+    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp([10, 20, 31])]);
   });
 
   it('drops the taps that arrive while a commit is still in flight', async () => {
@@ -446,7 +446,7 @@ describe('arrow-key nudge', () => {
     await act(async () => undefined);
 
     expect(api.applyWorldOps).toHaveBeenCalledTimes(1);
-    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp([20, 20, 30])]);
+    expect(api.applyWorldOps.mock.calls[0][0]).toMatchObject([nudgeOp([11, 20, 30])]);
     await act(async () => { release(); });
   });
 
@@ -468,7 +468,7 @@ describe('arrow-key nudge', () => {
 
     await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(2));
     expect(api.applyWorldOps.mock.calls[1][0]).toMatchObject([
-      { op: 'MoveVob', vob: 1, path: '1', from: [20, 20, 30], to: [30, 20, 30] },
+      { op: 'MoveVob', vob: 1, path: '1', from: [11, 20, 30], to: [12, 20, 30] },
     ]);
   });
 

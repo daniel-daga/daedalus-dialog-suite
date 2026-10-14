@@ -4191,18 +4191,21 @@ halves are needed: the first sees where focus *is*, the second what is *open*.
   to a focused button and to the Assets panel, which places on it. Shift
   multiplies the step by ten and Ctrl by a tenth, as they do the fly (#386),
   and are read live, so either pressed mid-hold changes the speed. The default
-  step is 10 cm, so Ctrl's is still a whole centimetre. The step is the
+  step is 1 cm, or 1 mm with Ctrl (#403). The step is the
   *translate* snap grid when one is set and only while the Snap control is
   showing it. The camera axes are queried for each nudge, so orbiting changes
   the movement direction — W/Up away from the camera, S/Down towards it. A tap
-  is one step; held past 250 ms the key moves continuously (500 cm/s, or four
-  snap steps a second if that is faster) with the OS auto-repeat swallowed. The
+  is one step; free movement continues immediately at 50 cm/s (5 cm/s with
+  Ctrl), with each frame capped at 50 ms of travel to discard stalls. Snapped
+  movement repeats after 250 ms at 50 cm/s or four snap steps a second if
+  faster. OS auto-repeat is swallowed. The
   whole hold — several keys at once included — is previewed through the gizmo
   like a drag and committed once on the last key up, so it is one undo entry.
   A held key stays the gesture's whatever modifier joins it (Ctrl mid-hold on S
   slows, it does not save). Ctrl *starts* a nudge only on the arrows and
   PageUp/Down, whose Ctrl chords are nobody's; Ctrl+S, Ctrl+D and the rest stay
-  their own chords.
+  their own chords. These defaults permit precision work; a measured Spacer
+  speed comparison remains for maintainer feedback.
 - **In rotate mode the same keys turn the selection** (#387): A/D yaw about the
   vertical (D turns it right seen from above), W/S pitch about camera-right (W
   tips the top away), Space/X roll about camera-forward. 1° a tap, 45°/s held,

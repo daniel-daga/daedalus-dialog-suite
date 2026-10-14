@@ -288,11 +288,11 @@ describe('useWorldShortcuts — Delete picks one of the two confirms', () => {
 });
 
 describe('useWorldShortcuts — the step a nudge key takes', () => {
-  test('the 10 cm default with no snap step set (#386)', () => {
+  test('the 1 cm default with no snap step set (#386)', () => {
     bound({ snapGrid: 0 });
     press('ArrowRight');
     expect(verbs.onNudgeBegin).toHaveBeenCalledWith(0);
-    expect(verbs.onNudgeBy).toHaveBeenCalledWith([10, 0, 0]);
+    expect(verbs.onNudgeBy).toHaveBeenCalledWith([1, 0, 0]);
   });
 
   test('the snap step when one is set, which the nudge also snaps to', () => {
@@ -307,7 +307,7 @@ describe('useWorldShortcuts — the step a nudge key takes', () => {
     expect(press('ArrowRight', { ctrlKey: true })).toBe(true);
     release('ArrowRight');
     press('PageUp', { ctrlKey: true });
-    expect(verbs.onNudgeBy.mock.calls.map(([delta]) => delta)).toEqual([[1, 0, 0], [0, 1, 0]]);
+    expect(verbs.onNudgeBy.mock.calls.map(([delta]) => delta)).toEqual([[0.1, 0, 0], [0, 0.1, 0]]);
   });
 
   test('×10 while Shift is held', () => {
@@ -347,7 +347,7 @@ describe('useWorldShortcuts — the step a nudge key takes', () => {
       release(key);
     }
     expect(verbs.onNudgeBy.mock.calls.map(([delta]) => delta)).toEqual([
-      [0, 0, 10], [0, 0, 10], [0, 0, -10], [0, 0, -10],
+      [0, 0, 1], [0, 0, 1], [0, 0, -1], [0, 0, -1],
     ]);
   });
 
@@ -358,7 +358,7 @@ describe('useWorldShortcuts — the step a nudge key takes', () => {
       release(key);
     }
     expect(verbs.onNudgeBy.mock.calls.map(([delta]) => delta)).toEqual([
-      [-10, 0, 0], [-10, 0, 0], [10, 0, 0], [10, 0, 0], [0, 10, 0], [0, -10, 0],
+      [-1, 0, 0], [-1, 0, 0], [1, 0, 0], [1, 0, 0], [0, 1, 0], [0, -1, 0],
     ]);
   });
 
@@ -369,7 +369,7 @@ describe('useWorldShortcuts — the step a nudge key takes', () => {
       release(key);
     }
     expect(verbs.onNudgeBy.mock.calls.map(([delta]) => delta)).toEqual([
-      [0, 10, 0], [0, -10, 0], [0, -100, 0],
+      [0, 1, 0], [0, -1, 0], [0, -10, 0],
     ]);
   });
 
@@ -433,46 +433,65 @@ describe('useWorldShortcuts — holding a nudge key', () => {
     act(() => { for (const callback of pending) callback(at); });
   }
 
+  test('free movement starts immediately and Ctrl permits millimetre taps (#403)', () => {
+    bound();
+    press('ArrowRight', { ctrlKey: true });
+    expect(verbs.onNudgeBy.mock.calls[0][0]).toEqual([0.1, 0, 0]);
+    frameAt(20);
+    expect(verbs.onNudgeBy.mock.calls[1][0]).toEqual([0.1, 0, 0]);
+    release('ArrowRight');
+    expect(verbs.onNudgeEnd).toHaveBeenCalledTimes(1);
+  });
+
+  test('a stalled frame cannot jump a free movement by seconds of travel (#403)', () => {
+    bound();
+    press('w');
+    frameAt(2000);
+    expect(verbs.onNudgeBy.mock.calls[1][0][2]).toBeLessThanOrEqual(2.5);
+    release('w');
+  });
+
   test('a tap is one step, one gesture and one commit', () => {
     bound();
     press('d');
-    frameAt(100);
     release('d');
     expect(verbs.onNudgeBegin).toHaveBeenCalledTimes(1);
-    expect(verbs.onNudgeBy.mock.calls).toEqual([[[10, 0, 0]]]);
+    expect(verbs.onNudgeBy.mock.calls).toEqual([[[1, 0, 0]]]);
     expect(verbs.onNudgeEnd).toHaveBeenCalledTimes(1);
   });
 
-  test('held past the delay it moves continuously, and commits once on release', () => {
+  test('free movement is continuous from the first frame and commits once on release', () => {
     bound();
     press('w');
-    frameAt(200);   // still inside the hold delay
-    frameAt(250);   // the delay ends here: nothing travelled yet
-    frameAt(350);   // 0.1 s at 500 cm/s
-    frameAt(450);
+    frameAt(20);
+    frameAt(40);
     expect(verbs.onNudgeEnd).not.toHaveBeenCalled();
     release('w');
-    const travelled = verbs.onNudgeBy.mock.calls.map(([delta]) => delta[2]);
-    expect(travelled[0]).toBe(10);
-    expect(travelled.slice(1)).toEqual([expect.closeTo(50, 6), expect.closeTo(50, 6)]);
+    expect(verbs.onNudgeBy.mock.calls.map(([delta]) => delta[2])).toEqual([1, 1, 1]);
     expect(verbs.onNudgeBegin).toHaveBeenCalledTimes(1);
     expect(verbs.onNudgeEnd).toHaveBeenCalledTimes(1);
   });
 
-  test('Shift or Ctrl pressed mid-hold changes the speed from then on (#386)', () => {
+  test('Shift or Ctrl pressed mid-hold changes the speed from then on (#403)', () => {
     bound();
     press('w');
-    frameAt(250);
-    frameAt(350);   // 50 cm at 500 cm/s
+    frameAt(20);
     press('Shift', { shiftKey: true });
-    frameAt(450);   // ×10
+    frameAt(40);
     release('Shift');
     press('Control', { ctrlKey: true });
-    frameAt(550);   // ×0.1
-    const travelled = verbs.onNudgeBy.mock.calls.map(([delta]) => delta[2]);
-    expect(travelled.slice(1)).toEqual([
-      expect.closeTo(50, 6), expect.closeTo(500, 6), expect.closeTo(5, 6),
-    ]);
+    frameAt(60);
+    expect(verbs.onNudgeBy.mock.calls.map(([delta]) => delta[2])).toEqual([1, 1, 10, 0.1]);
+  });
+
+  test('snapped movement keeps the chosen step and its repeat delay', () => {
+    bound({ snapGrid: 50 });
+    press('w');
+    frameAt(200);
+    expect(verbs.onNudgeBy.mock.calls.map(([delta]) => delta[2])).toEqual([50]);
+    frameAt(300);
+    expect(verbs.onNudgeBy.mock.calls[1][0][2]).toBe(10);
+    release('w');
   });
 
   test('Ctrl pressed mid-hold on S does not turn the held key into a save', () => {

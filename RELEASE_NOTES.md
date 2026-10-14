@@ -42,3 +42,4 @@
 - #391: Editing a decal's size, alpha weight or blend redraws it at once
 - #395: Saving keeps a dialog condition as it was written; editing one condition rewrites only that one
 - #395: Scripts open with the right characters: German files are no longer misread as Central European, and „“€ show correctly
+- #403: Finer VOB keyboard movement with millimetre Ctrl taps and smooth holds.

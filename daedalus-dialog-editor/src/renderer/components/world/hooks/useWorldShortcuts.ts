@@ -22,18 +22,16 @@ const NUDGE_DELTAS: Record<string, [number, number, number]> = {
   x: [0, -1, 0],
 };
 
-/** The nudge a bare key takes when no snap step is set, in cm — 10, so that
- *  Ctrl's ×0.1 is still a whole centimetre (#386). */
-const NUDGE_FALLBACK_STEP = 10;
+/** Free-movement tap in cm; Ctrl gives a millimetre step (#403). */
+const NUDGE_FALLBACK_STEP = 1;
 
-/** How long a nudge key is held before it moves continuously, in ms — about
- *  the OS's own auto-repeat delay, so a tap stays one step. */
+/** Snapped movement and rotation repeat delay; free movement starts at once. */
 const NUDGE_HOLD_DELAY = 250;
 
 /** How fast a held nudge key moves, in cm/s before Shift's ×10 or Ctrl's
  *  ×0.1 — and at least this many snap steps a second, so a coarse grid does
  *  not crawl. */
-const NUDGE_HOLD_SPEED = 500;
+const NUDGE_HOLD_SPEED = 50;
 const NUDGE_HOLD_STEPS_PER_SECOND = 4;
 
 /** The keyboard turn's counterparts, in degrees and °/s (#387). */
@@ -166,16 +164,20 @@ export function useWorldShortcuts({
      *  effect, which ends the gesture first. */
     const turning = gizmoMode === 'rotate';
     const by = turning ? onTurnBy : onNudgeBy;
+    const freeMovement = !turning && snapGrid === 0;
+    const holdDelay = freeMovement ? 0 : NUDGE_HOLD_DELAY;
     let frame: number | null = null;
     let lastFrame = 0;
 
     const tick = (now: number) => {
-      const dt = Math.max(0, now - lastFrame) / 1000;
+      const elapsed = Math.max(0, now - lastFrame) / 1000;
+      // Discard stalled time instead of jumping the selection on the next frame.
+      const dt = freeMovement ? Math.min(elapsed, 0.05) : elapsed;
       lastFrame = now;
       for (const [key, { since, speed }] of held) {
         // Counted from the end of the hold delay, not the press, so the first
         // continuous frame does not jump by the delay's worth of travel.
-        const moving = factor * Math.min(dt, Math.max(0, (now - since - NUDGE_HOLD_DELAY) / 1000));
+        const moving = factor * Math.min(dt, Math.max(0, (now - since - holdDelay) / 1000));
         if (moving <= 0) continue;
         const [r, u, f] = NUDGE_DELTAS[key];
         by([r * speed * moving, u * speed * moving, f * speed * moving]);
@@ -312,8 +314,8 @@ export function useWorldShortcuts({
       // (#387). Ctrl starts a gesture only on keys whose Ctrl chord is
       // nobody's (`CTRL_NUDGE_KEYS`); Ctrl+S, Ctrl+D fall through to those.
       //
-      // A press moves one step at once; held past `NUDGE_HOLD_DELAY` it moves
-      // continuously until released. The whole gesture is previewed and only
+      // Free movement starts continuously at once after a fine tap; snapped
+      // movement and rotation retain the hold delay. The gesture is previewed and only
       // committed on the last key up, so a hold is one undo entry like a gizmo
       // drag, and the OS's auto-repeat keydowns are swallowed — the frame loop
       // owns the motion.
