@@ -4,7 +4,7 @@
 // ID-picking draws instances, and a waypoint is a vertex in one `THREE.Points`
 // with nothing to draw an id into. `THREE.Points.raycast` would work, but its
 // threshold is in **world units** while the overlay draws with
-// `sizeAttenuation: false` — every waypoint is the same 3.5 px whatever its
+// `sizeAttenuation: false` — every waypoint has a fixed pixel size whatever its
 // distance, so a world-unit threshold is either unclickable at range or
 // swallows half the net up close.
 //
@@ -29,8 +29,8 @@ export const NO_POINT = -1;
 /** {@link NO_POINT}, for the waynet's own caller. */
 export const NO_WAYPOINT = NO_POINT;
 
-/** How near the pointer has to be, in pixels. Wider than the 3.5 px the overlay
- *  draws, because a waypoint is a dot and a dot is hard to hit exactly. */
+/** The legacy point helper's pixel radius. `WaynetOverlay` uses 12 px for its
+ *  larger facing arrows; layers with smaller point markers keep this default. */
 export const WAYPOINT_PICK_RADIUS = 8;
 
 const point = new THREE.Vector4();

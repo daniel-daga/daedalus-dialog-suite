@@ -101,7 +101,7 @@ const WorldViewControls: React.FC<WorldViewControlsProps> = ({
   hiddenClasses, onHiddenClassesChange, classOptions,
 }) => (
   <>
-    <Tooltip disableInteractive title="Show or hide VOB markers; scene-tree selection remains available">
+    <Tooltip disableInteractive title="VOB markers: suns for lights, diamonds for particles; scene-tree selection remains available">
       <span>
         <ToggleButton size="small" value="markers" selected={showMarkers}
           disabled={!hasWorld} onChange={onToggleMarkers} aria-label="VOB markers" sx={toggleSx}
@@ -132,7 +132,7 @@ const WorldViewControls: React.FC<WorldViewControlsProps> = ({
         ))}
       </TextField>
     </Tooltip>
-    <Tooltip title="Waynet — draw the waypoints and their edges">
+    <Tooltip title="Waynet — draw waypoint facing arrows and their edges">
       <span>
         <ToggleButton
           size="small"

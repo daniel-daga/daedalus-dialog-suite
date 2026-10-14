@@ -4,17 +4,15 @@ import { resolve } from 'node:path';
 /**
  * Browser mock-harness specs for the World surface (level-editor.md §6).
  *
- * What this suite can and cannot reach is worth stating, because a green run
- * here is not a working viewport: the harness runs the renderer in plain
- * Chromium against the mock API, which has no ZenGin world, no Gothic install
- * and no native binding — deliberately, since a fabricated world would be a
- * scene nobody could tell apart from a broken real one.
+ * The harness runs the real renderer against a mock backend, without Gothic
+ * or the native binding. The marker-only fixture below verifies GPU sprites
+ * and direction projection; it does not verify loading a real ZenGin world.
  *
  * So these specs cover exactly the flow that lives in the renderer: the view is
  * reachable, it is lazily loaded, it explains what it needs, and a refused open
- * surfaces the refusal instead of leaving a spinner running. The rendering
- * itself is covered by the scene-graph assertions in tests/WorldScene.test.ts,
- * and its performance by the measured spike numbers in §3.
+ * surfaces the refusal instead of leaving a spinner running. Native world
+ * loading is covered by the real-Electron suite; scene-graph tests cover the
+ * remaining rendering rules.
  */
 
 async function openWorldView(page: Page) {
@@ -40,6 +38,97 @@ async function openWorldView(page: Page) {
 }
 
 test.describe('World surface', () => {
+  test('renders larger facing arrows with the stored direction and the scene mirror', async ({ page }) => {
+    await openWorldView(page);
+    await expect(page.getByTestId('world-open')).toBeVisible();
+    const shaderErrors: string[] = [];
+    page.on('console', (message) => {
+      if (message.type() === 'error' && /shader|WebGLProgram/i.test(message.text())) shaderErrors.push(message.text());
+    });
+    await page.evaluate(async (fixturePath) => {
+      const { SUMMARY, vobIndex } = await import(/* @vite-ignore */ fixturePath);
+      const bbox = [-400, -100, -400, 400, 100, 400];
+      const api = (window as unknown as { editorAPI: Record<string, unknown> }).editorAPI;
+      api.listWorlds = async () => [{ path: SUMMARY.worldPath, name: 'NewWorld.zen', source: 'C:/Gothic', isDefault: false }];
+      api.openWorld = async () => ({
+        ...SUMMARY, bbox, assetSources: [],
+        vobIndex: vobIndex([[-150, 0, 0], [150, 0, 0]], ['zCVobLight', 'zCVob'],
+          undefined, ['LIGHT', 'PARTICLE'], ['', 'FIRE.PFX']),
+      });
+      api.getWorldMesh = async () => ({ groups: [], bbox });
+      api.getWorldVisuals = async () => ({ visuals: [], decals: { groups: [], count: 0 }, stats: {
+        visualsSeen: 0, visualsResolved: 0, vobsPlaced: 0, instancedDrawGroups: 0,
+        levelCompos: 0, unresolvedByType: {}, unresolved: [],
+      } });
+      const net = {
+        count: 1, names: ['WP_FACE'], positions: new Float32Array(3).buffer,
+        directions: new Float32Array([1, 0, 0]).buffer,
+        waterDepths: new Int32Array(1).buffer, flags: new Uint32Array(1).buffer,
+        edgeCount: 0, edges: new Uint32Array().buffer, danglingEdges: 0,
+      };
+      api.getWorldWaynet = async () => net;
+      api.getWorldHistoryDepth = async () => ({ undo: 0, redo: 0 });
+      api.getWorldPortalFindings = async () => [];
+      api.getVobFolders = async () => ({ folders: [] });
+    }, `/@fs${resolve(__dirname, '../worldFixtures.ts')}`);
+    const open = async () => {
+      await page.getByTestId('world-open').click();
+      await page.getByTestId('world-picker-entry-NewWorld.zen').click();
+      await expect(page.getByTestId('world-viewport')).toBeVisible();
+    };
+    await open();
+    await page.getByRole('button', { name: 'Waynet', exact: true }).click();
+    const arrow = async () => page.evaluate(async () => {
+      const probe = (window as unknown as { __worldViewport?: {
+        renderFrom: (from: number[], at: number[]) => Promise<{ width: number; height: number; rgba: string }>;
+      } }).__worldViewport;
+      if (!probe) return { count: 0, offset: 0, lights: 0, particles: 0 };
+      const frame = await probe.renderFrom([0, 1200, 600], [0, 0, 0]);
+      const pixels = Uint8Array.from(atob(frame.rgba), (character) => character.charCodeAt(0));
+      let count = 0;
+      let xSum = 0;
+      let lights = 0;
+      let particles = 0;
+      for (let pixel = 0; pixel < frame.width * frame.height; pixel++) {
+        const [r, g, b] = pixels.subarray(pixel * 4, pixel * 4 + 3);
+        if (r < 130 && g > 140 && b > 180) { count++; xSum += pixel % frame.width + 0.5; }
+        if (r > 200 && g > 180 && b < 160) lights++;
+        if (r > 200 && b > 210 && g < 180) particles++;
+      }
+      return { count, offset: count ? xSum / count - frame.width / 2 : 0, lights, particles };
+    });
+    await expect.poll(async () => (await arrow()).count).toBeGreaterThan(50);
+    const left = await arrow();
+    // ZenGin +X mirrors to screen-left in this camera; the filled head is
+    // heavier than the tail, so its coloured-pixel centroid must be left.
+    expect(left.offset).toBeLessThan(-1);
+    expect(left.lights).toBeGreaterThan(10);
+    expect(left.particles).toBeGreaterThan(10);
+    await page.screenshot({ path: test.info().outputPath('marker-types.png') });
+    for (const mode of ['Faint', 'Fully visible', 'Occluded']) {
+      await page.getByRole('combobox', { name: 'Marker occlusion' }).click();
+      await page.getByRole('option', { name: mode, exact: true }).click();
+      const frame = await arrow();
+      expect(frame.count).toBeGreaterThan(50);
+      expect(frame.offset).toBeLessThan(-1);
+    }
+    const canvas = page.getByTestId('world-viewport').locator('canvas');
+    const bounds = await canvas.boundingBox();
+    if (!bounds) throw new Error('Viewport canvas has no bounds');
+    await canvas.click({ position: { x: bounds.width / 2, y: bounds.height / 2 } });
+    await expect(page.getByRole('textbox', { name: 'Waypoint name' })).toHaveValue('WP_FACE');
+    await canvas.click({ position: { x: 10, y: 10 } });
+    await expect(page.getByTestId('world-waypoint-panel')).toHaveCount(0);
+    // Reopen with changed stored facing: the new payload must draw right.
+    await page.evaluate(async () => {
+      const api = (window as unknown as { editorAPI: { getWorldWaynet: () => Promise<{ directions: ArrayBuffer }> } }).editorAPI;
+      const net = await api.getWorldWaynet();
+      new Float32Array(net.directions).set([-1, 0, 0]);
+    });
+    await open();
+    await expect.poll(async () => (await arrow()).offset).toBeGreaterThan(1);
+    expect(shaderErrors).toEqual([]);
+  });
   test('marker distance and wall occlusion are independent view options', async ({ page }) => {
     await openWorldView(page);
     await expect(page.getByTestId('world-open')).toBeVisible();

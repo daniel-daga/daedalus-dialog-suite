@@ -28,7 +28,7 @@ import {
   MARKER_PICK_RADIUS, VobMarkerLayer, markerColorOf,
 } from '../src/renderer/world/VobMarkerLayer';
 import { NO_PICK } from '../src/renderer/world/pickIds';
-import { markerDotTexture } from '../src/renderer/world/markerSprite';
+import { markerAtlasTexture } from '../src/renderer/world/markerSprite';
 
 /**
  * A camera looking down -Z at the origin, and the clip matrix the viewport
@@ -71,6 +71,22 @@ function channels(hex: number): number[] {
 }
 
 describe('VobMarkerLayer', () => {
+  it('carries distinct light and particle shapes through filtering, alongside their colours', () => {
+    const layer = new VobMarkerLayer(vobIndex(
+      [[0, 0, 0], [1000, 0, 0], [20, 0, 0], [30, 0, 0]],
+      ['zCVobLight', 'zCVob', 'zCPFXController', 'zCVobSound'],
+      undefined, undefined, ['', 'FIRE.PFX', '', ''],
+    ));
+    const shapes = () => Array.from(layer.markers.geometry.getAttribute('markerShape').array)
+      .slice(0, layer.drawn);
+    expect(shapes()).toEqual([1, 2, 2, 0]);
+    layer.setView(true, [0, 0, 0], 100);
+    expect(shapes()).toEqual([1, 2, 0]);
+    layer.setHidden(new Uint8Array([1, 0, 0, 0]));
+    expect(shapes()).toEqual([2, 0]);
+    expect(layer.markers.material).toHaveProperty('size', 14);
+    layer.dispose();
+  });
   it('full visibility picks through walls, but faint and occluded modes do not', () => {
     const layer = new VobMarkerLayer(vobIndex([[0, 0, 0]], 'zCVobLight', undefined, undefined, ['']));
     for (const mode of ['occluded', 'faint'] as const) {
@@ -310,14 +326,14 @@ describe('VobMarkerLayer', () => {
     expect(layer.pick(clip(), x, y, SIZE, SIZE, MARKER_PICK_RADIUS, () => false)).toBe(NO_PICK);
   });
 
-  it('draws the shared pip, and disposes its own buffers rather than that', () => {
+  it('draws the shared atlas, and disposes its own buffers rather than that', () => {
     const layer = new VobMarkerLayer(vobIndex([[0, 0, 0]], 'zCVobSound', undefined, undefined, ['']));
     const material = layer.markers.material as THREE.PointsMaterial;
     const { geometry } = layer.markers;
 
-    // The app's one pip, shared with the spawn markers: built per layer it
+    // The shared atlas: built per layer it
     // would be a fresh GPU upload on every scene rebuild — see `markerSprite`.
-    expect(material.map).toBe(markerDotTexture());
+    expect(material.map).toBe(markerAtlasTexture());
 
     const geometryDisposed = jest.spyOn(geometry, 'dispose');
     const materialDisposed = jest.spyOn(material, 'dispose');
@@ -329,7 +345,7 @@ describe('VobMarkerLayer', () => {
     expect(geometryDisposed).toHaveBeenCalled();
     expect(materialDisposed).toHaveBeenCalled();
     expect(fadedDisposed).toHaveBeenCalled();
-    // Disposing it here would blank the spawn markers as well.
+    // Disposing it here would blank the waypoint markers as well.
     expect(mapDisposed).not.toHaveBeenCalled();
   });
 });

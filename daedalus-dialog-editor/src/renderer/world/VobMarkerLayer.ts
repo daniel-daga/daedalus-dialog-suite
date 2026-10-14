@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { VobIndex } from '../../shared/worldTypes';
-import { markerDotTexture } from './markerSprite';
+import { styleMarkerMaterial } from './markerSprite';
 import { NO_PICK } from './pickIds';
 import { NO_POINT, pickPoint } from './pickWaypoint';
 
@@ -33,10 +33,8 @@ export type MarkerOcclusion = 'occluded' | 'faint' | 'full';
 //     not drawn at all — but both still need a handle, and the pick, the gizmo
 //     and `positionOf` all come through here. The quad is the picture and the
 //     pip at its centre is the handle.
-//   - **the colour is the whole of what tells two markers apart.** One shape at
-//     one size for all of them, and a class table for the colour: a sound, a
-//     trigger volume and a startpoint are three unrelated objects and the dot
-//     alone says nothing about which is which.
+//   - **colour and shape identify the type.** Lights use suns and particle
+//     effects use diamonds; other VOBs keep the round pip and class colour.
 //   - **it draws only what the class filter left on**, and hands the pick only
 //     that. Hiding `zCVobSound` used to hide nothing because nothing was drawn
 //     (§16.38 consequence 4); a layer that drew regardless would swap that for
@@ -46,10 +44,8 @@ export type MarkerOcclusion = 'occluded' | 'faint' | 'full';
 // the spawn markers do, so the positions stay exactly as the index holds them —
 // ZenGin centimetres, unconverted.
 
-/** How big a marker is drawn, in **pixels**. Between the waynet's 3.5 and the
- *  spawn layer's 11: there are five times as many of these as waypoints, so a
- *  spawn marker's size would read as one mass with the whole world in frame. */
-export const MARKER_SIZE = 9;
+/** Pixels: enough to read a sun or diamond, smaller than a waypoint arrow. */
+export const MARKER_SIZE = 14;
 
 /** How near the pointer has to be, in pixels — wider than the dot, because a
  *  dot is hard to hit exactly. `WAYPOINT_PICK_RADIUS`'s reasoning exactly. */
@@ -151,6 +147,7 @@ export class VobMarkerLayer {
   private readonly source: Float32Array;
   /** Every marker's colour, the same way, so the compaction can carry it. */
   private readonly colors: Float32Array;
+  private readonly shapes: Float32Array;
   /** Which slot is drawn where, or -1 for a marker the filter switched off —
    *  what makes an unlimited-range live drag's write O(1). */
   private readonly drawnAt: Int32Array;
@@ -186,6 +183,7 @@ export class VobMarkerLayer {
     this.vobs = Uint32Array.from(markered);
     this.source = new Float32Array(this.vobs.length * 3);
     this.colors = new Float32Array(this.vobs.length * 3);
+    this.shapes = new Float32Array(this.vobs.length);
     this.drawnAt = new Int32Array(this.vobs.length).fill(-1);
 
     const color = new THREE.Color();
@@ -200,6 +198,9 @@ export class VobMarkerLayer {
       this.colors[slot * 3] = color.r;
       this.colors[slot * 3 + 1] = color.g;
       this.colors[slot * 3 + 2] = color.b;
+      const cls = index.classes[classIndex[vob]];
+      this.shapes[slot] = index.visualTypes[visualTypeIndex[vob]] === 'PARTICLE_EFFECT'
+        || cls === 'zCPFXController' ? 2 : cls === 'zCVobLight' ? 1 : 0;
     });
 
     // Allocated at the marker count — an upper bound on the drawn set, since
@@ -212,6 +213,7 @@ export class VobMarkerLayer {
     this.geometry.setAttribute(
       'color', new THREE.BufferAttribute(new Float32Array(this.vobs.length * 3), 3),
     );
+    this.geometry.setAttribute('markerShape', new THREE.BufferAttribute(new Float32Array(this.vobs.length), 1));
 
     this.material = new THREE.PointsMaterial({
       size: MARKER_SIZE,
@@ -222,20 +224,14 @@ export class VobMarkerLayer {
       // Per marker, from the class table. One layer and one draw call for all
       // of them; a layer per colour would be six.
       vertexColors: true,
-      // A rimmed round pip rather than the flat square `PointsMaterial` draws
-      // by default: a marker sits over terrain of any brightness, and the black
-      // rim is what keeps it readable over the bright half. Shared and never
-      // disposed here — see `markerSprite`.
-      map: markerDotTexture(),
       // The pip is transparent to its corners, and two markers a few pixels
       // apart are the ordinary case: without this the nearer one's empty
       // corners blend the far one away.
       alphaTest: 0.1,
-      // Hidden by whatever is in front of it. Drawn through every wall at full
-      // strength, fifteen thousand pips were jarring (maintainer, 2026-10-01) —
-      // unlike the waynet and the spawn layer, which still draw on top.
+      // The occlusion setting controls whether geometry hides the marker.
       transparent: true,
     });
+    styleMarkerMaterial(this.material);
 
     this.markers = new THREE.Points(this.geometry, this.material);
     // Above the waynet's 10 and the spawn layer's 11: a marker is a thing,
@@ -252,6 +248,7 @@ export class VobMarkerLayer {
     // wherever the marker is in view. A child, so it follows the layer's matrix
     // and visibility without its owner adding a second object.
     this.fadedMaterial = this.material.clone();
+    styleMarkerMaterial(this.fadedMaterial);
     this.fadedMaterial.depthTest = false;
     this.fadedMaterial.depthWrite = false;
     this.fadedMaterial.opacity = FADED_OPACITY;
@@ -347,7 +344,7 @@ export class VobMarkerLayer {
    * The drawn markers are *compacted* to the front of the buffer rather than
    * flagged in place, because a `THREE.Points` layer has no per-vertex "skip"
    * — the instanced meshes push a hidden instance out of the clip volume in the
-   * vertex shader, and there is no shader of ours here. The compaction is what
+   * vertex shader. The compaction is what
    * makes the pick agree with the picture for free: it is handed the drawn
    * range and nothing else.
    */
@@ -355,6 +352,7 @@ export class VobMarkerLayer {
     this.hidden = hidden;
     const positions = this.geometry.getAttribute('position');
     const colors = this.geometry.getAttribute('color');
+    const shapes = this.geometry.getAttribute('markerShape');
     const positionTarget = positions.array as Float32Array;
     const colorTarget = colors.array as Float32Array;
 
@@ -378,11 +376,13 @@ export class VobMarkerLayer {
       colorTarget[at * 3] = this.colors[slot * 3];
       colorTarget[at * 3 + 1] = this.colors[slot * 3 + 1];
       colorTarget[at * 3 + 2] = this.colors[slot * 3 + 2];
+      shapes.setX(at, this.shapes[slot]);
       this.drawnVobs.push(vob);
     }
 
     positions.needsUpdate = true;
     colors.needsUpdate = true;
+    shapes.needsUpdate = true;
     this.geometry.setDrawRange(0, this.drawnVobs.length);
     // Fitted over the whole attribute rather than the drawn range — `three` has
     // no range-aware form — so the slots past the range make it loose. Harmless
@@ -427,7 +427,7 @@ export class VobMarkerLayer {
 
   dispose(): void {
     this.geometry.dispose();
-    // Not its `map`: that is the app's one pip, shared with the spawn markers.
+    // Not its `map`: the atlas is shared with waypoint materials.
     // `Material.dispose` leaves a texture alone.
     this.material.dispose();
     this.fadedMaterial.dispose();

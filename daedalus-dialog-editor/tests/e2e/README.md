@@ -32,3 +32,6 @@ World picker. Importing a store by its raw Vite URL can create a second store
 instance after hot reload, when the app uses a timestamped module URL. A
 metadata-only fixture may leave geometry loading pending; it verifies the
 controls, not viewport rendering.
+
+A marker-only fixture can render actual WebGL sprites and verify framebuffer
+pixels and clicks. It proves renderer behavior, not native world loading.

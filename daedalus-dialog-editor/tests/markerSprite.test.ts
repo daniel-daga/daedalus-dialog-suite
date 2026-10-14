@@ -20,7 +20,7 @@
  */
 
 import * as THREE from 'three';
-import { markerDotTexture, markerReticleTexture } from '../src/renderer/world/markerSprite';
+import { markerAtlasTexture, markerDotTexture, markerReticleTexture } from '../src/renderer/world/markerSprite';
 
 /** A texel on the +x axis at `radius`, where 1 is the sprite's edge. */
 function sample(texture: THREE.DataTexture, radius: number): { value: number; alpha: number } {
@@ -33,6 +33,24 @@ function sample(texture: THREE.DataTexture, radius: number): { value: number; al
 }
 
 describe('marker sprites', () => {
+  it('gives lights a sun, particles a diamond and waypoints an arrow in a shared atlas', () => {
+    const atlas = markerAtlasTexture();
+    expect(markerAtlasTexture()).toBe(atlas);
+    const { data, width, height } = atlas.image;
+    expect(width).toBe(height * 4);
+    const alpha = (tile: number, x: number, y: number) => {
+      const px = tile * height + Math.floor((x + 1) * height / 2);
+      const py = Math.floor((y + 1) * height / 2);
+      return data[(py * width + px) * 4 + 3];
+    };
+    expect(alpha(0, 0.5, 0.5)).toBe(255); // round rim
+    expect(alpha(2, 0.5, 0.5)).toBe(0);   // diamond has no round corners
+    expect(alpha(1, 0.7, 0)).toBe(255);   // sun ray
+    expect(alpha(1, 0.6, 0.35)).toBe(0);  // between rays
+    expect(alpha(3, 0.35, 0.25)).toBeGreaterThan(200); // arrow head
+    expect(alpha(3, 0.35, -0.5)).toBe(0); // narrower tail
+    for (let tile = 0; tile < 4; tile++) expect(alpha(tile, 0.95, 0.95)).toBe(0);
+  });
   it('inks the dot white and rims it black, on a transparent field', () => {
     const dot = markerDotTexture();
 

@@ -1126,12 +1126,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
     // matches ordering by true distance in Three space.
     const labelRootInverse = new THREE.Matrix4();
     const labelCameraPosition = new THREE.Vector3();
-    const draw = () => {
-      frame = requestAnimationFrame(draw);
-      // A fly or a walk writes the camera itself, and OrbitControls would
-      // re-aim at a target neither of them is moving.
-      if (!nav.step(performance.now())) controls.update();
-
+    const updateMarkers = () => {
       camera.updateMatrixWorld();
       world.root.updateMatrixWorld();
       labelCameraPosition.copy(camera.position)
@@ -1140,8 +1135,22 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       const cameraZen: [number, number, number] = [labelCameraPosition.x, labelCameraPosition.y, labelCameraPosition.z];
       world.markers?.setView(markerView.showMarkers, cameraZen, markerView.markerDistance * 100);
       world.markers?.setOcclusion(markerView.markerOcclusion);
-      overlayRef.current?.setView(cameraZen, markerView.markerDistance * 100);
-      overlayRef.current?.setOcclusion(markerView.markerOcclusion);
+      const overlay = overlayRef.current;
+      overlay?.setView(cameraZen, markerView.markerDistance * 100);
+      overlay?.setOcclusion(markerView.markerOcclusion);
+      if (overlay?.root.visible) {
+        overlay.updateFacing(labelClip.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+          .multiply(world.root.matrixWorld), host.clientWidth || 1, host.clientHeight || 1);
+      }
+      return markerView;
+    };
+    const draw = () => {
+      frame = requestAnimationFrame(draw);
+      // A fly or a walk writes the camera itself, and OrbitControls would
+      // re-aim at a target neither of them is moving.
+      if (!nav.step(performance.now())) controls.update();
+
+      const markerView = updateMarkers();
 
       // Names, after `controls.update()` so they follow the camera in the same
       // frame it moved rather than trailing it by one.
@@ -1211,7 +1220,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
         camera.position.set(pose.position[0], pose.position[1], pose.position[2]);
         camera.lookAt(target.set(pose.lookAt[0], pose.lookAt[1], pose.lookAt[2]));
       },
-      render: () => { viewport.render(); },
+      render: () => { updateMarkers(); viewport.render(); },
       finishGpu: () => gl.finish(),
       drawCalls: () => renderer.info.render.calls,
       triangles: () => renderer.info.render.triangles,
@@ -1300,6 +1309,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
           camera.position.set(...zenToThree(from));
           camera.lookAt(target.set(...zenToThree(at)));
           camera.updateMatrixWorld();
+          updateMarkers();
           viewport.render();
 
           // The default framebuffer, read in the same task as the render that

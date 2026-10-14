@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { MarkerOcclusion } from './VobMarkerLayer';
-import { pickPoint, WAYPOINT_PICK_RADIUS } from './pickWaypoint';
+import { pickPoint } from './pickWaypoint';
+import { styleMarkerMaterial } from './markerSprite';
 import {
   WAYNET_FLAG_FREE_POINT,
   WAYNET_FLAG_UNDER_WATER,
@@ -31,6 +32,7 @@ const FREE = new THREE.Color(0xffb74d);
 const UNDERWATER = new THREE.Color(0x81c784);
 
 const RENDER_ORDER = 10;
+const WAYPOINT_SIZE = 24;
 
 export class WaynetOverlay {
   /** Add this under the scene's converted root, not under the scene. */
@@ -54,6 +56,13 @@ export class WaynetOverlay {
    * wrong for as long as anybody forgot it.
    */
   readonly positions: Float32Array;
+  private readonly directions: Float32Array;
+  private facingDirty = true;
+  private readonly facingClip = new THREE.Matrix4();
+  private facingWidth = 0;
+  private facingHeight = 0;
+  private readonly projected = new THREE.Vector4();
+  private readonly forward = new THREE.Vector4();
   private camera = new THREE.Vector3();
   private radius = 0;
   private readonly allEdges: Uint32Array;
@@ -67,6 +76,7 @@ export class WaynetOverlay {
   constructor(payload: WaynetPayload) {
     const position = new THREE.BufferAttribute(new Float32Array(payload.positions), 3);
     this.positions = position.array as Float32Array;
+    this.directions = new Float32Array(payload.directions);
     this.allEdges = new Uint32Array(payload.edges);
     this.pointIndices = new THREE.BufferAttribute(new Uint32Array(payload.count), 1);
     this.edgeIndices = new THREE.BufferAttribute(new Uint32Array(this.allEdges.length), 1);
@@ -88,21 +98,26 @@ export class WaynetOverlay {
 
     this.geometry.setAttribute('position', position);
     this.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    this.geometry.setAttribute('markerShape', new THREE.BufferAttribute(new Float32Array(payload.count), 1));
+    const headings = new Float32Array(payload.count * 2);
+    for (let point = 0; point < payload.count; point++) headings[point * 2 + 1] = 1;
+    this.geometry.setAttribute('markerHeading', new THREE.BufferAttribute(headings, 2));
     this.geometry.setIndex(this.pointIndices);
     this.geometry.computeBoundingSphere();
 
     const pointMaterial = new THREE.PointsMaterial({
-      // Small enough that the edges are still visible under the points with the
-      // whole world in frame: NewWorld's 2,959 waypoints at 6 px read as one
-      // solid mass, which hides the graph the overlay exists to show.
-      size: 3.5,
+      // A readable head and tail at every distance; the camera-radius filter
+      // limits clutter without shrinking the arrow into another dot.
+      size: WAYPOINT_SIZE,
       // Pixels, not world units: a waypoint has no size, and one that shrinks
       // with distance is invisible from the only viewpoint that shows the net.
       sizeAttenuation: false,
       vertexColors: true,
       depthTest: false,
       transparent: true,
+      alphaTest: 0.1,
     });
+    styleMarkerMaterial(pointMaterial, true);
     this.waypoints = new THREE.Points(this.geometry, pointMaterial);
     this.waypoints.renderOrder = RENDER_ORDER;
     this.waypoints.matrixAutoUpdate = false;
@@ -133,6 +148,7 @@ export class WaynetOverlay {
     // The faint pass shares the filtered buffers with the solid pass.
     for (const object of [this.waypoints, this.edges]) {
       const material = (object.material as THREE.Material).clone();
+      if (object === this.waypoints) styleMarkerMaterial(material as THREE.PointsMaterial, true);
       material.depthTest = false;
       material.depthWrite = false;
       material.opacity *= 0.25;
@@ -165,13 +181,53 @@ export class WaynetOverlay {
     this.filterRange();
   }
 
+  /** Project the stored direction through the SAME mirrored root as positions.
+   *  Pixel aspect matters: an NDC heading alone stretches on a wide viewport. */
+  updateFacing(toClip: THREE.Matrix4, width: number, height: number): void {
+    if (!this.facingDirty && this.facingClip.equals(toClip)
+      && this.facingWidth === width && this.facingHeight === height) return;
+    this.facingClip.copy(toClip);
+    this.facingWidth = width;
+    this.facingHeight = height;
+    this.facingDirty = false;
+    const headings = this.geometry.getAttribute('markerHeading');
+    const shapes = this.geometry.getAttribute('markerShape');
+    for (let point = 0; point < this.visible.length; point++) {
+      const at = point * 3;
+      const x = this.directions[at];
+      const y = this.directions[at + 1];
+      const z = this.directions[at + 2];
+      const length = Math.hypot(x, y, z);
+      let dx = 0;
+      let dy = 0;
+      if (length > 0) {
+        this.projected.set(this.positions[at], this.positions[at + 1], this.positions[at + 2], 1).applyMatrix4(toClip);
+        this.forward.set(this.positions[at] + x / length * 100,
+          this.positions[at + 1] + y / length * 100,
+          this.positions[at + 2] + z / length * 100, 1).applyMatrix4(toClip);
+        if (this.projected.w > 0 && this.forward.w > 0) {
+          dx = (this.forward.x / this.forward.w - this.projected.x / this.projected.w) * width;
+          dy = (this.forward.y / this.forward.w - this.projected.y / this.projected.w) * height;
+        }
+      }
+      const screenLength = Math.hypot(dx, dy);
+      // A zero direction, or one seen end-on, has no screen heading. Show a
+      // round marker instead of inventing a facing or looking like a particle.
+      shapes.setX(point, screenLength > 0.0001 ? 3 : 0);
+      headings.setXY(point, screenLength > 0.0001 ? dx / screenLength : 0,
+        screenLength > 0.0001 ? dy / screenLength : 1);
+    }
+    headings.needsUpdate = true;
+    shapes.needsUpdate = true;
+  }
+
   isPointVisible(point: number): boolean {
     return this.visible[point] === 1;
   }
 
   pick(toClip: THREE.Matrix4, x: number, y: number, width: number, height: number,
     inView: (at: readonly [number, number, number]) => boolean): number {
-    return pickPoint(this.positions, toClip, x, y, width, height, WAYPOINT_PICK_RADIUS,
+    return pickPoint(this.positions, toClip, x, y, width, height, WAYPOINT_SIZE / 2,
       (point) => this.isPointVisible(point)
         && (this.occlusion === 'full' || inView(this.positionOf(point))));
   }
@@ -238,6 +294,7 @@ export class WaynetOverlay {
    */
   refresh(): void {
     this.geometry.getAttribute('position').needsUpdate = true;
+    this.facingDirty = true;
     this.filterRange();
   }
 

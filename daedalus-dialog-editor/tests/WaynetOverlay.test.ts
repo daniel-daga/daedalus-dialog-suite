@@ -20,6 +20,7 @@
  */
 
 import * as THREE from 'three';
+import { ROOT_MATRIX } from 'zen-world';
 import {
   WAYNET_FLAG_FREE_POINT,
   WAYNET_FLAG_UNDER_WATER,
@@ -49,6 +50,48 @@ function waynet(overrides: Partial<WaynetPayload> = {}): WaynetPayload {
 }
 
 describe('WaynetOverlay', () => {
+  it('projects stored facing through the mirrored root, including viewport aspect', () => {
+    const payload = waynet({
+      directions: new Float32Array([1, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0]).buffer,
+    });
+    const overlay = new WaynetOverlay(payload);
+    const camera = new THREE.OrthographicCamera(-4, 4, 2, -2, 0.1, 1000);
+    camera.position.set(0, 100, 0);
+    camera.up.set(0, 0, -1);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld();
+    const root = new THREE.Matrix4().fromArray(ROOT_MATRIX);
+    const clip = new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).multiply(root);
+    overlay.updateFacing(clip, 800, 400);
+    const heading = overlay.waypoints.geometry.getAttribute('markerHeading');
+    expect(heading.getX(0)).toBeCloseTo(-1);
+    expect(heading.getY(0)).toBeCloseTo(0);
+    expect(heading.getX(1)).toBeCloseTo(0);
+    expect(heading.getY(1)).toBeCloseTo(-1);
+    expect(heading.getX(2)).toBeCloseTo(-Math.SQRT1_2);
+    expect(heading.getY(2)).toBeCloseTo(-Math.SQRT1_2);
+    expect(overlay.waypoints.geometry.getAttribute('markerShape').getX(3)).toBe(0);
+    expect((overlay.waypoints.material as THREE.PointsMaterial).size).toBe(24);
+
+    // The native direction column changes in place; refresh must invalidate
+    // a cached projection even with a stationary camera.
+    new Float32Array(payload.directions).set([-1, 0, 0], 0);
+    overlay.refresh();
+    overlay.updateFacing(clip, 800, 400);
+    expect(heading.getX(0)).toBeCloseTo(1);
+    overlay.setPosition(0, [200, 0, 200]);
+    overlay.updateFacing(clip, 800, 400);
+    expect(heading.getX(0)).toBeCloseTo(1);
+    // Turning the camera changes the projected arrow without editing the data.
+    camera.up.set(1, 0, 0);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld();
+    clip.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).multiply(root);
+    overlay.updateFacing(clip, 800, 400);
+    expect(heading.getX(0)).toBeCloseTo(0);
+    expect(heading.getY(0)).toBeCloseTo(1);
+    overlay.dispose();
+  });
   it('never picks a range-hidden or occluded waypoint, and full visibility can pick through walls', () => {
     const overlay = new WaynetOverlay(waynet({
       count: 1, positions: new Float32Array([0, 0, 0]).buffer,

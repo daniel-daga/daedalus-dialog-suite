@@ -2146,18 +2146,18 @@ waypoint is a delete aimed at something the user cannot see.
 
 **The pick is a projection, not a raycast.** `THREE.Points.raycast` is the
 obvious answer and the wrong one: its threshold is in *world units*, while the
-overlay draws with `sizeAttenuation: false`, so every waypoint is the same 3.5 px
+overlay draws with `sizeAttenuation: false`, so every waypoint arrow is 24 px
 whatever its distance. A world-unit threshold tuned to work up close cannot be
 clicked at range, and one tuned for range swallows half the net up close. So
-`pickWaypoint` projects every waypoint and measures the threshold in pixels,
+`WaynetOverlay.pick` projects every waypoint and measures its 12 px radius in pixels,
 where the sizes actually are equal. Looping over all 2,959 sounds worse than it
 is: it runs once per click, not once per frame — unlike the props, which is
 exactly why those are GPU ID-picked.
 
 **The waynet is picked before the VOBs**, and only while it is switched on. It
-draws with `depthTest: false` — over everything, the whole reason a waynet
-inside a building is visible at all — so picking it second means clicking a dot
-that is plainly on top and selecting the wall behind it.
+obeys the marker occlusion and distance settings (#409), so picking it second
+would select the wall behind a visible arrow. Hidden and out-of-range points
+are excluded from the pick.
 
 **The waynet forced an asymmetry on where `from` comes from.** Every other op in
 this surface reads `from` out of the columnar index at commit time, and can,
@@ -3234,6 +3234,26 @@ the depth-tested pass), or **Fully visible** (full strength through walls).
 The camera radius defaults to 100 metres, with 25, 50, 250, 500 and Unlimited
 also offered. These are surface-local view settings; no world op or save is
 involved. Spawns retain their separate visibility behavior.
+
+**Shapes and waypoint facing (#408).** Lights draw sun-shaped markers;
+particle visuals and `zCPFXController` draw diamonds, and other VOBs keep round
+markers. VOB markers are 14 px; waypoints use a larger 24 px arrow. One shared
+white-and-black sprite atlas supplies all four shapes, retaining the existing
+colours and dark rims. A per-point tile attribute is compacted with positions
+and colours, so filtering cannot swap a light's shape onto a particle. Both
+the solid and faint materials use the same sprite shader.
+
+Waypoint arrows show the stored `directions` vector, not a waynet edge. The
+renderer projects each position and a normalized one-metre step along its
+direction through projection × view × the scene root, including the X mirror
+and viewport aspect. It rotates the screen-sized sprite to that heading. A
+zero direction or an end-on projection uses a round marker instead of inventing
+a facing. Camera changes reproject headings; moves, refreshes and replaced
+payloads invalidate the cached projection. `refresh` reads the same direction
+buffer the backend supplied, so a changed direction cannot remain cached.
+The browser regression reads real GPU pixels, checks mirrored facing and
+reopening with changed directions, and clicks the rendered arrow; native
+world loading remains the real-Electron suite's responsibility.
 
 VOB markers compact only the enabled, class-visible, in-range positions.
 Waypoints keep their shared position buffer and filter point and edge indices;
