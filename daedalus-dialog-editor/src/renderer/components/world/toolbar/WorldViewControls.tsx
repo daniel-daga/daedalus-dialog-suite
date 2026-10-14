@@ -17,6 +17,7 @@ import { MINUTES_PER_DAY, type StateOption } from '../../../routines/routineSche
 import { MAX_EXPOSURE, MIN_EXPOSURE } from '../../../world/WorldScene';
 import type { OutlineMode } from '../../../world/VobOutline';
 import type { SelectionStyle } from '../../../world/WorldScene';
+import type { MarkerOcclusion } from '../../../world/VobMarkerLayer';
 
 /** Minutes since midnight as `HH:MM` — the routine index's own unit
  *  (level-editor.md §16.19). Moved with the one readout that uses it. */
@@ -44,6 +45,12 @@ function formatDayMinute(minute: number): string {
  */
 export interface WorldViewControlsProps {
   hasWorld: boolean;
+  showMarkers: boolean;
+  onToggleMarkers: () => void;
+  markerDistance: number;
+  onMarkerDistanceChange: (metres: number) => void;
+  markerOcclusion: MarkerOcclusion;
+  onMarkerOcclusionChange: (mode: MarkerOcclusion) => void;
   showWaynet: boolean;
   onToggleWaynet: () => void;
   showSpawns: boolean;
@@ -85,6 +92,8 @@ const toggleSx = { py: 0.25, px: 1 };
 
 const WorldViewControls: React.FC<WorldViewControlsProps> = ({
   hasWorld, showWaynet, onToggleWaynet, showSpawns, onToggleSpawns,
+  showMarkers, onToggleMarkers, markerDistance, onMarkerDistanceChange,
+  markerOcclusion, onMarkerOcclusionChange,
   spawnTime, onToggleTime, onSpawnTimeChange, spawnState, onSpawnStateChange,
   stateOptions, spawnStateReach, showWaypointNames, onToggleWaypointNames,
   outlineMode, onCycleOutlineMode, selectionStyle, onToggleSelectionStyle,
@@ -92,6 +101,37 @@ const WorldViewControls: React.FC<WorldViewControlsProps> = ({
   hiddenClasses, onHiddenClassesChange, classOptions,
 }) => (
   <>
+    <Tooltip disableInteractive title="Show or hide VOB markers; scene-tree selection remains available">
+      <span>
+        <ToggleButton size="small" value="markers" selected={showMarkers}
+          disabled={!hasWorld} onChange={onToggleMarkers} aria-label="VOB markers" sx={toggleSx}
+        >
+          <VisibilityOffIcon fontSize="small" />
+        </ToggleButton>
+      </span>
+    </Tooltip>
+    <Tooltip disableInteractive title="VOB markers and waypoints: hidden by geometry, faint through walls, or fully visible">
+      <TextField select size="small" disabled={!hasWorld} value={markerOcclusion}
+        onChange={(event) => onMarkerOcclusionChange(event.target.value as MarkerOcclusion)}
+        SelectProps={{ inputProps: { 'aria-label': 'Marker occlusion' } }}
+        sx={{ minWidth: 110 }}
+      >
+        <MenuItem value="occluded">Occluded</MenuItem>
+        <MenuItem value="faint">Faint</MenuItem>
+        <MenuItem value="full">Fully visible</MenuItem>
+      </TextField>
+    </Tooltip>
+    <Tooltip disableInteractive title="VOB marker and waypoint distance from the camera; independent of wall occlusion">
+      <TextField select size="small" disabled={!hasWorld} value={markerDistance}
+        onChange={(event) => onMarkerDistanceChange(Number(event.target.value))}
+        SelectProps={{ inputProps: { 'aria-label': 'Marker distance' } }}
+        sx={{ minWidth: 100 }}
+      >
+        {[25, 50, 100, 250, 500, 0].map((metres) => (
+          <MenuItem key={metres} value={metres}>{metres === 0 ? 'Unlimited' : `${metres} m`}</MenuItem>
+        ))}
+      </TextField>
+    </Tooltip>
     <Tooltip title="Waynet — draw the waypoints and their edges">
       <span>
         <ToggleButton

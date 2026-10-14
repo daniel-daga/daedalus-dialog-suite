@@ -4,6 +4,8 @@ import { markerDotTexture } from './markerSprite';
 import { NO_PICK } from './pickIds';
 import { NO_POINT, pickPoint } from './pickWaypoint';
 
+export type MarkerOcclusion = 'occluded' | 'faint' | 'full';
+
 // The VOBs with no visual, drawn (level-editor.md §7 — "The VOBs with no
 // visual, drawn"; carded as plan §16.38, closed by #247).
 //
@@ -150,10 +152,15 @@ export class VobMarkerLayer {
   /** Every marker's colour, the same way, so the compaction can carry it. */
   private readonly colors: Float32Array;
   /** Which slot is drawn where, or -1 for a marker the filter switched off —
-   *  what makes a live drag's write O(1) rather than a scan of the drawn set. */
+   *  what makes an unlimited-range live drag's write O(1). */
   private readonly drawnAt: Int32Array;
   /** The VOB behind each drawn marker: a pick answers a slot in this. */
   private drawnVobs: number[] = [];
+  private hidden: Uint8Array | null = null;
+  private enabled = true;
+  private camera = new THREE.Vector3();
+  private radius = 0;
+  private occlusion: MarkerOcclusion = 'faint';
 
   private readonly geometry = new THREE.BufferGeometry();
   private readonly material: THREE.PointsMaterial;
@@ -262,10 +269,25 @@ export class VobMarkerLayer {
     return this.vobs.length;
   }
 
-  /** How many are drawn right now: `count` less whatever the class filter is
-   *  hiding. */
+  /** How many survive the marker toggle, camera range and class filter. */
   get drawn(): number {
     return this.drawnVobs.length;
+  }
+
+  setOcclusion(mode: MarkerOcclusion): void {
+    this.occlusion = mode;
+    this.material.depthTest = mode !== 'full';
+    this.markers.children[0].visible = mode === 'faint';
+  }
+
+  /** Radius and camera are in the layer's ZenGin centimetres; zero is unlimited. */
+  setView(enabled: boolean, camera: readonly [number, number, number], radius: number): void {
+    if (this.enabled === enabled && this.radius === radius
+      && this.camera.x === camera[0] && this.camera.y === camera[1] && this.camera.z === camera[2]) return;
+    this.enabled = enabled;
+    this.camera.set(...camera);
+    this.radius = radius;
+    this.setHidden(this.hidden);
   }
 
   /**
@@ -300,6 +322,11 @@ export class VobMarkerLayer {
     this.source[slot * 3 + 1] = to[1];
     this.source[slot * 3 + 2] = to[2];
 
+    if (this.radius !== 0) {
+      this.setHidden(this.hidden);
+      return true;
+    }
+
     const drawn = this.drawnAt[slot];
     if (drawn === -1) return true;
 
@@ -315,7 +342,7 @@ export class VobMarkerLayer {
   /**
    * Which VOBs not to draw: one byte per VOB, 1 for hidden — the mask
    * `WorldScene.setHiddenVobs` takes, which is the scene tree's own predicate
-   * (`matchVobs`). Null draws every marker.
+   * (`matchVobs`). Null clears the class filter; the view settings still apply.
    *
    * The drawn markers are *compacted* to the front of the buffer rather than
    * flagged in place, because a `THREE.Points` layer has no per-vertex "skip"
@@ -325,6 +352,7 @@ export class VobMarkerLayer {
    * range and nothing else.
    */
   setHidden(hidden: Uint8Array | null): void {
+    this.hidden = hidden;
     const positions = this.geometry.getAttribute('position');
     const colors = this.geometry.getAttribute('color');
     const positionTarget = positions.array as Float32Array;
@@ -333,7 +361,11 @@ export class VobMarkerLayer {
     this.drawnVobs = [];
     for (let slot = 0; slot < this.vobs.length; slot++) {
       const vob = this.vobs[slot];
-      if (hidden !== null && vob < hidden.length && hidden[vob] !== 0) {
+      const distanceSquared = (this.source[slot * 3] - this.camera.x) ** 2
+        + (this.source[slot * 3 + 1] - this.camera.y) ** 2
+        + (this.source[slot * 3 + 2] - this.camera.z) ** 2;
+      if (!this.enabled || (this.radius !== 0 && distanceSquared > this.radius ** 2)
+        || (hidden !== null && vob < hidden.length && hidden[vob] !== 0)) {
         this.drawnAt[slot] = -1;
         continue;
       }
@@ -386,7 +418,7 @@ export class VobMarkerLayer {
   ): number {
     const drawn = (this.geometry.getAttribute('position').array as Float32Array)
       .subarray(0, this.drawnVobs.length * 3);
-    const accept = inView === undefined ? undefined : (candidate: number) => inView([
+    const accept = inView === undefined || this.occlusion === 'full' ? undefined : (candidate: number) => inView([
       drawn[candidate * 3], drawn[candidate * 3 + 1], drawn[candidate * 3 + 2],
     ]);
     const at = pickPoint(drawn, toClip, x, y, width, height, radius, accept);

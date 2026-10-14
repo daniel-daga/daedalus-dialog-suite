@@ -49,6 +49,55 @@ function waynet(overrides: Partial<WaynetPayload> = {}): WaynetPayload {
 }
 
 describe('WaynetOverlay', () => {
+  it('never picks a range-hidden or occluded waypoint, and full visibility can pick through walls', () => {
+    const overlay = new WaynetOverlay(waynet({
+      count: 1, positions: new Float32Array([0, 0, 0]).buffer,
+      flags: new Uint32Array(1).buffer, edges: new Uint32Array().buffer, edgeCount: 0,
+    }));
+    const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 1000);
+    camera.position.set(0, 0, 10);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld();
+    const clip = new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    overlay.setOcclusion('occluded');
+    expect(overlay.pick(clip, 200, 200, 400, 400, () => false)).toBe(-1);
+    overlay.setOcclusion('faint');
+    expect(overlay.pick(clip, 200, 200, 400, 400, () => false)).toBe(-1);
+    overlay.setOcclusion('full');
+    expect(overlay.pick(clip, 200, 200, 400, 400, () => false)).toBe(0);
+    overlay.setView([1000, 0, 0], 500);
+    expect(overlay.pick(clip, 200, 200, 400, 400, () => true)).toBe(-1);
+    overlay.dispose();
+  });
+  it('switches wall occlusion independently of the camera radius', () => {
+    const overlay = new WaynetOverlay(waynet());
+    overlay.setOcclusion('occluded');
+    for (const object of [overlay.waypoints, overlay.edges]) {
+      expect((object.material as THREE.Material).depthTest).toBe(true);
+    }
+    overlay.setOcclusion('faint');
+    expect((overlay.waypoints.material as THREE.Material).depthTest).toBe(true);
+    overlay.setOcclusion('full');
+    expect((overlay.waypoints.material as THREE.Material).depthTest).toBe(false);
+    overlay.dispose();
+  });
+  it('limits points and complete edges to the camera radius and follows moves', () => {
+    const overlay = new WaynetOverlay(waynet());
+    overlay.setView([1000, 0, 1000], 8000);
+    expect(overlay.visiblePoints).toEqual([0, 1, 2]);
+    expect(overlay.waypoints.geometry.drawRange.count).toBe(3);
+    expect(overlay.edges.geometry.drawRange.count).toBe(2);
+    expect(overlay.isPointVisible(3)).toBe(false);
+    overlay.setPosition(2, [10000, 0, 1000]);
+    expect(overlay.visiblePoints).toEqual([0, 1]);
+    expect(overlay.edges.geometry.drawRange.count).toBe(0);
+    overlay.setView([5000, -20000, 1000], 100);
+    expect(overlay.visiblePoints).toEqual([3]);
+    overlay.setView([0, 0, 0], 0);
+    expect(overlay.visiblePoints).toEqual([0, 1, 2, 3]);
+    expect(overlay.edges.geometry.drawRange.count).toBe(6);
+    overlay.dispose();
+  });
   it('keeps positions in ZenGin space — the conversion is the scene root', () => {
     const overlay = new WaynetOverlay(waynet());
     const positions = overlay.waypoints.geometry.getAttribute('position');

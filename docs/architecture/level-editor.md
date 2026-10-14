@@ -3226,16 +3226,31 @@ the props, then the world mesh: the first two draw over the props, so picking
 them later would mean clicking a dot you can see and selecting the wall behind
 it.
 
-**A marker behind a wall is faint, and not clickable.** The layer first drew
-with `depthTest: false`, like the waynet, and fifteen thousand full-strength
-pips through every wall were jarring (maintainer, 2026-10-01). It now draws the same
-buffer twice: depth-tested at full strength, and underneath that through the
-walls at 25 %, so a sound inside a building can still be found. The pick follows
-the picture. `pickPoint` takes an `accept` test, and the click hands the markers
-a ray from the eye against the world mesh, stopping 10 cm short so a startpoint
-on the floor is not hidden by that floor. The props are not in that ray, so a
-marker behind a prop draws faint but can still be clicked. The waynet and spawn
-layers still draw on top.
+**Marker visibility and distance are separate view options (#409).** VOB
+markers have their own on/off toggle; Waynet keeps its existing toggle. Both
+layers share an occlusion choice: **Occluded** (the default, depth-tested with
+no pass through walls), **Faint** (a quarter-strength pass through walls under
+the depth-tested pass), or **Fully visible** (full strength through walls).
+The camera radius defaults to 100 metres, with 25, 50, 250, 500 and Unlimited
+also offered. These are surface-local view settings; no world op or save is
+involved. Spawns retain their separate visibility behavior.
+
+VOB markers compact only the enabled, class-visible, in-range positions.
+Waypoints keep their shared position buffer and filter point and edge indices;
+an edge draws only when both endpoints are in range. The camera is converted
+through the scene root's inverse to ZenGin centimetres, so distance is a sphere
+in the same space as the positions. Camera movement and live object movement
+refresh the range; the faint and solid passes share the filtered geometry.
+
+The pick uses that same range. In Occluded and Faint modes it also checks a ray
+against the world mesh and visible instanced props, stopping 10 cm short of the
+marker so the floor does not hide a startpoint standing on it. Fully visible
+mode allows picking through walls. Class-hidden props do not block the ray.
+This is a geometry test, not a texture-alpha test. Scene-tree selection and
+gizmo positions remain available for hidden and out-of-range objects.
+Waypoint labels use the range-filtered candidates and test the capped label
+set against the world mesh in Occluded and Faint modes; props are excluded
+from this per-frame label test to avoid instanced raycasts in the draw loop.
 
 **The layer draws only what the class filter left on, and hands the pick exactly
 that.** A `Points` layer has no per-vertex "skip" — the instanced meshes push a

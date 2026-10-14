@@ -11,7 +11,7 @@
  *   - a double-click asks the mesh, then the props;
  *   - a right-click asks the props and stops.
  *
- * `pickWaypoint` and the GPU picker are stood in for, because each has its own
+ * The overlay pick and the GPU picker are stood in for, because each has its own
  * spec and neither is what is being checked here — what is, is which of them is
  * asked, in which order, and when none of them is asked at all.
  *
@@ -23,11 +23,6 @@ import { describe, it, expect, beforeEach } from '@jest/globals';
 import type { ZenPosition } from 'zen-world';
 
 const waypointPick = { answer: -1 };
-
-jest.mock('../src/renderer/world/pickWaypoint', () => ({
-  NO_WAYPOINT: -1,
-  pickWaypoint: () => waypointPick.answer,
-}));
 
 import { PickController } from '../src/renderer/world/PickController';
 import { NO_PICK } from '../src/renderer/world/pickIds';
@@ -68,6 +63,8 @@ function harness({
   /** Where the marker under the cursor stands — root space, which the identity
    *  root makes three space here. */
   markerAt = [0, 5, 0] as [number, number, number],
+  propOccludesMarker = false,
+  propHidden = false,
 } = {}) {
   waypointPick.answer = waypointUnderCursor;
 
@@ -84,6 +81,14 @@ function harness({
   camera.updateMatrixWorld(true);
 
   const mesh = ground();
+  const prop = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(10, 10, 10), new THREE.MeshBasicMaterial(), 1,
+  );
+  prop.setMatrixAt(0, new THREE.Matrix4().makeTranslation(0, 20, 0));
+  prop.geometry.setAttribute('instanceHidden', new THREE.InstancedBufferAttribute(
+    new Float32Array([propHidden ? 1 : 0]), 1,
+  ));
+  prop.updateMatrixWorld();
   // The markers for the VOBs with no visual (§16.38): a `THREE.Points` layer
   // picked in pixels, like the waynet and for the same reason, so its own pick
   // is stood in for here — what this spec is about is where in the order it is
@@ -102,6 +107,7 @@ function harness({
   const world = {
     root: new THREE.Group(),
     worldMeshes: hasMesh ? [mesh] : [],
+    instancedMeshes: propOccludesMarker ? [prop] : [],
     markers,
     positionOf: (vob: number) => vobPositions[vob as keyof typeof vobPositions] ?? null,
   } as unknown as WorldScene;
@@ -128,7 +134,7 @@ function harness({
     controls,
     raycaster: new THREE.Raycaster(),
     pointer: new THREE.Vector2(),
-    waynet: () => ({ positions: new Float32Array(3) } as unknown as WaynetOverlay),
+    waynet: () => ({ pick: () => waypointPick.answer } as unknown as WaynetOverlay),
     showWaynet: () => showWaynet,
     disposed: () => disposed,
     walking: () => walking,
@@ -167,6 +173,17 @@ const rightClick = (canvas: HTMLElement, init: MouseEventInit = {}) => {
 const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 describe('PickController — a click', () => {
+  it('does not take an invisible marker behind a prop, but ignores a hidden prop', async () => {
+    const blocked = harness({ markerUnderCursor: 8, propOccludesMarker: true, vobUnderCursor: 5 });
+    click(blocked.canvas);
+    await settle();
+    expect(blocked.picked).toEqual([[5, null, false]]);
+    blocked.controller.dispose();
+    const visible = harness({ markerUnderCursor: 8, propOccludesMarker: true, propHidden: true });
+    click(visible.canvas);
+    await settle();
+    expect(visible.picked).toEqual([[8, null, false]]);
+  });
   beforeEach(() => { document.body.innerHTML = ''; });
 
   it('asks the waynet first, and stops there when it hits', async () => {

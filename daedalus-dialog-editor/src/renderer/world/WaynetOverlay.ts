@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import type { MarkerOcclusion } from './VobMarkerLayer';
+import { pickPoint, WAYPOINT_PICK_RADIUS } from './pickWaypoint';
 import {
   WAYNET_FLAG_FREE_POINT,
   WAYNET_FLAG_UNDER_WATER,
@@ -17,9 +19,9 @@ import {
 // apart; one cannot, and an edge that points at a stale waypoint is a line
 // across the world with no obvious cause.
 //
-// It draws with `depthTest: false` on purpose: a waynet inside a building is
-// exactly the one worth looking at, and an overlay that terrain hides is an
-// overlay that answers nothing.
+// The view chooses depth-tested, faint through walls, or fully visible.
+// Distance filtering indexes this same position buffer for both points and
+// complete edges; the pick uses the same visibility mask.
 
 // Distinct enough to tell apart at a glance and at a distance: a free point is
 // somewhere an NPC stands rather than routes through, and an underwater point
@@ -52,10 +54,23 @@ export class WaynetOverlay {
    * wrong for as long as anybody forgot it.
    */
   readonly positions: Float32Array;
+  private camera = new THREE.Vector3();
+  private radius = 0;
+  private readonly allEdges: Uint32Array;
+  private readonly pointIndices: THREE.BufferAttribute;
+  private readonly edgeIndices: THREE.BufferAttribute;
+  private readonly visible: Uint8Array;
+  private readonly faded: THREE.Object3D[] = [];
+  private occlusion: MarkerOcclusion = 'full';
+  visiblePoints: number[] = [];
 
   constructor(payload: WaynetPayload) {
     const position = new THREE.BufferAttribute(new Float32Array(payload.positions), 3);
     this.positions = position.array as Float32Array;
+    this.allEdges = new Uint32Array(payload.edges);
+    this.pointIndices = new THREE.BufferAttribute(new Uint32Array(payload.count), 1);
+    this.edgeIndices = new THREE.BufferAttribute(new Uint32Array(this.allEdges.length), 1);
+    this.visible = new Uint8Array(payload.count);
     const flags = new Uint32Array(payload.flags);
 
     const colors = new Float32Array(payload.count * 3);
@@ -73,6 +88,7 @@ export class WaynetOverlay {
 
     this.geometry.setAttribute('position', position);
     this.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    this.geometry.setIndex(this.pointIndices);
     this.geometry.computeBoundingSphere();
 
     const pointMaterial = new THREE.PointsMaterial({
@@ -95,7 +111,7 @@ export class WaynetOverlay {
     // The same position attribute, indexed as segments. A strip would join
     // every waypoint to the next one in the list, which is not a waynet.
     this.edgeGeometry.setAttribute('position', position);
-    this.edgeGeometry.setIndex(new THREE.BufferAttribute(new Uint32Array(payload.edges), 1));
+    this.edgeGeometry.setIndex(this.edgeIndices);
     this.edgeGeometry.computeBoundingSphere();
 
     const lineMaterial = new THREE.LineBasicMaterial({
@@ -114,6 +130,75 @@ export class WaynetOverlay {
     this.root.matrixAutoUpdate = false;
     // Hidden until asked for: it costs a buffer and two draw calls.
     this.root.visible = false;
+    // The faint pass shares the filtered buffers with the solid pass.
+    for (const object of [this.waypoints, this.edges]) {
+      const material = (object.material as THREE.Material).clone();
+      material.depthTest = false;
+      material.depthWrite = false;
+      material.opacity *= 0.25;
+      const faded = object === this.waypoints
+        ? new THREE.Points(this.geometry, material)
+        : new THREE.LineSegments(this.edgeGeometry, material);
+      faded.renderOrder = RENDER_ORDER - 1;
+      faded.frustumCulled = false;
+      faded.visible = false;
+      this.faded.push(faded);
+      this.materials.push(material);
+      this.root.add(faded);
+    }
+    this.filterRange();
+  }
+
+  setOcclusion(mode: MarkerOcclusion): void {
+    this.occlusion = mode;
+    for (const object of [this.waypoints, this.edges]) {
+      (object.material as THREE.Material).depthTest = mode !== 'full';
+    }
+    for (const object of this.faded) object.visible = mode === 'faint';
+  }
+
+  setView(camera: readonly [number, number, number], radius: number): void {
+    if (this.radius === radius && this.camera.x === camera[0]
+      && this.camera.y === camera[1] && this.camera.z === camera[2]) return;
+    this.camera.set(...camera);
+    this.radius = radius;
+    this.filterRange();
+  }
+
+  isPointVisible(point: number): boolean {
+    return this.visible[point] === 1;
+  }
+
+  pick(toClip: THREE.Matrix4, x: number, y: number, width: number, height: number,
+    inView: (at: readonly [number, number, number]) => boolean): number {
+    return pickPoint(this.positions, toClip, x, y, width, height, WAYPOINT_PICK_RADIUS,
+      (point) => this.isPointVisible(point)
+        && (this.occlusion === 'full' || inView(this.positionOf(point))));
+  }
+
+  private filterRange(): void {
+    this.visiblePoints = [];
+    for (let point = 0; point < this.visible.length; point++) {
+      const at = point * 3;
+      const distanceSquared = (this.positions[at] - this.camera.x) ** 2
+        + (this.positions[at + 1] - this.camera.y) ** 2
+        + (this.positions[at + 2] - this.camera.z) ** 2;
+      this.visible[point] = this.radius === 0 || distanceSquared <= this.radius ** 2 ? 1 : 0;
+      if (this.visible[point] === 1) {
+        this.pointIndices.setX(this.visiblePoints.length, point);
+        this.visiblePoints.push(point);
+      }
+    }
+    let edges = 0;
+    for (let at = 0; at < this.allEdges.length; at += 2) {
+      if (!this.isPointVisible(this.allEdges[at]) || !this.isPointVisible(this.allEdges[at + 1])) continue;
+      this.edgeIndices.setX(edges++, this.allEdges[at]);
+      this.edgeIndices.setX(edges++, this.allEdges[at + 1]);
+    }
+    this.pointIndices.needsUpdate = true;
+    this.edgeIndices.needsUpdate = true;
+    this.geometry.setDrawRange(0, this.visiblePoints.length);
+    this.edgeGeometry.setDrawRange(0, edges);
   }
 
   setVisible(visible: boolean): void {
@@ -153,6 +238,7 @@ export class WaynetOverlay {
    */
   refresh(): void {
     this.geometry.getAttribute('position').needsUpdate = true;
+    this.filterRange();
   }
 
   /** The offset of a waypoint's x, or a refusal. A write past the end of a

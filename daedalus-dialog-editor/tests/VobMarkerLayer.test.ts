@@ -71,6 +71,59 @@ function channels(hex: number): number[] {
 }
 
 describe('VobMarkerLayer', () => {
+  it('full visibility picks through walls, but faint and occluded modes do not', () => {
+    const layer = new VobMarkerLayer(vobIndex([[0, 0, 0]], 'zCVobLight', undefined, undefined, ['']));
+    for (const mode of ['occluded', 'faint'] as const) {
+      layer.setOcclusion(mode);
+      expect(layer.pick(clip(), SIZE / 2, SIZE / 2, SIZE, SIZE, undefined, () => false)).toBe(NO_PICK);
+    }
+    layer.setOcclusion('full');
+    expect(layer.pick(clip(), SIZE / 2, SIZE / 2, SIZE, SIZE, undefined, () => false)).toBe(0);
+    layer.dispose();
+  });
+  it('can switch off the faint pass through walls independently of distance', () => {
+    const layer = new VobMarkerLayer(vobIndex([[0, 0, 0]], 'zCVobLight', undefined, undefined, ['']));
+    layer.setOcclusion('occluded');
+    expect(layer.markers.children[0].visible).toBe(false);
+    expect((layer.markers.material as THREE.PointsMaterial).depthTest).toBe(true);
+    layer.setOcclusion('faint');
+    expect(layer.markers.children[0].visible).toBe(true);
+    layer.setOcclusion('full');
+    expect(layer.markers.children[0].visible).toBe(false);
+    expect((layer.markers.material as THREE.PointsMaterial).depthTest).toBe(false);
+    layer.dispose();
+  });
+  it('filters drawing and picking by camera range without losing tree positions', () => {
+    const layer = new VobMarkerLayer(vobIndex(
+      [[0, 0, 0], [1000, 0, 0]], 'zCVobLight', undefined, undefined, ['', ''],
+    ));
+    layer.setView(true, [0, 0, 0], 500);
+    expect(layer.drawn).toBe(1);
+    expect(layer.positionOf(1)).toEqual([1000, 0, 0]);
+    layer.setView(true, [1000, 0, 0], 500);
+    expect(drawnPositions(layer)).toEqual([1000, 0, 0]);
+    expect(layer.pick(clip(), SIZE / 2, SIZE / 2, SIZE, SIZE)).toBe(NO_PICK);
+    layer.setHidden(new Uint8Array([0, 1]));
+    expect(layer.drawn).toBe(0);
+    layer.setView(true, [0, 0, 0], 0);
+    expect(layer.drawn).toBe(1);
+    layer.setHidden(null);
+    expect(layer.drawn).toBe(2);
+    layer.setView(false, [0, 0, 0], 0);
+    expect(layer.drawn).toBe(0);
+    expect(layer.pick(clip(), SIZE / 2, SIZE / 2, SIZE, SIZE)).toBe(NO_PICK);
+    layer.dispose();
+  });
+
+  it('rechecks the range when a marker moves across its boundary', () => {
+    const layer = new VobMarkerLayer(vobIndex([[0, 0, 0]], 'zCVobSound', undefined, undefined, ['']));
+    layer.setView(true, [0, 0, 0], 500);
+    layer.setPosition(0, [501, 0, 0]);
+    expect(layer.drawn).toBe(0);
+    layer.setPosition(0, [500, 0, 0]);
+    expect(layer.drawn).toBe(1);
+    layer.dispose();
+  });
   it('draws one marker per VOB nothing else draws, and none for one that is drawn', () => {
     // VOB 1 is a sound and VOB 3 a trigger — no visual name at all. VOB 0 is
     // drawn as an instance and gets none. VOB 2 is a decal: it *has* a name,

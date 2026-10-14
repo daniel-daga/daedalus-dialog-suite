@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { resolve } from 'node:path';
 
 /**
  * Browser mock-harness specs for the World surface (level-editor.md §6).
@@ -39,6 +40,50 @@ async function openWorldView(page: Page) {
 }
 
 test.describe('World surface', () => {
+  test('marker distance and wall occlusion are independent view options', async ({ page }) => {
+    await openWorldView(page);
+    // Supply only the backend summary; all controls and state transitions are
+    // the real World surface. GPU drawing is covered by the overlay tests.
+    await page.evaluate(async (fixturePath) => {
+      const storePath = '/store/worldStore.ts';
+      const { useWorldStore } = await import(/* @vite-ignore */ storePath);
+      const { SUMMARY } = await import(/* @vite-ignore */ fixturePath);
+      useWorldStore.getState().openSucceeded(SUMMARY);
+    }, `/@fs${resolve(__dirname, '../worldFixtures.ts')}`);
+    const markers = page.getByRole('button', { name: 'VOB markers' });
+    const walls = page.getByRole('combobox', { name: 'Marker occlusion' });
+    const distance = page.getByRole('combobox', { name: 'Marker distance' });
+    await expect(markers).toHaveAttribute('aria-pressed', 'true');
+    await expect(walls).toHaveText('Occluded');
+    await expect(distance).toHaveText('100 m');
+    await markers.click();
+    await expect(markers).toHaveAttribute('aria-pressed', 'false');
+    await walls.click();
+    await page.getByRole('option', { name: 'Faint', exact: true }).click();
+    await expect(walls).toHaveText('Faint');
+    await distance.click();
+    await page.getByRole('option', { name: '25 m', exact: true }).click();
+    await expect(distance).toHaveText('25 m');
+    await expect(walls).toHaveText('Faint');
+    await walls.click();
+    await page.getByRole('option', { name: 'Fully visible', exact: true }).click();
+    await expect(distance).toHaveText('25 m');
+    await walls.click();
+    await page.getByRole('option', { name: 'Occluded', exact: true }).click();
+    await distance.click();
+    await page.getByRole('option', { name: 'Unlimited', exact: true }).click();
+    await expect(distance).toHaveText('Unlimited');
+    await markers.click();
+    await expect(markers).toHaveAttribute('aria-pressed', 'true');
+    await expect(walls).toHaveText('Occluded');
+  });
+  test('marker view controls are visible and disabled before opening a world', async ({ page }) => {
+    await openWorldView(page);
+    await expect(page.getByRole('button', { name: 'VOB markers' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'VOB markers' })).toBeDisabled();
+    await expect(page.getByRole('combobox', { name: 'Marker distance' })).toBeVisible();
+    await expect(page.getByRole('combobox', { name: 'Marker distance' })).toBeDisabled();
+  });
   test('the World view is reachable and says what it needs before it can show anything', async ({ page }) => {
     await openWorldView(page);
 

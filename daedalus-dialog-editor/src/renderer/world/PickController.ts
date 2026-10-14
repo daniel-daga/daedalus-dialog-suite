@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import { threeToZen, zenToThree, type ZenPosition } from 'zen-world';
 import { NO_PICK } from './pickIds';
-import { pickWaypoint, NO_WAYPOINT } from './pickWaypoint';
+import { NO_WAYPOINT } from './pickWaypoint';
 import type { SpawnOverlay } from './SpawnOverlay';
 import type { VobPicker } from './VobPicker';
 import type { WaynetOverlay } from './WaynetOverlay';
 import type { WorldScene } from './WorldScene';
+import { HIDDEN_ATTRIBUTE } from './instanceAttributes';
 
 // What a click means (level-editor.md §3, §16.12, §17), lifted out of
 // `WorldViewport`'s one big effect (#220).
@@ -154,15 +155,15 @@ export class PickController {
 
   /**
    * Whether the world mesh leaves a marker in view — root space in, the same
-   * question the marker's depth test answers on the GPU. Only the world mesh:
-   * a marker behind a prop is drawn faint but still taken, because the props'
-   * depth lives in the GPU pick, not in anything a ray can ask cheaply.
+   * question the marker's depth test answers on the GPU. A click checks props
+   * too, ignoring instances hidden by the view's class filter. DOM labels may
+   * request the world mesh alone to avoid per-frame instanced raycasts.
    *
    * `MARKER_SLACK` short of the marker, so a startpoint standing on the floor
    * is not hidden by the floor it stands on. Called after `clip()`, which has
    * just refreshed the root's matrix.
    */
-  private readonly markerInView = (at: readonly [number, number, number]): boolean => {
+  readonly markerInView = (at: readonly [number, number, number], includeProps = true): boolean => {
     const { camera, world, raycaster } = this.options;
     this.eye.setFromMatrixPosition(camera.matrixWorld);
     this.toMarker.set(at[0], at[1], at[2]).applyMatrix4(world.root.matrixWorld).sub(this.eye);
@@ -172,7 +173,14 @@ export class PickController {
     const far = raycaster.far;
     raycaster.set(this.eye, this.toMarker.divideScalar(distance));
     raycaster.far = distance - MARKER_SLACK;
-    const hidden = raycaster.intersectObjects(world.worldMeshes, false).length > 0;
+    let hidden = raycaster.intersectObjects(world.worldMeshes, false).length > 0;
+    if (!hidden && includeProps) {
+      hidden = raycaster.intersectObjects(world.instancedMeshes, false).some((hit) => {
+        if (hit.instanceId === undefined) return false;
+        const mask = (hit.object as THREE.InstancedMesh).geometry.getAttribute(HIDDEN_ATTRIBUTE);
+        return mask === undefined || mask.getX(hit.instanceId) < 0.5;
+      });
+    }
     raycaster.far = far;
     return !hidden;
   };
@@ -211,15 +219,14 @@ export class PickController {
       return;
     }
 
-    // The waynet first, and only while it is on screen. It draws with
-    // `depthTest: false` — over everything, including whatever VOB is behind it
-    // — so picking it second would mean clicking a dot that is plainly on top
-    // and selecting the wall behind it. The modifiers do not apply: one
+    // The waynet first, restricted to the visible range and the view's
+    // occlusion mode. Picking it second would mean clicking a visible dot and
+    // selecting the wall behind it. The modifiers do not apply: one
     // waypoint is the whole selection, so there is no batch to add to.
     const overlay = o.waynet();
     if (o.showWaynet() && overlay !== null) {
-      const waypoint = pickWaypoint(
-        overlay.positions, this.clip(), x, y, width, height,
+      const waypoint = overlay.pick(
+        this.clip(), x, y, width, height, this.markerInView,
       );
       if (waypoint !== NO_WAYPOINT) { o.onSelectWaypoint(waypoint); return; }
     }

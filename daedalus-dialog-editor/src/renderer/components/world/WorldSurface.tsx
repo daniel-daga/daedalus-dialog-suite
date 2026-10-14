@@ -34,6 +34,7 @@ import { vobModelOf } from '../../world/vobModel';
 import { snapDelta } from '../../world/snapping';
 import { LiveTileContext } from './WorldAssetGrid';
 import { DEFAULT_EXPOSURE, type SelectionStyle } from '../../world/WorldScene';
+import type { MarkerOcclusion } from '../../world/VobMarkerLayer';
 import WorldViewport, { type GizmoMode, type WorldViewportHandle } from './WorldViewport';
 import WorldSceneTree from './WorldSceneTree';
 import WorldFolderTree from './WorldFolderTree';
@@ -249,6 +250,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
    *  (#226) — see `openWorldNamed`. */
   const [pendingJump, setPendingJump] = useState<string | null>(null);
   const [showWaynet, setShowWaynet] = useState(false);
+  const [showMarkers, setShowMarkers] = useState(true);
+  const [markerDistance, setMarkerDistance] = useState(100);
+  const [markerOcclusion, setMarkerOcclusion] = useState<MarkerOcclusion>('occluded');
   const {
     listAssets, searchAssets, resolveAssets, resolveAsset, compileAssets: compileAssetCatalog,
     loadTexture, loadVisual, thumbnails, liveTile,
@@ -2172,6 +2176,12 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
       setPendingWaypointName(null);
     },
     showWaynet,
+    showMarkers,
+    onToggleMarkers: () => setShowMarkers((shown) => !shown),
+    markerDistance,
+    onMarkerDistanceChange: setMarkerDistance,
+    markerOcclusion,
+    onMarkerOcclusionChange: setMarkerOcclusion,
     onToggleWaynet: () => void toggleWaynet(),
     showSpawns,
     onToggleSpawns: () => void toggleSpawns(),
@@ -2713,6 +2723,9 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               bbox={summary.bbox}
               waynet={waynet}
               showWaynet={showWaynet}
+              showMarkers={showMarkers}
+              markerDistance={markerDistance}
+              markerOcclusion={markerOcclusion}
               spawns={shownSpawns}
               npcBodyRequests={spawnBodyRequests}
               showSpawns={showSpawns}

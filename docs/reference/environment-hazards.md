@@ -8,6 +8,18 @@ every handover.
 Anything that is a fact about the *code* belongs in the plan or an architecture
 doc, not here. This file is only for the ground the code stands on.
 
+## Codex desktop runtime on macOS
+
+The bundled runtime can provide Node and pnpm while `npm` is absent. Its pnpm
+11 ignores `package.json`'s `pnpm.overrides`, so this repository's frozen
+lockfile install fails with `ERR_PNPM_LOCKFILE_CONFIG_MISMATCH`. On a fresh
+checkout use pnpm 10 for installation; do not rewrite the lockfile to match
+the bundled version. The parser's postinstall also needs npm, or its TypeScript
+build must be completed directly. Once installed, use the workspace-local
+Jest, TypeScript, ESLint and Vite executables with Node. Starting Vite directly
+also lets Playwright reuse the server when its `npm run dev:browser` command
+cannot run. This was observed on 2026-10-14.
+
 ## Windows and PowerShell
 
 - **PowerShell 5.1 mangles UTF-8 on a read-modify-write.** `Get-Content -Raw`

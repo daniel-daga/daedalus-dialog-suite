@@ -29,6 +29,7 @@ import { PickController } from '../../world/PickController';
 import { GizmoController, type GizmoMode } from '../../world/GizmoController';
 import { NO_PICK } from '../../world/pickIds';
 import { chooseWaypointLabels } from '../../world/waypointLabels';
+import type { MarkerOcclusion } from '../../world/VobMarkerLayer';
 import { WaypointLabelLayer } from '../../world/WaypointLabelLayer';
 import {
   attachBlenderNav, frameOn, frameVobs, navFor, pivotAt, type Nav,
@@ -159,6 +160,9 @@ export interface WorldViewportProps {
    *  separate IPC call and an overlay nobody turned on costs nothing. */
   waynet: WaynetPayload | null;
   showWaynet: boolean;
+  showMarkers?: boolean;
+  markerDistance?: number;
+  markerOcclusion?: MarkerOcclusion;
   /**
    * The project's statically resolvable spawns (§16.19 slice 4). Empty when no
    * script project is open — which means "nothing is known", never "nobody is
@@ -511,7 +515,8 @@ interface Gizmo {
 const NO_BODY_REQUESTS: ReadonlyMap<string, NpcBodyRequest> = new Map();
 
 const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(({
-  mesh, visuals, vobIndex, bbox, waynet, showWaynet, spawns, npcBodyRequests = NO_BODY_REQUESTS, showSpawns, routines, spawnTime, spawnState,
+  mesh, visuals, vobIndex, bbox, waynet, showWaynet, showMarkers = true, markerDistance = 100,
+  markerOcclusion = 'occluded', spawns, npcBodyRequests = NO_BODY_REQUESTS, showSpawns, routines, spawnTime, spawnState,
   showWaypointNames, loadTexture, onTextureFailures, onCameraSlot, onPick, onVobContextMenu, onCancelArmed,
   selection, onTranslateSelection, gizmoMode, onRotateSelection, membersOf, appliedOps,
   selectedWaypoint, terrainPoint, exposure, hiddenVobs, outlineMode, snapGrid, snapAngle,
@@ -664,6 +669,8 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   // does not re-run when it is toggled.
   const showWaynetRef = useRef(showWaynet);
   showWaynetRef.current = showWaynet;
+  const markerViewRef = useRef({ showMarkers, markerDistance, markerOcclusion });
+  markerViewRef.current = { showMarkers, markerDistance, markerOcclusion };
   // Read from the draw loop, so they are refs rather than dependencies: the
   // loop is built once per world and must not be torn down to change a label.
   const showNamesRef = useRef(showWaypointNames);
@@ -1125,6 +1132,17 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       // re-aim at a target neither of them is moving.
       if (!nav.step(performance.now())) controls.update();
 
+      camera.updateMatrixWorld();
+      world.root.updateMatrixWorld();
+      labelCameraPosition.copy(camera.position)
+        .applyMatrix4(labelRootInverse.copy(world.root.matrixWorld).invert());
+      const markerView = markerViewRef.current;
+      const cameraZen: [number, number, number] = [labelCameraPosition.x, labelCameraPosition.y, labelCameraPosition.z];
+      world.markers?.setView(markerView.showMarkers, cameraZen, markerView.markerDistance * 100);
+      world.markers?.setOcclusion(markerView.markerOcclusion);
+      overlayRef.current?.setView(cameraZen, markerView.markerDistance * 100);
+      overlayRef.current?.setOcclusion(markerView.markerOcclusion);
+
       // Names, after `controls.update()` so they follow the camera in the same
       // frame it moved rather than trailing it by one.
       //
@@ -1139,7 +1157,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
         // What is drawn, not what exists: the whole waynet when it is on, and
         // otherwise only the points the spawn layer is marking.
         const candidates = showWaynetRef.current
-          ? null
+          ? netOverlay.visiblePoints
           : (showSpawnsRef.current && spawnOverlayRef.current !== null)
             ? spawnOverlayRef.current.labelledPoints
             : [];
@@ -1147,7 +1165,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
         world.root.updateMatrixWorld();
         labelCameraPosition.copy(camera.position)
           .applyMatrix4(labelRootInverse.copy(world.root.matrixWorld).invert());
-        labels.update(chooseWaypointLabels(
+        const chosen = chooseWaypointLabels(
           netOverlay.positions,
           candidates,
           labelClip.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
@@ -1155,7 +1173,12 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
           labelCameraPosition,
           host.clientWidth || 1,
           host.clientHeight || 1,
-        ));
+        );
+        // DOM labels have no depth buffer. Test only the capped label set,
+        // so an occluded waypoint does not leave a name floating through a wall.
+        labels.update(showWaynetRef.current && markerView.markerOcclusion !== 'full'
+          ? chosen.filter(({ waypoint }) => picks.markerInView(netOverlay.positionOf(waypoint), false))
+          : chosen);
       }
 
       viewport.render();
