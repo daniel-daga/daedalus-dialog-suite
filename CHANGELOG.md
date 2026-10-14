@@ -4,6 +4,10 @@ What each published Windows build changed, newest first. Build Windows adds a
 build here when it publishes it; write new notes in `RELEASE_NOTES.md`, not here.
 Builds before 31 had no release notes.
 
+## Build 36 — 2026-10-14
+
+- #399: The asset browser lists source assets (3DS, ASC, MDS, MMS, TGA) by default; the rest behind its filter
+
 ## Build 35 — 2026-10-13
 
 - #394: The GMBT quick test and asset compile no longer fail on files locked by an open world
