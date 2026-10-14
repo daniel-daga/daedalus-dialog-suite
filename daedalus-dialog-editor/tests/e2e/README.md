@@ -26,3 +26,9 @@ and the mock "parser" returns a canned model. Therefore:
 
 Assertions that are legitimate here: UI state after an edit/reload round-trip,
 AI_Output line counts/text, and dialog-property values.
+
+For World control fixtures, override `window.editorAPI` and open through the
+World picker. Importing a store by its raw Vite URL can create a second store
+instance after hot reload, when the app uses a timestamped module URL. A
+metadata-only fixture may leave geometry loading pending; it verifies the
+controls, not viewport rendering.

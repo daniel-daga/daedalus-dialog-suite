@@ -42,17 +42,24 @@ async function openWorldView(page: Page) {
 test.describe('World surface', () => {
   test('marker distance and wall occlusion are independent view options', async ({ page }) => {
     await openWorldView(page);
-    // Supply only the backend summary; all controls and state transitions are
-    // the real World surface. GPU drawing is covered by the overlay tests.
+    await expect(page.getByTestId('world-open')).toBeVisible();
+    // Open through the real UI with a backend summary. Leave geometry pending:
+    // this test covers view controls, while overlay tests cover GPU buffers.
     await page.evaluate(async (fixturePath) => {
-      const storePath = '/store/worldStore.ts';
-      const { useWorldStore } = await import(/* @vite-ignore */ storePath);
       const { SUMMARY } = await import(/* @vite-ignore */ fixturePath);
-      useWorldStore.getState().openSucceeded(SUMMARY);
+      const api = (window as unknown as { editorAPI: Record<string, unknown> }).editorAPI;
+      api.listWorlds = async () => [{
+        path: SUMMARY.worldPath, name: 'NewWorld.zen', source: 'C:/Gothic', isDefault: false,
+      }];
+      api.openWorld = async () => SUMMARY;
+      api.getWorldMesh = () => new Promise(() => {});
     }, `/@fs${resolve(__dirname, '../worldFixtures.ts')}`);
+    await page.getByTestId('world-open').click();
+    await page.getByTestId('world-picker-entry-NewWorld.zen').click();
     const markers = page.getByRole('button', { name: 'VOB markers' });
     const walls = page.getByRole('combobox', { name: 'Marker occlusion' });
     const distance = page.getByRole('combobox', { name: 'Marker distance' });
+    await expect(markers).toBeEnabled();
     await expect(markers).toHaveAttribute('aria-pressed', 'true');
     await expect(walls).toHaveText('Occluded');
     await expect(distance).toHaveText('100 m');
