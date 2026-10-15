@@ -188,11 +188,11 @@ feedback, the Daedalus overlay, the multi-part workspace); that is §11's job.
 | 1.7 | **Visual assignment**, as opposed to rename | unscheduled → 1b-2 | `setVobProp.visual` renames in place and refuses any VOB whose visual type is `UNKNOWN` — 15,749 of the 41,393 retail VOBs, 38.0 % (§7). Assigning a visual has to decide the object's class; decals (`.TGA`) are refused outright. **The extension × class table is reproducible as of 2026-08-30** — `zenkit-node/scripts/check-visual-types.js` re-measures it over the corpus and reproduces every figure §7 quotes, `.3DS` being the one ambiguous extension (`MULTI_RESOLUTION_MESH` ×20,716 against `MESH` ×31). That settles the measurement the row was missing; the feature stays a decision. |
 | 1.8 | **The rest of `zCVob`** | **landed** (§7) | V1 landed 2026-08-28 — `SetVobProp` takes `presetName`, `visualCamAlign` and `bias`, bounded by the packed layout's bit fields rather than by their archive types. V2 landed the same day: `dynamicShadows` on the same two bits, and all seven fields of a decal visual, flat and prefixed. Two fields stay out and both by a fact rather than by time — `farClipScale`, because retail ships uninitialised junk in it (§7), and **`sleepMode`, because `VirtualObject` reads and writes it only under `is_save_game()`**, so a value set on a world archive never reaches the file. |
 
-**Not a gap either: a foliage/scatter brush.** Spacer has no paint tool — its
-whole placement verb is one right-click insert plus a physics drop. Carded
-anyway, as a past-Spacer feature, at §16.25 — and neither does Spacer.NET, so
-it is invention rather than catch-up. The *windows and modes* this inventory
-never covered are §16.26.
+**Scatter placement:** our brush is tracked at §16.25. Spacer.NET also has an
+object seeder for mass placement; the earlier claim that neither editor had
+such tooling was unsupported. See the sourced comparison correction in
+`docs/spacer-gap-triage.md`. The *windows and modes* this inventory never
+covered are §16.26.
 
 **Not a gap: scale.** `zCVob` has no scale field, so the two-mode gizmo is
 correct and a third mode would author a representation ZenGin does not have.
@@ -2368,21 +2368,16 @@ VOBs is now unwitnessed either way: the original report is fully explained by
 this if the VOBs the maintainer tried it on were undrawn, and the two probes above stay
 green regardless. Re-open only on a repeat that names a drawn VOB.
 
-### 16.25 Scatter placement — a tool Spacer does not have (2026-08-30)
+### 16.25 Scatter placement (2026-08-30)
 
-**Asked for by the maintainer 2026-08-30 as "the foliage painting tool in Spacer".
-Checked: Spacer has no such tool.** The
-[GMC's Spacer reference](https://gothic-modding-community.github.io/gmc/zengin/worlds/spacer/)
-lists the whole of its VOB placement as *insert one VOB from the Create tab's
-right-click menu*, plus a physics button that drops the inserted object onto
-the terrain and a grid snap. There is no brush, no scatter, no multi-placement.
-What the search turns up under that name is **Spacer.NET**, the Union-based
-modernisation, whose own pitch is "maximum automation of the vobbing process" —
-a different tool, not the MDK Spacer §14 measures parity against.
+**Asked for by the maintainer 2026-08-30 as "the foliage painting tool in Spacer".**
+The GMC introduction describes single-VOB insertion, physics drop and grid snap;
+it is not evidence that all ZenGin editors lack mass placement. **Corrected
+2026-10-15:** Spacer.NET has a documented object seeder (author's lesson 3.12),
+already discussed by its developer in 2022. See `docs/spacer-gap-triage.md` for
+sources. Its placement behavior needs comparing before claiming a unique feature.
 
-So this is not a §14 row and must not be filed as one: it is a **past-Spacer**
-feature, and its home is §11's question of where the editor goes beyond parity.
-It is carded because the request stands on its own merits — placing a forest one
+The brush remains a feature requested on its own merits — placing a forest one
 `AddVob` at a time is the single most tedious thing the World surface asks of a
 modder, and every piece it needs already exists.
 
@@ -2529,18 +2524,12 @@ under 3.4/3.6, the multi-ZEN macro system under 3.3, the physics drop under
 
 ### 16.26 Three gaps §14 never inventoried, and Spacer.NET's own list (2026-08-30)
 
-**Spacer.NET has no foliage brush either.** Its published feature list — the
-same twelve items on the
-[GitHub repo](https://github.com/postm1/SpacerNET_Interface) and the
-[Steam Workshop page](https://steamcommunity.com/sharedfiles/filedetails/?id=3261221886)
-— is entirely VOB-editing quality of life: hierarchical copy, reparenting,
-collision-free manipulation, preview models, PFX and item support, VobTree
-support, chest-contents editing, Union extended classes, FPS/VOB counters. No
-brush, no scatter, no randomised or mass placement anywhere in it. So the
-scatter tool of §16.25 is not a thing we lack — **it does not exist anywhere in
-the ZenGin tooling lineage**, and building it is invention, not catch-up. That
-is worth knowing before it is estimated: there is no reference implementation
-to copy and no modder muscle memory to match.
+**Comparison corrected 2026-10-15.** The short Workshop/README feature list
+is not an exhaustive inventory. Spacer.NET's author's lessons document an
+object seeder for mass placement, ZEN error checks, RMB+WASD navigation,
+PFX editing, mover/camera editing and more. Our brush cannot be called unique
+from its omission in that list. Sources and the limits of this comparison
+are recorded in `docs/spacer-gap-triage.md`.
 
 Reading that list against ours also settles two things that look like gaps and
 are not. **Reparenting is landed** — `ReparentVob` is validated in

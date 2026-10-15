@@ -9,6 +9,68 @@ priority labels are a first guess.
 The last section says which of the report's complaints are already answered or
 structurally cannot apply to us, so triage does not rediscover them.
 
+## Comparison correction (2026-10-15)
+
+The original-Spacer complaint report below is not a Spacer.NET feature audit.
+An external comparison repeated our plan's unsupported assertion that no
+ZenGin editor has scatter/mass placement. Do not use that assertion, or treat
+the Workshop summary as an exhaustive feature inventory.
+
+Primary sources checked:
+
+- [Spacer.NET author's lesson index](https://worldofplayers.ru/forums/1179/):
+  3.12 is the object seeder / mass creation of same-type VOBs; 3.4 is ZEN error
+  checking; 2.2 covers the PFX editor; 2.4 triggers/movers; 2.5 cameras; 3.10
+  BBOX editing. These are capabilities to include in any parity assessment.
+- [Developer discussion, September 2022](https://worldofplayers.ru/threads/41991/page-14):
+  post 271 explicitly mentions the existing seeder's vertical offset. This
+  establishes mass-placement tooling, not equivalence to our surface brush.
+- [Developer's 1.40 changes](https://rpgrussia.com/threads/spacer-net-redaktor-mirov-g1-g2nr.27956/page-19):
+  percentage-based vertical offset in the seeder and catalogue integration.
+- [Developer's 1.31 changes](https://worldofplayers.ru/threads/41991/page-40):
+  error checks include disconnected waypoints, nearby duplicate lights and
+  collision flags. "Neither editor has linting" is not defensible.
+- [Author's main thread and controls](https://worldofplayers.ru/threads/41991/):
+  Spacer.NET is a Union editor for Gothic I / II, using ZenGin, not CryEngine
+  Sandbox. RMB+WASD flies, Space/X moves vertically, 1/2 move/rotate VOBs,
+  Q/E turns vertically, Shift/Ctrl changes precision, Shift+F fits to a surface.
+  Original Spacer's F3/M/T/C controls must not be attributed to Spacer.NET.
+- [Author's world/mesh replacement lesson](https://worldofplayers.ru/threads/43499/):
+  Open/Merge MESH, compile world/light, Save VOBs and Merge ZEN preserve placed
+  objects across terrain replacement. This is a substantial workflow gap here.
+- [Original MDK object documentation](https://mdk.gothicarchive.org/docs/spacer/objects.htm):
+  tree double-click jumps to a VOB; helper VOBs expose invisible objects.
+  Focus/locate and invisible-object markers are not unique to our editor.
+
+Current-tree corrections to the supplied comparison:
+
+- `WorldStatusStats.tsx` already displays VOBs, triangles, draw calls and placed
+  VOBs. Only the asserted live FPS display remains unconfirmed by that component.
+- `ContainerContentsField.tsx` provides an item/quantity editor and thumbnail
+  picker, not merely a bounded text field. Item existence checks apply when
+  the project index is nonempty; an empty index means nothing is known.
+- Authoring 27 classes does not mean editing all their properties. The plan's
+  class-property row remains partial; copy also has class/field restrictions
+  and omits `physicsEnabled` (§14.1).
+- Euler conversion uses `Rx(-x) * Ry(-y) * Rz(-z)`. Retail matrix deviations do
+  not establish that Spacer silently corrupts those VOBs.
+- Fly uses delta time and a 2–2000 m/s base speed; this does not establish better
+  navigation in use. Open camera/movement feedback (#403–#405) and the standing
+  engine-witness list (#261) prevent an unconditional parity/safety verdict.
+- General undo in Spacer.NET, exact seeder/brush equivalence and camera-slot
+  parity were not established by this documentation review. Do not present
+  unverified absence as a fact or create parity tasks from it.
+
+Learning resources: [author's installation lesson](https://worldofplayers.ru/threads/43464/)
+and numbered lesson index above (Russian, English UI screenshots);
+[original MDK manual](https://mdk.gothicarchive.org/docs/spacer/index.htm);
+[YouTube: Gothic 2 Modding Tutorial #2 — Einführung in den Spacer](https://www.youtube.com/watch?v=PVlGZqmuIQ0)
+(German, 2013, original Spacer). A [Spacer.NET demo](https://www.youtube.com/watch?v=WRf-s2Df32w)
+is linked by [the community release thread](https://themodders.org/index.php?topic=30541.0).
+Video links were located, not watched end to end; no behavior claim here rests
+on video playback. This was a source/code review, not an interactive test of
+either editor. No new parity issues were filed from unverified differences.
+
 ---
 
 ## A. The script pipeline — the largest block, and the least started
