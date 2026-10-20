@@ -65,7 +65,13 @@ test.describe('World surface', () => {
     await expect(y).toHaveValue('0');
     // Leave tree focus so its navigation does not own the keys.
     await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+    // Pause the fake clock before the holds: an installed clock that is left
+    // running also advances with real time, so every round trip between
+    // keydown, runFor() and keyup adds frames of its own and a slow runner
+    // overshoots the bounds below. Paused at a time ahead of the install —
+    // pauseAt() may only fast-forward — runFor() is the only source of time.
     await page.clock.install();
+    await page.clock.pauseAt(Date.now() + 1000);
     await page.keyboard.press('Control+PageUp');
     await expect(y).toHaveValue('0.1');
     await page.keyboard.down('PageUp');
