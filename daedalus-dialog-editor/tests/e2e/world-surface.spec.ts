@@ -69,7 +69,7 @@ test.describe('World surface', () => {
     // Paused, the fake clock does not also drift with the real milliseconds
     // between the key presses below, whose movement frames would otherwise
     // overshoot the bounds runFor() is the only time source for.
-    await page.clock.pauseAt(0);
+    await page.clock.pause();
     await page.keyboard.press('Control+PageUp');
     await expect(y).toHaveValue('0.1');
     await page.keyboard.down('PageUp');
