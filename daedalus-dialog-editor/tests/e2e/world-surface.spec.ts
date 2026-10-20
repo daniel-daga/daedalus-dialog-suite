@@ -66,6 +66,10 @@ test.describe('World surface', () => {
     // Leave tree focus so its navigation does not own the keys.
     await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
     await page.clock.install();
+    // Paused, the fake clock does not also drift with the real milliseconds
+    // between the key presses below, whose movement frames would otherwise
+    // overshoot the bounds runFor() is the only time source for.
+    await page.clock.pauseAt(0);
     await page.keyboard.press('Control+PageUp');
     await expect(y).toHaveValue('0.1');
     await page.keyboard.down('PageUp');
