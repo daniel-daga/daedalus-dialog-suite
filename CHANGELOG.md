@@ -4,6 +4,12 @@ What each published Windows build changed, newest first. Build Windows adds a
 build here when it publishes it; write new notes in `RELEASE_NOTES.md`, not here.
 Builds before 31 had no release notes.
 
+## Build 37 — 2026-10-21
+
+- #408: Lights and particles have distinct marker shapes; solid 3D waypoint arrows show their stored facing
+- #409: World markers can be hidden, occluded, faint or fully visible, with an independent camera-distance limit
+- #403: Finer VOB keyboard movement with millimetre Ctrl taps and smooth holds.
+
 ## Build 36 — 2026-10-14
 
 - #399: The asset browser lists source assets (3DS, ASC, MDS, MMS, TGA) by default; the rest behind its filter
