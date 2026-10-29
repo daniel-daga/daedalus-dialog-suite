@@ -108,6 +108,8 @@ const CHORDS: Array<{
   { name: 'Delete', key: 'Delete', verb: 'onRequestDeleteVobs' },
   { name: 'Escape', key: 'Escape', verb: 'onDisarm' },
   { name: 'ArrowRight', key: 'ArrowRight', verb: 'onNudgeBy' },
+  { name: 'Q (yaw left, in either mode)', key: 'q', verb: 'onTurnBy' },
+  { name: 'E (yaw right)', key: 'e', verb: 'onTurnBy' },
   { name: 'Ctrl+S', key: 's', init: { ctrlKey: true }, verb: 'onRequestSave' },
   { name: 'Ctrl+Shift+S', key: 'S', init: { ctrlKey: true, shiftKey: true }, verb: 'onRequestSaveAs' },
   { name: 'Ctrl+Z', key: 'z', init: { ctrlKey: true }, verb: 'onHistory' },
@@ -173,7 +175,7 @@ describe('useWorldShortcuts — when nothing is bound at all', () => {
 describe('useWorldShortcuts — a key nobody here wants stays the browser’s', () => {
   test('a bare letter this surface does not bind', () => {
     bound();
-    expect(press('q')).toBe(false);
+    expect(press('j')).toBe(false);
   });
 
   test('Alt is nobody’s modifier here', () => {
@@ -320,13 +322,13 @@ describe('useWorldShortcuts — the step a nudge key takes', () => {
     // A `snapGrid` left over from translate mode is invisible here — that
     // control edits the angle in rotate mode — so it must not reach the turn.
     bound({ gizmoMode: 'rotate', snapGrid: 500 });
-    press('ArrowRight');
+    press('e');
     expect(verbs.onNudgeBegin).not.toHaveBeenCalled();
     expect(verbs.onTurnBegin).toHaveBeenCalledWith(0);
     expect(verbs.onTurnBy).toHaveBeenCalledWith([1, 0, 0]);
   });
 
-  test('in rotate mode WASD, Space and X turn by the angle step, ×10 with Shift', () => {
+  test('in rotate mode A/D lean the selection sideways, W/S pitch it, Space/X roll (#404)', () => {
     bound({ gizmoMode: 'rotate', snapAngleDegrees: 15 });
     for (const key of ['d', 'a', 'w', 's', ' ', 'x']) {
       press(key);
@@ -334,10 +336,51 @@ describe('useWorldShortcuts — the step a nudge key takes', () => {
     }
     press('d', { shiftKey: true });
     expect(verbs.onTurnBegin).toHaveBeenCalledWith(15);
+    // Read as `[yaw, roll, pitch]`: the lean is A/D's, and yaw is Q/E's alone.
     expect(verbs.onTurnBy.mock.calls.map(([turn]) => turn)).toEqual([
-      [15, 0, 0], [-15, 0, 0], [0, 0, 15], [0, 0, -15], [0, 15, 0], [0, -15, 0], [150, 0, 0],
+      [0, -15, 0], [0, 15, 0], [0, 0, 15], [0, 0, -15], [0, 15, 0], [0, -15, 0], [0, -150, 0],
     ]);
     expect(verbs.onNudgeBy).not.toHaveBeenCalled();
+  });
+
+  test('Q and E yaw about the vertical in rotate mode too (#404)', () => {
+    bound({ gizmoMode: 'rotate', snapAngleDegrees: 15 });
+    for (const key of ['q', 'e']) {
+      press(key);
+      release(key);
+    }
+    expect(verbs.onTurnBy.mock.calls.map(([turn]) => turn)).toEqual([[-15, 0, 0], [15, 0, 0]]);
+  });
+
+  test('in move mode Q and E still turn, and the tap is one turn gesture (#404)', () => {
+    bound({ snapAngleDegrees: 15 });
+    press('q');
+    expect(verbs.onTurnBegin).toHaveBeenCalledWith(15);
+    expect(verbs.onTurnBy).toHaveBeenCalledWith([-15, 0, 0]);
+    release('q');
+    expect(verbs.onTurnEnd).toHaveBeenCalledTimes(1);
+    expect(verbs.onNudgeBegin).not.toHaveBeenCalled();
+    expect(verbs.onNudgeEnd).not.toHaveBeenCalled();
+  });
+
+  test('Q with nothing selected is left to the browser', () => {
+    useWorldStore.setState({ selection: [] } as never);
+    bound();
+    expect(press('q')).toBe(false);
+    expect(verbs.onTurnBegin).not.toHaveBeenCalled();
+  });
+
+  test('a key of the other verb is not mixed into the gesture in progress', () => {
+    // A move and a turn are two edits and two undo entries: whichever verb the
+    // first key began owns the gesture, and the other key waits for it to end.
+    bound();
+    press('w');
+    press('q');
+    expect(verbs.onNudgeBy).toHaveBeenCalledTimes(1);
+    expect(verbs.onTurnBegin).not.toHaveBeenCalled();
+    expect(verbs.onTurnBy).not.toHaveBeenCalled();
+    release('q');
+    release('w');
   });
 
   test('W and Up move away from the camera, S and Down towards it', () => {
@@ -529,10 +572,10 @@ describe('useWorldShortcuts — holding a nudge key', () => {
 
   test('a held turn key turns continuously, and commits once on release', () => {
     bound({ gizmoMode: 'rotate' });
-    press('d');
+    press('e');
     frameAt(250);
     frameAt(350);   // 0.1 s at 45°/s
-    release('d');
+    release('e');
     const turned = verbs.onTurnBy.mock.calls.map(([turn]) => turn[0]);
     expect(turned).toEqual([1, expect.closeTo(4.5, 6)]);
     expect(verbs.onTurnBegin).toHaveBeenCalledTimes(1);

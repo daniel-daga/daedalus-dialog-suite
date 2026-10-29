@@ -1455,10 +1455,11 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     void commitOps(rotateSubtrees(vobModelOf(current).reader, selected, delta, boundsOf));
   }, [commitOps, boundsOf]);
 
-  /** The keyboard turn in progress (#387): degrees turned so far about the
-   *  hook's `[right, up, forward]` keys — read as yaw about the vertical, roll
-   *  about camera-forward and pitch about camera-right — the camera axes it
-   *  began under, and the angle step each snaps to. Null between turns. */
+  /** The keyboard turn in progress (#387, #404): degrees turned so far as
+   *  `[yaw, roll, pitch]` — yaw about the vertical (Q/E, in either mode), roll
+   *  about camera-forward (A/D) and pitch about camera-right (W/S) — the camera
+   *  axes it began under, and the angle step each snaps to. Null between
+   *  turns. */
   const turnRef = useRef<KeyboardTurn | null>(null);
 
   const handleTurnBegin = useCallback((step: number) => {

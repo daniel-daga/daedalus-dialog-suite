@@ -2,6 +2,7 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #404: Q and E turn a VOB about the vertical in both gizmo modes; in turn mode A/D lean it sideways
 - #408: Lights and particles have distinct marker shapes; solid 3D waypoint arrows show their stored facing
 - #409: World markers can be hidden, occluded, faint or fully visible, with an independent camera-distance limit
 - #399: The asset browser lists source assets (3DS, ASC, MDS, MMS, TGA) by default; the rest behind its filter

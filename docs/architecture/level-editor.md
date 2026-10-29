@@ -1616,8 +1616,8 @@ What made it more than "the same again with a different verb":
   preview drives the same members the ops are built from.
 - **1 and 2 switch the gizmo**, as the Spacer binds them (#387) — bare keys
   (by `key` or `code`, so AZERTY works) on a window listener, so they step
-  aside for anything that takes typing. W and E did until W became a nudge
-  and only switched with nothing selected. Ctrl+digit stays the camera slots.
+  aside for anything that takes typing. W and E were, until W became a nudge
+  and E became a yaw key (#404). Ctrl+digit stays the camera slots.
 - **Ground placement has two explicit modes** (#372). Rest on ground (`G`)
   puts the rotated visual's world-space bounding-box minimum Y at each VOB's
   downward raycast hit; Into ground (`Shift+G`) puts the pivot at the hit for
@@ -4206,16 +4206,21 @@ halves are needed: the first sees where focus *is*, the second what is *open*.
   PageUp/Down, whose Ctrl chords are nobody's; Ctrl+S, Ctrl+D and the rest stay
   their own chords. These defaults permit precision work; a measured Spacer
   speed comparison remains for maintainer feedback.
-- **In rotate mode the same keys turn the selection** (#387): A/D yaw about the
-  vertical (D turns it right seen from above), W/S pitch about camera-right (W
-  tips the top away), Space/X roll about camera-forward. 1° a tap, 45°/s held,
-  the angle snap step when one is set (each axis snapped on its own), Shift and
-  Ctrl as above. The camera axes are taken once, at the gesture's first key.
-  It is the gizmo's rotate path — previewed through `GizmoController.previewTurn`,
-  committed once as `rotateSubtrees`, one undo entry. The selection is read
-  *before* `preventDefault`, so an arrow with nothing selected is left to
-  whatever would otherwise scroll. `[role="tree"]` is reserved for the scene
-  tree's own navigation.
+- **In rotate mode the same keys turn the selection** (#387, #404): A/D lean it
+  sideways about camera-forward (A tips the top left as the camera sees it),
+  W/S pitch about camera-right (W tips the top away), Space/X keep the lean
+  they had. **Q/E yaw about the vertical in either mode** — the Spacer's
+  binding, and the only turn move mode has. 1° a tap, 45°/s held, the angle
+  snap step when one is set (each axis snapped on its own), Shift and Ctrl as
+  above; a move-mode yaw snaps to whatever angle the Snap control last showed
+  in rotate mode. The camera axes are taken once, at the gesture's first key.
+  A gesture is one verb from its first key: a move key pressed during a turn
+  (or the reverse) waits for the gesture to end, so a move and a turn are never
+  one undo entry. It is the gizmo's rotate path — previewed through
+  `GizmoController.previewTurn`, committed once as `rotateSubtrees`, one undo
+  entry. The selection is read *before* `preventDefault`, so an arrow with
+  nothing selected is left to whatever would otherwise scroll. `[role="tree"]`
+  is reserved for the scene tree's own navigation.
 
 **The toolbar is four groups — file, add, edit, view — packed from the
 left, with the view group pinned to the right edge** (`marginLeft: auto`).

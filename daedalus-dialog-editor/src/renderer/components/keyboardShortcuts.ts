@@ -87,8 +87,13 @@ export const KEYBOARD_SHORTCUTS: readonly KeyboardShortcut[] = [
     },
   },
   {
+    group: 'World editor', keys: 'Q / E',
+    action: 'Turn the selection about the vertical, in either gizmo mode; Shift ×10, Ctrl ×0.1',
+    probe: { listener: 'world', events: [{ key: 'q' }, { key: 'e' }] },
+  },
+  {
     group: 'World editor', keys: 'In turn mode: A / D, W / S, Space / X',
-    action: 'Turn the selection: yaw, pitch about camera-right, roll; Shift ×10, Ctrl ×0.1',
+    action: 'Lean the selection sideways (A/D), pitch it about camera-right (W/S), roll it (Space/X); Shift ×10, Ctrl ×0.1',
   },
   { group: 'World editor', keys: '.', action: 'Frame the selection' },
   { group: 'World editor', keys: 'Home', action: 'Frame the world' },

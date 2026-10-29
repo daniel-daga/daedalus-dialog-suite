@@ -4,9 +4,7 @@ import { useWorldStore } from '../../../store/worldStore';
 import { isTypingOrInPopover } from '../../../world/keyboardTarget';
 import type { GizmoMode } from '../WorldViewport';
 
-/** Camera-relative nudge: `[right, up, forward]`, one unit of step per key.
- *  Keyed by the lower-cased `KeyboardEvent.key`. In rotate mode the same keys
- *  turn instead, and the triple is read as degrees — see `onTurnBy`. */
+/** Camera-relative nudge: `[right, up, forward]`, one unit of step per key. */
 const NUDGE_DELTAS: Record<string, [number, number, number]> = {
   arrowleft: [-1, 0, 0],
   a: [-1, 0, 0],
@@ -20,6 +18,34 @@ const NUDGE_DELTAS: Record<string, [number, number, number]> = {
   ' ': [0, 1, 0],
   pagedown: [0, -1, 0],
   x: [0, -1, 0],
+};
+
+/**
+ * The same keys in rotate mode, read as `[yaw, roll, pitch]` degrees by
+ * `turnSoFar` — A/D lean the selection sideways about camera-forward (#404),
+ * W/S pitch it about camera-right, and Space/X keep the lean they had (as do
+ * PageUp/Down). Yaw is `YAW_DELTAS`' alone, because Q/E do it in both modes.
+ */
+const TURN_DELTAS: Record<string, [number, number, number]> = {
+  arrowleft: [0, 1, 0],
+  a: [0, 1, 0],
+  arrowright: [0, -1, 0],
+  d: [0, -1, 0],
+  arrowup: [0, 0, 1],
+  w: [0, 0, 1],
+  arrowdown: [0, 0, -1],
+  s: [0, 0, -1],
+  pageup: [0, 1, 0],
+  ' ': [0, 1, 0],
+  pagedown: [0, -1, 0],
+  x: [0, -1, 0],
+};
+
+/** Q/E turn the selection about the vertical in **either** mode, which is the
+ *  Spacer's binding and the one turn move mode has (#404). */
+const YAW_DELTAS: Record<string, [number, number, number]> = {
+  q: [-1, 0, 0],
+  e: [1, 0, 0],
 };
 
 /** Free-movement tap in cm; Ctrl gives a millimetre step (#403). */
@@ -106,10 +132,11 @@ export interface WorldShortcutsInput {
   onNudgeBy: (direction: [number, number, number]) => void;
   onNudgeEnd: () => void;
   /**
-   * The nudge keys in rotate mode: the same one-gesture shape, fed
-   * `[right, up, forward]` in degrees — A/D yaw about the vertical, W/S pitch
-   * about camera-right, Space/X roll about camera-forward. `step` is the
-   * angle step the turn snaps to, 0 for free-form.
+   * The turn keys: the movement keys in rotate mode, and Q/E in either mode
+   * — the same one-gesture shape, fed `[yaw, roll, pitch]` in degrees — A/D
+   * lean sideways about camera-forward, W/S pitch about camera-right, Space/X
+   * roll, and Q/E yaw about the vertical (#404). `step` is the angle step the
+   * turn snaps to, 0 for free-form.
    */
   onTurnBegin: (step: number) => boolean;
   onTurnBy: (turn: [number, number, number]) => void;
@@ -159,13 +186,24 @@ export function useWorldShortcuts({
     const readModifiers = (event: KeyboardEvent) => {
       factor = (event.shiftKey ? FAST : 1) * (event.ctrlKey || event.metaKey ? SLOW : 1);
     };
-    /** Whether the gesture in progress turns — fixed at its first key, so it
-     *  ends through the verb it began with. A mode switch re-binds this
-     *  effect, which ends the gesture first. */
+    /** Whether the gestures in progress turn by default — the mode's reading
+     *  of a movement key. Q/E turn whatever mode is on, so the verb is decided
+     *  per gesture below rather than by this alone. */
     const turning = gizmoMode === 'rotate';
-    const by = turning ? onTurnBy : onNudgeBy;
-    const freeMovement = !turning && snapGrid === 0;
-    const holdDelay = freeMovement ? 0 : NUDGE_HOLD_DELAY;
+    /** Which verb the gesture in progress uses — fixed at its first key, so a
+     *  move and a turn are never one undo entry. Null between gestures. */
+    let gesture: 'nudge' | 'turn' | null = null;
+    /** Free movement starts at once; snapped movement and every turn wait out
+     *  the hold delay. Both are the gesture's own reading of the controls. */
+    let freeMovement = false;
+    let holdDelay = NUDGE_HOLD_DELAY;
+    /** The delta a key contributes: the movement table in move mode, the turn
+     *  table in rotate mode, and Q/E's yaw in both. */
+    const deltaOf = (key: string): [number, number, number] | undefined =>
+      YAW_DELTAS[key] ?? (turning ? TURN_DELTAS[key] : NUDGE_DELTAS[key]);
+    /** Which verb a key belongs to, before a gesture has begun. */
+    const verbOf = (key: string): 'nudge' | 'turn' =>
+      turning || YAW_DELTAS[key] !== undefined ? 'turn' : 'nudge';
     let frame: number | null = null;
     let lastFrame = 0;
 
@@ -174,12 +212,13 @@ export function useWorldShortcuts({
       // Discard stalled time instead of jumping the selection on the next frame.
       const dt = freeMovement ? Math.min(elapsed, 0.05) : elapsed;
       lastFrame = now;
+      const by = gesture === 'turn' ? onTurnBy : onNudgeBy;
       for (const [key, { since, speed }] of held) {
         // Counted from the end of the hold delay, not the press, so the first
         // continuous frame does not jump by the delay's worth of travel.
         const moving = factor * Math.min(dt, Math.max(0, (now - since - holdDelay) / 1000));
         if (moving <= 0) continue;
-        const [r, u, f] = NUDGE_DELTAS[key];
+        const [r, u, f] = deltaOf(key) as [number, number, number];
         by([r * speed * moving, u * speed * moving, f * speed * moving]);
       }
       frame = requestAnimationFrame(tick);
@@ -187,10 +226,14 @@ export function useWorldShortcuts({
 
     const endNudge = () => {
       if (held.size === 0) return;
+      const ended = gesture;
       held.clear();
+      gesture = null;
+      freeMovement = false;
+      holdDelay = NUDGE_HOLD_DELAY;
       if (frame !== null) cancelAnimationFrame(frame);
       frame = null;
-      if (turning) onTurnEnd(); else onNudgeEnd();
+      if (ended === 'turn') onTurnEnd(); else onNudgeEnd();
     };
 
     const keyUp = (event: KeyboardEvent) => {
@@ -310,16 +353,17 @@ export function useWorldShortcuts({
       // Camera-relative nudge — WASD and the arrows move in the view plane;
       // PageUp/Down, and Space/X as the fly binds them, stay on ZenGin's
       // vertical axis. Shift multiplies the step by ten and Ctrl by a tenth
-      // (#386). In rotate mode the same keys turn the selection instead
-      // (#387). Ctrl starts a gesture only on keys whose Ctrl chord is
-      // nobody's (`CTRL_NUDGE_KEYS`); Ctrl+S, Ctrl+D fall through to those.
+      // (#386). In rotate mode the same keys turn the selection instead, and
+      // Q/E turn it in either mode (#387, #404). Ctrl starts a gesture only on
+      // keys whose Ctrl chord is nobody's (`CTRL_NUDGE_KEYS`); Ctrl+S, Ctrl+D
+      // fall through to those.
       //
       // Free movement starts continuously at once after a fine tap; snapped
       // movement and rotation retain the hold delay. The gesture is previewed and only
       // committed on the last key up, so a hold is one undo entry like a gizmo
       // drag, and the OS's auto-repeat keydowns are swallowed — the frame loop
       // owns the motion.
-      if (NUDGE_DELTAS[key] && !event.altKey
+      if (deltaOf(key) && !event.altKey
         && (!(event.ctrlKey || event.metaKey) || CTRL_NUDGE_KEYS.has(key))) {
         if (isTypingOrInPopover(event.target) || dialogOpen) return;
         // Reserves the arrow keys for the scene tree's own navigation.
@@ -333,19 +377,33 @@ export function useWorldShortcuts({
         // nothing selected this key is nobody's, and swallowing it would
         // stop the asset list scrolling for a nudge that never happens.
         if (held.size === 0 && useWorldStore.getState().selection.length === 0) return;
-        // The step is the one the Snap control is showing: the grid in
-        // translate mode, the angle in rotate mode — never the other mode's,
-        // which would be an invisible value driving a visible key.
-        const grid = turning ? snapAngleDegrees : snapGrid;
-        if (held.size === 0 && !(turning ? onTurnBegin(grid) : onNudgeBegin(grid))) return;
+        // The gesture's verb is its first key's: a move and a turn are two
+        // edits and two undo entries, so a key of the other verb waits for the
+        // gesture to end rather than joining it.
+        if (gesture !== null && verbOf(key) !== gesture) {
+          event.preventDefault();
+          return;
+        }
+        const verb = gesture ?? verbOf(key);
+        // The step is the one the Snap control is showing for that verb: the
+        // grid when it moves, the angle when it turns — never the other
+        // verb's, which would be an invisible value driving a visible key.
+        const step = verb === 'turn' ? snapAngleDegrees : snapGrid;
+        if (held.size === 0) {
+          freeMovement = verb === 'nudge' && step === 0;
+          holdDelay = freeMovement ? 0 : NUDGE_HOLD_DELAY;
+          if (!(verb === 'turn' ? onTurnBegin(step) : onNudgeBegin(step))) return;
+          gesture = verb;
+        }
         event.preventDefault();
-        const base = grid > 0 ? grid : (turning ? TURN_FALLBACK_STEP : NUDGE_FALLBACK_STEP);
-        const speed = Math.max(turning ? TURN_HOLD_SPEED : NUDGE_HOLD_SPEED,
+        const base = step > 0 ? step : (verb === 'turn' ? TURN_FALLBACK_STEP : NUDGE_FALLBACK_STEP);
+        const speed = Math.max(verb === 'turn' ? TURN_HOLD_SPEED : NUDGE_HOLD_SPEED,
           base * NUDGE_HOLD_STEPS_PER_SECOND);
         held.set(key, { since: performance.now(), speed });
-        const [r, u, f] = NUDGE_DELTAS[key];
-        const step = base * factor;
-        by([r * step, u * step, f * step]);
+        const [r, u, f] = deltaOf(key) as [number, number, number];
+        const delta = base * factor;
+        const by = verb === 'turn' ? onTurnBy : onNudgeBy;
+        by([r * delta, u * delta, f * delta]);
         if (frame === null) {
           lastFrame = performance.now();
           frame = requestAnimationFrame(tick);

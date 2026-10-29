@@ -5,7 +5,7 @@ import '@testing-library/jest-dom';
 import WorldSurface from '../src/renderer/components/world/WorldSurface';
 import { useWorldStore } from '../src/renderer/store/worldStore';
 import { useProjectStore } from '../src/renderer/store/projectStore';
-import { rotationAboutUp } from 'zen-world';
+import { rotationAbout, rotationAboutUp } from 'zen-world';
 import { SUMMARY, makeWorldEditorApi, vobIndex, waynetPayload } from './worldFixtures';
 
 /**
@@ -513,7 +513,7 @@ describe('arrow-key nudge', () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
-  it('turns the selection instead in rotate mode — D yaws it right by 1° (#387)', async () => {
+  it('turns the selection instead in rotate mode — E yaws it right by 1° (#404)', async () => {
     // A `snapGrid` left over from translate mode is invisible in rotate mode
     // (the Snap control edits the angle there), so it must not reach the turn.
     await openWorld();
@@ -521,13 +521,42 @@ describe('arrow-key nudge', () => {
     fireEvent.keyDown(window, { key: '2' });
     await act(async () => { useWorldStore.getState().selectVob(1); });
 
-    tap('d');
+    tap('e');
 
     await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
     const [ops] = api.applyWorldOps.mock.calls[0] as [Array<{ op: string; vob: number; to: number[] }>];
     expect(ops).toMatchObject([{ op: 'RotateVob', vob: 1 }]);
     const turn = Math.PI / 180;
     expect(ops[0].to).toEqual(rotationAboutUp(turn).map((value) => expect.closeTo(value, 6)));
+  });
+
+  it('yaws with Q in move mode too, as one undoable turn (#404)', async () => {
+    await openWorld();
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+
+    tap('q');
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledTimes(1));
+    const [ops] = api.applyWorldOps.mock.calls[0] as [Array<{ op: string; to: number[] }>];
+    expect(ops).toMatchObject([{ op: 'RotateVob', vob: 1 }]);
+    const turn = Math.PI / 180;
+    expect(ops[0].to).toEqual(rotationAboutUp(-turn).map((value) => expect.closeTo(value, 6)));
+  });
+
+  it('leans the selection sideways with D in rotate mode, about camera-forward (#404)', async () => {
+    await openWorld();
+    fireEvent.click(screen.getByTestId('world-gizmo-rotate'));
+    await chooseStep('90°');
+    await act(async () => { useWorldStore.getState().selectVob(1); });
+
+    tap('d');
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalled());
+    const [ops] = api.applyWorldOps.mock.calls[0] as [Array<{ op: string; to: number[] }>];
+    // The camera looks down +Z, so a lean to the right is -90° about it.
+    expect(ops[0].to).toEqual(
+      rotationAbout([0, 0, 1], -Math.PI / 2).map((value) => expect.closeTo(value, 6)),
+    );
   });
 
   it('pitches with W about camera-right, snapped to the angle step', async () => {

@@ -37,6 +37,7 @@ function bindWorld() {
     armed: true,
     gizmoMode: 'translate',
     snapGrid: 0,
+    snapAngleDegrees: 0,
     setGizmoMode: noop,
     onCopy: noop,
     onPaste: noop,
@@ -50,6 +51,9 @@ function bindWorld() {
     onNudgeBegin: () => true,
     onNudgeBy: noop,
     onNudgeEnd: noop,
+    onTurnBegin: () => true,
+    onTurnBy: noop,
+    onTurnEnd: noop,
     onHistory: noop,
   } as unknown as WorldShortcutsInput));
 }
