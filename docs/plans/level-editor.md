@@ -3256,30 +3256,32 @@ rather than nowhere (`docs/architecture/level-editor.md` §8). So a gap is a
 fact about the day that may or may not be a defect, where an overlap is a day
 the scripts do not determine.
 
-**What retail does, and why it is not a cliff.** 11 of the 1,137 routines leave
-exactly one hole each: 720, 600, 540, 420, 240, 60, 50, 30, 30, 30 and 7
-minutes. That is a spread, not two populations. The top five are plainly
-deliberate half- and quarter-day routines, the 7-minute one is plainly not, and
-nothing in between announces where the line falls. A threshold at 60 minutes
-fires four times on the whole of Gothic II; a threshold anywhere else is equally
-defensible, which is the problem.
+**What retail does, and why it is not a cliff.** 11 of the 1,154 routines the
+index now carries leave exactly one hole each: 720, 600, 540, 420, 240, 60, 50,
+30, 30, 30 and 7 minutes. That is a spread, not two populations. The top five
+are plainly deliberate half- and quarter-day routines, the 7-minute one is
+plainly not, and nothing in between announces where the line falls. Every
+cut-off is equally defensible, which is the problem.
 
 **So this is a measurement card before it is a rule card**, in §16.22's manner:
 the question is not "is a gap bad" but "is there a hole size retail does not
 write". The instrument exists —
-`daedalus-dialog-editor/scripts/check-routine-coverage.js` already reports the
-distribution — so the work is a re-run and a reading, not a script.
+`daedalus-dialog-editor/scripts/check-routine-coverage.js` — so the work is a
+re-run and a reading, not a script.
 
-**And the re-run is owed anyway.** The 11 were counted 2026-09-01, before
-`prototype_declaration` took `$.block` lifted the index from 81% to 99%, and the
-1,128 entries that recovered are `DMT_DementorAmbient.d`'s 17 walker routines —
-66 entries apiece, the densest in the corpus and the likeliest to change the
-shape of this tail.
+**The re-run is done (2026-10-29) and the tail did not move.** 1,725 files,
+6,215 of 6,275 `TA`-family calls indexed (99.0%), 1,154 routines, the same
+eleven routines with the same eleven numbers, 8 routines overlapping as before.
+The 17 `DMT_DementorAmbient.d` walker routines the `$.block` fix recovered added
+no gap, so 2026-09-01's 1,137/11 was the whole picture rather than a truncated
+one — this is a count of routines, not of holes. The gap is already drawn where
+an author edits it (`RoutineEditor` marks it and says no activity covers the
+time), so what is left is the choice in #236, not a measurement.
 
 **A measurement is allowed to kill its own check**, as occupancy's did (§16.22).
-If the re-run shows the same spread with no cliff, the honest outcome is no gap
-rule at all and this closes as answered rather than as built. Corpus is
-`mdk/Content` — the maintainer's machine, not CI, so this is not agent-ready either.
+The same spread with no cliff means no gap rule and a close as answered rather
+than as built; #236 carries the options and the recommendation. Corpus is
+`mdk/Content` — the maintainer's machine, not CI, so this was not agent-ready.
 
 ### 16.40 A decal edit was not redrawn (fixed), and `visualCamAlign` is unread (2026-10-12; #391)
 
@@ -3367,5 +3369,58 @@ both want the same machine and neither wants a candidate world.
 
 A row that fails here is a defect and gets its own issue; this list only records
 that nobody has looked.
+
+### 16.42 Swapping a world's mesh source — both halves exist, the seam does not (2026-10-29; #419)
+
+**The question is not a category error, and it is not a world edit either.** A
+`.3DS` is never stored in a `.zen`: a VOB carries the visual's bare file name
+(`NW_CRATE.3DS`) and the geometry lives in the mounted VFS — a VDF, or a loose
+file in a mod. So "replace this world's mesh" is one of two edits, and **both
+already work**:
+
+1. **The same name, new contents.** Put the re-exported `.3DS` (and any changed
+   `.TGA`) into one of the GMBT project's asset folders, then press **Compile**
+   in the Assets panel (#296): `gmbt compile --full --noupdatesubtitles`, which
+   releases the VFS, converts through the headless game and remounts;
+   `WorldSurface` re-reads the world's visuals afterwards, so the viewport and
+   every listing show the new geometry. This is the Blender case, and it needs
+   no op at all — the world was never holding the mesh.
+2. **A different name on these VOBs.** Preview any placeable mesh in the Assets
+   panel and press **Use as visual** (§16.26 row 1): one `SetVobProp` per
+   selected VOB, one batch, one undo entry. It writes the *compiled* name the
+   browser lists (`.MRM`) where retail stores the source name (`.3DS`) — the
+   engine and `extractVisual` resolve either, so it draws; the file only differs
+   from what Spacer would have written.
+
+**What is missing is the seam between them**, and it is three narrow things:
+
+- **No import.** The `.3DS` has to be dropped into an asset folder by hand. The
+  Assets panel browses the mounted VFS, never the disk, so it cannot say which
+  folders those are, and a file outside a configured source is simply not
+  visible to the app or to GMBT.
+- **No single-file compile.** The only conversion path is GMBT's project-wide
+  `--full` run, which converts everything in `_work`. **Whether the game's
+  converter can be pointed at one file is unmeasured, and it is the premise the
+  cheap version of this feature rests on.** If it cannot, the feature is a
+  shorter loop — copy in, compile, remount, refresh, keep the assignment — not
+  a cheap one.
+- **No assignment where there is none.** `SetVobProp.visual` *renames* a visual,
+  so it refuses the 15,749 retail VOBs whose visual type is `UNKNOWN` (38.0 % of
+  41,393) and refuses decals outright. §14.1 1.7's assignment half is still a
+  decision, and a swap that lands on one of those VOBs hits exactly that
+  refusal rather than the swap itself.
+
+**So the card's shape is one verb — "Replace mesh…"**, on a selected VOB or on
+an asset row: pick a file, get it into the GMBT project's mesh source, compile,
+remount, write the new name through the existing op. Two decisions are the
+maintainer's, and both are about what the tool may touch outside its own
+project: whether it copies an imported file into a source it does not own (and
+which one) or only accepts files already inside a configured source; and whether
+1.7's assignment rides along or stays a separate card.
+
+**Its engine half is not this section's.** §16.41 row 15 already says the
+Compile button has never run against a real GMBT project — nothing in it has
+been seen converting anything — so a swapped mesh is unwitnessed for the same
+reason, and a witness here starts by clearing that row.
 
 ---
