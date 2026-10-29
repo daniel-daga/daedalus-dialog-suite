@@ -16,7 +16,7 @@ import * as THREE from 'three';
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 
 import { NavController } from '../src/renderer/world/NavController';
-import { SLOW_MULTIPLIER } from '../src/renderer/world/flyNav';
+import { FLY_SPEED } from '../src/renderer/world/flyNav';
 import { CameraSlots, type CameraSlotOutcome } from '../src/renderer/world/cameraSlots';
 
 const WIDTH = 800;
@@ -46,7 +46,7 @@ function key(type: 'keydown' | 'keyup', code: string, modifiers: Partial<Keyboar
   return event;
 }
 
-function harness({ hasMesh = true, ceiling = CEILING, deferLock = false } = {}) {
+function harness({ hasMesh = true, ceiling = CEILING, deferLock = false, reach = 50 } = {}) {
   const host = document.createElement('div');
   const canvas = document.createElement('canvas');
   host.appendChild(canvas);
@@ -62,7 +62,9 @@ function harness({ hasMesh = true, ceiling = CEILING, deferLock = false } = {}) 
   let updates = 0;
   const controls = {
     enabled: true,
-    target: new THREE.Vector3(0, 0, 0),
+    // Straight below the camera, `reach` away — the distance a fly begins with,
+    // which used to be its speed (#405).
+    target: new THREE.Vector3(0, 50 - reach, 0),
     update: () => { updates += 1; },
   };
   const gizmo = { enabled: true, helperVisible: true };
@@ -234,20 +236,55 @@ describe('NavController — the fly', () => {
     expect(key('keydown', 'KeyW').defaultPrevented).toBe(true);
   });
 
-  it('Ctrl+W creeps, and is the fly\'s rather than a shortcut\'s (#363)', () => {
+  it('a Space tap moves the same bounded distance wherever the pivot is (#405)', () => {
+    const rise = (reach: number) => {
+      const h = stand({ hasMesh: false, reach });
+      h.beginFly();
+      key('keydown', 'Space');
+      h.nav.step(0);
+      // A tap at real frame times — three 50 ms frames, `MAX_STEP_SECONDS`
+      // well out of the way.
+      h.nav.step(50);
+      h.nav.step(100);
+      h.nav.step(150);
+      h.endFly();
+      return h.camera.position.y - 50;
+    };
+
+    const near = rise(50);
+    // 1500 m away is where the old pivot-derived speed turned a tap into most
+    // of a kilometre.
+    const far = rise(1500);
+    expect(near).toBeCloseTo(FLY_SPEED * 0.15, 6);
+    expect(far).toBeCloseTo(near, 6);
+    expect(far).toBeLessThan(5);
+  });
+
+  it('Shift hurries the fly, and is the only modifier it reads (#405)', () => {
     const h = stand({ hasMesh: false });
     h.beginFly();
-    expect(key('keydown', 'KeyW', { ctrlKey: true }).defaultPrevented).toBe(true);
+    key('keydown', 'KeyW', { shiftKey: true });
     h.nav.step(0);
     h.nav.step(100);
-    const crept = h.camera.position.distanceTo(new THREE.Vector3(0, 50, 0));
+    expect(h.camera.position.distanceTo(new THREE.Vector3(0, 50, 0)))
+      .toBeCloseTo(FLY_SPEED * 0.1 * 4, 6);
+  });
 
-    key('keyup', 'ControlLeft');
+  it("Ctrl+W is the app's even during a fly, so #415's chords keep working", () => {
+    const h = stand({ hasMesh: false });
+    h.beginFly();
+    expect(key('keydown', 'KeyW', { ctrlKey: true }).defaultPrevented).toBe(false);
+    expect(key('keydown', 'KeyS', { ctrlKey: true }).defaultPrevented).toBe(false);
+    expect(key('keydown', 'KeyA', { ctrlKey: true }).defaultPrevented).toBe(false);
+    h.nav.step(0);
+    h.nav.step(100);
+    expect(h.camera.position.distanceTo(new THREE.Vector3(0, 50, 0))).toBeCloseTo(0, 9);
+
+    // A plain W after the chord still moves: the fly has not lost the key.
+    expect(key('keydown', 'KeyW').defaultPrevented).toBe(true);
     h.nav.step(200);
-    const walked = h.camera.position.distanceTo(new THREE.Vector3(0, 50, 0)) - crept;
-    // Speed 50 (the reach at the press) for 0.1 s: 5 at full pace.
-    expect(walked).toBeCloseTo(5, 3);
-    expect(crept).toBeCloseTo(5 * SLOW_MULTIPLIER, 3);
+    expect(h.camera.position.distanceTo(new THREE.Vector3(0, 50, 0)))
+      .toBeCloseTo(FLY_SPEED * 0.1, 6);
   });
 
   it('W with no fly in hand is the surface\'s, untouched', () => {

@@ -99,7 +99,7 @@ export const KEYBOARD_SHORTCUTS: readonly KeyboardShortcut[] = [
   { group: 'World editor', keys: 'Home', action: 'Frame the world' },
   { group: 'World editor', keys: 'F3', action: 'Walk with WASD; F3 again to stop' },
   {
-    group: 'World editor', keys: 'Right-drag + WASD, Space, X', action: 'Fly; Shift for faster, Ctrl for slower',
+    group: 'World editor', keys: 'Right-drag + WASD, Space, X', action: 'Fly; Shift for faster',
     probe: { listener: 'fly', events: ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'KeyX'].map((code) => ({ code })) },
   },
   {

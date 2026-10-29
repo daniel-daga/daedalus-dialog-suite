@@ -4185,12 +4185,25 @@ halves are needed: the first sees where focus *is*, the second what is *open*.
 - **Escape clears the selection**, but not while a surface dialog is open —
   it is a second listener on the same keydown as MUI's own Escape-close, and
   would otherwise discard the selection the closing dialog was about.
+- **The fly's speed is one fixed number, and Ctrl is not its modifier**
+  (2026-10-29, #405, #415). It used to be the camera-to-pivot distance clamped
+  2–2000 m/s, which made a tap cost `distance × held time`: framed on the far
+  side of an island, a 0.6 s Space press rose nearly a kilometre — "ich tappe
+  LEER und mich fetzts tausend Meter in den Himmel". It is now `FLY_SPEED` in
+  `renderer/world/flyNav.ts` — **10 m/s, a little over twice the walk's 4**,
+  with **Shift ×4** for the hurry and no Ctrl creep at all. A Ctrl-modified
+  move is *declined* rather than swallowed, so Ctrl+S, Ctrl+A and Ctrl+W stay
+  the app's own shortcuts in the viewport: the fly's capture listener used to
+  claim them and Save looked dead mid-hold. Dolly and pan keep their
+  pivot-distance scaling in `cameraNav.ts`, where it is what makes aiming
+  precise — the two are not the same question.
 - **WASD and arrow keys nudge in the camera's horizontal plane** (left/right
   follow camera-right; forward/back follow the camera view), while PageUp/Down
   and Space/X (the fly's up/down) stay on ZenGin's vertical axis. Space is left
   to a focused button and to the Assets panel, which places on it. Shift
-  multiplies the step by ten and Ctrl by a tenth, as they do the fly (#386),
-  and are read live, so either pressed mid-hold changes the speed. The default
+  multiplies the step by ten and Ctrl by a tenth (#386), and are read live, so
+  either pressed mid-hold changes the speed — the nudge's own rule, since
+  neither is the fly's except Shift (#405). The default
   step is 1 cm, or 1 mm with Ctrl (#403). The step is the
   *translate* snap grid when one is set and only while the Snap control is
   showing it. The camera axes are queried for each nudge, so orbiting changes

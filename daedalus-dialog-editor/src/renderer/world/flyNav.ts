@@ -2,10 +2,10 @@ import * as THREE from 'three';
 
 // Fly navigation — the first-person half of the camera, beside the orbit in
 // `cameraNav` (plan §16.26 row 3). The idiom every 3D editor shares: hold the
-// right button to look, WASD to move, Space/X for up/down, Shift to hurry, Ctrl
-// to creep (#363). No mode to enter and none to leave, which is what lets it share the viewport
-// with a right *click* that opens the context menu — the hold and the click
-// are told apart by whether anything moved (`moved`).
+// right button to look, WASD to move, Space/X for up/down, Shift to hurry
+// (#363, #405). No mode to enter and none to leave, which is what lets it share
+// the viewport with a right *click* that opens the context menu — the hold and
+// the click are told apart by whether anything moved (`moved`).
 //
 // No gravity and no collision: this is a fly, not a walk. The walk that
 // collides against the picking BVH is `walkNav`, the other half of the row.
@@ -28,14 +28,15 @@ export function flyMoveFor(code: string): FlyMove | null {
  *  per width. */
 export const LOOK_RADIANS_PER_PIXEL = 0.003;
 export const FAST_MULTIPLIER = 4;
-/** Ctrl's factor: the inverse of Shift's, for lining up on a barrel from a
- *  pivot that set the pace for a whole hillside. */
-export const SLOW_MULTIPLIER = 1 / FAST_MULTIPLIER;
-/** Three units are metres (`ZEN_TO_THREE_SCALE`). Two metres a second is a
- *  walk indoors; two kilometres a second crosses the largest retail world in
- *  under a second, which is as fast as anyone can steer. */
-export const MIN_FLY_SPEED = 2;
-export const MAX_FLY_SPEED = 2000;
+/**
+ * Metres per second before Shift — one number for every hold, whatever the
+ * orbit pivot is doing (#405). It used to be the camera-to-pivot distance, so
+ * a camera framed on the far side of an island flew at the island's width per
+ * second and a Space tap threw it a kilometre into the sky. Ten is a little
+ * over twice the walk's pace: slow enough that a tap is a step, fast enough
+ * that a world is crossable at Shift's forty.
+ */
+export const FLY_SPEED = 10;
 /** Short of the pole, so the Euler decomposition never flips and the
  *  `lookAt` that OrbitControls does on the way back has an up to use. */
 const PITCH_LIMIT = Math.PI / 2 - 0.01;
@@ -43,16 +44,6 @@ const PITCH_LIMIT = Math.PI / 2 - 0.01;
  *  rather than the whole stall's worth in one jump. The walk shares it: a
  *  stalled tab that integrated a whole second of gravity would tunnel a floor. */
 export const MAX_STEP_SECONDS = 0.1;
-
-/**
- * Metres per second for a fly begun with the orbit pivot this far away: the
- * distance itself, so that a camera framed on a barrel creeps and one framed
- * on the island crosses it in about a second — the same scaling OrbitControls
- * gives its dolly and pan, for the same reason.
- */
-export function flySpeedFor(pivotDistance: number): number {
-  return Math.min(Math.max(pivotDistance, MIN_FLY_SPEED), MAX_FLY_SPEED);
-}
 
 // Scratch, so a frame allocates nothing.
 const euler = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -73,7 +64,6 @@ export function turnCamera(camera: THREE.Camera, dx: number, dy: number): void {
 export class Fly {
   private readonly held = new Set<FlyMove>();
   private fast = false;
-  private slow = false;
   private last: number | null = null;
   /** Whether the hold turned or moved the camera at all — what tells a fly
    *  from a right click. */
@@ -81,7 +71,7 @@ export class Fly {
 
   constructor(
     private readonly camera: THREE.Camera,
-    /** Metres per second, before Shift or Ctrl. */
+    /** Metres per second, before Shift. */
     readonly speed: number,
   ) {}
 
@@ -93,19 +83,22 @@ export class Fly {
 
   /** A key went down. True if the fly took it, so the caller can keep it from
    *  whoever else binds that letter. `shiftKey` is read on every key event,
-   *  which is how Shift itself is seen going down and up; `ctrlKey` likewise. */
+   *  which is how Shift itself is seen going down and up. A `ctrlKey`-modified
+   *  move is declined instead: Ctrl+S, Ctrl+A and Ctrl+W are the app's, and a
+   *  viewport that swallowed them made Save look dead (#415). */
   press(code: string, shiftKey: boolean, ctrlKey = false): boolean {
     this.fast = shiftKey;
-    this.slow = ctrlKey;
+    if (ctrlKey) return false;
     const move = flyMoveFor(code);
     if (move === null) return false;
     this.held.add(move);
     return true;
   }
 
-  release(code: string, shiftKey: boolean, ctrlKey = false): void {
+  /** A key went up. Still clears the move when Ctrl is down: a Ctrl pressed
+   *  mid-hold must not leave the key it joined stuck down. */
+  release(code: string, shiftKey: boolean): void {
     this.fast = shiftKey;
-    this.slow = ctrlKey;
     const move = flyMoveFor(code);
     if (move !== null) this.held.delete(move);
   }
@@ -118,7 +111,7 @@ export class Fly {
     this.last = now;
     if (this.held.size === 0 || dt === 0) return;
 
-    const distance = this.speed * (this.fast ? FAST_MULTIPLIER : 1) * (this.slow ? SLOW_MULTIPLIER : 1) * dt;
+    const distance = this.speed * (this.fast ? FAST_MULTIPLIER : 1) * dt;
     stride.set(
       (this.held.has('right') ? 1 : 0) - (this.held.has('left') ? 1 : 0),
       0,

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { pivotAt } from './cameraNav';
 import { isTypingOrInPopover } from './keyboardTarget';
 import { cameraSlotFor, type CameraSlotOutcome, type CameraSlots } from './cameraSlots';
-import { Fly, flyMoveFor, flySpeedFor, pivotAhead } from './flyNav';
+import { Fly, FLY_SPEED, flyMoveFor, pivotAhead } from './flyNav';
 import { Walk, walkMoveFor, findWalkEntry, WALK_EXIT_PIVOT_DISTANCE } from './walkNav';
 
 // Moving the camera (level-editor.md §16.26 row 3), lifted out of
@@ -76,7 +76,8 @@ export class NavController {
    *  the right click that opens the context menu. */
   private flew = false;
   /** The distance to the pivot when the hold began: what the release falls
-   *  back to when there is no world mesh under the centre of the view. */
+   *  back to when there is no world mesh under the centre of the view. Not a
+   *  speed — the fly has one of those (#405). */
   private flyReach = 0;
   private flyLastX = 0;
   private flyLastY = 0;
@@ -166,10 +167,12 @@ export class NavController {
 
   // ── fly navigation ────────────────────────────────────────────────────────
   //
-  // Hold the right button: the drag looks, WASD/Space/X moves, Shift hurries,
-  // Ctrl creeps (`flyNav`). The right button is free — OrbitControls' RIGHT is `null` —
-  // except for the click that opens the context menu, and a hold is told from
-  // a click by whether it moved anything (`flew`).
+  // Hold the right button: the drag looks, WASD/Space/X moves, Shift hurries
+  // (`flyNav`). Ctrl is nobody's in the fly — Ctrl+S/A/W are the app's, and the
+  // fly declines them rather than swallowing them (#415). The right button is
+  // free — OrbitControls' RIGHT is `null` — except for the click that opens the
+  // context menu, and a hold is told from a click by whether it moved anything
+  // (`flew`).
 
   private readonly onFlyPointerDown = (event: PointerEvent) => {
     // A walk and a fly would both write the camera every frame.
@@ -177,7 +180,7 @@ export class NavController {
     const { camera, controls } = this.options;
     this.flew = false;
     this.flyReach = camera.position.distanceTo(controls.target);
-    this.fly = new Fly(camera, flySpeedFor(this.flyReach));
+    this.fly = new Fly(camera, FLY_SPEED);
     this.flyLastX = event.clientX;
     this.flyLastY = event.clientY;
     controls.enabled = false;
@@ -212,7 +215,7 @@ export class NavController {
     if (this.fly === null) return;
     const taken = event.type === 'keydown'
       ? this.fly.press(event.code, event.shiftKey, event.ctrlKey)
-      : (this.fly.release(event.code, event.shiftKey, event.ctrlKey), flyMoveFor(event.code) !== null);
+      : (this.fly.release(event.code, event.shiftKey), flyMoveFor(event.code) !== null);
     if (!taken) return;
     event.preventDefault();
     event.stopPropagation();

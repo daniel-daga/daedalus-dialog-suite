@@ -1,9 +1,8 @@
 /**
  * Fly navigation — the first-person half of the viewport's camera (plan
  * §16.26 row 3). Right-mouse-hold looks, WASD moves, Space/X climbs and
- * descends, Shift is faster, Ctrl slower (#363), and
- * the speed comes from how far the orbit pivot was when the hold began, so a
- * 1 km island and a barrel are both crossable at a sensible pace.
+ * descends, Shift is faster and Ctrl is not the fly's at all (#405, #415).
+ * One fixed base speed, whatever the orbit pivot is doing (#405).
  *
  * Real `three` under jsdom: this is camera arithmetic, and none of it needs a
  * GL context.
@@ -13,8 +12,8 @@
 
 import * as THREE from 'three';
 import {
-  Fly, flyMoveFor, flySpeedFor, pivotAhead,
-  FAST_MULTIPLIER, SLOW_MULTIPLIER, MIN_FLY_SPEED, MAX_FLY_SPEED, LOOK_RADIANS_PER_PIXEL,
+  Fly, flyMoveFor, pivotAhead,
+  FLY_SPEED, FAST_MULTIPLIER, LOOK_RADIANS_PER_PIXEL,
 } from '../src/renderer/world/flyNav';
 
 const lookingDownMinusZ = () => {
@@ -38,10 +37,20 @@ describe('flyNav', () => {
     expect(flyMoveFor('KeyQ')).toBeNull();
   });
 
-  test('speed is the pivot distance per second, clamped so a wall and a whole island both work', () => {
-    expect(flySpeedFor(300)).toBe(300);
-    expect(flySpeedFor(0.01)).toBe(MIN_FLY_SPEED);
-    expect(flySpeedFor(1e6)).toBe(MAX_FLY_SPEED);
+  test('a tap moves the base speed times the time held, so a press is a step and not a leap', () => {
+    const camera = lookingDownMinusZ();
+    const fly = new Fly(camera, FLY_SPEED);
+
+    // A 150 ms tap at real frame times: three 50 ms frames.
+    fly.press('Space', false);
+    fly.step(0);
+    fly.step(50);
+    fly.step(100);
+    fly.step(150);
+    expect(camera.position.y).toBeCloseTo(FLY_SPEED * 0.15, 9);
+    // A click-sized tap is a metre and a half whatever the pivot is doing: the
+    // pivot's distance is not a speed any more (#405).
+    expect(camera.position.y).toBeLessThan(5);
   });
 
   test('a horizontal mouse drag turns about the world up axis, a vertical one pitches', () => {
@@ -130,20 +139,21 @@ describe('flyNav', () => {
     expect(camera.position.z).toBeCloseTo(-FAST_MULTIPLIER - 1, 9);
   });
 
-  test('Ctrl divides the speed for as long as it is held', () => {
+  test("Ctrl is not the fly's: a Ctrl-modified move is declined, so the app's chord runs (#415)", () => {
     const camera = lookingDownMinusZ();
     const fly = new Fly(camera, 10);
 
-    fly.press('ControlLeft', false, true);
-    fly.press('KeyW', false, true);
+    expect(fly.press('KeyW', false, true)).toBe(false);
+    expect(fly.press('KeyS', false, true)).toBe(false);
+    expect(fly.press('KeyA', false, true)).toBe(false);
     fly.step(0);
     fly.step(100);
-    expect(SLOW_MULTIPLIER).toBeLessThan(1);
-    expect(camera.position.z).toBeCloseTo(-SLOW_MULTIPLIER, 9);
+    expect(camera.position.toArray()).toEqual([0, 0, 0]);
 
-    fly.release('ControlLeft', false, false);
+    // And Ctrl letting go mid-hold does not strand a key: a plain press moves.
+    expect(fly.press('KeyW', false, false)).toBe(true);
     fly.step(200);
-    expect(camera.position.z).toBeCloseTo(-SLOW_MULTIPLIER - 1, 9);
+    expect(camera.position.z).toBeCloseTo(-1, 9);
   });
 
   test('a frame after a long stall moves one bounded step, not the whole stall', () => {

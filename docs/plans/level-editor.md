@@ -2754,16 +2754,15 @@ descend along the world's up (rebound from Q/E on 2026-09-07), **Shift** is
 four times faster. No mode key: the right
 button was free (OrbitControls' RIGHT is `null`) except for the click that
 opens the context menu, and a hold is told from a click by whether it moved
-anything — a hold that did opens no menu on release. Speed is the distance
-from camera to orbit pivot at the moment the hold began, clamped to 2–2000
-m/s, so a camera framed on a barrel walks and one framed on the island crosses
-it in about a second. On release the orbit pivot is re-seated on the world
+anything — a hold that did opens no menu on release. Speed is one fixed
+`FLY_SPEED`, 10 m/s with Shift ×4, at any pivot distance (§16.44 — it began as
+the pivot distance itself, and a Space tap at 1500 m rose 900 m). On release the orbit pivot is re-seated on the world
 mesh under the centre of the view, or failing that at the starting distance
 along the view axis, so the next orbit turns about what is being looked at and
 the next dolly and pan keep their scale; W/E are the fly's while held and the
 surface's gizmo-mode keys again after; the gizmo is switched off for the
 hold exactly as it is for an Alt+left orbit. Pure logic is
-`renderer/world/flyNav.ts` (`Fly`, `flySpeedFor`, `pivotAhead`), wiring in
+`renderer/world/flyNav.ts` (`Fly`, `FLY_SPEED`, `pivotAhead`), wiring in
 `WorldViewport` beside the context-menu handler. *Landed 2026-09-02, Spacer's
 camera slots:* four per open world, **Ctrl+Shift+1..4** stores the pose
 (camera and orbit pivot), **Ctrl+1..4** recalls it — by key code, since Shift
@@ -2898,7 +2897,9 @@ this is about a keystroke and must not reflow the view it is about.
 **4. Fly speed** — "a bit fast by default" on first look (maintainer), then
 **confirmed fine, 2026-09-02** on further use. `flySpeedFor`
 (`renderer/world/flyNav.ts`) derives speed from the distance to the orbit
-pivot at hold-start, clamped 2–2000 m/s. No number changed.
+pivot at hold-start, clamped 2–2000 m/s. No number changed. **Superseded
+2026-10-29 by §16.44 (#405):** the distance-derived speed was the defect, not
+the fix — the fly has one fixed 10 m/s now.
 
 ### 16.28 An arbitrary-length asset folder list, project root default (2026-09-02, maintainer)
 
@@ -3465,5 +3466,42 @@ compile, not one that owns the mesh.
 **So a card, if it ever is one, is a hand-off rather than a writer** — export
 the part ZEN's mesh for Blender, take the re-export back, and drive the compile
 step. Decided against today; recorded so the question stops being re-derived.
+
+---
+
+### 16.44 The fly's speed is a number, not a distance (2026-10-29; #405, #415)
+
+**Reported:** *"ich tappe LEER und mich fetzts tausend Meter in den Himmel"* — a
+short Space tap in the fly moves the camera an absurd distance upward. Its
+distance is the reporter's own impression, not a measurement, and the report
+was never reproduced on the machine; the cause needed no reproduction. The fly's
+base speed *was* the camera-to-pivot distance clamped 2–2000 m/s
+(`flyNav.ts:flySpeedFor`), and the pivot is the blue dot: set by a double-click
+on the terrain, and again by every fly release. A tap therefore cost
+`distance × held time`, and at 1500 m a 0.6 s press was 900 m. #416 is the same
+defect from the other end ("it works near the point and goes wild away from
+it") and is folded in here.
+
+**Decided 2026-10-29, amended the same day by #415:** one fixed, deliberately
+slow base with Shift to hurry, and **no Ctrl creep in the fly at all**.
+`FLY_SPEED` is **10 m/s** — a little over twice the walk's 4 — with Shift's
+existing ×4 for 40. A 150 ms tap is 1.5 m at any pivot distance. `flySpeedFor`,
+`MIN_FLY_SPEED`, `MAX_FLY_SPEED` and `SLOW_MULTIPLIER` are gone, and so is the
+comment that justified the derivation. `flyReach` survives as the release's
+pivot fallback, which is what it is for; dolly and pan keep their
+pivot-distance scaling in `cameraNav.ts`, untouched.
+
+**#415 is the same change, from the keyboard:** the fly's capture listener
+swallowed Ctrl+S, Ctrl+A and Ctrl+W, so Save did nothing during a hold and
+Ctrl+A also nudged the selection. A Ctrl-modified move is now *declined* —
+`Fly.press` returns false and lets the chord through — rather than merely
+ignored, and `release` still clears a held key whatever modifier joined it, so
+Ctrl pressed mid-hold cannot strand it. Shift is the only modifier the fly
+reads. The keyboard sheet's row for the fly says so now.
+
+**What this does not touch:** the pivot itself, orbit speeds, the walk, and
+which keys nudge a VOB. The nudge keeps Shift ×10 and Ctrl ×0.1 of its own
+accord — the architecture doc's "as they do the fly" clause was the stale half
+and is gone.
 
 ---
