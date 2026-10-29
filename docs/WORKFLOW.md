@@ -69,6 +69,13 @@ resolves to no heading.
 exist so deprioritised work stays visible as a decision rather than a silent
 drop.
 
+**A triage pass may label a report filed from outside the repo** — `area:*`,
+`user-feedback`, and a suggested `P*` — because four that arrived unlabelled in
+October sat outside the priority order until somebody noticed them. It may not
+set `deferred`, `triage`, `needs-decision` or `agent-ready`: those move work
+out of a run's path, or into it, and that stays a person's call (maintainer,
+2026-10-29).
+
 ## The rules that outlive any tracker
 
 **Anything said about future work is written down before the session ends.**
