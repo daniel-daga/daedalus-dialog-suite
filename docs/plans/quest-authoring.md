@@ -1,6 +1,7 @@
 # Quest authoring — a quest-level interface over topics, entries and `MIS_` state
 
-Agreed 2026-09-28. Phases 1 (#322), 2 (#323) and 3 (#324) have landed; phase 4 is #325.
+Agreed 2026-09-28. Phases 1 (#322), 2 (#323) and 3 (#324) have landed; phase 4
+(#325) is designed and decided but not built.
 
 ## Problem
 
@@ -120,6 +121,89 @@ while building:
 
 ### Phase 4 — named sub-stages
 
-An author-named stage within a running quest, such as "talked to Greg" or a
-counter like "3/5 sheep". The editor creates the variable behind it. How
-stages are declared and recognised is designed when this phase starts.
+**Designed and decided 2026-10-29 (#325). Not yet built.** An author-named stage
+within a running quest, such as "talked to Greg" or a counter like "3/5 sheep".
+
+**A stage is a script-backed flag or counter, not a new action type and not
+editor-side metadata.** It exists rather than a `B_LogEntry` line because a
+dialog has to branch on it, and it is a variable rather than a sidecar label
+because both the branch and the flag have to read correctly to a person and to
+any other tool looking at the scripts.
+
+**Naming: `STAGE_<QuestBase>_<Name>`** — the quest's `MIS_` base, so
+`STAGE_VerloreneSchafe_Sheep`. One prefix and two value shapes make the stage
+inventory a prefix scan of declared globals: no index, no sidecar, and a stage
+written in a file the editor never opened is still recognised. `MIS_` is the
+base because it is the quest key every other part of this uses
+(`buildQuestDiary`, `questConditions`, the graph); overloading `MIS_` itself is
+ruled out concretely, not stylistically — `getQuestMisVariableName` and
+`getCanonicalQuestKey` derive quest identity by stripping the prefix, so
+`MIS_X_SHEEP` would read as the quest `X_SHEEP` in all of them. The author types
+a title and the identifier is sanitised as `questNameFromTitle` does for quests;
+a name colliding case-insensitively with any declared global is refused, because
+two stages behind one name would merge silently.
+
+**Declaring** goes through `projectStore.addVariable(name, 'int', undefined,
+declarationFile, false)` beside the quest's `MIS_` — the call the implicit-quest
+upgrade already makes, so this adds no new write path. Unset ints are 0, which is
+`FALSE`, so no initialiser is written. A quest with no `MIS_` cannot own stages:
+the key would move when the quest is upgraded, orphaning every write, so creating
+a stage on an implicit quest offers the existing upgrade first and refuses
+otherwise.
+
+**Writing** is a **Set Stage** entry in the add-action menu beside Start Quest,
+producing one `SetVariableAction`: `STAGE_X_Name = TRUE;` for a flag,
+`STAGE_X_Name = STAGE_X_Name + 1;` for a counter (Daedalus has no compound
+assignment), and `= FALSE;` as a reset for a flag. No folding rule changes — a
+one-line assignment is already its own card, so phase 1's "only runs of two or
+more lines fold" stands. Recognition rides the existing Set Variable card: a
+variable that is a *declared* stage renders as a Stage card (quest, stage,
+"reached" / "counts up") with the raw line behind show-script, while a
+`STAGE_`-looking name that is not declared stays a plain Set Variable with a
+"not declared" hint and a register button — the way an undeclared quest on a step
+card already behaves. The counter expression needs no text parsing:
+`parseLiteralOrIdentifier` falls through to `node.text` for a non-literal right
+side, so the model holds `STAGE_X_Name + 1` and round-trips it as written.
+
+**Reading** is a **Stage** condition card beside phase 2's Quest State — quest →
+stage → "reached" / "not reached", or "at least N" for a counter — writing a
+`VariableCondition` (`== TRUE`, `== FALSE`, `>= 5`) and never a new condition
+type, for phase 2's reason: a new type comes back from a reload as a raw check.
+Recognition lives in a new `quest/domain/questStages.ts` beside
+`questConditions.ts` and accepts only a declared stage. "Not reached" is written
+`== FALSE`, matching "not started".
+
+**A counter's target is derived, not declared** (decided 2026-10-29): the
+largest `N` in a `>= N` / `== N` check of that stage anywhere in the project, and
+the page shows where it was read. No `MAX_`-style constant is invented — a helper
+constant vanilla does not have is what this plan's first decision rejects. A
+counter nothing compares shows "no target", which is a legitimate counter.
+
+**The quest page** gets a **Stages** section in `QuestDetails` (after the diary,
+before "Checked by"), built by `buildQuestStages` in the diary's manner: each
+stage with its kind, a jump to every write and every read through the same
+function/path machinery as `QuestDiaryItem`, and two page-level notes —
+*declared, never set* and *set, never checked*. Notes, not Problems findings: a
+stage the player only ever meets in a log entry is legitimate, and the
+project-wide "declared but never written is dead code" question is later and
+different. The page shows only static facts (where it is set, how many sites
+increment it, the target); "3 of 5" is a runtime value and the only place it
+could come from is the dialog simulator, which is out of scope here.
+
+**Rename is refused in the first slice** (decided 2026-10-29). A rename touches
+the declaration, every writer and every reader across files, one save at a time;
+the implicit-quest upgrade shows the per-file failure contract such a rename
+would inherit, and a half-renamed quest is the one state the page could not
+explain. The author adds the new stage and repoints the writes. **Delete**
+removes the declaration and refuses while any write or read still names the
+stage, and never edits a dialog on its own — silently deleting branches is worse
+than an error. All other writes are ordinary action edits through the existing
+save, re-read by the store sync.
+
+Slices: **1** — `questStages.ts` (inventory and write recognition), the
+`addVariable` path, the Set Stage menu entry and Stage card, the Stages section
+with its notes, for flags and counters together (counters are not a later
+slice: decided 2026-10-29). **2** — the Stage condition card, its recogniser,
+renderer and `conditionRegistry` routing (same phase, not a separate issue).
+Rename is not scheduled.
+
