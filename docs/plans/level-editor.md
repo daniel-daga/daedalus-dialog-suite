@@ -3372,11 +3372,11 @@ that nobody has looked.
 
 ### 16.42 Swapping a world's mesh source — both halves exist, the seam does not (2026-10-29; #419)
 
-**The question is not a category error, and it is not a world edit either.** A
-`.3DS` is never stored in a `.zen`: a VOB carries the visual's bare file name
+**A VOB's mesh is a name, not a blob.** It carries the visual's bare file name
 (`NW_CRATE.3DS`) and the geometry lives in the mounted VFS — a VDF, or a loose
-file in a mod. So "replace this world's mesh" is one of two edits, and **both
-already work**:
+file in a mod. So replacing a *prop's* mesh is one of two edits, and **both
+already work**. (The world's own geometry is the other half of the question and
+is not this section's: it is inside the file, and §16.43 answers it.)
 
 1. **The same name, new contents.** Put the re-exported `.3DS` (and any changed
    `.TGA`) into one of the GMBT project's asset folders, then press **Compile**
@@ -3422,5 +3422,48 @@ which one) or only accepts files already inside a configured source; and whether
 Compile button has never run against a real GMBT project — nothing in it has
 been seen converting anything — so a swapped mesh is unwitnessed for the same
 reason, and a witness here starts by clearing that row.
+
+### 16.43 The world mesh itself — in the file, and out of scope by decision (2026-10-29; #420)
+
+**Every way different from §16.42.** A prop's `.3DS` is a name the world refers
+to; **the world's own geometry is in the file** — the `MeshAndBsp` blob, 67–94 %
+of a `*_Part_*.zen` and 69 MB of `NewWorld.zen` (§5, *"What the `*_Part_*` files
+actually are"*). So swapping *that* from a Blender export is not a property
+write, and the answer today is **no**: `zenkit-node` exposes `extractWorldMesh`
+(render-ready buffers) and `saveWorld`, and nothing writes into `MeshAndBsp` —
+the mesh and its BSP round-trip through ZenKit untouched, which is what makes
+the save corpus pass. That is not an oversight: brief §3 and §11 put *no BSP
+compiler, no terrain sculpting* out of scope.
+
+**What a swapped mesh drags with it, which is why "just write the polygons" is
+the trap:**
+
+- **The BSP tree is the collision structure**, not only the visibility one.
+  ZenGin uses it for physics, and its heuristics — plane choice, sector
+  detection, portal assignment — are undocumented; a home-grown compiler
+  produces worlds that are formally valid, load, and then play wrong (brief §4).
+- **Portals are not objects.** They are material names on polygons: `P:_<name>`
+  and `P:<name>_` for a portal face, `S:<name>` for a sector, `GHOSTOCCLUDER`
+  for an occluder. A new mesh whose materials happen to start with `P:` invents
+  portals nobody wanted — a documented forum case — and one that drops them
+  loses the sectors.
+- **Light is baked into the mesh vertices.** A reshaped surface needs
+  `compile light`, and its absence is invisible in any file diff.
+- **Spacer's own answer is a macro, not an edit:** `Load world …` /
+  `compile world outdoor` / `compile light high` (§5) — a global re-BSP and a
+  global bake, which is why a merged world is 23 % smaller than the sum of its
+  parts.
+
+**The structural half outlives any compiler we might write: our output is a
+leaf, not a source** (§5). A retail world is authored as part ZENs and compiled
+as a final step, so a mesh swapped into `NewWorld.zen` is destroyed by the next
+merge. The supported place to change world geometry is the source layer plus
+Spacer's compile — which also says what the honest feature here is: one that
+*validates and reports* (§16.18) and hands the geometry to the tools that
+compile, not one that owns the mesh.
+
+**So a card, if it ever is one, is a hand-off rather than a writer** — export
+the part ZEN's mesh for Blender, take the re-export back, and drive the compile
+step. Decided against today; recorded so the question stops being re-derived.
 
 ---
