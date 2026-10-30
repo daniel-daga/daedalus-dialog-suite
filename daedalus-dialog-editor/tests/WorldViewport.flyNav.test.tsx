@@ -34,6 +34,7 @@ jest.mock('../src/renderer/world/VobPicker', () => ({
 }));
 
 import WorldViewport from '../src/renderer/components/world/WorldViewport';
+import { FLY_SPEED } from '../src/renderer/world/flyNav';
 import { VIEWPORT_DEFAULTS } from './worldViewportMocks';
 
 const MESH: WorldMeshPayload = { groups: [], bbox: [0, 0, 0, 10000, 10000, 10000] };
@@ -172,13 +173,14 @@ describe('WorldViewport — fly navigation on a right-mouse hold', () => {
 
     const after = handle().cameraPosition();
     const pivotAfter = handle().cameraTarget();
-    // Flew: half a second at a pivot-distance-per-second pace is a sizeable
-    // fraction of that distance.
-    expect(distance(before, after)).toBeGreaterThan(reach * 0.3);
+    // Flew: FLY_SPEED metres a second whatever the pivot distance (#405), for
+    // the 30 frames after the first primed the clock, in ZenGin centimetres.
+    const flown = FLY_SPEED * (30 * 16 / 1000) * 100;
+    expect(distance(before, after)).toBeCloseTo(flown, 3);
     // And the pivot came along — ahead of the camera, at the reach the fly
     // began with, not left behind at the middle of the island.
     expect(distance(after, pivotAfter)).toBeCloseTo(reach, 3);
-    expect(distance(pivotBefore, pivotAfter)).toBeGreaterThan(reach * 0.3);
+    expect(distance(pivotBefore, pivotAfter)).toBeGreaterThan(flown);
 
     // A fly is not a right click: the context menu the button also owns
     // stays shut.
