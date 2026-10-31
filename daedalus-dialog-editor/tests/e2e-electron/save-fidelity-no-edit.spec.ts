@@ -5,16 +5,18 @@ import { launchApp, seedProjectDir, stubOpenDialog, type AppFixture } from './ha
 
 /**
  * Real-Electron E2E spec #3 (fix-08 §2). Fidelity of the editor save path: open
- * a fixture, drive it back to its pristine model, let auto-save write, and
- * assert the bytes on disk are token-identical to the original (fix-01 Tier-1).
+ * a fixture, make a model edit that codegen does not emit, let auto-save write,
+ * and assert the bytes on disk are token-identical to the original (fix-01
+ * Tier-1). The second case pins the other half of the same rule: undoing back to
+ * the pristine model writes nothing at all.
  *
  * TRIGGER NOTE — "save with zero edits" is unreachable through the visual
  * editor UI: manual save (Ctrl+S / the app-bar Save button) is a no-op on a
- * clean file, and auto-save only fires on a dirty file. Per the plan this spec therefore uses the
- * sanctioned fallback — a trivial edit followed by an undo back to the pristine
- * snapshot — which leaves the file model-dirty (undo sets isDirty) with a model
- * reference-equal to the one produced by openFile. Auto-save then serializes
- * that pristine model: the effective "no-edit save".
+ * clean file, and auto-save only fires on a dirty file. This spec used to reach
+ * it as "a trivial edit, then an undo back to the pristine snapshot", which
+ * relied on undo leaving the file model-dirty. Undo no longer does — a model
+ * reference-equal to the one on disk is clean (`FileState.savedModel`) — so the
+ * edit itself is the trigger, and the undo case asserts the absence of a write.
  *
  * The write is detected via the file's mtime (not a content marker): every
  * fixture's first AI_Output line has no subtitle comment, so the UI's Text field
@@ -67,7 +69,7 @@ const EDIT_MARKER = 'ZZZ_TEMP_MARKER';
 const normalizeNewlines = (s: string): string => s.replace(/\r\n/g, '\n');
 
 for (const { fixtureFile, npc, dialog, expectedTextValue } of FIXTURES) {
-  test.describe(`Save fidelity (no-edit / undo-to-clean, disk truth) — ${fixtureFile}`, () => {
+  test.describe(`Save fidelity (no-edit through codegen, disk truth) — ${fixtureFile}`, () => {
     let fixture: AppFixture;
     let savedFile: string;
     let originalBytes: string;
@@ -94,26 +96,26 @@ for (const { fixtureFile, npc, dialog, expectedTextValue } of FIXTURES) {
       await fixture?.cleanup();
     });
 
-    test('undo-to-clean auto-save writes bytes token-identical to the original', async () => {
+    /** Edit the first line — a field codegen never emits — and commit it. */
+    const editFirstLine = async () => {
       const { page } = fixture;
-      const appBar = page.getByRole('banner');
       const firstLine = page.getByLabel('Text').first();
+      await firstLine.click();
+      await firstLine.fill(EDIT_MARKER);
+      await page.keyboard.press('Tab');
+      await expect(async () => {
+        await expect(page.getByRole('banner').getByRole('button', { name: 'Undo' })).toBeEnabled();
+      }).toPass({ timeout: 10000 });
+    };
+
+    test('an auto-save of the edited model writes bytes token-identical to the original', async () => {
+      const firstLine = fixture.page.getByLabel('Text').first();
       await expect(firstLine).toHaveValue(expectedTextValue);
 
       // No write can have happened yet — the file was only opened (read).
       const mtimeBefore = fs.statSync(savedFile).mtimeMs;
 
-      // Trivial edit, flushed into history (arms dirty state + undo).
-      await firstLine.click();
-      await firstLine.fill(EDIT_MARKER);
-      await page.keyboard.press('Tab');
-      await expect(async () => {
-        await expect(appBar.getByRole('button', { name: 'Undo' })).toBeEnabled();
-      }).toPass({ timeout: 10000 });
-
-      // Undo back to the pristine model (still dirty, so auto-save will run).
-      await page.keyboard.press('Control+z');
-      await expect(firstLine).toHaveValue(expectedTextValue);
+      await editFirstLine();
 
       // Auto-save (2 s debounce) serializes the model through the real codegen +
       // FileService write. Wait for the write to actually land (mtime change),
@@ -124,6 +126,27 @@ for (const { fixtureFile, npc, dialog, expectedTextValue } of FIXTURES) {
         const disk = fs.readFileSync(savedFile, 'latin1');
         expect(normalizeNewlines(disk)).toBe(normalizeNewlines(originalBytes));
       }).toPass({ timeout: 20000 });
+    });
+
+    test('undoing back to the pristine model writes nothing', async () => {
+      const { page } = fixture;
+      const firstLine = page.getByLabel('Text').first();
+      await expect(firstLine).toHaveValue(expectedTextValue);
+      const mtimeBefore = fs.statSync(savedFile).mtimeMs;
+
+      await editFirstLine();
+
+      // Undo returns the model to the one that came off disk, so the file is
+      // clean again and auto-save has nothing to write.
+      await page.keyboard.press('Control+z');
+      await expect(firstLine).toHaveValue(expectedTextValue);
+
+      // Past the 2 s auto-save debounce with room to spare.
+      await page.waitForTimeout(3500);
+
+      expect(fs.statSync(savedFile).mtimeMs).toBe(mtimeBefore);
+      expect(normalizeNewlines(fs.readFileSync(savedFile, 'latin1')))
+        .toBe(normalizeNewlines(originalBytes));
     });
   });
 }
