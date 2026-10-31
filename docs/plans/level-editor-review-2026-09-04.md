@@ -216,7 +216,7 @@ request then waits the full 120 s.
 `binding.cc:114` (`UnwrapHandle`) and `assets.cc:81` (`UnwrapVfs`) check
 `IsExternal()` only. `zenkit.vobIndex(vfs)` reinterprets a `zenkit::Vfs` as a
 `shared_ptr<World>`, passes the non-null check and dereferences garbage. Needs
-a caller bug (the worker or the blender bridge swapping arguments), but it is
+a caller bug (the worker passing the wrong handle), but it is
 the one argument hole that is memory-unsafe rather than a wrong answer.
 `napi_type_tag_object`/`CheckTypeTag` closes it.
 
@@ -232,8 +232,8 @@ refuses anything not a non-negative whole number before the cast.
 What is left is `_drillMesh`'s window (`read_size`), which rejects a negative
 but not a NaN or an infinity, so the `static_cast<std::size_t>` is still UB.
 It is **not on any path a user reaches**: `_drillMesh` is exported for the
-fidelity harness and its own tests, and nothing in the editor, `zen-world` or
-the blender bridge calls it. So it is a latent defect in a diagnostic, which is
+fidelity harness and its own tests, and nothing in the editor or `zen-world`
+calls it. So it is a latent defect in a diagnostic, which is
 why it has not been given an issue of its own — a `std::isfinite` check beside
 the `number < 0` one closes it in a line whenever that file is next open.
 

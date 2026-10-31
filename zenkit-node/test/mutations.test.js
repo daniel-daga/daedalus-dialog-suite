@@ -72,9 +72,9 @@ test('setVobPosition throws on a bad index path', () => {
 
 test('setVobPosition refuses a coordinate that is not a finite number', () => {
   // The bounds the editor's own ipcValidation applies are not the copy that is
-  // load-bearing: the blender bridge hands these straight through, and
-  // `JSON.parse('1e400')` is Infinity. An accepted NaN is worse than a rejected
-  // one — it is written to the .zen as a float the engine reads back and
+  // load-bearing: this binding is public, so any caller hands values straight
+  // in, and `JSON.parse('1e400')` is Infinity. An accepted NaN is worse than a
+  // rejected one — it is written to the .zen as a float the engine reads back and
   // computes with, and it poisons the bbox by the same delta.
   const handle = load();
   const before = zenkit.vobIndex(handle);

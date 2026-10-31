@@ -1099,6 +1099,16 @@ when a world project opens; all level-editor domain logic lives in
 tripwire response is a mechanical split into a separate app shell — the
 domain and binding packages move unchanged.
 
+The same reasoning retired the one second surface that was built and
+prototyped: a Blender add-on driving `zenkit-node` through a stdio-framed
+`daedalus-blender-bridge`, with its Python package and its bridge tests
+removed 2026-10-31. It solved asynchrony and fault isolation (`zenkit.worker`
+still does), but it duplicated the VOB projection and the undo/selection model
+in a second UI with no access to the project's scripts — the joins above are
+the whole point. Its design record is gone with it; do not take the removal as
+evidence that a Blender round-trip is impossible, only that it is not this
+editor's job.
+
 Naming note: settled 2026-09-12 — the app is **Dandelion**, which is what its
 UI always said; `productName` and the packaged `.exe` now agree with it.
 

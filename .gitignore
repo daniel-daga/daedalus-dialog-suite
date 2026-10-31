@@ -23,3 +23,4 @@ mdk/
 
 # Harness-local config (skills live in .agents/skills)
 .claude/
+.jules/

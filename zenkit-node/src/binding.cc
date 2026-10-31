@@ -661,8 +661,8 @@ zenkit::Vec3 Vec3FromValue(Napi::Env env, Napi::Value value, char const* label) 
     // The same rule every class-prop float already keeps, and for the reason
     // stated there: a NaN or an infinity is a number the engine reads back and
     // computes with. The editor's ipcValidation checks this too, but that is
-    // not the copy that is load-bearing — the blender bridge hands values
-    // straight through, and `JSON.parse('1e400')` is Infinity.
+    // not the copy that is load-bearing — this binding is public, so any caller
+    // hands values straight in, and `JSON.parse('1e400')` is Infinity.
     if (!std::isfinite(components[i])) {
       throw Napi::TypeError::New(env, std::string {label} + " components must be finite numbers");
     }

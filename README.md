@@ -58,7 +58,6 @@ The repository is a monorepo:
 | [`daedalus-parser/`](daedalus-parser/README.md) | Tree-sitter grammar for Daedalus, semantic model and code generator — usable on its own |
 | [`zenkit-node/`](zenkit-node/README.md) | Node binding around [ZenKit](https://github.com/GothicKit/ZenKit) for ZenGin worlds |
 | [`zen-world/`](zen-world/README.md) | Pure TypeScript world-editing domain |
-| [`blender-addon/`](blender-addon/) | Blender add-on for `.zen` worlds (experimental) |
 
 Design and architecture docs live in [`docs/`](docs/README.md).
 
