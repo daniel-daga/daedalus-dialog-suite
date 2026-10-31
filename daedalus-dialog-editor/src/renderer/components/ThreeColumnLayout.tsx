@@ -24,7 +24,7 @@ import { createTeacherDialogForNpc } from '../utils/teacherDialogFactory';
 import type { TeacherDialogConfig } from '../utils/teacherDialogTemplate';
 import { createTraderDialogForNpc } from '../utils/traderDialogFactory';
 import type { TraderDialogConfig } from '../utils/traderDialogTemplate';
-import { collectDialogOwnedFunctions, computeDialogDeletionSet } from './dialogUtils';
+import { computeDialogDeletionSet, planDialogRename } from './dialogUtils';
 import * as historyActions from '../store/historyActions';
 
 interface ThreeColumnLayoutProps {
@@ -376,13 +376,10 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
       return 'Name must be a valid identifier (letters, digits, underscores; cannot start with a digit)';
     }
     if (newName.trim() === oldName) return null;
-    if (semanticModel.dialogs?.[newName.trim()]) {
-      return `A dialog named "${newName.trim()}" already exists`;
-    }
-    if (semanticModel.functions?.[newName.trim()]) {
-      return `A function named "${newName.trim()}" already exists`;
-    }
-    return null;
+    // The same plan the store renames by: dialog-name and derived-function
+    // collisions both come back from here, so the dialog cannot pass a name the
+    // store then refuses.
+    return planDialogRename(semanticModel, oldName, newName.trim()).error;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [semanticModel.dialogs, semanticModel.functions]);
 
@@ -390,21 +387,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     if (!renameDialogTarget || !renameNewName.trim()) return [];
     const newName = renameNewName.trim();
     if (newName === renameDialogTarget) return [];
-    const model = semanticModel;
-    const dialog = model.dialogs?.[renameDialogTarget];
-    if (!dialog) return [];
-
-    // Same traversal as fileStore.renameDialog (shared helper)
-    const reachable = collectDialogOwnedFunctions(model, dialog);
-
-    const entries: FunctionRenameEntry[] = [];
-    for (const name of reachable) {
-      if (name.startsWith(renameDialogTarget)) {
-        const suffix = name.slice(renameDialogTarget.length);
-        entries.push({ oldName: name, newName: newName + suffix });
-      }
-    }
-    return entries;
+    return planDialogRename(semanticModel, renameDialogTarget, newName).functions;
   // Re-keyed on the two consumed categories (§3c): see deleteDialogInfo above.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [renameDialogTarget, renameNewName, semanticModel.dialogs, semanticModel.functions]);
@@ -432,7 +415,16 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     const targetFilePath = filePath || activeFile;
     if (!targetFilePath) return;
 
-    historyActions.renameDialog(targetFilePath, renameDialogTarget, newName, true);
+    // The store also refuses a rename that preserved raw source refers to (a
+    // rule that needs the whole file, so it lives there and not in the plan).
+    // Thrown from a click handler with nothing catching it, the refusal was
+    // invisible and the dialog just sat there.
+    try {
+      historyActions.renameDialog(targetFilePath, renameDialogTarget, newName, true);
+    } catch (error) {
+      setRenameValidationError(error instanceof Error ? error.message : String(error));
+      return;
+    }
 
     // Update the recent tab in-place with the new name
     const renamedNpcName =

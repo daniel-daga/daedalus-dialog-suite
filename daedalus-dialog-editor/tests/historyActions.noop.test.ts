@@ -117,4 +117,27 @@ describe('historyActions – no-op mutations push no phantom snapshot (F-A)', ()
 
     expect(useHistoryStore.getState().canUndo(filePath)).toBe(true);
   });
+
+  it('leaves the stacks alone when the mutation throws', () => {
+    // `renameDialog` refuses a name that is already taken by throwing, and it
+    // throws *after* the transactional push. The step it pushed must not stay
+    // behind as an undo that reverts nothing.
+    useFileStore.setState((state) => {
+      const fileState = state.openFiles.get(filePath)!;
+      fileState.semanticModel = {
+        ...fileState.semanticModel,
+        dialogs: {
+          ...fileState.semanticModel.dialogs,
+          DIA_Taken: { name: 'DIA_Taken', parent: 'C_INFO', properties: { npc: 'other' } }
+        }
+      } as SemanticModel;
+    });
+    seedRedoableFuture();
+    jest.advanceTimersByTime(1000);
+
+    expect(() => historyActions.renameDialog(filePath, 'DIA_Test', 'DIA_Taken', true)).toThrow();
+
+    expect(useHistoryStore.getState().canRedo(filePath)).toBe(true);
+    expect(useHistoryStore.getState().canUndo(filePath)).toBe(false);
+  });
 });

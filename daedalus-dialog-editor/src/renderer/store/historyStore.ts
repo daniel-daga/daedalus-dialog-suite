@@ -180,6 +180,10 @@ export const useHistoryStore = create<HistoryStore>()(immer((set, get) => ({
   // hit a silent no-op guard (missing dialog/function, updater returned null).
   // In that case restoring the pre-call past/future avoids a phantom undo step
   // and, crucially, avoids wiping the redo `future`.
+  //
+  // A mutation that *throws* is put back the same way: a refusal (`renameDialog`
+  // on a taken name, preserved source) happens after this push, and the step it
+  // left behind reverted nothing.
   pushSnapshotTransactional: (filePath: string, mutate: () => void) => {
     const beforeModel = useFileStore.getState().openFiles.get(filePath)?.semanticModel;
 
@@ -188,23 +192,30 @@ export const useHistoryStore = create<HistoryStore>()(immer((set, get) => ({
     const capturedPast = prevHistory ? [...prevHistory.past] : [];
     const capturedFuture = prevHistory ? [...prevHistory.future] : [];
 
+    const restore = () => set((state) => {
+      if (!hadHistory) {
+        state.editHistory.delete(filePath);
+        return;
+      }
+      const h = state.editHistory.get(filePath);
+      if (!h) return;
+      h.past = capturedPast;
+      h.future = capturedFuture;
+    });
+
     get().pushSnapshot(filePath);
-    mutate();
+    try {
+      mutate();
+    } catch (error) {
+      restore();
+      throw error;
+    }
 
     const afterModel = useFileStore.getState().openFiles.get(filePath)?.semanticModel;
 
     // Only restore when the file exists and its model reference is unchanged.
     if (beforeModel !== undefined && afterModel === beforeModel) {
-      set((state) => {
-        if (!hadHistory) {
-          state.editHistory.delete(filePath);
-          return;
-        }
-        const h = state.editHistory.get(filePath);
-        if (!h) return;
-        h.past = capturedPast;
-        h.future = capturedFuture;
-      });
+      restore();
     }
   },
 

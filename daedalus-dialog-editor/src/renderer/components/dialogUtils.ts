@@ -118,6 +118,59 @@ export function collectDialogOwnedFunctions(
 }
 
 /**
+ * What a dialog rename would do, and whether it may: the functions that follow
+ * the dialog's name, or the first reason the rename is refused.
+ *
+ * The one place these rules live. `fileStore.renameDialog` refuses with `error`
+ * and renames `functions`; the rename dialog previews `functions` and blocks its
+ * submit on the same `error`, so the confirmation cannot disagree with what the
+ * store does. The derived function names are the half a dialog-name check cannot
+ * see: `DIA_A` can become `DIA_B` while `DIA_B_Info` already exists.
+ */
+export interface DialogRenamePlan {
+  error: string | null;
+  functions: Array<{ oldName: string; newName: string }>;
+}
+
+export function planDialogRename(
+  model: Pick<SemanticModel, 'dialogs' | 'functions'>,
+  oldDialogName: string,
+  newDialogName: string,
+  renameFunctions = true
+): DialogRenamePlan {
+  const dialogs = model.dialogs || {};
+  const functions = model.functions || {};
+  const dialogKey = Object.keys(dialogs).find((name) => name.toLowerCase() === oldDialogName.toLowerCase());
+  const dialog = dialogKey ? dialogs[dialogKey] : undefined;
+  if (!dialog) return { error: `Dialog ${oldDialogName} is not in this file`, functions: [] };
+
+  const taken = Object.keys(dialogs).some(
+    (name) => name !== dialogKey && name.toLowerCase() === newDialogName.toLowerCase()
+  );
+  if (taken) return { error: `A dialog named "${newDialogName}" already exists`, functions: [] };
+
+  const renames: DialogRenamePlan['functions'] = [];
+  if (renameFunctions) {
+    // Only functions that exist: a dialog's condition property can name one
+    // that was deleted, and listing it would be a rename the store cannot make.
+    for (const name of collectDialogOwnedFunctions(model, dialog)) {
+      const followsName = name.slice(0, oldDialogName.length).toLowerCase() === oldDialogName.toLowerCase();
+      if (followsName && functions[name]) {
+        renames.push({ oldName: name, newName: newDialogName + name.slice(oldDialogName.length) });
+      }
+    }
+  }
+
+  const beingRenamed = new Set(renames.map((entry) => entry.oldName.toLowerCase()));
+  const collision = renames.find((entry) => Object.keys(functions).some(
+    (name) => !beingRenamed.has(name.toLowerCase()) && name.toLowerCase() === entry.newName.toLowerCase()
+  ));
+  if (collision) return { error: `A function named "${collision.newName}" already exists`, functions: renames };
+
+  return { error: null, functions: renames };
+}
+
+/**
  * Compute the set of functions that can safely be deleted together with
  * `dialogName`: functions owned by the dialog that are not referenced by any
  * remaining dialog (via information/condition properties or nested choices).

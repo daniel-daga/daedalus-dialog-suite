@@ -1,4 +1,4 @@
-import type { ConditionalAction, DialogAction } from '../types/global';
+import type { ConditionalAction, DialogAction, DialogLineAction } from '../types/global';
 import { resolveDialogNameForLineId } from './actionFactory';
 import { recognizeQuestSteps, type QuestStep } from '../quest/domain/questSteps';
 
@@ -360,8 +360,8 @@ export function mapChoiceTargetFunctions(
   return changed ? { actions: nextActions, changed } : { actions, changed };
 }
 
-export function collectDialogLineActions(actions: DialogAction[]): DialogAction[] {
-  const collected: DialogAction[] = [];
+export function collectDialogLineActions(actions: DialogAction[]): DialogLineAction[] {
+  const collected: DialogLineAction[] = [];
 
   actions.forEach((action) => {
     if (action.type === 'DialogLine') {

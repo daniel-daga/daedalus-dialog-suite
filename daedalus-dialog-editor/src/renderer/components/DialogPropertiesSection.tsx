@@ -65,6 +65,34 @@ const DialogPropertiesSection: React.FC<DialogPropertiesSectionProps> = ({
     properties: { ...existingDialog.properties, npc: value }
   })), [onDialogPropertyChange]);
 
+  // `nr` follows the same rule as the description: the field holds what was
+  // typed, and only a value that parses reaches the model. Writing
+  // `parseInt(text) || 0` on every keystroke put 0 into the model on the way to
+  // retyping the number, and auto-save then wrote that over the dialog's
+  // priority.
+  const storedNumber = dialog.properties?.nr;
+  const [localNumber, setLocalNumber] = useState(storedNumber === undefined ? '' : String(storedNumber));
+  useEffect(() => {
+    setLocalNumber(storedNumber === undefined ? '' : String(storedNumber));
+  }, [dialog.name, storedNumber]);
+
+  const handleNumberChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const next = event.target.value;
+    setLocalNumber(next);
+    const parsed = Number.parseInt(next, 10);
+    if (Number.isNaN(parsed)) return;
+    onDialogPropertyChange((existingDialog) => ({
+      ...existingDialog,
+      properties: { ...existingDialog.properties, nr: parsed }
+    }));
+  }, [onDialogPropertyChange]);
+
+  // Leaving an empty or half-typed field shows the number the dialog really
+  // has, rather than an empty box over a value that was never changed.
+  const handleNumberBlur = useCallback(() => {
+    setLocalNumber(storedNumber === undefined ? '' : String(storedNumber));
+  }, [storedNumber]);
+
   const descriptionInSync = isDescriptionInSync(dialog, firstLineText);
 
   return (
@@ -128,11 +156,9 @@ const DialogPropertiesSection: React.FC<DialogPropertiesSectionProps> = ({
             fullWidth
             label="Number (Priority)"
             type="number"
-            value={dialog.properties?.nr || ''}
-            onChange={(event) => onDialogPropertyChange((existingDialog) => ({
-              ...existingDialog,
-              properties: { ...existingDialog.properties, nr: parseInt(event.target.value, 10) || 0 }
-            }))}
+            value={localNumber}
+            onChange={handleNumberChange}
+            onBlur={handleNumberBlur}
             size="small"
           />
           <Stack direction="row" spacing={1} alignItems="flex-start">

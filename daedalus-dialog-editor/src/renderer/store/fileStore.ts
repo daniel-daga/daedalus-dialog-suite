@@ -4,8 +4,8 @@ import { enableMapSet } from 'immer';
 import { createDialogLineId, generateActionId } from '../components/actionFactory';
 import { collectDialogLineActions, mapChoiceTargetFunctions } from '../components/nestedActionUtils';
 import {
-  collectReachableChoiceFunctions,
   computeDialogDeletionSet,
+  planDialogRename,
   resolveFunctionRef
 } from '../components/dialogUtils';
 import { firstLineText, followFirstLine } from '../components/descriptionSync';
@@ -207,6 +207,13 @@ export interface FileState {
    */
   saveError?: SaveError;
   /**
+   * The model that was last read from disk or written to it. `isDirty` means
+   * "not this one" wherever the model is replaced wholesale (open, reload,
+   * save, undo) — a mutation on its own always changes the model, so a model
+   * equal to this is a file with nothing unsaved, e.g. after undoing an edit.
+   */
+  savedModel?: SemanticModel;
+  /**
    * Set when the file changed on disk while the editor holds unsaved changes
    * (E4). Type-only for now — the actions/watcher wiring land in a later slice;
    * the auto-save gate already excludes conflicted files.
@@ -376,6 +383,7 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       const fileState: FileState = {
         filePath,
         semanticModel: processedModel,
+        savedModel: processedModel,
         isDirty: false,
         lastSaved: new Date(),
         originalCode: sourceCode,
@@ -405,13 +413,18 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
   },
 
   updateModel: (filePath: string, model: SemanticModel) => {
+    // Read outside the recipe: inside it both sides would be Immer drafts, and
+    // drafts are never reference-equal to what was stored.
+    const savedModel = get().openFiles.get(filePath)?.savedModel;
     set((state) => {
       const fileState = state.openFiles.get(filePath);
       if (!fileState) {
         return;
       }
       fileState.semanticModel = model;
-      fileState.isDirty = true;
+      // Undo (through `_applyHistoryModelUpdate`) lands here: reverting to the
+      // model that went to disk is not an unsaved change.
+      fileState.isDirty = model !== savedModel;
       fileState.autoSaveError = undefined;
       fileState.saveError = undefined;
     });
@@ -590,31 +603,13 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
       const dialog = dialogKey ? model.dialogs[dialogKey] : undefined;
       if (!dialog) return;
 
-      if (Object.keys(model.dialogs).some((name) => name !== dialogKey && name.toLowerCase() === newDialogName.toLowerCase())) {
-        throw new Error(`Cannot rename dialog: ${newDialogName} already exists`);
-      }
-
-      // Resolve old info/condition function names
-      const oldInfoName = resolveFunctionRef(dialog.properties?.information);
-      const oldCondName = resolveFunctionRef(dialog.properties?.condition);
+      // Which functions follow the name, and whether the new names are free:
+      // one rule, shared with the rename dialog's preview and its pre-check.
+      const plan = planDialogRename(model, oldDialogName, newDialogName, renameFunctions);
+      if (plan.error) throw new Error(`Cannot rename dialog: ${plan.error}`);
 
       // Build a rename map: oldFuncName → newFuncName
-      const renameMap = new Map<string, string>();
-
-      if (renameFunctions) {
-        // Functions reachable from the info function via (possibly nested) choices
-        const reachable = collectReachableChoiceFunctions(model.functions, oldInfoName);
-        if (oldCondName) reachable.add(oldCondName);
-
-        // Compute new names for functions that follow the old dialog name prefix
-        for (const name of reachable) {
-          if (name.slice(0, oldDialogName.length).toLowerCase() === oldDialogName.toLowerCase()) {
-            const suffix = name.slice(oldDialogName.length);
-            const newName = newDialogName + suffix;
-            renameMap.set(name, newName);
-          }
-        }
-      }
+      const renameMap = new Map<string, string>(plan.functions.map((entry) => [entry.oldName, entry.newName]));
 
       const mapName = (name: string, names: Map<string, string>): string | undefined => {
         for (const [before, after] of names) {
@@ -622,11 +617,6 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
         }
         return undefined;
       };
-      for (const newName of renameMap.values()) {
-        const collision = Object.keys(model.functions).find((name) =>
-          name.toLowerCase() === newName.toLowerCase() && !mapName(name, renameMap));
-        if (collision) throw new Error(`Cannot rename dialog: function ${newName} already exists`);
-      }
 
       // Raw statements and projected predicates do not expose patchable source
       // ranges here. Refuse the transaction before changing declarations when
@@ -871,6 +861,8 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
           // conflict is now resolved in favour of the editor's content (E4).
           currentFileState.externalConflict = undefined;
           currentFileState.diskVersion = result.version;
+          // What is on disk now, for the dirty rule above.
+          currentFileState.savedModel = savedModel;
           // Only mark clean if the written model is still the current one;
           // an edit that landed mid-save is not on disk yet.
           if (stillCurrent) {
@@ -965,6 +957,7 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
         return;
       }
       currentFileState.semanticModel = processedModel;
+      currentFileState.savedModel = processedModel;
       currentFileState.isDirty = false;
       currentFileState.lastSaved = new Date();
       currentFileState.originalCode = sourceCode;

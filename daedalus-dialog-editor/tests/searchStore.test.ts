@@ -255,5 +255,41 @@ describe('searchStore', () => {
       const results = useSearchStore.getState().searchResults;
       expect(results.length).toBeGreaterThan(0);
     });
+
+    it('should find a dialog line inside a conditional branch', async () => {
+      // A line inside `if (...) { ... }` is the normal shape of conditional
+      // dialog, and the global search must not silently skip it.
+      const nested = {
+        dialogs: {},
+        functions: {
+          DIA_Diego_Info_Info: {
+            name: 'DIA_Diego_Info_Info',
+            returnType: 'VOID',
+            conditions: [],
+            calls: [],
+            actions: [
+              {
+                type: 'ConditionalAction',
+                condition: 'Npc_KnowsInfo(other, DIA_Diego_Info)',
+                thenActions: [
+                  { type: 'DialogLine', speaker: 'self', text: 'Your share is ready', id: '9' }
+                ],
+                elseActions: []
+              }
+            ]
+          }
+        },
+        hasErrors: false,
+        errors: []
+      } as unknown as SemanticModel;
+
+      useSearchStore.getState().setSearchQuery('share is ready');
+      useSearchStore.getState().setSearchScope({ dialogNames: false, functionNames: false, npcNames: false });
+      await useSearchStore.getState().performSearch(nested, new Map());
+
+      expect(useSearchStore.getState().searchResults).toMatchObject([
+        { type: 'text', match: 'Your share is ready', functionName: 'DIA_Diego_Info_Info' }
+      ]);
+    });
   });
 });

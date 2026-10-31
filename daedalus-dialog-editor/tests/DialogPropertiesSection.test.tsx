@@ -257,4 +257,35 @@ describe('DialogPropertiesSection', () => {
     renderSection(stringDialog('Hallo du'), false);
     expect(screen.getByText('Hallo du')).toBeInTheDocument();
   });
+
+  // The Number (Priority) box wrote `parseInt(text, 10) || 0` on every
+  // keystroke, so clearing it (the normal way to retype) put nr = 0 into the
+  // model and the next auto-save wrote that over the dialog's priority.
+  describe('Number (Priority)', () => {
+    test('clearing the field writes nothing', () => {
+      const { onDialogPropertyChange } = renderSection(stringDialog('Hallo du'));
+      fireEvent.change(screen.getByRole('spinbutton', { name: 'Number (Priority)' }), { target: { value: '' } });
+      expect(onDialogPropertyChange).not.toHaveBeenCalled();
+    });
+
+    test('a typed number is written', () => {
+      const { written } = renderSection(stringDialog('Hallo du'));
+      fireEvent.change(screen.getByRole('spinbutton', { name: 'Number (Priority)' }), { target: { value: '7' } });
+      expect(written().properties.nr).toBe(7);
+    });
+
+    test('a half-typed value stays on screen and writes nothing', () => {
+      const { onDialogPropertyChange } = renderSection(stringDialog('Hallo du'));
+      fireEvent.change(screen.getByRole('spinbutton', { name: 'Number (Priority)' }), { target: { value: '-' } });
+      expect(onDialogPropertyChange).not.toHaveBeenCalled();
+    });
+
+    test('leaving an emptied field shows the number the dialog has', () => {
+      renderSection(stringDialog('Hallo du'));
+      const field = screen.getByRole('spinbutton', { name: 'Number (Priority)' });
+      fireEvent.change(field, { target: { value: '' } });
+      fireEvent.blur(field);
+      expect(field).toHaveValue(1);
+    });
+  });
 });

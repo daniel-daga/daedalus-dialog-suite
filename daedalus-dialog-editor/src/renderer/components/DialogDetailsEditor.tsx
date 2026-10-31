@@ -195,7 +195,14 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
               <IconButton
                 size="small"
                 disabled={!canUndo}
-                onClick={() => filePath && undo(filePath)}
+                onClick={() => {
+                  if (!filePath) return;
+                  // Same order as Ctrl+Z: the pending keystroke becomes its own
+                  // history step first, or the debounce writes the text back on
+                  // top of the state this undo just restored.
+                  flushAllPendingEdits();
+                  undo(filePath);
+                }}
                 aria-label="Undo"
               >
                 <UndoIcon fontSize="small" />
@@ -207,7 +214,11 @@ const DialogDetailsEditor: React.FC<DialogDetailsEditorProps> = ({
               <IconButton
                 size="small"
                 disabled={!canRedo}
-                onClick={() => filePath && redo(filePath)}
+                onClick={() => {
+                  if (!filePath) return;
+                  flushAllPendingEdits();
+                  redo(filePath);
+                }}
                 aria-label="Redo"
               >
                 <RedoIcon fontSize="small" />

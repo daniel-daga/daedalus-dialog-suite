@@ -105,4 +105,30 @@ describe('model mutation', () => {
     expect(fileState?.semanticModel.dialogs.D1).toEqual({ properties: { npc: 'NPC2' } });
     expect(fileState?.isDirty).toBe(true);
   });
+
+  // Dirty is "the model is not the one that went to disk", not "a mutation
+  // happened": undoing back to the saved content used to leave the asterisk
+  // on, so auto-save wrote a file identical to the one already there and the
+  // close guard asked about nothing.
+  test('restoring the saved model clears dirty again', () => {
+    const filePath = 'saved.d';
+    const saved = {
+      dialogs: { D1: { name: 'D1', parent: 'C_INFO', properties: { npc: 'NPC1' } } },
+      functions: {}, hasErrors: false, errors: []
+    };
+    const edited = { ...saved, dialogs: { D1: { name: 'D1', parent: 'C_INFO', properties: { npc: 'NPC2' } } } };
+
+    useEditorStore.setState({
+      openFiles: new Map([[filePath, makeFileState({
+        filePath, semanticModel: edited, savedModel: saved, isDirty: true,
+      })]]),
+      activeFile: filePath,
+    });
+
+    useEditorStore.getState().updateModel(filePath, saved);
+    expect(useEditorStore.getState().getFileState(filePath)?.isDirty).toBe(false);
+
+    useEditorStore.getState().updateModel(filePath, { ...saved });
+    expect(useEditorStore.getState().getFileState(filePath)?.isDirty).toBe(true);
+  });
 });

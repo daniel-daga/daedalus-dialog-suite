@@ -6,8 +6,15 @@ gating, the write itself, external-change conflicts, and window close.
 
 ## Dirty-state model
 
-`FileState.isDirty` records model edits. External conflicts are stored
-separately in `externalConflict`. Every discard decision uses
+`FileState.isDirty` means "the model is not the one on disk", not "a mutation
+happened". `FileState.savedModel` holds the model last read from disk or written
+to it, and the paths that replace the whole model (`openFile`, `reloadFile`,
+`saveFile`, and `updateModel`, which undo goes through) compare against it — so
+undoing back to the saved content is clean again instead of leaving a file that
+auto-save rewrites byte for byte and the close guard asks about. Mutations that
+edit a dialog or function in place always produce a new model, so they stay
+dirty without consulting it. External conflicts are stored separately in
+`externalConflict`. Every discard decision uses
 `hasUnsavedChanges(fs) = fs.isDirty || !!fs.externalConflict`, exported from
 `src/renderer/store/fileStore.ts`. The source-edit state described by earlier
 versions of this document has been removed.

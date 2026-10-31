@@ -114,6 +114,15 @@ export function useDialogEditorCommands({
           validationResult: result.validationResult,
           mode: 'saved-with-warnings'
         });
+      } else if (!result.success) {
+        // Refused with no validation result: the file changed on disk since it
+        // was opened, and `saveFile` declines to overwrite it. Reporting the
+        // success message here said a file had been written that was not.
+        setSnackbar({
+          open: true,
+          message: 'Save was refused — the file changed on disk since it was opened. Resolve the conflict (Keep mine / Discard) first; your changes are kept in the editor.',
+          severity: 'error'
+        });
       } else {
         setSnackbar({
           open: true,

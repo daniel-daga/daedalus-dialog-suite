@@ -78,6 +78,25 @@ describe('handleSave with a successful save that has warnings', () => {
       expect.objectContaining({ open: true })
     );
   });
+
+  test('a refused save is reported as a failure, not as success', async () => {
+    // `saveFile` answers `{ success: false }` with no validation result when it
+    // refuses to overwrite a file that changed on disk. The success snackbar
+    // used to fire anyway, so a refused write looked like a completed one.
+    const params = makeParams({ success: false });
+    const { result } = renderHook(() => useDialogEditorCommands(params as any));
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(params.setSnackbar).not.toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'success' })
+    );
+    expect(params.setSnackbar).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'error' })
+    );
+  });
 });
 
 describe('ValidationErrorDialog saved-with-warnings mode', () => {

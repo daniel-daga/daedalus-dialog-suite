@@ -9,7 +9,8 @@
  */
 
 import { create } from 'zustand';
-import type { SemanticModel, DialogMetadata, DialogLineAction } from '../types/global';
+import type { SemanticModel, DialogMetadata } from '../types/global';
+import { collectDialogLineActions } from '../components/nestedActionUtils';
 
 export interface SearchResult {
   type: 'dialog' | 'function' | 'text' | 'npc';
@@ -230,22 +231,21 @@ export const useSearchStore = create<SearchStore>((set, get) => ({
 
         for (let j = i; j < end; j++) {
           const [funcName, func] = entries[j];
-          func.actions?.forEach((action) => {
-            // Check if it's a dialog line action
-            if ('text' in action && 'speaker' in action) {
-              const dialogLine = action as DialogLineAction;
-              if (dialogLine.text.toLowerCase().includes(lowerQuery)) {
-                const key = `text:${funcName}:${dialogLine.id}`;
-                if (!addedKeys.has(key)) {
-                  addedKeys.add(key);
-                  results.push({
-                    type: 'text',
-                    name: funcName,
-                    match: dialogLine.text,
-                    context: `[${dialogLine.speaker}]`,
-                    functionName: funcName
-                  });
-                }
+          // Nested too: a line inside `if (...) { ... }` is the normal shape of
+          // conditional dialog, and skipping it made search report nothing for
+          // text the user could see on screen.
+          collectDialogLineActions(func.actions || []).forEach((dialogLine) => {
+            if (dialogLine.text.toLowerCase().includes(lowerQuery)) {
+              const key = `text:${funcName}:${dialogLine.id}`;
+              if (!addedKeys.has(key)) {
+                addedKeys.add(key);
+                results.push({
+                  type: 'text',
+                  name: funcName,
+                  match: dialogLine.text,
+                  context: `[${dialogLine.speaker}]`,
+                  functionName: funcName
+                });
               }
             }
           });
