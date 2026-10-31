@@ -1776,7 +1776,13 @@ The consequences worth keeping:
 - **The projection cannot follow it.** The columnar index cannot grow, so
   `applyOps` refuses a structural op *by name* rather than skipping it, and the
   index is re-read whole (`refreshIndex` — from the world the worker already
-  holds, since re-opening would re-load from disk and discard every edit).
+  holds, since re-opening would re-load from disk and discard every edit). The
+  batch re-reads it before answering, so `visuals` never places a VOB the op
+  failed to move; that read is what `refreshIndex` hands the renderer, and a
+  second read there was a whole second enumeration of the world per add or
+  delete (fixed 2026-10-31). The path the worker reports with it follows a
+  **Save As** — the open world is the file that was written, and the renderer
+  keys the VOB folders sidecar and the `STARTUP_` function name off it.
 - **The scene follows it in place (2026-10-08).** It used to be rebuilt from a
   whole new instanced payload, because an instance cannot be appended to an
   allocated `InstancedMesh`. That cost, per placement on NewWorld, the worker

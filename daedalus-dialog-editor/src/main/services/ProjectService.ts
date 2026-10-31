@@ -15,7 +15,6 @@ import type { DialogMetadata, FileParseErrors, ProjectIndex, SemanticModel } fro
 export type { DialogMetadata, ProjectIndex } from '../../shared/types';
 
 import {
-  extractFileMetadataFromSource,
   extractExchangeSites,
   extractRoutineSites,
   buildRoutineParamIndex,
@@ -134,13 +133,6 @@ class ProjectService {
 
     await scanRecursive(rootPath);
     return files;
-  }
-
-  /**
-   * Extract dialog metadata from file content using semantic parser output.
-   */
-  extractDialogMetadata(content: string, filePath: string): DialogMetadata[] {
-    return extractFileMetadataFromSource(content, filePath).dialogs;
   }
 
   /**
@@ -360,13 +352,6 @@ class ProjectService {
       metadataFailures,
       parseErrors
     };
-  }
-
-  /**
-   * Get all dialogs for a specific NPC
-   */
-  getDialogsForNpc(index: ProjectIndex, npcId: string): DialogMetadata[] {
-    return index.dialogsByNpc.get(npcId) || [];
   }
 }
 

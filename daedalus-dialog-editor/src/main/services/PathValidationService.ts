@@ -127,65 +127,6 @@ export class PathValidationService {
   }
 
   /**
-   * Sync, lexical-only allow check (no symlink resolution). Retained for
-   * lightweight callers/tests; the security boundary is `validatePathResolved`.
-   * @param filePath Path to validate
-   * @returns true if path is lexically within an allowed root or an exact
-   *          allowed file, false otherwise
-   */
-  isPathAllowed(filePath: any): boolean {
-    let normalizedPath: string;
-    try {
-      normalizedPath = this.lexicalNormalize(filePath);
-    } catch {
-      return false;
-    }
-
-    if (this.allowedFiles.has(normalizedPath)) {
-      return true;
-    }
-
-    for (const root of this.allowedRoots) {
-      if (this.onSameDrive(root, normalizedPath) && this.isContained(root, normalizedPath)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  /**
-   * Validate a path lexically (no symlink resolution) and throw if not allowed.
-   * Retained for callers/tests that do not need filesystem resolution.
-   * @throws PathValidationError if path is not allowed
-   */
-  validatePath(filePath: any): void {
-    const normalizedPath = this.lexicalNormalize(filePath);
-    const hasTraversal = typeof filePath === 'string' && filePath.includes('..');
-
-    if (this.allowedFiles.has(normalizedPath)) {
-      return;
-    }
-    for (const root of this.allowedRoots) {
-      if (this.onSameDrive(root, normalizedPath) && this.isContained(root, normalizedPath)) {
-        return;
-      }
-    }
-
-    if (hasTraversal) {
-      throw new PathValidationError(
-        `Path validation failed: Potential directory traversal detected. Attempted: ${filePath}`,
-        filePath,
-        'directory_traversal'
-      );
-    }
-    throw new PathValidationError(
-      `Path validation failed: Path is not within allowed directories. Attempted: ${filePath}`,
-      filePath,
-      'not_within_allowed_directories'
-    );
-  }
-
-  /**
    * Resolve the deepest existing ancestor of `normalizedAbsPath` with realpath,
    * then re-join the non-existing tail. Handles save-as targets whose parent
    * directories do not exist yet. Throws if a tail segment is '..'.
@@ -328,23 +269,5 @@ export class PathValidationService {
    */
   addAllowedFile(filePath: string): void {
     this.allowedFiles.add(path.normalize(filePath));
-  }
-
-  /**
-   * Remove an allowed base path (from both roots and exact files).
-   * @param basePath Path to remove from the whitelist
-   */
-  removeAllowedPath(basePath: string): void {
-    const normalized = path.normalize(basePath);
-    this.allowedRoots.delete(normalized);
-    this.allowedFiles.delete(normalized);
-  }
-
-  /**
-   * Get all currently allowed paths (roots and exact files).
-   * @returns Array of allowed paths (copy, not reference)
-   */
-  getAllowedPaths(): string[] {
-    return [...this.allowedRoots, ...this.allowedFiles];
   }
 }

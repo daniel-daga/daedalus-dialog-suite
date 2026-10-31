@@ -110,9 +110,22 @@ export async function updateProjectOutputUnits(
     const original = await fs.readFile(filePath);
     return { filePath, original, rewritten: rewriteOutputUnits(original, lines) };
   }));
+  // Every file is rewritten in memory before any is touched, and each lands
+  // through a temp file and a rename — `FileService.writeFileAtomic`'s shape.
+  // These files are in the user's game install: an in-place `writeFile`
+  // truncates the database before the new bytes exist, so a crash or a full disk
+  // leaves the game's subtitles torn, and a failure between the two leaves
+  // `OU.BIN` and `OU.CSL` disagreeing about what they just agreed on.
   for (const { filePath, original, rewritten } of rewrites) {
     await fs.writeFile(`${filePath}.bak`, original);
-    await fs.writeFile(filePath, rewritten);
+    const tmpPath = `${filePath}.tmp`;
+    try {
+      await fs.writeFile(tmpPath, rewritten);
+      await fs.rename(tmpPath, filePath);
+    } catch (error) {
+      await fs.unlink(tmpPath).catch(() => undefined);
+      throw error;
+    }
   }
 
   return { written: files, outputUnits: await readProjectOutputUnits(installPath) };

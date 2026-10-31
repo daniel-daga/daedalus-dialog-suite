@@ -402,6 +402,39 @@ export function assertAssetResolveRequest(request: unknown): asserts request is 
   }
 }
 
+/**
+ * A request whose whole payload is one non-empty name inside the mounted VFS
+ * namespace — a directory, a search needle or a visual. Like `assertVisualRequest`,
+ * the name never reaches the disk, so this shape is the whole boundary; it is
+ * asserted rather than defaulted, because a request with no path is a mistake
+ * and the old default listed the namespace root for it.
+ */
+function assertMountedNameRequest(
+  request: unknown,
+  label: string,
+  field: 'path' | 'query' | 'name',
+): void {
+  const value = isPlainObject(request) ? request[field] : undefined;
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error(`Invalid ${label}: ${field} must be a non-empty string`);
+  }
+}
+
+/** One directory of the mounted namespace, for the asset browser. */
+export function assertAssetListRequest(request: unknown): asserts request is { path: string } {
+  assertMountedNameRequest(request, 'asset list request', 'path');
+}
+
+/** The asset browser's search box — an empty needle would walk the whole install. */
+export function assertAssetSearchRequest(request: unknown): asserts request is { query: string } {
+  assertMountedNameRequest(request, 'asset search request', 'query');
+}
+
+/** One visual's bounds, read when a VOB is being given a visual it does not have. */
+export function assertVisualBoundsRequest(request: unknown): asserts request is { name: string } {
+  assertMountedNameRequest(request, 'visual bounds request', 'name');
+}
+
 /** Assert a request to read the `<project>.assets.json` sidecar (§16.26). */
 export function assertAssetCatalogGetRequest(
   request: unknown,

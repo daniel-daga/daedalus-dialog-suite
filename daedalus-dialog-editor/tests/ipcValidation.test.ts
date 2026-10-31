@@ -37,6 +37,9 @@ import {
   RENDERER_ERROR_STACK_MAX,
   assertAssetResolveRequest,
   ASSET_RESOLVE_MAX,
+  assertAssetListRequest,
+  assertAssetSearchRequest,
+  assertVisualBoundsRequest,
 } from '../src/main/ipcValidation';
 
 describe('project config IPC payloads', () => {
@@ -342,6 +345,39 @@ describe('assertVisualRequest', () => {
       expect(() => assertVisualRequest({ name: bad })).toThrow(/visual name/i);
     }
     expect(() => assertVisualRequest('NW_CRATE.MRM')).toThrow(/plain object/i);
+  });
+});
+
+describe('the mounted-namespace requests the asset browser and the bounds read make', () => {
+  // Each name is resolved by the VFS and never reaches the disk, so the shape
+  // is the whole boundary. They are asserted rather than defaulted: a request
+  // without a path used to list the namespace root, which is a read nobody
+  // asked for rather than a refusal.
+  it('accepts a path, a query and a name', () => {
+    expect(() => assertAssetListRequest({ path: '/' })).not.toThrow();
+    expect(() => assertAssetListRequest({ path: '/Meshes' })).not.toThrow();
+    expect(() => assertAssetSearchRequest({ query: 'crate' })).not.toThrow();
+    expect(() => assertVisualBoundsRequest({ name: 'NW_CRATE.MRM' })).not.toThrow();
+  });
+
+  it('rejects anything but a non-empty path', () => {
+    for (const bad of [undefined, {}, { path: '' }, { path: 42 }, { path: null }, '/']) {
+      expect(() => assertAssetListRequest(bad)).toThrow(/asset list request/i);
+    }
+  });
+
+  it('rejects anything but a non-empty query', () => {
+    // An empty needle means "walk the whole install", the one thing this call
+    // must not do.
+    for (const bad of [undefined, {}, { query: '' }, { query: '   ' }, { query: 7 }]) {
+      expect(() => assertAssetSearchRequest(bad)).toThrow(/asset search request/i);
+    }
+  });
+
+  it('rejects anything but a non-empty visual name', () => {
+    for (const bad of [undefined, {}, { name: '' }, { name: '  ' }, { name: 7 }]) {
+      expect(() => assertVisualBoundsRequest(bad)).toThrow(/visual bounds request/i);
+    }
   });
 });
 

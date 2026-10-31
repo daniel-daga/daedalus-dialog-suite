@@ -7,6 +7,10 @@
  * - Path normalization bypass attempts
  * - Null/undefined inputs
  * - Invalid characters
+ *
+ * Everything here goes through `validatePathResolved`, the only entry point the
+ * app has: containment is checked against realpath'd roots, so each case needs a
+ * real directory rather than a string that merely looks like a path.
  */
 
 import * as path from 'path';
@@ -15,11 +19,6 @@ import * as fsp from 'fs/promises';
 
 describe('PathValidationService', () => {
   let PathValidationService: any;
-  const isWin = os.platform() === 'win32';
-  const projectPath = isWin
-    ? path.join('C:', 'Users', 'Test', 'MyGothicMod')
-    : path.join('/tmp', 'Users', 'Test', 'MyGothicMod');
-  const allowedPaths = [projectPath];
 
   beforeAll(async () => {
     // Dynamically import to avoid issues with main process code
@@ -27,387 +26,114 @@ describe('PathValidationService', () => {
     PathValidationService = module.PathValidationService;
   });
 
-  describe('constructor', () => {
-    it('should create instance with allowed paths', () => {
-      const service = new PathValidationService(allowedPaths);
-      expect(service).toBeDefined();
-    });
-
-    it('should handle empty allowed paths array', () => {
-      const service = new PathValidationService([]);
-      expect(service).toBeDefined();
-    });
-
-    it('should normalize allowed paths on construction', () => {
-      const unnormalizedPath = isWin
-        ? 'C:/Users/Test/../Test/MyGothicMod'
-        : '/tmp/Users/Test/../Test/MyGothicMod';
-      const service = new PathValidationService([unnormalizedPath]);
-
-      // Should accept a file in the normalized location
-      const normalizedProjectPath = path.normalize(unnormalizedPath);
-      const validFile = path.join(normalizedProjectPath, 'test.d');
-      expect(service.isPathAllowed(validFile)).toBe(true);
-    });
-  });
-
-  describe('isPathAllowed - valid paths', () => {
+  describe('validatePathResolved - what it allows and refuses', () => {
+    let root = '';
+    let outside = '';
     let service: any;
 
-    beforeEach(() => {
-      service = new PathValidationService(allowedPaths);
+    beforeEach(async () => {
+      root = await fsp.mkdtemp(path.join(os.tmpdir(), 'pvs-gate-root-'));
+      outside = await fsp.mkdtemp(path.join(os.tmpdir(), 'pvs-gate-out-'));
+      service = new PathValidationService([root]);
     });
 
-    it('should allow file directly in project root', () => {
-      const filePath = path.join(projectPath, 'test.d');
-      expect(service.isPathAllowed(filePath)).toBe(true);
+    afterEach(async () => {
+      await fsp.rm(root, { recursive: true, force: true });
+      await fsp.rm(outside, { recursive: true, force: true });
     });
 
-    it('should allow file in nested subdirectory', () => {
-      const filePath = path.join(projectPath, 'Dialoge', 'NPCs', 'DIA_Farim.d');
-      expect(service.isPathAllowed(filePath)).toBe(true);
+    it('allows files in the root, in nested folders, and with ordinary punctuation', async () => {
+      for (const relative of [
+        'test.d',
+        path.join('Dialoge', 'NPCs', 'DIA_Farim.d'),
+        path.join('a', 'b', 'c', 'd', 'e', 'file.d'),
+        'file-with-dashes_and_underscores (and parens).d',
+        path.join('My Folder', 'My File.d'),
+      ]) {
+        await expect(service.validatePathResolved(path.join(root, relative))).resolves.toBeUndefined();
+      }
     });
 
-    it('should allow deeply nested files', () => {
-      const filePath = path.join(projectPath, 'a', 'b', 'c', 'd', 'e', 'file.d');
-      expect(service.isPathAllowed(filePath)).toBe(true);
+    it('refuses null, undefined, empty, whitespace and non-string inputs', async () => {
+      for (const bad of [null, undefined, '', '   ', 123, {}, []]) {
+        await expect(service.validatePathResolved(bad)).rejects.toThrow(/non-empty string/i);
+      }
     });
 
-    it('should allow files with special but valid characters', () => {
-      const filePath = path.join(projectPath, 'file-with-dashes_and_underscores (and parens).d');
-      expect(service.isPathAllowed(filePath)).toBe(true);
+    it('refuses a path holding a null byte or a line break', async () => {
+      await expect(service.validatePathResolved(`${root}\0file.d`)).rejects.toThrow(/null bytes/i);
+      await expect(service.validatePathResolved(`${root}\r\nfile.d`)).rejects.toThrow(/control characters/i);
     });
 
-    it('should handle paths with spaces correctly', () => {
-      const filePath = path.join(projectPath, 'My Folder', 'My File.d');
-      expect(service.isPathAllowed(filePath)).toBe(true);
-    });
-  });
-
-  describe('isPathAllowed - directory traversal attacks', () => {
-    let service: any;
-
-    beforeEach(() => {
-      service = new PathValidationService(allowedPaths);
+    it('refuses a relative path, whatever it looks like', async () => {
+      for (const relative of ['Dialoge/DIA_Test.d', './file.d', '~/Documents/secrets.txt']) {
+        await expect(service.validatePathResolved(relative)).rejects.toThrow(/Relative paths not allowed/i);
+      }
     });
 
-    it('should reject path with .. going outside project', () => {
-      const filePath = path.join(projectPath, '..', '..', 'etc', 'passwd');
-      expect(service.isPathAllowed(filePath)).toBe(false);
+    it('refuses .. traversal out of the root, however many levels deep', async () => {
+      const from = (...steps: string[]) => [root, ...steps, 'etc', 'passwd'].join(path.sep);
+      await expect(service.validatePathResolved(from('..', '..'))).rejects.toThrow(/Path validation failed/i);
+      await expect(service.validatePathResolved(from('Dialoge', '..', '..', '..'))).rejects.toThrow(/Path validation failed/i);
     });
 
-    it('should reject path starting with ../', () => {
-      const filePath = path.join('..', 'SensitiveFolder', 'secret.txt');
-      expect(service.isPathAllowed(filePath)).toBe(false);
+    it('refuses an absolute path outside every allowed root', async () => {
+      const evil = path.join(outside, 'passwords.txt');
+      await fsp.writeFile(evil, 'x');
+      await expect(service.validatePathResolved(evil)).rejects.toThrow(/outside the allowed project folder/i);
+
+      // A temp-dir path is no less outside for being a temp-dir path.
+      await expect(service.validatePathResolved(path.join(os.tmpdir(), 'malicious.exe'))).rejects.toThrow();
     });
 
-    it('should reject multiple .. attempts', () => {
-      const filePath = path.join(projectPath, 'Dialoge', '..', '..', '..', 'Windows', 'System32', 'file.dll');
-      expect(service.isPathAllowed(filePath)).toBe(false);
+    it('refuses a path in the home directory it does not own', async () => {
+      await expect(service.validatePathResolved(path.join(os.homedir(), '.ssh', 'id_rsa'))).rejects.toThrow();
     });
 
-    it('should treat URL-encoded sequences as literal filename characters (IPC-c)', () => {
+    it('allows a child folder whose name merely begins with ".."', async () => {
+      // N3: containment is segment-aware. "..backup" is a legitimate child, not
+      // traversal.
+      await fsp.mkdir(path.join(root, '..backup'));
+      await expect(service.validatePathResolved(path.join(root, '..backup', 'x.d'))).resolves.toBeUndefined();
+    });
+
+    it('allows a folder whose name literally contains "%2e"', async () => {
       // The local fs never URL-decodes, so %2e/%2f are ordinary filename
-      // characters. A file literally named like this lives inside the project
-      // and must be allowed (the old substring rejection was a false positive).
-      const filePath = projectPath + '/%2e%2e%2f%2e%2e%2fsecret.txt';
-      expect(service.isPathAllowed(filePath)).toBe(true);
+      // characters; the old substring rejection was a false positive (IPC-c).
+      await fsp.mkdir(path.join(root, 'mod%2e5'));
+      await expect(service.validatePathResolved(path.join(root, 'mod%2e5', 'x.d'))).resolves.toBeUndefined();
+      await expect(
+        service.validatePathResolved(`${root}/%2e%2e%2f%2e%2e%2fsecret.txt`),
+      ).resolves.toBeUndefined();
     });
 
-    it('should treat double-encoded sequences as literal filename characters (IPC-c)', () => {
-      const filePath = projectPath + '/%252e%252e%252fsecret.txt';
-      expect(service.isPathAllowed(filePath)).toBe(true);
-    });
-
-    it('should allow .. that stays within project bounds', () => {
-      // Going up and back down should be OK if still within project
-      const filePath = path.join(projectPath, 'Dialoge', 'SubFolder', '..', 'OtherFolder', 'file.d');
-      const normalized = path.normalize(filePath);
-
-      // Should be allowed because normalized path is still within project
-      expect(service.isPathAllowed(normalized)).toBe(true);
-    });
-  });
-
-  describe('isPathAllowed - absolute path escapes', () => {
-    let service: any;
-
-    beforeEach(() => {
-      service = new PathValidationService(allowedPaths);
-    });
-
-    it('should reject absolute path to different drive (Windows)', () => {
-      if (os.platform() === 'win32') {
-        const filePath = 'D:\\SecretFiles\\passwords.txt';
-        expect(service.isPathAllowed(filePath)).toBe(false);
-      }
-    });
-
-    it('should reject absolute path outside allowed directory (Unix)', () => {
-      const filePath = '/etc/passwd';
-      expect(service.isPathAllowed(filePath)).toBe(false);
-    });
-
-    it('should reject absolute path to home directory', () => {
-      const homePath = os.homedir();
-      const filePath = path.join(homePath, '.ssh', 'id_rsa');
-
-      // Should be rejected unless homePath is in allowedPaths
-      expect(service.isPathAllowed(filePath)).toBe(false);
-    });
-
-    it('should reject absolute path to system directory (Windows)', () => {
-      if (os.platform() === 'win32') {
-        const filePath = 'C:\\Windows\\System32\\config\\SAM';
-        expect(service.isPathAllowed(filePath)).toBe(false);
-      }
-    });
-
-    it('should reject absolute path to temp directory', () => {
-      const filePath = path.join(os.tmpdir(), 'malicious.exe');
-      expect(service.isPathAllowed(filePath)).toBe(false);
-    });
-  });
-
-  describe('isPathAllowed - invalid inputs', () => {
-    let service: any;
-
-    beforeEach(() => {
-      service = new PathValidationService(allowedPaths);
-    });
-
-    it('should reject null path', () => {
-      expect(service.isPathAllowed(null)).toBe(false);
-    });
-
-    it('should reject undefined path', () => {
-      expect(service.isPathAllowed(undefined)).toBe(false);
-    });
-
-    it('should reject empty string', () => {
-      expect(service.isPathAllowed('')).toBe(false);
-    });
-
-    it('should reject whitespace-only string', () => {
-      expect(service.isPathAllowed('   ')).toBe(false);
-    });
-
-    it('should reject non-string inputs', () => {
-      expect(service.isPathAllowed(123 as any)).toBe(false);
-      expect(service.isPathAllowed({} as any)).toBe(false);
-      expect(service.isPathAllowed([] as any)).toBe(false);
-    });
-  });
-
-  describe('isPathAllowed - path normalization bypass attempts', () => {
-    let service: any;
-
-    beforeEach(() => {
-      service = new PathValidationService(allowedPaths);
-    });
-
-    it('should reject paths with forward slashes mixed with backslashes', () => {
-      if (os.platform() === 'win32') {
-        const filePath = 'C:/Users/Test/MyGothicMod\\..\\..\\Windows\\System32\\file.dll';
-        expect(service.isPathAllowed(filePath)).toBe(false);
-      }
-    });
-
-    it('should reject paths with redundant separators', () => {
-      const filePath = projectPath + path.sep + path.sep + path.sep + 'file.d';
-      // Should normalize and allow (it's still in project)
-      const normalized = path.normalize(filePath);
-      expect(service.isPathAllowed(normalized)).toBe(true);
-    });
-
-    it('should reject paths with null bytes', () => {
-      const filePath = projectPath + '\0' + 'file.d';
-      expect(service.isPathAllowed(filePath)).toBe(false);
-    });
-
-    it('should reject paths with control characters', () => {
-      const filePath = projectPath + '\r\n' + 'file.d';
-      expect(service.isPathAllowed(filePath)).toBe(false);
-    });
-  });
-
-  describe('isPathAllowed - relative paths', () => {
-    let service: any;
-
-    beforeEach(() => {
-      service = new PathValidationService(allowedPaths);
-    });
-
-    it('should reject relative paths without base', () => {
-      const filePath = 'Dialoge/DIA_Test.d';
-      expect(service.isPathAllowed(filePath)).toBe(false);
-    });
-
-    it('should reject ./ relative path', () => {
-      const filePath = './file.d';
-      expect(service.isPathAllowed(filePath)).toBe(false);
-    });
-
-    it('should reject ~/ home directory expansion', () => {
-      const filePath = '~/Documents/secrets.txt';
-      expect(service.isPathAllowed(filePath)).toBe(false);
-    });
-  });
-
-  describe('isPathAllowed - with multiple allowed directories', () => {
-    it('should allow paths in any of the allowed directories', () => {
-      const projectPath1 = isWin ? 'C:\\Users\\Test\\Project1' : '/tmp/Users/Test/Project1';
-      const projectPath2 = isWin ? 'C:\\Users\\Test\\Project2' : '/tmp/Users/Test/Project2';
-      const service = new PathValidationService([projectPath1, projectPath2]);
-
-      const file1 = path.join(projectPath1, 'file1.d');
-      const file2 = path.join(projectPath2, 'file2.d');
-
-      expect(service.isPathAllowed(file1)).toBe(true);
-      expect(service.isPathAllowed(file2)).toBe(true);
-    });
-
-    it('should reject paths outside all allowed directories', () => {
-      const projectPath1 = isWin ? 'C:\\Users\\Test\\Project1' : '/tmp/Users/Test/Project1';
-      const projectPath2 = isWin ? 'C:\\Users\\Test\\Project2' : '/tmp/Users/Test/Project2';
-      const service = new PathValidationService([projectPath1, projectPath2]);
-
-      const outsideFile = isWin ? 'C:\\Users\\Test\\Project3\\file.d' : '/tmp/Users/Test/Project3/file.d';
-      expect(service.isPathAllowed(outsideFile)).toBe(false);
-    });
-  });
-
-  describe('validatePath - throws on invalid paths', () => {
-    let service: any;
-
-    beforeEach(() => {
-      service = new PathValidationService(allowedPaths);
-    });
-
-    it('should not throw for valid path', () => {
-      const filePath = path.join(projectPath, 'test.d');
-      expect(() => service.validatePath(filePath)).not.toThrow();
-    });
-
-    it('should throw PathValidationError for directory traversal', () => {
-      // Use literal string with .. to test traversal detection (not path.join which normalizes)
-      const filePath = projectPath + path.sep + '..' + path.sep + '..' + path.sep + 'etc' + path.sep + 'passwd';
-      expect(() => service.validatePath(filePath)).toThrow('Path validation failed');
-      expect(() => service.validatePath(filePath)).toThrow('directory traversal');
-    });
-
-    it('should throw PathValidationError for absolute path escape', () => {
-      const filePath = '/etc/passwd';
-      expect(() => service.validatePath(filePath)).toThrow('Path validation failed');
-      expect(() => service.validatePath(filePath)).toThrow('not within allowed directories');
-    });
-
-    it('should throw PathValidationError for null path', () => {
-      expect(() => service.validatePath(null)).toThrow('Path validation failed');
-      expect(() => service.validatePath(null)).toThrow('Path must be a non-empty string');
-    });
-
-    it('should include attempted path in error message', () => {
-      const maliciousPath = '../../../etc/passwd';
+    it('allows a path in any of several allowed roots and refuses it outside them all', async () => {
+      const rootA = await fsp.mkdtemp(path.join(os.tmpdir(), 'pvs-multi-a-'));
+      const rootB = await fsp.mkdtemp(path.join(os.tmpdir(), 'pvs-multi-b-'));
       try {
-        service.validatePath(maliciousPath);
-        fail('Should have thrown error');
-      } catch (error: any) {
-        expect(error.message).toContain(maliciousPath);
+        const multi = new PathValidationService([rootA, rootB]);
+        await expect(multi.validatePathResolved(path.join(rootA, 'file1.d'))).resolves.toBeUndefined();
+        await expect(multi.validatePathResolved(path.join(rootB, 'file2.d'))).resolves.toBeUndefined();
+        await expect(multi.validatePathResolved(path.join(outside, 'file.d'))).rejects.toThrow();
+      } finally {
+        await fsp.rm(rootA, { recursive: true, force: true });
+        await fsp.rm(rootB, { recursive: true, force: true });
       }
     });
-  });
 
-  describe('addAllowedPath', () => {
-    it('should allow adding new allowed path at runtime', () => {
-      const service = new PathValidationService([projectPath]);
-      const newProjectPath = isWin ? 'C:\\Users\\Test\\NewProject' : '/tmp/Users/Test/NewProject';
+    it('grants a root added at runtime, normalized as it is stored', async () => {
+      const newRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'pvs-added-'));
+      try {
+        const file = path.join(newRoot, 'test.d');
+        await expect(service.validatePathResolved(file)).rejects.toThrow();
 
-      // Initially should reject
-      const filePath = path.join(newProjectPath, 'test.d');
-      expect(service.isPathAllowed(filePath)).toBe(false);
-
-      // Add new allowed path
-      service.addAllowedPath(newProjectPath);
-
-      // Now should allow
-      expect(service.isPathAllowed(filePath)).toBe(true);
-    });
-
-    it('should normalize paths when adding', () => {
-      const service = new PathValidationService([projectPath]);
-      const unnormalizedPath = isWin
-        ? 'C:/Users/Test/../Test/NewProject'
-        : '/tmp/Users/Test/../Test/NewProject';
-
-      service.addAllowedPath(unnormalizedPath);
-
-      const normalizedProjectPath = path.normalize(unnormalizedPath);
-      const filePath = path.join(normalizedProjectPath, 'test.d');
-      expect(service.isPathAllowed(filePath)).toBe(true);
-    });
-  });
-
-  describe('removeAllowedPath', () => {
-    it('should disallow paths after removing from allowed list', () => {
-      const service = new PathValidationService([projectPath]);
-      const filePath = path.join(projectPath, 'test.d');
-
-      // Initially allowed
-      expect(service.isPathAllowed(filePath)).toBe(true);
-
-      // Remove path
-      service.removeAllowedPath(projectPath);
-
-      // Now should reject
-      expect(service.isPathAllowed(filePath)).toBe(false);
-    });
-  });
-
-  describe('getAllowedPaths', () => {
-    it('should return array of allowed paths', () => {
-      const paths = [projectPath, isWin ? 'C:\\Users\\Test\\Project2' : '/tmp/Users/Test/Project2'];
-      const service = new PathValidationService(paths);
-
-      const allowed = service.getAllowedPaths();
-      expect(allowed).toHaveLength(2);
-      expect(allowed).toContain(path.normalize(projectPath));
-    });
-
-    it('should return copy not reference', () => {
-      const service = new PathValidationService([projectPath]);
-      const allowed = service.getAllowedPaths();
-
-      // Mutating returned array shouldn't affect service
-      allowed.push(isWin ? 'C:\\Malicious\\Path' : '/tmp/Malicious/Path');
-
-      const maliciousFile = isWin ? 'C:\\Malicious\\Path\\file.d' : '/tmp/Malicious/Path/file.d';
-      expect(service.isPathAllowed(maliciousFile)).toBe(false);
-    });
-  });
-
-  // N3: containment must be segment-aware. A sibling whose first segment merely
-  // *begins* with '..' (e.g. "..backup") is a legitimate child, not traversal.
-  describe('..-prefix sibling edge (N3)', () => {
-    it('should allow a child directory whose name begins with ".." (isPathAllowed)', () => {
-      const service = new PathValidationService([projectPath]);
-      const filePath = path.join(projectPath, '..backup', 'x.d');
-      expect(service.isPathAllowed(filePath)).toBe(true);
-    });
-
-    it('should allow a child directory whose name begins with ".." (validatePath)', () => {
-      const service = new PathValidationService([projectPath]);
-      const filePath = path.join(projectPath, '..backup', 'x.d');
-      expect(() => service.validatePath(filePath)).not.toThrow();
-    });
-  });
-
-  describe('%2e literal filename (IPC-c)', () => {
-    it('should allow a real folder whose name literally contains "%2e"', () => {
-      const service = new PathValidationService([projectPath]);
-      const filePath = path.join(projectPath, 'mod%2e5', 'x.d');
-      expect(service.isPathAllowed(filePath)).toBe(true);
-      expect(() => service.validatePath(filePath)).not.toThrow();
+        // The same folder, spelled with a `..` on the way in.
+        service.addAllowedPath(`${newRoot}${path.sep}sub${path.sep}..`);
+        await fsp.mkdir(path.join(newRoot, 'sub'));
+        await expect(service.validatePathResolved(file)).resolves.toBeUndefined();
+      } finally {
+        await fsp.rm(newRoot, { recursive: true, force: true });
+      }
     });
   });
 

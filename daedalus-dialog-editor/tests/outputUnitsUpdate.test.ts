@@ -82,4 +82,24 @@ describe('updateProjectOutputUnits', () => {
   it('refuses without an install', async () => {
     await expect(updateProjectOutputUnits(null, [])).rejects.toThrow(/Gothic install/i);
   });
+
+  // The database lives in the user's game install, which this app does not own
+  // and cannot rebuild on demand: a refusal has to leave the file it refused to
+  // write exactly as it was. Written through a temp file and a rename, so the
+  // target is never truncated before the new bytes exist.
+  it('leaves the database untouched, and no stray temp file, when the write cannot land', async () => {
+    const { root, dir } = install({ 'OU.BIN': binary(OLD), 'ou.csl': ascii(OLD) });
+    const binBefore = fs.readFileSync(path.join(dir, 'OU.BIN'));
+    const rename = jest.spyOn(fs.promises, 'rename').mockRejectedValue(new Error('EPERM: locked'));
+    try {
+      await expect(
+        updateProjectOutputUnits(root, [{ name: 'DIA_HARALD_15_00', text: 'Neu.' }]),
+      ).rejects.toThrow(/locked/);
+    } finally {
+      rename.mockRestore();
+    }
+
+    expect(fs.readFileSync(path.join(dir, 'OU.BIN'))).toEqual(binBefore);
+    expect(fs.readdirSync(dir).filter((name) => name.endsWith('.tmp'))).toEqual([]);
+  });
 });

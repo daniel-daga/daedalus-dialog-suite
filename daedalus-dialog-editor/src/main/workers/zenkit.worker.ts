@@ -63,6 +63,14 @@ let worldMesh: ReturnType<typeof buildWorldMesh> | null = null;
 let openedPath: string | null = null;
 let worldBbox: number[] | null = null;
 let openedStats: WorldSummary['stats'] | null = null;
+/**
+ * Whether `index` describes the world as a structural edit left it and has not
+ * been handed to the renderer yet. A batch re-reads it after the commit so
+ * `visuals` never places a VOB the op failed to move; the renderer then asks for
+ * it with `refreshIndex` for the same reason, and reading it again there was a
+ * second full enumeration of the world per add or delete.
+ */
+let indexAwaitingHandOff = false;
 /** The mount list the VFS above was built from — what a listing's per-entry
  *  `sources` index into, and the only place the renderer can learn the names
  *  behind those indices (architecture level-editor.md §6). */
@@ -172,13 +180,19 @@ function open(request: ResolvedOpenWorldRequest): { result: WorldSummary; transf
  * touches it, and it is the expensive half of an open.
  */
 function refreshIndex(): { result: WorldSummary; transfer: ArrayBuffer[] } {
-  index = phase('vobIndex', () => zenkit.vobIndex(handle!));
+  // A structural batch already re-read it (see `indexAwaitingHandOff`); this is
+  // the request that consumes that read.
+  const refreshed = indexAwaitingHandOff
+    ? index!
+    : phase('vobIndex', () => zenkit.vobIndex(handle!));
+  index = refreshed;
+  indexAwaitingHandOff = false;
   return {
     result: {
       worldPath: openedPath!,
       bbox: worldBbox!,
-      vobIndex: index,
-      stats: { ...openedStats!, vobCount: index.count },
+      vobIndex: refreshed,
+      stats: { ...openedStats!, vobCount: refreshed.count },
       timings: { ...timings },
       assetSources: [...openedSources],
     },
@@ -408,7 +422,10 @@ function applyOpsRequest(payload: ApplyOpsRequest): { result: null; transfer: Ar
   // A structural op changes how many VOBs there are, so the columnar projection
   // cannot be patched — `applyOps` refuses one by name. The index this thread
   // keeps is re-read instead, and the renderer asks for it with `refreshIndex`.
-  if (payload.ops.some(isStructuralOp)) index = zenkit.vobIndex(handle!);
+  if (payload.ops.some(isStructuralOp)) {
+    index = zenkit.vobIndex(handle!);
+    indexAwaitingHandOff = true;
+  }
   // A waynet op is not structural — it changes no enumeration — but it has no
   // row in the VOB columns either, and `applyOps` refuses it by name. Partition
   // rather than guard the whole batch: the refusal would land *after* the world
@@ -432,6 +449,12 @@ function applyOpsRequest(payload: ApplyOpsRequest): { result: null; transfer: Ar
  */
 function save(payload: SaveWorldRequest): { result: null; transfer: ArrayBuffer[] } {
   phase('save', () => zenkit.saveWorld(handle!, payload.targetPath));
+  // The open world *is* this file from now on — that is what makes Save As one.
+  // `refreshIndex` answers with this path, and the renderer keys the VOB folders
+  // sidecar and the `STARTUP_` function name off it; left on the previous world
+  // it would point every later structural edit back at the file it was copied
+  // from. A plain save passes the path it already has.
+  openedPath = payload.targetPath;
   return { result: null, transfer: [] };
 }
 
@@ -479,7 +502,11 @@ function mountAssets(payload: { assetSources: string[] }): { result: null; trans
   return { result: null, transfer: [] };
 }
 
-function run(message: WorldWorkerRequest): { result: unknown; transfer: ArrayBuffer[] } {
+/**
+ * Dispatch one request. Exported for the tests that pin the bookkeeping above,
+ * the way `parser.worker` exports its handler.
+ */
+export function run(message: WorldWorkerRequest): { result: unknown; transfer: ArrayBuffer[] } {
   switch (message.op) {
     case 'open': return open(message.payload as ResolvedOpenWorldRequest);
     case 'mountAssets': return mountAssets(message.payload as { assetSources: string[] });

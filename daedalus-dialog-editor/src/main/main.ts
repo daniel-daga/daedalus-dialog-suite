@@ -34,6 +34,9 @@ import {
   assertOptionalFolderPath,
   assertExternalUrl,
   assertOutputUnitLines,
+  assertAssetListRequest,
+  assertAssetSearchRequest,
+  assertVisualBoundsRequest,
 } from './ipcValidation';
 import { appendInsertNpcFlow } from './services/AppendInsertNpcFlow';
 import { indexFile } from './utils/semanticMetadataUtils';
@@ -1093,11 +1096,8 @@ export function setupIpcHandlers() {
     // The path is a position inside the *mounted VFS namespace*, not a
     // filesystem path, so it never reaches the disk and the path validator has
     // nothing to validate. The listing is bounded to one directory.
-    const path = typeof request === 'object' && request !== null && 'path' in request
-      && typeof (request as { path: unknown }).path === 'string'
-      ? (request as { path: string }).path
-      : '/';
-    return worldService.listAssets(path);
+    assertAssetListRequest(request);
+    return worldService.listAssets(request.path);
   });
 
   // A needle over the same namespace `world:assets` lists, so it never reaches
@@ -1105,14 +1105,8 @@ export function setupIpcHandlers() {
   // The query is bounded here rather than in the worker: an empty one means
   // "walk the whole install", which is the one thing this call must not do.
   ipcMain.handle('world:assetSearch', async (_event, request: unknown) => {
-    const query = typeof request === 'object' && request !== null && 'query' in request
-      && typeof (request as { query: unknown }).query === 'string'
-      ? (request as { query: string }).query
-      : '';
-    if (query.trim() === '') {
-      throw new Error('Invalid asset search request: query must be a non-empty string');
-    }
-    return worldService.searchAssets(query);
+    assertAssetSearchRequest(request);
+    return worldService.searchAssets(request.query);
   });
 
   // Names resolved inside the same namespace — never on disk — so the shape
@@ -1159,14 +1153,8 @@ export function setupIpcHandlers() {
   // A name inside the mounted VFS namespace, exactly like `world:assets` — it
   // never reaches the disk, so the path validator has nothing to validate.
   ipcMain.handle('world:visualBounds', async (_event, request: unknown) => {
-    const name = typeof request === 'object' && request !== null && 'name' in request
-      && typeof (request as { name: unknown }).name === 'string'
-      ? (request as { name: string }).name
-      : null;
-    if (name === null || name.trim() === '') {
-      throw new Error('Invalid visual bounds request: name must be a non-empty string');
-    }
-    return worldService.getVisualBounds(name);
+    assertVisualBoundsRequest(request);
+    return worldService.getVisualBounds(request.name);
   });
 
   // The per-class fields of one VOB. A read of the world the worker holds — the
