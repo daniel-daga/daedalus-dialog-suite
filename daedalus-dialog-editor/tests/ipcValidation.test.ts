@@ -40,7 +40,9 @@ import {
   assertAssetListRequest,
   assertAssetSearchRequest,
   assertVisualBoundsRequest,
+  guardIpc,
 } from '../src/main/ipcValidation';
+import { PathValidationError } from '../src/main/services/PathValidationService';
 
 describe('project config IPC payloads', () => {
   it('accepts asset source string arrays and an optional folder path', () => {
@@ -377,6 +379,66 @@ describe('the mounted-namespace requests the asset browser and the bounds read m
   it('rejects anything but a non-empty visual name', () => {
     for (const bad of [undefined, {}, { name: '' }, { name: '  ' }, { name: 7 }]) {
       expect(() => assertVisualBoundsRequest(bad)).toThrow(/visual bounds request/i);
+    }
+  });
+});
+
+describe('guardIpc', () => {
+  const quiet = () => jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+  it('answers with what the handler answered, and logs nothing', async () => {
+    const log = quiet();
+    try {
+      await expect(guardIpc('file:read', 'Failed to read file', async () => 'content'))
+        .resolves.toBe('content');
+      expect(log).not.toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('re-throws a path refusal unlabelled, because that sentence is the refusal', async () => {
+    const log = quiet();
+    const refusal = new PathValidationError(
+      'Path validation failed: nope', '/etc/passwd', 'not_within_allowed_directories',
+    );
+    try {
+      await expect(guardIpc('file:read', 'Failed to read file', async () => { throw refusal; }))
+        .rejects.toThrow('Path validation failed: nope');
+      await expect(guardIpc('file:read', 'Failed to read file', async () => { throw refusal; }))
+        .rejects.not.toThrow(/Failed to read file/);
+      expect(log).toHaveBeenCalledWith('[IPC] file:read - Path validation failed:', 'Path validation failed: nope');
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('labels every other failure, and logs the original object', async () => {
+    const log = quiet();
+    try {
+      await expect(guardIpc('file:read', 'Failed to read file', async () => { throw new Error('boom'); }))
+        .rejects.toThrow('Failed to read file: boom');
+      expect(log).toHaveBeenCalledWith('[IPC] file:read error:', expect.any(Error));
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('passes the message through where the caller asked for verbatim', async () => {
+    const log = quiet();
+    try {
+      // `world:save`: the binding's refusal is what a user acts on.
+      await expect(guardIpc(
+        'world:save', 'Failed to save the world',
+        async () => { throw new Error('Only the binsafe writer path is verified'); },
+        true,
+      )).rejects.toThrow('Only the binsafe writer path is verified');
+
+      // Nothing to pass through: the label is all there is.
+      await expect(guardIpc('world:save', 'Failed to save the world', async () => { throw 'weird'; }, true))
+        .rejects.toThrow('Failed to save the world');
+    } finally {
+      log.mockRestore();
     }
   });
 });

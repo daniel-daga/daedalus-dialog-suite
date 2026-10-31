@@ -19,6 +19,36 @@ import type { NpcBodyRequest, WorldOp } from '../shared/worldTypes';
 import type { NpcEdit } from 'daedalus-parser/npc-definition';
 import type { RoutineArgIndex } from '../shared/types';
 import { PROJECT_ASSET_SOURCE_LIMITS } from '../shared/projectConfigTypes';
+import { PathValidationError } from './services/PathValidationService';
+
+/**
+ * The boundary's error shape for a handler that touches the disk: a path
+ * refusal is logged and re-thrown verbatim — the renderer shows that sentence as
+ * the refusal it is — and anything else is logged under the channel and
+ * re-thrown with a label the user can act on.
+ *
+ * `verbatim` is for a handler whose own failure message is the whole answer:
+ * `world:save` passes the binding's refusal ("Only the binsafe writer path is
+ * verified") through rather than burying it in a label.
+ */
+export async function guardIpc<T>(
+  channel: string,
+  failed: string,
+  body: () => Promise<T>,
+  verbatim = false,
+): Promise<T> {
+  try {
+    return await body();
+  } catch (error) {
+    if (error instanceof PathValidationError) {
+      console.error(`[IPC] ${channel} - Path validation failed:`, error.message);
+      throw new Error(error.message);
+    }
+    console.error(`[IPC] ${channel} error:`, error);
+    if (verbatim) throw new Error(error instanceof Error ? error.message : failed);
+    throw new Error(`${failed}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

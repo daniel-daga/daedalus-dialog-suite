@@ -2,7 +2,6 @@ import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { parseAssetCatalog, parseVobFolders } from 'zen-world';
-import { PathValidationError } from './services/PathValidationService';
 import { getServiceRegistry } from './services/serviceRegistry';
 import { saveFileFlow, type SaveFileFlowOptions } from './services/SaveFileFlow';
 import { runOpenWorldSmoke } from './openWorldSmoke';
@@ -37,6 +36,7 @@ import {
   assertAssetListRequest,
   assertAssetSearchRequest,
   assertVisualBoundsRequest,
+  guardIpc,
 } from './ipcValidation';
 import { appendInsertNpcFlow } from './services/AppendInsertNpcFlow';
 import { indexFile } from './utils/semanticMetadataUtils';
@@ -423,56 +423,32 @@ export function setupIpcHandlers() {
     ));
 
   // File I/O handlers
-  ipcMain.handle('file:read', async (_event, filePath: string) => {
-    try {
+  ipcMain.handle('file:read', (_event, filePath: string) =>
+    guardIpc('file:read', 'Failed to read file', async () => {
       // Validate path before reading (symlink-resolved)
       await pathValidator.validatePathResolved(filePath);
 
       return fileService.readFile(filePath);
-    } catch (error) {
-      if (error instanceof PathValidationError) {
-        console.error('[IPC] file:read - Path validation failed:', error.message);
-        throw new Error(error.message);
-      }
-      console.error('[IPC] file:read error:', error);
-      throw new Error(`Failed to read file: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  });
+    }));
 
   // `file:read` plus the disk version of the bytes read (#378). A caller that
   // writes the file back passes `version` as the write's `expectedVersion`.
-  ipcMain.handle('file:readVersioned', async (_event, filePath: string) => {
-    try {
+  ipcMain.handle('file:readVersioned', (_event, filePath: string) =>
+    guardIpc('file:readVersioned', 'Failed to read file', async () => {
       await pathValidator.validatePathResolved(filePath);
 
       return await fileService.readFileVersioned(filePath);
-    } catch (error) {
-      if (error instanceof PathValidationError) {
-        console.error('[IPC] file:readVersioned - Path validation failed:', error.message);
-        throw new Error(error.message);
-      }
-      console.error('[IPC] file:readVersioned error:', error);
-      throw new Error(`Failed to read file: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  });
+    }));
 
-  ipcMain.handle('file:write', async (_event, filePath: string, content: string, options?: { expectedVersion?: string }) => {
-    try {
+  ipcMain.handle('file:write', (_event, filePath: string, content: string, options?: { expectedVersion?: string }) =>
+    guardIpc('file:write', 'Failed to write file', async () => {
       // Validate path before writing (symlink-resolved, write mode)
       await pathValidator.validatePathResolved(filePath, { write: true });
 
       const expectedVersion = typeof options?.expectedVersion === 'string' ? options.expectedVersion : undefined;
       const writeResult = await fileService.writeFile(filePath, content, { expectedVersion });
       return writeResult;
-    } catch (error) {
-      if (error instanceof PathValidationError) {
-        console.error('[IPC] file:write - Path validation failed:', error.message);
-        throw new Error(error.message);
-      }
-      console.error('[IPC] file:write error:', error);
-      throw new Error(`Failed to write file: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  });
+    }));
 
   ipcMain.handle('file:openDialog', async () => {
     try {
@@ -669,24 +645,16 @@ export function setupIpcHandlers() {
     return readProjectOutputUnits(await settingsService.getGothicInstallPath());
   });
 
-  ipcMain.handle('project:buildIndex', async (_event, folderPath: string) => {
-    try {
+  ipcMain.handle('project:buildIndex', (_event, folderPath: string) =>
+    guardIpc('project:buildIndex', 'Failed to build project index', async () => {
       // Validate project folder path (symlink-resolved)
       await pathValidator.validatePathResolved(folderPath);
 
       return await projectService.buildProjectIndex(folderPath);
-    } catch (error) {
-      if (error instanceof PathValidationError) {
-        console.error('[IPC] project:buildIndex - Path validation failed:', error.message);
-        throw new Error(error.message);
-      }
-      console.error('[IPC] project:buildIndex error:', error);
-      throw new Error(`Failed to build project index: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  });
+    }));
 
-  ipcMain.handle('project:parseDialogFile', async (_event, filePath: string) => {
-    try {
+  ipcMain.handle('project:parseDialogFile', (_event, filePath: string) =>
+    guardIpc('project:parseDialogFile', 'Failed to parse dialog file', async () => {
       // Validate file path before parsing (symlink-resolved)
       await pathValidator.validatePathResolved(filePath);
 
@@ -699,36 +667,20 @@ export function setupIpcHandlers() {
 
       const content = await fileService.readFile(filePath);
       return await parserService.parseSource(content);
-    } catch (error) {
-      if (error instanceof PathValidationError) {
-        console.error('[IPC] project:parseDialogFile - Path validation failed:', error.message);
-        throw new Error(error.message);
-      }
-      console.error('[IPC] project:parseDialogFile error:', error);
-      throw new Error(`Failed to parse dialog file: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  });
+    }));
 
   // One file's share of the index, after a routine save or an edit outside
   // the editor (docs/plans/npc-editor.md §6, #319): read the way the index
   // build reads it, with the layouts it derived — the wrappers live in another
   // file than the routine.
-  ipcMain.handle('project:indexFile', async (_event, request: unknown) => {
-    try {
+  ipcMain.handle('project:indexFile', (_event, request: unknown) =>
+    guardIpc('project:indexFile', 'Failed to index file', async () => {
       assertIndexFileRequest(request);
       await pathValidator.validatePathResolved(request.filePath);
       const content = await fileService.readFile(request.filePath);
       const model = await parserService.parseSource(content);
       return indexFile(request.filePath, model, request.layouts);
-    } catch (error) {
-      if (error instanceof PathValidationError) {
-        console.error('[IPC] project:indexFile - Path validation failed:', error.message);
-        throw new Error(error.message);
-      }
-      console.error('[IPC] project:indexFile error:', error);
-      throw new Error(`Failed to index file: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  });
+    }));
 
   ipcMain.handle('project:addAllowedPath', async (_event, folderPath: string) => {
     try {
@@ -760,21 +712,13 @@ export function setupIpcHandlers() {
   });
 
   // File watcher handlers
-  ipcMain.handle('fileWatcher:start', async (_event, projectPath: string) => {
-    try {
+  ipcMain.handle('fileWatcher:start', (_event, projectPath: string) =>
+    guardIpc('fileWatcher:start', 'Failed to start file watcher', async () => {
       // Validate path before watching (symlink-resolved)
       await pathValidator.validatePathResolved(projectPath);
 
       await fileWatcherService.startWatching(projectPath);
-    } catch (error) {
-      if (error instanceof PathValidationError) {
-        console.error('[IPC] fileWatcher:start - Path validation failed:', error.message);
-        throw new Error(error.message);
-      }
-      console.error('[IPC] fileWatcher:start error:', error);
-      throw new Error(`Failed to start file watcher: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  });
+    }));
 
   ipcMain.handle('fileWatcher:stop', async () => {
     try {
@@ -953,8 +897,8 @@ export function setupIpcHandlers() {
     }
   });
 
-  ipcMain.handle('world:open', async (_event, request: unknown) => {
-    try {
+  ipcMain.handle('world:open', (_event, request: unknown) =>
+    guardIpc('world:open', 'Failed to open world', async () => {
       assertOpenWorldRequest(request);
       await pathValidator.validatePathResolved(request.worldPath);
 
@@ -995,15 +939,7 @@ export function setupIpcHandlers() {
         gameVersion: request.gameVersion,
         assetSources,
       });
-    } catch (error) {
-      if (error instanceof PathValidationError) {
-        console.error('[IPC] world:open - Path validation failed:', error.message);
-        throw new Error(error.message);
-      }
-      console.error('[IPC] world:open error:', error);
-      throw new Error(`Failed to open world: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  });
+    }));
 
   // The GMBT quick test (§16.29). No payload, and deliberately so: both halves
   // of the launch — the working directory and the `--world` filename — are read
@@ -1180,30 +1116,22 @@ export function setupIpcHandlers() {
 
   // Save always overwrites the world currently held by WorldService. Main owns
   // the target: the renderer sends no path and therefore cannot redirect the
-  // write to another file that happens to be readable.
-  ipcMain.handle('world:save', async () => {
-    try {
+  // write to another file that happens to be readable. `verbatim` because the
+  // binding's own refusal — currently an unverified BINARY world — is the
+  // message worth showing, so it is passed through rather than replaced.
+  ipcMain.handle('world:save', () =>
+    guardIpc('world:save', 'Failed to save the world', async () => {
       const targetPath = worldService.openWorldPath();
       await pathValidator.validatePathResolved(targetPath, { write: true });
       await worldService.saveWorld(targetPath);
-    } catch (error) {
-      if (error instanceof PathValidationError) {
-        console.error('[IPC] world:save - Path validation failed:', error.message);
-        throw new Error(error.message);
-      }
-      console.error('[IPC] world:save error:', error);
-      // The binding's own refusal — currently an unverified BINARY world — is the message worth
-      // showing, so it is passed through rather than replaced.
-      throw new Error(error instanceof Error ? error.message : 'Failed to save the world');
-    }
-  });
+    }, true));
 
   // Save As (#367). Main shows the dialog and names the target, for the reason
   // `world:save` takes no path: the renderer cannot choose where the write
   // lands. The chosen file becomes the open world, so it is granted the way an
   // opened one is — the file and its sidecar, not the folder.
-  ipcMain.handle('world:saveAs', async () => {
-    try {
+  ipcMain.handle('world:saveAs', () =>
+    guardIpc('world:saveAs', 'Failed to save the world', async () => {
       const openPath = worldService.openWorldPath();
       const result = await dialog.showSaveDialog({
         title: 'Save world as',
@@ -1226,23 +1154,15 @@ export function setupIpcHandlers() {
         console.error('[IPC] world:saveAs - copying the VOB folders failed:', error);
       }
       return targetPath;
-    } catch (error) {
-      if (error instanceof PathValidationError) {
-        console.error('[IPC] world:saveAs - Path validation failed:', error.message);
-        throw new Error(error.message);
-      }
-      console.error('[IPC] world:saveAs error:', error);
-      throw new Error(error instanceof Error ? error.message : 'Failed to save the world');
-    }
-  });
+    }, true));
 
   // The `<worldname>.folders.json` sidecar (VOB folders slice) — user-created,
   // editor-only VOB groupings, kept beside the world file rather than in it.
   // Stateless like `world:save`: the renderer already holds the open world's
   // path (`WorldSummary.worldPath`) and carries it on every call rather than
   // this process tracking a second one.
-  ipcMain.handle('world:getVobFolders', async (_event, request: unknown) => {
-    try {
+  ipcMain.handle('world:getVobFolders', (_event, request: unknown) =>
+    guardIpc('world:getVobFolders', 'Failed to read VOB folders', async () => {
       assertVobFoldersGetRequest(request);
       // `{ write: true }` on a *read*, and deliberately: `load` renames a
       // corrupt sidecar aside before falling back, so this handler writes —
@@ -1253,18 +1173,10 @@ export function setupIpcHandlers() {
         worldFoldersService.sidecarPath(request.worldPath), { write: true },
       );
       return await worldFoldersService.load(request.worldPath);
-    } catch (error) {
-      if (error instanceof PathValidationError) {
-        console.error('[IPC] world:getVobFolders - Path validation failed:', error.message);
-        throw new Error(error.message);
-      }
-      console.error('[IPC] world:getVobFolders error:', error);
-      throw new Error(`Failed to read VOB folders: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  });
+    }));
 
-  ipcMain.handle('world:saveVobFolders', async (_event, request: unknown) => {
-    try {
+  ipcMain.handle('world:saveVobFolders', (_event, request: unknown) =>
+    guardIpc('world:saveVobFolders', 'Failed to save VOB folders', async () => {
       assertVobFoldersSaveRequest(request);
       await pathValidator.validatePathResolved(
         worldFoldersService.sidecarPath(request.worldPath), { write: true },
@@ -1272,51 +1184,27 @@ export function setupIpcHandlers() {
       // `folders` is untrusted regardless of the shape assertion above — it is
       // re-derived through `parseVobFolders` rather than written as given.
       await worldFoldersService.save(request.worldPath, parseVobFolders(request.folders));
-    } catch (error) {
-      if (error instanceof PathValidationError) {
-        console.error('[IPC] world:saveVobFolders - Path validation failed:', error.message);
-        throw new Error(error.message);
-      }
-      console.error('[IPC] world:saveVobFolders error:', error);
-      throw new Error(`Failed to save VOB folders: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  });
+    }));
 
   // The `<project>.assets.json` sidecar (§16.26, "Wanted on top") — the asset
   // browser's favorites and categories, beside the project file. The same
   // shape as the folders sidecar above: stateless, path-validated against the
   // exact file, the payload re-derived rather than written as given.
-  ipcMain.handle('project:getAssetCatalog', async (_event, request: unknown) => {
-    try {
+  ipcMain.handle('project:getAssetCatalog', (_event, request: unknown) =>
+    guardIpc('project:getAssetCatalog', 'Failed to read asset catalog', async () => {
       assertAssetCatalogGetRequest(request);
       await pathValidator.validatePathResolved(assetCatalogService.sidecarPath(request.projectFilePath));
       return await assetCatalogService.load(request.projectFilePath);
-    } catch (error) {
-      if (error instanceof PathValidationError) {
-        console.error('[IPC] project:getAssetCatalog - Path validation failed:', error.message);
-        throw new Error(error.message);
-      }
-      console.error('[IPC] project:getAssetCatalog error:', error);
-      throw new Error(`Failed to read asset catalog: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  });
+    }));
 
-  ipcMain.handle('project:saveAssetCatalog', async (_event, request: unknown) => {
-    try {
+  ipcMain.handle('project:saveAssetCatalog', (_event, request: unknown) =>
+    guardIpc('project:saveAssetCatalog', 'Failed to save asset catalog', async () => {
       assertAssetCatalogSaveRequest(request);
       await pathValidator.validatePathResolved(
         assetCatalogService.sidecarPath(request.projectFilePath), { write: true },
       );
       await assetCatalogService.save(request.projectFilePath, parseAssetCatalog(request.catalog));
-    } catch (error) {
-      if (error instanceof PathValidationError) {
-        console.error('[IPC] project:saveAssetCatalog - Path validation failed:', error.message);
-        throw new Error(error.message);
-      }
-      console.error('[IPC] project:saveAssetCatalog error:', error);
-      throw new Error(`Failed to save asset catalog: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  });
+    }));
 
   // Append a `Wld_InsertNpc` to a `STARTUP_<world>` function on disk by text
   // splice (level-editor.md §16.19, slice 16 C). The shape check is here;
