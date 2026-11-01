@@ -120,6 +120,65 @@ describe('useFileWatcher — change batching', () => {
     unmount();
   });
 
+  // #449: the reload decision is made per file, after every earlier await in
+  // the batch. An edit committed to file B while file A is still reading must
+  // be seen — B is dirty now, so it takes the conflict path, not the disk copy.
+  test('an edit committed while another file reloads survives the batch', async () => {
+    const parked = new Map<string, (value: { content: string; version: string }) => void>();
+    const readVersioned = jest.spyOn(window.editorAPI, 'readFileVersioned')
+      .mockImplementation((filePath: string) =>
+        new Promise((resolve) => { parked.set(filePath, resolve); }) as any);
+
+    const cleanState = (filePath: string) => {
+      const model = modelFor(filePath);
+      return {
+        filePath,
+        semanticModel: model as any,
+        savedModel: model as any,
+        isDirty: false,
+        lastSaved: new Date(),
+        originalCode: `// ${filePath}`,
+        diskVersion: 'v1',
+      };
+    };
+    useFileStore.setState({
+      activeFile: FILE_A,
+      openFiles: new Map([
+        [FILE_A, cleanState(FILE_A)],
+        [FILE_B, cleanState(FILE_B)],
+      ]) as any,
+    });
+    const { unmount } = await setupHook();
+
+    emit({ type: 'change', filePath: FILE_A });
+    emit({ type: 'change', filePath: FILE_B });
+    await act(async () => {
+      await waitFor(() => expect(parked.has(FILE_A)).toBe(true), { timeout: 2000 });
+    });
+
+    // The keystroke lands while A's disk read is still parked.
+    act(() => {
+      useFileStore.getState().updateModel(FILE_B, {
+        ...modelFor(FILE_B),
+        dialogs: { DIA_EDITED: { name: 'DIA_EDITED', properties: { npc: 'TestNPC' } } },
+      } as any);
+    });
+
+    await act(async () => {
+      parked.get(FILE_A)!({ content: '// A re-read from disk', version: 'v2' });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    const fileB = useFileStore.getState().openFiles.get(FILE_B)!;
+    // B was never re-read: the decision is made from live state, not a snapshot.
+    expect(parked.has(FILE_B)).toBe(false);
+    expect(fileB.externalConflict).toBeDefined();
+    expect(Object.keys(fileB.semanticModel.dialogs)).toEqual(['DIA_EDITED']);
+    expect(fileB.isDirty).toBe(true);
+    readVersioned.mockRestore();
+    unmount();
+  });
+
   test('N change events in one window: one parse per unique path, one store cascade', async () => {
     const { unmount } = await setupHook();
     const generationBefore = useProjectStore.getState().parseGeneration;
