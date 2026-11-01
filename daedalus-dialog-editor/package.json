@@ -20,7 +20,6 @@
     "package": "electron-builder",
     "lint": "eslint .",
     "test": "jest",
-    "test:mocked": "jest --config jest.mocked.config.js",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:stable:windows": "powershell -ExecutionPolicy Bypass -File scripts/run-jest-stable-windows.ps1",

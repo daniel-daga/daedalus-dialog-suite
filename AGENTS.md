@@ -277,7 +277,6 @@ Import direction is one-way: UI → domain.
 | `npm run typecheck:renderer` | TypeScript check renderer only |
 | `npm run typecheck:tests` | TypeScript check `tests/` (Jest suites and their helpers; ts-jest itself never type-checks) |
 | `npm test` | Jest unit/integration tests |
-| `npm run test:mocked` | Jest with mocks |
 | `npm run test:stable:windows` | Recommended local Windows baseline |
 | `npm run test:matrix:windows` | Repro matrix for intermittent `3221226505` exits |
 | `npm run test:e2e` | Playwright E2E tests |

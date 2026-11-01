@@ -1,7 +1,6 @@
-// Shared Jest settings for both the real-parser suite (jest.config.js) and the
-// explicit mocked suite (jest.mocked.config.js). Neither the parser-presence
-// guard nor the mock mappings live here — each consuming config layers its own
-// concern on top, so the mocked suite stays runnable with the parser absent.
+// Shared Jest settings. The parser-presence guard (so a missing daedalus-parser
+// fails loudly rather than silently running against mocks) lives in
+// jest.config.js, which layers it on top of these settings.
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'jsdom',
