@@ -65,4 +65,42 @@ describe('DialogLineRenderer', () => {
       text: 'Updated line'
     });
   });
+
+  // #457: AI_Output takes (speaker, listener, id). The parser sets `listener`
+  // on every line it reads, so the generator's speaker-derived fallback never
+  // applies — flipping only the speaker wrote `AI_Output (other, other, …)`
+  // and the hero spoke to himself.
+  test('flipping the speaker flips the listener with it', () => {
+    const action = {
+      type: 'DialogLine',
+      speaker: 'self',
+      listener: 'other',
+      text: 'Hello there',
+      id: 'DIA_Test_08_00'
+    };
+
+    render(<DialogLineRenderer {...baseProps} action={action as any} />);
+    fireEvent.mouseDown(screen.getByRole('combobox'));
+    fireEvent.click(screen.getByRole('option', { name: 'Hero' }));
+
+    expect(baseProps.handleUpdate).toHaveBeenCalledWith({
+      ...action,
+      speaker: 'other',
+      listener: 'self'
+    });
+  });
+
+  test('a line with no stored listener gets the opposite of its new speaker', () => {
+    const action = { type: 'DialogLine', speaker: 'other', text: 'Hi', id: 'DIA_Test_15_00' };
+
+    render(<DialogLineRenderer {...baseProps} action={action as any} />);
+    fireEvent.mouseDown(screen.getByRole('combobox'));
+    fireEvent.click(screen.getByRole('option', { name: 'Diego' }));
+
+    expect(baseProps.handleUpdate).toHaveBeenCalledWith({
+      ...action,
+      speaker: 'self',
+      listener: 'other'
+    });
+  });
 });
