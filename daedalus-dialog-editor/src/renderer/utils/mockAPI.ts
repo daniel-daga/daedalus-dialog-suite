@@ -6,7 +6,7 @@
  * file persistence and includes sample dialog data for testing.
  */
 
-import type { EditorAPI, ValidationResult, SaveResult, FileChangeEvent, AppendInsertNpcResult, OpenedProjectConfig, NpcDefinition, NpcStatement, NpcEdit, ProjectOutputUnits } from '../types/global';
+import type { EditorAPI, ValidationResult, SaveResult, FileChangeEvent, AppendInsertNpcResult, OpenedProjectConfig, NpcDefinition, NpcStatement, NpcEdit, ProjectOutputUnits, SaveOptions } from '../types/global';
 import type { ExchangeSite, FileIndex, RoutineSite } from '../../shared/types';
 import { routineStatesOf } from '../../shared/routineStates';
 
@@ -175,6 +175,29 @@ class MockFileSystem {
       }
     }
     keysToRemove.forEach(key => localStorage.removeItem(key));
+  }
+}
+
+/**
+ * The fake's stand-in for FileService's disk-version token (#505). Derived from
+ * the bytes, so the version a read reports is the one a later write must have
+ * seen — which is what makes the stale-write precondition meaningful here.
+ */
+function mockDiskVersion(content: string): string {
+  let hash = 5381;
+  for (let i = 0; i < content.length; i++) hash = ((hash * 33) ^ content.charCodeAt(i)) | 0;
+  return `mock:${content.length}:${(hash >>> 0).toString(36)}`;
+}
+
+/**
+ * FileService's external-modification precondition: refuse the write when the
+ * caller's snapshot is no longer what is on disk. A file that is gone has
+ * nothing to conflict with — the write recreates it.
+ */
+function assertExpectedVersion(filePath: string, expectedVersion: string | undefined): void {
+  if (expectedVersion === undefined || !MockFileSystem.fileExists(filePath)) return;
+  if (mockDiskVersion(MockFileSystem.readFile(filePath)) !== expectedVersion) {
+    throw new Error(`EXTERNAL_MODIFICATION: ${filePath} was modified on disk since it was last read`);
   }
 }
 
@@ -485,18 +508,25 @@ export const mockEditorAPI: EditorAPI = {
   async readFileVersioned(filePath: string): Promise<{ content: string; version: string }> {
     // Through the object, so a test spying on `readFile` steers this too.
     const content = await mockEditorAPI.readFile(filePath);
-    return { content, version: `mock:${content.length}` };
+    return { content, version: mockDiskVersion(content) };
   },
 
-  async writeFile(filePath: string, content: string): Promise<{ success: boolean }> {
+  async writeFile(
+    filePath: string,
+    content: string,
+    options?: { expectedVersion?: string }
+  ): Promise<{ success: boolean; version?: string }> {
     try {
+      // `guardIpc`'s label on the `file:write` channel, with the reason kept
+      // verbatim so the renderer can still classify it.
+      assertExpectedVersion(filePath, options?.expectedVersion);
       MockFileSystem.writeFile(filePath, content);
       console.log(`[Mock API] File written: ${filePath}`);
-      return { success: true };
     } catch (error) {
       console.error('Mock writeFile error:', error);
-      return { success: false };
+      throw new Error(`Failed to write file: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+    return { success: true, version: mockDiskVersion(content) };
   },
 
   async parseSource(sourceCode: string): Promise<any> {
@@ -618,24 +648,28 @@ export const mockEditorAPI: EditorAPI = {
     };
   },
 
-  async saveFile(filePath: string, model: any, settings: any, _options?: { skipValidation?: boolean; forceOnErrors?: boolean }): Promise<SaveResult> {
+  async saveFile(filePath: string, model: any, settings: any, options?: SaveOptions): Promise<SaveResult> {
+    const code = generateCode(model, settings);
     try {
-      const code = generateCode(model, settings);
+      // `overwriteExternal` is the conflict dialog's consent to write over a
+      // file that moved on; SaveFileFlow drops `expectedVersion` for it.
+      assertExpectedVersion(filePath, options?.overwriteExternal ? undefined : options?.expectedVersion);
       MockFileSystem.writeFile(filePath, code);
       console.log(`[Mock API] File saved: ${filePath}`);
-      return {
-        success: true,
-        validationResult: {
-          isValid: true,
-          errors: [],
-          warnings: [],
-          generatedCode: code
-        }
-      };
     } catch (error) {
       console.error('Mock saveFile error:', error);
-      return { success: false };
+      throw new Error(`Failed to save file: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+    return {
+      success: true,
+      version: mockDiskVersion(code),
+      validationResult: {
+        isValid: true,
+        errors: [],
+        warnings: [],
+        generatedCode: code
+      }
+    };
   },
 
   async openProjectFolderDialog(): Promise<string | null> {
