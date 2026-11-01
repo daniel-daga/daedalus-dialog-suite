@@ -456,8 +456,13 @@ function of another name (#395).
    identifier case, literal text, string quotes, comment text, and token
    order must match exactly. Corpus config:
    `{ includeComments: true, sectionHeaders: false, preserveSourceStyle: true }`.
-2. **Byte fidelity (reported, non-failing):** equality after line-ending
-   normalization; indentation preservation is the remaining gap (known:
+2. **Byte fidelity (reported, non-failing):** the file's bytes on disk
+   against `iconv.encode(generatedText, source.encoding)` — what the editor's
+   save path (`FileService.writeFile`) would write (#448). Line endings are
+   normalized away (generation emits LF); an encode loss the decoded-string
+   comparison this tier used to be could not see, such as an unassigned byte
+   `0x81` decoded to U+FFFD and written back as `0x9D`, now reports drift.
+   Indentation preservation is the remaining gap (known:
    `CreateTopic`/`LogEntry` blank-line padding, N3).
    **Blank lines between top-level declarations are kept (#286).** The
    declaration pass records on each `declarationOrder` entry the blank lines
@@ -478,9 +483,12 @@ The real MDK corpus is licensed/gitignored; run it locally with
 `npm run test:roundtrip-corpus -- --root <mdk path>`. It is strict-green as of
 #395 (1,725 files, exit 0); its one source syntax error is
 `AI/AI_Intern/Externals.d`, a listing of bodiless engine prototypes that no
-`.src` compiles. "Fallback-decoded" counts the files `parseFile` read as
-anything but UTF-8 — pure ASCII included, since that reads as Windows-1252. Re-enabling the
-standalone CI corpus job is slice 8's call.
+`.src` compiles, and `--strict` now fails on any file the grammar cannot parse
+(#448), so that run names the exception:
+`--allow-syntax-error <mdk path>/AI/AI_Intern/Externals.d`. "Fallback-decoded"
+counts the files `parseFile` read as anything but UTF-8 — pure ASCII included,
+since that reads as Windows-1252. Re-enabling the standalone CI corpus job is
+slice 8's call.
 
 ## 2026-10-03 review validation
 
