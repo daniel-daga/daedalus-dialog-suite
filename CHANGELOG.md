@@ -4,6 +4,10 @@ What each published Windows build changed, newest first. Build Windows adds a
 build here when it publishes it; write new notes in `RELEASE_NOTES.md`, not here.
 Builds before 31 had no release notes.
 
+## Build 39 — 2026-11-01
+
+- #431: VOB folders made after Save As are saved beside the copy, not the file it was saved from
+
 ## Build 38 — 2026-10-31
 
 - #404: Q and E turn a VOB about the vertical in both gizmo modes; in turn mode A/D lean it sideways
