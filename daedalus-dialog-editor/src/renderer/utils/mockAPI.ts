@@ -10,15 +10,16 @@ import type { EditorAPI, ValidationResult, SaveResult, FileChangeEvent, AppendIn
 import type { ExchangeSite, FileIndex, RoutineSite } from '../../shared/types';
 import { routineStatesOf } from '../../shared/routineStates';
 
-// Captured file-change callback (see onFileChanged). Lets E2E tests inject
-// external change/unlink events through the `__mockEmitFileChange` window hook.
-let mockFileChangeListener: ((event: FileChangeEvent) => void) | null = null;
+// Listeners per subscribe call (see onFileChanged/onCloseRequested), as
+// `preload.ts` registers one `ipcRenderer.on` per call: every subscriber hears
+// the event and each unsubscribe removes only its own. This is what lets E2E
+// tests inject events through the `__mockEmitFileChange` window hook below.
+const mockFileChangeListeners = new Set<(event: FileChangeEvent) => void>();
 
-// Captured close-requested callback (see onCloseRequested). There is no real
-// window in the mock harness, so E2E tests inject the request via the
-// `__mockEmitCloseRequested` window hook and assert against the recorded
-// ack/approve/cancel calls on `window.__closeGuardCalls`.
-let mockCloseRequestedListener: (() => void) | null = null;
+// There is no real window in the mock harness, so E2E tests inject the close
+// request via the `__mockEmitCloseRequested` window hook and assert against the
+// recorded ack/approve/cancel calls on `window.__closeGuardCalls`.
+const mockCloseRequestedListeners = new Set<() => void>();
 
 type CloseGuardCall = 'ackCloseRequest' | 'approveClose' | 'cancelClose';
 
@@ -868,17 +869,18 @@ export const mockEditorAPI: EditorAPI = {
     return recent ? JSON.parse(recent) : [];
   },
 
-  // File Watcher API (no-op in mock/browser mode). The change callback is
+  // File Watcher API (no-op in mock/browser mode). The change callbacks are
   // captured so E2E tests can inject external file-change events via the
   // `__mockEmitFileChange` window hook (there is no real watcher in the mock).
   async startFileWatcher(): Promise<void> {},
   async stopFileWatcher(): Promise<void> {},
   onFileChanged(callback): () => void {
-    mockFileChangeListener = callback;
+    mockFileChangeListeners.add(callback);
     if (typeof window !== 'undefined') {
-      (window as any).__mockEmitFileChange = (event: any) => mockFileChangeListener?.(event);
+      (window as any).__mockEmitFileChange = (event: any) =>
+        mockFileChangeListeners.forEach((listener) => listener(event));
     }
-    return () => { mockFileChangeListener = null; };
+    return () => { mockFileChangeListeners.delete(callback); };
   },
 
   async getAppVersion(): Promise<string> {
@@ -893,15 +895,16 @@ export const mockEditorAPI: EditorAPI = {
   },
   async showLogFile(): Promise<void> {},
 
-  // Window close guard (E1). The request callback is captured so E2E tests can
+  // Window close guard (E1). The request callbacks are captured so E2E tests can
   // inject a close request via the `__mockEmitCloseRequested` window hook; the
   // ack/approve/cancel signals are recorded for assertion (no real window here).
   onCloseRequested(callback: () => void): () => void {
-    mockCloseRequestedListener = callback;
+    mockCloseRequestedListeners.add(callback);
     if (typeof window !== 'undefined') {
-      (window as any).__mockEmitCloseRequested = () => mockCloseRequestedListener?.();
+      (window as any).__mockEmitCloseRequested = () =>
+        mockCloseRequestedListeners.forEach((listener) => listener());
     }
-    return () => { mockCloseRequestedListener = null; };
+    return () => { mockCloseRequestedListeners.delete(callback); };
   },
   ackCloseRequest(): void {
     recordCloseGuardCall('ackCloseRequest');
