@@ -3,6 +3,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const iconv = require('iconv-lite');
 const DaedalusParser = require('../src/core/parser');
 const { SemanticModelBuilderVisitor } = require('../dist/semantic/semantic-visitor-index');
 const { SemanticCodeGenerator } = require('../dist/codegen/generator');
@@ -27,6 +28,9 @@ function parseArgs(argv) {
       args.strict = true;
     } else if (token === '--no-strict') {
       args.strict = false;
+    } else if (token === '--allow-syntax-error') {
+      args.allowSyntaxErrors = [...(args.allowSyntaxErrors || []), argv[i + 1]];
+      i += 1;
     } else if (token === '--help' || token === '-h') {
       args.help = true;
     }
@@ -43,13 +47,17 @@ function printHelp() {
     '  --report-prefix <prefix>  Prefix for report files (default: dialog-roundtrip-corpus)',
     '  --report-dir <path>       Directory for generated reports (default: <repo>/reports)',
     '  --max-files <n>           Stop after processing n files',
-    '  --strict                  Exit 1 on structural drift (default)',
+    '  --strict                  Exit 1 on drift, a syntax error, or a file that does not parse (default)',
     '  --no-strict               Always exit 0',
+    '  --allow-syntax-error <path>  Do not fail on this path\'s syntax error (repeatable; for',
+    '                            files no compiler accepts, e.g. MDK AI/AI_Intern/Externals.d)',
     '  --help, -h                Show this help',
     '',
     'Examples:',
     '  npm run test:roundtrip-corpus -- --root "C:\\\\mods\\\\Story\\\\Dialoge"',
-    '  npm run test:roundtrip-corpus -- --max-files 50 --no-strict'
+    '  npm run test:roundtrip-corpus -- --max-files 50 --no-strict',
+    '  npm run test:roundtrip-corpus -- --root ../mdk/Content/Story/Dialoge \\',
+    '    --allow-syntax-error ../mdk/Content/Story/Dialoge/AI/AI_Intern/Externals.d'
   ];
   console.log(text.join('\n'));
 }
@@ -221,6 +229,37 @@ function normalizeLineEndings(text) {
 }
 
 /**
+ * Tier 2 compares bytes, not text: what is on disk against what the save path
+ * would write. `FileService.writeFile` encodes the generated text back in the
+ * source's own encoding, so a loss there (a byte iconv cannot write, a BOM it
+ * dropped on decode) changes the file. Comparing two already-decoded strings,
+ * as this tier used to, could never see that (#448).
+ *
+ * Line endings are normalized away because generation emits LF. 0x0D is CR in
+ * every encoding a Daedalus source uses, and never a trailing byte of a
+ * multi-byte sequence, so removing it cannot corrupt a character.
+ */
+function stripCarriageReturns(buffer) {
+  if (!buffer.includes(0x0D)) {
+    return buffer;
+  }
+  const out = Buffer.allocUnsafe(buffer.length);
+  let length = 0;
+  for (const byte of buffer) {
+    if (byte !== 0x0D) {
+      out[length] = byte;
+      length += 1;
+    }
+  }
+  return out.subarray(0, length);
+}
+
+/** The bytes `FileService.writeFile` would put on disk for this text. */
+function bytesOfSave(generatedText, encoding) {
+  return iconv.encode(normalizeLineEndings(generatedText), encoding);
+}
+
+/**
  * Tier 1 token stream: in-order leaf tokens (named leaves + anonymous tokens),
  * each contributing its exact text. Comment tokens contribute their text with
  * trailing whitespace trimmed. Inter-token whitespace, line endings and BOM are
@@ -307,8 +346,8 @@ function analyzeFile(filePath, parser, generator) {
     tokenStream(source.rootNode),
     tokenStream(generated.rootNode)
   );
-  const byteFidelityDrift =
-    normalizeLineEndings(source.rootNode.text) !== normalizeLineEndings(generatedText);
+  const byteFidelityDrift = !stripCarriageReturns(fs.readFileSync(filePath))
+    .equals(bytesOfSave(generatedText, source.encoding));
 
   // Idempotence check: save output should stabilize after the first generation.
   const generatedTextSecond = generator.generateSemanticModel(generatedVisitor.semanticModel);
@@ -589,10 +628,15 @@ function main() {
   console.log(`  ${reportPaths.detailsPath}`);
   console.log(`  ${reportPaths.byteIdempotencePath}`);
 
-  // --strict failure condition: Tier 1 token drift OR generated syntax errors
-  // OR Tier 3 (semantic/idempotence/global) drift OR a choice-target increase.
+  // --strict failure condition: a source the grammar rejected (it was never
+  // measured by any tier), Tier 1 token drift, generated syntax errors, Tier 3
+  // (semantic/idempotence/global) drift, or a choice-target increase.
   // Tier 2 byte fidelity is reported but never fails the run.
+  const allowedSyntaxErrors = new Set((args.allowSyntaxErrors || []).map((p) => path.resolve(p)));
+  const unexpectedSyntaxErrors = details.filter((d) =>
+    d.status === 'source_syntax_error' && !allowedSyntaxErrors.has(path.resolve(d.file))).length;
   const hasFailure = summary.driftFiles > 0 ||
+    unexpectedSyntaxErrors > 0 ||
     summary.generatedSyntaxErrors > 0 ||
     summary.tokenFidelityDriftFiles > 0 ||
     summary.choiceTargetIssuesAfter > summary.choiceTargetIssuesBefore;

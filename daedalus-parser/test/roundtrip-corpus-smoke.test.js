@@ -60,7 +60,7 @@ function isGreen(detail) {
   return detail.status === 'ok' && detail.drift && detail.drift.tokenFidelityDrift === false;
 }
 
-function runCorpus(root, reportDir, prefix) {
+function runCorpus(root, reportDir, prefix, extraArgs = []) {
   let exitCode = 0;
   try {
     execFileSync(process.execPath, [
@@ -68,7 +68,8 @@ function runCorpus(root, reportDir, prefix) {
       '--root', root,
       '--report-dir', reportDir,
       '--report-prefix', prefix,
-      '--strict'
+      '--strict',
+      ...extraArgs
     ], { stdio: 'pipe' });
   } catch (error) {
     exitCode = typeof error.status === 'number' ? error.status : 1;
@@ -135,6 +136,52 @@ test('full corpus token-fidelity matches the ratchet (GREEN clean, KNOWN_RED sti
   if (KNOWN_RED_FIXTURES.length > 0) {
     assert.notEqual(exitCode, 0, 'strict run should fail while known-red fixtures remain');
   }
+});
+
+// #448: a file the grammar rejects used to be counted, printed and dropped, so
+// `--strict` exited 0 over a corpus whose files had never been measured.
+test('--strict fails a corpus holding a file the parser rejects', () => {
+  const reportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-smoke-unparseable-report-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-smoke-unparseable-'));
+  fs.copyFileSync(path.join(corpusDir, 'quoting.d'), path.join(dir, 'quoting.d'));
+  fs.writeFileSync(path.join(dir, 'unparseable.d'), 'namespace Foo {\n  const int A = 1;\n};\n');
+
+  const { exitCode, details, byName } = runCorpus(dir, reportDir, 'smoke-unparseable');
+
+  assert.equal(byName.get('unparseable.d').status, 'source_syntax_error');
+  assert.equal(details.length, 2, 'the unparseable file must be reported, not dropped');
+  assert.notEqual(exitCode, 0, '--strict must fail on a file it could not parse');
+
+  // The one file no compiler accepts (MDK's Externals.d) gets named explicitly
+  // instead of turning the whole gate down.
+  const allowed = runCorpus(dir, reportDir, 'smoke-unparseable-allowed', [
+    '--allow-syntax-error', path.join(dir, 'unparseable.d')
+  ]);
+  assert.equal(allowed.exitCode, 0, 'a named syntax error must not fail --strict');
+});
+
+// #448: Tier 2 used to compare two decoded strings, so an encode/decode loss
+// was invisible by construction. 0x81 is unassigned in windows-1252: iconv
+// decodes it to U+FFFD and writes back 0x9D, so the save path cannot reproduce
+// the file. Only reading the file's bytes can see that.
+test('byte fidelity compares the file bytes, so an unmappable byte is caught', () => {
+  const reportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-smoke-lossy-report-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'corpus-smoke-lossy-'));
+  fs.copyFileSync(path.join(corpusDir, 'globals.d'), path.join(dir, 'globals.d'));
+  fs.writeFileSync(path.join(dir, 'unassigned-byte.d'), Buffer.concat([
+    Buffer.from('const string S = "'),
+    Buffer.from([0x81]),
+    Buffer.from('";\n')
+  ]));
+
+  const { byName } = runCorpus(dir, reportDir, 'smoke-lossy');
+  const lossy = byName.get('unassigned-byte.d');
+  const clean = byName.get('globals.d');
+
+  assert.equal(lossy.status, 'ok', 'the file parses; the defect is in the encoding, not the grammar');
+  assert.equal(lossy.drift.tokenFidelityDrift, false, 'the decoded tokens are equal — only the bytes differ');
+  assert.equal(lossy.drift.byteFidelityDrift, true, 'the bytes on disk must be compared, not the decoded text');
+  assert.equal(clean.drift.byteFidelityDrift, false, 'a file that round-trips must not be reported as lossy');
 });
 
 test('BYTE_EXACT fixtures round-trip byte-identical', () => {
