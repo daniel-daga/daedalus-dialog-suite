@@ -253,11 +253,7 @@ describe('project config IPC', () => {
     const project = await makeProject();
     await invoke('project:loadConfig', project.root);
     const alias = path.join(path.dirname(project.root), `${path.basename(project.root)}-canonical-alias`);
-    try {
-      await fs.symlink(project.root, alias, process.platform === 'win32' ? 'junction' : 'dir');
-    } catch {
-      return;
-    }
+    await fs.symlink(project.root, alias, process.platform === 'win32' ? 'junction' : 'dir');
     expect(await fs.realpath(alias)).not.toBe(alias);
 
     await expect(invoke('project:saveAssetSources', path.join(alias, path.basename(project.projectFilePath)), ['.']))
