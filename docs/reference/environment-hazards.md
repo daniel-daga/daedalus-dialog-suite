@@ -290,6 +290,11 @@ nothing. Cause unknown. To check for it:
   next test.** The symptom is the *following* test failing.
 - **react-window renders no rows under jsdom without the AutoSizer mock.** Any
   suite that renders the scene tree needs it.
+- **`projectConfigIpc.test.ts` is 13 failed of 17 on macOS, and green in CI.**
+  `/var` is a symlink to `/private/var` there, and the project registry keys by
+  a normalized path while the descriptor realpaths its root, so the test's own
+  registration misses. Real bug, not a test artefact — #477. Do not spend time
+  on the red baseline; the failure is not caused by what you changed.
 - **`FileService.lruCaches.test.ts` times out under a full parallel run, and
   passes alone.** Both its cases read `FILE_CACHE_CAP` (1024) real files in a
   loop against Jest's 5 s default, which is comfortable on an idle machine and

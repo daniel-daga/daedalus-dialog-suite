@@ -38,6 +38,12 @@ Order is by where a silent data loss is likeliest: 3, 5, 2, 1, 4, 6, 7, 8, 9.
 - **Slice 5** — `docs/reference/editor-review-2026-11-01-actions-conditions.md`,
   findings 1–8 filed as #457–#464. Findings 2 and 3 compound: a branch choice
   with an invented target still saves clean while either one alone is open.
+- **Slice 2** — `docs/reference/editor-review-2026-11-01-project-load.md`,
+  findings 1–10 filed as #465–#474.
+- **Slice 1** — `docs/reference/editor-review-2026-11-01-ipc-boundary.md`,
+  findings 1–6 filed as #475–#480. Its finding 3 is the reason
+  `projectConfigIpc.test.ts` has a red baseline on macOS; that is recorded in
+  `docs/reference/environment-hazards.md`.
 
 Slice 5 is the largest and the only one that may split (action rendering versus
 conditions and autocomplete) once its boundaries are read.
