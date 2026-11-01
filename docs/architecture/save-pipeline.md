@@ -126,7 +126,10 @@ Policy: **suspend auto-save AND prompt** — suspension is the safety mechanism
   `fileMissing` conflict instead of destroying the FileState. Clean files
   reload via `reloadFile(filePath)`, which reuses the FileState slot and
   preserves `activeFile` (no focus steal); `openFile` keeps activate-on-open
-  for genuine opens.
+  for genuine opens. Both decisions are made per file from the store's live
+  state, not from a map captured when the batch began: a batch reloads one file
+  at a time, and an edit landing in another file while an earlier read is in
+  flight must win over disk (#449).
   A keystroke made after this flush but before a clean-file reload completes
   can still be replaced by the loaded model; preserving that local component
   state across model replacement is a separate behavior change.

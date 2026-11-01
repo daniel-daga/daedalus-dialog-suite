@@ -3,6 +3,7 @@ import { Box, TextField, IconButton, Tooltip, FormControl, InputLabel, Select, M
 import { Delete as DeleteIcon } from '@mui/icons-material';
 import type { BaseActionRendererProps } from './types';
 import type { DialogLineAction } from '../../types/global';
+import { getOppositeSpeaker } from '../actionTemplates';
 
 const DialogLineRenderer: React.FC<BaseActionRendererProps> = ({
   action,
@@ -22,7 +23,22 @@ const DialogLineRenderer: React.FC<BaseActionRendererProps> = ({
         <Select
           value={typedAction.speaker || 'self'}
           label="Speaker"
-          onChange={(e) => handleUpdate({ ...typedAction, speaker: e.target.value as 'self' | 'other' })}
+          onChange={(e) => {
+            const speaker = e.target.value as 'self' | 'other';
+            handleUpdate({
+              ...typedAction,
+              speaker,
+              // AI_Output takes (speaker, listener, id). A parsed line already
+              // carries its listener, so the generator's speaker-derived
+              // fallback never runs: without this the new speaker talks to
+              // itself (`AI_Output (other, other, …)`) and nothing warns (#457).
+              listener: typedAction.listener === 'self'
+                ? 'other'
+                : typedAction.listener === 'other'
+                  ? 'self'
+                  : getOppositeSpeaker(speaker)
+            });
+          }}
           onBlur={flushUpdate}
           onKeyDown={handleKeyDown}
         >

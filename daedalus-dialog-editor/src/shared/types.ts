@@ -263,6 +263,12 @@ export interface CodeGenerationSettings {
 export interface DialogLineAction {
   type: 'DialogLine';
   speaker: 'self' | 'other';
+  /**
+   * AI_Output's second argument. The parser sets it on every line it reads, so
+   * the generator's speaker-derived fallback (`other` for a `self` speaker and
+   * vice versa) only applies to lines the editor authored.
+   */
+  listener?: 'self' | 'other';
   text: string;
   id: string;
   /** True when the source id argument was not a string literal. */

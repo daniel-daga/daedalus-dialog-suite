@@ -159,7 +159,6 @@ async function flushChangedFiles(): Promise<void> {
   // disk change may reload the open file or must raise a conflict.
   flushAllPendingEdits();
 
-  const fileStore = useFileStore.getState();
   if (!useProjectStore.getState().projectPath) {
     // Project closed while the batch was buffered — nothing to update.
     return;
@@ -167,7 +166,11 @@ async function flushChangedFiles(): Promise<void> {
 
   const backgroundPaths: string[] = [];
   for (const filePath of paths) {
-    const openFileState = fileStore.openFiles.get(filePath);
+    // Live state, not the map captured above: every earlier `await` in this
+    // loop lets the renderer commit an edit, and a file that is dirty *now*
+    // must take the conflict path rather than the disk copy (#449).
+    const currentStore = useFileStore.getState();
+    const openFileState = currentStore.openFiles.get(filePath);
     if (!openFileState) {
       backgroundPaths.push(filePath);
       continue;
@@ -177,13 +180,13 @@ async function flushChangedFiles(): Promise<void> {
     // already in conflict), record an external conflict instead of overwriting
     // the user's work — the conflict dialog then drives resolution (E4).
     if (hasUnsavedChanges(openFileState)) {
-      fileStore.markExternalConflict(filePath);
+      currentStore.markExternalConflict(filePath);
       continue;
     }
 
     // Clean file: reload in place (preserves activeFile, reuses the slot — N3).
     try {
-      await fileStore.reloadFile(filePath);
+      await currentStore.reloadFile(filePath);
     } catch (err) {
       console.error('[FileWatcher] Failed to reload open file:', filePath, err);
     }

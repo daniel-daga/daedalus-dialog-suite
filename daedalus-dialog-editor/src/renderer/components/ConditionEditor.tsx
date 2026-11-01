@@ -296,16 +296,12 @@ const ConditionEditor = React.memo<ConditionEditorProps>(({
                     {code}
                   </Box>
                 ))}
-                <Box sx={{ display: 'flex', justifyContent: 'center', mt: 1 }}>
-                  <Button
-                    startIcon={<AddIcon />}
-                    size="small"
-                    variant="outlined"
-                    onClick={(e) => setAddMenuAnchor(e.currentTarget)}
-                  >
-                    Add Condition
-                  </Button>
-                </Box>
+                {/* #446: a structured condition here would be generated in
+                    place of `actions`, deleting the guard above it. Editing the
+                    raw text is the only safe route. */}
+                <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center' }}>
+                  Add Condition is unavailable while a raw guard is preserved — edit it in the source view.
+                </Typography>
               </Stack>
             ) : (
             <Box sx={{
