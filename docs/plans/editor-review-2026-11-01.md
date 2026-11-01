@@ -44,6 +44,11 @@ Order is by where a silent data loss is likeliest: 3, 5, 2, 1, 4, 6, 7, 8, 9.
   findings 1–6 filed as #475–#480. Its finding 3 is the reason
   `projectConfigIpc.test.ts` has a red baseline on macOS; that is recorded in
   `docs/reference/environment-hazards.md`.
+- **Slice 4** — `docs/reference/editor-review-2026-11-01-authoring-shell.md`,
+  findings 1–7 filed as #481–#487. Its finding 8 is a deletion only
+  (`EditorColumn.tsx`, −29 lines) and stays in the doc.
+- **Slice 6** — `docs/reference/editor-review-2026-11-01-quest-routine-npc.md`,
+  findings 1–8 filed as #488–#495.
 
 Slice 5 is the largest and the only one that may split (action rendering versus
 conditions and autocomplete) once its boundaries are read.
