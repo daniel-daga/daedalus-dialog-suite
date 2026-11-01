@@ -49,13 +49,10 @@ describe('SearchResults Performance', () => {
 
     console.log(`Render time for 1000 results: ${endTime - startTime}ms`);
 
-    // In the original component, it renders ALL items.
-    // We want to verify this behavior first.
+    // If virtualized (height 463, itemSize 40 or 60), we expect roughly 8-12 rows + overscan.
+    // Definitely less than 50. If NOT virtualized, it will be 1000.
     const items = screen.getAllByRole('button');
-    console.log(`Rendered items count: ${items.length}`);
-
-    // Once optimized, this should fail if we expect 1000.
-    // For now, we expect 1000.
-    // After optimization, we will expect < 50.
+    expect(items.length).toBeLessThan(50);
+    expect(items.length).toBeGreaterThan(0);
   });
 });

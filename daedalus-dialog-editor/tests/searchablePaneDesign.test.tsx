@@ -10,6 +10,23 @@ import type { SemanticModel } from '../src/renderer/types/global';
 
 const PATTERN = 'searchable-pane-v1';
 
+/**
+ * The pane look the shared `searchablePaneShellSx` stands for, as it renders:
+ * a column-flex pane with no corner radius, a solid border, and the paper
+ * background at 96% opacity. Asserted as computed style, so a pane that drops
+ * the shared shell for its own colours/layout fails here.
+ */
+const expectPaneShell = (el: Element | null) => {
+  expect(el).toHaveStyle({
+    display: 'flex',
+    flexDirection: 'column',
+    minHeight: '0',
+    borderRadius: '0',
+    borderStyle: 'solid',
+    backgroundColor: 'rgba(255, 255, 255, 0.96)',
+  });
+};
+
 const mockSearchStore = {
   npcFilter: '',
   setNpcFilter: jest.fn(),
@@ -72,15 +89,15 @@ describe('Searchable pane design language', () => {
     dialogs: {},
   } as unknown as SemanticModel;
 
-  test('QuestList root has searchable pane pattern marker', () => {
+  test('QuestList root renders the searchable pane shell', () => {
     const { container } = render(
       <QuestList semanticModel={semanticModel} selectedQuest={null} onSelectQuest={jest.fn()} />
     );
 
-    expect(container.querySelector(`[data-ui-pattern="${PATTERN}"]`)).toBeInTheDocument();
+    expectPaneShell(container.querySelector(`[data-ui-pattern="${PATTERN}"]`));
   });
 
-  test('NPCList root has searchable pane pattern marker', () => {
+  test('NPCList root renders the searchable pane shell', () => {
     const { container } = render(
       <NPCList
         npcs={['NPC_One']}
@@ -90,10 +107,10 @@ describe('Searchable pane design language', () => {
       />
     );
 
-    expect(container.querySelector(`[data-ui-pattern="${PATTERN}"]`)).toBeInTheDocument();
+    expectPaneShell(container.querySelector(`[data-ui-pattern="${PATTERN}"]`));
   });
 
-  test('DialogTree root has searchable pane pattern marker', () => {
+  test('DialogTree root renders the searchable pane shell', () => {
     const { container } = render(
       <DialogTree
         selectedNPC={null}
@@ -110,10 +127,10 @@ describe('Searchable pane design language', () => {
       />
     );
 
-    expect(container.querySelector(`[data-ui-pattern="${PATTERN}"]`)).toBeInTheDocument();
+    expectPaneShell(container.querySelector(`[data-ui-pattern="${PATTERN}"]`));
   });
 
-  test('SearchPanel root has searchable pane pattern marker', () => {
+  test('SearchPanel root renders the searchable pane shell', () => {
     const { container } = render(
       <SearchPanel
         isOpen
@@ -124,12 +141,15 @@ describe('Searchable pane design language', () => {
       />
     );
 
-    expect(container.querySelector(`[data-ui-pattern="${PATTERN}"]`)).toBeInTheDocument();
+    expectPaneShell(container.querySelector(`[data-ui-pattern="${PATTERN}"]`));
   });
 
-  test('VariableManager shell has searchable pane pattern marker', () => {
+  test('VariableManager panes render the searchable pane shell', () => {
+    // The pattern marker sits on the page wrapper here; the shell is on its panes.
     const { container } = render(<VariableManager />);
 
-    expect(container.querySelector(`[data-ui-pattern="${PATTERN}"]`)).toBeInTheDocument();
+    const panes = container.querySelectorAll('.MuiPaper-root');
+    expect(panes.length).toBeGreaterThan(0);
+    panes.forEach(expectPaneShell);
   });
 });
