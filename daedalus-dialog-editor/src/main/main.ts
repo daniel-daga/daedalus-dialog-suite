@@ -108,9 +108,20 @@ function allowWorldFile(worldPath: string): void {
   pathValidator.addAllowedFile(worldFoldersService.sidecarPath(worldPath));
 }
 
+/**
+ * One spelling per file. `openOrMigrate` realpaths the project root, so the
+ * descriptor hands back a resolved path (`/private/var` on macOS, a junction or
+ * an 8.3 name on Windows) while a caller may hand back the spelling it was
+ * given; both have to reach the same registry key. A path that does not exist
+ * yet keeps its lexical spelling, which is all there is to compare.
+ */
 function projectFileKey(filePath: string): string {
-  const normalized = path.normalize(path.resolve(filePath));
-  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+  const resolved = path.normalize(path.resolve(filePath));
+  let canonical = resolved;
+  try {
+    canonical = fs.realpathSync(resolved);
+  } catch { /* not on disk yet */ }
+  return process.platform === 'win32' ? canonical.toLowerCase() : canonical;
 }
 
 function absoluteSourceKey(source: string): string {
