@@ -171,8 +171,10 @@ Nested guards, alternative branches, additional statements, mixed AND/OR, and
 comments inside a guard's header or branch remain raw actions. This retains explicit branch boundaries
 without assuming that a compiler short-circuits logical operators. It also
 retains comment positions that the flat fields cannot express. The editor shows
-these bodies as raw actions rather than editable typed condition rows. Call-site
-indexing remains a separate full-body pass, including raw expressions.
+these bodies as raw actions rather than editable typed condition rows, and
+offers no Add Condition beside them: generation emits `conditions` in place of
+`actions` and never both, so the click would delete the preserved guard (#446).
+Call-site indexing remains a separate full-body pass, including raw expressions.
 
 Comparison normalization may swap operands only when the moved operand is a
 literal. Compound operands can change associativity, and calls or identifier
