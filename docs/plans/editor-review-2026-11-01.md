@@ -29,6 +29,16 @@ slice below takes them as read and checks what they did not reach.
 
 Order is by where a silent data loss is likeliest: 3, 5, 2, 1, 4, 6, 7, 8, 9.
 
+## Reviewed so far
+
+- **Slice 3** — `docs/reference/editor-review-2026-11-01-edit-undo-save.md`,
+  findings 1–8 filed as #449–#456. Two findings are `needs-decision` (#455 docs
+  versus code on save clearing history, #456 writes on an external `add`); the
+  dead `_markFileDirty` stays in the doc as a deletion, not an issue.
+- **Slice 5** — `docs/reference/editor-review-2026-11-01-actions-conditions.md`,
+  findings 1–8 filed as #457–#464. Findings 2 and 3 compound: a branch choice
+  with an invented target still saves clean while either one alone is open.
+
 Slice 5 is the largest and the only one that may split (action rendering versus
 conditions and autocomplete) once its boundaries are read.
 
