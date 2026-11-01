@@ -244,6 +244,26 @@ describe('project config IPC', () => {
       .rejects.toThrow(/native folder picker/i);
   });
 
+  // The registry is written under the descriptor's path, which `openOrMigrate`
+  // realpaths; every lookup has to canonicalise the same way or the two keys
+  // differ whenever the spellings do (`/var` vs `/private/var` on macOS, a
+  // junction or an 8.3 name on Windows). A link to the project stands in for
+  // that divergence on any platform.
+  it('accepts any canonical spelling of the same loaded project file', async () => {
+    const project = await makeProject();
+    await invoke('project:loadConfig', project.root);
+    const alias = path.join(path.dirname(project.root), `${path.basename(project.root)}-canonical-alias`);
+    try {
+      await fs.symlink(project.root, alias, process.platform === 'win32' ? 'junction' : 'dir');
+    } catch {
+      return;
+    }
+    expect(await fs.realpath(alias)).not.toBe(alias);
+
+    await expect(invoke('project:saveAssetSources', path.join(alias, path.basename(project.projectFilePath)), ['.']))
+      .resolves.toMatchObject({ config: { assetSources: ['.'] } });
+  });
+
   it('rejects opening a stale project after another project becomes active', async () => {
     const first = await makeProject();
     const second = await makeProject();
