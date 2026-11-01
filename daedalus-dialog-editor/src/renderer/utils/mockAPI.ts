@@ -6,19 +6,20 @@
  * file persistence and includes sample dialog data for testing.
  */
 
-import type { EditorAPI, ValidationResult, SaveResult, FileChangeEvent, AppendInsertNpcResult, OpenedProjectConfig, NpcDefinition, NpcStatement, NpcEdit, ProjectOutputUnits } from '../types/global';
+import type { EditorAPI, ValidationResult, SaveResult, FileChangeEvent, AppendInsertNpcResult, OpenedProjectConfig, NpcDefinition, NpcStatement, NpcEdit, ProjectOutputUnits, SaveOptions } from '../types/global';
 import type { ExchangeSite, FileIndex, RoutineSite } from '../../shared/types';
 import { routineStatesOf } from '../../shared/routineStates';
 
-// Captured file-change callback (see onFileChanged). Lets E2E tests inject
-// external change/unlink events through the `__mockEmitFileChange` window hook.
-let mockFileChangeListener: ((event: FileChangeEvent) => void) | null = null;
+// Listeners per subscribe call (see onFileChanged/onCloseRequested), as
+// `preload.ts` registers one `ipcRenderer.on` per call: every subscriber hears
+// the event and each unsubscribe removes only its own. This is what lets E2E
+// tests inject events through the `__mockEmitFileChange` window hook below.
+const mockFileChangeListeners = new Set<(event: FileChangeEvent) => void>();
 
-// Captured close-requested callback (see onCloseRequested). There is no real
-// window in the mock harness, so E2E tests inject the request via the
-// `__mockEmitCloseRequested` window hook and assert against the recorded
-// ack/approve/cancel calls on `window.__closeGuardCalls`.
-let mockCloseRequestedListener: (() => void) | null = null;
+// There is no real window in the mock harness, so E2E tests inject the close
+// request via the `__mockEmitCloseRequested` window hook and assert against the
+// recorded ack/approve/cancel calls on `window.__closeGuardCalls`.
+const mockCloseRequestedListeners = new Set<() => void>();
 
 type CloseGuardCall = 'ackCloseRequest' | 'approveClose' | 'cancelClose';
 
@@ -175,6 +176,29 @@ class MockFileSystem {
       }
     }
     keysToRemove.forEach(key => localStorage.removeItem(key));
+  }
+}
+
+/**
+ * The fake's stand-in for FileService's disk-version token (#505). Derived from
+ * the bytes, so the version a read reports is the one a later write must have
+ * seen — which is what makes the stale-write precondition meaningful here.
+ */
+function mockDiskVersion(content: string): string {
+  let hash = 5381;
+  for (let i = 0; i < content.length; i++) hash = ((hash * 33) ^ content.charCodeAt(i)) | 0;
+  return `mock:${content.length}:${(hash >>> 0).toString(36)}`;
+}
+
+/**
+ * FileService's external-modification precondition: refuse the write when the
+ * caller's snapshot is no longer what is on disk. A file that is gone has
+ * nothing to conflict with — the write recreates it.
+ */
+function assertExpectedVersion(filePath: string, expectedVersion: string | undefined): void {
+  if (expectedVersion === undefined || !MockFileSystem.fileExists(filePath)) return;
+  if (mockDiskVersion(MockFileSystem.readFile(filePath)) !== expectedVersion) {
+    throw new Error(`EXTERNAL_MODIFICATION: ${filePath} was modified on disk since it was last read`);
   }
 }
 
@@ -485,18 +509,25 @@ export const mockEditorAPI: EditorAPI = {
   async readFileVersioned(filePath: string): Promise<{ content: string; version: string }> {
     // Through the object, so a test spying on `readFile` steers this too.
     const content = await mockEditorAPI.readFile(filePath);
-    return { content, version: `mock:${content.length}` };
+    return { content, version: mockDiskVersion(content) };
   },
 
-  async writeFile(filePath: string, content: string): Promise<{ success: boolean }> {
+  async writeFile(
+    filePath: string,
+    content: string,
+    options?: { expectedVersion?: string }
+  ): Promise<{ success: boolean; version?: string }> {
     try {
+      // `guardIpc`'s label on the `file:write` channel, with the reason kept
+      // verbatim so the renderer can still classify it.
+      assertExpectedVersion(filePath, options?.expectedVersion);
       MockFileSystem.writeFile(filePath, content);
       console.log(`[Mock API] File written: ${filePath}`);
-      return { success: true };
     } catch (error) {
       console.error('Mock writeFile error:', error);
-      return { success: false };
+      throw new Error(`Failed to write file: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+    return { success: true, version: mockDiskVersion(content) };
   },
 
   async parseSource(sourceCode: string): Promise<any> {
@@ -618,24 +649,28 @@ export const mockEditorAPI: EditorAPI = {
     };
   },
 
-  async saveFile(filePath: string, model: any, settings: any, _options?: { skipValidation?: boolean; forceOnErrors?: boolean }): Promise<SaveResult> {
+  async saveFile(filePath: string, model: any, settings: any, options?: SaveOptions): Promise<SaveResult> {
+    const code = generateCode(model, settings);
     try {
-      const code = generateCode(model, settings);
+      // `overwriteExternal` is the conflict dialog's consent to write over a
+      // file that moved on; SaveFileFlow drops `expectedVersion` for it.
+      assertExpectedVersion(filePath, options?.overwriteExternal ? undefined : options?.expectedVersion);
       MockFileSystem.writeFile(filePath, code);
       console.log(`[Mock API] File saved: ${filePath}`);
-      return {
-        success: true,
-        validationResult: {
-          isValid: true,
-          errors: [],
-          warnings: [],
-          generatedCode: code
-        }
-      };
     } catch (error) {
       console.error('Mock saveFile error:', error);
-      return { success: false };
+      throw new Error(`Failed to save file: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+    return {
+      success: true,
+      version: mockDiskVersion(code),
+      validationResult: {
+        isValid: true,
+        errors: [],
+        warnings: [],
+        generatedCode: code
+      }
+    };
   },
 
   async openProjectFolderDialog(): Promise<string | null> {
@@ -834,17 +869,18 @@ export const mockEditorAPI: EditorAPI = {
     return recent ? JSON.parse(recent) : [];
   },
 
-  // File Watcher API (no-op in mock/browser mode). The change callback is
+  // File Watcher API (no-op in mock/browser mode). The change callbacks are
   // captured so E2E tests can inject external file-change events via the
   // `__mockEmitFileChange` window hook (there is no real watcher in the mock).
   async startFileWatcher(): Promise<void> {},
   async stopFileWatcher(): Promise<void> {},
   onFileChanged(callback): () => void {
-    mockFileChangeListener = callback;
+    mockFileChangeListeners.add(callback);
     if (typeof window !== 'undefined') {
-      (window as any).__mockEmitFileChange = (event: any) => mockFileChangeListener?.(event);
+      (window as any).__mockEmitFileChange = (event: any) =>
+        mockFileChangeListeners.forEach((listener) => listener(event));
     }
-    return () => { mockFileChangeListener = null; };
+    return () => { mockFileChangeListeners.delete(callback); };
   },
 
   async getAppVersion(): Promise<string> {
@@ -859,15 +895,16 @@ export const mockEditorAPI: EditorAPI = {
   },
   async showLogFile(): Promise<void> {},
 
-  // Window close guard (E1). The request callback is captured so E2E tests can
+  // Window close guard (E1). The request callbacks are captured so E2E tests can
   // inject a close request via the `__mockEmitCloseRequested` window hook; the
   // ack/approve/cancel signals are recorded for assertion (no real window here).
   onCloseRequested(callback: () => void): () => void {
-    mockCloseRequestedListener = callback;
+    mockCloseRequestedListeners.add(callback);
     if (typeof window !== 'undefined') {
-      (window as any).__mockEmitCloseRequested = () => mockCloseRequestedListener?.();
+      (window as any).__mockEmitCloseRequested = () =>
+        mockCloseRequestedListeners.forEach((listener) => listener());
     }
-    return () => { mockCloseRequestedListener = null; };
+    return () => { mockCloseRequestedListeners.delete(callback); };
   },
   ackCloseRequest(): void {
     recordCloseGuardCall('ackCloseRequest');
