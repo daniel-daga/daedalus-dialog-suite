@@ -73,6 +73,45 @@ describe('projectStore getSemanticModel stale cache write (4.1)', () => {
     expect(useProjectStore.getState().parsedFiles.size).toBe(0);
   });
 
+  test('a parse resolving after openProject does not repopulate the cache', async () => {
+    // #471: File ▸ Open and Reload both go through openProject, which reset only
+    // the recency map — not the stamps the write guard compares. A parse in
+    // flight across the open therefore looked fresh and its pre-reload model
+    // landed in the new session's cache, where ingestion then skipped the path.
+    const api = (window as never as Record<string, any>).editorAPI;
+    const mocks = [
+      jest.spyOn(api, 'addAllowedPath').mockResolvedValue(undefined),
+      jest.spyOn(api, 'loadProjectConfig').mockResolvedValue({
+        projectFilePath: '/proj/project.dpj',
+        projectRoot: '/proj',
+        scriptsRoot: '/proj',
+        config: {},
+        resolvedAssetSources: [],
+        resolvedAssetRoots: [],
+        gmbtAssetSources: [],
+        gmbtProjectDir: null,
+        gothicInstallPath: null,
+        warnings: []
+      } as never),
+      jest.spyOn(api, 'buildProjectIndex').mockResolvedValue({
+        npcs: [], routines: [], dialogsByNpc: {}, allFiles: [], questFiles: []
+      } as never),
+      jest.spyOn(api, 'readOutputUnits').mockResolvedValue(null)
+    ];
+
+    try {
+      const parse = startParse();
+      await useProjectStore.getState().openProject('/proj');
+
+      parse.resolve(model('STALE'));
+      await parse.promise;
+
+      expect(useProjectStore.getState().parsedFiles.has(FILE)).toBe(false);
+    } finally {
+      mocks.forEach((mock) => mock.mockRestore());
+    }
+  });
+
   test('the caller still receives the model it asked for', async () => {
     const parse = startParse();
 

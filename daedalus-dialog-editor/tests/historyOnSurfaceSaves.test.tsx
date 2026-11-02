@@ -55,7 +55,7 @@ beforeEach(() => {
     routineSiteIndex: [{ routine: 'RTN_START_10', filePath: 'test.d' }],
     routineLayoutIndex: layouts,
   } as never);
-  jest.spyOn(useProjectStore.getState(), 'reindexFiles').mockResolvedValue(undefined);
+  jest.spyOn(useProjectStore.getState(), 'reindexFiles').mockResolvedValue(new Map());
 });
 
 describe('a surface save records one undo step', () => {

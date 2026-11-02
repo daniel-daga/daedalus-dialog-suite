@@ -8,7 +8,7 @@
  * parsedFiles clone, one parseGeneration bump, at most one re-merge.
  */
 
-import { describe, test, expect, beforeEach, afterEach, jest } from '@jest/globals';
+import { describe, test, expect, beforeEach, jest } from '@jest/globals';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useFileWatcher } from '../src/renderer/hooks/useFileWatcher';
 import { useProjectStore } from '../src/renderer/store/projectStore';
@@ -39,11 +39,16 @@ let capturedOnFileChanged: ((event: FileChangeEvent) => void) | null = null;
 const mockStartFileWatcher = jest.spyOn(window.editorAPI, 'startFileWatcher');
 const mockStopFileWatcher = jest.spyOn(window.editorAPI, 'stopFileWatcher');
 const mockParseDialogFile = jest.spyOn(window.editorAPI, 'parseDialogFile');
+const mockIndexFile = jest.spyOn(window.editorAPI, 'indexFile');
 
 jest.spyOn(window.editorAPI, 'onFileChanged').mockImplementation((cb) => {
   capturedOnFileChanged = cb as (event: FileChangeEvent) => void;
   return () => { capturedOnFileChanged = null; };
 });
+
+const EMPTY_INDEX = {
+  routineSites: [], spawnSites: [], exchangeSites: [], instances: [],
+};
 
 const modelFor = (filePath: string) => ({
   ...EMPTY_MODEL,
@@ -60,6 +65,11 @@ beforeEach(() => {
   mockStartFileWatcher.mockClear().mockResolvedValue(undefined as any);
   mockStopFileWatcher.mockClear().mockResolvedValue(undefined as any);
   mockParseDialogFile.mockClear().mockImplementation(async (filePath: string) => modelFor(filePath) as any);
+  // The change batch's one read of a file: its index and the model main parsed
+  // on the way (#473).
+  mockIndexFile.mockReset().mockImplementation(async (filePath: string) => ({
+    index: EMPTY_INDEX, model: modelFor(filePath) as any,
+  }));
 
   useProjectStore.getState().closeProject();
   useProjectStore.setState({
@@ -182,7 +192,6 @@ describe('useFileWatcher — change batching', () => {
   test('N change events in one window: one parse per unique path, one store cascade', async () => {
     const { unmount } = await setupHook();
     const generationBefore = useProjectStore.getState().parseGeneration;
-
     let parsedFilesChanges = 0;
     let lastSeen = useProjectStore.getState().parsedFiles;
     const unsubscribe = useProjectStore.subscribe((state) => {
@@ -210,7 +219,10 @@ describe('useFileWatcher — change batching', () => {
     });
     unsubscribe();
 
-    expect(mockParseDialogFile).toHaveBeenCalledTimes(3);
+    expect(mockIndexFile).toHaveBeenCalledTimes(3);
+    // The index read is the batch's only parse: the models it returned are
+    // what the cache holds, so nothing asks for a second parse of the same path.
+    expect(mockParseDialogFile).not.toHaveBeenCalled();
     expect(parsedFilesChanges).toBe(1);
     const { parsedFiles, parseGeneration } = useProjectStore.getState();
     expect(parseGeneration).toBe(generationBefore + 1);
@@ -223,9 +235,12 @@ describe('useFileWatcher — change batching', () => {
   // #319: the batch is re-indexed the way it is re-parsed — once per unique
   // path, and applied to the site indexes in one update, not one per file.
   test('N change events in one window: one index read per unique path, one site-index update', async () => {
-    const indexFile = jest.spyOn(window.editorAPI, 'indexFile').mockImplementation(async (filePath: string) => ({
-      routineSites: [{ routine: 'RTN_X', startMinute: 0, endMinute: 60, waypoint: 'WP', filePath, line: 1 }],
-      spawnSites: [], exchangeSites: [], instances: [],
+    mockIndexFile.mockImplementation(async (filePath: string) => ({
+      index: {
+        routineSites: [{ routine: 'RTN_X', startMinute: 0, endMinute: 60, waypoint: 'WP', filePath, line: 1 }],
+        spawnSites: [], exchangeSites: [], instances: [],
+      },
+      model: modelFor(filePath) as any,
     }));
     useProjectStore.setState({ routineSiteIndex: [] });
     const { unmount } = await setupHook();
@@ -252,9 +267,8 @@ describe('useFileWatcher — change batching', () => {
     });
     unsubscribe();
 
-    expect(indexFile).toHaveBeenCalledTimes(3);
+    expect(mockIndexFile).toHaveBeenCalledTimes(3);
     expect(siteIndexChanges).toBe(1);
-    indexFile.mockRestore();
     unmount();
   });
 
@@ -288,6 +302,25 @@ describe('useFileWatcher — change batching', () => {
     unmount();
   });
 
+  // #473: the batch parsed each changed file for its model and then asked main
+  // to read and parse the same path again for its FileIndex — two parses of one
+  // file. The index read already parses it, so its model is the one used.
+  test('a changed file is parsed once: the batch index read supplies the model', async () => {
+    const { unmount } = await setupHook();
+
+    emit({ type: 'change', filePath: FILE_A });
+    await act(async () => {
+      await waitFor(() => expect(mockIndexFile).toHaveBeenCalledTimes(1), { timeout: 2000 });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(mockParseDialogFile).not.toHaveBeenCalled();
+    // The one parse's model is what the cache ends up holding.
+    expect(Object.keys(useProjectStore.getState().parsedFiles.get(FILE_A)?.semanticModel.dialogs ?? {}))
+      .toEqual(['DIA_A']);
+    unmount();
+  });
+
   test('an unlink cancels a buffered change for the same path', async () => {
     const { unmount } = await setupHook();
 
@@ -306,11 +339,13 @@ describe('useFileWatcher — change batching', () => {
     unmount();
   });
 
-  // #382: a slow parse of X must not land after a later batch's parse of X.
+  // #382: a slow read of X must not land after a later batch's read of X.
   test('an older batch for a file never overwrites a newer one', async () => {
     const resolvers: Array<(model: any) => void> = [];
-    mockParseDialogFile.mockImplementation(() =>
-      new Promise((resolve) => { resolvers.push(resolve); }) as any);
+    mockIndexFile.mockImplementation((_filePath: string) =>
+      new Promise((resolve) => {
+        resolvers.push((model: any) => resolve({ index: EMPTY_INDEX, model }));
+      }) as any);
     const versioned = (version: string) => ({
       ...EMPTY_MODEL,
       dialogs: { [`DIA_${version}`]: { name: `DIA_${version}`, properties: { npc: 'TestNPC' } } },
@@ -352,20 +387,21 @@ describe('useFileWatcher — change batching', () => {
       dialogs: { [`DIA_${version}`]: { name: `DIA_${version}`, properties: { npc: 'TestNPC' } } },
     });
     let resolvers: Array<(model: any) => void>;
-    let indexFile: ReturnType<typeof jest.spyOn>;
+    let parseResolvers: Array<(model: any) => void>;
 
     beforeEach(() => {
       resolvers = [];
+      parseResolvers = [];
+      // The change batch's read is deferred; an added file still parses on its
+      // own (§141's exit-dialog path needs the model before the index).
+      mockIndexFile.mockImplementation((_filePath: string) =>
+        new Promise((resolve) => {
+          resolvers.push((model: any) => resolve({ index: EMPTY_INDEX, model }));
+        }) as any);
       mockParseDialogFile.mockImplementation(() =>
-        new Promise((resolve) => { resolvers.push(resolve); }) as any);
-      indexFile = jest.spyOn(window.editorAPI, 'indexFile').mockImplementation(async (filePath: string) => ({
-        routineSites: [{ routine: 'RTN_X', startMinute: 0, endMinute: 60, waypoint: 'WP', filePath, line: 1 }],
-        spawnSites: [], exchangeSites: [], instances: [],
-      }));
+        new Promise((resolve) => { parseResolvers.push(resolve); }) as any);
       useProjectStore.setState({ routineSiteIndex: [] });
     });
-
-    afterEach(() => indexFile.mockRestore());
 
     async function startBatchFor(filePath: string) {
       emit({ type: 'change', filePath });
@@ -395,15 +431,13 @@ describe('useFileWatcher — change batching', () => {
       await startBatchFor(FILE_A);
 
       // Deleted and recreated while the batch parses: the add's parse is the
-      // newer one, whichever order the two parses finish in.
+      // newer one, whichever order the two reads finish in.
       emit({ type: 'add', filePath: FILE_A });
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 20));
-        if (resolvers.length === 2) resolvers[1](versioned('NEW'));
-        await new Promise((resolve) => setTimeout(resolve, 20));
         resolvers[0](versioned('OLD'));
-        await waitFor(() => expect(resolvers).toHaveLength(2), { timeout: 2000 });
-        resolvers[1](versioned('NEW'));
+        await waitFor(() => expect(parseResolvers).toHaveLength(1), { timeout: 2000 });
+        parseResolvers[0](versioned('NEW'));
         await new Promise((resolve) => setTimeout(resolve, 50));
       });
 
@@ -430,6 +464,17 @@ describe('useFileWatcher — project session change', () => {
   const PROJ_B = 'C:/projectB';
   const FILE_B1 = 'C:/projectB/DIA_Q.d';
 
+  // The change batch's one read of a file — index and model together (#473) —
+  // deferred so a project switch can land while it is in flight.
+  function deferIndexes() {
+    const pending = new Map<string, (model: any) => void>();
+    mockIndexFile.mockImplementation((filePath: string) =>
+      new Promise((resolve) => {
+        pending.set(filePath, (model: any) => resolve({ index: EMPTY_INDEX, model }));
+      }) as any);
+    return pending;
+  }
+
   function deferParses() {
     const pending = new Map<string, (model: any) => void>();
     mockParseDialogFile.mockImplementation((filePath: string) =>
@@ -450,10 +495,7 @@ describe('useFileWatcher — project session change', () => {
   }
 
   test('a change batch parsing when the project switches is discarded', async () => {
-    const indexFile = jest.spyOn(window.editorAPI, 'indexFile').mockResolvedValue({
-      routineSites: [], spawnSites: [], exchangeSites: [], instances: [],
-    });
-    const pending = deferParses();
+    const pending = deferIndexes();
     const { unmount } = await setupHook();
 
     emit({ type: 'change', filePath: FILE_A });
@@ -470,13 +512,11 @@ describe('useFileWatcher — project session change', () => {
     const { parsedFiles, dialogIndex } = useProjectStore.getState();
     expect(parsedFiles.has(FILE_A)).toBe(false);
     expect(dialogIndex.size).toBe(0);
-    expect(indexFile).not.toHaveBeenCalled();
-    indexFile.mockRestore();
     unmount();
   });
 
   test('an old batch resolving after the new project\'s batch does not overwrite it', async () => {
-    const pending = deferParses();
+    const pending = deferIndexes();
     const { unmount } = await setupHook();
 
     emit({ type: 'change', filePath: FILE_A });
@@ -508,9 +548,7 @@ describe('useFileWatcher — project session change', () => {
 
   test('an added file parsing when the project switches is discarded', async () => {
     const FILE_NEW = 'C:/project/NPC_NEW.d';
-    const indexFile = jest.spyOn(window.editorAPI, 'indexFile').mockResolvedValue({
-      routineSites: [], spawnSites: [], exchangeSites: [], instances: [],
-    });
+    mockIndexFile.mockResolvedValue({ index: EMPTY_INDEX, model: EMPTY_MODEL as any });
     const writeFile = jest.spyOn(window.editorAPI, 'writeFile');
     writeFile.mockClear();
     const pending = deferParses();
@@ -535,9 +573,8 @@ describe('useFileWatcher — project session change', () => {
     expect(parsedFiles.has(FILE_NEW)).toBe(false);
     expect(dialogIndex.size).toBe(0);
     expect(allDialogFiles).toEqual([FILE_B1]);
-    expect(indexFile).not.toHaveBeenCalled();
+    expect(mockIndexFile).not.toHaveBeenCalled();
     expect(writeFile).not.toHaveBeenCalled();
-    indexFile.mockRestore();
     unmount();
   });
 });

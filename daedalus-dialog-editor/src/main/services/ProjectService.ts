@@ -132,7 +132,10 @@ class ProjectService {
     };
 
     await scanRecursive(rootPath);
-    return files;
+    // A path order, not an I/O-completion one: the index it feeds is
+    // last-writer-wins, so an unstable order makes which file owns a name
+    // declared twice differ between opens (#470).
+    return files.sort();
   }
 
   /**

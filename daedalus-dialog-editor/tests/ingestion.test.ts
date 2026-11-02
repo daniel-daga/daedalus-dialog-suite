@@ -44,12 +44,14 @@ describe('projectStore - ingestion', () => {
     expect(parseDialogFileMock).toHaveBeenCalledTimes(10);
   });
 
-  test('should handle ingestion errors correctly', async () => {
+  test('#472: a failed ingestion is not cached as the file\'s model', async () => {
     const files = ['good.d', 'bad.d', 'good2.d'];
-    
+
+    // A timeout, not a broken file: the first read fails, the next one works.
+    let badAttempts = 0;
     const parseDialogFileMock = jest.fn(async (filePath: string) => {
-      if (filePath === 'bad.d') {
-        throw new Error('Parse error');
+      if (filePath === 'bad.d' && badAttempts++ === 0) {
+        throw new Error('Metadata worker timed out');
       }
       return {
         dialogs: {},
@@ -72,13 +74,15 @@ describe('projectStore - ingestion', () => {
     const store = useProjectStore.getState();
     await store.startBackgroundIngestion();
 
-    const finalState = useProjectStore.getState();
-    expect(finalState.parsedFiles.size).toBe(3);
-    
-    const badFile = finalState.parsedFiles.get('bad.d');
-    expect(badFile).toBeDefined();
-    expect(badFile?.semanticModel.hasErrors).toBe(true);
-    expect(badFile?.semanticModel.errors[0].message).toBe('Parse error');
+    // The failure is not a model: caching it as an empty one made a transient
+    // worker failure read as "this file is broken" for the rest of the session.
+    expect(useProjectStore.getState().parsedFiles.size).toBe(2);
+    expect(useProjectStore.getState().parsedFiles.has('bad.d')).toBe(false);
+
+    // Nothing retried it during the run, so the next read does.
+    const model = await useProjectStore.getState().getSemanticModel('bad.d');
+    expect(model.hasErrors).toBe(false);
+    expect(useProjectStore.getState().parsedFiles.get('bad.d')?.semanticModel.hasErrors).toBe(false);
   });
 
   test('should respect abort signal', async () => {

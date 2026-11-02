@@ -59,8 +59,13 @@ let capturedOnFileChanged: ((event: FileChangeEvent) => void) | null = null;
 const mockStartFileWatcher = jest.spyOn(window.editorAPI, 'startFileWatcher');
 const mockStopFileWatcher = jest.spyOn(window.editorAPI, 'stopFileWatcher');
 const mockParseDialogFile = jest.spyOn(window.editorAPI, 'parseDialogFile');
+const mockIndexFile = jest.spyOn(window.editorAPI, 'indexFile');
 const mockReadFile = jest.spyOn(window.editorAPI, 'readFile');
 const mockWriteFile = jest.spyOn(window.editorAPI, 'writeFile');
+
+const EMPTY_INDEX = {
+  routineSites: [], spawnSites: [], exchangeSites: [], instances: [],
+};
 
 // Capture the callback registered by the hook so we can fire test events
 jest.spyOn(window.editorAPI, 'onFileChanged').mockImplementation((cb) => {
@@ -73,6 +78,9 @@ beforeEach(() => {
   mockStartFileWatcher.mockClear().mockResolvedValue(undefined as any);
   mockStopFileWatcher.mockClear().mockResolvedValue(undefined as any);
   mockParseDialogFile.mockClear().mockResolvedValue(PARSED_MODEL as any);
+  mockIndexFile.mockReset().mockImplementation(async () => ({
+    index: EMPTY_INDEX, model: PARSED_MODEL as any,
+  }));
   mockReadFile.mockClear().mockResolvedValue('// reloaded source' as any);
   mockWriteFile.mockClear().mockResolvedValue({ success: true } as any);
 
@@ -203,11 +211,14 @@ describe('useFileWatcher — change event', () => {
     unmount();
   });
 
-  test('re-parses and updates projectStore for a background file', async () => {
+  test('re-reads and updates projectStore for a background file in one read', async () => {
     const { unmount } = await setupHook();
     await emitFileChange({ type: 'change', filePath: FILE_B });
 
-    expect(mockParseDialogFile).toHaveBeenCalledWith(FILE_B);
+    // The index read is the batch's only parse of the file — its model comes
+    // back with the index, so there is no second parse (#473).
+    expect(mockIndexFile).toHaveBeenCalledWith(FILE_B, {});
+    expect(mockParseDialogFile).not.toHaveBeenCalled();
     const cached = useProjectStore.getState().parsedFiles.get(FILE_B);
     expect(cached).toBeDefined();
     unmount();
@@ -219,7 +230,10 @@ describe('useFileWatcher — change event', () => {
       constants: { TOPIC_Test: { name: 'TOPIC_Test', type: 'string', value: 'test' } },
       variables: { MIS_Test: { name: 'MIS_Test', type: 'int' } },
     };
-    mockParseDialogFile.mockResolvedValueOnce(modelWithSymbols as any);
+    mockIndexFile.mockImplementationOnce(async () => ({
+      index: { routineSites: [], spawnSites: [], exchangeSites: [], instances: [] },
+      model: modelWithSymbols as any,
+    }));
 
     const { unmount } = await setupHook();
     await emitFileChange({ type: 'change', filePath: FILE_B });
@@ -241,12 +255,13 @@ describe('useFileWatcher — re-indexes routines, spawns and NPCs', () => {
   const spawnIn = (filePath: string) => ({
     instance: 'BAU_900_ONAR', spawnPoint: 'WP', filePath, functionName: 'STARTUP', line: 1,
   });
-  const mockIndexFile = jest.spyOn(window.editorAPI, 'indexFile');
-
   beforeEach(() => {
     mockIndexFile.mockReset().mockImplementation(async (filePath: string) => ({
-      routineSites: [siteIn(filePath)], spawnSites: [], exchangeSites: [],
-      instances: [{ name: 'BAU_900_Onar', parent: 'C_NPC', npcId: 900, dailyRoutine: 'Rtn_Start_900' }],
+      index: {
+        routineSites: [siteIn(filePath)], spawnSites: [], exchangeSites: [],
+        instances: [{ name: 'BAU_900_Onar', parent: 'C_NPC', npcId: 900, dailyRoutine: 'Rtn_Start_900' }],
+      },
+      model: PARSED_MODEL as any,
     }));
     useProjectStore.setState({
       npcFileIndex: {}, npcIdIndex: {}, routineNpcIndex: {}, routineStateIndex: {},

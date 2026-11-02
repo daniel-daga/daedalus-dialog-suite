@@ -128,6 +128,35 @@ describe('ProjectService', () => {
       expect(files).toEqual([path.join(tempDir, 'Story', 'story.d')]);
     });
 
+    it('returns a path order that does not depend on readdir or I/O completion order', async () => {
+      // #470: the scan used to push each file as its readdir and its
+      // subdirectory walk completed, so the order changed between opens of one
+      // tree — and the index is last-writer-wins, so which file owns a name
+      // declared twice was a coin toss. readdir order is unspecified, so the
+      // scan must not inherit it.
+      fs.mkdirSync(path.join(tempDir, 'DIA'));
+      fs.mkdirSync(path.join(tempDir, 'NPC'));
+      fs.writeFileSync(path.join(tempDir, 'DIA', 'DIA_B.d'), '// b');
+      fs.writeFileSync(path.join(tempDir, 'NPC', 'NPC_A.d'), '// a');
+      fs.writeFileSync(path.join(tempDir, 'Root.d'), '// root');
+
+      const realReaddir = fs.promises.readdir;
+      const readdirSpy = jest.spyOn(fs.promises, 'readdir').mockImplementation(((dir: string, opts: any) =>
+        realReaddir.call(fs.promises, dir, opts).then((entries: any) => [...entries].reverse())) as any);
+      try {
+        const service = new ProjectService();
+        const files = await service.scanDirectory(tempDir);
+
+        expect(files).toEqual([
+          path.join(tempDir, 'DIA', 'DIA_B.d'),
+          path.join(tempDir, 'NPC', 'NPC_A.d'),
+          path.join(tempDir, 'Root.d')
+        ]);
+      } finally {
+        readdirSpy.mockRestore();
+      }
+    });
+
     it('logs and skips a subdirectory that cannot be read', async () => {
       const fine = path.join(tempDir, 'Fine');
       const broken = path.join(tempDir, 'Broken');

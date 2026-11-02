@@ -235,8 +235,9 @@ interface ProjectActions {
   /** Re-read each file's share of the index in main — its routine, spawn and
    *  exchange sites and the NPCs it declares — and replace that file's entries
    *  in one update (npc-editor.md §6, #319). A file main cannot read keeps
-   *  what it had. */
-  reindexFiles: (filePaths: readonly string[]) => Promise<void>;
+   *  what it had. Returns the models main parsed on the way, so a caller that
+   *  needs them does not ask for a second parse of the same file (#473). */
+  reindexFiles: (filePaths: readonly string[]) => Promise<Map<string, SemanticModel>>;
   /** Forget a removed file's share of the index (#319). */
   dropFileFromIndex: (filePath: string) => void;
   /** A routine the editor just created: the NPC's declared one (`state` null)
@@ -610,6 +611,13 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       // Recent projects are persisted main-side inside project:openFolderDialog;
       // the renderer no longer whitelists or records recents (security item 1.1).
 
+      // The session changes here, so the stale-write guard's resets belong here
+      // too: File ▸ Open and Reload both come through this function and neither
+      // closes the project, so a parse in flight across it would otherwise keep
+      // an unchanged stamp and land its pre-open model in the new cache (#471).
+      inFlight.clear();
+      stampAllFiles();
+      resetMergeCache();
       resetParsedFileRecency();
       set({
         projectPath: descriptor.projectRoot,
@@ -838,23 +846,12 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
             });
 
           } catch (e) {
+            // A failure is not a model: storing an empty one made a timeout or a
+            // dead worker indistinguishable from a broken file, and the cache hit
+            // meant nothing retried it for the rest of the session (#472).
             console.warn(`Background ingestion failed for ${filePath}:`, e);
-            
-            if (controller.signal.aborted) return;
 
-            // Add error to batch
-            pendingUpdates.set(filePath, {
-               filePath,
-               semanticModel: {
-                 ...createEmptySemanticModel(),
-                 hasErrors: true,
-                 errors: [{
-                    type: 'ingestion_error',
-                    message: e instanceof Error ? e.message : String(e)
-                 }]
-               },
-               lastParsed: new Date()
-            });
+            if (controller.signal.aborted) return;
           }
         }
       };
@@ -1282,12 +1279,15 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     const { projectPath, routineLayoutIndex: layouts } = get();
     const sessionAtStart = projectSession;
     const files = new Map<string, FileIndex>();
+    const models = new Map<string, SemanticModel>();
     let next = 0;
     const readNext = async (): Promise<void> => {
       while (next < filePaths.length) {
         const filePath = filePaths[next++];
         try {
-          files.set(filePath, await window.editorAPI.indexFile(filePath, layouts));
+          const { index, model } = await window.editorAPI.indexFile(filePath, layouts);
+          files.set(filePath, index);
+          models.set(filePath, model);
         } catch (err) {
           console.error('[projectStore] Failed to re-index file:', filePath, err);
         }
@@ -1296,6 +1296,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     await Promise.all(Array.from({ length: Math.min(REINDEX_CONCURRENCY, filePaths.length) }, readNext));
     // A read that lands after the project closed or changed belongs to no index.
     if (files.size > 0 && projectSession === sessionAtStart && get().projectPath === projectPath) set((state) => withFileIndexes(state, files));
+    return models;
   },
 
   dropFileFromIndex: (filePath) => {
