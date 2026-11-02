@@ -498,3 +498,99 @@ test('deserializeSemanticModel reconstructs CommentAction and dialog property co
   assert.ok(generated.includes('// the speaker'), 'property trailing comment regenerates');
   assert.ok(generated.includes('// end of body'), 'body trailing comment regenerates');
 });
+
+test('a dialog ships its body once, in the function dictionary (#443)', () => {
+  const { parseSemanticModel, SemanticCodeGenerator } = require('../dist/semantic/semantic-visitor-index');
+  const source = [
+    'instance DIA_One(C_INFO) { npc = SOME_NPC; nr = 1; condition = DIA_One_Condition; information = DIA_One_Info; };',
+    'func int DIA_One_Condition() { return TRUE; };',
+    'func void DIA_One_Info() {',
+    '  AI_Output(other, self, "DIA_One_Line_00");',
+    '  AI_StopProcessInfos(self);',
+    '};'
+  ].join('\n');
+
+  const model = parseSemanticModel(source);
+  const payload = JSON.stringify(model);
+  const dialog = JSON.parse(payload).dialogs.DIA_One;
+
+  assert.equal(dialog.properties.information, 'DIA_One_Info', 'the information reference is written as the name it is');
+  assert.equal(dialog.properties.condition, 'DIA_One_Condition', 'the condition reference is written as the name it is');
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(dialog, 'actions'), false,
+    'the dialog does not ship a second copy of its information body'
+  );
+  assert.equal(
+    JSON.stringify(dialog).includes('DIA_One_Line_00'), false,
+    'no line of the information body rides inside the dialog'
+  );
+  assert.equal(JSON.parse(payload).functions.DIA_One_Info.actions.length, 2, 'the function dictionary still owns the body');
+
+  const hydrated = deserializeSemanticModel(JSON.parse(payload));
+  assert.strictEqual(
+    hydrated.dialogs.DIA_One.actions, hydrated.functions.DIA_One_Info.actions,
+    'the hydrated dialog is a live view of the function again'
+  );
+  assert.equal(
+    new SemanticCodeGenerator().generateSemanticModel(hydrated),
+    new SemanticCodeGenerator().generateSemanticModel(model),
+    'generation is unchanged by the payload shape'
+  );
+});
+
+test('a dialog whose information function is in another file ships no zero-action snapshot (#443)', () => {
+  const { parseSemanticModel } = require('../dist/semantic/semantic-visitor-index');
+  const dialogFile = parseSemanticModel(
+    'instance DIA_Cross(C_INFO) { npc = SOME_NPC; nr = 1; information = DIA_Cross_Info; };'
+  );
+  const dialog = JSON.parse(JSON.stringify(dialogFile)).dialogs.DIA_Cross;
+
+  assert.equal(dialog.properties.information, 'DIA_Cross_Info', 'an unresolved reference stays a name');
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(dialog, 'actions'), false,
+    'an unresolved reference is not a 0-action snapshot'
+  );
+
+  // The same dialog once the owning file is in the model: the reference resolves
+  // and the dialog is a view of the function, not a copy of it.
+  const hydrated = deserializeSemanticModel({
+    functions: {
+      DIA_Cross_Info: {
+        name: 'DIA_Cross_Info',
+        returnType: 'void',
+        actions: [{ speaker: 'other', text: 'Hi!', id: 'DIA_Cross_15_00' }, { type: 'StopProcessInfosAction' }],
+        conditions: []
+      }
+    },
+    dialogs: { DIA_Cross: dialog }
+  });
+  assert.equal(hydrated.dialogs.DIA_Cross.actions.length, 2);
+  assert.strictEqual(hydrated.dialogs.DIA_Cross.actions, hydrated.functions.DIA_Cross_Info.actions);
+});
+
+test('a dialog payload written before the body was deduplicated still hydrates (#443)', () => {
+  const infoFunction = {
+    name: 'DIA_Legacy_Info',
+    returnType: 'void',
+    actions: [
+      { speaker: 'other', text: 'Hi!', id: 'DIA_Legacy_15_00' },
+      { type: 'StopProcessInfosAction' }
+    ],
+    conditions: []
+  };
+  const model = deserializeSemanticModel({
+    functions: { DIA_Legacy_Info: infoFunction },
+    dialogs: {
+      DIA_Legacy: {
+        name: 'DIA_Legacy',
+        parent: 'C_INFO',
+        properties: { npc: 'SOME_NPC', nr: 1, information: { name: 'DIA_Legacy_Info', returnType: 'void' } },
+        // The old payload's duplicate, carrying stale content on purpose.
+        actions: [{ speaker: 'other', text: 'Stale', id: 'DIA_Legacy_15_01' }]
+      }
+    }
+  });
+
+  assert.strictEqual(model.dialogs.DIA_Legacy.actions, model.functions.DIA_Legacy_Info.actions);
+  assert.equal(model.dialogs.DIA_Legacy.actions.length, 2, 'the function dictionary stays authoritative');
+});

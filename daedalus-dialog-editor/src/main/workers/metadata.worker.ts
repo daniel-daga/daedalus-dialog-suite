@@ -27,7 +27,10 @@ if (send) {
         routines,
         functions,
         voiceIds,
-        semanticModel,
+        // The worker's IPC uses the V8 structured-clone serializer, which
+        // ignores `toJSON`; plain JSON is what keeps a dialog's body to its one
+        // owner, the function dictionary (#443).
+        semanticModel: semanticModel && JSON.parse(JSON.stringify(semanticModel)),
         parseErrors,
         mtimeMs: stat.mtimeMs
       });
