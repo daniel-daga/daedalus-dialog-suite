@@ -309,13 +309,36 @@ export function useActionManagement(config: ActionManagementConfig) {
 
   /**
    * Insert an action after `path`, or append it to the root list when `path`
-   * is null. The one seeding path for both flows: choice target-function
-   * creation and a quest step's lines happen here and nowhere else.
+   * is null. With `branchEnd`, append to that `if`/`else` branch instead. The
+   * one seeding path for both flows: choice target-function creation and a
+   * quest step's lines happen here and nowhere else.
    */
-  const insertAction = useCallback((path: ActionPath | null, actionType: ActionTypeId) => {
+  const insertAction = useCallback((
+    path: ActionPath | null,
+    actionType: ActionTypeId,
+    branchEnd?: { path: ActionPath; branch: ActionBranchKey }
+  ) => {
     let nextPath: ActionPath | null = null;
 
+    const branchActions = (actions: DialogAction[], target: { path: ActionPath; branch: ActionBranchKey }): DialogAction[] => {
+      const parent = getActionAtPath(actions, target.path);
+      return parent?.type === 'ConditionalAction'
+        ? parent[target.branch === 'then' ? 'thenActions' : 'elseActions']
+        : [];
+    };
+
+    // Anchor whose next index is where the new action goes: the list end.
+    const anchorFor = (actions: DialogAction[]): ActionPath => branchEnd
+      ? [...branchEnd.path, branchEnd.branch, branchActions(actions, branchEnd).length - 1]
+      : path ?? [actions.length - 1];
+
     const insertAt = (actions: DialogAction[], action: DialogAction): { actions: DialogAction[]; insertedPath: ActionPath | null } => {
+      if (branchEnd) {
+        return {
+          actions: appendActionToBranch(actions, branchEnd.path, branchEnd.branch, action),
+          insertedPath: [...branchEnd.path, branchEnd.branch, branchActions(actions, branchEnd).length]
+        };
+      }
       if (path === null) {
         return { actions: [...actions, action], insertedPath: [actions.length] };
       }
@@ -335,12 +358,12 @@ export function useActionManagement(config: ActionManagementConfig) {
         const actions = prev.actions || [];
         // The lines are siblings of `path`; their paths are computed here, not
         // found by walking the list, which would step into an If block's branch.
-        const anchor: ActionPath = path ?? [actions.length - 1];
+        const anchor = anchorFor(actions);
         const parent = anchor.slice(0, -1);
         const first = (anchor[anchor.length - 1] as number) + 1;
         let next = actions;
         lines.forEach((line, i) => {
-          next = path === null && i === 0 && actions.length === 0
+          next = !branchEnd && path === null && i === 0 && actions.length === 0
             ? [line]
             : insertActionAfterPath(next, [...parent, first + i - 1], line);
         });
@@ -377,7 +400,7 @@ export function useActionManagement(config: ActionManagementConfig) {
       setFunction((prev) => {
         if (!prev) return prev;
         const actions = prev.actions || [];
-        const anchor = path ?? [actions.length - 1];
+        const anchor = anchorFor(actions);
         const parentIndex = anchor[anchor.length - 1] as number;
         const siblingActions = anchor.length === 1
           ? actions
@@ -438,43 +461,10 @@ export function useActionManagement(config: ActionManagementConfig) {
     insertAction(null, actionType);
   }, [insertAction]);
 
+  /** Append an action to the end of a conditional branch, seeding it like any insert. */
   const addActionToBranchEnd = useCallback((path: ActionPath, branch: ActionBranchKey, actionType: ActionTypeId) => {
-    let nextPath: ActionPath | null = null;
-    setFunction((prev) => {
-      if (!prev) return prev;
-      const actions = prev.actions || [];
-      const target = getActionAtPath(actions, path);
-      const branchActions = target?.type === 'ConditionalAction'
-        ? target[branch === 'then' ? 'thenActions' : 'elseActions']
-        : [];
-      const currentAction = branchActions[branchActions.length - 1];
-      let newAction = createAction(actionType, {
-        dialogName: contextName,
-        currentAction,
-        actions: branchActions
-      });
-      if (newAction.type === 'DialogLine') {
-        newAction = {
-          ...newAction,
-          id: createDialogLineId({
-            dialogName: contextName,
-            speaker: newAction.speaker,
-            actions: getAllDialogLineActions(actions)
-          })
-        };
-      }
-
-      nextPath = [...path, branch, branchActions.length];
-      return {
-        ...prev,
-        actions: appendActionToBranch(actions, path, branch, newAction)
-      };
-    });
-
-    if (nextPath) {
-      focusAction(nextPath, true);
-    }
-  }, [setFunction, contextName, focusAction, getAllDialogLineActions]);
+    insertAction(null, actionType, { path, branch });
+  }, [insertAction]);
 
   const moveAction = useCallback((pathPrefix: ActionPath, sourceIndex: number, destinationIndex: number) => {
     patchActions((actions) => moveActionWithinLevel(actions, pathPrefix, sourceIndex, destinationIndex));

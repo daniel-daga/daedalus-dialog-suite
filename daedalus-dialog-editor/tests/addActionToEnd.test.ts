@@ -82,3 +82,53 @@ describe('useActionManagement – addActionToEnd matches addActionAfter', () => 
     }
   });
 });
+
+describe('useActionManagement – addActionToBranchEnd into an empty branch', () => {
+  const conditional = (): DialogAction => ({
+    type: 'ConditionalAction',
+    condition: 'Wld_GetDay() == 0',
+    thenActions: [],
+    elseActions: []
+  } as unknown as DialogAction);
+
+  const ADDABLE = ['dialogLine', 'choice', 'questStart', 'questNote', 'clearChoicesAction'] as ActionTypeId[];
+
+  test.each(ADDABLE)('%s: lands in the empty then branch', (actionType) => {
+    const { result, getActions } = renderManagement([conditional()]);
+
+    expect(() => {
+      act(() => { result.current.addActionToBranchEnd([0], 'then', actionType); });
+    }).not.toThrow();
+
+    const target = getActions()[0] as unknown as { thenActions: DialogAction[]; elseActions: DialogAction[] };
+    expect(target.thenActions.length).toBeGreaterThan(0);
+    expect(target.elseActions).toEqual([]);
+  });
+
+  test('a Choice added to an empty branch gets a real target function and a seeded sub-dialog', () => {
+    const { result, model, getActions } = renderManagement([conditional()]);
+
+    act(() => { result.current.addActionToBranchEnd([0], 'then', 'choice'); });
+
+    const choice = (getActions()[0] as unknown as { thenActions: any[] }).thenActions[0];
+    expect(choice.type).toBe('Choice');
+    expect(choice.targetFunction).toBeTruthy();
+    expect(model.functions?.[choice.targetFunction]?.actions?.length).toBeGreaterThan(0);
+  });
+
+  test('appending to a non-empty branch adds after its last action', () => {
+    const start: DialogAction[] = [{
+      type: 'ConditionalAction',
+      condition: 'Wld_GetDay() == 0',
+      thenActions: [{ type: 'DialogLine', speaker: 'self', text: 'first', id: 'DIA_Test_08_00' }],
+      elseActions: []
+    } as unknown as DialogAction];
+    const { result, getActions } = renderManagement(start);
+
+    act(() => { result.current.addActionToBranchEnd([0], 'then', 'dialogLine'); });
+
+    const thenActions = (getActions()[0] as unknown as { thenActions: DialogAction[] }).thenActions;
+    expect(thenActions).toHaveLength(2);
+    expect(thenActions[1].type).toBe('DialogLine');
+  });
+});
