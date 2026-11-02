@@ -2,6 +2,8 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #501: A Problems scan no longer spends ~40 ms matching free points, one world name at a time
+- #497: NPC routines and start states are no longer reported as unreferenced functions
 - #493: A `Topic_`-spelled quest keeps its MIS edges, so its diary stays in story order
 - #494: A refused quest title save shows its error instead of leaving the field open
 - #488: A quest that ends inside an if no longer shows "In Progress", and its upgrade sets MIS_

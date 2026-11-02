@@ -1,7 +1,44 @@
+/**
+ * @jest-environment node
+ */
+import { execFileSync } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
 import { orphanedFunctionRule } from '../src/renderer/problems/domain/rules/orphanedFunction';
 import { buildProjectView } from '../src/renderer/problems/domain/projectView';
 import type { FileModel } from '../src/renderer/problems/domain/types';
 import type { Dialog, DialogFunction, SemanticModel } from '../src/shared/types';
+
+const EXAMPLES = path.resolve(__dirname, '..', '..', 'daedalus-parser', 'examples');
+
+/**
+ * Parse with the real parser in a child process (the native tree-sitter
+ * binding cannot be loaded into more than one Jest module registry per worker;
+ * see simulatorParserIntegration.test.ts).
+ */
+function parseWithRealParser(source: string): { hasErrors: boolean; model: SemanticModel } {
+  const parserPath = require.resolve('daedalus-parser');
+  const visitorPath = require.resolve('daedalus-parser/semantic-visitor');
+  const script = `
+    let src = '';
+    process.stdin.on('data', (d) => { src += d; });
+    process.stdin.on('end', () => {
+      const DaedalusParser = require(${JSON.stringify(parserPath)});
+      const { SemanticModelBuilderVisitor } = require(${JSON.stringify(visitorPath)});
+      const result = new DaedalusParser().parse(src);
+      const visitor = new SemanticModelBuilderVisitor();
+      visitor.pass1_createObjects(result.tree.rootNode);
+      visitor.pass2_analyzeAndLink(result.tree.rootNode);
+      process.stdout.write(JSON.stringify({ hasErrors: !!result.hasErrors, model: visitor.semanticModel }));
+    });
+  `;
+  const output = execFileSync(process.execPath, ['-e', script], {
+    input: source,
+    encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024
+  });
+  return JSON.parse(output);
+}
 
 const model = (overrides: Partial<SemanticModel> = {}): SemanticModel => ({
   dialogs: {},
@@ -133,6 +170,48 @@ describe('orphanedFunctionRule', () => {
     ];
     const view = buildProjectView({ files, knownNpcNames: [] });
 
+    expect(orphanedFunctionRule(view)).toEqual([]);
+  });
+});
+
+/**
+ * The engine reaches two function kinds through a C_NPC instance body rather
+ * than through a dialog or a call: the routine in `daily_routine` and the
+ * state in `start_aistate`. Retail names **1,137 routines** and nothing else,
+ * so missing these reported every one of them (editor review 2026-11-01,
+ * finding 2).
+ */
+describe('orphanedFunctionRule over real parser output', () => {
+  it('does not flag the routine an NPC instance names in daily_routine', () => {
+    const parsed = parseWithRealParser(fs.readFileSync(path.join(EXAMPLES, 'DEV_2130_Szmyk.d'), 'utf8'));
+    expect(parsed.hasErrors).toBe(false);
+    const view = buildProjectView({
+      files: [file('DEV_2130_Szmyk.d', parsed.model)],
+      knownNpcNames: []
+    });
+
+    expect(view.functionsByKey.has('rtn_start_2130')).toBe(true);
+    expect(orphanedFunctionRule(view)).toEqual([]);
+  });
+
+  it('does not flag the start state an NPC instance names in start_aistate', () => {
+    const parsed = parseWithRealParser(`
+      instance NPC_Test (C_NPC)
+      {
+        name = "Test";
+        id = 9999;
+        start_aistate = ZS_Test;
+      };
+
+      func void ZS_Test () { };
+    `);
+    expect(parsed.hasErrors).toBe(false);
+    const view = buildProjectView({
+      files: [file('npc.d', parsed.model)],
+      knownNpcNames: []
+    });
+
+    expect(view.functionsByKey.has('zs_test')).toBe(true);
     expect(orphanedFunctionRule(view)).toEqual([]);
   });
 });
