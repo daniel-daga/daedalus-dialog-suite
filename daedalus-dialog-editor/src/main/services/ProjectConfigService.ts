@@ -1,4 +1,4 @@
-import { constants, promises as fs, statSync } from 'node:fs';
+import { constants, promises as fs, realpathSync, statSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { gothicAssetSources } from 'zen-world';
@@ -244,13 +244,39 @@ function enqueueProjectFile<T>(projectFilePath: string, operation: () => Promise
   return run;
 }
 
+/**
+ * One spelling per file. `openOrMigrate` realpaths the project root, so the
+ * descriptor hands back a resolved path (`/private/var` on macOS, a junction or
+ * an 8.3 name on Windows) while a caller may hand back the spelling it was
+ * given; both have to reach the same key. A file that is not on disk yet — the
+ * one a migration is about to write — has no canonical spelling of its own, so
+ * its folder is resolved instead.
+ */
+export function projectFileKey(
+  filePath: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  const platformPath = platform === 'win32' ? path.win32 : path.posix;
+  const resolved = platformPath.normalize(platformPath.resolve(filePath));
+  let canonical = resolved;
+  try {
+    canonical = realpathSync(resolved);
+  } catch {
+    try {
+      canonical = platformPath.join(
+        realpathSync(platformPath.dirname(resolved)),
+        platformPath.basename(resolved),
+      );
+    } catch { /* nothing of that path is on disk yet */ }
+  }
+  return platform === 'win32' ? canonical.toLowerCase() : canonical;
+}
+
 export function projectOperationKey(
   candidate: string,
   platform: NodeJS.Platform = process.platform,
 ): string {
-  const platformPath = platform === 'win32' ? path.win32 : path.posix;
-  const normalized = platformPath.normalize(platformPath.resolve(candidate));
-  return platform === 'win32' ? normalized.toLowerCase() : normalized;
+  return projectFileKey(candidate, platform);
 }
 
 function comparablePath(candidate: string): string {

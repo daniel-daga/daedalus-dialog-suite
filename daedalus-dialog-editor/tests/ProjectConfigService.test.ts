@@ -238,6 +238,24 @@ describe('ProjectConfigService', () => {
       );
     });
 
+    // The two spellings the issue names are one file: `openOrMigrate` realpaths
+    // the root, so a migration and a save can reach the same project file as
+    // `/var/...` and `/private/var/...`, or through a junction. The alias is
+    // made here rather than assumed, so the test holds on either platform.
+    test('resolves two file system spellings of one project file to the same operation queue key', async () => {
+      const real = join(root, 'real');
+      const alias = join(root, 'alias');
+      await mkdir(real);
+      await symlink(real, alias, process.platform === 'win32' ? 'junction' : 'dir');
+
+      expect(projectOperationKey(join(alias, 'demo.gothicproject.json')))
+        .toBe(projectOperationKey(join(real, 'demo.gothicproject.json')));
+      // A project file being migrated does not exist yet: its folder still
+      // resolves, so the migration and a save that races it share one key.
+      expect(projectOperationKey(join(alias, 'new.gothicproject.json')))
+        .toBe(projectOperationKey(join(real, 'new.gothicproject.json')));
+    });
+
     test('creates a default project file named after a legacy folder', async () => {
       const service = new ProjectConfigService();
 
