@@ -1,4 +1,5 @@
 import { useEditorStore } from '../store/editorStore';
+import * as historyActions from '../store/historyActions';
 import { useProjectStore } from '../store/projectStore';
 import type { DialogAction, SemanticModel } from '../types/global';
 import { getQuestMisVariableName } from '../utils/questIdentity';
@@ -18,7 +19,7 @@ const functionKey = (model: SemanticModel, name: string) =>
 async function saveFunctions(filePath: string, model: SemanticModel, actionsByKey: Map<string, DialogAction[]>) {
   const functions = { ...model.functions };
   for (const [key, actions] of actionsByKey) functions[key] = { ...functions[key], actions };
-  useEditorStore.getState().updateModel(filePath, { ...model, functions });
+  historyActions.updateModel(filePath, { ...model, functions });
   const result = await useEditorStore.getState().saveFile(filePath);
   if (!result.success) {
     const firstError = result.validationResult?.errors?.[0]?.message;
