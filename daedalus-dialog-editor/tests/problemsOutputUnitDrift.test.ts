@@ -180,6 +180,21 @@ describe('outputUnitDriftRule', () => {
     expect(messages(problems).join(' ')).toContain('Eins.');
   });
 
+  it('gives two findings distinct ids when one function repeats a line', () => {
+    const view = viewOf(
+      [
+        { id: 'DIA_TEST_15_00', text: 'Eins.' },
+        { id: 'DIA_TEST_15_00', text: 'Noch eins.' },
+      ],
+      [{ name: 'DIA_TEST_15_00', text: 'Alt.', wav: 'DIA_TEST_15_00.WAV' }],
+    );
+
+    const problems = outputUnitDriftRule(view);
+
+    expect(problems).toHaveLength(2);
+    expect(new Set(problems.map((p) => p.id)).size).toBe(2);
+  });
+
   it('ignores an entry the database holds that no script line claims', () => {
     // A retail OU carries every vanilla line; a mod project holds a handful.
     // Reporting the rest as orphans would bury the two findings that matter.

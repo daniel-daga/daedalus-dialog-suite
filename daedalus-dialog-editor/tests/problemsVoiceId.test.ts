@@ -69,10 +69,21 @@ describe('voiceIdRule', () => {
     );
     expect(new Set(duplicates.map((p) => p.id))).toEqual(
       new Set([
-        'voice-id-duplicate:a.d:DIA_A:DIA_ALRIK_HI_15_00',
-        'voice-id-duplicate:b.d:DIA_B:DIA_ALRIK_HI_15_00'
+        'voice-id-duplicate:a.d:DIA_A:DIA_ALRIK_HI_15_00:0',
+        'voice-id-duplicate:b.d:DIA_B:DIA_ALRIK_HI_15_00:0'
       ])
     );
+  });
+
+  it('gives two findings distinct ids when one function repeats a line', () => {
+    const view = viewOf([
+      file('a.d', { DIA_A: func('DIA_A', [line('DIA_Alrik_Hi_15_00'), line('DIA_Alrik_Hi_15_00')]) })
+    ]);
+
+    const duplicates = voiceIdRule(view).filter((p) => p.rule === 'voice-id-duplicate');
+
+    expect(duplicates).toHaveLength(2);
+    expect(new Set(duplicates.map((p) => p.id)).size).toBe(2);
   });
 
   it('does not flag a unique well-formed voice id', () => {
@@ -91,7 +102,7 @@ describe('voiceIdRule', () => {
       rule: 'voice-id-malformed',
       severity: 'warning',
       locus: { kind: 'script', filePath: 'a.d', functionName: 'DIA_A' },
-      id: 'voice-id-malformed:a.d:DIA_A:DIA_ALRIK_HI'
+      id: 'voice-id-malformed:a.d:DIA_A:DIA_ALRIK_HI:0'
     });
     expect(problems[0].message).toBe(
       'Voice ID "DIA_Alrik_Hi" does not match the expected naming pattern (…_<number>_<number>).'
