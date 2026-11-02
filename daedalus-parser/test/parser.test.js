@@ -596,3 +596,48 @@ describe('body-less instance declarations (#383)', () => {
     assert.equal(parser.parse('instance A, B(C) { x = 1; };').hasErrors, true);
   });
 });
+
+// Both reference grammars require the terminator; a missing one used to
+// validate clean, which is the editor's whole validation story (issue #444).
+describe('semicolons are required', () => {
+  const parser = new DaedalusParser();
+
+  test('a statement missing its ; is a syntax error', () => {
+    const result = parser.parse('func void f() {\n  Foo();\n  Bar()\n  Baz();\n};\n');
+    assert.equal(result.hasErrors, true);
+  });
+
+  test('a function not closed with }; is a syntax error', () => {
+    assert.equal(parser.parse('func void f() {\n  Foo();\n}\n').hasErrors, true);
+  });
+
+  for (const [kind, source] of [
+    ['instance', 'instance A (B) { x = 1; }'],
+    ['class', 'class C { var int a; }'],
+    ['prototype', 'prototype P (C) { a = 1; }']
+  ]) {
+    test(`a ${kind} declaration missing its ; is a syntax error`, () => {
+      assert.equal(parser.parse(source).hasErrors, true);
+    });
+  }
+});
+
+describe('a bodiless func (#444)', () => {
+  const parser = new DaedalusParser();
+
+  // Refused, not accepted as a forward declaration: both reference grammars
+  // require a body. tree-sitter 0.21 still recovers by reusing the next
+  // declaration's block; the 0.25 runtime this repo's CLI runs does not.
+  test('is a syntax error rather than a valid declaration', () => {
+    assert.equal(parser.parse('func int PrintDebug(string txt);').hasErrors, true);
+    assert.equal(parser.parse('func int PrintDebug(string txt);\nfunc void After() { };\n').hasErrors, true);
+  });
+});
+
+describe('identifier alphabet is Latin-1 letters, not every Latin-1 byte (#444)', () => {
+  const parser = new DaedalusParser();
+
+  test('a non-breaking space cannot join a name', () => {
+    assert.equal(parser.parse('var int x\u00A0= 1;').hasErrors, true);
+  });
+});

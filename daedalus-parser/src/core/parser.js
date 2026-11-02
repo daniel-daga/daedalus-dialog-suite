@@ -15,7 +15,7 @@ const Daedalus = require('../../bindings/node');
 // The native binding object is the one thing that is genuinely process-global
 // here, so anchor the wrapper on it: `tree-sitter` is required exactly once per
 // process regardless of how many module registries evaluate this file.
-const { detectSourceEncoding } = require('./source-encoding');
+const { detectSourceEncoding, stripUtf8Bom } = require('./source-encoding');
 
 const TREE_SITTER_RUNTIME = Symbol.for('daedalus-parser.tree-sitter-runtime');
 const Parser = Daedalus[TREE_SITTER_RUNTIME]
@@ -83,7 +83,7 @@ class DaedalusParser {
     } = options;
 
     // Read file as buffer first
-    const buffer = fs.readFileSync(filePath);
+    const buffer = stripUtf8Bom(fs.readFileSync(filePath));
 
     let sourceCode;
     let detectedEncoding = null;

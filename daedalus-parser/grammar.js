@@ -30,7 +30,7 @@ module.exports = grammar({
       field('parent', $.identifier),
       ')',
       field('body', $.block),
-      optional(';'),
+      ';',
     ),
 
     // Instance declared without a body: `instance MEM_Game(oCGame);`, and
@@ -56,7 +56,7 @@ module.exports = grammar({
       field('parameters', optional($.parameter_list)),
       ')',
       field('body', $.block),
-      optional(';'),
+      ';',
     ),
 
     // Variable declaration: const/var type name[size] = value;
@@ -115,7 +115,7 @@ module.exports = grammar({
       field('keyword', alias(/[cC][lL][aA][sS][sS]/, 'class')),
       field('name', $.identifier),
       field('body', $.class_body),
-      optional(';'),
+      ';',
     ),
 
     // Prototype declaration: prototype PrototypeName(ParentClass) { ... }
@@ -128,7 +128,7 @@ module.exports = grammar({
       field('parent', $.identifier),
       ')',
       field('body', $.block),
-      optional(';'),
+      ';',
     ),
 
     // Class body can contain variable declarations and assignments
@@ -185,7 +185,7 @@ module.exports = grammar({
 
     expression_statement: $ => prec.right(1, seq(
       $._expression,
-      optional(';'),
+      ';',
     )),
 
     if_statement: $ => seq(
@@ -270,7 +270,7 @@ module.exports = grammar({
     // `@` and `^` continue an identifier but never start one (#383): Ikarus's
     // `_@`/`_^`, LeGo's `Foo@`. Same rule as the DaedalusLanguageServer and
     // DaedalusCompiler grammars, so `a^b` is one name. Neither has xor, nor do we (#389).
-    identifier: $ => prec(-1, /[a-zA-Z_\u0080-\u00FF][a-zA-Z0-9_@^\u0080-\u00FF]*/),
+    identifier: $ => prec(-1, /[a-zA-Z_\u00C0-\u00FF][a-zA-Z0-9_@^\u00C0-\u00FF]*/),
 
     // `1e5`, `.5` and `5.` too (#383), as both reference grammars read floats.
     number: $ => /(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?/,

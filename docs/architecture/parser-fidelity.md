@@ -596,8 +596,11 @@ byte rules, `daedalus-parser/source-encoding` (`detectSourceEncoding`, also a
 static on `DaedalusParser`), serves `parseFile`, the formatter, the corpus
 script and the editor's `FileService` and metadata reads: pure ASCII →
 Windows-1252, valid UTF-8 → UTF-8, Central European bytes → Windows-1250
-(a byte Windows-1252 leaves unassigned, or two distinct ambiguous ones),
-anything else → Windows-1252. It reads all 1,725 MDK files as Windows-1252 but
+(a byte Windows-1252 leaves unassigned, or renders as punctuation where a
+Central European letter belongs, or two distinct ambiguous ones), anything else
+→ Windows-1252. A leading UTF-8 BOM is dropped before decoding, so a file that
+has drifted one byte out of UTF-8 is not read as `ï»¿` plus two errors at 1:1
+(#444). It reads all 1,725 MDK files as Windows-1252 but
 two, which hold literal UTF-8 replacement characters from an earlier bad save.
 Other encodings, Windows-1251 among them, must be named (`encoding`,
 `--encoding`). The module is pure JS, so the editor's main process imports it

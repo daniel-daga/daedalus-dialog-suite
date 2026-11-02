@@ -204,6 +204,36 @@ func void DIA_Saturas_Hallo_weißtdu ()
     });
   });
 
+  // #444: Polish and Czech letters that Windows-1252 renders as punctuation
+  // (ł is 0xB3) were no evidence at all, so the file read as Western mojibake.
+  describe('Windows-1250 letters that Windows-1252 also defines', () => {
+    test('a file holding ł and ę reads as Windows-1250, not Windows-1252', () => {
+      const file = path.join(testDir, 'dialog_windows1250_letters.d');
+      fs.writeFileSync(file, iconv.encode('// Błędy i księga\nvar string s = "Błędy";\n', 'windows-1250'));
+
+      const result = parser.parseFile(file);
+
+      assert.equal(result.encoding, 'windows-1250');
+      assert.ok(result.rootNode.text.includes('Błędy i księga'));
+      assert.ok(result.rootNode.text.includes('"Błędy"'));
+    });
+  });
+
+  // #444: a UTF-8 BOM plus one legacy byte decoded as windows-1252 turned the
+  // BOM into ï»¿, which the parser then reported as two errors at 1:1.
+  describe('a UTF-8 BOM before a legacy byte', () => {
+    test('the BOM is dropped rather than decoded as three characters', () => {
+      const file = path.join(testDir, 'dialog_bom_legacy.d');
+      const body = iconv.encode('var string s = "Müller";\n', 'windows-1252');
+      fs.writeFileSync(file, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), body]));
+
+      const result = parser.parseFile(file);
+
+      assert.equal(result.hasErrors, false);
+      assert.equal(result.rootNode.text, 'var string s = "Müller";\n');
+    });
+  });
+
   // One detector for the parser and the editor (#395): its rules, byte by byte.
   describe('detectSourceEncoding', () => {
     const { detectSourceEncoding } = require('../src/core/source-encoding');
