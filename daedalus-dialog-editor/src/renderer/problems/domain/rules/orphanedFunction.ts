@@ -5,9 +5,11 @@ import type { LintRule, Problem } from '../types';
  *
  * A function is considered referenced when it is named by a dialog's
  * `information` or `condition` property, targeted by a `Choice` action (including
- * choices nested in conditional branches), or listed in another function's
- * `calls` array. Matching is case-insensitive across the whole project; all of
- * these references are pre-extracted into the per-file facts.
+ * choices nested in conditional branches), listed in another function's
+ * `calls` array, or assigned to an instance property — `daily_routine` and
+ * `start_aistate` are how the engine reaches a routine and a state without
+ * either. Matching is case-insensitive across the whole project; all of these
+ * references are pre-extracted into the per-file facts.
  */
 export const orphanedFunctionRule: LintRule = (view): Problem[] => {
   const referencedKeys = new Set<string>();
@@ -30,6 +32,9 @@ export const orphanedFunctionRule: LintRule = (view): Problem[] => {
       for (const call of func.calls) {
         addRef(call);
       }
+    }
+    for (const instanceRef of file.facts.instanceRefs) {
+      addRef(instanceRef);
     }
   }
 

@@ -67,7 +67,15 @@ export function extractFileFacts(model: SemanticModel): FileFacts {
   });
 
   const npcNames: string[] = [];
+  // Only `daily_routine` is a modelled field, so the rest of an instance body's
+  // function-valued properties (`start_aistate`, a project's own) are read out
+  // of its source text. A declaration the model was built from carries one.
+  const instanceRefs = new Set<string>();
   for (const instance of Object.values(model.instances || {})) {
+    if (instance.dailyRoutine) instanceRefs.add(instance.dailyRoutine);
+    for (const [, assigned] of (instance.sourceText || '').matchAll(/=\s*([A-Za-z_]\w*)\s*;/g)) {
+      instanceRefs.add(assigned);
+    }
     if (instance.parent && instance.parent.trim().toUpperCase() === 'C_NPC') {
       npcNames.push(instance.name);
     }
@@ -76,5 +84,5 @@ export function extractFileFacts(model: SemanticModel): FileFacts {
     npcNames.push(npc.name);
   }
 
-  return { dialogs, functions, npcNames };
+  return { dialogs, functions, npcNames, instanceRefs: [...instanceRefs] };
 }
