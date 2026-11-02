@@ -77,7 +77,7 @@ beforeEach(() => {
     projectName: 'TestProject',
     allDialogFiles: [FILE_A, FILE_B, FILE_C],
     dialogIndex: new Map([
-      ['TestNPC', [
+      ['TESTNPC', [
         { dialogName: 'DIA_A', npc: 'TestNPC', filePath: FILE_A },
         { dialogName: 'DIA_B', npc: 'TestNPC', filePath: FILE_B },
         { dialogName: 'DIA_C', npc: 'TestNPC', filePath: FILE_C },
