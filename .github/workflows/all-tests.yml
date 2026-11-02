@@ -250,7 +250,7 @@ jobs:
 
       - name: Upload blob report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: playwright-blob-${{ matrix.shardIndex }}
           path: daedalus-dialog-editor/blob-report
@@ -280,7 +280,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Download blob reports
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           pattern: playwright-blob-*
           path: daedalus-dialog-editor/all-blob-reports
@@ -291,7 +291,7 @@ jobs:
         working-directory: daedalus-dialog-editor
 
       - name: Upload merged HTML report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: playwright-report
           path: daedalus-dialog-editor/playwright-report
@@ -334,7 +334,7 @@ jobs:
 
       - name: Upload Electron E2E report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: playwright-report-electron
           path: daedalus-dialog-editor/playwright-report-electron
@@ -393,7 +393,7 @@ jobs:
 
       - name: Upload roundtrip reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: roundtrip-corpus-reports
           path: |
