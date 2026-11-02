@@ -33,8 +33,6 @@ interface GlobalSymbol {
   parent?: string;
   sourceText?: string;
   leadingComments?: string[];
-  /** Source position of the declaration, when it came from a parse (#440). */
-  position?: { startLine: number; endLine: number };
 }
 
 /** `b` of `var int a, b;` or `instance a, b(C);` (#383) is written by `a`'s statement while `a` exists. */
@@ -161,20 +159,18 @@ export class SemanticCodeGenerator {
     // by the blank lines the parse recorded before it (#286); an entry without
     // a record (a model built in code) gets the old spacing — none between
     // consecutive globals, one otherwise. Two declarations the source put on
-    // one line are joined with a space instead of a break (#440).
+    // one line are joined with the whitespace it had between them (#397, #440).
     let ordered = '';
     let previousWasGlobal: boolean | null = null;
-    let previousLine: number | undefined;
-    const emitOrdered = (text: string, isGlobal: boolean, blankLinesBefore: number | undefined, startLine: number | undefined) => {
+    const emitOrdered = (text: string, isGlobal: boolean, blankLinesBefore: number | undefined, sameLineBefore: string | undefined) => {
       const body = text.endsWith('\n') ? text.slice(0, -1) : text;
-      if (startLine !== undefined && startLine === previousLine && ordered.length > 0) {
-        ordered = `${ordered.slice(0, -1)} ${body}\n`;
+      if (sameLineBefore !== undefined && ordered.length > 0) {
+        ordered = `${ordered.slice(0, -1)}${sameLineBefore}${body}\n`;
       } else {
         const blank = blankLinesBefore ?? (previousWasGlobal === null || (isGlobal && previousWasGlobal) ? 0 : 1);
         ordered += '\n'.repeat(blank) + body + '\n';
       }
       previousWasGlobal = isGlobal;
-      previousLine = startLine;
     };
 
     // N10 — declaration-order fidelity: when the model carries a declaration
@@ -194,7 +190,7 @@ export class SemanticCodeGenerator {
         const symbol = this.lookupGlobalSymbol(declaration.type, declaration.name, model);
         const key = `${declaration.type}:${declaration.name}`;
         if (symbol && !emittedGlobals.has(key)) {
-          emitOrdered(this.generateGlobalDeclaration(declaration.type, symbol), true, declaration.blankLinesBefore, symbol.position?.startLine);
+          emitOrdered(this.generateGlobalDeclaration(declaration.type, symbol), true, declaration.blankLinesBefore, declaration.sameLineBefore);
           emittedGlobals.add(key);
         }
         continue;
@@ -205,13 +201,13 @@ export class SemanticCodeGenerator {
         if (dialog && !emittedDialogs.has(dialog.name)) {
           // Emit leading comments verbatim; do NOT synthesize a section header
           // for a dialog that has its own order entry (invented content).
-          emitOrdered(this.generateDialog(dialog), false, declaration.blankLinesBefore, dialog.line);
+          emitOrdered(this.generateDialog(dialog), false, declaration.blankLinesBefore, declaration.sameLineBefore);
           emittedDialogs.add(dialog.name);
         }
       } else if (declaration.type === 'function') {
         const func = model.functions[declaration.name];
         if (func && !emittedFunctions.has(func.name.toLowerCase())) {
-          emitOrdered(this.generateFunction(func), false, declaration.blankLinesBefore, func.line);
+          emitOrdered(this.generateFunction(func), false, declaration.blankLinesBefore, declaration.sameLineBefore);
           emittedFunctions.add(func.name.toLowerCase());
         }
       }

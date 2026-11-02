@@ -47,7 +47,9 @@ export class DeclarationVisitor {
       // inside the comment block, or between it and the declaration, are kept
       // as empty entries in leadingComments, which render as blank lines.
       let previousEndRow = -1;
+      let previousEndIndex = -1;
       let groupStartRow: number | null = null;
+      let groupStartIndex: number | null = null;
       let lastCommentEndRow = -1;
       const padSinceLastComment = (row: number) => {
         if (this.pendingLeadingComments.length === 0) return;
@@ -62,6 +64,7 @@ export class DeclarationVisitor {
             padSinceLastComment(child.startPosition.row);
             this.pendingLeadingComments.push(child.text);
             groupStartRow ??= child.startPosition.row;
+            groupStartIndex ??= child.startIndex;
             lastCommentEndRow = child.endPosition.row;
             continue;
           }
@@ -79,11 +82,22 @@ export class DeclarationVisitor {
             if (order && order.length > firstEntry) {
               const startRow = groupStartRow ?? child.startPosition.row;
               order[firstEntry].blankLinesBefore = Math.max(0, startRow - previousEndRow - 1);
+              if (startRow === previousEndRow && previousEndIndex >= 0) {
+                const gap = node.text.slice(
+                  previousEndIndex - node.startIndex,
+                  (groupStartIndex ?? child.startIndex) - node.startIndex
+                );
+                // Only plain whitespace: a comment in the gap keeps its own
+                // line rules, so joining there would move it.
+                if (/^[ \t]+$/.test(gap)) order[firstEntry].sameLineBefore = gap;
+              }
             }
           }
           this.pendingLeadingComments = [];
           groupStartRow = null;
+          groupStartIndex = null;
           previousEndRow = child.endPosition.row;
+          previousEndIndex = child.endIndex;
         } while (cursor.gotoNextSibling());
         cursor.gotoParent();
       }
