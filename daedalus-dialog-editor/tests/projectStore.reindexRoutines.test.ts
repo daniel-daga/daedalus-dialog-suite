@@ -90,7 +90,27 @@ describe('ProjectStore - reindexFiles', () => {
     expect(state.npcFileIndex).toEqual({ BAU_901_BAUER: '/p/Onar.d' });
     expect(state.npcIdIndex).toEqual({ BAU_901_BAUER: 901 });
     expect(state.routineNpcIndex).toEqual({ BAU_901_BAUER: 'RTN_START_901' });
-    expect(state.npcList).toEqual(['BAU_900_Onar', 'BAU_901_Bauer']);
+    expect(state.npcList).toEqual(['BAU_901_Bauer']);
+  });
+
+  // #468: the list is a projection of the index, so it has to be pruned in the
+  // same pass. An NPC another file declares, or one a dialog names (the two ways
+  // the load learns an NPC), stays.
+  it("drops an NPC the changed file no longer declares, keeping the ones other files and dialogs still name", async () => {
+    useProjectStore.setState({
+      npcList: ['BAU_900_Onar', 'BAU_901_Bauer', 'BAU_902_Diego'],
+      npcFileIndex: { BAU_900_ONAR: '/p/Onar.d', BAU_901_BAUER: '/p/Bauer.d' },
+      dialogIndex: new Map([['BAU_902_DIEGO', [
+        { dialogName: 'DIA_DIEGO_EXIT', npc: 'BAU_902_Diego', filePath: '/p/DIA_Diego.d' },
+      ]]]),
+    });
+    reads({ '/p/Onar.d': fileIndex({}) });
+
+    await useProjectStore.getState().reindexFiles(['/p/Onar.d']);
+
+    const state = useProjectStore.getState();
+    expect(state.npcFileIndex).toEqual({ BAU_901_BAUER: '/p/Bauer.d' });
+    expect(state.npcList).toEqual(['BAU_901_Bauer', 'BAU_902_Diego']);
   });
 
   it("changes an NPC's daily routine when his file does", async () => {
@@ -169,6 +189,7 @@ describe('ProjectStore - reindexFiles', () => {
 describe('ProjectStore - dropFileFromIndex', () => {
   it("forgets a removed file's sites and NPCs, and the variants that went with them", () => {
     useProjectStore.setState({
+      npcList: ['BAU_900_Onar', 'BAU_901_Bauer'],
       npcFileIndex: { BAU_900_ONAR: '/p/Onar.d', BAU_901_BAUER: '/p/Bauer.d' },
       npcIdIndex: { BAU_900_ONAR: 900, BAU_901_BAUER: 901 },
       routineNpcIndex: { BAU_900_ONAR: 'RTN_START_900', BAU_901_BAUER: 'RTN_START_901' },
@@ -176,6 +197,7 @@ describe('ProjectStore - dropFileFromIndex', () => {
       routineStateIndex: { BAU_901_BAUER: { id: 901, states: { TOT: 'RTN_TOT_901' } } },
       spawnSiteIndex: [spawn('BAU_900_ONAR', '/p/Onar.d'), spawn('BAU_901_BAUER', '/p/Bauer.d')],
       exchangeSiteIndex: [exchange('TOT', '/p/Onar.d')],
+      dialogIndex: new Map(),
     });
 
     useProjectStore.getState().dropFileFromIndex('/p/Onar.d');
@@ -184,6 +206,7 @@ describe('ProjectStore - dropFileFromIndex', () => {
     expect(state.npcFileIndex).toEqual({ BAU_901_BAUER: '/p/Bauer.d' });
     expect(state.npcIdIndex).toEqual({ BAU_901_BAUER: 901 });
     expect(state.routineNpcIndex).toEqual({ BAU_901_BAUER: 'RTN_START_901' });
+    expect(state.npcList).toEqual(['BAU_901_Bauer']);
     expect(state.routineSiteIndex).toEqual([site('RTN_START_901', '/p/Bauer.d', 0)]);
     expect(state.routineStateIndex).toEqual({});
     expect(state.spawnSiteIndex).toEqual([spawn('BAU_901_BAUER', '/p/Bauer.d')]);
