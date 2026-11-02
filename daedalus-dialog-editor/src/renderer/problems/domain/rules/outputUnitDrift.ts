@@ -26,7 +26,7 @@ export const outputUnitDriftRule: LintRule = (view): Problem[] => {
 
   for (const file of view.fileFacts) {
     for (const func of file.facts.functions) {
-      for (const { id, text: comment, line } of func.voiceIds) {
+      for (const [ordinal, { id, text: comment, line }] of func.voiceIds.entries()) {
         // Ids are matched case-insensitively because Daedalus is and the OU
         // writer upper-cases; the subtitle is compared verbatim because it is
         // what the player reads, so a changed capital is a real edit. Only the
@@ -37,7 +37,7 @@ export const outputUnitDriftRule: LintRule = (view): Problem[] => {
 
         if (recorded === undefined) {
           problems.push({
-            id: `output-unit-missing:${file.filePath}:${func.name}:${id.toUpperCase()}`,
+            id: `output-unit-missing:${file.filePath}:${func.name}:${id.toUpperCase()}:${ordinal}`,
             rule: 'output-unit-missing',
             severity: 'warning',
             message:
@@ -48,7 +48,7 @@ export const outputUnitDriftRule: LintRule = (view): Problem[] => {
           });
         } else if (recorded !== text) {
           problems.push({
-            id: `output-unit-stale:${file.filePath}:${func.name}:${id.toUpperCase()}`,
+            id: `output-unit-stale:${file.filePath}:${func.name}:${id.toUpperCase()}:${ordinal}`,
             rule: 'output-unit-stale',
             severity: 'warning',
             message:

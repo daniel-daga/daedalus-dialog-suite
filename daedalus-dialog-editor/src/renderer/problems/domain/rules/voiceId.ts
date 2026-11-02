@@ -7,6 +7,8 @@ interface VoiceIdOccurrence {
   functionName: string;
   /** The `AI_Output` line itself — a function holds many, and they differ. */
   line?: number;
+  /** Its position among the function's lines: two can carry the same id. */
+  ordinal: number;
 }
 
 /** Vanilla voice ids end in `_<number>_<number>`, e.g. `DIA_Alrik_Teach_15_00`. */
@@ -28,8 +30,8 @@ export const voiceIdRule: LintRule = (view): Problem[] => {
 
   for (const file of view.fileFacts) {
     for (const func of file.facts.functions) {
-      for (const { id, line } of func.voiceIds) {
-        occurrences.push({ id, filePath: file.filePath, functionName: func.name, line });
+      for (const [ordinal, { id, line }] of func.voiceIds.entries()) {
+        occurrences.push({ id, filePath: file.filePath, functionName: func.name, line, ordinal });
       }
     }
   }
@@ -53,7 +55,7 @@ export const voiceIdRule: LintRule = (view): Problem[] => {
     }
     for (const occ of group) {
       problems.push({
-        id: `voice-id-duplicate:${occ.filePath}:${occ.functionName}:${upper}`,
+        id: `voice-id-duplicate:${occ.filePath}:${occ.functionName}:${upper}:${occ.ordinal}`,
         rule: 'voice-id-duplicate',
         severity: 'warning',
         message: `Voice ID "${occ.id}" is used ${group.length} times across the project.`,
@@ -67,7 +69,7 @@ export const voiceIdRule: LintRule = (view): Problem[] => {
       continue;
     }
     problems.push({
-      id: `voice-id-malformed:${occ.filePath}:${occ.functionName}:${occ.id.toUpperCase()}`,
+      id: `voice-id-malformed:${occ.filePath}:${occ.functionName}:${occ.id.toUpperCase()}:${occ.ordinal}`,
       rule: 'voice-id-malformed',
       severity: 'warning',
       message: `Voice ID "${occ.id}" does not match the expected naming pattern (…_<number>_<number>).`,
