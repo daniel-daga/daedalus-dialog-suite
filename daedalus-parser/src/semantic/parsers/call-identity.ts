@@ -18,7 +18,11 @@ export function captureCallIdentity(owner: CodeGeneratable, node: TreeSitterNode
   const sourceName = firstCall(node)?.childForFieldName('function')?.text;
   if (!sourceName) return;
   parser ??= DaedalusParser.create();
-  const result = parser.parse(`func void __call_identity() {\n${owner.generateCode({ includeComments: true })}\n};`);
+  // Conditions generate a bare expression, actions a terminated statement; the
+  // wrapper holds one statement, so add the terminator a condition lacks (#444).
+  const generated = owner.generateCode({ includeComments: true });
+  const statement = generated.trimEnd().endsWith(';') ? generated : `${generated};`;
+  const result = parser.parse(`func void __call_identity() {\n${statement}\n};`);
   const generatedName = firstCall(result.rootNode as TreeSitterNode)?.childForFieldName('function')?.text;
   if (result.hasErrors || !generatedName) {
     throw new Error('Cannot capture call identity: generated expression must contain a valid call.');

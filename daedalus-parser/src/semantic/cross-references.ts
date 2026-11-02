@@ -70,7 +70,10 @@ let rawActionParser: DaedalusParser | undefined;
 /** Raw source owns its statements, but still contributes actual callback references. */
 function rawChoiceTargets(source: string): string[] {
   rawActionParser ??= DaedalusParser.create();
-  const result = rawActionParser.parse(`func void __choice_references() {\n${source}\n};`);
+  // A raw action may be a bare call (`Touch()`), which the grammar now requires
+  // to be terminated; an if-block already carries its own `;` (#444).
+  const statement = source.trimEnd().endsWith(';') ? source : `${source};`;
+  const result = rawActionParser.parse(`func void __choice_references() {\n${statement}\n};`);
   const declarations = (result.rootNode as TreeSitterNode).namedChildren.filter(node => node.type !== 'comment');
   const declaration = declarations[0];
   if (result.hasErrors || declarations.length !== 1 || declaration.type !== 'function_declaration') {

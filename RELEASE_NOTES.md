@@ -2,6 +2,7 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #444: A missing semicolon is a syntax error; Polish/Czech and BOM'd Windows scripts decode right
 - #440: Saving keeps a script's own line endings, blank lines and the statements you grouped on one line
 - #443: Edits ship half the data — a dialog no longer carries its own body over IPC
 - #431: VOB folders made after Save As are saved beside the copy, not the file it was saved from
