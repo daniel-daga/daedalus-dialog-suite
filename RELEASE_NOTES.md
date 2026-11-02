@@ -2,6 +2,8 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #464: A choice that targets its own function keeps the seeded first line in step with the choice text
+- #463: Expanding a choice whose target is declared in another file shows its actions instead of "Function not found"
 - #397: A save keeps the whitespace between two declarations that shared a line, so tab-aligned pairs don't reflow
 - #462: Inserting a condition template into an "or" condition keeps the condition's meaning
 - #461: Tabbing through the Conditions panel no longer marks the file dirty or adds undo steps

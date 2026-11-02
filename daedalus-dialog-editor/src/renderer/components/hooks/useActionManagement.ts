@@ -232,13 +232,25 @@ export function useActionManagement(config: ActionManagementConfig) {
           previousText: previousAction.text,
           newText: updatedAction.text,
         };
+
+        // A choice that targets the function being edited mirrors into this same
+        // write: the post-write mirror below reads the last render's copy and
+        // would revert this keystroke (#464).
+        if (updatedAction.targetFunction === currentFunctionName) {
+          const firstLine = updatedActions[0];
+          if (firstLine?.type === 'DialogLine' && firstLine.text === previousAction.text) {
+            updatedActions = [{ ...firstLine, text: updatedAction.text }, ...updatedActions.slice(1)];
+          }
+        }
       }
 
       return { ...prev, actions: updatedActions };
     });
 
-    if (choiceTextSync && semanticModel && onUpdateSemanticModel) {
+    if (choiceTextSync) {
       const { targetFunction, previousText, newText } = choiceTextSync;
+      // A self-target was mirrored in the same write above (#464).
+      if (targetFunction === currentFunctionName || !semanticModel || !onUpdateSemanticModel) return;
       const targetFn = semanticModel.functions?.[targetFunction];
       const firstLine = targetFn?.actions?.[0];
       // Only mirror while the seeded line still matches the old choice text — if
@@ -250,7 +262,7 @@ export function useActionManagement(config: ActionManagementConfig) {
         });
       }
     }
-  }, [setFunction, contextName, getAllDialogLineActions, semanticModel, onUpdateSemanticModel]);
+  }, [setFunction, contextName, getAllDialogLineActions, semanticModel, onUpdateSemanticModel, currentFunctionName]);
 
   /**
    * Delete an action at a specific index

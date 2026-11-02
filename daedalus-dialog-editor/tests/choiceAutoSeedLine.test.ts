@@ -30,6 +30,11 @@ function renderManagement(initialActions: DialogAction[] = []) {
 
   const onUpdateSemanticModel = jest.fn((name: string, func: DialogFunction) => {
     model.functions![name] = func;
+    // The store writes into the one open file, so a write to the function being
+    // edited replaces it — it does not sit beside it as a second copy.
+    if (name === currentFunc.name) {
+      currentFunc = func;
+    }
   });
 
   const { result, rerender } = renderHook(() =>
@@ -39,6 +44,7 @@ function renderManagement(initialActions: DialogAction[] = []) {
       semanticModel: model,
       onUpdateSemanticModel,
       contextName: 'DIA_Test',
+      currentFunctionName: currentFunc.name,
     })
   );
 
@@ -92,6 +98,29 @@ describe('useActionManagement – choice auto-seeded sub-dialog line (#181)', ()
     });
 
     expect((model.functions![targetName].actions![0] as { text: string }).text).toBe('Hello world');
+  });
+
+  test('a choice that targets the function being edited keeps the seed line in step (#464)', () => {
+    const selfName = 'DIA_Test_Info';
+    const seededLine: DialogAction = { type: 'DialogLine', speaker: 'other', text: 'Hello', id: 'DIA_Test_15_00' };
+    const choice: DialogAction = {
+      type: 'Choice', dialogRef: 'DIA_Test', text: 'Hello', targetFunction: selfName,
+    };
+    const { result, model, getActions } = renderManagement([seededLine, choice]);
+
+    // What the hook's closure holds from the last render: the function as it was
+    // before this keystroke.
+    model.functions![selfName] = makeFunction(selfName, [seededLine, choice]);
+
+    act(() => {
+      result.current.updateAction([1], {
+        type: 'Choice', dialogRef: 'DIA_Test', text: 'Hello world', targetFunction: selfName,
+      });
+    });
+
+    const actions = getActions();
+    expect((actions[1] as { text: string }).text).toBe('Hello world');
+    expect((actions[0] as { text: string }).text).toBe('Hello world');
   });
 
   test('does not clobber a line the user has manually edited away from the choice text', () => {
