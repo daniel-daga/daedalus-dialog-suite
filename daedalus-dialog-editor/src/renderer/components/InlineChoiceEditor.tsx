@@ -4,6 +4,7 @@ import { useEditorStore } from '../store/editorStore';
 import { useProjectStore } from '../store/projectStore';
 import ActionsList from './ActionsList';
 import { useActionManagement } from './hooks/useActionManagement';
+import { useResolvedFunction } from './hooks/useResolvedFunction';
 import { useFocusNavigation } from './hooks/useFocusNavigation';
 import { useStableHandlers } from './hooks/useStableHandlers';
 import { flattenVisibleActionPaths } from './nestedActionUtils';
@@ -60,17 +61,29 @@ const InlineChoiceEditor: React.FC<InlineChoiceEditorProps> = ({
     [fileModel, mergedDialogs, mergedFunctions]
   );
 
-  const targetFunction = semanticModel?.functions?.[targetFunctionName] || null;
+  // The target may be declared in another open file, and its model is the only
+  // copy `updateFunction` will write — it drops a name its file does not hold.
+  const ownerFilePath = useEditorStore((s) => {
+    if (!targetFunctionName) return null;
+    if (filePath && s.openFiles.get(filePath)?.semanticModel?.functions?.[targetFunctionName]) return filePath;
+    for (const [candidatePath, file] of s.openFiles) {
+      if (file.semanticModel?.functions?.[targetFunctionName]) return candidatePath;
+    }
+    return null;
+  });
+  const targetFilePath = ownerFilePath ?? filePath;
+
+  const targetFunction = useResolvedFunction(targetFunctionName, targetFilePath);
   const { registerActionRef, focusAction } = useFocusNavigation();
 
   const setFunction = useCallback((updatedFuncOrUpdater: FunctionUpdater) => {
-    if (!targetFunctionName || !filePath) return;
+    if (!targetFunctionName || !targetFilePath) return;
     if (typeof updatedFuncOrUpdater === 'function') {
-      updateFunctionWithUpdater(filePath, targetFunctionName, updatedFuncOrUpdater);
+      updateFunctionWithUpdater(targetFilePath, targetFunctionName, updatedFuncOrUpdater);
       return;
     }
-    updateFunction(filePath, targetFunctionName, updatedFuncOrUpdater);
-  }, [targetFunctionName, filePath, updateFunction, updateFunctionWithUpdater]);
+    updateFunction(targetFilePath, targetFunctionName, updatedFuncOrUpdater);
+  }, [targetFunctionName, targetFilePath, updateFunction, updateFunctionWithUpdater]);
 
   const {
     updateAction,
@@ -86,16 +99,16 @@ const InlineChoiceEditor: React.FC<InlineChoiceEditorProps> = ({
     focusAction,
     semanticModel,
     onUpdateSemanticModel: (funcName, func) => {
-      if (filePath) updateFunction(filePath, funcName, func);
+      if (targetFilePath) updateFunction(targetFilePath, funcName, func);
     },
     contextName: dialogName,
     currentFunctionName: targetFunctionName,
   });
 
   const handleRenameFunction = useCallback((oldName: string, newName: string) => {
-    if (!filePath) return;
-    renameFunction(filePath, oldName, newName);
-  }, [filePath, renameFunction]);
+    if (!targetFilePath) return;
+    renameFunction(targetFilePath, oldName, newName);
+  }, [targetFilePath, renameFunction]);
 
   // Identity-stable wrappers for every function prop crossing the ActionCard memo
   // boundary in the sub-dialog list (fix-07 §2.8), mirroring DialogActionsSection.
@@ -179,7 +192,7 @@ const InlineChoiceEditor: React.FC<InlineChoiceEditorProps> = ({
         dialogContextName={dialogName}
         contextId={targetFunctionName}
         droppableNamespace={targetFunctionName}
-        filePath={filePath}
+        filePath={targetFilePath}
       />
       </ActionLevelPatchContext.Provider>
     </Box>

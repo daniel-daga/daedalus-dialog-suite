@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import InlineChoiceEditor from '../src/renderer/components/InlineChoiceEditor';
 import { useFileStore } from '../src/renderer/store/fileStore';
@@ -9,8 +9,11 @@ import type { SemanticModel, DialogFunction } from '../src/renderer/types/global
 // Mock ActionsList to avoid DnD dependencies (same pattern as ConditionalActionRenderer.test.tsx)
 jest.mock('../src/renderer/components/ActionsList', () => ({
   __esModule: true,
-  default: ({ actions, contextId }: any) => (
-    <div data-testid={`actions-list-${contextId}`}>{actions.length} actions</div>
+  default: ({ actions, contextId, addDialogLineAfterPath }: any) => (
+    <div data-testid={`actions-list-${contextId}`}>
+      {actions.length} actions
+      <button data-testid="add-line" onClick={() => addDialogLineAfterPath?.([0], false)}>add</button>
+    </div>
   )
 }));
 
@@ -90,6 +93,40 @@ describe('InlineChoiceEditor', () => {
       />
     );
     expect(screen.getByText(/not found/i)).toBeInTheDocument();
+  });
+
+  test('resolves and edits a target declared in another file (#463)', () => {
+    const otherFilePath = '/test/other.d';
+    const emptyModel: SemanticModel = { dialogs: {}, functions: {}, hasErrors: false, errors: [] };
+    // The choice's own file does not declare the target; another open file
+    // does, and the merged model (as in project mode) knows it too.
+    useFileStore.setState({
+      openFiles: new Map([
+        [filePath, { filePath, semanticModel: emptyModel } as never],
+        [otherFilePath, { filePath: otherFilePath, semanticModel: testModel } as never],
+      ]),
+      activeFile: filePath,
+    } as never);
+    useProjectStore.setState({ mergedSemanticModel: testModel } as never);
+
+    render(
+      <InlineChoiceEditor
+        targetFunctionName="DIA_Test_Yes"
+        dialogName="DIA_Test"
+        filePath={filePath}
+        npcName="TestNPC"
+      />
+    );
+
+    expect(screen.queryByText(/not found/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId('actions-list-DIA_Test_Yes')).toHaveTextContent('2 actions');
+
+    // Editing must land on the file that declares the function — the active
+    // file's `updateFunction` would drop a name it does not hold.
+    fireEvent.click(screen.getByTestId('add-line'));
+    const ownerModel = useFileStore.getState().openFiles.get(otherFilePath)!.semanticModel;
+    expect(ownerModel.functions.DIA_Test_Yes.actions).toHaveLength(3);
+    expect(useFileStore.getState().openFiles.get(filePath)!.semanticModel.functions).toEqual({});
   });
 
   test('does not re-render on a no-op / unrelated-category merge (§3d)', () => {

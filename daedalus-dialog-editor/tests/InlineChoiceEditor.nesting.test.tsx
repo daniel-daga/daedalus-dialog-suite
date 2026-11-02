@@ -38,6 +38,19 @@ jest.mock('../src/renderer/store/editorStore', () => ({
     }),
 }));
 
+// `useResolvedFunction` reads the same store through its own module path, so the
+// mock has to answer there too.
+jest.mock('../src/renderer/store/fileStore', () => ({
+  useFileStore: (selector: (s: unknown) => unknown) =>
+    selector({
+      updateFunction,
+      updateFunctionWithUpdater,
+      renameFunction,
+      activeFile: FILE_PATH,
+      openFiles: new Map([[FILE_PATH, { filePath: FILE_PATH, semanticModel: mockModel }]]),
+    }),
+}));
+
 function makeSubFunction(): DialogFunction {
   return {
     name: SUB_FUNCTION_NAME,
