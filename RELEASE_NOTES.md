@@ -2,6 +2,7 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #501: A Problems scan no longer spends ~40 ms matching free points, one world name at a time
 - #497: NPC routines and start states are no longer reported as unreferenced functions
 - #444: A missing semicolon is a syntax error; Polish/Czech and BOM'd Windows scripts decode right
 - #450: Opening a file that is already open and edited no longer replaces the edits with the disk copy

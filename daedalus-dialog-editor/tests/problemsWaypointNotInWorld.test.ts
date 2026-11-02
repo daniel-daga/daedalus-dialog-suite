@@ -151,6 +151,20 @@ describe('waypointNotInWorldRule', () => {
     expect(waypointNotInWorldRule(view)).toHaveLength(1);
   });
 
+  it('matches a site name that is a proper substring of one free point', () => {
+    // The one behaviour a joined lookup must keep, in both places a fragment
+    // can sit: a prefix of one name, and text from its middle.
+    expect(worldHasPoint(world([], ['FP_ROAM_OW_SNAPPER_OW_ORC8']), 'FP_ROAM_OW_SNAPPER_OW_ORC')).toBe(true);
+    expect(worldHasPoint(world([], ['FP_ROAM_CITY_01']), 'ROAM')).toBe(true);
+  });
+
+  it('does not match a site name stitched across two free points', () => {
+    // The tail of one name and the head of the next are not a name. A lookup
+    // that joined the list without a separator would answer yes here.
+    expect(worldHasPoint(world([], ['FP_ROAM_CITY_01', 'FP_ROAM_CITY_02']), '01FP_ROAM_CITY_02'))
+      .toBe(false);
+  });
+
   it('does not fragment-match ordinary waypoints', () => {
     // Only free points are matched loosely; a routine naming `NW_CITY` when the
     // world holds only `NW_CITY_01` really does dangle.

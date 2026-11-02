@@ -283,6 +283,15 @@ export interface WorldWaynetView {
 }
 
 /**
+ * The free-point list joined once per *list object*: the rule asks once per
+ * script site (874 at retail scale) and the per-site linear scan of 2,254
+ * names measured 43 ms a scan. A world's list is built once per summary change
+ * (`worldStore`), so this join runs once per world and each scan after it is a
+ * substring test of one 45 kB string.
+ */
+const joinedFreePoints = new WeakMap<readonly string[], string>();
+
+/**
  * Does the open world have a place by this name? **The one answer both
  * surfaces take** — the Problems rule and the spawn-point jump button — so
  * that a name cannot be missing in one and present in the other, which is
@@ -306,8 +315,15 @@ export const worldHasPoint = (world: WorldWaynetView, name: string): boolean => 
   // any world holding one free point — and the next caller is a text field
   // being typed into, where the empty name is the normal state.
   if (!upper) return false;
-  return world.pointNameKeys.has(upper)
-    || world.freePointNames.some((freePoint) => freePoint.includes(upper));
+  if (world.pointNameKeys.has(upper)) return true;
+  let joined = joinedFreePoints.get(world.freePointNames);
+  if (joined === undefined) {
+    // A name cannot contain a newline, so the join cannot match across a
+    // boundary: the answer is the old per-name `includes` scan's, exactly.
+    joined = world.freePointNames.join('\n');
+    joinedFreePoints.set(world.freePointNames, joined);
+  }
+  return joined.includes(upper);
 };
 
 /** A pure lint rule: inspects the project view and returns any problems. */
