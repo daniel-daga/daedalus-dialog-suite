@@ -105,6 +105,9 @@ save leaves at most one aside beside the script; unlinking it is **best effort**
 — the inode Windows would not replace is the one still mapped, so the unlink can
 fail and the copy then stays until the next write of that path removes it. A
 crash between the two renames leaves the original under that predictable name.
+Every rename on that path — over, away, into place, and the rollback — carries
+the same 3×/50 ms transient-lock retry, so a scanner holding the target for a
+moment delays the save instead of failing it (#511).
 
 ## Encoding write policy
 

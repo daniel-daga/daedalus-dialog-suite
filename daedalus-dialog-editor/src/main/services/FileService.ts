@@ -133,14 +133,14 @@ async function replaceFile(tmp: string, filePath: string): Promise<void> {
     const code = (error as NodeJS.ErrnoException).code;
     if (code !== 'EPERM' && code !== 'EBUSY') throw error;
     try {
-      await fs.rename(filePath, aside);
+      await renameWithRetry(filePath, aside);
     } catch {
       throw error;
     }
     try {
-      await fs.rename(tmp, filePath);
+      await renameWithRetry(tmp, filePath);
     } catch (placeError) {
-      await fs.rename(aside, filePath);
+      await renameWithRetry(aside, filePath);
       throw placeError;
     }
     try {

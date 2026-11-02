@@ -114,7 +114,16 @@ describe('FileService conflict guard (E4 phase 2)', () => {
       await fs.writeFile(staged, 'external change');
       const future = new Date(Date.now() + 60_000);
       await fs.utimes(staged, future, future);
-      await fs.rename(staged, file);
+      try {
+        await fs.rename(staged, file);
+      } catch (error) {
+        // Windows refuses to rename over a file another handle holds, and the
+        // service holds one across this read; there the same replacement takes
+        // two steps and still leaves the path naming a different inode.
+        if ((error as NodeJS.ErrnoException).code !== 'EPERM') throw error;
+        await fs.unlink(file);
+        await fs.rename(staged, file);
+      }
     });
 
     const { content, version } = await service.readFileVersioned(file);
