@@ -840,23 +840,12 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
             });
 
           } catch (e) {
+            // A failure is not a model: storing an empty one made a timeout or a
+            // dead worker indistinguishable from a broken file, and the cache hit
+            // meant nothing retried it for the rest of the session (#472).
             console.warn(`Background ingestion failed for ${filePath}:`, e);
-            
-            if (controller.signal.aborted) return;
 
-            // Add error to batch
-            pendingUpdates.set(filePath, {
-               filePath,
-               semanticModel: {
-                 ...createEmptySemanticModel(),
-                 hasErrors: true,
-                 errors: [{
-                    type: 'ingestion_error',
-                    message: e instanceof Error ? e.message : String(e)
-                 }]
-               },
-               lastParsed: new Date()
-            });
+            if (controller.signal.aborted) return;
           }
         }
       };
