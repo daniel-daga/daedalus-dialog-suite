@@ -64,7 +64,7 @@ export function useDialogNavigation({
       if (isProjectMode) {
         selectNpc(npc);
 
-        const dialogMetadata = dialogIndex.get(npc) || [];
+        const dialogMetadata = dialogIndex.get(npc.toUpperCase()) || [];
         const uniqueFilePaths = [...new Set(dialogMetadata.map(m => m.filePath))];
 
         await Promise.all(
@@ -117,7 +117,7 @@ export function useDialogNavigation({
       if (isProjectMode && selectedNPC) {
         const { dialogIndex, getSemanticModel } = useProjectStore.getState();
         const { activeFile, openFiles, setActiveFile, openFile } = useEditorStore.getState();
-        const npcDialogs = dialogIndex.get(selectedNPC);
+        const npcDialogs = dialogIndex.get(selectedNPC.toUpperCase());
         const metadata = npcDialogs?.find(d => d.dialogName === dialogName);
         if (metadata && metadata.filePath && activeFile !== metadata.filePath) {
           if (openFiles.has(metadata.filePath)) {
@@ -150,7 +150,7 @@ export function useDialogNavigation({
     try {
       if (isProjectMode) {
         const { dialogIndex, selectNpc, getSemanticModel, loadAndMergeNpcModels } = useProjectStore.getState();
-        const dialogMetadata = dialogIndex.get(npcName) || [];
+        const dialogMetadata = dialogIndex.get(npcName.toUpperCase()) || [];
         const metadata = dialogMetadata.find((entry) => entry.dialogName === dialogName);
 
         if (metadata) {

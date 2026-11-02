@@ -60,7 +60,7 @@ export function useDialogFactory(config: DialogFactoryConfig) {
    */
   const resolveTargetFilePath = useCallback(
     (npcName: string): string | null => {
-      const npcDialogMetadata = dialogIndex.get(npcName) || [];
+      const npcDialogMetadata = dialogIndex.get(npcName.toUpperCase()) || [];
       if (npcDialogMetadata.length > 0) {
         return npcDialogMetadata[0].filePath;
       }
@@ -77,7 +77,7 @@ export function useDialogFactory(config: DialogFactoryConfig) {
       }
 
       if (selectedNPC) {
-        const selectedNpcMetadata = dialogIndex.get(selectedNPC) || [];
+        const selectedNpcMetadata = dialogIndex.get(selectedNPC.toUpperCase()) || [];
         if (selectedNpcMetadata.length > 0) {
           return selectedNpcMetadata[0].filePath;
         }

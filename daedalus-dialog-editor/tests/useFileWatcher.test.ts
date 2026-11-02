@@ -331,7 +331,7 @@ describe('useFileWatcher — add event', () => {
     await emitFileChange({ type: 'add', filePath: FILE_B });
 
     const dialogIndex = useProjectStore.getState().dialogIndex;
-    const entries = dialogIndex.get('TestNPC');
+    const entries = dialogIndex.get('TESTNPC');
     expect(entries).toBeDefined();
     expect(entries!.some((m) => m.dialogName === 'DIA_Test')).toBe(true);
     unmount();
@@ -393,7 +393,7 @@ describe('useFileWatcher — add event auto-creates EXIT dialog (issue #141)', (
     // The generated file is parsed and indexed → the NPC shows up in the
     // NPC list with its EXIT dialog without re-opening the project.
     await waitFor(() => {
-      const entries = useProjectStore.getState().dialogIndex.get('VLK_99099_Robert');
+      const entries = useProjectStore.getState().dialogIndex.get('VLK_99099_ROBERT');
       expect(entries?.some((m) => m.dialogName === 'DIA_Robert_EXIT')).toBe(true);
     });
     expect(useProjectStore.getState().npcList).toContain('VLK_99099_Robert');

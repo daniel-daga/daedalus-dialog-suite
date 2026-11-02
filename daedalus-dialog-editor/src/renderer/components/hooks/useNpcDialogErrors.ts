@@ -33,7 +33,7 @@ export function useNpcDialogErrors({
 }: UseNpcDialogErrorsProps): UseNpcDialogErrorsResult {
   const npcFilePaths = useMemo((): string[] => {
     if (!isProjectMode || !selectedNPC) return EMPTY_PATHS;
-    const dialogMetadata = dialogIndex.get(selectedNPC) || [];
+    const dialogMetadata = dialogIndex.get(selectedNPC.toUpperCase()) || [];
     return Array.from(new Set(dialogMetadata.map(m => m.filePath)));
   }, [isProjectMode, selectedNPC, dialogIndex]);
 

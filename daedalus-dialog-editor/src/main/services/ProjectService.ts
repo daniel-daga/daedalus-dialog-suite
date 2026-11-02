@@ -147,7 +147,10 @@ class ProjectService {
 
     // Map to store dialogs by NPC
     const dialogsByNpc = new Map<string, DialogMetadata[]>();
-    const allNpcs = new Set<string>();
+    // NPC key → the spelling the NPC list shows: the declaring instance's, or
+    // the dialog's when nothing declares it. Daedalus is case-insensitive, so
+    // one NPC must be one entry whichever case its dialogs spell it in (#465).
+    const npcNames = new Map<string, string>();
     const questFiles: string[] = [];
     const allRoutines = new Set<string>();
     const allFunctions = new Set<string>();
@@ -252,20 +255,23 @@ class ProjectService {
           }
 
           npcInstancesFound++;
-          allNpcs.add(instance.name);
+          npcNames.set(normalizeIdentifier(instance.name), instance.name);
           npcFiles[instance.name.toUpperCase()] = filePath;
-          if (!dialogsByNpc.has(instance.name)) {
-            dialogsByNpc.set(instance.name, []);
+          if (!dialogsByNpc.has(normalizeIdentifier(instance.name))) {
+            dialogsByNpc.set(normalizeIdentifier(instance.name), []);
           }
         });
 
         // Group dialogs by NPC
         for (const dialog of result.dialogs) {
-          allNpcs.add(dialog.npc);
-          if (!dialogsByNpc.has(dialog.npc)) {
-            dialogsByNpc.set(dialog.npc, []);
+          const npcKey = normalizeIdentifier(dialog.npc);
+          if (!npcNames.has(npcKey)) {
+            npcNames.set(npcKey, dialog.npc);
           }
-          dialogsByNpc.get(dialog.npc)!.push(dialog);
+          if (!dialogsByNpc.has(npcKey)) {
+            dialogsByNpc.set(npcKey, []);
+          }
+          dialogsByNpc.get(npcKey)!.push(dialog);
         }
 
         // Collect quest files
@@ -301,7 +307,7 @@ class ProjectService {
     }
 
     // Extract and sort NPC list
-    const npcs = Array.from(allNpcs).sort();
+    const npcs = Array.from(npcNames.values()).sort();
     const routineArgIndex = buildRoutineParamIndex(fileModelsForSiteIndexes);
     const routineSites = extractRoutineSites(fileModelsForSiteIndexes, routineArgIndex);
     // The spelling each wrapper is declared with, so a call written from the

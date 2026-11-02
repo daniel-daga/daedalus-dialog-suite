@@ -428,7 +428,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       if (!filesWithDialogs.has(filePath)) pinned.add(filePath);
     }
     if (state.selectedNpc) {
-      for (const meta of dialogIndex.get(state.selectedNpc) || []) pinned.add(meta.filePath);
+      for (const meta of dialogIndex.get(state.selectedNpc.toUpperCase()) || []) pinned.add(meta.filePath);
     }
     const evictable = Array.from(cache.keys())
       .filter((filePath) => !pinned.has(filePath))
@@ -919,7 +919,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   getSelectedNpcDialogs: () => {
     const { selectedNpc, dialogIndex } = get();
     if (!selectedNpc) return [];
-    return dialogIndex.get(selectedNpc) || [];
+    return dialogIndex.get(selectedNpc.toUpperCase()) || [];
   },
 
   getSemanticModel: async (filePath: string) => {
@@ -1207,7 +1207,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     const { dialogIndex, parsedFiles, allDialogFiles } = get();
 
     // 1. Identify NPC-specific files
-    const dialogMetadata = dialogIndex.get(npcId) || [];
+    const dialogMetadata = dialogIndex.get(npcId.toUpperCase()) || [];
     const npcFilePaths = new Set(dialogMetadata.map(m => m.filePath));
 
     // 2. Identify "Global" files (non-dialog files)
@@ -1310,8 +1310,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     // and condition edits (the common keystroke case) leave that set unchanged,
     // so rebuilding the whole index every update is pure O(project) waste. Only
     // rebuild — once per batch — for the files whose (dialogName, npc) set
-    // actually changed.
-    const entryKey = (e: { dialogName: string; npc: string }) => `${e.npc}\u0000${e.dialogName}`;
+    // actually changed. The npc is uppercased as the load keys it (#465).
+    const npcKey = (name: string) => name.toUpperCase();
+    const entryKey = (e: { dialogName: string; npc: string }) => `${npcKey(e.npc)}\u0000${e.dialogName}`;
     const nextEntriesByFile = new Map<string, DialogMetadata[]>();
     for (const { filePath, model } of updates) {
       nextEntriesByFile.set(filePath, Object.entries(model.dialogs || {}).map(([dialogName, dialog]) => ({
@@ -1354,11 +1355,12 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       }
       for (const filePath of changedFiles) {
         for (const entry of nextEntriesByFile.get(filePath)!) {
-          if (!rebuiltNpcs.has(entry.npc) || !newDialogIndex.has(entry.npc)) {
-            newDialogIndex.set(entry.npc, [...(newDialogIndex.get(entry.npc) || [])]);
-            rebuiltNpcs.add(entry.npc);
+          const key = npcKey(entry.npc);
+          if (!rebuiltNpcs.has(key) || !newDialogIndex.has(key)) {
+            newDialogIndex.set(key, [...(newDialogIndex.get(key) || [])]);
+            rebuiltNpcs.add(key);
           }
-          newDialogIndex.get(entry.npc)!.push(entry);
+          newDialogIndex.get(key)!.push(entry);
         }
       }
     }
@@ -1379,7 +1381,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     const { selectedNpc } = get();
     if (selectedNpc) {
       const selectedNpcFiles = new Set(
-        (newDialogIndex.get(selectedNpc) || []).map(d => d.filePath)
+        (newDialogIndex.get(selectedNpc.toUpperCase()) || []).map(d => d.filePath)
       );
       const filesWithDialogs = getFilesWithDialogs(newDialogIndex);
       const relevant = updates.some(
@@ -1393,15 +1395,17 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
   addDialogToIndex: (metadata: DialogMetadata) => {
     set((state) => {
+      const npcKey = metadata.npc.toUpperCase();
       const nextDialogIndex = new Map(state.dialogIndex);
-      const existing = nextDialogIndex.get(metadata.npc) || [];
+      const existing = nextDialogIndex.get(npcKey) || [];
 
       const alreadyPresent = existing.some((entry) => entry.dialogName === metadata.dialogName);
       if (!alreadyPresent) {
-        nextDialogIndex.set(metadata.npc, [...existing, metadata]);
+        nextDialogIndex.set(npcKey, [...existing, metadata]);
       }
 
-      const nextNpcList = state.npcList.includes(metadata.npc)
+      const listed = state.npcList.some((name) => name.toUpperCase() === npcKey);
+      const nextNpcList = listed
         ? state.npcList
         : [...state.npcList, metadata.npc].sort((a, b) => a.localeCompare(b));
 
@@ -1419,7 +1423,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
   addNpcToIndex: (npc: string, filePath: string) => {
     set((state) => ({
-      npcList: state.npcList.includes(npc)
+      npcList: state.npcList.some((name) => name.toUpperCase() === npc.toUpperCase())
         ? state.npcList
         : [...state.npcList, npc].sort((a, b) => a.localeCompare(b)),
       npcFileIndex: { ...state.npcFileIndex, [npc.toUpperCase()]: filePath },

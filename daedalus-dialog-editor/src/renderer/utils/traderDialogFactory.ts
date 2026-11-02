@@ -31,7 +31,7 @@ export async function createTraderDialogForNpc(
 
   // Target directory: next to the NPC's existing dialogs, else where the
   // project's dialog files live, else the project root.
-  const npcDialogs = dialogIndex.get(npcName) || [];
+  const npcDialogs = dialogIndex.get(npcName.toUpperCase()) || [];
   const directory = npcDialogs.length > 0
     ? getDirectoryName(npcDialogs[0].filePath)
     : resolveDialogDirectory(dialogIndex, '') || (projectPath ? normalizePath(projectPath) : '');

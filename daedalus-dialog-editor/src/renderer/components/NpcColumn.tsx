@@ -114,7 +114,7 @@ const NpcColumn: React.FC<NpcColumnProps> = ({
     const dirs = new Map<string, string[]>();
     if (!isProjectMode || !projectPath) return dirs;
     for (const npc of npcs) {
-      const files = (dialogIndex.get(npc) || []).map((meta) => meta.filePath);
+      const files = (dialogIndex.get(npc.toUpperCase()) || []).map((meta) => meta.filePath);
       const declared = npcFileIndex[npc.toUpperCase()];
       if (declared) files.push(declared);
       dirs.set(npc, files.map((file) => relativeDir(file, projectPath)));
