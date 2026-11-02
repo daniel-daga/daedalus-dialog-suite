@@ -67,7 +67,7 @@ describe('projectStore.updateFileModels', () => {
       selectedNpc: 'SLD_Farim',
       allDialogFiles: [npcFileA, npcFileB],
       dialogIndex: new Map([
-        ['SLD_Farim', [
+        ['SLD_FARIM', [
           { dialogName: 'DIA_A', npc: 'SLD_Farim', filePath: npcFileA },
           { dialogName: 'DIA_B', npc: 'SLD_Farim', filePath: npcFileB }
         ]]
@@ -136,6 +136,35 @@ describe('projectStore.updateFileModels', () => {
     const after = useProjectStore.getState();
     expect(after.parsedFiles.get(untouched)).toBe(untouchedEntry);
     expect(after.dialogIndex).toBe(dialogIndexBefore);
+  });
+
+  it('keys a dialog by the index\'s NPC key when its file spells the NPC in another case', () => {
+    // The load keys an NPC uppercased (#465); the watcher rebuilds the entry
+    // from `npc = NPC_Onar;` verbatim. Left raw it makes a second NPC whose
+    // only dialog is the one it just read.
+    const file = '/proj/DIA_Onar.d';
+    useProjectStore.setState({ dialogIndex: new Map([['NPC_ONAR', []]]) });
+
+    useProjectStore.getState().updateFileModels([
+      { filePath: file, model: modelWithDialog('DIA_Onar_Hallo', 'NPC_Onar') }
+    ]);
+
+    const index = useProjectStore.getState().dialogIndex;
+    expect(index.size).toBe(1);
+    expect(index.get('NPC_ONAR')).toHaveLength(1);
+  });
+
+  it('finds the selected NPC\'s dialogs whichever case the selection uses', () => {
+    const file = '/proj/DIA_Onar.d';
+    useProjectStore.setState({
+      dialogIndex: new Map([['NPC_ONAR', [{ dialogName: 'DIA_Onar_Hallo', npc: 'NPC_ONAR', filePath: file }]]]),
+      parsedFiles: new Map([[file, { filePath: file, semanticModel: modelWithDialog('DIA_Onar_Hallo', 'NPC_ONAR'), lastParsed: new Date() }]])
+    });
+
+    for (const selected of ['NPC_Onar', 'NPC_ONAR']) {
+      useProjectStore.setState({ selectedNpc: selected });
+      expect(useProjectStore.getState().getSelectedNpcDialogs()).toHaveLength(1);
+    }
   });
 
   it('rebuilds the dialog index once when files change their dialog sets', () => {

@@ -83,7 +83,7 @@ describe('parsedFiles cap', () => {
       questFiles: [questFile],
       selectedNpc: 'SLD_Farim',
       dialogIndex: new Map([
-        ['SLD_Farim', [{ dialogName: 'DIA_Farim_Hallo', npc: 'SLD_Farim', filePath: npcFile }]],
+        ['SLD_FARIM', [{ dialogName: 'DIA_Farim_Hallo', npc: 'SLD_Farim', filePath: npcFile }]],
         // The quest file also carries a dialog for an unselected NPC, so only
         // quest pinning (not the global rule) can keep it alive.
         ['Other_NPC', [

@@ -163,7 +163,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   const dialogsForNPC = useMemo(() => {
     if (!selectedNPC) return [];
     if (isProjectMode) {
-      return (dialogIndex.get(selectedNPC) || []).map(m => m.dialogName);
+      return (dialogIndex.get(selectedNPC.toUpperCase()) || []).map(m => m.dialogName);
     }
     return Object.entries(semanticModel.dialogs || {})
       .filter(([, dialog]) => (dialog.properties?.npc || 'Unknown NPC') === selectedNPC)

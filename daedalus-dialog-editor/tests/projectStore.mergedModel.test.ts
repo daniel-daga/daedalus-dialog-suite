@@ -69,7 +69,7 @@ describe('ProjectStore - mergedSemanticModel', () => {
 
     const state = useProjectStore.getState();
     expect(state.npcList).toContain('SLD_99999_NewNpc');
-    expect(state.dialogIndex.get('SLD_99999_NewNpc')).toEqual([
+    expect(state.dialogIndex.get('SLD_99999_NEWNPC')).toEqual([
       {
         dialogName: 'DIA_NewNpc_Start',
         npc: 'SLD_99999_NewNpc',
@@ -86,7 +86,7 @@ describe('ProjectStore - mergedSemanticModel', () => {
       projectPath: '/project',
       allDialogFiles: [npcFile],
       dialogIndex: new Map([
-        [npcName, [{ dialogName: 'DIA_OldName', npc: npcName, filePath: npcFile }]]
+        [npcName.toUpperCase(), [{ dialogName: 'DIA_OldName', npc: npcName, filePath: npcFile }]]
       ]),
       parsedFiles: new Map([
         [npcFile, { filePath: npcFile, semanticModel: createModel([], [{ name: 'DIA_OldName', npc: npcName }]), lastParsed: new Date() }]
@@ -99,7 +99,7 @@ describe('ProjectStore - mergedSemanticModel', () => {
     useProjectStore.getState().updateFileModel(npcFile, newModel);
 
     const state = useProjectStore.getState();
-    const entries = state.dialogIndex.get(npcName) || [];
+    const entries = state.dialogIndex.get(npcName.toUpperCase()) || [];
     expect(entries.map(e => e.dialogName)).not.toContain('DIA_OldName');
     expect(entries.map(e => e.dialogName)).toContain('DIA_NewName');
   });
@@ -112,7 +112,7 @@ describe('ProjectStore - mergedSemanticModel', () => {
       projectPath: '/project',
       allDialogFiles: [npcFile],
       dialogIndex: new Map([
-        [npcName, [{ dialogName: 'DIA_ToDelete', npc: npcName, filePath: npcFile }]]
+        [npcName.toUpperCase(), [{ dialogName: 'DIA_ToDelete', npc: npcName, filePath: npcFile }]]
       ]),
       parsedFiles: new Map([
         [npcFile, { filePath: npcFile, semanticModel: createModel([], [{ name: 'DIA_ToDelete', npc: npcName }]), lastParsed: new Date() }]
@@ -125,7 +125,7 @@ describe('ProjectStore - mergedSemanticModel', () => {
     useProjectStore.getState().updateFileModel(npcFile, newModel);
 
     const state = useProjectStore.getState();
-    const entries = state.dialogIndex.get(npcName) || [];
+    const entries = state.dialogIndex.get(npcName.toUpperCase()) || [];
     expect(entries.map(e => e.dialogName)).not.toContain('DIA_ToDelete');
   });
 
@@ -137,7 +137,7 @@ describe('ProjectStore - mergedSemanticModel', () => {
       projectPath: '/project',
       allDialogFiles: [npcFile],
       dialogIndex: new Map([
-        [npcName, [{ dialogName: 'DIA_Start', npc: npcName, filePath: npcFile }]]
+        [npcName.toUpperCase(), [{ dialogName: 'DIA_Start', npc: npcName, filePath: npcFile }]]
       ]),
       parsedFiles: new Map([
         [npcFile, { filePath: npcFile, semanticModel: createModel(['VAR_OLD'], [{ name: 'DIA_Start', npc: npcName }]), lastParsed: new Date() }]
@@ -347,7 +347,7 @@ describe('ProjectStore - mergedSemanticModel', () => {
     store.addDialogToIndex(metadata);
     store.addDialogToIndex(metadata);
 
-    const entries = useProjectStore.getState().dialogIndex.get('SLD_99998_DupeNpc') || [];
+    const entries = useProjectStore.getState().dialogIndex.get('SLD_99998_DUPENPC') || [];
     expect(entries).toHaveLength(1);
   });
 });

@@ -196,10 +196,10 @@ INSTANCE DIA_Arog_Greeting (C_INFO)
       expect(index.npcs).toContain('SLD_99005_Arog');
 
       // Verify dialogs by NPC
-      expect(index.dialogsByNpc.get('SLD_99003_Farim')).toHaveLength(2);
-      expect(index.dialogsByNpc.get('SLD_99005_Arog')).toHaveLength(1);
+      expect(index.dialogsByNpc.get('SLD_99003_FARIM')).toHaveLength(2);
+      expect(index.dialogsByNpc.get('SLD_99005_AROG')).toHaveLength(1);
 
-      const farimDialogs = index.dialogsByNpc.get('SLD_99003_Farim')!;
+      const farimDialogs = index.dialogsByNpc.get('SLD_99003_FARIM')!;
       expect(farimDialogs[0].dialogName).toBe('DIA_Farim_Hallo');
       expect(farimDialogs[1].dialogName).toBe('DIA_Farim_Trade');
 
@@ -367,6 +367,25 @@ INSTANCE DIA_Arog_Greeting (C_INFO)
       expect(index.npcs).toEqual(['Alpha', 'Beta', 'Zebra']);
     });
 
+    it('keys one NPC one way when a dialog spells it in another case', async () => {
+      // Daedalus is case-insensitive, so `npc = NPC_ONAR;` is the NPC that
+      // `instance NPC_Onar` declares. Keyed by the raw text it becomes two NPCs
+      // — one of them empty, and a new dialog for it lands in another file (#465).
+      const npcDir = path.join(tempDir, 'NPC');
+      fs.mkdirSync(npcDir, { recursive: true });
+      fs.writeFileSync(path.join(npcDir, 'Onar.d'), 'INSTANCE NPC_Onar (C_NPC) { name = "Onar"; };');
+      fs.writeFileSync(path.join(tempDir, 'DIA_Onar.d'), 'INSTANCE DIA_Onar_Hallo (C_INFO) { npc = NPC_ONAR; };');
+
+      const service = new ProjectService();
+      const index = await service.buildProjectIndex(tempDir);
+
+      // One row, spelled as the instance declares it; one key, uppercased so
+      // every lookup normalises the same way.
+      expect(index.npcs).toEqual(['NPC_Onar']);
+      expect(Array.from(index.dialogsByNpc.keys())).toEqual(['NPC_ONAR']);
+      expect(index.dialogsByNpc.get('NPC_ONAR')).toHaveLength(1);
+    });
+
     it('includes npc instances that have no dialogs yet', async () => {
       const dialogDir = path.join(tempDir, 'Dialoge');
       const npcDir = path.join(tempDir, 'NPC');
@@ -391,8 +410,8 @@ INSTANCE SLD_201_Blacksmith (C_NPC)
       const index = await service.buildProjectIndex(tempDir);
 
       expect(index.npcs).toEqual(['SLD_200_Guard', 'SLD_201_Blacksmith']);
-      expect(index.dialogsByNpc.get('SLD_200_Guard')).toHaveLength(1);
-      expect(index.dialogsByNpc.get('SLD_201_Blacksmith')).toEqual([]);
+      expect(index.dialogsByNpc.get('SLD_200_GUARD')).toHaveLength(1);
+      expect(index.dialogsByNpc.get('SLD_201_BLACKSMITH')).toEqual([]);
     });
 
     it('includes npc instances whose parent prototype derives from C_NPC', async () => {
@@ -418,7 +437,7 @@ INSTANCE VLK_99064_Schurfer (Npc_Default)
       const index = await service.buildProjectIndex(tempDir);
 
       expect(index.npcs).toContain('VLK_99064_Schurfer');
-      expect(index.dialogsByNpc.get('VLK_99064_Schurfer')).toEqual([]);
+      expect(index.dialogsByNpc.get('VLK_99064_SCHURFER')).toEqual([]);
       expect(index.allFiles).toContain(path.join(npcDir, 'VLK_99064_Schurfer.d'));
     });
 
@@ -623,7 +642,7 @@ PROTOTYPE Item_Default(C_ITEM)
       const index = await service.buildProjectIndex(tempDir);
 
       expect(index.npcs).toContain('Bärbel_1252');
-      expect(index.dialogsByNpc.get('Bärbel_1252')).toHaveLength(1);
+      expect(index.dialogsByNpc.get('BÄRBEL_1252')).toHaveLength(1);
     });
 
     it('surfaces per-file metadata failures without aborting the index', async () => {
@@ -658,7 +677,7 @@ PROTOTYPE Item_Default(C_ITEM)
 
         // The healthy file is still indexed normally.
         expect(index.npcs).toContain('SLD_Good');
-        expect(index.dialogsByNpc.get('SLD_Good')).toHaveLength(1);
+        expect(index.dialogsByNpc.get('SLD_GOOD')).toHaveLength(1);
         expect(index.npcs).not.toContain('SLD_Poison');
 
         // The failing file remains tracked (scan and metadata are separate),

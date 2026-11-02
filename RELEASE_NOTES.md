@@ -2,6 +2,8 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #466: A constant or variable ingested after an NPC was selected reaches the merged model
+- #465: An NPC whose dialogs spell its name in another case is one NPC row, with all its dialogs
 - #484: Renaming a dialog lists the other files whose Npc_KnowsInfo names it, instead of nothing
 - #496: A dangling `Npc_KnowsInfo` is reported in a raw `if` guard or condition body, not only an extracted one
 - #483: A search hit inside a choice function opens that function under the dialog that owns it
