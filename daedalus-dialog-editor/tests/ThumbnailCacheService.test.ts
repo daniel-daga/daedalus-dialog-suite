@@ -9,7 +9,7 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { ThumbnailCacheService } from '../src/main/services/ThumbnailCacheService';
+import { MAX_CACHED_PNGS, ThumbnailCacheService } from '../src/main/services/ThumbnailCacheService';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- must spy on the exact object the service uses
 const fsPromises = require('fs').promises;
@@ -77,13 +77,13 @@ describe('ThumbnailCacheService', () => {
 
     it('creates the cache directory on first write', async () => {
       await expect(fs.stat(path.join(testDir, 'thumbs'))).rejects.toBeDefined();
-      await service.store('b'.repeat(64), PNG);
+      await service.store(await service.keyFor('NW_CRATE.MRM', [sourceA]), PNG);
       await expect(fs.stat(path.join(testDir, 'thumbs'))).resolves.toBeDefined();
     });
 
     it('writes via a temp file and a rename, so a torn write never becomes a thumbnail', async () => {
       const renameSpy = jest.spyOn(fsPromises, 'rename');
-      const key = 'c'.repeat(64);
+      const key = await service.keyFor('NW_CRATE.MRM', [sourceA]);
       await service.store(key, PNG);
       const [tmp, final] = renameSpy.mock.calls[renameSpy.mock.calls.length - 1];
       expect(final).toBe(path.join(testDir, 'thumbs', `${key}.png`));
@@ -92,10 +92,33 @@ describe('ThumbnailCacheService', () => {
     });
 
     it('refuses anything that is not a PNG data URL', async () => {
-      await expect(service.store('d'.repeat(64), 'data:image/jpeg;base64,AAAA')).rejects.toThrow(/PNG/);
-      await expect(service.store('d'.repeat(64), `data:image/png;base64,${Buffer.from('not a png').toString('base64')}`))
+      const key = await service.keyFor('NW_CRATE.MRM', [sourceA]);
+      await expect(service.store(key, 'data:image/jpeg;base64,AAAA')).rejects.toThrow(/PNG/);
+      await expect(service.store(key, `data:image/png;base64,${Buffer.from('not a png').toString('base64')}`))
         .rejects.toThrow(/PNG/);
       await expect(service.store('not a key', PNG)).rejects.toThrow(/key/);
+    });
+
+    it('refuses a key it never minted, so only a lookup can name a file', async () => {
+      await expect(service.store('e'.repeat(64), PNG)).rejects.toThrow(/key/);
+      await expect(fs.readdir(path.join(testDir, 'thumbs'))).rejects.toBeDefined();
+    });
+
+    it('keeps at most MAX_CACHED_PNGS thumbnails, dropping the oldest and the one just drawn last', async () => {
+      const thumbs = path.join(testDir, 'thumbs');
+      await fs.mkdir(thumbs, { recursive: true });
+      const seeded = Array.from({ length: MAX_CACHED_PNGS }, (_, i) => `${i.toString(16).padStart(64, '0')}.png`);
+      for (const name of seeded) await fs.writeFile(path.join(thumbs, name), 'old');
+      const longAgo = new Date(Date.now() - 60_000);
+      await fs.utimes(path.join(thumbs, seeded[0]), longAgo, longAgo);
+
+      const key = await service.keyFor('NW_CRATE.MRM', [sourceA]);
+      await service.store(key, PNG);
+
+      const left = await fs.readdir(thumbs);
+      expect(left).toHaveLength(MAX_CACHED_PNGS);
+      expect(left).toContain(`${key}.png`);
+      expect(left).not.toContain(seeded[0]);
     });
   });
 });

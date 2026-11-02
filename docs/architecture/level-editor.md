@@ -4159,7 +4159,9 @@ filing the way it shares the project file, by committing the sidecar beside it.
 `userData/asset-thumbnails/` holds PNGs the renderer drew of mounted visuals,
 keyed by name and the mount list's paths and mtimes, regenerated on demand —
 derived images of files the VFS holds, nothing a collaborator needs to
-receive.
+receive. Because the key changes on every recompile, the old PNGs are never
+reused: a put only takes a key a read minted, and the folder is held to the
+newest 1024 files, so it stays bounded with no UI to show or clear it.
 
 ---
 
