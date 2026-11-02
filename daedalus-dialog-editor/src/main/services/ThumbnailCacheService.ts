@@ -19,9 +19,16 @@ import { promises as fs } from 'fs';
  *
  * Stateless beyond the directory, like `WorldFoldersService`: the mount list
  * is handed in per call by whoever knows the open world.
+ *
+ * Two bounds keep the folder from growing for the life of the install, since
+ * nothing in the app lists or clears it: `store` only takes a key this
+ * session's `keyFor` minted, and holds the directory to `MAX_CACHED_PNGS`
+ * files. The key changing is the normal case — that is what a recompile does —
+ * so an old key's PNG is never coming back and is the first to go.
  */
 export class ThumbnailCacheService {
   private readonly dir: string;
+  private readonly minted = new Set<string>();
 
   constructor(dir: string) {
     this.dir = dir;
@@ -40,7 +47,9 @@ export class ThumbnailCacheService {
       }
       hash.update(`\n${source}@${stamp}`);
     }
-    return hash.digest('hex');
+    const key = hash.digest('hex');
+    this.minted.add(key);
+    return key;
   }
 
   /** The PNG as a data URL, or null when nothing has been drawn under `key`. */
@@ -54,9 +63,12 @@ export class ThumbnailCacheService {
     }
   }
 
-  /** Atomic write, `SettingsService.writeSettings`'s temp-file-and-rename. */
+  /** Atomic write, `SettingsService.writeSettings`'s temp-file-and-rename.
+   *  Only a key `keyFor` answered: that is the only one a thumbnail can exist
+   *  under, and the one the renderer was told to draw. */
   async store(key: string, dataUrl: string): Promise<void> {
     assertKey(key);
+    if (!this.minted.has(key)) throw new Error('Invalid thumbnail key: not minted by this cache');
     const bytes = pngBytesOf(dataUrl);
     await fs.mkdir(this.dir, { recursive: true });
     const target = this.fileFor(key);
@@ -68,6 +80,25 @@ export class ThumbnailCacheService {
       await handle.close();
     }
     await fs.rename(tmp, target);
+    await this.prune(key);
+  }
+
+  /** Keep `keep` and the newest `MAX_CACHED_PNGS - 1` others. */
+  private async prune(keep: string): Promise<void> {
+    const keepFile = `${keep}.png`;
+    const others = (await fs.readdir(this.dir)).filter(
+      (name) => name.endsWith('.png') && name !== keepFile,
+    );
+    const excess = others.length + 1 - MAX_CACHED_PNGS;
+    if (excess <= 0) return;
+    const dated = await Promise.all(
+      others.map(async (name) => ({ name, at: (await fs.stat(path.join(this.dir, name))).mtimeMs })),
+    );
+    dated.sort((a, b) => a.at - b.at);
+    for (const { name } of dated.slice(0, excess)) {
+      // A second write pruning at the same time may have taken it already.
+      await fs.unlink(path.join(this.dir, name)).catch(() => undefined);
+    }
   }
 
   private fileFor(key: string): string {
@@ -78,6 +109,9 @@ export class ThumbnailCacheService {
 const PNG_DATA_URL = 'data:image/png;base64,';
 const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 const KEY = /^[0-9a-f]{64}$/;
+/** 96 px tiles of a few KB each: a recompile's whole old set fits, and so does
+ *  a big mod's redrawn one, at a bounded handful of MB. */
+export const MAX_CACHED_PNGS = 1024;
 
 function assertKey(key: string): void {
   if (!KEY.test(key)) throw new Error('Invalid thumbnail key');
