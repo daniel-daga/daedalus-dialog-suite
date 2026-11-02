@@ -2,6 +2,10 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #474: Worker docs: the parser pool starts on the first parse request, not at module load
+- #479: The security doc credits the settings/options shape checks to the one save handler that makes them
+- #495: Quest docs: MIS_ is appended to the end of the declaring file; the create flow is RegisterTopicDialog
+- #500: Problems panel docs list all 18 rule ids and all nine reference inputs
 - #507: Dev builds refuse navigation to a page whose host only looks like the dev server
 - #444: A missing semicolon is a syntax error; Polish/Czech and BOM'd Windows scripts decode right
 - #450: Opening a file that is already open and edited no longer replaces the edits with the disk copy

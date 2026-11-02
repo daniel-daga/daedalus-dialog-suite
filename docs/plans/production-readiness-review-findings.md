@@ -145,7 +145,7 @@ the Jest suite by LOC — plus 3 CI-sharded Playwright specs).
   `quest/domain/commands/conditionExpressionCodec`. Any removal/extraction must
   first promote the codec (295 LOC) to a shared module.
 - `QuestEditor.tsx` / `QuestList.tsx` / `QuestDetails.tsx` /
-  `CreateQuestDialog.tsx` (911 LOC) sit at `components/` root, outside the
+  `RegisterTopicDialog.tsx` (911 LOC) sit at `components/` root, outside the
   documented boundary, wired straight into `projectStore` and
   `uiSelectionStore` (already flagged in
   `docs/plans/code-review-2026-07-remediation.md:238`).

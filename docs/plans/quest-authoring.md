@@ -108,9 +108,9 @@ while building:
 - **State changes are rows, not steps.** A function that writes the same
   state through the topic status and `MIS_` shows it once; a branch that ends
   the quest two ways shows both.
-- **`MIS_X` is declared beside the `TOPIC_` constant**, as the create flow
-  does, so the upgrade is refused (button disabled) for a quest with no
-  `TOPIC_` declaration.
+- **`MIS_X` is appended to the end of the file that holds the `TOPIC_`
+  constant**, as the create flow does, so the upgrade is refused (button
+  disabled) for a quest with no `TOPIC_` declaration.
 - **The upgrade declares first, then edits the dialogs**, so the saves never
   write an undeclared name. A save that fails part-way leaves the variable
   declared and the page no longer implicit; the remaining assignments are then

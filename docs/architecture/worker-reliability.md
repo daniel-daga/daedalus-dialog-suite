@@ -11,10 +11,15 @@ editor's main process: the long-lived `ParserService` pool and the per-build
 - **`ParserService`** — a keep-alive pool of native parser workers used by all
   hot-path parsing (file open, save re-parse/validation, navigation, background
   ingestion). It has restart-with-replacement semantics so a dead worker leaves
-  rotation and is respawned rather than being routed to forever.
+  rotation and is respawned rather than being routed to forever. It is **lazy**:
+  `serviceRegistry` only constructs it, and `startPool` runs on the first parse
+  request, so a dialog-only session (or a test that imports only `main.ts`) holds
+  no child processes.
 - **`MetadataWorkerPool`** — spawned **once per project open** by
   `ProjectService.buildProjectIndex` and torn down in that method's `finally`.
-  This is the deliberate design (see "Per-build spawn" below), not an oversight.
+  Unlike the parser pool it is **eager**, spawning in its constructor: affordable
+  because it is only constructed when a build is already under way. This is the
+  deliberate design (see "Per-build spawn" below), not an oversight.
 
 ## Per-build spawn (PF4 decision)
 

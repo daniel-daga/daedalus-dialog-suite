@@ -100,9 +100,9 @@ Two layers remain, with a one-way import direction (UI → domain):
   before an ending, then by name, and a cycle is broken at its lowest-ranked
   node. Lines keep their written order within a function. An implicit quest
   (no `MIS_` declared) reads "State inferred from dialog X", X being the
-  dialog that starts it; its upgrade declares `var int MIS_X` beside the
-  `TOPIC_` constant and `withQuestStateAssignments` sets `MIS_X` to the same
-  state right after each topic-status line (or a lone mission
+  dialog that starts it; its upgrade appends `var int MIS_X` to the end of the
+  file that declares the `TOPIC_` constant, and `withQuestStateAssignments` sets
+  `MIS_X` to the same state right after each topic-status line (or a lone mission
   `Log_CreateTopic`) in a list that does not set it already. A quest with no
   ending shows "No ending yet", not an error.
 

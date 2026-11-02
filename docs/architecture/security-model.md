@@ -61,10 +61,13 @@ they can be saved. This keeps project-file edits narrow and prevents a
 compromised renderer from turning a generic path string into a filesystem
 capability.
 
-- **Structural payload checks** on `generator:generateCode`,
-  `generator:generateDialogCode`, `validation:validate`, and `generator:saveFile`
-  reject malformed `model`/`settings`/`options` shapes early (cheap local asserts,
-  not a schema library) rather than relying on deep service internals to throw.
+- **Structural payload checks.** `generator:generateCode`,
+  `generator:generateDialogCode` (which also asserts the dialog name) and
+  `validation:validate` assert the `model` shape only; `settings` and the
+  validate handler's `options` reach the services untouched. `generator:saveFile`
+  asserts `model`, `settings` and `options` — `assertSaveFileSettings` /
+  `assertSaveFileOptions`, called from `SaveFileFlow.ts`. Cheap local asserts,
+  not a schema library.
 - The renderer-exposed `fileWatcher:notifySelfWrite` channel was **removed** — an
   audit found no renderer caller; `generator:saveFile`/`file:write` already notify
   the watcher main-side after validation.
