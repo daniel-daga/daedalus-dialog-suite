@@ -94,4 +94,31 @@ describe('window close guard', () => {
     expect(second).not.toBe(first);
     expect(emitClose(second)).toBe(true);
   });
+
+  it('a second close request does not leave the first safety timer able to destroy the window', async () => {
+    const { createWindow, setupIpcHandlers } = await import('../src/main/main');
+    setupIpcHandlers();
+    const ackCloseRequest = electronMock.__listeners.get('app:ackCloseRequest');
+    expect(ackCloseRequest).toBeDefined();
+
+    jest.useFakeTimers();
+    try {
+      const before = electronMock.__created.length;
+      createWindow();
+      const win = electronMock.__created[before] as EventEmitter & { destroy: jest.Mock };
+
+      // Two closes before the renderer's first ack — an impatient double-click.
+      expect(emitClose(win)).toBe(true);
+      expect(emitClose(win)).toBe(true);
+      ackCloseRequest!(undefined);
+      ackCloseRequest!(undefined);
+
+      // Past the 3 s safety window, the window must still be there: the user
+      // has not decided about the save prompt.
+      jest.advanceTimersByTime(3500);
+      expect(win.destroy).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });

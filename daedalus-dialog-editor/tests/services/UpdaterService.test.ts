@@ -72,6 +72,7 @@ jest.mock('electron', () => ({
     getVersion: jest.fn().mockReturnValue('0.1.0-build.10'),
     getPath: jest.fn().mockReturnValue('/tmp'),
     quit: jest.fn(),
+    exit: jest.fn(),
   },
 }));
 
@@ -570,8 +571,43 @@ describe('UpdaterService.downloadUpdate integrity', () => {
 
     expect(() => service.installUpdate(dest)).toThrow(/sha256|integrity|mismatch/i);
     expect(mockSpawn).not.toHaveBeenCalled();
-    expect(app.quit).not.toHaveBeenCalled();
+    expect(app.exit).not.toHaveBeenCalled();
     // Tampered file is removed.
     expect(realFs.existsSync(dest)).toBe(false);
+  });
+});
+
+describe('UpdaterService.installUpdate', () => {
+  afterEach(() => {
+    try { realFs.unlinkSync(DOWNLOAD_DEST); } catch { /* ignore */ }
+  });
+
+  it('runs the installer and leaves without a quit the close guard can veto', async () => {
+    jest.clearAllMocks();
+    (app.getVersion as jest.Mock).mockReturnValue('0.1.0-build.10');
+    (app.getPath as jest.Mock).mockReturnValue('/tmp');
+    mockGetUpdaterSettings.mockResolvedValue(makeDefaultUpdaterSettings());
+    mockSetUpdaterLastCheckTimestamp.mockResolvedValue(undefined);
+
+    const body = 'installer-bytes-abcdef';
+    const digest = crypto.createHash('sha256').update(body).digest('hex');
+    const { meta, release } = buildMockRelease('0.1.0-build.20', 20, { sha256: digest, size: body.length });
+    setupStreamMock([
+      streamResponse(release),
+      streamResponse(meta),
+      streamResponse(body, { headers: { 'content-length': String(body.length) } }),
+    ]);
+
+    const service = new UpdaterService(mockSettingsService);
+    const result = await service.checkForUpdate();
+    const dest = await service.downloadUpdate(result.downloadUrl!, () => {});
+
+    service.installUpdate(dest);
+
+    expect(mockSpawn).toHaveBeenCalledWith(dest, ['/S'], { detached: true, stdio: 'ignore' });
+    expect(app.exit).toHaveBeenCalledWith(0);
+    // `quit` asks every window to close, and the guard vetoes that until the
+    // renderer says yes — the install must not take that path.
+    expect(app.quit).not.toHaveBeenCalled();
   });
 });

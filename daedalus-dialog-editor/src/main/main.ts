@@ -284,6 +284,11 @@ export function createWindow() {
     }
     e.preventDefault();
     win.webContents.send('app:closeRequested');
+    // A repeated close must not orphan the previous safety timer: the ack can
+    // only clear the handle that is current when it arrives.
+    if (closeGuardAckTimer) {
+      clearTimeout(closeGuardAckTimer);
+    }
     closeGuardAckTimer = setTimeout(() => {
       closeApprovedWindows.add(win);
       win.destroy();
