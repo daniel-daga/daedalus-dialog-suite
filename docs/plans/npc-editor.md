@@ -130,6 +130,9 @@ NPC's instance. What it rests on:
 - The save opens the file through the file store (keeping the main view's
   active file), replaces the instance's `sourceText` in its model and runs the
   ordinary `saveFile` — validation, conflict handling and store sync included.
+  It is refused when the instance's body changed since the form read it
+  (#490): the equipment and overlay edits name their call by occurrence, and
+  the visual edit rewrites the call whole.
 
 Combo box choices come from the parsed project files, indexed routines, and
 mounted assets. Typing filters a field's choices; selecting one changes the NPC.
