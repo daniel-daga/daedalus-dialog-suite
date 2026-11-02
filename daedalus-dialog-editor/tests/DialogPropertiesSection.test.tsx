@@ -2,6 +2,8 @@ import React from 'react';
 import { describe, expect, jest, test } from '@jest/globals';
 import { fireEvent, render, screen } from '@testing-library/react';
 import DialogPropertiesSection from '../src/renderer/components/DialogPropertiesSection';
+import { useEditorStore } from '../src/renderer/store/editorStore';
+import * as historyActions from '../src/renderer/store/historyActions';
 
 describe('DialogPropertiesSection', () => {
   test('shows Important and Permanent checkboxes in expanded properties', () => {
@@ -227,6 +229,39 @@ describe('DialogPropertiesSection', () => {
     const { onDialogPropertyChange } = renderSection(stringDialog('Hallo du'));
     fireEvent.blur(screen.getByRole('textbox', { name: 'Description' }));
     expect(onDialogPropertyChange).not.toHaveBeenCalled();
+  });
+
+  // #481: the description was written on blur only, so Ctrl+S with the caret
+  // still in the box found the file clean and saved nothing while reporting
+  // success. Typing must reach the model (and dirty the file) on its own.
+  test('typing writes the description and dirties the file without a blur', () => {
+    const filePath = 'C:/tmp/description.d';
+    const dialog = stringDialog('Hallo du');
+    useEditorStore.setState({
+      openFiles: new Map([[filePath, {
+        filePath,
+        semanticModel: { dialogs: { DIA_Test: dialog }, functions: {}, hasErrors: false, errors: [] },
+        isDirty: false,
+        lastSaved: new Date(),
+      } as any]]),
+      activeFile: filePath,
+    });
+
+    render(
+      <DialogPropertiesSection
+        dialog={dialog}
+        propertiesExpanded
+        onToggleExpanded={jest.fn()}
+        onDialogPropertyChange={(updater) =>
+          historyActions.updateDialogWithNormalizedProperties(filePath, 'DIA_Test', updater)}
+      />
+    );
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Description' }), { target: { value: 'Hallo' } });
+
+    const fileState = useEditorStore.getState().getFileState(filePath);
+    expect(fileState?.semanticModel.dialogs.DIA_Test.properties?.description).toBe('Hallo');
+    expect(fileState?.isDirty).toBe(true);
   });
 
   test('a constant description opens in Constant mode and shows its name', () => {

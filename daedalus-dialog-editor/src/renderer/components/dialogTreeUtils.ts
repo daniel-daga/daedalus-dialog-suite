@@ -1,4 +1,5 @@
 import { SemanticModel, FunctionTreeNode, FunctionTreeChild } from '../types/global';
+import { collectChoiceActions } from './nestedActionUtils';
 
 export type DialogRowData = {
   type: 'dialog';
@@ -50,8 +51,9 @@ export const flattenDialogs = (
       tree = infoFuncName ? buildFunctionTree(infoFuncName) : null;
       hasChildren = !!(tree && tree.children && tree.children.length > 0);
     } else if (infoFuncData && infoFuncData.actions) {
-      // Shallow check
-      hasChildren = infoFuncData.actions.some((a: any) => 'dialogRef' in a && 'targetFunction' in a);
+      // Choices anywhere in the actions, branches included: the traversal below
+      // walks into branches, so a branch-only choice still needs the expander.
+      hasChildren = collectChoiceActions(infoFuncData.actions).length > 0;
     }
 
     items.push({

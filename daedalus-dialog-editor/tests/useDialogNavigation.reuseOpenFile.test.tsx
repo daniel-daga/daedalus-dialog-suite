@@ -13,6 +13,7 @@ import { renderHook, act } from '@testing-library/react';
 import { useDialogNavigation } from '../src/renderer/components/hooks/useDialogNavigation';
 import { useProjectStore } from '../src/renderer/store/projectStore';
 import { useEditorStore } from '../src/renderer/store/editorStore';
+import { useUISelectionStore } from '../src/renderer/store/uiSelectionStore';
 import type { FileState } from '../src/renderer/store/fileStore';
 
 const mockReadFile = jest.spyOn(window.editorAPI, 'readFile');
@@ -149,5 +150,42 @@ describe('useDialogNavigation reuses already-open files', () => {
     expect(mockParseSource).not.toHaveBeenCalled();
     expect(useEditorStore.getState().activeFile).toBe('file1.d');
     expect(finalizeDialogSelection).toHaveBeenCalledWith('D1', null);
+  });
+
+  // #482: `dialogIndex` is filled by `openProject` and nothing else, so a file
+  // opened straight from the welcome screen had no way to resolve its own
+  // dialogs — every recent tab and every search hit reported "Could not find
+  // dialog … in the current context".
+  test('handleSelectRecentDialog outside a project selects the dialog from the open file', async () => {
+    useProjectStore.setState({ dialogIndex: new Map() });
+    useUISelectionStore.setState({ selectedDialog: null, selectedFunctionName: null, activeView: 'dialog' });
+    useEditorStore.setState({
+      ...baseFileStoreState,
+      openFiles: new Map([
+        ['file1.d', makeFileState({
+          filePath: 'file1.d',
+          semanticModel: {
+            dialogs: {
+              DIA_A: { name: 'DIA_A', parent: 'C_INFO', properties: { npc: 'NPC1', information: 'DIA_A_Info' } },
+              DIA_B: { name: 'DIA_B', parent: 'C_INFO', properties: { npc: 'NPC1', information: 'DIA_B_Info' } },
+            },
+            functions: {},
+            hasErrors: false,
+            errors: [],
+          } as any,
+        })],
+      ]),
+      activeFile: 'file1.d',
+    });
+
+    const { result, finalizeDialogSelection, setOperationError } = renderNav({ isProjectMode: false });
+
+    await act(async () => {
+      await result.current.handleSelectRecentDialog('DIA_B', null, 'NPC1');
+    });
+
+    expect(mockReadFile).not.toHaveBeenCalled();
+    expect(setOperationError).not.toHaveBeenCalledWith(expect.stringContaining('Could not find'));
+    expect(finalizeDialogSelection).toHaveBeenCalledWith('DIA_B', 'DIA_B_Info');
   });
 });
