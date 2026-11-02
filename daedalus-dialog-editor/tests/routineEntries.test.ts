@@ -136,6 +136,48 @@ describe('writeRoutine', () => {
     expect(written[1]).toEqual({ type: 'Action', action: 'TA_Stand_Guarding\t(13,30,14,00,"WP_X")' });
   });
 
+  // #489: the draft is addressed by action index, so it means the lines it was
+  // read from. A call that appeared ahead of them shifts every index, and the
+  // write would land on other statements — overwriting one and deleting one.
+  it('refuses a draft whose routine gained a call ahead of the ones it read', () => {
+    const actions = [
+      action('TA_Sit_Throne (07,00,22,00,"WP_SIT")'),
+      action('TA_Sleep (22,00,07,00,"WP_BED")'),
+    ];
+    const draft = readRoutine(actions, layouts);
+    const [throne, sleep] = draft;
+    const moved = [action('TA_Stand_Guarding (06,00,07,00,"WP_GUARD")'), ...actions];
+
+    expect(() => writeRoutine(moved, [{ ...throne, endMinute: 22 * 60 }, { ...sleep, waypoint: 'WP_BED_2' }], layouts, draft))
+      .toThrow(/changed since it was opened/);
+  });
+
+  it('keeps a call that arrived after everything the draft read, instead of deleting it', () => {
+    const actions = [
+      action('TA_Sit_Throne (07,00,22,00,"WP_SIT")'),
+      action('TA_Sleep (22,00,07,00,"WP_BED")'),
+    ];
+    const draft = readRoutine(actions, layouts);
+    const moved = [...actions, action('TA_Stand_Guarding (06,00,07,00,"WP_GUARD")')];
+
+    expect(texts(writeRoutine(moved, [{ ...draft[0] }, { ...draft[1], waypoint: 'WP_BED_2' }], layouts, draft))).toEqual([
+      'TA_Sit_Throne (07,00,22,00,"WP_SIT")',
+      'TA_Sleep (22,00,07,00,"WP_BED_2")',
+      'TA_Stand_Guarding (06,00,07,00,"WP_GUARD")',
+    ]);
+  });
+
+  it('still drops an entry the draft removed while the routine stood still', () => {
+    const actions = [
+      action('TA_Sit_Throne (07,00,22,00,"WP_SIT")'),
+      action('TA_Sleep (22,00,07,00,"WP_BED")'),
+    ];
+    const draft = readRoutine(actions, layouts);
+
+    expect(texts(writeRoutine(actions, [{ ...draft[0] }], layouts, draft)))
+      .toEqual(['TA_Sit_Throne (07,00,22,00,"WP_SIT")']);
+  });
+
   it('writes entries into a routine that has none', () => {
     const entry: RoutineEntry = { state: 'TA_Sleep', startMinute: 0, endMinute: 0, waypoint: 'WP_BED' };
 

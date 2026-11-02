@@ -10,7 +10,7 @@ import type { RoutineEntry } from '../src/renderer/routines/routineEntries';
 const h = (hour: number, minute = 0) => hour * 60 + minute;
 const entry = (state: string, start: number, end: number, waypoint: string, actionIndex?: number): RoutineEntry => ({
   state, startMinute: start, endMinute: end, waypoint,
-  ...(actionIndex === undefined ? {} : { source: { actionIndex } }),
+  ...(actionIndex === undefined ? {} : { source: { actionIndex, text: '' } }),
 });
 
 const onar = () => [
@@ -70,7 +70,7 @@ describe('splitEntry', () => {
 
     expect(windows(split)).toEqual([[h(7), h(13, 30)], [h(13, 30), h(22)], [h(22), h(7)]]);
     expect(split[1]).toEqual({ state: 'TA_Sit_Throne', startMinute: h(13, 30), endMinute: h(22), waypoint: 'THRONE' });
-    expect(split[0].source).toEqual({ actionIndex: 0 });
+    expect(split[0].source).toEqual({ actionIndex: 0, text: '' });
   });
 
   it('splits across midnight', () => {

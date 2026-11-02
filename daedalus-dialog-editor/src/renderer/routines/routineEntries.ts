@@ -24,8 +24,10 @@ export interface RoutineEntry {
   startMinute: number;
   endMinute: number;
   waypoint: string;
-  /** The action this entry was read from; absent for a new one. */
-  source?: { actionIndex: number };
+  /** The action this entry was read from, as it was written there; absent for
+   *  a new one. The text is what tells a save that the action still is the
+   *  one the draft read. */
+  source?: { actionIndex: number; text: string };
 }
 
 interface ParsedCall {
@@ -95,7 +97,7 @@ export function readRoutine(actions: readonly unknown[], layouts: Record<string,
     const call = parseCall(action.action);
     const layout = call && layoutOf(layouts, call.callee);
     const entry = layout && entryOf(call, layout);
-    if (entry) entries.push({ ...entry, source: { actionIndex } });
+    if (entry) entries.push({ ...entry, source: { actionIndex, text: action.action } });
   });
   return entries;
 }
@@ -183,19 +185,29 @@ function freshCall(entry: RoutineEntry, layout: RoutineArgIndex, template: Parse
 
 /**
  * `actions` with the routine's calls replaced by `entries`. An entry with a
- * `source` rewrites that action; a source no entry names any more is dropped;
- * a new entry goes after the action of the entry before it in `entries`, or
- * before the first entry's action when none is before it. Every other action
- * is kept as it is, in place. Throws when an entry cannot be written in its
- * state's layout, naming why.
+ * `source` rewrites that action; a source the draft read (`read`) that no entry
+ * names any more is dropped; a new entry goes after the action of the entry
+ * before it in `entries`, or before the first entry's action when none is
+ * before it. Every other action is kept as it is, in place. Throws when an
+ * entry cannot be written in its state's layout, naming why, and when the
+ * actions a draft read are no longer there — the draft is addressed by index,
+ * so a routine that moved would take the edits onto other lines.
  */
 export function writeRoutine(
   actions: readonly unknown[],
   entries: readonly RoutineEntry[],
   layouts: Record<string, RoutineArgIndex>,
+  /** The entries as the draft behind `entries` was read. Defaults to what
+   *  `actions` holds now, which is only right for a draft that was just read. */
+  read: readonly RoutineEntry[] = readRoutine(actions, layouts),
 ): unknown[] {
   const originals = readRoutine(actions, layouts);
-  const sourceIndices = new Set(originals.map((entry) => entry.source!.actionIndex));
+  for (const entry of read) {
+    if ((actions[entry.source!.actionIndex] as RoutineAction | undefined)?.action !== entry.source!.text) {
+      throw new Error('The routine changed since it was opened; reopen it to save your changes');
+    }
+  }
+  const sourceIndices = new Set(read.map((entry) => entry.source!.actionIndex));
   const templateAction = originals[0] && (actions[originals[0].source!.actionIndex] as RoutineAction).action;
   const template = templateAction ? parseCall(templateAction) : null;
 

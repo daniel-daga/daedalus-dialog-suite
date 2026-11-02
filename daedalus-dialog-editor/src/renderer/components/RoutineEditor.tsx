@@ -300,7 +300,7 @@ export const RoutineEditorPanel: React.FC<RoutineEditorPanelProps> = (
       ?? routines[0]?.routine ?? null,
   );
   const [draft, setDraft] = useState<Draft | null>(null);
-  const [baseline, setBaseline] = useState<string>('[]');
+  const [baseline, setBaseline] = useState<RoutineEntry[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -342,7 +342,7 @@ export const RoutineEditorPanel: React.FC<RoutineEditorPanelProps> = (
         const entries = await loadRoutine(filePath, routine);
         if (cancelled) return;
         setDraft({ entries, past: [], future: [] });
-        setBaseline(JSON.stringify(entries));
+        setBaseline(entries);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
       }
@@ -352,7 +352,7 @@ export const RoutineEditorPanel: React.FC<RoutineEditorPanelProps> = (
   }, [routine]);
 
   const entries = draft?.entries ?? NO_ENTRIES;
-  const dirty = draft !== null && JSON.stringify(draft.entries) !== baseline;
+  const dirty = draft !== null && JSON.stringify(draft.entries) !== JSON.stringify(baseline);
 
   useEffect(() => { onDraftChange?.(entries, selected); }, [entries, selected, onDraftChange]);
 
@@ -438,7 +438,7 @@ export const RoutineEditorPanel: React.FC<RoutineEditorPanelProps> = (
     setSaving(true);
     setError(null);
     try {
-      await saveRoutine(filePath, routine, draft.entries);
+      await saveRoutine(filePath, routine, draft.entries, baseline);
       onDone();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

@@ -245,6 +245,10 @@ export const NpcRoutinesSection: React.FC<NpcRoutinesSectionProps> = (
 
 const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, onClose }) => {
   const [definition, setDefinition] = useState<NpcDefinition | null>(null);
+  /** The body the form was read from. The equipment and overlay edits name a
+   *  call by its occurrence in it, and the visual edit rewrites the call whole,
+   *  so a body that moved would take them onto other statements. */
+  const [readBody, setReadBody] = useState('');
   const [initial, setInitial] = useState<NpcFormValues>({});
   const [values, setValues] = useState<NpcFormValues>({});
   const [error, setError] = useState<string | null>(null);
@@ -279,6 +283,7 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
         if (cancelled) return;
         const read = formValuesFrom(npc, projectItemCategoryLookup());
         setDefinition(npc);
+        setReadBody(sourceText);
         setInitial(read);
         setValues(read);
       } catch (e) {
@@ -396,6 +401,9 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
       const key = model ? findInstanceKey(model, npcName) : undefined;
       if (!model || !key) throw new Error(`${npcName} is no longer in ${filePath}`);
       const instance = model.instances![key];
+      if (instance.sourceText !== readBody) {
+        throw new Error(`${npcName} in ${filePath} has changed since the NPC editor read it; reopen it to save these edits`);
+      }
       const sourceText = await window.editorAPI.applyNpcEdits(instance.sourceText!, edits);
       const updated = { ...instance, sourceText };
       historyActions.updateModel(filePath, {

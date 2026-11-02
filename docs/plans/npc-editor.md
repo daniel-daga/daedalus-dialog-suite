@@ -130,6 +130,9 @@ NPC's instance. What it rests on:
 - The save opens the file through the file store (keeping the main view's
   active file), replaces the instance's `sourceText` in its model and runs the
   ordinary `saveFile` — validation, conflict handling and store sync included.
+  It is refused when the instance's body changed since the form read it
+  (#490): the equipment and overlay edits name their call by occurrence, and
+  the visual edit rewrites the call whole.
 
 Combo box choices come from the parsed project files, indexed routines, and
 mounted assets. Typing filters a field's choices; selecting one changes the NPC.
@@ -396,7 +399,9 @@ adds:
    drag in quarter hours (Alt detaches, arrow keys step), and one row per
    activity: state, typed start and end, waypoint, remove. The draft has its
    own undo; Save goes through `components/routineSave.ts` and re-indexes the
-   file. The state picker lists every layout an activity alone can fill,
+   file, and is refused when the function changed since the draft was read
+   (#489) — the draft names its lines by index and cannot follow a move.
+   The state picker lists every layout an activity alone can fill,
    spelled as declared (`routineLayouts[…].name`), so `TA` and `TA_MIN` are
    not offered. Covered by `tests/e2e/routine-editor.spec.ts` in the browser
    harness, which has no world by design, so the panel is driven from the NPC

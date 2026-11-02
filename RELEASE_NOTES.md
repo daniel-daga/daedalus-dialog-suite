@@ -2,6 +2,8 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #490: The NPC editor refuses a save when the NPC body changed since the form read it
+- #489: A routine save refuses a draft whose function changed, instead of rewriting the wrong lines
 - #466: A constant or variable ingested after an NPC was selected reaches the merged model
 - #465: An NPC whose dialogs spell its name in another case is one NPC row, with all its dialogs
 - #484: Renaming a dialog lists the other files whose Npc_KnowsInfo names it, instead of nothing
