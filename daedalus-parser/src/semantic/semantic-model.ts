@@ -1096,6 +1096,11 @@ export class Dialog {
   public trailingBodyComments?: string[];
   /** Editable view of the current information function, or standalone legacy actions. */
   public actions!: DialogAction[];
+  /** Source range of the whole declaration node, `instance` through `};` (#447). */
+  public range?: {
+    startIndex: number;
+    endIndex: number;
+  };
   /** 1-based line the declaration starts on — its `instance` keyword (#267). */
   public line?: number;
 

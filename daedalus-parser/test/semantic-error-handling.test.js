@@ -301,3 +301,142 @@ test('the code generator refuses to emit a model with a duplicate declaration', 
   assert.throws(() => generator.generateSemanticModel(model), /Refusing to generate/,
     'saving must not drop the second declaration silently');
 });
+
+// ===================================================================
+// DUPLICATES OF EVERY DECLARATION KIND (#447)
+// ===================================================================
+
+const duplicateError = (model, name) => model.errors.find(
+  e => e.type === 'duplicate_declaration' && e.text === name
+);
+
+test('a dialog declared twice is flagged and the second body is not merged into it (#447)', () => {
+  const model = parseSemanticModel([
+    'instance DIA_DUP(C_INFO) { nr = 1; important = 1; };',
+    'instance DIA_DUP(C_INFO) { nr = 2; };'
+  ].join('\n'));
+
+  assert.ok(model.hasErrors, 'a duplicate dialog cannot be saved silently');
+  const duplicate = duplicateError(model, 'DIA_DUP');
+  assert.ok(duplicate, 'a duplicate_declaration error should name the dialog');
+  assert.equal(duplicate.position.row, 2, 'the error should point at the second declaration');
+
+  assert.equal(Object.keys(model.dialogs).length, 1, 'one dialog symbol');
+  assert.equal(model.dialogs.DIA_DUP.line, 1, 'the first declaration is kept');
+  assert.equal(model.dialogs.DIA_DUP.properties.nr, 1, 'the second body must not be merged in');
+  assert.equal(model.declarationOrder.filter(d => d.name === 'DIA_DUP').length, 1,
+    'the duplicate should not be listed in declaration order');
+});
+
+test('an instance declared twice is flagged and the first declaration is kept (#447)', () => {
+  const model = parseSemanticModel([
+    'instance DUP_NPC(C_NPC) { name = "First"; };',
+    'instance DUP_NPC(C_NPC) { name = "Second"; };'
+  ].join('\n'));
+
+  assert.ok(model.hasErrors, 'a duplicate instance cannot be saved silently');
+  const duplicate = duplicateError(model, 'DUP_NPC');
+  assert.ok(duplicate, 'a duplicate_declaration error should name the instance');
+  assert.equal(duplicate.position.row, 2);
+
+  assert.equal(model.instances.DUP_NPC.displayName, 'First', 'the second declaration is not kept');
+  assert.strictEqual(model.npcs.DUP_NPC, model.instances.DUP_NPC, 'only one object is indexed');
+  assert.equal(model.declarationOrder.filter(d => d.name === 'DUP_NPC').length, 1);
+});
+
+test('a class declared twice is flagged and the first declaration is kept (#447)', () => {
+  const model = parseSemanticModel([
+    'class DUP_CLASS { var int first; };',
+    'class DUP_CLASS { var int second; };'
+  ].join('\n'));
+
+  assert.ok(model.hasErrors, 'a duplicate class cannot be saved silently');
+  const duplicate = duplicateError(model, 'DUP_CLASS');
+  assert.ok(duplicate, 'a duplicate_declaration error should name the class');
+  assert.equal(duplicate.position.row, 2);
+
+  assert.equal(Object.keys(model.classes).length, 1, 'one class symbol');
+  assert.match(model.classes.DUP_CLASS.sourceText, /var int first/, 'the first declaration is kept');
+  assert.equal(model.declarationOrder.filter(d => d.name === 'DUP_CLASS').length, 1);
+});
+
+test('a prototype declared twice is flagged and the first declaration is kept (#447)', () => {
+  const model = parseSemanticModel([
+    'prototype DUP_PROTO(C_MyRecord) { data = 1; };',
+    'prototype DUP_PROTO(C_MyRecord) { data = 2; };'
+  ].join('\n'));
+
+  assert.ok(model.hasErrors, 'a duplicate prototype cannot be saved silently');
+  const duplicate = duplicateError(model, 'DUP_PROTO');
+  assert.ok(duplicate, 'a duplicate_declaration error should name the prototype');
+  assert.equal(duplicate.position.row, 2);
+
+  assert.equal(Object.keys(model.prototypes).length, 1, 'one prototype symbol');
+  assert.match(model.prototypes.DUP_PROTO.sourceText, /data = 1;/, 'the first declaration is kept');
+  assert.equal(model.declarationOrder.filter(d => d.name === 'DUP_PROTO').length, 1);
+});
+
+test('a constant declared twice is flagged and the first value is kept (#447)', () => {
+  const model = parseSemanticModel([
+    'const int DUP_C = 1;',
+    'const int DUP_C = 2;'
+  ].join('\n'));
+
+  assert.ok(model.hasErrors, 'a duplicate constant cannot be saved silently');
+  const duplicate = duplicateError(model, 'DUP_C');
+  assert.ok(duplicate, 'a duplicate_declaration error should name the constant');
+  assert.equal(duplicate.position.row, 2);
+
+  assert.equal(Object.keys(model.constants).length, 1, 'one constant symbol');
+  assert.equal(model.constants.DUP_C.value, 1, 'the second value must not win');
+  assert.equal(model.declarationOrder.filter(d => d.name === 'DUP_C').length, 1,
+    'the duplicate line must not be emitted on save');
+});
+
+test('a variable declared twice is flagged and the first declaration is kept (#447)', () => {
+  const model = parseSemanticModel([
+    'var int dup_v;',
+    'var int dup_v = 7;'
+  ].join('\n'));
+
+  assert.ok(model.hasErrors, 'a duplicate variable cannot be saved silently');
+  const duplicate = duplicateError(model, 'dup_v');
+  assert.ok(duplicate, 'a duplicate_declaration error should name the variable');
+  assert.equal(duplicate.position.row, 2);
+
+  assert.equal(Object.keys(model.variables).length, 1, 'one variable symbol');
+  assert.equal(model.variables.dup_v.sourceText, 'var int dup_v;', 'the first declaration is kept');
+  assert.equal(model.declarationOrder.filter(d => d.name === 'dup_v').length, 1,
+    'the duplicate line must not be emitted on save');
+});
+
+test('a name that differs only in case is a duplicate, not two symbols (#447)', () => {
+  const model = parseSemanticModel([
+    'instance CASE_DUP(C_NPC) { name = "First"; };',
+    'instance case_dup(C_NPC) { name = "Second"; };'
+  ].join('\n'));
+
+  assert.ok(model.hasErrors, 'Daedalus names are case-insensitive, so this is a duplicate');
+  assert.ok(duplicateError(model, 'case_dup'), 'the error names the second spelling');
+  assert.equal(Object.keys(model.instances).length, 1, 'one symbol, not a pair every lookup treats as one');
+  assert.equal(model.instances.CASE_DUP.displayName, 'First');
+});
+
+// ===================================================================
+// ERRORS THAT REPORT NOTHING (#447)
+// ===================================================================
+
+test('a file that cannot be saved never has an empty error list (#447)', () => {
+  // The missing name sits under a zero-width node, so the recursive error walk
+  // never reaches it; without a fallback the file is unsaveable and silent.
+  const model = parseSemanticModel('func Foo() {};');
+
+  assert.ok(model.hasErrors, 'precondition: the file cannot be saved');
+  assert.ok(model.errors.length > 0, 'hasErrors must always come with something to show');
+  assert.equal(model.errors[0].position.row, 1, 'the error names the offending line');
+  assert.ok(model.errors[0].message, 'the error carries a message');
+
+  const generator = new SemanticCodeGenerator();
+  assert.throws(() => generator.generateSemanticModel(model), /1 parse error/,
+    'the save error counts the error the user is shown');
+});
