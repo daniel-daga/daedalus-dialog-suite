@@ -79,6 +79,30 @@ const ACTION_REQUIRED_FIELD_VALIDATORS: Readonly<Partial<Record<string, ActionVa
 };
 
 /**
+ * Visit every action of a function, descending into `ConditionalAction`
+ * branches. `location` names the action for error messages, e.g.
+ * "action 2 in the then branch of function 'DIA_X'".
+ */
+function walkActions(
+  actions: any[] | undefined,
+  functionName: string,
+  visit: (action: any, location: string) => void,
+  branches: string[] = []
+): void {
+  (actions || []).forEach((action, index) => {
+    if (!action) {
+      return;
+    }
+    const where = branches.length
+      ? `the ${branches.join(' › ')} branch of function '${functionName}'`
+      : `function '${functionName}'`;
+    visit(action, `action ${index + 1} in ${where}`);
+    walkActions(action.thenActions, functionName, visit, [...branches, 'then']);
+    walkActions(action.elseActions, functionName, visit, [...branches, 'else']);
+  });
+}
+
+/**
  * ValidationService - Validates semantic models before saving
  *
  * Performs the following validations:
@@ -330,21 +354,19 @@ export class ValidationService {
 
     for (const funcName in model.functions) {
       const func = model.functions[funcName];
-      const actions = func.actions || [];
-
-      for (const action of actions) {
+      walkActions(func.actions, funcName, (action, location) => {
         // Check if this is a choice action
         if ('dialogRef' in action && 'targetFunction' in action) {
           const targetFunc = action.targetFunction;
           if (targetFunc && !this.isResolvableChoiceTarget(targetFunc, model, functionNames, functionNameMap, dialogNameMap)) {
             errors.push({
               type: 'missing_function',
-              message: `Choice in function '${funcName}' references missing target function '${targetFunc}'`,
+              message: `Choice ${location} references missing target function '${targetFunc}'`,
               functionName: funcName
             });
           }
         }
-      }
+      });
     }
 
     return errors;
@@ -410,16 +432,14 @@ export class ValidationService {
 
     for (const funcName in model.functions) {
       const func = model.functions[funcName];
-      const actions = func.actions || [];
-
-      actions.forEach((action: any, index: number) => {
+      walkActions(func.actions, funcName, (action, location) => {
         const getText = QUOTED_STRING_FIELDS[action.type];
         const text = getText?.(action);
         if (typeof text === 'string' && text.includes('"')) {
           const displayName = ACTION_DISPLAY_NAMES[action.type] ?? action.type;
           errors.push({
             type: 'invalid_string_content',
-            message: `${displayName} action ${index + 1} in function '${funcName}' contains a double quote (") — Daedalus strings cannot contain quotes`,
+            message: `${displayName} ${location} contains a double quote (") — Daedalus strings cannot contain quotes`,
             functionName: funcName
           });
         }
@@ -445,25 +465,13 @@ export class ValidationService {
     // Collect literal-id dialog lines from all functions, including lines
     // nested inside conditional actions.
     const lines: Array<{ id: string; functionName: string }> = [];
-    const collect = (actions: any[], functionName: string): void => {
-      for (const action of actions || []) {
-        if (!action) {
-          continue;
-        }
-        if (action.type === 'DialogLine') {
-          if (typeof action.id === 'string' && action.id && !action.idIsExpression) {
-            lines.push({ id: action.id, functionName });
-          }
-          continue;
-        }
-        if (Array.isArray(action.thenActions) || Array.isArray(action.elseActions)) {
-          collect(action.thenActions || [], functionName);
-          collect(action.elseActions || [], functionName);
-        }
-      }
-    };
     for (const funcName in model.functions) {
-      collect(model.functions[funcName].actions || [], funcName);
+      walkActions(model.functions[funcName].actions, funcName, (action) => {
+        if (action.type === 'DialogLine' &&
+            typeof action.id === 'string' && action.id && !action.idIsExpression) {
+          lines.push({ id: action.id, functionName: funcName });
+        }
+      });
     }
 
     // Daedalus is case-insensitive: group by uppercased id.
@@ -528,11 +536,9 @@ export class ValidationService {
 
     for (const funcName in model.functions) {
       const func = model.functions[funcName];
-      const actions = func.actions || [];
 
-      actions.forEach((action: any, index: number) => {
+      walkActions(func.actions, funcName, (action, location) => {
         const actionType = action.type;
-        const location = `action ${index + 1} in function '${funcName}'`;
         const displayName = ACTION_DISPLAY_NAMES[actionType] ?? actionType;
 
         // Registry-based required-field check
