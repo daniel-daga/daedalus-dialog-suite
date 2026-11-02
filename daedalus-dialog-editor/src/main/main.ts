@@ -1211,7 +1211,9 @@ export function setupIpcHandlers() {
   ipcMain.handle('project:getAssetCatalog', (_event, request: unknown) =>
     guardIpc('project:getAssetCatalog', 'Failed to read asset catalog', async () => {
       assertAssetCatalogGetRequest(request);
-      await pathValidator.validatePathResolved(assetCatalogService.sidecarPath(request.projectFilePath));
+      await pathValidator.validatePathResolved(
+        assetCatalogService.sidecarPath(request.projectFilePath), { write: true },
+      );
       return await assetCatalogService.load(request.projectFilePath);
     }));
 

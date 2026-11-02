@@ -6,6 +6,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import { setupIpcHandlers } from '../src/main/main';
 import { ProjectConfigService } from '../src/main/services/ProjectConfigService';
+import { PathValidationService } from '../src/main/services/PathValidationService';
 
 type Handler = (event: unknown, ...args: unknown[]) => unknown;
 
@@ -22,18 +23,24 @@ jest.mock('electron', () => ({
   shell: {},
 }));
 
-jest.mock('../src/main/services/serviceRegistry', () => ({
-  __pathValidator: { validatePathResolved: jest.fn(async () => undefined), addAllowedPath: jest.fn(), addAllowedFile: jest.fn() },
-  __settings: { getGothicInstallPath: jest.fn(async () => null), setGothicInstallPath: jest.fn(async () => undefined), clearGothicInstallPath: jest.fn(async () => undefined), getRecentProjects: jest.fn(async () => []) },
-  __worldService: { openWorld: jest.fn(async () => ({ worldPath: 'test', stats: {} })) },
-  getServiceRegistry: () => ({
-    fileService: {}, parserService: {}, codeGeneratorService: {}, validationService: {}, projectService: {},
-    settingsService: (jest.requireMock('../src/main/services/serviceRegistry') as any).__settings,
-    fileWatcherService: {}, updaterService: {}, worldService: (jest.requireMock('../src/main/services/serviceRegistry') as any).__worldService, worldFoldersService: {},
-    logService: { log: jest.fn(), getLogFilePath: jest.fn() },
-    pathValidator: (jest.requireMock('../src/main/services/serviceRegistry') as any).__pathValidator,
-  }),
-}));
+jest.mock('../src/main/services/serviceRegistry', () => {
+  const { AssetCatalogService: RealAssetCatalogService } = jest.requireActual(
+    '../src/main/services/AssetCatalogService',
+  ) as typeof import('../src/main/services/AssetCatalogService');
+  return {
+    __pathValidator: { validatePathResolved: jest.fn(async () => undefined), addAllowedPath: jest.fn(), addAllowedFile: jest.fn() },
+    __settings: { getGothicInstallPath: jest.fn(async () => null), setGothicInstallPath: jest.fn(async () => undefined), clearGothicInstallPath: jest.fn(async () => undefined), getRecentProjects: jest.fn(async () => []) },
+    __worldService: { openWorld: jest.fn(async () => ({ worldPath: 'test', stats: {} })) },
+    getServiceRegistry: () => ({
+      fileService: {}, parserService: {}, codeGeneratorService: {}, validationService: {}, projectService: {},
+      settingsService: (jest.requireMock('../src/main/services/serviceRegistry') as any).__settings,
+      fileWatcherService: {}, updaterService: {}, worldService: (jest.requireMock('../src/main/services/serviceRegistry') as any).__worldService, worldFoldersService: {},
+      assetCatalogService: new RealAssetCatalogService(),
+      logService: { log: jest.fn(), getLogFilePath: jest.fn() },
+      pathValidator: (jest.requireMock('../src/main/services/serviceRegistry') as any).__pathValidator,
+    }),
+  };
+});
 
 const electron = jest.requireMock('electron') as { __handlers: Map<string, Handler>; __showOpenDialog: jest.Mock<(...args: any[]) => any> };
 const registry = jest.requireMock('../src/main/services/serviceRegistry') as any;
@@ -380,5 +387,25 @@ describe('project config IPC', () => {
     const result = await invoke('project:saveAssetSources', project.projectFilePath, ['.']) as any;
     expect(result.config.target).toBe('g1');
     expect(JSON.parse(await fs.readFile(project.projectFilePath, 'utf8')).target).toBe('g1');
+  });
+
+  // The same finding as the VOB folders read (review 2026-09-04 §2.15): the
+  // `<project>.assets.json` read renames a corrupt sidecar aside, which is a
+  // write, so it has to pass the check its save passes — and a read check does
+  // not refuse a symlinked final component that points somewhere it may read.
+  it('refuses a symlinked asset catalog on the read, as the save does', async () => {
+    const project = await makeProject();
+    const validator = new PathValidationService([project.root]);
+    registry.__pathValidator.validatePathResolved.mockImplementation(
+      (candidate: string, options?: { write?: boolean }) => validator.validatePathResolved(candidate, options),
+    );
+    await fs.writeFile(path.join(project.root, 'decoy.json'), '{}');
+    await fs.symlink('decoy.json', path.join(project.root, `${path.basename(project.root)}.assets.json`));
+
+    await expect(invoke('project:getAssetCatalog', { projectFilePath: project.projectFilePath }))
+      .rejects.toThrow(/symbolic link/i);
+    await expect(invoke('project:saveAssetCatalog', {
+      projectFilePath: project.projectFilePath, catalog: { favorites: [], categories: [] },
+    })).rejects.toThrow(/symbolic link/i);
   });
 });
