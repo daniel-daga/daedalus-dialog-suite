@@ -235,28 +235,13 @@ function normalizeLineEndings(text) {
  * dropped on decode) changes the file. Comparing two already-decoded strings,
  * as this tier used to, could never see that (#448).
  *
- * Line endings are normalized away because generation emits LF. 0x0D is CR in
- * every encoding a Daedalus source uses, and never a trailing byte of a
- * multi-byte sequence, so removing it cannot corrupt a character.
+ * Neither side is normalized: generation writes the file's own line ending
+ * (#440), so a CRLF file that comes back as LF is drift, which is the point.
  */
-function stripCarriageReturns(buffer) {
-  if (!buffer.includes(0x0D)) {
-    return buffer;
-  }
-  const out = Buffer.allocUnsafe(buffer.length);
-  let length = 0;
-  for (const byte of buffer) {
-    if (byte !== 0x0D) {
-      out[length] = byte;
-      length += 1;
-    }
-  }
-  return out.subarray(0, length);
-}
 
 /** The bytes `FileService.writeFile` would put on disk for this text. */
 function bytesOfSave(generatedText, encoding) {
-  return iconv.encode(normalizeLineEndings(generatedText), encoding);
+  return iconv.encode(generatedText, encoding);
 }
 
 /**
@@ -346,8 +331,7 @@ function analyzeFile(filePath, parser, generator) {
     tokenStream(source.rootNode),
     tokenStream(generated.rootNode)
   );
-  const byteFidelityDrift = !stripCarriageReturns(fs.readFileSync(filePath))
-    .equals(bytesOfSave(generatedText, source.encoding));
+  const byteFidelityDrift = !fs.readFileSync(filePath).equals(bytesOfSave(generatedText, source.encoding));
 
   // Idempotence check: save output should stabilize after the first generation.
   const generatedTextSecond = generator.generateSemanticModel(generatedVisitor.semanticModel);

@@ -458,8 +458,9 @@ function of another name (#395).
    `{ includeComments: true, sectionHeaders: false, preserveSourceStyle: true }`.
 2. **Byte fidelity (reported, non-failing):** the file's bytes on disk
    against `iconv.encode(generatedText, source.encoding)` — what the editor's
-   save path (`FileService.writeFile`) would write (#448). Line endings are
-   normalized away (generation emits LF); an encode loss the decoded-string
+   save path (`FileService.writeFile`) would write (#448). Neither side is
+   normalized: generation writes the file's own line ending (#440), so a CRLF
+   file that comes back as LF is drift. An encode loss the decoded-string
    comparison this tier used to be could not see, such as an unassigned byte
    `0x81` decoded to U+FFFD and written back as `0x9D`, now reports drift.
    Indentation preservation is the remaining gap (known:
@@ -473,10 +474,18 @@ function of another name (#395).
    otherwise. The smoke test's `BYTE_EXACT_FIXTURES` pins the fixtures that
    round-trip byte-identical, so byte drift in them fails rather than only
    being reported.
+   **The layout the source had is re-emitted (#440).** The visitor records
+   `lineEnding` from the file's first line break and the generator applies it
+   once to the whole result, so a CRLF file stays CRLF; `emitOrdered` joins
+   two declarations whose `position.startLine` (or `line`) is the same instead
+   of breaking the line; the action loop puts each entry back on its `line`,
+   emitting the blank lines of a gap and continuing the previous line when the
+   next entry starts on the same one; and `Dialog.propertyBlankLinesBefore`
+   records the gaps in a `C_INFO` property list.
 3. **Semantic drift + idempotence:** model summaries (including
    class/prototype/global name sets) across reparse.
 
-The committed fixture corpus (`test/fixtures/corpus/`, 12 files, one per
+The committed fixture corpus (`test/fixtures/corpus/`, 18 files, one per
 construct family) runs fully strict via `test/roundtrip-corpus-smoke.test.js`
 — all fixtures are in the green set and the test fails if any regresses.
 The real MDK corpus is licensed/gitignored; run it locally with

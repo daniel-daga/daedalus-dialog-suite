@@ -12,7 +12,8 @@ import {
   resolveDialogFunction,
   getDialogFunctionName,
   snapshotDialogProperties,
-  unchangedConditionText
+  unchangedConditionText,
+  SourceLine
 } from '../semantic/semantic-model';
 import { collectReachableFunctions } from '../semantic/cross-references';
 import { continuationIndent, indentGeneratedCode } from '../semantic/code-formatting';
@@ -32,6 +33,8 @@ interface GlobalSymbol {
   parent?: string;
   sourceText?: string;
   leadingComments?: string[];
+  /** Source position of the declaration, when it came from a parse (#440). */
+  position?: { startLine: number; endLine: number };
 }
 
 /** `b` of `var int a, b;` or `instance a, b(C);` (#383) is written by `a`'s statement while `a` exists. */
@@ -56,6 +59,8 @@ export interface CodeGeneratorOptions {
 
 export class SemanticCodeGenerator {
   private options: Required<CodeGeneratorOptions>;
+  /** The line ending the file being generated uses (#440); LF for hand-built models. */
+  private eol: '\r\n' | '\n' = '\n';
 
   constructor(options: CodeGeneratorOptions = {}) {
     this.options = {
@@ -80,8 +85,12 @@ export class SemanticCodeGenerator {
       );
     }
 
+    // #440: every structural join below uses LF; the file's own line ending,
+    // recorded by the visitor, is applied to the whole result at the end.
+    this.eol = model.lineEnding === '\r\n' ? '\r\n' : '\n';
+
     if (model.declarationOrder && model.declarationOrder.length > 0) {
-      return this.generateByDeclarationOrder(model);
+      return this.applyLineEnding(this.generateByDeclarationOrder(model));
     }
 
     const sections: string[] = [];
@@ -151,13 +160,21 @@ export class SemanticCodeGenerator {
     // The ordered declarations are emitted into one section. Each is preceded
     // by the blank lines the parse recorded before it (#286); an entry without
     // a record (a model built in code) gets the old spacing — none between
-    // consecutive globals, one otherwise.
+    // consecutive globals, one otherwise. Two declarations the source put on
+    // one line are joined with a space instead of a break (#440).
     let ordered = '';
     let previousWasGlobal: boolean | null = null;
-    const emitOrdered = (text: string, isGlobal: boolean, blankLinesBefore: number | undefined) => {
-      const blank = blankLinesBefore ?? (previousWasGlobal === null || (isGlobal && previousWasGlobal) ? 0 : 1);
-      ordered += '\n'.repeat(blank) + (text.endsWith('\n') ? text : `${text}\n`);
+    let previousLine: number | undefined;
+    const emitOrdered = (text: string, isGlobal: boolean, blankLinesBefore: number | undefined, startLine: number | undefined) => {
+      const body = text.endsWith('\n') ? text.slice(0, -1) : text;
+      if (startLine !== undefined && startLine === previousLine && ordered.length > 0) {
+        ordered = `${ordered.slice(0, -1)} ${body}\n`;
+      } else {
+        const blank = blankLinesBefore ?? (previousWasGlobal === null || (isGlobal && previousWasGlobal) ? 0 : 1);
+        ordered += '\n'.repeat(blank) + body + '\n';
+      }
       previousWasGlobal = isGlobal;
+      previousLine = startLine;
     };
 
     // N10 — declaration-order fidelity: when the model carries a declaration
@@ -177,7 +194,7 @@ export class SemanticCodeGenerator {
         const symbol = this.lookupGlobalSymbol(declaration.type, declaration.name, model);
         const key = `${declaration.type}:${declaration.name}`;
         if (symbol && !emittedGlobals.has(key)) {
-          emitOrdered(this.generateGlobalDeclaration(declaration.type, symbol), true, declaration.blankLinesBefore);
+          emitOrdered(this.generateGlobalDeclaration(declaration.type, symbol), true, declaration.blankLinesBefore, symbol.position?.startLine);
           emittedGlobals.add(key);
         }
         continue;
@@ -188,13 +205,13 @@ export class SemanticCodeGenerator {
         if (dialog && !emittedDialogs.has(dialog.name)) {
           // Emit leading comments verbatim; do NOT synthesize a section header
           // for a dialog that has its own order entry (invented content).
-          emitOrdered(this.generateDialog(dialog), false, declaration.blankLinesBefore);
+          emitOrdered(this.generateDialog(dialog), false, declaration.blankLinesBefore, dialog.line);
           emittedDialogs.add(dialog.name);
         }
       } else if (declaration.type === 'function') {
         const func = model.functions[declaration.name];
         if (func && !emittedFunctions.has(func.name.toLowerCase())) {
-          emitOrdered(this.generateFunction(func), false, declaration.blankLinesBefore);
+          emitOrdered(this.generateFunction(func), false, declaration.blankLinesBefore, func.line);
           emittedFunctions.add(func.name.toLowerCase());
         }
       }
@@ -273,7 +290,12 @@ export class SemanticCodeGenerator {
       sections.push(trailing);
     }
 
-    return sections.join('\n');
+    return this.applyLineEnding(sections.join('\n'));
+  }
+
+  /** #440: LF joins, written out in the line ending the file already used. */
+  private applyLineEnding(text: string): string {
+    return this.eol === '\n' ? text : text.replace(/\r?\n/g, '\r\n');
   }
 
   private lookupGlobalSymbol(
@@ -331,7 +353,8 @@ export class SemanticCodeGenerator {
     }
 
     const processedFunctions = new Set<string>();
-    return this.generateDialogSection(dialog, model, processedFunctions);
+    this.eol = model.lineEnding === '\r\n' ? '\r\n' : '\n';
+    return this.applyLineEnding(this.generateDialogSection(dialog, model, processedFunctions));
   }
 
   /**
@@ -458,6 +481,10 @@ export class SemanticCodeGenerator {
           lines.push(`${indent}${comment}`);
         }
       }
+      // The blank lines the source had before this property (#440).
+      for (let gap = dialog.propertyBlankLinesBefore?.[key] ?? 0; gap > 0; gap--) {
+        lines.push('');
+      }
       const spacing = this.resolvePropertySpacing(dialog, key);
       const trailing =
         this.options.includeComments && dialog.propertyTrailingComments && dialog.propertyTrailingComments[key]
@@ -559,10 +586,11 @@ export class SemanticCodeGenerator {
     const parameters = (func.parameters || [])
       .map(p => [p.keyword, p.type, p.size ? `${p.name}[${p.size}]` : p.name].filter(Boolean).join(' '))
       .join(', ');
-    lines.push(generateDeclarationHeader(
+    const header = generateDeclarationHeader(
       `${funcKeyword} ${returnType} ${func.name}${spaceBeforeParen}(${parameters})`,
       func.sourceHeader, this.options.includeComments
-    ));
+    );
+    lines.push(header);
     lines.push('{');
     const emitBodyComments = (comments?: string[]) => {
       if (!this.options.includeComments || preservedBody) return;
@@ -585,13 +613,41 @@ export class SemanticCodeGenerator {
       // Generate condition function body
       this.generateConditionBody(func.conditions, lines, indent, func.conditionOperator);
     } else if (func.actions.length > 0) {
-      // Generate body from semantic actions
-      func.actions.forEach(action => {
+      // Generate body from semantic actions, where the source put each one
+      // (#440): a blank line between two entries is kept, and an entry on the
+      // previous entry's line continues that line.
+      const newlines = (text: string) => text.split('\n').length - 1;
+      // The line of the body's opening brace, so a gap before the first entry
+      // is the source's too.
+      let previousStart = func.line === undefined ? undefined : func.line + newlines(header) + 1;
+      let previousEnd = previousStart;
+      for (const action of func.actions) {
         const actionCode = this.generateAction(action);
-        if (actionCode) {
-          lines.push(...indentGeneratedCode(actionCode, indent, continuationIndent(action)).split('\n'));
+        if (!actionCode) continue;
+        const parts = indentGeneratedCode(actionCode, indent, continuationIndent(action)).split('\n');
+        const actionLine = (action as SourceLine).line;
+        const actionEnd = actionLine === undefined ? undefined : actionLine + parts.length - 1;
+        // Only a statement that ended with `;` is continued on the next entry's
+        // line; a raw statement closed by `}` keeps its own line, as #395 wants.
+        if (actionLine !== undefined && actionLine === previousStart && lines[lines.length - 1].trimEnd().endsWith(';')) {
+          const [firstLine, ...rest] = parts;
+          lines[lines.length - 1] += ` ${firstLine.startsWith(indent) ? firstLine.slice(indent.length) : firstLine}`;
+          lines.push(...rest);
+        } else {
+          // An entry's own text may already carry the blank line a gap asks
+          // for — the log emitters write one around their statement — so only
+          // the difference is emitted.
+          let leading = 0;
+          while (leading < parts.length && parts[leading] === '') leading += 1;
+          let trailing = 0;
+          while (trailing < lines.length && lines[lines.length - 1 - trailing] === '') trailing += 1;
+          const gap = previousEnd === undefined || actionLine === undefined ? 1 : actionLine - previousEnd;
+          for (let blank = gap - 1 - leading - trailing; blank > 0; blank--) lines.push('');
+          lines.push(...parts);
         }
-      });
+        previousStart = actionLine ?? previousStart;
+        previousEnd = actionEnd ?? previousEnd;
+      }
     } else {
       // Empty function - add a simple return or placeholder
       if (returnTypeLower === 'int') {

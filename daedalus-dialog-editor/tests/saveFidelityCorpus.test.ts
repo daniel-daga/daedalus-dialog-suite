@@ -11,15 +11,17 @@ import { CodeGeneratorService } from '../src/main/services/CodeGeneratorService'
  *
  * - The parser smoke test asserts TOKEN fidelity through the corpus codegen
  *   config (`sectionHeaders: false`, no `indentChar`/`uppercaseKeywords`); it
- *   ignores blank lines, indentation, and comment placement. All 11 fixtures
- *   are token-green there.
- * - This test asserts BYTE identity (after CRLF->LF normalization) through the
- *   editor's REAL save-path seam — `CodeGeneratorService.generateCode` with the
- *   editor's DEFAULT `codeSettings` (see `fileStore.ts`: `indentChar: '\t'`,
+ *   ignores indentation. The parser now keeps blank lines and statement
+ *   layout, so its byte tier is green for the same shapes this one pins.
+ * - This test asserts BYTE identity through the editor's REAL save-path seam —
+ *   `CodeGeneratorService.generateCode` with the editor's DEFAULT
+ *   `codeSettings` (see `fileStore.ts`: `indentChar: '\t'`,
  *   `includeComments: true`, `sectionHeaders: true`, `uppercaseKeywords: true`;
  *   the service additionally forces `preserveSourceStyle: true`). This is the
  *   same generation the auto-save pipeline runs via `ValidationService`, and it
  *   is what the real-Electron `save-fidelity-no-edit.spec.ts` asserts on disk.
+ *   Neither side is normalized: the save path writes the generated text
+ *   verbatim, so a CRLF fixture coming back as LF is drift (#440).
  *
  * A fixture is GREEN when parse -> serialize (IPC boundary) -> generate through
  * that seam reproduces the source exactly. It is a KNOWN_GAP when only byte-level
@@ -49,16 +51,18 @@ const GREEN_FIXTURES = [
   'items-npcs-mds.d',   // blank lines between declarations and after comments (#286)
   'blank-lines.d',      // #286: 0/1/2+ blank lines before every declaration kind
   'condition-idioms.d', // #384: raw multi-line statement continuation indent
+  'comments.d',         // #440: a trailing inline comment stays on its statement's line
+  'crlf-layout.d',      // #440: the file's own CRLF line endings are written back
+  'body-blank-line.d',  // #440: a blank line inside a body
+  'body-same-line-statements.d', // #440: two statements on one line
+  'body-trailing-comment.d',     // #440: a trailing statement comment
+  'same-line-declarations.d',    // #440: two declarations on one line
+  'property-gaps.d',             // #440: a blank line inside a C_INFO property list
 ];
 
 // Token-equal but not byte-identical through the editor path. Each entry names
 // what still gates it; fixing the cause must promote the fixture to GREEN.
 const KNOWN_GAP_FIXTURES: Array<{ file: string; reason: string }> = [
-  // A trailing inline comment on a non-AI_Output statement is modeled by the
-  // parser as a standalone CommentAction (only DialogLine absorbs inline
-  // comments), so it regenerates on its own line instead of inline. fix-01
-  // (parser fidelity) owns attaching inline comments to arbitrary statements.
-  { file: 'comments.d', reason: 'inline comment on non-AI_Output stmt becomes standalone' },
   // CreateTopic / LogEntry / InsertNpc action renderers emit surrounding blank
   // lines, inserting spurious blanks between packed statements.
   { file: 'quoting.d', reason: 'topic/log/insert action renderers emit surrounding blank lines' },
@@ -66,7 +70,6 @@ const KNOWN_GAP_FIXTURES: Array<{ file: string; reason: string }> = [
 
 const parserDir = path.resolve(__dirname, '..', '..', 'daedalus-parser');
 const corpusDir = path.join(parserDir, 'test', 'fixtures', 'corpus');
-const normalizeNewlines = (s: string): string => s.replace(/\r\n/g, '\n');
 
 interface ParsedFixture {
   original: string;
@@ -128,7 +131,7 @@ function generateThroughEditorPath(fixtureFile: string): { original: string; gen
 
 function isByteGreen(fixtureFile: string): boolean {
   const { original, generated } = generateThroughEditorPath(fixtureFile);
-  return normalizeNewlines(generated) === normalizeNewlines(original);
+  return generated === original;
 }
 
 describe('Editor save-path byte-fidelity ratchet (parser corpus)', () => {
@@ -149,7 +152,7 @@ describe('Editor save-path byte-fidelity ratchet (parser corpus)', () => {
 
   test.each(GREEN_FIXTURES)('GREEN: %s regenerates byte-identical through the editor save path', (fixtureFile) => {
     const { original, generated } = generateThroughEditorPath(fixtureFile);
-    expect(normalizeNewlines(generated)).toBe(normalizeNewlines(original));
+    expect(generated).toBe(original);
   });
 
   test.each(KNOWN_GAP_FIXTURES)('KNOWN_GAP: $file still differs ($reason)', ({ file }) => {
