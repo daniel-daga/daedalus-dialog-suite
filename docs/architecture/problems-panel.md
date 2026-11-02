@@ -27,13 +27,16 @@ quest-editor boundaries:
 
 The parser emits one `SemanticModel` per file, so cross-file lints aggregate in
 the renderer. The scan's main input is `projectStore.parsedFiles` — the full
-per-file models already cached by background ingestion — joined by two pieces of
-reference data the rules read but never walk: `projectStore.waypointSiteIndex`,
-the whole-project index pass's record of which script sites name a waypoint
-(so it sees every file, not only the ones opened), and `worldStore.waynetNames`,
-the open world's point names. Both are absent-means-nothing-is-known, never
-absent-means-nothing-is-legal. `buildProjectView`
-folds them into case-insensitive lookup sets (`dialogNameKeys`, `npcNameKeys`)
+per-file models already cached by background ingestion — joined by nine pieces of
+reference data the rules read but never walk: the project index passes' records of
+waypoint sites (`waypointSiteIndex`), spawn sites (`spawnSiteIndex`), routine
+sites (`routineSiteIndex`), parse errors (`parseErrorIndex`) and the NPCs the
+project holds dialog for; `projectStore.outputUnits`, the OutputUnit database; and
+the open world's point names (`waynetNames`), portal findings and waypoint
+positions with their mobs. The index passes see every file, not only the ones
+opened. Each is absent-means-nothing-is-known, never
+absent-means-nothing-is-legal. `buildProjectView` folds them into
+case-insensitive lookup sets (`dialogNameKeys`, `npcNameKeys`)
 and a `functionsByKey` map. Known NPCs come from the project index
 (`npcList ∪ npcPrototypes`, which already resolve prototype/instance chains to
 C_NPC) plus any file-local C_NPC instance. The panel re-scans whenever
@@ -49,13 +52,17 @@ All read only structured, typed data:
 |---|---|---|
 | `parse-error` | error | a file the index pass could not parse, one row per syntax error |
 | `npc-not-found` | error | dialog `npc` not in the known-NPC set |
-| `knowsinfo-dangling` | error | `NpcKnowsInfoCondition.dialogRef` names no known dialog |
+| `knowsinfo-dangling` | error | `NpcKnowsInfoCondition.dialogRef` names no known dialog; a reference the parser left in raw action text is not scanned |
 | `choice-no-clearchoices` | warning | an `Info_AddChoice` with no `Info_ClearChoices` reachable via the choice-target chain |
 | `orphaned-function` | warning | function referenced by no dialog property, choice target, or `calls` entry |
 | `voice-id-duplicate` / `voice-id-malformed` | warning | a voice id used cross-file, or not matching `…_<n>_<n>` |
+| `output-unit-stale` / `output-unit-missing` | warning | the OutputUnit database holds different text for an `AI_Output` line, or no entry at all; these two rows carry the line the panel's **Update OUs** writes, and are silent when no database was found |
 | `waypoint-not-in-world` | warning | a script site names a waypoint the open world's waynet has no point for; silent when no world is open, and free points are matched by prefix because the engine matches them that way |
 | `duplicate-spawn` | warning | one NPC is statically inserted at two different spawn points, so both sites running puts two copies in the world |
+| `routine-overlap` | warning | two `TA` entries of one routine in force at the same minute, so nothing in the format decides where the NPC stands; silent when the index holds no routine sites |
 | `routine-mob-missing` | hint | a routine entry whose state sits down at a mob (`TA_Sleep` → `BEDHIGH`, `TA_Sit_Bench` → `BENCH`, 22 states) has no mob of that scheme within 20 m of its waypoint in the open world; skips `TOT`; silent when no world is open |
+| `portal-material-malformed` / `portal-material-unknown-sector` | error | a portal material that is not `P:<sector>_<sector>`, or names a sector the world does not have |
+| `portal-unpaired` / `portal-non-planar` / `portal-reversed` | warning | a portal with no mirror material, a polygon 12.1 units off its own plane, or one facing away from its sector; silent when no world is open |
 
 Four decisions worth keeping:
 
@@ -102,13 +109,15 @@ Four decisions worth keeping:
 `runRules` enriches each function-based problem with the dialog that owns its
 `information`/`condition` function, so clicking any problem navigates to a
 dialog via `useNavigation().navigateToDialog(dialogName, functionName)`. A
-problem with only a standalone function falls back to `navigateToSymbol`.
+problem with only a standalone function falls back to `navigateToSymbol`. A
+portal finding is the one world locus, with no file to open: its click frames the
+polygon in the open World view instead.
 
 Both navigators search the merged semantic model, which only covers files that
 have been opened — and `waypoint-not-in-world` and `duplicate-spawn` take their sites
 from the whole-project index pass, so its function routinely lives in a
 file no model was ever built for. When neither navigator resolves, the click
-falls back to `problem.filePath`, the one thing every problem carries: the
+falls back to `problem.filePath`, the one thing every script problem carries: the
 panel opens that file, selects the function and switches to the dialog view.
 Without it the click is a no-op on a view that occupies the whole main area.
 

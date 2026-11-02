@@ -2,6 +2,7 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #500: Problems panel docs list all 18 rule ids and all nine reference inputs
 - #444: A missing semicolon is a syntax error; Polish/Czech and BOM'd Windows scripts decode right
 - #450: Opening a file that is already open and edited no longer replaces the edits with the disk copy
 - #451: The Undo and Redo buttons wait for a pending edit, so the step you meant is the step you get
