@@ -65,7 +65,8 @@ but not editable through a form control.
 
 **Writing back patches, it does not regenerate.** An edit replaces the source
 range of the statement it changed; a new field is inserted after the last
-statement of its kind (or before the closing brace); a removed one deletes its
+statement of its kind the batch keeps (or before the closing brace, when the
+batch removes every one); a removed one deletes its
 range. Comments, blank lines, statement order and every unrecognised statement
 survive byte for byte. This keeps the save pipeline's contract
 (`docs/architecture/save-pipeline.md`) and the fidelity bar in

@@ -172,9 +172,10 @@ interface Splice {
 /**
  * Apply `edits` to an NPC instance's source. Every edit is resolved against
  * the *original* statements, so edits in one call do not see each other.
- * An absent field is inserted on a line of its own after the last field, an
- * absent call after the last call of its name or else the last statement;
- * removing an absent one does nothing. Calls match by name and `occurrence`,
+ * An absent field is inserted on a line of its own after the last field the
+ * batch keeps, an absent call after the last kept call of its name or else the
+ * last kept statement; a batch that keeps no statement inserts before the `}`.
+ * Removing an absent one does nothing. Calls match by name and `occurrence`,
  * because retail calls `EquipItem` once per weapon.
  * Duplicate targets and overlapping source patches are rejected before any
  * change. Sequential changes to one target require separate calls.
@@ -205,9 +206,20 @@ export function applyNpcEdits(source: string, edits: NpcEdit[]): string {
     fields.find((s) => same(s.field, field) && same(s.index, index));
   const callsNamed = (name: string) => calls.filter((s) => same(s.name, name));
   const findCall = (name: string, occurrence = 0) => callsNamed(name)[occurrence];
+  // #445: an insertion is anchored on a statement this batch *keeps*. The
+  // editor has one Save button, so anchoring on the last field when the same
+  // batch removes that line would refuse a save the user cannot split.
+  const removed = new Set<NpcStatement | undefined>();
+  for (const edit of edits) {
+    if (edit.op === 'remove') removed.add(findField(edit.field, edit.index));
+    if (edit.op === 'removeCall') removed.add(findCall(edit.name, edit.occurrence));
+  }
+  const kept = npc.statements.filter((s) => !removed.has(s));
+  const lastKept = kept[kept.length - 1];
+  const lastKeptField = kept.filter((s): s is NpcFieldStatement => s.kind === 'field').pop();
   const newCall = (name: string, args: string[], order: number) => {
-    const named = callsNamed(name);
-    return insertAfter(source, npc, named[named.length - 1], `${name} (${args.join(', ')});`, order);
+    const named = callsNamed(name).filter((s) => !removed.has(s));
+    return insertAfter(source, npc, named[named.length - 1] ?? lastKept, `${name} (${args.join(', ')});`, order);
   };
 
   const splices: Splice[] = edits.map((edit, order) => {
@@ -219,7 +231,7 @@ export function applyNpcEdits(source: string, edits: NpcEdit[]): string {
           return { start: existing.valueRange.startIndex, end: existing.valueRange.endIndex, text: edit.value, order };
         }
         const target = edit.index === undefined ? edit.field : `${edit.field}[${edit.index}]`;
-        return insertAfter(source, npc, fields[fields.length - 1], `${target} = ${edit.value};`, order);
+        return insertAfter(source, npc, lastKeptField ?? lastKept, `${target} = ${edit.value};`, order);
       }
       case 'remove':
         assertFieldUnambiguous(edit.field, edit.index);
@@ -264,12 +276,11 @@ function conflictingEdits(first: number, second: number): Error {
   return new Error(`Conflicting NPC edits ${Math.min(first, second)} and ${Math.max(first, second)}: duplicate target or overlapping source ranges; apply sequential changes in separate calls`);
 }
 
-/** Insert `text` on a new line after `anchor`'s line (default: the last
- *  statement), indented like it; with no statement at all, before the `}`. */
+/** Insert `text` on a new line after `anchor`'s line, indented like it; with
+ *  no anchor, before the `}`. */
 function insertAfter(
-  source: string, npc: ParsedNpcDefinition, anchor: NpcStatement | undefined, text: string, order: number
+  source: string, npc: ParsedNpcDefinition, after: NpcStatement | undefined, text: string, order: number
 ): Splice {
-  const after = anchor ?? npc.statements[npc.statements.length - 1];
   if (after) {
     const lineStart = source.lastIndexOf('\n', after.range.startIndex - 1) + 1;
     const indent = /^[ \t]*/.exec(source.slice(lineStart))![0];

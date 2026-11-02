@@ -47,3 +47,4 @@
 - #403: Finer VOB keyboard movement with millimetre Ctrl taps and smooth holds.
 - #405: Flying moves at one steady speed instead of one per pivot distance, so a Space tap is a step and not a kilometre
 - #415: Ctrl+S, Ctrl+A and Ctrl+W keep working while the right mouse button is held in the world view
+- #445: Clearing an NPC's daily routine and filling another field in the same visit no longer fails with a conflicting-edits error

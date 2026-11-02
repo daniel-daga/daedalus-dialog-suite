@@ -26,15 +26,69 @@ conflicts.forEach((edits, index) => {
   });
 });
 
-test('insertion inside a removed anchor line is rejected instead of consuming the new statement', () => {
+// #445: the NPC editor has one Save button and sends one batch, so an
+// insertion anchored on the last field/statement must not sit on a line the
+// same batch removes.
+test('an insertion anchored on a statement the batch removes is placed after a kept one', () => {
   const input = 'instance A(C_NPC)\r\n{\r\n\tlevel = 1; // keep\r\n};';
   for (const edits of [
     [{ op: 'remove', field: 'level' }, { op: 'set', field: 'guild', value: 'GIL_NONE' }],
     [{ op: 'set', field: 'guild', value: 'GIL_NONE' }, { op: 'remove', field: 'level' }]
   ]) {
-    assert.throws(() => applyNpcEdits(input, edits), /Conflicting NPC edits/);
+    const output = applyNpcEdits(input, edits);
+    assert.deepEqual(extractNpcDefinition(output).statements.map((s) => [s.kind, s.field ?? s.name, s.value]),
+      [['field', 'guild', 'GIL_NONE']]);
+    assert.equal(output, 'instance A(C_NPC)\r\n{\r\n\tguild = GIL_NONE;\r\n};');
   }
 });
+
+// The three batches the review reproduced against the editor's one Save.
+const npcWithRoutine = 'INSTANCE BAU_900_Onar (C_NPC)\n{\n\tname = "Onar";\n\tid = 900;\n\tdaily_routine = Rtn_Start_900;\n};\n';
+const templateWithoutGuild = 'INSTANCE BAU_899_Old (C_NPC)\n{\n\tname = "Old";\n\tid = 899;\n\tdaily_routine = Rtn_Start_899;\n};\n';
+
+const field = (npc, name) => npc.statements.find((s) => s.kind === 'field' && s.field === name)?.value;
+
+const oneSaveBatches = [
+  {
+    name: 'clearing the daily routine and filling an empty field',
+    source: npcWithRoutine,
+    edits: [{ op: 'remove', field: 'daily_routine' }, { op: 'set', field: 'flags', value: '0' }],
+    check: (npc) => assert.equal(field(npc, 'flags'), '0')
+  },
+  {
+    name: 'adding a call and clearing the daily routine',
+    source: npcWithRoutine,
+    edits: [
+      { op: 'addCall', name: 'EquipItem', args: ['self', 'ItMw_1h_Bau_Mace'] },
+      { op: 'remove', field: 'daily_routine' }
+    ],
+    check: (npc) => assert.deepEqual(
+      npc.statements.filter((s) => s.kind === 'call').map((s) => s.args), [['self', 'ItMw_1h_Bau_Mace']]
+    )
+  },
+  {
+    // npcTemplate.ts's copy edits, on a template that has no `guild`.
+    name: 'copying a template that lacks guild',
+    source: templateWithoutGuild,
+    edits: [
+      { op: 'set', field: 'name', value: '"Harald"' },
+      { op: 'set', field: 'guild', value: 'GIL_BAU' },
+      { op: 'set', field: 'id', value: '901' },
+      { op: 'remove', field: 'daily_routine' }
+    ],
+    check: (npc) => assert.deepEqual(
+      [field(npc, 'name'), field(npc, 'guild'), field(npc, 'id')], ['"Harald"', 'GIL_BAU', '901']
+    )
+  }
+];
+
+for (const { name, source: batchSource, edits, check } of oneSaveBatches) {
+  test(`one batch ${name} saves`, () => {
+    const npc = extractNpcDefinition(applyNpcEdits(batchSource, edits));
+    assert.equal(field(npc, 'daily_routine'), undefined);
+    check(npc);
+  });
+}
 
 test('nonconflicting replacements use original coordinates despite different lengths and Unicode', () => {
   const edits = [{ op: 'set', field: 'name', value: '"A"' }, { op: 'set', field: 'level', value: '100' }];
