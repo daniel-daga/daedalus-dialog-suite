@@ -435,6 +435,11 @@ adds:
    declares is refused before anything is written. `components/routineSave.ts`'s
    `createRoutine` saves, re-indexes the file, and records the new routine in
    `projectStore` (`registerRoutine`) so the list shows it without a reload.
+   That index is also what the NPC editor's start-routine field reads (#429):
+   the field sits below the Routines list — create first, then pick — and it
+   fills itself with the first routine as soon as one exists, because an NPC
+   with no `daily_routine` cannot spawn. The field offers the NPC's own
+   routines as well as the project's, which is stale until the next load.
 6. **Editing without a world** (#317). **Built 2026-09-28** as the same panel
    in a modal, `RoutineEditorDialog`, opened by "Edit" beside each routine
    in the NPC editor's routines section. That section now follows the index,
