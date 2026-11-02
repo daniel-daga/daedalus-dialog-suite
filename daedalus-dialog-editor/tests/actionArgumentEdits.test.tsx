@@ -25,6 +25,30 @@ test('editing a teaching argument preserves commas within strings and nested cal
   }));
 });
 
+test('a typed comma survives so another teaching argument can be appended', () => {
+  let latest: any;
+  function Harness() {
+    const [action, setAction] = React.useState<any>({
+      type: 'TeachAction',
+      teachFunctionName: 'B_TeachCustom',
+      teachArgs: ['self', 'other', 'SPL_LIGHT']
+    });
+    return <TeachActionRenderer action={action} path={[0]} index={0} totalActions={1}
+      npcName="TestNPC"
+      handleUpdate={(next: any) => { latest = next; setAction(next); }}
+      handleDelete={jest.fn()} flushUpdate={jest.fn()} handleKeyDown={jest.fn()}
+      mainFieldRef={{ current: null }} />;
+  }
+  render(<Harness />);
+  const field = screen.getByLabelText('Arguments (comma separated)') as HTMLInputElement;
+
+  fireEvent.change(field, { target: { value: 'self, other, SPL_LIGHT,' } });
+  expect(field.value).toBe('self, other, SPL_LIGHT,');
+
+  fireEvent.change(field, { target: { value: field.value + ' SPL_FIRE' } });
+  expect(latest.teachArgs).toEqual(['self', 'other', 'SPL_LIGHT', 'SPL_FIRE']);
+});
+
 test('switching inventory removal to singular clears its quantity', () => {
   const handleUpdate = renderAction(RemoveInventoryItemsActionRenderer, {
     type: 'RemoveInventoryItemsAction', removeFunctionName: 'Npc_RemoveInvItems',

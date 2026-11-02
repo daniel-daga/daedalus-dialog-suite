@@ -49,3 +49,4 @@
 - #415: Ctrl+S, Ctrl+A and Ctrl+W keep working while the right mouse button is held in the world view
 - #458: Save-time validation also checks actions nested inside an if/else branch
 - #459: Adding a choice or a quest step to an empty if/else branch works
+- #460: The Teach arguments field keeps a typed comma, so another argument can be added

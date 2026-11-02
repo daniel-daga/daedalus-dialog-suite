@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import type { BaseActionRendererProps } from './types';
 import type { TeachActionType } from '../../types/global';
 import { ActionFieldContainer, ActionDeleteButton, ActionTextField } from '../common';
@@ -15,6 +15,16 @@ const TeachActionRenderer: React.FC<BaseActionRendererProps> = ({
 }) => {
   const typedAction = action as TeachActionType;
   const argsText = Array.isArray(typedAction.teachArgs) ? typedAction.teachArgs.join(', ') : '';
+
+  // The splitter drops empty arguments, so a controlled value would swallow a
+  // comma the moment it is typed. Keep the raw text while editing and reset it
+  // only when the action's arguments changed from elsewhere (undo, reload).
+  const [text, setText] = useState(argsText);
+  const [seenArgsText, setSeenArgsText] = useState(argsText);
+  if (argsText !== seenArgsText) {
+    setSeenArgsText(argsText);
+    setText(argsText);
+  }
 
   // #183 follow-up: Tab walks Teach Function -> Arguments; only the row edges
   // hand off to card-to-card navigation.
@@ -35,13 +45,14 @@ const TeachActionRenderer: React.FC<BaseActionRendererProps> = ({
       <ActionTextField
         fullWidth
         label="Arguments (comma separated)"
-        value={argsText}
-        onChange={(value) =>
+        value={text}
+        onChange={(value) => {
+          setText(value);
           handleUpdate({
             ...typedAction,
             teachArgs: splitDaedalusArguments(value)
-          })
-        }
+          });
+        }}
         onFlush={flushUpdate}
         onKeyDown={fieldKeyDown[1]}
       />
