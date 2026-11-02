@@ -13,7 +13,7 @@ export const knowsInfoDanglingRule: LintRule = (view): Problem[] => {
 
   for (const file of view.fileFacts) {
     for (const func of file.facts.functions) {
-      for (const { index, dialogRef, line } of func.knowsInfoRefs) {
+      for (const [index, { dialogRef, line }] of func.knowsInfoRefs.entries()) {
         if (view.dialogNameKeys.has(dialogRef.trim().toLowerCase())) {
           continue;
         }
