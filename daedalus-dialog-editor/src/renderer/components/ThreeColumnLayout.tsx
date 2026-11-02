@@ -392,6 +392,27 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [renameDialogTarget, renameNewName, semanticModel.dialogs, semanticModel.functions]);
 
+  // A rename rewrites this file's model only, so another file's
+  // `Npc_KnowsInfo` naming the dialog breaks with nothing else to notice it.
+  // Read at open time from the parsed models the merged model is built from;
+  // subscribing to `parsedFiles` would re-render the layout on every parse.
+  const crossFileWarnings = useMemo(() => {
+    if (!renameDialogTarget) return [];
+    const ownPath = filePath || activeFile;
+    const target = renameDialogTarget.toLowerCase();
+    const referencing: string[] = [];
+    for (const cache of useProjectStore.getState().parsedFiles.values()) {
+      if (cache.filePath === ownPath) continue;
+      const namesTarget = Object.values(cache.semanticModel.functions || {}).some((func) =>
+        (func.conditions || []).some(
+          (cond) => cond.type === 'NpcKnowsInfoCondition' && cond.dialogRef?.toLowerCase() === target
+        )
+      );
+      if (namesTarget) referencing.push(cache.filePath);
+    }
+    return referencing;
+  }, [renameDialogTarget, filePath, activeFile]);
+
   const handleRenameDialogRequest = useCallback((dialogName: string) => {
     setRenameDialogTarget(dialogName);
     setRenameNewName(dialogName);
@@ -556,7 +577,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
           newDialogName={renameNewName}
           validationError={renameValidationError ?? undefined}
           functionRenames={renameFunctionEntries}
-          crossFileWarnings={[]}
+          crossFileWarnings={crossFileWarnings}
           onConfirm={handleRenameDialogConfirm}
           onCancel={handleRenameDialogCancel}
           onNewNameChange={handleRenameNewNameChange}

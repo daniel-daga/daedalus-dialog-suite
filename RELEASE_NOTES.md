@@ -2,6 +2,8 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #484: Renaming a dialog lists the other files whose Npc_KnowsInfo names it, instead of nothing
+
 - #486: A dialog whose choices all sit inside an if/else can be expanded in the tree
 - #482: Recent tabs and search results open their dialog when the file was opened without a project
 - #481: A description typed and then saved with Ctrl+S is written to the file, not silently dropped
