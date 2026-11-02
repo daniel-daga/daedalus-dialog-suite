@@ -2,6 +2,8 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #468: An NPC deleted or renamed in a script leaves the NPC list without reopening the project
+- #492: An NPC editor save re-indexes its file, so the routine it changed is current everywhere
 - #478: The asset thumbnail cache stops growing forever, keeping the newest 1024 images
 - #498: Two voice findings on repeated lines in one function are two rows, not one
 - #490: The NPC editor refuses a save when the NPC body changed since the form read it

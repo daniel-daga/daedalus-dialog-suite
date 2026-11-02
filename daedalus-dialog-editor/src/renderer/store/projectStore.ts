@@ -271,7 +271,7 @@ const EMPTY_FILE_INDEX: FileIndex = { routineSites: [], spawnSites: [], exchange
 
 type FileIndexedState = Pick<ProjectState,
   'npcList' | 'npcPrototypes' | 'npcFileIndex' | 'npcIdIndex' | 'routineNpcIndex'
-  | 'routineSiteIndex' | 'spawnSiteIndex' | 'exchangeSiteIndex'>;
+  | 'routineSiteIndex' | 'spawnSiteIndex' | 'exchangeSiteIndex' | 'dialogIndex'>;
 
 /**
  * Replace each file's share of the index with `files` (#319). An instance is an
@@ -309,11 +309,16 @@ function withFileIndexes(state: FileIndexedState, files: ReadonlyMap<string, Fil
 
   const read = [...files.values()];
   const routineSiteIndex = [...state.routineSiteIndex.filter(elsewhere), ...read.flatMap((file) => file.routineSites)];
+  // #468: the list is a projection of the index, so a file that stopped
+  // declaring an NPC must drop it too — unless a dialog still names it, which is
+  // the other way the load learns an NPC.
+  const npcList = (added.length === 0 ? state.npcList : [...state.npcList, ...added].sort((a, b) => a.localeCompare(b)))
+    .filter((npc) => npcFileIndex[npc.toUpperCase()] !== undefined || state.dialogIndex.has(npc.toUpperCase()));
   return {
     npcFileIndex,
     npcIdIndex,
     routineNpcIndex,
-    npcList: added.length === 0 ? state.npcList : [...state.npcList, ...added].sort((a, b) => a.localeCompare(b)),
+    npcList,
     routineSiteIndex,
     spawnSiteIndex: [...state.spawnSiteIndex.filter(elsewhere), ...read.flatMap((file) => file.spawnSites)],
     exchangeSiteIndex: [...state.exchangeSiteIndex.filter(elsewhere), ...read.flatMap((file) => file.exchangeSites)],

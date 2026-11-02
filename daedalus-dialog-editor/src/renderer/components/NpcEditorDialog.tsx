@@ -416,6 +416,9 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
         const firstError = result.validationResult?.errors?.[0]?.message;
         throw new Error(firstError ? `Save refused: ${firstError}` : 'Save failed');
       }
+      // The watcher suppresses the editor's own write, and the routine facts
+      // the form changed (`daily_routine`, `id`) come from the index.
+      await useProjectStore.getState().reindexFiles([filePath]);
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
