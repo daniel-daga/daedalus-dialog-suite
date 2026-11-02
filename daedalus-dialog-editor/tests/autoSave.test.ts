@@ -551,4 +551,56 @@ describe('useAutoSave hook', () => {
       unregister();
     }
   });
+
+  test('switching auto-save off during a save cancels the tick the flush rescheduled', async () => {
+    const filePath = 'disarm.d';
+    useEditorStore.setState({
+      openFiles: new Map<string, any>([[filePath, {
+        filePath,
+        semanticModel: {
+          dialogs: { TestDialog: { properties: { npc: 'PENDING' } } },
+          functions: {},
+        },
+        isDirty: true,
+        lastSaved: new Date(),
+      }]]),
+      activeFile: filePath,
+      autoSaveEnabled: true,
+    });
+
+    // The flush that starts a save writes to the store, which re-arms the
+    // debounce. That timer must stay cancellable: if the handle is dropped,
+    // turning auto-save off cannot clear it and one more file is written.
+    const unregister = registerPendingEditFlusher(() => {
+      useEditorStore.getState().updateDialog(filePath, 'TestDialog', {
+        properties: { npc: 'FLUSHED' },
+      } as any);
+    });
+
+    try {
+      mockSaveFile.mockResolvedValueOnce({ success: true } as any);
+      renderHook(() => useAutoSave());
+
+      await act(async () => {
+        jest.advanceTimersByTime(2000);
+      });
+      expect(mockSaveFile).toHaveBeenCalledTimes(1);
+
+      // A keystroke lands after the save, then the user turns auto-save off.
+      act(() => {
+        useEditorStore.getState().updateDialog(filePath, 'TestDialog', {
+          properties: { npc: 'TYPED' },
+        } as any);
+        useEditorStore.getState().setAutoSaveEnabled(false);
+      });
+
+      await act(async () => {
+        jest.advanceTimersByTime(5000);
+      });
+      expect(mockSaveFile).toHaveBeenCalledTimes(1);
+    } finally {
+      unregister();
+      act(() => { useEditorStore.getState().setAutoSaveEnabled(true); });
+    }
+  });
 });

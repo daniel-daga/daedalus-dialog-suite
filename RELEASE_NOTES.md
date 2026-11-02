@@ -2,6 +2,7 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #453: Turning auto-save off while a save is running no longer writes one more file
 - #473: A file changed outside the editor is parsed once per watcher batch instead of twice
 - #472: A file whose parse timed out is retried on the next read instead of being cached as "broken"
 - #471: Reload no longer keeps a model parsed before the reload; opening a project resets the stale-parse guard
