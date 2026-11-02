@@ -1,8 +1,9 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useUISelectionStore } from '../../store/uiSelectionStore';
+import { useEditorStore } from '../../store/editorStore';
 import type { SearchResult } from '../../store/searchStore';
 import type { SemanticModel } from '../../types/global';
-import { extractFunctionName } from '../../utils/pathAndIdentifierUtils';
+import { collectDialogOwnedFunctions } from '../dialogUtils';
 
 export interface UseSearchNavigationProps {
   semanticModel: SemanticModel;
@@ -79,29 +80,44 @@ export function useSearchNavigation({
       return;
     }
 
-    // For function or text results, try to navigate via the owning dialog
+    // For function or text results, navigate to the dialog that owns the
+    // function: its information or condition function, or a choice target —
+    // which is where most hero lines live (#483).
     if (result.functionName) {
-      const dialogs = semanticModel.dialogs || {};
-      for (const [dialogName, dialog] of Object.entries(dialogs)) {
-        const infoFuncName = extractFunctionName(dialog.properties?.information);
-
-        if (infoFuncName === result.functionName) {
-          setOperationError(null);
-          try {
-            const navigated = await navigateToDialogWithLoading(dialogName);
-            if (!navigated) {
-              setOperationError(`Could not find dialog "${dialogName}" in the current context.`);
-            }
-          } catch (error) {
-            const message = error instanceof Error ? error.message : 'Unknown error';
-            setOperationError(`Failed to navigate to dialog: ${message}`);
+      const functionName = result.functionName;
+      // The open files' models too: a hit in a file other than the active one
+      // still has to open with the dialog that owns it.
+      const models = [
+        semanticModel,
+        ...[...useEditorStore.getState().openFiles.values()].map((file) => file.semanticModel),
+      ];
+      let ownerDialog: string | null = null;
+      for (const model of models) {
+        for (const [dialogName, dialog] of Object.entries(model.dialogs || {})) {
+          if (collectDialogOwnedFunctions(model, dialog).has(functionName)) {
+            ownerDialog = dialogName;
+            break;
           }
-          return;
         }
+        if (ownerDialog) break;
       }
 
-      // Not a dialog info function — navigate directly to the function
-      useUISelectionStore.getState().setSelectedFunctionName(result.functionName);
+      if (!ownerDialog) {
+        // No dialog owns this function — select it on its own.
+        useUISelectionStore.getState().setSelectedFunctionName(functionName);
+        return;
+      }
+
+      setOperationError(null);
+      try {
+        const navigated = await navigateToDialogWithLoading(ownerDialog, functionName);
+        if (!navigated) {
+          setOperationError(`Could not find dialog "${ownerDialog}" in the current context.`);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        setOperationError(`Failed to navigate to dialog: ${message}`);
+      }
     }
   }, [semanticModel, handleSelectNPC, navigateToDialogWithLoading, setOperationError]);
 
