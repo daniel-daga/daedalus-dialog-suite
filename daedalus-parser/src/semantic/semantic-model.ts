@@ -1123,6 +1123,31 @@ export class Dialog {
     });
   }
 
+  /**
+   * The dialog as it crosses a serialization boundary (#443). A dialog owns no
+   * body of its own in memory: `actions` is a live view of the information
+   * function's array and function-valued properties hold the functions the
+   * `functions` dictionary holds. Writing either would ship the body twice more,
+   * so the properties are written as the names they resolve through and
+   * `actions` only when no information property can own it. The test is the
+   * property, not a lookup: a cross-file reference does not resolve in this
+   * file's own model, and must not fall back to a 0-action snapshot.
+   */
+  toJSON(): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    for (const key of Object.keys(this)) {
+      if (key !== 'actions') json[key] = (this as unknown as Record<string, unknown>)[key];
+    }
+    const properties: DialogProperties = { ...this.properties };
+    for (const key of Object.keys(properties)) {
+      const value = properties[key];
+      if (value instanceof DialogFunction) properties[key] = value.name;
+    }
+    json.properties = properties;
+    if (getDialogFunctionName(this, 'information') === undefined) json.actions = this.actions;
+    return json;
+  }
+
   static fromJSON(
     json: any, functionsMap: { [key: string]: DialogFunction }, functionsSource?: () => Record<string, DialogFunction>
   ): Dialog {

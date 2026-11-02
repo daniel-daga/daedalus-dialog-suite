@@ -181,8 +181,10 @@ the previous value inference.
 It follows array replacement, function-object replacement, function-dictionary
 replacement and function relinking, including after
 `deserializeSemanticModel`; shared information functions share the same action
-array. JSON retains the enumerable `actions` field, but a linked function's
-current body takes precedence over a stale serialized dialog snapshot.
+array. A serialized dialog owns no copy of it: `Dialog.toJSON` writes
+`information` and `condition` as the names they are and leaves `actions` out
+whenever the dialog names an information function, so the function dictionary is
+the one serialized copy of the body and a stale dialog snapshot cannot come back.
 Standalone dialogs without a resolvable information function retain their own
 editable action arrays, including legacy JSON. A hand-built dialog can pass its
 function dictionary as the optional third constructor argument when its

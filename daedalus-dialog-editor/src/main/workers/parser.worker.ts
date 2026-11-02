@@ -1,4 +1,5 @@
 import { SemanticModelBuilderVisitor } from 'daedalus-parser/semantic-visitor';
+import type { SemanticModel } from 'daedalus-parser/semantic-model';
 import { extractNpcDefinition, applyNpcEdits, type NpcEdit } from 'daedalus-parser/npc-definition';
 
 import DaedalusParser from 'daedalus-parser';
@@ -21,6 +22,11 @@ export interface ParserRequest {
   npc?: 'extract' | 'apply';
   edits?: NpcEdit[];
 }
+
+/** A model as it crosses this worker's IPC: the forked channel uses the V8
+ *  structured-clone serializer, which ignores `toJSON`, so the plain form is
+ *  what makes `Dialog.toJSON` the single owner of a dialog's body (#443). */
+const plainModel = (model: SemanticModel): SemanticModel => JSON.parse(JSON.stringify(model));
 
 /** The answer to one request; throws to report an error. */
 export function handleParserRequest(message: ParserRequest): unknown {
@@ -48,7 +54,7 @@ export function handleParserRequest(message: ParserRequest): unknown {
 
   // If there are syntax errors, return the model with errors immediately
   if (visitor.semanticModel.hasErrors) {
-    return visitor.semanticModel;
+    return plainModel(visitor.semanticModel);
   }
 
   // Otherwise, proceed with semantic analysis
@@ -56,7 +62,7 @@ export function handleParserRequest(message: ParserRequest): unknown {
   visitor.pass2_analyzeAndLink(tree.rootNode as any);
 
   // Return the semantic model
-  return visitor.semanticModel;
+  return plainModel(visitor.semanticModel);
 }
 
 if (send) {

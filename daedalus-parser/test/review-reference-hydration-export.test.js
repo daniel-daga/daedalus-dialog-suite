@@ -144,7 +144,11 @@ for (const functionsFirst of [false, true]) {
       model.dialogs.A.properties.information = '((info))';
       assert.strictEqual(model.dialogs.A.actions, info.actions, 'current wrapped string relinking must work');
       const json = JSON.parse(JSON.stringify(model));
-      assert.equal(json.dialogs.A.actions[0].action, 'Assigned()');
+      // #443: the body belongs to the function dictionary; a dialog ships the
+      // name it resolves through and no second copy of the actions.
+      assert.equal(json.dialogs.A.actions, undefined, 'the dialog ships no action snapshot');
+      assert.equal(json.dialogs.A.properties.information, '((info))');
+      assert.equal(json.functions.Info.actions[0].action, 'Assigned()');
       model = parse(generator.generateSemanticModel(model));
     }
   });
