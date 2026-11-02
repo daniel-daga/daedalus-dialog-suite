@@ -254,7 +254,7 @@ implicit quest upgraded to `MIS_`, both written through the ordinary file save
 (see `docs/architecture/quest-editor.md`; the litegraph Flow view was removed):
 
 1. `src/renderer/quest/domain/` — pure logic: analysis, graph inference, condition-expression codec. No React/MUI/Electron imports.
-2. `src/renderer/components/QuestEditor.tsx` + `QuestList.tsx` / `QuestDetails.tsx` / `CreateQuestDialog.tsx` — UI.
+2. `src/renderer/components/QuestEditor.tsx` + `QuestList.tsx` / `QuestDetails.tsx` / `RegisterTopicDialog.tsx` — UI.
 
 Import direction is one-way: UI → domain.
 
