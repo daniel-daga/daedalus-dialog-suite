@@ -374,6 +374,13 @@ export const useFileStore = create<FileStore>()(immer((set, get) => ({
   getFileState: (filePath: string) => get().openFiles.get(filePath),
 
   openFile: async (filePath: string, opts?: { model?: SemanticModel }) => {
+    // An already-open file keeps its live state: re-reading it here would
+    // replace unsaved edits with the disk text, unasked (#450). `reloadFile`
+    // is the guarded path for re-reading, and a second open only activates.
+    if (get().openFiles.has(filePath)) {
+      get().setActiveFile(filePath);
+      return;
+    }
     try {
       const { content: sourceCode, version } = await window.editorAPI.readFileVersioned(filePath);
       const processedModel = opts?.model

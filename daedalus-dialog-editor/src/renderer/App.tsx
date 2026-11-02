@@ -66,8 +66,9 @@ const themeOptions: Array<{ value: ThemeMode; label: string; icon: JSX.Element }
 ];
 
 const AppContent: React.FC<AppProps> = ({ buildChanges = [] }) => {
-  const { openFile, activeFile, resetEditorSession } = useEditorStore((state) => ({
+  const { openFile, reloadFile, activeFile, resetEditorSession } = useEditorStore((state) => ({
     openFile: state.openFile,
+    reloadFile: state.reloadFile,
     activeFile: state.activeFile,
     resetEditorSession: state.resetEditorSession,
   }), shallow);
@@ -287,7 +288,7 @@ const AppContent: React.FC<AppProps> = ({ buildChanges = [] }) => {
 
     withDiscardConfirmed('reload the file', async () => {
       try {
-        await openFile(activeFile);
+        await reloadFile(activeFile);
       } catch (error) {
         setAppError(`Failed to reload file: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
