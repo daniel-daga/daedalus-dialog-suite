@@ -1137,6 +1137,88 @@ describe('ValidationService', () => {
     });
   });
 
+  describe('Nested Action Validation (if/else branches)', () => {
+    const modelWithActions = (actions: any[]) => ({
+      dialogs: {},
+      functions: {
+        DIA_Test_Info: { name: 'DIA_Test_Info', returnType: 'VOID', actions, conditions: [], calls: [] }
+      },
+      hasErrors: false,
+      errors: []
+    });
+
+    const conditional = (thenActions: any[], elseActions: any[] = []) => ({
+      type: 'ConditionalAction',
+      condition: 'Wld_GetDay() == 0',
+      thenActions,
+      elseActions
+    });
+
+    test('reports a missing choice target inside a then branch', async () => {
+      const model = modelWithActions([
+        conditional([{
+          type: 'Choice',
+          dialogRef: 'DIA_Test',
+          text: 'More',
+          targetFunction: 'DoesNotExist'
+        }])
+      ]);
+
+      const result = await validationService.validate(model, defaultSettings);
+
+      expect(result.isValid).toBe(false);
+      expect(result.errors).toContainEqual(
+        expect.objectContaining({
+          type: 'missing_function',
+          message: expect.stringContaining('then branch')
+        })
+      );
+      expect(result.errors).toContainEqual(
+        expect.objectContaining({
+          type: 'missing_function',
+          message: expect.stringContaining('DoesNotExist')
+        })
+      );
+    });
+
+    test('reports a required field missing inside an else branch', async () => {
+      const model = modelWithActions([
+        conditional([], [{ type: 'DialogLine', speaker: 'self', text: 'Hi', id: '' }])
+      ]);
+
+      const result = await validationService.validate(model, defaultSettings);
+
+      expect(result.isValid).toBe(false);
+      expect(result.errors).toContainEqual(
+        expect.objectContaining({
+          type: 'missing_required_property',
+          message: expect.stringContaining('else branch')
+        })
+      );
+    });
+
+    test('reports a double quote in a choice text inside a then branch', async () => {
+      const model = modelWithActions([
+        conditional([{
+          type: 'Choice',
+          dialogRef: 'DIA_Test',
+          text: 'Say "hello"',
+          targetFunction: 'DIA_Test_Info'
+        }])
+      ]);
+
+      const result = await validationService.validate(model, defaultSettings);
+
+      expect(result.isValid).toBe(false);
+      expect(result.errors).toContainEqual(
+        expect.objectContaining({
+          type: 'invalid_string_content',
+          message: expect.stringContaining('then branch')
+        })
+      );
+    });
+  });
+
   describe('String Content Validation (Daedalus has no escape sequences)', () => {
     const modelWithAction = (action: any) => ({
       dialogs: {},
