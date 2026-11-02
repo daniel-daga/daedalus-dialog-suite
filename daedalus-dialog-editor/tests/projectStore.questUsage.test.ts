@@ -1,5 +1,6 @@
 import { useProjectStore } from '../src/renderer/store/projectStore';
 import { buildQuestGraph } from '../src/renderer/quest/domain/graph';
+import { buildQuestDiary } from '../src/renderer/quest/domain/questDiary';
 import type { SemanticModel } from '../src/renderer/types/global';
 
 const createEmptyModel = (): SemanticModel => ({
@@ -180,6 +181,56 @@ describe('ProjectStore - getQuestUsage', () => {
     expect(usage.functions).toHaveProperty('DIA_Linked_Info');
     expect(usage.functions).toHaveProperty('DIA_Linked_Condition');
     expect(usage.dialogs).toHaveProperty('DIA_Linked');
+  });
+
+  it('includes the function whose quest lines sit inside an if/else, so its ending reaches the diary', () => {
+    const filePath = '/dialogs/conditional-ending.d';
+    const model = createEmptyModel();
+    model.constants = {
+      TOPIC_NESTED_END: { name: 'TOPIC_NESTED_END', type: 'string', value: 'Nested Ending' }
+    };
+    model.variables = {
+      MIS_NESTED_END: { name: 'MIS_NESTED_END', type: 'int' }
+    };
+    // Every quest line is inside a branch: the function is not a top-level writer.
+    model.functions = {
+      DIA_Nested_End_Info: {
+        name: 'DIA_Nested_End_Info',
+        returnType: 'VOID',
+        actions: [
+          {
+            type: 'ConditionalAction',
+            condition: 'Npc_HasItems (other, ItMi_Nugget) >= 5',
+            thenActions: [
+              { type: 'LogSetTopicStatus', topic: 'TOPIC_NESTED_END', status: 'LOG_SUCCESS' },
+              { type: 'LogEntry', topic: 'TOPIC_NESTED_END', text: 'I brought the ore.' }
+            ],
+            elseActions: [{ type: 'LogSetTopicStatus', topic: 'TOPIC_NESTED_END', status: 'LOG_FAILED' }]
+          }
+        ],
+        conditions: [],
+        calls: []
+      }
+    };
+    model.dialogs = {
+      DIA_Nested_End: {
+        name: 'DIA_Nested_End',
+        parent: 'C_INFO',
+        properties: { npc: 'NPC_NESTED', information: 'DIA_Nested_End_Info' }
+      }
+    };
+
+    useProjectStore.setState({
+      parsedFiles: new Map([
+        [filePath, { filePath, semanticModel: model, lastParsed: new Date('2026-11-01T00:00:00Z') }]
+      ])
+    });
+
+    const usage = useProjectStore.getState().getQuestUsage('TOPIC_NESTED_END');
+
+    expect(usage.functions).toHaveProperty('DIA_Nested_End_Info');
+    expect(buildQuestDiary(usage, 'TOPIC_NESTED_END').map((item) => item.state ?? item.text))
+      .toEqual(['success', 'I brought the ore.', 'failed']);
   });
 
   it('builds condition requires edges from linked condition functions instead of world-trigger fallback', () => {

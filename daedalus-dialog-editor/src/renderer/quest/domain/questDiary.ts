@@ -60,6 +60,28 @@ function stateOf(action: DialogAction, questName: string, misName: string): Ques
   return state === 'unknown' ? null : state;
 }
 
+/**
+ * Visits every action of a list at any depth, through if/else branches, with
+ * its path into the list. Shared by the diary and the quest scans, so a line
+ * inside an if is seen by every panel.
+ */
+export function walkActionsWithPath(
+  actions: readonly DialogAction[] | undefined,
+  visit: (action: DialogAction, path: QuestDiaryPath) => void,
+  prefix: QuestDiaryPath = []
+): void {
+  (actions ?? []).forEach((action, index) => {
+    const path = [...prefix, index];
+    const a = action as unknown as Record<string, unknown>;
+    if (a.type === 'ConditionalAction') {
+      walkActionsWithPath((a.thenActions as DialogAction[]) ?? [], visit, [...path, 'then']);
+      walkActionsWithPath((a.elseActions as DialogAction[]) ?? [], visit, [...path, 'else']);
+      return;
+    }
+    visit(action, path);
+  });
+}
+
 function collectLines(
   actions: readonly DialogAction[],
   questName: string,
@@ -67,14 +89,8 @@ function collectLines(
   prefix: QuestDiaryPath,
   out: Line[]
 ): void {
-  actions.forEach((action, index) => {
-    const path = [...prefix, index];
+  walkActionsWithPath(actions, (action, path) => {
     const a = action as unknown as Record<string, unknown>;
-    if (a.type === 'ConditionalAction') {
-      collectLines((a.thenActions as DialogAction[]) ?? [], questName, misName, [...path, 'then'], out);
-      collectLines((a.elseActions as DialogAction[]) ?? [], questName, misName, [...path, 'else'], out);
-      return;
-    }
     if (a.type === 'LogEntry' && isCaseInsensitiveMatch(a.topic as string, questName)) {
       out.push({ kind: 'entry', path, text: String(a.text ?? ''), editable: !a.textIsExpression });
       return;
@@ -84,7 +100,7 @@ function collectLines(
     if (state && !out.some((line) => line.kind === 'state' && line.state === state)) {
       out.push({ kind: 'state', path, state });
     }
-  });
+  }, prefix);
 }
 
 /** A start sorts first and an ending last; a function with only entries sits between. */
