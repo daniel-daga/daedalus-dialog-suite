@@ -112,6 +112,22 @@ describe('useConditionUpdate interleaving (U3 stage 1)', () => {
     expect(texts).toEqual(['c0', 'c1']);
   });
 
+  // A visit with no edit must write nothing: an unconditional flush rebuilds an
+  // equal condition, which dirties the file and pushes an empty undo step.
+  it('does not write anything on a focus and blur with no edit', () => {
+    const onChange = jest.fn();
+    render(<Harness initial={['c0']} onChange={onChange} />);
+    fireEvent.click(screen.getByLabelText('Expand conditions'));
+    expect(onChange).not.toHaveBeenCalled();
+
+    const input = screen.getByLabelText('Condition Expression');
+    fireEvent.focus(input);
+    fireEvent.blur(input);
+
+    act(() => { jest.runOnlyPendingTimers(); });
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   // Stage 2: identity keys keep the edited card mounted across a deletion above
   // it, so the in-flight edit lands on the same logical condition instead of
   // being dropped.

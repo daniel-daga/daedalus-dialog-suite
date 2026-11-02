@@ -37,6 +37,11 @@ export function useConditionUpdate(
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
+    // A visit with no edit must not write: the rebuilt condition is a new
+    // reference, so the write dirties the file and pushes an empty undo step.
+    if (shallowEqual(localConditionRef.current, conditionRef.current)) {
+      return;
+    }
     updateCondition(index, localCondition);
   }, [updateCondition, index, localCondition]);
 

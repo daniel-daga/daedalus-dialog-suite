@@ -33,6 +33,26 @@ const CONDITION_TEMPLATES: ReadonlyArray<{ label: string; snippet: string }> = [
   { label: 'Quest State', snippet: 'MIS_ == LOG_RUNNING' }
 ];
 
+/**
+ * True when `expression` holds a `||` outside any parentheses, so appending
+ * `&& snippet` would bind the snippet to the last alternative only.
+ * shortcut: a quoted "||" counts as top-level; no condition carries one today.
+ */
+function hasTopLevelOr(expression: string): boolean {
+  let depth = 0;
+  for (let i = 0; i < expression.length; i++) {
+    const ch = expression[i];
+    if (ch === '(') {
+      depth++;
+    } else if (ch === ')') {
+      depth--;
+    } else if (depth === 0 && ch === '|' && expression[i + 1] === '|') {
+      return true;
+    }
+  }
+  return false;
+}
+
 const ConditionalActionRenderer: React.FC<BaseActionRendererProps> = ({
   action,
   path,
@@ -65,7 +85,10 @@ const ConditionalActionRenderer: React.FC<BaseActionRendererProps> = ({
 
   const insertConditionTemplate = (snippet: string) => {
     const existing = (typedAction.condition || '').trim();
-    const condition = existing ? `${existing} && ${snippet}` : snippet;
+    // `&&` binds tighter than `||`, so an existing or-chain needs parentheses
+    // for the appended snippet to read as "also require this".
+    const base = hasTopLevelOr(existing) ? `(${existing})` : existing;
+    const condition = existing ? `${base} && ${snippet}` : snippet;
     handleUpdate({ ...typedAction, condition });
     setTemplateMenuAnchor(null);
   };

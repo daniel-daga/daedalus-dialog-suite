@@ -156,8 +156,10 @@ export function useAutoSave(): AutoSaveStatus {
       }
 
       timeoutRef.current = setTimeout(() => {
-        performAutoSave();
+        // Clear the handle before the save starts: its flush reschedules and
+        // arms a new timer into this ref, which must stay cancellable.
         timeoutRef.current = null;
+        void performAutoSave();
       }, autoSaveInterval);
     };
 

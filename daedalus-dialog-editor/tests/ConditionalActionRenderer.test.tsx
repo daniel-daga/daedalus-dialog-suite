@@ -62,4 +62,30 @@ describe('ConditionalActionRenderer', () => {
       condition: 'Npc_KnowsInfo(other, DIA_Test)'
     });
   });
+
+  const insertTemplate = (condition: string) => {
+    const action = { ...baseProps.action, condition };
+    render(<ConditionalActionRenderer {...baseProps} action={action} />);
+    fireEvent.click(screen.getByLabelText('Insert condition template'));
+    fireEvent.click(screen.getByText('NPC Knows Dialog'));
+    return action;
+  };
+
+  test('appends an "and" to a condition that has no top-level ||', () => {
+    const action = insertTemplate('Wld_GetDay() == 0');
+
+    expect(baseProps.handleUpdate).toHaveBeenCalledWith({
+      ...action,
+      condition: 'Wld_GetDay() == 0 && Npc_KnowsInfo(other, DIA_)'
+    });
+  });
+
+  test('parenthesises a top-level || so the template really adds a requirement', () => {
+    const action = insertTemplate('A() || B()');
+
+    expect(baseProps.handleUpdate).toHaveBeenCalledWith({
+      ...action,
+      condition: '(A() || B()) && Npc_KnowsInfo(other, DIA_)'
+    });
+  });
 });
