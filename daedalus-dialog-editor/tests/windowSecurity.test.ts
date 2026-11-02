@@ -75,4 +75,19 @@ describe('applyWindowSecurity', () => {
     stub.navHandler!(blockedEvent, 'https://evil.example.com');
     expect(blockedEvent.preventDefault).toHaveBeenCalled();
   });
+
+  it('refuses a URL whose host is not the dev server, even with the same prefix', () => {
+    process.env.NODE_ENV = 'development';
+    const stub = makeStub('http://localhost:5173');
+    applyWindowSecurity(stub as any);
+    for (const url of [
+      'http://localhost:5173@evil.example/',
+      'http://localhost:5174/',
+      'https://localhost:5173/',
+    ]) {
+      const event = { preventDefault: jest.fn() };
+      stub.navHandler!(event, url);
+      expect(event.preventDefault).toHaveBeenCalled();
+    }
+  });
 });

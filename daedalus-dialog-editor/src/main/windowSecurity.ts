@@ -13,7 +13,7 @@ export function applyWindowSecurity(webContents: WebContents): void {
   webContents.on('will-navigate', (event, url) => {
     const allowed =
       process.env.NODE_ENV === 'development'
-        ? url.startsWith('http://localhost:5173')
+        ? new URL(url).origin === 'http://localhost:5173'
         : url === webContents.getURL();
     if (!allowed) {
       event.preventDefault();
