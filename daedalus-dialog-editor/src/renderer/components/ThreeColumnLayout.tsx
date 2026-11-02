@@ -300,18 +300,27 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
   // -------------------------------------------------------------------------
   const [deleteDialogTarget, setDeleteDialogTarget] = useState<string | null>(null);
 
+  // The file `fileStore.removeDialog` will rewrite. The preview must ask that
+  // same model: the merged project model would keep a function another file
+  // also uses, and the store would then delete it (#485).
+  const deleteTargetFilePath = filePath || activeFile;
+
   const deleteDialogInfo = useMemo(() => {
     if (!deleteDialogTarget) return null;
-    const model = semanticModel;
-    const dialog = model.dialogs?.[deleteDialogTarget];
-    if (!dialog) return null;
+    // The store removes from this file's model (fileStore.removeDialog), so the
+    // preview asks the same model; the merged model would promise to keep a
+    // function another file also uses and the store would delete it (#485).
+    const model = fileState?.semanticModel;
+    const dialog = model?.dialogs?.[deleteDialogTarget];
+    if (!model || !dialog) return null;
 
     // Same traversal as fileStore.removeDialog (shared helper)
     const functionsToDelete = [...computeDialogDeletionSet(model, deleteDialogTarget)];
 
-    // Find broken NpcKnowsInfo references
+    // Broken NpcKnowsInfo references are collateral across the project, not
+    // something the store touches, so they are scanned on the merged model.
     const brokenRefs: Array<{ functionName: string }> = [];
-    for (const [funcName, func] of Object.entries(model.functions || {})) {
+    for (const [funcName, func] of Object.entries(semanticModel.functions || {})) {
       for (const cond of (func.conditions || []) as any[]) {
         if (cond.type === 'NpcKnowsInfoCondition' && cond.dialogRef === deleteDialogTarget) {
           brokenRefs.push({ functionName: funcName });
@@ -325,18 +334,33 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
       functionsToDelete,
       brokenReferences: brokenRefs,
     };
-  // Re-keyed on the two consumed categories (§3c): `semanticModel` is a stable
-  // reconstruction of exactly these, so it never goes stale relative to them.
+  // Re-keyed on the consumed categories (§3c): both models are stable
+  // reconstructions of exactly these, so they never go stale relative to them.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deleteDialogTarget, semanticModel.dialogs, semanticModel.functions]);
+  }, [
+    deleteDialogTarget,
+    fileState?.semanticModel.dialogs,
+    fileState?.semanticModel.functions,
+    semanticModel.functions,
+  ]);
 
   const handleDeleteDialogRequest = useCallback((dialogName: string) => {
+    // The dialog may be listed from the merged model while another file owns
+    // it. Deleting here would do nothing, so say so instead (#485).
+    const model = deleteTargetFilePath
+      ? useEditorStore.getState().openFiles.get(deleteTargetFilePath)?.semanticModel
+      : undefined;
+    if (!model?.dialogs?.[dialogName]) {
+      setOperationError(`Cannot delete "${dialogName}": it is not declared in the active file.`);
+      return;
+    }
+    setOperationError(null);
     setDeleteDialogTarget(dialogName);
-  }, []);
+  }, [deleteTargetFilePath]);
 
   const handleDeleteDialogConfirm = useCallback(() => {
     if (!deleteDialogTarget) return;
-    const targetFilePath = filePath || activeFile;
+    const targetFilePath = deleteTargetFilePath;
     if (!targetFilePath) return;
 
     historyActions.removeDialog(targetFilePath, deleteDialogTarget);
@@ -355,7 +379,7 @@ const ThreeColumnLayout: React.FC<ThreeColumnLayoutProps> = ({ filePath }) => {
     }
 
     setDeleteDialogTarget(null);
-  }, [deleteDialogTarget, filePath, activeFile, semanticModel.dialogs, selectedNPC, selectedDialog, activeNpcName, closeRecentDialog, handleSelectRecentDialog]);
+  }, [deleteDialogTarget, deleteTargetFilePath, semanticModel.dialogs, selectedNPC, selectedDialog, activeNpcName, closeRecentDialog, handleSelectRecentDialog]);
 
   const handleDeleteDialogCancel = useCallback(() => {
     setDeleteDialogTarget(null);
