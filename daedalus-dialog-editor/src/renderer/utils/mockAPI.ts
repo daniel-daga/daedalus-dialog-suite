@@ -770,22 +770,23 @@ export const mockEditorAPI: EditorAPI = {
       for (const npcName in model.npcs || {}) {
         npcs.add(npcName);
         npcFiles[npcName.toUpperCase()] = filePath;
-        if (!dialogsByNpc[npcName]) {
-          dialogsByNpc[npcName] = [];
+        if (!dialogsByNpc[npcName.toUpperCase()]) {
+          dialogsByNpc[npcName.toUpperCase()] = [];
         }
       }
       
       for (const dialogName in model.dialogs) {
         const dialog = model.dialogs[dialogName];
         const npcName = dialog.properties?.npc || 'Unknown';
+        const npcKey = npcName.toUpperCase();
         
         npcs.add(npcName);
         
-        if (!dialogsByNpc[npcName]) {
-          dialogsByNpc[npcName] = [];
+        if (!dialogsByNpc[npcKey]) {
+          dialogsByNpc[npcKey] = [];
         }
         
-        dialogsByNpc[npcName].push({
+        dialogsByNpc[npcKey].push({
           dialogName,
           npc: npcName,
           filePath
