@@ -1,6 +1,13 @@
-import type { DialogLineAction, NpcKnowsInfoCondition, SemanticModel } from '../../../shared/types';
+import type { DialogLineAction, SemanticModel } from '../../../shared/types';
 import type { DialogFacts, FileFacts, FunctionFacts } from './types';
 import { forEachAction } from './walk';
+
+/**
+ * A `Npc_KnowsInfo` call in text the parser left unstructured. The same pattern
+ * the quest codec reads one clause with (`conditionExpressionCodec.ts`), minus
+ * its anchors: here it is matched inside a whole statement or function body.
+ */
+const KNOWS_INFO_CALL = /Npc_KnowsInfo\s*\(\s*([^,]+?)\s*,\s*([^)]+?)\s*\)/gi;
 
 /** Resolves a `string | { name }` reference property to a plain name. */
 const refName = (ref: string | { name?: string } | undefined): string | undefined =>
@@ -27,6 +34,15 @@ export function extractFileFacts(model: SemanticModel): FileFacts {
     let hasClearChoices = false;
     const choiceTargets: string[] = [];
     const voiceIds: Array<{ id: string; text: string; line?: number }> = [];
+    const knowsInfoRefs: FunctionFacts['knowsInfoRefs'] = [];
+    const scanKnowsInfo = (text: string | undefined, line?: number) => {
+      for (const [, , dialogRef] of (text || '').matchAll(KNOWS_INFO_CALL)) {
+        const ref = dialogRef.trim();
+        if (ref.length > 0) {
+          knowsInfoRefs.push({ dialogRef: ref, line });
+        }
+      }
+    };
     forEachAction(func.actions, (action) => {
       if (action.type === 'Choice') {
         hasChoice = true;
@@ -38,19 +54,22 @@ export function extractFileFacts(model: SemanticModel): FileFacts {
         if (typeof dialogLine.id === 'string' && dialogLine.id.trim() !== '' && !dialogLine.idIsExpression) {
           voiceIds.push({ id: dialogLine.id, text: dialogLine.text ?? '', line: action.line });
         }
+      } else if (action.type === 'ConditionalAction') {
+        scanKnowsInfo(action.condition, action.line);
+      } else if (action.type === 'Action') {
+        scanKnowsInfo(action.action, action.line);
       }
     });
 
-    const knowsInfoRefs: Array<{ index: number; dialogRef: string; line?: number }> = [];
     // `conditions` is guaranteed by the native parser but may be absent on
     // partial/error models or the browser-harness mock — tolerate that.
-    (func.conditions || []).forEach((condition, index) => {
-      if (condition.type !== 'NpcKnowsInfoCondition') {
-        return;
-      }
-      const { dialogRef } = condition as NpcKnowsInfoCondition;
-      if (typeof dialogRef === 'string' && dialogRef.length > 0) {
-        knowsInfoRefs.push({ index, dialogRef, line: condition.line });
+    (func.conditions || []).forEach((condition) => {
+      if (condition.type === 'NpcKnowsInfoCondition') {
+        if (condition.dialogRef.length > 0) {
+          knowsInfoRefs.push({ dialogRef: condition.dialogRef, line: condition.line });
+        }
+      } else if (condition.type === 'Condition' || condition.type === 'GenericCondition') {
+        scanKnowsInfo(condition.condition, condition.line);
       }
     });
 

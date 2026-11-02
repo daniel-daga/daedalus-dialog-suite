@@ -46,13 +46,14 @@ mid-ingestion window.
 
 ## Rules
 
-All read only structured, typed data:
+All read only structured, typed data, except `knowsinfo-dangling`, which also
+scans the condition/action text the parser left unstructured:
 
 | Rule | Severity | Detection |
 |---|---|---|
 | `parse-error` | error | a file the index pass could not parse, one row per syntax error |
 | `npc-not-found` | error | dialog `npc` not in the known-NPC set |
-| `knowsinfo-dangling` | error | `NpcKnowsInfoCondition.dialogRef` names no known dialog; a reference the parser left in raw action text is not scanned |
+| `knowsinfo-dangling` | error | a `Npc_KnowsInfo` dialog ref names no known dialog, whether the parser structured it or left it in raw body/guard text |
 | `choice-no-clearchoices` | warning | an `Info_AddChoice` with no `Info_ClearChoices` reachable via the choice-target chain |
 | `orphaned-function` | warning | function referenced by no dialog property, choice target, or `calls` entry |
 | `voice-id-duplicate` / `voice-id-malformed` | warning | a voice id used cross-file, or not matching `…_<n>_<n>` |

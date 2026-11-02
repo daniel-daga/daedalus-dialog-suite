@@ -150,8 +150,8 @@ export interface FunctionFacts {
   choiceTargets: string[];
   /** The function's `calls` list. */
   calls: string[];
-  /** Non-empty `Npc_KnowsInfo` dialog refs with their condition index and line. */
-  knowsInfoRefs: Array<{ index: number; dialogRef: string; line?: number }>;
+  /** Non-empty `Npc_KnowsInfo` dialog refs, with the line each was written on. */
+  knowsInfoRefs: Array<{ dialogRef: string; line?: number }>;
   /** Literal, non-empty voice ids in encounter order, with the line each was written on. */
   /** Literal, non-empty voice ids, each with the subtitle written beside it —
    *  the text is what `output-unit-stale` compares against the OU database. */
