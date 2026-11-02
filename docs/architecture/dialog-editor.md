@@ -99,6 +99,16 @@ when the timer was scheduled:
   (the resurrection vector) was removed — out-of-range updates are no-ops (and push
   no phantom snapshot, above).
 
+## Rename is file-local
+
+Renaming a dialog (`historyActions.renameDialog`) rewrites only the active
+file's model — its dialogs, derived functions, choice targets and `dialogRef`s.
+Another file's `Npc_KnowsInfo(other, DIA_Old)` is not touched, so the rename
+confirmation lists every file in `projectStore.parsedFiles` whose
+`Npc_KnowsInfoCondition.dialogRef` names the dialog (case-insensitively, active
+file excluded) and asks for a manual update there. It is a warning, not a
+refusal: rewriting other files' models during a rename is out of scope.
+
 ## Drag-and-drop
 
 Action/condition reordering uses **`@hello-pangea/dnd`** (a maintained drop-in
