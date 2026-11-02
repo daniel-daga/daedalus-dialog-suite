@@ -605,6 +605,13 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       // Recent projects are persisted main-side inside project:openFolderDialog;
       // the renderer no longer whitelists or records recents (security item 1.1).
 
+      // The session changes here, so the stale-write guard's resets belong here
+      // too: File ▸ Open and Reload both come through this function and neither
+      // closes the project, so a parse in flight across it would otherwise keep
+      // an unchanged stamp and land its pre-open model in the new cache (#471).
+      inFlight.clear();
+      stampAllFiles();
+      resetMergeCache();
       resetParsedFileRecency();
       set({
         projectPath: descriptor.projectRoot,

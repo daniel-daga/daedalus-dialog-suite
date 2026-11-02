@@ -2,6 +2,7 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #471: Reload no longer keeps a model parsed before the reload; opening a project resets the stale-parse guard
 - #470: A project's files are read in one fixed order, so which file owns a twice-declared name no longer changes between opens
 - #490: The NPC editor refuses a save when the NPC body changed since the form read it
 - #489: A routine save refuses a draft whose function changed, instead of rewriting the wrong lines
