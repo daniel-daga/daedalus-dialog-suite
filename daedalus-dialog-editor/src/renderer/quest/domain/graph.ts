@@ -15,6 +15,7 @@
 
 import type { SemanticModel } from '../../types/global';
 import type { QuestGraphBuildOptions, QuestGraphData } from '../../types/questGraph';
+import { getQuestMisVariableName } from '../../utils/questIdentity';
 import { buildQuestEdges } from './questEdgeBuilding';
 import { filterGraph, materializeQuestNodes } from './questLayout';
 import { identifyQuestNodes } from './questNodeIdentification';
@@ -33,7 +34,7 @@ export const buildQuestGraph = (
     return { nodes: [], edges: [] };
   }
 
-  const misVarName = questName.replace('TOPIC_', 'MIS_');
+  const misVarName = getQuestMisVariableName(questName);
   const { nodeDataMap, producersByVariableAndValue } = identifyQuestNodes(
     semanticModel,
     questName,

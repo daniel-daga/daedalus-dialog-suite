@@ -98,6 +98,43 @@ describe('questGraphUtils - Variable Dependencies', () => {
         expect(indirectEdge).toBeDefined();
     });
 
+    it('should give a Topic_-spelled quest the same MIS edge as its TOPIC_ twin', () => {
+        const misEdge = (questName: string) => {
+            const functions = [
+                {
+                    name: 'DIA_Zettel_Done_Info',
+                    actions: [
+                        { type: 'LogSetTopicStatus', topic: questName, status: 'LOG_SUCCESS' },
+                        { type: 'LogEntry', topic: questName, text: 'Ich habe die Zettel.' }
+                    ]
+                },
+                {
+                    name: 'DIA_Zettel_After_Info',
+                    conditions: [
+                        { type: 'VariableCondition', variableName: 'MIS_Zettel', operator: '==', value: 'LOG_SUCCESS' }
+                    ],
+                    actions: [
+                        { type: 'LogEntry', topic: questName, text: 'Der naechste Hinweis.' }
+                    ]
+                }
+            ];
+            const dialogs = [
+                { name: 'DIA_Zettel_Done', properties: { information: 'DIA_Zettel_Done_Info', npc: 'NPC_Test' } },
+                { name: 'DIA_Zettel_After', properties: { information: 'DIA_Zettel_After_Info', npc: 'NPC_Test' } }
+            ];
+
+            const model = createMockModel(functions, dialogs);
+            model.variables = { MIS_Zettel: { name: 'MIS_Zettel', type: 'int' } } as never;
+
+            return buildQuestGraph(model, questName).edges.find(
+                (edge) => edge.source === 'DIA_Zettel_Done_Info' && edge.target === 'DIA_Zettel_After_Info'
+            );
+        };
+
+        expect(misEdge('TOPIC_Zettel')).toBeDefined();
+        expect(misEdge('Topic_Zettel')).toEqual(misEdge('TOPIC_Zettel'));
+    });
+
     it('should create external condition nodes for unresolved item pickup prerequisites', () => {
         const questName = 'TOPIC_FETCH';
 
