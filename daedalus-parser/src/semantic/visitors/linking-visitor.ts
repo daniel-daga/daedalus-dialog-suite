@@ -155,7 +155,10 @@ export class LinkingVisitor {
     if (type === 'instance_declaration') {
       const nameNode = node.childForFieldName('name');
       if (nameNode) {
-        this.currentInstance = this.dialogs[nameNode.text];
+        const dialog = this.dialogs[nameNode.text];
+        // Pass 1 keeps the first declaration of a repeated name and flags the
+        // rest (#447); the rejected body must not be projected into it.
+        this.currentInstance = dialog?.range?.startIndex === node.startIndex ? dialog : null;
         if (this.currentInstance) {
           this.captureDialogBodyComments(node, this.currentInstance);
         }
@@ -166,7 +169,9 @@ export class LinkingVisitor {
     if (type === 'function_declaration') {
       const nameNode = node.childForFieldName('name');
       if (!nameNode) return;
-      this.currentFunction = this.functions[nameNode.text];
+      const stored = this.functions[nameNode.text];
+      // Same rule for functions: only the declaration pass 1 stored is analysed.
+      this.currentFunction = stored?.range?.startIndex === node.startIndex ? stored : null;
       const body = node.childForFieldName('body');
       if (this.currentFunction && body) {
         this.currentFunction.hasExplicitBodyContent = body.namedChildren.length > 0;

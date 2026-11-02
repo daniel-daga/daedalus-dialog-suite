@@ -18,11 +18,13 @@ import { captureDeclarationHeader, captureDeclarationSuffix, parameterKeyword } 
 export class DeclarationVisitor {
   private semanticModel: SemanticModel;
   private functionNameMap: Map<string, string>;
+  private declaredNames: Record<string, Record<string, true>>;
   private pendingLeadingComments: string[];
 
   constructor(semanticModel: SemanticModel, functionNameMap: Map<string, string>) {
     this.semanticModel = semanticModel;
     this.functionNameMap = functionNameMap;
+    this.declaredNames = createNameRecord();
     this.pendingLeadingComments = [];
   }
 
@@ -98,6 +100,9 @@ export class DeclarationVisitor {
       const typeNode = node.childForFieldName('return_type');
       const keywordNode = node.childForFieldName('keyword');
       if (nameNode && typeNode) {
+        if (!this.claimDeclarationName('function', nameNode.text, node)) {
+          return;
+        }
         const func = new DialogFunction(nameNode.text, typeNode.text);
         const sourceHeader = captureDeclarationHeader(node);
         if (sourceHeader) func.sourceHeader = sourceHeader;
@@ -115,13 +120,6 @@ export class DeclarationVisitor {
         func.leadingComments = [...this.pendingLeadingComments];
         func.range = { startIndex: node.startIndex, endIndex: node.endIndex };
         func.line = node.startPosition.row + 1;
-        if (this.functionNameMap.has(func.name.toLowerCase())) {
-          // Daedalus names are case-insensitive and the engine rejects a second
-          // declaration. Keep the first and flag the second, so a save refuses
-          // instead of dropping it.
-          this.recordDuplicateFunction(func.name, node);
-          return;
-        }
         this.semanticModel.functions[func.name] = func;
         this.semanticModel.declarationOrder?.push({ type: 'function', name: func.name });
         this.functionNameMap.set(func.name.toLowerCase(), func.name);
@@ -135,6 +133,10 @@ export class DeclarationVisitor {
         const parentType = parentNode ? parentNode.text : '';
         const isDialogInstance = parentType.toUpperCase() === 'C_INFO';
 
+        if (!this.claimDeclarationName(isDialogInstance ? 'dialog' : 'instance', nameNode.text, node)) {
+          return;
+        }
+
         if (isDialogInstance) {
           const dialog = new Dialog(nameNode.text, parentNode ? parentNode.text : null, () => this.semanticModel.functions);
           const sourceHeader = captureDeclarationHeader(node);
@@ -147,6 +149,7 @@ export class DeclarationVisitor {
           }
           dialog.spaceBeforeParen = new RegExp(`${nameNode.text}\\s+\\(`).test(firstLine);
           dialog.leadingComments = [...this.pendingLeadingComments];
+          dialog.range = { startIndex: node.startIndex, endIndex: node.endIndex };
           dialog.line = node.startPosition.row + 1;
           this.semanticModel.dialogs[dialog.name] = dialog;
           this.semanticModel.declarationOrder?.push({ type: 'dialog', name: dialog.name });
@@ -202,6 +205,9 @@ export class DeclarationVisitor {
     } else if (node.type === 'class_declaration') {
       const nameNode = node.childForFieldName('name');
       if (nameNode) {
+        if (!this.claimDeclarationName('class', nameNode.text, node)) {
+          return;
+        }
         const globalClass = new GlobalClass(nameNode.text);
         globalClass.sourceText = node.text;
         globalClass.leadingComments = [...this.pendingLeadingComments];
@@ -223,6 +229,9 @@ export class DeclarationVisitor {
       const nameNode = node.childForFieldName('name');
       const parentNode = node.childForFieldName('parent');
       if (nameNode) {
+        if (!this.claimDeclarationName('prototype', nameNode.text, node)) {
+          return;
+        }
         const prototype = new GlobalPrototype(nameNode.text, parentNode ? parentNode.text : '');
         prototype.sourceText = node.text;
         prototype.leadingComments = [...this.pendingLeadingComments];
@@ -311,14 +320,31 @@ export class DeclarationVisitor {
     }
   }
 
-  private recordDuplicateFunction(name: string, node: TreeSitterNode): void {
+  /**
+   * Claim `name` for `kind` in the pass-1 dictionary. Daedalus names are
+   * case-insensitive and the engine rejects a second declaration, so a name
+   * already claimed is recorded as an error and the caller keeps the first,
+   * so a save refuses instead of dropping or merging the second (#447).
+   */
+  private claimDeclarationName(kind: string, name: string, node: TreeSitterNode): boolean {
+    const names = (this.declaredNames[kind] ??= createNameRecord<true>());
+    const key = name.toLowerCase();
+    if (names[key]) {
+      this.recordDuplicateDeclaration(kind, name, node);
+      return false;
+    }
+    names[key] = true;
+    return true;
+  }
+
+  private recordDuplicateDeclaration(kind: string, name: string, node: TreeSitterNode): void {
     if (!this.semanticModel.errors) {
       this.semanticModel.errors = [];
     }
     this.semanticModel.hasErrors = true;
     this.semanticModel.errors.push({
       type: 'duplicate_declaration',
-      message: `Duplicate declaration of function ${name} at line ${node.startPosition.row + 1}, column ${node.startPosition.column + 1}`,
+      message: `Duplicate declaration of ${kind} ${name} at line ${node.startPosition.row + 1}, column ${node.startPosition.column + 1}`,
       position: {
         row: node.startPosition.row + 1,
         column: node.startPosition.column + 1
@@ -478,6 +504,9 @@ export class DeclarationVisitor {
     name: string
   ): GlobalConstant | GlobalVariable | undefined {
     if (keyword === 'const') {
+      if (!this.claimDeclarationName('constant', name, node)) {
+        return undefined;
+      }
       const valueNode = node.childForFieldName('value');
       let value: string | number | boolean = 0;
       const isLiteral = valueNode?.type === 'string';
@@ -494,6 +523,9 @@ export class DeclarationVisitor {
       return constant;
     }
     if (keyword === 'var') {
+      if (!this.claimDeclarationName('variable', name, node)) {
+        return undefined;
+      }
       const variable = new GlobalVariable(name, type);
       if (!this.semanticModel.variables) {
         this.semanticModel.variables = createNameRecord();
