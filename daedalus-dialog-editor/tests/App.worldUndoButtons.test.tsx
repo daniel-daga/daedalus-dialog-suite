@@ -8,13 +8,14 @@
  * (level-editor.md §17).
  */
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import App from '../src/renderer/App';
 import { useEditorStore } from '../src/renderer/store/editorStore';
 import { useHistoryStore } from '../src/renderer/store/historyStore';
 import { useProjectStore } from '../src/renderer/store/projectStore';
 import { useUISelectionStore } from '../src/renderer/store/uiSelectionStore';
+import { registerPendingEditFlusher } from '../src/renderer/utils/pendingEditFlushRegistry';
 
 jest.mock('../src/renderer/store/storeSync', () => ({
   initStoreSync: jest.fn(),
@@ -62,5 +63,28 @@ describe('the app-bar undo/redo buttons', () => {
 
     expect(screen.getByTestId('appbar-undo-button')).toBeDisabled();
     expect(screen.getByTestId('appbar-redo-button')).toBeDisabled();
+  });
+
+  it('flush a pending debounced edit before undoing or redoing (#451)', () => {
+    useUISelectionStore.setState({ activeView: 'dialog' } as never);
+    const calls: string[] = [];
+    const unregister = registerPendingEditFlusher(() => { calls.push('flush'); });
+    const undo = jest.spyOn(useHistoryStore.getState(), 'undo').mockImplementation(() => { calls.push('undo'); });
+    const redo = jest.spyOn(useHistoryStore.getState(), 'redo').mockImplementation(() => { calls.push('redo'); });
+    render(<App />);
+
+    // Left un-flushed, the ActionCard's 300 ms timer writes the typed text back
+    // after the undo as a fresh edit — re-consuming the undo step and clearing
+    // the redo stack the user was about to use.
+    fireEvent.click(screen.getByTestId('appbar-undo-button'));
+    expect(calls).toEqual(['flush', 'undo']);
+
+    calls.length = 0;
+    fireEvent.click(screen.getByTestId('appbar-redo-button'));
+    expect(calls).toEqual(['flush', 'redo']);
+
+    undo.mockRestore();
+    redo.mockRestore();
+    unregister();
   });
 });

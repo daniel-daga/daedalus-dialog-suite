@@ -311,7 +311,13 @@ const AppContent: React.FC<AppProps> = ({ buildChanges = [] }) => {
                     color="inherit"
                     aria-label="Undo"
                     disabled={!canUndo || worldViewActive}
-                    onClick={() => undo(activeFile)}
+                    onClick={() => {
+                      // A click within the 300 ms debounce would otherwise let
+                      // the component's timer write its text back as a fresh
+                      // edit after the undo (#451).
+                      flushAllPendingEdits();
+                      undo(activeFile);
+                    }}
                     data-testid="appbar-undo-button"
                   >
                     <UndoIcon />
@@ -324,7 +330,10 @@ const AppContent: React.FC<AppProps> = ({ buildChanges = [] }) => {
                     color="inherit"
                     aria-label="Redo"
                     disabled={!canRedo || worldViewActive}
-                    onClick={() => redo(activeFile)}
+                    onClick={() => {
+                      flushAllPendingEdits();
+                      redo(activeFile);
+                    }}
                     sx={{ mr: 1 }}
                     data-testid="appbar-redo-button"
                   >
