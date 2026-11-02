@@ -2,6 +2,8 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #493: A `Topic_`-spelled quest keeps its MIS edges, so its diary stays in story order
+- #494: A refused quest title save shows its error instead of leaving the field open
 - #488: A quest that ends inside an if no longer shows "In Progress", and its upgrade sets MIS_
 - #474: Worker docs: the parser pool starts on the first parse request, not at module load
 - #479: The security doc credits the settings/options shape checks to the one save handler that makes them

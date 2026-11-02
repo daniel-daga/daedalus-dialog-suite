@@ -114,9 +114,9 @@ const QuestDetails: React.FC<QuestDetailsProps> = ({ semanticModel, questName })
   const hasEnding = diary.some((item) => item.kind === 'state' && item.state !== 'running');
 
   const handleSaveTitle = async () => {
-      if (!analysis || !analysis.filePaths.topic || !questName) return;
-      await updateGlobalConstant(questName, editTitle, analysis.filePaths.topic);
-      setIsEditingTitle(false);
+      const declarationFile = analysis?.filePaths.topic;
+      if (!questName || !declarationFile) return;
+      if (await write(() => updateGlobalConstant(questName, editTitle, declarationFile))) setIsEditingTitle(false);
   };
 
   if (!questName) {
