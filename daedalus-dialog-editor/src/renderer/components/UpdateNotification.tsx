@@ -13,6 +13,8 @@ import {
 } from '@mui/material';
 import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
 import { UpdateCheckResult } from '../types/global';
+import { useFileStore } from '../store/fileStore';
+import { flushAllPendingEdits } from '../utils/pendingEditFlushRegistry';
 
 type UpdateState =
   | { kind: 'idle' }
@@ -85,6 +87,15 @@ const UpdateNotification: React.FC<UpdateNotificationProps> = ({ triggerCheck })
     if (state.kind !== 'ready-to-install') return;
     setState({ kind: 'installing' });
     try {
+      // The install exits the process without going through the close guard,
+      // so unsaved work would go with it (#475).
+      flushAllPendingEdits();
+      const store = useFileStore.getState();
+      for (const [filePath, fileState] of store.openFiles) {
+        if (!fileState.isDirty || fileState.externalConflict) continue;
+        const result = await store.saveFile(filePath);
+        if (!result.success) throw new Error(`Could not save ${filePath}, so the update was not installed.`);
+      }
       await window.editorAPI.installUpdate(state.installerPath);
     } catch (err) {
       setState({ kind: 'error', message: err instanceof Error ? err.message : 'Install failed' });
