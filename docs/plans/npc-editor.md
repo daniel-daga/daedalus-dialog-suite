@@ -65,7 +65,8 @@ but not editable through a form control.
 
 **Writing back patches, it does not regenerate.** An edit replaces the source
 range of the statement it changed; a new field is inserted after the last
-statement of its kind (or before the closing brace); a removed one deletes its
+statement of its kind the batch keeps (or before the closing brace, when the
+batch removes every one); a removed one deletes its
 range. Comments, blank lines, statement order and every unrecognised statement
 survive byte for byte. This keeps the save pipeline's contract
 (`docs/architecture/save-pipeline.md`) and the fidelity bar in
@@ -434,6 +435,11 @@ adds:
    declares is refused before anything is written. `components/routineSave.ts`'s
    `createRoutine` saves, re-indexes the file, and records the new routine in
    `projectStore` (`registerRoutine`) so the list shows it without a reload.
+   That index is also what the NPC editor's start-routine field reads (#429):
+   the field sits below the Routines list — create first, then pick — and it
+   fills itself with the first routine as soon as one exists, because an NPC
+   with no `daily_routine` cannot spawn. The field offers the NPC's own
+   routines as well as the project's, which is stale until the next load.
 6. **Editing without a world** (#317). **Built 2026-09-28** as the same panel
    in a modal, `RoutineEditorDialog`, opened by "Edit" beside each routine
    in the NPC editor's routines section. That section now follows the index,

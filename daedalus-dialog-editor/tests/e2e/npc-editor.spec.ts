@@ -376,3 +376,53 @@ test.describe('NPC editor: preview', () => {
     await expect(preview.getByTestId('npc-animation-controls')).toHaveCount(0);
   });
 });
+
+// #429: an NPC with a routine but no `daily_routine` never gets a start
+// routine, so the engine cannot spawn it. The field is chosen below the
+// Routines list — create first, then pick — and fills itself with the first
+// routine as soon as one is created.
+const NPC_WITHOUT_ROUTINE = `INSTANCE BAU_901_Bauer (C_NPC)
+{
+	name = "Bauer";
+	id = 901;
+};
+`;
+
+const ACTIVITY_FILE = `FUNC VOID TA_Stand_Guarding(var int start_h, var int start_m, var int stop_h, var int stop_m, var string waypoint)
+{
+};
+`;
+
+test.describe('NPC editor: start routine', () => {
+  test('fills the start routine from the routine created below it', async ({ page }) => {
+    await openProject(page, { 'NPC/BAU_901_Bauer.d': NPC_WITHOUT_ROUTINE, 'AI/TA.d': ACTIVITY_FILE });
+    await page.getByRole('button', { name: 'Edit NPC BAU_901_Bauer' }).click();
+    const editor = page.getByRole('dialog', { name: /BAU_901_Bauer/ });
+    await expect(editor).toBeVisible();
+
+    // Below the list, because the routine it names does not exist yet.
+    await expect(editor.getByLabel('Daily routine')).toHaveValue('');
+    const routines = (await editor.getByText('Routines', { exact: true }).boundingBox())!;
+    const field = (await editor.getByLabel('Daily routine').boundingBox())!;
+    expect(field.y).toBeGreaterThan(routines.y);
+
+    await editor.getByRole('button', { name: 'Create routine' }).click();
+    const routineEditor = page.getByRole('dialog', { name: 'Routines of BAU_901_Bauer' });
+    const form = routineEditor.getByRole('group', { name: 'New routine' });
+    await form.getByLabel('Activity', { exact: true }).fill('TA_Stand_Guarding');
+    await page.getByRole('option', { name: 'TA_Stand_Guarding', exact: true }).click();
+    await form.getByLabel('Waypoint').fill('WP_FARM');
+    await form.getByRole('button', { name: 'Create daily routine' }).click();
+    await expect(routineEditor.getByRole('button', { name: 'Daily: RTN_START_901' })).toHaveAttribute('aria-pressed', 'true');
+    await routineEditor.getByRole('button', { name: 'Cancel' }).click();
+    await expect(routineEditor).toBeHidden();
+
+    // Filled without being touched, and offered even once cleared: the
+    // routine created here is not in the project's routine list until the
+    // next index load.
+    await expect(editor.getByLabel('Daily routine')).toHaveValue('RTN_START_901');
+    await editor.getByLabel('Daily routine').fill('');
+    await editor.getByLabel('Daily routine').press('ArrowDown');
+    await expect(page.getByRole('option', { name: 'RTN_START_901' })).toBeVisible();
+  });
+});

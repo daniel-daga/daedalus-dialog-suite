@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Autocomplete,
@@ -58,6 +58,10 @@ const GROUPS: Array<{ id: NpcFormField['group']; title: string }> = [
   { id: 'visual', title: 'Visual (B_SetNpcVisual)' },
   { id: 'equipment', title: 'Equipment (EquipItem)' },
 ];
+
+// #429: the start routine is chosen below the Routines list — create first,
+// then pick — because a routine is what makes an NPC spawn.
+const DAILY_ROUTINE_FIELD = NPC_FORM_FIELDS.find((field) => field.key === 'dailyRoutine')!;
 
 function findInstanceKey(model: SemanticModel, npcName: string): string | undefined {
   const upper = npcName.toUpperCase();
@@ -283,11 +287,6 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
     return () => { cancelled = true; };
   }, [npcName, filePath]);
 
-  const options = useMemo(
-    () => Object.fromEntries(NPC_FORM_FIELDS.map((field) => [field.key, optionsFor(field)])),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- parseGeneration invalidates optionsFor's project-store snapshot.
-    [parseGeneration],
-  );
   useEffect(() => {
     let current = true;
     setPreviewAssetsReady(false);
@@ -329,6 +328,26 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
       statesByNpc: project.routineStateIndex,
     }, npcName);
   }, [npcName, routineSites]);
+  const options = useMemo(() => {
+    const byKey: Record<string, string[]> = Object.fromEntries(
+      NPC_FORM_FIELDS.map((field) => [field.key, optionsFor(field)]),
+    );
+    // #429: a routine created in this dialog is not in the project's
+    // routineList until the next index load, and it is the one to pick.
+    byKey.dailyRoutine = [...new Set([...byKey.dailyRoutine, ...routines.map((r) => r.routine)])];
+    return byKey;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- parseGeneration invalidates optionsFor's project-store snapshot.
+  }, [parseGeneration, routines]);
+  // #429: the first routine is the start routine, so it fills the field once
+  // it exists — an NPC without one cannot spawn. A value the user cleared
+  // stays cleared, which is why this happens once per routine name.
+  const autoFilledRoutine = useRef<string | null>(null);
+  useEffect(() => {
+    const first = routines[0]?.routine;
+    if (!first || initial.dailyRoutine || values.dailyRoutine || autoFilledRoutine.current === first) return;
+    autoFilledRoutine.current = first;
+    setValues((current) => ({ ...current, dailyRoutine: first }));
+  }, [routines, initial.dailyRoutine, values.dailyRoutine]);
   const invalid = definition ? validateNpcForm(values) : null;
   // Rebuilt as background ingestion parses more of the project.
   const lookupConstant = useMemo(projectConstantLookup, [parseGeneration]);
@@ -464,7 +483,7 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
                 <Box key={group.id} sx={{ mb: 1 }}>
                   <Typography variant="subtitle2" sx={{ mb: 0.5 }}>{group.title}</Typography>
                   <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 1 }}>
-                    {NPC_FORM_FIELDS.filter((field) => field.group === group.id).map(renderField)}
+                    {NPC_FORM_FIELDS.filter((field) => field.group === group.id && field !== DAILY_ROUTINE_FIELD).map(renderField)}
                   </Box>
                 </Box>
               ))}
@@ -480,6 +499,12 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
                 onCreateRoutine={() => setEditingRoutine('')}
                 onEditRoutineInWorld={editRoutineInWorld}
               />
+              <Box sx={{ mb: 1 }}>
+                <Typography variant="subtitle2" sx={{ mb: 0.5 }}>Start routine</Typography>
+                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 1 }}>
+                  {renderField(DAILY_ROUTINE_FIELD)}
+                </Box>
+              </Box>
               {uncovered.length > 0 && (
                 <Box>
                   <Typography variant="subtitle2">Other statements</Typography>
