@@ -40,7 +40,7 @@ import {
 } from './ipcValidation';
 import { appendInsertNpcFlow } from './services/AppendInsertNpcFlow';
 import { indexFile } from './utils/semanticMetadataUtils';
-import { findInstallShaped, ProjectConfigService } from './services/ProjectConfigService';
+import { findInstallShaped, projectFileKey, ProjectConfigService } from './services/ProjectConfigService';
 import { runGmbtCompile, startGmbtQuickTest } from './services/GmbtService';
 import { readGmbtDefaultWorld } from './services/gmbtProject';
 import { readProjectOutputUnits, updateProjectOutputUnits } from './services/outputUnits';
@@ -106,22 +106,6 @@ let activeProjectFileKey: string | null = null;
 function allowWorldFile(worldPath: string): void {
   pathValidator.addAllowedFile(worldPath);
   pathValidator.addAllowedFile(worldFoldersService.sidecarPath(worldPath));
-}
-
-/**
- * One spelling per file. `openOrMigrate` realpaths the project root, so the
- * descriptor hands back a resolved path (`/private/var` on macOS, a junction or
- * an 8.3 name on Windows) while a caller may hand back the spelling it was
- * given; both have to reach the same registry key. A path that does not exist
- * yet keeps its lexical spelling, which is all there is to compare.
- */
-function projectFileKey(filePath: string): string {
-  const resolved = path.normalize(path.resolve(filePath));
-  let canonical = resolved;
-  try {
-    canonical = fs.realpathSync(resolved);
-  } catch { /* not on disk yet */ }
-  return process.platform === 'win32' ? canonical.toLowerCase() : canonical;
 }
 
 function absoluteSourceKey(source: string): string {
