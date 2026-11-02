@@ -201,21 +201,20 @@ export function computeDialogDeletionSet(
   // historical callSites index) and conservatively retain a target whenever
   // its identifier appears in an unstructured representation. String or
   // comment matches can retain extra declarations, but cannot destroy source.
+  //
+  // Dialogs are not scanned here: their information/condition references and
+  // choices are covered structurally above, and nothing else in a dialog is
+  // code — prose in a property cannot keep a function alive (#516).
   let changed: boolean;
   do {
     changed = false;
     for (const name of [...deletable]) {
       const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const reference = new RegExp(`(^|[^\\p{L}\\p{N}_])${escaped}($|[^\\p{L}\\p{N}_])`, 'iu');
-      const referencedByFunction = Object.entries(model.functions || {}).some(([caller, func]) => {
+      const referencedBySurvivor = Object.entries(model.functions || {}).some(([caller, func]) => {
         if (deletable.has(caller)) return false;
         return reference.test(JSON.stringify([func.actions || [], func.conditions || []]));
       });
-      const referencedByDialog = Object.entries(model.dialogs || {}).some(([survivor, other]) => {
-        if (survivor === dialogName) return false;
-        return reference.test(JSON.stringify([other.properties || {}, (other as any).actions || []]));
-      });
-      const referencedBySurvivor = referencedByFunction || referencedByDialog;
       if (referencedBySurvivor) {
         deletable.delete(name);
         changed = true;

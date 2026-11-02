@@ -406,6 +406,60 @@ describe('historyActions – removeDialog', () => {
     expect(getModel()?.dialogs['DIA_Test']).toBeUndefined();
   });
 
+  // #516: a dialog reaches code only through its information/condition
+  // properties (collectDialogOwnedFunctions). The removed scan stringified every
+  // surviving dialog's properties, so prose that happened to spell a function
+  // name kept that function alive as an orphan.
+  it("does not retain a function whose name only appears in a surviving dialog's description", () => {
+    const emptyFunc = (name: string, actions: any[] = []) => ({ name, returnType: 'VOID', actions, conditions: [], calls: [] });
+    useFileStore.setState((state) => {
+      const fileState = state.openFiles.get(filePath)!;
+      fileState.semanticModel = {
+        ...fileState.semanticModel,
+        dialogs: {
+          DIA_Test: { properties: { npc: 'NPC', information: 'DIA_Test_Info' } },
+          DIA_Other: {
+            properties: { npc: 'NPC', information: 'DIA_Other_Info', description: 'Start over with the farmer' }
+          },
+        },
+        functions: {
+          DIA_Test_Info: emptyFunc('DIA_Test_Info', [{ type: 'Choice', targetFunction: 'Start' }]),
+          Start: emptyFunc('Start'),
+          DIA_Other_Info: emptyFunc('DIA_Other_Info'),
+        },
+      } as any;
+    });
+
+    historyActions.removeDialog(filePath, 'DIA_Test');
+
+    expect(getModel()?.functions.Start).toBeUndefined();
+  });
+
+  it("retains a function named only by a surviving dialog's information or condition property", () => {
+    const emptyFunc = (name: string, actions: any[] = []) => ({ name, returnType: 'VOID', actions, conditions: [], calls: [] });
+    useFileStore.setState((state) => {
+      const fileState = state.openFiles.get(filePath)!;
+      fileState.semanticModel = {
+        ...fileState.semanticModel,
+        dialogs: {
+          DIA_Test: { properties: { npc: 'NPC', information: 'DIA_Test_Info' } },
+          DIA_Other: { properties: { npc: 'NPC', information: 'DIA_Other_Info', condition: 'Shared_Condition' } },
+        },
+        functions: {
+          // Owned by the deleted dialog: reachable as one of its choice targets.
+          DIA_Test_Info: emptyFunc('DIA_Test_Info', [{ type: 'Choice', targetFunction: 'Shared_Condition' }]),
+          Shared_Condition: emptyFunc('Shared_Condition'),
+          DIA_Other_Info: emptyFunc('DIA_Other_Info'),
+        },
+      } as any;
+    });
+
+    historyActions.removeDialog(filePath, 'DIA_Test');
+
+    expect(getModel()?.functions.Shared_Condition).toBeDefined();
+    expect(getModel()?.dialogs['DIA_Test']).toBeUndefined();
+  });
+
   it('preserves class/prototype declarationOrder entries and maps untouched by a dialog deletion', () => {
     // Parser fix P1: declarationOrder entries can now be 'class'/'prototype'.
     // removeDialog filters declarationOrder by name, so unrelated entry types
