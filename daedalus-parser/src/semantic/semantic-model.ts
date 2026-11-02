@@ -1254,6 +1254,11 @@ export interface SemanticModel {
     name: string;
     /** Blank lines before the declaration and its leading comments, as parsed (#286) */
     blankLinesBefore?: number;
+    /**
+     * The whitespace the source put between this declaration and the previous
+     * one standing on the same line (#397). Absent when they did not share one.
+     */
+    sameLineBefore?: string;
   }>;
   constants?: { [key: string]: GlobalConstant };
   variables?: { [key: string]: GlobalVariable };

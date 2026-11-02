@@ -464,7 +464,8 @@ function of another name (#395).
    comparison this tier used to be could not see, such as an unassigned byte
    `0x81` decoded to U+FFFD and written back as `0x9D`, now reports drift.
    Indentation preservation is the remaining gap (known:
-   `CreateTopic`/`LogEntry` blank-line padding, N3).
+   `CreateTopic`/`LogEntry` blank-line padding, N3; the residues are listed
+   under the layout paragraph below).
    **Blank lines between top-level declarations are kept (#286).** The
    declaration pass records on each `declarationOrder` entry the blank lines
    before the declaration and its leading comments (`blankLinesBefore`), and
@@ -477,11 +478,17 @@ function of another name (#395).
    **The layout the source had is re-emitted (#440).** The visitor records
    `lineEnding` from the file's first line break and the generator applies it
    once to the whole result, so a CRLF file stays CRLF; `emitOrdered` joins
-   two declarations whose `position.startLine` (or `line`) is the same instead
-   of breaking the line; the action loop puts each entry back on its `line`,
+   two declarations the source put on one line instead of breaking the line,
+   with the whitespace `sameLineBefore` recorded between them (#397), so a
+   tab-aligned pair stays aligned and a sibling after a multi-line
+   declaration's closing `};` stays on that line; the action loop puts each
+   entry back on its `line`,
    emitting the blank lines of a gap and continuing the previous line when the
    next entry starts on the same one; and `Dialog.propertyBlankLinesBefore`
-   records the gaps in a `C_INFO` property list.
+   records the gaps in a `C_INFO` property list. What a save still reflows:
+   a declaration's own leading indentation is not captured, a declaration after
+   an inline `/* */` between same-line siblings moves to the next line, and a
+   space-indented body is re-indented to the configured `indentChar`.
 3. **Semantic drift + idempotence:** model summaries (including
    class/prototype/global name sets) across reparse.
 
