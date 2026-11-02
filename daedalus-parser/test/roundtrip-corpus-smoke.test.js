@@ -30,17 +30,23 @@ const GREEN_FIXTURES = [
   'globals.d',           // fix-01 step 9 (P6 trailing/EOF comment preservation)
   'items-npcs-mds.d',    // fix-01 step 9 (P6 trailing comment preservation)
   'encoding-1252.d',     // fix-01 step 9 (P6 comment preservation, windows-1252 encoded)
-  'blank-lines.d'        // #286 blank lines between top-level declarations
+  'blank-lines.d',       // #286 blank lines between top-level declarations
+  'crlf-layout.d',       // #440 a CRLF file keeps its line endings
+  'body-blank-line.d',   // #440 a blank line inside a body
+  'body-same-line-statements.d', // #440 two statements on one line
+  'body-trailing-comment.d',     // #440 a trailing statement comment
+  'same-line-declarations.d',    // #440 two declarations on one line
+  'property-gaps.d'              // #440 a blank line inside a C_INFO property list
 ];
 
 // The whole synthetic corpus is now Tier-1 token-clean. New fidelity gaps land
 // here as a fresh red fixture; fix and promote to GREEN in the same change.
 const KNOWN_RED_FIXTURES = [];
 
-// Tier-2 byte ratchet: fixtures that must also round-trip byte-identical
-// (after line-ending normalization). Byte drift is otherwise only reported;
-// these fixtures pin the formatting fixes that have landed so a regression
-// fails here instead of vanishing into a report.
+// Tier-2 byte ratchet: fixtures that must round-trip byte-identical, line
+// endings included. Byte drift is otherwise only reported; these fixtures pin
+// the formatting fixes that have landed so a regression fails here instead of
+// vanishing into a report.
 const BYTE_EXACT_FIXTURES = [
   'arity-variants.d',
   'case-drift.d',
@@ -50,7 +56,14 @@ const BYTE_EXACT_FIXTURES = [
   'globals.d',
   'items-npcs-mds.d',    // #286 blank line between a comment and its declaration
   'numeric-args.d',
-  'blank-lines.d'        // #286
+  'blank-lines.d',       // #286
+  'crlf-layout.d',       // #440 line endings are the file's own
+  'body-blank-line.d',   // #440
+  'body-same-line-statements.d', // #440
+  'body-trailing-comment.d',     // #440
+  'same-line-declarations.d',    // #440
+  'property-gaps.d',             // #440
+  'comments.d'                   // #440 a trailing statement comment and an inline subtitle
 ];
 
 const corpusDir = path.resolve(__dirname, 'fixtures', 'corpus');

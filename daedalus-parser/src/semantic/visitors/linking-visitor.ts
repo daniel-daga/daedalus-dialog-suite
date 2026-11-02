@@ -304,8 +304,18 @@ export class LinkingVisitor {
     }
     // Metadata comes only from direct simple writes, even in raw mode. It is
     // not an evaluation of the constructor's final runtime state.
+    // #440: the blank lines before a property are recorded the way #286 does
+    // for declarations, measured from the previous statement or comment.
+    let previousEndRow = body.startPosition.row;
     for (const statement of body.namedChildren) {
-      if (this.isDirectPropertyAssignment(statement)) this.processAssignment(statement);
+      if (this.isDirectPropertyAssignment(statement)) {
+        const blankLines = statement.startPosition.row - previousEndRow - 1;
+        if (blankLines > 0) {
+          (dialog.propertyBlankLinesBefore ??= {})[statement.childForFieldName('left')!.text] = blankLines;
+        }
+        this.processAssignment(statement);
+      }
+      previousEndRow = statement.endPosition.row;
     }
     if (!representable) {
       dialog.sourceBody = { text: body.text, propertyValues: snapshotDialogProperties(dialog.properties) };

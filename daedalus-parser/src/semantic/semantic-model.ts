@@ -1094,6 +1094,8 @@ export class Dialog {
   public propertyReferenceSpelling?: { [key: string]: string };
   /** Standalone comments after the last property, before the closing `};`. */
   public trailingBodyComments?: string[];
+  /** Blank lines before a C_INFO property, keyed by property name, as parsed (#440). */
+  public propertyBlankLinesBefore?: { [key: string]: number };
   /** Editable view of the current information function, or standalone legacy actions. */
   public actions!: DialogAction[];
   /** 1-based line the declaration starts on — its `instance` keyword (#267). */
@@ -1181,6 +1183,9 @@ export class Dialog {
     if (Array.isArray(json.trailingBodyComments)) {
       dialog.trailingBodyComments = json.trailingBodyComments;
     }
+    if (json.propertyBlankLinesBefore && typeof json.propertyBlankLinesBefore === 'object') {
+      dialog.propertyBlankLinesBefore = json.propertyBlankLinesBefore;
+    }
     if (typeof json.line === 'number') {
       dialog.line = json.line;
     }
@@ -1230,6 +1235,8 @@ export interface SemanticModel {
   animations?: { [key: string]: GlobalInstance };
   /** File-trailing comments (after the last declaration, at EOF). */
   trailingComments?: string[];
+  /** The file's own line ending, so a regenerated file keeps it (#440). */
+  lineEnding?: '\r\n' | '\n';
   errors?: SyntaxError[];
   hasErrors?: boolean;
 }
@@ -1254,6 +1261,7 @@ export function deserializeSemanticModel(json: any): SemanticModel {
     npcs: createNameRecord(),
     animations: createNameRecord(),
     trailingComments: json.trailingComments,
+    lineEnding: json.lineEnding,
     errors: json.errors,
     hasErrors: json.hasErrors
   };

@@ -44,6 +44,10 @@ export class SemanticModelBuilderVisitor {
    * First pass: Create all skeleton objects to ensure they exist before linking
    */
   pass1_createObjects(node: TreeSitterNode): void {
+    // #440: the file's own line ending, from its first line break, so a save
+    // writes the file back the way it was written.
+    const firstNewline = node.text.indexOf('\n');
+    this.semanticModel.lineEnding = firstNewline > 0 && node.text[firstNewline - 1] === '\r' ? '\r\n' : '\n';
     const declarationVisitor = new DeclarationVisitor(this.semanticModel, this.functionNameMap);
     declarationVisitor.visit(node);
   }

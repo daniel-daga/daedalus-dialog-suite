@@ -1,5 +1,8 @@
 * text eol=lf
 
+# Committed with its CRLF bytes intact: it is the #440 layout fixture.
+test/fixtures/corpus/crlf-layout.d -text
+
 src/*.json linguist-generated
 src/parser.c linguist-generated
 src/tree_sitter/* linguist-generated
