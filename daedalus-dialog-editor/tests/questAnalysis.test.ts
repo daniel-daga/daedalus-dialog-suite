@@ -189,6 +189,31 @@ describe('questAnalysis', () => {
             expect(result.lifecycleSource).toBe('mis');
         });
 
+        it('sees a completion written inside an if/else branch', () => {
+            const questName = 'TOPIC_CONDITIONAL';
+            const functions = [
+                {
+                    name: 'DIA_Conditional_Info',
+                    actions: [
+                        { type: 'CreateTopic', topic: questName },
+                        {
+                            type: 'ConditionalAction',
+                            condition: 'Npc_HasItems (other, ItMi_Nugget) >= 5',
+                            thenActions: [{ type: 'LogSetTopicStatus', topic: questName, status: 'LOG_SUCCESS' }],
+                            elseActions: [{ type: 'LogSetTopicStatus', topic: questName, status: 'LOG_FAILED' }]
+                        }
+                    ]
+                }
+            ];
+
+            const model = createMockModel(functions, [], [{ name: questName, value: 'Conditional' }], [{ name: 'MIS_CONDITIONAL', type: 'int' }]);
+            const result = analyzeQuest(model, questName);
+
+            expect(result.hasSuccess).toBe(true);
+            expect(result.hasFailed).toBe(true);
+            expect(result.status).toBe('implemented');
+        });
+
         it('should flag lifecycle conflicts when topic and MIS terminal states disagree', () => {
             const questName = 'TOPIC_CONFLICT';
             const constants = [{ name: questName, value: 'Conflict Quest' }];
@@ -229,6 +254,7 @@ describe('questAnalysis', () => {
                 { name: 'TOPIC_ENTRYONLY', value: 'Entry only', filePath: 'B.d' },
                 { name: 'TOPIC_ODDCOND', value: 'Odd cond', filePath: 'B.d' },
                 { name: 'TOPIC_PLUS', value: 'Compound assign', filePath: 'B.d' },
+                { name: 'TOPIC_NESTED', value: 'Nested ending', filePath: 'B.d' },
                 // Case-insensitive duplicate: first Object.entries match must win.
                 { name: 'TOPIC_DupCase', value: 'Dup first', filePath: 'C.d' },
                 { name: 'TOPIC_DUPCASE', value: 'Dup second', filePath: 'D.d' }
@@ -292,6 +318,19 @@ describe('questAnalysis', () => {
                     // Compound assignment operator: not a lifecycle signal per current rules.
                     name: 'F_Plus',
                     actions: [{ type: 'SetVariableAction', variableName: 'MIS_PLUS', operator: '+=', value: '1' }]
+                },
+                {
+                    // The ending sits inside a branch, not in the top-level list.
+                    name: 'F_Nested',
+                    actions: [
+                        { type: 'CreateTopic', topic: 'TOPIC_NESTED' },
+                        {
+                            type: 'ConditionalAction',
+                            condition: 'Npc_HasItems (other, ItMi_Nugget) >= 5',
+                            thenActions: [{ type: 'LogSetTopicStatus', topic: 'TOPIC_NESTED', status: 'LOG_SUCCESS' }],
+                            elseActions: []
+                        }
+                    ]
                 }
             ];
             const dialogs = [
@@ -313,6 +352,7 @@ describe('questAnalysis', () => {
             'TOPIC_ENTRYONLY',
             'TOPIC_ODDCOND',
             'TOPIC_PLUS',
+            'TOPIC_NESTED',
             'TOPIC_Dupcase', // exact-miss: exercises case-insensitive first-match on duplicates
             'TOPIC_UNDECLARED' // no constant, no signals at all
         ];
@@ -344,6 +384,9 @@ describe('questAnalysis', () => {
             expect(batch.get('TOPIC_ENTRYONLY')?.logicMethod).toBe('unknown');
             expect(batch.get('TOPIC_ODDCOND')?.logicMethod).toBe('unknown');
             expect(batch.get('TOPIC_PLUS')?.status).toBe('not_started');
+            // The batch walk sees the ending inside the if branch, like analyzeQuest does.
+            expect(batch.get('TOPIC_NESTED')?.status).toBe('implemented');
+            expect(batch.get('TOPIC_NESTED')?.hasSuccess).toBe(true);
             // First Object.entries match wins for case-insensitive duplicates.
             expect(batch.get('TOPIC_Dupcase')?.description).toBe('Dup first');
             expect(batch.get('TOPIC_Dupcase')?.filePaths.topic).toBe('C.d');
@@ -383,6 +426,36 @@ describe('questAnalysis', () => {
     });
 
     describe('getQuestReferences', () => {
+        it('finds references written inside an if/else branch', () => {
+            const questName = 'TOPIC_NESTED_REF';
+
+            const functions = [
+                {
+                    name: 'DIA_Nested_Info',
+                    actions: [
+                        {
+                            type: 'ConditionalAction',
+                            condition: 'Npc_HasItems (other, ItMi_Nugget) >= 5',
+                            thenActions: [
+                                { type: 'LogEntry', topic: questName, text: 'I brought the ore.' },
+                                { type: 'LogSetTopicStatus', topic: questName, status: 'LOG_SUCCESS' }
+                            ],
+                            elseActions: [{ type: 'LogSetTopicStatus', topic: questName, status: 'LOG_FAILED' }]
+                        }
+                    ]
+                }
+            ];
+
+            const dialogs = [
+                { name: 'DIA_Nested', properties: { information: 'DIA_Nested_Info', npc: 'NPC_N' } }
+            ];
+
+            const refs = getQuestReferences(createMockModel(functions, dialogs), questName);
+
+            expect(refs.map(r => r.type)).toEqual(['entry', 'status', 'status']);
+            expect(refs.every(r => r.dialogName === 'DIA_Nested')).toBe(true);
+        });
+
         it('should find references to quest usage', () => {
             const questName = 'TOPIC_REF';
             const misVarName = 'MIS_REF';
@@ -423,6 +496,24 @@ describe('questAnalysis', () => {
     });
 
     describe('getUsedQuestTopics', () => {
+        it('counts a topic used only inside an if branch', () => {
+            const functions = [
+                {
+                    name: 'F1',
+                    actions: [
+                        {
+                            type: 'ConditionalAction',
+                            condition: 'Npc_HasItems (other, ItMi_Nugget) >= 5',
+                            thenActions: [{ type: 'CreateTopic', topic: 'TOPIC_NESTED' }],
+                            elseActions: []
+                        }
+                    ]
+                }
+            ];
+
+            expect(getUsedQuestTopics(createMockModel(functions, [])).has('TOPIC_NESTED')).toBe(true);
+        });
+
         it('should return unique set of topics used in actions', () => {
             const functions = [
                 {

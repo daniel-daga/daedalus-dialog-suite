@@ -5,6 +5,7 @@
 
 import type { SemanticModel } from '../types/global';
 import type { ParsedFileCache } from '../store/projectStore';
+import { walkActionsWithPath } from '../quest/domain/questDiary';
 import {
   getCanonicalQuestKey,
   getQuestMisVariableName,
@@ -83,23 +84,20 @@ export function getQuestUsage(
         let isRelevant = false;
 
         // Check Actions
-        if (func.actions) {
-          for (const action of func.actions) {
-            // Topic references
-            if ('topic' in action && isCaseInsensitiveMatch(action.topic, questName)) {
-              isRelevant = true;
-              break;
-            }
-            // Explicit MIS writers (writer-only quest handlers)
-            if (
-              action.type === 'SetVariableAction' &&
-              isCaseInsensitiveMatch(action.variableName, misVarName)
-            ) {
-              isRelevant = true;
-              break;
-            }
+        walkActionsWithPath(func.actions, (action) => {
+          // Topic references
+          if ('topic' in action && isCaseInsensitiveMatch(action.topic, questName)) {
+            isRelevant = true;
+            return;
           }
-        }
+          // Explicit MIS writers (writer-only quest handlers)
+          if (
+            action.type === 'SetVariableAction' &&
+            isCaseInsensitiveMatch(action.variableName, misVarName)
+          ) {
+            isRelevant = true;
+          }
+        });
 
         // Check Conditions
         if (!isRelevant && func.conditions) {

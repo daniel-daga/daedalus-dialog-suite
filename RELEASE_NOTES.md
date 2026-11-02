@@ -2,6 +2,7 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #488: A quest that ends inside an if no longer shows "In Progress", and its upgrade sets MIS_
 - #474: Worker docs: the parser pool starts on the first parse request, not at module load
 - #479: The security doc credits the settings/options shape checks to the one save handler that makes them
 - #495: Quest docs: MIS_ is appended to the end of the declaring file; the create flow is RegisterTopicDialog

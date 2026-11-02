@@ -6,6 +6,7 @@ import {
     isCaseInsensitiveMatch,
     normalizeQuestLifecycleState
 } from '../../utils/questIdentity';
+import { walkActionsWithPath } from './questDiary';
 
 export interface QuestAnalysis {
     status: 'implemented' | 'wip' | 'not_started';
@@ -104,7 +105,7 @@ export const analyzeQuest = (semanticModel: SemanticModel, questName: string): Q
 
     // Scan functions for actions
     Object.values(semanticModel.functions || {}).forEach(func => {
-        func.actions?.forEach((action: DialogAction) => {
+        walkActionsWithPath(func.actions, (action: DialogAction) => {
             if ('topic' in action && isCaseInsensitiveMatch(action.topic, questName)) {
                 if (action.type === 'CreateTopic') {
                     hasStart = true;
@@ -264,7 +265,7 @@ export const analyzeQuests = (
 
     // Single pass over all functions, accumulating signals for every quest.
     Object.values(semanticModel.functions || {}).forEach(func => {
-        func.actions?.forEach((action: DialogAction) => {
+        walkActionsWithPath(func.actions, (action: DialogAction) => {
             if ('topic' in action && action.topic) {
                 const signals = topicSignalsByKey.get(getCanonicalQuestKey(action.topic));
                 if (signals) {
@@ -369,7 +370,7 @@ export const getQuestReferences = (semanticModel: SemanticModel, questName: stri
     });
 
     Object.values(semanticModel.functions || {}).forEach(func => {
-        func.actions?.forEach(action => {
+        walkActionsWithPath(func.actions, action => {
             if ('topic' in action && isCaseInsensitiveMatch(action.topic, questName)) {
                 const context = funcToDialog.get(getCanonicalQuestKey(func.name));
                 const type = getActionType(action);
@@ -426,7 +427,7 @@ export const getUsedQuestTopics = (semanticModel: Pick<SemanticModel, 'functions
 
     // Check all functions for Log_* calls
     Object.values(semanticModel.functions || {}).forEach(func => {
-      func.actions?.forEach(action => {
+      walkActionsWithPath(func.actions, action => {
         if ('topic' in action && action.topic) {
            used.add(action.topic);
         }
