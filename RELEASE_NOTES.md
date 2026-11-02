@@ -2,6 +2,7 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #483: A search hit inside a choice function opens that function under the dialog that owns it
 - #475: Install & Restart now closes the editor instead of leaving it open under the running installer
 - #476: Clicking X twice no longer closes the window with the unsaved-changes prompt still on screen
 - #486: A dialog whose choices all sit inside an if/else can be expanded in the tree
