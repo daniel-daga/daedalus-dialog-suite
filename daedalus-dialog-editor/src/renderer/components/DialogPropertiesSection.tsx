@@ -47,13 +47,11 @@ const DialogPropertiesSection: React.FC<DialogPropertiesSectionProps> = ({
   const storedDescription = dialog.properties?.description || '';
   const storedIsConstant = isDescriptionConstant(dialog);
   const [localDescription, setLocalDescription] = useState(storedDescription);
-  const [descriptionEdited, setDescriptionEdited] = useState(false);
   // The mode only says which editor shows; the kind is written with a value.
   const [constantMode, setConstantMode] = useState(storedIsConstant);
 
   useEffect(() => {
     setLocalDescription(storedDescription);
-    setDescriptionEdited(false);
   }, [storedDescription]);
 
   useEffect(() => {
@@ -192,13 +190,12 @@ const DialogPropertiesSection: React.FC<DialogPropertiesSectionProps> = ({
                 label="Description"
                 value={localDescription}
                 onChange={(event) => {
-                  setLocalDescription(event.target.value);
-                  setDescriptionEdited(true);
-                }}
-                onBlur={() => {
-                  if (descriptionEdited) {
-                    onDialogPropertyChange((existingDialog) => withDescription(existingDialog, localDescription, false));
-                  }
+                  const next = event.target.value;
+                  setLocalDescription(next);
+                  // Written as it is typed, like every other field here: a
+                  // blur-only commit left the text out of the model, so Ctrl+S
+                  // found the file clean and saved nothing (#481).
+                  onDialogPropertyChange((existingDialog) => withDescription(existingDialog, next, false));
                 }}
                 multiline
                 rows={2}
