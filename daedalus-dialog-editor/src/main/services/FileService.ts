@@ -113,15 +113,25 @@ async function renameWithRetry(from: string, to: string): Promise<void> {
  * be renamed away and a new one take its name, which is what `SaveWorld` does
  * for the same reason (zenkit-node `binding.cc`). A failure between the two
  * renames puts the original back.
+ *
+ * The aside has one fixed name per target, so a save whose aside cannot be
+ * unlinked (still mapped) leaves at most one copy beside the script instead of
+ * one per save, and it is removed at the next write of the path. A crash
+ * between the two renames leaves the original under that predictable name.
  */
 async function replaceFile(tmp: string, filePath: string): Promise<void> {
+  const aside = path.join(path.dirname(filePath), `.${path.basename(filePath)}.save-aside`);
+  try {
+    await fs.unlink(aside);
+  } catch {
+    // No aside left behind; nothing to do.
+  }
   try {
     await renameWithRetry(tmp, filePath);
     return;
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code !== 'EPERM' && code !== 'EBUSY') throw error;
-    const aside = `${tmp}.old`;
     try {
       await fs.rename(filePath, aside);
     } catch {
@@ -136,8 +146,9 @@ async function replaceFile(tmp: string, filePath: string): Promise<void> {
     try {
       await fs.unlink(aside);
     } catch {
-      // Still mapped: the aside copy stays until the mapping is gone. It does
-      // not end in `.d`, so neither the watcher nor the indexer sees it.
+      // Still mapped: the aside keeps the previous bytes until the next write
+      // of this path unlinks it. It does not end in `.d`, so neither the
+      // watcher nor the indexer sees it.
     }
   }
 }

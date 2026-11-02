@@ -155,6 +155,49 @@ describe('FileService atomic write (E5)', () => {
     expect(await fs.readdir(tempDir)).toEqual(['DIA_Test.d']);
   });
 
+  it('leaves one aside per file while the target stays mapped, and removes it on the next write', async () => {
+    const realRename = fs.rename.bind(fs);
+    const realUnlink = fs.unlink.bind(fs);
+    let targetMapped = true;
+    let asideMapped = true;
+    // A mapped target refuses the rename over it; a mapped aside refuses the
+    // unlink that would clean it up.
+    jest.spyOn(fs, 'rename').mockImplementation(async (from: any, to: any) => {
+      if (targetMapped && to === target && fsSync.existsSync(target)) {
+        throw Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' });
+      }
+      return (realRename as any)(from, to);
+    });
+    jest.spyOn(fs, 'unlink').mockImplementation(async (p: any) => {
+      if (asideMapped && /(\.save-aside|\.old)$/.test(String(p))) {
+        throw Object.assign(new Error('EBUSY: resource busy'), { code: 'EBUSY' });
+      }
+      return (realUnlink as any)(p);
+    });
+
+    await service.writeFile(target, 'first save');
+    await service.writeFile(target, 'second save');
+
+    expect(await fs.readFile(target, 'utf8')).toBe('second save');
+    expect((await fs.readdir(tempDir)).sort()).toEqual(['.DIA_Test.d.save-aside', 'DIA_Test.d']);
+
+    asideMapped = false;
+    targetMapped = false;
+    await service.writeFile(target, 'third save');
+
+    expect(await fs.readFile(target, 'utf8')).toBe('third save');
+    expect(await fs.readdir(tempDir)).toEqual(['DIA_Test.d']);
+  });
+
+  it('unlinks the aside a previous save left behind on the next write', async () => {
+    await fs.writeFile(path.join(tempDir, '.DIA_Test.d.save-aside'), 'previous bytes');
+
+    await service.writeFile(target, 'updated content');
+
+    expect(await fs.readFile(target, 'utf8')).toBe('updated content');
+    expect(await fs.readdir(tempDir)).toEqual(['DIA_Test.d']);
+  });
+
   it('throws and preserves the original when rename fails persistently', async () => {
     const original = await fs.readFile(target, 'utf8');
     const finish = jest.fn();

@@ -97,6 +97,15 @@ skipped (nothing to lose); any other backup failure refuses the save with a
 `BACKUP_FAILED` FileServiceError — better to refuse than to destroy without a
 backup. Normal saves never write a backup.
 
+**Aside copy for a mapped target (#454):** while a world or NPC preview maps a
+script, Windows refuses to rename over it, and `replaceFile` renames the
+original to `.<basename>.save-aside`, puts the staged file in place, then
+unlinks the aside. The name is **fixed per target**, not random per save, so a
+save leaves at most one aside beside the script; unlinking it is **best effort**
+— the inode Windows would not replace is the one still mapped, so the unlink can
+fail and the copy then stays until the next write of that path removes it. A
+crash between the two renames leaves the original under that predictable name.
+
 ## Encoding write policy
 
 Before writing, `encodeWithRoundtripCheck` (in
