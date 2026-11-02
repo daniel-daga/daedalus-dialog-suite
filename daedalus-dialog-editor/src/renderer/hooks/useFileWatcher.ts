@@ -12,7 +12,6 @@ import type { FileChangeEvent, SemanticModel } from '../types/global';
 // applied through a single projectStore.updateFileModels call — one
 // parsedFiles clone, one parseGeneration bump, at most one re-merge.
 const CHANGE_BATCH_WINDOW_MS = 250;
-const CHANGE_PARSE_CONCURRENCY = 8;
 
 const pendingChangedPaths = new Set<string>();
 let changeFlushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -146,8 +145,8 @@ function injectFilePathIntoSymbols(semanticModel: SemanticModel, filePath: strin
 /**
  * Flush the buffered 'change' events: open files are reloaded or marked
  * conflicted individually (their state is read at flush time, not event
- * time); background files are re-parsed with bounded concurrency and applied
- * in one batched store update.
+ * time); every changed file's share of the index is re-read in one update,
+ * and the background files' models are applied in one batched store update.
  */
 async function flushChangedFiles(): Promise<void> {
   const paths = Array.from(pendingChangedPaths);
@@ -193,35 +192,25 @@ async function flushChangedFiles(): Promise<void> {
     if (!isCurrent()) return;
   }
 
-  // Re-parse background files with bounded concurrency and apply as one batch.
-  const updates: Array<{ filePath: string; model: SemanticModel }> = [];
-  let nextIndex = 0;
-  const parseNext = async (): Promise<void> => {
-    while (nextIndex < backgroundPaths.length) {
-      const filePath = backgroundPaths[nextIndex++];
-      try {
-        const semanticModel = await window.editorAPI.parseDialogFile(filePath);
-        injectFilePathIntoSymbols(semanticModel, filePath);
-        updates.push({ filePath, model: semanticModel });
-      } catch (err) {
-        console.error('[FileWatcher] Failed to re-parse file:', filePath, err);
-      }
-    }
-  };
-  await Promise.all(
-    Array(Math.min(CHANGE_PARSE_CONCURRENCY, backgroundPaths.length))
-      .fill(null)
-      .map(() => parseNext())
-  );
+  // Re-read each changed file's share of the index with bounded concurrency —
+  // one read per path, and one parse: main hands back the model it parsed on
+  // the way, so the batch does not ask for the same file twice (#473). The
+  // models are applied only to the background files: an open one holds the
+  // editor's own model, or is in conflict, and must not take the disk's.
+  const models = await useProjectStore.getState().reindexFiles(paths);
   if (!isCurrent()) return;
+
+  const updates: Array<{ filePath: string; model: SemanticModel }> = [];
+  for (const filePath of backgroundPaths) {
+    const model = models.get(filePath);
+    if (!model) continue;
+    injectFilePathIntoSymbols(model, filePath);
+    updates.push({ filePath, model });
+  }
 
   if (updates.length > 0) {
     useProjectStore.getState().updateFileModels(updates);
   }
-
-  // The site indexes are the disk's, so every changed file is re-read —
-  // an open one too, whether it reloaded or went into conflict (#319).
-  await useProjectStore.getState().reindexFiles(paths);
 }
 
 /**

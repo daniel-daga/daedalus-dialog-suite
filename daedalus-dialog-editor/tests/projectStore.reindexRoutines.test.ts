@@ -43,7 +43,7 @@ describe('ProjectStore - reindexFiles', () => {
   const reads = (byFile: Record<string, FileIndex>) => {
     const read = jest.fn(async (filePath: string) => {
       if (!byFile[filePath]) throw new Error(`no ${filePath}`);
-      return byFile[filePath];
+      return { index: byFile[filePath], model: {} as never };
     });
     window.editorAPI.indexFile = read;
     return read;
@@ -138,8 +138,8 @@ describe('ProjectStore - reindexFiles', () => {
   it('drops a read that lands after the project changed', async () => {
     useProjectStore.setState({ projectPath: '/p' });
     let release!: () => void;
-    window.editorAPI.indexFile = jest.fn(() => new Promise<FileIndex>((resolve) => {
-      release = () => resolve(fileIndex({ routineSites: [site('RTN_OLD', '/p/Old.d', 0)] }));
+    window.editorAPI.indexFile = jest.fn(() => new Promise<any>((resolve) => {
+      release = () => resolve({ index: fileIndex({ routineSites: [site('RTN_OLD', '/p/Old.d', 0)] }), model: {} });
     }));
 
     const pending = useProjectStore.getState().reindexFiles(['/p/Old.d']);

@@ -695,7 +695,9 @@ export function setupIpcHandlers() {
       await pathValidator.validatePathResolved(request.filePath);
       const content = await fileService.readFile(request.filePath);
       const model = await parserService.parseSource(content);
-      return indexFile(request.filePath, model, request.layouts);
+      // The model rides along: the caller needed the file's index anyway, and
+      // asking for the model separately would parse the same file twice (#473).
+      return { index: indexFile(request.filePath, model, request.layouts), model };
     }));
 
   ipcMain.handle('project:addAllowedPath', async (_event, folderPath: string) => {

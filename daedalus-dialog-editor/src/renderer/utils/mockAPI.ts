@@ -6,7 +6,7 @@
  * file persistence and includes sample dialog data for testing.
  */
 
-import type { EditorAPI, ValidationResult, SaveResult, FileChangeEvent, AppendInsertNpcResult, OpenedProjectConfig, NpcDefinition, NpcStatement, NpcEdit, ProjectOutputUnits, SaveOptions } from '../types/global';
+import type { EditorAPI, ValidationResult, SaveResult, FileChangeEvent, AppendInsertNpcResult, OpenedProjectConfig, NpcDefinition, NpcStatement, NpcEdit, ProjectOutputUnits, SaveOptions, SemanticModel } from '../types/global';
 import type { ExchangeSite, FileIndex, RoutineSite } from '../../shared/types';
 import { routineStatesOf } from '../../shared/routineStates';
 
@@ -815,22 +815,27 @@ export const mockEditorAPI: EditorAPI = {
     };
   },
 
-  async indexFile(filePath: string): Promise<FileIndex> {
+  async indexFile(filePath: string): Promise<{ index: FileIndex; model: SemanticModel }> {
     const content = MockFileSystem.readFile(filePath);
     const dailyRoutines = mockDailyRoutines(content);
     return {
-      routineSites: mockRoutineSites(filePath, content),
-      spawnSites: [],
-      exchangeSites: mockExchangeSites(filePath, content),
-      instances: Object.values(parseSource(content).npcs || {}).map((npc: any) => {
-        const dailyRoutine = dailyRoutines.get(npc.name.toUpperCase());
-        return {
-          name: npc.name,
-          parent: npc.parent,
-          ...(npc.npcId === undefined ? {} : { npcId: npc.npcId }),
-          ...(dailyRoutine ? { dailyRoutine } : {}),
-        };
-      }),
+      index: {
+        routineSites: mockRoutineSites(filePath, content),
+        spawnSites: [],
+        exchangeSites: mockExchangeSites(filePath, content),
+        instances: Object.values(parseSource(content).npcs || {}).map((npc: any) => {
+          const dailyRoutine = dailyRoutines.get(npc.name.toUpperCase());
+          return {
+            name: npc.name,
+            parent: npc.parent,
+            ...(npc.npcId === undefined ? {} : { npcId: npc.npcId }),
+            ...(dailyRoutine ? { dailyRoutine } : {}),
+          };
+        }),
+      },
+      // The real handler parses the file once and returns the model beside the
+      // index, so the watcher's batch needs no second read (#473).
+      model: parseSource(content),
     };
   },
 
