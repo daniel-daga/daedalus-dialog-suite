@@ -14,6 +14,7 @@ import {
   Typography,
 } from '@mui/material';
 import { useEditorStore } from '../store/editorStore';
+import * as historyActions from '../store/historyActions';
 import { useProjectStore } from '../store/projectStore';
 import type { NpcDefinition, SemanticModel } from '../types/global';
 import {
@@ -397,7 +398,7 @@ const NpcEditorDialog: React.FC<NpcEditorDialogProps> = ({ npcName, filePath, on
       const instance = model.instances![key];
       const sourceText = await window.editorAPI.applyNpcEdits(instance.sourceText!, edits);
       const updated = { ...instance, sourceText };
-      store.updateModel(filePath, {
+      historyActions.updateModel(filePath, {
         ...model,
         instances: { ...model.instances, [key]: updated },
         ...(model.npcs?.[key] ? { npcs: { ...model.npcs, [key]: updated } } : {}),

@@ -120,6 +120,36 @@ describe('openFile with a pre-parsed model (opts.model)', () => {
     expect(new Set(ids).size).toBe(3); // ids are unique
   });
 
+  test('a second open of an already-open file keeps its unsaved model (#450)', async () => {
+    const filePath = 'already-open.d';
+    seedMockFile(filePath, '// disk content\n');
+    await useEditorStore.getState().openFile(filePath);
+
+    const next = {
+      ...useEditorStore.getState().getFileState(filePath)!.semanticModel,
+      functions: {
+        EDITED: { name: 'EDITED', returnType: 'VOID', actions: [], calls: [] },
+      },
+    } as any;
+    useEditorStore.getState().updateModel(filePath, next);
+    expect(useEditorStore.getState().getFileState(filePath)?.isDirty).toBe(true);
+
+    // A Problems-panel jump lands here: the file is open and dirty, and
+    // re-reading it would replace the edit with the disk text, unasked.
+    useEditorStore.setState({ activeFile: null } as never);
+    mockReadFile.mockClear();
+    mockParseSource.mockClear();
+    await useEditorStore.getState().openFile(filePath);
+
+    expect(mockReadFile).not.toHaveBeenCalled();
+    expect(mockParseSource).not.toHaveBeenCalled();
+    const fileState = useEditorStore.getState().getFileState(filePath)!;
+    expect(fileState.semanticModel).toBe(next);
+    expect(fileState.isDirty).toBe(true);
+    // It still becomes the file the main view shows.
+    expect(useEditorStore.getState().activeFile).toBe(filePath);
+  });
+
   test('without opts, still parses via parseSource (unchanged behavior)', async () => {
     const filePath = 'needs-parse.d';
     seedMockFile(filePath, 'INSTANCE DIA_Example_Hello(C_INFO) {\n\tnpc = PC_Hero;\n};');

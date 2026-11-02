@@ -1,4 +1,5 @@
 import { useEditorStore } from '../store/editorStore';
+import * as historyActions from '../store/historyActions';
 import { useProjectStore } from '../store/projectStore';
 import type { SemanticModel } from '../types/global';
 import { readRoutine, withRoutineFunction, writeRoutine, type RoutineEntry } from '../routines/routineEntries';
@@ -50,8 +51,7 @@ export async function saveRoutine(filePath: string, routine: string, entries: re
   if (!key) throw new Error(`${routine} is no longer in ${filePath}`);
   const fn = model.functions[key];
   const actions = writeRoutine(fn.actions, entries, useProjectStore.getState().routineLayoutIndex);
-  const store = useEditorStore.getState();
-  store.updateModel(filePath, {
+  historyActions.updateModel(filePath, {
     ...model,
     functions: { ...model.functions, [key]: { ...fn, actions: actions as typeof fn.actions } },
   });
@@ -111,7 +111,7 @@ export async function createRoutine(npc: string, state: string | null, entries: 
     };
   }
 
-  useEditorStore.getState().updateModel(filePath, next);
+  historyActions.updateModel(filePath, next);
   const result = await useEditorStore.getState().saveFile(filePath);
   if (!result.success) {
     const firstError = result.validationResult?.errors?.[0]?.message;

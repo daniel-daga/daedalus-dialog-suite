@@ -80,6 +80,7 @@ describe('fileStore › re-opening a normalized file does not re-walk', () => {
     await store.openFile(filePath, { model: cachedModel() });
     walk.mockClear();
 
+    store.closeFile(filePath);
     await store.openFile(filePath, { model: cachedModel() });
     expect(walk).toHaveBeenCalled();
   });
