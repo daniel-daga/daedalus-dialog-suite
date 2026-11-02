@@ -122,4 +122,41 @@ describe('projectStore - ingestion', () => {
     expect(finalState.parsedFiles.size).toBeLessThan(100);
     // expect(finalState.isIngesting).toBe(false); // See note in thought process: manual abort doesn't reset flag
   });
+
+  test('a global file ingested after the NPC was selected reaches the merged model', async () => {
+    // #466: only `updateFileModels` re-derived the merged model, so a constant
+    // that arrived during background ingestion stayed invisible for the rest of
+    // the session — the index disagreed with the cache it was built from.
+    const npcFile = '/p/DIA_Onar.d';
+    const globalsFile = '/p/Story_Globals.d';
+
+    const emptyModel = {
+      dialogs: {}, functions: {}, constants: {}, variables: {},
+      instances: {}, hasErrors: false, errors: []
+    };
+    (window as any).editorAPI.parseDialogFile = jest.fn(async (filePath: string) => (
+      filePath === globalsFile
+        ? { ...emptyModel, constants: { TOPIC_ONAR: { name: 'TOPIC_ONAR', type: 'string' } } }
+        : emptyModel
+    ));
+
+    useProjectStore.setState({
+      projectPath: '/p',
+      allDialogFiles: [npcFile, globalsFile],
+      questFiles: [],
+      selectedNpc: 'NPC_ONAR',
+      dialogIndex: new Map([
+        ['NPC_ONAR', [{ dialogName: 'DIA_Onar_Hallo', npc: 'NPC_ONAR', filePath: npcFile }]]
+      ]),
+      // Selected before ingestion read the globals, which is what the cache
+      // looks like on a project large enough for ingestion to outlast a click.
+      parsedFiles: new Map([[npcFile, { filePath: npcFile, semanticModel: emptyModel, lastParsed: new Date() }]])
+    });
+    useProjectStore.getState().loadAndMergeNpcModels('NPC_ONAR');
+    expect(useProjectStore.getState().mergedSemanticModel.constants).not.toHaveProperty('TOPIC_ONAR');
+
+    await useProjectStore.getState().startBackgroundIngestion();
+
+    expect(useProjectStore.getState().mergedSemanticModel.constants).toHaveProperty('TOPIC_ONAR');
+  });
 });

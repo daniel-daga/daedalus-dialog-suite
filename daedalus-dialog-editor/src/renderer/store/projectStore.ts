@@ -760,6 +760,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         return;
       }
       if (pendingUpdates.size > 0) {
+        const flushed = [...pendingUpdates.keys()];
         set((state) => {
           const newCache = new Map(state.parsedFiles);
           pendingUpdates.forEach((value, key) => {
@@ -770,6 +771,19 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
           return { parsedFiles: newCache, parseGeneration: state.parseGeneration + 1 };
         });
         pendingUpdates.clear();
+        // The merged model is derived from the cache, so a contributor that
+        // lands here — a global file, or the selected NPC's own — has to be
+        // merged in; nothing else re-derives it while ingestion runs (#466).
+        const { selectedNpc, dialogIndex } = get();
+        if (selectedNpc) {
+          const filesWithDialogs = getFilesWithDialogs(dialogIndex);
+          const npcFiles = new Set(
+            (dialogIndex.get(selectedNpc.toUpperCase()) || []).map((meta) => meta.filePath)
+          );
+          if (flushed.some((filePath) => !filesWithDialogs.has(filePath) || npcFiles.has(filePath))) {
+            get().loadAndMergeNpcModels(selectedNpc);
+          }
+        }
       }
     };
     

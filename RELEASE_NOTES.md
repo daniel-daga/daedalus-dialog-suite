@@ -2,6 +2,7 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #466: A constant or variable ingested after an NPC was selected reaches the merged model
 - #465: An NPC whose dialogs spell its name in another case is one NPC row, with all its dialogs
 - #486: A dialog whose choices all sit inside an if/else can be expanded in the tree
 - #482: Recent tabs and search results open their dialog when the file was opened without a project
