@@ -107,6 +107,26 @@ export const useNavigation = () => {
       return true;
     }
 
+    // 6. Outside a project there is no `dialogIndex` — `openProject` is its only
+    // filler — so the open files' models are the only place a dialog can be
+    // found. Recent tabs and search both route through here (#482).
+    for (const [filePath, fileState] of useEditorStore.getState().openFiles) {
+      const match = Object.entries(fileState.semanticModel?.dialogs ?? {})
+        .find(([name]) => name.toLowerCase() === lowerDialogName);
+      if (!match) continue;
+
+      await openOrActivate(filePath);
+      setSelectedDialog(match[0]);
+      const infoFunc = match[1].properties?.information;
+      const infoFuncName = typeof infoFunc === 'string' ? infoFunc : infoFunc?.name;
+      const nextFunction = functionName ?? infoFuncName;
+      if (nextFunction) {
+        setSelectedFunctionName(nextFunction);
+      }
+      setActiveView('dialog');
+      return true;
+    }
+
     return false;
   }, []);
 

@@ -2,6 +2,7 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #482: Recent tabs and search results open their dialog when the file was opened without a project
 - #481: A description typed and then saved with Ctrl+S is written to the file, not silently dropped
 - #444: A missing semicolon is a syntax error; Polish/Czech and BOM'd Windows scripts decode right
 - #450: Opening a file that is already open and edited no longer replaces the edits with the disk copy
