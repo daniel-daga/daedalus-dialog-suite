@@ -396,7 +396,9 @@ adds:
    drag in quarter hours (Alt detaches, arrow keys step), and one row per
    activity: state, typed start and end, waypoint, remove. The draft has its
    own undo; Save goes through `components/routineSave.ts` and re-indexes the
-   file. The state picker lists every layout an activity alone can fill,
+   file, and is refused when the function changed since the draft was read
+   (#489) — the draft names its lines by index and cannot follow a move.
+   The state picker lists every layout an activity alone can fill,
    spelled as declared (`routineLayouts[…].name`), so `TA` and `TA_MIN` are
    not offered. Covered by `tests/e2e/routine-editor.spec.ts` in the browser
    harness, which has no world by design, so the panel is driven from the NPC

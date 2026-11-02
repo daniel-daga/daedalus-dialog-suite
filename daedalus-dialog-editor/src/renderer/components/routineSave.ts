@@ -45,12 +45,19 @@ export async function loadRoutine(filePath: string, routine: string): Promise<Ro
   return readRoutine(model.functions[key].actions, useProjectStore.getState().routineLayoutIndex);
 }
 
-export async function saveRoutine(filePath: string, routine: string, entries: readonly RoutineEntry[]): Promise<void> {
+export async function saveRoutine(
+  filePath: string,
+  routine: string,
+  entries: readonly RoutineEntry[],
+  /** The entries the draft was read from, so a function that moved under it is
+   *  refused rather than written by index. */
+  read: readonly RoutineEntry[],
+): Promise<void> {
   const model = await fileModel(filePath);
   const key = functionKey(model, routine);
   if (!key) throw new Error(`${routine} is no longer in ${filePath}`);
   const fn = model.functions[key];
-  const actions = writeRoutine(fn.actions, entries, useProjectStore.getState().routineLayoutIndex);
+  const actions = writeRoutine(fn.actions, entries, useProjectStore.getState().routineLayoutIndex, read);
   historyActions.updateModel(filePath, {
     ...model,
     functions: { ...model.functions, [key]: { ...fn, actions: actions as typeof fn.actions } },

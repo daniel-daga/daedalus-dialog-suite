@@ -14,6 +14,7 @@ import { useHistoryStore } from '../src/renderer/store/historyStore';
 import { useProjectStore } from '../src/renderer/store/projectStore';
 import { seedMockFile, resetMockFileSystem } from '../src/renderer/utils/mockAPI';
 import { saveRoutine, createRoutine } from '../src/renderer/components/routineSave';
+import { readRoutine } from '../src/renderer/routines/routineEntries';
 import { saveDiaryEntryText } from '../src/renderer/components/questDiarySave';
 import NpcEditorDialog from '../src/renderer/components/NpcEditorDialog';
 
@@ -62,10 +63,11 @@ describe('a surface save records one undo step', () => {
     seedMockFile('test.d', source);
     await useEditorStore.getState().openFile('test.d');
     const before = useEditorStore.getState().getFileState('test.d')!.semanticModel;
+    const read = readRoutine(before.functions.Rtn_Start_10.actions, layouts);
 
     await saveRoutine('test.d', 'Rtn_Start_10', [
       { state: 'TA_Sleep', startMinute: 22 * 60, endMinute: 7 * 60, waypoint: 'BED2' },
-    ]);
+    ], read);
 
     const after = useEditorStore.getState().getFileState('test.d')!.semanticModel;
     expect(after).not.toBe(before);
