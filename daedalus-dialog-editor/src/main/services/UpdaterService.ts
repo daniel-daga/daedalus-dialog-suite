@@ -354,6 +354,8 @@ export class UpdaterService {
       stdio: 'ignore',
     });
     child.unref();
-    app.quit();
+    // `quit` asks each window to close, and the close guard vetoes that until
+    // the renderer says yes, so the app would stay up under the installer.
+    app.exit(0);
   }
 }
