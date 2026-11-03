@@ -861,6 +861,37 @@ test('Should display a negated Npc_KnowsInfo condition', () => {
   assert.strictEqual(condition.toDisplayString(), '[Not NpcKnowsInfo: other knows DIA_Farim_Hallo]');
 });
 
+test('every structured condition call is structured under unary negation too (#439)', () => {
+  const forms = [
+    { call: '!Npc_KnowsInfo(other, DIA_Test)', type: 'NpcKnowsInfoCondition' },
+    { call: '!Npc_HasItems(other, ItMi_Gold)', type: 'NpcHasItemsCondition' },
+    { call: '!Npc_IsInState(self, ZS_Talk)', type: 'NpcIsInStateCondition' },
+    { call: '!Npc_IsDead(Esteban)', type: 'NpcIsDeadCondition' },
+    { call: '!Npc_GetDistToWP(self, "OW_CITY")', type: 'NpcGetDistToWpCondition' },
+    { call: '!Npc_GetTalentSkill(other, "T")', type: 'NpcGetTalentSkillCondition' }
+  ];
+
+  for (const form of forms) {
+    const source = [
+      'instance DIA_Neg(C_INFO) { condition = DIA_Neg_Cond; };',
+      'func int DIA_Neg_Cond() {',
+      `\tif (${form.call}) { return TRUE; };`,
+      '};'
+    ].join('\n');
+    const model = parseAndBuildModel(source);
+    const { conditions } = model.dialogs.DIA_Neg.properties.condition;
+    assert.equal(conditions.length, 1, form.call);
+    assert.equal(conditions[0].constructor.name, form.type, form.call);
+    assert.equal(conditions[0].negated, true, form.call);
+
+    const generated = new SemanticCodeGenerator().generateSemanticModel(model);
+    assert.ok(generated.includes(form.call), `${form.call} should round-trip:\n${generated}`);
+    const reparsed = parseAndBuildModel(generated).dialogs.DIA_Neg.properties.condition.conditions[0];
+    assert.equal(reparsed.constructor.name, form.type, form.call);
+    assert.equal(reparsed.negated, true, form.call);
+  }
+});
+
 test('unsupported negated condition call keeps the negation on round-trip', () => {
   const source = [
     'instance DIA_Custom(C_INFO) { condition = DIA_Custom_Cond; };',

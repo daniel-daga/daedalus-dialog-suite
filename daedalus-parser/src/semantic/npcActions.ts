@@ -236,14 +236,15 @@ export class PickpocketAction implements CodeGeneratable {
 
 export class StartOtherRoutineAction implements CodeGeneratable {
   public readonly type = 'StartOtherRoutineAction';
-  public routineFunctionName: 'B_StartOtherRoutine' | 'B_StartotherRoutine';
+  /** Source spelling of the callee; any casing the mod wrote (Daedalus identifiers are case-insensitive). */
+  public routineFunctionName: string;
   public routineNpc: string;
   public routineName: string;
   /** True when the source routine-name argument was not a string literal. */
   public routineNameIsExpression?: boolean;
 
   constructor(
-    routineFunctionName: 'B_StartOtherRoutine' | 'B_StartotherRoutine',
+    routineFunctionName: string,
     routineNpc: string,
     routineName: string,
     routineNameIsExpression?: boolean

@@ -134,6 +134,39 @@ test('legacy commented action metadata preserves the original callee with commen
   assert.deepEqual(callees(new SemanticCodeGenerator({ includeComments: false }).generateSemanticModel(model)), ['Log_AddEntry']);
 });
 
+test('analysis does not parse each call a second time to learn its callee (#439)', () => {
+  const DaedalusParser = require('../dist/core/parser');
+  const { SemanticModelBuilderVisitor } = require('../dist/semantic/semantic-visitor-index');
+  const source = [
+    'instance D(C_INFO) { condition = C; };',
+    'func int C() {',
+    '\tif (!Npc_IsDead(other) && Npc_HasItems(other, Gold) >= 1) { return TRUE; };',
+    '};',
+    'func void F() {',
+    '\tAI_Output(self, other, "ID");',
+    '\tb_teachCustom(self, 2);',
+    '\tUnknown_Helper(self, 2);',
+    '};'
+  ].join('\n');
+  const root = createParser().parse(source).rootNode;
+  assert.equal(root.hasError, false);
+
+  const reparsed = [];
+  const original = DaedalusParser.prototype.parse;
+  DaedalusParser.prototype.parse = function patched(...args) {
+    reparsed.push(args[0]);
+    return original.apply(this, args);
+  };
+  try {
+    const visitor = new SemanticModelBuilderVisitor();
+    visitor.pass1_createObjects(root);
+    visitor.pass2_analyzeAndLink(root);
+  } finally {
+    DaedalusParser.prototype.parse = original;
+  }
+  assert.deepEqual(reparsed, [], `analysis rendered and re-parsed call text:\n${reparsed.join('\n')}`);
+});
+
 for (const suffix of ['', ' /* retained */']) {
   for (const includeComments of [true, false]) {
     test(`pickpocket edits survive parse, hydration and generation (${suffix}, ${includeComments})`, () => {

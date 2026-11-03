@@ -12,20 +12,6 @@ export function isArgumentNode(node: TreeSitterNode): boolean {
 }
 
 /**
- * Parse a tree-sitter argument_list node into normalized argument text values.
- */
-export function parseArguments(argsNode: TreeSitterNode): string[] {
-  const args: string[] = [];
-  for (let i = 0; i < argsNode.childCount; i++) {
-    const child = argsNode.child(i);
-    if (isArgumentNode(child)) {
-      args.push(normalizeArgumentText(child));
-    }
-  }
-  return args;
-}
-
-/**
  * A single call argument captured with enough information to regenerate it
  * verbatim: `raw` is the exact source text (quotes intact for strings), `value`
  * is the normalized form (quotes stripped) used for display/structured fields,
@@ -74,8 +60,7 @@ export function normalizeArgumentText(node: TreeSitterNode): string {
  * constant name, an expression, etc.) keeps its raw trimmed text so it can be
  * regenerated verbatim.
  */
-export function parseNumericArg(raw: string | undefined, fallback: number): number | string {
-  if (raw === undefined || raw === '') return fallback;
+export function parseNumericArg(raw: string): number | string {
   const trimmed = raw.trim();
   const value = Number(trimmed);
   return /^-?\d+$/.test(trimmed) && Number.isSafeInteger(value) ? value : trimmed;
