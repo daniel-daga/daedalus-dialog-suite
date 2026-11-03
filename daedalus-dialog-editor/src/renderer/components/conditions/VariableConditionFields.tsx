@@ -2,6 +2,8 @@ import React from 'react';
 import { Box, FormControlLabel, Switch } from '@mui/material';
 import VariableAutocomplete from '../common/VariableAutocomplete';
 import { AUTOCOMPLETE_POLICIES } from '../common/autocompletePolicies';
+import { useProjectStore } from '../../store/projectStore';
+import { declaredStages } from '../../quest/domain/questStages';
 import type { ConditionEditorCondition } from '../dialogTypes';
 import type { ConditionFieldsProps } from './conditionRegistry';
 
@@ -19,6 +21,15 @@ const VARIABLE_NAME_FIELD_SX = { flex: 1 };
 
 export default function VariableConditionFields({ condition, handleUpdate, handleImmediateUpdate, flushUpdate, mainFieldRef }: ConditionFieldsProps) {
   const c = condition as unknown as C;
+  // #325: a STAGE_ name nothing declares is a plain variable check, and says so
+  // the way an undeclared stage write does.
+  const variables = useProjectStore((s) => s.mergedSemanticModel.variables);
+  const constants = useProjectStore((s) => s.mergedSemanticModel.constants);
+  const notDeclared = React.useMemo(
+    () => /^stage_./i.test(c.variableName ?? '')
+      && !declaredStages({ variables, constants }).some((stage) => stage.variable.toUpperCase() === c.variableName.toUpperCase()),
+    [c.variableName, variables, constants]
+  );
   const upd = React.useCallback(
     (patch: Partial<C>): ConditionEditorCondition => ({ ...c, ...patch } as unknown as ConditionEditorCondition),
     [c]
@@ -50,6 +61,7 @@ export default function VariableConditionFields({ condition, handleUpdate, handl
         mainFieldRef={mainFieldRef}
         sx={VARIABLE_NAME_FIELD_SX}
         placeholder="e.g., MIS_QuestCompleted"
+        textFieldProps={notDeclared ? { helperText: 'Not declared' } : undefined}
       />
     </Box>
   );

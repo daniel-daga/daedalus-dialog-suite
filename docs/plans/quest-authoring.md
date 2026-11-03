@@ -1,7 +1,7 @@
 # Quest authoring — a quest-level interface over topics, entries and `MIS_` state
 
-Agreed 2026-09-28. Phases 1 (#322), 2 (#323) and 3 (#324) have landed; phase 4
-(#325) is designed and decided but not built.
+Agreed 2026-09-28. Phases 1 (#322), 2 (#323), 3 (#324) and 4 (#325) have
+landed.
 
 ## Problem
 
@@ -121,7 +121,7 @@ while building:
 
 ### Phase 4 — named sub-stages
 
-**Designed and decided 2026-10-29 (#325). Not yet built.** An author-named stage
+**Landed in two slices (#325), designed 2026-10-29.** An author-named stage
 within a running quest, such as "talked to Greg" or a counter like "3/5 sheep".
 
 **A stage is a script-backed flag or counter, not a new action type and not

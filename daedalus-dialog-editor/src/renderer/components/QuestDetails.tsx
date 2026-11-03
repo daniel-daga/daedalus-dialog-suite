@@ -151,8 +151,9 @@ const QuestDetails: React.FC<QuestDetailsProps> = ({ semanticModel, questName })
               const sites = stage.writes.map((item) => item.dialogName ?? item.functionName).join(', ');
               throw new Error(`${stage.variable} is still written in ${sites}; change those lines first.`);
           }
-          if (stage.checked) {
-              throw new Error(`${stage.variable} is still checked in a condition; change that first.`);
+          if (stage.reads.length > 0) {
+              const sites = stage.reads.map((item) => item.dialogName ?? item.functionName).join(', ');
+              throw new Error(`${stage.variable} is still checked in ${sites}; change that first.`);
           }
           const declaration = Object.values(semanticModel.variables ?? {}).find(
               (variable) => variable.name.toUpperCase() === stage.variable.toUpperCase()
@@ -401,6 +402,13 @@ const QuestDetails: React.FC<QuestDetailsProps> = ({ semanticModel, questName })
                           </IconButton>
                         </Tooltip>
                       ))}
+                      {stage.reads.map((item, i) => (
+                        <Tooltip key={i} title={`Go to read in ${item.dialogName ?? item.functionName}`} arrow>
+                          <IconButton edge="end" aria-label={`Go to read in ${item.dialogName ?? item.functionName}`} onClick={() => goTo(item)}>
+                            <OpenInNewIcon />
+                          </IconButton>
+                        </Tooltip>
+                      ))}
                       <Tooltip title={`Delete ${stage.variable}`} arrow>
                         <IconButton aria-label={`Delete ${stage.variable}`} disabled={isWriting} onClick={() => handleDeleteStage(stage)}>
                           <DeleteIcon />
@@ -423,9 +431,9 @@ const QuestDetails: React.FC<QuestDetailsProps> = ({ semanticModel, questName })
                     <ListItemText secondary={`Declared, never set: ${stages.filter((s) => s.writes.length === 0).map((s) => s.name).join(', ')}`} />
                 </ListItem>
             )}
-            {stages.some((stage) => stage.writes.length > 0 && !stage.checked) && (
+            {stages.some((stage) => stage.writes.length > 0 && stage.reads.length === 0) && (
                 <ListItem data-testid="stage-note-never-checked">
-                    <ListItemText secondary={`Set, never checked: ${stages.filter((s) => s.writes.length > 0 && !s.checked).map((s) => s.name).join(', ')}`} />
+                    <ListItemText secondary={`Set, never checked: ${stages.filter((s) => s.writes.length > 0 && s.reads.length === 0).map((s) => s.name).join(', ')}`} />
                 </ListItem>
             )}
          </List>

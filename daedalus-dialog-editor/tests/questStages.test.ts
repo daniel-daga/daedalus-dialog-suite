@@ -10,16 +10,20 @@
 import { execFileSync } from 'child_process';
 import {
   buildQuestStages,
+  buildStageRead,
   buildStageWrite,
   declaredStages,
   findDeclaredStage,
+  recognizeStageRead,
   recognizeStageWrite,
   stageNameCollision,
+  stageReadScript,
   stageVariableName,
   stageWriteScript,
+  type QuestStageReadKind,
   type QuestStageWriteKind
 } from '../src/renderer/quest/domain/questStages';
-import type { DialogAction, SemanticModel } from '../src/renderer/types/global';
+import type { DialogAction, DialogCondition, SemanticModel } from '../src/renderer/types/global';
 
 function parseModel(source: string): SemanticModel {
   const parserPath = require.resolve('daedalus-parser');
@@ -60,6 +64,20 @@ function generate(action: DialogAction): string {
     });
   `;
   return execFileSync(process.execPath, ['-e', script], { input: JSON.stringify(action), encoding: 'latin1' });
+}
+
+/** What the editor saves for a condition. */
+function generateCondition(condition: DialogCondition): string {
+  const modelPath = require.resolve('daedalus-parser/semantic-model');
+  const script = `
+    let src = '';
+    process.stdin.on('data', (d) => { src += d; });
+    process.stdin.on('end', () => {
+      const { deserializeCondition } = require(${JSON.stringify(modelPath)});
+      process.stdout.write(deserializeCondition(JSON.parse(src)).generateCode({}));
+    });
+  `;
+  return execFileSync(process.execPath, ['-e', script], { input: JSON.stringify(condition), encoding: 'latin1' });
 }
 
 // Sheep is a counter with a target, Said a flag, Empty is declared but never
@@ -121,6 +139,71 @@ func int DIA_Hirt_Condition()
 
 const model = parseModel(SHEEP);
 const sheepStages = () => buildQuestStages(model, 'TOPIC_VerloreneSchafe');
+
+// Conditions only reach the model through a dialog's condition function, so each
+// read here is attached to an instance — the way a real one is.
+const READS = `
+var int STAGE_VerloreneSchafe_Said;
+var int STAGE_VerloreneSchafe_Sheep;
+var int MIS_VerloreneSchafe;
+
+instance DIA_A (C_INFO)
+{
+	npc = BAU_900_Bauer;
+	condition = DIA_A_Condition;
+};
+
+func int DIA_A_Condition()
+{
+	if (STAGE_VerloreneSchafe_Said == TRUE)
+	{
+		return TRUE;
+	};
+};
+
+instance DIA_B (C_INFO)
+{
+	npc = BAU_901_Hirt;
+	condition = DIA_B_Condition;
+};
+
+func int DIA_B_Condition()
+{
+	if (STAGE_VerloreneSchafe_Sheep >= 4)
+	{
+		return TRUE;
+	};
+};
+
+instance DIA_C (C_INFO)
+{
+	npc = BAU_902_Knecht;
+	condition = DIA_C_Condition;
+};
+
+func int DIA_C_Condition()
+{
+	if (STAGE_VerloreneSchafe_Sheep == FALSE)
+	{
+		return TRUE;
+	};
+};
+
+instance DIA_D (C_INFO)
+{
+	npc = BAU_903_Magd;
+	condition = DIA_D_Condition;
+};
+
+func int DIA_D_Condition()
+{
+	if (STAGE_VerloreneSchafe_Cow == TRUE)
+	{
+		return TRUE;
+	};
+};
+`;
+const readModel = parseModel(READS);
 
 describe('stage naming and inventory', () => {
   test('a stage is STAGE_<quest base>_<title>, the title sanitised like a quest name', () => {
@@ -196,6 +279,50 @@ describe('stage writes', () => {
   });
 });
 
+describe('stage reads', () => {
+  const stages = declaredStages(readModel);
+  const readOf = (functionName: string) => recognizeStageRead(readModel.functions[functionName].conditions[0], stages);
+
+  test('a stage is read as reached, not reached, or at least N', () => {
+    expect(readOf('DIA_A_Condition')).toEqual({ variable: 'STAGE_VerloreneSchafe_Said', kind: 'reached' });
+    expect(readOf('DIA_C_Condition')).toEqual({ variable: 'STAGE_VerloreneSchafe_Sheep', kind: 'not_reached' });
+    expect(readOf('DIA_B_Condition')).toEqual({ variable: 'STAGE_VerloreneSchafe_Sheep', kind: 'at_least', target: 4 });
+  });
+
+  test('the card writes the three forms as one plain variable check', () => {
+    const code = (kind: QuestStageReadKind, target?: number) => generateCondition(buildStageRead('STAGE_X_Sheep', kind, target));
+    expect(code('reached')).toBe('STAGE_X_Sheep == TRUE');
+    // "Not reached" matches "not started": an unset int is 0.
+    expect(code('not_reached')).toBe('STAGE_X_Sheep == FALSE');
+    expect(code('at_least', 5)).toBe('STAGE_X_Sheep >= 5');
+    expect(buildStageRead('STAGE_X_Sheep', 'reached')).toMatchObject({ type: 'VariableCondition', negated: false });
+  });
+
+  test('the card shows the check it writes', () => {
+    expect(stageReadScript({ variable: 'STAGE_X_Sheep', kind: 'at_least', target: 5 })).toBe('STAGE_X_Sheep >= 5');
+  });
+
+  test('only a declared stage is a stage read; an undeclared STAGE_ name stays a variable check', () => {
+    expect(readOf('DIA_D_Condition')).toBeNull();
+    expect(recognizeStageRead(
+      { type: 'VariableCondition', variableName: 'MIS_VerloreneSchafe', operator: '==', value: 'TRUE' } as DialogCondition,
+      stages
+    )).toBeNull();
+  });
+
+  test('the Stage entry’s card before a stage is picked is a stage read', () => {
+    expect(recognizeStageRead(
+      { type: 'VariableCondition', variableName: 'STAGE_', negated: false, operator: '==', value: 'TRUE' } as DialogCondition,
+      stages
+    )).toEqual({ variable: 'STAGE_', kind: 'reached' });
+  });
+
+  test('a check the card cannot write back is not a stage read', () => {
+    // `== 7` has no form on the card and rewriting it as `>= 7` would change it.
+    expect(recognizeStageRead(model.functions.DIA_Hirt_Condition.conditions[0], declaredStages(model))).toBeNull();
+  });
+});
+
 describe('buildQuestStages', () => {
   test('lists the quest’s stages with kind, target, writes and whether they are read', () => {
     const stages = sheepStages();
@@ -205,7 +332,7 @@ describe('buildQuestStages', () => {
     expect(sheep.kind).toBe('counter');
     // The largest N of its `>= N` / `== N` checks, across two dialogs.
     expect(sheep.target).toBe(7);
-    expect(sheep.checked).toBe(true);
+    expect(sheep.reads.map((read) => read.functionName)).toEqual(['DIA_Bauer_Condition', 'DIA_Hirt_Condition']);
     expect(sheep.writes.map((w) => [w.kind, w.functionName])).toEqual([
       ['counts', 'DIA_Bauer_Info'],
       ['counts', 'DIA_Bauer_Count']
@@ -214,7 +341,7 @@ describe('buildQuestStages', () => {
     const said = stages[1];
     expect(said.kind).toBe('flag');
     expect(said.target).toBeNull();
-    expect(said.checked).toBe(false);
+    expect(said.reads).toEqual([]);
     expect(said.writes.map((w) => w.kind)).toEqual(['reached']);
 
     expect(stages[2].writes).toEqual([]);
@@ -227,6 +354,13 @@ describe('buildQuestStages', () => {
     expect(write.dialogName).toBe('DIA_Bauer');
     // The stage line is the second action of the info function.
     expect(write.path).toEqual([1]);
+  });
+
+  test('a read says where it is, for the page’s jump', () => {
+    const stages = buildQuestStages(readModel, 'TOPIC_VerloreneSchafe');
+    expect(stages.find((s) => s.name === 'Said')!.reads.map((read) => read.functionName)).toEqual(['DIA_A_Condition']);
+    expect(stages.find((s) => s.name === 'Sheep')!.reads.map((read) => read.functionName))
+      .toEqual(['DIA_B_Condition', 'DIA_C_Condition']);
   });
 
   test('a counter’s target is the largest N of its >= / == checks anywhere', () => {

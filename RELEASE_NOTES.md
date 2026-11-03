@@ -2,6 +2,7 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #325: Named quest stages — declare a stage, set it in a dialog, and branch on it with a "Stage" condition card
 - #491: A refused quest upgrade no longer leaves the quest declared but never set
 - #487: A variable delete is refused while its file has unsaved changes, so the next save can't bring it back
 - #518: An expanded choice whose target file is not open is read-only, and says why
