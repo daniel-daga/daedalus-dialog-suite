@@ -243,7 +243,7 @@ export class ActionParsers {
    */
   static parseCreateInventoryItemsCall(node: TreeSitterNode): CreateInventoryItems | null {
     return ActionParsers.parseActionWithArgs(node, 3, (args) =>
-      new CreateInventoryItems(args[0].raw, args[1].raw, parseNumericArg(args[2].raw, 1))
+      new CreateInventoryItems(args[0].raw, args[1].raw, parseNumericArg(args[2].raw))
     );
   }
 
@@ -252,7 +252,7 @@ export class ActionParsers {
    */
   static parseGiveInventoryItemsCall(node: TreeSitterNode): GiveInventoryItems | null {
     return ActionParsers.parseActionWithArgs(node, 4, (args) =>
-      new GiveInventoryItems(args[0].raw, args[1].raw, args[2].raw, parseNumericArg(args[3].raw, 1))
+      new GiveInventoryItems(args[0].raw, args[1].raw, args[2].raw, parseNumericArg(args[3].raw))
     );
   }
 
@@ -261,7 +261,7 @@ export class ActionParsers {
    */
   static parseAttackCall(node: TreeSitterNode): AttackAction | null {
     return ActionParsers.parseActionWithArgs(node, 4, (args) =>
-      new AttackAction(args[0].raw, args[1].raw, args[2].raw, parseNumericArg(args[3].raw, 1))
+      new AttackAction(args[0].raw, args[1].raw, args[2].raw, parseNumericArg(args[3].raw))
     );
   }
 
@@ -288,7 +288,7 @@ export class ActionParsers {
    */
   static parseChapterTransitionCall(node: TreeSitterNode): ChapterTransitionAction | null {
     return ActionParsers.parseActionWithArgs(node, 2, (args) =>
-      new ChapterTransitionAction(parseNumericArg(args[0].raw, 1), args[1].raw)
+      new ChapterTransitionAction(parseNumericArg(args[0].raw), args[1].raw)
     );
   }
 
@@ -306,7 +306,7 @@ export class ActionParsers {
    */
   static parseSetRefuseTalkCall(node: TreeSitterNode): SetRefuseTalkAction | null {
     return ActionParsers.parseActionWithArgs(node, 2, (args) =>
-      new SetRefuseTalkAction(args[0].raw, parseNumericArg(args[1].raw, 300))
+      new SetRefuseTalkAction(args[0].raw, parseNumericArg(args[1].raw))
     );
   }
 
@@ -346,12 +346,7 @@ export class ActionParsers {
    */
   static parseStartOtherRoutineCall(node: TreeSitterNode, functionName: string): StartOtherRoutineAction | null {
     return ActionParsers.parseActionWithArgs(node, 2, (args) =>
-      new StartOtherRoutineAction(
-        functionName as 'B_StartOtherRoutine' | 'B_StartotherRoutine',
-        args[0].raw,
-        args[1].value,
-        !args[1].isString
-      )
+      new StartOtherRoutineAction(functionName, args[0].raw, args[1].value, !args[1].isString)
     );
   }
 
@@ -394,7 +389,7 @@ export class ActionParsers {
   ): RemoveInventoryItemsAction | null {
     return ActionParsers.parseActionWithArgs(node, arity, (args) =>
       new RemoveInventoryItemsAction(
-        functionName as 'Npc_RemoveInvItems' | 'Npc_RemoveInvItem',
+        functionName,
         args[0].raw,
         args[1].raw,
         args[2] ? args[2].raw : undefined

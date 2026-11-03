@@ -151,6 +151,41 @@ const cases = [
       assert.equal(action.type, 'Action');
     }
   },
+  // #439: these four dispatch entries had no test that would notice them
+  // falling back to a verbatim generic action, which is invisible to a
+  // round-trip token comparison.
+  {
+    name: 'Log_SetTopicStatus parses structurally (#439)',
+    body: 'Log_SetTopicStatus (TOPIC_Test, LOG_RUNNING);',
+    assert: (action) => {
+      assert.equal(action.type, 'LogSetTopicStatus');
+      assert.equal(action.status, 'LOG_RUNNING');
+    }
+  },
+  {
+    name: 'B_SetAttitude parses structurally (#439)',
+    body: 'B_SetAttitude (other, ATT_FRIENDLY);',
+    assert: (action) => {
+      assert.equal(action.type, 'SetAttitudeAction');
+      assert.equal(action.attitude, 'ATT_FRIENDLY');
+    }
+  },
+  {
+    name: 'B_GiveTradeInv parses structurally (#439)',
+    body: 'B_GiveTradeInv (other);',
+    assert: (action) => {
+      assert.equal(action.type, 'GiveTradeInventoryAction');
+      assert.equal(action.tradeTarget, 'other');
+    }
+  },
+  {
+    name: 'B_StartotherRoutine parses structurally (#439)',
+    body: 'B_StartotherRoutine (self, "Routine");',
+    assert: (action) => {
+      assert.equal(action.type, 'StartOtherRoutineAction');
+      assert.equal(action.routineName, 'Routine');
+    }
+  },
   // P5: identifier routine argument must not be turned into a string literal.
   {
     name: 'Npc_ExchangeRoutine preserves an identifier routine argument (P5)',

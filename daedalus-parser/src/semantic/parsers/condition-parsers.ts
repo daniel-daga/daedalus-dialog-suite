@@ -18,6 +18,84 @@ import { getBinaryOperator, isComparisonOperator, hasComment } from './ast-const
 
 import { captureCallIdentity } from './call-identity';
 
+/** A structured condition call: the ones the table below owns. */
+type ConditionCall = (
+  | NpcKnowsInfoCondition
+  | NpcHasItemsCondition
+  | NpcIsInStateCondition
+  | NpcIsDeadCondition
+  | NpcGetDistToWpCondition
+  | NpcGetTalentSkillCondition
+) & { negated: boolean };
+
+/** The `call == value` form a comparison passes to the constructor. */
+interface ConditionComparison {
+  operator: string;
+  value: string | number | boolean;
+  valueIsStringLiteral: boolean;
+}
+
+/**
+ * Every condition call the parser structures. The call switch, the `!` form and
+ * the comparison form all read this table, so a new condition cannot land in one
+ * of them only (#439). `construct` returns null for a form it cannot represent,
+ * which keeps the source verbatim.
+ */
+const CONDITION_CALLS: Record<string, {
+  arity: number;
+  construct: (args: string[], comparison?: ConditionComparison) => ConditionCall | null;
+}> = {
+  npc_knowsinfo: {
+    arity: 2,
+    // A compared Npc_KnowsInfo has no comparison slot; keep that form verbatim.
+    construct: (args, comparison) =>
+      comparison ? null : new NpcKnowsInfoCondition(args[0], args[1])
+  },
+  npc_hasitems: {
+    arity: 2,
+    construct: (args, comparison) =>
+      new NpcHasItemsCondition(
+        args[0],
+        args[1],
+        comparison?.operator,
+        comparison?.value,
+        comparison?.valueIsStringLiteral
+      )
+  },
+  npc_isinstate: {
+    arity: 2,
+    construct: (args, comparison) =>
+      withBoolComparison(new NpcIsInStateCondition(args[0], args[1]), comparison)
+  },
+  npc_isdead: {
+    arity: 1,
+    construct: (args, comparison) =>
+      withBoolComparison(new NpcIsDeadCondition(args[0]), comparison)
+  },
+  npc_getdisttowp: {
+    arity: 2,
+    construct: (args, comparison) =>
+      new NpcGetDistToWpCondition(
+        args[0],
+        args[1],
+        comparison?.operator,
+        comparison?.value,
+        comparison?.valueIsStringLiteral
+      )
+  },
+  npc_gettalentskill: {
+    arity: 2,
+    construct: (args, comparison) =>
+      new NpcGetTalentSkillCondition(
+        args[0],
+        args[1],
+        comparison?.operator,
+        comparison?.value,
+        comparison?.valueIsStringLiteral
+      )
+  }
+};
+
 export class ConditionParsers {
 
   /**
@@ -37,22 +115,8 @@ export class ConditionParsers {
     // For call expressions, check function name. Daedalus identifiers are
     // case-insensitive, so dispatch on a normalized key.
     if (functionName) {
-      switch (functionName.toLowerCase()) {
-        case 'npc_knowsinfo':
-          return ConditionParsers.parseNpcKnowsInfoCall(node) ?? ConditionParsers.parseGenericCondition(node);
-        case 'npc_hasitems':
-          return ConditionParsers.parseNpcHasItemsCall(node) ?? ConditionParsers.parseGenericCondition(node);
-        case 'npc_isinstate':
-          return ConditionParsers.parseNpcIsInStateCall(node) ?? ConditionParsers.parseGenericCondition(node);
-        case 'npc_isdead':
-          return ConditionParsers.parseNpcIsDeadCall(node) ?? ConditionParsers.parseGenericCondition(node);
-        case 'npc_getdisttowp':
-          return ConditionParsers.parseNpcGetDistToWpCall(node) ?? ConditionParsers.parseGenericCondition(node);
-        case 'npc_gettalentskill':
-          return ConditionParsers.parseNpcGetTalentSkillCall(node) ?? ConditionParsers.parseGenericCondition(node);
-        default:
-          return ConditionParsers.parseGenericCondition(node);
-      }
+      return ConditionParsers.constructCondition(functionName, node)
+        ?? ConditionParsers.parseGenericCondition(node);
     }
 
     // For other node types, handle based on node type
@@ -113,46 +177,6 @@ export class ConditionParsers {
   }
 
   /**
-   * Parse Npc_KnowsInfo function call
-   */
-  static parseNpcKnowsInfoCall(node: TreeSitterNode): NpcKnowsInfoCondition | null {
-    const args = ConditionParsers.parseRawCallArguments(node);
-    if (args.length !== 2) return null;
-
-    return new NpcKnowsInfoCondition(args[0], args[1]);
-  }
-
-  static parseNpcHasItemsCall(node: TreeSitterNode): NpcHasItemsCondition | null {
-    const args = ConditionParsers.parseRawCallArguments(node);
-    if (args.length !== 2) return null;
-    return new NpcHasItemsCondition(args[0], args[1]);
-  }
-
-  static parseNpcIsInStateCall(node: TreeSitterNode): NpcIsInStateCondition | null {
-    const args = ConditionParsers.parseRawCallArguments(node);
-    if (args.length !== 2) return null;
-    return new NpcIsInStateCondition(args[0], args[1], false);
-  }
-
-  static parseNpcIsDeadCall(node: TreeSitterNode): NpcIsDeadCondition | null {
-    const args = ConditionParsers.parseRawCallArguments(node);
-    if (args.length !== 1) return null;
-    return new NpcIsDeadCondition(args[0], false);
-  }
-
-  static parseNpcGetDistToWpCall(node: TreeSitterNode): NpcGetDistToWpCondition | null {
-    const args = ConditionParsers.parseRawCallArguments(node);
-    if (args.length !== 2) return null;
-    return new NpcGetDistToWpCondition(args[0], args[1]);
-  }
-
-  static parseNpcGetTalentSkillCall(node: TreeSitterNode): NpcGetTalentSkillCondition | null {
-    const args = ConditionParsers.parseRawCallArguments(node);
-    if (args.length !== 2) return null;
-    return new NpcGetTalentSkillCondition(args[0], args[1]);
-  }
-
-  /**
    * Parse generic condition expression as Condition
    */
   static parseGenericCondition(node: TreeSitterNode): Condition {
@@ -188,31 +212,9 @@ export class ConditionParsers {
     }
 
     if (operand.type === 'call_expression') {
-      const fnNode = operand.childForFieldName('function');
-      const fnName = fnNode?.text?.trim();
-      if (!fnName) {
-        return null;
-      }
-
-      // Daedalus identifiers are case-insensitive.
-      const dispatchKey = fnName.toLowerCase();
-      if (dispatchKey === 'npc_isdead') {
-        const parsed = ConditionParsers.parseNpcIsDeadCall(operand);
-        if (!parsed) return ConditionParsers.parseGenericCondition(node);
-        parsed.negated = true;
-        return parsed;
-      }
-
-      if (dispatchKey === 'npc_isinstate') {
-        const parsed = ConditionParsers.parseNpcIsInStateCall(operand);
-        if (!parsed) return ConditionParsers.parseGenericCondition(node);
-        parsed.negated = true;
-        return parsed;
-      }
-
-      if (dispatchKey === 'npc_knowsinfo') {
-        const parsed = ConditionParsers.parseNpcKnowsInfoCall(operand);
-        if (!parsed) return ConditionParsers.parseGenericCondition(node);
+      const fnName = operand.childForFieldName('function')?.text?.trim();
+      const parsed = fnName && ConditionParsers.constructCondition(fnName, operand);
+      if (parsed) {
         parsed.negated = true;
         return parsed;
       }
@@ -242,67 +244,27 @@ export class ConditionParsers {
     otherNode: TreeSitterNode,
     operator: string
   ): DialogCondition | null {
-    const fnNode = callNode.childForFieldName('function');
-    const fnName = fnNode?.text?.trim();
+    const fnName = callNode.childForFieldName('function')?.text?.trim();
     if (!fnName) return null;
-
-    const args = ConditionParsers.parseRawCallArguments(callNode);
-    const value = ConditionParsers.parseBinaryValue(otherNode);
-    const valueIsStringLiteral = otherNode.type === 'string';
-
-    // Daedalus identifiers are case-insensitive, so dispatch on a normalized key.
-    switch (fnName.toLowerCase()) {
-      case 'npc_hasitems':
-        if (args.length !== 2) return null;
-        return new NpcHasItemsCondition(args[0], args[1], operator, value, valueIsStringLiteral);
-      case 'npc_getdisttowp':
-        if (args.length !== 2) return null;
-        return new NpcGetDistToWpCondition(args[0], args[1], operator, value, valueIsStringLiteral);
-      case 'npc_gettalentskill':
-        if (args.length !== 2) return null;
-        return new NpcGetTalentSkillCondition(args[0], args[1], operator, value, valueIsStringLiteral);
-      case 'npc_isdead':
-        if (args.length !== 1 || valueIsStringLiteral) return null;
-        return ConditionParsers.parseBoolLikeComparisonAsNegation(
-          new NpcIsDeadCondition(args[0], false),
-          operator,
-          value
-        );
-      case 'npc_isinstate':
-        if (args.length !== 2 || valueIsStringLiteral) return null;
-        return ConditionParsers.parseBoolLikeComparisonAsNegation(
-          new NpcIsInStateCondition(args[0], args[1], false),
-          operator,
-          value
-        );
-      default:
-        return null;
-    }
+    return ConditionParsers.constructCondition(fnName, callNode, {
+      operator,
+      value: ConditionParsers.parseBinaryValue(otherNode),
+      valueIsStringLiteral: otherNode.type === 'string'
+    });
   }
 
-  private static parseBoolLikeComparisonAsNegation<T extends { negated: boolean }>(
-    condition: T,
-    operator: string,
-    value: string | number | boolean
-  ): T | null {
-    const normalized = String(value).trim().toUpperCase();
-    const isTrueLike = normalized === 'TRUE' || normalized === '1';
-    const isFalseLike = normalized === 'FALSE' || normalized === '0';
-    if (!isTrueLike && !isFalseLike) {
-      return null;
-    }
-
-    let negated = false;
-    if (operator === '==') {
-      negated = isFalseLike;
-    } else if (operator === '!=') {
-      negated = isTrueLike;
-    } else {
-      return null;
-    }
-
-    condition.negated = negated;
-    return condition;
+  /** Build a structured call from the table, or null for an unowned or mismatched form. */
+  private static constructCondition(
+    functionName: string,
+    node: TreeSitterNode,
+    comparison?: ConditionComparison
+  ): ConditionCall | null {
+    // Daedalus identifiers are case-insensitive, so dispatch on a normalized key.
+    const call = CONDITION_CALLS[functionName.toLowerCase()];
+    if (!call) return null;
+    const args = ConditionParsers.parseRawCallArguments(node);
+    if (args.length !== call.arity) return null;
+    return call.construct(args, comparison);
   }
 
   private static parseRawCallArguments(callNode: TreeSitterNode): string[] {
@@ -346,4 +308,29 @@ export class ConditionParsers {
         return operator;
     }
   }
+}
+
+/** `call == FALSE` / `call != TRUE` normalize to a negated call; anything else keeps the source. */
+function withBoolComparison(
+  condition: ConditionCall,
+  comparison?: ConditionComparison
+): ConditionCall | null {
+  if (!comparison) return condition;
+  if (comparison.valueIsStringLiteral) return null;
+
+  const normalized = String(comparison.value).trim().toUpperCase();
+  const isTrueLike = normalized === 'TRUE' || normalized === '1';
+  const isFalseLike = normalized === 'FALSE' || normalized === '0';
+  if (!isTrueLike && !isFalseLike) {
+    return null;
+  }
+
+  if (comparison.operator === '==') {
+    condition.negated = isFalseLike;
+  } else if (comparison.operator === '!=') {
+    condition.negated = isTrueLike;
+  } else {
+    return null;
+  }
+  return condition;
 }

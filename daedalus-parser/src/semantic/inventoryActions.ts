@@ -107,13 +107,14 @@ export class UseItemAction implements CodeGeneratable {
 
 export class RemoveInventoryItemsAction implements CodeGeneratable {
   public readonly type = 'RemoveInventoryItemsAction';
-  public removeFunctionName: 'Npc_RemoveInvItems' | 'Npc_RemoveInvItem';
+  /** Source spelling of the callee; any casing the mod wrote (Daedalus identifiers are case-insensitive). */
+  public removeFunctionName: string;
   public removeNpc: string;
   public removeItem: string;
   public removeQuantity?: string;
 
   constructor(
-    removeFunctionName: 'Npc_RemoveInvItems' | 'Npc_RemoveInvItem',
+    removeFunctionName: string,
     removeNpc: string,
     removeItem: string,
     removeQuantity?: string

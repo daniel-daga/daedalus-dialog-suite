@@ -48,7 +48,7 @@ export class NpcKnowsInfoCondition implements CodeGeneratable {
 }
 
 /**
- * Represents an Npc_HasItems condition, optionally with a comparison.
+ * Represents an Npc_HasItems condition, optionally with a comparison or negated.
  */
 export class NpcHasItemsCondition implements CodeGeneratable {
   public readonly type = 'NpcHasItemsCondition';
@@ -57,8 +57,16 @@ export class NpcHasItemsCondition implements CodeGeneratable {
   public operator?: string;
   public value?: string | number | boolean;
   public valueIsStringLiteral: boolean;
+  public negated: boolean;
 
-  constructor(npc: string, item: string, operator?: string, value?: string | number | boolean, valueIsStringLiteral = false) {
+  constructor(
+    npc: string,
+    item: string,
+    operator?: string,
+    value?: string | number | boolean,
+    valueIsStringLiteral = false,
+    negated = false
+  ) {
     this.npc = npc;
     this.item = item;
     if (operator !== undefined) {
@@ -68,6 +76,7 @@ export class NpcHasItemsCondition implements CodeGeneratable {
       this.value = value;
     }
     this.valueIsStringLiteral = valueIsStringLiteral;
+    this.negated = negated;
   }
 
   generateCode(_options: CodeGenOptions): string {
@@ -75,7 +84,7 @@ export class NpcHasItemsCondition implements CodeGeneratable {
     if (this.operator && this.value !== undefined) {
       return `${call} ${this.operator} ${formatComparisonValue(this.value, this.valueIsStringLiteral)}`;
     }
-    return call;
+    return this.negated ? `!${call}` : call;
   }
 
   toDisplayString(): string {
@@ -160,8 +169,16 @@ export class NpcGetDistToWpCondition implements CodeGeneratable {
   public operator?: string;
   public value?: string | number | boolean;
   public valueIsStringLiteral: boolean;
+  public negated: boolean;
 
-  constructor(npc: string, waypoint: string, operator?: string, value?: string | number | boolean, valueIsStringLiteral = false) {
+  constructor(
+    npc: string,
+    waypoint: string,
+    operator?: string,
+    value?: string | number | boolean,
+    valueIsStringLiteral = false,
+    negated = false
+  ) {
     this.npc = npc;
     this.waypoint = waypoint;
     if (operator !== undefined) {
@@ -171,6 +188,7 @@ export class NpcGetDistToWpCondition implements CodeGeneratable {
       this.value = value;
     }
     this.valueIsStringLiteral = valueIsStringLiteral;
+    this.negated = negated;
   }
 
   generateCode(_options: CodeGenOptions): string {
@@ -178,7 +196,7 @@ export class NpcGetDistToWpCondition implements CodeGeneratable {
     if (this.operator && this.value !== undefined) {
       return `${call} ${this.operator} ${formatComparisonValue(this.value, this.valueIsStringLiteral)}`;
     }
-    return call;
+    return this.negated ? `!${call}` : call;
   }
 
   toDisplayString(): string {
@@ -203,8 +221,16 @@ export class NpcGetTalentSkillCondition implements CodeGeneratable {
   public operator?: string;
   public value?: string | number | boolean;
   public valueIsStringLiteral: boolean;
+  public negated: boolean;
 
-  constructor(npc: string, talent: string, operator?: string, value?: string | number | boolean, valueIsStringLiteral = false) {
+  constructor(
+    npc: string,
+    talent: string,
+    operator?: string,
+    value?: string | number | boolean,
+    valueIsStringLiteral = false,
+    negated = false
+  ) {
     this.npc = npc;
     this.talent = talent;
     if (operator !== undefined) {
@@ -214,6 +240,7 @@ export class NpcGetTalentSkillCondition implements CodeGeneratable {
       this.value = value;
     }
     this.valueIsStringLiteral = valueIsStringLiteral;
+    this.negated = negated;
   }
 
   generateCode(_options: CodeGenOptions): string {
@@ -221,7 +248,7 @@ export class NpcGetTalentSkillCondition implements CodeGeneratable {
     if (this.operator && this.value !== undefined) {
       return `${call} ${this.operator} ${formatComparisonValue(this.value, this.valueIsStringLiteral)}`;
     }
-    return call;
+    return this.negated ? `!${call}` : call;
   }
 
   toDisplayString(): string {
