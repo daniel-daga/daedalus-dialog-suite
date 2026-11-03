@@ -41,7 +41,9 @@ and a `functionsByKey` map. Known NPCs come from the project index
 (`npcList ∪ npcPrototypes`, which already resolve prototype/instance chains to
 C_NPC) plus any file-local C_NPC instance. The panel re-scans whenever
 `projectStore.parseGeneration` changes, so problems appear as ingestion
-advances; a manual **Rescan** button and scanned/total counts cover the
+advances, and whenever the open world changes what a rule can see — its
+waypoint name set, its edit count, or new portal findings (#509); a manual
+**Rescan** button and scanned/total counts cover the
 mid-ingestion window.
 
 ## Rules
@@ -99,7 +101,8 @@ Four decisions worth keeping:
   or bench state (#318, measured by `zenkit-node/scripts/check-routine-mobs.js`).
   The state → scheme table is that script's output, not derived per project.
   Mobs are read from the live VOB columns on every scan, so a moved bench
-  counts at the next scan; waypoint positions are from the last waynet read.
+  counts at the next scan; waypoint positions are a live view of the waynet
+  payload's own buffer, so a moved waypoint does too (#509).
 - **Defensive optional arrays.** A project-wide scan consumes many models,
   including partial/error models and the browser-harness mock, which may omit
   arrays the native parser always sets. Rules treat `conditions`/`calls`/
