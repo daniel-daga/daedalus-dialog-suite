@@ -76,14 +76,19 @@ const InlineChoiceEditor: React.FC<InlineChoiceEditorProps> = ({
   const targetFunction = useResolvedFunction(targetFunctionName, targetFilePath);
   const { registerActionRef, focusAction } = useFocusNavigation();
 
+  // No open file declares the target, so there is nowhere to write: both store
+  // writes drop a name the target file's model does not hold (#518). The list
+  // still renders (the merged model knows the function) but read-only.
+  const isReadOnly = ownerFilePath === null;
+
   const setFunction = useCallback((updatedFuncOrUpdater: FunctionUpdater) => {
-    if (!targetFunctionName || !targetFilePath) return;
+    if (!ownerFilePath || !targetFunctionName) return;
     if (typeof updatedFuncOrUpdater === 'function') {
-      updateFunctionWithUpdater(targetFilePath, targetFunctionName, updatedFuncOrUpdater);
+      updateFunctionWithUpdater(ownerFilePath, targetFunctionName, updatedFuncOrUpdater);
       return;
     }
-    updateFunction(targetFilePath, targetFunctionName, updatedFuncOrUpdater);
-  }, [targetFunctionName, targetFilePath, updateFunction, updateFunctionWithUpdater]);
+    updateFunction(ownerFilePath, targetFunctionName, updatedFuncOrUpdater);
+  }, [targetFunctionName, ownerFilePath, updateFunction, updateFunctionWithUpdater]);
 
   const {
     updateAction,
@@ -99,16 +104,16 @@ const InlineChoiceEditor: React.FC<InlineChoiceEditorProps> = ({
     focusAction,
     semanticModel,
     onUpdateSemanticModel: (funcName, func) => {
-      if (targetFilePath) updateFunction(targetFilePath, funcName, func);
+      if (ownerFilePath) updateFunction(ownerFilePath, funcName, func);
     },
     contextName: dialogName,
     currentFunctionName: targetFunctionName,
   });
 
   const handleRenameFunction = useCallback((oldName: string, newName: string) => {
-    if (!targetFilePath) return;
-    renameFunction(targetFilePath, oldName, newName);
-  }, [targetFilePath, renameFunction]);
+    if (!ownerFilePath) return;
+    renameFunction(ownerFilePath, oldName, newName);
+  }, [ownerFilePath, renameFunction]);
 
   // Identity-stable wrappers for every function prop crossing the ActionCard memo
   // boundary in the sub-dialog list (fix-07 §2.8), mirroring DialogActionsSection.
@@ -166,13 +171,9 @@ const InlineChoiceEditor: React.FC<InlineChoiceEditorProps> = ({
     );
   }
 
-  return (
-    <Box sx={{ pl: 2, pt: 1 }}>
-      <Divider sx={{ mb: 1 }}>
-        <Typography variant="caption" sx={{ fontWeight: 700 }}>{targetFunctionName}</Typography>
-      </Divider>
-      {/* The choice's own function: its quest step cards patch it, not the dialog's (#322). */}
-      <ActionLevelPatchContext.Provider value={handlers.patchActionsAtLevel}>
+  // The choice's own function: its quest step cards patch it, not the dialog's (#322).
+  const actionsList = (
+    <ActionLevelPatchContext.Provider value={handlers.patchActionsAtLevel}>
       <ActionsList
         actions={actions}
         npcName={npcName}
@@ -194,7 +195,26 @@ const InlineChoiceEditor: React.FC<InlineChoiceEditorProps> = ({
         droppableNamespace={targetFunctionName}
         filePath={targetFilePath}
       />
-      </ActionLevelPatchContext.Provider>
+    </ActionLevelPatchContext.Provider>
+  );
+
+  return (
+    <Box sx={{ pl: 2, pt: 1 }}>
+      <Divider sx={{ mb: 1 }}>
+        <Typography variant="caption" sx={{ fontWeight: 700 }}>{targetFunctionName}</Typography>
+      </Divider>
+      {isReadOnly ? (
+        <>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+            Read-only: &quot;{targetFunctionName}&quot; is declared in a file that is not open.
+            Open that file to edit its actions.
+          </Typography>
+          {/* `fieldset` is what actually disables every control the cards render. */}
+          <Box component="fieldset" disabled sx={{ border: 0, m: 0, p: 0, minWidth: 0 }}>
+            {actionsList}
+          </Box>
+        </>
+      ) : actionsList}
     </Box>
   );
 };
