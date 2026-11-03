@@ -26,7 +26,7 @@ import { BvhBuilder } from '../../world/BvhBuilder';
 import { SceneHost } from '../../world/SceneHost';
 import { ViewportRenderer } from '../../world/ViewportRenderer';
 import { PickController } from '../../world/PickController';
-import { GizmoController, type GizmoMode } from '../../world/GizmoController';
+import { GizmoController, type GizmoMode, type GizmoSpace } from '../../world/GizmoController';
 import { NO_PICK } from '../../world/pickIds';
 import { chooseWaypointLabels } from '../../world/waypointLabels';
 import type { MarkerOcclusion } from '../../world/VobMarkerLayer';
@@ -244,6 +244,12 @@ export interface WorldViewportProps {
    *  nothing in the retail corpus is scaled — so there are two modes, not three. */
   gizmoMode: GizmoMode;
   /**
+   * Which axes the gizmo's handles stand on — the VOB's own (local, the
+   * default) or the world's. It applies to both modes: a turn of a selection
+   * still goes out as one shared delta about the anchor's axis (§16.4).
+   */
+  gizmoSpace?: GizmoSpace;
+  /**
    * A finished turn as a **delta 3x3 in ZenGin space, row-major** — the shell
    * composes it onto each selected VOB's own matrix, so every one of them turns
    * the same way on screen and each about its own origin.
@@ -391,6 +397,7 @@ export interface WorldViewportProps {
 // Defined with the controller that owns the gizmo, re-exported here because
 // the toolbar and `WorldSurface` have always taken it from the viewport.
 export type { GizmoMode };
+export type { GizmoSpace };
 
 /**
  * The imperative surface `WorldSurface` calls directly, for the one thing that
@@ -505,6 +512,7 @@ interface Gizmo {
   /** The other thing the gizmo can be on. Null detaches it. */
   attachWaypoint: (waypoint: number | null) => void;
   setMode: (mode: GizmoMode) => void;
+  setSpace: (space: GizmoSpace) => void;
   beginNudge: () => boolean;
   previewNudge: (delta: readonly [number, number, number]) => void;
   previewTurn: (delta: ZenRotation) => void;
@@ -518,7 +526,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   mesh, visuals, vobIndex, bbox, waynet, showWaynet, showMarkers = true, markerDistance = 100,
   markerOcclusion = 'occluded', spawns, npcBodyRequests = NO_BODY_REQUESTS, showSpawns, routines, spawnTime, spawnState,
   showWaypointNames, loadTexture, onTextureFailures, onCameraSlot, onPick, onVobContextMenu, onCancelArmed,
-  selection, onTranslateSelection, gizmoMode, onRotateSelection, membersOf, appliedOps,
+  selection, onTranslateSelection, gizmoMode, gizmoSpace = 'local', onRotateSelection, membersOf, appliedOps,
   selectedWaypoint, terrainPoint, exposure, hiddenVobs, outlineMode, snapGrid, snapAngle,
   selectionStyle = 'box',
   selectedExtent = null,
@@ -656,6 +664,10 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   // and every later change reaches it through `setMode`.
   const gizmoModeRef = useRef(gizmoMode);
   gizmoModeRef.current = gizmoMode;
+  // Same reason, for the axes a translate drag stands on: the scene effect
+  // reads it once, and every later change reaches the gizmo through `setSpace`.
+  const gizmoSpaceRef = useRef(gizmoSpace);
+  gizmoSpaceRef.current = gizmoSpace;
   const snapAngleRef = useRef(snapAngle);
   snapAngleRef.current = snapAngle;
   // The brush is read from pointer handlers built once per world, so switching
@@ -880,6 +892,7 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
       // the waynet is not drawn.
       overlay: () => overlayRef.current,
       mode: gizmoModeRef.current,
+      space: gizmoSpaceRef.current,
       snapGrid: () => snapGridRef.current,
       snapAngle: () => snapAngleRef.current,
       onTranslate: (delta) => onTranslateRef.current(delta),
@@ -1585,6 +1598,10 @@ const WorldViewport = React.forwardRef<WorldViewportHandle, WorldViewportProps>(
   useEffect(() => {
     gizmoRef.current?.setMode(gizmoMode);
   }, [gizmoMode, mesh]);
+
+  useEffect(() => {
+    gizmoRef.current?.setSpace(gizmoSpace);
+  }, [gizmoSpace, mesh]);
 
   // The ring is drawn by the pointer handler and can only be *un*drawn from
   // here: switching the brush off is a prop change, and the cursor may never

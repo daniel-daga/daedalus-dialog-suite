@@ -8,11 +8,13 @@ import ExploreIcon from '@mui/icons-material/Explore';
 import GrassIcon from '@mui/icons-material/Grass';
 import GridOnIcon from '@mui/icons-material/GridOn';
 import OpenWithIcon from '@mui/icons-material/OpenWith';
+import PublicIcon from '@mui/icons-material/Public';
 import RedoIcon from '@mui/icons-material/Redo';
 import ThreeSixtyIcon from '@mui/icons-material/ThreeSixty';
 import UndoIcon from '@mui/icons-material/Undo';
 import VerticalAlignBottomIcon from '@mui/icons-material/VerticalAlignBottom';
-import type { GizmoMode } from '../WorldViewport';
+import ViewInArIcon from '@mui/icons-material/ViewInAr';
+import type { GizmoMode, GizmoSpace } from '../WorldViewport';
 
 /** What a move drag can be quantised to. **ZenGin centimetres** — every
  *  position in this app is in them, so a metre is 100 and the labels say
@@ -43,6 +45,9 @@ export interface WorldEditControlsProps {
   hasWorld: boolean;
   gizmoMode: GizmoMode;
   onGizmoModeChange: (mode: GizmoMode) => void;
+  /** The axes a move drag stands on, and the switch between them (#414). */
+  gizmoSpace: GizmoSpace;
+  onToggleGizmoSpace: () => void;
   snapGrid: number;
   snapAngleDegrees: number;
   onSnapStepChange: (step: number) => void;
@@ -68,7 +73,8 @@ export interface WorldEditControlsProps {
 }
 
 const WorldEditControls: React.FC<WorldEditControlsProps> = ({
-  hasWorld, gizmoMode, onGizmoModeChange, snapGrid, snapAngleDegrees, onSnapStepChange,
+  hasWorld, gizmoMode, onGizmoModeChange, gizmoSpace, onToggleGizmoSpace,
+  snapGrid, snapAngleDegrees, onSnapStepChange,
   selectionCount, onRestOnGround, onIntoGround, onAlignToNormal, onDuplicate, onDeleteRequest,
   historyDepth, onUndo, onRedo,
   scatterOn, onScatterToggle, scatterGroundPlacement, onScatterGroundPlacementChange,
@@ -107,6 +113,30 @@ const WorldEditControls: React.FC<WorldEditControlsProps> = ({
         </span>
       </Tooltip>
     </ToggleButtonGroup>
+    {/* Local axes are the default (#414): a VOB turned on a table should still
+        move — and turn — along its own edges, which a world-aligned gizmo cannot
+        do. World axes stay one click away, for lining something up with the
+        map. */}
+    <Tooltip
+      title={`${gizmoMode === 'rotate' ? 'Turn' : 'Move'} axes: ${
+        gizmoSpace === 'local' ? 'the VOB’s own' : 'the world’s'
+      } — click for ${gizmoSpace === 'local' ? 'the world’s' : 'the VOB’s own'}`}
+    >
+      <span>
+        <ToggleButton
+          size="small"
+          value="space"
+          selected={gizmoSpace === 'local'}
+          disabled={!hasWorld}
+          onChange={onToggleGizmoSpace}
+          data-testid="world-gizmo-space"
+          aria-label={gizmoSpace === 'local' ? 'Local axes' : 'World axes'}
+          sx={{ py: 0.25, px: 1 }}
+        >
+          {gizmoSpace === 'local' ? <ViewInArIcon fontSize="small" /> : <PublicIcon fontSize="small" />}
+        </ToggleButton>
+      </span>
+    </Tooltip>
     {/* The step the gizmo drags in, and it follows the mode rather than
         being two controls: one of them is always meaningless, and the
         steps for a distance and for an angle share nothing but the word.

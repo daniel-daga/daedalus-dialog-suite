@@ -270,12 +270,38 @@ describe('the World bar', () => {
       ['world-save', 'Save world'], ['world-save-as', 'Save world as'], ['world-gmbt-test', 'Quick test'],
       ['world-waynet-toggle', 'Waynet'], ['world-spawns-toggle', 'Spawns'],
       ['world-gizmo-translate', 'Move'], ['world-gizmo-rotate', 'Turn'],
+      ['world-gizmo-space', 'Local axes'],
     ] as const) {
       expect(screen.getByTestId(testId)).toHaveAccessibleName(name);
     }
 
     fireEvent.mouseOver(screen.getByTestId('world-undo'));
     expect(await screen.findByRole('tooltip')).toHaveTextContent('Undo (Ctrl+Z)');
+  });
+
+  it('starts a move on the VOB’s own axes, with the world’s one click away', async () => {
+    // #414: a VOB turned on a table has to move along the table's edges, so
+    // local is the default. World axes stay reachable, and the choice is one
+    // setting for both modes — a turn of a selection is still one shared delta
+    // about the anchor's axis.
+    await openWorld();
+
+    const space = screen.getByTestId('world-gizmo-space');
+    expect(space).toHaveAttribute('aria-pressed', 'true');
+    expect(space).toHaveAccessibleName('Local axes');
+    expect(space).toBeEnabled();
+
+    fireEvent.click(space);
+
+    expect(space).toHaveAttribute('aria-pressed', 'false');
+    expect(space).toHaveAccessibleName('World axes');
+
+    fireEvent.click(screen.getByTestId('world-gizmo-rotate'));
+    expect(space).toBeEnabled();
+    expect(space).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(screen.getByTestId('world-gizmo-translate'));
+    expect(space).toBeEnabled();
   });
 
   it('keeps the gizmo ToggleButtonGroup working with each button wrapped in its own Tooltip', async () => {

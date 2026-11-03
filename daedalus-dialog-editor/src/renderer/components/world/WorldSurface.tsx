@@ -35,7 +35,7 @@ import { snapDelta } from '../../world/snapping';
 import { LiveTileContext } from './WorldAssetGrid';
 import { DEFAULT_EXPOSURE, type SelectionStyle } from '../../world/WorldScene';
 import type { MarkerOcclusion } from '../../world/VobMarkerLayer';
-import WorldViewport, { type GizmoMode, type WorldViewportHandle } from './WorldViewport';
+import WorldViewport, { type GizmoMode, type GizmoSpace, type WorldViewportHandle } from './WorldViewport';
 import WorldSceneTree from './WorldSceneTree';
 import WorldFolderTree from './WorldFolderTree';
 import WorldPropertyGrid from './WorldPropertyGrid';
@@ -1327,6 +1327,14 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
   const [gizmoMode, setGizmoMode] = useState<GizmoMode>('translate');
 
   /**
+   * Which axes a move drag stands on (#414) — the VOB's own by default, since
+   * that is what a level designer means by "move it along the wall". Component
+   * state beside the mode: it changes how an edit is made, produces no op of
+   * its own and is not part of the world.
+   */
+  const [gizmoSpace, setGizmoSpace] = useState<GizmoSpace>('local');
+
+  /**
    * How far a drag is quantised, in ZenGin centimetres and in degrees — one
    * value per gizmo mode, so switching mode and back does not forget the step.
    *
@@ -2208,6 +2216,8 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
     classOptions,
     gizmoMode,
     onGizmoModeChange: setGizmoMode,
+    gizmoSpace,
+    onToggleGizmoSpace: () => setGizmoSpace((space) => (space === 'local' ? 'world' : 'local')),
     snapGrid,
     snapAngleDegrees,
     onSnapStepChange: handleSnapStepChange,
@@ -2744,6 +2754,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               onTranslateSelection={handleTranslateSelection}
               membersOf={membersOfSelection}
               gizmoMode={gizmoMode}
+              gizmoSpace={gizmoSpace}
               onRotateSelection={handleRotateSelection}
               appliedOps={appliedOps}
               selectedWaypoint={selectedWaypoint}

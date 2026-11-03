@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {
-  multiplyRotation, mirrorRotation, turnAbout, type SubtreeMember, type ZenRotation,
+  multiplyRotation, turnAbout, type SubtreeMember, type ZenRotation,
 } from 'zen-world';
 import { DampedTransformControls } from './DampedTransformControls';
 import { snapDelta, snapTurn } from './snapping';
@@ -23,6 +23,9 @@ import type { WorldScene } from './WorldScene';
 
 export type GizmoMode = 'translate' | 'rotate';
 
+/** Which axes the gizmo's handles stand on: the VOB's own, or the world's. */
+export type GizmoSpace = 'local' | 'world';
+
 export interface GizmoControllerOptions {
   camera: THREE.Camera;
   canvas: HTMLElement;
@@ -35,6 +38,8 @@ export interface GizmoControllerOptions {
    *  whenever the waynet is not drawn. */
   overlay: () => WaynetOverlay | null;
   mode: GizmoMode;
+  /** Which axes the handles stand on: the anchor VOB's own, or the world's. */
+  space: GizmoSpace;
   /** The drag's quantisation, in ZenGin centimetres and in degrees; 0 is off. */
   snapGrid: () => number;
   snapAngle: () => number;
@@ -64,6 +69,72 @@ export function rowMajor(matrix: THREE.Matrix4): ZenRotation {
   return out as ZenRotation;
 }
 
+/** A row-major 3x3 as a 4x4 with no translation — the form every rotation here
+ *  travels in. */
+const rotationMatrix = (rotation: readonly number[]): THREE.Matrix4 => new THREE.Matrix4().set(
+  rotation[0], rotation[1], rotation[2], 0,
+  rotation[3], rotation[4], rotation[5], 0,
+  rotation[6], rotation[7], rotation[8], 0,
+  0, 0, 0, 1,
+);
+
+/**
+ * The proxy's own rotation for a translate drag: the anchor VOB's, verbatim
+ * (level-editor.md §7, #414).
+ *
+ * A VOB turned on a table has to still move along the table's edges, which a
+ * world-aligned gizmo cannot do. The proxy hangs under the mirrored root, so
+ * its *position* is ZenGin and its orientation plainly is not — but a
+ * quaternion cannot carry a mirror, and the gizmo's own layout reads the
+ * orientation back through `Matrix4.decompose`, which folds the X flip into
+ * `scale.x`. Carrying the stored rotation unchanged is therefore what puts the
+ * handles on the VOB's axes; `localDragFix` is the other half of the pair.
+ *
+ * A **turn** carries the same frame, so the rings follow the VOB too; the delta
+ * it reports is conjugated back out through `turnReflection`. A selection still
+ * turns as one shared delta about the anchor's axis, which is the semantic
+ * `rotateVobs` has (§16.4).
+ */
+export function localGizmoFrame(rotation: ZenRotation): THREE.Quaternion {
+  return new THREE.Quaternion().setFromRotationMatrix(rotationMatrix(rotation));
+}
+
+/**
+ * What puts a local translate drag back on the axis it was drawn along.
+ *
+ * `TransformControls` lays its handles out from the *decomposed world*
+ * rotation, but turns the pointer travel by the object's own quaternion, and
+ * under the mirrored root those two disagree by `A F A⁻¹ F` — F being the X
+ * mirror. Uncorrected, a VOB turned a quarter about Y drags the wrong way along
+ * its own X and Z. Applied to the travel rather than to the pose, so the live
+ * preview, the snap and the commit all still read one number off the proxy.
+ */
+export function localDragFix(frame: THREE.Quaternion): THREE.Quaternion {
+  const turn = new THREE.Matrix4().makeRotationFromQuaternion(frame);
+  const mirror = new THREE.Matrix4().makeScale(-1, 1, 1);
+  return new THREE.Quaternion().setFromRotationMatrix(
+    turn.clone().multiply(mirror).multiply(turn.clone().invert()).multiply(mirror),
+  );
+}
+
+/**
+ * The reflection a turn is conjugated by: `A F A⁻¹`, with `A` the anchor's own
+ * rotation — F alone (`A` = identity) in world space.
+ *
+ * A turn leaves the gizmo as the proxy's own rotation, and taking it back to
+ * the op means changing basis twice: out of the proxy's frame with `A`, and
+ * across the mirrored root with the same conjugation a world-space turn
+ * already gets (`mirrorRotation`). The composition is one reflection, and a
+ * conjugation by a reflection squares to the identity — which is why
+ * `turnBy` reads the same function backwards without a second derivation.
+ */
+export function turnReflection(frame: THREE.Quaternion | null): THREE.Matrix4 {
+  const mirror = new THREE.Matrix4().makeScale(-1, 1, 1);
+  if (frame === null) return mirror;
+  const anchor = new THREE.Matrix4().makeRotationFromQuaternion(frame);
+  return anchor.clone().multiply(mirror).multiply(anchor.clone().invert());
+}
+
 export class GizmoController {
   private readonly proxy = new THREE.Object3D();
   private readonly transform: DampedTransformControls;
@@ -87,9 +158,27 @@ export class GizmoController {
   private readonly rootOf = new Map<number, number>();
   private readonly proxyFrom = new THREE.Vector3();
   private readonly proxyTurnFrom = new THREE.Quaternion();
+  /** The anchor's own axes, in ZenGin space, while the handles stand on them
+   *  (#414) — null in world space, or for a VOB the scene draws no orientation
+   *  for. Kept with its inverse because the snap reads the pair every frame. */
+  private localFrame: THREE.Quaternion | null = null;
+  private readonly localFrameInverse = new THREE.Quaternion();
+  /** The rotation that corrects the library's local travel — `localDragFix`. */
+  private localFix: THREE.Quaternion | null = null;
+  /** What a turn's proxy rotation is conjugated by on the way out — see
+   *  `turnReflection`. F in world space, `A F A⁻¹` when the gizmo stands on the
+   *  anchor's axes. */
+  private readonly turnMirror = new THREE.Matrix4();
+  /** True while `dragTo` drives the gizmo: the harness supplies the proxy's
+   *  final pose itself, so the library's reflected travel is not in play. */
+  private harnessDrag = false;
   // Scratch, so a drag frame allocates nothing.
   private readonly turn = new THREE.Quaternion();
   private readonly turnMatrix = new THREE.Matrix4();
+  /** Where `turnDelta` builds the conjugated turn — scratch, like the two
+   *  above, because this runs on every frame of a drag. */
+  private readonly turnOut = new THREE.Matrix4();
+  private readonly travel = new THREE.Vector3();
   /** A drag ends with a pointerup that the browser also delivers as a click on
    *  the canvas, *after* the gizmo has already reported the drag finished — so
    *  a flag that is true only during the drag would already be false by then.
@@ -98,9 +187,13 @@ export class GizmoController {
   /** Which anchor `attach` uses, and therefore a value the mode switch has to
    *  re-attach on — see `anchorFor`. */
   private modeNow: GizmoMode;
+  /** The axes the translate handles stand on, read by `orientProxy`. */
+  private spaceNow: GizmoSpace;
 
   constructor(private readonly options: GizmoControllerOptions) {
     this.modeNow = options.mode;
+    this.spaceNow = options.space;
+    this.turnMirror.copy(turnReflection(null));
     options.world.root.add(this.proxy);
 
     // Damped rather than the library's own, because its rotate rate is a
@@ -161,13 +254,45 @@ export class GizmoController {
 
     if (position === null) { this.detach(); return; }
     this.proxy.position.set(position[0], position[1], position[2]);
-    // The proxy's own orientation is reset on every attach: the gizmo reports a
-    // *delta* from where it was picked up, so what it starts from only has to
-    // be the same at the press and at the release.
-    this.proxy.quaternion.identity();
+    this.orientProxy();
     this.transform.attach(this.proxy);
     this.transform.enabled = true;
     this.transform.getHelper().visible = true;
+  }
+
+  /**
+   * Stand the proxy on the selection's own axes (#414) — the last VOB picked,
+   * as every other row of the grid describes the last one. A VOB the scene
+   * draws no orientation for (a sound, a decal) has none to give, and the gizmo
+   * falls back to the world's.
+   */
+  private orientProxy(): void {
+    // Only in local space does the library draw its handles from the object's
+    // orientation at all; in world space it draws them axis-aligned whatever
+    // the proxy says.
+    const local = this.spaceNow === 'local';
+    this.transform.setSpace(local ? 'local' : 'world');
+
+    let anchor: number[] | null = null;
+    if (local) {
+      for (let at = this.vobs.length - 1; at >= 0 && anchor === null; at--) {
+        anchor = this.options.world.rotationOf(this.vobs[at]);
+      }
+    }
+
+    if (anchor === null) {
+      this.localFrame = null;
+      this.localFix = null;
+      this.turnMirror.copy(turnReflection(null));
+      this.proxy.quaternion.identity();
+      return;
+    }
+
+    this.localFrame = localGizmoFrame(anchor as ZenRotation);
+    this.localFrameInverse.copy(this.localFrame).invert();
+    this.localFix = localDragFix(this.localFrame);
+    this.turnMirror.copy(turnReflection(this.localFrame));
+    this.proxy.quaternion.copy(this.localFrame);
   }
 
   /**
@@ -189,6 +314,9 @@ export class GizmoController {
     const position = overlay.positionOf(waypoint);
     this.proxy.position.set(position[0], position[1], position[2]);
     this.proxy.quaternion.identity();
+    // No VOB under it, so no axes to stand on.
+    this.localFrame = null;
+    this.localFix = null;
     this.transform.setMode('translate');
     this.transform.attach(this.proxy);
     this.transform.enabled = true;
@@ -207,6 +335,14 @@ export class GizmoController {
     // The anchor is the mode's, so 1 and 2 move the gizmo as well as changing
     // its handles — a rotate gizmo left standing at the centroid would turn
     // about a pivot no op uses.
+    if (this.waypoint === null && this.vobs.length > 0) this.attach(this.vobs);
+  }
+
+  /** Local or world axes for the handles. Re-attaches, because the axes are
+   *  what `attach` puts on the proxy — nothing else about the selection
+   *  changes. */
+  setSpace(space: GizmoSpace): void {
+    this.spaceNow = space;
     if (this.waypoint === null && this.vobs.length > 0) this.attach(this.vobs);
   }
 
@@ -345,12 +481,24 @@ export class GizmoController {
    * So the delta is conjugated by the mirror on the way out, in `coords`, with
    * the rest of the conversion. `tests/gizmoRotation.test.ts` pins both library
    * behaviours this depends on.
+   *
+   * **In local space there is no such conversion.** The proxy then carries the
+   * anchor's own rotation `A`, and the library multiplies its turn onto it —
+   * `q_now = A R A⁻¹` — which is already the delta the VOB wants: `rotateVobs`
+   * applies a delta on the left, and `A R A⁻¹` turns the VOB about its own
+   * axis, exactly as the ring does on screen. Conjugating that by the mirror
+   * again (as the world branch must) would turn it about a different axis.
    */
   private turnDelta(): ZenRotation | null {
     // q_now = delta * q_start, so delta = q_now * q_start⁻¹.
     this.turn.copy(this.proxyTurnFrom).invert().premultiply(this.proxy.quaternion);
     if (Math.abs(this.turn.w) >= 1) return null;
-    return mirrorRotation(rowMajor(this.turnMatrix.makeRotationFromQuaternion(this.turn)));
+    // The proxy's own turn, conjugated out of its basis and across the mirror —
+    // `C Q C⁻¹`, which is the world branch's `mirrorRotation` when C is F.
+    this.turnOut
+      .multiplyMatrices(this.turnMirror, this.turnMatrix.makeRotationFromQuaternion(this.turn))
+      .multiply(this.turnMirror);
+    return rowMajor(this.turnOut);
   }
 
   /**
@@ -367,27 +515,60 @@ export class GizmoController {
   private snapProxy(): void {
     if (this.transform.getMode() === 'rotate') {
       // The turn since the press, snapped and put back — the proxy's start
-      // orientation is arbitrary (`attach` resets it), so only the delta is a
-      // quantity a step means anything against.
+      // orientation is whatever `attach` gave it (the anchor's, or the identity
+      // in world space), so only the delta is a quantity a step means anything
+      // against.
       this.turn.copy(this.proxyTurnFrom).invert().premultiply(this.proxy.quaternion);
       snapTurn(this.turn, this.options.snapAngle());
       this.proxy.quaternion.copy(this.proxyTurnFrom).premultiply(this.turn);
       return;
     }
 
-    const snapped = snapDelta([
+    const delta: [number, number, number] = [
       this.proxy.position.x - this.proxyFrom.x,
       this.proxy.position.y - this.proxyFrom.y,
       this.proxy.position.z - this.proxyFrom.z,
-    ], this.options.snapGrid());
+    ];
+    const snapped = this.localFrame === null
+      ? snapDelta(delta, this.options.snapGrid())
+      : this.snapAlongAnchor(delta, this.localFrame);
     this.proxy.position.set(
       this.proxyFrom.x + snapped[0], this.proxyFrom.y + snapped[1], this.proxyFrom.z + snapped[2],
+    );
+  }
+
+  /** The step measured along the anchor's own axes — the ones the handles are
+   *  drawn on — rather than along the world's. */
+  private snapAlongAnchor(
+    delta: [number, number, number], frame: THREE.Quaternion,
+  ): [number, number, number] {
+    this.travel.set(delta[0], delta[1], delta[2]).applyQuaternion(this.localFrameInverse);
+    const snapped = snapDelta(
+      [this.travel.x, this.travel.y, this.travel.z], this.options.snapGrid());
+    this.travel.set(snapped[0], snapped[1], snapped[2]).applyQuaternion(frame);
+    return [this.travel.x, this.travel.y, this.travel.z];
+  }
+
+  /** Put a local translate drag back on the axis it was drawn along — see
+   *  `localDragFix` — before the snap and the preview read the proxy. */
+  private correctLocalTranslate(): void {
+    if (this.localFix === null || this.harnessDrag) return;
+    this.travel.set(
+      this.proxy.position.x - this.proxyFrom.x,
+      this.proxy.position.y - this.proxyFrom.y,
+      this.proxy.position.z - this.proxyFrom.z,
+    ).applyQuaternion(this.localFix);
+    this.proxy.position.set(
+      this.proxyFrom.x + this.travel.x,
+      this.proxyFrom.y + this.travel.y,
+      this.proxyFrom.z + this.travel.z,
     );
   }
 
   /** The live preview. The world in the main process still has the VOBs where
    *  they were; this is the drag being drawn, and it is made real on release. */
   private readonly onObjectChange = () => {
+    this.correctLocalTranslate();
     this.snapProxy();
 
     if (this.waypoint !== null) {
@@ -439,17 +620,19 @@ export class GizmoController {
     if (this.vobs.length === 0 && this.waypoint === null) {
       throw new Error('nothing is selected');
     }
+    this.harnessDrag = true;
     this.transform.dispatchEvent({ type: 'dragging-changed', value: true });
     this.proxy.position.set(to[0], to[1], to[2]);
     this.transform.dispatchEvent({ type: 'objectChange' });
     this.transform.dispatchEvent({ type: 'dragging-changed', value: false });
+    this.harnessDrag = false;
   }
 
   /** Turn the gizmo about an axis given **in ZenGin space**, like everything an
-   *  op carries, so the driver can predict the answer. The proxy's quaternion
-   *  is not in that basis (see `turnDelta`), so the turn is built in ZenGin and
-   *  conjugated into the proxy's frame by the same function that converts it
-   *  back — which is its own inverse, so this cannot be applied the wrong way. */
+   *  op carries, so the driver can predict the answer. The proxy's quaternion is
+   *  not in that basis (see `turnDelta`), so the turn is built in ZenGin and
+   *  conjugated into the proxy's frame by the same reflection `turnDelta` takes
+   *  it back out with. */
   turnBy(axis: readonly [number, number, number], radians: number): void {
     if (this.vobs.length === 0) throw new Error('no VOB is selected');
     this.transform.dispatchEvent({ type: 'dragging-changed', value: true });
@@ -458,13 +641,18 @@ export class GizmoController {
         new THREE.Vector3(axis[0], axis[1], axis[2]).normalize(), radians,
       ),
     ));
-    const asProxy = mirrorRotation(inZen);
-    this.proxy.quaternion.setFromRotationMatrix(this.turnMatrix.set(
-      asProxy[0], asProxy[1], asProxy[2], 0,
-      asProxy[3], asProxy[4], asProxy[5], 0,
-      asProxy[6], asProxy[7], asProxy[8], 0,
-      0, 0, 0, 1,
-    ));
+    // `turnDelta` conjugates by a reflection, and a reflection squared is the
+    // identity — so reading it backwards is the same conjugation, and the
+    // proxy rotation it needs is the delta turned into its own frame.
+    const asProxy = this.turnMirror.clone()
+      .multiply(rotationMatrix(inZen))
+      .multiply(this.turnMirror);
+    // The drag starts wherever the proxy already stands — identity in world
+    // space, the anchor's rotation in local space — so the delta composes onto
+    // it rather than replacing it.
+    this.proxy.quaternion
+      .setFromRotationMatrix(asProxy)
+      .multiply(this.localFrame ?? new THREE.Quaternion());
     this.transform.dispatchEvent({ type: 'objectChange' });
     this.transform.dispatchEvent({ type: 'dragging-changed', value: false });
   }

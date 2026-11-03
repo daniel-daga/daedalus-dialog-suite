@@ -24,7 +24,7 @@ import * as mockWorldViewport from './worldViewportMocks';
 
 jest.mock('three/examples/jsm/controls/TransformControls.js', () => mockWorldViewport.mockTransformControls());
 
-import { GizmoController, type GizmoControllerOptions, type GizmoMode } from '../src/renderer/world/GizmoController';
+import { GizmoController, type GizmoControllerOptions, type GizmoMode, type GizmoSpace } from '../src/renderer/world/GizmoController';
 import type { WaynetOverlay } from '../src/renderer/world/WaynetOverlay';
 import type { WorldScene } from '../src/renderer/world/WorldScene';
 
@@ -32,7 +32,10 @@ const IDENTITY: ZenRotation = [1, 0, 0, 0, 1, 0, 0, 0, 1];
 
 /** Just the handful of `WorldScene` the gizmo touches, plus a record of what it
  *  was asked to preview. */
-function fakeWorld(positions: Record<number, [number, number, number]>) {
+function fakeWorld(
+  positions: Record<number, [number, number, number]>,
+  rotations: Record<number, ZenRotation> = {},
+) {
   const moved: Array<[number, [number, number, number]]> = [];
   const turned: Array<[number, ZenRotation]> = [];
   return {
@@ -41,7 +44,7 @@ function fakeWorld(positions: Record<number, [number, number, number]>) {
     scene: {
       root: new THREE.Group(),
       positionOf: (vob: number) => positions[vob] ?? null,
-      rotationOf: (vob: number) => (vob in positions ? IDENTITY : null),
+      rotationOf: (vob: number) => rotations[vob] ?? (vob in positions ? IDENTITY : null),
       // The last VOB picked, which is what a rotate gizmo stands on.
       anchorOf: (vobs: readonly number[]) => (
         vobs.length === 0 ? null : positions[vobs[vobs.length - 1]] ?? null
@@ -60,13 +63,16 @@ function fakeWorld(positions: Record<number, [number, number, number]>) {
 
 function harness({
   mode = 'translate' as GizmoMode,
+  space = 'local' as GizmoSpace,
   snapGrid = 0,
   snapAngle = 0,
   positions = { 1: [100, 0, 0], 2: [300, 0, 0] } as Record<number, [number, number, number]>,
+  rotations = {} as Record<number, ZenRotation>,
   waypoints = { 7: [50, 60, 70] as [number, number, number] },
   membersOf = undefined as GizmoControllerOptions['membersOf'],
 } = {}) {
-  const world = fakeWorld(positions);
+  const world = fakeWorld(positions, rotations);
+  const scene = new THREE.Scene();
   const controls = { enabled: true };
   const translated: [number, number, number][] = [];
   const rotated: ZenRotation[] = [];
@@ -82,11 +88,12 @@ function harness({
   const gizmo = new GizmoController({
     camera: new THREE.PerspectiveCamera(),
     canvas: document.createElement('canvas'),
-    scene: new THREE.Scene(),
+    scene,
     world: world.scene,
     controls,
     overlay: () => overlay,
     mode,
+    space,
     snapGrid: () => snapGrid,
     snapAngle: () => snapAngle,
     onTranslate: (delta) => { translated.push(delta); },
@@ -95,7 +102,7 @@ function harness({
     membersOf,
   });
 
-  return { gizmo, world, controls, translated, rotated, waypointMoves, waypoints };
+  return { gizmo, world, scene, controls, translated, rotated, waypointMoves, waypoints };
 }
 
 describe('GizmoController', () => {
@@ -112,6 +119,39 @@ describe('GizmoController', () => {
     const rotate = harness({ mode: 'rotate' });
     rotate.gizmo.attach([1, 2]);
     expect(rotate.gizmo.position()).toEqual([300, 0, 0]);
+  });
+
+  it('draws the gizmo’s handles in the VOB’s own space in both modes', () => {
+    // The library only honours the proxy's orientation in `local` space — in
+    // `world` it draws the handles axis-aligned whatever the proxy says — so a
+    // gizmo that turned the proxy but left the space alone would look identical
+    // to the one that never turned it (#414).
+    const { gizmo, scene } = harness({ mode: 'translate' });
+    const handleSpace = () => (scene.children[0].children[0] as unknown as { space: string }).space;
+
+    gizmo.attach([1]);
+    expect(handleSpace()).toBe('local');
+
+    // A turn follows the VOB too — the rings are the same setting as the arrows.
+    gizmo.setMode('rotate');
+    expect(handleSpace()).toBe('local');
+
+    gizmo.setSpace('world');
+    expect(handleSpace()).toBe('world');
+  });
+
+  it('switches a live gizmo to the world’s axes on request', () => {
+    const { gizmo, scene } = harness({ mode: 'translate', space: 'world' });
+    const handleSpace = () => (scene.children[0].children[0] as unknown as { space: string }).space;
+
+    gizmo.attach([1]);
+    expect(handleSpace()).toBe('world');
+
+    gizmo.setSpace('local');
+    expect(handleSpace()).toBe('local');
+
+    gizmo.setSpace('world');
+    expect(handleSpace()).toBe('world');
   });
 
   it('previews a keyboard nudge from where it began, carrying children, and commits nothing itself', () => {
@@ -194,6 +234,46 @@ describe('GizmoController', () => {
 
     expect(translated).toEqual([[100, 0, 0]]);
     expect(gizmo.position()).toEqual([200, 0, 0]);
+  });
+
+  it('quantises a turned VOB’s drag along its own edges, not the world grid', () => {
+    // #414: with the gizmo standing on the VOB's own axes, a step is a distance
+    // along an edge the user can see. Snapping the world components of a travel
+    // that runs diagonally across them would move it off that edge again.
+    const edge = Math.SQRT1_2; // a 45° turn about Y: the VOB's X runs (c, 0, -c)
+    const rotation: ZenRotation = [edge, 0, edge, 0, 1, 0, -edge, 0, edge];
+    const { gizmo, translated } = harness({ snapGrid: 100, rotations: { 1: rotation } });
+
+    gizmo.attach([1]);
+    gizmo.dragTo([100 + 200 * edge, 0, -200 * edge]);
+
+    // Two whole steps along that edge — where it was dragged. A world-grid snap
+    // would have made it (100, 0, -100), which is not on the edge at all.
+    [200 * edge, 0, -200 * edge].forEach((value, axis) =>
+      expect(translated[0][axis]).toBeCloseTo(value, 6));
+  });
+
+  it('reports a local turn as the delta the ring drew, about the VOB’s own axis', () => {
+    // The proxy carries the VOB's rotation, so the turn it reports has to be
+    // conjugated back out of that frame before it is an op — and a conjugation
+    // by a reflection is its own inverse, which is what makes the harness's
+    // "turn about this ZenGin axis" mean the same thing in both spaces.
+    const quarterTurnY: ZenRotation = [0, 0, 1, 0, 1, 0, -1, 0, 0];
+    const { gizmo, rotated } = harness({
+      mode: 'rotate', space: 'local', rotations: { 1: quarterTurnY },
+    });
+
+    gizmo.attach([1]);
+    gizmo.turnBy([0, 1, 0], Math.PI / 2);
+
+    // The same delta a world-space drag of the Y ring reports, so the op — and
+    // a selection turned through the shared delta — is unchanged by the space.
+    const [xx, , xz, , yy, , zx, , zz] = rotated[0];
+    expect(xx).toBeCloseTo(0, 6);
+    expect(yy).toBeCloseTo(1, 6);
+    expect(xz).toBeCloseTo(1, 6);
+    expect(zx).toBeCloseTo(-1, 6);
+    expect(zz).toBeCloseTo(0, 6);
   });
 
   it('turns each VOB about its own origin, and reports one delta', () => {
