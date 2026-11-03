@@ -55,6 +55,8 @@ export const ACTION_TYPE_REGISTRY: Record<ActionTypeId, ActionTypeEntry> = {
   questFail: { label: 'Fail Quest', icon: CancelIcon },
   questCancel: { label: 'Cancel Quest', icon: DoNotDisturbOnIcon },
   questNote: { label: 'Note', icon: StickyNote2Icon },
+  // #325: one SetVariableAction writing a named stage.
+  setStage: { label: 'Set Stage', icon: FlagIcon },
   logEntry: { label: 'Log Entry', icon: DescriptionIcon },
   createTopic: { label: 'Create Topic', icon: LibraryBooksIcon },
   logSetTopicStatus: { label: 'Log Set Status', icon: DescriptionIcon },

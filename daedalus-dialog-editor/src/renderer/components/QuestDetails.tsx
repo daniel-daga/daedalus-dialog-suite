@@ -19,6 +19,7 @@ import {
 import {
   OpenInNew as OpenInNewIcon,
   Add as AddIcon,
+  Delete as DeleteIcon,
   Edit as EditIcon,
   Save as SaveIcon,
   Cancel as CancelIcon,
@@ -29,7 +30,9 @@ import {
 import type { SemanticModel } from '../types/global';
 import { useNavigation } from '../hooks/useNavigation';
 import { analyzeQuest, getQuestReferences, buildQuestDiary, implicitQuestSource, type QuestDiaryItem, type QuestDiaryState } from '../quest/domain';
+import { buildQuestStages, stageNameCollision, stageVariableName, type QuestStageItem } from '../quest/domain/questStages';
 import { useProjectStore } from '../store/projectStore';
+import { questNameFromTitle, topicBaseName } from '../utils/questLogFiles';
 import { saveDiaryEntryText, upgradeImplicitQuest } from './questDiarySave';
 
 const STATE_LABEL: Record<QuestDiaryState, string> = {
@@ -47,12 +50,15 @@ interface QuestDetailsProps {
 const QuestDetails: React.FC<QuestDetailsProps> = ({ semanticModel, questName }) => {
   const { navigateToDialog, navigateToSymbol } = useNavigation();
   const updateGlobalConstant = useProjectStore((s) => s.updateGlobalConstant);
+  const addVariable = useProjectStore((s) => s.addVariable);
+  const deleteVariable = useProjectStore((s) => s.deleteVariable);
   const isLoading = useProjectStore((s) => s.isLoading);
 
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [editingEntry, setEditingEntry] = useState<QuestDiaryItem | null>(null);
   const [entryText, setEntryText] = useState('');
+  const [stageTitle, setStageTitle] = useState('');
   const [isWriting, setIsWriting] = useState(false);
   const [writeError, setWriteError] = useState<string | null>(null);
 
@@ -61,6 +67,7 @@ const QuestDetails: React.FC<QuestDetailsProps> = ({ semanticModel, questName })
       setIsEditingTitle(false);
       setEditTitle('');
       setEditingEntry(null);
+      setStageTitle('');
       setWriteError(null);
   }, [questName]);
 
@@ -74,6 +81,10 @@ const QuestDetails: React.FC<QuestDetailsProps> = ({ semanticModel, questName })
 
   const diary = useMemo(() => {
     return questName ? buildQuestDiary(semanticModel, questName) : [];
+  }, [semanticModel, questName]);
+
+  const stages = useMemo(() => {
+    return questName ? buildQuestStages(semanticModel, questName) : [];
   }, [semanticModel, questName]);
 
   const conditionReferences = useMemo(() => references.filter((ref) => ref.type === 'condition'), [references]);
@@ -101,6 +112,53 @@ const QuestDetails: React.FC<QuestDetailsProps> = ({ semanticModel, questName })
       const declarationFile = analysis?.filePaths.topic;
       if (!questName || !declarationFile) return;
       void write(() => upgradeImplicitQuest(questName, diary, declarationFile));
+  };
+
+  // #325: a stage is a declared int beside the quest's MIS_, so creating one is
+  // the same `addVariable` write as the implicit-quest upgrade. A quest with no
+  // MIS_ cannot own stages — the key would move when it is upgraded later.
+  const handleAddStage = () => {
+      if (!questName) return;
+      const name = questNameFromTitle(stageTitle);
+      if (!name) {
+          setWriteError('A stage needs a title with letters or digits in it.');
+          return;
+      }
+      const declarationFile = analysis?.filePaths.variable;
+      if (!analysis?.misVariableExists || !declarationFile) {
+          setWriteError(`${analysis?.misVariableName ?? 'MIS_'} is not declared yet, so the quest cannot own stages.`);
+          return;
+      }
+      const variable = stageVariableName(topicBaseName(questName), name);
+      const collision = stageNameCollision(semanticModel, variable);
+      if (collision) {
+          setWriteError(`${variable} is already declared as ${collision}.`);
+          return;
+      }
+      void write(async () => {
+          await addVariable(variable, 'int', undefined, declarationFile, false);
+          setStageTitle('');
+      });
+  };
+
+  // The declaration goes alone: deleting a stage a dialog still writes (or a
+  // condition still checks) would silently break that branch, so the page
+  // refuses and names the writers.
+  const handleDeleteStage = (stage: QuestStageItem) => {
+      void write(async () => {
+          if (stage.writes.length > 0) {
+              const sites = stage.writes.map((item) => item.dialogName ?? item.functionName).join(', ');
+              throw new Error(`${stage.variable} is still written in ${sites}; change those lines first.`);
+          }
+          if (stage.checked) {
+              throw new Error(`${stage.variable} is still checked in a condition; change that first.`);
+          }
+          const declaration = Object.values(semanticModel.variables ?? {}).find(
+              (variable) => variable.name.toUpperCase() === stage.variable.toUpperCase()
+          );
+          if (!declaration?.filePath || !declaration.range) throw new Error(`No declaration was found for ${stage.variable}`);
+          await deleteVariable(declaration.filePath, declaration.range);
+      });
   };
 
   const goTo = (item: { dialogName?: string; functionName: string }) => {
@@ -322,6 +380,69 @@ const QuestDetails: React.FC<QuestDetailsProps> = ({ semanticModel, questName })
                 <ListItem><ListItemText secondary="No ending yet" /></ListItem>
             )}
          </List>
+      </Paper>
+
+      <Paper sx={{ p: 2, mb: 3 }}>
+         <Typography variant="h6" gutterBottom>Stages</Typography>
+         <List data-testid="quest-stages">
+            {stages.map((stage) => (
+                <ListItem
+                  key={stage.variable}
+                  data-testid="quest-stage-item"
+                  secondaryAction={
+                    <>
+                      {stage.writes.map((item, i) => (
+                        <Tooltip key={i} title={`Go to ${item.dialogName ?? item.functionName}`} arrow>
+                          <IconButton edge="end" aria-label={`Go to ${item.dialogName ?? item.functionName}`} onClick={() => goTo(item)}>
+                            <OpenInNewIcon />
+                          </IconButton>
+                        </Tooltip>
+                      ))}
+                      <Tooltip title={`Delete ${stage.variable}`} arrow>
+                        <IconButton aria-label={`Delete ${stage.variable}`} disabled={isWriting} onClick={() => handleDeleteStage(stage)}>
+                          <DeleteIcon />
+                        </IconButton>
+                      </Tooltip>
+                    </>
+                  }
+                >
+                    <ListItemText
+                        primary={stage.name}
+                        secondary={`${stage.kind} · ${stage.target === null ? 'no target' : `target ${stage.target}`}`}
+                    />
+                </ListItem>
+            ))}
+            {stages.length === 0 && (
+                <ListItem><ListItemText primary="No stages yet" /></ListItem>
+            )}
+            {stages.some((stage) => stage.writes.length === 0) && (
+                <ListItem data-testid="stage-note-never-set">
+                    <ListItemText secondary={`Declared, never set: ${stages.filter((s) => s.writes.length === 0).map((s) => s.name).join(', ')}`} />
+                </ListItem>
+            )}
+            {stages.some((stage) => stage.writes.length > 0 && !stage.checked) && (
+                <ListItem data-testid="stage-note-never-checked">
+                    <ListItemText secondary={`Set, never checked: ${stages.filter((s) => s.writes.length > 0 && !s.checked).map((s) => s.name).join(', ')}`} />
+                </ListItem>
+            )}
+         </List>
+         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mt: 1 }}>
+             <TextField
+                 label="Stage title"
+                 placeholder="e.g. Talked to Greg"
+                 size="small"
+                 fullWidth
+                 value={stageTitle}
+                 onChange={(e) => setStageTitle(e.target.value)}
+             />
+             <Button
+                 startIcon={<AddIcon />}
+                 onClick={handleAddStage}
+                 disabled={isWriting || isLoading || !stageTitle.trim()}
+             >
+                 Add stage
+             </Button>
+         </Box>
       </Paper>
 
       {conditionReferences.length > 0 && (
