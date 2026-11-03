@@ -134,7 +134,11 @@ export function mockTransformControls() {
       enabled = false;
       private helper = mockGizmoHelper(three);
       private mode = 'translate';
-      setSpace() {}
+      /** Recorded on the fake gizmo, where the plane-handle mirroring reads it
+       *  and where a spec can check which space the controller chose. */
+      setSpace(space: 'local' | 'world') {
+        (this.helper.children[0] as unknown as { space: string }).space = space;
+      }
       getHelper() { return this.helper; }
       setMode(mode: string) { this.mode = mode; }
       getMode() { return this.mode; }

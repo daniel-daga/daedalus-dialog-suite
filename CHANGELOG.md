@@ -4,6 +4,62 @@ What each published Windows build changed, newest first. Build Windows adds a
 build here when it publishes it; write new notes in `RELEASE_NOTES.md`, not here.
 Builds before 31 had no release notes.
 
+## Build 40 — 2026-11-03
+
+- #511: A save no longer fails because another program is holding the script for a moment
+- #454: Saving a script a world or NPC preview holds no longer leaves a stray copy beside it
+- #464: A choice that targets its own function keeps the seeded first line in step with the choice text
+- #463: Expanding a choice whose target is declared in another file shows its actions instead of "Function not found"
+- #397: A save keeps the whitespace between two declarations that shared a line, so tab-aligned pairs don't reflow
+- #462: Inserting a condition template into an "or" condition keeps the condition's meaning
+- #461: Tabbing through the Conditions panel no longer marks the file dirty or adds undo steps
+- #453: Turning auto-save off while a save is running no longer writes one more file
+- #512: A project save and a migration that spell the same file two ways can no longer race each other
+- #437: A symlinked asset catalog file is refused on open, as it already was on save
+- #473: A file changed outside the editor is parsed once per watcher batch instead of twice
+- #472: A file whose parse timed out is retried on the next read instead of being cached as "broken"
+- #471: Reload no longer keeps a model parsed before the reload; opening a project resets the stale-parse guard
+- #470: A project's files are read in one fixed order, so which file owns a twice-declared name no longer changes between opens
+- #485: The delete confirmation lists exactly what is deleted, and says when the dialog belongs to another file
+- #516: A dialog delete no longer keeps a function alive because a description mentions its name
+- #468: An NPC deleted or renamed in a script leaves the NPC list without reopening the project
+- #492: An NPC editor save re-indexes its file, so the routine it changed is current everywhere
+- #478: The asset thumbnail cache stops growing forever, keeping the newest 1024 images
+- #498: Two voice findings on repeated lines in one function are two rows, not one
+- #490: The NPC editor refuses a save when the NPC body changed since the form read it
+- #489: A routine save refuses a draft whose function changed, instead of rewriting the wrong lines
+- #466: A constant or variable ingested after an NPC was selected reaches the merged model
+- #465: An NPC whose dialogs spell its name in another case is one NPC row, with all its dialogs
+- #484: Renaming a dialog lists the other files whose Npc_KnowsInfo names it, instead of nothing
+- #496: A dangling `Npc_KnowsInfo` is reported in a raw `if` guard or condition body, not only an extracted one
+- #483: A search hit inside a choice function opens that function under the dialog that owns it
+- #475: Install & Restart now closes the editor instead of leaving it open under the running installer
+- #476: Clicking X twice no longer closes the window with the unsaved-changes prompt still on screen
+- #486: A dialog whose choices all sit inside an if/else can be expanded in the tree
+- #482: Recent tabs and search results open their dialog when the file was opened without a project
+- #481: A description typed and then saved with Ctrl+S is written to the file, not silently dropped
+- #501: A Problems scan no longer spends ~40 ms matching free points, one world name at a time
+- #497: NPC routines and start states are no longer reported as unreferenced functions
+- #493: A `Topic_`-spelled quest keeps its MIS edges, so its diary stays in story order
+- #494: A refused quest title save shows its error instead of leaving the field open
+- #488: A quest that ends inside an if no longer shows "In Progress", and its upgrade sets MIS_
+- #474: Worker docs: the parser pool starts on the first parse request, not at module load
+- #479: The security doc credits the settings/options shape checks to the one save handler that makes them
+- #495: Quest docs: MIS_ is appended to the end of the declaring file; the create flow is RegisterTopicDialog
+- #500: Problems panel docs list all 18 rule ids and all nine reference inputs
+- #507: Dev builds refuse navigation to a page whose host only looks like the dev server
+- #444: A missing semicolon is a syntax error; Polish/Czech and BOM'd Windows scripts decode right
+- #450: Opening a file that is already open and edited no longer replaces the edits with the disk copy
+- #451: The Undo and Redo buttons wait for a pending edit, so the step you meant is the step you get
+- #452: A routine, diary or NPC-editor save can be undone like any other edit
+- #440: Saving keeps a script's own line endings, blank lines and the statements you grouped on one line
+- #443: Edits ship half the data — a dialog no longer carries its own body over IPC
+- #445: Clearing an NPC's daily routine and filling another field in the same visit no longer conflicts
+- #429: The NPC creator's start routine sits below its routines and fills itself with the first one
+- #458: Save-time validation also checks actions nested inside an if/else branch
+- #459: Adding a choice or a quest step to an empty if/else branch works
+- #460: The Teach arguments field keeps a typed comma, so another argument can be added
+
 ## Build 39 — 2026-11-01
 
 - #431: VOB folders made after Save As are saved beside the copy, not the file it was saved from

@@ -1514,6 +1514,63 @@ gizmo reads the scene), then puts both back with a single Ctrl+Z. Sabotaged by
 making the drag a destination again: the two VOBs collapse onto one point and
 the script fails.
 
+#### The translate gizmo stands on the VOB's own axes (2026-11-03; #414)
+
+A VOB turned on a table has to still move along the table's edges, and a
+world-aligned gizmo cannot do that — the report is Flo's, against Spacer's
+behaviour ("der Pivot, die Drehachsen, mit dem Modell mitdrehen"). **Both sets
+of handles now carry the anchor VOB's own rotation, and local is the default**:
+the arrows stand on its axes and the rings turn with it. A selection still
+leaves as *one shared delta* about the anchor's axes, which is the semantic
+`rotateVobs` has (§16.4) — rings that each followed their own VOB would have to
+pick one of them. In a selection the axes are the last picked VOB's, as every
+other row of the property grid describes the last one. A VOB the scene draws no
+orientation for — a sound, a decal — has none to give, and the gizmo falls back
+to the world's.
+
+Two pieces, and neither is visible in this repo's own source:
+
+- **The proxy's quaternion is the stored rotation verbatim** (`localGizmoFrame`
+  in `renderer/world/GizmoController.ts`), *not* conjugated by
+  `mirrorRotation` the way a turn is. The handle frame is read back through
+  `Matrix4.decompose`, which answers the mirrored root's negative determinant
+  by negating `scale.x` and folding the flip out of the rotation; carrying the
+  rotation unchanged is what survives that and puts the handles on the VOB's
+  axes.
+- **The library's local travel has to be corrected** (`localDragFix`):
+  `TransformControls` lays its handles out from the *decomposed world* rotation
+  but turns the pointer travel by the object's own quaternion, and under the
+  mirrored root the two disagree by `A F A⁻¹ F`, F being the X mirror.
+  Uncorrected, a VOB turned a quarter about Y drags the wrong way along two of
+  its three handles — the fix's test reproduces the library's arithmetic and
+  counts them. The correction is applied to the travel before the snap and the
+  preview, so there is still one number on the proxy for everything to read.
+
+**The snap step is measured along those axes too** (`snapAlongAnchor`), because
+a step is a distance along the handle that was dragged; quantising the world
+components of a diagonal travel would move the VOB off the edge it snapped to.
+A VOB at `IDENTITY` has a world frame here, so an untouched world drags and
+snaps byte-identically and the existing harness scripts did not move.
+
+**A turn takes the same frame, and one more conjugation.** The rings are drawn
+from the anchor's rotation, and the delta a drag leaves as is the proxy's own
+turn conjugated out of that frame and back across the mirror — `C Q C⁻¹` with
+`C = A F A⁻¹` (`turnReflection`), which is the world branch's `mirrorRotation`
+when `A` is the identity. That conjugation is a reflection, so it squares to
+the identity: `turnBy`, the harness's "turn about this ZenGin axis", reads the
+same function backwards rather than deriving it again, and the e2e scripts'
+turns mean what they say in either space. The turn's *visible* criterion is the
+one that was tested: the VOB turns on screen about the axis the ring is drawn
+on, by the angle dragged.
+
+**A space switch sits beside the mode toggle, and local is its default** — the
+maintainer's call: the report's complaint is world axes, so local is what the
+gizmo starts on, and world stays one click away for lining something up with
+the map. It applies to both modes; a turn's shared delta is unchanged by it.
+The switch is component state in `WorldSurface` beside the gizmo mode: it
+changes how an edit is made, produces no op of its own and is not part of the
+world.
+
 #### Save, from the UI — and the question the projection could never answer (2026-08-26)
 
 `saveWorld` is reachable from the app: a **Save world…** button, the two
