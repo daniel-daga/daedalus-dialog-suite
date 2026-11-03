@@ -260,10 +260,12 @@ The metadata pass additionally walked top-level declarations twice per file
 `clearMergedModel` had no external callers and only `closeProject` shrank it.
 It is now capped at `PARSED_FILES_CAP` (512) entries:
 
-- **Pinned (never evicted): the merged-model contributors** that
-  `loadAndMergeNpcModels`/`loadQuestData` read from the cache — global
-  (dialog-less) files in `allDialogFiles`, the selected NPC's dialog files, and
-  quest files.
+- **Pinned: the merged-model contributors** that
+  `loadAndMergeNpcModels`/`loadQuestData` read from the cache — the selected
+  NPC's dialog files and quest files. Global (dialog-less) files in
+  `allDialogFiles` are a preference, not an absolute: a project can list more
+  of them than the cap (the MDK tree does), so they are evicted after every
+  other unpinned entry rather than never.
 - **Eviction order**: least-recently-touched first. Recency lives in a
   store-closure map (`touchParsedFile`) updated on every cache write *and* on
   `getSemanticModel` cache hits, so reads refresh recency without churning

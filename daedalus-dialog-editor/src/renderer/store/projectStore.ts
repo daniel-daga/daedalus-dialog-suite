@@ -344,8 +344,8 @@ type MergeCategoryKey = typeof MERGE_CATEGORY_KEYS[number];
 type CategoryMap = Record<string, unknown>;
 
 // Upper bound on cached parsed models (P0: parsedFiles previously grew without
-// bound — only closeProject ever shrank it). Merged-model contributors are
-// pinned (global dialog-less files, the selected NPC's files, quest files);
+// bound — only closeProject ever shrank it). Quest files and the selected NPC's
+// files are pinned; global (dialog-less) files are preferred over the rest;
 // everything else is evicted least-recently-touched first. Evicted files
 // self-heal: NPC selection re-parses its files via getSemanticModel before
 // merging. On projects larger than the cap, whole-corpus consumers (Problems
@@ -417,10 +417,13 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   };
 
   /**
-   * Evict least-recently-touched unpinned entries from `cache` (mutating it)
-   * until it fits PARSED_FILES_CAP. Pinned: quest files, global (dialog-less)
-   * project files, and the selected NPC's dialog files — the merged-model
-   * contributors that loadAndMergeNpcModels/loadQuestData read from the cache.
+   * Evict least-recently-touched entries from `cache` (mutating it) until it
+   * fits PARSED_FILES_CAP. Pinned absolutely: quest files and the selected
+   * NPC's dialog files. Global (dialog-less) project files are the
+   * merged-model contributors loadAndMergeNpcModels/loadQuestData read from the
+   * cache, so they are preferred over everything else — but only preferred: a
+   * project can list more of them than the cap (the MDK tree does), and the cap
+   * is the harder promise.
    */
   const enforceParsedFilesCap = (
     cache: Map<string, ParsedFileCache>,
@@ -429,16 +432,21 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   ): Map<string, ParsedFileCache> => {
     if (cache.size <= PARSED_FILES_CAP) return cache;
     const pinned = new Set<string>(state.questFiles);
-    const filesWithDialogs = getFilesWithDialogs(dialogIndex);
-    for (const filePath of state.allDialogFiles) {
-      if (!filesWithDialogs.has(filePath)) pinned.add(filePath);
-    }
     if (state.selectedNpc) {
       for (const meta of dialogIndex.get(state.selectedNpc.toUpperCase()) || []) pinned.add(meta.filePath);
     }
+    const globals = new Set<string>();
+    const filesWithDialogs = getFilesWithDialogs(dialogIndex);
+    for (const filePath of state.allDialogFiles) {
+      if (!filesWithDialogs.has(filePath)) globals.add(filePath);
+    }
     const evictable = Array.from(cache.keys())
       .filter((filePath) => !pinned.has(filePath))
-      .sort((a, b) => (parsedFileRecency.get(a) ?? 0) - (parsedFileRecency.get(b) ?? 0));
+      .sort((a, b) => {
+        const aGlobal = globals.has(a);
+        if (aGlobal !== globals.has(b)) return aGlobal ? 1 : -1;
+        return (parsedFileRecency.get(a) ?? 0) - (parsedFileRecency.get(b) ?? 0);
+      });
     for (const filePath of evictable) {
       if (cache.size <= PARSED_FILES_CAP) break;
       cache.delete(filePath);
