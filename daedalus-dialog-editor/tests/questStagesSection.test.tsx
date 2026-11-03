@@ -3,7 +3,7 @@
  * a recognised stage write renders as.
  */
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import QuestDetails from '../src/renderer/components/QuestDetails';
 import SetVariableActionRenderer from '../src/renderer/components/actionRenderers/SetVariableActionRenderer';
 import { createAction } from '../src/renderer/components/actionFactory';
@@ -52,6 +52,27 @@ const seedStore = (addVariable = jest.fn(), deleteVariable = jest.fn()) => {
   return { addVariable, deleteVariable };
 };
 
+const read = (variableName: string, operator: string, value: string | number) => ({
+  type: 'VariableCondition', variableName, negated: false, operator, value
+});
+
+// Sheep is both written and read; Said is only written. The read is a
+// condition function, as the parser delivers one.
+const readModel = (overrides: Record<string, unknown> = {}) => questModel({
+  functions: {
+    DIA_Bauer_Info: {
+      name: 'DIA_Bauer_Info',
+      filePath: 'dialogs.d',
+      actions: [SHEEP_WRITE, { type: 'SetVariableAction', variableName: 'STAGE_VerloreneSchafe_Said', operator: '=', value: 'TRUE' }]
+    },
+    DIA_Bauer_Condition: {
+      name: 'DIA_Bauer_Condition', filePath: 'dialogs.d', actions: [],
+      conditions: [read('STAGE_VerloreneSchafe_Sheep', '>=', 3)]
+    }
+  },
+  ...overrides
+});
+
 describe('the quest page’s Stages section', () => {
   beforeEach(() => {
     useFileStore.setState({ openFiles: new Map() } as never);
@@ -92,6 +113,24 @@ describe('the quest page’s Stages section', () => {
 
     expect(screen.getByTestId('stage-note-never-checked')).toHaveTextContent('Sheep');
     expect(screen.queryByTestId('stage-note-never-set')).toBeNull();
+  });
+
+  test('lists a jump to every read, beside the writes', () => {
+    seedStore();
+    render(<QuestDetails semanticModel={readModel()} questName="TOPIC_VerloreneSchafe" />);
+
+    const [sheep, said] = screen.getAllByTestId('quest-stage-item');
+    expect(within(sheep).getByRole('button', { name: 'Go to read in DIA_Bauer_Condition' })).toBeInTheDocument();
+    expect(within(sheep).getByRole('button', { name: 'Go to DIA_Bauer_Info' })).toBeInTheDocument();
+    expect(within(said).queryByRole('button', { name: /Go to read/ })).toBeNull();
+  });
+
+  test('a stage something reads is not "set, never checked"', () => {
+    seedStore();
+    render(<QuestDetails semanticModel={readModel()} questName="TOPIC_VerloreneSchafe" />);
+
+    expect(screen.getByTestId('stage-note-never-checked')).toHaveTextContent('Said');
+    expect(screen.getByTestId('stage-note-never-checked')).not.toHaveTextContent('Sheep');
   });
 
   test('adding a stage declares the sanitised stage beside the MIS_ variable', async () => {
@@ -153,7 +192,8 @@ describe('the quest page’s Stages section', () => {
     expect(deleteVariable).not.toHaveBeenCalled();
   });
 
-  test('deleting refuses while a condition still checks the stage', async () => {    const { deleteVariable } = seedStore();
+  test('deleting refuses while a condition still checks the stage', async () => {
+    const { deleteVariable } = seedStore();
     const model = questModel({
       variables: {
         MIS_VerloreneSchafe: { name: 'MIS_VerloreneSchafe', type: 'int', filePath: 'quests.d' },
@@ -174,6 +214,29 @@ describe('the quest page’s Stages section', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Delete STAGE_VerloreneSchafe_Said' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('still checked');
+    expect(deleteVariable).not.toHaveBeenCalled();
+  });
+
+  test('deleting names every function that reads the stage and refuses', async () => {
+    const { deleteVariable } = seedStore();
+    const model = questModel({
+      variables: {
+        MIS_VerloreneSchafe: { name: 'MIS_VerloreneSchafe', type: 'int', filePath: 'quests.d' },
+        STAGE_VerloreneSchafe_Said: { name: 'STAGE_VerloreneSchafe_Said', type: 'int', filePath: 'quests.d' }
+      },
+      functions: {
+        DIA_Bauer_Condition: {
+          name: 'DIA_Bauer_Condition',
+          actions: [],
+          conditions: [read('STAGE_VerloreneSchafe_Said', '==', 'TRUE')]
+        }
+      }
+    });
+    render(<QuestDetails semanticModel={model} questName="TOPIC_VerloreneSchafe" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete STAGE_VerloreneSchafe_Said' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('DIA_Bauer_Condition');
     expect(deleteVariable).not.toHaveBeenCalled();
   });
 

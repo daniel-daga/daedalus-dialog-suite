@@ -8,7 +8,7 @@
  * a stage written in a file the editor never opened is still recognised, with no
  * index and no sidecar.
  */
-import type { DialogAction, SemanticModel } from '../../types/global';
+import type { DialogAction, DialogCondition, SemanticModel } from '../../types/global';
 import { getQuestMisVariableName, isCaseInsensitiveMatch } from '../../utils/questIdentity';
 import { questNameFromTitle } from '../../utils/questLogFiles';
 import { walkActionsWithPath, type QuestDiaryPath } from './questDiary';
@@ -16,6 +16,7 @@ import { getDialogContextForFunction, getFunctionFilePath } from './questGraphSh
 
 export type QuestStageKind = 'flag' | 'counter';
 export type QuestStageWriteKind = 'reached' | 'reset' | 'counts';
+export type QuestStageReadKind = 'reached' | 'not_reached' | 'at_least';
 
 /** A declared stage. */
 export interface QuestStage {
@@ -28,23 +29,34 @@ export interface QuestStage {
   name: string;
 }
 
-export interface QuestStageWrite {
-  kind: QuestStageWriteKind;
+/** Where a stage is written or read, so the page can jump there. */
+export interface QuestStageSite {
   functionName: string;
   filePath?: string;
   dialogName?: string;
   npc?: string;
+}
+
+export interface QuestStageWrite extends QuestStageSite {
+  kind: QuestStageWriteKind;
   /** Where the line sits in the function's actions, through if/else branches. */
   path: QuestDiaryPath;
+}
+
+/** A stage read as the card shows it: quest, stage, and the form. */
+export interface QuestStageRead {
+  variable: string;
+  kind: QuestStageReadKind;
+  /** The N of an `at_least` read. */
+  target?: number;
 }
 
 export interface QuestStageItem extends QuestStage {
   kind: QuestStageKind;
   writes: QuestStageWrite[];
+  reads: QuestStageSite[];
   /** Largest N of a `>= N` / `== N` check of the stage, or null when nothing compares it. */
   target: number | null;
-  /** Some `VariableCondition` in the project reads it. */
-  checked: boolean;
 }
 
 const STAGE_PREFIX = /^stage_/i;
@@ -147,36 +159,76 @@ export function stageWriteScript(action: DialogAction): string {
   return `${a.variableName} ${a.operator} ${a.value};`;
 }
 
+const isBoolean = (value: unknown, text: string) => new RegExp(`^${text}$`, 'i').test(String(value ?? '').trim());
+
+/**
+ * The stage read `condition` is, or null when it is anything else. Only a
+ * declared stage counts, so a `STAGE_` name nobody declares stays a plain
+ * variable check — and only the three forms the card writes back, because
+ * rewriting a check it cannot express would change what the script says.
+ */
+export function recognizeStageRead(condition: DialogCondition, stages: QuestStage[]): QuestStageRead | null {
+  const c = condition as unknown as Record<string, unknown>;
+  if (c.type !== 'VariableCondition' || c.negated) return null;
+  const variable = String(c.variableName ?? '').trim();
+  // `STAGE_` alone is the Stage card before a stage is picked, as on the write side.
+  if (!STAGE_PLACEHOLDER.test(variable) && !stages.some((stage) => isCaseInsensitiveMatch(stage.variable, variable))) {
+    return null;
+  }
+  if (c.operator === '==') {
+    if (isBoolean(c.value, 'true')) return { variable, kind: 'reached' };
+    if (isBoolean(c.value, 'false')) return { variable, kind: 'not_reached' };
+    return null;
+  }
+  if (c.operator !== '>=') return null;
+  const value = String(c.value ?? '').trim();
+  return /^\d+$/.test(value) ? { variable, kind: 'at_least', target: Number(value) } : null;
+}
+
+/**
+ * The condition that checks a stage read. "Not reached" is `== FALSE` because
+ * an unset int is 0, matching "not started" on the quest state card.
+ */
+export function buildStageRead(variable: string, kind: QuestStageReadKind, target = 1): DialogCondition {
+  const [operator, value] = kind === 'at_least'
+    ? ['>=', target]
+    : ['==', kind === 'reached' ? 'TRUE' : 'FALSE'];
+  return { type: 'VariableCondition', variableName: variable, negated: false, operator, value } as DialogCondition;
+}
+
+/** The read as Daedalus, for the card's "show script" view. */
+export function stageReadScript({ variable, kind, target }: QuestStageRead): string {
+  const c = buildStageRead(variable || 'STAGE_?', kind, target) as unknown as Record<string, unknown>;
+  return `${c.variableName} ${c.operator} ${c.value}`;
+}
+
 /**
  * The quest page's Stages section: its declared stages, what writes each with
- * where it is so it can be jumped to, whether anything reads it, and — for a
+ * where it is so it can be jumped to, what reads each the same way, and — for a
  * counter — the target its `>= N` / `== N` checks give it.
- *
- * Reads are found only for those notes and the target: a stage check has no card
- * of its own yet (slice 2), so there is no read site to list.
  */
 export function buildQuestStages(model: SemanticModel, questName: string): QuestStageItem[] {
   const questBase = getQuestMisVariableName(questName).replace(/^mis_/i, '');
   const belongs = new RegExp(`^STAGE_${escapeRegExp(questBase)}_`, 'i');
 
   const writes = new Map<string, QuestStageWrite[]>();
+  const reads = new Map<string, QuestStageSite[]>();
   const targets = new Map<string, number>();
-  const checked = new Set<string>();
 
   for (const func of Object.values(model.functions ?? {})) {
+    const context = getDialogContextForFunction(func.name, model);
+    const filePath = getFunctionFilePath(func);
+    const site = {
+      functionName: func.name,
+      ...(filePath ? { filePath } : {}),
+      ...(context.dialogName ? { dialogName: context.dialogName, npc: context.npc } : {})
+    };
+
     walkActionsWithPath(func.actions, (action, path) => {
       const write = recognizeStageWrite(action);
       if (!write?.variable || !belongs.test(write.variable)) return;
-      const context = getDialogContextForFunction(func.name, model);
-      const filePath = getFunctionFilePath(func);
       const key = write.variable.toLowerCase();
-      writes.set(key, [...(writes.get(key) ?? []), {
-        kind: write.kind,
-        functionName: func.name,
-        path,
-        ...(filePath ? { filePath } : {}),
-        ...(context.dialogName ? { dialogName: context.dialogName, npc: context.npc } : {})
-      }]);
+      writes.set(key, [...(writes.get(key) ?? []), { kind: write.kind, path, ...site }]);
     });
 
     for (const condition of func.conditions ?? []) {
@@ -185,7 +237,7 @@ export function buildQuestStages(model: SemanticModel, questName: string): Quest
       const variable = String(c.variableName ?? '');
       if (!belongs.test(variable)) continue;
       const key = variable.toLowerCase();
-      checked.add(key);
+      reads.set(key, [...(reads.get(key) ?? []), site]);
       if (c.operator !== '>=' && c.operator !== '==') continue;
       const target = Number(c.value);
       if (Number.isFinite(target)) targets.set(key, Math.max(targets.get(key) ?? 0, target));
@@ -207,8 +259,8 @@ export function buildQuestStages(model: SemanticModel, questName: string): Quest
         // only ever written TRUE/FALSE.
         kind: stageWrites.some((write) => write.kind === 'counts') || target !== null ? 'counter' : 'flag',
         writes: stageWrites,
-        target,
-        checked: checked.has(key)
+        reads: reads.get(key) ?? [],
+        target
       } as QuestStageItem;
     });
 }

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Info as InfoIcon, Check as CheckIcon, Code as CodeIcon, Assignment as AssignmentIcon } from '@mui/icons-material';
+import { Info as InfoIcon, Check as CheckIcon, Code as CodeIcon, Assignment as AssignmentIcon, Flag as FlagIcon } from '@mui/icons-material';
 import type { ConditionEditorCondition } from '../dialogTypes';
 import NpcKnowsInfoFields from './NpcKnowsInfoFields';
 import VariableConditionFields from './VariableConditionFields';
@@ -9,7 +9,10 @@ import NpcIsDeadFields from './NpcIsDeadFields';
 import NpcGetDistToWpFields from './NpcGetDistToWpFields';
 import NpcGetTalentSkillFields from './NpcGetTalentSkillFields';
 import QuestStateFields, { QUEST_STATE_LABEL } from './QuestStateFields';
+import StageConditionFields, { stageReadLabel } from './StageConditionFields';
 import { buildQuestCondition, recognizeQuestCondition } from '../../quest/domain/questConditions';
+import { buildStageRead, declaredStages, recognizeStageRead } from '../../quest/domain/questStages';
+import { useProjectStore } from '../../store/projectStore';
 import ExpressionConditionFields from './ExpressionConditionFields';
 
 // No `semanticModel` prop (memo-boundary invariant, render-performance.md):
@@ -137,6 +140,22 @@ export const CONDITION_REGISTRY: Record<string, RegistryEntry> = {
     } as ConditionEditorCondition),
     Fields: QuestStateFields,
   },
+  // A view over VariableCondition (#325): only a declared `STAGE_` variable is a
+  // stage, so a STAGE_ name nobody declares stays a plain variable check.
+  StageCondition: {
+    icon: <FlagIcon fontSize="small" />,
+    label: (c) => {
+      const stages = declaredStageList();
+      const read = recognizeStageRead(c, stages);
+      return read ? stageReadLabel(read, stages) : 'Stage Condition';
+    },
+    menuLabel: 'Stage',
+    createDefault: () => ({
+      ...buildStageRead('STAGE_', 'reached'),
+      getTypeName: () => 'VariableCondition'
+    } as ConditionEditorCondition),
+    Fields: StageConditionFields,
+  },
   Condition: {
     icon: <CodeIcon fontSize="small" />,
     label: () => 'Custom Condition',
@@ -152,9 +171,19 @@ export const CONDITION_REGISTRY: Record<string, RegistryEntry> = {
 
 export const FALLBACK_ENTRY: RegistryEntry = CONDITION_REGISTRY.Condition;
 
+/**
+ * The declared stages, for routing and labelling. Read from the store rather
+ * than a prop to keep the memo boundary (no `semanticModel` prop); the card's
+ * own fields subscribe, so picking a stage re-renders them.
+ */
+const declaredStageList = () => declaredStages(useProjectStore.getState().mergedSemanticModel);
+
 export function getConditionType(condition: ConditionEditorCondition): string {
   if (recognizeQuestCondition(condition)) {
     return 'QuestStateCondition';
+  }
+  if (recognizeStageRead(condition, declaredStageList())) {
+    return 'StageCondition';
   }
   if (typeof condition.getTypeName === 'function') {
     return condition.getTypeName();
