@@ -78,6 +78,8 @@ export const ACTION_RENDERERS: Record<ActionTypeId, React.FC<BaseActionRendererP
   questFail: QuestStepRenderer,
   questCancel: QuestStepRenderer,
   questNote: QuestStepRenderer,
+  // #325: menu-only; the SetVariableAction it writes shows as a Stage card.
+  setStage: SetVariableActionRenderer,
   customAction: CustomActionRenderer
 };
 

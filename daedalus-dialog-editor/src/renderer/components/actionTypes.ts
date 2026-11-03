@@ -274,7 +274,11 @@ export type ActionTypeId =
   | 'commentAction'
   | 'questStep'
   | QuestStepMenuId
+  | StageMenuId
   | 'customAction';
+
+/** Menu-only: "Set Stage" writes one `SetVariableAction` the Stage card fills in. */
+export type StageMenuId = 'setStage';
 
 /**
  * Add-action menu entries that write a quest step's lines (#322). Menu-only:

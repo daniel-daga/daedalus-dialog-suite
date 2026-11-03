@@ -119,6 +119,15 @@ export const ACTION_TEMPLATES = {
     target
   }),
 
+  // #325: one SetVariableAction; the Stage card picks the stage and the form
+  // (`STAGE_` is the placeholder, like a new quest step's `TOPIC_`).
+  setStage: (): SetVariableAction => ({
+    type: 'SetVariableAction',
+    variableName: 'STAGE_',
+    operator: '=',
+    value: 'TRUE'
+  }),
+
   playAniAction: (target: string = 'self', animationName: string = 'T_SEARCH'): PlayAniAction => ({
     type: 'PlayAniAction',
     target,

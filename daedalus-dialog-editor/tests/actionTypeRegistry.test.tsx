@@ -10,11 +10,14 @@ import { ACTION_TYPE_REGISTRY, ADDABLE_ACTION_TYPES } from '../src/renderer/comp
 import { getActionTypeLabel } from '../src/renderer/components/actionRenderers';
 import ActionTypeMenu from '../src/renderer/components/common/ActionTypeMenu';
 import { QUEST_STEP_MENU_KINDS } from '../src/renderer/components/actionTypes';
-import type { ActionTypeId, QuestStepMenuId } from '../src/renderer/components/actionTypes';
+import type { ActionTypeId, QuestStepMenuId, StageMenuId } from '../src/renderer/components/actionTypes';
 
 // Quest step menu entries (#322) write several lines that show as one
-// "Quest Step" card, so no stored action carries their ids.
-const TYPE_FIELD_BY_ID: Record<Exclude<ActionTypeId, QuestStepMenuId>, string> = {
+// "Quest Step" card, and Set Stage (#325) writes one SetVariableAction, so no
+// stored action carries their ids.
+type MenuOnlyId = QuestStepMenuId | StageMenuId;
+
+const TYPE_FIELD_BY_ID: Record<Exclude<ActionTypeId, MenuOnlyId>, string> = {
   dialogLine: 'DialogLine',
   choice: 'Choice',
   logEntry: 'LogEntry',
@@ -61,8 +64,8 @@ describe('actionTypeRegistry', () => {
     for (const id of ADDABLE_ACTION_TYPES) {
       const registryLabel = ACTION_TYPE_REGISTRY[id].label;
       // The card tooltip (getActionTypeLabel) and the registry agree.
-      if (!(id in QUEST_STEP_MENU_KINDS)) {
-        expect(getActionTypeLabel({ type: TYPE_FIELD_BY_ID[id as Exclude<ActionTypeId, QuestStepMenuId>] })).toBe(registryLabel);
+      if (!(id in QUEST_STEP_MENU_KINDS) && id !== 'setStage') {
+        expect(getActionTypeLabel({ type: TYPE_FIELD_BY_ID[id as Exclude<ActionTypeId, MenuOnlyId>] })).toBe(registryLabel);
       }
       // The add-action menu and the registry agree.
       expect(menuLabels).toContain(registryLabel);
