@@ -1,10 +1,11 @@
 /**
  * P0 perf: parsedFiles must not grow without bound.
  *
- * The cache is capped at PARSED_FILES_CAP entries. Merged-model contributors
- * are pinned and never evicted: global (dialog-less) files listed in
- * allDialogFiles, the selected NPC's dialog files, and quest files. Eviction
- * order among the rest is least-recently-written/read first.
+ * The cache is capped at PARSED_FILES_CAP entries. Quest files and the selected
+ * NPC's dialog files are pinned and never evicted; global (dialog-less) files
+ * listed in allDialogFiles are preferred over the rest but evicted when more
+ * than the cap of them exist. Eviction order among the rest is
+ * least-recently-written/read first.
  */
 
 import { useProjectStore, PARSED_FILES_CAP } from '../src/renderer/store/projectStore';
@@ -45,6 +46,20 @@ describe('parsedFiles cap', () => {
 
   it('never holds more than PARSED_FILES_CAP entries', () => {
     fillPast(PARSED_FILES_CAP + 20);
+    expect(useProjectStore.getState().parsedFiles.size).toBe(PARSED_FILES_CAP);
+  });
+
+  it('caps a project where more than the cap of files carry no dialog', () => {
+    // The MDK shape: every scanned file listed, most with no C_INFO.
+    const globals = Array.from(
+      { length: PARSED_FILES_CAP + 188 },
+      (_, i) => `/proj/DIA_Filler${i}.d`
+    );
+    useProjectStore.setState({ allDialogFiles: globals, dialogIndex: new Map() });
+    for (const filePath of globals) {
+      useProjectStore.getState().updateFileModel(filePath, emptyModel());
+    }
+
     expect(useProjectStore.getState().parsedFiles.size).toBe(PARSED_FILES_CAP);
   });
 
