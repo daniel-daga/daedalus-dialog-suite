@@ -42,16 +42,16 @@ export async function saveDiaryEntryText(item: QuestDiaryItem, text: string): Pr
 }
 
 /**
- * Upgrade an implicit quest: declare `MIS_X` beside the quest's `TOPIC_`
- * constant, then set it wherever the diary sets the quest's state.
+ * Upgrade an implicit quest: set `MIS_X` wherever the diary sets the quest's
+ * state, then declare it beside the quest's `TOPIC_`. The declaration goes
+ * last because it is what hides the upgrade banner: a refused assignment then
+ * leaves the quest untouched and the banner still offered (#491).
  */
 export async function upgradeImplicitQuest(
   questName: string,
   diary: readonly QuestDiaryItem[],
   declarationFile: string
 ): Promise<void> {
-  await useProjectStore.getState().addVariable(getQuestMisVariableName(questName), 'int', undefined, declarationFile, false);
-
   const functionsByFile = new Map<string, Set<string>>();
   for (const item of diary) {
     if (item.kind !== 'state' || !item.filePath) continue;
@@ -67,4 +67,8 @@ export async function upgradeImplicitQuest(
     }
     if (actionsByKey.size > 0) await saveFunctions(filePath, model, actionsByKey);
   }
+
+  // `addVariable` refuses the write when the file will not parse, so a failure
+  // here leaves no declaration behind either.
+  await useProjectStore.getState().addVariable(getQuestMisVariableName(questName), 'int', undefined, declarationFile, false);
 }
