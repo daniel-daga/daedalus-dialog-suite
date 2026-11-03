@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState, type MutableRefObject } from 'react';
 import {
+  applyWaypointDirections,
   applyWaypointNames,
   applyWaypointPositions,
   invertOp,
@@ -126,6 +127,14 @@ export function useWorldEditPipeline({
     const moves = ops.filter((op) => op.op === 'MoveWaypoint');
     if (moves.length > 0 && waynet !== null) {
       applyWaypointPositions(new Float32Array(waynet.positions), moves);
+    }
+    // A turn writes the other half of the same projection, and into the column
+    // the facing arrows are built from — `directions` is a view over the
+    // payload's buffer exactly as `positions` is, so this is what the overlay
+    // uploads. Undo and redo come through here too.
+    const turns = ops.filter((op) => op.op === 'TurnWaypoint');
+    if (turns.length > 0 && waynet !== null) {
+      applyWaypointDirections(new Float32Array(waynet.directions), turns);
     }
     // The names are the other half, and they are written differently on
     // purpose. The positions column is a buffer the overlay's attribute is a

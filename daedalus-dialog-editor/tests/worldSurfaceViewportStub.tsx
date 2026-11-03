@@ -1,7 +1,7 @@
 import React from 'react';
 import { type WorldOp, type ZenRotation } from 'zen-world';
 import { type WaynetPayload } from '../src/shared/worldTypes';
-import { BASE_PROPS, WAYPOINT_TO, WAYPOINT_WAS } from './worldFixtures';
+import { BASE_PROPS, WAYPOINT_FACING, WAYPOINT_TO, WAYPOINT_TURNED, WAYPOINT_WAS } from './worldFixtures';
 
 /**
  * The stubbed `WorldViewport` the `WorldSurface.editing.*` suites render
@@ -132,6 +132,11 @@ export function viewportStubModule() {
       from: [number, number, number],
       to: [number, number, number],
     ) => void;
+    onTurnWaypoint: (
+      waypoint: number,
+      from: [number, number, number],
+      to: [number, number, number],
+    ) => void;
   }, ref: React.Ref<{
     raycastDown: typeof mockRaycastDown; frameVob: typeof mockFrameVob;
     framePoint: typeof mockFramePoint; framePolygon: typeof mockFramePolygon;
@@ -182,6 +187,13 @@ export function viewportStubModule() {
           onClick={() => props.onMoveWaypoint(1, WAYPOINT_WAS, WAYPOINT_TO)}
         >
           drag waypoint
+        </button>
+        <button
+          type="button"
+          data-testid="stub-turn-waypoint"
+          onClick={() => props.onTurnWaypoint(1, WAYPOINT_FACING, WAYPOINT_TURNED)}
+        >
+          turn waypoint
         </button>
         <button type="button" data-testid="stub-turn" onClick={() => props.onRotateSelection(TURN)}>
           turn

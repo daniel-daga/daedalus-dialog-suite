@@ -98,6 +98,8 @@ function props(outlineMode: OutlineMode, selectionStyle: 'box' | 'outline' = 'ou
     snapAngle: 0,
     onSelectWaypoint: () => {},
     onMoveWaypoint: () => {},
+
+    onTurnWaypoint: () => {},
     paused: false,
     outlineMode,
     selectionStyle,

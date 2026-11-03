@@ -5,7 +5,9 @@ import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { useWorldStore } from '../src/renderer/store/worldStore';
 import { useProjectStore } from '../src/renderer/store/projectStore';
 import { type WaynetPayload } from '../src/shared/worldTypes';
-import { WAYPOINT_MOVE, WAYPOINT_TO, WAYPOINT_WAS, waynetPayload } from './worldFixtures';
+import {
+  WAYPOINT_MOVE, WAYPOINT_TO, WAYPOINT_TURN, WAYPOINT_TURNED, WAYPOINT_WAS, waynetPayload,
+} from './worldFixtures';
 import { TERRAIN, vp } from './worldSurfaceViewportStub';
 import { api, openWorld } from './worldSurfaceEditingHarness';
 
@@ -46,6 +48,26 @@ describe('a waypoint dragged in the viewport', () => {
     fireEvent.click(screen.getByTestId('stub-drag-waypoint'));
 
     await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledWith([WAYPOINT_MOVE]));
+  });
+
+  it('a turn becomes a TurnWaypoint carrying the facing it had, and reaches the main process', async () => {
+    // #423. The other half of a waypoint's edit: the point moves in translate
+    // mode and its facing turns in rotate mode, and the op carries the vector it
+    // ended on so undo is a plain swap.
+    await openWithWaynet();
+
+    fireEvent.click(screen.getByTestId('stub-turn-waypoint'));
+
+    await waitFor(() => expect(api.applyWorldOps).toHaveBeenCalledWith([WAYPOINT_TURN]));
+  });
+
+  it('writes the committed turn into the directions the arrows are built from', async () => {
+    const payload = await openWithWaynet();
+
+    fireEvent.click(screen.getByTestId('stub-turn-waypoint'));
+
+    await waitFor(() => expect(Array.from(new Float32Array(payload.directions).slice(3, 6)))
+      .toEqual(WAYPOINT_TURNED));
   });
 
   it('writes the committed move into the payload the overlay draws', async () => {

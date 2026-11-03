@@ -283,8 +283,27 @@ describe('WaynetOverlay', () => {
     expect(points.version).toBeGreaterThan(version);
   });
 
-  it('uploads again when the payload was written from outside', () => {
-    // The applied path: the surface has already written the payload through
+  it('turns a waypoint\'s facing in place, in the column the arrows are built from', () => {
+    // #423: a turn is the arrow's heading and nothing else, so the position is
+    // untouched — and the redraw is asked for, or the arrow would keep pointing
+    // where it did for as long as the drag lasted.
+    const overlay = new WaynetOverlay(waynet());
+
+    overlay.setDirection(2, [0, 0, -1]);
+
+    expect(overlay.directionOf(2)).toEqual([0, 0, -1]);
+    expect(overlay.positionOf(2)).toEqual([9000, 0, 1000]);
+  });
+
+  it('reports a waypoint facing in ZenGin space, for the ring to turn', () => {
+    const payload = waynet();
+    new Float32Array(payload.directions).set([1, 0, 0], 1 * 3);
+    const overlay = new WaynetOverlay(payload);
+
+    expect(overlay.directionOf(1)).toEqual([1, 0, 0]);
+  });
+
+  it('uploads again when the payload was written from outside', () => {    // The applied path: the surface has already written the payload through
     // `applyWaypointPositions`, so there is nothing for the overlay to write —
     // only the upload to ask for, which nothing else would.
     const payload = waynet();

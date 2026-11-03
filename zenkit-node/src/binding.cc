@@ -753,6 +753,46 @@ Napi::Value SetWaypointPosition(Napi::CallbackInfo const& info) {
   return env.Undefined();
 }
 
+// setWaypointDirection(handle, waypoint, name, [x, y, z]) — turns one waypoint.
+//
+// The address `SetWaypointPosition` uses, for the same reason: a turn writes one
+// field of one point and inserts, deletes and reorders nothing, so the
+// enumeration the caller read is the one this writes into. `name` is the guard
+// and not the address, exactly as it is for the move.
+//
+// This is the only call that writes `direction` — `SetWaypointPosition`
+// deliberately leaves it alone, because a move is a move. Nothing is checked
+// about the vector beyond the finiteness `Vec3FromValue` already enforces: the
+// format says nothing about the length, and (0, 0, 0) is a direction retail
+// worlds do hold, meaning "unset". Turning one of those into a real facing is
+// what the gizmo does, and undoing that turn has to be able to put the zero
+// back.
+Napi::Value SetWaypointDirection(Napi::CallbackInfo const& info) {
+  Napi::Env env = info.Env();
+  auto* handle = UnwrapHandle(env, info[0]);
+  if (!info[1].IsNumber()) {
+    throw Napi::TypeError::New(env, "waypoint must be a number");
+  }
+  auto const requested = info[1].As<Napi::Number>().Int64Value();
+  auto const name = RequiredCp1252Arg(env, info[2], "name");
+  auto direction = Vec3FromValue(env, info[3], "direction");
+
+  auto points = CollectWaypoints(*handle);
+  if (requested < 0 || static_cast<std::size_t>(requested) >= points.size()) {
+    throw Napi::Error::New(env, "no waypoint at " + std::to_string(requested));
+  }
+
+  auto const& point = points[static_cast<std::size_t>(requested)];
+  if (point->name != name) {
+    throw Napi::Error::New(env, "waypoint " + std::to_string(requested) + " is "
+                                  + Named(point->name) + ", not " + Named(name)
+                                  + " — the waynet has changed under this op");
+  }
+
+  point->direction = direction;
+  return env.Undefined();
+}
+
 // setWaypointName(handle, waypoint, name, newName) — renames one waypoint.
 //
 // The same address as SetWaypointPosition's and for the same reason: a rename
@@ -3929,6 +3969,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("restoreVob", Napi::Function::New(env, RestoreVob));
   exports.Set("reparentVob", Napi::Function::New(env, ReparentVob));
   exports.Set("setWaypointPosition", Napi::Function::New(env, SetWaypointPosition));
+  exports.Set("setWaypointDirection", Napi::Function::New(env, SetWaypointDirection));
   exports.Set("setWaypointName", Napi::Function::New(env, SetWaypointName));
   exports.Set("addWaypoint", Napi::Function::New(env, AddWaypoint));
   exports.Set("removeWaypoint", Napi::Function::New(env, RemoveWaypoint));

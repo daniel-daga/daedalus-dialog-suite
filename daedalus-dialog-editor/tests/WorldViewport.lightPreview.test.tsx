@@ -89,6 +89,8 @@ function props(overrides: {
     snapAngle: 0,
     onSelectWaypoint: () => {},
     onMoveWaypoint: () => {},
+
+    onTurnWaypoint: () => {},
     paused: false,
     outlineMode: 'all' as const,
     selectedExtent: null,

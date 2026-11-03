@@ -112,6 +112,8 @@ function props(onScatterStroke: (samples: Array<[number, number, number]>) => vo
     onScatterStroke,
     onSelectWaypoint: () => {},
     onMoveWaypoint: () => {},
+
+    onTurnWaypoint: () => {},
     paused: false,
   };
 }

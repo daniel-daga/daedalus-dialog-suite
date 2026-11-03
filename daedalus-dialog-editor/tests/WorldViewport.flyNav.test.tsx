@@ -77,6 +77,8 @@ function props(onVobContextMenu: (...args: ContextMenuHit) => void) {
     snapAngle: 0,
     onSelectWaypoint: () => {},
     onMoveWaypoint: () => {},
+
+    onTurnWaypoint: () => {},
   };
 }
 

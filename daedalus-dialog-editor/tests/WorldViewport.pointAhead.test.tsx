@@ -78,6 +78,8 @@ function props(groups: WorldMeshPayload['groups']) {
     snapAngle: 0,
     onSelectWaypoint: () => {},
     onMoveWaypoint: () => {},
+
+    onTurnWaypoint: () => {},
   };
 }
 

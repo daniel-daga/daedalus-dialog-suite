@@ -2,6 +2,7 @@
 
 ## One line per change, newest on top, `- #123: Short description` (120 characters max). A build ships only the lines added since the last one, and CHANGELOG.md keeps them; old lines may be pruned at any time.
 
+- #423: A waypoint's facing turns with the rotate gizmo, and the turn saves with the world
 - #511: A save no longer fails because another program is holding the script for a moment
 - #454: Saving a script a world or NPC preview holds no longer leaves a stray copy beside it
 - #464: A choice that targets its own function keeps the seeded first line in step with the choice text

@@ -2193,9 +2193,26 @@ for the upload. `WaynetOverlay.test.ts` pins the view-not-a-copy, because a copy
 would fail silently — the file would save the move and the overlay would go on
 drawing the old position until the world was reopened.
 
-Translate only. The waynet's other op is the panel's rename (§7, W1), which
-no gizmo produces; a waypoint does carry a direction, but nothing writes one, so
-a rotate ring would turn something the world would never be told about.
+Translate moves the point; the rotate ring turns it (#423). The ring writes the
+waypoint's stored **direction** and nothing else — a direction is a field of one
+point, not an orientation, so the ring stands still and the op carries the
+vector it ended on (`TurnWaypoint`'s `from`/`to`) rather than an angle, which is
+what makes undo the plain swap every other op in the set uses. A stored zero
+means "unset" (retail holds them); turning one of those would be a no-op, so the
+gizmo turns `+Z` instead — the facing `addWaypoint` gives a new point — while the
+op still carries the zero as its origin, so undo puts it back.
+
+The facing reaches the screen the same way a move does: the preview writes the
+overlay's `directions`, and an applied op writes the payload through
+`applyWaypointDirections`, whose buffer the arrows are built from. **That write
+is also done in the viewport, and not only in the surface** — a *refused* op
+never reaches `applied`, and without it the arrow would stay turned after a
+refusal the banner says did not happen. Commit writes are idempotent, so doing
+both costs nothing.
+
+Still not done: waypoint **drop-to-ground** (`G`/`Shift-G`, the other half of
+#423) — a waypoint is not a VOB, so it needs its own raycast-and-`MoveWaypoint`
+path, and the per-VOB `dropVobsToGround` batch cannot carry it.
 
 `verify-world-edit.js`'s `expectedWaypointMoves` moves from 0 to 1 — the number
 §14.2 said this slice would change — and the driver's waynet comparison was

@@ -143,6 +143,8 @@ function props(overrides: Record<string, unknown> = {}) {
     onScatterStroke: () => {},
     onSelectWaypoint: () => {},
     onMoveWaypoint: () => {},
+
+    onTurnWaypoint: () => {},
     ...overrides,
   };
 }

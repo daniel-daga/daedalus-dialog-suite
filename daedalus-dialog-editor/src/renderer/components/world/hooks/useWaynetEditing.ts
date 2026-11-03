@@ -6,6 +6,7 @@ import {
   disconnectWaypoints,
   moveWaypoint,
   renameWaypoint,
+  turnWaypoint,
   type WorldOp,
   type ZenPosition,
 } from 'zen-world';
@@ -24,6 +25,7 @@ export interface WaynetEditingInput {
 
 export interface WaynetEditing {
   moveWaypointTo: (waypoint: number, from: ZenPosition, to: ZenPosition) => void;
+  turnWaypointTo: (waypoint: number, from: ZenPosition, to: ZenPosition) => void;
   renameWaypointTo: (waypoint: number, to: string) => void;
   addWaypointAt: (name: string, point: [number, number, number]) => void;
   joinWaypointTo: (to: number) => void;
@@ -73,6 +75,22 @@ export function useWaynetEditing({
     const positions = new Float32Array(waynet.positions);
     positions.set(from, waypoint * 3);
     void commitOps([moveWaypoint(positions, waynet.names, waypoint, to)]);
+  }, [commitOps, waynet]);
+
+  /**
+   * A finished waypoint turn (#423) — the waynet's counterpart of a gizmo
+   * rotation, and the same `from`-restoring trick as the move above: the live
+   * preview has already written `to` into the overlay's directions column, so
+   * the column the op reads its origin out of is put back first. The op carries
+   * a direction rather than an angle, which is what makes undo a plain swap.
+   */
+  const turnWaypointTo = useCallback((
+    waypoint: number, from: ZenPosition, to: ZenPosition,
+  ) => {
+    if (waynet === null) return;
+    const directions = new Float32Array(waynet.directions);
+    directions.set(from, waypoint * 3);
+    void commitOps([turnWaypoint(directions, waynet.names, waypoint, to)]);
   }, [commitOps, waynet]);
 
   /**
@@ -229,6 +247,7 @@ export function useWaynetEditing({
 
   return {
     moveWaypointTo,
+    turnWaypointTo,
     renameWaypointTo,
     addWaypointAt,
     joinWaypointTo,

@@ -1781,6 +1781,30 @@ describe('assertApplyOpsRequest', () => {
     });
   });
 
+  describe('a waypoint turn', () => {
+    // #423. The same address and the same guard as the move, so it shares that
+    // branch — which is only true while its two sides are also three numbers.
+    // A direction is one, and this is what says so at the boundary.
+    const turn = {
+      op: 'TurnWaypoint', waypoint: 12, name: 'WP_CITY_01',
+      from: [0, 0, 1], to: [1, 0, 0],
+    };
+
+    it('is accepted carrying no vob and no path at all', () => {
+      expect(() => assertApplyOpsRequest({ ops: [turn] })).not.toThrow();
+    });
+
+    it('rejects a missing name, and a side that is not three finite numbers', () => {
+      expect(() => assertApplyOpsRequest({ ops: [{ ...turn, name: undefined }] })).toThrow(/name/);
+      for (const bad of [undefined, null, [1, 2], [1, 2, 'x'], [1, 2, NaN]]) {
+        expect(() => assertApplyOpsRequest({ ops: [{ ...turn, to: bad }] }))
+          .toThrow(/to must be three finite numbers/);
+        expect(() => assertApplyOpsRequest({ ops: [{ ...turn, from: bad }] }))
+          .toThrow(/from must be three finite numbers/);
+      }
+    });
+  });
+
   describe('a waypoint move', () => {
     // The first op that is not about a VOB at all. A reparent got as far as
     // needing to sit before the `path` check; this one carries neither `path`

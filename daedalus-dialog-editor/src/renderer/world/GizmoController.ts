@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {
-  multiplyRotation, mirrorRotation, turnAbout, type SubtreeMember, type ZenRotation,
+  multiplyRotation, mirrorRotation, turnAbout, type SubtreeMember, type ZenPosition,
+  type ZenRotation,
 } from 'zen-world';
 import { DampedTransformControls } from './DampedTransformControls';
 import { snapDelta, snapTurn } from './snapping';
@@ -45,6 +46,14 @@ export interface GizmoControllerOptions {
     from: [number, number, number],
     to: [number, number, number],
   ) => void;
+  /** A finished waypoint turn — the direction it faced and the one the ring gave
+   *  it, in ZenGin space. A rotate ring on a waypoint turns its *direction*
+   *  (#423); a translate drag moves the point itself. */
+  onTurnWaypoint: (
+    waypoint: number,
+    from: [number, number, number],
+    to: [number, number, number],
+  ) => void;
   /**
    * What a drag of `vobs` moves: each of them and its descendants, with the
    * selected VOB each turns about (#292) — `subtreeMembers` over the index, the
@@ -80,6 +89,9 @@ export class GizmoController {
    *  VOB there is nothing to convert on the way in or out. */
   private waypoint: number | null = null;
   private waypointFrom: [number, number, number] | null = null;
+  /** Where the waypoint faced when the drag began, for the rotate mode. Zero is
+   *  legal — retail's "unset" — and `turnedDirection` says what that turns. */
+  private waypointDirectionFrom: [number, number, number] | null = null;
   private readonly dragFrom = new Map<number, [number, number, number]>();
   private readonly turnFrom = new Map<number, ZenRotation>();
   /** The selected VOB each dragged one turns about — itself for a selected
@@ -173,10 +185,11 @@ export class GizmoController {
   /**
    * Put the gizmo on a waypoint instead.
    *
-   * Translate only, and that is a fact about the op set rather than about the
-   * gizmo: `MoveWaypoint` is the only waynet op there is. A waypoint does carry
-   * a direction, but nothing writes one yet, so a rotate ring here would turn
-   * something the world would never be told about.
+   * Both modes, and they mean two different things: translate moves the point,
+   * and the rotate ring turns the waypoint's stored *direction* — the facing its
+   * arrow draws and an NPC spawned there takes (#423). That is one field of one
+   * point, so the ring turns in place and the op carries the vector it ended on
+   * rather than an angle.
    */
   attachWaypoint(waypoint: number | null): void {
     this.vobs = [];
@@ -189,24 +202,22 @@ export class GizmoController {
     const position = overlay.positionOf(waypoint);
     this.proxy.position.set(position[0], position[1], position[2]);
     this.proxy.quaternion.identity();
-    this.transform.setMode('translate');
+    this.transform.setMode(this.modeNow);
     this.transform.attach(this.proxy);
     this.transform.enabled = true;
     this.transform.getHelper().visible = true;
   }
 
   /**
-   * The mode buttons and the 1/2 keys keep working while a waypoint is
-   * selected; they just have nothing to switch to. Ignored rather than
-   * disabled, so the mode the VOBs were in survives a detour through the
-   * waynet.
+   * The mode buttons and the 1/2 keys keep working while a waypoint is selected:
+   * the ring on it turns the waypoint, the arrows move it.
    */
   setMode(mode: GizmoMode): void {
     this.modeNow = mode;
-    this.transform.setMode(this.waypoint === null ? mode : 'translate');
+    this.transform.setMode(mode);
     // The anchor is the mode's, so 1 and 2 move the gizmo as well as changing
     // its handles — a rotate gizmo left standing at the centroid would turn
-    // about a pivot no op uses.
+    // about a pivot no op uses. A waypoint has the same anchor either way.
     if (this.waypoint === null && this.vobs.length > 0) this.attach(this.vobs);
   }
 
@@ -226,6 +237,9 @@ export class GizmoController {
     this.waypointFrom = this.waypoint === null
       ? null
       : this.options.overlay()?.positionOf(this.waypoint) ?? null;
+    this.waypointDirectionFrom = this.waypoint === null
+      ? null
+      : this.options.overlay()?.directionOf(this.waypoint) ?? null;
     this.proxyFrom.copy(this.proxy.position);
     this.proxyTurnFrom.copy(this.proxy.quaternion);
     this.dragFrom.clear();
@@ -295,6 +309,21 @@ export class GizmoController {
     this.endedDrag = true;
 
     if (this.waypoint !== null) {
+      if (this.transform.getMode() === 'rotate') {
+        const delta = this.turnDelta();
+        if (delta === null) return;
+        const from = this.waypointDirectionFrom;
+        const to = this.turnedDirection(delta);
+        if (from === null || to === null) return;
+        // A turn about the waypoint's own facing leaves it facing exactly where
+        // it did: no op, for the reason a click that dragged nothing commits
+        // none. Compared with a tolerance because the vector went through a
+        // matrix.
+        if (to.every((component, axis) => Math.abs(component - from[axis]) < 1e-6)) return;
+        this.options.onTurnWaypoint(this.waypoint, from, to);
+        return;
+      }
+
       const from = this.waypointFrom;
       if (from === null) return;
       const to: [number, number, number] = [
@@ -354,6 +383,23 @@ export class GizmoController {
   }
 
   /**
+   * The waypoint's direction turned by `delta`, or null when there is no
+   * direction under the gizmo to turn.
+   *
+   * A stored direction may be zero — retail's "unset" — and a zero vector
+   * turned is still zero, which would make the first turn of such a waypoint a
+   * no-op however far the ring went. So a zero base is turned from +Z instead,
+   * the facing `AddWaypoint` gives a new point. `from` stays what is stored, so
+   * undo puts the zero back.
+   */
+  private turnedDirection(delta: ZenRotation): ZenPosition | null {
+    const from = this.waypointDirectionFrom;
+    if (from === null) return null;
+    const base: ZenPosition = from.some((component) => component !== 0) ? from : [0, 0, 1];
+    return turnAbout(base, [0, 0, 0], delta);
+  }
+
+  /**
    * Quantise the drag, by writing the snapped pose back onto the proxy.
    *
    * On the proxy rather than on the delta the commit reports, because the proxy
@@ -391,6 +437,12 @@ export class GizmoController {
     this.snapProxy();
 
     if (this.waypoint !== null) {
+      if (this.transform.getMode() === 'rotate') {
+        const delta = this.turnDelta();
+        const to = delta === null ? null : this.turnedDirection(delta);
+        if (to !== null) this.options.overlay()?.setDirection(this.waypoint, to);
+        return;
+      }
       // Straight into the array the point cloud and the edge lines share, so
       // the edges into this waypoint follow the drag instead of pointing at
       // where it used to be for as long as the drag lasts.
@@ -451,7 +503,9 @@ export class GizmoController {
    *  conjugated into the proxy's frame by the same function that converts it
    *  back — which is its own inverse, so this cannot be applied the wrong way. */
   turnBy(axis: readonly [number, number, number], radians: number): void {
-    if (this.vobs.length === 0) throw new Error('no VOB is selected');
+    if (this.vobs.length === 0 && this.waypoint === null) {
+      throw new Error('nothing is selected');
+    }
     this.transform.dispatchEvent({ type: 'dragging-changed', value: true });
     const inZen = rowMajor(this.turnMatrix.makeRotationFromQuaternion(
       this.turn.setFromAxisAngle(

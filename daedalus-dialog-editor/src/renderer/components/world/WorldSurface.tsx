@@ -1843,6 +1843,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
 
   const {
     moveWaypointTo,
+    turnWaypointTo,
     renameWaypointTo,
     addWaypointAt,
     joinWaypointTo,
@@ -2761,6 +2762,7 @@ const WorldSurface: React.FC<WorldSurfaceProps> = ({ hidden = false }) => {
               onSelectWaypoint={handleSelectWaypoint}
               routineDraft={routineMode.mode !== null ? routineMode.draft : spawnRoutineDraft}
               onMoveWaypoint={moveWaypointTo}
+              onTurnWaypoint={turnWaypointTo}
               paused={hidden}
             />
             )}

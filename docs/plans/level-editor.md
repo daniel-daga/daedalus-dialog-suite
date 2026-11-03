@@ -199,11 +199,16 @@ correct and a third mode would author a representation ZenGin does not have.
 
 ### 14.2 Waynet
 
-`MoveWaypoint`, `RenameWaypoint`, `AddWaypoint`, `SetWaypointEdge` and
-`DeleteWaypoint` exist, and the third of them *is* freepoint authoring — every
-waypoint it makes is a free point, because `WayNet::save` writes nothing else
-that is in no edge. Of the verbs Spacer has, parity still wants only **waypoint
-direction** — which the binding deliberately leaves alone.
+`MoveWaypoint`, `TurnWaypoint`, `RenameWaypoint`, `AddWaypoint`,
+`SetWaypointEdge` and `DeleteWaypoint` exist, and the third of them *is*
+freepoint authoring — every waypoint it makes is a free point, because
+`WayNet::save` writes nothing else that is in no edge. **The direction landed
+2026-11-03 (#423)**: `setWaypointDirection` writes the one field
+`setWaypointPosition` deliberately leaves alone, `TurnWaypoint` carries the two
+facing vectors, and the rotate ring that produces it landed with it. Of the
+verbs Spacer has, parity now wants only **drop-to-ground on a waypoint**
+(`G`/`Shift-G`), which is a raycast plus a `MoveWaypoint` and needs no op — the
+per-VOB `dropVobsToGround` batch cannot carry it, since a waypoint is not a VOB.
 
 The gizmo that produces a `MoveWaypoint` landed 2026-08-28 (§7), and the rename
 (W1), the append (W2), the edge ops (W3) and the delete (W4) the same day — all
