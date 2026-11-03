@@ -120,6 +120,13 @@ export interface FileIndex {
   spawnSites: SpawnSite[];
   exchangeSites: ExchangeSite[];
   instances: Array<{ name: string; parent: string; npcId?: number; dailyRoutine?: string }>;
+  /**
+   * Whether the file declares any `prototype`. A prototype reaches every file,
+   * so the file that writes one is re-indexed whole rather than incrementally
+   * — the load's `chainEnd` rule is the only rule that can say whether the
+   * instances behind it are NPCs (#469).
+   */
+  declaresPrototype?: boolean;
 }
 
 export interface ProjectIndex {
