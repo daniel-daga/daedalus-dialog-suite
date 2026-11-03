@@ -270,13 +270,17 @@ export class WaynetOverlay {
 
   private filterRange(): void {
     this.visiblePoints = [];
+    let changed = false;
     for (let point = 0; point < this.visible.length; point++) {
       const at = point * 3;
       const distanceSquared = (this.positions[at] - this.camera.x) ** 2
         + (this.positions[at + 1] - this.camera.y) ** 2
         + (this.positions[at + 2] - this.camera.z) ** 2;
       const visible = this.radius === 0 || distanceSquared <= this.radius ** 2 ? 1 : 0;
-      if (this.visible[point] !== visible) this.arrowsDirty = true;
+      if (this.visible[point] !== visible) {
+        changed = true;
+        this.arrowsDirty = true;
+      }
       this.visible[point] = visible;
       if (this.visible[point] === 1) {
         this.pointIndices.setX(this.visiblePoints.length, point);
@@ -289,8 +293,13 @@ export class WaynetOverlay {
       this.edgeIndices.setX(edges++, this.allEdges[at]);
       this.edgeIndices.setX(edges++, this.allEdges[at + 1]);
     }
-    this.pointIndices.needsUpdate = true;
-    this.edgeIndices.needsUpdate = true;
+    // A frame that selects the same waypoints filled the same indices in again,
+    // and a hidden overlay draws nothing at all — neither uploads (#510).
+    // `setVisible` flags what was filled in while it was off.
+    if (changed && this.root.visible) {
+      this.pointIndices.needsUpdate = true;
+      this.edgeIndices.needsUpdate = true;
+    }
     this.geometry.setDrawRange(0, this.visiblePoints.length);
     this.edgeGeometry.setDrawRange(0, edges);
     if (this.arrowsDirty) this.rebuildArrows();
@@ -298,6 +307,12 @@ export class WaynetOverlay {
 
   setVisible(visible: boolean): void {
     this.root.visible = visible;
+    // What a camera move filled into the indices while it was hidden was never
+    // flagged for upload — one flag when it is drawn again covers all of it.
+    if (visible) {
+      this.pointIndices.needsUpdate = true;
+      this.edgeIndices.needsUpdate = true;
+    }
   }
 
   /** Where a waypoint sits, in ZenGin centimetres — the space the gizmo's proxy

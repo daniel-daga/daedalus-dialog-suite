@@ -131,6 +131,49 @@ describe('VobMarkerLayer', () => {
     layer.dispose();
   });
 
+  it('uploads nothing when the camera moves over the same markers', () => {
+    // A range of 10,000 cm does not need millimetre equality, and the frame
+    // loop asks every frame while the camera flies: a compaction whose result is
+    // the previous frame's must not reach the GPU (#510).
+    const layer = new VobMarkerLayer(vobIndex(
+      [[0, 0, 0], [1000, 0, 0]], 'zCVobSound', undefined, undefined, ['', ''],
+    ));
+    layer.setView(true, [0, 0, 0], 5000);
+    const attribute = (name: string) => layer.markers.geometry.getAttribute(name) as THREE.BufferAttribute;
+    const versions = () => [attribute('position').version, attribute('color').version,
+      attribute('markerShape').version];
+
+    const before = versions();
+    layer.setView(true, [10, 0, 0], 5000);
+    expect(layer.drawn).toBe(2);
+    expect(versions()).toEqual(before);
+
+    // …and a frame whose drawn set really does change is still uploaded.
+    layer.setView(true, [1000, 0, 0], 500);
+    expect(drawnPositions(layer)).toEqual([1000, 0, 0]);
+    expect(attribute('position').version).toBeGreaterThan(before[0]);
+    layer.dispose();
+  });
+
+  it('uploads nothing while the markers are switched off', () => {
+    const layer = new VobMarkerLayer(vobIndex([[0, 0, 0]], 'zCVobSound', undefined, undefined, ['']));
+    layer.setView(true, [0, 0, 0], 5000);
+    layer.setView(false, [0, 0, 0], 5000);
+    expect(layer.drawn).toBe(0);
+
+    const position = layer.markers.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const version = position.version;
+    layer.setView(false, [2000, 0, 0], 5000);
+    expect(position.version).toBe(version);
+    expect(layer.drawn).toBe(0);
+
+    // Switched back on, the range is answered for the camera it is now at.
+    layer.setView(true, [2000, 0, 0], 5000);
+    expect(layer.drawn).toBe(1);
+    expect(position.version).toBeGreaterThan(version);
+    layer.dispose();
+  });
+
   it('rechecks the range when a marker moves across its boundary', () => {
     const layer = new VobMarkerLayer(vobIndex([[0, 0, 0]], 'zCVobSound', undefined, undefined, ['']));
     layer.setView(true, [0, 0, 0], 500);

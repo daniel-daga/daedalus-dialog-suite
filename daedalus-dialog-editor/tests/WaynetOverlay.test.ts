@@ -143,6 +143,52 @@ describe('WaynetOverlay', () => {
     expect((overlay.waypoints.material as THREE.Material).depthTest).toBe(false);
     overlay.dispose();
   });
+
+  it('uploads no indices when the camera moves over the same waypoints', () => {
+    // The frame loop asks every frame while the camera moves; a filter that
+    // selects the same points must not flag either index buffer (#510).
+    const overlay = new WaynetOverlay(waynet());
+    overlay.setVisible(true);
+    overlay.setView([1000, 0, 1000], 0);
+    const points = overlay.waypoints.geometry.getIndex() as THREE.BufferAttribute;
+    const edges = overlay.edges.geometry.getIndex() as THREE.BufferAttribute;
+    const versions = [points.version, edges.version];
+
+    overlay.setView([1200, 0, 1300], 0);
+
+    expect(overlay.visiblePoints).toEqual([0, 1, 2, 3]);
+    expect([points.version, edges.version]).toEqual(versions);
+
+    // A range that really does drop a point is still uploaded, and still asks
+    // for the arrows to be rebuilt.
+    overlay.setView([1000, 0, 1000], 500);
+    expect(overlay.visiblePoints).toEqual([1]);
+    expect(points.version).toBeGreaterThan(versions[0]);
+    expect(edges.version).toBeGreaterThan(versions[1]);
+    overlay.dispose();
+  });
+
+  it('uploads nothing while it is switched off, and once more when it comes back', () => {
+    // Hidden rather than destroyed (`WorldSurface`): while it draws nothing the
+    // camera must not push 35 KB of indices at a buffer nobody reads.
+    const overlay = new WaynetOverlay(waynet());
+    overlay.setVisible(true);
+    overlay.setView([0, 0, 0], 5000);
+    overlay.setVisible(false);
+    const points = overlay.waypoints.geometry.getIndex() as THREE.BufferAttribute;
+    const version = points.version;
+
+    overlay.setView([0, 0, 0], 20000);
+    // The filter still answers for the pick and the name layer.
+    expect(overlay.visiblePoints).toEqual([0, 1, 2]);
+    expect(points.version).toBe(version);
+
+    // What it filled in while hidden is uploaded when it is drawn again.
+    overlay.setVisible(true);
+    expect(points.version).toBeGreaterThan(version);
+    overlay.dispose();
+  });
+
   it('limits points and complete edges to the camera radius and follows moves', () => {
     const overlay = new WaynetOverlay(waynet());
     overlay.setView([1000, 0, 1000], 8000);
