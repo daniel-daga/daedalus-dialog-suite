@@ -129,6 +129,82 @@ describe('InlineChoiceEditor', () => {
     expect(useFileStore.getState().openFiles.get(filePath)!.semanticModel.functions).toEqual({});
   });
 
+  test('a target in another OPEN file stays editable (#518)', () => {
+    const otherFilePath = '/test/other.d';
+    const emptyModel: SemanticModel = { dialogs: {}, functions: {}, hasErrors: false, errors: [] };
+    useFileStore.setState({
+      openFiles: new Map([
+        [filePath, { filePath, semanticModel: emptyModel } as never],
+        [otherFilePath, { filePath: otherFilePath, semanticModel: testModel } as never],
+      ]),
+      activeFile: filePath,
+    } as never);
+    useProjectStore.setState({ mergedSemanticModel: testModel } as never);
+
+    render(
+      <InlineChoiceEditor
+        targetFunctionName="DIA_Test_Yes"
+        dialogName="DIA_Test"
+        filePath={filePath}
+        npcName="TestNPC"
+      />
+    );
+
+    // Guard against over-reaching: a writable target keeps today's UI.
+    expect(screen.queryByText(/read-only/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('group')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('add-line'));
+    expect(
+      useFileStore.getState().openFiles.get(otherFilePath)!.semanticModel.functions.DIA_Test_Yes.actions
+    ).toHaveLength(3);
+  });
+
+  test('a target whose declaring file is not open is read-only with a visible reason (#518)', () => {
+    // Only the choice's own file is open and it does not declare the target;
+    // the function is known only from the merged project model, so there is no
+    // open file to write to.
+    const emptyModel: SemanticModel = { dialogs: {}, functions: {}, hasErrors: false, errors: [] };
+    useFileStore.setState({
+      openFiles: new Map([[filePath, { filePath, semanticModel: emptyModel } as never]]),
+      activeFile: filePath,
+    } as never);
+    useProjectStore.setState({ mergedSemanticModel: testModel } as never);
+
+    const storeUpdater = useFileStore.getState().updateFunctionWithUpdater;
+    const writeSpy = jest.fn(storeUpdater);
+    useFileStore.setState({ updateFunctionWithUpdater: writeSpy } as never);
+
+    try {
+      render(
+        <InlineChoiceEditor
+          targetFunctionName="DIA_Test_Yes"
+          dialogName="DIA_Test"
+          filePath={filePath}
+          npcName="TestNPC"
+        />
+      );
+
+      // The reason is readable, not tooltip-only.
+      expect(screen.getByText(/read-only/i)).toBeVisible();
+      expect(screen.getByText(/not open/i)).toBeVisible();
+      // The fields render, disabled.
+      expect(screen.getByTestId('actions-list-DIA_Test_Yes')).toHaveTextContent('2 actions');
+      expect(screen.getByRole('group')).toBeDisabled();
+
+      // Touching a field writes nothing at all.
+      fireEvent.click(screen.getByTestId('add-line'));
+      expect(writeSpy).not.toHaveBeenCalled();
+      expect(
+        useFileStore.getState().openFiles.get(filePath)!.semanticModel.functions
+      ).toEqual({});
+    } finally {
+      act(() => {
+        useFileStore.setState({ updateFunctionWithUpdater: storeUpdater } as never);
+      });
+    }
+  });
+
   test('does not re-render on a no-op / unrelated-category merge (§3d)', () => {
     // Shared category refs so a fresh top-level merged model can preserve the
     // dialogs/functions references (mimics a no-op or unrelated-category merge).
