@@ -275,6 +275,35 @@ type FileIndexedState = Pick<ProjectState,
   | 'routineSiteIndex' | 'spawnSiteIndex' | 'exchangeSiteIndex' | 'dialogIndex'>;
 
 /**
+ * The index-derived half of the store's state, adopted whole from a build — by
+ * `openProject`, and by a reindex that has to take the whole index again (#469).
+ */
+function indexFields(rawIndex: ProjectIndex): Partial<ProjectState> {
+  return {
+    npcList: rawIndex.npcs || [],
+    routineList: rawIndex.routines || [],
+    dialogIndex: deserialiseIpcMap<string, DialogMetadata[]>(rawIndex.dialogsByNpc),
+    allDialogFiles: rawIndex.allFiles || [],
+    questFiles: rawIndex.questFiles || [],
+    npcPrototypes: rawIndex.npcPrototypes || [],
+    npcCoverage: rawIndex.npcCoverage ?? null,
+    npcFileIndex: rawIndex.npcFiles || {},
+    voiceIdIndex: rawIndex.voiceIds || {},
+    waypointSiteIndex: rawIndex.waypointSites || {},
+    spawnSiteIndex: rawIndex.spawnSites || [],
+    routineSiteIndex: rawIndex.routineSites || [],
+    routineNpcIndex: rawIndex.routinesByNpc || {},
+    routineStateIndex: rawIndex.routineStatesByNpc || {},
+    npcIdIndex: rawIndex.npcIds || {},
+    routineLayoutIndex: rawIndex.routineLayouts || {},
+    exchangeSiteIndex: rawIndex.exchangeSites || [],
+    metadataFailures: rawIndex.metadataFailures || [],
+    functionList: rawIndex.functions || [],
+    parseErrorIndex: rawIndex.parseErrors || [],
+  };
+}
+
+/**
  * Replace each file's share of the index with `files` (#319). An instance is an
  * NPC by the load's rule — its parent is C_NPC or a prototype reaching it, or it
  * sets `daily_routine` — and the variants are derived again over every file,
@@ -609,9 +638,6 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       // Build project index via IPC
       const rawIndex = await window.editorAPI.buildProjectIndex(descriptor.scriptsRoot);
 
-      // Convert the plain object back to Map (IPC serialization loses Map type)
-      const dialogsByNpc = deserialiseIpcMap<string, DialogMetadata[]>(rawIndex.dialogsByNpc);
-
       // Extract project name from path
       const pathParts = descriptor.projectRoot.split(/[\\/]/);
       const projectName = pathParts[pathParts.length - 1];
@@ -638,26 +664,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         gmbtAssetSources: descriptor.gmbtAssetSources,
         gothicInstallPath: descriptor.gothicInstallPath,
         projectWarnings: descriptor.warnings,
-        npcList: rawIndex.npcs || [],
-        routineList: rawIndex.routines || [],
-        dialogIndex: dialogsByNpc,
-        allDialogFiles: rawIndex.allFiles || [],
-        questFiles: rawIndex.questFiles || [],
-        npcPrototypes: rawIndex.npcPrototypes || [],
-        npcCoverage: rawIndex.npcCoverage ?? null,
-        npcFileIndex: rawIndex.npcFiles || {},
-        voiceIdIndex: rawIndex.voiceIds || {},
-        waypointSiteIndex: rawIndex.waypointSites || {},
-        spawnSiteIndex: rawIndex.spawnSites || [],
-        routineSiteIndex: rawIndex.routineSites || [],
-        routineNpcIndex: rawIndex.routinesByNpc || {},
-        routineStateIndex: rawIndex.routineStatesByNpc || {},
-        npcIdIndex: rawIndex.npcIds || {},
-        routineLayoutIndex: rawIndex.routineLayouts || {},
-        exchangeSiteIndex: rawIndex.exchangeSites || [],
-        metadataFailures: rawIndex.metadataFailures || [],
-        functionList: rawIndex.functions || [],
-        parseErrorIndex: rawIndex.parseErrors || [],
+        ...indexFields(rawIndex),
         isLoading: false,
         parsedFiles: new Map(), // Clear any previous cache
         parseGeneration: get().parseGeneration + 1,
@@ -1284,7 +1291,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
   },
 
   reindexFiles: async (filePaths) => {
-    const { projectPath, routineLayoutIndex: layouts } = get();
+    const { projectPath, scriptsRoot, routineLayoutIndex: layouts } = get();
     const sessionAtStart = projectSession;
     const files = new Map<string, FileIndex>();
     const models = new Map<string, SemanticModel>();
@@ -1302,8 +1309,22 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       }
     };
     await Promise.all(Array.from({ length: Math.min(REINDEX_CONCURRENCY, filePaths.length) }, readNext));
-    // A read that lands after the project closed or changed belongs to no index.
-    if (files.size > 0 && projectSession === sessionAtStart && get().projectPath === projectPath) set((state) => withFileIndexes(state, files));
+    const current = () => projectSession === sessionAtStart && get().projectPath === projectPath;
+    if (files.size === 0 || !current()) return models;
+
+    // A prototype is project-wide: whether the instances inheriting through it
+    // are NPCs is the load's chain rule's answer, which the incremental rule
+    // cannot give (#469). Those files are rare; a plain NPC edit stays here.
+    // shortcut: a file that *deletes* its prototype declaration reads as a plain
+    // edit, so the dead name stays in npcPrototypes until a reopen — upgrade
+    // when a per-file prototype map is worth carrying.
+    if ([...files.values()].some((file) => file.declaresPrototype)) {
+      if (!scriptsRoot) return models;
+      const rawIndex = await window.editorAPI.buildProjectIndex(scriptsRoot);
+      if (current()) set(indexFields(rawIndex));
+    } else {
+      set((state) => withFileIndexes(state, files));
+    }
     return models;
   },
 

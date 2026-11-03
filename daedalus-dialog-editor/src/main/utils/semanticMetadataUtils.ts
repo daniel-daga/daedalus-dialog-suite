@@ -476,6 +476,7 @@ export function indexFile(
       ...(npcId === undefined ? {} : { npcId }),
       ...(dailyRoutine ? { dailyRoutine } : {}),
     })),
+    declaresPrototype: Object.keys(semanticModel.prototypes || {}).length > 0,
   };
 }
 

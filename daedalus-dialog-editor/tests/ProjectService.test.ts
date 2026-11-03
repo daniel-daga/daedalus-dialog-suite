@@ -1222,8 +1222,36 @@ FUNC VOID B_Kapitel3()
           target: 'BAU_900_ONAR', state: 'TOT', filePath: '/test/Onar.d', functionName: 'B_KAPITEL3', line: 15
         }],
         instances: [{ name: 'BAU_900_Onar', parent: 'Npc_Default', npcId: 900, dailyRoutine: 'Rtn_Start_900' }],
+        declaresPrototype: false,
       });
       expect(indexFile('/test/Onar.d', model, {}).routineSites).toEqual([]);
+    });
+
+    // #469: a prototype reaches every file, so the file that writes one cannot
+    // be re-indexed by the narrower incremental rule — this is what tells the
+    // renderer to take the whole index again.
+    it('reports whether the file declares a prototype', async () => {
+      const { indexFile, extractFileMetadataFromSource } = await load();
+
+      const prototypes = extractFileMetadataFromSource(`
+PROTOTYPE SLD_New (C_NPC)
+{
+    name = "";
+};
+INSTANCE SLD_Foo (SLD_New)
+{
+    name = "Foo";
+};
+      `, '/test/SLD.d').semanticModel!;
+      const npc = extractFileMetadataFromSource(`
+INSTANCE BAU_900_Onar (Npc_Default)
+{
+    id = 900;
+};
+      `, '/test/Onar.d').semanticModel!;
+
+      expect(indexFile('/test/SLD.d', prototypes, {}).declaresPrototype).toBe(true);
+      expect(indexFile('/test/Onar.d', npc, {}).declaresPrototype).toBe(false);
     });
 
     // The load reads sites off clean parses only; a file broken mid-edit must
@@ -1256,6 +1284,7 @@ FUNC VOID B_Kapitel3()
       expect(indexFile('/test/Onar.d', model, layouts)).toEqual({
         routineSites: [], spawnSites: [], exchangeSites: [],
         instances: [{ name: 'BAU_900_Onar', parent: 'Npc_Default', npcId: 900 }],
+        declaresPrototype: false,
       });
     });
 

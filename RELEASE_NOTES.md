@@ -4,6 +4,7 @@
 
 - #518: An expanded choice whose target file is not open is read-only, and says why
 - #517: Install & Restart saves the open world first, and refuses to install when that save fails
+- #469: An NPC file added with a new prototype shows up in the NPC list without reopening the project
 - #509: Editing the world re-runs the Problems scan, so a routine hint clears once its bed or waypoint is moved
 - #423: A waypoint's facing turns with the rotate gizmo, and the turn saves with the world
 - #414: The World editor's move gizmo follows the selected VOB's own axes, with a click for world axes
